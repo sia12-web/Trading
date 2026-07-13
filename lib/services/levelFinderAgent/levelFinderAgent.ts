@@ -14,6 +14,9 @@ import type {
   Candle,
   ClaudeUsage,
   ArchiveRequest,
+  AnalysisRequestWithContext,
+  HistoricalContext,
+  HistoricalLevelData,
 } from './types'
 
 const CLAUDE_MODEL = 'claude-3-5-sonnet-20241022'
@@ -32,7 +35,7 @@ class LevelFinderAgent {
     this.claudeClient = new Anthropic({ apiKey })
   }
 
-  async analyzePriceAction(request: AnalysisRequest): Promise<{
+  async analyzePriceAction(request: AnalysisRequestWithContext): Promise<{
     levels: LevelIdentification[]
     usage: ClaudeUsage
   }> {
@@ -41,6 +44,7 @@ class LevelFinderAgent {
     }
 
     const prompt = this.buildAnalysisPrompt(request)
+    const systemPrompt = this.buildSystemPrompt(request.historicalContext)
 
     try {
       const controller = new AbortController()
@@ -53,18 +57,7 @@ class LevelFinderAgent {
           {
             model: CLAUDE_MODEL,
             max_tokens: 1024,
-            system: `You are an expert technical analyst specializing in institutional price action.
-Analyze price data to identify key support/resistance levels and VWAP.
-Focus on high-probability areas where institutions likely have positions.
-
-For DOW: Analyze round numbers, major swing points, and 200/50 SMA zones.
-For NASDAQ: Focus on previous day high/low, VWAP, and 5-min VWAP zones.
-
-Return ONLY valid JSON array. No additional text. Example:
-[
-  {"level": 40250.50, "type": "resistance", "conviction": 8, "reasoning": "Previous day high", "timeframe": "D"},
-  {"level": 40100.00, "type": "support", "conviction": 7, "reasoning": "Round number + VWAP", "timeframe": "4H"}
-]`,
+            system: systemPrompt,
             messages: [
               {
                 role: 'user',
@@ -270,6 +263,68 @@ Return ONLY valid JSON array. No additional text. Example:
       console.error('[Level Finder] Archival network error:', fetchError)
       throw fetchError
     }
+  }
+
+  private buildSystemPrompt(historicalContext?: HistoricalContext): string {
+    const basePrompt = `You are an expert technical analyst specializing in institutional price action.
+Analyze price data to identify key support/resistance levels and VWAP.
+Focus on high-probability areas where institutions likely have positions.
+
+For DOW: Analyze round numbers, major swing points, and 200/50 SMA zones.
+For NASDAQ: Focus on previous day high/low, VWAP, and 5-min VWAP zones.`
+
+    if (!historicalContext || historicalContext.levels.length === 0) {
+      // No historical context available, use base prompt
+      return basePrompt + `
+
+Return ONLY valid JSON array. No additional text. Example:
+[
+  {"level": 40250.50, "type": "resistance", "conviction": 8, "reasoning": "Previous day high", "timeframe": "D"},
+  {"level": 40100.00, "type": "support", "conviction": 7, "reasoning": "Round number + VWAP", "timeframe": "4H"}
+]`
+    }
+
+    // Build enhanced prompt with historical context
+    const summary = historicalContext.summary
+    const successfulTypes = historicalContext.summary.most_reliable_type
+    const avgSuccessRate = (summary.avg_success_rate * 100).toFixed(0)
+
+    // Format successful and unreliable levels for context
+    const successfulLevelsList = summary.successful_levels
+      .slice(0, 5)
+      .map(l => `- ${l.level} (${l.type}, conviction ${l.conviction}, success rate ${(l.success_rate * 100).toFixed(0)}%, "${l.reasoning}")`)
+      .join('\n')
+
+    const unreliableLevelsList = summary.unreliable_levels
+      .slice(0, 3)
+      .map(l => `- ${l.level} (${l.type}, success rate ${(l.success_rate * 100).toFixed(0)}%)`)
+      .join('\n')
+
+    const historicalSection = `
+
+HISTORICAL PERFORMANCE CONTEXT (Last 30 days):
+Your historical level accuracy: ${avgSuccessRate}% average success rate (tested ${summary.total_levels} levels)
+Most reliable pattern: ${successfulTypes} levels (highest success rate)
+Average conviction score: ${summary.avg_conviction.toFixed(1)}/10
+
+Past Successful Levels:
+${successfulLevelsList || '(none yet)'}
+
+${unreliableLevelsList ? `Patterns to avoid:\n${unreliableLevelsList}` : ''}
+
+RECOMMENDATIONS:
+1. Prioritize ${successfulTypes} levels when available - they have highest success rate
+2. Target conviction scores similar to your successful past levels
+3. Validate new levels against established patterns
+4. De-emphasize level types with lower success rates`
+
+    return basePrompt + historicalSection + `
+
+Return ONLY valid JSON array. No additional text. Example:
+[
+  {"level": 40250.50, "type": "resistance", "conviction": 8, "reasoning": "Previous day high", "timeframe": "D"},
+  {"level": 40100.00, "type": "support", "conviction": 7, "reasoning": "Round number + VWAP", "timeframe": "4H"}
+]`
   }
 
   private buildAnalysisPrompt(request: AnalysisRequest): string {
