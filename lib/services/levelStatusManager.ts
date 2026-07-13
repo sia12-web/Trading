@@ -119,8 +119,9 @@ function updateLevelStatus(
     status: newStatus,
     touchedAt: touched ? new Date() : current.touchedAt,
     brokenAt: broken ? new Date() : current.brokenAt,
+    // Increment bounceCount on every touch after a break (current.status is 'broken' OR 'bounced')
     bounceCount:
-      newStatus === 'bounced' && current.status === 'broken'
+      touched && (current.status === 'broken' || current.status === 'bounced')
         ? current.bounceCount + 1
         : current.bounceCount,
     lastTouchPrice: touched ? currentPrice : current.lastTouchPrice,
@@ -249,6 +250,9 @@ let levelStatusManagerInstance: LevelStatusManager | null = null
 export function getLevelStatusManager(): LevelStatusManager {
   if (!levelStatusManagerInstance) {
     levelStatusManagerInstance = new LevelStatusManager()
+  }
+  if (!levelStatusManagerInstance) {
+    throw new Error('Failed to initialize LevelStatusManager')
   }
   return levelStatusManagerInstance
 }

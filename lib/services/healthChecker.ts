@@ -4,6 +4,8 @@
  */
 
 import type { Instrument } from '@/types/price-feed'
+import { validateHealthCheckResponse } from '@/lib/utils/validation'
+import { logger } from '@/lib/utils/logger'
 
 export interface HealthCheckResult {
   instrument: Instrument
@@ -58,12 +60,10 @@ export class HealthChecker {
   start(): void {
     if (this.checkInterval) return
 
-    console.debug('[HealthChecker] Starting health checks every', this.config.intervalMs, 'ms')
+    logger.debug('[HealthChecker] Starting health checks every', this.config.intervalMs, 'ms')
 
-    // Check immediately
-    this.runChecks()
-
-    // Then check on interval
+    // Delay first check by one full interval to give Realtime time to establish.
+    // Running immediately on mount would always flag data as stale on first load.
     this.checkInterval = setInterval(() => this.runChecks(), this.config.intervalMs)
   }
 
@@ -96,20 +96,28 @@ export class HealthChecker {
         throw new Error(`HTTP ${res.status}`)
       }
 
-      const data = await res.json()
+      const rawData = await res.json()
+
+      // Validate response structure
+      const data = validateHealthCheckResponse(rawData)
 
       if (!data.data || data.data.length === 0) {
         throw new Error('No data in response')
       }
 
-      const instrumentData = data.data[0]
-      const dataAge = Date.now() - new Date(instrumentData.timestamp).getTime()
+      const instrumentData = data.data[0]!
+      const timestamp = new Date(instrumentData.timestamp)
+      if (isNaN(timestamp.getTime())) {
+        throw new Error('Invalid timestamp format')
+      }
+
+      const dataAge = Date.now() - timestamp.getTime()
       const isStale = dataAge > this.config.staleThresholdMs
 
       this.lastDataAge.set(instrument, dataAge)
 
       if (isStale) {
-        console.warn(
+        logger.warn(
           `[HealthChecker] Stale data for ${instrument}: ${Math.round(dataAge / 1000)}s old`
         )
         this.recordFailure(instrument)
@@ -126,7 +134,7 @@ export class HealthChecker {
       })
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error))
-      console.error(`[HealthChecker] Health check failed for ${instrument}:`, err.message)
+      logger.error(`[HealthChecker] Health check failed for ${instrument}:`, err.message)
 
       this.recordFailure(instrument)
 
@@ -156,7 +164,7 @@ export class HealthChecker {
     this.failureCount.set(instrument, failures)
 
     if (failures >= this.config.maxConsecutiveFailures) {
-      console.error(
+      logger.error(
         `[HealthChecker] Too many failures for ${instrument} (${failures}/${this.config.maxConsecutiveFailures})`
       )
       this.failureCallbacks.forEach((cb) => cb(instrument))
@@ -177,7 +185,7 @@ export class HealthChecker {
     if (this.checkInterval) {
       clearInterval(this.checkInterval)
       this.checkInterval = null
-      console.debug('[HealthChecker] Health checks stopped')
+      logger.debug('[HealthChecker] Health checks stopped')
     }
   }
 

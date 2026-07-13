@@ -1,14 +1,12 @@
-import type { Metadata } from 'next'
+import { Sidebar } from './Sidebar'
 
-export const metadata: Metadata = {
-  title: 'Dashboard | Trading Platform',
-  description: 'Level analytics and performance dashboard',
-}
-
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
-  return <>{children}</>
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex min-h-screen">
+      <Sidebar />
+      <main className="flex-1 ml-60 min-h-screen bg-surface-900 scrollbar-dark overflow-y-auto">
+        {children}
+      </main>
+    </div>
+  )
 }

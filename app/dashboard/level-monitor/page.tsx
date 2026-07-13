@@ -1,60 +1,75 @@
+import { getLevelStatusManager } from '@/lib/services/levelStatusManager'
+import type { Instrument } from '@/types/price-feed'
 import { LevelMonitorWidget } from './components/LevelMonitorWidget'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 export const metadata = {
-  title: 'Level Monitoring | Trading Platform',
-  description: 'Real-time level monitoring for DOW, NASDAQ, and NIKKEI',
+  title: 'Level Monitor | TradePulse',
+  description: 'Real-time support & resistance level monitoring for DOW, NASDAQ, NIKKEI',
 }
 
-export default async function LevelMonitorPage() {
-  try {
-    // Fetch initial level status from API
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
-    const res = await fetch(`${apiUrl}/api/levels/status?instruments=DOW,NASDAQ,NIKKEI`, {
-      cache: 'no-store', // Always fresh data
-    })
+const INSTRUMENTS: Instrument[] = ['DOW', 'NASDAQ', 'NIKKEI']
 
-    if (!res.ok) {
-      throw new Error(`Failed to fetch level status: ${res.status}`)
-    }
+const PREDEFINED_LEVELS: Record<Instrument, number[]> = {
+  DOW:    [33000, 34000, 35000, 36000, 37000, 38000],
+  NASDAQ: [13000, 14000, 15000, 16000, 17000, 18000],
+  NIKKEI: [26000, 27000, 28000, 29000, 30000, 31000],
+}
 
-    const data = await res.json()
-    const initialData = data.data || []
+export default function LevelMonitorPage() {
+  const manager = getLevelStatusManager()
 
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
-        <div className="max-w-7xl mx-auto">
-          <header className="mb-8">
-            <h1 className="text-4xl font-bold text-gray-900 mb-2">Level Monitoring</h1>
-            <p className="text-gray-600">
-              Real-time tracking of key support and resistance levels
-            </p>
-          </header>
+  const initialData = INSTRUMENTS.map((instrument) => {
+    const levels = manager.getLevels(instrument)
+    const currentPrice = manager.getCurrentPrice(instrument) ?? null
 
-          <LevelMonitorWidget initialData={initialData} />
+    const levelRows =
+      levels.length > 0
+        ? levels.map((l) => ({
+            level: l.level,
+            status: l.status,
+            proximity: l.currentDistance.proximity,
+            distance: parseFloat(l.currentDistance.distance.toFixed(2)),
+            distancePct: parseFloat(l.currentDistance.distancePct.toFixed(4)),
+            bounceCount: l.bounceCount,
+            touchedAt: l.touchedAt?.toISOString() ?? null,
+            brokenAt: l.brokenAt?.toISOString() ?? null,
+            lastTouchPrice: l.lastTouchPrice,
+          }))
+        : PREDEFINED_LEVELS[instrument].map((lvl) => ({
+            level: lvl,
+            status: 'unvisited' as const,
+            proximity: 'far' as const,
+            distance: 0,
+            distancePct: 0,
+            bounceCount: 0,
+            touchedAt: null,
+            brokenAt: null,
+            lastTouchPrice: null,
+          }))
+
+    return { instrument, currentPrice, levels: levelRows, timestamp: new Date().toISOString() }
+  })
+
+  return (
+    <div className="p-6 space-y-6 animate-fade-in">
+      {/* Page header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Level Monitor</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Real-time support &amp; resistance tracking · DOW · NASDAQ · NIKKEI
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-gray-500 bg-surface-700 border border-surface-500 px-3 py-1.5 rounded-lg">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+          Live data
         </div>
       </div>
-    )
-  } catch (error) {
-    console.error('[Level Monitor Page] Error fetching initial data:', error)
 
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
-        <div className="max-w-7xl mx-auto">
-          <header className="mb-8">
-            <h1 className="text-4xl font-bold text-gray-900 mb-2">Level Monitoring</h1>
-            <p className="text-gray-600">
-              Real-time tracking of key support and resistance levels
-            </p>
-          </header>
-
-          <div className="bg-red-50 border border-red-200 rounded-lg p-8 text-center">
-            <div className="text-red-800 font-semibold mb-2">Failed to Load Level Data</div>
-            <div className="text-red-700 text-sm mb-4">
-              Unable to fetch initial level status. Please try refreshing the page.
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
+      <ErrorBoundary>
+        <LevelMonitorWidget initialData={initialData} />
+      </ErrorBoundary>
+    </div>
+  )
 }

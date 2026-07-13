@@ -1,0 +1,20 @@
+
+> trading-platform@0.1.0 dev
+> next dev
+
+ ⚠ Port 3000 is in use, trying 3001 instead.
+ ⚠ Port 3001 is in use, trying 3002 instead.
+ ⚠ Port 3002 is in use, trying 3003 instead.
+ ⚠ Port 3003 is in use, trying 3004 instead.
+ ⚠ Port 3004 is in use, trying 3005 instead.
+ ⚠ Port 3005 is in use, trying 3006 instead.
+  ▲ Next.js 14.2.35
+  - Local:        http://localhost:3006
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 2.3s
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 1753ms (437 modules)
+ GET / 404 in 2207ms
+[?25h

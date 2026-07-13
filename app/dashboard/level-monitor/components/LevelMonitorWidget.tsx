@@ -3,14 +3,18 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { LevelCard } from './LevelCard'
-import { EmptyState } from './States'
 import { ConnectionStatus } from './ConnectionStatus'
+import { PriceChart } from './PriceChart'
 import { getConnectionManager } from '@/lib/services/connectionManager'
 import { getFallbackManager } from '@/lib/services/fallbackManager'
 import { getHealthChecker } from '@/lib/services/healthChecker'
-import type { Instrument, ChangedLevel } from '@/types/price-feed'
+import { getPriceHistoryManager } from '@/lib/services/priceHistoryManager'
+import { validateRealtimePayload } from '@/lib/utils/validation'
+import { logger } from '@/lib/utils/logger'
+import type { Instrument } from '@/types/price-feed'
 import type { ConnectionState } from '@/lib/services/connectionManager'
 import type { FallbackMode } from '@/lib/services/fallbackManager'
+import type { PricePoint } from '@/lib/services/priceHistoryManager'
 
 interface LevelData {
   level: number
@@ -35,17 +39,35 @@ interface Props {
   initialData: InstrumentData[]
 }
 
+const INSTRUMENTS: Instrument[] = ['DOW', 'NASDAQ', 'NIKKEI']
+
+const INSTRUMENT_META: Record<Instrument, { label: string; color: string; desc: string }> = {
+  DOW:    { label: 'Dow Jones', color: '#3b7eff', desc: 'DJIA · US 30' },
+  NASDAQ: { label: 'NASDAQ',    color: '#a78bfa', desc: 'Composite · Tech' },
+  NIKKEI: { label: 'Nikkei',    color: '#34d399', desc: 'N225 · Japan' },
+}
+
+const STATUS_META: Record<string, { label: string; color: string; dot: string }> = {
+  unvisited:  { label: 'Unvisited',  color: 'text-gray-400',   dot: 'bg-gray-500' },
+  approaching:{ label: 'Approaching',color: 'text-yellow-400', dot: 'bg-yellow-400' },
+  touched:    { label: 'Touched',    color: 'text-brand-400',  dot: 'bg-brand-400' },
+  broken:     { label: 'Broken',     color: 'text-red-400',    dot: 'bg-red-400' },
+  bounced:    { label: 'Bounced',    color: 'text-purple-400', dot: 'bg-purple-400' },
+  rejected:   { label: 'Rejected',   color: 'text-orange-400', dot: 'bg-orange-400' },
+}
+
 export function LevelMonitorWidget({ initialData }: Props) {
   const [activeInstrument, setActiveInstrument] = useState<Instrument>('DOW')
   const [instrumentData, setInstrumentData] = useState<Map<Instrument, InstrumentData>>(
-    new Map(initialData.map((data) => [data.instrument, data]))
+    new Map(initialData.map((d) => [d.instrument, d]))
   )
   const [error, setError] = useState<string | null>(null)
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting')
   const [fallbackMode, setFallbackMode] = useState<FallbackMode>('realtime')
   const [dataAge, setDataAge] = useState<number | null>(null)
+  const [isInitialLoad, setIsInitialLoad] = useState(true)
+  const [priceHistory, setPriceHistory] = useState<Map<Instrument, PricePoint[]>>(new Map())
 
-  // Subscribe to Realtime updates with fallback and connection management
   useEffect(() => {
     const supabase = createClient()
     const connectionManager = getConnectionManager()
@@ -56,67 +78,63 @@ export function LevelMonitorWidget({ initialData }: Props) {
     const channelName = `level_status:${activeInstrument}`
     const channel = supabase.realtime.channel(channelName)
 
-    // Handle Realtime subscription
     const setupRealtimeSubscription = (): (() => void) => {
       try {
         connectionManager.markConnecting()
 
         channel
           .on('broadcast', { event: 'status_update' }, (payload) => {
-            const update = payload.payload
+            try {
+              // Validate realtime payload
+              const update = validateRealtimePayload(payload.payload)
 
-            // Cache data for fallback
-            fallbackManager.cacheData(activeInstrument, update)
+              fallbackManager.cacheData(activeInstrument, update)
 
-            // Mark connection as healthy
-            if (!realtimeSubscribed) {
-              realtimeSubscribed = true
-              connectionManager.markConnected()
-              setConnectionState('connected')
-              setFallbackMode('realtime')
-            }
-
-            setInstrumentData((prev) => {
-              const newData = new Map(prev)
-              const current = newData.get(activeInstrument)
-
-              if (current) {
-                // Update the levels that changed
-                const updatedLevels = current.levels.map((level) => {
-                  const changedLevel = update.changedLevels.find(
-                    (cl: ChangedLevel) => cl.level === level.level
-                  )
-                  return changedLevel
-                    ? {
-                        ...level,
-                        status: changedLevel.status,
-                        proximity: changedLevel.proximity,
-                        distance: changedLevel.distance,
-                      }
-                    : level
-                })
-
-                newData.set(activeInstrument, {
-                  ...current,
-                  currentPrice: update.currentPrice,
-                  levels: updatedLevels,
-                  timestamp: update.timestamp,
-                })
+              if (!realtimeSubscribed) {
+                realtimeSubscribed = true
+                connectionManager.markConnected()
+                setConnectionState('connected')
+                setFallbackMode('realtime')
+                setIsInitialLoad(false)
               }
 
-              return newData
-            })
+              setInstrumentData((prev) => {
+                const newData = new Map(prev)
+                const current = newData.get(activeInstrument)
+
+                if (current) {
+                  const updatedLevels = current.levels.map((level) => {
+                    const changedLevel = update.changedLevels?.find((cl) => cl.level === level.level)
+                    return changedLevel
+                      ? { ...level, status: changedLevel.status, proximity: changedLevel.proximity, distance: changedLevel.distance }
+                      : level
+                  })
+
+                  newData.set(activeInstrument, {
+                    ...current,
+                    currentPrice: update.currentPrice,
+                    levels: updatedLevels,
+                    timestamp: update.timestamp,
+                  })
+                }
+
+                return newData
+              })
+            } catch (err) {
+              if (process.env.NODE_ENV === 'development') {
+                logger.error('[LevelMonitorWidget] Invalid realtime payload:', err)
+              }
+              setError('Received invalid data from server')
+            }
           })
           .subscribe((status) => {
             if (status === 'SUBSCRIBED') {
-              console.debug(`[LevelMonitor] Subscribed to ${activeInstrument}`)
               realtimeSubscribed = true
               connectionManager.markConnected()
               setConnectionState('connected')
               fallbackManager.recoverToRealtime()
               setFallbackMode('realtime')
             } else if (status === 'CHANNEL_ERROR') {
-              console.error(`[LevelMonitor] Channel error for ${activeInstrument}`)
               connectionManager.markFailed(new Error('Channel subscription error'))
               setConnectionState('reconnecting')
               fallbackManager.activatePolling('Realtime channel error')
@@ -125,168 +143,254 @@ export function LevelMonitorWidget({ initialData }: Props) {
             }
           })
 
+        // Subscribe to price updates for chart
+        const priceChannelName = `price_updates:${activeInstrument}`
+        const priceChannel = supabase.realtime.channel(priceChannelName)
+
+        priceChannel
+          .on('broadcast', { event: 'price_update' }, (payload) => {
+            try {
+              const priceUpdate = payload.payload as any
+
+              // Validate price update
+              if (typeof priceUpdate.price !== 'number' || priceUpdate.price <= 0) {
+                logger.debug('[LevelMonitorWidget] Invalid price update:', priceUpdate)
+                return
+              }
+
+              // Add to price history
+              const historyManager = getPriceHistoryManager()
+              historyManager.addPrice(activeInstrument, priceUpdate.price, new Date(priceUpdate.timestamp))
+
+              // Update chart
+              setPriceHistory(new Map([[activeInstrument, historyManager.getHistory(activeInstrument)]]))
+            } catch (err) {
+              logger.error('[LevelMonitorWidget] Error processing price update:', err)
+            }
+          })
+          .subscribe()
+
         return () => {
           channel.unsubscribe()
+          priceChannel.unsubscribe()
         }
       } catch (err) {
-        console.error('[LevelMonitor] Realtime setup failed:', err)
         connectionManager.markFailed(err instanceof Error ? err : new Error(String(err)))
         setConnectionState('reconnecting')
         fallbackManager.activatePolling('Realtime setup failed')
         setFallbackMode('polling')
         setError('Failed to establish connection')
-
-        return () => {} // Return empty cleanup function on error
+        return () => {}
       }
     }
 
-    // Listen to fallback status changes
     const unsubscribeFallback = fallbackManager.onStatusChange((status) => {
       setFallbackMode(status.mode)
-      const currentData = status.dataAge.get(activeInstrument) || 0
-      setDataAge(currentData)
-
-      if (status.mode === 'error') {
-        setError('Connection lost and fallback failed')
-      } else if (status.mode !== 'realtime') {
-        setError(null)
-      }
+      const age = status.dataAge.get(activeInstrument) || 0
+      setDataAge(age)
+      setError(status.mode === 'error' ? 'Connection lost and fallback failed' : null)
     })
 
-    // Listen to health check failures
     const unsubscribeHealth = healthChecker.onFailure((instrument) => {
-      if (instrument === activeInstrument) {
-        console.warn(`[LevelMonitor] Health check failed for ${instrument}`)
-        // Trigger fallback if health check fails
-        if (fallbackManager.getMode() === 'realtime') {
-          fallbackManager.activatePolling('Health check failed')
-          setFallbackMode('polling')
-        }
+      if (instrument === activeInstrument && fallbackManager.getMode() === 'realtime') {
+        fallbackManager.activatePolling('Health check failed')
+        setFallbackMode('polling')
       }
     })
 
-    // Start health checks
-    healthChecker.start()
+    let cleanupReconnect: (() => void) | null = null
+    const unsubscribeReconnect = connectionManager.onReconnectNeeded(() => {
+      if (cleanupReconnect) cleanupReconnect()
+      connectionManager.markConnecting()
+      setConnectionState('connecting')
+      realtimeSubscribed = false
+      cleanupReconnect = setupRealtimeSubscription()
+    })
 
-    // Setup Realtime subscription
+    healthChecker.start()
     const unsubscribeRealtime = setupRealtimeSubscription()
 
     return () => {
       unsubscribeRealtime()
       unsubscribeFallback()
       unsubscribeHealth()
+      unsubscribeReconnect()
+      if (cleanupReconnect) cleanupReconnect()
       healthChecker.stop()
     }
   }, [activeInstrument])
 
   const currentData = instrumentData.get(activeInstrument)
-  const fallbackManager = getFallbackManager()
 
-  // Try to use fallback data if Realtime data unavailable
-  let displayData = currentData
-  if (!displayData && fallbackMode !== 'realtime') {
-    const cached = fallbackManager.getCachedData(activeInstrument)
-    if (cached) {
-      displayData = cached.data
-    }
-  }
-
+  let displayData: InstrumentData | undefined = currentData
   if (!displayData) {
-    return <EmptyState message="No level data available for this instrument" />
+    const cached = getFallbackManager().getCachedData(activeInstrument)
+    if (cached) displayData = cached.data as InstrumentData
   }
 
-  const hasCriticalLevels = displayData.levels.some(
-    (l) => l.status !== 'unvisited' && l.proximity !== 'far'
-  )
+  const meta = INSTRUMENT_META[activeInstrument]
+  const levels = displayData?.levels ?? []
+  const currentPrice = displayData?.currentPrice ?? null
 
-  const handleRetry = () => {
-    setError(null)
-    fallbackManager.recoverToRealtime()
-    setConnectionState('reconnecting')
-  }
+  // Stats
+  const criticalCount = levels.filter(l => l.status !== 'unvisited' && l.proximity !== 'far').length
+  const nearestLevel = levels
+    .filter(l => l.distance > 0)
+    .sort((a, b) => a.distance - b.distance)[0]
 
   return (
-    <div className="space-y-6">
-      {/* Connection Status Indicator */}
+    <div className="space-y-5 animate-slide-up">
+      {/* Connection banner */}
       <ConnectionStatus
         connectionState={connectionState}
         fallbackMode={fallbackMode}
         dataAge={dataAge}
         errorMessage={error}
-        onRetry={connectionState === 'failed' ? handleRetry : undefined}
+        onRetry={connectionState === 'failed' ? () => {
+          setError(null)
+          getConnectionManager().markRecovering()
+          getFallbackManager().recoverToRealtime()
+          setConnectionState('reconnecting')
+        } : undefined}
       />
 
-      {/* Instrument Tabs */}
-      <div className="flex gap-2 border-b border-gray-200 bg-white rounded-t-lg p-4">
-        {(['DOW', 'NASDAQ', 'NIKKEI'] as const).map((instrument) => (
-          <button
-            key={instrument}
-            onClick={() => setActiveInstrument(instrument)}
-            className={`px-4 py-2 font-semibold transition-all rounded-t-lg border-b-2 ${
-              activeInstrument === instrument
-                ? 'border-blue-500 text-blue-600 bg-blue-50'
-                : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-            }`}
-          >
-            {instrument}
-          </button>
-        ))}
+      {/* Instrument tabs + price hero */}
+      <div className="card p-5">
+        {/* Tabs */}
+        <div className="tab-bar w-fit mb-5">
+          {INSTRUMENTS.map((inst) => (
+            <button
+              key={inst}
+              onClick={() => setActiveInstrument(inst)}
+              className={`tab ${activeInstrument === inst ? 'tab-active' : ''}`}
+              aria-label={`Switch to ${inst}`}
+              aria-current={activeInstrument === inst ? 'page' : undefined}
+            >
+              {inst}
+            </button>
+          ))}
+        </div>
+
+        {/* Price Hero */}
+        <div className="flex flex-col sm:flex-row sm:items-end gap-6">
+          <div className="flex-1">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+              {meta.desc}
+            </div>
+            <div className="flex items-baseline gap-3">
+              {currentPrice ? (
+                <>
+                  <span className="text-5xl font-bold price-mono text-white" style={{ color: meta.color }}>
+                    {currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </>
+              ) : (
+                <span className="text-3xl font-bold text-gray-600 price-mono">— Awaiting price</span>
+              )}
+            </div>
+            {displayData?.timestamp && (
+              <div className="text-xs text-gray-600 mt-2">
+                Updated {new Date(displayData.timestamp).toLocaleTimeString()}
+                {fallbackMode !== 'realtime' && (
+                  <span className="ml-2 text-yellow-500">· {fallbackMode} mode</span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Quick stats */}
+          <div className="flex gap-4 flex-wrap">
+            <div className="stat-block min-w-[110px]">
+              <div className="stat-label">Levels tracked</div>
+              <div className="stat-value text-white">{levels.length}</div>
+            </div>
+            <div className="stat-block min-w-[110px]">
+              <div className="stat-label">Critical zones</div>
+              <div className={`stat-value ${criticalCount > 0 ? 'text-yellow-400' : 'text-gray-500'}`}>
+                {criticalCount}
+              </div>
+            </div>
+            {nearestLevel && (
+              <div className="stat-block min-w-[130px]">
+                <div className="stat-label">Nearest level</div>
+                <div className="stat-value text-white price-mono">
+                  {nearestLevel.level.toLocaleString()}
+                </div>
+                <div className="text-xs text-gray-500 mt-0.5">{nearestLevel.distancePct.toFixed(2)}% away</div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* Current Price Display */}
-      {displayData.currentPrice && (
-        <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-8 rounded-lg shadow-lg">
-          <div className="text-sm font-semibold opacity-90 mb-2">Current Price</div>
-          <div className="text-5xl font-bold mb-4">
-            {displayData.currentPrice.toFixed(2)}
-          </div>
-          <div className="text-xs opacity-75">
-            Last updated: {new Date(displayData.timestamp).toLocaleTimeString()}
-            {fallbackMode !== 'realtime' && ` • ${fallbackMode} mode`}
-          </div>
+      {/* Real-time price chart */}
+      {currentPrice && (
+        <div className="card p-5">
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">
+            Price Action
+          </h2>
+          <PriceChart
+            priceHistory={priceHistory.get(activeInstrument) || []}
+            levels={levels}
+            accentColor={meta.color}
+            height={350}
+          />
         </div>
       )}
 
-      {/* Levels List */}
-      <div className="space-y-4">
-        <div className="flex justify-between items-center">
-          <h2 className="text-xl font-semibold text-gray-800">Key Levels</h2>
-          <div className="text-sm text-gray-500">
-            {displayData.levels.length} levels tracked
+      {/* Levels grid */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Key Levels</h2>
+          {/* Legend */}
+          <div className="flex items-center gap-3 flex-wrap">
+            {Object.entries(STATUS_META).slice(0, 4).map(([key, val]) => (
+              <div key={key} className="flex items-center gap-1.5">
+                <span className={`w-1.5 h-1.5 rounded-full ${val.dot}`} />
+                <span className="text-xs text-gray-500">{val.label}</span>
+              </div>
+            ))}
           </div>
         </div>
 
-        {!hasCriticalLevels && displayData.levels.length === 0 ? (
-          <EmptyState message="No level data yet. Monitoring will start when price data arrives." />
+        {levels.length === 0 || !currentPrice || currentPrice <= 0 ? (
+          <div className="card p-12 text-center">
+            {isInitialLoad ? (
+              <>
+                <div className="animate-pulse text-brand-400 text-2xl mb-2">●</div>
+                <div className="text-gray-600">Connecting to live feed…</div>
+              </>
+            ) : (
+              <div className="text-gray-600">No level data yet. Waiting for price feed…</div>
+            )}
+          </div>
         ) : (
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {displayData.levels.map((level) => (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3">
+            {levels.map((level) => (
               <LevelCard
                 key={level.level}
                 level={level}
-                currentPrice={displayData.currentPrice || 0}
+                currentPrice={currentPrice}
+                accentColor={meta.color}
               />
             ))}
           </div>
         )}
       </div>
 
-      {/* Status Info */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
-        <div className="font-semibold mb-2">Real-time Monitoring Active</div>
-        <div className="opacity-90">
-          Updates arrive instantly as price changes. Levels are categorized by proximity:
-          <ul className="list-disc list-inside mt-2 space-y-1 opacity-75">
-            <li>
-              <span className="font-medium">Approaching:</span> Within 5% of level
-            </li>
-            <li>
-              <span className="font-medium">At:</span> Within 1% of level
-            </li>
-            <li>
-              <span className="font-medium">Breached:</span> Within 0.1% of level
-            </li>
-          </ul>
+      {/* Info footer */}
+      <div className="card-sm px-5 py-4 flex flex-wrap gap-6 text-xs text-gray-500">
+        <div className="flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
+          <strong className="text-gray-400">Approaching</strong> — within 5%
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-brand-400" />
+          <strong className="text-gray-400">At level</strong> — within 1%
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+          <strong className="text-gray-400">Breached</strong> — within 0.1%
         </div>
       </div>
     </div>

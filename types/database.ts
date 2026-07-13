@@ -307,6 +307,50 @@ export interface Database {
           updated_at?: string
         }
       }
+      level_breaks: {
+        Row: {
+          id: string
+          instrument: 'DOW' | 'NASDAQ' | 'NIKKEI'
+          level: number
+          direction: 'up' | 'down'
+          confidence: number
+          entry_price: number
+          break_price: number
+          volume: number | null
+          reasoning: string
+          score_breakdown: Json
+          break_timestamp: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          instrument: 'DOW' | 'NASDAQ' | 'NIKKEI'
+          level: number
+          direction: 'up' | 'down'
+          confidence: number
+          entry_price: number
+          break_price: number
+          volume?: number | null
+          reasoning: string
+          score_breakdown: Json
+          break_timestamp: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          instrument?: 'DOW' | 'NASDAQ' | 'NIKKEI'
+          level?: number
+          direction?: 'up' | 'down'
+          confidence?: number
+          entry_price?: number
+          break_price?: number
+          volume?: number | null
+          reasoning?: string
+          score_breakdown?: Json
+          break_timestamp?: string
+          created_at?: string
+        }
+      }
     }
     Views: {
       [_ in never]: never
@@ -356,4 +400,62 @@ export interface SessionCreateRequest {
   date: string
   index_recommendation: 'DOW' | 'NASDAQ'
   prep_notes?: string
+}
+
+// Level Break types (Slice 3)
+export interface LevelBreak {
+  id: string
+  instrument: 'DOW' | 'NASDAQ' | 'NIKKEI'
+  level: number
+  direction: 'up' | 'down'
+  confidence: number
+  entryPrice: number
+  breakPrice: number
+  volume?: number | null
+  reasoning: string
+  scoreBreakdown: Record<string, unknown>
+  breakTimestamp: string
+  createdAt: string
+}
+
+export interface BreakQueryFilters {
+  instrument?: 'DOW' | 'NASDAQ' | 'NIKKEI'
+  minConfidence?: number
+  maxConfidence?: number
+  minLevel?: number
+  maxLevel?: number
+  startDate?: string
+  endDate?: string
+  direction?: 'up' | 'down'
+  limit?: number
+  offset?: number
+  sortBy?: 'confidence' | 'timestamp' | 'price'
+  sortOrder?: 'asc' | 'desc'
+}
+
+export interface BreakListResponse {
+  breaks: LevelBreak[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface BreakStatistics {
+  instrument?: 'DOW' | 'NASDAQ' | 'NIKKEI'
+  totalBreaks: number
+  upBreaks: number
+  downBreaks: number
+  averageConfidence: number
+  maxConfidence: number
+  minConfidence: number
+  confidenceDistribution: {
+    veryHigh: number
+    high: number
+    medium: number
+    low: number
+  }
+  timeRange: {
+    oldest: string | null
+    newest: string | null
+  }
 }

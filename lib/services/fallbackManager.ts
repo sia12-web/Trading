@@ -4,6 +4,8 @@
  */
 
 import type { Instrument } from '@/types/price-feed'
+import { validateCachedData } from '@/lib/utils/validation'
+import { logger } from '@/lib/utils/logger'
 
 export type FallbackMode = 'realtime' | 'polling' | 'cached' | 'error'
 
@@ -82,7 +84,7 @@ export class FallbackManager {
    * Activate polling fallback when Realtime fails
    */
   activatePolling(reason: string): void {
-    console.warn(`[FallbackManager] Activating polling fallback: ${reason}`)
+    logger.warn(`[FallbackManager] Activating polling fallback: ${reason}`)
 
     if (this.mode === 'realtime' || this.mode === 'error') {
       this.stopPolling()
@@ -97,7 +99,7 @@ export class FallbackManager {
    * Activate cached data mode when polling fails
    */
   activateCached(reason: string): void {
-    console.warn(`[FallbackManager] Activating cached data fallback: ${reason}`)
+    logger.warn(`[FallbackManager] Activating cached data fallback: ${reason}`)
 
     if (this.mode !== 'cached' && this.mode !== 'error') {
       this.stopPolling()
@@ -111,7 +113,7 @@ export class FallbackManager {
    * Activate error mode when all fallbacks fail
    */
   activateError(error: Error): void {
-    console.error(`[FallbackManager] All fallbacks exhausted: ${error.message}`)
+    logger.error(`[FallbackManager] All fallbacks exhausted: ${error.message}`)
 
     this.stopPolling()
     this.mode = 'error'
@@ -125,7 +127,7 @@ export class FallbackManager {
   private startPolling(): void {
     if (this.pollingInterval) return
 
-    console.debug('[FallbackManager] Starting polling every', this.config.pollingIntervalMs, 'ms')
+    logger.debug('[FallbackManager] Starting polling every', this.config.pollingIntervalMs, 'ms')
 
     // Poll immediately
     this.poll()
@@ -158,19 +160,26 @@ export class FallbackManager {
       for (const item of data.data) {
         // Validate instrument
         if (!item.instrument || !['DOW', 'NASDAQ', 'NIKKEI'].includes(item.instrument)) {
-          console.warn('[FallbackManager] Invalid instrument in poll response:', item.instrument)
+          logger.warn('[FallbackManager] Invalid instrument in poll response:', item.instrument)
           continue
         }
         // Validate levels exist
         if (!item.levels || !Array.isArray(item.levels)) {
-          console.warn('[FallbackManager] Invalid levels for', item.instrument)
+          logger.warn('[FallbackManager] Invalid levels for', item.instrument)
           continue
         }
 
-        this.cachedData.set(item.instrument, {
-          data: item,
-          timestamp: new Date(),
-        })
+        // Validate data before caching
+        try {
+          const validatedData = validateCachedData(item)
+          this.cachedData.set(item.instrument, {
+            data: validatedData,
+            timestamp: new Date(),
+          })
+        } catch (error) {
+          logger.error(`[FallbackManager] Invalid cached data for ${item.instrument}:`, error)
+          continue
+        }
       }
 
       // If we were in error mode, try to recover
@@ -180,7 +189,7 @@ export class FallbackManager {
         this.notifyStatusChange()
       }
     } catch (error) {
-      console.error('[FallbackManager] Polling error:', error)
+      logger.error('[FallbackManager] Polling error:', error)
       // Continue polling, don't fail immediately
     }
   }
@@ -192,24 +201,30 @@ export class FallbackManager {
     if (this.pollingInterval) {
       clearInterval(this.pollingInterval)
       this.pollingInterval = null
-      console.debug('[FallbackManager] Polling stopped')
+      logger.debug('[FallbackManager] Polling stopped')
     }
   }
 
   /**
    * Cache data from Realtime updates
    */
-  cacheData(instrument: Instrument, data: any): void {
-    this.cachedData.set(instrument, {
-      data,
-      timestamp: new Date(),
-    })
+  cacheData(instrument: Instrument, data: unknown): void {
+    try {
+      const validatedData = validateCachedData(data)
+      this.cachedData.set(instrument, {
+        data: validatedData,
+        timestamp: new Date(),
+      })
+    } catch (error) {
+      logger.error(`[FallbackManager] Invalid data for ${instrument}:`, error)
+      // Don't cache invalid data
+    }
   }
 
   /**
    * Get cached data for an instrument
    */
-  getCachedData(instrument: Instrument): { data: any; age: number; isStale: boolean } | null {
+  getCachedData(instrument: Instrument): { data: unknown; age: number; isStale: boolean } | null {
     const cached = this.cachedData.get(instrument)
 
     if (!cached) {
@@ -225,10 +240,18 @@ export class FallbackManager {
       return null
     }
 
-    return {
-      data: cached.data,
-      age,
-      isStale,
+    // Validate cached data before returning
+    try {
+      const validatedData = validateCachedData(cached.data)
+      return {
+        data: validatedData,
+        age,
+        isStale,
+      }
+    } catch (error) {
+      logger.error(`[FallbackManager] Cached data corrupted for ${instrument}:`, error)
+      this.cachedData.delete(instrument)
+      return null
     }
   }
 
@@ -236,7 +259,7 @@ export class FallbackManager {
    * Recover to Realtime mode
    */
   recoverToRealtime(): void {
-    console.log('[FallbackManager] Recovering to Realtime mode')
+    logger.debug('[FallbackManager] Recovering to Realtime mode')
 
     if (this.mode === 'polling' || this.mode === 'cached') {
       this.stopPolling()
@@ -278,6 +301,9 @@ let fallbackManagerInstance: FallbackManager | null = null
 export function getFallbackManager(): FallbackManager {
   if (!fallbackManagerInstance) {
     fallbackManagerInstance = new FallbackManager()
+  }
+  if (!fallbackManagerInstance) {
+    throw new Error('Failed to initialize FallbackManager')
   }
   return fallbackManagerInstance
 }

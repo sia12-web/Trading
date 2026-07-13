@@ -15,7 +15,17 @@
       "Bash(npm run dev:*)",
       "Bash(curl -I http://localhost:3000/dashboard/level-monitor)",
       "Bash(curl:*)",
-      "Bash(xargs:*)"
+      "Bash(xargs:*)",
+      "Bash(lsof:*)",
+      "Bash(tee:*)",
+      "Bash(echo:*)",
+      "Bash(wmic process where \"name=''node.exe''\" delete)",
+      "Bash(git log:*)",
+      "Bash(npx next build:*)",
+      "Bash(npm test:*)",
+      "Bash(ls:*)",
+      "Bash(supabase status:*)",
+      "Bash(node apply-migrations.js:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

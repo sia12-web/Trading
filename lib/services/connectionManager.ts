@@ -39,6 +39,7 @@ export class ConnectionManager {
   private retryTimerId: NodeJS.Timeout | null = null
   private statusCallbacks: Set<(status: ConnectionStatus) => void> = new Set()
   private errorCallbacks: Set<(error: Error) => void> = new Set()
+  private reconnectCallbacks: Set<() => void> = new Set()
   private config: ReconnectConfig = DEFAULT_CONFIG
 
   /**
@@ -55,6 +56,14 @@ export class ConnectionManager {
   onError(callback: (error: Error) => void): () => void {
     this.errorCallbacks.add(callback)
     return () => this.errorCallbacks.delete(callback)
+  }
+
+  /**
+   * Register callback for when a reconnect attempt should be made
+   */
+  onReconnectNeeded(callback: () => void): () => void {
+    this.reconnectCallbacks.add(callback)
+    return () => this.reconnectCallbacks.delete(callback)
   }
 
   /**
@@ -159,9 +168,8 @@ export class ConnectionManager {
       clearTimeout(this.retryTimerId)
     }
     this.retryTimerId = setTimeout(() => {
-      this.errorCallbacks.forEach((cb) =>
-        cb(new Error('Retry attempt scheduled'))
-      )
+      // Fire reconnect callbacks so subscribers can re-establish connections
+      this.reconnectCallbacks.forEach((cb) => cb())
       this.retryTimerId = null
     }, delayMs)
   }
@@ -203,6 +211,9 @@ let connectionManagerInstance: ConnectionManager | null = null
 export function getConnectionManager(): ConnectionManager {
   if (!connectionManagerInstance) {
     connectionManagerInstance = new ConnectionManager()
+  }
+  if (!connectionManagerInstance) {
+    throw new Error('Failed to initialize ConnectionManager')
   }
   return connectionManagerInstance
 }
