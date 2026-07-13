@@ -131,3 +131,51 @@ export interface HistoricalContext {
 export interface AnalysisRequestWithContext extends AnalysisRequest {
   historicalContext?: HistoricalContext
 }
+
+// Analytics Dashboard Types
+export interface AnalyticsResponse {
+  summary: AnalyticsSummary
+  by_type: TypeMetrics[]
+  by_timeframe: TimeframeMetrics[]
+  top_performers: LevelPerformance[]
+  reliability_ranking: ReliabilityRanking
+}
+
+export interface AnalyticsSummary {
+  total_levels: number
+  total_tests: number
+  total_successes: number
+  avg_conviction: number
+  overall_success_rate: number
+}
+
+export interface TypeMetrics {
+  type: 'support' | 'resistance' | 'vwap'
+  count: number
+  avg_conviction: number
+  success_rate: number
+  tested_count: number
+  success_count: number
+}
+
+export interface TimeframeMetrics {
+  timeframe: 'D' | '4H' | 'H1'
+  count: number
+  avg_conviction: number
+  success_rate: number
+}
+
+export interface LevelPerformance {
+  level: number
+  type: 'support' | 'resistance' | 'vwap'
+  conviction: number
+  success_rate: number
+  tested_count: number
+  success_count: number
+}
+
+export interface ReliabilityRanking {
+  most_reliable_type: 'support' | 'resistance' | 'vwap' | null
+  least_reliable_type: 'support' | 'resistance' | 'vwap' | null
+  most_reliable_timeframe: 'D' | '4H' | 'H1' | null
+}
