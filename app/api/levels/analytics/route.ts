@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
 
     const { instrument, days } = validation.params
     const cutoffDate = new Date()
-    cutoffDate.setDate(cutoffDate.getDate() - days)
+    cutoffDate.setUTCDate(cutoffDate.getUTCDate() - days)
 
     // Fetch all levels for this user/instrument within time range
     const { data: levels, error: fetchError } = await supabase
@@ -165,16 +165,20 @@ export async function GET(request: NextRequest) {
     }))
 
     // Calculate top performers (success_rate >= 50%, limit 10)
+    const TOP_PERFORMER_THRESHOLD = 0.5
     const top_performers: LevelPerformance[] = levels
-      .map((level: any) => ({
-        level: level.level,
-        type: level.type,
-        conviction: level.conviction,
-        success_rate: level.tested_count > 0 ? parseFloat((level.success_count / level.tested_count).toFixed(4)) : 0,
-        tested_count: level.tested_count,
-        success_count: level.success_count,
-      }))
-      .filter((l) => l.success_rate >= 0.5 && l.tested_count > 0)
+      .map((level: any) => {
+        const successRate = level.tested_count > 0 ? parseFloat((level.success_count / level.tested_count).toFixed(4)) : 0
+        return {
+          level: level.level,
+          type: level.type,
+          conviction: level.conviction,
+          success_rate: successRate,
+          tested_count: level.tested_count,
+          success_count: level.success_count,
+        }
+      })
+      .filter((l) => l.success_rate >= TOP_PERFORMER_THRESHOLD && l.tested_count > 0)
       .sort((a, b) => b.success_rate - a.success_rate)
       .slice(0, 10)
 
