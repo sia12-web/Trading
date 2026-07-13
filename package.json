@@ -1,0 +1,32 @@
+{
+  "name": "trading-platform",
+  "version": "0.1.0",
+  "description": "Day trading platform with AI-powered analysis",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.24.0",
+    "@supabase/ssr": "^0.0.10",
+    "@supabase/supabase-js": "^2.39.0",
+    "lightweight-charts": "^4.1.0",
+    "next": "^14.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^3.9.2",
+    "swr": "^2.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/react": "^18.2.45",
+    "@types/react-dom": "^18.2.18",
+    "eslint": "^8.55.0",
+    "eslint-config-next": "^14.1.0",
+    "typescript": "^5.3.3"
+  }
+}

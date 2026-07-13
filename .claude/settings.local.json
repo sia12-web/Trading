@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__supabase__list_tables",
+      "mcp__supabase__apply_migration",
+      "mcp__supabase__list_migrations",
+      "Bash(npx tsc:*)",
+      "Bash(npm run build:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nFix Slice 5 Auditor issues - Historical Level Memory\n\nCritical Fix:\n- Add NEXT_PUBLIC_BASE_URL validation in levelFinderAgent.archiveLevels\\(\\)\n  Throws error if env var not set instead of silently falling back to localhost\n- Add 5-second fetch timeout with AbortController to archive endpoint call\n  Prevents hanging requests and provides clear timeout error handling\n\nImportant Fixes:\n- Split NaN validation from range validation in history endpoint\n  Provides clearer error messages for invalid integer inputs\n- Add floating-point epsilon comparison \\(0.01\\) to duplicate detection\n  Handles precision issues from decimal level calculations\n\nAll changes maintain backward compatibility and improve robustness.\n\nFiles modified:\n- lib/services/levelFinderAgent/levelFinderAgent.ts\n- app/api/levels/history/route.ts\n- app/api/levels/archive/route.ts\n\nCo-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "mcp__supabase__execute_sql",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nImplement Slice 6: Claude Integration - Level History Context in Prompt\n\nNew Functionality:\n- Add HistoricalContext, HistoricalLevelData, ContextSummary types for historical data\n- Extend AnalysisRequest with optional historicalContext parameter \\(backward compatible\\)\n- Implement fetchHistoricalContext\\(\\) to fetch and summarize user''s level history\n- Build enhanced system prompt with historical success rates and patterns\n- Inject historical context into Claude''s analysis for better accuracy\n\nAPI Endpoints:\n- GET /api/agents/find-levels/history?instrument=DOW&days=30&limit=20\n  Returns historical levels with summary statistics\n- POST /api/agents/find-levels \\(enhanced\\)\n  Now fetches historical context automatically before analysis\n  Passes context to Claude for institutional memory\n\nService Layer:\n- buildSystemPrompt\\(\\) method constructs enhanced Claude prompt with:\n  - Historical success rates per level type\n  - Past successful levels \\(success_rate >= 60%\\)\n  - Patterns to avoid \\(success_rate < 40%\\)\n  - Recommendations based on trader''s historical performance\n- analyzePriceAction\\(\\) now accepts optional historicalContext\n- Graceful fallback: if history unavailable, uses base prompt\n\nKey Implementation Details:\n- 30-day rolling window for historical data\n- Calculates avg_conviction and avg_success_rate\n- Identifies most_reliable_type across all levels\n- No schema changes \\(uses existing level_history table\\)\n- Fully backward compatible \\(context is optional\\)\n- Non-blocking: missing history doesn''t fail analysis\n\nFiles Modified:\n- lib/services/levelFinderAgent/types.ts \\(add types\\)\n- lib/services/levelFinderAgent/levelFinderAgent.ts \\(enhance service\\)\n- app/api/agents/find-levels/route.ts \\(add GET endpoint, enhance POST\\)\n\nCo-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit:*)",
+      "Bash(npm run dev:*)",
+      "Bash(curl -I http://localhost:3000/dashboard/level-monitor)",
+      "Bash(curl:*)",
+      "Bash(xargs:*)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "supabase"
+  ]
+}

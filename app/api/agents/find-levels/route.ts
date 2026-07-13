@@ -36,8 +36,11 @@ const validateCandleValues = (candles: Candle[]): boolean => {
  */
 const validateCandleOrder = (candles: Candle[]): boolean => {
   for (let i = 1; i < candles.length; i++) {
-    const prevTime = new Date(candles[i - 1].timestamp).getTime()
-    const currTime = new Date(candles[i].timestamp).getTime()
+    const prevCandle = candles[i - 1]
+    const currCandle = candles[i]
+    if (!prevCandle || !currCandle) return false
+    const prevTime = new Date(prevCandle.timestamp).getTime()
+    const currTime = new Date(currCandle.timestamp).getTime()
     if (currTime < prevTime) return false
   }
   return true
@@ -202,8 +205,9 @@ async function fetchHistoricalContext(supabase: SupabaseClient<any>, userId: str
       {} as Record<string, number>
     )
 
-    const mostReliableType = Object.entries(typeStats).length > 0
-      ? (Object.entries(typeStats).sort(([, a], [, b]) => b - a)[0][0] as 'support' | 'resistance' | 'vwap')
+    const entries = Object.entries(typeStats)
+    const mostReliableType = entries.length > 0
+      ? (entries.sort(([, a], [, b]) => b - a)[0]?.[0] as 'support' | 'resistance' | 'vwap' | undefined) ?? null
       : null
 
     // Separate successful and unreliable levels

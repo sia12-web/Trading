@@ -1,0 +1,321 @@
+/**
+ * Position Executor Service
+ * Handles position execution logic with paper/live trading mode support
+ * Routes to simulated or real OANDA execution based on is_paper_trading flag
+ *
+ * @requires OANDAService implementation for live mode (Phase 4+)
+ * @requires process.env.OANDA_API_KEY for live trading
+ * @requires process.env.OANDA_ACCOUNT_ID for live trading
+ */
+
+import { createClient } from '@/lib/supabase/server'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/types/database'
+
+interface ExecutionResult {
+  success: boolean
+  execution_type: 'simulated' | 'live'
+  message: string
+  order_id?: string
+}
+
+/**
+ * Execute a position entry at the specified price
+ * Checks is_paper_trading flag and routes to appropriate execution method
+ */
+export async function executePositionEntry(
+  positionId: string,
+  entryPrice: number,
+  oandaOrderData?: any
+): Promise<ExecutionResult> {
+  try {
+    const supabase = await createClient()
+
+    // Fetch position with is_paper_trading flag
+    const { data: position, error: positionError } = await supabase
+      .from('positions')
+      .select('*')
+      .eq('id', positionId)
+      .single()
+
+    if (positionError || !position) {
+      return {
+        success: false,
+        execution_type: 'simulated',
+        message: 'Position not found'
+      }
+    }
+
+    const isPaperTrading = position.is_paper_trading
+
+    if (isPaperTrading) {
+      // Simulate execution - no real OANDA call
+      return simulatePositionExecution(positionId, entryPrice, supabase)
+    } else {
+      // Live execution - call OANDA API
+      return livePositionExecution(positionId, entryPrice, oandaOrderData, supabase)
+    }
+  } catch (error) {
+    console.error('[Position Executor] Error executing position:', error)
+    return {
+      success: false,
+      execution_type: 'simulated',
+      message: 'Execution failed: ' + (error instanceof Error ? error.message : 'Unknown error')
+    }
+  }
+}
+
+/**
+ * Update position with entry price and open status
+ * @internal
+ */
+async function updatePositionEntry(
+  supabase: SupabaseClient<Database>,
+  positionId: string,
+  entryPrice: number
+): Promise<boolean> {
+  const { error } = await supabase
+    .from('positions')
+    .update({
+      entry_price: entryPrice,
+      status: 'open'
+    } as any)
+    .eq('id', positionId)
+
+  return !error
+}
+
+/**
+ * Log execution event to monitoring_events table
+ * @internal
+ */
+async function logExecutionEvent(
+  supabase: SupabaseClient<Database>,
+  positionId: string,
+  eventType: string,
+  price: number,
+  description: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('monitoring_events')
+    .insert({
+      position_id: positionId,
+      event_type: eventType as any,
+      price,
+      description
+    })
+
+  if (error) {
+    console.error('[Position Executor] Failed to log event:', error)
+  }
+}
+
+/**
+ * Simulate position execution (paper trading mode)
+ * Records execution in database without calling OANDA
+ */
+async function simulatePositionExecution(
+  positionId: string,
+  entryPrice: number,
+  supabase: SupabaseClient<Database>
+): Promise<ExecutionResult> {
+  try {
+    // Update position with entry price
+    const success = await updatePositionEntry(supabase, positionId, entryPrice)
+    if (!success) {
+      throw new Error('Failed to update position')
+    }
+
+    // Log simulated execution to monitoring_events
+    await logExecutionEvent(
+      supabase,
+      positionId,
+      'simulated_execution',
+      entryPrice,
+      `PAPER MODE: Simulated entry at $${entryPrice}`
+    )
+
+    return {
+      success: true,
+      execution_type: 'simulated',
+      message: `Paper trading: simulated entry at $${entryPrice}`
+    }
+  } catch (error) {
+    console.error('[Position Executor] Simulation error:', error)
+    return {
+      success: false,
+      execution_type: 'simulated',
+      message: 'Simulation failed: ' + (error instanceof Error ? error.message : 'Unknown error')
+    }
+  }
+}
+
+/**
+ * Execute position live via OANDA API (live trading mode)
+ * GUARD: Returns error until OANDA service is fully integrated
+ *
+ * TODO: Implement OANDA integration in Phase 4
+ * Requires: OANDAService with placeOrder() method
+ * Requires: OANDA_API_KEY and OANDA_ACCOUNT_ID environment variables
+ */
+async function livePositionExecution(
+  positionId: string,
+  entryPrice: number,
+  oandaOrderData: any,
+  supabase: SupabaseClient<Database>
+): Promise<ExecutionResult> {
+  // GUARD: Prevent live execution until OANDA is integrated
+  return {
+    success: false,
+    execution_type: 'live',
+    message: 'Live trading not yet implemented. OANDA integration required. Use paper mode for testing.'
+  }
+
+  // Future implementation (Phase 4+):
+  // try {
+  //   if (!oandaOrderData) {
+  //     return {
+  //       success: false,
+  //       execution_type: 'live',
+  //       message: 'OANDA order data required for live execution'
+  //     }
+  //   }
+  //
+  //   // Call OANDA service
+  //   const oandaService = await getOANDAService()
+  //   if (!oandaService) {
+  //     return {
+  //       success: false,
+  //       execution_type: 'live',
+  //       message: 'OANDA service not initialized'
+  //     }
+  //   }
+  //
+  //   const orderId = await oandaService.placeOrder(oandaOrderData)
+  //
+  //   // Update position
+  //   const success = await updatePositionEntry(supabase, positionId, entryPrice)
+  //   if (!success) throw new Error('Failed to update position')
+  //
+  //   // Log execution
+  //   await logExecutionEvent(
+  //     supabase,
+  //     positionId,
+  //     'execution',
+  //     entryPrice,
+  //     `LIVE MODE: Real order placed at $${entryPrice} | Order ID: ${orderId}`
+  //   )
+  //
+  //   return {
+  //     success: true,
+  //     execution_type: 'live',
+  //     message: `Live trading: real order placed at $${entryPrice}`,
+  //     order_id: orderId
+  //   }
+  // } catch (error) {
+  //   console.error('[Position Executor] Live execution error:', error)
+  //   return {
+  //     success: false,
+  //     execution_type: 'live',
+  //     message: 'Live execution failed: ' + (error instanceof Error ? error.message : 'Unknown error')
+  //   }
+  // }
+}
+
+/**
+ * Close a position at specified price
+ * Routes to simulated or live exit based on is_paper_trading flag
+ */
+export async function closePositionExit(
+  positionId: string,
+  exitPrice: number
+): Promise<ExecutionResult> {
+  try {
+    const supabase = await createClient()
+
+    // Fetch position
+    const { data: position, error: positionError } = await supabase
+      .from('positions')
+      .select('*')
+      .eq('id', positionId)
+      .single()
+
+    if (positionError || !position) {
+      return {
+        success: false,
+        execution_type: 'simulated',
+        message: 'Position not found'
+      }
+    }
+
+    const isPaperTrading = position.is_paper_trading
+    const exitType = isPaperTrading ? 'simulated_close' : 'live_close'
+
+    // Both paper and live use same exit logic - flag is for entry only
+    // Exit is triggered by reaching SL/TP regardless of mode
+    const result = await executePositionExit(
+      positionId,
+      exitPrice,
+      exitType,
+      supabase
+    )
+
+    return result
+  } catch (error) {
+    console.error('[Position Executor] Error closing position:', error)
+    return {
+      success: false,
+      execution_type: 'simulated',
+      message: 'Close failed: ' + (error instanceof Error ? error.message : 'Unknown error')
+    }
+  }
+}
+
+/**
+ * Execute position exit (applies to both paper and live)
+ * @internal
+ */
+async function executePositionExit(
+  positionId: string,
+  exitPrice: number,
+  exitType: string,
+  supabase: SupabaseClient<Database>
+): Promise<ExecutionResult> {
+  try {
+    // Update position with exit price and close status
+    const { error: updateError } = await supabase
+      .from('positions')
+      .update({
+        exit_price: exitPrice,
+        status: 'closed',
+        closed_at: new Date().toISOString()
+      })
+      .eq('id', positionId)
+
+    if (updateError) {
+      throw updateError
+    }
+
+    // Log close to monitoring_events
+    await logExecutionEvent(
+      supabase,
+      positionId,
+      'closed',
+      exitPrice,
+      `Position closed at $${exitPrice} | Mode: ${exitType}`
+    )
+
+    return {
+      success: true,
+      execution_type: exitType.includes('simulated') ? 'simulated' : 'live',
+      message: `Position closed at $${exitPrice}`
+    }
+  } catch (error) {
+    console.error('[Position Executor] Exit error:', error)
+    return {
+      success: false,
+      execution_type: 'simulated',
+      message: 'Exit failed: ' + (error instanceof Error ? error.message : 'Unknown error')
+    }
+  }
+}

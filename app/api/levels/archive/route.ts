@@ -188,7 +188,7 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: 'Failed to archive level' }, { status: 500 })
         }
 
-        if (inserted && inserted.length > 0) {
+        if (inserted && inserted.length > 0 && inserted[0]) {
           archivedCount++
           levelHistoryIds.push(inserted[0].id)
         }

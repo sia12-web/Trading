@@ -7,7 +7,8 @@ import type {
   TimeframeMetrics,
   LevelPerformance,
   ReliabilityRanking,
-} from '@/lib/services/levelFinderAgent/types'
+  LevelHistoryRecord,
+} from '@/types/analytics'
 
 /**
  * Validates query parameters
@@ -96,78 +97,102 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(emptyResponse, { status: 200 })
     }
 
-    // Calculate summary statistics
-    const totalTests = levels.reduce((sum, l: any) => sum + l.tested_count, 0)
-    const totalSuccesses = levels.reduce((sum, l: any) => sum + l.success_count, 0)
-    const avgConviction = levels.reduce((sum, l: any) => sum + l.conviction, 0) / levels.length
-    const overallSuccessRate = totalTests > 0 ? totalSuccesses / totalTests : 0
+    // Type-safe typed levels with proper interface
+    const typedLevels: LevelHistoryRecord[] = levels || []
+
+    // Single-pass aggregation for efficiency: O(n) instead of O(n*m)
+    interface AggregationState {
+      totalTests: number
+      totalSuccesses: number
+      totalConvictions: number
+      byTypeMap: Map<string, { type: string; count: number; convictions: number[]; tested_count: number; success_count: number }>
+      byTimeframeMap: Map<string, { timeframe: string; count: number; convictions: number[]; tested_count: number; success_count: number }>
+    }
+
+    const aggregates = typedLevels.reduce<AggregationState>(
+      (agg, level) => {
+        // Accumulate summary statistics
+        agg.totalTests += level.tested_count
+        agg.totalSuccesses += level.success_count
+        agg.totalConvictions += level.conviction
+
+        // Aggregate by type (in same pass)
+        if (!agg.byTypeMap.has(level.type)) {
+          agg.byTypeMap.set(level.type, {
+            type: level.type,
+            count: 0,
+            convictions: [],
+            tested_count: 0,
+            success_count: 0,
+          })
+        }
+        const typeData = agg.byTypeMap.get(level.type)!
+        typeData.count++
+        typeData.convictions.push(level.conviction)
+        typeData.tested_count += level.tested_count
+        typeData.success_count += level.success_count
+
+        // Aggregate by timeframe (in same pass)
+        if (!agg.byTimeframeMap.has(level.timeframe)) {
+          agg.byTimeframeMap.set(level.timeframe, {
+            timeframe: level.timeframe,
+            count: 0,
+            convictions: [],
+            tested_count: 0,
+            success_count: 0,
+          })
+        }
+        const timeframeData = agg.byTimeframeMap.get(level.timeframe)!
+        timeframeData.count++
+        timeframeData.convictions.push(level.conviction)
+        timeframeData.tested_count += level.tested_count
+        timeframeData.success_count += level.success_count
+
+        return agg
+      },
+      {
+        totalTests: 0,
+        totalSuccesses: 0,
+        totalConvictions: 0,
+        byTypeMap: new Map(),
+        byTimeframeMap: new Map(),
+      }
+    )
+
+    // Build summary from aggregates
+    const avgConviction = typedLevels.length > 0 ? aggregates.totalConvictions / typedLevels.length : 0
+    const overallSuccessRate = aggregates.totalTests > 0 ? aggregates.totalSuccesses / aggregates.totalTests : 0
 
     const summary: AnalyticsSummary = {
-      total_levels: levels.length,
-      total_tests: totalTests,
-      total_successes: totalSuccesses,
+      total_levels: typedLevels.length,
+      total_tests: aggregates.totalTests,
+      total_successes: aggregates.totalSuccesses,
       avg_conviction: parseFloat(avgConviction.toFixed(2)),
       overall_success_rate: parseFloat(overallSuccessRate.toFixed(4)),
     }
 
-    // Calculate metrics by type
-    const byTypeMap = new Map<string, any>()
-    levels.forEach((level: any) => {
-      if (!byTypeMap.has(level.type)) {
-        byTypeMap.set(level.type, {
-          type: level.type,
-          count: 0,
-          convictions: [],
-          tested_count: 0,
-          success_count: 0,
-        })
-      }
-      const typeData = byTypeMap.get(level.type)
-      typeData.count++
-      typeData.convictions.push(level.conviction)
-      typeData.tested_count += level.tested_count
-      typeData.success_count += level.success_count
-    })
-
-    const by_type: TypeMetrics[] = Array.from(byTypeMap.values()).map((typeData) => ({
-      type: typeData.type,
+    // Convert type aggregates to TypeMetrics
+    const by_type: TypeMetrics[] = Array.from(aggregates.byTypeMap.values()).map((typeData) => ({
+      type: typeData.type as any,
       count: typeData.count,
-      avg_conviction: parseFloat((typeData.convictions.reduce((a: number, b: number) => a + b, 0) / typeData.count).toFixed(2)),
+      avg_conviction: parseFloat((typeData.convictions.reduce((a, b) => a + b, 0) / typeData.count).toFixed(2)),
       success_rate: typeData.tested_count > 0 ? parseFloat((typeData.success_count / typeData.tested_count).toFixed(4)) : 0,
       tested_count: typeData.tested_count,
       success_count: typeData.success_count,
     }))
 
-    // Calculate metrics by timeframe
-    const byTimeframeMap = new Map<string, any>()
-    levels.forEach((level: any) => {
-      if (!byTimeframeMap.has(level.timeframe)) {
-        byTimeframeMap.set(level.timeframe, {
-          timeframe: level.timeframe,
-          count: 0,
-          convictions: [],
-          tested_count: 0,
-          success_count: 0,
-        })
-      }
-      const timeframeData = byTimeframeMap.get(level.timeframe)
-      timeframeData.count++
-      timeframeData.convictions.push(level.conviction)
-      timeframeData.tested_count += level.tested_count
-      timeframeData.success_count += level.success_count
-    })
-
-    const by_timeframe: TimeframeMetrics[] = Array.from(byTimeframeMap.values()).map((timeframeData) => ({
-      timeframe: timeframeData.timeframe,
+    // Convert timeframe aggregates to TimeframeMetrics
+    const by_timeframe: TimeframeMetrics[] = Array.from(aggregates.byTimeframeMap.values()).map((timeframeData) => ({
+      timeframe: timeframeData.timeframe as any,
       count: timeframeData.count,
-      avg_conviction: parseFloat((timeframeData.convictions.reduce((a: number, b: number) => a + b, 0) / timeframeData.count).toFixed(2)),
+      avg_conviction: parseFloat((timeframeData.convictions.reduce((a, b) => a + b, 0) / timeframeData.count).toFixed(2)),
       success_rate: timeframeData.tested_count > 0 ? parseFloat((timeframeData.success_count / timeframeData.tested_count).toFixed(4)) : 0,
     }))
 
     // Calculate top performers (success_rate >= 50%, limit 10)
     const TOP_PERFORMER_THRESHOLD = 0.5
-    const top_performers: LevelPerformance[] = levels
-      .map((level: any) => {
+    const top_performers: LevelPerformance[] = typedLevels
+      .map((level) => {
         const successRate = level.tested_count > 0 ? parseFloat((level.success_count / level.tested_count).toFixed(4)) : 0
         return {
           level: level.level,

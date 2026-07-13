@@ -16,7 +16,6 @@ import type {
   ArchiveRequest,
   AnalysisRequestWithContext,
   HistoricalContext,
-  HistoricalLevelData,
 } from './types'
 
 const CLAUDE_MODEL = 'claude-3-5-sonnet-20241022'
@@ -72,7 +71,7 @@ class LevelFinderAgent {
       }
 
       const content = response.content[0]
-      if (content.type !== 'text') {
+      if (!content || content.type !== 'text') {
         throw new Error('Unexpected response format from Claude')
       }
 
