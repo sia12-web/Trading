@@ -125,6 +125,7 @@ export interface PositionSizing {
 
 export interface TradePosition {
   id: string
+  user_id: string // CRITICAL FIX: Track which user owns this trade
   instrument: Instrument
   trade_date: string // YYYY-MM-DD
   entry_window: EntryWindow

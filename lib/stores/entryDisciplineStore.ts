@@ -33,6 +33,11 @@ interface EntryDisciplineStoreState extends EntryDisciplineState {
   hasOpenPosition: () => boolean
   isInEntryWindow: () => boolean
   canEntry: () => boolean
+  isRegimeDataStale: () => boolean
+  clearStaleData: () => void
+
+  // Internal tracking (not persisted)
+  _regimeLoadDate: string | null
 }
 
 const initialState: EntryDisciplineState = {
@@ -56,6 +61,9 @@ export const useEntryDisciplineStore = create<EntryDisciplineStoreState>()(
   persist(
     (set, get) => ({
       ...initialState,
+
+      // CRITICAL FIX: Track when regime data was loaded to detect stale data
+      _regimeLoadDate: null as string | null,
 
       setInstrument: (instrument: Instrument) => {
         set({ instrument })
@@ -81,10 +89,33 @@ export const useEntryDisciplineStore = create<EntryDisciplineStoreState>()(
       },
 
       setCurrentRegime: (regime: Regime, confidence: number) => {
+        // CRITICAL FIX: Track load date to detect stale data across days
         set({
           currentRegime: regime,
           regimeConfidence: confidence,
+          _regimeLoadDate: new Date().toDateString(),
         })
+      },
+
+      // CRITICAL FIX: Detect stale regime data (from previous trading day)
+      isRegimeDataStale: () => {
+        const state = get()
+        const today = new Date().toDateString()
+        return state._regimeLoadDate !== today || state.currentRegime === null
+      },
+
+      // CRITICAL FIX: Clear stale data if it's from a different day
+      clearStaleData: () => {
+        const today = new Date().toDateString()
+        const state = get()
+        if (state._regimeLoadDate !== today) {
+          set({
+            currentRegime: null,
+            regimeConfidence: null,
+            marketDisabled: false,
+            _regimeLoadDate: null,
+          })
+        }
       },
 
       setMarketDisabled: (disabled: boolean) => {
@@ -141,11 +172,12 @@ export const useEntryDisciplineStore = create<EntryDisciplineStoreState>()(
     }),
     {
       name: 'entry-discipline-store',
+      // CRITICAL FIX: Don't persist regime data - it's daily and changes every trading session
+      // Only persist instrument selection
       partialize: (state) => ({
         instrument: state.instrument,
-        currentRegime: state.currentRegime,
-        regimeConfidence: state.regimeConfidence,
-        marketDisabled: state.marketDisabled,
+        // Don't persist: currentRegime, regimeConfidence, marketDisabled, _regimeLoadDate
+        // These are daily values that must be reloaded from backend
       }),
     }
   )

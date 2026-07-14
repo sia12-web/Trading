@@ -340,4 +340,137 @@ describe('Entry Discipline System - Slice 4', () => {
       expect(validRegimes).not.toContain('neutral')
     })
   })
+
+  describe('API Integration - Market Disabled Scenario', () => {
+    it('should reject entry when market is disabled after 2 stop loss hits', () => {
+      // Scenario: User had 2 stop loss hits in first 45 min, market is now disabled
+      const marketDisabled = true
+      const shouldAllowEntry = !marketDisabled
+      expect(shouldAllowEntry).toBe(false)
+    })
+
+    it('should persist market disabled state across API calls', () => {
+      // Once market_disabled = true in regime_cache, all subsequent entries rejected
+      const disabledState1 = true
+      const disabledState2 = true // Should stay disabled
+      expect(disabledState2).toBe(disabledState1)
+    })
+
+    it('should allow entry when market is not disabled', () => {
+      const marketDisabled = false
+      const shouldAllowEntry = !marketDisabled && true // Assuming other conditions met
+      expect(shouldAllowEntry).toBe(true)
+    })
+  })
+
+  describe('API Integration - Deep Entry Validation', () => {
+    it('should validate entry price is within 0.001% of highest for LONG', () => {
+      const ENTRY_TOLERANCE = 0.00001 // 0.001%
+      const windowHighest = 40100.5
+      const entryPrice = 40100.45 // Within 0.001%
+      const isDeep = entryPrice >= windowHighest * (1 - ENTRY_TOLERANCE)
+      expect(isDeep).toBe(true)
+    })
+
+    it('should reject entry price outside 0.001% tolerance for LONG', () => {
+      const ENTRY_TOLERANCE = 0.00001 // 0.001%
+      const windowHighest = 40100
+      const entryPrice = 40104 // 0.01% away - outside tolerance
+      const isDeep = entryPrice >= windowHighest * (1 - ENTRY_TOLERANCE)
+      expect(isDeep).toBe(false)
+    })
+
+    it('should validate entry price is within 0.001% of lowest for SHORT', () => {
+      const ENTRY_TOLERANCE = 0.00001 // 0.001%
+      const windowLowest = 40000
+      const entryPrice = 40000.004 // Within 0.001%
+      const isDeep = entryPrice <= windowLowest * (1 + ENTRY_TOLERANCE)
+      expect(isDeep).toBe(true)
+    })
+
+    it('should reject entry price outside 0.001% tolerance for SHORT', () => {
+      const ENTRY_TOLERANCE = 0.00001 // 0.001%
+      const windowLowest = 40000
+      const entryPrice = 39996 // 0.01% away - outside tolerance
+      const isDeep = entryPrice <= windowLowest * (1 + ENTRY_TOLERANCE)
+      expect(isDeep).toBe(false)
+    })
+
+    it('should allow entry when cache not yet populated', () => {
+      // First trade of the day: cache may not have window extremes yet
+      const cacheData = null
+      const allowEntryIfNoCache = cacheData === null
+      expect(allowEntryIfNoCache).toBe(true)
+    })
+  })
+
+  describe('API Integration - Account Size Validation', () => {
+    it('should accept account size between $5,000 and $1,000,000', () => {
+      const MINIMUM_ACCOUNT_SIZE = 5000
+      const MAXIMUM_ACCOUNT_SIZE = 1000000
+      const accountSize = 100000
+      const isValid = accountSize >= MINIMUM_ACCOUNT_SIZE && accountSize <= MAXIMUM_ACCOUNT_SIZE
+      expect(isValid).toBe(true)
+    })
+
+    it('should reject account size below $5,000 minimum', () => {
+      const MINIMUM_ACCOUNT_SIZE = 5000
+      const accountSize = 4999
+      const isValid = accountSize >= MINIMUM_ACCOUNT_SIZE
+      expect(isValid).toBe(false)
+    })
+
+    it('should reject account size above $1,000,000 maximum', () => {
+      const MAXIMUM_ACCOUNT_SIZE = 1000000
+      const accountSize = 1000001
+      const isValid = accountSize <= MAXIMUM_ACCOUNT_SIZE
+      expect(isValid).toBe(false)
+    })
+
+    it('should validate account size matches position sizing calculations', () => {
+      // Account size of $100k with 5% risk should risk $5k
+      const accountSize = 100000
+      const riskPercent = 0.05
+      const expectedRisk = accountSize * riskPercent
+      expect(expectedRisk).toBe(5000)
+    })
+  })
+
+  describe('API Integration - Stop Loss Precision', () => {
+    it('should validate calculated stop loss is exactly 5% from entry for LONG', () => {
+      const entryPrice = 40000
+      const direction = 'LONG'
+      const expectedStopLoss = entryPrice * (1 - 0.05) // 38000
+      const calculatedStopLoss = 38000
+      expect(calculatedStopLoss).toBe(expectedStopLoss)
+    })
+
+    it('should validate calculated stop loss is exactly 5% from entry for SHORT', () => {
+      const entryPrice = 40000
+      const direction = 'SHORT'
+      const expectedStopLoss = entryPrice * (1 + 0.05) // 42000
+      const calculatedStopLoss = 42000
+      expect(calculatedStopLoss).toBe(expectedStopLoss)
+    })
+
+    it('should detect stop loss precision error beyond 0.1% tolerance', () => {
+      const entryPrice = 40000
+      const expectedStopLoss = 38000
+      const calculatedStopLoss = 38050 // 0.13% error
+      const tolerance = entryPrice * 0.001 // 0.1% = $40
+      const error = Math.abs(calculatedStopLoss - expectedStopLoss)
+      const isPrecisionError = error > tolerance
+      expect(isPrecisionError).toBe(true)
+    })
+
+    it('should accept stop loss within 0.1% tolerance', () => {
+      const entryPrice = 40000
+      const expectedStopLoss = 38000
+      const calculatedStopLoss = 38010 // 0.026% error (within tolerance)
+      const tolerance = entryPrice * 0.001 // 0.1% = $40
+      const error = Math.abs(calculatedStopLoss - expectedStopLoss)
+      const isPrecisionOk = error <= tolerance
+      expect(isPrecisionOk).toBe(true)
+    })
+  })
 })

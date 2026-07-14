@@ -98,7 +98,13 @@ CREATE TABLE entry_discipline_cache (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX idx_entry_cache_user_instrument_date ON entry_discipline_cache(user_id, instrument, trade_date);
+-- CRITICAL FIX: Use constraint name for proper upsert handling
+CREATE UNIQUE INDEX idx_entry_cache_user_instrument_date
+  ON entry_discipline_cache(user_id, instrument, trade_date);
+
+-- CRITICAL FIX: Add comment about upsert pattern to avoid race conditions
+-- Use INSERT ... ON CONFLICT DO UPDATE in API code instead of SELECT/UPDATE pattern
+-- This prevents race conditions during high-frequency price updates
 
 ALTER TABLE entry_discipline_cache ENABLE ROW LEVEL SECURITY;
 
