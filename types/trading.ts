@@ -196,24 +196,6 @@ export interface EntryWindowStatus {
 
 // Slice 3: Stop Loss Tracking & Market Disabling
 
-export interface StopLossHitRequest {
-  instrument: Instrument
-  position_id: string
-  current_price: number
-  hit_timestamp: string // ISO timestamp
-}
-
-export interface StopLossHitResponse {
-  success: boolean
-  position_id: string
-  instrument: Instrument
-  stop_loss_hit_count: number
-  position_closed: boolean
-  market_disabled: boolean
-  exit_price: number | null
-  message: string
-}
-
 export interface MarketStatusResponse {
   instrument: Instrument
   market_disabled: boolean
@@ -488,4 +470,23 @@ export interface EntryDisciplineState {
   windowLowestTime: Date | null
   isLoadingEntry: boolean
   entryError: string | null
+}
+
+// Slice 5.3: Stop Loss Auto-Close Logic
+
+export interface StopLossHitRequest {
+  position_id: string
+  current_price: number
+  hit_timestamp: string // ISO timestamp
+}
+
+export interface StopLossHitResponse {
+  success: boolean
+  position_id: string
+  exit_price: number
+  profit_loss: number
+  profit_loss_percent: number
+  stop_loss_hit_count: number
+  market_disabled: boolean
+  message: string
 }

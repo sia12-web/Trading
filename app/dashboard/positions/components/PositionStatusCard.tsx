@@ -54,6 +54,45 @@ export function PositionStatusCard({ position }: PositionStatusCardProps) {
   const [distanceToSL, setDistanceToSL] = useState<number | null>(null)
   const [distanceToTarget, setDistanceToTarget] = useState<number | null>(null)
   const [submittingDecision, setSubmittingDecision] = useState<DecisionType | null>(null)
+  const [slHitRecorded, setSlHitRecorded] = useState(false)
+  const [isSubmittingSlHit, setIsSubmittingSlHit] = useState(false)
+
+  // Handle stop loss hit
+  const handleStopLossHit = useCallback(
+    async (hitPrice: number) => {
+      if (!position || slHitRecorded || isSubmittingSlHit) return
+
+      setIsSubmittingSlHit(true)
+      try {
+        const response = await fetch('/api/trading/positions/stop-loss-hit', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            position_id: position.id,
+            current_price: hitPrice,
+            hit_timestamp: new Date().toISOString(),
+          }),
+        })
+
+        const data = await response.json()
+
+        if (!response.ok) {
+          errorToast(data.message || 'Failed to close position at stop loss')
+          return
+        }
+
+        setSlHitRecorded(true)
+        successToast(`Stop loss hit! Position closed. P&L: $${data.profit_loss}`)
+      } catch (error) {
+        errorToast('Error processing stop loss hit')
+      } finally {
+        setIsSubmittingSlHit(false)
+      }
+    },
+    [position, slHitRecorded, isSubmittingSlHit]
+  )
 
   // Handle management decision submission
   const handleDecision = useCallback(
@@ -111,8 +150,19 @@ export function PositionStatusCard({ position }: PositionStatusCardProps) {
         // Calculate distance to profit target
         const distToTarget = Math.abs((price - position.profit_target_price) / position.profit_target_price) * 100
         setDistanceToTarget(distToTarget)
+
+        // Detect stop loss hit (price crossed SL)
+        if (!slHitRecorded && !isSubmittingSlHit) {
+          const isSLHit =
+            (position.entry_direction === 'LONG' && price <= position.stop_loss_price) ||
+            (position.entry_direction === 'SHORT' && price >= position.stop_loss_price)
+
+          if (isSLHit) {
+            handleStopLossHit(price)
+          }
+        }
       },
-      [position]
+      [position, slHitRecorded, isSubmittingSlHit, handleStopLossHit]
     )
   )
 
@@ -258,32 +308,43 @@ export function PositionStatusCard({ position }: PositionStatusCardProps) {
       </div>
 
       {/* Management Decision Buttons */}
-      <div className="mt-6 flex gap-3">
-        <button
-          onClick={() => handleDecision('HOLD')}
-          disabled={submittingDecision !== null}
-          className="flex-1 rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white transition-all hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400 dark:bg-blue-500 dark:hover:bg-blue-600 dark:disabled:bg-gray-600"
-          aria-label="Record HOLD decision"
-        >
-          {submittingDecision === 'HOLD' ? 'Recording...' : 'HOLD'}
-        </button>
-        <button
-          onClick={() => handleDecision('TAKE_PROFIT')}
-          disabled={submittingDecision !== null}
-          className="flex-1 rounded-lg bg-green-600 px-4 py-2 font-semibold text-white transition-all hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-400 dark:bg-green-500 dark:hover:bg-green-600 dark:disabled:bg-gray-600"
-          aria-label="Record TAKE_PROFIT decision"
-        >
-          {submittingDecision === 'TAKE_PROFIT' ? 'Recording...' : 'TAKE PROFIT'}
-        </button>
-        <button
-          onClick={() => handleDecision('ADJUST')}
-          disabled={submittingDecision !== null}
-          className="flex-1 rounded-lg bg-orange-600 px-4 py-2 font-semibold text-white transition-all hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-gray-400 dark:bg-orange-500 dark:hover:bg-orange-600 dark:disabled:bg-gray-600"
-          aria-label="Record ADJUST decision"
-        >
-          {submittingDecision === 'ADJUST' ? 'Recording...' : 'ADJUST'}
-        </button>
-      </div>
+      {!slHitRecorded && (
+        <div className="mt-6 flex gap-3">
+          <button
+            onClick={() => handleDecision('HOLD')}
+            disabled={submittingDecision !== null || isSubmittingSlHit}
+            className="flex-1 rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white transition-all hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400 dark:bg-blue-500 dark:hover:bg-blue-600 dark:disabled:bg-gray-600"
+            aria-label="Record HOLD decision"
+          >
+            {submittingDecision === 'HOLD' ? 'Recording...' : 'HOLD'}
+          </button>
+          <button
+            onClick={() => handleDecision('TAKE_PROFIT')}
+            disabled={submittingDecision !== null || isSubmittingSlHit}
+            className="flex-1 rounded-lg bg-green-600 px-4 py-2 font-semibold text-white transition-all hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-400 dark:bg-green-500 dark:hover:bg-green-600 dark:disabled:bg-gray-600"
+            aria-label="Record TAKE_PROFIT decision"
+          >
+            {submittingDecision === 'TAKE_PROFIT' ? 'Recording...' : 'TAKE PROFIT'}
+          </button>
+          <button
+            onClick={() => handleDecision('ADJUST')}
+            disabled={submittingDecision !== null || isSubmittingSlHit}
+            className="flex-1 rounded-lg bg-orange-600 px-4 py-2 font-semibold text-white transition-all hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-gray-400 dark:bg-orange-500 dark:hover:bg-orange-600 dark:disabled:bg-gray-600"
+            aria-label="Record ADJUST decision"
+          >
+            {submittingDecision === 'ADJUST' ? 'Recording...' : 'ADJUST'}
+          </button>
+        </div>
+      )}
+
+      {/* Position Closed Message */}
+      {slHitRecorded && (
+        <div className="mt-6 rounded-lg border border-orange-300 bg-orange-50 p-4 dark:border-orange-700 dark:bg-orange-900/20">
+          <p className="text-center text-sm font-semibold text-orange-700 dark:text-orange-400">
+            ✓ Position closed by stop loss
+          </p>
+        </div>
+      )}
 
       {/* Stop Loss Hit Count Warning */}
       {position.stop_loss_hit_count > 0 && (
