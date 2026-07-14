@@ -177,10 +177,10 @@ export class PriceFeeder {
 
   /**
    * Determine current market session
+   * CRITICAL: Must use EST timezone, not UTC
    */
   private determineMarketSession(): 'market' | 'pre' | 'after' | 'closed' {
     const now = new Date()
-    const hour = now.getUTCHours()
     const dayOfWeek = now.getUTCDay()
 
     // Weekend or holiday (simplified - doesn't account for US holidays)
@@ -188,19 +188,31 @@ export class PriceFeeder {
       return 'closed'
     }
 
+    // CRITICAL FIX: Convert UTC to EST by using Intl.DateTimeFormat
+    // Using UTC hours directly was causing wrong session detection
+    const estFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      hour: '2-digit',
+      hour12: false,
+    })
+
+    const parts = estFormatter.formatToParts(now)
+    const hourStr = parts.find((p) => p.type === 'hour')?.value || '00'
+    const hour = parseInt(hourStr, 10)
+
     // US Market hours (EST/EDT)
     // Pre-market: 4 AM - 9:30 AM EST
     // Regular: 9:30 AM - 4 PM EST
     // After-hours: 4 PM - 8 PM EST
     // Closed: 8 PM - 4 AM EST
 
-    if (hour >= 8 && hour < 13) {
-      // Pre-market (4 AM - 9:30 AM EST)
+    if (hour >= 4 && hour < 9) {
+      // Pre-market (4 AM - 9:30 AM EST) - before 9 AM
       return 'pre'
-    } else if (hour >= 13 && hour < 20) {
-      // Market hours (9:30 AM - 4 PM EST)
+    } else if (hour >= 9 && hour < 16) {
+      // Market hours (9:30 AM - 4 PM EST) - 9 AM to 4 PM
       return 'market'
-    } else if (hour >= 20 && hour < 24) {
+    } else if (hour >= 16 && hour < 20) {
       // After-hours (4 PM - 8 PM EST)
       return 'after'
     } else {

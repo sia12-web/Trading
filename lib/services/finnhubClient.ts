@@ -33,160 +33,226 @@ export class FinnhubClient {
   constructor() {
     this.apiKey = process.env.FINNHUB_API_KEY || ''
     if (!this.apiKey) {
-      logger.warn('[FinnhubClient] FINNHUB_API_KEY not set in environment')
+      logger.error('[FinnhubClient] FINNHUB_API_KEY not configured - all API calls will fail. Set FINNHUB_API_KEY environment variable.')
     }
   }
 
   /**
-   * Fetch quote data for an instrument
+   * Fetch quote data for an instrument with exponential backoff retry
    * Maps instrument symbol to Finnhub symbol: DOW -> ^DJI, NASDAQ -> ^IXIC, NIKKEI -> ^N225
    */
   async getQuote(instrument: Instrument): Promise<FinnhubQuote | null> {
-    try {
-      const symbol = this.getSymbol(instrument)
-      const url = `${FINNHUB_BASE_URL}/quote?symbol=${symbol}&token=${this.apiKey}`
+    const maxRetries = 3
+    let lastError: Error | null = null
 
-      logger.debug(`[FinnhubClient] Fetching quote for ${instrument} (${symbol})`)
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const symbol = this.getSymbol(instrument)
+        const url = `${FINNHUB_BASE_URL}/quote?symbol=${symbol}&token=${this.apiKey}`
 
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT)
+        logger.debug(`[FinnhubClient] Fetching quote for ${instrument} (${symbol}) - attempt ${attempt + 1}/${maxRetries}`)
 
-      const response = await fetch(url, {
-        signal: controller.signal,
-      })
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT)
 
-      clearTimeout(timeoutId)
+        const response = await fetch(url, {
+          signal: controller.signal,
+        })
 
-      if (!response.ok) {
-        logger.error(
-          `[FinnhubClient] Quote fetch failed for ${instrument}: HTTP ${response.status}`
+        clearTimeout(timeoutId)
+
+        if (!response.ok) {
+          const error = new Error(`HTTP ${response.status}`)
+          lastError = error
+
+          if (attempt < maxRetries - 1) {
+            const delayMs = Math.pow(2, attempt) * 1000
+            logger.warn(
+              `[FinnhubClient] Quote fetch failed for ${instrument}: ${response.status}, retrying in ${delayMs}ms`
+            )
+            await new Promise((resolve) => setTimeout(resolve, delayMs))
+            continue
+          } else {
+            logger.error(`[FinnhubClient] Quote fetch failed for ${instrument}: HTTP ${response.status} (final attempt)`)
+            return null
+          }
+        }
+
+        const data = (await response.json()) as FinnhubQuoteResponse
+
+        logger.debug(
+          `[FinnhubClient] Successfully fetched quote for ${instrument}: open=${data.o}, close=${data.pc}`
         )
-        return null
-      }
 
-      const data = (await response.json()) as FinnhubQuoteResponse
+        return {
+          symbol: instrument,
+          current: data.c,
+          open: data.o,
+          high: data.h,
+          low: data.l,
+          previousClose: data.pc,
+          timestamp: data.t,
+        }
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error))
 
-      logger.debug(
-        `[FinnhubClient] Successfully fetched quote for ${instrument}: open=${data.o}, close=${data.pc}`
-      )
+        if (error instanceof Error) {
+          if (error.name === 'AbortError') {
+            logger.warn(
+              `[FinnhubClient] Quote fetch timeout for ${instrument} - attempt ${attempt + 1}/${maxRetries}`
+            )
+          } else {
+            logger.warn(
+              `[FinnhubClient] Quote fetch error for ${instrument}: ${error.message} - attempt ${attempt + 1}/${maxRetries}`
+            )
+          }
+        }
 
-      return {
-        symbol: instrument,
-        current: data.c,
-        open: data.o,
-        high: data.h,
-        low: data.l,
-        previousClose: data.pc,
-        timestamp: data.t,
-      }
-    } catch (error) {
-      if (error instanceof Error) {
-        if (error.name === 'AbortError') {
-          logger.error(`[FinnhubClient] Quote fetch timeout for ${instrument}`)
-        } else {
-          logger.error(`[FinnhubClient] Quote fetch error for ${instrument}: ${error.message}`)
+        if (attempt < maxRetries - 1) {
+          const delayMs = Math.pow(2, attempt) * 1000
+          await new Promise((resolve) => setTimeout(resolve, delayMs))
         }
       }
-      return null
     }
+
+    logger.error(`[FinnhubClient] Quote fetch failed after ${maxRetries} attempts for ${instrument}`, {
+      lastError: lastError?.message,
+    })
+    return null
   }
 
   /**
-   * Fetch news for an instrument (optional for MVP)
+   * Fetch news for an instrument with exponential backoff retry
    */
   async getNews(instrument: Instrument): Promise<FinnhubNews['headlines'] | null> {
-    try {
-      const symbol = this.getSymbol(instrument)
-      const today = new Date()
-      const oneWeekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
+    const maxRetries = 3
+    let lastError: Error | null = null
 
-      const fromDate = oneWeekAgo.toISOString().split('T')[0]
-      const toDate = today.toISOString().split('T')[0]
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const symbol = this.getSymbol(instrument)
+        const today = new Date()
+        const oneWeekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
 
-      const url =
-        `${FINNHUB_BASE_URL}/company-news?` +
-        `symbol=${symbol}&from=${fromDate}&to=${toDate}&limit=20&token=${this.apiKey}`
+        const fromDate = oneWeekAgo.toISOString().split('T')[0]
+        const toDate = today.toISOString().split('T')[0]
 
-      logger.debug(`[FinnhubClient] Fetching news for ${instrument}`)
+        const url =
+          `${FINNHUB_BASE_URL}/company-news?` +
+          `symbol=${symbol}&from=${fromDate}&to=${toDate}&limit=20&token=${this.apiKey}`
 
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT)
+        logger.debug(`[FinnhubClient] Fetching news for ${instrument} - attempt ${attempt + 1}/${maxRetries}`)
 
-      const response = await fetch(url, {
-        signal: controller.signal,
-      })
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT)
 
-      clearTimeout(timeoutId)
-
-      if (!response.ok) {
-        logger.error(
-          `[FinnhubClient] News fetch failed for ${instrument}: HTTP ${response.status}`
-        )
-        return null
-      }
-
-      // Finnhub returns array directly
-      const newsItems = (await response.json()) as FinnhubNewsItem[]
-
-      // Transform to our format
-      const headlines = newsItems
-        .map((item) => {
-          // Simple sentiment analysis based on keywords
-          const headline = item.headline.toLowerCase()
-          let sentiment = 0
-
-          const bullishKeywords = [
-            'rally',
-            'up',
-            'surge',
-            'bullish',
-            'gains',
-            'recovery',
-            'strong',
-            'rise',
-          ]
-          const bearishKeywords = [
-            'fall',
-            'down',
-            'crash',
-            'bearish',
-            'loss',
-            'decline',
-            'weak',
-            'drop',
-          ]
-
-          bullishKeywords.forEach((keyword) => {
-            if (headline.includes(keyword)) sentiment += 2
-          })
-          bearishKeywords.forEach((keyword) => {
-            if (headline.includes(keyword)) sentiment -= 2
-          })
-
-          sentiment = Math.max(-10, Math.min(10, sentiment)) // Clamp to -10 to +10
-
-          return {
-            headline: item.headline,
-            source: 'Finnhub',
-            sentiment,
-            timestamp: new Date(item.datetime * 1000).toISOString(),
-          }
+        const response = await fetch(url, {
+          signal: controller.signal,
         })
-        .slice(0, 10) // Top 10 headlines
 
-      logger.debug(`[FinnhubClient] Successfully fetched ${headlines.length} news items for ${instrument}`)
+        clearTimeout(timeoutId)
 
-      return headlines
-    } catch (error) {
-      if (error instanceof Error) {
-        if (error.name === 'AbortError') {
-          logger.error(`[FinnhubClient] News fetch timeout for ${instrument}`)
-        } else {
-          logger.error(`[FinnhubClient] News fetch error for ${instrument}: ${error.message}`)
+        if (!response.ok) {
+          const error = new Error(`HTTP ${response.status}`)
+          lastError = error
+
+          if (attempt < maxRetries - 1) {
+            const delayMs = Math.pow(2, attempt) * 1000
+            logger.warn(
+              `[FinnhubClient] News fetch failed for ${instrument}: ${response.status}, retrying in ${delayMs}ms`
+            )
+            await new Promise((resolve) => setTimeout(resolve, delayMs))
+            continue
+          } else {
+            logger.error(`[FinnhubClient] News fetch failed for ${instrument}: HTTP ${response.status} (final attempt)`)
+            return null
+          }
+        }
+
+        // Finnhub returns array directly
+        const newsItems = (await response.json()) as FinnhubNewsItem[]
+
+        // Transform to our format with deduplication
+        const seenHeadlines = new Set<string>()
+        const headlines = newsItems
+          .map((item) => {
+            // Simple sentiment analysis based on keywords
+            const headline = item.headline.toLowerCase()
+            let sentiment = 0
+
+            const bullishKeywords = [
+              'rally',
+              'up',
+              'surge',
+              'bullish',
+              'gains',
+              'recovery',
+              'strong',
+              'rise',
+            ]
+            const bearishKeywords = [
+              'fall',
+              'down',
+              'crash',
+              'bearish',
+              'loss',
+              'decline',
+              'weak',
+              'drop',
+            ]
+
+            // Count keyword matches but cap at 10/-10 per headline
+            bullishKeywords.forEach((keyword) => {
+              if (headline.includes(keyword)) sentiment += 2
+            })
+            bearishKeywords.forEach((keyword) => {
+              if (headline.includes(keyword)) sentiment -= 2
+            })
+
+            sentiment = Math.max(-10, Math.min(10, sentiment)) // Clamp to -10 to +10
+
+            return {
+              headline: item.headline,
+              source: 'Finnhub',
+              sentiment,
+              timestamp: new Date(item.datetime * 1000).toISOString(),
+            }
+          })
+          .filter((h) => {
+            // Deduplicate headlines
+            if (seenHeadlines.has(h.headline)) return false
+            seenHeadlines.add(h.headline)
+            return true
+          })
+          .slice(0, 10) // Top 10 headlines
+
+        logger.debug(`[FinnhubClient] Successfully fetched ${headlines.length} news items for ${instrument}`)
+
+        return headlines
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error))
+
+        if (error instanceof Error) {
+          if (error.name === 'AbortError') {
+            logger.warn(`[FinnhubClient] News fetch timeout for ${instrument} - attempt ${attempt + 1}/${maxRetries}`)
+          } else {
+            logger.warn(
+              `[FinnhubClient] News fetch error for ${instrument}: ${error.message} - attempt ${attempt + 1}/${maxRetries}`
+            )
+          }
+        }
+
+        if (attempt < maxRetries - 1) {
+          const delayMs = Math.pow(2, attempt) * 1000
+          await new Promise((resolve) => setTimeout(resolve, delayMs))
         }
       }
-      return null
     }
+
+    logger.error(`[FinnhubClient] News fetch failed after ${maxRetries} attempts for ${instrument}`, {
+      lastError: lastError?.message,
+    })
+    return null
   }
 
   /**
@@ -198,7 +264,13 @@ export class FinnhubClient {
       NASDAQ: '^IXIC', // NASDAQ Composite
       NIKKEI: '^N225', // Nikkei 225
     }
-    return symbolMap[instrument]
+    const symbol = symbolMap[instrument]
+    if (!symbol) {
+      const error = new Error(`FinnhubClient: Unknown instrument "${instrument}"`)
+      logger.error('[FinnhubClient] Invalid instrument', { instrument })
+      throw error
+    }
+    return symbol
   }
 }
 

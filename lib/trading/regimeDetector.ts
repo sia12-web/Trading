@@ -120,9 +120,24 @@ export class RegimeDetector {
   /**
    * OHLC analysis: (-15 to +15 points)
    * Close > Open indicates bullish, body strength and range matter
+   * CRITICAL: Guard against division by zero
    */
   private calculateOHLCScore(ohlc: OvernightOHLC): number {
     let score = 0
+
+    // CRITICAL FIX: Stricter OHLC validation to prevent division by zero
+    // All values must be positive, and high must be >= low
+    if (ohlc.open <= 0 || ohlc.close <= 0 || ohlc.high <= 0 || ohlc.low <= 0) {
+      logger.warn('[RegimeDetector] Invalid OHLC data - negative or zero values', { ohlc })
+      return 0
+    }
+
+    // Sanity check: high >= low, high >= open/close, low <= open/close
+    if (ohlc.high < ohlc.low || ohlc.high < ohlc.open || ohlc.high < ohlc.close ||
+        ohlc.low > ohlc.open || ohlc.low > ohlc.close) {
+      logger.warn('[RegimeDetector] Invalid OHLC data - violated OHLC constraints', { ohlc })
+      return 0
+    }
 
     // Body direction and strength
     const bodyStrength = ((ohlc.close - ohlc.open) / ohlc.open) * 100
@@ -145,6 +160,7 @@ export class RegimeDetector {
     }
 
     // Range indicates volatility (good for day trading)
+    // CRITICAL FIX: Guard against division by zero with ohlc.low
     const range = ((ohlc.high - ohlc.low) / ohlc.low) * 100
     if (range > 2.0) {
       score += 3 // Good volatility for entry

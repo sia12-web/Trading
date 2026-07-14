@@ -9,11 +9,11 @@ import type { LevelBreak } from '@/types/database'
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = await createClient()
-    const { id } = params
+    const { id } = await params
 
     if (!id || typeof id !== 'string') {
       return NextResponse.json(

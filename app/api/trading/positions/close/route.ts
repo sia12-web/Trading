@@ -1,0 +1,248 @@
+/**
+ * POST /api/trading/positions/close
+ * Close position immediately (lunch close, manual, or AI signal)
+ * Calculate final P&L and record closure decision
+ */
+
+import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { logger } from '@/lib/utils/logger'
+import { getPositionManager } from '@/lib/trading/positionManager'
+import { getESTDateString } from '@/lib/utils/timeUtils'
+import type { ClosePositionRequest, ClosePositionResponse, TradePosition } from '@/types/trading'
+
+export async function POST(request: Request): Promise<NextResponse<ClosePositionResponse>> {
+  try {
+    const body = (await request.json()) as ClosePositionRequest
+
+    // Validate required fields
+    if (!body.position_id || !body.instrument || body.exit_price === undefined || !body.exit_reason) {
+      logger.error('POST /api/trading/positions/close: Missing required fields', { body })
+      return NextResponse.json(
+        {
+          success: false,
+          position_id: body.position_id || '',
+          instrument: body.instrument,
+          exit_price: body.exit_price || 0,
+          entry_price: 0,
+          position_size: 0,
+          profit_loss: 0,
+          profit_loss_percent: 0,
+          exit_reason: body.exit_reason || 'manual',
+          message: 'Missing required fields',
+        },
+        { status: 400 }
+      )
+    }
+
+    // Validate exit reason
+    if (!['stop_hit', 'manual', 'lunch_close', 'ai_signal'].includes(body.exit_reason)) {
+      logger.error('POST /api/trading/positions/close: Invalid exit reason', {
+        reason: body.exit_reason,
+      })
+      return NextResponse.json(
+        {
+          success: false,
+          position_id: body.position_id,
+          instrument: body.instrument,
+          exit_price: body.exit_price,
+          entry_price: 0,
+          position_size: 0,
+          profit_loss: 0,
+          profit_loss_percent: 0,
+          exit_reason: body.exit_reason,
+          message: 'Invalid exit reason',
+        },
+        { status: 400 }
+      )
+    }
+
+    // Validate price
+    if (body.exit_price <= 0) {
+      logger.error('POST /api/trading/positions/close: Invalid exit price', {
+        price: body.exit_price,
+      })
+      return NextResponse.json(
+        {
+          success: false,
+          position_id: body.position_id,
+          instrument: body.instrument,
+          exit_price: body.exit_price,
+          entry_price: 0,
+          position_size: 0,
+          profit_loss: 0,
+          profit_loss_percent: 0,
+          exit_reason: body.exit_reason,
+          message: 'Invalid exit price',
+        },
+        { status: 400 }
+      )
+    }
+
+    const supabase = await createClient()
+    const positionManager = getPositionManager()
+
+    // Get today's date (EST)
+    const today = getESTDateString()
+    const closeTime = new Date().toISOString()
+
+    // Query open position
+    const { data: position, error: queryError } = await supabase
+      .from('trades_journal')
+      .select('*')
+      .eq('id', body.position_id)
+      .is('exit_timestamp', null)
+      .maybeSingle()
+
+    if (queryError) {
+      logger.error('POST /api/trading/positions/close: Query error', { error: queryError })
+      return NextResponse.json(
+        {
+          success: false,
+          position_id: body.position_id,
+          instrument: body.instrument,
+          exit_price: body.exit_price,
+          entry_price: 0,
+          position_size: 0,
+          profit_loss: 0,
+          profit_loss_percent: 0,
+          exit_reason: body.exit_reason,
+          message: 'Database error',
+        },
+        { status: 500 }
+      )
+    }
+
+    if (!position) {
+      logger.error('POST /api/trading/positions/close: Position not found or already closed', {
+        position_id: body.position_id,
+      })
+      return NextResponse.json(
+        {
+          success: false,
+          position_id: body.position_id,
+          instrument: body.instrument,
+          exit_price: body.exit_price,
+          entry_price: 0,
+          position_size: 0,
+          profit_loss: 0,
+          profit_loss_percent: 0,
+          exit_reason: body.exit_reason,
+          message: 'Position not found or already closed',
+        },
+        { status: 404 }
+      )
+    }
+
+    // Calculate final P&L
+    const pnl = positionManager.calculateCurrentPnL(
+      position as TradePosition,
+      body.exit_price
+    )
+
+    // Update position with closure details
+    const { error: updateError } = await supabase
+      .from('trades_journal')
+      .update({
+        exit_timestamp: closeTime,
+        exit_price: body.exit_price,
+        exit_reason: body.exit_reason,
+        profit_loss: pnl.profitLoss,
+        profit_loss_percent: pnl.profitLossPercent,
+        updated_at: closeTime,
+      })
+      .eq('id', body.position_id)
+
+    if (updateError) {
+      logger.error('POST /api/trading/positions/close: Update failed', { error: updateError })
+      return NextResponse.json(
+        {
+          success: false,
+          position_id: body.position_id,
+          instrument: body.instrument,
+          exit_price: body.exit_price,
+          entry_price: position.entry_price,
+          position_size: position.position_size,
+          profit_loss: pnl.profitLoss,
+          profit_loss_percent: pnl.profitLossPercent,
+          exit_reason: body.exit_reason,
+          message: 'Failed to close position',
+        },
+        { status: 500 }
+      )
+    }
+
+    // Record closure decision in management_decisions for audit trail
+    const closureReason = body.reason || `Position closed via ${body.exit_reason}`
+    const { error: decisionError } = await supabase.from('management_decisions').insert({
+      position_id: body.position_id,
+      instrument: body.instrument,
+      trade_date: today,
+      decision: 'TAKE_PROFIT',
+      decision_price: body.exit_price,
+      decision_time: closeTime,
+      reason: closureReason,
+      confidence_at_decision: position.best_level_break_confidence || 0,
+      current_p_l: pnl.profitLoss,
+      current_p_l_percent: pnl.profitLossPercent,
+    })
+
+    if (decisionError) {
+      logger.error('POST /api/trading/positions/close: Failed to record decision', {
+        error: decisionError,
+      })
+      // Continue - position was closed, just decision not recorded
+    }
+
+    logger.log('POST /api/trading/positions/close: Position closed', {
+      position_id: body.position_id,
+      instrument: body.instrument,
+      exit_price: body.exit_price,
+      exit_reason: body.exit_reason,
+      p_l: pnl.profitLoss,
+      p_l_percent: pnl.profitLossPercent,
+    })
+
+    const messagePrefix =
+      body.exit_reason === 'lunch_close'
+        ? '🍽️ LUNCH CLOSE'
+        : body.exit_reason === 'stop_hit'
+          ? '🛑 STOP LOSS'
+          : body.exit_reason === 'ai_signal'
+            ? '🤖 AI SIGNAL'
+            : '📍 POSITION CLOSED'
+
+    return NextResponse.json(
+      {
+        success: true,
+        position_id: body.position_id,
+        instrument: body.instrument,
+        exit_price: body.exit_price,
+        entry_price: position.entry_price,
+        position_size: position.position_size,
+        profit_loss: pnl.profitLoss,
+        profit_loss_percent: pnl.profitLossPercent,
+        exit_reason: body.exit_reason,
+        message: `${messagePrefix}: Position closed at $${body.exit_price}. P&L: ${pnl.profitLoss >= 0 ? '+' : ''}$${pnl.profitLoss.toFixed(2)} (${pnl.profitLossPercent.toFixed(2)}%)`,
+      },
+      { status: 200 }
+    )
+  } catch (error) {
+    logger.error('POST /api/trading/positions/close: Unexpected error', { error })
+    return NextResponse.json(
+      {
+        success: false,
+        position_id: '',
+        instrument: 'DOW',
+        exit_price: 0,
+        entry_price: 0,
+        position_size: 0,
+        profit_loss: 0,
+        profit_loss_percent: 0,
+        exit_reason: 'manual',
+        message: 'Internal server error',
+      },
+      { status: 500 }
+    )
+  }
+}

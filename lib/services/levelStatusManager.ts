@@ -47,8 +47,14 @@ const PREDEFINED_LEVELS: Record<Instrument, number[]> = {
 
 /**
  * Calculate distance from current price to a level
+ * CRITICAL: Guard against division by zero
  */
 function calculateDistance(currentPrice: number, level: number): LevelDistance {
+  // CRITICAL FIX: Prevent division by zero
+  if (currentPrice <= 0) {
+    throw new Error(`Invalid price in calculateDistance: ${currentPrice}. Price must be > 0.`)
+  }
+
   const distance = Math.abs(currentPrice - level)
   const distancePct = (distance / currentPrice) * 100
 
