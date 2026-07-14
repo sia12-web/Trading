@@ -7,23 +7,19 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { logger } from '@/lib/utils/logger'
+import { getOrCreateUser } from '@/lib/utils/devAuth'
 import type { ManagementDecisionResponse } from '@/types/trading'
 
 const VALID_DECISION_TYPES = ['HOLD', 'TAKE_PROFIT', 'ADJUST'] as const
 
 export async function POST(request: Request): Promise<NextResponse<ManagementDecisionResponse>> {
   try {
-    // CRITICAL: Validate auth before proceeding
     const supabase = await createClient()
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
+    // Development: Use dev user instead of auth
+    const user = await getOrCreateUser()
 
-    if (authError || !user) {
-      logger.error('POST /api/trading/positions/management-decisions: Unauthorized', {
-        error: authError,
-      })
+    if (!user) {
+      logger.error('POST /api/trading/positions/management-decisions: No user found', {})
       return NextResponse.json(
         {
           success: false,

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { logger } from '@/lib/utils/logger'
+import { getOrCreateUser } from '@/lib/utils/devAuth'
 import type { StopLossHitRequest, StopLossHitResponse } from '@/types/trading'
 
 const createErrorResponse = (
@@ -39,22 +40,19 @@ const createSuccessResponse = (
 
 export async function POST(request: Request): Promise<NextResponse<StopLossHitResponse>> {
   try {
-    const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      logger.error('POST /api/trading/positions/stop-loss-hit: Unauthorized', { error: authError })
-      return NextResponse.json(createErrorResponse('', 'Unauthorized'), { status: 401 })
+    const user = await getOrCreateUser()
+    if (!user) {
+      return NextResponse.json(createErrorResponse('', 'No user found'), { status: 401 })
     }
 
     const body: StopLossHitRequest = await request.json()
     const { position_id, current_price, hit_timestamp } = body
 
     if (!position_id || current_price === undefined || !hit_timestamp) {
-      logger.error('POST /api/trading/positions/stop-loss-hit: Missing fields')
       return NextResponse.json(createErrorResponse(position_id || '', 'Missing required fields'), { status: 400 })
     }
 
+    const supabase = await createClient()
     const { data: position, error: positionError } = await supabase
       .from('trades_journal')
       .select('id, user_id, instrument, entry_price, entry_direction, position_size, risk_amount, stop_loss_hit_count, exit_timestamp')
@@ -116,12 +114,6 @@ export async function POST(request: Request): Promise<NextResponse<StopLossHitRe
         .eq('date', todayStr)
       marketDisabled = true
     }
-
-    logger.log('POST /api/trading/positions/stop-loss-hit: Position closed', {
-      position_id,
-      profit_loss: profitLoss,
-      market_disabled: marketDisabled,
-    })
 
     return NextResponse.json(
       createSuccessResponse(position_id, current_price, profitLoss, profitLossPercentRounded, newStopLossHitCount, marketDisabled),

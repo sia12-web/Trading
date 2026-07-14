@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { logger } from '@/lib/utils/logger'
 import { getESTDateString } from '@/lib/utils/timeUtils'
+import { getOrCreateUser } from '@/lib/utils/devAuth'
 import type { PositionStatusResponse, PositionStatus } from '@/types/positionManagement'
 import type { Instrument } from '@/types/trading'
 
@@ -37,17 +38,11 @@ function calculateProfitTarget(
 
 export async function GET(request: Request): Promise<NextResponse<PositionStatusResponse>> {
   try {
-    // CRITICAL: Validate auth before proceeding
-    const supabase = await createClient()
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
+    // Development: Use dev user instead of auth
+    const user = await getOrCreateUser()
 
-    if (authError || !user) {
-      logger.error('GET /api/trading/positions/management-status: Unauthorized', {
-        error: authError,
-      })
+    if (!user) {
+      logger.error('GET /api/trading/positions/management-status: No user found', {})
       return NextResponse.json(
         {
           success: false,
@@ -59,6 +54,8 @@ export async function GET(request: Request): Promise<NextResponse<PositionStatus
         { status: 401 }
       )
     }
+
+    const supabase = await createClient()
 
     // Parse query params
     const url = new URL(request.url)

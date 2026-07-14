@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from 'react'
 import { PositionStatusCard } from './components/PositionStatusCard'
+import { LunchCloseCountdown } from './components/LunchCloseCountdown'
 import type { PositionStatusResponse, PositionStatus } from '@/types/positionManagement'
 import type { Instrument } from '@/types/trading'
 
@@ -104,7 +105,14 @@ export default function PositionsPage() {
 
         {/* Position Card */}
         {!loading && !error && (
-          <PositionStatusCard position={position} />
+          <>
+            <LunchCloseCountdown
+              marketDisabled={(position?.stop_loss_hit_count ?? 0) >= 2}
+              stopLossHitCount={position?.stop_loss_hit_count ?? 0}
+            />
+            <div className="mt-4" />
+            <PositionStatusCard position={position} />
+          </>
         )}
 
         {/* Info Box */}
