@@ -40,7 +40,11 @@
       "Bash(npx vitest:*)",
       "Bash(taskkill:*)",
       "Bash(kill:*)",
-      "Bash(killall node npm)"
+      "Bash(killall node npm)",
+      "Bash(Start-Sleep -Seconds 5)",
+      "Bash(Get-Content \"C:\\\\Users\\\\shahb\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-shahb-myApplications-Trading\\\\tasks\\\\be04fbc.output\" -Tail 20)",
+      "Bash(netstat:*)",
+      "Bash(PORT=3100 npm run dev:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

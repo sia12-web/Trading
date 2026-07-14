@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getOrCreateUser } from '@/lib/utils/devAuth'
 import type { TradingModeResponse, UpdateTradingModeRequest, TradingMode } from '@/types/database'
 
 /**
@@ -8,16 +9,16 @@ import type { TradingModeResponse, UpdateTradingModeRequest, TradingMode } from 
  */
 export async function GET() {
   try {
-    const supabase = await createClient()
-
-    // Validate auth
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
+    // Development: Use dev user instead of auth
+    const user = await getOrCreateUser()
+    if (!user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       )
     }
+
+    const supabase = await createClient()
 
     // Fetch user's trading mode from profiles
     const { data: profile, error: fetchError } = await supabase
@@ -55,16 +56,16 @@ export async function GET() {
  */
 export async function PATCH(request: NextRequest) {
   try {
-    const supabase = await createClient()
-
-    // Validate auth
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
+    // Development: Use dev user instead of auth
+    const user = await getOrCreateUser()
+    if (!user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       )
     }
+
+    const supabase = await createClient()
 
     // Parse request body
     let body: UpdateTradingModeRequest
