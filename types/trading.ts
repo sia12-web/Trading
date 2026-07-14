@@ -375,3 +375,57 @@ export interface ReplayModeState {
   isLoadingDates: boolean
   lastFetchedInstrument: Instrument | null
 }
+
+// Slice 3: Real-Time Level Status Monitoring
+
+export type LevelType = 'support' | 'resistance' | 'pivot'
+export type LevelStatus = 'safe' | 'approaching' | 'broken' | 'recovered'
+export type ConnectionStatus = 'connected' | 'reconnecting' | 'disconnected'
+
+export interface TradingLevel {
+  id: string
+  user_id: string
+  instrument: Instrument
+  level_name: string
+  price: number
+  level_type: LevelType
+  is_active: boolean
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface LevelStatusDetail {
+  level_id: string
+  status: LevelStatus
+  distance_pct: number
+  approach_direction: 'approaching' | 'receding' | 'broken'
+}
+
+export interface PriceUpdateEvent {
+  instrument: Instrument
+  price: number
+  timestamp: string
+  source: 'finnhub'
+  levels_approach: LevelStatusDetail[]
+}
+
+export interface ConnectionStatusResponse {
+  overall_status: ConnectionStatus
+  instruments: Record<
+    string,
+    {
+      connection_status: ConnectionStatus
+      last_price: number | null
+      last_price_update: string | null
+      data_freshness: 'live' | 'fresh' | 'stale'
+      reconnect_attempts: number
+    }
+  >
+}
+
+export interface LevelsResponse {
+  instrument: Instrument
+  levels: TradingLevel[]
+  total_active: number
+}
