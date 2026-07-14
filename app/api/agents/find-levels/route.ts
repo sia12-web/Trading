@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { getLevelFinderAgent } from '@/lib/services/levelFinderAgent'
 import type { AnalysisRequest, Candle, ValidationResult, HistoricalContext, HistoricalLevelData, ContextSummary } from '@/lib/services/levelFinderAgent/types'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -239,13 +240,13 @@ async function fetchHistoricalContext(supabase: SupabaseClient<any>, userId: str
  */
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
-
-    // Validate auth
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
+    // Development: Use dev user instead of auth
+    const user = await getOrCreateUser()
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const supabase = await createClient()
 
     // Parse query parameters
     const searchParams = request.nextUrl.searchParams
@@ -315,13 +316,13 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-
-    // Validate auth
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
+    // Development: Use dev user instead of auth
+    const user = await getOrCreateUser()
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const supabase = await createClient()
 
     // Parse request body
     let body: any
