@@ -429,3 +429,41 @@ export interface LevelsResponse {
   levels: TradingLevel[]
   total_active: number
 }
+
+// Slice 4: Entry Discipline System
+
+export interface PendingEntry {
+  price: number
+  direction: EntryDirection
+  window: EntryWindow
+  time: Date
+}
+
+export interface OpenPositionRequest {
+  instrument: Instrument
+  entry_price: number
+  entry_direction: EntryDirection
+  entry_window: EntryWindow
+  entry_time: string // ISO timestamp
+  account_size: number
+  current_price: number
+  regime: Regime
+  regime_confidence: number
+}
+
+export interface EntryDisciplineState {
+  instrument: Instrument | null
+  currentWindow: EntryWindow | null
+  entryDetected: boolean
+  pendingEntry: PendingEntry | null
+  openPosition: TradePosition | null
+  currentRegime: Regime | null
+  regimeConfidence: number | null
+  marketDisabled: boolean
+  windowHighest: number | null
+  windowLowest: number | null
+  windowHighestTime: Date | null
+  windowLowestTime: Date | null
+  isLoadingEntry: boolean
+  entryError: string | null
+}
