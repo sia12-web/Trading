@@ -222,11 +222,32 @@ export interface MarketStatusResponse {
   disabled_at: string | null
 }
 
-// Slice 4: Position Management & Lunch Close
+// Slice 5: Position Management & Decision Buttons
+
+export type DecisionType = 'HOLD' | 'TAKE_PROFIT' | 'ADJUST'
+
+export interface ManagementDecisionRecord {
+  id: string
+  user_id: string
+  position_id: string
+  instrument: Instrument
+  trade_date: string
+  decision_type: DecisionType
+  notes: string | null
+  created_at: string
+}
+
+export interface ManagementDecisionResponse {
+  success: boolean
+  decision: ManagementDecisionRecord
+  message: string
+}
+
+// Legacy: Position Management & Lunch Close (keeping for compatibility)
 
 export type ManagementDecision = 'HOLD' | 'TAKE_PROFIT' | 'ADJUST' | 'MONITOR'
 
-export interface ManagementDecisionRecord {
+export interface ManagementDecisionAuditRecord {
   id: string
   position_id: string
   instrument: Instrument
