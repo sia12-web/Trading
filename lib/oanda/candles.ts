@@ -43,40 +43,50 @@ async function fetchChunk(
   })
 
   const url = `${oandaBaseUrl()}/v3/instruments/${instrument}/candles?${params}`
-  const res = await fetch(url, {
-    headers: oandaHeaders(),
-    cache: 'no-store',
-  })
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    console.error(`[OANDA] candles ${res.status} ${instrument}: ${text.slice(0, 200)}`)
-    return []
-  }
-
-  const json = await res.json()
-  const out: OandaCandle[] = []
-  for (const c of json.candles || []) {
-    if (c.complete === false) continue
-    const mid = c.mid
-    if (!mid) continue
-    const t = Math.floor(new Date(c.time).getTime() / 1000)
-    if (!Number.isFinite(t)) continue
-    out.push({
-      time: t,
-      open: parseFloat(mid.o),
-      high: parseFloat(mid.h),
-      low: parseFloat(mid.l),
-      close: parseFloat(mid.c),
-      volume: Number(c.volume) || 0,
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 12_000)
+  try {
+    const res = await fetch(url, {
+      headers: oandaHeaders(),
+      cache: 'no-store',
+      signal: controller.signal,
     })
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      console.error(`[OANDA] candles ${res.status} ${instrument}: ${text.slice(0, 200)}`)
+      return []
+    }
+
+    const json = await res.json()
+    const out: OandaCandle[] = []
+    for (const c of json.candles || []) {
+      if (c.complete === false) continue
+      const mid = c.mid
+      if (!mid) continue
+      const t = Math.floor(new Date(c.time).getTime() / 1000)
+      if (!Number.isFinite(t)) continue
+      out.push({
+        time: t,
+        open: parseFloat(mid.o),
+        high: parseFloat(mid.h),
+        low: parseFloat(mid.l),
+        close: parseFloat(mid.c),
+        volume: Number(c.volume) || 0,
+      })
+    }
+    return out
+  } catch (e) {
+    console.error(`[OANDA] candles chunk failed ${instrument}:`, e instanceof Error ? e.message : e)
+    return []
+  } finally {
+    clearTimeout(timer)
   }
-  return out
 }
 
 /**
  * Fetch OANDA mid candles for DOW/NASDAQ/NIKKEI over [period1, period2] unix seconds.
- * Chunks by ~3 days for M5 to stay under API limits.
+ * Chunks by ~3 days for M5; fetches chunks in parallel so sim desk doesn't hang.
  */
 export async function getOandaCandlesRange(
   instrument: Instrument,
@@ -90,16 +100,20 @@ export async function getOandaCandlesRange(
 
   const granularity = GRANULARITY[resolution] || 'M5'
   const chunkSec = granularity === 'M1' ? 1 * 86400 : 3 * 86400
-  const candles: OandaCandle[] = []
 
+  const ranges: Array<{ from: number; to: number }> = []
   let cursor = Math.floor(period1)
   const end = Math.floor(period2)
   while (cursor < end) {
     const chunkEnd = Math.min(cursor + chunkSec, end)
-    const part = await fetchChunk(symbol, granularity, cursor, chunkEnd)
-    candles.push(...part)
+    ranges.push({ from: cursor, to: chunkEnd })
     cursor = chunkEnd
   }
+
+  const parts = await Promise.all(
+    ranges.map((r) => fetchChunk(symbol, granularity, r.from, r.to))
+  )
+  const candles = parts.flat()
 
   candles.sort((a, b) => a.time - b.time)
   const deduped: OandaCandle[] = []

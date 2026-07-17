@@ -377,6 +377,9 @@ function SimulationDeskInner() {
     }
 
     let cancelled = false
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), 20_000)
+
     ;(async () => {
       setLoading(true)
       setError(null)
@@ -384,17 +387,13 @@ function SimulationDeskInner() {
         const startOpen = toUnix(replayDate, openH!, openM || 0)
         setSimNow(startOpen)
 
-        const [candlesRes, levelsRes] = await Promise.all([
-          fetch(
-            // Same OANDA 24h feed as live chart (Asia / London / NY boxes)
-            `/api/trading/candles?instrument=${instrument}&timeframe=5m&days=7&date=${replayDate}&_=${Date.now()}`,
-            { cache: 'no-store' }
-          ),
-          fetch(aiLevelsUrl(instrument), { cache: 'no-store' }),
-        ])
+        // Candles are required; levels are optional — don't block the desk on AI history
+        const candlesRes = await fetch(
+          `/api/trading/candles?instrument=${instrument}&timeframe=5m&days=7&date=${replayDate}&_=${Date.now()}`,
+          { cache: 'no-store', signal: controller.signal }
+        )
 
         const cJson = await candlesRes.json()
-        const lJson = levelsRes.ok ? await levelsRes.json() : { levels: [] }
         if (cancelled) return
 
         const mapped: Candle[] = (cJson.candles || []).map((c: {
@@ -414,13 +413,31 @@ function SimulationDeskInner() {
         }))
 
         if (mapped.length === 0) {
-          throw new Error('No candles for this day — Yahoo may be unavailable')
+          throw new Error(
+            cJson.error ||
+              `No candles for ${replayDate} (${cJson.source || 'empty'}). Try another day or check OANDA/Yahoo.`
+          )
         }
 
         setAllCandles(mapped)
 
-        // Same resolution rule as the live chart (shared deskLevels module)
-        const resolved = resolveDeskLevels(lJson.levels || [], mapped, startOpen, sess.tz)
+        let levelRows: unknown[] = []
+        try {
+          const levelsRes = await fetch(aiLevelsUrl(instrument), {
+            cache: 'no-store',
+            signal: AbortSignal.timeout(8_000),
+          })
+          if (levelsRes.ok) {
+            const lJson = await levelsRes.json()
+            levelRows = lJson.levels || []
+          }
+        } catch {
+          /* structure fallback below */
+        }
+
+        if (cancelled) return
+
+        const resolved = resolveDeskLevels(levelRows as any[], mapped, startOpen, sess.tz)
         setLevels(resolved.levels)
         setLevelsSource(resolved.source)
 
@@ -430,16 +447,29 @@ function SimulationDeskInner() {
           `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} — place a level order, then Play`
         )
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load desk')
+        if (cancelled) return
+        const aborted =
+          (e instanceof Error && e.name === 'AbortError') ||
+          (typeof e === 'object' && e !== null && 'name' in e && (e as { name: string }).name === 'AbortError')
+        setError(
+          aborted
+            ? 'Timed out loading candles (20s). Refresh or pick another day.'
+            : e instanceof Error
+              ? e.message
+              : 'Failed to load desk'
+        )
       } finally {
+        window.clearTimeout(timeoutId)
         if (!cancelled) setLoading(false)
       }
     })()
 
     return () => {
       cancelled = true
+      controller.abort()
+      window.clearTimeout(timeoutId)
     }
-  }, [instrument, replayDate])
+  }, [instrument, replayDate, openH, openM, toUnix, sess.tz])
 
   // Chart init
   useEffect(() => {
@@ -1029,9 +1059,12 @@ function SimulationDeskInner() {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center text-gray-500 text-sm animate-pulse">
-        Loading {instrument} desk at{' '}
-        {instrument === 'NIKKEI' ? '9:00 AM JST' : '9:30 AM ET'}…
+      <div className="flex h-screen flex-col items-center justify-center gap-3 text-gray-500 text-sm">
+        <p className="animate-pulse">
+          Loading {instrument} desk at{' '}
+          {instrument === 'NIKKEI' ? '9:00 AM JST' : '9:30 AM ET'}…
+        </p>
+        <p className="text-xs text-gray-600">Fetching candles (OANDA / Yahoo)…</p>
       </div>
     )
   }
@@ -1040,13 +1073,22 @@ function SimulationDeskInner() {
     return (
       <div className="p-6 space-y-3">
         <p className="text-red-400 text-sm">{error}</p>
-        <button
-          type="button"
-          onClick={() => router.push('/dashboard/simulation')}
-          className="text-xs text-gray-400 hover:text-white"
-        >
-          ← Back to simulation
-        </button>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="text-xs text-brand-400 hover:text-brand-300"
+          >
+            Retry
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push('/dashboard/simulation')}
+            className="text-xs text-gray-400 hover:text-white"
+          >
+            ← Back to simulation
+          </button>
+        </div>
       </div>
     )
   }
