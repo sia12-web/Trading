@@ -559,6 +559,7 @@ function SimulationDeskInner() {
     }
 
     chart.priceScale('right').applyOptions({
+      autoScale: true,
       scaleMargins: { top: 0.05, bottom: 0.05 },
       borderVisible: false,
     })
@@ -617,6 +618,23 @@ function SimulationDeskInner() {
     })
     setSessionRects(rects)
   }, [instrument])
+
+  const resetPriceScale = useCallback(() => {
+    const chart = chartRef.current
+    if (!chart) return
+    chart.priceScale('right').applyOptions({
+      autoScale: true,
+      scaleMargins: { top: 0.05, bottom: 0.05 },
+    })
+    try {
+      chart.timeScale().fitContent()
+    } catch {
+      /* ignore */
+    }
+    followLiveRef.current = false
+    setFollowingLive(false)
+    requestAnimationFrame(() => refreshSessionHighlights())
+  }, [refreshSessionHighlights])
 
   /** Keep the sim tip pinned to the right with a readable trailing window. */
   const pinToLatest = useCallback(
@@ -1196,6 +1214,15 @@ function SimulationDeskInner() {
               Jump to latest
             </button>
           )}
+
+          <button
+            type="button"
+            onClick={resetPriceScale}
+            className="rounded border border-white/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-300 hover:bg-white/10 hover:text-white"
+            title="Reset price scale (and fit time) — same as TradingView"
+          >
+            Reset scale
+          </button>
 
           {lastPrice != null && (
             <span className="price-mono ml-auto font-bold text-sm text-white">

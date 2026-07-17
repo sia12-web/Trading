@@ -544,6 +544,7 @@ export function TradingChart({
 
     // Full chart height — no volume so no bottom margin needed
     chart.priceScale('right').applyOptions({
+      autoScale: true,
       scaleMargins: { top: 0.05, bottom: 0.05 },
       borderVisible: false,
     })
@@ -801,6 +802,22 @@ export function TradingChart({
     })
     setSessionRects(rects)
   }, [instrument])
+
+  /** TradingView-style: re-enable auto price scale after manual zoom on the axis */
+  const resetPriceScale = useCallback(() => {
+    const chart = chartRef.current
+    if (!chart) return
+    chart.priceScale('right').applyOptions({
+      autoScale: true,
+      scaleMargins: { top: 0.05, bottom: 0.05 },
+    })
+    try {
+      chart.timeScale().fitContent()
+    } catch {
+      /* ignore */
+    }
+    requestAnimationFrame(() => refreshSessionHighlights())
+  }, [refreshSessionHighlights])
 
   useEffect(() => {
     if (!chartReady || !chartRef.current) return
@@ -1296,6 +1313,14 @@ export function TradingChart({
             title={`${s.name} session`}
           />
         ))}
+        <button
+          type="button"
+          onClick={resetPriceScale}
+          className="absolute bottom-8 right-16 z-20 rounded-md border border-surface-500/80 bg-surface-800/95 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-300 shadow-lg backdrop-blur transition hover:border-brand-500/50 hover:text-white"
+          title="Reset price scale (and fit time) — same as TradingView double-click on price axis"
+        >
+          Reset scale
+        </button>
       </div>
 
       {/* ── Clickable level chips — hidden while in a trade (only SL/TP visible) ─ */}
