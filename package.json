@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "db:migrate": "node scripts/run-migrations.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",

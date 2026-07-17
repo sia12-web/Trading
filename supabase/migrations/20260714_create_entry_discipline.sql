@@ -1,7 +1,7 @@
 -- Slice 4: Entry Discipline System
 -- Creates trades_journal for position tracking and entry_discipline_cache for real-time state
 
-CREATE TABLE trades_journal (
+CREATE TABLE IF NOT EXISTS trades_journal (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   instrument TEXT NOT NULL CHECK (instrument IN ('DOW', 'NASDAQ', 'NIKKEI')),
@@ -66,7 +66,7 @@ CREATE POLICY "Users can update own trades"
   USING (user_id = auth.uid());
 
 -- Entry Discipline Cache Table
-CREATE TABLE entry_discipline_cache (
+CREATE TABLE IF NOT EXISTS entry_discipline_cache (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   instrument TEXT NOT NULL CHECK (instrument IN ('DOW', 'NASDAQ', 'NIKKEI')),

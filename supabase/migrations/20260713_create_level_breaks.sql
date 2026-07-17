@@ -1,7 +1,7 @@
 -- Create level_breaks table for storing detected level breaks
 -- Stores breaks detected by the LevelBreakDetector service
 
-CREATE TABLE level_breaks (
+CREATE TABLE IF NOT EXISTS level_breaks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- Break identification

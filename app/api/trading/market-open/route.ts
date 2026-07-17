@@ -93,7 +93,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<MarketOpe
       return denyMarketOpen(e instanceof Error ? e.message : 'Env misconfigured', 500)
     }
 
-    logger.debug('[Market Open] Starting market open analysis')
+    logger.info('[Market Open] Starting market open analysis')
 
     const supabase = await createClient()
     const finnhub = getFinnhubClient()
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<MarketOpe
     const recommendationEngine = getRecommendationEngine()
 
     // Index-scale quotes first (Yahoo); Finnhub news still used for sentiment
-    logger.debug('[Market Open] Fetching index quotes (Yahoo) + Finnhub news')
+    logger.info('[Market Open] Fetching index quotes (Yahoo) + Finnhub news')
 
     const quotePromises = INSTRUMENTS.map((inst) => getIndexQuote(inst))
     const newsPromises = INSTRUMENTS.map((inst) => finnhub.getNews(inst))
@@ -240,7 +240,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<MarketOpe
     // Level Finder runs via /api/trading/auto-levels (same path for DOW/NASDAQ/NIKKEI)
     // once the session-gate locks the instrument — not here.
 
-    logger.debug('[Market Open] Market open analysis complete')
+    logger.info('[Market Open] Market open analysis complete', {
+      instrument: recommendation.instrument,
+      confidence: recommendation.recommendation_confidence,
+    })
 
     return NextResponse.json(
       {

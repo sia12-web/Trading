@@ -18,6 +18,8 @@ import { validateLevelsAgainstMarket } from '@/lib/services/levelValidation'
 import { getESTDateString } from '@/lib/utils/timeUtils'
 import { deskMarketFor, isDeskInstrument, sessionFor } from '@/lib/trading/sessionGate'
 import type { Instrument } from '@/types/price-feed'
+import { logger } from '@/lib/utils/logger'
+import { withApiLog } from '@/lib/utils/withApiLog'
 
 export const dynamic = 'force-dynamic'
 
@@ -70,6 +72,7 @@ async function runMorningReview(request: NextRequest) {
   try {
     const { assertCronOrDeskUser, resolveDeskUser } = await import('@/lib/utils/devAuth')
     if (!(await assertCronOrDeskUser(request))) {
+      logger.warn('morning-review.unauthorized')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -84,12 +87,23 @@ async function runMorningReview(request: NextRequest) {
     const sess = sessionFor(instrument)
     const todayLocal = localDateInTz(sess.tz)
 
+    logger.info('morning-review.start', { instrument, market, date: todayLocal })
+
     // Grade stored levels against real morning candles — memory only
     const result = await validateLevelsAgainstMarket(supabase, user.id, instrument, 2)
 
     const respected = result.verdicts.filter((v) => v.verdict === 'respected')
     const broken = result.verdicts.filter((v) => v.verdict === 'broken')
     const contested = result.verdicts.filter((v) => v.verdict === 'contested')
+
+    logger.info('morning-review.done', {
+      instrument,
+      judged: result.validated,
+      memoryUpdated: result.updated,
+      respected: respected.length,
+      broken: broken.length,
+      contested: contested.length,
+    })
 
     const afternoonCandidates = [
       ...broken.map((v) => ({
@@ -153,17 +167,15 @@ async function runMorningReview(request: NextRequest) {
       { status: 200 }
     )
   } catch (error) {
-    console.error('[Morning Review] Unexpected error:', error)
+    logger.error('morning-review.failed', { err: error })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
 
 /** Cron / manual GET */
-export async function GET(request: NextRequest) {
-  return runMorningReview(request)
-}
+export const GET = withApiLog('trading.morning-review', runMorningReview)
 
 /** Manual trigger from the dashboard */
 export async function POST(request: NextRequest) {
-  return runMorningReview(request)
+  return GET(request)
 }

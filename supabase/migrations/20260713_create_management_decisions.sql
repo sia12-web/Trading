@@ -38,3 +38,14 @@ DROP POLICY IF EXISTS "management_users_insert_own" ON management_decisions;
 CREATE POLICY "management_users_insert_own"
   ON management_decisions FOR INSERT
   WITH CHECK (user_id = auth.uid());
+
+-- Desk / service inserts (single-trader + cron paths)
+DROP POLICY IF EXISTS "management_system_insert" ON management_decisions;
+CREATE POLICY "management_system_insert"
+  ON management_decisions FOR INSERT
+  WITH CHECK (true);
+
+DROP POLICY IF EXISTS "management_system_read" ON management_decisions;
+CREATE POLICY "management_system_read"
+  ON management_decisions FOR SELECT
+  USING (true);

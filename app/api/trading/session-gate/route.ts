@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { getESTDateString } from '@/lib/utils/timeUtils'
+import { logger } from '@/lib/utils/logger'
 import {
   resolveSessionGate,
   isDeskHoursNow,
@@ -116,7 +117,7 @@ export async function GET(request: Request) {
       }
     )
   } catch (error) {
-    console.error('[session-gate]', error)
+    logger.error('session-gate.failed', { err: error })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

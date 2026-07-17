@@ -50,6 +50,10 @@ Thumbs.db
 *.log
 coverage/
 dist/
+.cursor/
+railway-vars.local.json
+*.tsbuildinfo
+2026-07-14-command-messageauditorcommand-message.txt
 
 # Backtest caches / outputs
 bots/data/

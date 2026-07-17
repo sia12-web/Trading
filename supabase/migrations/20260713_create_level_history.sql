@@ -2,7 +2,7 @@
 -- Stores identified levels with performance tracking for AI context awareness
 -- 30-day rolling retention with auto-deletion of old records
 
-CREATE TABLE level_history (
+CREATE TABLE IF NOT EXISTS level_history (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,

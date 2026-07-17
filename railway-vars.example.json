@@ -1,0 +1,17 @@
+{
+  "NODE_ENV": "production",
+  "LOG_LEVEL": "info",
+  "DESK_MODE": "single",
+  "DESK_USER_ID": "00000000-0000-0000-0000-000000000001",
+  "CRON_SECRET": "replace-with-long-random-secret",
+  "NEXT_PUBLIC_SUPABASE_URL": "https://YOUR_PROJECT.supabase.co",
+  "NEXT_PUBLIC_SUPABASE_ANON_KEY": "your-anon-key",
+  "SUPABASE_SERVICE_ROLE_KEY": "your-service-role-key",
+  "DATABASE_URL": "postgresql://postgres:PASSWORD@db.YOUR_PROJECT.supabase.co:5432/postgres",
+  "ANTHROPIC_API_KEY": "sk-ant-...",
+  "FINNHUB_API_KEY": "your-finnhub-key",
+  "OANDA_API_KEY": "your-oanda-key",
+  "OANDA_ACCOUNT_ID": "your-oanda-account-id",
+  "OANDA_ENVIRONMENT": "practice",
+  "NEXT_PUBLIC_BASE_URL": "https://YOUR_SERVICE.up.railway.app"
+}

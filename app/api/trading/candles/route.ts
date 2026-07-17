@@ -12,6 +12,7 @@ import { getYahooQuote } from '@/lib/yahoo/quote'
 import { clipAfternoonBars, isLiveDeskInstrument, sessionFor } from '@/lib/trading/sessionGate'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import type { Instrument } from '@/types/price-feed'
+import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -160,7 +161,7 @@ export async function GET(request: Request) {
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Candle fetch failed'
-    console.error('[candles]', message)
+    logger.error('candles.failed', { err: error, message })
     return NextResponse.json({ error: message, candles: [] }, { status: 500 })
   }
 }

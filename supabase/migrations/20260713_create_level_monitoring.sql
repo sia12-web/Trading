@@ -2,7 +2,7 @@
 -- Creates tables for trading levels and monitoring status
 
 -- Create trading_levels table
-CREATE TABLE trading_levels (
+CREATE TABLE IF NOT EXISTS trading_levels (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   instrument TEXT NOT NULL,
@@ -17,32 +17,36 @@ CREATE TABLE trading_levels (
 );
 
 -- Create indexes for fast queries
-CREATE INDEX idx_levels_user_id ON trading_levels(user_id);
-CREATE INDEX idx_levels_user_instrument ON trading_levels(user_id, instrument);
-CREATE INDEX idx_levels_user_instrument_active ON trading_levels(user_id, instrument, is_active);
+CREATE INDEX IF NOT EXISTS idx_levels_user_id ON trading_levels(user_id);
+CREATE INDEX IF NOT EXISTS idx_levels_user_instrument ON trading_levels(user_id, instrument);
+CREATE INDEX IF NOT EXISTS idx_levels_user_instrument_active ON trading_levels(user_id, instrument, is_active);
 
 -- Enable RLS on trading_levels
 ALTER TABLE trading_levels ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for trading_levels
+DROP POLICY IF EXISTS "Users can read own levels" ON trading_levels;
 CREATE POLICY "Users can read own levels"
   ON trading_levels FOR SELECT
   USING (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "Users can create own levels" ON trading_levels;
 CREATE POLICY "Users can create own levels"
   ON trading_levels FOR INSERT
   WITH CHECK (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "Users can update own levels" ON trading_levels;
 CREATE POLICY "Users can update own levels"
   ON trading_levels FOR UPDATE
   USING (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "Users can delete own levels" ON trading_levels;
 CREATE POLICY "Users can delete own levels"
   ON trading_levels FOR DELETE
   USING (user_id = auth.uid());
 
 -- Create level_monitor_status table
-CREATE TABLE level_monitor_status (
+CREATE TABLE IF NOT EXISTS level_monitor_status (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   instrument TEXT NOT NULL,
@@ -53,29 +57,28 @@ CREATE TABLE level_monitor_status (
   last_reconnect_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
-  CONSTRAINT unique_user_instrument ON (user_id, instrument)
+  CONSTRAINT unique_user_instrument UNIQUE (user_id, instrument)
 );
 
 -- Create indexes for monitoring status
-CREATE INDEX idx_monitor_status_user_id ON level_monitor_status(user_id);
-CREATE INDEX idx_monitor_status_user_instrument ON level_monitor_status(user_id, instrument);
+CREATE INDEX IF NOT EXISTS idx_monitor_status_user_id ON level_monitor_status(user_id);
+CREATE INDEX IF NOT EXISTS idx_monitor_status_user_instrument ON level_monitor_status(user_id, instrument);
 
 -- Enable RLS on level_monitor_status
 ALTER TABLE level_monitor_status ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for level_monitor_status
+DROP POLICY IF EXISTS "Users can read own monitoring status" ON level_monitor_status;
 CREATE POLICY "Users can read own monitoring status"
   ON level_monitor_status FOR SELECT
   USING (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "System can update monitoring status" ON level_monitor_status;
 CREATE POLICY "System can update monitoring status"
   ON level_monitor_status FOR UPDATE
   USING (true);
 
+DROP POLICY IF EXISTS "System can insert monitoring status" ON level_monitor_status;
 CREATE POLICY "System can insert monitoring status"
   ON level_monitor_status FOR INSERT
   WITH CHECK (true);
-
--- Seed default levels for each user/instrument combination
--- Note: These will be inserted via application logic, not this migration
--- This ensures each user gets their own copy of default levels

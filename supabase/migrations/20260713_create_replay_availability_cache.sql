@@ -22,4 +22,5 @@ CREATE INDEX IF NOT EXISTS idx_replay_availability_instrument
 CREATE INDEX IF NOT EXISTS idx_replay_availability_date
   ON replay_availability_cache(replay_date DESC);
 
--- No RLS needed - this is public/cached data, not user-specific
+-- Cached Finnhub availability — personal desk (RLS on, desk-wide policies)
+-- See 20260717_rls_personal_desk_caches.sql
