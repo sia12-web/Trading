@@ -582,9 +582,11 @@ function SimulationDeskInner() {
       containerWidth: containerRef.current.clientWidth,
       containerHeight: containerRef.current.clientHeight,
       asOfUnix: simNowRef.current || undefined,
+      instrument,
+      fullHeight: true,
     })
     setSessionRects(rects)
-  }, [])
+  }, [instrument])
 
   /** Keep the sim tip pinned to the right with a readable trailing window. */
   const pinToLatest = useCallback(

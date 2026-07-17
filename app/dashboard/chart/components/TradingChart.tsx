@@ -796,9 +796,11 @@ export function TradingChart({
       priceScaleWidth: priceAxisW,
       containerWidth: containerRef.current.clientWidth,
       containerHeight: containerRef.current.clientHeight,
+      instrument,
+      fullHeight: true,
     })
     setSessionRects(rects)
-  }, [])
+  }, [instrument])
 
   useEffect(() => {
     if (!chartReady || !chartRef.current) return
@@ -1291,7 +1293,7 @@ export function TradingChart({
               backgroundColor: s.color,
               zIndex: s.zIndex,
             }}
-            title={`${s.name} session range`}
+            title={`${s.name} session`}
           />
         ))}
       </div>

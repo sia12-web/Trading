@@ -8,19 +8,19 @@ import type { UTCTimestamp } from 'lightweight-charts'
 
 export const SESSION_STYLES = {
   Asia: {
-    color: 'rgba(56, 189, 248, 0.28)',
+    color: 'rgba(56, 189, 248, 0.18)',
     zIndex: 1,
     line: '#38bdf8',
     short: 'Asia',
   },
   London: {
-    color: 'rgba(250, 204, 21, 0.24)',
+    color: 'rgba(250, 204, 21, 0.16)',
     zIndex: 2,
     line: '#facc15',
     short: 'Lon',
   },
   'New York': {
-    color: 'rgba(74, 222, 128, 0.26)',
+    color: 'rgba(74, 222, 128, 0.16)',
     zIndex: 3,
     line: '#4ade80',
     short: 'NY',
@@ -266,7 +266,9 @@ export function sessionRangeLinePoints(range: SessionRange): {
 }
 
 /**
- * Session color boxes: horizontal span = session time, vertical = session high→low.
+ * Session color boxes: horizontal span = session time.
+ * Vertical: full pane by default so Asia/London stay visible when the price
+ * scale is zoomed to NY (price-bounded boxes used to collapse to height 0).
  * Needs 24h bars (OANDA) for Asia/London to have candles inside those windows.
  */
 export function computeSessionHighlightRects(args: {
@@ -281,6 +283,13 @@ export function computeSessionHighlightRects(args: {
   containerHeight: number
   /** Live = now; sim = sim clock */
   asOfUnix?: number
+  /** DOW/NASDAQ → NY windows; NIKKEI → Tokyo windows */
+  instrument?: string | null
+  /**
+   * true (default): full-pane height columns (session always visible on X).
+   * false: box only covers session high→low (can vanish when price zoomed away).
+   */
+  fullHeight?: boolean
 }): { rects: SessionHighlightRect[]; paneHeight: number } {
   const { candles, timeScale, priceToY } = args
   if (candles.length === 0) return { rects: [], paneHeight: 0 }
@@ -300,12 +309,15 @@ export function computeSessionHighlightRects(args: {
   const paneW = Math.max(args.containerWidth - args.priceScaleWidth, 0)
   const timeAxisH = timeScale.height() || 28
   const paneHeight = Math.max(args.containerHeight - timeAxisH, 0)
+  const useFullHeight = args.fullHeight !== false
+  const isTokyo = args.instrument === 'NIKKEI'
+  const clockTz = isTokyo ? 'Asia/Tokyo' : 'America/New_York'
 
-  const etDayKeys = new Set<string>()
+  const dayKeys = new Set<string>()
   for (const c of bars) {
-    etDayKeys.add(
+    dayKeys.add(
       new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'America/New_York',
+        timeZone: clockTz,
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
@@ -334,17 +346,31 @@ export function computeSessionHighlightRects(args: {
 
     const x1 = timeToX(timeScale, Math.max(startT, firstBarT), candleTimes)
     const x2 = timeToX(timeScale, Math.min(clipEnd, lastBarT), candleTimes)
-    const yHigh = priceToY(high)
-    const yLow = priceToY(low)
-    if (x1 == null || x2 == null || yHigh == null || yLow == null) return
+    if (x1 == null || x2 == null) return
 
     const left = Math.max(Math.min(x1, x2), 0)
     const right = Math.min(Math.max(x1, x2), paneW)
-    const top = Math.max(Math.min(yHigh, yLow), 0)
-    const bottom = Math.min(Math.max(yHigh, yLow), paneHeight)
     const width = right - left
-    const height = bottom - top
-    if (width < 2 || height < 2) return
+    if (width < 2) return
+
+    let top = 0
+    let height = paneHeight
+
+    if (!useFullHeight) {
+      const yHigh = priceToY(high)
+      const yLow = priceToY(low)
+      if (yHigh == null || yLow == null) return
+      top = Math.max(Math.min(yHigh, yLow), 0)
+      const bottom = Math.min(Math.max(yHigh, yLow), paneHeight)
+      height = bottom - top
+      // Price zoom moved this session's range off-screen — keep a time column
+      if (height < 2) {
+        top = 0
+        height = paneHeight
+      }
+    }
+
+    if (height < 2) return
 
     rects.push({
       name,
@@ -365,12 +391,25 @@ export function computeSessionHighlightRects(args: {
     pushSpan(name, startT, endT)
   }
 
-  for (const dayStr of Array.from(etDayKeys).sort()) {
+  for (const dayStr of Array.from(dayKeys).sort()) {
     const [y, m, d] = dayStr.split('-').map(Number)
     const dayAnchor = Math.floor(Date.UTC(y!, m! - 1, d!, 12, 0, 0) / 1000)
     const dow = new Date(`${dayStr}T12:00:00Z`).getUTCDay()
-    // Cash sessions Mon–Fri only; Asia overnight can start Sunday 18:00 ET
     const isCashDay = dow !== 0 && dow !== 6
+
+    if (isTokyo) {
+      // Tokyo desk: overnight (prior 15:00 → 09:00), morning (09:00 → 11:30),
+      // afternoon window exists but live candles clip it — still label if bars exist.
+      if (!isCashDay) continue
+      const overnightStart = sessionEdgeUnix(dayAnchor - 86400, 15, clockTz)
+      const cashOpen = sessionEdgeUnix(dayAnchor, 9, clockTz)
+      const lunch = sessionEdgeUnix(dayAnchor, 11.5, clockTz)
+      const close = sessionEdgeUnix(dayAnchor, 15, clockTz)
+      pushOnce('Asia', overnightStart, cashOpen)
+      pushOnce('London', cashOpen, lunch)
+      pushOnce('New York', lunch, close)
+      continue
+    }
 
     // Asia INTO this civil day (prev 18:00 → day 03:00) — always for weekdays
     if (isCashDay) {
@@ -388,7 +427,6 @@ export function computeSessionHighlightRects(args: {
     }
 
     // Asia AFTER this civil day (day 18:00 → next 03:00).
-    // Critical for live after NY close: Thu 18:00–now must highlight even before Fri bars exist.
     if (isCashDay || dow === 0) {
       const asiaOutStart = sessionEdgeUnix(
         dayAnchor,

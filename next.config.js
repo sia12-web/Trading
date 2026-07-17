@@ -3,11 +3,9 @@ const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
 
-  // Environment variables
-  env: {
-    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-  },
+  // Do NOT put NEXT_PUBLIC_* in `env` here — that inlines build-time values
+  // (often empty on Railway) and breaks runtime even after vars are set.
+  // Next.js already exposes NEXT_PUBLIC_* from the environment.
 
   // Optimize images
   images: {
