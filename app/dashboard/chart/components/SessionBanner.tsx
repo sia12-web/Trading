@@ -46,6 +46,9 @@ function phaseHint(phase: string, message: string): string {
   if (phase === 'FLAT') {
     return 'Morning trading open until lunch — click a level or the chart to place a limit.'
   }
+  if (phase === 'FLAT') {
+    return 'Entry window closed — levels off. Manage if in a trade; AI still updates memory.'
+  }
   if (phase === 'DONE' || phase === 'CLOSED') {
     return message
   }

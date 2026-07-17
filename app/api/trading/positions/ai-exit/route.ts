@@ -19,7 +19,7 @@ interface Body {
 
 export async function POST(request: Request) {
   try {
-    const user = await getOrCreateUser()
+    const user = await getOrCreateUser(request)
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

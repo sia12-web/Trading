@@ -16,7 +16,7 @@ export async function POST(request: Request): Promise<NextResponse<ManagementDec
   try {
     const supabase = await createClient()
     // Development: Use dev user instead of auth
-    const user = await getOrCreateUser()
+    const user = await getOrCreateUser(request)
 
     if (!user) {
       logger.error('POST /api/trading/positions/management-decisions: No user found', {})

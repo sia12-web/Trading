@@ -40,7 +40,7 @@ const createSuccessResponse = (
 
 export async function POST(request: Request): Promise<NextResponse<StopLossHitResponse>> {
   try {
-    const user = await getOrCreateUser()
+    const user = await getOrCreateUser(request)
     if (!user) {
       return NextResponse.json(createErrorResponse('', 'No user found'), { status: 401 })
     }

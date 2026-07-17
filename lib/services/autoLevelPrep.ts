@@ -92,10 +92,16 @@ export async function runAutoLevelPrep(
 
     const user = await getOrCreateUser()
     if (!user) {
-      return { ok: false, instrument, levels: 0, error: 'No user for auto prep' }
+      return {
+        ok: false,
+        instrument,
+        levels: 0,
+        error: 'No desk user — set DESK_MODE=single or configure Supabase Auth',
+      }
     }
 
-    const supabase = await createClient()
+    const { createAdminClient } = await import('@/lib/supabase/admin')
+    const supabase = createAdminClient() ?? (await createClient())
     const sessionId = await ensureDeskSession(supabase, user.id, instrument)
     if (!sessionId) {
       return { ok: false, instrument, levels: 0, error: 'Could not create desk session' }

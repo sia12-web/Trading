@@ -244,7 +244,7 @@ async function fetchHistoricalContext(supabase: SupabaseClient<any>, userId: str
 export async function GET(request: NextRequest) {
   try {
     // Development: Use dev user instead of auth
-    const user = await getOrCreateUser()
+    const user = await getOrCreateUser(request)
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -320,7 +320,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     // Development: Use dev user instead of auth
-    const user = await getOrCreateUser()
+    const user = await getOrCreateUser(request)
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

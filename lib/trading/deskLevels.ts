@@ -3,9 +3,14 @@
  * the simulation desk so a level means the same thing everywhere:
  * same AI query, same structure fallback, same reasoning carried through.
  *
- * Next-day memory rule: only yesterday's range + overnight matter.
- * Levels are NEVER the obvious session high/low — those are retail bait
- * that big money sweeps. We place at sweep-exhaustion beyond them.
+ * LIQUIDITY MODEL (non-negotiable):
+ * Big money enters WHERE RETAIL PUTS STOPS — not at the obvious buy/sell
+ * lines retail uses. Retail buys support → stops sit BELOW it; retail
+ * shorts resistance → stops sit ABOVE it. Desks hunt that stop liquidity
+ * to fill size. Our levels = those stop pools (just beyond Asia/London/
+ * prior-day extremes), never the bait extremes themselves.
+ *
+ * Next-day memory: only yesterday's range + overnight matter.
  */
 
 import { hourInTz, SESSION_WINDOWS, type SessionName } from '@/lib/chart/sessionVwap'
@@ -49,16 +54,21 @@ export const LEVEL_ZONE_PCT = 0.0012
 export const ZONE_STOP_BUFFER_PCT = 0.001
 
 /**
- * How far BEYOND an obvious high/low we place the institutional level.
- * Floor = 0.10% of price; also at least ~15% of yesterday's range so
- * London/Asia range extremes get swept before our zone.
+ * How far into the retail STOP POOL (past the obvious high/low) we place
+ * the institutional entry. Stops cluster just beyond the bait — that is
+ * the liquidity desks hunt. Floor ≈ 0.065% of price; also ≥ ~8% of
+ * yesterday's range (typical wick-through on indices).
  */
-export const SWEEP_EXHAUST_PCT = 0.001
-export const SWEEP_RANGE_FRAC = 0.15
+export const LIQUIDITY_OFFSET_PCT = 0.00065
+export const LIQUIDITY_RANGE_FRAC = 0.08
+/** @deprecated use LIQUIDITY_OFFSET_PCT — kept for any external imports */
+export const SWEEP_EXHAUST_PCT = LIQUIDITY_OFFSET_PCT
+/** @deprecated use LIQUIDITY_RANGE_FRAC */
+export const SWEEP_RANGE_FRAC = LIQUIDITY_RANGE_FRAC
 /**
  * Magnet width around a bait extreme. Anything inside this band is treated
- * as "sitting on the obvious London/Asia high/low" — including retail shorts
- * just under the high and buys just above the low.
+ * as "sitting on the obvious London/Asia high/low" (retail ENTRY), not the
+ * stop pool beyond it where institutions enter.
  */
 export const OBVIOUS_LEVEL_TOL_PCT = 0.0018
 /** Merge two bait extremes / levels closer than this fraction of price. */
@@ -131,9 +141,10 @@ function rangeOf(bars: DeskBar[]): { hi: number; lo: number } | null {
   return { hi, lo }
 }
 
-function sweepDepth(price: number, rangeHi: number, rangeLo: number): number {
-  const fromPct = price * SWEEP_EXHAUST_PCT
-  const fromRange = Math.max(0, rangeHi - rangeLo) * SWEEP_RANGE_FRAC
+/** Distance from bait extreme into the retail stop / liquidity pool. */
+function liquidityDepth(price: number, rangeHi: number, rangeLo: number): number {
+  const fromPct = price * LIQUIDITY_OFFSET_PCT
+  const fromRange = Math.max(0, rangeHi - rangeLo) * LIQUIDITY_RANGE_FRAC
   return Math.max(fromPct, fromRange)
 }
 
@@ -204,8 +215,9 @@ function dedupeBaits(baits: BaitExtreme[], refPrice: number): BaitExtreme[] {
 }
 
 /**
- * Asia / London / overnight / prior-day highs & lows — the stop clusters
- * desks intentionally run. These are BAIT, not trade entries.
+ * Asia / London / overnight / prior-day highs & lows — retail ENTRY bait.
+ * Retail stops sit just beyond these. Desks hunt those stops for liquidity;
+ * the bait extremes themselves are NOT our entries.
  */
 export function collectBaitExtremes(
   candles: DeskBar[],
@@ -287,7 +299,7 @@ export function collectBaitExtremes(
   }
 
   const depth = Math.max(
-    sweepDepth(yRange.hi, yRange.hi, yRange.lo),
+    liquidityDepth(yRange.hi, yRange.hi, yRange.lo),
     recentSweepWickDepth(sessionBars)
   )
 
@@ -325,9 +337,9 @@ function nearestBait(
 }
 
 /**
- * Structure levels: NEVER the naked session high/low (Asia/London/NY range
- * extremes are where retail stops cluster — big money runs those on purpose).
- * Place at sweep-exhaustion BEYOND those bait levels + impulse origins.
+ * Structure levels = retail STOP POOLS (liquidity), not retail entries.
+ * Retail shorts at the high → stops ABOVE → institutions sell into that pool.
+ * Retail buys at the low → stops BELOW → institutions buy into that pool.
  */
 export function structureLevelsFromCandles(
   candles: DeskBar[],
@@ -348,7 +360,7 @@ export function structureLevelsFromCandles(
     return true
   }
 
-  // One sweep-exhaustion short zone ABOVE each distinct bait high
+  // SHORT liquidity: retail stop cluster ABOVE each bait high
   for (const b of baits.filter((x) => x.kind === 'high')) {
     const px = roundPx(b.price + depth)
     if (!take(px)) continue
@@ -356,12 +368,12 @@ export function structureLevelsFromCandles(
       level: px,
       type: 'resistance',
       conviction: b.label.includes('London') || b.label.includes('Asia') ? 9 : 8,
-      reasoning: `Sweep-exhaustion ABOVE ${b.label} ${roundPx(b.price)} — stops above get run on purpose; real supply sits ~${roundPx(depth)} beyond the bait.`,
+      reasoning: `Liquidity ABOVE ${b.label} ${roundPx(b.price)} — retail shorts park stops here; big money sells into that stop pool (~${roundPx(depth)} past the bait), not at the obvious high.`,
       source: 'structure',
     })
   }
 
-  // One sweep-exhaustion long zone BELOW each distinct bait low
+  // LONG liquidity: retail stop cluster BELOW each bait low
   for (const b of baits.filter((x) => x.kind === 'low')) {
     const px = roundPx(b.price - depth)
     if (!take(px)) continue
@@ -369,7 +381,7 @@ export function structureLevelsFromCandles(
       level: px,
       type: 'support',
       conviction: b.label.includes('London') || b.label.includes('Asia') ? 9 : 8,
-      reasoning: `Sweep-exhaustion BELOW ${b.label} ${roundPx(b.price)} — liquidity grab under the range then reverse; demand sits ~${roundPx(depth)} beyond.`,
+      reasoning: `Liquidity BELOW ${b.label} ${roundPx(b.price)} — retail longs park stops here; big money buys into that stop pool (~${roundPx(depth)} past the bait), not at the obvious low.`,
       source: 'structure',
     })
   }
@@ -451,8 +463,8 @@ export function structureLevelsFromCandles(
 }
 
 /**
- * If AI returned a level glued to an obvious Asia/London/prior high/low,
- * nudge it to sweep exhaustion beyond that bait — same rule as structure.
+ * If AI returned a retail ENTRY (on the obvious high/low), move it to the
+ * retail STOP POOL beyond that bait — where institutions enter for liquidity.
  */
 export function deObviousLevels(
   levels: DeskLevel[],
@@ -477,7 +489,7 @@ export function deObviousLevels(
       return {
         ...l,
         level: nudged,
-        reasoning: `${l.reasoning ? l.reasoning + ' · ' : ''}Nudged ABOVE ${bait.label} ${roundPx(bait.price)} — shorts AFTER the stop-run, not at the obvious session high.`,
+        reasoning: `${l.reasoning ? l.reasoning + ' · ' : ''}Moved to stop liquidity ABOVE ${bait.label} ${roundPx(bait.price)} — big money shorts WHERE retail stops sit, not at the obvious high.`,
       }
     }
 
@@ -486,7 +498,7 @@ export function deObviousLevels(
     return {
       ...l,
       level: nudged,
-      reasoning: `${l.reasoning ? l.reasoning + ' · ' : ''}Nudged BELOW ${bait.label} ${roundPx(bait.price)} — longs AFTER the liquidity grab, not at the obvious range low.`,
+      reasoning: `${l.reasoning ? l.reasoning + ' · ' : ''}Moved to stop liquidity BELOW ${bait.label} ${roundPx(bait.price)} — big money buys WHERE retail stops sit, not at the obvious low.`,
     }
   })
 }

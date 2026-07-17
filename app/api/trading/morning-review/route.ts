@@ -14,7 +14,6 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { validateLevelsAgainstMarket } from '@/lib/services/levelValidation'
 import { getESTDateString } from '@/lib/utils/timeUtils'
 import { deskMarketFor, isDeskInstrument, sessionFor } from '@/lib/trading/sessionGate'
@@ -69,7 +68,12 @@ async function resolveInstrument(
 
 async function runMorningReview(request: NextRequest) {
   try {
-    const user = await getOrCreateUser()
+    const { assertCronOrDeskUser, resolveDeskUser } = await import('@/lib/utils/devAuth')
+    if (!(await assertCronOrDeskUser(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const user = await resolveDeskUser(request)
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

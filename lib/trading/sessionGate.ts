@@ -331,18 +331,18 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   }
 
   if (t >= open && t < lunch) {
-    const inFirst45 = t <= entryClose
+    const inEntryWindow = t <= entryClose
     return {
       ...base,
-      phase: inFirst45 ? 'ENTRY' : 'FLAT',
+      phase: inEntryWindow ? 'ENTRY' : 'FLAT',
       canViewLiveChart: canView,
       canFetchLiveBars: true,
-      // Morning trading: place limits anytime from open → lunch while flat
-      canPlaceEntry: true,
+      // Entries ONLY until entryClose (10:15 ET / 09:45 JST). After that: no new levels/orders.
+      canPlaceEntry: inEntryWindow,
       canManagePosition: false,
-      message: inFirst45
-        ? `Entry window — click a ${locked} level (or the chart) to place a limit.`
-        : `Morning trading — click a ${locked} level (or the chart) to place a limit until lunch.`,
+      message: inEntryWindow
+        ? `Entry window — click a ${locked} level to place a working limit (until ${s.entryClose.slice(0, 5)}).`
+        : `Entry window closed (${s.entryClose.slice(0, 5)}). Levels cleared — manage an open position if you have one; otherwise wait for lunch. AI still updates level memory in the background.`,
     }
   }
 
@@ -428,12 +428,15 @@ export function resolveSimMorningGate(input: {
   }
 
   if (t < lunch) {
+    const inEntry = t <= entryClose
     return {
       ...base,
-      phase: t <= entryClose ? 'ENTRY' : 'FLAT',
-      canPlaceEntry: true,
+      phase: inEntry ? 'ENTRY' : 'FLAT',
+      canPlaceEntry: inEntry,
       canManagePosition: false,
-      message: `Morning trading — click a ${instrument} level to place a limit until lunch.`,
+      message: inEntry
+        ? `Entry window — click a ${instrument} level to place a working limit.`
+        : `Entry window closed. Levels off — manage if in a trade; otherwise wait for lunch.`,
     }
   }
 

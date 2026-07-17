@@ -92,7 +92,7 @@ export async function POST(request: Request): Promise<NextResponse<any>> {
       )
     }
 
-    const user = await getOrCreateUser()
+    const user = await getOrCreateUser(request)
 
     if (!user) {
       logger.error('POST /api/trading/replays: Unauthorized')
@@ -264,7 +264,7 @@ export async function GET(request: Request): Promise<NextResponse<any>> {
     }
 
     const supabase = await createClient()
-    const user = await getOrCreateUser()
+    const user = await getOrCreateUser(request)
 
     if (!user) {
       logger.error('GET /api/trading/replays: Unauthorized')

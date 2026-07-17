@@ -33,7 +33,7 @@ export async function GET(request: Request): Promise<NextResponse<any>> {
 
     const instrument = instrumentParam
     const supabase = await createClient()
-    const user = await getOrCreateUser()
+    const user = await getOrCreateUser(request)
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

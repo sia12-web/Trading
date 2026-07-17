@@ -19,7 +19,6 @@ import type {
   StoredLevel,
   Candle,
   ClaudeUsage,
-  ArchiveRequest,
   AnalysisRequestWithContext,
   HistoricalContext,
 } from './types'
@@ -198,9 +197,9 @@ class LevelFinderAgent {
   }
 
   private async archiveLevels(insertedLevels: any[], sessionId: string): Promise<void> {
-    const supabase = await createClient()
+    const { createAdminClient } = await import('@/lib/supabase/admin')
+    const supabase = createAdminClient() ?? (await createClient())
 
-    // Fetch session to get instrument
     const { data: sessionData, error: sessionError } = await supabase
       .from('sessions')
       .select('user_id, index_recommendation')
@@ -212,65 +211,63 @@ class LevelFinderAgent {
       throw new Error('Failed to fetch session for archival')
     }
 
-    const instrument = sessionData.index_recommendation // DOW, NASDAQ, NIKKEI
+    const userId = sessionData.user_id as string
+    const instrument = sessionData.index_recommendation as 'DOW' | 'NASDAQ' | 'NIKKEI'
     if (!instrument) {
-      console.error('[Level Finder] Session has no instrument')
       throw new Error('Session missing instrument')
     }
 
-    // Prepare archive payload
-    const archivePayload: ArchiveRequest = {
-      session_id: sessionId,
-      instrument: instrument as 'DOW' | 'NASDAQ' | 'NIKKEI',
-      levels: insertedLevels.map((level) => ({
+    const { data: existingLevels, error: fetchError } = await supabase
+      .from('level_history')
+      .select('id, level, tested_count')
+      .eq('user_id', userId)
+      .eq('instrument', instrument)
+
+    if (fetchError) {
+      throw new Error(`Failed to load level_history: ${fetchError.message}`)
+    }
+
+    const existing = existingLevels ?? []
+    const DUP_THRESHOLD = 50
+    let archived = 0
+    let duplicates = 0
+
+    for (const level of insertedLevels) {
+      const dup = existing.find((e) => Math.abs(Number(e.level) - Number(level.level)) <= DUP_THRESHOLD + 0.01)
+      if (dup) {
+        duplicates++
+        await supabase
+          .from('level_history')
+          .update({
+            tested_count: (Number(dup.tested_count) || 0) + 1,
+            last_tested_date: new Date().toISOString(),
+          })
+          .eq('id', dup.id)
+        continue
+      }
+
+      const { error: insertError } = await supabase.from('level_history').insert({
+        user_id: userId,
+        session_id: sessionId,
+        instrument,
         level: level.level,
         type: level.type,
         conviction: level.conviction,
         reasoning: level.reasoning,
         timeframe: level.timeframe,
-      })),
+        tested_count: 1,
+        success_count: 0,
+        last_tested_date: null,
+      })
+
+      if (insertError) {
+        console.error('[Level Finder] level_history insert failed:', insertError)
+        continue
+      }
+      archived++
     }
 
-    // Call archive endpoint
-    try {
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL
-      if (!baseUrl) {
-        throw new Error('NEXT_PUBLIC_BASE_URL environment variable is not set')
-      }
-
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 5000) // 5-second timeout
-
-      try {
-        const response = await fetch(`${baseUrl}/api/levels/archive`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(archivePayload),
-          signal: controller.signal as any,
-        })
-
-        if (!response.ok) {
-          const error = await response.json()
-          console.warn('[Level Finder] Archive endpoint returned error:', error)
-          throw new Error(`Archive failed: ${error.error || 'Unknown error'}`)
-        }
-
-        const result = await response.json()
-        console.log('[Level Finder] Levels archived successfully:', {
-          archived: result.archived_count,
-          duplicates: result.duplicate_count,
-        })
-      } finally {
-        clearTimeout(timeoutId)
-      }
-    } catch (fetchError) {
-      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-        console.error('[Level Finder] Archive request timeout (exceeded 5 seconds)')
-        throw new Error('Archive request timeout')
-      }
-      console.error('[Level Finder] Archival network error:', fetchError)
-      throw fetchError
-    }
+    console.log('[Level Finder] Levels archived in-process:', { archived, duplicates })
   }
 
   private buildSystemPrompt(
@@ -284,23 +281,25 @@ class LevelFinderAgent {
     const tzLabel = index === 'NIKKEI' ? 'JST' : 'ET'
     const marketLabel = index === 'NIKKEI' ? 'Tokyo' : 'NY'
 
-    const basePrompt = `You are a senior institutional trader who runs execution for a large desk. You do NOT think like a retail trader — you think about where retail traders will be positioned, because their stops and entries are the liquidity your desk uses to fill size.
+    const basePrompt = `You are a senior institutional trader who runs execution for a large desk. You do NOT think like a retail trader — you think about where retail traders put their STOPS, because that stop liquidity is where your desk ENTERS to fill size.
 
 You are analyzing ${index}. Use the SAME methodology for DOW, NASDAQ, and NIKKEI — only the session clock differs (see DESK CADENCE).
 
-CORE PHILOSOPHY — THINK LIKE THE MANIPULATOR, NOT THE VICTIM:
-- You are modeling where SMART MONEY engineers liquidity, not where retail draws horizontal lines.
-- Asia session highs/lows and London session highs/lows are the MOST obvious bait on the chart. Big desks INTENTIONALLY push price through those extremes to trigger stops, then reverse. NEVER return the exact Asia/London/prior-day high or low as a tradeable level.
-- The real institutional level is where that stop-run EXHAUSTS — typically a measured distance beyond the bait (recent wick depth past the swing, or ~0.08–0.15% of price / ~10–15% of yesterday's range). Shorts live ABOVE the obvious high; longs live BELOW the obvious low.
-- Prefer: (1) sweep-exhaustion beyond equal highs/lows or session range extremes, (2) unmitigated impulse origins (where the real move started, not where it peaked), (3) absorption / initiative volume bars, (4) AVWAP band confluence — never naked session highs/lows or round numbers.
-- A "short at London high" or "buy at Asia low" idea is retail. Reject it. Ask: where do their stops sit, and where does the engineered run die?
+CORE PHILOSOPHY — BIG MONEY ENTERS AT RETAIL STOP LOSS LIQUIDITY:
+- Institutions are constantly hunting liquidity. The deepest, easiest liquidity is retail stop-loss clusters.
+- Retail BUYS the obvious support (Asia/London/prior-day low) → their stops sit BELOW that low. Big money BUYS into those stops.
+- Retail SHORTS the obvious resistance (Asia/London/prior-day high) → their stops sit ABOVE that high. Big money SELLS into those stops.
+- Therefore: NEVER return the exact Asia/London/prior-day high or low as a tradeable level — that is where retail ENTERS. Your level is WHERE THEIR STOPS SIT (just beyond the bait).
+- Offset: typically ~0.05–0.12% of price (or ~6–10% of yesterday's range / a measured wick-through) past the bait into the stop pool.
+- Prefer: (1) stop-liquidity pools beyond equal highs/lows or session extremes, (2) unmitigated impulse origins, (3) absorption / initiative volume, (4) AVWAP confluence — never naked session highs/lows or round numbers.
+- Ask every time: "Where did retail put stops?" That answer IS your entry zone. "Short the London high" / "buy the Asia low" is retail — reject it.
 
 WHAT TO LOOK FOR IN THE CANDLES:
 1. Origins of impulse — the last down-candle before a strong rally (demand) or last up-candle before a strong drop (supply), especially if price hasn't returned there yet.
-2. Sweep zones — clusters of equal highs/lows OR Asia/London/prior-day extremes: mark the level BEYOND the bait where the stop-run would exhaust, then reverse. Say so in the reasoning.
+2. Liquidity / stop pools — clusters of equal highs/lows OR Asia/London/prior-day extremes: mark the price JUST BEYOND the bait where retail stops live. That is where desks enter. Say so in the reasoning.
 3. Volume anomalies — bars with outsized volume and small range (absorption) or wide range closing near the extreme (initiative).
-4. Rejection quality — one strong wick WITH follow-through through the bait beats many weak touches AT the bait.
-5. VWAP/AVWAP — institutions benchmark to it; ±2σ/±3σ extremes often mean-revert after a sweep of a session extreme.
+4. Rejection quality — one strong wick THROUGH the bait into stops WITH follow-through beats many weak touches AT the bait.
+5. VWAP/AVWAP — institutions benchmark to it; ±2σ/±3σ extremes often mean-revert after a stop-hunt through a session extreme.
 
 DESK CADENCE (your levels live inside this rhythm — ${marketLabel} clock for ${index}):
 - You call levels pre-open from YESTERDAY'S range + overnight only. Older multi-day level history is discarded — the next session does not care about last week's levels.
@@ -315,14 +314,14 @@ THE MARKET IS THE FINAL JUDGE (non-negotiable):
 - A level respected on high volume is confirmed institutional interest; re-using it with evidence is good practice, but expect the crowd to see it too on the third+ touch — the sweep risk grows every retest.
 
 LEVELS ARE ZONES, NOT LINES:
-- Every level you return is treated by the desk as a zone of ±0.12% around your price, with the stop placed beyond the zone's far edge. So do not agonize over exactness to the tick — return the DEFENDED EDGE of the institutional zone: for support the price where resting demand starts (upper edge of accumulation), for resistance where supply starts.
-- Choose the price such that a stop just beyond the zone survives one liquidity sweep. If your zone's far side sits exactly at an obvious retail stop cluster, shift the level so the cluster falls INSIDE the zone, not beyond it.
+- Every level you return is treated by the desk as a zone of ±0.12% around your price, with the stop placed beyond the zone's far edge. So do not agonize over exactness to the tick — return the DEFENDED EDGE of the institutional zone: for support the price where resting demand starts (inside the buy-side stop pool), for resistance where supply starts (inside the sell-side stop pool).
+- The retail stop cluster should sit INSIDE your zone (that is the liquidity), not outside it. Your protective stop sits beyond the far edge of that zone.
 
 REASONING REQUIREMENTS (critical):
-- Each level's reasoning MUST be specific to THAT level and cite evidence from the provided candles (e.g. "origin of the 09:35 impulse, unmitigated, high-volume bar" or "equal lows at 44,120/44,118 — expect sweep to ~44,085 then reversal").
+- Each level's reasoning MUST be specific to THAT level and cite evidence from the provided candles (e.g. "retail longs stop under equal lows 44,120 — liquidity buy ~44,085" or "retail shorts stop above London high — sell liquidity there").
 - Never write generic reasoning like "strong support" or "round number". If two levels would have the same reasoning, drop the weaker one.
-- Say explicitly which side of the crowd the level exploits (e.g. "retail stops below the double bottom feed longs here").
-- Conviction reflects evidence quality: 8-10 only for unmitigated origin + volume + confluence; 5-7 single strong signal; below 5 don't include it.`
+- Say explicitly which retail stop pool you are targeting (e.g. "buy where stops under Asia low get taken").
+- Conviction reflects evidence quality: 8-10 only for clear stop-pool + volume/confluence; 5-7 single strong signal; below 5 don't include it.`
 
     if (!historicalContext || historicalContext.levels.length === 0) {
       // No historical context available, use base prompt
@@ -330,7 +329,7 @@ REASONING REQUIREMENTS (critical):
 
 Return ONLY valid JSON array. No additional text. Example:
 [
-  {"level": 40287.50, "type": "resistance", "conviction": 8, "reasoning": "Sweep-exhaustion zone 37pts above equal highs at 40250 — retail breakout buyers and short stops provide exit liquidity; last touch rejected on 2x avg volume", "timeframe": "4H"},
+  {"level": 40287.50, "type": "resistance", "conviction": 8, "reasoning": "Retail shorts stop ~37pts above equal highs at 40250 — sell into that stop liquidity; last touch rejected on 2x avg volume", "timeframe": "4H"},
   {"level": 40062.00, "type": "support", "conviction": 7, "reasoning": "Unmitigated origin of the strongest H1 rally in the data (wide-range bar, close at high); price has not returned since — resting demand likely", "timeframe": "H1"}
 ]`
     }
@@ -366,14 +365,14 @@ ${unreliableLevelsList ? `Levels the market REJECTED (price broke through — yo
 HOW TO USE THIS:
 1. The rejected levels are the market telling you where your model fails — do not resubmit them on the same side. If one is still relevant, flip it (broken support → resistance) and say so.
 2. The respected levels show where real defense exists — levels with similar structural evidence deserve weight.
-3. If your hold rate is below ~50%, your recent bias is off: lean harder on sweep-exhaustion and unmitigated origins, less on classic horizontal lines.
+3. If your hold rate is below ~50%, your recent bias is off: lean harder on retail stop-pool liquidity and unmitigated origins, less on classic horizontal lines.
 4. Calibrate conviction to this record — do not assign 8+ if the market has been rejecting your 8s.`
 
     return basePrompt + historicalSection + `
 
 Return ONLY valid JSON array. No additional text. Example:
 [
-  {"level": 40287.50, "type": "resistance", "conviction": 8, "reasoning": "Sweep-exhaustion zone 37pts above equal highs at 40250 — retail breakout buyers and short stops provide exit liquidity; last touch rejected on 2x avg volume", "timeframe": "4H"},
+  {"level": 40287.50, "type": "resistance", "conviction": 8, "reasoning": "Retail shorts stop ~37pts above equal highs at 40250 — sell into that stop liquidity; last touch rejected on 2x avg volume", "timeframe": "4H"},
   {"level": 40062.00, "type": "support", "conviction": 7, "reasoning": "Unmitigated origin of the strongest H1 rally in the data (wide-range bar, close at high); price has not returned since — resting demand likely", "timeframe": "H1"}
 ]`
   }
@@ -421,7 +420,7 @@ Return ONLY valid JSON array. No additional text. Example:
 How to use it:
 - Any "vwap"-type level you return must reference THESE values (AVWAP or a band), not your own estimate.
 - AVWAP itself is an institutional benchmark — pullbacks that defend it are desk buying/selling, and ±2σ/±3σ extremes tend to mean-revert toward AVWAP.
-- Confluence between a structural level (sweep-exhaustion, impulse origin) and AVWAP or a band raises conviction; note the confluence explicitly in the reasoning.
+- Confluence between a structural level (retail stop-pool liquidity, impulse origin) and AVWAP or a band raises conviction; note the confluence explicitly in the reasoning.
 `
   }
 
@@ -448,16 +447,16 @@ ${formatDailyCandles}
 ${formatH1Candles}
 ${vwapSection}
 Work through this before choosing levels:
-1. Where are retail traders positioned right now (obvious support/resistance, round numbers, prior day high/low)? Where do their stops cluster?
-2. Which of those clusters is most likely to get swept for liquidity, and where would that sweep exhaust?
-3. Where are the unmitigated impulse origins (demand/supply) that price has not yet returned to?
-4. Which levels show absorption or initiative volume in the data above?
+1. Where are retail traders ENTERING right now (obvious support/resistance, Asia/London highs/lows, round numbers)?
+2. WHERE DID THEY PUT THEIR STOP LOSSES relative to those entries? That stop cluster IS the liquidity.
+3. Which stop pool is most likely to get hunted next for a fill — and that price is YOUR level (buy below bait lows / sell above bait highs).
+4. Where are unmitigated impulse origins, and which levels show absorption / initiative volume?
 
-Then identify 2-5 levels where INSTITUTIONAL orders likely sit — not where retail is looking. Rules:
-- HARD BAN: do NOT return yesterday's exact high/low, overnight exact high/low, Asia/London session high/low, or a round number. If that zone matters, return the sweep-exhaustion price BEYOND it and say which bait you are fading.
-- Especially: NEVER short the London session high or buy the Asia/London session low. Those are engineered stop magnets. Shorts belong ABOVE the London/Asia high after the sweep; longs belong BELOW the Asia/London low after the grab.
-- Offset guide: place ~0.10–0.20% of price (or ~12–18% of yesterday's range) beyond the bait extreme you are fading.
-- Each reasoning must cite specific evidence (time, wick through bait, volume) and name the retail stops being hunted.
+Then identify 2-5 levels where INSTITUTIONS ENTER — i.e. retail stop-loss liquidity pools. Rules:
+- HARD BAN: do NOT return yesterday's exact high/low, overnight exact high/low, Asia/London session high/low, or a round number. Those are retail entries. Return the stop-pool price JUST BEYOND them and name which stops you are targeting.
+- Especially: NEVER short the London session high or buy the Asia/London session low. Short ABOVE that high (into short-stops); buy BELOW that low (into long-stops).
+- Offset guide: ~0.05–0.12% of price (or ~6–10% of yesterday's range) past the bait into the stop pool.
+- Each reasoning must cite evidence and say explicitly: "retail stops at X — institutional entry into that liquidity."
 - If two candidate levels are within 0.3% of each other, keep only the stronger one.
 
 For each level provide:

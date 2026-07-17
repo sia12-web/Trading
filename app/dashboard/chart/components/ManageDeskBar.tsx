@@ -116,7 +116,10 @@ export function ManageDeskBar({ position, currentPrice, onClosed, onRefreshGate 
             position_id: position.id,
             instrument: position.instrument,
             exit_price: exitPrice,
-            exit_reason: hitSl ? 'stop_hit' : 'manual',
+            exit_reason: hitSl ? 'stop_hit' : 'take_profit',
+            reason: hitSl
+              ? `Stop loss hit — price reached ${exitPrice}`
+              : `Take profit hit — price reached ${exitPrice}`,
           }),
         })
         if (cancelled) return
@@ -178,7 +181,10 @@ export function ManageDeskBar({ position, currentPrice, onClosed, onRefreshGate 
             position_id: position.id,
             instrument: position.instrument,
             exit_price: exitPrice,
-            exit_reason: 'manual',
+            exit_reason: 'take_profit',
+            reason: ai?.reason
+              ? `Manual take profit — ${ai.reason}`
+              : `Manual take profit at ${exitPrice}`,
           }),
         })
         const closeJson = await closeRes.json()

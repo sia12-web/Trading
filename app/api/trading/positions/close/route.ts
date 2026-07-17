@@ -36,7 +36,7 @@ export async function POST(request: Request): Promise<NextResponse<ClosePosition
     }
 
     // Validate exit reason
-    if (!['stop_hit', 'manual', 'lunch_close', 'ai_signal'].includes(body.exit_reason)) {
+    if (!['stop_hit', 'manual', 'lunch_close', 'ai_signal', 'take_profit'].includes(body.exit_reason)) {
       logger.error('POST /api/trading/positions/close: Invalid exit reason', {
         reason: body.exit_reason,
       })
@@ -80,17 +80,38 @@ export async function POST(request: Request): Promise<NextResponse<ClosePosition
     }
 
     const supabase = await createClient()
+    const { resolveDeskUser } = await import('@/lib/utils/devAuth')
+    const user = await resolveDeskUser(request)
+    if (!user) {
+      return NextResponse.json(
+        {
+          success: false,
+          position_id: body.position_id || '',
+          instrument: body.instrument,
+          exit_price: body.exit_price || 0,
+          entry_price: 0,
+          position_size: 0,
+          profit_loss: 0,
+          profit_loss_percent: 0,
+          exit_reason: body.exit_reason || 'manual',
+          message: 'Unauthorized',
+        },
+        { status: 401 }
+      )
+    }
+
     const positionManager = getPositionManager()
 
     // Get today's date (EST)
     const today = getESTDateString()
     const closeTime = new Date().toISOString()
 
-    // Query open position
+    // Query open position owned by this desk user
     const { data: position, error: queryError } = await supabase
       .from('trades_journal')
       .select('*')
       .eq('id', body.position_id)
+      .eq('user_id', user.id)
       .is('exit_timestamp', null)
       .maybeSingle()
 
@@ -141,17 +162,59 @@ export async function POST(request: Request): Promise<NextResponse<ClosePosition
     )
 
     // Update position with closure details
-    const { error: updateError } = await supabase
+    const exitNotes =
+      body.reason ||
+      (body.exit_reason === 'stop_hit'
+        ? `Stop loss hit at ${body.exit_price}`
+        : body.exit_reason === 'take_profit'
+          ? `Take profit hit at ${body.exit_price}`
+          : body.exit_reason === 'ai_signal'
+            ? `AI exit at ${body.exit_price}`
+            : `Closed via ${body.exit_reason} at ${body.exit_price}`)
+
+    const updatePayload: Record<string, unknown> = {
+      exit_timestamp: closeTime,
+      exit_price: body.exit_price,
+      exit_reason: body.exit_reason,
+      exit_notes: exitNotes,
+      profit_loss: pnl.profitLoss,
+      profit_loss_percent: pnl.profitLossPercent,
+      updated_at: closeTime,
+    }
+    if (body.exit_reason === 'stop_hit') {
+      updatePayload.stop_loss_hit_at = closeTime
+      updatePayload.stop_loss_hit_count = (position.stop_loss_hit_count || 0) + 1
+    }
+
+    let { error: updateError } = await supabase
       .from('trades_journal')
-      .update({
+      .update(updatePayload)
+      .eq('id', body.position_id)
+      .eq('user_id', user.id)
+
+    // Soft-fallback if take_profit / exit_notes columns not migrated yet
+    if (updateError && /take_profit|exit_notes|exit_reason/i.test(updateError.message || '')) {
+      const fallback = {
         exit_timestamp: closeTime,
         exit_price: body.exit_price,
-        exit_reason: body.exit_reason,
+        exit_reason: body.exit_reason === 'take_profit' ? 'manual' : body.exit_reason,
         profit_loss: pnl.profitLoss,
         profit_loss_percent: pnl.profitLossPercent,
         updated_at: closeTime,
-      })
-      .eq('id', body.position_id)
+        ...(body.exit_reason === 'stop_hit'
+          ? {
+              stop_loss_hit_at: closeTime,
+              stop_loss_hit_count: (position.stop_loss_hit_count || 0) + 1,
+            }
+          : {}),
+      }
+      const retry = await supabase
+        .from('trades_journal')
+        .update(fallback)
+        .eq('id', body.position_id)
+        .eq('user_id', user.id)
+      updateError = retry.error
+    }
 
     if (updateError) {
       logger.error('POST /api/trading/positions/close: Update failed', { error: updateError })

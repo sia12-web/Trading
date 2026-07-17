@@ -27,6 +27,10 @@ interface OpenPositionRequest {
   entry_source?: 'chart_level' | 'auto_deep'
   /** Zone-based stop (beyond the level's zone edge); omit for default ±5% */
   stop_loss_price?: number
+  /** Planned take-profit at fill */
+  profit_target_price?: number
+  /** Why we entered (liquidity thesis / level reasoning) — journaled */
+  entry_reason?: string
 }
 
 export async function POST(request: Request): Promise<NextResponse<PositionOpenResponse>> {
@@ -34,17 +38,15 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
     const body = (await request.json()) as OpenPositionRequest
     const supabase = await createClient()
 
-    // Development-friendly auth (same as other desk routes)
-    let user = null as { id: string } | null
+    // Auth: Supabase session, or DESK_MODE=single / DESK_SECRET (never invent user in locked prod)
     const {
       data: { user: authUser },
       error: authError,
     } = await supabase.auth.getUser()
-    if (!authError && authUser) {
-      user = authUser
-    } else {
-      const { getOrCreateUser } = await import('@/lib/utils/devAuth')
-      user = await getOrCreateUser()
+    let user = authUser as { id: string } | null
+    if (!user) {
+      const { resolveDeskUser } = await import('@/lib/utils/devAuth')
+      user = await resolveDeskUser(request)
     }
 
     if (!user) {
@@ -482,6 +484,11 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       regime_confidence: body.regime_confidence,
       best_level_break_confidence: body.best_level_break_confidence || null,
       best_break_level: body.best_break_level || null,
+      profit_target_price: body.profit_target_price ?? null,
+      entry_reason:
+        typeof body.entry_reason === 'string' && body.entry_reason.trim()
+          ? body.entry_reason.trim().slice(0, 2000)
+          : `Chart ${body.entry_direction} at level ${body.best_break_level ?? body.entry_price}`,
     }
 
     const { data: newPosition, error: insertError } = await supabase
@@ -489,6 +496,32 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       .insert(tradePosition)
       .select('id')
       .single()
+
+    // If enrichment columns missing (migration not applied), retry without them
+    if (insertError && /entry_reason|profit_target_price/i.test(insertError.message || '')) {
+      const { profit_target_price: _pt, entry_reason: _er, ...baseRow } = tradePosition as typeof tradePosition & {
+        profit_target_price?: number | null
+        entry_reason?: string
+      }
+      const retry = await supabase.from('trades_journal').insert(baseRow).select('id').single()
+      if (!retry.error && retry.data) {
+        return NextResponse.json(
+          {
+            success: true,
+            position_id: retry.data.id,
+            instrument: body.instrument,
+            entry_price: body.entry_price,
+            stop_loss_price: sizing.stop_loss_price,
+            position_size: sizing.position_size,
+            risk_amount: sizing.risk_amount,
+            entry_direction: body.entry_direction,
+            entry_window: body.entry_window,
+            message: `Position opened at $${body.entry_price}. Stop Loss: $${sizing.stop_loss_price}`,
+          },
+          { status: 201 }
+        )
+      }
+    }
 
     if (insertError || !newPosition) {
       logger.error('POST /api/trading/positions/open: Insert failed', { error: insertError })

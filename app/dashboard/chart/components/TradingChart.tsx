@@ -315,18 +315,27 @@ interface PositionOverlay {
   direction:   'long' | 'short'
 }
 
+interface PendingLimitOverlay {
+  price: number
+  direction: 'long' | 'short'
+  stopLoss: number
+  profitTarget: number
+}
+
 interface TradingChartProps {
   onInstrumentChange?: (i: Instrument) => void
   onPriceUpdate?:      (price: number) => void   // called every tick
   /** Fired with unix seconds whenever a live quote lands */
   onQuoteTick?:        (unixSec: number) => void
   onDataModeChange?:   (mode: 'live' | 'synthetic') => void
-  positionOverlay?:    PositionOverlay | null     // draw entry/SL / TP lines
+  positionOverlay?:    PositionOverlay | null     // filled position Entry/SL/TP
+  /** Working limit — not filled yet; does not enter MANAGE */
+  pendingLimit?:       PendingLimitOverlay | null
   jumpToPriceRef?:     React.MutableRefObject<((price: number) => void) | null>
   /** Lock tabs to day's recommended desk instrument */
   lockedInstrument?:   Instrument | null
   /** When user clicks a level price (from panel or highlight) */
-  onLevelSelect?:      (price: number, meta?: { type?: string }) => void
+  onLevelSelect?:      (price: number, meta?: { type?: string; reasoning?: string }) => void
   /** Morning session: allow placing limits from the chart */
   canPlaceOrder?: boolean
   /** Bump to force a levels reload after SL/TP (system memory updated) */
@@ -343,6 +352,7 @@ export function TradingChart({
   onQuoteTick,
   onDataModeChange,
   positionOverlay,
+  pendingLimit = null,
   jumpToPriceRef,
   lockedInstrument,
   onLevelSelect,
@@ -642,7 +652,15 @@ export function TradingChart({
         setLevels([])
         return
       }
-      // Demo-only fallback during an open session if feeds fail
+      // Never invent candles in production — fake OHLCV must not drive orders
+      if (process.env.NODE_ENV === 'production') {
+        setCandles([])
+        setDataMode('live')
+        setLivePrice(null)
+        setLevels([])
+        return
+      }
+      // Demo-only fallback during an open session if feeds fail (local/dev)
       const generated = generateCandles(meta.basePrice, tfSec)
       setCandles(generated)
       setDataMode('synthetic')
@@ -657,13 +675,18 @@ export function TradingChart({
     }
   }, [instrument, chartReady, loadLevels, levelsRefreshKey])
 
-  // Refresh AI levels periodically during the session
+  // Refresh AI levels periodically during the session (ENTRY window only)
   useEffect(() => {
     if (!chartReady) return
-    if (positionOverlay || hideTradeLevels) return // don't churn levels while in a trade
+    if (positionOverlay || hideTradeLevels) return
     const id = setInterval(() => loadLevels(instrument), 60_000)
     return () => clearInterval(id)
   }, [chartReady, instrument, loadLevels, positionOverlay, hideTradeLevels])
+
+  // Clear buy/short levels when entry window ends or in a trade
+  useEffect(() => {
+    if (hideTradeLevels) setLevels([])
+  }, [hideTradeLevels])
 
   // Reset fit when switching instrument
   useEffect(() => {
@@ -1025,20 +1048,20 @@ export function TradingChart({
       const rect = container.getBoundingClientRect()
       const y = e.clientY - rect.top
       const price = candleRef.current.coordinateToPrice(y)
-      if (price == null || !Number.isFinite(price) || price <= 0) return
+      if (price == null || !Number.isFinite(Number(price)) || Number(price) <= 0) return
 
       // Snap to nearest AI/structure level within 0.25% when close
       const tradeLevels = levelsRef.current.filter(
         (l) => l.source === 'ai' || l.source === 'structure'
       )
-      let best = price
+      let best = Number(price)
       let bestType: string | undefined
       let bestDist = Infinity
       for (const l of tradeLevels) {
-        const d = Math.abs(l.price - price) / price
+        const d = Math.abs(l.price - best) / best
         if (d < bestDist && d <= 0.0025) {
           bestDist = d
-          best = l.price
+          best = Number(l.price)
           bestType = String(l.type)
         }
       }
@@ -1053,33 +1076,55 @@ export function TradingChart({
     }
   }, [canPlaceOrder, onLevelSelect, chartReady, positionOverlay])
 
-  // ── Position overlay: draw entry / SL / TP lines ────────────────────────────
+  // ── Position / working-limit overlay lines ──────────────────────────────────
   useEffect(() => {
-    // Remove old position lines
     positionLinesRef.current.forEach(line => {
       try { candleRef.current?.removePriceLine(line) } catch {}
     })
     positionLinesRef.current = []
 
-    if (!positionOverlay || !candleRef.current) return
+    if (!candleRef.current) return
 
-    const entries: Array<{ price: number; color: string; label: string; style: LineStyle }> = [
-      { price: positionOverlay.entryPrice,   color: '#3b82f6', label: `Entry ${positionOverlay.direction.toUpperCase()}`, style: LineStyle.Solid },
-      { price: positionOverlay.stopLoss,     color: '#ef4444', label: 'Stop Loss',    style: LineStyle.Dashed },
-      { price: positionOverlay.profitTarget, color: '#22c55e', label: 'Target',       style: LineStyle.Dashed },
-    ]
+    if (positionOverlay) {
+      const entries: Array<{ price: number; color: string; label: string; style: LineStyle }> = [
+        { price: positionOverlay.entryPrice,   color: '#3b82f6', label: `Entry ${positionOverlay.direction.toUpperCase()}`, style: LineStyle.Solid },
+        { price: positionOverlay.stopLoss,     color: '#ef4444', label: 'Stop Loss',    style: LineStyle.Dashed },
+        { price: positionOverlay.profitTarget, color: '#22c55e', label: 'Target',       style: LineStyle.Dashed },
+      ]
+      for (const { price, color, label, style } of entries) {
+        try {
+          positionLinesRef.current.push(
+            candleRef.current.createPriceLine({
+              price, color, lineStyle: style, lineWidth: 1,
+              axisLabelVisible: true,
+              title: label,
+            })
+          )
+        } catch { /* ignore */ }
+      }
+      return
+    }
 
-    entries.forEach(({ price, color, label, style }) => {
-      try {
-        const line = candleRef.current!.createPriceLine({
-          price, color, lineStyle: style, lineWidth: 1,
-          axisLabelVisible: true,
-          title: label,
-        })
-        positionLinesRef.current.push(line)
-      } catch {}
-    })
-  }, [positionOverlay])
+    if (pendingLimit) {
+      const dir = pendingLimit.direction.toUpperCase()
+      const entries: Array<{ price: number; color: string; label: string; style: LineStyle }> = [
+        { price: pendingLimit.price, color: '#38bdf8', label: `WORKING ${dir}`, style: LineStyle.Solid },
+        { price: pendingLimit.stopLoss, color: '#ef4444', label: 'SL (if filled)', style: LineStyle.Dotted },
+        { price: pendingLimit.profitTarget, color: '#22c55e', label: 'TP (if filled)', style: LineStyle.Dotted },
+      ]
+      for (const { price, color, label, style } of entries) {
+        try {
+          positionLinesRef.current.push(
+            candleRef.current.createPriceLine({
+              price, color, lineStyle: style, lineWidth: 1,
+              axisLabelVisible: true,
+              title: label,
+            })
+          )
+        } catch { /* ignore */ }
+      }
+    }
+  }, [positionOverlay, pendingLimit])
 
   // ── Emit live price to parent ─────────────────────────────────────────────────
   useEffect(() => {
@@ -1129,19 +1174,25 @@ export function TradingChart({
           {levels.length > 0 ? ` (${levels.filter(l => l.source === 'ai' || l.source === 'structure').length})` : ''}
         </button>
 
-        {canPlaceOrder && !positionOverlay && (
+        {canPlaceOrder && !positionOverlay && !pendingLimit && (
           <button
             type="button"
-            title="Place a limit at the live price (or click the chart / a level)"
+            title="Place a working limit at the live price (fills only when price reaches it)"
             onClick={() => {
               const px = livePrice ?? lastCandleRef.current?.close
               if (px == null || !Number.isFinite(px)) return
               onLevelSelect?.(px, { type: 'market' })
             }}
-            className="rounded-lg border border-emerald-500/50 bg-emerald-600/90 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-500"
+            className="rounded-lg border border-sky-500/50 bg-sky-600/90 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-sky-500"
           >
-            Place order
+            Place limit
           </button>
+        )}
+
+        {pendingLimit && !positionOverlay && (
+          <span className="rounded-lg border border-sky-700/50 bg-sky-950/40 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">
+            Working limit · waiting for fill
+          </span>
         )}
 
         {(hideTradeLevels || positionOverlay) && (
@@ -1176,6 +1227,11 @@ export function TradingChart({
                 : 'text-red-400 border-red-800 bg-red-900/30'
             }`}>
               {positionOverlay.direction === 'long' ? '▲' : '▼'} POSITION
+            </span>
+          )}
+          {pendingLimit && !positionOverlay && (
+            <span className="text-xs px-2 py-0.5 rounded font-semibold border text-sky-300 border-sky-800 bg-sky-900/30">
+              WORKING {pendingLimit.direction.toUpperCase()}
             </span>
           )}
           {dataMode === 'live' ? (
@@ -1255,7 +1311,12 @@ export function TradingChart({
                 <button
                   key={`${l.price}-${i}`}
                   type="button"
-                  onClick={() => onLevelSelect?.(l.price, { type: String(l.type) })}
+                  onClick={() =>
+                    onLevelSelect?.(l.price, {
+                      type: String(l.type),
+                      reasoning: l.reasoning,
+                    })
+                  }
                   className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] border transition-all ${
                     isRes
                       ? 'border-red-900/60 bg-red-950/40 text-red-300 hover:border-red-600'

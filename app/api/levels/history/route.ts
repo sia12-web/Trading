@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient()
 
     // Use dev auth (works without real session in development)
-    const user = await getOrCreateUser()
+    const user = await getOrCreateUser(request)
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

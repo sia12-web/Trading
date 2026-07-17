@@ -2,17 +2,32 @@
  * GET /api/trading/auto-levels?instrument=DOW|NASDAQ|NIKKEI
  * Cron / internal: run Level Finder and archive levels for the live chart.
  * Tokyo: scheduled ~08:45 JST. NY: covered by market-open after recommendation.
+ * Requires Authorization: Bearer $CRON_SECRET in production.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { runAutoLevelPrep } from '@/lib/services/autoLevelPrep'
 import { isDeskInstrument, type DeskInstrument } from '@/lib/trading/sessionGate'
+import { assertCronOrDeskUser } from '@/lib/utils/devAuth'
+import { assertProdEnv } from '@/lib/utils/env'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
 export async function GET(request: NextRequest) {
   try {
+    if (!(await assertCronOrDeskUser(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    try {
+      assertProdEnv()
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : 'Env misconfigured' },
+        { status: 500 }
+      )
+    }
+
     const param = request.nextUrl.searchParams.get('instrument') || 'NIKKEI'
     if (!isDeskInstrument(param)) {
       return NextResponse.json(

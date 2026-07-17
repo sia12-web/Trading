@@ -59,13 +59,40 @@ async function getIndexQuote(instrument: Instrument): Promise<DeskQuote | null> 
   }
 }
 
+function denyMarketOpen(message: string, status: number): NextResponse<MarketOpenResponse> {
+  return NextResponse.json(
+    {
+      success: false,
+      recommendation: null,
+      error: message,
+      processed_at: new Date().toISOString(),
+    },
+    { status }
+  )
+}
+
 export async function GET(request: NextRequest): Promise<NextResponse<MarketOpenResponse>> {
+  const { assertCronOrDeskUser } = await import('@/lib/utils/devAuth')
+  if (!(await assertCronOrDeskUser(request))) {
+    return denyMarketOpen('Unauthorized', 401)
+  }
   // Vercel cron invokes GET — reuse POST handler
   return POST(request)
 }
 
-export async function POST(_request: NextRequest): Promise<NextResponse<MarketOpenResponse>> {
+export async function POST(request: NextRequest): Promise<NextResponse<MarketOpenResponse>> {
+  const { assertCronOrDeskUser } = await import('@/lib/utils/devAuth')
+  if (!(await assertCronOrDeskUser(request))) {
+    return denyMarketOpen('Unauthorized', 401)
+  }
   try {
+    const { assertProdEnv } = await import('@/lib/utils/env')
+    try {
+      assertProdEnv()
+    } catch (e) {
+      return denyMarketOpen(e instanceof Error ? e.message : 'Env misconfigured', 500)
+    }
+
     logger.debug('[Market Open] Starting market open analysis')
 
     const supabase = await createClient()

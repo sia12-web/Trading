@@ -33,11 +33,27 @@ export async function GET(request: Request): Promise<NextResponse<CurrentPositio
     }
 
     const supabase = await createClient()
+    const { resolveDeskUser } = await import('@/lib/utils/devAuth')
+    const user = await resolveDeskUser(request)
+    if (!user) {
+      return NextResponse.json(
+        {
+          position: null,
+          locked_instrument: instrument,
+          entry_window_active: null,
+          next_entry_window: null,
+          market_disabled: false,
+          message: 'Unauthorized',
+        },
+        { status: 401 }
+      )
+    }
+
     const windowManager = getWindowManager()
     const now = new Date()
     const today = getESTDateString()
 
-    // Query for today's open position (ET date)
+    // Query for today's open position (ET date) for this user only
     let query = supabase
       .from('trades_journal')
       .select(
@@ -48,6 +64,7 @@ export async function GET(request: Request): Promise<NextResponse<CurrentPositio
          best_level_break_confidence, best_break_level, profit_target_price,
          created_at, updated_at`
       )
+      .eq('user_id', user.id)
       .eq('trade_date', today)
       .is('exit_timestamp', null)
 
