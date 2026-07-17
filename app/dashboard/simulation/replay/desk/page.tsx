@@ -1078,11 +1078,7 @@ function SimulationDeskInner() {
   if (loading) {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-3 text-gray-500 text-sm">
-        <p className="animate-pulse">
-          Loading {instrument} desk at{' '}
-          {instrument === 'NIKKEI' ? '9:00 AM JST' : '9:30 AM ET'}…
-        </p>
-        <p className="text-xs text-gray-600">Fetching candles (OANDA / Yahoo)…</p>
+        <p className="animate-pulse">Loading…</p>
       </div>
     )
   }
