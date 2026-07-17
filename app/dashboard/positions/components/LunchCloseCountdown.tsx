@@ -73,7 +73,7 @@ export function LunchCloseCountdown({ marketDisabled, stopLossHitCount }: LunchC
           🔴 MARKET DISABLED - No new entries allowed
         </p>
         <p className="mt-2 text-center text-sm text-red-600 dark:text-red-300">
-          {stopLossHitCount >= 2 && 'Stop loss hit twice. Market disabled for rest of session.'}
+          {stopLossHitCount >= 3 && 'Stop loss hit 3 times. Market disabled for rest of session.'}
         </p>
       </div>
     )
@@ -90,7 +90,7 @@ export function LunchCloseCountdown({ marketDisabled, stopLossHitCount }: LunchC
         </p>
       </div>
       <p className="mt-2 text-xs text-blue-700 dark:text-blue-300">
-        Position must be closed by lunch close. Stop loss hit count: {stopLossHitCount}/2
+        Position must be closed by lunch close. Stop loss hit count: {stopLossHitCount}/3
       </p>
     </div>
   )

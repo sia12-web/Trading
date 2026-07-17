@@ -10,6 +10,7 @@ import { logger } from '@/lib/utils/logger'
 import { getWindowManager } from '@/lib/trading/windowManager'
 import { getPositionSizer } from '@/lib/trading/positionSizing'
 import { getESTDateString } from '@/lib/utils/timeUtils'
+import { resolveSessionGate, assertCanOpenPosition } from '@/lib/trading/sessionGate'
 import type { PositionOpenResponse, TradePosition } from '@/types/trading'
 
 interface OpenPositionRequest {
@@ -22,20 +23,31 @@ interface OpenPositionRequest {
   regime_confidence: number
   best_level_break_confidence?: number | null
   best_break_level?: number | null
+  /** Chart click at a highlighted level — skip window-extreme deep check */
+  entry_source?: 'chart_level' | 'auto_deep'
+  /** Zone-based stop (beyond the level's zone edge); omit for default ±5% */
+  stop_loss_price?: number
 }
 
 export async function POST(request: Request): Promise<NextResponse<PositionOpenResponse>> {
   try {
     const body = (await request.json()) as OpenPositionRequest
-
-    // CRITICAL FIX: Validate auth before proceeding
     const supabase = await createClient()
+
+    // Development-friendly auth (same as other desk routes)
+    let user = null as { id: string } | null
     const {
-      data: { user },
+      data: { user: authUser },
       error: authError,
     } = await supabase.auth.getUser()
+    if (!authError && authUser) {
+      user = authUser
+    } else {
+      const { getOrCreateUser } = await import('@/lib/utils/devAuth')
+      user = await getOrCreateUser()
+    }
 
-    if (authError || !user) {
+    if (!user) {
       logger.error('POST /api/trading/positions/open: Unauthorized', { error: authError })
       return NextResponse.json(
         {
@@ -73,6 +85,107 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
         { status: 400 }
       )
     }
+
+    // Desk: DOW / NASDAQ / NIKKEI + session gate
+    if (
+      body.instrument !== 'DOW' &&
+      body.instrument !== 'NASDAQ' &&
+      body.instrument !== 'NIKKEI'
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          position_id: '',
+          instrument: body.instrument,
+          entry_price: body.entry_price,
+          stop_loss_price: 0,
+          position_size: 0,
+          risk_amount: 0,
+          entry_direction: body.entry_direction,
+          entry_window: body.entry_window,
+          message: 'Desk only allows DOW, NASDAQ, or NIKKEI',
+        },
+        { status: 400 }
+      )
+    }
+
+    const today = getESTDateString()
+
+    // Locked instrument from today's recommendation (NY) or Tokyo morning (NIKKEI)
+    let lockedInstrument: 'DOW' | 'NASDAQ' | 'NIKKEI' | null = null
+    const { data: rec } = await supabase
+      .from('market_recommendations')
+      .select('recommended_instrument')
+      .eq('date', today)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (rec?.recommended_instrument === 'DOW' || rec?.recommended_instrument === 'NASDAQ') {
+      lockedInstrument = rec.recommended_instrument
+    } else {
+      const { data: regimes } = await supabase
+        .from('regime_cache')
+        .select('instrument, recommendation_confidence')
+        .eq('date', today)
+        .in('instrument', ['DOW', 'NASDAQ'])
+        .order('recommendation_confidence', { ascending: false })
+        .limit(1)
+      if (regimes?.[0]?.instrument === 'DOW' || regimes?.[0]?.instrument === 'NASDAQ') {
+        lockedInstrument = regimes[0].instrument
+      }
+    }
+    if (body.instrument === 'NIKKEI') {
+      lockedInstrument = 'NIKKEI'
+    }
+
+    // One open OR closed trade for this instrument's session today
+    const { data: anyNyTrade } = await supabase
+      .from('trades_journal')
+      .select('id, exit_timestamp, stop_loss_hit_count')
+      .eq('user_id', user.id)
+      .eq('trade_date', today)
+      .eq('instrument', body.instrument)
+      .limit(1)
+      .maybeSingle()
+
+    const { data: openNy } = await supabase
+      .from('trades_journal')
+      .select('id, stop_loss_hit_count')
+      .eq('user_id', user.id)
+      .eq('trade_date', today)
+      .eq('instrument', body.instrument)
+      .is('exit_timestamp', null)
+      .maybeSingle()
+
+    const gate = resolveSessionGate({
+      lockedInstrument,
+      hasOpenPosition: !!openNy,
+      stopLossHitCount: openNy?.stop_loss_hit_count ?? 0,
+      dayDone: !!anyNyTrade && !openNy,
+      viewingInstrument: body.instrument,
+    })
+
+    const gateCheck = assertCanOpenPosition(body.instrument, gate)
+    if (!gateCheck.ok) {
+      return NextResponse.json(
+        {
+          success: false,
+          position_id: '',
+          instrument: body.instrument,
+          entry_price: body.entry_price,
+          stop_loss_price: 0,
+          position_size: 0,
+          risk_amount: 0,
+          entry_direction: body.entry_direction,
+          entry_window: body.entry_window,
+          message: gateCheck.message,
+        },
+        { status: gateCheck.status }
+      )
+    }
+
+    // Skip ultra-tight deep extreme check when entry is from chart level click
+    const fromChartLevel = body.entry_source === 'chart_level'
 
     // Validate entry price
     if (body.entry_price <= 0) {
@@ -148,9 +261,10 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
     const windowManager = getWindowManager()
     const positionSizer = getPositionSizer()
 
-    // IMPORTANT FIX: Validate entry time is within window boundaries AND in EST timezone
+    // Chart-level / morning-desk orders: session gate already enforced open→lunch.
+    // Legacy auto-deep still requires a strict 15-min NY entry window.
     const now = new Date()
-    if (!windowManager.validateEntryTiming(now, body.entry_window)) {
+    if (!fromChartLevel && !windowManager.validateEntryTiming(now, body.entry_window)) {
       logger.error('POST /api/trading/positions/open: Entry outside window boundaries', {
         time: now.toISOString(),
         window: body.entry_window,
@@ -173,7 +287,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
     }
 
     // IMPORTANT FIX: Validate entry price is within 0.001% of window extreme (deep entry requirement)
-    // Get window extremes from cache to verify deep entry condition
+    // Chart level clicks skip this — the clicked level IS the intended limit price.
     const { data: cacheData } = await supabase
       .from('entry_discipline_cache')
       .select('highest_price_in_window, lowest_price_in_window')
@@ -184,6 +298,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
 
     const ENTRY_TOLERANCE = 0.00001 // 0.001% tolerance
     const entryPriceIsDeep = (() => {
+      if (fromChartLevel) return true
       if (!cacheData) return true // Cache not yet populated, allow entry on first trade
 
       if (body.entry_direction === 'LONG' && cacheData.highest_price_in_window) {
@@ -220,8 +335,13 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       )
     }
 
-    // Calculate position sizing
-    const sizing = positionSizer.calculatePosition(body.entry_price, body.account_size, body.entry_direction)
+    // Calculate position sizing (zone stop when provided, else default ±5%)
+    const sizing = positionSizer.calculatePosition(
+      body.entry_price,
+      body.account_size,
+      body.entry_direction,
+      body.stop_loss_price
+    )
     if (!sizing) {
       logger.error('POST /api/trading/positions/open: Position sizing failed', { body })
       return NextResponse.json(
@@ -241,12 +361,21 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       )
     }
 
-    // IMPORTANT FIX: Validate stop loss precision
-    // Stop loss should be exactly ±5% from entry price
+    // Validate the stop: zone stops just need to be on the correct side with
+    // real distance; default stops must still be exactly ±5%
     const STOP_LOSS_PERCENT = 0.05
-    const expectedStopLoss = body.entry_direction === 'LONG'
-      ? body.entry_price * (1 - STOP_LOSS_PERCENT)
-      : body.entry_price * (1 + STOP_LOSS_PERCENT)
+    const usingZoneStop =
+      body.stop_loss_price != null &&
+      body.stop_loss_price > 0 &&
+      (body.entry_direction === 'LONG'
+        ? body.stop_loss_price < body.entry_price
+        : body.stop_loss_price > body.entry_price)
+
+    const expectedStopLoss = usingZoneStop
+      ? body.stop_loss_price!
+      : body.entry_direction === 'LONG'
+        ? body.entry_price * (1 - STOP_LOSS_PERCENT)
+        : body.entry_price * (1 + STOP_LOSS_PERCENT)
 
     const stopLossPrecisionTolerance = body.entry_price * 0.001 // 0.1% tolerance for rounding
     const stopLossError = Math.abs(sizing.stop_loss_price - expectedStopLoss)
@@ -275,8 +404,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       )
     }
 
-    // Get today's date in YYYY-MM-DD format (EST)
-    const today = getESTDateString()
+    // Get today's date in YYYY-MM-DD format (EST) — already computed as `today` above
 
     // Check for existing open position (only one per instrument per day)
     const { data: existingPosition, error: queryError } = await supabase

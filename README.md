@@ -11,6 +11,11 @@ A sophisticated day trading platform combining real-time market data, institutio
 - **Session-Based Trading**: Structured 9:00-9:45 AM trading windows with pre-market prep
 - **Forced Discipline**: One position at a time, stop-loss/take-profit exits only
 
+## Documentation
+
+- **[TradePulse System Guide](docs/DAY_TRADER_SYSTEM_GUIDE.md)** — how the platform works and how its tools help day traders (not a trading strategy)
+- [Paper Trading Mode](docs/PAPER_TRADING_MODE.md) — paper vs live schema and API flow
+
 ## Project Structure
 
 ```

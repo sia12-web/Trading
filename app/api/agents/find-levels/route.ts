@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { getLevelFinderAgent } from '@/lib/services/levelFinderAgent'
+import { validateLevelsAgainstMarket } from '@/lib/services/levelValidation'
+import { isDeskHoursNow } from '@/lib/trading/sessionGate'
 import type { AnalysisRequest, Candle, ValidationResult, HistoricalContext, HistoricalLevelData, ContextSummary } from '@/lib/services/levelFinderAgent/types'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Instrument } from '@/types/price-feed'
 
 /**
  * Validates candle array has required fields with correct types
@@ -87,7 +90,7 @@ function validateRequest(body: any): { valid: true; data: AnalysisRequest } | { 
   }
 
   // Validate index and current_price
-  if (!['DOW', 'NASDAQ'].includes(index)) {
+  if (!['DOW', 'NASDAQ', 'NIKKEI'].includes(index)) {
     return { valid: false, error: 'Invalid index' }
   }
 
@@ -338,10 +341,38 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: validation.error }, { status: 400 })
     }
 
+    // Desk asleep outside that market's prep→lunch window (use ?force=1 to test)
+    const force = request.nextUrl.searchParams.get('force') === '1'
+    const desk = isDeskHoursNow(new Date(), validation.data.index)
+    if (!desk.open && !force) {
+      return NextResponse.json(
+        {
+          error: `Market closed — AI level analysis runs during the morning desk window (${desk.reason}). Add ?force=1 to override for testing.`,
+        },
+        { status: 403 }
+      )
+    }
+
     // Verify session ownership
     const sessionCheck = await verifySessionOwnership(supabase, validation.data.session_id, user.id)
     if (!sessionCheck.valid) {
       return NextResponse.json({ error: sessionCheck.error }, { status: 403 })
+    }
+
+    // Market verdict first: re-judge every stored level against real candles so
+    // the historical context reflects what price actually did, not stale counts
+    try {
+      const verdict = await validateLevelsAgainstMarket(
+        supabase,
+        user.id,
+        validation.data.index as Instrument,
+        7
+      )
+      console.log(
+        `[Agent API] Market validation: ${verdict.validated} levels judged, ${verdict.updated} updated`
+      )
+    } catch (validationError) {
+      console.warn('[Agent API] Market validation skipped:', validationError)
     }
 
     // Fetch historical context for enhanced analysis (optional, doesn't fail if unavailable)

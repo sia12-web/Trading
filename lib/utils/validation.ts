@@ -70,9 +70,11 @@ export function isInstrumentData(value: unknown): value is {
 
   return (
     isInstrument(obj.instrument) &&
-    (obj.currentPrice === null || isValidNumber(obj.currentPrice)) &&
+    // currentPrice can be null OR undefined (before first price update) OR a valid number
+    (obj.currentPrice === null || obj.currentPrice === undefined || isValidNumber(obj.currentPrice)) &&
     Array.isArray(obj.levels) &&
-    obj.levels.every(isLevelData) &&
+    // Empty levels array is valid (e.g. before price feed starts, or no levels near current price)
+    (obj.levels.length === 0 || obj.levels.every(isLevelData)) &&
     typeof obj.timestamp === 'string'
   )
 }
@@ -139,10 +141,11 @@ export function isHealthCheckResponse(value: unknown): value is {
   return (
     typeof obj.success === 'boolean' &&
     Array.isArray(obj.data) &&
+    // Each item must at minimum have a valid instrument and timestamp
     obj.data.every((item: unknown) => {
       if (!item || typeof item !== 'object') return false
-      const instrument = (item as Record<string, unknown>).instrument
-      return isInstrumentData(item) || isInstrument(instrument)
+      const i = item as Record<string, unknown>
+      return isInstrument(i.instrument) && typeof i.timestamp === 'string'
     })
   )
 }
@@ -260,13 +263,15 @@ export function validateHealthCheckResponse(data: unknown): {
     throw new Error('Health check response data is not an array')
   }
 
+  // Empty data array is acceptable when no instruments match
   if (obj.data.length === 0) {
-    throw new Error('Health check response data array is empty')
+    return obj as any
   }
 
   obj.data.forEach((item: unknown, idx: number) => {
-    if (!isInstrumentData(item)) {
-      throw new Error(`Health check response data[${idx}] has invalid structure: ${JSON.stringify(item).slice(0, 100)}`)
+    // Use relaxed validation: require instrument + timestamp at minimum
+    if (!isHealthCheckResponse({ success: true, data: [item] })) {
+      throw new Error(`Health check response data[${idx}] missing required fields: ${JSON.stringify(item).slice(0, 120)}`)
     }
   })
 

@@ -8,18 +8,23 @@ import { logger } from '@/lib/utils/logger'
 import type { PositionSizing, EntryDirection } from '@/types/trading'
 
 const RISK_PERCENT = 5 // 5% of account
-const MAX_LOSS_PERCENT = 0.05 // 5% max loss per trade
+const MAX_LOSS_PERCENT = 0.05 // 5% max loss per trade (default disaster stop)
+/** With tight zone stops, cap exposure so risk-per-point can't blow up notional */
+const MAX_NOTIONAL_MULT = 5
 
 export class PositionSizer {
   /**
-   * Calculate position sizing from entry price and account size
-   * Stop loss is fixed at ±5% from entry price
+   * Calculate position sizing from entry price and account size.
+   * Default stop is ±5% from entry; pass `stopLossPrice` for a zone-based
+   * stop (beyond the level's zone edge) — risk amount stays the same, the
+   * position size adapts to the true stop distance.
    * Position size = risk_amount / (entry_price - stop_loss_price)
    */
   calculatePosition(
     entryPrice: number,
     accountSize: number,
-    direction: EntryDirection
+    direction: EntryDirection,
+    stopLossPrice?: number
   ): PositionSizing | null {
     // Validate inputs
     if (entryPrice <= 0) {
@@ -35,28 +40,32 @@ export class PositionSizer {
     // Calculate risk amount (5% of account)
     const riskAmount = accountSize * (RISK_PERCENT / 100)
 
-    // Calculate stop loss price
-    let stopLossPrice: number
-    if (direction === 'LONG') {
-      // For LONG: stop loss is 5% below entry
-      stopLossPrice = entryPrice * (1 - MAX_LOSS_PERCENT)
-    } else {
-      // For SHORT: stop loss is 5% above entry
-      stopLossPrice = entryPrice * (1 + MAX_LOSS_PERCENT)
-    }
+    // Stop: custom (zone-based) if valid for the direction, else default ±5%
+    const customStopValid =
+      stopLossPrice != null &&
+      stopLossPrice > 0 &&
+      (direction === 'LONG' ? stopLossPrice < entryPrice : stopLossPrice > entryPrice)
+
+    const stopLossPriceFinal = customStopValid
+      ? stopLossPrice!
+      : direction === 'LONG'
+        ? entryPrice * (1 - MAX_LOSS_PERCENT)
+        : entryPrice * (1 + MAX_LOSS_PERCENT)
 
     // Ensure stop loss is different from entry
-    if (Math.abs(stopLossPrice - entryPrice) < 0.01) {
+    if (Math.abs(stopLossPriceFinal - entryPrice) < 0.01) {
       logger.error('PositionSizer: Stop loss too close to entry', {
         entryPrice,
-        stopLossPrice,
+        stopLossPrice: stopLossPriceFinal,
       })
       return null
     }
 
-    // Calculate position size
-    const priceDistance = Math.abs(entryPrice - stopLossPrice)
-    const positionSize = riskAmount / priceDistance
+    // Calculate position size (capped so tight stops can't create runaway notional)
+    const priceDistance = Math.abs(entryPrice - stopLossPriceFinal)
+    let positionSize = riskAmount / priceDistance
+    const maxSize = (accountSize * MAX_NOTIONAL_MULT) / entryPrice
+    if (positionSize > maxSize) positionSize = maxSize
 
     // Validate position size
     if (positionSize <= 0 || !isFinite(positionSize)) {
@@ -84,7 +93,7 @@ export class PositionSizer {
 
     logger.debug('PositionSizer: Position calculated', {
       entryPrice,
-      stopLossPrice,
+      stopLossPrice: stopLossPriceFinal,
       positionSize,
       riskAmount,
       riskPercent,
@@ -96,7 +105,7 @@ export class PositionSizer {
       risk_percent: RISK_PERCENT,
       risk_amount: riskAmount,
       entry_price: entryPrice,
-      stop_loss_price: stopLossPrice,
+      stop_loss_price: stopLossPriceFinal,
       position_size: positionSize,
       direction,
     }
@@ -199,4 +208,59 @@ export function getPositionSizer(): PositionSizer {
     positionSizerInstance = new PositionSizer()
   }
   return positionSizerInstance
+}
+
+/**
+ * Client-safe preview of the same sizing used by open-route.
+ * Pass `stopLossPrice` (e.g. beyond the level's zone edge) for zone-based
+ * risk — same risk amount, size adapts to the true stop distance.
+ */
+export function previewPositionSizing(
+  entryPrice: number,
+  accountSize: number,
+  direction: EntryDirection,
+  stopLossPrice?: number
+): {
+  stop_loss_price: number
+  position_size: number
+  risk_amount: number
+  risk_percent: number
+  notional: number
+  profit_target_price: number
+} | null {
+  if (entryPrice <= 0 || accountSize <= 0) return null
+  const risk_amount = accountSize * (RISK_PERCENT / 100)
+
+  const customStopValid =
+    stopLossPrice != null &&
+    stopLossPrice > 0 &&
+    (direction === 'LONG' ? stopLossPrice < entryPrice : stopLossPrice > entryPrice)
+
+  const stop_loss_price = customStopValid
+    ? stopLossPrice!
+    : direction === 'LONG'
+      ? entryPrice * (1 - MAX_LOSS_PERCENT)
+      : entryPrice * (1 + MAX_LOSS_PERCENT)
+
+  const priceDistance = Math.abs(entryPrice - stop_loss_price)
+  if (priceDistance < 0.01) return null
+  let position_size = risk_amount / priceDistance
+  const maxSize = (accountSize * MAX_NOTIONAL_MULT) / entryPrice
+  if (position_size > maxSize) position_size = maxSize
+  if (!Number.isFinite(position_size) || position_size <= 0) return null
+  // Target: with a zone stop use 2R (risk-symmetric, min 0.5% move);
+  // with the default disaster stop keep the classic 1% day-trade target
+  const rewardDistance = customStopValid
+    ? Math.max(priceDistance * 2, entryPrice * 0.005)
+    : entryPrice * 0.01
+  const profit_target_price =
+    direction === 'LONG' ? entryPrice + rewardDistance : entryPrice - rewardDistance
+  return {
+    stop_loss_price,
+    position_size,
+    risk_amount: position_size * priceDistance,
+    risk_percent: RISK_PERCENT,
+    notional: position_size * entryPrice,
+    profit_target_price,
+  }
 }

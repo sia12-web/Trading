@@ -6,13 +6,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { logger } from '@/lib/utils/logger'
+import { getESTDateString } from '@/lib/utils/timeUtils'
 import type { MarketRecommendationResponse, Instrument } from '@/types/trading'
 
 export async function GET(_request: NextRequest): Promise<NextResponse<MarketRecommendationResponse>> {
   try {
     const supabase = await createClient()
 
-    const today = new Date().toISOString().split('T')[0]
+    const today = getESTDateString()
 
     logger.debug('[Recommendation] Fetching today recommendation for', today)
 
@@ -24,15 +25,20 @@ export async function GET(_request: NextRequest): Promise<NextResponse<MarketRec
 
     if (regimesError) {
       logger.error('[Recommendation] Error fetching regimes:', regimesError)
+      // Table missing or schema cache lag — soft-fail so chart desk stays usable
+      const missing = regimesError.code === 'PGRST205'
       return NextResponse.json(
         {
           recommendation: null,
           processed_at: null,
           market_disabled_instruments: [],
           locked_instrument: null,
-          message: 'Error fetching recommendation',
+          message: missing
+            ? 'Waiting for market open analysis (regime tables not ready)'
+            : 'Error fetching recommendation',
+          ready: false,
         },
-        { status: 500 }
+        { status: missing ? 200 : 500 }
       )
     }
 

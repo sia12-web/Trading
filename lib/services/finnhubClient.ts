@@ -260,9 +260,9 @@ export class FinnhubClient {
    */
   private getSymbol(instrument: Instrument): string {
     const symbolMap: Record<Instrument, string> = {
-      DOW: '^DJI', // Dow Jones Industrial Average
-      NASDAQ: '^IXIC', // NASDAQ Composite
-      NIKKEI: '^N225', // Nikkei 225
+      DOW: 'DIA', // SPDR Dow ETF (free-tier candle access; ^DJI returns 403)
+      NASDAQ: 'QQQ', // Invesco QQQ (Nasdaq-100 proxy)
+      NIKKEI: 'EWJ', // iShares MSCI Japan ETF
     }
     const symbol = symbolMap[instrument]
     if (!symbol) {

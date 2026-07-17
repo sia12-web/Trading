@@ -1,6 +1,6 @@
 /**
  * POST /api/trading/market-open
- * Internal endpoint for market open analysis (runs at 9:20 AM)
+ * Internal endpoint for market open analysis (runs at 9:15 AM ET)
  * Fetches market data, calculates regimes, stores recommendations
  */
 
@@ -8,11 +8,61 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { logger } from '@/lib/utils/logger'
 import { getFinnhubClient } from '@/lib/services/finnhubClient'
+import { getYahooQuote } from '@/lib/yahoo/quote'
 import { getRegimeDetector } from '@/lib/trading/regimeDetector'
 import { getRecommendationEngine } from '@/lib/trading/recommendationEngine'
 import type { Instrument, MarketOpenResponse, OvernightOHLC } from '@/types/trading'
+import type { Instrument as PriceInstrument } from '@/types/price-feed'
 
-const INSTRUMENTS: Instrument[] = ['DOW', 'NASDAQ', 'NIKKEI']
+const INSTRUMENTS: Instrument[] = ['DOW', 'NASDAQ']
+
+type DeskQuote = {
+  open: number
+  high: number
+  low: number
+  previousClose: number
+  current: number
+}
+
+async function getIndexQuote(instrument: Instrument): Promise<DeskQuote | null> {
+  // Prefer Yahoo index (^DJI/^IXIC) — same scale as chart desk / levels
+  try {
+    const y = await getYahooQuote(instrument as PriceInstrument)
+    if (y && y.previous_close > 0) {
+      const open = y.open ?? y.price
+      const high = y.high ?? Math.max(open, y.price)
+      const low = y.low ?? Math.min(open, y.price)
+      return {
+        open,
+        high,
+        low,
+        previousClose: y.previous_close,
+        current: y.price,
+      }
+    }
+  } catch {
+    /* fall through */
+  }
+  try {
+    const finnhub = getFinnhubClient()
+    const q = await finnhub.getQuote(instrument)
+    if (!q) return null
+    return {
+      open: q.open,
+      high: q.high,
+      low: q.low,
+      previousClose: q.previousClose,
+      current: q.current,
+    }
+  } catch {
+    return null
+  }
+}
+
+export async function GET(request: NextRequest): Promise<NextResponse<MarketOpenResponse>> {
+  // Vercel cron invokes GET — reuse POST handler
+  return POST(request)
+}
 
 export async function POST(_request: NextRequest): Promise<NextResponse<MarketOpenResponse>> {
   try {
@@ -23,10 +73,10 @@ export async function POST(_request: NextRequest): Promise<NextResponse<MarketOp
     const regimeDetector = getRegimeDetector()
     const recommendationEngine = getRecommendationEngine()
 
-    // Fetch market data from Finnhub for all instruments
-    logger.debug('[Market Open] Fetching quote data from Finnhub')
+    // Index-scale quotes first (Yahoo); Finnhub news still used for sentiment
+    logger.debug('[Market Open] Fetching index quotes (Yahoo) + Finnhub news')
 
-    const quotePromises = INSTRUMENTS.map((inst) => finnhub.getQuote(inst))
+    const quotePromises = INSTRUMENTS.map((inst) => getIndexQuote(inst))
     const newsPromises = INSTRUMENTS.map((inst) => finnhub.getNews(inst))
 
     const quotes = await Promise.all(quotePromises)
@@ -35,7 +85,7 @@ export async function POST(_request: NextRequest): Promise<NextResponse<MarketOp
     // Check if we got any data
     const hasData = quotes.some((q) => q !== null)
     if (!hasData) {
-      logger.error('[Market Open] Failed to fetch any quote data from Finnhub')
+      logger.error('[Market Open] Failed to fetch any index quote data')
       return handleFallback(supabase, recommendationEngine)
     }
 
@@ -159,6 +209,9 @@ export async function POST(_request: NextRequest): Promise<NextResponse<MarketOp
       logger.warn('[Market Open] Error storing recommendation record:', recError)
       // Don't fail
     }
+
+    // Level Finder runs via /api/trading/auto-levels (same path for DOW/NASDAQ/NIKKEI)
+    // once the session-gate locks the instrument — not here.
 
     logger.debug('[Market Open] Market open analysis complete')
 

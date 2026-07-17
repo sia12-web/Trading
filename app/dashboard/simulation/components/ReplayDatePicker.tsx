@@ -1,204 +1,165 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useReplayModeStore } from '@/lib/stores/replayModeStore'
-import { AvailabilityBadge } from './AvailabilityBadge'
 import {
-  getLastNDays,
+  getLastNNycTradingDays,
+  getLastNTokyoTradingDays,
   formatDateDisplay,
   getDayName,
-  getDaysAgo,
-  isToday,
 } from '@/lib/utils/dateUtils'
-import type { AvailableDate } from '@/types/trading'
+import type { AvailableDate, AvailableDatesResponse } from '@/types/trading'
+
+function AvailabilityBadge({ date }: { date: AvailableDate }) {
+  if (date.has_session) {
+    return (
+      <span className="text-[10px] text-orange-400 font-medium" title="Session already exists">
+        resume
+      </span>
+    )
+  }
+  if (date.is_available) {
+    return (
+      <span className="text-[10px] text-green-400 font-medium" title="Ready to replay">
+        ready
+      </span>
+    )
+  }
+  return (
+    <span className="text-[10px] text-gray-600 font-medium" title="No data">
+      n/a
+    </span>
+  )
+}
 
 interface ReplayDatePickerProps {
   onDateSelected?: (date: string) => void
 }
 
 export function ReplayDatePicker({ onDateSelected }: ReplayDatePickerProps) {
-  const {
-    selectedDate,
-    selectedInstrument,
-    availableDates,
-    isLoadingDates,
-    lastFetchedInstrument,
-    setSelectedDate,
-    setAvailableDates,
-    setIsLoadingDates,
-    setLastFetchedInstrument,
-    setError,
-  } = useReplayModeStore()
-
+  const { selectedDate, selectedInstrument, setSelectedDate } = useReplayModeStore()
+  const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
+  const [isLoadingDates, setIsLoadingDates] = useState(true)
   const [localError, setLocalError] = useState<string | null>(null)
 
-  // Fetch available dates when instrument changes
-  useEffect(() => {
-    if (selectedInstrument === lastFetchedInstrument && availableDates.length > 0) {
-      return // Already fetched for this instrument
-    }
+  const instrument =
+    selectedInstrument === 'NASDAQ'
+      ? 'NASDAQ'
+      : selectedInstrument === 'NIKKEI'
+        ? 'NIKKEI'
+        : 'DOW'
 
-    async function fetchAvailableDates() {
-      setIsLoadingDates(true)
-      setLocalError(null)
-
-      try {
-        const response = await fetch(
-          `/api/trading/replays/available-dates?instrument=${selectedInstrument}`
-        )
-
-        if (!response.ok) {
-          const data = await response.json()
-          throw new Error(data.error || 'Failed to fetch available dates')
-        }
-
-        const data = await response.json()
-        setAvailableDates(data.available_dates)
-        setLastFetchedInstrument(selectedInstrument)
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error'
-        setLocalError(message)
-        setError(message)
-
-        // Fallback: generate last 30 days assuming all available
-        const lastDays = getLastNDays(30)
-        const fallbackDates: AvailableDate[] = lastDays.map(date => ({
+  const loadDates = useCallback(async () => {
+    setIsLoadingDates(true)
+    setLocalError(null)
+    try {
+      const response = await fetch(
+        `/api/trading/replays/available-dates?instrument=${instrument}`,
+        { cache: 'no-store' }
+      )
+      if (!response.ok) {
+        throw new Error('Failed to load available dates')
+      }
+      const data: AvailableDatesResponse = await response.json()
+      setAvailableDates(data.available_dates ?? [])
+    } catch {
+      const lastDays =
+        instrument === 'NIKKEI' ? getLastNTokyoTradingDays(5) : getLastNNycTradingDays(5)
+      setAvailableDates(
+        lastDays.map((date) => ({
           date,
           is_available: true,
           has_session: false,
         }))
-        setAvailableDates(fallbackDates)
-      } finally {
-        setIsLoadingDates(false)
-      }
+      )
+      setLocalError(
+        instrument === 'NIKKEI'
+          ? 'Using local Tokyo calendar (API unavailable)'
+          : 'Using local NYC calendar (API unavailable)'
+      )
+    } finally {
+      setIsLoadingDates(false)
     }
+  }, [instrument])
 
-    fetchAvailableDates()
-  }, [selectedInstrument, lastFetchedInstrument])
+  useEffect(() => {
+    void loadDates()
+  }, [loadDates])
 
   const handleDateClick = (date: string) => {
-    // Validate date format before accepting
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/
-    if (!dateRegex.test(date)) {
-      setLocalError('Invalid date format')
-      return
-    }
-
-    const dateObj = availableDates.find(d => d.date === date)
+    setLocalError(null)
+    const dateObj = availableDates.find((d) => d.date === date)
     if (dateObj && !dateObj.is_available) {
       setLocalError('No market data available for this date')
       return
     }
-
     setSelectedDate(date)
     onDateSelected?.(date)
   }
 
-  // If loading and no dates yet, show loading state
   if (isLoadingDates && availableDates.length === 0) {
     return (
-      <div className="text-center py-8 text-gray-500">
-        <div className="text-2xl mb-2">⏳</div>
-        <p>Loading available dates...</p>
+      <div className="text-center py-8 text-gray-500 text-sm">
+        Loading last 5 NYC trading days…
       </div>
     )
   }
 
-  // If no dates at all, show fallback message
   if (availableDates.length === 0) {
     return (
-      <div className="text-center py-8 text-gray-500">
-        <div className="text-2xl mb-2">📅</div>
-        <p>No dates loaded</p>
+      <div className="text-center py-8 text-gray-500 text-sm">
+        No trading days available
       </div>
     )
   }
 
   return (
-    <div className="space-y-4">
-      {/* Error message */}
+    <div className="space-y-3">
       {localError && (
-        <div className="bg-red-900/20 border border-red-700/50 rounded-lg px-4 py-3 text-sm text-red-300">
-          ⚠️ {localError}
+        <div className="bg-amber-900/20 border border-amber-700/40 rounded-lg px-3 py-2 text-xs text-amber-300">
+          {localError}
         </div>
       )}
 
-      {/* Calendar grid */}
       <div className="space-y-2">
-        {/* Weekday headers */}
-        <div className="grid grid-cols-7 gap-2 mb-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">
-          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-            <div key={day} className="text-center">
-              {day}
-            </div>
-          ))}
-        </div>
-
-        {/* Calendar dates */}
-        <div className="grid grid-cols-7 gap-2">
-          {availableDates.map(dateObj => {
-            const dayName = getDayName(dateObj.date)
-            const daysAgo = getDaysAgo(dateObj.date)
-            const isTodayDate = isToday(dateObj.date)
-            const isSelectedDate = selectedDate === dateObj.date
-
-            return (
-              <button
-                key={dateObj.date}
-                onClick={() => handleDateClick(dateObj.date)}
-                disabled={!dateObj.is_available}
-                className={`relative aspect-square rounded-lg border-2 transition-all duration-150 ${
-                  isSelectedDate
-                    ? 'border-brand-500 bg-brand-600/20 shadow-lg'
-                    : dateObj.is_available
-                      ? 'border-surface-600 hover:border-brand-400 bg-surface-700 cursor-pointer'
-                      : 'border-surface-700 bg-surface-800/50 cursor-not-allowed opacity-50'
-                }`}
-                title={formatDateDisplay(dateObj.date)}
-              >
-                {/* Date number and label */}
-                <div className="flex flex-col items-center justify-center h-full text-xs font-semibold">
-                  {isTodayDate ? (
-                    <>
-                      <span className="text-white text-sm">Today</span>
-                      <span className="text-gray-500 text-xs">{dayName}</span>
-                    </>
-                  ) : daysAgo === 1 ? (
-                    <>
-                      <span className="text-white text-sm">Yest</span>
-                      <span className="text-gray-500 text-xs">{dayName}</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="text-white">{daysAgo}d ago</span>
-                      <span className="text-gray-500">{dayName}</span>
-                    </>
-                  )}
+        {availableDates.map((dateObj, idx) => {
+          const isSelected = selectedDate === dateObj.date
+          return (
+            <button
+              key={dateObj.date}
+              type="button"
+              onClick={() => handleDateClick(dateObj.date)}
+              disabled={!dateObj.is_available}
+              className={`w-full flex items-center justify-between gap-3 rounded-lg border px-4 py-3 text-left transition ${
+                isSelected
+                  ? 'border-brand-500 bg-brand-600/20'
+                  : dateObj.is_available
+                    ? 'border-surface-600 bg-surface-700/60 hover:border-brand-400'
+                    : 'border-surface-800 bg-surface-900/40 opacity-50 cursor-not-allowed'
+              }`}
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                    #{idx + 1}
+                  </span>
+                  <span className="text-sm font-semibold text-white">
+                    {formatDateDisplay(dateObj.date)}
+                  </span>
                 </div>
-
-                {/* Availability badge */}
-                <AvailabilityBadge date={dateObj} />
-              </button>
-            )
-          })}
-        </div>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {getDayName(dateObj.date)} · opens 9:30 AM ET
+                </p>
+              </div>
+              <AvailabilityBadge date={dateObj} />
+            </button>
+          )
+        })}
       </div>
 
-      {/* Legend */}
-      <div className="mt-6 pt-4 border-t border-surface-600 space-y-2 text-xs text-gray-500">
-        <div className="flex items-center gap-2">
-          <span className="text-green-400">✅</span>
-          <span>Market data available</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-orange-400">🔄</span>
-          <span>Replay session already created</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-gray-600">❌</span>
-          <span>No market data available</span>
-        </div>
-      </div>
+      <p className="text-[11px] text-gray-600 pt-2 border-t border-surface-700">
+        Only completed NYC sessions (Mon–Fri). Today is excluded until the day closes.
+      </p>
     </div>
   )
 }

@@ -3,7 +3,7 @@
  */
 
 /**
- * Get last N days including today (or up to a specific date)
+ * Get last N calendar days including today (or up to a specific date)
  */
 export function getLastNDays(days: number = 30): string[] {
   const dates: string[] = []
@@ -16,6 +16,99 @@ export function getLastNDays(days: number = 30): string[] {
   }
 
   return dates
+}
+
+function lastNTradingDaysInTz(n: number, timeZone: string): string[] {
+  const out: string[] = []
+  const todayStr = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
+  const [y, m, d] = todayStr.split('-').map(Number)
+  const cursor = new Date(Date.UTC(y!, m! - 1, d!))
+  cursor.setUTCDate(cursor.getUTCDate() - 1) // start yesterday in that calendar
+
+  let guard = 0
+  while (out.length < n && guard < 40) {
+    guard++
+    const dateStr = `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}-${String(cursor.getUTCDate()).padStart(2, '0')}`
+    // Weekday of that civil date at noon UTC is a stable Mon–Fri check for calendar days
+    const dow = new Date(`${dateStr}T12:00:00Z`).getUTCDay()
+    if (dow !== 0 && dow !== 6) out.push(dateStr)
+    cursor.setUTCDate(cursor.getUTCDate() - 1)
+  }
+  return out.reverse()
+}
+
+/**
+ * Last N completed NYC cash trading days (Mon–Fri), ending yesterday ET.
+ * Used by simulation — never includes today (live desk owns today).
+ */
+export function getLastNNycTradingDays(n: number = 5): string[] {
+  return lastNTradingDaysInTz(n, 'America/New_York')
+}
+
+/** Last N completed Tokyo cash trading days (Mon–Fri), ending yesterday JST. */
+export function getLastNTokyoTradingDays(n: number = 5): string[] {
+  return lastNTradingDaysInTz(n, 'Asia/Tokyo')
+}
+
+/**
+ * Unix seconds for a wall-clock time on a calendar date in any IANA timezone.
+ */
+export function zonedDateTimeToUnix(
+  dateStr: string,
+  hour: number,
+  minute: number = 0,
+  timeZone: string = 'America/New_York'
+): number {
+  const target = hour + minute / 60
+  const [y, m, d] = dateStr.split('-').map(Number)
+  // Rough morning guess in UTC; correction loop handles TZ/DST
+  let guess = Math.floor(Date.UTC(y!, m! - 1, d!, 12, 0, 0) / 1000)
+
+  for (let pass = 0; pass < 3; pass++) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date(guess * 1000))
+
+    let h = parseInt(parts.find((p) => p.type === 'hour')?.value ?? '0', 10)
+    const min = parseInt(parts.find((p) => p.type === 'minute')?.value ?? '0', 10)
+    if (h === 24) h = 0
+    const actual = h + min / 60
+    let diff = target - actual
+    if (diff > 12) diff -= 24
+    if (diff < -12) diff += 24
+    if (Math.abs(diff) < 1 / 120) break
+    guess += Math.round(diff * 3600)
+  }
+  return guess
+}
+
+/** Unix seconds for a wall-clock time on an ET calendar date (handles DST). */
+export function nyDateTimeToUnix(
+  dateStr: string,
+  hour: number,
+  minute: number = 0
+): number {
+  return zonedDateTimeToUnix(dateStr, hour, minute, 'America/New_York')
+}
+
+/** Unix seconds for a wall-clock time on a Tokyo calendar date. */
+export function tokyoDateTimeToUnix(
+  dateStr: string,
+  hour: number,
+  minute: number = 0
+): number {
+  return zonedDateTimeToUnix(dateStr, hour, minute, 'Asia/Tokyo')
 }
 
 /**

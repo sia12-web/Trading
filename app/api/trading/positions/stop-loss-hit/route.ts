@@ -82,42 +82,82 @@ export async function POST(request: Request): Promise<NextResponse<StopLossHitRe
     const profitLossPercent = (profitLoss / position.risk_amount) * 100
     const profitLossPercentRounded = Math.round(profitLossPercent * 100) / 100
     const newStopLossHitCount = position.stop_loss_hit_count + 1
+    const shouldClose = newStopLossHitCount >= 3
+    const marketDisabled = newStopLossHitCount >= 3
 
-    const { error: updateError } = await supabase
+    if (shouldClose) {
+      const { error: updateError } = await supabase
+        .from('trades_journal')
+        .update({
+          exit_timestamp: hit_timestamp,
+          exit_price: current_price,
+          exit_reason: 'stop_hit',
+          profit_loss: profitLoss,
+          profit_loss_percent: profitLossPercentRounded,
+          stop_loss_hit_count: newStopLossHitCount,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', position_id)
+
+      if (updateError) {
+        logger.error('POST /api/trading/positions/stop-loss-hit: Update error', { error: updateError })
+        return NextResponse.json(
+          createErrorResponse(position_id, 'Failed to close position', newStopLossHitCount),
+          { status: 500 }
+        )
+      }
+
+      if (marketDisabled) {
+        const todayStr = new Date().toISOString().split('T')[0]
+        await supabase
+          .from('regime_cache')
+          .update({ market_disabled: true, disabled_at: new Date().toISOString() })
+          .eq('instrument', position.instrument)
+          .eq('date', todayStr)
+      }
+
+      return NextResponse.json(
+        createSuccessResponse(
+          position_id,
+          current_price,
+          profitLoss,
+          profitLossPercentRounded,
+          newStopLossHitCount,
+          marketDisabled
+        ),
+        { status: 201 }
+      )
+    }
+
+    // Hits 1–2: increment only, keep position open
+    const { error: bumpError } = await supabase
       .from('trades_journal')
       .update({
-        exit_timestamp: hit_timestamp,
-        exit_price: current_price,
-        exit_reason: 'stop_hit',
-        profit_loss: profitLoss,
-        profit_loss_percent: profitLossPercentRounded,
         stop_loss_hit_count: newStopLossHitCount,
+        stop_loss_hit_at: hit_timestamp,
         updated_at: new Date().toISOString(),
       })
       .eq('id', position_id)
 
-    if (updateError) {
-      logger.error('POST /api/trading/positions/stop-loss-hit: Update error', { error: updateError })
+    if (bumpError) {
       return NextResponse.json(
-        createErrorResponse(position_id, 'Failed to close position', newStopLossHitCount),
+        createErrorResponse(position_id, 'Failed to update stop hit count', newStopLossHitCount),
         { status: 500 }
       )
     }
 
-    let marketDisabled = false
-    if (newStopLossHitCount >= 2) {
-      const todayStr = new Date().toISOString().split('T')[0]
-      await supabase
-        .from('regime_cache')
-        .update({ market_disabled: true, disabled_at: new Date().toISOString() })
-        .eq('instrument', position.instrument)
-        .eq('date', todayStr)
-      marketDisabled = true
-    }
-
     return NextResponse.json(
-      createSuccessResponse(position_id, current_price, profitLoss, profitLossPercentRounded, newStopLossHitCount, marketDisabled),
-      { status: 201 }
+      {
+        success: true,
+        position_id,
+        exit_price: 0,
+        profit_loss: 0,
+        profit_loss_percent: 0,
+        stop_loss_hit_count: newStopLossHitCount,
+        market_disabled: false,
+        message: `Stop hit #${newStopLossHitCount}/3 — position still open`,
+      } satisfies StopLossHitResponse,
+      { status: 200 }
     )
   } catch (error) {
     logger.error('POST /api/trading/positions/stop-loss-hit: Error', { error })

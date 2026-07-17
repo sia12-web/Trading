@@ -1,0 +1,20 @@
+{
+  "crons": [
+    {
+      "path": "/api/trading/market-open",
+      "schedule": "15 13 * * 1-5"
+    },
+    {
+      "path": "/api/trading/auto-levels",
+      "schedule": "45 23 * * 0-4"
+    },
+    {
+      "path": "/api/trading/morning-review",
+      "schedule": "35 15 * * 1-5"
+    },
+    {
+      "path": "/api/trading/morning-review",
+      "schedule": "35 2 * * 1-5"
+    }
+  ]
+}

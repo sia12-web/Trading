@@ -126,6 +126,10 @@ export async function GET(request: Request): Promise<NextResponse<PositionStatus
       .is('exit_timestamp', null) // Only open positions
       .maybeSingle()
 
+    // #region agent log
+    fetch('http://127.0.0.1:7854/ingest/12861b9b-f890-41df-9c4f-bff921b2361a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'624454'},body:JSON.stringify({sessionId:'624454',runId:'post-fix',hypothesisId:'A',location:'management-status/route.ts:query',message:'trades_journal query result',data:{hasError:!!queryError,errorCode:queryError?.code??null,errorMessage:queryError?.message??null,hasPosition:!!positionData,supabaseHost:(process.env.NEXT_PUBLIC_SUPABASE_URL||'').replace(/^https?:\/\//,'').split('/')[0],userIdPrefix:user.id?.slice(0,8),instrument,today},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+
     if (queryError) {
       logger.error('GET /api/trading/positions/management-status: Database query error', {
         error: queryError,

@@ -4,7 +4,7 @@
  * Remove or modify this for production
  */
 
-export const DEV_USER_ID = 'dev-user-00000000-0000-0000-0000-000000000000'
+export const DEV_USER_ID = '00000000-0000-0000-0000-000000000001'
 
 export async function getOrCreateUser() {
   return {

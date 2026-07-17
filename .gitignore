@@ -50,3 +50,7 @@ Thumbs.db
 *.log
 coverage/
 dist/
+
+# Backtest caches / outputs
+bots/data/
+bots/output/

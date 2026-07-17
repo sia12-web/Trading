@@ -8,14 +8,16 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { logger } from '@/lib/utils/logger'
 import { getWindowManager } from '@/lib/trading/windowManager'
+import { getESTDateString } from '@/lib/utils/timeUtils'
 import type { CurrentPositionResponse, TradePosition } from '@/types/trading'
 
 export async function GET(request: Request): Promise<NextResponse<CurrentPositionResponse>> {
   try {
     const { searchParams } = new URL(request.url)
     const instrument = searchParams.get('instrument') as 'DOW' | 'NASDAQ' | 'NIKKEI' | null
+    const anyNy = searchParams.get('any') === '1'
 
-    if (!instrument || !['DOW', 'NASDAQ', 'NIKKEI'].includes(instrument)) {
+    if (!anyNy && (!instrument || !['DOW', 'NASDAQ', 'NIKKEI'].includes(instrument))) {
       logger.error('GET /api/trading/current-position: Invalid or missing instrument', { instrument })
       return NextResponse.json(
         {
@@ -33,24 +35,29 @@ export async function GET(request: Request): Promise<NextResponse<CurrentPositio
     const supabase = await createClient()
     const windowManager = getWindowManager()
     const now = new Date()
+    const today = getESTDateString()
 
-    // Get today's date in YYYY-MM-DD format
-    const today = new Date().toISOString().split('T')[0] || ''
-
-    // Query for today's open position
-    const { data: position, error: queryError } = await supabase
+    // Query for today's open position (ET date)
+    let query = supabase
       .from('trades_journal')
       .select(
         `id, instrument, trade_date, entry_window, entry_timestamp, entry_price,
          entry_direction, stop_loss_price, stop_loss_hit_at, stop_loss_hit_count,
          position_size, risk_amount, account_size, exit_timestamp, exit_price,
          exit_reason, profit_loss, profit_loss_percent, regime, regime_confidence,
-         best_level_break_confidence, best_break_level, created_at, updated_at`
+         best_level_break_confidence, best_break_level, profit_target_price,
+         created_at, updated_at`
       )
-      .eq('instrument', instrument)
       .eq('trade_date', today)
       .is('exit_timestamp', null)
-      .maybeSingle()
+
+    if (anyNy || !instrument) {
+      query = query.in('instrument', ['DOW', 'NASDAQ'])
+    } else {
+      query = query.eq('instrument', instrument)
+    }
+
+    const { data: position, error: queryError } = await query.maybeSingle()
 
     if (queryError) {
       logger.error('GET /api/trading/current-position: Query error', { error: queryError })
@@ -73,7 +80,7 @@ export async function GET(request: Request): Promise<NextResponse<CurrentPositio
 
     // Check if market is disabled (2 stop loss hits = market disabled)
     let marketDisabled = false
-    if (position && position.stop_loss_hit_count >= 2) {
+    if (position && position.stop_loss_hit_count >= 3) {
       marketDisabled = true
       logger.log('GET /api/trading/current-position: Market disabled (2 stops)', {
         instrument,
@@ -88,10 +95,13 @@ export async function GET(request: Request): Promise<NextResponse<CurrentPositio
       market_disabled: marketDisabled,
     })
 
+    const locked =
+      (position?.instrument as 'DOW' | 'NASDAQ' | 'NIKKEI' | undefined) ?? instrument ?? null
+
     return NextResponse.json(
       {
         position: position as TradePosition | null,
-        locked_instrument: instrument,
+        locked_instrument: locked,
         entry_window_active: currentWindow,
         next_entry_window: nextWindow,
         market_disabled: marketDisabled,

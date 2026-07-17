@@ -18,7 +18,7 @@ export interface AnalysisRequest {
   candles_daily: Candle[]
   candles_h1: Candle[]
   symbol: string
-  index: 'DOW' | 'NASDAQ'
+  index: 'DOW' | 'NASDAQ' | 'NIKKEI'
   current_price: number
 }
 

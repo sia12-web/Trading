@@ -107,7 +107,7 @@ export default function PositionsPage() {
         {!loading && !error && (
           <>
             <LunchCloseCountdown
-              marketDisabled={(position?.stop_loss_hit_count ?? 0) >= 2}
+              marketDisabled={(position?.stop_loss_hit_count ?? 0) >= 3}
               stopLossHitCount={position?.stop_loss_hit_count ?? 0}
             />
             <div className="mt-4" />

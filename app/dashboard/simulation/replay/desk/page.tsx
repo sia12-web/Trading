@@ -1,0 +1,1445 @@
+'use client'
+
+/**
+ * Simulation replay desk (query-param driven — no DB session required)
+ * Flow: pick day → land at 9:30 ET → AI/structure levels → pending → fill → manage
+ */
+
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import {
+  createChart,
+  ColorType,
+  CrosshairMode,
+  LineStyle,
+  TickMarkType,
+  type IChartApi,
+  type ISeriesApi,
+  type UTCTimestamp,
+} from 'lightweight-charts'
+import {
+  nyDateTimeToUnix,
+  tokyoDateTimeToUnix,
+  formatDateDisplay,
+  getLastNNycTradingDays,
+  getLastNTokyoTradingDays,
+} from '@/lib/utils/dateUtils'
+import { sessionFor } from '@/lib/trading/sessionGate'
+import { previewPositionSizing } from '@/lib/trading/positionSizing'
+import { resolveSimMorningGate } from '@/lib/trading/sessionGate'
+import {
+  SESSION_STYLES,
+  VWAP_COLORS,
+  computeAnchoredVwap,
+  computeSessionHighlightRects,
+  deskClockFor,
+  lastNTradingSessions,
+  type SessionHighlightRect,
+} from '@/lib/chart/sessionVwap'
+import {
+  computeSimOvernightBias,
+  simSuggestedDirection,
+} from '@/lib/trading/simOvernightBias'
+import {
+  aiLevelsUrl,
+  resolveDeskLevels,
+  zoneStopPrice,
+  formatZone,
+} from '@/lib/trading/deskLevels'
+
+type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI'
+type Direction = 'LONG' | 'SHORT'
+
+interface Candle {
+  time: number
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+}
+
+interface AiLevel {
+  level: number
+  type: string
+  conviction: number
+  reasoning?: string
+  source?: 'ai' | 'structure'
+}
+
+/** After SL/TP, flip or reinforce the traded level so the next entry set is updated. */
+function applySimTradeOutcome(
+  levels: AiLevel[],
+  entry: number,
+  direction: Direction,
+  outcome: 'stop' | 'target'
+): AiLevel[] {
+  if (levels.length === 0) return levels
+  let nearest = levels[0]!
+  let best = Math.abs(nearest.level - entry)
+  for (const l of levels) {
+    const d = Math.abs(l.level - entry)
+    if (d < best) {
+      best = d
+      nearest = l
+    }
+  }
+  if (best / entry > 0.005) return levels
+
+  return levels.map((l) => {
+    if (l.level !== nearest.level) return l
+    if (outcome === 'stop') {
+      const flipped = direction === 'LONG' ? 'resistance' : 'support'
+      return {
+        ...l,
+        type: flipped,
+        conviction: Math.max(5, Math.min(9, (l.conviction || 6) + 1)),
+        reasoning: `Market broke this zone (${direction} stopped out) — flipped to ${flipped} for the retest.`,
+      }
+    }
+    return {
+      ...l,
+      conviction: Math.min(10, (l.conviction || 6) + 1),
+      reasoning: `Held through take-profit (${direction}) — zone still defended; sweep risk rises on next touch.`,
+    }
+  })
+}
+
+interface PendingOrder {
+  level: number
+  direction: Direction
+  stopLoss: number
+  target: number
+  size: number
+  risk: number
+  accountSize: number
+}
+
+interface PaperPosition {
+  entry: number
+  direction: Direction
+  stopLoss: number
+  target: number
+  size: number
+  risk: number
+  filledAt: number
+}
+
+const CHART_TZ = 'America/New_York'
+/** Trailing window while following the sim tip — readable bars, tip pinned right */
+const FOLLOW_BARS = 96
+const FOLLOW_RIGHT_PAD = 8
+const FOLLOW_BAR_SPACING = 7
+
+// Reuse formatters — tick mark paint during scroll was allocating these every call
+const fmtTime = new Intl.DateTimeFormat('en-US', {
+  timeZone: CHART_TZ,
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+})
+const fmtTimeSec = new Intl.DateTimeFormat('en-US', {
+  timeZone: CHART_TZ,
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+})
+const fmtDay = new Intl.DateTimeFormat('en-US', {
+  timeZone: CHART_TZ,
+  day: 'numeric',
+  month: 'short',
+})
+const fmtMonth = new Intl.DateTimeFormat('en-US', {
+  timeZone: CHART_TZ,
+  month: 'short',
+  year: '2-digit',
+})
+const fmtYear = new Intl.DateTimeFormat('en-US', {
+  timeZone: CHART_TZ,
+  year: 'numeric',
+})
+
+function formatChartTime(unix: number, withSeconds = false): string {
+  return (withSeconds ? fmtTimeSec : fmtTime).format(new Date(unix * 1000))
+}
+
+function formatChartDate(unix: number, style: 'day' | 'month' | 'year' = 'day'): string {
+  if (style === 'year') return fmtYear.format(new Date(unix * 1000))
+  if (style === 'month') return fmtMonth.format(new Date(unix * 1000))
+  return fmtDay.format(new Date(unix * 1000))
+}
+
+/** Axis tick labels in ET (lightweight-charts defaults to UTC). */
+function nyTickMarkFormatter(
+  time: UTCTimestamp | string | number,
+  tickMarkType: TickMarkType
+): string {
+  const unix =
+    typeof time === 'number' ? time : Math.floor(new Date(String(time)).getTime() / 1000)
+  if (!Number.isFinite(unix)) return ''
+  switch (tickMarkType) {
+    case TickMarkType.Year:
+      return formatChartDate(unix, 'year')
+    case TickMarkType.Month:
+      return formatChartDate(unix, 'month')
+    case TickMarkType.DayOfMonth:
+      return formatChartDate(unix, 'day')
+    case TickMarkType.TimeWithSeconds:
+      return formatChartTime(unix, true)
+    case TickMarkType.Time:
+    default:
+      return formatChartTime(unix)
+  }
+}
+
+function formatEt(unix: number): string {
+  return formatChartTime(unix, true)
+}
+
+function barTouches(bar: Candle, level: number): boolean {
+  return bar.low <= level && bar.high >= level
+}
+
+/** Last index with candle.time <= t (candles must be sorted ascending). */
+function lastIndexAtOrBefore(candles: Candle[], t: number): number {
+  let lo = 0
+  let hi = candles.length - 1
+  let ans = -1
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1
+    if (candles[mid]!.time <= t) {
+      ans = mid
+      lo = mid + 1
+    } else {
+      hi = mid - 1
+    }
+  }
+  return ans
+}
+
+function SimulationDeskInner() {
+  const router = useRouter()
+  const search = useSearchParams()
+
+  const instrumentParam = (search.get('instrument') || 'DOW').toUpperCase()
+  const instrument: Instrument =
+    instrumentParam === 'NASDAQ'
+      ? 'NASDAQ'
+      : instrumentParam === 'NIKKEI'
+        ? 'NIKKEI'
+        : 'DOW'
+  const replayDate = search.get('date') || ''
+  const initialSpeed = Math.min(16, Math.max(1, parseInt(search.get('speed') || '1', 10) || 1))
+  const sess = sessionFor(instrument)
+  const toUnix = instrument === 'NIKKEI' ? tokyoDateTimeToUnix : nyDateTimeToUnix
+  const [openH, openM] = sess.marketOpen.split(':').map(Number)
+  const [entryH, entryM] = sess.entryClose.split(':').map(Number)
+  const [lunchH, lunchM] = sess.lunchClose.split(':').map(Number)
+
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [speed, setSpeed] = useState(initialSpeed)
+  const [allCandles, setAllCandles] = useState<Candle[]>([])
+  const [levels, setLevels] = useState<AiLevel[]>([])
+  const [levelsSource, setLevelsSource] = useState<'ai' | 'structure'>('ai')
+  const [simNow, setSimNow] = useState(0)
+  const [playing, setPlaying] = useState(false)
+  const [pending, setPending] = useState<PendingOrder | null>(null)
+  const [position, setPosition] = useState<PaperPosition | null>(null)
+  const [accountSize, setAccountSize] = useState(100000)
+  const [ticketLevel, setTicketLevel] = useState<AiLevel | null>(null)
+  const [msg, setMsg] = useState<string | null>(null)
+  const [levelsOpen, setLevelsOpen] = useState(true)
+  const [reasoningOpen, setReasoningOpen] = useState<number | null>(null)
+  const [chartReady, setChartReady] = useState(false)
+  const [sessionRects, setSessionRects] = useState<SessionHighlightRect[]>([])
+
+  const containerRef = useRef<HTMLDivElement>(null)
+  const chartRef = useRef<IChartApi | null>(null)
+  const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
+  const vwapSeriesRef = useRef<{
+    vwap: ISeriesApi<'Line'>
+    upper1: ISeriesApi<'Line'>
+    lower1: ISeriesApi<'Line'>
+    upper2: ISeriesApi<'Line'>
+    lower2: ISeriesApi<'Line'>
+    upper3: ISeriesApi<'Line'>
+    lower3: ISeriesApi<'Line'>
+  } | null>(null)
+  const levelLinesRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]>([])
+  const posLinesRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]>([])
+  const allCandlesRef = useRef<Candle[]>([])
+  const sessionCandlesRef = useRef<Candle[]>([])
+  const pendingRef = useRef<PendingOrder | null>(null)
+  const positionRef = useRef<PaperPosition | null>(null)
+  const didFitRef = useRef(false)
+  const visibleCandlesRef = useRef<Candle[]>([])
+  const simNowRef = useRef(0)
+  const speedRef = useRef(initialSpeed)
+  const lunchUnixRef = useRef(0)
+  const playingRef = useRef(false)
+  const followLiveRef = useRef(true)
+  const ignoreRangeChangeRef = useRef(false)
+  const lastAppliedBarIdxRef = useRef(-1)
+  const lastPriceRef = useRef<number | null>(null)
+  const applyChartDataRef = useRef<(simT: number, opts?: { force?: boolean; fit?: boolean }) => void>(
+    () => {}
+  )
+  const fillPendingRef = useRef<(pend: PendingOrder, at: number) => void>(() => {})
+  const [lastPrice, setLastPrice] = useState<number | null>(null)
+  const [followingLive, setFollowingLive] = useState(true)
+
+  useEffect(() => {
+    allCandlesRef.current = allCandles
+  }, [allCandles])
+  useEffect(() => {
+    pendingRef.current = pending
+  }, [pending])
+  useEffect(() => {
+    positionRef.current = position
+  }, [position])
+  useEffect(() => {
+    // Don't clobber the live playback clock from a stale React state flush
+    if (!playingRef.current) simNowRef.current = simNow
+  }, [simNow])
+  useEffect(() => {
+    speedRef.current = speed
+  }, [speed])
+  useEffect(() => {
+    playingRef.current = playing
+  }, [playing])
+
+  const openUnix = useMemo(
+    () => (replayDate ? toUnix(replayDate, openH!, openM || 0) : 0),
+    [replayDate, toUnix, openH, openM]
+  )
+  const entryCloseUnix = useMemo(
+    () => (replayDate ? toUnix(replayDate, entryH!, entryM || 0) : 0),
+    [replayDate, toUnix, entryH, entryM]
+  )
+  const lunchUnix = useMemo(
+    () => (replayDate ? toUnix(replayDate, lunchH!, lunchM || 0) : 0),
+    [replayDate, toUnix, lunchH, lunchM]
+  )
+
+  useEffect(() => {
+    lunchUnixRef.current = lunchUnix
+  }, [lunchUnix])
+
+  // Last 5 cash sessions for this index (same window as live AVWAP; clock by instrument)
+  const sessionCandles = useMemo(
+    () => lastNTradingSessions(allCandles, 5, deskClockFor(instrument)),
+    [allCandles, instrument]
+  )
+
+  useEffect(() => {
+    sessionCandlesRef.current = sessionCandles
+    lastAppliedBarIdxRef.current = -1
+  }, [sessionCandles])
+
+  // Sim-only: overnight gap + prior session (no news). Live desk unchanged.
+  const overnightBias = useMemo(
+    () => (openUnix ? computeSimOvernightBias(allCandles, openUnix) : null),
+    [allCandles, openUnix]
+  )
+
+  // Morning-only sim gate — no live afternoon / background-memory feature
+  const gate = useMemo(() => {
+    if (!simNow) return null
+    return resolveSimMorningGate({
+      now: new Date(simNow * 1000),
+      instrument,
+      hasOpenPosition: !!position,
+      dayDone: simNow >= lunchUnix,
+    })
+  }, [simNow, instrument, position, lunchUnix])
+
+  // Validate date + load candles/levels
+  useEffect(() => {
+    if (!replayDate) {
+      setError('Missing date — pick a day from Simulation')
+      setLoading(false)
+      return
+    }
+
+    const allowed = new Set(
+      instrument === 'NIKKEI' ? getLastNTokyoTradingDays(5) : getLastNNycTradingDays(5)
+    )
+    if (!allowed.has(replayDate)) {
+      setError(
+        instrument === 'NIKKEI'
+          ? 'Date must be one of the last 5 Tokyo trading days'
+          : 'Date must be one of the last 5 NYC trading days'
+      )
+      setLoading(false)
+      return
+    }
+
+    let cancelled = false
+    ;(async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const startOpen = toUnix(replayDate, openH!, openM || 0)
+        setSimNow(startOpen)
+
+        const [candlesRes, levelsRes] = await Promise.all([
+          fetch(
+            // Same OANDA 24h feed as live chart (Asia / London / NY boxes)
+            `/api/trading/candles?instrument=${instrument}&timeframe=5m&days=7&date=${replayDate}&_=${Date.now()}`,
+            { cache: 'no-store' }
+          ),
+          fetch(aiLevelsUrl(instrument), { cache: 'no-store' }),
+        ])
+
+        const cJson = await candlesRes.json()
+        const lJson = levelsRes.ok ? await levelsRes.json() : { levels: [] }
+        if (cancelled) return
+
+        const mapped: Candle[] = (cJson.candles || []).map((c: {
+          time: number
+          open: number
+          high: number
+          low: number
+          close: number
+          volume?: number
+        }) => ({
+          time: c.time,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: c.volume ?? 0,
+        }))
+
+        if (mapped.length === 0) {
+          throw new Error('No candles for this day — Yahoo may be unavailable')
+        }
+
+        setAllCandles(mapped)
+
+        // Same resolution rule as the live chart (shared deskLevels module)
+        const resolved = resolveDeskLevels(lJson.levels || [], mapped, startOpen, sess.tz)
+        setLevels(resolved.levels)
+        setLevelsSource(resolved.source)
+
+        const openLabel =
+          instrument === 'NIKKEI' ? '9:00 AM JST' : '9:30 AM ET'
+        setMsg(
+          `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} — place a level order, then Play`
+        )
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load desk')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [instrument, replayDate])
+
+  // Chart init
+  useEffect(() => {
+    if (!containerRef.current || loading) return
+    didFitRef.current = false
+    setChartReady(false)
+
+    const chart = createChart(containerRef.current, {
+      layout: {
+        background: { type: ColorType.Solid, color: '#131622' },
+        textColor: '#6b7280',
+        fontSize: 11,
+      },
+      grid: {
+        vertLines: { color: '#1a1e2e' },
+        horzLines: { color: '#1a1e2e' },
+      },
+      crosshair: {
+        mode: CrosshairMode.Normal,
+        vertLine: {
+          color: '#3a4268',
+          width: 1 as const,
+          style: LineStyle.Dashed,
+          labelBackgroundColor: '#222840',
+        },
+        horzLine: {
+          color: '#3a4268',
+          width: 1 as const,
+          style: LineStyle.Dashed,
+          labelBackgroundColor: '#222840',
+        },
+      },
+      rightPriceScale: { borderColor: '#1a1e2e' },
+      timeScale: {
+        borderColor: '#1a1e2e',
+        timeVisible: true,
+        secondsVisible: false,
+        rightOffset: 12,
+        barSpacing: 8,
+        // Default axis is UTC — format ticks in NY so 9:30 ET is not shown as 13:30
+        tickMarkFormatter: nyTickMarkFormatter,
+      },
+      localization: {
+        timeFormatter: (time: UTCTimestamp | string | number) => {
+          const unix =
+            typeof time === 'number'
+              ? time
+              : Math.floor(new Date(String(time)).getTime() / 1000)
+          if (!Number.isFinite(unix)) return ''
+          return `${formatChartDate(unix, 'day')} ${formatChartTime(unix)} ET`
+        },
+      },
+      width: containerRef.current.clientWidth,
+      height: containerRef.current.clientHeight,
+    })
+
+    const series = chart.addCandlestickSeries({
+      upColor: '#26a69a',
+      downColor: '#ef5350',
+      borderUpColor: '#26a69a',
+      borderDownColor: '#ef5350',
+      wickUpColor: '#26a69a',
+      wickDownColor: '#ef5350',
+    })
+
+    const bandOpts = {
+      color: VWAP_COLORS.band,
+      lineWidth: 1 as const,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    }
+    const vwapSeries = {
+      upper3: chart.addLineSeries({ ...bandOpts, title: '+3σ' }),
+      upper2: chart.addLineSeries({ ...bandOpts, title: '+2σ' }),
+      upper1: chart.addLineSeries({ ...bandOpts, title: '+1σ' }),
+      vwap: chart.addLineSeries({
+        color: VWAP_COLORS.vwap,
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        title: 'AVWAP',
+      }),
+      lower1: chart.addLineSeries({ ...bandOpts, title: '-1σ' }),
+      lower2: chart.addLineSeries({ ...bandOpts, title: '-2σ' }),
+      lower3: chart.addLineSeries({ ...bandOpts, title: '-3σ' }),
+    }
+
+    chart.priceScale('right').applyOptions({
+      scaleMargins: { top: 0.05, bottom: 0.05 },
+      borderVisible: false,
+    })
+
+    chartRef.current = chart
+    seriesRef.current = series
+    vwapSeriesRef.current = vwapSeries
+    setChartReady(true)
+
+    const ro = new ResizeObserver(() => {
+      if (containerRef.current && chartRef.current) {
+        chartRef.current.resize(
+          containerRef.current.clientWidth,
+          containerRef.current.clientHeight
+        )
+      }
+    })
+    ro.observe(containerRef.current)
+
+    return () => {
+      ro.disconnect()
+      setChartReady(false)
+      chart.remove()
+      chartRef.current = null
+      seriesRef.current = null
+      vwapSeriesRef.current = null
+    }
+  }, [loading])
+
+  const refreshSessionHighlights = useCallback(() => {
+    const chart = chartRef.current
+    const series = seriesRef.current
+    const list = visibleCandlesRef.current
+    if (!chart || !series || !containerRef.current || list.length === 0) {
+      setSessionRects([])
+      return
+    }
+
+    let priceAxisW = 70
+    try {
+      priceAxisW = chart.priceScale('right').width() || priceAxisW
+    } catch {
+      /* defaults */
+    }
+
+    const { rects } = computeSessionHighlightRects({
+      candles: list,
+      timeScale: chart.timeScale(),
+      priceToY: (price) => series.priceToCoordinate(price),
+      priceScaleWidth: priceAxisW,
+      containerWidth: containerRef.current.clientWidth,
+      containerHeight: containerRef.current.clientHeight,
+      asOfUnix: simNowRef.current || undefined,
+    })
+    setSessionRects(rects)
+  }, [])
+
+  /** Keep the sim tip pinned to the right with a readable trailing window. */
+  const pinToLatest = useCallback(
+    (endIdx: number) => {
+      const chart = chartRef.current
+      if (!chart || endIdx < 0) return
+
+      const ts = chart.timeScale()
+      ignoreRangeChangeRef.current = true
+      ts.applyOptions({
+        rightOffset: FOLLOW_RIGHT_PAD,
+        barSpacing: FOLLOW_BAR_SPACING,
+      })
+      // Logical range: trailing window ending just past the newest bar
+      ts.setVisibleLogicalRange({
+        from: Math.max(-2, endIdx - FOLLOW_BARS),
+        to: endIdx + FOLLOW_RIGHT_PAD,
+      })
+      didFitRef.current = true
+      requestAnimationFrame(() => {
+        ignoreRangeChangeRef.current = false
+        refreshSessionHighlights()
+      })
+    },
+    [refreshSessionHighlights]
+  )
+
+  const enableFollowLive = useCallback(() => {
+    followLiveRef.current = true
+    setFollowingLive(true)
+    const endIdx = lastAppliedBarIdxRef.current
+    if (endIdx >= 0) pinToLatest(endIdx)
+  }, [pinToLatest])
+
+  /** Push candles/VWAP to the chart. Skips work when no new bar (playback stays smooth). */
+  const applyChartData = useCallback(
+    (simT: number, opts?: { force?: boolean; fit?: boolean }) => {
+      const series = seriesRef.current
+      const chart = chartRef.current
+      const candles = sessionCandlesRef.current
+      if (!series || !chart || candles.length === 0) return
+
+      const endIdx = lastIndexAtOrBefore(candles, simT)
+      if (endIdx < 0) return
+
+      const force = opts?.force || endIdx < lastAppliedBarIdxRef.current
+      if (!force && endIdx === lastAppliedBarIdxRef.current) return
+
+      const toBar = (c: Candle) => ({
+        time: c.time as UTCTimestamp,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+      })
+
+      if (force || lastAppliedBarIdxRef.current < 0) {
+        const slice = candles.slice(0, endIdx + 1)
+        series.setData(slice.map(toBar))
+        visibleCandlesRef.current = slice
+
+        const clock = deskClockFor(instrument)
+        const bands = computeAnchoredVwap(slice, clock)
+        const vs = vwapSeriesRef.current
+        if (vs && bands) {
+          vs.vwap.setData(bands.vwap)
+          vs.upper1.setData(bands.upper1)
+          vs.lower1.setData(bands.lower1)
+          vs.upper2.setData(bands.upper2)
+          vs.lower2.setData(bands.lower2)
+          vs.upper3.setData(bands.upper3)
+          vs.lower3.setData(bands.lower3)
+        } else if (vs) {
+          vs.vwap.setData([])
+          vs.upper1.setData([])
+          vs.lower1.setData([])
+          vs.upper2.setData([])
+          vs.lower2.setData([])
+          vs.upper3.setData([])
+          vs.lower3.setData([])
+        }
+      } else {
+        // Incremental: only append new bars (cheap path during Play)
+        for (let i = lastAppliedBarIdxRef.current + 1; i <= endIdx; i++) {
+          series.update(toBar(candles[i]!))
+        }
+        const slice = candles.slice(0, endIdx + 1)
+        visibleCandlesRef.current = slice
+
+        // VWAP bands only refresh when a bar is added (not every clock tick)
+        const bands = computeAnchoredVwap(slice, deskClockFor(instrument))
+        const vs = vwapSeriesRef.current
+        if (vs && bands) {
+          vs.vwap.setData(bands.vwap)
+          vs.upper1.setData(bands.upper1)
+          vs.lower1.setData(bands.lower1)
+          vs.upper2.setData(bands.upper2)
+          vs.lower2.setData(bands.lower2)
+          vs.upper3.setData(bands.upper3)
+          vs.lower3.setData(bands.lower3)
+        }
+      }
+
+      lastAppliedBarIdxRef.current = endIdx
+      const price = candles[endIdx]!.close
+      lastPriceRef.current = price
+      setLastPrice(price)
+
+      // Always keep the tip in view while following (Play or after reset)
+      if (opts?.fit || !didFitRef.current || followLiveRef.current) {
+        pinToLatest(endIdx)
+      } else {
+        requestAnimationFrame(() => refreshSessionHighlights())
+      }
+    },
+    [pinToLatest, refreshSessionHighlights]
+  )
+
+  // Initial / seek chart paint (not every clock tick)
+  useEffect(() => {
+    if (!chartReady || sessionCandles.length === 0 || !simNow) return
+    applyChartData(simNow, { force: true, fit: !didFitRef.current })
+  }, [chartReady, sessionCandles, applyChartData]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!chartReady || !chartRef.current) return
+    let rafPending = 0
+    const runHighlights = () => {
+      if (rafPending) return
+      rafPending = requestAnimationFrame(() => {
+        rafPending = 0
+        refreshSessionHighlights()
+      })
+    }
+
+    const onRangeChange = () => {
+      runHighlights()
+      // User panned/zoomed away from the tip → stop auto-follow so we don't fight them
+      if (ignoreRangeChangeRef.current || !followLiveRef.current) return
+      const range = chartRef.current?.timeScale().getVisibleLogicalRange()
+      const endIdx = lastAppliedBarIdxRef.current
+      if (!range || endIdx < 0) return
+      // If the newest bar is no longer near the right edge, user is inspecting history
+      if (range.to < endIdx - 3) {
+        followLiveRef.current = false
+        setFollowingLive(false)
+      }
+    }
+
+    runHighlights()
+    const t1 = window.setTimeout(runHighlights, 50)
+    const t2 = window.setTimeout(runHighlights, 200)
+    const ts = chartRef.current.timeScale()
+    ts.subscribeVisibleLogicalRangeChange(onRangeChange)
+    ts.subscribeVisibleTimeRangeChange(onRangeChange)
+    const el = containerRef.current
+    const ro = el ? new ResizeObserver(runHighlights) : null
+    ro?.observe(el!)
+    return () => {
+      window.clearTimeout(t1)
+      window.clearTimeout(t2)
+      if (rafPending) cancelAnimationFrame(rafPending)
+      try {
+        ts.unsubscribeVisibleLogicalRangeChange(onRangeChange)
+        ts.unsubscribeVisibleTimeRangeChange(onRangeChange)
+      } catch {
+        /* ignore */
+      }
+      ro?.disconnect()
+    }
+  }, [chartReady, refreshSessionHighlights])
+
+  // Starting Play always snaps back to the live tip
+  useEffect(() => {
+    if (!playing) return
+    enableFollowLive()
+  }, [playing, enableFollowLive])
+
+  // Trade levels — hidden while in a position (only Entry / SL / TP show)
+  useEffect(() => {
+    if (!seriesRef.current || !chartReady) return
+    levelLinesRef.current.forEach((l) => {
+      try {
+        seriesRef.current?.removePriceLine(l)
+      } catch {
+        /* ignore */
+      }
+    })
+    levelLinesRef.current = []
+
+    if (position) return
+
+    for (const lv of levels.slice(0, 16)) {
+      const isRes = String(lv.type).toLowerCase().includes('resist')
+      try {
+        levelLinesRef.current.push(
+          seriesRef.current.createPriceLine({
+            price: lv.level,
+            color: isRes ? '#f87171' : '#34d399',
+            lineWidth: 2,
+            lineStyle: LineStyle.Solid,
+            axisLabelVisible: true,
+            title: `${isRes ? 'SHORT' : 'BUY'} ${lv.level.toLocaleString()}`,
+          })
+        )
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [levels, chartReady, position])
+
+  useEffect(() => {
+    if (!seriesRef.current) return
+    posLinesRef.current.forEach((l) => {
+      try {
+        seriesRef.current?.removePriceLine(l)
+      } catch {
+        /* ignore */
+      }
+    })
+    posLinesRef.current = []
+    if (!position) return
+
+    for (const s of [
+      { price: position.entry, color: '#3b82f6', title: 'Entry' },
+      { price: position.stopLoss, color: '#ef4444', title: 'SL' },
+      { price: position.target, color: '#22c55e', title: 'TP' },
+    ]) {
+      try {
+        posLinesRef.current.push(
+          seriesRef.current.createPriceLine({
+            price: s.price,
+            color: s.color,
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: s.title,
+          })
+        )
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [position])
+
+  const fillPending = useCallback((pend: PendingOrder, at: number) => {
+    setPosition({
+      entry: pend.level,
+      direction: pend.direction,
+      stopLoss: pend.stopLoss,
+      target: pend.target,
+      size: pend.size,
+      risk: pend.risk,
+      filledAt: at,
+    })
+    setPending(null)
+    setLevelsOpen(false)
+    setMsg(`FILLED ${pend.direction} @ ${pend.level.toLocaleString()} — SL/TP only`)
+  }, [])
+
+  useEffect(() => {
+    applyChartDataRef.current = applyChartData
+  }, [applyChartData])
+  useEffect(() => {
+    fillPendingRef.current = fillPending
+  }, [fillPending])
+
+  // Playback — step one candle at a time so the chart visibly moves
+  useEffect(() => {
+    if (!playing || !openUnix) return
+
+    const stepOnce = () => {
+      const candles = allCandlesRef.current
+      const prev = simNowRef.current
+      const lunch = lunchUnixRef.current
+      if (!lunch || candles.length === 0) {
+        setPlaying(false)
+        return
+      }
+
+      // Next bar after the current sim clock (binary search)
+      const nextIdx = lastIndexAtOrBefore(candles, prev) + 1
+      if (nextIdx >= candles.length || candles[nextIdx]!.time > lunch) {
+        simNowRef.current = lunch
+        setSimNow(lunch)
+        applyChartDataRef.current(lunch)
+        setPlaying(false)
+        setMsg('Sim clock reached 11:30 ET — session window closed')
+        return
+      }
+
+      const bar = candles[nextIdx]!
+      const next = bar.time
+
+      const pend = pendingRef.current
+      if (pend && !positionRef.current && barTouches(bar, pend.level)) {
+        fillPendingRef.current(pend, bar.time)
+      }
+
+      const pos = positionRef.current
+      if (pos) {
+        const hitSl =
+          pos.direction === 'LONG'
+            ? bar.low <= pos.stopLoss
+            : bar.high >= pos.stopLoss
+        const hitTp =
+          pos.direction === 'LONG'
+            ? bar.high >= pos.target
+            : bar.low <= pos.target
+        if (hitSl) {
+          const closed = pos
+          simNowRef.current = next
+          setSimNow(next)
+          applyChartDataRef.current(next)
+          setPlaying(false)
+          setMsg(`STOP HIT @ ${closed.stopLoss.toLocaleString()} — levels updated`)
+          setLevels((prev) =>
+            applySimTradeOutcome(prev, closed.entry, closed.direction, 'stop')
+          )
+          setPosition(null)
+          setLevelsOpen(true)
+          return
+        }
+        if (hitTp) {
+          const closed = pos
+          simNowRef.current = next
+          setSimNow(next)
+          applyChartDataRef.current(next)
+          setPlaying(false)
+          setMsg(`TARGET HIT @ ${closed.target.toLocaleString()} — levels updated`)
+          setLevels((prev) =>
+            applySimTradeOutcome(prev, closed.entry, closed.direction, 'target')
+          )
+          setPosition(null)
+          setLevelsOpen(true)
+          return
+        }
+      }
+
+      simNowRef.current = next
+      setSimNow(next)
+      applyChartDataRef.current(next)
+    }
+
+    // 1x ≈ 450ms per 5m bar; 16x ≈ 28ms — chart advances immediately on Play
+    const intervalMs = Math.max(28, Math.round(450 / Math.max(1, speed)))
+    // Step once immediately so Play feels responsive
+    stepOnce()
+    const timer = window.setInterval(stepOnce, intervalMs)
+
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [playing, openUnix, speed])
+
+  const placePending = useCallback(
+    (level: AiLevel, direction: Direction) => {
+      if (position) {
+        setMsg('Already in a position — manage or close first')
+        return
+      }
+      const now = simNowRef.current
+      if (now > entryCloseUnix) {
+        setMsg('Entry window closed (after 10:15 ET sim time)')
+        return
+      }
+      // Zone-based stop: beyond the far edge of the level's zone (sweep-proof)
+      const preview = previewPositionSizing(
+        level.level,
+        accountSize,
+        direction,
+        zoneStopPrice(level.level, direction)
+      )
+      if (!preview) {
+        setMsg('Invalid sizing')
+        return
+      }
+      const order: PendingOrder = {
+        level: level.level,
+        direction,
+        stopLoss: preview.stop_loss_price,
+        target: preview.profit_target_price,
+        size: preview.position_size,
+        risk: preview.risk_amount,
+        accountSize,
+      }
+
+      // Immediate fill if any bar from open→now already touched
+      const touched = allCandlesRef.current.find(
+        (c) => c.time >= openUnix && c.time <= now && barTouches(c, order.level)
+      )
+      setTicketLevel(null)
+      if (touched) {
+        fillPending(order, touched.time)
+        setPlaying(true)
+        return
+      }
+
+      setPending(order)
+      setMsg(
+        `Pending ${direction} limit @ ${level.level.toLocaleString()} — Play until price fills`
+      )
+      setPlaying(true)
+    },
+    [position, entryCloseUnix, accountSize, openUnix, fillPending]
+  )
+
+  const closeAtMarket = () => {
+    const price = lastPriceRef.current ?? lastPrice
+    if (!position || price == null) return
+    const closed = position
+    const pnl =
+      closed.direction === 'LONG'
+        ? (price - closed.entry) * closed.size
+        : (closed.entry - price) * closed.size
+    setMsg(`Closed @ ${price.toLocaleString()} · P&L $${pnl.toFixed(0)} — levels back`)
+    setLevels((prev) =>
+      applySimTradeOutcome(prev, closed.entry, closed.direction, 'target')
+    )
+    setPosition(null)
+    setLevelsOpen(true)
+    setPlaying(false)
+  }
+
+  const jumpToOpen = () => {
+    followLiveRef.current = true
+    setFollowingLive(true)
+    simNowRef.current = openUnix
+    setSimNow(openUnix)
+    applyChartData(openUnix, { force: true, fit: true })
+    setPlaying(false)
+    setPending(null)
+    setPosition(null)
+    setMsg(
+      instrument === 'NIKKEI'
+        ? 'Reset to 9:00 AM JST — place a level order, then Play'
+        : 'Reset to 9:30 AM ET — place a level order, then Play'
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center text-gray-500 text-sm animate-pulse">
+        Loading {instrument} desk at{' '}
+        {instrument === 'NIKKEI' ? '9:00 AM JST' : '9:30 AM ET'}…
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="p-6 space-y-3">
+        <p className="text-red-400 text-sm">{error}</p>
+        <button
+          type="button"
+          onClick={() => router.push('/dashboard/simulation')}
+          className="text-xs text-gray-400 hover:text-white"
+        >
+          ← Back to simulation
+        </button>
+      </div>
+    )
+  }
+
+  const phase = position ? 'MANAGE' : gate?.phase ?? 'ENTRY'
+  const canEnter = !position && !pending && simNow <= entryCloseUnix && simNow >= openUnix
+
+  return (
+    <div className="relative h-screen w-screen overflow-hidden bg-[#0d1117]">
+      {/* Full-bleed chart + session color bands */}
+      <div className="absolute inset-0 z-0">
+        <div ref={containerRef} className="absolute inset-0 z-0" />
+        {sessionRects.map((s, i) => (
+          <div
+            key={`${s.name}-${i}`}
+            className="pointer-events-none absolute"
+            style={{
+              left: s.left,
+              width: s.width,
+              top: s.top,
+              height: s.height,
+              backgroundColor: s.color,
+              zIndex: s.zIndex,
+            }}
+            title={`${s.name} session range`}
+          />
+        ))}
+      </div>
+
+      {/* Top toolbar overlay */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 p-2">
+        <div className="pointer-events-auto flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-[#0d1117]/90 px-2.5 py-1.5 text-xs backdrop-blur-md">
+          <span className="font-semibold uppercase tracking-wide text-violet-300">SIM</span>
+          <span className="font-mono tabular-nums text-white">{formatEt(simNow)} ET</span>
+          <span className="rounded bg-white/10 px-1.5 py-0.5 text-gray-200">{instrument}</span>
+          <span className="hidden text-gray-500 sm:inline">
+            {formatDateDisplay(replayDate)}
+          </span>
+          <span className="rounded bg-violet-500/20 px-1.5 py-0.5 font-semibold uppercase text-violet-200">
+            {phase}
+          </span>
+          {overnightBias && (
+            <span
+              className={`rounded px-1.5 py-0.5 font-semibold uppercase ${
+                overnightBias.bias === 'bullish'
+                  ? 'bg-emerald-500/20 text-emerald-300'
+                  : overnightBias.bias === 'bearish'
+                    ? 'bg-red-500/20 text-red-300'
+                    : 'bg-white/10 text-gray-300'
+              }`}
+              title={overnightBias.detail}
+            >
+              {overnightBias.label}
+            </span>
+          )}
+          {pending && (
+            <span className="text-amber-300">
+              Pending {pending.direction} @ {pending.level.toLocaleString()}
+            </span>
+          )}
+          {position && (
+            <span className="text-emerald-300">
+              OPEN {position.direction} @ {position.entry.toLocaleString()}
+            </span>
+          )}
+
+          <div className="mx-1 h-4 w-px bg-white/10" />
+
+          <button
+            type="button"
+            onClick={jumpToOpen}
+            className="rounded px-2 py-1 text-gray-400 hover:bg-white/10 hover:text-white"
+          >
+            {instrument === 'NIKKEI' ? '9:00' : '9:30'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setPlaying((p) => !p)}
+            className={`rounded px-2.5 py-1 font-semibold ${
+              playing ? 'bg-amber-600 text-white' : 'bg-emerald-600 text-white'
+            }`}
+          >
+            {playing ? 'Pause' : 'Play'}
+          </button>
+          {[1, 2, 4, 16].map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setSpeed(s)}
+              className={`rounded px-1.5 py-1 ${
+                speed === s ? 'bg-brand-600 text-white' : 'text-gray-500 hover:text-white'
+              }`}
+            >
+              {s}x
+            </button>
+          ))}
+
+          {!followingLive && (
+            <button
+              type="button"
+              onClick={enableFollowLive}
+              className="rounded bg-sky-600/90 px-2 py-1 font-semibold text-white hover:bg-sky-500"
+              title="Snap chart back to the latest sim bar"
+            >
+              Jump to latest
+            </button>
+          )}
+
+          {lastPrice != null && (
+            <span className="price-mono ml-auto font-bold text-sm text-white">
+              {lastPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            </span>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setLevelsOpen((o) => !o)}
+            className="rounded border border-white/15 px-2 py-1 text-[10px] uppercase text-gray-300 hover:bg-white/10"
+          >
+            {levelsOpen ? 'Hide levels' : 'Levels'}
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push('/dashboard/simulation')}
+            className="rounded px-2 py-1 text-[10px] uppercase text-gray-500 hover:text-white"
+          >
+            Exit
+          </button>
+        </div>
+
+        {/* Session + AVWAP legend */}
+        <div className="pointer-events-none mt-1.5 flex flex-wrap items-center gap-3 px-1 text-[10px] uppercase tracking-wider text-gray-500">
+          <span>Sessions</span>
+          {Object.entries(SESSION_STYLES).map(([name, s]) => (
+            <span key={name} className="flex items-center gap-1.5">
+              <span
+                className="inline-block h-2.5 w-3.5 rounded-[2px]"
+                style={{ backgroundColor: s.color.replace(/[\d.]+\)$/, '0.55)') }}
+              />
+              <span style={{ color: s.line }}>{name}</span>
+            </span>
+          ))}
+          <span className="text-gray-600">·</span>
+          <span className="flex items-center gap-1.5 normal-case tracking-normal">
+            <span
+              className="inline-block w-4 border-t-2"
+              style={{ borderColor: VWAP_COLORS.vwap }}
+            />
+            <span style={{ color: VWAP_COLORS.vwap }}>AVWAP</span>
+            <span className="text-gray-600">
+              {deskClockFor(instrument).openLabel} · 5 sessions · ±1/2/3σ
+            </span>
+          </span>
+        </div>
+
+        {msg && (
+          <div className="pointer-events-auto mt-1.5 max-w-xl rounded-lg border border-amber-800/40 bg-amber-950/80 px-3 py-1.5 text-[11px] text-amber-100 backdrop-blur">
+            {msg}
+          </div>
+        )}
+
+        {position && lastPrice != null && (
+          <div className="pointer-events-auto mt-1.5 flex max-w-3xl flex-wrap items-center gap-3 rounded-lg border border-amber-700/40 bg-[#161b22]/95 px-3 py-2 text-xs backdrop-blur">
+            <span
+              className={`rounded border px-2 py-0.5 font-bold ${
+                position.direction === 'LONG'
+                  ? 'border-green-800 text-green-400'
+                  : 'border-red-800 text-red-400'
+              }`}
+            >
+              MANAGE · {position.direction}
+            </span>
+            <span className="text-gray-500">
+              Entry{' '}
+              <span className="price-mono text-blue-400">
+                {position.entry.toLocaleString()}
+              </span>
+            </span>
+            <span className="text-gray-500">
+              SL{' '}
+              <span className="price-mono text-red-400">
+                {position.stopLoss.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </span>
+            </span>
+            <span className="text-gray-500">
+              TP{' '}
+              <span className="price-mono text-green-400">
+                {position.target.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </span>
+            </span>
+            <span
+              className={`ml-auto font-bold price-mono ${
+                (position.direction === 'LONG'
+                  ? lastPrice - position.entry
+                  : position.entry - lastPrice) >= 0
+                  ? 'text-green-400'
+                  : 'text-red-400'
+              }`}
+            >
+              $
+              {(
+                (position.direction === 'LONG'
+                  ? lastPrice - position.entry
+                  : position.entry - lastPrice) * position.size
+              ).toFixed(0)}
+            </span>
+            <button
+              type="button"
+              onClick={closeAtMarket}
+              className="rounded-lg border border-emerald-800 px-2.5 py-1 text-[11px] font-semibold text-emerald-400"
+            >
+              CLOSE
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Levels drawer — hidden while in a trade (SL/TP only on chart) */}
+      {levelsOpen && !position && (
+        <div className="absolute bottom-3 right-3 top-14 z-20 flex w-60 flex-col overflow-hidden rounded-xl border border-white/10 bg-[#0d1117]/92 shadow-2xl backdrop-blur-md">
+          <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+              {levelsSource === 'ai' ? 'AI Levels' : 'Session Levels'}
+            </span>
+            <button
+              type="button"
+              onClick={() => setLevelsOpen(false)}
+              className="text-gray-600 hover:text-white"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="flex-1 space-y-1.5 overflow-y-auto p-2">
+            {levels.length === 0 && (
+              <p className="p-2 text-[11px] text-amber-500/90">No levels for this session.</p>
+            )}
+            {levels.map((l, i) => {
+              const isRes = String(l.type).toLowerCase().includes('resist')
+              const whyOpen = reasoningOpen === i
+              const why =
+                l.reasoning?.trim() ||
+                (isRes
+                  ? 'Resistance zone — prefer shorts on touch in this window.'
+                  : 'Support zone — prefer buys on touch in this window.')
+              return (
+                <div
+                  key={`${l.level}-${i}`}
+                  className={`rounded-lg border text-[11px] ${
+                    isRes
+                      ? 'border-red-900/50 bg-red-950/40 text-red-300'
+                      : 'border-emerald-900/50 bg-emerald-950/40 text-emerald-300'
+                  }`}
+                >
+                  <button
+                    type="button"
+                    disabled={!canEnter}
+                    onClick={() => setTicketLevel(l)}
+                    className="w-full px-2.5 py-2 text-left transition-all disabled:opacity-40 hover:brightness-110"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-semibold uppercase opacity-70">
+                        {isRes ? 'SHORT' : 'BUY'}
+                      </span>
+                      <span className="text-gray-500">c{l.conviction}</span>
+                    </div>
+                    <div className="price-mono mt-0.5 text-sm font-bold text-white">
+                      {l.level.toLocaleString()}
+                    </div>
+                    <div className="mt-0.5 text-[9px] text-gray-500">
+                      zone {formatZone(l.level)}
+                    </div>
+                  </button>
+                  <div className="border-t border-white/5 px-2 pb-2">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setReasoningOpen(whyOpen ? null : i)
+                      }}
+                      className="mt-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400 hover:text-white"
+                    >
+                      {whyOpen ? 'Hide why ▾' : 'Why this level ▸'}
+                    </button>
+                    {whyOpen && (
+                      <p className="mt-1.5 text-[11px] leading-relaxed text-gray-300">
+                        {why}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div className="border-t border-white/10 p-2">
+            <label className="text-[9px] uppercase text-gray-600">
+              Account $
+              <input
+                type="number"
+                value={accountSize}
+                onChange={(e) => setAccountSize(Number(e.target.value) || 0)}
+                className="price-mono mt-1 w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 text-xs text-white"
+              />
+            </label>
+          </div>
+        </div>
+      )}
+
+      {ticketLevel && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-sm rounded-xl border border-[#30363d] bg-[#161b22] p-4">
+            <div className="flex justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-white">Sim limit order</h3>
+                <p className="mt-1 text-xs text-gray-400">
+                  {instrument} · {ticketLevel.level.toLocaleString()}
+                  <span className="ml-1.5 text-gray-500">
+                    zone {formatZone(ticketLevel.level)}
+                  </span>
+                </p>
+                {ticketLevel.reasoning && (
+                  <p className="mt-2 text-[11px] leading-relaxed text-gray-300">
+                    <span className="font-semibold uppercase tracking-wide text-gray-500">
+                      Why ·{' '}
+                    </span>
+                    {ticketLevel.reasoning}
+                  </p>
+                )}
+                {overnightBias && (
+                  <p className="mt-1 text-[11px] text-gray-500">{overnightBias.detail}</p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setTicketLevel(null)}
+                className="text-gray-500"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="mt-4 flex gap-2">
+              {(['LONG', 'SHORT'] as Direction[]).map((d) => {
+                const prev = previewPositionSizing(
+                  ticketLevel.level,
+                  accountSize,
+                  d,
+                  zoneStopPrice(ticketLevel.level, d)
+                )
+                const suggested = simSuggestedDirection(
+                  overnightBias?.bias ?? 'none',
+                  ticketLevel.type
+                )
+                const isSuggested = d === suggested
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => placePending(ticketLevel, d)}
+                    className={`flex-1 rounded-lg py-3 text-xs font-semibold transition ${
+                      d === 'LONG' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
+                    } ${isSuggested ? 'ring-2 ring-white/70 scale-[1.02]' : 'opacity-55'}`}
+                  >
+                    <div>
+                      {d === 'LONG' ? 'Deep Buy' : 'Deep Short'}
+                      {isSuggested ? ' · suggested' : ''}
+                    </div>
+                    {prev && (
+                      <div className="mt-1 font-normal opacity-80">
+                        SL {prev.stop_loss_price.toFixed(0)} · size{' '}
+                        {prev.position_size.toFixed(1)}
+                      </div>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="mt-3 text-[10px] text-gray-500">
+              Sim only: overnight gap + prior session. No news. You can still override.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function SimulationDeskPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-screen items-center justify-center text-gray-500 text-sm">
+          Opening simulation desk…
+        </div>
+      }
+    >
+      <SimulationDeskInner />
+    </Suspense>
+  )
+}

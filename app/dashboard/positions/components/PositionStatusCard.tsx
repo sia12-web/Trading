@@ -355,9 +355,9 @@ export function PositionStatusCard({ position }: PositionStatusCardProps) {
       {position.stop_loss_hit_count > 0 && (
         <div className="mt-4 rounded-lg border border-red-300 bg-red-50 p-3 dark:border-red-700 dark:bg-red-900/20">
           <p className="text-sm font-semibold text-red-700 dark:text-red-400">
-            ⚠️ Stop Loss Hit Count: {position.stop_loss_hit_count}/2
+            ⚠️ Stop Loss Hit Count: {position.stop_loss_hit_count}/3
           </p>
-          {position.stop_loss_hit_count >= 2 && (
+          {position.stop_loss_hit_count >= 3 && (
             <p className="text-sm text-red-600 dark:text-red-300">
               Market disabled. No new entries allowed today.
             </p>
