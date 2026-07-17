@@ -9,7 +9,6 @@ const REQUIRED_ALWAYS = [
 
 const REQUIRED_PROD = [
   'SUPABASE_SERVICE_ROLE_KEY',
-  'ANTHROPIC_API_KEY',
   'CRON_SECRET',
 ] as const
 
@@ -30,6 +29,9 @@ export function checkEnv(): EnvCheckResult {
   if (process.env.NODE_ENV === 'production') {
     for (const key of REQUIRED_PROD) {
       if (!process.env[key]?.trim()) missing.push(key)
+    }
+    if (!process.env.ANTHROPIC_API_KEY?.trim() && !process.env.GEMINI_API_KEY?.trim()) {
+      missing.push('ANTHROPIC_API_KEY or GEMINI_API_KEY')
     }
     if (process.env.DESK_MODE !== 'single' && process.env.ALLOW_DEV_AUTH === 'true') {
       warnings.push('ALLOW_DEV_AUTH=true in production weakens auth — prefer DESK_MODE=single or Supabase login')

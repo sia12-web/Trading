@@ -43,6 +43,8 @@ export interface StoredLevel extends ValidationResult {
 export interface ClaudeUsage {
   input_tokens: number
   output_tokens: number
+  provider?: string
+  model?: string
 }
 
 export interface AnalysisResponse {

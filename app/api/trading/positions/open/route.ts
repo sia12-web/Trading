@@ -11,6 +11,8 @@ import { getWindowManager } from '@/lib/trading/windowManager'
 import { getPositionSizer } from '@/lib/trading/positionSizing'
 import { getESTDateString } from '@/lib/utils/timeUtils'
 import { resolveSessionGate, assertCanOpenPosition } from '@/lib/trading/sessionGate'
+import { shouldExecuteOandaOrders } from '@/lib/oanda/config'
+import { placeOandaMarketOrder } from '@/lib/oanda/orders'
 import type { PositionOpenResponse, TradePosition } from '@/types/trading'
 
 interface OpenPositionRequest {
@@ -460,6 +462,56 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
     }
 
     // CRITICAL FIX: Always use authenticated user's ID, never trust request body
+    // Broker fill first (practice/live) — do not journal a phantom if OANDA rejects
+    let oandaTradeId: string | null = null
+    let oandaOrderId: string | null = null
+    let brokerFillPrice: number | null = null
+    let fillPrice = body.entry_price
+
+    if (shouldExecuteOandaOrders()) {
+      const broker = await placeOandaMarketOrder({
+        instrument: body.instrument,
+        direction: body.entry_direction,
+        units: sizing.position_size,
+        stopLossPrice: sizing.stop_loss_price,
+        takeProfitPrice: body.profit_target_price ?? null,
+      })
+
+      if (!broker.ok) {
+        logger.error('POST /api/trading/positions/open: OANDA order rejected', {
+          error: broker.error,
+          status: broker.status,
+          instrument: body.instrument,
+        })
+        return NextResponse.json(
+          {
+            success: false,
+            position_id: '',
+            instrument: body.instrument,
+            entry_price: body.entry_price,
+            stop_loss_price: sizing.stop_loss_price,
+            position_size: sizing.position_size,
+            risk_amount: sizing.risk_amount,
+            entry_direction: body.entry_direction,
+            entry_window: body.entry_window,
+            message: `OANDA order failed: ${broker.error}`,
+          },
+          { status: 502 }
+        )
+      }
+
+      oandaTradeId = broker.tradeId
+      oandaOrderId = broker.orderId
+      brokerFillPrice = broker.fillPrice > 0 ? broker.fillPrice : null
+      if (broker.fillPrice > 0) fillPrice = broker.fillPrice
+      logger.info('POST /api/trading/positions/open: OANDA filled', {
+        tradeId: oandaTradeId,
+        orderId: oandaOrderId,
+        fillPrice,
+        units: broker.units,
+      })
+    }
+
     // Insert new position into trades_journal
     const tradePosition: Omit<TradePosition, 'id' | 'created_at' | 'updated_at'> = {
       user_id: user.id, // Always use authenticated user
@@ -467,7 +519,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       trade_date: today,
       entry_window: body.entry_window,
       entry_timestamp: now.toISOString(),
-      entry_price: body.entry_price,
+      entry_price: fillPrice,
       entry_direction: body.entry_direction,
       stop_loss_price: sizing.stop_loss_price,
       stop_loss_hit_at: null,
@@ -489,6 +541,9 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
         typeof body.entry_reason === 'string' && body.entry_reason.trim()
           ? body.entry_reason.trim().slice(0, 2000)
           : `Chart ${body.entry_direction} at level ${body.best_break_level ?? body.entry_price}`,
+      oanda_trade_id: oandaTradeId,
+      oanda_order_id: oandaOrderId,
+      broker_fill_price: brokerFillPrice,
     }
 
     const { data: newPosition, error: insertError } = await supabase
@@ -498,10 +553,25 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       .single()
 
     // If enrichment columns missing (migration not applied), retry without them
-    if (insertError && /entry_reason|profit_target_price/i.test(insertError.message || '')) {
-      const { profit_target_price: _pt, entry_reason: _er, ...baseRow } = tradePosition as typeof tradePosition & {
+    if (
+      insertError &&
+      /entry_reason|profit_target_price|oanda_trade_id|oanda_order_id|broker_fill_price/i.test(
+        insertError.message || ''
+      )
+    ) {
+      const {
+        profit_target_price: _pt,
+        entry_reason: _er,
+        oanda_trade_id: _ot,
+        oanda_order_id: _oo,
+        broker_fill_price: _bf,
+        ...baseRow
+      } = tradePosition as typeof tradePosition & {
         profit_target_price?: number | null
         entry_reason?: string
+        oanda_trade_id?: string | null
+        oanda_order_id?: string | null
+        broker_fill_price?: number | null
       }
       const retry = await supabase.from('trades_journal').insert(baseRow).select('id').single()
       if (!retry.error && retry.data) {
@@ -510,13 +580,15 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
             success: true,
             position_id: retry.data.id,
             instrument: body.instrument,
-            entry_price: body.entry_price,
+            entry_price: fillPrice,
             stop_loss_price: sizing.stop_loss_price,
             position_size: sizing.position_size,
             risk_amount: sizing.risk_amount,
             entry_direction: body.entry_direction,
             entry_window: body.entry_window,
-            message: `Position opened at $${body.entry_price}. Stop Loss: $${sizing.stop_loss_price}`,
+            message: `Position opened at $${fillPrice}. Stop Loss: $${sizing.stop_loss_price}${
+              oandaTradeId ? ` (OANDA trade ${oandaTradeId})` : ''
+            }`,
           },
           { status: 201 }
         )
@@ -545,9 +617,10 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
     logger.log('POST /api/trading/positions/open: Position opened successfully', {
       position_id: newPosition.id,
       instrument: body.instrument,
-      entry_price: body.entry_price,
+      entry_price: fillPrice,
       stop_loss_price: sizing.stop_loss_price,
       position_size: sizing.position_size,
+      oanda_trade_id: oandaTradeId,
     })
 
     return NextResponse.json(
@@ -555,13 +628,15 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
         success: true,
         position_id: newPosition.id,
         instrument: body.instrument,
-        entry_price: body.entry_price,
+        entry_price: fillPrice,
         stop_loss_price: sizing.stop_loss_price,
         position_size: sizing.position_size,
         risk_amount: sizing.risk_amount,
         entry_direction: body.entry_direction,
         entry_window: body.entry_window,
-        message: `Position opened at $${body.entry_price}. Stop Loss: $${sizing.stop_loss_price}`,
+        message: `Position opened at $${fillPrice}. Stop Loss: $${sizing.stop_loss_price}${
+          oandaTradeId ? ` (OANDA trade ${oandaTradeId})` : ''
+        }`,
       },
       { status: 201 }
     )

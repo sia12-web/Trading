@@ -150,6 +150,9 @@ export interface TradePosition {
   entry_reason?: string | null
   exit_notes?: string | null
   profit_target_price?: number | null
+  oanda_trade_id?: string | null
+  oanda_order_id?: string | null
+  broker_fill_price?: number | null
   created_at: string
   updated_at: string
 }

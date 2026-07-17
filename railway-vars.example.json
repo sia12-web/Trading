@@ -9,9 +9,15 @@
   "SUPABASE_SERVICE_ROLE_KEY": "your-service-role-key",
   "DATABASE_URL": "postgresql://postgres:PASSWORD@db.YOUR_PROJECT.supabase.co:5432/postgres",
   "ANTHROPIC_API_KEY": "sk-ant-...",
+  "GEMINI_API_KEY": "optional-for-verifier",
+  "LLM_PROPOSER": "anthropic",
+  "LLM_PROPOSER_MODEL": "claude-opus-4-20250514",
+  "LLM_VERIFIER": "gemini",
+  "LLM_VERIFIER_MODEL": "gemini-2.0-flash",
   "FINNHUB_API_KEY": "your-finnhub-key",
   "OANDA_API_KEY": "your-oanda-key",
-  "OANDA_ACCOUNT_ID": "your-oanda-account-id",
+  "OANDA_ACCOUNT_ID": "101-002-36082256-006",
   "OANDA_ENVIRONMENT": "practice",
+  "OANDA_EXECUTE_ORDERS": "true",
   "NEXT_PUBLIC_BASE_URL": "https://YOUR_SERVICE.up.railway.app"
 }

@@ -1,17 +1,27 @@
 /**
  * Level Finder Agent Service
- * Analyzes price action using Claude API to identify key support/resistance levels and VWAP
- * Single API call per session, 5-minute timeout
+ * Proposer LLM (Claude Opus by default) + deterministic anti-hallucination
+ * grounding + optional Gemini Flash verifier. Usage logged to llm_usage.
  */
 
-import Anthropic from '@anthropic-ai/sdk'
-import { createClient } from '@/lib/supabase/server'
 import {
   computeAnchoredVwap,
   deskClockFor,
   lastNTradingSessions,
 } from '@/lib/chart/sessionVwap'
 import { sessionFor } from '@/lib/trading/sessionGate'
+import { createClient } from '@/lib/supabase/server'
+import { groundLevels, onlyGrounded } from '@/lib/llm/antiHallucination'
+import { llmComplete } from '@/lib/llm/complete'
+import {
+  isProviderConfigured,
+  llmConfigSnapshot,
+  llmModel,
+  llmProvider,
+} from '@/lib/llm/config'
+import { logLlmUsage } from '@/lib/llm/usageLog'
+import { verifyLevelsKeepDrop } from '@/lib/llm/verifier'
+import { logger } from '@/lib/utils/logger'
 import type {
   AnalysisRequest,
   LevelIdentification,
@@ -23,92 +33,188 @@ import type {
   HistoricalContext,
 } from './types'
 
-const CLAUDE_MODEL = 'claude-3-5-sonnet-20241022'
-const ANALYSIS_TIMEOUT_MS = 5 * 60 * 1000  // 5 minutes
+const ANALYSIS_TIMEOUT_MS = 5 * 60 * 1000
 const DUPLICATE_THRESHOLD_PIPS = 50
 const MAX_LEVELS = 10
 
 class LevelFinderAgent {
-  private claudeClient: Anthropic | null = null
-
   async initialize(): Promise<void> {
-    const apiKey = process.env.ANTHROPIC_API_KEY
-    if (!apiKey) {
-      throw new Error('ANTHROPIC_API_KEY environment variable not set')
+    const cfg = llmConfigSnapshot()
+    if (!cfg.proposer.configured) {
+      throw new Error(
+        `LLM proposer not configured (${cfg.proposer.provider}). Set ANTHROPIC_API_KEY or GEMINI_API_KEY.`
+      )
     }
-    this.claudeClient = new Anthropic({ apiKey })
+    logger.info('level_finder.init', cfg)
   }
 
   async analyzePriceAction(request: AnalysisRequestWithContext): Promise<{
     levels: LevelIdentification[]
     usage: ClaudeUsage
   }> {
-    if (!this.claudeClient) {
-      throw new Error('Claude client not initialized')
+    const provider = llmProvider('proposer')
+    const model = llmModel('proposer')
+    if (!isProviderConfigured(provider)) {
+      throw new Error(`LLM provider ${provider} not configured`)
     }
 
     const prompt = this.buildAnalysisPrompt(request)
-    const systemPrompt = this.buildSystemPrompt(
-      request.index,
-      request.historicalContext
-    )
+    const systemPrompt = this.buildSystemPrompt(request.index, request.historicalContext)
+    const avwapBands = this.extractAvwapBandPrices(request)
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), ANALYSIS_TIMEOUT_MS)
+
+    let proposerUsage: ClaudeUsage = { input_tokens: 0, output_tokens: 0 }
+    let proposedCount = 0
+    let acceptedCount = 0
+    let rejectedCount = 0
 
     try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), ANALYSIS_TIMEOUT_MS)
-
-      let response
-
+      let text: string
       try {
-        response = await this.claudeClient.messages.create(
+        const result = await llmComplete(
           {
-            model: CLAUDE_MODEL,
-            max_tokens: 1024,
+            provider,
+            model,
             system: systemPrompt,
-            messages: [
-              {
-                role: 'user',
-                content: prompt,
-              },
-            ],
+            user: prompt,
+            maxTokens: 1024,
+            temperature: 0.2,
           },
-          { signal: controller.signal as any }
+          controller.signal
         )
+        text = result.text
+        proposerUsage = {
+          input_tokens: result.usage.input_tokens,
+          output_tokens: result.usage.output_tokens,
+          provider: result.usage.provider,
+          model: result.usage.model,
+        }
+        result.usage.role = 'proposer'
+        await logLlmUsage({
+          usage: result.usage,
+          route: 'level_finder.proposer',
+          instrument: request.index,
+          sessionId: request.session_id,
+          success: true,
+        })
       } finally {
         clearTimeout(timeoutId)
       }
 
-      const content = response.content[0]
-      if (!content || content.type !== 'text') {
-        throw new Error('Unexpected response format from Claude')
+      const parsed = this.parseClaudeResponse(text)
+      proposedCount = parsed.length
+
+      const allCandles = [
+        ...request.candles_daily,
+        ...request.candles_4h,
+        ...request.candles_h1,
+      ]
+      const grounded = groundLevels(parsed, {
+        candles: allCandles,
+        currentPrice: request.current_price,
+        avwapBands,
+        snap: false,
+      })
+      const afterGround = onlyGrounded(grounded)
+      rejectedCount = proposedCount - afterGround.length
+
+      logger.info('level_finder.grounded', {
+        instrument: request.index,
+        proposed: proposedCount,
+        grounded: afterGround.length,
+        rejected: rejectedCount,
+        rejects: grounded
+          .filter((g) => !g.grounded)
+          .map((g) => ({ level: g.level, reason: g.reject_reason })),
+      })
+
+      const verified = await verifyLevelsKeepDrop(afterGround, {
+        instrument: request.index,
+        currentPrice: request.current_price,
+      })
+      if (verified.usage) {
+        await logLlmUsage({
+          usage: verified.usage,
+          route: 'level_finder.verifier',
+          instrument: request.index,
+          sessionId: request.session_id,
+          success: true,
+          levelsProposed: afterGround.length,
+          levelsAccepted: verified.kept.length,
+          levelsRejected: afterGround.length - verified.kept.length,
+        })
       }
 
-      const levels = this.parseClaudeResponse(content.text)
+      const levels = verified.kept.slice(0, MAX_LEVELS)
+      acceptedCount = levels.length
 
-      return {
-        levels: levels.slice(0, MAX_LEVELS),
-        usage: {
-          input_tokens: response.usage.input_tokens,
-          output_tokens: response.usage.output_tokens,
-        },
-      }
+      logger.info('level_finder.done', {
+        instrument: request.index,
+        proposed: proposedCount,
+        accepted: acceptedCount,
+        rejected: rejectedCount + (afterGround.length - verified.kept.length),
+        model,
+        provider,
+      })
+
+      return { levels, usage: proposerUsage }
     } catch (error) {
+      clearTimeout(timeoutId)
+      const msg = error instanceof Error ? error.message : 'LLM failed'
+      await logLlmUsage({
+        usage: {
+          provider,
+          model,
+          role: 'proposer',
+          input_tokens: proposerUsage.input_tokens,
+          output_tokens: proposerUsage.output_tokens,
+        },
+        route: 'level_finder.proposer',
+        instrument: request.index,
+        sessionId: request.session_id,
+        success: false,
+        errorMessage: msg,
+      })
+
       if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error('Claude API request timeout (exceeded 5 minutes)')
+        throw new Error('LLM request timeout (exceeded 5 minutes)')
       }
-
-      if (error instanceof Anthropic.APIError) {
-        if (error.status === 429) {
-          throw new Error('Claude API rate limited. Try again in a moment.')
-        }
-        if (error.status === 500) {
-          throw new Error('Claude API service error. Try again shortly.')
-        }
-        throw new Error(`Claude API error: ${error.message}`)
-      }
-
-      throw error
+      throw error instanceof Error ? error : new Error(String(error))
     }
+  }
+
+  private extractAvwapBandPrices(request: AnalysisRequest): number[] {
+    const bars = request.candles_h1
+      .map((c) => ({
+        time: Math.floor(new Date(c.timestamp).getTime() / 1000),
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      }))
+      .filter((b) => Number.isFinite(b.time))
+      .sort((a, b) => a.time - b.time)
+
+    if (bars.length === 0) return []
+
+    const clock = deskClockFor(request.index)
+    const scoped = lastNTradingSessions(bars, 5, clock)
+    const bands = computeAnchoredVwap(scoped.length > 0 ? scoped : bars, clock)
+    if (!bands || bands.vwap.length === 0) return []
+
+    const i = bands.vwap.length - 1
+    return [
+      bands.vwap[i]!.value,
+      bands.upper1[i]!.value,
+      bands.lower1[i]!.value,
+      bands.upper2[i]!.value,
+      bands.lower2[i]!.value,
+      bands.upper3[i]!.value,
+      bands.lower3[i]!.value,
+    ].filter((n) => Number.isFinite(n) && n > 0)
   }
 
   async validateLevels(
@@ -327,10 +433,12 @@ REASONING REQUIREMENTS (critical):
       // No historical context available, use base prompt
       return basePrompt + `
 
-Return ONLY valid JSON array. No additional text. Example:
+Return ONLY valid JSON array. No additional text.
+ANTI-HALLUCINATION: every "level" MUST be near a real high/low/close from the provided candles OR an AVWAP band printed above. Never invent round numbers or prices outside the candle range.
+Example shape (replace numbers with real prices from THIS request's candles):
 [
-  {"level": 40287.50, "type": "resistance", "conviction": 8, "reasoning": "Retail shorts stop ~37pts above equal highs at 40250 — sell into that stop liquidity; last touch rejected on 2x avg volume", "timeframe": "4H"},
-  {"level": 40062.00, "type": "support", "conviction": 7, "reasoning": "Unmitigated origin of the strongest H1 rally in the data (wide-range bar, close at high); price has not returned since — resting demand likely", "timeframe": "H1"}
+  {"level": <price_from_candles>, "type": "resistance", "conviction": 8, "reasoning": "Retail shorts stop just above equal highs at <bait> — sell into that stop liquidity", "timeframe": "4H"},
+  {"level": <price_from_candles>, "type": "support", "conviction": 7, "reasoning": "Unmitigated origin of strongest H1 rally; price has not returned", "timeframe": "H1"}
 ]`
     }
 
@@ -370,10 +478,12 @@ HOW TO USE THIS:
 
     return basePrompt + historicalSection + `
 
-Return ONLY valid JSON array. No additional text. Example:
+Return ONLY valid JSON array. No additional text.
+ANTI-HALLUCINATION: every "level" MUST be near a real high/low/close from the provided candles OR an AVWAP band printed above. Never invent round numbers or prices outside the candle range.
+Example shape (replace numbers with real prices from THIS request's candles):
 [
-  {"level": 40287.50, "type": "resistance", "conviction": 8, "reasoning": "Retail shorts stop ~37pts above equal highs at 40250 — sell into that stop liquidity; last touch rejected on 2x avg volume", "timeframe": "4H"},
-  {"level": 40062.00, "type": "support", "conviction": 7, "reasoning": "Unmitigated origin of the strongest H1 rally in the data (wide-range bar, close at high); price has not returned since — resting demand likely", "timeframe": "H1"}
+  {"level": <price_from_candles>, "type": "resistance", "conviction": 8, "reasoning": "Retail shorts stop just above equal highs at <bait> — sell into that stop liquidity", "timeframe": "4H"},
+  {"level": <price_from_candles>, "type": "support", "conviction": 7, "reasoning": "Unmitigated origin of strongest H1 rally; price has not returned", "timeframe": "H1"}
 ]`
   }
 
@@ -471,9 +581,12 @@ Return ONLY valid JSON array, no additional text.`
 
   private formatCandles(candles: Candle[], timeframe: string): string {
     const rows = candles.map((c) => {
-      const time = new Date(c.timestamp).toLocaleTimeString('en-US', {
+      const time = new Date(c.timestamp).toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
+        hour12: false,
       })
       return `${time} | O: ${c.open} H: ${c.high} L: ${c.low} C: ${c.close} V: ${(c.volume / 1000000).toFixed(1)}M`
     })

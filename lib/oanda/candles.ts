@@ -1,14 +1,10 @@
 /**
- * OANDA practice/live candle history for NY desk indices (near-24h).
- * Instruments: US30_USD (DOW), NAS100_USD (NASDAQ).
+ * OANDA practice/live candle history for desk indices (near-24h).
+ * Instruments: US30_USD (DOW), NAS100_USD (NASDAQ), JP225_USD (NIKKEI).
  */
 
 import type { Instrument } from '@/types/price-feed'
-
-const OANDA_INSTRUMENTS: Partial<Record<Instrument, string>> = {
-  DOW: 'US30_USD',
-  NASDAQ: 'NAS100_USD',
-}
+import { isOandaConfigured, oandaBaseUrl, oandaHeaders, OANDA_INSTRUMENTS } from '@/lib/oanda/config'
 
 const GRANULARITY: Record<string, string> = {
   '1': 'M1',
@@ -27,19 +23,8 @@ export type OandaCandle = {
   volume: number
 }
 
-function baseUrl(): string {
-  const env = (process.env.OANDA_ENVIRONMENT || 'practice').toLowerCase()
-  return env === 'live'
-    ? 'https://api-fxtrade.oanda.com'
-    : 'https://api-fxpractice.oanda.com'
-}
-
 function rfc3339(unix: number): string {
   return new Date(unix * 1000).toISOString().replace(/\.\d{3}Z$/, '.000000000Z')
-}
-
-function isConfigured(): boolean {
-  return Boolean(process.env.OANDA_API_KEY && process.env.OANDA_ACCOUNT_ID)
 }
 
 async function fetchChunk(
@@ -48,8 +33,7 @@ async function fetchChunk(
   fromUnix: number,
   toUnix: number
 ): Promise<OandaCandle[]> {
-  const key = process.env.OANDA_API_KEY
-  if (!key) return []
+  if (!isOandaConfigured()) return []
 
   const params = new URLSearchParams({
     granularity,
@@ -58,12 +42,9 @@ async function fetchChunk(
     to: rfc3339(toUnix),
   })
 
-  const url = `${baseUrl()}/v3/instruments/${instrument}/candles?${params}`
+  const url = `${oandaBaseUrl()}/v3/instruments/${instrument}/candles?${params}`
   const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${key}`,
-      'Content-Type': 'application/json',
-    },
+    headers: oandaHeaders(),
     cache: 'no-store',
   })
 
@@ -94,7 +75,7 @@ async function fetchChunk(
 }
 
 /**
- * Fetch OANDA mid candles for DOW/NASDAQ over [period1, period2] unix seconds.
+ * Fetch OANDA mid candles for DOW/NASDAQ/NIKKEI over [period1, period2] unix seconds.
  * Chunks by ~3 days for M5 to stay under API limits.
  */
 export async function getOandaCandlesRange(
@@ -103,7 +84,7 @@ export async function getOandaCandlesRange(
   period1: number,
   period2: number
 ): Promise<{ candles: OandaCandle[]; symbol: string; source: 'oanda' } | null> {
-  if (!isConfigured()) return null
+  if (!isOandaConfigured()) return null
   const symbol = OANDA_INSTRUMENTS[instrument]
   if (!symbol) return null
 

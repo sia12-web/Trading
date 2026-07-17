@@ -9,6 +9,8 @@ import { createClient } from '@/lib/supabase/server'
 import { logger } from '@/lib/utils/logger'
 import { getPositionManager } from '@/lib/trading/positionManager'
 import { getESTDateString } from '@/lib/utils/timeUtils'
+import { shouldExecuteOandaOrders } from '@/lib/oanda/config'
+import { closeOandaTrade } from '@/lib/oanda/orders'
 import type { ClosePositionRequest, ClosePositionResponse, TradePosition } from '@/types/trading'
 
 export async function POST(request: Request): Promise<NextResponse<ClosePositionResponse>> {
@@ -161,24 +163,70 @@ export async function POST(request: Request): Promise<NextResponse<ClosePosition
       body.exit_price
     )
 
+    // Close on OANDA when this journal row has a broker trade id
+    let brokerExitPrice: number | null = null
+    if (shouldExecuteOandaOrders()) {
+      const tradeId = (position as { oanda_trade_id?: string | null }).oanda_trade_id
+      if (tradeId) {
+        const broker = await closeOandaTrade(tradeId)
+        if (!broker.ok) {
+          logger.error('POST /api/trading/positions/close: OANDA close failed', {
+            error: broker.error,
+            tradeId,
+            instrument: body.instrument,
+          })
+          return NextResponse.json(
+            {
+              success: false,
+              position_id: body.position_id,
+              instrument: body.instrument,
+              exit_price: body.exit_price,
+              entry_price: Number(position.entry_price),
+              position_size: Number(position.position_size),
+              profit_loss: 0,
+              profit_loss_percent: 0,
+              exit_reason: body.exit_reason,
+              message: `OANDA close failed: ${broker.error}`,
+            },
+            { status: 502 }
+          )
+        }
+        brokerExitPrice = broker.fillPrice
+        logger.info('POST /api/trading/positions/close: OANDA closed', {
+          tradeId: broker.tradeId,
+          fillPrice: brokerExitPrice,
+        })
+      } else {
+        logger.warn('POST /api/trading/positions/close: no oanda_trade_id — journal-only close', {
+          position_id: body.position_id,
+        })
+      }
+    }
+
+    const exitPrice = brokerExitPrice && brokerExitPrice > 0 ? brokerExitPrice : body.exit_price
+    const pnlFinal =
+      brokerExitPrice && brokerExitPrice > 0
+        ? positionManager.calculateCurrentPnL(position as TradePosition, exitPrice)
+        : pnl
+
     // Update position with closure details
     const exitNotes =
       body.reason ||
       (body.exit_reason === 'stop_hit'
-        ? `Stop loss hit at ${body.exit_price}`
+        ? `Stop loss hit at ${exitPrice}`
         : body.exit_reason === 'take_profit'
-          ? `Take profit hit at ${body.exit_price}`
+          ? `Take profit hit at ${exitPrice}`
           : body.exit_reason === 'ai_signal'
-            ? `AI exit at ${body.exit_price}`
-            : `Closed via ${body.exit_reason} at ${body.exit_price}`)
+            ? `AI exit at ${exitPrice}`
+            : `Closed via ${body.exit_reason} at ${exitPrice}`)
 
     const updatePayload: Record<string, unknown> = {
       exit_timestamp: closeTime,
-      exit_price: body.exit_price,
+      exit_price: exitPrice,
       exit_reason: body.exit_reason,
       exit_notes: exitNotes,
-      profit_loss: pnl.profitLoss,
-      profit_loss_percent: pnl.profitLossPercent,
+      profit_loss: pnlFinal.profitLoss,
+      profit_loss_percent: pnlFinal.profitLossPercent,
       updated_at: closeTime,
     }
     if (body.exit_reason === 'stop_hit') {
@@ -196,10 +244,10 @@ export async function POST(request: Request): Promise<NextResponse<ClosePosition
     if (updateError && /take_profit|exit_notes|exit_reason/i.test(updateError.message || '')) {
       const fallback = {
         exit_timestamp: closeTime,
-        exit_price: body.exit_price,
+        exit_price: exitPrice,
         exit_reason: body.exit_reason === 'take_profit' ? 'manual' : body.exit_reason,
-        profit_loss: pnl.profitLoss,
-        profit_loss_percent: pnl.profitLossPercent,
+        profit_loss: pnlFinal.profitLoss,
+        profit_loss_percent: pnlFinal.profitLossPercent,
         updated_at: closeTime,
         ...(body.exit_reason === 'stop_hit'
           ? {
@@ -223,11 +271,11 @@ export async function POST(request: Request): Promise<NextResponse<ClosePosition
           success: false,
           position_id: body.position_id,
           instrument: body.instrument,
-          exit_price: body.exit_price,
+          exit_price: exitPrice,
           entry_price: position.entry_price,
           position_size: position.position_size,
-          profit_loss: pnl.profitLoss,
-          profit_loss_percent: pnl.profitLossPercent,
+          profit_loss: pnlFinal.profitLoss,
+          profit_loss_percent: pnlFinal.profitLossPercent,
           exit_reason: body.exit_reason,
           message: 'Failed to close position',
         },
@@ -242,12 +290,12 @@ export async function POST(request: Request): Promise<NextResponse<ClosePosition
       instrument: body.instrument,
       trade_date: today,
       decision: 'TAKE_PROFIT',
-      decision_price: body.exit_price,
+      decision_price: exitPrice,
       decision_time: closeTime,
       reason: closureReason,
       confidence_at_decision: position.best_level_break_confidence || 0,
-      current_p_l: pnl.profitLoss,
-      current_p_l_percent: pnl.profitLossPercent,
+      current_p_l: pnlFinal.profitLoss,
+      current_p_l_percent: pnlFinal.profitLossPercent,
     })
 
     if (decisionError) {
@@ -260,10 +308,11 @@ export async function POST(request: Request): Promise<NextResponse<ClosePosition
     logger.log('POST /api/trading/positions/close: Position closed', {
       position_id: body.position_id,
       instrument: body.instrument,
-      exit_price: body.exit_price,
+      exit_price: exitPrice,
       exit_reason: body.exit_reason,
-      p_l: pnl.profitLoss,
-      p_l_percent: pnl.profitLossPercent,
+      p_l: pnlFinal.profitLoss,
+      p_l_percent: pnlFinal.profitLossPercent,
+      oanda_trade_id: (position as { oanda_trade_id?: string | null }).oanda_trade_id ?? null,
     })
 
     const messagePrefix =
@@ -280,13 +329,13 @@ export async function POST(request: Request): Promise<NextResponse<ClosePosition
         success: true,
         position_id: body.position_id,
         instrument: body.instrument,
-        exit_price: body.exit_price,
+        exit_price: exitPrice,
         entry_price: position.entry_price,
         position_size: position.position_size,
-        profit_loss: pnl.profitLoss,
-        profit_loss_percent: pnl.profitLossPercent,
+        profit_loss: pnlFinal.profitLoss,
+        profit_loss_percent: pnlFinal.profitLossPercent,
         exit_reason: body.exit_reason,
-        message: `${messagePrefix}: Position closed at $${body.exit_price}. P&L: ${pnl.profitLoss >= 0 ? '+' : ''}$${pnl.profitLoss.toFixed(2)} (${pnl.profitLossPercent.toFixed(2)}%)`,
+        message: `${messagePrefix}: Position closed at $${exitPrice}. P&L: ${pnlFinal.profitLoss >= 0 ? '+' : ''}$${pnlFinal.profitLoss.toFixed(2)} (${pnlFinal.profitLossPercent.toFixed(2)}%)`,
       },
       { status: 200 }
     )
