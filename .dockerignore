@@ -1,0 +1,14 @@
+﻿node_modules
+.next
+.git
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+.env
+.env.local
+.env*.local
+railway-vars.local.json
+.cursor
+__pycache__
+*.pyc
+bots/data
+bots/output
