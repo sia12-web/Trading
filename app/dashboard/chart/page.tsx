@@ -51,6 +51,8 @@ export default function ChartPage() {
   const pendingRef = useRef<PendingLimitOrder | null>(null)
   const fillingRef = useRef(false)
   const livePriceRef = useRef<number | null>(null)
+  const regimeFetchedRef = useRef(false)
+  const lastParentPriceAt = useRef(0)
 
   useEffect(() => {
     pendingRef.current = pending
@@ -58,6 +60,24 @@ export default function ChartPage() {
   useEffect(() => {
     livePriceRef.current = livePrice
   }, [livePrice])
+
+  // Fill detection needs every tick on the ref; UI state is throttled unless a limit is working
+  const pendingActiveRef = useRef(false)
+  useEffect(() => {
+    pendingActiveRef.current = !!pending && !managePos
+  }, [pending, managePos])
+
+  const onPriceUpdate = useCallback((price: number) => {
+    livePriceRef.current = price
+    if (pendingActiveRef.current) {
+      setLivePrice(price)
+      return
+    }
+    const now = Date.now()
+    if (now - lastParentPriceAt.current < 200) return
+    lastParentPriceAt.current = now
+    setLivePrice(price)
+  }, [])
 
   const handleLevelSelect = useCallback(
     (price: number, meta?: { type?: string; reasoning?: string }) => {
@@ -94,6 +114,9 @@ export default function ChartPage() {
 
   const handleGate = useCallback((g: SessionGateState) => {
     setGate(g)
+    // Regime / recommendation is day-stable — fetch once, not every 5s gate poll
+    if (regimeFetchedRef.current) return
+    regimeFetchedRef.current = true
     fetch('/api/trading/today-recommendation')
       .then((r) => r.json())
       .then((j) => {
@@ -105,7 +128,9 @@ export default function ChartPage() {
         }
         if (typeof nextConf === 'number') setRegimeConfidence(nextConf)
       })
-      .catch(() => {})
+      .catch(() => {
+        regimeFetchedRef.current = false
+      })
   }, [])
 
   const enterManage = useCallback(
@@ -384,7 +409,7 @@ export default function ChartPage() {
 
           <TradingChart
             onInstrumentChange={(i) => setInstrument(i as Instrument)}
-            onPriceUpdate={setLivePrice}
+            onPriceUpdate={onPriceUpdate}
             onQuoteTick={setLastQuoteAt}
             onDataModeChange={setDataMode}
             positionOverlay={

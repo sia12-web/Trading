@@ -620,7 +620,7 @@ export function TradingChart({
       // but do not invent synthetic bars for trading.
       try {
         const res = await fetch(
-          `/api/trading/candles?instrument=${instrument}&timeframe=${DESK_TIMEFRAME}&days=7`
+          `/api/trading/candles?instrument=${instrument}&timeframe=${DESK_TIMEFRAME}&days=5`
         )
         const json = await res.json()
         if (!cancelled && Array.isArray(json.candles) && json.candles.length > 0) {
@@ -893,12 +893,19 @@ export function TradingChart({
     }
 
     const QUOTE_MS = 1000 // Yahoo quote is our live path
-    const CANDLE_REFRESH_MS = 20_000 // merge completed bars without full flicker
+    const CANDLE_REFRESH_MS = 45_000 // soft-merge completed bars; quotes keep the forming bar live
+    let lastUiPriceAt = 0
 
     const applyQuote = (price: number, changePct: number, quoteTs: number) => {
-      setLivePrice(price)
-      setPriceChange(changePct)
-      onQuoteTick?.(Math.floor(Date.now() / 1000))
+      // Always push price to parent (fill detection); throttle chart header React state
+      onPriceUpdate?.(price)
+      const now = Date.now()
+      if (now - lastUiPriceAt >= 250) {
+        lastUiPriceAt = now
+        setLivePrice(price)
+        setPriceChange(changePct)
+        onQuoteTick?.(Math.floor(now / 1000))
+      }
 
       const last = lastCandleRef.current
       if (!last || !candleRef.current) return
@@ -996,7 +1003,7 @@ export function TradingChart({
       if (!isLiveBarsAllowed(instrument).open) return
       try {
         const res = await fetch(
-          `/api/trading/candles?instrument=${instrument}&timeframe=${DESK_TIMEFRAME}&days=7&_=${Date.now()}`,
+          `/api/trading/candles?instrument=${instrument}&timeframe=${DESK_TIMEFRAME}&days=5&quote=0&_=${Date.now()}`,
           { cache: 'no-store' }
         )
         if (!res.ok) return
@@ -1032,12 +1039,36 @@ export function TradingChart({
           }
         }
 
-        setCandles(trimmed)
-        setDataMode('live')
-        if (json.quote?.price) {
-          setLivePrice(json.quote.price)
-          setPriceChange(json.quote.change_pct ?? 0)
+        const prev = candlesRef.current
+        const structureChanged =
+          prev.length !== trimmed.length ||
+          (prev.length > 0 &&
+            trimmed.length > 0 &&
+            (prev[0]!.time as number) !== (trimmed[0]!.time as number)) ||
+          (prev.length >= 2 &&
+            trimmed.length >= 2 &&
+            (prev[prev.length - 2]!.time as number) !==
+              (trimmed[trimmed.length - 2]!.time as number))
+
+        lastCandleRef.current = trimmed[trimmed.length - 1]!
+        if (structureChanged) {
+          setCandles(trimmed)
+        } else {
+          // Forming bar only — update series without rebuilding AVWAP / full setData
+          const tip = trimmed[trimmed.length - 1]!
+          try {
+            candleRef.current?.update({
+              time: tip.time,
+              open: tip.open,
+              high: tip.high,
+              low: tip.low,
+              close: tip.close,
+            })
+          } catch {
+            setCandles(trimmed)
+          }
         }
+        setDataMode('live')
       } catch {
         // ignore — quote poll still keeps price fresh
       }
@@ -1055,7 +1086,7 @@ export function TradingChart({
       tickIntervalRef.current = null
       candleRefreshRef.current = null
     }
-  }, [chartReady, instrument, candles.length, dataMode, onQuoteTick])
+  }, [chartReady, instrument, candles.length, dataMode, onQuoteTick, onPriceUpdate])
 
   // ── Click chart to place order at that price (morning trading) ─────────────
   useEffect(() => {

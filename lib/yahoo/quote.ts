@@ -1,5 +1,6 @@
 /**
  * Low-latency Yahoo last price for index symbols (no API key).
+ * Uses a tiny chart slice (1h/1m) so live polling stays fast.
  */
 
 import type { Instrument } from '@/types/price-feed'
@@ -23,14 +24,23 @@ export type YahooQuote = {
   low: number | null
 }
 
+/** In-process cache — live desk polls ~1–2s; Yahoo meta is enough at ~800ms TTL */
+const quoteCache = new Map<string, { at: number; quote: YahooQuote }>()
+const QUOTE_TTL_MS = 750
+
 export async function getYahooQuote(instrument: Instrument): Promise<YahooQuote | null> {
   const symbol = YAHOO_SYMBOLS[instrument]
   if (!symbol) return null
 
-  // 1m chart slice is light and includes regularMarketPrice + day OHLC meta
+  const cached = quoteCache.get(instrument)
+  if (cached && Date.now() - cached.at < QUOTE_TTL_MS) {
+    return cached.quote
+  }
+
+  // 1h of 1m bars is enough for meta.regularMarketPrice — far lighter than full 1d
   const url =
     `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}` +
-    `?interval=1m&range=1d&includePrePost=false`
+    `?interval=1m&range=1h&includePrePost=false`
 
   const response = await fetch(url, {
     headers: {
@@ -38,17 +48,18 @@ export async function getYahooQuote(instrument: Instrument): Promise<YahooQuote 
       Accept: 'application/json',
     },
     cache: 'no-store',
+    signal: AbortSignal.timeout(6_000),
   })
 
   if (!response.ok) {
     console.error(`[Yahoo] Quote HTTP ${response.status} for ${symbol}`)
-    return null
+    return cached?.quote ?? null
   }
 
   const json = await response.json()
   const result = json?.chart?.result?.[0]
   const meta = result?.meta
-  if (!meta) return null
+  if (!meta) return cached?.quote ?? null
 
   const previous =
     typeof meta.chartPreviousClose === 'number'
@@ -57,7 +68,6 @@ export async function getYahooQuote(instrument: Instrument): Promise<YahooQuote 
         ? meta.previousClose
         : null
 
-  // Prefer live mark price; fall back to newest 1m close only if mark missing
   let lastBarClose: number | null = null
   const closes: (number | null)[] = result?.indicators?.quote?.[0]?.close || []
   for (let i = closes.length - 1; i >= 0; i--) {
@@ -73,19 +83,18 @@ export async function getYahooQuote(instrument: Instrument): Promise<YahooQuote 
       ? meta.regularMarketPrice
       : null
   const live = mark ?? lastBarClose
-  if (live == null || !Number.isFinite(live) || live <= 0) return null
+  if (live == null || !Number.isFinite(live) || live <= 0) return cached?.quote ?? null
 
   const prev = previous ?? live
   const change = live - prev
   const change_pct = prev ? (change / prev) * 100 : 0
 
-  // Wall-clock for bar rollover when market is open (bar timestamps lag)
   const exchangeTs =
     typeof meta.regularMarketTime === 'number' && meta.regularMarketTime > 0
       ? meta.regularMarketTime
       : Math.floor(Date.now() / 1000)
 
-  return {
+  const quote: YahooQuote = {
     symbol,
     price: live,
     change,
@@ -96,4 +105,7 @@ export async function getYahooQuote(instrument: Instrument): Promise<YahooQuote 
     high: typeof meta.regularMarketDayHigh === 'number' ? meta.regularMarketDayHigh : null,
     low: typeof meta.regularMarketDayLow === 'number' ? meta.regularMarketDayLow : null,
   }
+
+  quoteCache.set(instrument, { at: Date.now(), quote })
+  return quote
 }

@@ -46,15 +46,17 @@ export async function GET(request: Request) {
     const sess = sessionFor(instrument)
     const toUnix = instrument === 'NIKKEI' ? tokyoDateTimeToUnix : nyDateTimeToUnix
     const [lh, lm] = sess.lunchClose.split(':').map(Number)
+    const includeQuote = searchParams.get('quote') !== '0'
 
-    let candles: Array<{
+    type CandleRow = {
       time: number
       open: number
       high: number
       low: number
       close: number
       volume: number
-    }> | null = null
+    }
+    let candles: CandleRow[] | null = null
     let source: 'oanda' | 'yahoo' | 'empty' = 'empty'
 
     if (endDate && /^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
@@ -63,13 +65,18 @@ export async function GET(request: Request) {
       const startUnix = endUnix - Math.max(days, 5) * 24 * 3600 - 2 * 24 * 3600
 
       if (instrument !== 'NIKKEI') {
-        const oanda = await getOandaCandlesRange(instrument, resolution, startUnix, endUnix)
+        const [oanda, yahoo] = await Promise.all([
+          getOandaCandlesRange(instrument, resolution, startUnix, endUnix),
+          getYahooCandlesRange(instrument, resolution, startUnix, endUnix),
+        ])
         if (oanda?.candles?.length) {
           candles = oanda.candles
           source = 'oanda'
+        } else if (yahoo?.candles?.length) {
+          candles = yahoo.candles
+          source = 'yahoo'
         }
-      }
-      if (!candles?.length) {
+      } else {
         const yahoo = await getYahooCandlesRange(instrument, resolution, startUnix, endUnix)
         candles = yahoo?.candles ?? null
         source = candles?.length ? 'yahoo' : 'empty'
@@ -78,21 +85,26 @@ export async function GET(request: Request) {
       if (candles?.length) {
         candles = clipAfternoonBars(candles, instrument)
       }
+    } else if (instrument !== 'NIKKEI') {
+      // Live NY: fetch OANDA + Yahoo in parallel; prefer OANDA
+      const [oanda, yahoo] = await Promise.all([
+        getOandaCandles(instrument, resolution, days),
+        getYahooCandles(instrument, resolution, days),
+      ])
+      if (oanda?.candles?.length) {
+        candles = oanda.candles
+        source = 'oanda'
+      } else if (yahoo?.candles?.length) {
+        candles = yahoo.candles
+        source = 'yahoo'
+      }
+      if (candles?.length) {
+        candles = clipAfternoonBars(candles, instrument)
+      }
     } else {
-      if (instrument !== 'NIKKEI') {
-        const oanda = await getOandaCandles(instrument, resolution, days)
-        if (oanda?.candles?.length) {
-          candles = oanda.candles
-          source = 'oanda'
-        }
-      }
-      if (!candles?.length) {
-        const yahoo = await getYahooCandles(instrument, resolution, days)
-        candles = yahoo?.candles ?? null
-        source = candles?.length ? 'yahoo' : 'empty'
-      }
-
-      // Live: never show afternoon bars (any day). Overnight + morning only.
+      const yahoo = await getYahooCandles(instrument, resolution, days)
+      candles = yahoo?.candles ?? null
+      source = candles?.length ? 'yahoo' : 'empty'
       if (candles?.length) {
         candles = clipAfternoonBars(candles, instrument)
       }
@@ -123,17 +135,22 @@ export async function GET(request: Request) {
       change_pct: number
       previous_close?: number
     } | null = null
-    try {
-      const q = await getYahooQuote(instrument)
-      if (q) {
-        quote = {
-          price: q.price,
-          change: q.change,
-          change_pct: q.change_pct,
-          previous_close: q.previous_close,
+    if (includeQuote) {
+      try {
+        const q = await getYahooQuote(instrument)
+        if (q) {
+          quote = {
+            price: q.price,
+            change: q.change,
+            change_pct: q.change_pct,
+            previous_close: q.previous_close,
+          }
         }
+      } catch {
+        const last = candles[candles.length - 1]!
+        quote = { price: last.close, change: 0, change_pct: 0 }
       }
-    } catch {
+    } else {
       const last = candles[candles.length - 1]!
       quote = { price: last.close, change: 0, change_pct: 0 }
     }

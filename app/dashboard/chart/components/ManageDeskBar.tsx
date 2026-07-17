@@ -41,6 +41,11 @@ export function ManageDeskBar({ position, currentPrice, onClosed, onRefreshGate 
   const [busy, setBusy] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const exitingRef = useRef(false)
+  const priceRef = useRef(currentPrice)
+
+  useEffect(() => {
+    priceRef.current = currentPrice
+  }, [currentPrice])
 
   const isLong = position.direction === 'long'
   const pnl =
@@ -61,7 +66,7 @@ export function ManageDeskBar({ position, currentPrice, onClosed, onRefreshGate 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           position_id: position.id,
-          current_price: currentPrice ?? undefined,
+          current_price: priceRef.current ?? undefined,
         }),
       })
       if (!res.ok) return
@@ -83,7 +88,7 @@ export function ManageDeskBar({ position, currentPrice, onClosed, onRefreshGate 
     } catch {
       /* keep last */
     }
-  }, [position.id, currentPrice, onClosed, onRefreshGate])
+  }, [position.id, onClosed, onRefreshGate])
 
   useEffect(() => {
     pollAi()

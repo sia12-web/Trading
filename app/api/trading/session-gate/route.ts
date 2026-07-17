@@ -36,15 +36,35 @@ export async function GET(request: Request) {
     const supabase = await createClient()
     const today = getESTDateString()
 
-    let lockedInstrument: DeskInstrument | null = null
+    // Parallel DB reads — was sequential and slow on every 5s poll
+    const [recRes, openPosRes, anyTradeRes] = await Promise.all([
+      supabase
+        .from('market_recommendations')
+        .select('recommended_instrument')
+        .eq('date', today)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from('trades_journal')
+        .select('id, instrument, stop_loss_hit_count')
+        .eq('user_id', user.id)
+        .eq('trade_date', today)
+        .in('instrument', ['DOW', 'NASDAQ', 'NIKKEI'])
+        .is('exit_timestamp', null)
+        .maybeSingle(),
+      supabase
+        .from('trades_journal')
+        .select('id, exit_timestamp, stop_loss_hit_count')
+        .eq('user_id', user.id)
+        .eq('trade_date', today)
+        .in('instrument', ['DOW', 'NASDAQ', 'NIKKEI'])
+        .limit(1)
+        .maybeSingle(),
+    ])
 
-    const { data: rec } = await supabase
-      .from('market_recommendations')
-      .select('recommended_instrument')
-      .eq('date', today)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+    let lockedInstrument: DeskInstrument | null = null
+    const rec = recRes.data
 
     if (rec?.recommended_instrument && isNyDeskInstrument(rec.recommended_instrument)) {
       lockedInstrument = rec.recommended_instrument
@@ -63,33 +83,16 @@ export async function GET(request: Request) {
       }
     }
 
-    // Tokyo desk: during TSE morning prep→lunch, the tradeable instrument is NIKKEI
     if (isDeskHoursNow(new Date(), 'NIKKEI').open) {
       lockedInstrument = 'NIKKEI'
     }
 
-    const { data: openPos } = await supabase
-      .from('trades_journal')
-      .select('id, instrument, stop_loss_hit_count')
-      .eq('user_id', user.id)
-      .eq('trade_date', today)
-      .in('instrument', ['DOW', 'NASDAQ', 'NIKKEI'])
-      .is('exit_timestamp', null)
-      .maybeSingle()
-
+    const openPos = openPosRes.data
     if (openPos?.instrument && isLiveDeskInstrument(openPos.instrument)) {
       lockedInstrument = openPos.instrument as DeskInstrument
     }
 
-    const { data: anyTrade } = await supabase
-      .from('trades_journal')
-      .select('id, exit_timestamp, stop_loss_hit_count')
-      .eq('user_id', user.id)
-      .eq('trade_date', today)
-      .in('instrument', ['DOW', 'NASDAQ', 'NIKKEI'])
-      .limit(1)
-      .maybeSingle()
-
+    const anyTrade = anyTradeRes.data
     const dayDone =
       (!!anyTrade && !openPos) || (openPos?.stop_loss_hit_count ?? 0) >= 3
 

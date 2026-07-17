@@ -484,17 +484,25 @@ export function isLiveDeskInstrument(instrument: string): instrument is DeskInst
 /**
  * Drop afternoon cash-session bars from a candle series.
  * Keeps overnight / pre-open + morning session; removes lunch→close for that market.
- * Used by the live candles API so the chart never shows post-lunch price action.
+ * Caches timezone formatting per minute so large OANDA payloads stay cheap.
  */
 export function clipAfternoonBars<T extends { time: number }>(
   candles: T[],
   instrument: string | null | undefined
 ): T[] {
+  if (candles.length === 0) return candles
   const s = sessionFor(instrument)
   const lunch = parseTimeToSeconds(s.lunchClose)
   const close = parseTimeToSeconds(s.marketClose)
+  const secCache = new Map<number, number>()
+
   return candles.filter((c) => {
-    const sec = parseTimeToSeconds(timeInTz(new Date(c.time * 1000), s.tz))
+    const minuteKey = Math.floor(c.time / 60)
+    let sec = secCache.get(minuteKey)
+    if (sec == null) {
+      sec = parseTimeToSeconds(timeInTz(new Date(c.time * 1000), s.tz))
+      secCache.set(minuteKey, sec)
+    }
     // Afternoon RTH only — overnight and morning stay
     if (sec >= lunch && sec < close) return false
     return true

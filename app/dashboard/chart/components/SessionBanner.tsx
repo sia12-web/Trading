@@ -134,7 +134,7 @@ export function SessionBanner({
 
   useEffect(() => {
     refresh()
-    const id = setInterval(refresh, 5000)
+    const id = setInterval(refresh, 10_000)
     return () => clearInterval(id)
   }, [refresh])
 
