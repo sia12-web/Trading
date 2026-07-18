@@ -98,7 +98,9 @@ export async function cleanupDeskSession(
       let exitPrice = Number(row.entry_price)
       if (shouldExecuteOandaOrders() && row.oanda_trade_id) {
         const closed = await closeOandaTrade(String(row.oanda_trade_id))
-        if (closed.ok && closed.price > 0) exitPrice = closed.price
+        if (closed.ok && closed.fillPrice != null && closed.fillPrice > 0) {
+          exitPrice = closed.fillPrice
+        }
       }
       const entry = Number(row.entry_price)
       const size = Number(row.position_size)
