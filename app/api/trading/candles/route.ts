@@ -1,6 +1,6 @@
 /**
  * GET /api/trading/candles?instrument=DOW|NASDAQ|NIKKEI&timeframe=5m&days=5
- * NY indices: OANDA then Yahoo. NIKKEI: Yahoo ^N225.
+ * All desk indices: OANDA first (incl. JP225 for NIKKEI), Yahoo fallback.
  * Morning session only (open→lunch). Afternoon bars are never returned —
  * live freezes at lunch; simulation has no afternoon session.
  */
@@ -62,34 +62,14 @@ export async function GET(request: Request) {
     if (endDate && /^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
       // Sim / dated: end at lunch so morning session is the visible window
       const endUnix = toUnix(endDate, lh!, lm || 0) + 60
-      const startUnix = endUnix - Math.max(days, 5) * 24 * 3600 - 2 * 24 * 3600
+      // Extra lead-in for Tokyo overnight + Yahoo/OANDA gaps
+      const leadDays = instrument === 'NIKKEI' ? 3 : 2
+      const startUnix =
+        endUnix - Math.max(days, 5) * 24 * 3600 - leadDays * 24 * 3600
 
-      if (instrument !== 'NIKKEI') {
-        const [oanda, yahoo] = await Promise.all([
-          getOandaCandlesRange(instrument, resolution, startUnix, endUnix),
-          getYahooCandlesRange(instrument, resolution, startUnix, endUnix),
-        ])
-        if (oanda?.candles?.length) {
-          candles = oanda.candles
-          source = 'oanda'
-        } else if (yahoo?.candles?.length) {
-          candles = yahoo.candles
-          source = 'yahoo'
-        }
-      } else {
-        const yahoo = await getYahooCandlesRange(instrument, resolution, startUnix, endUnix)
-        candles = yahoo?.candles ?? null
-        source = candles?.length ? 'yahoo' : 'empty'
-      }
-      // Morning + overnight only (no afternoon on any day in the window)
-      if (candles?.length) {
-        candles = clipAfternoonBars(candles, instrument)
-      }
-    } else if (instrument !== 'NIKKEI') {
-      // Live NY: fetch OANDA + Yahoo in parallel; prefer OANDA
       const [oanda, yahoo] = await Promise.all([
-        getOandaCandles(instrument, resolution, days),
-        getYahooCandles(instrument, resolution, days),
+        getOandaCandlesRange(instrument, resolution, startUnix, endUnix),
+        getYahooCandlesRange(instrument, resolution, startUnix, endUnix),
       ])
       if (oanda?.candles?.length) {
         candles = oanda.candles
@@ -98,13 +78,24 @@ export async function GET(request: Request) {
         candles = yahoo.candles
         source = 'yahoo'
       }
+      // Morning + overnight only (no afternoon on any day in the window)
       if (candles?.length) {
         candles = clipAfternoonBars(candles, instrument)
       }
     } else {
-      const yahoo = await getYahooCandles(instrument, resolution, days)
-      candles = yahoo?.candles ?? null
-      source = candles?.length ? 'yahoo' : 'empty'
+      // Live desk: OANDA (US30 / NAS100 / JP225) then Yahoo — same path for all three
+      const fetchDays = Math.max(days, instrument === 'NIKKEI' ? 7 : 5)
+      const [oanda, yahoo] = await Promise.all([
+        getOandaCandles(instrument, resolution, fetchDays),
+        getYahooCandles(instrument, resolution, fetchDays),
+      ])
+      if (oanda?.candles?.length) {
+        candles = oanda.candles
+        source = 'oanda'
+      } else if (yahoo?.candles?.length) {
+        candles = yahoo.candles
+        source = 'yahoo'
+      }
       if (candles?.length) {
         candles = clipAfternoonBars(candles, instrument)
       }

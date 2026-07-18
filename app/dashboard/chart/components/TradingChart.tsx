@@ -669,8 +669,10 @@ export function TradingChart({
       // Outside morning session: still show frozen morning history (API clips at lunch),
       // but do not invent synthetic bars for trading.
       try {
+        // NIKKEI needs a longer window — Yahoo ^N225 5d is often truncated; OANDA JP225 fills gaps
+        const days = instrument === 'NIKKEI' ? 7 : 5
         const res = await fetch(
-          `/api/trading/candles?instrument=${instrument}&timeframe=${DESK_TIMEFRAME}&days=5`
+          `/api/trading/candles?instrument=${instrument}&timeframe=${DESK_TIMEFRAME}&days=${days}`
         )
         const json = await res.json()
         if (!cancelled && Array.isArray(json.candles) && json.candles.length > 0) {
@@ -793,15 +795,16 @@ export function TradingChart({
 
     const ts = chartRef.current.timeScale()
     if (!didFitRef.current) {
-      // First load only — fit all ~5 sessions; later soft-refreshes keep the user's zoom
+      // First load — show ~5 sessions with the tip pinned near the right edge
       const width = containerRef.current?.clientWidth ?? 900
       const spacing = Math.min(7, Math.max(2.5, (width - 40) / Math.max(ordered.length, 1)))
-      ts.applyOptions({ barSpacing: spacing, rightOffset: 8 })
-      const asiaPad = Math.max(20, Math.ceil(ordered.length * 0.08))
+      ts.applyOptions({ barSpacing: spacing, rightOffset: 4 })
+      const leftPad = Math.max(8, Math.ceil(ordered.length * 0.04))
       requestAnimationFrame(() => {
+        const last = Math.max(ordered.length - 1, 1)
         ts.setVisibleLogicalRange({
-          from: -asiaPad,
-          to: Math.max(ordered.length - 1, 1),
+          from: -leftPad,
+          to: last + 2,
         })
         didFitRef.current = true
       })
@@ -1116,8 +1119,9 @@ export function TradingChart({
     const refreshCandles = async () => {
       if (!isLiveBarsAllowed(instrument).open) return
       try {
+        const days = instrument === 'NIKKEI' ? 7 : 5
         const res = await fetch(
-          `/api/trading/candles?instrument=${instrument}&timeframe=${DESK_TIMEFRAME}&days=5&quote=0&_=${Date.now()}`,
+          `/api/trading/candles?instrument=${instrument}&timeframe=${DESK_TIMEFRAME}&days=${days}&quote=0&_=${Date.now()}`,
           { cache: 'no-store' }
         )
         if (!res.ok) return
