@@ -8,6 +8,7 @@ import {
   nyDeskSessionAt,
   tokyoDeskSessionAt,
   sessionLegendLabel,
+  sessionLegendOrder,
   deskClockFor,
 } from '../lib/chart/sessionVwap'
 
@@ -79,12 +80,12 @@ for (const instrument of ['DOW', 'NASDAQ'] as const) {
 }
 
 // ── Tokyo desk (NIKKEI) ──────────────────────────────────────────────────────
-assert(tokyoDeskSessionAt(jst(2026, 7, 16, 15, 0)) === 'Asia', 'JST 15:00 → Overnight')
-assert(tokyoDeskSessionAt(jst(2026, 7, 16, 8, 0)) === 'Asia', 'JST 08:00 → Overnight')
-assert(tokyoDeskSessionAt(jst(2026, 7, 16, 9, 0)) === 'London', 'JST 09:00 → Morning')
-assert(tokyoDeskSessionAt(jst(2026, 7, 16, 11, 0)) === 'London', 'JST 11:00 → Morning')
-assert(tokyoDeskSessionAt(jst(2026, 7, 16, 12, 0)) === 'New York', 'JST 12:00 → Afternoon')
-assert(tokyoDeskSessionAt(jst(2026, 7, 16, 14, 55)) === 'New York', 'JST 14:55 → Afternoon')
+assert(tokyoDeskSessionAt(jst(2026, 7, 16, 15, 0)) === 'Asia', 'JST 15:00 → Asia')
+assert(tokyoDeskSessionAt(jst(2026, 7, 16, 8, 0)) === 'Asia', 'JST 08:00 → Asia')
+assert(tokyoDeskSessionAt(jst(2026, 7, 16, 9, 0)) === 'London', 'JST 09:00 → London')
+assert(tokyoDeskSessionAt(jst(2026, 7, 16, 11, 0)) === 'London', 'JST 11:00 → London')
+assert(tokyoDeskSessionAt(jst(2026, 7, 16, 12, 0)) === 'New York', 'JST 12:00 → NY')
+assert(tokyoDeskSessionAt(jst(2026, 7, 16, 14, 55)) === 'New York', 'JST 14:55 → NY')
 
 {
   const end = jst(2026, 7, 16, 14, 55)
@@ -97,9 +98,17 @@ assert(tokyoDeskSessionAt(jst(2026, 7, 16, 14, 55)) === 'New York', 'JST 14:55 �
   const tip = spans.find((s) => s.startT <= end && s.endT >= end)
   assert(tip?.name === 'New York', `NIKKEI tip afternoon, got ${tip?.name}`)
   assert(deskClockFor('NIKKEI').timeZone === 'Asia/Tokyo', 'NIKKEI TZ')
-  assert(sessionLegendLabel('Asia', 'NIKKEI') === 'Overnight', 'NIKKEI overnight label')
-  assert(sessionLegendLabel('London', 'NIKKEI') === 'Morning', 'NIKKEI morning label')
-  assert(sessionLegendLabel('New York', 'NIKKEI') === 'Afternoon', 'NIKKEI afternoon label')
+  // Same legend language as DOW/NASDAQ
+  assert(sessionLegendLabel('Asia', 'NIKKEI') === 'Asia', 'NIKKEI Asia label')
+  assert(sessionLegendLabel('London', 'NIKKEI') === 'London', 'NIKKEI London label')
+  assert(sessionLegendLabel('New York', 'NIKKEI') === 'New York', 'NIKKEI NY label')
+  for (const inst of ['DOW', 'NASDAQ', 'NIKKEI'] as const) {
+    const order = sessionLegendOrder(inst)
+    assert(
+      order[0] === 'Asia' && order[1] === 'London' && order[2] === 'New York',
+      `${inst} legend order`
+    )
+  }
 }
 
 console.log('✅ session_desk_instruments: DOW / NASDAQ / NIKKEI contiguous + clocks OK')

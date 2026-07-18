@@ -37,8 +37,8 @@ import {
   deskClockFor,
   lastNTradingSessions,
   sessionLegendLabel,
+  sessionLegendOrder,
   type SessionHighlightSpan,
-  type SessionName,
 } from '@/lib/chart/sessionVwap'
 import {
   computeSimOvernightBias,
@@ -1701,7 +1701,7 @@ function SimulationDeskInner() {
         {/* Session + AVWAP legend */}
         <div className="pointer-events-none mt-1.5 flex flex-wrap items-center gap-3 px-1 text-[10px] uppercase tracking-wider text-gray-500">
           <span>Sessions</span>
-          {(Object.keys(SESSION_STYLES) as SessionName[]).map((name) => {
+          {sessionLegendOrder(instrument).map((name) => {
             const s = SESSION_STYLES[name]
             return (
               <span key={name} className="flex items-center gap-1.5">

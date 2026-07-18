@@ -48,9 +48,14 @@ export function nyDeskSessionAt(unix: number): SessionName {
   return 'New York'
 }
 
+export const SESSION_RANGE_ORDER: SessionName[] = ['Asia', 'London', 'New York']
+
 /**
- * Tokyo desk — contiguous JST windows (same color keys as NY desk):
- * Overnight 15:00→09:00 · Morning cash 09:00→11:30 · Afternoon 11:30→15:00
+ * Tokyo desk — contiguous JST windows, same color keys as NY desk (Asia/London/NY):
+ *   15:00→09:00 → Asia (blue)
+ *   09:00→11:30 → London (yellow)
+ *   11:30→15:00 → New York (green)
+ * Same palette + legend names as DOW/NASDAQ.
  */
 export function tokyoDeskSessionAt(unix: number): SessionName {
   const h = hourInTz(unix, 'Asia/Tokyo')
@@ -59,17 +64,14 @@ export function tokyoDeskSessionAt(unix: number): SessionName {
   return 'New York'
 }
 
-/** Legend labels — NY desk keeps Asia/London/NY; Tokyo uses local session names. */
-export function sessionLegendLabel(
-  name: SessionName,
-  instrument?: string | null
-): string {
-  if (instrument === 'NIKKEI') {
-    if (name === 'Asia') return 'Overnight'
-    if (name === 'London') return 'Morning'
-    return 'Afternoon'
-  }
+/** Shared legend — Asia / London / New York for every desk instrument. */
+export function sessionLegendLabel(name: SessionName, _instrument?: string | null): string {
   return name
+}
+
+/** Legend swatch order — identical for DOW, NASDAQ, and NIKKEI. */
+export function sessionLegendOrder(_instrument?: string | null): SessionName[] {
+  return SESSION_RANGE_ORDER
 }
 
 export interface SessionHighlightRect {
@@ -88,8 +90,6 @@ export const VWAP_COLORS = {
   vwap: '#b8a04a',
   band: '#3d8f7a',
 } as const
-
-export const SESSION_RANGE_ORDER: SessionName[] = ['Asia', 'London', 'New York']
 
 export interface SessionBar {
   time: number

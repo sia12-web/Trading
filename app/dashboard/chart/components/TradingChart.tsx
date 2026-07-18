@@ -36,10 +36,10 @@ import {
   deskClockFor,
   lastNTradingSessions as trimDeskCandles,
   sessionLegendLabel,
+  sessionLegendOrder,
   SESSION_STYLES as SESSION_RANGE_STYLES,
   VWAP_COLORS as SHARED_VWAP_COLORS,
   type SessionHighlightSpan,
-  type SessionName,
 } from '@/lib/chart/sessionVwap'
 import { aiLevelsUrl, resolveDeskLevels } from '@/lib/trading/deskLevels'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
@@ -1596,7 +1596,7 @@ export function TradingChart({
       {/* ── Chart container ──────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-3 px-1 text-[10px] uppercase tracking-wider text-gray-500">
         <span>Sessions</span>
-        {(Object.keys(SESSION_RANGE_STYLES) as SessionName[]).map((name) => {
+        {sessionLegendOrder(instrument).map((name) => {
           const s = SESSION_RANGE_STYLES[name]
           return (
             <span key={name} className="flex items-center gap-1.5">
