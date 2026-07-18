@@ -1,14 +1,21 @@
 /**
  * POST /api/trading/sim-levels
- * Cheap Level Finder for simulation replay (Haiku / LLM_SIM_PROPOSER_MODEL).
- * As-of cash open — no lookahead into the session being practiced.
- * Does NOT archive into live level_history (won't pollute the morning desk).
+ *
+ * Same Level Finder prompts as live (buildSystemPrompt + buildAnalysisPrompt),
+ * but:
+ *   - llm_tier=sim → cheap Haiku (not Opus)
+ *   - candles cut strictly before cash open (as-of 9:30 ET / 9:00 JST) — no
+ *     morning/afternoon lookahead into the replay day
+ *   - NO Finnhub/news (past session — news is irrelevant for dated practice)
+ *   - does NOT archive into live level_history
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { getYahooCandlesRange } from '@/lib/yahoo/candles'
 import { getLevelFinderAgent } from '@/lib/services/levelFinderAgent'
+import { fetchLevelHistoricalContext } from '@/lib/services/levelFinderAgent/historicalContext'
 import { sessionFor } from '@/lib/trading/sessionGate'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import type { Candle } from '@/lib/services/levelFinderAgent/types'
@@ -109,7 +116,7 @@ export async function POST(request: NextRequest) {
     const toUnix = instrument === 'NIKKEI' ? tokyoDateTimeToUnix : nyDateTimeToUnix
     const [oh, om] = sess.marketOpen.split(':').map(Number)
     const openUnix = toUnix(date, oh!, om || 0)
-    // Strictly before cash open — AI must not see the morning being replayed
+    // Strictly before cash open — AI must not see the morning/afternoon being replayed
     const cut = openUnix - 1
 
     const [dailyPack, h1Pack, h4Pack] = await Promise.all([
@@ -167,6 +174,20 @@ export async function POST(request: NextRequest) {
       candles_4h[candles_4h.length - 1]?.close ??
       candles_daily[candles_daily.length - 1]!.close
 
+    // Same memory section as live prompt — but only grades created before this open
+    // (no future leakage). Never fetches Finnhub/news for dated sim.
+    const supabase = await createClient()
+    const historicalContext = await fetchLevelHistoricalContext(
+      supabase,
+      user.id,
+      instrument,
+      {
+        days: 30,
+        limit: 20,
+        asOfIso: new Date(openUnix * 1000).toISOString(),
+      }
+    )
+
     const agent = await getLevelFinderAgent()
     const sessionId = `sim-${instrument}-${date}`
     const analysis = await agent.analyzePriceAction({
@@ -178,6 +199,7 @@ export async function POST(request: NextRequest) {
       candles_daily,
       candles_h1,
       llm_tier: 'sim',
+      historicalContext: historicalContext || undefined,
     })
 
     const levels = analysis.levels.map((l) => ({
@@ -198,6 +220,8 @@ export async function POST(request: NextRequest) {
       model: analysis.usage.model ?? null,
       usage: analysis.usage,
       source: 'ai',
+      news: false,
+      prompt: 'same_as_live',
     })
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Sim levels failed'
