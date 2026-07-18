@@ -1,11 +1,11 @@
 'use client'
 
 /**
- * Position Management Dashboard
- * Real-time position display with live P&L calculations
+ * Live Positions — manage open books with path meters, AI, and clear exits.
  */
 
-import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { useCallback, useEffect, useState } from 'react'
 import { PositionStatusCard } from './components/PositionStatusCard'
 import { LunchCloseCountdown } from './components/LunchCloseCountdown'
 import type { PositionStatusResponse, PositionStatus } from '@/types/positionManagement'
@@ -16,130 +16,216 @@ const INSTRUMENTS: Instrument[] = ['DOW', 'NASDAQ', 'NIKKEI']
 export default function PositionsPage() {
   const [selectedInstrument, setSelectedInstrument] = useState<Instrument>('DOW')
   const [position, setPosition] = useState<PositionStatus | null>(null)
+  const [openByInstrument, setOpenByInstrument] = useState<Partial<Record<Instrument, boolean>>>(
+    {}
+  )
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Fetch position on mount and when instrument changes
-  useEffect(() => {
-    const fetchPosition = async () => {
-      try {
+  const fetchOpenFlags = useCallback(async () => {
+    const flags: Partial<Record<Instrument, boolean>> = {}
+    await Promise.all(
+      INSTRUMENTS.map(async (inst) => {
+        try {
+          const res = await fetch(
+            `/api/trading/positions/management-status?instrument=${inst}`,
+            { cache: 'no-store' }
+          )
+          if (!res.ok) return
+          const data: PositionStatusResponse = await res.json()
+          flags[inst] = !!(data.success && data.position)
+        } catch {
+          /* ignore */
+        }
+      })
+    )
+    setOpenByInstrument(flags)
+  }, [])
+
+  const fetchPosition = useCallback(async (opts?: { soft?: boolean }) => {
+    try {
+      if (!opts?.soft) {
         setLoading(true)
         setError(null)
-
-        // Drop unfilled working limits + lunch-flatten leftovers before reading Positions
-        await fetch('/api/trading/positions/cleanup-session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({}),
-        }).catch(() => {})
-
-        const response = await fetch(
-          `/api/trading/positions/management-status?instrument=${selectedInstrument}`
-        )
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch position')
-        }
-
-        const data: PositionStatusResponse = await response.json()
-
-        if (data.success) {
-          setPosition(data.position)
-        } else {
-          setError(data.message)
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error')
-      } finally {
-        setLoading(false)
       }
-    }
 
-    fetchPosition()
+      await fetch('/api/trading/positions/cleanup-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }).catch(() => {})
+
+      const response = await fetch(
+        `/api/trading/positions/management-status?instrument=${selectedInstrument}`,
+        { cache: 'no-store' }
+      )
+
+      if (!response.ok) throw new Error('Failed to fetch position')
+
+      const data: PositionStatusResponse = await response.json()
+      if (data.success) {
+        setPosition(data.position)
+        setOpenByInstrument((prev) => ({
+          ...prev,
+          [selectedInstrument]: !!data.position,
+        }))
+      } else {
+        setError(data.message || 'Could not load position')
+        setPosition(null)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
+      if (!opts?.soft) setPosition(null)
+    } finally {
+      setLoading(false)
+    }
   }, [selectedInstrument])
 
+  useEffect(() => {
+    void fetchPosition()
+  }, [fetchPosition])
+
+  useEffect(() => {
+    void fetchOpenFlags()
+  }, [fetchOpenFlags])
+
+  // Soft refresh while managing
+  useEffect(() => {
+    if (!position) return
+    const id = setInterval(() => void fetchPosition({ soft: true }), 30_000)
+    return () => clearInterval(id)
+  }, [position, fetchPosition])
+
+  // On first open-flags load, jump to an instrument that actually has a book
+  useEffect(() => {
+    const openInst = INSTRUMENTS.find((i) => openByInstrument[i])
+    if (!openInst) return
+    if (openByInstrument[selectedInstrument]) return
+    setSelectedInstrument(openInst)
+    // intentionally once when flags populate for another market
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openByInstrument])
+
+  const anyOpen = INSTRUMENTS.some((i) => openByInstrument[i])
+
   return (
-    <div className="min-h-screen bg-gray-50 p-6 dark:bg-gray-900">
-      <div className="mx-auto max-w-6xl">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 dark:text-white">Position Management</h1>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">
-            Real-time position tracking with live P&L updates
-          </p>
-        </div>
-
-        {/* Instrument Selector */}
-        <div className="mb-8 flex gap-3">
-          {INSTRUMENTS.map((instrument) => (
-            <button
-              key={instrument}
-              onClick={() => setSelectedInstrument(instrument)}
-              className={`rounded-lg px-4 py-2 font-semibold transition-colors ${
-                selectedInstrument === instrument
-                  ? 'bg-blue-600 text-white dark:bg-blue-500'
-                  : 'bg-white text-gray-900 hover:bg-gray-100 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700'
-              }`}
+    <div className="min-h-screen bg-[#0d1117] text-gray-200">
+      <div className="mx-auto max-w-3xl px-4 py-8 space-y-6">
+        <header className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-gray-500">Live desk</p>
+            <h1 className="mt-1 text-2xl font-semibold text-white">Positions</h1>
+            <p className="mt-1 text-sm text-gray-500 max-w-lg">
+              Manage the open book: path to target, room to stop, AI check, then HOLD or take
+              profit. Simulation never appears here.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/dashboard/chart"
+              className="rounded-lg border border-[#30363d] px-3 py-1.5 text-xs font-semibold text-gray-300 hover:bg-[#161b22]"
             >
-              {instrument}
-            </button>
-          ))}
+              Live Trading
+            </Link>
+            <Link
+              href="/dashboard/journal"
+              className="rounded-lg border border-[#30363d] px-3 py-1.5 text-xs font-semibold text-gray-300 hover:bg-[#161b22]"
+            >
+              Order History
+            </Link>
+          </div>
+        </header>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {INSTRUMENTS.map((instrument) => {
+            const open = !!openByInstrument[instrument]
+            const selected = selectedInstrument === instrument
+            return (
+              <button
+                key={instrument}
+                type="button"
+                onClick={() => setSelectedInstrument(instrument)}
+                className={`relative rounded-lg px-3.5 py-2 text-xs font-semibold border transition ${
+                  selected
+                    ? 'bg-brand-600/30 text-brand-200 border-brand-700/40'
+                    : 'bg-[#161b22] text-gray-500 border-[#30363d] hover:text-gray-300'
+                }`}
+              >
+                {instrument}
+                {open && (
+                  <span
+                    className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]"
+                    title="Open position"
+                  />
+                )}
+              </button>
+            )
+          })}
+          <button
+            type="button"
+            onClick={() => {
+              void fetchPosition()
+              void fetchOpenFlags()
+            }}
+            className="ml-auto rounded-lg border border-[#30363d] px-3 py-1.5 text-xs text-gray-400 hover:text-white"
+          >
+            Refresh
+          </button>
         </div>
 
-        {/* Loading State */}
+        {!loading && anyOpen && (
+          <p className="text-[11px] text-emerald-400/90">
+            Green dot = open book on that market. You can only manage one instrument’s desk day at a
+            time.
+          </p>
+        )}
+
+        <LunchCloseCountdown
+          instrument={selectedInstrument}
+          marketDisabled={(position?.stop_loss_hit_count ?? 0) >= 3}
+          stopLossHitCount={position?.stop_loss_hit_count ?? 0}
+          hasOpenPosition={!!position}
+        />
+
         {loading && (
-          <div className="rounded-lg border border-gray-200 bg-white p-8 dark:border-gray-700 dark:bg-gray-900">
-            <div className="flex items-center justify-center space-x-2">
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent dark:border-blue-400"></div>
-              <p className="text-gray-600 dark:text-gray-400">Loading position data...</p>
-            </div>
+          <div className="rounded-xl border border-[#30363d] bg-[#161b22] px-6 py-12 text-center">
+            <div className="mx-auto mb-3 h-5 w-5 animate-spin rounded-full border-2 border-brand-500 border-t-transparent" />
+            <p className="text-sm text-gray-500">Loading {selectedInstrument}…</p>
           </div>
         )}
 
-        {/* Error State */}
         {error && !loading && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-6 dark:border-red-800 dark:bg-red-900/20">
-            <h3 className="font-semibold text-red-900 dark:text-red-200">Error</h3>
-            <p className="mt-2 text-red-700 dark:text-red-300">{error}</p>
+          <div className="rounded-xl border border-red-900/50 bg-red-950/30 px-4 py-4">
+            <p className="text-sm font-semibold text-red-300">Couldn’t load position</p>
+            <p className="mt-1 text-xs text-red-400/80">{error}</p>
             <button
-              onClick={() => window.location.reload()}
-              className="mt-4 rounded bg-red-600 px-4 py-2 text-white hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-600"
+              type="button"
+              onClick={() => void fetchPosition()}
+              className="mt-3 rounded-lg border border-red-800/60 px-3 py-1.5 text-xs font-semibold text-red-200 hover:bg-red-950/50"
             >
               Retry
             </button>
           </div>
         )}
 
-        {/* Position Card */}
         {!loading && !error && (
-          <>
-            <LunchCloseCountdown
-              marketDisabled={(position?.stop_loss_hit_count ?? 0) >= 3}
-              stopLossHitCount={position?.stop_loss_hit_count ?? 0}
-            />
-            <div className="mt-4" />
-            <PositionStatusCard position={position} />
-          </>
+          <PositionStatusCard
+            position={position}
+            onClosed={() => {
+              setPosition(null)
+              setOpenByInstrument((prev) => ({ ...prev, [selectedInstrument]: false }))
+            }}
+            onRefresh={() => {
+              void fetchPosition({ soft: true })
+              void fetchOpenFlags()
+            }}
+          />
         )}
 
-        {/* Info Box */}
-        <div className="mt-8 rounded-lg border border-blue-200 bg-blue-50 p-6 dark:border-blue-800 dark:bg-blue-900/20">
-          <h3 className="font-semibold text-blue-900 dark:text-blue-200">How it works</h3>
-          <ul className="mt-3 space-y-2 text-sm text-blue-800 dark:text-blue-300">
-            <li>
-              ✓ <strong>Real-time P&L:</strong> Updated live from market prices with &lt;100ms latency
-            </li>
-            <li>
-              ✓ <strong>Stop Loss Monitoring:</strong> Automatically closes position if price breaches SL
-            </li>
-            <li>
-              ✓ <strong>Profit Target:</strong> Calculated based on market regime confidence
-            </li>
-            <li>
-              ✓ <strong>Management Decisions:</strong> Record HOLD, TAKE_PROFIT, ADJUST decisions
-            </li>
-          </ul>
-        </div>
+        <p className="text-[11px] text-gray-600 leading-relaxed">
+          Prefer managing from the chart while price is moving — this page is the dedicated manage
+          desk when you leave the chart. Fills, stops, and AI exits land in Order History.
+        </p>
       </div>
     </div>
   )

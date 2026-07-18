@@ -1,97 +1,138 @@
 'use client'
 
 /**
- * Lunch Close Countdown Component
- * Shows time remaining until 11:30 AM EST market close
- * Displays market disabled status
+ * Morning desk countdown — NY 11:30 ET / Tokyo 11:30 JST lunch flatten.
  */
 
 import { useEffect, useState } from 'react'
+import { sessionFor } from '@/lib/trading/sessionGate'
+import type { Instrument } from '@/types/trading'
 
 interface LunchCloseCountdownProps {
+  instrument: Instrument
   marketDisabled: boolean
   stopLossHitCount: number
+  hasOpenPosition: boolean
 }
 
-export function LunchCloseCountdown({ marketDisabled, stopLossHitCount }: LunchCloseCountdownProps) {
-  const [timeRemaining, setTimeRemaining] = useState<string>('')
-  const [isMarketClosed, setIsMarketClosed] = useState(false)
+function localParts(tz: string) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date())
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '0'
+  let hour = parseInt(get('hour'), 10)
+  if (hour === 24) hour = 0
+  return {
+    weekday: get('weekday'),
+    mins: hour * 60 + parseInt(get('minute'), 10),
+    secs: parseInt(get('second'), 10),
+  }
+}
+
+function parseHms(hms: string): number {
+  const [h, m] = hms.split(':').map(Number)
+  return (h || 0) * 60 + (m || 0)
+}
+
+export function LunchCloseCountdown({
+  instrument,
+  marketDisabled,
+  stopLossHitCount,
+  hasOpenPosition,
+}: LunchCloseCountdownProps) {
+  const sess = sessionFor(instrument)
+  const tzLabel = instrument === 'NIKKEI' ? 'JST' : 'ET'
+  const lunchLabel = `${sess.lunchClose.slice(0, 5)} ${tzLabel}`
+  const [label, setLabel] = useState('—')
+  const [phase, setPhase] = useState<'pre' | 'open' | 'closed'>('closed')
 
   useEffect(() => {
-    const calculateTimeRemaining = () => {
-      // Get current time in EST
-      const now = new Date()
-      const estTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }))
-
-      // Lunch close at 11:30 AM EST
-      const lunchClose = new Date(estTime)
-      lunchClose.setHours(11, 30, 0, 0)
-
-      // Trading hours: 9:30 AM - 11:30 AM EST
-      const marketOpen = new Date(estTime)
-      marketOpen.setHours(9, 30, 0, 0)
-
-      // Check if market is still open for trading
-      if (estTime < marketOpen || estTime > lunchClose) {
-        setIsMarketClosed(true)
-        setTimeRemaining('Market closed')
+    const tick = () => {
+      const { weekday, mins, secs } = localParts(sess.tz)
+      if (weekday === 'Sat' || weekday === 'Sun') {
+        setPhase('closed')
+        setLabel('Weekend')
         return
       }
-
-      setIsMarketClosed(false)
-
-      const diff = lunchClose.getTime() - estTime.getTime()
-      if (diff > 0) {
-        const minutes = Math.floor(diff / 60000)
-        const seconds = Math.floor((diff % 60000) / 1000)
-        setTimeRemaining(`${minutes}:${seconds.toString().padStart(2, '0')}`)
-      } else {
-        setTimeRemaining('Closing...')
+      const open = parseHms(sess.marketOpen)
+      const lunch = parseHms(sess.lunchClose)
+      if (mins < open) {
+        setPhase('pre')
+        const left = open * 60 - (mins * 60 + secs)
+        const m = Math.floor(left / 60)
+        const s = left % 60
+        setLabel(`Opens in ${m}:${s.toString().padStart(2, '0')}`)
+        return
       }
+      if (mins >= lunch) {
+        setPhase('closed')
+        setLabel('Morning closed')
+        return
+      }
+      setPhase('open')
+      const left = lunch * 60 - (mins * 60 + secs)
+      const m = Math.floor(left / 60)
+      const s = left % 60
+      setLabel(`${m}:${s.toString().padStart(2, '0')}`)
     }
-
-    calculateTimeRemaining()
-    const interval = setInterval(calculateTimeRemaining, 1000)
-
-    return () => clearInterval(interval)
-  }, [])
-
-  if (isMarketClosed) {
-    return (
-      <div className="rounded-lg border border-gray-300 bg-gray-100 p-4 dark:border-gray-600 dark:bg-gray-800">
-        <p className="text-center text-sm font-semibold text-gray-700 dark:text-gray-300">
-          📊 Market closed - trading window completed for today
-        </p>
-      </div>
-    )
-  }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [sess.tz, sess.marketOpen, sess.lunchClose])
 
   if (marketDisabled) {
     return (
-      <div className="rounded-lg border border-red-300 bg-red-50 p-4 dark:border-red-700 dark:bg-red-900/20">
-        <p className="text-center font-semibold text-red-700 dark:text-red-400">
-          🔴 MARKET DISABLED - No new entries allowed
-        </p>
-        <p className="mt-2 text-center text-sm text-red-600 dark:text-red-300">
-          {stopLossHitCount >= 3 && 'Stop loss hit 3 times. Market disabled for rest of session.'}
+      <div className="rounded-xl border border-red-800/50 bg-red-950/30 px-4 py-3">
+        <p className="text-sm font-semibold text-red-300">Desk locked — 3 stops today</p>
+        <p className="mt-1 text-xs text-red-400/80">
+          No new entries on {instrument} for the rest of this session.
         </p>
       </div>
     )
   }
 
+  const border =
+    phase === 'open'
+      ? 'border-amber-800/40 bg-amber-950/20'
+      : phase === 'pre'
+        ? 'border-sky-800/40 bg-sky-950/20'
+        : 'border-[#30363d] bg-[#161b22]'
+
   return (
-    <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-      <div className="flex items-center justify-between">
-        <p className="font-semibold text-blue-900 dark:text-blue-200">
-          Time until lunch close (11:30 AM EST)
-        </p>
-        <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 font-mono">
-          {timeRemaining}
-        </p>
+    <div className={`rounded-xl border px-4 py-3 ${border}`}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-gray-500">
+            {phase === 'open'
+              ? `Until lunch flatten · ${lunchLabel}`
+              : phase === 'pre'
+                ? `Pre-open · ${instrument}`
+                : `Session · ${instrument}`}
+          </p>
+          <p className="mt-0.5 text-xs text-gray-400">
+            {hasOpenPosition
+              ? 'Open book must be flat by lunch'
+              : 'No open book — place limits on Live Trading'}
+            {stopLossHitCount > 0 ? ` · Stops ${stopLossHitCount}/3` : ''}
+          </p>
+        </div>
+        <div
+          className={`price-mono text-2xl font-bold tabular-nums ${
+            phase === 'open'
+              ? 'text-amber-300'
+              : phase === 'pre'
+                ? 'text-sky-300'
+                : 'text-gray-500'
+          }`}
+        >
+          {label}
+        </div>
       </div>
-      <p className="mt-2 text-xs text-blue-700 dark:text-blue-300">
-        Position must be closed by lunch close. Stop loss hit count: {stopLossHitCount}/3
-      </p>
     </div>
   )
 }
