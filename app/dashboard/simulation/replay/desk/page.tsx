@@ -267,7 +267,8 @@ function SimulationDeskInner() {
   const [speed, setSpeed] = useState(initialSpeed)
   const [allCandles, setAllCandles] = useState<Candle[]>([])
   const [levels, setLevels] = useState<AiLevel[]>([])
-  const [levelsSource, setLevelsSource] = useState<'ai' | 'structure'>('ai')
+  const [levelsSource, setLevelsSource] = useState<'ai' | 'structure'>('structure')
+  const [levelsAiLoading, setLevelsAiLoading] = useState(false)
   const [playbook, setPlaybook] = useState<DeskPlaybook | null>(null)
   const [simNow, setSimNow] = useState(0)
   const [playing, setPlaying] = useState(false)
@@ -426,20 +427,22 @@ function SimulationDeskInner() {
     }
 
     let cancelled = false
-    const controller = new AbortController()
-    const timeoutId = window.setTimeout(() => controller.abort(), 20_000)
+    const candleController = new AbortController()
+    const aiController = new AbortController()
+    const candleTimeoutId = window.setTimeout(() => candleController.abort(), 20_000)
+    const aiTimeoutId = window.setTimeout(() => aiController.abort(), 55_000)
 
     ;(async () => {
       setLoading(true)
       setError(null)
+      setLevelsAiLoading(false)
       try {
         const startOpen = toUnix(replayDate, openH!, openM || 0)
         setSimNow(startOpen)
 
-        // Candles are required; levels are optional — don't block the desk on AI history
         const candlesRes = await fetch(
           `/api/trading/candles?instrument=${instrument}&timeframe=5m&days=7&date=${replayDate}&_=${Date.now()}`,
-          { cache: 'no-store', signal: controller.signal }
+          { cache: 'no-store', signal: candleController.signal }
         )
 
         const cJson = await candlesRes.json()
@@ -472,7 +475,7 @@ function SimulationDeskInner() {
 
         if (cancelled) return
 
-        // Dated sim: structure + overnight lean → ranked PRIMARY BUY/SHORT playbook
+        // Fast path: structure playbook so the desk opens immediately
         const biasProbe = computeSimOvernightBias(mapped, startOpen, sess.tz)
         const bias =
           biasProbe?.bias === 'bullish'
@@ -480,16 +483,76 @@ function SimulationDeskInner() {
             : biasProbe?.bias === 'bearish'
               ? 'bearish'
               : 'none'
-        const resolved = resolveDeskLevels([], mapped, startOpen, sess.tz, bias)
-        setLevels(resolved.levels as AiLevel[])
-        setLevelsSource(resolved.source)
-        setPlaybook(resolved.playbook)
+        const structure = resolveDeskLevels([], mapped, startOpen, sess.tz, bias)
+        setLevels(structure.levels as AiLevel[])
+        setLevelsSource(structure.source)
+        setPlaybook(structure.playbook)
 
         const openLabel =
           instrument === 'NIKKEI' ? '9:00 AM JST' : '9:30 AM ET'
         setMsg(
-          `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · structure levels — place a limit, then Play`
+          `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · loading AI levels (Haiku)…`
         )
+        setLoading(false)
+
+        // Cheap AI (llm_tier=sim / Haiku) — upgrades structure when ready
+        setLevelsAiLoading(true)
+        try {
+          const aiRes = await fetch('/api/trading/sim-levels', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: aiController.signal,
+            body: JSON.stringify({
+              instrument,
+              date: replayDate,
+              candles_5m: mapped.map((c) => ({
+                time: c.time,
+                open: c.open,
+                high: c.high,
+                low: c.low,
+                close: c.close,
+                volume: c.volume,
+              })),
+            }),
+          })
+          const aiJson = await aiRes.json().catch(() => ({}))
+          if (cancelled) return
+
+          if (aiRes.ok && Array.isArray(aiJson.levels) && aiJson.levels.length > 0) {
+            const withAi = resolveDeskLevels(
+              aiJson.levels,
+              mapped,
+              startOpen,
+              sess.tz,
+              bias
+            )
+            setLevels(withAi.levels as AiLevel[])
+            setLevelsSource(withAi.source)
+            setPlaybook(withAi.playbook)
+            setMsg(
+              `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · AI levels (Haiku) — place a limit, then Play`
+            )
+          } else {
+            setMsg(
+              `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · structure levels (AI unavailable) — place a limit, then Play`
+            )
+          }
+        } catch (aiErr) {
+          if (cancelled) return
+          const aborted =
+            (aiErr instanceof Error && aiErr.name === 'AbortError') ||
+            (typeof aiErr === 'object' &&
+              aiErr !== null &&
+              'name' in aiErr &&
+              (aiErr as { name: string }).name === 'AbortError')
+          setMsg(
+            `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · structure levels${
+              aborted ? ' (AI timed out)' : ' (AI failed)'
+            } — place a limit, then Play`
+          )
+        } finally {
+          if (!cancelled) setLevelsAiLoading(false)
+        }
       } catch (e) {
         if (cancelled) return
         const aborted =
@@ -502,16 +565,18 @@ function SimulationDeskInner() {
               ? e.message
               : 'Failed to load desk'
         )
+        setLoading(false)
       } finally {
-        window.clearTimeout(timeoutId)
-        if (!cancelled) setLoading(false)
+        window.clearTimeout(candleTimeoutId)
       }
     })()
 
     return () => {
       cancelled = true
-      controller.abort()
-      window.clearTimeout(timeoutId)
+      candleController.abort()
+      aiController.abort()
+      window.clearTimeout(candleTimeoutId)
+      window.clearTimeout(aiTimeoutId)
     }
   }, [instrument, replayDate, openH, openM, toUnix, sess.tz])
 
@@ -1731,6 +1796,9 @@ function SimulationDeskInner() {
           <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
               Morning playbook
+              <span className="ml-1.5 normal-case tracking-normal text-gray-600">
+                · {levelsAiLoading ? 'AI…' : levelsSource === 'ai' ? 'AI Haiku' : 'structure'}
+              </span>
             </span>
             <button
               type="button"
