@@ -1,0 +1,3 @@
+# Include devDependencies during install — Next.js production build needs typescript.
+[phases.install]
+cmds = ["npm ci"]

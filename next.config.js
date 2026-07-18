@@ -1,3 +1,5 @@
+const path = require('path')
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -6,6 +8,15 @@ const nextConfig = {
   // Do NOT put NEXT_PUBLIC_* in `env` here — that inlines build-time values
   // (often empty on Railway) and breaks runtime even after vars are set.
   // Next.js already exposes NEXT_PUBLIC_* from the environment.
+
+  // Explicit alias so production (Railway/Linux) resolves @/ the same as local.
+  webpack: (config) => {
+    config.resolve.alias = {
+      ...(config.resolve.alias || {}),
+      '@': path.resolve(__dirname),
+    }
+    return config
+  },
 
   // Optimize images
   images: {
