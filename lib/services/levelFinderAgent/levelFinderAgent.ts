@@ -40,9 +40,10 @@ const MAX_LEVELS = 10
 class LevelFinderAgent {
   async initialize(): Promise<void> {
     const cfg = llmConfigSnapshot()
-    if (!cfg.proposer.configured) {
+    // Live or sim proposer must be available (same Anthropic key covers both by default)
+    if (!cfg.proposer.configured && !cfg.sim_proposer.configured) {
       throw new Error(
-        `LLM proposer not configured (${cfg.proposer.provider}). Set ANTHROPIC_API_KEY or GEMINI_API_KEY.`
+        `LLM proposer not configured (live=${cfg.proposer.provider}, sim=${cfg.sim_proposer.provider}). Set ANTHROPIC_API_KEY or GEMINI_API_KEY.`
       )
     }
     logger.info('level_finder.init', cfg)
@@ -52,10 +53,13 @@ class LevelFinderAgent {
     levels: LevelIdentification[]
     usage: ClaudeUsage
   }> {
-    const provider = llmProvider('proposer')
-    const model = llmModel('proposer')
+    const tier = request.llm_tier === 'sim' ? 'sim' : 'live'
+    const provider = llmProvider('proposer', tier)
+    const model = llmModel('proposer', tier)
     if (!isProviderConfigured(provider)) {
-      throw new Error(`LLM provider ${provider} not configured`)
+      throw new Error(
+        `LLM provider ${provider} not configured for ${tier} tier (set ANTHROPIC_API_KEY or GEMINI_API_KEY)`
+      )
     }
 
     const prompt = this.buildAnalysisPrompt(request)
@@ -69,6 +73,8 @@ class LevelFinderAgent {
     let proposedCount = 0
     let acceptedCount = 0
     let rejectedCount = 0
+    const proposerRoute =
+      tier === 'sim' ? 'level_finder.proposer.sim' : 'level_finder.proposer'
 
     try {
       let text: string
@@ -94,10 +100,11 @@ class LevelFinderAgent {
         result.usage.role = 'proposer'
         await logLlmUsage({
           usage: result.usage,
-          route: 'level_finder.proposer',
+          route: proposerRoute,
           instrument: request.index,
           sessionId: request.session_id,
           success: true,
+          meta: { tier },
         })
       } finally {
         clearTimeout(timeoutId)
@@ -171,11 +178,12 @@ class LevelFinderAgent {
           input_tokens: proposerUsage.input_tokens,
           output_tokens: proposerUsage.output_tokens,
         },
-        route: 'level_finder.proposer',
+        route: proposerRoute,
         instrument: request.index,
         sessionId: request.session_id,
         success: false,
         errorMessage: msg,
+        meta: { tier },
       })
 
       if (error instanceof Error && error.name === 'AbortError') {

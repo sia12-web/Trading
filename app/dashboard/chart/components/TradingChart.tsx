@@ -30,12 +30,14 @@ import {
 } from 'lightweight-charts'
 import {
   computeAnchoredVwap,
-  computeSessionHighlightRects,
+  computeSessionHighlightSpans,
+  projectSessionHighlightRects,
+  paintSessionHighlightOverlay,
   deskClockFor,
   lastNTradingSessions as trimDeskCandles,
   SESSION_STYLES as SESSION_RANGE_STYLES,
   VWAP_COLORS as SHARED_VWAP_COLORS,
-  type SessionHighlightRect,
+  type SessionHighlightSpan,
 } from '@/lib/chart/sessionVwap'
 import { aiLevelsUrl, resolveDeskLevels } from '@/lib/trading/deskLevels'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
@@ -48,35 +50,44 @@ import {
 /** Desk timezone for axis / tooltip labels (data stays true UTC). */
 const CHART_TZ = 'America/New_York'
 
+// Cached formatters — creating Intl on every tick mark during pan was a major lag source
+const fmtTime = new Intl.DateTimeFormat('en-US', {
+  timeZone: CHART_TZ,
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+})
+const fmtTimeSec = new Intl.DateTimeFormat('en-US', {
+  timeZone: CHART_TZ,
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+})
+const fmtDay = new Intl.DateTimeFormat('en-US', {
+  timeZone: CHART_TZ,
+  day: 'numeric',
+  month: 'short',
+})
+const fmtMonth = new Intl.DateTimeFormat('en-US', {
+  timeZone: CHART_TZ,
+  month: 'short',
+  year: '2-digit',
+})
+const fmtYear = new Intl.DateTimeFormat('en-US', {
+  timeZone: CHART_TZ,
+  year: 'numeric',
+})
+
 function formatChartTime(unix: number, withSeconds = false): string {
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: CHART_TZ,
-    hour: '2-digit',
-    minute: '2-digit',
-    second: withSeconds ? '2-digit' : undefined,
-    hour12: false,
-  }).format(new Date(unix * 1000))
+  return (withSeconds ? fmtTimeSec : fmtTime).format(new Date(unix * 1000))
 }
 
 function formatChartDate(unix: number, style: 'day' | 'month' | 'year' = 'day'): string {
-  if (style === 'year') {
-    return new Intl.DateTimeFormat('en-US', {
-      timeZone: CHART_TZ,
-      year: 'numeric',
-    }).format(new Date(unix * 1000))
-  }
-  if (style === 'month') {
-    return new Intl.DateTimeFormat('en-US', {
-      timeZone: CHART_TZ,
-      month: 'short',
-      year: '2-digit',
-    }).format(new Date(unix * 1000))
-  }
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: CHART_TZ,
-    day: 'numeric',
-    month: 'short',
-  }).format(new Date(unix * 1000))
+  const d = new Date(unix * 1000)
+  if (style === 'year') return fmtYear.format(d)
+  if (style === 'month') return fmtMonth.format(d)
+  return fmtDay.format(d)
 }
 
 /** Axis tick labels in America/New_York (lightweight-charts defaults to UTC). */
@@ -191,6 +202,21 @@ const CHART_THEME = {
     fixRightEdge:  false,
     // Default axis is UTC — format ticks in NY so 10:55 ET is not shown as 14:55 / 2:55
     tickMarkFormatter: nyTickMarkFormatter,
+  },
+  handleScroll: {
+    mouseWheel: true,
+    pressedMouseMove: true,
+    horzTouchDrag: true,
+    vertTouchDrag: false,
+  },
+  handleScale: {
+    axisPressedMouseMove: { time: true, price: true },
+    mouseWheel: true,
+    pinch: true,
+  },
+  kineticScroll: {
+    mouse: true,
+    touch: true,
   },
   localization: {
     // Crosshair time label (bottom axis hover)
@@ -361,6 +387,12 @@ export function TradingChart({
   hideTradeLevels = false,
 }: TradingChartProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const sessionOverlayRef = useRef<HTMLDivElement>(null)
+  const sessionSpansRef = useRef<{
+    key: string
+    spans: SessionHighlightSpan[]
+    candleTimes: number[]
+  } | null>(null)
   const chartRef     = useRef<IChartApi | null>(null)
   const candleRef    = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const vwapSeriesRef = useRef<{
@@ -378,6 +410,8 @@ export function TradingChart({
   const lastCandleRef = useRef<OHLCV | null>(null)
   const quoteInFlightRef = useRef(false)
   const didFitRef = useRef(false)
+  /** True while user is dragging/zooming — pause React work for TV-smooth pan */
+  const interactingRef = useRef(false)
 
   const [instrument,  setInstrumentState] = useState<Instrument>(lockedInstrument || 'DOW')
   const [candles,     setCandles]    = useState<OHLCV[]>([])
@@ -388,7 +422,6 @@ export function TradingChart({
   const [priceChange, setPriceChange] = useState<number>(0)
   const [showLevels,  setShowLevels] = useState(true)
   const [chartReady,  setChartReady] = useState(false)
-  const [sessionRects, setSessionRects] = useState<SessionHighlightRect[]>([])
   const [barsFrozen, setBarsFrozen] = useState(false)
   const [sessionMsg, setSessionMsg] = useState<string | null>(null)
   const candlesRef = useRef<OHLCV[]>([])
@@ -534,7 +567,8 @@ export function TradingChart({
         color: VWAP_COLORS.vwap,
         lineWidth: 2,
         priceLineVisible: false,
-        lastValueVisible: true,
+        // lastValueVisible causes axis churn while panning — keep off for smooth scroll
+        lastValueVisible: false,
         title: 'AVWAP',
       }),
       lower1: chart.addLineSeries({ ...bandOpts, title: '-1σ' }),
@@ -549,33 +583,49 @@ export function TradingChart({
       borderVisible: false,
     })
 
-    // ─── 2. Crosshair OHLCV tooltip subscription ─────────────────────────────
+    // ─── 2. Crosshair tooltip — skip entirely while panning (React setState kills FPS)
+    let tipRaf = 0
+    let tipPending: TooltipData | null | undefined
     chart.subscribeCrosshairMove((param) => {
-      if (!param?.seriesData?.size || param.point === undefined) {
-        setTooltip(null)
+      if (interactingRef.current) {
+        if (tipPending !== null) {
+          tipPending = null
+          if (!tipRaf) {
+            tipRaf = requestAnimationFrame(() => {
+              tipRaf = 0
+              setTooltip(null)
+            })
+          }
+        }
         return
       }
-      const candle = param.seriesData.get(candleSeries) as CandlestickData | undefined
-      if (!candle) return
-
-      const open      = (candle as any).open  ?? 0
-      const close     = (candle as any).close ?? 0
-      const change    = close - open
-      const changePct = open !== 0 ? (change / open) * 100 : 0
-
-      const time = param.time
-        ? `${formatChartTime(param.time as number)} ET`
-        : ''
-
-      setTooltip({
-        time,
-        open:   (candle as any).open,
-        high:   (candle as any).high,
-        low:    (candle as any).low,
-        close:  (candle as any).close,
-        volume: 0,
-        change,
-        changePct,
+      if (!param?.seriesData?.size || param.point === undefined) {
+        tipPending = null
+      } else {
+        const candle = param.seriesData.get(candleSeries) as CandlestickData | undefined
+        if (!candle) {
+          tipPending = null
+        } else {
+          const open = (candle as any).open ?? 0
+          const close = (candle as any).close ?? 0
+          const change = close - open
+          tipPending = {
+            time: param.time ? `${formatChartTime(param.time as number)} ET` : '',
+            open: (candle as any).open,
+            high: (candle as any).high,
+            low: (candle as any).low,
+            close: (candle as any).close,
+            volume: 0,
+            change,
+            changePct: open !== 0 ? (change / open) * 100 : 0,
+          }
+        }
+      }
+      if (tipRaf) return
+      tipRaf = requestAnimationFrame(() => {
+        tipRaf = 0
+        setTooltip(tipPending === undefined ? null : tipPending)
+        tipPending = undefined
       })
     })
 
@@ -766,14 +816,34 @@ export function TradingChart({
     levelsRef.current = levels
   }, [levels])
 
-  // ── Session color boxes (time × session high→low)
+  // ── Session color boxes (cached spans + imperative paint = smooth pan)
   const refreshSessionHighlights = useCallback(() => {
     const chart = chartRef.current
     const series = candleRef.current
     const list = candlesRef.current
+    const host = sessionOverlayRef.current
     if (!chart || !series || !containerRef.current || list.length === 0) {
-      setSessionRects([])
+      paintSessionHighlightOverlay(host, [])
       return
+    }
+
+    const tip = (list[list.length - 1]?.time as number) || 0
+    const cacheKey = `${instrument}:${tip}:${list.length}`
+    let cached = sessionSpansRef.current
+    if (!cached || cached.key !== cacheKey) {
+      const built = computeSessionHighlightSpans({
+        candles: list.map((c) => ({
+          time: c.time as number,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: c.volume,
+        })),
+        instrument,
+      })
+      cached = { key: cacheKey, spans: built.spans, candleTimes: built.candleTimes }
+      sessionSpansRef.current = cached
     }
 
     let priceAxisW = 70
@@ -783,24 +853,16 @@ export function TradingChart({
       /* defaults */
     }
 
-    const { rects } = computeSessionHighlightRects({
-      candles: list.map((c) => ({
-        time: c.time as number,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-        volume: c.volume,
-      })),
+    const { rects } = projectSessionHighlightRects({
+      spans: cached.spans,
+      candleTimes: cached.candleTimes,
       timeScale: chart.timeScale(),
       priceToY: (price) => series.priceToCoordinate(price),
       priceScaleWidth: priceAxisW,
       containerWidth: containerRef.current.clientWidth,
       containerHeight: containerRef.current.clientHeight,
-      instrument,
-      fullHeight: true,
     })
-    setSessionRects(rects)
+    paintSessionHighlightOverlay(host, rects)
   }, [instrument])
 
   /** TradingView-style: re-enable auto price scale after manual zoom on the axis */
@@ -821,28 +883,78 @@ export function TradingChart({
 
   useEffect(() => {
     if (!chartReady || !chartRef.current) return
-    const run = () => requestAnimationFrame(() => refreshSessionHighlights())
-    run()
-    const t1 = window.setTimeout(run, 50)
-    const t2 = window.setTimeout(run, 200)
-    const ts = chartRef.current.timeScale()
-    ts.subscribeVisibleLogicalRangeChange(run)
-    ts.subscribeVisibleTimeRangeChange(run)
+    const host = sessionOverlayRef.current
     const el = containerRef.current
-    const ro = el ? new ResizeObserver(run) : null
-    ro?.observe(el!)
+    let settleTimer = 0
+    let rafPending = 0
+    let pointerDown = false
+
+    const paintNow = () => {
+      if (pointerDown || interactingRef.current) return
+      if (rafPending) cancelAnimationFrame(rafPending)
+      rafPending = requestAnimationFrame(() => {
+        rafPending = 0
+        // Re-check: kinetic scroll may have resumed between schedule and frame
+        if (pointerDown || interactingRef.current) return
+        refreshSessionHighlights()
+        if (host) host.style.opacity = '1'
+      })
+    }
+
+    const scheduleSettle = () => {
+      window.clearTimeout(settleTimer)
+      settleTimer = window.setTimeout(() => {
+        if (pointerDown) return
+        interactingRef.current = false
+        paintNow()
+      }, 180)
+    }
+
+    const beginInteract = () => {
+      pointerDown = true
+      interactingRef.current = true
+      if (host) host.style.opacity = '0'
+      window.clearTimeout(settleTimer)
+    }
+
+    const endInteract = () => {
+      if (!pointerDown) return
+      pointerDown = false
+      // Keep overlays hidden through kinetic scroll coast
+      scheduleSettle()
+    }
+
+    // Hide bands on range change; do NOT recompute mid-drag (TV-smooth pan)
+    const onRangeChange = () => {
+      interactingRef.current = true
+      if (host) host.style.opacity = '0'
+      // Wheel / kinetic: settle when motion stops. Pointer drag: wait for pointerup.
+      if (!pointerDown) scheduleSettle()
+    }
+
+    paintNow()
+    const t1 = window.setTimeout(paintNow, 80)
+    const ts = chartRef.current.timeScale()
+    ts.subscribeVisibleLogicalRangeChange(onRangeChange)
+    el?.addEventListener('pointerdown', beginInteract)
+    // window: drag can end outside the chart (pointerleave used to false-settle mid-pan)
+    window.addEventListener('pointerup', endInteract)
+    window.addEventListener('pointercancel', endInteract)
     return () => {
       window.clearTimeout(t1)
-      window.clearTimeout(t2)
+      window.clearTimeout(settleTimer)
+      if (rafPending) cancelAnimationFrame(rafPending)
+      interactingRef.current = false
       try {
-        ts.unsubscribeVisibleLogicalRangeChange(run)
-        ts.unsubscribeVisibleTimeRangeChange(run)
+        ts.unsubscribeVisibleLogicalRangeChange(onRangeChange)
       } catch {
         /* ignore */
       }
-      ro?.disconnect()
+      el?.removeEventListener('pointerdown', beginInteract)
+      window.removeEventListener('pointerup', endInteract)
+      window.removeEventListener('pointercancel', endInteract)
     }
-  }, [chartReady, candles, refreshSessionHighlights])
+  }, [chartReady, refreshSessionHighlights])
 
   // ── Draw level lines ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -897,14 +1009,16 @@ export function TradingChart({
     let lastUiPriceAt = 0
 
     const applyQuote = (price: number, changePct: number, quoteTs: number) => {
-      // Always push price to parent (fill detection); throttle chart header React state
+      // Fill detection needs every tick; skip React header updates while user is panning
       onPriceUpdate?.(price)
-      const now = Date.now()
-      if (now - lastUiPriceAt >= 250) {
-        lastUiPriceAt = now
-        setLivePrice(price)
-        setPriceChange(changePct)
-        onQuoteTick?.(Math.floor(now / 1000))
+      if (!interactingRef.current) {
+        const now = Date.now()
+        if (now - lastUiPriceAt >= 250) {
+          lastUiPriceAt = now
+          setLivePrice(price)
+          setPriceChange(changePct)
+          onQuoteTick?.(Math.floor(now / 1000))
+        }
       }
 
       const last = lastCandleRef.current
@@ -1329,21 +1443,11 @@ export function TradingChart({
       </div>
       <div className="flex-1 relative rounded-xl border border-surface-600 overflow-hidden" style={{ minHeight: 400 }}>
         <div ref={containerRef} className="absolute inset-0 z-0" />
-        {sessionRects.map((s, i) => (
-          <div
-            key={`${s.name}-${i}`}
-            className="pointer-events-none absolute"
-            style={{
-              left: s.left,
-              width: s.width,
-              top: s.top,
-              height: s.height,
-              backgroundColor: s.color,
-              zIndex: s.zIndex,
-            }}
-            title={`${s.name} session`}
-          />
-        ))}
+        <div
+          ref={sessionOverlayRef}
+          className="pointer-events-none absolute inset-0 z-[1]"
+          style={{ opacity: 1, transition: 'none', willChange: 'opacity' }}
+        />
         <button
           type="button"
           onClick={resetPriceScale}

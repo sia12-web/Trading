@@ -13,7 +13,7 @@ import { getESTDateString } from '@/lib/utils/timeUtils'
 import { resolveSessionGate, assertCanOpenPosition } from '@/lib/trading/sessionGate'
 import { shouldExecuteOandaOrders } from '@/lib/oanda/config'
 import { placeOandaMarketOrder } from '@/lib/oanda/orders'
-import type { PositionOpenResponse, TradePosition } from '@/types/trading'
+import type { PositionOpenResponse } from '@/types/trading'
 
 interface OpenPositionRequest {
   instrument: 'DOW' | 'NASDAQ' | 'NIKKEI'
@@ -142,13 +142,14 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       lockedInstrument = 'NIKKEI'
     }
 
-    // One open OR closed trade for this instrument's session today
-    const { data: anyNyTrade } = await supabase
+    // Filled trades only — working/cancelled limits must not lock the day
+    const { data: anyFilled } = await supabase
       .from('trades_journal')
       .select('id, exit_timestamp, stop_loss_hit_count')
       .eq('user_id', user.id)
       .eq('trade_date', today)
       .eq('instrument', body.instrument)
+      .eq('fill_status', 'filled')
       .limit(1)
       .maybeSingle()
 
@@ -158,6 +159,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       .eq('user_id', user.id)
       .eq('trade_date', today)
       .eq('instrument', body.instrument)
+      .eq('fill_status', 'filled')
       .is('exit_timestamp', null)
       .maybeSingle()
 
@@ -165,7 +167,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       lockedInstrument,
       hasOpenPosition: !!openNy,
       stopLossHitCount: openNy?.stop_loss_hit_count ?? 0,
-      dayDone: !!anyNyTrade && !openNy,
+      dayDone: !!anyFilled && !openNy,
       viewingInstrument: body.instrument,
     })
 
@@ -410,12 +412,14 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
 
     // Get today's date in YYYY-MM-DD format (EST) — already computed as `today` above
 
-    // Check for existing open position (only one per instrument per day)
+    // Existing FILLED open only (working limits are upgraded below)
     const { data: existingPosition, error: queryError } = await supabase
       .from('trades_journal')
-      .select('id, entry_price, stop_loss_price, position_size, risk_amount')
+      .select('id, entry_price, stop_loss_price, position_size, risk_amount, fill_status')
+      .eq('user_id', user.id)
       .eq('instrument', body.instrument)
       .eq('trade_date', today)
+      .eq('fill_status', 'filled')
       .is('exit_timestamp', null)
       .maybeSingle()
 
@@ -438,7 +442,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       )
     }
 
-    // If position exists, return it (idempotent)
+    // If filled position exists, return it (idempotent)
     if (existingPosition) {
       logger.log('POST /api/trading/positions/open: Position already exists (idempotent)', {
         instrument: body.instrument,
@@ -460,6 +464,16 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
         { status: 200 }
       )
     }
+
+    const { data: workingRow } = await supabase
+      .from('trades_journal')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('instrument', body.instrument)
+      .eq('trade_date', today)
+      .eq('fill_status', 'working')
+      .is('exit_timestamp', null)
+      .maybeSingle()
 
     // CRITICAL FIX: Always use authenticated user's ID, never trust request body
     // Broker fill first (practice/live) — do not journal a phantom if OANDA rejects
@@ -512,9 +526,13 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       })
     }
 
-    // Insert new position into trades_journal
-    const tradePosition: Omit<TradePosition, 'id' | 'created_at' | 'updated_at'> = {
-      user_id: user.id, // Always use authenticated user
+    const entryReason =
+      typeof body.entry_reason === 'string' && body.entry_reason.trim()
+        ? body.entry_reason.trim().slice(0, 2000)
+        : `Chart ${body.entry_direction} at level ${body.best_break_level ?? body.entry_price}`
+
+    const tradePosition = {
+      user_id: user.id,
       instrument: body.instrument,
       trade_date: today,
       entry_window: body.entry_window,
@@ -522,40 +540,58 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       entry_price: fillPrice,
       entry_direction: body.entry_direction,
       stop_loss_price: sizing.stop_loss_price,
-      stop_loss_hit_at: null,
+      stop_loss_hit_at: null as null,
       stop_loss_hit_count: 0,
       position_size: sizing.position_size,
       risk_amount: sizing.risk_amount,
       account_size: body.account_size,
-      exit_timestamp: null,
-      exit_price: null,
-      exit_reason: null,
-      profit_loss: null,
-      profit_loss_percent: null,
+      exit_timestamp: null as null,
+      exit_price: null as null,
+      exit_reason: null as null,
+      profit_loss: null as null,
+      profit_loss_percent: null as null,
       regime: body.regime,
       regime_confidence: body.regime_confidence,
       best_level_break_confidence: body.best_level_break_confidence || null,
       best_break_level: body.best_break_level || null,
       profit_target_price: body.profit_target_price ?? null,
-      entry_reason:
-        typeof body.entry_reason === 'string' && body.entry_reason.trim()
-          ? body.entry_reason.trim().slice(0, 2000)
-          : `Chart ${body.entry_direction} at level ${body.best_break_level ?? body.entry_price}`,
+      entry_reason: entryReason,
       oanda_trade_id: oandaTradeId,
       oanda_order_id: oandaOrderId,
       broker_fill_price: brokerFillPrice,
+      fill_status: 'filled' as const,
+      notes: null as null,
+      updated_at: now.toISOString(),
     }
 
-    const { data: newPosition, error: insertError } = await supabase
-      .from('trades_journal')
-      .insert(tradePosition)
-      .select('id')
-      .single()
+    let newPosition: { id: string } | null = null
+    let insertError: { message?: string } | null = null
+
+    if (workingRow?.id) {
+      const upgraded = await supabase
+        .from('trades_journal')
+        .update(tradePosition)
+        .eq('id', workingRow.id)
+        .eq('user_id', user.id)
+        .eq('fill_status', 'working')
+        .select('id')
+        .single()
+      newPosition = upgraded.data
+      insertError = upgraded.error
+    } else {
+      const inserted = await supabase
+        .from('trades_journal')
+        .insert(tradePosition)
+        .select('id')
+        .single()
+      newPosition = inserted.data
+      insertError = inserted.error
+    }
 
     // If enrichment columns missing (migration not applied), retry without them
     if (
       insertError &&
-      /entry_reason|profit_target_price|oanda_trade_id|oanda_order_id|broker_fill_price/i.test(
+      /entry_reason|profit_target_price|oanda_trade_id|oanda_order_id|broker_fill_price|fill_status/i.test(
         insertError.message || ''
       )
     ) {
@@ -565,15 +601,19 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
         oanda_trade_id: _ot,
         oanda_order_id: _oo,
         broker_fill_price: _bf,
+        fill_status: _fs,
+        notes: _n,
+        updated_at: _u,
         ...baseRow
-      } = tradePosition as typeof tradePosition & {
-        profit_target_price?: number | null
-        entry_reason?: string
-        oanda_trade_id?: string | null
-        oanda_order_id?: string | null
-        broker_fill_price?: number | null
-      }
-      const retry = await supabase.from('trades_journal').insert(baseRow).select('id').single()
+      } = tradePosition
+      const retry = workingRow?.id
+        ? await supabase
+            .from('trades_journal')
+            .update(baseRow)
+            .eq('id', workingRow.id)
+            .select('id')
+            .single()
+        : await supabase.from('trades_journal').insert(baseRow).select('id').single()
       if (!retry.error && retry.data) {
         return NextResponse.json(
           {

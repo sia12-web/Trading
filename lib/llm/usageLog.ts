@@ -31,8 +31,9 @@ export function estimateCostUsd(provider: string, model: string, input: number, 
     inRate = 3
     outRate = 15
   } else if (m.includes('haiku')) {
-    inRate = 0.8
-    outRate = 4
+    // Haiku 4.5 list price ~$1 / $5 per MTok
+    inRate = 1
+    outRate = 5
   }
   return (input * inRate + output * outRate) / 1_000_000
 }

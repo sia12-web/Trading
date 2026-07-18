@@ -1,33 +1,75 @@
 /**
- * LLM routing — simple proposer (+ optional verifier). No multi-agent debate.
+ * LLM routing — live vs simulation tiers.
  *
- * Defaults favor quality for levels (Claude Opus) with a cheap Gemini Flash
- * verifier when GEMINI_API_KEY is set. Deterministic grounding is always on.
+ * Live desk (auto-levels / morning prep): Claude Opus by default (quality).
+ * Simulation: cheap Haiku by default so replay practice doesn't burn Opus spend.
+ * Optional Gemini Flash verifier when GEMINI_API_KEY is set.
  */
 
 export type LlmProvider = 'anthropic' | 'gemini'
 
 export type LlmRole = 'proposer' | 'verifier'
 
-const DEFAULT_PROPOSER_MODEL = 'claude-opus-4-20250514'
+/** Live = real trading desk; sim = replay / practice (cheap model). */
+export type LlmTier = 'live' | 'sim'
+
+const DEFAULT_LIVE_PROPOSER_MODEL = 'claude-opus-4-20250514'
+const DEFAULT_SIM_PROPOSER_MODEL = 'claude-haiku-4-5-20251001'
 const DEFAULT_VERIFIER_MODEL = 'gemini-2.0-flash'
 
-export function llmProvider(role: LlmRole): LlmProvider {
-  const key = role === 'proposer' ? 'LLM_PROPOSER' : 'LLM_VERIFIER'
-  const raw = (process.env[key] || (role === 'proposer' ? 'anthropic' : 'gemini')).toLowerCase()
-  if (raw === 'gemini' || raw === 'google') return 'gemini'
+export function parseLlmTier(raw: unknown): LlmTier {
+  const s = String(raw ?? '')
+    .trim()
+    .toLowerCase()
+  if (
+    s === 'sim' ||
+    s === 'simulation' ||
+    s === 'replay' ||
+    s === 'cheap' ||
+    s === 'practice'
+  ) {
+    return 'sim'
+  }
+  return 'live'
+}
+
+function providerFromEnv(raw: string | undefined, fallback: LlmProvider): LlmProvider {
+  const v = (raw || fallback).toLowerCase()
+  if (v === 'gemini' || v === 'google') return 'gemini'
+  if (v === 'off' || v === 'false' || v === '0' || v === 'none') return fallback
   return 'anthropic'
 }
 
-export function llmModel(role: LlmRole): string {
-  if (role === 'proposer') {
+export function llmProvider(role: LlmRole, tier: LlmTier = 'live'): LlmProvider {
+  if (role === 'verifier') {
+    return providerFromEnv(process.env.LLM_VERIFIER, 'gemini')
+  }
+  if (tier === 'sim') {
+    // Sim can use Gemini Flash if explicitly set; otherwise Anthropic Haiku
+    return providerFromEnv(
+      process.env.LLM_SIM_PROPOSER || process.env.LLM_PROPOSER,
+      'anthropic'
+    )
+  }
+  return providerFromEnv(process.env.LLM_PROPOSER, 'anthropic')
+}
+
+export function llmModel(role: LlmRole, tier: LlmTier = 'live'): string {
+  if (role === 'verifier') {
+    return (process.env.LLM_VERIFIER_MODEL || DEFAULT_VERIFIER_MODEL).trim()
+  }
+  if (tier === 'sim') {
     return (
-      process.env.LLM_PROPOSER_MODEL ||
-      process.env.ANTHROPIC_MODEL ||
-      DEFAULT_PROPOSER_MODEL
+      process.env.LLM_SIM_PROPOSER_MODEL ||
+      process.env.LLM_SIM_MODEL ||
+      DEFAULT_SIM_PROPOSER_MODEL
     ).trim()
   }
-  return (process.env.LLM_VERIFIER_MODEL || DEFAULT_VERIFIER_MODEL).trim()
+  return (
+    process.env.LLM_PROPOSER_MODEL ||
+    process.env.ANTHROPIC_MODEL ||
+    DEFAULT_LIVE_PROPOSER_MODEL
+  ).trim()
 }
 
 export function isProviderConfigured(provider: LlmProvider): boolean {
@@ -43,11 +85,20 @@ export function isVerifierEnabled(): boolean {
 }
 
 export function llmConfigSnapshot() {
+  const liveProvider = llmProvider('proposer', 'live')
+  const simProvider = llmProvider('proposer', 'sim')
   return {
     proposer: {
-      provider: llmProvider('proposer'),
-      model: llmModel('proposer'),
-      configured: isProviderConfigured(llmProvider('proposer')),
+      provider: liveProvider,
+      model: llmModel('proposer', 'live'),
+      configured: isProviderConfigured(liveProvider),
+      tier: 'live' as const,
+    },
+    sim_proposer: {
+      provider: simProvider,
+      model: llmModel('proposer', 'sim'),
+      configured: isProviderConfigured(simProvider),
+      tier: 'sim' as const,
     },
     verifier: {
       enabled: isVerifierEnabled(),

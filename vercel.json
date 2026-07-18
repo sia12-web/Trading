@@ -15,6 +15,30 @@
     {
       "path": "/api/trading/morning-review",
       "schedule": "35 2 * * 1-5"
+    },
+    {
+      "path": "/api/trading/positions/cleanup-session",
+      "schedule": "20 14 * * 1-5"
+    },
+    {
+      "path": "/api/trading/positions/cleanup-session",
+      "schedule": "35 15 * * 1-5"
+    },
+    {
+      "path": "/api/trading/positions/cleanup-session",
+      "schedule": "20 1 * * 1-5"
+    },
+    {
+      "path": "/api/trading/positions/cleanup-session",
+      "schedule": "35 2 * * 1-5"
+    },
+    {
+      "path": "/api/trading/eod-journal",
+      "schedule": "5 20 * * 1-5"
+    },
+    {
+      "path": "/api/trading/eod-journal",
+      "schedule": "5 6 * * 1-5"
     }
   ]
 }

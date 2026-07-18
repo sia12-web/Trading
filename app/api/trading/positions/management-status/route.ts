@@ -122,7 +122,8 @@ export async function GET(request: Request): Promise<NextResponse<PositionStatus
       .eq('user_id', user.id)
       .eq('instrument', instrument)
       .eq('trade_date', today)
-      .is('exit_timestamp', null) // Only open positions
+      .eq('fill_status', 'filled') // Ignore unfilled working limits
+      .is('exit_timestamp', null) // Only open filled positions
       .maybeSingle()
 
     if (queryError) {

@@ -38,7 +38,11 @@ export async function POST(request: Request): Promise<NextResponse<ClosePosition
     }
 
     // Validate exit reason
-    if (!['stop_hit', 'manual', 'lunch_close', 'ai_signal', 'take_profit'].includes(body.exit_reason)) {
+    if (
+      !['stop_hit', 'manual', 'lunch_close', 'ai_signal', 'take_profit', 'limit_expired'].includes(
+        body.exit_reason
+      )
+    ) {
       logger.error('POST /api/trading/positions/close: Invalid exit reason', {
         reason: body.exit_reason,
       })

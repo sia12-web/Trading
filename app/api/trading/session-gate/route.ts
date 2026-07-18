@@ -14,8 +14,10 @@ import {
   isDeskHoursNow,
   isNyDeskInstrument,
   isLiveDeskInstrument,
+  deskMarketFor,
   type DeskInstrument,
 } from '@/lib/trading/sessionGate'
+import { getTodayAttendance, autoLunchClockOut } from '@/lib/trading/deskAttendance'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -51,6 +53,7 @@ export async function GET(request: Request) {
         .eq('user_id', user.id)
         .eq('trade_date', today)
         .in('instrument', ['DOW', 'NASDAQ', 'NIKKEI'])
+        .eq('fill_status', 'filled')
         .is('exit_timestamp', null)
         .maybeSingle(),
       supabase
@@ -59,6 +62,7 @@ export async function GET(request: Request) {
         .eq('user_id', user.id)
         .eq('trade_date', today)
         .in('instrument', ['DOW', 'NASDAQ', 'NIKKEI'])
+        .eq('fill_status', 'filled')
         .limit(1)
         .maybeSingle(),
     ])
@@ -96,12 +100,20 @@ export async function GET(request: Request) {
     const dayDone =
       (!!anyTrade && !openPos) || (openPos?.stop_loss_hit_count ?? 0) >= 3
 
+    // Lunch may have hit while the tab was open — auto clock-out
+    await autoLunchClockOut(supabase, user.id)
+
+    const market = deskMarketFor(lockedInstrument ?? viewingInstrument ?? 'DOW')
+    const attendance = await getTodayAttendance(supabase, user.id, market)
+    const clockedIn = attendance?.status === 'clocked_in'
+
     const gate = resolveSessionGate({
       lockedInstrument,
       hasOpenPosition: !!openPos,
       stopLossHitCount: openPos?.stop_loss_hit_count ?? 0,
       dayDone,
       viewingInstrument: viewingInstrument ?? lockedInstrument,
+      clockedIn,
     })
 
     return NextResponse.json(
@@ -112,6 +124,8 @@ export async function GET(request: Request) {
         open_instrument: openPos?.instrument ?? null,
         trade_date: today,
         server_now_et: gate.timeEst,
+        attendance_id: attendance?.id ?? null,
+        attendance_status: attendance?.status ?? null,
       },
       {
         headers: {

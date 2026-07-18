@@ -121,6 +121,11 @@ export interface SessionGateInput {
   marketDisabled?: boolean
   /** Instrument the user is viewing on the live chart */
   viewingInstrument?: DeskInstrument | null
+  /**
+   * Trader must clock in ("Today I trade") to unlock live chart + level AI.
+   * When false/undefined during desk hours, chart stays locked.
+   */
+  clockedIn?: boolean
 }
 
 export interface SessionGateResult {
@@ -136,6 +141,10 @@ export interface SessionGateResult {
   message: string
   entryWindow: 1 | 2 | 3 | null
   market: DeskMarket
+  /** True when trader clocked in for this market today */
+  clockedIn: boolean
+  /** Clock-in window open (prep → lunch) and not yet clocked in */
+  canClockIn: boolean
 }
 
 /**
@@ -232,6 +241,9 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   const hasOpen = !!input.hasOpenPosition
   const hits = input.stopLossHitCount ?? 0
   const dayDone = !!input.dayDone || !!input.marketDisabled || hits >= MAX_STOP_HITS
+  const clockedIn = !!input.clockedIn
+  const inDeskWindow = isWeekdayInTz(now, s.tz) && t >= analyze && t < lunch
+  const canClockIn = inDeskWindow && !clockedIn
 
   const bars = isLiveBarsAllowed(viewing ?? locked, now)
   const wm = getWindowManager()
@@ -246,17 +258,46 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     entryWindow: entryWindow as 1 | 2 | 3 | null,
     market,
     canFetchLiveBars: bars.open && !!locked && (!viewing || viewing === locked),
+    clockedIn,
+    canClockIn,
   }
 
-  // Live chart only when we have something to trade AND morning bars are live
+  // Live chart only when clocked in + locked instrument + morning bars live
   const canView =
+    clockedIn &&
     !!locked &&
     bars.open &&
     (viewing == null || viewing === locked)
 
+  const finish = (r: Omit<SessionGateResult, 'clockedIn' | 'canClockIn'>): SessionGateResult => {
+    if (clockedIn) {
+      return { ...r, clockedIn, canClockIn }
+    }
+    // Not clocked in: lock live chart / entries / manage; keep phase messaging
+    const needClock =
+      inDeskWindow &&
+      (r.phase === 'PREP' ||
+        r.phase === 'RECOMMENDED' ||
+        r.phase === 'ENTRY' ||
+        r.phase === 'FLAT' ||
+        r.phase === 'MANAGE')
+    return {
+      ...r,
+      clockedIn: false,
+      canClockIn,
+      canViewLiveChart: false,
+      canFetchLiveBars: false,
+      canPlaceEntry: false,
+      canManagePosition: false,
+      message: needClock
+        ? 'Live chart is closed — clock in (“Today I trade”) to unlock, or try Simulation.'
+        : r.message,
+    }
+  }
+
   if (!isWeekdayInTz(now, s.tz) || t < analyze || t >= lunch) {
     const afterLunch = isWeekdayInTz(now, s.tz) && t >= lunch
-    return {
+    return finish({
       ...base,
       phase: dayDone || afterLunch ? 'DONE' : 'CLOSED',
       canViewLiveChart: false,
@@ -267,26 +308,26 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
         ? 'Morning session closed at lunch. Live chart frozen — afternoon review runs in the background for memory only.'
         : t < analyze
           ? market === 'TOKYO'
-            ? 'Pre-session. Tokyo desk opens 8:45 JST.'
-            : 'Pre-session. Live desk opens at 9:15 ET for analysis.'
+            ? 'Pre-session. Tokyo desk opens 8:45 JST — clock in then to trade NIKKEI.'
+            : 'Pre-session. Clock-in opens 9:15 ET (15 min before cash open).'
           : 'Session closed. Use Simulation for replay.',
-    }
+    })
   }
 
   if (dayDone) {
-    return {
+    return finish({
       ...base,
       phase: 'DONE',
       canViewLiveChart: canView,
-      canFetchLiveBars: bars.open && !!locked,
+      canFetchLiveBars: clockedIn && bars.open && !!locked,
       canPlaceEntry: false,
       canManagePosition: false,
       message: 'Session done for today (stop limit or AI exit). Trading locked.',
-    }
+    })
   }
 
   if (!locked) {
-    return {
+    return finish({
       ...base,
       phase: t >= analyze && t < open ? 'RECOMMENDED' : 'PREP',
       canViewLiveChart: false,
@@ -297,26 +338,26 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
         market === 'TOKYO'
           ? 'No locked instrument for Tokyo session yet.'
           : 'Awaiting DOW vs NASDAQ recommendation…',
-    }
+    })
   }
 
   if (hasOpen) {
     const pastLunch = t >= lunch
-    return {
+    return finish({
       ...base,
       phase: pastLunch ? 'DONE' : 'MANAGE',
-      canViewLiveChart: !pastLunch && locked === (viewing ?? locked),
-      canFetchLiveBars: !pastLunch,
+      canViewLiveChart: !pastLunch && clockedIn && locked === (viewing ?? locked),
+      canFetchLiveBars: !pastLunch && clockedIn,
       canPlaceEntry: false,
-      canManagePosition: !pastLunch,
+      canManagePosition: !pastLunch && clockedIn,
       message: pastLunch
         ? 'Lunch flatten — morning session over. Live chart frozen.'
         : 'Position open. Manage only — no new entries.',
-    }
+    })
   }
 
   if (t >= analyze && t < open) {
-    return {
+    return finish({
       ...base,
       phase: 'RECOMMENDED',
       canViewLiveChart: false, // bars start at open
@@ -325,29 +366,29 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       canManagePosition: false,
       message:
         market === 'TOKYO'
-          ? `Trade ${locked} today. Tokyo morning entries ${s.marketOpen.slice(0, 5)}–${s.lunchClose.slice(0, 5)} JST.`
-          : `Trade ${locked} today. Morning entries ${s.marketOpen.slice(0, 5)}–${s.lunchClose.slice(0, 5)} ET.`,
-    }
+          ? `Trade ${locked} today. Clock in to unlock the live desk (${s.marketOpen.slice(0, 5)}–${s.lunchClose.slice(0, 5)} JST).`
+          : `Trade ${locked} today. Clock in to unlock the live desk (${s.marketOpen.slice(0, 5)}–${s.lunchClose.slice(0, 5)} ET).`,
+    })
   }
 
   if (t >= open && t < lunch) {
     const inEntryWindow = t <= entryClose
-    return {
+    return finish({
       ...base,
       phase: inEntryWindow ? 'ENTRY' : 'FLAT',
       canViewLiveChart: canView,
-      canFetchLiveBars: true,
+      canFetchLiveBars: clockedIn,
       // Entries ONLY until entryClose (10:15 ET / 09:45 JST). After that: no new levels/orders.
-      canPlaceEntry: inEntryWindow,
+      canPlaceEntry: inEntryWindow && clockedIn,
       canManagePosition: false,
       message: inEntryWindow
         ? `Entry window — click a ${locked} level to place a working limit (until ${s.entryClose.slice(0, 5)}).`
-        : `Entry window closed (${s.entryClose.slice(0, 5)}). Levels cleared — manage an open position if you have one; otherwise wait for lunch. AI still updates level memory in the background.`,
-    }
+        : `Entry window closed (${s.entryClose.slice(0, 5)}). Levels cleared — manage an open position if you have one; otherwise wait for lunch.`,
+    })
   }
 
   // After lunch — closed (afternoon is background memory only)
-  return {
+  return finish({
     ...base,
     phase: 'DONE',
     canViewLiveChart: false,
@@ -356,7 +397,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     canManagePosition: false,
     message:
       'Morning session closed at lunch. Live chart frozen — afternoon review runs in the background for memory only.',
-  }
+  })
 }
 
 /**

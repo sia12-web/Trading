@@ -20,6 +20,8 @@ export interface AnalysisRequest {
   symbol: string
   index: 'DOW' | 'NASDAQ' | 'NIKKEI'
   current_price: number
+  /** live = Opus (default); sim = cheap Haiku for replay practice */
+  llm_tier?: 'live' | 'sim'
 }
 
 export interface LevelIdentification {

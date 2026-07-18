@@ -17,6 +17,11 @@ import { createClient } from '@/lib/supabase/server'
 import { validateLevelsAgainstMarket } from '@/lib/services/levelValidation'
 import { getESTDateString } from '@/lib/utils/timeUtils'
 import { deskMarketFor, isDeskInstrument, sessionFor } from '@/lib/trading/sessionGate'
+import {
+  getTodayAttendance,
+  saveMorningJournal,
+  autoLunchClockOut,
+} from '@/lib/trading/deskAttendance'
 import type { Instrument } from '@/types/price-feed'
 import { logger } from '@/lib/utils/logger'
 import { withApiLog } from '@/lib/utils/withApiLog'
@@ -87,9 +92,25 @@ async function runMorningReview(request: NextRequest) {
     const sess = sessionFor(instrument)
     const todayLocal = localDateInTz(sess.tz)
 
+    // Lunch clock-out first
+    await autoLunchClockOut(supabase, user.id)
+
+    const attendance = await getTodayAttendance(supabase, user.id, market)
+    if (!attendance) {
+      logger.info('morning-review.skipped_no_clock_in', { instrument, market, date: todayLocal })
+      return NextResponse.json({
+        ok: true,
+        skipped: true,
+        reason: 'Not clocked in today — no level reaction journal or afternoon update',
+        date: todayLocal,
+        instrument,
+        market,
+      })
+    }
+
     logger.info('morning-review.start', { instrument, market, date: todayLocal })
 
-    // Grade stored levels against real morning candles — memory only
+    // Grade stored levels against real morning candles — only when clocked in
     const result = await validateLevelsAgainstMarket(supabase, user.id, instrument, 2)
 
     const respected = result.verdicts.filter((v) => v.verdict === 'respected')
@@ -111,16 +132,61 @@ async function runMorningReview(request: NextRequest) {
         original_type: v.type,
         candidate_type: v.type === 'support' ? 'resistance' : 'support',
         play: 'FLIP',
-        note: `Morning broke this ${v.type} — flip candidate for afternoon memory only (not live-traded).`,
+        note: `Morning broke this ${v.type} — flip for afternoon memory (watch reaction into cash close).`,
       })),
       ...respected.map((v) => ({
         level: v.level,
         original_type: v.type,
         candidate_type: v.type,
         play: 'RETEST',
-        note: `Held ${v.holds}/${v.tests} morning test${v.tests === 1 ? '' : 's'} — retest candidate for afternoon memory only.`,
+        note: `Held ${v.holds}/${v.tests} morning test${v.tests === 1 ? '' : 's'} — retest candidate into afternoon.`,
       })),
     ]
+
+    const morningJournal = {
+      written_at: new Date().toISOString(),
+      instrument,
+      market,
+      session: market === 'TOKYO' ? 'morning (09:00–11:30 JST)' : 'morning (09:30–11:30 ET)',
+      filled_or_not: 'journaled regardless of fill',
+      reactions: {
+        validated: respected.map(({ level, type, tests, holds }) => ({
+          level,
+          type,
+          tests,
+          holds,
+          thesis: type === 'resistance' || String(type).includes('resist') ? 'deep short' : 'deep buy',
+          outcome: 'validated',
+        })),
+        rejected: broken.map(({ level, type, tests, breaks }) => ({
+          level,
+          type,
+          tests,
+          breaks,
+          thesis: type === 'resistance' || String(type).includes('resist') ? 'deep short' : 'deep buy',
+          outcome: 'rejected',
+        })),
+        contested: contested.map(({ level, type, tests, holds, breaks }) => ({
+          level,
+          type,
+          tests,
+          holds,
+          breaks,
+          outcome: 'contested',
+        })),
+      },
+      summary: `${instrument} morning: ${respected.length} validated, ${broken.length} rejected, ${contested.length} contested.`,
+    }
+
+    await saveMorningJournal(supabase, attendance.id, morningJournal, afternoonCandidates)
+
+    // Refresh AI levels for afternoon memory (clocked-in days only; force past lunch)
+    try {
+      const { runAutoLevelPrep } = await import('@/lib/services/autoLevelPrep')
+      await runAutoLevelPrep(instrument as Instrument, { force: true })
+    } catch (err) {
+      logger.warn('morning-review.afternoon_levels_failed', { err })
+    }
 
     const sessionLabel =
       market === 'TOKYO'
@@ -129,12 +195,15 @@ async function runMorningReview(request: NextRequest) {
 
     return NextResponse.json(
       {
+        ok: true,
         date: todayLocal,
         instrument,
         market,
+        clocked_in: true,
         session_reviewed: sessionLabel,
         levels_judged: result.validated,
         memory_updated: result.updated,
+        morning_journal: morningJournal,
         verdicts: {
           respected: respected.map(({ level, type, tests, holds }) => ({
             level,
@@ -157,10 +226,10 @@ async function runMorningReview(request: NextRequest) {
           })),
         },
         afternoon_playbook: {
-          enabled: false,
+          enabled: true,
           visible_on_live_chart: false,
           note:
-            'Afternoon review updates AI/system memory only. Live chart stays frozen at lunch — no afternoon bars.',
+            'Afternoon levels updated for memory. Live chart stays frozen at lunch — EOD journal at cash close grades the reaction.',
           candidates: afternoonCandidates,
         },
       },

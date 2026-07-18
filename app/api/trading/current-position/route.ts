@@ -66,6 +66,7 @@ export async function GET(request: Request): Promise<NextResponse<CurrentPositio
       )
       .eq('user_id', user.id)
       .eq('trade_date', today)
+      .eq('fill_status', 'filled')
       .is('exit_timestamp', null)
 
     if (anyNy || !instrument) {

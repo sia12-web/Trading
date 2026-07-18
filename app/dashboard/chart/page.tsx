@@ -212,6 +212,47 @@ export default function ChartPage() {
     [enterManage]
   )
 
+  const persistWorking = useCallback(async (order: PendingLimitOrder) => {
+    try {
+      await fetch('/api/trading/positions/working', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instrument: order.instrument,
+          level: order.level,
+          direction: order.direction,
+          entry_direction: order.direction,
+          stop_loss_price: order.stopLoss,
+          profit_target_price: order.profitTarget,
+          position_size: order.positionSize,
+          risk_amount: order.riskAmount,
+          account_size: order.accountSize,
+          entry_window: order.entryWindow,
+          regime: order.regime,
+          regime_confidence: order.regimeConfidence,
+          entry_reason: order.entryReason,
+        }),
+      })
+    } catch {
+      /* chart still tracks pending locally */
+    }
+  }, [])
+
+  const expireWorkingLimits = useCallback(async (force = false) => {
+    try {
+      await fetch('/api/trading/positions/cleanup-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          force_expire_working: force,
+          force_lunch_close: force,
+        }),
+      })
+    } catch {
+      /* non-fatal */
+    }
+  }, [])
+
   const handlePlaced = useCallback(
     (order: PendingLimitOrder) => {
       setOrderLevel(null)
@@ -227,8 +268,9 @@ export default function ChartPage() {
       }
 
       setPending(order)
+      void persistWorking(order)
     },
-    [fillPending]
+    [fillPending, persistWorking]
   )
 
   // Watch live quotes — fill working limit when price reaches it
@@ -240,8 +282,8 @@ export default function ChartPage() {
 
   // After entryClose (FLAT) or session end: cancel unfilled working limits; levels gone
   useEffect(() => {
-    if (!pending) return
-    if (gate?.phase === 'FLAT' || gate?.phase === 'DONE' || gate?.phase === 'CLOSED') {
+    if (gate?.phase !== 'FLAT' && gate?.phase !== 'DONE' && gate?.phase !== 'CLOSED') return
+    if (pending) {
       setPending(null)
       setFillError(
         gate.phase === 'FLAT'
@@ -249,7 +291,9 @@ export default function ChartPage() {
           : 'Working limit cancelled — session closed'
       )
     }
-  }, [gate?.phase, pending])
+    // Expire DB working rows + lunch-flatten any leftover filled opens
+    void expireWorkingLimits(gate.phase === 'DONE' || gate.phase === 'CLOSED')
+  }, [gate?.phase, pending, expireWorkingLimits])
 
   // Load open position into manage desk when already filled (refresh / reopen)
   useEffect(() => {
@@ -309,12 +353,14 @@ export default function ChartPage() {
   }, [gate?.phase, gate?.lockedInstrument, gate?.open_position_id, instrument, gateTick, pending])
 
   const locked = gate?.lockedInstrument ?? null
+  const clockedIn = !!gate?.clockedIn
+  const chartLocked = gate != null && !clockedIn
   const inManage = gate?.phase === 'MANAGE' || !!managePos
   const inEntry = gate?.phase === 'ENTRY' && !!gate?.canPlaceEntry
-  const canTrade = inEntry && !pending && !managePos
+  const canTrade = inEntry && !pending && !managePos && clockedIn
   const inWorking = !!pending && !managePos
   /** Buy/short levels only during ENTRY window while flat */
-  const showDeskLevels = inEntry && !managePos && !positionOverlay
+  const showDeskLevels = inEntry && !managePos && !positionOverlay && clockedIn
 
   return (
     <div className="flex h-screen overflow-hidden relative flex-col">
@@ -334,17 +380,19 @@ export default function ChartPage() {
         <div className="flex-1 min-w-0 min-h-0 flex flex-col p-2 gap-2">
           <div className="flex items-center gap-2 px-1">
             <span className="text-[10px] text-gray-600">
-              {inWorking
-                ? `WORKING ${pending!.direction} limit @ ${pending!.level.toLocaleString()} — waiting for fill`
-                : canTrade
-                  ? 'Entry window · click a level for a working limit (MANAGE only after fill)'
-                  : inManage
-                    ? 'MANAGE · HOLD or TAKE PROFIT — levels cleared'
-                    : gate?.phase === 'FLAT'
-                      ? 'Entry window closed · levels off · AI still updates memory for later'
-                      : gate?.phase === 'RECOMMENDED'
-                        ? 'Pre-open · levels prep — entries at cash open'
-                        : 'Live morning desk'}
+              {chartLocked
+                ? 'Live chart locked — clock in (“Today I trade”) or use Simulation'
+                : inWorking
+                  ? `WORKING ${pending!.direction} limit @ ${pending!.level.toLocaleString()} — waiting for fill`
+                  : canTrade
+                    ? 'Entry window · click a level for a working limit (MANAGE only after fill)'
+                    : inManage
+                      ? 'MANAGE · HOLD or TAKE PROFIT — levels cleared'
+                      : gate?.phase === 'FLAT'
+                        ? 'Entry window closed · levels off'
+                        : gate?.phase === 'RECOMMENDED'
+                          ? 'Pre-open · levels prep — entries at cash open'
+                          : 'Live morning desk'}
             </span>
             <Link
               href="/dashboard/simulation"
@@ -382,6 +430,7 @@ export default function ChartPage() {
                 onClick={() => {
                   setPending(null)
                   setFillError(null)
+                  void expireWorkingLimits(true)
                 }}
                 className="ml-auto rounded border border-sky-600/50 px-2 py-1 text-[10px] font-semibold uppercase text-sky-200 hover:bg-sky-900/50"
               >
@@ -407,39 +456,89 @@ export default function ChartPage() {
             />
           )}
 
-          <TradingChart
-            onInstrumentChange={(i) => setInstrument(i as Instrument)}
-            onPriceUpdate={onPriceUpdate}
-            onQuoteTick={setLastQuoteAt}
-            onDataModeChange={setDataMode}
-            positionOverlay={
-              positionOverlay ??
-              (managePos
-                ? {
-                    entryPrice: managePos.entryPrice,
-                    stopLoss: managePos.stopLoss,
-                    profitTarget: managePos.profitTarget,
-                    direction: managePos.direction,
-                  }
-                : null)
-            }
-            pendingLimit={
-              pending && !managePos
-                ? {
-                    price: pending.level,
-                    direction: pending.direction === 'LONG' ? 'long' : 'short',
-                    stopLoss: pending.stopLoss,
-                    profitTarget: pending.profitTarget,
-                  }
-                : null
-            }
-            jumpToPriceRef={jumpToPriceRef}
-            lockedInstrument={locked}
-            onLevelSelect={handleLevelSelect}
-            canPlaceOrder={canTrade && dataMode === 'live'}
-            levelsRefreshKey={levelsRefreshKey}
-            hideTradeLevels={!showDeskLevels}
-          />
+          <div className="relative flex-1 min-h-0">
+            {!chartLocked && (
+              <TradingChart
+                onInstrumentChange={(i) => setInstrument(i as Instrument)}
+                onPriceUpdate={onPriceUpdate}
+                onQuoteTick={setLastQuoteAt}
+                onDataModeChange={setDataMode}
+                positionOverlay={
+                  positionOverlay ??
+                  (managePos
+                    ? {
+                        entryPrice: managePos.entryPrice,
+                        stopLoss: managePos.stopLoss,
+                        profitTarget: managePos.profitTarget,
+                        direction: managePos.direction,
+                      }
+                    : null)
+                }
+                pendingLimit={
+                  pending && !managePos
+                    ? {
+                        price: pending.level,
+                        direction: pending.direction === 'LONG' ? 'long' : 'short',
+                        stopLoss: pending.stopLoss,
+                        profitTarget: pending.profitTarget,
+                      }
+                    : null
+                }
+                jumpToPriceRef={jumpToPriceRef}
+                lockedInstrument={locked}
+                onLevelSelect={handleLevelSelect}
+                canPlaceOrder={canTrade && dataMode === 'live'}
+                levelsRefreshKey={levelsRefreshKey}
+                hideTradeLevels={!showDeskLevels}
+              />
+            )}
+
+            {chartLocked && (
+              <div className="absolute inset-0 z-30 flex items-center justify-center rounded-xl border border-surface-600 bg-[#0d1117]">
+                <div className="max-w-md px-8 text-center">
+                  <p className="text-lg font-semibold text-white tracking-tight">
+                    Live chart is closed
+                  </p>
+                  <p className="mt-2 text-sm text-gray-400 leading-relaxed">
+                    Clock in with <span className="text-amber-300 font-medium">Today I trade</span>{' '}
+                    (15 min before cash open) to unlock the live desk and level journaling. Or try
+                    Simulation.
+                  </p>
+                  <div className="mt-6 flex items-center justify-center gap-3">
+                    {gate?.canClockIn && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const market =
+                            gate.market ||
+                            (gate.lockedInstrument === 'NIKKEI' ? 'TOKYO' : 'NY')
+                          await fetch('/api/trading/clock-in', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              market,
+                              instrument: gate.lockedInstrument ?? undefined,
+                            }),
+                          })
+                          bannerRefreshRef.current?.()
+                          setGateTick((t) => t + 1)
+                        }}
+                        className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold uppercase tracking-wide text-black hover:bg-amber-400"
+                      >
+                        Today I trade
+                      </button>
+                    )}
+                    <Link
+                      href="/dashboard/simulation"
+                      className="rounded-lg border border-violet-500/50 bg-violet-500/20 px-4 py-2 text-xs font-semibold text-violet-100 hover:bg-violet-500/30"
+                    >
+                      Try simulation
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {orderLevel != null && !pending && !managePos && inEntry && (

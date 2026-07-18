@@ -6,7 +6,13 @@ export type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI'
 export type Regime = 'bullish' | 'bearish' | 'choppy'
 export type EntryDirection = 'LONG' | 'SHORT'
 export type EntryWindow = 1 | 2 | 3
-export type ExitReason = 'stop_hit' | 'manual' | 'lunch_close' | 'ai_signal' | 'take_profit'
+export type ExitReason =
+  | 'stop_hit'
+  | 'manual'
+  | 'lunch_close'
+  | 'ai_signal'
+  | 'take_profit'
+  | 'limit_expired'
 
 export interface OvernightOHLC {
   open: number

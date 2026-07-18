@@ -138,6 +138,7 @@ export async function runAutoLevelPrep(
     }
 
     const agent = await getLevelFinderAgent()
+    // Morning cron always uses live (Opus) — never the cheap sim tier
     const analysis = await agent.analyzePriceAction({
       session_id: sessionId,
       symbol: SYMBOL[instrument] || instrument,
@@ -146,6 +147,7 @@ export async function runAutoLevelPrep(
       candles_4h,
       candles_daily,
       candles_h1,
+      llm_tier: 'live',
     })
 
     const validated = await agent.validateLevels(analysis.levels, sessionId)

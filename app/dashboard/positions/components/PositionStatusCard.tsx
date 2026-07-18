@@ -5,13 +5,11 @@
  * Displays current open position with live P&L from Realtime price updates
  * Updates P&L in real-time as prices change (<100ms latency)
  * Includes management decision buttons (HOLD, TAKE_PROFIT, ADJUST)
- * Displays live price chart with entry, SL, and target levels
  */
 
 import { useEffect, useState, useCallback } from 'react'
 import { usePositionPriceSubscription } from '@/lib/hooks/usePositionPriceSubscription'
 import { successToast, errorToast } from '@/lib/utils/toastUtils'
-import { PriceChart } from './PriceChart'
 import type { PositionStatus } from '@/types/positionManagement'
 import type { DecisionType } from '@/types/trading'
 
@@ -215,9 +213,6 @@ export function PositionStatusCard({ position }: PositionStatusCardProps) {
           </div>
         </div>
       </div>
-
-      {/* Price Chart */}
-      <PriceChart position={position} currentPrice={currentPrice} />
 
       {/* Connection Status */}
       {!isConnected && (

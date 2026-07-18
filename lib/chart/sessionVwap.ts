@@ -145,7 +145,19 @@ export function timeToX(
   const first = candleTimes[0]!
   const last = candleTimes[candleTimes.length - 1]!
   if (t <= first) return timeScale.timeToCoordinate(first as UTCTimestamp)
-  if (t >= last) return timeScale.timeToCoordinate(last as UTCTimestamp)
+  if (t >= last) {
+    // Extrapolate past tip so endT = lastOpen + barSec covers the full last candle
+    const xLast = timeScale.timeToCoordinate(last as UTCTimestamp)
+    if (xLast == null) return null
+    if (candleTimes.length >= 2) {
+      const prev = candleTimes[candleTimes.length - 2]!
+      const xPrev = timeScale.timeToCoordinate(prev as UTCTimestamp)
+      if (xPrev != null && prev < last) {
+        return xLast + (xLast - xPrev) * ((t - last) / (last - prev))
+      }
+    }
+    return xLast
+  }
 
   let lo = 0
   let hi = candleTimes.length - 1
@@ -265,10 +277,276 @@ export function sessionRangeLinePoints(range: SessionRange): {
   }
 }
 
+/** Precomputed session column in unix time — cheap to re-project on pan/zoom. */
+export type SessionHighlightSpan = {
+  name: SessionName
+  /** First bar open in session */
+  startT: number
+  /** Right edge = last bar open + bar duration (covers full last candle) */
+  endT: number
+  /** Exact wick high of bars in this session */
+  high: number
+  /** Exact wick low of bars in this session */
+  low: number
+}
+
+const DESK_BAR_SECONDS = 300
+
 /**
- * Session color boxes: horizontal span = session time.
- * Vertical: full pane by default so Asia/London stay visible when the price
- * scale is zoomed to NY (price-bounded boxes used to collapse to height 0).
+ * Expensive once: find session windows that have bars (Intl / edge solving).
+ * Call again only when candle tip / as-of clock changes — not on every pan frame.
+ */
+export function computeSessionHighlightSpans(args: {
+  candles: SessionBar[]
+  asOfUnix?: number
+  instrument?: string | null
+  barSeconds?: number
+}): { spans: SessionHighlightSpan[]; candleTimes: number[] } {
+  const { candles } = args
+  if (candles.length === 0) return { spans: [], candleTimes: [] }
+
+  const barSec = args.barSeconds && args.barSeconds > 0 ? args.barSeconds : DESK_BAR_SECONDS
+  const now =
+    args.asOfUnix != null && Number.isFinite(args.asOfUnix)
+      ? args.asOfUnix
+      : Math.floor(Date.now() / 1000)
+
+  const bars = candles.filter((c) => c.time <= now)
+  if (bars.length === 0) return { spans: [], candleTimes: [] }
+
+  const candleTimes = bars.map((c) => c.time)
+  const firstBarT = candleTimes[0]!
+  const lastBarT = candleTimes[candleTimes.length - 1]!
+  const isTokyo = args.instrument === 'NIKKEI'
+  const clockTz = isTokyo ? 'Asia/Tokyo' : 'America/New_York'
+
+  // One formatter for the whole pass — was recreated per bar and made pan laggy
+  const dayFmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: clockTz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  const dayKeys = new Set<string>()
+  for (const c of bars) {
+    dayKeys.add(dayFmt.format(new Date(c.time * 1000)))
+  }
+
+  const spans: SessionHighlightSpan[] = []
+  const seen = new Set<string>()
+
+  const pushSpan = (name: SessionName, startT: number, endT: number) => {
+    if (endT <= firstBarT || startT >= lastBarT) return
+    // Clip to "as of" so live doesn't paint into the future
+    const clipEnd = Math.min(endT, now)
+    if (clipEnd <= startT) return
+
+    let high = -Infinity
+    let low = Infinity
+    let count = 0
+    let firstBarIn: number | null = null
+    let lastBarIn: number | null = null
+    // Strict: only bars whose OPEN is inside [startT, clipEnd)
+    for (const c of bars) {
+      if (c.time < startT || c.time >= clipEnd) continue
+      if (!(c.high >= c.low) || !Number.isFinite(c.high) || !Number.isFinite(c.low)) continue
+      if (c.high > high) high = c.high
+      if (c.low < low) low = c.low
+      if (firstBarIn == null) firstBarIn = c.time
+      lastBarIn = c.time
+      count++
+    }
+    if (
+      count < 1 ||
+      firstBarIn == null ||
+      lastBarIn == null ||
+      !Number.isFinite(high) ||
+      !Number.isFinite(low) ||
+      high < low
+    ) {
+      return
+    }
+
+    const key = `${name}:${firstBarIn}:${lastBarIn}`
+    if (seen.has(key)) return
+    seen.add(key)
+    spans.push({
+      name,
+      startT: firstBarIn,
+      // Cover full last candle body; high/low stay exact wicks
+      endT: Math.min(lastBarIn + barSec, clipEnd),
+      high,
+      low,
+    })
+  }
+
+  for (const dayStr of Array.from(dayKeys).sort()) {
+    const [y, m, d] = dayStr.split('-').map(Number)
+    const dayAnchor = Math.floor(Date.UTC(y!, m! - 1, d!, 12, 0, 0) / 1000)
+    const dow = new Date(`${dayStr}T12:00:00Z`).getUTCDay()
+    const isCashDay = dow !== 0 && dow !== 6
+
+    if (isTokyo) {
+      if (!isCashDay) continue
+      const overnightStart = sessionEdgeUnix(dayAnchor - 86400, 15, clockTz)
+      const cashOpen = sessionEdgeUnix(dayAnchor, 9, clockTz)
+      const lunch = sessionEdgeUnix(dayAnchor, 11.5, clockTz)
+      const close = sessionEdgeUnix(dayAnchor, 15, clockTz)
+      pushSpan('Asia', overnightStart, cashOpen)
+      pushSpan('London', cashOpen, lunch)
+      pushSpan('New York', lunch, close)
+      continue
+    }
+
+    if (isCashDay) {
+      const asiaInStart = sessionEdgeUnix(
+        dayAnchor - 86400,
+        SESSION_WINDOWS.Asia.start,
+        'America/New_York'
+      )
+      const asiaInEnd = sessionEdgeUnix(
+        dayAnchor,
+        SESSION_WINDOWS.Asia.end,
+        'America/New_York'
+      )
+      pushSpan('Asia', asiaInStart, asiaInEnd)
+    }
+
+    if (isCashDay || dow === 0) {
+      const asiaOutStart = sessionEdgeUnix(
+        dayAnchor,
+        SESSION_WINDOWS.Asia.start,
+        'America/New_York'
+      )
+      const asiaOutEnd = sessionEdgeUnix(
+        dayAnchor + 86400,
+        SESSION_WINDOWS.Asia.end,
+        'America/New_York'
+      )
+      pushSpan('Asia', asiaOutStart, asiaOutEnd)
+    }
+
+    if (!isCashDay) continue
+
+    const lonStart = sessionEdgeUnix(dayAnchor, SESSION_WINDOWS.London.start, 'America/New_York')
+    const lonEnd = sessionEdgeUnix(dayAnchor, SESSION_WINDOWS.London.end, 'America/New_York')
+    pushSpan('London', lonStart, lonEnd)
+
+    const nyStart = sessionEdgeUnix(
+      dayAnchor,
+      SESSION_WINDOWS['New York'].start,
+      'America/New_York'
+    )
+    const nyEnd = sessionEdgeUnix(
+      dayAnchor,
+      SESSION_WINDOWS['New York'].end,
+      'America/New_York'
+    )
+    pushSpan('New York', nyStart, nyEnd)
+  }
+
+  return { spans, candleTimes }
+}
+
+/**
+ * Map cached spans → pixel rects.
+ * priceToCoordinate is full-chart pixel space (0 = top). Do NOT subtract time-axis
+ * from Y (that mismatch stretched bands). Vertical = exact wick high→low, no pad.
+ */
+export function projectSessionHighlightRects(args: {
+  spans: SessionHighlightSpan[]
+  candleTimes: number[]
+  timeScale: {
+    timeToCoordinate: (t: UTCTimestamp) => number | null
+    height: () => number
+  }
+  priceToY: (price: number) => number | null
+  priceScaleWidth: number
+  containerWidth: number
+  containerHeight: number
+  /** @deprecated Ignored */
+  fullHeight?: boolean
+  /** @deprecated Ignored */
+  visiblePriceRange?: { from: number; to: number } | null
+}): { rects: SessionHighlightRect[]; paneHeight: number } {
+  const { spans, candleTimes, timeScale, priceToY } = args
+  const chartH = Math.max(args.containerHeight, 0)
+  const paneW = Math.max(args.containerWidth - args.priceScaleWidth, 0)
+  if (spans.length === 0 || candleTimes.length === 0 || chartH < 2) {
+    return { rects: [], paneHeight: chartH }
+  }
+
+  const rects: SessionHighlightRect[] = []
+
+  for (const span of spans) {
+    if (!(span.high >= span.low) || !Number.isFinite(span.high) || !Number.isFinite(span.low)) {
+      continue
+    }
+
+    const x1 = timeToX(timeScale, span.startT, candleTimes)
+    const x2 = timeToX(timeScale, span.endT, candleTimes)
+    if (x1 == null || x2 == null || !Number.isFinite(x1) || !Number.isFinite(x2)) continue
+
+    const left = Math.max(Math.min(x1, x2), 0)
+    const right = Math.min(Math.max(x1, x2), paneW)
+    const width = right - left
+    if (width < 2) continue
+
+    const yHigh = priceToY(span.high)
+    const yLow = priceToY(span.low)
+    if (
+      yHigh == null ||
+      yLow == null ||
+      !Number.isFinite(yHigh) ||
+      !Number.isFinite(yLow)
+    ) {
+      continue
+    }
+
+    const rawTop = Math.min(yHigh, yLow)
+    const rawBottom = Math.max(yHigh, yLow)
+    if (rawBottom < 0 || rawTop > chartH) continue
+
+    const top = Math.max(rawTop, 0)
+    const bottom = Math.min(rawBottom, chartH)
+    let height = bottom - top
+
+    if (height < 3) {
+      const mid = (top + bottom) / 2
+      const tinyTop = Math.max(mid - 1.5, 0)
+      height = Math.min(3, chartH - tinyTop)
+      rects.push({
+        name: span.name,
+        left,
+        width,
+        top: tinyTop,
+        height,
+        color: SESSION_STYLES[span.name].color,
+        zIndex: SESSION_STYLES[span.name].zIndex,
+      })
+      continue
+    }
+
+    // Bad Y mapping would paint wallpaper — skip rather than stretch
+    if (height >= chartH * 0.92) continue
+
+    rects.push({
+      name: span.name,
+      left,
+      width,
+      top,
+      height,
+      color: SESSION_STYLES[span.name].color,
+      zIndex: SESSION_STYLES[span.name].zIndex,
+    })
+  }
+
+  rects.sort((a, b) => a.zIndex - b.zIndex)
+  return { rects, paneHeight: chartH }
+}
+
+/**
+ * Session color boxes: horizontal = bars in that session, vertical = session high→low.
  * Needs 24h bars (OANDA) for Asia/London to have candles inside those windows.
  */
 export function computeSessionHighlightRects(args: {
@@ -285,183 +563,61 @@ export function computeSessionHighlightRects(args: {
   asOfUnix?: number
   /** DOW/NASDAQ → NY windows; NIKKEI → Tokyo windows */
   instrument?: string | null
-  /**
-   * true (default): full-pane height columns (session always visible on X).
-   * false: box only covers session high→low (can vanish when price zoomed away).
-   */
+  /** @deprecated Ignored — always price-bounded */
   fullHeight?: boolean
+  visiblePriceRange?: { from: number; to: number } | null
 }): { rects: SessionHighlightRect[]; paneHeight: number } {
-  const { candles, timeScale, priceToY } = args
-  if (candles.length === 0) return { rects: [], paneHeight: 0 }
+  const { spans, candleTimes } = computeSessionHighlightSpans({
+    candles: args.candles,
+    asOfUnix: args.asOfUnix,
+    instrument: args.instrument,
+  })
+  return projectSessionHighlightRects({
+    spans,
+    candleTimes,
+    timeScale: args.timeScale,
+    priceToY: args.priceToY,
+    priceScaleWidth: args.priceScaleWidth,
+    containerWidth: args.containerWidth,
+    containerHeight: args.containerHeight,
+    visiblePriceRange: args.visiblePriceRange,
+  })
+}
 
-  const now =
-    args.asOfUnix != null && Number.isFinite(args.asOfUnix)
-      ? args.asOfUnix
-      : Math.floor(Date.now() / 1000)
-
-  const bars = candles.filter((c) => c.time <= now)
-  if (bars.length === 0) return { rects: [], paneHeight: 0 }
-
-  const candleTimes = bars.map((c) => c.time)
-  const firstBarT = candleTimes[0]!
-  const lastBarT = candleTimes[candleTimes.length - 1]!
-
-  const paneW = Math.max(args.containerWidth - args.priceScaleWidth, 0)
-  const timeAxisH = timeScale.height() || 28
-  const paneHeight = Math.max(args.containerHeight - timeAxisH, 0)
-  const useFullHeight = args.fullHeight !== false
-  const isTokyo = args.instrument === 'NIKKEI'
-  const clockTz = isTokyo ? 'Asia/Tokyo' : 'America/New_York'
-
-  const dayKeys = new Set<string>()
-  for (const c of bars) {
-    dayKeys.add(
-      new Intl.DateTimeFormat('en-CA', {
-        timeZone: clockTz,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      }).format(new Date(c.time * 1000))
-    )
+/** Paint session bands without React — keeps chart pan/zoom at 60fps. */
+export function paintSessionHighlightOverlay(
+  host: HTMLElement | null,
+  rects: SessionHighlightRect[]
+): void {
+  if (!host) return
+  while (host.childElementCount < rects.length) {
+    const d = document.createElement('div')
+    d.className = 'pointer-events-none absolute'
+    d.style.position = 'absolute'
+    d.style.right = 'auto'
+    d.style.bottom = 'auto'
+    d.style.margin = '0'
+    d.style.padding = '0'
+    d.style.boxSizing = 'border-box'
+    host.appendChild(d)
   }
-
-  const rects: SessionHighlightRect[] = []
-
-  const pushSpan = (name: SessionName, startT: number, endT: number) => {
-    if (endT <= firstBarT || startT >= lastBarT) return
-    const clipEnd = Math.min(endT, Math.max(now, startT))
-    if (clipEnd <= startT) return
-
-    let high = -Infinity
-    let low = Infinity
-    let count = 0
-    for (const c of bars) {
-      if (c.time < startT || c.time > clipEnd) continue
-      if (c.high > high) high = c.high
-      if (c.low < low) low = c.low
-      count++
-    }
-    // Need real bars in the window (OANDA 24h supplies Asia/London)
-    if (count < 2 || !Number.isFinite(high) || !Number.isFinite(low) || high < low) return
-
-    const x1 = timeToX(timeScale, Math.max(startT, firstBarT), candleTimes)
-    const x2 = timeToX(timeScale, Math.min(clipEnd, lastBarT), candleTimes)
-    if (x1 == null || x2 == null) return
-
-    const left = Math.max(Math.min(x1, x2), 0)
-    const right = Math.min(Math.max(x1, x2), paneW)
-    const width = right - left
-    if (width < 2) return
-
-    let top = 0
-    let height = paneHeight
-
-    if (!useFullHeight) {
-      const yHigh = priceToY(high)
-      const yLow = priceToY(low)
-      if (yHigh == null || yLow == null) return
-      top = Math.max(Math.min(yHigh, yLow), 0)
-      const bottom = Math.min(Math.max(yHigh, yLow), paneHeight)
-      height = bottom - top
-      // Price zoom moved this session's range off-screen — keep a time column
-      if (height < 2) {
-        top = 0
-        height = paneHeight
-      }
-    }
-
-    if (height < 2) return
-
-    rects.push({
-      name,
-      left,
-      width,
-      top,
-      height,
-      color: SESSION_STYLES[name].color,
-      zIndex: SESSION_STYLES[name].zIndex,
-    })
+  while (host.childElementCount > rects.length) {
+    host.removeChild(host.lastElementChild!)
   }
-
-  const seen = new Set<string>()
-  const pushOnce = (name: SessionName, startT: number, endT: number) => {
-    const key = `${name}:${startT}:${endT}`
-    if (seen.has(key)) return
-    seen.add(key)
-    pushSpan(name, startT, endT)
+  for (let i = 0; i < rects.length; i++) {
+    const s = rects[i]!
+    const d = host.children[i] as HTMLElement
+    d.style.position = 'absolute'
+    d.style.left = `${s.left}px`
+    d.style.width = `${Math.max(0, s.width)}px`
+    d.style.top = `${s.top}px`
+    d.style.height = `${Math.max(0, s.height)}px`
+    d.style.right = 'auto'
+    d.style.bottom = 'auto'
+    d.style.backgroundColor = s.color
+    d.style.zIndex = String(s.zIndex)
+    d.title = `${s.name} session (high→low)`
   }
-
-  for (const dayStr of Array.from(dayKeys).sort()) {
-    const [y, m, d] = dayStr.split('-').map(Number)
-    const dayAnchor = Math.floor(Date.UTC(y!, m! - 1, d!, 12, 0, 0) / 1000)
-    const dow = new Date(`${dayStr}T12:00:00Z`).getUTCDay()
-    const isCashDay = dow !== 0 && dow !== 6
-
-    if (isTokyo) {
-      // Tokyo desk: overnight (prior 15:00 → 09:00), morning (09:00 → 11:30),
-      // afternoon window exists but live candles clip it — still label if bars exist.
-      if (!isCashDay) continue
-      const overnightStart = sessionEdgeUnix(dayAnchor - 86400, 15, clockTz)
-      const cashOpen = sessionEdgeUnix(dayAnchor, 9, clockTz)
-      const lunch = sessionEdgeUnix(dayAnchor, 11.5, clockTz)
-      const close = sessionEdgeUnix(dayAnchor, 15, clockTz)
-      pushOnce('Asia', overnightStart, cashOpen)
-      pushOnce('London', cashOpen, lunch)
-      pushOnce('New York', lunch, close)
-      continue
-    }
-
-    // Asia INTO this civil day (prev 18:00 → day 03:00) — always for weekdays
-    if (isCashDay) {
-      const asiaInStart = sessionEdgeUnix(
-        dayAnchor - 86400,
-        SESSION_WINDOWS.Asia.start,
-        'America/New_York'
-      )
-      const asiaInEnd = sessionEdgeUnix(
-        dayAnchor,
-        SESSION_WINDOWS.Asia.end,
-        'America/New_York'
-      )
-      pushOnce('Asia', asiaInStart, asiaInEnd)
-    }
-
-    // Asia AFTER this civil day (day 18:00 → next 03:00).
-    if (isCashDay || dow === 0) {
-      const asiaOutStart = sessionEdgeUnix(
-        dayAnchor,
-        SESSION_WINDOWS.Asia.start,
-        'America/New_York'
-      )
-      const asiaOutEnd = sessionEdgeUnix(
-        dayAnchor + 86400,
-        SESSION_WINDOWS.Asia.end,
-        'America/New_York'
-      )
-      pushOnce('Asia', asiaOutStart, asiaOutEnd)
-    }
-
-    if (!isCashDay) continue
-
-    const lonStart = sessionEdgeUnix(dayAnchor, SESSION_WINDOWS.London.start, 'America/New_York')
-    const lonEnd = sessionEdgeUnix(dayAnchor, SESSION_WINDOWS.London.end, 'America/New_York')
-    pushOnce('London', lonStart, lonEnd)
-
-    const nyStart = sessionEdgeUnix(
-      dayAnchor,
-      SESSION_WINDOWS['New York'].start,
-      'America/New_York'
-    )
-    const nyEnd = sessionEdgeUnix(
-      dayAnchor,
-      SESSION_WINDOWS['New York'].end,
-      'America/New_York'
-    )
-    pushOnce('New York', nyStart, nyEnd)
-  }
-
-  rects.sort((a, b) => a.zIndex - b.zIndex)
-  return { rects, paneHeight }
 }
 
 /** Desk clock — same pipeline for every index; only TZ + cash open differ. */

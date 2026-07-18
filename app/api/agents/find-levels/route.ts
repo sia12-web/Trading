@@ -4,6 +4,7 @@ import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { getLevelFinderAgent } from '@/lib/services/levelFinderAgent'
 import { validateLevelsAgainstMarket } from '@/lib/services/levelValidation'
 import { isDeskHoursNow } from '@/lib/trading/sessionGate'
+import { parseLlmTier } from '@/lib/llm/config'
 import type { AnalysisRequest, Candle, ValidationResult, HistoricalContext, HistoricalLevelData, ContextSummary } from '@/lib/services/levelFinderAgent/types'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Instrument } from '@/types/price-feed'
@@ -378,9 +379,21 @@ export async function POST(request: NextRequest) {
     // Fetch historical context for enhanced analysis (optional, doesn't fail if unavailable)
     const historicalContext = await fetchHistoricalContext(supabase, user.id, validation.data.index, 30, 20)
 
+    // Live = Opus (morning desk); sim = cheap Haiku for replay practice
+    const tierParam =
+      request.nextUrl.searchParams.get('tier') ||
+      body.llm_tier ||
+      body.tier ||
+      body.purpose
+    const llm_tier = parseLlmTier(tierParam)
+
     // Perform analysis with optional historical context
     const agent = await getLevelFinderAgent()
-    const requestWithContext = { ...validation.data, historicalContext: historicalContext || undefined }
+    const requestWithContext = {
+      ...validation.data,
+      llm_tier,
+      historicalContext: historicalContext || undefined,
+    }
     const analysisResult = await performAnalysis(agent, requestWithContext)
 
     if ('error' in analysisResult) {
@@ -400,6 +413,7 @@ export async function POST(request: NextRequest) {
         levels: storageResult.levels,
         session_id: validation.data.session_id,
         analysis_timestamp: new Date().toISOString(),
+        llm_tier,
         claude_usage: analysisResult.usage || { input_tokens: 0, output_tokens: 0 },
       },
       { status: 201 }

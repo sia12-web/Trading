@@ -11,7 +11,8 @@ type UsagePayload = {
   ok: boolean
   days: number
   config: {
-    proposer: { provider: string; model: string; configured: boolean }
+    proposer: { provider: string; model: string; configured: boolean; tier?: string }
+    sim_proposer?: { provider: string; model: string; configured: boolean; tier?: string }
     verifier: { enabled: boolean; provider: string; model: string; configured: boolean }
   }
   summary: {
@@ -157,10 +158,21 @@ export default function LlmUsagePage() {
                 <h2 className="text-sm font-medium text-gray-300 mb-3">Active models</h2>
                 <dl className="space-y-2 text-sm">
                   <div className="flex justify-between gap-4">
-                    <dt className="text-gray-500">Proposer</dt>
+                    <dt className="text-gray-500">Live proposer</dt>
                     <dd className="text-right text-gray-200">
                       {data.config.proposer.provider} · {data.config.proposer.model}
                       {!data.config.proposer.configured && (
+                        <span className="text-amber-400 ml-2">not configured</span>
+                      )}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-gray-500">Sim proposer</dt>
+                    <dd className="text-right text-gray-200">
+                      {data.config.sim_proposer
+                        ? `${data.config.sim_proposer.provider} · ${data.config.sim_proposer.model}`
+                        : '—'}
+                      {data.config.sim_proposer && !data.config.sim_proposer.configured && (
                         <span className="text-amber-400 ml-2">not configured</span>
                       )}
                     </dd>
@@ -175,9 +187,9 @@ export default function LlmUsagePage() {
                   </div>
                 </dl>
                 <p className="text-xs text-gray-600 mt-3">
-                  Set <code className="text-gray-400">LLM_PROPOSER_MODEL</code>,{' '}
-                  <code className="text-gray-400">GEMINI_API_KEY</code>,{' '}
-                  <code className="text-gray-400">LLM_VERIFIER=off</code> in env.
+                  Live: <code className="text-gray-400">LLM_PROPOSER_MODEL</code> (Opus). Sim:{' '}
+                  <code className="text-gray-400">LLM_SIM_PROPOSER_MODEL</code> (Haiku). Pass{' '}
+                  <code className="text-gray-400">?tier=sim</code> on find-levels.
                 </p>
               </div>
 

@@ -1,11 +1,12 @@
 'use client'
 
 /**
- * Session banner for NY desk — polls /api/trading/session-gate
- * Clock ticks every second locally (ET). Phase comes from the server.
+ * Session banner for NY/Tokyo desk — polls /api/trading/session-gate
+ * Clock-in (“Today I trade”) unlocks live chart + level reaction AI.
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react'
+import Link from 'next/link'
 
 export interface SessionGateState {
   phase: string
@@ -15,6 +16,9 @@ export interface SessionGateState {
   canManagePosition: boolean
   canViewLiveChart: boolean
   canFetchLiveBars?: boolean
+  clockedIn?: boolean
+  canClockIn?: boolean
+  market?: 'NY' | 'TOKYO'
   timeEst: string
   entryWindow: 1 | 2 | 3 | null
   open_position_id: string | null
@@ -30,7 +34,6 @@ function formatEtNow(): string {
   }).format(new Date())
 }
 
-/** Human label — FLAT ≠ frozen feed */
 function phaseLabel(phase: string): string {
   switch (phase) {
     case 'FLAT':
@@ -45,9 +48,6 @@ function phaseLabel(phase: string): string {
 function phaseHint(phase: string, message: string): string {
   if (phase === 'FLAT') {
     return 'Morning trading open until lunch — click a level or the chart to place a limit.'
-  }
-  if (phase === 'FLAT') {
-    return 'Entry window closed — levels off. Manage if in a trade; AI still updates memory.'
   }
   if (phase === 'DONE' || phase === 'CLOSED') {
     return message
@@ -65,15 +65,13 @@ export function SessionBanner({
   onGate?: (g: SessionGateState) => void
   refreshKey?: number
   onRefreshReady?: (refresh: () => void) => void
-  /** Unix seconds of last live quote tick (from chart) */
   lastQuoteAt?: number | null
   dataMode?: 'live' | 'synthetic'
 }) {
   const [gate, setGate] = useState<SessionGateState | null>(null)
-  // Empty until mount — avoids SSR/client second mismatch hydration error
   const [clockEt, setClockEt] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
-  /** Fire market-open / auto-levels once per instrument per page load */
+  const [clocking, setClocking] = useState(false)
   const prepFiredRef = useRef<string | null>(null)
 
   const refresh = useCallback(async () => {
@@ -90,6 +88,10 @@ export function SessionBanner({
         canPlaceEntry: json.canPlaceEntry,
         canManagePosition: json.canManagePosition,
         canViewLiveChart: json.canViewLiveChart,
+        canFetchLiveBars: json.canFetchLiveBars,
+        clockedIn: !!json.clockedIn,
+        canClockIn: !!json.canClockIn,
+        market: json.market,
         timeEst: json.timeEst,
         entryWindow: json.entryWindow,
         open_position_id: json.open_position_id,
@@ -97,8 +99,8 @@ export function SessionBanner({
       setGate(next)
       onGate?.(next)
 
-      // Auto prep once per load — same path for DOW / NASDAQ / NIKKEI
-      if (next.phase === 'RECOMMENDED' || next.phase === 'PREP' || next.phase === 'ENTRY') {
+      // Only prep levels after clock-in — otherwise system does not care
+      if (next.clockedIn && (next.phase === 'RECOMMENDED' || next.phase === 'PREP' || next.phase === 'ENTRY')) {
         if (!next.lockedInstrument) {
           if (prepFiredRef.current !== 'market-open') {
             prepFiredRef.current = 'market-open'
@@ -120,7 +122,29 @@ export function SessionBanner({
     }
   }, [onGate])
 
-  // Live ET clock — start only after mount (SSR HTML must match first client paint)
+  const handleClockIn = useCallback(async () => {
+    if (clocking) return
+    setClocking(true)
+    try {
+      const market = gate?.market || (gate?.lockedInstrument === 'NIKKEI' ? 'TOKYO' : 'NY')
+      const res = await fetch('/api/trading/clock-in', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          market,
+          instrument: gate?.lockedInstrument ?? undefined,
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        console.warn('clock-in failed', json.error)
+      }
+      await refresh()
+    } finally {
+      setClocking(false)
+    }
+  }, [clocking, gate?.market, gate?.lockedInstrument, refresh])
+
   useEffect(() => {
     setMounted(true)
     setClockEt(formatEtNow())
@@ -183,14 +207,27 @@ export function SessionBanner({
       {gate.lockedInstrument && (
         <span className="rounded bg-white/10 px-2 py-0.5 font-medium">{gate.lockedInstrument}</span>
       )}
-      {gate.phase === 'ENTRY' && gate.entryWindow && (
+      {gate.clockedIn ? (
+        <span className="rounded bg-emerald-500/25 px-2 py-0.5 text-emerald-200 font-semibold">
+          CLOCKED IN
+        </span>
+      ) : gate.canClockIn ? (
+        <button
+          type="button"
+          onClick={handleClockIn}
+          disabled={clocking}
+          className="rounded bg-amber-500/90 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-black hover:bg-amber-400 disabled:opacity-60"
+        >
+          {clocking ? 'Clocking in…' : 'Today I trade'}
+        </button>
+      ) : null}
+      {gate.phase === 'ENTRY' && gate.entryWindow && gate.clockedIn && (
         <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-emerald-300">
           Window {gate.entryWindow}/3
         </span>
       )}
       <span className="flex-1 min-w-[12rem]">{phaseHint(gate.phase, gate.message)}</span>
 
-      {/* Feed health — proves ticks are moving even in POST-ENTRY */}
       <span
         className={`flex items-center gap-1.5 font-mono text-[10px] ${
           dataMode === 'synthetic'
@@ -218,6 +255,13 @@ export function SessionBanner({
               ? 'FEED LIVE'
               : `FEED ${quoteAgeSec}s`}
       </span>
+
+      <Link
+        href="/dashboard/simulation"
+        className="text-[10px] uppercase tracking-wider text-violet-300 hover:text-violet-100"
+      >
+        Simulation
+      </Link>
 
       <button
         type="button"

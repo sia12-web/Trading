@@ -26,6 +26,13 @@ export default function PositionsPage() {
         setLoading(true)
         setError(null)
 
+        // Drop unfilled working limits + lunch-flatten leftovers before reading Positions
+        await fetch('/api/trading/positions/cleanup-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        }).catch(() => {})
+
         const response = await fetch(
           `/api/trading/positions/management-status?instrument=${selectedInstrument}`
         )

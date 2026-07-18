@@ -31,10 +31,12 @@ import {
   SESSION_STYLES,
   VWAP_COLORS,
   computeAnchoredVwap,
-  computeSessionHighlightRects,
+  computeSessionHighlightSpans,
+  projectSessionHighlightRects,
+  paintSessionHighlightOverlay,
   deskClockFor,
   lastNTradingSessions,
-  type SessionHighlightRect,
+  type SessionHighlightSpan,
 } from '@/lib/chart/sessionVwap'
 import {
   computeSimOvernightBias,
@@ -253,9 +255,14 @@ function SimulationDeskInner() {
   const [levelsOpen, setLevelsOpen] = useState(true)
   const [reasoningOpen, setReasoningOpen] = useState<number | null>(null)
   const [chartReady, setChartReady] = useState(false)
-  const [sessionRects, setSessionRects] = useState<SessionHighlightRect[]>([])
 
   const containerRef = useRef<HTMLDivElement>(null)
+  const sessionOverlayRef = useRef<HTMLDivElement>(null)
+  const sessionSpansRef = useRef<{
+    key: string
+    spans: SessionHighlightSpan[]
+    candleTimes: number[]
+  } | null>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const vwapSeriesRef = useRef<{
@@ -512,6 +519,21 @@ function SimulationDeskInner() {
         // Default axis is UTC — format ticks in NY so 9:30 ET is not shown as 13:30
         tickMarkFormatter: nyTickMarkFormatter,
       },
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: false,
+      },
+      handleScale: {
+        axisPressedMouseMove: { time: true, price: true },
+        mouseWheel: true,
+        pinch: true,
+      },
+      kineticScroll: {
+        mouse: true,
+        touch: true,
+      },
       localization: {
         timeFormatter: (time: UTCTimestamp | string | number) => {
           const unix =
@@ -550,7 +572,7 @@ function SimulationDeskInner() {
         color: VWAP_COLORS.vwap,
         lineWidth: 2,
         priceLineVisible: false,
-        lastValueVisible: true,
+        lastValueVisible: false,
         title: 'AVWAP',
       }),
       lower1: chart.addLineSeries({ ...bandOpts, title: '-1σ' }),
@@ -593,9 +615,24 @@ function SimulationDeskInner() {
     const chart = chartRef.current
     const series = seriesRef.current
     const list = visibleCandlesRef.current
+    const host = sessionOverlayRef.current
     if (!chart || !series || !containerRef.current || list.length === 0) {
-      setSessionRects([])
+      paintSessionHighlightOverlay(host, [])
       return
+    }
+
+    const asOf = simNowRef.current || 0
+    const tip = list[list.length - 1]?.time ?? 0
+    const cacheKey = `${instrument}:${tip}:${asOf}:${list.length}`
+    let cached = sessionSpansRef.current
+    if (!cached || cached.key !== cacheKey) {
+      const built = computeSessionHighlightSpans({
+        candles: list,
+        asOfUnix: asOf || undefined,
+        instrument,
+      })
+      cached = { key: cacheKey, spans: built.spans, candleTimes: built.candleTimes }
+      sessionSpansRef.current = cached
     }
 
     let priceAxisW = 70
@@ -605,36 +642,17 @@ function SimulationDeskInner() {
       /* defaults */
     }
 
-    const { rects } = computeSessionHighlightRects({
-      candles: list,
+    const { rects } = projectSessionHighlightRects({
+      spans: cached.spans,
+      candleTimes: cached.candleTimes,
       timeScale: chart.timeScale(),
       priceToY: (price) => series.priceToCoordinate(price),
       priceScaleWidth: priceAxisW,
       containerWidth: containerRef.current.clientWidth,
       containerHeight: containerRef.current.clientHeight,
-      asOfUnix: simNowRef.current || undefined,
-      instrument,
-      fullHeight: true,
     })
-    setSessionRects(rects)
+    paintSessionHighlightOverlay(host, rects)
   }, [instrument])
-
-  const resetPriceScale = useCallback(() => {
-    const chart = chartRef.current
-    if (!chart) return
-    chart.priceScale('right').applyOptions({
-      autoScale: true,
-      scaleMargins: { top: 0.05, bottom: 0.05 },
-    })
-    try {
-      chart.timeScale().fitContent()
-    } catch {
-      /* ignore */
-    }
-    followLiveRef.current = false
-    setFollowingLive(false)
-    requestAnimationFrame(() => refreshSessionHighlights())
-  }, [refreshSessionHighlights])
 
   /** Keep the sim tip pinned to the right with a readable trailing window. */
   const pinToLatest = useCallback(
@@ -668,6 +686,29 @@ function SimulationDeskInner() {
     const endIdx = lastAppliedBarIdxRef.current
     if (endIdx >= 0) pinToLatest(endIdx)
   }, [pinToLatest])
+
+  const resetPriceScale = useCallback(() => {
+    const chart = chartRef.current
+    if (!chart) return
+    chart.priceScale('right').applyOptions({
+      autoScale: true,
+      scaleMargins: { top: 0.05, bottom: 0.05 },
+    })
+    // Sim: snap to tip (fitContent zooms out across all history and feels broken)
+    const endIdx = lastAppliedBarIdxRef.current
+    followLiveRef.current = true
+    setFollowingLive(true)
+    if (endIdx >= 0) {
+      pinToLatest(endIdx)
+    } else {
+      try {
+        chart.timeScale().fitContent()
+      } catch {
+        /* ignore */
+      }
+      requestAnimationFrame(() => refreshSessionHighlights())
+    }
+  }, [pinToLatest, refreshSessionHighlights])
 
   /** Push candles/VWAP to the chart. Skips work when no new bar (playback stays smooth). */
   const applyChartData = useCallback(
@@ -761,49 +802,83 @@ function SimulationDeskInner() {
 
   useEffect(() => {
     if (!chartReady || !chartRef.current) return
+    const host = sessionOverlayRef.current
+    const el = containerRef.current
+    let settleTimer = 0
     let rafPending = 0
-    const runHighlights = () => {
-      if (rafPending) return
+    let pointerDown = false
+
+    const paintNow = () => {
+      if (pointerDown) return
+      if (rafPending) cancelAnimationFrame(rafPending)
       rafPending = requestAnimationFrame(() => {
         rafPending = 0
+        if (pointerDown) return
         refreshSessionHighlights()
+        if (host) host.style.opacity = '1'
       })
     }
 
+    const scheduleSettle = () => {
+      window.clearTimeout(settleTimer)
+      settleTimer = window.setTimeout(() => {
+        if (pointerDown) return
+        paintNow()
+      }, 180)
+    }
+
+    const beginInteract = () => {
+      pointerDown = true
+      if (host) host.style.opacity = '0'
+      window.clearTimeout(settleTimer)
+    }
+
+    const endInteract = () => {
+      if (!pointerDown) return
+      pointerDown = false
+      scheduleSettle()
+    }
+
     const onRangeChange = () => {
-      runHighlights()
+      // Hide bands while dragging — chart pan stays 60fps like TradingView
+      if (host) host.style.opacity = '0'
+      if (!pointerDown) scheduleSettle()
+
       // User panned/zoomed away from the tip → stop auto-follow so we don't fight them
       if (ignoreRangeChangeRef.current || !followLiveRef.current) return
       const range = chartRef.current?.timeScale().getVisibleLogicalRange()
       const endIdx = lastAppliedBarIdxRef.current
       if (!range || endIdx < 0) return
-      // If the newest bar is no longer near the right edge, user is inspecting history
       if (range.to < endIdx - 3) {
         followLiveRef.current = false
         setFollowingLive(false)
       }
     }
 
-    runHighlights()
-    const t1 = window.setTimeout(runHighlights, 50)
-    const t2 = window.setTimeout(runHighlights, 200)
+    paintNow()
+    const t1 = window.setTimeout(paintNow, 50)
+    const t2 = window.setTimeout(paintNow, 200)
     const ts = chartRef.current.timeScale()
     ts.subscribeVisibleLogicalRangeChange(onRangeChange)
-    ts.subscribeVisibleTimeRangeChange(onRangeChange)
-    const el = containerRef.current
-    const ro = el ? new ResizeObserver(runHighlights) : null
+    const ro = el ? new ResizeObserver(() => scheduleSettle()) : null
     ro?.observe(el!)
+    el?.addEventListener('pointerdown', beginInteract)
+    window.addEventListener('pointerup', endInteract)
+    window.addEventListener('pointercancel', endInteract)
     return () => {
       window.clearTimeout(t1)
       window.clearTimeout(t2)
+      window.clearTimeout(settleTimer)
       if (rafPending) cancelAnimationFrame(rafPending)
       try {
         ts.unsubscribeVisibleLogicalRangeChange(onRangeChange)
-        ts.unsubscribeVisibleTimeRangeChange(onRangeChange)
       } catch {
         /* ignore */
       }
       ro?.disconnect()
+      el?.removeEventListener('pointerdown', beginInteract)
+      window.removeEventListener('pointerup', endInteract)
+      window.removeEventListener('pointercancel', endInteract)
     }
   }, [chartReady, refreshSessionHighlights])
 
@@ -990,6 +1065,14 @@ function SimulationDeskInner() {
     }
   }, [playing, openUnix, speed])
 
+  // Unfilled sim limits expire when the entry window ends
+  useEffect(() => {
+    if (!pending) return
+    if (simNow <= entryCloseUnix) return
+    setPending(null)
+    setMsg('Working limit cancelled — entry window closed (never filled)')
+  }, [simNow, entryCloseUnix, pending])
+
   const placePending = useCallback(
     (level: AiLevel, direction: Direction) => {
       if (position) {
@@ -1046,11 +1129,7 @@ function SimulationDeskInner() {
     const price = lastPriceRef.current ?? lastPrice
     if (!position || price == null) return
     const closed = position
-    const pnl =
-      closed.direction === 'LONG'
-        ? (price - closed.entry) * closed.size
-        : (closed.entry - price) * closed.size
-    setMsg(`Closed @ ${price.toLocaleString()} · P&L $${pnl.toFixed(0)} — levels back`)
+    setMsg(`Closed @ ${price.toLocaleString()} — manage ended · levels back`)
     setLevels((prev) =>
       applySimTradeOutcome(prev, closed.entry, closed.direction, 'target')
     )
@@ -1112,24 +1191,22 @@ function SimulationDeskInner() {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#0d1117]">
-      {/* Full-bleed chart + session color bands */}
+      {/* Full-bleed chart + session color bands (bands painted imperatively for smooth pan) */}
       <div className="absolute inset-0 z-0">
         <div ref={containerRef} className="absolute inset-0 z-0" />
-        {sessionRects.map((s, i) => (
-          <div
-            key={`${s.name}-${i}`}
-            className="pointer-events-none absolute"
-            style={{
-              left: s.left,
-              width: s.width,
-              top: s.top,
-              height: s.height,
-              backgroundColor: s.color,
-              zIndex: s.zIndex,
-            }}
-            title={`${s.name} session range`}
-          />
-        ))}
+        <div
+          ref={sessionOverlayRef}
+          className="pointer-events-none absolute inset-0 z-[1]"
+          style={{ opacity: 1, transition: 'none', willChange: 'opacity' }}
+        />
+        <button
+          type="button"
+          onClick={resetPriceScale}
+          className="absolute bottom-8 right-16 z-20 rounded-md border border-white/20 bg-[#0d1117]/95 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-300 shadow-lg backdrop-blur transition hover:border-violet-400/50 hover:text-white"
+          title="Reset price scale and snap to latest sim bar"
+        >
+          Reset scale
+        </button>
       </div>
 
       {/* Top toolbar overlay */}
@@ -1275,14 +1352,11 @@ function SimulationDeskInner() {
 
         {position && lastPrice != null && (
           <div className="pointer-events-auto mt-1.5 flex max-w-3xl flex-wrap items-center gap-3 rounded-lg border border-amber-700/40 bg-[#161b22]/95 px-3 py-2 text-xs backdrop-blur">
-            <span
-              className={`rounded border px-2 py-0.5 font-bold ${
-                position.direction === 'LONG'
-                  ? 'border-green-800 text-green-400'
-                  : 'border-red-800 text-red-400'
-              }`}
-            >
+            <span className="rounded border border-amber-700/60 bg-amber-950/40 px-2 py-0.5 font-bold text-amber-200">
               MANAGE · {position.direction}
+            </span>
+            <span className="text-[10px] uppercase tracking-wide text-sky-400/90">
+              Watching SL / TP
             </span>
             <span className="text-gray-500">
               Entry{' '}
@@ -1298,25 +1372,65 @@ function SimulationDeskInner() {
             </span>
             <span className="text-gray-500">
               TP{' '}
-              <span className="price-mono text-green-400">
+              <span className="price-mono text-emerald-400/80">
                 {position.target.toLocaleString(undefined, { maximumFractionDigits: 2 })}
               </span>
             </span>
-            <span
-              className={`ml-auto font-bold price-mono ${
-                (position.direction === 'LONG'
-                  ? lastPrice - position.entry
-                  : position.entry - lastPrice) >= 0
-                  ? 'text-green-400'
-                  : 'text-red-400'
-              }`}
-            >
-              $
-              {(
-                (position.direction === 'LONG'
-                  ? lastPrice - position.entry
-                  : position.entry - lastPrice) * position.size
-              ).toFixed(0)}
+            {/* Process meters only — no live $ P&L */}
+            <span className="ml-auto flex flex-wrap items-center gap-3 text-[10px] uppercase tracking-wide text-gray-500">
+              {(() => {
+                const isLong = position.direction === 'LONG'
+                const tpSpan = isLong
+                  ? position.target - position.entry
+                  : position.entry - position.target
+                const slSpan = isLong
+                  ? position.entry - position.stopLoss
+                  : position.stopLoss - position.entry
+                const toTp =
+                  Math.abs(tpSpan) > 1e-9
+                    ? Math.max(
+                        0,
+                        Math.min(
+                          1,
+                          (isLong
+                            ? lastPrice - position.entry
+                            : position.entry - lastPrice) / tpSpan
+                        )
+                      )
+                    : null
+                const roomSl =
+                  Math.abs(slSpan) > 1e-9
+                    ? Math.max(
+                        0,
+                        Math.min(
+                          1,
+                          (isLong
+                            ? lastPrice - position.stopLoss
+                            : position.stopLoss - lastPrice) / slSpan
+                        )
+                      )
+                    : null
+                return (
+                  <>
+                    {toTp != null && (
+                      <span>
+                        Path to TP{' '}
+                        <span className="price-mono text-sky-300 normal-case">
+                          {Math.round(toTp * 100)}%
+                        </span>
+                      </span>
+                    )}
+                    {roomSl != null && (
+                      <span>
+                        Room to SL{' '}
+                        <span className="price-mono text-gray-300 normal-case">
+                          {Math.round(roomSl * 100)}%
+                        </span>
+                      </span>
+                    )}
+                  </>
+                )
+              })()}
             </span>
             <button
               type="button"

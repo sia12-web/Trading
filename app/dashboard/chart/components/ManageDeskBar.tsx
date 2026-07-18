@@ -1,7 +1,8 @@
 'use client'
 
 /**
- * MANAGE phase desk — P&L, AI trend verdict, HOLD / TAKE PROFIT decisions.
+ * MANAGE phase desk — process-focused (no live $ P&L).
+ * Shows SL/TP path + AI verdict so you know manage is working without scorekeeping.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -48,15 +49,32 @@ export function ManageDeskBar({ position, currentPrice, onClosed, onRefreshGate 
   }, [currentPrice])
 
   const isLong = position.direction === 'long'
-  const pnl =
+  /** Path progress 0→1 toward TP (neutral — not framed as win/loss $). */
+  const pathToTp =
     currentPrice != null
-      ? isLong
-        ? (currentPrice - position.entryPrice) * position.positionSize
-        : (position.entryPrice - currentPrice) * position.positionSize
+      ? (() => {
+          const span = isLong
+            ? position.profitTarget - position.entryPrice
+            : position.entryPrice - position.profitTarget
+          if (!Number.isFinite(span) || Math.abs(span) < 1e-9) return null
+          const moved = isLong
+            ? currentPrice - position.entryPrice
+            : position.entryPrice - currentPrice
+          return Math.max(0, Math.min(1, moved / span))
+        })()
       : null
-  const distSl =
+  const riskToSl =
     currentPrice != null
-      ? ((currentPrice - position.stopLoss) / position.stopLoss) * 100
+      ? (() => {
+          const span = isLong
+            ? position.entryPrice - position.stopLoss
+            : position.stopLoss - position.entryPrice
+          if (!Number.isFinite(span) || Math.abs(span) < 1e-9) return null
+          const left = isLong
+            ? currentPrice - position.stopLoss
+            : position.stopLoss - currentPrice
+          return Math.max(0, Math.min(1, left / span))
+        })()
       : null
 
   const pollAi = useCallback(async () => {
@@ -197,13 +215,13 @@ export function ManageDeskBar({ position, currentPrice, onClosed, onRefreshGate 
           setMsg(closeJson.message || 'Close failed')
           return
         }
-        setMsg(`Closed @ ${exitPrice.toLocaleString()} · P&L $${closeJson.profit_loss ?? '—'}`)
+        setMsg(`Closed @ ${exitPrice.toLocaleString()} — session flat`)
         onClosed('take_profit')
         onRefreshGate()
         return
       }
 
-      setMsg('HOLD recorded — AI keeps watching')
+      setMsg('HOLD recorded — manage still watching')
     } catch {
       setMsg('Decision failed')
     } finally {
@@ -219,16 +237,13 @@ export function ManageDeskBar({ position, currentPrice, onClosed, onRefreshGate 
         : 'text-emerald-400'
 
   return (
-    <div className="rounded-xl border border-[#30363d] bg-[#161b22] px-3 py-2.5 space-y-2">
+    <div className="rounded-xl border border-amber-800/40 bg-[#161b22] px-3 py-2.5 space-y-2">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-        <span
-          className={`font-bold px-2 py-0.5 rounded border ${
-            isLong
-              ? 'text-green-400 border-green-800 bg-green-900/30'
-              : 'text-red-400 border-red-800 bg-red-900/30'
-          }`}
-        >
-          {isLong ? '▲ LONG' : '▼ SHORT'} {position.instrument}
+        <span className="font-bold px-2 py-0.5 rounded border border-amber-700/60 bg-amber-950/40 text-amber-200">
+          MANAGE · {isLong ? 'LONG' : 'SHORT'} {position.instrument}
+        </span>
+        <span className="text-[10px] uppercase tracking-wide text-sky-400/90">
+          {ai ? 'AI watching' : 'Arming…'}
         </span>
         <span className="text-gray-500">
           Entry{' '}
@@ -241,31 +256,38 @@ export function ManageDeskBar({ position, currentPrice, onClosed, onRefreshGate 
           <span className="price-mono text-red-400">
             {position.stopLoss.toLocaleString()}
           </span>
-          {distSl != null && (
-            <span className="text-gray-600 ml-1">({distSl.toFixed(2)}%)</span>
-          )}
         </span>
         <span className="text-gray-500">
           TP{' '}
-          <span className="price-mono text-green-400">
+          <span className="price-mono text-emerald-400/80">
             {position.profitTarget.toLocaleString()}
           </span>
         </span>
-        {pnl != null && (
-          <span
-            className={`ml-auto font-bold price-mono ${
-              pnl >= 0 ? 'text-green-400' : 'text-red-400'
-            }`}
-          >
-            {pnl >= 0 ? '+' : ''}${pnl.toFixed(0)}
-          </span>
-        )}
+        {/* Process meters — no live $ P&L (keeps manage calm) */}
+        <span className="ml-auto flex flex-wrap items-center gap-3 text-[10px] uppercase tracking-wide text-gray-500">
+          {pathToTp != null && (
+            <span title="Progress from entry toward take-profit (not P&L)">
+              Path to TP{' '}
+              <span className="price-mono text-sky-300 normal-case">
+                {Math.round(pathToTp * 100)}%
+              </span>
+            </span>
+          )}
+          {riskToSl != null && (
+            <span title="Room left before stop (not P&L)">
+              Room to SL{' '}
+              <span className="price-mono text-gray-300 normal-case">
+                {Math.round(riskToSl * 100)}%
+              </span>
+            </span>
+          )}
+        </span>
       </div>
 
       <div className="flex flex-wrap items-start gap-3 text-[11px]">
         <div className="flex-1 min-w-[200px]">
           <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-0.5">
-            AI trend check
+            Manage check · process only
           </div>
           {ai ? (
             <>
@@ -273,11 +295,6 @@ export function ManageDeskBar({ position, currentPrice, onClosed, onRefreshGate 
                 {ai.verdict}
               </span>
               <span className="text-gray-600 ml-2">{ai.confidence}% conf</span>
-              {typeof ai.move_pct === 'number' && (
-                <span className="text-gray-600 ml-2">
-                  move {ai.move_pct.toFixed(2)}%
-                </span>
-              )}
               <p className="text-gray-400 mt-0.5 leading-snug">{ai.reason}</p>
               {ai.headlines && ai.headlines.length > 0 && (
                 <ul className="mt-1 text-gray-600 list-disc list-inside">
@@ -290,7 +307,9 @@ export function ManageDeskBar({ position, currentPrice, onClosed, onRefreshGate 
               )}
             </>
           ) : (
-            <span className="text-gray-600 animate-pulse">Scoring news + price…</span>
+            <span className="text-gray-600 animate-pulse">
+              Manage active — scoring news + price…
+            </span>
           )}
         </div>
 
