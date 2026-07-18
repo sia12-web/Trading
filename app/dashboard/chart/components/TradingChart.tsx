@@ -41,6 +41,10 @@ import {
   VWAP_COLORS as SHARED_VWAP_COLORS,
   type SessionHighlightSpan,
 } from '@/lib/chart/sessionVwap'
+import {
+  deskDisplayTimeZone,
+  deskDisplayTzLabel,
+} from '@/lib/trading/deskDisplayTz'
 import { aiLevelsUrl, resolveDeskLevels } from '@/lib/trading/deskLevels'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
@@ -60,35 +64,35 @@ type DeskChartFmt = {
   tzLabel: string
 }
 
-/** DOW/NASDAQ → ET · NIKKEI → JST — same clocks as session color bands. */
+/** DOW/NASDAQ/NIKKEI UI clocks — always Eastern (Montreal / NYC). */
 function makeDeskChartFormatters(instrument: Instrument): DeskChartFmt {
-  const clock = deskClockFor(instrument)
-  const tzLabel = instrument === 'NIKKEI' ? 'JST' : 'ET'
+  const timeZone = deskDisplayTimeZone(instrument)
+  const tzLabel = deskDisplayTzLabel(instrument)
   const fmtTime = new Intl.DateTimeFormat('en-US', {
-    timeZone: clock.timeZone,
+    timeZone,
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
   })
   const fmtTimeSec = new Intl.DateTimeFormat('en-US', {
-    timeZone: clock.timeZone,
+    timeZone,
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
     hour12: false,
   })
   const fmtDay = new Intl.DateTimeFormat('en-US', {
-    timeZone: clock.timeZone,
+    timeZone,
     day: 'numeric',
     month: 'short',
   })
   const fmtMonth = new Intl.DateTimeFormat('en-US', {
-    timeZone: clock.timeZone,
+    timeZone,
     month: 'short',
     year: '2-digit',
   })
   const fmtYear = new Intl.DateTimeFormat('en-US', {
-    timeZone: clock.timeZone,
+    timeZone,
     year: 'numeric',
   })
 
@@ -261,7 +265,7 @@ const CHART_THEME = {
     barSpacing:    8,
     fixLeftEdge:   false,
     fixRightEdge:  false,
-    // tickMarkFormatter applied per-instrument (ET for DOW/NASDAQ, JST for NIKKEI)
+    // tickMarkFormatter applied in Eastern for all instruments (Montreal / NYC)
   },
   handleScroll: {
     mouseWheel: true,
@@ -497,7 +501,7 @@ export function TradingChart({
     [onDataModeChange]
   )
   const positionLinesRef = useRef<any[]>([])
-  /** Axis / tooltip clocks — ET for DOW/NASDAQ, JST for NIKKEI */
+  /** Axis / tooltip clocks — Eastern for all desk instruments (Montreal / NYC) */
   const chartFmtRef = useRef<DeskChartFmt>(makeDeskChartFormatters(lockedInstrument || 'DOW'))
 
   const setInstrument = useCallback((inst: Instrument) => {
@@ -608,7 +612,7 @@ export function TradingChart({
     )
   }, []) // levels only — setLevels is stable
 
-  // Keep axis / tooltips on the same desk clock as session colors (ET vs JST).
+  // Keep axis / tooltips on Eastern display clock for every instrument.
   // tickMarkFormatter is wired via chartFmtRef at create time (v4 applyOptions
   // does not accept tickMarkFormatter on timeScale).
   useEffect(() => {
@@ -999,7 +1003,7 @@ export function TradingChart({
       priceScaleWidth: priceAxisW,
       containerWidth: containerRef.current.clientWidth,
       containerHeight: containerRef.current.clientHeight,
-      fullHeight: false, // high→low only — never wallpaper above/below price
+      fullHeight: true, // TradingView-style full-pane session wallpaper
     })
     paintSessionHighlightOverlay(host, rects)
   }, [instrument])
@@ -1613,7 +1617,8 @@ export function TradingChart({
           <span className="inline-block w-4 border-t-2" style={{ borderColor: SHARED_VWAP_COLORS.vwap }} />
           <span style={{ color: SHARED_VWAP_COLORS.vwap }}>AVWAP</span>
           <span className="text-gray-600">
-            {deskClockFor(instrument).openLabel} · 5 sessions · ±1/2/3σ
+            {instrument === 'NIKKEI' ? 'Tokyo open (ET)' : deskClockFor(instrument).openLabel} · 5
+            sessions · ±1/2/3σ
           </span>
         </span>
       </div>

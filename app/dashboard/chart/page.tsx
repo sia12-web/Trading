@@ -4,7 +4,7 @@
  * Chart Page — live morning desk only (afternoon is background memory).
  * Flow: place WORKING limit → wait for fill → then MANAGE.
  * NY:  DOW/NASDAQ  9:30–11:30 ET
- * Tokyo: NIKKEI    9:00–11:30 JST
+ * Tokyo: NIKKEI cash 9:00–11:30 JST (shown as evening ET in UI)
  */
 
 import Link from 'next/link'

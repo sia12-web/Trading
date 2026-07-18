@@ -1,11 +1,12 @@
 'use client'
 
 /**
- * Morning desk countdown — NY 11:30 ET / Tokyo 11:30 JST lunch flatten.
+ * Morning desk countdown — lunch flatten shown in Eastern (Montreal / NYC).
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { sessionFor } from '@/lib/trading/sessionGate'
+import { formatMarketHmsTodayInDisplayTz } from '@/lib/trading/deskDisplayTz'
 import type { Instrument } from '@/types/trading'
 
 interface LunchCloseCountdownProps {
@@ -46,8 +47,10 @@ export function LunchCloseCountdown({
   hasOpenPosition,
 }: LunchCloseCountdownProps) {
   const sess = sessionFor(instrument)
-  const tzLabel = instrument === 'NIKKEI' ? 'JST' : 'ET'
-  const lunchLabel = `${sess.lunchClose.slice(0, 5)} ${tzLabel}`
+  const lunchLabel = useMemo(
+    () => formatMarketHmsTodayInDisplayTz(instrument, sess.lunchClose),
+    [instrument, sess.lunchClose]
+  )
   const [label, setLabel] = useState('—')
   const [phase, setPhase] = useState<'pre' | 'open' | 'closed'>('closed')
 
