@@ -50,20 +50,6 @@ export function nyDeskSessionAt(unix: number): SessionName {
 
 export const SESSION_RANGE_ORDER: SessionName[] = ['Asia', 'London', 'New York']
 
-/**
- * Tokyo desk — contiguous JST windows, same color keys as NY desk (Asia/London/NY):
- *   15:00→09:00 → Asia (blue)
- *   09:00→11:30 → London (yellow)
- *   11:30→15:00 → New York (green)
- * Same palette + legend names as DOW/NASDAQ.
- */
-export function tokyoDeskSessionAt(unix: number): SessionName {
-  const h = hourInTz(unix, 'Asia/Tokyo')
-  if (h >= 15 || h < 9) return 'Asia'
-  if (h < 11.5) return 'London'
-  return 'New York'
-}
-
 /** Shared legend — Asia / London / New York for every desk instrument. */
 export function sessionLegendLabel(name: SessionName, _instrument?: string | null): string {
   return name
@@ -326,12 +312,15 @@ const DESK_BAR_SECONDS = 300
 
 /**
  * Expensive once: paint contiguous session columns from every bar’s clock.
+ * Uses America/New_York Asia/London/NY windows for DOW, NASDAQ, and NIKKEI
+ * (JP225 trades during NYC hours — same color language as the NY desk).
  * Walks bars (not calendar windows) so post-cash / overnight / tip never go uncolored.
  * Call again only when candle tip / as-of clock changes — not on every pan frame.
  */
 export function computeSessionHighlightSpans(args: {
   candles: SessionBar[]
   asOfUnix?: number
+  /** Kept for API compat — coloring always uses NY desk ET windows */
   instrument?: string | null
   barSeconds?: number
 }): { spans: SessionHighlightSpan[]; candleTimes: number[] } {
@@ -350,8 +339,9 @@ export function computeSessionHighlightSpans(args: {
   if (bars.length === 0) return { spans: [], candleTimes: [] }
 
   const candleTimes = bars.map((c) => c.time)
-  const isTokyo = args.instrument === 'NIKKEI'
-  const sessionAt = isTokyo ? tokyoDeskSessionAt : nyDeskSessionAt
+  // Real Asia / London / NY (ET) for every instrument — including NIKKEI JP225
+  // during NYC hours. Tokyo clock still drives trading gates + AVWAP anchor.
+  const sessionAt = nyDeskSessionAt
 
   const spans: SessionHighlightSpan[] = []
   let runName: SessionName | null = null
@@ -521,7 +511,7 @@ export function computeSessionHighlightRects(args: {
   containerHeight: number
   /** Live = now; sim = sim clock */
   asOfUnix?: number
-  /** DOW/NASDAQ → NY windows; NIKKEI → Tokyo windows */
+  /** Kept for API compat — coloring always uses NY desk ET windows */
   instrument?: string | null
   /** true = full-pane wallpaper; default false = high→low only */
   fullHeight?: boolean
