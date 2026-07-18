@@ -118,13 +118,62 @@ export async function GET(request: NextRequest) {
     const losses = closed.filter((t) => Number(t.profit_loss) < 0)
     const stops = closed.filter((t) => t.exit_reason === 'stop_hit')
     const tps = closed.filter((t) => t.exit_reason === 'take_profit')
+    const aiExits = closed.filter((t) => t.exit_reason === 'ai_signal')
     const totalPnl = closed.reduce((s, t) => s + (Number(t.profit_loss) || 0), 0)
+
+    // Desk equity trail from ticket account_size + realized P&L (not broker margin)
+    const chrono = [...rows].sort((a, b) => {
+      const ta = new Date(a.entry_timestamp || a.created_at || 0).getTime()
+      const tb = new Date(b.entry_timestamp || b.created_at || 0).getTime()
+      return ta - tb
+    })
+    const startingAccount =
+      chrono.find((t) => Number(t.account_size) > 0)?.account_size != null
+        ? Number(chrono.find((t) => Number(t.account_size) > 0)!.account_size)
+        : 100000
+    let running = startingAccount
+    const equityAfter = new Map<string, number>()
+    const equityBefore = new Map<string, number>()
+    for (const t of chrono) {
+      equityBefore.set(t.id, Math.round(running * 100) / 100)
+      if (t.exit_timestamp && t.profit_loss != null) {
+        running += Number(t.profit_loss) || 0
+      }
+      equityAfter.set(t.id, Math.round(running * 100) / 100)
+    }
+    const endingEquity = Math.round(running * 100) / 100
+
+    const resolveExitNotes = (
+      t: Record<string, any>,
+      decs: Array<Record<string, unknown>>
+    ): string => {
+      if (t.exit_notes && String(t.exit_notes).trim()) return String(t.exit_notes)
+      const aiNote = decs
+        .map((d) => String(d.notes ?? d.reason ?? ''))
+        .find((n) => /AI exit/i.test(n))
+      if (aiNote) return aiNote
+      if (t.exit_reason === 'stop_hit') return 'Stop loss hit — exit before or at stop'
+      if (t.exit_reason === 'take_profit') return 'Take profit hit'
+      if (t.exit_reason === 'ai_signal') {
+        return 'AI early exit — system closed before take-profit (see management decisions)'
+      }
+      if (t.exit_reason === 'lunch_close') return 'Lunch flatten — morning desk closed'
+      if (t.exit_reason === 'manual') return 'Manual close'
+      return t.exit_reason ? String(t.exit_reason) : 'Closed'
+    }
 
     const entries = rows.map((t) => {
       const decs = byPosition.get(t.id) ?? []
+      const exitNotes = t.exit_timestamp ? resolveExitNotes(t, decs) : null
+      const tp = t.profit_target_price != null ? Number(t.profit_target_price) : null
+      const earlyExit =
+        t.exit_reason === 'ai_signal' ||
+        t.exit_reason === 'manual' ||
+        t.exit_reason === 'lunch_close'
       return {
         id: t.id,
         instrument: t.instrument,
+        market: t.instrument === 'NIKKEI' ? 'TOKYO' : 'NY',
         trade_date: t.trade_date,
         entry_window: t.entry_window,
         direction: t.entry_direction,
@@ -141,25 +190,23 @@ export async function GET(request: NextRequest) {
         },
         risk: {
           stop_loss: Number(t.stop_loss_price),
-          take_profit: t.profit_target_price != null ? Number(t.profit_target_price) : null,
+          take_profit: tp,
           position_size: Number(t.position_size),
           risk_amount: Number(t.risk_amount),
           account_size: Number(t.account_size),
+        },
+        equity: {
+          before: equityBefore.get(t.id) ?? startingAccount,
+          after: equityAfter.get(t.id) ?? startingAccount,
         },
         exit: t.exit_timestamp
           ? {
               time: t.exit_timestamp,
               price: t.exit_price != null ? Number(t.exit_price) : null,
               reason_code: t.exit_reason,
-              notes:
-                t.exit_notes ||
-                (t.exit_reason === 'stop_hit'
-                  ? 'Stop loss hit'
-                  : t.exit_reason === 'take_profit'
-                    ? 'Take profit hit'
-                    : t.exit_reason === 'ai_signal'
-                      ? 'AI exit'
-                      : t.exit_reason || 'Closed'),
+              notes: exitNotes,
+              early_exit: earlyExit && t.exit_reason !== 'take_profit',
+              tp_hit: t.exit_reason === 'take_profit',
             }
           : null,
         stops: {
@@ -193,8 +240,12 @@ export async function GET(request: NextRequest) {
         losses: losses.length,
         stop_outs: stops.length,
         take_profits: tps.length,
+        ai_exits: aiExits.length,
         win_rate: closed.length ? Math.round((wins.length / closed.length) * 100) : null,
         total_pnl: Math.round(totalPnl * 100) / 100,
+        starting_account: startingAccount,
+        ending_equity: endingEquity,
+        equity_change: Math.round((endingEquity - startingAccount) * 100) / 100,
         days,
       },
       entries,

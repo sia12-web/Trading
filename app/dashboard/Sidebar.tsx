@@ -38,7 +38,7 @@ const NAV_ITEMS = [
   },
   {
     href: '/dashboard/journal',
-    label: 'Journal',
+    label: 'Order History',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-4 h-4">
         <path

@@ -106,12 +106,14 @@ export async function POST(request: Request) {
       profitLoss = Math.round(profitLoss * 100) / 100
       const plPct = Math.round((profitLoss / Number(position.risk_amount)) * 10000) / 100
 
+      const exitNotes = `AI early exit (TP not hit): ${reason}`
       const { error: closeErr } = await supabase
         .from('trades_journal')
         .update({
           exit_timestamp: new Date().toISOString(),
           exit_price: px,
           exit_reason: 'ai_signal',
+          exit_notes: exitNotes,
           profit_loss: profitLoss,
           profit_loss_percent: plPct,
           updated_at: new Date().toISOString(),
