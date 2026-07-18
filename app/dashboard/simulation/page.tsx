@@ -9,7 +9,7 @@ import { formatDateDisplay } from '@/lib/utils/dateUtils'
 import type { CreateReplaySessionRequest } from '@/types/trading'
 
 const INSTRUMENTS: Array<'DOW' | 'NASDAQ' | 'NIKKEI'> = ['DOW', 'NASDAQ', 'NIKKEI']
-const PLAYBACK_SPEEDS = [0.5, 1, 2, 4, 16] as const
+const PLAYBACK_SPEEDS = [0.25, 0.5, 1, 2, 4, 16] as const
 type PlaybackSpeed = (typeof PLAYBACK_SPEEDS)[number]
 
 export default function SimulationPage() {
@@ -23,7 +23,7 @@ export default function SimulationPage() {
     loadFromLocalStorage,
   } = useReplayModeStore()
 
-  const [playbackSpeed, setPlaybackSpeed] = useState<PlaybackSpeed>(1)
+  const [playbackSpeed, setPlaybackSpeed] = useState<PlaybackSpeed>(0.25)
   const [isCreatingSession, setIsCreatingSession] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(
     null

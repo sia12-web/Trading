@@ -247,10 +247,10 @@ function SimulationDeskInner() {
         ? 'NIKKEI'
         : 'DOW'
   const replayDate = search.get('date') || ''
-  const parsedSpeed = parseFloat(search.get('speed') || '1')
+  const parsedSpeed = parseFloat(search.get('speed') || '0.25')
   const initialSpeed = Number.isFinite(parsedSpeed)
-    ? Math.min(16, Math.max(0.5, parsedSpeed))
-    : 1
+    ? Math.min(16, Math.max(0.25, parsedSpeed))
+    : 0.25
   const sess = sessionFor(instrument)
   const tzLabel = instrument === 'NIKKEI' ? 'JST' : 'ET'
   const chartFmt = useMemo(
@@ -1031,7 +1031,8 @@ function SimulationDeskInner() {
         /* ignore */
       }
     }
-  }, [position, pending, chartReady, lastPrice])
+  // Do not depend on lastPrice — recreating axis labels every tick makes them "pop"
+  }, [position, pending, chartReady])
 
   const fillPending = useCallback((pend: PendingOrder, at: number) => {
     const filled: PaperPosition = {
@@ -1223,8 +1224,8 @@ function SimulationDeskInner() {
       applyChartDataRef.current(next)
     }
 
-    // 0.5x ≈ 900ms per 5m bar; 1x ≈ 450ms; 16x ≈ 28ms
-    const intervalMs = Math.max(28, Math.round(450 / Math.max(0.5, speed)))
+    // 0.25x ≈ 1800ms per 5m bar; 1x ≈ 450ms; 16x ≈ 28ms
+    const intervalMs = Math.max(28, Math.round(450 / Math.max(0.25, speed)))
     // Step once immediately so Play feels responsive
     stepOnce()
     const timer = window.setInterval(stepOnce, intervalMs)
@@ -1534,7 +1535,7 @@ function SimulationDeskInner() {
           >
             {playing ? 'Pause' : 'Play'}
           </button>
-          {[0.5, 1, 2, 4, 16].map((s) => (
+          {[0.25, 0.5, 1, 2, 4, 16].map((s) => (
             <button
               key={s}
               type="button"
