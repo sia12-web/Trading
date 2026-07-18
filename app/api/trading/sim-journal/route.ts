@@ -175,6 +175,11 @@ export async function POST(request: NextRequest) {
     const replayDate = body.replay_date
     const direction = body.direction
     const exitReason = body.exit_reason
+    const replayId =
+      typeof body.replay_id === 'string' &&
+      /^[0-9a-f-]{36}$/i.test(body.replay_id)
+        ? body.replay_id
+        : null
 
     if (!isInstrument(instrument) || typeof replayDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(replayDate)) {
       return NextResponse.json(
@@ -226,11 +231,13 @@ export async function POST(request: NextRequest) {
       .eq('replay_date', replayDate)
       .maybeSingle()
 
+    const resolvedReplayId = replayId || (session?.id as string | undefined) || null
+
     const { data, error } = await supabase
       .from('simulation_trades')
       .insert({
         user_id: user.id,
-        replay_id: session?.id ?? null,
+        replay_id: resolvedReplayId,
         instrument,
         replay_date: replayDate,
         direction,

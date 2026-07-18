@@ -1,7 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
+import { Suspense } from 'react'
 
 type NavItem = {
   href: string
@@ -38,8 +39,8 @@ const LIVE_ITEMS: NavItem[] = [
   },
   {
     href: '/dashboard/journal',
-    label: 'Live History',
-    hint: 'Fills & P&L',
+    label: 'Order History',
+    hint: 'Live & sim fills',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-4 h-4">
         <path
@@ -64,7 +65,7 @@ const PRACTICE_ITEMS: NavItem[] = [
     ),
   },
   {
-    href: '/dashboard/simulation/history',
+    href: '/dashboard/journal?tab=sim',
     label: 'Sim History',
     hint: 'Paper fills & P&L',
     icon: (
@@ -118,14 +119,35 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
   )
 }
 
+function pathMatches(pathname: string, search: string, href: string): boolean {
+  const [hrefPath, hrefQuery = ''] = href.split('?')
+  if (pathname !== hrefPath && !pathname.startsWith(`${hrefPath}/`)) return false
+  if (!hrefQuery) {
+    // Bare /dashboard/journal should not match when tab=sim is active
+    if (hrefPath === '/dashboard/journal') {
+      const tab = new URLSearchParams(search).get('tab')
+      return tab !== 'sim'
+    }
+    return pathname === hrefPath || pathname.startsWith(`${hrefPath}/`)
+  }
+  const want = new URLSearchParams(hrefQuery)
+  const have = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search)
+  for (const [k, v] of want.entries()) {
+    if (have.get(k) !== v) return false
+  }
+  return true
+}
+
 function NavSection({
   title,
   items,
   pathname,
+  search,
 }: {
   title: string
   items: NavItem[]
   pathname: string
+  search: string
 }) {
   return (
     <div className="space-y-0.5">
@@ -133,20 +155,31 @@ function NavSection({
         {title}
       </p>
       {items.map((item) => {
-        // Prefer longest matching href so /simulation does not stay active on /simulation/history
-        const best = items
-          .filter((i) => pathname === i.href || pathname.startsWith(`${i.href}/`))
-          .sort((a, b) => b.href.length - a.href.length)[0]
-        const active = best?.href === item.href
+        const matches = items
+          .filter((i) => pathMatches(pathname, search, i.href))
+          .sort((a, b) => b.href.length - a.href.length)
+        const active = matches[0]?.href === item.href
         return <NavLink key={item.href} item={item} active={active} />
       })}
     </div>
   )
 }
 
-export function Sidebar() {
+function SidebarNav() {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const search = searchParams.toString()
 
+  return (
+    <>
+      <NavSection title="Live desk" items={LIVE_ITEMS} pathname={pathname} search={search} />
+      <NavSection title="Practice" items={PRACTICE_ITEMS} pathname={pathname} search={search} />
+      <NavSection title="Tools" items={TOOL_ITEMS} pathname={pathname} search={search} />
+    </>
+  )
+}
+
+export function Sidebar() {
   return (
     <aside className="fixed left-0 top-0 h-full w-60 bg-surface-800 border-r border-surface-600 flex flex-col z-40">
       <div className="px-5 py-5 border-b border-surface-600">
@@ -170,9 +203,9 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 px-3 py-2 space-y-3 overflow-y-auto scrollbar-dark">
-        <NavSection title="Live desk" items={LIVE_ITEMS} pathname={pathname} />
-        <NavSection title="Practice" items={PRACTICE_ITEMS} pathname={pathname} />
-        <NavSection title="Tools" items={TOOL_ITEMS} pathname={pathname} />
+        <Suspense fallback={null}>
+          <SidebarNav />
+        </Suspense>
       </nav>
 
       <div className="px-5 py-4 border-t border-surface-600 space-y-1">
@@ -181,7 +214,7 @@ export function Sidebar() {
           <span className="text-xs text-gray-500">Desk ready</span>
         </div>
         <p className="text-[10px] text-gray-600 leading-snug">
-          Sim paper → Sim History. Live fills → Live History.
+          Order History has Live + Simulation tabs.
         </p>
       </div>
     </aside>

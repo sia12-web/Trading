@@ -302,6 +302,7 @@ function SimulationDeskInner() {
   const levelLinesRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]>([])
   const posLinesRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]>([])
   const allCandlesRef = useRef<Candle[]>([])
+  const replaySessionIdRef = useRef<string | null>(null)
   const sessionCandlesRef = useRef<Candle[]>([])
   const pendingRef = useRef<PendingOrder | null>(null)
   const positionRef = useRef<PaperPosition | null>(null)
@@ -391,7 +392,15 @@ function SimulationDeskInner() {
         replay_date: replayDate,
         playback_speed: speed,
       }),
-    }).catch(() => {})
+    })
+      .then(async (res) => {
+        const j = await res.json().catch(() => null)
+        const id = j?.id as string | undefined
+        if (id && !String(id).startsWith('local-')) {
+          replaySessionIdRef.current = id
+        }
+      })
+      .catch(() => {})
   }, [replayDate, instrument, speed])
 
   // Morning-only sim gate — no live afternoon / background-memory feature
@@ -1144,6 +1153,7 @@ function SimulationDeskInner() {
         body: JSON.stringify({
           instrument,
           replay_date: replayDate,
+          replay_id: replaySessionIdRef.current,
           direction: pos.direction,
           entry_price: pos.entry,
           exit_price: exitPrice,
@@ -1160,9 +1170,19 @@ function SimulationDeskInner() {
           entry_reason: pos.entryReason || null,
           level_conviction: pos.conviction ?? null,
         }),
-      }).catch(() => {
-        /* history write is best-effort — desk keeps running */
       })
+        .then(async (res) => {
+          if (res.ok) return
+          const j = await res.json().catch(() => ({}))
+          console.error('[sim-journal] save failed', res.status, j)
+          setMsg(
+            `Closed @ ${exitPrice.toLocaleString()} — history save failed (${j.error || res.status}). Check Order History → Simulation.`
+          )
+        })
+        .catch((err) => {
+          console.error('[sim-journal] network', err)
+          setMsg(`Closed @ ${exitPrice.toLocaleString()} — history save failed (network).`)
+        })
     },
     [instrument, replayDate, accountSize]
   )
@@ -1601,6 +1621,13 @@ function SimulationDeskInner() {
           >
             {playing ? 'Pause' : 'Play'}
           </button>
+          <a
+            href="/dashboard/journal?tab=sim"
+            className="shrink-0 rounded px-2 py-1 text-gray-400 hover:bg-white/10 hover:text-violet-200"
+            title="Open simulation order history"
+          >
+            History
+          </a>
           <div
             className="flex shrink-0 flex-wrap items-center gap-0.5 rounded-md border border-white/10 bg-black/30 p-0.5"
             role="group"

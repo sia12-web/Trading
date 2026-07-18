@@ -129,10 +129,10 @@ export default function SimulationPage() {
         <p className="text-sm text-gray-500 mt-1 max-w-2xl">
           Replay a past morning (open → lunch) on this desk. Paper fills, SL/TP, and manage stay
           here; closed paper orders land in{' '}
-          <Link href="/dashboard/simulation/history" className="text-violet-400 hover:underline">
-            Sim History
+          <Link href="/dashboard/journal?tab=sim" className="text-violet-400 hover:underline">
+            Order History (Simulation)
           </Link>
-          . Live Positions / Live History are for real clock-in trading only.
+          . Live Positions / Order History (Live) are for real clock-in trading only.
         </p>
       </div>
 

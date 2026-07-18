@@ -1,14 +1,16 @@
 'use client'
 
 /**
- * Live desk order history — by day & market, with equity / P&L and entry/exit reasons.
- * Simulation paper trades are never recorded here.
+ * Order history — Live (`trades_journal`) and Simulation (`simulation_trades`).
+ * Prefer ?tab=live (default) or ?tab=sim.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'ALL'
+type HistoryTab = 'live' | 'sim'
 
 interface JournalEntry {
   id: string
@@ -55,6 +57,7 @@ interface Summary {
   stop_outs: number
   take_profits: number
   ai_exits?: number
+  manuals?: number
   win_rate: number | null
   total_pnl: number
   starting_account?: number
@@ -75,11 +78,13 @@ function marketFor(e: JournalEntry): string {
   return e.market || (e.instrument === 'NIKKEI' ? 'TOKYO' : 'NY')
 }
 
-function fmtTime(iso: string | null | undefined): string {
+function fmtTime(iso: string | null | undefined, market?: string): string {
   if (!iso) return '—'
+  const tz = market === 'TOKYO' ? 'Asia/Tokyo' : 'America/New_York'
+  const label = market === 'TOKYO' ? 'JST' : 'ET'
   try {
-    return new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/New_York',
+    const s = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
@@ -87,6 +92,7 @@ function fmtTime(iso: string | null | undefined): string {
       second: '2-digit',
       hour12: false,
     }).format(new Date(iso))
+    return `${s} ${label}`
   } catch {
     return iso
   }
@@ -140,7 +146,63 @@ function formatDayLabel(date: string): string {
   }
 }
 
-export default function JournalPage() {
+function mapSimEntry(raw: Record<string, unknown>): JournalEntry {
+  const fill = (raw.fill || {}) as Record<string, unknown>
+  const risk = (raw.risk || {}) as Record<string, unknown>
+  const exit = (raw.exit || {}) as Record<string, unknown>
+  const pnl = (raw.pnl || {}) as Record<string, unknown>
+  const fillUnix = Number(fill.time_unix) || 0
+  const exitUnix = Number(exit.time_unix) || 0
+  const reason = String(exit.reason_code || 'manual')
+  return {
+    id: String(raw.id),
+    instrument: String(raw.instrument),
+    market: raw.market === 'TOKYO' ? 'TOKYO' : 'NY',
+    trade_date: String(raw.replay_date),
+    entry_window: 1,
+    direction: String(raw.direction),
+    status: 'closed',
+    fill: {
+      time: fillUnix > 0 ? new Date(fillUnix * 1000).toISOString() : String(raw.created_at || ''),
+      price: Number(fill.price) || 0,
+      level: fill.level != null ? Number(fill.level) : null,
+      reason: String(fill.reason || 'Sim level limit fill'),
+    },
+    risk: {
+      stop_loss: Number(risk.stop_loss) || 0,
+      take_profit: risk.take_profit != null ? Number(risk.take_profit) : null,
+      position_size: Number(risk.position_size) || 0,
+      risk_amount: Number(risk.risk_amount) || 0,
+      account_size: Number(risk.account_size) || 100000,
+    },
+    exit: {
+      time: exitUnix > 0 ? new Date(exitUnix * 1000).toISOString() : '',
+      price: exit.price != null ? Number(exit.price) : null,
+      reason_code: reason,
+      notes: '',
+      tp_hit: reason === 'take_profit',
+    },
+    stops: {
+      hit_count: reason === 'stop_hit' ? 1 : 0,
+      hit_at:
+        reason === 'stop_hit' && exitUnix > 0
+          ? new Date(exitUnix * 1000).toISOString()
+          : null,
+    },
+    pnl: {
+      dollars: pnl.dollars != null ? Number(pnl.dollars) : null,
+      percent: pnl.percent != null ? Number(pnl.percent) : null,
+    },
+    regime: { type: 'sim', confidence: null },
+    decisions: [],
+  }
+}
+
+function JournalPageInner() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const tab: HistoryTab = searchParams.get('tab') === 'sim' ? 'sim' : 'live'
+
   const [instrument, setInstrument] = useState<Instrument>('ALL')
   const [days, setDays] = useState(30)
   const [loading, setLoading] = useState(true)
@@ -149,28 +211,52 @@ export default function JournalPage() {
   const [entries, setEntries] = useState<JournalEntry[]>([])
   const [expanded, setExpanded] = useState<string | null>(null)
 
+  const setTab = useCallback(
+    (next: HistoryTab) => {
+      const q = new URLSearchParams(searchParams.toString())
+      if (next === 'live') q.delete('tab')
+      else q.set('tab', 'sim')
+      const qs = q.toString()
+      router.replace(qs ? `/dashboard/journal?${qs}` : '/dashboard/journal')
+    },
+    [router, searchParams]
+  )
+
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
+    setExpanded(null)
     try {
-      const q = new URLSearchParams({ days: String(days), limit: '120' })
+      const q = new URLSearchParams({
+        days: String(days),
+        limit: tab === 'sim' ? '80' : '120',
+      })
       if (instrument !== 'ALL') q.set('instrument', instrument)
-      const res = await fetch(`/api/trading/journal?${q}`)
+      const url =
+        tab === 'sim' ? `/api/trading/sim-journal?${q}` : `/api/trading/journal?${q}`
+      const res = await fetch(url)
       const json = await res.json()
-      if (!res.ok || !json.success) {
-        setError(json.error || json.detail || 'Failed to load journal')
+      if (!res.ok || (tab === 'live' && !json.success)) {
+        setError(json.error || json.detail || 'Failed to load order history')
         setEntries([])
         setSummary(null)
         return
       }
-      setSummary(json.summary)
-      setEntries(json.entries || [])
+      if (tab === 'sim') {
+        setEntries((json.entries || []).map((e: Record<string, unknown>) => mapSimEntry(e)))
+        setSummary(json.summary || null)
+      } else {
+        setSummary(json.summary)
+        setEntries(json.entries || [])
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load journal')
+      setError(e instanceof Error ? e.message : 'Failed to load order history')
+      setEntries([])
+      setSummary(null)
     } finally {
       setLoading(false)
     }
-  }, [days, instrument])
+  }, [days, instrument, tab])
 
   useEffect(() => {
     void load()
@@ -216,30 +302,56 @@ export default function JournalPage() {
   const equityChange = summary?.equity_change ?? summary?.total_pnl ?? 0
   const madeMoney = equityChange > 0
   const lostMoney = equityChange < 0
+  const isSim = tab === 'sim'
 
   return (
     <div className="min-h-screen bg-[#0d1117] text-gray-200">
       <div className="mx-auto max-w-5xl px-4 py-8 space-y-6">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-amber-500/90">
-              Live trading only
+            <p
+              className={`text-[10px] uppercase tracking-[0.2em] ${
+                isSim ? 'text-violet-400/90' : 'text-amber-500/90'
+              }`}
+            >
+              {isSim ? 'Practice paper' : 'Live trading'}
             </p>
-            <h1 className="mt-1 text-2xl font-semibold text-white">Live order history</h1>
+            <h1 className="mt-1 text-2xl font-semibold text-white">Order history</h1>
             <p className="mt-1 text-sm text-gray-500 max-w-xl">
-              Closed and open live fills by day and market — entries, SL/TP, level reasons, AI exits,
-              and equity. Simulation paper trades are never recorded here.
+              {isSim
+                ? 'Paper fills from simulation mornings — entry, SL/TP, exit reason, and P&L by replay day.'
+                : 'Closed and open live fills by day and market — entries, SL/TP, level reasons, AI exits, and equity.'}
             </p>
           </div>
           <Link
-            href="/dashboard/chart"
+            href={isSim ? '/dashboard/simulation' : '/dashboard/chart'}
             className="rounded-lg border border-[#30363d] px-3 py-1.5 text-xs font-semibold text-gray-300 hover:bg-[#161b22]"
           >
-            ← Live Trading
+            {isSim ? '← Simulation' : '← Live Trading'}
           </Link>
         </header>
 
         <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-lg border border-[#30363d] bg-[#161b22] p-0.5">
+            <button
+              type="button"
+              onClick={() => setTab('live')}
+              className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
+                !isSim ? 'bg-brand-600/30 text-brand-200' : 'text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              Live
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab('sim')}
+              className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
+                isSim ? 'bg-violet-600/30 text-violet-200' : 'text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              Simulation
+            </button>
+          </div>
           {(['ALL', 'DOW', 'NASDAQ', 'NIKKEI'] as Instrument[]).map((inst) => (
             <button
               key={inst}
@@ -247,7 +359,9 @@ export default function JournalPage() {
               onClick={() => setInstrument(inst)}
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
                 instrument === inst
-                  ? 'bg-brand-600/30 text-brand-200 border border-brand-700/40'
+                  ? isSim
+                    ? 'bg-violet-600/30 text-violet-200 border border-violet-700/40'
+                    : 'bg-brand-600/30 text-brand-200 border border-brand-700/40'
                   : 'bg-[#161b22] text-gray-500 border border-[#30363d]'
               }`}
             >
@@ -370,8 +484,20 @@ export default function JournalPage() {
 
         {!loading && !error && entries.length === 0 && (
           <div className="rounded-xl border border-dashed border-[#30363d] px-6 py-12 text-center text-sm text-gray-500">
-            No live orders yet. Clock in, place a limit on Live Trading — fills land here with entry
-            and exit reasons.
+            {isSim ? (
+              <>
+                No paper closes yet. Open{' '}
+                <Link href="/dashboard/simulation" className="text-violet-400 hover:underline">
+                  Simulation
+                </Link>
+                , fill a level, then hit SL/TP or CLOSE — orders land under the Simulation tab.
+              </>
+            ) : (
+              <>
+                No live orders yet. Clock in, place a limit on Live Trading — fills land here with
+                entry and exit reasons.
+              </>
+            )}
           </div>
         )}
 
@@ -385,7 +511,7 @@ export default function JournalPage() {
               <section key={date} className="space-y-3">
                 <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-[#30363d] pb-2">
                   <h2 className="text-sm font-semibold text-white tracking-tight">
-                    {formatDayLabel(date)}
+                    {isSim ? `Replay day · ${formatDayLabel(date)}` : formatDayLabel(date)}
                   </h2>
                   <span
                     className={`text-xs font-semibold price-mono ${
@@ -458,7 +584,7 @@ export default function JournalPage() {
                                 </span>
                               </span>
                               <span className="text-[10px] text-gray-600">
-                                {fmtTime(e.fill.time)}
+                                {fmtTime(e.fill.time, marketFor(e))}
                               </span>
                               <span className="text-xs text-gray-500">
                                 SL{' '}
@@ -552,7 +678,7 @@ export default function JournalPage() {
                                     {e.stops.hit_count > 0 && (
                                       <div className="mt-1 text-red-300/80">
                                         Hit ×{e.stops.hit_count}
-                                        {e.stops.hit_at ? ` · ${fmtTime(e.stops.hit_at)}` : ''}
+                                        {e.stops.hit_at ? ` · ${fmtTime(e.stops.hit_at, marketFor(e))}` : ''}
                                       </div>
                                     )}
                                   </div>
@@ -594,7 +720,7 @@ export default function JournalPage() {
                                         {e.exit.price?.toLocaleString() ?? '—'}
                                       </span>
                                       {' · '}
-                                      {fmtTime(e.exit.time)}
+                                      {fmtTime(e.exit.time, marketFor(e))}
                                       {e.pnl.percent != null && (
                                         <span className="ml-2">
                                           vs risk{' '}
@@ -620,7 +746,9 @@ export default function JournalPage() {
                                           <span className="font-semibold text-amber-300">
                                             {String(d.type || 'NOTE')}
                                           </span>
-                                          <span className="text-gray-500">{fmtTime(d.time)}</span>
+                                          <span className="text-gray-500">
+                                            {fmtTime(d.time, marketFor(e))}
+                                          </span>
                                           {d.notes && (
                                             <span className="text-gray-400 w-full">
                                               {String(d.notes)}
@@ -645,11 +773,25 @@ export default function JournalPage() {
         </div>
 
         <p className="text-[11px] text-gray-600 leading-relaxed">
-          Live desk only. After the entry window, levels leave the chart; open books stay in MANAGE
-          until stop, target, AI exit, or lunch flatten. Equity above is reconstructed from your
-          ticket account size and closed-trade P&amp;L — not a live OANDA margin feed.
+          {isSim
+            ? 'Simulation tab reads paper closes from simulation_trades only — never mixes with live fills. Resetting a replay day clears that day’s paper history.'
+            : 'Live desk only. After the entry window, levels leave the chart; open books stay in MANAGE until stop, target, AI exit, or lunch flatten. Equity above is reconstructed from your ticket account size and closed-trade P&L — not a live OANDA margin feed.'}
         </p>
       </div>
     </div>
+  )
+}
+
+export default function JournalPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#0d1117] px-4 py-8 text-sm text-gray-500">
+          Loading order history…
+        </div>
+      }
+    >
+      <JournalPageInner />
+    </Suspense>
   )
 }
