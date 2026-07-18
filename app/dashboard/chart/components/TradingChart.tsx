@@ -525,10 +525,15 @@ export function TradingChart({
       ...c,
       time: c.time as number,
     }))
-    const resolved = resolveDeskLevels(aiRows, barsForFallback, openUnix, sess.tz)
+    // Live morning: no overnight sim bias here — rank by conviction only (BOTH focus)
+    const resolved = resolveDeskLevels(aiRows, barsForFallback, openUnix, sess.tz, 'none')
 
     for (const l of resolved.levels) {
       const isRes = String(l.type).toLowerCase().includes('resist')
+      const side = isRes ? 'SHORT' : 'BUY'
+      const stars = Math.max(1, Math.min(5, Math.round((l.conviction || 5) / 2)))
+      const starLabel = `${'★'.repeat(stars)}${'☆'.repeat(5 - stars)}`
+      const rank = l.rank === 'watch' ? 'WATCH' : 'PRIMARY'
       byPrice.set(l.level, {
         price: l.level,
         type: isRes ? 'resistance' : 'support',
@@ -536,11 +541,14 @@ export function TradingChart({
         conviction: l.conviction,
         reasoning: l.reasoning,
         source: l.source,
-        label: `${l.source === 'ai' ? 'AI' : 'STR'} ${isRes ? 'R' : 'S'} · c${l.conviction ?? '?'} · ${l.level.toLocaleString()}`,
+        label: `${rank} ${side} ${starLabel} · ${l.level.toLocaleString()}`,
       })
     }
 
-    setLevels(Array.from(byPrice.values()).sort((a, b) => b.price - a.price))
+    // Keep playbook order (primary focus first), not price sort
+    setLevels(
+      resolved.levels.map((l) => byPrice.get(l.level)!).filter(Boolean)
+    )
   }, []) // levels only — setLevels is stable
 
   // ── Initialize chart ─────────────────────────────────────────────────────────
@@ -994,6 +1002,7 @@ export function TradingChart({
     levels.forEach(level => {
       const isAi = level.source === 'ai'
       const isRes = level.type === 'resistance' || String(level.type).toLowerCase().includes('resist')
+      const isPrimary = (level.label || '').includes('PRIMARY')
       const baseColor =
         STATUS_COLORS[level.status] ??
         LEVEL_COLORS[level.type] ??
@@ -1008,10 +1017,10 @@ export function TradingChart({
         const line = candleRef.current!.createPriceLine({
           price:             level.price,
           color:             baseColor,
-          lineWidth:         2,
-          lineStyle:         isAi ? LineStyle.Solid : LineStyle.Dashed,
+          lineWidth:         isPrimary ? 2 : 1,
+          lineStyle:         isPrimary ? LineStyle.Solid : (isAi ? LineStyle.Solid : LineStyle.Dashed),
           axisLabelVisible:  true,
-          title:             level.label ?? `${isRes ? 'R' : 'S'} ${level.price.toLocaleString()}`,
+          title:             level.label ?? `${isRes ? 'SHORT' : 'BUY'} ${level.price.toLocaleString()}`,
         })
         levelLinesRef.current.push(line)
       } catch {}
@@ -1544,49 +1553,50 @@ export function TradingChart({
         </button>
       </div>
 
-      {/* ── Clickable level chips — hidden while in a trade (only SL/TP visible) ─ */}
+      {/* ── Morning playbook chips — primary BUY/SHORT first; max ~4 ─ */}
       {showLevels && !hideTradeLevels && !positionOverlay && levels.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 pt-1">
-          <span className="text-[10px] uppercase tracking-wider text-gray-600 self-center mr-1">
-            Click to trade
-          </span>
-          {levels
-            .filter((l) => l.source === 'ai' || l.source === 'structure')
-            .slice(0, 10)
-            .map((l, i) => {
-              const isRes = l.type === 'resistance'
-              return (
-                <button
-                  key={`${l.price}-${i}`}
-                  type="button"
-                  onClick={() =>
-                    onLevelSelect?.(l.price, {
-                      type: String(l.type),
-                      reasoning: l.reasoning,
-                    })
-                  }
-                  className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] border transition-all ${
-                    isRes
-                      ? 'border-red-900/60 bg-red-950/40 text-red-300 hover:border-red-600'
-                      : 'border-emerald-900/60 bg-emerald-950/40 text-emerald-300 hover:border-emerald-600'
-                  }`}
-                  title={l.reasoning ?? l.label}
-                >
-                  <span className="font-semibold uppercase text-[9px] opacity-70">
-                    {isRes ? 'SHORT zone' : 'BUY zone'}
-                  </span>
-                  <span className="price-mono font-bold">{l.price.toLocaleString()}</span>
-                  {l.conviction != null && (
-                    <span className="text-gray-500">c{l.conviction}</span>
-                  )}
-                </button>
-              )
-            })}
-          {levels.filter((l) => l.source === 'ai' || l.source === 'structure').length === 0 && (
-            <span className="text-[11px] text-amber-500/90">
-              No levels yet — run AI Level Finder or wait for 9:15 market-open prep
-            </span>
-          )}
+        <div className="space-y-1.5 pt-1">
+          <p className="text-[10px] text-gray-500">
+            Trade the <span className="text-gray-300 font-semibold">PRIMARY</span> with more ★ —
+            WATCH only if primary fails. Do not bet every level.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {levels
+              .filter((l) => l.source === 'ai' || l.source === 'structure')
+              .slice(0, 4)
+              .map((l, i) => {
+                const isRes = l.type === 'resistance'
+                const stars = Math.max(1, Math.min(5, Math.round((l.conviction || 5) / 2)))
+                const isPrimary = (l.label || '').startsWith('PRIMARY')
+                return (
+                  <button
+                    key={`${l.price}-${i}`}
+                    type="button"
+                    onClick={() =>
+                      onLevelSelect?.(l.price, {
+                        type: String(l.type),
+                        reasoning: l.reasoning,
+                      })
+                    }
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] border transition-all ${
+                      isRes
+                        ? 'border-red-900/60 bg-red-950/40 text-red-300 hover:border-red-600'
+                        : 'border-emerald-900/60 bg-emerald-950/40 text-emerald-300 hover:border-emerald-600'
+                    } ${isPrimary ? 'ring-1 ring-white/20' : 'opacity-80'}`}
+                    title={l.reasoning ?? l.label}
+                  >
+                    <span className="font-bold uppercase text-[9px]">
+                      {isPrimary ? 'PRIMARY' : 'WATCH'} {isRes ? 'SHORT' : 'BUY'}
+                    </span>
+                    <span className="price-mono font-bold">{l.price.toLocaleString()}</span>
+                    <span className="text-amber-300/90 text-[10px]" title={`Conviction ${l.conviction}`}>
+                      {'★'.repeat(stars)}
+                      <span className="text-gray-600">{'☆'.repeat(5 - stars)}</span>
+                    </span>
+                  </button>
+                )
+              })}
+          </div>
         </div>
       )}
     </div>

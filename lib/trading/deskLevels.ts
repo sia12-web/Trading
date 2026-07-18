@@ -15,12 +15,29 @@
 
 import { hourInTz, SESSION_WINDOWS, type SessionName } from '@/lib/chart/sessionVwap'
 
+export type LevelSide = 'BUY' | 'SHORT'
+/** Overnight / regime lean used to pick the morning focus side */
+export type DeskBias = 'bullish' | 'bearish' | 'none'
+
 export interface DeskLevel {
   level: number
   type: string
   conviction: number
   reasoning?: string
   source: 'ai' | 'structure'
+  /** Set by buildDeskPlaybook */
+  side?: LevelSide
+  /** primary = trade first; watch = only if primary fails / late */
+  rank?: 'primary' | 'watch'
+}
+
+export interface DeskPlaybook {
+  focusSide: LevelSide | 'BOTH'
+  focusHint: string
+  primaryBuy: DeskLevel | null
+  primaryShort: DeskLevel | null
+  /** Max 4: 1 primary BUY + 1 primary SHORT + up to 1 watch each */
+  levels: DeskLevel[]
 }
 
 export interface DeskBar {
@@ -39,9 +56,115 @@ export interface DeskBar {
  */
 export const AI_LEVELS_QUERY = {
   days: 1,
-  limit: 12,
-  minConviction: 5,
+  limit: 6,
+  /** Raise floor so weak history levels do not clutter the morning desk */
+  minConviction: 7,
 } as const
+
+export function levelSide(type: string): LevelSide {
+  return String(type).toLowerCase().includes('resist') ? 'SHORT' : 'BUY'
+}
+
+/** Conviction 1–10 → 1–5 stars for UI */
+export function convictionStars(conviction: number): { stars: number; label: string } {
+  const stars = Math.max(1, Math.min(5, Math.round((Number(conviction) || 5) / 2)))
+  return { stars, label: `${'★'.repeat(stars)}${'☆'.repeat(5 - stars)}` }
+}
+
+/**
+ * Morning desk playbook: pick ONE best BUY and ONE best SHORT (by conviction + bias),
+ * plus at most one watch level per side. Do not bet 4–5 levels — trade the primary.
+ */
+export function buildDeskPlaybook(
+  levels: DeskLevel[],
+  bias: DeskBias = 'none'
+): DeskPlaybook {
+  const buys = levels
+    .filter((l) => levelSide(l.type) === 'BUY')
+    .map((l) => ({
+      ...l,
+      side: 'BUY' as const,
+      score: scoreLevel(l, bias, 'BUY'),
+    }))
+    .sort((a, b) => b.score - a.score || b.conviction - a.conviction)
+
+  const shorts = levels
+    .filter((l) => levelSide(l.type) === 'SHORT')
+    .map((l) => ({
+      ...l,
+      side: 'SHORT' as const,
+      score: scoreLevel(l, bias, 'SHORT'),
+    }))
+    .sort((a, b) => b.score - a.score || b.conviction - a.conviction)
+
+  const primaryBuy = buys[0]
+    ? { ...stripScore(buys[0]), side: 'BUY' as const, rank: 'primary' as const }
+    : null
+  const primaryShort = shorts[0]
+    ? { ...stripScore(shorts[0]), side: 'SHORT' as const, rank: 'primary' as const }
+    : null
+  const watchBuy = buys[1]
+    ? { ...stripScore(buys[1]), side: 'BUY' as const, rank: 'watch' as const }
+    : null
+  const watchShort = shorts[1]
+    ? { ...stripScore(shorts[1]), side: 'SHORT' as const, rank: 'watch' as const }
+    : null
+
+  let focusSide: LevelSide | 'BOTH' = 'BOTH'
+  let focusHint =
+    'No overnight lean — pick the higher-star primary that price reaches first.'
+  if (bias === 'bullish') {
+    focusSide = 'BUY'
+    focusHint =
+      'Overnight lean LONG — prioritize the PRIMARY BUY. SHORT is only a watch if the bid fails.'
+  } else if (bias === 'bearish') {
+    focusSide = 'SHORT'
+    focusHint =
+      'Overnight lean SHORT — prioritize the PRIMARY SHORT. BUY is only a watch if the offer fails.'
+  }
+
+  const ordered: DeskLevel[] = []
+  if (focusSide === 'BUY') {
+    if (primaryBuy) ordered.push(primaryBuy)
+    if (primaryShort) ordered.push(primaryShort)
+  } else if (focusSide === 'SHORT') {
+    if (primaryShort) ordered.push(primaryShort)
+    if (primaryBuy) ordered.push(primaryBuy)
+  } else {
+    // Higher conviction primary first
+    const primaries = [primaryBuy, primaryShort].filter(Boolean) as DeskLevel[]
+    primaries.sort((a, b) => (b.conviction || 0) - (a.conviction || 0))
+    ordered.push(...primaries)
+  }
+  if (watchBuy) ordered.push(watchBuy)
+  if (watchShort) ordered.push(watchShort)
+
+  return {
+    focusSide,
+    focusHint,
+    primaryBuy,
+    primaryShort,
+    levels: ordered.slice(0, 4),
+  }
+}
+
+function scoreLevel(l: DeskLevel, bias: DeskBias, side: LevelSide): number {
+  let score = (Number(l.conviction) || 5) * 10
+  if (bias === 'bullish' && side === 'BUY') score += 20
+  if (bias === 'bearish' && side === 'SHORT') score += 20
+  if (bias === 'bullish' && side === 'SHORT') score -= 8
+  if (bias === 'bearish' && side === 'BUY') score -= 8
+  const why = (l.reasoning || '').toLowerCase()
+  if (why.includes('london') || why.includes('asia')) score += 8
+  if (l.source === 'ai') score += 4
+  if (l.rank === 'primary') score += 2
+  return score
+}
+
+function stripScore<T extends DeskLevel & { score?: number }>(l: T): DeskLevel {
+  const { score: _s, ...rest } = l
+  return rest
+}
 
 /**
  * A level is a ZONE, not a line. Entry executes at the level price (the
@@ -386,15 +509,15 @@ export function structureLevelsFromCandles(
     })
   }
 
-  // Cap to strongest 2R + 2S from bait sweeps (avoid chart clutter)
+  // Cap bait sweeps to strongest 1R + 1S — playbook may keep 1 watch from impulse
   const resists = levels
     .filter((l) => l.type === 'resistance')
     .sort((a, b) => b.conviction - a.conviction || a.level - b.level)
-    .slice(0, 2)
+    .slice(0, 1)
   const supports = levels
     .filter((l) => l.type === 'support')
     .sort((a, b) => b.conviction - a.conviction || b.level - a.level)
-    .slice(0, 2)
+    .slice(0, 1)
   const trimmed = [...resists, ...supports]
   used.length = 0
   for (const l of trimmed) used.push(l.level)
@@ -505,26 +628,27 @@ export function deObviousLevels(
 
 /**
  * Shared resolution: AI when available (de-obvioused), else structure sweep zones.
- * Final pass drops anything still glued to bait after nudge (wrong type / edge case).
+ * Final pass ranks into a morning playbook (1 primary BUY + 1 primary SHORT).
  */
 export function resolveDeskLevels(
   aiRows: unknown[],
   candles: DeskBar[],
   openUnix: number,
-  timeZone: string = 'America/New_York'
-): { levels: DeskLevel[]; source: 'ai' | 'structure' } {
+  timeZone: string = 'America/New_York',
+  bias: DeskBias = 'none'
+): { levels: DeskLevel[]; source: 'ai' | 'structure'; playbook: DeskPlaybook } {
   const ai = mapAiLevels(aiRows)
+  let source: 'ai' | 'structure' = 'structure'
+  let raw: DeskLevel[]
   if (ai.length > 0) {
     const nudged = deObviousLevels(ai, candles, openUnix, timeZone)
-    return {
-      levels: dropResidualBait(nudged, candles, openUnix, timeZone),
-      source: 'ai',
-    }
+    raw = dropResidualBait(nudged, candles, openUnix, timeZone)
+    source = 'ai'
+  } else {
+    raw = structureLevelsFromCandles(candles, openUnix, timeZone)
   }
-  return {
-    levels: structureLevelsFromCandles(candles, openUnix, timeZone),
-    source: 'structure',
-  }
+  const playbook = buildDeskPlaybook(raw, bias)
+  return { levels: playbook.levels, source, playbook }
 }
 
 /** Remove levels that still sit on a bait extreme after de-obviousing. */

@@ -43,7 +43,9 @@ import {
   simSuggestedDirection,
 } from '@/lib/trading/simOvernightBias'
 import {
+  convictionStars,
   resolveDeskLevels,
+  type DeskPlaybook,
   zoneStopPrice,
   formatZone,
 } from '@/lib/trading/deskLevels'
@@ -66,6 +68,8 @@ interface AiLevel {
   conviction: number
   reasoning?: string
   source?: 'ai' | 'structure'
+  rank?: 'primary' | 'watch'
+  side?: 'BUY' | 'SHORT'
 }
 
 /** After SL/TP, flip or reinforce the traded level so the next entry set is updated. */
@@ -257,6 +261,7 @@ function SimulationDeskInner() {
   const [allCandles, setAllCandles] = useState<Candle[]>([])
   const [levels, setLevels] = useState<AiLevel[]>([])
   const [levelsSource, setLevelsSource] = useState<'ai' | 'structure'>('ai')
+  const [playbook, setPlaybook] = useState<DeskPlaybook | null>(null)
   const [simNow, setSimNow] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [pending, setPending] = useState<PendingOrder | null>(null)
@@ -460,10 +465,18 @@ function SimulationDeskInner() {
 
         if (cancelled) return
 
-        // Dated sim: structure from that morning's candles only (not today's live AI history)
-        const resolved = resolveDeskLevels([], mapped, startOpen, sess.tz)
-        setLevels(resolved.levels)
+        // Dated sim: structure + overnight lean → ranked PRIMARY BUY/SHORT playbook
+        const biasProbe = computeSimOvernightBias(mapped, startOpen, sess.tz)
+        const bias =
+          biasProbe?.bias === 'bullish'
+            ? 'bullish'
+            : biasProbe?.bias === 'bearish'
+              ? 'bearish'
+              : 'none'
+        const resolved = resolveDeskLevels([], mapped, startOpen, sess.tz, bias)
+        setLevels(resolved.levels as AiLevel[])
         setLevelsSource(resolved.source)
+        setPlaybook(resolved.playbook)
 
         const openLabel =
           instrument === 'NIKKEI' ? '9:00 AM JST' : '9:30 AM ET'
@@ -919,17 +932,20 @@ function SimulationDeskInner() {
 
     if (position || pending) return
 
-    for (const lv of levels.slice(0, 16)) {
+    for (const lv of levels.slice(0, 4)) {
       const isRes = String(lv.type).toLowerCase().includes('resist')
+      const side = isRes ? 'SHORT' : 'BUY'
+      const isPrimary = lv.rank !== 'watch'
+      const { label: stars } = convictionStars(lv.conviction)
       try {
         levelLinesRef.current.push(
           seriesRef.current.createPriceLine({
             price: lv.level,
             color: isRes ? '#f87171' : '#34d399',
-            lineWidth: 2,
-            lineStyle: LineStyle.Solid,
+            lineWidth: isPrimary ? 2 : 1,
+            lineStyle: isPrimary ? LineStyle.Solid : LineStyle.Dashed,
             axisLabelVisible: true,
-            title: `${isRes ? 'SHORT' : 'BUY'} ${lv.level.toLocaleString()}`,
+            title: `${isPrimary ? 'PRIMARY' : 'WATCH'} ${side} ${stars}`,
           })
         )
       } catch {
@@ -1645,10 +1661,10 @@ function SimulationDeskInner() {
 
       {/* Levels drawer — hidden while in a trade (SL/TP only on chart) */}
       {levelsOpen && !position && (
-        <div className="absolute bottom-3 right-3 top-14 z-20 flex w-60 flex-col overflow-hidden rounded-xl border border-white/10 bg-[#0d1117]/92 shadow-2xl backdrop-blur-md">
+        <div className="absolute bottom-3 right-3 top-14 z-20 flex w-64 flex-col overflow-hidden rounded-xl border border-white/10 bg-[#0d1117]/92 shadow-2xl backdrop-blur-md">
           <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-              {levelsSource === 'ai' ? 'AI Levels' : 'Session Levels'}
+              Morning playbook
             </span>
             <button
               type="button"
@@ -1658,6 +1674,17 @@ function SimulationDeskInner() {
               ✕
             </button>
           </div>
+          {playbook && (
+            <div className="border-b border-white/10 px-3 py-2 space-y-1">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-violet-300">
+                Focus:{' '}
+                {playbook.focusSide === 'BOTH'
+                  ? 'Best ★ first'
+                  : playbook.focusSide}
+              </p>
+              <p className="text-[10px] leading-snug text-gray-400">{playbook.focusHint}</p>
+            </div>
+          )}
           <div className="flex-1 space-y-1.5 overflow-y-auto p-2">
             {levels.length === 0 && (
               <p className="p-2 text-[11px] text-amber-500/90">No levels for this session.</p>
@@ -1665,11 +1692,13 @@ function SimulationDeskInner() {
             {levels.map((l, i) => {
               const isRes = String(l.type).toLowerCase().includes('resist')
               const whyOpen = reasoningOpen === i
+              const isPrimary = l.rank !== 'watch'
+              const { label: stars } = convictionStars(l.conviction)
               const why =
                 l.reasoning?.trim() ||
                 (isRes
-                  ? 'Resistance zone — prefer shorts on touch in this window.'
-                  : 'Support zone — prefer buys on touch in this window.')
+                  ? 'SHORT zone — sell liquidity above bait highs.'
+                  : 'BUY zone — buy liquidity below bait lows.')
               return (
                 <div
                   key={`${l.level}-${i}`}
@@ -1677,7 +1706,7 @@ function SimulationDeskInner() {
                     isRes
                       ? 'border-red-900/50 bg-red-950/40 text-red-300'
                       : 'border-emerald-900/50 bg-emerald-950/40 text-emerald-300'
-                  }`}
+                  } ${isPrimary ? 'ring-1 ring-white/15' : 'opacity-75'}`}
                 >
                   <button
                     type="button"
@@ -1685,17 +1714,19 @@ function SimulationDeskInner() {
                     onClick={() => setTicketLevel(l)}
                     className="w-full px-2.5 py-2 text-left transition-all disabled:opacity-40 hover:brightness-110"
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9px] font-semibold uppercase opacity-70">
-                        {isRes ? 'SHORT' : 'BUY'}
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[9px] font-bold uppercase">
+                        {isPrimary ? 'PRIMARY' : 'WATCH'} {isRes ? 'SHORT' : 'BUY'}
                       </span>
-                      <span className="text-gray-500">c{l.conviction}</span>
+                      <span className="text-amber-300/90 text-[10px]" title={`Conviction ${l.conviction}/10`}>
+                        {stars}
+                      </span>
                     </div>
                     <div className="price-mono mt-0.5 text-sm font-bold text-white">
                       {l.level.toLocaleString()}
                     </div>
                     <div className="mt-0.5 text-[9px] text-gray-500">
-                      zone {formatZone(l.level)}
+                      zone {formatZone(l.level)} · {levelsSource}
                     </div>
                   </button>
                   <div className="border-t border-white/5 px-2 pb-2">
