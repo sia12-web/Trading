@@ -13,7 +13,7 @@
  * Next-day memory: only yesterday's range + overnight matter.
  */
 
-import { hourInTz, SESSION_WINDOWS, type SessionName } from '@/lib/chart/sessionVwap'
+import { nyDeskSessionAt, type SessionName } from '@/lib/chart/sessionVwap'
 
 export type LevelSide = 'BUY' | 'SHORT'
 /** Overnight / regime lean used to pick the morning focus side */
@@ -303,15 +303,7 @@ function recentSweepWickDepth(bars: DeskBar[]): number {
 
 /** Which desk session a bar belongs to (NY clock — same as chart boxes). */
 function sessionOfBar(unix: number): SessionName | null {
-  const h = hourInTz(unix, SESSION_WINDOWS.Asia.tz)
-  const asia = SESSION_WINDOWS.Asia
-  const lon = SESSION_WINDOWS.London
-  const ny = SESSION_WINDOWS['New York']
-  // Asia crosses midnight: 18 → 24 and 0 → 3
-  if (h >= asia.start || h < asia.end) return 'Asia'
-  if (h >= lon.start && h < lon.end) return 'London'
-  if (h >= ny.start && h < ny.end) return 'New York'
-  return null
+  return nyDeskSessionAt(unix)
 }
 
 export interface BaitExtreme {

@@ -8,19 +8,19 @@ import type { UTCTimestamp } from 'lightweight-charts'
 
 export const SESSION_STYLES = {
   Asia: {
-    color: 'rgba(56, 189, 248, 0.18)',
+    color: 'rgba(56, 189, 248, 0.22)',
     zIndex: 1,
     line: '#38bdf8',
     short: 'Asia',
   },
   London: {
-    color: 'rgba(250, 204, 21, 0.16)',
+    color: 'rgba(250, 204, 21, 0.20)',
     zIndex: 2,
     line: '#facc15',
     short: 'Lon',
   },
   'New York': {
-    color: 'rgba(74, 222, 128, 0.16)',
+    color: 'rgba(74, 222, 128, 0.20)',
     zIndex: 3,
     line: '#4ade80',
     short: 'NY',
@@ -30,15 +30,31 @@ export const SESSION_STYLES = {
 export type SessionName = keyof typeof SESSION_STYLES
 
 /**
- * Desk session windows in America/New_York (works with Yahoo RTH + overnight gaps).
- * Asia = overnight: prior 18:00 → 03:00 into the cash day, AND day 18:00 → next 03:00
- * after the cash close (live post-NY bars must still get the Asia highlight).
+ * Desk session windows in America/New_York — contiguous, no dead zone.
+ * Asia starts at cash close (16:00) so post-NY bars are never uncolored
+ * (old 18:00 start left a 16:00–18:00 gap that looked like “broken extension”).
  */
 export const SESSION_WINDOWS = {
-  Asia: { tz: 'America/New_York', start: 18, end: 3 }, // 18:00 → 03:00 (crosses midnight)
+  Asia: { tz: 'America/New_York', start: 16, end: 3 }, // 16:00 → 03:00 (crosses midnight)
   London: { tz: 'America/New_York', start: 3, end: 9.5 }, // 03:00 → 09:30
   'New York': { tz: 'America/New_York', start: 9.5, end: 16 }, // 09:30 → 16:00
 } as const
+
+/** Classify a bar into Asia / London / NY — every clock hour maps to exactly one session. */
+export function nyDeskSessionAt(unix: number): SessionName {
+  const h = hourInTz(unix, 'America/New_York')
+  if (h >= SESSION_WINDOWS.Asia.start || h < SESSION_WINDOWS.Asia.end) return 'Asia'
+  if (h < SESSION_WINDOWS.London.end) return 'London'
+  return 'New York'
+}
+
+/** Tokyo desk: overnight → morning cash → afternoon (labels reuse Asia/London/NY colors). */
+export function tokyoDeskSessionAt(unix: number): SessionName {
+  const h = hourInTz(unix, 'Asia/Tokyo')
+  if (h >= 15 || h < 9) return 'Asia'
+  if (h < 11.5) return 'London'
+  return 'New York'
+}
 
 export interface SessionHighlightRect {
   name: SessionName
@@ -293,7 +309,8 @@ export type SessionHighlightSpan = {
 const DESK_BAR_SECONDS = 300
 
 /**
- * Expensive once: find session windows that have bars (Intl / edge solving).
+ * Expensive once: paint contiguous session columns from every bar’s clock.
+ * Walks bars (not calendar windows) so post-cash / overnight / tip never go uncolored.
  * Call again only when candle tip / as-of clock changes — not on every pan frame.
  */
 export function computeSessionHighlightSpans(args: {
@@ -311,133 +328,60 @@ export function computeSessionHighlightSpans(args: {
       ? args.asOfUnix
       : Math.floor(Date.now() / 1000)
 
-  const bars = candles.filter((c) => c.time <= now)
+  const bars = candles
+    .filter((c) => c.time <= now && Number.isFinite(c.high) && Number.isFinite(c.low) && c.high >= c.low)
+    .sort((a, b) => a.time - b.time)
   if (bars.length === 0) return { spans: [], candleTimes: [] }
 
   const candleTimes = bars.map((c) => c.time)
-  const firstBarT = candleTimes[0]!
-  const lastBarT = candleTimes[candleTimes.length - 1]!
   const isTokyo = args.instrument === 'NIKKEI'
-  const clockTz = isTokyo ? 'Asia/Tokyo' : 'America/New_York'
-
-  // One formatter for the whole pass — was recreated per bar and made pan laggy
-  const dayFmt = new Intl.DateTimeFormat('en-CA', {
-    timeZone: clockTz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  })
-  const dayKeys = new Set<string>()
-  for (const c of bars) {
-    dayKeys.add(dayFmt.format(new Date(c.time * 1000)))
-  }
+  const sessionAt = isTokyo ? tokyoDeskSessionAt : nyDeskSessionAt
 
   const spans: SessionHighlightSpan[] = []
-  const seen = new Set<string>()
+  let runName: SessionName | null = null
+  let runStart = 0
+  let runEnd = 0
+  let runHigh = -Infinity
+  let runLow = Infinity
 
-  const pushSpan = (name: SessionName, startT: number, endT: number) => {
-    if (endT <= firstBarT || startT >= lastBarT + barSec) return
-    // Clip to "as of" so live doesn't paint into the future
-    const clipEnd = Math.min(endT, now)
-    if (clipEnd <= startT) return
-
-    let high = -Infinity
-    let low = Infinity
-    let count = 0
-    // Strict: only bars whose OPEN is inside [startT, clipEnd)
-    for (const c of bars) {
-      if (c.time < startT || c.time >= clipEnd) continue
-      if (!(c.high >= c.low) || !Number.isFinite(c.high) || !Number.isFinite(c.low)) continue
-      if (c.high > high) high = c.high
-      if (c.low < low) low = c.low
-      count++
-    }
-    if (count < 1 || !Number.isFinite(high) || !Number.isFinite(low) || high < low) {
-      return
-    }
-
-    // Clock-aligned column (not first/last bar), clipped to visible data
-    const colStart = Math.max(startT, firstBarT)
-    const colEnd = Math.min(clipEnd, lastBarT + barSec)
-    if (colEnd <= colStart) return
-
-    const key = `${name}:${Math.round(colStart)}:${Math.round(colEnd)}`
-    if (seen.has(key)) return
-    seen.add(key)
+  const flush = () => {
+    if (runName == null || !(runHigh >= runLow) || runEnd <= runStart) return
     spans.push({
-      name,
-      startT: colStart,
-      endT: colEnd,
-      high,
-      low,
+      name: runName,
+      startT: runStart,
+      endT: runEnd,
+      high: runHigh,
+      low: runLow,
     })
   }
 
-  for (const dayStr of Array.from(dayKeys).sort()) {
-    const [y, m, d] = dayStr.split('-').map(Number)
-    const dayAnchor = Math.floor(Date.UTC(y!, m! - 1, d!, 12, 0, 0) / 1000)
-    const dow = new Date(`${dayStr}T12:00:00Z`).getUTCDay()
-    const isCashDay = dow !== 0 && dow !== 6
-
-    if (isTokyo) {
-      if (!isCashDay) continue
-      const overnightStart = sessionEdgeUnix(dayAnchor - 86400, 15, clockTz)
-      const cashOpen = sessionEdgeUnix(dayAnchor, 9, clockTz)
-      const lunch = sessionEdgeUnix(dayAnchor, 11.5, clockTz)
-      const close = sessionEdgeUnix(dayAnchor, 15, clockTz)
-      pushSpan('Asia', overnightStart, cashOpen)
-      pushSpan('London', cashOpen, lunch)
-      pushSpan('New York', lunch, close)
+  for (const c of bars) {
+    const name = sessionAt(c.time)
+    const barEnd = Math.min(c.time + barSec, now + barSec)
+    if (runName === null) {
+      runName = name
+      runStart = c.time
+      runEnd = barEnd
+      runHigh = c.high
+      runLow = c.low
       continue
     }
-
-    if (isCashDay) {
-      const asiaInStart = sessionEdgeUnix(
-        dayAnchor - 86400,
-        SESSION_WINDOWS.Asia.start,
-        'America/New_York'
-      )
-      const asiaInEnd = sessionEdgeUnix(
-        dayAnchor,
-        SESSION_WINDOWS.Asia.end,
-        'America/New_York'
-      )
-      pushSpan('Asia', asiaInStart, asiaInEnd)
+    // New session, or a large time hole (weekend / feed gap) — start a fresh column
+    const gapSec = c.time - (runEnd - barSec)
+    if (name !== runName || gapSec > barSec * 3) {
+      flush()
+      runName = name
+      runStart = c.time
+      runEnd = barEnd
+      runHigh = c.high
+      runLow = c.low
+      continue
     }
-
-    // Overnight after cash + weekend evenings (Sat was missing → tip stayed NY-green)
-    if (isCashDay || dow === 0 || dow === 6) {
-      const asiaOutStart = sessionEdgeUnix(
-        dayAnchor,
-        SESSION_WINDOWS.Asia.start,
-        'America/New_York'
-      )
-      const asiaOutEnd = sessionEdgeUnix(
-        dayAnchor + 86400,
-        SESSION_WINDOWS.Asia.end,
-        'America/New_York'
-      )
-      pushSpan('Asia', asiaOutStart, asiaOutEnd)
-    }
-
-    if (!isCashDay) continue
-
-    const lonStart = sessionEdgeUnix(dayAnchor, SESSION_WINDOWS.London.start, 'America/New_York')
-    const lonEnd = sessionEdgeUnix(dayAnchor, SESSION_WINDOWS.London.end, 'America/New_York')
-    pushSpan('London', lonStart, lonEnd)
-
-    const nyStart = sessionEdgeUnix(
-      dayAnchor,
-      SESSION_WINDOWS['New York'].start,
-      'America/New_York'
-    )
-    const nyEnd = sessionEdgeUnix(
-      dayAnchor,
-      SESSION_WINDOWS['New York'].end,
-      'America/New_York'
-    )
-    pushSpan('New York', nyStart, nyEnd)
+    runEnd = Math.max(runEnd, barEnd)
+    if (c.high > runHigh) runHigh = c.high
+    if (c.low < runLow) runLow = c.low
   }
+  flush()
 
   return { spans, candleTimes }
 }
@@ -628,7 +572,7 @@ export type DeskClock = {
 export const NY_DESK_CLOCK: DeskClock = {
   timeZone: 'America/New_York',
   cashOpenHour: 9.5,
-  overnightStartHour: 18,
+  overnightStartHour: 16, // cash close → Asia continuum (matches SESSION_WINDOWS)
   openLabel: 'NY 9:30',
 }
 
