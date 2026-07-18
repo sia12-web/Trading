@@ -3,8 +3,9 @@
  *
  * LIVE only:
  *   Morning bars: NY 09:30–11:30 ET / Tokyo 09:00–11:30 JST
- *   After lunch: live chart freezes. Afternoon review updates memory
- *   in the background — never shown as a tradable live session.
+ *   Lunch → cash close: psychology freeze (tip held; today's afternoon hidden).
+ *   After cash close: afternoon + overnight continuum until next morning desk.
+ *   Trading stays morning-only; freeze never carries into the next day.
  *
  * SIMULATION: morning session only (open → lunch). No afternoon feature,
  * no background memory pass — use resolveSimMorningGate(), not the live gate.
@@ -151,9 +152,36 @@ export interface SessionGateResult {
   canClockIn: boolean
 }
 
+function dateKeyInTz(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
+
 /**
- * Live bars allowed only during that instrument's morning session
- * (open → lunch). After lunch: freeze — afternoon memory updates are background-only.
+ * Psychology freeze: lunch → cash close on a weekday.
+ * Tip stays at lunch; afternoon bars for *today* are hidden until cash close.
+ * Past days always keep their full afternoon — and after close the chart continues.
+ */
+export function isLunchFreezeActive(
+  instrument: string | null | undefined,
+  now: Date = new Date()
+): boolean {
+  if (!isDeskInstrument(instrument)) return false
+  const s = sessionFor(instrument)
+  if (!isWeekdayInTz(now, s.tz)) return false
+  const t = parseTimeToSeconds(timeInTz(now, s.tz))
+  const lunch = parseTimeToSeconds(s.lunchClose)
+  const close = parseTimeToSeconds(s.marketClose)
+  return t >= lunch && t < close
+}
+
+/**
+ * Trading live bars: cash open → lunch only.
+ * Next trading day this opens again automatically (not stuck from yesterday's freeze).
  */
 export function isLiveBarsAllowed(
   instrument: string | null | undefined,
@@ -181,11 +209,45 @@ export function isLiveBarsAllowed(
   if (t >= lunch) {
     return {
       open: false,
-      reason:
-        'Morning session closed — live bars frozen at lunch. Afternoon review runs in the background.',
+      reason: isLunchFreezeActive(instrument, now)
+        ? 'Lunch freeze — chart tip held until cash close, then afternoon + overnight resume.'
+        : 'Morning entry session over — chart continues after cash close (read-only).',
     }
   }
   return { open: true, reason: 'Morning session live' }
+}
+
+/**
+ * Chart may refresh candles/quotes for display.
+ * Frozen only during lunch→close; after cash close + overnight + pre-open history continue
+ * until the next morning desk. Trading permissions stay separate (isLiveBarsAllowed).
+ */
+export function isChartStreamAllowed(
+  instrument: string | null | undefined,
+  now: Date = new Date()
+): { open: boolean; reason: string } {
+  if (!isDeskInstrument(instrument)) {
+    return { open: false, reason: 'Unknown instrument' }
+  }
+  const s = sessionFor(instrument)
+  if (!isWeekdayInTz(now, s.tz)) {
+    return { open: false, reason: `Weekend — ${deskMarketFor(instrument)} session closed` }
+  }
+  if (isLunchFreezeActive(instrument, now)) {
+    return {
+      open: false,
+      reason:
+        deskMarketFor(instrument) === 'TOKYO'
+          ? 'Lunch freeze (11:30–15:00 JST) — afternoon bars unlock at Tokyo cash close.'
+          : 'Lunch freeze (11:30–16:00 ET) — afternoon bars unlock at NY cash close.',
+    }
+  }
+  const t = parseTimeToSeconds(timeInTz(now, s.tz))
+  const lunch = parseTimeToSeconds(s.lunchClose)
+  if (t < lunch) {
+    return { open: true, reason: 'Chart streaming (morning / pre-open history)' }
+  }
+  return { open: true, reason: 'Chart streaming (post-close continuum)' }
 }
 
 /**
@@ -551,30 +613,59 @@ export function isLiveDeskInstrument(instrument: string): instrument is DeskInst
   return isDeskInstrument(instrument)
 }
 
-/**
- * Drop afternoon cash-session bars from a candle series.
- * Keeps overnight / pre-open + morning session; removes lunch→close for that market.
- * Caches timezone formatting per minute so large OANDA payloads stay cheap.
- */
-export function clipAfternoonBars<T extends { time: number }>(
+function filterAfternoonBars<T extends { time: number }>(
   candles: T[],
-  instrument: string | null | undefined
+  instrument: string | null | undefined,
+  mode: 'today-freeze' | 'all-days',
+  now: Date = new Date()
 ): T[] {
   if (candles.length === 0) return candles
+  if (!isDeskInstrument(instrument)) return candles
+  if (mode === 'today-freeze' && !isLunchFreezeActive(instrument, now)) return candles
+
   const s = sessionFor(instrument)
   const lunch = parseTimeToSeconds(s.lunchClose)
   const close = parseTimeToSeconds(s.marketClose)
+  const todayKey = dateKeyInTz(now, s.tz)
   const secCache = new Map<number, number>()
+  const dayCache = new Map<number, string>()
 
   return candles.filter((c) => {
     const minuteKey = Math.floor(c.time / 60)
+    let day = dayCache.get(minuteKey)
+    if (day == null) {
+      day = dateKeyInTz(new Date(c.time * 1000), s.tz)
+      dayCache.set(minuteKey, day)
+    }
+    if (mode === 'today-freeze' && day !== todayKey) return true
+
     let sec = secCache.get(minuteKey)
     if (sec == null) {
       sec = parseTimeToSeconds(timeInTz(new Date(c.time * 1000), s.tz))
       secCache.set(minuteKey, sec)
     }
-    // Afternoon RTH only — overnight and morning stay
     if (sec >= lunch && sec < close) return false
     return true
   })
+}
+
+/**
+ * Live psychology clip: while lunch freeze is active, hide *today's* afternoon
+ * only. Past days keep full afternoon. After cash close / weekend / next morning:
+ * no clip — continuum through overnight into the next session.
+ */
+export function clipAfternoonBars<T extends { time: number }>(
+  candles: T[],
+  instrument: string | null | undefined,
+  now: Date = new Date()
+): T[] {
+  return filterAfternoonBars(candles, instrument, 'today-freeze', now)
+}
+
+/** Simulation / dated morning window — strip lunch→close on every day in the series. */
+export function clipAllAfternoonBars<T extends { time: number }>(
+  candles: T[],
+  instrument: string | null | undefined
+): T[] {
+  return filterAfternoonBars(candles, instrument, 'all-days')
 }

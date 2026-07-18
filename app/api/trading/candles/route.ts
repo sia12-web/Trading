@@ -1,15 +1,20 @@
 /**
  * GET /api/trading/candles?instrument=DOW|NASDAQ|NIKKEI&timeframe=5m&days=5
  * All desk indices: OANDA first (incl. JP225 for NIKKEI), Yahoo fallback.
- * Morning session only (open→lunch). Afternoon bars are never returned —
- * live freezes at lunch; simulation has no afternoon session.
+ * Live: lunch→cash close psychology freeze (today's afternoon hidden until close),
+ * then full afternoon + overnight continuum. Sim/dated: morning window only.
  */
 
 import { NextResponse } from 'next/server'
 import { getYahooCandles, getYahooCandlesRange } from '@/lib/yahoo/candles'
 import { getOandaCandles, getOandaCandlesRange } from '@/lib/oanda/candles'
 import { getYahooQuote } from '@/lib/yahoo/quote'
-import { clipAfternoonBars, isLiveDeskInstrument, sessionFor } from '@/lib/trading/sessionGate'
+import {
+  clipAfternoonBars,
+  clipAllAfternoonBars,
+  isLiveDeskInstrument,
+  sessionFor,
+} from '@/lib/trading/sessionGate'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import type { Instrument } from '@/types/price-feed'
 import { logger } from '@/lib/utils/logger'
@@ -78,9 +83,9 @@ export async function GET(request: Request) {
         candles = yahoo.candles
         source = 'yahoo'
       }
-      // Morning + overnight only (no afternoon on any day in the window)
+      // Sim: strip afternoon on every day (morning replay only)
       if (candles?.length) {
-        candles = clipAfternoonBars(candles, instrument)
+        candles = clipAllAfternoonBars(candles, instrument)
       }
     } else {
       // Live desk: OANDA (US30 / NAS100 / JP225) then Yahoo — same path for all three
@@ -96,6 +101,7 @@ export async function GET(request: Request) {
         candles = yahoo.candles
         source = 'yahoo'
       }
+      // Live psychology: clip today's afternoon only while lunch freeze is active
       if (candles?.length) {
         candles = clipAfternoonBars(candles, instrument)
       }

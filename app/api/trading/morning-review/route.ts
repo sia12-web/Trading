@@ -37,6 +37,14 @@ function localDateInTz(timeZone: string): string {
   }).format(new Date())
 }
 
+function isSimJournalRequest(request: NextRequest): boolean {
+  const simFlag =
+    request.nextUrl.searchParams.get('sim') ||
+    request.nextUrl.searchParams.get('tier') ||
+    request.nextUrl.searchParams.get('mode')
+  return !!simFlag && /^(1|true|sim|simulation)$/i.test(simFlag)
+}
+
 async function resolveInstrument(
   request: NextRequest,
   supabase: Awaited<ReturnType<typeof createClient>>
@@ -75,6 +83,13 @@ async function resolveInstrument(
 
 async function runMorningReview(request: NextRequest) {
   try {
+    if (isSimJournalRequest(request)) {
+      return NextResponse.json(
+        { error: 'Morning journal is live desk only — simulation has no journal' },
+        { status: 403 }
+      )
+    }
+
     const { assertCronOrDeskUser, resolveDeskUser } = await import('@/lib/utils/devAuth')
     if (!(await assertCronOrDeskUser(request))) {
       logger.warn('morning-review.unauthorized')

@@ -1,6 +1,7 @@
 /**
  * GET /api/trading/journal
- * Past trades journal — fills, exits, P&L, stop counts, entry/exit reasons.
+ * Live desk trades only — fills, exits, P&L, stop counts, entry/exit reasons.
+ * Simulation never writes to trades_journal; this API has no sim path.
  */
 
 import { NextRequest, NextResponse } from 'next/server'

@@ -8,7 +8,8 @@ import { formatDateDisplay } from '@/lib/utils/dateUtils'
 import type { CreateReplaySessionRequest } from '@/types/trading'
 
 const INSTRUMENTS: Array<'DOW' | 'NASDAQ' | 'NIKKEI'> = ['DOW', 'NASDAQ', 'NIKKEI']
-const PLAYBACK_SPEEDS = [1, 2, 4, 16] as const
+const PLAYBACK_SPEEDS = [0.5, 1, 2, 4, 16] as const
+type PlaybackSpeed = (typeof PLAYBACK_SPEEDS)[number]
 
 export default function SimulationPage() {
   const router = useRouter()
@@ -20,7 +21,7 @@ export default function SimulationPage() {
     loadFromLocalStorage,
   } = useReplayModeStore()
 
-  const [playbackSpeed, setPlaybackSpeed] = useState<1 | 2 | 4 | 16>(1)
+  const [playbackSpeed, setPlaybackSpeed] = useState<PlaybackSpeed>(1)
   const [isCreatingSession, setIsCreatingSession] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(
     null
@@ -91,8 +92,8 @@ export default function SimulationPage() {
       <div>
         <h1 className="text-2xl font-bold text-white">Simulation</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Replay a past morning session only (open → lunch). No afternoon session — that exists on
-          Live Trading for background memory.
+          Replay a past morning session only (open → lunch). Paper trades stay on this desk — they
+          are never written to the live Trade Journal. Morning/EOD journaling is live clock-in only.
         </p>
       </div>
 
@@ -143,7 +144,7 @@ export default function SimulationPage() {
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
               Playback speed
             </h3>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-5 gap-2">
               {PLAYBACK_SPEEDS.map((s) => (
                 <button
                   key={s}

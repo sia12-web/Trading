@@ -232,7 +232,10 @@ function SimulationDeskInner() {
         ? 'NIKKEI'
         : 'DOW'
   const replayDate = search.get('date') || ''
-  const initialSpeed = Math.min(16, Math.max(1, parseInt(search.get('speed') || '1', 10) || 1))
+  const parsedSpeed = parseFloat(search.get('speed') || '1')
+  const initialSpeed = Number.isFinite(parsedSpeed)
+    ? Math.min(16, Math.max(0.5, parsedSpeed))
+    : 1
   const sess = sessionFor(instrument)
   const toUnix = instrument === 'NIKKEI' ? tokyoDateTimeToUnix : nyDateTimeToUnix
   const [openH, openM] = sess.marketOpen.split(':').map(Number)
@@ -888,7 +891,7 @@ function SimulationDeskInner() {
     enableFollowLive()
   }, [playing, enableFollowLive])
 
-  // Trade levels — hidden while in a position (only Entry / SL / TP show)
+  // Trade levels — hidden while working or in a position (only Entry / SL / TP show)
   useEffect(() => {
     if (!seriesRef.current || !chartReady) return
     levelLinesRef.current.forEach((l) => {
@@ -900,7 +903,7 @@ function SimulationDeskInner() {
     })
     levelLinesRef.current = []
 
-    if (position) return
+    if (position || pending) return
 
     for (const lv of levels.slice(0, 16)) {
       const isRes = String(lv.type).toLowerCase().includes('resist')
@@ -919,10 +922,11 @@ function SimulationDeskInner() {
         /* ignore */
       }
     }
-  }, [levels, chartReady, position])
+  }, [levels, chartReady, position, pending])
 
+  // Pending working limit + open position — always visible on the sim chart
   useEffect(() => {
-    if (!seriesRef.current) return
+    if (!seriesRef.current || !chartReady) return
     posLinesRef.current.forEach((l) => {
       try {
         seriesRef.current?.removePriceLine(l)
@@ -931,20 +935,56 @@ function SimulationDeskInner() {
       }
     })
     posLinesRef.current = []
-    if (!position) return
 
-    for (const s of [
-      { price: position.entry, color: '#3b82f6', title: 'Entry' },
-      { price: position.stopLoss, color: '#ef4444', title: 'SL' },
-      { price: position.target, color: '#22c55e', title: 'TP' },
-    ]) {
+    const specs: Array<{
+      price: number
+      color: string
+      title: string
+      style: LineStyle
+    }> = []
+
+    if (position) {
+      specs.push(
+        {
+          price: position.entry,
+          color: '#3b82f6',
+          title: `Entry ${position.direction}`,
+          style: LineStyle.Solid,
+        },
+        { price: position.stopLoss, color: '#ef4444', title: 'Stop Loss', style: LineStyle.Dashed },
+        { price: position.target, color: '#22c55e', title: 'Target', style: LineStyle.Dashed }
+      )
+    } else if (pending) {
+      specs.push(
+        {
+          price: pending.level,
+          color: '#38bdf8',
+          title: `WORKING ${pending.direction}`,
+          style: LineStyle.Solid,
+        },
+        {
+          price: pending.stopLoss,
+          color: '#ef4444',
+          title: 'SL (if filled)',
+          style: LineStyle.Dotted,
+        },
+        {
+          price: pending.target,
+          color: '#22c55e',
+          title: 'TP (if filled)',
+          style: LineStyle.Dotted,
+        }
+      )
+    }
+
+    for (const s of specs) {
       try {
         posLinesRef.current.push(
           seriesRef.current.createPriceLine({
             price: s.price,
             color: s.color,
-            lineWidth: 1,
-            lineStyle: LineStyle.Dashed,
+            lineWidth: 2,
+            lineStyle: s.style,
             axisLabelVisible: true,
             title: s.title,
           })
@@ -953,7 +993,7 @@ function SimulationDeskInner() {
         /* ignore */
       }
     }
-  }, [position])
+  }, [position, pending, chartReady, lastPrice])
 
   const fillPending = useCallback((pend: PendingOrder, at: number) => {
     setPosition({
@@ -1054,8 +1094,8 @@ function SimulationDeskInner() {
       applyChartDataRef.current(next)
     }
 
-    // 1x ≈ 450ms per 5m bar; 16x ≈ 28ms — chart advances immediately on Play
-    const intervalMs = Math.max(28, Math.round(450 / Math.max(1, speed)))
+    // 0.5x ≈ 900ms per 5m bar; 1x ≈ 450ms; 16x ≈ 28ms
+    const intervalMs = Math.max(28, Math.round(450 / Math.max(0.5, speed)))
     // Step once immediately so Play feels responsive
     stepOnce()
     const timer = window.setInterval(stepOnce, intervalMs)
@@ -1154,6 +1194,25 @@ function SimulationDeskInner() {
     )
   }
 
+  /** Restart morning from cash open and auto-play (keeps levels). */
+  const replayFromOpen = () => {
+    followLiveRef.current = true
+    setFollowingLive(true)
+    simNowRef.current = openUnix
+    setSimNow(openUnix)
+    applyChartData(openUnix, { force: true, fit: true })
+    setPending(null)
+    setPosition(null)
+    setTicketLevel(null)
+    setLevelsOpen(true)
+    setMsg(
+      instrument === 'NIKKEI'
+        ? 'Replay from 9:00 AM JST — place a level or watch the morning'
+        : 'Replay from 9:30 AM ET — place a level or watch the morning'
+    )
+    setPlaying(true)
+  }
+
   if (loading) {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-3 text-gray-500 text-sm">
@@ -1199,6 +1258,28 @@ function SimulationDeskInner() {
           className="pointer-events-none absolute inset-0 z-[1]"
           style={{ opacity: 1, transition: 'none', willChange: 'opacity' }}
         />
+        {(position || pending) && (
+          <div className="pointer-events-none absolute left-3 top-14 z-20 max-w-[min(340px,70%)]">
+            <div
+              className={`rounded-lg border px-3 py-2 shadow-lg backdrop-blur-sm ${
+                position
+                  ? 'border-emerald-500/40 bg-emerald-950/85 text-emerald-100'
+                  : 'border-sky-500/40 bg-sky-950/85 text-sky-100'
+              }`}
+            >
+              <div className="text-[10px] font-bold uppercase tracking-wider">
+                {position
+                  ? `OPEN ${position.direction} · Entry / SL / TP on chart`
+                  : `WORKING ${pending!.direction} · limit + SL/TP on chart`}
+              </div>
+              <p className="mt-0.5 font-mono text-[11px] opacity-90">
+                {position
+                  ? `@ ${position.entry.toLocaleString()} · SL ${position.stopLoss.toLocaleString()} · TP ${position.target.toLocaleString()}`
+                  : `@ ${pending!.level.toLocaleString()} · SL ${pending!.stopLoss.toLocaleString()} · TP ${pending!.target.toLocaleString()}`}
+              </p>
+            </div>
+          </div>
+        )}
         <button
           type="button"
           onClick={resetPriceScale}
@@ -1252,8 +1333,17 @@ function SimulationDeskInner() {
             type="button"
             onClick={jumpToOpen}
             className="rounded px-2 py-1 text-gray-400 hover:bg-white/10 hover:text-white"
+            title="Jump to cash open and pause"
           >
             {instrument === 'NIKKEI' ? '9:00' : '9:30'}
+          </button>
+          <button
+            type="button"
+            onClick={replayFromOpen}
+            className="rounded px-2.5 py-1 font-semibold text-violet-200 hover:bg-violet-500/20"
+            title="Restart morning from open and play"
+          >
+            Replay
           </button>
           <button
             type="button"
@@ -1264,7 +1354,7 @@ function SimulationDeskInner() {
           >
             {playing ? 'Pause' : 'Play'}
           </button>
-          {[1, 2, 4, 16].map((s) => (
+          {[0.5, 1, 2, 4, 16].map((s) => (
             <button
               key={s}
               type="button"

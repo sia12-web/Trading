@@ -44,6 +44,8 @@ import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import {
   isDeskHoursNow,
   isLiveBarsAllowed,
+  isLunchFreezeActive,
+  isChartStreamAllowed,
   sessionFor,
 } from '@/lib/trading/sessionGate'
 
@@ -348,6 +350,13 @@ interface PendingLimitOverlay {
   profitTarget: number
 }
 
+/** Live manage AI — shown on the chart canvas while in a filled position */
+export interface ChartAiVerdict {
+  verdict: string
+  confidence: number
+  reason: string
+}
+
 interface TradingChartProps {
   onInstrumentChange?: (i: Instrument) => void
   onPriceUpdate?:      (price: number) => void   // called every tick
@@ -357,6 +366,8 @@ interface TradingChartProps {
   positionOverlay?:    PositionOverlay | null     // filled position Entry/SL/TP
   /** Working limit — not filled yet; does not enter MANAGE */
   pendingLimit?:       PendingLimitOverlay | null
+  /** AI manage verdict (hold / take profit / reversal) drawn on the chart */
+  aiVerdict?:          ChartAiVerdict | null
   jumpToPriceRef?:     React.MutableRefObject<((price: number) => void) | null>
   /** Lock tabs to day's recommended desk instrument */
   lockedInstrument?:   Instrument | null
@@ -379,6 +390,7 @@ export function TradingChart({
   onDataModeChange,
   positionOverlay,
   pendingLimit = null,
+  aiVerdict = null,
   jumpToPriceRef,
   lockedInstrument,
   onLevelSelect,
@@ -662,12 +674,19 @@ export function TradingChart({
     const load = async () => {
       const meta = INSTRUMENT_META[instrument]
       const tfSec = DESK_BAR_SECONDS
-      const barsOk = isLiveBarsAllowed(instrument)
-      setBarsFrozen(!barsOk.open)
-      setSessionMsg(barsOk.open ? null : barsOk.reason)
+      const lunchFreeze = isLunchFreezeActive(instrument)
+      const stream = isChartStreamAllowed(instrument)
+      const tradeLive = isLiveBarsAllowed(instrument)
+      setBarsFrozen(lunchFreeze)
+      setSessionMsg(
+        lunchFreeze
+          ? stream.reason ||
+              'Lunch freeze — afternoon + overnight unlock after cash close.'
+          : null
+      )
 
-      // Outside morning session: still show frozen morning history (API clips at lunch),
-      // but do not invent synthetic bars for trading.
+      // Always load history. Lunch freeze clips only *today's* afternoon; after cash
+      // close / next day the full continuum returns (never stuck frozen overnight).
       try {
         // NIKKEI needs a longer window — Yahoo ^N225 5d is often truncated; OANDA JP225 fills gaps
         const days = instrument === 'NIKKEI' ? 7 : 5
@@ -698,7 +717,8 @@ export function TradingChart({
       }
 
       if (cancelled) return
-      if (!barsOk.open) {
+      // Synthetic fallback only during morning trade window — never invent afternoon/overnight
+      if (!tradeLive.open) {
         setCandles([])
         setDataMode('live')
         setLivePrice(null)
@@ -713,7 +733,7 @@ export function TradingChart({
         setLevels([])
         return
       }
-      // Demo-only fallback during an open session if feeds fail (local/dev)
+      // Demo-only fallback during morning session if feeds fail (local/dev)
       const generated = generateCandles(meta.basePrice, tfSec)
       setCandles(generated)
       setDataMode('synthetic')
@@ -998,21 +1018,34 @@ export function TradingChart({
     })
   }, [levels, showLevels, chartReady, positionOverlay, hideTradeLevels])
 
-  // ── Live quote poll — ONLY during morning session (stops at lunch) ───────────
+  // ── Chart stream: trade live open→lunch; lunch freeze tip; after cash close continuum ─
   useEffect(() => {
     if (!chartReady || candles.length === 0 || dataMode === 'synthetic') return
-    if (!isLiveBarsAllowed(instrument).open) {
-      setBarsFrozen(true)
-      setSessionMsg(isLiveBarsAllowed(instrument).reason)
-      return
+
+    const CANDLE_REFRESH_MS = 45_000
+    let lastUiPriceAt = 0
+    let wasFrozen = isLunchFreezeActive(instrument)
+
+    const syncFreezeBanner = () => {
+      const freeze = isLunchFreezeActive(instrument)
+      setBarsFrozen(freeze)
+      setSessionMsg(freeze ? isChartStreamAllowed(instrument).reason : null)
+      // Cash close unlock — pull afternoon + overnight bars immediately
+      if (wasFrozen && !freeze) {
+        wasFrozen = false
+        void refreshCandles()
+      } else {
+        wasFrozen = freeze
+      }
+      return freeze
     }
 
-    const QUOTE_MS = 1000 // Yahoo quote is our live path
-    const CANDLE_REFRESH_MS = 45_000 // soft-merge completed bars; quotes keep the forming bar live
-    let lastUiPriceAt = 0
-
-    const applyQuote = (price: number, changePct: number, quoteTs: number) => {
-      // Fill detection needs every tick; skip React header updates while user is panning
+    const applyQuote = (
+      price: number,
+      changePct: number,
+      quoteTs: number,
+      tradeLive: boolean
+    ) => {
       onPriceUpdate?.(price)
       if (!interactingRef.current) {
         const now = Date.now()
@@ -1024,11 +1057,10 @@ export function TradingChart({
         }
       }
 
+      if (!tradeLive) return
       const last = lastCandleRef.current
       if (!last || !candleRef.current) return
 
-      // Roll to a new bar when the quote has crossed the 5m boundary,
-      // instead of stretching the old candle until the next full refresh
       const tfSec = DESK_BAR_SECONDS
       const lastT = last.time as number
       if (quoteTs >= lastT + tfSec) {
@@ -1052,7 +1084,7 @@ export function TradingChart({
               close: bar.close,
             })
           } catch {
-            // ignore mid-reload races
+            /* ignore */
           }
           return
         }
@@ -1074,27 +1106,16 @@ export function TradingChart({
           close: updated.close,
         })
       } catch {
-        // ignore mid-reload races
+        /* ignore */
       }
     }
 
     const pollQuote = async () => {
-      const gate = isLiveBarsAllowed(instrument)
-      if (!gate.open) {
-        setBarsFrozen(true)
-        setSessionMsg(gate.reason)
-        if (tickIntervalRef.current) {
-          clearInterval(tickIntervalRef.current)
-          tickIntervalRef.current = null
-        }
-        if (candleRefreshRef.current) {
-          clearInterval(candleRefreshRef.current)
-          candleRefreshRef.current = null
-        }
-        return
-      }
+      if (syncFreezeBanner()) return
+      if (!isChartStreamAllowed(instrument).open) return
       if (quoteInFlightRef.current) return
       quoteInFlightRef.current = true
+      const tradeLive = isLiveBarsAllowed(instrument).open
       try {
         const res = await fetch(
           `/api/trading/quote?instrument=${instrument}&_=${Date.now()}`,
@@ -1107,17 +1128,18 @@ export function TradingChart({
             typeof json.timestamp === 'number' && json.timestamp > 0
               ? json.timestamp
               : Math.floor(Date.now() / 1000)
-          applyQuote(json.price, json.change_pct ?? 0, ts)
+          applyQuote(json.price, json.change_pct ?? 0, ts, tradeLive)
         }
       } catch {
-        // keep last known price
+        /* keep */
       } finally {
         quoteInFlightRef.current = false
       }
     }
 
     const refreshCandles = async () => {
-      if (!isLiveBarsAllowed(instrument).open) return
+      if (isLunchFreezeActive(instrument)) return
+      if (!isChartStreamAllowed(instrument).open) return
       try {
         const days = instrument === 'NIKKEI' ? 7 : 5
         const res = await fetch(
@@ -1139,10 +1161,10 @@ export function TradingChart({
         const trimmed = normalizeCandleTimes(toDeskCandles(mapped, instrument))
         if (trimmed.length === 0) return
 
-        // Preserve client-rolled forming bar ahead of server, or merge live OHLC
         const live = lastCandleRef.current
         const last = trimmed[trimmed.length - 1]!
-        if (live) {
+        const tradeLive = isLiveBarsAllowed(instrument).open
+        if (live && tradeLive) {
           const liveT = live.time as number
           const lastT = last.time as number
           if (liveT > lastT) {
@@ -1170,9 +1192,10 @@ export function TradingChart({
 
         lastCandleRef.current = trimmed[trimmed.length - 1]!
         if (structureChanged) {
+          // Afternoon unlock / overnight tip — full setData + AVWAP rebuild
+          didFitRef.current = false
           setCandles(trimmed)
         } else {
-          // Forming bar only — update series without rebuilding AVWAP / full setData
           const tip = trimmed[trimmed.length - 1]!
           try {
             candleRef.current?.update({
@@ -1188,17 +1211,27 @@ export function TradingChart({
         }
         setDataMode('live')
       } catch {
-        // ignore — quote poll still keeps price fresh
+        /* ignore */
       }
     }
 
-    pollQuote()
+    syncFreezeBanner()
+    void pollQuote()
+    void refreshCandles()
     if (tickIntervalRef.current) clearInterval(tickIntervalRef.current)
     if (candleRefreshRef.current) clearInterval(candleRefreshRef.current)
-    tickIntervalRef.current = setInterval(pollQuote, QUOTE_MS)
+    // Keep a steady poll so lunch→close→overnight transitions wake without reload
+    tickIntervalRef.current = setInterval(pollQuote, 5_000)
     candleRefreshRef.current = setInterval(refreshCandles, CANDLE_REFRESH_MS)
+    // Faster quotes only while morning trade desk is live
+    const tradeQuote = setInterval(() => {
+      if (isLiveBarsAllowed(instrument).open && !isLunchFreezeActive(instrument)) {
+        void pollQuote()
+      }
+    }, 1000)
 
     return () => {
+      clearInterval(tradeQuote)
       if (tickIntervalRef.current) clearInterval(tickIntervalRef.current)
       if (candleRefreshRef.current) clearInterval(candleRefreshRef.current)
       tickIntervalRef.current = null
@@ -1254,10 +1287,21 @@ export function TradingChart({
     if (!candleRef.current) return
 
     if (positionOverlay) {
+      const v = (aiVerdict?.verdict || '').toLowerCase()
+      const aiWantsTp = v === 'reversal' || v === 'take_profit' || v === 'pullback'
+      const tpLabel =
+        v === 'reversal'
+          ? 'AI EXIT · Target'
+          : v === 'pullback'
+            ? 'AI PULLBACK · Target'
+            : v === 'hold'
+              ? 'AI HOLD · Target'
+              : 'Target'
+      const tpColor = aiWantsTp && v === 'reversal' ? '#a78bfa' : '#22c55e'
       const entries: Array<{ price: number; color: string; label: string; style: LineStyle }> = [
         { price: positionOverlay.entryPrice,   color: '#3b82f6', label: `Entry ${positionOverlay.direction.toUpperCase()}`, style: LineStyle.Solid },
         { price: positionOverlay.stopLoss,     color: '#ef4444', label: 'Stop Loss',    style: LineStyle.Dashed },
-        { price: positionOverlay.profitTarget, color: '#22c55e', label: 'Target',       style: LineStyle.Dashed },
+        { price: positionOverlay.profitTarget, color: tpColor, label: tpLabel, style: LineStyle.Dashed },
       ]
       for (const { price, color, label, style } of entries) {
         try {
@@ -1292,7 +1336,7 @@ export function TradingChart({
         } catch { /* ignore */ }
       }
     }
-  }, [positionOverlay, pendingLimit])
+  }, [positionOverlay, pendingLimit, aiVerdict])
 
   // ── Emit live price to parent ─────────────────────────────────────────────────
   useEffect(() => {
@@ -1452,6 +1496,44 @@ export function TradingChart({
           className="pointer-events-none absolute inset-0 z-[1]"
           style={{ opacity: 1, transition: 'none', willChange: 'opacity' }}
         />
+        {positionOverlay && (
+          <div className="pointer-events-none absolute left-3 top-3 z-20 max-w-[min(360px,70%)]">
+            {aiVerdict ? (
+              <div
+                className={`rounded-lg border px-3 py-2 shadow-lg backdrop-blur-sm ${
+                  aiVerdict.verdict.toLowerCase() === 'reversal'
+                    ? 'border-violet-500/50 bg-violet-950/85 text-violet-100'
+                    : aiVerdict.verdict.toLowerCase() === 'pullback'
+                      ? 'border-amber-500/50 bg-amber-950/85 text-amber-100'
+                      : 'border-emerald-500/40 bg-emerald-950/85 text-emerald-100'
+                }`}
+              >
+                <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider">
+                  <span>AI manage</span>
+                  <span className="rounded bg-black/30 px-1.5 py-0.5">
+                    {aiVerdict.verdict === 'reversal'
+                      ? 'TAKE PROFIT / EXIT'
+                      : aiVerdict.verdict === 'hold'
+                        ? 'HOLD — no TP yet'
+                        : aiVerdict.verdict === 'pullback'
+                          ? 'PULLBACK — watch TP'
+                          : aiVerdict.verdict}
+                  </span>
+                  <span className="font-mono normal-case tracking-normal opacity-80">
+                    {aiVerdict.confidence}%
+                  </span>
+                </div>
+                <p className="mt-1 text-[11px] leading-snug opacity-90 line-clamp-3">
+                  {aiVerdict.reason}
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-amber-700/40 bg-amber-950/80 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-amber-200 shadow-lg backdrop-blur-sm">
+                AI manage · scoring…
+              </div>
+            )}
+          </div>
+        )}
         <button
           type="button"
           onClick={resetPriceScale}

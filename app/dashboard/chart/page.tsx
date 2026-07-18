@@ -17,7 +17,11 @@ import {
   type PendingLimitOrder,
   limitWouldFill,
 } from './components/LevelOrderTicket'
-import { ManageDeskBar, type ManagePosition } from './components/ManageDeskBar'
+import {
+  ManageDeskBar,
+  type AiVerdict,
+  type ManagePosition,
+} from './components/ManageDeskBar'
 
 type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI'
 
@@ -45,6 +49,7 @@ export default function ChartPage() {
   const [dataMode, setDataMode] = useState<'live' | 'synthetic'>('live')
   const [fillError, setFillError] = useState<string | null>(null)
   const [levelsRefreshKey, setLevelsRefreshKey] = useState(0)
+  const [aiVerdict, setAiVerdict] = useState<AiVerdict | null>(null)
 
   const jumpToPriceRef = useRef<((price: number) => void) | null>(null)
   const bannerRefreshRef = useRef<(() => void) | null>(null)
@@ -462,9 +467,11 @@ export default function ChartPage() {
               onClosed={(exitReason = 'manual') => {
                 setManagePos(null)
                 setPositionOverlay(null)
+                setAiVerdict(null)
                 void refreshLevelsAfterExit(exitReason)
               }}
               onRefreshGate={refreshGate}
+              onAiVerdict={setAiVerdict}
             />
           )}
 
@@ -496,6 +503,7 @@ export default function ChartPage() {
                       }
                     : null
                 }
+                aiVerdict={managePos ? aiVerdict : null}
                 jumpToPriceRef={jumpToPriceRef}
                 lockedInstrument={locked}
                 onLevelSelect={handleLevelSelect}

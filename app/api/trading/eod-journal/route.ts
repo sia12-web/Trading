@@ -76,8 +76,23 @@ async function resolveMarket(
   return null
 }
 
+function isSimJournalRequest(request: NextRequest): boolean {
+  const simFlag =
+    request.nextUrl.searchParams.get('sim') ||
+    request.nextUrl.searchParams.get('tier') ||
+    request.nextUrl.searchParams.get('mode')
+  return !!simFlag && /^(1|true|sim|simulation)$/i.test(simFlag)
+}
+
 async function runEodJournal(request: NextRequest) {
   try {
+    if (isSimJournalRequest(request)) {
+      return NextResponse.json(
+        { error: 'EOD journal is live desk only — simulation has no journal' },
+        { status: 403 }
+      )
+    }
+
     if (!(await assertCronOrDeskUser(request))) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

@@ -124,10 +124,13 @@ export default function JournalPage() {
       <div className="mx-auto max-w-5xl px-4 py-8 space-y-6">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-gray-500">Desk record</p>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-gray-500">
+              Live desk only
+            </p>
             <h1 className="mt-1 text-2xl font-semibold text-white">Trade Journal</h1>
             <p className="mt-1 text-sm text-gray-500">
-              Fills, stops, take-profits, and the reasons behind every morning decision.
+              Live fills, stops, take-profits, and manage decisions. Simulation paper trades are
+              never written here.
             </p>
           </div>
           <Link

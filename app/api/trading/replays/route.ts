@@ -19,7 +19,7 @@ import type {
 
 // Validation constants — desk markets
 const VALID_INSTRUMENTS = ['DOW', 'NASDAQ', 'NIKKEI'] as const
-const VALID_SPEEDS = [1, 2, 4, 16] as const
+const VALID_SPEEDS = [0.5, 1, 2, 4, 16] as const
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 100
 
@@ -27,8 +27,8 @@ function isValidInstrument(instrument: unknown): instrument is 'DOW' | 'NASDAQ' 
   return typeof instrument === 'string' && VALID_INSTRUMENTS.includes(instrument as any)
 }
 
-function isValidSpeed(speed: unknown): speed is 1 | 2 | 4 | 16 {
-  return typeof speed === 'number' && VALID_SPEEDS.includes(speed as any)
+function isValidSpeed(speed: unknown): speed is (typeof VALID_SPEEDS)[number] {
+  return typeof speed === 'number' && (VALID_SPEEDS as readonly number[]).includes(speed)
 }
 
 function isValidDate(dateString: string): boolean {

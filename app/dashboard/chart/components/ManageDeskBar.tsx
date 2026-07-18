@@ -20,7 +20,7 @@ export interface ManagePosition {
   riskAmount: number
 }
 
-interface AiVerdict {
+export interface AiVerdict {
   verdict: 'pullback' | 'reversal' | 'hold' | string
   confidence: number
   reason: string
@@ -35,9 +35,17 @@ interface Props {
   currentPrice: number | null
   onClosed: (exitReason?: 'stop_hit' | 'take_profit' | 'manual' | 'ai_signal') => void
   onRefreshGate: () => void
+  /** Mirror AI manage verdict onto the chart canvas */
+  onAiVerdict?: (verdict: AiVerdict | null) => void
 }
 
-export function ManageDeskBar({ position, currentPrice, onClosed, onRefreshGate }: Props) {
+export function ManageDeskBar({
+  position,
+  currentPrice,
+  onClosed,
+  onRefreshGate,
+  onAiVerdict,
+}: Props) {
   const [ai, setAi] = useState<AiVerdict | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
@@ -47,6 +55,14 @@ export function ManageDeskBar({ position, currentPrice, onClosed, onRefreshGate 
   useEffect(() => {
     priceRef.current = currentPrice
   }, [currentPrice])
+
+  useEffect(() => {
+    onAiVerdict?.(ai)
+  }, [ai, onAiVerdict])
+
+  useEffect(() => {
+    return () => onAiVerdict?.(null)
+  }, [onAiVerdict])
 
   const isLong = position.direction === 'long'
   /** Path progress 0→1 toward TP (neutral — not framed as win/loss $). */
