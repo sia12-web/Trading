@@ -8,19 +8,19 @@ import type { UTCTimestamp } from 'lightweight-charts'
 
 export const SESSION_STYLES = {
   Asia: {
-    color: 'rgba(56, 189, 248, 0.22)',
+    color: 'rgba(56, 189, 248, 0.28)',
     zIndex: 1,
     line: '#38bdf8',
     short: 'Asia',
   },
   London: {
-    color: 'rgba(250, 204, 21, 0.20)',
+    color: 'rgba(250, 204, 21, 0.26)',
     zIndex: 2,
     line: '#facc15',
     short: 'Lon',
   },
   'New York': {
-    color: 'rgba(74, 222, 128, 0.20)',
+    color: 'rgba(74, 222, 128, 0.26)',
     zIndex: 3,
     line: '#4ade80',
     short: 'NY',
@@ -77,9 +77,9 @@ export interface SessionHighlightRect {
   color: string
   left: number
   width: number
-  /** Top of band (0 when full-height time columns) */
+  /** Y of session high (price-bounded) */
   top: number
-  /** Band height (full pane when full-height time columns) */
+  /** Height from session high → low */
   height: number
   zIndex: number
 }
@@ -411,8 +411,8 @@ export function computeSessionHighlightSpans(args: {
 
 /**
  * Map cached spans → pixel rects.
- * Default: full-pane time columns (TradingView-style) so session colors line up
- * with the clock — price-bounded boxes floated at different Y and looked “off”.
+ * Default: horizontal = full session hours (bar run), vertical = session high→low only
+ * (never wallpaper above/below where price never traded).
  */
 export function projectSessionHighlightRects(args: {
   spans: SessionHighlightSpan[]
@@ -426,8 +426,8 @@ export function projectSessionHighlightRects(args: {
   containerWidth: number
   containerHeight: number
   /**
-   * true (default): full-pane height columns aligned to session clock.
-   * false: box only covers session high→low (can look misaligned / vanish on zoom).
+   * false (default): box = session high→low × session hours.
+   * true: full-pane wallpaper (legacy — avoid).
    */
   fullHeight?: boolean
   /** @deprecated Ignored */
@@ -436,7 +436,7 @@ export function projectSessionHighlightRects(args: {
   const { spans, candleTimes, timeScale, priceToY } = args
   const chartH = Math.max(args.containerHeight, 0)
   const paneW = Math.max(args.containerWidth - args.priceScaleWidth, 0)
-  const useFullHeight = args.fullHeight !== false
+  const useFullHeight = args.fullHeight === true
   if (spans.length === 0 || candleTimes.length === 0 || chartH < 2) {
     return { rects: [], paneHeight: chartH }
   }
@@ -474,18 +474,17 @@ export function projectSessionHighlightRects(args: {
 
       const rawTop = Math.min(yHigh, yLow)
       const rawBottom = Math.max(yHigh, yLow)
-      if (rawBottom < 0 || rawTop > chartH) {
-        // Zoomed away from this session’s range — keep a time column
-        top = 0
-        height = chartH
-      } else {
-        top = Math.max(rawTop, 0)
-        const bottom = Math.min(rawBottom, chartH)
-        height = bottom - top
-        if (height < 3) {
-          top = 0
-          height = chartH
-        }
+      // Fully off-screen (zoomed away) — skip, do not stretch into wallpaper
+      if (rawBottom < 0 || rawTop > chartH) continue
+
+      top = Math.max(rawTop, 0)
+      const bottom = Math.min(rawBottom, chartH)
+      height = bottom - top
+      // Flat session — keep a thin stripe at that price, never full pane
+      if (height < 3) {
+        const mid = (top + bottom) / 2
+        top = Math.max(mid - 1.5, 0)
+        height = Math.min(3, chartH - top)
       }
     }
 
@@ -507,8 +506,8 @@ export function projectSessionHighlightRects(args: {
 }
 
 /**
- * Session color columns: horizontal = session clock window, vertical = full pane.
- * Needs 24h bars (OANDA) for Asia/London to have candles inside those windows.
+ * Session color boxes: horizontal = hours price traded in that session,
+ * vertical = exact session high→low.
  */
 export function computeSessionHighlightRects(args: {
   candles: SessionBar[]
@@ -524,7 +523,7 @@ export function computeSessionHighlightRects(args: {
   asOfUnix?: number
   /** DOW/NASDAQ → NY windows; NIKKEI → Tokyo windows */
   instrument?: string | null
-  /** true (default): full-pane time columns */
+  /** true = full-pane wallpaper; default false = high→low only */
   fullHeight?: boolean
   visiblePriceRange?: { from: number; to: number } | null
 }): { rects: SessionHighlightRect[]; paneHeight: number } {
@@ -570,14 +569,14 @@ export function paintSessionHighlightOverlay(
     d.style.position = 'absolute'
     d.style.left = `${s.left}px`
     d.style.width = `${Math.max(0, s.width)}px`
-    // Pin to host top+bottom so bands always fill the pane (ignore stale px height)
-    d.style.top = '0'
-    d.style.bottom = '0'
-    d.style.height = 'auto'
+    // Price-bounded: exact high→low pixels (not full pane)
+    d.style.top = `${s.top}px`
+    d.style.height = `${Math.max(0, s.height)}px`
+    d.style.bottom = 'auto'
     d.style.right = 'auto'
     d.style.backgroundColor = s.color
     d.style.zIndex = String(s.zIndex)
-    d.title = `${s.name} session`
+    d.title = `${s.name} session (high→low)`
   }
 }
 

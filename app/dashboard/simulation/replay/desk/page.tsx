@@ -687,6 +687,7 @@ function SimulationDeskInner() {
       priceScaleWidth: priceAxisW,
       containerWidth: containerRef.current.clientWidth,
       containerHeight: containerRef.current.clientHeight,
+      fullHeight: false, // high→low only — never wallpaper above/below price
     })
     paintSessionHighlightOverlay(host, rects)
   }, [instrument])
