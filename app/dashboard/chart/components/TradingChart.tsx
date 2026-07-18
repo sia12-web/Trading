@@ -1670,13 +1670,13 @@ export function TradingChart({
           Reset scale
         </button>
 
-        {/* Levels panel — top-right overlay so it never covers the price axis */}
+        {/* Levels panel — bottom-center so price axis / top chrome stay clear */}
         {showLevels &&
           !hideTradeLevels &&
           !positionOverlay &&
           !pendingLimit &&
           levels.some((l) => l.source === 'ai' || l.source === 'structure') && (
-          <div className="absolute right-3 top-3 z-30 flex w-64 max-h-[min(42vh,420px)] flex-col overflow-hidden rounded-xl border border-surface-500/80 bg-surface-900/95 shadow-2xl backdrop-blur-md">
+          <div className="absolute bottom-10 left-1/2 z-30 flex w-72 max-h-[min(38vh,360px)] -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-surface-500/80 bg-surface-900/95 shadow-2xl backdrop-blur-md">
             <div className="border-b border-surface-600 px-3 py-2">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
                 Morning playbook

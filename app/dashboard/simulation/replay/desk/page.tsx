@@ -1790,9 +1790,9 @@ function SimulationDeskInner() {
         )}
       </div>
 
-      {/* Levels panel — top-right overlay so it never covers the price axis */}
+      {/* Levels panel — bottom-center so it doesn't cover chart action */}
       {levelsOpen && !position && !pending && (
-        <div className="absolute right-3 top-14 z-30 flex w-64 max-h-[min(42vh,420px)] flex-col overflow-hidden rounded-xl border border-white/10 bg-[#0d1117]/95 shadow-2xl backdrop-blur-md">
+        <div className="absolute bottom-10 left-1/2 z-30 flex w-72 max-h-[min(38vh,360px)] -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-white/10 bg-[#0d1117]/95 shadow-2xl backdrop-blur-md">
           <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
               Morning playbook
