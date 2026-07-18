@@ -12,7 +12,6 @@ import {
 import { computeVolumeProfile } from '@/lib/chart/volumeProfile'
 import { filterByConfluence } from '@/lib/trading/levelConfluence'
 import { sessionFor } from '@/lib/trading/sessionGate'
-import { formatMarketHmsTodayInDisplayTz } from '@/lib/trading/deskDisplayTz'
 import { createClient } from '@/lib/supabase/server'
 import { groundLevels, onlyGrounded } from '@/lib/llm/antiHallucination'
 import { llmComplete } from '@/lib/llm/complete'
@@ -476,10 +475,11 @@ How to use it (big-desk volume map):
     historicalContext?: HistoricalContext
   ): string {
     const s = sessionFor(index)
-    const openEt = formatMarketHmsTodayInDisplayTz(index, s.marketOpen)
-    const entryEt = formatMarketHmsTodayInDisplayTz(index, s.entryClose)
-    const lunchEt = formatMarketHmsTodayInDisplayTz(index, s.lunchClose)
-    const marketLabel = index === 'NIKKEI' ? 'Tokyo cash (shown ET)' : 'NY'
+    const open = s.marketOpen.slice(0, 5)
+    const entryEnd = s.entryClose.slice(0, 5)
+    const lunch = s.lunchClose.slice(0, 5)
+    const tzLabel = index === 'NIKKEI' ? 'JST' : 'ET'
+    const marketLabel = index === 'NIKKEI' ? 'Tokyo' : 'NY'
 
     const basePrompt = `You are a senior institutional trader who runs execution for a large desk. You do NOT think like a retail trader — you think about where retail traders put their STOPS, because that stop liquidity is where your desk ENTERS to fill size.
 
@@ -504,7 +504,7 @@ WHAT TO LOOK FOR IN THE CANDLES:
 
 DESK CADENCE (your levels live inside this rhythm — ${marketLabel} clock for ${index}):
 - You call levels pre-open from YESTERDAY'S range + overnight only. Older multi-day level history is discarded — the next session does not care about last week's levels.
-- Traded ONLY in the morning window: entries ${openEt}–${entryEt}, flat by ${lunchEt}.
+- Traded ONLY in the morning window: entries ${open}–${entryEnd} ${tzLabel}, flat by ${lunch} ${tzLabel}.
 - At lunch every level is graded against what the morning actually did; that verdict enters memory. LIVE only: afternoon review is background memory — the live chart freezes at lunch. Simulation has no afternoon session.
 - Afternoon playbook (flips / retests) updates system memory for learning; it is not traded yet. Choose levels that give clean morning verdicts — a level the morning never reaches teaches nothing.
 
@@ -636,15 +636,14 @@ How to use it:
     const vwapSection = this.buildVwapSection(request)
     const vpSection = this.buildVolumeProfileSection(request)
 
+    const clock = deskClockFor(request.index)
     const s = sessionFor(request.index)
-    const openEt = formatMarketHmsTodayInDisplayTz(request.index, s.marketOpen)
-    const entryEt = formatMarketHmsTodayInDisplayTz(request.index, s.entryClose)
-    const lunchEt = formatMarketHmsTodayInDisplayTz(request.index, s.lunchClose)
+    const tzLabel = request.index === 'NIKKEI' ? 'JST' : 'ET'
 
     return `Analyze these price charts for ${request.symbol} (${request.index}):
 
 Current Price: ${request.current_price}
-Desk clock: ${openEt} open · entries until ${entryEt} · lunch ${lunchEt}
+Desk clock: ${clock.openLabel} open · entries until ${s.entryClose.slice(0, 5)} ${tzLabel} · lunch ${s.lunchClose.slice(0, 5)} ${tzLabel}
 Methodology is identical for DOW, NASDAQ, and NIKKEI — only this clock differs.
 
 ${format4hCandles}

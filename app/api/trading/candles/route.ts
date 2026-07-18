@@ -2,8 +2,7 @@
  * GET /api/trading/candles?instrument=DOW|NASDAQ|NIKKEI&timeframe=5m&days=5
  * All desk indices: OANDA first (incl. JP225 for NIKKEI), Yahoo fallback.
  * Live: lunch→cash close psychology freeze (today's afternoon hidden until close),
- * then full afternoon + overnight continuum. Sim/dated: tip ends at lunch, but
- * prior days keep full Asia/London/NY AM/NY PM bands (same chart look as live).
+ * then full afternoon + overnight continuum. Sim/dated: morning window only.
  */
 
 import { NextResponse } from 'next/server'
@@ -12,6 +11,7 @@ import { getOandaCandles, getOandaCandlesRange } from '@/lib/oanda/candles'
 import { getYahooQuote } from '@/lib/yahoo/quote'
 import {
   clipAfternoonBars,
+  clipAllAfternoonBars,
   isLiveDeskInstrument,
   sessionFor,
 } from '@/lib/trading/sessionGate'
@@ -83,8 +83,10 @@ export async function GET(request: Request) {
         candles = yahoo.candles
         source = 'yahoo'
       }
-      // Tip already ends at lunch (endUnix). Keep prior-day afternoons so
-      // session wallpaper matches live (Asia / London / NY AM / NY PM).
+      // Sim: strip afternoon on every day (morning replay only)
+      if (candles?.length) {
+        candles = clipAllAfternoonBars(candles, instrument)
+      }
     } else {
       // Live desk: OANDA (US30 / NAS100 / JP225) then Yahoo — same path for all three
       const fetchDays = Math.max(days, instrument === 'NIKKEI' ? 7 : 5)

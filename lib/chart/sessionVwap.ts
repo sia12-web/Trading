@@ -1,35 +1,29 @@
 /**
- * Session highlight bands — TradingView-style soft pastel wallpaper (ET clock).
- * Drawn as time-bounded overlays so they never mix with BUY/SHORT level lines.
+ * Session high/low ranges for NY desk charts.
+ * Drawn as time-bounded overlays (not full-width price lines) so they never
+ * mix with BUY/SHORT level lines.
  */
 
 import type { UTCTimestamp } from 'lightweight-charts'
 
-/** Soft pastels on dark chart — mirrors TradingView session bgcolor look. */
 export const SESSION_STYLES = {
   Asia: {
-    color: 'rgba(165, 180, 252, 0.16)', // lavender-blue overnight
+    color: 'rgba(56, 189, 248, 0.28)',
     zIndex: 1,
-    line: '#a5b4fc',
+    line: '#38bdf8',
     short: 'Asia',
   },
   London: {
-    color: 'rgba(253, 224, 71, 0.14)', // soft yellow
+    color: 'rgba(250, 204, 21, 0.26)',
     zIndex: 2,
     line: '#facc15',
     short: 'Lon',
   },
-  'NY AM': {
-    color: 'rgba(134, 239, 172, 0.16)', // mint — cash open → lunch
+  'New York': {
+    color: 'rgba(74, 222, 128, 0.26)',
     zIndex: 3,
-    line: '#86efac',
-    short: 'NY·AM',
-  },
-  'NY PM': {
-    color: 'rgba(103, 232, 249, 0.14)', // cyan — lunch → cash close
-    zIndex: 4,
-    line: '#67e8f9',
-    short: 'NY·PM',
+    line: '#4ade80',
+    short: 'NY',
   },
 } as const
 
@@ -37,28 +31,26 @@ export type SessionName = keyof typeof SESSION_STYLES
 
 /**
  * Desk session windows in America/New_York — contiguous, no dead zone.
- * Asia starts at cash close (16:00). NY cash is split AM/PM at lunch (11:30)
- * to match TradingView-style morning vs afternoon bands.
+ * Asia starts at cash close (16:00) so post-NY bars are never uncolored
+ * (old 18:00 start left a 16:00–18:00 gap that looked like “broken extension”).
  */
 export const SESSION_WINDOWS = {
-  Asia: { tz: 'America/New_York', start: 16, end: 3 }, // 16:00 → 03:00
+  Asia: { tz: 'America/New_York', start: 16, end: 3 }, // 16:00 → 03:00 (crosses midnight)
   London: { tz: 'America/New_York', start: 3, end: 9.5 }, // 03:00 → 09:30
-  'NY AM': { tz: 'America/New_York', start: 9.5, end: 11.5 }, // 09:30 → 11:30
-  'NY PM': { tz: 'America/New_York', start: 11.5, end: 16 }, // 11:30 → 16:00
+  'New York': { tz: 'America/New_York', start: 9.5, end: 16 }, // 09:30 → 16:00
 } as const
 
-/** Classify a bar into Asia / London / NY AM / NY PM. */
+/** Classify a bar into Asia / London / NY — every clock hour maps to exactly one session. */
 export function nyDeskSessionAt(unix: number): SessionName {
   const h = hourInTz(unix, 'America/New_York')
   if (h >= SESSION_WINDOWS.Asia.start || h < SESSION_WINDOWS.Asia.end) return 'Asia'
   if (h < SESSION_WINDOWS.London.end) return 'London'
-  if (h < SESSION_WINDOWS['NY AM'].end) return 'NY AM'
-  return 'NY PM'
+  return 'New York'
 }
 
-export const SESSION_RANGE_ORDER: SessionName[] = ['Asia', 'London', 'NY AM', 'NY PM']
+export const SESSION_RANGE_ORDER: SessionName[] = ['Asia', 'London', 'New York']
 
-/** Shared legend for every desk instrument. */
+/** Shared legend — Asia / London / New York for every desk instrument. */
 export function sessionLegendLabel(name: SessionName, _instrument?: string | null): string {
   return name
 }
@@ -409,7 +401,8 @@ export function computeSessionHighlightSpans(args: {
 
 /**
  * Map cached spans → pixel rects.
- * Default: full-pane TradingView-style session wallpaper (soft pastel bands).
+ * Default: horizontal = full session hours (bar run), vertical = session high→low only
+ * (never wallpaper above/below where price never traded).
  */
 export function projectSessionHighlightRects(args: {
   spans: SessionHighlightSpan[]
@@ -423,8 +416,8 @@ export function projectSessionHighlightRects(args: {
   containerWidth: number
   containerHeight: number
   /**
-   * true (default for desk): full-pane TradingView-style session wallpaper.
-   * false: box = session high→low × session hours only.
+   * false (default): box = session high→low × session hours.
+   * true: full-pane wallpaper (legacy — avoid).
    */
   fullHeight?: boolean
   /** @deprecated Ignored */
@@ -433,7 +426,7 @@ export function projectSessionHighlightRects(args: {
   const { spans, candleTimes, timeScale, priceToY } = args
   const chartH = Math.max(args.containerHeight, 0)
   const paneW = Math.max(args.containerWidth - args.priceScaleWidth, 0)
-  const useFullHeight = args.fullHeight !== false
+  const useFullHeight = args.fullHeight === true
   if (spans.length === 0 || candleTimes.length === 0 || chartH < 2) {
     return { rects: [], paneHeight: chartH }
   }
@@ -566,14 +559,14 @@ export function paintSessionHighlightOverlay(
     d.style.position = 'absolute'
     d.style.left = `${s.left}px`
     d.style.width = `${Math.max(0, s.width)}px`
-    // Full-pane wallpaper (or price-bounded when fullHeight=false)
+    // Price-bounded: exact high→low pixels (not full pane)
     d.style.top = `${s.top}px`
     d.style.height = `${Math.max(0, s.height)}px`
     d.style.bottom = 'auto'
     d.style.right = 'auto'
     d.style.backgroundColor = s.color
     d.style.zIndex = String(s.zIndex)
-    d.title = `${s.name} session`
+    d.title = `${s.name} session (high→low)`
   }
 }
 
@@ -598,7 +591,7 @@ export const TOKYO_DESK_CLOCK: DeskClock = {
   timeZone: 'Asia/Tokyo',
   cashOpenHour: 9,
   overnightStartHour: 15, // prior TSE close → next cash open
-  openLabel: 'Tokyo open (ET)',
+  openLabel: 'Tokyo 9:00',
 }
 
 export function deskClockFor(instrument: string | null | undefined): DeskClock {

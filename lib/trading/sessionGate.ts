@@ -2,7 +2,7 @@
  * Trading desk session state — NY (DOW/NASDAQ) and Tokyo (NIKKEI).
  *
  * LIVE only:
- *   Morning bars: NY 09:30–11:30 ET / Tokyo cash 09:00–11:30 JST (shown as evening ET in UI)
+ *   Morning bars: NY 09:30–11:30 ET / Tokyo 09:00–11:30 JST
  *   Lunch → cash close: psychology freeze (tip held; today's afternoon hidden).
  *   After cash close: afternoon + overnight continuum until next morning desk.
  *   Trading stays morning-only; freeze never carries into the next day.
@@ -16,7 +16,6 @@
 
 import { getESTTimeString, parseTimeToSeconds } from '@/lib/utils/timeUtils'
 import { getWindowManager } from '@/lib/trading/windowManager'
-import { formatMarketHmsTodayInDisplayTz } from '@/lib/trading/deskDisplayTz'
 import type { Instrument } from '@/types/trading'
 
 export type SessionPhase =
@@ -203,8 +202,8 @@ export function isLiveBarsAllowed(
       open: false,
       reason:
         deskMarketFor(instrument) === 'TOKYO'
-          ? `Pre-open — Tokyo live desk opens ${formatMarketHmsTodayInDisplayTz(instrument, s.marketOpen, now)}`
-          : 'Pre-open — NY live desk opens 9:30 AM ET',
+          ? 'Pre-open — Tokyo live desk opens 9:00 JST'
+          : 'Pre-open — NY live desk opens 9:30 ET',
     }
   }
   if (t >= lunch) {
@@ -239,7 +238,7 @@ export function isChartStreamAllowed(
       open: false,
       reason:
         deskMarketFor(instrument) === 'TOKYO'
-          ? `Lunch freeze (${formatMarketHmsTodayInDisplayTz(instrument, s.lunchClose, now)}–${formatMarketHmsTodayInDisplayTz(instrument, s.marketClose, now)}) — afternoon bars unlock at Tokyo cash close.`
+          ? 'Lunch freeze (11:30–15:00 JST) — afternoon bars unlock at Tokyo cash close.'
           : 'Lunch freeze (11:30–16:00 ET) — afternoon bars unlock at NY cash close.',
     }
   }
@@ -271,7 +270,7 @@ export function isDeskHoursNow(
       open: false,
       reason:
         deskMarketFor(instrument) === 'TOKYO'
-          ? `Pre-session — Tokyo desk opens ${formatMarketHmsTodayInDisplayTz(instrument, s.analyzeStart, now)}`
+          ? 'Pre-session — Tokyo desk opens 8:45 JST'
           : 'Pre-session — desk opens 9:15 ET',
     }
   }
@@ -400,7 +399,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
         ? 'Morning session closed at lunch. Live chart frozen — afternoon review runs in the background for memory only.'
         : t < analyze
           ? market === 'TOKYO'
-            ? `Pre-session. Tokyo desk opens ${formatMarketHmsTodayInDisplayTz('NIKKEI', s.analyzeStart, now)} — clock in then to trade NIKKEI.`
+            ? 'Pre-session. Tokyo desk opens 8:45 JST — clock in then to trade NIKKEI.'
             : 'Pre-session. Clock-in opens 9:15 ET (15 min before cash open).'
           : 'Session closed. Use Simulation for replay.',
     })
@@ -458,7 +457,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       canManagePosition: false,
       message:
         market === 'TOKYO'
-          ? `Trade ${locked} today. Clock in to unlock the live desk (${formatMarketHmsTodayInDisplayTz('NIKKEI', s.marketOpen, now)}–${formatMarketHmsTodayInDisplayTz('NIKKEI', s.lunchClose, now)}).`
+          ? `Trade ${locked} today. Clock in to unlock the live desk (${s.marketOpen.slice(0, 5)}–${s.lunchClose.slice(0, 5)} JST).`
           : `Trade ${locked} today. Clock in to unlock the live desk (${s.marketOpen.slice(0, 5)}–${s.lunchClose.slice(0, 5)} ET).`,
     })
   }

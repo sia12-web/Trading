@@ -12,7 +12,6 @@ import {
   type DeskInstrument,
   type DeskMarket,
 } from '@/lib/trading/sessionGate'
-import { formatMarketHmsTodayInDisplayTz } from '@/lib/trading/deskDisplayTz'
 import { getESTDateString, parseTimeToSeconds } from '@/lib/utils/timeUtils'
 
 export type AttendanceStatus = 'clocked_in' | 'clocked_out' | 'missed'
@@ -99,7 +98,7 @@ export function canClockInNow(
       ok: false,
       reason:
         market === 'TOKYO'
-          ? `Clock-in opens ${formatMarketHmsTodayInDisplayTz('NIKKEI', s.analyzeStart, now)} (15 min before Tokyo cash open)`
+          ? 'Clock-in opens 8:45 JST (15 min before Tokyo cash open)'
           : 'Clock-in opens 9:15 ET (15 min before NY cash open)',
     }
   }

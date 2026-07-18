@@ -9,7 +9,6 @@ import {
   getDayName,
 } from '@/lib/utils/dateUtils'
 import type { AvailableDate, AvailableDatesResponse } from '@/types/trading'
-import { formatDeskOpenLabelForDate } from '@/lib/trading/deskDisplayTz'
 
 function AvailabilityBadge({ date }: { date: AvailableDate }) {
   const status = date.session_status ?? (date.has_session ? 'in_progress' : 'none')
@@ -64,7 +63,7 @@ export function ReplayDatePicker({ onDateSelected }: ReplayDatePickerProps) {
       : selectedInstrument === 'NIKKEI'
         ? 'NIKKEI'
         : 'DOW'
-  const openLabelFor = (date: string) => formatDeskOpenLabelForDate(instrument, date)
+  const openLabel = instrument === 'NIKKEI' ? '9:00 AM JST' : '9:30 AM ET'
 
   const loadDates = useCallback(async () => {
     setIsLoadingDates(true)
@@ -195,7 +194,7 @@ export function ReplayDatePicker({ onDateSelected }: ReplayDatePickerProps) {
                   </span>
                 </div>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {getDayName(dateObj.date)} · opens {openLabelFor(dateObj.date)}
+                  {getDayName(dateObj.date)} · opens {openLabel}
                 </p>
               </div>
               <div className="flex items-center gap-2">

@@ -2,7 +2,7 @@
 
 /**
  * Simulation replay desk (query-param driven).
- * Flow: pick day → cash open (ET display) → structure levels → pending → fill → manage → lunch done
+ * Flow: pick day → cash open (ET/JST) → structure levels → pending → fill → manage → lunch done
  */
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -40,13 +40,6 @@ import {
   sessionLegendOrder,
   type SessionHighlightSpan,
 } from '@/lib/chart/sessionVwap'
-import {
-  deskDisplayTimeZone,
-  deskDisplayTzLabel,
-  formatDeskClockLabel,
-  formatDeskOpenLabel,
-  formatDeskHm,
-} from '@/lib/trading/deskDisplayTz'
 import {
   computeSimOvernightBias,
   simSuggestedDirection,
@@ -158,7 +151,7 @@ type ChartFmt = {
   tzLabel: string
 }
 
-/** Eastern display clocks for every desk instrument (Montreal / NYC). */
+/** Market-local chart clocks — NY for DOW/NASDAQ, Tokyo for NIKKEI. */
 function makeChartFormatters(timeZone: string, tzLabel: string): ChartFmt {
   const fmtTime = new Intl.DateTimeFormat('en-US', {
     timeZone,
@@ -260,10 +253,10 @@ function SimulationDeskInner() {
     ? Math.min(16, Math.max(0.25, parsedSpeed))
     : 0.25
   const sess = sessionFor(instrument)
-  const tzLabel = deskDisplayTzLabel(instrument)
+  const tzLabel = instrument === 'NIKKEI' ? 'JST' : 'ET'
   const chartFmt = useMemo(
-    () => makeChartFormatters(deskDisplayTimeZone(instrument), tzLabel),
-    [instrument, tzLabel]
+    () => makeChartFormatters(sess.tz, tzLabel),
+    [sess.tz, tzLabel]
   )
   const toUnix = instrument === 'NIKKEI' ? tokyoDateTimeToUnix : nyDateTimeToUnix
   const [openH, openM] = sess.marketOpen.split(':').map(Number)
@@ -505,7 +498,8 @@ function SimulationDeskInner() {
         setLevelsSource(structure.source)
         setPlaybook(structure.playbook)
 
-        const openLabel = formatDeskOpenLabel(instrument, startOpen)
+        const openLabel =
+          instrument === 'NIKKEI' ? '9:00 AM JST' : '9:30 AM ET'
         setMsg(
           `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · loading AI levels (Haiku)…`
         )
@@ -634,7 +628,7 @@ function SimulationDeskInner() {
         secondsVisible: false,
         rightOffset: 12,
         barSpacing: 8,
-        // Default axis is UTC — format ticks in Eastern display TZ
+        // Default axis is UTC — format ticks in market TZ (ET / JST)
         tickMarkFormatter: chartFmt.tickMarkFormatter,
       },
       handleScroll: {
@@ -768,7 +762,7 @@ function SimulationDeskInner() {
       priceScaleWidth: priceAxisW,
       containerWidth: containerRef.current.clientWidth,
       containerHeight: containerRef.current.clientHeight,
-      fullHeight: true, // TradingView-style full-pane session wallpaper
+      fullHeight: false, // high→low only — never wallpaper above/below price
     })
     paintSessionHighlightOverlay(host, rects)
   }, [instrument])
@@ -1252,7 +1246,9 @@ function SimulationDeskInner() {
         applyChartDataRef.current(lunch)
         setPlaying(false)
         setMsg(
-          `Sim clock reached lunch (${formatDeskClockLabel(lunch)}) — morning finished`
+          instrument === 'NIKKEI'
+            ? 'Sim clock reached lunch (11:30 JST) — morning finished'
+            : 'Sim clock reached lunch (11:30 ET) — morning finished'
         )
         void markSessionCompleted()
         return
@@ -1457,7 +1453,9 @@ function SimulationDeskInner() {
     setLevelsOpen(true)
     resetSessionProgress()
     setMsg(
-      `Reset to ${formatDeskOpenLabel(instrument, openUnix)} — place a level order, then Play`
+      instrument === 'NIKKEI'
+        ? 'Reset to 9:00 AM JST — place a level order, then Play'
+        : 'Reset to 9:30 AM ET — place a level order, then Play'
     )
   }
 
@@ -1474,7 +1472,9 @@ function SimulationDeskInner() {
     setLevelsOpen(true)
     resetSessionProgress()
     setMsg(
-      `Replay from ${formatDeskOpenLabel(instrument, openUnix)} — place a level or watch the morning`
+      instrument === 'NIKKEI'
+        ? 'Replay from 9:00 AM JST — place a level or watch the morning'
+        : 'Replay from 9:30 AM ET — place a level or watch the morning'
     )
     setPlaying(true)
   }
@@ -1601,13 +1601,9 @@ function SimulationDeskInner() {
             type="button"
             onClick={jumpToOpen}
             className="rounded px-2 py-1 text-gray-400 hover:bg-white/10 hover:text-white"
-            title={`Jump to cash open (${formatDeskOpenLabel(instrument, openUnix)}) and pause`}
+            title="Jump to cash open and pause"
           >
-            {openUnix
-              ? formatDeskHm(openUnix, { instrument, hour12: false })
-              : instrument === 'NIKKEI'
-                ? '20:00'
-                : '09:30'}
+            {instrument === 'NIKKEI' ? '9:00' : '9:30'}
           </button>
           <button
             type="button"
@@ -1725,10 +1721,7 @@ function SimulationDeskInner() {
             />
             <span style={{ color: VWAP_COLORS.vwap }}>AVWAP</span>
             <span className="text-gray-600">
-              {openUnix
-                ? formatDeskOpenLabel(instrument, openUnix)
-                : deskClockFor(instrument).openLabel}{' '}
-              · 5 sessions · ±1/2/3σ
+              {deskClockFor(instrument).openLabel} · 5 sessions · ±1/2/3σ
             </span>
           </span>
         </div>

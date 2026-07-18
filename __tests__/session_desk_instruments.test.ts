@@ -1,5 +1,5 @@
 /**
- * DOW / NASDAQ / NIKKEI share TradingView-style Asia/London/NY AM/NY PM bands (ET).
+ * Production readiness: DOW / NASDAQ / NIKKEI share real Asia/London/NY (ET) colors.
  * Run: npx tsx __tests__/session_desk_instruments.test.ts
  */
 
@@ -45,15 +45,14 @@ function makeBars(
   return out
 }
 
-// ── Shared ET classifier (4 bands like TradingView) ──────────────────────────
+// ── Shared ET classifier ─────────────────────────────────────────────────────
 assert(nyDeskSessionAt(et(2026, 7, 16, 16, 0)) === 'Asia', 'NY 16:00 → Asia')
 assert(nyDeskSessionAt(et(2026, 7, 16, 21, 50)) === 'Asia', 'NY 21:50 → Asia')
 assert(nyDeskSessionAt(et(2026, 7, 16, 3, 0)) === 'London', 'NY 03:00 → London')
-assert(nyDeskSessionAt(et(2026, 7, 16, 9, 30)) === 'NY AM', 'NY 09:30 → NY AM')
-assert(nyDeskSessionAt(et(2026, 7, 16, 11, 0)) === 'NY AM', 'NY 11:00 → NY AM')
-assert(nyDeskSessionAt(et(2026, 7, 16, 11, 30)) === 'NY PM', 'NY 11:30 → NY PM')
-assert(nyDeskSessionAt(et(2026, 7, 16, 15, 55)) === 'NY PM', 'NY 15:55 → NY PM')
+assert(nyDeskSessionAt(et(2026, 7, 16, 9, 30)) === 'New York', 'NY 09:30 → NY')
+assert(nyDeskSessionAt(et(2026, 7, 16, 15, 55)) === 'New York', 'NY 15:55 → NY')
 
+// ── DOW / NASDAQ / NIKKEI: same session highlight coloring (ET clock) ─────────
 for (const instrument of ['DOW', 'NASDAQ', 'NIKKEI'] as const) {
   const end = et(2026, 7, 16, 21, 50)
   const { spans } = computeSessionHighlightSpans({
@@ -61,34 +60,35 @@ for (const instrument of ['DOW', 'NASDAQ', 'NIKKEI'] as const) {
     asOfUnix: end,
     instrument,
   })
-  assert(spans.length >= 4, `${instrument}: expected ≥4 session spans, got ${spans.length}`)
+  assert(spans.length >= 3, `${instrument}: expected multiple session spans`)
   const tip = spans.find((s) => s.startT <= end && s.endT >= end)
   assert(tip?.name === 'Asia', `${instrument}: tip 21:50 must be Asia, got ${tip?.name}`)
 
-  const am = spans.find((s) => s.startT <= et(2026, 7, 16, 10, 0) && s.endT >= et(2026, 7, 16, 10, 0))
-  assert(am?.name === 'NY AM', `${instrument}: 10:00 ET must be NY AM, got ${am?.name}`)
+  // NY cash window must paint New York (green) — including NIKKEI JP225 overnight
+  const midNy = et(2026, 7, 16, 12, 0)
+  const nySpan = spans.find((s) => s.startT <= midNy && s.endT >= midNy)
+  assert(nySpan?.name === 'New York', `${instrument}: 12:00 ET must be New York, got ${nySpan?.name}`)
 
-  const pm = spans.find((s) => s.startT <= et(2026, 7, 16, 13, 0) && s.endT >= et(2026, 7, 16, 13, 0))
-  assert(pm?.name === 'NY PM', `${instrument}: 13:00 ET must be NY PM, got ${pm?.name}`)
-
-  const pmThenAsia = spans.some(
+  const nyThenAsia = spans.some(
     (s, i) =>
-      s.name === 'NY PM' &&
+      s.name === 'New York' &&
       spans[i + 1]?.name === 'Asia' &&
       spans[i + 1]!.startT <= s.endT + 1
   )
-  assert(pmThenAsia, `${instrument}: NY PM must abut Asia at cash close`)
+  assert(nyThenAsia, `${instrument}: NY must abut Asia at cash close`)
 
+  assert(sessionLegendLabel('Asia', instrument) === 'Asia', `${instrument} Asia legend`)
+  assert(sessionLegendLabel('London', instrument) === 'London', `${instrument} London legend`)
+  assert(sessionLegendLabel('New York', instrument) === 'New York', `${instrument} NY legend`)
   const order = sessionLegendOrder(instrument)
   assert(
-    order.join(',') === 'Asia,London,NY AM,NY PM',
+    order[0] === 'Asia' && order[1] === 'London' && order[2] === 'New York',
     `${instrument} legend order`
   )
-  assert(sessionLegendLabel('NY AM', instrument) === 'NY AM', `${instrument} NY AM label`)
 }
 
 assert(deskClockFor('DOW').timeZone === 'America/New_York', 'DOW TZ')
 assert(deskClockFor('NASDAQ').timeZone === 'America/New_York', 'NASDAQ TZ')
 assert(deskClockFor('NIKKEI').timeZone === 'Asia/Tokyo', 'NIKKEI trading clock stays Tokyo')
 
-console.log('✅ session_desk_instruments: TradingView-style Asia/London/NY AM/NY PM OK')
+console.log('✅ session_desk_instruments: DOW / NASDAQ / NIKKEI share real NYC session colors')
