@@ -1595,24 +1595,31 @@ function SimulationDeskInner() {
           <button
             type="button"
             onClick={() => setPlaying((p) => !p)}
-            className={`rounded px-2.5 py-1 font-semibold ${
+            className={`shrink-0 rounded px-2.5 py-1 font-semibold ${
               playing ? 'bg-amber-600 text-white' : 'bg-emerald-600 text-white'
             }`}
           >
             {playing ? 'Pause' : 'Play'}
           </button>
-          {[0.25, 0.5, 1, 2, 4, 16].map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => setSpeed(s)}
-              className={`rounded px-1.5 py-1 ${
-                speed === s ? 'bg-brand-600 text-white' : 'text-gray-500 hover:text-white'
-              }`}
-            >
-              {s}x
-            </button>
-          ))}
+          <div
+            className="flex shrink-0 flex-wrap items-center gap-0.5 rounded-md border border-white/10 bg-black/30 p-0.5"
+            role="group"
+            aria-label="Playback speed"
+          >
+            {([0.25, 0.5, 1, 2, 4, 16] as const).map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setSpeed(s)}
+                title={`${s}× playback`}
+                className={`shrink-0 rounded px-1.5 py-1 font-mono tabular-nums ${
+                  speed === s ? 'bg-brand-600 text-white' : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                {s}x
+              </button>
+            ))}
+          </div>
 
           {!followingLive && (
             <button
