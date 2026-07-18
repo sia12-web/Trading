@@ -15,6 +15,7 @@ import { getLastNNycTradingDays } from '@/lib/utils/dateUtils'
 import type {
   CreateReplaySessionRequest,
   SimulationReplay,
+  UpdateReplaySessionRequest,
 } from '@/types/trading'
 
 // Validation constants — desk markets
@@ -110,6 +111,7 @@ export async function POST(request: Request): Promise<NextResponse<any>> {
         instrument: body.instrument,
         replay_date: body.replay_date,
         playback_speed: body.playback_speed,
+        status: 'in_progress' as const,
         final_pnl: null,
         final_pnl_percent: null,
         trades_count: 0,
@@ -130,10 +132,15 @@ export async function POST(request: Request): Promise<NextResponse<any>> {
         .maybeSingle()
 
       if (existing) {
+        // Re-opening a day always resumes — clear completed so badge shows resume until lunch again
         const { data: updated } = await supabase
           .from('simulation_replays')
           .update({
             playback_speed: body.playback_speed,
+            status: 'in_progress',
+            final_pnl: null,
+            final_pnl_percent: null,
+            replay_duration_seconds: null,
             updated_at: new Date().toISOString(),
           })
           .eq('id', existing.id)
@@ -148,6 +155,7 @@ export async function POST(request: Request): Promise<NextResponse<any>> {
             instrument: session.instrument,
             replay_date: session.replay_date,
             playback_speed: session.playback_speed,
+            status: session.status ?? 'in_progress',
             final_pnl: session.final_pnl,
             final_pnl_percent: session.final_pnl_percent,
             trades_count: session.trades_count,
@@ -167,6 +175,7 @@ export async function POST(request: Request): Promise<NextResponse<any>> {
           instrument: body.instrument,
           replay_date: body.replay_date,
           playback_speed: body.playback_speed,
+          status: 'in_progress',
           final_pnl: null,
           final_pnl_percent: null,
           trades_count: 0,
@@ -190,6 +199,7 @@ export async function POST(request: Request): Promise<NextResponse<any>> {
           instrument: newSession.instrument,
           replay_date: newSession.replay_date,
           playback_speed: newSession.playback_speed,
+          status: newSession.status ?? 'in_progress',
           final_pnl: null,
           final_pnl_percent: null,
           trades_count: 0,
@@ -320,5 +330,76 @@ export async function GET(request: Request): Promise<NextResponse<any>> {
       { error: 'Internal server error' },
       { status: 500 }
     )
+  }
+}
+
+/**
+ * PATCH /api/trading/replays
+ * Mark a replay session completed (or update results) by instrument + date.
+ */
+export async function PATCH(request: Request): Promise<NextResponse<any>> {
+  try {
+    const user = await getOrCreateUser(request)
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const body = (await request.json()) as UpdateReplaySessionRequest
+    if (!body.instrument || !body.replay_date || !isValidInstrument(body.instrument)) {
+      return NextResponse.json(
+        { error: 'instrument and replay_date required' },
+        { status: 400 }
+      )
+    }
+
+    const supabase = createAdminClient() ?? (await createClient())
+    const patch: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    }
+    if (body.status === 'completed' || body.status === 'in_progress') {
+      patch.status = body.status
+    }
+    if ('final_pnl' in body) patch.final_pnl = body.final_pnl ?? null
+    if ('final_pnl_percent' in body) patch.final_pnl_percent = body.final_pnl_percent ?? null
+    if (body.trades_count !== undefined) patch.trades_count = body.trades_count
+    if ('replay_duration_seconds' in body) {
+      patch.replay_duration_seconds = body.replay_duration_seconds ?? null
+    }
+    if ('notes' in body) patch.notes = body.notes ?? null
+
+    // Completing without explicit duration still stamps a duration so badges flip
+    if (body.status === 'completed' && !('replay_duration_seconds' in body)) {
+      patch.replay_duration_seconds = 0
+    }
+    if (body.status === 'completed' && !('final_pnl' in body)) {
+      patch.final_pnl = 0
+    }
+    // Re-opening clears completion markers
+    if (body.status === 'in_progress') {
+      if (!('final_pnl' in body)) patch.final_pnl = null
+      if (!('replay_duration_seconds' in body)) patch.replay_duration_seconds = null
+    }
+
+    const { data, error } = await supabase
+      .from('simulation_replays')
+      .update(patch)
+      .eq('user_id', user.id)
+      .eq('instrument', body.instrument)
+      .eq('replay_date', body.replay_date)
+      .select()
+      .maybeSingle()
+
+    if (error) {
+      logger.error('PATCH /api/trading/replays failed', { error })
+      return NextResponse.json({ error: 'Failed to update session' }, { status: 500 })
+    }
+    if (!data) {
+      return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+    }
+
+    return NextResponse.json({ success: true, session: data })
+  } catch (e) {
+    logger.error('PATCH /api/trading/replays', { error: e })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

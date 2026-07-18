@@ -313,12 +313,15 @@ export interface ManagementStatusResponse {
 
 export type PlaybackSpeed = 0.5 | 1 | 2 | 4 | 16
 
+export type ReplaySessionStatus = 'in_progress' | 'completed'
+
 export interface SimulationReplay {
   id: string  // UUID
   user_id: string  // UUID
   instrument: Instrument
   replay_date: string  // YYYY-MM-DD
   playback_speed: PlaybackSpeed
+  status: ReplaySessionStatus
   final_pnl: number | null  // Dollars, null while replay in progress
   final_pnl_percent: number | null  // Percentage, null while in progress
   trades_count: number
@@ -359,6 +362,9 @@ export interface ListReplaySessionsResponse {
 export interface GetReplaySessionResponse extends SimulationReplay {}
 
 export interface UpdateReplaySessionRequest {
+  instrument: Instrument
+  replay_date: string
+  status?: ReplaySessionStatus
   final_pnl?: number
   final_pnl_percent?: number
   trades_count?: number
@@ -373,7 +379,10 @@ export type TradingMode = 'live' | 'replay'
 export interface AvailableDate {
   date: string // YYYY-MM-DD
   is_available: boolean
-  has_session: boolean // true if user has existing session for this date
+  /** @deprecated prefer session_status — true if any row exists */
+  has_session: boolean
+  /** none = never started · in_progress = resume · completed = finished (done) */
+  session_status: 'none' | ReplaySessionStatus
 }
 
 export interface AvailableDatesResponse {

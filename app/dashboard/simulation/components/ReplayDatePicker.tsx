@@ -11,9 +11,21 @@ import {
 import type { AvailableDate, AvailableDatesResponse } from '@/types/trading'
 
 function AvailabilityBadge({ date }: { date: AvailableDate }) {
-  if (date.has_session) {
+  const status = date.session_status ?? (date.has_session ? 'in_progress' : 'none')
+
+  if (status === 'completed') {
     return (
-      <span className="text-[10px] text-orange-400 font-medium" title="Session already exists">
+      <span
+        className="text-[10px] text-sky-400 font-medium"
+        title="Morning finished — open again to replay from scratch"
+      >
+        done
+      </span>
+    )
+  }
+  if (status === 'in_progress') {
+    return (
+      <span className="text-[10px] text-orange-400 font-medium" title="Session started — continue">
         resume
       </span>
     )
@@ -48,6 +60,7 @@ export function ReplayDatePicker({ onDateSelected }: ReplayDatePickerProps) {
       : selectedInstrument === 'NIKKEI'
         ? 'NIKKEI'
         : 'DOW'
+  const openLabel = instrument === 'NIKKEI' ? '9:00 AM JST' : '9:30 AM ET'
 
   const loadDates = useCallback(async () => {
     setIsLoadingDates(true)
@@ -70,6 +83,7 @@ export function ReplayDatePicker({ onDateSelected }: ReplayDatePickerProps) {
           date,
           is_available: true,
           has_session: false,
+          session_status: 'none' as const,
         }))
       )
       setLocalError(
@@ -86,6 +100,15 @@ export function ReplayDatePicker({ onDateSelected }: ReplayDatePickerProps) {
     void loadDates()
   }, [loadDates])
 
+  // Refresh badges when returning from the desk
+  useEffect(() => {
+    const onFocus = () => {
+      void loadDates()
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [loadDates])
+
   const handleDateClick = (date: string) => {
     setLocalError(null)
     const dateObj = availableDates.find((d) => d.date === date)
@@ -97,10 +120,30 @@ export function ReplayDatePicker({ onDateSelected }: ReplayDatePickerProps) {
     onDateSelected?.(date)
   }
 
+  const markDone = async (date: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      const res = await fetch('/api/trading/replays', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instrument,
+          replay_date: date,
+          status: 'completed',
+          notes: 'Marked finished from simulation picker',
+        }),
+      })
+      if (!res.ok) throw new Error('Failed')
+      await loadDates()
+    } catch {
+      setLocalError('Could not mark day finished — try again')
+    }
+  }
+
   if (isLoadingDates && availableDates.length === 0) {
     return (
       <div className="text-center py-8 text-gray-500 text-sm">
-        Loading last 5 NYC trading days…
+        Loading last 5 trading days…
       </div>
     )
   }
@@ -148,17 +191,38 @@ export function ReplayDatePicker({ onDateSelected }: ReplayDatePickerProps) {
                   </span>
                 </div>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {getDayName(dateObj.date)} · opens 9:30 AM ET
+                  {getDayName(dateObj.date)} · opens {openLabel}
                 </p>
               </div>
-              <AvailabilityBadge date={dateObj} />
+              <div className="flex items-center gap-2">
+                {(dateObj.session_status === 'in_progress' ||
+                  (!dateObj.session_status && dateObj.has_session)) && (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => void markDone(dateObj.date, e)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        void markDone(dateObj.date, e as unknown as React.MouseEvent)
+                      }
+                    }}
+                    className="text-[10px] text-gray-500 underline hover:text-sky-300"
+                    title="I finished this morning — mark done"
+                  >
+                    finish
+                  </span>
+                )}
+                <AvailabilityBadge date={dateObj} />
+              </div>
             </button>
           )
         })}
       </div>
 
       <p className="text-[11px] text-gray-600 pt-2 border-t border-surface-700">
-        Only completed NYC sessions (Mon–Fri). Today is excluded until the day closes.
+        ready = new · resume = started · done = morning finished at lunch. Opening a done day starts
+        a fresh replay.
       </p>
     </div>
   )

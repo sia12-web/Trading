@@ -297,6 +297,9 @@ function SimulationDeskInner() {
     () => {}
   )
   const fillPendingRef = useRef<(pend: PendingOrder, at: number) => void>(() => {})
+  const tradesCountRef = useRef(0)
+  const realizedPnlRef = useRef(0)
+  const sessionCompletedRef = useRef(false)
   const [lastPrice, setLastPrice] = useState<number | null>(null)
   const [followingLive, setFollowingLive] = useState(true)
 
@@ -1010,6 +1013,42 @@ function SimulationDeskInner() {
     setMsg(`FILLED ${pend.direction} @ ${pend.level.toLocaleString()} — SL/TP only`)
   }, [])
 
+  const recordPaperClose = useCallback(
+    (pos: PaperPosition, exitPrice: number) => {
+      const isLong = pos.direction === 'LONG'
+      const pnl = isLong
+        ? (exitPrice - pos.entry) * pos.size
+        : (pos.entry - exitPrice) * pos.size
+      realizedPnlRef.current += Math.round(pnl * 100) / 100
+      tradesCountRef.current += 1
+    },
+    []
+  )
+
+  /** Persist lunch finish so the picker shows "done" instead of forever "resume". */
+  const markSessionCompleted = useCallback(async () => {
+    if (!replayDate || sessionCompletedRef.current) return
+    sessionCompletedRef.current = true
+    const duration = Math.max(0, (simNowRef.current || lunchUnixRef.current) - (openUnix || 0))
+    try {
+      await fetch('/api/trading/replays', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instrument,
+          replay_date: replayDate,
+          status: 'completed',
+          final_pnl: Math.round(realizedPnlRef.current * 100) / 100,
+          trades_count: tradesCountRef.current,
+          replay_duration_seconds: duration,
+          notes: 'Morning session finished at lunch',
+        }),
+      })
+    } catch {
+      sessionCompletedRef.current = false
+    }
+  }, [instrument, replayDate, openUnix])
+
   useEffect(() => {
     applyChartDataRef.current = applyChartData
   }, [applyChartData])
@@ -1037,7 +1076,12 @@ function SimulationDeskInner() {
         setSimNow(lunch)
         applyChartDataRef.current(lunch)
         setPlaying(false)
-        setMsg('Sim clock reached 11:30 ET — session window closed')
+        setMsg(
+          instrument === 'NIKKEI'
+            ? 'Sim clock reached lunch (11:30 JST) — morning finished'
+            : 'Sim clock reached lunch (11:30 ET) — morning finished'
+        )
+        void markSessionCompleted()
         return
       }
 
@@ -1061,6 +1105,7 @@ function SimulationDeskInner() {
             : bar.low <= pos.target
         if (hitSl) {
           const closed = pos
+          recordPaperClose(closed, closed.stopLoss)
           simNowRef.current = next
           setSimNow(next)
           applyChartDataRef.current(next)
@@ -1075,6 +1120,7 @@ function SimulationDeskInner() {
         }
         if (hitTp) {
           const closed = pos
+          recordPaperClose(closed, closed.target)
           simNowRef.current = next
           setSimNow(next)
           applyChartDataRef.current(next)
@@ -1103,7 +1149,13 @@ function SimulationDeskInner() {
     return () => {
       window.clearInterval(timer)
     }
-  }, [playing, openUnix, speed])
+  }, [playing, openUnix, speed, instrument, markSessionCompleted, recordPaperClose])
+
+  // If clock is already at/after lunch (paused at end), flip picker to "done"
+  useEffect(() => {
+    if (!lunchUnix || !simNow) return
+    if (simNow >= lunchUnix) void markSessionCompleted()
+  }, [simNow, lunchUnix, markSessionCompleted])
 
   // Unfilled sim limits expire when the entry window ends
   useEffect(() => {
@@ -1169,6 +1221,7 @@ function SimulationDeskInner() {
     const price = lastPriceRef.current ?? lastPrice
     if (!position || price == null) return
     const closed = position
+    recordPaperClose(closed, price)
     setMsg(`Closed @ ${price.toLocaleString()} — manage ended · levels back`)
     setLevels((prev) =>
       applySimTradeOutcome(prev, closed.entry, closed.direction, 'target')
@@ -1176,6 +1229,28 @@ function SimulationDeskInner() {
     setPosition(null)
     setLevelsOpen(true)
     setPlaying(false)
+  }
+
+  const resetSessionProgress = () => {
+    sessionCompletedRef.current = false
+    tradesCountRef.current = 0
+    realizedPnlRef.current = 0
+    if (replayDate) {
+      void fetch('/api/trading/replays', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instrument,
+          replay_date: replayDate,
+          status: 'in_progress',
+          final_pnl: null,
+          final_pnl_percent: null,
+          replay_duration_seconds: null,
+          trades_count: 0,
+          notes: null,
+        }),
+      })
+    }
   }
 
   const jumpToOpen = () => {
@@ -1187,6 +1262,7 @@ function SimulationDeskInner() {
     setPlaying(false)
     setPending(null)
     setPosition(null)
+    resetSessionProgress()
     setMsg(
       instrument === 'NIKKEI'
         ? 'Reset to 9:00 AM JST — place a level order, then Play'
@@ -1205,6 +1281,7 @@ function SimulationDeskInner() {
     setPosition(null)
     setTicketLevel(null)
     setLevelsOpen(true)
+    resetSessionProgress()
     setMsg(
       instrument === 'NIKKEI'
         ? 'Replay from 9:00 AM JST — place a level or watch the morning'

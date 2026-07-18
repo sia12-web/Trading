@@ -44,17 +44,36 @@ export async function GET(request: Request): Promise<NextResponse<any>> {
 
     const { data: userSessions } = await supabase
       .from('simulation_replays')
-      .select('replay_date')
+      .select('replay_date, status, final_pnl, replay_duration_seconds')
       .eq('user_id', user.id)
       .eq('instrument', instrument)
 
-    const sessionDates = new Set((userSessions || []).map((s) => s.replay_date))
+    const sessionByDate = new Map<
+      string,
+      { status: 'in_progress' | 'completed' }
+    >()
+    for (const s of userSessions || []) {
+      const date = String(s.replay_date)
+      // Prefer completed if column missing: duration/pnl already set
+      const completed =
+        s.status === 'completed' ||
+        s.replay_duration_seconds != null ||
+        s.final_pnl != null
+      sessionByDate.set(date, {
+        status: completed ? 'completed' : 'in_progress',
+      })
+    }
 
-    const available_dates: AvailableDate[] = tradingDays.map((date) => ({
-      date,
-      is_available: true,
-      has_session: sessionDates.has(date),
-    }))
+    const available_dates: AvailableDate[] = tradingDays.map((date) => {
+      const sess = sessionByDate.get(date)
+      const session_status = sess?.status ?? 'none'
+      return {
+        date,
+        is_available: true,
+        has_session: session_status !== 'none',
+        session_status,
+      }
+    })
 
     const response: AvailableDatesResponse = {
       instrument,
