@@ -51,6 +51,7 @@ import {
   zoneStopPrice,
   formatZone,
 } from '@/lib/trading/deskLevels'
+import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
 
 type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI'
 type Direction = 'LONG' | 'SHORT'
@@ -1824,36 +1825,42 @@ function SimulationDeskInner() {
         )}
       </div>
 
-      {/* Levels panel — bottom-center so it doesn't cover chart action */}
+      {/* Morning playbook — floating draggable widget */}
       {levelsOpen && !position && !pending && (
-        <div className="absolute bottom-10 left-1/2 z-30 flex w-72 max-h-[min(38vh,360px)] -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-white/10 bg-[#0d1117]/95 shadow-2xl backdrop-blur-md">
-          <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+        <DraggableDeskWidget
+          storageKey="desk-playbook-sim"
+          defaultPos={{ x: 24, y: 72 }}
+          title={
+            <>
               Morning playbook
-              <span className="ml-1.5 normal-case tracking-normal text-gray-600">
+              <span className="ml-1.5 font-normal normal-case tracking-normal text-violet-300/80">
                 · {levelsAiLoading ? 'AI…' : levelsSource === 'ai' ? 'AI Haiku' : 'structure'}
               </span>
-            </span>
-            <button
-              type="button"
-              onClick={() => setLevelsOpen(false)}
-              className="text-gray-600 hover:text-white"
-            >
-              ✕
-            </button>
-          </div>
+            </>
+          }
+          onClose={() => setLevelsOpen(false)}
+          footer={
+            <label className="block text-[9px] font-semibold uppercase tracking-wider text-gray-500">
+              Account $
+              <input
+                type="number"
+                value={accountSize}
+                onChange={(e) => setAccountSize(Number(e.target.value) || 0)}
+                className="price-mono mt-1.5 w-full rounded-lg border border-white/10 bg-[#161b22] px-2.5 py-1.5 text-xs font-semibold text-white focus:border-violet-500/40 focus:outline-none"
+              />
+            </label>
+          }
+        >
           {playbook && (
-            <div className="border-b border-white/10 px-3 py-2 space-y-1">
+            <div className="border-b border-white/8 bg-violet-950/20 px-3 py-2.5 space-y-1">
               <p className="text-[10px] font-bold uppercase tracking-wide text-violet-300">
                 Focus:{' '}
-                {playbook.focusSide === 'BOTH'
-                  ? 'Best ★ first'
-                  : playbook.focusSide}
+                {playbook.focusSide === 'BOTH' ? 'Best ★ first' : playbook.focusSide}
               </p>
               <p className="text-[10px] leading-snug text-gray-400">{playbook.focusHint}</p>
             </div>
           )}
-          <div className="flex-1 space-y-1.5 overflow-y-auto p-2">
+          <div className="space-y-1.5 p-2">
             {levels.length === 0 && (
               <p className="p-2 text-[11px] text-amber-500/90">No levels for this session.</p>
             )}
@@ -1870,34 +1877,37 @@ function SimulationDeskInner() {
               return (
                 <div
                   key={`${l.level}-${i}`}
-                  className={`rounded-lg border text-[11px] ${
+                  className={`rounded-xl border text-[11px] ${
                     isRes
-                      ? 'border-red-900/50 bg-red-950/40 text-red-300'
-                      : 'border-emerald-900/50 bg-emerald-950/40 text-emerald-300'
+                      ? 'border-red-900/50 bg-red-950/35 text-red-300'
+                      : 'border-emerald-900/50 bg-emerald-950/35 text-emerald-300'
                   } ${isPrimary ? 'ring-1 ring-white/15' : 'opacity-75'}`}
                 >
                   <button
                     type="button"
                     disabled={!canEnter}
                     onClick={() => setTicketLevel(l)}
-                    className="w-full px-2.5 py-2 text-left transition-all disabled:opacity-40 hover:brightness-110"
+                    className="w-full px-2.5 py-2.5 text-left transition-all disabled:opacity-40 hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
                   >
                     <div className="flex items-center justify-between gap-1">
-                      <span className="text-[9px] font-bold uppercase">
+                      <span className="text-[9px] font-bold uppercase tracking-wide">
                         {isPrimary ? 'PRIMARY' : 'WATCH'} {isRes ? 'SHORT' : 'BUY'}
                       </span>
-                      <span className="text-amber-300/90 text-[10px]" title={`Conviction ${l.conviction}/10`}>
+                      <span
+                        className="text-amber-300/90 text-[10px]"
+                        title={`Conviction ${l.conviction}/10`}
+                      >
                         {stars}
                       </span>
                     </div>
-                    <div className="price-mono mt-0.5 text-sm font-bold text-white">
+                    <div className="price-mono mt-1 text-base font-bold tracking-tight text-white">
                       {l.level.toLocaleString()}
                     </div>
                     <div className="mt-0.5 text-[9px] text-gray-500">
                       zone {formatZone(l.level)} · {levelsSource}
                     </div>
                   </button>
-                  <div className="border-t border-white/5 px-2 pb-2">
+                  <div className="border-t border-white/5 px-2.5 pb-2">
                     <button
                       type="button"
                       onClick={(e) => {
@@ -1909,27 +1919,14 @@ function SimulationDeskInner() {
                       {whyOpen ? 'Hide why ▾' : 'Why this level ▸'}
                     </button>
                     {whyOpen && (
-                      <p className="mt-1.5 text-[11px] leading-relaxed text-gray-300">
-                        {why}
-                      </p>
+                      <p className="mt-1.5 text-[11px] leading-relaxed text-gray-300">{why}</p>
                     )}
                   </div>
                 </div>
               )
             })}
           </div>
-          <div className="border-t border-white/10 p-2">
-            <label className="text-[9px] uppercase text-gray-600">
-              Account $
-              <input
-                type="number"
-                value={accountSize}
-                onChange={(e) => setAccountSize(Number(e.target.value) || 0)}
-                className="price-mono mt-1 w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 text-xs text-white"
-              />
-            </label>
-          </div>
-        </div>
+        </DraggableDeskWidget>
       )}
 
       {ticketLevel && (

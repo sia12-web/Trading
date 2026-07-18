@@ -43,6 +43,7 @@ import {
 } from '@/lib/chart/sessionVwap'
 import { aiLevelsUrl, resolveDeskLevels } from '@/lib/trading/deskLevels'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
+import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
 import {
   isDeskHoursNow,
   isLiveBarsAllowed,
@@ -1670,23 +1671,19 @@ export function TradingChart({
           Reset scale
         </button>
 
-        {/* Levels panel — bottom-center so price axis / top chrome stay clear */}
+        {/* Morning playbook — floating draggable widget */}
         {showLevels &&
           !hideTradeLevels &&
           !positionOverlay &&
           !pendingLimit &&
           levels.some((l) => l.source === 'ai' || l.source === 'structure') && (
-          <div className="absolute bottom-10 left-1/2 z-30 flex w-72 max-h-[min(38vh,360px)] -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-surface-500/80 bg-surface-900/95 shadow-2xl backdrop-blur-md">
-            <div className="border-b border-surface-600 px-3 py-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-                Morning playbook
-              </p>
-              <p className="mt-0.5 text-[10px] leading-snug text-gray-400">
-                Trade the <span className="font-semibold text-gray-300">PRIMARY</span> with more ★ —
-                reaction updates from the market every ~2m.
-              </p>
-            </div>
-            <div className="flex-1 space-y-1.5 overflow-y-auto p-2">
+          <DraggableDeskWidget
+            storageKey="desk-playbook-live"
+            defaultPos={{ x: 24, y: 88 }}
+            title="Morning playbook"
+            onClose={undefined}
+          >
+            <div className="space-y-1.5 p-2">
               {levels
                 .filter((l) => l.source === 'ai' || l.source === 'structure')
                 .slice(0, 4)
@@ -1705,15 +1702,15 @@ export function TradingChart({
                           reasoning: l.reasoning,
                         })
                       }
-                      className={`w-full rounded-lg border px-2.5 py-2 text-left text-[11px] transition-all hover:brightness-110 ${
+                      className={`w-full rounded-xl border px-2.5 py-2.5 text-left text-[11px] transition-all hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 ${
                         isRes
-                          ? 'border-red-900/60 bg-red-950/40 text-red-300'
-                          : 'border-emerald-900/60 bg-emerald-950/40 text-emerald-300'
+                          ? 'border-red-900/50 bg-red-950/35 text-red-300'
+                          : 'border-emerald-900/50 bg-emerald-950/35 text-emerald-300'
                       } ${isPrimary ? 'ring-1 ring-white/20' : 'opacity-80'}`}
                       title={l.reasoning ?? l.label}
                     >
                       <div className="flex items-center justify-between gap-1">
-                        <span className="text-[9px] font-bold uppercase">
+                        <span className="text-[9px] font-bold uppercase tracking-wide">
                           {isPrimary ? 'PRIMARY' : 'WATCH'} {isRes ? 'SHORT' : 'BUY'}
                         </span>
                         <span className="text-[10px] text-amber-300/90" title={`Conviction ${l.conviction}`}>
@@ -1721,12 +1718,12 @@ export function TradingChart({
                           <span className="text-gray-600">{'☆'.repeat(5 - stars)}</span>
                         </span>
                       </div>
-                      <div className="price-mono mt-0.5 text-sm font-bold text-white">
+                      <div className="price-mono mt-1 text-base font-bold tracking-tight text-white">
                         {l.price.toLocaleString()}
                       </div>
                       {reaction && (
                         <div
-                          className={`mt-1 text-[9px] font-semibold uppercase tracking-wide ${
+                          className={`mt-1.5 text-[9px] font-semibold uppercase tracking-wide ${
                             reaction.startsWith('held')
                               ? 'text-emerald-400'
                               : reaction.startsWith('broke')
@@ -1741,7 +1738,7 @@ export function TradingChart({
                   )
                 })}
             </div>
-          </div>
+          </DraggableDeskWidget>
         )}
       </div>
     </div>
