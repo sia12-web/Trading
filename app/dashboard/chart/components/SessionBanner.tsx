@@ -17,6 +17,7 @@ export interface SessionGateState {
   canViewLiveChart: boolean
   canFetchLiveBars?: boolean
   clockedIn?: boolean
+  attendedToday?: boolean
   canClockIn?: boolean
   market?: 'NY' | 'TOKYO'
   timeEst: string
@@ -90,6 +91,7 @@ export function SessionBanner({
         canViewLiveChart: json.canViewLiveChart,
         canFetchLiveBars: json.canFetchLiveBars,
         clockedIn: !!json.clockedIn,
+        attendedToday: !!json.attendedToday,
         canClockIn: !!json.canClockIn,
         market: json.market,
         timeEst: json.timeEst,
@@ -220,6 +222,10 @@ export function SessionBanner({
         >
           {clocking ? 'Clocking in…' : 'Today I trade'}
         </button>
+      ) : gate.attendedToday ? (
+        <span className="rounded bg-gray-500/30 px-2 py-0.5 text-gray-300 font-semibold">
+          CLOCKED OUT
+        </span>
       ) : null}
       {gate.phase === 'ENTRY' && gate.entryWindow && gate.clockedIn && (
         <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-emerald-300">

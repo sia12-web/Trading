@@ -109,7 +109,8 @@ async function runEodJournal(request: NextRequest) {
     }
 
     // Already written?
-    if (attendance.eod_journal && Object.keys(attendance.eod_journal).length > 2) {
+    const existingEod = attendance.eod_journal as { written_at?: string } | null
+    if (existingEod && typeof existingEod.written_at === 'string') {
       return NextResponse.json({
         ok: true,
         skipped: true,

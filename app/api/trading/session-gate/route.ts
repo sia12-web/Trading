@@ -106,6 +106,7 @@ export async function GET(request: Request) {
     const market = deskMarketFor(lockedInstrument ?? viewingInstrument ?? 'DOW')
     const attendance = await getTodayAttendance(supabase, user.id, market)
     const clockedIn = attendance?.status === 'clocked_in'
+    const attendedToday = !!attendance
 
     const gate = resolveSessionGate({
       lockedInstrument,
@@ -114,6 +115,7 @@ export async function GET(request: Request) {
       dayDone,
       viewingInstrument: viewingInstrument ?? lockedInstrument,
       clockedIn,
+      attendedToday,
     })
 
     return NextResponse.json(

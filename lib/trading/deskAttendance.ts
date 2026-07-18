@@ -12,7 +12,7 @@ import {
   type DeskInstrument,
   type DeskMarket,
 } from '@/lib/trading/sessionGate'
-import { parseTimeToSeconds } from '@/lib/utils/timeUtils'
+import { getESTDateString, parseTimeToSeconds } from '@/lib/utils/timeUtils'
 
 export type AttendanceStatus = 'clocked_in' | 'clocked_out' | 'missed'
 
@@ -249,12 +249,20 @@ export async function autoLunchClockOut(
     const row = await getTodayAttendance(supabase, userId, market, now)
     if (row?.status !== 'clocked_in') continue
 
-    // Prefer instrument that had a filled trade today
+    // Prefer instrument that had a filled trade today.
+    // Trades currently store EST calendar dates; Tokyo session_date is JST — check both.
     let traded: DeskInstrument | null = null
+    const sessionDate = sessionDateForMarket(market, now)
+    const estDate = getESTDateString(now)
+    const dateFilter =
+      market === 'TOKYO' && estDate !== sessionDate
+        ? [sessionDate, estDate]
+        : [sessionDate]
     const { data: trade } = await supabase
       .from('trades_journal')
       .select('instrument')
       .eq('user_id', userId)
+      .in('trade_date', dateFilter)
       .eq('fill_status', 'filled')
       .in('instrument', market === 'TOKYO' ? ['NIKKEI'] : ['DOW', 'NASDAQ'])
       .order('created_at', { ascending: false })

@@ -126,6 +126,8 @@ export interface SessionGateInput {
    * When false/undefined during desk hours, chart stays locked.
    */
   clockedIn?: boolean
+  /** Had a desk_attendance row today (clocked in earlier, even if lunch clock-out) */
+  attendedToday?: boolean
 }
 
 export interface SessionGateResult {
@@ -141,8 +143,10 @@ export interface SessionGateResult {
   message: string
   entryWindow: 1 | 2 | 3 | null
   market: DeskMarket
-  /** True when trader clocked in for this market today */
+  /** True when trader is currently clocked in for this market */
   clockedIn: boolean
+  /** True if they clocked in at any point today (still true after lunch clock-out) */
+  attendedToday: boolean
   /** Clock-in window open (prep → lunch) and not yet clocked in */
   canClockIn: boolean
 }
@@ -242,7 +246,9 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   const hits = input.stopLossHitCount ?? 0
   const dayDone = !!input.dayDone || !!input.marketDisabled || hits >= MAX_STOP_HITS
   const clockedIn = !!input.clockedIn
+  const attendedToday = !!input.attendedToday || clockedIn
   const inDeskWindow = isWeekdayInTz(now, s.tz) && t >= analyze && t < lunch
+  // Can clock in only during morning window if not already attended (incl. re-open if early manual out)
   const canClockIn = inDeskWindow && !clockedIn
 
   const bars = isLiveBarsAllowed(viewing ?? locked, now)
@@ -259,31 +265,54 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     market,
     canFetchLiveBars: bars.open && !!locked && (!viewing || viewing === locked),
     clockedIn,
+    attendedToday,
     canClockIn,
   }
 
-  // Live chart only when clocked in + locked instrument + morning bars live
+  // Live streaming only while currently clocked in; attendedToday still allows viewing frozen chart after lunch
   const canView =
-    clockedIn &&
+    (clockedIn || (attendedToday && t >= lunch)) &&
     !!locked &&
-    bars.open &&
+    (bars.open || (attendedToday && t >= lunch)) &&
     (viewing == null || viewing === locked)
 
-  const finish = (r: Omit<SessionGateResult, 'clockedIn' | 'canClockIn'>): SessionGateResult => {
+  const finish = (
+    r: Omit<SessionGateResult, 'clockedIn' | 'canClockIn' | 'attendedToday'>
+  ): SessionGateResult => {
     if (clockedIn) {
-      return { ...r, clockedIn, canClockIn }
+      return { ...r, clockedIn, attendedToday, canClockIn }
     }
-    // Not clocked in: lock live chart / entries / manage; keep phase messaging
+    // Never clocked in during morning desk → lock trading + chart
     const needClock =
       inDeskWindow &&
+      !attendedToday &&
       (r.phase === 'PREP' ||
         r.phase === 'RECOMMENDED' ||
         r.phase === 'ENTRY' ||
         r.phase === 'FLAT' ||
         r.phase === 'MANAGE')
+    // Attended earlier today (lunch/manual clock-out)
+    if (attendedToday) {
+      const canReClock = inDeskWindow // before lunch only
+      return {
+        ...r,
+        clockedIn: false,
+        attendedToday: true,
+        canClockIn: canReClock,
+        canPlaceEntry: false,
+        canManagePosition: false,
+        // Frozen morning chart after lunch is OK; no live bars once clocked out
+        canFetchLiveBars: false,
+        canViewLiveChart: !!locked && (t >= lunch || r.canViewLiveChart),
+        message: canReClock
+          ? 'Clocked out — re-clock in with “Today I trade” to resume the live desk.'
+          : r.message,
+      }
+    }
     return {
       ...r,
       clockedIn: false,
+      attendedToday: false,
       canClockIn,
       canViewLiveChart: false,
       canFetchLiveBars: false,

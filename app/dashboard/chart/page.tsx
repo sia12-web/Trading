@@ -354,7 +354,19 @@ export default function ChartPage() {
 
   const locked = gate?.lockedInstrument ?? null
   const clockedIn = !!gate?.clockedIn
-  const chartLocked = gate != null && !clockedIn
+  const attendedToday = !!gate?.attendedToday
+  // Overlay while not clocked in during the morning window (incl. early clock-out).
+  // After lunch: no overlay — attended traders keep the frozen chart; others see DONE.
+  const chartLocked =
+    gate != null &&
+    !clockedIn &&
+    (!!gate.canClockIn ||
+      (!attendedToday &&
+        (gate.phase === 'PREP' ||
+          gate.phase === 'RECOMMENDED' ||
+          gate.phase === 'ENTRY' ||
+          gate.phase === 'FLAT' ||
+          gate.phase === 'MANAGE')))
   const inManage = gate?.phase === 'MANAGE' || !!managePos
   const inEntry = gate?.phase === 'ENTRY' && !!gate?.canPlaceEntry
   const canTrade = inEntry && !pending && !managePos && clockedIn

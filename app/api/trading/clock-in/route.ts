@@ -66,16 +66,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: result.error }, { status: 403 })
     }
 
-    // Kick level prep for the locked instrument (cheap if already cached)
+    // Kick level prep when we know the instrument (NY waits for recommendation via banner)
     const prepInstrument =
       result.row.instrument ||
       instrument ||
       (market === 'TOKYO' ? 'NIKKEI' : null)
     if (prepInstrument) {
+      // Fire-and-forget — do not await (keeps clock-in snappy). Absolute URL can fail
+      // behind proxies; relative fetch on same host via nextUrl is fine for desk.
       const origin = request.nextUrl.origin
-      fetch(
-        `${origin}/api/trading/auto-levels?instrument=${encodeURIComponent(prepInstrument)}`,
-        { method: 'POST', headers: { cookie: request.headers.get('cookie') || '' } }
+      void fetch(
+        `${origin}/api/trading/auto-levels?instrument=${encodeURIComponent(prepInstrument)}&force=1`,
+        {
+          method: 'POST',
+          headers: {
+            cookie: request.headers.get('cookie') || '',
+            authorization: request.headers.get('authorization') || '',
+          },
+        }
       ).catch(() => {})
     }
 
