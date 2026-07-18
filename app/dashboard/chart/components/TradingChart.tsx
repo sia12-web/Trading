@@ -1426,13 +1426,11 @@ export function TradingChart({
           </span>
         )}
 
-        {(hideTradeLevels || positionOverlay || pendingLimit) && (
+        {(positionOverlay || pendingLimit) && (
           <span className="rounded-lg border border-blue-700/50 bg-blue-950/40 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-blue-200">
             {positionOverlay
               ? 'In trade · levels hidden · SL / TP only'
-              : pendingLimit
-                ? 'Working limit · levels hidden · SL / TP only'
-                : 'Levels hidden · SL / TP only'}
+              : 'Working limit · levels hidden · SL / TP only'}
           </span>
         )}
 

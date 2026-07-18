@@ -366,9 +366,9 @@ export function computeSessionHighlightSpans(args: {
       runLow = c.low
       continue
     }
-    // New session, or a large time hole (weekend / feed gap) — start a fresh column
-    const gapSec = c.time - (runEnd - barSec)
-    if (name !== runName || gapSec > barSec * 3) {
+    // Only split on session change — keep one column through feed holes so
+    // timeToX stretches color across the gap (no black strips between bars).
+    if (name !== runName) {
       flush()
       runName = name
       runStart = c.time
@@ -382,6 +382,13 @@ export function computeSessionHighlightSpans(args: {
     if (c.low < runLow) runLow = c.low
   }
   flush()
+
+  // Seal abutting sessions so pixel columns never leave a 1px gutters
+  for (let i = 0; i < spans.length - 1; i++) {
+    const cur = spans[i]!
+    const next = spans[i + 1]!
+    if (next.startT > cur.endT) cur.endT = next.startT
+  }
 
   return { spans, candleTimes }
 }
@@ -533,8 +540,6 @@ export function paintSessionHighlightOverlay(
     const d = document.createElement('div')
     d.className = 'pointer-events-none absolute'
     d.style.position = 'absolute'
-    d.style.right = 'auto'
-    d.style.bottom = 'auto'
     d.style.margin = '0'
     d.style.padding = '0'
     d.style.boxSizing = 'border-box'
@@ -549,10 +554,11 @@ export function paintSessionHighlightOverlay(
     d.style.position = 'absolute'
     d.style.left = `${s.left}px`
     d.style.width = `${Math.max(0, s.width)}px`
-    d.style.top = `${s.top}px`
-    d.style.height = `${Math.max(0, s.height)}px`
+    // Pin to host top+bottom so bands always fill the pane (ignore stale px height)
+    d.style.top = '0'
+    d.style.bottom = '0'
+    d.style.height = 'auto'
     d.style.right = 'auto'
-    d.style.bottom = 'auto'
     d.style.backgroundColor = s.color
     d.style.zIndex = String(s.zIndex)
     d.title = `${s.name} session`
