@@ -20,7 +20,7 @@ import type {
 
 // Validation constants — desk markets
 const VALID_INSTRUMENTS = ['DOW', 'NASDAQ', 'NIKKEI'] as const
-const VALID_SPEEDS = [0.5, 1, 2, 4, 16] as const
+const VALID_SPEEDS = [0.25, 0.5, 1, 2, 4, 16] as const
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 100
 
@@ -95,7 +95,7 @@ export async function POST(request: Request): Promise<NextResponse<any>> {
     if (!isValidSpeed(body.playback_speed)) {
       logger.error('POST /api/trading/replays: Invalid playback speed', { speed: body.playback_speed })
       return NextResponse.json(
-        { error: 'Invalid playback speed: must be 0.5, 1, 2, 4, or 16' },
+        { error: 'Invalid playback speed: must be 0.25, 0.5, 1, 2, 4, or 16' },
         { status: 400 }
       )
     }

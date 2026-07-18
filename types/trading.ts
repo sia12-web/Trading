@@ -311,7 +311,7 @@ export interface ManagementStatusResponse {
 
 // Slice 5: Historical Market Replay
 
-export type PlaybackSpeed = 0.5 | 1 | 2 | 4 | 16
+export type PlaybackSpeed = 0.25 | 0.5 | 1 | 2 | 4 | 16
 
 export type ReplaySessionStatus = 'in_progress' | 'completed'
 

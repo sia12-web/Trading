@@ -6,11 +6,10 @@ import { useRouter } from 'next/navigation'
 import { useReplayModeStore } from '@/lib/stores/replayModeStore'
 import { ReplayDatePicker } from './components/ReplayDatePicker'
 import { formatDateDisplay } from '@/lib/utils/dateUtils'
-import type { CreateReplaySessionRequest } from '@/types/trading'
+import type { CreateReplaySessionRequest, PlaybackSpeed } from '@/types/trading'
 
 const INSTRUMENTS: Array<'DOW' | 'NASDAQ' | 'NIKKEI'> = ['DOW', 'NASDAQ', 'NIKKEI']
-const PLAYBACK_SPEEDS = [0.25, 0.5, 1, 2, 4, 16] as const
-type PlaybackSpeed = (typeof PLAYBACK_SPEEDS)[number]
+const PLAYBACK_SPEEDS: PlaybackSpeed[] = [0.25, 0.5, 1, 2, 4, 16]
 
 export default function SimulationPage() {
   const router = useRouter()
