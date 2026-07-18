@@ -17,6 +17,7 @@ export default function SimulationPage() {
     selectedDate,
     selectedInstrument,
     setSelectedInstrument,
+    setSelectedDate,
     setMode,
     loadFromLocalStorage,
   } = useReplayModeStore()
@@ -26,6 +27,7 @@ export default function SimulationPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(
     null
   )
+  const [lastInstrument, setLastInstrument] = useState<string | null>(null)
 
   useEffect(() => {
     loadFromLocalStorage()
@@ -42,6 +44,18 @@ export default function SimulationPage() {
     }
   }, [selectedInstrument, setSelectedInstrument])
 
+  // Clear stale date when switching NY ↔ Tokyo calendars
+  useEffect(() => {
+    if (lastInstrument == null) {
+      setLastInstrument(selectedInstrument)
+      return
+    }
+    if (lastInstrument !== selectedInstrument) {
+      setSelectedDate(null)
+      setLastInstrument(selectedInstrument)
+    }
+  }, [selectedInstrument, lastInstrument, setSelectedDate])
+
   const deskInstrument: 'DOW' | 'NASDAQ' | 'NIKKEI' =
     selectedInstrument === 'NASDAQ'
       ? 'NASDAQ'
@@ -50,7 +64,7 @@ export default function SimulationPage() {
         : 'DOW'
   const openLabel = deskInstrument === 'NIKKEI' ? '9:00 AM JST' : '9:30 AM ET'
 
-  const handlePlayReplay = () => {
+  const handlePlayReplay = async () => {
     if (!selectedDate) {
       setMessage({
         type: 'error',
@@ -64,27 +78,47 @@ export default function SimulationPage() {
 
     setIsCreatingSession(true)
     setMessage({
-      type: 'success',
+      type: 'info',
       text: `Opening ${deskInstrument} on ${formatDateDisplay(selectedDate)} at ${openLabel}…`,
     })
-
-    const qs = new URLSearchParams({
-      instrument: deskInstrument,
-      date: selectedDate,
-      speed: String(playbackSpeed),
-    })
-    router.push(`/dashboard/simulation/replay/desk?${qs.toString()}`)
 
     const request: CreateReplaySessionRequest = {
       instrument: deskInstrument,
       replay_date: selectedDate,
       playback_speed: playbackSpeed,
     }
-    void fetch('/api/trading/replays', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(request),
-    }).finally(() => setIsCreatingSession(false))
+
+    try {
+      const res = await fetch('/api/trading/replays', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setMessage({
+          type: 'error',
+          text: json.error || 'Could not start replay session',
+        })
+        return
+      }
+      if (json.persisted === false) {
+        setMessage({
+          type: 'info',
+          text: 'Desk opening (session not persisted — badges may not update)',
+        })
+      }
+      const qs = new URLSearchParams({
+        instrument: deskInstrument,
+        date: selectedDate,
+        speed: String(playbackSpeed),
+      })
+      router.push(`/dashboard/simulation/replay/desk?${qs.toString()}`)
+    } catch {
+      setMessage({ type: 'error', text: 'Network error starting replay' })
+    } finally {
+      setIsCreatingSession(false)
+    }
   }
 
   return (

@@ -17,7 +17,7 @@ function AvailabilityBadge({ date }: { date: AvailableDate }) {
     return (
       <span
         className="text-[10px] text-sky-400 font-medium"
-        title="Morning finished — open again to replay from scratch"
+        title="Morning finished at lunch — open again to replay from cash open"
       >
         done
       </span>
@@ -25,8 +25,11 @@ function AvailabilityBadge({ date }: { date: AvailableDate }) {
   }
   if (status === 'in_progress') {
     return (
-      <span className="text-[10px] text-orange-400 font-medium" title="Session started — continue">
-        resume
+      <span
+        className="text-[10px] text-orange-400 font-medium"
+        title="Opened before — starts again at cash open (not mid-session restore)"
+      >
+        started
       </span>
     )
   }
@@ -221,8 +224,8 @@ export function ReplayDatePicker({ onDateSelected }: ReplayDatePickerProps) {
       </div>
 
       <p className="text-[11px] text-gray-600 pt-2 border-t border-surface-700">
-        ready = new · resume = started · done = morning finished at lunch. Opening a done day starts
-        a fresh replay.
+        ready = new · started = opened before · done = finished at lunch. Every open starts again at
+        cash open (not a mid-session restore).
       </p>
     </div>
   )

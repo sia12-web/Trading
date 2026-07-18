@@ -5,6 +5,7 @@
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { logger } from '@/lib/utils/logger'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { getLastNNycTradingDays, getLastNTokyoTradingDays } from '@/lib/utils/dateUtils'
@@ -32,12 +33,14 @@ export async function GET(request: Request): Promise<NextResponse<any>> {
     }
 
     const instrument = instrumentParam
-    const supabase = await createClient()
     const user = await getOrCreateUser(request)
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    // Same client as POST/PATCH so badges match persisted sessions under RLS/dev auth
+    const supabase = createAdminClient() ?? (await createClient())
 
     const tradingDays =
       instrument === 'NIKKEI' ? getLastNTokyoTradingDays(5) : getLastNNycTradingDays(5)
@@ -54,11 +57,11 @@ export async function GET(request: Request): Promise<NextResponse<any>> {
     >()
     for (const s of userSessions || []) {
       const date = String(s.replay_date)
-      // Prefer completed if column missing: duration/pnl already set
+      // Prefer explicit status; fall back for pre-migration rows
       const completed =
         s.status === 'completed' ||
-        s.replay_duration_seconds != null ||
-        s.final_pnl != null
+        (s.status == null &&
+          (s.replay_duration_seconds != null || s.final_pnl != null))
       sessionByDate.set(date, {
         status: completed ? 'completed' : 'in_progress',
       })

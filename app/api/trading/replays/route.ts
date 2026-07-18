@@ -11,7 +11,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { logger } from '@/lib/utils/logger'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
-import { getLastNNycTradingDays } from '@/lib/utils/dateUtils'
+import { getLastNNycTradingDays, getLastNTokyoTradingDays } from '@/lib/utils/dateUtils'
 import type {
   CreateReplaySessionRequest,
   SimulationReplay,
@@ -75,11 +75,18 @@ export async function POST(request: Request): Promise<NextResponse<any>> {
       )
     }
 
-    // Must be one of the last 5 NYC trading days
-    const allowed = new Set(getLastNNycTradingDays(5))
+    // Last 5 cash days for that market's calendar (NY vs Tokyo)
+    const allowed = new Set(
+      body.instrument === 'NIKKEI' ? getLastNTokyoTradingDays(5) : getLastNNycTradingDays(5)
+    )
     if (!allowed.has(body.replay_date)) {
       return NextResponse.json(
-        { error: 'Invalid date: choose one of the last 5 NYC trading days' },
+        {
+          error:
+            body.instrument === 'NIKKEI'
+              ? 'Invalid date: choose one of the last 5 Tokyo trading days'
+              : 'Invalid date: choose one of the last 5 NYC trading days',
+        },
         { status: 400 }
       )
     }
@@ -88,7 +95,7 @@ export async function POST(request: Request): Promise<NextResponse<any>> {
     if (!isValidSpeed(body.playback_speed)) {
       logger.error('POST /api/trading/replays: Invalid playback speed', { speed: body.playback_speed })
       return NextResponse.json(
-        { error: 'Invalid playback speed: must be 1, 2, 4, or 16' },
+        { error: 'Invalid playback speed: must be 0.5, 1, 2, 4, or 16' },
         { status: 400 }
       )
     }
@@ -119,6 +126,7 @@ export async function POST(request: Request): Promise<NextResponse<any>> {
         notes: null,
         created_at: now,
         updated_at: now,
+        persisted: false as const,
       }
     }
 
@@ -163,6 +171,7 @@ export async function POST(request: Request): Promise<NextResponse<any>> {
             notes: session.notes,
             created_at: session.created_at,
             updated_at: session.updated_at,
+            persisted: true as const,
           },
           { status: 200 }
         )
@@ -186,10 +195,19 @@ export async function POST(request: Request): Promise<NextResponse<any>> {
         .single()
 
       if (insertError || !newSession) {
-        logger.error('POST /api/trading/replays: Insert failed — using ephemeral', {
-          error: insertError,
-        })
-        return NextResponse.json(ephemeral(), { status: 201 })
+        logger.error('POST /api/trading/replays: Insert failed', { error: insertError })
+        // Local/dev without migrated schema — allow desk; badges won't persist
+        if (process.env.NODE_ENV !== 'production') {
+          return NextResponse.json(ephemeral(), { status: 201 })
+        }
+        return NextResponse.json(
+          {
+            error: 'Failed to create replay session',
+            detail: insertError?.message,
+            hint: 'Ensure simulation_replays supports status + 0.5x speed (migration 20260718)',
+          },
+          { status: 500 }
+        )
       }
 
       return NextResponse.json(
@@ -207,12 +225,16 @@ export async function POST(request: Request): Promise<NextResponse<any>> {
           notes: null,
           created_at: newSession.created_at,
           updated_at: newSession.updated_at,
+          persisted: true as const,
         },
         { status: 201 }
       )
     } catch (dbError) {
-      logger.error('POST /api/trading/replays: DB error — ephemeral session', { dbError })
-      return NextResponse.json(ephemeral(), { status: 201 })
+      logger.error('POST /api/trading/replays: DB error', { dbError })
+      if (process.env.NODE_ENV !== 'production') {
+        return NextResponse.json(ephemeral(), { status: 201 })
+      }
+      return NextResponse.json({ error: 'Database error creating session' }, { status: 500 })
     }
   } catch (error) {
     logger.error('POST /api/trading/replays: Unexpected error', { error })

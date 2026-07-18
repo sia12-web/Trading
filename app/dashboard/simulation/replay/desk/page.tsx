@@ -1,8 +1,8 @@
 'use client'
 
 /**
- * Simulation replay desk (query-param driven — no DB session required)
- * Flow: pick day → land at 9:30 ET → AI/structure levels → pending → fill → manage
+ * Simulation replay desk (query-param driven).
+ * Flow: pick day → cash open (ET/JST) → structure levels → pending → fill → manage → lunch done
  */
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -43,7 +43,6 @@ import {
   simSuggestedDirection,
 } from '@/lib/trading/simOvernightBias'
 import {
-  aiLevelsUrl,
   resolveDeskLevels,
   zoneStopPrice,
   formatZone,
@@ -127,76 +126,81 @@ interface PaperPosition {
   filledAt: number
 }
 
-const CHART_TZ = 'America/New_York'
 /** Trailing window while following the sim tip — readable bars, tip pinned right */
 const FOLLOW_BARS = 96
 const FOLLOW_RIGHT_PAD = 8
 const FOLLOW_BAR_SPACING = 7
 
-// Reuse formatters — tick mark paint during scroll was allocating these every call
-const fmtTime = new Intl.DateTimeFormat('en-US', {
-  timeZone: CHART_TZ,
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-})
-const fmtTimeSec = new Intl.DateTimeFormat('en-US', {
-  timeZone: CHART_TZ,
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hour12: false,
-})
-const fmtDay = new Intl.DateTimeFormat('en-US', {
-  timeZone: CHART_TZ,
-  day: 'numeric',
-  month: 'short',
-})
-const fmtMonth = new Intl.DateTimeFormat('en-US', {
-  timeZone: CHART_TZ,
-  month: 'short',
-  year: '2-digit',
-})
-const fmtYear = new Intl.DateTimeFormat('en-US', {
-  timeZone: CHART_TZ,
-  year: 'numeric',
-})
-
-function formatChartTime(unix: number, withSeconds = false): string {
-  return (withSeconds ? fmtTimeSec : fmtTime).format(new Date(unix * 1000))
+type ChartFmt = {
+  formatTime: (unix: number, withSeconds?: boolean) => string
+  formatDate: (unix: number, style?: 'day' | 'month' | 'year') => string
+  tickMarkFormatter: (time: UTCTimestamp | string | number, tickMarkType: TickMarkType) => string
+  formatClock: (unix: number) => string
+  tzLabel: string
 }
 
-function formatChartDate(unix: number, style: 'day' | 'month' | 'year' = 'day'): string {
-  if (style === 'year') return fmtYear.format(new Date(unix * 1000))
-  if (style === 'month') return fmtMonth.format(new Date(unix * 1000))
-  return fmtDay.format(new Date(unix * 1000))
-}
+/** Market-local chart clocks — NY for DOW/NASDAQ, Tokyo for NIKKEI. */
+function makeChartFormatters(timeZone: string, tzLabel: string): ChartFmt {
+  const fmtTime = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+  const fmtTimeSec = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
+  const fmtDay = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    day: 'numeric',
+    month: 'short',
+  })
+  const fmtMonth = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    month: 'short',
+    year: '2-digit',
+  })
+  const fmtYear = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+  })
 
-/** Axis tick labels in ET (lightweight-charts defaults to UTC). */
-function nyTickMarkFormatter(
-  time: UTCTimestamp | string | number,
-  tickMarkType: TickMarkType
-): string {
-  const unix =
-    typeof time === 'number' ? time : Math.floor(new Date(String(time)).getTime() / 1000)
-  if (!Number.isFinite(unix)) return ''
-  switch (tickMarkType) {
-    case TickMarkType.Year:
-      return formatChartDate(unix, 'year')
-    case TickMarkType.Month:
-      return formatChartDate(unix, 'month')
-    case TickMarkType.DayOfMonth:
-      return formatChartDate(unix, 'day')
-    case TickMarkType.TimeWithSeconds:
-      return formatChartTime(unix, true)
-    case TickMarkType.Time:
-    default:
-      return formatChartTime(unix)
+  const formatTime = (unix: number, withSeconds = false) =>
+    (withSeconds ? fmtTimeSec : fmtTime).format(new Date(unix * 1000))
+  const formatDate = (unix: number, style: 'day' | 'month' | 'year' = 'day') => {
+    if (style === 'year') return fmtYear.format(new Date(unix * 1000))
+    if (style === 'month') return fmtMonth.format(new Date(unix * 1000))
+    return fmtDay.format(new Date(unix * 1000))
   }
-}
 
-function formatEt(unix: number): string {
-  return formatChartTime(unix, true)
+  return {
+    formatTime,
+    formatDate,
+    formatClock: (unix) => formatTime(unix, true),
+    tzLabel,
+    tickMarkFormatter: (time, tickMarkType) => {
+      const unix =
+        typeof time === 'number' ? time : Math.floor(new Date(String(time)).getTime() / 1000)
+      if (!Number.isFinite(unix)) return ''
+      switch (tickMarkType) {
+        case TickMarkType.Year:
+          return formatDate(unix, 'year')
+        case TickMarkType.Month:
+          return formatDate(unix, 'month')
+        case TickMarkType.DayOfMonth:
+          return formatDate(unix, 'day')
+        case TickMarkType.TimeWithSeconds:
+          return formatTime(unix, true)
+        case TickMarkType.Time:
+        default:
+          return formatTime(unix)
+      }
+    },
+  }
 }
 
 function barTouches(bar: Candle, level: number): boolean {
@@ -237,6 +241,11 @@ function SimulationDeskInner() {
     ? Math.min(16, Math.max(0.5, parsedSpeed))
     : 1
   const sess = sessionFor(instrument)
+  const tzLabel = instrument === 'NIKKEI' ? 'JST' : 'ET'
+  const chartFmt = useMemo(
+    () => makeChartFormatters(sess.tz, tzLabel),
+    [sess.tz, tzLabel]
+  )
   const toUnix = instrument === 'NIKKEI' ? tokyoDateTimeToUnix : nyDateTimeToUnix
   const [openH, openM] = sess.marketOpen.split(':').map(Number)
   const [entryH, entryM] = sess.entryClose.split(':').map(Number)
@@ -300,6 +309,7 @@ function SimulationDeskInner() {
   const tradesCountRef = useRef(0)
   const realizedPnlRef = useRef(0)
   const sessionCompletedRef = useRef(false)
+  const sessionEpochRef = useRef(0)
   const [lastPrice, setLastPrice] = useState<number | null>(null)
   const [followingLive, setFollowingLive] = useState(true)
 
@@ -353,9 +363,23 @@ function SimulationDeskInner() {
 
   // Sim-only: overnight gap + prior session (no news). Live desk unchanged.
   const overnightBias = useMemo(
-    () => (openUnix ? computeSimOvernightBias(allCandles, openUnix) : null),
-    [allCandles, openUnix]
+    () => (openUnix ? computeSimOvernightBias(allCandles, openUnix, sess.tz) : null),
+    [allCandles, openUnix, sess.tz]
   )
+
+  // Ensure a DB session row exists (picker POST is fire-and-forget; desk owns persistence)
+  useEffect(() => {
+    if (!replayDate) return
+    void fetch('/api/trading/replays', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        instrument,
+        replay_date: replayDate,
+        playback_speed: speed,
+      }),
+    }).catch(() => {})
+  }, [replayDate, instrument, speed])
 
   // Morning-only sim gate — no live afternoon / background-memory feature
   const gate = useMemo(() => {
@@ -434,30 +458,17 @@ function SimulationDeskInner() {
 
         setAllCandles(mapped)
 
-        let levelRows: unknown[] = []
-        try {
-          const levelsRes = await fetch(aiLevelsUrl(instrument), {
-            cache: 'no-store',
-            signal: AbortSignal.timeout(8_000),
-          })
-          if (levelsRes.ok) {
-            const lJson = await levelsRes.json()
-            levelRows = lJson.levels || []
-          }
-        } catch {
-          /* structure fallback below */
-        }
-
         if (cancelled) return
 
-        const resolved = resolveDeskLevels(levelRows as any[], mapped, startOpen, sess.tz)
+        // Dated sim: structure from that morning's candles only (not today's live AI history)
+        const resolved = resolveDeskLevels([], mapped, startOpen, sess.tz)
         setLevels(resolved.levels)
         setLevelsSource(resolved.source)
 
         const openLabel =
           instrument === 'NIKKEI' ? '9:00 AM JST' : '9:30 AM ET'
         setMsg(
-          `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} — place a level order, then Play`
+          `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · structure levels — place a limit, then Play`
         )
       } catch (e) {
         if (cancelled) return
@@ -522,8 +533,8 @@ function SimulationDeskInner() {
         secondsVisible: false,
         rightOffset: 12,
         barSpacing: 8,
-        // Default axis is UTC — format ticks in NY so 9:30 ET is not shown as 13:30
-        tickMarkFormatter: nyTickMarkFormatter,
+        // Default axis is UTC — format ticks in market TZ (ET / JST)
+        tickMarkFormatter: chartFmt.tickMarkFormatter,
       },
       handleScroll: {
         mouseWheel: true,
@@ -547,7 +558,7 @@ function SimulationDeskInner() {
               ? time
               : Math.floor(new Date(String(time)).getTime() / 1000)
           if (!Number.isFinite(unix)) return ''
-          return `${formatChartDate(unix, 'day')} ${formatChartTime(unix)} ET`
+          return `${chartFmt.formatDate(unix, 'day')} ${chartFmt.formatTime(unix)} ${chartFmt.tzLabel}`
         },
       },
       width: containerRef.current.clientWidth,
@@ -999,7 +1010,7 @@ function SimulationDeskInner() {
   }, [position, pending, chartReady, lastPrice])
 
   const fillPending = useCallback((pend: PendingOrder, at: number) => {
-    setPosition({
+    const filled: PaperPosition = {
       entry: pend.level,
       direction: pend.direction,
       stopLoss: pend.stopLoss,
@@ -1007,7 +1018,11 @@ function SimulationDeskInner() {
       size: pend.size,
       risk: pend.risk,
       filledAt: at,
-    })
+    }
+    // Sync refs before next playback tick (16x can fire before React effects)
+    pendingRef.current = null
+    positionRef.current = filled
+    setPosition(filled)
     setPending(null)
     setLevelsOpen(false)
     setMsg(`FILLED ${pend.direction} @ ${pend.level.toLocaleString()} — SL/TP only`)
@@ -1028,10 +1043,11 @@ function SimulationDeskInner() {
   /** Persist lunch finish so the picker shows "done" instead of forever "resume". */
   const markSessionCompleted = useCallback(async () => {
     if (!replayDate || sessionCompletedRef.current) return
+    const epoch = sessionEpochRef.current
     sessionCompletedRef.current = true
     const duration = Math.max(0, (simNowRef.current || lunchUnixRef.current) - (openUnix || 0))
     try {
-      await fetch('/api/trading/replays', {
+      const res = await fetch('/api/trading/replays', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1044,8 +1060,13 @@ function SimulationDeskInner() {
           notes: 'Morning session finished at lunch',
         }),
       })
+      // Ignore stale completes after Reset/Replay; retry if request failed
+      if (epoch !== sessionEpochRef.current) return
+      if (!res.ok) {
+        sessionCompletedRef.current = false
+      }
     } catch {
-      sessionCompletedRef.current = false
+      if (epoch === sessionEpochRef.current) sessionCompletedRef.current = false
     }
   }, [instrument, replayDate, openUnix])
 
@@ -1106,6 +1127,7 @@ function SimulationDeskInner() {
         if (hitSl) {
           const closed = pos
           recordPaperClose(closed, closed.stopLoss)
+          positionRef.current = null
           simNowRef.current = next
           setSimNow(next)
           applyChartDataRef.current(next)
@@ -1121,6 +1143,7 @@ function SimulationDeskInner() {
         if (hitTp) {
           const closed = pos
           recordPaperClose(closed, closed.target)
+          positionRef.current = null
           simNowRef.current = next
           setSimNow(next)
           applyChartDataRef.current(next)
@@ -1161,6 +1184,7 @@ function SimulationDeskInner() {
   useEffect(() => {
     if (!pending) return
     if (simNow <= entryCloseUnix) return
+    pendingRef.current = null
     setPending(null)
     setMsg('Working limit cancelled — entry window closed (never filled)')
   }, [simNow, entryCloseUnix, pending])
@@ -1173,7 +1197,9 @@ function SimulationDeskInner() {
       }
       const now = simNowRef.current
       if (now > entryCloseUnix) {
-        setMsg('Entry window closed (after 10:15 ET sim time)')
+        setMsg(
+          `Entry window closed (after ${sess.entryClose.slice(0, 5)} ${tzLabel} sim time)`
+        )
         return
       }
       // Zone-based stop: beyond the far edge of the level's zone (sweep-proof)
@@ -1208,13 +1234,14 @@ function SimulationDeskInner() {
         return
       }
 
+      pendingRef.current = order
       setPending(order)
       setMsg(
         `Pending ${direction} limit @ ${level.level.toLocaleString()} — Play until price fills`
       )
       setPlaying(true)
     },
-    [position, entryCloseUnix, accountSize, openUnix, fillPending]
+    [position, entryCloseUnix, accountSize, openUnix, fillPending, sess.entryClose, tzLabel]
   )
 
   const closeAtMarket = () => {
@@ -1222,6 +1249,7 @@ function SimulationDeskInner() {
     if (!position || price == null) return
     const closed = position
     recordPaperClose(closed, price)
+    positionRef.current = null
     setMsg(`Closed @ ${price.toLocaleString()} — manage ended · levels back`)
     setLevels((prev) =>
       applySimTradeOutcome(prev, closed.entry, closed.direction, 'target')
@@ -1232,9 +1260,12 @@ function SimulationDeskInner() {
   }
 
   const resetSessionProgress = () => {
+    sessionEpochRef.current += 1
     sessionCompletedRef.current = false
     tradesCountRef.current = 0
     realizedPnlRef.current = 0
+    pendingRef.current = null
+    positionRef.current = null
     if (replayDate) {
       void fetch('/api/trading/replays', {
         method: 'PATCH',
@@ -1371,7 +1402,9 @@ function SimulationDeskInner() {
       <div className="pointer-events-none absolute inset-x-0 top-0 z-20 p-2">
         <div className="pointer-events-auto flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-[#0d1117]/90 px-2.5 py-1.5 text-xs backdrop-blur-md">
           <span className="font-semibold uppercase tracking-wide text-violet-300">SIM</span>
-          <span className="font-mono tabular-nums text-white">{formatEt(simNow)} ET</span>
+          <span className="font-mono tabular-nums text-white">
+            {chartFmt.formatClock(simNow)} {tzLabel}
+          </span>
           <span className="rounded bg-white/10 px-1.5 py-0.5 text-gray-200">{instrument}</span>
           <span className="hidden text-gray-500 sm:inline">
             {formatDateDisplay(replayDate)}

@@ -27,9 +27,9 @@ export interface SimOvernightBias {
   detail: string
 }
 
-function etDateKey(unix: number): string {
+function dateKeyInTz(unix: number, timeZone: string): string {
   return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/New_York',
+    timeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -79,11 +79,13 @@ function ohlcScore(ohlc: { open: number; high: number; low: number; close: numbe
 
 /**
  * Build overnight bias for a sim day from 5m candles.
- * Uses prior cash session OHLC + gap into today's 9:30 open. No news.
+ * Uses prior cash session OHLC + gap into today's open. No news.
+ * timeZone: America/New_York (DOW/NASDAQ) or Asia/Tokyo (NIKKEI).
  */
 export function computeSimOvernightBias(
   candles: SimCandle[],
-  openUnix: number
+  openUnix: number,
+  timeZone: string = 'America/New_York'
 ): SimOvernightBias | null {
   if (!openUnix || candles.length === 0) return null
 
@@ -95,8 +97,10 @@ export function computeSimOvernightBias(
   const priorBars = candles.filter((c) => c.time < openUnix)
   if (priorBars.length < 5) return null
 
-  const priorDate = etDateKey(priorBars[priorBars.length - 1]!.time)
-  const priorSessionBars = priorBars.filter((c) => etDateKey(c.time) === priorDate)
+  const priorDate = dateKeyInTz(priorBars[priorBars.length - 1]!.time, timeZone)
+  const priorSessionBars = priorBars.filter(
+    (c) => dateKeyInTz(c.time, timeZone) === priorDate
+  )
   const session = priorSessionBars.length >= 5 ? priorSessionBars : priorBars.slice(-78)
 
   let open = session[0]!.open
