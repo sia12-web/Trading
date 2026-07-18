@@ -15,6 +15,19 @@ export type LlmUsageLogInput = {
   meta?: Record<string, unknown>
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** llm_usage.session_id is UUID — sim uses string keys like sim-NASDAQ-2026-07-16. */
+function sessionIdForDb(sessionId?: string | null): {
+  uuid: string | null
+  ref: string | null
+} {
+  if (!sessionId) return { uuid: null, ref: null }
+  if (UUID_RE.test(sessionId)) return { uuid: sessionId, ref: null }
+  return { uuid: null, ref: sessionId }
+}
+
 /** Rough USD estimates for dashboard (not billing-grade). */
 export function estimateCostUsd(provider: string, model: string, input: number, output: number): number {
   const m = model.toLowerCase()
@@ -53,13 +66,19 @@ export async function logLlmUsage(row: LlmUsageLogInput): Promise<void> {
       row.usage.output_tokens
     )
 
+    const { uuid, ref } = sessionIdForDb(row.sessionId)
+    const meta = {
+      ...(row.meta ?? {}),
+      ...(ref ? { session_ref: ref } : {}),
+    }
+
     const { error } = await admin.from('llm_usage').insert({
       provider: row.usage.provider,
       model: row.usage.model,
       role: row.usage.role,
       route: row.route,
       instrument: row.instrument ?? null,
-      session_id: row.sessionId ?? null,
+      session_id: uuid,
       input_tokens: row.usage.input_tokens,
       output_tokens: row.usage.output_tokens,
       estimated_cost_usd: cost,
@@ -68,7 +87,7 @@ export async function logLlmUsage(row: LlmUsageLogInput): Promise<void> {
       levels_accepted: row.levelsAccepted ?? null,
       levels_rejected: row.levelsRejected ?? null,
       error_message: row.errorMessage ?? null,
-      meta: row.meta ?? {},
+      meta,
     })
 
     if (error) {

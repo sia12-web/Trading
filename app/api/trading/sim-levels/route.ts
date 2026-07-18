@@ -189,6 +189,7 @@ export async function POST(request: NextRequest) {
     )
 
     const agent = await getLevelFinderAgent()
+    // Not a DB sessions.id UUID — correlator only (usage log stores it in meta.session_ref)
     const sessionId = `sim-${instrument}-${date}`
     const analysis = await agent.analyzePriceAction({
       session_id: sessionId,
