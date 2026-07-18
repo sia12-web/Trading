@@ -63,6 +63,20 @@ const PRACTICE_ITEMS: NavItem[] = [
       </svg>
     ),
   },
+  {
+    href: '/dashboard/simulation/history',
+    label: 'Sim History',
+    hint: 'Paper fills & P&L',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-4 h-4">
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+        />
+      </svg>
+    ),
+  },
 ]
 
 const TOOL_ITEMS: NavItem[] = [
@@ -118,9 +132,14 @@ function NavSection({
       <p className="px-3 pt-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-600">
         {title}
       </p>
-      {items.map((item) => (
-        <NavLink key={item.href} item={item} active={pathname.startsWith(item.href)} />
-      ))}
+      {items.map((item) => {
+        // Prefer longest matching href so /simulation does not stay active on /simulation/history
+        const best = items
+          .filter((i) => pathname === i.href || pathname.startsWith(`${i.href}/`))
+          .sort((a, b) => b.href.length - a.href.length)[0]
+        const active = best?.href === item.href
+        return <NavLink key={item.href} item={item} active={active} />
+      })}
     </div>
   )
 }
@@ -162,7 +181,7 @@ export function Sidebar() {
           <span className="text-xs text-gray-500">Desk ready</span>
         </div>
         <p className="text-[10px] text-gray-600 leading-snug">
-          Sim paper never hits Live Positions or Live History.
+          Sim paper → Sim History. Live fills → Live History.
         </p>
       </div>
     </aside>

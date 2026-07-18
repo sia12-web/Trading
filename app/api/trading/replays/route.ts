@@ -419,6 +419,19 @@ export async function PATCH(request: Request): Promise<NextResponse<any>> {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 })
     }
 
+    // Replay / Reset from open — drop paper closes for this session so Sim History matches
+    if (body.status === 'in_progress' && body.clear_trades) {
+      const del = await supabase
+        .from('simulation_trades')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('instrument', body.instrument)
+        .eq('replay_date', body.replay_date)
+      if (del.error) {
+        logger.error('PATCH /api/trading/replays clear_trades failed', { error: del.error })
+      }
+    }
+
     return NextResponse.json({ success: true, session: data })
   } catch (e) {
     logger.error('PATCH /api/trading/replays', { error: e })

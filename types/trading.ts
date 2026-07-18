@@ -365,11 +365,39 @@ export interface UpdateReplaySessionRequest {
   instrument: Instrument
   replay_date: string
   status?: ReplaySessionStatus
-  final_pnl?: number
-  final_pnl_percent?: number
+  final_pnl?: number | null
+  final_pnl_percent?: number | null
   trades_count?: number
-  replay_duration_seconds?: number
-  notes?: string
+  replay_duration_seconds?: number | null
+  notes?: string | null
+  /** When resetting a day, delete simulation_trades for this session */
+  clear_trades?: boolean
+}
+
+export type SimTradeExitReason = 'stop_hit' | 'take_profit' | 'manual'
+
+export interface SimulationTrade {
+  id: string
+  user_id: string
+  replay_id: string | null
+  instrument: Instrument
+  replay_date: string
+  direction: 'LONG' | 'SHORT'
+  entry_price: number
+  exit_price: number
+  stop_loss: number
+  take_profit: number | null
+  position_size: number
+  risk_amount: number
+  account_size: number
+  filled_at_unix: number
+  exit_at_unix: number
+  exit_reason: SimTradeExitReason
+  profit_loss: number
+  entry_level: number | null
+  entry_reason: string | null
+  level_conviction: number | null
+  created_at: string
 }
 
 // Slice 2: Date Picker & Replay Mode Toggle

@@ -118,6 +118,8 @@ interface PendingOrder {
   size: number
   risk: number
   accountSize: number
+  entryReason?: string
+  conviction?: number
 }
 
 interface PaperPosition {
@@ -127,7 +129,10 @@ interface PaperPosition {
   target: number
   size: number
   risk: number
+  accountSize: number
   filledAt: number
+  entryReason?: string
+  conviction?: number
 }
 
 /** Trailing window while following the sim tip — readable bars, tip pinned right */
@@ -1033,7 +1038,10 @@ function SimulationDeskInner() {
       target: pend.target,
       size: pend.size,
       risk: pend.risk,
+      accountSize: pend.accountSize,
       filledAt: at,
+      entryReason: pend.entryReason,
+      conviction: pend.conviction,
     }
     // Sync refs before next playback tick (16x can fire before React effects)
     pendingRef.current = null
@@ -1045,15 +1053,48 @@ function SimulationDeskInner() {
   }, [])
 
   const recordPaperClose = useCallback(
-    (pos: PaperPosition, exitPrice: number) => {
+    (
+      pos: PaperPosition,
+      exitPrice: number,
+      exitReason: 'stop_hit' | 'take_profit' | 'manual'
+    ) => {
       const isLong = pos.direction === 'LONG'
       const pnl = isLong
         ? (exitPrice - pos.entry) * pos.size
         : (pos.entry - exitPrice) * pos.size
-      realizedPnlRef.current += Math.round(pnl * 100) / 100
+      const profitLoss = Math.round(pnl * 100) / 100
+      realizedPnlRef.current += profitLoss
       tradesCountRef.current += 1
+
+      if (!replayDate) return
+      const exitAt = simNowRef.current || pos.filledAt
+      void fetch('/api/trading/sim-journal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instrument,
+          replay_date: replayDate,
+          direction: pos.direction,
+          entry_price: pos.entry,
+          exit_price: exitPrice,
+          stop_loss: pos.stopLoss,
+          take_profit: pos.target,
+          position_size: pos.size,
+          risk_amount: pos.risk,
+          account_size: pos.accountSize || accountSize,
+          filled_at_unix: pos.filledAt,
+          exit_at_unix: exitAt,
+          exit_reason: exitReason,
+          profit_loss: profitLoss,
+          entry_level: pos.entry,
+          entry_reason: pos.entryReason || null,
+          level_conviction: pos.conviction ?? null,
+        }),
+      }).catch(() => {
+        /* history write is best-effort — desk keeps running */
+      })
     },
-    []
+    [instrument, replayDate, accountSize]
   )
 
   /** Persist lunch finish so the picker shows "done" instead of forever "resume". */
@@ -1142,7 +1183,7 @@ function SimulationDeskInner() {
             : bar.low <= pos.target
         if (hitSl) {
           const closed = pos
-          recordPaperClose(closed, closed.stopLoss)
+          recordPaperClose(closed, closed.stopLoss, 'stop_hit')
           positionRef.current = null
           simNowRef.current = next
           setSimNow(next)
@@ -1158,7 +1199,7 @@ function SimulationDeskInner() {
         }
         if (hitTp) {
           const closed = pos
-          recordPaperClose(closed, closed.target)
+          recordPaperClose(closed, closed.target, 'take_profit')
           positionRef.current = null
           simNowRef.current = next
           setSimNow(next)
@@ -1237,6 +1278,12 @@ function SimulationDeskInner() {
         size: preview.position_size,
         risk: preview.risk_amount,
         accountSize,
+        entryReason:
+          level.reasoning ||
+          `${level.rank === 'primary' ? 'PRIMARY' : 'WATCH'} ${
+            level.side || (direction === 'LONG' ? 'BUY' : 'SHORT')
+          } level`,
+        conviction: level.conviction,
       }
 
       // Immediate fill if any bar from open→now already touched
@@ -1264,7 +1311,7 @@ function SimulationDeskInner() {
     const price = lastPriceRef.current ?? lastPrice
     if (!position || price == null) return
     const closed = position
-    recordPaperClose(closed, price)
+    recordPaperClose(closed, price, 'manual')
     positionRef.current = null
     setMsg(`Closed @ ${price.toLocaleString()} — manage ended · levels back`)
     setLevels((prev) =>
@@ -1295,6 +1342,7 @@ function SimulationDeskInner() {
           replay_duration_seconds: null,
           trades_count: 0,
           notes: null,
+          clear_trades: true,
         }),
       })
     }
