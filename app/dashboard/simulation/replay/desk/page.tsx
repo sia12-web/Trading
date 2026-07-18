@@ -952,7 +952,8 @@ function SimulationDeskInner() {
             color: isRes ? '#f87171' : '#34d399',
             lineWidth: isPrimary ? 2 : 1,
             lineStyle: isPrimary ? LineStyle.Solid : LineStyle.Dashed,
-            axisLabelVisible: true,
+            // Labels live in the top-right panel — keep price axis readable
+            axisLabelVisible: false,
             title: `${isPrimary ? 'PRIMARY' : 'WATCH'} ${side} ${stars}`,
           })
         )
@@ -1724,9 +1725,9 @@ function SimulationDeskInner() {
         )}
       </div>
 
-      {/* Levels drawer — hidden while working limit or in a trade (SL/TP only on chart) */}
+      {/* Levels panel — top-right overlay so it never covers the price axis */}
       {levelsOpen && !position && !pending && (
-        <div className="absolute bottom-3 right-3 top-14 z-20 flex w-64 flex-col overflow-hidden rounded-xl border border-white/10 bg-[#0d1117]/92 shadow-2xl backdrop-blur-md">
+        <div className="absolute right-3 top-14 z-30 flex w-64 max-h-[min(42vh,420px)] flex-col overflow-hidden rounded-xl border border-white/10 bg-[#0d1117]/95 shadow-2xl backdrop-blur-md">
           <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
               Morning playbook
