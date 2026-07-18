@@ -48,12 +48,28 @@ export function nyDeskSessionAt(unix: number): SessionName {
   return 'New York'
 }
 
-/** Tokyo desk: overnight → morning cash → afternoon (labels reuse Asia/London/NY colors). */
+/**
+ * Tokyo desk — contiguous JST windows (same color keys as NY desk):
+ * Overnight 15:00→09:00 · Morning cash 09:00→11:30 · Afternoon 11:30→15:00
+ */
 export function tokyoDeskSessionAt(unix: number): SessionName {
   const h = hourInTz(unix, 'Asia/Tokyo')
   if (h >= 15 || h < 9) return 'Asia'
   if (h < 11.5) return 'London'
   return 'New York'
+}
+
+/** Legend labels — NY desk keeps Asia/London/NY; Tokyo uses local session names. */
+export function sessionLegendLabel(
+  name: SessionName,
+  instrument?: string | null
+): string {
+  if (instrument === 'NIKKEI') {
+    if (name === 'Asia') return 'Overnight'
+    if (name === 'London') return 'Morning'
+    return 'Afternoon'
+  }
+  return name
 }
 
 export interface SessionHighlightRect {

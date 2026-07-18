@@ -35,9 +35,11 @@ import {
   paintSessionHighlightOverlay,
   deskClockFor,
   lastNTradingSessions as trimDeskCandles,
+  sessionLegendLabel,
   SESSION_STYLES as SESSION_RANGE_STYLES,
   VWAP_COLORS as SHARED_VWAP_COLORS,
   type SessionHighlightSpan,
+  type SessionName,
 } from '@/lib/chart/sessionVwap'
 import { aiLevelsUrl, resolveDeskLevels } from '@/lib/trading/deskLevels'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
@@ -49,65 +51,83 @@ import {
   sessionFor,
 } from '@/lib/trading/sessionGate'
 
-/** Desk timezone for axis / tooltip labels (data stays true UTC). */
-const CHART_TZ = 'America/New_York'
-
-// Cached formatters — creating Intl on every tick mark during pan was a major lag source
-const fmtTime = new Intl.DateTimeFormat('en-US', {
-  timeZone: CHART_TZ,
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-})
-const fmtTimeSec = new Intl.DateTimeFormat('en-US', {
-  timeZone: CHART_TZ,
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hour12: false,
-})
-const fmtDay = new Intl.DateTimeFormat('en-US', {
-  timeZone: CHART_TZ,
-  day: 'numeric',
-  month: 'short',
-})
-const fmtMonth = new Intl.DateTimeFormat('en-US', {
-  timeZone: CHART_TZ,
-  month: 'short',
-  year: '2-digit',
-})
-const fmtYear = new Intl.DateTimeFormat('en-US', {
-  timeZone: CHART_TZ,
-  year: 'numeric',
-})
-
-function formatChartTime(unix: number, withSeconds = false): string {
-  return (withSeconds ? fmtTimeSec : fmtTime).format(new Date(unix * 1000))
+type DeskChartFmt = {
+  formatTime: (unix: number, withSeconds?: boolean) => string
+  formatDate: (unix: number, style?: 'day' | 'month' | 'year') => string
+  tickMarkFormatter: (time: UTCTimestamp | string | number, tickMarkType: TickMarkType) => string
+  timeFormatter: (time: UTCTimestamp | string | number) => string
+  tzLabel: string
 }
 
-function formatChartDate(unix: number, style: 'day' | 'month' | 'year' = 'day'): string {
-  const d = new Date(unix * 1000)
-  if (style === 'year') return fmtYear.format(d)
-  if (style === 'month') return fmtMonth.format(d)
-  return fmtDay.format(d)
-}
+/** DOW/NASDAQ → ET · NIKKEI → JST — same clocks as session color bands. */
+function makeDeskChartFormatters(instrument: Instrument): DeskChartFmt {
+  const clock = deskClockFor(instrument)
+  const tzLabel = instrument === 'NIKKEI' ? 'JST' : 'ET'
+  const fmtTime = new Intl.DateTimeFormat('en-US', {
+    timeZone: clock.timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+  const fmtTimeSec = new Intl.DateTimeFormat('en-US', {
+    timeZone: clock.timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
+  const fmtDay = new Intl.DateTimeFormat('en-US', {
+    timeZone: clock.timeZone,
+    day: 'numeric',
+    month: 'short',
+  })
+  const fmtMonth = new Intl.DateTimeFormat('en-US', {
+    timeZone: clock.timeZone,
+    month: 'short',
+    year: '2-digit',
+  })
+  const fmtYear = new Intl.DateTimeFormat('en-US', {
+    timeZone: clock.timeZone,
+    year: 'numeric',
+  })
 
-/** Axis tick labels in America/New_York (lightweight-charts defaults to UTC). */
-function nyTickMarkFormatter(time: UTCTimestamp | string | number, tickMarkType: TickMarkType): string {
-  const unix = typeof time === 'number' ? time : Math.floor(new Date(String(time)).getTime() / 1000)
-  if (!Number.isFinite(unix)) return ''
-  switch (tickMarkType) {
-    case TickMarkType.Year:
-      return formatChartDate(unix, 'year')
-    case TickMarkType.Month:
-      return formatChartDate(unix, 'month')
-    case TickMarkType.DayOfMonth:
-      return formatChartDate(unix, 'day')
-    case TickMarkType.TimeWithSeconds:
-      return formatChartTime(unix, true)
-    case TickMarkType.Time:
-    default:
-      return formatChartTime(unix)
+  const formatTime = (unix: number, withSeconds = false) =>
+    (withSeconds ? fmtTimeSec : fmtTime).format(new Date(unix * 1000))
+  const formatDate = (unix: number, style: 'day' | 'month' | 'year' = 'day') => {
+    const d = new Date(unix * 1000)
+    if (style === 'year') return fmtYear.format(d)
+    if (style === 'month') return fmtMonth.format(d)
+    return fmtDay.format(d)
+  }
+  const toUnix = (time: UTCTimestamp | string | number) =>
+    typeof time === 'number' ? time : Math.floor(new Date(String(time)).getTime() / 1000)
+
+  return {
+    formatTime,
+    formatDate,
+    tzLabel,
+    tickMarkFormatter: (time, tickMarkType) => {
+      const unix = toUnix(time)
+      if (!Number.isFinite(unix)) return ''
+      switch (tickMarkType) {
+        case TickMarkType.Year:
+          return formatDate(unix, 'year')
+        case TickMarkType.Month:
+          return formatDate(unix, 'month')
+        case TickMarkType.DayOfMonth:
+          return formatDate(unix, 'day')
+        case TickMarkType.TimeWithSeconds:
+          return formatTime(unix, true)
+        case TickMarkType.Time:
+        default:
+          return formatTime(unix)
+      }
+    },
+    timeFormatter: (time) => {
+      const unix = toUnix(time)
+      if (!Number.isFinite(unix)) return ''
+      return `${formatDate(unix, 'day')} ${formatTime(unix)} ${tzLabel}`
+    },
   }
 }
 
@@ -202,8 +222,7 @@ const CHART_THEME = {
     barSpacing:    8,
     fixLeftEdge:   false,
     fixRightEdge:  false,
-    // Default axis is UTC — format ticks in NY so 10:55 ET is not shown as 14:55 / 2:55
-    tickMarkFormatter: nyTickMarkFormatter,
+    // tickMarkFormatter applied per-instrument (ET for DOW/NASDAQ, JST for NIKKEI)
   },
   handleScroll: {
     mouseWheel: true,
@@ -219,14 +238,6 @@ const CHART_THEME = {
   kineticScroll: {
     mouse: true,
     touch: true,
-  },
-  localization: {
-    // Crosshair time label (bottom axis hover)
-    timeFormatter: (time: UTCTimestamp | string | number) => {
-      const unix = typeof time === 'number' ? time : Math.floor(new Date(String(time)).getTime() / 1000)
-      if (!Number.isFinite(unix)) return ''
-      return `${formatChartDate(unix, 'day')} ${formatChartTime(unix)} ET`
-    },
   },
 }
 
@@ -447,6 +458,8 @@ export function TradingChart({
     [onDataModeChange]
   )
   const positionLinesRef = useRef<any[]>([])
+  /** Axis / tooltip clocks — ET for DOW/NASDAQ, JST for NIKKEI */
+  const chartFmtRef = useRef<DeskChartFmt>(makeDeskChartFormatters(lockedInstrument || 'DOW'))
 
   const setInstrument = useCallback((inst: Instrument) => {
     if (lockedInstrument && inst !== lockedInstrument) return
@@ -551,14 +564,34 @@ export function TradingChart({
     )
   }, []) // levels only — setLevels is stable
 
+  // Keep axis / tooltips on the same desk clock as session colors (ET vs JST)
+  useEffect(() => {
+    const fmt = makeDeskChartFormatters(instrument)
+    chartFmtRef.current = fmt
+    const chart = chartRef.current
+    if (!chart) return
+    chart.applyOptions({
+      localization: { timeFormatter: fmt.timeFormatter },
+    })
+    chart.timeScale().applyOptions({
+      tickMarkFormatter: fmt.tickMarkFormatter,
+    })
+  }, [instrument])
+
   // ── Initialize chart ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!containerRef.current) return
 
+    const initialFmt = chartFmtRef.current
     const chart = createChart(containerRef.current, {
       ...CHART_THEME,
       width:  containerRef.current.clientWidth,
       height: containerRef.current.clientHeight,
+      localization: { timeFormatter: initialFmt.timeFormatter },
+      timeScale: {
+        ...CHART_THEME.timeScale,
+        tickMarkFormatter: initialFmt.tickMarkFormatter,
+      },
     })
 
     // ─── 1. Candlestick series on the main 'right' price scale ────────────────
@@ -629,8 +662,11 @@ export function TradingChart({
           const open = (candle as any).open ?? 0
           const close = (candle as any).close ?? 0
           const change = close - open
+          const fmt = chartFmtRef.current
           tipPending = {
-            time: param.time ? `${formatChartTime(param.time as number)} ET` : '',
+            time: param.time
+              ? `${fmt.formatTime(param.time as number)} ${fmt.tzLabel}`
+              : '',
             open: (candle as any).open,
             high: (candle as any).high,
             low: (candle as any).low,
@@ -1492,15 +1528,18 @@ export function TradingChart({
       {/* ── Chart container ──────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-3 px-1 text-[10px] uppercase tracking-wider text-gray-500">
         <span>Sessions</span>
-        {Object.entries(SESSION_RANGE_STYLES).map(([name, s]) => (
-          <span key={name} className="flex items-center gap-1.5">
-            <span
-              className="inline-block h-2.5 w-3.5 rounded-[2px]"
-              style={{ backgroundColor: s.color.replace(/[\d.]+\)$/, '0.55)') }}
-            />
-            <span style={{ color: s.line }}>{name}</span>
-          </span>
-        ))}
+        {(Object.keys(SESSION_RANGE_STYLES) as SessionName[]).map((name) => {
+          const s = SESSION_RANGE_STYLES[name]
+          return (
+            <span key={name} className="flex items-center gap-1.5">
+              <span
+                className="inline-block h-2.5 w-3.5 rounded-[2px]"
+                style={{ backgroundColor: s.color.replace(/[\d.]+\)$/, '0.55)') }}
+              />
+              <span style={{ color: s.line }}>{sessionLegendLabel(name, instrument)}</span>
+            </span>
+          )
+        })}
         <span className="text-gray-600">·</span>
         <span className="flex items-center gap-1.5 normal-case tracking-normal">
           <span className="inline-block w-4 border-t-2" style={{ borderColor: SHARED_VWAP_COLORS.vwap }} />

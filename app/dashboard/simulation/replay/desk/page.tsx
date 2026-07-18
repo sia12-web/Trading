@@ -36,7 +36,9 @@ import {
   paintSessionHighlightOverlay,
   deskClockFor,
   lastNTradingSessions,
+  sessionLegendLabel,
   type SessionHighlightSpan,
+  type SessionName,
 } from '@/lib/chart/sessionVwap'
 import {
   computeSimOvernightBias,
@@ -1596,15 +1598,18 @@ function SimulationDeskInner() {
         {/* Session + AVWAP legend */}
         <div className="pointer-events-none mt-1.5 flex flex-wrap items-center gap-3 px-1 text-[10px] uppercase tracking-wider text-gray-500">
           <span>Sessions</span>
-          {Object.entries(SESSION_STYLES).map(([name, s]) => (
-            <span key={name} className="flex items-center gap-1.5">
-              <span
-                className="inline-block h-2.5 w-3.5 rounded-[2px]"
-                style={{ backgroundColor: s.color.replace(/[\d.]+\)$/, '0.55)') }}
-              />
-              <span style={{ color: s.line }}>{name}</span>
-            </span>
-          ))}
+          {(Object.keys(SESSION_STYLES) as SessionName[]).map((name) => {
+            const s = SESSION_STYLES[name]
+            return (
+              <span key={name} className="flex items-center gap-1.5">
+                <span
+                  className="inline-block h-2.5 w-3.5 rounded-[2px]"
+                  style={{ backgroundColor: s.color.replace(/[\d.]+\)$/, '0.55)') }}
+                />
+                <span style={{ color: s.line }}>{sessionLegendLabel(name, instrument)}</span>
+              </span>
+            )
+          })}
           <span className="text-gray-600">·</span>
           <span className="flex items-center gap-1.5 normal-case tracking-normal">
             <span
