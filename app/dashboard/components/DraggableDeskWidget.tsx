@@ -2,11 +2,14 @@
 
 /**
  * Floating desk widget — drag by the chrome handle; position persists in sessionStorage.
+ * Live drag mutates left/top via rAF (no React re-render / sessionStorage per frame).
+ * Move/up listeners attach synchronously on pointerdown so release never races React state.
  */
 
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -60,6 +63,7 @@ export function DraggableDeskWidget({
   const rootRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<WidgetPos>(() => loadPos(storageKey, defaultPos))
   const [dragging, setDragging] = useState(false)
+  const posRef = useRef(pos)
   const dragRef = useRef<{
     pointerId: number
     startX: number
@@ -67,14 +71,50 @@ export function DraggableDeskWidget({
     originX: number
     originY: number
   } | null>(null)
+  const rafRef = useRef<number | null>(null)
+  const pendingRef = useRef<WidgetPos | null>(null)
+  const unbindRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
-    setPos(loadPos(storageKey, defaultPos))
+    const next = loadPos(storageKey, defaultPos)
+    posRef.current = next
+    setPos(next)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-load when key / default coords change
   }, [storageKey, defaultPos.x, defaultPos.y])
 
+  useLayoutEffect(() => {
+    posRef.current = pos
+    const el = rootRef.current
+    if (!el || dragging) return
+    el.style.left = `${pos.x}px`
+    el.style.top = `${pos.y}px`
+  }, [pos, dragging])
+
+  useEffect(() => {
+    return () => {
+      unbindRef.current?.()
+      unbindRef.current = null
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
+    }
+  }, [])
+
+  const applyLivePos = (next: WidgetPos) => {
+    pendingRef.current = next
+    if (rafRef.current != null) return
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null
+      const p = pendingRef.current
+      const el = rootRef.current
+      if (!p || !el) return
+      posRef.current = p
+      el.style.left = `${p.x}px`
+      el.style.top = `${p.y}px`
+    })
+  }
+
   const persist = useCallback(
     (next: WidgetPos) => {
+      posRef.current = next
       setPos(next)
       try {
         sessionStorage.setItem(storageKey, JSON.stringify(next))
@@ -85,51 +125,89 @@ export function DraggableDeskWidget({
     [storageKey]
   )
 
+  const finishDrag = useCallback(() => {
+    unbindRef.current?.()
+    unbindRef.current = null
+
+    if (rafRef.current != null) {
+      cancelAnimationFrame(rafRef.current)
+      rafRef.current = null
+    }
+
+    const finalPos = pendingRef.current ?? posRef.current
+    pendingRef.current = null
+    dragRef.current = null
+    persist(finalPos)
+    setDragging(false)
+  }, [persist])
+
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return
     const t = e.target as HTMLElement
     if (t.closest('button, a, input, select, textarea')) return
 
-    const el = rootRef.current
-    if (!el) return
+    // Already dragging — ignore
+    if (dragRef.current) return
+
     e.preventDefault()
-    el.setPointerCapture(e.pointerId)
+    e.stopPropagation()
+
+    const origin = posRef.current
+    const pointerId = e.pointerId
     dragRef.current = {
-      pointerId: e.pointerId,
+      pointerId,
       startX: e.clientX,
       startY: e.clientY,
-      originX: pos.x,
-      originY: pos.y,
+      originX: origin.x,
+      originY: origin.y,
     }
+    pendingRef.current = null
     setDragging(true)
-  }
 
-  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const d = dragRef.current
-    if (!d || d.pointerId !== e.pointerId) return
-    const parent = rootRef.current?.offsetParent as HTMLElement | null
-    const pw = parent?.clientWidth ?? window.innerWidth
-    const ph = parent?.clientHeight ?? window.innerHeight
-    const ww = rootRef.current?.offsetWidth ?? 312
-    const wh = rootRef.current?.offsetHeight ?? 220
-    const dx = e.clientX - d.startX
-    const dy = e.clientY - d.startY
-    persist({
-      x: clamp(d.originX + dx, 8, Math.max(8, pw - ww - 8)),
-      y: clamp(d.originY + dy, 8, Math.max(8, ph - wh - 8)),
-    })
-  }
-
-  const endDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const d = dragRef.current
-    if (!d || d.pointerId !== e.pointerId) return
-    dragRef.current = null
-    setDragging(false)
-    try {
-      rootRef.current?.releasePointerCapture(e.pointerId)
-    } catch {
-      /* already released */
+    const onMove = (ev: PointerEvent) => {
+      const d = dragRef.current
+      if (!d || d.pointerId !== ev.pointerId) return
+      const parent = rootRef.current?.offsetParent as HTMLElement | null
+      const pw = parent?.clientWidth ?? window.innerWidth
+      const ph = parent?.clientHeight ?? window.innerHeight
+      const ww = rootRef.current?.offsetWidth ?? 312
+      const wh = rootRef.current?.offsetHeight ?? 220
+      applyLivePos({
+        x: clamp(d.originX + (ev.clientX - d.startX), 8, Math.max(8, pw - ww - 8)),
+        y: clamp(d.originY + (ev.clientY - d.startY), 8, Math.max(8, ph - wh - 8)),
+      })
     }
+
+    const onUp = (ev: PointerEvent) => {
+      const d = dragRef.current
+      if (!d || d.pointerId !== ev.pointerId) return
+      finishDrag()
+    }
+
+    const onAbort = () => {
+      if (!dragRef.current) return
+      finishDrag()
+    }
+
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') onAbort()
+    }
+
+    const unbind = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+      window.removeEventListener('blur', onAbort)
+      window.removeEventListener('keydown', onKey)
+    }
+    unbindRef.current = unbind
+
+    // Sync attach — do not wait for React re-render (that caused stuck drag)
+    window.addEventListener('pointermove', onMove, { passive: true })
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    window.addEventListener('blur', onAbort)
+    window.addEventListener('keydown', onKey)
   }
 
   return (
@@ -138,56 +216,47 @@ export function DraggableDeskWidget({
       role="dialog"
       aria-label="Morning playbook"
       className={[
-        'absolute z-40 flex flex-col overflow-hidden rounded-2xl',
-        'border border-white/[0.14] bg-[#0b0f18]/94',
-        'shadow-[0_24px_64px_rgba(0,0,0,0.65),0_0_0_1px_rgba(139,92,246,0.12)]',
-        'backdrop-blur-2xl',
+        'absolute z-40 flex flex-col overflow-hidden rounded-xl',
+        'border border-white/[0.12] bg-[#0b0f18]/94',
+        'shadow-[0_16px_48px_rgba(0,0,0,0.55),0_0_0_1px_rgba(139,92,246,0.1)]',
+        'backdrop-blur-xl',
         widthClassName,
         maxHeightClassName,
-        dragging ? 'scale-[1.01] cursor-grabbing select-none shadow-[0_28px_72px_rgba(0,0,0,0.7)]' : '',
-        'transition-[box-shadow,transform] duration-200 ease-out',
-        'motion-reduce:transition-none motion-reduce:transform-none',
+        dragging ? 'cursor-grabbing select-none will-change-[left,top]' : '',
         className,
       ].join(' ')}
       style={{ left: pos.x, top: pos.y, touchAction: 'none' }}
     >
-      {/* Drag handle — grab anywhere on this bar */}
       <div
         onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
         className={[
-          'flex shrink-0 items-center gap-2.5 border-b border-white/10 px-3 py-2.5',
-          'bg-gradient-to-b from-[#1a1530]/95 to-[#121826]/90',
+          'flex shrink-0 items-center gap-1.5 border-b border-white/10 px-2 py-1',
+          'bg-[#141a26]/90',
           dragging ? 'cursor-grabbing' : 'cursor-grab',
         ].join(' ')}
         title="Drag to move"
       >
         <span
-          className="grid h-9 w-7 shrink-0 grid-cols-2 place-content-center gap-0.5 rounded-md bg-white/5 text-violet-300/80"
+          className="grid h-5 w-3.5 shrink-0 grid-cols-2 place-content-center gap-px text-violet-300/55"
           aria-hidden
         >
           {Array.from({ length: 6 }).map((_, i) => (
-            <span key={i} className="h-1 w-1 rounded-full bg-current" />
+            <span key={i} className="h-0.5 w-0.5 rounded-full bg-current" />
           ))}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-200">
+          <div className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-200">
             {title}
           </div>
-          <div className="mt-0.5 truncate text-[9px] font-medium uppercase tracking-wider text-violet-300/70">
-            {dragging ? 'Moving…' : 'Drag to move'}
-          </div>
           {subtitle ? (
-            <div className="mt-0.5 truncate text-[10px] leading-snug text-gray-500">{subtitle}</div>
+            <div className="truncate text-[9px] leading-tight text-gray-500">{subtitle}</div>
           ) : null}
         </div>
         {onClose && (
           <button
             type="button"
             onClick={onClose}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-gray-500 transition hover:bg-white/10 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[11px] text-gray-500 transition hover:bg-white/10 hover:text-white focus:outline-none focus-visible:ring-1 focus-visible:ring-violet-400/50"
             aria-label="Close playbook"
           >
             ✕
@@ -200,7 +269,7 @@ export function DraggableDeskWidget({
       </div>
 
       {footer ? (
-        <div className="shrink-0 border-t border-white/10 bg-[#080b12]/90 px-3 py-2.5">
+        <div className="shrink-0 border-t border-white/10 bg-[#080b12]/90 px-3 py-2">
           {footer}
         </div>
       ) : null}
