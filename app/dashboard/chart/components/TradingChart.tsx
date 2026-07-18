@@ -564,17 +564,18 @@ export function TradingChart({
     )
   }, []) // levels only — setLevels is stable
 
-  // Keep axis / tooltips on the same desk clock as session colors (ET vs JST)
+  // Keep axis / tooltips on the same desk clock as session colors (ET vs JST).
+  // tickMarkFormatter is wired via chartFmtRef at create time (v4 applyOptions
+  // does not accept tickMarkFormatter on timeScale).
   useEffect(() => {
-    const fmt = makeDeskChartFormatters(instrument)
-    chartFmtRef.current = fmt
+    chartFmtRef.current = makeDeskChartFormatters(instrument)
     const chart = chartRef.current
     if (!chart) return
     chart.applyOptions({
-      localization: { timeFormatter: fmt.timeFormatter },
-    })
-    chart.timeScale().applyOptions({
-      tickMarkFormatter: fmt.tickMarkFormatter,
+      localization: {
+        timeFormatter: (time: UTCTimestamp | string | number) =>
+          chartFmtRef.current.timeFormatter(time),
+      },
     })
   }, [instrument])
 
@@ -582,15 +583,20 @@ export function TradingChart({
   useEffect(() => {
     if (!containerRef.current) return
 
-    const initialFmt = chartFmtRef.current
     const chart = createChart(containerRef.current, {
       ...CHART_THEME,
       width:  containerRef.current.clientWidth,
       height: containerRef.current.clientHeight,
-      localization: { timeFormatter: initialFmt.timeFormatter },
+      localization: {
+        timeFormatter: (time: UTCTimestamp | string | number) =>
+          chartFmtRef.current.timeFormatter(time),
+      },
       timeScale: {
         ...CHART_THEME.timeScale,
-        tickMarkFormatter: initialFmt.tickMarkFormatter,
+        tickMarkFormatter: (
+          time: UTCTimestamp | string | number,
+          tickMarkType: TickMarkType,
+        ) => chartFmtRef.current.tickMarkFormatter(time, tickMarkType),
       },
     })
 
