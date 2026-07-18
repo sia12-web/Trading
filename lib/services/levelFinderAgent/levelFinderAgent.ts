@@ -9,6 +9,8 @@ import {
   deskClockFor,
   lastNTradingSessions,
 } from '@/lib/chart/sessionVwap'
+import { computeVolumeProfile } from '@/lib/chart/volumeProfile'
+import { filterByConfluence } from '@/lib/trading/levelConfluence'
 import { sessionFor } from '@/lib/trading/sessionGate'
 import { createClient } from '@/lib/supabase/server'
 import { groundLevels, onlyGrounded } from '@/lib/llm/antiHallucination'
@@ -65,6 +67,7 @@ class LevelFinderAgent {
     const prompt = this.buildAnalysisPrompt(request)
     const systemPrompt = this.buildSystemPrompt(request.index, request.historicalContext)
     const avwapBands = this.extractAvwapBandPrices(request)
+    const vpAnchors = this.extractVolumeProfileAnchors(request)
 
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), ANALYSIS_TIMEOUT_MS)
@@ -122,6 +125,7 @@ class LevelFinderAgent {
         candles: allCandles,
         currentPrice: request.current_price,
         avwapBands,
+        vpAnchors,
         snap: false,
       })
       const afterGround = onlyGrounded(grounded)
@@ -154,16 +158,46 @@ class LevelFinderAgent {
         })
       }
 
-      const levels = verified.kept.slice(0, MAX_LEVELS)
+      // Confluence gate: ≥2 of stop-pool / AVWAP / POC-HVN (same for live + sim)
+      const deskBars = request.candles_h1
+        .map((c) => ({
+          time: Math.floor(new Date(c.timestamp).getTime() / 1000),
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: c.volume,
+        }))
+        .filter((b) => Number.isFinite(b.time))
+      const openUnix =
+        deskBars.length > 0
+          ? Math.max(...deskBars.map((b) => b.time)) + 1
+          : Math.floor(Date.now() / 1000)
+      const timeZone = sessionFor(request.index).tz
+      const afterConfluence = filterByConfluence(verified.kept, {
+        candles: deskBars,
+        openUnix,
+        timeZone,
+        avwapBands,
+        vpAnchors,
+      })
+
+      const levels = afterConfluence.slice(0, MAX_LEVELS)
       acceptedCount = levels.length
 
       logger.info('level_finder.done', {
         instrument: request.index,
         proposed: proposedCount,
-        accepted: acceptedCount,
-        rejected: rejectedCount + (afterGround.length - verified.kept.length),
+        grounded: afterGround.length,
+        verified: verified.kept.length,
+        confluence: acceptedCount,
+        rejected:
+          rejectedCount +
+          (afterGround.length - verified.kept.length) +
+          (verified.kept.length - acceptedCount),
         model,
         provider,
+        vpAnchors: vpAnchors.length,
       })
 
       return { levels, usage: proposerUsage }
@@ -223,6 +257,58 @@ class LevelFinderAgent {
       bands.upper3[i]!.value,
       bands.lower3[i]!.value,
     ].filter((n) => Number.isFinite(n) && n > 0)
+  }
+
+  /** Prefer H1 bars (as-of open upstream); fall back to 4H if thin. */
+  private extractVolumeProfileAnchors(request: AnalysisRequest): number[] {
+    const profile = this.computeRequestVolumeProfile(request)
+    return profile?.anchors ?? []
+  }
+
+  private computeRequestVolumeProfile(request: AnalysisRequest) {
+    const toBars = (candles: Candle[]) =>
+      candles
+        .map((c) => ({
+          time: Math.floor(new Date(c.timestamp).getTime() / 1000),
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: Math.max(0, c.volume || 0),
+        }))
+        .filter((b) => Number.isFinite(b.time))
+        .sort((a, b) => a.time - b.time)
+
+    let bars = toBars(request.candles_h1)
+    let profile = computeVolumeProfile(bars)
+    if (!profile) {
+      bars = toBars(request.candles_4h)
+      profile = computeVolumeProfile(bars)
+    }
+    return profile
+  }
+
+  private buildVolumeProfileSection(request: AnalysisRequest): string {
+    const profile = this.computeRequestVolumeProfile(request)
+    if (!profile) return ''
+
+    const fmt = (n: number) => n.toFixed(2)
+    const hvnLine =
+      profile.hvn.length > 0
+        ? profile.hvn.map((h, i) => `HVN${i + 1}: ${fmt(h.price)}`).join(' · ')
+        : '(no secondary HVN)'
+
+    return `
+VOLUME-BY-PRICE (deterministic profile from as-of-open H1/4H bars — NOT invented):
+- POC (point of control / highest volume price): ${fmt(profile.poc.price)}
+- ${hvnLine}
+- Bucket size: ${fmt(profile.bucketSize)} · bars used: ${profile.barCount}
+
+How to use it (big-desk volume map):
+- POC and HVN are where size historically traded — treat them like institutional magnets.
+- Prefer levels that sit AT or just beyond a stop-pool bait AND near POC/HVN and/or AVWAP.
+- Do not invent other POCs; only use these printed prices.
+`
   }
 
   async validateLevels(
@@ -405,7 +491,7 @@ CORE PHILOSOPHY — BIG MONEY ENTERS AT RETAIL STOP LOSS LIQUIDITY:
 - Retail SHORTS the obvious resistance (Asia/London/prior-day high) → their stops sit ABOVE that high. Big money SELLS into those stops.
 - Therefore: NEVER return the exact Asia/London/prior-day high or low as a tradeable level — that is where retail ENTERS. Your level is WHERE THEIR STOPS SIT (just beyond the bait).
 - Offset: typically ~0.05–0.12% of price (or ~6–10% of yesterday's range / a measured wick-through) past the bait into the stop pool.
-- Prefer: (1) stop-liquidity pools beyond equal highs/lows or session extremes, (2) unmitigated impulse origins, (3) absorption / initiative volume, (4) AVWAP confluence — never naked session highs/lows or round numbers.
+- Prefer: (1) stop-liquidity pools beyond equal highs/lows or session extremes, (2) unmitigated impulse origins, (3) absorption / initiative volume, (4) AVWAP confluence, (5) volume-by-price POC/HVN confluence — never naked session highs/lows or round numbers.
 - Ask every time: "Where did retail put stops?" That answer IS your entry zone. "Short the London high" / "buy the Asia low" is retail — reject it.
 
 WHAT TO LOOK FOR IN THE CANDLES:
@@ -414,6 +500,7 @@ WHAT TO LOOK FOR IN THE CANDLES:
 3. Volume anomalies — bars with outsized volume and small range (absorption) or wide range closing near the extreme (initiative).
 4. Rejection quality — one strong wick THROUGH the bait into stops WITH follow-through beats many weak touches AT the bait.
 5. VWAP/AVWAP — institutions benchmark to it; ±2σ/±3σ extremes often mean-revert after a stop-hunt through a session extreme.
+6. Volume-by-price — POC (highest volume) and HVN nodes printed in the request are where size clustered; confluence with a stop-pool raises conviction.
 
 DESK CADENCE (your levels live inside this rhythm — ${marketLabel} clock for ${index}):
 - You call levels pre-open from YESTERDAY'S range + overnight only. Older multi-day level history is discarded — the next session does not care about last week's levels.
@@ -442,7 +529,7 @@ REASONING REQUIREMENTS (critical):
       return basePrompt + `
 
 Return ONLY valid JSON array. No additional text.
-ANTI-HALLUCINATION: every "level" MUST be near a real high/low/close from the provided candles OR an AVWAP band printed above. Never invent round numbers or prices outside the candle range.
+ANTI-HALLUCINATION: every "level" MUST be near a real high/low/close from the provided candles OR an AVWAP band OR a printed POC/HVN. Never invent round numbers or prices outside the candle range.
 Example shape (replace numbers with real prices from THIS request's candles):
 [
   {"level": <price_from_candles>, "type": "resistance", "conviction": 8, "reasoning": "Retail shorts stop just above equal highs at <bait> — sell into that stop liquidity", "timeframe": "4H"},
@@ -487,7 +574,7 @@ HOW TO USE THIS:
     return basePrompt + historicalSection + `
 
 Return ONLY valid JSON array. No additional text.
-ANTI-HALLUCINATION: every "level" MUST be near a real high/low/close from the provided candles OR an AVWAP band printed above. Never invent round numbers or prices outside the candle range.
+ANTI-HALLUCINATION: every "level" MUST be near a real high/low/close from the provided candles OR an AVWAP band OR a printed POC/HVN. Never invent round numbers or prices outside the candle range.
 Example shape (replace numbers with real prices from THIS request's candles):
 [
   {"level": <price_from_candles>, "type": "resistance", "conviction": 8, "reasoning": "Retail shorts stop just above equal highs at <bait> — sell into that stop liquidity", "timeframe": "4H"},
@@ -547,6 +634,7 @@ How to use it:
     const formatDailyCandles = this.formatCandles(request.candles_daily, 'D')
     const formatH1Candles = this.formatCandles(request.candles_h1, 'H1')
     const vwapSection = this.buildVwapSection(request)
+    const vpSection = this.buildVolumeProfileSection(request)
 
     const clock = deskClockFor(request.index)
     const s = sessionFor(request.index)
@@ -564,16 +652,19 @@ ${formatDailyCandles}
 
 ${formatH1Candles}
 ${vwapSection}
+${vpSection}
 Work through this before choosing levels:
 1. Where are retail traders ENTERING right now (obvious support/resistance, Asia/London highs/lows, round numbers)?
 2. WHERE DID THEY PUT THEIR STOP LOSSES relative to those entries? That stop cluster IS the liquidity.
 3. Which stop pool is most likely to get hunted next for a fill — and that price is YOUR level (buy below bait lows / sell above bait highs).
 4. Where are unmitigated impulse origins, and which levels show absorption / initiative volume?
+5. Does that stop-pool zone also sit near a printed AVWAP band and/or POC/HVN? Prefer levels with that confluence.
 
 Then identify 2-5 levels where INSTITUTIONS ENTER — i.e. retail stop-loss liquidity pools. Rules:
 - HARD BAN: do NOT return yesterday's exact high/low, overnight exact high/low, Asia/London session high/low, or a round number. Those are retail entries. Return the stop-pool price JUST BEYOND them and name which stops you are targeting.
 - Especially: NEVER short the London session high or buy the Asia/London session low. Short ABOVE that high (into short-stops); buy BELOW that low (into long-stops).
 - Offset guide: ~0.05–0.12% of price (or ~6–10% of yesterday's range) past the bait into the stop pool.
+- Prefer confluence: stop-pool + AVWAP and/or POC/HVN. Single-signal naked levels are weak.
 - Each reasoning must cite evidence and say explicitly: "retail stops at X — institutional entry into that liquidity."
 - If two candidate levels are within 0.3% of each other, keep only the stronger one.
 

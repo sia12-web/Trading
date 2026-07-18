@@ -23,7 +23,8 @@ const DEFAULT_TOL_PCT = 0.0015 // 0.15% — zone-scale
 function collectAnchors(
   candles: Candle[],
   currentPrice: number,
-  avwapBands?: number[] | null
+  avwapBands?: number[] | null,
+  vpAnchors?: number[] | null
 ): GroundingAnchor[] {
   const anchors: GroundingAnchor[] = [{ price: currentPrice, source: 'current_price' }]
 
@@ -37,6 +38,12 @@ function collectAnchors(
   if (avwapBands) {
     for (const p of avwapBands) {
       if (Number.isFinite(p) && p > 0) anchors.push({ price: p, source: 'avwap_band' })
+    }
+  }
+
+  if (vpAnchors) {
+    for (const p of vpAnchors) {
+      if (Number.isFinite(p) && p > 0) anchors.push({ price: p, source: 'volume_profile' })
     }
   }
 
@@ -68,6 +75,8 @@ export function groundLevels(
     candles: Candle[]
     currentPrice: number
     avwapBands?: number[] | null
+    /** POC / HVN prices from computeVolumeProfile */
+    vpAnchors?: number[] | null
     /** Max distance from an anchor as fraction of price (default 0.15%) */
     tolPct?: number
     /** Also reject levels more than this % away from current price (default 8%) */
@@ -77,7 +86,12 @@ export function groundLevels(
 ): GroundedLevel[] {
   const tolPct = opts.tolPct ?? DEFAULT_TOL_PCT
   const maxDist = opts.maxDistFromPricePct ?? 0.08
-  const anchors = collectAnchors(opts.candles, opts.currentPrice, opts.avwapBands)
+  const anchors = collectAnchors(
+    opts.candles,
+    opts.currentPrice,
+    opts.avwapBands,
+    opts.vpAnchors
+  )
 
   return levels.map((lvl) => {
     if (!Number.isFinite(lvl.level) || lvl.level <= 0) {
@@ -109,7 +123,7 @@ export function groundLevels(
         grounded: false,
         snap_to: null,
         anchor_source: null,
-        reject_reason: 'no_candle_or_avwap_anchor',
+        reject_reason: 'no_candle_avwap_or_vp_anchor',
       }
     }
 

@@ -47,12 +47,13 @@ Each slice is end-to-end (DB → API → Service → UI):
 **Purpose:** Identify key support/resistance levels and VWAP
 **Input:** 4H/Daily/H1 candles, symbol, index type, current price
 **Output:** 2-5 levels with type (support/resistance/vwap), conviction (1-10), reasoning, timeframe
-**Logic:** Analyzes institutional price action, round numbers, swing points, SMA zones
-**Tech:** Claude 3.5 Sonnet, 5-minute timeout, 50-pip duplicate detection
+**Logic:** Stop-pool liquidity beyond retail bait + multi-TF structure + exact chart AVWAP ±σ + deterministic volume-by-price (POC/HVN). Post-AI confluence gate keeps levels with ≥2 of {stop-pool, AVWAP, POC/HVN}. Live=Opus, sim=Haiku. Structure fallback if AI fails.
+**Tech:** Claude (tiered models), 5-minute timeout, grounding + optional Gemini verifier
 **Files:**
 - `lib/services/levelFinderAgent/levelFinderAgent.ts` - Main service
-- `app/api/agents/find-levels/route.ts` - API endpoint
-- `lib/services/levelFinderAgent/types.ts` - TypeScript interfaces
+- `lib/chart/volumeProfile.ts` - POC + HVN
+- `lib/trading/levelConfluence.ts` - confluence gate
+- `app/api/agents/find-levels/route.ts` / `app/api/trading/sim-levels/route.ts`
 
 **Key Features Implemented:**
 - Comprehensive input validation (volume > 0, OHLC relationships, chronological order)
@@ -61,6 +62,12 @@ Each slice is end-to-end (DB → API → Service → UI):
 - Graceful JSON parsing with fallback to empty array
 - Proper error handling with 408 timeout responses
 - Refactored into helpers (<50 line functions)
+- Confluence MVP (AVWAP + volume profile + stop-pool)
+
+**Success metrics (2-week check after confluence MVP):**
+- % of PRIMARY levels tested before lunch
+- % of those that hold vs break
+- If no lift vs pre-MVP, do not expand to full VAH/VAL profiles
 
 ---
 
