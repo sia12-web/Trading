@@ -72,6 +72,8 @@ export interface LevelHistory {
   success_count: number
   success_rate: number // Calculated: success_count / tested_count * 100
   last_tested_date: string | null
+  last_verdict?: 'respected' | 'contested' | 'broken' | 'untested' | null
+  last_outcome?: 'held' | 'broke' | 'untested' | null
   created_at: string
   days_ago: number // Calculated: days since created_at
 }
@@ -115,6 +117,8 @@ export interface HistoricalLevelData {
   success_count: number
   success_rate: number  // 0.00 to 1.00
   last_tested_date: string | null
+  last_verdict?: 'respected' | 'contested' | 'broken' | 'untested' | null
+  last_outcome?: 'held' | 'broke' | 'untested' | null
 }
 
 export interface ContextSummary {

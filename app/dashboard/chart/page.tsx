@@ -102,7 +102,11 @@ export default function ChartPage() {
         await fetch('/api/levels/respond', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ instrument: inst, exit_reason: exitReason }),
+          body: JSON.stringify({
+            instrument: inst,
+            exit_reason: exitReason,
+            trigger: 'exit',
+          }),
         })
       } catch {
         /* non-fatal */

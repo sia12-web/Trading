@@ -136,9 +136,11 @@ export async function GET(request: NextRequest) {
       success_count: level.success_count,
       success_rate: calculateSuccessRate(level.success_count, level.tested_count),
       last_tested_date: level.last_tested_date,
+      last_verdict: level.last_verdict ?? null,
+      last_outcome: level.last_outcome ?? null,
       created_at: level.created_at,
       days_ago: calculateDaysAgo(level.created_at),
-    }))
+    })) as LevelHistory[]
 
     // Return response
     return NextResponse.json(

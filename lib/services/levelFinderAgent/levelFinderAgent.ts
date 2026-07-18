@@ -545,12 +545,12 @@ Example shape (replace numbers with real prices from THIS request's candles):
     // Format successful and unreliable levels for context
     const successfulLevelsList = summary.successful_levels
       .slice(0, 5)
-      .map(l => `- ${l.level} (${l.type}, conviction ${l.conviction}, success rate ${(l.success_rate * 100).toFixed(0)}%, "${l.reasoning}")`)
+      .map(l => `- ${l.level} (${l.type}, conviction ${l.conviction}, success rate ${(l.success_rate * 100).toFixed(0)}%${l.last_verdict ? `, verdict ${l.last_verdict}` : ''}, "${l.reasoning}")`)
       .join('\n')
 
     const unreliableLevelsList = summary.unreliable_levels
       .slice(0, 3)
-      .map(l => `- ${l.level} (${l.type}, success rate ${(l.success_rate * 100).toFixed(0)}%)`)
+      .map(l => `- ${l.level} (${l.type}, success rate ${(l.success_rate * 100).toFixed(0)}%${l.last_verdict ? `, verdict ${l.last_verdict}` : ''})`)
       .join('\n')
 
     const historicalSection = `

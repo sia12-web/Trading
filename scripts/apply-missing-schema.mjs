@@ -114,12 +114,17 @@ CREATE TABLE IF NOT EXISTS level_history (
   tested_count INT NOT NULL DEFAULT 0,
   success_count INT NOT NULL DEFAULT 0,
   last_tested_date TIMESTAMPTZ,
+  last_verdict TEXT,
+  last_outcome TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   archived_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_level_history_user_instrument_created
   ON level_history(user_id, instrument, created_at DESC);
+
+ALTER TABLE level_history ADD COLUMN IF NOT EXISTS last_verdict TEXT;
+ALTER TABLE level_history ADD COLUMN IF NOT EXISTS last_outcome TEXT;
 
 ALTER TABLE level_history ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "level_history_all_access" ON level_history;

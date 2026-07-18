@@ -30,7 +30,7 @@ export async function fetchLevelHistoricalContext(
     let q = supabase
       .from('level_history')
       .select(
-        'level, type, conviction, reasoning, timeframe, tested_count, success_count, last_tested_date, created_at'
+        'level, type, conviction, reasoning, timeframe, tested_count, success_count, last_tested_date, last_verdict, last_outcome, created_at'
       )
       .eq('user_id', userId)
       .eq('instrument', instrument)
@@ -59,6 +59,8 @@ export async function fetchLevelHistoricalContext(
       success_rate:
         level.tested_count > 0 ? level.success_count / level.tested_count : 0,
       last_tested_date: level.last_tested_date,
+      last_verdict: level.last_verdict ?? null,
+      last_outcome: level.last_outcome ?? null,
     }))
 
     const avgConviction =

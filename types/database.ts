@@ -87,6 +87,8 @@ export interface Database {
           tested_count: number
           success_count: number
           last_tested_date: string | null
+          last_verdict: 'respected' | 'contested' | 'broken' | 'untested' | null
+          last_outcome: 'held' | 'broke' | 'untested' | null
           created_at: string
           archived_at: string
         }
@@ -103,6 +105,8 @@ export interface Database {
           tested_count?: number
           success_count?: number
           last_tested_date?: string | null
+          last_verdict?: 'respected' | 'contested' | 'broken' | 'untested' | null
+          last_outcome?: 'held' | 'broke' | 'untested' | null
           created_at?: string
           archived_at?: string
         }
@@ -119,6 +123,8 @@ export interface Database {
           tested_count?: number
           success_count?: number
           last_tested_date?: string | null
+          last_verdict?: 'respected' | 'contested' | 'broken' | 'untested' | null
+          last_outcome?: 'held' | 'broke' | 'untested' | null
           created_at?: string
           archived_at?: string
         }

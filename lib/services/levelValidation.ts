@@ -2,7 +2,10 @@
  * Market-verdict engine for AI levels.
  * Replays real candles over stored levels and records how the market actually
  * treated each one (held / broke), so the AI's memory reflects price action —
- * not opinions. Runs before every new analysis.
+ * not opinions.
+ *
+ * Runs: pre-analysis, mid-morning cadence (~2m from live chart), trade exit,
+ * lunch morning-review, and EOD journal. Never calls an LLM.
  */
 
 import { getOandaCandles } from '@/lib/oanda/candles'
@@ -156,17 +159,21 @@ export async function validateLevelsAgainstMarket(
       ...result,
     })
 
-    if (result.tests === 0) continue
+    const patch: Record<string, unknown> = {
+      last_verdict: result.verdict,
+      last_outcome: result.lastOutcome,
+    }
+    if (result.tests > 0) {
+      patch.tested_count = result.tests
+      patch.success_count = result.holds
+      patch.last_tested_date = result.lastTestedAt
+        ? new Date(result.lastTestedAt * 1000).toISOString()
+        : null
+    }
 
     const { error: updateError } = await supabase
       .from('level_history')
-      .update({
-        tested_count: result.tests,
-        success_count: result.holds,
-        last_tested_date: result.lastTestedAt
-          ? new Date(result.lastTestedAt * 1000).toISOString()
-          : null,
-      })
+      .update(patch)
       .eq('id', row.id)
 
     if (!updateError) updated++

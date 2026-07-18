@@ -1,7 +1,7 @@
 /**
  * POST /api/levels/respond
- * After a stop / take-profit (or any exit), re-judge stored levels against
- * real candles so the next chart load shows updated memory — not stale zones.
+ * Rule-grade stored levels against real candles (no LLM).
+ * Called on: trade exit, mid-morning chart cadence (~2m), optional manual refresh.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -19,7 +19,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    let body: { instrument?: string; exit_reason?: string } = {}
+    let body: {
+      instrument?: string
+      exit_reason?: string
+      /** exit | cadence | manual — for logging only */
+      trigger?: string
+    } = {}
     try {
       body = await request.json()
     } catch {
@@ -35,21 +40,26 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = await createClient()
+    // Morning desk: grade today+yesterday so freshly archived levels get reaction fast
     const result = await validateLevelsAgainstMarket(supabase, user.id, instrument, 2)
 
     return NextResponse.json({
       success: true,
       instrument,
+      trigger: body.trigger ?? (body.exit_reason ? 'exit' : 'manual'),
       exit_reason: body.exit_reason ?? null,
       levels_judged: result.validated,
       memory_updated: result.updated,
       verdicts: result.verdicts.map((v) => ({
+        id: v.id,
         level: v.level,
         type: v.type,
         verdict: v.verdict,
+        last_outcome: v.lastOutcome,
         tests: v.tests,
         holds: v.holds,
         breaks: v.breaks,
+        last_tested_at: v.lastTestedAt,
       })),
     })
   } catch (error) {

@@ -29,6 +29,11 @@ export interface DeskLevel {
   side?: LevelSide
   /** primary = trade first; watch = only if primary fails / late */
   rank?: 'primary' | 'watch'
+  /** Market reaction from rule grading (live chart cadence) */
+  marketVerdict?: 'respected' | 'contested' | 'broken' | 'untested'
+  marketOutcome?: 'held' | 'broke' | 'untested'
+  testedCount?: number
+  successCount?: number
 }
 
 export interface DeskPlaybook {
@@ -229,15 +234,41 @@ export function aiLevelsUrl(instrument: string): string {
 export function mapAiLevels(rows: unknown[]): DeskLevel[] {
   const out: DeskLevel[] = []
   for (const raw of rows ?? []) {
-    const l = raw as { level?: unknown; type?: unknown; conviction?: unknown; reasoning?: unknown }
+    const l = raw as {
+      level?: unknown
+      type?: unknown
+      conviction?: unknown
+      reasoning?: unknown
+      last_verdict?: unknown
+      last_outcome?: unknown
+      tested_count?: unknown
+      success_count?: unknown
+    }
     const price = Number(l.level)
     if (!Number.isFinite(price) || price <= 0) continue
+    const verdictRaw = String(l.last_verdict || '')
+    const outcomeRaw = String(l.last_outcome || '')
+    const marketVerdict =
+      verdictRaw === 'respected' ||
+      verdictRaw === 'contested' ||
+      verdictRaw === 'broken' ||
+      verdictRaw === 'untested'
+        ? verdictRaw
+        : undefined
+    const marketOutcome =
+      outcomeRaw === 'held' || outcomeRaw === 'broke' || outcomeRaw === 'untested'
+        ? outcomeRaw
+        : undefined
     out.push({
       level: price,
       type: String(l.type ?? 'support'),
       conviction: Number(l.conviction) || 5,
       reasoning: typeof l.reasoning === 'string' && l.reasoning.trim() ? l.reasoning : undefined,
       source: 'ai',
+      marketVerdict,
+      marketOutcome,
+      testedCount: Number.isFinite(Number(l.tested_count)) ? Number(l.tested_count) : undefined,
+      successCount: Number.isFinite(Number(l.success_count)) ? Number(l.success_count) : undefined,
     })
   }
   return out

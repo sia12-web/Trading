@@ -156,6 +156,10 @@ interface LevelLine {
   conviction?: number
   reasoning?: string
   source?: 'ai' | 'status' | 'structure'
+  marketVerdict?: 'respected' | 'contested' | 'broken' | 'untested'
+  marketOutcome?: 'held' | 'broke' | 'untested'
+  testedCount?: number
+  successCount?: number
 }
 
 interface TooltipData {
@@ -186,9 +190,43 @@ const LEVEL_COLORS: Record<string, string> = {
 const STATUS_COLORS: Record<string, string> = {
   approaching: '#facc15',
   touched:     '#3b82f6',
+  contested:   '#facc15',
   broken:      '#ef4444',
   bounced:     '#a855f7',
+  respected:   '#22c55e',
   rejected:    '#f97316',
+  held:        '#22c55e',
+  untested:    '#6b7280',
+}
+
+/** Map rule-grader verdict → chart status (drives line color + panel badge). */
+function reactionStatus(
+  verdict?: string | null,
+  outcome?: string | null
+): string {
+  if (verdict === 'respected') return 'respected'
+  if (verdict === 'broken') return 'broken'
+  if (verdict === 'contested') return 'contested'
+  if (outcome === 'held') return 'held'
+  if (outcome === 'broke') return 'broken'
+  return 'untested'
+}
+
+function reactionLabel(l: LevelLine): string | null {
+  const v = l.marketVerdict || l.status
+  if (!v || v === 'untested' || v === 'ai' || v === 'structure') return null
+  const tests = l.testedCount ?? 0
+  const holds = l.successCount ?? 0
+  if (v === 'respected' || v === 'held' || v === 'bounced') {
+    return tests > 0 ? `held ${holds}/${tests}` : 'held'
+  }
+  if (v === 'broken' || v === 'rejected') {
+    return tests > 0 ? `broke ${tests - holds}/${tests}` : 'broke'
+  }
+  if (v === 'contested' || v === 'touched') {
+    return tests > 0 ? `mixed ${holds}/${tests}` : 'mixed'
+  }
+  return null
 }
 
 // Chart dark theme
@@ -547,13 +585,18 @@ export function TradingChart({
       const stars = Math.max(1, Math.min(5, Math.round((l.conviction || 5) / 2)))
       const starLabel = `${'★'.repeat(stars)}${'☆'.repeat(5 - stars)}`
       const rank = l.rank === 'watch' ? 'WATCH' : 'PRIMARY'
+      const status = reactionStatus(l.marketVerdict, l.marketOutcome)
       byPrice.set(l.level, {
         price: l.level,
         type: isRes ? 'resistance' : 'support',
-        status: l.source,
+        status,
         conviction: l.conviction,
         reasoning: l.reasoning,
         source: l.source,
+        marketVerdict: l.marketVerdict,
+        marketOutcome: l.marketOutcome,
+        testedCount: l.testedCount,
+        successCount: l.successCount,
         label: `${rank} ${side} ${starLabel} · ${l.level.toLocaleString()}`,
       })
     }
@@ -578,6 +621,21 @@ export function TradingChart({
       },
     })
   }, [instrument])
+
+  // Grade market reaction into level_history, then reload playbook (no LLM).
+  const gradeLevels = useCallback(async (inst: Instrument) => {
+    if (!isDeskHoursNow(new Date(), inst).open) return
+    try {
+      await fetch('/api/levels/respond', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instrument: inst, trigger: 'cadence' }),
+      })
+    } catch {
+      /* non-fatal — still try to paint last known verdicts */
+    }
+    await loadLevels(inst)
+  }, [loadLevels])
 
   // ── Initialize chart ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -798,13 +856,14 @@ export function TradingChart({
     }
   }, [instrument, chartReady, loadLevels, levelsRefreshKey])
 
-  // Refresh AI levels periodically during the session (ENTRY window only)
+  // Mid-morning: re-grade levels against candles every 2 minutes (rule engine only)
   useEffect(() => {
     if (!chartReady) return
     if (positionOverlay || hideTradeLevels) return
-    const id = setInterval(() => loadLevels(instrument), 60_000)
+    void gradeLevels(instrument)
+    const id = setInterval(() => void gradeLevels(instrument), 120_000)
     return () => clearInterval(id)
-  }, [chartReady, instrument, loadLevels, positionOverlay, hideTradeLevels])
+  }, [chartReady, instrument, gradeLevels, positionOverlay, hideTradeLevels])
 
   // Clear buy/short levels while working/in-trade; reload when flat again
   useEffect(() => {
@@ -1624,7 +1683,7 @@ export function TradingChart({
               </p>
               <p className="mt-0.5 text-[10px] leading-snug text-gray-400">
                 Trade the <span className="font-semibold text-gray-300">PRIMARY</span> with more ★ —
-                WATCH only if primary fails.
+                reaction updates from the market every ~2m.
               </p>
             </div>
             <div className="flex-1 space-y-1.5 overflow-y-auto p-2">
@@ -1635,6 +1694,7 @@ export function TradingChart({
                   const isRes = l.type === 'resistance'
                   const stars = Math.max(1, Math.min(5, Math.round((l.conviction || 5) / 2)))
                   const isPrimary = (l.label || '').startsWith('PRIMARY')
+                  const reaction = reactionLabel(l)
                   return (
                     <button
                       key={`${l.price}-${i}`}
@@ -1664,6 +1724,19 @@ export function TradingChart({
                       <div className="price-mono mt-0.5 text-sm font-bold text-white">
                         {l.price.toLocaleString()}
                       </div>
+                      {reaction && (
+                        <div
+                          className={`mt-1 text-[9px] font-semibold uppercase tracking-wide ${
+                            reaction.startsWith('held')
+                              ? 'text-emerald-400'
+                              : reaction.startsWith('broke')
+                                ? 'text-red-400'
+                                : 'text-amber-300'
+                          }`}
+                        >
+                          Market · {reaction}
+                        </div>
+                      )}
                     </button>
                   )
                 })}
