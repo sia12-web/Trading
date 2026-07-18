@@ -124,10 +124,12 @@ export default function SimulationPage() {
   return (
     <div className="p-6 space-y-6 animate-fade-in">
       <div>
-        <h1 className="text-2xl font-bold text-white">Simulation</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Replay a past morning session only (open → lunch). Paper trades stay on this desk — they
-          are never written to the live Trade Journal. Morning/EOD journaling is live clock-in only.
+        <p className="text-[10px] uppercase tracking-[0.2em] text-violet-400/90">Practice only</p>
+        <h1 className="mt-1 text-2xl font-bold text-white">Simulation</h1>
+        <p className="text-sm text-gray-500 mt-1 max-w-2xl">
+          Replay a past morning (open → lunch) on this desk. Paper fills, SL/TP, and manage all live
+          here — you do not need Live Positions or Live History. Those pages are for real clock-in
+          trading only.
         </p>
       </div>
 

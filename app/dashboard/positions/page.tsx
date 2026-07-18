@@ -113,11 +113,13 @@ export default function PositionsPage() {
       <div className="mx-auto max-w-3xl px-4 py-8 space-y-6">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-gray-500">Live desk</p>
-            <h1 className="mt-1 text-2xl font-semibold text-white">Positions</h1>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-amber-500/90">
+              Live trading only
+            </p>
+            <h1 className="mt-1 text-2xl font-semibold text-white">Live positions</h1>
             <p className="mt-1 text-sm text-gray-500 max-w-lg">
-              Manage the open book: path to target, room to stop, AI check, then HOLD or take
-              profit. Simulation never appears here.
+              Manage today’s open live book (path to TP, room to SL, AI, take profit). Simulation
+              paper trades stay on the Simulation desk — they never show here.
             </p>
           </div>
           <div className="flex items-center gap-2">

@@ -3,10 +3,18 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
-const NAV_ITEMS = [
+type NavItem = {
+  href: string
+  label: string
+  hint?: string
+  icon: React.ReactNode
+}
+
+const LIVE_ITEMS: NavItem[] = [
   {
     href: '/dashboard/chart',
     label: 'Live Trading',
+    hint: 'Clock-in desk',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-4 h-4">
         <path strokeLinecap="round" strokeLinejoin="round" d="M3 3v18h18" />
@@ -15,17 +23,9 @@ const NAV_ITEMS = [
     ),
   },
   {
-    href: '/dashboard/simulation',
-    label: 'Simulation',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-4 h-4">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
-  },
-  {
     href: '/dashboard/positions',
-    label: 'Positions',
+    label: 'Live Positions',
+    hint: 'Open book now',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-4 h-4">
         <path
@@ -38,7 +38,8 @@ const NAV_ITEMS = [
   },
   {
     href: '/dashboard/journal',
-    label: 'Order History',
+    label: 'Live History',
+    hint: 'Fills & P&L',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-4 h-4">
         <path
@@ -49,6 +50,22 @@ const NAV_ITEMS = [
       </svg>
     ),
   },
+]
+
+const PRACTICE_ITEMS: NavItem[] = [
+  {
+    href: '/dashboard/simulation',
+    label: 'Simulation',
+    hint: 'Paper replay desk',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-4 h-4">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+  },
+]
+
+const TOOL_ITEMS: NavItem[] = [
   {
     href: '/dashboard/usage',
     label: 'LLM Usage',
@@ -63,6 +80,50 @@ const NAV_ITEMS = [
     ),
   },
 ]
+
+function NavLink({ item, active }: { item: NavItem; active: boolean }) {
+  return (
+    <Link
+      href={item.href}
+      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+        active
+          ? 'bg-brand-600/20 text-brand-300 border border-brand-700/30'
+          : 'text-gray-500 hover:text-gray-200 hover:bg-surface-700 border border-transparent'
+      }`}
+    >
+      <span className={active ? 'text-brand-400' : 'text-gray-600'}>{item.icon}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block leading-tight">{item.label}</span>
+        {item.hint && (
+          <span className="block text-[10px] font-normal text-gray-600 leading-tight mt-0.5">
+            {item.hint}
+          </span>
+        )}
+      </span>
+    </Link>
+  )
+}
+
+function NavSection({
+  title,
+  items,
+  pathname,
+}: {
+  title: string
+  items: NavItem[]
+  pathname: string
+}) {
+  return (
+    <div className="space-y-0.5">
+      <p className="px-3 pt-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-600">
+        {title}
+      </p>
+      {items.map((item) => (
+        <NavLink key={item.href} item={item} active={pathname.startsWith(item.href)} />
+      ))}
+    </div>
+  )
+}
 
 export function Sidebar() {
   const pathname = usePathname()
@@ -89,31 +150,20 @@ export function Sidebar() {
         </div>
       </div>
 
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto scrollbar-dark">
-        {NAV_ITEMS.map((item) => {
-          const active = pathname.startsWith(item.href)
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
-                active
-                  ? 'bg-brand-600/20 text-brand-300 border border-brand-700/30'
-                  : 'text-gray-500 hover:text-gray-200 hover:bg-surface-700'
-              }`}
-            >
-              <span className={active ? 'text-brand-400' : 'text-gray-600'}>{item.icon}</span>
-              {item.label}
-            </Link>
-          )
-        })}
+      <nav className="flex-1 px-3 py-2 space-y-3 overflow-y-auto scrollbar-dark">
+        <NavSection title="Live desk" items={LIVE_ITEMS} pathname={pathname} />
+        <NavSection title="Practice" items={PRACTICE_ITEMS} pathname={pathname} />
+        <NavSection title="Tools" items={TOOL_ITEMS} pathname={pathname} />
       </nav>
 
-      <div className="px-5 py-4 border-t border-surface-600">
+      <div className="px-5 py-4 border-t border-surface-600 space-y-1">
         <div className="flex items-center gap-2">
           <span className="inline-block w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
           <span className="text-xs text-gray-500">Desk ready</span>
         </div>
+        <p className="text-[10px] text-gray-600 leading-snug">
+          Sim paper never hits Live Positions or Live History.
+        </p>
       </div>
     </aside>
   )

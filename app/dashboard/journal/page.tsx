@@ -222,13 +222,13 @@ export default function JournalPage() {
       <div className="mx-auto max-w-5xl px-4 py-8 space-y-6">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-gray-500">
-              Live desk only
+            <p className="text-[10px] uppercase tracking-[0.2em] text-amber-500/90">
+              Live trading only
             </p>
-            <h1 className="mt-1 text-2xl font-semibold text-white">Order history & P&amp;L</h1>
+            <h1 className="mt-1 text-2xl font-semibold text-white">Live order history</h1>
             <p className="mt-1 text-sm text-gray-500 max-w-xl">
-              Organized by day and market. Entries, stops, targets, level reasons, and why the system
-              exited — including AI exits before take-profit. Simulation is never written here.
+              Closed and open live fills by day and market — entries, SL/TP, level reasons, AI exits,
+              and equity. Simulation paper trades are never recorded here.
             </p>
           </div>
           <Link
