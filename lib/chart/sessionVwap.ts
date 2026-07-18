@@ -45,9 +45,9 @@ export interface SessionHighlightRect {
   color: string
   left: number
   width: number
-  /** Y of session high (price-bounded box, not full pane) */
+  /** Top of band (0 when full-height time columns) */
   top: number
-  /** Height from session high → low */
+  /** Band height (full pane when full-height time columns) */
   height: number
   zIndex: number
 }
@@ -336,7 +336,7 @@ export function computeSessionHighlightSpans(args: {
   const seen = new Set<string>()
 
   const pushSpan = (name: SessionName, startT: number, endT: number) => {
-    if (endT <= firstBarT || startT >= lastBarT) return
+    if (endT <= firstBarT || startT >= lastBarT + barSec) return
     // Clip to "as of" so live doesn't paint into the future
     const clipEnd = Math.min(endT, now)
     if (clipEnd <= startT) return
@@ -344,37 +344,30 @@ export function computeSessionHighlightSpans(args: {
     let high = -Infinity
     let low = Infinity
     let count = 0
-    let firstBarIn: number | null = null
-    let lastBarIn: number | null = null
     // Strict: only bars whose OPEN is inside [startT, clipEnd)
     for (const c of bars) {
       if (c.time < startT || c.time >= clipEnd) continue
       if (!(c.high >= c.low) || !Number.isFinite(c.high) || !Number.isFinite(c.low)) continue
       if (c.high > high) high = c.high
       if (c.low < low) low = c.low
-      if (firstBarIn == null) firstBarIn = c.time
-      lastBarIn = c.time
       count++
     }
-    if (
-      count < 1 ||
-      firstBarIn == null ||
-      lastBarIn == null ||
-      !Number.isFinite(high) ||
-      !Number.isFinite(low) ||
-      high < low
-    ) {
+    if (count < 1 || !Number.isFinite(high) || !Number.isFinite(low) || high < low) {
       return
     }
 
-    const key = `${name}:${firstBarIn}:${lastBarIn}`
+    // Clock-aligned column (not first/last bar), clipped to visible data
+    const colStart = Math.max(startT, firstBarT)
+    const colEnd = Math.min(clipEnd, lastBarT + barSec)
+    if (colEnd <= colStart) return
+
+    const key = `${name}:${Math.round(colStart)}:${Math.round(colEnd)}`
     if (seen.has(key)) return
     seen.add(key)
     spans.push({
       name,
-      startT: firstBarIn,
-      // Cover full last candle body; high/low stay exact wicks
-      endT: Math.min(lastBarIn + barSec, clipEnd),
+      startT: colStart,
+      endT: colEnd,
       high,
       low,
     })
@@ -412,7 +405,8 @@ export function computeSessionHighlightSpans(args: {
       pushSpan('Asia', asiaInStart, asiaInEnd)
     }
 
-    if (isCashDay || dow === 0) {
+    // Overnight after cash + weekend evenings (Sat was missing → tip stayed NY-green)
+    if (isCashDay || dow === 0 || dow === 6) {
       const asiaOutStart = sessionEdgeUnix(
         dayAnchor,
         SESSION_WINDOWS.Asia.start,
@@ -450,8 +444,8 @@ export function computeSessionHighlightSpans(args: {
 
 /**
  * Map cached spans → pixel rects.
- * priceToCoordinate is full-chart pixel space (0 = top). Do NOT subtract time-axis
- * from Y (that mismatch stretched bands). Vertical = exact wick high→low, no pad.
+ * Default: full-pane time columns (TradingView-style) so session colors line up
+ * with the clock — price-bounded boxes floated at different Y and looked “off”.
  */
 export function projectSessionHighlightRects(args: {
   spans: SessionHighlightSpan[]
@@ -464,7 +458,10 @@ export function projectSessionHighlightRects(args: {
   priceScaleWidth: number
   containerWidth: number
   containerHeight: number
-  /** @deprecated Ignored */
+  /**
+   * true (default): full-pane height columns aligned to session clock.
+   * false: box only covers session high→low (can look misaligned / vanish on zoom).
+   */
   fullHeight?: boolean
   /** @deprecated Ignored */
   visiblePriceRange?: { from: number; to: number } | null
@@ -472,6 +469,7 @@ export function projectSessionHighlightRects(args: {
   const { spans, candleTimes, timeScale, priceToY } = args
   const chartH = Math.max(args.containerHeight, 0)
   const paneW = Math.max(args.containerWidth - args.priceScaleWidth, 0)
+  const useFullHeight = args.fullHeight !== false
   if (spans.length === 0 || candleTimes.length === 0 || chartH < 2) {
     return { rects: [], paneHeight: chartH }
   }
@@ -492,43 +490,39 @@ export function projectSessionHighlightRects(args: {
     const width = right - left
     if (width < 2) continue
 
-    const yHigh = priceToY(span.high)
-    const yLow = priceToY(span.low)
-    if (
-      yHigh == null ||
-      yLow == null ||
-      !Number.isFinite(yHigh) ||
-      !Number.isFinite(yLow)
-    ) {
-      continue
+    let top = 0
+    let height = chartH
+
+    if (!useFullHeight) {
+      const yHigh = priceToY(span.high)
+      const yLow = priceToY(span.low)
+      if (
+        yHigh == null ||
+        yLow == null ||
+        !Number.isFinite(yHigh) ||
+        !Number.isFinite(yLow)
+      ) {
+        continue
+      }
+
+      const rawTop = Math.min(yHigh, yLow)
+      const rawBottom = Math.max(yHigh, yLow)
+      if (rawBottom < 0 || rawTop > chartH) {
+        // Zoomed away from this session’s range — keep a time column
+        top = 0
+        height = chartH
+      } else {
+        top = Math.max(rawTop, 0)
+        const bottom = Math.min(rawBottom, chartH)
+        height = bottom - top
+        if (height < 3) {
+          top = 0
+          height = chartH
+        }
+      }
     }
 
-    const rawTop = Math.min(yHigh, yLow)
-    const rawBottom = Math.max(yHigh, yLow)
-    if (rawBottom < 0 || rawTop > chartH) continue
-
-    const top = Math.max(rawTop, 0)
-    const bottom = Math.min(rawBottom, chartH)
-    let height = bottom - top
-
-    if (height < 3) {
-      const mid = (top + bottom) / 2
-      const tinyTop = Math.max(mid - 1.5, 0)
-      height = Math.min(3, chartH - tinyTop)
-      rects.push({
-        name: span.name,
-        left,
-        width,
-        top: tinyTop,
-        height,
-        color: SESSION_STYLES[span.name].color,
-        zIndex: SESSION_STYLES[span.name].zIndex,
-      })
-      continue
-    }
-
-    // Bad Y mapping would paint wallpaper — skip rather than stretch
-    if (height >= chartH * 0.92) continue
+    if (height < 2) continue
 
     rects.push({
       name: span.name,
@@ -546,7 +540,7 @@ export function projectSessionHighlightRects(args: {
 }
 
 /**
- * Session color boxes: horizontal = bars in that session, vertical = session high→low.
+ * Session color columns: horizontal = session clock window, vertical = full pane.
  * Needs 24h bars (OANDA) for Asia/London to have candles inside those windows.
  */
 export function computeSessionHighlightRects(args: {
@@ -563,7 +557,7 @@ export function computeSessionHighlightRects(args: {
   asOfUnix?: number
   /** DOW/NASDAQ → NY windows; NIKKEI → Tokyo windows */
   instrument?: string | null
-  /** @deprecated Ignored — always price-bounded */
+  /** true (default): full-pane time columns */
   fullHeight?: boolean
   visiblePriceRange?: { from: number; to: number } | null
 }): { rects: SessionHighlightRect[]; paneHeight: number } {
@@ -580,6 +574,7 @@ export function computeSessionHighlightRects(args: {
     priceScaleWidth: args.priceScaleWidth,
     containerWidth: args.containerWidth,
     containerHeight: args.containerHeight,
+    fullHeight: args.fullHeight,
     visiblePriceRange: args.visiblePriceRange,
   })
 }
@@ -616,7 +611,7 @@ export function paintSessionHighlightOverlay(
     d.style.bottom = 'auto'
     d.style.backgroundColor = s.color
     d.style.zIndex = String(s.zIndex)
-    d.title = `${s.name} session (high→low)`
+    d.title = `${s.name} session`
   }
 }
 
