@@ -764,10 +764,15 @@ export function TradingChart({
     return () => clearInterval(id)
   }, [chartReady, instrument, loadLevels, positionOverlay, hideTradeLevels])
 
-  // Clear buy/short levels when entry window ends or in a trade
+  // Clear buy/short levels while working/in-trade; reload when flat again
   useEffect(() => {
-    if (hideTradeLevels) setLevels([])
-  }, [hideTradeLevels])
+    if (hideTradeLevels) {
+      setLevels([])
+      return
+    }
+    if (!chartReady) return
+    void loadLevels(instrument)
+  }, [hideTradeLevels, chartReady, instrument, loadLevels])
 
   // Reset fit when switching instrument
   useEffect(() => {
@@ -997,7 +1002,8 @@ export function TradingChart({
     })
     levelLinesRef.current = []
 
-    if (!showLevels || hideTradeLevels || !!positionOverlay) return
+    // Flat only — working limit or open position → Entry/SL/TP lines only
+    if (!showLevels || hideTradeLevels || !!positionOverlay || !!pendingLimit) return
 
     levels.forEach(level => {
       const isAi = level.source === 'ai'
@@ -1025,7 +1031,7 @@ export function TradingChart({
         levelLinesRef.current.push(line)
       } catch {}
     })
-  }, [levels, showLevels, chartReady, positionOverlay, hideTradeLevels])
+  }, [levels, showLevels, chartReady, positionOverlay, pendingLimit, hideTradeLevels])
 
   // ── Chart stream: trade live open→lunch; lunch freeze tip; after cash close continuum ─
   useEffect(() => {
@@ -1381,19 +1387,23 @@ export function TradingChart({
           5m
         </span>
 
-        {/* Level toggle */}
-        <button
-          onClick={() => setShowLevels(v => !v)}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
-            showLevels
-              ? 'bg-surface-600 border-surface-400 text-gray-200'
-              : 'bg-transparent border-surface-600 text-gray-600 hover:text-gray-400'
-          }`}
-        >
-          <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
-          {levels.some(l => l.source === 'ai') ? 'AI Levels' : 'Levels'}
-          {levels.length > 0 ? ` (${levels.filter(l => l.source === 'ai' || l.source === 'structure').length})` : ''}
-        </button>
+        {/* Level toggle — only while flat (working/in-trade keeps chart clean) */}
+        {!hideTradeLevels && !positionOverlay && !pendingLimit && (
+          <button
+            onClick={() => setShowLevels((v) => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+              showLevels
+                ? 'bg-surface-600 border-surface-400 text-gray-200'
+                : 'bg-transparent border-surface-600 text-gray-600 hover:text-gray-400'
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
+            {levels.some((l) => l.source === 'ai') ? 'AI Levels' : 'Levels'}
+            {levels.length > 0
+              ? ` (${levels.filter((l) => l.source === 'ai' || l.source === 'structure').length})`
+              : ''}
+          </button>
+        )}
 
         {canPlaceOrder && !positionOverlay && !pendingLimit && (
           <button
@@ -1416,9 +1426,13 @@ export function TradingChart({
           </span>
         )}
 
-        {(hideTradeLevels || positionOverlay) && (
+        {(hideTradeLevels || positionOverlay || pendingLimit) && (
           <span className="rounded-lg border border-blue-700/50 bg-blue-950/40 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-blue-200">
-            In trade · levels hidden · SL / TP only
+            {positionOverlay
+              ? 'In trade · levels hidden · SL / TP only'
+              : pendingLimit
+                ? 'Working limit · levels hidden · SL / TP only'
+                : 'Levels hidden · SL / TP only'}
           </span>
         )}
 
@@ -1554,7 +1568,11 @@ export function TradingChart({
       </div>
 
       {/* ── Morning playbook chips — primary BUY/SHORT first; max ~4 ─ */}
-      {showLevels && !hideTradeLevels && !positionOverlay && levels.length > 0 && (
+      {showLevels &&
+        !hideTradeLevels &&
+        !positionOverlay &&
+        !pendingLimit &&
+        levels.length > 0 && (
         <div className="space-y-1.5 pt-1">
           <p className="text-[10px] text-gray-500">
             Trade the <span className="text-gray-300 font-semibold">PRIMARY</span> with more ★ —

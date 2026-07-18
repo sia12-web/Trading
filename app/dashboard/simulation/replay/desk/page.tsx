@@ -1243,6 +1243,7 @@ function SimulationDeskInner() {
     if (simNow <= entryCloseUnix) return
     pendingRef.current = null
     setPending(null)
+    setLevelsOpen(true)
     setMsg('Working limit cancelled — entry window closed (never filled)')
   }, [simNow, entryCloseUnix, pending])
 
@@ -1291,6 +1292,7 @@ function SimulationDeskInner() {
         (c) => c.time >= openUnix && c.time <= now && barTouches(c, order.level)
       )
       setTicketLevel(null)
+      setLevelsOpen(false) // hide playbook until SL/TP (or cancel) — clear chart
       if (touched) {
         fillPending(order, touched.time)
         setPlaying(true)
@@ -1300,7 +1302,7 @@ function SimulationDeskInner() {
       pendingRef.current = order
       setPending(order)
       setMsg(
-        `Pending ${direction} limit @ ${level.level.toLocaleString()} — Play until price fills`
+        `Pending ${direction} limit @ ${level.level.toLocaleString()} — other levels hidden · Play until fill`
       )
       setPlaying(true)
     },
@@ -1357,6 +1359,7 @@ function SimulationDeskInner() {
     setPlaying(false)
     setPending(null)
     setPosition(null)
+    setLevelsOpen(true)
     resetSessionProgress()
     setMsg(
       instrument === 'NIKKEI'
@@ -1567,13 +1570,20 @@ function SimulationDeskInner() {
             </span>
           )}
 
-          <button
-            type="button"
-            onClick={() => setLevelsOpen((o) => !o)}
-            className="rounded border border-white/15 px-2 py-1 text-[10px] uppercase text-gray-300 hover:bg-white/10"
-          >
-            {levelsOpen ? 'Hide levels' : 'Levels'}
-          </button>
+          {!(position || pending) && (
+            <button
+              type="button"
+              onClick={() => setLevelsOpen((o) => !o)}
+              className="rounded border border-white/15 px-2 py-1 text-[10px] uppercase text-gray-300 hover:bg-white/10"
+            >
+              {levelsOpen ? 'Hide levels' : 'Levels'}
+            </button>
+          )}
+          {(position || pending) && (
+            <span className="rounded border border-blue-700/50 bg-blue-950/50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-blue-200">
+              Levels hidden · SL / TP only
+            </span>
+          )}
           <button
             type="button"
             onClick={() => router.push('/dashboard/simulation')}
@@ -1707,8 +1717,8 @@ function SimulationDeskInner() {
         )}
       </div>
 
-      {/* Levels drawer — hidden while in a trade (SL/TP only on chart) */}
-      {levelsOpen && !position && (
+      {/* Levels drawer — hidden while working limit or in a trade (SL/TP only on chart) */}
+      {levelsOpen && !position && !pending && (
         <div className="absolute bottom-3 right-3 top-14 z-20 flex w-64 flex-col overflow-hidden rounded-xl border border-white/10 bg-[#0d1117]/92 shadow-2xl backdrop-blur-md">
           <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">

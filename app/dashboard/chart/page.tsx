@@ -376,8 +376,9 @@ export default function ChartPage() {
   const inEntry = gate?.phase === 'ENTRY' && !!gate?.canPlaceEntry
   const canTrade = inEntry && !pending && !managePos && clockedIn
   const inWorking = !!pending && !managePos
-  /** Buy/short levels only during ENTRY window while flat */
-  const showDeskLevels = inEntry && !managePos && !positionOverlay && clockedIn
+  /** Buy/short levels only while flat — hide as soon as a working limit or fill is on */
+  const showDeskLevels =
+    inEntry && !managePos && !positionOverlay && !pending && clockedIn
 
   return (
     <div className="flex h-screen overflow-hidden relative flex-col">
