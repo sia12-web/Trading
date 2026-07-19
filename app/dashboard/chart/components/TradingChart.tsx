@@ -416,6 +416,9 @@ export function TradingChart({
     lower3: ISeriesApi<'Line'>
   } | null>(null)
   const levelLinesRef = useRef<any[]>([])
+  /** Host for level/SL/TP price lines — seeded once; candle setData must not touch it */
+  const priceLineHostRef = useRef<ISeriesApi<'Line'> | null>(null)
+  const priceLineHostSeededRef = useRef(false)
   const tickIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const candleRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const lastCandleRef = useRef<OHLCV | null>(null)
@@ -433,7 +436,6 @@ export function TradingChart({
   const [priceChange, setPriceChange] = useState<number>(0)
   const [showLevels,  setShowLevels] = useState(true)
   const showLevelsRef = useRef(true)
-  const [priceLinesEpoch, setPriceLinesEpoch] = useState(0)
   const [chartReady,  setChartReady] = useState(false)
   const [barsFrozen, setBarsFrozen] = useState(false)
   const [sessionMsg, setSessionMsg] = useState<string | null>(null)
@@ -619,6 +621,15 @@ export function TradingChart({
       wickDownColor:   '#ef5350',
     })
 
+    const priceLineHost = chart.addLineSeries({
+      color: 'rgba(0,0,0,0)',
+      lineWidth: 1,
+      lastValueVisible: false,
+      priceLineVisible: false,
+      crosshairMarkerVisible: false,
+      priceScaleId: 'right',
+    })
+
     // Anchored VWAP + ±1/±2/±3σ bands (from NY 9:30 of 5 trading days ago)
     const bandOpts = {
       color: VWAP_COLORS.band,
@@ -702,6 +713,7 @@ export function TradingChart({
 
     chartRef.current  = chart
     candleRef.current = candleSeries
+    priceLineHostRef.current = priceLineHost
     vwapSeriesRef.current = vwapSeries
     setChartReady(true)
 
@@ -721,7 +733,11 @@ export function TradingChart({
       chart.remove()
       chartRef.current  = null
       candleRef.current = null
+      priceLineHostRef.current = null
+      priceLineHostSeededRef.current = false
       vwapSeriesRef.current = null
+      levelLinesRef.current = []
+      positionLinesRef.current = []
     }
   }, []) // initialize once only
 
@@ -821,9 +837,17 @@ export function TradingChart({
     void loadLevels(instrument)
   }, [chartReady, instrument, loadLevels])
 
-  // Reset fit when switching instrument
+  // Reset fit + price-line host when switching instrument
   useEffect(() => {
     didFitRef.current = false
+    priceLineHostSeededRef.current = false
+    try {
+      priceLineHostRef.current?.setData([])
+    } catch {
+      /* ignore */
+    }
+    levelLinesRef.current = []
+    positionLinesRef.current = []
   }, [instrument])
 
   useEffect(() => {
@@ -838,16 +862,16 @@ export function TradingChart({
     showLevelsRef.current = showLevels
   }, [showLevels])
 
-  /** lightweight-charts clears price lines on setData — always re-paint from refs. */
+  /** Paint levels on host series — survives candle/VWAP setData. */
   const paintLevelLines = useCallback(() => {
-    const series = candleRef.current
-    if (!series) return
+    const host = priceLineHostRef.current
+    if (!host) return
 
     levelLinesRef.current.forEach((line) => {
       try {
-        series.removePriceLine(line)
+        host.removePriceLine(line)
       } catch {
-        /* already cleared by setData */
+        /* ignore */
       }
     })
     levelLinesRef.current = []
@@ -865,7 +889,7 @@ export function TradingChart({
         (isAi ? (isRes ? '#f87171' : '#34d399') : isRes ? '#f87171' : '#34d399')
       try {
         levelLinesRef.current.push(
-          series.createPriceLine({
+          host.createPriceLine({
             price: level.price,
             color: baseColor,
             lineWidth: isPrimary ? 3 : 2,
@@ -929,9 +953,18 @@ export function TradingChart({
       vs.lower3.setData([])
     }
 
-    // setData wipes candle price lines — restore levels (+ position lines via epoch below)
+    // Seed host once (never again) so price lines bind to the right scale
+    const host = priceLineHostRef.current
+    if (host && !priceLineHostSeededRef.current && ordered.length > 0) {
+      const a = ordered[0]!
+      const b = ordered[ordered.length - 1]!
+      host.setData([
+        { time: a.time, value: a.close },
+        { time: b.time, value: b.close },
+      ])
+      priceLineHostSeededRef.current = true
+    }
     paintLevelLines()
-    setPriceLinesEpoch((n) => n + 1)
 
     const ts = chartRef.current.timeScale()
     if (!didFitRef.current) {
@@ -1351,14 +1384,15 @@ export function TradingChart({
     }
   }, [canPlaceOrder, onLevelSelect, chartReady, positionOverlay])
 
-  // ── Position / working-limit overlay lines ──────────────────────────────────
+  // ── Position / working-limit overlay lines (host series — survives candle setData)
   useEffect(() => {
+    const host = priceLineHostRef.current
     positionLinesRef.current.forEach(line => {
-      try { candleRef.current?.removePriceLine(line) } catch {}
+      try { host?.removePriceLine(line) } catch {}
     })
     positionLinesRef.current = []
 
-    if (!candleRef.current) return
+    if (!host) return
 
     if (positionOverlay) {
       const v = (aiVerdict?.verdict || '').toLowerCase()
@@ -1380,7 +1414,7 @@ export function TradingChart({
       for (const { price, color, label, style } of entries) {
         try {
           positionLinesRef.current.push(
-            candleRef.current.createPriceLine({
+            host.createPriceLine({
               price, color, lineStyle: style, lineWidth: 1,
               axisLabelVisible: true,
               title: label,
@@ -1401,7 +1435,7 @@ export function TradingChart({
       for (const { price, color, label, style } of entries) {
         try {
           positionLinesRef.current.push(
-            candleRef.current.createPriceLine({
+            host.createPriceLine({
               price, color, lineStyle: style, lineWidth: 1,
               axisLabelVisible: true,
               title: label,
@@ -1410,7 +1444,7 @@ export function TradingChart({
         } catch { /* ignore */ }
       }
     }
-  }, [positionOverlay, pendingLimit, aiVerdict, priceLinesEpoch])
+  }, [positionOverlay, pendingLimit, aiVerdict])
 
   // ── Emit live price to parent ─────────────────────────────────────────────────
   useEffect(() => {

@@ -282,7 +282,6 @@ function SimulationDeskInner() {
   const levelsOpenRef = useRef(true)
   const [reasoningOpen, setReasoningOpen] = useState<number | null>(null)
   const [chartReady, setChartReady] = useState(false)
-  const [priceLinesEpoch, setPriceLinesEpoch] = useState(0)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const sessionOverlayRef = useRef<HTMLDivElement>(null)
@@ -304,6 +303,9 @@ function SimulationDeskInner() {
   } | null>(null)
   const levelLinesRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]>([])
   const posLinesRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]>([])
+  /** Invisible series that hosts level/SL/TP price lines — seeded once, never updated again */
+  const priceLineHostRef = useRef<ISeriesApi<'Line'> | null>(null)
+  const priceLineHostSeededRef = useRef(false)
   const allCandlesRef = useRef<Candle[]>([])
   const replaySessionIdRef = useRef<string | null>(null)
   const sessionCandlesRef = useRef<Candle[]>([])
@@ -628,6 +630,17 @@ function SimulationDeskInner() {
       wickDownColor: '#ef5350',
     })
 
+    // Dedicated host for BUY/SHORT + working/manage lines. Candle/VWAP setData
+    // must never touch this series or the levels vanish after a few seconds.
+    const priceLineHost = chart.addLineSeries({
+      color: 'rgba(0,0,0,0)',
+      lineWidth: 1,
+      lastValueVisible: false,
+      priceLineVisible: false,
+      crosshairMarkerVisible: false,
+      priceScaleId: 'right',
+    })
+
     const bandOpts = {
       color: VWAP_COLORS.band,
       lineWidth: 1 as const,
@@ -659,6 +672,7 @@ function SimulationDeskInner() {
 
     chartRef.current = chart
     seriesRef.current = series
+    priceLineHostRef.current = priceLineHost
     vwapSeriesRef.current = vwapSeries
     setChartReady(true)
 
@@ -678,7 +692,11 @@ function SimulationDeskInner() {
       chart.remove()
       chartRef.current = null
       seriesRef.current = null
+      priceLineHostRef.current = null
+      priceLineHostSeededRef.current = false
       vwapSeriesRef.current = null
+      levelLinesRef.current = []
+      posLinesRef.current = []
     }
   }, [loading])
 
@@ -690,16 +708,16 @@ function SimulationDeskInner() {
     levelsOpenRef.current = levelsOpen
   }, [levelsOpen])
 
-  /** setData clears price lines — re-paint trade levels from refs. */
+  /** Paint BUY/SHORT on dedicated host series — survives candle/VWAP setData. */
   const paintTradeLevels = useCallback(() => {
-    const series = seriesRef.current
-    if (!series) return
+    const host = priceLineHostRef.current
+    if (!host) return
 
     levelLinesRef.current.forEach((l) => {
       try {
-        series.removePriceLine(l)
+        host.removePriceLine(l)
       } catch {
-        /* already cleared by setData */
+        /* ignore */
       }
     })
     levelLinesRef.current = []
@@ -713,7 +731,7 @@ function SimulationDeskInner() {
       const { label: stars } = convictionStars(lv.conviction)
       try {
         levelLinesRef.current.push(
-          series.createPriceLine({
+          host.createPriceLine({
             price: lv.level,
             color: isRes ? '#f87171' : '#34d399',
             lineWidth: isPrimary ? 3 : 2,
@@ -730,17 +748,6 @@ function SimulationDeskInner() {
 
   const paintTradeLevelsRef = useRef(paintTradeLevels)
   paintTradeLevelsRef.current = paintTradeLevels
-
-  /** After any setData, lines can clear on the next frame — paint now and again on rAF. */
-  const restorePriceLines = useCallback(() => {
-    paintTradeLevelsRef.current()
-    const needPos = !!(pendingRef.current || positionRef.current)
-    if (needPos) setPriceLinesEpoch((n) => n + 1)
-    requestAnimationFrame(() => {
-      paintTradeLevelsRef.current()
-      if (needPos) setPriceLinesEpoch((n) => n + 1)
-    })
-  }, [])
 
   const refreshSessionHighlights = useCallback(() => {
     const chart = chartRef.current
@@ -889,8 +896,18 @@ function SimulationDeskInner() {
           vs.upper3.setData([])
           vs.lower3.setData([])
         }
-        // Candle + VWAP setData wipe price lines — restore now and next frame
-        restorePriceLines()
+        // Seed host once so price lines bind to the right scale — never setData again
+        const host = priceLineHostRef.current
+        if (host && !priceLineHostSeededRef.current && slice.length > 0) {
+          const a = slice[0]!
+          const b = slice[slice.length - 1]!
+          host.setData([
+            { time: a.time as UTCTimestamp, value: a.close },
+            { time: b.time as UTCTimestamp, value: b.close },
+          ])
+          priceLineHostSeededRef.current = true
+          paintTradeLevelsRef.current()
+        }
       } else {
         // Incremental: only append new bars (cheap path during Play)
         for (let i = lastAppliedBarIdxRef.current + 1; i <= endIdx; i++) {
@@ -910,8 +927,6 @@ function SimulationDeskInner() {
           vs.lower2.setData(bands.lower2)
           vs.upper3.setData(bands.upper3)
           vs.lower3.setData(bands.lower3)
-          // VWAP setData can clear candle price lines — restore levels
-          restorePriceLines()
         }
       }
 
@@ -927,7 +942,7 @@ function SimulationDeskInner() {
         requestAnimationFrame(() => refreshSessionHighlights())
       }
     },
-    [pinToLatest, refreshSessionHighlights, restorePriceLines, instrument]
+    [pinToLatest, refreshSessionHighlights, instrument]
   )
 
   // Initial / seek chart paint — use ref so callback identity churn does not force setData
@@ -1028,12 +1043,13 @@ function SimulationDeskInner() {
     paintTradeLevels()
   }, [levels, chartReady, levelsOpen, paintTradeLevels])
 
-  // Pending working limit + open position — always visible on the sim chart
+  // Pending working limit + open position — on host series (survives candle setData)
   useEffect(() => {
-    if (!seriesRef.current || !chartReady) return
+    const host = priceLineHostRef.current
+    if (!host || !chartReady) return
     posLinesRef.current.forEach((l) => {
       try {
-        seriesRef.current?.removePriceLine(l)
+        host.removePriceLine(l)
       } catch {
         /* ignore */
       }
@@ -1084,7 +1100,7 @@ function SimulationDeskInner() {
     for (const s of specs) {
       try {
         posLinesRef.current.push(
-          seriesRef.current.createPriceLine({
+          host.createPriceLine({
             price: s.price,
             color: s.color,
             lineWidth: 2,
@@ -1097,8 +1113,7 @@ function SimulationDeskInner() {
         /* ignore */
       }
     }
-  // Do not depend on lastPrice — recreating axis labels every tick makes them "pop"
-  }, [position, pending, chartReady, priceLinesEpoch])
+  }, [position, pending, chartReady])
 
   const fillPending = useCallback((pend: PendingOrder, at: number) => {
     const filled: PaperPosition = {
