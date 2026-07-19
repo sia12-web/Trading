@@ -1,10 +1,10 @@
 'use client'
 
 /**
- * Chart Page — live morning desk only (afternoon is background memory).
- * Flow: place WORKING limit → wait for fill → then MANAGE.
- * NY:  DOW/NASDAQ  9:30–11:30 ET
- * Tokyo: NIKKEI    9:00–11:30 JST
+ * Chart Page — live desk: morning trading; afternoon chart continues (read-only).
+ * Flow: place WORKING limit → wait for fill → then MANAGE (morning only).
+ * NY:  DOW/NASDAQ  9:30–11:30 ET trade / chart through 16:00
+ * Tokyo: NIKKEI    9:00–11:30 JST trade / chart through 15:00
  */
 
 import Link from 'next/link'
@@ -474,7 +474,7 @@ export default function ChartPage() {
   const clockedIn = !!gate?.clockedIn
   const attendedToday = !!gate?.attendedToday
   // Overlay while not clocked in during the morning window (incl. early clock-out).
-  // After lunch: no overlay — attended traders keep the frozen chart; others see DONE.
+  // After lunch: no overlay — attended traders keep the live chart (read-only); others see DONE.
   const chartLocked =
     gate != null &&
     !clockedIn &&

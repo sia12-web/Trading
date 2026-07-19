@@ -18,7 +18,11 @@ import {
   instrumentsForDeskMarket,
   type DeskInstrument,
 } from '@/lib/trading/sessionGate'
-import { getTodayAttendance, autoLunchClockOut } from '@/lib/trading/deskAttendance'
+import {
+  getTodayAttendance,
+  autoLunchClockOut,
+  tradeDateForInstrument,
+} from '@/lib/trading/deskAttendance'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -37,13 +41,13 @@ export async function GET(request: Request) {
       : null
 
     const supabase = await createClient()
-    const today = getESTDateString()
+    const nyRecDate = getESTDateString()
 
     // Resolve lock first so attempt book is scoped to the active desk market
     const { data: rec } = await supabase
       .from('market_recommendations')
       .select('recommended_instrument')
-      .eq('date', today)
+      .eq('date', nyRecDate)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
@@ -56,7 +60,7 @@ export async function GET(request: Request) {
       const { data: regimes } = await supabase
         .from('regime_cache')
         .select('instrument, recommendation_confidence')
-        .eq('date', today)
+        .eq('date', nyRecDate)
         .in('instrument', ['DOW', 'NASDAQ'])
         .order('recommendation_confidence', { ascending: false })
         .limit(1)
@@ -73,13 +77,14 @@ export async function GET(request: Request) {
 
     const market = deskMarketFor(lockedInstrument ?? viewingInstrument ?? 'DOW')
     const marketInstruments = instrumentsForDeskMarket(market)
+    const tradeDate = tradeDateForInstrument(lockedInstrument ?? viewingInstrument ?? 'DOW')
 
     const [openPosRes, filledRes] = await Promise.all([
       supabase
         .from('trades_journal')
         .select('id, instrument, stop_loss_hit_count')
         .eq('user_id', user.id)
-        .eq('trade_date', today)
+        .eq('trade_date', tradeDate)
         .in('instrument', marketInstruments)
         .eq('fill_status', 'filled')
         .is('exit_timestamp', null)
@@ -88,7 +93,7 @@ export async function GET(request: Request) {
         .from('trades_journal')
         .select('id, exit_timestamp, exit_reason, stop_loss_hit_count')
         .eq('user_id', user.id)
-        .eq('trade_date', today)
+        .eq('trade_date', tradeDate)
         .in('instrument', marketInstruments)
         .eq('fill_status', 'filled'),
     ])
@@ -125,7 +130,7 @@ export async function GET(request: Request) {
         ...gate,
         open_position_id: openPos?.id ?? null,
         open_instrument: openPos?.instrument ?? null,
-        trade_date: today,
+        trade_date: tradeDate,
         server_now_et: gate.timeEst,
         attendance_id: attendance?.id ?? null,
         attendance_status: attendance?.status ?? null,

@@ -7,8 +7,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { logger } from '@/lib/utils/logger'
-import { getESTDateString } from '@/lib/utils/timeUtils'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
+import { tradeDateForInstrument } from '@/lib/trading/deskAttendance'
 import type { PositionStatusResponse, PositionStatus } from '@/types/positionManagement'
 import type { Instrument } from '@/types/trading'
 
@@ -93,7 +93,7 @@ export async function GET(request: Request): Promise<NextResponse<PositionStatus
     }
 
     const instrument = instrumentParam as Instrument
-    const today = getESTDateString()
+    const today = tradeDateForInstrument(instrument)
 
     // Query open position for this user, instrument, and today
     const { data: positionData, error: queryError } = await supabase

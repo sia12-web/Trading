@@ -81,6 +81,14 @@ export function sessionDateForMarket(market: DeskMarket, now = new Date()): stri
   return localDateInTz(sessionFor(probe).tz, now)
 }
 
+/** Journal / attempt-book date for an instrument (ET for NY, JST for NIKKEI). */
+export function tradeDateForInstrument(
+  instrument: string | null | undefined,
+  now = new Date()
+): string {
+  return sessionDateForMarket(deskMarketFor(instrument), now)
+}
+
 export function canClockInNow(
   market: DeskMarket,
   now = new Date()

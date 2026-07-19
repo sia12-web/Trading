@@ -2,8 +2,8 @@
  * Morning review — the "evaluation mode" step of the desk cadence.
  *
  * LIVE only. Runs in the BACKGROUND after lunch for memory — the live
- * chart stays frozen (no afternoon bars). Simulation has no afternoon
- * session and does not call this route.
+ * chart continues printing afternoon bars (trading stays morning-only).
+ * Simulation has no afternoon session and does not call this route.
  *
  * NY:     cron ~11:35 ET  → DOW/NASDAQ morning (09:30–11:30 ET)
  * Tokyo:  cron ~11:35 JST → NIKKEI morning (09:00–11:30 JST)

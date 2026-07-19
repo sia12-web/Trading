@@ -1,8 +1,8 @@
 /**
  * GET /api/trading/candles?instrument=DOW|NASDAQ|NIKKEI&timeframe=5m&days=5
  * All desk indices: OANDA first (incl. JP225 for NIKKEI), Yahoo fallback.
- * Live: lunch→cash close psychology freeze (today's afternoon hidden until close),
- * then full afternoon + overnight continuum. Sim/dated: morning window only.
+ * Live: full day continuum (morning + afternoon + overnight). Trading stays morning-only.
+ * Sim/dated: morning window only.
  */
 
 import { NextResponse } from 'next/server'
@@ -101,7 +101,7 @@ export async function GET(request: Request) {
         candles = yahoo.candles
         source = 'yahoo'
       }
-      // Live psychology: clip today's afternoon only while lunch freeze is active
+      // Live: afternoon included (lunch freeze off); sim still strips via clipAllAfternoonBars
       if (candles?.length) {
         candles = clipAfternoonBars(candles, instrument)
       }

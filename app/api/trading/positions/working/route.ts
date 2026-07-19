@@ -17,7 +17,7 @@ import {
   instrumentsForDeskMarket,
   type DeskInstrument,
 } from '@/lib/trading/sessionGate'
-import { getTodayAttendance } from '@/lib/trading/deskAttendance'
+import { getTodayAttendance, tradeDateForInstrument } from '@/lib/trading/deskAttendance'
 import { logger } from '@/lib/utils/logger'
 import { normalizeEntrySource } from '@/lib/trading/positionSizing'
 
@@ -43,9 +43,11 @@ export async function POST(request: Request) {
     }
 
     const supabase = await createClient()
-    const today = getESTDateString()
+    const tradeDate = tradeDateForInstrument(instrument)
+    // NY recommendation row is keyed by EST calendar date
+    const nyRecDate = getESTDateString()
 
-    // Cancel any prior working limit for today on this instrument
+    // Cancel any prior working limit for this session date on this instrument
     await supabase
       .from('trades_journal')
       .update({
@@ -60,7 +62,7 @@ export async function POST(request: Request) {
       })
       .eq('user_id', user.id)
       .eq('instrument', instrument)
-      .eq('trade_date', today)
+      .eq('trade_date', tradeDate)
       .eq('fill_status', 'working')
       .is('exit_timestamp', null)
 
@@ -69,7 +71,7 @@ export async function POST(request: Request) {
       .select('id')
       .eq('user_id', user.id)
       .eq('instrument', instrument)
-      .eq('trade_date', today)
+      .eq('trade_date', tradeDate)
       .eq('fill_status', 'filled')
       .is('exit_timestamp', null)
       .maybeSingle()
@@ -84,18 +86,38 @@ export async function POST(request: Request) {
     const { data: rec } = await supabase
       .from('market_recommendations')
       .select('recommended_instrument')
-      .eq('date', today)
+      .eq('date', nyRecDate)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
 
+    // NY lock from recommendation / regime only — never from client body (Sentinel C2)
     let locked: DeskInstrument | null =
       rec?.recommended_instrument && isNyDeskInstrument(rec.recommended_instrument)
         ? rec.recommended_instrument
         : null
-    if (!locked && isNyDeskInstrument(instrument)) locked = instrument
+    if (!locked) {
+      const { data: regimes } = await supabase
+        .from('regime_cache')
+        .select('instrument, recommendation_confidence')
+        .eq('date', nyRecDate)
+        .in('instrument', ['DOW', 'NASDAQ'])
+        .order('recommendation_confidence', { ascending: false })
+        .limit(1)
+      const top = regimes?.[0]
+      if (top?.instrument && isNyDeskInstrument(top.instrument)) {
+        locked = top.instrument
+      }
+    }
     if (instrument === 'NIKKEI' || isDeskHoursNow(new Date(), 'NIKKEI').open) {
       locked = 'NIKKEI'
+    }
+
+    if (isNyDeskInstrument(instrument) && !locked) {
+      return NextResponse.json(
+        { error: 'No locked NY instrument yet — wait for morning recommendation' },
+        { status: 403 }
+      )
     }
 
     const market = deskMarketFor(instrument)
@@ -106,14 +128,14 @@ export async function POST(request: Request) {
         .from('trades_journal')
         .select('id, exit_reason')
         .eq('user_id', user.id)
-        .eq('trade_date', today)
+        .eq('trade_date', tradeDate)
         .in('instrument', marketInstruments)
         .eq('fill_status', 'filled'),
       supabase
         .from('trades_journal')
         .select('id')
         .eq('user_id', user.id)
-        .eq('trade_date', today)
+        .eq('trade_date', tradeDate)
         .in('instrument', marketInstruments)
         .eq('fill_status', 'filled')
         .is('exit_timestamp', null)
@@ -127,7 +149,6 @@ export async function POST(request: Request) {
       hasOpenPosition: !!openRes.data,
       attemptsUsed: filledRows.length,
       stopLossHitCount: filledRows.filter((t) => t.exit_reason === 'stop_hit').length,
-      dayDone: false,
       viewingInstrument: instrument,
       clockedIn: attendance?.status === 'clocked_in',
       attendedToday: !!attendance,
@@ -156,7 +177,7 @@ export async function POST(request: Request) {
       .insert({
         user_id: user.id,
         instrument,
-        trade_date: today,
+        trade_date: tradeDate,
         entry_window: entryWindow,
         entry_timestamp: now,
         entry_price: level,
@@ -193,7 +214,7 @@ export async function POST(request: Request) {
           .insert({
             user_id: user.id,
             instrument,
-            trade_date: today,
+            trade_date: tradeDate,
             entry_window: entryWindow,
             entry_timestamp: now,
             entry_price: level,

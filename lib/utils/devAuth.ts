@@ -34,13 +34,15 @@ function allowDevAuth(): boolean {
   return process.env.ALLOW_DEV_AUTH === 'true'
 }
 
-function deskUserId(): string {
-  return process.env.DESK_USER_ID || DEV_USER_ID
+function deskUserId(): string | null {
+  const id = process.env.DESK_USER_ID?.trim()
+  if (id && id.length >= 8) return id
+  return null
 }
 
-function fixedDeskUser(email = 'desk@local'): DeskUser {
+function fixedDeskUser(email = 'desk@local', id?: string): DeskUser {
   return {
-    id: deskUserId(),
+    id: id || deskUserId() || DEV_USER_ID,
     email,
     user_metadata: {},
     app_metadata: { desk_mode: singleDeskEnabled() ? 'single' : 'dev' },
@@ -76,18 +78,31 @@ export async function resolveDeskUser(request?: Request): Promise<DeskUser | nul
     const auth = request.headers.get('authorization')
     const header = request.headers.get('x-desk-secret')
     if (auth === `Bearer ${deskSecret}` || header === deskSecret) {
-      return fixedDeskUser('desk-secret@local')
+      const id = deskUserId()
+      if (isProd() && !id) {
+        console.error('[auth] DESK_SECRET auth requires DESK_USER_ID in production')
+        return null
+      }
+      return fixedDeskUser('desk-secret@local', id || undefined)
     }
   }
 
-  // Explicit single-trader production mode
+  // Explicit single-trader production mode — requires DESK_USER_ID in production
   if (singleDeskEnabled()) {
-    return fixedDeskUser('single-desk@local')
+    const id = deskUserId()
+    if (!id) {
+      if (isProd()) {
+        console.error('[auth] DESK_MODE=single requires DESK_USER_ID in production')
+        return null
+      }
+      return fixedDeskUser('single-desk@local', DEV_USER_ID)
+    }
+    return fixedDeskUser('single-desk@local', id)
   }
 
   // Local / explicit escape hatch only
   if (allowDevAuth()) {
-    return fixedDeskUser('dev@example.com')
+    return fixedDeskUser('dev@example.com', DEV_USER_ID)
   }
 
   return null
@@ -124,8 +139,11 @@ export function assertCronAuthorized(request: Request): boolean {
   const auth = request.headers.get('authorization')
   if (auth === `Bearer ${cronSecret}`) return true
 
-  const url = new URL(request.url)
-  if (url.searchParams.get('cron_secret') === cronSecret) return true
+  // Query-string secret only outside production (leaks via logs/Referer)
+  if (!isProd()) {
+    const url = new URL(request.url)
+    if (url.searchParams.get('cron_secret') === cronSecret) return true
+  }
 
   return false
 }

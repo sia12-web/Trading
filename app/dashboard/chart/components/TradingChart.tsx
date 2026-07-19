@@ -46,7 +46,6 @@ import { DESK_CHART_THEME } from '@/lib/chart/deskChartTheme'
 import {
   isDeskHoursNow,
   isLiveBarsAllowed,
-  isLunchFreezeActive,
   isChartStreamAllowed,
   sessionFor,
 } from '@/lib/trading/sessionGate'
@@ -443,8 +442,6 @@ export function TradingChart({
   const [showLevels,  setShowLevels] = useState(true)
   const showLevelsRef = useRef(true)
   const [chartReady,  setChartReady] = useState(false)
-  const [barsFrozen, setBarsFrozen] = useState(false)
-  const [sessionMsg, setSessionMsg] = useState<string | null>(null)
   const candlesRef = useRef<OHLCV[]>([])
   /** LIVE = real Yahoo data; SYNTHETIC = random fallback (never trade off this) */
   const [dataMode, setDataModeState] = useState<'live' | 'synthetic'>('live')
@@ -755,19 +752,9 @@ export function TradingChart({
     const load = async () => {
       const meta = INSTRUMENT_META[instrument]
       const tfSec = DESK_BAR_SECONDS
-      const lunchFreeze = isLunchFreezeActive(instrument)
-      const stream = isChartStreamAllowed(instrument)
       const tradeLive = isLiveBarsAllowed(instrument)
-      setBarsFrozen(lunchFreeze)
-      setSessionMsg(
-        lunchFreeze
-          ? stream.reason ||
-              'Lunch freeze — afternoon + overnight unlock after cash close.'
-          : null
-      )
 
-      // Always load history. Lunch freeze clips only *today's* afternoon; after cash
-      // close / next day the full continuum returns (never stuck frozen overnight).
+      // Full continuum including afternoon — clipAfternoonBars is a no-op while freeze is off
       try {
         // NIKKEI needs a longer window — Yahoo ^N225 5d is often truncated; OANDA JP225 fills gaps
         const days = instrument === 'NIKKEI' ? 7 : 5
@@ -1131,33 +1118,18 @@ export function TradingChart({
     paintLevelLines()
   }, [levels, showLevels, chartReady, paintLevelLines])
 
-  // ── Chart stream: trade live open→lunch; lunch freeze tip; after cash close continuum ─
+  // ── Chart stream: quotes + candles through afternoon; trading tip gated separately ─
   useEffect(() => {
     if (!chartReady || candles.length === 0 || dataMode === 'synthetic') return
 
     const CANDLE_REFRESH_MS = 45_000
     let lastUiPriceAt = 0
-    let wasFrozen = isLunchFreezeActive(instrument)
-
-    const syncFreezeBanner = () => {
-      const freeze = isLunchFreezeActive(instrument)
-      setBarsFrozen(freeze)
-      setSessionMsg(freeze ? isChartStreamAllowed(instrument).reason : null)
-      // Cash close unlock — pull afternoon + overnight bars immediately
-      if (wasFrozen && !freeze) {
-        wasFrozen = false
-        void refreshCandles()
-      } else {
-        wasFrozen = freeze
-      }
-      return freeze
-    }
 
     const applyQuote = (
       price: number,
       changePct: number,
       quoteTs: number,
-      tradeLive: boolean
+      streamLive: boolean
     ) => {
       onPriceUpdate?.(price)
       if (!interactingRef.current) {
@@ -1170,7 +1142,8 @@ export function TradingChart({
         }
       }
 
-      if (!tradeLive) return
+      // Advance candle tip whenever the chart stream is open (incl. afternoon)
+      if (!streamLive) return
       const last = lastCandleRef.current
       if (!last || !candleRef.current) return
 
@@ -1224,11 +1197,10 @@ export function TradingChart({
     }
 
     const pollQuote = async () => {
-      if (syncFreezeBanner()) return
       if (!isChartStreamAllowed(instrument).open) return
       if (quoteInFlightRef.current) return
       quoteInFlightRef.current = true
-      const tradeLive = isLiveBarsAllowed(instrument).open
+      const streamLive = isChartStreamAllowed(instrument).open
       try {
         const res = await fetch(
           `/api/trading/quote?instrument=${instrument}&_=${Date.now()}`,
@@ -1241,7 +1213,7 @@ export function TradingChart({
             typeof json.timestamp === 'number' && json.timestamp > 0
               ? json.timestamp
               : Math.floor(Date.now() / 1000)
-          applyQuote(json.price, json.change_pct ?? 0, ts, tradeLive)
+          applyQuote(json.price, json.change_pct ?? 0, ts, streamLive)
         }
       } catch {
         /* keep */
@@ -1251,7 +1223,6 @@ export function TradingChart({
     }
 
     const refreshCandles = async () => {
-      if (isLunchFreezeActive(instrument)) return
       if (!isChartStreamAllowed(instrument).open) return
       try {
         const days = instrument === 'NIKKEI' ? 7 : 5
@@ -1276,8 +1247,8 @@ export function TradingChart({
 
         const live = lastCandleRef.current
         const last = trimmed[trimmed.length - 1]!
-        const tradeLive = isLiveBarsAllowed(instrument).open
-        if (live && tradeLive) {
+        const streamLive = isChartStreamAllowed(instrument).open
+        if (live && streamLive) {
           const liveT = live.time as number
           const lastT = last.time as number
           if (liveT > lastT) {
@@ -1305,7 +1276,6 @@ export function TradingChart({
 
         lastCandleRef.current = trimmed[trimmed.length - 1]!
         if (structureChanged) {
-          // Afternoon unlock / overnight tip — full setData + AVWAP rebuild
           didFitRef.current = false
           setCandles(trimmed)
         } else {
@@ -1328,23 +1298,21 @@ export function TradingChart({
       }
     }
 
-    syncFreezeBanner()
     void pollQuote()
     void refreshCandles()
     if (tickIntervalRef.current) clearInterval(tickIntervalRef.current)
     if (candleRefreshRef.current) clearInterval(candleRefreshRef.current)
-    // Keep a steady poll so lunch→close→overnight transitions wake without reload
     tickIntervalRef.current = setInterval(pollQuote, 5_000)
     candleRefreshRef.current = setInterval(refreshCandles, CANDLE_REFRESH_MS)
-    // Faster quotes only while morning trade desk is live
-    const tradeQuote = setInterval(() => {
-      if (isLiveBarsAllowed(instrument).open && !isLunchFreezeActive(instrument)) {
+    // Faster tip while chart stream is open (morning + afternoon cash day)
+    const streamQuote = setInterval(() => {
+      if (isChartStreamAllowed(instrument).open) {
         void pollQuote()
       }
     }, 1000)
 
     return () => {
-      clearInterval(tradeQuote)
+      clearInterval(streamQuote)
       if (tickIntervalRef.current) clearInterval(tickIntervalRef.current)
       if (candleRefreshRef.current) clearInterval(candleRefreshRef.current)
       tickIntervalRef.current = null
@@ -1539,11 +1507,6 @@ export function TradingChart({
 
   return (
     <div className="flex flex-col h-full gap-2">
-      {barsFrozen && sessionMsg && (
-        <div className="rounded-lg border border-amber-800/50 bg-amber-950/50 px-3 py-2 text-[11px] text-amber-100">
-          Live frozen · {sessionMsg}
-        </div>
-      )}
       {/* ── Toolbar ─────────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
         {/* Instrument tabs */}

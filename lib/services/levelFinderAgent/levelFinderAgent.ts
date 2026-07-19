@@ -510,7 +510,7 @@ WHAT TO LOOK FOR IN THE CANDLES (think like a day trader reading the tape before
 DESK CADENCE (your levels live inside this rhythm — ${marketLabel} clock for ${index}):
 - You call levels pre-open from YESTERDAY'S range + overnight only. Older multi-day level history is discarded — the next session does not care about last week's levels.
 - Traded ONLY in the morning window: entries ${open}–${entryEnd} ${tzLabel}, flat by ${lunch} ${tzLabel}.
-- At lunch every level is graded against what the morning actually did; that verdict enters memory. LIVE only: afternoon review is background memory — the live chart freezes at lunch. Simulation has no afternoon session.
+- At lunch every level is graded against what the morning actually did; that verdict enters memory. LIVE only: afternoon chart continues (read-only); trading stays morning-only. Simulation has no afternoon session.
 - Afternoon playbook (flips / retests) updates system memory for learning; it is not traded yet. Choose levels that give clean morning verdicts — a level the morning never reaches teaches nothing.
 
 THE MARKET IS THE FINAL JUDGE (non-negotiable):

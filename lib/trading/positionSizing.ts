@@ -23,6 +23,26 @@ export function riskPercentForEntrySource(source?: DeskEntrySource | string | nu
   return source === 'manual' ? MANUAL_RISK_PERCENT : DESK_RISK_PERCENT
 }
 
+const MIN_ACCOUNT = 5_000
+const MAX_ACCOUNT = 1_000_000
+
+/**
+ * Prefer server DESK_ACCOUNT_SIZE when set; otherwise clamp client value.
+ * Prevents inflated account_size from inflating dollar risk (Sentinel M1).
+ */
+export function resolveDeskAccountSize(clientSize?: number | null): number | null {
+  const envRaw = process.env.DESK_ACCOUNT_SIZE
+  if (envRaw != null && String(envRaw).trim() !== '') {
+    const envSize = Number(envRaw)
+    if (Number.isFinite(envSize) && envSize >= MIN_ACCOUNT && envSize <= MAX_ACCOUNT) {
+      return envSize
+    }
+  }
+  if (typeof clientSize !== 'number' || !Number.isFinite(clientSize)) return null
+  if (clientSize < MIN_ACCOUNT || clientSize > MAX_ACCOUNT) return null
+  return clientSize
+}
+
 export function normalizeEntrySource(
   raw?: string | null,
   fallback: DeskEntrySource = 'ai'

@@ -12,6 +12,7 @@ import {
   getPositionSizer,
   normalizeEntrySource,
   riskPercentForEntrySource,
+  resolveDeskAccountSize,
 } from '@/lib/trading/positionSizing'
 import { getESTDateString } from '@/lib/utils/timeUtils'
 import {
@@ -20,7 +21,7 @@ import {
   deskMarketFor,
   instrumentsForDeskMarket,
 } from '@/lib/trading/sessionGate'
-import { getTodayAttendance } from '@/lib/trading/deskAttendance'
+import { getTodayAttendance, tradeDateForInstrument } from '@/lib/trading/deskAttendance'
 import { shouldExecuteOandaOrders } from '@/lib/oanda/config'
 import { placeOandaMarketOrder, closeOandaTrade } from '@/lib/oanda/orders'
 import type { PositionOpenResponse } from '@/types/trading'
@@ -128,14 +129,15 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       )
     }
 
-    const today = getESTDateString()
+    const tradeDate = tradeDateForInstrument(body.instrument)
+    const nyRecDate = getESTDateString()
 
     // Locked instrument from today's recommendation (NY) or Tokyo morning (NIKKEI)
     let lockedInstrument: 'DOW' | 'NASDAQ' | 'NIKKEI' | null = null
     const { data: rec } = await supabase
       .from('market_recommendations')
       .select('recommended_instrument')
-      .eq('date', today)
+      .eq('date', nyRecDate)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
@@ -145,7 +147,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       const { data: regimes } = await supabase
         .from('regime_cache')
         .select('instrument, recommendation_confidence')
-        .eq('date', today)
+        .eq('date', nyRecDate)
         .in('instrument', ['DOW', 'NASDAQ'])
         .order('recommendation_confidence', { ascending: false })
         .limit(1)
@@ -167,14 +169,14 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
         .from('trades_journal')
         .select('id, exit_timestamp, exit_reason, stop_loss_hit_count')
         .eq('user_id', user.id)
-        .eq('trade_date', today)
+        .eq('trade_date', tradeDate)
         .in('instrument', marketInstruments)
         .eq('fill_status', 'filled'),
       supabase
         .from('trades_journal')
         .select('id, stop_loss_hit_count')
         .eq('user_id', user.id)
-        .eq('trade_date', today)
+        .eq('trade_date', tradeDate)
         .in('instrument', marketInstruments)
         .eq('fill_status', 'filled')
         .is('exit_timestamp', null)
@@ -250,8 +252,9 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       )
     }
 
-    // Validate account size
-    if (body.account_size <= 0) {
+    // Prefer DESK_ACCOUNT_SIZE when set; otherwise clamp client $5k–$1M
+    const accountSize = resolveDeskAccountSize(body.account_size)
+    if (accountSize == null) {
       logger.error('POST /api/trading/positions/open: Invalid account size', {
         size: body.account_size,
       })
@@ -266,38 +269,12 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
           risk_amount: 0,
           entry_direction: body.entry_direction,
           entry_window: body.entry_window,
-          message: 'Invalid account size',
+          message: 'Account size must be between $5000 and $1000000 (or set DESK_ACCOUNT_SIZE)',
         },
         { status: 400 }
       )
     }
-
-    // IMPORTANT FIX: Verify account size is reasonable (prevent accidental large trades)
-    // Minimum account size $5,000, maximum $1,000,000
-    const MINIMUM_ACCOUNT_SIZE = 5000
-    const MAXIMUM_ACCOUNT_SIZE = 1000000
-    if (body.account_size < MINIMUM_ACCOUNT_SIZE || body.account_size > MAXIMUM_ACCOUNT_SIZE) {
-      logger.error('POST /api/trading/positions/open: Account size out of bounds', {
-        size: body.account_size,
-        min: MINIMUM_ACCOUNT_SIZE,
-        max: MAXIMUM_ACCOUNT_SIZE,
-      })
-      return NextResponse.json(
-        {
-          success: false,
-          position_id: '',
-          instrument: body.instrument,
-          entry_price: body.entry_price,
-          stop_loss_price: 0,
-          position_size: 0,
-          risk_amount: 0,
-          entry_direction: body.entry_direction,
-          entry_window: body.entry_window,
-          message: `Account size must be between $${MINIMUM_ACCOUNT_SIZE} and $${MAXIMUM_ACCOUNT_SIZE}`,
-        },
-        { status: 400 }
-      )
-    }
+    body.account_size = accountSize
 
     const windowManager = getWindowManager()
     const positionSizer = getPositionSizer()
@@ -334,7 +311,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       .select('highest_price_in_window, lowest_price_in_window')
       .eq('user_id', user.id)
       .eq('instrument', body.instrument)
-      .eq('trade_date', getESTDateString())
+      .eq('trade_date', tradeDate)
       .maybeSingle()
 
     const ENTRY_TOLERANCE = 0.00001 // 0.001% tolerance
@@ -447,8 +424,6 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       )
     }
 
-    // Get today's date in YYYY-MM-DD format (EST) — already computed as `today` above
-
     // Existing FILLED open + WORKING upgrade candidate in parallel
     const [existingRes, workingRes] = await Promise.all([
       supabase
@@ -456,7 +431,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
         .select('id, entry_price, stop_loss_price, position_size, risk_amount, fill_status')
         .eq('user_id', user.id)
         .eq('instrument', body.instrument)
-        .eq('trade_date', today)
+        .eq('trade_date', tradeDate)
         .eq('fill_status', 'filled')
         .is('exit_timestamp', null)
         .maybeSingle(),
@@ -465,7 +440,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
         .select('id')
         .eq('user_id', user.id)
         .eq('instrument', body.instrument)
-        .eq('trade_date', today)
+        .eq('trade_date', tradeDate)
         .eq('fill_status', 'working')
         .is('exit_timestamp', null)
         .maybeSingle(),
@@ -576,7 +551,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
     const tradePosition = {
       user_id: user.id,
       instrument: body.instrument,
-      trade_date: today,
+      trade_date: tradeDate,
       entry_window: body.entry_window,
       entry_timestamp: now.toISOString(),
       entry_price: fillPrice,

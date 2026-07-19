@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { getESTDateString } from '@/lib/utils/timeUtils'
 import { isLiveDeskInstrument } from '@/lib/trading/sessionGate'
+import { tradeDateForInstrument } from '@/lib/trading/deskAttendance'
 import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
@@ -26,7 +27,6 @@ export async function POST(request: Request) {
     }
 
     const supabase = await createClient()
-    const today = getESTDateString()
     const now = new Date().toISOString()
 
     let q = supabase
@@ -39,13 +39,16 @@ export async function POST(request: Request) {
         updated_at: now,
       })
       .eq('user_id', user.id)
-      .eq('trade_date', today)
       .eq('fill_status', 'working')
 
     if (instrument) {
-      q = q.eq('instrument', instrument)
+      q = q.eq('instrument', instrument).eq('trade_date', tradeDateForInstrument(instrument))
     } else {
-      q = q.in('instrument', ['DOW', 'NASDAQ', 'NIKKEI'])
+      // Both desk calendars (ET + JST) so NY and Tokyo working rows clear
+      const dates = Array.from(
+        new Set([getESTDateString(), tradeDateForInstrument('NIKKEI')])
+      )
+      q = q.in('instrument', ['DOW', 'NASDAQ', 'NIKKEI']).in('trade_date', dates)
     }
 
     const { data, error } = await q.select('id')
@@ -58,10 +61,9 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       cancelled: data?.length ?? 0,
-      instrument: instrument ?? null,
     })
-  } catch (err) {
-    logger.error('cancel-working.unexpected', { err })
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  } catch (error) {
+    logger.error('cancel-working.unexpected', { err: error })
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }

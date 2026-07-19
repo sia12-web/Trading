@@ -2,10 +2,12 @@
  * Trading desk session state — NY (DOW/NASDAQ) and Tokyo (NIKKEI).
  *
  * LIVE only:
- *   Morning bars: NY 09:30–11:30 ET / Tokyo 09:00–11:30 JST
- *   Lunch → cash close: psychology freeze (tip held; today's afternoon hidden).
- *   After cash close: afternoon + overnight continuum until next morning desk.
- *   Trading stays morning-only; freeze never carries into the next day.
+ *   Morning trading: NY 09:30–11:30 ET / Tokyo 09:00–11:30 JST (entries until entryClose).
+ *   Chart stream: cash day open continuum through afternoon until marketClose
+ *     (no lunch freeze). After cash close the tip freezes — overnight is not traded.
+ *   Next morning clock-in: full history (incl. prior afternoon) loads again.
+ *   Lunch AI / morning-review still runs in the background for memory.
+ *   AVWAP: always anchored at cash open of 5 trading days prior to the tip session.
  *
  * SIMULATION: morning session only (open → lunch). No afternoon feature,
  * no background memory pass — use resolveSimMorningGate(), not the live gate.
@@ -41,9 +43,9 @@ export interface MarketSessionTimes {
   analyzeStart: string
   marketOpen: string
   entryClose: string
-  /** Live bars stop here — lunch / morning session end */
+  /** Morning trading desk ends here */
   lunchClose: string
-  /** Full cash close (background only after lunch) */
+  /** Full cash close (chart continues until here, then overnight) */
   marketClose: string
 }
 
@@ -56,7 +58,7 @@ export const NY_SESSION: MarketSessionTimes = {
   marketClose: '16:00:00',
 }
 
-/** TSE morning cash session (afternoon 12:30–15:00 is background-only). */
+/** TSE morning cash session; afternoon chart continues to 15:00 (trading stays morning-only). */
 export const TOKYO_SESSION: MarketSessionTimes = {
   tz: 'Asia/Tokyo',
   analyzeStart: '08:45:00',
@@ -221,26 +223,20 @@ function dateKeyInTz(date: Date, timeZone: string): string {
 }
 
 /**
- * Psychology freeze: lunch → cash close on a weekday.
- * Tip stays at lunch; afternoon bars for *today* are hidden until cash close.
- * Past days always keep their full afternoon — and after close the chart continues.
+ * Lunch→close psychology freeze — permanently off.
+ * Afternoon prints live through cash close; AI morning-review still runs at lunch.
+ * clipAfternoonBars stays a no-op so next-session loads keep prior afternoon history.
  */
 export function isLunchFreezeActive(
-  instrument: string | null | undefined,
-  now: Date = new Date()
+  _instrument: string | null | undefined,
+  _now: Date = new Date()
 ): boolean {
-  if (!isDeskInstrument(instrument)) return false
-  const s = sessionFor(instrument)
-  if (!isWeekdayInTz(now, s.tz)) return false
-  const t = parseTimeToSeconds(timeInTz(now, s.tz))
-  const lunch = parseTimeToSeconds(s.lunchClose)
-  const close = parseTimeToSeconds(s.marketClose)
-  return t >= lunch && t < close
+  return false
 }
 
 /**
  * Trading live bars: cash open → lunch only.
- * Next trading day this opens again automatically (not stuck from yesterday's freeze).
+ * After lunch the chart still streams until cash close (isChartStreamAllowed).
  */
 export function isLiveBarsAllowed(
   instrument: string | null | undefined,
@@ -268,18 +264,17 @@ export function isLiveBarsAllowed(
   if (t >= lunch) {
     return {
       open: false,
-      reason: isLunchFreezeActive(instrument, now)
-        ? 'Lunch freeze — chart tip held until cash close, then afternoon + overnight resume.'
-        : 'Morning entry session over — chart continues after cash close (read-only).',
+      reason: 'Morning trading closed at lunch — chart continues until cash close (read-only).',
     }
   }
   return { open: true, reason: 'Morning session live' }
 }
 
 /**
- * Chart may refresh candles/quotes for display.
- * Frozen only during lunch→close; after cash close + overnight + pre-open history continue
- * until the next morning desk. Trading permissions stay separate (isLiveBarsAllowed).
+ * Chart may refresh candles/quotes through the cash day (morning + afternoon).
+ * Freezes after marketClose until the next weekday — overnight is not streamed.
+ * Next session clock-in loads full history (prior afternoon included).
+ * Trading permissions stay separate (isLiveBarsAllowed).
  */
 export function isChartStreamAllowed(
   instrument: string | null | undefined,
@@ -292,21 +287,21 @@ export function isChartStreamAllowed(
   if (!isWeekdayInTz(now, s.tz)) {
     return { open: false, reason: `Weekend — ${deskMarketFor(instrument)} session closed` }
   }
-  if (isLunchFreezeActive(instrument, now)) {
+  const t = parseTimeToSeconds(timeInTz(now, s.tz))
+  const close = parseTimeToSeconds(s.marketClose)
+  if (t >= close) {
     return {
       open: false,
       reason:
         deskMarketFor(instrument) === 'TOKYO'
-          ? 'Lunch freeze (11:30–15:00 JST) — afternoon bars unlock at Tokyo cash close.'
-          : 'Lunch freeze (11:30–16:00 ET) — afternoon bars unlock at NY cash close.',
+          ? 'Cash close — chart frozen until next Tokyo session (clock in for full prints).'
+          : 'Cash close — chart frozen until next NY session (clock in for full prints).',
     }
   }
-  const t = parseTimeToSeconds(timeInTz(now, s.tz))
-  const lunch = parseTimeToSeconds(s.lunchClose)
-  if (t < lunch) {
-    return { open: true, reason: 'Chart streaming (morning / pre-open history)' }
+  if (t >= parseTimeToSeconds(s.lunchClose)) {
+    return { open: true, reason: 'Chart streaming (afternoon — trading locked)' }
   }
-  return { open: true, reason: 'Chart streaming (post-close continuum)' }
+  return { open: true, reason: 'Chart streaming (morning / pre-open history)' }
 }
 
 /**
@@ -336,7 +331,7 @@ export function isDeskHoursNow(
   if (t >= lunch) {
     return {
       open: false,
-      reason: 'Morning desk closed — afternoon updates are background-only',
+      reason: 'Morning desk closed — trading locked; chart continues',
     }
   }
   return { open: true, reason: 'Desk hours' }
@@ -344,7 +339,7 @@ export function isDeskHoursNow(
 
 /**
  * LIVE desk phase from clock + position state.
- * Afternoon freeze / background memory messaging belongs here only — not sim.
+ * Trading is morning-only; chart stream continues after lunch (not sim).
  */
 export function resolveSessionGate(input: SessionGateInput = {}): SessionGateResult {
   const now = input.now ?? new Date()
@@ -435,7 +430,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
         canClockIn: canReClock,
         canPlaceEntry: false,
         canManagePosition: false,
-        // Frozen morning chart after lunch is OK; no live bars once clocked out
+        // Chart may continue after lunch; no live trading bars once clocked out
         canFetchLiveBars: false,
         canViewLiveChart: !!locked && (t >= lunch || r.canViewLiveChart),
         message: canReClock
@@ -463,12 +458,12 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     return finish({
       ...base,
       phase: dayDone || afterLunch ? 'DONE' : 'CLOSED',
-      canViewLiveChart: false,
+      canViewLiveChart: afterLunch && !!locked,
       canFetchLiveBars: false,
       canPlaceEntry: false,
       canManagePosition: false,
       message: afterLunch
-        ? 'Morning session closed at lunch. Live chart frozen — afternoon review runs in the background for memory only.'
+        ? 'Morning trading closed at lunch. Chart continues until cash close (read-only); AI reviews levels in the background.'
         : t < analyze
           ? market === 'TOKYO'
             ? 'Pre-session. Tokyo desk opens 8:45 JST — clock in then to trade NIKKEI.'
@@ -511,12 +506,12 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     return finish({
       ...base,
       phase: pastLunch ? 'DONE' : 'MANAGE',
-      canViewLiveChart: !pastLunch && clockedIn && locked === (viewing ?? locked),
+      canViewLiveChart: clockedIn && locked === (viewing ?? locked),
       canFetchLiveBars: !pastLunch && clockedIn,
       canPlaceEntry: false,
       canManagePosition: !pastLunch && clockedIn,
       message: pastLunch
-        ? 'Lunch flatten — morning session over. Live chart frozen.'
+        ? 'Lunch flatten — morning trading over. Chart continues (read-only).'
         : 'Position open. Manage only — no new entries.',
     })
   }
@@ -557,16 +552,16 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     })
   }
 
-  // After lunch — closed (afternoon is background memory only)
+  // After lunch — trading locked; chart stream continues separately
   return finish({
     ...base,
     phase: 'DONE',
-    canViewLiveChart: false,
+    canViewLiveChart: !!locked,
     canFetchLiveBars: false,
     canPlaceEntry: false,
     canManagePosition: false,
     message:
-      'Morning session closed at lunch. Live chart frozen — afternoon review runs in the background for memory only.',
+      'Morning trading closed at lunch. Chart continues until cash close (read-only); AI reviews levels in the background.',
   })
 }
 
@@ -761,9 +756,8 @@ function filterAfternoonBars<T extends { time: number }>(
 }
 
 /**
- * Live psychology clip: while lunch freeze is active, hide *today's* afternoon
- * only. Past days keep full afternoon. After cash close / weekend / next morning:
- * no clip — continuum through overnight into the next session.
+ * Live afternoon clip — no-op while lunch freeze is off (chart prints afternoon).
+ * Past days always keep full afternoon. Sim still uses clipAllAfternoonBars.
  */
 export function clipAfternoonBars<T extends { time: number }>(
   candles: T[],
