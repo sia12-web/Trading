@@ -646,6 +646,11 @@ Current Price: ${request.current_price}
 Desk clock: ${clock.openLabel} open · entries until ${s.entryClose.slice(0, 5)} ${tzLabel} · lunch ${s.lunchClose.slice(0, 5)} ${tzLabel}
 Methodology is identical for DOW, NASDAQ, and NIKKEI — only this clock differs.
 
+HARD GEOMETRY (desk rejects violations):
+- resistance / SHORT levels MUST be ABOVE Current Price (offer side).
+- support / BUY levels MUST be BELOW Current Price (bid side).
+- Every level must be reachable in the morning entry window — stay inside / just beyond the prior session + overnight range. Do NOT invent levels thousands of points away from Current Price.
+
 ${format4hCandles}
 
 ${formatDailyCandles}

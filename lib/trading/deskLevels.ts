@@ -649,6 +649,56 @@ export function deObviousLevels(
   })
 }
 
+/** Cash-open reference: last close before open, else first bar at/after open. */
+export function referencePriceAtOpen(
+  candles: DeskBar[],
+  openUnix: number
+): number | null {
+  if (!openUnix || candles.length === 0) return null
+  let lastBefore: DeskBar | null = null
+  let firstAtOrAfter: DeskBar | null = null
+  for (const c of candles) {
+    if (c.time < openUnix) lastBefore = c
+    else if (!firstAtOrAfter) firstAtOrAfter = c
+  }
+  const px = lastBefore?.close ?? firstAtOrAfter?.open ?? firstAtOrAfter?.close
+  return px != null && Number.isFinite(px) && px > 0 ? px : null
+}
+
+/**
+ * Drop levels the morning cannot trade:
+ * - SHORT (resistance) must be ABOVE cash open
+ * - BUY (support) must be BELOW cash open
+ * - Distance capped by prior-day range (and a small % of price) so stale AI
+ *   levels thousands of points away never become PRIMARY.
+ */
+export function filterReachableMorningLevels(
+  levels: DeskLevel[],
+  candles: DeskBar[],
+  openUnix: number,
+  timeZone: string = 'America/New_York'
+): DeskLevel[] {
+  const ref = referencePriceAtOpen(candles, openUnix)
+  if (ref == null || levels.length === 0) return levels
+
+  const ctx = collectBaitExtremes(candles, openUnix, timeZone)
+  const priorSpan =
+    ctx && ctx.yRange.hi > ctx.yRange.lo ? ctx.yRange.hi - ctx.yRange.lo : 0
+  // Allow slightly beyond prior day (overnight extension) but never "another era"
+  const maxDist = Math.max(ref * 0.02, priorSpan * 1.35, ref * 0.008)
+
+  return levels.filter((l) => {
+    if (!Number.isFinite(l.level) || l.level <= 0) return false
+    const side = levelSide(l.type)
+    if (side === 'SHORT') {
+      if (l.level <= ref) return false
+      return l.level - ref <= maxDist
+    }
+    if (l.level >= ref) return false
+    return ref - l.level <= maxDist
+  })
+}
+
 /**
  * Shared resolution: AI when available (de-obvioused), else structure sweep zones.
  * Final pass ranks into a morning playbook (1 primary BUY + 1 primary SHORT).
@@ -660,16 +710,36 @@ export function resolveDeskLevels(
   timeZone: string = 'America/New_York',
   bias: DeskBias = 'none'
 ): { levels: DeskLevel[]; source: 'ai' | 'structure'; playbook: DeskPlaybook } {
+  const structure = structureLevelsFromCandles(candles, openUnix, timeZone)
   const ai = mapAiLevels(aiRows)
   let source: 'ai' | 'structure' = 'structure'
   let raw: DeskLevel[]
+
   if (ai.length > 0) {
     const nudged = deObviousLevels(ai, candles, openUnix, timeZone)
-    raw = dropResidualBait(nudged, candles, openUnix, timeZone)
-    source = 'ai'
+    const cleaned = dropResidualBait(nudged, candles, openUnix, timeZone)
+    const reachable = filterReachableMorningLevels(cleaned, candles, openUnix, timeZone)
+
+    if (reachable.length === 0) {
+      raw = structure
+      source = 'structure'
+    } else {
+      // Keep reachable AI levels; fill any missing side from structure
+      const hasBuy = reachable.some((l) => levelSide(l.type) === 'BUY')
+      const hasShort = reachable.some((l) => levelSide(l.type) === 'SHORT')
+      raw = [...reachable]
+      if (!hasBuy) {
+        raw.push(...structure.filter((l) => levelSide(l.type) === 'BUY'))
+      }
+      if (!hasShort) {
+        raw.push(...structure.filter((l) => levelSide(l.type) === 'SHORT'))
+      }
+      source = 'ai'
+    }
   } else {
-    raw = structureLevelsFromCandles(candles, openUnix, timeZone)
+    raw = structure
   }
+
   const playbook = buildDeskPlaybook(raw, bias)
   return { levels: playbook.levels, source, playbook }
 }
