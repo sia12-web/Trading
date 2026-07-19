@@ -40,6 +40,10 @@ import {
   VWAP_COLORS as SHARED_VWAP_COLORS,
   type SessionHighlightSpan,
 } from '@/lib/chart/sessionVwap'
+import {
+  previewLevelOrderPrices,
+  resolveChartLimitPick,
+} from '@/lib/trading/chartLevelPick'
 import { aiLevelsUrl, resolveDeskLevels } from '@/lib/trading/deskLevels'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
@@ -456,8 +460,24 @@ export function TradingChart({
     [onDataModeChange]
   )
   const positionLinesRef = useRef<any[]>([])
+  /** Hover preview of entry/SL/TP for the nearest visible AI/structure level */
+  const hoverPreviewLinesRef = useRef<any[]>([])
+  const hoverPreviewKeyRef = useRef<string | null>(null)
   /** Axis / tooltip clocks — ET for DOW/NASDAQ, JST for NIKKEI */
   const chartFmtRef = useRef<DeskChartFmt>(makeDeskChartFormatters(lockedInstrument || 'DOW'))
+
+  const clearHoverPreview = useCallback(() => {
+    const host = priceLineHostRef.current
+    hoverPreviewLinesRef.current.forEach((line) => {
+      try {
+        host?.removePriceLine(line)
+      } catch {
+        /* ignore */
+      }
+    })
+    hoverPreviewLinesRef.current = []
+    hoverPreviewKeyRef.current = null
+  }, [])
 
   const setInstrument = useCallback((inst: Instrument) => {
     if (lockedInstrument && inst !== lockedInstrument) return
@@ -1344,29 +1364,21 @@ export function TradingChart({
       const price = candleRef.current.coordinateToPrice(y)
       if (price == null || !Number.isFinite(Number(price)) || Number(price) <= 0) return
 
-      // Snap to nearest AI/structure level within 0.25% when close; else manual
-      const tradeLevels = levelsRef.current.filter(
-        (l) => l.source === 'ai' || l.source === 'structure'
-      )
-      let best = Number(price)
-      let bestType: string | undefined
-      let bestSource: 'ai' | 'structure' | 'manual' = 'manual'
-      let bestReason: string | undefined
-      let bestDist = Infinity
-      for (const l of tradeLevels) {
-        const d = Math.abs(l.price - best) / best
-        if (d < bestDist && d <= 0.0025) {
-          bestDist = d
-          best = Number(l.price)
-          bestType = String(l.type)
-          bestSource = l.source === 'structure' ? 'structure' : 'ai'
-          bestReason = l.reasoning
-        }
-      }
-      onLevelSelect(best, {
-        type: bestSource === 'manual' ? 'manual' : bestType,
-        source: bestSource,
-        reasoning: bestReason,
+      // Snap to AI/structure only when those levels are visible — hidden → always manual
+      const pick = resolveChartLimitPick({
+        rawPrice: Number(price),
+        levels: levelsRef.current.map((l) => ({
+          price: l.price,
+          type: l.type,
+          source: l.source,
+          reasoning: l.reasoning,
+        })),
+        levelsVisible: showLevelsRef.current,
+      })
+      onLevelSelect(pick.price, {
+        type: pick.type,
+        source: pick.source,
+        reasoning: pick.reasoning,
       })
     }
 
@@ -1378,10 +1390,131 @@ export function TradingChart({
     }
   }, [canPlaceOrder, onLevelSelect, chartReady, positionOverlay, pendingLimit])
 
+  // ── Hover visible AI/structure level → preview entry / SL / TP (same as ticket) ─
+  useEffect(() => {
+    const container = containerRef.current
+    const host = priceLineHostRef.current
+    if (
+      !container ||
+      !candleRef.current ||
+      !host ||
+      !chartReady ||
+      !canPlaceOrder ||
+      positionOverlay ||
+      pendingLimit ||
+      !showLevels
+    ) {
+      clearHoverPreview()
+      return
+    }
+
+    const fmt = (n: number) =>
+      n.toLocaleString('en-US', { maximumFractionDigits: 0 })
+
+    const onMove = (e: MouseEvent) => {
+      if (!candleRef.current || !priceLineHostRef.current) return
+      const rect = container.getBoundingClientRect()
+      const y = e.clientY - rect.top
+      const raw = candleRef.current.coordinateToPrice(y)
+      if (raw == null || !Number.isFinite(Number(raw)) || Number(raw) <= 0) {
+        clearHoverPreview()
+        return
+      }
+
+      const pick = resolveChartLimitPick({
+        rawPrice: Number(raw),
+        levels: levelsRef.current.map((l) => ({
+          price: l.price,
+          type: l.type,
+          source: l.source,
+          reasoning: l.reasoning,
+        })),
+        levelsVisible: true,
+      })
+      if (pick.source === 'manual' || !pick.matched) {
+        clearHoverPreview()
+        return
+      }
+
+      const preview = previewLevelOrderPrices({
+        level: pick.matched,
+        instrument,
+      })
+      if (!preview) {
+        clearHoverPreview()
+        return
+      }
+
+      const key = `${preview.direction}:${preview.entry}:${preview.stop}:${preview.target}`
+      if (hoverPreviewKeyRef.current === key) return
+      clearHoverPreview()
+      hoverPreviewKeyRef.current = key
+      const h = priceLineHostRef.current
+      if (!h) return
+
+      const specs = [
+        {
+          price: preview.entry,
+          color: 'rgba(56, 189, 248, 0.85)',
+          title: `HOVER ${preview.direction} ${fmt(preview.entry)}`,
+          style: LineStyle.Dashed,
+        },
+        {
+          price: preview.stop,
+          color: 'rgba(239, 68, 68, 0.75)',
+          title: `SL ${fmt(preview.stop)}`,
+          style: LineStyle.Dotted,
+        },
+        {
+          price: preview.target,
+          color: 'rgba(34, 197, 94, 0.75)',
+          title: `TP ${fmt(preview.target)}`,
+          style: LineStyle.Dotted,
+        },
+      ] as const
+
+      for (const s of specs) {
+        try {
+          hoverPreviewLinesRef.current.push(
+            h.createPriceLine({
+              price: s.price,
+              color: s.color,
+              lineStyle: s.style,
+              lineWidth: 1,
+              axisLabelVisible: true,
+              title: s.title,
+            })
+          )
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+
+    const onLeave = () => clearHoverPreview()
+
+    container.addEventListener('mousemove', onMove)
+    container.addEventListener('mouseleave', onLeave)
+    return () => {
+      container.removeEventListener('mousemove', onMove)
+      container.removeEventListener('mouseleave', onLeave)
+      clearHoverPreview()
+    }
+  }, [
+    canPlaceOrder,
+    chartReady,
+    positionOverlay,
+    pendingLimit,
+    showLevels,
+    instrument,
+    clearHoverPreview,
+  ])
+
   // ── Position / working-limit overlay lines (host series — survives candle setData)
   // Independent of Hide levels — AI/structure lines toggle separately.
   useEffect(() => {
     const host = priceLineHostRef.current
+    clearHoverPreview()
     positionLinesRef.current.forEach(line => {
       try { host?.removePriceLine(line) } catch {}
     })
@@ -1508,7 +1641,7 @@ export function TradingChart({
     try {
       host.applyOptions({ autoscaleInfoProvider: undefined })
     } catch { /* ignore */ }
-  }, [positionOverlay, pendingLimit, aiVerdict, chartReady])
+  }, [positionOverlay, pendingLimit, aiVerdict, chartReady, clearHoverPreview])
 
   // ── Emit live price to parent ─────────────────────────────────────────────────
   useEffect(() => {

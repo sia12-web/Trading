@@ -31,6 +31,10 @@ import {
   type DeskEntrySource,
 } from '@/lib/trading/positionSizing'
 import {
+  previewLevelOrderPrices,
+  resolveChartLimitPick,
+} from '@/lib/trading/chartLevelPick'
+import {
   snapDeskPrice,
   snapStopToTick,
   snapTargetToTick,
@@ -332,6 +336,10 @@ function SimulationDeskInner() {
   } | null>(null)
   const levelLinesRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]>([])
   const posLinesRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]>([])
+  const hoverPreviewLinesRef = useRef<
+    ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]
+  >([])
+  const hoverPreviewKeyRef = useRef<string | null>(null)
   /** Invisible series that hosts level/SL/TP price lines — seeded once, never updated again */
   const priceLineHostRef = useRef<ISeriesApi<'Line'> | null>(null)
   const priceLineHostSeededRef = useRef(false)
@@ -1709,27 +1717,33 @@ function SimulationDeskInner() {
       const raw = seriesRef.current.coordinateToPrice(y)
       if (raw == null || !Number.isFinite(Number(raw)) || Number(raw) <= 0) return
 
-      let best = Number(raw)
-      let matched: AiLevel | null = null
-      let bestDist = Infinity
-      for (const l of levelsRef.current) {
-        const d = Math.abs(l.level - best) / best
-        if (d < bestDist && d <= 0.0025) {
-          bestDist = d
-          best = l.level
-          matched = l
+      // Snap to AI/structure only when levels are visible — hidden → always manual
+      const pick = resolveChartLimitPick({
+        rawPrice: Number(raw),
+        levels: levelsRef.current.map((l) => ({
+          price: l.level,
+          type: l.type,
+          source: l.source,
+          reasoning: l.reasoning,
+          side: l.side ?? null,
+        })),
+        levelsVisible: levelsOpenRef.current,
+      })
+
+      if (pick.matched && pick.source !== 'manual') {
+        const matched = levelsRef.current.find(
+          (l) => Math.abs(l.level - pick.price) < 1e-6
+        )
+        if (matched) {
+          setManualTicketOpen(false)
+          setManualClickPrice(null)
+          setTicketLevel(matched)
+          return
         }
       }
 
-      if (matched) {
-        setManualTicketOpen(false)
-        setManualClickPrice(null)
-        setTicketLevel(matched)
-        return
-      }
-
       setTicketLevel(null)
-      setManualClickPrice(best)
+      setManualClickPrice(pick.price)
       setManualTicketOpen(true)
     }
 
@@ -1749,6 +1763,138 @@ function SimulationDeskInner() {
     attemptsUsed,
     stopHits,
     gate?.canPlaceEntry,
+  ])
+
+  // Hover visible level → preview entry / SL / TP (same math as AI ticket)
+  useEffect(() => {
+    const container = containerRef.current
+    const host = priceLineHostRef.current
+    const clearHover = () => {
+      hoverPreviewLinesRef.current.forEach((line) => {
+        try {
+          host?.removePriceLine(line)
+        } catch {
+          /* ignore */
+        }
+      })
+      hoverPreviewLinesRef.current = []
+      hoverPreviewKeyRef.current = null
+    }
+
+    const canHover =
+      chartReady &&
+      !position &&
+      !pending &&
+      levelsOpen &&
+      simNow > 0 &&
+      simNow <= entryCloseUnix &&
+      gate?.canPlaceEntry !== false
+
+    if (!container || !seriesRef.current || !host || !canHover) {
+      clearHover()
+      return
+    }
+
+    const fmt = (n: number) =>
+      n.toLocaleString('en-US', { maximumFractionDigits: 0 })
+
+    const onMove = (e: MouseEvent) => {
+      if (!seriesRef.current || !priceLineHostRef.current) return
+      const rect = container.getBoundingClientRect()
+      const y = e.clientY - rect.top
+      const raw = seriesRef.current.coordinateToPrice(y)
+      if (raw == null || !Number.isFinite(Number(raw)) || Number(raw) <= 0) {
+        clearHover()
+        return
+      }
+
+      const pick = resolveChartLimitPick({
+        rawPrice: Number(raw),
+        levels: levelsRef.current.map((l) => ({
+          price: l.level,
+          type: l.type,
+          source: l.source,
+          reasoning: l.reasoning,
+          side: l.side ?? null,
+        })),
+        levelsVisible: true,
+      })
+      if (pick.source === 'manual' || !pick.matched) {
+        clearHover()
+        return
+      }
+
+      const preview = previewLevelOrderPrices({
+        level: pick.matched,
+        instrument,
+        accountSize,
+      })
+      if (!preview) {
+        clearHover()
+        return
+      }
+
+      const key = `${preview.direction}:${preview.entry}:${preview.stop}:${preview.target}`
+      if (hoverPreviewKeyRef.current === key) return
+      clearHover()
+      hoverPreviewKeyRef.current = key
+      const h = priceLineHostRef.current
+      if (!h) return
+
+      for (const s of [
+        {
+          price: preview.entry,
+          color: 'rgba(56, 189, 248, 0.85)',
+          title: `HOVER ${preview.direction} ${fmt(preview.entry)}`,
+          style: LineStyle.Dashed,
+        },
+        {
+          price: preview.stop,
+          color: 'rgba(239, 68, 68, 0.75)',
+          title: `SL ${fmt(preview.stop)}`,
+          style: LineStyle.Dotted,
+        },
+        {
+          price: preview.target,
+          color: 'rgba(34, 197, 94, 0.75)',
+          title: `TP ${fmt(preview.target)}`,
+          style: LineStyle.Dotted,
+        },
+      ] as const) {
+        try {
+          hoverPreviewLinesRef.current.push(
+            h.createPriceLine({
+              price: s.price,
+              color: s.color,
+              lineStyle: s.style,
+              lineWidth: 1,
+              axisLabelVisible: true,
+              title: s.title,
+            })
+          )
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+
+    container.addEventListener('mousemove', onMove)
+    container.addEventListener('mouseleave', clearHover)
+    return () => {
+      container.removeEventListener('mousemove', onMove)
+      container.removeEventListener('mouseleave', clearHover)
+      clearHover()
+    }
+  }, [
+    chartReady,
+    position,
+    pending,
+    levelsOpen,
+    simNow,
+    entryCloseUnix,
+    gate?.canPlaceEntry,
+    instrument,
+    accountSize,
   ])
 
   if (loading) {
