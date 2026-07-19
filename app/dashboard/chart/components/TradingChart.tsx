@@ -27,6 +27,7 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts'
 import {
+  AVWAP_CANDLE_FETCH_CALENDAR_DAYS,
   computeAnchoredVwap,
   computeSessionHighlightSpans,
   projectSessionHighlightRects,
@@ -756,8 +757,8 @@ export function TradingChart({
 
       // Full continuum including afternoon — clipAfternoonBars is a no-op while freeze is off
       try {
-        // NIKKEI needs a longer window — Yahoo ^N225 5d is often truncated; OANDA JP225 fills gaps
-        const days = instrument === 'NIKKEI' ? 7 : 5
+        // Must cover cash open of 5 trading days prior (weekends truncate a plain 5d fetch)
+        const days = AVWAP_CANDLE_FETCH_CALENDAR_DAYS
         const res = await fetch(
           `/api/trading/candles?instrument=${instrument}&timeframe=${DESK_TIMEFRAME}&days=${days}`
         )
@@ -1225,7 +1226,7 @@ export function TradingChart({
     const refreshCandles = async () => {
       if (!isChartStreamAllowed(instrument).open) return
       try {
-        const days = instrument === 'NIKKEI' ? 7 : 5
+        const days = AVWAP_CANDLE_FETCH_CALENDAR_DAYS
         const res = await fetch(
           `/api/trading/candles?instrument=${instrument}&timeframe=${DESK_TIMEFRAME}&days=${days}&quote=0&_=${Date.now()}`,
           { cache: 'no-store' }

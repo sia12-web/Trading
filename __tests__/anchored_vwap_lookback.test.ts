@@ -4,6 +4,7 @@
  */
 
 import {
+  AVWAP_CANDLE_FETCH_CALENDAR_DAYS,
   AVWAP_LOOKBACK_TRADING_DAYS,
   NY_DESK_CLOCK,
   TOKYO_DESK_CLOCK,
@@ -20,11 +21,56 @@ function assert(cond: unknown, msg: string) {
 }
 
 assert(AVWAP_LOOKBACK_TRADING_DAYS === 5, 'lookback is 5 trading days')
+assert(
+  AVWAP_CANDLE_FETCH_CALENDAR_DAYS >= AVWAP_LOOKBACK_TRADING_DAYS + 7,
+  'candle fetch must include weekend buffer beyond 5 trading days'
+)
 
 {
   // Friday 2026-07-17 → 5 trading days prior = Friday 2026-07-10
   const prior = nthTradingDayBefore('2026-07-17', 5, 'America/New_York')
   assert(prior === '2026-07-10', `expected 2026-07-10 got ${prior}`)
+}
+
+{
+  // Sparse feed bug: weekend tip + only ~4 RTH days in history → AVWAP starts too late.
+  // A 5-calendar-day Yahoo/OANDA window from Sun Jul 19 only reaches Tue Jul 14.
+  const tipOpen = cashOpenUnixForYmd('2026-07-17', NY_DESK_CLOCK)
+  const short: SessionBar[] = ['2026-07-14', '2026-07-15', '2026-07-16', '2026-07-17'].map((d) =>
+    bar(d, 10, 100)
+  )
+  const shortScoped = lastNTradingSessions(short, 5, NY_DESK_CLOCK, tipOpen)
+  assert(
+    shortScoped[0]!.time >= cashOpenUnixForYmd('2026-07-14', NY_DESK_CLOCK),
+    'truncated history clamps to earliest available RTH day'
+  )
+  assert(
+    !shortScoped.some((c) => c.time < cashOpenUnixForYmd('2026-07-14', NY_DESK_CLOCK)),
+    'Jul 10 (true 5-prior) absent when feed is short'
+  )
+
+  // Full calendar buffer includes the 5th prior day (Jul 10)
+  const fullDays = [
+    '2026-07-08',
+    '2026-07-09',
+    '2026-07-10',
+    '2026-07-13',
+    '2026-07-14',
+    '2026-07-15',
+    '2026-07-16',
+    '2026-07-17',
+  ]
+  const full: SessionBar[] = fullDays.map((d) => bar(d, 10, 100))
+  const fullScoped = lastNTradingSessions(full, 5, NY_DESK_CLOCK, tipOpen)
+  const priorOpen = cashOpenUnixForYmd('2026-07-10', NY_DESK_CLOCK)
+  assert(fullScoped[0]!.time >= priorOpen, 'full feed reaches 5th prior cash open')
+  assert(
+    fullScoped.some((c) => {
+      const t = c.time
+      return t >= priorOpen && t < cashOpenUnixForYmd('2026-07-13', NY_DESK_CLOCK)
+    }),
+    '5th prior RTH day (Jul 10) is included in the scoped window'
+  )
 }
 
 {

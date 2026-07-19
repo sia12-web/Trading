@@ -640,6 +640,14 @@ export function deskClockFor(instrument: string | null | undefined): DeskClock {
 /** How many trading days before the tip session AVWAP is anchored (cash open). */
 export const AVWAP_LOOKBACK_TRADING_DAYS = 5
 
+/**
+ * Calendar days of candle history required so `lastNTradingSessions(…, 5)` can
+ * actually reach the 5th prior RTH day. A plain `days=5` fetch from a weekend
+ * tip only covers ~4 RTH sessions (Yahoo `5d` / OANDA wall-clock), so the
+ * anchor day is missing and AVWAP starts too late.
+ */
+export const AVWAP_CANDLE_FETCH_CALENDAR_DAYS = AVWAP_LOOKBACK_TRADING_DAYS + 7 // 12
+
 function dayKeyInTz(unix: number, timeZone: string): string {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone,

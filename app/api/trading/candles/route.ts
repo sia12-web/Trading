@@ -15,6 +15,7 @@ import {
   isLiveDeskInstrument,
   sessionFor,
 } from '@/lib/trading/sessionGate'
+import { AVWAP_CANDLE_FETCH_CALENDAR_DAYS } from '@/lib/chart/sessionVwap'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import type { Instrument } from '@/types/price-feed'
 import { logger } from '@/lib/utils/logger'
@@ -89,7 +90,8 @@ export async function GET(request: Request) {
       }
     } else {
       // Live desk: OANDA (US30 / NAS100 / JP225) then Yahoo — same path for all three
-      const fetchDays = Math.max(days, instrument === 'NIKKEI' ? 7 : 5)
+      // Floor must cover AVWAP 5-trading-day-prior anchor (weekends truncate `days=5`)
+      const fetchDays = Math.max(days, AVWAP_CANDLE_FETCH_CALENDAR_DAYS)
       const [oanda, yahoo] = await Promise.all([
         getOandaCandles(instrument, resolution, fetchDays),
         getYahooCandles(instrument, resolution, fetchDays),
