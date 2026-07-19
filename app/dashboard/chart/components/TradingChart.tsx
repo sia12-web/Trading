@@ -441,6 +441,8 @@ export function TradingChart({
   const [livePrice,   setLivePrice]  = useState<number | null>(null)
   const [priceChange, setPriceChange] = useState<number>(0)
   const [showLevels,  setShowLevels] = useState(true)
+  /** Floating morning playbook — independent of chart level lines. */
+  const [playbookOpen, setPlaybookOpen] = useState(true)
   const showLevelsRef = useRef(true)
   const [chartReady,  setChartReady] = useState(false)
   const candlesRef = useRef<OHLCV[]>([])
@@ -1563,6 +1565,18 @@ export function TradingChart({
             : ''}
         </button>
 
+        {!playbookOpen &&
+          levels.some((l) => l.source === 'ai' || l.source === 'structure') && (
+          <button
+            type="button"
+            title="Show morning playbook panel"
+            onClick={() => setPlaybookOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg bg-transparent border-surface-600 text-gray-500 hover:text-gray-300"
+          >
+            Playbook
+          </button>
+        )}
+
         {canPlaceOrder && !positionOverlay && !pendingLimit && (
           <button
             type="button"
@@ -1740,14 +1754,14 @@ export function TradingChart({
           Reset scale
         </button>
 
-        {/* Morning playbook — follows Levels / Hide levels toggle only */}
-        {showLevels &&
+        {/* Morning playbook — close only hides this panel, not chart levels */}
+        {playbookOpen &&
           levels.some((l) => l.source === 'ai' || l.source === 'structure') && (
           <DraggableDeskWidget
             storageKey="desk-playbook-live"
             defaultPos={{ x: 24, y: 88 }}
             title="Morning playbook"
-            onClose={() => setShowLevels(false)}
+            onClose={() => setPlaybookOpen(false)}
           >
             <div className="space-y-1.5 p-2">
               {levels

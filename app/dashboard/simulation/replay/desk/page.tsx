@@ -307,6 +307,8 @@ function SimulationDeskInner() {
   const [manualClickPrice, setManualClickPrice] = useState<number | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [levelsOpen, setLevelsOpen] = useState(true)
+  /** Floating morning playbook — independent of chart level lines. */
+  const [playbookOpen, setPlaybookOpen] = useState(true)
   const levelsOpenRef = useRef(true)
   const [reasoningOpen, setReasoningOpen] = useState<number | null>(null)
   const [chartReady, setChartReady] = useState(false)
@@ -341,6 +343,8 @@ function SimulationDeskInner() {
   const positionRef = useRef<PaperPosition | null>(null)
   const placingOrderRef = useRef(false)
   const didFitRef = useRef(false)
+  /** Last barSpacing we set — preserved across Play ticks so user zoom sticks. */
+  const barSpacingRef = useRef(FOLLOW_BAR_SPACING)
   const visibleCandlesRef = useRef<Candle[]>([])
   const simNowRef = useRef(0)
   const speedRef = useRef(initialSpeed)
@@ -830,21 +834,38 @@ function SimulationDeskInner() {
     paintSessionHighlightOverlay(host, rects, { keepPreviousIfEmpty: true })
   }, [instrument])
 
-  /** Keep the sim tip pinned to the right with a readable trailing window. */
+  /**
+   * Keep the sim tip pinned to the right.
+   * resetSpacing: only on first fit / explicit reset — never re-force barSpacing
+   * during Play (that was trapping users in a zoomed-in view).
+   */
   const pinToLatest = useCallback(
-    (endIdx: number) => {
+    (endIdx: number, opts?: { resetSpacing?: boolean }) => {
       const chart = chartRef.current
       if (!chart || endIdx < 0) return
 
       const ts = chart.timeScale()
       ignoreRangeChangeRef.current = true
-      ts.applyOptions({
-        rightOffset: FOLLOW_RIGHT_PAD,
-        barSpacing: FOLLOW_BAR_SPACING,
-      })
-      // Logical range: trailing window ending just past the newest bar
+      const resetSpacing = !!opts?.resetSpacing || !didFitRef.current
+      if (resetSpacing) {
+        barSpacingRef.current = FOLLOW_BAR_SPACING
+        ts.applyOptions({
+          rightOffset: FOLLOW_RIGHT_PAD,
+          barSpacing: FOLLOW_BAR_SPACING,
+        })
+      } else {
+        // Keep tip in view without stomping the user's scroll-zoom
+        ts.applyOptions({ rightOffset: FOLLOW_RIGHT_PAD })
+      }
+
+      const spacing = Math.max(1, barSpacingRef.current || FOLLOW_BAR_SPACING)
+      const width = containerRef.current?.clientWidth ?? 900
+      const barsVisible = Math.max(
+        40,
+        Math.floor((width - 80) / spacing) - FOLLOW_RIGHT_PAD
+      )
       ts.setVisibleLogicalRange({
-        from: Math.max(-2, endIdx - FOLLOW_BARS),
+        from: Math.max(-2, endIdx - barsVisible),
         to: endIdx + FOLLOW_RIGHT_PAD,
       })
       didFitRef.current = true
@@ -972,9 +993,11 @@ function SimulationDeskInner() {
       lastPriceRef.current = price
       setLastPrice(price)
 
-      // Always keep the tip in view while following (Play or after reset)
-      if (opts?.fit || !didFitRef.current || followLiveRef.current) {
-        pinToLatest(endIdx)
+      // Tip follow: reset spacing only on first fit / explicit fit — preserve user zoom
+      if (opts?.fit || !didFitRef.current) {
+        pinToLatest(endIdx, { resetSpacing: true })
+      } else if (followLiveRef.current) {
+        pinToLatest(endIdx, { resetSpacing: false })
       } else {
         requestAnimationFrame(() => refreshSessionHighlights())
       }
@@ -1014,6 +1037,12 @@ function SimulationDeskInner() {
       }, 180)
     }
 
+    const stopFollow = () => {
+      if (!followLiveRef.current) return
+      followLiveRef.current = false
+      setFollowingLive(false)
+    }
+
     const beginInteract = () => {
       pointerDown = true
       window.clearTimeout(settleTimer)
@@ -1023,6 +1052,12 @@ function SimulationDeskInner() {
       if (!pointerDown) return
       pointerDown = false
       scheduleSettle()
+    }
+
+    /** Scroll zoom must release follow or pinToLatest fights the user every bar. */
+    const onWheel = () => {
+      if (ignoreRangeChangeRef.current) return
+      stopFollow()
     }
 
     const onRangeChange = () => {
@@ -1036,8 +1071,7 @@ function SimulationDeskInner() {
       const endIdx = lastAppliedBarIdxRef.current
       if (!range || endIdx < 0) return
       if (range.to < endIdx - 3) {
-        followLiveRef.current = false
-        setFollowingLive(false)
+        stopFollow()
       }
     }
 
@@ -1049,6 +1083,7 @@ function SimulationDeskInner() {
     const ro = el ? new ResizeObserver(() => scheduleSettle()) : null
     ro?.observe(el!)
     el?.addEventListener('pointerdown', beginInteract)
+    el?.addEventListener('wheel', onWheel, { passive: true })
     window.addEventListener('pointerup', endInteract)
     window.addEventListener('pointercancel', endInteract)
     return () => {
@@ -1063,6 +1098,7 @@ function SimulationDeskInner() {
       }
       ro?.disconnect()
       el?.removeEventListener('pointerdown', beginInteract)
+      el?.removeEventListener('wheel', onWheel)
       window.removeEventListener('pointerup', endInteract)
       window.removeEventListener('pointercancel', endInteract)
     }
@@ -1516,7 +1552,6 @@ function SimulationDeskInner() {
       setTicketLevel(null)
       if (touched) {
         fillPending(order, touched.time)
-        setPlaying(true)
         placingOrderRef.current = false
         return
       }
@@ -1524,9 +1559,8 @@ function SimulationDeskInner() {
       pendingRef.current = order
       setPending(order)
       setMsg(
-        `Working ${direction} @ ${limit.toLocaleString()} — Play until fill`
+        `Working ${direction} @ ${limit.toLocaleString()} — press Play until fill`
       )
-      setPlaying(true)
       placingOrderRef.current = false
     },
     [
@@ -1960,6 +1994,16 @@ function SimulationDeskInner() {
           >
             {levelsOpen ? 'Hide levels' : 'Levels'}
           </button>
+          {!playbookOpen && (
+            <button
+              type="button"
+              title="Show morning playbook panel"
+              onClick={() => setPlaybookOpen(true)}
+              className="rounded border border-white/15 px-2 py-1 text-[10px] uppercase text-gray-400 hover:bg-white/10 hover:text-gray-200"
+            >
+              Playbook
+            </button>
+          )}
           <button
             type="button"
             onClick={() => router.push('/dashboard/simulation')}
@@ -2096,8 +2140,8 @@ function SimulationDeskInner() {
         )}
       </div>
 
-      {/* Morning playbook — follows Levels / Hide levels only */}
-      {levelsOpen && (
+      {/* Morning playbook — close only hides this panel, not chart levels */}
+      {playbookOpen && (
         <DraggableDeskWidget
           storageKey="desk-playbook-sim"
           defaultPos={{ x: 24, y: 72 }}
@@ -2109,7 +2153,7 @@ function SimulationDeskInner() {
               </span>
             </>
           }
-          onClose={() => setLevelsOpen(false)}
+          onClose={() => setPlaybookOpen(false)}
           footer={
             <label className="block text-[9px] font-semibold uppercase tracking-wider text-gray-500">
               Account $
@@ -2242,15 +2286,13 @@ function SimulationDeskInner() {
             )
             if (touched) {
               fillPending(pend, touched.time)
-              setPlaying(true)
               return
             }
             pendingRef.current = pend
             setPending(pend)
             setMsg(
-              `Manual ${order.direction} limit @ ${order.level.toLocaleString()} — ${MANUAL_RISK_PERCENT}% risk · Play until fill`
+              `Manual ${order.direction} limit @ ${order.level.toLocaleString()} — ${MANUAL_RISK_PERCENT}% risk · press Play until fill`
             )
-            setPlaying(true)
           }}
         />
       )}
