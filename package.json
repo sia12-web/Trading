@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "Day trading platform with AI-powered analysis",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "next dev",
     "prebuild": "node scripts/verify-build-context.mjs",
@@ -25,7 +28,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
-    "@types/node": "^20.10.0",
+    "@types/node": "^22.10.0",
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
     "autoprefixer": "^10.5.2",

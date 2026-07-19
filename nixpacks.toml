@@ -1,3 +1,7 @@
 # Include devDependencies during install — Next.js production build needs typescript.
+# Node 22+: required by @supabase/supabase-js (20 and below deprecated).
+[variables]
+NIXPACKS_NODE_VERSION = "22"
+
 [phases.install]
 cmds = ["npm ci"]
