@@ -19,8 +19,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import {
   createChart,
-  ColorType,
-  CrosshairMode,
   LineStyle,
   TickMarkType,
   type IChartApi,
@@ -44,6 +42,7 @@ import {
 import { aiLevelsUrl, resolveDeskLevels } from '@/lib/trading/deskLevels'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
+import { DESK_CHART_THEME } from '@/lib/chart/deskChartTheme'
 import {
   isDeskHoursNow,
   isLiveBarsAllowed,
@@ -230,55 +229,8 @@ function reactionLabel(l: LevelLine): string | null {
   return null
 }
 
-// Chart dark theme
-const CHART_THEME = {
-  layout: {
-    background: { type: ColorType.Solid, color: '#131622' },
-    textColor:  '#6b7280',
-    fontFamily: 'Inter, JetBrains Mono, system-ui',
-    fontSize:   11,
-  },
-  grid: {
-    vertLines: { color: '#1a1e2e', style: LineStyle.Solid },
-    horzLines: { color: '#1a1e2e', style: LineStyle.Solid },
-  },
-  crosshair: {
-    mode: CrosshairMode.Normal,
-    vertLine: { color: '#3a4268', width: 1 as any, style: LineStyle.Dashed, labelBackgroundColor: '#222840' },
-    horzLine: { color: '#3a4268', width: 1 as any, style: LineStyle.Dashed, labelBackgroundColor: '#222840' },
-  },
-  rightPriceScale: {
-    borderColor: '#1a1e2e',
-    textColor:   '#6b7280',
-    // Margins are set dynamically in the chart init block (0.05 top / 0.20 bottom)
-    // to reserve space for volume bars at the bottom
-  },
-  timeScale: {
-    borderColor:   '#1a1e2e',
-    timeVisible:   true,
-    secondsVisible: false,
-    rightOffset:   12,
-    barSpacing:    8,
-    fixLeftEdge:   false,
-    fixRightEdge:  false,
-    // tickMarkFormatter applied per-instrument (ET for DOW/NASDAQ, JST for NIKKEI)
-  },
-  handleScroll: {
-    mouseWheel: true,
-    pressedMouseMove: true,
-    horzTouchDrag: true,
-    vertTouchDrag: false,
-  },
-  handleScale: {
-    axisPressedMouseMove: { time: true, price: true },
-    mouseWheel: true,
-    pinch: true,
-  },
-  kineticScroll: {
-    mouse: true,
-    touch: true,
-  },
-}
+// Chart light theme (TradingView-style near-white pane)
+const CHART_THEME = DESK_CHART_THEME
 
 /** Same desk window for every index: last 5 cash days + overnight lead-in (clock by instrument). */
 function toDeskCandles(candles: OHLCV[], instrument: Instrument = 'DOW'): OHLCV[] {
@@ -1617,7 +1569,7 @@ export function TradingChart({
           </span>
         </span>
       </div>
-      <div className="flex-1 relative rounded-xl border border-surface-600 overflow-hidden" style={{ minHeight: 400 }}>
+      <div className="flex-1 relative rounded-xl border border-gray-300 overflow-hidden bg-[#fafafa]" style={{ minHeight: 400 }}>
         <div ref={containerRef} className="absolute inset-0 z-0" />
         <div
           ref={sessionOverlayRef}

@@ -9,8 +9,6 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   createChart,
-  ColorType,
-  CrosshairMode,
   LineStyle,
   TickMarkType,
   type IChartApi,
@@ -40,6 +38,7 @@ import {
   sessionLegendOrder,
   type SessionHighlightSpan,
 } from '@/lib/chart/sessionVwap'
+import { DESK_CHART_THEME } from '@/lib/chart/deskChartTheme'
 import {
   computeSimOvernightBias,
   simSuggestedDirection,
@@ -597,54 +596,11 @@ function SimulationDeskInner() {
     setChartReady(false)
 
     const chart = createChart(containerRef.current, {
-      layout: {
-        background: { type: ColorType.Solid, color: '#131622' },
-        textColor: '#6b7280',
-        fontSize: 11,
-      },
-      grid: {
-        vertLines: { color: '#1a1e2e' },
-        horzLines: { color: '#1a1e2e' },
-      },
-      crosshair: {
-        mode: CrosshairMode.Normal,
-        vertLine: {
-          color: '#3a4268',
-          width: 1 as const,
-          style: LineStyle.Dashed,
-          labelBackgroundColor: '#222840',
-        },
-        horzLine: {
-          color: '#3a4268',
-          width: 1 as const,
-          style: LineStyle.Dashed,
-          labelBackgroundColor: '#222840',
-        },
-      },
-      rightPriceScale: { borderColor: '#1a1e2e' },
+      ...DESK_CHART_THEME,
       timeScale: {
-        borderColor: '#1a1e2e',
-        timeVisible: true,
-        secondsVisible: false,
-        rightOffset: 12,
-        barSpacing: 8,
+        ...DESK_CHART_THEME.timeScale,
         // Default axis is UTC — format ticks in market TZ (ET / JST)
         tickMarkFormatter: chartFmt.tickMarkFormatter,
-      },
-      handleScroll: {
-        mouseWheel: true,
-        pressedMouseMove: true,
-        horzTouchDrag: true,
-        vertTouchDrag: false,
-      },
-      handleScale: {
-        axisPressedMouseMove: { time: true, price: true },
-        mouseWheel: true,
-        pinch: true,
-      },
-      kineticScroll: {
-        mouse: true,
-        touch: true,
       },
       localization: {
         timeFormatter: (time: UTCTimestamp | string | number) => {

@@ -6,23 +6,24 @@
 
 import type { UTCTimestamp } from 'lightweight-charts'
 
+/** Soft pastel fills for light chart panes (TradingView-like). */
 export const SESSION_STYLES = {
   Asia: {
-    color: 'rgba(56, 189, 248, 0.28)',
+    color: 'rgba(147, 197, 253, 0.32)',
     zIndex: 1,
-    line: '#38bdf8',
+    line: '#2563eb',
     short: 'Asia',
   },
   London: {
-    color: 'rgba(250, 204, 21, 0.26)',
+    color: 'rgba(250, 204, 21, 0.30)',
     zIndex: 2,
-    line: '#facc15',
+    line: '#ca8a04',
     short: 'Lon',
   },
   'New York': {
-    color: 'rgba(74, 222, 128, 0.26)',
+    color: 'rgba(74, 222, 128, 0.30)',
     zIndex: 3,
-    line: '#4ade80',
+    line: '#16a34a',
     short: 'NY',
   },
 } as const
