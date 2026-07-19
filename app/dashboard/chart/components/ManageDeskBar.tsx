@@ -27,6 +27,18 @@ export interface AiVerdict {
   news_score?: number
   headlines?: string[]
   move_pct?: number
+  rvol?: number | null
+  rvol_source?: string | null
+  factors?: string[]
+  options?: {
+    proxy: string
+    put_call_volume: number | null
+    put_call_oi: number | null
+    call_volume: number
+    put_volume: number
+    bias: number
+    source: string
+  } | null
   closed?: boolean
 }
 
@@ -112,6 +124,10 @@ export function ManageDeskBar({
         news_score: json.news_score,
         headlines: json.headlines,
         move_pct: json.move_pct,
+        rvol: json.rvol,
+        rvol_source: json.rvol_source,
+        factors: json.factors,
+        options: json.options ?? null,
         closed: json.closed,
       })
       if (json.closed) {
@@ -126,7 +142,7 @@ export function ManageDeskBar({
 
   useEffect(() => {
     pollAi()
-    const id = setInterval(pollAi, 45000)
+    const id = setInterval(pollAi, 20000)
     return () => clearInterval(id)
   }, [pollAi])
 
@@ -312,6 +328,41 @@ export function ManageDeskBar({
               </span>
               <span className="text-gray-600 ml-2">{ai.confidence}% conf</span>
               <p className="text-gray-400 mt-0.5 leading-snug">{ai.reason}</p>
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] uppercase tracking-wide text-gray-500">
+                {ai.rvol != null && Number.isFinite(ai.rvol) && (
+                  <span title={ai.rvol_source ?? undefined}>
+                    RVOL{' '}
+                    <span className="price-mono text-gray-300 normal-case">
+                      {ai.rvol.toFixed(2)}×
+                    </span>
+                  </span>
+                )}
+                {ai.options && (
+                  <span title={`${ai.options.proxy} · ${ai.options.source}`}>
+                    P/C{' '}
+                    <span className="price-mono text-gray-300 normal-case">
+                      {ai.options.put_call_volume != null
+                        ? ai.options.put_call_volume.toFixed(2)
+                        : '—'}
+                    </span>
+                    <span className="ml-1 normal-case text-gray-600">
+                      {ai.options.bias > 0
+                        ? 'calls'
+                        : ai.options.bias < 0
+                          ? 'puts'
+                          : 'flat'}
+                    </span>
+                  </span>
+                )}
+                {typeof ai.news_score === 'number' && (
+                  <span>
+                    News{' '}
+                    <span className="price-mono text-gray-300 normal-case">
+                      {ai.news_score}
+                    </span>
+                  </span>
+                )}
+              </div>
               {ai.headlines && ai.headlines.length > 0 && (
                 <ul className="mt-1 text-gray-600 list-disc list-inside">
                   {ai.headlines.slice(0, 2).map((h, i) => (
@@ -324,7 +375,7 @@ export function ManageDeskBar({
             </>
           ) : (
             <span className="text-gray-600 animate-pulse">
-              Manage active — scoring news + price…
+              Manage active — scoring news + RVOL + options…
             </span>
           )}
         </div>

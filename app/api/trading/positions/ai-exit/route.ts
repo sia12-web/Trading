@@ -1,6 +1,7 @@
 /**
  * POST /api/trading/positions/ai-exit
- * While MANAGE: score pullback vs reversal using news + recent price move; liquidate on reversal.
+ * While MANAGE: score pullback vs reversal using news + price + RVOL + options flow;
+ * liquidate on strong reversal.
  */
 
 import { NextResponse } from 'next/server'
@@ -9,6 +10,11 @@ import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { getFinnhubClient } from '@/lib/services/finnhubClient'
 import { getYahooQuote } from '@/lib/yahoo/quote'
 import { logger } from '@/lib/utils/logger'
+import {
+  fetchManageOptionsFlow,
+  fetchManageRvol,
+} from '@/lib/trading/manageMarketData'
+import { scoreManageVerdict } from '@/lib/trading/manageSignals'
 import type { Instrument } from '@/types/trading'
 import type { Instrument as PriceInstrument } from '@/types/price-feed'
 
@@ -72,28 +78,21 @@ export async function POST(request: Request) {
     const dir = String(position.entry_direction || '').toUpperCase() as 'LONG' | 'SHORT'
     const movePct = dir === 'LONG' ? ((px - entry) / entry) * 100 : ((entry - px) / entry) * 100
 
-    // Rules hybrid: adverse move + opposing news ⇒ reversal; mild dip with supportive news ⇒ pullback
-    let verdict: 'pullback' | 'reversal' | 'hold' = 'hold'
-    let confidence = 50
-    let reason = 'No strong signal'
+    const deskInstrument = instrument as 'DOW' | 'NASDAQ' | 'NIKKEI'
+    const [rvolSnap, optionsFlow] = await Promise.all([
+      fetchManageRvol(deskInstrument),
+      fetchManageOptionsFlow(deskInstrument),
+    ])
 
-    if (movePct < -0.35 && newsScore <= 0) {
-      verdict = 'reversal'
-      confidence = Math.min(95, 60 + Math.abs(movePct) * 10)
-      reason = `Adverse move ${movePct.toFixed(2)}% with non-supportive news (score ${newsScore})`
-    } else if (movePct < -0.15 && movePct >= -0.35 && newsScore > 0) {
-      verdict = 'pullback'
-      confidence = 65
-      reason = `Mild adverse move ${movePct.toFixed(2)}% but news supportive (${newsScore}) — treat as pullback`
-    } else if (movePct < -0.5) {
-      verdict = 'reversal'
-      confidence = 80
-      reason = `Sharp adverse move ${movePct.toFixed(2)}% — likely reversal`
-    } else if (movePct > 0.2) {
-      verdict = 'hold'
-      confidence = 70
-      reason = `Trade in favor (+${movePct.toFixed(2)}%) — hold`
-    }
+    const scored = scoreManageVerdict({
+      movePct,
+      newsScore,
+      rvol: rvolSnap.rvol,
+      optionsBias: optionsFlow?.bias ?? null,
+      direction: dir === 'SHORT' ? 'SHORT' : 'LONG',
+    })
+
+    const { verdict, confidence, reason, factors } = scored
 
     let closed = false
     if (verdict === 'reversal' && confidence >= 70) {
@@ -144,9 +143,23 @@ export async function POST(request: Request) {
       verdict,
       confidence,
       reason,
+      factors,
       news_score: newsScore,
       headlines,
       move_pct: movePct,
+      rvol: rvolSnap.rvol,
+      rvol_source: rvolSnap.source,
+      options: optionsFlow
+        ? {
+            proxy: optionsFlow.proxySymbol,
+            put_call_volume: optionsFlow.putCallVolume,
+            put_call_oi: optionsFlow.putCallOi,
+            call_volume: optionsFlow.callVolume,
+            put_volume: optionsFlow.putVolume,
+            bias: optionsFlow.bias,
+            source: optionsFlow.source,
+          }
+        : null,
       closed,
     })
   } catch (e) {

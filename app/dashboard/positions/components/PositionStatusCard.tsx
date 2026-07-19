@@ -146,7 +146,7 @@ export function PositionStatusCard({
   useEffect(() => {
     if (!position || closedMsg) return
     void pollAi()
-    const id = setInterval(pollAi, 45000)
+    const id = setInterval(pollAi, 20000)
     return () => clearInterval(id)
   }, [pollAi, position, closedMsg])
 
