@@ -666,36 +666,43 @@ export function referencePriceAtOpen(
 }
 
 /**
- * Drop levels the morning cannot trade:
- * - SHORT (resistance) must be ABOVE cash open
- * - BUY (support) must be BELOW cash open
- * - Distance capped by prior-day range (and a small % of price) so stale AI
- *   levels thousands of points away never become PRIMARY.
+ * Day-trader geometry only (levels may sit on overnight / London / HTF structure
+ * anywhere in the provided candle universe):
+ * - SHORT (resistance) must be ABOVE cash-open reference
+ * - BUY (support) must be BELOW cash-open reference
+ * - Reject invented prices outside the candle high/low band (± pad for stop pools)
+ *
+ * Does NOT force levels near the open — HTF / London / overnight levels are valid.
  */
 export function filterReachableMorningLevels(
   levels: DeskLevel[],
   candles: DeskBar[],
   openUnix: number,
-  timeZone: string = 'America/New_York'
+  _timeZone: string = 'America/New_York'
 ): DeskLevel[] {
   const ref = referencePriceAtOpen(candles, openUnix)
   if (ref == null || levels.length === 0) return levels
 
-  const ctx = collectBaitExtremes(candles, openUnix, timeZone)
-  const priorSpan =
-    ctx && ctx.yRange.hi > ctx.yRange.lo ? ctx.yRange.hi - ctx.yRange.lo : 0
-  // Allow slightly beyond prior day (overnight extension) but never "another era"
-  const maxDist = Math.max(ref * 0.02, priorSpan * 1.35, ref * 0.008)
+  let hi = -Infinity
+  let lo = Infinity
+  for (const c of candles) {
+    if (c.time > openUnix + 3600) continue // ignore far post-open lookahead if present
+    if (c.high > hi) hi = c.high
+    if (c.low < lo) lo = c.low
+  }
+  if (!(hi > lo) || !Number.isFinite(hi) || !Number.isFinite(lo)) {
+    hi = ref * 1.05
+    lo = ref * 0.95
+  }
+  const pad = Math.max((hi - lo) * 0.12, ref * 0.003)
 
   return levels.filter((l) => {
     if (!Number.isFinite(l.level) || l.level <= 0) return false
+    // Hallucination guard: must live in (or just beyond) the chart's price universe
+    if (l.level > hi + pad || l.level < lo - pad) return false
     const side = levelSide(l.type)
-    if (side === 'SHORT') {
-      if (l.level <= ref) return false
-      return l.level - ref <= maxDist
-    }
-    if (l.level >= ref) return false
-    return ref - l.level <= maxDist
+    if (side === 'SHORT') return l.level > ref
+    return l.level < ref
   })
 }
 

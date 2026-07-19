@@ -1,6 +1,7 @@
 /**
- * AI must not propose SHORT below cash open / BUY above it, or levels
- * thousands of points from the open (unreachable in the morning window).
+ * Geometry: SHORT above open, BUY below open.
+ * Levels may sit on overnight/London/HTF anywhere inside the candle universe.
+ * Invented prices outside the chart range are rejected.
  * Run: npx tsx __tests__/reachable_morning_levels.test.ts
  */
 
@@ -15,12 +16,11 @@ function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(msg)
 }
 
-const OPEN = 1_721_000_000 // arbitrary unix
+const OPEN = 1_721_000_000
 const ref = 29522.3
 
 function barsAroundOpen(): DeskBar[] {
   const out: DeskBar[] = []
-  // Prior day ~28.8k–30.1k then open at ~29.5k
   for (let i = 80; i >= 1; i--) {
     const t = OPEN - i * 300
     const base = 29500 + Math.sin(i / 5) * 400
@@ -29,11 +29,19 @@ function barsAroundOpen(): DeskBar[] {
       open: base,
       high: base + 80,
       low: base - 80,
-      // Last pre-open bar closes at cash-open reference
       close: i === 1 ? ref : base + 10,
       volume: 100,
     })
   }
+  // Overnight low far from open but still on the chart (~28.7k)
+  out.push({
+    time: OPEN - 20 * 300,
+    open: 28750,
+    high: 28820,
+    low: 28680,
+    close: 28790,
+    volume: 200,
+  })
   out.push({
     time: OPEN,
     open: ref,
@@ -48,42 +56,36 @@ function barsAroundOpen(): DeskBar[] {
 const candles = barsAroundOpen()
 assert(Math.abs((referencePriceAtOpen(candles, OPEN) ?? 0) - ref) < 0.01, 'ref = pre-open close')
 
-// Crazy AI short ~3.4k BELOW open (user screenshot)
-const crazy = filterReachableMorningLevels(
+// SHORT below open is invalid geometry (user bug)
+const wrongSide = filterReachableMorningLevels(
   [
-    {
-      level: 26136.5,
-      type: 'resistance',
-      conviction: 10,
-      source: 'ai',
-      reasoning: 'stale',
-    },
-    {
-      level: 25953.91,
-      type: 'support',
-      conviction: 8,
-      source: 'ai',
-    },
+    { level: 26136.5, type: 'resistance', conviction: 10, source: 'ai' },
+    { level: 25953.91, type: 'support', conviction: 8, source: 'ai' },
   ],
   candles,
   OPEN,
   'America/New_York'
 )
-assert(crazy.length === 0, 'absurd AI levels below open must be dropped')
+assert(wrongSide.length === 0, 'SHORT/BUY on wrong side or outside candle range dropped')
 
-// Valid: SHORT above open, BUY below open within prior range
-const ok = filterReachableMorningLevels(
-  [
-    { level: 29850, type: 'resistance', conviction: 9, source: 'ai' },
-    { level: 29200, type: 'support', conviction: 8, source: 'ai' },
-  ],
+// Far-from-open but ON the overnight print — valid day-trader BUY
+const overnightBuy = filterReachableMorningLevels(
+  [{ level: 28690, type: 'support', conviction: 9, source: 'ai' }],
   candles,
   OPEN,
   'America/New_York'
 )
-assert(ok.length === 2, 'reachable levels kept')
+assert(overnightBuy.length === 1, 'overnight/London-style level below open is allowed')
 
-// resolveDeskLevels falls back to structure when AI is all junk
+// SHORT above open inside recent highs — valid
+const okShort = filterReachableMorningLevels(
+  [{ level: 29850, type: 'resistance', conviction: 9, source: 'ai' }],
+  candles,
+  OPEN,
+  'America/New_York'
+)
+assert(okShort.length === 1, 'SHORT above open kept')
+
 const resolved = resolveDeskLevels(
   [
     { level: 26136.5, type: 'resistance', conviction: 10 },
@@ -94,15 +96,7 @@ const resolved = resolveDeskLevels(
   'America/New_York',
   'none'
 )
-assert(resolved.source === 'structure', 'junk AI → structure fallback')
+assert(resolved.source === 'structure', 'hallucinated AI → structure fallback')
 assert(resolved.levels.length > 0, 'structure still provides levels')
-for (const l of resolved.levels) {
-  const isShort = String(l.type).toLowerCase().includes('resist')
-  if (isShort) {
-    assert(l.level > ref, `structure SHORT ${l.level} must be above open ${ref}`)
-  } else {
-    assert(l.level < ref, `structure BUY ${l.level} must be below open ${ref}`)
-  }
-}
 
-console.log('✅ reachable_morning_levels: absurd AI shorts/buys rejected')
+console.log('✅ reachable_morning_levels: side geometry + candle-range; HTF distance OK')

@@ -494,13 +494,16 @@ CORE PHILOSOPHY — BIG MONEY ENTERS AT RETAIL STOP LOSS LIQUIDITY:
 - Prefer: (1) stop-liquidity pools beyond equal highs/lows or session extremes, (2) unmitigated impulse origins, (3) absorption / initiative volume, (4) AVWAP confluence, (5) volume-by-price POC/HVN confluence — never naked session highs/lows or round numbers.
 - Ask every time: "Where did retail put stops?" That answer IS your entry zone. "Short the London high" / "buy the Asia low" is retail — reject it.
 
-WHAT TO LOOK FOR IN THE CANDLES:
-1. Origins of impulse — the last down-candle before a strong rally (demand) or last up-candle before a strong drop (supply), especially if price hasn't returned there yet.
-2. Liquidity / stop pools — clusters of equal highs/lows OR Asia/London/prior-day extremes: mark the price JUST BEYOND the bait where retail stops live. That is where desks enter. Say so in the reasoning.
-3. Volume anomalies — bars with outsized volume and small range (absorption) or wide range closing near the extreme (initiative).
-4. Rejection quality — one strong wick THROUGH the bait into stops WITH follow-through beats many weak touches AT the bait.
-5. VWAP/AVWAP — institutions benchmark to it; ±2σ/±3σ extremes often mean-revert after a stop-hunt through a session extreme.
-6. Volume-by-price — POC (highest volume) and HVN nodes printed in the request are where size clustered; confluence with a stop-pool raises conviction.
+WHAT TO LOOK FOR IN THE CANDLES (think like a day trader reading the tape before the cash open):
+1. Overnight + Asia — where price traveled after prior cash close; overnight highs/lows and the stop pools beyond them often set the morning first magnet.
+2. London session — London extremes and equal highs/lows are classic NY-open liquidity; wicks that pierce London then reclaim are HTF/other-session footprints.
+3. Origins of impulse — the last down-candle before a strong rally (demand) or last up-candle before a strong drop (supply), especially if price hasn't returned there yet.
+4. Liquidity / stop pools — clusters of equal highs/lows OR Asia/London/prior-day extremes: mark the price JUST BEYOND the bait where retail stops live. That is where desks enter. Say so in the reasoning.
+5. Volume anomalies — bars with outsized volume and small range (absorption) or wide range closing near the extreme (initiative). Rising volume into a level = participation; dying volume into a break = fake.
+6. Rejection quality / tails — one strong wick THROUGH the bait into stops WITH follow-through beats many weak touches AT the bait. Long tails on H1/4H against a level often mark other-timeframe (swing/desk) entrance — weight those higher than clean 5m lines.
+7. Multi-timeframe confluence — a level that shows on daily/4H AND is defended on H1 with volume/wick evidence outranks a single-TF print. Levels may sit far from the open if overnight/London/HTF structure put them there — distance from open is NOT a reason to discard.
+8. VWAP/AVWAP — institutions benchmark to it; ±2σ/±3σ extremes often mean-revert after a stop-hunt through a session extreme.
+9. Volume-by-price — POC (highest volume) and HVN nodes printed in the request are where size clustered; confluence with a stop-pool raises conviction.
 
 DESK CADENCE (your levels live inside this rhythm — ${marketLabel} clock for ${index}):
 - You call levels pre-open from YESTERDAY'S range + overnight only. Older multi-day level history is discarded — the next session does not care about last week's levels.
@@ -647,9 +650,10 @@ Desk clock: ${clock.openLabel} open · entries until ${s.entryClose.slice(0, 5)}
 Methodology is identical for DOW, NASDAQ, and NIKKEI — only this clock differs.
 
 HARD GEOMETRY (desk rejects violations):
-- resistance / SHORT levels MUST be ABOVE Current Price (offer side).
-- support / BUY levels MUST be BELOW Current Price (bid side).
-- Every level must be reachable in the morning entry window — stay inside / just beyond the prior session + overnight range. Do NOT invent levels thousands of points away from Current Price.
+- resistance / SHORT levels MUST be ABOVE Current Price (offer side) — you cannot short a resistance below the market.
+- support / BUY levels MUST be BELOW Current Price (bid side) — you cannot buy a support above the market.
+- Levels may come from overnight, London, prior day, or HTF structure ANYWHERE in the provided candle range (with a small stop-pool pad beyond extremes). Cite which session/TF and the volume or wick evidence.
+- Do NOT invent prices outside the high/low of the candles you were given (hallucinated "old index" levels).
 
 ${format4hCandles}
 
