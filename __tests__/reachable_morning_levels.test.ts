@@ -21,7 +21,16 @@ const ref = 29522.3
 
 function barsAroundOpen(): DeskBar[] {
   const out: DeskBar[] = []
-  for (let i = 80; i >= 1; i--) {
+  // Overnight low far from open but still on the chart
+  out.push({
+    time: OPEN - 40 * 300,
+    open: 28750,
+    high: 28820,
+    low: 28680,
+    close: 28790,
+    volume: 200,
+  })
+  for (let i = 79; i >= 1; i--) {
     const t = OPEN - i * 300
     const base = 29500 + Math.sin(i / 5) * 400
     out.push({
@@ -29,19 +38,11 @@ function barsAroundOpen(): DeskBar[] {
       open: base,
       high: base + 80,
       low: base - 80,
+      // Chronological last pre-open bar closes at cash-open reference
       close: i === 1 ? ref : base + 10,
       volume: 100,
     })
   }
-  // Overnight low far from open but still on the chart (~28.7k)
-  out.push({
-    time: OPEN - 20 * 300,
-    open: 28750,
-    high: 28820,
-    low: 28680,
-    close: 28790,
-    volume: 200,
-  })
   out.push({
     time: OPEN,
     open: ref,
