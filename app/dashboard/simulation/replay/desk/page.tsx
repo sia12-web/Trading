@@ -157,7 +157,6 @@ interface PaperPosition {
 }
 
 /** Trailing window while following the sim tip — readable bars, tip pinned right */
-const FOLLOW_BARS = 96
 const FOLLOW_RIGHT_PAD = 8
 const FOLLOW_BAR_SPACING = 7
 
