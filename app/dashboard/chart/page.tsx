@@ -513,7 +513,7 @@ export default function ChartPage() {
                 : inWorking
                   ? `WORKING ${pending!.direction} limit @ ${pending!.level.toLocaleString()} — waiting for fill`
                   : canTrade
-                    ? 'Entry window · click a level for a working limit (MANAGE only after fill)'
+                    ? 'Entry window · click the chart or a level for a working limit (MANAGE only after fill)'
                     : inManage
                       ? 'MANAGE · HOLD or TAKE PROFIT'
                       : gate?.phase === 'FLAT'
@@ -701,11 +701,13 @@ export default function ChartPage() {
                 </div>
               </div>
             )}
+
           </div>
         </div>
 
         {orderLevel != null && !pending && !managePos && inEntry && (
           <LevelOrderTicket
+            key={`live-${orderLevel}-${orderEntrySource}-${orderLevelType ?? 'x'}`}
             instrument={(locked || instrument) as Instrument}
             levelPrice={orderLevel}
             levelType={orderLevelType}

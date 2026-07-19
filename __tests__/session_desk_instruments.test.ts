@@ -64,7 +64,11 @@ assert(nyDeskSessionAt(et(2026, 7, 16, 15, 55)) === 'New York', 'NY 15:55 → NY
 assert(tokyoDeskSessionAt(jst(2026, 7, 16, 8, 55)) === 'New York', 'JST 08:55 → NY overnight')
 assert(tokyoDeskSessionAt(jst(2026, 7, 16, 9, 0)) === 'Asia', 'JST 09:00 → Tokyo/Asia start')
 assert(tokyoDeskSessionAt(jst(2026, 7, 16, 11, 0)) === 'Asia', 'JST 11:00 → Asia')
+assert(tokyoDeskSessionAt(jst(2026, 7, 16, 11, 30)) === 'Asia', 'JST 11:30 lunch still Tokyo/Asia band')
+assert(tokyoDeskSessionAt(jst(2026, 7, 16, 14, 59)) === 'Asia', 'JST 14:59 still Tokyo cash')
 assert(tokyoDeskSessionAt(jst(2026, 7, 16, 15, 0)) === 'London', 'JST 15:00 → London')
+assert(tokyoDeskSessionAt(jst(2026, 7, 16, 22, 29)) === 'London', 'JST 22:29 still London')
+assert(tokyoDeskSessionAt(jst(2026, 7, 16, 22, 30)) === 'New York', 'JST 22:30 → NY')
 assert(tokyoDeskSessionAt(jst(2026, 7, 16, 23, 0)) === 'New York', 'JST 23:00 → NY')
 
 // ── DOW / NASDAQ: NYC ET paint ───────────────────────────────────────────────

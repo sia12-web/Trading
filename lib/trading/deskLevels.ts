@@ -13,7 +13,7 @@
  * Next-day memory: only yesterday's range + overnight matter.
  */
 
-import { nyDeskSessionAt, type SessionName } from '@/lib/chart/sessionVwap'
+import { deskSessionAt, type SessionName } from '@/lib/chart/sessionVwap'
 
 export type LevelSide = 'BUY' | 'SHORT'
 /** Overnight / regime lean used to pick the morning focus side */
@@ -411,9 +411,9 @@ function recentSweepWickDepth(bars: DeskBar[]): number {
   return depths[Math.floor(depths.length * 0.6)] ?? 0
 }
 
-/** Which desk session a bar belongs to (NY clock — same as chart boxes). */
-function sessionOfBar(unix: number): SessionName | null {
-  return nyDeskSessionAt(unix)
+/** Which desk session a bar belongs to — same classifier as chart color bands. */
+function sessionOfBar(unix: number, instrument?: string | null): SessionName | null {
+  return deskSessionAt(unix, instrument)
 }
 
 export interface BaitExtreme {
@@ -447,8 +447,11 @@ function dedupeBaits(baits: BaitExtreme[], refPrice: number): BaitExtreme[] {
 export function collectBaitExtremes(
   candles: DeskBar[],
   openUnix: number,
-  timeZone: string = 'America/New_York'
+  timeZone: string = 'America/New_York',
+  instrument?: string | null
 ): { baits: BaitExtreme[]; yRange: { hi: number; lo: number }; depth: number } | null {
+  const deskInstrument =
+    instrument ?? (timeZone === 'Asia/Tokyo' ? 'NIKKEI' : null)
   const prior = candles.filter((c) => c.time < openUnix)
   if (prior.length < 10) return null
 
@@ -483,11 +486,11 @@ export function collectBaitExtremes(
   pushRange(sessionBars, 'prior day')
   if (overnightBars.length >= 3) pushRange(overnightBars, 'overnight')
 
-  // Session windows on the NY clock (matches chart Asia / London boxes)
+  // Session windows — Tokyo clock for NIKKEI, NY clock for DOW/NASDAQ (matches chart bands)
   const lookback = prior.slice(-Math.min(prior.length, 200))
   const bySession = new Map<SessionName, DeskBar[]>()
   for (const c of lookback) {
-    const name = sessionOfBar(c.time)
+    const name = sessionOfBar(c.time, deskInstrument)
     if (!name) continue
     const list = bySession.get(name) ?? []
     list.push(c)
@@ -495,7 +498,10 @@ export function collectBaitExtremes(
   }
   for (const name of ['Asia', 'London'] as SessionName[]) {
     const bars = bySession.get(name)
-    if (bars && bars.length >= 3) pushRange(bars, name)
+    if (bars && bars.length >= 3) {
+      const label = deskInstrument === 'NIKKEI' && name === 'Asia' ? 'Tokyo' : name
+      pushRange(bars, label)
+    }
   }
 
   // Equal highs / equal lows clusters (within ~0.04%) — classic stop magnet

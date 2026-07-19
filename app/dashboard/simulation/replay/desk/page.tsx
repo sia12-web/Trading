@@ -303,6 +303,8 @@ function SimulationDeskInner() {
   const [accountSize, setAccountSize] = useState(100000)
   const [ticketLevel, setTicketLevel] = useState<AiLevel | null>(null)
   const [manualTicketOpen, setManualTicketOpen] = useState(false)
+  /** Chart-click price for manual ticket; null = use lastPrice (toolbar Place limit). */
+  const [manualClickPrice, setManualClickPrice] = useState<number | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [levelsOpen, setLevelsOpen] = useState(true)
   const levelsOpenRef = useRef(true)
@@ -579,11 +581,11 @@ function SimulationDeskInner() {
             setLevelsSource(withAi.source)
             setPlaybook(withAi.playbook)
             setMsg(
-              `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · AI levels (Haiku) — place a limit, then Play`
+              `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · AI levels (Haiku) — click the chart or a level to place a limit, then Play`
             )
           } else {
             setMsg(
-              `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · structure levels (AI unavailable) — place a limit, then Play`
+              `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · structure levels (AI unavailable) — click the chart or a level to place a limit, then Play`
             )
           }
         } catch (aiErr) {
@@ -597,7 +599,7 @@ function SimulationDeskInner() {
           setMsg(
             `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · structure levels${
               aborted ? ' (AI timed out)' : ' (AI failed)'
-            } — place a limit, then Play`
+            } — click the chart or a level to place a limit, then Play`
           )
         } finally {
           if (!cancelled) setLevelsAiLoading(false)
@@ -1592,12 +1594,15 @@ function SimulationDeskInner() {
     setPlaying(false)
     setPending(null)
     setPosition(null)
+    setTicketLevel(null)
+    setManualTicketOpen(false)
+    setManualClickPrice(null)
     setLevelsOpen(true)
     resetSessionProgress()
     setMsg(
       instrument === 'NIKKEI'
-        ? 'Reset to 9:00 AM JST — place a level order, then Play'
-        : 'Reset to 9:30 AM ET — place a level order, then Play'
+        ? 'Reset to 9:00 AM JST — click the chart or a level to place a limit, then Play'
+        : 'Reset to 9:30 AM ET — click the chart or a level to place a limit, then Play'
     )
   }
 
@@ -1611,15 +1616,82 @@ function SimulationDeskInner() {
     setPending(null)
     setPosition(null)
     setTicketLevel(null)
+    setManualTicketOpen(false)
+    setManualClickPrice(null)
     setLevelsOpen(true)
     resetSessionProgress()
     setMsg(
       instrument === 'NIKKEI'
-        ? 'Replay from 9:00 AM JST — place a level or watch the morning'
-        : 'Replay from 9:30 AM ET — place a level or watch the morning'
+        ? 'Replay from 9:00 AM JST — click the chart or a level, or watch the morning'
+        : 'Replay from 9:30 AM ET — click the chart or a level, or watch the morning'
     )
     setPlaying(true)
   }
+
+  // Click chart to place limit (snap to nearby level, else manual ticket) — same as live desk
+  useEffect(() => {
+    const container = containerRef.current
+    const canPlace =
+      chartReady &&
+      !position &&
+      !pending &&
+      simNow > 0 &&
+      simNow <= entryCloseUnix &&
+      simNow >= openUnix &&
+      attemptsUsed < MAX_SESSION_ATTEMPTS &&
+      stopHits < MAX_STOP_HITS &&
+      gate?.canPlaceEntry !== false
+
+    if (!container || !seriesRef.current || !canPlace) return
+
+    const onClick = (e: MouseEvent) => {
+      if (!seriesRef.current) return
+      const rect = container.getBoundingClientRect()
+      const y = e.clientY - rect.top
+      const raw = seriesRef.current.coordinateToPrice(y)
+      if (raw == null || !Number.isFinite(Number(raw)) || Number(raw) <= 0) return
+
+      let best = Number(raw)
+      let matched: AiLevel | null = null
+      let bestDist = Infinity
+      for (const l of levelsRef.current) {
+        const d = Math.abs(l.level - best) / best
+        if (d < bestDist && d <= 0.0025) {
+          bestDist = d
+          best = l.level
+          matched = l
+        }
+      }
+
+      if (matched) {
+        setManualTicketOpen(false)
+        setManualClickPrice(null)
+        setTicketLevel(matched)
+        return
+      }
+
+      setTicketLevel(null)
+      setManualClickPrice(best)
+      setManualTicketOpen(true)
+    }
+
+    container.style.cursor = 'crosshair'
+    container.addEventListener('click', onClick)
+    return () => {
+      container.removeEventListener('click', onClick)
+      container.style.cursor = ''
+    }
+  }, [
+    chartReady,
+    position,
+    pending,
+    simNow,
+    entryCloseUnix,
+    openUnix,
+    attemptsUsed,
+    stopHits,
+    gate?.canPlaceEntry,
+  ])
 
   if (loading) {
     return (
@@ -1860,12 +1932,21 @@ function SimulationDeskInner() {
           {canEnter && (
             <button
               type="button"
-              onClick={() => setManualTicketOpen(true)}
+              onClick={() => {
+                setManualClickPrice(null)
+                setTicketLevel(null)
+                setManualTicketOpen(true)
+              }}
               className="rounded border border-amber-500/50 bg-amber-600/80 px-2 py-1 text-[10px] font-bold uppercase text-white hover:bg-amber-500"
               title="Manual limit — 1% account risk, size adjusts to your stop"
             >
               Place limit
             </button>
+          )}
+          {canEnter && (
+            <span className="hidden text-[10px] text-gray-500 sm:inline" title="Crosshair on chart">
+              Click chart or level
+            </span>
           )}
           <button
             type="button"
@@ -2119,10 +2200,12 @@ function SimulationDeskInner() {
         </DraggableDeskWidget>
       )}
 
-      {manualTicketOpen && (lastPrice != null || ticketLevel) && (
+      {manualTicketOpen &&
+        (manualClickPrice != null || lastPrice != null || ticketLevel != null) && (
         <LevelOrderTicket
+          key={manualClickPrice != null ? `click-${manualClickPrice}` : 'toolbar-manual'}
           instrument={instrument}
-          levelPrice={lastPrice ?? ticketLevel?.level ?? 0}
+          levelPrice={manualClickPrice ?? lastPrice ?? ticketLevel?.level ?? 0}
           entrySource="manual"
           levelType="manual"
           regime={
@@ -2135,9 +2218,13 @@ function SimulationDeskInner() {
           regimeConfidence={70}
           canPlace={canEnter}
           entryWindow={1}
-          onClose={() => setManualTicketOpen(false)}
+          onClose={() => {
+            setManualTicketOpen(false)
+            setManualClickPrice(null)
+          }}
           onPlaced={(order) => {
             setManualTicketOpen(false)
+            setManualClickPrice(null)
             const pend: PendingOrder = {
               level: order.level,
               direction: order.direction,

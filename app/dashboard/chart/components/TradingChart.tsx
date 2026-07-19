@@ -1324,7 +1324,16 @@ export function TradingChart({
   // ── Click chart to place order at that price (morning trading) ─────────────
   useEffect(() => {
     const container = containerRef.current
-    if (!container || !candleRef.current || !canPlaceOrder || !onLevelSelect || positionOverlay) return
+    if (
+      !container ||
+      !candleRef.current ||
+      !canPlaceOrder ||
+      !onLevelSelect ||
+      positionOverlay ||
+      pendingLimit
+    ) {
+      return
+    }
 
     const onClick = (e: MouseEvent) => {
       if (!candleRef.current) return
@@ -1365,7 +1374,7 @@ export function TradingChart({
       container.removeEventListener('click', onClick)
       container.style.cursor = ''
     }
-  }, [canPlaceOrder, onLevelSelect, chartReady, positionOverlay])
+  }, [canPlaceOrder, onLevelSelect, chartReady, positionOverlay, pendingLimit])
 
   // ── Position / working-limit overlay lines (host series — survives candle setData)
   // Independent of Hide levels — AI/structure lines toggle separately.
@@ -1567,6 +1576,11 @@ export function TradingChart({
           >
             Place limit
           </button>
+        )}
+        {canPlaceOrder && !positionOverlay && !pendingLimit && (
+          <span className="hidden text-[10px] text-gray-500 sm:inline" title="Crosshair on chart">
+            Click chart or level
+          </span>
         )}
 
         {pendingLimit && !positionOverlay && (

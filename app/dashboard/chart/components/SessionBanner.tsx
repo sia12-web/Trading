@@ -29,14 +29,17 @@ export interface SessionGateState {
   maxStopHits?: number
 }
 
-function formatEtNow(): string {
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
+/** Live banner clock — ET for NY desk, JST when Tokyo/NIKKEI is active. */
+function formatDeskClock(market?: 'NY' | 'TOKYO' | null): { time: string; label: string } {
+  const tokyo = market === 'TOKYO'
+  const time = new Intl.DateTimeFormat('en-US', {
+    timeZone: tokyo ? 'Asia/Tokyo' : 'America/New_York',
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
     hour12: false,
   }).format(new Date())
+  return { time, label: tokyo ? 'JST' : 'ET' }
 }
 
 function phaseLabel(phase: string): string {
@@ -51,8 +54,8 @@ function phaseLabel(phase: string): string {
 }
 
 function phaseHint(phase: string, message: string): string {
-  if (phase === 'FLAT') {
-    return 'Morning trading open until lunch — click a level or the chart to place a limit.'
+  if (phase === 'ENTRY' || phase === 'FLAT') {
+    return 'Morning trading open until lunch — click the chart or a level to place a limit.'
   }
   if (phase === 'DONE' || phase === 'CLOSED') {
     return message
@@ -75,7 +78,8 @@ export function SessionBanner({
 }) {
   const [gate, setGate] = useState<SessionGateState | null>(null)
   const [gateError, setGateError] = useState<string | null>(null)
-  const [clockEt, setClockEt] = useState<string | null>(null)
+  const [clockNow, setClockNow] = useState<string | null>(null)
+  const [clockLabel, setClockLabel] = useState('ET')
   const [mounted, setMounted] = useState(false)
   const [clocking, setClocking] = useState(false)
   const prepFiredRef = useRef<string | null>(null)
@@ -168,10 +172,15 @@ export function SessionBanner({
 
   useEffect(() => {
     setMounted(true)
-    setClockEt(formatEtNow())
-    const id = setInterval(() => setClockEt(formatEtNow()), 1000)
+    const tick = () => {
+      const c = formatDeskClock(gate?.market)
+      setClockNow(c.time)
+      setClockLabel(c.label)
+    }
+    tick()
+    const id = setInterval(tick, 1000)
     return () => clearInterval(id)
-  }, [])
+  }, [gate?.market])
 
   useEffect(() => {
     onRefreshReady?.(refresh)
@@ -191,7 +200,7 @@ export function SessionBanner({
     return (
       <div className="rounded-lg border border-[#30363d] bg-[#161b22] px-3 py-2 text-xs text-gray-500 font-mono">
         <span suppressHydrationWarning>
-          {mounted && clockEt ? `${clockEt} ET · ` : ''}
+          {mounted && clockNow ? `${clockNow} ${clockLabel} · ` : ''}
         </span>
         {gateError ? (
           <span className="text-amber-300">{gateError}</span>
@@ -224,10 +233,14 @@ export function SessionBanner({
       <span className="font-semibold tracking-wide uppercase">{phaseLabel(gate.phase)}</span>
       <span
         className="text-gray-400 font-mono tabular-nums min-w-[5.5rem]"
-        title="America/New_York (live)"
+        title={
+          gate.market === 'TOKYO'
+            ? 'Asia/Tokyo (NIKKEI desk)'
+            : 'America/New_York (NY desk)'
+        }
         suppressHydrationWarning
       >
-        {mounted && clockEt ? `${clockEt} ET` : '—:—:— ET'}
+        {mounted && clockNow ? `${clockNow} ${clockLabel}` : `—:—:— ${clockLabel}`}
       </span>
       {gate.lockedInstrument && (
         <span className="rounded bg-white/10 px-2 py-0.5 font-medium">{gate.lockedInstrument}</span>
