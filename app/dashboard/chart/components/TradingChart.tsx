@@ -432,6 +432,8 @@ export function TradingChart({
   const [livePrice,   setLivePrice]  = useState<number | null>(null)
   const [priceChange, setPriceChange] = useState<number>(0)
   const [showLevels,  setShowLevels] = useState(true)
+  const showLevelsRef = useRef(true)
+  const [priceLinesEpoch, setPriceLinesEpoch] = useState(0)
   const [chartReady,  setChartReady] = useState(false)
   const [barsFrozen, setBarsFrozen] = useState(false)
   const [sessionMsg, setSessionMsg] = useState<string | null>(null)
@@ -824,6 +826,62 @@ export function TradingChart({
     didFitRef.current = false
   }, [instrument])
 
+  useEffect(() => {
+    candlesRef.current = candles
+  }, [candles])
+
+  useEffect(() => {
+    levelsRef.current = levels
+  }, [levels])
+
+  useEffect(() => {
+    showLevelsRef.current = showLevels
+  }, [showLevels])
+
+  /** lightweight-charts clears price lines on setData — always re-paint from refs. */
+  const paintLevelLines = useCallback(() => {
+    const series = candleRef.current
+    if (!series) return
+
+    levelLinesRef.current.forEach((line) => {
+      try {
+        series.removePriceLine(line)
+      } catch {
+        /* already cleared by setData */
+      }
+    })
+    levelLinesRef.current = []
+
+    if (!showLevelsRef.current) return
+
+    for (const level of levelsRef.current) {
+      const isAi = level.source === 'ai'
+      const isRes =
+        level.type === 'resistance' || String(level.type).toLowerCase().includes('resist')
+      const isPrimary = (level.label || '').includes('PRIMARY')
+      const baseColor =
+        STATUS_COLORS[level.status] ??
+        LEVEL_COLORS[level.type] ??
+        (isAi ? (isRes ? '#f87171' : '#34d399') : isRes ? '#f87171' : '#34d399')
+      try {
+        levelLinesRef.current.push(
+          series.createPriceLine({
+            price: level.price,
+            color: baseColor,
+            lineWidth: isPrimary ? 3 : 2,
+            lineStyle: isPrimary ? LineStyle.Solid : isAi ? LineStyle.Solid : LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: level.label
+              ? `${level.label} ${level.price.toLocaleString()}`
+              : `${isRes ? 'SHORT' : 'BUY'} ${level.price.toLocaleString()}`,
+          })
+        )
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [])
+
   // ── Push candle data to chart ─────────────────────────────────────────────────
   useEffect(() => {
     if (!candleRef.current || !chartRef.current || candles.length === 0) return
@@ -871,6 +929,10 @@ export function TradingChart({
       vs.lower3.setData([])
     }
 
+    // setData wipes candle price lines — restore levels (+ position lines via epoch below)
+    paintLevelLines()
+    setPriceLinesEpoch((n) => n + 1)
+
     const ts = chartRef.current.timeScale()
     if (!didFitRef.current) {
       // First load — show ~5 sessions with the tip pinned near the right edge
@@ -887,15 +949,7 @@ export function TradingChart({
         didFitRef.current = true
       })
     }
-  }, [candles, instrument]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    candlesRef.current = candles
-  }, [candles])
-
-  useEffect(() => {
-    levelsRef.current = levels
-  }, [levels])
+  }, [candles, instrument, paintLevelLines]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Session color boxes (cached spans + imperative paint = smooth pan)
   const refreshSessionHighlights = useCallback(() => {
@@ -1034,46 +1088,9 @@ export function TradingChart({
 
   // ── Draw level lines ──────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!candleRef.current) return
-
-    // Remove old level lines
-    levelLinesRef.current.forEach(line => {
-      try { candleRef.current?.removePriceLine(line) } catch {}
-    })
-    levelLinesRef.current = []
-
-    // Manual toggle only — stay on chart through working limits / open positions
-    if (!showLevels) return
-
-    levels.forEach(level => {
-      const isAi = level.source === 'ai'
-      const isRes = level.type === 'resistance' || String(level.type).toLowerCase().includes('resist')
-      const isPrimary = (level.label || '').includes('PRIMARY')
-      const baseColor =
-        STATUS_COLORS[level.status] ??
-        LEVEL_COLORS[level.type] ??
-        (isAi
-          ? isRes
-            ? '#f87171'
-            : '#34d399'
-          : isRes
-            ? '#f87171'
-            : '#34d399')
-      try {
-        const line = candleRef.current!.createPriceLine({
-          price:             level.price,
-          color:             baseColor,
-          lineWidth:         isPrimary ? 3 : 2,
-          lineStyle:         isPrimary ? LineStyle.Solid : (isAi ? LineStyle.Solid : LineStyle.Dashed),
-          axisLabelVisible:  true,
-          title:             level.label
-            ? `${level.label} ${level.price.toLocaleString()}`
-            : `${isRes ? 'SHORT' : 'BUY'} ${level.price.toLocaleString()}`,
-        })
-        levelLinesRef.current.push(line)
-      } catch {}
-    })
-  }, [levels, showLevels, chartReady])
+    if (!chartReady) return
+    paintLevelLines()
+  }, [levels, showLevels, chartReady, paintLevelLines])
 
   // ── Chart stream: trade live open→lunch; lunch freeze tip; after cash close continuum ─
   useEffect(() => {
@@ -1393,7 +1410,7 @@ export function TradingChart({
         } catch { /* ignore */ }
       }
     }
-  }, [positionOverlay, pendingLimit, aiVerdict])
+  }, [positionOverlay, pendingLimit, aiVerdict, priceLinesEpoch])
 
   // ── Emit live price to parent ─────────────────────────────────────────────────
   useEffect(() => {

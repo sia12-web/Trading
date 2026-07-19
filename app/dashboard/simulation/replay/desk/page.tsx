@@ -267,6 +267,7 @@ function SimulationDeskInner() {
   const [speed, setSpeed] = useState(initialSpeed)
   const [allCandles, setAllCandles] = useState<Candle[]>([])
   const [levels, setLevels] = useState<AiLevel[]>([])
+  const levelsRef = useRef<AiLevel[]>([])
   const [levelsSource, setLevelsSource] = useState<'ai' | 'structure'>('structure')
   const [levelsAiLoading, setLevelsAiLoading] = useState(false)
   const [playbook, setPlaybook] = useState<DeskPlaybook | null>(null)
@@ -278,8 +279,10 @@ function SimulationDeskInner() {
   const [ticketLevel, setTicketLevel] = useState<AiLevel | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [levelsOpen, setLevelsOpen] = useState(true)
+  const levelsOpenRef = useRef(true)
   const [reasoningOpen, setReasoningOpen] = useState<number | null>(null)
   const [chartReady, setChartReady] = useState(false)
+  const [priceLinesEpoch, setPriceLinesEpoch] = useState(0)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const sessionOverlayRef = useRef<HTMLDivElement>(null)
@@ -679,6 +682,52 @@ function SimulationDeskInner() {
     }
   }, [loading])
 
+  useEffect(() => {
+    levelsRef.current = levels
+  }, [levels])
+
+  useEffect(() => {
+    levelsOpenRef.current = levelsOpen
+  }, [levelsOpen])
+
+  /** setData clears price lines — re-paint trade levels from refs. */
+  const paintTradeLevels = useCallback(() => {
+    const series = seriesRef.current
+    if (!series) return
+
+    levelLinesRef.current.forEach((l) => {
+      try {
+        series.removePriceLine(l)
+      } catch {
+        /* already cleared by setData */
+      }
+    })
+    levelLinesRef.current = []
+
+    if (!levelsOpenRef.current) return
+
+    for (const lv of levelsRef.current.slice(0, 4)) {
+      const isRes = String(lv.type).toLowerCase().includes('resist')
+      const side = isRes ? 'SHORT' : 'BUY'
+      const isPrimary = lv.rank !== 'watch'
+      const { label: stars } = convictionStars(lv.conviction)
+      try {
+        levelLinesRef.current.push(
+          series.createPriceLine({
+            price: lv.level,
+            color: isRes ? '#f87171' : '#34d399',
+            lineWidth: isPrimary ? 3 : 2,
+            lineStyle: isPrimary ? LineStyle.Solid : LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: `${isPrimary ? 'P' : 'W'} ${side} ${lv.level.toLocaleString()} ${stars}`,
+          })
+        )
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [])
+
   const refreshSessionHighlights = useCallback(() => {
     const chart = chartRef.current
     const series = seriesRef.current
@@ -826,6 +875,9 @@ function SimulationDeskInner() {
           vs.upper3.setData([])
           vs.lower3.setData([])
         }
+        // setData wipes price lines — restore trade levels + bump epoch for entry/SL/TP
+        paintTradeLevels()
+        setPriceLinesEpoch((n) => n + 1)
       } else {
         // Incremental: only append new bars (cheap path during Play)
         for (let i = lastAppliedBarIdxRef.current + 1; i <= endIdx; i++) {
@@ -860,7 +912,7 @@ function SimulationDeskInner() {
         requestAnimationFrame(() => refreshSessionHighlights())
       }
     },
-    [pinToLatest, refreshSessionHighlights]
+    [pinToLatest, refreshSessionHighlights, paintTradeLevels, instrument]
   )
 
   // Initial / seek chart paint (not every clock tick)
@@ -956,39 +1008,9 @@ function SimulationDeskInner() {
 
   // Trade levels — manual Levels / Hide levels only (stay through working + position)
   useEffect(() => {
-    if (!seriesRef.current || !chartReady) return
-    levelLinesRef.current.forEach((l) => {
-      try {
-        seriesRef.current?.removePriceLine(l)
-      } catch {
-        /* ignore */
-      }
-    })
-    levelLinesRef.current = []
-
-    if (!levelsOpen) return
-
-    for (const lv of levels.slice(0, 4)) {
-      const isRes = String(lv.type).toLowerCase().includes('resist')
-      const side = isRes ? 'SHORT' : 'BUY'
-      const isPrimary = lv.rank !== 'watch'
-      const { label: stars } = convictionStars(lv.conviction)
-      try {
-        levelLinesRef.current.push(
-          seriesRef.current.createPriceLine({
-            price: lv.level,
-            color: isRes ? '#f87171' : '#34d399',
-            lineWidth: isPrimary ? 3 : 2,
-            lineStyle: isPrimary ? LineStyle.Solid : LineStyle.Dashed,
-            axisLabelVisible: true,
-            title: `${isPrimary ? 'P' : 'W'} ${side} ${lv.level.toLocaleString()} ${stars}`,
-          })
-        )
-      } catch {
-        /* ignore */
-      }
-    }
-  }, [levels, chartReady, levelsOpen])
+    if (!chartReady) return
+    paintTradeLevels()
+  }, [levels, chartReady, levelsOpen, paintTradeLevels])
 
   // Pending working limit + open position — always visible on the sim chart
   useEffect(() => {
@@ -1060,7 +1082,7 @@ function SimulationDeskInner() {
       }
     }
   // Do not depend on lastPrice — recreating axis labels every tick makes them "pop"
-  }, [position, pending, chartReady])
+  }, [position, pending, chartReady, priceLinesEpoch])
 
   const fillPending = useCallback((pend: PendingOrder, at: number) => {
     const filled: PaperPosition = {
