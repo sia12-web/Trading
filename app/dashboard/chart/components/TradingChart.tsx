@@ -1650,18 +1650,18 @@ export function TradingChart({
                       }
                       className={`w-full rounded-xl border px-2.5 py-2.5 text-left text-[11px] transition-all hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 ${
                         isRes
-                          ? 'border-red-900/50 bg-red-950/35 text-red-300'
-                          : 'border-emerald-900/50 bg-emerald-950/35 text-emerald-300'
-                      } ${isPrimary ? 'ring-1 ring-white/20' : 'opacity-80'}`}
+                          ? 'border-red-800/80 bg-[#2a1518] text-red-200'
+                          : 'border-emerald-800/80 bg-[#12241c] text-emerald-200'
+                      } ${isPrimary ? 'ring-1 ring-white/25' : 'opacity-90'}`}
                       title={l.reasoning ?? l.label}
                     >
                       <div className="flex items-center justify-between gap-1">
                         <span className="text-[9px] font-bold uppercase tracking-wide">
                           {isPrimary ? 'PRIMARY' : 'WATCH'} {isRes ? 'SHORT' : 'BUY'}
                         </span>
-                        <span className="text-[10px] text-amber-300/90" title={`Conviction ${l.conviction}`}>
+                        <span className="text-[10px] text-amber-300" title={`Conviction ${l.conviction}`}>
                           {'★'.repeat(stars)}
-                          <span className="text-gray-600">{'☆'.repeat(5 - stars)}</span>
+                          <span className="text-gray-500">{'☆'.repeat(5 - stars)}</span>
                         </span>
                       </div>
                       <div className="price-mono mt-1 text-base font-bold tracking-tight text-white">

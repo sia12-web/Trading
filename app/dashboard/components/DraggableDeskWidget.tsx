@@ -217,9 +217,9 @@ export function DraggableDeskWidget({
       aria-label="Morning playbook"
       className={[
         'absolute z-40 flex flex-col overflow-hidden rounded-xl',
-        'border border-white/[0.12] bg-[#0b0f18]/94',
-        'shadow-[0_16px_48px_rgba(0,0,0,0.55),0_0_0_1px_rgba(139,92,246,0.1)]',
-        'backdrop-blur-xl',
+        // Solid panel — light chart session colors must not bleed through translucency
+        'border border-[#30363d] bg-[#0d1117]',
+        'shadow-[0_16px_48px_rgba(0,0,0,0.65),0_0_0_1px_rgba(0,0,0,0.4)]',
         widthClassName,
         maxHeightClassName,
         dragging ? 'cursor-grabbing select-none will-change-[left,top]' : '',
@@ -230,8 +230,8 @@ export function DraggableDeskWidget({
       <div
         onPointerDown={onPointerDown}
         className={[
-          'flex shrink-0 items-center gap-1.5 border-b border-white/10 px-2 py-1',
-          'bg-[#141a26]/90',
+          'flex shrink-0 items-center gap-1.5 border-b border-[#30363d] px-2 py-1',
+          'bg-[#161b22]',
           dragging ? 'cursor-grabbing' : 'cursor-grab',
         ].join(' ')}
         title="Drag to move"
@@ -264,12 +264,12 @@ export function DraggableDeskWidget({
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-dark">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#0d1117] scrollbar-dark">
         {children}
       </div>
 
       {footer ? (
-        <div className="shrink-0 border-t border-white/10 bg-[#080b12]/90 px-3 py-2">
+        <div className="shrink-0 border-t border-[#30363d] bg-[#010409] px-3 py-2">
           {footer}
         </div>
       ) : null}

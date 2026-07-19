@@ -1805,17 +1805,17 @@ function SimulationDeskInner() {
           }
         >
           {playbook && (
-            <div className="border-b border-white/8 bg-violet-950/20 px-3 py-2.5 space-y-1">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-violet-300">
+            <div className="border-b border-[#30363d] bg-[#1a1430] px-3 py-2.5 space-y-1">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-violet-200">
                 Focus:{' '}
                 {playbook.focusSide === 'BOTH' ? 'Best ★ first' : playbook.focusSide}
               </p>
-              <p className="text-[10px] leading-snug text-gray-400">{playbook.focusHint}</p>
+              <p className="text-[10px] leading-snug text-gray-300">{playbook.focusHint}</p>
             </div>
           )}
           <div className="space-y-1.5 p-2">
             {levels.length === 0 && (
-              <p className="p-2 text-[11px] text-amber-500/90">No levels for this session.</p>
+              <p className="p-2 text-[11px] text-amber-400">No levels for this session.</p>
             )}
             {levels.map((l, i) => {
               const isRes = String(l.type).toLowerCase().includes('resist')
@@ -1832,9 +1832,9 @@ function SimulationDeskInner() {
                   key={`${l.level}-${i}`}
                   className={`rounded-xl border text-[11px] ${
                     isRes
-                      ? 'border-red-900/50 bg-red-950/35 text-red-300'
-                      : 'border-emerald-900/50 bg-emerald-950/35 text-emerald-300'
-                  } ${isPrimary ? 'ring-1 ring-white/15' : 'opacity-75'}`}
+                      ? 'border-red-800/80 bg-[#2a1518] text-red-200'
+                      : 'border-emerald-800/80 bg-[#12241c] text-emerald-200'
+                  } ${isPrimary ? 'ring-1 ring-white/25' : 'opacity-90'}`}
                 >
                   <button
                     type="button"
@@ -1847,7 +1847,7 @@ function SimulationDeskInner() {
                         {isPrimary ? 'PRIMARY' : 'WATCH'} {isRes ? 'SHORT' : 'BUY'}
                       </span>
                       <span
-                        className="text-amber-300/90 text-[10px]"
+                        className="text-amber-300 text-[10px]"
                         title={`Conviction ${l.conviction}/10`}
                       >
                         {stars}
@@ -1856,11 +1856,11 @@ function SimulationDeskInner() {
                     <div className="price-mono mt-1 text-base font-bold tracking-tight text-white">
                       {l.level.toLocaleString()}
                     </div>
-                    <div className="mt-0.5 text-[9px] text-gray-500">
+                    <div className="mt-0.5 text-[9px] text-gray-400">
                       zone {formatZone(l.level)} · {levelsSource}
                     </div>
                   </button>
-                  <div className="border-t border-white/5 px-2.5 pb-2">
+                  <div className="border-t border-white/10 px-2.5 pb-2">
                     <button
                       type="button"
                       onClick={(e) => {
