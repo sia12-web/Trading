@@ -379,8 +379,6 @@ interface TradingChartProps {
   canPlaceOrder?: boolean
   /** Bump to force a levels reload after SL/TP (system memory updated) */
   levelsRefreshKey?: number
-  /** When true (in a trade), hide buy/short levels — only Entry/SL/TP show */
-  hideTradeLevels?: boolean
 }
 
 // ─── Main TradingChart component ──────────────────────────────────────────────
@@ -398,7 +396,6 @@ export function TradingChart({
   onLevelSelect,
   canPlaceOrder = false,
   levelsRefreshKey = 0,
-  hideTradeLevels = false,
 }: TradingChartProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const sessionOverlayRef = useRef<HTMLDivElement>(null)
@@ -493,9 +490,8 @@ export function TradingChart({
 
   // ── Load levels — SAME pipeline as the simulation desk (shared deskLevels) ───
   const loadLevels = useCallback(async (inst: Instrument, freshCandles?: OHLCV[]) => {
-    // Levels only during that market's prep→lunch window
+    // Outside desk hours: keep whatever is already on the chart (manual Hide only clears view)
     if (!isDeskHoursNow(new Date(), inst).open) {
-      setLevels([])
       return
     }
 
@@ -812,21 +808,16 @@ export function TradingChart({
   // Mid-morning: re-grade levels against candles every 2 minutes (rule engine only)
   useEffect(() => {
     if (!chartReady) return
-    if (positionOverlay || hideTradeLevels) return
     void gradeLevels(instrument)
     const id = setInterval(() => void gradeLevels(instrument), 120_000)
     return () => clearInterval(id)
-  }, [chartReady, instrument, gradeLevels, positionOverlay, hideTradeLevels])
+  }, [chartReady, instrument, gradeLevels])
 
-  // Clear buy/short levels while working/in-trade; reload when flat again
+  // Initial / instrument load — do not wipe levels when working or in a trade
   useEffect(() => {
-    if (hideTradeLevels) {
-      setLevels([])
-      return
-    }
     if (!chartReady) return
     void loadLevels(instrument)
-  }, [hideTradeLevels, chartReady, instrument, loadLevels])
+  }, [chartReady, instrument, loadLevels])
 
   // Reset fit when switching instrument
   useEffect(() => {
@@ -1051,8 +1042,8 @@ export function TradingChart({
     })
     levelLinesRef.current = []
 
-    // Flat only — working limit or open position → Entry/SL/TP lines only
-    if (!showLevels || hideTradeLevels || !!positionOverlay || !!pendingLimit) return
+    // Manual toggle only — stay on chart through working limits / open positions
+    if (!showLevels) return
 
     levels.forEach(level => {
       const isAi = level.source === 'ai'
@@ -1081,7 +1072,7 @@ export function TradingChart({
         levelLinesRef.current.push(line)
       } catch {}
     })
-  }, [levels, showLevels, chartReady, positionOverlay, pendingLimit, hideTradeLevels])
+  }, [levels, showLevels, chartReady])
 
   // ── Chart stream: trade live open→lunch; lunch freeze tip; after cash close continuum ─
   useEffect(() => {
@@ -1437,23 +1428,26 @@ export function TradingChart({
           5m
         </span>
 
-        {/* Level toggle — only while flat (working/in-trade keeps chart clean) */}
-        {!hideTradeLevels && !positionOverlay && !pendingLimit && (
-          <button
-            onClick={() => setShowLevels((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
-              showLevels
-                ? 'bg-surface-600 border-surface-400 text-gray-200'
-                : 'bg-transparent border-surface-600 text-gray-600 hover:text-gray-400'
-            }`}
-          >
-            <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
-            {levels.some((l) => l.source === 'ai') ? 'AI Levels' : 'Levels'}
-            {levels.length > 0
-              ? ` (${levels.filter((l) => l.source === 'ai' || l.source === 'structure').length})`
-              : ''}
-          </button>
-        )}
+        {/* Level toggle — manual only; levels stay until Hide levels */}
+        <button
+          type="button"
+          onClick={() => setShowLevels((v) => !v)}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+            showLevels
+              ? 'bg-surface-600 border-surface-400 text-gray-200'
+              : 'bg-transparent border-surface-600 text-gray-600 hover:text-gray-400'
+          }`}
+        >
+          <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
+          {showLevels
+            ? 'Hide levels'
+            : levels.some((l) => l.source === 'ai')
+              ? 'AI Levels'
+              : 'Levels'}
+          {levels.length > 0
+            ? ` (${levels.filter((l) => l.source === 'ai' || l.source === 'structure').length})`
+            : ''}
+        </button>
 
         {canPlaceOrder && !positionOverlay && !pendingLimit && (
           <button
@@ -1617,17 +1611,14 @@ export function TradingChart({
           Reset scale
         </button>
 
-        {/* Morning playbook — floating draggable widget */}
+        {/* Morning playbook — follows Levels / Hide levels toggle only */}
         {showLevels &&
-          !hideTradeLevels &&
-          !positionOverlay &&
-          !pendingLimit &&
           levels.some((l) => l.source === 'ai' || l.source === 'structure') && (
           <DraggableDeskWidget
             storageKey="desk-playbook-live"
             defaultPos={{ x: 24, y: 88 }}
             title="Morning playbook"
-            onClose={undefined}
+            onClose={() => setShowLevels(false)}
           >
             <div className="space-y-1.5 p-2">
               {levels

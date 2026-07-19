@@ -954,7 +954,7 @@ function SimulationDeskInner() {
     enableFollowLive()
   }, [playing, enableFollowLive])
 
-  // Trade levels — hidden while working or in a position (only Entry / SL / TP show)
+  // Trade levels — manual Levels / Hide levels only (stay through working + position)
   useEffect(() => {
     if (!seriesRef.current || !chartReady) return
     levelLinesRef.current.forEach((l) => {
@@ -966,7 +966,7 @@ function SimulationDeskInner() {
     })
     levelLinesRef.current = []
 
-    if (position || pending) return
+    if (!levelsOpen) return
 
     for (const lv of levels.slice(0, 4)) {
       const isRes = String(lv.type).toLowerCase().includes('resist')
@@ -989,7 +989,7 @@ function SimulationDeskInner() {
         /* ignore */
       }
     }
-  }, [levels, chartReady, position, pending])
+  }, [levels, chartReady, levelsOpen])
 
   // Pending working limit + open position — always visible on the sim chart
   useEffect(() => {
@@ -1081,8 +1081,7 @@ function SimulationDeskInner() {
     positionRef.current = filled
     setPosition(filled)
     setPending(null)
-    setLevelsOpen(false)
-    setMsg(`FILLED ${pend.direction} @ ${pend.level.toLocaleString()} — SL/TP only`)
+    setMsg(`FILLED ${pend.direction} @ ${pend.level.toLocaleString()} — manage SL/TP`)
   }, [])
 
   const recordPaperClose = useCallback(
@@ -1238,7 +1237,6 @@ function SimulationDeskInner() {
             applySimTradeOutcome(prev, closed.entry, closed.direction, 'stop')
           )
           setPosition(null)
-          setLevelsOpen(true)
           return
         }
         if (hitTp) {
@@ -1254,7 +1252,6 @@ function SimulationDeskInner() {
             applySimTradeOutcome(prev, closed.entry, closed.direction, 'target')
           )
           setPosition(null)
-          setLevelsOpen(true)
           return
         }
       }
@@ -1287,7 +1284,6 @@ function SimulationDeskInner() {
     if (simNow <= entryCloseUnix) return
     pendingRef.current = null
     setPending(null)
-    setLevelsOpen(true)
     setMsg('Working limit cancelled — entry window closed (never filled)')
   }, [simNow, entryCloseUnix, pending])
 
@@ -1336,7 +1332,6 @@ function SimulationDeskInner() {
         (c) => c.time >= openUnix && c.time <= now && barTouches(c, order.level)
       )
       setTicketLevel(null)
-      setLevelsOpen(false) // hide playbook until SL/TP (or cancel) — clear chart
       if (touched) {
         fillPending(order, touched.time)
         setPlaying(true)
@@ -1346,7 +1341,7 @@ function SimulationDeskInner() {
       pendingRef.current = order
       setPending(order)
       setMsg(
-        `Pending ${direction} limit @ ${level.level.toLocaleString()} — other levels hidden · Play until fill`
+        `Pending ${direction} limit @ ${level.level.toLocaleString()} — Play until fill`
       )
       setPlaying(true)
     },
@@ -1359,12 +1354,11 @@ function SimulationDeskInner() {
     const closed = position
     recordPaperClose(closed, price, 'manual')
     positionRef.current = null
-    setMsg(`Closed @ ${price.toLocaleString()} — manage ended · levels back`)
+    setMsg(`Closed @ ${price.toLocaleString()} — manage ended`)
     setLevels((prev) =>
       applySimTradeOutcome(prev, closed.entry, closed.direction, 'target')
     )
     setPosition(null)
-    setLevelsOpen(true)
     setPlaying(false)
   }
 
@@ -1628,20 +1622,13 @@ function SimulationDeskInner() {
             </span>
           )}
 
-          {!(position || pending) && (
-            <button
-              type="button"
-              onClick={() => setLevelsOpen((o) => !o)}
-              className="rounded border border-white/15 px-2 py-1 text-[10px] uppercase text-gray-300 hover:bg-white/10"
-            >
-              {levelsOpen ? 'Hide levels' : 'Levels'}
-            </button>
-          )}
-          {(position || pending) && (
-            <span className="rounded border border-blue-700/50 bg-blue-950/50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-blue-200">
-              Levels hidden · SL / TP only
-            </span>
-          )}
+          <button
+            type="button"
+            onClick={() => setLevelsOpen((o) => !o)}
+            className="rounded border border-white/15 px-2 py-1 text-[10px] uppercase text-gray-300 hover:bg-white/10"
+          >
+            {levelsOpen ? 'Hide levels' : 'Levels'}
+          </button>
           <button
             type="button"
             onClick={() => router.push('/dashboard/simulation')}
@@ -1778,8 +1765,8 @@ function SimulationDeskInner() {
         )}
       </div>
 
-      {/* Morning playbook — floating draggable widget */}
-      {levelsOpen && !position && !pending && (
+      {/* Morning playbook — follows Levels / Hide levels only */}
+      {levelsOpen && (
         <DraggableDeskWidget
           storageKey="desk-playbook-sim"
           defaultPos={{ x: 24, y: 72 }}

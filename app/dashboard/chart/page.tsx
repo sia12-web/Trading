@@ -380,9 +380,6 @@ export default function ChartPage() {
   const inEntry = gate?.phase === 'ENTRY' && !!gate?.canPlaceEntry
   const canTrade = inEntry && !pending && !managePos && clockedIn
   const inWorking = !!pending && !managePos
-  /** Buy/short levels only while flat — hide as soon as a working limit or fill is on */
-  const showDeskLevels =
-    inEntry && !managePos && !positionOverlay && !pending && clockedIn
 
   return (
     <div className="flex h-screen overflow-hidden relative flex-col">
@@ -409,9 +406,9 @@ export default function ChartPage() {
                   : canTrade
                     ? 'Entry window · click a level for a working limit (MANAGE only after fill)'
                     : inManage
-                      ? 'MANAGE · HOLD or TAKE PROFIT — levels cleared'
+                      ? 'MANAGE · HOLD or TAKE PROFIT'
                       : gate?.phase === 'FLAT'
-                        ? 'Entry window closed · levels off'
+                        ? 'Entry window closed'
                         : gate?.phase === 'RECOMMENDED'
                           ? 'Pre-open · levels prep — entries at cash open'
                           : 'Live morning desk'}
@@ -514,7 +511,6 @@ export default function ChartPage() {
                 onLevelSelect={handleLevelSelect}
                 canPlaceOrder={canTrade && dataMode === 'live'}
                 levelsRefreshKey={levelsRefreshKey}
-                hideTradeLevels={!showDeskLevels}
               />
             )}
 
