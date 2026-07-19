@@ -206,7 +206,7 @@ export default function SimulationPage() {
               Session flow
             </p>
             <p>1. Opens at cash open with levels on the chart</p>
-            <p>2. Click the chart or a level → size + place limit</p>
+            <p>2. Double-click the chart or pick a level → size + place limit</p>
             <p>3. Play → wait for fill</p>
             <p>4. Manage SL / TP / close</p>
           </div>

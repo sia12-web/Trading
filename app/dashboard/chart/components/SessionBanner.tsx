@@ -55,7 +55,7 @@ function phaseLabel(phase: string): string {
 
 function phaseHint(phase: string, message: string): string {
   if (phase === 'ENTRY' || phase === 'FLAT') {
-    return 'Morning trading open until lunch — click the chart or a level to place a limit.'
+    return 'Morning trading open until lunch — double-click the chart or pick a level to place a limit.'
   }
   if (phase === 'DONE' || phase === 'CLOSED') {
     return message

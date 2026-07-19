@@ -513,7 +513,7 @@ export default function ChartPage() {
                 : inWorking
                   ? `WORKING ${pending!.direction} limit @ ${pending!.level.toLocaleString()} — waiting for fill`
                   : canTrade
-                    ? 'Entry window · click the chart or a level for a working limit (MANAGE only after fill)'
+                    ? 'Entry window · double-click the chart or pick a level for a working limit (MANAGE only after fill)'
                     : inManage
                       ? 'MANAGE · HOLD or TAKE PROFIT'
                       : gate?.phase === 'FLAT'

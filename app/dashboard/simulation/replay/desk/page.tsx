@@ -31,7 +31,6 @@ import {
   type DeskEntrySource,
 } from '@/lib/trading/positionSizing'
 import {
-  isChartDragGesture,
   previewLevelOrderPrices,
   resolveChartLimitPick,
 } from '@/lib/trading/chartLevelPick'
@@ -596,11 +595,11 @@ function SimulationDeskInner() {
             setLevelsSource(withAi.source)
             setPlaybook(withAi.playbook)
             setMsg(
-              `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · AI levels (Haiku) — click the chart or a level to place a limit, then Play`
+              `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · AI levels (Haiku) — double-click the chart or pick a level, then Play`
             )
           } else {
             setMsg(
-              `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · structure levels (AI unavailable) — click the chart or a level to place a limit, then Play`
+              `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · structure levels (AI unavailable) — double-click the chart or pick a level, then Play`
             )
           }
         } catch (aiErr) {
@@ -614,7 +613,7 @@ function SimulationDeskInner() {
           setMsg(
             `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · structure levels${
               aborted ? ' (AI timed out)' : ' (AI failed)'
-            } — click the chart or a level to place a limit, then Play`
+            } — double-click the chart or pick a level, then Play`
           )
         } finally {
           if (!cancelled) setLevelsAiLoading(false)
@@ -1668,8 +1667,8 @@ function SimulationDeskInner() {
     resetSessionProgress()
     setMsg(
       instrument === 'NIKKEI'
-        ? 'Reset to 9:00 AM JST — click the chart or a level to place a limit, then Play'
-        : 'Reset to 9:30 AM ET — click the chart or a level to place a limit, then Play'
+        ? 'Reset to 9:00 AM JST — double-click the chart or pick a level, then Play'
+        : 'Reset to 9:30 AM ET — double-click the chart or pick a level, then Play'
     )
   }
 
@@ -1689,13 +1688,13 @@ function SimulationDeskInner() {
     resetSessionProgress()
     setMsg(
       instrument === 'NIKKEI'
-        ? 'Replay from 9:00 AM JST — click the chart or a level, or watch the morning'
-        : 'Replay from 9:30 AM ET — click the chart or a level, or watch the morning'
+        ? 'Replay from 9:00 AM JST — double-click the chart or pick a level, or watch'
+        : 'Replay from 9:30 AM ET — double-click the chart or pick a level, or watch'
     )
     setPlaying(true)
   }
 
-  // Click chart to place limit (snap to nearby level, else manual ticket) — same as live desk
+  // Double-click chart to place limit (snap to nearby level, else manual) — same as live
   useEffect(() => {
     const container = containerRef.current
     const canPlace =
@@ -1711,26 +1710,9 @@ function SimulationDeskInner() {
 
     if (!container || !seriesRef.current || !canPlace) return
 
-    // Pan/drag must not open the limit ticket — only a short click places
-    let downX = 0
-    let downY = 0
-    let dragging = false
-
-    const onPointerDown = (e: PointerEvent) => {
-      if (e.button !== 0) return
-      downX = e.clientX
-      downY = e.clientY
-      dragging = false
-    }
-    const onPointerMove = (e: PointerEvent) => {
-      if ((e.buttons & 1) === 0) return
-      if (isChartDragGesture(downX, downY, e.clientX, e.clientY)) dragging = true
-    }
-    const onClick = (e: MouseEvent) => {
-      if (dragging || isChartDragGesture(downX, downY, e.clientX, e.clientY)) {
-        dragging = false
-        return
-      }
+    // Double-click places a limit — single click/drag stays free for pan/zoom
+    const onDblClick = (e: MouseEvent) => {
+      e.preventDefault()
       if (!seriesRef.current) return
       const rect = container.getBoundingClientRect()
       const y = e.clientY - rect.top
@@ -1768,13 +1750,9 @@ function SimulationDeskInner() {
     }
 
     container.style.cursor = 'crosshair'
-    container.addEventListener('pointerdown', onPointerDown)
-    container.addEventListener('pointermove', onPointerMove)
-    container.addEventListener('click', onClick)
+    container.addEventListener('dblclick', onDblClick)
     return () => {
-      container.removeEventListener('pointerdown', onPointerDown)
-      container.removeEventListener('pointermove', onPointerMove)
-      container.removeEventListener('click', onClick)
+      container.removeEventListener('dblclick', onDblClick)
       container.style.cursor = ''
     }
   }, [
@@ -2172,8 +2150,11 @@ function SimulationDeskInner() {
             </button>
           )}
           {canEnter && (
-            <span className="hidden text-[10px] text-gray-500 sm:inline" title="Crosshair on chart">
-              Click chart or level
+            <span
+              className="hidden text-[10px] text-gray-500 sm:inline"
+              title="Double-click chart · or use playbook / Place limit"
+            >
+              Double-click chart
             </span>
           )}
           <button

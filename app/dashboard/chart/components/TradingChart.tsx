@@ -41,7 +41,6 @@ import {
   type SessionHighlightSpan,
 } from '@/lib/chart/sessionVwap'
 import {
-  isChartDragGesture,
   previewLevelOrderPrices,
   resolveChartLimitPick,
 } from '@/lib/trading/chartLevelPick'
@@ -1344,7 +1343,7 @@ export function TradingChart({
     }
   }, [chartReady, instrument, candles.length, dataMode, onQuoteTick, onPriceUpdate])
 
-  // ── Click chart to place order at that price (morning trading) ─────────────
+  // ── Double-click chart to place order at that price (morning trading) ───────
   useEffect(() => {
     const container = containerRef.current
     if (
@@ -1358,26 +1357,9 @@ export function TradingChart({
       return
     }
 
-    // Pan/drag must not open the limit ticket — only a short click places
-    let downX = 0
-    let downY = 0
-    let dragging = false
-
-    const onPointerDown = (e: PointerEvent) => {
-      if (e.button !== 0) return
-      downX = e.clientX
-      downY = e.clientY
-      dragging = false
-    }
-    const onPointerMove = (e: PointerEvent) => {
-      if ((e.buttons & 1) === 0) return
-      if (isChartDragGesture(downX, downY, e.clientX, e.clientY)) dragging = true
-    }
-    const onClick = (e: MouseEvent) => {
-      if (dragging || isChartDragGesture(downX, downY, e.clientX, e.clientY)) {
-        dragging = false
-        return
-      }
+    // Double-click places a limit — single click/drag stays free for pan/zoom
+    const onDblClick = (e: MouseEvent) => {
+      e.preventDefault()
       if (!candleRef.current) return
       const rect = container.getBoundingClientRect()
       const y = e.clientY - rect.top
@@ -1403,13 +1385,9 @@ export function TradingChart({
     }
 
     container.style.cursor = 'crosshair'
-    container.addEventListener('pointerdown', onPointerDown)
-    container.addEventListener('pointermove', onPointerMove)
-    container.addEventListener('click', onClick)
+    container.addEventListener('dblclick', onDblClick)
     return () => {
-      container.removeEventListener('pointerdown', onPointerDown)
-      container.removeEventListener('pointermove', onPointerMove)
-      container.removeEventListener('click', onClick)
+      container.removeEventListener('dblclick', onDblClick)
       container.style.cursor = ''
     }
   }, [canPlaceOrder, onLevelSelect, chartReady, positionOverlay, pendingLimit])
@@ -1749,8 +1727,11 @@ export function TradingChart({
           </button>
         )}
         {canPlaceOrder && !positionOverlay && !pendingLimit && (
-          <span className="hidden text-[10px] text-gray-500 sm:inline" title="Crosshair on chart">
-            Click chart or level
+          <span
+            className="hidden text-[10px] text-gray-500 sm:inline"
+            title="Double-click chart · or use playbook / Place limit"
+          >
+            Double-click chart
           </span>
         )}
 
