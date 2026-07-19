@@ -1593,14 +1593,13 @@ export function TradingChart({
         {canPlaceOrder && !positionOverlay && !pendingLimit && (
           <button
             type="button"
-            title="Place a working limit at the live price (fills only when price reaches it)"
+            title="Manual limit at last price — 1% account risk, size adjusts to your stop"
             onClick={() => {
               const px = livePrice ?? lastCandleRef.current?.close
               if (px == null || !Number.isFinite(px)) return
               onLevelSelect?.(px, { type: 'manual', source: 'manual' })
             }}
             className="rounded-lg border border-amber-500/50 bg-amber-600/90 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-amber-500"
-            title="Manual limit at last price — 1% account risk, size adjusts to your stop"
           >
             Place limit
           </button>
