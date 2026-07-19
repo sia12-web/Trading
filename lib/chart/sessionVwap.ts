@@ -41,6 +41,16 @@ export const SESSION_WINDOWS = {
   'New York': { tz: 'America/New_York', start: 9.5, end: 16 }, // 09:30 → 16:00
 } as const
 
+/**
+ * Nikkei morning desk — Asia/Tokyo clock so cash open (09:00) is the Asia start,
+ * not mid-NYC “Asia” that began at 05:00 JST. Same three legend names.
+ */
+export const TOKYO_SESSION_WINDOWS = {
+  Asia: { tz: 'Asia/Tokyo', start: 9, end: 15 }, // Tokyo cash 09:00 → 15:00
+  London: { tz: 'Asia/Tokyo', start: 15, end: 22.5 }, // post-cash → US open
+  'New York': { tz: 'Asia/Tokyo', start: 22.5, end: 9 }, // US hours → next Tokyo open
+} as const
+
 /** Classify a bar into Asia / London / NY — every clock hour maps to exactly one session. */
 export function nyDeskSessionAt(unix: number): SessionName {
   const h = hourInTz(unix, 'America/New_York')
@@ -49,10 +59,31 @@ export function nyDeskSessionAt(unix: number): SessionName {
   return 'New York'
 }
 
+/** Nikkei: Tokyo cash open starts Asia — overnight US is New York until 09:00 JST. */
+export function tokyoDeskSessionAt(unix: number): SessionName {
+  const h = hourInTz(unix, 'Asia/Tokyo')
+  if (h >= TOKYO_SESSION_WINDOWS.Asia.start && h < TOKYO_SESSION_WINDOWS.Asia.end) {
+    return 'Asia'
+  }
+  if (h >= TOKYO_SESSION_WINDOWS.London.start && h < TOKYO_SESSION_WINDOWS.London.end) {
+    return 'London'
+  }
+  return 'New York'
+}
+
+/** Per-instrument session paint clock. */
+export function deskSessionAt(
+  unix: number,
+  instrument?: string | null
+): SessionName {
+  return instrument === 'NIKKEI' ? tokyoDeskSessionAt(unix) : nyDeskSessionAt(unix)
+}
+
 export const SESSION_RANGE_ORDER: SessionName[] = ['Asia', 'London', 'New York']
 
 /** Shared legend — Asia / London / New York for every desk instrument. */
-export function sessionLegendLabel(name: SessionName, _instrument?: string | null): string {
+export function sessionLegendLabel(name: SessionName, instrument?: string | null): string {
+  if (instrument === 'NIKKEI' && name === 'Asia') return 'Tokyo'
   return name
 }
 
@@ -313,15 +344,15 @@ const DESK_BAR_SECONDS = 300
 
 /**
  * Expensive once: paint contiguous session columns from every bar’s clock.
- * Uses America/New_York Asia/London/NY windows for DOW, NASDAQ, and NIKKEI
- * (JP225 trades during NYC hours — same color language as the NY desk).
+ * DOW / NASDAQ use America/New_York Asia/London/NY windows.
+ * NIKKEI uses Asia/Tokyo so cash open (09:00) starts Asia — not mid-NYC Asia.
  * Walks bars (not calendar windows) so post-cash / overnight / tip never go uncolored.
  * Call again only when candle tip / as-of clock changes — not on every pan frame.
  */
 export function computeSessionHighlightSpans(args: {
   candles: SessionBar[]
   asOfUnix?: number
-  /** Kept for API compat — coloring always uses NY desk ET windows */
+  /** NIKKEI → Tokyo session clock; others → NYC ET */
   instrument?: string | null
   barSeconds?: number
 }): { spans: SessionHighlightSpan[]; candleTimes: number[] } {
@@ -340,10 +371,7 @@ export function computeSessionHighlightSpans(args: {
   if (bars.length === 0) return { spans: [], candleTimes: [] }
 
   const candleTimes = bars.map((c) => c.time)
-  // Real Asia / London / NY (ET) for every instrument — including NIKKEI JP225
-  // during NYC hours. Tokyo clock still drives trading gates + AVWAP anchor.
-  const sessionAt = nyDeskSessionAt
-
+  const sessionAt = (t: number) => deskSessionAt(t, args.instrument)
   const spans: SessionHighlightSpan[] = []
   let runName: SessionName | null = null
   let runStart = 0

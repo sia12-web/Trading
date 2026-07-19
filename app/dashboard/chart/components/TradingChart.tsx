@@ -1063,11 +1063,12 @@ export function TradingChart({
         const line = candleRef.current!.createPriceLine({
           price:             level.price,
           color:             baseColor,
-          lineWidth:         isPrimary ? 2 : 1,
+          lineWidth:         isPrimary ? 3 : 2,
           lineStyle:         isPrimary ? LineStyle.Solid : (isAi ? LineStyle.Solid : LineStyle.Dashed),
-          // Labels live in the top-right panel — keep price axis readable
-          axisLabelVisible:  false,
-          title:             level.label ?? `${isRes ? 'SHORT' : 'BUY'} ${level.price.toLocaleString()}`,
+          axisLabelVisible:  true,
+          title:             level.label
+            ? `${level.label} ${level.price.toLocaleString()}`
+            : `${isRes ? 'SHORT' : 'BUY'} ${level.price.toLocaleString()}`,
         })
         levelLinesRef.current.push(line)
       } catch {}

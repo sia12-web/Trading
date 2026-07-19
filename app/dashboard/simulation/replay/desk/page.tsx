@@ -978,11 +978,10 @@ function SimulationDeskInner() {
           seriesRef.current.createPriceLine({
             price: lv.level,
             color: isRes ? '#f87171' : '#34d399',
-            lineWidth: isPrimary ? 2 : 1,
+            lineWidth: isPrimary ? 3 : 2,
             lineStyle: isPrimary ? LineStyle.Solid : LineStyle.Dashed,
-            // Labels live in the top-right panel — keep price axis readable
-            axisLabelVisible: false,
-            title: `${isPrimary ? 'PRIMARY' : 'WATCH'} ${side} ${stars}`,
+            axisLabelVisible: true,
+            title: `${isPrimary ? 'P' : 'W'} ${side} ${lv.level.toLocaleString()} ${stars}`,
           })
         )
       } catch {
