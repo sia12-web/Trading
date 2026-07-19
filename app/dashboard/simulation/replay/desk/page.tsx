@@ -342,8 +342,10 @@ function SimulationDeskInner() {
   const positionRef = useRef<PaperPosition | null>(null)
   const placingOrderRef = useRef(false)
   const didFitRef = useRef(false)
-  /** Last barSpacing we set — preserved across Play ticks so user zoom sticks. */
+  /** Last barSpacing we set on first fit / reset. */
   const barSpacingRef = useRef(FOLLOW_BAR_SPACING)
+  /** Logical span last used while following — so Play slides without re-zooming. */
+  const pinnedSpanRef = useRef<number | null>(null)
   const visibleCandlesRef = useRef<Candle[]>([])
   const simNowRef = useRef(0)
   const speedRef = useRef(initialSpeed)
@@ -352,6 +354,7 @@ function SimulationDeskInner() {
   const followLiveRef = useRef(true)
   const ignoreRangeChangeRef = useRef(false)
   const lastAppliedBarIdxRef = useRef(-1)
+  const wasPlayingRef = useRef(false)
   const lastPriceRef = useRef<number | null>(null)
   const applyChartDataRef = useRef<(simT: number, opts?: { force?: boolean; fit?: boolean }) => void>(
     () => {}
@@ -834,9 +837,9 @@ function SimulationDeskInner() {
   }, [instrument])
 
   /**
-   * Keep the sim tip pinned to the right.
-   * resetSpacing: only on first fit / explicit reset — never re-force barSpacing
-   * during Play (that was trapping users in a zoomed-in view).
+   * Keep the sim tip on the right edge.
+   * resetSpacing: first fit / Reset scale only.
+   * During Play follow: slide the existing window (same span) — never re-zoom.
    */
   const pinToLatest = useCallback(
     (endIdx: number, opts?: { resetSpacing?: boolean }) => {
@@ -846,27 +849,39 @@ function SimulationDeskInner() {
       const ts = chart.timeScale()
       ignoreRangeChangeRef.current = true
       const resetSpacing = !!opts?.resetSpacing || !didFitRef.current
+      const to = endIdx + FOLLOW_RIGHT_PAD
+
       if (resetSpacing) {
         barSpacingRef.current = FOLLOW_BAR_SPACING
         ts.applyOptions({
           rightOffset: FOLLOW_RIGHT_PAD,
           barSpacing: FOLLOW_BAR_SPACING,
         })
+        const width = containerRef.current?.clientWidth ?? 900
+        const barsVisible = Math.max(
+          40,
+          Math.floor((width - 80) / FOLLOW_BAR_SPACING) - FOLLOW_RIGHT_PAD
+        )
+        pinnedSpanRef.current = barsVisible + FOLLOW_RIGHT_PAD
+        ts.setVisibleLogicalRange({
+          from: Math.max(-2, endIdx - barsVisible),
+          to,
+        })
       } else {
-        // Keep tip in view without stomping the user's scroll-zoom
+        // Preserve user's zoom: keep the same logical span, only slide to tip
+        const cur = ts.getVisibleLogicalRange()
+        const span =
+          cur && cur.to > cur.from
+            ? cur.to - cur.from
+            : pinnedSpanRef.current || 104
+        pinnedSpanRef.current = span
         ts.applyOptions({ rightOffset: FOLLOW_RIGHT_PAD })
+        ts.setVisibleLogicalRange({
+          from: to - span,
+          to,
+        })
       }
 
-      const spacing = Math.max(1, barSpacingRef.current || FOLLOW_BAR_SPACING)
-      const width = containerRef.current?.clientWidth ?? 900
-      const barsVisible = Math.max(
-        40,
-        Math.floor((width - 80) / spacing) - FOLLOW_RIGHT_PAD
-      )
-      ts.setVisibleLogicalRange({
-        from: Math.max(-2, endIdx - barsVisible),
-        to: endIdx + FOLLOW_RIGHT_PAD,
-      })
       didFitRef.current = true
       requestAnimationFrame(() => {
         ignoreRangeChangeRef.current = false
@@ -880,7 +895,7 @@ function SimulationDeskInner() {
     followLiveRef.current = true
     setFollowingLive(true)
     const endIdx = lastAppliedBarIdxRef.current
-    if (endIdx >= 0) pinToLatest(endIdx)
+    if (endIdx >= 0) pinToLatest(endIdx, { resetSpacing: false })
   }, [pinToLatest])
 
   const resetPriceScale = useCallback(() => {
@@ -890,12 +905,12 @@ function SimulationDeskInner() {
       autoScale: true,
       scaleMargins: { top: 0.05, bottom: 0.05 },
     })
-    // Sim: snap to tip (fitContent zooms out across all history and feels broken)
+    // Sim: snap to tip with default spacing (fitContent zooms out across all history)
     const endIdx = lastAppliedBarIdxRef.current
     followLiveRef.current = true
     setFollowingLive(true)
     if (endIdx >= 0) {
-      pinToLatest(endIdx)
+      pinToLatest(endIdx, { resetSpacing: true })
     } else {
       try {
         chart.timeScale().fitContent()
@@ -1045,6 +1060,8 @@ function SimulationDeskInner() {
     const beginInteract = () => {
       pointerDown = true
       window.clearTimeout(settleTimer)
+      // Dragging the scale / chart releases tip-follow so we don't fight the user
+      if (!ignoreRangeChangeRef.current) stopFollow()
     }
 
     const endInteract = () => {
@@ -1053,7 +1070,7 @@ function SimulationDeskInner() {
       scheduleSettle()
     }
 
-    /** Scroll zoom must release follow or pinToLatest fights the user every bar. */
+    /** Capture phase: LWC handles wheel on canvas; bubble may never reach container. */
     const onWheel = () => {
       if (ignoreRangeChangeRef.current) return
       stopFollow()
@@ -1064,12 +1081,18 @@ function SimulationDeskInner() {
       paintNow()
       if (!pointerDown) scheduleSettle()
 
-      // User panned/zoomed away from the tip → stop auto-follow so we don't fight them
       if (ignoreRangeChangeRef.current || !followLiveRef.current) return
       const range = chartRef.current?.timeScale().getVisibleLogicalRange()
+      if (!range || !(range.to > range.from)) return
+      const span = range.to - range.from
+      const pinned = pinnedSpanRef.current
+      // Zoom (span change) or pan away from tip → release follow
+      if (pinned != null && Math.abs(span - pinned) > 1.5) {
+        stopFollow()
+        return
+      }
       const endIdx = lastAppliedBarIdxRef.current
-      if (!range || endIdx < 0) return
-      if (range.to < endIdx - 3) {
+      if (endIdx >= 0 && range.to < endIdx - 3) {
         stopFollow()
       }
     }
@@ -1082,7 +1105,7 @@ function SimulationDeskInner() {
     const ro = el ? new ResizeObserver(() => scheduleSettle()) : null
     ro?.observe(el!)
     el?.addEventListener('pointerdown', beginInteract)
-    el?.addEventListener('wheel', onWheel, { passive: true })
+    el?.addEventListener('wheel', onWheel, { passive: true, capture: true })
     window.addEventListener('pointerup', endInteract)
     window.addEventListener('pointercancel', endInteract)
     return () => {
@@ -1097,16 +1120,18 @@ function SimulationDeskInner() {
       }
       ro?.disconnect()
       el?.removeEventListener('pointerdown', beginInteract)
-      el?.removeEventListener('wheel', onWheel)
+      el?.removeEventListener('wheel', onWheel, true)
       window.removeEventListener('pointerup', endInteract)
       window.removeEventListener('pointercancel', endInteract)
     }
   }, [chartReady, refreshSessionHighlights])
 
-  // Starting Play always snaps back to the live tip
+  // Only re-enable tip-follow when Play transitions off → on (not on every callback churn)
   useEffect(() => {
-    if (!playing) return
-    enableFollowLive()
+    if (playing && !wasPlayingRef.current) {
+      enableFollowLive()
+    }
+    wasPlayingRef.current = playing
   }, [playing, enableFollowLive])
 
   // Trade levels — manual Levels / Hide levels only (stay through working + position)
