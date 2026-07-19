@@ -74,6 +74,7 @@ export function SessionBanner({
   dataMode?: 'live' | 'synthetic'
 }) {
   const [gate, setGate] = useState<SessionGateState | null>(null)
+  const [gateError, setGateError] = useState<string | null>(null)
   const [clockEt, setClockEt] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
   const [clocking, setClocking] = useState(false)
@@ -84,8 +85,18 @@ export function SessionBanner({
       const res = await fetch(`/api/trading/session-gate?_=${Date.now()}`, {
         cache: 'no-store',
       })
-      if (!res.ok) return
+      if (res.status === 401) {
+        setGateError(
+          'Session unauthorized — set DESK_USER_ID on Railway (required with DESK_MODE=single) or sign in with Supabase.'
+        )
+        return
+      }
+      if (!res.ok) {
+        setGateError(`Session gate failed (${res.status})`)
+        return
+      }
       const json = await res.json()
+      setGateError(null)
       const next: SessionGateState = {
         phase: json.phase,
         message: json.message,
@@ -128,7 +139,7 @@ export function SessionBanner({
         }
       }
     } catch {
-      /* ignore */
+      setGateError('Session gate unreachable — check deploy / network')
     }
   }, [onGate])
 
@@ -182,7 +193,11 @@ export function SessionBanner({
         <span suppressHydrationWarning>
           {mounted && clockEt ? `${clockEt} ET · ` : ''}
         </span>
-        loading session…
+        {gateError ? (
+          <span className="text-amber-300">{gateError}</span>
+        ) : (
+          'loading session…'
+        )}
       </div>
     )
   }
