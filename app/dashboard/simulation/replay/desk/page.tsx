@@ -728,6 +728,20 @@ function SimulationDeskInner() {
     }
   }, [])
 
+  const paintTradeLevelsRef = useRef(paintTradeLevels)
+  paintTradeLevelsRef.current = paintTradeLevels
+
+  /** After any setData, lines can clear on the next frame — paint now and again on rAF. */
+  const restorePriceLines = useCallback(() => {
+    paintTradeLevelsRef.current()
+    const needPos = !!(pendingRef.current || positionRef.current)
+    if (needPos) setPriceLinesEpoch((n) => n + 1)
+    requestAnimationFrame(() => {
+      paintTradeLevelsRef.current()
+      if (needPos) setPriceLinesEpoch((n) => n + 1)
+    })
+  }, [])
+
   const refreshSessionHighlights = useCallback(() => {
     const chart = chartRef.current
     const series = seriesRef.current
@@ -875,9 +889,8 @@ function SimulationDeskInner() {
           vs.upper3.setData([])
           vs.lower3.setData([])
         }
-        // setData wipes price lines — restore trade levels + bump epoch for entry/SL/TP
-        paintTradeLevels()
-        setPriceLinesEpoch((n) => n + 1)
+        // Candle + VWAP setData wipe price lines — restore now and next frame
+        restorePriceLines()
       } else {
         // Incremental: only append new bars (cheap path during Play)
         for (let i = lastAppliedBarIdxRef.current + 1; i <= endIdx; i++) {
@@ -897,6 +910,8 @@ function SimulationDeskInner() {
           vs.lower2.setData(bands.lower2)
           vs.upper3.setData(bands.upper3)
           vs.lower3.setData(bands.lower3)
+          // VWAP setData can clear candle price lines — restore levels
+          restorePriceLines()
         }
       }
 
@@ -912,14 +927,15 @@ function SimulationDeskInner() {
         requestAnimationFrame(() => refreshSessionHighlights())
       }
     },
-    [pinToLatest, refreshSessionHighlights, paintTradeLevels, instrument]
+    [pinToLatest, refreshSessionHighlights, restorePriceLines, instrument]
   )
 
-  // Initial / seek chart paint (not every clock tick)
+  // Initial / seek chart paint — use ref so callback identity churn does not force setData
   useEffect(() => {
     if (!chartReady || sessionCandles.length === 0 || !simNow) return
-    applyChartData(simNow, { force: true, fit: !didFitRef.current })
-  }, [chartReady, sessionCandles, applyChartData]) // eslint-disable-line react-hooks/exhaustive-deps
+    applyChartDataRef.current(simNow, { force: true, fit: !didFitRef.current })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when chart/candles ready; play uses applyChartDataRef
+  }, [chartReady, sessionCandles])
 
   useEffect(() => {
     if (!chartReady || !chartRef.current) return
