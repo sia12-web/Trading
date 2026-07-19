@@ -720,7 +720,7 @@ function SimulationDeskInner() {
       containerHeight: containerRef.current.clientHeight,
       fullHeight: false, // high→low only — never wallpaper above/below price
     })
-    paintSessionHighlightOverlay(host, rects)
+    paintSessionHighlightOverlay(host, rects, { keepPreviousIfEmpty: true })
   }, [instrument])
 
   /** Keep the sim tip pinned to the right with a readable trailing window. */
@@ -878,11 +878,9 @@ function SimulationDeskInner() {
     let pointerDown = false
 
     const paintNow = () => {
-      if (pointerDown) return
       if (rafPending) cancelAnimationFrame(rafPending)
       rafPending = requestAnimationFrame(() => {
         rafPending = 0
-        if (pointerDown) return
         refreshSessionHighlights()
         if (host) host.style.opacity = '1'
       })
@@ -898,7 +896,6 @@ function SimulationDeskInner() {
 
     const beginInteract = () => {
       pointerDown = true
-      if (host) host.style.opacity = '0'
       window.clearTimeout(settleTimer)
     }
 
@@ -909,8 +906,8 @@ function SimulationDeskInner() {
     }
 
     const onRangeChange = () => {
-      // Hide bands while dragging — chart pan stays 60fps like TradingView
-      if (host) host.style.opacity = '0'
+      // Track pan/zoom: repaint bands every frame so colors stay locked to the candles.
+      paintNow()
       if (!pointerDown) scheduleSettle()
 
       // User panned/zoomed away from the tip → stop auto-follow so we don't fight them

@@ -439,14 +439,17 @@ export function projectSessionHighlightRects(args: {
       continue
     }
 
-    const x1 = timeToX(timeScale, span.startT, candleTimes)
-    const x2 = timeToX(timeScale, span.endT, candleTimes)
+    let x1 = timeToX(timeScale, span.startT, candleTimes)
+    let x2 = timeToX(timeScale, span.endT, candleTimes)
+    // Mid-pan the scale can briefly return null for one edge — recover from the other.
+    if ((x1 == null || !Number.isFinite(x1)) && x2 != null && Number.isFinite(x2)) x1 = x2 - 2
+    if ((x2 == null || !Number.isFinite(x2)) && x1 != null && Number.isFinite(x1)) x2 = x1 + 2
     if (x1 == null || x2 == null || !Number.isFinite(x1) || !Number.isFinite(x2)) continue
 
     const left = Math.max(Math.min(x1, x2), 0)
     const right = Math.min(Math.max(x1, x2), paneW)
     const width = right - left
-    if (width < 2) continue
+    if (width < 1) continue
 
     let top = 0
     let height = chartH
@@ -460,22 +463,24 @@ export function projectSessionHighlightRects(args: {
         !Number.isFinite(yHigh) ||
         !Number.isFinite(yLow)
       ) {
-        continue
-      }
+        // priceToY often fails mid-pan — keep a full-height band instead of blanking.
+        top = 0
+        height = chartH
+      } else {
+        const rawTop = Math.min(yHigh, yLow)
+        const rawBottom = Math.max(yHigh, yLow)
+        // Fully off-screen (zoomed away) — skip, do not stretch into wallpaper
+        if (rawBottom < 0 || rawTop > chartH) continue
 
-      const rawTop = Math.min(yHigh, yLow)
-      const rawBottom = Math.max(yHigh, yLow)
-      // Fully off-screen (zoomed away) — skip, do not stretch into wallpaper
-      if (rawBottom < 0 || rawTop > chartH) continue
-
-      top = Math.max(rawTop, 0)
-      const bottom = Math.min(rawBottom, chartH)
-      height = bottom - top
-      // Flat session — keep a thin stripe at that price, never full pane
-      if (height < 3) {
-        const mid = (top + bottom) / 2
-        top = Math.max(mid - 1.5, 0)
-        height = Math.min(3, chartH - top)
+        top = Math.max(rawTop, 0)
+        const bottom = Math.min(rawBottom, chartH)
+        height = bottom - top
+        // Flat session — keep a thin stripe at that price, never full pane
+        if (height < 3) {
+          const mid = (top + bottom) / 2
+          top = Math.max(mid - 1.5, 0)
+          height = Math.min(3, chartH - top)
+        }
       }
     }
 
@@ -539,9 +544,14 @@ export function computeSessionHighlightRects(args: {
 /** Paint session bands without React — keeps chart pan/zoom at 60fps. */
 export function paintSessionHighlightOverlay(
   host: HTMLElement | null,
-  rects: SessionHighlightRect[]
+  rects: SessionHighlightRect[],
+  opts?: { keepPreviousIfEmpty?: boolean }
 ): void {
   if (!host) return
+  // Mid-pan projection can briefly return [] — keep last good paint instead of blanking.
+  if (rects.length === 0 && opts?.keepPreviousIfEmpty && host.childElementCount > 0) {
+    return
+  }
   while (host.childElementCount < rects.length) {
     const d = document.createElement('div')
     d.className = 'pointer-events-none absolute'

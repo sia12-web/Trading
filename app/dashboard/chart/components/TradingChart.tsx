@@ -953,7 +953,7 @@ export function TradingChart({
       containerHeight: containerRef.current.clientHeight,
       fullHeight: false, // high→low only — never wallpaper above/below price
     })
-    paintSessionHighlightOverlay(host, rects)
+    paintSessionHighlightOverlay(host, rects, { keepPreviousIfEmpty: true })
   }, [instrument])
 
   /** TradingView-style: re-enable auto price scale after manual zoom on the axis */
@@ -981,12 +981,9 @@ export function TradingChart({
     let pointerDown = false
 
     const paintNow = () => {
-      if (pointerDown || interactingRef.current) return
       if (rafPending) cancelAnimationFrame(rafPending)
       rafPending = requestAnimationFrame(() => {
         rafPending = 0
-        // Re-check: kinetic scroll may have resumed between schedule and frame
-        if (pointerDown || interactingRef.current) return
         refreshSessionHighlights()
         if (host) host.style.opacity = '1'
       })
@@ -1004,22 +1001,19 @@ export function TradingChart({
     const beginInteract = () => {
       pointerDown = true
       interactingRef.current = true
-      if (host) host.style.opacity = '0'
       window.clearTimeout(settleTimer)
     }
 
     const endInteract = () => {
       if (!pointerDown) return
       pointerDown = false
-      // Keep overlays hidden through kinetic scroll coast
       scheduleSettle()
     }
 
-    // Hide bands on range change; do NOT recompute mid-drag (TV-smooth pan)
+    // Track pan/zoom: repaint bands every frame so colors stay locked to the candles.
     const onRangeChange = () => {
       interactingRef.current = true
-      if (host) host.style.opacity = '0'
-      // Wheel / kinetic: settle when motion stops. Pointer drag: wait for pointerup.
+      paintNow()
       if (!pointerDown) scheduleSettle()
     }
 
