@@ -1,7 +1,7 @@
 /**
  * Deterministic anti-hallucination for level prices.
  * LLMs may invent numbers — we only keep levels that sit near real structure
- * (candle OHLC, session extremes, or chart AVWAP bands).
+ * (candle OHLC, session extremes, chart AVWAP bands, or psychological rounds).
  */
 
 import type { Candle, LevelIdentification } from '@/lib/services/levelFinderAgent/types'
@@ -19,6 +19,33 @@ export type GroundedLevel = LevelIdentification & {
 }
 
 const DEFAULT_TOL_PCT = 0.0015 // 0.15% — zone-scale
+
+/** Index / FX-aware psychological handles near a price. */
+export function roundNumberSteps(price: number): number[] {
+  if (price >= 5000) return [50, 100, 250, 500]
+  if (price >= 200) return [1, 5, 10, 25, 50]
+  if (price >= 20) return [0.25, 0.5, 1, 5]
+  if (price >= 1) return [0.01, 0.05, 0.1, 0.25]
+  return [0.0001, 0.0005, 0.001]
+}
+
+function roundNumberAnchors(currentPrice: number): GroundingAnchor[] {
+  if (!(currentPrice > 0)) return []
+  const out: GroundingAnchor[] = []
+  const seen = new Set<number>()
+  for (const step of roundNumberSteps(currentPrice)) {
+    const nearest = Math.round(currentPrice / step) * step
+    for (let i = -12; i <= 12; i++) {
+      const p = Number((nearest + i * step).toFixed(6))
+      if (p <= 0 || seen.has(p)) continue
+      // Keep rounds within ~8% of spot (same band as maxDistFromPricePct)
+      if (Math.abs(p - currentPrice) / currentPrice > 0.08) continue
+      seen.add(p)
+      out.push({ price: p, source: 'round_number' })
+    }
+  }
+  return out
+}
 
 function collectAnchors(
   candles: Candle[],
@@ -46,6 +73,8 @@ function collectAnchors(
       if (Number.isFinite(p) && p > 0) anchors.push({ price: p, source: 'volume_profile' })
     }
   }
+
+  anchors.push(...roundNumberAnchors(currentPrice))
 
   return anchors
 }
@@ -123,7 +152,7 @@ export function groundLevels(
         grounded: false,
         snap_to: null,
         anchor_source: null,
-        reject_reason: 'no_candle_avwap_or_vp_anchor',
+        reject_reason: 'no_candle_avwap_vp_or_round_anchor',
       }
     }
 

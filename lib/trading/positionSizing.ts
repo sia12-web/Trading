@@ -5,6 +5,7 @@
  */
 
 import { logger } from '@/lib/utils/logger'
+import { snapProfitToRound } from '@/lib/trading/deskLevels'
 import type { PositionSizing, EntryDirection } from '@/types/trading'
 
 const RISK_PERCENT = 5 // 5% of account
@@ -253,8 +254,14 @@ export function previewPositionSizing(
   const rewardDistance = customStopValid
     ? Math.max(priceDistance * 2, entryPrice * 0.005)
     : entryPrice * 0.01
-  const profit_target_price =
+  const rawTarget =
     direction === 'LONG' ? entryPrice + rewardDistance : entryPrice - rewardDistance
+  const profit_target_price = snapProfitToRound(
+    entryPrice,
+    stop_loss_price,
+    rawTarget,
+    direction
+  )
   return {
     stop_loss_price,
     position_size,

@@ -1043,7 +1043,8 @@ function SimulationDeskInner() {
     paintTradeLevels()
   }, [levels, chartReady, levelsOpen, paintTradeLevels])
 
-  // Pending working limit + open position — on host series (survives candle setData)
+  // Pending working limit + open position — on host series (survives candle setData).
+  // Independent of Hide levels — AI/structure lines toggle separately.
   useEffect(() => {
     const host = priceLineHostRef.current
     if (!host || !chartReady) return
@@ -1056,11 +1057,15 @@ function SimulationDeskInner() {
     })
     posLinesRef.current = []
 
+    const fmt = (n: number) =>
+      n.toLocaleString('en-US', { maximumFractionDigits: 0 })
+
     const specs: Array<{
       price: number
       color: string
       title: string
       style: LineStyle
+      width: 1 | 2 | 3 | 4
     }> = []
 
     if (position) {
@@ -1068,47 +1073,90 @@ function SimulationDeskInner() {
         {
           price: position.entry,
           color: '#3b82f6',
-          title: `Entry ${position.direction}`,
+          title: `Entry ${position.direction} ${fmt(position.entry)}`,
           style: LineStyle.Solid,
+          width: 2,
         },
-        { price: position.stopLoss, color: '#ef4444', title: 'Stop Loss', style: LineStyle.Dashed },
-        { price: position.target, color: '#22c55e', title: 'Target', style: LineStyle.Dashed }
+        {
+          price: position.stopLoss,
+          color: '#ef4444',
+          title: `SL ${fmt(position.stopLoss)}`,
+          style: LineStyle.Dashed,
+          width: 2,
+        },
+        {
+          price: position.target,
+          color: '#22c55e',
+          title: `TP ${fmt(position.target)}`,
+          style: LineStyle.Dashed,
+          width: 2,
+        }
       )
     } else if (pending) {
       specs.push(
         {
           price: pending.level,
           color: '#38bdf8',
-          title: `WORKING ${pending.direction}`,
+          title: `WORKING ${pending.direction} ${fmt(pending.level)}`,
           style: LineStyle.Solid,
+          width: 3,
         },
         {
           price: pending.stopLoss,
           color: '#ef4444',
-          title: 'SL (if filled)',
+          title: `SL ${fmt(pending.stopLoss)}`,
           style: LineStyle.Dotted,
+          width: 2,
         },
         {
           price: pending.target,
           color: '#22c55e',
-          title: 'TP (if filled)',
+          title: `TP ${fmt(pending.target)}`,
           style: LineStyle.Dotted,
+          width: 2,
         }
       )
     }
 
+    const prices: number[] = []
     for (const s of specs) {
+      if (!Number.isFinite(s.price) || s.price <= 0) continue
+      prices.push(s.price)
       try {
         posLinesRef.current.push(
           host.createPriceLine({
             price: s.price,
             color: s.color,
-            lineWidth: 2,
+            lineWidth: s.width,
             lineStyle: s.style,
             axisLabelVisible: true,
             title: s.title,
           })
         )
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (prices.length >= 2) {
+      const min = Math.min(...prices)
+      const max = Math.max(...prices)
+      const pad = Math.max((max - min) * 0.1, max * 0.0008)
+      try {
+        host.applyOptions({
+          autoscaleInfoProvider: () => ({
+            priceRange: {
+              minValue: min - pad,
+              maxValue: max + pad,
+            },
+          }),
+        })
+      } catch {
+        /* ignore */
+      }
+    } else {
+      try {
+        host.applyOptions({ autoscaleInfoProvider: undefined })
       } catch {
         /* ignore */
       }
@@ -1339,6 +1387,14 @@ function SimulationDeskInner() {
     setMsg('Working limit cancelled — entry window closed (never filled)')
   }, [simNow, entryCloseUnix, pending])
 
+  const cancelPending = useCallback(() => {
+    if (!pendingRef.current) return
+    pendingRef.current = null
+    setPending(null)
+    setPlaying(false)
+    setMsg('Working limit cancelled')
+  }, [])
+
   const placePending = useCallback(
     (level: AiLevel, direction: Direction) => {
       if (position) {
@@ -1524,7 +1580,7 @@ function SimulationDeskInner() {
           style={{ opacity: 1, transition: 'none', willChange: 'opacity' }}
         />
         {(position || pending) && (
-          <div className="pointer-events-none absolute left-3 top-14 z-20 max-w-[min(340px,70%)]">
+          <div className="pointer-events-none absolute left-3 top-14 z-20 max-w-[min(360px,75%)]">
             <div
               className={`rounded-lg border px-3 py-2 shadow-lg backdrop-blur-sm ${
                 position
@@ -1532,16 +1588,29 @@ function SimulationDeskInner() {
                   : 'border-sky-500/40 bg-sky-950/85 text-sky-100'
               }`}
             >
-              <div className="text-[10px] font-bold uppercase tracking-wider">
-                {position
-                  ? `OPEN ${position.direction} · Entry / SL / TP on chart`
-                  : `WORKING ${pending!.direction} · limit + SL/TP on chart`}
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider">
+                    {position
+                      ? `OPEN ${position.direction} · Entry / SL / TP on chart`
+                      : `WORKING ${pending!.direction} · limit + SL/TP on chart`}
+                  </div>
+                  <p className="mt-0.5 font-mono text-[11px] opacity-90">
+                    {position
+                      ? `@ ${position.entry.toLocaleString()} · SL ${position.stopLoss.toLocaleString()} · TP ${position.target.toLocaleString()}`
+                      : `@ ${pending!.level.toLocaleString()} · SL ${pending!.stopLoss.toLocaleString()} · TP ${pending!.target.toLocaleString()}`}
+                  </p>
+                </div>
+                {pending && !position && (
+                  <button
+                    type="button"
+                    onClick={cancelPending}
+                    className="pointer-events-auto shrink-0 rounded border border-sky-400/50 bg-sky-600/90 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white hover:bg-sky-500"
+                  >
+                    Cancel
+                  </button>
+                )}
               </div>
-              <p className="mt-0.5 font-mono text-[11px] opacity-90">
-                {position
-                  ? `@ ${position.entry.toLocaleString()} · SL ${position.stopLoss.toLocaleString()} · TP ${position.target.toLocaleString()}`
-                  : `@ ${pending!.level.toLocaleString()} · SL ${pending!.stopLoss.toLocaleString()} · TP ${pending!.target.toLocaleString()}`}
-              </p>
             </div>
           </div>
         )}
@@ -1584,9 +1653,18 @@ function SimulationDeskInner() {
             </span>
           )}
           {pending && (
-            <span className="text-amber-300">
-              Pending {pending.direction} @ {pending.level.toLocaleString()}
-            </span>
+            <>
+              <span className="text-amber-300">
+                Pending {pending.direction} @ {pending.level.toLocaleString()}
+              </span>
+              <button
+                type="button"
+                onClick={cancelPending}
+                className="rounded border border-sky-500/50 bg-sky-600/80 px-2 py-1 text-[10px] font-bold uppercase text-white hover:bg-sky-500"
+              >
+                Cancel limit
+              </button>
+            </>
           )}
           {position && (
             <span className="text-emerald-300">
@@ -1676,6 +1754,11 @@ function SimulationDeskInner() {
 
           <button
             type="button"
+            title={
+              levelsOpen
+                ? 'Hide AI/structure levels (working limit + SL/TP stay on chart)'
+                : 'Show AI/structure levels'
+            }
             onClick={() => setLevelsOpen((o) => !o)}
             className="rounded border border-white/15 px-2 py-1 text-[10px] uppercase text-gray-300 hover:bg-white/10"
           >

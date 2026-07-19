@@ -491,8 +491,9 @@ CORE PHILOSOPHY — BIG MONEY ENTERS AT RETAIL STOP LOSS LIQUIDITY:
 - Retail SHORTS the obvious resistance (Asia/London/prior-day high) → their stops sit ABOVE that high. Big money SELLS into those stops.
 - Therefore: NEVER return the exact Asia/London/prior-day high or low as a tradeable level — that is where retail ENTERS. Your level is WHERE THEIR STOPS SIT (just beyond the bait).
 - Offset: typically ~0.05–0.12% of price (or ~6–10% of yesterday's range / a measured wick-through) past the bait into the stop pool.
-- Prefer: (1) stop-liquidity pools beyond equal highs/lows or session extremes, (2) unmitigated impulse origins, (3) absorption / initiative volume, (4) AVWAP confluence, (5) volume-by-price POC/HVN confluence — never naked session highs/lows or round numbers.
-- Ask every time: "Where did retail put stops?" That answer IS your entry zone. "Short the London high" / "buy the Asia low" is retail — reject it.
+- Prefer: (1) stop-liquidity pools beyond equal highs/lows or session extremes, (2) unmitigated impulse origins, (3) absorption / initiative volume, (4) AVWAP confluence, (5) volume-by-price POC/HVN confluence, (6) psychological round numbers as magnets with structure — not naked rounds alone.
+- ROUND NUMBERS (00 / 50 / big figures): day traders and algos park size there. Use them as confluence for ENTRY (with session/volume/wick evidence), TAKE PROFIT (exit/scale at rounds), and STOP LOSS (park the protective stop just beyond the round so the round itself is the magnet, not your exact stop print). Naked round with no candle evidence = weak; round + London/overnight/wick/AVWAP = strong.
+- Ask every time: "Where did retail put stops?" That answer IS your entry zone. "Short the London high" / "buy the Asia low" with no stop-pool offset is retail — reject it.
 
 WHAT TO LOOK FOR IN THE CANDLES (think like a day trader reading the tape before the cash open):
 1. Overnight + Asia — where price traveled after prior cash close; overnight highs/lows and the stop pools beyond them often set the morning first magnet.
@@ -504,6 +505,7 @@ WHAT TO LOOK FOR IN THE CANDLES (think like a day trader reading the tape before
 7. Multi-timeframe confluence — a level that shows on daily/4H AND is defended on H1 with volume/wick evidence outranks a single-TF print. Levels may sit far from the open if overnight/London/HTF structure put them there — distance from open is NOT a reason to discard.
 8. VWAP/AVWAP — institutions benchmark to it; ±2σ/±3σ extremes often mean-revert after a stop-hunt through a session extreme.
 9. Volume-by-price — POC (highest volume) and HVN nodes printed in the request are where size clustered; confluence with a stop-pool raises conviction.
+10. Round-number magnets — big figures and .00 / .50 (or index 100/50 handles) that align with overnight/London/impulse. Note in reasoning how the round shapes entry, implied stop (beyond the round), and take-profit.
 
 DESK CADENCE (your levels live inside this rhythm — ${marketLabel} clock for ${index}):
 - You call levels pre-open from YESTERDAY'S range + overnight only. Older multi-day level history is discarded — the next session does not care about last week's levels.
@@ -518,24 +520,24 @@ THE MARKET IS THE FINAL JUDGE (non-negotiable):
 - A level respected on high volume is confirmed institutional interest; re-using it with evidence is good practice, but expect the crowd to see it too on the third+ touch — the sweep risk grows every retest.
 
 LEVELS ARE ZONES, NOT LINES:
-- Every level you return is treated by the desk as a zone of ±0.12% around your price, with the stop placed beyond the zone's far edge. So do not agonize over exactness to the tick — return the DEFENDED EDGE of the institutional zone: for support the price where resting demand starts (inside the buy-side stop pool), for resistance where supply starts (inside the sell-side stop pool).
-- The retail stop cluster should sit INSIDE your zone (that is the liquidity), not outside it. Your protective stop sits beyond the far edge of that zone.
+- Every level you return is treated by the desk as a zone of ±0.12% around your price, with the stop placed beyond the zone's far edge (and soft-extended just past a nearby round number when one sits there). So do not agonize over exactness to the tick — return the DEFENDED EDGE of the institutional zone: for support the price where resting demand starts (inside the buy-side stop pool), for resistance where supply starts (inside the sell-side stop pool). Prefer that edge on or against a psychological round when structure agrees.
+- The retail stop cluster should sit INSIDE your zone (that is the liquidity), not outside it. Your protective stop sits beyond the far edge of that zone — ideally just beyond the round magnet, not printed on it. Take-profits lean toward the next clean round / opposing HTF magnet.
 
 REASONING REQUIREMENTS (critical):
 - Each level's reasoning MUST be specific to THAT level and cite evidence from the provided candles (e.g. "retail longs stop under equal lows 44,120 — liquidity buy ~44,085" or "retail shorts stop above London high — sell liquidity there").
-- Never write generic reasoning like "strong support" or "round number". If two levels would have the same reasoning, drop the weaker one.
+- Never write generic reasoning like "strong support" alone. If the edge is a round number, say which handle (e.g. 29,500) and what structure/volume confirms it — and whether the round is for entry, stop placement, or take-profit.
 - Say explicitly which retail stop pool you are targeting (e.g. "buy where stops under Asia low get taken").
-- Conviction reflects evidence quality: 8-10 only for clear stop-pool + volume/confluence; 5-7 single strong signal; below 5 don't include it.`
+- Conviction reflects evidence quality: 8-10 only for clear stop-pool + volume/confluence (round-number confluence can help); 5-7 single strong signal; below 5 don't include it.`
 
     if (!historicalContext || historicalContext.levels.length === 0) {
       // No historical context available, use base prompt
       return basePrompt + `
 
 Return ONLY valid JSON array. No additional text.
-ANTI-HALLUCINATION: every "level" MUST be near a real high/low/close from the provided candles OR an AVWAP band OR a printed POC/HVN. Never invent round numbers or prices outside the candle range.
+ANTI-HALLUCINATION: every "level" MUST be near a real high/low/close from the provided candles OR an AVWAP band OR a printed POC/HVN OR a psychological round that sits on that structure. Never invent prices outside the candle range. Round numbers are valid when they magnetize real structure — cite both.
 Example shape (replace numbers with real prices from THIS request's candles):
 [
-  {"level": <price_from_candles>, "type": "resistance", "conviction": 8, "reasoning": "Retail shorts stop just above equal highs at <bait> — sell into that stop liquidity", "timeframe": "4H"},
+  {"level": <price_from_candles>, "type": "resistance", "conviction": 8, "reasoning": "Retail shorts stop just above equal highs at <bait> — sell into that stop liquidity; 29,500 handle is the magnet for TP/stop beyond", "timeframe": "4H"},
   {"level": <price_from_candles>, "type": "support", "conviction": 7, "reasoning": "Unmitigated origin of strongest H1 rally; price has not returned", "timeframe": "H1"}
 ]`
     }
@@ -577,10 +579,10 @@ HOW TO USE THIS:
     return basePrompt + historicalSection + `
 
 Return ONLY valid JSON array. No additional text.
-ANTI-HALLUCINATION: every "level" MUST be near a real high/low/close from the provided candles OR an AVWAP band OR a printed POC/HVN. Never invent round numbers or prices outside the candle range.
+ANTI-HALLUCINATION: every "level" MUST be near a real high/low/close from the provided candles OR an AVWAP band OR a printed POC/HVN OR a psychological round that sits on that structure. Never invent prices outside the candle range. Round numbers are valid when they magnetize real structure — cite both.
 Example shape (replace numbers with real prices from THIS request's candles):
 [
-  {"level": <price_from_candles>, "type": "resistance", "conviction": 8, "reasoning": "Retail shorts stop just above equal highs at <bait> — sell into that stop liquidity", "timeframe": "4H"},
+  {"level": <price_from_candles>, "type": "resistance", "conviction": 8, "reasoning": "Retail shorts stop just above equal highs at <bait> — sell into that stop liquidity; round handle is the magnet for TP/stop beyond", "timeframe": "4H"},
   {"level": <price_from_candles>, "type": "support", "conviction": 7, "reasoning": "Unmitigated origin of strongest H1 rally; price has not returned", "timeframe": "H1"}
 ]`
   }
@@ -663,18 +665,20 @@ ${formatH1Candles}
 ${vwapSection}
 ${vpSection}
 Work through this before choosing levels:
-1. Where are retail traders ENTERING right now (obvious support/resistance, Asia/London highs/lows, round numbers)?
+1. Where are retail traders ENTERING right now (obvious support/resistance, Asia/London highs/lows, round-number handles)?
 2. WHERE DID THEY PUT THEIR STOP LOSSES relative to those entries? That stop cluster IS the liquidity.
 3. Which stop pool is most likely to get hunted next for a fill — and that price is YOUR level (buy below bait lows / sell above bait highs).
-4. Where are unmitigated impulse origins, and which levels show absorption / initiative volume?
-5. Does that stop-pool zone also sit near a printed AVWAP band and/or POC/HVN? Prefer levels with that confluence.
+4. Where are unmitigated impulse origins, and which levels show absorption / initiative volume or HTF tails?
+5. Does that stop-pool zone also sit near a printed AVWAP band, POC/HVN, and/or a psychological round? Prefer levels with that confluence.
+6. For each level, mentally place: ENTRY (liquidity), STOP (just beyond the round/structure so the magnet is not your exact stop), TAKE PROFIT (next opposing round / session extreme / AVWAP). Mention rounds when they matter for SL or TP.
 
 Then identify 2-5 levels where INSTITUTIONS ENTER — i.e. retail stop-loss liquidity pools. Rules:
-- HARD BAN: do NOT return yesterday's exact high/low, overnight exact high/low, Asia/London session high/low, or a round number. Those are retail entries. Return the stop-pool price JUST BEYOND them and name which stops you are targeting.
-- Especially: NEVER short the London session high or buy the Asia/London session low. Short ABOVE that high (into short-stops); buy BELOW that low (into long-stops).
+- Do NOT return yesterday's / overnight / Asia / London exact high or low as the entry print — those are retail bait. Return the stop-pool JUST BEYOND them (and say which stops you target).
+- Round numbers are NOT banned — use them. Prefer entries that lean on a round when structure agrees; place stops just beyond the round; aim take-profits at the next clean round or HTF magnet.
+- Especially: NEVER short the London session high or buy the Asia/London session low as the exact print. Short ABOVE that high (into short-stops); buy BELOW that low (into long-stops). A round sitting in that stop pool is a feature, not a bug.
 - Offset guide: ~0.05–0.12% of price (or ~6–10% of yesterday's range) past the bait into the stop pool.
-- Prefer confluence: stop-pool + AVWAP and/or POC/HVN. Single-signal naked levels are weak.
-- Each reasoning must cite evidence and say explicitly: "retail stops at X — institutional entry into that liquidity."
+- Prefer confluence: stop-pool + round and/or AVWAP and/or POC/HVN. Single-signal naked levels (including naked rounds with no tape evidence) are weak.
+- Each reasoning must cite evidence and say explicitly: "retail stops at X — institutional entry into that liquidity" (and name the round handle if it is the magnet).
 - If two candidate levels are within 0.3% of each other, keep only the stronger one.
 
 For each level provide:

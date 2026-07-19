@@ -213,10 +213,89 @@ export function levelZone(level: number): LevelZone {
   return { low: level - half, high: level + half, width: half * 2 }
 }
 
+/** Index / FX-aware psychological handles (kept local to avoid import cycles). */
+function roundNumberSteps(price: number): number[] {
+  if (price >= 5000) return [50, 100, 250, 500]
+  if (price >= 200) return [1, 5, 10, 25, 50]
+  if (price >= 20) return [0.25, 0.5, 1, 5]
+  if (price >= 1) return [0.01, 0.05, 0.1, 0.25]
+  return [0.0001, 0.0005, 0.001]
+}
+
+/**
+ * Soft-extend a protective stop so it sits just beyond a nearby psychological
+ * round (00 / 50 / big figure). Never pulls the stop tighter.
+ */
+export function extendStopPastRound(
+  stop: number,
+  direction: 'LONG' | 'SHORT',
+  refPrice: number
+): number {
+  if (!(stop > 0) || !(refPrice > 0)) return stop
+  let best = stop
+  const maxExtendPct = 0.0012 // ≤0.12% further past the round
+  for (const step of roundNumberSteps(refPrice)) {
+    const epsilon = Math.max(step * 0.02, refPrice * 0.00005)
+    if (direction === 'LONG') {
+      // Park stop just under the round at/below the raw stop
+      const magnet = Math.floor(stop / step) * step
+      if (magnet <= 0) continue
+      const candidate = magnet - epsilon
+      if (candidate >= stop) continue
+      const extendPct = (stop - candidate) / refPrice
+      if (extendPct > 0 && extendPct <= maxExtendPct && candidate < best) best = candidate
+    } else {
+      // Park stop just above the round at/above the raw stop
+      const magnet = Math.ceil(stop / step) * step
+      const candidate = magnet + epsilon
+      if (candidate <= stop) continue
+      const extendPct = (candidate - stop) / refPrice
+      if (extendPct > 0 && extendPct <= maxExtendPct && candidate > best) best = candidate
+    }
+  }
+  return best
+}
+
+/** Soft-snap a take-profit toward the nearest round without shrinking RR below 1.5R. */
+export function snapProfitToRound(
+  entry: number,
+  stop: number,
+  target: number,
+  direction: 'LONG' | 'SHORT'
+): number {
+  if (!(entry > 0) || !(target > 0)) return target
+  const risk = Math.abs(entry - stop)
+  if (!(risk > 0)) return target
+  const minReward = risk * 1.5
+  let best = target
+  let bestDist = Infinity
+  for (const step of roundNumberSteps(entry)) {
+    const nearest = Math.round(target / step) * step
+    for (const candidate of [nearest, nearest - step, nearest + step]) {
+      if (candidate <= 0) continue
+      if (direction === 'LONG') {
+        if (candidate <= entry) continue
+        if (candidate - entry < minReward) continue
+      } else {
+        if (candidate >= entry) continue
+        if (entry - candidate < minReward) continue
+      }
+      const dist = Math.abs(candidate - target)
+      if (dist / entry > 0.0025) continue // only soft-snap within 0.25%
+      if (dist < bestDist) {
+        bestDist = dist
+        best = candidate
+      }
+    }
+  }
+  return best
+}
+
 export function zoneStopPrice(level: number, direction: 'LONG' | 'SHORT'): number {
   const z = levelZone(level)
   const buffer = level * ZONE_STOP_BUFFER_PCT
-  return direction === 'LONG' ? z.low - buffer : z.high + buffer
+  const raw = direction === 'LONG' ? z.low - buffer : z.high + buffer
+  return extendStopPastRound(raw, direction, level)
 }
 
 export function formatZone(level: number): string {

@@ -505,6 +505,11 @@ export default function ChartPage() {
                       }
                     : null
                 }
+                onCancelPending={() => {
+                  setPending(null)
+                  setFillError(null)
+                  void expireWorkingLimits(true)
+                }}
                 aiVerdict={managePos ? aiVerdict : null}
                 jumpToPriceRef={jumpToPriceRef}
                 lockedInstrument={locked}

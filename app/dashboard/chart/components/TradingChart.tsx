@@ -368,6 +368,8 @@ interface TradingChartProps {
   positionOverlay?:    PositionOverlay | null     // filled position Entry/SL/TP
   /** Working limit — not filled yet; does not enter MANAGE */
   pendingLimit?:       PendingLimitOverlay | null
+  /** Cancel the working limit (chart toolbar + parent bar) */
+  onCancelPending?:    () => void
   /** AI manage verdict (hold / take profit / reversal) drawn on the chart */
   aiVerdict?:          ChartAiVerdict | null
   jumpToPriceRef?:     React.MutableRefObject<((price: number) => void) | null>
@@ -390,6 +392,7 @@ export function TradingChart({
   onDataModeChange,
   positionOverlay,
   pendingLimit = null,
+  onCancelPending,
   aiVerdict = null,
   jumpToPriceRef,
   lockedInstrument,
@@ -1385,6 +1388,7 @@ export function TradingChart({
   }, [canPlaceOrder, onLevelSelect, chartReady, positionOverlay])
 
   // ── Position / working-limit overlay lines (host series — survives candle setData)
+  // Independent of Hide levels — AI/structure lines toggle separately.
   useEffect(() => {
     const host = priceLineHostRef.current
     positionLinesRef.current.forEach(line => {
@@ -1392,7 +1396,57 @@ export function TradingChart({
     })
     positionLinesRef.current = []
 
-    if (!host) return
+    if (!host || !chartReady) {
+      try {
+        host?.applyOptions({ autoscaleInfoProvider: undefined })
+      } catch { /* ignore */ }
+      return
+    }
+
+    const fmt = (n: number) =>
+      n.toLocaleString('en-US', { maximumFractionDigits: 0 })
+
+    const paint = (
+      entries: Array<{ price: number; color: string; label: string; style: LineStyle; width: 1 | 2 | 3 | 4 }>
+    ) => {
+      const prices: number[] = []
+      for (const { price, color, label, style, width } of entries) {
+        if (!Number.isFinite(price) || price <= 0) continue
+        prices.push(price)
+        try {
+          positionLinesRef.current.push(
+            host.createPriceLine({
+              price,
+              color,
+              lineStyle: style,
+              lineWidth: width,
+              axisLabelVisible: true,
+              title: label,
+            })
+          )
+        } catch { /* ignore */ }
+      }
+      // Keep limit/entry + SL + TP inside the visible price scale
+      if (prices.length >= 2) {
+        const min = Math.min(...prices)
+        const max = Math.max(...prices)
+        const pad = Math.max((max - min) * 0.1, max * 0.0008)
+        try {
+          host.applyOptions({
+            autoscaleInfoProvider: () => ({
+              priceRange: {
+                minValue: min - pad,
+                maxValue: max + pad,
+              },
+            }),
+          })
+        } catch { /* ignore */ }
+      } else {
+        try {
+          host.applyOptions({ autoscaleInfoProvider: undefined })
+        } catch { /* ignore */ }
+      }
+    }
 
     if (positionOverlay) {
       const v = (aiVerdict?.verdict || '').toLowerCase()
@@ -1406,45 +1460,64 @@ export function TradingChart({
               ? 'AI HOLD · Target'
               : 'Target'
       const tpColor = aiWantsTp && v === 'reversal' ? '#a78bfa' : '#22c55e'
-      const entries: Array<{ price: number; color: string; label: string; style: LineStyle }> = [
-        { price: positionOverlay.entryPrice,   color: '#3b82f6', label: `Entry ${positionOverlay.direction.toUpperCase()}`, style: LineStyle.Solid },
-        { price: positionOverlay.stopLoss,     color: '#ef4444', label: 'Stop Loss',    style: LineStyle.Dashed },
-        { price: positionOverlay.profitTarget, color: tpColor, label: tpLabel, style: LineStyle.Dashed },
-      ]
-      for (const { price, color, label, style } of entries) {
-        try {
-          positionLinesRef.current.push(
-            host.createPriceLine({
-              price, color, lineStyle: style, lineWidth: 1,
-              axisLabelVisible: true,
-              title: label,
-            })
-          )
-        } catch { /* ignore */ }
-      }
+      paint([
+        {
+          price: positionOverlay.entryPrice,
+          color: '#3b82f6',
+          label: `Entry ${positionOverlay.direction.toUpperCase()} ${fmt(positionOverlay.entryPrice)}`,
+          style: LineStyle.Solid,
+          width: 2,
+        },
+        {
+          price: positionOverlay.stopLoss,
+          color: '#ef4444',
+          label: `SL ${fmt(positionOverlay.stopLoss)}`,
+          style: LineStyle.Dashed,
+          width: 2,
+        },
+        {
+          price: positionOverlay.profitTarget,
+          color: tpColor,
+          label: `${tpLabel} ${fmt(positionOverlay.profitTarget)}`,
+          style: LineStyle.Dashed,
+          width: 2,
+        },
+      ])
       return
     }
 
     if (pendingLimit) {
       const dir = pendingLimit.direction.toUpperCase()
-      const entries: Array<{ price: number; color: string; label: string; style: LineStyle }> = [
-        { price: pendingLimit.price, color: '#38bdf8', label: `WORKING ${dir}`, style: LineStyle.Solid },
-        { price: pendingLimit.stopLoss, color: '#ef4444', label: 'SL (if filled)', style: LineStyle.Dotted },
-        { price: pendingLimit.profitTarget, color: '#22c55e', label: 'TP (if filled)', style: LineStyle.Dotted },
-      ]
-      for (const { price, color, label, style } of entries) {
-        try {
-          positionLinesRef.current.push(
-            host.createPriceLine({
-              price, color, lineStyle: style, lineWidth: 1,
-              axisLabelVisible: true,
-              title: label,
-            })
-          )
-        } catch { /* ignore */ }
-      }
+      paint([
+        {
+          price: pendingLimit.price,
+          color: '#38bdf8',
+          label: `WORKING ${dir} ${fmt(pendingLimit.price)}`,
+          style: LineStyle.Solid,
+          width: 3,
+        },
+        {
+          price: pendingLimit.stopLoss,
+          color: '#ef4444',
+          label: `SL ${fmt(pendingLimit.stopLoss)}`,
+          style: LineStyle.Dotted,
+          width: 2,
+        },
+        {
+          price: pendingLimit.profitTarget,
+          color: '#22c55e',
+          label: `TP ${fmt(pendingLimit.profitTarget)}`,
+          style: LineStyle.Dotted,
+          width: 2,
+        },
+      ])
+      return
     }
-  }, [positionOverlay, pendingLimit, aiVerdict])
+
+    try {
+      host.applyOptions({ autoscaleInfoProvider: undefined })
+    } catch { /* ignore */ }
+  }, [positionOverlay, pendingLimit, aiVerdict, chartReady])
 
   // ── Emit live price to parent ─────────────────────────────────────────────────
   useEffect(() => {
@@ -1480,9 +1553,14 @@ export function TradingChart({
           5m
         </span>
 
-        {/* Level toggle — manual only; levels stay until Hide levels */}
+        {/* Level toggle — AI/structure only; working limit + SL/TP always stay */}
         <button
           type="button"
+          title={
+            showLevels
+              ? 'Hide AI/structure levels (working limit + SL/TP stay on chart)'
+              : 'Show AI/structure levels'
+          }
           onClick={() => setShowLevels((v) => !v)}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
             showLevels
@@ -1517,16 +1595,26 @@ export function TradingChart({
         )}
 
         {pendingLimit && !positionOverlay && (
-          <span className="rounded-lg border border-sky-700/50 bg-sky-950/40 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">
-            Working limit · waiting for fill
-          </span>
+          <>
+            <span className="rounded-lg border border-sky-700/50 bg-sky-950/40 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">
+              Working {pendingLimit.direction} @{' '}
+              {pendingLimit.price.toLocaleString()} · SL/TP on chart
+            </span>
+            {onCancelPending && (
+              <button
+                type="button"
+                onClick={onCancelPending}
+                className="rounded-lg border border-sky-500/60 bg-sky-600/80 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm transition hover:bg-sky-500"
+              >
+                Cancel limit
+              </button>
+            )}
+          </>
         )}
 
-        {(positionOverlay || pendingLimit) && (
+        {positionOverlay && (
           <span className="rounded-lg border border-blue-700/50 bg-blue-950/40 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-blue-200">
-            {positionOverlay
-              ? 'In trade · levels hidden · SL / TP only'
-              : 'Working limit · levels hidden · SL / TP only'}
+            In trade · Entry / SL / TP on chart
           </span>
         )}
 
