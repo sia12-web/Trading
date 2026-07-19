@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { logger } from '@/lib/utils/logger'
 import { getWindowManager } from '@/lib/trading/windowManager'
+import { MAX_STOP_HITS } from '@/lib/trading/sessionGate'
 import { getESTDateString } from '@/lib/utils/timeUtils'
 import type { CurrentPositionResponse, TradePosition } from '@/types/trading'
 
@@ -96,13 +97,21 @@ export async function GET(request: Request): Promise<NextResponse<CurrentPositio
     const nextWindow = windowManager.getNextWindow(now)
     const entryWindowsClosed = windowManager.areEntryWindowsClosed(now)
 
-    // Check if market is disabled (2 stop loss hits = market disabled)
-    let marketDisabled = false
-    if (position && position.stop_loss_hit_count >= 3) {
-      marketDisabled = true
+    // Session lock: 2 stop-outs today (same book as live/sim desk)
+    const { count: stopHitCount } = await supabase
+      .from('trades_journal')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .eq('trade_date', today)
+      .in('instrument', ['DOW', 'NASDAQ', 'NIKKEI'])
+      .eq('fill_status', 'filled')
+      .eq('exit_reason', 'stop_hit')
+
+    const marketDisabled = (stopHitCount ?? 0) >= MAX_STOP_HITS
+    if (marketDisabled) {
       logger.log('GET /api/trading/current-position: Market disabled (2 stops)', {
         instrument,
-        stops: position.stop_loss_hit_count,
+        stops: stopHitCount,
       })
     }
 

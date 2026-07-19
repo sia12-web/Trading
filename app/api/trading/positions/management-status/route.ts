@@ -116,7 +116,10 @@ export async function GET(request: Request): Promise<NextResponse<PositionStatus
         stop_loss_percent,
         regime,
         regime_confidence,
-        stop_loss_hit_count
+        stop_loss_hit_count,
+        entry_source,
+        entry_reason,
+        profit_target_price
       `
       )
       .eq('user_id', user.id)
@@ -161,12 +164,16 @@ export async function GET(request: Request): Promise<NextResponse<PositionStatus
       )
     }
 
-    // Build position status with calculated fields
-    const profitTarget = calculateProfitTarget(
-      positionData.entry_price,
-      positionData.entry_direction,
-      positionData.regime_confidence
-    )
+    // Prefer journaled TP; fall back to regime heuristic
+    const profitTarget =
+      positionData.profit_target_price != null &&
+      Number(positionData.profit_target_price) > 0
+        ? Number(positionData.profit_target_price)
+        : calculateProfitTarget(
+            positionData.entry_price,
+            positionData.entry_direction,
+            positionData.regime_confidence
+          )
 
     const positionStatus: PositionStatus = {
       id: positionData.id,
@@ -187,6 +194,8 @@ export async function GET(request: Request): Promise<NextResponse<PositionStatus
       regime_confidence: positionData.regime_confidence,
       profit_target_price: profitTarget,
       stop_loss_hit_count: positionData.stop_loss_hit_count,
+      entry_source: positionData.entry_source ?? null,
+      entry_reason: positionData.entry_reason ?? null,
     }
 
     logger.log('GET /api/trading/positions/management-status: Position fetched', {

@@ -154,6 +154,8 @@ export interface TradePosition {
   best_level_break_confidence: number | null
   best_break_level: number | null
   entry_reason?: string | null
+  /** ai | structure | manual — how the limit was chosen */
+  entry_source?: 'ai' | 'structure' | 'manual' | null
   exit_notes?: string | null
   profit_target_price?: number | null
   oanda_trade_id?: string | null

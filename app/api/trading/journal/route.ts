@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
          stop_loss_price, stop_loss_hit_at, stop_loss_hit_count, position_size, risk_amount, account_size,
          exit_timestamp, exit_price, exit_reason, profit_loss, profit_loss_percent,
          regime, regime_confidence, best_break_level, best_level_break_confidence,
-         entry_reason, exit_notes, profit_target_price, created_at, updated_at`
+         entry_reason, entry_source, exit_notes, profit_target_price, created_at, updated_at`
       )
       .eq('user_id', user.id)
       .order('entry_timestamp', { ascending: false })
@@ -187,6 +187,7 @@ export async function GET(request: NextRequest) {
             (t.best_break_level != null
               ? `${t.entry_direction} at level ${t.best_break_level}`
               : `${t.entry_direction} entry`),
+          source: (t.entry_source as string | null) || null,
         },
         risk: {
           stop_loss: Number(t.stop_loss_price),

@@ -588,9 +588,8 @@ Example shape (replace numbers with real prices from THIS request's candles):
   }
 
   /**
-   * The SAME 5-session anchored VWAP the trader sees on the live and sim
-   * charts (lib/chart/sessionVwap) — computed here so the AI reasons against
-   * the exact AVWAP/bands on screen, not its own approximation.
+   * The SAME AVWAP the trader sees on live and sim charts
+   * (cash open of 5 trading days prior to the tip session).
    */
   private buildVwapSection(request: AnalysisRequest): string {
     const bars = request.candles_h1
@@ -620,7 +619,7 @@ Example shape (replace numbers with real prices from THIS request's candles):
     const side = price >= v ? 'ABOVE' : 'BELOW'
 
     return `
-5-SESSION ANCHORED VWAP (exact AVWAP on the trader's chart — anchored at ${clock.openLabel} five sessions back; same construction for DOW/NASDAQ/NIKKEI):
+5-SESSION ANCHORED VWAP (exact AVWAP on the trader's chart — anchored at ${clock.openLabel} of the trading day 5 sessions prior to the tip; same construction for DOW/NASDAQ/NIKKEI):
 - AVWAP: ${fmt(v)}
 - +1σ: ${fmt(bands.upper1[i]!.value)} / -1σ: ${fmt(bands.lower1[i]!.value)}
 - +2σ: ${fmt(bands.upper2[i]!.value)} / -2σ: ${fmt(bands.lower2[i]!.value)}

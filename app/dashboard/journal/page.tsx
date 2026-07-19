@@ -8,6 +8,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { entrySourceLabel, entrySourceTone } from '@/lib/trading/entrySourceBadge'
 
 type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'ALL'
 type HistoryTab = 'live' | 'sim'
@@ -20,7 +21,13 @@ interface JournalEntry {
   entry_window: number
   direction: string
   status: 'open' | 'closed'
-  fill: { time: string; price: number; level: number | null; reason: string }
+  fill: {
+    time: string
+    price: number
+    level: number | null
+    reason: string
+    source?: string | null
+  }
   risk: {
     stop_loss: number
     take_profit: number | null
@@ -167,6 +174,7 @@ function mapSimEntry(raw: Record<string, unknown>): JournalEntry {
       price: Number(fill.price) || 0,
       level: fill.level != null ? Number(fill.level) : null,
       reason: String(fill.reason || 'Sim level limit fill'),
+      source: fill.source != null ? String(fill.source) : null,
     },
     risk: {
       stop_loss: Number(risk.stop_loss) || 0,
@@ -577,6 +585,14 @@ function JournalPageInner() {
                               >
                                 {e.direction === 'LONG' ? '▲ LONG' : '▼ SHORT'}
                               </span>
+                              {e.fill.source && (
+                                <span
+                                  className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${entrySourceTone(e.fill.source)}`}
+                                  title="How this limit was chosen"
+                                >
+                                  {entrySourceLabel(e.fill.source)}
+                                </span>
+                              )}
                               <span className="text-xs text-gray-400">
                                 Entry{' '}
                                 <span className="price-mono text-sky-300">
@@ -649,6 +665,18 @@ function JournalPageInner() {
                                   <h3 className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">
                                     Why this level / entry
                                   </h3>
+                                  {e.fill.source && (
+                                    <p className="mb-1.5">
+                                      <span
+                                        className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${entrySourceTone(e.fill.source)}`}
+                                      >
+                                        {entrySourceLabel(e.fill.source)}
+                                        {e.fill.source === 'manual'
+                                          ? ' · 1% risk'
+                                          : ' · desk risk'}
+                                      </span>
+                                    </p>
+                                  )}
                                   <p className="text-gray-300 leading-relaxed">{e.fill.reason}</p>
                                   <p className="mt-1 text-xs text-gray-500">
                                     {e.fill.level != null && (

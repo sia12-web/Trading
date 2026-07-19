@@ -184,7 +184,7 @@ export default function PositionsPage() {
 
         <LunchCloseCountdown
           instrument={selectedInstrument}
-          marketDisabled={(position?.stop_loss_hit_count ?? 0) >= 3}
+          marketDisabled={(position?.stop_loss_hit_count ?? 0) >= 2}
           stopLossHitCount={position?.stop_loss_hit_count ?? 0}
           hasOpenPosition={!!position}
         />

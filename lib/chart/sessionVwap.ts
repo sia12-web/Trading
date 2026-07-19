@@ -628,73 +628,156 @@ export const NY_DESK_CLOCK: DeskClock = {
 
 export const TOKYO_DESK_CLOCK: DeskClock = {
   timeZone: 'Asia/Tokyo',
-  cashOpenHour: 9,
-  overnightStartHour: 15, // prior TSE close → next cash open
-  openLabel: 'Tokyo 9:00',
+  cashOpenHour: 9, // Nikkei / TSE cash open — not NY 9:30
+  overnightStartHour: 15, // TSE cash close
+  openLabel: 'Nikkei 9:00 JST',
 }
 
 export function deskClockFor(instrument: string | null | undefined): DeskClock {
   return instrument === 'NIKKEI' ? TOKYO_DESK_CLOCK : NY_DESK_CLOCK
 }
 
+/** How many trading days before the tip session AVWAP is anchored (cash open). */
+export const AVWAP_LOOKBACK_TRADING_DAYS = 5
+
+function dayKeyInTz(unix: number, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(unix * 1000))
+}
+
+function addCalendarDaysYmd(ymd: string, delta: number): string {
+  const [y, m, d] = ymd.split('-').map(Number)
+  const dt = new Date(Date.UTC(y!, m! - 1, d! + delta, 12, 0, 0))
+  return dt.toISOString().slice(0, 10)
+}
+
+/** Weekday in the desk TZ for a civil YYYY-MM-DD date. */
+export function isWeekdayYmd(ymd: string, timeZone: string): boolean {
+  const noon = zonedCivilToUnix(ymd, 12, timeZone)
+  const dow = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    weekday: 'short',
+  }).format(new Date(noon * 1000))
+  return dow !== 'Sat' && dow !== 'Sun'
+}
+
+/** Cash-open unix for a civil date in the desk clock (TZ-correct for ET and JST). */
+export function cashOpenUnixForYmd(ymd: string, clock: DeskClock): number {
+  return zonedCivilToUnix(ymd, clock.cashOpenHour, clock.timeZone)
+}
+
 /**
- * Keep last N cash weekdays of bars, including overnight lead-in before the
- * first kept day. Same rule for DOW/NASDAQ/NIKKEI — only the desk clock changes.
+ * Convert a civil YYYY-MM-DD + decimal hour in `timeZone` to unix seconds.
+ * Binary-searches so Asia/Tokyo (UTC+9) and America/New_York both land on the
+ * intended local calendar day (UTC-noon seeding fails east of UTC).
+ */
+export function zonedCivilToUnix(
+  ymd: string,
+  decimalHour: number,
+  timeZone: string
+): number {
+  const [y, m, d] = ymd.split('-').map(Number)
+  if (!y || !m || !d) return 0
+  const targetMin = Math.round(decimalHour * 60)
+  // Search window: day-before → day-after in UTC (covers all offsets)
+  let lo = Math.floor(Date.UTC(y, m - 1, d - 1, 0, 0, 0) / 1000)
+  let hi = Math.floor(Date.UTC(y, m - 1, d + 2, 0, 0, 0) / 1000)
+
+  for (let i = 0; i < 48 && hi - lo > 1; i++) {
+    const mid = Math.floor((lo + hi) / 2)
+    const key = dayKeyInTz(mid, timeZone)
+    const mins = Math.round(hourInTz(mid, timeZone) * 60)
+    if (key < ymd || (key === ymd && mins < targetMin)) lo = mid
+    else hi = mid
+  }
+  return hi
+}
+
+/**
+ * Civil date that is `n` trading days before `ymd` (weekends skipped in desk TZ).
+ * n=1 → previous weekday; n=5 → five trading days prior.
+ */
+export function nthTradingDayBefore(ymd: string, n: number, timeZone: string): string {
+  let cur = ymd
+  let left = Math.max(0, n)
+  while (left > 0) {
+    cur = addCalendarDaysYmd(cur, -1)
+    if (isWeekdayYmd(cur, timeZone)) left--
+  }
+  return cur
+}
+
+function sessionTradingDayYmd(unix: number, clock: DeskClock): string {
+  let day = dayKeyInTz(unix, clock.timeZone)
+  // Weekend tip → last weekday (Friday for Sat/Sun)
+  let guard = 0
+  while (!isWeekdayYmd(day, clock.timeZone) && guard++ < 14) {
+    day = addCalendarDaysYmd(day, -1)
+  }
+  return day
+}
+
+/**
+ * Bars from cash open of (tip − n trading sessions) through the tip session.
+ *
+ * NY (DOW/NASDAQ): America/New_York, anchor = 09:30 ET.
+ * NIKKEI: Asia/Tokyo, anchor = Nikkei cash open 09:00 JST — never NY 9:30.
+ *
+ * Prefer days that actually have RTH prints so exchange holidays do not count
+ * as a “session.” Falls back to weekday calendar when history is sparse.
+ *
+ * @param asOfUnix — session tip (live = now; sim = replay cash open). Defaults to last bar.
  */
 export function lastNTradingSessions(
   candles: SessionBar[],
-  n: number,
-  clock: DeskClock = NY_DESK_CLOCK
+  n: number = AVWAP_LOOKBACK_TRADING_DAYS,
+  clock: DeskClock = NY_DESK_CLOCK,
+  asOfUnix?: number
 ): SessionBar[] {
   if (candles.length === 0) return candles
 
-  const dayKey = (unix: number) =>
-    new Intl.DateTimeFormat('en-CA', {
-      timeZone: clock.timeZone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(new Date(unix * 1000))
+  const tipUnix =
+    asOfUnix != null && Number.isFinite(asOfUnix)
+      ? asOfUnix
+      : candles[candles.length - 1]!.time
 
-  const days = Array.from(new Set(candles.map((c) => dayKey(c.time))))
-    .filter((d) => {
-      const dow = new Date(`${d}T12:00:00Z`).getUTCDay()
-      return dow !== 0 && dow !== 6
-    })
-    .sort()
+  const sessionDay = sessionTradingDayYmd(tipUnix, clock)
 
-  if (days.length === 0) return candles
+  // Days with at least one bar inside cash open → cash close (desk RTH)
+  const rthDays = new Set<string>()
+  for (const c of candles) {
+    const day = dayKeyInTz(c.time, clock.timeZone)
+    if (!isWeekdayYmd(day, clock.timeZone)) continue
+    const openU = cashOpenUnixForYmd(day, clock)
+    const closeU = zonedCivilToUnix(day, clock.overnightStartHour, clock.timeZone)
+    if (c.time >= openU && c.time < closeU) rthDays.add(day)
+  }
 
-  const kept = days.slice(-n)
-  const first = kept[0]!
-  const [y, m, d] = first.split('-').map(Number)
-  const dayAnchor = Math.floor(Date.UTC(y!, m! - 1, d!, 12, 0, 0) / 1000)
-  const cutoff = sessionEdgeUnix(
-    dayAnchor - 86400,
-    clock.overnightStartHour,
-    clock.timeZone
-  )
+  let startDay: string
+  if (rthDays.size > 0) {
+    const sorted = Array.from(rthDays)
+    if (!rthDays.has(sessionDay)) sorted.push(sessionDay)
+    sorted.sort()
+    const tipIdx = sorted.lastIndexOf(sessionDay)
+    const idx = tipIdx >= 0 ? tipIdx : sorted.length - 1
+    // n trading days prior to tip → sorted[idx - n]
+    startDay = sorted[Math.max(0, idx - n)]!
+  } else {
+    startDay = nthTradingDayBefore(sessionDay, n, clock.timeZone)
+  }
 
+  const cutoff = cashOpenUnixForYmd(startDay, clock)
   return candles.filter((c) => c.time >= cutoff)
 }
 
-function hourMinuteInTz(
-  unix: number,
-  timeZone: string
-): { hour: number; minute: number } {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(new Date(unix * 1000))
-  const hour = parseInt(parts.find((p) => p.type === 'hour')?.value ?? '0', 10)
-  const minute = parseInt(parts.find((p) => p.type === 'minute')?.value ?? '0', 10)
-  return { hour: hour === 24 ? 0 : hour, minute }
-}
-
 /**
- * Anchored VWAP from cash open of the first bar in the series.
+ * Anchored VWAP from cash open of the first RTH trading day in the series.
+ * Overnight / post-close bars (hour ≥ cash close) must not become the anchor —
+ * previously `hour >= 9:30` matched 16:00 and started AVWAP a day early.
  * Same math for every index — pass deskClockFor(instrument) for timing.
  */
 export function computeAnchoredVwap(
@@ -711,17 +794,23 @@ export function computeAnchoredVwap(
 } | null {
   if (candles.length === 0) return null
 
-  const openH = Math.floor(clock.cashOpenHour)
-  const openM = Math.round((clock.cashOpenHour - openH) * 60)
-
-  let startIdx = 0
-  for (let i = 0; i < candles.length; i++) {
-    const { hour, minute } = hourMinuteInTz(candles[i]!.time, clock.timeZone)
-    if (hour > openH || (hour === openH && minute >= openM)) {
-      startIdx = i
+  // First bar inside cash session (open → close) defines the anchor day.
+  let anchorUnix: number | null = null
+  for (const c of candles) {
+    const day = dayKeyInTz(c.time, clock.timeZone)
+    if (!isWeekdayYmd(day, clock.timeZone)) continue
+    const openU = cashOpenUnixForYmd(day, clock)
+    const closeU = zonedCivilToUnix(day, clock.overnightStartHour, clock.timeZone)
+    if (c.time >= openU && c.time < closeU) {
+      anchorUnix = openU
       break
     }
   }
+
+  if (anchorUnix == null) return null
+
+  const startIdx = candles.findIndex((c) => c.time >= anchorUnix!)
+  if (startIdx < 0) return null
 
   let sumPV = 0
   let sumV = 0

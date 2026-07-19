@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePositionPriceSubscription } from '@/lib/hooks/usePositionPriceSubscription'
 import { successToast, errorToast } from '@/lib/utils/toastUtils'
 import type { PositionStatus } from '@/types/positionManagement'
+import { entrySourceLabel, entrySourceTone } from '@/lib/trading/entrySourceBadge'
 
 interface PositionStatusCardProps {
   position: PositionStatus | null
@@ -374,6 +375,15 @@ export function PositionStatusCard({
             <span className="rounded border border-amber-800/50 bg-amber-950/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-200">
               Manage
             </span>
+            {position.entry_source && (
+              <span
+                className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${entrySourceTone(position.entry_source)}`}
+                title={position.entry_reason || undefined}
+              >
+                {entrySourceLabel(position.entry_source)}
+                {position.entry_source === 'manual' ? ' · 1%' : ''}
+              </span>
+            )}
             <span
               className={`flex items-center gap-1 text-[10px] ${
                 isConnected ? 'text-emerald-500' : 'text-gray-500'
@@ -479,7 +489,7 @@ export function PositionStatusCard({
             <span className="price-mono text-gray-300">{fmtMoney(position.account_size)}</span>
           </span>
           {position.stop_loss_hit_count > 0 && (
-            <span className="text-red-400">Stops today {position.stop_loss_hit_count}/3</span>
+            <span className="text-red-400">Stops today {position.stop_loss_hit_count}/2</span>
           )}
         </div>
 

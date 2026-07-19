@@ -115,22 +115,43 @@ export async function getOandaAccountSummary(): Promise<
   }
 }
 
+const instrumentMetaCache = new Map<
+  string,
+  { displayPrecision: number; tradeUnitsPrecision: number; at: number }
+>()
+const INSTRUMENT_META_TTL_MS = 60 * 60 * 1000 // 1h
+
 export async function getOandaInstrumentDetails(oandaInstrument: string): Promise<{
   displayPrecision: number
   tradeUnitsPrecision: number
 } | null> {
+  const cached = instrumentMetaCache.get(oandaInstrument)
+  if (cached && Date.now() - cached.at < INSTRUMENT_META_TTL_MS) {
+    return {
+      displayPrecision: cached.displayPrecision,
+      tradeUnitsPrecision: cached.tradeUnitsPrecision,
+    }
+  }
+
   const accountId = oandaAccountId()
   const res = await oandaFetch(
     `/v3/accounts/${accountId}/instruments?instruments=${encodeURIComponent(oandaInstrument)}`
   )
-  if (!res.ok) return null
+  if (!res.ok) return cached
+    ? {
+        displayPrecision: cached.displayPrecision,
+        tradeUnitsPrecision: cached.tradeUnitsPrecision,
+      }
+    : null
   const json = await res.json()
   const inst = json?.instruments?.[0]
   if (!inst) return null
-  return {
+  const meta = {
     displayPrecision: Number(inst.displayPrecision ?? 1),
     tradeUnitsPrecision: Number(inst.tradeUnitsPrecision ?? 0),
   }
+  instrumentMetaCache.set(oandaInstrument, { ...meta, at: Date.now() })
+  return meta
 }
 
 /**

@@ -1,17 +1,36 @@
 /**
  * Position sizing calculator
- * Calculates position size based on 5% account risk
- * Formula: position_size = risk_amount / (entry_price - stop_loss_price)
+ * Desk (AI/structure) levels: 5% account risk.
+ * Manual chart/ticket entries: 1% account risk — size adapts to stop distance.
+ * Formula: position_size = risk_amount / |entry - stop|
  */
 
 import { logger } from '@/lib/utils/logger'
 import { snapProfitToRound } from '@/lib/trading/deskLevels'
 import type { PositionSizing, EntryDirection } from '@/types/trading'
 
-const RISK_PERCENT = 5 // 5% of account
+/** AI / structure desk levels */
+export const DESK_RISK_PERCENT = 5
+/** Manual limit orders — always 1% of account */
+export const MANUAL_RISK_PERCENT = 1
 const MAX_LOSS_PERCENT = 0.05 // 5% max loss per trade (default disaster stop)
 /** With tight zone stops, cap exposure so risk-per-point can't blow up notional */
 const MAX_NOTIONAL_MULT = 5
+
+export type DeskEntrySource = 'ai' | 'structure' | 'manual'
+
+export function riskPercentForEntrySource(source?: DeskEntrySource | string | null): number {
+  return source === 'manual' ? MANUAL_RISK_PERCENT : DESK_RISK_PERCENT
+}
+
+export function normalizeEntrySource(
+  raw?: string | null,
+  fallback: DeskEntrySource = 'ai'
+): DeskEntrySource {
+  if (raw === 'manual' || raw === 'structure' || raw === 'ai') return raw
+  if (raw === 'chart_level') return 'ai'
+  return fallback
+}
 
 export class PositionSizer {
   /**
@@ -25,7 +44,8 @@ export class PositionSizer {
     entryPrice: number,
     accountSize: number,
     direction: EntryDirection,
-    stopLossPrice?: number
+    stopLossPrice?: number,
+    riskPercent: number = DESK_RISK_PERCENT
   ): PositionSizing | null {
     // Validate inputs
     if (entryPrice <= 0) {
@@ -38,8 +58,9 @@ export class PositionSizer {
       return null
     }
 
-    // Calculate risk amount (5% of account)
-    const riskAmount = accountSize * (RISK_PERCENT / 100)
+    const riskPct =
+      Number.isFinite(riskPercent) && riskPercent > 0 ? riskPercent : DESK_RISK_PERCENT
+    const riskAmount = accountSize * (riskPct / 100)
 
     // Stop: custom (zone-based) if valid for the direction, else default ±5%
     const customStopValid =
@@ -80,14 +101,15 @@ export class PositionSizer {
 
     // Verify risk doesn't exceed max
     const maxRisk = positionSize * priceDistance
-    const riskPercent = (maxRisk / accountSize) * 100
+    const riskPercentActual = (maxRisk / accountSize) * 100
 
-    if (riskPercent > RISK_PERCENT + 0.1) {
+    if (riskPercentActual > riskPct + 0.1) {
       // Allow 0.1% tolerance for rounding
       logger.error('PositionSizer: Risk exceeds maximum', {
-        riskPercent,
+        riskPercent: riskPercentActual,
         maxRisk,
         accountSize,
+        riskPct,
       })
       return null
     }
@@ -97,13 +119,13 @@ export class PositionSizer {
       stopLossPrice: stopLossPriceFinal,
       positionSize,
       riskAmount,
-      riskPercent,
+      riskPercent: riskPct,
       direction,
     })
 
     return {
       account_size: accountSize,
-      risk_percent: RISK_PERCENT,
+      risk_percent: riskPct,
       risk_amount: riskAmount,
       entry_price: entryPrice,
       stop_loss_price: stopLossPriceFinal,
@@ -220,7 +242,8 @@ export function previewPositionSizing(
   entryPrice: number,
   accountSize: number,
   direction: EntryDirection,
-  stopLossPrice?: number
+  stopLossPrice?: number,
+  riskPercent: number = DESK_RISK_PERCENT
 ): {
   stop_loss_price: number
   position_size: number
@@ -230,7 +253,9 @@ export function previewPositionSizing(
   profit_target_price: number
 } | null {
   if (entryPrice <= 0 || accountSize <= 0) return null
-  const risk_amount = accountSize * (RISK_PERCENT / 100)
+  const riskPct =
+    Number.isFinite(riskPercent) && riskPercent > 0 ? riskPercent : DESK_RISK_PERCENT
+  const risk_amount = accountSize * (riskPct / 100)
 
   const customStopValid =
     stopLossPrice != null &&
@@ -266,7 +291,7 @@ export function previewPositionSizing(
     stop_loss_price,
     position_size,
     risk_amount: position_size * priceDistance,
-    risk_percent: RISK_PERCENT,
+    risk_percent: riskPct,
     notional: position_size * entryPrice,
     profit_target_price,
   }

@@ -232,7 +232,7 @@ function reactionLabel(l: LevelLine): string | null {
 // Chart light theme (TradingView-style near-white pane)
 const CHART_THEME = DESK_CHART_THEME
 
-/** Same desk window for every index: last 5 cash days + overnight lead-in (clock by instrument). */
+/** Desk window: from cash open of 5 trading days prior to tip through now. */
 function toDeskCandles(candles: OHLCV[], instrument: Instrument = 'DOW'): OHLCV[] {
   const trimmed = trimDeskCandles(
     candles.map((c) => ({
@@ -376,7 +376,10 @@ interface TradingChartProps {
   /** Lock tabs to day's recommended desk instrument */
   lockedInstrument?:   Instrument | null
   /** When user clicks a level price (from panel or highlight) */
-  onLevelSelect?:      (price: number, meta?: { type?: string; reasoning?: string }) => void
+  onLevelSelect?:      (
+    price: number,
+    meta?: { type?: string; reasoning?: string; source?: 'ai' | 'structure' | 'manual' }
+  ) => void
   /** Morning session: allow placing limits from the chart */
   canPlaceOrder?: boolean
   /** Bump to force a levels reload after SL/TP (system memory updated) */
@@ -1361,12 +1364,14 @@ export function TradingChart({
       const price = candleRef.current.coordinateToPrice(y)
       if (price == null || !Number.isFinite(Number(price)) || Number(price) <= 0) return
 
-      // Snap to nearest AI/structure level within 0.25% when close
+      // Snap to nearest AI/structure level within 0.25% when close; else manual
       const tradeLevels = levelsRef.current.filter(
         (l) => l.source === 'ai' || l.source === 'structure'
       )
       let best = Number(price)
       let bestType: string | undefined
+      let bestSource: 'ai' | 'structure' | 'manual' = 'manual'
+      let bestReason: string | undefined
       let bestDist = Infinity
       for (const l of tradeLevels) {
         const d = Math.abs(l.price - best) / best
@@ -1374,9 +1379,15 @@ export function TradingChart({
           bestDist = d
           best = Number(l.price)
           bestType = String(l.type)
+          bestSource = l.source === 'structure' ? 'structure' : 'ai'
+          bestReason = l.reasoning
         }
       }
-      onLevelSelect(best, bestType ? { type: bestType } : undefined)
+      onLevelSelect(best, {
+        type: bestSource === 'manual' ? 'manual' : bestType,
+        source: bestSource,
+        reasoning: bestReason,
+      })
     }
 
     container.style.cursor = 'crosshair'
@@ -1586,9 +1597,10 @@ export function TradingChart({
             onClick={() => {
               const px = livePrice ?? lastCandleRef.current?.close
               if (px == null || !Number.isFinite(px)) return
-              onLevelSelect?.(px, { type: 'market' })
+              onLevelSelect?.(px, { type: 'manual', source: 'manual' })
             }}
-            className="rounded-lg border border-sky-500/50 bg-sky-600/90 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-sky-500"
+            className="rounded-lg border border-amber-500/50 bg-amber-600/90 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-amber-500"
+            title="Manual limit at last price — 1% account risk, size adjusts to your stop"
           >
             Place limit
           </button>
@@ -1693,7 +1705,7 @@ export function TradingChart({
           <span className="inline-block w-4 border-t-2" style={{ borderColor: SHARED_VWAP_COLORS.vwap }} />
           <span style={{ color: SHARED_VWAP_COLORS.vwap }}>AVWAP</span>
           <span className="text-gray-600">
-            {deskClockFor(instrument).openLabel} · 5 sessions · ±1/2/3σ
+            {deskClockFor(instrument).openLabel} · 5 trading days prior · ±1/2/3σ
           </span>
         </span>
       </div>
@@ -1777,6 +1789,7 @@ export function TradingChart({
                         onLevelSelect?.(l.price, {
                           type: String(l.type),
                           reasoning: l.reasoning,
+                          source: l.source === 'structure' ? 'structure' : 'ai',
                         })
                       }
                       className={`w-full rounded-xl border px-2.5 py-2.5 text-left text-[11px] transition-all hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 ${

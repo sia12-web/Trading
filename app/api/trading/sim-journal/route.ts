@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
       .select(
         `id, instrument, replay_date, direction, entry_price, exit_price, stop_loss, take_profit,
          position_size, risk_amount, account_size, filled_at_unix, exit_at_unix, exit_reason,
-         profit_loss, entry_level, entry_reason, level_conviction, created_at, replay_id`
+         profit_loss, entry_level, entry_reason, entry_source, level_conviction, created_at, replay_id`
       )
       .eq('user_id', user.id)
       .gte('created_at', since.toISOString())
@@ -111,6 +111,7 @@ export async function GET(request: NextRequest) {
           level: r.entry_level != null ? num(r.entry_level) : num(r.entry_price),
           reason: (r.entry_reason as string) || 'Sim level limit fill',
           conviction: r.level_conviction != null ? num(r.level_conviction) : null,
+          source: (r.entry_source as string | null) || null,
         },
         risk: {
           stop_loss: num(r.stop_loss),
@@ -254,12 +255,49 @@ export async function POST(request: NextRequest) {
         profit_loss: profitLoss,
         entry_level: body.entry_level != null ? num(body.entry_level) : entryPrice,
         entry_reason: typeof body.entry_reason === 'string' ? body.entry_reason.slice(0, 2000) : null,
+        entry_source:
+          body.entry_source === 'ai' ||
+          body.entry_source === 'structure' ||
+          body.entry_source === 'manual'
+            ? body.entry_source
+            : null,
         level_conviction: body.level_conviction != null ? num(body.level_conviction) : null,
       })
       .select('id, profit_loss, created_at')
       .single()
 
     if (error) {
+      if (/entry_source/i.test(error.message || '')) {
+        const retry = await supabase
+          .from('simulation_trades')
+          .insert({
+            user_id: user.id,
+            replay_id: resolvedReplayId,
+            instrument,
+            replay_date: replayDate,
+            direction,
+            entry_price: entryPrice,
+            exit_price: exitPrice,
+            stop_loss: stopLoss,
+            take_profit: takeProfit,
+            position_size: positionSize,
+            risk_amount: riskAmount,
+            account_size: accountSize,
+            filled_at_unix: filledAtUnix,
+            exit_at_unix: exitAtUnix,
+            exit_reason: exitReason,
+            profit_loss: profitLoss,
+            entry_level: body.entry_level != null ? num(body.entry_level) : entryPrice,
+            entry_reason:
+              typeof body.entry_reason === 'string' ? body.entry_reason.slice(0, 2000) : null,
+            level_conviction: body.level_conviction != null ? num(body.level_conviction) : null,
+          })
+          .select('id, profit_loss, created_at')
+          .single()
+        if (!retry.error && retry.data) {
+          return NextResponse.json({ success: true, trade: retry.data })
+        }
+      }
       console.error('[sim-journal POST]', error)
       return NextResponse.json(
         { error: 'Failed to save sim trade', detail: error.message },

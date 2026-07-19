@@ -23,6 +23,10 @@ export interface SessionGateState {
   timeEst: string
   entryWindow: 1 | 2 | 3 | null
   open_position_id: string | null
+  attemptsUsed?: number
+  maxAttempts?: number
+  stopHits?: number
+  maxStopHits?: number
 }
 
 function formatEtNow(): string {
@@ -97,6 +101,10 @@ export function SessionBanner({
         timeEst: json.timeEst,
         entryWindow: json.entryWindow,
         open_position_id: json.open_position_id,
+        attemptsUsed: Number(json.attemptsUsed ?? json.attempts_used ?? 0),
+        maxAttempts: Number(json.maxAttempts ?? json.max_attempts ?? 2),
+        stopHits: Number(json.stopHits ?? json.stop_hits ?? 0),
+        maxStopHits: Number(json.maxStopHits ?? json.max_stop_hits ?? 2),
       }
       setGate(next)
       onGate?.(next)
@@ -230,6 +238,22 @@ export function SessionBanner({
       {gate.phase === 'ENTRY' && gate.entryWindow && gate.clockedIn && (
         <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-emerald-300">
           Window {gate.entryWindow}/3
+        </span>
+      )}
+      {gate.clockedIn && (
+        <span
+          className={`rounded px-2 py-0.5 font-semibold tabular-nums ${
+            (gate.stopHits ?? 0) >= (gate.maxStopHits ?? 2) ||
+            (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? 2)
+              ? 'bg-red-500/25 text-red-200'
+              : 'bg-sky-500/20 text-sky-200'
+          }`}
+          title="Max 2 attempts per session. After 2 stop-outs, trading switches off."
+        >
+          Attempts {gate.attemptsUsed ?? 0}/{gate.maxAttempts ?? 2}
+          {(gate.stopHits ?? 0) > 0
+            ? ` · Stops ${gate.stopHits}/${gate.maxStopHits ?? 2}`
+            : ''}
         </span>
       )}
       <span className="flex-1 min-w-[12rem]">{phaseHint(gate.phase, gate.message)}</span>

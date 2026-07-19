@@ -8,11 +8,21 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { logger } from '@/lib/utils/logger'
 import { getWindowManager } from '@/lib/trading/windowManager'
-import { getPositionSizer } from '@/lib/trading/positionSizing'
+import {
+  getPositionSizer,
+  normalizeEntrySource,
+  riskPercentForEntrySource,
+} from '@/lib/trading/positionSizing'
 import { getESTDateString } from '@/lib/utils/timeUtils'
-import { resolveSessionGate, assertCanOpenPosition } from '@/lib/trading/sessionGate'
+import {
+  resolveSessionGate,
+  assertCanOpenPosition,
+  deskMarketFor,
+  instrumentsForDeskMarket,
+} from '@/lib/trading/sessionGate'
+import { getTodayAttendance } from '@/lib/trading/deskAttendance'
 import { shouldExecuteOandaOrders } from '@/lib/oanda/config'
-import { placeOandaMarketOrder } from '@/lib/oanda/orders'
+import { placeOandaMarketOrder, closeOandaTrade } from '@/lib/oanda/orders'
 import type { PositionOpenResponse } from '@/types/trading'
 
 interface OpenPositionRequest {
@@ -25,8 +35,13 @@ interface OpenPositionRequest {
   regime_confidence: number
   best_level_break_confidence?: number | null
   best_break_level?: number | null
-  /** Chart click at a highlighted level — skip window-extreme deep check */
-  entry_source?: 'chart_level' | 'auto_deep'
+  /**
+   * How the limit was chosen.
+   * ai | structure | manual (preferred); chart_level → ai; auto_deep → ai
+   */
+  entry_source?: 'ai' | 'structure' | 'manual' | 'chart_level' | 'auto_deep'
+  /** Ignored — risk is always derived from entry_source on the server */
+  risk_percent?: number
   /** Zone-based stop (beyond the level's zone edge); omit for default ±5% */
   stop_loss_price?: number
   /** Planned take-profit at fill */
@@ -142,33 +157,48 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       lockedInstrument = 'NIKKEI'
     }
 
-    // Filled trades only — working/cancelled limits must not lock the day
-    const { data: anyFilled } = await supabase
-      .from('trades_journal')
-      .select('id, exit_timestamp, stop_loss_hit_count')
-      .eq('user_id', user.id)
-      .eq('trade_date', today)
-      .eq('instrument', body.instrument)
-      .eq('fill_status', 'filled')
-      .limit(1)
-      .maybeSingle()
+    // Filled trades only — working/cancelled limits must not count as attempts.
+    // Scope to this desk market so NY and Tokyo do not share the attempt book.
+    const market = deskMarketFor(body.instrument)
+    const marketInstruments = instrumentsForDeskMarket(market)
 
-    const { data: openNy } = await supabase
-      .from('trades_journal')
-      .select('id, stop_loss_hit_count')
-      .eq('user_id', user.id)
-      .eq('trade_date', today)
-      .eq('instrument', body.instrument)
-      .eq('fill_status', 'filled')
-      .is('exit_timestamp', null)
-      .maybeSingle()
+    const [filledRes, openRes, attendance] = await Promise.all([
+      supabase
+        .from('trades_journal')
+        .select('id, exit_timestamp, exit_reason, stop_loss_hit_count')
+        .eq('user_id', user.id)
+        .eq('trade_date', today)
+        .in('instrument', marketInstruments)
+        .eq('fill_status', 'filled'),
+      supabase
+        .from('trades_journal')
+        .select('id, stop_loss_hit_count')
+        .eq('user_id', user.id)
+        .eq('trade_date', today)
+        .in('instrument', marketInstruments)
+        .eq('fill_status', 'filled')
+        .is('exit_timestamp', null)
+        .maybeSingle(),
+      getTodayAttendance(supabase, user.id, market),
+    ])
+
+    const filledToday = filledRes.data
+    const openNy = openRes.data
+
+    const filledRows = filledToday ?? []
+    const attemptsUsed = filledRows.length
+    const stopHits = filledRows.filter((t) => t.exit_reason === 'stop_hit').length
+    const clockedIn = attendance?.status === 'clocked_in'
+    const attendedToday = !!attendance
 
     const gate = resolveSessionGate({
       lockedInstrument,
       hasOpenPosition: !!openNy,
-      stopLossHitCount: openNy?.stop_loss_hit_count ?? 0,
-      dayDone: !!anyFilled && !openNy,
+      attemptsUsed,
+      stopLossHitCount: stopHits,
       viewingInstrument: body.instrument,
+      clockedIn,
+      attendedToday,
     })
 
     const gateCheck = assertCanOpenPosition(body.instrument, gate)
@@ -191,7 +221,12 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
     }
 
     // Skip ultra-tight deep extreme check when entry is from chart level click
-    const fromChartLevel = body.entry_source === 'chart_level'
+    const deskEntrySource = normalizeEntrySource(body.entry_source)
+    const fromChartLevel =
+      body.entry_source === 'chart_level' ||
+      body.entry_source === 'ai' ||
+      body.entry_source === 'structure' ||
+      body.entry_source === 'manual'
 
     // Validate entry price
     if (body.entry_price <= 0) {
@@ -341,12 +376,14 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       )
     }
 
-    // Calculate position sizing (zone stop when provided, else default ±5%)
+    // Calculate position sizing — risk is server-derived only (manual = 1%, else desk 5%)
+    const riskPct = riskPercentForEntrySource(deskEntrySource)
     const sizing = positionSizer.calculatePosition(
       body.entry_price,
       body.account_size,
       body.entry_direction,
-      body.stop_loss_price
+      body.stop_loss_price,
+      riskPct
     )
     if (!sizing) {
       logger.error('POST /api/trading/positions/open: Position sizing failed', { body })
@@ -412,16 +449,31 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
 
     // Get today's date in YYYY-MM-DD format (EST) — already computed as `today` above
 
-    // Existing FILLED open only (working limits are upgraded below)
-    const { data: existingPosition, error: queryError } = await supabase
-      .from('trades_journal')
-      .select('id, entry_price, stop_loss_price, position_size, risk_amount, fill_status')
-      .eq('user_id', user.id)
-      .eq('instrument', body.instrument)
-      .eq('trade_date', today)
-      .eq('fill_status', 'filled')
-      .is('exit_timestamp', null)
-      .maybeSingle()
+    // Existing FILLED open + WORKING upgrade candidate in parallel
+    const [existingRes, workingRes] = await Promise.all([
+      supabase
+        .from('trades_journal')
+        .select('id, entry_price, stop_loss_price, position_size, risk_amount, fill_status')
+        .eq('user_id', user.id)
+        .eq('instrument', body.instrument)
+        .eq('trade_date', today)
+        .eq('fill_status', 'filled')
+        .is('exit_timestamp', null)
+        .maybeSingle(),
+      supabase
+        .from('trades_journal')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('instrument', body.instrument)
+        .eq('trade_date', today)
+        .eq('fill_status', 'working')
+        .is('exit_timestamp', null)
+        .maybeSingle(),
+    ])
+
+    const existingPosition = existingRes.data
+    const queryError = existingRes.error
+    const workingRow = workingRes.data
 
     if (queryError) {
       logger.error('POST /api/trading/positions/open: Database query error', { error: queryError })
@@ -464,16 +516,6 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
         { status: 200 }
       )
     }
-
-    const { data: workingRow } = await supabase
-      .from('trades_journal')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('instrument', body.instrument)
-      .eq('trade_date', today)
-      .eq('fill_status', 'working')
-      .is('exit_timestamp', null)
-      .maybeSingle()
 
     // CRITICAL FIX: Always use authenticated user's ID, never trust request body
     // Broker fill first (practice/live) — do not journal a phantom if OANDA rejects
@@ -556,6 +598,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       best_break_level: body.best_break_level || null,
       profit_target_price: body.profit_target_price ?? null,
       entry_reason: entryReason,
+      entry_source: deskEntrySource,
       oanda_trade_id: oandaTradeId,
       oanda_order_id: oandaOrderId,
       broker_fill_price: brokerFillPrice,
@@ -591,13 +634,14 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
     // If enrichment columns missing (migration not applied), retry without them
     if (
       insertError &&
-      /entry_reason|profit_target_price|oanda_trade_id|oanda_order_id|broker_fill_price|fill_status/i.test(
+      /entry_reason|entry_source|profit_target_price|oanda_trade_id|oanda_order_id|broker_fill_price|fill_status/i.test(
         insertError.message || ''
       )
     ) {
       const {
         profit_target_price: _pt,
         entry_reason: _er,
+        entry_source: _es,
         oanda_trade_id: _ot,
         oanda_order_id: _oo,
         broker_fill_price: _bf,
@@ -637,6 +681,27 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
 
     if (insertError || !newPosition) {
       logger.error('POST /api/trading/positions/open: Insert failed', { error: insertError })
+      // Broker already filled — flatten so we do not leave an orphan OANDA position
+      if (oandaTradeId) {
+        try {
+          const closed = await closeOandaTrade(oandaTradeId)
+          if (!closed.ok) {
+            logger.error('POST /api/trading/positions/open: OANDA compensate close failed', {
+              tradeId: oandaTradeId,
+              error: closed.error,
+            })
+          } else {
+            logger.info('POST /api/trading/positions/open: OANDA compensate close ok', {
+              tradeId: oandaTradeId,
+            })
+          }
+        } catch (compensateErr) {
+          logger.error('POST /api/trading/positions/open: OANDA compensate threw', {
+            tradeId: oandaTradeId,
+            error: compensateErr,
+          })
+        }
+      }
       return NextResponse.json(
         {
           success: false,
@@ -648,7 +713,9 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
           risk_amount: sizing.risk_amount,
           entry_direction: body.entry_direction,
           entry_window: body.entry_window,
-          message: 'Failed to insert position',
+          message: oandaTradeId
+            ? 'Failed to journal position — broker fill was closed to avoid orphan'
+            : 'Failed to insert position',
         },
         { status: 500 }
       )

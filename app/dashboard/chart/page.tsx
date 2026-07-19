@@ -42,12 +42,17 @@ export default function ChartPage() {
   const [orderLevel, setOrderLevel] = useState<number | null>(null)
   const [orderLevelType, setOrderLevelType] = useState<string | undefined>()
   const [orderLevelReason, setOrderLevelReason] = useState<string | undefined>()
+  const [orderEntrySource, setOrderEntrySource] = useState<'ai' | 'structure' | 'manual'>('ai')
   const [regime, setRegime] = useState<'bullish' | 'bearish' | 'choppy'>('bullish')
   const [regimeConfidence, setRegimeConfidence] = useState(70)
   const [gateTick, setGateTick] = useState(0)
   const [lastQuoteAt, setLastQuoteAt] = useState<number | null>(null)
   const [dataMode, setDataMode] = useState<'live' | 'synthetic'>('live')
   const [fillError, setFillError] = useState<string | null>(null)
+  /** Placing → Working → Filled | Rejected */
+  const [orderStatus, setOrderStatus] = useState<
+    'idle' | 'placing' | 'working' | 'filled' | 'rejected'
+  >('idle')
   const [levelsRefreshKey, setLevelsRefreshKey] = useState(0)
   const [aiVerdict, setAiVerdict] = useState<AiVerdict | null>(null)
 
@@ -55,6 +60,9 @@ export default function ChartPage() {
   const bannerRefreshRef = useRef<(() => void) | null>(null)
   const pendingRef = useRef<PendingLimitOrder | null>(null)
   const fillingRef = useRef(false)
+  const placingOrderRef = useRef(false)
+  /** Bumped on cancel / session expire so in-flight fills do not re-arm a cancelled limit */
+  const orderGenRef = useRef(0)
   const livePriceRef = useRef<number | null>(null)
   const regimeFetchedRef = useRef(false)
   const lastParentPriceAt = useRef(0)
@@ -85,12 +93,22 @@ export default function ChartPage() {
   }, [])
 
   const handleLevelSelect = useCallback(
-    (price: number, meta?: { type?: string; reasoning?: string }) => {
+    (
+      price: number,
+      meta?: { type?: string; reasoning?: string; source?: 'ai' | 'structure' | 'manual' }
+    ) => {
       if (managePos || positionOverlay || pending) return
       if (gate?.phase !== 'ENTRY' || !gate?.canPlaceEntry) return
       setOrderLevel(price)
       setOrderLevelType(meta?.type)
       setOrderLevelReason(meta?.reasoning)
+      setOrderEntrySource(
+        meta?.source === 'manual' || meta?.type === 'manual' || meta?.type === 'market'
+          ? 'manual'
+          : meta?.source === 'structure'
+            ? 'structure'
+            : 'ai'
+      )
     },
     [managePos, positionOverlay, pending, gate?.phase, gate?.canPlaceEntry]
   )
@@ -146,7 +164,9 @@ export default function ChartPage() {
     (order: FilledOrder, inst: string) => {
       const dir = order.entry_direction === 'LONG' ? 'long' : 'short'
       setPending(null)
+      pendingRef.current = null
       setFillError(null)
+      setOrderStatus('filled')
       setPositionOverlay({
         entryPrice: order.entry_price,
         stopLoss: order.stop_loss_price,
@@ -168,12 +188,29 @@ export default function ChartPage() {
     [refreshGate]
   )
 
+  const cancelWorkingLimit = useCallback(
+    async (inst: Instrument) => {
+      try {
+        await fetch('/api/trading/positions/cancel-working', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ instrument: inst }),
+        })
+      } catch {
+        /* non-fatal — local state already cleared */
+      }
+    },
+    []
+  )
+
   /** Open the journal position only after the working limit fills. */
   const fillPending = useCallback(
     async (pend: PendingLimitOrder, fillPrice: number) => {
       if (fillingRef.current) return
       fillingRef.current = true
+      const gen = orderGenRef.current
       setFillError(null)
+      setOrderStatus('placing')
       try {
         const res = await fetch('/api/trading/positions/open', {
           method: 'POST',
@@ -187,7 +224,7 @@ export default function ChartPage() {
             regime: pend.regime,
             regime_confidence: pend.regimeConfidence,
             best_break_level: pend.level,
-            entry_source: 'chart_level',
+            entry_source: pend.entrySource || 'ai',
             stop_loss_price: pend.stopLoss,
             profit_target_price: pend.profitTarget,
             entry_reason:
@@ -196,10 +233,39 @@ export default function ChartPage() {
           }),
         })
         const json = await res.json()
-        if (!res.ok || !json.success) {
-          setFillError(json.message || 'Fill failed — limit still working')
+        if (gen !== orderGenRef.current) {
+          // Cancelled while in flight — if broker+journal succeeded, still manage the open risk
+          if (res.ok && json.success) {
+            setOrderStatus('filled')
+            setPending(null)
+            pendingRef.current = null
+            enterManage(
+              {
+                position_id: json.position_id,
+                entry_price: json.entry_price ?? fillPrice,
+                stop_loss_price: json.stop_loss_price ?? pend.stopLoss,
+                position_size: json.position_size ?? pend.positionSize,
+                risk_amount: json.risk_amount ?? pend.riskAmount,
+                entry_direction: pend.direction,
+                profit_target_price: pend.profitTarget,
+                entry_source: pend.entrySource,
+              },
+              pend.instrument
+            )
+          }
           return
         }
+        if (!res.ok || !json.success) {
+          setOrderStatus('rejected')
+          setFillError(json.message || 'Fill rejected')
+          pendingRef.current = null
+          setPending(null)
+          void cancelWorkingLimit(pend.instrument as Instrument)
+          return
+        }
+        setOrderStatus('filled')
+        setPending(null)
+        pendingRef.current = null
         enterManage(
           {
             position_id: json.position_id,
@@ -209,21 +275,29 @@ export default function ChartPage() {
             risk_amount: json.risk_amount ?? pend.riskAmount,
             entry_direction: pend.direction,
             profit_target_price: pend.profitTarget,
+            entry_source: pend.entrySource,
           },
           pend.instrument
         )
       } catch (e) {
-        setFillError(e instanceof Error ? e.message : 'Fill failed')
+        if (gen === orderGenRef.current) {
+          setOrderStatus('rejected')
+          setFillError(e instanceof Error ? e.message : 'Fill failed')
+          pendingRef.current = null
+          setPending(null)
+          void cancelWorkingLimit(pend.instrument as Instrument)
+        }
       } finally {
         fillingRef.current = false
       }
     },
-    [enterManage]
+    [enterManage, cancelWorkingLimit]
   )
 
   const persistWorking = useCallback(async (order: PendingLimitOrder) => {
+    const gen = orderGenRef.current
     try {
-      await fetch('/api/trading/positions/working', {
+      const res = await fetch('/api/trading/positions/working', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -240,10 +314,23 @@ export default function ChartPage() {
           regime: order.regime,
           regime_confidence: order.regimeConfidence,
           entry_reason: order.entryReason,
+          entry_source: order.entrySource,
         }),
       })
+      if (gen !== orderGenRef.current) return
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        setOrderStatus('rejected')
+        setFillError(j.error || 'Working limit rejected by server')
+        pendingRef.current = null
+        setPending(null)
+      }
     } catch {
-      /* chart still tracks pending locally */
+      if (gen !== orderGenRef.current) return
+      setOrderStatus('rejected')
+      setFillError('Working limit failed to persist — cleared')
+      pendingRef.current = null
+      setPending(null)
     }
   }, [])
 
@@ -264,45 +351,67 @@ export default function ChartPage() {
 
   const handlePlaced = useCallback(
     (order: PendingLimitOrder) => {
+      if (placingOrderRef.current || pendingRef.current || managePos) return
+      placingOrderRef.current = true
+      setOrderStatus('placing')
       setOrderLevel(null)
       setOrderLevelType(undefined)
       setOrderLevelReason(undefined)
+      setOrderEntrySource('ai')
       setFillError(null)
 
       // Immediate fill if price is already through the limit
       const px = livePriceRef.current
       if (px != null && limitWouldFill(order.direction, order.level, px)) {
-        void fillPending(order, order.level)
+        pendingRef.current = order
+        setPending(order)
+        void fillPending(order, order.level).finally(() => {
+          placingOrderRef.current = false
+        })
         return
       }
 
+      // Optimistic WORKING — paint lines before network
+      pendingRef.current = order
       setPending(order)
+      setOrderStatus('working')
+      placingOrderRef.current = false
       void persistWorking(order)
     },
-    [fillPending, persistWorking]
+    [fillPending, persistWorking, managePos]
   )
 
-  // Watch live quotes — fill working limit when price reaches it
+  // Watch live quotes — fill only durable WORKING limits (not placing/rejected)
   useEffect(() => {
     if (!pending || managePos || livePrice == null) return
+    if (orderStatus !== 'working') return
     if (!limitWouldFill(pending.direction, pending.level, livePrice)) return
     void fillPending(pending, pending.level)
-  }, [livePrice, pending, managePos, fillPending])
+  }, [livePrice, pending, managePos, fillPending, orderStatus])
 
   // After entryClose (FLAT) or session end: cancel unfilled working limits; levels gone
   useEffect(() => {
     if (gate?.phase !== 'FLAT' && gate?.phase !== 'DONE' && gate?.phase !== 'CLOSED') return
     if (pending) {
+      const inst = (pending.instrument || gate.lockedInstrument || instrument) as Instrument
+      orderGenRef.current += 1
+      pendingRef.current = null
       setPending(null)
+      setOrderStatus('idle')
       setFillError(
         gate.phase === 'FLAT'
           ? 'Working limit cancelled — entry window closed (levels cleared)'
           : 'Working limit cancelled — session closed'
       )
+      if (gate.phase === 'FLAT') {
+        void cancelWorkingLimit(inst)
+      }
     }
     // Expire DB working rows + lunch-flatten any leftover filled opens
-    void expireWorkingLimits(gate.phase === 'DONE' || gate.phase === 'CLOSED')
-  }, [gate?.phase, pending, expireWorkingLimits])
+    if (gate.phase === 'DONE' || gate.phase === 'CLOSED') {
+      void expireWorkingLimits(true)
+    }
+  }, [gate?.phase, gate?.lockedInstrument, pending, expireWorkingLimits, cancelWorkingLimit, instrument])
 
   // Load open position into manage desk when already filled (refresh / reopen)
   useEffect(() => {
@@ -421,18 +530,35 @@ export default function ChartPage() {
             </Link>
           </div>
 
-          {inWorking && pending && (
-            <div className="flex items-center gap-3 rounded-lg border border-sky-700/50 bg-sky-950/40 px-3 py-2 text-xs text-sky-100">
-              <span className="font-semibold uppercase tracking-wide text-sky-300">
-                Working limit
+          {(inWorking && pending) || orderStatus === 'rejected' || orderStatus === 'placing' ? (
+            <div
+              className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-xs ${
+                orderStatus === 'rejected'
+                  ? 'border-red-700/50 bg-red-950/40 text-red-100'
+                  : 'border-sky-700/50 bg-sky-950/40 text-sky-100'
+              }`}
+            >
+              <span className="font-semibold uppercase tracking-wide">
+                {orderStatus === 'placing'
+                  ? 'Placing'
+                  : orderStatus === 'rejected'
+                    ? 'Rejected'
+                    : orderStatus === 'filled'
+                      ? 'Filled'
+                      : 'Working'}
               </span>
-              <span className="price-mono">
-                {pending.direction} @ {pending.level.toLocaleString()}
-              </span>
-              <span className="text-sky-400/80">
-                SL {pending.stopLoss.toLocaleString()} · TP {pending.profitTarget.toLocaleString()}
-              </span>
-              {livePrice != null && (
+              {pending && (
+                <>
+                  <span className="price-mono">
+                    {pending.direction} @ {pending.level.toLocaleString()}
+                  </span>
+                  <span className="opacity-80">
+                    SL {pending.stopLoss.toLocaleString()} · TP{' '}
+                    {pending.profitTarget.toLocaleString()}
+                  </span>
+                </>
+              )}
+              {pending && livePrice != null && orderStatus === 'working' && (
                 <span className="text-gray-400">
                   last {livePrice.toLocaleString()} ·{' '}
                   {pending.direction === 'LONG'
@@ -444,19 +570,25 @@ export default function ChartPage() {
                       : 'at/through limit…'}
                 </span>
               )}
-              <button
-                type="button"
-                onClick={() => {
-                  setPending(null)
-                  setFillError(null)
-                  void expireWorkingLimits(true)
-                }}
-                className="ml-auto rounded border border-sky-600/50 px-2 py-1 text-[10px] font-semibold uppercase text-sky-200 hover:bg-sky-900/50"
-              >
-                Cancel
-              </button>
+              {pending && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const inst = pending.instrument
+                    orderGenRef.current += 1
+                    pendingRef.current = null
+                    setPending(null)
+                    setFillError(null)
+                    setOrderStatus('idle')
+                    void cancelWorkingLimit(inst)
+                  }}
+                  className="ml-auto rounded border border-sky-600/50 px-2 py-1 text-[10px] font-semibold uppercase text-sky-200 hover:bg-sky-900/50"
+                >
+                  Cancel
+                </button>
+              )}
             </div>
-          )}
+          ) : null}
 
           {fillError && (
             <p className="px-1 text-xs text-red-400">{fillError}</p>
@@ -470,6 +602,7 @@ export default function ChartPage() {
                 setManagePos(null)
                 setPositionOverlay(null)
                 setAiVerdict(null)
+                refreshGate()
                 void refreshLevelsAfterExit(exitReason)
               }}
               onRefreshGate={refreshGate}
@@ -506,9 +639,13 @@ export default function ChartPage() {
                     : null
                 }
                 onCancelPending={() => {
+                  const inst = (pending?.instrument || locked || instrument) as Instrument
+                  orderGenRef.current += 1
+                  pendingRef.current = null
                   setPending(null)
                   setFillError(null)
-                  void expireWorkingLimits(true)
+                  setOrderStatus('idle')
+                  void cancelWorkingLimit(inst)
                 }}
                 aiVerdict={managePos ? aiVerdict : null}
                 jumpToPriceRef={jumpToPriceRef}
@@ -573,6 +710,7 @@ export default function ChartPage() {
             levelPrice={orderLevel}
             levelType={orderLevelType}
             entryReason={orderLevelReason}
+            entrySource={orderEntrySource}
             regime={regime}
             regimeConfidence={regimeConfidence}
             canPlace={canTrade && dataMode === 'live'}
@@ -581,6 +719,7 @@ export default function ChartPage() {
               setOrderLevel(null)
               setOrderLevelType(undefined)
               setOrderLevelReason(undefined)
+              setOrderEntrySource('ai')
             }}
             onPlaced={handlePlaced}
           />

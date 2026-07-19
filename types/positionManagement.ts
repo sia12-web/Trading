@@ -40,6 +40,9 @@ export interface PositionStatus {
   // Computed fields (calculated by API)
   profit_target_price: number
   stop_loss_hit_count: number
+  /** ai | structure | manual */
+  entry_source?: 'ai' | 'structure' | 'manual' | null
+  entry_reason?: string | null
 }
 
 export interface PositionStatusResponse {

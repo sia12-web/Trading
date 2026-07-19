@@ -11,10 +11,15 @@ import {
   assertCanOpenPosition,
   isLiveDeskInstrument,
   isNyDeskInstrument,
+  isDeskHoursNow,
   resolveSessionGate,
+  deskMarketFor,
+  instrumentsForDeskMarket,
   type DeskInstrument,
 } from '@/lib/trading/sessionGate'
+import { getTodayAttendance } from '@/lib/trading/deskAttendance'
 import { logger } from '@/lib/utils/logger'
+import { normalizeEntrySource } from '@/lib/trading/positionSizing'
 
 export const dynamic = 'force-dynamic'
 
@@ -88,14 +93,44 @@ export async function POST(request: Request) {
       rec?.recommended_instrument && isNyDeskInstrument(rec.recommended_instrument)
         ? rec.recommended_instrument
         : null
-    if (!locked) locked = instrument
+    if (!locked && isNyDeskInstrument(instrument)) locked = instrument
+    if (instrument === 'NIKKEI' || isDeskHoursNow(new Date(), 'NIKKEI').open) {
+      locked = 'NIKKEI'
+    }
 
+    const market = deskMarketFor(instrument)
+    const marketInstruments = instrumentsForDeskMarket(market)
+
+    const [filledRes, openRes, attendance] = await Promise.all([
+      supabase
+        .from('trades_journal')
+        .select('id, exit_reason')
+        .eq('user_id', user.id)
+        .eq('trade_date', today)
+        .in('instrument', marketInstruments)
+        .eq('fill_status', 'filled'),
+      supabase
+        .from('trades_journal')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('trade_date', today)
+        .in('instrument', marketInstruments)
+        .eq('fill_status', 'filled')
+        .is('exit_timestamp', null)
+        .maybeSingle(),
+      getTodayAttendance(supabase, user.id, market),
+    ])
+
+    const filledRows = filledRes.data ?? []
     const gate = resolveSessionGate({
       lockedInstrument: locked,
-      hasOpenPosition: false,
-      stopLossHitCount: 0,
+      hasOpenPosition: !!openRes.data,
+      attemptsUsed: filledRows.length,
+      stopLossHitCount: filledRows.filter((t) => t.exit_reason === 'stop_hit').length,
       dayDone: false,
       viewingInstrument: instrument,
+      clockedIn: attendance?.status === 'clocked_in',
+      attendedToday: !!attendance,
     })
     const gateCheck = assertCanOpenPosition(instrument, gate)
     if (!gateCheck.ok) {
@@ -143,6 +178,7 @@ export async function POST(request: Request) {
           typeof body.entry_reason === 'string' && body.entry_reason.trim()
             ? body.entry_reason.trim().slice(0, 2000)
             : `WORKING ${direction} limit @ ${level}`,
+        entry_source: normalizeEntrySource(body.entry_source),
         fill_status: 'working',
         notes: 'Working limit — not filled yet',
       })
@@ -150,6 +186,51 @@ export async function POST(request: Request) {
       .single()
 
     if (error || !row) {
+      // Soft-fallback if entry_source migration not applied yet
+      if (error && /entry_source/i.test(error.message || '')) {
+        const retry = await supabase
+          .from('trades_journal')
+          .insert({
+            user_id: user.id,
+            instrument,
+            trade_date: today,
+            entry_window: entryWindow,
+            entry_timestamp: now,
+            entry_price: level,
+            entry_direction: direction,
+            stop_loss_price: stop,
+            stop_loss_hit_count: 0,
+            position_size: size,
+            risk_amount: risk || 0,
+            account_size: account,
+            exit_timestamp: null,
+            exit_price: null,
+            exit_reason: null,
+            profit_loss: null,
+            profit_loss_percent: null,
+            regime,
+            regime_confidence: regimeConf,
+            profit_target_price: Number.isFinite(target) ? target : null,
+            entry_reason:
+              typeof body.entry_reason === 'string' && body.entry_reason.trim()
+                ? body.entry_reason.trim().slice(0, 2000)
+                : `WORKING ${direction} limit @ ${level}`,
+            fill_status: 'working',
+            notes: 'Working limit — not filled yet',
+          })
+          .select('id')
+          .single()
+        if (!retry.error && retry.data) {
+          return NextResponse.json({
+            success: true,
+            working_id: retry.data.id,
+            instrument,
+            level,
+            direction,
+            fill_status: 'working',
+          })
+        }
+      }
       logger.error('working.place_failed', { error })
       return NextResponse.json({ error: error?.message || 'Insert failed' }, { status: 500 })
     }

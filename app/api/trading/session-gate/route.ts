@@ -15,6 +15,7 @@ import {
   isNyDeskInstrument,
   isLiveDeskInstrument,
   deskMarketFor,
+  instrumentsForDeskMarket,
   type DeskInstrument,
 } from '@/lib/trading/sessionGate'
 import { getTodayAttendance, autoLunchClockOut } from '@/lib/trading/deskAttendance'
@@ -38,37 +39,16 @@ export async function GET(request: Request) {
     const supabase = await createClient()
     const today = getESTDateString()
 
-    // Parallel DB reads — was sequential and slow on every 5s poll
-    const [recRes, openPosRes, anyTradeRes] = await Promise.all([
-      supabase
-        .from('market_recommendations')
-        .select('recommended_instrument')
-        .eq('date', today)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .from('trades_journal')
-        .select('id, instrument, stop_loss_hit_count')
-        .eq('user_id', user.id)
-        .eq('trade_date', today)
-        .in('instrument', ['DOW', 'NASDAQ', 'NIKKEI'])
-        .eq('fill_status', 'filled')
-        .is('exit_timestamp', null)
-        .maybeSingle(),
-      supabase
-        .from('trades_journal')
-        .select('id, exit_timestamp, stop_loss_hit_count')
-        .eq('user_id', user.id)
-        .eq('trade_date', today)
-        .in('instrument', ['DOW', 'NASDAQ', 'NIKKEI'])
-        .eq('fill_status', 'filled')
-        .limit(1)
-        .maybeSingle(),
-    ])
+    // Resolve lock first so attempt book is scoped to the active desk market
+    const { data: rec } = await supabase
+      .from('market_recommendations')
+      .select('recommended_instrument')
+      .eq('date', today)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
 
     let lockedInstrument: DeskInstrument | null = null
-    const rec = recRes.data
 
     if (rec?.recommended_instrument && isNyDeskInstrument(rec.recommended_instrument)) {
       lockedInstrument = rec.recommended_instrument
@@ -91,19 +71,40 @@ export async function GET(request: Request) {
       lockedInstrument = 'NIKKEI'
     }
 
+    const market = deskMarketFor(lockedInstrument ?? viewingInstrument ?? 'DOW')
+    const marketInstruments = instrumentsForDeskMarket(market)
+
+    const [openPosRes, filledRes] = await Promise.all([
+      supabase
+        .from('trades_journal')
+        .select('id, instrument, stop_loss_hit_count')
+        .eq('user_id', user.id)
+        .eq('trade_date', today)
+        .in('instrument', marketInstruments)
+        .eq('fill_status', 'filled')
+        .is('exit_timestamp', null)
+        .maybeSingle(),
+      supabase
+        .from('trades_journal')
+        .select('id, exit_timestamp, exit_reason, stop_loss_hit_count')
+        .eq('user_id', user.id)
+        .eq('trade_date', today)
+        .in('instrument', marketInstruments)
+        .eq('fill_status', 'filled'),
+    ])
+
     const openPos = openPosRes.data
     if (openPos?.instrument && isLiveDeskInstrument(openPos.instrument)) {
       lockedInstrument = openPos.instrument as DeskInstrument
     }
 
-    const anyTrade = anyTradeRes.data
-    const dayDone =
-      (!!anyTrade && !openPos) || (openPos?.stop_loss_hit_count ?? 0) >= 3
+    const filledTrades = filledRes.data ?? []
+    const attemptsUsed = filledTrades.length
+    const stopHits = filledTrades.filter((t) => t.exit_reason === 'stop_hit').length
 
     // Lunch may have hit while the tab was open — auto clock-out
     await autoLunchClockOut(supabase, user.id)
 
-    const market = deskMarketFor(lockedInstrument ?? viewingInstrument ?? 'DOW')
     const attendance = await getTodayAttendance(supabase, user.id, market)
     const clockedIn = attendance?.status === 'clocked_in'
     const attendedToday = !!attendance
@@ -111,8 +112,8 @@ export async function GET(request: Request) {
     const gate = resolveSessionGate({
       lockedInstrument,
       hasOpenPosition: !!openPos,
-      stopLossHitCount: openPos?.stop_loss_hit_count ?? 0,
-      dayDone,
+      attemptsUsed,
+      stopLossHitCount: stopHits,
       viewingInstrument: viewingInstrument ?? lockedInstrument,
       clockedIn,
       attendedToday,
@@ -128,6 +129,10 @@ export async function GET(request: Request) {
         server_now_et: gate.timeEst,
         attendance_id: attendance?.id ?? null,
         attendance_status: attendance?.status ?? null,
+        attempts_used: gate.attemptsUsed,
+        max_attempts: gate.maxAttempts,
+        stop_hits: gate.stopHits,
+        max_stop_hits: gate.maxStopHits,
       },
       {
         headers: {

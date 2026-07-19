@@ -22,9 +22,26 @@ import {
   getLastNNycTradingDays,
   getLastNTokyoTradingDays,
 } from '@/lib/utils/dateUtils'
-import { sessionFor } from '@/lib/trading/sessionGate'
-import { previewPositionSizing } from '@/lib/trading/positionSizing'
-import { resolveSimMorningGate } from '@/lib/trading/sessionGate'
+import {
+  DESK_RISK_PERCENT,
+  MANUAL_RISK_PERCENT,
+  normalizeEntrySource,
+  previewPositionSizing,
+  riskPercentForEntrySource,
+  type DeskEntrySource,
+} from '@/lib/trading/positionSizing'
+import {
+  snapDeskPrice,
+  snapStopToTick,
+  snapTargetToTick,
+} from '@/lib/trading/instrumentTicks'
+import {
+  MAX_SESSION_ATTEMPTS,
+  MAX_STOP_HITS,
+  resolveSimMorningGate,
+  sessionFor,
+} from '@/lib/trading/sessionGate'
+import { LevelOrderTicket } from '@/app/dashboard/chart/components/LevelOrderTicket'
 import {
   SESSION_STYLES,
   VWAP_COLORS,
@@ -122,6 +139,7 @@ interface PendingOrder {
   accountSize: number
   entryReason?: string
   conviction?: number
+  entrySource: DeskEntrySource
 }
 
 interface PaperPosition {
@@ -135,6 +153,7 @@ interface PaperPosition {
   filledAt: number
   entryReason?: string
   conviction?: number
+  entrySource: DeskEntrySource
 }
 
 /** Trailing window while following the sim tip — readable bars, tip pinned right */
@@ -275,8 +294,15 @@ function SimulationDeskInner() {
   const [playing, setPlaying] = useState(false)
   const [pending, setPending] = useState<PendingOrder | null>(null)
   const [position, setPosition] = useState<PaperPosition | null>(null)
+  /** Filled trades this replay (same max-2 book as live) */
+  const [attemptsUsed, setAttemptsUsed] = useState(0)
+  /** Stop-outs this replay — 2 locks the session */
+  const [stopHits, setStopHits] = useState(0)
+  const attemptsUsedRef = useRef(0)
+  const stopHitsRef = useRef(0)
   const [accountSize, setAccountSize] = useState(100000)
   const [ticketLevel, setTicketLevel] = useState<AiLevel | null>(null)
+  const [manualTicketOpen, setManualTicketOpen] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [levelsOpen, setLevelsOpen] = useState(true)
   const levelsOpenRef = useRef(true)
@@ -311,6 +337,7 @@ function SimulationDeskInner() {
   const sessionCandlesRef = useRef<Candle[]>([])
   const pendingRef = useRef<PendingOrder | null>(null)
   const positionRef = useRef<PaperPosition | null>(null)
+  const placingOrderRef = useRef(false)
   const didFitRef = useRef(false)
   const visibleCandlesRef = useRef<Candle[]>([])
   const simNowRef = useRef(0)
@@ -369,10 +396,16 @@ function SimulationDeskInner() {
     lunchUnixRef.current = lunchUnix
   }, [lunchUnix])
 
-  // Last 5 cash sessions for this index (same window as live AVWAP; clock by instrument)
+  // Last 5 trading days prior to this replay session → AVWAP from that cash open
   const sessionCandles = useMemo(
-    () => lastNTradingSessions(allCandles, 5, deskClockFor(instrument)),
-    [allCandles, instrument]
+    () =>
+      lastNTradingSessions(
+        allCandles,
+        5,
+        deskClockFor(instrument),
+        openUnix || undefined
+      ),
+    [allCandles, instrument, openUnix]
   )
 
   useEffect(() => {
@@ -408,7 +441,7 @@ function SimulationDeskInner() {
       .catch(() => {})
   }, [replayDate, instrument, speed])
 
-  // Morning-only sim gate — no live afternoon / background-memory feature
+  // Morning-only sim gate — same attempt/stop limits as live
   const gate = useMemo(() => {
     if (!simNow) return null
     return resolveSimMorningGate({
@@ -416,8 +449,10 @@ function SimulationDeskInner() {
       instrument,
       hasOpenPosition: !!position,
       dayDone: simNow >= lunchUnix,
+      attemptsUsed,
+      stopHits,
     })
-  }, [simNow, instrument, position, lunchUnix])
+  }, [simNow, instrument, position, lunchUnix, attemptsUsed, stopHits])
 
   // Validate date + load candles/levels
   useEffect(() => {
@@ -1175,13 +1210,18 @@ function SimulationDeskInner() {
       filledAt: at,
       entryReason: pend.entryReason,
       conviction: pend.conviction,
+      entrySource: pend.entrySource || 'ai',
     }
     // Sync refs before next playback tick (16x can fire before React effects)
     pendingRef.current = null
     positionRef.current = filled
+    attemptsUsedRef.current += 1
+    setAttemptsUsed(attemptsUsedRef.current)
     setPosition(filled)
     setPending(null)
-    setMsg(`FILLED ${pend.direction} @ ${pend.level.toLocaleString()} — manage SL/TP`)
+    setMsg(
+      `FILLED ${pend.direction} @ ${pend.level.toLocaleString()} — attempt ${attemptsUsedRef.current}/${MAX_SESSION_ATTEMPTS}`
+    )
   }, [])
 
   const recordPaperClose = useCallback(
@@ -1222,6 +1262,7 @@ function SimulationDeskInner() {
           entry_level: pos.entry,
           entry_reason: pos.entryReason || null,
           level_conviction: pos.conviction ?? null,
+          entry_source: pos.entrySource || 'ai',
         }),
       })
         .then(async (res) => {
@@ -1328,11 +1369,18 @@ function SimulationDeskInner() {
           const closed = pos
           recordPaperClose(closed, closed.stopLoss, 'stop_hit')
           positionRef.current = null
+          stopHitsRef.current += 1
+          setStopHits(stopHitsRef.current)
           simNowRef.current = next
           setSimNow(next)
           applyChartDataRef.current(next)
           setPlaying(false)
-          setMsg(`STOP HIT @ ${closed.stopLoss.toLocaleString()} — levels updated`)
+          const locked = stopHitsRef.current >= MAX_STOP_HITS
+          setMsg(
+            locked
+              ? `STOP HIT @ ${closed.stopLoss.toLocaleString()} — stopped out ${MAX_STOP_HITS}/${MAX_STOP_HITS}, trading locked`
+              : `STOP HIT @ ${closed.stopLoss.toLocaleString()} — stops ${stopHitsRef.current}/${MAX_STOP_HITS} · attempt ${attemptsUsedRef.current}/${MAX_SESSION_ATTEMPTS}`
+          )
           setLevels((prev) =>
             applySimTradeOutcome(prev, closed.entry, closed.direction, 'stop')
           )
@@ -1390,6 +1438,7 @@ function SimulationDeskInner() {
   const cancelPending = useCallback(() => {
     if (!pendingRef.current) return
     pendingRef.current = null
+    placingOrderRef.current = false
     setPending(null)
     setPlaying(false)
     setMsg('Working limit cancelled')
@@ -1397,8 +1446,17 @@ function SimulationDeskInner() {
 
   const placePending = useCallback(
     (level: AiLevel, direction: Direction) => {
+      if (placingOrderRef.current || pendingRef.current) return
       if (position) {
         setMsg('Already in a position — manage or close first')
+        return
+      }
+      if (stopHitsRef.current >= MAX_STOP_HITS) {
+        setMsg(`Stopped out ${MAX_STOP_HITS}/${MAX_STOP_HITS} — trading locked for this session`)
+        return
+      }
+      if (attemptsUsedRef.current >= MAX_SESSION_ATTEMPTS) {
+        setMsg(`Both attempts used (${MAX_SESSION_ATTEMPTS}/${MAX_SESSION_ATTEMPTS}) — trading locked`)
         return
       }
       const now = simNowRef.current
@@ -1408,22 +1466,35 @@ function SimulationDeskInner() {
         )
         return
       }
-      // Zone-based stop: beyond the far edge of the level's zone (sweep-proof)
+
+      placingOrderRef.current = true
+      const entrySource = normalizeEntrySource(level.source, 'structure')
+      const limit = snapDeskPrice(instrument, level.level)
+      const rawStop = zoneStopPrice(limit, direction)
+      const stop = snapStopToTick(instrument, limit, rawStop, direction)
       const preview = previewPositionSizing(
-        level.level,
+        limit,
         accountSize,
         direction,
-        zoneStopPrice(level.level, direction)
+        stop,
+        riskPercentForEntrySource(entrySource)
       )
       if (!preview) {
+        placingOrderRef.current = false
         setMsg('Invalid sizing')
         return
       }
+      const target = snapTargetToTick(
+        instrument,
+        limit,
+        preview.profit_target_price,
+        direction
+      )
       const order: PendingOrder = {
-        level: level.level,
+        level: limit,
         direction,
-        stopLoss: preview.stop_loss_price,
-        target: preview.profit_target_price,
+        stopLoss: stop,
+        target,
         size: preview.position_size,
         risk: preview.risk_amount,
         accountSize,
@@ -1433,6 +1504,7 @@ function SimulationDeskInner() {
             level.side || (direction === 'LONG' ? 'BUY' : 'SHORT')
           } level`,
         conviction: level.conviction,
+        entrySource,
       }
 
       // Immediate fill if any bar from open→now already touched
@@ -1443,17 +1515,28 @@ function SimulationDeskInner() {
       if (touched) {
         fillPending(order, touched.time)
         setPlaying(true)
+        placingOrderRef.current = false
         return
       }
 
       pendingRef.current = order
       setPending(order)
       setMsg(
-        `Pending ${direction} limit @ ${level.level.toLocaleString()} — Play until fill`
+        `Working ${direction} @ ${limit.toLocaleString()} — Play until fill`
       )
       setPlaying(true)
+      placingOrderRef.current = false
     },
-    [position, entryCloseUnix, accountSize, openUnix, fillPending, sess.entryClose, tzLabel]
+    [
+      position,
+      entryCloseUnix,
+      accountSize,
+      openUnix,
+      fillPending,
+      sess.entryClose,
+      tzLabel,
+      instrument,
+    ]
   )
 
   const closeAtMarket = () => {
@@ -1475,6 +1558,10 @@ function SimulationDeskInner() {
     sessionCompletedRef.current = false
     tradesCountRef.current = 0
     realizedPnlRef.current = 0
+    attemptsUsedRef.current = 0
+    stopHitsRef.current = 0
+    setAttemptsUsed(0)
+    setStopHits(0)
     pendingRef.current = null
     positionRef.current = null
     if (replayDate) {
@@ -1567,7 +1654,14 @@ function SimulationDeskInner() {
   }
 
   const phase = position ? 'MANAGE' : gate?.phase ?? 'ENTRY'
-  const canEnter = !position && !pending && simNow <= entryCloseUnix && simNow >= openUnix
+  const canEnter =
+    !position &&
+    !pending &&
+    simNow <= entryCloseUnix &&
+    simNow >= openUnix &&
+    attemptsUsed < MAX_SESSION_ATTEMPTS &&
+    stopHits < MAX_STOP_HITS &&
+    gate?.canPlaceEntry !== false
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#0d1117]">
@@ -1637,6 +1731,17 @@ function SimulationDeskInner() {
           </span>
           <span className="rounded bg-violet-500/20 px-1.5 py-0.5 font-semibold uppercase text-violet-200">
             {phase}
+          </span>
+          <span
+            className={`rounded px-1.5 py-0.5 font-semibold tabular-nums ${
+              stopHits >= MAX_STOP_HITS || attemptsUsed >= MAX_SESSION_ATTEMPTS
+                ? 'bg-red-500/25 text-red-200'
+                : 'bg-sky-500/20 text-sky-200'
+            }`}
+            title="Max 2 attempts per session. After 2 stop-outs, trading switches off (same as live)."
+          >
+            Attempts {attemptsUsed}/{MAX_SESSION_ATTEMPTS}
+            {stopHits > 0 ? ` · Stops ${stopHits}/${MAX_STOP_HITS}` : ''}
           </span>
           {overnightBias && (
             <span
@@ -1752,6 +1857,16 @@ function SimulationDeskInner() {
             </span>
           )}
 
+          {canEnter && (
+            <button
+              type="button"
+              onClick={() => setManualTicketOpen(true)}
+              className="rounded border border-amber-500/50 bg-amber-600/80 px-2 py-1 text-[10px] font-bold uppercase text-white hover:bg-amber-500"
+              title="Manual limit — 1% account risk, size adjusts to your stop"
+            >
+              Place limit
+            </button>
+          )}
           <button
             type="button"
             title={
@@ -1796,7 +1911,7 @@ function SimulationDeskInner() {
             />
             <span style={{ color: VWAP_COLORS.vwap }}>AVWAP</span>
             <span className="text-gray-600">
-              {deskClockFor(instrument).openLabel} · 5 sessions · ±1/2/3σ
+              {deskClockFor(instrument).openLabel} · 5 trading days prior · ±1/2/3σ
             </span>
           </span>
         </div>
@@ -2004,6 +2119,55 @@ function SimulationDeskInner() {
         </DraggableDeskWidget>
       )}
 
+      {manualTicketOpen && (lastPrice != null || ticketLevel) && (
+        <LevelOrderTicket
+          instrument={instrument}
+          levelPrice={lastPrice ?? ticketLevel?.level ?? 0}
+          entrySource="manual"
+          levelType="manual"
+          regime={
+            overnightBias?.bias === 'bearish'
+              ? 'bearish'
+              : overnightBias?.bias === 'bullish'
+                ? 'bullish'
+                : 'choppy'
+          }
+          regimeConfidence={70}
+          canPlace={canEnter}
+          entryWindow={1}
+          onClose={() => setManualTicketOpen(false)}
+          onPlaced={(order) => {
+            setManualTicketOpen(false)
+            const pend: PendingOrder = {
+              level: order.level,
+              direction: order.direction,
+              stopLoss: order.stopLoss,
+              target: order.profitTarget,
+              size: order.positionSize,
+              risk: order.riskAmount,
+              accountSize: order.accountSize,
+              entryReason: order.entryReason,
+              entrySource: 'manual',
+            }
+            const now = simNowRef.current
+            const touched = allCandlesRef.current.find(
+              (c) => c.time >= openUnix && c.time <= now && barTouches(c, pend.level)
+            )
+            if (touched) {
+              fillPending(pend, touched.time)
+              setPlaying(true)
+              return
+            }
+            pendingRef.current = pend
+            setPending(pend)
+            setMsg(
+              `Manual ${order.direction} limit @ ${order.level.toLocaleString()} — ${MANUAL_RISK_PERCENT}% risk · Play until fill`
+            )
+            setPlaying(true)
+          }}
+        />
+      )}
+
       {ticketLevel && (
         <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-sm rounded-xl border border-[#30363d] bg-[#161b22] p-4">
@@ -2011,7 +2175,17 @@ function SimulationDeskInner() {
               <div>
                 <h3 className="text-sm font-semibold text-white">Sim limit order</h3>
                 <p className="mt-1 text-xs text-gray-400">
-                  {instrument} · {ticketLevel.level.toLocaleString()}
+                  {instrument} ·{' '}
+                  <span
+                    className={
+                      ticketLevel.source === 'ai' ? 'text-emerald-300' : 'text-violet-300'
+                    }
+                  >
+                    {ticketLevel.source === 'ai' ? 'AI level' : 'Structure'} ·{' '}
+                    {DESK_RISK_PERCENT}% risk
+                  </span>
+                  <br />
+                  {ticketLevel.level.toLocaleString()}
                   <span className="ml-1.5 text-gray-500">
                     zone {formatZone(ticketLevel.level)}
                   </span>
@@ -2042,7 +2216,8 @@ function SimulationDeskInner() {
                   ticketLevel.level,
                   accountSize,
                   d,
-                  zoneStopPrice(ticketLevel.level, d)
+                  zoneStopPrice(ticketLevel.level, d),
+                  DESK_RISK_PERCENT
                 )
                 const suggested = simSuggestedDirection(
                   overnightBias?.bias ?? 'none',

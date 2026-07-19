@@ -82,8 +82,9 @@ export async function POST(request: Request): Promise<NextResponse<StopLossHitRe
     const profitLossPercent = (profitLoss / position.risk_amount) * 100
     const profitLossPercentRounded = Math.round(profitLossPercent * 100) / 100
     const newStopLossHitCount = position.stop_loss_hit_count + 1
-    const shouldClose = newStopLossHitCount >= 3
-    const marketDisabled = newStopLossHitCount >= 3
+    // Desk closes on stop; session lock uses day's stop count (max 2) via session-gate.
+    const shouldClose = newStopLossHitCount >= 1
+    const marketDisabled = newStopLossHitCount >= 2
 
     if (shouldClose) {
       const { error: updateError } = await supabase

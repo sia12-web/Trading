@@ -88,9 +88,9 @@ export function LunchCloseCountdown({
   if (marketDisabled) {
     return (
       <div className="rounded-xl border border-red-800/50 bg-red-950/30 px-4 py-3">
-        <p className="text-sm font-semibold text-red-300">Desk locked — 3 stops today</p>
+        <p className="text-sm font-semibold text-red-300">Desk locked — 2 stops today</p>
         <p className="mt-1 text-xs text-red-400/80">
-          No new entries on {instrument} for the rest of this session.
+          No new entries on {instrument} for the rest of this session (max 2 attempts).
         </p>
       </div>
     )
@@ -118,7 +118,7 @@ export function LunchCloseCountdown({
             {hasOpenPosition
               ? 'Open book must be flat by lunch'
               : 'No open book — place limits on Live Trading'}
-            {stopLossHitCount > 0 ? ` · Stops ${stopLossHitCount}/3` : ''}
+            {stopLossHitCount > 0 ? ` · Stops ${stopLossHitCount}/2` : ''}
           </p>
         </div>
         <div
