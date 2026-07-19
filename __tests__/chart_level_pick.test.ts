@@ -4,8 +4,10 @@
  */
 
 import {
+  CHART_CLICK_DRAG_PX,
   CHART_LEVEL_SNAP_PCT,
   directionFromChartLevel,
+  isChartDragGesture,
   previewLevelOrderPrices,
   resolveChartLimitPick,
 } from '../lib/trading/chartLevelPick'
@@ -92,5 +94,8 @@ assert(
   assert(prev!.stop > prev!.entry, 'SHORT stop above')
   assert(prev!.target < prev!.entry, 'SHORT target below')
 }
+
+assert(!isChartDragGesture(100, 100, 102, 101), 'tiny move = click')
+assert(isChartDragGesture(100, 100, 100 + CHART_CLICK_DRAG_PX + 1, 100), 'pan = drag')
 
 console.log('chart_level_pick: all passed')

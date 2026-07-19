@@ -19,6 +19,20 @@ import {
 /** Same band as live/sim click snap (~0.25%). */
 export const CHART_LEVEL_SNAP_PCT = 0.0025
 
+/** Pointer move beyond this (px) = pan/drag, not a place-limit click. */
+export const CHART_CLICK_DRAG_PX = 6
+
+/** True when pointer traveled far enough to count as chart pan, not a click. */
+export function isChartDragGesture(
+  downX: number,
+  downY: number,
+  upX: number,
+  upY: number,
+  thresholdPx = CHART_CLICK_DRAG_PX
+): boolean {
+  return Math.hypot(upX - downX, upY - downY) > thresholdPx
+}
+
 export type ChartPickLevel = {
   price: number
   type?: string

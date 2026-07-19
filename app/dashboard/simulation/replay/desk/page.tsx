@@ -31,6 +31,7 @@ import {
   type DeskEntrySource,
 } from '@/lib/trading/positionSizing'
 import {
+  isChartDragGesture,
   previewLevelOrderPrices,
   resolveChartLimitPick,
 } from '@/lib/trading/chartLevelPick'
@@ -1710,7 +1711,26 @@ function SimulationDeskInner() {
 
     if (!container || !seriesRef.current || !canPlace) return
 
+    // Pan/drag must not open the limit ticket — only a short click places
+    let downX = 0
+    let downY = 0
+    let dragging = false
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.button !== 0) return
+      downX = e.clientX
+      downY = e.clientY
+      dragging = false
+    }
+    const onPointerMove = (e: PointerEvent) => {
+      if ((e.buttons & 1) === 0) return
+      if (isChartDragGesture(downX, downY, e.clientX, e.clientY)) dragging = true
+    }
     const onClick = (e: MouseEvent) => {
+      if (dragging || isChartDragGesture(downX, downY, e.clientX, e.clientY)) {
+        dragging = false
+        return
+      }
       if (!seriesRef.current) return
       const rect = container.getBoundingClientRect()
       const y = e.clientY - rect.top
@@ -1748,8 +1768,12 @@ function SimulationDeskInner() {
     }
 
     container.style.cursor = 'crosshair'
+    container.addEventListener('pointerdown', onPointerDown)
+    container.addEventListener('pointermove', onPointerMove)
     container.addEventListener('click', onClick)
     return () => {
+      container.removeEventListener('pointerdown', onPointerDown)
+      container.removeEventListener('pointermove', onPointerMove)
       container.removeEventListener('click', onClick)
       container.style.cursor = ''
     }
