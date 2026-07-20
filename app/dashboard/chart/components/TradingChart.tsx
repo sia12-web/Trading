@@ -54,6 +54,10 @@ import {
   isChartStreamAllowed,
   sessionFor,
 } from '@/lib/trading/sessionGate'
+import {
+  getDeskInstrumentPreference,
+  setDeskInstrumentPreference,
+} from '@/lib/trading/deskInstrumentPreference'
 
 type DeskChartFmt = {
   formatTime: (unix: number, withSeconds?: boolean) => string
@@ -437,7 +441,9 @@ export function TradingChart({
   /** True while user is dragging/zooming — pause React work for TV-smooth pan */
   const interactingRef = useRef(false)
 
-  const [instrument,  setInstrumentState] = useState<Instrument>(lockedInstrument || 'DOW')
+  const [instrument,  setInstrumentState] = useState<Instrument>(
+    () => lockedInstrument || getDeskInstrumentPreference()
+  )
   const [candles,     setCandles]    = useState<OHLCV[]>([])
   const [levels,      setLevels]     = useState<LevelLine[]>([])
   const levelsRef = useRef<LevelLine[]>([])
@@ -464,7 +470,9 @@ export function TradingChart({
   const hoverPreviewLinesRef = useRef<any[]>([])
   const hoverPreviewKeyRef = useRef<string | null>(null)
   /** Axis / tooltip clocks — ET for DOW/NASDAQ, JST for NIKKEI */
-  const chartFmtRef = useRef<DeskChartFmt>(makeDeskChartFormatters(lockedInstrument || 'DOW'))
+  const chartFmtRef = useRef<DeskChartFmt>(
+    makeDeskChartFormatters(lockedInstrument || getDeskInstrumentPreference())
+  )
 
   const clearHoverPreview = useCallback(() => {
     const host = priceLineHostRef.current
@@ -482,16 +490,23 @@ export function TradingChart({
   const setInstrument = useCallback((inst: Instrument) => {
     if (lockedInstrument && inst !== lockedInstrument) return
     setInstrumentState(inst)
+    if (!lockedInstrument) setDeskInstrumentPreference(inst)
     onInstrumentChange?.(inst)
   }, [onInstrumentChange, lockedInstrument])
 
-  // Follow day's locked instrument
+  // Follow day's locked instrument; when unlocked restore remembered market
   useEffect(() => {
     if (lockedInstrument) {
       setInstrumentState(lockedInstrument)
       onInstrumentChange?.(lockedInstrument)
+      return
     }
-  }, [lockedInstrument, onInstrumentChange])
+    const preferred = getDeskInstrumentPreference()
+    setInstrumentState(preferred)
+    onInstrumentChange?.(preferred)
+    // Only when lock changes — parent may pass a new callback each render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lockedInstrument])
 
   // Register jumpToPrice so level clicks can scroll/highlight on the chart
   useEffect(() => {

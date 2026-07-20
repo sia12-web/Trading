@@ -22,8 +22,13 @@ import {
   type AiVerdict,
   type ManagePosition,
 } from './components/ManageDeskBar'
+import {
+  getDeskInstrumentPreference,
+  setDeskInstrumentPreference,
+  type DeskInstrumentPref,
+} from '@/lib/trading/deskInstrumentPreference'
 
-type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI'
+type Instrument = DeskInstrumentPref
 
 interface PositionOverlay {
   entryPrice: number
@@ -33,7 +38,14 @@ interface PositionOverlay {
 }
 
 export default function ChartPage() {
-  const [instrument, setInstrument] = useState<Instrument>('DOW')
+  const [instrument, setInstrumentState] = useState<Instrument>(() =>
+    getDeskInstrumentPreference()
+  )
+
+  const setInstrument = useCallback((i: Instrument) => {
+    setInstrumentState(i)
+    setDeskInstrumentPreference(i)
+  }, [])
   const [livePrice, setLivePrice] = useState<number | null>(null)
   const [positionOverlay, setPositionOverlay] = useState<PositionOverlay | null>(null)
   const [managePos, setManagePos] = useState<ManagePosition | null>(null)
@@ -613,7 +625,7 @@ export default function ChartPage() {
           <div className="relative flex-1 min-h-0">
             {!chartLocked && (
               <TradingChart
-                onInstrumentChange={(i) => setInstrument(i as Instrument)}
+                onInstrumentChange={setInstrument}
                 onPriceUpdate={onPriceUpdate}
                 onQuoteTick={setLastQuoteAt}
                 onDataModeChange={setDataMode}
