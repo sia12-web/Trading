@@ -836,26 +836,73 @@ export function resolveDeskLevels(
   return { levels: playbook.levels, source, playbook }
 }
 
-/** First-hour Initial Balance (cash open → +60m) as watch levels for afternoon. */
-export function initialBalanceLevelsFromCandles(
+/** First-hour Initial Balance range (cash open → +ibMinutes). */
+export type InitialBalanceRange = {
+  high: number
+  low: number
+  openUnix: number
+  endUnix: number
+  /** First / last bar times used for short chart segments */
+  fromTime: number
+  toTime: number
+}
+
+/**
+ * Compute Initial Balance once the first hour has enough bars.
+ * Returns null until IB is shaped (session open + ibMinutes, with ≥2 bars).
+ */
+export function computeInitialBalance(
   candles: DeskBar[],
   openUnix: number,
+  nowUnix: number = Math.floor(Date.now() / 1000),
   ibMinutes = 60
-): DeskLevel[] {
-  if (!openUnix || candles.length === 0) return []
-  const end = openUnix + ibMinutes * 60
-  const ibBars = candles.filter((c) => c.time >= openUnix && c.time < end)
-  if (ibBars.length < 2) return []
+): InitialBalanceRange | null {
+  if (!openUnix || candles.length === 0) return null
+  const endUnix = openUnix + ibMinutes * 60
+  // Not shaped yet — wait until the IB window has closed
+  if (nowUnix < endUnix) return null
+
+  const ibBars = candles.filter((c) => c.time >= openUnix && c.time < endUnix)
+  if (ibBars.length < 2) return null
+
   let hi = -Infinity
   let lo = Infinity
   for (const c of ibBars) {
     if (c.high > hi) hi = c.high
     if (c.low < lo) lo = c.low
   }
-  if (!(hi > lo) || !Number.isFinite(hi) || !Number.isFinite(lo)) return []
+  if (!(hi > lo) || !Number.isFinite(hi) || !Number.isFinite(lo)) return null
+
+  const fromTime = ibBars[0]!.time as number
+  const toTime = ibBars[ibBars.length - 1]!.time as number
+  if (!(toTime > fromTime)) return null
+
+  return {
+    high: Math.round(hi * 100) / 100,
+    low: Math.round(lo * 100) / 100,
+    openUnix,
+    endUnix,
+    fromTime,
+    toTime,
+  }
+}
+
+/** First-hour Initial Balance (cash open → +60m) as watch levels for afternoon. */
+export function initialBalanceLevelsFromCandles(
+  candles: DeskBar[],
+  openUnix: number,
+  ibMinutes = 60
+): DeskLevel[] {
+  const ib = computeInitialBalance(
+    candles,
+    openUnix,
+    Math.floor(Date.now() / 1000),
+    ibMinutes
+  )
+  if (!ib) return []
   return [
     {
-      level: Math.round(hi * 100) / 100,
+      level: ib.high,
       type: 'resistance',
       conviction: 8,
       reasoning: `Initial Balance high (first ${ibMinutes}m) — afternoon watch for break/hold`,
@@ -863,7 +910,7 @@ export function initialBalanceLevelsFromCandles(
       rank: 'watch',
     },
     {
-      level: Math.round(lo * 100) / 100,
+      level: ib.low,
       type: 'support',
       conviction: 8,
       reasoning: `Initial Balance low (first ${ibMinutes}m) — afternoon watch for break/hold`,
@@ -920,7 +967,6 @@ export function resolveAfternoonDeskLevels(
   tipPrice: number | null = null
 ): { levels: DeskLevel[]; source: 'ai' | 'structure'; playbook: DeskPlaybook } {
   const fromReview = mapAfternoonCandidates(afternoonCandidates)
-  const ib = initialBalanceLevelsFromCandles(candles, openUnix)
   const ai = mapAiLevels(aiRows)
   const structure = structureLevelsFromCandles(candles, openUnix, timeZone)
 
@@ -930,7 +976,6 @@ export function resolveAfternoonDeskLevels(
     merged.push(l)
   }
   for (const l of fromReview) pushUnique(l)
-  for (const l of ib) pushUnique(l)
   for (const l of ai) pushUnique(l)
   if (merged.length < 2) {
     for (const l of structure) pushUnique(l)

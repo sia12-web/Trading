@@ -44,7 +44,7 @@ import {
   previewLevelOrderPrices,
   resolveChartLimitPick,
 } from '@/lib/trading/chartLevelPick'
-import { aiLevelsUrl, resolveDeskLevels, resolveAfternoonDeskLevels } from '@/lib/trading/deskLevels'
+import { aiLevelsUrl, resolveDeskLevels, resolveAfternoonDeskLevels, computeInitialBalance } from '@/lib/trading/deskLevels'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
 import { DESK_CHART_THEME } from '@/lib/chart/deskChartTheme'
@@ -435,6 +435,12 @@ export function TradingChart({
     upper3: ISeriesApi<'Line'>
     lower3: ISeriesApi<'Line'>
   } | null>(null)
+  /** Short blue IB high/low segments (first hour only — not full-width lines) */
+  const ibSeriesRef = useRef<{
+    high: ISeriesApi<'Line'>
+    low: ISeriesApi<'Line'>
+  } | null>(null)
+  const [ibShaped, setIbShaped] = useState(false)
   const levelLinesRef = useRef<any[]>([])
   /** Host for level/SL/TP price lines — seeded once; candle setData must not touch it */
   const priceLineHostRef = useRef<ISeriesApi<'Line'> | null>(null)
@@ -787,6 +793,21 @@ export function TradingChart({
       lower3: chart.addLineSeries({ ...bandOpts, title: '-3σ' }),
     }
 
+    // Initial Balance high/low — short segments over the first hour only
+    const ibLineOpts = {
+      color: '#3b82f6',
+      lineWidth: 2 as const,
+      lineStyle: LineStyle.Solid,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      crosshairMarkerVisible: false,
+      ...ignoreScale,
+    }
+    const ibSeries = {
+      high: chart.addLineSeries({ ...ibLineOpts, title: 'IB H' }),
+      low: chart.addLineSeries({ ...ibLineOpts, title: 'IB L' }),
+    }
+
     // Full chart height — no volume so no bottom margin needed
     chart.priceScale('right').applyOptions({
       autoScale: true,
@@ -847,6 +868,7 @@ export function TradingChart({
     candleRef.current = candleSeries
     priceLineHostRef.current = priceLineHost
     vwapSeriesRef.current = vwapSeries
+    ibSeriesRef.current = ibSeries
     setChartReady(true)
 
     // Responsive resize
@@ -868,8 +890,10 @@ export function TradingChart({
       priceLineHostRef.current = null
       priceLineHostSeededRef.current = false
       vwapSeriesRef.current = null
+      ibSeriesRef.current = null
       levelLinesRef.current = []
       positionLinesRef.current = []
+      setIbShaped(false)
     }
   }, []) // initialize once only
 
@@ -1020,6 +1044,16 @@ export function TradingChart({
         /* ignore */
       }
     }
+    const ibs = ibSeriesRef.current
+    if (ibs) {
+      try {
+        ibs.high.setData([])
+        ibs.low.setData([])
+      } catch {
+        /* ignore */
+      }
+    }
+    setIbShaped(false)
     try {
       host?.setData([])
     } catch {
@@ -1164,6 +1198,57 @@ export function TradingChart({
         vs.lower2.setData([])
         vs.upper3.setData([])
         vs.lower3.setData([])
+      }
+
+      // Initial Balance — blue high/low spanning only the first cash hour
+      const ibSeries = ibSeriesRef.current
+      if (ibSeries) {
+        const sess = sessionFor(instrument)
+        const todayLocal = new Intl.DateTimeFormat('en-CA', {
+          timeZone: sess.tz,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        }).format(new Date())
+        const [oh, om] = sess.marketOpen.split(':').map(Number)
+        const openUnix =
+          instrument === 'NIKKEI'
+            ? tokyoDateTimeToUnix(todayLocal, oh!, om || 0)
+            : nyDateTimeToUnix(todayLocal, oh!, om || 0)
+        const ib = computeInitialBalance(
+          ordered.map((c) => ({
+            time: c.time as number,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume,
+          })),
+          openUnix
+        )
+        if (ib) {
+          const hiPts = [
+            { time: ib.fromTime as UTCTimestamp, value: ib.high },
+            { time: ib.toTime as UTCTimestamp, value: ib.high },
+          ]
+          const loPts = [
+            { time: ib.fromTime as UTCTimestamp, value: ib.low },
+            { time: ib.toTime as UTCTimestamp, value: ib.low },
+          ]
+          try {
+            ibSeries.high.setData(hiPts)
+            ibSeries.low.setData(loPts)
+            setIbShaped(true)
+          } catch {
+            ibSeries.high.setData([])
+            ibSeries.low.setData([])
+            setIbShaped(false)
+          }
+        } else {
+          ibSeries.high.setData([])
+          ibSeries.low.setData([])
+          setIbShaped(false)
+        }
       }
 
       // Seed host once (never again) so price lines bind to the right scale
@@ -2205,6 +2290,19 @@ export function TradingChart({
             {deskClockFor(instrument).openLabel} · 5 trading days prior · ±1/2/3σ
           </span>
         </span>
+        {ibShaped && (
+          <>
+            <span className="text-gray-600">·</span>
+            <span
+              className="flex items-center gap-1.5 normal-case tracking-normal"
+              title="Initial Balance — first hour high / low (blue segments)"
+            >
+              <span className="inline-block w-4 border-t-2 border-blue-500" />
+              <span className="text-blue-500">IB H/L</span>
+              <span className="text-gray-600">first hour</span>
+            </span>
+          </>
+        )}
       </div>
       <div className="flex-1 relative rounded-xl border border-gray-300 overflow-hidden bg-[#fafafa]" style={{ minHeight: 400 }}>
         <div ref={containerRef} className="absolute inset-0 z-0" />
