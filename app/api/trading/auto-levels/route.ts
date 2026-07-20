@@ -40,8 +40,8 @@ async function handleAutoLevels(request: NextRequest) {
       )
     }
 
-    // Cron fires at prep open — force so clock skew / DST edges don't skip
-    const force = request.nextUrl.searchParams.get('force') !== '0'
+    // Cron may pass force=1; browser prep should not (default false)
+    const force = request.nextUrl.searchParams.get('force') === '1'
     logger.info('auto-levels.start', { instrument: param, force })
     const result = await runAutoLevelPrep(param as DeskInstrument, { force })
     logger.info('auto-levels.done', {
@@ -51,6 +51,8 @@ async function handleAutoLevels(request: NextRequest) {
       error: result.error ?? null,
     })
 
+    // Soft failure (no candles / LLM hiccup) must not 422 the browser console —
+    // chart still loads structure / prior history levels.
     return NextResponse.json(
       {
         success: result.ok,
@@ -59,7 +61,7 @@ async function handleAutoLevels(request: NextRequest) {
         error: result.error ?? null,
         processed_at: new Date().toISOString(),
       },
-      { status: result.ok ? 200 : 422 }
+      { status: 200 }
     )
   } catch (error) {
     logger.error('auto-levels.failed', { err: error })

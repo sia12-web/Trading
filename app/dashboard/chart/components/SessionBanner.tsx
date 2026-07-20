@@ -136,7 +136,7 @@ export function SessionBanner({
           if (prepFiredRef.current !== key) {
             prepFiredRef.current = key
             fetch(
-              `/api/trading/auto-levels?instrument=${encodeURIComponent(next.lockedInstrument)}`,
+              `/api/trading/auto-levels?instrument=${encodeURIComponent(next.lockedInstrument)}&force=0`,
               { method: 'POST' }
             ).catch(() => {})
           }

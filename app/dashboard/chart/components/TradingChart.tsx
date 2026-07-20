@@ -1595,27 +1595,21 @@ export function TradingChart({
   // ── Double-click chart to place order at that price (morning trading) ───────
   useEffect(() => {
     const container = containerRef.current
-    if (
-      !container ||
-      !candleRef.current ||
-      !canPlaceOrder ||
-      !onLevelSelect ||
-      positionOverlay ||
-      pendingLimit
-    ) {
+    // Open ticket on dbl-click whenever we can select a level — submit still
+    // gated by canPlace on the ticket (clock-in + ENTRY).
+    if (!container || !candleRef.current || !onLevelSelect || !chartReady) {
       return
     }
+    if (positionOverlay || pendingLimit) return
 
-    // Double-click places a limit — single click/drag stays free for pan/zoom
-    const onDblClick = (e: MouseEvent) => {
-      e.preventDefault()
+    const placeAtClientY = (clientY: number) => {
       if (!candleRef.current) return
       const rect = container.getBoundingClientRect()
-      const y = e.clientY - rect.top
+      const y = clientY - rect.top
+      if (y < 0 || y > rect.height) return
       const price = candleRef.current.coordinateToPrice(y)
       if (price == null || !Number.isFinite(Number(price)) || Number(price) <= 0) return
 
-      // Snap to AI/structure only when those levels are visible — hidden → always manual
       const pick = resolveChartLimitPick({
         rawPrice: Number(price),
         levels: levelsRef.current.map((l) => ({
@@ -1627,17 +1621,31 @@ export function TradingChart({
         levelsVisible: showLevelsRef.current,
       })
       onLevelSelect(pick.price, {
-        type: pick.type,
+        type: pick.source === 'manual' ? 'manual' : pick.type,
         source: pick.source,
         reasoning: pick.reasoning,
       })
     }
 
-    container.style.cursor = 'crosshair'
-    container.addEventListener('dblclick', onDblClick)
+    const onDblClick = (e: MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      placeAtClientY(e.clientY)
+    }
+
+    container.style.cursor = canPlaceOrder ? 'crosshair' : container.style.cursor
+    container.addEventListener('dblclick', onDblClick, true)
+    // LWC paints on nested canvases — bubble may not reach the wrapper reliably
+    const canvases = Array.from(container.querySelectorAll('canvas'))
+    for (const c of canvases) {
+      c.addEventListener('dblclick', onDblClick, true)
+    }
     return () => {
-      container.removeEventListener('dblclick', onDblClick)
-      container.style.cursor = ''
+      container.removeEventListener('dblclick', onDblClick, true)
+      for (const c of canvases) {
+        c.removeEventListener('dblclick', onDblClick, true)
+      }
+      if (canPlaceOrder) container.style.cursor = ''
     }
   }, [canPlaceOrder, onLevelSelect, chartReady, positionOverlay, pendingLimit])
 
@@ -1960,21 +1968,25 @@ export function TradingChart({
           </button>
         )}
 
-        {canPlaceOrder && !positionOverlay && !pendingLimit && (
+        {!positionOverlay && !pendingLimit && onLevelSelect && (
           <button
             type="button"
             title="Manual limit at last price — 1% account risk, size adjusts to your stop"
             onClick={() => {
               const px = livePrice ?? lastCandleRef.current?.close
               if (px == null || !Number.isFinite(px)) return
-              onLevelSelect?.(px, { type: 'manual', source: 'manual' })
+              onLevelSelect(px, {
+                type: 'manual',
+                source: 'manual',
+                reasoning: 'Manual limit at last traded price',
+              })
             }}
             className="rounded-lg border border-amber-500/50 bg-amber-600/90 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-amber-500"
           >
             Place limit
           </button>
         )}
-        {canPlaceOrder && !positionOverlay && !pendingLimit && (
+        {!positionOverlay && !pendingLimit && onLevelSelect && (
           <span
             className="hidden text-[10px] text-gray-500 sm:inline"
             title="Double-click chart · or use playbook / Place limit"

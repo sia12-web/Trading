@@ -107,6 +107,21 @@ export async function runAutoLevelPrep(
       return { ok: false, instrument, levels: 0, error: 'Could not create desk session' }
     }
 
+    // Browser refresh / gate poll — don't re-burn Opus if today's levels already exist
+    if (!opts.force) {
+      const since = new Date()
+      since.setUTCHours(since.getUTCHours() - 18)
+      const { count } = await supabase
+        .from('level_history')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('instrument', instrument)
+        .gte('created_at', since.toISOString())
+      if ((count ?? 0) > 0) {
+        return { ok: true, instrument, levels: count ?? 0 }
+      }
+    }
+
     const [daily, h1, h4, quote] = await Promise.all([
       getYahooCandles(instrument, 'D', 30),
       getYahooCandles(instrument, '60', 10),
