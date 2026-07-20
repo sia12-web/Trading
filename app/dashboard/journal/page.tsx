@@ -9,6 +9,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { entrySourceLabel, entrySourceTone } from '@/lib/trading/entrySourceBadge'
+import { formatDeskMoney, deskCurrencyLabel } from '@/lib/trading/currency'
 
 type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'ALL'
 type HistoryTab = 'live' | 'sim'
@@ -106,13 +107,7 @@ function fmtTime(iso: string | null | undefined, market?: string): string {
 }
 
 function fmtMoney(n: number | null | undefined, signed = false): string {
-  if (n == null || !Number.isFinite(n)) return '—'
-  const abs = Math.abs(n).toLocaleString(undefined, {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  })
-  if (signed) return `${n >= 0 ? '+' : '−'}$${abs}`
-  return `$${abs}`
+  return formatDeskMoney(n, { signed })
 }
 
 function exitBadge(code: string | null | undefined): { label: string; className: string } {
@@ -437,7 +432,8 @@ function JournalPageInner() {
                 </div>
               </div>
               <p className="mt-2 text-[11px] text-gray-600">
-                Risk per trade is ~5% of ticket account size (shown as risk $ on each order). Broker
+                Risk per trade is ~5% of ticket account size (shown as risk {deskCurrencyLabel()} on each order). Broker
+                fills and journal P&L are in {deskCurrencyLabel()} (OANDA account currency).
                 margin lives on OANDA; this trail is your desk bookkeeping from live fills.
               </p>
             </div>
@@ -803,7 +799,7 @@ function JournalPageInner() {
         <p className="text-[11px] text-gray-600 leading-relaxed">
           {isSim
             ? 'Simulation tab reads paper closes from simulation_trades only — never mixes with live fills. Resetting a replay day clears that day’s paper history.'
-            : 'Live desk only. After the entry window, levels leave the chart; open books stay in MANAGE until stop, target, AI exit, or lunch flatten. Equity above is reconstructed from your ticket account size and closed-trade P&L — not a live OANDA margin feed.'}
+            : 'Live desk only. After the entry window, levels leave the chart; open books stay in MANAGE until stop, target, AI exit, or lunch flatten. Equity above is reconstructed from your ticket account size and closed-trade P&L in CAD (OANDA account currency) — not a live OANDA margin feed.'}
         </p>
       </div>
     </div>

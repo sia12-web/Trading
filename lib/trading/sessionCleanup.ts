@@ -56,7 +56,7 @@ export async function cleanupDeskSession(
   const { data: openRows } = await supabase
     .from('trades_journal')
     .select(
-      'id, instrument, fill_status, entry_price, entry_direction, position_size, oanda_trade_id, stop_loss_price, profit_target_price'
+      'id, instrument, fill_status, entry_price, entry_direction, position_size, risk_amount, oanda_trade_id, stop_loss_price, profit_target_price'
     )
     .eq('user_id', userId)
     .eq('trade_date', today)
@@ -102,12 +102,16 @@ export async function cleanupDeskSession(
       const dir = String(row.entry_direction || '').toUpperCase()
       let exitPrice: number | null = null
       let priceSource = 'none'
+      let brokerPl: number | null = null
 
       if (shouldExecuteOandaOrders() && row.oanda_trade_id) {
         const closed = await closeOandaTrade(String(row.oanda_trade_id))
         if (closed.ok && closed.fillPrice != null && closed.fillPrice > 0) {
           exitPrice = closed.fillPrice
           priceSource = 'oanda_fill'
+        }
+        if (closed.ok && closed.realizedPL != null && Number.isFinite(closed.realizedPL)) {
+          brokerPl = closed.realizedPL
         }
       }
 
@@ -135,14 +139,20 @@ export async function cleanupDeskSession(
         tp > 0 &&
         Math.abs(exitPrice - tp) / tp < 0.0005
       const exitReason = nearTp ? 'take_profit' : 'lunch_close'
-      const pnl =
+      const deskPnl =
         dir === 'LONG' ? (exitPrice - entry) * size : (entry - exitPrice) * size
-      const pnlRounded = Math.round(pnl * 100) / 100
-      const accountValueAtEntry = entry * size
+      // Prefer OANDA home-currency P&L (CAD)
+      const pnlRounded =
+        brokerPl != null
+          ? Math.round(brokerPl * 100) / 100
+          : Math.round(deskPnl * 100) / 100
+          const riskAmt = Number(row.risk_amount) || 0
       const pnlPct =
-        accountValueAtEntry > 0
-          ? Math.round((pnlRounded / accountValueAtEntry) * 10000) / 100
-          : 0
+        riskAmt > 0
+          ? Math.round((pnlRounded / riskAmt) * 10000) / 100
+          : entry * size > 0
+            ? Math.round((pnlRounded / (entry * size)) * 10000) / 100
+            : 0
 
       const { error } = await supabase
         .from('trades_journal')
@@ -154,8 +164,8 @@ export async function cleanupDeskSession(
           profit_loss_percent: pnlPct,
           exit_notes:
             exitReason === 'take_profit'
-              ? `Take profit fill @ ${exitPrice} (source ${priceSource})`
-              : `Auto lunch flatten @ ${exitPrice} (source ${priceSource})`,
+              ? `Take profit fill @ ${exitPrice} (source ${priceSource}${brokerPl != null ? ', CAD P&L from OANDA' : ''})`
+              : `Auto lunch flatten @ ${exitPrice} (source ${priceSource}${brokerPl != null ? ', CAD P&L from OANDA' : ''})`,
           updated_at: nowIso,
         })
         .eq('id', row.id)

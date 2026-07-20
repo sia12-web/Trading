@@ -22,6 +22,7 @@ import {
   snapStopToTick,
   snapTargetToTick,
 } from '@/lib/trading/instrumentTicks'
+import { deskCurrencyLabel, formatDeskMoney } from '@/lib/trading/currency'
 
 type Direction = 'LONG' | 'SHORT'
 
@@ -334,7 +335,7 @@ export function LevelOrderTicket({
         </div>
 
         <label className="mt-4 block text-[10px] uppercase tracking-wider text-gray-500">
-          Account size ($)
+          Account size ({deskCurrencyLabel()})
           <input
             type="number"
             value={accountSize}
@@ -416,7 +417,7 @@ export function LevelOrderTicket({
                 Risk ({riskPct}%{isManual ? '' : ` desk / ${DESK_RISK_PERCENT}%`})
               </span>
               <span className="price-mono text-amber-400">
-                ${preview.risk_amount.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                {formatDeskMoney(preview.risk_amount, { compact: true })}
               </span>
             </div>
             <p className="pt-1 text-[10px] text-gray-600">

@@ -49,8 +49,42 @@ export type PlaceMarketOrderResult =
     }
 
 export type CloseTradeResult =
-  | { ok: true; tradeId: string; fillPrice: number | null; raw: unknown }
+  | {
+      ok: true
+      tradeId: string
+      fillPrice: number | null
+      /** Account home-currency P&L (CAD on practice) when OANDA reports it */
+      realizedPL: number | null
+      raw: unknown
+    }
   | { ok: false; error: string; status?: number; raw?: unknown }
+
+function extractFillPrice(json: any): number {
+  return Number(
+    json?.orderFillTransaction?.price ||
+      json?.longOrderFillTransaction?.price ||
+      json?.shortOrderFillTransaction?.price ||
+      0
+  )
+}
+
+/** OANDA reports close P&L in account home currency (e.g. CAD). */
+function extractRealizedPl(json: any): number | null {
+  const fill =
+    json?.orderFillTransaction ||
+    json?.longOrderFillTransaction ||
+    json?.shortOrderFillTransaction
+  const fromPl = Number(fill?.pl)
+  if (Number.isFinite(fromPl)) return fromPl
+  const fromClosed = Number(fill?.tradesClosed?.[0]?.realizedPL)
+  if (Number.isFinite(fromClosed)) return fromClosed
+  return null
+}
+
+type ClosedTradeSnapshot = {
+  fillPrice: number | null
+  realizedPL: number | null
+}
 
 async function oandaFetch(path: string, init?: RequestInit): Promise<Response> {
   const url = `${oandaBaseUrl()}${path}`
@@ -105,7 +139,7 @@ export async function getOandaAccountSummary(): Promise<
     ok: true,
     account: {
       id: String(a.id),
-      currency: String(a.currency || 'USD'),
+      currency: String(a.currency || 'CAD'),
       balance: Number(a.balance),
       unrealizedPL: Number(a.unrealizedPL),
       NAV: Number(a.NAV),
@@ -306,57 +340,71 @@ export async function closeOandaTrade(tradeId: string): Promise<CloseTradeResult
   }
 
   if (!res.ok) {
-    // Already closed is OK for idempotent desk close — still recover fill price
+    // Already closed is OK for idempotent desk close — still recover fill + CAD P&L
     const msg = String(json?.errorMessage || text || '')
     if (/does not exist|already|CLOSED/i.test(msg)) {
-      const recovered = await fetchOandaTradeClosePrice(tradeId)
+      const recovered = await fetchOandaClosedTradeSnapshot(tradeId)
       logger.warn('oanda.trade_already_closed', {
         tradeId,
         msg,
-        recoveredFill: recovered,
+        recoveredFill: recovered.fillPrice,
+        recoveredPL: recovered.realizedPL,
       })
-      return { ok: true, tradeId, fillPrice: recovered, raw: json }
+      return {
+        ok: true,
+        tradeId,
+        fillPrice: recovered.fillPrice,
+        realizedPL: recovered.realizedPL,
+        raw: json,
+      }
     }
     logger.error('oanda.trade_close_failed', { status: res.status, msg, tradeId })
     return { ok: false, error: msg || `HTTP ${res.status}`, status: res.status, raw: json }
   }
 
-  let fillPrice = Number(
-    json?.orderFillTransaction?.price ||
-      json?.longOrderFillTransaction?.price ||
-      json?.shortOrderFillTransaction?.price ||
-      0
-  )
-  if (!(fillPrice > 0)) {
-    fillPrice = (await fetchOandaTradeClosePrice(tradeId)) || 0
+  let fillPrice = extractFillPrice(json)
+  let realizedPL = extractRealizedPl(json)
+  if (!(fillPrice > 0) || realizedPL == null) {
+    const recovered = await fetchOandaClosedTradeSnapshot(tradeId)
+    if (!(fillPrice > 0) && recovered.fillPrice != null) fillPrice = recovered.fillPrice
+    if (realizedPL == null && recovered.realizedPL != null) {
+      realizedPL = recovered.realizedPL
+    }
   }
 
   logger.info('oanda.trade_closed', {
     tradeId,
     fillPrice: Number.isFinite(fillPrice) && fillPrice > 0 ? fillPrice : null,
+    realizedPL,
   })
 
   return {
     ok: true,
     tradeId,
     fillPrice: Number.isFinite(fillPrice) && fillPrice > 0 ? fillPrice : null,
+    realizedPL,
     raw: json,
   }
 }
 
-/** Read averageClosePrice for a trade that is already CLOSED. */
-async function fetchOandaTradeClosePrice(tradeId: string): Promise<number | null> {
+/** Read averageClosePrice + realizedPL for a trade that is already CLOSED. */
+async function fetchOandaClosedTradeSnapshot(
+  tradeId: string
+): Promise<ClosedTradeSnapshot> {
   try {
     const accountId = oandaAccountId()
     const res = await oandaFetch(`/v3/accounts/${accountId}/trades/${tradeId}`)
-    if (!res.ok) return null
-    const json = await res.json()
-    const trade = json?.trade
-    const avg = Number(trade?.averageClosePrice || trade?.price || 0)
-    if (avg > 0) return avg
-    return null
+    if (!res.ok) return { fillPrice: null, realizedPL: null }
+    const body = await res.json()
+    const trade = body?.trade
+    const avg = Number(trade?.averageClosePrice || 0)
+    const pl = Number(trade?.realizedPL)
+    return {
+      fillPrice: avg > 0 ? avg : null,
+      realizedPL: Number.isFinite(pl) ? pl : null,
+    }
   } catch {
-    return null
+    return { fillPrice: null, realizedPL: null }
   }
 }
 
@@ -384,12 +432,12 @@ export async function closeOandaInstrumentPosition(
   if (!res.ok) {
     const msg = String(json?.errorMessage || text || `HTTP ${res.status}`)
     if (/does not exist|CLOSEOUT|no position/i.test(msg)) {
-      return { ok: true, tradeId: symbol, fillPrice: null, raw: json }
+      return { ok: true, tradeId: symbol, fillPrice: null, realizedPL: null, raw: json }
     }
     return { ok: false, error: msg, status: res.status, raw: json }
   }
 
-  return { ok: true, tradeId: symbol, fillPrice: null, raw: json }
+  return { ok: true, tradeId: symbol, fillPrice: null, realizedPL: null, raw: json }
 }
 
 export { toUnits }

@@ -11,6 +11,7 @@ import { usePositionPriceSubscription } from '@/lib/hooks/usePositionPriceSubscr
 import { successToast, errorToast } from '@/lib/utils/toastUtils'
 import type { PositionStatus } from '@/types/positionManagement'
 import { entrySourceLabel, entrySourceTone } from '@/lib/trading/entrySourceBadge'
+import { formatDeskMoney } from '@/lib/trading/currency'
 
 interface PositionStatusCardProps {
   position: PositionStatus | null
@@ -34,12 +35,7 @@ function fmt(n: number) {
 }
 
 function fmtMoney(n: number, signed = false) {
-  const abs = Math.abs(n).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
-  if (signed) return `${n >= 0 ? '+' : '−'}$${abs}`
-  return `$${abs}`
+  return formatDeskMoney(n, { signed })
 }
 
 export function PositionStatusCard({
