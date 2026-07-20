@@ -7,7 +7,7 @@ import type { Instrument } from '@/types/price-feed'
 
 const YAHOO_SYMBOLS: Record<Instrument, string> = {
   DOW: '^DJI',
-  NASDAQ: '^IXIC',
+  NASDAQ: '^NDX',
   NIKKEI: '^N225',
 }
 

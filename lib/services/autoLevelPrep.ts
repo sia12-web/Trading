@@ -16,7 +16,7 @@ import type { Instrument } from '@/types/price-feed'
 
 const SYMBOL: Record<string, string> = {
   DOW: '^DJI',
-  NASDAQ: '^IXIC',
+  NASDAQ: '^NDX',
   NIKKEI: '^N225',
 }
 

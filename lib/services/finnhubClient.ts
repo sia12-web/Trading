@@ -39,7 +39,7 @@ export class FinnhubClient {
 
   /**
    * Fetch quote data for an instrument with exponential backoff retry
-   * Maps instrument symbol to Finnhub symbol: DOW -> ^DJI, NASDAQ -> ^IXIC, NIKKEI -> ^N225
+   * Maps instrument symbol to Finnhub symbol: DOW -> ^DJI, NASDAQ -> ^NDX, NIKKEI -> ^N225
    */
   async getQuote(instrument: Instrument): Promise<FinnhubQuote | null> {
     const maxRetries = 3

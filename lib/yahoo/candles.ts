@@ -1,13 +1,13 @@
 /**
  * Yahoo Finance chart candles (no API key).
- * Primary source for NY desk index OHLC (^DJI / ^IXIC) — same scale as live quotes.
+ * Primary fallback for NY desk index OHLC (^DJI / ^NDX) — same scale as OANDA US30/NAS100.
  */
 
 import type { Instrument } from '@/types/price-feed'
 
 const YAHOO_SYMBOLS: Record<Instrument, string> = {
   DOW: '^DJI',
-  NASDAQ: '^IXIC',
+  NASDAQ: '^NDX',
   NIKKEI: '^N225',
 }
 

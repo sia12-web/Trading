@@ -181,7 +181,7 @@ interface TooltipData {
 
 const INSTRUMENT_META: Record<Instrument, { label: string; symbol: string; color: string; basePrice: number }> = {
   DOW:    { label: 'Dow Jones', symbol: '^DJI',  color: '#3b7eff', basePrice: 39500 },
-  NASDAQ: { label: 'NASDAQ',   symbol: '^IXIC', color: '#a78bfa', basePrice: 17800 },
+  NASDAQ: { label: 'NASDAQ 100', symbol: '^NDX', color: '#3b7eff', basePrice: 28500 },
   NIKKEI: { label: 'Nikkei 225', symbol: '^N225', color: '#f472b6', basePrice: 38000 },
 }
 
@@ -1154,6 +1154,18 @@ export function TradingChart({
       quoteTs: number,
       streamLive: boolean
     ) => {
+      // Guard: never paint a quote from a different index scale onto candle tips
+      // (e.g. Composite vs NAS100) — that warps wicks and session bands.
+      const tip = lastCandleRef.current
+      if (
+        tip &&
+        tip.close > 0 &&
+        Math.abs(price - tip.close) / tip.close > 0.015
+      ) {
+        onPriceUpdate?.(price)
+        return
+      }
+
       onPriceUpdate?.(price)
       if (!interactingRef.current) {
         const now = Date.now()

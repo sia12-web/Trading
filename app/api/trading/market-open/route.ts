@@ -25,7 +25,7 @@ type DeskQuote = {
 }
 
 async function getIndexQuote(instrument: Instrument): Promise<DeskQuote | null> {
-  // Prefer Yahoo index (^DJI/^IXIC) — same scale as chart desk / levels
+  // Prefer Yahoo index (^DJI/^NDX) — same scale as OANDA US30/NAS100 chart desk / levels
   try {
     const y = await getYahooQuote(instrument as PriceInstrument)
     if (y && y.previous_close > 0) {

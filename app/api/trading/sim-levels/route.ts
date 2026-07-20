@@ -26,7 +26,7 @@ export const maxDuration = 60
 
 const SYMBOL: Record<string, string> = {
   DOW: '^DJI',
-  NASDAQ: '^IXIC',
+  NASDAQ: '^NDX',
   NIKKEI: '^N225',
 }
 

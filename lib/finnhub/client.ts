@@ -19,7 +19,7 @@ const INSTRUMENT_SYMBOLS: Record<Instrument, string> = {
 /** Symbols used only for display / docs (not Finnhub free-candle endpoints) */
 export const INSTRUMENT_INDEX_SYMBOLS: Record<Instrument, string> = {
   DOW: '^DJI',
-  NASDAQ: '^IXIC',
+  NASDAQ: '^NDX',
   NIKKEI: '^N225',
 }
 
