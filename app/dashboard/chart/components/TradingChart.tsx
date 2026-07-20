@@ -57,6 +57,8 @@ import {
 import {
   getDeskInstrumentPreference,
   setDeskInstrumentPreference,
+  deskVisibleLogicalRange,
+  deskBarSpacing,
 } from '@/lib/trading/deskInstrumentPreference'
 
 type DeskChartFmt = {
@@ -369,6 +371,8 @@ export interface ChartAiVerdict {
 
 interface TradingChartProps {
   onInstrumentChange?: (i: Instrument) => void
+  /** Gate/lock view sync — must not persist preference */
+  onInstrumentSync?: (i: Instrument) => void
   onPriceUpdate?:      (price: number) => void   // called every tick
   /** Fired with unix seconds whenever a live quote lands */
   onQuoteTick?:        (unixSec: number) => void
@@ -398,6 +402,7 @@ interface TradingChartProps {
 
 export function TradingChart({
   onInstrumentChange,
+  onInstrumentSync,
   onPriceUpdate,
   onQuoteTick,
   onDataModeChange,
@@ -444,9 +449,7 @@ export function TradingChart({
   /** Arm live stream once we have bars — avoid restarting intervals on every new print */
   const [streamArmed, setStreamArmed] = useState(false)
 
-  const [instrument,  setInstrumentState] = useState<Instrument>(
-    () => lockedInstrument || getDeskInstrumentPreference()
-  )
+  const [instrument,  setInstrumentState] = useState<Instrument>('DOW')
   const [candles,     setCandles]    = useState<OHLCV[]>([])
   const [levels,      setLevels]     = useState<LevelLine[]>([])
   const levelsRef = useRef<LevelLine[]>([])
@@ -474,9 +477,7 @@ export function TradingChart({
   const hoverPreviewLinesRef = useRef<any[]>([])
   const hoverPreviewKeyRef = useRef<string | null>(null)
   /** Axis / tooltip clocks — ET for DOW/NASDAQ, JST for NIKKEI */
-  const chartFmtRef = useRef<DeskChartFmt>(
-    makeDeskChartFormatters(lockedInstrument || getDeskInstrumentPreference())
-  )
+  const chartFmtRef = useRef<DeskChartFmt>(makeDeskChartFormatters('DOW'))
 
   const clearHoverPreview = useCallback(() => {
     const host = priceLineHostRef.current
@@ -494,21 +495,21 @@ export function TradingChart({
   const setInstrument = useCallback((inst: Instrument) => {
     if (lockedInstrument && inst !== lockedInstrument) return
     setInstrumentState(inst)
+    // Persist only intentional tab clicks — never gate/lock sync
     if (!lockedInstrument) setDeskInstrumentPreference(inst)
     onInstrumentChange?.(inst)
   }, [onInstrumentChange, lockedInstrument])
 
-  // Follow day's locked instrument; when unlocked restore remembered market
+  // Hydrate remembered market once; then follow clock-in lock without clobbering storage
   useEffect(() => {
     if (lockedInstrument) {
       setInstrumentState(lockedInstrument)
-      onInstrumentChange?.(lockedInstrument)
+      onInstrumentSync?.(lockedInstrument)
       return
     }
     const preferred = getDeskInstrumentPreference()
     setInstrumentState(preferred)
-    onInstrumentChange?.(preferred)
-    // Only when lock changes — parent may pass a new callback each render
+    onInstrumentSync?.(preferred)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lockedInstrument])
 
@@ -875,7 +876,13 @@ export function TradingChart({
   }, [chartReady, instrument, loadLevels])
 
   // Reset chart series + levels when switching instrument (wrong-scale leftovers squash the pane)
+  const prevInstrumentRef = useRef<Instrument | null>(null)
   useEffect(() => {
+    const prev = prevInstrumentRef.current
+    prevInstrumentRef.current = instrument
+    // Skip first mount — initial load effect owns the first candle fetch
+    if (prev === null || prev === instrument) return
+
     didFitRef.current = false
     priceLineHostSeededRef.current = false
     lastCandleRef.current = null
@@ -1132,18 +1139,17 @@ export function TradingChart({
     paintLevelLines()
 
     if (!didFitRef.current) {
-      // First load — show ~5 sessions with the tip pinned near the right edge
+      // Tip-anchored window — never fit all ~3k history bars (looks randomly zoomed out)
       const width = containerRef.current?.clientWidth ?? 900
-      const spacing = Math.min(7, Math.max(2.5, (width - 40) / Math.max(ordered.length, 1)))
-      ts.applyOptions({ barSpacing: spacing, rightOffset: 4 })
-      const leftPad = Math.max(8, Math.ceil(ordered.length * 0.04))
+      const spacing = deskBarSpacing(width, ordered.length)
+      ts.applyOptions({ barSpacing: spacing, rightOffset: 8 })
       requestAnimationFrame(() => {
         try {
-          const last = Math.max(ordered.length - 1, 1)
-          ts.setVisibleLogicalRange({
-            from: -leftPad,
-            to: last + 2,
+          chartRef.current?.priceScale('right').applyOptions({
+            autoScale: true,
+            scaleMargins: { top: 0.05, bottom: 0.05 },
           })
+          ts.setVisibleLogicalRange(deskVisibleLogicalRange(ordered.length))
           didFitRef.current = true
         } catch {
           /* ignore */

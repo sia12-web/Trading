@@ -38,13 +38,22 @@ interface PositionOverlay {
 }
 
 export default function ChartPage() {
-  const [instrument, setInstrumentState] = useState<Instrument>(() =>
-    getDeskInstrumentPreference()
-  )
+  // SSR/hydration always starts DOW — restore preference after mount (see effect below)
+  const [instrument, setInstrumentState] = useState<Instrument>('DOW')
 
+  /** User tab click — persist across refresh */
   const setInstrument = useCallback((i: Instrument) => {
     setInstrumentState(i)
     setDeskInstrumentPreference(i)
+  }, [])
+
+  /** Gate/lock sync — update view only, do not clobber saved preference */
+  const syncInstrument = useCallback((i: Instrument) => {
+    setInstrumentState(i)
+  }, [])
+
+  useEffect(() => {
+    setInstrumentState(getDeskInstrumentPreference())
   }, [])
   const [livePrice, setLivePrice] = useState<number | null>(null)
   const [positionOverlay, setPositionOverlay] = useState<PositionOverlay | null>(null)
@@ -626,6 +635,7 @@ export default function ChartPage() {
             {!chartLocked && (
               <TradingChart
                 onInstrumentChange={setInstrument}
+                onInstrumentSync={syncInstrument}
                 onPriceUpdate={onPriceUpdate}
                 onQuoteTick={setLastQuoteAt}
                 onDataModeChange={setDataMode}
@@ -661,7 +671,9 @@ export default function ChartPage() {
                 }}
                 aiVerdict={managePos ? aiVerdict : null}
                 jumpToPriceRef={jumpToPriceRef}
-                lockedInstrument={locked}
+                // Only hard-lock tabs after clock-in — recommendation alone must not
+                // force DOW and wipe the user's remembered market on refresh.
+                lockedInstrument={clockedIn ? locked : null}
                 onLevelSelect={handleLevelSelect}
                 canPlaceOrder={canTrade && dataMode === 'live'}
                 levelsRefreshKey={levelsRefreshKey}
