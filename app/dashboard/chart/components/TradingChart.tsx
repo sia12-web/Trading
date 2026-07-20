@@ -437,9 +437,12 @@ export function TradingChart({
   const candleRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const lastCandleRef = useRef<OHLCV | null>(null)
   const quoteInFlightRef = useRef(false)
+  const candleFetchGenRef = useRef(0)
   const didFitRef = useRef(false)
   /** True while user is dragging/zooming — pause React work for TV-smooth pan */
   const interactingRef = useRef(false)
+  /** Arm live stream once we have bars — avoid restarting intervals on every new print */
+  const [streamArmed, setStreamArmed] = useState(false)
 
   const [instrument,  setInstrumentState] = useState<Instrument>(
     () => lockedInstrument || getDeskInstrumentPreference()
@@ -872,6 +875,9 @@ export function TradingChart({
   useEffect(() => {
     didFitRef.current = false
     priceLineHostSeededRef.current = false
+    lastCandleRef.current = null
+    setStreamArmed(false)
+    setCandles([])
     try {
       priceLineHostRef.current?.setData([])
     } catch {
@@ -942,62 +948,126 @@ export function TradingChart({
     if (!candleRef.current || !chartRef.current || candles.length === 0) return
 
     const ordered = normalizeCandleTimes(candles)
-    const candleData: CandlestickData[] = ordered.map(c => ({
-      time:  c.time,
-      open:  c.open,
-      high:  c.high,
-      low:   c.low,
+    const candleData: CandlestickData[] = ordered.map((c) => ({
+      time: c.time,
+      open: c.open,
+      high: c.high,
+      low: c.low,
       close: c.close,
     }))
 
-    candleRef.current.setData(candleData)
-    lastCandleRef.current = ordered[ordered.length - 1] ?? null
-
-    // Same AVWAP pipeline for every index — cash open from desk clock
-    const bands = computeAnchoredVwap(
-      ordered.map((c) => ({
-        time: c.time as number,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-        volume: c.volume,
-      })),
-      deskClockFor(instrument)
-    )
-    const vs = vwapSeriesRef.current
-    if (vs && bands) {
-      vs.vwap.setData(bands.vwap)
-      vs.upper1.setData(bands.upper1)
-      vs.lower1.setData(bands.lower1)
-      vs.upper2.setData(bands.upper2)
-      vs.lower2.setData(bands.lower2)
-      vs.upper3.setData(bands.upper3)
-      vs.lower3.setData(bands.lower3)
-    } else if (vs) {
-      vs.vwap.setData([])
-      vs.upper1.setData([])
-      vs.lower1.setData([])
-      vs.upper2.setData([])
-      vs.lower2.setData([])
-      vs.upper3.setData([])
-      vs.lower3.setData([])
+    const ts = chartRef.current.timeScale()
+    let savedRange: { from: number; to: number } | null = null
+    if (didFitRef.current) {
+      try {
+        savedRange = ts.getVisibleLogicalRange()
+      } catch {
+        savedRange = null
+      }
     }
 
-    // Seed host once (never again) so price lines bind to the right scale
-    const host = priceLineHostRef.current
-    if (host && !priceLineHostSeededRef.current && ordered.length > 0) {
-      const a = ordered[0]!
-      const b = ordered[ordered.length - 1]!
-      host.setData([
-        { time: a.time, value: a.close },
-        { time: b.time, value: b.close },
-      ])
-      priceLineHostSeededRef.current = true
+    const liveBefore = lastCandleRef.current
+
+    try {
+      candleRef.current.setData(candleData)
+
+      // Same AVWAP pipeline for every index — cash open from desk clock
+      const bands = computeAnchoredVwap(
+        ordered.map((c) => ({
+          time: c.time as number,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: c.volume,
+        })),
+        deskClockFor(instrument)
+      )
+      const vs = vwapSeriesRef.current
+      if (vs && bands) {
+        vs.vwap.setData(bands.vwap)
+        vs.upper1.setData(bands.upper1)
+        vs.lower1.setData(bands.lower1)
+        vs.upper2.setData(bands.upper2)
+        vs.lower2.setData(bands.lower2)
+        vs.upper3.setData(bands.upper3)
+        vs.lower3.setData(bands.lower3)
+      } else if (vs) {
+        vs.vwap.setData([])
+        vs.upper1.setData([])
+        vs.lower1.setData([])
+        vs.upper2.setData([])
+        vs.lower2.setData([])
+        vs.upper3.setData([])
+        vs.lower3.setData([])
+      }
+
+      // Seed host once (never again) so price lines bind to the right scale
+      const host = priceLineHostRef.current
+      if (host && !priceLineHostSeededRef.current && ordered.length > 0) {
+        const a = ordered[0]!
+        const b = ordered[ordered.length - 1]!
+        if (ordered.length === 1 || a.time === b.time) {
+          host.setData([{ time: a.time, value: a.close }])
+        } else {
+          host.setData([
+            { time: a.time, value: a.close },
+            { time: b.time, value: b.close },
+          ])
+        }
+        priceLineHostSeededRef.current = true
+      }
+    } catch {
+      // Bad series data must not blank the whole effect mid-way
+      return
     }
+
+    // Keep a fresher live tip than the server snapshot when quotes advanced it
+    const serverTip = ordered[ordered.length - 1] ?? null
+    if (liveBefore && serverTip) {
+      const liveT = liveBefore.time as number
+      const serverT = serverTip.time as number
+      if (liveT === serverT) {
+        const merged: OHLCV = {
+          ...serverTip,
+          high: Math.max(serverTip.high, liveBefore.high, liveBefore.close),
+          low: Math.min(serverTip.low, liveBefore.low, liveBefore.close),
+          close: liveBefore.close,
+        }
+        lastCandleRef.current = merged
+        try {
+          candleRef.current.update({
+            time: merged.time,
+            open: merged.open,
+            high: merged.high,
+            low: merged.low,
+            close: merged.close,
+          })
+        } catch {
+          /* ignore */
+        }
+      } else if (liveT > serverT) {
+        lastCandleRef.current = liveBefore
+        try {
+          candleRef.current.update({
+            time: liveBefore.time,
+            open: liveBefore.open,
+            high: liveBefore.high,
+            low: liveBefore.low,
+            close: liveBefore.close,
+          })
+        } catch {
+          /* ignore */
+        }
+      } else {
+        lastCandleRef.current = serverTip
+      }
+    } else {
+      lastCandleRef.current = serverTip
+    }
+
     paintLevelLines()
 
-    const ts = chartRef.current.timeScale()
     if (!didFitRef.current) {
       // First load — show ~5 sessions with the tip pinned near the right edge
       const width = containerRef.current?.clientWidth ?? 900
@@ -1005,12 +1075,25 @@ export function TradingChart({
       ts.applyOptions({ barSpacing: spacing, rightOffset: 4 })
       const leftPad = Math.max(8, Math.ceil(ordered.length * 0.04))
       requestAnimationFrame(() => {
-        const last = Math.max(ordered.length - 1, 1)
-        ts.setVisibleLogicalRange({
-          from: -leftPad,
-          to: last + 2,
-        })
-        didFitRef.current = true
+        try {
+          const last = Math.max(ordered.length - 1, 1)
+          ts.setVisibleLogicalRange({
+            from: -leftPad,
+            to: last + 2,
+          })
+          didFitRef.current = true
+        } catch {
+          /* ignore */
+        }
+      })
+    } else if (savedRange) {
+      // New prints / refresh must not yank the viewport while the user is panned
+      requestAnimationFrame(() => {
+        try {
+          ts.setVisibleLogicalRange(savedRange)
+        } catch {
+          /* ignore */
+        }
       })
     }
   }, [candles, instrument, paintLevelLines]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -1156,12 +1239,18 @@ export function TradingChart({
     paintLevelLines()
   }, [levels, showLevels, chartReady, paintLevelLines])
 
+  // Arm live quote/candle stream once bars exist (do not restart on every new print)
+  useEffect(() => {
+    if (candles.length > 0) setStreamArmed(true)
+  }, [candles.length])
+
   // ── Chart stream: quotes + candles through afternoon; trading tip gated separately ─
   useEffect(() => {
-    if (!chartReady || candles.length === 0 || dataMode === 'synthetic') return
+    if (!chartReady || !streamArmed || dataMode === 'synthetic') return
 
     const CANDLE_REFRESH_MS = 45_000
     let lastUiPriceAt = 0
+    const fetchGen = ++candleFetchGenRef.current
 
     const applyQuote = (
       price: number,
@@ -1169,15 +1258,13 @@ export function TradingChart({
       quoteTs: number,
       streamLive: boolean
     ) => {
-      // Guard: never paint a quote from a different index scale onto candle tips
-      // (e.g. Composite vs NAS100) — that warps wicks and session bands.
+      // Guard: never paint / feed a quote from a different index scale
       const tip = lastCandleRef.current
       if (
         tip &&
         tip.close > 0 &&
         Math.abs(price - tip.close) / tip.close > 0.015
       ) {
-        onPriceUpdate?.(price)
         return
       }
 
@@ -1200,30 +1287,28 @@ export function TradingChart({
       const tfSec = DESK_BAR_SECONDS
       const lastT = last.time as number
       if (quoteTs >= lastT + tfSec) {
-        const barTime = Math.floor(quoteTs / tfSec) * tfSec
-        if (barTime > lastT) {
-          const bar: OHLCV = {
-            time: barTime as UTCTimestamp,
-            open: price,
-            high: price,
-            low: price,
-            close: price,
-            volume: 0,
-          }
-          lastCandleRef.current = bar
-          try {
-            candleRef.current.update({
-              time: bar.time,
-              open: bar.open,
-              high: bar.high,
-              low: bar.low,
-              close: bar.close,
-            })
-          } catch {
-            /* ignore */
-          }
-          return
+        const barTime = (lastT + tfSec) as UTCTimestamp
+        const bar: OHLCV = {
+          time: barTime,
+          open: price,
+          high: price,
+          low: price,
+          close: price,
+          volume: 0,
         }
+        try {
+          candleRef.current.update({
+            time: bar.time,
+            open: bar.open,
+            high: bar.high,
+            low: bar.low,
+            close: bar.close,
+          })
+          lastCandleRef.current = bar
+        } catch {
+          /* ignore — do not advance ref on failed update */
+        }
+        return
       }
 
       const updated: OHLCV = {
@@ -1232,7 +1317,6 @@ export function TradingChart({
         low: Math.min(last.low, price),
         close: price,
       }
-      lastCandleRef.current = updated
       try {
         candleRef.current.update({
           time: updated.time,
@@ -1241,6 +1325,7 @@ export function TradingChart({
           low: updated.low,
           close: updated.close,
         })
+        lastCandleRef.current = updated
       } catch {
         /* ignore */
       }
@@ -1281,7 +1366,9 @@ export function TradingChart({
           { cache: 'no-store' }
         )
         if (!res.ok) return
+        if (fetchGen !== candleFetchGenRef.current) return
         const json = await res.json()
+        if (fetchGen !== candleFetchGenRef.current) return
         if (!Array.isArray(json.candles) || json.candles.length === 0) return
 
         const mapped: OHLCV[] = json.candles.map((c: any) => ({
@@ -1313,6 +1400,8 @@ export function TradingChart({
           }
         }
 
+        if (fetchGen !== candleFetchGenRef.current) return
+
         const prev = candlesRef.current
         const structureChanged =
           prev.length !== trimmed.length ||
@@ -1324,9 +1413,9 @@ export function TradingChart({
             (prev[prev.length - 2]!.time as number) !==
               (trimmed[trimmed.length - 2]!.time as number))
 
+        // Never reset didFitRef here — new prints must not yank a panned viewport
         lastCandleRef.current = trimmed[trimmed.length - 1]!
         if (structureChanged) {
-          didFitRef.current = false
           setCandles(trimmed)
         } else {
           const tip = trimmed[trimmed.length - 1]!
@@ -1362,13 +1451,14 @@ export function TradingChart({
     }, 1000)
 
     return () => {
+      candleFetchGenRef.current += 1
       clearInterval(streamQuote)
       if (tickIntervalRef.current) clearInterval(tickIntervalRef.current)
       if (candleRefreshRef.current) clearInterval(candleRefreshRef.current)
       tickIntervalRef.current = null
       candleRefreshRef.current = null
     }
-  }, [chartReady, instrument, candles.length, dataMode, onQuoteTick, onPriceUpdate])
+  }, [chartReady, instrument, streamArmed, dataMode, onQuoteTick, onPriceUpdate])
 
   // ── Double-click chart to place order at that price (morning trading) ───────
   useEffect(() => {
@@ -1671,11 +1761,6 @@ export function TradingChart({
       host.applyOptions({ autoscaleInfoProvider: undefined })
     } catch { /* ignore */ }
   }, [positionOverlay, pendingLimit, aiVerdict, chartReady, clearHoverPreview])
-
-  // ── Emit live price to parent ─────────────────────────────────────────────────
-  useEffect(() => {
-    if (livePrice !== null) onPriceUpdate?.(livePrice)
-  }, [livePrice, onPriceUpdate])
 
   const isUp = priceChange >= 0
 

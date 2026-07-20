@@ -535,24 +535,23 @@ export function projectSessionHighlightRects(args: {
         !Number.isFinite(yHigh) ||
         !Number.isFinite(yLow)
       ) {
-        // priceToY often fails mid-pan — keep a full-height band instead of blanking.
-        top = 0
-        height = chartH
-      } else {
-        const rawTop = Math.min(yHigh, yLow)
-        const rawBottom = Math.max(yHigh, yLow)
-        // Fully off-screen (zoomed away) — skip, do not stretch into wallpaper
-        if (rawBottom < 0 || rawTop > chartH) continue
+        // Mid-pan priceToY is often null — skip this span (keepPreviousIfEmpty
+        // retains last good paint) instead of flashing full-pane wallpaper.
+        continue
+      }
+      const rawTop = Math.min(yHigh, yLow)
+      const rawBottom = Math.max(yHigh, yLow)
+      // Fully off-screen (zoomed away) — skip, do not stretch into wallpaper
+      if (rawBottom < 0 || rawTop > chartH) continue
 
-        top = Math.max(rawTop, 0)
-        const bottom = Math.min(rawBottom, chartH)
-        height = bottom - top
-        // Flat session — keep a thin stripe at that price, never full pane
-        if (height < 3) {
-          const mid = (top + bottom) / 2
-          top = Math.max(mid - 1.5, 0)
-          height = Math.min(3, chartH - top)
-        }
+      top = Math.max(rawTop, 0)
+      const bottom = Math.min(rawBottom, chartH)
+      height = bottom - top
+      // Flat session — keep a thin stripe at that price, never full pane
+      if (height < 3) {
+        const mid = (top + bottom) / 2
+        top = Math.max(mid - 1.5, 0)
+        height = Math.min(3, chartH - top)
       }
     }
 
