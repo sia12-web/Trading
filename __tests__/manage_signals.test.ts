@@ -19,6 +19,12 @@ function assert(cond: unknown, msg: string) {
   const r = computeRvol(vols)
   assert(r != null && Math.abs(r - 2) < 1e-9, 'RVOL 2.0×')
   assert(computeRvol([1, 2, 3]) === null, 'RVOL needs history')
+
+  // In-progress bar often has volume 0 — skip it
+  const withZeroTip = Array.from({ length: 20 }, () => 100).concat([200, 0])
+  const r2 = computeRvol(withZeroTip)
+  assert(r2 != null && Math.abs(r2 - 2) < 1e-9, 'RVOL skips trailing zero bar')
+  assert(computeRvol([0, 0, 0]) === null, 'all-zero RVOL is n/a')
 }
 
 {

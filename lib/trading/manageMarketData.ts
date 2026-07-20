@@ -87,6 +87,7 @@ export async function fetchManageRvol(
       const hit = await get()
       if (!hit) continue
       const rvol = computeRvol(hit.volumes)
+      if (rvol == null || !(rvol > 0)) continue
       return {
         rvol,
         lastVolume: hit.volumes[hit.volumes.length - 1] ?? null,

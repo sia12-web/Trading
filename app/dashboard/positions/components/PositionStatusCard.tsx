@@ -427,7 +427,7 @@ export function PositionStatusCard({
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-lg border border-[#30363d] bg-[#0d1117] px-3 py-2.5">
             <div className="flex justify-between text-[10px] uppercase tracking-wider text-gray-500">
-              <span>Path to TP</span>
+              <span>Entry→TP</span>
               <span className="price-mono text-sky-300 normal-case">
                 {Math.round(pathToTp * 100)}%
               </span>
@@ -508,8 +508,11 @@ export function PositionStatusCard({
                         ? 'Pullback — watch'
                         : ai.verdict}
                 </span>
-                <span className="font-mono normal-case tracking-normal opacity-80">
-                  {ai.confidence}%
+                <span
+                  className="font-mono normal-case tracking-normal opacity-80"
+                  title="AI confidence — not Entry→TP %"
+                >
+                  AI {ai.confidence}%
                 </span>
               </>
             ) : (

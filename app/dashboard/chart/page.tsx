@@ -536,7 +536,7 @@ export default function ChartPage() {
                   : canTrade
                     ? 'Entry window · double-click the chart or pick a level for a working limit (MANAGE only after fill)'
                     : inManage
-                      ? 'MANAGE · HOLD or TAKE PROFIT'
+                      ? null
                       : gate?.phase === 'FLAT'
                         ? 'Entry window closed'
                         : gate?.phase === 'RECOMMENDED'

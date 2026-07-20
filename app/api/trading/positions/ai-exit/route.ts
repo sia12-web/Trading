@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { getFinnhubClient } from '@/lib/services/finnhubClient'
 import { getYahooQuote } from '@/lib/yahoo/quote'
+import { getOandaPrice } from '@/lib/oanda/pricing'
 import { logger } from '@/lib/utils/logger'
 import {
   fetchManageOptionsFlow,
@@ -62,13 +63,22 @@ export async function POST(request: Request) {
       /* news optional */
     }
 
-    // Prefer server-side Yahoo index quote — never trust client livePrice alone
+    // Prefer live OANDA mid (same as desk tip), then Yahoo, then client
     let px = typeof body.current_price === 'number' ? body.current_price : 0
     try {
-      const q = await getYahooQuote(instrument as PriceInstrument)
-      if (q?.price && q.price > 0) px = q.price
+      const oanda = await getOandaPrice(instrument as PriceInstrument)
+      if (oanda?.price && oanda.price > 0) px = oanda.price
+      else {
+        const q = await getYahooQuote(instrument as PriceInstrument)
+        if (q?.price && q.price > 0) px = q.price
+      }
     } catch {
-      /* keep client price fallback */
+      try {
+        const q = await getYahooQuote(instrument as PriceInstrument)
+        if (q?.price && q.price > 0) px = q.price
+      } catch {
+        /* keep client price fallback */
+      }
     }
     if (!px || px <= 0) {
       return NextResponse.json({ error: 'No reliable price for AI exit' }, { status: 503 })

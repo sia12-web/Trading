@@ -30,16 +30,24 @@ export type ManageScoreResult = {
   factors: string[]
 }
 
-/** RVOL = last bar volume / mean of prior `period` bars. */
+/** RVOL = last *completed* bar volume / mean of prior `period` bars.
+ * Skips trailing zero-volume bars (common on the in-progress 5m candle). */
 export function computeRvol(
   volumes: number[],
   period = MANAGE_RVOL_PERIOD
 ): number | null {
   if (!Array.isArray(volumes) || volumes.length < period + 1) return null
-  const last = Number(volumes[volumes.length - 1])
-  const prior = volumes.slice(-(period + 1), -1).map(Number)
-  if (!(last >= 0) || !Number.isFinite(last)) return null
-  const mean = prior.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0) / prior.length
+
+  let end = volumes.length - 1
+  while (end >= 0 && !(Number(volumes[end]) > 0)) end -= 1
+  if (end < period) return null
+
+  const last = Number(volumes[end])
+  const prior = volumes.slice(end - period, end).map(Number)
+  if (!(last > 0) || !Number.isFinite(last)) return null
+  const mean =
+    prior.reduce((a, b) => a + (Number.isFinite(b) && b > 0 ? b : 0), 0) /
+    prior.length
   if (!(mean > 0)) return null
   return last / mean
 }

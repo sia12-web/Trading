@@ -2,7 +2,7 @@
 
 /**
  * MANAGE phase desk — process-focused (no live $ P&L).
- * Shows SL/TP path + AI verdict so you know manage is working without scorekeeping.
+ * Price path toward TP is separate from AI confidence.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -77,7 +77,7 @@ export function ManageDeskBar({
   }, [onAiVerdict])
 
   const isLong = position.direction === 'long'
-  /** Path progress 0→1 toward TP (neutral — not framed as win/loss $). */
+  /** Geometric progress 0→1 from entry toward TP (not AI confidence). */
   const pathToTp =
     currentPrice != null
       ? (() => {
@@ -268,14 +268,20 @@ export function ManageDeskBar({
         ? 'text-amber-400'
         : 'text-emerald-400'
 
+  const rvolOk =
+    ai?.rvol != null && Number.isFinite(ai.rvol) && ai.rvol > 0
+
   return (
     <div className="rounded-xl border border-amber-800/40 bg-[#161b22] px-3 py-2.5 space-y-2">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-        <span className="font-bold px-2 py-0.5 rounded border border-amber-700/60 bg-amber-950/40 text-amber-200">
-          MANAGE · {isLong ? 'LONG' : 'SHORT'} {position.instrument}
-        </span>
-        <span className="text-[10px] uppercase tracking-wide text-sky-400/90">
-          {ai ? 'AI watching' : 'Arming…'}
+        <span
+          className={`font-bold px-2 py-0.5 rounded border ${
+            isLong
+              ? 'border-emerald-700/60 bg-emerald-950/40 text-emerald-200'
+              : 'border-red-700/60 bg-red-950/40 text-red-200'
+          }`}
+        >
+          {isLong ? 'LONG' : 'SHORT'}
         </span>
         <span className="text-gray-500">
           Entry{' '}
@@ -295,20 +301,19 @@ export function ManageDeskBar({
             {position.profitTarget.toLocaleString()}
           </span>
         </span>
-        {/* Process meters — no live $ P&L (keeps manage calm) */}
-        <span className="ml-auto flex flex-wrap items-center gap-3 text-[10px] uppercase tracking-wide text-gray-500">
+        <span className="ml-auto flex flex-wrap items-center gap-3 text-[10px] tracking-wide text-gray-500">
           {pathToTp != null && (
-            <span title="Progress from entry toward take-profit (not P&L)">
-              Path to TP{' '}
-              <span className="price-mono text-sky-300 normal-case">
+            <span title="How far price has moved from entry toward take-profit">
+              Entry→TP{' '}
+              <span className="price-mono text-sky-300">
                 {Math.round(pathToTp * 100)}%
               </span>
             </span>
           )}
           {riskToSl != null && (
-            <span title="Room left before stop (not P&L)">
+            <span title="Room left before stop">
               Room to SL{' '}
-              <span className="price-mono text-gray-300 normal-case">
+              <span className="price-mono text-gray-300">
                 {Math.round(riskToSl * 100)}%
               </span>
             </span>
@@ -318,24 +323,33 @@ export function ManageDeskBar({
 
       <div className="flex flex-wrap items-start gap-3 text-[11px]">
         <div className="flex-1 min-w-[200px]">
-          <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-0.5">
-            Manage check · process only
-          </div>
           {ai ? (
             <>
-              <span className={`font-semibold uppercase ${verdictColor}`}>
-                {ai.verdict}
-              </span>
-              <span className="text-gray-600 ml-2">{ai.confidence}% conf</span>
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span className={`font-semibold uppercase ${verdictColor}`}>
+                  {ai.verdict}
+                </span>
+                <span
+                  className="text-gray-500"
+                  title="AI confidence in this manage call — not Entry→TP progress"
+                >
+                  AI confidence{' '}
+                  <span className="price-mono text-gray-300">
+                    {ai.confidence}%
+                  </span>
+                </span>
+              </div>
               <p className="text-gray-400 mt-0.5 leading-snug">{ai.reason}</p>
               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] uppercase tracking-wide text-gray-500">
-                {ai.rvol != null && Number.isFinite(ai.rvol) && (
+                {rvolOk ? (
                   <span title={ai.rvol_source ?? undefined}>
                     RVOL{' '}
                     <span className="price-mono text-gray-300 normal-case">
-                      {ai.rvol.toFixed(2)}×
+                      {ai.rvol!.toFixed(2)}×
                     </span>
                   </span>
+                ) : (
+                  <span className="text-gray-600 normal-case">RVOL —</span>
                 )}
                 {ai.options && (
                   <span title={`${ai.options.proxy} · ${ai.options.source}`}>
@@ -375,7 +389,7 @@ export function ManageDeskBar({
             </>
           ) : (
             <span className="text-gray-600 animate-pulse">
-              Manage active — scoring news + RVOL + options…
+              Scoring news + RVOL + options…
             </span>
           )}
         </div>

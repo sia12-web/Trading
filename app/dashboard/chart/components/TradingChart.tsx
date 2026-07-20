@@ -2161,7 +2161,7 @@ export function TradingChart({
           <div className="pointer-events-none absolute left-3 top-3 z-20 max-w-[min(360px,70%)]">
             {aiVerdict ? (
               <div
-                className={`rounded-lg border px-3 py-2 shadow-lg backdrop-blur-sm ${
+                className={`rounded-md border px-2 py-1 shadow-lg backdrop-blur-sm ${
                   aiVerdict.verdict.toLowerCase() === 'reversal'
                     ? 'border-violet-500/50 bg-violet-950/85 text-violet-100'
                     : aiVerdict.verdict.toLowerCase() === 'pullback'
@@ -2169,28 +2169,27 @@ export function TradingChart({
                       : 'border-emerald-500/40 bg-emerald-950/85 text-emerald-100'
                 }`}
               >
-                <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider">
-                  <span>AI manage</span>
-                  <span className="rounded bg-black/30 px-1.5 py-0.5">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider">
+                  <span>
                     {aiVerdict.verdict === 'reversal'
-                      ? 'TAKE PROFIT / EXIT'
+                      ? 'EXIT'
                       : aiVerdict.verdict === 'hold'
-                        ? 'HOLD — no TP yet'
+                        ? 'HOLD'
                         : aiVerdict.verdict === 'pullback'
-                          ? 'PULLBACK — watch TP'
+                          ? 'PULLBACK'
                           : aiVerdict.verdict}
                   </span>
-                  <span className="font-mono normal-case tracking-normal opacity-80">
+                  <span
+                    className="font-mono normal-case tracking-normal opacity-80"
+                    title="AI confidence — not Entry→TP %"
+                  >
                     {aiVerdict.confidence}%
                   </span>
                 </div>
-                <p className="mt-1 text-[11px] leading-snug opacity-90 line-clamp-3">
-                  {aiVerdict.reason}
-                </p>
               </div>
             ) : (
-              <div className="rounded-lg border border-amber-700/40 bg-amber-950/80 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-amber-200 shadow-lg backdrop-blur-sm">
-                AI manage · scoring…
+              <div className="rounded-md border border-amber-700/40 bg-amber-950/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-amber-200 shadow-lg backdrop-blur-sm">
+                AI…
               </div>
             )}
           </div>
