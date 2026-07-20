@@ -67,6 +67,8 @@ import {
 import {
   convictionStars,
   resolveDeskLevels,
+  computeInitialBalance,
+  ibLineSeriesData,
   type DeskPlaybook,
   zoneStopPrice,
   formatZone,
@@ -334,6 +336,11 @@ function SimulationDeskInner() {
     upper3: ISeriesApi<'Line'>
     lower3: ISeriesApi<'Line'>
   } | null>(null)
+  const ibSeriesRef = useRef<{
+    high: ISeriesApi<'Line'>
+    low: ISeriesApi<'Line'>
+  } | null>(null)
+  const [ibShaped, setIbShaped] = useState(false)
   const levelLinesRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]>([])
   const posLinesRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]>([])
   const hoverPreviewLinesRef = useRef<
@@ -715,6 +722,20 @@ function SimulationDeskInner() {
       lower3: chart.addLineSeries({ ...bandOpts, title: '-3σ' }),
     }
 
+    // Initial Balance — same blue H/L as live (extended to sim lunch)
+    const ibLineOpts = {
+      color: '#3b82f6',
+      lineWidth: 2 as const,
+      lineStyle: LineStyle.Solid,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      crosshairMarkerVisible: false,
+    }
+    const ibSeries = {
+      high: chart.addLineSeries({ ...ibLineOpts, title: 'IB H' }),
+      low: chart.addLineSeries({ ...ibLineOpts, title: 'IB L' }),
+    }
+
     chart.priceScale('right').applyOptions({
       autoScale: true,
       scaleMargins: { top: 0.05, bottom: 0.05 },
@@ -725,6 +746,7 @@ function SimulationDeskInner() {
     seriesRef.current = series
     priceLineHostRef.current = priceLineHost
     vwapSeriesRef.current = vwapSeries
+    ibSeriesRef.current = ibSeries
     setChartReady(true)
 
     const ro = new ResizeObserver(() => {
@@ -746,6 +768,8 @@ function SimulationDeskInner() {
       priceLineHostRef.current = null
       priceLineHostSeededRef.current = false
       vwapSeriesRef.current = null
+      ibSeriesRef.current = null
+      setIbShaped(false)
       levelLinesRef.current = []
       posLinesRef.current = []
     }
@@ -976,6 +1000,52 @@ function SimulationDeskInner() {
           vs.upper3.setData([])
           vs.lower3.setData([])
         }
+
+        // IB high/low — shaped against replay clock (simT), not wall clock
+        const ibs = ibSeriesRef.current
+        if (ibs && openUnix) {
+          const ib = computeInitialBalance(
+            slice.map((c) => ({
+              time: c.time,
+              open: c.open,
+              high: c.high,
+              low: c.low,
+              close: c.close,
+              volume: c.volume,
+            })),
+            openUnix,
+            simT
+          )
+          if (ib) {
+            const tip = slice[slice.length - 1]?.time ?? simT
+            const sessionEnd = lunchUnix || tip
+            const pts = ibLineSeriesData(ib, Math.max(tip, sessionEnd, simT))
+            try {
+              ibs.high.setData(
+                pts.high.map((p) => ({
+                  time: p.time as UTCTimestamp,
+                  value: p.value,
+                }))
+              )
+              ibs.low.setData(
+                pts.low.map((p) => ({
+                  time: p.time as UTCTimestamp,
+                  value: p.value,
+                }))
+              )
+              setIbShaped(true)
+            } catch {
+              ibs.high.setData([])
+              ibs.low.setData([])
+              setIbShaped(false)
+            }
+          } else {
+            ibs.high.setData([])
+            ibs.low.setData([])
+            setIbShaped(false)
+          }
+        }
+
         // Seed host once so price lines bind to the right scale — never setData again
         const host = priceLineHostRef.current
         if (host && !priceLineHostSeededRef.current && slice.length > 0) {
@@ -1008,6 +1078,50 @@ function SimulationDeskInner() {
           vs.upper3.setData(bands.upper3)
           vs.lower3.setData(bands.lower3)
         }
+
+        const ibs = ibSeriesRef.current
+        if (ibs && openUnix) {
+          const ib = computeInitialBalance(
+            slice.map((c) => ({
+              time: c.time,
+              open: c.open,
+              high: c.high,
+              low: c.low,
+              close: c.close,
+              volume: c.volume,
+            })),
+            openUnix,
+            simT
+          )
+          if (ib) {
+            const tip = slice[slice.length - 1]?.time ?? simT
+            const sessionEnd = lunchUnix || tip
+            const pts = ibLineSeriesData(ib, Math.max(tip, sessionEnd, simT))
+            try {
+              ibs.high.setData(
+                pts.high.map((p) => ({
+                  time: p.time as UTCTimestamp,
+                  value: p.value,
+                }))
+              )
+              ibs.low.setData(
+                pts.low.map((p) => ({
+                  time: p.time as UTCTimestamp,
+                  value: p.value,
+                }))
+              )
+              setIbShaped(true)
+            } catch {
+              ibs.high.setData([])
+              ibs.low.setData([])
+              setIbShaped(false)
+            }
+          } else {
+            ibs.high.setData([])
+            ibs.low.setData([])
+            setIbShaped(false)
+          }
+        }
       }
 
       lastAppliedBarIdxRef.current = endIdx
@@ -1024,7 +1138,7 @@ function SimulationDeskInner() {
         requestAnimationFrame(() => refreshSessionHighlights())
       }
     },
-    [pinToLatest, refreshSessionHighlights, instrument]
+    [pinToLatest, refreshSessionHighlights, instrument, openUnix, lunchUnix]
   )
 
   // Initial / seek chart paint — use ref so callback identity churn does not force setData
@@ -2214,6 +2328,19 @@ function SimulationDeskInner() {
               {deskClockFor(instrument).openLabel} · 5 trading days prior · ±1/2/3σ
             </span>
           </span>
+          {ibShaped && (
+            <>
+              <span className="text-gray-600">·</span>
+              <span
+                className="flex items-center gap-1.5 normal-case tracking-normal"
+                title="Initial Balance — first-hour high/low, extended to lunch (sim session end)"
+              >
+                <span className="inline-block w-4 border-t-2 border-blue-500" />
+                <span className="text-blue-500">IB H/L</span>
+                <span className="text-gray-600">to session end</span>
+              </span>
+            </>
+          )}
         </div>
 
         {msg && (

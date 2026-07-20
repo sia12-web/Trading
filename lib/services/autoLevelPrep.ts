@@ -10,7 +10,14 @@ import { getYahooCandles } from '@/lib/yahoo/candles'
 import { getYahooQuote } from '@/lib/yahoo/quote'
 import { getLevelFinderAgent } from '@/lib/services/levelFinderAgent'
 import { validateLevelsAgainstMarket } from '@/lib/services/levelValidation'
-import { isDeskHoursNow } from '@/lib/trading/sessionGate'
+import {
+  deskMarketFor,
+  isDeskHoursNow,
+  isDeskInstrument,
+  shouldRunLiveAiForInstrument,
+  type DeskInstrument,
+} from '@/lib/trading/sessionGate'
+import { getTodayAttendance } from '@/lib/trading/deskAttendance'
 import type { Candle } from '@/lib/services/levelFinderAgent/types'
 import type { Instrument } from '@/types/price-feed'
 
@@ -83,8 +90,13 @@ export async function runAutoLevelPrep(
   opts: { force?: boolean } = {}
 ): Promise<AutoLevelPrepResult> {
   try {
+    if (!isDeskInstrument(instrument)) {
+      return { ok: false, instrument, levels: 0, error: 'Invalid instrument' }
+    }
+
+    const now = new Date()
     if (!opts.force) {
-      const desk = isDeskHoursNow(new Date(), instrument)
+      const desk = isDeskHoursNow(now, instrument)
       if (!desk.open) {
         return { ok: false, instrument, levels: 0, error: desk.reason }
       }
@@ -102,6 +114,27 @@ export async function runAutoLevelPrep(
 
     const { createAdminClient } = await import('@/lib/supabase/admin')
     const supabase = createAdminClient() ?? (await createClient())
+
+    // LIVE focus: never burn Opus on the off-session market or a non-locked twin
+    const market = deskMarketFor(instrument)
+    const attendance = await getTodayAttendance(supabase, user.id, market, now)
+    const focusLock =
+      (attendance?.traded_instrument && isDeskInstrument(attendance.traded_instrument)
+        ? (attendance.traded_instrument as DeskInstrument)
+        : null) ||
+      (attendance?.instrument && isDeskInstrument(attendance.instrument)
+        ? (attendance.instrument as DeskInstrument)
+        : null)
+    const aiGate = shouldRunLiveAiForInstrument(instrument as DeskInstrument, now, {
+      lockedInstrument: focusLock,
+      clockedIn: attendance?.status === 'clocked_in',
+      attendedToday: !!attendance,
+    })
+    if (!aiGate.ok) {
+      console.log(`[AutoLevelPrep] skip ${instrument}: ${aiGate.reason}`)
+      return { ok: false, instrument, levels: 0, error: aiGate.reason }
+    }
+
     const sessionId = await ensureDeskSession(supabase, user.id, instrument)
     if (!sessionId) {
       return { ok: false, instrument, levels: 0, error: 'Could not create desk session' }

@@ -16,7 +16,7 @@
  * - Real Finnhub candles via /api/trading/candles (synthetic fallback)
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import {
   createChart,
   LineStyle,
@@ -44,7 +44,13 @@ import {
   previewLevelOrderPrices,
   resolveChartLimitPick,
 } from '@/lib/trading/chartLevelPick'
-import { aiLevelsUrl, resolveDeskLevels, resolveAfternoonDeskLevels, computeInitialBalance } from '@/lib/trading/deskLevels'
+import {
+  aiLevelsUrl,
+  resolveDeskLevels,
+  resolveAfternoonDeskLevels,
+  computeInitialBalance,
+  ibLineSeriesData,
+} from '@/lib/trading/deskLevels'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
 import { DESK_CHART_THEME } from '@/lib/chart/deskChartTheme'
@@ -53,6 +59,7 @@ import {
   isChartStreamAllowed,
   isLevelPaintAllowed,
   isAfternoonWatchWindow,
+  liveVisibleInstruments,
   sessionFor,
 } from '@/lib/trading/sessionGate'
 import {
@@ -388,6 +395,11 @@ interface TradingChartProps {
   jumpToPriceRef?:     React.MutableRefObject<((price: number) => void) | null>
   /** Lock tabs to day's recommended desk instrument */
   lockedInstrument?:   Instrument | null
+  /**
+   * LIVE focus tabs only (session market ± clock-in lock).
+   * Simulation must never pass this — leave undefined to show all three.
+   */
+  allowedInstruments?: Instrument[] | null
   /** When user clicks a level price (from panel or highlight) */
   onLevelSelect?:      (
     price: number,
@@ -413,6 +425,7 @@ export function TradingChart({
   aiVerdict = null,
   jumpToPriceRef,
   lockedInstrument,
+  allowedInstruments = null,
   onLevelSelect,
   canPlaceOrder = false,
   levelsRefreshKey = 0,
@@ -499,26 +512,50 @@ export function TradingChart({
     hoverPreviewKeyRef.current = null
   }, [])
 
+  // Recompute focus tabs on a short clock so NIKKEI appears at Tokyo−30m without refresh
+  const [focusTick, setFocusTick] = useState(0)
+  useEffect(() => {
+    const id = window.setInterval(() => setFocusTick((n) => n + 1), 30_000)
+    return () => window.clearInterval(id)
+  }, [])
+
+  const visibleInstruments = useMemo((): Instrument[] => {
+    // Day lock always wins — cannot switch away from locked DOW/NASDAQ/NIKKEI
+    if (lockedInstrument) return [lockedInstrument]
+    if (allowedInstruments && allowedInstruments.length > 0) {
+      return allowedInstruments.filter((i) =>
+        (liveVisibleInstruments(new Date()) as Instrument[]).includes(i)
+      )
+    }
+    // Never fall back to all three on the live desk
+    void focusTick
+    return liveVisibleInstruments(new Date()) as Instrument[]
+  }, [allowedInstruments, lockedInstrument, focusTick])
+
   const setInstrument = useCallback((inst: Instrument) => {
     if (lockedInstrument && inst !== lockedInstrument) return
+    if (!visibleInstruments.includes(inst)) return
     setInstrumentState(inst)
     // Persist only intentional tab clicks — never gate/lock sync
     if (!lockedInstrument) setDeskInstrumentPreference(inst)
     onInstrumentChange?.(inst)
-  }, [onInstrumentChange, lockedInstrument])
+  }, [onInstrumentChange, lockedInstrument, visibleInstruments])
 
-  // Hydrate remembered market once; then follow clock-in lock without clobbering storage
+  // Hydrate remembered market once; then follow clock-in lock / session focus
   useEffect(() => {
-    if (lockedInstrument) {
+    if (lockedInstrument && visibleInstruments.includes(lockedInstrument)) {
       setInstrumentState(lockedInstrument)
       onInstrumentSync?.(lockedInstrument)
       return
     }
     const preferred = getDeskInstrumentPreference()
-    setInstrumentState(preferred)
-    onInstrumentSync?.(preferred)
+    const next = visibleInstruments.includes(preferred)
+      ? preferred
+      : visibleInstruments[0] ?? 'DOW'
+    setInstrumentState(next)
+    onInstrumentSync?.(next)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lockedInstrument])
+  }, [lockedInstrument, visibleInstruments.join('|')])
 
   const jumpMarkerRef = useRef<any | null>(null)
 
@@ -793,7 +830,7 @@ export function TradingChart({
       lower3: chart.addLineSeries({ ...bandOpts, title: '-3σ' }),
     }
 
-    // Initial Balance high/low — short segments over the first hour only
+    // Initial Balance — blue H/L from first hour, extended to session end
     const ibLineOpts = {
       color: '#3b82f6',
       lineWidth: 2 as const,
@@ -1200,7 +1237,7 @@ export function TradingChart({
         vs.lower3.setData([])
       }
 
-      // Initial Balance — blue high/low spanning only the first cash hour
+      // Initial Balance — first-hour H/L, line extended through cash close
       const ibSeries = ibSeriesRef.current
       if (ibSeries) {
         const sess = sessionFor(instrument)
@@ -1211,10 +1248,18 @@ export function TradingChart({
           day: '2-digit',
         }).format(new Date())
         const [oh, om] = sess.marketOpen.split(':').map(Number)
+        const [ch, cm] = sess.marketClose.split(':').map(Number)
         const openUnix =
           instrument === 'NIKKEI'
             ? tokyoDateTimeToUnix(todayLocal, oh!, om || 0)
             : nyDateTimeToUnix(todayLocal, oh!, om || 0)
+        const closeUnix =
+          instrument === 'NIKKEI'
+            ? tokyoDateTimeToUnix(todayLocal, ch!, cm || 0)
+            : nyDateTimeToUnix(todayLocal, ch!, cm || 0)
+        const tipUnix = ordered.length
+          ? (ordered[ordered.length - 1]!.time as number)
+          : closeUnix
         const ib = computeInitialBalance(
           ordered.map((c) => ({
             time: c.time as number,
@@ -1227,17 +1272,20 @@ export function TradingChart({
           openUnix
         )
         if (ib) {
-          const hiPts = [
-            { time: ib.fromTime as UTCTimestamp, value: ib.high },
-            { time: ib.toTime as UTCTimestamp, value: ib.high },
-          ]
-          const loPts = [
-            { time: ib.fromTime as UTCTimestamp, value: ib.low },
-            { time: ib.toTime as UTCTimestamp, value: ib.low },
-          ]
+          const pts = ibLineSeriesData(ib, Math.max(tipUnix, closeUnix))
           try {
-            ibSeries.high.setData(hiPts)
-            ibSeries.low.setData(loPts)
+            ibSeries.high.setData(
+              pts.high.map((p) => ({
+                time: p.time as UTCTimestamp,
+                value: p.value,
+              }))
+            )
+            ibSeries.low.setData(
+              pts.low.map((p) => ({
+                time: p.time as UTCTimestamp,
+                value: p.value,
+              }))
+            )
             setIbShaped(true)
           } catch {
             ibSeries.high.setData([])
@@ -1824,7 +1872,8 @@ export function TradingChart({
     }
   }, [canPlaceOrder, onLevelSelect, chartReady, positionOverlay, pendingLimit])
 
-  // ── Hover visible AI/structure level → preview entry / SL / TP (same as ticket) ─
+  // ── Hover visible AI/structure level → preview entry / SL / TP ─
+  // Morning: place preview. Afternoon: same geometry, watch-only (canPlaceOrder false).
   useEffect(() => {
     const container = containerRef.current
     const host = priceLineHostRef.current
@@ -1833,7 +1882,6 @@ export function TradingChart({
       !candleRef.current ||
       !host ||
       !chartReady ||
-      !canPlaceOrder ||
       positionOverlay ||
       pendingLimit ||
       !showLevels
@@ -1844,6 +1892,7 @@ export function TradingChart({
 
     const fmt = (n: number) =>
       n.toLocaleString('en-US', { maximumFractionDigits: 0 })
+    const tag = canPlaceOrder ? 'HOVER' : 'WATCH'
 
     const onMove = (e: MouseEvent) => {
       if (!candleRef.current || !priceLineHostRef.current) return
@@ -1879,7 +1928,7 @@ export function TradingChart({
         return
       }
 
-      const key = `${preview.direction}:${preview.entry}:${preview.stop}:${preview.target}`
+      const key = `${tag}:${preview.direction}:${preview.entry}:${preview.stop}:${preview.target}`
       if (hoverPreviewKeyRef.current === key) return
       clearHoverPreview()
       hoverPreviewKeyRef.current = key
@@ -1890,7 +1939,7 @@ export function TradingChart({
         {
           price: preview.entry,
           color: 'rgba(56, 189, 248, 0.85)',
-          title: `HOVER ${preview.direction} ${fmt(preview.entry)}`,
+          title: `${tag} ${preview.direction} ${fmt(preview.entry)}`,
           style: LineStyle.Dashed,
         },
         {
@@ -2087,9 +2136,9 @@ export function TradingChart({
     <div className="flex flex-col h-full gap-2">
       {/* ── Toolbar ─────────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
-        {/* Instrument tabs */}
+        {/* Instrument tabs — LIVE focus hides off-session desks */}
         <div className="tab-bar">
-          {(Object.keys(INSTRUMENT_META) as Instrument[]).map(inst => (
+          {visibleInstruments.map((inst) => (
             <button
               key={inst}
               onClick={() => setInstrument(inst)}
@@ -2295,11 +2344,11 @@ export function TradingChart({
             <span className="text-gray-600">·</span>
             <span
               className="flex items-center gap-1.5 normal-case tracking-normal"
-              title="Initial Balance — first hour high / low (blue segments)"
+              title="Initial Balance — first-hour high/low, extended to cash close"
             >
               <span className="inline-block w-4 border-t-2 border-blue-500" />
               <span className="text-blue-500">IB H/L</span>
-              <span className="text-gray-600">first hour</span>
+              <span className="text-gray-600">to session end</span>
             </span>
           </>
         )}

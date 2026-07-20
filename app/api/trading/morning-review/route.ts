@@ -16,11 +16,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { validateLevelsAgainstMarket } from '@/lib/services/levelValidation'
 import { getESTDateString } from '@/lib/utils/timeUtils'
-import { deskMarketFor, isDeskInstrument, sessionFor } from '@/lib/trading/sessionGate'
+import {
+  deskMarketFor,
+  isDeskInstrument,
+  liveFocusMarket,
+  sessionFor,
+} from '@/lib/trading/sessionGate'
 import {
   getTodayAttendance,
   saveMorningJournal,
   autoLunchClockOut,
+  type DeskAttendanceRow,
 } from '@/lib/trading/deskAttendance'
 import type { Instrument } from '@/types/price-feed'
 import { logger } from '@/lib/utils/logger'
@@ -45,29 +51,32 @@ function isSimJournalRequest(request: NextRequest): boolean {
   return !!simFlag && /^(1|true|sim|simulation)$/i.test(simFlag)
 }
 
+/** LIVE only — focused market + clock-in commitment; never the off-session desk. */
 async function resolveInstrument(
   request: NextRequest,
-  supabase: Awaited<ReturnType<typeof createClient>>
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  attendance: DeskAttendanceRow | null
 ): Promise<Instrument> {
-  const param = request.nextUrl.searchParams.get('instrument')
-  if (param && isDeskInstrument(param)) return param
-
-  // Prefer Tokyo when TSE morning just ended / is lunch; else NY recommendation
-  const tokyo = sessionFor('NIKKEI')
   const now = new Date()
-  const tokyoTime = new Intl.DateTimeFormat('en-US', {
-    timeZone: tokyo.tz,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(now)
-  const [th, tm] = tokyoTime.replace('24:', '00:').split(':').map(Number)
-  const tokyoMins = (th ?? 0) * 60 + (tm ?? 0)
-  const lunchMins = 11 * 60 + 30
-  // Around Tokyo lunch window (±2h) default to NIKKEI if no explicit param
-  if (tokyoMins >= lunchMins - 15 && tokyoMins <= lunchMins + 120) {
-    return 'NIKKEI'
+  const focus = liveFocusMarket(now)
+
+  const param = request.nextUrl.searchParams.get('instrument')
+  if (param && isDeskInstrument(param) && deskMarketFor(param) === focus) {
+    return param
   }
+
+  const fromAttendance =
+    (attendance?.traded_instrument && isDeskInstrument(attendance.traded_instrument)
+      ? attendance.traded_instrument
+      : null) ||
+    (attendance?.instrument && isDeskInstrument(attendance.instrument)
+      ? attendance.instrument
+      : null)
+  if (fromAttendance && deskMarketFor(fromAttendance) === focus) {
+    return fromAttendance
+  }
+
+  if (focus === 'TOKYO') return 'NIKKEI'
 
   const todayNy = getESTDateString()
   const { data: rec } = await supabase
@@ -102,26 +111,31 @@ async function runMorningReview(request: NextRequest) {
     }
 
     const supabase = await createClient()
-    const instrument = await resolveInstrument(request, supabase)
-    const market = deskMarketFor(instrument)
-    const sess = sessionFor(instrument)
-    const todayLocal = localDateInTz(sess.tz)
+    const now = new Date()
+    const focusMarket = liveFocusMarket(now)
 
     // Lunch clock-out first
     await autoLunchClockOut(supabase, user.id)
 
-    const attendance = await getTodayAttendance(supabase, user.id, market)
+    const attendance = await getTodayAttendance(supabase, user.id, focusMarket, now)
     if (!attendance) {
-      logger.info('morning-review.skipped_no_clock_in', { instrument, market, date: todayLocal })
+      logger.info('morning-review.skipped_no_clock_in', {
+        market: focusMarket,
+        date: localDateInTz(sessionFor(focusMarket === 'TOKYO' ? 'NIKKEI' : 'DOW').tz),
+      })
       return NextResponse.json({
         ok: true,
         skipped: true,
         reason: 'Not clocked in today — no level reaction journal or afternoon update',
-        date: todayLocal,
-        instrument,
-        market,
+        date: localDateInTz(sessionFor(focusMarket === 'TOKYO' ? 'NIKKEI' : 'DOW').tz),
+        market: focusMarket,
       })
     }
+
+    const instrument = await resolveInstrument(request, supabase, attendance)
+    const market = deskMarketFor(instrument)
+    const sess = sessionFor(instrument)
+    const todayLocal = localDateInTz(sess.tz)
 
     logger.info('morning-review.start', { instrument, market, date: todayLocal })
 

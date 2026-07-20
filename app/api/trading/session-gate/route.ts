@@ -1,7 +1,8 @@
 /**
  * GET /api/trading/session-gate
  * Returns desk phase, locks, and trading permissions.
- * NY: DOW/NASDAQ from morning recommendation. Tokyo: NIKKEI when TSE morning is live.
+ * LIVE focus: one market at a time (Tokyo → NIKKEI only; NY → DOW/NASDAQ).
+ * After clock-in, tabs lock to the committed instrument.
  */
 
 import { NextResponse } from 'next/server'
@@ -11,10 +12,9 @@ import { getESTDateString } from '@/lib/utils/timeUtils'
 import { logger } from '@/lib/utils/logger'
 import {
   resolveSessionGate,
-  isDeskHoursNow,
   isNyDeskInstrument,
   isLiveDeskInstrument,
-  deskMarketFor,
+  liveFocusMarket,
   instrumentsForDeskMarket,
   type DeskInstrument,
 } from '@/lib/trading/sessionGate'
@@ -41,43 +41,46 @@ export async function GET(request: Request) {
       : null
 
     const supabase = await createClient()
+    const now = new Date()
+    const focusMarket = liveFocusMarket(now)
+    const marketInstruments = instrumentsForDeskMarket(focusMarket)
     const nyRecDate = getESTDateString()
-
-    // Resolve lock first so attempt book is scoped to the active desk market
-    const { data: rec } = await supabase
-      .from('market_recommendations')
-      .select('recommended_instrument')
-      .eq('date', nyRecDate)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
 
     let lockedInstrument: DeskInstrument | null = null
 
-    if (rec?.recommended_instrument && isNyDeskInstrument(rec.recommended_instrument)) {
-      lockedInstrument = rec.recommended_instrument
+    if (focusMarket === 'TOKYO') {
+      lockedInstrument = 'NIKKEI'
     } else {
-      const { data: regimes } = await supabase
-        .from('regime_cache')
-        .select('instrument, recommendation_confidence')
+      const { data: rec } = await supabase
+        .from('market_recommendations')
+        .select('recommended_instrument')
         .eq('date', nyRecDate)
-        .in('instrument', ['DOW', 'NASDAQ'])
-        .order('recommendation_confidence', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(1)
+        .maybeSingle()
 
-      const top = regimes?.[0]
-      if (top?.instrument && isNyDeskInstrument(top.instrument)) {
-        lockedInstrument = top.instrument
+      if (rec?.recommended_instrument && isNyDeskInstrument(rec.recommended_instrument)) {
+        lockedInstrument = rec.recommended_instrument
+      } else {
+        const { data: regimes } = await supabase
+          .from('regime_cache')
+          .select('instrument, recommendation_confidence')
+          .eq('date', nyRecDate)
+          .in('instrument', ['DOW', 'NASDAQ'])
+          .order('recommendation_confidence', { ascending: false })
+          .limit(1)
+
+        const top = regimes?.[0]
+        if (top?.instrument && isNyDeskInstrument(top.instrument)) {
+          lockedInstrument = top.instrument
+        }
       }
     }
 
-    if (isDeskHoursNow(new Date(), 'NIKKEI').open) {
-      lockedInstrument = 'NIKKEI'
-    }
-
-    const market = deskMarketFor(lockedInstrument ?? viewingInstrument ?? 'DOW')
-    const marketInstruments = instrumentsForDeskMarket(market)
-    const tradeDate = tradeDateForInstrument(lockedInstrument ?? viewingInstrument ?? 'DOW')
+    const tradeDate = tradeDateForInstrument(
+      lockedInstrument ?? marketInstruments[0] ?? 'DOW',
+      now
+    )
 
     const [openPosRes, filledRes] = await Promise.all([
       supabase
@@ -110,18 +113,37 @@ export async function GET(request: Request) {
     // Lunch may have hit while the tab was open — auto clock-out
     await autoLunchClockOut(supabase, user.id)
 
-    const attendance = await getTodayAttendance(supabase, user.id, market)
+    const attendance = await getTodayAttendance(supabase, user.id, focusMarket, now)
     const clockedIn = attendance?.status === 'clocked_in'
     const attendedToday = !!attendance
+
+    // Clock-in commitment wins over morning recommendation (focus that name only)
+    const attendanceFocus =
+      (attendance?.traded_instrument &&
+      isLiveDeskInstrument(attendance.traded_instrument)
+        ? attendance.traded_instrument
+        : null) ||
+      (attendance?.instrument && isLiveDeskInstrument(attendance.instrument)
+        ? attendance.instrument
+        : null)
+    if (attendanceFocus && marketInstruments.includes(attendanceFocus)) {
+      lockedInstrument = attendanceFocus
+    }
+
+    const viewingInFocus =
+      viewingInstrument && marketInstruments.includes(viewingInstrument)
+        ? viewingInstrument
+        : lockedInstrument
 
     const gate = resolveSessionGate({
       lockedInstrument,
       hasOpenPosition: !!openPos,
       attemptsUsed,
       stopLossHitCount: stopHits,
-      viewingInstrument: viewingInstrument ?? lockedInstrument,
+      viewingInstrument: viewingInFocus,
       clockedIn,
       attendedToday,
+      now,
     })
 
     return NextResponse.json(
@@ -138,6 +160,7 @@ export async function GET(request: Request) {
         max_attempts: gate.maxAttempts,
         stop_hits: gate.stopHits,
         max_stop_hits: gate.maxStopHits,
+        focus_market: focusMarket,
       },
       {
         headers: {

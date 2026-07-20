@@ -7,7 +7,13 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { runAutoLevelPrep } from '@/lib/services/autoLevelPrep'
-import { isDeskInstrument, type DeskInstrument } from '@/lib/trading/sessionGate'
+import {
+  deskMarketFor,
+  isDeskInstrument,
+  liveFocusMarket,
+  liveVisibleInstruments,
+  type DeskInstrument,
+} from '@/lib/trading/sessionGate'
 import { assertCronOrDeskUser } from '@/lib/utils/devAuth'
 import { assertProdEnv } from '@/lib/utils/env'
 import { logger } from '@/lib/utils/logger'
@@ -32,13 +38,28 @@ async function handleAutoLevels(request: NextRequest) {
       )
     }
 
-    const param = request.nextUrl.searchParams.get('instrument') || 'NIKKEI'
-    if (!isDeskInstrument(param)) {
+    const now = new Date()
+    const focus = liveFocusMarket(now)
+    const focusDefault = liveVisibleInstruments(now)[0] ?? (focus === 'TOKYO' ? 'NIKKEI' : 'DOW')
+    const raw = request.nextUrl.searchParams.get('instrument') || focusDefault
+    if (!isDeskInstrument(raw)) {
       return NextResponse.json(
         { error: 'instrument must be DOW, NASDAQ, or NIKKEI' },
         { status: 400 }
       )
     }
+    // Soft-skip off-session cron hits (e.g. NIKKEI cron during NY cash day)
+    if (deskMarketFor(raw) !== focus) {
+      logger.info('auto-levels.skipped_off_session', { instrument: raw, focus })
+      return NextResponse.json({
+        success: false,
+        instrument: raw,
+        levels: 0,
+        error: `Live focus is ${focus} — skip ${raw}`,
+        processed_at: new Date().toISOString(),
+      })
+    }
+    const param = raw
 
     // Cron may pass force=1; browser prep should not (default false)
     const force = request.nextUrl.searchParams.get('force') === '1'

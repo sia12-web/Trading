@@ -12,6 +12,7 @@ export interface SessionGateState {
   phase: string
   message: string
   lockedInstrument: 'DOW' | 'NASDAQ' | 'NIKKEI' | null
+  allowedInstruments?: Array<'DOW' | 'NASDAQ' | 'NIKKEI'>
   canPlaceEntry: boolean
   canManagePosition: boolean
   canViewLiveChart: boolean
@@ -69,12 +70,15 @@ export function SessionBanner({
   onRefreshReady,
   lastQuoteAt = null,
   dataMode = 'live',
+  viewingInstrument = null,
 }: {
   onGate?: (g: SessionGateState) => void
   refreshKey?: number
   onRefreshReady?: (refresh: () => void) => void
   lastQuoteAt?: number | null
   dataMode?: 'live' | 'synthetic'
+  /** Current chart tab — preferred clock-in commitment when in focus market */
+  viewingInstrument?: 'DOW' | 'NASDAQ' | 'NIKKEI' | null
 }) {
   const [gate, setGate] = useState<SessionGateState | null>(null)
   const [gateError, setGateError] = useState<string | null>(null)
@@ -105,6 +109,9 @@ export function SessionBanner({
         phase: json.phase,
         message: json.message,
         lockedInstrument: json.lockedInstrument,
+        allowedInstruments: Array.isArray(json.allowedInstruments)
+          ? json.allowedInstruments
+          : undefined,
         canPlaceEntry: json.canPlaceEntry,
         canManagePosition: json.canManagePosition,
         canViewLiveChart: json.canViewLiveChart,
@@ -152,12 +159,20 @@ export function SessionBanner({
     setClocking(true)
     try {
       const market = gate?.market || (gate?.lockedInstrument === 'NIKKEI' ? 'TOKYO' : 'NY')
+      const allowed = gate?.allowedInstruments
+      const focusInstrument =
+        (viewingInstrument &&
+        (!allowed || allowed.includes(viewingInstrument))
+          ? viewingInstrument
+          : null) ||
+        gate?.lockedInstrument ||
+        undefined
       const res = await fetch('/api/trading/clock-in', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           market,
-          instrument: gate?.lockedInstrument ?? undefined,
+          instrument: focusInstrument,
         }),
       })
       const json = await res.json().catch(() => ({}))
@@ -168,7 +183,14 @@ export function SessionBanner({
     } finally {
       setClocking(false)
     }
-  }, [clocking, gate?.market, gate?.lockedInstrument, refresh])
+  }, [
+    clocking,
+    gate?.market,
+    gate?.lockedInstrument,
+    gate?.allowedInstruments,
+    viewingInstrument,
+    refresh,
+  ])
 
   useEffect(() => {
     setMounted(true)

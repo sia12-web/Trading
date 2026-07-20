@@ -529,6 +529,7 @@ export default function ChartPage() {
           refreshKey={gateTick}
           lastQuoteAt={lastQuoteAt}
           dataMode={dataMode}
+          viewingInstrument={instrument}
           onRefreshReady={(fn) => {
             bannerRefreshRef.current = fn
           }}
@@ -681,9 +682,9 @@ export default function ChartPage() {
                 }}
                 aiVerdict={managePos ? aiVerdict : null}
                 jumpToPriceRef={jumpToPriceRef}
-                // Only hard-lock tabs after clock-in — recommendation alone must not
-                // force DOW and wipe the user's remembered market on refresh.
-                lockedInstrument={clockedIn ? locked : null}
+                // Hard-lock tabs to day's recommended / clocked instrument (no NASDAQ switch when DOW locked)
+                lockedInstrument={locked}
+                allowedInstruments={gate?.allowedInstruments ?? undefined}
                 onLevelSelect={handleLevelSelect}
                 canPlaceOrder={canTrade && dataMode === 'live'}
                 levelsRefreshKey={levelsRefreshKey}
@@ -709,12 +710,17 @@ export default function ChartPage() {
                           const market =
                             gate.market ||
                             (gate.lockedInstrument === 'NIKKEI' ? 'TOKYO' : 'NY')
+                          const allowed = gate.allowedInstruments
+                          const focusInstrument =
+                            (allowed?.includes(instrument) ? instrument : null) ||
+                            gate.lockedInstrument ||
+                            undefined
                           await fetch('/api/trading/clock-in', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                               market,
-                              instrument: gate.lockedInstrument ?? undefined,
+                              instrument: focusInstrument,
                             }),
                           })
                           bannerRefreshRef.current?.()

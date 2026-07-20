@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { getLevelFinderAgent } from '@/lib/services/levelFinderAgent'
 import { validateLevelsAgainstMarket } from '@/lib/services/levelValidation'
-import { isDeskHoursNow } from '@/lib/trading/sessionGate'
+import { isDeskHoursNow, isDeskInstrument, shouldRunLiveAiForInstrument } from '@/lib/trading/sessionGate'
 import { parseLlmTier } from '@/lib/llm/config'
 import { fetchLevelHistoricalContext } from '@/lib/services/levelFinderAgent/historicalContext'
 import type { AnalysisRequest, Candle, ValidationResult } from '@/lib/services/levelFinderAgent/types'
@@ -276,6 +276,13 @@ export async function POST(request: NextRequest) {
         },
         { status: 403 }
       )
+    }
+    // LIVE focus: do not spend tokens on the off-session desk
+    if (isDeskInstrument(validation.data.index) && !force) {
+      const focus = shouldRunLiveAiForInstrument(validation.data.index)
+      if (!focus.ok) {
+        return NextResponse.json({ error: focus.reason }, { status: 403 })
+      }
     }
 
     // Verify session ownership
