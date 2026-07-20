@@ -1,6 +1,7 @@
 /**
  * DOW / NASDAQ: Asia/London/NY on America/New_York.
- * NIKKEI: same legend names, but Asia starts at Tokyo cash open (09:00 JST).
+ * Post–NY cash close (16:00–18:00 ET) is uncolored — not Asia.
+ * NIKKEI: Asia at Tokyo cash open; 15:00–17:00 JST uncolored after cash close.
  * Run: npx tsx __tests__/session_desk_instruments.test.ts
  */
 
@@ -54,7 +55,9 @@ function makeBars(
 }
 
 // ── Shared ET classifier (US desks) ──────────────────────────────────────────
-assert(nyDeskSessionAt(et(2026, 7, 16, 16, 0)) === 'Asia', 'NY 16:00 → Asia')
+assert(nyDeskSessionAt(et(2026, 7, 16, 16, 0)) === null, 'NY 16:00 → dead zone (not Asia)')
+assert(nyDeskSessionAt(et(2026, 7, 16, 17, 0)) === null, 'NY 17:00 → dead zone')
+assert(nyDeskSessionAt(et(2026, 7, 16, 18, 0)) === 'Asia', 'NY 18:00 → Asia')
 assert(nyDeskSessionAt(et(2026, 7, 16, 21, 50)) === 'Asia', 'NY 21:50 → Asia')
 assert(nyDeskSessionAt(et(2026, 7, 16, 3, 0)) === 'London', 'NY 03:00 → London')
 assert(nyDeskSessionAt(et(2026, 7, 16, 9, 30)) === 'New York', 'NY 09:30 → NY')
@@ -64,15 +67,28 @@ assert(nyDeskSessionAt(et(2026, 7, 16, 15, 55)) === 'New York', 'NY 15:55 → NY
 assert(tokyoDeskSessionAt(jst(2026, 7, 16, 8, 55)) === 'New York', 'JST 08:55 → NY overnight')
 assert(tokyoDeskSessionAt(jst(2026, 7, 16, 9, 0)) === 'Asia', 'JST 09:00 → Tokyo/Asia start')
 assert(tokyoDeskSessionAt(jst(2026, 7, 16, 11, 0)) === 'Asia', 'JST 11:00 → Asia')
-assert(tokyoDeskSessionAt(jst(2026, 7, 16, 11, 30)) === 'Asia', 'JST 11:30 lunch still Tokyo/Asia band')
 assert(tokyoDeskSessionAt(jst(2026, 7, 16, 14, 59)) === 'Asia', 'JST 14:59 still Tokyo cash')
-assert(tokyoDeskSessionAt(jst(2026, 7, 16, 15, 0)) === 'London', 'JST 15:00 → London')
+assert(tokyoDeskSessionAt(jst(2026, 7, 16, 15, 0)) === null, 'JST 15:00 → dead zone after cash')
+assert(tokyoDeskSessionAt(jst(2026, 7, 16, 16, 0)) === null, 'JST 16:00 → dead zone')
+assert(tokyoDeskSessionAt(jst(2026, 7, 16, 17, 0)) === 'London', 'JST 17:00 → London')
 assert(tokyoDeskSessionAt(jst(2026, 7, 16, 22, 29)) === 'London', 'JST 22:29 still London')
 assert(tokyoDeskSessionAt(jst(2026, 7, 16, 22, 30)) === 'New York', 'JST 22:30 → NY')
 assert(tokyoDeskSessionAt(jst(2026, 7, 16, 23, 0)) === 'New York', 'JST 23:00 → NY')
 
-// ── DOW / NASDAQ: NYC ET paint ───────────────────────────────────────────────
+// ── DOW / NASDAQ: post-NY dead zone uncolored; Asia from 18:00 ────────────────
 for (const instrument of ['DOW', 'NASDAQ'] as const) {
+  const tipDead = et(2026, 7, 16, 17, 0)
+  const { spans: deadSpans } = computeSessionHighlightSpans({
+    candles: makeBars(et(2026, 7, 16, 9, 30), tipDead),
+    asOfUnix: tipDead,
+    instrument,
+  })
+  const coveringDead = deadSpans.find((s) => s.startT <= tipDead && s.endT >= tipDead)
+  assert(
+    coveringDead == null,
+    `${instrument}: 17:00 ET must be uncolored, got ${coveringDead?.name}`
+  )
+
   const end = et(2026, 7, 16, 21, 50)
   const { spans } = computeSessionHighlightSpans({
     candles: makeBars(et(2026, 7, 15, 9, 30), end),
@@ -95,7 +111,7 @@ for (const instrument of ['DOW', 'NASDAQ'] as const) {
   )
 }
 
-// ── NIKKEI: Tokyo cash open starts Asia ──────────────────────────────────────
+// ── NIKKEI: Tokyo cash open starts Asia; post-cash dead zone ─────────────────
 {
   const open = jst(2026, 7, 16, 9, 0)
   const tip = jst(2026, 7, 16, 10, 0)
@@ -114,6 +130,15 @@ for (const instrument of ['DOW', 'NASDAQ'] as const) {
     `NIKKEI: 08:00 JST must be overnight NY, got ${overnight?.name}`
   )
 
+  const afterCash = jst(2026, 7, 16, 15, 30)
+  const { spans: pm } = computeSessionHighlightSpans({
+    candles: makeBars(jst(2026, 7, 16, 9, 0), afterCash),
+    asOfUnix: afterCash,
+    instrument: 'NIKKEI',
+  })
+  const dead = pm.find((s) => s.startT <= afterCash && s.endT >= afterCash)
+  assert(dead == null, `NIKKEI: 15:30 JST uncolored, got ${dead?.name}`)
+
   assert(sessionLegendLabel('Asia', 'NIKKEI') === 'Tokyo', 'NIKKEI Asia legend → Tokyo')
   assert(deskClockFor('NIKKEI').timeZone === 'Asia/Tokyo', 'NIKKEI trading clock stays Tokyo')
 }
@@ -121,4 +146,4 @@ for (const instrument of ['DOW', 'NASDAQ'] as const) {
 assert(deskClockFor('DOW').timeZone === 'America/New_York', 'DOW TZ')
 assert(deskClockFor('NASDAQ').timeZone === 'America/New_York', 'NASDAQ TZ')
 
-console.log('✅ session_desk_instruments: US desks ET; NIKKEI Tokyo cash-open Asia')
+console.log('✅ session_desk_instruments: dead zones after cash close; Asia from 18:00 ET / London from 17:00 JST')

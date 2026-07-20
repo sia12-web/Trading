@@ -31,39 +31,54 @@ export const SESSION_STYLES = {
 export type SessionName = keyof typeof SESSION_STYLES
 
 /**
- * Desk session windows in America/New_York — contiguous, no dead zone.
- * Asia starts at cash close (16:00) so post-NY bars are never uncolored
- * (old 18:00 start left a 16:00–18:00 gap that looked like “broken extension”).
+ * Desk session windows in America/New_York.
+ * New York ends at cash close (16:00). Asia starts at 18:00 ET.
+ * 16:00–18:00 is intentionally uncolored (not Asia) so post-RTH bars
+ * are not mistaken for the Asian session.
  */
 export const SESSION_WINDOWS = {
-  Asia: { tz: 'America/New_York', start: 16, end: 3 }, // 16:00 → 03:00 (crosses midnight)
+  Asia: { tz: 'America/New_York', start: 18, end: 3 }, // 18:00 → 03:00 (crosses midnight)
   London: { tz: 'America/New_York', start: 3, end: 9.5 }, // 03:00 → 09:30
   'New York': { tz: 'America/New_York', start: 9.5, end: 16 }, // 09:30 → 16:00
 } as const
 
 /**
- * Nikkei morning desk — Asia/Tokyo clock so cash open (09:00) is the Asia start,
- * not mid-NYC “Asia” that began at 05:00 JST. Same three legend names.
+ * Nikkei morning desk — Asia/Tokyo clock so cash open (09:00) is the Asia start.
+ * After Tokyo cash close (15:00) → 17:00 JST is uncolored (not London).
  */
 export const TOKYO_SESSION_WINDOWS = {
   Asia: { tz: 'Asia/Tokyo', start: 9, end: 15 }, // Tokyo cash 09:00 → 15:00
-  London: { tz: 'Asia/Tokyo', start: 15, end: 22.5 }, // post-cash → US open
+  London: { tz: 'Asia/Tokyo', start: 17, end: 22.5 }, // after post-cash gap → US open
   'New York': { tz: 'Asia/Tokyo', start: 22.5, end: 9 }, // US hours → next Tokyo open
 } as const
 
-/** Classify a bar into Asia / London / NY — every clock hour maps to exactly one session. */
-export function nyDeskSessionAt(unix: number): SessionName {
+/**
+ * Classify a bar into Asia / London / NY, or null when between sessions
+ * (post–cash-close dead zone — no paint).
+ */
+export function nyDeskSessionAt(unix: number): SessionName | null {
   const h = hourInTz(unix, 'America/New_York')
+  // Post–NY cash close before Asia: uncolored
+  if (h >= SESSION_WINDOWS['New York'].end && h < SESSION_WINDOWS.Asia.start) {
+    return null
+  }
   if (h >= SESSION_WINDOWS.Asia.start || h < SESSION_WINDOWS.Asia.end) return 'Asia'
   if (h < SESSION_WINDOWS.London.end) return 'London'
   return 'New York'
 }
 
-/** Nikkei: Tokyo cash open starts Asia — overnight US is New York until 09:00 JST. */
-export function tokyoDeskSessionAt(unix: number): SessionName {
+/**
+ * Nikkei: Tokyo cash open starts Asia — overnight US is New York until 09:00 JST.
+ * 15:00–17:00 JST after cash close is uncolored.
+ */
+export function tokyoDeskSessionAt(unix: number): SessionName | null {
   const h = hourInTz(unix, 'Asia/Tokyo')
   if (h >= TOKYO_SESSION_WINDOWS.Asia.start && h < TOKYO_SESSION_WINDOWS.Asia.end) {
     return 'Asia'
+  }
+  // Post–Tokyo cash close before London band: uncolored
+  if (h >= TOKYO_SESSION_WINDOWS.Asia.end && h < TOKYO_SESSION_WINDOWS.London.start) {
+    return null
   }
   if (h >= TOKYO_SESSION_WINDOWS.London.start && h < TOKYO_SESSION_WINDOWS.London.end) {
     return 'London'
@@ -71,11 +86,11 @@ export function tokyoDeskSessionAt(unix: number): SessionName {
   return 'New York'
 }
 
-/** Per-instrument session paint clock. */
+/** Per-instrument session paint clock — null = no session band (dead zone). */
 export function deskSessionAt(
   unix: number,
   instrument?: string | null
-): SessionName {
+): SessionName | null {
   return instrument === 'NIKKEI' ? tokyoDeskSessionAt(unix) : nyDeskSessionAt(unix)
 }
 
@@ -390,7 +405,7 @@ const DESK_BAR_SECONDS = 300
  * Expensive once: paint contiguous session columns from every bar’s clock.
  * DOW / NASDAQ use America/New_York Asia/London/NY windows.
  * NIKKEI uses Asia/Tokyo so cash open (09:00) starts Asia — not mid-NYC Asia.
- * Walks bars (not calendar windows) so post-cash / overnight / tip never go uncolored.
+ * Bars in the post–cash-close dead zone (null session) get NO color.
  * Call again only when candle tip / as-of clock changes — not on every pan frame.
  */
 export function computeSessionHighlightSpans(args: {
@@ -436,6 +451,14 @@ export function computeSessionHighlightSpans(args: {
 
   for (const c of bars) {
     const name = sessionAt(c.time)
+    // Dead zone (post cash close) — leave uncolored; do not stretch previous session
+    if (name == null) {
+      flush()
+      runName = null
+      runHigh = -Infinity
+      runLow = Infinity
+      continue
+    }
     const barEnd = Math.min(c.time + barSec, now + barSec)
     if (runName === null) {
       runName = name
@@ -445,8 +468,6 @@ export function computeSessionHighlightSpans(args: {
       runLow = c.low
       continue
     }
-    // Only split on session change — keep one column through feed holes so
-    // timeToX stretches color across the gap (no black strips between bars).
     if (name !== runName) {
       flush()
       runName = name
@@ -462,11 +483,13 @@ export function computeSessionHighlightSpans(args: {
   }
   flush()
 
-  // Seal abutting sessions so pixel columns never leave a 1px gutters
+  // Seal only tiny abutting gaps (≤ one bar) — never paint across dead zones
   for (let i = 0; i < spans.length - 1; i++) {
     const cur = spans[i]!
     const next = spans[i + 1]!
-    if (next.startT > cur.endT) cur.endT = next.startT
+    if (next.startT > cur.endT && next.startT - cur.endT <= barSec) {
+      cur.endT = next.startT
+    }
   }
 
   return { spans, candleTimes }
