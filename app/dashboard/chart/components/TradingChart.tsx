@@ -513,6 +513,8 @@ export function TradingChart({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lockedInstrument])
 
+  const jumpMarkerRef = useRef<any | null>(null)
+
   // Register jumpToPrice so level clicks can scroll/highlight on the chart
   useEffect(() => {
     if (!jumpToPriceRef) return
@@ -520,6 +522,14 @@ export function TradingChart({
       onLevelSelect?.(price)
       if (!candleRef.current) return
       try {
+        if (jumpMarkerRef.current) {
+          try {
+            candleRef.current.removePriceLine(jumpMarkerRef.current)
+          } catch {
+            /* ignore */
+          }
+          jumpMarkerRef.current = null
+        }
         const marker = candleRef.current.createPriceLine({
           price,
           color:            '#ffffff40',
@@ -528,9 +538,14 @@ export function TradingChart({
           axisLabelVisible: true,
           title:            '→ ' + price.toLocaleString('en-US', { minimumFractionDigits: 0 }),
         })
-        // Auto-remove the highlight after 3 seconds
+        jumpMarkerRef.current = marker
         setTimeout(() => {
-          try { candleRef.current?.removePriceLine(marker) } catch {}
+          try {
+            if (jumpMarkerRef.current === marker) {
+              candleRef.current?.removePriceLine(marker)
+              jumpMarkerRef.current = null
+            }
+          } catch {}
         }, 3000)
       } catch {}
     }
@@ -660,14 +675,43 @@ export function TradingChart({
     })
 
     // ─── 1. Candlestick series on the main 'right' price scale ────────────────
+    // Autoscale from candle highs/lows ONLY — orphan price lines (wrong instrument)
+    // must never stretch the pane to 65k while DOW prints at 52k.
+    const candleAutoscale = () => {
+      const list = candlesRef.current
+      if (!list.length) return null
+      let min = Infinity
+      let max = -Infinity
+      for (const c of list) {
+        if (Number.isFinite(c.low)) min = Math.min(min, c.low)
+        if (Number.isFinite(c.high)) max = Math.max(max, c.high)
+      }
+      const tip = lastCandleRef.current
+      if (tip) {
+        min = Math.min(min, tip.low, tip.close)
+        max = Math.max(max, tip.high, tip.close)
+      }
+      if (!(max > min) || !Number.isFinite(min) || !Number.isFinite(max)) return null
+      const pad = Math.max((max - min) * 0.06, Math.abs(max) * 0.0004)
+      return {
+        priceRange: {
+          minValue: min - pad,
+          maxValue: max + pad,
+        },
+      }
+    }
+
     const candleSeries = chart.addCandlestickSeries({
-      upColor:         '#26a69a',   // TradingView classic teal-green
-      downColor:       '#ef5350',   // TradingView classic red
+      upColor:         '#26a69a',
+      downColor:       '#ef5350',
       borderUpColor:   '#26a69a',
       borderDownColor: '#ef5350',
       wickUpColor:     '#26a69a',
       wickDownColor:   '#ef5350',
+      autoscaleInfoProvider: candleAutoscale,
     })
+
+    const ignoreScale = { autoscaleInfoProvider: (): null => null }
 
     const priceLineHost = chart.addLineSeries({
       color: 'rgba(0,0,0,0)',
@@ -676,6 +720,7 @@ export function TradingChart({
       priceLineVisible: false,
       crosshairMarkerVisible: false,
       priceScaleId: 'right',
+      ...ignoreScale,
     })
 
     // Anchored VWAP + ±1/±2/±3σ bands (from NY 9:30 of 5 trading days ago)
@@ -685,6 +730,7 @@ export function TradingChart({
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
+      ...ignoreScale,
     }
     const vwapSeries = {
       upper3: chart.addLineSeries({ ...bandOpts, title: '+3σ' }),
@@ -694,9 +740,9 @@ export function TradingChart({
         color: VWAP_COLORS.vwap,
         lineWidth: 2,
         priceLineVisible: false,
-        // lastValueVisible causes axis churn while panning — keep off for smooth scroll
         lastValueVisible: false,
         title: 'AVWAP',
+        ...ignoreScale,
       }),
       lower1: chart.addLineSeries({ ...bandOpts, title: '-1σ' }),
       lower2: chart.addLineSeries({ ...bandOpts, title: '-2σ' }),
@@ -908,6 +954,14 @@ export function TradingChart({
     removeAll(positionLinesRef.current)
     levelLinesRef.current = []
     positionLinesRef.current = []
+    if (jumpMarkerRef.current && candleRef.current) {
+      try {
+        candleRef.current.removePriceLine(jumpMarkerRef.current)
+      } catch {
+        /* ignore */
+      }
+      jumpMarkerRef.current = null
+    }
 
     try {
       candleRef.current?.setData([])
@@ -978,7 +1032,16 @@ export function TradingChart({
 
     if (!showLevelsRef.current) return
 
+    const tip = lastCandleRef.current?.close
     for (const level of levelsRef.current) {
+      // Skip wrong-scale leftovers (e.g. Nikkei ~65k while DOW prints ~52k)
+      if (
+        tip != null &&
+        tip > 0 &&
+        Math.abs(level.price - tip) / tip > 0.08
+      ) {
+        continue
+      }
       const isAi = level.source === 'ai'
       const isRes =
         level.type === 'resistance' || String(level.type).toLowerCase().includes('resist')
@@ -1710,7 +1773,7 @@ export function TradingChart({
 
     if (!host || !chartReady) {
       try {
-        host?.applyOptions({ autoscaleInfoProvider: undefined })
+        host?.applyOptions({ autoscaleInfoProvider: (): null => null })
       } catch { /* ignore */ }
       return
     }
@@ -1738,11 +1801,15 @@ export function TradingChart({
           )
         } catch { /* ignore */ }
       }
-      // Keep limit/entry + SL + TP inside the visible price scale
-      if (prices.length >= 2) {
-        const min = Math.min(...prices)
-        const max = Math.max(...prices)
-        const pad = Math.max((max - min) * 0.1, max * 0.0008)
+      // Expand candle scale just enough to keep entry/SL/TP in view — never orphan lines alone
+      if (prices.length >= 1) {
+        let min = Math.min(...prices)
+        let max = Math.max(...prices)
+        for (const c of candlesRef.current) {
+          min = Math.min(min, c.low)
+          max = Math.max(max, c.high)
+        }
+        const pad = Math.max((max - min) * 0.08, max * 0.0008)
         try {
           host.applyOptions({
             autoscaleInfoProvider: () => ({
@@ -1755,7 +1822,7 @@ export function TradingChart({
         } catch { /* ignore */ }
       } else {
         try {
-          host.applyOptions({ autoscaleInfoProvider: undefined })
+          host.applyOptions({ autoscaleInfoProvider: (): null => null })
         } catch { /* ignore */ }
       }
     }
@@ -1827,7 +1894,7 @@ export function TradingChart({
     }
 
     try {
-      host.applyOptions({ autoscaleInfoProvider: undefined })
+      host.applyOptions({ autoscaleInfoProvider: (): null => null })
     } catch { /* ignore */ }
   }, [positionOverlay, pendingLimit, aiVerdict, chartReady, clearHoverPreview])
 
