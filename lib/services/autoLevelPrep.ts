@@ -14,10 +14,16 @@ import {
   deskMarketFor,
   isDeskHoursNow,
   isDeskInstrument,
+  isAfternoonWatchWindow,
   shouldRunLiveAiForInstrument,
   type DeskInstrument,
 } from '@/lib/trading/sessionGate'
 import { getTodayAttendance } from '@/lib/trading/deskAttendance'
+import {
+  buildAfternoonDeskBrief,
+  formatAfternoonDeskBriefForPrompt,
+} from '@/lib/trading/afternoonDeskBrief'
+import { fetchLevelHistoricalContext } from '@/lib/services/levelFinderAgent/historicalContext'
 import type { Candle } from '@/lib/services/levelFinderAgent/types'
 import type { Instrument } from '@/types/price-feed'
 
@@ -186,7 +192,41 @@ export async function runAutoLevelPrep(
     }
 
     const agent = await getLevelFinderAgent()
-    // Morning cron always uses live (Opus) — never the cheap sim tier
+
+    // Afternoon lunch refresh (force) gets IB / morning volume / FLIP-RETEST brief + memory
+    const afternoonMode =
+      opts.force === true && isAfternoonWatchWindow(now, instrument)
+    const h1Bars = (h1?.candles ?? []).map((c) => ({
+      time: c.time,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+      volume: Math.max(1, c.volume || 0),
+    }))
+    const brief = afternoonMode
+      ? buildAfternoonDeskBrief({
+          instrument: instrument as DeskInstrument,
+          candlesH1: h1Bars,
+          tip: current_price,
+          nowUnix: Math.floor(now.getTime() / 1000),
+          afternoonCandidates: Array.isArray(attendance?.afternoon_levels)
+            ? attendance!.afternoon_levels
+            : [],
+        })
+      : null
+
+    let historicalContext = undefined
+    try {
+      historicalContext =
+        (await fetchLevelHistoricalContext(supabase, user.id, instrument, {
+          days: afternoonMode ? 2 : 30,
+          limit: 20,
+        })) ?? undefined
+    } catch {
+      /* optional */
+    }
+
     const analysis = await agent.analyzePriceAction({
       session_id: sessionId,
       symbol: SYMBOL[instrument] || instrument,
@@ -196,6 +236,9 @@ export async function runAutoLevelPrep(
       candles_daily,
       candles_h1,
       llm_tier: 'live',
+      analysis_mode: afternoonMode ? 'afternoon' : 'morning',
+      afternoonBriefText: brief ? formatAfternoonDeskBriefForPrompt(brief) : undefined,
+      historicalContext,
     })
 
     const validated = await agent.validateLevels(analysis.levels, sessionId)

@@ -69,7 +69,6 @@ export function LiveVoicePanel({
   const [turns, setTurns] = useState<TurnLine[]>([])
   const [lastReply, setLastReply] = useState<string | null>(null)
   const [pins, setPins] = useState<PinChip[]>([])
-  const [watchLevels, setWatchLevels] = useState<WatchLevel[]>([])
   const [reactionLine, setReactionLine] = useState<string | null>(null)
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
@@ -118,7 +117,6 @@ export function LiveVoicePanel({
     if (!clockedIn) {
       setSummary(null)
       setPins([])
-      setWatchLevels([])
       watchLevelsRef.current = []
       return
     }
@@ -132,7 +130,6 @@ export function LiveVoicePanel({
       if (res.status === 403 || !res.ok || !json?.success || !json.summary) {
         setSummary(null)
         setPins([])
-        setWatchLevels([])
         watchLevelsRef.current = []
         return
       }
@@ -141,13 +138,11 @@ export function LiveVoicePanel({
       summaryPhaseRef.current = s.phase || ''
       if (Array.isArray(s.pins)) setPins(s.pins)
       if (Array.isArray(s.watchLevels)) {
-        setWatchLevels(s.watchLevels)
         watchLevelsRef.current = s.watchLevels
       }
     } catch {
       setSummary(null)
       setPins([])
-      setWatchLevels([])
       watchLevelsRef.current = []
     } finally {
       setCtxLoading(false)

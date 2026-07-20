@@ -22,6 +22,13 @@ export interface AnalysisRequest {
   current_price: number
   /** live = Opus (default); sim = cheap Haiku for replay practice */
   llm_tier?: 'live' | 'sim'
+  /**
+   * morning = pre-open / morning prep.
+   * afternoon = lunch refresh for watch-only playbook (same tools, different brief).
+   */
+  analysis_mode?: 'morning' | 'afternoon'
+  /** Precomputed afternoon facts (IB, morning range/volume, reactions) — no new vendors */
+  afternoonBriefText?: string
 }
 
 export interface LevelIdentification {

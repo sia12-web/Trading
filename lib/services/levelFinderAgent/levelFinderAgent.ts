@@ -65,7 +65,11 @@ class LevelFinderAgent {
     }
 
     const prompt = this.buildAnalysisPrompt(request)
-    const systemPrompt = this.buildSystemPrompt(request.index, request.historicalContext)
+    const systemPrompt = this.buildSystemPrompt(
+      request.index,
+      request.historicalContext,
+      request.analysis_mode === 'afternoon' ? 'afternoon' : 'morning'
+    )
     const avwapBands = this.extractAvwapBandPrices(request)
     const vpAnchors = this.extractVolumeProfileAnchors(request)
 
@@ -472,19 +476,33 @@ How to use it (big-desk volume map):
 
   private buildSystemPrompt(
     index: 'DOW' | 'NASDAQ' | 'NIKKEI',
-    historicalContext?: HistoricalContext
+    historicalContext?: HistoricalContext,
+    analysisMode: 'morning' | 'afternoon' = 'morning'
   ): string {
     const s = sessionFor(index)
     const open = s.marketOpen.slice(0, 5)
     const entryEnd = s.entryClose.slice(0, 5)
     const lunch = s.lunchClose.slice(0, 5)
+    const close = s.marketClose.slice(0, 5)
     const tzLabel = index === 'NIKKEI' ? 'JST' : 'ET'
     const marketLabel = index === 'NIKKEI' ? 'Tokyo' : 'NY'
+
+    const afternoonBlock =
+      analysisMode === 'afternoon'
+        ? `
+AFTERNOON MODE (watch-only — this run is the lunch refresh):
+- Trading for the day is DONE. You are building the AFTERNOON WATCH list for memory and chart levels through cash close (${close} ${tzLabel}).
+- A pro after the morning session asks: Did we break Initial Balance with volume? Which morning levels held vs broke? Where is price vs IB / morning mid / AVWAP / POC?
+- Use ONLY the AFTERNOON DESK BRIEF and candle/AVWAP/volume-profile tables in the user message. Those come from our Yahoo candles, IB math, AVWAP, volume-by-price, and morning-review grades — do NOT invent news, order-flow, or other feeds.
+- Prefer levels at: IB high/low, morning high/low, FLIP (broken→flip side) and RETEST (held) from the brief, AVWAP/POC confluence.
+- Still hunt retail stop pools — but frame them as afternoon magnets to watch, not new morning entries.
+`
+        : ''
 
     const basePrompt = `You are a senior institutional trader who runs execution for a large desk. You do NOT think like a retail trader — you think about where retail traders put their STOPS, because that stop liquidity is where your desk ENTERS to fill size.
 
 You are analyzing ${index}. Use the SAME methodology for DOW, NASDAQ, and NIKKEI — only the session clock differs (see DESK CADENCE).
-
+${afternoonBlock}
 CORE PHILOSOPHY — BIG MONEY ENTERS AT RETAIL STOP LOSS LIQUIDITY:
 - Institutions are constantly hunting liquidity. The deepest, easiest liquidity is retail stop-loss clusters.
 - Retail BUYS the obvious support (Asia/London/prior-day low) → their stops sit BELOW that low. Big money BUYS into those stops.
@@ -639,22 +657,32 @@ How to use it:
     const formatH1Candles = this.formatCandles(request.candles_h1, 'H1')
     const vwapSection = this.buildVwapSection(request)
     const vpSection = this.buildVolumeProfileSection(request)
+    const afternoonSection =
+      request.analysis_mode === 'afternoon' && request.afternoonBriefText
+        ? request.afternoonBriefText
+        : ''
 
     const clock = deskClockFor(request.index)
     const s = sessionFor(request.index)
     const tzLabel = request.index === 'NIKKEI' ? 'JST' : 'ET'
+    const modeLine =
+      request.analysis_mode === 'afternoon'
+        ? 'Mode: AFTERNOON WATCH refresh (flat for trading — levels for chart memory through cash close).'
+        : 'Mode: morning prep / Level Finder.'
 
     return `Analyze these price charts for ${request.symbol} (${request.index}):
 
 Current Price: ${request.current_price}
 Desk clock: ${clock.openLabel} open · entries until ${s.entryClose.slice(0, 5)} ${tzLabel} · lunch ${s.lunchClose.slice(0, 5)} ${tzLabel}
+${modeLine}
 Methodology is identical for DOW, NASDAQ, and NIKKEI — only this clock differs.
-
+${afternoonSection}
 HARD GEOMETRY (desk rejects violations):
 - resistance / SHORT levels MUST be ABOVE Current Price (offer side) — you cannot short a resistance below the market.
 - support / BUY levels MUST be BELOW Current Price (bid side) — you cannot buy a support above the market.
 - Levels may come from overnight, London, prior day, or HTF structure ANYWHERE in the provided candle range (with a small stop-pool pad beyond extremes). Cite which session/TF and the volume or wick evidence.
 - Do NOT invent prices outside the high/low of the candles you were given (hallucinated "old index" levels).
+- Do NOT invent data sources we did not give you (no news, no Level 2, no external IB feeds beyond the brief).
 
 ${format4hCandles}
 
@@ -670,7 +698,12 @@ Work through this before choosing levels:
 4. Where are unmitigated impulse origins, and which levels show absorption / initiative volume or HTF tails?
 5. Does that stop-pool zone also sit near a printed AVWAP band, POC/HVN, and/or a psychological round? Prefer levels with that confluence.
 6. For each level, mentally place: ENTRY (liquidity), STOP (just beyond the round/structure so the magnet is not your exact stop), TAKE PROFIT (next opposing round / session extreme / AVWAP). Mention rounds when they matter for SL or TP.
-
+${
+  request.analysis_mode === 'afternoon'
+    ? `7. Afternoon: cross-check every candidate against the AFTERNOON DESK BRIEF (IB state, morning H/L + volume, FLIP/RETEST, tip vs AVWAP/POC). Prefer those magnets.
+`
+    : ''
+}
 Then identify 2-5 levels where INSTITUTIONS ENTER — i.e. retail stop-loss liquidity pools. Rules:
 - Do NOT return yesterday's / overnight / Asia / London exact high or low as the entry print — those are retail bait. Return the stop-pool JUST BEYOND them (and say which stops you target).
 - Round numbers are NOT banned — use them. Prefer entries that lean on a round when structure agrees; place stops just beyond the round; aim take-profits at the next clean round or HTF magnet.
