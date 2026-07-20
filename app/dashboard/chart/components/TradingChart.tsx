@@ -2158,23 +2158,27 @@ export function TradingChart({
                   const stars = Math.max(1, Math.min(5, Math.round((l.conviction || 5) / 2)))
                   const isPrimary = (l.label || '').startsWith('PRIMARY')
                   const reaction = reactionLabel(l)
+                  const why =
+                    (l.reasoning && l.reasoning.trim()) ||
+                    `${isPrimary ? 'Primary' : 'Watch'} ${isRes ? 'short' : 'buy'} from ${l.source === 'structure' ? 'structure' : 'AI'} · conviction ${l.conviction ?? '—'}`
                   return (
                     <button
                       key={`${l.price}-${i}`}
                       type="button"
-                      onClick={() =>
+                      onClick={(e) => {
+                        e.stopPropagation()
                         onLevelSelect?.(l.price, {
                           type: String(l.type),
-                          reasoning: l.reasoning,
+                          reasoning: l.reasoning || why,
                           source: l.source === 'structure' ? 'structure' : 'ai',
                         })
-                      }
+                      }}
                       className={`w-full rounded-xl border px-2.5 py-2.5 text-left text-[11px] transition-all hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 ${
                         isRes
                           ? 'border-red-800/80 bg-[#2a1518] text-red-200'
                           : 'border-emerald-800/80 bg-[#12241c] text-emerald-200'
                       } ${isPrimary ? 'ring-1 ring-white/25' : 'opacity-90'}`}
-                      title={l.reasoning ?? l.label}
+                      title={why}
                     >
                       <div className="flex items-center justify-between gap-1">
                         <span className="text-[9px] font-bold uppercase tracking-wide">
@@ -2188,6 +2192,9 @@ export function TradingChart({
                       <div className="price-mono mt-1 text-base font-bold tracking-tight text-white">
                         {l.price.toLocaleString()}
                       </div>
+                      <p className="mt-1.5 line-clamp-3 text-[10px] leading-snug text-gray-400 normal-case">
+                        {why}
+                      </p>
                       {reaction && (
                         <div
                           className={`mt-1.5 text-[9px] font-semibold uppercase tracking-wide ${

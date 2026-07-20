@@ -119,7 +119,7 @@ export default function ChartPage() {
       meta?: { type?: string; reasoning?: string; source?: 'ai' | 'structure' | 'manual' }
     ) => {
       if (managePos || positionOverlay || pending) return
-      if (gate?.phase !== 'ENTRY' || !gate?.canPlaceEntry) return
+      // Always stash selection so the ticket can show "why this level"
       setOrderLevel(price)
       setOrderLevelType(meta?.type)
       setOrderLevelReason(meta?.reasoning)
@@ -131,7 +131,7 @@ export default function ChartPage() {
             : 'ai'
       )
     },
-    [managePos, positionOverlay, pending, gate?.phase, gate?.canPlaceEntry]
+    [managePos, positionOverlay, pending]
   )
 
   const refreshLevelsAfterExit = useCallback(
@@ -729,10 +729,10 @@ export default function ChartPage() {
           </div>
         </div>
 
-        {orderLevel != null && !pending && !managePos && inEntry && (
+        {orderLevel != null && !pending && !managePos && (
           <LevelOrderTicket
             key={`live-${orderLevel}-${orderEntrySource}-${orderLevelType ?? 'x'}`}
-            instrument={(locked || instrument) as Instrument}
+            instrument={(clockedIn && locked ? locked : instrument) as Instrument}
             levelPrice={orderLevel}
             levelType={orderLevelType}
             entryReason={orderLevelReason}

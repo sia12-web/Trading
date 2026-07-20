@@ -101,7 +101,20 @@ export function LevelOrderTicket({
   const isManual = entrySource === 'manual'
   const riskPct = riskPercentForEntrySource(entrySource)
 
-  const suggested: Direction = regime === 'bearish' ? 'SHORT' : 'LONG'
+  // BUY/support → LONG, SHORT/resistance → SHORT (regime is only a fallback)
+  const fromLevel: Direction | null =
+    levelType &&
+    (String(levelType).toLowerCase().includes('resist') ||
+      String(levelType).toLowerCase() === 'short')
+      ? 'SHORT'
+      : levelType &&
+          (String(levelType).toLowerCase().includes('support') ||
+            String(levelType).toLowerCase() === 'long' ||
+            String(levelType).toLowerCase() === 'buy')
+        ? 'LONG'
+        : null
+  const suggested: Direction =
+    fromLevel ?? (regime === 'bearish' ? 'SHORT' : 'LONG')
   const [direction, setDirection] = useState<Direction>(suggested)
   const [accountSize, setAccountSize] = useState(100000)
   const [limitPrice, setLimitPrice] = useState(levelPrice)
@@ -247,7 +260,7 @@ export function LevelOrderTicket({
         : 'AI level · desk risk'
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 p-4">
+    <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
       <div className="w-full max-w-sm rounded-xl border border-[#30363d] bg-[#161b22] p-4 shadow-xl">
         <div className="flex items-start justify-between gap-2">
           <div>
@@ -272,6 +285,14 @@ export function LevelOrderTicket({
               <p className="mt-1 text-xs text-gray-400">
                 <span className="price-mono text-white">{levelPrice.toLocaleString()}</span>
                 <span className="ml-1.5 text-gray-500">zone {formatZone(levelPrice)}</span>
+              </p>
+            )}
+            {entryReason && entryReason.trim() && (
+              <p className="mt-2 rounded-lg border border-[#30363d] bg-[#0d1117] px-2.5 py-2 text-[11px] leading-snug text-gray-300">
+                <span className="mb-0.5 block text-[9px] font-semibold uppercase tracking-wide text-violet-300/90">
+                  Why this level
+                </span>
+                {entryReason.trim()}
               </p>
             )}
             <p className="mt-1 text-[10px] text-amber-400/90">

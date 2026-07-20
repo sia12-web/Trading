@@ -216,7 +216,7 @@ export function DraggableDeskWidget({
       role="dialog"
       aria-label="Morning playbook"
       className={[
-        'absolute z-40 flex flex-col overflow-hidden rounded-xl',
+        'absolute z-30 flex flex-col overflow-hidden rounded-xl',
         // Solid panel — light chart session colors must not bleed through translucency
         'border border-[#30363d] bg-[#0d1117]',
         'shadow-[0_16px_48px_rgba(0,0,0,0.65),0_0_0_1px_rgba(0,0,0,0.4)]',
