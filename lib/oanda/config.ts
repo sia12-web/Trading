@@ -17,6 +17,24 @@ export function oandaBaseUrl(): string {
     : 'https://api-fxpractice.oanda.com'
 }
 
+/** Persistent pricing stream host (different from REST api-fx*) */
+export function oandaStreamBaseUrl(): string {
+  const env = (process.env.OANDA_ENVIRONMENT || 'practice').toLowerCase()
+  return env === 'live'
+    ? 'https://stream-fxtrade.oanda.com'
+    : 'https://stream-fxpractice.oanda.com'
+}
+
+const OANDA_TO_DESK: Record<string, Instrument> = {
+  US30_USD: 'DOW',
+  NAS100_USD: 'NASDAQ',
+  JP225_USD: 'NIKKEI',
+}
+
+export function fromOandaInstrument(symbol: string): Instrument | null {
+  return OANDA_TO_DESK[symbol] ?? null
+}
+
 export function oandaAccountId(): string {
   return (process.env.OANDA_ACCOUNT_ID || '').trim()
 }

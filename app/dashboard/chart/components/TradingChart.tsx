@@ -1380,9 +1380,10 @@ export function TradingChart({
   useEffect(() => {
     if (!chartReady || !streamArmed || dataMode === 'synthetic') return
 
-    const CANDLE_REFRESH_MS = 45_000
+    const CANDLE_REFRESH_MS = 30_000
     let lastUiPriceAt = 0
     const fetchGen = ++candleFetchGenRef.current
+    let sseHealthy = false
 
     const applyQuote = (
       price: number,
@@ -1403,7 +1404,8 @@ export function TradingChart({
       onPriceUpdate?.(price)
       if (!interactingRef.current) {
         const now = Date.now()
-        if (now - lastUiPriceAt >= 250) {
+        // Header label throttle only — candle tip updates every tick below
+        if (now - lastUiPriceAt >= 50) {
           lastUiPriceAt = now
           setLivePrice(price)
           setPriceChange(changePct)
@@ -1573,18 +1575,68 @@ export function TradingChart({
     void refreshCandles()
     if (tickIntervalRef.current) clearInterval(tickIntervalRef.current)
     if (candleRefreshRef.current) clearInterval(candleRefreshRef.current)
-    tickIntervalRef.current = setInterval(pollQuote, 5_000)
     candleRefreshRef.current = setInterval(refreshCandles, CANDLE_REFRESH_MS)
-    // Faster tip while chart stream is open (morning + afternoon cash day)
-    const streamQuote = setInterval(() => {
-      if (isChartStreamAllowed(instrument).open) {
-        void pollQuote()
+
+    // Primary tip: OANDA pricing stream via SSE (push on every tick)
+    let es: EventSource | null = null
+    const openPriceStream = () => {
+      if (typeof EventSource === 'undefined') return
+      if (!isChartStreamAllowed(instrument).open) return
+      try {
+        es?.close()
+      } catch {
+        /* ignore */
       }
-    }, 1000)
+      es = new EventSource(
+        `/api/trading/quote/stream?instrument=${encodeURIComponent(instrument)}`
+      )
+      es.onmessage = (ev) => {
+        try {
+          const json = JSON.parse(ev.data) as {
+            price?: number
+            change_pct?: number
+            timestamp?: number
+          }
+          if (typeof json.price !== 'number' || !(json.price > 0)) return
+          sseHealthy = true
+          const streamLive = isChartStreamAllowed(instrument).open
+          const ts =
+            typeof json.timestamp === 'number' && json.timestamp > 0
+              ? json.timestamp
+              : Math.floor(Date.now() / 1000)
+          applyQuote(json.price, json.change_pct ?? 0, ts, streamLive)
+        } catch {
+          /* ignore bad frames */
+        }
+      }
+      es.onerror = () => {
+        sseHealthy = false
+        // Browser auto-reconnects EventSource; REST backup covers the gap
+      }
+    }
+    openPriceStream()
+
+    // Backup REST poll — frequent only when SSE is unhealthy
+    tickIntervalRef.current = setInterval(() => {
+      if (!isChartStreamAllowed(instrument).open) return
+      if (sseHealthy) return
+      void pollQuote()
+    }, 1_000)
+    // Safety reconcile even when SSE is healthy (drift / missed reconnect)
+    const reconcile = setInterval(() => {
+      if (!isChartStreamAllowed(instrument).open) return
+      void pollQuote()
+    }, 8_000)
 
     return () => {
       candleFetchGenRef.current += 1
-      clearInterval(streamQuote)
+      clearInterval(reconcile)
+      try {
+        es?.close()
+      } catch {
+        /* ignore */
+      }
+      es = null
       if (tickIntervalRef.current) clearInterval(tickIntervalRef.current)
       if (candleRefreshRef.current) clearInterval(candleRefreshRef.current)
       tickIntervalRef.current = null

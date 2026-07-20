@@ -108,7 +108,7 @@ export default function ChartPage() {
       return
     }
     const now = Date.now()
-    if (now - lastParentPriceAt.current < 200) return
+    if (now - lastParentPriceAt.current < 50) return
     lastParentPriceAt.current = now
     setLivePrice(price)
   }, [])
