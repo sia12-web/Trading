@@ -294,7 +294,7 @@ export function SessionBanner({
               ? 'text-emerald-400'
               : 'text-gray-500'
         }`}
-        title="Last Yahoo quote age"
+        title="Desk tip = OANDA mid (same broker as orders). Not CMC Markets / Yahoo cash."
       >
         <span
           className={`w-1.5 h-1.5 rounded-full ${
@@ -308,10 +308,10 @@ export function SessionBanner({
         {dataMode === 'synthetic'
           ? 'SYNTHETIC'
           : quoteAgeSec == null
-            ? 'FEED…'
+            ? 'OANDA…'
             : quoteAgeSec < 3
-              ? 'FEED LIVE'
-              : `FEED ${quoteAgeSec}s`}
+              ? 'OANDA LIVE'
+              : `OANDA ${quoteAgeSec}s`}
       </span>
 
       <Link

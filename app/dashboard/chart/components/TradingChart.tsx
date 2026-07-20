@@ -2079,9 +2079,15 @@ export function TradingChart({
               <span
                 className="price-mono text-xl font-bold transition-colors duration-300"
                 style={{ color: INSTRUMENT_META[instrument].color }}
+                title="OANDA mid (bid+ask)/2 — compare TradingView to OANDA:US30USD / NAS100USD / JP225USD, not CMC Markets"
               >
                 {livePrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
+              {dataMode === 'live' && (
+                <span className="text-[9px] uppercase tracking-wider text-gray-600" title="Broker feed for fills">
+                  OANDA mid
+                </span>
+              )}
               <span className={`text-xs font-bold px-2 py-0.5 rounded ${
                 isUp ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'
               }`}>
