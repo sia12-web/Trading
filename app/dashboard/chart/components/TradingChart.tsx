@@ -459,6 +459,7 @@ export function TradingChart({
   const showLevelsRef = useRef(true)
   const [chartReady,  setChartReady] = useState(false)
   const candlesRef = useRef<OHLCV[]>([])
+  const instrumentRef = useRef<Instrument>(instrument)
   /** LIVE = real Yahoo data; SYNTHETIC = random fallback (never trade off this) */
   const [dataMode, setDataModeState] = useState<'live' | 'synthetic'>('live')
   const setDataMode = useCallback(
@@ -599,6 +600,8 @@ export function TradingChart({
     }
 
     // Keep playbook order (primary focus first), not price sort
+    // Ignore stale responses after the user switched instruments
+    if (instrumentRef.current !== inst) return
     setLevels(
       resolved.levels.map((l) => byPrice.get(l.level)!).filter(Boolean)
     )
@@ -871,20 +874,73 @@ export function TradingChart({
     void loadLevels(instrument)
   }, [chartReady, instrument, loadLevels])
 
-  // Reset fit + price-line host when switching instrument
+  // Reset chart series + levels when switching instrument (wrong-scale leftovers squash the pane)
   useEffect(() => {
     didFitRef.current = false
     priceLineHostSeededRef.current = false
     lastCandleRef.current = null
+    sessionSpansRef.current = null
     setStreamArmed(false)
     setCandles([])
+    setLevels([])
+    setLivePrice(null)
+    setPriceChange(0)
+    clearHoverPreview()
+
+    const host = priceLineHostRef.current
+    const removeAll = (lines: any[]) => {
+      lines.forEach((line) => {
+        try {
+          host?.removePriceLine(line)
+        } catch {
+          /* ignore */
+        }
+      })
+    }
+    removeAll(levelLinesRef.current)
+    removeAll(positionLinesRef.current)
+    levelLinesRef.current = []
+    positionLinesRef.current = []
+
     try {
-      priceLineHostRef.current?.setData([])
+      candleRef.current?.setData([])
     } catch {
       /* ignore */
     }
-    levelLinesRef.current = []
-    positionLinesRef.current = []
+    const vs = vwapSeriesRef.current
+    if (vs) {
+      try {
+        vs.vwap.setData([])
+        vs.upper1.setData([])
+        vs.lower1.setData([])
+        vs.upper2.setData([])
+        vs.lower2.setData([])
+        vs.upper3.setData([])
+        vs.lower3.setData([])
+      } catch {
+        /* ignore */
+      }
+    }
+    try {
+      host?.setData([])
+    } catch {
+      /* ignore */
+    }
+    paintSessionHighlightOverlay(sessionOverlayRef.current, [])
+
+    // Fresh autoscaling for the next instrument's price universe
+    try {
+      chartRef.current?.priceScale('right').applyOptions({
+        autoScale: true,
+        scaleMargins: { top: 0.05, bottom: 0.05 },
+      })
+    } catch {
+      /* ignore */
+    }
+  }, [instrument, clearHoverPreview])
+
+  useEffect(() => {
+    instrumentRef.current = instrument
   }, [instrument])
 
   useEffect(() => {
@@ -1023,8 +1079,13 @@ export function TradingChart({
     }
 
     // Keep a fresher live tip than the server snapshot when quotes advanced it
+    // (only same instrument — never merge a leftover tip from the previous tab)
     const serverTip = ordered[ordered.length - 1] ?? null
-    if (liveBefore && serverTip) {
+    if (
+      liveBefore &&
+      serverTip &&
+      Math.abs(liveBefore.close - serverTip.close) / serverTip.close <= 0.015
+    ) {
       const liveT = liveBefore.time as number
       const serverT = serverTip.time as number
       if (liveT === serverT) {
@@ -1066,6 +1127,8 @@ export function TradingChart({
       lastCandleRef.current = serverTip
     }
 
+    // Only paint levels after refs synced — empty after instrument switch until loadLevels
+    levelsRef.current = levels
     paintLevelLines()
 
     if (!didFitRef.current) {
