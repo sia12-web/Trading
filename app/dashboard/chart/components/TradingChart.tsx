@@ -57,8 +57,11 @@ import { DESK_CHART_THEME } from '@/lib/chart/deskChartTheme'
 import {
   isLiveBarsAllowed,
   isChartStreamAllowed,
+  isLiveTipStreamAllowed,
+  isLiveFocusWindowActive,
   isLevelPaintAllowed,
   isAfternoonWatchWindow,
+  isAnyLiveFocusWindowActive,
   liveVisibleInstruments,
   sessionFor,
 } from '@/lib/trading/sessionGate'
@@ -407,6 +410,16 @@ interface TradingChartProps {
   ) => void
   /** Morning session: allow placing limits from the chart */
   canPlaceOrder?: boolean
+  /**
+   * Live desk: paint playbook/levels only when clocked in or attended this market today.
+   * Between sessions / other desk tabs → false (clear stale NY levels off NIKKEI).
+   */
+  deskLevelsActive?: boolean
+  /**
+   * Same-day attendance (clocked in or attended) — unlocks afternoon tip after lunch.
+   * Morning focus tip (−30m→lunch) does not require this.
+   */
+  deskAttended?: boolean
   /** Bump to force a levels reload after SL/TP (system memory updated) */
   levelsRefreshKey?: number
 }
@@ -428,6 +441,8 @@ export function TradingChart({
   allowedInstruments = null,
   onLevelSelect,
   canPlaceOrder = false,
+  deskLevelsActive = false,
+  deskAttended = false,
   levelsRefreshKey = 0,
 }: TradingChartProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -532,6 +547,15 @@ export function TradingChart({
     return liveVisibleInstruments(new Date()) as Instrument[]
   }, [allowedInstruments, lockedInstrument, focusTick])
 
+  /** Tip/SSE: pre-open focus free; after open / afternoon only if attended */
+  const tipStreamActive = useMemo(() => {
+    void focusTick
+    return isLiveTipStreamAllowed(instrument, new Date(), {
+      attendedToday: deskAttended,
+      clockedIn: deskAttended,
+    }).open
+  }, [instrument, deskAttended, focusTick])
+
   const setInstrument = useCallback((inst: Instrument) => {
     if (lockedInstrument && inst !== lockedInstrument) return
     if (!visibleInstruments.includes(inst)) return
@@ -599,12 +623,17 @@ export function TradingChart({
 
   // ── Load levels — SAME pipeline as the simulation desk (shared deskLevels) ───
   const loadLevels = useCallback(async (inst: Instrument, freshCandles?: OHLCV[]) => {
-    // Outside cash-day chart window: keep whatever is already painted
-    if (!isLevelPaintAllowed(new Date(), inst).open) {
+    // No attendance / wrong desk / outside that instrument's level window → clear (never keep NY paint on NIKKEI)
+    if (!deskLevelsActive || !isLevelPaintAllowed(new Date(), inst).open) {
+      if (instrumentRef.current === inst) {
+        setLevels([])
+        setPlaybookOpen(false)
+      }
       return
     }
 
     const afternoonWatch = isAfternoonWatchWindow(new Date(), inst)
+    const tokyoDesk = inst === 'NIKKEI'
     const byPrice = new Map<number, LevelLine>()
 
     let aiRows: unknown[] = []
@@ -675,7 +704,8 @@ export function TradingChart({
       const starLabel = `${'★'.repeat(stars)}${'☆'.repeat(5 - stars)}`
       const rank = l.rank === 'watch' ? 'WATCH' : 'PRIMARY'
       const status = reactionStatus(l.marketVerdict, l.marketOutcome)
-      const watchTag = afternoonWatch ? 'PM · ' : ''
+      // NY post-lunch = PM; Tokyo post-lunch is still the Asia cash day — no NY “PM” brand
+      const watchTag = afternoonWatch ? (tokyoDesk ? '' : 'PM · ') : ''
       byPrice.set(l.level, {
         price: l.level,
         type: isRes ? 'resistance' : 'support',
@@ -697,7 +727,10 @@ export function TradingChart({
     setLevels(
       resolved.levels.map((l) => byPrice.get(l.level)!).filter(Boolean)
     )
-  }, []) // levels only — setLevels is stable
+    if (resolved.levels.some((l) => l.source === 'ai' || l.source === 'structure')) {
+      setPlaybookOpen(true)
+    }
+  }, [deskLevelsActive])
 
   // Keep axis / tooltips on the same desk clock as session colors (ET vs JST).
   // tickMarkFormatter is wired via chartFmtRef at create time (v4 applyOptions
@@ -716,7 +749,13 @@ export function TradingChart({
 
   // Grade market reaction into level_history, then reload playbook (no LLM).
   const gradeLevels = useCallback(async (inst: Instrument) => {
-    if (!isLevelPaintAllowed(new Date(), inst).open) return
+    if (!deskLevelsActive || !isLevelPaintAllowed(new Date(), inst).open) {
+      if (instrumentRef.current === inst) {
+        setLevels([])
+        setPlaybookOpen(false)
+      }
+      return
+    }
     try {
       await fetch('/api/levels/respond', {
         method: 'POST',
@@ -732,7 +771,7 @@ export function TradingChart({
       /* non-fatal — still try to paint last known verdicts */
     }
     await loadLevels(inst)
-  }, [loadLevels])
+  }, [loadLevels, deskLevelsActive])
 
   // ── Initialize chart ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1547,14 +1586,19 @@ export function TradingChart({
     if (candles.length > 0) setStreamArmed(true)
   }, [candles.length])
 
-  // ── Chart stream: quotes + candles through afternoon; trading tip gated separately ─
+  // ── Chart tip stream: only in focus window (−30m→close); afternoon if attended ─
   useEffect(() => {
     if (!chartReady || !streamArmed || dataMode === 'synthetic') return
+    if (!tipStreamActive) return
 
     const CANDLE_REFRESH_MS = 30_000
     let lastUiPriceAt = 0
     const fetchGen = ++candleFetchGenRef.current
     let sseHealthy = false
+
+    /** Parent encodes focus + afternoon attendance; re-check chart stream for clock edge */
+    const tipOpen = () =>
+      tipStreamActive && isChartStreamAllowed(instrument).open
 
     const applyQuote = (
       price: number,
@@ -1637,10 +1681,10 @@ export function TradingChart({
     }
 
     const pollQuote = async () => {
-      if (!isChartStreamAllowed(instrument).open) return
+      if (!tipOpen()) return
       if (quoteInFlightRef.current) return
       quoteInFlightRef.current = true
-      const streamLive = isChartStreamAllowed(instrument).open
+      const streamLive = tipOpen()
       try {
         const res = await fetch(
           `/api/trading/quote?instrument=${instrument}&_=${Date.now()}`,
@@ -1663,7 +1707,7 @@ export function TradingChart({
     }
 
     const refreshCandles = async () => {
-      if (!isChartStreamAllowed(instrument).open) return
+      if (!tipOpen()) return
       try {
         const days = AVWAP_CANDLE_FETCH_CALENDAR_DAYS
         const res = await fetch(
@@ -1689,7 +1733,7 @@ export function TradingChart({
 
         const live = lastCandleRef.current
         const last = trimmed[trimmed.length - 1]!
-        const streamLive = isChartStreamAllowed(instrument).open
+        const streamLive = tipOpen()
         if (live && streamLive) {
           const liveT = live.time as number
           const lastT = last.time as number
@@ -1752,7 +1796,7 @@ export function TradingChart({
     let es: EventSource | null = null
     const openPriceStream = () => {
       if (typeof EventSource === 'undefined') return
-      if (!isChartStreamAllowed(instrument).open) return
+      if (!tipOpen()) return
       try {
         es?.close()
       } catch {
@@ -1770,7 +1814,7 @@ export function TradingChart({
           }
           if (typeof json.price !== 'number' || !(json.price > 0)) return
           sseHealthy = true
-          const streamLive = isChartStreamAllowed(instrument).open
+          const streamLive = tipOpen()
           const ts =
             typeof json.timestamp === 'number' && json.timestamp > 0
               ? json.timestamp
@@ -1789,13 +1833,13 @@ export function TradingChart({
 
     // Backup REST poll — frequent only when SSE is unhealthy
     tickIntervalRef.current = setInterval(() => {
-      if (!isChartStreamAllowed(instrument).open) return
+      if (!tipOpen()) return
       if (sseHealthy) return
       void pollQuote()
     }, 1_000)
     // Safety reconcile even when SSE is healthy (drift / missed reconnect)
     const reconcile = setInterval(() => {
-      if (!isChartStreamAllowed(instrument).open) return
+      if (!tipOpen()) return
       void pollQuote()
     }, 8_000)
 
@@ -1813,7 +1857,15 @@ export function TradingChart({
       tickIntervalRef.current = null
       candleRefreshRef.current = null
     }
-  }, [chartReady, instrument, streamArmed, dataMode, onQuoteTick, onPriceUpdate])
+  }, [
+    chartReady,
+    instrument,
+    streamArmed,
+    dataMode,
+    tipStreamActive,
+    onQuoteTick,
+    onPriceUpdate,
+  ])
 
   // ── Double-click chart to place order at that price (morning trading) ───────
   useEffect(() => {
@@ -2131,6 +2183,13 @@ export function TradingChart({
   }, [positionOverlay, pendingLimit, aiVerdict, chartReady, clearHoverPreview])
 
   const isUp = priceChange >= 0
+  /** Levels / Watch only / playbook — only while NY or Tokyo cash day is live */
+  const deskSessionLive = isAnyLiveFocusWindowActive()
+  const tokyoDesk = instrument === 'NIKKEI'
+  const watchPlaybookTitle = tokyoDesk ? 'Tokyo watch' : 'Afternoon watch'
+  const watchPlaybookHint = tokyoDesk
+    ? 'Tokyo morning reaction + Initial Balance — watch only, no new orders.'
+    : 'Morning reaction + Initial Balance — watch only, no new orders.'
 
   return (
     <div className="flex flex-col h-full gap-2">
@@ -2154,45 +2213,51 @@ export function TradingChart({
           5m
         </span>
 
-        {/* Level toggle — AI/structure only; working limit + SL/TP always stay */}
-        <button
-          type="button"
-          title={
-            showLevels
-              ? 'Hide AI/structure levels (working limit + SL/TP stay on chart)'
-              : 'Show AI/structure levels'
-          }
-          onClick={() => setShowLevels((v) => !v)}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
-            showLevels
-              ? 'bg-surface-600 border-surface-400 text-gray-200'
-              : 'bg-transparent border-surface-600 text-gray-600 hover:text-gray-400'
-          }`}
-        >
-          <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
-          {showLevels
-            ? 'Hide levels'
-            : levels.some((l) => l.source === 'ai')
-              ? 'AI Levels'
-              : 'Levels'}
-          {levels.length > 0
-            ? ` (${levels.filter((l) => l.source === 'ai' || l.source === 'structure').length})`
-            : ''}
-        </button>
+        {/* Level toggle — only while this desk session has an active playbook */}
+        {deskSessionLive && deskLevelsActive && (
+          <button
+            type="button"
+            title={
+              showLevels
+                ? 'Hide AI/structure levels (working limit + SL/TP stay on chart)'
+                : 'Show AI/structure levels'
+            }
+            onClick={() => setShowLevels((v) => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+              showLevels
+                ? 'bg-surface-600 border-surface-400 text-gray-200'
+                : 'bg-transparent border-surface-600 text-gray-600 hover:text-gray-400'
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
+            {showLevels
+              ? 'Hide levels'
+              : levels.some((l) => l.source === 'ai')
+                ? 'AI Levels'
+                : 'Levels'}
+            {levels.length > 0
+              ? ` (${levels.filter((l) => l.source === 'ai' || l.source === 'structure').length})`
+              : ''}
+          </button>
+        )}
 
-        {!playbookOpen &&
+        {deskSessionLive &&
+          deskLevelsActive &&
+          !playbookOpen &&
           levels.some((l) => l.source === 'ai' || l.source === 'structure') && (
           <button
             type="button"
             title={
               canPlaceOrder
                 ? 'Show morning playbook panel'
-                : 'Show afternoon watch playbook (read-only)'
+                : tokyoDesk
+                  ? 'Show Tokyo watch playbook (read-only)'
+                  : 'Show afternoon watch playbook (read-only)'
             }
             onClick={() => setPlaybookOpen(true)}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg bg-transparent border-surface-600 text-gray-500 hover:text-gray-300"
           >
-            {canPlaceOrder ? 'Playbook' : 'PM watch'}
+            {canPlaceOrder ? 'Playbook' : tokyoDesk ? 'Tokyo watch' : 'PM watch'}
           </button>
         )}
 
@@ -2222,10 +2287,18 @@ export function TradingChart({
             Double-click chart
           </span>
         )}
-        {!canPlaceOrder && !positionOverlay && !pendingLimit && (
+        {deskSessionLive &&
+          deskLevelsActive &&
+          !canPlaceOrder &&
+          !positionOverlay &&
+          !pendingLimit && (
           <span
             className="rounded-lg border border-surface-600 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500"
-            title="Morning trading closed — afternoon levels are watch-only"
+            title={
+              tokyoDesk
+                ? 'Tokyo morning trading closed — levels are watch-only until cash close'
+                : 'Morning trading closed — afternoon levels are watch-only'
+            }
           >
             Watch only
           </span>
@@ -2406,19 +2479,20 @@ export function TradingChart({
           Reset scale
         </button>
 
-        {/* Playbook — morning trade or afternoon watch (read-only) */}
-        {playbookOpen &&
+        {/* Playbook — morning trade or post-lunch watch (read-only); NY vs Tokyo labels */}
+        {deskLevelsActive &&
+          playbookOpen &&
           levels.some((l) => l.source === 'ai' || l.source === 'structure') && (
           <DraggableDeskWidget
             storageKey="desk-playbook-live"
             defaultPos={{ x: 24, y: 88 }}
-            title={canPlaceOrder ? 'Morning playbook' : 'Afternoon watch'}
+            title={canPlaceOrder ? 'Morning playbook' : watchPlaybookTitle}
             onClose={() => setPlaybookOpen(false)}
           >
             <div className="space-y-1.5 p-2">
               {!canPlaceOrder && (
                 <p className="px-1 pb-1 text-[10px] leading-snug text-gray-500">
-                  Morning reaction + Initial Balance — watch only, no new orders.
+                  {watchPlaybookHint}
                 </p>
               )}
               {levels

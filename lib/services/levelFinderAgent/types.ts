@@ -29,6 +29,11 @@ export interface AnalysisRequest {
   analysis_mode?: 'morning' | 'afternoon'
   /** Precomputed afternoon facts (IB, morning range/volume, reactions) — no new vendors */
   afternoonBriefText?: string
+  /**
+   * NY twin tape (DOW↔NASDAQ): CONFIRM/DIVERGE only — never peer price levels.
+   * NIKKEI has no twin.
+   */
+  peerTapeText?: string
 }
 
 export interface LevelIdentification {

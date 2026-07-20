@@ -9,7 +9,11 @@ import {
   subscribeOandaPriceStream,
 } from '@/lib/oanda/pricingStream'
 import { isOandaConfigured } from '@/lib/oanda/config'
-import { isLiveDeskInstrument } from '@/lib/trading/sessionGate'
+import { getOrCreateUser } from '@/lib/utils/devAuth'
+import {
+  isChartStreamAllowed,
+  isLiveDeskInstrument,
+} from '@/lib/trading/sessionGate'
 import type { Instrument } from '@/types/price-feed'
 
 export const dynamic = 'force-dynamic'
@@ -55,6 +59,14 @@ function payloadFor(
 }
 
 export async function GET(request: Request) {
+  const user = await getOrCreateUser(request)
+  if (!user) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
   const { searchParams } = new URL(request.url)
   const instrument = (searchParams.get('instrument') || 'DOW') as Instrument
 
@@ -63,6 +75,17 @@ export async function GET(request: Request) {
       status: 400,
       headers: { 'Content-Type': 'application/json' },
     })
+  }
+
+  const streamGate = isChartStreamAllowed(instrument)
+  if (!streamGate.open) {
+    return new Response(
+      JSON.stringify({ error: streamGate.reason, stream: false, frozen: true }),
+      {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    )
   }
 
   if (!isOandaConfigured()) {

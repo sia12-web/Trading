@@ -15,6 +15,7 @@ import {
   isNyDeskInstrument,
   isLiveDeskInstrument,
   liveFocusMarket,
+  isAnyLiveFocusWindowActive,
   instrumentsForDeskMarket,
   type DeskInstrument,
 } from '@/lib/trading/sessionGate'
@@ -130,17 +131,22 @@ export async function GET(request: Request) {
       lockedInstrument = attendanceFocus
     }
 
-    const viewingInFocus =
-      viewingInstrument && marketInstruments.includes(viewingInstrument)
-        ? viewingInstrument
-        : lockedInstrument
+    // During a live focus window, viewing must stay on that desk.
+    // Between sessions (all tabs visible), honor the chart tab so NIKKEI gets Tokyo copy.
+    const focusLive = isAnyLiveFocusWindowActive(now)
+    const viewingForGate =
+      focusLive
+        ? viewingInstrument && marketInstruments.includes(viewingInstrument)
+          ? viewingInstrument
+          : lockedInstrument
+        : viewingInstrument ?? lockedInstrument
 
     const gate = resolveSessionGate({
       lockedInstrument,
       hasOpenPosition: !!openPos,
       attemptsUsed,
       stopLossHitCount: stopHits,
-      viewingInstrument: viewingInFocus,
+      viewingInstrument: viewingForGate,
       clockedIn,
       attendedToday,
       now,

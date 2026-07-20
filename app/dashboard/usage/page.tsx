@@ -187,7 +187,8 @@ export default function LlmUsagePage() {
                   </div>
                 </dl>
                 <p className="text-xs text-gray-600 mt-3">
-                  Live: <code className="text-gray-400">LLM_PROPOSER_MODEL</code> (Opus). Sim:{' '}
+                  Live Level Finder: <code className="text-gray-400">LLM_LEVEL_FINDER_MODEL</code>{' '}
+                  (Opus 4.8 — best quality). Sim:{' '}
                   <code className="text-gray-400">LLM_SIM_PROPOSER_MODEL</code> (Haiku). Pass{' '}
                   <code className="text-gray-400">?tier=sim</code> on find-levels.
                 </p>

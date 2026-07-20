@@ -61,7 +61,10 @@ function weekdayInTz(now: Date, timeZone: string): boolean {
   return d !== 'Sat' && d !== 'Sun'
 }
 
-/** Which markets are in the clock-in window right now (prep → lunch). */
+/**
+ * Markets in the clock-in window right now.
+ * Prep only: analyzeStart → cash open. Late after open = missed session (no clock-in).
+ */
 export function activeClockMarkets(now = new Date()): DeskMarket[] {
   const out: DeskMarket[] = []
   for (const market of ['NY', 'TOKYO'] as DeskMarket[]) {
@@ -70,8 +73,8 @@ export function activeClockMarkets(now = new Date()): DeskMarket[] {
     if (!weekdayInTz(now, s.tz)) continue
     const t = parseTimeToSeconds(timeInTz(now, s.tz))
     const start = parseTimeToSeconds(s.analyzeStart)
-    const lunch = parseTimeToSeconds(s.lunchClose)
-    if (t >= start && t < lunch) out.push(market)
+    const open = parseTimeToSeconds(s.marketOpen)
+    if (t >= start && t < open) out.push(market)
   }
   return out
 }
@@ -100,7 +103,7 @@ export function canClockInNow(
   }
   const t = parseTimeToSeconds(timeInTz(now, s.tz))
   const start = parseTimeToSeconds(s.analyzeStart)
-  const lunch = parseTimeToSeconds(s.lunchClose)
+  const open = parseTimeToSeconds(s.marketOpen)
   if (t < start) {
     return {
       ok: false,
@@ -110,10 +113,14 @@ export function canClockInNow(
           : 'Clock-in opens 9:15 ET (15 min before NY cash open)',
     }
   }
-  if (t >= lunch) {
-    return { ok: false, reason: 'Morning session ended at lunch — clock-in closed' }
+  if (t >= open) {
+    return {
+      ok: false,
+      reason:
+        'Cash open already passed — late clock-in closed. This session is skipped (no AI / no trades).',
+    }
   }
-  return { ok: true, reason: 'Clock-in window open' }
+  return { ok: true, reason: 'Clock-in window open (prep until cash open)' }
 }
 
 export async function getTodayAttendance(
@@ -155,14 +162,33 @@ export async function isClockedInForInstrument(
   return isClockedIn(supabase, userId, market, now)
 }
 
+/** Re-clock after early manual out — until lunch (they already committed today). */
+export function canReClockInNow(
+  market: DeskMarket,
+  now = new Date()
+): { ok: boolean; reason: string } {
+  const probe = market === 'TOKYO' ? 'NIKKEI' : 'DOW'
+  const s = sessionFor(probe)
+  if (!weekdayInTz(now, s.tz)) {
+    return { ok: false, reason: 'Weekend — desk closed' }
+  }
+  const t = parseTimeToSeconds(timeInTz(now, s.tz))
+  const start = parseTimeToSeconds(s.analyzeStart)
+  const lunch = parseTimeToSeconds(s.lunchClose)
+  if (t < start) {
+    return { ok: false, reason: 'Desk prep not open yet' }
+  }
+  if (t >= lunch) {
+    return { ok: false, reason: 'Morning session ended at lunch — re-clock closed' }
+  }
+  return { ok: true, reason: 'Re-clock window open until lunch' }
+}
+
 export async function clockIn(
   supabase: SupabaseClient,
   userId: string,
   args: { market: DeskMarket; instrument?: DeskInstrument | null }
 ): Promise<{ ok: true; row: DeskAttendanceRow } | { ok: false; error: string }> {
-  const check = canClockInNow(args.market)
-  if (!check.ok) return { ok: false, error: check.reason }
-
   const sessionDate = sessionDateForMarket(args.market)
   const instrument =
     args.instrument && isDeskInstrument(args.instrument) ? args.instrument : null
@@ -172,7 +198,9 @@ export async function clockIn(
     return { ok: true, row: existing }
   }
   if (existing?.status === 'clocked_out') {
-    // Re-open before lunch if they clocked out early
+    // Already attended today — may re-enter until lunch (not a late first clock-in)
+    const re = canReClockInNow(args.market)
+    if (!re.ok) return { ok: false, error: re.reason }
     const { data, error } = await supabase
       .from('desk_attendance')
       .update({
@@ -189,6 +217,10 @@ export async function clockIn(
     if (error || !data) return { ok: false, error: error?.message || 'Failed to re-clock-in' }
     return { ok: true, row: data as DeskAttendanceRow }
   }
+
+  // First clock-in of the day — prep only (before cash open)
+  const check = canClockInNow(args.market)
+  if (!check.ok) return { ok: false, error: check.reason }
 
   const { data, error } = await supabase
     .from('desk_attendance')

@@ -3,7 +3,15 @@ import { createClient } from '@/lib/supabase/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { getLevelFinderAgent } from '@/lib/services/levelFinderAgent'
 import { validateLevelsAgainstMarket } from '@/lib/services/levelValidation'
-import { isDeskHoursNow, isDeskInstrument, shouldRunLiveAiForInstrument } from '@/lib/trading/sessionGate'
+import {
+  deskMarketFor,
+  isDeskHoursNow,
+  isDeskInstrument,
+  shouldRunLiveAiForInstrument,
+  type DeskInstrument,
+} from '@/lib/trading/sessionGate'
+import { getTodayAttendance } from '@/lib/trading/deskAttendance'
+import { buildPeerTapeBrief } from '@/lib/trading/peerTapeBrief'
 import { parseLlmTier } from '@/lib/llm/config'
 import { fetchLevelHistoricalContext } from '@/lib/services/levelFinderAgent/historicalContext'
 import type { AnalysisRequest, Candle, ValidationResult } from '@/lib/services/levelFinderAgent/types'
@@ -277,9 +285,28 @@ export async function POST(request: NextRequest) {
         { status: 403 }
       )
     }
-    // LIVE focus: do not spend tokens on the off-session desk
+    // LIVE focus + clock-in: do not spend tokens off-session or before attendance
     if (isDeskInstrument(validation.data.index) && !force) {
-      const focus = shouldRunLiveAiForInstrument(validation.data.index)
+      const inst = validation.data.index as DeskInstrument
+      const attendance = await getTodayAttendance(
+        supabase,
+        user.id,
+        deskMarketFor(inst),
+        new Date()
+      )
+      const focusLock =
+        (attendance?.traded_instrument &&
+        isDeskInstrument(attendance.traded_instrument)
+          ? (attendance.traded_instrument as DeskInstrument)
+          : null) ||
+        (attendance?.instrument && isDeskInstrument(attendance.instrument)
+          ? (attendance.instrument as DeskInstrument)
+          : null)
+      const focus = shouldRunLiveAiForInstrument(inst, new Date(), {
+        lockedInstrument: focusLock,
+        clockedIn: attendance?.status === 'clocked_in',
+        attendedToday: !!attendance,
+      })
       if (!focus.ok) {
         return NextResponse.json({ error: focus.reason }, { status: 403 })
       }
@@ -323,12 +350,27 @@ export async function POST(request: NextRequest) {
       body.purpose
     const llm_tier = parseLlmTier(tierParam)
 
+    // NY twin CONFIRM/DIVERGE glance (live only — sim stays single-name)
+    let peerTapeText: string | undefined
+    if (
+      llm_tier === 'live' &&
+      isDeskInstrument(validation.data.index)
+    ) {
+      try {
+        const peer = await buildPeerTapeBrief(validation.data.index as DeskInstrument)
+        peerTapeText = peer?.promptText
+      } catch {
+        /* optional */
+      }
+    }
+
     // Perform analysis with optional historical context
     const agent = await getLevelFinderAgent()
     const requestWithContext = {
       ...validation.data,
       llm_tier,
       historicalContext: historicalContext || undefined,
+      peerTapeText,
     }
     const analysisResult = await performAnalysis(agent, requestWithContext)
 

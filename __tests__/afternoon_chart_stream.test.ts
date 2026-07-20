@@ -8,6 +8,7 @@ import {
   isLunchFreezeActive,
   isLiveBarsAllowed,
   isChartStreamAllowed,
+  isLiveTipStreamAllowed,
   clipAfternoonBars,
   resolveSessionGate,
 } from '../lib/trading/sessionGate'
@@ -37,6 +38,28 @@ assert(isLiveBarsAllowed('DOW', afternoonEt).open === false, 'trading locked aft
 assert(isChartStreamAllowed('DOW', afternoonEt).open === true, 'chart prints afternoon')
 assert(isChartStreamAllowed('DOW', afterCloseEt).open === false, 'frozen after cash close')
 assert(isChartStreamAllowed('DOW', nextMorningEt).open === true, 'stream open next session')
+assert(
+  isLiveTipStreamAllowed('DOW', afternoonEt, { attendedToday: false }).open === false,
+  'afternoon tip needs attendance'
+)
+assert(
+  isLiveTipStreamAllowed('DOW', afternoonEt, { attendedToday: true }).open === true,
+  'afternoon tip ok when attended'
+)
+assert(
+  isChartStreamAllowed('DOW', new Date('2026-07-15T12:00:00.000Z')).open === false,
+  'pre-focus 08:00 ET tip frozen'
+)
+// After cash open without clock-in → session skipped (no tip)
+const afterOpenMiss = new Date('2026-07-15T14:00:00.000Z') // 10:00 ET
+assert(
+  isLiveTipStreamAllowed('DOW', afterOpenMiss, { attendedToday: false }).open === false,
+  'missed clock-in → tip off after open'
+)
+assert(
+  isLiveTipStreamAllowed('DOW', afterOpenMiss, { clockedIn: true }).open === true,
+  'clocked in → tip on after open'
+)
 
 const lunchUnix = Math.floor(new Date('2026-07-15T15:30:00.000Z').getTime() / 1000)
 const afternoonBar = Math.floor(new Date('2026-07-15T18:00:00.000Z').getTime() / 1000)
@@ -63,7 +86,40 @@ const gate = resolveSessionGate({
   stopLossHitCount: 0,
 })
 assert(gate.canPlaceEntry === false, 'no entries after lunch')
-assert(/cash close|background/i.test(gate.message), `gate: ${gate.message}`)
+assert(gate.phase === 'DONE', `afternoon phase: ${gate.phase}`)
+assert(/afternoon watch|cash close/i.test(gate.message), `gate: ${gate.message}`)
+
+const gateClosed = resolveSessionGate({
+  now: afterCloseEt,
+  lockedInstrument: 'DOW',
+  viewingInstrument: 'DOW',
+  clockedIn: false,
+  attendedToday: true,
+  attemptsUsed: 0,
+  stopLossHitCount: 0,
+})
+assert(gateClosed.phase === 'CLOSED', `after close phase: ${gateClosed.phase}`)
+assert(/cash closed/i.test(gateClosed.message), `after close: ${gateClosed.message}`)
+assert(!/afternoon watch/i.test(gateClosed.message), 'no afternoon copy after cash close')
+assert(gateClosed.market === 'NY', 'DOW tab → NY market copy')
+assert(/NY desk|9:15 ET/i.test(gateClosed.message), `NY copy: ${gateClosed.message}`)
+
+// Same wall time, NIKKEI tab → Tokyo desk messaging (not sticky NY copy)
+const gateNikkeiBrowse = resolveSessionGate({
+  now: afterCloseEt,
+  lockedInstrument: 'DOW',
+  viewingInstrument: 'NIKKEI',
+  clockedIn: false,
+  attendedToday: true,
+  attemptsUsed: 0,
+  stopLossHitCount: 0,
+})
+assert(gateNikkeiBrowse.market === 'TOKYO', 'NIKKEI tab → TOKYO market')
+assert(
+  /Tokyo|JST|NIKKEI/i.test(gateNikkeiBrowse.message),
+  `Tokyo copy: ${gateNikkeiBrowse.message}`
+)
+assert(!/Next NY desk|9:15 ET/i.test(gateNikkeiBrowse.message), 'no NY next-desk on NIKKEI tab')
 
 assert(AVWAP_LOOKBACK_TRADING_DAYS === 5, 'VWAP lookback = 5')
 {

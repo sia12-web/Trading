@@ -272,10 +272,9 @@ export function isLiveBarsAllowed(
 }
 
 /**
- * Chart may refresh candles/quotes through the cash day (morning + afternoon).
- * Freezes after marketClose until the next weekday — overnight is not streamed.
- * Next session clock-in loads full history (prior afternoon included).
- * Trading permissions stay separate (isLiveBarsAllowed).
+ * Live tip / quote stream window = focus lead only (cash open − 30m → cash close).
+ * No midnight→open or overnight printing — saves Railway/OANDA when desk is idle.
+ * History candles still load on demand; trading permissions stay separate (isLiveBarsAllowed).
  */
 export function isChartStreamAllowed(
   instrument: string | null | undefined,
@@ -288,21 +287,69 @@ export function isChartStreamAllowed(
   if (!isWeekdayInTz(now, s.tz)) {
     return { open: false, reason: `Weekend — ${deskMarketFor(instrument)} session closed` }
   }
-  const t = parseTimeToSeconds(timeInTz(now, s.tz))
-  const close = parseTimeToSeconds(s.marketClose)
-  if (t >= close) {
-    return {
-      open: false,
-      reason:
-        deskMarketFor(instrument) === 'TOKYO'
-          ? 'Cash close — chart frozen until next Tokyo session (clock in for full prints).'
-          : 'Cash close — chart frozen until next NY session (clock in for full prints).',
+  if (!isLiveFocusWindowActive(instrument, now)) {
+    const t = parseTimeToSeconds(timeInTz(now, s.tz))
+    const open = parseTimeToSeconds(s.marketOpen)
+    const close = parseTimeToSeconds(s.marketClose)
+    const focusStart = open - LIVE_FOCUS_LEAD_MINUTES * 60
+    if (t >= close) {
+      return {
+        open: false,
+        reason:
+          deskMarketFor(instrument) === 'TOKYO'
+            ? 'Cash close — chart frozen until next Tokyo focus (open − 30m).'
+            : 'Cash close — chart frozen until next NY focus (open − 30m).',
+      }
     }
+    if (t < focusStart) {
+      return {
+        open: false,
+        reason:
+          deskMarketFor(instrument) === 'TOKYO'
+            ? 'Pre-focus — NIKKEI tip starts 08:30 JST'
+            : 'Pre-focus — NY tip starts 09:00 ET',
+      }
+    }
+    return { open: false, reason: 'Outside focus window — tip frozen' }
   }
-  if (t >= parseTimeToSeconds(s.lunchClose)) {
+  if (isAfternoonWatchWindow(now, instrument)) {
     return { open: true, reason: 'Chart streaming (afternoon — trading locked)' }
   }
-  return { open: true, reason: 'Chart streaming (morning / pre-open history)' }
+  return { open: true, reason: 'Chart streaming (focus window)' }
+}
+
+/**
+ * Tip updates:
+ *   −30m → cash open: on (watch while deciding to clock in)
+ *   after cash open: only if clocked in / attended (late miss = tip off, no AI)
+ *   afternoon: same attendance rule
+ */
+export function isLiveTipStreamAllowed(
+  instrument: string | null | undefined,
+  now: Date = new Date(),
+  opts?: { clockedIn?: boolean; attendedToday?: boolean }
+): { open: boolean; reason: string } {
+  const stream = isChartStreamAllowed(instrument, now)
+  if (!stream.open) return stream
+  const attended = !!(opts?.clockedIn || opts?.attendedToday)
+  if (isAfternoonWatchWindow(now, instrument)) {
+    if (attended) return { open: true, reason: 'Afternoon tip (attended desk)' }
+    return {
+      open: false,
+      reason: 'Afternoon tip frozen — no morning attendance (save feed cost)',
+    }
+  }
+  // Morning focus: before cash open tip is free; after open require attendance
+  if (!isDeskInstrument(instrument)) return stream
+  const s = sessionFor(instrument)
+  const t = parseTimeToSeconds(timeInTz(now, s.tz))
+  const open = parseTimeToSeconds(s.marketOpen)
+  if (t < open) return { open: true, reason: 'Pre-open focus tip' }
+  if (attended) return { open: true, reason: 'Session tip (clocked in)' }
+  return {
+    open: false,
+    reason: 'Missed clock-in — session skipped (no tip / no AI)',
+  }
 }
 
 /**
@@ -339,8 +386,9 @@ export function isDeskHoursNow(
 }
 
 /**
- * Paint AI/structure levels while the cash day chart is live
- * (morning prep → cash close). Afternoon is watch-only; trading stays locked.
+ * Paint AI/structure levels only in the instrument's desk windows:
+ *   morning prep → lunch, or lunch → cash close (watch-only).
+ * Pre-open / after close / other market's session → no paint (do not reuse chart-stream).
  */
 export function isLevelPaintAllowed(
   now: Date = new Date(),
@@ -349,22 +397,33 @@ export function isLevelPaintAllowed(
   if (isDeskHoursNow(now, instrument).open) {
     return { open: true, reason: 'Morning desk levels' }
   }
-  const stream = isChartStreamAllowed(instrument, now)
-  if (stream.open) {
-    return { open: true, reason: 'Afternoon watch levels (read-only)' }
+  if (isAfternoonWatchWindow(now, instrument)) {
+    return {
+      open: true,
+      reason:
+        isDeskInstrument(instrument) && deskMarketFor(instrument) === 'TOKYO'
+          ? 'Tokyo watch levels (read-only)'
+          : 'Afternoon watch levels (read-only)',
+    }
   }
-  return { open: false, reason: stream.reason || 'Outside cash session' }
+  return { open: false, reason: 'Outside level window for this desk' }
 }
 
-/** True after lunch while the chart still streams (afternoon watch window). */
+/**
+ * True after lunch while that instrument's cash day is still open (lunch → marketClose).
+ * Uses the instrument clock (ET vs JST) — not “is the chart streaming history”.
+ */
 export function isAfternoonWatchWindow(
   now: Date = new Date(),
   instrument: string | null | undefined = 'DOW'
 ): boolean {
-  return (
-    !isDeskHoursNow(now, instrument).open &&
-    isChartStreamAllowed(instrument, now).open
-  )
+  if (!isDeskInstrument(instrument)) return false
+  const s = sessionFor(instrument)
+  if (!isWeekdayInTz(now, s.tz)) return false
+  const t = parseTimeToSeconds(timeInTz(now, s.tz))
+  const lunch = parseTimeToSeconds(s.lunchClose)
+  const close = parseTimeToSeconds(s.marketClose)
+  return t >= lunch && t < close
 }
 
 /**
@@ -517,7 +576,8 @@ export function liveVisibleInstruments(
 
 /**
  * Gate LIVE Level Finder / morning AI token spend to the focused desk.
- * Simulation / sim-levels must not use this.
+ * Requires clock-in (or same-day attendance for afternoon force refresh).
+ * Simulation / sim-levels must not use this. NY DOW/NASDAQ scoring stays on market-open (no Opus).
  */
 export function shouldRunLiveAiForInstrument(
   instrument: DeskInstrument,
@@ -530,6 +590,9 @@ export function shouldRunLiveAiForInstrument(
 ): { ok: boolean; reason: string } {
   if (!isDeskInstrument(instrument)) {
     return { ok: false, reason: 'Unknown instrument' }
+  }
+  if (!opts?.clockedIn && !opts?.attendedToday) {
+    return { ok: false, reason: 'Clock in before Level Finder runs' }
   }
   if (!isAnyLiveFocusWindowActive(now)) {
     return { ok: false, reason: 'Between sessions — no live AI' }
@@ -581,6 +644,12 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   const open = parseTimeToSeconds(s.marketOpen)
   const entryClose = parseTimeToSeconds(s.entryClose)
   const lunch = parseTimeToSeconds(s.lunchClose)
+  const close = parseTimeToSeconds(s.marketClose)
+  const weekday = isWeekdayInTz(now, s.tz)
+  /** Lunch → cash close: chart + watch levels only */
+  const afternoonWatch = weekday && t >= lunch && t < close
+  /** Past cash close (same weekday) or weekend — desk fully closed */
+  const afterCashClose = weekday && t >= close
 
   const hasOpen = !!input.hasOpenPosition
   const book = evaluateSessionAttempts({
@@ -592,9 +661,13 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     !!input.dayDone || !!input.marketDisabled || book.sessionDone
   const clockedIn = !!input.clockedIn
   const attendedToday = !!input.attendedToday || clockedIn
+  /** First clock-in: prep only (analyze → cash open). Late first entry = missed. */
+  const inFirstClockWindow = isWeekdayInTz(now, s.tz) && t >= analyze && t < open
+  /** Re-clock after early out: until lunch if already attended today. */
   const inDeskWindow = isWeekdayInTz(now, s.tz) && t >= analyze && t < lunch
-  // Can clock in only during morning window if not already attended (incl. re-open if early manual out)
-  const canClockIn = inDeskWindow && !clockedIn
+  // First commit: prep only. Already attended (early out): re-enter until lunch.
+  const canClockIn =
+    !clockedIn && (!!input.attendedToday ? inDeskWindow : inFirstClockWindow)
 
   const bars = isLiveBarsAllowed(viewing ?? locked, now)
   const wm = getWindowManager()
@@ -628,11 +701,11 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     ...bookFields,
   }
 
-  // Live streaming only while currently clocked in; attendedToday still allows viewing frozen chart after lunch
+  // Live streaming only while currently clocked in; attendedToday keeps afternoon chart until cash close
   const canView =
-    (clockedIn || (attendedToday && t >= lunch)) &&
+    (clockedIn || (attendedToday && afternoonWatch)) &&
     !!locked &&
-    (bars.open || (attendedToday && t >= lunch)) &&
+    (bars.open || (attendedToday && afternoonWatch)) &&
     (viewing == null || viewing === locked)
 
   const finish = (
@@ -650,9 +723,11 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
         r.phase === 'ENTRY' ||
         r.phase === 'FLAT' ||
         r.phase === 'MANAGE')
+    const missedLate =
+      needClock && isWeekdayInTz(now, s.tz) && t >= open && t < lunch
     // Attended earlier today (lunch/manual clock-out)
     if (attendedToday) {
-      const canReClock = inDeskWindow // before lunch only
+      const canReClock = inDeskWindow // until lunch — they already committed today
       return {
         ...r,
         clockedIn: false,
@@ -662,7 +737,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
         canManagePosition: false,
         // Chart may continue after lunch; no live trading bars once clocked out
         canFetchLiveBars: false,
-        canViewLiveChart: !!locked && (t >= lunch || r.canViewLiveChart),
+        canViewLiveChart: !!locked && (afternoonWatch || r.canViewLiveChart),
         message: canReClock
           ? 'Clocked out — re-clock in with “Today I trade” to resume the live desk.'
           : r.message,
@@ -677,28 +752,37 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       canFetchLiveBars: false,
       canPlaceEntry: false,
       canManagePosition: false,
-      message: needClock
-        ? 'Live chart is closed — clock in (“Today I trade”) to unlock, or try Simulation.'
-        : r.message,
+      message: missedLate
+        ? 'Missed clock-in — cash open already passed. This session is skipped (no AI, no trades). Use Simulation or wait for the next desk.'
+        : needClock
+          ? 'Live chart is closed — clock in (“Today I trade”) before cash open to unlock, or try Simulation.'
+          : r.message,
     }
   }
 
-  if (!isWeekdayInTz(now, s.tz) || t < analyze || t >= lunch) {
-    const afterLunch = isWeekdayInTz(now, s.tz) && t >= lunch
+  if (!weekday || t < analyze || t >= lunch) {
+    const nextDesk =
+      market === 'TOKYO'
+        ? 'Next Tokyo desk: clock in from 8:45 JST.'
+        : 'Next NY desk: clock in from 9:15 ET.'
     return finish({
       ...base,
-      phase: dayDone || afterLunch ? 'DONE' : 'CLOSED',
-      canViewLiveChart: afterLunch && !!locked,
+      phase: afternoonWatch ? 'DONE' : 'CLOSED',
+      canViewLiveChart: afternoonWatch && !!locked,
       canFetchLiveBars: false,
       canPlaceEntry: false,
       canManagePosition: false,
-      message: afterLunch
-        ? 'Morning trading closed at lunch. Chart continues until cash close (read-only); afternoon levels are watch-only (AI + IB).'
-        : t < analyze
-          ? market === 'TOKYO'
-            ? 'Pre-session. Tokyo desk opens 8:45 JST — clock in then to trade NIKKEI.'
-            : 'Pre-session. Clock-in opens 9:15 ET (15 min before cash open).'
-          : 'Session closed. Use Simulation for replay.',
+      message: afternoonWatch
+        ? dayDone
+          ? 'Session done for today. Afternoon watch — read-only until cash close.'
+          : 'Afternoon watch — read-only until cash close. Levels (AI + IB) are watch-only.'
+        : afterCashClose
+          ? `Cash closed. ${nextDesk}`
+          : t < analyze && weekday
+            ? market === 'TOKYO'
+              ? 'Pre-session. Tokyo desk opens 8:45 JST — clock in then to trade NIKKEI.'
+              : 'Pre-session. Clock-in opens 9:15 ET (15 min before cash open).'
+            : `Weekend — desk closed. ${nextDesk} Or use Simulation.`,
     })
   }
 
@@ -732,17 +816,14 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   }
 
   if (hasOpen) {
-    const pastLunch = t >= lunch
     return finish({
       ...base,
-      phase: pastLunch ? 'DONE' : 'MANAGE',
+      phase: 'MANAGE',
       canViewLiveChart: clockedIn && locked === (viewing ?? locked),
-      canFetchLiveBars: !pastLunch && clockedIn,
+      canFetchLiveBars: clockedIn,
       canPlaceEntry: false,
-      canManagePosition: !pastLunch && clockedIn,
-      message: pastLunch
-        ? 'Lunch flatten — morning trading over. Chart continues (read-only).'
-        : 'Position open. Manage only — no new entries.',
+      canManagePosition: clockedIn,
+      message: 'Position open. Manage only — no new entries.',
     })
   }
 
@@ -782,16 +863,19 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     })
   }
 
-  // After lunch — trading locked; chart stream continues separately
+  // Fallback (should be unreachable — lunch+ handled above)
   return finish({
     ...base,
-    phase: 'DONE',
-    canViewLiveChart: !!locked,
+    phase: afternoonWatch ? 'DONE' : 'CLOSED',
+    canViewLiveChart: afternoonWatch && !!locked,
     canFetchLiveBars: false,
     canPlaceEntry: false,
     canManagePosition: false,
-    message:
-      'Morning trading closed at lunch. Chart continues until cash close (read-only); afternoon levels are watch-only (AI + IB).',
+    message: afternoonWatch
+      ? 'Afternoon watch — read-only until cash close. Levels (AI + IB) are watch-only.'
+      : market === 'TOKYO'
+        ? 'Cash closed. Next Tokyo desk: clock in from 8:45 JST.'
+        : 'Cash closed. Next NY desk: clock in from 9:15 ET.',
   })
 }
 

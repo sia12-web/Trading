@@ -1,6 +1,19 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { LlmCompleteRequest, LlmCompleteResult } from '@/lib/llm/types'
 
+/**
+ * Opus 4.6+ / Fable reject temperature / top_p / top_k (400).
+ * Older dated Opus IDs still accept temperature.
+ */
+function supportsTemperature(model: string): boolean {
+  const m = model.toLowerCase()
+  if (m.includes('fable')) return false
+  if (/claude-opus-4-[6-9]/.test(m)) return false
+  if (/claude-opus-4-\d+$/.test(m) && !m.includes('2025')) return false
+  if (/claude-sonnet-5/.test(m)) return false
+  return true
+}
+
 export async function completeAnthropic(
   req: LlmCompleteRequest,
   signal?: AbortSignal
@@ -9,15 +22,21 @@ export async function completeAnthropic(
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set')
 
   const client = new Anthropic({ apiKey })
+  const body: Anthropic.MessageCreateParams = {
+    model: req.model,
+    max_tokens: req.maxTokens ?? 1024,
+    system: req.system,
+    messages: [{ role: 'user', content: req.user }],
+  }
+  if (supportsTemperature(req.model) && req.temperature != null) {
+    body.temperature = req.temperature
+  } else if (supportsTemperature(req.model)) {
+    body.temperature = 0.2
+  }
+
   const response = await client.messages.create(
-    {
-      model: req.model,
-      max_tokens: req.maxTokens ?? 1024,
-      temperature: req.temperature ?? 0.2,
-      system: req.system,
-      messages: [{ role: 'user', content: req.user }],
-    },
-    signal ? { signal: signal as any } : undefined
+    body,
+    signal ? { signal: signal as AbortSignal } : undefined
   )
 
   const block = response.content[0]

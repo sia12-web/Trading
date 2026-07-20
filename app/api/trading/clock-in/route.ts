@@ -1,7 +1,7 @@
 /**
  * POST /api/trading/clock-in
- * "Today I trade" — unlocks live chart and enables level reaction AI for this market.
- * Window: 15 min before cash open → lunch (NY 9:15 ET / Tokyo 8:45 JST).
+ * "Today I trade" — unlocks live chart and Level Finder for this market.
+ * Window: prep only (analyzeStart → cash open). Late after open = rejected (session skipped).
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error:
-            'No clock-in window open. Clock in from 9:15 ET (DOW/NASDAQ) or 8:45 JST (NIKKEI).',
+            'No clock-in window. Clock in during prep only (NY 9:15–9:30 ET / Tokyo 8:45–9:00 JST). After cash open the session is skipped.',
         },
         { status: 403 }
       )

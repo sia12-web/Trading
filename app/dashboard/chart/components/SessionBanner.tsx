@@ -54,13 +54,8 @@ function phaseLabel(phase: string): string {
   }
 }
 
-function phaseHint(phase: string, message: string): string {
-  if (phase === 'ENTRY' || phase === 'FLAT') {
-    return 'Morning trading open until lunch — double-click the chart or pick a level to place a limit.'
-  }
-  if (phase === 'DONE' || phase === 'CLOSED') {
-    return message
-  }
+/** Banner copy comes from sessionGate — keep one source of truth (no phase overrides). */
+function phaseHint(_phase: string, message: string): string {
   return message
 }
 
@@ -90,7 +85,9 @@ export function SessionBanner({
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch(`/api/trading/session-gate?_=${Date.now()}`, {
+      const q = new URLSearchParams({ _: String(Date.now()) })
+      if (viewingInstrument) q.set('instrument', viewingInstrument)
+      const res = await fetch(`/api/trading/session-gate?${q}`, {
         cache: 'no-store',
       })
       if (res.status === 401) {
@@ -152,7 +149,7 @@ export function SessionBanner({
     } catch {
       setGateError('Session gate unreachable — check deploy / network')
     }
-  }, [onGate])
+  }, [onGate, viewingInstrument])
 
   const handleClockIn = useCallback(async () => {
     if (clocking) return

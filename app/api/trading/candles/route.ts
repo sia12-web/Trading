@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server'
 import { getYahooCandles, getYahooCandlesRange } from '@/lib/yahoo/candles'
 import { getOandaCandles, getOandaCandlesRange } from '@/lib/oanda/candles'
 import { getYahooQuote } from '@/lib/yahoo/quote'
+import { getOrCreateUser } from '@/lib/utils/devAuth'
 import {
   clipAfternoonBars,
   clipAllAfternoonBars,
@@ -33,10 +34,16 @@ const RES_MAP: Record<string, string> = {
 
 export async function GET(request: Request) {
   try {
+    const user = await getOrCreateUser(request)
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { searchParams } = new URL(request.url)
     const instrument = (searchParams.get('instrument') || 'DOW') as Instrument
     const timeframe = searchParams.get('timeframe') || '5m'
-    const days = Math.min(Math.max(parseInt(searchParams.get('days') || '5', 10), 1), 30)
+    // Cap lookback — AVWAP needs ~5 sessions; hard max 14 calendar days
+    const days = Math.min(Math.max(parseInt(searchParams.get('days') || '5', 10), 1), 14)
     const endDate = searchParams.get('date') || searchParams.get('end_date')
     const asOfParam = searchParams.get('as_of')
     const asOf = asOfParam ? parseInt(asOfParam, 10) : null

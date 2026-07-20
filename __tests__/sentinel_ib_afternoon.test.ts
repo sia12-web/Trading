@@ -167,15 +167,20 @@ test('isLevelPaintAllowed: morning + afternoon stream, not after close', () => {
   const morning = etDate(2026, 7, 15, 9, 45)
   const afternoon = etDate(2026, 7, 15, 14, 0)
   const afterClose = etDate(2026, 7, 15, 16, 30)
+  const preOpen = etDate(2026, 7, 15, 9, 0)
   assert(isLevelPaintAllowed(morning, 'DOW').open === true, 'morning paint')
   assert(isLevelPaintAllowed(afternoon, 'DOW').open === true, 'afternoon paint')
   assert(isLevelPaintAllowed(afterClose, 'DOW').open === false, 'frozen after close')
+  assert(isLevelPaintAllowed(preOpen, 'DOW').open === false, 'no paint before desk open')
+  // NY evening = Tokyo pre-session next day — never paint NIKKEI off NY leftovers
+  assert(isLevelPaintAllowed(afterClose, 'NIKKEI').open === false, 'no NIKKEI paint after NY close')
 })
 
-test('isAfternoonWatchWindow: true only after lunch while chart streams', () => {
+test('isAfternoonWatchWindow: true only after lunch until cash close', () => {
   assert(isAfternoonWatchWindow(etDate(2026, 7, 15, 10, 0), 'DOW') === false, 'morning')
   assert(isAfternoonWatchWindow(etDate(2026, 7, 15, 14, 0), 'DOW') === true, 'afternoon')
   assert(isAfternoonWatchWindow(etDate(2026, 7, 15, 16, 30), 'DOW') === false, 'after close')
+  assert(isAfternoonWatchWindow(etDate(2026, 7, 15, 9, 0), 'DOW') === false, 'pre-open is not afternoon')
 })
 
 test('NIKKEI afternoon watch uses JST cash close 15:00', () => {

@@ -1,8 +1,8 @@
 /**
  * LLM routing — live vs simulation tiers.
  *
- * Live desk (auto-levels / morning prep): Claude Opus by default (quality).
- * Simulation: cheap Haiku by default so replay practice doesn't burn Opus spend.
+ * Level Finder (live desk) always uses the best Opus — never cut quality there.
+ * Feed/SSE savings are separate; sim replay uses cheap Haiku.
  * Optional Gemini Flash verifier when GEMINI_API_KEY is set.
  */
 
@@ -13,7 +13,10 @@ export type LlmRole = 'proposer' | 'verifier'
 /** Live = real trading desk; sim = replay / practice (cheap model). */
 export type LlmTier = 'live' | 'sim'
 
-const DEFAULT_LIVE_PROPOSER_MODEL = 'claude-opus-4-20250514'
+/** Best available Opus for live Level Finder (do not downgrade for cost). */
+export const DEFAULT_LEVEL_FINDER_MODEL = 'claude-opus-4-8'
+/** @deprecated alias — same as DEFAULT_LEVEL_FINDER_MODEL */
+const DEFAULT_LIVE_PROPOSER_MODEL = DEFAULT_LEVEL_FINDER_MODEL
 const DEFAULT_SIM_PROPOSER_MODEL = 'claude-haiku-4-5-20251001'
 const DEFAULT_VERIFIER_MODEL = 'gemini-2.0-flash'
 
@@ -65,10 +68,20 @@ export function llmModel(role: LlmRole, tier: LlmTier = 'live'): string {
       DEFAULT_SIM_PROPOSER_MODEL
     ).trim()
   }
+  return llmLevelFinderModel()
+}
+
+/**
+ * Live Level Finder model — always the quality tier.
+ * Prefer LLM_LEVEL_FINDER_MODEL, then LLM_PROPOSER_MODEL, then latest Opus.
+ * Never falls back to sim/Haiku.
+ */
+export function llmLevelFinderModel(): string {
   return (
+    process.env.LLM_LEVEL_FINDER_MODEL ||
     process.env.LLM_PROPOSER_MODEL ||
     process.env.ANTHROPIC_MODEL ||
-    DEFAULT_LIVE_PROPOSER_MODEL
+    DEFAULT_LEVEL_FINDER_MODEL
   ).trim()
 }
 
@@ -90,9 +103,10 @@ export function llmConfigSnapshot() {
   return {
     proposer: {
       provider: liveProvider,
-      model: llmModel('proposer', 'live'),
+      model: llmLevelFinderModel(),
       configured: isProviderConfigured(liveProvider),
       tier: 'live' as const,
+      role: 'level_finder',
     },
     sim_proposer: {
       provider: simProvider,

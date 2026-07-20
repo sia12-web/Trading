@@ -199,16 +199,32 @@ test('AI: allow DOW when clocked into DOW', () => {
   assert(r.ok, r.reason)
 })
 
-test('AI: allow NIKKEI during Tokyo focus (08:30+)', () => {
+test('AI: allow NIKKEI during Tokyo focus after clock-in', () => {
   const now = jstDate(Y, M, D, 8, 50)
-  const r = shouldRunLiveAiForInstrument('NIKKEI', now)
+  const r = shouldRunLiveAiForInstrument('NIKKEI', now, {
+    lockedInstrument: 'NIKKEI',
+    clockedIn: true,
+    attendedToday: true,
+  })
   assert(r.ok, r.reason)
+})
+
+test('AI: skip without clock-in even in focus', () => {
+  const now = etDate(Y, M, D, 10, 0)
+  const r = shouldRunLiveAiForInstrument('DOW', now)
+  assert(!r.ok && /clock in/i.test(r.reason), r.reason)
 })
 
 test('AI: skip DOW during Tokyo session', () => {
   const now = jstDate(Y, M, D, 9, 30)
-  assert(!shouldRunLiveAiForInstrument('DOW', now).ok, 'skip DOW')
-  assert(!shouldRunLiveAiForInstrument('NASDAQ', now).ok, 'skip NASDAQ')
+  assert(
+    !shouldRunLiveAiForInstrument('DOW', now, { clockedIn: true, attendedToday: true }).ok,
+    'skip DOW'
+  )
+  assert(
+    !shouldRunLiveAiForInstrument('NASDAQ', now, { clockedIn: true, attendedToday: true }).ok,
+    'skip NASDAQ'
+  )
 })
 
 test('nextLiveDeskMarket returns NY or TOKYO', () => {

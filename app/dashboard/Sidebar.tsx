@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { Suspense } from 'react'
+import { Suspense, useEffect, useState } from 'react'
+import { isAnyLiveFocusWindowActive } from '@/lib/trading/sessionGate'
 
 type NavItem = {
   href: string
@@ -96,7 +97,33 @@ const TOOL_ITEMS: NavItem[] = [
   },
 ]
 
-function NavLink({ item, active }: { item: NavItem; active: boolean }) {
+function NavLink({
+  item,
+  active,
+  locked,
+  lockedHint,
+}: {
+  item: NavItem
+  active: boolean
+  locked?: boolean
+  lockedHint?: string
+}) {
+  if (locked) {
+    return (
+      <div
+        className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium border border-transparent text-gray-600 opacity-70 cursor-not-allowed"
+        title={lockedHint}
+      >
+        <span className="text-gray-700">{item.icon}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block leading-tight">{item.label}</span>
+          <span className="block text-[10px] font-normal text-gray-600 leading-tight mt-0.5">
+            {lockedHint || 'Locked'}
+          </span>
+        </span>
+      </div>
+    )
+  }
   return (
     <Link
       href={item.href}
@@ -143,11 +170,13 @@ function NavSection({
   items,
   pathname,
   search,
+  liveDeskOpen,
 }: {
   title: string
   items: NavItem[]
   pathname: string
   search: string
+  liveDeskOpen: boolean
 }) {
   return (
     <div className="space-y-0.5">
@@ -159,7 +188,16 @@ function NavSection({
           .filter((i) => pathMatches(pathname, search, i.href))
           .sort((a, b) => b.href.length - a.href.length)
         const active = matches[0]?.href === item.href
-        return <NavLink key={item.href} item={item} active={active} />
+        const isLiveChart = item.href === '/dashboard/chart'
+        return (
+          <NavLink
+            key={item.href}
+            item={item}
+            active={active}
+            locked={isLiveChart && !liveDeskOpen}
+            lockedHint="No session now — unlocks 30 min before NY or Tokyo open"
+          />
+        )
       })}
     </div>
   )
@@ -169,12 +207,38 @@ function SidebarNav() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const search = searchParams.toString()
+  const [liveDeskOpen, setLiveDeskOpen] = useState(false)
+
+  useEffect(() => {
+    const tick = () => setLiveDeskOpen(isAnyLiveFocusWindowActive())
+    tick()
+    const id = window.setInterval(tick, 15_000)
+    return () => window.clearInterval(id)
+  }, [])
 
   return (
     <>
-      <NavSection title="Live desk" items={LIVE_ITEMS} pathname={pathname} search={search} />
-      <NavSection title="Practice" items={PRACTICE_ITEMS} pathname={pathname} search={search} />
-      <NavSection title="Tools" items={TOOL_ITEMS} pathname={pathname} search={search} />
+      <NavSection
+        title="Live desk"
+        items={LIVE_ITEMS}
+        pathname={pathname}
+        search={search}
+        liveDeskOpen={liveDeskOpen}
+      />
+      <NavSection
+        title="Practice"
+        items={PRACTICE_ITEMS}
+        pathname={pathname}
+        search={search}
+        liveDeskOpen={true}
+      />
+      <NavSection
+        title="Tools"
+        items={TOOL_ITEMS}
+        pathname={pathname}
+        search={search}
+        liveDeskOpen={true}
+      />
     </>
   )
 }

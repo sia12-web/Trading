@@ -1,7 +1,7 @@
 /**
  * Level Finder Agent Service
- * Proposer LLM (Claude Opus by default) + deterministic anti-hallucination
- * grounding + optional Gemini Flash verifier. Usage logged to llm_usage.
+ * Live: best Claude Opus (never cheap tier). Sim: Haiku.
+ * Grounding + optional Gemini verifier. Usage logged to llm_usage.
  */
 
 import {
@@ -18,6 +18,7 @@ import { llmComplete } from '@/lib/llm/complete'
 import {
   isProviderConfigured,
   llmConfigSnapshot,
+  llmLevelFinderModel,
   llmModel,
   llmProvider,
 } from '@/lib/llm/config'
@@ -57,7 +58,8 @@ class LevelFinderAgent {
   }> {
     const tier = request.llm_tier === 'sim' ? 'sim' : 'live'
     const provider = llmProvider('proposer', tier)
-    const model = llmModel('proposer', tier)
+    // Live always pins best Opus — feed-cost cuts never downgrade Level Finder
+    const model = tier === 'live' ? llmLevelFinderModel() : llmModel('proposer', 'sim')
     if (!isProviderConfigured(provider)) {
       throw new Error(
         `LLM provider ${provider} not configured for ${tier} tier (set ANTHROPIC_API_KEY or GEMINI_API_KEY)`
@@ -92,7 +94,8 @@ class LevelFinderAgent {
             model,
             system: systemPrompt,
             user: prompt,
-            maxTokens: 1024,
+            // Live Opus: room for full level JSON; sim stays lean
+            maxTokens: tier === 'live' ? 2048 : 1024,
             temperature: 0.2,
           },
           controller.signal
@@ -503,6 +506,13 @@ AFTERNOON MODE (watch-only — this run is the lunch refresh):
 
 You are analyzing ${index}. Use the SAME methodology for DOW, NASDAQ, and NIKKEI — only the session clock differs (see DESK CADENCE).
 ${afternoonBlock}
+PEER TAPE (pro use — simple, not distracting):
+- NY only: when trading DOW, glance at NASDAQ (and vice versa). One twin. No S&P / ES / extras.
+- NIKKEI: no twin on this desk — ignore US names for levels.
+- Peer is CONFIRM vs DIVERGE only. Never invent ${index} levels from peer prices.
+- CONFIRM (same lean) → keep normal conviction. DIVERGE → fewer levels, prefer WATCH-quality (conviction 5–7), say "peer diverges" in reasoning.
+- If PEER TAPE is missing from the user message, skip this step.
+
 CORE PHILOSOPHY — BIG MONEY ENTERS AT RETAIL STOP LOSS LIQUIDITY:
 - Institutions are constantly hunting liquidity. The deepest, easiest liquidity is retail stop-loss clusters.
 - Retail BUYS the obvious support (Asia/London/prior-day low) → their stops sit BELOW that low. Big money BUYS into those stops.
@@ -661,6 +671,9 @@ How to use it:
       request.analysis_mode === 'afternoon' && request.afternoonBriefText
         ? request.afternoonBriefText
         : ''
+    const peerSection = request.peerTapeText?.trim()
+      ? `\n${request.peerTapeText.trim()}\n`
+      : ''
 
     const clock = deskClockFor(request.index)
     const s = sessionFor(request.index)
@@ -676,7 +689,7 @@ Current Price: ${request.current_price}
 Desk clock: ${clock.openLabel} open · entries until ${s.entryClose.slice(0, 5)} ${tzLabel} · lunch ${s.lunchClose.slice(0, 5)} ${tzLabel}
 ${modeLine}
 Methodology is identical for DOW, NASDAQ, and NIKKEI — only this clock differs.
-${afternoonSection}
+${afternoonSection}${peerSection}
 HARD GEOMETRY (desk rejects violations):
 - resistance / SHORT levels MUST be ABOVE Current Price (offer side) — you cannot short a resistance below the market.
 - support / BUY levels MUST be BELOW Current Price (bid side) — you cannot buy a support above the market.
@@ -698,9 +711,10 @@ Work through this before choosing levels:
 4. Where are unmitigated impulse origins, and which levels show absorption / initiative volume or HTF tails?
 5. Does that stop-pool zone also sit near a printed AVWAP band, POC/HVN, and/or a psychological round? Prefer levels with that confluence.
 6. For each level, mentally place: ENTRY (liquidity), STOP (just beyond the round/structure so the magnet is not your exact stop), TAKE PROFIT (next opposing round / session extreme / AVWAP). Mention rounds when they matter for SL or TP.
+7. If PEER TAPE is present: apply CONFIRM/DIVERGE to conviction only — do not change level prices to match the peer.
 ${
   request.analysis_mode === 'afternoon'
-    ? `7. Afternoon: cross-check every candidate against the AFTERNOON DESK BRIEF (IB state, morning H/L + volume, FLIP/RETEST, tip vs AVWAP/POC). Prefer those magnets.
+    ? `8. Afternoon: cross-check every candidate against the AFTERNOON DESK BRIEF (IB state, morning H/L + volume, FLIP/RETEST, tip vs AVWAP/POC). Prefer those magnets.
 `
     : ''
 }

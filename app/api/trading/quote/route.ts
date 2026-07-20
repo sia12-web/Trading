@@ -6,7 +6,11 @@
 import { NextResponse } from 'next/server'
 import { getYahooQuote } from '@/lib/yahoo/quote'
 import { getOandaPrice } from '@/lib/oanda/pricing'
-import { isLiveDeskInstrument } from '@/lib/trading/sessionGate'
+import { getOrCreateUser } from '@/lib/utils/devAuth'
+import {
+  isChartStreamAllowed,
+  isLiveDeskInstrument,
+} from '@/lib/trading/sessionGate'
 import type { Instrument } from '@/types/price-feed'
 
 export const dynamic = 'force-dynamic'
@@ -27,6 +31,11 @@ function refreshDayPrevClose(instrument: Instrument) {
 
 export async function GET(request: Request) {
   try {
+    const user = await getOrCreateUser(request)
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { searchParams } = new URL(request.url)
     const instrument = (searchParams.get('instrument') || 'DOW') as Instrument
 
@@ -39,6 +48,15 @@ export async function GET(request: Request) {
 
     const headers = {
       'Cache-Control': 'no-store, no-cache, must-revalidate',
+    }
+
+    // Focus window only (open − 30m → cash close) — no overnight/pre-focus OANDA burn
+    const stream = isChartStreamAllowed(instrument)
+    if (!stream.open) {
+      return NextResponse.json(
+        { error: stream.reason, instrument, price: null, frozen: true },
+        { status: 200, headers }
+      )
     }
 
     // OANDA first — matches TradingView OANDA CFD tip; do not await Yahoo here

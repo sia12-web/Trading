@@ -23,6 +23,7 @@ import {
   buildAfternoonDeskBrief,
   formatAfternoonDeskBriefForPrompt,
 } from '@/lib/trading/afternoonDeskBrief'
+import { buildPeerTapeBrief } from '@/lib/trading/peerTapeBrief'
 import { fetchLevelHistoricalContext } from '@/lib/services/levelFinderAgent/historicalContext'
 import type { Candle } from '@/lib/services/levelFinderAgent/types'
 import type { Instrument } from '@/types/price-feed'
@@ -227,6 +228,15 @@ export async function runAutoLevelPrep(
       /* optional */
     }
 
+    // One NY twin glance (DOW↔NASDAQ) — CONFIRM/DIVERGE only; NIKKEI skips
+    let peerTapeText: string | undefined
+    try {
+      const peer = await buildPeerTapeBrief(instrument as DeskInstrument)
+      peerTapeText = peer?.promptText
+    } catch {
+      /* optional */
+    }
+
     const analysis = await agent.analyzePriceAction({
       session_id: sessionId,
       symbol: SYMBOL[instrument] || instrument,
@@ -238,6 +248,7 @@ export async function runAutoLevelPrep(
       llm_tier: 'live',
       analysis_mode: afternoonMode ? 'afternoon' : 'morning',
       afternoonBriefText: brief ? formatAfternoonDeskBriefForPrompt(brief) : undefined,
+      peerTapeText,
       historicalContext,
     })
 

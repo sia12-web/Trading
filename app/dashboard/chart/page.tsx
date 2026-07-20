@@ -8,6 +8,7 @@
  */
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { TradingChart } from './components/TradingChart'
 import { SessionBanner, type SessionGateState } from './components/SessionBanner'
@@ -27,6 +28,7 @@ import {
   setDeskInstrumentPreference,
   type DeskInstrumentPref,
 } from '@/lib/trading/deskInstrumentPreference'
+import { isAnyLiveFocusWindowActive } from '@/lib/trading/sessionGate'
 
 type Instrument = DeskInstrumentPref
 
@@ -38,6 +40,7 @@ interface PositionOverlay {
 }
 
 export default function ChartPage() {
+  const router = useRouter()
   // SSR/hydration always starts DOW — restore preference after mount (see effect below)
   const [instrument, setInstrumentState] = useState<Instrument>('DOW')
 
@@ -55,6 +58,18 @@ export default function ChartPage() {
   useEffect(() => {
     setInstrumentState(getDeskInstrumentPreference())
   }, [])
+
+  // Outside focus (−30m→close): send home — Live Trading is locked
+  useEffect(() => {
+    const check = () => {
+      if (!isAnyLiveFocusWindowActive()) {
+        router.replace('/dashboard')
+      }
+    }
+    check()
+    const id = window.setInterval(check, 15_000)
+    return () => window.clearInterval(id)
+  }, [router])
   const [livePrice, setLivePrice] = useState<number | null>(null)
   const [positionOverlay, setPositionOverlay] = useState<PositionOverlay | null>(null)
   const [managePos, setManagePos] = useState<ManagePosition | null>(null)
@@ -520,6 +535,14 @@ export default function ChartPage() {
   const inEntry = gate?.phase === 'ENTRY' && !!gate?.canPlaceEntry
   const canTrade = inEntry && !pending && !managePos && clockedIn
   const inWorking = !!pending && !managePos
+  // Playbook/levels only for the desk you clocked into — not on browse tabs after close
+  const deskLevelsActive =
+    !!gate &&
+    gate.phase !== 'CLOSED' &&
+    (clockedIn || attendedToday) &&
+    (!locked || locked === instrument) &&
+    (!gate.allowedInstruments || gate.allowedInstruments.includes(instrument))
+  const deskAttended = clockedIn || attendedToday
 
   return (
     <div className="flex h-screen overflow-hidden relative flex-col">
@@ -549,10 +572,10 @@ export default function ChartPage() {
                     : inManage
                       ? null
                       : gate?.phase === 'FLAT'
-                        ? 'Entry window closed'
-                        : gate?.phase === 'RECOMMENDED'
+                        ? 'Entry window closed — manage an open position if you have one'
+                        : gate?.phase === 'RECOMMENDED' || gate?.phase === 'PREP'
                           ? 'Pre-open · levels prep — entries at cash open'
-                          : 'Live morning desk'}
+                          : null}
             </span>
             <Link
               href="/dashboard/simulation"
@@ -687,6 +710,8 @@ export default function ChartPage() {
                 allowedInstruments={gate?.allowedInstruments ?? undefined}
                 onLevelSelect={handleLevelSelect}
                 canPlaceOrder={canTrade && dataMode === 'live'}
+                deskLevelsActive={deskLevelsActive}
+                deskAttended={deskAttended}
                 levelsRefreshKey={levelsRefreshKey}
               />
             )}

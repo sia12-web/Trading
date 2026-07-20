@@ -99,7 +99,9 @@ function expectPhase(
 
 // ── DOW + NASDAQ share ET clock ──────────────────────────────────────────────
 for (const inst of ['DOW', 'NASDAQ'] as const) {
-  expectPhase(inst, etDate(Y, M, D, 8, 0), { lunchFreeze: false, trade: false, chart: true, deskHours: false }, `${inst} 08:00 pre`)
+  // Tip only from focus −30m (09:00 ET) — not midnight / early morning
+  expectPhase(inst, etDate(Y, M, D, 8, 0), { lunchFreeze: false, trade: false, chart: false, deskHours: false }, `${inst} 08:00 pre-focus`)
+  expectPhase(inst, etDate(Y, M, D, 9, 0), { lunchFreeze: false, trade: false, chart: true, deskHours: false }, `${inst} 09:00 focus start`)
   expectPhase(inst, etDate(Y, M, D, 9, 20), { lunchFreeze: false, trade: false, chart: true, deskHours: true }, `${inst} 09:20 prep`)
   expectPhase(inst, etDate(Y, M, D, 9, 30), { lunchFreeze: false, trade: true, chart: true, deskHours: true }, `${inst} 09:30 open`)
   expectPhase(inst, etDate(Y, M, D, 10, 0), { lunchFreeze: false, trade: true, chart: true, deskHours: true }, `${inst} 10:00 entry`)
@@ -129,7 +131,8 @@ expectPhase(
 )
 
 // ── NIKKEI JST clock (independent of ET) ─────────────────────────────────────
-expectPhase('NIKKEI', jstDate(Y, M, D, 8, 0), { lunchFreeze: false, trade: false, chart: true, deskHours: false }, 'NIKKEI 08:00')
+expectPhase('NIKKEI', jstDate(Y, M, D, 8, 0), { lunchFreeze: false, trade: false, chart: false, deskHours: false }, 'NIKKEI 08:00 pre-focus')
+expectPhase('NIKKEI', jstDate(Y, M, D, 8, 30), { lunchFreeze: false, trade: false, chart: true, deskHours: false }, 'NIKKEI 08:30 focus start')
 expectPhase('NIKKEI', jstDate(Y, M, D, 8, 50), { lunchFreeze: false, trade: false, chart: true, deskHours: true }, 'NIKKEI 08:50 prep')
 expectPhase('NIKKEI', jstDate(Y, M, D, 9, 0), { lunchFreeze: false, trade: true, chart: true, deskHours: true }, 'NIKKEI 09:00 open')
 expectPhase('NIKKEI', jstDate(Y, M, D, 9, 30), { lunchFreeze: false, trade: true, chart: true, deskHours: true }, 'NIKKEI 09:30 entry')
@@ -147,8 +150,8 @@ expectPhase('NIKKEI', jstDate(Y, M, D, 22, 0), { lunchFreeze: false, trade: fals
   const sameUtc = etDate(Y, M, D, 14, 0)
   assert(isChartStreamAllowed('DOW', sameUtc).open === true, '14:00 ET DOW still printing')
   assert(isLiveBarsAllowed('DOW', sameUtc).open === false, '14:00 ET DOW not trading')
-  // 03:00 JST Thursday — before Tokyo open, chart open (pre-open continuum), trade off
-  assert(isChartStreamAllowed('NIKKEI', sameUtc).open === true, '03:00 JST NIKKEI chart pre-open ok')
+  // 03:00 JST Thursday — before Tokyo focus (08:30) — tip frozen
+  assert(isChartStreamAllowed('NIKKEI', sameUtc).open === false, '03:00 JST NIKKEI tip frozen')
   assert(isLiveBarsAllowed('NIKKEI', sameUtc).open === false, '03:00 JST NIKKEI not trading')
 }
 
