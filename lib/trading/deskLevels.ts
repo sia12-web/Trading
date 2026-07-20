@@ -836,6 +836,124 @@ export function resolveDeskLevels(
   return { levels: playbook.levels, source, playbook }
 }
 
+/** First-hour Initial Balance (cash open → +60m) as watch levels for afternoon. */
+export function initialBalanceLevelsFromCandles(
+  candles: DeskBar[],
+  openUnix: number,
+  ibMinutes = 60
+): DeskLevel[] {
+  if (!openUnix || candles.length === 0) return []
+  const end = openUnix + ibMinutes * 60
+  const ibBars = candles.filter((c) => c.time >= openUnix && c.time < end)
+  if (ibBars.length < 2) return []
+  let hi = -Infinity
+  let lo = Infinity
+  for (const c of ibBars) {
+    if (c.high > hi) hi = c.high
+    if (c.low < lo) lo = c.low
+  }
+  if (!(hi > lo) || !Number.isFinite(hi) || !Number.isFinite(lo)) return []
+  return [
+    {
+      level: Math.round(hi * 100) / 100,
+      type: 'resistance',
+      conviction: 8,
+      reasoning: `Initial Balance high (first ${ibMinutes}m) — afternoon watch for break/hold`,
+      source: 'structure',
+      rank: 'watch',
+    },
+    {
+      level: Math.round(lo * 100) / 100,
+      type: 'support',
+      conviction: 8,
+      reasoning: `Initial Balance low (first ${ibMinutes}m) — afternoon watch for break/hold`,
+      source: 'structure',
+      rank: 'watch',
+    },
+  ]
+}
+
+/** Map morning-review afternoon_levels (FLIP / RETEST) onto DeskLevel rows. */
+export function mapAfternoonCandidates(rows: unknown[]): DeskLevel[] {
+  if (!Array.isArray(rows)) return []
+  const out: DeskLevel[] = []
+  for (const raw of rows) {
+    const r = raw as Record<string, unknown>
+    const level = Number(r.level)
+    if (!(level > 0)) continue
+    const type = String(r.candidate_type || r.original_type || 'support')
+    const play = String(r.play || 'WATCH')
+    const note = String(r.note || '')
+    out.push({
+      level: Math.round(level * 100) / 100,
+      type,
+      conviction: play === 'FLIP' ? 9 : 8,
+      reasoning:
+        note ||
+        (play === 'FLIP'
+          ? 'Morning break — flipped for afternoon watch'
+          : 'Morning hold — retest candidate into cash close'),
+      source: 'ai',
+      rank: play === 'FLIP' ? 'primary' : 'watch',
+      marketVerdict: play === 'FLIP' ? 'broken' : 'respected',
+      marketOutcome: play === 'FLIP' ? 'broke' : 'held',
+    })
+  }
+  return out
+}
+
+function nearPrice(a: number, b: number, tolPct = 0.0008): boolean {
+  if (!(a > 0) || !(b > 0)) return false
+  return Math.abs(a - b) / b < tolPct
+}
+
+/**
+ * Afternoon watch playbook: morning reaction candidates + IB + refreshed AI,
+ * ranked for viewing only (no trading).
+ */
+export function resolveAfternoonDeskLevels(
+  aiRows: unknown[],
+  afternoonCandidates: unknown[],
+  candles: DeskBar[],
+  openUnix: number,
+  timeZone: string = 'America/New_York',
+  tipPrice: number | null = null
+): { levels: DeskLevel[]; source: 'ai' | 'structure'; playbook: DeskPlaybook } {
+  const fromReview = mapAfternoonCandidates(afternoonCandidates)
+  const ib = initialBalanceLevelsFromCandles(candles, openUnix)
+  const ai = mapAiLevels(aiRows)
+  const structure = structureLevelsFromCandles(candles, openUnix, timeZone)
+
+  const merged: DeskLevel[] = []
+  const pushUnique = (l: DeskLevel) => {
+    if (merged.some((m) => nearPrice(m.level, l.level))) return
+    merged.push(l)
+  }
+  for (const l of fromReview) pushUnique(l)
+  for (const l of ib) pushUnique(l)
+  for (const l of ai) pushUnique(l)
+  if (merged.length < 2) {
+    for (const l of structure) pushUnique(l)
+  }
+
+  const tip =
+    tipPrice && tipPrice > 0
+      ? tipPrice
+      : candles.length
+        ? candles[candles.length - 1]!.close
+        : null
+  const banded =
+    tip != null
+      ? merged.filter((l) => Math.abs(l.level - tip) / tip <= 0.02)
+      : merged
+  const raw = banded.length >= 2 ? banded : merged
+
+  const playbook = buildDeskPlaybook(raw, 'none')
+  const source: 'ai' | 'structure' =
+    fromReview.length > 0 || ai.length > 0 ? 'ai' : 'structure'
+  return { levels: playbook.levels, source, playbook }
+}
+
 /** Remove levels that still sit on a bait extreme after de-obviousing. */
 function dropResidualBait(
   levels: DeskLevel[],

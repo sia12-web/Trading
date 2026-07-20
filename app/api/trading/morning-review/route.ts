@@ -242,9 +242,9 @@ async function runMorningReview(request: NextRequest) {
         },
         afternoon_playbook: {
           enabled: true,
-          visible_on_live_chart: false,
+          visible_on_live_chart: true,
           note:
-            'Afternoon levels updated for memory. Live chart stays frozen at lunch — EOD journal at cash close grades the reaction.',
+            'Afternoon levels paint on the live chart as watch-only (FLIP/RETEST + IB). Trading stays morning-only until next session.',
           candidates: afternoonCandidates,
         },
       },

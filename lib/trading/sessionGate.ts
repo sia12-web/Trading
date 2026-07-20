@@ -338,6 +338,35 @@ export function isDeskHoursNow(
 }
 
 /**
+ * Paint AI/structure levels while the cash day chart is live
+ * (morning prep → cash close). Afternoon is watch-only; trading stays locked.
+ */
+export function isLevelPaintAllowed(
+  now: Date = new Date(),
+  instrument: string | null | undefined = 'DOW'
+): { open: boolean; reason: string } {
+  if (isDeskHoursNow(now, instrument).open) {
+    return { open: true, reason: 'Morning desk levels' }
+  }
+  const stream = isChartStreamAllowed(instrument, now)
+  if (stream.open) {
+    return { open: true, reason: 'Afternoon watch levels (read-only)' }
+  }
+  return { open: false, reason: stream.reason || 'Outside cash session' }
+}
+
+/** True after lunch while the chart still streams (afternoon watch window). */
+export function isAfternoonWatchWindow(
+  now: Date = new Date(),
+  instrument: string | null | undefined = 'DOW'
+): boolean {
+  return (
+    !isDeskHoursNow(now, instrument).open &&
+    isChartStreamAllowed(instrument, now).open
+  )
+}
+
+/**
  * LIVE desk phase from clock + position state.
  * Trading is morning-only; chart stream continues after lunch (not sim).
  */
@@ -463,7 +492,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       canPlaceEntry: false,
       canManagePosition: false,
       message: afterLunch
-        ? 'Morning trading closed at lunch. Chart continues until cash close (read-only); AI reviews levels in the background.'
+        ? 'Morning trading closed at lunch. Chart continues until cash close (read-only); afternoon levels are watch-only (AI + IB).'
         : t < analyze
           ? market === 'TOKYO'
             ? 'Pre-session. Tokyo desk opens 8:45 JST — clock in then to trade NIKKEI.'
@@ -561,7 +590,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     canPlaceEntry: false,
     canManagePosition: false,
     message:
-      'Morning trading closed at lunch. Chart continues until cash close (read-only); AI reviews levels in the background.',
+      'Morning trading closed at lunch. Chart continues until cash close (read-only); afternoon levels are watch-only (AI + IB).',
   })
 }
 

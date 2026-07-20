@@ -75,6 +75,7 @@ export default function ChartPage() {
     'idle' | 'placing' | 'working' | 'filled' | 'rejected'
   >('idle')
   const [levelsRefreshKey, setLevelsRefreshKey] = useState(0)
+  const afternoonLevelsLoadedRef = useRef(false)
   const [aiVerdict, setAiVerdict] = useState<AiVerdict | null>(null)
 
   const jumpToPriceRef = useRef<((price: number) => void) | null>(null)
@@ -431,6 +432,15 @@ export default function ChartPage() {
     // Expire DB working rows + lunch-flatten any leftover filled opens
     if (gate.phase === 'DONE' || gate.phase === 'CLOSED') {
       void expireWorkingLimits(true)
+    }
+    // Reload levels once after lunch so afternoon watch playbook paints
+    if (gate.phase === 'DONE') {
+      if (!afternoonLevelsLoadedRef.current) {
+        afternoonLevelsLoadedRef.current = true
+        setLevelsRefreshKey((k) => k + 1)
+      }
+    } else {
+      afternoonLevelsLoadedRef.current = false
     }
   }, [gate?.phase, gate?.lockedInstrument, pending, expireWorkingLimits, cancelWorkingLimit, instrument])
 

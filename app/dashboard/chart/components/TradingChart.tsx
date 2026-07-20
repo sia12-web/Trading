@@ -44,14 +44,15 @@ import {
   previewLevelOrderPrices,
   resolveChartLimitPick,
 } from '@/lib/trading/chartLevelPick'
-import { aiLevelsUrl, resolveDeskLevels } from '@/lib/trading/deskLevels'
+import { aiLevelsUrl, resolveDeskLevels, resolveAfternoonDeskLevels } from '@/lib/trading/deskLevels'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
 import { DESK_CHART_THEME } from '@/lib/chart/deskChartTheme'
 import {
-  isDeskHoursNow,
   isLiveBarsAllowed,
   isChartStreamAllowed,
+  isLevelPaintAllowed,
+  isAfternoonWatchWindow,
   sessionFor,
 } from '@/lib/trading/sessionGate'
 import {
@@ -555,11 +556,12 @@ export function TradingChart({
 
   // ── Load levels — SAME pipeline as the simulation desk (shared deskLevels) ───
   const loadLevels = useCallback(async (inst: Instrument, freshCandles?: OHLCV[]) => {
-    // Outside desk hours: keep whatever is already on the chart (manual Hide only clears view)
-    if (!isDeskHoursNow(new Date(), inst).open) {
+    // Outside cash-day chart window: keep whatever is already painted
+    if (!isLevelPaintAllowed(new Date(), inst).open) {
       return
     }
 
+    const afternoonWatch = isAfternoonWatchWindow(new Date(), inst)
     const byPrice = new Map<number, LevelLine>()
 
     let aiRows: unknown[] = []
@@ -573,7 +575,22 @@ export function TradingChart({
       /* AI history optional until Level Finder has run */
     }
 
-    // Structure fallback anchored at this market's cash open (yesterday range)
+    let afternoonCandidates: unknown[] = []
+    if (afternoonWatch) {
+      try {
+        const ap = await fetch(
+          `/api/trading/afternoon-playbook?instrument=${encodeURIComponent(inst)}`
+        )
+        if (ap.ok) {
+          const aj = await ap.json()
+          afternoonCandidates = Array.isArray(aj.candidates) ? aj.candidates : []
+        }
+      } catch {
+        /* optional until morning-review has run */
+      }
+    }
+
+    // Structure / IB anchored at this market's cash open (yesterday range)
     const sess = sessionFor(inst)
     const todayLocal = new Intl.DateTimeFormat('en-CA', {
       timeZone: sess.tz,
@@ -590,8 +607,23 @@ export function TradingChart({
       ...c,
       time: c.time as number,
     }))
-    // Live morning: no overnight sim bias here — rank by conviction only (BOTH focus)
-    const resolved = resolveDeskLevels(aiRows, barsForFallback, openUnix, sess.tz, 'none')
+    const tip =
+      lastCandleRef.current?.close ??
+      (barsForFallback.length
+        ? barsForFallback[barsForFallback.length - 1]!.close
+        : null)
+
+    // Live morning: conviction rank. Afternoon: reaction + IB watch playbook.
+    const resolved = afternoonWatch
+      ? resolveAfternoonDeskLevels(
+          aiRows,
+          afternoonCandidates,
+          barsForFallback,
+          openUnix,
+          sess.tz,
+          tip
+        )
+      : resolveDeskLevels(aiRows, barsForFallback, openUnix, sess.tz, 'none')
 
     for (const l of resolved.levels) {
       const isRes = String(l.type).toLowerCase().includes('resist')
@@ -600,6 +632,7 @@ export function TradingChart({
       const starLabel = `${'★'.repeat(stars)}${'☆'.repeat(5 - stars)}`
       const rank = l.rank === 'watch' ? 'WATCH' : 'PRIMARY'
       const status = reactionStatus(l.marketVerdict, l.marketOutcome)
+      const watchTag = afternoonWatch ? 'PM · ' : ''
       byPrice.set(l.level, {
         price: l.level,
         type: isRes ? 'resistance' : 'support',
@@ -611,7 +644,7 @@ export function TradingChart({
         marketOutcome: l.marketOutcome,
         testedCount: l.testedCount,
         successCount: l.successCount,
-        label: `${rank} ${side} ${starLabel} · ${l.level.toLocaleString()}`,
+        label: `${watchTag}${rank} ${side} ${starLabel} · ${l.level.toLocaleString()}`,
       })
     }
 
@@ -640,12 +673,17 @@ export function TradingChart({
 
   // Grade market reaction into level_history, then reload playbook (no LLM).
   const gradeLevels = useCallback(async (inst: Instrument) => {
-    if (!isDeskHoursNow(new Date(), inst).open) return
+    if (!isLevelPaintAllowed(new Date(), inst).open) return
     try {
       await fetch('/api/levels/respond', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instrument: inst, trigger: 'cadence' }),
+        body: JSON.stringify({
+          instrument: inst,
+          trigger: isAfternoonWatchWindow(new Date(), inst)
+            ? 'afternoon'
+            : 'cadence',
+        }),
       })
     } catch {
       /* non-fatal — still try to paint last known verdicts */
@@ -2012,15 +2050,19 @@ export function TradingChart({
           levels.some((l) => l.source === 'ai' || l.source === 'structure') && (
           <button
             type="button"
-            title="Show morning playbook panel"
+            title={
+              canPlaceOrder
+                ? 'Show morning playbook panel'
+                : 'Show afternoon watch playbook (read-only)'
+            }
             onClick={() => setPlaybookOpen(true)}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg bg-transparent border-surface-600 text-gray-500 hover:text-gray-300"
           >
-            Playbook
+            {canPlaceOrder ? 'Playbook' : 'PM watch'}
           </button>
         )}
 
-        {!positionOverlay && !pendingLimit && onLevelSelect && (
+        {canPlaceOrder && !positionOverlay && !pendingLimit && onLevelSelect && (
           <button
             type="button"
             title="Manual limit at last price — 1% account risk, size adjusts to your stop"
@@ -2038,12 +2080,20 @@ export function TradingChart({
             Place limit
           </button>
         )}
-        {!positionOverlay && !pendingLimit && onLevelSelect && (
+        {canPlaceOrder && !positionOverlay && !pendingLimit && onLevelSelect && (
           <span
             className="hidden text-[10px] text-gray-500 sm:inline"
             title="Double-click chart · or use playbook / Place limit"
           >
             Double-click chart
+          </span>
+        )}
+        {!canPlaceOrder && !positionOverlay && !pendingLimit && (
+          <span
+            className="rounded-lg border border-surface-600 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500"
+            title="Morning trading closed — afternoon levels are watch-only"
+          >
+            Watch only
           </span>
         )}
 
@@ -2209,23 +2259,28 @@ export function TradingChart({
           Reset scale
         </button>
 
-        {/* Morning playbook — close only hides this panel, not chart levels */}
+        {/* Playbook — morning trade or afternoon watch (read-only) */}
         {playbookOpen &&
           levels.some((l) => l.source === 'ai' || l.source === 'structure') && (
           <DraggableDeskWidget
             storageKey="desk-playbook-live"
             defaultPos={{ x: 24, y: 88 }}
-            title="Morning playbook"
+            title={canPlaceOrder ? 'Morning playbook' : 'Afternoon watch'}
             onClose={() => setPlaybookOpen(false)}
           >
             <div className="space-y-1.5 p-2">
+              {!canPlaceOrder && (
+                <p className="px-1 pb-1 text-[10px] leading-snug text-gray-500">
+                  Morning reaction + Initial Balance — watch only, no new orders.
+                </p>
+              )}
               {levels
                 .filter((l) => l.source === 'ai' || l.source === 'structure')
                 .slice(0, 4)
                 .map((l, i) => {
                   const isRes = l.type === 'resistance'
                   const stars = Math.max(1, Math.min(5, Math.round((l.conviction || 5) / 2)))
-                  const isPrimary = (l.label || '').startsWith('PRIMARY')
+                  const isPrimary = (l.label || '').includes('PRIMARY')
                   const reaction = reactionLabel(l)
                   const why =
                     (l.reasoning && l.reasoning.trim()) ||
@@ -2236,6 +2291,8 @@ export function TradingChart({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation()
+                        jumpToPriceRef?.current?.(l.price)
+                        if (!canPlaceOrder) return
                         onLevelSelect?.(l.price, {
                           type: String(l.type),
                           reasoning: l.reasoning || why,
@@ -2247,7 +2304,11 @@ export function TradingChart({
                           ? 'border-red-800/80 bg-[#2a1518] text-red-200'
                           : 'border-emerald-800/80 bg-[#12241c] text-emerald-200'
                       } ${isPrimary ? 'ring-1 ring-white/25' : 'opacity-90'}`}
-                      title={why}
+                      title={
+                        canPlaceOrder
+                          ? why
+                          : `${why} · watch only (click to focus price)`
+                      }
                     >
                       <div className="flex items-center justify-between gap-1">
                         <span className="text-[9px] font-bold uppercase tracking-wide">
