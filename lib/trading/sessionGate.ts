@@ -472,9 +472,20 @@ export function liveFocusMarket(now: Date = new Date()): DeskMarket {
 }
 
 /**
+ * True while either NY or Tokyo cash-day focus window is open
+ * (cash open − 30m → cash close). Outside this = between sessions.
+ */
+export function isAnyLiveFocusWindowActive(now: Date = new Date()): boolean {
+  return (
+    isLiveFocusWindowActive('DOW', now) || isLiveFocusWindowActive('NIKKEI', now)
+  )
+}
+
+/**
  * Instruments shown on the LIVE chart for the current session.
- * Focus market only (NY hides NIKKEI; Tokyo hides DOW/NASDAQ).
- * When a day lock exists (recommendation / clock-in / open fill), only that name.
+ * Focus market only while a cash day is live (NY hides NIKKEI; Tokyo hides DOW/NASDAQ).
+ * When a day lock exists, only that name.
+ * After cash close / between sessions → all three (normal browse state).
  * Simulation must not use this.
  */
 export function liveVisibleInstruments(
@@ -485,6 +496,11 @@ export function liveVisibleInstruments(
     attendedToday?: boolean
   }
 ): DeskInstrument[] {
+  // Session over / weekend gap — back to normal (all desks visible)
+  if (!isAnyLiveFocusWindowActive(now)) {
+    return [...DESK_INSTRUMENTS]
+  }
+
   const market = liveFocusMarket(now)
   const sessionList = instrumentsForDeskMarket(market)
   const locked =
@@ -515,6 +531,9 @@ export function shouldRunLiveAiForInstrument(
   if (!isDeskInstrument(instrument)) {
     return { ok: false, reason: 'Unknown instrument' }
   }
+  if (!isAnyLiveFocusWindowActive(now)) {
+    return { ok: false, reason: 'Between sessions — no live AI' }
+  }
   const focus = liveFocusMarket(now)
   if (deskMarketFor(instrument) !== focus) {
     return { ok: false, reason: `Live focus is ${focus} — skip ${instrument}` }
@@ -538,19 +557,22 @@ export function shouldRunLiveAiForInstrument(
 export function resolveSessionGate(input: SessionGateInput = {}): SessionGateResult {
   const now = input.now ?? new Date()
   const focusMarket = liveFocusMarket(now)
+  const focusLive = isAnyLiveFocusWindowActive(now)
   const lockedRaw = isDeskInstrument(input.lockedInstrument) ? input.lockedInstrument : null
-  // Never lock to an off-session name (e.g. NY rec while Tokyo cash day is live)
+  // Lock + focus tabs only while a cash-day focus window is open; after close → browse all
   const locked =
-    lockedRaw && deskMarketFor(lockedRaw) === focusMarket ? lockedRaw : null
+    focusLive && lockedRaw && deskMarketFor(lockedRaw) === focusMarket
+      ? lockedRaw
+      : null
   const viewingRaw = isDeskInstrument(input.viewingInstrument)
     ? input.viewingInstrument
     : locked
   const viewing =
-    viewingRaw && deskMarketFor(viewingRaw) === focusMarket
+    focusLive && viewingRaw && deskMarketFor(viewingRaw) === focusMarket
       ? viewingRaw
-      : locked ?? instrumentsForDeskMarket(focusMarket)[0]!
-  const market = focusMarket
-  const s = sessionFor(viewing ?? locked ?? instrumentsForDeskMarket(focusMarket)[0]!)
+      : locked ?? (focusLive ? instrumentsForDeskMarket(focusMarket)[0]! : viewingRaw ?? 'DOW')
+  const market = focusLive ? focusMarket : deskMarketFor(viewing ?? 'DOW')
+  const s = sessionFor(viewing ?? locked ?? (focusLive ? instrumentsForDeskMarket(focusMarket)[0]! : 'DOW'))
 
   const timeLocal = timeInTz(now, s.tz)
   const timeEst = getESTTimeString(now) // keep EST label for NY-centric UI banner
@@ -590,11 +612,13 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   const base = {
     timeEst: market === 'NY' ? timeEst : timeLocal,
     lockedInstrument: locked,
-    allowedInstruments: liveVisibleInstruments(now, {
-      lockedInstrument: locked,
-      clockedIn,
-      attendedToday,
-    }),
+    allowedInstruments: focusLive
+      ? liveVisibleInstruments(now, {
+          lockedInstrument: locked,
+          clockedIn,
+          attendedToday,
+        })
+      : [...DESK_INSTRUMENTS],
     entryWindow: entryWindow as 1 | 2 | 3 | null,
     market,
     canFetchLiveBars: bars.open && !!locked && (!viewing || viewing === locked),

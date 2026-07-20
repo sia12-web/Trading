@@ -280,7 +280,10 @@ export function SessionBanner({
         >
           {clocking ? 'Clocking in…' : 'Today I trade'}
         </button>
-      ) : gate.attendedToday ? (
+      ) : gate.attendedToday &&
+        !gate.canClockIn &&
+        // Afternoon watch only — hide once cash close clears the day lock / focus
+        !!gate.lockedInstrument ? (
         <span className="rounded bg-gray-500/30 px-2 py-0.5 text-gray-300 font-semibold">
           CLOCKED OUT
         </span>

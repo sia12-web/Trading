@@ -66,11 +66,32 @@ test('NY afternoon stream: still NY focus — NIKKEI hidden', () => {
   assert(!liveVisibleInstruments(now).includes('NIKKEI'), 'no NIKKEI PM')
 })
 
-test('After NY close before Tokyo−30m: sticky NY — still no NIKKEI', () => {
-  // 17:00 ET Jul 15 = 06:00 JST Jul 16 — Tokyo focus starts 08:30 JST
+test('After NY cash close: all three instruments visible again (normal state)', () => {
+  // 16:30 ET — past NY cash close 16:00, before Tokyo focus 08:30 JST
+  const now = etDate(Y, M, D, 16, 30)
+  const vis = liveVisibleInstruments(now, {
+    lockedInstrument: 'DOW',
+    clockedIn: false,
+    attendedToday: true,
+  })
+  assert(vis.includes('DOW') && vis.includes('NASDAQ') && vis.includes('NIKKEI'), `all three got ${vis}`)
+  const gate = resolveSessionGate({
+    now,
+    lockedInstrument: 'DOW',
+    viewingInstrument: 'DOW',
+    clockedIn: false,
+    attendedToday: true,
+    attemptsUsed: 1,
+    stopLossHitCount: 0,
+  })
+  assert(gate.lockedInstrument === null, 'lock cleared after cash close')
+  assert(gate.allowedInstruments.length === 3, 'gate allows all three')
+})
+
+test('After NY close before Tokyo−30m: focus sticky NY but tabs browse all', () => {
   const now = etDate(Y, M, D, 17, 0)
   assert(liveFocusMarket(now) === 'NY', 'sticky NY after close')
-  assert(!liveVisibleInstruments(now).includes('NIKKEI'), 'NIKKEI still hidden')
+  assert(liveVisibleInstruments(now).length === 3, 'browse all between sessions')
 })
 
 test('NIKKEI becomes visible 30m before Tokyo open (08:30 JST)', () => {
