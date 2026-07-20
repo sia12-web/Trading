@@ -13,6 +13,8 @@ import {
 } from '@/lib/trading/sessionGate'
 import { shouldExecuteOandaOrders } from '@/lib/oanda/config'
 import { closeOandaTrade } from '@/lib/oanda/orders'
+import { getOandaPrice } from '@/lib/oanda/pricing'
+import type { Instrument } from '@/types/price-feed'
 import { logger } from '@/lib/utils/logger'
 
 function localNowSeconds(tz: string): number {
@@ -54,7 +56,7 @@ export async function cleanupDeskSession(
   const { data: openRows } = await supabase
     .from('trades_journal')
     .select(
-      'id, instrument, fill_status, entry_price, entry_direction, position_size, oanda_trade_id, stop_loss_price'
+      'id, instrument, fill_status, entry_price, entry_direction, position_size, oanda_trade_id, stop_loss_price, profit_target_price'
     )
     .eq('user_id', userId)
     .eq('trade_date', today)
@@ -95,36 +97,81 @@ export async function cleanupDeskSession(
 
     // Filled open past lunch → flatten so Positions clears
     if ((row.fill_status === 'filled' || !row.fill_status) && pastLunch) {
-      let exitPrice = Number(row.entry_price)
+      const entry = Number(row.entry_price)
+      const size = Number(row.position_size)
+      const dir = String(row.entry_direction || '').toUpperCase()
+      let exitPrice: number | null = null
+      let priceSource = 'none'
+
       if (shouldExecuteOandaOrders() && row.oanda_trade_id) {
         const closed = await closeOandaTrade(String(row.oanda_trade_id))
         if (closed.ok && closed.fillPrice != null && closed.fillPrice > 0) {
           exitPrice = closed.fillPrice
+          priceSource = 'oanda_fill'
         }
       }
-      const entry = Number(row.entry_price)
-      const size = Number(row.position_size)
-      const dir = String(row.entry_direction || '').toUpperCase()
+
+      if (exitPrice == null) {
+        const quote = await getOandaPrice(inst as Instrument)
+        if (quote?.price && quote.price > 0) {
+          exitPrice = quote.price
+          priceSource = 'oanda_mid'
+        }
+      }
+
+      if (exitPrice == null || !(exitPrice > 0)) {
+        logger.error('cleanup.lunch_close_no_price', {
+          id: row.id,
+          entry,
+          oanda_trade_id: row.oanda_trade_id,
+        })
+        continue
+      }
+
+      // If broker already closed at/near TP, label as take_profit not lunch_close
+      const tp = Number(row.profit_target_price)
+      const nearTp =
+        Number.isFinite(tp) &&
+        tp > 0 &&
+        Math.abs(exitPrice - tp) / tp < 0.0005
+      const exitReason = nearTp ? 'take_profit' : 'lunch_close'
       const pnl =
         dir === 'LONG' ? (exitPrice - entry) * size : (entry - exitPrice) * size
-      const pnlPct = entry ? (pnl / (entry * size)) * 100 : 0
+      const pnlRounded = Math.round(pnl * 100) / 100
+      const accountValueAtEntry = entry * size
+      const pnlPct =
+        accountValueAtEntry > 0
+          ? Math.round((pnlRounded / accountValueAtEntry) * 10000) / 100
+          : 0
 
       const { error } = await supabase
         .from('trades_journal')
         .update({
           exit_timestamp: nowIso,
           exit_price: exitPrice,
-          exit_reason: 'lunch_close',
-          profit_loss: pnl,
+          exit_reason: exitReason,
+          profit_loss: pnlRounded,
           profit_loss_percent: pnlPct,
-          exit_notes: 'Auto lunch flatten — morning session ended',
+          exit_notes:
+            exitReason === 'take_profit'
+              ? `Take profit fill @ ${exitPrice} (source ${priceSource})`
+              : `Auto lunch flatten @ ${exitPrice} (source ${priceSource})`,
           updated_at: nowIso,
         })
         .eq('id', row.id)
         .eq('user_id', userId)
         .is('exit_timestamp', null)
-      if (!error) lunchClosed.push(row.id)
-      else logger.error('cleanup.lunch_close_failed', { id: row.id, error })
+      if (!error) {
+        lunchClosed.push(row.id)
+        logger.info('cleanup.lunch_close', {
+          id: row.id,
+          entry,
+          exitPrice,
+          priceSource,
+          exitReason,
+          pnl: pnlRounded,
+        })
+      } else logger.error('cleanup.lunch_close_failed', { id: row.id, error })
     }
   }
 

@@ -306,23 +306,34 @@ export async function closeOandaTrade(tradeId: string): Promise<CloseTradeResult
   }
 
   if (!res.ok) {
-    // Already closed is OK for idempotent desk close
+    // Already closed is OK for idempotent desk close — still recover fill price
     const msg = String(json?.errorMessage || text || '')
     if (/does not exist|already|CLOSED/i.test(msg)) {
-      logger.warn('oanda.trade_already_closed', { tradeId, msg })
-      return { ok: true, tradeId, fillPrice: null, raw: json }
+      const recovered = await fetchOandaTradeClosePrice(tradeId)
+      logger.warn('oanda.trade_already_closed', {
+        tradeId,
+        msg,
+        recoveredFill: recovered,
+      })
+      return { ok: true, tradeId, fillPrice: recovered, raw: json }
     }
     logger.error('oanda.trade_close_failed', { status: res.status, msg, tradeId })
     return { ok: false, error: msg || `HTTP ${res.status}`, status: res.status, raw: json }
   }
 
-  const fillPrice = Number(
-    json?.orderFillTransaction?.price || json?.longOrderFillTransaction?.price || 0
+  let fillPrice = Number(
+    json?.orderFillTransaction?.price ||
+      json?.longOrderFillTransaction?.price ||
+      json?.shortOrderFillTransaction?.price ||
+      0
   )
+  if (!(fillPrice > 0)) {
+    fillPrice = (await fetchOandaTradeClosePrice(tradeId)) || 0
+  }
 
   logger.info('oanda.trade_closed', {
     tradeId,
-    fillPrice: Number.isFinite(fillPrice) ? fillPrice : null,
+    fillPrice: Number.isFinite(fillPrice) && fillPrice > 0 ? fillPrice : null,
   })
 
   return {
@@ -330,6 +341,22 @@ export async function closeOandaTrade(tradeId: string): Promise<CloseTradeResult
     tradeId,
     fillPrice: Number.isFinite(fillPrice) && fillPrice > 0 ? fillPrice : null,
     raw: json,
+  }
+}
+
+/** Read averageClosePrice for a trade that is already CLOSED. */
+async function fetchOandaTradeClosePrice(tradeId: string): Promise<number | null> {
+  try {
+    const accountId = oandaAccountId()
+    const res = await oandaFetch(`/v3/accounts/${accountId}/trades/${tradeId}`)
+    if (!res.ok) return null
+    const json = await res.json()
+    const trade = json?.trade
+    const avg = Number(trade?.averageClosePrice || trade?.price || 0)
+    if (avg > 0) return avg
+    return null
+  } catch {
+    return null
   }
 }
 
