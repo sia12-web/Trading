@@ -154,13 +154,57 @@ export function isSessionTradingDay(
   return dow !== 0 && dow !== 6
 }
 
+/** Reuse Intl formatters — constructing one per bar freezes the chart (~3k bars). */
+const hourFmtCache = new Map<string, Intl.DateTimeFormat>()
+const dayFmtCache = new Map<string, Intl.DateTimeFormat>()
+const weekdayFmtCache = new Map<string, Intl.DateTimeFormat>()
+/** Memo: `${ymd}|${decimalHour}|${tz}` → unix */
+const zonedCivilCache = new Map<string, number>()
+/** Memo: `${ymd}|${tz}` → weekday */
+const weekdayYmdCache = new Map<string, boolean>()
+
+function hourFormatter(timeZone: string): Intl.DateTimeFormat {
+  let fmt = hourFmtCache.get(timeZone)
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+    hourFmtCache.set(timeZone, fmt)
+  }
+  return fmt
+}
+
+function dayFormatter(timeZone: string): Intl.DateTimeFormat {
+  let fmt = dayFmtCache.get(timeZone)
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+    dayFmtCache.set(timeZone, fmt)
+  }
+  return fmt
+}
+
+function weekdayFormatter(timeZone: string): Intl.DateTimeFormat {
+  let fmt = weekdayFmtCache.get(timeZone)
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      weekday: 'short',
+    })
+    weekdayFmtCache.set(timeZone, fmt)
+  }
+  return fmt
+}
+
 export function hourInTz(unix: number, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(new Date(unix * 1000))
+  const parts = hourFormatter(timeZone).formatToParts(new Date(unix * 1000))
   let hour = parseInt(parts.find((p) => p.type === 'hour')?.value ?? '0', 10)
   const minute = parseInt(parts.find((p) => p.type === 'minute')?.value ?? '0', 10)
   if (hour === 24) hour = 0
@@ -649,12 +693,7 @@ export const AVWAP_LOOKBACK_TRADING_DAYS = 5
 export const AVWAP_CANDLE_FETCH_CALENDAR_DAYS = AVWAP_LOOKBACK_TRADING_DAYS + 7 // 12
 
 function dayKeyInTz(unix: number, timeZone: string): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date(unix * 1000))
+  return dayFormatter(timeZone).format(new Date(unix * 1000))
 }
 
 function addCalendarDaysYmd(ymd: string, delta: number): string {
@@ -665,12 +704,14 @@ function addCalendarDaysYmd(ymd: string, delta: number): string {
 
 /** Weekday in the desk TZ for a civil YYYY-MM-DD date. */
 export function isWeekdayYmd(ymd: string, timeZone: string): boolean {
+  const cacheKey = `${ymd}|${timeZone}`
+  const hit = weekdayYmdCache.get(cacheKey)
+  if (hit != null) return hit
   const noon = zonedCivilToUnix(ymd, 12, timeZone)
-  const dow = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    weekday: 'short',
-  }).format(new Date(noon * 1000))
-  return dow !== 'Sat' && dow !== 'Sun'
+  const dow = weekdayFormatter(timeZone).format(new Date(noon * 1000))
+  const ok = dow !== 'Sat' && dow !== 'Sun'
+  weekdayYmdCache.set(cacheKey, ok)
+  return ok
 }
 
 /** Cash-open unix for a civil date in the desk clock (TZ-correct for ET and JST). */
@@ -688,6 +729,10 @@ export function zonedCivilToUnix(
   decimalHour: number,
   timeZone: string
 ): number {
+  const cacheKey = `${ymd}|${decimalHour}|${timeZone}`
+  const cached = zonedCivilCache.get(cacheKey)
+  if (cached != null) return cached
+
   const [y, m, d] = ymd.split('-').map(Number)
   if (!y || !m || !d) return 0
   const targetMin = Math.round(decimalHour * 60)
@@ -702,6 +747,7 @@ export function zonedCivilToUnix(
     if (key < ymd || (key === ymd && mins < targetMin)) lo = mid
     else hi = mid
   }
+  zonedCivilCache.set(cacheKey, hi)
   return hi
 }
 
@@ -757,12 +803,23 @@ export function lastNTradingSessions(
 
   // Days with at least one bar inside cash open → cash close (desk RTH)
   const rthDays = new Set<string>()
+  const dayBounds = new Map<string, { openU: number; closeU: number } | null>()
   for (const c of candles) {
     const day = dayKeyInTz(c.time, clock.timeZone)
-    if (!isWeekdayYmd(day, clock.timeZone)) continue
-    const openU = cashOpenUnixForYmd(day, clock)
-    const closeU = zonedCivilToUnix(day, clock.overnightStartHour, clock.timeZone)
-    if (c.time >= openU && c.time < closeU) rthDays.add(day)
+    let bounds = dayBounds.get(day)
+    if (bounds === undefined) {
+      if (!isWeekdayYmd(day, clock.timeZone)) {
+        dayBounds.set(day, null)
+        continue
+      }
+      bounds = {
+        openU: cashOpenUnixForYmd(day, clock),
+        closeU: zonedCivilToUnix(day, clock.overnightStartHour, clock.timeZone),
+      }
+      dayBounds.set(day, bounds)
+    }
+    if (!bounds) continue
+    if (c.time >= bounds.openU && c.time < bounds.closeU) rthDays.add(day)
   }
 
   let startDay: string
@@ -804,13 +861,24 @@ export function computeAnchoredVwap(
 
   // First bar inside cash session (open → close) defines the anchor day.
   let anchorUnix: number | null = null
+  const dayBounds = new Map<string, { openU: number; closeU: number } | null>()
   for (const c of candles) {
     const day = dayKeyInTz(c.time, clock.timeZone)
-    if (!isWeekdayYmd(day, clock.timeZone)) continue
-    const openU = cashOpenUnixForYmd(day, clock)
-    const closeU = zonedCivilToUnix(day, clock.overnightStartHour, clock.timeZone)
-    if (c.time >= openU && c.time < closeU) {
-      anchorUnix = openU
+    let bounds = dayBounds.get(day)
+    if (bounds === undefined) {
+      if (!isWeekdayYmd(day, clock.timeZone)) {
+        dayBounds.set(day, null)
+        continue
+      }
+      bounds = {
+        openU: cashOpenUnixForYmd(day, clock),
+        closeU: zonedCivilToUnix(day, clock.overnightStartHour, clock.timeZone),
+      }
+      dayBounds.set(day, bounds)
+    }
+    if (!bounds) continue
+    if (c.time >= bounds.openU && c.time < bounds.closeU) {
+      anchorUnix = bounds.openU
       break
     }
   }
