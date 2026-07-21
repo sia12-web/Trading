@@ -1967,7 +1967,11 @@ export function TradingChart({
 
     const fmt = (n: number) =>
       n.toLocaleString('en-US', { maximumFractionDigits: 0 })
-    const tag = canPlaceOrder ? 'HOVER' : 'WATCH'
+    const tag = canPlaceOrder
+      ? 'HOVER'
+      : isAfternoonWatchWindow(new Date(), instrument)
+        ? 'WATCH'
+        : 'PREP'
 
     const onMove = (e: MouseEvent) => {
       if (!candleRef.current || !priceLineHostRef.current) return
@@ -2208,10 +2212,20 @@ export function TradingChart({
   const isUp = priceChange >= 0
   /** Levels / Watch only / playbook — only while NY or Tokyo cash day is live (post-mount) */
   const tokyoDesk = instrument === 'NIKKEI'
+  // Watch-only is afternoon only — morning prep/entry must never look like PM watch
+  void focusTick
+  const afternoonWatch =
+    clockReady && isAfternoonWatchWindow(new Date(), instrument)
   const watchPlaybookTitle = tokyoDesk ? 'Tokyo watch' : 'Afternoon watch'
   const watchPlaybookHint = tokyoDesk
     ? 'Tokyo morning reaction + Initial Balance — watch only, no new orders.'
     : 'Morning reaction + Initial Balance — watch only, no new orders.'
+  const playbookButtonLabel = afternoonWatch
+    ? tokyoDesk
+      ? 'Tokyo watch'
+      : 'PM watch'
+    : 'Playbook'
+  const playbookPanelTitle = afternoonWatch ? watchPlaybookTitle : 'Morning playbook'
 
   return (
     <div className="flex flex-col h-full gap-2">
@@ -2270,16 +2284,18 @@ export function TradingChart({
           <button
             type="button"
             title={
-              canPlaceOrder
-                ? 'Show morning playbook panel'
-                : tokyoDesk
+              afternoonWatch
+                ? tokyoDesk
                   ? 'Show Tokyo watch playbook (read-only)'
                   : 'Show afternoon watch playbook (read-only)'
+                : canPlaceOrder
+                  ? 'Show morning playbook panel'
+                  : 'Show morning playbook — entries at cash open'
             }
             onClick={() => setPlaybookOpen(true)}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg bg-transparent border-surface-600 text-gray-500 hover:text-gray-300"
           >
-            {canPlaceOrder ? 'Playbook' : tokyoDesk ? 'Tokyo watch' : 'PM watch'}
+            {playbookButtonLabel}
           </button>
         )}
 
@@ -2311,6 +2327,7 @@ export function TradingChart({
         )}
         {deskSessionLive &&
           deskLevelsActive &&
+          afternoonWatch &&
           !canPlaceOrder &&
           !positionOverlay &&
           !pendingLimit && (
@@ -2546,13 +2563,18 @@ export function TradingChart({
           <DraggableDeskWidget
             storageKey="desk-playbook-live"
             defaultPos={{ x: 24, y: 88 }}
-            title={canPlaceOrder ? 'Morning playbook' : watchPlaybookTitle}
+            title={playbookPanelTitle}
             onClose={() => setPlaybookOpen(false)}
           >
             <div className="space-y-1.5 p-2">
-              {!canPlaceOrder && (
+              {afternoonWatch && (
                 <p className="px-1 pb-1 text-[10px] leading-snug text-gray-500">
                   {watchPlaybookHint}
+                </p>
+              )}
+              {!afternoonWatch && !canPlaceOrder && (
+                <p className="px-1 pb-1 text-[10px] leading-snug text-gray-500">
+                  Morning prep — review levels now; place limits at cash open.
                 </p>
               )}
               {levels
@@ -2588,7 +2610,9 @@ export function TradingChart({
                       title={
                         canPlaceOrder
                           ? why
-                          : `${why} · watch only (click to focus price)`
+                          : afternoonWatch
+                            ? `${why} · watch only (click to focus price)`
+                            : `${why} · prep (click to focus price; entries at cash open)`
                       }
                     >
                       <div className="flex items-center justify-between gap-1">

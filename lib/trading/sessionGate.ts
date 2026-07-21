@@ -52,7 +52,7 @@ export interface MarketSessionTimes {
 
 export const NY_SESSION: MarketSessionTimes = {
   tz: 'America/New_York',
-  analyzeStart: '09:15:00',
+  analyzeStart: '09:00:00',
   marketOpen: '09:30:00',
   entryClose: '10:15:00',
   lunchClose: '11:30:00',
@@ -62,7 +62,7 @@ export const NY_SESSION: MarketSessionTimes = {
 /** TSE morning cash session; afternoon chart continues to 15:00 (trading stays morning-only). */
 export const TOKYO_SESSION: MarketSessionTimes = {
   tz: 'Asia/Tokyo',
-  analyzeStart: '08:45:00',
+  analyzeStart: '08:30:00',
   marketOpen: '09:00:00',
   entryClose: '09:45:00',
   lunchClose: '11:30:00',
@@ -836,12 +836,15 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     return finish({
       ...base,
       phase: 'RECOMMENDED',
-      canViewLiveChart: false, // bars start at open
+      canViewLiveChart: clockedIn, // prep chart once clocked in; bars still start at open
       canFetchLiveBars: false,
       canPlaceEntry: false,
       canManagePosition: false,
-      message:
-        market === 'TOKYO'
+      message: clockedIn
+        ? market === 'TOKYO'
+          ? `Clocked in on ${locked}. Pre-open prep — entries ${s.marketOpen.slice(0, 5)}–${s.entryClose.slice(0, 5)} JST.`
+          : `Clocked in on ${locked}. Pre-open prep — entries ${s.marketOpen.slice(0, 5)}–${s.entryClose.slice(0, 5)} ET.`
+        : market === 'TOKYO'
           ? `Trade ${locked} today. Clock in to unlock the live desk (${s.marketOpen.slice(0, 5)}–${s.lunchClose.slice(0, 5)} JST).`
           : `Trade ${locked} today. Clock in to unlock the live desk (${s.marketOpen.slice(0, 5)}–${s.lunchClose.slice(0, 5)} ET).`,
     })
