@@ -68,8 +68,17 @@ async function hmacVerify(secret: string, message: string, sigB64: string): Prom
   try {
     const key = await importHmacKey(secret)
     const sig = b64urlDecode(sigB64)
-    const sigBuf = new Uint8Array(sig).buffer
-    return crypto.subtle.verify('HMAC', key, sigBuf, new TextEncoder().encode(message))
+    // Copy into a real ArrayBuffer — Node/Edge reject SharedArrayBuffer / offset views
+    const sigAb = sig.buffer.slice(
+      sig.byteOffset,
+      sig.byteOffset + sig.byteLength
+    ) as ArrayBuffer
+    return await crypto.subtle.verify(
+      'HMAC',
+      key,
+      sigAb,
+      new TextEncoder().encode(message)
+    )
   } catch {
     return false
   }

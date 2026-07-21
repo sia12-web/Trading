@@ -503,23 +503,30 @@ export function LiveVoicePanel({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <span
-              className={`text-[10px] font-bold uppercase tracking-wider ${
+              className={`text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 ${
                 enabled ? 'text-violet-200' : 'text-gray-500'
               }`}
             >
-              Live Voice
+              {enabled && (
+                <span className={`h-2 w-2 rounded-full ${
+                  voicePhase === 'listening' ? 'bg-red-500 animate-ping' :
+                  voicePhase === 'thinking' ? 'bg-amber-500 animate-pulse' :
+                  voicePhase === 'speaking' ? 'bg-sky-500 animate-bounce' : 'bg-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.8)]'
+                }`} />
+              )}
+              Leo (Desk Partner)
             </span>
             <span
-              className={`rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase ${
+              className={`rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${
                 voicePhase === 'listening'
-                  ? 'bg-red-500/25 text-red-200'
+                  ? 'bg-red-500/25 text-red-200 border border-red-500/30'
                   : voicePhase === 'thinking'
-                    ? 'bg-amber-500/25 text-amber-100'
+                    ? 'bg-amber-500/25 text-amber-100 border border-amber-500/30'
                     : voicePhase === 'speaking'
-                      ? 'bg-sky-500/25 text-sky-100'
+                      ? 'bg-sky-500/25 text-sky-100 border border-sky-500/30'
                       : enabled
-                        ? 'bg-violet-500/25 text-violet-100'
-                        : 'bg-white/5 text-gray-500'
+                        ? 'bg-violet-500/25 text-violet-100 border border-violet-500/30'
+                        : 'bg-white/5 text-gray-500 border border-white/5'
               }`}
             >
               {loading ? '…' : phaseLabel}
@@ -655,7 +662,7 @@ export function LiveVoicePanel({
                 }`}
               >
                 <span className="font-semibold uppercase tracking-wide text-gray-500">
-                  {t.role === 'user' ? 'You · ' : 'Coach · '}
+                  {t.role === 'user' ? 'You · ' : 'Leo · '}
                 </span>
                 {t.text}
               </p>
