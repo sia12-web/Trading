@@ -1,4 +1,4 @@
-export type LlmProvider = 'anthropic' | 'gemini'
+export type LlmProvider = 'anthropic' | 'gemini' | 'openai'
 
 export type LlmUsage = {
   provider: LlmProvider

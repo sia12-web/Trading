@@ -47,7 +47,7 @@ const mock = {
     entryWindow: null,
     tradeDate: '2026-07-15',
     times: {
-      analyzeStart: '09:15',
+      analyzeStart: '09:00',
       marketOpen: '09:30',
       entryClose: '10:15',
       lunchClose: '11:30',

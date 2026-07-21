@@ -46,8 +46,6 @@ type ContextSummary = {
 
 type VoicePhase = 'idle' | 'listening' | 'thinking' | 'speaking'
 
-type TurnLine = { role: 'user' | 'assistant'; text: string }
-
 export function LiveVoicePanel({
   instrument,
   clockedIn: clockedInProp,
@@ -69,7 +67,6 @@ export function LiveVoicePanel({
   const [ctxLoading, setCtxLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [voicePhase, setVoicePhase] = useState<VoicePhase>('idle')
-  const [turns, setTurns] = useState<TurnLine[]>([])
   const [lastReply, setLastReply] = useState<string | null>(null)
   const [pins, setPins] = useState<PinChip[]>([])
   const [reactionLine, setReactionLine] = useState<string | null>(null)
@@ -187,37 +184,54 @@ export function LiveVoicePanel({
     async (
       text: string,
       audioBase64: string | null,
-      mime: string | null,
-      opts?: { soft?: boolean }
+      mime: string | null
     ) => {
-      const soft = !!opts?.soft
       const phase = voicePhaseRef.current
-      const busy =
-        phase === 'listening' || phase === 'thinking' || phase === 'speaking'
-      // Soft reactions: text only — never steal the mic / turn TTS
-      if (soft) {
-        setReactionLine(text)
-        setLastReply(text)
-        return
-      }
-      if (busy) return
+      if (phase === 'listening' || phase === 'thinking') return
       setVoicePhase('speaking')
       setLastReply(text)
       try {
+        let playUrl: string | null = null
+        let shouldRevoke = false
+
         if (audioBase64 && mime) {
           const bytes = Uint8Array.from(atob(audioBase64), (c) => c.charCodeAt(0))
           const blob = new Blob([bytes], { type: mime })
-          const url = URL.createObjectURL(blob)
+          playUrl = URL.createObjectURL(blob)
+          shouldRevoke = true
+        } else {
+          // Dynamic TTS fallback via OpenAI speech synthesis
+          try {
+            const synthRes = await fetch('/api/speech/synthesize', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text }),
+            })
+            if (synthRes.ok) {
+              const blob = await synthRes.blob()
+              playUrl = URL.createObjectURL(blob)
+              shouldRevoke = true
+            }
+          } catch {
+            /* ignore synth fetch error */
+          }
+        }
+
+        if (playUrl) {
           audioRef.current?.pause()
-          const audio = new Audio(url)
+          const audio = new Audio(playUrl)
           audioRef.current = audio
           await new Promise<void>((resolve) => {
             audio.onended = () => {
-              URL.revokeObjectURL(url)
+              if (shouldRevoke) URL.revokeObjectURL(playUrl!)
+              resolve()
+            }
+            audio.onerror = () => {
+              if (shouldRevoke) URL.revokeObjectURL(playUrl!)
               resolve()
             }
             audio.play().catch(() => {
-              URL.revokeObjectURL(url)
+              if (shouldRevoke) URL.revokeObjectURL(playUrl!)
               resolve()
             })
           })
@@ -298,14 +312,11 @@ export function LiveVoicePanel({
           }
           if (verdict === 'tagged') taggedLevelsRef.current.add(key)
           reactedKeysRef.current.add(reactKey)
-          setTurns((prev) =>
-            [...prev, { role: 'assistant' as const, text: String(json.replyText) }].slice(-6)
-          )
+          setReactionLine(String(json.replyText))
           await playReply(
             String(json.replyText),
             json.audioBase64 ?? null,
-            json.audioMime ?? null,
-            { soft: true }
+            json.audioMime ?? null
           )
         } catch {
           /* ignore */
@@ -340,16 +351,7 @@ export function LiveVoicePanel({
           return
         }
 
-        const userText = String(json.transcript || speechFallback || '').trim()
         const reply = String(json.replyText || '').trim()
-        setTurns((prev) => {
-          const next = [
-            ...prev,
-            ...(userText ? [{ role: 'user' as const, text: userText }] : []),
-            ...(reply ? [{ role: 'assistant' as const, text: reply }] : []),
-          ]
-          return next.slice(-6)
-        })
         if (Array.isArray(json.pins)) {
           setPins(
             json.pins.map((p: PinChip) => ({
@@ -652,26 +654,39 @@ export function LiveVoicePanel({
             {reactionLine}
           </p>
         )}
-        {turns.length > 0 && (
-          <div className="max-h-28 space-y-1 overflow-y-auto rounded-lg border border-white/5 bg-black/20 px-2 py-1.5">
-            {turns.map((t, i) => (
-              <p
-                key={`${t.role}-${i}`}
-                className={`text-[10px] leading-snug ${
-                  t.role === 'user' ? 'text-violet-200/90' : 'text-gray-300'
-                }`}
-              >
-                <span className="font-semibold uppercase tracking-wide text-gray-500">
-                  {t.role === 'user' ? 'You · ' : 'Leo · '}
+        {/* Audio Equalizer & Spoken Voice Output Banner (Voice-First Intercom) */}
+        <div className="space-y-1.5 pt-1">
+          {voicePhase === 'speaking' && (
+            <div className="flex items-center justify-between rounded-md border border-emerald-500/30 bg-emerald-950/30 px-2 py-1">
+              <div className="flex items-center gap-1.5">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
                 </span>
-                {t.text}
+                <span className="text-[10px] font-semibold tracking-wider text-emerald-300 uppercase">
+                  Leo Speaking Audio...
+                </span>
+              </div>
+              <div className="flex items-end gap-0.5 h-3">
+                <span className="w-0.5 bg-emerald-400 animate-[bounce_0.6s_infinite_100ms] h-3"></span>
+                <span className="w-0.5 bg-emerald-400 animate-[bounce_0.6s_infinite_200ms] h-2"></span>
+                <span className="w-0.5 bg-emerald-400 animate-[bounce_0.6s_infinite_300ms] h-3.5"></span>
+                <span className="w-0.5 bg-emerald-400 animate-[bounce_0.6s_infinite_150ms] h-1.5"></span>
+              </div>
+            </div>
+          )}
+
+          {lastReply && (
+            <div className="rounded-lg border border-emerald-500/20 bg-emerald-950/20 p-2 text-left">
+              <div className="flex items-center gap-1.5 mb-1 text-[10px] font-semibold text-emerald-400 uppercase tracking-wider">
+                <span>🔊 Spoken Audio Caption · Leo</span>
+              </div>
+              <p className="text-[11px] leading-snug font-medium text-emerald-100/90 italic">
+                &ldquo;{lastReply}&rdquo;
               </p>
-            ))}
-          </div>
-        )}
-        {!turns.length && lastReply && (
-          <p className="text-[11px] leading-snug text-gray-300">{lastReply}</p>
-        )}
+            </div>
+          )}
+        </div>
         {loading && !status && (
           <p className="animate-pulse text-[11px] text-gray-500">Checking window…</p>
         )}

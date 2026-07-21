@@ -34,7 +34,7 @@ import { logger } from '@/lib/utils/logger'
 const MAX_REPLY_TOKENS = 220
 
 /** Sonnet: solid co-pilot quality without Opus spend. Override with LIVE_VOICE_MODEL. */
-export const DEFAULT_LIVE_VOICE_MODEL = 'claude-sonnet-4-20250514'
+export const DEFAULT_LIVE_VOICE_MODEL = 'claude-3-5-sonnet-20241022'
 
 export type LiveVoiceTurnResult = {
   transcript: string
@@ -50,9 +50,10 @@ export type LiveVoiceTurnResult = {
   newPins: LiveVoicePin[]
 }
 
-/** Live Voice always prefers Anthropic (desk ANTHROPIC_API_KEY). */
+/** Live Voice prefers Anthropic, Gemini, or OpenAI based on config. */
 export function voiceLlmProvider(): LlmProvider {
   const raw = process.env.LIVE_VOICE_PROVIDER?.trim().toLowerCase()
+  if (raw === 'openai') return 'openai'
   if (raw === 'gemini' || raw === 'google') return 'gemini'
   return 'anthropic'
 }

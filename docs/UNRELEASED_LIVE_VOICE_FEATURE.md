@@ -104,8 +104,8 @@ When deployed in production, Live Voice is controlled by a multi-tiered security
 | Rule / Condition | Status | `disableCode` | Reason Reported to User |
 | :--- | :--- | :--- | :--- |
 | **Weekend Check** | Closed | `weekend` | *"Weekend — Live Voice closed"* |
-| **Before 9:00 AM ET** | Closed | `before_prep` | *"Live Voice opens at 09:00 ET (prep)"* |
-| **After 10:15 AM ET** | Closed | `after_entry` | *"Live Voice closed after 10:15 ET (entry window ended)"* |
+| **Before 30-Min Pre-Open (09:00 ET / 08:30 JST)** | Closed | `before_prep` | *"Live Voice opens 30 min before open (09:00 ET / 08:30 JST)"* |
+| **After Entry Close (10:15 ET / 09:45 JST)** | Closed | `after_entry` | *"Live Voice closed after entry window ended"* |
 | **Not Clocked In** | Disabled | `not_clocked_in` | *"Clock in ('Today I trade') to talk"* |
 | **Authorized Window + Clocked In** | **Enabled** | `null` | Microphone active, audio streaming enabled |
 

@@ -14,6 +14,23 @@ function supportsTemperature(model: string): boolean {
   return true
 }
 
+function normalizeAnthropicModel(model: string): string {
+  const m = model.trim().toLowerCase()
+  if (m === 'claude-3-5-sonnet-20241022' || m === 'claude-3-5-sonnet-latest' || m === 'claude-3-opus-20240229' || m === 'claude-3-5-haiku-20241022') {
+    return m
+  }
+  if (m.includes('sonnet')) {
+    return 'claude-3-5-sonnet-20241022'
+  }
+  if (m.includes('opus')) {
+    return 'claude-3-opus-20240229'
+  }
+  if (m.includes('haiku')) {
+    return 'claude-3-5-haiku-20241022'
+  }
+  return model
+}
+
 export async function completeAnthropic(
   req: LlmCompleteRequest,
   signal?: AbortSignal
@@ -22,8 +39,9 @@ export async function completeAnthropic(
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set')
 
   const client = new Anthropic({ apiKey })
+  const apiModel = normalizeAnthropicModel(req.model)
   const body: Anthropic.MessageCreateParams = {
-    model: req.model,
+    model: apiModel,
     max_tokens: req.maxTokens ?? 1024,
     system: req.system,
     messages: [{ role: 'user', content: req.user }],

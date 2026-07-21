@@ -34,7 +34,7 @@ assert(MAX_SESSION_ATTEMPTS === 2 && MAX_STOP_HITS === 2, 'attempt caps')
   const tk = deskClockFor('NIKKEI')
   assert(tk.timeZone === 'Asia/Tokyo', 'Tokyo TZ')
   assert(sessionFor('DOW').entryClose.startsWith('10:15'), 'NY entry close')
-  assert(sessionFor('NIKKEI').analyzeStart.startsWith('08:45'), 'Tokyo prep')
+  assert(sessionFor('NIKKEI').analyzeStart.startsWith('08:30'), 'Tokyo prep')
 }
 
 {

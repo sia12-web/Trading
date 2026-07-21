@@ -6,7 +6,7 @@
  * Optional Gemini Flash verifier when GEMINI_API_KEY is set.
  */
 
-export type LlmProvider = 'anthropic' | 'gemini'
+export type LlmProvider = 'anthropic' | 'gemini' | 'openai'
 
 export type LlmRole = 'proposer' | 'verifier'
 
@@ -36,6 +36,7 @@ export function parseLlmTier(raw: unknown): LlmTier {
 
 function providerFromEnv(raw: string | undefined, fallback: LlmProvider): LlmProvider {
   const v = (raw || fallback).toLowerCase()
+  if (v === 'openai') return 'openai'
   if (v === 'gemini' || v === 'google') return 'gemini'
   if (v === 'off' || v === 'false' || v === '0' || v === 'none') return fallback
   return 'anthropic'
@@ -84,6 +85,7 @@ export function llmLevelFinderModel(): string {
 }
 
 export function isProviderConfigured(provider: LlmProvider): boolean {
+  if (provider === 'openai') return Boolean(process.env.OPENAI_API_KEY?.trim())
   if (provider === 'anthropic') return Boolean(process.env.ANTHROPIC_API_KEY?.trim())
   return Boolean(process.env.GEMINI_API_KEY?.trim())
 }

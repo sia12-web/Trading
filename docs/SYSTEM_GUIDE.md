@@ -12,7 +12,7 @@ TradePulse strictly structures the day trader’s workflow to enforce profession
 timeline
     title Daily Trading Desk Timeline (US Eastern Time)
     7:00 AM - 9:00 AM : Pre-Market Prep : Auto Level Prep & News Sentiment Retrieval
-    9:00 AM - 9:15 AM : Pre-Market Clock-In : Desk Attendance Registration
+    9:00 AM - 9:30 AM : Pre-Market Clock-In & Live Voice : Desk Attendance & Voice Co-Pilot Opens (30 min before open)
     9:15 AM - 9:30 AM : Instrument Lock : Market Regime Check & Instrument Selection (DOW vs NASDAQ)
     9:30 AM - 10:15 AM : Core Entry Window : Level Order Fills (Single Position Enforced)
     10:15 AM - 11:30 AM : Active Management : SL/TP Tracking, Reversal AI Exits
@@ -23,7 +23,8 @@ timeline
 
 ### Session Phases Breakdown
 
-1. **PREP Phase (Before 9:15 AM ET)**:
+1. **PREP & VOICE Phase (Opens 30 Minutes Before Open: 9:00 AM ET / 08:30 AM JST)**:
+   - Live Voice co-pilot opens 30 minutes prior to cash open.
    - System automatically aggregates higher-timeframe candles ($D$, $4H$, $1H$).
    - Computes Anchored VWAP (AVWAP), Volume Profile (POC/HVN), and Stop-pool liquidity zones.
    - Claude Level Finder Agent identifies $2–5$ high-conviction key levels.

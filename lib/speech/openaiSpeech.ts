@@ -47,8 +47,8 @@ export async function synthesizeSpeechMp3(text: string): Promise<Buffer | null> 
   const key = openaiKey()
   if (!key) return null
 
-  const model = process.env.OPENAI_TTS_MODEL?.trim() || 'gpt-4o-mini-tts'
-  const voice = process.env.OPENAI_TTS_VOICE?.trim() || 'ash'
+  const model = process.env.OPENAI_TTS_MODEL?.trim() || 'tts-1'
+  const voice = process.env.OPENAI_TTS_VOICE?.trim() || 'alloy'
   const res = await fetch('https://api.openai.com/v1/audio/speech', {
     method: 'POST',
     headers: {

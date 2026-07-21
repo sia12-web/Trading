@@ -54,7 +54,7 @@ assert(NY_SESSION.lunchClose === '11:30:00', 'NY lunch 11:30')
 assert(NY_SESSION.marketClose === '16:00:00', 'NY close 16:00')
 
 assert(TOKYO_SESSION.tz === 'Asia/Tokyo', 'Tokyo tz')
-assert(TOKYO_SESSION.analyzeStart === '08:45:00', 'Tokyo prep 8:45')
+assert(TOKYO_SESSION.analyzeStart === '08:30:00', 'Tokyo prep 8:30')
 assert(TOKYO_SESSION.marketOpen === '09:00:00', 'Tokyo open 9:00')
 assert(TOKYO_SESSION.entryClose === '09:45:00', 'Tokyo entry close 9:45')
 assert(TOKYO_SESSION.lunchClose === '11:30:00', 'Tokyo lunch 11:30')
