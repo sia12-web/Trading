@@ -7,6 +7,16 @@ import {
 } from '@/lib/auth/deskGate'
 
 /**
+ * Force Next.js to inline these into the Edge middleware bundle.
+ * Without this, Node login can mint with DESK_AUTH_SECRET while Edge
+ * middleware falls back to a different secret → eternal login loop.
+ */
+const EDGE_GATE_PASSWORD = process.env.DESK_GATE_PASSWORD
+const EDGE_GATE_SECRET = process.env.DESK_AUTH_SECRET
+void EDGE_GATE_PASSWORD
+void EDGE_GATE_SECRET
+
+/**
  * Public paths — no desk_gate cookie required.
  * Cron routes still need Bearer CRON_SECRET (checked below when gated).
  */
@@ -22,6 +32,8 @@ function isPublicPath(pathname: string): boolean {
   if (pathname.startsWith('/_next/')) return true
   if (pathname === '/favicon.ico') return true
   if (pathname.startsWith('/icons/')) return true
+  // Chrome DevTools probe — ignore without polluting login redirects
+  if (pathname.startsWith('/.well-known/')) return true
   return false
 }
 
@@ -36,7 +48,7 @@ function loginRedirect(request: NextRequest): NextResponse {
   const url = request.nextUrl.clone()
   url.pathname = '/login'
   const next = request.nextUrl.pathname + request.nextUrl.search
-  if (next && next !== '/login') {
+  if (next && next !== '/login' && !next.startsWith('/.well-known')) {
     url.searchParams.set('next', next)
   } else {
     url.searchParams.delete('next')
@@ -73,11 +85,25 @@ export async function middleware(request: NextRequest) {
     )
   }
 
-  // Gate only when password is configured (local/prod with DESK_GATE_PASSWORD)
-  const gateOn = Boolean(getGatePassword())
+  // Prefer Edge-inlined env; getGatePassword still reads process.env as fallback
+  const gateOn = Boolean(EDGE_GATE_PASSWORD || getGatePassword())
   if (gateOn) {
     const token = request.cookies.get(DESK_GATE_COOKIE)?.value
     const authed = await verifyGateToken(token)
+
+    if (process.env.NODE_ENV !== 'production' && token && !authed) {
+      console.warn(
+        JSON.stringify({
+          ts: new Date().toISOString(),
+          level: 'warn',
+          msg: 'desk_gate.verify_failed',
+          path: pathname,
+          hasToken: true,
+          hasSecret: Boolean(EDGE_GATE_SECRET || process.env.DESK_AUTH_SECRET),
+          requestId,
+        })
+      )
+    }
 
     // Already signed in → skip login page
     if (authed && pathname === '/login') {
@@ -113,10 +139,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * All app routes except static files Next already excludes via patterns.
-     * Include pages + APIs so the desk gate covers both.
-     */
     '/((?!_next/static|_next/image|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
   ],
 }

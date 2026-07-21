@@ -1,6 +1,6 @@
 /**
  * Desk gate session — shared site password + signed HttpOnly cookie.
- * Edge-safe (Web Crypto) so Slice 2 middleware can verify the same token.
+ * Edge-safe (Web Crypto) so middleware can verify the same token Node minted.
  */
 
 export const DESK_GATE_COOKIE = 'desk_gate'
@@ -20,15 +20,16 @@ export function getGatePassword(): string | null {
   return p
 }
 
+/**
+ * Signing secret — MUST be identical in Node API routes and Edge middleware.
+ * Prefer DESK_AUTH_SECRET; otherwise derive from password (same formula everywhere).
+ */
 export function getGateSigningSecret(): string | null {
   const s = process.env.DESK_AUTH_SECRET?.trim()
   if (s && s.length >= 16) return s
-  // Dev fallback only — production must set DESK_AUTH_SECRET
   const pw = getGatePassword()
-  if (pw && process.env.NODE_ENV !== 'production') {
-    return `desk-gate-dev:${pw}`
-  }
-  return s && s.length > 0 ? s : null
+  if (pw) return `desk-gate:${pw}`
+  return null
 }
 
 function b64url(bytes: ArrayBuffer | Uint8Array): string {
@@ -39,29 +40,13 @@ function b64url(bytes: ArrayBuffer | Uint8Array): string {
   return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-function b64urlDecode(s: string): Uint8Array {
-  const pad = s.length % 4 === 0 ? '' : '='.repeat(4 - (s.length % 4))
-  const b64 = s.replace(/-/g, '+').replace(/_/g, '/') + pad
-  const bin = atob(b64)
-  const out = new Uint8Array(bin.length)
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
-  return out
-}
-
-/** Fresh ArrayBuffer copy — required by SubtleCrypto in Node + Edge. */
-function bytesToArrayBuffer(u8: Uint8Array): ArrayBuffer {
-  const copy = new Uint8Array(u8.byteLength)
-  copy.set(u8)
-  return copy.buffer
-}
-
 async function importHmacKey(secret: string): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(secret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
-    ['sign', 'verify']
+    ['sign']
   )
 }
 
@@ -71,16 +56,16 @@ async function hmacSign(secret: string, message: string): Promise<string> {
   return b64url(sig)
 }
 
+/** Re-sign and compare — avoids SubtleCrypto.verify ArrayBuffer quirks on Edge/Node. */
 async function hmacVerify(secret: string, message: string, sigB64: string): Promise<boolean> {
   try {
-    const key = await importHmacKey(secret)
-    const sig = b64urlDecode(sigB64)
-    return await crypto.subtle.verify(
-      'HMAC',
-      key,
-      bytesToArrayBuffer(sig),
-      new TextEncoder().encode(message)
-    )
+    const expected = await hmacSign(secret, message)
+    if (expected.length !== sigB64.length) return false
+    const a = new TextEncoder().encode(expected)
+    const b = new TextEncoder().encode(sigB64)
+    let diff = 0
+    for (let i = 0; i < a.length; i++) diff |= a[i]! ^ b[i]!
+    return diff === 0
   } catch {
     return false
   }
@@ -159,12 +144,20 @@ export type GateCookieAttrs = {
   maxAge: number
 }
 
+/** Secure only on HTTPS — never on localhost http (avoids silent cookie drop). */
+export function shouldUseSecureCookie(): boolean {
+  if (process.env.NODE_ENV !== 'production') return false
+  // Still allow explicit override for local `next start` over http
+  if (process.env.DESK_GATE_COOKIE_INSECURE === 'true') return false
+  return true
+}
+
 export function buildGateCookie(token: string, maxAge = getGateTtlSeconds()): GateCookieAttrs {
   return {
     name: DESK_GATE_COOKIE,
     value: token,
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: shouldUseSecureCookie(),
     sameSite: 'lax',
     path: '/',
     maxAge,
@@ -176,7 +169,7 @@ export function buildClearGateCookie(): GateCookieAttrs {
     name: DESK_GATE_COOKIE,
     value: '',
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: shouldUseSecureCookie(),
     sameSite: 'lax',
     path: '/',
     maxAge: 0,
