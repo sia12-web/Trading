@@ -93,6 +93,15 @@ export async function POST(request: Request) {
     }
 
     const body = await parseBody(request)
+    logger.info('live_voice.turn_request_received', {
+      userId: user.id,
+      instrument: body.instrument,
+      hasTranscript: Boolean(body.transcript),
+      transcriptSnippet: body.transcript?.slice(0, 80),
+      audioSizeBytes: body.audio?.length ?? 0,
+      audioFilename: body.audioFilename,
+    })
+
     const supabase = await createClient()
     const result = await runLiveVoiceTurn({
       supabase,
@@ -101,6 +110,15 @@ export async function POST(request: Request) {
       transcript: body.transcript,
       audio: body.audio,
       audioFilename: body.audioFilename,
+    })
+
+    logger.info('live_voice.turn_request_success', {
+      userId: user.id,
+      instrument: body.instrument,
+      transcript: result.transcript,
+      replySnippet: result.replyText.slice(0, 100),
+      hasAudioResponse: Boolean(result.audioBase64),
+      audioResponseBytes: result.audioBase64?.length ?? 0,
     })
 
     return NextResponse.json({

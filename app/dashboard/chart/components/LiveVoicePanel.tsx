@@ -446,9 +446,10 @@ export function LiveVoicePanel({
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data)
       }
-      recorder.start(200)
-    } catch {
-      // Mic denied — still allow speech-recognition-only if we got text
+      recorder.start(100)
+      console.log('[LiveVoice] Mic recording started', { instrument, mime })
+    } catch (err) {
+      console.warn('[LiveVoice] Mic access error:', err)
       streamRef.current = null
       mediaRecorderRef.current = null
       if (!recognitionRef.current) {
@@ -457,11 +458,14 @@ export function LiveVoicePanel({
         holdingRef.current = false
       }
     }
-  }, [status?.enabled, status?.micAllowed, voicePhase])
+  }, [status?.enabled, status?.micAllowed, voicePhase, instrument])
 
   const endHold = useCallback(async () => {
     if (!holdingRef.current) return
     holdingRef.current = false
+
+    // Brief delay to let SpeechRecognition onresult flush final text
+    await new Promise((r) => setTimeout(r, 120))
 
     recognitionRef.current?.stop()
     recognitionRef.current = null
@@ -480,6 +484,9 @@ export function LiveVoicePanel({
           resolve(blob)
         }
         try {
+          if (recorder.state === 'recording') {
+            recorder.requestData()
+          }
           recorder.stop()
         } catch {
           resolve(null)
@@ -490,8 +497,14 @@ export function LiveVoicePanel({
     streamRef.current = null
 
     const speechFallback = speechTextRef.current.trim()
-    if ((!audioBlob || audioBlob.size < 200) && !speechFallback) {
-      setError('Hold longer and speak, then release')
+    console.log('[LiveVoice] Recording ended', {
+      blobSize: audioBlob?.size ?? 0,
+      speechFallback,
+      chunks: chunksRef.current.length,
+    })
+
+    if ((!audioBlob || audioBlob.size < 50) && !speechFallback) {
+      setError('Hold button while speaking, then release')
       setVoicePhase('idle')
       return
     }
