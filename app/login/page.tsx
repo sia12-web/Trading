@@ -1,16 +1,15 @@
 'use client'
 
 import { FormEvent, Suspense, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 
 function safeNext(raw: string | null): string {
   if (!raw || !raw.startsWith('/') || raw.startsWith('//')) return '/dashboard'
-  if (raw.startsWith('/login')) return '/dashboard'
+  if (raw === '/' || raw.startsWith('/login')) return '/dashboard'
   return raw
 }
 
 function LoginForm() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -24,18 +23,23 @@ function LoginForm() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
         body: JSON.stringify({ password }),
       })
       const json = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) {
-        setError(json.error || (res.status === 429 ? 'Too many attempts — wait and try again' : 'Login failed'))
+        setError(
+          json.error ||
+            (res.status === 429 ? 'Too many attempts — wait and try again' : 'Login failed')
+        )
+        setLoading(false)
         return
       }
-      router.replace(safeNext(searchParams.get('next')))
-      router.refresh()
+      // Full navigation so the HttpOnly cookie is on the next document request
+      // (client router.replace can race middleware before the cookie sticks).
+      window.location.assign(safeNext(searchParams.get('next')))
     } catch {
       setError('Network error — try again')
-    } finally {
       setLoading(false)
     }
   }
@@ -43,7 +47,10 @@ function LoginForm() {
   return (
     <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4">
       <div>
-        <label htmlFor="desk-password" className="block text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1.5">
+        <label
+          htmlFor="desk-password"
+          className="block text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1.5"
+        >
           Password
         </label>
         <input

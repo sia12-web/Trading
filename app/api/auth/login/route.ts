@@ -103,6 +103,12 @@ export async function POST(request: Request) {
 
   const cookie = buildGateCookie(token)
   const res = NextResponse.json({ ok: true })
-  res.cookies.set(cookie)
+  res.cookies.set(cookie.name, cookie.value, {
+    httpOnly: cookie.httpOnly,
+    secure: cookie.secure,
+    sameSite: cookie.sameSite,
+    path: cookie.path,
+    maxAge: cookie.maxAge,
+  })
   return res
 }

@@ -48,6 +48,13 @@ function b64urlDecode(s: string): Uint8Array {
   return out
 }
 
+/** Fresh ArrayBuffer copy — required by SubtleCrypto in Node + Edge. */
+function bytesToArrayBuffer(u8: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(u8.byteLength)
+  copy.set(u8)
+  return copy.buffer
+}
+
 async function importHmacKey(secret: string): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     'raw',
@@ -68,15 +75,10 @@ async function hmacVerify(secret: string, message: string, sigB64: string): Prom
   try {
     const key = await importHmacKey(secret)
     const sig = b64urlDecode(sigB64)
-    // Copy into a real ArrayBuffer — Node/Edge reject SharedArrayBuffer / offset views
-    const sigAb = sig.buffer.slice(
-      sig.byteOffset,
-      sig.byteOffset + sig.byteLength
-    ) as ArrayBuffer
     return await crypto.subtle.verify(
       'HMAC',
       key,
-      sigAb,
+      bytesToArrayBuffer(sig),
       new TextEncoder().encode(message)
     )
   } catch {
