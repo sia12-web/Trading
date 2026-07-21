@@ -77,6 +77,7 @@ export default function ChartPage() {
   const [gate, setGate] = useState<SessionGateState | null>(null)
   const [orderLevel, setOrderLevel] = useState<number | null>(null)
   const [orderLevelType, setOrderLevelType] = useState<string | undefined>()
+  const [orderLevelSide, setOrderLevelSide] = useState<'BUY' | 'SHORT' | undefined>()
   const [orderLevelReason, setOrderLevelReason] = useState<string | undefined>()
   const [orderEntrySource, setOrderEntrySource] = useState<'ai' | 'structure' | 'manual'>('ai')
   const [regime, setRegime] = useState<'bullish' | 'bearish' | 'choppy'>('bullish')
@@ -132,12 +133,20 @@ export default function ChartPage() {
   const handleLevelSelect = useCallback(
     (
       price: number,
-      meta?: { type?: string; reasoning?: string; source?: 'ai' | 'structure' | 'manual' }
+      meta?: {
+        type?: string
+        reasoning?: string
+        source?: 'ai' | 'structure' | 'manual'
+        side?: 'BUY' | 'SHORT'
+      }
     ) => {
       if (managePos || positionOverlay || pending) return
       // Always stash selection so the ticket can show "why this level"
       setOrderLevel(price)
       setOrderLevelType(meta?.type)
+      setOrderLevelSide(
+        meta?.side === 'BUY' || meta?.side === 'SHORT' ? meta.side : undefined
+      )
       setOrderLevelReason(meta?.reasoning)
       setOrderEntrySource(
         meta?.source === 'manual' || meta?.type === 'manual' || meta?.type === 'market'
@@ -393,6 +402,7 @@ export default function ChartPage() {
       setOrderStatus('placing')
       setOrderLevel(null)
       setOrderLevelType(undefined)
+      setOrderLevelSide(undefined)
       setOrderLevelReason(undefined)
       setOrderEntrySource('ai')
       setFillError(null)
@@ -789,10 +799,11 @@ export default function ChartPage() {
 
         {orderLevel != null && !pending && !managePos && (
           <LevelOrderTicket
-            key={`live-${orderLevel}-${orderEntrySource}-${orderLevelType ?? 'x'}`}
+            key={`live-${orderLevel}-${orderEntrySource}-${orderLevelSide ?? orderLevelType ?? 'x'}`}
             instrument={(clockedIn && locked ? locked : instrument) as Instrument}
             levelPrice={orderLevel}
             levelType={orderLevelType}
+            levelSide={orderLevelSide}
             entryReason={orderLevelReason}
             entrySource={orderEntrySource}
             regime={regime}
@@ -802,6 +813,7 @@ export default function ChartPage() {
             onClose={() => {
               setOrderLevel(null)
               setOrderLevelType(undefined)
+              setOrderLevelSide(undefined)
               setOrderLevelReason(undefined)
               setOrderEntrySource('ai')
             }}

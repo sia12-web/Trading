@@ -67,7 +67,16 @@ export const AI_LEVELS_QUERY = {
 } as const
 
 export function levelSide(type: string): LevelSide {
-  return String(type).toLowerCase().includes('resist') ? 'SHORT' : 'BUY'
+  const t = String(type).toLowerCase()
+  if (
+    t.includes('resist') ||
+    t.includes('short') ||
+    t.includes('supply') ||
+    t === 'sell'
+  ) {
+    return 'SHORT'
+  }
+  return 'BUY'
 }
 
 /** Conviction 1–10 → 1–5 stars for UI */

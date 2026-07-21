@@ -173,6 +173,8 @@ interface OHLCV {
 interface LevelLine {
   price:  number
   type:   'support' | 'resistance' | 'vwap' | string
+  /** Playbook side — drives Limit Buy vs Limit Short on click */
+  side?: 'BUY' | 'SHORT'
   status: string
   label?: string
   conviction?: number
@@ -407,7 +409,12 @@ interface TradingChartProps {
   /** When user clicks a level price (from panel or highlight) */
   onLevelSelect?:      (
     price: number,
-    meta?: { type?: string; reasoning?: string; source?: 'ai' | 'structure' | 'manual' }
+    meta?: {
+      type?: string
+      reasoning?: string
+      source?: 'ai' | 'structure' | 'manual'
+      side?: 'BUY' | 'SHORT'
+    }
   ) => void
   /** Morning session: allow placing limits from the chart */
   canPlaceOrder?: boolean
@@ -606,11 +613,11 @@ export function TradingChart({
 
   const jumpMarkerRef = useRef<any | null>(null)
 
-  // Register jumpToPrice so level clicks can scroll/highlight on the chart
+  // Register jumpToPrice so level clicks can scroll/highlight on the chart.
+  // Do NOT open the order ticket here — that must carry BUY/SHORT meta.
   useEffect(() => {
     if (!jumpToPriceRef) return
     jumpToPriceRef.current = (price: number) => {
-      onLevelSelect?.(price)
       if (!candleRef.current) return
       try {
         if (jumpMarkerRef.current) {
@@ -640,7 +647,10 @@ export function TradingChart({
         }, 3000)
       } catch {}
     }
-  }, [jumpToPriceRef, onLevelSelect])
+    return () => {
+      jumpToPriceRef.current = null
+    }
+  }, [jumpToPriceRef])
 
   const meta = INSTRUMENT_META[instrument]
 
@@ -721,8 +731,13 @@ export function TradingChart({
       : resolveDeskLevels(aiRows, barsForFallback, openUnix, sess.tz, 'none')
 
     for (const l of resolved.levels) {
-      const isRes = String(l.type).toLowerCase().includes('resist')
-      const side = isRes ? 'SHORT' : 'BUY'
+      const side: 'BUY' | 'SHORT' =
+        l.side === 'BUY' || l.side === 'SHORT'
+          ? l.side
+          : String(l.type).toLowerCase().includes('resist')
+            ? 'SHORT'
+            : 'BUY'
+      const isRes = side === 'SHORT'
       const stars = Math.max(1, Math.min(5, Math.round((l.conviction || 5) / 2)))
       const starLabel = `${'★'.repeat(stars)}${'☆'.repeat(5 - stars)}`
       const rank = l.rank === 'watch' ? 'WATCH' : 'PRIMARY'
@@ -732,6 +747,7 @@ export function TradingChart({
       byPrice.set(l.level, {
         price: l.level,
         type: isRes ? 'resistance' : 'support',
+        side,
         status,
         conviction: l.conviction,
         reasoning: l.reasoning,
@@ -1913,15 +1929,29 @@ export function TradingChart({
         levels: levelsRef.current.map((l) => ({
           price: l.price,
           type: l.type,
+          side: l.side,
           source: l.source,
           reasoning: l.reasoning,
         })),
         levelsVisible: showLevelsRef.current,
       })
+      const pickSide =
+        pick.matched?.side === 'BUY' || pick.matched?.side === 'SHORT'
+          ? pick.matched.side
+          : pick.source === 'manual'
+            ? undefined
+            : String(pick.type).toLowerCase().includes('resist') ||
+                String(pick.type).toLowerCase().includes('short')
+              ? 'SHORT'
+              : String(pick.type).toLowerCase().includes('support') ||
+                  String(pick.type).toLowerCase().includes('buy')
+                ? 'BUY'
+                : undefined
       onLevelSelect(pick.price, {
         type: pick.source === 'manual' ? 'manual' : pick.type,
         source: pick.source,
         reasoning: pick.reasoning,
+        side: pickSide,
       })
     }
 
@@ -2581,7 +2611,13 @@ export function TradingChart({
                 .filter((l) => l.source === 'ai' || l.source === 'structure')
                 .slice(0, 4)
                 .map((l, i) => {
-                  const isRes = l.type === 'resistance'
+                  const side: 'BUY' | 'SHORT' =
+                    l.side === 'BUY' || l.side === 'SHORT'
+                      ? l.side
+                      : l.type === 'resistance'
+                        ? 'SHORT'
+                        : 'BUY'
+                  const isRes = side === 'SHORT'
                   const stars = Math.max(1, Math.min(5, Math.round((l.conviction || 5) / 2)))
                   const isPrimary = (l.label || '').includes('PRIMARY')
                   const reaction = reactionLabel(l)
@@ -2598,6 +2634,7 @@ export function TradingChart({
                         if (!canPlaceOrder) return
                         onLevelSelect?.(l.price, {
                           type: String(l.type),
+                          side,
                           reasoning: l.reasoning || why,
                           source: l.source === 'structure' ? 'structure' : 'ai',
                         })

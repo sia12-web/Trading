@@ -63,6 +63,8 @@ interface Props {
   instrument: 'DOW' | 'NASDAQ' | 'NIKKEI'
   levelPrice: number
   levelType?: string
+  /** Explicit playbook side — preferred over levelType parsing */
+  levelSide?: 'BUY' | 'SHORT'
   entryReason?: string
   /** ai | structure | manual — defaults from levelType */
   entrySource?: DeskEntrySource | string
@@ -85,6 +87,7 @@ export function LevelOrderTicket({
   instrument,
   levelPrice,
   levelType,
+  levelSide,
   entryReason,
   entrySource: entrySourceProp,
   regime,
@@ -102,18 +105,24 @@ export function LevelOrderTicket({
   const isManual = entrySource === 'manual'
   const riskPct = riskPercentForEntrySource(entrySource)
 
-  // BUY/support → LONG, SHORT/resistance → SHORT (regime is only a fallback)
+  // Playbook side wins; then type (resistance→SHORT, support→BUY); regime last
+  const typeLower = String(levelType || '').toLowerCase()
   const fromLevel: Direction | null =
-    levelType &&
-    (String(levelType).toLowerCase().includes('resist') ||
-      String(levelType).toLowerCase() === 'short')
+    levelSide === 'SHORT'
       ? 'SHORT'
-      : levelType &&
-          (String(levelType).toLowerCase().includes('support') ||
-            String(levelType).toLowerCase() === 'long' ||
-            String(levelType).toLowerCase() === 'buy')
+      : levelSide === 'BUY'
         ? 'LONG'
-        : null
+        : typeLower.includes('resist') ||
+            typeLower.includes('short') ||
+            typeLower.includes('supply') ||
+            typeLower === 'sell'
+          ? 'SHORT'
+          : typeLower.includes('support') ||
+              typeLower.includes('long') ||
+              typeLower.includes('buy') ||
+              typeLower.includes('demand')
+            ? 'LONG'
+            : null
   const suggested: Direction =
     fromLevel ?? (regime === 'bearish' ? 'SHORT' : 'LONG')
   const [direction, setDirection] = useState<Direction>(suggested)
