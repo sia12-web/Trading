@@ -70,6 +70,11 @@ export function LiveVoicePanel({
   const [lastReply, setLastReply] = useState<string | null>(null)
   const [pins, setPins] = useState<PinChip[]>([])
   const [reactionLine, setReactionLine] = useState<string | null>(null)
+  const [historyTurns, setHistoryTurns] = useState<Array<{ id: string; role: 'user' | 'assistant'; text: string; time: string }>>([])
+  const [showHistoryDrawer, setShowHistoryDrawer] = useState(false)
+  const [showPinInput, setShowPinInput] = useState(false)
+  const [manualPriceInput, setManualPriceInput] = useState('')
+  const [manualSideInput, setManualSideInput] = useState<'BUY' | 'SHORT' | 'LEVEL'>('LEVEL')
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -351,7 +356,17 @@ export function LiveVoicePanel({
           return
         }
 
+        const userText = String(json.transcript || speechFallback || '').trim()
         const reply = String(json.replyText || '').trim()
+        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        if (userText || reply) {
+          setHistoryTurns((prev) => [
+            ...(reply ? [{ id: Math.random().toString(), role: 'assistant' as const, text: reply, time: timeStr }] : []),
+            ...(userText ? [{ id: Math.random().toString(), role: 'user' as const, text: userText, time: timeStr }] : []),
+            ...prev,
+          ])
+        }
+
         if (Array.isArray(json.pins)) {
           setPins(
             json.pins.map((p: PinChip) => ({
@@ -370,6 +385,21 @@ export function LiveVoicePanel({
     },
     [instrument, playReply, refreshContext]
   )
+
+  const handlePinChartLine = useCallback(async () => {
+    const num = Number(manualPriceInput.replace(/,/g, ''))
+    if (!Number.isFinite(num) || num <= 0) return
+    const side = manualSideInput === 'LEVEL' ? null : manualSideInput
+    const newPin: PinChip = {
+      price: num,
+      side,
+      reason: 'Trader drawn chart line',
+    }
+    setPins((prev) => [...prev, newPin])
+    setManualPriceInput('')
+    setShowPinInput(false)
+    await submitTurn(null, `I drew a line on the chart at ${num.toLocaleString()}${side ? ` for ${side}` : ''}`)
+  }, [manualPriceInput, manualSideInput, submitTurn])
 
   const startHold = useCallback(async () => {
     if (!status?.enabled || !status.micAllowed || holdingRef.current) return
@@ -628,32 +658,76 @@ export function LiveVoicePanel({
             </p>
           </div>
         )}
-        {pins.length > 0 && (
-          <div className="flex flex-wrap gap-1 pt-0.5">
-            {pins.map((p) => (
-              <span
-                key={`${p.price}-${p.side || 'x'}`}
-                title={p.reason || 'Your spoken pin'}
-                className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${
-                  p.side === 'SHORT'
-                    ? 'border-red-700/50 bg-red-950/40 text-red-200'
-                    : p.side === 'BUY'
-                      ? 'border-emerald-700/50 bg-emerald-950/40 text-emerald-200'
-                      : 'border-violet-700/40 bg-violet-950/40 text-violet-100'
-                }`}
-              >
-                {p.side ? `${p.side} ` : ''}
-                {p.price.toLocaleString()}
-              </span>
-            ))}
+        {/* Pins + Interactive Chart Line Drawer Controls */}
+        <div className="space-y-1 pt-0.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase font-semibold text-gray-400 tracking-wider">
+              Chart Pins & Drawn Lines
+            </span>
+            <button
+              onClick={() => setShowPinInput((v) => !v)}
+              className="text-[10px] text-emerald-400 hover:text-emerald-300 transition-colors font-mono"
+            >
+              {showPinInput ? 'Cancel' : '+ Pin Drawn Line'}
+            </button>
           </div>
-        )}
+
+          {showPinInput && (
+            <div className="flex items-center gap-1 bg-black/40 p-1.5 rounded border border-emerald-500/30">
+              <input
+                type="text"
+                value={manualPriceInput}
+                onChange={(e) => setManualPriceInput(e.target.value)}
+                placeholder="e.g. 39,250"
+                className="w-20 bg-gray-900 border border-gray-700 text-[10px] text-white px-1.5 py-0.5 rounded font-mono"
+              />
+              <select
+                value={manualSideInput}
+                onChange={(e) => setManualSideInput(e.target.value as any)}
+                className="bg-gray-900 border border-gray-700 text-[10px] text-white px-1 py-0.5 rounded font-mono"
+              >
+                <option value="LEVEL">LEVEL</option>
+                <option value="BUY">BUY</option>
+                <option value="SHORT">SHORT</option>
+              </select>
+              <button
+                onClick={handlePinChartLine}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] px-2 py-0.5 rounded font-semibold transition-colors"
+              >
+                Send to Leo
+              </button>
+            </div>
+          )}
+
+          {pins.length > 0 && (
+            <div className="flex flex-wrap gap-1 pt-0.5">
+              {pins.map((p) => (
+                <span
+                  key={`${p.price}-${p.side || 'x'}`}
+                  title={p.reason || 'Drawn chart line pin'}
+                  className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${
+                    p.side === 'SHORT'
+                      ? 'border-red-700/50 bg-red-950/40 text-red-200'
+                      : p.side === 'BUY'
+                        ? 'border-emerald-700/50 bg-emerald-950/40 text-emerald-200'
+                        : 'border-violet-700/40 bg-violet-950/40 text-violet-100'
+                  }`}
+                >
+                  {p.side ? `${p.side} ` : ''}
+                  {p.price.toLocaleString()}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
         {reactionLine && (
           <p className="rounded border border-sky-700/40 bg-sky-950/40 px-2 py-1 text-[10px] leading-snug text-sky-100">
             <span className="font-semibold uppercase tracking-wide text-sky-400/90">Tag · </span>
             {reactionLine}
           </p>
         )}
+
         {/* Audio Equalizer & Spoken Voice Output Banner (Voice-First Intercom) */}
         <div className="space-y-1.5 pt-1">
           {voicePhase === 'speaking' && (
@@ -687,6 +761,49 @@ export function LiveVoicePanel({
             </div>
           )}
         </div>
+
+        {/* Persistent Voice Session History Drawer */}
+        {historyTurns.length > 0 && (
+          <div className="pt-1.5 border-t border-white/5">
+            <button
+              onClick={() => setShowHistoryDrawer((v) => !v)}
+              className="flex items-center justify-between w-full text-[10px] font-semibold tracking-wider uppercase text-gray-400 hover:text-gray-200 transition-colors"
+            >
+              <span>📜 Voice Audio History ({historyTurns.length})</span>
+              <span>{showHistoryDrawer ? '▲ Hide' : '▼ View History'}</span>
+            </button>
+
+            {showHistoryDrawer && (
+              <div className="mt-1.5 max-h-40 space-y-1.5 overflow-y-auto rounded-lg border border-white/10 bg-black/40 p-2">
+                {historyTurns.map((t) => (
+                  <div
+                    key={t.id}
+                    className={`rounded p-1.5 text-[10px] leading-snug ${
+                      t.role === 'user'
+                        ? 'border border-violet-800/40 bg-violet-950/30 text-violet-200'
+                        : 'border border-emerald-800/40 bg-emerald-950/30 text-emerald-100'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="font-semibold uppercase tracking-wider text-[9px] text-gray-400">
+                        {t.role === 'user' ? 'You' : 'Leo'} · {t.time}
+                      </span>
+                      {t.role === 'assistant' && (
+                        <button
+                          onClick={() => playReply(t.text, null, null)}
+                          className="text-[9px] text-emerald-400 hover:text-emerald-300 font-semibold uppercase tracking-wider"
+                        >
+                          ▶ Replay Voice
+                        </button>
+                      )}
+                    </div>
+                    <p className="italic">&ldquo;{t.text}&rdquo;</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {loading && !status && (
           <p className="animate-pulse text-[11px] text-gray-500">Checking window…</p>
         )}
