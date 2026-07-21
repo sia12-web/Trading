@@ -50,15 +50,18 @@ type TurnLine = { role: 'user' | 'assistant'; text: string }
 
 export function LiveVoicePanel({
   instrument,
-  clockedIn,
+  clockedIn: clockedInProp,
   refreshKey = 0,
   livePrice = null,
+  onClose,
 }: {
   instrument: Instrument
+  /** Optional parent hint; server status.clockedIn wins when present */
   clockedIn?: boolean
   refreshKey?: number
   /** Live tip for Slice 5 level-tag reactions */
   livePrice?: number | null
+  onClose?: () => void
 }) {
   const [status, setStatus] = useState<StatusPayload | null>(null)
   const [summary, setSummary] = useState<ContextSummary | null>(null)
@@ -84,6 +87,9 @@ export function LiveVoicePanel({
   const voicePhaseRef = useRef<VoicePhase>('idle')
   const watchLevelsRef = useRef<WatchLevel[]>([])
   const summaryPhaseRef = useRef<string>('')
+
+  /** Prefer live status from API; fall back to parent prop while status loads */
+  const clockedIn = status?.clockedIn ?? !!clockedInProp
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -188,15 +194,15 @@ export function LiveVoicePanel({
       const phase = voicePhaseRef.current
       const busy =
         phase === 'listening' || phase === 'thinking' || phase === 'speaking'
-      // Soft reactions never interrupt mic / turn TTS — show text only
-      if (soft && busy) {
+      // Soft reactions: text only — never steal the mic / turn TTS
+      if (soft) {
         setReactionLine(text)
         setLastReply(text)
         return
       }
+      if (busy) return
       setVoicePhase('speaking')
       setLastReply(text)
-      if (soft) setReactionLine(text)
       try {
         if (audioBase64 && mime) {
           const bytes = Uint8Array.from(atob(audioBase64), (c) => c.charCodeAt(0))
@@ -205,16 +211,15 @@ export function LiveVoicePanel({
           audioRef.current?.pause()
           const audio = new Audio(url)
           audioRef.current = audio
-          await new Promise<void>((resolve, reject) => {
+          await new Promise<void>((resolve) => {
             audio.onended = () => {
               URL.revokeObjectURL(url)
               resolve()
             }
-            audio.onerror = () => {
+            audio.play().catch(() => {
               URL.revokeObjectURL(url)
-              reject(new Error('audio play failed'))
-            }
-            void audio.play()
+              resolve()
+            })
           })
         } else if (typeof window !== 'undefined' && window.speechSynthesis) {
           await new Promise<void>((resolve) => {
@@ -495,7 +500,7 @@ export function LiveVoicePanel({
       data-voice-phase={voicePhase}
     >
       <div className="flex items-start justify-between gap-2 px-3 py-2.5">
-        <div>
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <span
               className={`text-[10px] font-bold uppercase tracking-wider ${
@@ -530,37 +535,55 @@ export function LiveVoicePanel({
             {status?.localTime ? ` · now ${status.localTime.slice(0, 5)}` : ''}
           </p>
         </div>
-        <button
-          type="button"
-          disabled={!canTalk}
-          onPointerDown={(e) => {
-            e.preventDefault()
-            void startHold()
-          }}
-          onPointerUp={(e) => {
-            e.preventDefault()
-            void endHold()
-          }}
-          onPointerLeave={() => {
-            if (holdingRef.current) void endHold()
-          }}
-          onContextMenu={(e) => e.preventDefault()}
-          title={
-            canTalk
-              ? 'Hold to talk — release to send'
-              : status?.reason || 'Live Voice unavailable'
-          }
-          className={`flex h-11 w-11 shrink-0 select-none items-center justify-center rounded-full border text-[9px] font-bold uppercase tracking-wide transition ${
-            voicePhase === 'listening'
-              ? 'border-red-400/70 bg-red-600 text-white scale-105'
-              : canTalk
-                ? 'border-violet-400/50 bg-violet-600/90 text-white hover:bg-violet-500'
-                : 'border-white/15 bg-black/30 text-gray-500 opacity-60'
-          }`}
-          aria-label="Hold to talk"
-        >
-          Mic
-        </button>
+        <div className="flex items-start gap-1.5 shrink-0">
+          <button
+            type="button"
+            disabled={!canTalk}
+            onPointerDown={(e) => {
+              e.preventDefault()
+              e.currentTarget.setPointerCapture(e.pointerId)
+              void startHold()
+            }}
+            onPointerUp={(e) => {
+              e.preventDefault()
+              try {
+                e.currentTarget.releasePointerCapture(e.pointerId)
+              } catch {
+                /* ignore */
+              }
+              void endHold()
+            }}
+            onContextMenu={(e) => e.preventDefault()}
+            title={
+              canTalk
+                ? 'Hold to talk — release to send'
+                : status?.reason || 'Live Voice unavailable'
+            }
+            className={`flex h-11 w-11 select-none items-center justify-center rounded-full border text-[9px] font-bold uppercase tracking-wide transition ${
+              voicePhase === 'listening'
+                ? 'border-red-400/70 bg-red-600 text-white scale-105'
+                : canTalk
+                  ? 'border-violet-400/50 bg-violet-600/90 text-white hover:bg-violet-500'
+                  : 'border-white/15 bg-black/30 text-gray-500 opacity-60'
+            }`}
+            aria-label="Hold to talk"
+          >
+            Mic
+          </button>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md p-1.5 text-gray-500 transition hover:bg-white/5 hover:text-gray-300"
+              title="Hide Live Voice"
+              aria-label="Hide Live Voice"
+            >
+              <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.75">
+                <path d="M4 4l8 8M12 4l-8 8" strokeLinecap="round" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="border-t border-white/10 px-3 py-2 space-y-1.5">

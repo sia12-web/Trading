@@ -110,7 +110,7 @@ function jstDate(h: number, m: number, s = 0): Date {
 {
   const prevNode = process.env.NODE_ENV
   const prev = process.env.LIVE_VOICE_DEV_BYPASS
-  process.env.NODE_ENV = 'development'
+  ;(process.env as any).NODE_ENV = 'development'
   process.env.LIVE_VOICE_DEV_BYPASS = 'true'
   const sat = new Date(Date.UTC(2026, 6, 18, 13, 30, 0))
   const r = resolveLiveVoiceStatus({
@@ -120,14 +120,14 @@ function jstDate(h: number, m: number, s = 0): Date {
   })
   assert(r.enabled === true, 'bypass opens weekend')
   assert(r.devBypass === true, 'devBypass flag')
-  process.env.NODE_ENV = 'production'
+  ;(process.env as any).NODE_ENV = 'production'
   const rProd = resolveLiveVoiceStatus({
     now: sat,
     instrument: 'DOW',
     clockedIn: true,
   })
   assert(rProd.enabled === false, 'production ignores bypass')
-  process.env.NODE_ENV = prevNode
+  ;(process.env as any).NODE_ENV = prevNode
   if (prev === undefined) delete process.env.LIVE_VOICE_DEV_BYPASS
   else process.env.LIVE_VOICE_DEV_BYPASS = prev
 }

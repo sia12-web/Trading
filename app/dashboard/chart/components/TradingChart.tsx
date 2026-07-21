@@ -53,12 +53,13 @@ import {
 } from '@/lib/trading/deskLevels'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
+import { LiveVoicePanel } from '@/app/dashboard/chart/components/LiveVoicePanel'
 import { DESK_CHART_THEME } from '@/lib/chart/deskChartTheme'
 import {
+  DESK_INSTRUMENTS,
   isLiveBarsAllowed,
   isChartStreamAllowed,
   isLiveTipStreamAllowed,
-  isLiveFocusWindowActive,
   isLevelPaintAllowed,
   isAfternoonWatchWindow,
   isAnyLiveFocusWindowActive,
@@ -420,6 +421,8 @@ interface TradingChartProps {
    * Morning focus tip (−30m→lunch) does not require this.
    */
   deskAttended?: boolean
+  /** Currently clocked in — enables Live Voice panel entry */
+  clockedIn?: boolean
   /** Bump to force a levels reload after SL/TP (system memory updated) */
   levelsRefreshKey?: number
 }
@@ -443,6 +446,7 @@ export function TradingChart({
   canPlaceOrder = false,
   deskLevelsActive = false,
   deskAttended = false,
+  clockedIn = false,
   levelsRefreshKey = 0,
 }: TradingChartProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -494,6 +498,12 @@ export function TradingChart({
   const [showLevels,  setShowLevels] = useState(true)
   /** Floating morning playbook — independent of chart level lines. */
   const [playbookOpen, setPlaybookOpen] = useState(true)
+  const [voiceOpen, setVoiceOpen] = useState(false)
+
+  // Open Live Voice once when you clock in (same discoverability as playbook)
+  useEffect(() => {
+    if (clockedIn) setVoiceOpen(true)
+  }, [clockedIn])
   const showLevelsRef = useRef(true)
   const [chartReady,  setChartReady] = useState(false)
   const candlesRef = useRef<OHLCV[]>([])
@@ -527,34 +537,47 @@ export function TradingChart({
     hoverPreviewKeyRef.current = null
   }, [])
 
-  // Recompute focus tabs on a short clock so NIKKEI appears at Tokyo−30m without refresh
+  // Recompute focus tabs on a short clock so NIKKEI appears at Tokyo−30m without refresh.
+  // Clock-gated UI must NOT run during the hydrate render (Railway TZ ≠ browser → React #418).
   const [focusTick, setFocusTick] = useState(0)
+  const [clockReady, setClockReady] = useState(false)
+  const [deskSessionLive, setDeskSessionLive] = useState(false)
+  const [visibleInstruments, setVisibleInstruments] = useState<Instrument[]>(() => {
+    if (lockedInstrument) return [lockedInstrument]
+    if (allowedInstruments && allowedInstruments.length > 0) return [...allowedInstruments]
+    return [...DESK_INSTRUMENTS] as Instrument[]
+  })
+
   useEffect(() => {
     const id = window.setInterval(() => setFocusTick((n) => n + 1), 30_000)
     return () => window.clearInterval(id)
   }, [])
 
-  const visibleInstruments = useMemo((): Instrument[] => {
-    // Day lock always wins — cannot switch away from locked DOW/NASDAQ/NIKKEI
-    if (lockedInstrument) return [lockedInstrument]
-    if (allowedInstruments && allowedInstruments.length > 0) {
-      return allowedInstruments.filter((i) =>
-        (liveVisibleInstruments(new Date()) as Instrument[]).includes(i)
-      )
+  useEffect(() => {
+    const now = new Date()
+    setClockReady(true)
+    setDeskSessionLive(isAnyLiveFocusWindowActive(now))
+    if (lockedInstrument) {
+      setVisibleInstruments([lockedInstrument])
+      return
     }
-    // Never fall back to all three on the live desk
-    void focusTick
-    return liveVisibleInstruments(new Date()) as Instrument[]
+    const live = liveVisibleInstruments(now) as Instrument[]
+    if (allowedInstruments && allowedInstruments.length > 0) {
+      setVisibleInstruments(allowedInstruments.filter((i) => live.includes(i)))
+      return
+    }
+    setVisibleInstruments(live)
   }, [allowedInstruments, lockedInstrument, focusTick])
 
   /** Tip/SSE: pre-open focus free; after open / afternoon only if attended */
   const tipStreamActive = useMemo(() => {
+    if (!clockReady) return false
     void focusTick
     return isLiveTipStreamAllowed(instrument, new Date(), {
       attendedToday: deskAttended,
       clockedIn: deskAttended,
     }).open
-  }, [instrument, deskAttended, focusTick])
+  }, [instrument, deskAttended, focusTick, clockReady])
 
   const setInstrument = useCallback((inst: Instrument) => {
     if (lockedInstrument && inst !== lockedInstrument) return
@@ -2183,8 +2206,7 @@ export function TradingChart({
   }, [positionOverlay, pendingLimit, aiVerdict, chartReady, clearHoverPreview])
 
   const isUp = priceChange >= 0
-  /** Levels / Watch only / playbook — only while NY or Tokyo cash day is live */
-  const deskSessionLive = isAnyLiveFocusWindowActive()
+  /** Levels / Watch only / playbook — only while NY or Tokyo cash day is live (post-mount) */
   const tokyoDesk = instrument === 'NIKKEI'
   const watchPlaybookTitle = tokyoDesk ? 'Tokyo watch' : 'Afternoon watch'
   const watchPlaybookHint = tokyoDesk
@@ -2303,6 +2325,31 @@ export function TradingChart({
             Watch only
           </span>
         )}
+
+        {/* Live Voice — toggle like playbook; panel when open */}
+        <button
+          type="button"
+          title={
+            voiceOpen
+              ? 'Hide Live Voice coach'
+              : clockedIn
+                ? 'Show Live Voice — hold Mic to talk during morning entry'
+                : 'Live Voice — clock in first, then talk during morning entry'
+          }
+          onClick={() => setVoiceOpen((v) => !v)}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+            voiceOpen
+              ? 'bg-violet-600/30 border-violet-500/50 text-violet-100'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-violet-200 hover:border-violet-500/40'
+          }`}
+        >
+          <span
+            className={`w-2 h-2 rounded-full inline-block ${
+              voiceOpen ? 'bg-violet-400 animate-pulse' : 'bg-gray-600'
+            }`}
+          />
+          Voice
+        </button>
 
         {pendingLimit && !positionOverlay && (
           <>
@@ -2478,6 +2525,19 @@ export function TradingChart({
         >
           Reset scale
         </button>
+
+        {/* Live Voice coach — floating panel (self-contained card; toggle via Voice button) */}
+        {voiceOpen && (
+          <div className="absolute bottom-20 left-3 z-30 max-w-[min(340px,calc(100vw-1.5rem))]">
+            <LiveVoicePanel
+              instrument={(lockedInstrument ?? instrument) as Instrument}
+              clockedIn={clockedIn}
+              livePrice={livePrice}
+              refreshKey={levelsRefreshKey}
+              onClose={() => setVoiceOpen(false)}
+            />
+          </div>
+        )}
 
         {/* Playbook — morning trade or post-lunch watch (read-only); NY vs Tokyo labels */}
         {deskLevelsActive &&

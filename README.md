@@ -13,8 +13,13 @@ A sophisticated day trading platform combining real-time market data, institutio
 
 ## Documentation
 
-- **[TradePulse System Guide](docs/DAY_TRADER_SYSTEM_GUIDE.md)** — how the platform works and how its tools help day traders (not a trading strategy)
-- [Paper Trading Mode](docs/PAPER_TRADING_MODE.md) — paper vs live schema and API flow
+- **[System Architecture Guide](docs/ARCHITECTURE.md)** — High-level architecture, module flow, database schema, LLM orchestration, and market data feeds
+- **[Operational System Guide](docs/SYSTEM_GUIDE.md)** — Complete day trading desk lifecycle, level confluence engine, live voice assistant, and simulation replay
+- **[Trading Psychology & AI Level Finder Tools](docs/TRADING_PSYCHOLOGY_AND_AI_TOOLS.md)** — Live chart UI, AI level tools (AVWAP, Volume Profile POC/HVN, Stop pools), and trader consistency framework
+- **[Unreleased Live Voice AI Feature Specification](docs/UNRELEASED_LIVE_VOICE_FEATURE.md)** — Detailed specification, architecture, API contracts, local bypass testing (`LIVE_VOICE_DEV_BYPASS`), and deployment steps for the unreleased Live Voice Assistant
+- **[Usage & API Reference Manual](docs/USAGE_AND_API_REFERENCE.md)** — Complete REST API reference, environment setup, CLI scripts, Python backtests, and deployment
+- **[Paper Trading Mode](docs/PAPER_TRADING_MODE.md)** — Paper vs live trading execution flow and database rules
+- **[NY Session Quick Guide](docs/DAY_TRADER_SYSTEM_GUIDE.md)** — NY session desk clock and feature summary
 
 ## Project Structure
 

@@ -243,7 +243,7 @@ test('initialBalanceLevelsFromCandles: IB H resistance + IB L support', () => {
   const lo = levels.find((l) => l.type === 'support')
   assert(hi && lo, 'types')
   assert(hi!.rank === 'watch' && lo!.rank === 'watch', 'watch rank')
-  assert(/Initial Balance/i.test(hi!.reasoning), 'IB reasoning')
+  assert(!!hi!.reasoning && /Initial Balance/i.test(hi!.reasoning), 'IB reasoning')
 })
 
 test('resolveAfternoonDeskLevels: includes IB even when AI/review present', () => {

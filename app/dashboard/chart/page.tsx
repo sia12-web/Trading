@@ -519,8 +519,8 @@ export default function ChartPage() {
   const locked = gate?.lockedInstrument ?? null
   const clockedIn = !!gate?.clockedIn
   const attendedToday = !!gate?.attendedToday
-  // Overlay while not clocked in during the morning window (incl. early clock-out).
-  // After lunch: no overlay — attended traders keep the live chart (read-only); others see DONE.
+  // Never clocked in today → lock for the whole cash session (morning + afternoon).
+  // Clocked in then out (attendedToday) → afternoon watch chart is allowed (read-only).
   const chartLocked =
     gate != null &&
     !clockedIn &&
@@ -530,7 +530,10 @@ export default function ChartPage() {
           gate.phase === 'RECOMMENDED' ||
           gate.phase === 'ENTRY' ||
           gate.phase === 'FLAT' ||
-          gate.phase === 'MANAGE')))
+          gate.phase === 'MANAGE' ||
+          gate.phase === 'DONE')))
+  const missedSessionLocked =
+    chartLocked && !attendedToday && (gate?.phase === 'DONE' || gate?.phase === 'FLAT')
   const inManage = gate?.phase === 'MANAGE' || !!managePos
   const inEntry = gate?.phase === 'ENTRY' && !!gate?.canPlaceEntry
   const canTrade = inEntry && !pending && !managePos && clockedIn
@@ -564,7 +567,9 @@ export default function ChartPage() {
           <div className="flex items-center gap-2 px-1">
             <span className="text-[10px] text-gray-600">
               {chartLocked
-                ? 'Live chart locked — clock in (“Today I trade”) or use Simulation'
+                ? missedSessionLocked
+                  ? 'Session skipped — no clock-in today; live chart locked until cash close'
+                  : 'Live chart locked — clock in (“Today I trade”) or use Simulation'
                 : inWorking
                   ? `WORKING ${pending!.direction} limit @ ${pending!.level.toLocaleString()} — waiting for fill`
                   : canTrade
@@ -712,6 +717,7 @@ export default function ChartPage() {
                 canPlaceOrder={canTrade && dataMode === 'live'}
                 deskLevelsActive={deskLevelsActive}
                 deskAttended={deskAttended}
+                clockedIn={clockedIn}
                 levelsRefreshKey={levelsRefreshKey}
               />
             )}
@@ -720,12 +726,23 @@ export default function ChartPage() {
               <div className="absolute inset-0 z-30 flex items-center justify-center rounded-xl border border-surface-600 bg-[#0d1117]">
                 <div className="max-w-md px-8 text-center">
                   <p className="text-lg font-semibold text-white tracking-tight">
-                    Live chart is closed
+                    {missedSessionLocked ? 'Session skipped' : 'Live chart is closed'}
                   </p>
                   <p className="mt-2 text-sm text-gray-400 leading-relaxed">
-                    Clock in with <span className="text-amber-300 font-medium">Today I trade</span>{' '}
-                    (15 min before cash open) to unlock the live desk and level journaling. Or try
-                    Simulation.
+                    {missedSessionLocked ? (
+                      <>
+                        You did not clock in this morning, so the live desk (DOW, NASDAQ, and
+                        NIKKEI) stays locked through afternoon watch until cash close. Use
+                        Simulation, or wait for the next session.
+                      </>
+                    ) : (
+                      <>
+                        Clock in with{' '}
+                        <span className="text-amber-300 font-medium">Today I trade</span>{' '}
+                        (15 min before cash open) to unlock the live desk and level journaling.
+                        Or try Simulation.
+                      </>
+                    )}
                   </p>
                   <div className="mt-6 flex items-center justify-center gap-3">
                     {gate?.canClockIn && (

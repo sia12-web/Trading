@@ -87,7 +87,29 @@ const gate = resolveSessionGate({
 })
 assert(gate.canPlaceEntry === false, 'no entries after lunch')
 assert(gate.phase === 'DONE', `afternoon phase: ${gate.phase}`)
+assert(gate.canViewLiveChart === true, 'attended → afternoon chart ok')
 assert(/afternoon watch|cash close/i.test(gate.message), `gate: ${gate.message}`)
+
+// Never clocked in → afternoon stays locked (DOW / NASDAQ / NIKKEI)
+for (const [inst, now] of [
+  ['DOW', afternoonEt],
+  ['NASDAQ', afternoonEt],
+  ['NIKKEI', new Date('2026-07-15T04:00:00.000Z')], // 13:00 JST
+] as const) {
+  const missed = resolveSessionGate({
+    now,
+    lockedInstrument: inst,
+    viewingInstrument: inst,
+    clockedIn: false,
+    attendedToday: false,
+    attemptsUsed: 0,
+    stopLossHitCount: 0,
+  })
+  assert(missed.phase === 'DONE', `${inst} afternoon DONE`)
+  assert(missed.canViewLiveChart === false, `${inst} no chart without clock-in`)
+  assert(missed.attendedToday === false, `${inst} not attended`)
+  assert(/missed clock-in|locked until cash close/i.test(missed.message), `${inst}: ${missed.message}`)
+}
 
 const gateClosed = resolveSessionGate({
   now: afterCloseEt,

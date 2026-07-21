@@ -61,7 +61,9 @@ export function DraggableDeskWidget({
   footer,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState<WidgetPos>(() => loadPos(storageKey, defaultPos))
+  // Always start at defaultPos so SSR HTML matches the first client paint
+  // (sessionStorage is only available after mount).
+  const [pos, setPos] = useState<WidgetPos>(defaultPos)
   const [dragging, setDragging] = useState(false)
   const posRef = useRef(pos)
   const dragRef = useRef<{

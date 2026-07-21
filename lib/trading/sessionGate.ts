@@ -743,6 +743,8 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
           : r.message,
       }
     }
+    // Never attended: locked all day through afternoon watch until cash close
+    const skippedAfternoon = afternoonWatch && !attendedToday
     return {
       ...r,
       clockedIn: false,
@@ -752,11 +754,13 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       canFetchLiveBars: false,
       canPlaceEntry: false,
       canManagePosition: false,
-      message: missedLate
-        ? 'Missed clock-in — cash open already passed. This session is skipped (no AI, no trades). Use Simulation or wait for the next desk.'
-        : needClock
-          ? 'Live chart is closed — clock in (“Today I trade”) before cash open to unlock, or try Simulation.'
-          : r.message,
+      message: skippedAfternoon
+        ? 'Missed clock-in — no morning attendance. Live chart stays locked until cash close. Use Simulation.'
+        : missedLate
+          ? 'Missed clock-in — cash open already passed. This session is skipped (no AI, no trades). Use Simulation or wait for the next desk.'
+          : needClock
+            ? 'Live chart is closed — clock in (“Today I trade”) before cash open to unlock, or try Simulation.'
+            : r.message,
     }
   }
 
@@ -768,7 +772,8 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     return finish({
       ...base,
       phase: afternoonWatch ? 'DONE' : 'CLOSED',
-      canViewLiveChart: afternoonWatch && !!locked,
+      // Afternoon watch chart only if you clocked in / attended this morning
+      canViewLiveChart: afternoonWatch && !!locked && attendedToday,
       canFetchLiveBars: false,
       canPlaceEntry: false,
       canManagePosition: false,
@@ -867,7 +872,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   return finish({
     ...base,
     phase: afternoonWatch ? 'DONE' : 'CLOSED',
-    canViewLiveChart: afternoonWatch && !!locked,
+    canViewLiveChart: afternoonWatch && !!locked && attendedToday,
     canFetchLiveBars: false,
     canPlaceEntry: false,
     canManagePosition: false,

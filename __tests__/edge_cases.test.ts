@@ -176,8 +176,8 @@ test('Regime Detection: Strong bullish gap +2.5%', () => {
   const regimes = regimeDetector.detectRegimes(marketData)
 
   assert(regimes.length === 1, 'Should return 1 regime')
-  assert(regimes[0].regime === 'bullish', `Expected bullish regime, got ${regimes[0].regime}`)
-  assert(regimes[0].recommendation_confidence > 60, `Expected high confidence, got ${regimes[0].recommendation_confidence}`)
+  assert(regimes[0]!.regime === 'bullish', `Expected bullish regime, got ${regimes[0]?.regime}`)
+  assert(regimes[0]!.recommendation_confidence > 60, `Expected high confidence, got ${regimes[0]?.recommendation_confidence}`)
 })
 
 test('Regime Detection: Strong bearish gap -2.0%', () => {
@@ -202,8 +202,8 @@ test('Regime Detection: Strong bearish gap -2.0%', () => {
   const regimes = regimeDetector.detectRegimes(marketData)
 
   assert(regimes.length === 1, 'Should return 1 regime')
-  assert(regimes[0].regime === 'bearish', `Expected bearish regime, got ${regimes[0].regime}`)
-  assert(regimes[0].recommendation_confidence < 50, `Expected low confidence, got ${regimes[0].recommendation_confidence}`)
+  assert(regimes[0]!.regime === 'bearish', `Expected bearish regime, got ${regimes[0]?.regime}`)
+  assert(regimes[0]!.recommendation_confidence < 50, `Expected low confidence, got ${regimes[0]?.recommendation_confidence}`)
 })
 
 test('Regime Detection: Choppy market (no clear direction)', () => {
@@ -228,7 +228,7 @@ test('Regime Detection: Choppy market (no clear direction)', () => {
   const regimes = regimeDetector.detectRegimes(marketData)
 
   assert(regimes.length === 1, 'Should return 1 regime')
-  assert(regimes[0].regime === 'choppy', `Expected choppy regime, got ${regimes[0].regime}`)
+  assert(regimes[0]!.regime === 'choppy', `Expected choppy regime, got ${regimes[0]?.regime}`)
 })
 
 // ============================================================================
@@ -237,7 +237,6 @@ test('Regime Detection: Choppy market (no clear direction)', () => {
 
 test('Integration: Trading scenario - bullish entry, 2% gain', () => {
   const manager = new PositionManager()
-  const positionSizer = new PositionSizer()
 
   // Entry at market open: $100
   const position = {
@@ -305,7 +304,7 @@ test('Integration: Lunch close countdown', () => {
   const minutesRemaining = manager.getMinutesUntilLunchClose(at1100)
 
   assert(minutesRemaining !== null, 'Should return minutes remaining')
-  assert(minutesRemaining > 25 && minutesRemaining < 35, `Expected ~30 minutes, got ${minutesRemaining}`)
+  assert(minutesRemaining! > 25 && minutesRemaining! < 35, `Expected ~30 minutes, got ${minutesRemaining}`)
 })
 
 // ============================================================================

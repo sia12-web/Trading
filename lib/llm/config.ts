@@ -15,8 +15,6 @@ export type LlmTier = 'live' | 'sim'
 
 /** Best available Opus for live Level Finder (do not downgrade for cost). */
 export const DEFAULT_LEVEL_FINDER_MODEL = 'claude-opus-4-8'
-/** @deprecated alias — same as DEFAULT_LEVEL_FINDER_MODEL */
-const DEFAULT_LIVE_PROPOSER_MODEL = DEFAULT_LEVEL_FINDER_MODEL
 const DEFAULT_SIM_PROPOSER_MODEL = 'claude-haiku-4-5-20251001'
 const DEFAULT_VERIFIER_MODEL = 'gemini-2.0-flash'
 

@@ -66,6 +66,14 @@ async function parseBody(request: Request): Promise<{
 
 export async function POST(request: Request) {
   try {
+    const contentLength = request.headers.get('content-length')
+    if (contentLength && parseInt(contentLength, 10) > 10 * 1024 * 1024) {
+      return NextResponse.json(
+        { success: false, error: 'Audio payload exceeds maximum limit of 10MB' },
+        { status: 413 }
+      )
+    }
+
     const user = await resolveDeskUser(request)
     if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })

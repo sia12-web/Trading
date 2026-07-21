@@ -38,7 +38,7 @@ export function extractPinsFromTranscript(
       ? 'BUY'
       : null
 
-  const rawMatches = text.match(/\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b|\b\d{4,7}(?:\.\d+)?\b/g) || []
+  const rawMatches = text.match(/\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b|\b\d{3,7}(?:\.\d+)?\b/g) || []
   const pins: LiveVoicePin[] = []
   const seen = new Set<number>()
 
@@ -96,10 +96,17 @@ export async function getOrCreateLiveVoiceSession(
 
   if (existing?.id) {
     if (existing.status === 'closed') {
-      await supabase
+      const { data: reopened, error: reopenErr } = await supabase
         .from('live_voice_sessions')
         .update({ status: 'active', ended_at: null, updated_at: new Date().toISOString() })
         .eq('id', existing.id)
+        .select('id, user_id, instrument, market, trade_date, status')
+        .single()
+      if (reopenErr || !reopened) {
+        logger.warn('live_voice.session_reopen_failed', { error: reopenErr?.message })
+        return null
+      }
+      return reopened as LiveVoiceSessionRow
     }
     return existing as LiveVoiceSessionRow
   }

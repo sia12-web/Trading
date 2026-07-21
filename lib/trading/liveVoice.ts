@@ -75,10 +75,10 @@ function hhmm(hms: string): string {
 
 /**
  * Opt-in only: set LIVE_VOICE_DEV_BYPASS=true in .env.local to test outside the weekday window.
- * Always off in production — never honor the flag on Railway.
+ * Off in production unless ALLOW_STAGING_VOICE_BYPASS=true is explicitly set for staging previews.
  */
 export function liveVoiceDevBypassEnabled(): boolean {
-  if (process.env.NODE_ENV === 'production') return false
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_STAGING_VOICE_BYPASS !== 'true') return false
   return process.env.LIVE_VOICE_DEV_BYPASS === 'true'
 }
 

@@ -111,7 +111,7 @@ test('Status: not_clocked_in keeps inVoiceWindow true', () => {
 test('SECURITY: LIVE_VOICE_DEV_BYPASS ignored in production', () => {
   const prevNode = process.env.NODE_ENV
   const prevBypass = process.env.LIVE_VOICE_DEV_BYPASS
-  process.env.NODE_ENV = 'production'
+  ;(process.env as any).NODE_ENV = 'production'
   process.env.LIVE_VOICE_DEV_BYPASS = 'true'
   try {
     assert(liveVoiceDevBypassEnabled() === false, 'bypass off in production')
@@ -123,7 +123,7 @@ test('SECURITY: LIVE_VOICE_DEV_BYPASS ignored in production', () => {
     })
     assert(r.enabled === false && r.disableCode === 'weekend', 'weekend closed in prod')
   } finally {
-    process.env.NODE_ENV = prevNode
+    ;(process.env as any).NODE_ENV = prevNode
     if (prevBypass === undefined) delete process.env.LIVE_VOICE_DEV_BYPASS
     else process.env.LIVE_VOICE_DEV_BYPASS = prevBypass
   }
@@ -131,7 +131,7 @@ test('SECURITY: LIVE_VOICE_DEV_BYPASS ignored in production', () => {
 
 test('Dev bypass unlocks weekend voice + clock-in when not production', () => {
   const prevNode = process.env.NODE_ENV
-  process.env.NODE_ENV = 'development'
+  ;(process.env as any).NODE_ENV = 'development'
   withEnv('LIVE_VOICE_DEV_BYPASS', 'true', () => {
     assert(liveVoiceDevBypassEnabled() === true, 'bypass on')
     const sat = new Date(Date.UTC(2026, 6, 18, 13, 30, 0))
@@ -144,7 +144,7 @@ test('Dev bypass unlocks weekend voice + clock-in when not production', () => {
     assert(canClockInNow('NY', sat).ok === true, 'clock-in open')
     assert(activeClockMarkets(sat).includes('NY'), 'active markets include NY')
   })
-  process.env.NODE_ENV = prevNode
+  ;(process.env as any).NODE_ENV = prevNode
 })
 
 // ── Reaction classification edges ──────────────────────────────────────────

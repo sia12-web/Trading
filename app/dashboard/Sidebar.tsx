@@ -272,7 +272,7 @@ export function Sidebar() {
         </Suspense>
       </nav>
 
-      <div className="px-5 py-4 border-t border-surface-600 space-y-1">
+      <div className="px-5 py-4 border-t border-surface-600 space-y-2">
         <div className="flex items-center gap-2">
           <span className="inline-block w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
           <span className="text-xs text-gray-500">Desk ready</span>
@@ -280,7 +280,34 @@ export function Sidebar() {
         <p className="text-[10px] text-gray-600 leading-snug">
           Order History has Live + Simulation tabs.
         </p>
+        <LogoutButton />
       </div>
     </aside>
+  )
+}
+
+function LogoutButton() {
+  const [busy, setBusy] = useState(false)
+
+  async function logout() {
+    if (busy) return
+    setBusy(true)
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' })
+    } catch {
+      /* still leave */
+    }
+    window.location.href = '/login'
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={logout}
+      disabled={busy}
+      className="mt-1 w-full rounded-lg border border-surface-600 px-2.5 py-1.5 text-left text-xs font-medium text-gray-500 transition hover:border-surface-500 hover:text-gray-300 disabled:opacity-50"
+    >
+      {busy ? 'Signing out…' : 'Sign out'}
+    </button>
   )
 }
