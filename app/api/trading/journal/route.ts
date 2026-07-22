@@ -35,6 +35,7 @@ export async function GET(request: NextRequest) {
          entry_reason, entry_source, exit_notes, profit_target_price, created_at, updated_at`
       )
       .eq('user_id', user.id)
+      .neq('fill_status', 'cancelled')
       .order('entry_timestamp', { ascending: false })
       .limit(limit)
 
@@ -91,7 +92,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to load journal', detail: error.message }, { status: 500 })
     }
 
-    const rows = trades ?? []
+    const rawRows = trades ?? []
+    const rows = rawRows.filter(
+      (t) =>
+        t.fill_status !== 'cancelled' &&
+        t.exit_reason !== 'broker_rejected' &&
+        !/failed|rejected|insufficient margin/i.test(String(t.notes || ''))
+    )
     const ids = rows.map((t) => t.id).filter(Boolean)
 
     let decisions: Array<Record<string, unknown>> = []

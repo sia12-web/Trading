@@ -514,6 +514,22 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
           status: broker.status,
           instrument: body.instrument,
         })
+        if (workingRow?.id) {
+          await supabase
+            .from('trades_journal')
+            .update({
+              fill_status: 'cancelled',
+              exit_timestamp: new Date().toISOString(),
+              exit_price: body.entry_price,
+              exit_reason: 'broker_rejected',
+              profit_loss: 0,
+              profit_loss_percent: 0,
+              notes: `OANDA order failed: ${broker.error}`,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', workingRow.id)
+            .eq('user_id', user.id)
+        }
         return NextResponse.json(
           {
             success: false,
