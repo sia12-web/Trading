@@ -567,10 +567,24 @@ export function TradingChart({
 
   // Highlight Time Range tool — drag 2D zone to highlight multi-session time & price for Leo
   const [drawTimeActive, setDrawTimeActive] = useState(false)
-  const [drawnTime, setDrawnTime] = useState<{ startUnix: number; endUnix: number; label: string } | null>(null)
+  const [drawnTime, setDrawnTime] = useState<{ startUnix: number; endUnix: number; priceHigh: number; priceLow: number; label: string } | null>(null)
   const [drawnTimeCounter, setDrawnTimeCounter] = useState(1)
   const [drawnTimeSending, setDrawnTimeSending] = useState(false)
   const drawTimeOverlayRef = useRef<HTMLDivElement | null>(null)
+
+  // Saved Time Highlights for recall list
+  const [savedHighlights, setSavedHighlights] = useState<Array<{
+    id: string
+    label: string
+    startUnix: number
+    endUnix: number
+    priceHigh: number
+    priceLow: number
+    sessionSpanStr: string
+    visible: boolean
+  }>>([])
+  const [highlightsListOpen, setHighlightsListOpen] = useState(false)
+  const [chartScrollTrigger, setChartScrollTrigger] = useState(0)
 
   // TradingView-style Interactive Risk/Reward Limit Tool (O key / toolbar button)
   const [riskBoxActive, setRiskBoxActive] = useState(false)
@@ -1108,6 +1122,12 @@ export function TradingChart({
     ibSeriesRef.current = ibSeries
     setChartReady(true)
 
+    // Sync React overlay coordinates on chart scroll/zoom
+    const onScroll = () => {
+      setChartScrollTrigger((prev) => prev + 1)
+    }
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onScroll)
+
     // Responsive resize
     const ro = new ResizeObserver(() => {
       if (containerRef.current && chartRef.current) {
@@ -1121,6 +1141,9 @@ export function TradingChart({
 
     return () => {
       ro.disconnect()
+      try {
+        chart.timeScale().unsubscribeVisibleLogicalRangeChange(onScroll)
+      } catch {}
       chart.remove()
       chartRef.current  = null
       candleRef.current = null
@@ -2337,14 +2360,66 @@ export function TradingChart({
       }
     } catch { /* silent */ }
 
+    // Save to list
+    const newHl = {
+      id: `${Date.now()}`,
+      label,
+      startUnix: drawnTime.startUnix,
+      endUnix: drawnTime.endUnix,
+      priceHigh: drawnTime.priceHigh,
+      priceLow: drawnTime.priceLow,
+      sessionSpanStr,
+      visible: true,
+    }
+    setSavedHighlights((prev) => [...prev, newHl])
+
     setDrawnTimeSending(false)
     setDrawnTime(null)
-  }, [drawnTime, instrument, lockedInstrument, voiceOpen])
+  }, [drawnTime, instrument, lockedInstrument, voiceOpen, setSavedHighlights])
 
   const cancelDrawnTime = useCallback(() => {
     setDrawnTime(null)
     setDrawTimeActive(false)
   }, [])
+
+  const centerChartOnHighlight = useCallback((hl: typeof savedHighlights[0]) => {
+    const chart = chartRef.current
+    if (!chart) return
+    const timeScale = chart.timeScale()
+
+    // Add extra padding bars to the left and right so it visualizes comfortably
+    const span = hl.endUnix - hl.startUnix
+    const padding = Math.max(span * 0.2, 3600) // minimum 1 hour padding
+    
+    timeScale.setVisibleRange({
+      from: (hl.startUnix - padding) as UTCTimestamp,
+      to: (hl.endUnix + padding) as UTCTimestamp,
+    })
+  }, [])
+
+  // Lock chart scrolling & scaling during active drawing to prevent chart jumping
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart) return
+    const drawing = drawTimeActive || drawZoneActive
+
+    chart.applyOptions({
+      handleScroll: {
+        mouseWheel: !drawing,
+        pressedMouseMove: !drawing,
+        horzTouchDrag: !drawing,
+        vertTouchDrag: !drawing,
+      },
+      handleScale: {
+        axisPressedMouseMove: {
+          time: !drawing,
+          price: !drawing,
+        },
+        mouseWheel: !drawing,
+        pinch: !drawing,
+      }
+    })
+  }, [drawTimeActive, drawZoneActive])
 
   // ── Highlight Time Range tool — 2D rectangle price & time highlight for Leo ─
   useEffect(() => {
@@ -2454,6 +2529,12 @@ export function TradingChart({
       dragging = false
       const rect = container.getBoundingClientRect()
       const endX = e.clientX - rect.left
+      const endY = e.clientY - rect.top
+
+      const pStart = priceAtY(startY)
+      const pEnd = priceAtY(endY)
+      const highPrice = pStart != null && pEnd != null ? Math.max(pStart, pEnd) : 0
+      const lowPrice = pStart != null && pEnd != null ? Math.min(pStart, pEnd) : 0
       
       const timeScale = chartRef.current?.timeScale()
       if (!timeScale) return
@@ -2475,6 +2556,8 @@ export function TradingChart({
           setDrawnTime({
             startUnix: Number(startCandle.time),
             endUnix: Number(endCandle.time),
+            priceHigh: highPrice,
+            priceLow: lowPrice,
             label: currentLabel,
           })
         }
@@ -3016,6 +3099,56 @@ export function TradingChart({
     : 'Playbook'
   const playbookPanelTitle = afternoonWatch ? watchPlaybookTitle : 'Morning playbook'
 
+  const renderSavedHighlightBoxes = () => {
+    const chart = chartRef.current
+    const series = candleRef.current
+    if (!chart || !series) return null
+    const timeScale = chart.timeScale()
+
+    // Reference chartScrollTrigger to register active scroll updates and solve compiler checks
+    void chartScrollTrigger
+
+    return savedHighlights.map((hl) => {
+      if (!hl.visible) return null
+
+      // Convert times directly to coordinates
+      const leftCoord = timeScale.timeToCoordinate(hl.startUnix as any)
+      const rightCoord = timeScale.timeToCoordinate(hl.endUnix as any)
+      
+      // Handle fallback values for price boundaries
+      const pHigh = hl.priceHigh || (candles.length > 0 ? Math.max(...candles.map(c => c.high)) : 100000)
+      const pLow = hl.priceLow || (candles.length > 0 ? Math.min(...candles.map(c => c.low)) : 0)
+
+      const topCoord = series.priceToCoordinate(pHigh)
+      const bottomCoord = series.priceToCoordinate(pLow)
+
+      if (leftCoord == null || rightCoord == null || topCoord == null || bottomCoord == null) return null
+
+      const left = Math.min(leftCoord, rightCoord)
+      const top = Math.min(topCoord, bottomCoord)
+      const width = Math.abs(rightCoord - leftCoord)
+      const height = Math.abs(bottomCoord - topCoord)
+
+      return (
+        <div
+          key={hl.id}
+          className="absolute border border-dashed border-violet-500 bg-violet-500/15 rounded pointer-events-none z-20 flex flex-col justify-between p-1.5"
+          style={{
+            left: `${left}px`,
+            top: `${top}px`,
+            width: `${width}px`,
+            height: `${height}px`,
+            transition: 'none',
+          }}
+        >
+          <span className="text-[9px] font-mono font-extrabold text-violet-200 bg-[#161b22]/90 border border-violet-500/30 px-1.5 py-0.5 rounded w-max select-none leading-none shadow-md">
+            {hl.label}
+          </span>
+        </div>
+      )
+    })
+  }
+
   return (
     <div
       className={`flex flex-col gap-2 ${
@@ -3233,6 +3366,25 @@ export function TradingChart({
           {drawTimeActive ? 'Drag to highlight…' : 'Highlight Time (T)'}
         </button>
 
+        {/* Highlights Recall List Button */}
+        <button
+          type="button"
+          title="Open list of saved session highlights"
+          onClick={() => setHighlightsListOpen((prev) => !prev)}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+            highlightsListOpen
+              ? 'bg-violet-600 border-violet-500 text-white shadow-lg'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-violet-200 hover:border-violet-500/40'
+          }`}
+        >
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <line x1="4" y1="4" x2="12" y2="4" strokeLinecap="round" />
+            <line x1="4" y1="8" x2="12" y2="8" strokeLinecap="round" />
+            <line x1="4" y1="12" x2="12" y2="12" strokeLinecap="round" />
+          </svg>
+          {`Highlights (${savedHighlights.length})`}
+        </button>
+
         {/* Interactive TradingView Risk/Reward Limit Order Tool */}
         <button
           type="button"
@@ -3424,6 +3576,87 @@ export function TradingChart({
           className="pointer-events-none absolute inset-0 z-[1]"
           style={{ opacity: 1, transition: 'none', willChange: 'opacity' }}
         />
+        
+        {/* Render Saved 2D Time Highlights */}
+        {renderSavedHighlightBoxes()}
+
+        {/* Saved Highlights List glassmorphism popup panel */}
+        {highlightsListOpen && (
+          <div className="absolute top-3 right-3 z-30 w-80 rounded-xl border border-violet-500/50 bg-[#161b22]/95 shadow-2xl backdrop-blur-md p-4 space-y-3">
+            <div className="flex items-center justify-between border-b border-violet-500/20 pb-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-violet-300 flex items-center gap-1.5">
+                <svg viewBox="0 0 16 16" className="h-4 w-4 text-violet-400" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <line x1="4" y1="4" x2="12" y2="4" strokeLinecap="round" />
+                  <line x1="4" y1="8" x2="12" y2="8" strokeLinecap="round" />
+                  <line x1="4" y1="12" x2="12" y2="12" strokeLinecap="round" />
+                </svg>
+                Saved Highlights ({savedHighlights.length})
+              </span>
+              <button
+                onClick={() => setHighlightsListOpen(false)}
+                className="text-gray-400 hover:text-white transition text-xs font-bold"
+              >✕</button>
+            </div>
+
+            {savedHighlights.length === 0 ? (
+              <p className="text-xs text-gray-550 text-center py-6">
+                No highlights saved yet. Drag on chart using "Highlight Time" to create.
+              </p>
+            ) : (
+              <div className="max-h-60 overflow-y-auto pr-1 space-y-2 custom-scrollbar">
+                {savedHighlights.map((hl) => (
+                  <div
+                    key={hl.id}
+                    className="flex flex-col gap-1.5 rounded-lg border border-[#30363d] bg-black/30 p-2.5 hover:border-violet-500/30 transition"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-violet-200">{hl.label}</span>
+                      <div className="flex items-center gap-1.5">
+                        {/* Toggle Visibility */}
+                        <button
+                          onClick={() => {
+                            setSavedHighlights((prev) =>
+                              prev.map((item) =>
+                                item.id === hl.id ? { ...item, visible: !item.visible } : item
+                              )
+                            )
+                          }}
+                          className={`px-1.5 py-0.5 text-[10px] font-bold rounded transition border ${
+                            hl.visible
+                              ? 'bg-violet-600/20 border-violet-500/40 text-violet-300 hover:bg-violet-600/30'
+                              : 'bg-transparent border-gray-605 text-gray-505 hover:border-gray-500'
+                          }`}
+                          title="Toggle visibility on chart"
+                        >
+                          {hl.visible ? 'Hide' : 'Show'}
+                        </button>
+                        {/* Center chart on range */}
+                        <button
+                          onClick={() => centerChartOnHighlight(hl)}
+                          className="px-1.5 py-0.5 text-[10px] font-bold rounded border border-[#30363d] bg-black/40 text-gray-300 hover:bg-black/60 hover:text-white transition"
+                          title="Center chart on highlight range"
+                        >
+                          Center
+                        </button>
+                        {/* Delete */}
+                        <button
+                          onClick={() => {
+                            setSavedHighlights((prev) => prev.filter((item) => item.id !== hl.id))
+                          }}
+                          className="text-gray-505 hover:text-red-400 transition font-bold text-[10px] px-1"
+                          title="Delete highlight"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-gray-400 leading-normal">{hl.sessionSpanStr}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {positionOverlay && (
           <div className="pointer-events-none absolute left-3 top-3 z-20 max-w-[min(360px,70%)]">
             {aiVerdict ? (
