@@ -188,8 +188,9 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
     const openNy = openRes.data
 
     const filledRows = filledToday ?? []
-    const attemptsUsed = filledRows.length
+    // Attempts = stop-outs only
     const stopHits = filledRows.filter((t) => t.exit_reason === 'stop_hit').length
+    const attemptsUsed = stopHits
     const clockedIn = attendance?.status === 'clocked_in'
     const attendedToday = !!attendance
 

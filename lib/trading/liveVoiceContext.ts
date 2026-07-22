@@ -249,8 +249,8 @@ export async function buildLiveVoiceDeskContext(
   }
 
   const filledTrades = filledRes.data ?? []
-  const attemptsUsed = filledTrades.length
   const stopHits = filledTrades.filter((t) => t.exit_reason === 'stop_hit').length
+  const attemptsUsed = stopHits
 
   const workingOrders = (workingRes.data || []).map((w) => ({
     id: w.id as string,
@@ -430,7 +430,7 @@ export async function buildLiveVoiceDeskContext(
       maxAttempts: MAX_SESSION_ATTEMPTS,
       maxStopHits: MAX_STOP_HITS,
       entryRule:
-        'Entries only marketOpen→entryClose (first ~45 min). AI/structure risk 5%; manual 1%. Max 2 attempts / 2 stop-outs. Voice never places orders.',
+        'Entries only marketOpen→entryClose (first ~45 min). AI/structure risk 5%; manual 1%. Max 2 stop-out attempts. Voice never places orders.',
     },
     avwap: {
       openLabel: clock.openLabel,

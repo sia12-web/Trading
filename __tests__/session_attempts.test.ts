@@ -1,5 +1,5 @@
 /**
- * Max 2 attempts / 2 stop-outs — live and sim share evaluateSessionAttempts.
+ * Attempts = stop-outs only (max 2). Fills / TP do not burn an attempt.
  * Run: npx tsx __tests__/session_attempts.test.ts
  */
 
@@ -18,45 +18,49 @@ assert(MAX_SESSION_ATTEMPTS === 2, 'max attempts must be 2')
 assert(MAX_STOP_HITS === 2, 'max stops must be 2')
 
 {
-  const fresh = evaluateSessionAttempts({ attemptsUsed: 0, stopHits: 0 })
+  const fresh = evaluateSessionAttempts({ stopHits: 0 })
   assert(!fresh.entriesLocked, 'fresh session should allow entries')
   assert(!fresh.sessionDone, 'fresh session not done')
+  assert(fresh.attemptsUsed === 0, 'attempts start at 0')
 }
 
 {
-  const afterOneStop = evaluateSessionAttempts({ attemptsUsed: 1, stopHits: 1 })
-  assert(!afterOneStop.sessionDone, 'one stop still allows a second attempt')
-  assert(!afterOneStop.entriesLocked, 'one stop — can place again when flat')
-}
-
-{
-  const twoStops = evaluateSessionAttempts({ attemptsUsed: 2, stopHits: 2 })
-  assert(twoStops.sessionDone, 'two stops locks the session')
-  assert(twoStops.entriesLocked, 'two stops blocks entries')
-  assert(!!twoStops.lockReason?.includes('Stopped out'), 'lock reason mentions stops')
-}
-
-{
-  const twoAttemptsFlat = evaluateSessionAttempts({
+  // Two fills with zero stops must NOT lock the book
+  const twoFillsNoStops = evaluateSessionAttempts({
     attemptsUsed: 2,
     stopHits: 0,
     hasOpenPosition: false,
   })
-  assert(twoAttemptsFlat.sessionDone, 'two attempts used → session done when flat')
+  assert(!twoFillsNoStops.sessionDone, 'fills alone do not finish the session')
+  assert(!twoFillsNoStops.entriesLocked, 'fills alone do not lock entries')
+  assert(twoFillsNoStops.attemptsUsed === 0, 'attempts = stopHits, not fill count')
 }
 
 {
-  const secondOpen = evaluateSessionAttempts({
-    attemptsUsed: 2,
-    stopHits: 1,
+  const afterOneStop = evaluateSessionAttempts({ stopHits: 1 })
+  assert(!afterOneStop.sessionDone, 'one stop still allows a second attempt')
+  assert(!afterOneStop.entriesLocked, 'one stop — can place again when flat')
+  assert(afterOneStop.attemptsUsed === 1, 'one stop = one attempt')
+}
+
+{
+  const twoStops = evaluateSessionAttempts({ stopHits: 2 })
+  assert(twoStops.sessionDone, 'two stops locks the session')
+  assert(twoStops.entriesLocked, 'two stops blocks entries')
+  assert(twoStops.attemptsUsed === 2, 'two stops = two attempts')
+  assert(!!twoStops.lockReason?.includes('Stopped out'), 'lock reason mentions stops')
+}
+
+{
+  const openPos = evaluateSessionAttempts({
+    stopHits: 0,
     hasOpenPosition: true,
   })
-  assert(!secondOpen.sessionDone, 'second attempt still open — manage, not done yet')
-  assert(secondOpen.entriesLocked, 'cannot place while open')
+  assert(!openPos.sessionDone, 'open position is manage, not done')
+  assert(openPos.entriesLocked, 'cannot place while open')
 }
 
 {
-  // Cash-open Monday-ish NY: use a fixed morning stamp
   const morning = new Date('2026-07-14T14:00:00.000Z') // 10:00 ET
   const gate = resolveSimMorningGate({
     now: morning,
@@ -76,11 +80,12 @@ assert(MAX_STOP_HITS === 2, 'max stops must be 2')
     now: morning,
     instrument: 'NASDAQ',
     hasOpenPosition: false,
-    attemptsUsed: 1,
+    attemptsUsed: 5,
     stopHits: 1,
   })
-  assert(gate.phase === 'ENTRY', `expected ENTRY for second attempt, got ${gate.phase}`)
+  assert(gate.phase === 'ENTRY', `expected ENTRY after one stop, got ${gate.phase}`)
   assert(gate.canPlaceEntry === true, 'second attempt allowed after one stop')
+  assert(gate.attemptsUsed === 1, 'attempts follow stopHits, ignore fill count')
 }
 
 console.log('session_attempts: ok')

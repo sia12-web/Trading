@@ -204,7 +204,7 @@ export function LevelOrderTicket({
     if (placingRef.current) return
     if (!canPlace) {
       setError(
-        'Entries locked — morning session only, max 2 attempts / 2 stops, locked instrument'
+        'Entries locked — morning session only, max 2 stop-out attempts, locked instrument'
       )
       return
     }

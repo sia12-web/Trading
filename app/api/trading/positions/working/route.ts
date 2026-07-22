@@ -144,11 +144,12 @@ export async function POST(request: Request) {
     ])
 
     const filledRows = filledRes.data ?? []
+    const stopHits = filledRows.filter((t) => t.exit_reason === 'stop_hit').length
     const gate = resolveSessionGate({
       lockedInstrument: locked,
       hasOpenPosition: !!openRes.data,
-      attemptsUsed: filledRows.length,
-      stopLossHitCount: filledRows.filter((t) => t.exit_reason === 'stop_hit').length,
+      attemptsUsed: stopHits,
+      stopLossHitCount: stopHits,
       viewingInstrument: instrument,
       clockedIn: attendance?.status === 'clocked_in',
       attendedToday: !!attendance,

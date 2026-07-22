@@ -293,17 +293,13 @@ export function SessionBanner({
       {gate.clockedIn && (
         <span
           className={`rounded px-2 py-0.5 font-semibold tabular-nums ${
-            (gate.stopHits ?? 0) >= (gate.maxStopHits ?? 2) ||
-            (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? 2)
+            (gate.stopHits ?? 0) >= (gate.maxStopHits ?? 2)
               ? 'bg-red-500/25 text-red-200'
               : 'bg-sky-500/20 text-sky-200'
           }`}
-          title="Max 2 attempts per session. After 2 stop-outs, trading switches off."
+          title="Attempts = stop-loss hits only (max 2). Fills / TP do not burn an attempt."
         >
-          Attempts {gate.attemptsUsed ?? 0}/{gate.maxAttempts ?? 2}
-          {(gate.stopHits ?? 0) > 0
-            ? ` · Stops ${gate.stopHits}/${gate.maxStopHits ?? 2}`
-            : ''}
+          Attempts {gate.attemptsUsed ?? gate.stopHits ?? 0}/{gate.maxAttempts ?? 2}
         </span>
       )}
       <span className="flex-1 min-w-[12rem]">{phaseHint(gate.phase, gate.message)}</span>
