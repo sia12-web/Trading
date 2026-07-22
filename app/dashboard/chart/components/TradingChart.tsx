@@ -73,6 +73,17 @@ import {
   deskVisibleLogicalRange,
   deskBarSpacing,
 } from '@/lib/trading/deskInstrumentPreference'
+import {
+  instrumentTick,
+  snapDeskPrice,
+  snapStopToTick,
+  snapTargetToTick,
+} from '@/lib/trading/instrumentTicks'
+
+function defaultManualStop(limit: number, direction: 'LONG' | 'SHORT'): number {
+  const pct = 0.0035
+  return direction === 'LONG' ? limit * (1 - pct) : limit * (1 + pct)
+}
 
 type DeskChartFmt = {
   formatTime: (unix: number, withSeconds?: boolean) => string
@@ -535,6 +546,26 @@ export function TradingChart({
   const [drawnTime, setDrawnTime] = useState<{ startUnix: number; endUnix: number } | null>(null)
   const [drawnTimeSending, setDrawnTimeSending] = useState(false)
   const drawTimeOverlayRef = useRef<HTMLDivElement | null>(null)
+
+  // TradingView-style Interactive Risk/Reward Limit Tool (O key / toolbar button)
+  const [riskBoxActive, setRiskBoxActive] = useState(false)
+  const [riskBox, setRiskBox] = useState<{
+    direction: 'LONG' | 'SHORT'
+    entryPrice: number
+    stopLoss: number
+    profitTarget: number
+  } | null>(null)
+  const riskBoxLinesRef = useRef<any[]>([])
+  const [rationaleModal, setRationaleModal] = useState<{
+    open: boolean
+    entryPrice: number
+    stopLoss: number
+    profitTarget: number
+    direction: 'LONG' | 'SHORT'
+    suggestedReason: string
+  } | null>(null)
+  const [userRationale, setUserRationale] = useState('')
+  const [userSlTpRationale, setUserSlTpRationale] = useState('')
 
   // Fullscreen mode (F key / Esc / button)
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -2391,7 +2422,99 @@ export function TradingChart({
     }
   }, [drawTimeActive, chartReady, candles])
 
-  // ── Keyboard shortcuts: V (Voice), L (Levels), P (Playbook), D (Draw Zone), F (Fullscreen), Esc
+  // Clear risk box chart lines
+  const clearRiskBoxLines = useCallback(() => {
+    const host = priceLineHostRef.current
+    if (host) {
+      riskBoxLinesRef.current.forEach((line) => {
+        try { host.removePriceLine(line) } catch { /* silent */ }
+      })
+    }
+    riskBoxLinesRef.current = []
+  }, [])
+
+  const cancelRiskBox = useCallback(() => {
+    setRiskBox(null)
+    setRiskBoxActive(false)
+    clearRiskBoxLines()
+  }, [clearRiskBoxLines])
+
+  // Paint interactive risk box lines on chart
+  useEffect(() => {
+    clearRiskBoxLines()
+    if (!riskBox || !chartReady) return
+    const host = priceLineHostRef.current
+    if (!host) return
+
+    const isLong = riskBox.direction === 'LONG'
+    const entryColor = isLong ? 'rgba(56, 189, 248, 0.95)' : 'rgba(251, 113, 133, 0.95)'
+    const slColor = '#f43f5e'
+    const tpColor = '#10b981'
+
+    const lineEntry = host.createPriceLine({
+      price: riskBox.entryPrice,
+      color: entryColor,
+      lineWidth: 2,
+      lineStyle: 0,
+      axisLabelVisible: true,
+      title: `◆ ENTRY ${riskBox.direction} @ ${riskBox.entryPrice.toLocaleString()}`,
+    })
+
+    const lineSl = host.createPriceLine({
+      price: riskBox.stopLoss,
+      color: slColor,
+      lineWidth: 2,
+      lineStyle: 2,
+      axisLabelVisible: true,
+      title: `▁ SL @ ${riskBox.stopLoss.toLocaleString()}`,
+    })
+
+    const lineTp = host.createPriceLine({
+      price: riskBox.profitTarget,
+      color: tpColor,
+      lineWidth: 2,
+      lineStyle: 2,
+      axisLabelVisible: true,
+      title: `▔ TP @ ${riskBox.profitTarget.toLocaleString()}`,
+    })
+
+    riskBoxLinesRef.current = [lineEntry, lineSl, lineTp]
+  }, [riskBox, chartReady, instrument, clearRiskBoxLines])
+
+  const confirmRiskBoxOrder = useCallback(() => {
+    if (!riskBox) return
+    const { entryPrice, stopLoss, profitTarget, direction } = riskBox
+
+    // Check if Leo was consulted for this session / price
+    const discussedWithLeo = (levelsRef.current || []).some(
+      (l) => Math.abs(l.price - entryPrice) / entryPrice < 0.005
+    )
+
+    if (discussedWithLeo) {
+      const autoReason = `Manual ${direction} Zone (Discussed with Leo): Level @ ${entryPrice.toLocaleString()}, SL @ ${stopLoss.toLocaleString()}, TP @ ${profitTarget.toLocaleString()}`
+      onLevelSelect?.(entryPrice, {
+        source: 'manual',
+        side: direction === 'LONG' ? 'BUY' : 'SHORT',
+        preferredDirection: direction,
+        reasoning: autoReason,
+      })
+      cancelRiskBox()
+    } else {
+      // Require user rationale for pure manual orders
+      setUserRationale(`Technical structure entry @ ${entryPrice.toLocaleString()}`)
+      setUserSlTpRationale(`Protective SL @ ${stopLoss.toLocaleString()}, Target TP @ ${profitTarget.toLocaleString()}`)
+      setRationaleModal({
+        open: true,
+        entryPrice,
+        stopLoss,
+        profitTarget,
+        direction,
+        suggestedReason: `Manual ${direction} limit @ ${entryPrice.toLocaleString()}`,
+      })
+    }
+  }, [riskBox, onLevelSelect, cancelRiskBox])
+
+  // ── Keyboard shortcuts: V (Voice), L (Levels), P (Playbook), D (Draw Zone), T (Highlight Time), O (Risk Box), F (Fullscreen), Esc
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement
@@ -2435,8 +2558,29 @@ export function TradingChart({
             return true
           }
         })
+      } else if (key === 'o') {
+        e.preventDefault()
+        setRiskBoxActive((prev) => {
+          if (prev || riskBox) {
+            cancelRiskBox()
+            return false
+          } else {
+            const rawPx = livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 67000)
+            const dir = 'LONG'
+            setRiskBox({
+              direction: dir,
+              entryPrice: rawPx,
+              stopLoss: defaultManualStop(rawPx, dir),
+              profitTarget: dir === 'LONG' ? snapDeskPrice(instrument, rawPx * 1.0105) : snapDeskPrice(instrument, rawPx * 0.9895),
+            })
+            return true
+          }
+        })
       } else if (key === 'escape') {
-        if (drawZoneActive || drawnZone) {
+        if (riskBoxActive || riskBox) {
+          e.preventDefault()
+          cancelRiskBox()
+        } else if (drawZoneActive || drawnZone) {
           e.preventDefault()
           cancelDrawnZone()
         } else if (drawTimeActive || drawnTime) {
@@ -2964,6 +3108,43 @@ export function TradingChart({
           {drawTimeActive ? 'Drag to highlight…' : 'Highlight Time (T)'}
         </button>
 
+        {/* Interactive TradingView Risk/Reward Limit Order Tool */}
+        <button
+          type="button"
+          title={
+            riskBox
+              ? 'TradingView Risk Box active — place order or Esc to close'
+              : 'Interactive Risk/Reward Limit Order Tool (Press O)'
+          }
+          onClick={() => {
+            if (riskBoxActive || riskBox) {
+              cancelRiskBox()
+            } else {
+              const rawPx = livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 67000)
+              const dir = 'LONG'
+              setRiskBox({
+                direction: dir,
+                entryPrice: rawPx,
+                stopLoss: defaultManualStop(rawPx, dir),
+                profitTarget: snapDeskPrice(instrument, rawPx * 1.0105),
+              })
+              setRiskBoxActive(true)
+            }
+          }}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+            riskBox
+              ? 'bg-sky-600/30 border-sky-500/50 text-sky-100 animate-pulse'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-sky-200 hover:border-sky-500/40'
+          }`}
+        >
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <rect x="2" y="2" width="12" height="6" rx="1" className="fill-emerald-500/30 stroke-emerald-400" />
+            <rect x="2" y="8" width="12" height="6" rx="1" className="fill-red-500/30 stroke-red-400" />
+            <line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" strokeWidth="2" />
+          </svg>
+          {riskBox ? 'Risk Box Active' : 'Risk Box (O)'}
+        </button>
+
         {/* Fullscreen mode button (Press F / Esc) */}
         <button
           type="button"
@@ -3270,6 +3451,195 @@ export function TradingChart({
             >
               {drawnTimeSending ? 'Sending…' : 'Send Time to Leo'}
             </button>
+          </div>
+        )}
+
+        {/* TradingView Interactive Risk/Reward Box HUD overlay on chart */}
+        {riskBox && (
+          <div className="absolute top-16 right-4 z-40 w-72 rounded-xl border border-sky-500/50 bg-[#161b22]/95 shadow-2xl backdrop-blur-md p-3.5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newDir = riskBox.direction === 'LONG' ? 'SHORT' : 'LONG'
+                    const rawStop = defaultManualStop(riskBox.entryPrice, newDir)
+                    const rawTp = newDir === 'LONG'
+                      ? snapDeskPrice(instrument, riskBox.entryPrice * 1.0105)
+                      : snapDeskPrice(instrument, riskBox.entryPrice * 0.9895)
+                    setRiskBox({
+                      ...riskBox,
+                      direction: newDir,
+                      stopLoss: rawStop,
+                      profitTarget: rawTp,
+                    })
+                  }}
+                  className={`px-2.5 py-1 text-xs font-bold uppercase rounded-md transition border ${
+                    riskBox.direction === 'LONG'
+                      ? 'bg-emerald-600/40 border-emerald-500/60 text-emerald-200'
+                      : 'bg-red-600/40 border-red-500/60 text-red-200'
+                  }`}
+                  title="Click to flip direction (LONG / SHORT)"
+                >
+                  {riskBox.direction === 'LONG' ? '▲ BUY LIMIT' : '▼ SHORT LIMIT'}
+                </button>
+                <span className="text-[10px] font-bold text-sky-300 uppercase tracking-wider bg-sky-950/60 px-2 py-1 rounded border border-sky-700/50">
+                  Risk 1.0%
+                </span>
+              </div>
+              <button
+                onClick={cancelRiskBox}
+                className="text-gray-400 hover:text-white transition text-sm font-bold"
+                title="Close Risk Box (Esc)"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Calculations HUD */}
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="rounded-lg border border-[#30363d] bg-black/40 p-2 space-y-0.5">
+                <span className="text-[9px] text-gray-500 uppercase tracking-wide">Entry Price</span>
+                <p className="font-mono font-bold text-white text-sm">
+                  {riskBox.entryPrice.toLocaleString()}
+                </p>
+              </div>
+              <div className="rounded-lg border border-[#30363d] bg-black/40 p-2 space-y-0.5">
+                <span className="text-[9px] text-gray-500 uppercase tracking-wide">Risk/Reward</span>
+                <p className="font-mono font-bold text-emerald-400 text-sm">
+                  {(() => {
+                    const riskDist = Math.abs(riskBox.entryPrice - riskBox.stopLoss)
+                    const rewardDist = Math.abs(riskBox.profitTarget - riskBox.entryPrice)
+                    const ratio = riskDist > 0 ? rewardDist / riskDist : 0
+                    return `${ratio.toFixed(2)} R`
+                  })()}
+                </p>
+              </div>
+            </div>
+
+            {/* SL and TP Price Adjusters */}
+            <div className="space-y-1.5 text-xs">
+              <div className="flex items-center justify-between rounded-lg border border-red-900/40 bg-red-950/20 px-2.5 py-1.5">
+                <span className="text-red-300 font-semibold text-[11px]">SL: {riskBox.stopLoss.toLocaleString()}</span>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => {
+                      const step = instrumentTick(instrument)
+                      setRiskBox({ ...riskBox, stopLoss: snapStopToTick(instrument, riskBox.entryPrice, riskBox.stopLoss - step, riskBox.direction) })
+                    }}
+                    className="px-1.5 py-0.5 text-[10px] bg-red-900/40 text-red-200 rounded border border-red-700/50 hover:bg-red-800/60"
+                  >-</button>
+                  <button
+                    onClick={() => {
+                      const step = instrumentTick(instrument)
+                      setRiskBox({ ...riskBox, stopLoss: snapStopToTick(instrument, riskBox.entryPrice, riskBox.stopLoss + step, riskBox.direction) })
+                    }}
+                    className="px-1.5 py-0.5 text-[10px] bg-red-900/40 text-red-200 rounded border border-red-700/50 hover:bg-red-800/60"
+                  >+</button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg border border-emerald-900/40 bg-emerald-950/20 px-2.5 py-1.5">
+                <span className="text-emerald-300 font-semibold text-[11px]">TP: {riskBox.profitTarget.toLocaleString()}</span>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => {
+                      const step = instrumentTick(instrument)
+                      setRiskBox({ ...riskBox, profitTarget: snapTargetToTick(instrument, riskBox.entryPrice, riskBox.profitTarget - step, riskBox.direction) })
+                    }}
+                    className="px-1.5 py-0.5 text-[10px] bg-emerald-900/40 text-emerald-200 rounded border border-emerald-700/50 hover:bg-emerald-800/60"
+                  >-</button>
+                  <button
+                    onClick={() => {
+                      const step = instrumentTick(instrument)
+                      setRiskBox({ ...riskBox, profitTarget: snapTargetToTick(instrument, riskBox.entryPrice, riskBox.profitTarget + step, riskBox.direction) })
+                    }}
+                    className="px-1.5 py-0.5 text-[10px] bg-emerald-900/40 text-emerald-200 rounded border border-emerald-700/50 hover:bg-emerald-800/60"
+                  >+</button>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={confirmRiskBoxOrder}
+              className="w-full rounded-lg bg-sky-600 hover:bg-sky-500 text-white py-2 text-xs font-bold uppercase tracking-wider transition shadow-lg flex items-center justify-center gap-1.5"
+            >
+              Place 1% Limit Order
+            </button>
+          </div>
+        )}
+
+        {/* Required Rationale Modal for Pure Manual Orders (No Leo conversation) */}
+        {rationaleModal?.open && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
+            <div className="w-full max-w-md rounded-2xl border border-sky-500/40 bg-[#161b22] p-5 shadow-2xl space-y-4 animate-fade-in">
+              <div className="flex items-center justify-between border-b border-[#30363d] pb-3">
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <span className="text-sky-400">📝</span> Manual Trade Journal Rationale
+                </h4>
+                <button
+                  onClick={() => setRationaleModal(null)}
+                  className="text-gray-400 hover:text-white transition text-sm"
+                >✕</button>
+              </div>
+
+              <p className="text-xs text-gray-400 leading-relaxed">
+                Because this manual order was placed directly without a Live Voice discussion with Leo, please record your entry and SL/TP trade rationale for your daily performance journal:
+              </p>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-gray-300 mb-1">
+                    Why did you choose this entry level ({rationaleModal.entryPrice.toLocaleString()})?
+                  </label>
+                  <input
+                    type="text"
+                    value={userRationale}
+                    onChange={(e) => setUserRationale(e.target.value)}
+                    placeholder="e.g. Key support re-test, liquidity sweep rejection"
+                    className="w-full rounded-lg border border-[#30363d] bg-black/60 px-3 py-2 text-xs text-white placeholder-gray-600 focus:border-sky-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-gray-300 mb-1">
+                    Why did you set this SL ({rationaleModal.stopLoss.toLocaleString()}) & TP ({rationaleModal.profitTarget.toLocaleString()})?
+                  </label>
+                  <input
+                    type="text"
+                    value={userSlTpRationale}
+                    onChange={(e) => setUserSlTpRationale(e.target.value)}
+                    placeholder="e.g. SL beyond market structure, TP at AVWAP band"
+                    className="w-full rounded-lg border border-[#30363d] bg-black/60 px-3 py-2 text-xs text-white placeholder-gray-600 focus:border-sky-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={() => setRationaleModal(null)}
+                  className="flex-1 rounded-lg border border-[#30363d] bg-transparent py-2 text-xs font-semibold text-gray-400 hover:bg-[#21262d] hover:text-white transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    const fullReason = `Manual ${rationaleModal.direction} entry: ${userRationale || 'Technical structure'} | SL/TP rationale: ${userSlTpRationale || 'Geometry bounds'}`
+                    onLevelSelect?.(rationaleModal.entryPrice, {
+                      source: 'manual',
+                      side: rationaleModal.direction === 'LONG' ? 'BUY' : 'SHORT',
+                      preferredDirection: rationaleModal.direction,
+                      reasoning: fullReason,
+                    })
+                    setRationaleModal(null)
+                    cancelRiskBox()
+                  }}
+                  className="flex-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white py-2 text-xs font-bold uppercase tracking-wider transition shadow-md"
+                >
+                  Confirm & Place Order
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
