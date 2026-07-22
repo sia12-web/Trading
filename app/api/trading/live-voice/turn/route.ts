@@ -27,6 +27,11 @@ async function parseBody(request: Request): Promise<{
   transcript: string | null
   audio: Buffer | null
   audioFilename: string
+  customPin: {
+    price: number
+    side: 'BUY' | 'SHORT'
+    reason: string
+  } | null
 }> {
   const contentType = request.headers.get('content-type') || ''
 
@@ -49,19 +54,24 @@ async function parseBody(request: Request): Promise<{
       audio = Buffer.from(await f.arrayBuffer())
       audioFilename = f.name || audioFilename
     }
-    return { instrument, transcript, audio, audioFilename }
+    return { instrument, transcript, audio, audioFilename, customPin: null }
   }
 
   const json = (await request.json().catch(() => null)) as {
     instrument?: string
     transcript?: string
+    customPin?: {
+      price: number
+      side: 'BUY' | 'SHORT'
+      reason: string
+    } | null
   } | null
   const instrumentRaw = String(json?.instrument || 'DOW')
   const instrument: DeskInstrument = isLiveDeskInstrument(instrumentRaw)
     ? instrumentRaw
     : 'DOW'
   const transcript = String(json?.transcript || '').trim() || null
-  return { instrument, transcript, audio: null, audioFilename: 'audio.webm' }
+  return { instrument, transcript, audio: null, audioFilename: 'audio.webm', customPin: json?.customPin ?? null }
 }
 
 export async function POST(request: Request) {
@@ -110,6 +120,7 @@ export async function POST(request: Request) {
       transcript: body.transcript,
       audio: body.audio,
       audioFilename: body.audioFilename,
+      customPin: body.customPin,
     })
 
     logger.info('live_voice.turn_request_success', {

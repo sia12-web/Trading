@@ -526,6 +526,7 @@ export function TradingChart({
   const [drawnZone, setDrawnZone] = useState<{ priceHigh: number; priceLow: number } | null>(null)
   const [drawnZoneSide, setDrawnZoneSide] = useState<'BUY' | 'SHORT'>('BUY')
   const [drawnZoneSending, setDrawnZoneSending] = useState(false)
+  const [drawnZoneCounter, setDrawnZoneCounter] = useState(1)
   const drawZoneLinesRef = useRef<any[]>([])
   const drawZoneOverlayRef = useRef<HTMLDivElement | null>(null)
 
@@ -2216,13 +2217,21 @@ export function TradingChart({
     // Auto-open voice panel first so context loads
     if (!voiceOpen) setVoiceOpen(true)
     
+    const zoneName = `Zone ${drawnZoneCounter}`
+    const mid = Math.round(((drawnZone.priceHigh + drawnZone.priceLow) / 2) * 100) / 100
+
     try {
       const res = await fetch('/api/trading/live-voice/turn', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           instrument: inst,
-          transcript: `I drew a custom ${drawnZoneSide} zone on ${inst} between ${drawnZone.priceLow.toLocaleString()} and ${drawnZone.priceHigh.toLocaleString()}. What do you think of this level?`
+          transcript: `I drew a custom ${drawnZoneSide} zone named ${zoneName} on ${inst} between ${drawnZone.priceLow.toLocaleString()} and ${drawnZone.priceHigh.toLocaleString()}. What do you think of this level?`,
+          customPin: {
+            price: mid,
+            side: drawnZoneSide,
+            reason: zoneName,
+          }
         }),
       })
       const json = await res.json().catch(() => null)
@@ -2234,12 +2243,13 @@ export function TradingChart({
         const audio = new Audio(url)
         audio.play().catch(() => {})
       }
+      setDrawnZoneCounter((prev) => prev + 1)
     } catch { /* silent */ }
 
     setDrawnZoneSending(false)
     setDrawnZone(null)
     clearDrawnZoneLines()
-  }, [drawnZone, drawnZoneSide, instrument, lockedInstrument, voiceOpen, clearDrawnZoneLines])
+  }, [drawnZone, drawnZoneSide, instrument, lockedInstrument, voiceOpen, clearDrawnZoneLines, drawnZoneCounter])
 
   const cancelDrawnZone = useCallback(() => {
     setDrawnZone(null)

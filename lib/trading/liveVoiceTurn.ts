@@ -69,6 +69,11 @@ export async function runLiveVoiceTurn(args: {
   transcript?: string | null
   audio?: Buffer | null
   audioFilename?: string
+  customPin?: {
+    price: number
+    side: 'BUY' | 'SHORT'
+    reason: string
+  } | null
 }): Promise<LiveVoiceTurnResult> {
   const ctx = await buildLiveVoiceDeskContext(
     args.supabase,
@@ -192,6 +197,7 @@ export async function runLiveVoiceTurn(args: {
     transcript,
     replyText,
     aiLevels: ctx.levels.items.map((l) => ({ price: l.price, side: l.side })),
+    customPin: args.customPin,
   })
 
   return {

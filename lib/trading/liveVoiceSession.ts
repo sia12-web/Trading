@@ -164,6 +164,11 @@ export async function persistLiveVoiceTurn(args: {
   transcript: string
   replyText: string
   aiLevels: Array<{ price: number; side?: 'BUY' | 'SHORT' | null }>
+  customPin?: {
+    price: number
+    side: 'BUY' | 'SHORT'
+    reason: string
+  } | null
 }): Promise<{ sessionId: string | null; pins: LiveVoicePin[]; newPins: LiveVoicePin[] }> {
   const session = await getOrCreateLiveVoiceSession(args.supabase, {
     userId: args.userId,
@@ -182,6 +187,25 @@ export async function persistLiveVoiceTurn(args: {
   const { error: turnErr } = await args.supabase.from('live_voice_turns').insert(turnRows)
   if (turnErr) {
     logger.warn('live_voice.turns_insert_failed', { error: turnErr.message })
+  }
+
+  if (args.customPin) {
+    const { error: pinErr } = await args.supabase
+      .from('live_voice_pins')
+      .upsert(
+        {
+          session_id: session.id,
+          user_id: args.userId,
+          price: args.customPin.price,
+          side: args.customPin.side,
+          reason: args.customPin.reason,
+          source: 'user_voice',
+        },
+        { onConflict: 'session_id,price' }
+      )
+    if (pinErr) {
+      logger.warn('live_voice.custom_pin_upsert_failed', { error: pinErr.message })
+    }
   }
 
   const extracted = extractPinsFromTranscript(args.transcript, args.aiLevels)
