@@ -516,6 +516,55 @@ export function TradingChart({
   const drawZoneLinesRef = useRef<any[]>([])
   const drawZoneOverlayRef = useRef<HTMLDivElement | null>(null)
 
+  // Fullscreen mode (F key / Esc / button)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
+  const toggleFullscreen = useCallback(() => {
+    if (!isFullscreen) {
+      const elem = containerRef.current?.parentElement || document.documentElement
+      if (elem.requestFullscreen) {
+        elem.requestFullscreen().catch(() => null)
+      }
+      setIsFullscreen(true)
+    } else {
+      if (document.exitFullscreen && document.fullscreenElement) {
+        document.exitFullscreen().catch(() => null)
+      }
+      setIsFullscreen(false)
+    }
+  }, [isFullscreen])
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase()
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return
+
+      if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault()
+        toggleFullscreen()
+      } else if (e.key === 'Escape') {
+        if (isFullscreen) {
+          e.preventDefault()
+          if (document.exitFullscreen && document.fullscreenElement) {
+            document.exitFullscreen().catch(() => null)
+          }
+          setIsFullscreen(false)
+        }
+      }
+    }
+
+    const onFsChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    document.addEventListener('fullscreenchange', onFsChange)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('fullscreenchange', onFsChange)
+    }
+  }, [isFullscreen, toggleFullscreen])
+
   // Open Live Voice once when you clock in (same discoverability as playbook)
   useEffect(() => {
     if (clockedIn) setVoiceOpen(true)
@@ -843,24 +892,43 @@ export function TradingChart({
     })
 
     // ─── 1. Candlestick series on the main 'right' price scale ────────────────
-    // Autoscale from candle highs/lows ONLY — orphan price lines (wrong instrument)
-    // must never stretch the pane to 65k while DOW prints at 52k.
+    // Autoscale from VISIBLE candles on screen ONLY — distantly historical bars or orphan level lines
+    // must never flatten candles to tiny micro-lines.
     const candleAutoscale = () => {
       const list = candlesRef.current
       if (!list.length) return null
+
+      let startIndex = 0
+      let endIndex = list.length - 1
+      try {
+        const range = chart.timeScale().getVisibleLogicalRange()
+        if (range) {
+          startIndex = Math.max(0, Math.floor(range.from))
+          endIndex = Math.min(list.length - 1, Math.ceil(range.to))
+        } else {
+          startIndex = Math.max(0, list.length - 60)
+        }
+      } catch {
+        startIndex = Math.max(0, list.length - 60)
+      }
+
       let min = Infinity
       let max = -Infinity
-      for (const c of list) {
-        if (Number.isFinite(c.low)) min = Math.min(min, c.low)
-        if (Number.isFinite(c.high)) max = Math.max(max, c.high)
+      for (let i = startIndex; i <= endIndex; i++) {
+        const c = list[i]
+        if (c) {
+          if (Number.isFinite(c.low) && c.low > 0) min = Math.min(min, c.low)
+          if (Number.isFinite(c.high) && c.high > 0) max = Math.max(max, c.high)
+        }
       }
+
       const tip = lastCandleRef.current
       if (tip) {
         min = Math.min(min, tip.low, tip.close)
         max = Math.max(max, tip.high, tip.close)
       }
       if (!(max > min) || !Number.isFinite(min) || !Number.isFinite(max)) return null
-      const pad = Math.max((max - min) * 0.06, Math.abs(max) * 0.0004)
+      const pad = Math.max((max - min) * 0.05, Math.abs(max) * 0.0005)
       return {
         priceRange: {
           minValue: min - pad,
@@ -2472,7 +2540,13 @@ export function TradingChart({
   const playbookPanelTitle = afternoonWatch ? watchPlaybookTitle : 'Morning playbook'
 
   return (
-    <div className="flex flex-col h-full gap-2">
+    <div
+      className={`flex flex-col gap-2 ${
+        isFullscreen
+          ? 'fixed inset-0 z-[100] bg-[#0d1117] p-3 h-screen w-screen'
+          : 'h-full w-full'
+      }`}
+    >
       {/* ── Toolbar ─────────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
         {/* Instrument tabs — LIVE focus hides off-session desks */}
@@ -2644,6 +2718,31 @@ export function TradingChart({
             <line x1="2" y1="8" x2="14" y2="8" strokeDasharray="2 2" />
           </svg>
           {drawZoneActive ? 'Drag to draw…' : 'Draw Zone'}
+        </button>
+
+        {/* Fullscreen mode button (Press F / Esc) */}
+        <button
+          type="button"
+          title={
+            isFullscreen
+              ? 'Exit Fullscreen mode (Esc / F)'
+              : 'Enter Fullscreen mode (Press F)'
+          }
+          onClick={toggleFullscreen}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+            isFullscreen
+              ? 'bg-blue-600/30 border-blue-500/50 text-blue-100'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-blue-200 hover:border-blue-500/40'
+          }`}
+        >
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
+            {isFullscreen ? (
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5.5 2v3.5H2M10.5 2v3.5H14M5.5 14v-3.5H2M10.5 14v-3.5H14" />
+            ) : (
+              <path strokeLinecap="round" strokeLinejoin="round" d="M2 5.5V2h3.5M14 5.5V2h-3.5M2 10.5V14h3.5M14 10.5V14h-3.5" />
+            )}
+          </svg>
+          {isFullscreen ? 'Exit Full (Esc)' : 'Fullscreen (F)'}
         </button>
 
         {pendingLimit && !positionOverlay && (
