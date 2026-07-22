@@ -88,15 +88,37 @@ graph LR
 
 ---
 
-## 4. Live Voice AI Assistant & Chart Controls
+## 4. Advanced Chart Controls, Shortcuts & Tools
 
-The **Live Voice Assistant** ([`app/dashboard/chart/components/LiveVoicePanel.tsx`](file:///c:/Users/shahb/myApplications/Trading/app/dashboard/chart/components/LiveVoicePanel.tsx)) acts as a co-pilot during active trading hours.
+TradePulse features a high-performance chart dashboard built on top of Lightweight Charts. It provides institutional-grade drawing tools, keyboard hotkeys, and automated scaling to keep you locked into market action.
 
-### Capabilities:
-- **Real-Time Level Proximity Alerts**: Verbally alerts the trader as price approaches a key support/resistance zone (e.g. *"DOW is 8 pips away from 4H Support at 39,250"*).
-- **Position & Risk Speech Updates**: Spoken updates on open P&L, stop-loss distance, and target progress.
-- **Voice Commands**: Traders can query the assistant verbally or trigger voice context sync (`POST /api/trading/live-voice/react`).
-- **Audio Engine**: Powered by OpenAI Speech API (`alloy`/`echo` voices) with fallback to browser SpeechSynthesis.
+### 2D Drag-to-Draw Zone Tool
+* **Interactive Range Drawing (Hotkeys: `D` or click toolbar)**: Hovering or clicking the `Draw Zone` tool switches the cursor to crosshair mode. On `mousedown`, you can drag in 2D to expand a blue zone (`#3b82f6`) with real-time High/Low index prices and 8 active control handles.
+* **Send to Leo**: Letting go of the mouse locks the zone on screen and pops open a **"Send to Leo"** co-pilot banner. Confirming it uploads the drawn range coordinates as context for your AI co-pilot.
+* **Dismiss / Cancel**: Press **`Esc`** or click **`Cancel`** to discard the drawn range at any time.
+
+### Single-Key Keyboard Shortcuts
+For maximum efficiency under high volatility, single-key toggles let you quickly display or hide UI elements without moving your mouse:
+
+| Hotkey | Target Component | Action |
+| :---: | :--- | :--- |
+| **`V`** | **Voice Coach Panel** | Toggles the Live Voice chat panel on or off. |
+| **`L`** | **Levels Overlay** | Toggles the display of AI & Structure level lines on the chart. |
+| **`P`** | **Morning Playbook** | Toggles the Morning Playbook / Afternoon Watchbook widget open or closed. |
+| **`D`** | **Draw Zone Tool** | Activates the 2D Drag-to-Draw zone tool (press again or `Esc` to cancel). |
+| **`F`** | **Fullscreen Chart** | Toggles 100% Fullscreen Mode. |
+| **`Esc`**| **Cancel / Exit** | Exits Fullscreen mode, cancels drawing, or closes the manual order ticket. |
+
+*Shortcuts are automatically bypassed while typing in input fields, textareas, or dropdown selects.*
+
+### Visible Candle Autoscale
+* **TradingView-Style Scaling**: Instead of compressing candlesticks using the entire 5-day historical dataset, the chart calculates candle highs and lows strictly from the **currently visible logical range** on screen. As you scroll or zoom, the chart dynamically auto-scales vertically to keep candlestick bodies and wicks clear and readable.
+
+### Playbook Dismissal Persistence
+* **Close State Memory**: Once you click `✕` on the Morning Playbook or Afternoon Watchbook widget (or toggle it off via `P`), the closed state is saved in memory. Background database level polling will **never auto-reopen** the widget on your screen. The playbook will only reappear when you manually request it.
+
+### Centered Order Ticket Modal
+* **Unclipped Modal Overlay**: The manual limit order ticket (`LevelOrderTicket.tsx`) opens as a centered modal with a dark translucent background. It features a prominent red `✕ Close` badge, a bottom `Cancel` button, and supports full `Esc` key dismissals.
 
 ---
 
