@@ -638,6 +638,34 @@ export function TradingChart({
   }>>([])
   const [highlightsListOpen, setHighlightsListOpen] = useState(false)
   const [chartScrollTrigger, setChartScrollTrigger] = useState(0)
+  const loadedInstrumentRef = useRef<string | null>(null)
+
+  // Load saved highlights when instrument changes
+  useEffect(() => {
+    try {
+      const key = `desk_saved_highlights_${instrument}`
+      const saved = localStorage.getItem(key)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (Array.isArray(parsed)) {
+          setSavedHighlights(parsed)
+          loadedInstrumentRef.current = instrument
+          return
+        }
+      }
+    } catch { /* ignore */ }
+    setSavedHighlights([])
+    loadedInstrumentRef.current = instrument
+  }, [instrument])
+
+  // Save highlights to localStorage when updated for current instrument
+  useEffect(() => {
+    if (loadedInstrumentRef.current !== instrument) return
+    try {
+      const key = `desk_saved_highlights_${instrument}`
+      localStorage.setItem(key, JSON.stringify(savedHighlights))
+    } catch { /* ignore */ }
+  }, [savedHighlights, instrument])
 
   // TradingView-style Interactive Risk/Reward Limit Tool (O key / toolbar button)
   const [riskBoxActive, setRiskBoxActive] = useState(false)
@@ -3266,9 +3294,9 @@ Please evaluate the market structure, candle bodies, volume, and session transit
       const leftCoord = timeScale.timeToCoordinate(hl.startUnix as any)
       const rightCoord = timeScale.timeToCoordinate(hl.endUnix as any)
       
-      // Handle fallback values for price boundaries (prefer candle rangeHigh/Low over mouse bounds)
-      const pHigh = hl.rangeHigh || hl.priceHigh || (candles.length > 0 ? Math.max(...candles.map(c => c.high)) : 100000)
-      const pLow = hl.rangeLow || hl.priceLow || (candles.length > 0 ? Math.min(...candles.map(c => c.low)) : 0)
+      // Handle price boundaries: use exact priceHigh and priceLow drawn by user (do NOT extend vertically)
+      const pHigh = hl.priceHigh || hl.rangeHigh || (candles.length > 0 ? Math.max(...candles.map(c => c.high)) : 100000)
+      const pLow = hl.priceLow || hl.rangeLow || (candles.length > 0 ? Math.min(...candles.map(c => c.low)) : 0)
 
       const topCoord = series.priceToCoordinate(pHigh)
       const bottomCoord = series.priceToCoordinate(pLow)
