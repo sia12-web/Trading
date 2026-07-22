@@ -42,11 +42,12 @@ export async function POST(request: Request) {
       .select('*')
       .eq('id', body.position_id)
       .eq('user_id', user.id)
+      .eq('fill_status', 'filled')
       .is('exit_timestamp', null)
       .maybeSingle()
 
     if (error || !position) {
-      return NextResponse.json({ error: 'Open position not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Open filled position not found' }, { status: 404 })
     }
 
     const instrument = position.instrument as Instrument

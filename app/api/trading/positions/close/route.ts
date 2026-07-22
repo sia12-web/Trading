@@ -161,6 +161,36 @@ export async function POST(request: Request): Promise<NextResponse<ClosePosition
       )
     }
 
+    // Unfilled working limit or broker-rejected order: cancel cleanly with 0 P&L
+    if (position.fill_status !== 'filled') {
+      await supabase
+        .from('trades_journal')
+        .update({
+          fill_status: 'cancelled',
+          exit_timestamp: closeTime,
+          exit_price: position.entry_price,
+          exit_reason: 'broker_rejected',
+          profit_loss: 0,
+          profit_loss_percent: 0,
+          notes: 'Unfilled order cancelled — zero P&L',
+          updated_at: closeTime,
+        })
+        .eq('id', position.id)
+
+      return NextResponse.json({
+        success: true,
+        position_id: position.id,
+        instrument: position.instrument,
+        exit_price: Number(position.entry_price),
+        entry_price: Number(position.entry_price),
+        position_size: Number(position.position_size),
+        profit_loss: 0,
+        profit_loss_percent: 0,
+        exit_reason: 'broker_rejected',
+        message: 'Working order cancelled cleanly with zero P&L',
+      })
+    }
+
     // Calculate final P&L
     const pnl = positionManager.calculateCurrentPnL(
       position as TradePosition,
