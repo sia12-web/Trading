@@ -97,6 +97,10 @@ TradePulse features a high-performance chart dashboard built on top of Lightweig
 * **Send to Leo**: Letting go of the mouse locks the zone on screen and pops open a **"Send to Leo"** co-pilot banner. Confirming it uploads the drawn range coordinates as context for your AI co-pilot.
 * **Dismiss / Cancel**: Press **`Esc`** or click **`Cancel`** to discard the drawn range at any time.
 
+### Highlight Time Range Tool
+* **Interactive Time Highlights (Hotkeys: `T` or click toolbar)**: Drag horizontally to select a custom time span (e.g. from 10:15 JST to 11:30 JST) on the chart.
+* **Send Time to Leo**: Letting go of the mouse locks a semi-transparent purple selection box on screen and displays a **"Send Time to Leo"** popup. Clicking it asks Leo to analyze the OHLCV candlestick bodies, volume, and patterns during that highlighted period. Leo immediately replies with spoken audio feedback.
+
 ### Single-Key Keyboard Shortcuts
 For maximum efficiency under high volatility, single-key toggles let you quickly display or hide UI elements without moving your mouse:
 
@@ -106,6 +110,7 @@ For maximum efficiency under high volatility, single-key toggles let you quickly
 | **`L`** | **Levels Overlay** | Toggles the display of AI & Structure level lines on the chart. |
 | **`P`** | **Morning Playbook** | Toggles the Morning Playbook / Afternoon Watchbook widget open or closed. |
 | **`D`** | **Draw Zone Tool** | Activates the 2D Drag-to-Draw zone tool (press again or `Esc` to cancel). |
+| **`T`** | **Highlight Time Tool** | Activates the Highlight Time selection tool (press again or `Esc` to cancel). |
 | **`F`** | **Fullscreen Chart** | Toggles 100% Fullscreen Mode. |
 | **`Esc`**| **Cancel / Exit** | Exits Fullscreen mode, cancels drawing, or closes the manual order ticket. |
 

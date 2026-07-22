@@ -530,6 +530,12 @@ export function TradingChart({
   const drawZoneLinesRef = useRef<any[]>([])
   const drawZoneOverlayRef = useRef<HTMLDivElement | null>(null)
 
+  // Highlight Time Range tool — drag horizontally to highlight duration for Leo
+  const [drawTimeActive, setDrawTimeActive] = useState(false)
+  const [drawnTime, setDrawnTime] = useState<{ startUnix: number; endUnix: number } | null>(null)
+  const [drawnTimeSending, setDrawnTimeSending] = useState(false)
+  const drawTimeOverlayRef = useRef<HTMLDivElement | null>(null)
+
   // Fullscreen mode (F key / Esc / button)
   const [isFullscreen, setIsFullscreen] = useState(false)
 
@@ -2257,6 +2263,134 @@ export function TradingChart({
     clearDrawnZoneLines()
   }, [clearDrawnZoneLines])
 
+  // Send drawn time range to Leo
+  const sendDrawnTimeToLeo = useCallback(async () => {
+    if (!drawnTime) return
+    setDrawnTimeSending(true)
+    const inst = (lockedInstrument ?? instrument) as Instrument
+    
+    // Auto-open voice panel first so context loads
+    if (!voiceOpen) setVoiceOpen(true)
+    
+    const fmt = makeDeskChartFormatters(inst)
+    const startStr = fmt.formatTime(drawnTime.startUnix)
+    const endStr = fmt.formatTime(drawnTime.endUnix)
+    const tzLabel = fmt.tzLabel
+
+    try {
+      const res = await fetch('/api/trading/live-voice/turn', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          instrument: inst,
+          transcript: `I highlighted a time range on the chart from ${startStr} to ${endStr} ${tzLabel}. What do you think of the price action during this period?`
+        }),
+      })
+      const json = await res.json().catch(() => null)
+      if (res.ok && json?.success && json?.audioBase64) {
+        // Play Leo's verbal response immediately
+        const bytes = Uint8Array.from(atob(json.audioBase64), (c) => c.charCodeAt(0))
+        const blob = new Blob([bytes], { type: json.mime || 'audio/mp3' })
+        const url = URL.createObjectURL(blob)
+        const audio = new Audio(url)
+        audio.play().catch(() => {})
+      }
+    } catch { /* silent */ }
+
+    setDrawnTimeSending(false)
+    setDrawnTime(null)
+  }, [drawnTime, instrument, lockedInstrument, voiceOpen])
+
+  const cancelDrawnTime = useCallback(() => {
+    setDrawnTime(null)
+    setDrawTimeActive(false)
+  }, [])
+
+  // ── Draw Time Range Overlay Selection ──
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || !chartReady || !drawTimeActive) return
+    container.style.cursor = 'col-resize'
+
+    let overlay = drawTimeOverlayRef.current
+    if (!overlay) {
+      overlay = document.createElement('div')
+      overlay.style.position = 'absolute'
+      overlay.style.pointerEvents = 'none'
+      overlay.style.zIndex = '25'
+      overlay.style.display = 'none'
+      overlay.style.backgroundColor = 'rgba(139, 92, 246, 0.15)' // semi-transparent purple
+      overlay.style.borderLeft = '2px dashed #8b5cf6'
+      overlay.style.borderRight = '2px dashed #8b5cf6'
+      overlay.style.top = '0'
+      overlay.style.bottom = '0'
+      container.style.position = 'relative'
+      container.appendChild(overlay)
+      drawTimeOverlayRef.current = overlay
+    }
+
+    let startX: number | null = null
+    let dragging = false
+
+    const onMouseDown = (e: MouseEvent) => {
+      const rect = container.getBoundingClientRect()
+      startX = e.clientX - rect.left
+      dragging = true
+      overlay.style.left = `${startX}px`
+      overlay.style.width = '0px'
+      overlay.style.display = 'block'
+    }
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!dragging || startX == null) return
+      const rect = container.getBoundingClientRect()
+      const currentX = e.clientX - rect.left
+      const left = Math.min(startX, currentX)
+      const width = Math.abs(startX - currentX)
+      overlay.style.left = `${left}px`
+      overlay.style.width = `${width}px`
+    }
+
+    const onMouseUp = (e: MouseEvent) => {
+      if (!dragging || startX == null) return
+      dragging = false
+      const rect = container.getBoundingClientRect()
+      const endX = e.clientX - rect.left
+      
+      const timeScale = chartRef.current?.timeScale()
+      if (!timeScale) return
+
+      const startLogical = timeScale.coordinateToLogical(startX)
+      const endLogical = timeScale.coordinateToLogical(endX)
+
+      if (startLogical != null && endLogical != null && candles.length > 0) {
+        const startIdx = Math.max(0, Math.min(candles.length - 1, Math.round(startLogical)))
+        const endIdx = Math.max(0, Math.min(candles.length - 1, Math.round(endLogical)))
+        const minIdx = Math.min(startIdx, endIdx)
+        const maxIdx = Math.max(startIdx, endIdx)
+
+        const startCandle = candles[minIdx]
+        const endCandle = candles[maxIdx]
+        if (startCandle && endCandle) {
+          setDrawnTime({ startUnix: Number(startCandle.time), endUnix: Number(endCandle.time) })
+        }
+      }
+      setDrawTimeActive(false)
+      container.style.cursor = ''
+    }
+
+    container.addEventListener('mousedown', onMouseDown, true)
+    container.addEventListener('mousemove', onMouseMove, true)
+    container.addEventListener('mouseup', onMouseUp, true)
+    return () => {
+      container.removeEventListener('mousedown', onMouseDown, true)
+      container.removeEventListener('mousemove', onMouseMove, true)
+      container.removeEventListener('mouseup', onMouseUp, true)
+      container.style.cursor = ''
+      if (overlay) overlay.style.display = 'none'
+    }
+  }, [drawTimeActive, chartReady, candles])
+
   // ── Keyboard shortcuts: V (Voice), L (Levels), P (Playbook), D (Draw Zone), F (Fullscreen), Esc
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -2290,10 +2424,24 @@ export function TradingChart({
             return true
           }
         })
+      } else if (key === 't') {
+        e.preventDefault()
+        setDrawTimeActive((prev) => {
+          if (prev) {
+            cancelDrawnTime()
+            return false
+          } else {
+            setDrawnTime(null)
+            return true
+          }
+        })
       } else if (key === 'escape') {
         if (drawZoneActive || drawnZone) {
           e.preventDefault()
           cancelDrawnZone()
+        } else if (drawTimeActive || drawnTime) {
+          e.preventDefault()
+          cancelDrawnTime()
         } else if (isFullscreen) {
           e.preventDefault()
           if (document.exitFullscreen && document.fullscreenElement) {
@@ -2314,7 +2462,7 @@ export function TradingChart({
       window.removeEventListener('keydown', handleKeyDown)
       document.removeEventListener('fullscreenchange', onFsChange)
     }
-  }, [isFullscreen, drawZoneActive, drawnZone, toggleFullscreen, cancelDrawnZone, clearDrawnZoneLines])
+  }, [isFullscreen, drawZoneActive, drawnZone, drawTimeActive, drawnTime, toggleFullscreen, cancelDrawnZone, clearDrawnZoneLines, cancelDrawnTime])
 
   // ── Hover visible AI/structure level → preview entry / SL / TP ─
   // Morning: place preview. Afternoon: same geometry, watch-only (canPlaceOrder false).
@@ -2783,6 +2931,39 @@ export function TradingChart({
           {drawZoneActive ? 'Drag to draw…' : 'Draw Zone (D)'}
         </button>
 
+        {/* Highlight Time Range tool */}
+        <button
+          type="button"
+          title={
+            drawTimeActive
+              ? 'Drag horizontally on chart to highlight time — or press T / Esc to cancel'
+              : drawnTime
+                ? 'Time highlighted — send or discard'
+                : 'Highlight a specific time range to discuss with Leo (Press T)'
+          }
+          onClick={() => {
+            if (drawTimeActive) {
+              cancelDrawnTime()
+            } else {
+              setDrawTimeActive(true)
+              setDrawnTime(null)
+            }
+          }}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+            drawTimeActive
+              ? 'bg-violet-600/30 border-violet-500/50 text-violet-100 animate-pulse'
+              : drawnTime
+                ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-100'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-violet-200 hover:border-violet-500/40'
+          }`}
+        >
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <rect x="2" y="2" width="12" height="12" rx="1" strokeLinecap="round" />
+            <line x1="8" y1="2" x2="8" y2="14" strokeDasharray="2 2" />
+          </svg>
+          {drawTimeActive ? 'Drag to highlight…' : 'Highlight Time (T)'}
+        </button>
+
         {/* Fullscreen mode button (Press F / Esc) */}
         <button
           type="button"
@@ -3052,6 +3233,42 @@ export function TradingChart({
               className="w-full rounded-lg bg-violet-600 hover:bg-violet-500 text-white py-2 text-xs font-bold uppercase tracking-wider transition shadow-md disabled:opacity-50"
             >
               {drawnZoneSending ? 'Sending…' : 'Send to Leo'}
+            </button>
+          </div>
+        )}
+
+        {/* Drawn Time confirmation popup */}
+        {drawnTime && (
+          <div className="absolute bottom-20 right-72 z-40 w-64 rounded-xl border border-violet-500/40 bg-[#161b22]/95 shadow-2xl backdrop-blur-md p-3 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-violet-300 flex items-center gap-1.5">
+                <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <rect x="2" y="2" width="12" height="12" rx="1" strokeLinecap="round" />
+                  <line x1="8" y1="2" x2="8" y2="14" strokeDasharray="2 2" />
+                </svg>
+                Highlighted Time
+              </span>
+              <button
+                onClick={cancelDrawnTime}
+                className="text-gray-500 hover:text-white transition text-xs"
+                title="Discard time highlight"
+              >✕</button>
+            </div>
+            <div className="flex flex-col gap-1 rounded-lg border border-[#30363d] bg-black/40 px-3 py-2">
+              <span className="text-[10px] text-gray-500 uppercase tracking-wide">Duration</span>
+              <p className="font-mono text-xs font-semibold text-white leading-tight">
+                {(() => {
+                  const fmt = makeDeskChartFormatters((lockedInstrument ?? instrument) as Instrument)
+                  return `${fmt.formatTime(drawnTime.startUnix)} – ${fmt.formatTime(drawnTime.endUnix)} ${fmt.tzLabel}`
+                })()}
+              </p>
+            </div>
+            <button
+              onClick={sendDrawnTimeToLeo}
+              disabled={drawnTimeSending}
+              className="w-full rounded-lg bg-violet-600 hover:bg-violet-500 text-white py-2 text-xs font-bold uppercase tracking-wider transition shadow-md disabled:opacity-50"
+            >
+              {drawnTimeSending ? 'Sending…' : 'Send Time to Leo'}
             </button>
           </div>
         )}
