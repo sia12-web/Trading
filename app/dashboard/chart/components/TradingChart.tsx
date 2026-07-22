@@ -507,6 +507,19 @@ export function TradingChart({
   const [showLevels,  setShowLevels] = useState(true)
   /** Floating morning playbook — independent of chart level lines. */
   const [playbookOpen, setPlaybookOpen] = useState(true)
+  const playbookUserClosedRef = useRef(false)
+
+  const togglePlaybook = useCallback(() => {
+    setPlaybookOpen((prev) => {
+      const next = !prev
+      playbookUserClosedRef.current = !next
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    playbookUserClosedRef.current = false
+  }, [instrument])
   const [voiceOpen, setVoiceOpen] = useState(false)
   // Draw Zone tool — drag on chart to draw a rectangle zone for Leo
   const [drawZoneActive, setDrawZoneActive] = useState(false)
@@ -793,7 +806,7 @@ export function TradingChart({
     setLevels(
       resolved.levels.map((l) => byPrice.get(l.level)!).filter(Boolean)
     )
-    if (resolved.levels.some((l) => l.source === 'ai' || l.source === 'structure')) {
+    if (!playbookUserClosedRef.current && resolved.levels.some((l) => l.source === 'ai' || l.source === 'structure')) {
       setPlaybookOpen(true)
     }
   }, [deskLevelsActive])
@@ -2245,7 +2258,7 @@ export function TradingChart({
         setShowLevels((prev) => !prev)
       } else if (key === 'p') {
         e.preventDefault()
-        setPlaybookOpen((prev) => !prev)
+        togglePlaybook()
       } else if (key === 'd') {
         e.preventDefault()
         setDrawZoneActive((prev) => {
@@ -2638,7 +2651,10 @@ export function TradingChart({
                   ? 'Show morning playbook panel (Press P)'
                   : 'Show morning playbook — entries at cash open (Press P)'
             }
-            onClick={() => setPlaybookOpen(true)}
+            onClick={() => {
+              playbookUserClosedRef.current = false
+              setPlaybookOpen(true)
+            }}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg bg-transparent border-surface-600 text-gray-500 hover:text-gray-300"
           >
             {playbookButtonLabel} (P)
@@ -3029,7 +3045,10 @@ export function TradingChart({
             storageKey="desk-playbook-live"
             defaultPos={{ x: 24, y: 88 }}
             title={playbookPanelTitle}
-            onClose={() => setPlaybookOpen(false)}
+            onClose={() => {
+              playbookUserClosedRef.current = true
+              setPlaybookOpen(false)
+            }}
           >
             <div className="space-y-1.5 p-2">
               {afternoonWatch && (
