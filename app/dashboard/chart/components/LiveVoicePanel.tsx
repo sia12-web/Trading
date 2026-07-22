@@ -72,9 +72,6 @@ export function LiveVoicePanel({
   const [reactionLine, setReactionLine] = useState<string | null>(null)
   const [historyTurns, setHistoryTurns] = useState<Array<{ id: string; role: 'user' | 'assistant'; text: string; time: string }>>([])
   const [showHistoryDrawer, setShowHistoryDrawer] = useState(false)
-  const [showPinInput, setShowPinInput] = useState(false)
-  const [manualPriceInput, setManualPriceInput] = useState('')
-  const [manualSideInput, setManualSideInput] = useState<'BUY' | 'SHORT' | 'LEVEL'>('LEVEL')
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -385,30 +382,7 @@ export function LiveVoicePanel({
     [instrument, playReply, refreshContext]
   )
 
-  const handlePinChartLine = useCallback(async () => {
-    const num = Number(manualPriceInput.replace(/,/g, ''))
-    if (!Number.isFinite(num) || num <= 0) return
-    const side = manualSideInput === 'LEVEL' ? null : manualSideInput
-    const newPin: PinChip = {
-      price: num,
-      side,
-      reason: 'Trader drawn chart line',
-    }
-    setPins((prev) => [...prev, newPin])
-    setManualPriceInput('')
-    setShowPinInput(false)
-    await fetch('/api/trading/live-voice/react', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        instrument,
-        price: num,
-        side: side || 'BUY',
-        reason: 'Trader drawn chart zone',
-      }),
-    }).catch(() => null)
-    await submitTurn(null, `I drew a line on the chart at ${num.toLocaleString()}${side ? ` for ${side}` : ''}`)
-  }, [manualPriceInput, manualSideInput, instrument, submitTurn])
+
 
 
 
@@ -682,54 +656,17 @@ export function LiveVoicePanel({
             </p>
           </div>
         )}
-        {/* Pins + Interactive Chart Line Drawer Controls */}
-        {/* Pins + Interactive Chart Line Drawer Controls */}
-        <div className="space-y-1 pt-1.5 border-t border-[#30363d]">
-          <div className="flex items-center justify-between">
+        {/* Sent chart zones display */}
+        {pins.length > 0 && (
+          <div className="space-y-1 pt-1.5 border-t border-[#30363d]">
             <span className="text-[10px] uppercase font-semibold text-gray-400 tracking-wider">
-              Chart Pins & Drawn Lines
+              📍 Zones Sent to Leo
             </span>
-            <button
-              onClick={() => setShowPinInput((v) => !v)}
-              className="text-[10px] text-emerald-400 hover:text-emerald-300 transition-colors font-mono font-semibold"
-            >
-              {showPinInput ? 'Cancel' : '+ Pin Drawn Line'}
-            </button>
-          </div>
-
-          {showPinInput && (
-            <div className="flex items-center gap-1 bg-black/50 p-1.5 rounded border border-emerald-500/40">
-              <input
-                type="text"
-                value={manualPriceInput}
-                onChange={(e) => setManualPriceInput(e.target.value)}
-                placeholder="e.g. 39,250"
-                className="w-20 bg-gray-900 border border-gray-700 text-[10px] text-white px-1.5 py-0.5 rounded font-mono"
-              />
-              <select
-                value={manualSideInput}
-                onChange={(e) => setManualSideInput(e.target.value as any)}
-                className="bg-gray-900 border border-gray-700 text-[10px] text-white px-1 py-0.5 rounded font-mono"
-              >
-                <option value="LEVEL">LEVEL</option>
-                <option value="BUY">BUY</option>
-                <option value="SHORT">SHORT</option>
-              </select>
-              <button
-                onClick={handlePinChartLine}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] px-2.5 py-0.5 rounded font-semibold transition-colors shadow-sm"
-              >
-                Send to Leo
-              </button>
-            </div>
-          )}
-
-          {pins.length > 0 && (
             <div className="flex flex-wrap gap-1 pt-0.5">
               {pins.map((p, idx) => (
                 <span
                   key={`${p.price}-${p.side || 'x'}-${idx}`}
-                  title={p.reason || 'Drawn chart line pin'}
+                  title={p.reason || 'Drawn chart zone'}
                   className={`rounded border px-1.5 py-0.5 font-mono text-[10px] flex items-center gap-1 ${
                     p.side === 'SHORT'
                       ? 'border-red-700/50 bg-red-950/40 text-red-200'
@@ -744,8 +681,8 @@ export function LiveVoicePanel({
                 </span>
               ))}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {reactionLine && (
           <p className="rounded border border-sky-700/40 bg-sky-950/40 px-2 py-1 text-[10px] leading-snug text-sky-100">

@@ -508,6 +508,13 @@ export function TradingChart({
   /** Floating morning playbook — independent of chart level lines. */
   const [playbookOpen, setPlaybookOpen] = useState(true)
   const [voiceOpen, setVoiceOpen] = useState(false)
+  // Draw Zone tool — click two Y coords on the chart to define a price zone for Leo
+  const [drawZoneActive, setDrawZoneActive] = useState(false)
+  const [drawZoneAnchorPrice, setDrawZoneAnchorPrice] = useState<number | null>(null)
+  const [drawnZone, setDrawnZone] = useState<{ priceHigh: number; priceLow: number } | null>(null)
+  const [drawnZoneSide, setDrawnZoneSide] = useState<'BUY' | 'SHORT'>('BUY')
+  const [drawnZoneSending, setDrawnZoneSending] = useState(false)
+  const drawZoneLinesRef = useRef<any[]>([])
 
   // Open Live Voice once when you clock in (same discoverability as playbook)
   useEffect(() => {
@@ -1976,6 +1983,112 @@ export function TradingChart({
     }
   }, [canPlaceOrder, onLevelSelect, chartReady, positionOverlay, pendingLimit])
 
+  // ── Draw Zone tool — click two points to define a price band ────────────────
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || !candleRef.current || !chartReady || !drawZoneActive) return
+    container.style.cursor = 'crosshair'
+
+    const onClick = (e: MouseEvent) => {
+      if (!candleRef.current) return
+      const rect = container.getBoundingClientRect()
+      const y = e.clientY - rect.top
+      if (y < 0 || y > rect.height) return
+      const price = candleRef.current.coordinateToPrice(y)
+      if (price == null || !Number.isFinite(Number(price)) || Number(price) <= 0) return
+      const p = Math.round(Number(price) * 100) / 100
+
+      if (drawZoneAnchorPrice == null) {
+        // First click — anchor
+        setDrawZoneAnchorPrice(p)
+        // Draw a temporary price line for the anchor
+        const host = priceLineHostRef.current
+        if (host) {
+          const line = host.createPriceLine({
+            price: p,
+            color: '#a78bfa',
+            lineWidth: 2,
+            lineStyle: 2, // dashed
+            axisLabelVisible: true,
+            title: '— Zone Start',
+          })
+          drawZoneLinesRef.current.push(line)
+        }
+      } else {
+        // Second click — complete zone
+        const high = Math.max(drawZoneAnchorPrice, p)
+        const low = Math.min(drawZoneAnchorPrice, p)
+        setDrawnZone({ priceHigh: high, priceLow: low })
+        setDrawZoneActive(false)
+        setDrawZoneAnchorPrice(null)
+        // Draw the second line
+        const host = priceLineHostRef.current
+        if (host) {
+          const line = host.createPriceLine({
+            price: p,
+            color: '#a78bfa',
+            lineWidth: 2,
+            lineStyle: 2,
+            axisLabelVisible: true,
+            title: '— Zone End',
+          })
+          drawZoneLinesRef.current.push(line)
+        }
+        container.style.cursor = ''
+      }
+    }
+
+    container.addEventListener('click', onClick, true)
+    const canvases = Array.from(container.querySelectorAll('canvas'))
+    for (const c of canvases) c.addEventListener('click', onClick, true)
+    return () => {
+      container.removeEventListener('click', onClick, true)
+      for (const c of canvases) c.removeEventListener('click', onClick, true)
+      container.style.cursor = ''
+    }
+  }, [drawZoneActive, drawZoneAnchorPrice, chartReady])
+
+  // Clear drawn zone lines helper
+  const clearDrawnZoneLines = useCallback(() => {
+    const host = priceLineHostRef.current
+    drawZoneLinesRef.current.forEach((line) => {
+      try { host?.removePriceLine(line) } catch { /* ignore */ }
+    })
+    drawZoneLinesRef.current = []
+  }, [])
+
+  // Send drawn zone to Leo
+  const sendDrawnZoneToLeo = useCallback(async () => {
+    if (!drawnZone) return
+    setDrawnZoneSending(true)
+    const mid = Math.round(((drawnZone.priceHigh + drawnZone.priceLow) / 2) * 100) / 100
+    const inst = (lockedInstrument ?? instrument) as Instrument
+    try {
+      await fetch('/api/trading/live-voice/react', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          instrument: inst,
+          price: mid,
+          side: drawnZoneSide,
+          reason: `Trader drawn ${drawnZoneSide} zone: ${drawnZone.priceLow.toLocaleString()} – ${drawnZone.priceHigh.toLocaleString()}`,
+        }),
+      })
+    } catch { /* silent */ }
+    // Also auto-open voice and submit a turn so Leo speaks about it
+    if (!voiceOpen) setVoiceOpen(true)
+    setDrawnZoneSending(false)
+    setDrawnZone(null)
+    clearDrawnZoneLines()
+  }, [drawnZone, drawnZoneSide, instrument, lockedInstrument, voiceOpen, clearDrawnZoneLines])
+
+  const cancelDrawnZone = useCallback(() => {
+    setDrawnZone(null)
+    setDrawZoneActive(false)
+    setDrawZoneAnchorPrice(null)
+    clearDrawnZoneLines()
+  }, [clearDrawnZoneLines])
+
   // ── Hover visible AI/structure level → preview entry / SL / TP ─
   // Morning: place preview. Afternoon: same geometry, watch-only (canPlaceOrder false).
   useEffect(() => {
@@ -2400,6 +2513,43 @@ export function TradingChart({
           Voice
         </button>
 
+        {/* Draw Zone tool — next to voice */}
+        <button
+          type="button"
+          title={
+            drawZoneActive
+              ? 'Cancel zone drawing'
+              : drawZoneAnchorPrice != null
+                ? 'Click second point to complete zone'
+                : 'Draw a BUY/SHORT zone on the chart for Leo'
+          }
+          onClick={() => {
+            if (drawZoneActive || drawZoneAnchorPrice != null) {
+              cancelDrawnZone()
+            } else {
+              setDrawZoneActive(true)
+              setDrawnZone(null)
+            }
+          }}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+            drawZoneActive || drawZoneAnchorPrice != null
+              ? 'bg-amber-600/30 border-amber-500/50 text-amber-100 animate-pulse'
+              : drawnZone
+                ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-100'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-amber-200 hover:border-amber-500/40'
+          }`}
+        >
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <rect x="2" y="4" width="12" height="8" rx="1" strokeLinecap="round" />
+            <line x1="2" y1="8" x2="14" y2="8" strokeDasharray="2 2" />
+          </svg>
+          {drawZoneActive
+            ? drawZoneAnchorPrice != null
+              ? 'Click 2nd point'
+              : 'Click 1st point'
+            : 'Draw Zone'}
+        </button>
+
         {pendingLimit && !positionOverlay && (
           <>
             <span className="rounded-lg border border-sky-700/50 bg-sky-950/40 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">
@@ -2585,6 +2735,66 @@ export function TradingChart({
               refreshKey={levelsRefreshKey}
               onClose={() => setVoiceOpen(false)}
             />
+          </div>
+        )}
+
+        {/* Drawn Zone confirmation popup — appears after drawing two points */}
+        {drawnZone && (
+          <div className="absolute bottom-20 right-3 z-40 w-64 rounded-xl border border-violet-500/40 bg-[#161b22]/95 shadow-2xl backdrop-blur-md p-3 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-violet-300 flex items-center gap-1.5">
+                <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <rect x="2" y="4" width="12" height="8" rx="1" strokeLinecap="round" />
+                  <line x1="2" y1="8" x2="14" y2="8" strokeDasharray="2 2" />
+                </svg>
+                Drawn Zone
+              </span>
+              <button
+                onClick={cancelDrawnZone}
+                className="text-gray-500 hover:text-white transition text-xs"
+                title="Discard zone"
+              >✕</button>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-[#30363d] bg-black/40 px-3 py-2">
+              <div className="space-y-0.5">
+                <span className="text-[10px] text-gray-500 uppercase tracking-wide">Range</span>
+                <p className="font-mono text-sm font-bold text-white">
+                  {drawnZone.priceLow.toLocaleString()} – {drawnZone.priceHigh.toLocaleString()}
+                </p>
+              </div>
+              <span className="text-[10px] font-mono text-gray-500">
+                {Math.round(drawnZone.priceHigh - drawnZone.priceLow)} pts
+              </span>
+            </div>
+            <div className="flex gap-1.5">
+              <button
+                onClick={() => setDrawnZoneSide('BUY')}
+                className={`flex-1 rounded-lg py-1.5 text-xs font-bold uppercase tracking-wide transition border ${
+                  drawnZoneSide === 'BUY'
+                    ? 'bg-emerald-600/40 border-emerald-500/60 text-emerald-200 shadow-sm'
+                    : 'bg-transparent border-[#30363d] text-gray-500 hover:text-emerald-300 hover:border-emerald-500/40'
+                }`}
+              >
+                BUY Zone
+              </button>
+              <button
+                onClick={() => setDrawnZoneSide('SHORT')}
+                className={`flex-1 rounded-lg py-1.5 text-xs font-bold uppercase tracking-wide transition border ${
+                  drawnZoneSide === 'SHORT'
+                    ? 'bg-red-600/40 border-red-500/60 text-red-200 shadow-sm'
+                    : 'bg-transparent border-[#30363d] text-gray-500 hover:text-red-300 hover:border-red-500/40'
+                }`}
+              >
+                SHORT Zone
+              </button>
+            </div>
+            <button
+              onClick={sendDrawnZoneToLeo}
+              disabled={drawnZoneSending}
+              className="w-full rounded-lg bg-violet-600 hover:bg-violet-500 text-white py-2 text-xs font-bold uppercase tracking-wider transition shadow-md disabled:opacity-50"
+            >
+              {drawnZoneSending ? 'Sending…' : 'Send to Leo'}
+            </button>
           </div>
         )}
 
