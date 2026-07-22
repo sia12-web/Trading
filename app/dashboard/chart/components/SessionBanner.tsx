@@ -285,9 +285,13 @@ export function SessionBanner({
           CLOCKED OUT
         </span>
       ) : null}
-      {gate.phase === 'ENTRY' && gate.entryWindow && gate.clockedIn && (
+      {gate.phase === 'ENTRY' && gate.clockedIn && (
         <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-emerald-300">
-          Window {gate.entryWindow}/3
+          {gate.market === 'TOKYO'
+            ? 'Entry 09:00–09:45 JST'
+            : gate.entryWindow
+              ? `Window ${gate.entryWindow}/3`
+              : 'Entry window'}
         </span>
       )}
       {gate.clockedIn && (

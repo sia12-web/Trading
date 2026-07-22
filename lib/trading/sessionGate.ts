@@ -861,6 +861,9 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     const inEntryWindow = t <= entryClose
     const canAttempt =
       book.attemptsUsed < MAX_SESSION_ATTEMPTS && book.stopHits < MAX_STOP_HITS
+    const tzShort = market === 'TOKYO' ? 'JST' : 'ET'
+    const entryUntil = `${s.entryClose.slice(0, 5)} ${tzShort}`
+    const entryRange = `${s.marketOpen.slice(0, 5)}–${s.entryClose.slice(0, 5)} ${tzShort}`
     return finish({
       ...base,
       phase: inEntryWindow ? 'ENTRY' : 'FLAT',
@@ -871,10 +874,12 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       canManagePosition: false,
       message: inEntryWindow
         ? canAttempt
-          ? `Entry window — attempt ${book.attemptsUsed + 1}/${MAX_SESSION_ATTEMPTS}. Click a ${locked} level (until ${s.entryClose.slice(0, 5)}). Working limits do not count until filled.`
+          ? market === 'TOKYO'
+            ? `Tokyo entry ${entryRange} — attempt ${book.attemptsUsed + 1}/${MAX_SESSION_ATTEMPTS}. Click a ${locked} level (until ${entryUntil}). Working limits do not count until filled.`
+            : `Entry window ${entryWindow ?? '—'}/3 — attempt ${book.attemptsUsed + 1}/${MAX_SESSION_ATTEMPTS}. Click a ${locked} level (until ${entryUntil}). Working limits do not count until filled.`
           : book.lockReason ||
             `No attempts left (${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS}). Trading locked.`
-        : `Entry window closed (${s.entryClose.slice(0, 5)}). Levels cleared — manage an open position if you have one; otherwise wait for lunch.`,
+        : `Entry window closed (${entryUntil}). Levels cleared — manage an open position if you have one; otherwise wait for lunch.`,
     })
   }
 
