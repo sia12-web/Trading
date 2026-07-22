@@ -2600,6 +2600,16 @@ Please evaluate the market structure, candle bodies, volume, and session transit
     }
 
     const onMouseDown = (e: MouseEvent) => {
+      if (e.button === 2) {
+        // Right click cancels highlight creation immediately
+        e.preventDefault()
+        e.stopPropagation()
+        if (overlay) overlay.style.display = 'none'
+        step = 0
+        setDrawTimeActive(false)
+        container.style.cursor = ''
+        return
+      }
       if (e.button !== 0) return
       e.preventDefault()
       e.stopPropagation()
@@ -2623,7 +2633,7 @@ Please evaluate the market structure, candle bodies, volume, and session transit
           overlay.style.borderRadius = '4px'
           overlay.style.boxSizing = 'border-box'
           const p = priceAtY(e.clientY)
-          renderHandles(p, p, 'Click 2nd point to finish')
+          renderHandles(p, p, 'Click 2nd point (or Right-Click to cancel)')
         }
       } else if (step === 1 && startX != null && startY != null) {
         // 2nd Click: Lock end position & complete
@@ -2717,23 +2727,36 @@ Please evaluate the market structure, candle bodies, volume, and session transit
       if (topPrice != null && botPrice != null) {
         const high = Math.max(topPrice, botPrice)
         const low = Math.min(topPrice, botPrice)
-        renderHandles(high, low, 'Click 2nd point to finish')
+        renderHandles(high, low, 'Click 2nd point (or Right-Click to cancel)')
       }
+    }
+
+    const onContextMenu = (e: MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (overlay) overlay.style.display = 'none'
+      step = 0
+      setDrawTimeActive(false)
+      container.style.cursor = ''
     }
 
     container.addEventListener('mousedown', onMouseDown, true)
     container.addEventListener('mousemove', onMouseMove, true)
+    container.addEventListener('contextmenu', onContextMenu, true)
     const canvases = Array.from(container.querySelectorAll('canvas'))
     for (const c of canvases) {
       c.addEventListener('mousedown', onMouseDown, true)
       c.addEventListener('mousemove', onMouseMove, true)
+      c.addEventListener('contextmenu', onContextMenu, true)
     }
     return () => {
       container.removeEventListener('mousedown', onMouseDown, true)
       container.removeEventListener('mousemove', onMouseMove, true)
+      container.removeEventListener('contextmenu', onContextMenu, true)
       for (const c of canvases) {
         c.removeEventListener('mousedown', onMouseDown, true)
         c.removeEventListener('mousemove', onMouseMove, true)
+        c.removeEventListener('contextmenu', onContextMenu, true)
       }
       container.style.cursor = ''
       if (overlay) overlay.style.display = 'none'
