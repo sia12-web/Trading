@@ -73,12 +73,7 @@ import {
   deskVisibleLogicalRange,
   deskBarSpacing,
 } from '@/lib/trading/deskInstrumentPreference'
-import {
-  instrumentTick,
-  snapDeskPrice,
-  snapStopToTick,
-  snapTargetToTick,
-} from '@/lib/trading/instrumentTicks'
+import { snapDeskPrice } from '@/lib/trading/instrumentTicks'
 
 function defaultManualStop(limit: number, direction: 'LONG' | 'SHORT'): number {
   const pct = 0.0035
@@ -3488,173 +3483,152 @@ export function TradingChart({
           </div>
         )}
 
-        {/* TradingView Interactive Risk/Reward Box HUD overlay on chart */}
-        {riskBox && (
-          <div className="absolute top-16 right-4 z-40 w-80 rounded-2xl border border-sky-500/50 bg-[#161b22]/95 shadow-2xl backdrop-blur-md p-4 space-y-3">
-            {/* Top Bar: Buy/Sell pill + 1% Units + Limit Submit + Close */}
-            <div className="flex items-center justify-between gap-2 border-b border-[#30363d] pb-3">
-              <button
-                type="button"
-                onClick={() => {
-                  const newDir = riskBox.direction === 'LONG' ? 'SHORT' : 'LONG'
-                  const rawStop = defaultManualStop(riskBox.entryPrice, newDir)
-                  const rawTp = newDir === 'LONG'
-                    ? snapDeskPrice(instrument, riskBox.entryPrice * 1.0105)
-                    : snapDeskPrice(instrument, riskBox.entryPrice * 0.9895)
-                  setRiskBox({
-                    ...riskBox,
-                    direction: newDir,
-                    stopLoss: rawStop,
-                    profitTarget: rawTp,
-                  })
-                }}
-                className={`px-3 py-1.5 text-xs font-extrabold uppercase rounded-lg shadow-sm transition border ${
-                  riskBox.direction === 'LONG'
-                    ? 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500'
-                    : 'bg-red-600 border-red-500 text-white hover:bg-red-500'
-                }`}
-                title="Click to toggle BUY / SELL direction"
-              >
-                {riskBox.direction === 'LONG' ? 'Buy' : 'Sell'}
-              </button>
+        {/* TradingView Order Line Overlay Badges (Attached Directly to Price Lines on Chart) */}
+        {riskBox && (() => {
+          const candleSeries = candleRef.current
+          const entryY = candleSeries ? candleSeries.priceToCoordinate(riskBox.entryPrice) : null
+          const tpY = candleSeries ? candleSeries.priceToCoordinate(riskBox.profitTarget) : null
+          const slY = candleSeries ? candleSeries.priceToCoordinate(riskBox.stopLoss) : null
 
-              {/* TradingView Pill: [ Units | Limit | ✕ ] */}
-              <div className="flex items-center rounded-lg border border-blue-500/60 bg-blue-950/40 px-2.5 py-1 text-xs font-mono font-bold text-blue-200 gap-2 shadow-inner">
-                {(() => {
-                  const sz = previewPositionSizing(
-                    riskBox.entryPrice,
-                    100000,
-                    riskBox.direction,
-                    riskBox.stopLoss,
-                    1.0
-                  )
-                  return <span>{sz?.position_size ?? 1}</span>
-                })()}
-                <span className="text-gray-500">|</span>
-                <button
-                  type="button"
-                  onClick={confirmRiskBoxOrder}
-                  className="text-blue-300 hover:text-white font-sans uppercase tracking-wider text-[11px] font-extrabold transition"
-                  title="Place 1% Limit Order"
+          const sz = previewPositionSizing(
+            riskBox.entryPrice,
+            100000,
+            riskBox.direction,
+            riskBox.stopLoss,
+            1.0
+          )
+          const posSize = sz?.position_size ?? 1
+          const lossVal = (sz?.risk_amount ?? 100).toFixed(2)
+          const targetPts = Math.abs(riskBox.profitTarget - riskBox.entryPrice)
+          const profitVal = (posSize * targetPts).toFixed(2)
+
+          const minLineY = entryY != null && tpY != null && slY != null ? Math.min(entryY, tpY, slY) : null
+          const maxLineY = entryY != null && tpY != null && slY != null ? Math.max(entryY, tpY, slY) : null
+
+          return (
+            <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
+              {/* Dashed Vertical Blue Connecting Line */}
+              {minLineY != null && maxLineY != null && (
+                <div
+                  className="absolute border-r-2 border-dashed border-blue-500/80 pointer-events-none"
+                  style={{
+                    left: 'calc(50% + 140px)',
+                    top: `${minLineY}px`,
+                    height: `${Math.abs(maxLineY - minLineY)}px`,
+                  }}
+                />
+              )}
+
+              {/* Take Profit (TP) Line Pill Badge */}
+              {tpY != null && (
+                <div
+                  className="absolute flex items-center gap-1.5 pointer-events-auto"
+                  style={{
+                    left: '42%',
+                    top: `${tpY - 13}px`,
+                  }}
                 >
-                  Limit
-                </button>
-                <span className="text-gray-500">|</span>
-                <button
-                  type="button"
-                  onClick={cancelRiskBox}
-                  className="text-gray-400 hover:text-red-400 transition"
-                  title="Close Risk Box (Esc)"
+                  <div className="flex items-center rounded border border-dashed border-emerald-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-emerald-300 shadow-md">
+                    <span>{posSize}</span>
+                    <span className="text-emerald-600 mx-1.5">|</span>
+                    <span className="text-emerald-400">+{profitVal} CAD</span>
+                    <span className="text-emerald-600 mx-1.5">|</span>
+                    <button
+                      onClick={cancelRiskBox}
+                      className="text-gray-400 hover:text-emerald-200 transition font-bold"
+                      title="Remove TP"
+                    >✕</button>
+                  </div>
+                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 border border-white shadow-sm" />
+                </div>
+              )}
+
+              {/* Entry Line Pill Badge: [ Buy/Sell ] [ Units | Limit | ✕ ] */}
+              {entryY != null && (
+                <div
+                  className="absolute flex items-center gap-2 pointer-events-auto"
+                  style={{
+                    left: '32%',
+                    top: `${entryY - 14}px`,
+                  }}
                 >
-                  ✕
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newDir = riskBox.direction === 'LONG' ? 'SHORT' : 'LONG'
+                      const rawStop = defaultManualStop(riskBox.entryPrice, newDir)
+                      const rawTp = newDir === 'LONG'
+                        ? snapDeskPrice(instrument, riskBox.entryPrice * 1.0105)
+                        : snapDeskPrice(instrument, riskBox.entryPrice * 0.9895)
+                      setRiskBox({
+                        ...riskBox,
+                        direction: newDir,
+                        stopLoss: rawStop,
+                        profitTarget: rawTp,
+                      })
+                    }}
+                    className={`px-3 py-1 text-xs font-extrabold uppercase rounded-md shadow-md transition border ${
+                      riskBox.direction === 'LONG'
+                        ? 'bg-blue-600 border-blue-400 text-white hover:bg-blue-500'
+                        : 'bg-red-600 border-red-400 text-white hover:bg-red-500'
+                    }`}
+                    title="Toggle Buy / Sell direction"
+                  >
+                    {riskBox.direction === 'LONG' ? 'Buy' : 'Sell'}
+                  </button>
+
+                  <div className="flex items-center rounded-md border border-blue-400 bg-white/95 px-3 py-1 text-xs font-mono font-bold text-gray-900 shadow-xl">
+                    <span className="text-blue-700 font-extrabold text-sm">{posSize}</span>
+                    <span className="text-gray-300 mx-1.5">|</span>
+                    <button
+                      type="button"
+                      onClick={confirmRiskBoxOrder}
+                      className="text-blue-600 hover:text-blue-800 font-sans uppercase font-extrabold tracking-wider text-[11px] transition"
+                      title="Place 1% Limit Order"
+                    >
+                      Limit
+                    </button>
+                    <span className="text-gray-300 mx-1.5">|</span>
+                    <button
+                      type="button"
+                      onClick={cancelRiskBox}
+                      className="text-gray-400 hover:text-red-500 transition font-bold"
+                      title="Close (Esc)"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <div className="w-3 h-3 rounded-full bg-blue-500 border-2 border-white shadow-md" />
+                </div>
+              )}
+
+              {/* Stop Loss (SL) Line Pill Badge — Dynamic 1% Position Sizing */}
+              {slY != null && (
+                <div
+                  className="absolute flex items-center gap-1.5 pointer-events-auto"
+                  style={{
+                    left: '42%',
+                    top: `${slY - 13}px`,
+                  }}
+                >
+                  <div className="flex items-center rounded border border-dashed border-amber-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-amber-300 shadow-md">
+                    <span>{posSize}</span>
+                    <span className="text-amber-600 mx-1.5">|</span>
+                    <span className="text-amber-400">-{lossVal} CAD</span>
+                    <span className="text-amber-600 mx-1.5">|</span>
+                    <button
+                      onClick={cancelRiskBox}
+                      className="text-gray-400 hover:text-amber-200 transition font-bold"
+                      title="Remove SL"
+                    >✕</button>
+                  </div>
+                  <div className="w-2.5 h-2.5 rounded-full bg-amber-400 border border-white shadow-sm" />
+                </div>
+              )}
             </div>
-
-            {/* Calculations Row: Entry | Reward:Risk */}
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="rounded-lg border border-[#30363d] bg-black/40 p-2 space-y-0.5">
-                <span className="text-[9px] text-gray-500 uppercase tracking-wide">Entry Price</span>
-                <p className="font-mono font-bold text-white text-sm">
-                  {riskBox.entryPrice.toLocaleString()}
-                </p>
-              </div>
-              <div className="rounded-lg border border-[#30363d] bg-black/40 p-2 space-y-0.5">
-                <span className="text-[9px] text-gray-500 uppercase tracking-wide">Risk / Reward</span>
-                <p className="font-mono font-bold text-emerald-400 text-sm">
-                  {(() => {
-                    const riskDist = Math.abs(riskBox.entryPrice - riskBox.stopLoss)
-                    const rewardDist = Math.abs(riskBox.profitTarget - riskBox.entryPrice)
-                    const ratio = riskDist > 0 ? rewardDist / riskDist : 0
-                    return `${ratio.toFixed(2)} R`
-                  })()}
-                </p>
-              </div>
-            </div>
-
-            {/* SL & TP Line Badges (TradingView Style with 1% Auto Sizing) */}
-            <div className="space-y-2 text-xs">
-              {/* Take Profit Pill */}
-              <div className="flex items-center justify-between rounded-lg border border-dashed border-emerald-500/60 bg-emerald-950/20 px-3 py-2">
-                <div className="space-y-0.5">
-                  <span className="text-[9px] text-emerald-400 font-bold uppercase tracking-wider">Take Profit (TP)</span>
-                  <p className="font-mono font-bold text-emerald-300 text-xs">
-                    {riskBox.profitTarget.toLocaleString()} ({(() => {
-                      const sz = previewPositionSizing(
-                        riskBox.entryPrice,
-                        100000,
-                        riskBox.direction,
-                        riskBox.stopLoss,
-                        1.0
-                      )
-                      const targetPts = Math.abs(riskBox.profitTarget - riskBox.entryPrice)
-                      const profitVal = (sz?.position_size ?? 1) * targetPts
-                      return `+${profitVal.toFixed(2)} USD`
-                    })()})
-                  </p>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => {
-                      const step = instrumentTick(instrument)
-                      setRiskBox({ ...riskBox, profitTarget: snapTargetToTick(instrument, riskBox.entryPrice, riskBox.profitTarget - step, riskBox.direction) })
-                    }}
-                    className="px-2 py-0.5 text-[10px] font-bold bg-emerald-900/40 text-emerald-200 rounded border border-emerald-700/50 hover:bg-emerald-800/60 transition"
-                  >-</button>
-                  <button
-                    onClick={() => {
-                      const step = instrumentTick(instrument)
-                      setRiskBox({ ...riskBox, profitTarget: snapTargetToTick(instrument, riskBox.entryPrice, riskBox.profitTarget + step, riskBox.direction) })
-                    }}
-                    className="px-2 py-0.5 text-[10px] font-bold bg-emerald-900/40 text-emerald-200 rounded border border-emerald-700/50 hover:bg-emerald-800/60 transition"
-                  >+</button>
-                </div>
-              </div>
-
-              {/* Stop Loss Pill — Auto Recalculates 1% Position Size */}
-              <div className="flex items-center justify-between rounded-lg border border-dashed border-amber-500/60 bg-amber-950/20 px-3 py-2">
-                <div className="space-y-0.5">
-                  <span className="text-[9px] text-amber-400 font-bold uppercase tracking-wider">Stop Loss (SL — 1.0% Risk)</span>
-                  <p className="font-mono font-bold text-amber-300 text-xs">
-                    {riskBox.stopLoss.toLocaleString()} ({(() => {
-                      const sz = previewPositionSizing(
-                        riskBox.entryPrice,
-                        100000,
-                        riskBox.direction,
-                        riskBox.stopLoss,
-                        1.0
-                      )
-                      return `-${(sz?.risk_amount ?? 100).toFixed(2)} USD`
-                    })()})
-                  </p>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => {
-                      const step = instrumentTick(instrument)
-                      setRiskBox({ ...riskBox, stopLoss: snapStopToTick(instrument, riskBox.entryPrice, riskBox.stopLoss - step, riskBox.direction) })
-                    }}
-                    className="px-2 py-0.5 text-[10px] font-bold bg-amber-900/40 text-amber-200 rounded border border-amber-700/50 hover:bg-amber-800/60 transition"
-                  >-</button>
-                  <button
-                    onClick={() => {
-                      const step = instrumentTick(instrument)
-                      setRiskBox({ ...riskBox, stopLoss: snapStopToTick(instrument, riskBox.entryPrice, riskBox.stopLoss + step, riskBox.direction) })
-                    }}
-                    className="px-2 py-0.5 text-[10px] font-bold bg-amber-900/40 text-amber-200 rounded border border-amber-700/50 hover:bg-amber-800/60 transition"
-                  >+</button>
-                </div>
-              </div>
-            </div>
-
-            <button
-              onClick={confirmRiskBoxOrder}
-              className="w-full rounded-xl bg-blue-600 hover:bg-blue-500 text-white py-2.5 text-xs font-extrabold uppercase tracking-wider transition shadow-lg flex items-center justify-center gap-1.5"
-            >
-              Place 1% Limit Order
-            </button>
-          </div>
-        )}
+          )
+        })()}
 
         {/* Required Rationale Modal for Pure Manual Orders (No Leo conversation) */}
         {rationaleModal?.open && (
