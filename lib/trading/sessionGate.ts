@@ -52,7 +52,8 @@ export interface MarketSessionTimes {
 
 export const NY_SESSION: MarketSessionTimes = {
   tz: 'America/New_York',
-  analyzeStart: '09:00:00',
+  /** Level resolution triggers at 09:15 ET to capture full London session moves right up to 9:15 AM ET */
+  analyzeStart: '09:15:00',
   marketOpen: '09:30:00',
   entryClose: '10:15:00',
   lunchClose: '11:30:00',
