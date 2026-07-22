@@ -146,6 +146,8 @@ export default function ChartPage() {
     ) => {
       if (managePos || positionOverlay || pending) return
       // Always stash selection so the ticket can show "why this level"
+      const side =
+        meta?.side === 'BUY' || meta?.side === 'SHORT' ? meta.side : undefined
       const preferred =
         meta?.preferredDirection === 'LONG' || meta?.preferredDirection === 'SHORT'
           ? meta.preferredDirection
