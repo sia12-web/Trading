@@ -2542,7 +2542,7 @@ Please evaluate the market structure, candle bodies, volume, and session transit
     })
   }, [drawTimeActive, drawZoneActive])
 
-  // ── Highlight Time Range tool — 2D rectangle price & time highlight for Leo ─
+  // ── Highlight Time Range tool — 2-Click (Click Start → Move → Click End) ────
   useEffect(() => {
     const container = containerRef.current
     if (!container || !candleRef.current || !chartReady || !drawTimeActive) return
@@ -2563,7 +2563,7 @@ Please evaluate the market structure, candle bodies, volume, and session transit
 
     let startX: number | null = null
     let startY: number | null = null
-    let dragging = false
+    let step = 0 // 0 = awaiting 1st click, 1 = awaiting 2nd click
 
     const priceAtY = (clientY: number): number | null => {
       if (!candleRef.current) return null
@@ -2575,7 +2575,7 @@ Please evaluate the market structure, candle bodies, volume, and session transit
       return Math.round(Number(price) * 100) / 100
     }
 
-    const renderHandles = (highPrice: number | null, lowPrice: number | null) => {
+    const renderHandles = (highPrice: number | null, lowPrice: number | null, hintText?: string) => {
       if (!overlay) return
       const handlesHtml = `
         <div style="position:absolute;top:-5px;left:-5px;width:10px;height:10px;background:#8b5cf6;border:1.5px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>
@@ -2589,8 +2589,9 @@ Please evaluate the market structure, candle bodies, volume, and session transit
         ${
           highPrice != null && lowPrice != null
             ? `<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:4px 8px;height:100%;flex-direction:column;pointer-events:none">
-                <span style="font-family:monospace;font-size:10px;font-weight:700;color:#c4b5fd;background:rgba(15,23,42,0.75);padding:1px 5px;border-radius:3px;border:1px solid rgba(139,92,246,0.4)">${highPrice.toLocaleString()}</span>
-                <span style="font-family:monospace;font-size:10px;font-weight:700;color:#c4b5fd;background:rgba(15,23,42,0.75);padding:1px 5px;border-radius:3px;border:1px solid rgba(139,92,246,0.4)">${lowPrice.toLocaleString()}</span>
+                <span style="font-family:monospace;font-size:10px;font-weight:700;color:#c4b5fd;background:rgba(15,23,42,0.85);padding:2px 6px;border-radius:3px;border:1px solid rgba(139,92,246,0.5)">${highPrice.toLocaleString()}</span>
+                ${hintText ? `<span style="font-size:9px;font-weight:600;color:#e9d5ff;background:rgba(126,34,206,0.8);padding:2px 6px;border-radius:4px;box-shadow:0 2px 4px rgba(0,0,0,0.3)">${hintText}</span>` : ''}
+                <span style="font-family:monospace;font-size:10px;font-weight:700;color:#c4b5fd;background:rgba(15,23,42,0.85);padding:2px 6px;border-radius:3px;border:1px solid rgba(139,92,246,0.5)">${lowPrice.toLocaleString()}</span>
               </div>`
             : ''
         }
@@ -2603,26 +2604,99 @@ Please evaluate the market structure, candle bodies, volume, and session transit
       e.preventDefault()
       e.stopPropagation()
       const rect = container.getBoundingClientRect()
-      startX = e.clientX - rect.left
-      startY = e.clientY - rect.top
-      dragging = true
-      if (overlay) {
-        overlay.style.display = 'block'
-        overlay.style.left = `${startX}px`
-        overlay.style.top = `${startY}px`
-        overlay.style.width = '0px'
-        overlay.style.height = '0px'
-        overlay.style.background = 'rgba(139, 92, 246, 0.16)'
-        overlay.style.border = '2px solid #8b5cf6'
-        overlay.style.borderRadius = '4px'
-        overlay.style.boxSizing = 'border-box'
-        const p = priceAtY(e.clientY)
-        renderHandles(p, p)
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+
+      if (step === 0) {
+        // 1st Click: Lock start position
+        startX = x
+        startY = y
+        step = 1
+        if (overlay) {
+          overlay.style.display = 'block'
+          overlay.style.left = `${startX}px`
+          overlay.style.top = `${startY}px`
+          overlay.style.width = '0px'
+          overlay.style.height = '0px'
+          overlay.style.background = 'rgba(139, 92, 246, 0.16)'
+          overlay.style.border = '2px dashed #8b5cf6'
+          overlay.style.borderRadius = '4px'
+          overlay.style.boxSizing = 'border-box'
+          const p = priceAtY(e.clientY)
+          renderHandles(p, p, 'Click 2nd point to finish')
+        }
+      } else if (step === 1 && startX != null && startY != null) {
+        // 2nd Click: Lock end position & complete
+        const endX = x
+        const endY = y
+
+        const minX = Math.min(startX, endX)
+        const maxX = Math.max(startX, endX)
+        const minY = Math.min(startY, endY)
+        const maxY = Math.max(startY, endY)
+
+        const topP = priceAtY(minY)
+        const botP = priceAtY(maxY)
+        const highPrice = topP != null && botP != null ? Math.max(topP, botP) : 0
+        const lowPrice = topP != null && botP != null ? Math.min(topP, botP) : 0
+
+        const pStart = priceAtY(startY)
+        const pEnd = priceAtY(endY)
+
+        const timeScale = chartRef.current?.timeScale()
+        if (timeScale) {
+          const startLogical = timeScale.coordinateToLogical(minX)
+          const endLogical = timeScale.coordinateToLogical(maxX)
+
+          if (startLogical != null && endLogical != null && candles.length > 0) {
+            const startIdx = Math.max(0, Math.min(candles.length - 1, Math.round(startLogical)))
+            const endIdx = Math.max(0, Math.min(candles.length - 1, Math.round(endLogical)))
+
+            const startCandle = candles[startIdx]
+            const endCandle = candles[endIdx]
+            if (startCandle && endCandle) {
+              const sTime = Number(startCandle.time)
+              const eTime = Number(endCandle.time)
+              const rangeBars = candles.filter((c) => Number(c.time) >= sTime && Number(c.time) <= eTime)
+              
+              const cOpen = rangeBars[0]?.open ?? pStart ?? highPrice
+              const cClose = rangeBars[rangeBars.length - 1]?.close ?? pEnd ?? lowPrice
+              const rHigh = rangeBars.length > 0 ? Math.max(...rangeBars.map((c) => c.high)) : highPrice
+              const rLow = rangeBars.length > 0 ? Math.min(...rangeBars.map((c) => c.low)) : lowPrice
+              const cCount = rangeBars.length
+              const movePts = cClose - cOpen
+              const movePct = cOpen > 0 ? (movePts / cOpen) * 100 : 0
+
+              const currentLabel = `Highlight ${drawnTimeCounter}`
+              setDrawnTimeCounter((prev) => prev + 1)
+              setDrawnTime({
+                startUnix: sTime,
+                endUnix: eTime,
+                priceHigh: highPrice,
+                priceLow: lowPrice,
+                priceStart: pStart ?? cOpen,
+                priceEnd: pEnd ?? cClose,
+                rangeHigh: rHigh,
+                rangeLow: rLow,
+                candleStartOpen: cOpen,
+                candleEndClose: cClose,
+                candleCount: cCount,
+                netMovePts: movePts,
+                netMovePct: movePct,
+                label: currentLabel,
+              })
+            }
+          }
+        }
+        if (overlay) overlay.style.display = 'none'
+        step = 0
+        setDrawTimeActive(false)
+        container.style.cursor = ''
       }
     }
 
     const onMouseMove = (e: MouseEvent) => {
-      if (!dragging || startX == null || startY == null || !overlay) return
+      if (step !== 1 || startX == null || startY == null || !overlay) return
       e.preventDefault()
       const rect = container.getBoundingClientRect()
       const currentX = e.clientX - rect.left
@@ -2643,95 +2717,28 @@ Please evaluate the market structure, candle bodies, volume, and session transit
       if (topPrice != null && botPrice != null) {
         const high = Math.max(topPrice, botPrice)
         const low = Math.min(topPrice, botPrice)
-        renderHandles(high, low)
+        renderHandles(high, low, 'Click 2nd point to finish')
       }
-    }
-
-    const onMouseUp = (e: MouseEvent) => {
-      if (!dragging || startX == null || startY == null) return
-      dragging = false
-      const rect = container.getBoundingClientRect()
-      const endX = e.clientX - rect.left
-      const endY = e.clientY - rect.top
-
-      const pStart = priceAtY(startY)
-      const pEnd = priceAtY(endY)
-      const highPrice = pStart != null && pEnd != null ? Math.max(pStart, pEnd) : 0
-      const lowPrice = pStart != null && pEnd != null ? Math.min(pStart, pEnd) : 0
-      
-      const timeScale = chartRef.current?.timeScale()
-      if (!timeScale) return
-
-      const startLogical = timeScale.coordinateToLogical(startX)
-      const endLogical = timeScale.coordinateToLogical(endX)
-
-      if (startLogical != null && endLogical != null && candles.length > 0) {
-        const startIdx = Math.max(0, Math.min(candles.length - 1, Math.round(startLogical)))
-        const endIdx = Math.max(0, Math.min(candles.length - 1, Math.round(endLogical)))
-        const minIdx = Math.min(startIdx, endIdx)
-        const maxIdx = Math.max(startIdx, endIdx)
-
-        const startCandle = candles[minIdx]
-        const endCandle = candles[maxIdx]
-        if (startCandle && endCandle) {
-          const sTime = Number(startCandle.time)
-          const eTime = Number(endCandle.time)
-          const rangeBars = candles.filter((c) => Number(c.time) >= sTime && Number(c.time) <= eTime)
-          
-          const cOpen = rangeBars[0]?.open ?? pStart ?? highPrice
-          const cClose = rangeBars[rangeBars.length - 1]?.close ?? pEnd ?? lowPrice
-          const rHigh = rangeBars.length > 0 ? Math.max(...rangeBars.map((c) => c.high)) : highPrice
-          const rLow = rangeBars.length > 0 ? Math.min(...rangeBars.map((c) => c.low)) : lowPrice
-          const cCount = rangeBars.length
-          const movePts = cClose - cOpen
-          const movePct = cOpen > 0 ? (movePts / cOpen) * 100 : 0
-
-          const currentLabel = `Highlight ${drawnTimeCounter}`
-          setDrawnTimeCounter((prev) => prev + 1)
-          setDrawnTime({
-            startUnix: sTime,
-            endUnix: eTime,
-            priceHigh: highPrice,
-            priceLow: lowPrice,
-            priceStart: pStart ?? cOpen,
-            priceEnd: pEnd ?? cClose,
-            rangeHigh: rHigh,
-            rangeLow: rLow,
-            candleStartOpen: cOpen,
-            candleEndClose: cClose,
-            candleCount: cCount,
-            netMovePts: movePts,
-            netMovePct: movePct,
-            label: currentLabel,
-          })
-        }
-      }
-      setDrawTimeActive(false)
-      container.style.cursor = ''
     }
 
     container.addEventListener('mousedown', onMouseDown, true)
     container.addEventListener('mousemove', onMouseMove, true)
-    container.addEventListener('mouseup', onMouseUp, true)
     const canvases = Array.from(container.querySelectorAll('canvas'))
     for (const c of canvases) {
       c.addEventListener('mousedown', onMouseDown, true)
       c.addEventListener('mousemove', onMouseMove, true)
-      c.addEventListener('mouseup', onMouseUp, true)
     }
     return () => {
       container.removeEventListener('mousedown', onMouseDown, true)
       container.removeEventListener('mousemove', onMouseMove, true)
-      container.removeEventListener('mouseup', onMouseUp, true)
       for (const c of canvases) {
         c.removeEventListener('mousedown', onMouseDown, true)
         c.removeEventListener('mousemove', onMouseMove, true)
-        c.removeEventListener('mouseup', onMouseUp, true)
       }
       container.style.cursor = ''
       if (overlay) overlay.style.display = 'none'
     }
-  }, [drawTimeActive, chartReady, candles])
+  }, [drawTimeActive, chartReady, candles, drawnTimeCounter])
 
   // Clear risk box chart lines
   const clearRiskBoxLines = useCallback(() => {
@@ -3532,7 +3539,7 @@ Please evaluate the market structure, candle bodies, volume, and session transit
           type="button"
           title={
             drawTimeActive
-              ? 'Drag horizontally on chart to highlight time — or press T / Esc to cancel'
+              ? 'Click 1st & 2nd points on chart to highlight — or press T / Esc to cancel'
               : drawnTime
                 ? 'Time highlighted — send or discard'
                 : 'Highlight a specific time range to discuss with Leo (Press T)'
@@ -3557,7 +3564,7 @@ Please evaluate the market structure, candle bodies, volume, and session transit
             <rect x="2" y="2" width="12" height="12" rx="1" strokeLinecap="round" />
             <line x1="8" y1="2" x2="8" y2="14" strokeDasharray="2 2" />
           </svg>
-          {drawTimeActive ? 'Drag to highlight…' : 'Highlight Time (T)'}
+          {drawTimeActive ? 'Click 1st & 2nd points…' : 'Highlight Time (T)'}
         </button>
 
         {/* Highlights Recall List Button */}
