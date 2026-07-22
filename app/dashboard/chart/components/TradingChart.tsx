@@ -3238,8 +3238,8 @@ export function TradingChart({
           type="button"
           title={
             riskBox
-              ? 'TradingView Risk Box active — place order or Esc to close'
-              : 'Interactive Risk/Reward Limit Order Tool (Press T)'
+              ? 'TradingView Limit Order active — place order or Esc to close'
+              : 'Interactive Limit Order Tool (Press T)'
           }
           onClick={() => {
             if (riskBoxActive || riskBox) {
@@ -3267,7 +3267,7 @@ export function TradingChart({
             <rect x="2" y="8" width="12" height="6" rx="1" className="fill-red-500/30 stroke-red-400" />
             <line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" strokeWidth="2" />
           </svg>
-          {riskBox ? 'Risk Box Active' : 'Risk Box (T)'}
+          {riskBox ? 'Limit Order Active' : 'Limit Order (T)'}
         </button>
 
         {/* Fullscreen mode button (Press F / Esc) */}
