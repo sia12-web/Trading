@@ -109,6 +109,13 @@ export async function POST(request: Request) {
         locked = top.instrument
       }
     }
+    // Fallback: check today's clocked-in attendance instrument
+    if (!locked && isNyDeskInstrument(instrument)) {
+      const attend = await getTodayAttendance(supabase, user.id, 'NY')
+      if (attend?.instrument && isNyDeskInstrument(attend.instrument)) {
+        locked = attend.instrument
+      }
+    }
     if (instrument === 'NIKKEI' || isDeskHoursNow(new Date(), 'NIKKEI').open) {
       locked = 'NIKKEI'
     }

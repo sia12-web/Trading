@@ -155,6 +155,13 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
         lockedInstrument = regimes[0].instrument
       }
     }
+    // Fallback: check today's clocked-in attendance instrument
+    if (!lockedInstrument && (body.instrument === 'DOW' || body.instrument === 'NASDAQ')) {
+      const attend = await getTodayAttendance(supabase, user.id, 'NY')
+      if (attend?.instrument && (attend.instrument === 'DOW' || attend.instrument === 'NASDAQ')) {
+        lockedInstrument = attend.instrument
+      }
+    }
     if (body.instrument === 'NIKKEI') {
       lockedInstrument = 'NIKKEI'
     }
