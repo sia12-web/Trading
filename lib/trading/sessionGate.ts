@@ -63,7 +63,7 @@ export const NY_SESSION: MarketSessionTimes = {
 /** TSE morning cash session; afternoon chart continues to 15:00 (trading stays morning-only). */
 export const TOKYO_SESSION: MarketSessionTimes = {
   tz: 'Asia/Tokyo',
-  analyzeStart: '08:30:00',
+  analyzeStart: '08:45:00',
   marketOpen: '09:00:00',
   entryClose: '09:45:00',
   lunchClose: '11:30:00',
