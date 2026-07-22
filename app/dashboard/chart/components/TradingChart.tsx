@@ -93,6 +93,8 @@ function describeTimeHighlightSpan(
   label: string,
   startUnix: number,
   endUnix: number,
+  priceStart: number,
+  priceEnd: number,
   instrument: Instrument
 ): string {
   const startSess = deskSessionAt(startUnix, instrument) || 'Overnight'
@@ -123,10 +125,17 @@ function describeTimeHighlightSpan(
   const startDateStr = getRelativeDate(startUnix)
   const endDateStr = getRelativeDate(endUnix)
 
+  const diffPts = priceEnd - priceStart
+  const pct = priceStart > 0 ? (diffPts / priceStart) * 100 : 0
+  const moveStr = `${diffPts >= 0 ? '+' : ''}${diffPts.toFixed(2)} pts (${diffPts >= 0 ? '+' : ''}${pct.toFixed(2)}%)`
+
+  const startDesc = `${startDateStr}'s ${startSess} Session (started at price ${priceStart.toLocaleString()})`
+  const endDesc = `${endDateStr}'s ${endSess} Session (ended at price ${priceEnd.toLocaleString()})`
+
   if (startDateStr === endDateStr && startSess === endSess) {
-    return `${label}: ${startDateStr}'s ${startSess} Session`
+    return `${label}: Price Action in ${startDateStr}'s ${startSess} Session, moving ${moveStr} from ${priceStart.toLocaleString()} to ${priceEnd.toLocaleString()}`
   }
-  return `${label}: Spans from ${startDateStr} ${startSess} Session to ${endDateStr} ${endSess} Session`
+  return `${label}: Price Action spans from ${startDesc} to ${endDesc}, capturing a move of ${moveStr}`
 }
 
 /** DOW/NASDAQ → ET · NIKKEI → JST — same clocks as session color bands. */
@@ -579,7 +588,7 @@ export function TradingChart({
 
   // Highlight Time Range tool — drag 2D zone to highlight multi-session time & price for Leo
   const [drawTimeActive, setDrawTimeActive] = useState(false)
-  const [drawnTime, setDrawnTime] = useState<{ startUnix: number; endUnix: number; priceHigh: number; priceLow: number; label: string } | null>(null)
+  const [drawnTime, setDrawnTime] = useState<{ startUnix: number; endUnix: number; priceHigh: number; priceLow: number; priceStart: number; priceEnd: number; label: string } | null>(null)
   const [drawnTimeCounter, setDrawnTimeCounter] = useState(1)
   const [drawnTimeSending, setDrawnTimeSending] = useState(false)
   const drawTimeOverlayRef = useRef<HTMLDivElement | null>(null)
@@ -592,6 +601,8 @@ export function TradingChart({
     endUnix: number
     priceHigh: number
     priceLow: number
+    priceStart: number
+    priceEnd: number
     sessionSpanStr: string
     visible: boolean
   }>>([])
@@ -2344,6 +2355,8 @@ export function TradingChart({
       label,
       drawnTime.startUnix,
       drawnTime.endUnix,
+      drawnTime.priceStart,
+      drawnTime.priceEnd,
       inst
     )
 
@@ -2380,6 +2393,8 @@ export function TradingChart({
       endUnix: drawnTime.endUnix,
       priceHigh: drawnTime.priceHigh,
       priceLow: drawnTime.priceLow,
+      priceStart: drawnTime.priceStart,
+      priceEnd: drawnTime.priceEnd,
       sessionSpanStr,
       visible: true,
     }
@@ -2572,6 +2587,8 @@ export function TradingChart({
             endUnix: Number(endCandle.time),
             priceHigh: highPrice,
             priceLow: lowPrice,
+            priceStart: pStart ?? highPrice,
+            priceEnd: pEnd ?? lowPrice,
             label: currentLabel,
           })
         }
@@ -3122,7 +3139,24 @@ export function TradingChart({
     // Reference chartScrollTrigger to register active scroll updates and solve compiler checks
     void chartScrollTrigger
 
-    return savedHighlights.map((hl) => {
+    // Combine saved highlights and the currently active unsent drawnTime highlight
+    const listToRender = [...savedHighlights]
+    if (drawnTime) {
+      listToRender.push({
+        id: 'unsent-drawn-time',
+        label: drawnTime.label,
+        startUnix: drawnTime.startUnix,
+        endUnix: drawnTime.endUnix,
+        priceHigh: drawnTime.priceHigh,
+        priceLow: drawnTime.priceLow,
+        priceStart: drawnTime.priceStart,
+        priceEnd: drawnTime.priceEnd,
+        sessionSpanStr: 'Unsent highlight',
+        visible: true,
+      })
+    }
+
+    return listToRender.map((hl) => {
       if (!hl.visible) return null
 
       // Convert times directly to coordinates
@@ -3143,10 +3177,16 @@ export function TradingChart({
       const width = Math.abs(rightCoord - leftCoord)
       const height = Math.abs(bottomCoord - topCoord)
 
+      const isUnsent = hl.id === 'unsent-drawn-time'
+
       return (
         <div
           key={hl.id}
-          className="absolute border border-dashed border-violet-500 bg-violet-500/15 rounded pointer-events-none z-20 flex flex-col justify-between p-1.5"
+          className={`absolute border border-dashed rounded pointer-events-none z-20 flex flex-col justify-between p-1.5 ${
+            isUnsent
+              ? 'border-amber-400 bg-amber-400/15 animate-pulse'
+              : 'border-violet-500 bg-violet-500/15'
+          }`}
           style={{
             left: `${left}px`,
             top: `${top}px`,
@@ -3155,9 +3195,18 @@ export function TradingChart({
             transition: 'none',
           }}
         >
-          <span className="text-[9px] font-mono font-extrabold text-violet-200 bg-[#161b22]/90 border border-violet-500/30 px-1.5 py-0.5 rounded w-max select-none leading-none shadow-md">
+          <span className={`text-[9px] font-mono font-extrabold border px-1.5 py-0.5 rounded w-max select-none leading-none shadow-md ${
+            isUnsent
+              ? 'text-amber-200 bg-[#161b22]/90 border-amber-400/30'
+              : 'text-violet-200 bg-[#161b22]/90 border-violet-500/30'
+          }`}>
             {hl.label}
           </span>
+          {!isUnsent && (
+            <span className="text-[7px] font-bold text-violet-300 self-end select-none opacity-60">
+              SAVED
+            </span>
+          )}
         </div>
       )
     })
@@ -3816,6 +3865,8 @@ export function TradingChart({
                   drawnTime.label || 'Highlight 1',
                   drawnTime.startUnix,
                   drawnTime.endUnix,
+                  drawnTime.priceStart,
+                  drawnTime.priceEnd,
                   (lockedInstrument ?? instrument) as Instrument
                 )}
               </p>
