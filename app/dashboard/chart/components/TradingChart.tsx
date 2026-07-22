@@ -33,6 +33,7 @@ import {
   projectSessionHighlightRects,
   paintSessionHighlightOverlay,
   deskClockFor,
+  deskSessionAt,
   lastNTradingSessions as trimDeskCandles,
   sessionLegendLabel,
   sessionLegendOrder,
@@ -86,6 +87,34 @@ type DeskChartFmt = {
   tickMarkFormatter: (time: UTCTimestamp | string | number, tickMarkType: TickMarkType) => string
   timeFormatter: (time: UTCTimestamp | string | number) => string
   tzLabel: string
+}
+
+function describeTimeHighlightSpan(
+  label: string,
+  startUnix: number,
+  endUnix: number,
+  instrument: Instrument
+): string {
+  const startSess = deskSessionAt(startUnix, instrument) || 'Overnight'
+  const endSess = deskSessionAt(endUnix, instrument) || 'Overnight'
+  
+  const nowUnix = Date.now() / 1000
+  const getRelativeDate = (unix: number) => {
+    const d1 = new Date(unix * 1000)
+    const d2 = new Date(nowUnix * 1000)
+    const diffDays = Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24))
+    if (diffDays <= 0) return 'Today'
+    if (diffDays === 1) return 'Yesterday'
+    return `${diffDays} days ago`
+  }
+
+  const startDateStr = getRelativeDate(startUnix)
+  const endDateStr = getRelativeDate(endUnix)
+
+  if (startDateStr === endDateStr && startSess === endSess) {
+    return `${label}: ${startDateStr}'s ${startSess} Session`
+  }
+  return `${label}: Spans from ${startDateStr} ${startSess} Session to ${endDateStr} ${endSess} Session`
 }
 
 /** DOW/NASDAQ → ET · NIKKEI → JST — same clocks as session color bands. */
@@ -536,9 +565,10 @@ export function TradingChart({
   const drawZoneLinesRef = useRef<any[]>([])
   const drawZoneOverlayRef = useRef<HTMLDivElement | null>(null)
 
-  // Highlight Time Range tool — drag horizontally to highlight duration for Leo
+  // Highlight Time Range tool — drag 2D zone to highlight multi-session time & price for Leo
   const [drawTimeActive, setDrawTimeActive] = useState(false)
-  const [drawnTime, setDrawnTime] = useState<{ startUnix: number; endUnix: number } | null>(null)
+  const [drawnTime, setDrawnTime] = useState<{ startUnix: number; endUnix: number; label: string } | null>(null)
+  const [drawnTimeCounter, setDrawnTimeCounter] = useState(1)
   const [drawnTimeSending, setDrawnTimeSending] = useState(false)
   const drawTimeOverlayRef = useRef<HTMLDivElement | null>(null)
 
@@ -2274,6 +2304,14 @@ export function TradingChart({
     // Auto-open voice panel first so context loads
     if (!voiceOpen) setVoiceOpen(true)
     
+    const label = drawnTime.label || 'Highlight 1'
+    const sessionSpanStr = describeTimeHighlightSpan(
+      label,
+      drawnTime.startUnix,
+      drawnTime.endUnix,
+      inst
+    )
+
     const fmt = makeDeskChartFormatters(inst)
     const startStr = fmt.formatTime(drawnTime.startUnix)
     const endStr = fmt.formatTime(drawnTime.endUnix)
@@ -2285,7 +2323,7 @@ export function TradingChart({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           instrument: inst,
-          transcript: `I highlighted a time range on the chart from ${startStr} to ${endStr} ${tzLabel}. What do you think of the price action during this period?`
+          transcript: `I highlighted a multi-session time range on the chart (${sessionSpanStr}). The exact period runs from ${startStr} to ${endStr} (${tzLabel}). Please evaluate the market structure, candle bodies, volume, and session transitions during this period.`,
         }),
       })
       const json = await res.json().catch(() => null)
@@ -2432,7 +2470,13 @@ export function TradingChart({
         const startCandle = candles[minIdx]
         const endCandle = candles[maxIdx]
         if (startCandle && endCandle) {
-          setDrawnTime({ startUnix: Number(startCandle.time), endUnix: Number(endCandle.time) })
+          const currentLabel = `Highlight ${drawnTimeCounter}`
+          setDrawnTimeCounter((prev) => prev + 1)
+          setDrawnTime({
+            startUnix: Number(startCandle.time),
+            endUnix: Number(endCandle.time),
+            label: currentLabel,
+          })
         }
       }
       setDrawTimeActive(false)
@@ -3449,36 +3493,40 @@ export function TradingChart({
 
         {/* Drawn Time confirmation popup */}
         {drawnTime && (
-          <div className="absolute bottom-20 right-72 z-40 w-64 rounded-xl border border-violet-500/40 bg-[#161b22]/95 shadow-2xl backdrop-blur-md p-3 space-y-2.5">
+          <div className="absolute bottom-20 right-72 z-40 w-72 rounded-xl border border-violet-500/50 bg-[#161b22]/95 shadow-2xl backdrop-blur-md p-3.5 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-violet-300 flex items-center gap-1.5">
                 <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
                   <rect x="2" y="2" width="12" height="12" rx="1" strokeLinecap="round" />
                   <line x1="8" y1="2" x2="8" y2="14" strokeDasharray="2 2" />
                 </svg>
-                Highlighted Time
+                {drawnTime.label || 'Highlight 1'}
               </span>
               <button
                 onClick={cancelDrawnTime}
-                className="text-gray-500 hover:text-white transition text-xs"
+                className="text-gray-400 hover:text-white transition text-xs font-bold"
                 title="Discard time highlight"
               >✕</button>
             </div>
-            <div className="flex flex-col gap-1 rounded-lg border border-[#30363d] bg-black/40 px-3 py-2">
-              <span className="text-[10px] text-gray-500 uppercase tracking-wide">Duration</span>
-              <p className="font-mono text-xs font-semibold text-white leading-tight">
-                {(() => {
-                  const fmt = makeDeskChartFormatters((lockedInstrument ?? instrument) as Instrument)
-                  return `${fmt.formatTime(drawnTime.startUnix)} – ${fmt.formatTime(drawnTime.endUnix)} ${fmt.tzLabel}`
-                })()}
+            <div className="rounded-lg border border-[#30363d] bg-black/40 p-2.5 space-y-1">
+              <span className="text-[9px] text-gray-400 font-semibold uppercase tracking-wide block">
+                Session Breakdown
+              </span>
+              <p className="text-xs font-semibold text-violet-200 leading-snug">
+                {describeTimeHighlightSpan(
+                  drawnTime.label || 'Highlight 1',
+                  drawnTime.startUnix,
+                  drawnTime.endUnix,
+                  (lockedInstrument ?? instrument) as Instrument
+                )}
               </p>
             </div>
             <button
               onClick={sendDrawnTimeToLeo}
               disabled={drawnTimeSending}
-              className="w-full rounded-lg bg-violet-600 hover:bg-violet-500 text-white py-2 text-xs font-bold uppercase tracking-wider transition shadow-md disabled:opacity-50"
+              className="w-full rounded-lg bg-violet-600 hover:bg-violet-500 text-white py-2 text-xs font-bold uppercase tracking-wider transition shadow-md disabled:opacity-50 flex items-center justify-center gap-1.5"
             >
-              {drawnTimeSending ? 'Sending…' : 'Send Time to Leo'}
+              {drawnTimeSending ? 'Sending to Leo…' : 'Send to Leo'}
             </button>
           </div>
         )}
