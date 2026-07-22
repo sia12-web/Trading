@@ -2003,7 +2003,49 @@ export function TradingChart({
     onPriceUpdate,
   ])
 
-  // ── Manual double-click removed in favor of TradingView Interactive Risk Box (T key) ───────
+  // ── Double-click chart to drop TradingView Risk Box at clicked price ───────
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || !candleRef.current || !chartReady) return
+    if (positionOverlay || pendingLimit) return
+
+    const placeAtClientY = (clientY: number) => {
+      if (!candleRef.current) return
+      const rect = container.getBoundingClientRect()
+      const y = clientY - rect.top
+      if (y < 0 || y > rect.height) return
+      const price = candleRef.current.coordinateToPrice(y)
+      if (price == null || !Number.isFinite(Number(price)) || Number(price) <= 0) return
+
+      const snapped = snapDeskPrice(instrument, Number(price))
+      const dir = 'LONG'
+      setRiskBox({
+        direction: dir,
+        entryPrice: snapped,
+        stopLoss: defaultManualStop(snapped, dir),
+        profitTarget: snapDeskPrice(instrument, snapped * 1.0105),
+      })
+      setRiskBoxActive(true)
+    }
+
+    const onDblClick = (e: MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      placeAtClientY(e.clientY)
+    }
+
+    container.addEventListener('dblclick', onDblClick, true)
+    const canvases = Array.from(container.querySelectorAll('canvas'))
+    for (const c of canvases) {
+      c.addEventListener('dblclick', onDblClick, true)
+    }
+    return () => {
+      container.removeEventListener('dblclick', onDblClick, true)
+      for (const c of canvases) {
+        c.removeEventListener('dblclick', onDblClick, true)
+      }
+    }
+  }, [chartReady, positionOverlay, pendingLimit, instrument])
 
   // ── Draw Zone tool — drag to draw a rectangle price zone ────────────────────
   useEffect(() => {
