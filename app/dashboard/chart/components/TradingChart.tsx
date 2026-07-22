@@ -4095,19 +4095,14 @@ export function TradingChart({
                       onClick={(e) => {
                         e.stopPropagation()
                         jumpToPriceRef?.current?.(l.price)
-                        // Launch the on-chart Limit Order Box at the clicked playbook level
-                        const pDir = side === 'SHORT' ? 'SHORT' : 'LONG'
-                        const rawStop = defaultManualStop(l.price, pDir)
-                        const rawTp = pDir === 'LONG'
-                          ? snapDeskPrice(instrument, l.price * 1.0105)
-                          : snapDeskPrice(instrument, l.price * 0.9895)
-                        setRiskBox({
-                          direction: pDir,
-                          entryPrice: l.price,
-                          stopLoss: rawStop,
-                          profitTarget: rawTp,
+                        // Trigger standard LevelOrderTicket modal with pre-calculated zone SL and TP
+                        onLevelSelect?.(l.price, {
+                          type: side === 'SHORT' ? 'resistance' : 'support',
+                          side,
+                          preferredDirection: side === 'SHORT' ? 'SHORT' : 'LONG',
+                          reasoning: l.reasoning || why,
+                          source: l.source === 'structure' ? 'structure' : 'ai',
                         })
-                        setRiskBoxActive(true)
                       }}
                       className={`w-full rounded-xl border px-2.5 py-2.5 text-left text-[11px] transition-all hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 ${
                         isRes
