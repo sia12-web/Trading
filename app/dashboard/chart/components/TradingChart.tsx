@@ -89,6 +89,33 @@ type DeskChartFmt = {
   tzLabel: string
 }
 
+function getTradingSessionDate(unix: number, timeZone: string): Date {
+  const d = new Date(unix * 1000)
+  const fmtHour = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hour12: false })
+  const hour = parseInt(fmtHour.format(d), 10)
+  
+  // Overnight/Asia session starts at 18:00 (6 PM ET) on the previous calendar day
+  const dateOffset = hour >= 18 ? 1 : 0
+  
+  const fmtDate = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric' })
+  const parts = fmtDate.formatToParts(d)
+  const getVal = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find(p => p.type === type)?.value)
+  
+  return new Date(getVal('year'), getVal('month') - 1, getVal('day') + dateOffset)
+}
+
+function getRelativeTradingDayLabel(unix: number, nowUnix: number, timeZone: string): string {
+  const tDate = getTradingSessionDate(unix, timeZone)
+  const nowDate = getTradingSessionDate(nowUnix, timeZone)
+  
+  const diffMs = nowDate.getTime() - tDate.getTime()
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24))
+  
+  if (diffDays <= 0) return 'Today'
+  if (diffDays === 1) return 'Yesterday'
+  return `${diffDays} trading days ago`
+}
+
 function describeTimeHighlightSpan(
   label: string,
   startUnix: number,
@@ -101,41 +128,22 @@ function describeTimeHighlightSpan(
   const endSess = deskSessionAt(endUnix, instrument) || 'Overnight'
   
   const nowUnix = Date.now() / 1000
-  const getRelativeDate = (unix: number) => {
-    const timeZone = instrument === 'NIKKEI' ? 'Asia/Tokyo' : 'America/New_York'
-    const fmt = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric' })
-    
-    const parts1 = fmt.formatToParts(new Date(unix * 1000))
-    const parts2 = fmt.formatToParts(new Date(nowUnix * 1000))
-    
-    const getVal = (parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes) =>
-      Number(parts.find(p => p.type === type)?.value)
-      
-    const date1 = new Date(getVal(parts1, 'year'), getVal(parts1, 'month') - 1, getVal(parts1, 'day'))
-    const date2 = new Date(getVal(parts2, 'year'), getVal(parts2, 'month') - 1, getVal(parts2, 'day'))
-    
-    const diffTime = date2.getTime() - date1.getTime()
-    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24))
-    
-    if (diffDays <= 0) return 'Today'
-    if (diffDays === 1) return 'Yesterday'
-    return `${diffDays} days ago`
-  }
+  const timeZone = instrument === 'NIKKEI' ? 'Asia/Tokyo' : 'America/New_York'
 
-  const startDateStr = getRelativeDate(startUnix)
-  const endDateStr = getRelativeDate(endUnix)
+  const startDateStr = getRelativeTradingDayLabel(startUnix, nowUnix, timeZone)
+  const endDateStr = getRelativeTradingDayLabel(endUnix, nowUnix, timeZone)
 
   const diffPts = priceEnd - priceStart
   const pct = priceStart > 0 ? (diffPts / priceStart) * 100 : 0
   const moveStr = `${diffPts >= 0 ? '+' : ''}${diffPts.toFixed(2)} pts (${diffPts >= 0 ? '+' : ''}${pct.toFixed(2)}%)`
 
-  const startDesc = `${startDateStr}'s ${startSess} Session (started at price ${priceStart.toLocaleString()})`
-  const endDesc = `${endDateStr}'s ${endSess} Session (ended at price ${priceEnd.toLocaleString()})`
+  const startDesc = `${startDateStr}'s ${startSess} Session (Open @ ${priceStart.toLocaleString()})`
+  const endDesc = `${endDateStr}'s ${endSess} Session (Close @ ${priceEnd.toLocaleString()})`
 
   if (startDateStr === endDateStr && startSess === endSess) {
-    return `${label}: Price Action in ${startDateStr}'s ${startSess} Session, moving ${moveStr} from ${priceStart.toLocaleString()} to ${priceEnd.toLocaleString()}`
+    return `${label}: ${startDateStr}'s ${startSess} Session, moving ${moveStr} from ${priceStart.toLocaleString()} to ${priceEnd.toLocaleString()}`
   }
-  return `${label}: Price Action spans from ${startDesc} to ${endDesc}, capturing a move of ${moveStr}`
+  return `${label}: Spans from ${startDesc} to ${endDesc}, capturing a ${moveStr} move`
 }
 
 /** DOW/NASDAQ → ET · NIKKEI → JST — same clocks as session color bands. */
@@ -588,7 +596,22 @@ export function TradingChart({
 
   // Highlight Time Range tool — drag 2D zone to highlight multi-session time & price for Leo
   const [drawTimeActive, setDrawTimeActive] = useState(false)
-  const [drawnTime, setDrawnTime] = useState<{ startUnix: number; endUnix: number; priceHigh: number; priceLow: number; priceStart: number; priceEnd: number; label: string } | null>(null)
+  const [drawnTime, setDrawnTime] = useState<{
+    startUnix: number
+    endUnix: number
+    priceHigh: number
+    priceLow: number
+    priceStart: number
+    priceEnd: number
+    rangeHigh: number
+    rangeLow: number
+    candleStartOpen: number
+    candleEndClose: number
+    candleCount: number
+    netMovePts: number
+    netMovePct: number
+    label: string
+  } | null>(null)
   const [drawnTimeCounter, setDrawnTimeCounter] = useState(1)
   const [drawnTimeSending, setDrawnTimeSending] = useState(false)
   const drawTimeOverlayRef = useRef<HTMLDivElement | null>(null)
@@ -603,6 +626,13 @@ export function TradingChart({
     priceLow: number
     priceStart: number
     priceEnd: number
+    rangeHigh: number
+    rangeLow: number
+    candleStartOpen: number
+    candleEndClose: number
+    candleCount: number
+    netMovePts: number
+    netMovePct: number
     sessionSpanStr: string
     visible: boolean
   }>>([])
@@ -2360,10 +2390,39 @@ export function TradingChart({
       inst
     )
 
-    const fmt = makeDeskChartFormatters(inst)
-    const startStr = fmt.formatTime(drawnTime.startUnix)
-    const endStr = fmt.formatTime(drawnTime.endUnix)
-    const tzLabel = fmt.tzLabel
+    const fmtFull = new Intl.DateTimeFormat('en-US', {
+      timeZone: inst === 'NIKKEI' ? 'Asia/Tokyo' : 'America/New_York',
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+
+    const fullStartStr = fmtFull.format(new Date(drawnTime.startUnix * 1000))
+    const fullEndStr = fmtFull.format(new Date(drawnTime.endUnix * 1000))
+    const tzLabel = inst === 'NIKKEI' ? 'JST' : 'ET'
+
+    const openP = drawnTime.candleStartOpen ?? drawnTime.priceStart
+    const closeP = drawnTime.candleEndClose ?? drawnTime.priceEnd
+    const rHigh = drawnTime.rangeHigh ?? drawnTime.priceHigh
+    const rLow = drawnTime.rangeLow ?? drawnTime.priceLow
+    const pts = drawnTime.netMovePts ?? (closeP - openP)
+    const pct = drawnTime.netMovePct ?? (openP > 0 ? (pts / openP) * 100 : 0)
+
+    const detailedTranscript = `USER HIGHLIGHTED TIME RANGE (${label}): "${sessionSpanStr}".
+Exact Time Period: ${fullStartStr} (${tzLabel}) to ${fullEndStr} (${tzLabel}).
+Empirical Candle Data in Highlighted Window:
+- Period Open Price: ${openP.toLocaleString()}
+- Period Close Price: ${closeP.toLocaleString()}
+- Range High (Resistance): ${rHigh.toLocaleString()}
+- Range Low (Support): ${rLow.toLocaleString()}
+- Net Move: ${pts >= 0 ? '+' : ''}${pts.toFixed(2)} pts (${pts >= 0 ? '+' : ''}${pct.toFixed(2)}%)
+- 5m Bar Count: ${drawnTime.candleCount ?? 'N/A'}
+
+Please evaluate the market structure, candle bodies, volume, and session transitions during this exact period.`
 
     try {
       const res = await fetch('/api/trading/live-voice/turn', {
@@ -2371,7 +2430,7 @@ export function TradingChart({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           instrument: inst,
-          transcript: `I highlighted a multi-session time range on the chart (${sessionSpanStr}). The exact period runs from ${startStr} to ${endStr} (${tzLabel}). Please evaluate the market structure, candle bodies, volume, and session transitions during this period.`,
+          transcript: detailedTranscript,
         }),
       })
       const json = await res.json().catch(() => null)
@@ -2395,6 +2454,13 @@ export function TradingChart({
       priceLow: drawnTime.priceLow,
       priceStart: drawnTime.priceStart,
       priceEnd: drawnTime.priceEnd,
+      rangeHigh: rHigh,
+      rangeLow: rLow,
+      candleStartOpen: openP,
+      candleEndClose: closeP,
+      candleCount: drawnTime.candleCount ?? 0,
+      netMovePts: pts,
+      netMovePct: pct,
       sessionSpanStr,
       visible: true,
     }
@@ -2580,15 +2646,34 @@ export function TradingChart({
         const startCandle = candles[minIdx]
         const endCandle = candles[maxIdx]
         if (startCandle && endCandle) {
+          const sTime = Number(startCandle.time)
+          const eTime = Number(endCandle.time)
+          const rangeBars = candles.filter((c) => Number(c.time) >= sTime && Number(c.time) <= eTime)
+          
+          const cOpen = rangeBars[0]?.open ?? pStart ?? highPrice
+          const cClose = rangeBars[rangeBars.length - 1]?.close ?? pEnd ?? lowPrice
+          const rHigh = rangeBars.length > 0 ? Math.max(...rangeBars.map((c) => c.high)) : highPrice
+          const rLow = rangeBars.length > 0 ? Math.min(...rangeBars.map((c) => c.low)) : lowPrice
+          const cCount = rangeBars.length
+          const movePts = cClose - cOpen
+          const movePct = cOpen > 0 ? (movePts / cOpen) * 100 : 0
+
           const currentLabel = `Highlight ${drawnTimeCounter}`
           setDrawnTimeCounter((prev) => prev + 1)
           setDrawnTime({
-            startUnix: Number(startCandle.time),
-            endUnix: Number(endCandle.time),
+            startUnix: sTime,
+            endUnix: eTime,
             priceHigh: highPrice,
             priceLow: lowPrice,
-            priceStart: pStart ?? highPrice,
-            priceEnd: pEnd ?? lowPrice,
+            priceStart: pStart ?? cOpen,
+            priceEnd: pEnd ?? cClose,
+            rangeHigh: rHigh,
+            rangeLow: rLow,
+            candleStartOpen: cOpen,
+            candleEndClose: cClose,
+            candleCount: cCount,
+            netMovePts: movePts,
+            netMovePct: movePct,
             label: currentLabel,
           })
         }
@@ -3151,6 +3236,13 @@ export function TradingChart({
         priceLow: drawnTime.priceLow,
         priceStart: drawnTime.priceStart,
         priceEnd: drawnTime.priceEnd,
+        rangeHigh: drawnTime.rangeHigh,
+        rangeLow: drawnTime.rangeLow,
+        candleStartOpen: drawnTime.candleStartOpen,
+        candleEndClose: drawnTime.candleEndClose,
+        candleCount: drawnTime.candleCount,
+        netMovePts: drawnTime.netMovePts,
+        netMovePct: drawnTime.netMovePct,
         sessionSpanStr: 'Unsent highlight',
         visible: true,
       })
