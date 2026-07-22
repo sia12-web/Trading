@@ -590,7 +590,7 @@ export default function ChartPage() {
       <div className="flex-1 w-full h-full min-h-0 min-w-0 relative p-1 flex flex-col gap-1">
         {(inWorking && pending) || orderStatus === 'rejected' || orderStatus === 'placing' ? (
           <div
-            className={`absolute top-2 left-2 z-30 flex items-center gap-3 rounded-lg border px-3 py-1.5 text-xs shadow-xl backdrop-blur-md ${
+            className={`absolute bottom-14 left-4 z-30 flex items-center gap-3 rounded-lg border px-3 py-1.5 text-xs shadow-xl backdrop-blur-md ${
               orderStatus === 'rejected'
                 ? 'border-red-700/50 bg-red-950/90 text-red-100'
                 : 'border-sky-700/50 bg-sky-950/90 text-sky-100'
@@ -649,13 +649,13 @@ export default function ChartPage() {
         ) : null}
 
         {fillError && (
-          <p className="absolute top-2 left-2 z-30 px-2.5 py-1 text-xs text-red-300 bg-red-950/90 rounded border border-red-700/60 shadow-lg backdrop-blur-md">
+          <p className="absolute bottom-14 left-4 z-30 px-2.5 py-1 text-xs text-red-300 bg-red-950/90 rounded border border-red-700/60 shadow-lg backdrop-blur-md">
             {fillError}
           </p>
         )}
 
         {inManage && managePos && (
-          <div className="absolute top-2 left-2 z-30">
+          <div className="absolute bottom-14 left-4 z-30">
             <ManageDeskBar
               position={managePos}
               currentPrice={livePrice}
