@@ -534,37 +534,6 @@ export function TradingChart({
     }
   }, [isFullscreen])
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase()
-      if (tag === 'input' || tag === 'textarea' || tag === 'select') return
-
-      if (e.key === 'f' || e.key === 'F') {
-        e.preventDefault()
-        toggleFullscreen()
-      } else if (e.key === 'Escape') {
-        if (isFullscreen) {
-          e.preventDefault()
-          if (document.exitFullscreen && document.fullscreenElement) {
-            document.exitFullscreen().catch(() => null)
-          }
-          setIsFullscreen(false)
-        }
-      }
-    }
-
-    const onFsChange = () => {
-      setIsFullscreen(!!document.fullscreenElement)
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    document.addEventListener('fullscreenchange', onFsChange)
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown)
-      document.removeEventListener('fullscreenchange', onFsChange)
-    }
-  }, [isFullscreen, toggleFullscreen])
-
   // Open Live Voice once when you clock in (same discoverability as playbook)
   useEffect(() => {
     if (clockedIn) setVoiceOpen(true)
@@ -2256,6 +2225,65 @@ export function TradingChart({
     clearDrawnZoneLines()
   }, [clearDrawnZoneLines])
 
+  // ── Keyboard shortcuts: V (Voice), L (Levels), P (Playbook), D (Draw Zone), F (Fullscreen), Esc
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement
+      const tag = target?.tagName?.toLowerCase()
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable) return
+
+      const key = e.key.toLowerCase()
+
+      if (key === 'f') {
+        e.preventDefault()
+        toggleFullscreen()
+      } else if (key === 'v') {
+        e.preventDefault()
+        setVoiceOpen((prev) => !prev)
+      } else if (key === 'l') {
+        e.preventDefault()
+        setShowLevels((prev) => !prev)
+      } else if (key === 'p') {
+        e.preventDefault()
+        setPlaybookOpen((prev) => !prev)
+      } else if (key === 'd') {
+        e.preventDefault()
+        setDrawZoneActive((prev) => {
+          if (prev) {
+            cancelDrawnZone()
+            return false
+          } else {
+            setDrawnZone(null)
+            clearDrawnZoneLines()
+            return true
+          }
+        })
+      } else if (key === 'escape') {
+        if (drawZoneActive || drawnZone) {
+          e.preventDefault()
+          cancelDrawnZone()
+        } else if (isFullscreen) {
+          e.preventDefault()
+          if (document.exitFullscreen && document.fullscreenElement) {
+            document.exitFullscreen().catch(() => null)
+          }
+          setIsFullscreen(false)
+        }
+      }
+    }
+
+    const onFsChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    document.addEventListener('fullscreenchange', onFsChange)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('fullscreenchange', onFsChange)
+    }
+  }, [isFullscreen, drawZoneActive, drawnZone, toggleFullscreen, cancelDrawnZone, clearDrawnZoneLines])
+
   // ── Hover visible AI/structure level → preview entry / SL / TP ─
   // Morning: place preview. Afternoon: same geometry, watch-only (canPlaceOrder false).
   useEffect(() => {
@@ -2573,8 +2601,8 @@ export function TradingChart({
             type="button"
             title={
               showLevels
-                ? 'Hide AI/structure levels (working limit + SL/TP stay on chart)'
-                : 'Show AI/structure levels'
+                ? 'Hide AI/structure levels (Press L)'
+                : 'Show AI/structure levels (Press L)'
             }
             onClick={() => setShowLevels((v) => !v)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
@@ -2585,10 +2613,10 @@ export function TradingChart({
           >
             <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
             {showLevels
-              ? 'Hide levels'
+              ? 'Levels (L)'
               : levels.some((l) => l.source === 'ai')
-                ? 'AI Levels'
-                : 'Levels'}
+                ? 'AI Levels (L)'
+                : 'Levels (L)'}
             {levels.length > 0
               ? ` (${levels.filter((l) => l.source === 'ai' || l.source === 'structure').length})`
               : ''}
@@ -2604,16 +2632,16 @@ export function TradingChart({
             title={
               afternoonWatch
                 ? tokyoDesk
-                  ? 'Show Tokyo watch playbook (read-only)'
-                  : 'Show afternoon watch playbook (read-only)'
+                  ? 'Show Tokyo watch playbook (Press P)'
+                  : 'Show afternoon watch playbook (Press P)'
                 : canPlaceOrder
-                  ? 'Show morning playbook panel'
-                  : 'Show morning playbook — entries at cash open'
+                  ? 'Show morning playbook panel (Press P)'
+                  : 'Show morning playbook — entries at cash open (Press P)'
             }
             onClick={() => setPlaybookOpen(true)}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg bg-transparent border-surface-600 text-gray-500 hover:text-gray-300"
           >
-            {playbookButtonLabel}
+            {playbookButtonLabel} (P)
           </button>
         )}
 
@@ -2666,10 +2694,10 @@ export function TradingChart({
           type="button"
           title={
             voiceOpen
-              ? 'Hide Live Voice coach'
+              ? 'Hide Live Voice coach (Press V)'
               : clockedIn
-                ? 'Show Live Voice — hold Mic to talk during morning entry'
-                : 'Live Voice — clock in first, then talk during morning entry'
+                ? 'Show Live Voice — hold Mic to talk during morning entry (Press V)'
+                : 'Live Voice — clock in first, then talk during morning entry (Press V)'
           }
           onClick={() => setVoiceOpen((v) => !v)}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
@@ -2683,7 +2711,7 @@ export function TradingChart({
               voiceOpen ? 'bg-violet-400 animate-pulse' : 'bg-gray-600'
             }`}
           />
-          Voice
+          Voice (V)
         </button>
 
         {/* Draw Zone tool — next to voice */}
@@ -2691,10 +2719,10 @@ export function TradingChart({
           type="button"
           title={
             drawZoneActive
-              ? 'Drag on chart to draw zone — or click to cancel'
+              ? 'Drag on chart to draw zone — or press D / Esc to cancel'
               : drawnZone
                 ? 'Zone drawn — send or discard'
-                : 'Draw a BUY/SHORT zone on the chart for Leo'
+                : 'Draw a BUY/SHORT zone on the chart for Leo (Press D)'
           }
           onClick={() => {
             if (drawZoneActive) {
@@ -2717,7 +2745,7 @@ export function TradingChart({
             <rect x="2" y="4" width="12" height="8" rx="1" strokeLinecap="round" />
             <line x1="2" y1="8" x2="14" y2="8" strokeDasharray="2 2" />
           </svg>
-          {drawZoneActive ? 'Drag to draw…' : 'Draw Zone'}
+          {drawZoneActive ? 'Drag to draw…' : 'Draw Zone (D)'}
         </button>
 
         {/* Fullscreen mode button (Press F / Esc) */}

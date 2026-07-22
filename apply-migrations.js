@@ -18,8 +18,8 @@ envContent.split('\n').forEach((line) => {
   }
 })
 
-const SUPABASE_URL = envVars.NEXT_PUBLIC_SUPABASE_URL
-const SERVICE_ROLE_KEY = envVars.SUPABASE_SERVICE_ROLE_KEY
+const SUPABASE_URL = (envVars.NEXT_PUBLIC_SUPABASE_URL || '').replace(/^["']|["']$/g, '')
+const SERVICE_ROLE_KEY = (envVars.SUPABASE_SERVICE_ROLE_KEY || '').replace(/^["']|["']$/g, '')
 
 if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
   console.error('❌ Missing SUPABASE_URL or SERVICE_ROLE_KEY in environment')
