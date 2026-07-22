@@ -2313,11 +2313,11 @@ export function TradingChart({
     setDrawTimeActive(false)
   }, [])
 
-  // ── Draw Time Range Overlay Selection ──
+  // ── Highlight Time Range tool — 2D rectangle price & time highlight for Leo ─
   useEffect(() => {
     const container = containerRef.current
-    if (!container || !chartReady || !drawTimeActive) return
-    container.style.cursor = 'col-resize'
+    if (!container || !candleRef.current || !chartReady || !drawTimeActive) return
+    container.style.cursor = 'crosshair'
 
     let overlay = drawTimeOverlayRef.current
     if (!overlay) {
@@ -2326,40 +2326,98 @@ export function TradingChart({
       overlay.style.pointerEvents = 'none'
       overlay.style.zIndex = '25'
       overlay.style.display = 'none'
-      overlay.style.backgroundColor = 'rgba(139, 92, 246, 0.15)' // semi-transparent purple
-      overlay.style.borderLeft = '2px dashed #8b5cf6'
-      overlay.style.borderRight = '2px dashed #8b5cf6'
-      overlay.style.top = '0'
-      overlay.style.bottom = '0'
+      overlay.style.borderRadius = '4px'
       container.style.position = 'relative'
       container.appendChild(overlay)
       drawTimeOverlayRef.current = overlay
     }
 
     let startX: number | null = null
+    let startY: number | null = null
     let dragging = false
 
+    const priceAtY = (clientY: number): number | null => {
+      if (!candleRef.current) return null
+      const rect = container.getBoundingClientRect()
+      const y = clientY - rect.top
+      if (y < 0 || y > rect.height) return null
+      const price = candleRef.current.coordinateToPrice(y)
+      if (price == null || !Number.isFinite(Number(price)) || Number(price) <= 0) return null
+      return Math.round(Number(price) * 100) / 100
+    }
+
+    const renderHandles = (highPrice: number | null, lowPrice: number | null) => {
+      if (!overlay) return
+      const handlesHtml = `
+        <div style="position:absolute;top:-5px;left:-5px;width:10px;height:10px;background:#8b5cf6;border:1.5px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>
+        <div style="position:absolute;top:-5px;left:50%;transform:translateX(-50%);width:10px;height:10px;background:#8b5cf6;border:1.5px solid #fff;border-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>
+        <div style="position:absolute;top:-5px;right:-5px;width:10px;height:10px;background:#8b5cf6;border:1.5px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>
+        <div style="position:absolute;top:50%;left:-5px;transform:translateY(-50%);width:10px;height:10px;background:#8b5cf6;border:1.5px solid #fff;border-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>
+        <div style="position:absolute;top:50%;right:-5px;transform:translateY(-50%);width:10px;height:10px;background:#8b5cf6;border:1.5px solid #fff;border-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>
+        <div style="position:absolute;bottom:-5px;left:-5px;width:10px;height:10px;background:#8b5cf6;border:1.5px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>
+        <div style="position:absolute;bottom:-5px;left:50%;transform:translateX(-50%);width:10px;height:10px;background:#8b5cf6;border:1.5px solid #fff;border-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>
+        <div style="position:absolute;bottom:-5px;right:-5px;width:10px;height:10px;background:#8b5cf6;border:1.5px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>
+        ${
+          highPrice != null && lowPrice != null
+            ? `<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:4px 8px;height:100%;flex-direction:column;pointer-events:none">
+                <span style="font-family:monospace;font-size:10px;font-weight:700;color:#c4b5fd;background:rgba(15,23,42,0.75);padding:1px 5px;border-radius:3px;border:1px solid rgba(139,92,246,0.4)">${highPrice.toLocaleString()}</span>
+                <span style="font-family:monospace;font-size:10px;font-weight:700;color:#c4b5fd;background:rgba(15,23,42,0.75);padding:1px 5px;border-radius:3px;border:1px solid rgba(139,92,246,0.4)">${lowPrice.toLocaleString()}</span>
+              </div>`
+            : ''
+        }
+      `
+      overlay.innerHTML = handlesHtml
+    }
+
     const onMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return
       const rect = container.getBoundingClientRect()
       startX = e.clientX - rect.left
+      startY = e.clientY - rect.top
       dragging = true
-      overlay.style.left = `${startX}px`
-      overlay.style.width = '0px'
-      overlay.style.display = 'block'
+      if (overlay) {
+        overlay.style.display = 'block'
+        overlay.style.left = `${startX}px`
+        overlay.style.top = `${startY}px`
+        overlay.style.width = '0px'
+        overlay.style.height = '0px'
+        overlay.style.background = 'rgba(139, 92, 246, 0.16)'
+        overlay.style.border = '2px solid #8b5cf6'
+        overlay.style.borderRadius = '4px'
+        overlay.style.boxSizing = 'border-box'
+        const p = priceAtY(e.clientY)
+        renderHandles(p, p)
+      }
     }
 
     const onMouseMove = (e: MouseEvent) => {
-      if (!dragging || startX == null) return
+      if (!dragging || startX == null || startY == null || !overlay) return
+      e.preventDefault()
       const rect = container.getBoundingClientRect()
       const currentX = e.clientX - rect.left
+      const currentY = e.clientY - rect.top
+
       const left = Math.min(startX, currentX)
-      const width = Math.abs(startX - currentX)
+      const top = Math.min(startY, currentY)
+      const width = Math.abs(currentX - startX)
+      const height = Math.abs(currentY - startY)
+
       overlay.style.left = `${left}px`
+      overlay.style.top = `${top}px`
       overlay.style.width = `${width}px`
+      overlay.style.height = `${height}px`
+
+      const topPrice = priceAtY(rect.top + top)
+      const botPrice = priceAtY(rect.top + top + height)
+      if (topPrice != null && botPrice != null) {
+        const high = Math.max(topPrice, botPrice)
+        const low = Math.min(topPrice, botPrice)
+        renderHandles(high, low)
+      }
     }
 
     const onMouseUp = (e: MouseEvent) => {
-      if (!dragging || startX == null) return
+      if (!dragging || startX == null || startY == null) return
       dragging = false
       const rect = container.getBoundingClientRect()
       const endX = e.clientX - rect.left
@@ -2389,10 +2447,21 @@ export function TradingChart({
     container.addEventListener('mousedown', onMouseDown, true)
     container.addEventListener('mousemove', onMouseMove, true)
     container.addEventListener('mouseup', onMouseUp, true)
+    const canvases = Array.from(container.querySelectorAll('canvas'))
+    for (const c of canvases) {
+      c.addEventListener('mousedown', onMouseDown, true)
+      c.addEventListener('mousemove', onMouseMove, true)
+      c.addEventListener('mouseup', onMouseUp, true)
+    }
     return () => {
       container.removeEventListener('mousedown', onMouseDown, true)
       container.removeEventListener('mousemove', onMouseMove, true)
       container.removeEventListener('mouseup', onMouseUp, true)
+      for (const c of canvases) {
+        c.removeEventListener('mousedown', onMouseDown, true)
+        c.removeEventListener('mousemove', onMouseMove, true)
+        c.removeEventListener('mouseup', onMouseUp, true)
+      }
       container.style.cursor = ''
       if (overlay) overlay.style.display = 'none'
     }
