@@ -168,8 +168,22 @@ export default function ChartPage() {
             ? 'structure'
             : 'ai'
       )
+
+      // Auto-sync drawn chart level / zone to Leo in real-time
+      if (price > 0) {
+        void fetch('/api/trading/live-voice/react', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            instrument,
+            price,
+            side: side || (preferred === 'SHORT' ? 'SHORT' : 'BUY'),
+            reason: meta?.reasoning || 'Trader drawn chart zone',
+          }),
+        }).catch(() => null)
+      }
     },
-    [managePos, positionOverlay, pending]
+    [managePos, positionOverlay, pending, instrument]
   )
 
   const refreshLevelsAfterExit = useCallback(
