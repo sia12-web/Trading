@@ -2211,22 +2211,31 @@ export function TradingChart({
   const sendDrawnZoneToLeo = useCallback(async () => {
     if (!drawnZone) return
     setDrawnZoneSending(true)
-    const mid = Math.round(((drawnZone.priceHigh + drawnZone.priceLow) / 2) * 100) / 100
     const inst = (lockedInstrument ?? instrument) as Instrument
+    
+    // Auto-open voice panel first so context loads
+    if (!voiceOpen) setVoiceOpen(true)
+    
     try {
-      await fetch('/api/trading/live-voice/react', {
+      const res = await fetch('/api/trading/live-voice/turn', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           instrument: inst,
-          price: mid,
-          side: drawnZoneSide,
-          reason: `Trader drawn ${drawnZoneSide} zone: ${drawnZone.priceLow.toLocaleString()} – ${drawnZone.priceHigh.toLocaleString()}`,
+          transcript: `I drew a custom ${drawnZoneSide} zone on ${inst} between ${drawnZone.priceLow.toLocaleString()} and ${drawnZone.priceHigh.toLocaleString()}. What do you think of this level?`
         }),
       })
+      const json = await res.json().catch(() => null)
+      if (res.ok && json?.success && json?.audioBase64) {
+        // Play Leo's verbal response immediately
+        const bytes = Uint8Array.from(atob(json.audioBase64), (c) => c.charCodeAt(0))
+        const blob = new Blob([bytes], { type: json.mime || 'audio/mp3' })
+        const url = URL.createObjectURL(blob)
+        const audio = new Audio(url)
+        audio.play().catch(() => {})
+      }
     } catch { /* silent */ }
-    // Also auto-open voice and submit a turn so Leo speaks about it
-    if (!voiceOpen) setVoiceOpen(true)
+
     setDrawnZoneSending(false)
     setDrawnZone(null)
     clearDrawnZoneLines()
