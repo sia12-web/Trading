@@ -414,6 +414,7 @@ interface TradingChartProps {
       reasoning?: string
       source?: 'ai' | 'structure' | 'manual'
       side?: 'BUY' | 'SHORT'
+      preferredDirection?: 'LONG' | 'SHORT'
     }
   ) => void
   /** Morning session: allow placing limits from the chart */
@@ -1952,6 +1953,8 @@ export function TradingChart({
         source: pick.source,
         reasoning: pick.reasoning,
         side: pickSide,
+        preferredDirection:
+          pickSide === 'SHORT' ? 'SHORT' : pickSide === 'BUY' ? 'LONG' : undefined,
       })
     }
 
@@ -2632,9 +2635,11 @@ export function TradingChart({
                         e.stopPropagation()
                         jumpToPriceRef?.current?.(l.price)
                         if (!canPlaceOrder) return
+                        // Match ticket to the same SHORT/BUY label shown on this row
                         onLevelSelect?.(l.price, {
-                          type: String(l.type),
+                          type: side === 'SHORT' ? 'resistance' : 'support',
                           side,
+                          preferredDirection: side === 'SHORT' ? 'SHORT' : 'LONG',
                           reasoning: l.reasoning || why,
                           source: l.source === 'structure' ? 'structure' : 'ai',
                         })

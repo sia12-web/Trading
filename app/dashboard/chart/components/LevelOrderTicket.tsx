@@ -90,6 +90,7 @@ export function LevelOrderTicket({
   levelPrice,
   levelType,
   levelSide,
+  preferredDirection,
   entryReason,
   entrySource: entrySourceProp,
   regime,
@@ -107,24 +108,26 @@ export function LevelOrderTicket({
   const isManual = entrySource === 'manual'
   const riskPct = riskPercentForEntrySource(entrySource)
 
-  // Playbook side wins; then type (resistance→SHORT, support→BUY); regime last
+  // preferredDirection / playbook side win; then type; regime last
   const typeLower = String(levelType || '').toLowerCase()
   const fromLevel: Direction | null =
-    levelSide === 'SHORT'
-      ? 'SHORT'
-      : levelSide === 'BUY'
-        ? 'LONG'
-        : typeLower.includes('resist') ||
-            typeLower.includes('short') ||
-            typeLower.includes('supply') ||
-            typeLower === 'sell'
-          ? 'SHORT'
-          : typeLower.includes('support') ||
-              typeLower.includes('long') ||
-              typeLower.includes('buy') ||
-              typeLower.includes('demand')
-            ? 'LONG'
-            : null
+    preferredDirection === 'SHORT' || preferredDirection === 'LONG'
+      ? preferredDirection
+      : levelSide === 'SHORT'
+        ? 'SHORT'
+        : levelSide === 'BUY'
+          ? 'LONG'
+          : typeLower.includes('resist') ||
+              typeLower.includes('short') ||
+              typeLower.includes('supply') ||
+              typeLower === 'sell'
+            ? 'SHORT'
+            : typeLower.includes('support') ||
+                typeLower.includes('long') ||
+                typeLower.includes('buy') ||
+                typeLower.includes('demand')
+              ? 'LONG'
+              : null
   const suggested: Direction =
     fromLevel ?? (regime === 'bearish' ? 'SHORT' : 'LONG')
   const [direction, setDirection] = useState<Direction>(suggested)

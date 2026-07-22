@@ -141,15 +141,23 @@ export default function ChartPage() {
         reasoning?: string
         source?: 'ai' | 'structure' | 'manual'
         side?: 'BUY' | 'SHORT'
+        preferredDirection?: 'LONG' | 'SHORT'
       }
     ) => {
       if (managePos || positionOverlay || pending) return
       // Always stash selection so the ticket can show "why this level"
+      const preferred =
+        meta?.preferredDirection === 'LONG' || meta?.preferredDirection === 'SHORT'
+          ? meta.preferredDirection
+          : side === 'SHORT'
+            ? 'SHORT'
+            : side === 'BUY'
+              ? 'LONG'
+              : undefined
       setOrderLevel(price)
       setOrderLevelType(meta?.type)
-      setOrderLevelSide(
-        meta?.side === 'BUY' || meta?.side === 'SHORT' ? meta.side : undefined
-      )
+      setOrderLevelSide(side)
+      setOrderPreferredDirection(preferred)
       setOrderLevelReason(meta?.reasoning)
       setOrderEntrySource(
         meta?.source === 'manual' || meta?.type === 'manual' || meta?.type === 'market'
@@ -406,6 +414,7 @@ export default function ChartPage() {
       setOrderLevel(null)
       setOrderLevelType(undefined)
       setOrderLevelSide(undefined)
+      setOrderPreferredDirection(undefined)
       setOrderLevelReason(undefined)
       setOrderEntrySource('ai')
       setFillError(null)
@@ -802,11 +811,12 @@ export default function ChartPage() {
 
         {orderLevel != null && !pending && !managePos && (
           <LevelOrderTicket
-            key={`live-${orderLevel}-${orderEntrySource}-${orderLevelSide ?? orderLevelType ?? 'x'}`}
+            key={`live-${orderLevel}-${orderEntrySource}-${orderPreferredDirection ?? orderLevelSide ?? orderLevelType ?? 'x'}`}
             instrument={(clockedIn && locked ? locked : instrument) as Instrument}
             levelPrice={orderLevel}
             levelType={orderLevelType}
             levelSide={orderLevelSide}
+            preferredDirection={orderPreferredDirection}
             entryReason={orderLevelReason}
             entrySource={orderEntrySource}
             regime={regime}
@@ -817,6 +827,7 @@ export default function ChartPage() {
               setOrderLevel(null)
               setOrderLevelType(undefined)
               setOrderLevelSide(undefined)
+              setOrderPreferredDirection(undefined)
               setOrderLevelReason(undefined)
               setOrderEntrySource('ai')
             }}
