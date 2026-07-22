@@ -211,6 +211,31 @@ export async function placeOandaMarketOrder(
   if (unitsPrecision <= 0) absUnits = Math.max(1, Math.round(absUnits))
   else absUnits = Math.max(Math.pow(10, -unitsPrecision), Number(absUnits.toFixed(unitsPrecision)))
 
+  // Dynamic margin check & safety clamping for index contracts (JP225, US30, NAS100)
+  const summary = await getOandaAccountSummary().catch(() => null)
+  if (summary && summary.ok && summary.account.marginAvailable > 0) {
+    const estimatedMarginPerUnit = symbol.includes('JP225')
+      ? 2000
+      : symbol.includes('US30')
+        ? 2200
+        : symbol.includes('NAS100')
+          ? 1000
+          : 500
+    const maxUnitsForAvailableMargin = Math.max(
+      1,
+      Math.floor((summary.account.marginAvailable * 0.75) / estimatedMarginPerUnit)
+    )
+    if (absUnits > maxUnitsForAvailableMargin) {
+      logger.warn('oanda.clamping_units_for_margin', {
+        originalUnits: absUnits,
+        clampedUnits: maxUnitsForAvailableMargin,
+        marginAvailable: summary.account.marginAvailable,
+        instrument: symbol,
+      })
+      absUnits = maxUnitsForAvailableMargin
+    }
+  }
+
   const signed = input.direction === 'LONG' ? absUnits : -absUnits
   const unitsStr =
     unitsPrecision <= 0 ? String(Math.trunc(signed)) : signed.toFixed(unitsPrecision)

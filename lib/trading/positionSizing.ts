@@ -106,8 +106,16 @@ export class PositionSizer {
     // Calculate position size (capped so tight stops can't create runaway notional)
     const priceDistance = Math.abs(entryPrice - stopLossPriceFinal)
     let positionSize = riskAmount / priceDistance
-    const maxSize = (accountSize * MAX_NOTIONAL_MULT) / entryPrice
+
+    // For high-priced indices (JP225, US30, NAS100 with price > 1000), cap notional leverage to 1.5x account size
+    const effectiveMaxMult = entryPrice > 1000 ? 1.5 : MAX_NOTIONAL_MULT
+    const maxSize = (accountSize * effectiveMaxMult) / entryPrice
     if (positionSize > maxSize) positionSize = maxSize
+
+    // Safety cap for high indices so unit size never triggers OANDA insufficient margin rejection
+    if (entryPrice > 10000 && positionSize > 2.0) {
+      positionSize = 2.0
+    }
 
     // Validate position size
     if (positionSize <= 0 || !isFinite(positionSize)) {
@@ -291,8 +299,12 @@ export function previewPositionSizing(
   const priceDistance = Math.abs(entryPrice - stop_loss_price)
   if (priceDistance < 0.01) return null
   let position_size = risk_amount / priceDistance
-  const maxSize = (accountSize * MAX_NOTIONAL_MULT) / entryPrice
+  const effectiveMaxMult = entryPrice > 1000 ? 1.5 : MAX_NOTIONAL_MULT
+  const maxSize = (accountSize * effectiveMaxMult) / entryPrice
   if (position_size > maxSize) position_size = maxSize
+  if (entryPrice > 10000 && position_size > 2.0) {
+    position_size = 2.0
+  }
   if (!Number.isFinite(position_size) || position_size <= 0) return null
   // Target: with a zone stop use 2R (risk-symmetric, min 0.5% move);
   // with the default disaster stop keep the classic 1% day-trade target
