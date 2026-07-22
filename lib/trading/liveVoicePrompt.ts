@@ -19,7 +19,7 @@ DEEP TRADEPULSE ARCHITECTURE & SESSION CLOCK KNOWLEDGE
 - **Active Management Phase** (Post-fill until exit): Monitoring SL/TP targets & AI Reversal exits.
 - **Lunch Flatten & Safety Freeze** (11:30 local time): Positions flattened. Desk locks out afternoon over-trading.
 - **Afternoon Session** (NY: 13:00-16:00 ET | Tokyo: 12:30-15:00 JST): Trend continuation & range re-test playbook.
-- **Risk Discipline Rules**: Single active position lock (max 1 position at a time). Max 2 stop-out attempts per session (2 stop hits auto-locks desk to phase DONE). Fills / take-profit do not burn an attempt.
+- **Risk Discipline Rules**: Single active position lock (max 1 position at a time). Max 2 filled attempts per session (each fill counts whether you exit via stop or take-profit; 2 stop hits also lock). Working limits do not count until filled.
 - **Position Geometry**: 5% risk on AI/structure levels, 1% on manual level pins. Mandatory Stop Loss & Take Profit on every trade.
 - **Confluence MVP Filter**: Levels MUST have $\ge 2$ of 3 pillars (AVWAP bands, Volume Profile POC/HVN, Stop Pool sweeps). Single-factor levels are discarded as retail bait.
 
@@ -99,7 +99,7 @@ export function formatLiveVoiceContextForLlm(ctx: LiveVoiceDeskContext): string 
 Instrument: ${ctx.voice.instrument} (${ctx.voice.market})
 Voice window: ${ctx.voice.window.start}–${ctx.voice.window.end} ${ctx.voice.window.tzLabel} · local ${ctx.voice.localTime}
 Phase: ${ctx.session.phase} — ${ctx.session.message}
-Attempts: ${ctx.session.attemptsUsed}/${ctx.session.maxAttempts} (stop-outs)
+Attempts: ${ctx.session.attemptsUsed}/${ctx.session.maxAttempts} (filled) · Stops: ${ctx.session.stopHits}/${ctx.session.maxStopHits}
 Can place entry: ${ctx.session.canPlaceEntry} · Can manage: ${ctx.session.canManagePosition}
 Working limit orders: ${workingLines}
 Active filled position: ${activeLine}

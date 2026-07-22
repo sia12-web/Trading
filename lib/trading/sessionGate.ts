@@ -72,19 +72,21 @@ export const TOKYO_SESSION: MarketSessionTimes = {
 /** Legacy alias — NY times only */
 export const SESSION_TIMES = NY_SESSION
 
-/** Max stop-out attempts per morning session — live and sim share this. */
+/** Max filled trades (attempts) per morning session — live and sim share this. */
 export const MAX_SESSION_ATTEMPTS = 2
-/** Alias — an "attempt" is a stop-loss hit (not a fill / TP / lunch close). */
+/** After this many stop-outs, trading locks (usually same as attempt cap). */
 export const MAX_STOP_HITS = 2
 
 /**
- * Session attempt book — attempts = stop-outs only.
- * Fills, take-profit, and lunch closes do not burn an attempt.
- * Flat + 2 stops → session done. Open position → manage only (no new entry).
+ * Session attempt book.
+ * - Working / cancelled limits do NOT count.
+ * - A fill starts a trade (manage only while open).
+ * - That fill burns one attempt whether you exit via stop OR take-profit (or lunch).
+ * - Max 2 filled trades per session; 2 stop-outs also locks.
  */
 export function evaluateSessionAttempts(input: {
-  /** @deprecated Ignored — attempts are derived from stopHits */
-  attemptsUsed?: number
+  /** Filled trades today (open + closed) — each fill is one attempt */
+  attemptsUsed: number
   stopHits: number
   hasOpenPosition?: boolean
 }): {
@@ -92,24 +94,26 @@ export function evaluateSessionAttempts(input: {
   stopHits: number
   maxAttempts: number
   maxStopHits: number
-  /** No more new entries (stopped out twice, or already in a position). */
+  /** No more new entries (attempt cap, 2 stops, or already in a position). */
   entriesLocked: boolean
-  /** Morning book finished for trading (2 stop-outs and flat). */
+  /** Morning book finished (capped and flat). */
   sessionDone: boolean
   lockReason: string | null
 } {
+  const attemptsUsed = Math.max(0, Math.floor(input.attemptsUsed || 0))
   const stopHits = Math.max(0, Math.floor(input.stopHits || 0))
-  // Attempts mean stop-loss hits only
-  const attemptsUsed = stopHits
   const hasOpen = !!input.hasOpenPosition
+  const atAttemptCap = attemptsUsed >= MAX_SESSION_ATTEMPTS
   const stoppedOut = stopHits >= MAX_STOP_HITS
-  const entriesLocked = stoppedOut || hasOpen
-  const sessionDone = stoppedOut && !hasOpen
+  const entriesLocked = atAttemptCap || stoppedOut || hasOpen
+  const sessionDone = (atAttemptCap || stoppedOut) && !hasOpen
   let lockReason: string | null = null
   if (stoppedOut) {
     lockReason = `Stopped out ${MAX_STOP_HITS}/${MAX_STOP_HITS} times — trading locked for this session.`
+  } else if (atAttemptCap && !hasOpen) {
+    lockReason = `Both attempts used (${MAX_SESSION_ATTEMPTS}/${MAX_SESSION_ATTEMPTS}) — trading locked for this session.`
   } else if (hasOpen) {
-    lockReason = 'Position open — manage only until flat.'
+    lockReason = `In a trade — attempt ${Math.min(attemptsUsed, MAX_SESSION_ATTEMPTS)}/${MAX_SESSION_ATTEMPTS}. Manage only until flat.`
   }
   return {
     attemptsUsed,
@@ -173,9 +177,9 @@ export interface SessionGateInput {
   lockedInstrument?: DeskInstrument | null
   /** True if an open position exists for the locked instrument today */
   hasOpenPosition?: boolean
-  /** Stop-outs today — each stop-loss hit is one attempt */
+  /** Filled trades today (open + closed) — each fill is one attempt (SL or TP) */
   attemptsUsed?: number
-  /** Closed trades today with exit_reason stop_hit (same as attempts) */
+  /** Closed trades today with exit_reason stop_hit */
   stopLossHitCount?: number
   dayDone?: boolean
   marketDisabled?: boolean
@@ -209,10 +213,10 @@ export interface SessionGateResult {
   attendedToday: boolean
   /** Clock-in window open (prep → lunch) and not yet clocked in */
   canClockIn: boolean
-  /** Stop-out attempts used this session (max MAX_SESSION_ATTEMPTS) */
+  /** Filled trades used this session (max MAX_SESSION_ATTEMPTS) — SL or TP */
   attemptsUsed: number
   maxAttempts: number
-  /** Same as attemptsUsed — stop-outs this session */
+  /** Stop-outs this session (max MAX_STOP_HITS) */
   stopHits: number
   maxStopHits: number
 }
@@ -656,7 +660,8 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
 
   const hasOpen = !!input.hasOpenPosition
   const book = evaluateSessionAttempts({
-    stopHits: input.stopLossHitCount ?? input.attemptsUsed ?? 0,
+    attemptsUsed: input.attemptsUsed ?? 0,
+    stopHits: input.stopLossHitCount ?? 0,
     hasOpenPosition: hasOpen,
   })
   const dayDone =
@@ -803,7 +808,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       canManagePosition: false,
       message:
         book.lockReason ||
-        'Session done for today (2 stop-outs). Trading locked.',
+        'Session done for today (2 attempts). Trading locked.',
     })
   }
 
@@ -854,20 +859,21 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
 
   if (t >= open && t < lunch) {
     const inEntryWindow = t <= entryClose
-    const canAttempt = book.stopHits < MAX_STOP_HITS
+    const canAttempt =
+      book.attemptsUsed < MAX_SESSION_ATTEMPTS && book.stopHits < MAX_STOP_HITS
     return finish({
       ...base,
       phase: inEntryWindow ? 'ENTRY' : 'FLAT',
       canViewLiveChart: canView,
       canFetchLiveBars: clockedIn,
-      // Entries ONLY until entryClose; max 2 stop-out attempts per session.
+      // Entries ONLY until entryClose; max 2 filled attempts (SL or TP) per session.
       canPlaceEntry: inEntryWindow && clockedIn && canAttempt,
       canManagePosition: false,
       message: inEntryWindow
         ? canAttempt
-          ? `Entry window — attempts ${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS} (stop-outs). Click a ${locked} level (until ${s.entryClose.slice(0, 5)}).`
+          ? `Entry window — attempt ${book.attemptsUsed + 1}/${MAX_SESSION_ATTEMPTS}. Click a ${locked} level (until ${s.entryClose.slice(0, 5)}). Working limits do not count until filled.`
           : book.lockReason ||
-            `No attempts left (${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS} stop-outs). Trading locked.`
+            `No attempts left (${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS}). Trading locked.`
         : `Entry window closed (${s.entryClose.slice(0, 5)}). Levels cleared — manage an open position if you have one; otherwise wait for lunch.`,
     })
   }
@@ -925,7 +931,8 @@ export function resolveSimMorningGate(input: {
   const lunch = parseTimeToSeconds(s.lunchClose)
   const hasOpen = !!input.hasOpenPosition
   const book = evaluateSessionAttempts({
-    stopHits: input.stopHits ?? input.attemptsUsed ?? 0,
+    attemptsUsed: input.attemptsUsed ?? 0,
+    stopHits: input.stopHits ?? 0,
     hasOpenPosition: hasOpen,
   })
   const dayDone = !!input.dayDone || book.sessionDone
@@ -959,7 +966,7 @@ export function resolveSimMorningGate(input: {
       canManagePosition: false,
       message:
         book.lockReason ||
-        'Session done — 2 stop-outs reached. Trading locked.',
+        'Session done — 2 attempts reached. Trading locked.',
     }
   }
 
@@ -969,7 +976,7 @@ export function resolveSimMorningGate(input: {
       phase: 'MANAGE',
       canPlaceEntry: false,
       canManagePosition: true,
-      message: `Position open — attempts ${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS} (stop-outs). Manage only until lunch.`,
+      message: `Position open — attempt ${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS}. Manage only until lunch.`,
     }
   }
 
@@ -979,13 +986,14 @@ export function resolveSimMorningGate(input: {
       phase: 'RECOMMENDED',
       canPlaceEntry: false,
       canManagePosition: false,
-      message: `Replay clock before cash open. Entries ${s.marketOpen.slice(0, 5)}–${s.lunchClose.slice(0, 5)}. Attempts ${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS} (stop-outs).`,
+      message: `Replay clock before cash open. Entries ${s.marketOpen.slice(0, 5)}–${s.lunchClose.slice(0, 5)}. Attempts ${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS}.`,
     }
   }
 
   if (t < lunch) {
     const inEntry = t <= entryClose
-    const canAttempt = book.stopHits < MAX_STOP_HITS
+    const canAttempt =
+      book.attemptsUsed < MAX_SESSION_ATTEMPTS && book.stopHits < MAX_STOP_HITS
     return {
       ...base,
       phase: inEntry ? 'ENTRY' : 'FLAT',
@@ -993,7 +1001,7 @@ export function resolveSimMorningGate(input: {
       canManagePosition: false,
       message: inEntry
         ? canAttempt
-          ? `Entry window — attempts ${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS} (stop-outs). Click a ${instrument} level.`
+          ? `Entry window — attempt ${book.attemptsUsed + 1}/${MAX_SESSION_ATTEMPTS}. Click a ${instrument} level. Working limits do not count until filled.`
           : book.lockReason || 'No attempts left. Trading locked.'
         : `Entry window closed. Levels off — manage if in a trade; otherwise wait for lunch.`,
     }

@@ -1399,10 +1399,12 @@ function SimulationDeskInner() {
     // Sync refs before next playback tick (16x can fire before React effects)
     pendingRef.current = null
     positionRef.current = filled
+    attemptsUsedRef.current += 1
+    setAttemptsUsed(attemptsUsedRef.current)
     setPosition(filled)
     setPending(null)
     setMsg(
-      `FILLED ${pend.direction} @ ${pend.level.toLocaleString()} — attempts ${attemptsUsedRef.current}/${MAX_SESSION_ATTEMPTS} (stop-outs)`
+      `FILLED ${pend.direction} @ ${pend.level.toLocaleString()} — attempt ${attemptsUsedRef.current}/${MAX_SESSION_ATTEMPTS} (in a trade)`
     )
   }, [])
 
@@ -1552,18 +1554,18 @@ function SimulationDeskInner() {
           recordPaperClose(closed, closed.stopLoss, 'stop_hit')
           positionRef.current = null
           stopHitsRef.current += 1
-          attemptsUsedRef.current = stopHitsRef.current
           setStopHits(stopHitsRef.current)
-          setAttemptsUsed(attemptsUsedRef.current)
           simNowRef.current = next
           setSimNow(next)
           applyChartDataRef.current(next)
           setPlaying(false)
-          const locked = stopHitsRef.current >= MAX_STOP_HITS
+          const locked =
+            stopHitsRef.current >= MAX_STOP_HITS ||
+            attemptsUsedRef.current >= MAX_SESSION_ATTEMPTS
           setMsg(
             locked
-              ? `STOP HIT @ ${closed.stopLoss.toLocaleString()} — stopped out ${MAX_STOP_HITS}/${MAX_STOP_HITS}, trading locked`
-              : `STOP HIT @ ${closed.stopLoss.toLocaleString()} — attempts ${attemptsUsedRef.current}/${MAX_SESSION_ATTEMPTS} (stop-outs)`
+              ? `STOP HIT @ ${closed.stopLoss.toLocaleString()} — session locked (${attemptsUsedRef.current}/${MAX_SESSION_ATTEMPTS} attempts)`
+              : `STOP HIT @ ${closed.stopLoss.toLocaleString()} — attempt ${attemptsUsedRef.current}/${MAX_SESSION_ATTEMPTS} used`
           )
           setLevels((prev) =>
             applySimTradeOutcome(prev, closed.entry, closed.direction, 'stop')
@@ -1637,6 +1639,10 @@ function SimulationDeskInner() {
       }
       if (stopHitsRef.current >= MAX_STOP_HITS) {
         setMsg(`Stopped out ${MAX_STOP_HITS}/${MAX_STOP_HITS} — trading locked for this session`)
+        return
+      }
+      if (attemptsUsedRef.current >= MAX_SESSION_ATTEMPTS) {
+        setMsg(`Both attempts used (${MAX_SESSION_ATTEMPTS}/${MAX_SESSION_ATTEMPTS}) — trading locked`)
         return
       }
       const now = simNowRef.current
@@ -1814,6 +1820,7 @@ function SimulationDeskInner() {
       simNow > 0 &&
       simNow <= entryCloseUnix &&
       simNow >= openUnix &&
+      attemptsUsed < MAX_SESSION_ATTEMPTS &&
       stopHits < MAX_STOP_HITS &&
       gate?.canPlaceEntry !== false
 
@@ -2046,6 +2053,7 @@ function SimulationDeskInner() {
     !pending &&
     simNow <= entryCloseUnix &&
     simNow >= openUnix &&
+    attemptsUsed < MAX_SESSION_ATTEMPTS &&
     stopHits < MAX_STOP_HITS &&
     gate?.canPlaceEntry !== false
 
@@ -2120,13 +2128,14 @@ function SimulationDeskInner() {
           </span>
           <span
             className={`rounded px-1.5 py-0.5 font-semibold tabular-nums ${
-              stopHits >= MAX_STOP_HITS
+              stopHits >= MAX_STOP_HITS || attemptsUsed >= MAX_SESSION_ATTEMPTS
                 ? 'bg-red-500/25 text-red-200'
                 : 'bg-sky-500/20 text-sky-200'
             }`}
-            title="Attempts = stop-loss hits only (max 2). Fills / TP do not burn an attempt."
+            title="Attempts = filled trades (max 2). Working limits do not count. Stop or take-profit both use the attempt."
           >
-            Attempts {stopHits}/{MAX_STOP_HITS}
+            Attempts {attemptsUsed}/{MAX_SESSION_ATTEMPTS}
+            {stopHits > 0 ? ` · Stops ${stopHits}/${MAX_STOP_HITS}` : ''}
           </span>
           {overnightBias && (
             <span

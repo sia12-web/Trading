@@ -108,9 +108,9 @@ export async function GET(request: Request) {
     }
 
     const filledTrades = filledRes.data ?? []
-    // Attempts = stop-outs only (fills / TP / lunch do not burn an attempt)
+    // Attempts = filled trades only (working limits do not count). SL or TP both use the attempt.
+    const attemptsUsed = filledTrades.length
     const stopHits = filledTrades.filter((t) => t.exit_reason === 'stop_hit').length
-    const attemptsUsed = stopHits
 
     // Lunch may have hit while the tab was open — auto clock-out
     await autoLunchClockOut(supabase, user.id)

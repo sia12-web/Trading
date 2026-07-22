@@ -1,5 +1,6 @@
 /**
- * Attempts = stop-outs only (max 2). Fills / TP do not burn an attempt.
+ * Attempts = filled trades (max 2). Working limits do not count.
+ * Exit via stop OR take-profit still used that attempt.
  * Run: npx tsx __tests__/session_attempts.test.ts
  */
 
@@ -18,46 +19,65 @@ assert(MAX_SESSION_ATTEMPTS === 2, 'max attempts must be 2')
 assert(MAX_STOP_HITS === 2, 'max stops must be 2')
 
 {
-  const fresh = evaluateSessionAttempts({ stopHits: 0 })
+  const fresh = evaluateSessionAttempts({ attemptsUsed: 0, stopHits: 0 })
   assert(!fresh.entriesLocked, 'fresh session should allow entries')
   assert(!fresh.sessionDone, 'fresh session not done')
-  assert(fresh.attemptsUsed === 0, 'attempts start at 0')
 }
 
 {
-  // Two fills with zero stops must NOT lock the book
-  const twoFillsNoStops = evaluateSessionAttempts({
+  // Working limit / no fills — still open
+  const noFills = evaluateSessionAttempts({ attemptsUsed: 0, stopHits: 0 })
+  assert(!noFills.entriesLocked, 'no fills → can place')
+}
+
+{
+  // One fill open = in a trade (manage only)
+  const inTrade = evaluateSessionAttempts({
+    attemptsUsed: 1,
+    stopHits: 0,
+    hasOpenPosition: true,
+  })
+  assert(inTrade.entriesLocked, 'in a trade — no new entry')
+  assert(!inTrade.sessionDone, 'still managing — not session done')
+}
+
+{
+  // One fill closed via TP — attempt used, can take second
+  const afterTp = evaluateSessionAttempts({
+    attemptsUsed: 1,
+    stopHits: 0,
+    hasOpenPosition: false,
+  })
+  assert(!afterTp.entriesLocked, 'after TP — second attempt allowed')
+  assert(!afterTp.sessionDone, 'one attempt left')
+}
+
+{
+  // One fill closed via SL — attempt used, can take second
+  const afterSl = evaluateSessionAttempts({
+    attemptsUsed: 1,
+    stopHits: 1,
+    hasOpenPosition: false,
+  })
+  assert(!afterSl.entriesLocked, 'after one stop — second attempt allowed')
+  assert(!afterSl.sessionDone, 'one attempt left')
+}
+
+{
+  const twoAttemptsFlat = evaluateSessionAttempts({
     attemptsUsed: 2,
     stopHits: 0,
     hasOpenPosition: false,
   })
-  assert(!twoFillsNoStops.sessionDone, 'fills alone do not finish the session')
-  assert(!twoFillsNoStops.entriesLocked, 'fills alone do not lock entries')
-  assert(twoFillsNoStops.attemptsUsed === 0, 'attempts = stopHits, not fill count')
+  assert(twoAttemptsFlat.sessionDone, 'two fills (e.g. two TPs) → session done')
+  assert(twoAttemptsFlat.entriesLocked, 'two fills blocks entries')
 }
 
 {
-  const afterOneStop = evaluateSessionAttempts({ stopHits: 1 })
-  assert(!afterOneStop.sessionDone, 'one stop still allows a second attempt')
-  assert(!afterOneStop.entriesLocked, 'one stop — can place again when flat')
-  assert(afterOneStop.attemptsUsed === 1, 'one stop = one attempt')
-}
-
-{
-  const twoStops = evaluateSessionAttempts({ stopHits: 2 })
+  const twoStops = evaluateSessionAttempts({ attemptsUsed: 2, stopHits: 2 })
   assert(twoStops.sessionDone, 'two stops locks the session')
   assert(twoStops.entriesLocked, 'two stops blocks entries')
-  assert(twoStops.attemptsUsed === 2, 'two stops = two attempts')
   assert(!!twoStops.lockReason?.includes('Stopped out'), 'lock reason mentions stops')
-}
-
-{
-  const openPos = evaluateSessionAttempts({
-    stopHits: 0,
-    hasOpenPosition: true,
-  })
-  assert(!openPos.sessionDone, 'open position is manage, not done')
-  assert(openPos.entriesLocked, 'cannot place while open')
 }
 
 {
@@ -69,9 +89,8 @@ assert(MAX_STOP_HITS === 2, 'max stops must be 2')
     attemptsUsed: 2,
     stopHits: 2,
   })
-  assert(gate.phase === 'DONE', `expected DONE after 2 stops, got ${gate.phase}`)
-  assert(gate.canPlaceEntry === false, 'cannot place after 2 stops')
-  assert(gate.attemptsUsed === 2 && gate.stopHits === 2, 'book echoed on gate')
+  assert(gate.phase === 'DONE', `expected DONE after 2 attempts, got ${gate.phase}`)
+  assert(gate.canPlaceEntry === false, 'cannot place after 2 attempts')
 }
 
 {
@@ -80,12 +99,11 @@ assert(MAX_STOP_HITS === 2, 'max stops must be 2')
     now: morning,
     instrument: 'NASDAQ',
     hasOpenPosition: false,
-    attemptsUsed: 5,
-    stopHits: 1,
+    attemptsUsed: 1,
+    stopHits: 0,
   })
-  assert(gate.phase === 'ENTRY', `expected ENTRY after one stop, got ${gate.phase}`)
-  assert(gate.canPlaceEntry === true, 'second attempt allowed after one stop')
-  assert(gate.attemptsUsed === 1, 'attempts follow stopHits, ignore fill count')
+  assert(gate.phase === 'ENTRY', `expected ENTRY for second attempt, got ${gate.phase}`)
+  assert(gate.canPlaceEntry === true, 'second attempt after one TP/fill')
 }
 
 console.log('session_attempts: ok')

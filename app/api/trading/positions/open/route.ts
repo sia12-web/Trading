@@ -188,9 +188,9 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
     const openNy = openRes.data
 
     const filledRows = filledToday ?? []
-    // Attempts = stop-outs only
+    // Attempts = filled trades (working limits do not count). Exit via SL or TP still used the attempt.
+    const attemptsUsed = filledRows.length
     const stopHits = filledRows.filter((t) => t.exit_reason === 'stop_hit').length
-    const attemptsUsed = stopHits
     const clockedIn = attendance?.status === 'clocked_in'
     const attendedToday = !!attendance
 
