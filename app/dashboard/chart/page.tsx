@@ -78,6 +78,9 @@ export default function ChartPage() {
   const [orderLevel, setOrderLevel] = useState<number | null>(null)
   const [orderLevelType, setOrderLevelType] = useState<string | undefined>()
   const [orderLevelSide, setOrderLevelSide] = useState<'BUY' | 'SHORT' | undefined>()
+  const [orderPreferredDirection, setOrderPreferredDirection] = useState<
+    'LONG' | 'SHORT' | undefined
+  >()
   const [orderLevelReason, setOrderLevelReason] = useState<string | undefined>()
   const [orderEntrySource, setOrderEntrySource] = useState<'ai' | 'structure' | 'manual'>('ai')
   const [regime, setRegime] = useState<'bullish' | 'bearish' | 'choppy'>('bullish')

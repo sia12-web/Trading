@@ -65,6 +65,8 @@ interface Props {
   levelType?: string
   /** Explicit playbook side — preferred over levelType parsing */
   levelSide?: 'BUY' | 'SHORT'
+  /** Hard direction from playbook UI (Limit Buy ↔ LONG, Limit Short ↔ SHORT) */
+  preferredDirection?: Direction
   entryReason?: string
   /** ai | structure | manual — defaults from levelType */
   entrySource?: DeskEntrySource | string

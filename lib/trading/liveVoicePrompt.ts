@@ -25,10 +25,12 @@ DEEP TRADEPULSE ARCHITECTURE & SESSION CLOCK KNOWLEDGE
 
 FULL CHART & ORDER ORIGIN VISIBILITY
 - YOU SEE EVERYTHING THE TRADER SEES ON THE CHART: 5-day Anchored VWAP (AVWAP), yesterday/overnight session OHLC and gaps, Volume Profile POC/HVN, identified support/resistance levels, conviction scores, active working limit orders, open position P&L, trade attempts, and stop limits.
-- YOU SEE BOTH SYSTEM AI ORDERS AND MANUAL TRADER ORDERS:
-  1) Working Limit Orders: You see pending limits placed on the chart (AI-recommended levels vs manual trader level pins).
-  2) Active Open Positions: You see filled open positions, entry prices, SL/TP targets, and whether the fill originated from an AI system level or was placed manually by the trader.
-- When evaluating orders, explicitly distinguish between AI system levels and manual trader entries (e.g., "I see your manual BUY limit pending at 39,250..." or "Our AI-filled LONG from 39,100 is holding strong...").
+- YOU SEE EXACT ORDER ORIGINS (AI MORNING PLAYBOOK VS MANUAL TRADER):
+  1) AI Playbook Entries: When the trader buys/shorts using the Morning Playbook buttons (Primary Buy, Primary Short, Watch Buy, Watch Short), you see the exact rank badge used (e.g. "AI Morning Playbook: Primary Buy Level", "AI Morning Playbook: Watch Short Level").
+  2) Manual Independent Entries: When the trader places a line manually on their own without using the Morning Playbook, you see "Manual Independent Line (placed by trader directly, not from AI playbook)".
+- ACKNOWLEDGE THE DIFFERENCE IN VOICE DEBATES:
+  * When speaking about AI Playbook orders: e.g., "I see you executed our AI Primary Buy level at 39,250, partner. Structure has 5% desk risk."
+  * When speaking about manual orders: e.g., "I see your independent manual BUY limit pending at 39,250. Remember that's capped at 1% manual risk."
 - CRITICAL SAFETY RULE — ZERO HALLUCINATION: NEVER invent prices, levels, or market data under any circumstances. Giving fake or hallucinated levels causes real trading losses.
 - Only discuss prices and levels explicitly listed in DESK CONTEXT (AI levels, AVWAP notes, overnight OHLC, or prices stated by the trader).
 - If the trader asks about an unlisted price, state clearly: "That level isn't in our desk context or AVWAP bounds right now, partner. Let's check our chart levels first."
@@ -48,6 +50,16 @@ HARD RULES
 
 OUTPUT
 - Plain spoken English sentences. No markdown, no bullet lists, no asterisks, no hashtags, no JSON.`
+
+export function formatEntrySourceLabel(src: string): string {
+  const s = src.toLowerCase()
+  if (s.includes('primary_buy') || s.includes('primary_long')) return 'AI Morning Playbook: Primary Buy Level'
+  if (s.includes('primary_short')) return 'AI Morning Playbook: Primary Short Level'
+  if (s.includes('watch_buy') || s.includes('watch_long')) return 'AI Morning Playbook: Watch Buy Level'
+  if (s.includes('watch_short')) return 'AI Morning Playbook: Watch Short Level'
+  if (s.includes('ai') || s.includes('structure')) return 'AI Morning Playbook Level'
+  return 'Manual Independent Line (placed by trader directly, not from AI playbook)'
+}
 
 export function formatLiveVoiceContextForLlm(ctx: LiveVoiceDeskContext): string {
   const levels =
@@ -75,12 +87,12 @@ export function formatLiveVoiceContextForLlm(ctx: LiveVoiceDeskContext): string 
       : ctx.workingOrders
           .map(
             (w) =>
-              `${w.direction} limit @ ${w.entryLevel} (SL: ${w.stopLoss}, TP: ${w.takeProfit ?? 'none'}, Source: ${w.entrySource === 'ai_structure' ? 'AI Level' : 'Manual Pin'})`
+              `${w.direction} limit @ ${w.entryLevel} (SL: ${w.stopLoss}, TP: ${w.takeProfit ?? 'none'}, Origin: ${formatEntrySourceLabel(w.entrySource)})`
           )
           .join('; ')
 
   const activeLine = ctx.activePosition
-    ? `${ctx.activePosition.direction} filled @ ${ctx.activePosition.fillPrice} (SL: ${ctx.activePosition.stopLoss}, TP: ${ctx.activePosition.takeProfit ?? 'none'}, Source: ${ctx.activePosition.entrySource === 'ai_structure' ? 'AI Level' : 'Manual Pin'})`
+    ? `${ctx.activePosition.direction} filled @ ${ctx.activePosition.fillPrice} (SL: ${ctx.activePosition.stopLoss}, TP: ${ctx.activePosition.takeProfit ?? 'none'}, Origin: ${formatEntrySourceLabel(ctx.activePosition.entrySource)})`
     : 'none (flat)'
 
   return `DESK CONTEXT (ground truth — do not invent beyond this):
