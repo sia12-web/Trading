@@ -100,9 +100,21 @@ function describeTimeHighlightSpan(
   
   const nowUnix = Date.now() / 1000
   const getRelativeDate = (unix: number) => {
-    const d1 = new Date(unix * 1000)
-    const d2 = new Date(nowUnix * 1000)
-    const diffDays = Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24))
+    const timeZone = instrument === 'NIKKEI' ? 'Asia/Tokyo' : 'America/New_York'
+    const fmt = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric' })
+    
+    const parts1 = fmt.formatToParts(new Date(unix * 1000))
+    const parts2 = fmt.formatToParts(new Date(nowUnix * 1000))
+    
+    const getVal = (parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes) =>
+      Number(parts.find(p => p.type === type)?.value)
+      
+    const date1 = new Date(getVal(parts1, 'year'), getVal(parts1, 'month') - 1, getVal(parts1, 'day'))
+    const date2 = new Date(getVal(parts2, 'year'), getVal(parts2, 'month') - 1, getVal(parts2, 'day'))
+    
+    const diffTime = date2.getTime() - date1.getTime()
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24))
+    
     if (diffDays <= 0) return 'Today'
     if (diffDays === 1) return 'Yesterday'
     return `${diffDays} days ago`
@@ -2479,6 +2491,8 @@ export function TradingChart({
 
     const onMouseDown = (e: MouseEvent) => {
       if (e.button !== 0) return
+      e.preventDefault()
+      e.stopPropagation()
       const rect = container.getBoundingClientRect()
       startX = e.clientX - rect.left
       startY = e.clientY - rect.top
@@ -3374,7 +3388,7 @@ export function TradingChart({
           className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
             highlightsListOpen
               ? 'bg-violet-600 border-violet-500 text-white shadow-lg'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-violet-200 hover:border-violet-500/40'
+              : 'bg-violet-950/40 border-violet-500/40 text-violet-300 hover:text-white hover:border-violet-500 shadow-sm'
           }`}
         >
           <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -3382,7 +3396,7 @@ export function TradingChart({
             <line x1="4" y1="8" x2="12" y2="8" strokeLinecap="round" />
             <line x1="4" y1="12" x2="12" y2="12" strokeLinecap="round" />
           </svg>
-          {`Highlights (${savedHighlights.length})`}
+          {`Previous Highlights (${savedHighlights.length})`}
         </button>
 
         {/* Interactive TradingView Risk/Reward Limit Order Tool */}
