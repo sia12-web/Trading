@@ -317,6 +317,66 @@ function SimulationDeskInner() {
   const levelsOpenRef = useRef(true)
   const [reasoningOpen, setReasoningOpen] = useState<number | null>(null)
   const [chartReady, setChartReady] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
+  const toggleFullscreen = useCallback(() => {
+    if (!isFullscreen) {
+      const elem = containerRef.current?.parentElement || document.documentElement
+      if (elem.requestFullscreen) {
+        elem.requestFullscreen().catch(() => null)
+      }
+      setIsFullscreen(true)
+    } else {
+      if (document.exitFullscreen && document.fullscreenElement) {
+        document.exitFullscreen().catch(() => null)
+      }
+      setIsFullscreen(false)
+    }
+  }, [isFullscreen])
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement
+      const tag = target?.tagName?.toLowerCase()
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable) return
+
+      const key = e.key.toLowerCase()
+
+      if (key === 'f') {
+        e.preventDefault()
+        toggleFullscreen()
+      } else if (key === 'l') {
+        e.preventDefault()
+        setLevelsOpen((prev) => !prev)
+      } else if (key === 'p') {
+        e.preventDefault()
+        setPlaybookOpen((prev) => !prev)
+      } else if (key === 'escape') {
+        if (manualTicketOpen) {
+          e.preventDefault()
+          setManualTicketOpen(false)
+          setManualClickPrice(null)
+        } else if (isFullscreen) {
+          e.preventDefault()
+          if (document.exitFullscreen && document.fullscreenElement) {
+            document.exitFullscreen().catch(() => null)
+          }
+          setIsFullscreen(false)
+        }
+      }
+    }
+
+    const onFsChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    document.addEventListener('fullscreenchange', onFsChange)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('fullscreenchange', onFsChange)
+    }
+  }, [isFullscreen, manualTicketOpen, toggleFullscreen])
 
   const containerRef = useRef<HTMLDivElement>(null)
   const sessionOverlayRef = useRef<HTMLDivElement>(null)
@@ -686,6 +746,33 @@ function SimulationDeskInner() {
       borderDownColor: '#ef5350',
       wickUpColor: '#26a69a',
       wickDownColor: '#ef5350',
+      autoscaleInfoProvider: () => {
+        const list = allCandlesRef.current
+        if (!list || list.length === 0) return null
+        const range = chart.timeScale().getVisibleLogicalRange()
+        let visible = list
+        if (range && Number.isFinite(range.from) && Number.isFinite(range.to)) {
+          const fromIdx = Math.max(0, Math.floor(range.from))
+          const toIdx = Math.min(list.length - 1, Math.ceil(range.to))
+          if (fromIdx <= toIdx) {
+            visible = list.slice(fromIdx, toIdx + 1)
+          }
+        }
+        if (visible.length === 0 || !visible[0]) return null
+        let minValue = visible[0].low
+        let maxValue = visible[0].high
+        for (let i = 1; i < visible.length; i++) {
+          const c = visible[i]
+          if (c && c.low < minValue) minValue = c.low
+          if (c && c.high > maxValue) maxValue = c.high
+        }
+        return {
+          priceRange: {
+            minValue,
+            maxValue,
+          },
+        }
+      },
     })
 
     // Dedicated host for BUY/SHORT + working/manage lines. Candle/VWAP setData
@@ -2277,24 +2364,36 @@ function SimulationDeskInner() {
             type="button"
             title={
               levelsOpen
-                ? 'Hide AI/structure levels (working limit + SL/TP stay on chart)'
-                : 'Show AI/structure levels'
+                ? 'Hide AI/structure levels (Press L)'
+                : 'Show AI/structure levels (Press L)'
             }
             onClick={() => setLevelsOpen((o) => !o)}
             className="rounded border border-white/15 px-2 py-1 text-[10px] uppercase text-gray-300 hover:bg-white/10"
           >
-            {levelsOpen ? 'Hide levels' : 'Levels'}
+            {levelsOpen ? 'Levels (L)' : 'Show levels (L)'}
           </button>
           {!playbookOpen && (
             <button
               type="button"
-              title="Show morning playbook panel"
+              title="Show morning playbook panel (Press P)"
               onClick={() => setPlaybookOpen(true)}
               className="rounded border border-white/15 px-2 py-1 text-[10px] uppercase text-gray-400 hover:bg-white/10 hover:text-gray-200"
             >
-              Playbook
+              Playbook (P)
             </button>
           )}
+          <button
+            type="button"
+            title={
+              isFullscreen
+                ? 'Exit Fullscreen mode (Esc / F)'
+                : 'Enter Fullscreen mode (Press F)'
+            }
+            onClick={toggleFullscreen}
+            className="rounded border border-white/15 px-2 py-1 text-[10px] uppercase text-gray-400 hover:bg-white/10 hover:text-gray-200"
+          >
+            {isFullscreen ? 'Exit Fullscreen (F)' : 'Fullscreen (F)'}
+          </button>
           <button
             type="button"
             onClick={() => router.push('/dashboard/simulation')}
