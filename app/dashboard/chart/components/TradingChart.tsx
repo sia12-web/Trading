@@ -2884,6 +2884,17 @@ Please evaluate the market structure, candle bodies, volume, and session transit
         })
       } else if (key === 't') {
         e.preventDefault()
+        setDrawTimeActive((prev) => {
+          if (prev) {
+            cancelDrawnTime()
+            return false
+          } else {
+            setDrawnTime(null)
+            return true
+          }
+        })
+      } else if (key === 'o') {
+        e.preventDefault()
         setRiskBoxActive((prev) => {
           if (prev || riskBox) {
             cancelRiskBox()
@@ -3255,9 +3266,9 @@ Please evaluate the market structure, candle bodies, volume, and session transit
       const leftCoord = timeScale.timeToCoordinate(hl.startUnix as any)
       const rightCoord = timeScale.timeToCoordinate(hl.endUnix as any)
       
-      // Handle fallback values for price boundaries
-      const pHigh = hl.priceHigh || (candles.length > 0 ? Math.max(...candles.map(c => c.high)) : 100000)
-      const pLow = hl.priceLow || (candles.length > 0 ? Math.min(...candles.map(c => c.low)) : 0)
+      // Handle fallback values for price boundaries (prefer candle rangeHigh/Low over mouse bounds)
+      const pHigh = hl.rangeHigh || hl.priceHigh || (candles.length > 0 ? Math.max(...candles.map(c => c.high)) : 100000)
+      const pLow = hl.rangeLow || hl.priceLow || (candles.length > 0 ? Math.min(...candles.map(c => c.low)) : 0)
 
       const topCoord = series.priceToCoordinate(pHigh)
       const bottomCoord = series.priceToCoordinate(pLow)
@@ -3546,7 +3557,7 @@ Please evaluate the market structure, candle bodies, volume, and session transit
           title={
             riskBox
               ? 'TradingView Limit Order active — place order or Esc to close'
-              : 'Interactive Limit Order Tool (Press T)'
+              : 'Interactive Limit Order Tool (Press O)'
           }
           onClick={() => {
             if (riskBoxActive || riskBox) {
@@ -3574,7 +3585,7 @@ Please evaluate the market structure, candle bodies, volume, and session transit
             <rect x="2" y="8" width="12" height="6" rx="1" className="fill-red-500/30 stroke-red-400" />
             <line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" strokeWidth="2" />
           </svg>
-          {riskBox ? 'Limit Order Active' : 'Limit Order (T)'}
+          {riskBox ? 'Limit Order Active' : 'Limit Order (O)'}
         </button>
 
         {/* Fullscreen mode button (Press F / Esc) */}
