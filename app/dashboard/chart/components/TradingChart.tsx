@@ -41,6 +41,7 @@ import {
   type SessionHighlightSpan,
 } from '@/lib/chart/sessionVwap'
 import {
+  directionFromChartLevel,
   previewLevelOrderPrices,
   resolveChartLimitPick,
 } from '@/lib/trading/chartLevelPick'
@@ -1931,30 +1932,25 @@ export function TradingChart({
           price: l.price,
           type: l.type,
           side: l.side,
+          label: l.label,
           source: l.source,
           reasoning: l.reasoning,
         })),
         levelsVisible: showLevelsRef.current,
       })
-      const pickSide =
-        pick.matched?.side === 'BUY' || pick.matched?.side === 'SHORT'
-          ? pick.matched.side
-          : pick.source === 'manual'
-            ? undefined
-            : String(pick.type).toLowerCase().includes('resist') ||
-                String(pick.type).toLowerCase().includes('short')
-              ? 'SHORT'
-              : String(pick.type).toLowerCase().includes('support') ||
-                  String(pick.type).toLowerCase().includes('buy')
-                ? 'BUY'
-                : undefined
+      const dir = pick.matched ? directionFromChartLevel(pick.matched) : null
+      const pickSide: 'BUY' | 'SHORT' | undefined =
+        pick.source === 'manual' || !dir
+          ? undefined
+          : dir === 'SHORT'
+            ? 'SHORT'
+            : 'BUY'
       onLevelSelect(pick.price, {
         type: pick.source === 'manual' ? 'manual' : pick.type,
         source: pick.source,
         reasoning: pick.reasoning,
         side: pickSide,
-        preferredDirection:
-          pickSide === 'SHORT' ? 'SHORT' : pickSide === 'BUY' ? 'LONG' : undefined,
+        preferredDirection: dir ?? undefined,
       })
     }
 
@@ -2000,11 +1996,6 @@ export function TradingChart({
 
     const fmt = (n: number) =>
       n.toLocaleString('en-US', { maximumFractionDigits: 0 })
-    const tag = canPlaceOrder
-      ? 'HOVER'
-      : isAfternoonWatchWindow(new Date(), instrument)
-        ? 'WATCH'
-        : 'PREP'
 
     const onMove = (e: MouseEvent) => {
       if (!candleRef.current || !priceLineHostRef.current) return
@@ -2021,6 +2012,8 @@ export function TradingChart({
         levels: levelsRef.current.map((l) => ({
           price: l.price,
           type: l.type,
+          side: l.side,
+          label: l.label,
           source: l.source,
           reasoning: l.reasoning,
         })),
@@ -2040,18 +2033,24 @@ export function TradingChart({
         return
       }
 
-      const key = `${tag}:${preview.direction}:${preview.entry}:${preview.stop}:${preview.target}`
+      const key = `${preview.direction}:${preview.entry}:${preview.stop}:${preview.target}`
       if (hoverPreviewKeyRef.current === key) return
       clearHoverPreview()
       hoverPreviewKeyRef.current = key
       const h = priceLineHostRef.current
       if (!h) return
 
+      // Color alone = side (blue buy / rose short) — no written HOVER LONG/SHORT
+      const entryColor =
+        preview.direction === 'SHORT'
+          ? 'rgba(251, 113, 133, 0.9)'
+          : 'rgba(56, 189, 248, 0.85)'
+
       const specs = [
         {
           price: preview.entry,
-          color: 'rgba(56, 189, 248, 0.85)',
-          title: `${tag} ${preview.direction} ${fmt(preview.entry)}`,
+          color: entryColor,
+          title: fmt(preview.entry),
           style: LineStyle.Dashed,
         },
         {

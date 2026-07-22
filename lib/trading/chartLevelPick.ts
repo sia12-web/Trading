@@ -39,6 +39,7 @@ export type ChartPickLevel = {
   source?: 'ai' | 'structure' | string
   reasoning?: string
   side?: 'BUY' | 'SHORT' | null
+  label?: string
 }
 
 export type ChartLimitPick = {
@@ -56,6 +57,13 @@ export function directionFromChartLevel(level: ChartPickLevel): 'LONG' | 'SHORT'
   if (t.includes('resist') || t.includes('short') || t.includes('supply')) {
     return 'SHORT'
   }
+  if (t.includes('support') || t.includes('buy') || t.includes('demand') || t.includes('long')) {
+    return 'LONG'
+  }
+  // Label fallback e.g. "PRIMARY SHORT ★★★★★ · 66,638"
+  const label = String(level.label || '').toUpperCase()
+  if (/\bSHORT\b/.test(label)) return 'SHORT'
+  if (/\bBUY\b/.test(label) || /\bLONG\b/.test(label)) return 'LONG'
   return 'LONG'
 }
 
