@@ -508,13 +508,13 @@ export function TradingChart({
   /** Floating morning playbook — independent of chart level lines. */
   const [playbookOpen, setPlaybookOpen] = useState(true)
   const [voiceOpen, setVoiceOpen] = useState(false)
-  // Draw Zone tool — click two Y coords on the chart to define a price zone for Leo
+  // Draw Zone tool — drag on chart to draw a rectangle zone for Leo
   const [drawZoneActive, setDrawZoneActive] = useState(false)
-  const [drawZoneAnchorPrice, setDrawZoneAnchorPrice] = useState<number | null>(null)
   const [drawnZone, setDrawnZone] = useState<{ priceHigh: number; priceLow: number } | null>(null)
   const [drawnZoneSide, setDrawnZoneSide] = useState<'BUY' | 'SHORT'>('BUY')
   const [drawnZoneSending, setDrawnZoneSending] = useState(false)
   const drawZoneLinesRef = useRef<any[]>([])
+  const drawZoneOverlayRef = useRef<HTMLDivElement | null>(null)
 
   // Open Live Voice once when you clock in (same discoverability as playbook)
   useEffect(() => {
@@ -1983,70 +1983,135 @@ export function TradingChart({
     }
   }, [canPlaceOrder, onLevelSelect, chartReady, positionOverlay, pendingLimit])
 
-  // ── Draw Zone tool — click two points to define a price band ────────────────
+  // ── Draw Zone tool — drag to draw a rectangle price zone ────────────────────
   useEffect(() => {
     const container = containerRef.current
     if (!container || !candleRef.current || !chartReady || !drawZoneActive) return
     container.style.cursor = 'crosshair'
 
-    const onClick = (e: MouseEvent) => {
-      if (!candleRef.current) return
-      const rect = container.getBoundingClientRect()
-      const y = e.clientY - rect.top
-      if (y < 0 || y > rect.height) return
-      const price = candleRef.current.coordinateToPrice(y)
-      if (price == null || !Number.isFinite(Number(price)) || Number(price) <= 0) return
-      const p = Math.round(Number(price) * 100) / 100
+    // Create or reuse overlay div for the rectangle
+    let overlay = drawZoneOverlayRef.current
+    if (!overlay) {
+      overlay = document.createElement('div')
+      overlay.style.position = 'absolute'
+      overlay.style.pointerEvents = 'none'
+      overlay.style.zIndex = '25'
+      overlay.style.display = 'none'
+      overlay.style.borderRadius = '4px'
+      container.style.position = 'relative'
+      container.appendChild(overlay)
+      drawZoneOverlayRef.current = overlay
+    }
 
-      if (drawZoneAnchorPrice == null) {
-        // First click — anchor
-        setDrawZoneAnchorPrice(p)
-        // Draw a temporary price line for the anchor
-        const host = priceLineHostRef.current
-        if (host) {
-          const line = host.createPriceLine({
-            price: p,
-            color: '#a78bfa',
-            lineWidth: 2,
-            lineStyle: 2, // dashed
-            axisLabelVisible: true,
-            title: '— Zone Start',
-          })
-          drawZoneLinesRef.current.push(line)
-        }
-      } else {
-        // Second click — complete zone
-        const high = Math.max(drawZoneAnchorPrice, p)
-        const low = Math.min(drawZoneAnchorPrice, p)
-        setDrawnZone({ priceHigh: high, priceLow: low })
-        setDrawZoneActive(false)
-        setDrawZoneAnchorPrice(null)
-        // Draw the second line
-        const host = priceLineHostRef.current
-        if (host) {
-          const line = host.createPriceLine({
-            price: p,
-            color: '#a78bfa',
-            lineWidth: 2,
-            lineStyle: 2,
-            axisLabelVisible: true,
-            title: '— Zone End',
-          })
-          drawZoneLinesRef.current.push(line)
-        }
-        container.style.cursor = ''
+    let startY: number | null = null
+    let anchorPrice: number | null = null
+    let dragging = false
+
+    const priceAtY = (clientY: number): number | null => {
+      if (!candleRef.current) return null
+      const rect = container.getBoundingClientRect()
+      const y = clientY - rect.top
+      if (y < 0 || y > rect.height) return null
+      const price = candleRef.current.coordinateToPrice(y)
+      if (price == null || !Number.isFinite(Number(price)) || Number(price) <= 0) return null
+      return Math.round(Number(price) * 100) / 100
+    }
+
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return // left click only
+      const p = priceAtY(e.clientY)
+      if (p == null) return
+      e.preventDefault()
+      e.stopPropagation()
+      const rect = container.getBoundingClientRect()
+      startY = e.clientY - rect.top
+      anchorPrice = p
+      dragging = true
+      if (overlay) {
+        overlay.style.display = 'block'
+        overlay.style.left = '0'
+        overlay.style.right = '60px' // leave room for price axis
+        overlay.style.top = `${startY}px`
+        overlay.style.height = '0px'
+        overlay.style.background = 'rgba(139, 92, 246, 0.15)'
+        overlay.style.border = '2px solid rgba(139, 92, 246, 0.5)'
+        overlay.style.borderRadius = '4px'
       }
     }
 
-    container.addEventListener('click', onClick, true)
-    const canvases = Array.from(container.querySelectorAll('canvas'))
-    for (const c of canvases) c.addEventListener('click', onClick, true)
-    return () => {
-      container.removeEventListener('click', onClick, true)
-      for (const c of canvases) c.removeEventListener('click', onClick, true)
+    const onMouseMove = (e: MouseEvent) => {
+      if (!dragging || startY == null || !overlay) return
+      e.preventDefault()
+      const rect = container.getBoundingClientRect()
+      const currentY = e.clientY - rect.top
+      const top = Math.min(startY, currentY)
+      const height = Math.abs(currentY - startY)
+      overlay.style.top = `${top}px`
+      overlay.style.height = `${height}px`
+      // Show price labels in the overlay
+      const topPrice = priceAtY(rect.top + top)
+      const botPrice = priceAtY(rect.top + top + height)
+      if (topPrice != null && botPrice != null) {
+        const high = Math.max(topPrice, botPrice)
+        const low = Math.min(topPrice, botPrice)
+        overlay.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:4px 8px;height:100%;flex-direction:column">
+          <span style="font-family:monospace;font-size:11px;font-weight:700;color:rgba(139,92,246,0.9)">${high.toLocaleString()}</span>
+          <span style="font-family:monospace;font-size:11px;font-weight:700;color:rgba(139,92,246,0.9)">${low.toLocaleString()}</span>
+        </div>`
+      }
+    }
+
+    const onMouseUp = (e: MouseEvent) => {
+      if (!dragging || startY == null || anchorPrice == null) return
+      e.preventDefault()
+      e.stopPropagation()
+      dragging = false
+      const endPrice = priceAtY(e.clientY)
+      if (endPrice == null || Math.abs(endPrice - anchorPrice) < 1) {
+        // Too small — cancel
+        if (overlay) overlay.style.display = 'none'
+        return
+      }
+      const high = Math.max(anchorPrice, endPrice)
+      const low = Math.min(anchorPrice, endPrice)
+      // Draw dashed price lines at zone edges
+      const host = priceLineHostRef.current
+      if (host) {
+        const lineHigh = host.createPriceLine({
+          price: high,
+          color: '#a78bfa',
+          lineWidth: 2,
+          lineStyle: 2,
+          axisLabelVisible: true,
+          title: '▔ Zone High',
+        })
+        const lineLow = host.createPriceLine({
+          price: low,
+          color: '#a78bfa',
+          lineWidth: 2,
+          lineStyle: 2,
+          axisLabelVisible: true,
+          title: '▁ Zone Low',
+        })
+        drawZoneLinesRef.current.push(lineHigh, lineLow)
+      }
+      setDrawnZone({ priceHigh: high, priceLow: low })
+      setDrawZoneActive(false)
       container.style.cursor = ''
     }
-  }, [drawZoneActive, drawZoneAnchorPrice, chartReady])
+
+    // Attach to container + inner canvases
+    container.addEventListener('mousedown', onMouseDown, true)
+    container.addEventListener('mousemove', onMouseMove, true)
+    container.addEventListener('mouseup', onMouseUp, true)
+    return () => {
+      container.removeEventListener('mousedown', onMouseDown, true)
+      container.removeEventListener('mousemove', onMouseMove, true)
+      container.removeEventListener('mouseup', onMouseUp, true)
+      container.style.cursor = ''
+      if (overlay) overlay.style.display = 'none'
+    }
+  }, [drawZoneActive, chartReady])
 
   // Clear drawn zone lines helper
   const clearDrawnZoneLines = useCallback(() => {
@@ -2055,6 +2120,10 @@ export function TradingChart({
       try { host?.removePriceLine(line) } catch { /* ignore */ }
     })
     drawZoneLinesRef.current = []
+    // Also hide the rectangle overlay
+    if (drawZoneOverlayRef.current) {
+      drawZoneOverlayRef.current.style.display = 'none'
+    }
   }, [])
 
   // Send drawn zone to Leo
@@ -2085,7 +2154,6 @@ export function TradingChart({
   const cancelDrawnZone = useCallback(() => {
     setDrawnZone(null)
     setDrawZoneActive(false)
-    setDrawZoneAnchorPrice(null)
     clearDrawnZoneLines()
   }, [clearDrawnZoneLines])
 
@@ -2518,21 +2586,22 @@ export function TradingChart({
           type="button"
           title={
             drawZoneActive
-              ? 'Cancel zone drawing'
-              : drawZoneAnchorPrice != null
-                ? 'Click second point to complete zone'
+              ? 'Drag on chart to draw zone — or click to cancel'
+              : drawnZone
+                ? 'Zone drawn — send or discard'
                 : 'Draw a BUY/SHORT zone on the chart for Leo'
           }
           onClick={() => {
-            if (drawZoneActive || drawZoneAnchorPrice != null) {
+            if (drawZoneActive) {
               cancelDrawnZone()
             } else {
               setDrawZoneActive(true)
               setDrawnZone(null)
+              clearDrawnZoneLines()
             }
           }}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
-            drawZoneActive || drawZoneAnchorPrice != null
+            drawZoneActive
               ? 'bg-amber-600/30 border-amber-500/50 text-amber-100 animate-pulse'
               : drawnZone
                 ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-100'
@@ -2543,11 +2612,7 @@ export function TradingChart({
             <rect x="2" y="4" width="12" height="8" rx="1" strokeLinecap="round" />
             <line x1="2" y1="8" x2="14" y2="8" strokeDasharray="2 2" />
           </svg>
-          {drawZoneActive
-            ? drawZoneAnchorPrice != null
-              ? 'Click 2nd point'
-              : 'Click 1st point'
-            : 'Draw Zone'}
+          {drawZoneActive ? 'Drag to draw…' : 'Draw Zone'}
         </button>
 
         {pendingLimit && !positionOverlay && (
