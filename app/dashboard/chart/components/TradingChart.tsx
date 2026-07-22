@@ -2523,6 +2523,58 @@ export function TradingChart({
     clearRiskBoxLines()
   }, [clearRiskBoxLines])
 
+  // Mouse dragging for Risk Box lines (Entry, TP, SL)
+  const draggingRiskLineRef = useRef<'ENTRY' | 'TP' | 'SL' | null>(null)
+
+  const onRiskLineMouseDown = useCallback((type: 'ENTRY' | 'TP' | 'SL') => (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    draggingRiskLineRef.current = type
+  }, [])
+
+  useEffect(() => {
+    if (!riskBox) return
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!draggingRiskLineRef.current || !containerRef.current || !candleRef.current) return
+      const rect = containerRef.current.getBoundingClientRect()
+      const y = e.clientY - rect.top
+      if (y < 0 || y > rect.height) return
+      const rawPrice = candleRef.current.coordinateToPrice(y)
+      if (rawPrice == null || !Number.isFinite(Number(rawPrice)) || Number(rawPrice) <= 0) return
+
+      const snapped = snapDeskPrice(instrument, Number(rawPrice))
+
+      if (draggingRiskLineRef.current === 'ENTRY') {
+        setRiskBox((prev) => {
+          if (!prev) return null
+          const diff = snapped - prev.entryPrice
+          return {
+            ...prev,
+            entryPrice: snapped,
+            stopLoss: snapDeskPrice(instrument, prev.stopLoss + diff),
+            profitTarget: snapDeskPrice(instrument, prev.profitTarget + diff),
+          }
+        })
+      } else if (draggingRiskLineRef.current === 'TP') {
+        setRiskBox((prev) => (prev ? { ...prev, profitTarget: snapped } : null))
+      } else if (draggingRiskLineRef.current === 'SL') {
+        setRiskBox((prev) => (prev ? { ...prev, stopLoss: snapped } : null))
+      }
+    }
+
+    const onMouseUp = () => {
+      draggingRiskLineRef.current = null
+    }
+
+    window.addEventListener('mousemove', onMouseMove, true)
+    window.addEventListener('mouseup', onMouseUp, true)
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove, true)
+      window.removeEventListener('mouseup', onMouseUp, true)
+    }
+  }, [riskBox, instrument])
+
   // Paint interactive risk box lines on chart
   useEffect(() => {
     clearRiskBoxLines()
@@ -3567,79 +3619,73 @@ export function TradingChart({
                 />
               )}
 
-              {/* Take Profit (TP) Line Pill Badge */}
+              {/* Take Profit (TP) Line Pill Badge — Drag to adjust TP */}
               {tpY != null && (
                 <div
-                  className="absolute flex items-center gap-1.5 pointer-events-auto"
+                  onMouseDown={onRiskLineMouseDown('TP')}
+                  className="absolute flex items-center gap-1.5 pointer-events-auto cursor-ns-resize group"
                   style={{
                     left: '42%',
                     top: `${tpY - 13}px`,
                   }}
+                  title="Drag Take Profit line up or down"
                 >
-                  <div className="flex items-center rounded border border-dashed border-emerald-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-emerald-300 shadow-md">
+                  <div className="flex items-center rounded border border-dashed border-emerald-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-emerald-300 shadow-md group-hover:border-emerald-300 transition">
                     <span>{posSize}</span>
                     <span className="text-emerald-600 mx-1.5">|</span>
                     <span className="text-emerald-400">+{profitVal} CAD</span>
                     <span className="text-emerald-600 mx-1.5">|</span>
                     <button
-                      onClick={cancelRiskBox}
+                      onClick={(e) => { e.stopPropagation(); cancelRiskBox() }}
                       className="text-gray-400 hover:text-emerald-200 transition font-bold"
                       title="Remove TP"
                     >✕</button>
                   </div>
-                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 border border-white shadow-sm" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
                 </div>
               )}
 
-              {/* Entry Line Pill Badge: [ Buy/Sell ] [ Units | Limit | ✕ ] */}
+              {/* Entry Line Pill Badge: [ Buy ] / [ Sell ] (Places Order) | [ Units | Limit | ✕ ] (Drag to adjust Entry) */}
               {entryY != null && (
                 <div
-                  className="absolute flex items-center gap-2 pointer-events-auto"
+                  onMouseDown={onRiskLineMouseDown('ENTRY')}
+                  className="absolute flex items-center gap-2 pointer-events-auto cursor-ns-resize group"
                   style={{
                     left: '32%',
                     top: `${entryY - 14}px`,
                   }}
+                  title="Drag Entry line up or down"
                 >
+                  {/* Explicit Buy / Sell Placement Button — ONLY BUTTON THAT PLACES ORDER */}
                   <button
                     type="button"
-                    onClick={() => {
-                      const newDir = riskBox.direction === 'LONG' ? 'SHORT' : 'LONG'
-                      const rawStop = defaultManualStop(riskBox.entryPrice, newDir)
-                      const rawTp = newDir === 'LONG'
-                        ? snapDeskPrice(instrument, riskBox.entryPrice * 1.0105)
-                        : snapDeskPrice(instrument, riskBox.entryPrice * 0.9895)
-                      setRiskBox({
-                        ...riskBox,
-                        direction: newDir,
-                        stopLoss: rawStop,
-                        profitTarget: rawTp,
-                      })
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      confirmRiskBoxOrder()
                     }}
                     className={`px-3 py-1 text-xs font-extrabold uppercase rounded-md shadow-md transition border ${
                       riskBox.direction === 'LONG'
-                        ? 'bg-blue-600 border-blue-400 text-white hover:bg-blue-500'
-                        : 'bg-red-600 border-red-400 text-white hover:bg-red-500'
+                        ? 'bg-blue-600 border-blue-400 text-white hover:bg-blue-500 hover:scale-105'
+                        : 'bg-red-600 border-red-400 text-white hover:bg-red-500 hover:scale-105'
                     }`}
-                    title="Toggle Buy / Sell direction"
+                    title={`Click to place 1% ${riskBox.direction} Limit Order`}
                   >
                     {riskBox.direction === 'LONG' ? 'Buy' : 'Sell'}
                   </button>
 
-                  <div className="flex items-center rounded-md border border-blue-400 bg-white/95 px-3 py-1 text-xs font-mono font-bold text-gray-900 shadow-xl">
+                  {/* Pill Badge with Non-Clickable Limit Label */}
+                  <div className="flex items-center rounded-md border border-blue-400 bg-white/95 px-3 py-1 text-xs font-mono font-bold text-gray-900 shadow-xl group-hover:border-blue-500 transition">
                     <span className="text-blue-700 font-extrabold text-sm">{posSize}</span>
                     <span className="text-gray-300 mx-1.5">|</span>
-                    <button
-                      type="button"
-                      onClick={confirmRiskBoxOrder}
-                      className="text-blue-600 hover:text-blue-800 font-sans uppercase font-extrabold tracking-wider text-[11px] transition"
-                      title="Place 1% Limit Order"
+                    <span
+                      className="text-gray-600 font-sans uppercase font-extrabold tracking-wider text-[11px] select-none"
                     >
                       Limit
-                    </button>
+                    </span>
                     <span className="text-gray-300 mx-1.5">|</span>
                     <button
                       type="button"
-                      onClick={cancelRiskBox}
+                      onClick={(e) => { e.stopPropagation(); cancelRiskBox() }}
                       className="text-gray-400 hover:text-red-500 transition font-bold"
                       title="Close (Esc)"
                     >
@@ -3647,31 +3693,33 @@ export function TradingChart({
                     </button>
                   </div>
 
-                  <div className="w-3 h-3 rounded-full bg-blue-500 border-2 border-white shadow-md" />
+                  <div className="w-3 h-3 rounded-full bg-blue-500 border-2 border-white shadow-md group-hover:scale-125 transition-transform" />
                 </div>
               )}
 
-              {/* Stop Loss (SL) Line Pill Badge — Dynamic 1% Position Sizing */}
+              {/* Stop Loss (SL) Line Pill Badge — Drag to adjust SL (Dynamic 1% Sizing) */}
               {slY != null && (
                 <div
-                  className="absolute flex items-center gap-1.5 pointer-events-auto"
+                  onMouseDown={onRiskLineMouseDown('SL')}
+                  className="absolute flex items-center gap-1.5 pointer-events-auto cursor-ns-resize group"
                   style={{
                     left: '42%',
                     top: `${slY - 13}px`,
                   }}
+                  title="Drag Stop Loss line up or down to adjust risk size"
                 >
-                  <div className="flex items-center rounded border border-dashed border-amber-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-amber-300 shadow-md">
+                  <div className="flex items-center rounded border border-dashed border-amber-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-amber-300 shadow-md group-hover:border-amber-300 transition">
                     <span>{posSize}</span>
                     <span className="text-amber-600 mx-1.5">|</span>
                     <span className="text-amber-400">-{lossVal} CAD</span>
                     <span className="text-amber-600 mx-1.5">|</span>
                     <button
-                      onClick={cancelRiskBox}
+                      onClick={(e) => { e.stopPropagation(); cancelRiskBox() }}
                       className="text-gray-400 hover:text-amber-200 transition font-bold"
                       title="Remove SL"
                     >✕</button>
                   </div>
-                  <div className="w-2.5 h-2.5 rounded-full bg-amber-400 border border-white shadow-sm" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-amber-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
                 </div>
               )}
             </div>
