@@ -573,8 +573,8 @@ export default function ChartPage() {
   const deskAttended = clockedIn || attendedToday
 
   return (
-    <div className="flex h-screen overflow-hidden relative flex-col">
-      <div className="px-3 pt-3">
+    <div className="flex h-screen w-screen overflow-hidden relative flex-col bg-[#0d1117]">
+      <div className="px-2 pt-1 pb-0.5 shrink-0 z-20">
         <SessionBanner
           onGate={handleGate}
           refreshKey={gateTick}
@@ -587,99 +587,75 @@ export default function ChartPage() {
         />
       </div>
 
-      <div className="flex flex-1 min-h-0 relative">
-        <div className="flex-1 min-w-0 min-h-0 flex flex-col p-2 gap-2">
-          <div className="flex items-center gap-2 px-1">
-            <span className="text-[10px] text-gray-600">
-              {chartLocked
-                ? missedSessionLocked
-                  ? 'Session skipped — no clock-in today; live chart locked until cash close'
-                  : 'Live chart locked — clock in (“Today I trade”) or use Simulation'
-                : inWorking
-                  ? `WORKING ${pending!.direction} limit @ ${pending!.level.toLocaleString()} — waiting for fill`
-                  : canTrade
-                    ? 'Entry window · double-click the chart or pick a level for a working limit (MANAGE only after fill)'
-                    : inManage
-                      ? null
-                      : gate?.phase === 'FLAT'
-                        ? 'Entry window closed — manage an open position if you have one'
-                        : gate?.phase === 'RECOMMENDED' || gate?.phase === 'PREP'
-                          ? 'Pre-open · levels prep — entries at cash open'
-                          : null}
+      <div className="flex-1 w-full h-full min-h-0 min-w-0 relative p-1 flex flex-col gap-1">
+        {(inWorking && pending) || orderStatus === 'rejected' || orderStatus === 'placing' ? (
+          <div
+            className={`absolute top-2 left-2 z-30 flex items-center gap-3 rounded-lg border px-3 py-1.5 text-xs shadow-xl backdrop-blur-md ${
+              orderStatus === 'rejected'
+                ? 'border-red-700/50 bg-red-950/90 text-red-100'
+                : 'border-sky-700/50 bg-sky-950/90 text-sky-100'
+            }`}
+          >
+            <span className="font-semibold uppercase tracking-wide">
+              {orderStatus === 'placing'
+                ? 'Placing'
+                : orderStatus === 'rejected'
+                  ? 'Rejected'
+                  : orderStatus === 'filled'
+                    ? 'Filled'
+                    : 'Working'}
             </span>
-            <Link
-              href="/dashboard/simulation"
-              className="ml-auto rounded-lg border border-violet-500/40 bg-violet-500/15 px-3 py-1.5 text-xs font-semibold text-violet-200 transition hover:bg-violet-500/25 hover:text-white"
-            >
-              Simulation →
-            </Link>
-          </div>
-
-          {(inWorking && pending) || orderStatus === 'rejected' || orderStatus === 'placing' ? (
-            <div
-              className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-xs ${
-                orderStatus === 'rejected'
-                  ? 'border-red-700/50 bg-red-950/40 text-red-100'
-                  : 'border-sky-700/50 bg-sky-950/40 text-sky-100'
-              }`}
-            >
-              <span className="font-semibold uppercase tracking-wide">
-                {orderStatus === 'placing'
-                  ? 'Placing'
-                  : orderStatus === 'rejected'
-                    ? 'Rejected'
-                    : orderStatus === 'filled'
-                      ? 'Filled'
-                      : 'Working'}
-              </span>
-              {pending && (
-                <>
-                  <span className="price-mono">
-                    {pending.direction} @ {pending.level.toLocaleString()}
-                  </span>
-                  <span className="opacity-80">
-                    SL {pending.stopLoss.toLocaleString()} · TP{' '}
-                    {pending.profitTarget.toLocaleString()}
-                  </span>
-                </>
-              )}
-              {pending && livePrice != null && orderStatus === 'working' && (
-                <span className="text-gray-400">
-                  last {livePrice.toLocaleString()} ·{' '}
-                  {pending.direction === 'LONG'
-                    ? livePrice > pending.level
-                      ? 'waiting for price ≤ limit'
-                      : 'at/through limit…'
-                    : livePrice < pending.level
-                      ? 'waiting for price ≥ limit'
-                      : 'at/through limit…'}
+            {pending && (
+              <>
+                <span className="price-mono">
+                  {pending.direction} @ {pending.level.toLocaleString()}
                 </span>
-              )}
-              {pending && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const inst = pending.instrument
-                    orderGenRef.current += 1
-                    pendingRef.current = null
-                    setPending(null)
-                    setFillError(null)
-                    setOrderStatus('idle')
-                    void cancelWorkingLimit(inst)
-                  }}
-                  className="ml-auto rounded border border-sky-600/50 px-2 py-1 text-[10px] font-semibold uppercase text-sky-200 hover:bg-sky-900/50"
-                >
-                  Cancel
-                </button>
-              )}
-            </div>
-          ) : null}
+                <span className="opacity-80">
+                  SL {pending.stopLoss.toLocaleString()} · TP{' '}
+                  {pending.profitTarget.toLocaleString()}
+                </span>
+              </>
+            )}
+            {pending && livePrice != null && orderStatus === 'working' && (
+              <span className="text-gray-400">
+                last {livePrice.toLocaleString()} ·{' '}
+                {pending.direction === 'LONG'
+                  ? livePrice > pending.level
+                    ? 'waiting for price ≤ limit'
+                    : 'at/through limit…'
+                  : livePrice < pending.level
+                    ? 'waiting for price ≥ limit'
+                    : 'at/through limit…'}
+              </span>
+            )}
+            {pending && (
+              <button
+                type="button"
+                onClick={() => {
+                  const inst = pending.instrument
+                  orderGenRef.current += 1
+                  pendingRef.current = null
+                  setPending(null)
+                  setFillError(null)
+                  setOrderStatus('idle')
+                  void cancelWorkingLimit(inst)
+                }}
+                className="ml-auto rounded border border-sky-600/50 px-2 py-1 text-[10px] font-semibold uppercase text-sky-200 hover:bg-sky-900/50"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        ) : null}
 
-          {fillError && (
-            <p className="px-1 text-xs text-red-400">{fillError}</p>
-          )}
+        {fillError && (
+          <p className="absolute top-2 left-2 z-30 px-2.5 py-1 text-xs text-red-300 bg-red-950/90 rounded border border-red-700/60 shadow-lg backdrop-blur-md">
+            {fillError}
+          </p>
+        )}
 
-          {inManage && managePos && (
+        {inManage && managePos && (
+          <div className="absolute top-2 left-2 z-30">
             <ManageDeskBar
               position={managePos}
               currentPrice={livePrice}
@@ -693,149 +669,150 @@ export default function ChartPage() {
               onRefreshGate={refreshGate}
               onAiVerdict={setAiVerdict}
             />
+          </div>
+        )}
+
+        <div className="relative flex-1 w-full h-full min-h-0">
+          {!chartLocked && (
+            <TradingChart
+              onInstrumentChange={setInstrument}
+              onInstrumentSync={syncInstrument}
+              onPriceUpdate={onPriceUpdate}
+              onQuoteTick={setLastQuoteAt}
+              onDataModeChange={setDataMode}
+              positionOverlay={
+                positionOverlay ??
+                (managePos
+                  ? {
+                      entryPrice: managePos.entryPrice,
+                      stopLoss: managePos.stopLoss,
+                      profitTarget: managePos.profitTarget,
+                      direction: managePos.direction,
+                    }
+                  : null)
+              }
+              pendingLimit={
+                pending && !managePos
+                  ? {
+                      price: pending.level,
+                      direction: pending.direction === 'LONG' ? 'long' : 'short',
+                      stopLoss: pending.stopLoss,
+                      profitTarget: pending.profitTarget,
+                    }
+                  : null
+              }
+              onCancelPending={() => {
+                const inst = (pending?.instrument || locked || instrument) as Instrument
+                orderGenRef.current += 1
+                pendingRef.current = null
+                setPending(null)
+                setFillError(null)
+                setOrderStatus('idle')
+                void cancelWorkingLimit(inst)
+              }}
+              aiVerdict={managePos ? aiVerdict : null}
+              jumpToPriceRef={jumpToPriceRef}
+              // Hard-lock tabs to day's recommended / clocked instrument (no NASDAQ switch when DOW locked)
+              lockedInstrument={locked}
+              allowedInstruments={gate?.allowedInstruments ?? undefined}
+              onLevelSelect={handleLevelSelect}
+              canPlaceOrder={canTrade && dataMode === 'live'}
+              deskLevelsActive={deskLevelsActive}
+              deskAttended={deskAttended}
+              clockedIn={clockedIn}
+              levelsRefreshKey={levelsRefreshKey}
+            />
           )}
 
-          <div className="relative flex-1 min-h-0">
-            {!chartLocked && (
-              <TradingChart
-                onInstrumentChange={setInstrument}
-                onInstrumentSync={syncInstrument}
-                onPriceUpdate={onPriceUpdate}
-                onQuoteTick={setLastQuoteAt}
-                onDataModeChange={setDataMode}
-                positionOverlay={
-                  positionOverlay ??
-                  (managePos
-                    ? {
-                        entryPrice: managePos.entryPrice,
-                        stopLoss: managePos.stopLoss,
-                        profitTarget: managePos.profitTarget,
-                        direction: managePos.direction,
-                      }
-                    : null)
-                }
-                pendingLimit={
-                  pending && !managePos
-                    ? {
-                        price: pending.level,
-                        direction: pending.direction === 'LONG' ? 'long' : 'short',
-                        stopLoss: pending.stopLoss,
-                        profitTarget: pending.profitTarget,
-                      }
-                    : null
-                }
-                onCancelPending={() => {
-                  const inst = (pending?.instrument || locked || instrument) as Instrument
-                  orderGenRef.current += 1
-                  pendingRef.current = null
-                  setPending(null)
-                  setFillError(null)
-                  setOrderStatus('idle')
-                  void cancelWorkingLimit(inst)
-                }}
-                aiVerdict={managePos ? aiVerdict : null}
-                jumpToPriceRef={jumpToPriceRef}
-                // Hard-lock tabs to day's recommended / clocked instrument (no NASDAQ switch when DOW locked)
-                lockedInstrument={locked}
-                allowedInstruments={gate?.allowedInstruments ?? undefined}
-                onLevelSelect={handleLevelSelect}
-                canPlaceOrder={canTrade && dataMode === 'live'}
-                deskLevelsActive={deskLevelsActive}
-                deskAttended={deskAttended}
-                clockedIn={clockedIn}
-                levelsRefreshKey={levelsRefreshKey}
-              />
-            )}
-
-            {chartLocked && (
-              <div className="absolute inset-0 z-30 flex items-center justify-center rounded-xl border border-surface-600 bg-[#0d1117]">
-                <div className="max-w-md px-8 text-center">
-                  <p className="text-lg font-semibold text-white tracking-tight">
-                    {missedSessionLocked ? 'Session skipped' : 'Live chart is closed'}
-                  </p>
-                  <p className="mt-2 text-sm text-gray-400 leading-relaxed">
-                    {missedSessionLocked ? (
-                      <>
-                        You did not clock in this morning, so the live desk (DOW, NASDAQ, and
-                        NIKKEI) stays locked through afternoon watch until cash close. Use
-                        Simulation, or wait for the next session.
-                      </>
-                    ) : (
-                      <>
-                        Clock in with{' '}
-                        <span className="text-amber-300 font-medium">Today I trade</span>{' '}
-                        (15 min before cash open) to unlock the live desk and level journaling.
-                        Or try Simulation.
-                      </>
-                    )}
-                  </p>
-                  <div className="mt-6 flex items-center justify-center gap-3">
-                    {gate?.canClockIn && (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const market =
-                            gate.market ||
-                            (gate.lockedInstrument === 'NIKKEI' ? 'TOKYO' : 'NY')
-                          const allowed = gate.allowedInstruments
-                          const focusInstrument =
-                            (allowed?.includes(instrument) ? instrument : null) ||
-                            gate.lockedInstrument ||
-                            undefined
-                          await fetch('/api/trading/clock-in', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              market,
-                              instrument: focusInstrument,
-                            }),
-                          })
-                          bannerRefreshRef.current?.()
-                          setGateTick((t) => t + 1)
-                        }}
-                        className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold uppercase tracking-wide text-black hover:bg-amber-400"
-                      >
-                        Today I trade
-                      </button>
-                    )}
-                    <Link
-                      href="/dashboard/simulation"
-                      className="rounded-lg border border-violet-500/50 bg-violet-500/20 px-4 py-2 text-xs font-semibold text-violet-100 hover:bg-violet-500/30"
+          {chartLocked && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center rounded-xl border border-surface-600 bg-[#0d1117]">
+              <div className="max-w-md px-8 text-center">
+                <p className="text-lg font-semibold text-white tracking-tight">
+                  {missedSessionLocked ? 'Session skipped' : 'Live chart is closed'}
+                </p>
+                <p className="mt-2 text-sm text-gray-400 leading-relaxed">
+                  {missedSessionLocked ? (
+                    <>
+                      You did not clock in this morning, so the live desk (DOW, NASDAQ, and
+                      NIKKEI) stays locked through afternoon watch until cash close. Use
+                      Simulation, or wait for the next session.
+                    </>
+                  ) : (
+                    <>
+                      Clock in with{' '}
+                      <span className="text-amber-300 font-medium">Today I trade</span>{' '}
+                      (15 min before cash open) to unlock the live desk and level journaling.
+                      Or try Simulation.
+                    </>
+                  )}
+                </p>
+                <div className="mt-6 flex items-center justify-center gap-3">
+                  {gate?.canClockIn && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const market =
+                          gate.market ||
+                          (gate.lockedInstrument === 'NIKKEI' ? 'TOKYO' : 'NY')
+                        const allowed = gate.allowedInstruments
+                        const focusInstrument =
+                          (allowed?.includes(instrument) ? instrument : null) ||
+                          gate.lockedInstrument ||
+                          undefined
+                        await fetch('/api/trading/clock-in', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            market,
+                            instrument: focusInstrument,
+                          }),
+                        })
+                        bannerRefreshRef.current?.()
+                        setGateTick((t) => t + 1)
+                      }}
+                      className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold uppercase tracking-wide text-black hover:bg-amber-400"
                     >
-                      Try simulation
-                    </Link>
-                  </div>
+                      Today I trade
+                    </button>
+                  )}
+                  <Link
+                    href="/dashboard/simulation"
+                    className="rounded-lg border border-violet-500/50 bg-violet-500/20 px-4 py-2 text-xs font-semibold text-violet-100 hover:bg-violet-500/30"
+                  >
+                    Try simulation
+                  </Link>
                 </div>
               </div>
-            )}
-
-          </div>
+            </div>
+          )}
         </div>
 
         {orderLevel != null && !pending && !managePos && (
-          <LevelOrderTicket
-            key={`live-${orderLevel}-${orderEntrySource}-${orderPreferredDirection ?? orderLevelSide ?? orderLevelType ?? 'x'}`}
-            instrument={(clockedIn && locked ? locked : instrument) as Instrument}
-            levelPrice={orderLevel}
-            levelType={orderLevelType}
-            levelSide={orderLevelSide}
-            preferredDirection={orderPreferredDirection}
-            entryReason={orderLevelReason}
-            entrySource={orderEntrySource}
-            regime={regime}
-            regimeConfidence={regimeConfidence}
-            canPlace={canTrade && dataMode === 'live'}
-            entryWindow={gate?.entryWindow ?? 1}
-            onClose={() => {
-              setOrderLevel(null)
-              setOrderLevelType(undefined)
-              setOrderLevelSide(undefined)
-              setOrderPreferredDirection(undefined)
-              setOrderLevelReason(undefined)
-              setOrderEntrySource('ai')
-            }}
-            onPlaced={handlePlaced}
-          />
+          <div className="absolute top-2 right-2 bottom-2 z-40 w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-surface-600 bg-[#161b22]/95 p-3 shadow-2xl backdrop-blur-md">
+            <LevelOrderTicket
+              key={`live-${orderLevel}-${orderEntrySource}-${orderPreferredDirection ?? orderLevelSide ?? orderLevelType ?? 'x'}`}
+              instrument={(clockedIn && locked ? locked : instrument) as Instrument}
+              levelPrice={orderLevel}
+              levelType={orderLevelType}
+              levelSide={orderLevelSide}
+              preferredDirection={orderPreferredDirection}
+              entryReason={orderLevelReason}
+              entrySource={orderEntrySource}
+              regime={regime}
+              regimeConfidence={regimeConfidence}
+              canPlace={canTrade && dataMode === 'live'}
+              entryWindow={gate?.entryWindow ?? 1}
+              onClose={() => {
+                setOrderLevel(null)
+                setOrderLevelType(undefined)
+                setOrderLevelSide(undefined)
+                setOrderPreferredDirection(undefined)
+                setOrderLevelReason(undefined)
+                setOrderEntrySource('ai')
+              }}
+              onPlaced={handlePlaced}
+            />
+          </div>
         )}
       </div>
     </div>
