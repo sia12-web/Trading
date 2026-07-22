@@ -267,6 +267,19 @@ export function LevelOrderTicket({
     })
   }
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        const tag = (e.target as HTMLElement)?.tagName?.toLowerCase()
+        if (tag === 'input' || tag === 'textarea' || tag === 'select') return
+        e.preventDefault()
+        onClose?.()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
   const sourceBadge =
     entrySource === 'manual'
       ? 'Manual · 1% risk'
@@ -275,9 +288,14 @@ export function LevelOrderTicket({
         : 'AI level · desk risk'
 
   return (
-    <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-sm rounded-xl border border-[#30363d] bg-[#161b22] p-4 shadow-xl">
-        <div className="flex items-start justify-between gap-2">
+    <div
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose?.()
+      }}
+    >
+      <div className="w-full max-w-sm rounded-xl border border-surface-600 bg-[#161b22] p-5 shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto">
+        <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-white">
               {isManual ? 'Place manual limit' : 'Place working limit'}
@@ -318,8 +336,14 @@ export function LevelOrderTicket({
               {canPlace ? ' · ready to place' : ' · trading locked'}
             </p>
           </div>
-          <button type="button" onClick={onClose} className="text-gray-500 hover:text-white">
-            ✕
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex items-center gap-1 rounded-lg border border-surface-500 bg-surface-700/80 px-2.5 py-1 text-xs font-bold text-gray-300 transition hover:bg-red-600 hover:border-red-500 hover:text-white shrink-0"
+            title="Close order ticket (Esc)"
+          >
+            <span>✕</span>
+            <span>Close</span>
           </button>
         </div>
 
@@ -442,18 +466,27 @@ export function LevelOrderTicket({
 
         {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
 
-        <button
-          type="button"
-          disabled={!canPlace || !preview || placing}
-          onClick={submit}
-          className="mt-4 w-full rounded-lg bg-sky-600 py-2.5 text-sm font-semibold text-white disabled:opacity-40 hover:bg-sky-500"
-        >
-          {!canPlace
-            ? 'Trading locked'
-            : placing
-              ? 'Placing…'
-              : 'Place working limit'}
-        </button>
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 rounded-lg border border-surface-600 bg-surface-800 py-2.5 text-xs font-semibold text-gray-300 hover:bg-surface-700 hover:text-white"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!canPlace || !preview || placing}
+            onClick={submit}
+            className="flex-[2] rounded-lg bg-sky-600 py-2.5 text-sm font-semibold text-white disabled:opacity-40 hover:bg-sky-500"
+          >
+            {!canPlace
+              ? 'Trading locked'
+              : placing
+                ? 'Placing…'
+                : 'Place working limit'}
+          </button>
+        </div>
       </div>
     </div>
   )

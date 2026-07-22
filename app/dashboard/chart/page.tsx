@@ -788,31 +788,29 @@ export default function ChartPage() {
         </div>
 
         {orderLevel != null && !pending && !managePos && (
-          <div className="absolute top-2 right-2 bottom-2 z-40 w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-surface-600 bg-[#161b22]/95 p-3 shadow-2xl backdrop-blur-md">
-            <LevelOrderTicket
-              key={`live-${orderLevel}-${orderEntrySource}-${orderPreferredDirection ?? orderLevelSide ?? orderLevelType ?? 'x'}`}
-              instrument={(clockedIn && locked ? locked : instrument) as Instrument}
-              levelPrice={orderLevel}
-              levelType={orderLevelType}
-              levelSide={orderLevelSide}
-              preferredDirection={orderPreferredDirection}
-              entryReason={orderLevelReason}
-              entrySource={orderEntrySource}
-              regime={regime}
-              regimeConfidence={regimeConfidence}
-              canPlace={canTrade && dataMode === 'live'}
-              entryWindow={gate?.entryWindow ?? 1}
-              onClose={() => {
-                setOrderLevel(null)
-                setOrderLevelType(undefined)
-                setOrderLevelSide(undefined)
-                setOrderPreferredDirection(undefined)
-                setOrderLevelReason(undefined)
-                setOrderEntrySource('ai')
-              }}
-              onPlaced={handlePlaced}
-            />
-          </div>
+          <LevelOrderTicket
+            key={`live-${orderLevel}-${orderEntrySource}-${orderPreferredDirection ?? orderLevelSide ?? orderLevelType ?? 'x'}`}
+            instrument={(clockedIn && locked ? locked : instrument) as Instrument}
+            levelPrice={orderLevel}
+            levelType={orderLevelType}
+            levelSide={orderLevelSide}
+            preferredDirection={orderPreferredDirection}
+            entryReason={orderLevelReason}
+            entrySource={orderEntrySource}
+            regime={regime}
+            regimeConfidence={regimeConfidence}
+            canPlace={canTrade && dataMode === 'live'}
+            entryWindow={gate?.entryWindow ?? 1}
+            onClose={() => {
+              setOrderLevel(null)
+              setOrderLevelType(undefined)
+              setOrderLevelSide(undefined)
+              setOrderPreferredDirection(undefined)
+              setOrderLevelReason(undefined)
+              setOrderEntrySource('ai')
+            }}
+            onPlaced={handlePlaced}
+          />
         )}
       </div>
     </div>
