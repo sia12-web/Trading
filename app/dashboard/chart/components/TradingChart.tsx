@@ -2003,6 +2003,7 @@ export function TradingChart({
       drawZoneOverlayRef.current = overlay
     }
 
+    let startX: number | null = null
     let startY: number | null = null
     let anchorPrice: number | null = null
     let dragging = false
@@ -2017,6 +2018,29 @@ export function TradingChart({
       return Math.round(Number(price) * 100) / 100
     }
 
+    const renderHandles = (highPrice: number | null, lowPrice: number | null) => {
+      if (!overlay) return
+      const handlesHtml = `
+        <div style="position:absolute;top:-5px;left:-5px;width:10px;height:10px;background:#3b82f6;border:1.5px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>
+        <div style="position:absolute;top:-5px;left:50%;transform:translateX(-50%);width:10px;height:10px;background:#3b82f6;border:1.5px solid #fff;border-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>
+        <div style="position:absolute;top:-5px;right:-5px;width:10px;height:10px;background:#3b82f6;border:1.5px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>
+        <div style="position:absolute;top:50%;left:-5px;transform:translateY(-50%);width:10px;height:10px;background:#3b82f6;border:1.5px solid #fff;border-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>
+        <div style="position:absolute;top:50%;right:-5px;transform:translateY(-50%);width:10px;height:10px;background:#3b82f6;border:1.5px solid #fff;border-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>
+        <div style="position:absolute;bottom:-5px;left:-5px;width:10px;height:10px;background:#3b82f6;border:1.5px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>
+        <div style="position:absolute;bottom:-5px;left:50%;transform:translateX(-50%);width:10px;height:10px;background:#3b82f6;border:1.5px solid #fff;border-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>
+        <div style="position:absolute;bottom:-5px;right:-5px;width:10px;height:10px;background:#3b82f6;border:1.5px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>
+        ${
+          highPrice != null && lowPrice != null
+            ? `<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:4px 8px;height:100%;flex-direction:column;pointer-events:none">
+                <span style="font-family:monospace;font-size:10px;font-weight:700;color:#93c5fd;background:rgba(15,23,42,0.75);padding:1px 5px;border-radius:3px;border:1px solid rgba(59,130,246,0.3)">${highPrice.toLocaleString()}</span>
+                <span style="font-family:monospace;font-size:10px;font-weight:700;color:#93c5fd;background:rgba(15,23,42,0.75);padding:1px 5px;border-radius:3px;border:1px solid rgba(59,130,246,0.3)">${lowPrice.toLocaleString()}</span>
+              </div>`
+            : ''
+        }
+      `
+      overlay.innerHTML = handlesHtml
+    }
+
     const onMouseDown = (e: MouseEvent) => {
       if (e.button !== 0) return // left click only
       const p = priceAtY(e.clientY)
@@ -2024,57 +2048,64 @@ export function TradingChart({
       e.preventDefault()
       e.stopPropagation()
       const rect = container.getBoundingClientRect()
+      startX = e.clientX - rect.left
       startY = e.clientY - rect.top
       anchorPrice = p
       dragging = true
       if (overlay) {
         overlay.style.display = 'block'
-        overlay.style.left = '0'
-        overlay.style.right = '60px' // leave room for price axis
+        overlay.style.left = `${startX}px`
         overlay.style.top = `${startY}px`
+        overlay.style.width = '0px'
         overlay.style.height = '0px'
-        overlay.style.background = 'rgba(139, 92, 246, 0.15)'
-        overlay.style.border = '2px solid rgba(139, 92, 246, 0.5)'
+        overlay.style.right = 'auto'
+        overlay.style.background = 'rgba(59, 130, 246, 0.16)'
+        overlay.style.border = '2px solid #3b82f6'
         overlay.style.borderRadius = '4px'
+        overlay.style.boxSizing = 'border-box'
+        renderHandles(p, p)
       }
     }
 
     const onMouseMove = (e: MouseEvent) => {
-      if (!dragging || startY == null || !overlay) return
+      if (!dragging || startX == null || startY == null || !overlay) return
       e.preventDefault()
       const rect = container.getBoundingClientRect()
+      const currentX = e.clientX - rect.left
       const currentY = e.clientY - rect.top
+
+      const left = Math.min(startX, currentX)
       const top = Math.min(startY, currentY)
+      const width = Math.abs(currentX - startX)
       const height = Math.abs(currentY - startY)
+
+      overlay.style.left = `${left}px`
       overlay.style.top = `${top}px`
+      overlay.style.width = `${width}px`
       overlay.style.height = `${height}px`
-      // Show price labels in the overlay
+
       const topPrice = priceAtY(rect.top + top)
       const botPrice = priceAtY(rect.top + top + height)
       if (topPrice != null && botPrice != null) {
         const high = Math.max(topPrice, botPrice)
         const low = Math.min(topPrice, botPrice)
-        overlay.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:4px 8px;height:100%;flex-direction:column">
-          <span style="font-family:monospace;font-size:11px;font-weight:700;color:rgba(139,92,246,0.9)">${high.toLocaleString()}</span>
-          <span style="font-family:monospace;font-size:11px;font-weight:700;color:rgba(139,92,246,0.9)">${low.toLocaleString()}</span>
-        </div>`
+        renderHandles(high, low)
       }
     }
 
     const onMouseUp = (e: MouseEvent) => {
-      if (!dragging || startY == null || anchorPrice == null) return
+      if (!dragging || startX == null || startY == null || anchorPrice == null) return
       e.preventDefault()
       e.stopPropagation()
       dragging = false
       const endPrice = priceAtY(e.clientY)
       if (endPrice == null || Math.abs(endPrice - anchorPrice) < 1) {
-        // Too small — cancel
         if (overlay) overlay.style.display = 'none'
         return
       }
       const high = Math.max(anchorPrice, endPrice)
       const low = Math.min(anchorPrice, endPrice)
-      // Draw dashed price lines at zone edges
+
       const host = priceLineHostRef.current
       if (host) {
         const lineHigh = host.createPriceLine({
