@@ -102,12 +102,12 @@ TradePulse features a high-performance chart dashboard built on top of Lightweig
 * **Send Time to Leo**: Letting go of the mouse locks a semi-transparent purple selection box on screen and displays a **"Send Time to Leo"** popup. Clicking it asks Leo to analyze the OHLCV candlestick bodies, volume, and patterns during that highlighted period. Leo immediately replies with spoken audio feedback.
 
 ### TradingView Interactive Risk/Reward Box Tool
-* **Interactive Position Risk Tool (Hotkeys: `O` or click toolbar)**: Drops an interactive 3-line Risk/Reward tool directly onto the chart (Entry, Stop Loss, Take Profit).
+* **Interactive Position Risk Tool (Hotkeys: `T` or click toolbar)**: Drops an interactive 3-line Risk/Reward tool directly onto the chart (Entry, Stop Loss, Take Profit).
 * **Automatic 1% Position Sizing**: As you move the Stop Loss or Entry price lines, position size automatically recalculates: `units = (Account * 0.01) / |Entry - SL|` to enforce 1.0% account risk.
-* **On-Chart HUD Controls**: Displays real-time Reward:Risk ratio (e.g. `3.00 R`), direction toggle (`BUY LIMIT` vs `SHORT LIMIT`), potential profit/loss dollar targets, and quick `SL +/-` and `TP +/-` adjustment buttons.
+* **TradingView Control Badges**: Renders the exact TradingView order pill badges (`[ Buy / Sell ]`, `[ Units | Limit | ✕ ]`, `[ Units | +$482.53 | ✕ ]`, `[ Units | -$100.00 (1.0%) | ✕ ]`).
 * **Smart Trade Journaling Automation**:
   * **With Leo**: If you discussed the level with Leo during the session, the system automatically writes Leo's co-pilot evaluation into the `trades_journal` entry reason.
-  * **Without Leo (Pure Manual)**: Clicking `Place 1% Limit Order` prompts you with a mandatory rationale modal (*"Why did you choose this zone and set this SL/TP?"*) before submitting the order to ensure your trade log is 100% complete.
+  * **Without Leo (Pure Manual)**: Clicking `Limit` / `Place 1% Limit Order` prompts you with a mandatory rationale modal (*"Why did you choose this zone and set this SL/TP?"*) before submitting the order to ensure your trade log is 100% complete.
 
 ### Single-Key Keyboard Shortcuts
 For maximum efficiency under high volatility, single-key toggles let you quickly display or hide UI elements without moving your mouse:
@@ -118,8 +118,7 @@ For maximum efficiency under high volatility, single-key toggles let you quickly
 | **`L`** | **Levels Overlay** | Toggles the display of AI & Structure level lines on the chart. |
 | **`P`** | **Morning Playbook** | Toggles the Morning Playbook / Afternoon Watchbook widget open or closed. |
 | **`D`** | **Draw Zone Tool** | Activates the 2D Drag-to-Draw zone tool (press again or `Esc` to cancel). |
-| **`T`** | **Highlight Time Tool** | Activates the Highlight Time selection tool (press again or `Esc` to cancel). |
-| **`O`** | **Risk Box Tool** | Activates the TradingView Interactive Limit Order Risk Box (press again or `Esc` to cancel). |
+| **`T`** | **Risk Box Tool** | Activates the TradingView Interactive Limit Order Risk Box (press again or `Esc` to cancel). |
 | **`F`** | **Fullscreen Chart** | Toggles 100% Fullscreen Mode. |
 | **`Esc`**| **Cancel / Exit** | Exits Fullscreen mode, cancels active tools, or closes manual order tickets. |
 

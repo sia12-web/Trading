@@ -41,10 +41,10 @@ import {
   type SessionHighlightSpan,
 } from '@/lib/chart/sessionVwap'
 import {
-  directionFromChartLevel,
   previewLevelOrderPrices,
   resolveChartLimitPick,
 } from '@/lib/trading/chartLevelPick'
+import { previewPositionSizing } from '@/lib/trading/positionSizing'
 import {
   aiLevelsUrl,
   resolveDeskLevels,
@@ -2003,73 +2003,7 @@ export function TradingChart({
     onPriceUpdate,
   ])
 
-  // ── Double-click chart to place order at that price (morning trading) ───────
-  useEffect(() => {
-    const container = containerRef.current
-    // Open ticket on dbl-click whenever we can select a level — submit still
-    // gated by canPlace on the ticket (clock-in + ENTRY).
-    if (!container || !candleRef.current || !onLevelSelect || !chartReady) {
-      return
-    }
-    if (positionOverlay || pendingLimit) return
-
-    const placeAtClientY = (clientY: number) => {
-      if (!candleRef.current) return
-      const rect = container.getBoundingClientRect()
-      const y = clientY - rect.top
-      if (y < 0 || y > rect.height) return
-      const price = candleRef.current.coordinateToPrice(y)
-      if (price == null || !Number.isFinite(Number(price)) || Number(price) <= 0) return
-
-      const pick = resolveChartLimitPick({
-        rawPrice: Number(price),
-        levels: levelsRef.current.map((l) => ({
-          price: l.price,
-          type: l.type,
-          side: l.side,
-          label: l.label,
-          source: l.source,
-          reasoning: l.reasoning,
-        })),
-        levelsVisible: showLevelsRef.current,
-      })
-      const dir = pick.matched ? directionFromChartLevel(pick.matched) : null
-      const pickSide: 'BUY' | 'SHORT' | undefined =
-        pick.source === 'manual' || !dir
-          ? undefined
-          : dir === 'SHORT'
-            ? 'SHORT'
-            : 'BUY'
-      onLevelSelect(pick.price, {
-        type: pick.source === 'manual' ? 'manual' : pick.type,
-        source: pick.source,
-        reasoning: pick.reasoning,
-        side: pickSide,
-        preferredDirection: dir ?? undefined,
-      })
-    }
-
-    const onDblClick = (e: MouseEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-      placeAtClientY(e.clientY)
-    }
-
-    container.style.cursor = canPlaceOrder ? 'crosshair' : container.style.cursor
-    container.addEventListener('dblclick', onDblClick, true)
-    // LWC paints on nested canvases — bubble may not reach the wrapper reliably
-    const canvases = Array.from(container.querySelectorAll('canvas'))
-    for (const c of canvases) {
-      c.addEventListener('dblclick', onDblClick, true)
-    }
-    return () => {
-      container.removeEventListener('dblclick', onDblClick, true)
-      for (const c of canvases) {
-        c.removeEventListener('dblclick', onDblClick, true)
-      }
-      if (canPlaceOrder) container.style.cursor = ''
-    }
-  }, [canPlaceOrder, onLevelSelect, chartReady, positionOverlay, pendingLimit])
+  // ── Manual double-click removed in favor of TradingView Interactive Risk Box (T key) ───────
 
   // ── Draw Zone tool — drag to draw a rectangle price zone ────────────────────
   useEffect(() => {
@@ -2548,17 +2482,6 @@ export function TradingChart({
           }
         })
       } else if (key === 't') {
-        e.preventDefault()
-        setDrawTimeActive((prev) => {
-          if (prev) {
-            cancelDrawnTime()
-            return false
-          } else {
-            setDrawnTime(null)
-            return true
-          }
-        })
-      } else if (key === 'o') {
         e.preventDefault()
         setRiskBoxActive((prev) => {
           if (prev || riskBox) {
@@ -3114,7 +3037,7 @@ export function TradingChart({
           title={
             riskBox
               ? 'TradingView Risk Box active — place order or Esc to close'
-              : 'Interactive Risk/Reward Limit Order Tool (Press O)'
+              : 'Interactive Risk/Reward Limit Order Tool (Press T)'
           }
           onClick={() => {
             if (riskBoxActive || riskBox) {
@@ -3142,7 +3065,7 @@ export function TradingChart({
             <rect x="2" y="8" width="12" height="6" rx="1" className="fill-red-500/30 stroke-red-400" />
             <line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" strokeWidth="2" />
           </svg>
-          {riskBox ? 'Risk Box Active' : 'Risk Box (O)'}
+          {riskBox ? 'Risk Box Active' : 'Risk Box (T)'}
         </button>
 
         {/* Fullscreen mode button (Press F / Esc) */}
@@ -3456,47 +3379,68 @@ export function TradingChart({
 
         {/* TradingView Interactive Risk/Reward Box HUD overlay on chart */}
         {riskBox && (
-          <div className="absolute top-16 right-4 z-40 w-72 rounded-xl border border-sky-500/50 bg-[#161b22]/95 shadow-2xl backdrop-blur-md p-3.5 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
+          <div className="absolute top-16 right-4 z-40 w-80 rounded-2xl border border-sky-500/50 bg-[#161b22]/95 shadow-2xl backdrop-blur-md p-4 space-y-3">
+            {/* Top Bar: Buy/Sell pill + 1% Units + Limit Submit + Close */}
+            <div className="flex items-center justify-between gap-2 border-b border-[#30363d] pb-3">
+              <button
+                type="button"
+                onClick={() => {
+                  const newDir = riskBox.direction === 'LONG' ? 'SHORT' : 'LONG'
+                  const rawStop = defaultManualStop(riskBox.entryPrice, newDir)
+                  const rawTp = newDir === 'LONG'
+                    ? snapDeskPrice(instrument, riskBox.entryPrice * 1.0105)
+                    : snapDeskPrice(instrument, riskBox.entryPrice * 0.9895)
+                  setRiskBox({
+                    ...riskBox,
+                    direction: newDir,
+                    stopLoss: rawStop,
+                    profitTarget: rawTp,
+                  })
+                }}
+                className={`px-3 py-1.5 text-xs font-extrabold uppercase rounded-lg shadow-sm transition border ${
+                  riskBox.direction === 'LONG'
+                    ? 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500'
+                    : 'bg-red-600 border-red-500 text-white hover:bg-red-500'
+                }`}
+                title="Click to toggle BUY / SELL direction"
+              >
+                {riskBox.direction === 'LONG' ? 'Buy' : 'Sell'}
+              </button>
+
+              {/* TradingView Pill: [ Units | Limit | ✕ ] */}
+              <div className="flex items-center rounded-lg border border-blue-500/60 bg-blue-950/40 px-2.5 py-1 text-xs font-mono font-bold text-blue-200 gap-2 shadow-inner">
+                {(() => {
+                  const sz = previewPositionSizing(
+                    riskBox.entryPrice,
+                    100000,
+                    riskBox.direction,
+                    riskBox.stopLoss,
+                    1.0
+                  )
+                  return <span>{sz?.position_size ?? 1}</span>
+                })()}
+                <span className="text-gray-500">|</span>
                 <button
                   type="button"
-                  onClick={() => {
-                    const newDir = riskBox.direction === 'LONG' ? 'SHORT' : 'LONG'
-                    const rawStop = defaultManualStop(riskBox.entryPrice, newDir)
-                    const rawTp = newDir === 'LONG'
-                      ? snapDeskPrice(instrument, riskBox.entryPrice * 1.0105)
-                      : snapDeskPrice(instrument, riskBox.entryPrice * 0.9895)
-                    setRiskBox({
-                      ...riskBox,
-                      direction: newDir,
-                      stopLoss: rawStop,
-                      profitTarget: rawTp,
-                    })
-                  }}
-                  className={`px-2.5 py-1 text-xs font-bold uppercase rounded-md transition border ${
-                    riskBox.direction === 'LONG'
-                      ? 'bg-emerald-600/40 border-emerald-500/60 text-emerald-200'
-                      : 'bg-red-600/40 border-red-500/60 text-red-200'
-                  }`}
-                  title="Click to flip direction (LONG / SHORT)"
+                  onClick={confirmRiskBoxOrder}
+                  className="text-blue-300 hover:text-white font-sans uppercase tracking-wider text-[11px] font-extrabold transition"
+                  title="Place 1% Limit Order"
                 >
-                  {riskBox.direction === 'LONG' ? '▲ BUY LIMIT' : '▼ SHORT LIMIT'}
+                  Limit
                 </button>
-                <span className="text-[10px] font-bold text-sky-300 uppercase tracking-wider bg-sky-950/60 px-2 py-1 rounded border border-sky-700/50">
-                  Risk 1.0%
-                </span>
+                <span className="text-gray-500">|</span>
+                <button
+                  type="button"
+                  onClick={cancelRiskBox}
+                  className="text-gray-400 hover:text-red-400 transition"
+                  title="Close Risk Box (Esc)"
+                >
+                  ✕
+                </button>
               </div>
-              <button
-                onClick={cancelRiskBox}
-                className="text-gray-400 hover:text-white transition text-sm font-bold"
-                title="Close Risk Box (Esc)"
-              >
-                ✕
-              </button>
             </div>
 
-            {/* Calculations HUD */}
+            {/* Calculations Row: Entry | Reward:Risk */}
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="rounded-lg border border-[#30363d] bg-black/40 p-2 space-y-0.5">
                 <span className="text-[9px] text-gray-500 uppercase tracking-wide">Entry Price</span>
@@ -3505,7 +3449,7 @@ export function TradingChart({
                 </p>
               </div>
               <div className="rounded-lg border border-[#30363d] bg-black/40 p-2 space-y-0.5">
-                <span className="text-[9px] text-gray-500 uppercase tracking-wide">Risk/Reward</span>
+                <span className="text-[9px] text-gray-500 uppercase tracking-wide">Risk / Reward</span>
                 <p className="font-mono font-bold text-emerald-400 text-sm">
                   {(() => {
                     const riskDist = Math.abs(riskBox.entryPrice - riskBox.stopLoss)
@@ -3517,44 +3461,76 @@ export function TradingChart({
               </div>
             </div>
 
-            {/* SL and TP Price Adjusters */}
-            <div className="space-y-1.5 text-xs">
-              <div className="flex items-center justify-between rounded-lg border border-red-900/40 bg-red-950/20 px-2.5 py-1.5">
-                <span className="text-red-300 font-semibold text-[11px]">SL: {riskBox.stopLoss.toLocaleString()}</span>
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => {
-                      const step = instrumentTick(instrument)
-                      setRiskBox({ ...riskBox, stopLoss: snapStopToTick(instrument, riskBox.entryPrice, riskBox.stopLoss - step, riskBox.direction) })
-                    }}
-                    className="px-1.5 py-0.5 text-[10px] bg-red-900/40 text-red-200 rounded border border-red-700/50 hover:bg-red-800/60"
-                  >-</button>
-                  <button
-                    onClick={() => {
-                      const step = instrumentTick(instrument)
-                      setRiskBox({ ...riskBox, stopLoss: snapStopToTick(instrument, riskBox.entryPrice, riskBox.stopLoss + step, riskBox.direction) })
-                    }}
-                    className="px-1.5 py-0.5 text-[10px] bg-red-900/40 text-red-200 rounded border border-red-700/50 hover:bg-red-800/60"
-                  >+</button>
+            {/* SL & TP Line Badges (TradingView Style with 1% Auto Sizing) */}
+            <div className="space-y-2 text-xs">
+              {/* Take Profit Pill */}
+              <div className="flex items-center justify-between rounded-lg border border-dashed border-emerald-500/60 bg-emerald-950/20 px-3 py-2">
+                <div className="space-y-0.5">
+                  <span className="text-[9px] text-emerald-400 font-bold uppercase tracking-wider">Take Profit (TP)</span>
+                  <p className="font-mono font-bold text-emerald-300 text-xs">
+                    {riskBox.profitTarget.toLocaleString()} ({(() => {
+                      const sz = previewPositionSizing(
+                        riskBox.entryPrice,
+                        100000,
+                        riskBox.direction,
+                        riskBox.stopLoss,
+                        1.0
+                      )
+                      const targetPts = Math.abs(riskBox.profitTarget - riskBox.entryPrice)
+                      const profitVal = (sz?.position_size ?? 1) * targetPts
+                      return `+${profitVal.toFixed(2)} USD`
+                    })()})
+                  </p>
                 </div>
-              </div>
-
-              <div className="flex items-center justify-between rounded-lg border border-emerald-900/40 bg-emerald-950/20 px-2.5 py-1.5">
-                <span className="text-emerald-300 font-semibold text-[11px]">TP: {riskBox.profitTarget.toLocaleString()}</span>
-                <div className="flex gap-1">
+                <div className="flex items-center gap-1">
                   <button
                     onClick={() => {
                       const step = instrumentTick(instrument)
                       setRiskBox({ ...riskBox, profitTarget: snapTargetToTick(instrument, riskBox.entryPrice, riskBox.profitTarget - step, riskBox.direction) })
                     }}
-                    className="px-1.5 py-0.5 text-[10px] bg-emerald-900/40 text-emerald-200 rounded border border-emerald-700/50 hover:bg-emerald-800/60"
+                    className="px-2 py-0.5 text-[10px] font-bold bg-emerald-900/40 text-emerald-200 rounded border border-emerald-700/50 hover:bg-emerald-800/60 transition"
                   >-</button>
                   <button
                     onClick={() => {
                       const step = instrumentTick(instrument)
                       setRiskBox({ ...riskBox, profitTarget: snapTargetToTick(instrument, riskBox.entryPrice, riskBox.profitTarget + step, riskBox.direction) })
                     }}
-                    className="px-1.5 py-0.5 text-[10px] bg-emerald-900/40 text-emerald-200 rounded border border-emerald-700/50 hover:bg-emerald-800/60"
+                    className="px-2 py-0.5 text-[10px] font-bold bg-emerald-900/40 text-emerald-200 rounded border border-emerald-700/50 hover:bg-emerald-800/60 transition"
+                  >+</button>
+                </div>
+              </div>
+
+              {/* Stop Loss Pill — Auto Recalculates 1% Position Size */}
+              <div className="flex items-center justify-between rounded-lg border border-dashed border-amber-500/60 bg-amber-950/20 px-3 py-2">
+                <div className="space-y-0.5">
+                  <span className="text-[9px] text-amber-400 font-bold uppercase tracking-wider">Stop Loss (SL — 1.0% Risk)</span>
+                  <p className="font-mono font-bold text-amber-300 text-xs">
+                    {riskBox.stopLoss.toLocaleString()} ({(() => {
+                      const sz = previewPositionSizing(
+                        riskBox.entryPrice,
+                        100000,
+                        riskBox.direction,
+                        riskBox.stopLoss,
+                        1.0
+                      )
+                      return `-${(sz?.risk_amount ?? 100).toFixed(2)} USD`
+                    })()})
+                  </p>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => {
+                      const step = instrumentTick(instrument)
+                      setRiskBox({ ...riskBox, stopLoss: snapStopToTick(instrument, riskBox.entryPrice, riskBox.stopLoss - step, riskBox.direction) })
+                    }}
+                    className="px-2 py-0.5 text-[10px] font-bold bg-amber-900/40 text-amber-200 rounded border border-amber-700/50 hover:bg-amber-800/60 transition"
+                  >-</button>
+                  <button
+                    onClick={() => {
+                      const step = instrumentTick(instrument)
+                      setRiskBox({ ...riskBox, stopLoss: snapStopToTick(instrument, riskBox.entryPrice, riskBox.stopLoss + step, riskBox.direction) })
+                    }}
+                    className="px-2 py-0.5 text-[10px] font-bold bg-amber-900/40 text-amber-200 rounded border border-amber-700/50 hover:bg-amber-800/60 transition"
                   >+</button>
                 </div>
               </div>
@@ -3562,7 +3538,7 @@ export function TradingChart({
 
             <button
               onClick={confirmRiskBoxOrder}
-              className="w-full rounded-lg bg-sky-600 hover:bg-sky-500 text-white py-2 text-xs font-bold uppercase tracking-wider transition shadow-lg flex items-center justify-center gap-1.5"
+              className="w-full rounded-xl bg-blue-600 hover:bg-blue-500 text-white py-2.5 text-xs font-extrabold uppercase tracking-wider transition shadow-lg flex items-center justify-center gap-1.5"
             >
               Place 1% Limit Order
             </button>
