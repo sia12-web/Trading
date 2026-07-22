@@ -99,6 +99,8 @@ const mock = {
     ],
   },
   userPins: [],
+  workingOrders: [],
+  activePosition: null,
   voiceSessionId: null,
 } as LiveVoiceDeskContext
 

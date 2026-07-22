@@ -23,8 +23,12 @@ DEEP TRADEPULSE ARCHITECTURE & SESSION CLOCK KNOWLEDGE
 - **Position Geometry**: 5% risk on AI/structure levels, 1% on manual level pins. Mandatory Stop Loss & Take Profit on every trade.
 - **Confluence MVP Filter**: Levels MUST have $\ge 2$ of 3 pillars (AVWAP bands, Volume Profile POC/HVN, Stop Pool sweeps). Single-factor levels are discarded as retail bait.
 
-FULL CHART VISIBILITY & STRICT ANTI-HALLUCINATION
-- YOU SEE EVERYTHING THE TRADER SEES ON THE CHART: 5-day Anchored VWAP (AVWAP), yesterday/overnight session OHLC and gaps, Volume Profile POC/HVN, identified support/resistance levels, conviction scores, active position P&L, trade attempts, and stop limits.
+FULL CHART & ORDER ORIGIN VISIBILITY
+- YOU SEE EVERYTHING THE TRADER SEES ON THE CHART: 5-day Anchored VWAP (AVWAP), yesterday/overnight session OHLC and gaps, Volume Profile POC/HVN, identified support/resistance levels, conviction scores, active working limit orders, open position P&L, trade attempts, and stop limits.
+- YOU SEE BOTH SYSTEM AI ORDERS AND MANUAL TRADER ORDERS:
+  1) Working Limit Orders: You see pending limits placed on the chart (AI-recommended levels vs manual trader level pins).
+  2) Active Open Positions: You see filled open positions, entry prices, SL/TP targets, and whether the fill originated from an AI system level or was placed manually by the trader.
+- When evaluating orders, explicitly distinguish between AI system levels and manual trader entries (e.g., "I see your manual BUY limit pending at 39,250..." or "Our AI-filled LONG from 39,100 is holding strong...").
 - CRITICAL SAFETY RULE — ZERO HALLUCINATION: NEVER invent prices, levels, or market data under any circumstances. Giving fake or hallucinated levels causes real trading losses.
 - Only discuss prices and levels explicitly listed in DESK CONTEXT (AI levels, AVWAP notes, overnight OHLC, or prices stated by the trader).
 - If the trader asks about an unlisted price, state clearly: "That level isn't in our desk context or AVWAP bounds right now, partner. Let's check our chart levels first."
@@ -65,13 +69,28 @@ export function formatLiveVoiceContextForLlm(ctx: LiveVoiceDeskContext): string 
       } OHLC=${ohlc ? `${ohlc.open}/${ohlc.high}/${ohlc.low}/${ohlc.close}` : 'n/a'}`
     : 'No regime_cache row for this instrument/date yet.'
 
+  const workingLines =
+    ctx.workingOrders.length === 0
+      ? 'none pending'
+      : ctx.workingOrders
+          .map(
+            (w) =>
+              `${w.direction} limit @ ${w.entryLevel} (SL: ${w.stopLoss}, TP: ${w.takeProfit ?? 'none'}, Source: ${w.entrySource === 'ai_structure' ? 'AI Level' : 'Manual Pin'})`
+          )
+          .join('; ')
+
+  const activeLine = ctx.activePosition
+    ? `${ctx.activePosition.direction} filled @ ${ctx.activePosition.fillPrice} (SL: ${ctx.activePosition.stopLoss}, TP: ${ctx.activePosition.takeProfit ?? 'none'}, Source: ${ctx.activePosition.entrySource === 'ai_structure' ? 'AI Level' : 'Manual Pin'})`
+    : 'none (flat)'
+
   return `DESK CONTEXT (ground truth — do not invent beyond this):
 Instrument: ${ctx.voice.instrument} (${ctx.voice.market})
 Voice window: ${ctx.voice.window.start}–${ctx.voice.window.end} ${ctx.voice.window.tzLabel} · local ${ctx.voice.localTime}
 Phase: ${ctx.session.phase} — ${ctx.session.message}
 Attempts: ${ctx.session.attemptsUsed}/${ctx.session.maxAttempts} · Stops: ${ctx.session.stopHits}/${ctx.session.maxStopHits}
 Can place entry: ${ctx.session.canPlaceEntry} · Can manage: ${ctx.session.canManagePosition}
-Open position id: ${ctx.session.openPositionId ?? 'none'}
+Working limit orders: ${workingLines}
+Active filled position: ${activeLine}
 Session times: analyze ${ctx.session.times.analyzeStart} · open ${ctx.session.times.marketOpen} · entry close ${ctx.session.times.entryClose} · lunch ${ctx.session.times.lunchClose} (${ctx.session.times.tzLabel})
 Risk: AI/structure ${ctx.risk.deskRiskPercent}% · manual ${ctx.risk.manualRiskPercent}% · ${ctx.risk.entryRule}
 AVWAP: ${ctx.avwap.bandNote}

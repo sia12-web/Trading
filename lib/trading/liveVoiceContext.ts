@@ -117,6 +117,24 @@ export type LiveVoiceDeskContext = {
     items: LiveVoiceContextLevel[]
   }
   userPins: LiveVoicePin[]
+  workingOrders: Array<{
+    id: string
+    instrument: string
+    direction: string
+    entryLevel: number
+    stopLoss: number
+    takeProfit: number | null
+    entrySource: string
+  }>
+  activePosition: {
+    id: string
+    instrument: string
+    direction: string
+    fillPrice: number
+    stopLoss: number
+    takeProfit: number | null
+    entrySource: string
+  } | null
   voiceSessionId: string | null
 }
 
@@ -199,10 +217,10 @@ export async function buildLiveVoiceDeskContext(
   const marketInstruments = instrumentsForDeskMarket(market)
   const tradeDate = tradeDateForInstrument(lockedInstrument ?? viewing, now)
 
-  const [openPosRes, filledRes] = await Promise.all([
+  const [openPosRes, filledRes, workingRes] = await Promise.all([
     supabase
       .from('trades_journal')
-      .select('id, instrument')
+      .select('id, instrument, direction, fill_price, entry_level, stop_loss, take_profit, entry_source')
       .eq('user_id', userId)
       .eq('trade_date', tradeDate)
       .in('instrument', marketInstruments)
@@ -216,6 +234,13 @@ export async function buildLiveVoiceDeskContext(
       .eq('trade_date', tradeDate)
       .in('instrument', marketInstruments)
       .eq('fill_status', 'filled'),
+    supabase
+      .from('trades_journal')
+      .select('id, instrument, direction, entry_level, stop_loss, take_profit, entry_source')
+      .eq('user_id', userId)
+      .eq('trade_date', tradeDate)
+      .in('instrument', marketInstruments)
+      .eq('fill_status', 'working'),
   ])
 
   const openPos = openPosRes.data
@@ -226,6 +251,28 @@ export async function buildLiveVoiceDeskContext(
   const filledTrades = filledRes.data ?? []
   const attemptsUsed = filledTrades.length
   const stopHits = filledTrades.filter((t) => t.exit_reason === 'stop_hit').length
+
+  const workingOrders = (workingRes.data || []).map((w) => ({
+    id: w.id as string,
+    instrument: w.instrument as string,
+    direction: w.direction as string,
+    entryLevel: Number(w.entry_level ?? 0),
+    stopLoss: Number(w.stop_loss ?? 0),
+    takeProfit: w.take_profit != null ? Number(w.take_profit) : null,
+    entrySource: (w.entry_source as string) || 'manual_pin',
+  }))
+
+  const activePosition = openPos
+    ? {
+        id: openPos.id as string,
+        instrument: openPos.instrument as string,
+        direction: openPos.direction as string,
+        fillPrice: Number(openPos.fill_price ?? openPos.entry_level ?? 0),
+        stopLoss: Number(openPos.stop_loss ?? 0),
+        takeProfit: openPos.take_profit != null ? Number(openPos.take_profit) : null,
+        entrySource: (openPos.entry_source as string) || 'manual_pin',
+      }
+    : null
 
   const attendance = await getTodayAttendance(supabase, userId, market, now)
   const clockedIn = attendance?.status === 'clocked_in'
@@ -401,6 +448,8 @@ export async function buildLiveVoiceDeskContext(
       items: playbook.levels.map(toContextLevel),
     },
     userPins,
+    workingOrders,
+    activePosition,
     voiceSessionId,
   }
 }
