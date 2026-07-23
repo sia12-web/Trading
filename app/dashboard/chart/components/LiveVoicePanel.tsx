@@ -154,16 +154,55 @@ export function LiveVoicePanel({
     }
   }, [instrument, clockedIn])
 
+  const refreshHistory = useCallback(async () => {
+    try {
+      const res = await fetch(
+        `/api/trading/live-voice/transcript?instrument=${encodeURIComponent(instrument)}&days=14&_=${Date.now()}`,
+        { cache: 'no-store' }
+      )
+      const json = await res.json().catch(() => null)
+      if (!res.ok || !json?.success || !Array.isArray(json.sessions)) return
+
+      const turnsFromDb: Array<{ id: string; role: 'user' | 'assistant'; text: string; time: string }> = []
+      for (const sess of json.sessions) {
+        for (const t of sess.turns || []) {
+          if ((t.role === 'user' || t.role === 'assistant') && t.text) {
+            const timeStr = t.created_at
+              ? new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              : ''
+            turnsFromDb.push({
+              id: `${sess.id}:${t.created_at || Math.random()}`,
+              role: t.role as 'user' | 'assistant',
+              text: t.text,
+              time: timeStr,
+            })
+          }
+        }
+      }
+      turnsFromDb.reverse()
+      if (turnsFromDb.length > 0) {
+        setHistoryTurns(turnsFromDb)
+      }
+    } catch {
+      /* ignore transcript fetch error */
+    }
+  }, [instrument])
+
   const refresh = useCallback(async () => {
     const st = await refreshStatus()
-    if (st?.clockedIn) await refreshContext()
-    else setSummary(null)
-  }, [refreshStatus, refreshContext])
+    if (st?.clockedIn) {
+      await refreshContext()
+      await refreshHistory()
+    } else {
+      setSummary(null)
+    }
+  }, [refreshStatus, refreshContext, refreshHistory])
 
   useEffect(() => {
     setLoading(true)
     void refresh()
-  }, [refresh, refreshKey, clockedIn])
+    void refreshHistory()
+  }, [refresh, refreshHistory, refreshKey, clockedIn])
 
   useEffect(() => {
     const id = window.setInterval(() => void refresh(), 30_000)
@@ -726,10 +765,16 @@ export function LiveVoicePanel({
         </div>
 
         {/* Persistent Voice Session History Drawer */}
-        {historyTurns.length > 0 && (
+        {(clockedIn || historyTurns.length > 0) && (
           <div className="pt-1.5 border-t border-white/5">
             <button
-              onClick={() => setShowHistoryDrawer((v) => !v)}
+              onClick={() => {
+                setShowHistoryDrawer((v) => {
+                  const next = !v
+                  if (next) void refreshHistory()
+                  return next
+                })
+              }}
               className="flex items-center justify-between w-full text-[10px] font-semibold tracking-wider uppercase text-gray-400 hover:text-gray-200 transition-colors"
             >
               <span>📜 Voice Audio History ({historyTurns.length})</span>
@@ -738,31 +783,35 @@ export function LiveVoicePanel({
 
             {showHistoryDrawer && (
               <div className="mt-1.5 max-h-40 space-y-1.5 overflow-y-auto rounded-lg border border-white/10 bg-black/40 p-2">
-                {historyTurns.map((t) => (
-                  <div
-                    key={t.id}
-                    className={`rounded p-1.5 text-[10px] leading-snug ${
-                      t.role === 'user'
-                        ? 'border border-violet-800/40 bg-violet-950/30 text-violet-200'
-                        : 'border border-emerald-800/40 bg-emerald-950/30 text-emerald-100'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="font-semibold uppercase tracking-wider text-[9px] text-gray-400">
-                        {t.role === 'user' ? 'You' : 'Leo'} · {t.time}
-                      </span>
-                      {t.role === 'assistant' && (
-                        <button
-                          onClick={() => playReply(t.text, null, null)}
-                          className="text-[9px] text-emerald-400 hover:text-emerald-300 font-semibold uppercase tracking-wider"
-                        >
-                          ▶ Replay Voice
-                        </button>
-                      )}
+                {historyTurns.length === 0 ? (
+                  <p className="text-[10px] italic text-gray-500">No voice turns recorded yet today.</p>
+                ) : (
+                  historyTurns.map((t) => (
+                    <div
+                      key={t.id}
+                      className={`rounded p-1.5 text-[10px] leading-snug ${
+                        t.role === 'user'
+                          ? 'border border-violet-800/40 bg-violet-950/30 text-violet-200'
+                          : 'border border-emerald-800/40 bg-emerald-950/30 text-emerald-100'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="font-semibold uppercase tracking-wider text-[9px] text-gray-400">
+                          {t.role === 'user' ? 'You' : 'Leo'} · {t.time}
+                        </span>
+                        {t.role === 'assistant' && (
+                          <button
+                            onClick={() => playReply(t.text, null, null)}
+                            className="text-[9px] text-emerald-400 hover:text-emerald-300 font-semibold uppercase tracking-wider"
+                          >
+                            ▶ Replay Voice
+                          </button>
+                        )}
+                      </div>
+                      <p className="italic">&ldquo;{t.text}&rdquo;</p>
                     </div>
-                    <p className="italic">&ldquo;{t.text}&rdquo;</p>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             )}
           </div>
