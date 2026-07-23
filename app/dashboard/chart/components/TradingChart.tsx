@@ -137,13 +137,13 @@ function describeTimeHighlightSpan(
   const pct = priceStart > 0 ? (diffPts / priceStart) * 100 : 0
   const moveStr = `${diffPts >= 0 ? '+' : ''}${diffPts.toFixed(2)} pts (${diffPts >= 0 ? '+' : ''}${pct.toFixed(2)}%)`
 
-  const startDesc = `${startDateStr}'s ${startSess} Session (Open @ ${priceStart.toLocaleString()})`
-  const endDesc = `${endDateStr}'s ${endSess} Session (Close @ ${priceEnd.toLocaleString()})`
+  const startDetail = `${priceStart.toLocaleString()} (${startDateStr} ${startSess})`
+  const endDetail = `${priceEnd.toLocaleString()} (${endDateStr} ${endSess})`
 
   if (startDateStr === endDateStr && startSess === endSess) {
-    return `${label}: ${startDateStr}'s ${startSess} Session, moving ${moveStr} from ${priceStart.toLocaleString()} to ${priceEnd.toLocaleString()}`
+    return `${label}: Move from ${priceStart.toLocaleString()} to ${priceEnd.toLocaleString()} (${moveStr}) in ${startDateStr}'s ${startSess} Session`
   }
-  return `${label}: Spans from ${startDesc} to ${endDesc}, capturing a ${moveStr} move`
+  return `${label}: Move from ${startDetail} to ${endDetail}, capturing a ${moveStr} move`
 }
 
 /** DOW/NASDAQ → ET · NIKKEI → JST — same clocks as session color bands. */
@@ -2433,24 +2433,27 @@ export function TradingChart({
     const fullEndStr = fmtFull.format(new Date(drawnTime.endUnix * 1000))
     const tzLabel = inst === 'NIKKEI' ? 'JST' : 'ET'
 
-    const openP = drawnTime.candleStartOpen ?? drawnTime.priceStart
-    const closeP = drawnTime.candleEndClose ?? drawnTime.priceEnd
+    const clickStartP = drawnTime.priceStart
+    const clickEndP = drawnTime.priceEnd
+    const openP = drawnTime.candleStartOpen ?? clickStartP
+    const closeP = drawnTime.candleEndClose ?? clickEndP
     const rHigh = drawnTime.rangeHigh ?? drawnTime.priceHigh
     const rLow = drawnTime.rangeLow ?? drawnTime.priceLow
-    const pts = drawnTime.netMovePts ?? (closeP - openP)
-    const pct = drawnTime.netMovePct ?? (openP > 0 ? (pts / openP) * 100 : 0)
+    const pts = clickEndP - clickStartP
+    const pct = clickStartP > 0 ? (pts / clickStartP) * 100 : 0
 
-    const detailedTranscript = `USER HIGHLIGHTED TIME RANGE (${label}): "${sessionSpanStr}".
-Exact Time Period: ${fullStartStr} (${tzLabel}) to ${fullEndStr} (${tzLabel}).
-Empirical Candle Data in Highlighted Window:
-- Period Open Price: ${openP.toLocaleString()}
-- Period Close Price: ${closeP.toLocaleString()}
-- Range High (Resistance): ${rHigh.toLocaleString()}
-- Range Low (Support): ${rLow.toLocaleString()}
-- Net Move: ${pts >= 0 ? '+' : ''}${pts.toFixed(2)} pts (${pts >= 0 ? '+' : ''}${pct.toFixed(2)}%)
+    const detailedTranscript = `USER HIGHLIGHTED PRICE MOVE (${label}): "${sessionSpanStr}".
+Time Window: ${fullStartStr} (${tzLabel}) to ${fullEndStr} (${tzLabel}).
+Highlighted Click Move Details:
+- 1st Click (Start Price): ${clickStartP.toLocaleString()}
+- 2nd Click (Finish Price): ${clickEndP.toLocaleString()}
+- Clicked Move: ${pts >= 0 ? '+' : ''}${pts.toFixed(2)} pts (${pts >= 0 ? '+' : ''}${pct.toFixed(2)}%)
+- Period High (Resistance): ${rHigh.toLocaleString()}
+- Period Low (Support): ${rLow.toLocaleString()}
+- Underlying Bar Open: ${openP.toLocaleString()} | Bar Close: ${closeP.toLocaleString()}
 - 5m Bar Count: ${drawnTime.candleCount ?? 'N/A'}
 
-Please evaluate the market structure, candle bodies, volume, and session transitions during this exact period.`
+Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${clickEndP.toLocaleString()}, market structure, price action, volume, and session context during this period.`
 
     try {
       const res = await fetch('/api/trading/live-voice/turn', {
@@ -2674,8 +2677,8 @@ Please evaluate the market structure, candle bodies, volume, and session transit
               const rHigh = rangeBars.length > 0 ? Math.max(...rangeBars.map((c) => c.high)) : highPrice
               const rLow = rangeBars.length > 0 ? Math.min(...rangeBars.map((c) => c.low)) : lowPrice
               const cCount = rangeBars.length
-              const movePts = cClose - cOpen
-              const movePct = cOpen > 0 ? (movePts / cOpen) * 100 : 0
+              const movePts = (pStart != null && pEnd != null) ? (pEnd - pStart) : (cClose - cOpen)
+              const movePct = (pStart != null && pStart > 0) ? (movePts / pStart) * 100 : 0
 
               const currentLabel = `Highlight ${drawnTimeCounter}`
               setDrawnTimeCounter((prev) => prev + 1)
