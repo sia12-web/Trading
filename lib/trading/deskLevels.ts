@@ -907,8 +907,48 @@ export function referencePriceAtOpen(
  * - SHORT (resistance) must be ABOVE cash-open reference
  * - BUY (support) must be BELOW cash-open reference
  * - Reject invented prices outside the candle high/low band (± pad for stop pools)
- *
- * Does NOT force levels near the open — HTF / London / overnight levels are valid.
+/**
+ * Normalize levels relative to current live price action:
+ * - BUY (support) levels MUST sit strictly BELOW live price (discount).
+ *   If a level sitting ABOVE live price was marked as support, it has been broken to the downside
+ *   and automatically flips to RESISTANCE / SHORT (pullback retest).
+ * - SHORT (resistance) levels MUST sit strictly ABOVE live price (premium).
+ *   If a level sitting BELOW live price was marked as resistance, it has been broken to the upside
+ *   and automatically flips to SUPPORT / BUY (pullback retest).
+ */
+export function normalizeLevelsByLivePrice(
+  levels: DeskLevel[],
+  tipPx: number | null
+): DeskLevel[] {
+  if (tipPx == null || !(tipPx > 0) || levels.length === 0) return levels
+
+  return levels.map((l) => {
+    if (!Number.isFinite(l.level) || l.level <= 0) return l
+    const side = levelSide(l.type)
+    if (l.level > tipPx && side === 'BUY') {
+      return {
+        ...l,
+        type: 'resistance',
+        reasoning: `${l.reasoning ? l.reasoning + ' · ' : ''}Price gap-dropped below level — flipped to RESISTANCE (SHORT retest) above live price ${l.level.toLocaleString()}.`,
+      }
+    }
+    if (l.level < tipPx && side === 'SHORT') {
+      return {
+        ...l,
+        type: 'support',
+        reasoning: `${l.reasoning ? l.reasoning + ' · ' : ''}Price rally-broke above level — flipped to SUPPORT (BUY retest) below live price ${l.level.toLocaleString()}.`,
+      }
+    }
+    return l
+  })
+}
+
+/**
+ * Day-trader geometry only (levels may sit on overnight / London / HTF structure
+ * anywhere in the provided candle universe):
+ * - SHORT (resistance) must be strictly ABOVE live price tipPx
+ * - BUY (support) must be strictly BELOW live price tipPx
+ * - Reject invented prices outside maxDayTradeDist (1.8% away from active price)
  */
 export function filterReachableMorningLevels(
   levels: DeskLevel[],
@@ -922,17 +962,18 @@ export function filterReachableMorningLevels(
   const tipPx = candles.length > 0 ? candles[candles.length - 1]!.close : ref
   const activeBase = tipPx > 0 ? tipPx : ref
   // Intraday day-trading reachability clamp: max 1.8% distance from active price
-  // Prevents distant levels (e.g. 53,020 when price is at 51,630) from clogging morning playbook
   const maxDayTradeDist = activeBase * 0.018
 
-  return levels.filter((l) => {
+  const normalized = normalizeLevelsByLivePrice(levels, tipPx)
+
+  return normalized.filter((l) => {
     if (!Number.isFinite(l.level) || l.level <= 0) return false
     // Reject absurdly distant levels further than 1.8% away from active price
     if (Math.abs(l.level - activeBase) > maxDayTradeDist) return false
 
     const side = levelSide(l.type)
-    if (side === 'SHORT') return l.level > Math.min(ref, tipPx)
-    return l.level < Math.max(ref, tipPx)
+    if (side === 'SHORT') return l.level > tipPx
+    return l.level < tipPx
   })
 }
 
@@ -947,6 +988,9 @@ export function resolveDeskLevels(
   timeZone: string = 'America/New_York',
   bias: DeskBias = 'none'
 ): { levels: DeskLevel[]; source: 'ai' | 'structure'; playbook: DeskPlaybook } {
+  const ref = referencePriceAtOpen(candles, openUnix)
+  const tipPx = candles.length > 0 ? candles[candles.length - 1]!.close : ref
+
   const structure = structureLevelsFromCandles(candles, openUnix, timeZone)
   const ai = mapAiLevels(aiRows)
   let source: 'ai' | 'structure' = 'structure'
@@ -966,10 +1010,10 @@ export function resolveDeskLevels(
       const hasShort = reachable.some((l) => levelSide(l.type) === 'SHORT')
       raw = [...reachable]
       if (!hasBuy) {
-        raw.push(...structure.filter((l) => levelSide(l.type) === 'BUY'))
+        raw.push(...structure.filter((l) => levelSide(l.type) === 'BUY' && l.level < (tipPx || Infinity)))
       }
       if (!hasShort) {
-        raw.push(...structure.filter((l) => levelSide(l.type) === 'SHORT'))
+        raw.push(...structure.filter((l) => levelSide(l.type) === 'SHORT' && l.level > (tipPx || 0)))
       }
       source = 'ai'
     }
@@ -977,7 +1021,8 @@ export function resolveDeskLevels(
     raw = structure
   }
 
-  const playbook = buildDeskPlaybook(raw, bias)
+  const normalized = normalizeLevelsByLivePrice(raw, tipPx)
+  const playbook = buildDeskPlaybook(normalized, bias)
   return { levels: playbook.levels, source, playbook }
 }
 
