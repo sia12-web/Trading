@@ -23,57 +23,12 @@ export type LiveVoiceSessionRow = {
   status: 'active' | 'closed'
 }
 
-/** Parse prices the trader spoke; snap to nearby AI levels when within 0.25%. */
+/** Spoken transcripts no longer auto-create level pins — user requested that voice speech never automatically sends levels. */
 export function extractPinsFromTranscript(
-  transcript: string,
-  aiPrices: Array<{ price: number; side?: 'BUY' | 'SHORT' | null }>
+  _transcript: string,
+  _aiPrices: Array<{ price: number; side?: 'BUY' | 'SHORT' | null }>
 ): LiveVoicePin[] {
-  const text = transcript.trim()
-  if (!text) return []
-
-  const lower = text.toLowerCase()
-  const globalSide: 'BUY' | 'SHORT' | null = /\b(short|sell|resistance)\b/.test(lower)
-    ? 'SHORT'
-    : /\b(long|buy|support|bid)\b/.test(lower)
-      ? 'BUY'
-      : null
-
-  const rawMatches = text.match(/\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b|\b\d{3,7}(?:\.\d+)?\b/g) || []
-  const pins: LiveVoicePin[] = []
-  const seen = new Set<number>()
-
-  for (const raw of rawMatches) {
-    const price = Number(String(raw).replace(/,/g, ''))
-    if (!Number.isFinite(price) || price < 100) continue
-
-    let pinned = price
-    let side = globalSide
-    let reason: string | null = `Spoken level ${price.toLocaleString()}`
-
-    let bestDist = Infinity
-    for (const ai of aiPrices) {
-      if (!(ai.price > 0)) continue
-      const d = Math.abs(ai.price - price) / ai.price
-      if (d <= 0.0025 && d < bestDist) {
-        bestDist = d
-        pinned = ai.price
-        side = ai.side ?? side
-        reason = `Aligned with AI level ${ai.price.toLocaleString()}`
-      }
-    }
-
-    const key = Math.round(pinned * 100) / 100
-    if (seen.has(key)) continue
-    seen.add(key)
-    pins.push({
-      price: pinned,
-      side,
-      reason,
-      source: 'user_voice',
-    })
-  }
-
-  return pins.slice(0, 6)
+  return []
 }
 
 export async function getOrCreateLiveVoiceSession(
