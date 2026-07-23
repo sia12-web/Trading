@@ -799,13 +799,60 @@ export function structureLevelsFromCandles(
     }
   }
 
+  // ── NYC Opening Drive Range (first 15 min = range-defining extremes) ──
+  // The first 15 minutes of the NY session are CRITICAL. The opening drive
+  // high and low frequently define the session's range ceiling/floor.
+  // These extremes are institutional reference points — when price revisits
+  // the opening drive high, sellers defend; when it revisits the low, buyers defend.
+  const OPENING_DRIVE_SECONDS = 15 * 60 // 15 minutes
+  const OPENING_WIG_WINDOW_SECONDS = 20 * 60 // 20 minutes for enhanced wick sensitivity
+  const openingDriveEnd = openUnix + OPENING_DRIVE_SECONDS
+  const openingWickEnd = openUnix + OPENING_WIG_WINDOW_SECONDS
+
+  const postOpenBars = candles.filter((c) => c.time >= openUnix)
+  const openingDriveBars = postOpenBars.filter((c) => c.time >= openUnix && c.time <= openingDriveEnd)
+
+  if (openingDriveBars.length > 0) {
+    const driveRange = rangeOf(openingDriveBars)
+    if (driveRange) {
+      const driveHigh = roundPx(driveRange.hi)
+      const driveLow = roundPx(driveRange.lo)
+      const driveSpread = driveHigh - driveLow
+
+      // Only create opening drive levels if there's meaningful range (not a flat open)
+      if (driveSpread > 0) {
+        // Opening Drive High → resistance (sellers will defend if price retests)
+        if (take(driveHigh)) {
+          trimmed.push({
+            level: driveHigh,
+            type: 'resistance',
+            conviction: 10,
+            reasoning: `NYC Opening Drive High (first 15 min) at ${driveHigh.toLocaleString()} — this level often defines the session range ceiling. Institutional sellers defend this on retest.`,
+            source: 'structure',
+          })
+        }
+        // Opening Drive Low → support (buyers will defend if price retests)
+        if (take(driveLow)) {
+          trimmed.push({
+            level: driveLow,
+            type: 'support',
+            conviction: 10,
+            reasoning: `NYC Opening Drive Low (first 15 min) at ${driveLow.toLocaleString()} — this level often defines the session range floor. Institutional buyers defend this on retest.`,
+            source: 'structure',
+          })
+        }
+      }
+    }
+  }
+
   // ── Post-Open Rejection Tails & Intraday Sweeps (Smart Wick Significance) ──
   // A tail is only meaningful if the wick is significant relative to the candle range.
-  // Wick ≥ 40% of candle range = real rejection by other timeframe participants.
+  // OPENING CANDLES (first 20 min) get a LOWER threshold (30%) because every wick
+  // in the opening drive carries institutional weight — it shapes the range.
+  // Later candles require ≥ 40% wick ratio to qualify.
   // Multiple tails clustered at the same zone = higher conviction.
-  const postOpenBars = candles.filter((c) => c.time >= openUnix)
   if (postOpenBars.length > 0) {
-    type TailHit = { px: number; wickSize: number; ratio: number }
+    type TailHit = { px: number; wickSize: number; ratio: number; isOpening: boolean }
     const upperTails: TailHit[] = []
     const lowerTails: TailHit[] = []
 
@@ -814,32 +861,37 @@ export function structureLevelsFromCandles(
       if (range <= 0) continue
       const upperWick = c.high - Math.max(c.open, c.close)
       const lowerWick = Math.min(c.open, c.close) - c.low
-      const wickRatioThreshold = 0.40 // wick must be ≥ 40% of candle range
+      const isOpening = c.time <= openingWickEnd
+
+      // Opening drive wicks: 30% threshold (every wick matters in the range-defining window)
+      // Later session wicks: 40% threshold (need more significance to matter)
+      const wickRatioThreshold = isOpening ? 0.30 : 0.40
 
       if (upperWick / range >= wickRatioThreshold && upperWick > 0) {
-        upperTails.push({ px: roundPx(c.high), wickSize: upperWick, ratio: upperWick / range })
+        upperTails.push({ px: roundPx(c.high), wickSize: upperWick, ratio: upperWick / range, isOpening })
       }
       if (lowerWick / range >= wickRatioThreshold && lowerWick > 0) {
-        lowerTails.push({ px: roundPx(c.low), wickSize: lowerWick, ratio: lowerWick / range })
+        lowerTails.push({ px: roundPx(c.low), wickSize: lowerWick, ratio: lowerWick / range, isOpening })
       }
     }
 
     // Cluster tails at similar price zones (within 0.08% of each other)
-    const clusterTails = (tails: TailHit[]): { px: number; count: number; bestWick: number }[] => {
+    const clusterTails = (tails: TailHit[]): { px: number; count: number; bestWick: number; hasOpening: boolean }[] => {
       if (tails.length === 0) return []
       const sorted = [...tails].sort((a, b) => b.wickSize - a.wickSize)
-      const clusters: { px: number; count: number; bestWick: number }[] = []
+      const clusters: { px: number; count: number; bestWick: number; hasOpening: boolean }[] = []
       const clusterTol = sorted[0]!.px * 0.0008
       for (const t of sorted) {
         const existing = clusters.find((c) => Math.abs(c.px - t.px) <= clusterTol)
         if (existing) {
           existing.count++
+          if (t.isOpening) existing.hasOpening = true
           if (t.wickSize > existing.bestWick) {
             existing.bestWick = t.wickSize
             existing.px = t.px
           }
         } else {
-          clusters.push({ px: t.px, count: 1, bestWick: t.wickSize })
+          clusters.push({ px: t.px, count: 1, bestWick: t.wickSize, hasOpening: t.isOpening })
         }
       }
       return clusters.sort((a, b) => b.bestWick - a.bestWick)
@@ -852,12 +904,15 @@ export function structureLevelsFromCandles(
     if (upperClusters.length > 0) {
       const best = upperClusters[0]!
       if (take(best.px)) {
+        const openingLabel = best.hasOpening ? 'NYC OPENING ' : ''
         const multi = best.count > 1 ? ` (${best.count} rejection wicks clustered here)` : ''
+        // Opening tails get conviction 10, later tails get 9 (or +1 if clustered)
+        const conv = best.hasOpening ? 10 : Math.min(10, 9 + (best.count > 1 ? 1 : 0))
         trimmed.push({
           level: best.px,
           type: 'resistance',
-          conviction: Math.min(10, 9 + (best.count > 1 ? 1 : 0)),
-          reasoning: `Post-open supply rejection tail at ${best.px.toLocaleString()} — other timeframe sellers stepped in with significant wick rejection${multi}.`,
+          conviction: conv,
+          reasoning: `${openingLabel}Supply rejection tail at ${best.px.toLocaleString()} — other timeframe sellers stepped in with significant wick rejection${multi}.${best.hasOpening ? ' Opening drive wicks shape the session range ceiling.' : ''}`,
           source: 'structure',
         })
       }
@@ -866,12 +921,14 @@ export function structureLevelsFromCandles(
     if (lowerClusters.length > 0) {
       const best = lowerClusters[0]!
       if (take(best.px)) {
+        const openingLabel = best.hasOpening ? 'NYC OPENING ' : ''
         const multi = best.count > 1 ? ` (${best.count} sweep wicks clustered here)` : ''
+        const conv = best.hasOpening ? 10 : Math.min(10, 9 + (best.count > 1 ? 1 : 0))
         trimmed.push({
           level: best.px,
           type: 'support',
-          conviction: Math.min(10, 9 + (best.count > 1 ? 1 : 0)),
-          reasoning: `Post-open liquidity sweep tail at ${best.px.toLocaleString()} — other timeframe buyers stepped in with significant wick defense${multi}.`,
+          conviction: conv,
+          reasoning: `${openingLabel}Liquidity sweep tail at ${best.px.toLocaleString()} — other timeframe buyers stepped in with significant wick defense${multi}.${best.hasOpening ? ' Opening drive wicks shape the session range floor.' : ''}`,
           source: 'structure',
         })
       }
