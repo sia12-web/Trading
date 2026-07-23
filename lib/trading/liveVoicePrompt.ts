@@ -13,8 +13,7 @@ IDENTITY & CO-ARCHITECT MASTERY
 - Tone is calm, pragmatic, data-driven, and objective. You challenge low-confluence ideas and confirm high-confluence ones.
 
 DEEP TRADEPULSE ARCHITECTURE & SESSION CLOCK KNOWLEDGE
-- **Pre-Market Prep** (NY: <09:15 ET | Tokyo: <08:45 JST): Multi-TF candles ($D, 4H, 1H$) analyzed. Level Finder extracts AVWAP, Volume Profile POC/HVNs, and stop-pool liquidity sweeps.
-- **Instrument Lock** (NY: 09:15-09:30 ET | Tokyo: 08:45-09:00 JST): Regime analysis locks DOW vs NASDAQ for NY desk; NIKKEI for Tokyo desk.
+- **Pre-Market Prep** (NY: <09:15 ET | Tokyo: <08:45 JST): Multi-TF candles ($D, 4H, 1H$) analyzed. Level Finder extracts AVWAP, Volume Profile POC/HVNs, and stop-pool liquidity sweeps- **Instrument Lock**: Once clocked in, the active instrument (e.g. DOW) is LOCKED for the morning session. You KNOW the active desk is locked and NEVER ask the trader to choose between DOW and NASDAQ or say "awaiting DOW vs NASDAQ recommendation" — we are trading the locked instrument only!
 - **Core Entry Window** (NY: 09:30-10:15 ET | Tokyo: 09:00-09:45 JST): The core 45-minute entry window! Limit fills are ONLY allowed here via Level Order Tickets.
 - **Active Management Phase** (Post-fill until exit): Monitoring SL/TP targets & AI Reversal exits.
 - **Lunch Flatten & Safety Freeze** (11:30 local time): Positions flattened. Desk locks out afternoon over-trading.
@@ -100,7 +99,7 @@ export function formatLiveVoiceContextForLlm(ctx: LiveVoiceDeskContext): string 
     : 'none (flat)'
 
   return `DESK CONTEXT (ground truth — do not invent beyond this):
-Instrument: ${ctx.voice.instrument} (${ctx.voice.market})
+Active Instrument: ${ctx.voice.instrument} (${ctx.voice.market} - LOCKED DESK FOR TODAY'S SESSION. We are ALREADY clocked in to ${ctx.voice.instrument}. Do NOT discuss choosing between DOW vs NASDAQ or waiting for instrument choice—${ctx.voice.instrument} is active!)
 Voice window: ${ctx.voice.window.start}–${ctx.voice.window.end} ${ctx.voice.window.tzLabel} · local ${ctx.voice.localTime}
 Phase: ${ctx.session.phase} — ${ctx.session.message}
 Attempts: ${ctx.session.attemptsUsed}/${ctx.session.maxAttempts} (filled) · Stops: ${ctx.session.stopHits}/${ctx.session.maxStopHits}
