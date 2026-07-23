@@ -1454,6 +1454,9 @@ export function resolveAfternoonDeskLevels(
   const fromReview = mapAfternoonCandidates(afternoonCandidates)
   const ai = mapAiLevels(aiRows)
   const ib = initialBalanceLevelsFromCandles(candles, openUnix, 60, nowUnix)
+  // Structure levels include: bait stop pools, AVWAP bands, round handles,
+  // post-open rejection tails (morning + lunch wicks), opening drive range,
+  // and multi-day polarity flips — all critical for afternoon context.
   const structure = structureLevelsFromCandles(candles, openUnix, timeZone)
 
   const merged: DeskLevel[] = []
@@ -1461,13 +1464,14 @@ export function resolveAfternoonDeskLevels(
     if (merged.some((m) => nearPrice(m.level, l.level))) return
     merged.push(l)
   }
-  // Morning reaction + IB + refreshed AI (structure only if still thin)
+
+  // Priority order: morning reaction flips/retests → AI levels → IB high/low → full structure
   for (const l of fromReview) pushUnique(l)
   for (const l of ai) pushUnique(l)
   for (const l of ib) pushUnique(l)
-  if (merged.length < 2) {
-    for (const l of structure) pushUnique(l)
-  }
+  // Always include structure for afternoon — it contains post-open tails, opening
+  // drive range, and polarity flips that are essential for afternoon continuation.
+  for (const l of structure) pushUnique(l)
 
   const tip =
     tipPrice && tipPrice > 0
@@ -1475,13 +1479,30 @@ export function resolveAfternoonDeskLevels(
       : candles.length
         ? candles[candles.length - 1]!.close
         : null
+
+  // ── Full afternoon pipeline (same rigor as morning) ──
+  // 1. Drop levels already penetrated by morning + lunch price action
+  //    EXCEPTION: IB levels are exempt — they ARE the intraday high/low and
+  //    must always be present for afternoon break/hold analysis.
+  const ibPrices = new Set(ib.map((l) => l.level))
+  const nonIb = merged.filter((l) => !ibPrices.has(l.level))
+  const ibKept = merged.filter((l) => ibPrices.has(l.level))
+  const unspentNonIb = dropPenetratedMorningLevels(nonIb, candles, openUnix)
+  const raw = [...unspentNonIb, ...ibKept]
+
+  // 2. Normalize sides by current live price (support above price → resistance, etc.)
+  const normalized = normalizeLevelsByLivePrice(raw, tip)
+
+  // 3. Band to reachable levels (2% from current price for afternoon)
   const banded =
     tip != null
-      ? merged.filter((l) => Math.abs(l.level - tip) / tip <= 0.02)
-      : merged
-  const raw = banded.length >= 2 ? banded : merged
+      ? normalized.filter((l) => Math.abs(l.level - tip) / tip <= 0.02)
+      : normalized
 
-  const playbook = buildDeskPlaybook(raw, 'none')
+  // 4. Dedupe clustered levels on same side
+  const deduped = dedupeClusteredLevels(banded.length >= 2 ? banded : normalized)
+
+  const playbook = buildDeskPlaybook(deduped, 'none')
   const source: 'ai' | 'structure' =
     fromReview.length > 0 || ai.length > 0 ? 'ai' : 'structure'
   return { levels: playbook.levels, source, playbook }
