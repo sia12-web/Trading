@@ -207,9 +207,9 @@ function describeTimeHighlightSpan(
   const endDetail = `${priceEnd.toLocaleString()} (${endDateStr} ${endSess})`
 
   if (startDateStr === endDateStr && startSess === endSess) {
-    return `${label}: Move from ${priceStart.toLocaleString()} to ${priceEnd.toLocaleString()} (${moveStr}) in ${startDateStr}'s ${startSess} Session`
+    return `${label}: Move Details: 1st Click Start @ ${priceStart.toLocaleString()} -> 2nd Click Finish @ ${priceEnd.toLocaleString()} (${moveStr}) in ${startDateStr}'s ${startSess} Session`
   }
-  return `${label}: Move from ${startDetail} to ${endDetail}, capturing a ${moveStr} move`
+  return `${label}: Move Details: 1st Click Start @ ${startDetail} -> 2nd Click Finish @ ${endDetail}, Net Move: ${moveStr}`
 }
 
 /** DOW/NASDAQ → ET · NIKKEI → JST — same clocks as session color bands. */
@@ -2709,8 +2709,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         const endX = x
         const endY = y
 
-        const minX = Math.min(startX, endX)
-        const maxX = Math.max(startX, endX)
         const minY = Math.min(startY, endY)
         const maxY = Math.max(startY, endY)
 
@@ -2724,8 +2722,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
         const timeScale = chartRef.current?.timeScale()
         if (timeScale) {
-          const startLogical = timeScale.coordinateToLogical(minX)
-          const endLogical = timeScale.coordinateToLogical(maxX)
+          const startLogical = timeScale.coordinateToLogical(startX)
+          const endLogical = timeScale.coordinateToLogical(endX)
 
           if (startLogical != null && endLogical != null && candles.length > 0) {
             const startIdx = Math.max(0, Math.min(candles.length - 1, Math.round(startLogical)))
@@ -2736,7 +2734,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             if (startCandle && endCandle) {
               const sTime = Number(startCandle.time)
               const eTime = Number(endCandle.time)
-              const rangeBars = candles.filter((c) => Number(c.time) >= sTime && Number(c.time) <= eTime)
+              const minTime = Math.min(sTime, eTime)
+              const maxTime = Math.max(sTime, eTime)
+              const rangeBars = candles.filter((c) => Number(c.time) >= minTime && Number(c.time) <= maxTime)
               
               const cOpen = rangeBars[0]?.open ?? pStart ?? highPrice
               const cClose = rangeBars[rangeBars.length - 1]?.close ?? pEnd ?? lowPrice

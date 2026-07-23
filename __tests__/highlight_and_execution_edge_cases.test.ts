@@ -7,12 +7,9 @@ import {
 } from '../lib/trading/deskLevels'
 import {
   PositionSizer,
-  previewPositionSizing,
   riskPercentForEntrySource,
   MANUAL_RISK_PERCENT,
-  DESK_RISK_PERCENT,
 } from '../lib/trading/positionSizing'
-import { snapDeskPrice, snapStopToTick } from '../lib/trading/instrumentTicks'
 
 // ─── 1. HIGHLIGHTING TIME & PRICE EDGE CASES ────────────────────────────────
 
