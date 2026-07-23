@@ -799,6 +799,48 @@ export function structureLevelsFromCandles(
     }
   }
 
+  // ── Post-Open Rejection Tails & Intraday Sweeps (Updates Live After 09:30 Open) ──
+  const postOpenBars = candles.filter((c) => c.time >= openUnix)
+  if (postOpenBars.length > 0) {
+    let topRejectionWick = 0
+    let topRejectionPx = 0
+    let btmSweepWick = 0
+    let btmSweepPx = 0
+
+    for (const c of postOpenBars) {
+      const upperWick = c.high - Math.max(c.open, c.close)
+      const lowerWick = Math.min(c.open, c.close) - c.low
+
+      if (upperWick > topRejectionWick) {
+        topRejectionWick = upperWick
+        topRejectionPx = roundPx(c.high)
+      }
+      if (lowerWick > btmSweepWick) {
+        btmSweepWick = lowerWick
+        btmSweepPx = roundPx(c.low)
+      }
+    }
+
+    if (topRejectionPx > 0 && take(topRejectionPx)) {
+      trimmed.push({
+        level: topRejectionPx,
+        type: 'resistance',
+        conviction: 9,
+        reasoning: `Post-open supply rejection tail at ${topRejectionPx.toLocaleString()} — live intraday sellers defending upper wick.`,
+        source: 'structure',
+      })
+    }
+    if (btmSweepPx > 0 && take(btmSweepPx)) {
+      trimmed.push({
+        level: btmSweepPx,
+        type: 'support',
+        conviction: 9,
+        reasoning: `Post-open liquidity sweep tail at ${btmSweepPx.toLocaleString()} — live intraday buyers defending lower wick.`,
+        source: 'structure',
+      })
+    }
+  }
+
   return trimmed
 }
 
@@ -878,26 +920,16 @@ export function filterReachableMorningLevels(
   if (ref == null || levels.length === 0) return levels
 
   const tipPx = candles.length > 0 ? candles[candles.length - 1]!.close : ref
-
-  let hi = -Infinity
-  let lo = Infinity
-  for (const c of candles) {
-    if (c.time > openUnix + 3600) continue // ignore far post-open lookahead if present
-    if (c.high > hi) hi = c.high
-    if (c.low < lo) lo = c.low
-  }
-  if (!(hi > lo) || !Number.isFinite(hi) || !Number.isFinite(lo)) {
-    hi = Math.max(ref, tipPx) * 1.05
-    lo = Math.min(ref, tipPx) * 0.95
-  }
-  const maxHi = Math.max(hi, tipPx)
-  const minLo = Math.min(lo, tipPx)
-  const pad = Math.max((maxHi - minLo) * 0.15, ref * 0.005)
+  const activeBase = tipPx > 0 ? tipPx : ref
+  // Intraday day-trading reachability clamp: max 1.8% distance from active price
+  // Prevents distant levels (e.g. 53,020 when price is at 51,630) from clogging morning playbook
+  const maxDayTradeDist = activeBase * 0.018
 
   return levels.filter((l) => {
     if (!Number.isFinite(l.level) || l.level <= 0) return false
-    // Hallucination guard: must live in (or just beyond) the chart's price universe
-    if (l.level > maxHi + pad || l.level < minLo - pad) return false
+    // Reject absurdly distant levels further than 1.8% away from active price
+    if (Math.abs(l.level - activeBase) > maxDayTradeDist) return false
+
     const side = levelSide(l.type)
     if (side === 'SHORT') return l.level > Math.min(ref, tipPx)
     return l.level < Math.max(ref, tipPx)
