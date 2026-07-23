@@ -1382,7 +1382,7 @@ export function TradingChart({
   useEffect(() => {
     if (!chartReady) return
     void gradeLevels(instrument)
-    const id = setInterval(() => void gradeLevels(instrument), 120_000)
+    const id = setInterval(() => void gradeLevels(instrument), 15_000)
     return () => clearInterval(id)
   }, [chartReady, instrument, gradeLevels])
 
@@ -1924,7 +1924,7 @@ export function TradingChart({
     if (!chartReady || !streamArmed || dataMode === 'synthetic') return
     if (!tipStreamActive) return
 
-    const CANDLE_REFRESH_MS = 30_000
+    const CANDLE_REFRESH_MS = 5_000
     let lastUiPriceAt = 0
     const fetchGen = ++candleFetchGenRef.current
     let sseHealthy = false
