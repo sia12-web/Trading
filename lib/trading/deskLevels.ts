@@ -978,6 +978,63 @@ export function filterReachableMorningLevels(
 }
 
 /**
+ * Filter out levels that were ALREADY penetrated/spent by live price action in the current session.
+ * For a BUY level: if any post-open candle low breached below the level, the level is spent.
+ * For a SHORT level: if any post-open candle high breached above the level, the level is spent.
+ */
+export function dropPenetratedMorningLevels(
+  levels: DeskLevel[],
+  candles: DeskBar[],
+  openUnix: number
+): DeskLevel[] {
+  if (candles.length === 0 || levels.length === 0) return levels
+  const postOpen = candles.filter((c) => c.time >= openUnix)
+  if (postOpen.length === 0) return levels
+
+  let minPostLow = Infinity
+  let maxPostHigh = -Infinity
+  for (const c of postOpen) {
+    if (c.low < minPostLow) minPostLow = c.low
+    if (c.high > maxPostHigh) maxPostHigh = c.high
+  }
+
+  return levels.filter((l) => {
+    const side = levelSide(l.type)
+    if (side === 'BUY') {
+      return minPostLow > l.level
+    }
+    return maxPostHigh < l.level
+  })
+}
+
+/**
+ * Enforce minimum distance separation (0.25%) between levels on the same side so
+ * Primary and Watch levels aren't clustered together on top of each other.
+ */
+export function dedupeClusteredLevels(
+  levels: DeskLevel[],
+  minSepPct = 0.0025
+): DeskLevel[] {
+  if (levels.length <= 1) return levels
+
+  const buys: DeskLevel[] = []
+  const shorts: DeskLevel[] = []
+
+  for (const l of levels) {
+    const side = levelSide(l.type)
+    const target = side === 'BUY' ? buys : shorts
+    const isClustered = target.some(
+      (existing) => Math.abs(existing.level - l.level) / existing.level < minSepPct
+    )
+    if (!isClustered) {
+      target.push(l)
+    }
+  }
+
+  return [...buys, ...shorts]
+}
+
+/**
  * Shared resolution: AI when available (de-obvioused), else structure sweep zones.
  * Final pass ranks into a morning playbook (1 primary BUY + 1 primary SHORT).
  */
@@ -1021,8 +1078,10 @@ export function resolveDeskLevels(
     raw = structure
   }
 
-  const normalized = normalizeLevelsByLivePrice(raw, tipPx)
-  const playbook = buildDeskPlaybook(normalized, bias)
+  const unspent = dropPenetratedMorningLevels(raw, candles, openUnix)
+  const normalized = normalizeLevelsByLivePrice(unspent.length > 0 ? unspent : raw, tipPx)
+  const deduped = dedupeClusteredLevels(normalized)
+  const playbook = buildDeskPlaybook(deduped, bias)
   return { levels: playbook.levels, source, playbook }
 }
 
