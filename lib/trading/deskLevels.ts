@@ -799,45 +799,196 @@ export function structureLevelsFromCandles(
     }
   }
 
-  // ── Post-Open Rejection Tails & Intraday Sweeps (Updates Live After 09:30 Open) ──
+  // ── Post-Open Rejection Tails & Intraday Sweeps (Smart Wick Significance) ──
+  // A tail is only meaningful if the wick is significant relative to the candle range.
+  // Wick ≥ 40% of candle range = real rejection by other timeframe participants.
+  // Multiple tails clustered at the same zone = higher conviction.
   const postOpenBars = candles.filter((c) => c.time >= openUnix)
   if (postOpenBars.length > 0) {
-    let topRejectionWick = 0
-    let topRejectionPx = 0
-    let btmSweepWick = 0
-    let btmSweepPx = 0
+    type TailHit = { px: number; wickSize: number; ratio: number }
+    const upperTails: TailHit[] = []
+    const lowerTails: TailHit[] = []
 
     for (const c of postOpenBars) {
+      const range = c.high - c.low
+      if (range <= 0) continue
       const upperWick = c.high - Math.max(c.open, c.close)
       const lowerWick = Math.min(c.open, c.close) - c.low
+      const wickRatioThreshold = 0.40 // wick must be ≥ 40% of candle range
 
-      if (upperWick > topRejectionWick) {
-        topRejectionWick = upperWick
-        topRejectionPx = roundPx(c.high)
+      if (upperWick / range >= wickRatioThreshold && upperWick > 0) {
+        upperTails.push({ px: roundPx(c.high), wickSize: upperWick, ratio: upperWick / range })
       }
-      if (lowerWick > btmSweepWick) {
-        btmSweepWick = lowerWick
-        btmSweepPx = roundPx(c.low)
+      if (lowerWick / range >= wickRatioThreshold && lowerWick > 0) {
+        lowerTails.push({ px: roundPx(c.low), wickSize: lowerWick, ratio: lowerWick / range })
       }
     }
 
-    if (topRejectionPx > 0 && take(topRejectionPx)) {
-      trimmed.push({
-        level: topRejectionPx,
-        type: 'resistance',
-        conviction: 9,
-        reasoning: `Post-open supply rejection tail at ${topRejectionPx.toLocaleString()} — live intraday sellers defending upper wick.`,
-        source: 'structure',
-      })
+    // Cluster tails at similar price zones (within 0.08% of each other)
+    const clusterTails = (tails: TailHit[]): { px: number; count: number; bestWick: number }[] => {
+      if (tails.length === 0) return []
+      const sorted = [...tails].sort((a, b) => b.wickSize - a.wickSize)
+      const clusters: { px: number; count: number; bestWick: number }[] = []
+      const clusterTol = sorted[0]!.px * 0.0008
+      for (const t of sorted) {
+        const existing = clusters.find((c) => Math.abs(c.px - t.px) <= clusterTol)
+        if (existing) {
+          existing.count++
+          if (t.wickSize > existing.bestWick) {
+            existing.bestWick = t.wickSize
+            existing.px = t.px
+          }
+        } else {
+          clusters.push({ px: t.px, count: 1, bestWick: t.wickSize })
+        }
+      }
+      return clusters.sort((a, b) => b.bestWick - a.bestWick)
     }
-    if (btmSweepPx > 0 && take(btmSweepPx)) {
-      trimmed.push({
-        level: btmSweepPx,
-        type: 'support',
-        conviction: 9,
-        reasoning: `Post-open liquidity sweep tail at ${btmSweepPx.toLocaleString()} — live intraday buyers defending lower wick.`,
-        source: 'structure',
-      })
+
+    const upperClusters = clusterTails(upperTails)
+    const lowerClusters = clusterTails(lowerTails)
+
+    // Best upper rejection cluster → resistance
+    if (upperClusters.length > 0) {
+      const best = upperClusters[0]!
+      if (take(best.px)) {
+        const multi = best.count > 1 ? ` (${best.count} rejection wicks clustered here)` : ''
+        trimmed.push({
+          level: best.px,
+          type: 'resistance',
+          conviction: Math.min(10, 9 + (best.count > 1 ? 1 : 0)),
+          reasoning: `Post-open supply rejection tail at ${best.px.toLocaleString()} — other timeframe sellers stepped in with significant wick rejection${multi}.`,
+          source: 'structure',
+        })
+      }
+    }
+    // Best lower sweep cluster → support
+    if (lowerClusters.length > 0) {
+      const best = lowerClusters[0]!
+      if (take(best.px)) {
+        const multi = best.count > 1 ? ` (${best.count} sweep wicks clustered here)` : ''
+        trimmed.push({
+          level: best.px,
+          type: 'support',
+          conviction: Math.min(10, 9 + (best.count > 1 ? 1 : 0)),
+          reasoning: `Post-open liquidity sweep tail at ${best.px.toLocaleString()} — other timeframe buyers stepped in with significant wick defense${multi}.`,
+          source: 'structure',
+        })
+      }
+    }
+  }
+
+  // ── Multi-Day Historical Polarity Flip Detection (Support ↔ Resistance) ──
+  // Scan prior 5 trading days for session highs/lows that previously acted as
+  // support or resistance. If price is now on the opposite side of a historical
+  // level, that level has FLIPPED polarity — past support becomes new resistance,
+  // past resistance becomes new support. Real traders call this "polarity" or
+  // "role reversal" and it's one of the highest-conviction setups.
+  const tipPxForFlip = candles.length > 0 ? candles[candles.length - 1]!.close : 0
+  if (tipPxForFlip > 0) {
+    const priorBars = candles.filter((c) => c.time < openUnix)
+    if (priorBars.length >= 20) {
+      // Group prior bars by trading day
+      const dayMap = new Map<string, DeskBar[]>()
+      for (const c of priorBars) {
+        const d = dateInTz(c.time, timeZone)
+        const list = dayMap.get(d) ?? []
+        list.push(c)
+        dayMap.set(d, list)
+      }
+      const tradingDays = [...dayMap.keys()].sort().slice(-5) // last 5 trading days
+
+      type HistoricalLevel = { px: number; type: 'support' | 'resistance'; dayLabel: string; touchCount: number }
+      const historicalLevels: HistoricalLevel[] = []
+      const flipTol = tipPxForFlip * 0.0015 // 0.15% clustering tolerance
+
+      for (const day of tradingDays) {
+        const dayBars = dayMap.get(day) ?? []
+        if (dayBars.length < 5) continue
+        const dayRange = rangeOf(dayBars)
+        if (!dayRange) continue
+
+        // Session high = prior resistance, session low = prior support
+        historicalLevels.push({
+          px: roundPx(dayRange.hi),
+          type: 'resistance',
+          dayLabel: day,
+          touchCount: 1,
+        })
+        historicalLevels.push({
+          px: roundPx(dayRange.lo),
+          type: 'support',
+          dayLabel: day,
+          touchCount: 1,
+        })
+
+        // Also detect intra-day swing highs/lows (bars where high > both neighbors)
+        for (let i = 1; i < dayBars.length - 1; i++) {
+          const prev = dayBars[i - 1]!
+          const curr = dayBars[i]!
+          const next = dayBars[i + 1]!
+          if (curr.high > prev.high && curr.high > next.high && curr.high < dayRange.hi * 0.999) {
+            historicalLevels.push({ px: roundPx(curr.high), type: 'resistance', dayLabel: day, touchCount: 1 })
+          }
+          if (curr.low < prev.low && curr.low < next.low && curr.low > dayRange.lo * 1.001) {
+            historicalLevels.push({ px: roundPx(curr.low), type: 'support', dayLabel: day, touchCount: 1 })
+          }
+        }
+      }
+
+      // Cluster historical levels at similar prices and count touches across days
+      type FlipCandidate = { px: number; originalType: 'support' | 'resistance'; touchCount: number; daysCount: number }
+      const flipCandidates: FlipCandidate[] = []
+      const seenDays = new Map<number, Set<string>>()
+
+      for (const hl of historicalLevels) {
+        const existing = flipCandidates.find((c) => Math.abs(c.px - hl.px) <= flipTol && c.originalType === hl.type)
+        if (existing) {
+          existing.touchCount++
+          const days = seenDays.get(existing.px) ?? new Set()
+          days.add(hl.dayLabel)
+          seenDays.set(existing.px, days)
+          existing.daysCount = days.size
+        } else {
+          flipCandidates.push({
+            px: hl.px,
+            originalType: hl.type,
+            touchCount: hl.touchCount,
+            daysCount: 1,
+          })
+          seenDays.set(hl.px, new Set([hl.dayLabel]))
+        }
+      }
+
+      // Only consider levels with touches across ≥2 different days (proven historical level)
+      const proven = flipCandidates.filter((c) => c.daysCount >= 2)
+
+      for (const candidate of proven) {
+        // POLARITY FLIP: past support is now ABOVE price → new resistance
+        if (candidate.originalType === 'support' && candidate.px > tipPxForFlip) {
+          if (take(candidate.px)) {
+            trimmed.push({
+              level: candidate.px,
+              type: 'resistance',
+              conviction: Math.min(10, 8 + Math.min(candidate.daysCount - 1, 2)),
+              reasoning: `Historical polarity flip: acted as SUPPORT across ${candidate.daysCount} prior sessions — now ABOVE live price, flipped to RESISTANCE. Past buyers become sellers defending this level.`,
+              source: 'structure',
+            })
+          }
+        }
+        // POLARITY FLIP: past resistance is now BELOW price → new support
+        if (candidate.originalType === 'resistance' && candidate.px < tipPxForFlip) {
+          if (take(candidate.px)) {
+            trimmed.push({
+              level: candidate.px,
+              type: 'support',
+              conviction: Math.min(10, 8 + Math.min(candidate.daysCount - 1, 2)),
+              reasoning: `Historical polarity flip: acted as RESISTANCE across ${candidate.daysCount} prior sessions — now BELOW live price, flipped to SUPPORT. Past sellers become buyers defending this level.`,
+              source: 'structure',
+            })
+          }
+        }
+      }
     }
   }
 
