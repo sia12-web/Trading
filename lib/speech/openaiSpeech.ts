@@ -47,8 +47,8 @@ export async function synthesizeSpeechMp3(text: string): Promise<Buffer | null> 
   const key = openaiKey()
   if (!key) return null
 
-  const model = process.env.OPENAI_TTS_MODEL?.trim() || 'tts-1'
-  const voice = process.env.OPENAI_TTS_VOICE?.trim() || 'alloy'
+  const model = process.env.OPENAI_TTS_MODEL?.trim() || 'tts-1-hd'
+  const voice = process.env.OPENAI_TTS_VOICE?.trim() || 'onyx'
   const res = await fetch('https://api.openai.com/v1/audio/speech', {
     method: 'POST',
     headers: {
@@ -63,7 +63,7 @@ export async function synthesizeSpeechMp3(text: string): Promise<Buffer | null> 
     }),
   })
   if (!res.ok) {
-    // Fallback model name if mini-tts unavailable on account
+    // Fallback model name if HD unavailable on account
     if (res.status === 400 || res.status === 404) {
       const retry = await fetch('https://api.openai.com/v1/audio/speech', {
         method: 'POST',
@@ -73,7 +73,7 @@ export async function synthesizeSpeechMp3(text: string): Promise<Buffer | null> 
         },
         body: JSON.stringify({
           model: 'tts-1',
-          voice: 'alloy',
+          voice: 'onyx',
           input: text.slice(0, 1200),
           response_format: 'mp3',
         }),
