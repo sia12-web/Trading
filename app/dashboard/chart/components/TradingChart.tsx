@@ -3518,32 +3518,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </button>
         )}
 
-        {canPlaceOrder && !positionOverlay && !pendingLimit && onLevelSelect && (
-          <button
-            type="button"
-            title="Manual limit at last price — 1% account risk, size adjusts to your stop"
-            onClick={() => {
-              const px = livePrice ?? lastCandleRef.current?.close
-              if (px == null || !Number.isFinite(px)) return
-              onLevelSelect(px, {
-                type: 'manual',
-                source: 'manual',
-                reasoning: 'Manual limit at last traded price',
-              })
-            }}
-            className="rounded-lg border border-amber-500/50 bg-amber-600/90 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-amber-500"
-          >
-            Place limit
-          </button>
-        )}
-        {canPlaceOrder && !positionOverlay && !pendingLimit && onLevelSelect && (
-          <span
-            className="hidden text-[10px] text-gray-500 sm:inline"
-            title="Double-click chart · or use playbook / Place limit"
-          >
-            Double-click chart
-          </span>
-        )}
+
         {deskSessionLive &&
           deskLevelsActive &&
           afternoonWatch &&
