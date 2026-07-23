@@ -3710,23 +3710,40 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           {isFullscreen ? 'Exit Full (Esc)' : 'Fullscreen (F)'}
         </button>
 
-        {pendingLimit && !positionOverlay && (
-          <>
-            <span className="rounded-lg border border-sky-700/50 bg-sky-950/40 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">
-              Working {pendingLimit.direction} @{' '}
-              {pendingLimit.price.toLocaleString()} · SL/TP on chart
-            </span>
-            {onCancelPending && (
-              <button
-                type="button"
-                onClick={onCancelPending}
-                className="rounded-lg border border-sky-500/60 bg-sky-600/80 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm transition hover:bg-sky-500"
+        {pendingLimit && !positionOverlay && (() => {
+          const isBroken = levels.some(
+            (l: LevelLine) =>
+              Math.abs(l.price - pendingLimit.price) < l.price * 0.002 &&
+              (l.marketVerdict === 'broken' || l.marketOutcome === 'broke')
+          )
+          return (
+            <>
+              <span
+                className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide ${
+                  isBroken
+                    ? 'border-amber-500/80 bg-amber-950/80 text-amber-200 animate-pulse font-bold'
+                    : 'border-sky-700/50 bg-sky-950/40 text-sky-200'
+                }`}
               >
-                Cancel limit
-              </button>
-            )}
-          </>
-        )}
+                {isBroken ? '⚠️ Level Invalidated (Structure Broke) · Working ' : 'Working '}
+                {pendingLimit.direction} @ {pendingLimit.price.toLocaleString()}
+              </span>
+              {onCancelPending && (
+                <button
+                  type="button"
+                  onClick={onCancelPending}
+                  className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide shadow-sm transition ${
+                    isBroken
+                      ? 'border-red-500 bg-red-600 text-white hover:bg-red-500 animate-pulse'
+                      : 'border-sky-500/60 bg-sky-600/80 text-white hover:bg-sky-500'
+                  }`}
+                >
+                  Cancel limit
+                </button>
+              )}
+            </>
+          )
+        })()}
 
         {positionOverlay && (
           <span className="rounded-lg border border-blue-700/50 bg-blue-950/40 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-blue-200">
