@@ -13,7 +13,12 @@
  * Next-day memory: only yesterday's range + overnight matter.
  */
 
-import { deskSessionAt, type SessionName } from '@/lib/chart/sessionVwap'
+import {
+  computeAnchoredVwap,
+  deskClockFor,
+  deskSessionAt,
+  type SessionName,
+} from '@/lib/chart/sessionVwap'
 
 export type LevelSide = 'BUY' | 'SHORT'
 /** Overnight / regime lean used to pick the morning focus side */
@@ -699,6 +704,101 @@ export function structureLevelsFromCandles(
     }
   }
 
+  // ── AVWAP Deviation Bands & Round Handles (Crucial for Gap Downs / Breakouts) ──
+  const clock = deskClockFor(timeZone === 'Asia/Tokyo' ? 'NIKKEI' : 'DOW')
+  const vwapResult = computeAnchoredVwap(candles, clock)
+  if (vwapResult && vwapResult.vwap.length > 0) {
+    const lastIdx = vwapResult.vwap.length - 1
+    const l1 = roundPx(vwapResult.lower1[lastIdx]!.value)
+    const l2 = roundPx(vwapResult.lower2[lastIdx]!.value)
+    const l3 = roundPx(vwapResult.lower3[lastIdx]!.value)
+    const u1 = roundPx(vwapResult.upper1[lastIdx]!.value)
+    const u2 = roundPx(vwapResult.upper2[lastIdx]!.value)
+    const u3 = roundPx(vwapResult.upper3[lastIdx]!.value)
+
+    if (take(l3)) {
+      trimmed.push({
+        level: l3,
+        type: 'support',
+        conviction: 9,
+        reasoning: 'Anchored VWAP -3σ Band — institutional extreme oversold demand zone.',
+        source: 'structure',
+      })
+    }
+    if (take(l2)) {
+      trimmed.push({
+        level: l2,
+        type: 'support',
+        conviction: 8,
+        reasoning: 'Anchored VWAP -2σ Band — institutional secondary support band.',
+        source: 'structure',
+      })
+    }
+    if (take(l1)) {
+      trimmed.push({
+        level: l1,
+        type: 'support',
+        conviction: 7,
+        reasoning: 'Anchored VWAP -1σ Band — institutional primary support band.',
+        source: 'structure',
+      })
+    }
+
+    if (take(u1)) {
+      trimmed.push({
+        level: u1,
+        type: 'resistance',
+        conviction: 7,
+        reasoning: 'Anchored VWAP +1σ Band — institutional primary supply band.',
+        source: 'structure',
+      })
+    }
+    if (take(u2)) {
+      trimmed.push({
+        level: u2,
+        type: 'resistance',
+        conviction: 8,
+        reasoning: 'Anchored VWAP +2σ Band — institutional secondary supply band.',
+        source: 'structure',
+      })
+    }
+    if (take(u3)) {
+      trimmed.push({
+        level: u3,
+        type: 'resistance',
+        conviction: 9,
+        reasoning: 'Anchored VWAP +3σ Band — institutional extreme overbought supply zone.',
+        source: 'structure',
+      })
+    }
+  }
+
+  // Add Psychological Round Handles when extending beyond recent candle ranges
+  const tipPx = candles.length > 0 ? candles[candles.length - 1]!.close : 0
+  if (tipPx > 0) {
+    const roundStep = tipPx >= 10000 ? 100 : tipPx >= 1000 ? 50 : 10
+    const roundBelow = roundPx(Math.floor(tipPx / roundStep) * roundStep)
+    if (take(roundBelow)) {
+      trimmed.push({
+        level: roundBelow,
+        type: 'support',
+        conviction: 8,
+        reasoning: `Psychological Round Handle ${roundBelow.toLocaleString()} — resting liquidity pool below current price action.`,
+        source: 'structure',
+      })
+    }
+    const roundAbove = roundPx(Math.ceil(tipPx / roundStep) * roundStep)
+    if (take(roundAbove)) {
+      trimmed.push({
+        level: roundAbove,
+        type: 'resistance',
+        conviction: 8,
+        reasoning: `Psychological Round Handle ${roundAbove.toLocaleString()} — resting supply pool above current price action.`,
+        source: 'structure',
+      })
+    }
+  }
+
   return trimmed
 }
 
@@ -777,6 +877,8 @@ export function filterReachableMorningLevels(
   const ref = referencePriceAtOpen(candles, openUnix)
   if (ref == null || levels.length === 0) return levels
 
+  const tipPx = candles.length > 0 ? candles[candles.length - 1]!.close : ref
+
   let hi = -Infinity
   let lo = Infinity
   for (const c of candles) {
@@ -785,18 +887,20 @@ export function filterReachableMorningLevels(
     if (c.low < lo) lo = c.low
   }
   if (!(hi > lo) || !Number.isFinite(hi) || !Number.isFinite(lo)) {
-    hi = ref * 1.05
-    lo = ref * 0.95
+    hi = Math.max(ref, tipPx) * 1.05
+    lo = Math.min(ref, tipPx) * 0.95
   }
-  const pad = Math.max((hi - lo) * 0.12, ref * 0.003)
+  const maxHi = Math.max(hi, tipPx)
+  const minLo = Math.min(lo, tipPx)
+  const pad = Math.max((maxHi - minLo) * 0.15, ref * 0.005)
 
   return levels.filter((l) => {
     if (!Number.isFinite(l.level) || l.level <= 0) return false
     // Hallucination guard: must live in (or just beyond) the chart's price universe
-    if (l.level > hi + pad || l.level < lo - pad) return false
+    if (l.level > maxHi + pad || l.level < minLo - pad) return false
     const side = levelSide(l.type)
-    if (side === 'SHORT') return l.level > ref
-    return l.level < ref
+    if (side === 'SHORT') return l.level > Math.min(ref, tipPx)
+    return l.level < Math.max(ref, tipPx)
   })
 }
 
