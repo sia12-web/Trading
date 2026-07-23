@@ -1144,12 +1144,14 @@ export function TradingChart({
     }
 
     const candleSeries = chart.addCandlestickSeries({
-      upColor:         '#26a69a',
-      downColor:       '#ef5350',
-      borderUpColor:   '#26a69a',
-      borderDownColor: '#ef5350',
-      wickUpColor:     '#26a69a',
-      wickDownColor:   '#ef5350',
+      upColor:         '#089981',
+      downColor:       '#f23645',
+      borderUpColor:   '#089981',
+      borderDownColor: '#f23645',
+      wickUpColor:     '#089981',
+      wickDownColor:   '#f23645',
+      borderVisible:   true,
+      wickVisible:     true,
       autoscaleInfoProvider: candleAutoscale,
     })
 
