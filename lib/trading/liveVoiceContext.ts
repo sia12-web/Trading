@@ -362,21 +362,33 @@ export async function buildLiveVoiceDeskContext(
         source: 'none' as const,
       }
 
-  // AI levels from level_history — same query as the live chart (no structure invent without candles)
+  // AI levels from level_history — query by instrument (fallback across desk history if needed)
   const cutoff = new Date(now)
   cutoff.setDate(cutoff.getDate() - AI_LEVELS_QUERY.days)
 
-  const { data: levelRows } = await supabase
+  let { data: levelRows } = await supabase
     .from('level_history')
     .select(
       'level, type, conviction, reasoning, last_verdict, last_outcome, tested_count, success_count'
     )
-    .eq('user_id', userId)
     .eq('instrument', contextInstrument)
     .gte('created_at', cutoff.toISOString())
     .gte('conviction', AI_LEVELS_QUERY.minConviction)
     .order('created_at', { ascending: false })
     .limit(AI_LEVELS_QUERY.limit)
+
+  if (!levelRows || levelRows.length === 0) {
+    // Fallback: fetch most recent levels for this instrument regardless of cutoff date
+    const { data: fallbackRows } = await supabase
+      .from('level_history')
+      .select(
+        'level, type, conviction, reasoning, last_verdict, last_outcome, tested_count, success_count'
+      )
+      .eq('instrument', contextInstrument)
+      .order('created_at', { ascending: false })
+      .limit(AI_LEVELS_QUERY.limit)
+    levelRows = fallbackRows
+  }
 
   const mapped = mapAiLevels(levelRows ?? [])
   const bias = biasFromRegime(overnight.regime)
