@@ -78,7 +78,10 @@ const mock = {
     gapPercent: 0.2,
     overnightOhlc: { open: 1, high: 2, low: 0.5, close: 1.5 },
     newsSummary: null,
-    source: 'regime_cache',
+    source: 'regime_cache' as const,
+  },
+  market: {
+    livePrice: 39250,
   },
   levels: {
     source: 'ai',

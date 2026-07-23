@@ -111,6 +111,9 @@ export type LiveVoiceDeskContext = {
     newsSummary: string | null
     source: 'regime_cache' | 'none'
   }
+  market: {
+    livePrice: number | null
+  }
   levels: {
     source: 'ai' | 'empty'
     count: number
@@ -420,6 +423,13 @@ export async function buildLiveVoiceDeskContext(
     }
   }
 
+  const activeLivePrice =
+    playbook.levels.length > 0
+      ? playbook.levels[0]!.level
+      : userPins.length > 0
+        ? userPins[0]!.price
+        : null
+
   return {
     voice,
     session: {
@@ -462,6 +472,9 @@ export async function buildLiveVoiceDeskContext(
       bandNote: `${clock.openLabel} · ${AVWAP_LOOKBACK_TRADING_DAYS} trading days prior · ±1/2/3σ`,
     },
     overnight,
+    market: {
+      livePrice: activeLivePrice,
+    },
     levels: {
       source: playbook.levels.length > 0 ? 'ai' : 'empty',
       count: playbook.levels.length,

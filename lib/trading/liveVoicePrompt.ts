@@ -69,16 +69,19 @@ export function formatEntrySourceLabel(src: string): string {
 }
 
 export function formatLiveVoiceContextForLlm(ctx: LiveVoiceDeskContext): string {
+  const livePx = ctx.market?.livePrice
+
   const levels =
     ctx.levels.items.length === 0
       ? 'No AI levels loaded yet.'
       : ctx.levels.items
-          .map(
-            (l) =>
-              `- ${l.rank ?? 'level'} ${l.side} ${l.price} (${l.type}, conv ${l.conviction}${
-                l.reasoning ? `: ${l.reasoning.slice(0, 120)}` : ''
-              })`
-          )
+          .map((l) => {
+            const dist = livePx != null ? l.price - livePx : null
+            const distStr = dist != null && livePx != null
+              ? ` (${dist >= 0 ? '+' : ''}${dist.toFixed(2)} pts from live price ${livePx.toLocaleString()})`
+              : ''
+            return `- ${l.rank ?? 'level'} ${l.side} ${l.price}${distStr} [conviction ${l.conviction}/10${l.reasoning ? `: ${l.reasoning.slice(0, 120)}` : ''}]`
+          })
           .join('\n')
 
   const ohlc = ctx.overnight.overnightOhlc
@@ -104,6 +107,7 @@ export function formatLiveVoiceContextForLlm(ctx: LiveVoiceDeskContext): string 
 
   return `DESK CONTEXT (ground truth — do not invent beyond this):
 Active Instrument: ${ctx.voice.instrument} (${ctx.voice.market} - LOCKED DESK FOR TODAY'S SESSION. We are ALREADY clocked in to ${ctx.voice.instrument}. Do NOT discuss choosing between DOW vs NASDAQ or waiting for instrument choice—${ctx.voice.instrument} is active!)
+Live Price Action: ${ctx.voice.instrument} @ ${livePx != null ? livePx.toLocaleString() : 'loading live tick'}
 Voice window: ${ctx.voice.window.start}–${ctx.voice.window.end} ${ctx.voice.window.tzLabel} · local ${ctx.voice.localTime}
 Phase: ${ctx.session.phase} — ${ctx.session.message}
 Attempts: ${ctx.session.attemptsUsed}/${ctx.session.maxAttempts} (filled) · Stops: ${ctx.session.stopHits}/${ctx.session.maxStopHits}

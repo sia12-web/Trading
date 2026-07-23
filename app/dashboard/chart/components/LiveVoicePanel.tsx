@@ -206,7 +206,7 @@ export function LiveVoicePanel({
   }, [refresh, refreshHistory, refreshKey, clockedIn])
 
   useEffect(() => {
-    const id = window.setInterval(() => void refresh(), 30_000)
+    const id = window.setInterval(() => void refresh(), 5_000)
     return () => window.clearInterval(id)
   }, [refresh])
 
