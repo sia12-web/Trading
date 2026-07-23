@@ -278,12 +278,14 @@ export function LiveVoicePanel({
           })
         } else if (typeof window !== 'undefined' && window.speechSynthesis) {
           await new Promise<void>((resolve) => {
-            const u = new SpeechSynthesisUtterance(text)
-            u.rate = 1.05
-            u.onend = () => resolve()
-            u.onerror = () => resolve()
             window.speechSynthesis.cancel()
-            window.speechSynthesis.speak(u)
+            setTimeout(() => {
+              const u = new SpeechSynthesisUtterance(text)
+              u.rate = 1.05
+              u.onend = () => resolve()
+              u.onerror = () => resolve()
+              window.speechSynthesis.speak(u)
+            }, 50)
           })
         }
       } catch {

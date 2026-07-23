@@ -6,6 +6,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   AVWAP_LOOKBACK_TRADING_DAYS,
+  cashOpenUnixForYmd,
   deskClockFor,
 } from '@/lib/chart/sessionVwap'
 import {
@@ -13,6 +14,7 @@ import {
   buildDeskPlaybook,
   levelSide,
   mapAiLevels,
+  resolveDeskLevels,
   type DeskBias,
   type DeskLevel,
 } from '@/lib/trading/deskLevels'
@@ -390,8 +392,16 @@ export async function buildLiveVoiceDeskContext(
     levelRows = fallbackRows
   }
 
-  const mapped = mapAiLevels(levelRows ?? [])
+  let mapped = mapAiLevels(levelRows ?? [])
   const bias = biasFromRegime(overnight.regime)
+
+  if (mapped.length === 0) {
+    // Generate structural levels (AVWAP bands, stop pools, round handles) so Leo NEVER sees empty levels
+    const openUnix = cashOpenUnixForYmd(voice.tradeDate, clock)
+    const resolved = resolveDeskLevels([], [], openUnix, clock.timeZone, bias)
+    mapped = resolved.levels
+  }
+
   const playbook = buildDeskPlaybook(mapped, bias)
 
   let userPins: LiveVoicePin[] = []
