@@ -96,6 +96,13 @@ export default function ChartPage() {
   const [levelsRefreshKey, setLevelsRefreshKey] = useState(0)
   const afternoonLevelsLoadedRef = useRef(false)
   const [aiVerdict, setAiVerdict] = useState<AiVerdict | null>(null)
+  const [recommendation, setRecommendation] = useState<{
+    instrument: Instrument
+    regime: string
+    regime_confidence: number
+    recommendation_confidence: number
+    message: string
+  } | null>(null)
 
   const jumpToPriceRef = useRef<((price: number) => void) | null>(null)
   const bannerRefreshRef = useRef<(() => void) | null>(null)
@@ -208,6 +215,7 @@ export default function ChartPage() {
       .then((r) => r.json())
       .then((j) => {
         const rec = j?.recommendation
+        if (rec) setRecommendation(rec)
         const nextRegime = rec?.regime ?? j?.regime
         const nextConf = rec?.regime_confidence ?? j?.regime_confidence
         if (nextRegime === 'bullish' || nextRegime === 'bearish' || nextRegime === 'choppy') {
@@ -725,59 +733,90 @@ export default function ChartPage() {
           )}
 
           {chartLocked && (
-            <div className="absolute inset-0 z-30 flex items-center justify-center rounded-xl border border-surface-600 bg-[#0d1117]">
-              <div className="max-w-md px-8 text-center">
-                <p className="text-lg font-semibold text-white tracking-tight">
-                  {missedSessionLocked ? 'Session skipped' : 'Live chart is closed'}
-                </p>
-                <p className="mt-2 text-sm text-gray-400 leading-relaxed">
-                  {missedSessionLocked ? (
-                    <>
-                      You did not clock in this morning, so the live desk (DOW, NASDAQ, and
-                      NIKKEI) stays locked through afternoon watch until cash close. Use
-                      Simulation, or wait for the next session.
-                    </>
-                  ) : (
-                    <>
-                      Clock in with{' '}
-                      <span className="text-amber-300 font-medium">Today I trade</span>{' '}
-                      (15 min before cash open) to unlock the live desk and level journaling.
-                      Or try Simulation.
-                    </>
-                  )}
-                </p>
-                <div className="mt-6 flex items-center justify-center gap-3">
-                  {gate?.canClockIn && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const market =
-                          gate.market ||
-                          (gate.lockedInstrument === 'NIKKEI' ? 'TOKYO' : 'NY')
-                        const allowed = gate.allowedInstruments
-                        const focusInstrument =
-                          (allowed?.includes(instrument) ? instrument : null) ||
-                          gate.lockedInstrument ||
-                          undefined
-                        await fetch('/api/trading/clock-in', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            market,
-                            instrument: focusInstrument,
-                          }),
-                        })
-                        bannerRefreshRef.current?.()
-                        setGateTick((t) => t + 1)
-                      }}
-                      className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold uppercase tracking-wide text-black hover:bg-amber-400"
-                    >
-                      Today I trade
-                    </button>
-                  )}
+            <div className="absolute inset-0 z-30 flex items-center justify-center rounded-xl border border-surface-600 bg-[#0d1117]/95 backdrop-blur-md p-6">
+              <div className="max-w-md w-full px-6 py-5 text-center bg-[#161b22]/95 border border-amber-500/30 rounded-2xl shadow-2xl space-y-4">
+                {missedSessionLocked ? (
+                  <>
+                    <p className="text-lg font-bold text-white tracking-tight">Session Skipped</p>
+                    <p className="text-xs text-gray-400 leading-relaxed">
+                      You did not clock in this morning, so the live desk (DOW, NASDAQ, and NIKKEI) stays locked through afternoon watch until cash close. Use Simulation, or wait for the next session.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[11px] font-extrabold uppercase tracking-wider">
+                      <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                      PRE-MARKET PREP PHASE
+                    </div>
+
+                    <div>
+                      <h3 className="text-lg font-extrabold text-white tracking-tight">
+                        {recommendation ? (
+                          <>
+                            AI Recommendation:{' '}
+                            <span className="text-amber-400">{recommendation.instrument}</span>
+                          </>
+                        ) : (
+                          'Pre-Market Session Analysis'
+                        )}
+                      </h3>
+                      <p className="mt-1 text-xs text-amber-200/90 font-medium leading-relaxed">
+                        {recommendation?.message ??
+                          'Level Finder has analyzed overnight structure, AVWAP, and market regime.'}
+                      </p>
+                    </div>
+
+                    {gate?.canClockIn && (
+                      <div className="pt-2 flex flex-col gap-2">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                          Select Desk & Clock In for Today:
+                        </span>
+                        <div className="flex items-center justify-center gap-2">
+                          {(gate.market === 'TOKYO' ? ['NIKKEI'] as Instrument[] : ['DOW', 'NASDAQ'] as Instrument[]).map((inst) => {
+                            const isRec = (recommendation?.instrument ?? 'DOW') === inst
+                            return (
+                              <button
+                                key={inst}
+                                type="button"
+                                onClick={async () => {
+                                  const market = gate.market || (inst === 'NIKKEI' ? 'TOKYO' : 'NY')
+                                  await fetch('/api/trading/clock-in', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      market,
+                                      instrument: inst,
+                                    }),
+                                  })
+                                  setInstrument(inst)
+                                  bannerRefreshRef.current?.()
+                                  setGateTick((t) => t + 1)
+                                }}
+                                className={`flex-1 py-2.5 px-3 rounded-lg text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 border ${
+                                  isRec
+                                    ? 'bg-amber-500 text-black border-amber-400 shadow-lg shadow-amber-500/20 hover:bg-amber-400 scale-[1.02]'
+                                    : 'bg-surface-700 text-gray-200 border-surface-600 hover:bg-surface-600 hover:text-white'
+                                }`}
+                              >
+                                {isRec && <span>★ AI TOP PICK:</span>}
+                                <span>{inst}</span>
+                                {isRec && recommendation?.recommendation_confidence && (
+                                  <span className="text-[10px] opacity-80">({recommendation.recommendation_confidence}%)</span>
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                <div className="pt-3 border-t border-surface-700 flex items-center justify-between text-xs">
+                  <span className="text-gray-400 text-[11px]">Prefer paper trading?</span>
                   <Link
                     href="/dashboard/simulation"
-                    className="rounded-lg border border-violet-500/50 bg-violet-500/20 px-4 py-2 text-xs font-semibold text-violet-100 hover:bg-violet-500/30"
+                    className="rounded-lg border border-violet-500/50 bg-violet-500/20 px-3 py-1 text-[11px] font-semibold text-violet-100 hover:bg-violet-500/30"
                   >
                     Try simulation
                   </Link>
