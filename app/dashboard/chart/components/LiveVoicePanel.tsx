@@ -16,6 +16,7 @@ type StatusPayload = LiveVoiceStatus & {
 }
 
 type PinChip = {
+  id?: string
   price: number
   side: 'BUY' | 'SHORT' | null
   reason: string | null
@@ -560,6 +561,27 @@ export function LiveVoicePanel({
             ? 'Ready'
             : 'Off'
 
+  const deletePin = useCallback(
+    async (pin: PinChip) => {
+      // Optimistic UI update
+      setPins((prev) =>
+        prev.filter((p) =>
+          pin.id ? p.id !== pin.id : Math.abs(p.price - pin.price) > 0.01
+        )
+      )
+      try {
+        const query = pin.id
+          ? `id=${encodeURIComponent(pin.id)}`
+          : `price=${pin.price}&instrument=${encodeURIComponent(instrument)}`
+        await fetch(`/api/trading/live-voice/pin?${query}`, { method: 'DELETE' })
+        void refreshContext()
+      } catch {
+        /* ignore pin delete failure */
+      }
+    },
+    [instrument, refreshContext]
+  )
+
   return (
     <div
       className={`pointer-events-auto w-[min(340px,calc(100vw-1.5rem))] rounded-xl border shadow-lg backdrop-blur-md ${
@@ -697,18 +719,22 @@ export function LiveVoicePanel({
             </p>
           </div>
         )}
+
         {/* Sent chart zones display */}
         {pins.length > 0 && (
           <div className="space-y-1 pt-1.5 border-t border-[#30363d]">
-            <span className="text-[10px] uppercase font-semibold text-gray-400 tracking-wider">
-              📍 Zones Sent to Leo
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase font-semibold text-gray-400 tracking-wider">
+                📍 Zones Sent to Leo ({pins.length})
+              </span>
+              <span className="text-[9px] text-gray-500">Click × to remove from memory</span>
+            </div>
             <div className="flex flex-wrap gap-1 pt-0.5">
               {pins.map((p, idx) => (
                 <span
-                  key={`${p.price}-${p.side || 'x'}-${idx}`}
+                  key={p.id || `${p.price}-${p.side || 'x'}-${idx}`}
                   title={p.reason || 'Drawn chart zone'}
-                  className={`rounded border px-1.5 py-0.5 font-mono text-[10px] flex items-center gap-1 ${
+                  className={`rounded border px-1.5 py-0.5 font-mono text-[10px] flex items-center gap-1.5 ${
                     p.side === 'SHORT'
                       ? 'border-red-700/50 bg-red-950/40 text-red-200'
                       : p.side === 'BUY'
@@ -719,6 +745,14 @@ export function LiveVoicePanel({
                   <span className="h-1 w-1 rounded-full bg-current"></span>
                   {p.side ? `${p.side} ` : ''}
                   {p.price.toLocaleString()}
+                  <button
+                    type="button"
+                    onClick={() => void deletePin(p)}
+                    title="Delete zone from Leo's memory"
+                    className="ml-0.5 text-gray-400 hover:text-red-400 font-bold px-0.5 transition-colors"
+                  >
+                    ×
+                  </button>
                 </span>
               ))}
             </div>
