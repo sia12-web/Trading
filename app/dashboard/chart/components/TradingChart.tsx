@@ -81,6 +81,72 @@ function defaultManualStop(limit: number, direction: 'LONG' | 'SHORT'): number {
   return direction === 'LONG' ? limit * (1 - pct) : limit * (1 + pct)
 }
 
+const HIGHLIGHT_COLOR_PALETTES = [
+  {
+    border: 'border-violet-500',
+    bg: 'bg-violet-500/15',
+    text: 'text-violet-200',
+    pillBorder: 'border-violet-500/40',
+    pillBg: 'bg-[#161b22]/90',
+    badgeText: 'text-violet-300',
+  },
+  {
+    border: 'border-cyan-400',
+    bg: 'bg-cyan-500/15',
+    text: 'text-cyan-200',
+    pillBorder: 'border-cyan-400/40',
+    pillBg: 'bg-[#161b22]/90',
+    badgeText: 'text-cyan-300',
+  },
+  {
+    border: 'border-emerald-400',
+    bg: 'bg-emerald-500/15',
+    text: 'text-emerald-200',
+    pillBorder: 'border-emerald-400/40',
+    pillBg: 'bg-[#161b22]/90',
+    badgeText: 'text-emerald-300',
+  },
+  {
+    border: 'border-amber-400',
+    bg: 'bg-amber-500/15',
+    text: 'text-amber-200',
+    pillBorder: 'border-amber-400/40',
+    pillBg: 'bg-[#161b22]/90',
+    badgeText: 'text-amber-300',
+  },
+  {
+    border: 'border-rose-400',
+    bg: 'bg-rose-500/15',
+    text: 'text-rose-200',
+    pillBorder: 'border-rose-400/40',
+    pillBg: 'bg-[#161b22]/90',
+    badgeText: 'text-rose-300',
+  },
+  {
+    border: 'border-indigo-400',
+    bg: 'bg-indigo-500/15',
+    text: 'text-indigo-200',
+    pillBorder: 'border-indigo-400/40',
+    pillBg: 'bg-[#161b22]/90',
+    badgeText: 'text-indigo-300',
+  },
+]
+
+function getHighlightTheme(index: number, isUnsent: boolean) {
+  if (isUnsent) {
+    return {
+      border: 'border-amber-400 animate-pulse',
+      bg: 'bg-amber-400/15',
+      text: 'text-amber-200',
+      pillBorder: 'border-amber-400/40',
+      pillBg: 'bg-[#161b22]/90',
+      badgeText: 'text-amber-300',
+    }
+  }
+  const theme = HIGHLIGHT_COLOR_PALETTES[index % HIGHLIGHT_COLOR_PALETTES.length]!
+  return theme
+}
+
 type DeskChartFmt = {
   formatTime: (unix: number, withSeconds?: boolean) => string
   formatDate: (unix: number, style?: 'day' | 'month' | 'year') => string
@@ -3320,7 +3386,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       })
     }
 
-    return listToRender.map((hl) => {
+    return listToRender.map((hl, idx) => {
       if (!hl.visible) return null
 
       // Convert times directly to coordinates
@@ -3342,15 +3408,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       const height = Math.abs(bottomCoord - topCoord)
 
       const isUnsent = hl.id === 'unsent-drawn-time'
+      const theme = getHighlightTheme(idx, isUnsent)
 
       return (
         <div
           key={hl.id}
-          className={`absolute border border-dashed rounded pointer-events-none z-20 flex flex-col justify-between p-1.5 ${
-            isUnsent
-              ? 'border-amber-400 bg-amber-400/15 animate-pulse'
-              : 'border-violet-500 bg-violet-500/15'
-          }`}
+          className={`absolute border border-dashed rounded pointer-events-none z-20 flex flex-col justify-between p-1.5 ${theme.border} ${theme.bg}`}
           style={{
             left: `${left}px`,
             top: `${top}px`,
@@ -3359,15 +3422,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             transition: 'none',
           }}
         >
-          <span className={`text-[9px] font-mono font-extrabold border px-1.5 py-0.5 rounded w-max select-none leading-none shadow-md ${
-            isUnsent
-              ? 'text-amber-200 bg-[#161b22]/90 border-amber-400/30'
-              : 'text-violet-200 bg-[#161b22]/90 border-violet-500/30'
-          }`}>
+          <span className={`text-[9px] font-mono font-extrabold border px-1.5 py-0.5 rounded w-max select-none leading-none shadow-md ${theme.text} ${theme.pillBg} ${theme.pillBorder}`}>
             {hl.label}
           </span>
           {!isUnsent && (
-            <span className="text-[7px] font-bold text-violet-300 self-end select-none opacity-60">
+            <span className={`text-[7px] font-bold self-end select-none opacity-80 ${theme.badgeText}`}>
               SAVED
             </span>
           )}
@@ -3831,55 +3890,58 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               </p>
             ) : (
               <div className="max-h-60 overflow-y-auto pr-1 space-y-2 custom-scrollbar">
-                {savedHighlights.map((hl) => (
-                  <div
-                    key={hl.id}
-                    className="flex flex-col gap-1.5 rounded-lg border border-[#30363d] bg-black/30 p-2.5 hover:border-violet-500/30 transition"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-violet-200">{hl.label}</span>
-                      <div className="flex items-center gap-1.5">
-                        {/* Toggle Visibility */}
-                        <button
-                          onClick={() => {
-                            setSavedHighlights((prev) =>
-                              prev.map((item) =>
-                                item.id === hl.id ? { ...item, visible: !item.visible } : item
+                {savedHighlights.map((hl, idx) => {
+                  const theme = getHighlightTheme(idx, false)
+                  return (
+                    <div
+                      key={hl.id}
+                      className={`flex flex-col gap-1.5 rounded-lg border bg-black/30 p-2.5 transition ${theme.pillBorder}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className={`text-xs font-bold ${theme.text}`}>{hl.label}</span>
+                        <div className="flex items-center gap-1.5">
+                          {/* Toggle Visibility */}
+                          <button
+                            onClick={() => {
+                              setSavedHighlights((prev) =>
+                                prev.map((item) =>
+                                  item.id === hl.id ? { ...item, visible: !item.visible } : item
+                                )
                               )
-                            )
-                          }}
-                          className={`px-1.5 py-0.5 text-[10px] font-bold rounded transition border ${
-                            hl.visible
-                              ? 'bg-violet-600/20 border-violet-500/40 text-violet-300 hover:bg-violet-600/30'
-                              : 'bg-transparent border-gray-605 text-gray-505 hover:border-gray-500'
-                          }`}
-                          title="Toggle visibility on chart"
-                        >
-                          {hl.visible ? 'Hide' : 'Show'}
-                        </button>
-                        {/* Center chart on range */}
-                        <button
-                          onClick={() => centerChartOnHighlight(hl)}
-                          className="px-1.5 py-0.5 text-[10px] font-bold rounded border border-[#30363d] bg-black/40 text-gray-300 hover:bg-black/60 hover:text-white transition"
-                          title="Center chart on highlight range"
-                        >
-                          Center
-                        </button>
-                        {/* Delete */}
-                        <button
-                          onClick={() => {
-                            setSavedHighlights((prev) => prev.filter((item) => item.id !== hl.id))
-                          }}
-                          className="text-gray-505 hover:text-red-400 transition font-bold text-[10px] px-1"
-                          title="Delete highlight"
-                        >
-                          ✕
-                        </button>
+                            }}
+                            className={`px-1.5 py-0.5 text-[10px] font-bold rounded transition border ${
+                              hl.visible
+                                ? `${theme.pillBg} ${theme.pillBorder} ${theme.text}`
+                                : 'bg-transparent border-gray-605 text-gray-505 hover:border-gray-500'
+                            }`}
+                            title="Toggle visibility on chart"
+                          >
+                            {hl.visible ? 'Hide' : 'Show'}
+                          </button>
+                          {/* Center chart on range */}
+                          <button
+                            onClick={() => centerChartOnHighlight(hl)}
+                            className="px-1.5 py-0.5 text-[10px] font-bold rounded border border-[#30363d] bg-black/40 text-gray-300 hover:bg-black/60 hover:text-white transition"
+                            title="Center chart on highlight range"
+                          >
+                            Center
+                          </button>
+                          {/* Delete */}
+                          <button
+                            onClick={() => {
+                              setSavedHighlights((prev) => prev.filter((item) => item.id !== hl.id))
+                            }}
+                            className="text-gray-505 hover:text-red-400 transition font-bold text-[10px] px-1"
+                            title="Delete highlight"
+                          >
+                            ✕
+                          </button>
+                        </div>
                       </div>
+                      <p className="text-[10px] text-gray-400 leading-normal">{hl.sessionSpanStr}</p>
                     </div>
-                    <p className="text-[10px] text-gray-400 leading-normal">{hl.sessionSpanStr}</p>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
