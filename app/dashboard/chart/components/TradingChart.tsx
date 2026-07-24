@@ -3067,6 +3067,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       const target = e.target as HTMLElement
       const tag = target?.tagName?.toLowerCase()
       if (tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable) return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
 
       const key = e.key.toLowerCase()
 
@@ -3874,10 +3875,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           {isFullscreen ? 'Exit Full (Esc)' : 'Fullscreen (F)'}
         </button>
 
-        {/* Reset / Remove All Tools Button (Press R) */}
+        {/* Clear All Tools Button (Press R) */}
         <button
           type="button"
-          title="Remove all active tools & drawings from chart (Press R)"
+          title="Remove all active drawing tools and risk box overlays from chart (Press R)"
           onClick={() => {
             cancelRiskBox()
             cancelDrawnZone()
@@ -3891,7 +3892,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             <path d="M2.5 8a5.5 5.5 0 1 1 1.6 3.9" strokeLinecap="round" />
             <path d="M2.5 12V8h4" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          <span>Reset Tools (R)</span>
+          <span>Clear Tools (R)</span>
         </button>
 
         {pendingLimit && !positionOverlay && (() => {
