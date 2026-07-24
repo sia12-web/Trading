@@ -430,12 +430,14 @@ export default function ChartPage() {
       setOrderEntrySource('ai')
       setFillError(null)
 
-      // Immediate fill if price is already through the limit
+      // Immediate fill if market order or price is already through the limit
       const px = livePriceRef.current
-      if (px != null && limitWouldFill(order.direction, order.level, px)) {
+      const isMarket = order.levelType === 'market'
+      if (isMarket || (px != null && limitWouldFill(order.direction, order.level, px))) {
         pendingRef.current = order
         setPending(order)
-        void fillPending(order, order.level).finally(() => {
+        const execPx = isMarket ? (px ?? order.level) : order.level
+        void fillPending(order, execPx).finally(() => {
           placingOrderRef.current = false
         })
         return

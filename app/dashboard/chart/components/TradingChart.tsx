@@ -733,10 +733,11 @@ export function TradingChart({
     } catch { /* ignore */ }
   }, [savedHighlights, instrument])
 
-  // TradingView-style Interactive Risk/Reward Limit Tool (O key / toolbar button)
+  // TradingView-style Interactive Risk/Reward Order Tool (Limit: O key, Market: M key / toolbar buttons)
   const [riskBoxActive, setRiskBoxActive] = useState(false)
   const [riskBox, setRiskBox] = useState<{
     direction: 'LONG' | 'SHORT'
+    orderType: 'LIMIT' | 'MARKET'
     entryPrice: number
     stopLoss: number
     profitTarget: number
@@ -748,6 +749,7 @@ export function TradingChart({
     stopLoss: number
     profitTarget: number
     direction: 'LONG' | 'SHORT'
+    orderType?: 'LIMIT' | 'MARKET'
     suggestedReason: string
   } | null>(null)
   const [userRationale, setUserRationale] = useState('')
@@ -2218,6 +2220,7 @@ export function TradingChart({
       const dir = 'LONG'
       setRiskBox({
         direction: dir,
+        orderType: 'LIMIT',
         entryPrice: snapped,
         stopLoss: defaultManualStop(snapped, dir),
         profitTarget: snapDeskPrice(instrument, snapped * 1.0105),
@@ -2903,6 +2906,25 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     }
   }, [riskBox, instrument])
 
+  // Auto-track live price for Market Orders (so Entry line stays locked to current price tick in real-time)
+  useEffect(() => {
+    if (!riskBox || riskBox.orderType !== 'MARKET' || draggingRiskLineRef.current) return
+    if (livePrice == null || !(livePrice > 0)) return
+    const currentLive = snapDeskPrice(instrument, livePrice)
+    if (currentLive === riskBox.entryPrice) return
+
+    const diff = currentLive - riskBox.entryPrice
+    setRiskBox((prev) => {
+      if (!prev || prev.orderType !== 'MARKET') return prev
+      return {
+        ...prev,
+        entryPrice: currentLive,
+        stopLoss: snapDeskPrice(instrument, prev.stopLoss + diff),
+        profitTarget: snapDeskPrice(instrument, prev.profitTarget + diff),
+      }
+    })
+  }, [livePrice, riskBox, instrument])
+
   // Paint interactive risk box lines on chart
   useEffect(() => {
     clearRiskBoxLines()
@@ -2911,7 +2933,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     if (!host) return
 
     const isLong = riskBox.direction === 'LONG'
-    const entryColor = isLong ? 'rgba(56, 189, 248, 0.95)' : 'rgba(251, 113, 133, 0.95)'
+    const isMarket = riskBox.orderType === 'MARKET'
+    const entryColor = isMarket
+      ? 'rgba(245, 158, 11, 0.95)'
+      : isLong
+        ? 'rgba(56, 189, 248, 0.95)'
+        : 'rgba(251, 113, 133, 0.95)'
     const slColor = '#f43f5e'
     const tpColor = '#10b981'
 
@@ -2921,7 +2948,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       lineWidth: 2,
       lineStyle: 0,
       axisLabelVisible: true,
-      title: `◆ ENTRY ${riskBox.direction} @ ${riskBox.entryPrice.toLocaleString()}`,
+      title: `◆ ${isMarket ? 'MARKET' : 'ENTRY'} ${riskBox.direction} @ ${riskBox.entryPrice.toLocaleString()}`,
     })
 
     const lineSl = host.createPriceLine({
@@ -2947,7 +2974,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
   const confirmRiskBoxOrder = useCallback(() => {
     if (!riskBox) return
-    const { entryPrice, stopLoss, profitTarget, direction } = riskBox
+    const { entryPrice, stopLoss, profitTarget, direction, orderType } = riskBox
+    const isMarket = orderType === 'MARKET'
 
     // Check if Leo was consulted for this session / price
     const discussedWithLeo = (levelsRef.current || []).some(
@@ -2955,9 +2983,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     )
 
     if (discussedWithLeo) {
-      const autoReason = `Manual ${direction} Zone (Discussed with Leo): Level @ ${entryPrice.toLocaleString()}, SL @ ${stopLoss.toLocaleString()}, TP @ ${profitTarget.toLocaleString()}`
+      const autoReason = `Manual ${direction} ${isMarket ? 'Market' : 'Limit'} Zone (Discussed with Leo): Level @ ${entryPrice.toLocaleString()}, SL @ ${stopLoss.toLocaleString()}, TP @ ${profitTarget.toLocaleString()}`
       onLevelSelect?.(entryPrice, {
         source: 'manual',
+        type: isMarket ? 'market' : 'manual',
         side: direction === 'LONG' ? 'BUY' : 'SHORT',
         preferredDirection: direction,
         reasoning: autoReason,
@@ -2965,7 +2994,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       cancelRiskBox()
     } else {
       // Require user rationale for pure manual orders
-      setUserRationale(`Technical structure entry @ ${entryPrice.toLocaleString()}`)
+      setUserRationale(`Technical structure ${isMarket ? 'market' : 'limit'} entry @ ${entryPrice.toLocaleString()}`)
       setUserSlTpRationale(`Protective SL @ ${stopLoss.toLocaleString()}, Target TP @ ${profitTarget.toLocaleString()}`)
       setRationaleModal({
         open: true,
@@ -2973,7 +3002,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         stopLoss,
         profitTarget,
         direction,
-        suggestedReason: `Manual ${direction} limit @ ${entryPrice.toLocaleString()}`,
+        orderType: isMarket ? 'MARKET' : 'LIMIT',
+        suggestedReason: `Manual ${direction} ${isMarket ? 'market order' : 'limit'} @ ${entryPrice.toLocaleString()}`,
       })
     }
   }, [riskBox, onLevelSelect, cancelRiskBox])
@@ -3025,7 +3055,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       } else if (key === 'o') {
         e.preventDefault()
         setRiskBoxActive((prev) => {
-          if (prev || riskBox) {
+          if (prev && riskBox?.orderType === 'LIMIT') {
             cancelRiskBox()
             return false
           } else {
@@ -3033,6 +3063,26 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             const dir = 'LONG'
             setRiskBox({
               direction: dir,
+              orderType: 'LIMIT',
+              entryPrice: rawPx,
+              stopLoss: defaultManualStop(rawPx, dir),
+              profitTarget: dir === 'LONG' ? snapDeskPrice(instrument, rawPx * 1.0105) : snapDeskPrice(instrument, rawPx * 0.9895),
+            })
+            return true
+          }
+        })
+      } else if (key === 'm') {
+        e.preventDefault()
+        setRiskBoxActive((prev) => {
+          if (prev && riskBox?.orderType === 'MARKET') {
+            cancelRiskBox()
+            return false
+          } else {
+            const rawPx = livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 67000)
+            const dir = 'LONG'
+            setRiskBox({
+              direction: dir,
+              orderType: 'MARKET',
               entryPrice: rawPx,
               stopLoss: defaultManualStop(rawPx, dir),
               profitTarget: dir === 'LONG' ? snapDeskPrice(instrument, rawPx * 1.0105) : snapDeskPrice(instrument, rawPx * 0.9895),
@@ -3652,18 +3702,19 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         <button
           type="button"
           title={
-            riskBox
+            riskBox && riskBox.orderType === 'LIMIT'
               ? 'TradingView Limit Order active — place order or Esc to close'
               : 'Interactive Limit Order Tool (Press O)'
           }
           onClick={() => {
-            if (riskBoxActive || riskBox) {
+            if (riskBoxActive && riskBox?.orderType === 'LIMIT') {
               cancelRiskBox()
             } else {
               const rawPx = livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 67000)
               const dir = 'LONG'
               setRiskBox({
                 direction: dir,
+                orderType: 'LIMIT',
                 entryPrice: rawPx,
                 stopLoss: defaultManualStop(rawPx, dir),
                 profitTarget: snapDeskPrice(instrument, rawPx * 1.0105),
@@ -3672,7 +3723,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             }
           }}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
-            riskBox
+            riskBox && riskBox.orderType === 'LIMIT'
               ? 'bg-sky-600/30 border-sky-500/50 text-sky-100 animate-pulse'
               : 'bg-transparent border-surface-600 text-gray-500 hover:text-sky-200 hover:border-sky-500/40'
           }`}
@@ -3682,7 +3733,43 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             <rect x="2" y="8" width="12" height="6" rx="1" className="fill-red-500/30 stroke-red-400" />
             <line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" strokeWidth="2" />
           </svg>
-          {riskBox ? 'Limit Order Active' : 'Limit Order (O)'}
+          {riskBox && riskBox.orderType === 'LIMIT' ? 'Limit Order Active' : 'Limit Order (O)'}
+        </button>
+
+        {/* Interactive TradingView Risk/Reward Market Order Tool */}
+        <button
+          type="button"
+          title={
+            riskBox && riskBox.orderType === 'MARKET'
+              ? 'TradingView Market Order active — place order or Esc to close'
+              : 'Interactive Market Order Tool (Press M)'
+          }
+          onClick={() => {
+            if (riskBoxActive && riskBox?.orderType === 'MARKET') {
+              cancelRiskBox()
+            } else {
+              const rawPx = livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 67000)
+              const dir = 'LONG'
+              setRiskBox({
+                direction: dir,
+                orderType: 'MARKET',
+                entryPrice: rawPx,
+                stopLoss: defaultManualStop(rawPx, dir),
+                profitTarget: snapDeskPrice(instrument, rawPx * 1.0105),
+              })
+              setRiskBoxActive(true)
+            }
+          }}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+            riskBox && riskBox.orderType === 'MARKET'
+              ? 'bg-amber-600/30 border-amber-500/50 text-amber-100 animate-pulse'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-amber-200 hover:border-amber-500/40'
+          }`}
+        >
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <path d="M8 2v12M4 6l4-4 4 4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          {riskBox && riskBox.orderType === 'MARKET' ? 'Market Order Active' : 'Market Order (M)'}
         </button>
 
         {/* Fullscreen mode button (Press F / Esc) */}
@@ -4182,25 +4269,48 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                       confirmRiskBoxOrder()
                     }}
                     className={`px-3 py-1 text-xs font-extrabold uppercase rounded-md shadow-md transition border ${
-                      riskBox.direction === 'LONG'
-                        ? 'bg-blue-600 border-blue-400 text-white hover:bg-blue-500 hover:scale-105'
-                        : 'bg-red-600 border-red-400 text-white hover:bg-red-500 hover:scale-105'
+                      riskBox.orderType === 'MARKET'
+                        ? riskBox.direction === 'LONG'
+                          ? 'bg-emerald-600 border-emerald-400 text-white hover:bg-emerald-500 hover:scale-105'
+                          : 'bg-red-600 border-red-400 text-white hover:bg-red-500 hover:scale-105'
+                        : riskBox.direction === 'LONG'
+                          ? 'bg-blue-600 border-blue-400 text-white hover:bg-blue-500 hover:scale-105'
+                          : 'bg-red-600 border-red-400 text-white hover:bg-red-500 hover:scale-105'
                     }`}
-                    title={`Click to place 1% ${riskBox.direction} Limit Order`}
+                    title={
+                      riskBox.orderType === 'MARKET'
+                        ? `Click to execute 1% ${riskBox.direction} Market Order @ current price`
+                        : `Click to place 1% ${riskBox.direction} Limit Order`
+                    }
                   >
-                    {riskBox.direction === 'LONG' ? 'Buy' : 'Sell'}
+                    {riskBox.orderType === 'MARKET'
+                      ? riskBox.direction === 'LONG'
+                        ? 'Buy Market'
+                        : 'Sell Market'
+                      : riskBox.direction === 'LONG'
+                        ? 'Buy'
+                        : 'Sell'}
                   </button>
 
-                  {/* Pill Badge with Non-Clickable Limit Label */}
-                  <div className="flex items-center rounded-md border border-blue-400 bg-white/95 px-3 py-1 text-xs font-mono font-bold text-gray-900 shadow-xl group-hover:border-blue-500 transition">
-                    <span className="text-blue-700 font-extrabold text-sm">{posSize}</span>
-                    <span className="text-gray-300 mx-1.5">|</span>
-                    <span
-                      className="text-gray-600 font-sans uppercase font-extrabold tracking-wider text-[11px] select-none"
-                    >
-                      Limit
+                  {/* Pill Badge with Non-Clickable Order Type Label */}
+                  <div className={`flex items-center rounded-md border px-3 py-1 text-xs font-mono font-bold shadow-xl transition ${
+                    riskBox.orderType === 'MARKET'
+                      ? 'border-amber-400 bg-[#161b22]/95 text-amber-300 hover:border-amber-300'
+                      : 'border-blue-400 bg-white/95 text-gray-900 hover:border-blue-500'
+                  }`}>
+                    <span className={riskBox.orderType === 'MARKET' ? 'text-amber-400 font-extrabold text-sm' : 'text-blue-700 font-extrabold text-sm'}>{posSize}</span>
+                    <span className="text-gray-400 mx-1.5">|</span>
+                    <span className="font-sans uppercase font-extrabold tracking-wider text-[11px] select-none flex items-center gap-1">
+                      {riskBox.orderType === 'MARKET' ? (
+                        <>
+                          <span>Market</span>
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping inline-block" />
+                        </>
+                      ) : (
+                        'Limit'
+                      )}
                     </span>
-                    <span className="text-gray-300 mx-1.5">|</span>
+                    <span className="text-gray-400 mx-1.5">|</span>
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); cancelRiskBox() }}
@@ -4211,7 +4321,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     </button>
                   </div>
 
-                  <div className="w-3 h-3 rounded-full bg-blue-500 border-2 border-white shadow-md group-hover:scale-125 transition-transform" />
+                  <div className={`w-3 h-3 rounded-full border-2 border-white shadow-md group-hover:scale-125 transition-transform ${
+                    riskBox.orderType === 'MARKET' ? 'bg-amber-400' : 'bg-blue-500'
+                  }`} />
                 </div>
               )}
 
