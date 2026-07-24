@@ -51,7 +51,9 @@ import {
   resolveDeskLevels,
   resolveAfternoonDeskLevels,
   computeInitialBalance,
+  computeIbSignals,
   ibLineSeriesData,
+  type InitialBalanceRange,
 } from '@/lib/trading/deskLevels'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
@@ -611,7 +613,9 @@ export function TradingChart({
     high: ISeriesApi<'Line'>
     low: ISeriesApi<'Line'>
   } | null>(null)
+  const ibRangeRef = useRef<InitialBalanceRange | null>(null)
   const [ibShaped, setIbShaped] = useState(false)
+  const [showIbBreakouts, setShowIbBreakouts] = useState(true)
   const levelLinesRef = useRef<any[]>([])
   /** Host for level/SL/TP price lines — seeded once; candle setData must not touch it */
   const priceLineHostRef = useRef<ISeriesApi<'Line'> | null>(null)
@@ -671,6 +675,53 @@ export function TradingChart({
   const [showLevels,  setShowLevels] = useState(true)
   /** Floating morning playbook — closed by default on chart refresh; open via Playbook (P). */
   const [playbookOpen, setPlaybookOpen] = useState(false)
+
+  useEffect(() => {
+    const candleSeries = candleRef.current
+    const ib = ibRangeRef.current
+    if (!candleSeries) return
+
+    if (showIbBreakouts && ib && candlesRef.current.length > 0) {
+      const deskBars = candlesRef.current.map((c) => ({
+        time: c.time as number,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      }))
+      const signals = computeIbSignals(deskBars, ib)
+      const markers = signals.map((s) => ({
+        time: s.time as UTCTimestamp,
+        position: s.position,
+        color: s.color,
+        shape: s.shape,
+        text: s.text,
+      }))
+      try {
+        candleSeries.setMarkers(markers)
+      } catch { /* ignore */ }
+    } else {
+      try {
+        candleSeries.setMarkers([])
+      } catch { /* ignore */ }
+    }
+  }, [showIbBreakouts])
+
+  const ibProximity = useMemo(() => {
+    if (!showIbBreakouts || !ibShaped || !ibRangeRef.current || !livePrice) return null
+    const ib = ibRangeRef.current
+    const range = ib.high - ib.low
+    const buffer = Math.max(range * 0.05, ib.high * 0.0015)
+
+    if (Math.abs(livePrice - ib.high) <= buffer) {
+      return { level: 'HIGH', price: ib.high }
+    }
+    if (Math.abs(livePrice - ib.low) <= buffer) {
+      return { level: 'LOW', price: ib.low }
+    }
+    return null
+  }, [showIbBreakouts, ibShaped, livePrice])
   const playbookUserClosedRef = useRef(false)
 
   const togglePlaybook = useCallback(() => {
@@ -1679,6 +1730,7 @@ export function TradingChart({
           })),
           openUnix
         )
+        ibRangeRef.current = ib
         if (ib) {
           const pts = ibLineSeriesData(ib, Math.max(tipUnix, closeUnix))
           try {
@@ -1700,10 +1752,37 @@ export function TradingChart({
             ibSeries.low.setData([])
             setIbShaped(false)
           }
+
+          if (showIbBreakouts && candleRef.current) {
+            const deskBars = ordered.map((c) => ({
+              time: c.time as number,
+              open: c.open,
+              high: c.high,
+              low: c.low,
+              close: c.close,
+              volume: c.volume,
+            }))
+            const signals = computeIbSignals(deskBars, ib)
+            const markers = signals.map((s) => ({
+              time: s.time as UTCTimestamp,
+              position: s.position,
+              color: s.color,
+              shape: s.shape,
+              text: s.text,
+            }))
+            try {
+              candleRef.current.setMarkers(markers)
+            } catch { /* ignore */ }
+          } else if (candleRef.current) {
+            try { candleRef.current.setMarkers([]) } catch { /* ignore */ }
+          }
         } else {
           ibSeries.high.setData([])
           ibSeries.low.setData([])
           setIbShaped(false)
+          if (candleRef.current) {
+            try { candleRef.current.setMarkers([]) } catch { /* ignore */ }
+          }
         }
       }
 
@@ -3080,6 +3159,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       } else if (key === 'l') {
         e.preventDefault()
         setShowLevels((prev) => !prev)
+      } else if (key === 'b') {
+        e.preventDefault()
+        setShowIbBreakouts((prev) => !prev)
       } else if (key === 'p') {
         e.preventDefault()
         togglePlaybook()
@@ -3595,6 +3677,41 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               ? ` (${levels.filter((l) => l.source === 'ai' || l.source === 'structure').length})`
               : ''}
           </button>
+        )}
+
+        {/* IB Breakout Signals toggle button (Press B) */}
+        {deskSessionLive && (
+          <button
+            type="button"
+            title={
+              showIbBreakouts
+                ? 'IB Breakout & Rejection signals visible (Press B)'
+                : 'Show session Initial Balance Breakout & Rejection signals (Press B)'
+            }
+            onClick={() => setShowIbBreakouts((v) => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+              showIbBreakouts
+                ? 'bg-blue-600/30 border-blue-500/50 text-blue-100'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-blue-200 hover:border-blue-500/40'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full inline-block ${showIbBreakouts ? 'bg-blue-400' : 'bg-gray-600'}`} />
+            <span>IB Breakout (B)</span>
+          </button>
+        )}
+
+        {/* IB Proximity Badge when price approaches IB High / IB Low */}
+        {ibProximity && (
+          <span
+            className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-extrabold uppercase tracking-wide animate-pulse shadow-sm ${
+              ibProximity.level === 'HIGH'
+                ? 'border-amber-500/80 bg-amber-950/80 text-amber-200'
+                : 'border-purple-500/80 bg-purple-950/80 text-purple-200'
+            }`}
+            title={`Price is testing Initial Balance ${ibProximity.level} (${ibProximity.price.toLocaleString()})`}
+          >
+            ⚡ TESTING IB {ibProximity.level} ({ibProximity.price.toLocaleString()})
+          </span>
         )}
 
         {deskSessionLive &&

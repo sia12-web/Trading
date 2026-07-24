@@ -1375,6 +1375,96 @@ export function ibLineSeriesData(
   }
 }
 
+export interface IbSignalMarker {
+  time: number
+  type: 'INITIATIVE_LONG' | 'INITIATIVE_SHORT' | 'REJECT_HIGH' | 'REJECT_LOW'
+  price: number
+  text: string
+  color: string
+  position: 'aboveBar' | 'belowBar'
+  shape: 'arrowUp' | 'arrowDown'
+}
+
+/**
+ * Compute Initial Balance Breakout (IB BRK) and Rejection (IB REJ) signals.
+ * - Initiative Long (IB BRK ▲): Close crosses above IB High
+ * - Initiative Short (IB BRK ▼): Close crosses below IB Low
+ * - Reject High (IB REJ ▼): High spikes past IB High, Close stays inside IB High
+ * - Reject Low (IB REJ ▲): Low spikes below IB Low, Close stays inside IB Low
+ * No duplicate IB lines, balance, or excess labels. Binds strictly to system IB levels.
+ */
+export function computeIbSignals(
+  candles: DeskBar[],
+  ib: InitialBalanceRange | null
+): IbSignalMarker[] {
+  if (!ib || !candles || candles.length < 2) return []
+
+  const signals: IbSignalMarker[] = []
+  const postIbBars = candles.filter((c) => c.time >= ib.fromTime)
+
+  for (let i = 0; i < postIbBars.length; i++) {
+    const c = postIbBars[i]!
+    if (c.time < ib.endUnix) continue
+
+    const prev = i > 0 ? postIbBars[i - 1]! : null
+
+    const closeAbove = c.close > ib.high
+    const closeBelow = c.close < ib.low
+    const prevCloseAbove = prev ? prev.close > ib.high : false
+    const prevCloseBelow = prev ? prev.close < ib.low : false
+
+    const crossUp = closeAbove && (!prev || !prevCloseAbove)
+    const crossDn = closeBelow && (!prev || !prevCloseBelow)
+
+    const rejectH = c.high > ib.high && c.close < ib.high && !crossUp
+    const rejectL = c.low < ib.low && c.close > ib.low && !crossDn
+
+    if (crossUp) {
+      signals.push({
+        time: c.time as number,
+        type: 'INITIATIVE_LONG',
+        price: c.low,
+        text: 'IB BRK ▲',
+        color: '#22c55e',
+        position: 'belowBar',
+        shape: 'arrowUp',
+      })
+    } else if (crossDn) {
+      signals.push({
+        time: c.time as number,
+        type: 'INITIATIVE_SHORT',
+        price: c.high,
+        text: 'IB BRK ▼',
+        color: '#ef4444',
+        position: 'aboveBar',
+        shape: 'arrowDown',
+      })
+    } else if (rejectH) {
+      signals.push({
+        time: c.time as number,
+        type: 'REJECT_HIGH',
+        price: c.high,
+        text: 'IB REJ ▼',
+        color: '#f97316',
+        position: 'aboveBar',
+        shape: 'arrowDown',
+      })
+    } else if (rejectL) {
+      signals.push({
+        time: c.time as number,
+        type: 'REJECT_LOW',
+        price: c.low,
+        text: 'IB REJ ▲',
+        color: '#a855f7',
+        position: 'belowBar',
+        shape: 'arrowUp',
+      })
+    }
+  }
+
+  return signals
+}
+
 /** First-hour Initial Balance (cash open → +60m) as watch levels for afternoon. */
 export function initialBalanceLevelsFromCandles(
   candles: DeskBar[],
