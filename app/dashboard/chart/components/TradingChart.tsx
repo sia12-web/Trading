@@ -4299,7 +4299,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             riskBox.stopLoss,
             1.0
           )
-          const posSize = sz?.position_size ?? 1
+          const rawUnits = sz?.position_size ?? 1
+          const posSize = typeof rawUnits === 'number' && Number.isFinite(rawUnits)
+            ? (rawUnits >= 1 ? Math.round(rawUnits * 100) / 100 : Math.round(rawUnits * 1000) / 1000)
+            : 1
           const lossVal = (sz?.risk_amount ?? 100).toFixed(2)
           const targetPts = Math.abs(riskBox.profitTarget - riskBox.entryPrice)
           const profitVal = (posSize * targetPts).toFixed(2)
@@ -4389,22 +4392,17 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                         : 'SELL LIMIT'}
                   </button>
 
-                  {/* Direction Switch Toggle Button — Switch to SHORT / LONG */}
+                  {/* Direction Switch Icon Toggle Button — Switch between LONG and SHORT */}
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation()
                       toggleRiskBoxDirection()
                     }}
-                    className={`px-2.5 py-1 text-[11px] font-mono font-extrabold uppercase rounded-md shadow-md transition border flex items-center gap-1.5 ${
-                      riskBox.direction === 'LONG'
-                        ? 'bg-red-950/90 border-red-500/80 text-red-300 hover:bg-red-900 hover:text-white hover:scale-105'
-                        : 'bg-emerald-950/90 border-emerald-500/80 text-emerald-300 hover:bg-emerald-900 hover:text-white hover:scale-105'
-                    }`}
+                    className="w-7 h-7 flex items-center justify-center text-xs font-mono font-extrabold rounded-md shadow-md bg-[#161b22]/95 border border-gray-600 text-gray-200 hover:text-white hover:border-amber-400 hover:bg-surface-700 transition"
                     title={`Click to switch to ${riskBox.direction === 'LONG' ? 'SHORT / SELL' : 'LONG / BUY'} mode`}
                   >
-                    <span className="text-xs">⇄</span>
-                    <span>{riskBox.direction === 'LONG' ? 'SHORT MARKET' : 'LONG MARKET'}</span>
+                    ⇄
                   </button>
 
                   {/* Pill Badge with Non-Clickable Order Type Label */}
