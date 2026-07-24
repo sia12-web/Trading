@@ -8,6 +8,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
+import { isOandaConfigured } from '@/lib/oanda/config'
+import { getOandaAccountSummary } from '@/lib/oanda/orders'
 
 export const dynamic = 'force-dynamic'
 
@@ -128,16 +130,35 @@ export async function GET(request: NextRequest) {
     const aiExits = closed.filter((t) => t.exit_reason === 'ai_signal')
     const totalPnl = closed.reduce((s, t) => s + (Number(t.profit_loss) || 0), 0)
 
-    // Desk equity trail from ticket account_size + realized P&L (not broker margin)
+    // Desk equity trail from live OANDA account / ticket account_size + realized P&L
     const chrono = [...rows].sort((a, b) => {
       const ta = new Date(a.entry_timestamp || a.created_at || 0).getTime()
       const tb = new Date(b.entry_timestamp || b.created_at || 0).getTime()
       return ta - tb
     })
-    const startingAccount =
+
+    let startingAccount =
       chrono.find((t) => Number(t.account_size) > 0)?.account_size != null
         ? Number(chrono.find((t) => Number(t.account_size) > 0)!.account_size)
         : 100000
+
+    let oandaAccountInfo: Record<string, any> | null = null
+    if (isOandaConfigured()) {
+      const oandaRes = await getOandaAccountSummary()
+      if (oandaRes.ok) {
+        oandaAccountInfo = {
+          id: oandaRes.account.id,
+          balance: oandaRes.account.balance,
+          NAV: oandaRes.account.NAV,
+          marginAvailable: oandaRes.account.marginAvailable,
+          currency: oandaRes.account.currency,
+        }
+        if (chrono.length === 0) {
+          startingAccount = oandaRes.account.balance ?? oandaRes.account.NAV ?? startingAccount
+        }
+      }
+    }
+
     let running = startingAccount
     const equityAfter = new Map<string, number>()
     const equityBefore = new Map<string, number>()
@@ -254,6 +275,7 @@ export async function GET(request: NextRequest) {
         starting_account: startingAccount,
         ending_equity: endingEquity,
         equity_change: Math.round((endingEquity - startingAccount) * 100) / 100,
+        oanda_account: oandaAccountInfo,
         days,
       },
       entries,

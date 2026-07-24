@@ -71,6 +71,13 @@ interface Summary {
   starting_account?: number
   ending_equity?: number
   equity_change?: number
+  oanda_account?: {
+    id: string
+    balance: number
+    NAV: number
+    marginAvailable: number
+    currency: string
+  } | null
   days: number
 }
 
@@ -436,8 +443,18 @@ function JournalPageInner() {
                     : 'border-[#30363d] bg-[#161b22]'
               }`}
             >
-              <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-2">
-                Desk equity (ticket account ± realized P&amp;L)
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[10px] uppercase tracking-wider text-gray-500">
+                  Desk equity (ticket account ± realized P&amp;L)
+                </div>
+                {summary.oanda_account && (
+                  <div className="flex items-center gap-2 rounded-full border border-emerald-500/40 bg-emerald-950/60 px-2.5 py-0.5 text-[10px] font-mono font-bold text-emerald-300">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>OANDA LIVE ({summary.oanda_account.id})</span>
+                    <span className="text-gray-500">|</span>
+                    <span>Margin Avail: {fmtMoney(summary.oanda_account.marginAvailable)}</span>
+                  </div>
+                )}
               </div>
               <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
                 <div>
