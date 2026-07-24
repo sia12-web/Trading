@@ -4025,6 +4025,21 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           className="pointer-events-none absolute inset-0 z-[1]"
           style={{ opacity: 1, transition: 'none', willChange: 'opacity' }}
         />
+
+        {/* Floating TradingView-Style 5M Bar Countdown Badge (Always Visible Over Chart) */}
+        {barCountdown && (
+          <div
+            className="absolute top-3 right-4 z-20 flex items-center gap-2 rounded-lg border border-emerald-500/60 bg-[#161b22]/95 px-3 py-1.5 shadow-2xl backdrop-blur-md font-mono text-xs font-bold text-emerald-300"
+            title="TradingView 5-Minute Bar Close Countdown"
+          >
+            <span className="flex items-center gap-1.5 text-emerald-400">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <span className="text-[11px] font-sans font-extrabold uppercase tracking-wider text-emerald-400">5M BAR</span>
+            </span>
+            <span className="text-gray-500">|</span>
+            <span className="text-sm font-extrabold text-white tracking-widest">{barCountdown}</span>
+          </div>
+        )}
         
         {/* Render Saved 2D Time Highlights */}
         {renderSavedHighlightBoxes()}
