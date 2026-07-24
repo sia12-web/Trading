@@ -3911,38 +3911,32 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         {/* Live price ticker */}
         <div className="ml-auto flex items-center gap-3">
           {livePrice && (
-            <>
-              <span className="text-xs text-gray-500">{INSTRUMENT_META[instrument].label}</span>
-              <span
-                className="price-mono text-xl font-bold transition-colors duration-300"
-                style={{ color: INSTRUMENT_META[instrument].color }}
-                title="OANDA mid (bid+ask)/2 — compare TradingView to OANDA:US30USD / NAS100USD / JP225USD, not CMC Markets"
-              >
-                {livePrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
+            <div className="flex flex-col items-end leading-tight">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500">{INSTRUMENT_META[instrument].label}</span>
+                <span
+                  className="price-mono text-xl font-extrabold transition-colors duration-300"
+                  style={{ color: INSTRUMENT_META[instrument].color }}
+                  title="OANDA mid (bid+ask)/2 — compare TradingView to OANDA:US30USD / NAS100USD / JP225USD"
+                >
+                  {livePrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
+                  isUp ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'
+                }`}>
+                  {isUp ? '▲' : '▼'} {Math.abs(priceChange).toFixed(2)}
+                </span>
+              </div>
               {barCountdown && (
                 <div
-                  className="flex items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-950/70 px-2 py-0.5 font-mono text-xs font-bold text-emerald-300 shadow-sm"
-                  title="Time remaining until current 5-minute candle closes (TradingView Bar Countdown)"
+                  className="flex items-center gap-1.5 font-mono text-xs font-bold text-emerald-400 mt-0.5"
+                  title="Time remaining in current 5-minute candle"
                 >
-                  <svg className="w-3 h-3 text-emerald-400 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span className="text-[10px] text-emerald-400/80 uppercase tracking-wider font-semibold">5M</span>
-                  <span className="text-emerald-200 font-extrabold">{barCountdown}</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-emerald-300 font-extrabold tracking-widest">{barCountdown}</span>
                 </div>
               )}
-              {dataMode === 'live' && (
-                <span className="text-[9px] uppercase tracking-wider text-gray-600" title="Broker feed for fills">
-                  OANDA mid
-                </span>
-              )}
-              <span className={`text-xs font-bold px-2 py-0.5 rounded ${
-                isUp ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'
-              }`}>
-                {isUp ? '▲' : '▼'} {Math.abs(priceChange).toFixed(2)}
-              </span>
-            </>
+            </div>
           )}
           {/* Position overlay indicator */}
           {positionOverlay && (
@@ -4026,21 +4020,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           style={{ opacity: 1, transition: 'none', willChange: 'opacity' }}
         />
 
-        {/* Floating TradingView-Style 5M Bar Countdown Badge (Always Visible Over Chart) */}
-        {barCountdown && (
-          <div
-            className="absolute top-3 right-4 z-20 flex items-center gap-2 rounded-lg border border-emerald-500/60 bg-[#161b22]/95 px-3 py-1.5 shadow-2xl backdrop-blur-md font-mono text-xs font-bold text-emerald-300"
-            title="TradingView 5-Minute Bar Close Countdown"
-          >
-            <span className="flex items-center gap-1.5 text-emerald-400">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-              <span className="text-[11px] font-sans font-extrabold uppercase tracking-wider text-emerald-400">5M BAR</span>
-            </span>
-            <span className="text-gray-500">|</span>
-            <span className="text-sm font-extrabold text-white tracking-widest">{barCountdown}</span>
-          </div>
-        )}
-        
         {/* Render Saved 2D Time Highlights */}
         {renderSavedHighlightBoxes()}
 
