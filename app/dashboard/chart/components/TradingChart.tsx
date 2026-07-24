@@ -4336,8 +4336,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   title="Drag Take Profit line up or down"
                 >
                   <div className="flex items-center rounded border border-dashed border-emerald-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-emerald-300 shadow-md group-hover:border-emerald-300 transition">
-                    <span>{posSize}</span>
-                    <span className="text-emerald-600 mx-1.5">|</span>
                     <span className="text-emerald-400">+{profitVal} CAD</span>
                     <span className="text-emerald-600 mx-1.5">|</span>
                     <button
@@ -4411,8 +4409,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                       ? 'border-amber-400 bg-[#161b22]/95 text-amber-300 hover:border-amber-300'
                       : 'border-blue-400 bg-white/95 text-gray-900 hover:border-blue-500'
                   }`}>
-                    <span className={riskBox.orderType === 'MARKET' ? 'text-amber-400 font-extrabold text-sm' : 'text-blue-700 font-extrabold text-sm'}>{posSize}</span>
-                    <span className="text-gray-400 mx-1.5">|</span>
                     <span className="font-sans uppercase font-extrabold tracking-wider text-[11px] select-none flex items-center gap-1">
                       {riskBox.orderType === 'MARKET' ? (
                         <>
@@ -4452,8 +4448,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   title="Drag Stop Loss line up or down to adjust risk size"
                 >
                   <div className="flex items-center rounded border border-dashed border-amber-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-amber-300 shadow-md group-hover:border-amber-300 transition">
-                    <span>{posSize}</span>
-                    <span className="text-amber-600 mx-1.5">|</span>
                     <span className="text-amber-400">-{lossVal} CAD</span>
                     <span className="text-amber-600 mx-1.5">|</span>
                     <button
