@@ -495,6 +495,10 @@ export async function updateOandaTradeStopLoss(
 
   const text = await res.text()
   if (!res.ok) {
+    if (/does not exist|already|CLOSED|TOO_CLOSE/i.test(text)) {
+      logger.warn('oanda.stop_loss_update_ignored', { status: res.status, tradeId, msg: text.slice(0, 200) })
+      return { ok: false, error: 'Trade closed or price too close' }
+    }
     logger.error('oanda.stop_loss_update_failed', { status: res.status, tradeId, text })
     return { ok: false, error: text.slice(0, 300) }
   }

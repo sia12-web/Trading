@@ -133,7 +133,9 @@ export async function POST(request: Request) {
       const roundedTrail = Math.round(calculatedTrail * 10) / 10
 
       const effectiveSl = updatedSlPrice ?? currentSl
-      const isTrailTighter = isLong ? roundedTrail > effectiveSl : roundedTrail < effectiveSl
+      const isTrailTighter = isLong
+        ? roundedTrail > effectiveSl && (roundedTrail - effectiveSl) >= 1.5
+        : roundedTrail < effectiveSl && (effectiveSl - roundedTrail) >= 1.5
 
       if (isTrailTighter) {
         updatedSlPrice = roundedTrail
