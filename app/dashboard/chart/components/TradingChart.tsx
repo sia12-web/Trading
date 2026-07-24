@@ -635,6 +635,24 @@ export function TradingChart({
   const [livePrice,   setLivePrice]  = useState<number | null>(null)
   const [priceChange, setPriceChange] = useState<number>(0)
   const [barCountdown, setBarCountdown] = useState<string>('')
+  const [liveAccountSize, setLiveAccountSize] = useState<number>(100000)
+
+  useEffect(() => {
+    let isMounted = true
+    fetch('/api/trading/oanda/status')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!isMounted || !data?.ok) return
+        const nav = Number(data.NAV ?? data.balance)
+        if (Number.isFinite(nav) && nav > 0) {
+          setLiveAccountSize(nav)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
   useEffect(() => {
     const updateCountdown = () => {
@@ -4261,7 +4279,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
           const sz = previewPositionSizing(
             riskBox.entryPrice,
-            100000,
+            liveAccountSize,
             riskBox.direction,
             riskBox.stopLoss,
             1.0

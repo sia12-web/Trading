@@ -23,8 +23,8 @@ export function riskPercentForEntrySource(source?: DeskEntrySource | string | nu
   return source === 'manual' ? MANUAL_RISK_PERCENT : DESK_RISK_PERCENT
 }
 
-const MIN_ACCOUNT = 5_000
-const MAX_ACCOUNT = 1_000_000
+const MIN_ACCOUNT = 100
+const MAX_ACCOUNT = 10_000_000
 
 /**
  * Prefer server DESK_ACCOUNT_SIZE when set; otherwise clamp client value.

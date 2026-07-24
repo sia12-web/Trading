@@ -22,7 +22,8 @@ import {
   instrumentsForDeskMarket,
 } from '@/lib/trading/sessionGate'
 import { getTodayAttendance, tradeDateForInstrument } from '@/lib/trading/deskAttendance'
-import { shouldExecuteOandaOrders } from '@/lib/oanda/config'
+import { isOandaConfigured, shouldExecuteOandaOrders } from '@/lib/oanda/config'
+import { getOandaAccountSummary } from '@/lib/oanda/orders'
 import { placeOandaMarketOrder, closeOandaTrade } from '@/lib/oanda/orders'
 import type { PositionOpenResponse } from '@/types/trading'
 
@@ -260,11 +261,23 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       )
     }
 
-    // Prefer DESK_ACCOUNT_SIZE when set; otherwise clamp client $5k–$1M
-    const accountSize = resolveDeskAccountSize(body.account_size)
+    // Dynamic Account Size: Prefer live OANDA account NAV / balance, or DESK_ACCOUNT_SIZE / client value
+    let rawAccountSize = body.account_size
+    if (isOandaConfigured()) {
+      const oandaRes = await getOandaAccountSummary()
+      if (oandaRes.ok && oandaRes.account) {
+        const liveNav = oandaRes.account.balance ?? oandaRes.account.NAV
+        if (liveNav && liveNav > 0) {
+          rawAccountSize = liveNav
+        }
+      }
+    }
+
+    const accountSize = resolveDeskAccountSize(rawAccountSize)
     if (accountSize == null) {
       logger.error('POST /api/trading/positions/open: Invalid account size', {
         size: body.account_size,
+        rawAccountSize,
       })
       return NextResponse.json(
         {
@@ -277,7 +290,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
           risk_amount: 0,
           entry_direction: body.entry_direction,
           entry_window: body.entry_window,
-          message: 'Account size must be between $5000 and $1000000 (or set DESK_ACCOUNT_SIZE)',
+          message: 'Account size must be between $100 and $10,000,000 (or set DESK_ACCOUNT_SIZE)',
         },
         { status: 400 }
       )
