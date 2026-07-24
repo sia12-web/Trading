@@ -195,6 +195,20 @@ export async function clockIn(
 
   const existing = await getTodayAttendance(supabase, userId, args.market)
   if (existing?.status === 'clocked_in') {
+    if (instrument && instrument !== existing.instrument && !existing.traded_instrument) {
+      const { data, error } = await supabase
+        .from('desk_attendance')
+        .update({
+          instrument: instrument,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id)
+        .select('*')
+        .single()
+      if (!error && data) {
+        return { ok: true, row: data as DeskAttendanceRow }
+      }
+    }
     return { ok: true, row: existing }
   }
   if (existing?.status === 'clocked_out') {

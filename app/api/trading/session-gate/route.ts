@@ -119,7 +119,12 @@ export async function GET(request: Request) {
     const clockedIn = attendance?.status === 'clocked_in'
     const attendedToday = !!attendance
 
-    // Clock-in commitment wins over morning recommendation (focus that name only)
+    // Trader's active choice (viewing tab or attendance commitment) wins over AI default recommendation
+    const userSelected =
+      viewingInstrument && marketInstruments.includes(viewingInstrument)
+        ? viewingInstrument
+        : null
+
     const attendanceFocus =
       (attendance?.traded_instrument &&
       isLiveDeskInstrument(attendance.traded_instrument)
@@ -128,8 +133,11 @@ export async function GET(request: Request) {
       (attendance?.instrument && isLiveDeskInstrument(attendance.instrument)
         ? attendance.instrument
         : null)
+
     if (attendanceFocus && marketInstruments.includes(attendanceFocus)) {
       lockedInstrument = attendanceFocus
+    } else if (userSelected && !openPos) {
+      lockedInstrument = userSelected
     }
 
     // During a live focus window, viewing must stay on that desk.
