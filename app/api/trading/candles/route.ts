@@ -8,6 +8,7 @@
 import { NextResponse } from 'next/server'
 import { getYahooCandles, getYahooCandlesRange } from '@/lib/yahoo/candles'
 import { getOandaCandles, getOandaCandlesRange } from '@/lib/oanda/candles'
+import { getOandaPrice } from '@/lib/oanda/pricing'
 import { getYahooQuote } from '@/lib/yahoo/quote'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import {
@@ -143,13 +144,26 @@ export async function GET(request: Request) {
     } | null = null
     if (includeQuote) {
       try {
-        const q = await getYahooQuote(instrument)
-        if (q) {
-          quote = {
-            price: q.price,
-            change: q.change,
-            change_pct: q.change_pct,
-            previous_close: q.previous_close,
+        if (source === 'oanda') {
+          const o = await getOandaPrice(instrument)
+          if (o?.price && o.price > 0) {
+            const last = candles[candles.length - 1]!
+            quote = {
+              price: o.price,
+              change: last ? o.price - last.open : 0,
+              change_pct: 0,
+            }
+          }
+        }
+        if (!quote) {
+          const q = await getYahooQuote(instrument)
+          if (q) {
+            quote = {
+              price: q.price,
+              change: q.change,
+              change_pct: q.change_pct,
+              previous_close: q.previous_close,
+            }
           }
         }
       } catch {
