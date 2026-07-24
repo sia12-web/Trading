@@ -465,4 +465,85 @@ export async function closeOandaInstrumentPosition(
   return { ok: true, tradeId: symbol, fillPrice: null, realizedPL: null, raw: json }
 }
 
+/** Update Stop Loss on open OANDA trade (e.g. Breakeven or Trailing Stop). */
+export async function updateOandaTradeStopLoss(
+  tradeId: string,
+  newStopLossPrice: number,
+  instrument: Instrument
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!isOandaConfigured()) {
+    return { ok: false, error: 'OANDA not configured' }
+  }
+  if (!tradeId) {
+    return { ok: false, error: 'Missing OANDA trade id' }
+  }
+
+  const symbol = toOandaInstrument(instrument)
+  const meta = symbol ? await getOandaInstrumentDetails(symbol) : null
+  const priceDecimals = meta?.displayPrecision ?? 1
+
+  const accountId = oandaAccountId()
+  const res = await oandaFetch(`/v3/accounts/${accountId}/trades/${tradeId}/orders`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      stopLoss: {
+        price: priceString(newStopLossPrice, priceDecimals),
+        timeInForce: 'GTC',
+      },
+    }),
+  })
+
+  const text = await res.text()
+  if (!res.ok) {
+    logger.error('oanda.stop_loss_update_failed', { status: res.status, tradeId, text })
+    return { ok: false, error: text.slice(0, 300) }
+  }
+
+  logger.info('oanda.stop_loss_updated', { tradeId, newStopLossPrice })
+  return { ok: true }
+}
+
+/** Partially close units on an open OANDA trade (Partial Scale-Out). */
+export async function partialCloseOandaTrade(
+  tradeId: string,
+  unitsToClose: number
+): Promise<CloseTradeResult> {
+  if (!isOandaConfigured()) {
+    return { ok: false, error: 'OANDA not configured' }
+  }
+  if (!tradeId) {
+    return { ok: false, error: 'Missing OANDA trade id' }
+  }
+
+  const accountId = oandaAccountId()
+  const unitsStr = String(Math.abs(Math.round(unitsToClose)))
+
+  logger.info('oanda.trade_partial_scale_out', { accountId, tradeId, unitsToClose: unitsStr })
+
+  const res = await oandaFetch(`/v3/accounts/${accountId}/trades/${tradeId}/close`, {
+    method: 'PUT',
+    body: JSON.stringify({ units: unitsStr }),
+  })
+
+  const text = await res.text()
+  let json: any = null
+  try {
+    json = JSON.parse(text)
+  } catch {
+    /* ignore */
+  }
+
+  if (!res.ok) {
+    const msg = String(json?.errorMessage || text || '')
+    logger.error('oanda.trade_scale_out_failed', { status: res.status, msg, tradeId })
+    return { ok: false, error: msg || `HTTP ${res.status}`, status: res.status, raw: json }
+  }
+
+  const fillPrice = extractFillPrice(json)
+  const realizedPL = extractRealizedPl(json)
+
+  logger.info('oanda.trade_scaled_out', { tradeId, fillPrice, realizedPL })
+  return { ok: true, tradeId, fillPrice, realizedPL, raw: json }
+}
+
 export { toUnits }
