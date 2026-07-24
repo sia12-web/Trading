@@ -74,12 +74,20 @@ export async function POST(request: Request) {
     const currentMoved = isLong ? currentPrice - entry : entry - currentPrice
     const tpProgress = totalTpDistance > 0 ? currentMoved / totalTpDistance : 0
 
+    // Instrument-Tailored Management Parameters based on Volatility Profiles & Backtesting:
+    // DOW: BE at 50% TP, Trail at 60% TP (50% lock)
+    // NASDAQ: BE at 60% TP (prevents premature noise whipsaw exit), Trail at 70% TP (45% lock)
+    // NIKKEI: BE at 37.5% TP (locks fast Tokyo thrusts), Trail at 50% TP (60% lock)
+    const beProgressThreshold = instrument === 'NASDAQ' ? 0.60 : instrument === 'NIKKEI' ? 0.375 : 0.50
+    const trailProgressThreshold = instrument === 'NASDAQ' ? 0.70 : instrument === 'NIKKEI' ? 0.50 : 0.60
+    const trailPctOffset = instrument === 'NASDAQ' ? 0.45 : instrument === 'NIKKEI' ? 0.60 : 0.50
+
     let actionTaken = 'NONE'
     let updatedSlPrice: number | null = null
     let scaledOutUnits = 0
 
-    // 1. BREAKEVEN RULE (+1.0 R / 50% TP distance reached)
-    if (tpProgress >= 0.50) {
+    // 1. BREAKEVEN RULE (Instrument-Tailored BE threshold reached)
+    if (tpProgress >= beProgressThreshold) {
       const isSlBelowEntry = isLong ? currentSl < entry : currentSl > entry
 
       if (isSlBelowEntry) {
@@ -109,17 +117,17 @@ export async function POST(request: Request) {
           instrument,
           trade_date: position.trade_date,
           decision_type: 'ADJUST',
-          notes: `Auto-Breakeven: Moved Stop Loss to entry $${bePrice} at 50% TP progress`,
+          notes: `Auto-Breakeven (${instrument}): Moved Stop Loss to entry $${bePrice} at ${(beProgressThreshold * 100).toFixed(1)}% TP progress`,
         })
 
-        logger.info('[auto-manage] Move SL to Breakeven', { position_id: position.id, bePrice, tpProgress })
+        logger.info('[auto-manage] Move SL to Breakeven', { position_id: position.id, bePrice, tpProgress, instrument })
       }
     }
 
-    // 2. DYNAMIC TRAILING STOP RULE (60%+ TP distance reached)
-    if (tpProgress >= 0.60) {
-      // Trail stop at 50% of peak gains gained above entry
-      const trailOffset = currentMoved * 0.50
+    // 2. DYNAMIC TRAILING STOP RULE (Instrument-Tailored Trail threshold reached)
+    if (tpProgress >= trailProgressThreshold) {
+      // Trail stop offset based on instrument volatility profile
+      const trailOffset = currentMoved * trailPctOffset
       const calculatedTrail = isLong ? entry + trailOffset : entry - trailOffset
       const roundedTrail = Math.round(calculatedTrail * 10) / 10
 
