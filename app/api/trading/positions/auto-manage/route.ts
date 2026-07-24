@@ -18,6 +18,9 @@ import type { Instrument as PriceInstrument } from '@/types/price-feed'
 interface Body {
   position_id: string
   current_price?: number
+  auto_execute?: boolean
+  confirm_action?: 'CONFIRM' | 'REJECT'
+  action_type?: 'BREAKEVEN' | 'TRAIL_STOP' | 'SCALE_OUT'
 }
 
 export async function POST(request: Request) {
@@ -81,7 +84,35 @@ export async function POST(request: Request) {
     const beProgressThreshold = instrument === 'NASDAQ' ? 0.50 : instrument === 'NIKKEI' ? 0.35 : 0.25
     const trailProgressThreshold = instrument === 'NASDAQ' ? 0.60 : instrument === 'NIKKEI' ? 0.45 : 0.30
     const trailPctOffset = instrument === 'NASDAQ' ? 0.50 : instrument === 'NIKKEI' ? 0.40 : 0.30
-    const scaleOutProgressThreshold = beProgressThreshold
+    const autoExecute = body.auto_execute === true // Default is false: Require Trader Confirmation (CONFIRM/REJECT)
+    const confirmAction = body.confirm_action // 'CONFIRM' | 'REJECT'
+    const actionType = body.action_type // 'BREAKEVEN' | 'TRAIL_STOP' | 'SCALE_OUT'
+
+    // Handle Trader Manual Confirmation or Rejection
+    if (confirmAction === 'REJECT') {
+      await supabase.from('management_decisions').insert({
+        user_id: user.id,
+        position_id: position.id,
+        instrument,
+        trade_date: position.trade_date,
+        decision_type: 'HOLD',
+        notes: `Trader rejected ${actionType || 'management'} recommendation — holding position as-is`,
+      })
+      logger.info('[auto-manage] Trader REJECTED recommendation', { position_id: position.id, actionType })
+      return NextResponse.json({
+        success: true,
+        action_taken: 'REJECTED_BY_TRADER',
+        message: 'Recommendation rejected. Position held untouched.',
+      })
+    }
+
+    let recommendation: {
+      action_type: 'BREAKEVEN' | 'TRAIL_STOP' | 'SCALE_OUT'
+      proposed_price?: number
+      proposed_units?: number
+      reason: string
+      confidence: number
+    } | null = null
 
     let actionTaken = 'NONE'
     let updatedSlPrice: number | null = null
@@ -92,42 +123,44 @@ export async function POST(request: Request) {
       const isSlBelowEntry = isLong ? currentSl < entry : currentSl > entry
 
       if (isSlBelowEntry) {
-        // Move Stop Loss to Breakeven (Entry Price)
         const bePrice = Math.round(entry * 10) / 10
-        updatedSlPrice = bePrice
-        actionTaken = 'MOVED_TO_BREAKEVEN'
+        if (autoExecute || (confirmAction === 'CONFIRM' && actionType === 'BREAKEVEN')) {
+          updatedSlPrice = bePrice
+          actionTaken = 'MOVED_TO_BREAKEVEN'
 
-        // Update OANDA Stop Loss
-        if (oandaTradeId) {
-          await updateOandaTradeStopLoss(oandaTradeId, bePrice, instrument)
-        }
+          if (oandaTradeId) {
+            await updateOandaTradeStopLoss(oandaTradeId, bePrice, instrument)
+          }
 
-        // Update Database
-        await supabase
-          .from('trades_journal')
-          .update({
-            stop_loss_price: bePrice,
-            updated_at: new Date().toISOString(),
+          await supabase
+            .from('trades_journal')
+            .update({
+              stop_loss_price: bePrice,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', position.id)
+
+          await supabase.from('management_decisions').insert({
+            user_id: user.id,
+            position_id: position.id,
+            instrument,
+            trade_date: position.trade_date,
+            decision_type: 'ADJUST',
+            notes: `Confirmed Auto-Breakeven (${instrument}): Moved Stop Loss to entry $${bePrice}`,
           })
-          .eq('id', position.id)
-
-        // Record Decision
-        await supabase.from('management_decisions').insert({
-          user_id: user.id,
-          position_id: position.id,
-          instrument,
-          trade_date: position.trade_date,
-          decision_type: 'ADJUST',
-          notes: `Auto-Breakeven (${instrument} 2-Year Profile): Moved Stop Loss to entry $${bePrice} at ${(beProgressThreshold * 100).toFixed(1)}% TP progress`,
-        })
-
-        logger.info('[auto-manage] Move SL to Breakeven', { position_id: position.id, bePrice, tpProgress, instrument })
+        } else {
+          recommendation = {
+            action_type: 'BREAKEVEN',
+            proposed_price: bePrice,
+            reason: `Target reached ${(beProgressThreshold * 100).toFixed(0)}% TP progress. Move Stop Loss to Breakeven ($${bePrice})?`,
+            confidence: 85,
+          }
+        }
       }
     }
 
     // 2. DYNAMIC TRAILING STOP RULE (Instrument 2-Year Empirical Trail threshold reached)
-    if (tpProgress >= trailProgressThreshold) {
-      // Trail stop offset based on instrument 2-year backtested profile
+    if (tpProgress >= trailProgressThreshold && !recommendation) {
       const trailOffset = currentMoved * trailPctOffset
       const calculatedTrail = isLong ? entry + trailOffset : entry - trailOffset
       const roundedTrail = Math.round(calculatedTrail * 10) / 10
@@ -138,52 +171,64 @@ export async function POST(request: Request) {
         : roundedTrail < effectiveSl && (effectiveSl - roundedTrail) >= 1.5
 
       if (isTrailTighter) {
-        updatedSlPrice = roundedTrail
-        actionTaken = actionTaken === 'MOVED_TO_BREAKEVEN' ? 'BREAKEVEN_AND_TRAILED' : 'TRAILED_STOP'
+        if (autoExecute || (confirmAction === 'CONFIRM' && actionType === 'TRAIL_STOP')) {
+          updatedSlPrice = roundedTrail
+          actionTaken = actionTaken === 'MOVED_TO_BREAKEVEN' ? 'BREAKEVEN_AND_TRAILED' : 'TRAILED_STOP'
 
-        // Update OANDA Stop Loss
-        if (oandaTradeId) {
-          await updateOandaTradeStopLoss(oandaTradeId, roundedTrail, instrument)
+          if (oandaTradeId) {
+            await updateOandaTradeStopLoss(oandaTradeId, roundedTrail, instrument)
+          }
+
+          await supabase
+            .from('trades_journal')
+            .update({
+              stop_loss_price: roundedTrail,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', position.id)
+        } else {
+          recommendation = {
+            action_type: 'TRAIL_STOP',
+            proposed_price: roundedTrail,
+            reason: `Trade in strong profit (${(tpProgress * 100).toFixed(0)}% TP). Trail Stop Loss to $${roundedTrail}?`,
+            confidence: 80,
+          }
         }
-
-        // Update Database
-        await supabase
-          .from('trades_journal')
-          .update({
-            stop_loss_price: roundedTrail,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', position.id)
-
-        logger.info('[auto-manage] Trailed SL', { position_id: position.id, roundedTrail, tpProgress, instrument })
       }
     }
 
     // 3. PARTIAL SCALE-OUT RULE (Instrument 2-Year Empirical Scale-Out threshold reached)
     const alreadyScaledOut = Boolean(position.scaled_out)
-    if (tpProgress >= scaleOutProgressThreshold && confidence >= 70 && !alreadyScaledOut) {
+    if (tpProgress >= beProgressThreshold && confidence >= 70 && !alreadyScaledOut && !recommendation) {
       const totalUnits = Math.abs(Number(position.position_size || 1))
       if (totalUnits > 1) {
         const unitsToClose = Math.max(1, Math.floor(totalUnits * 0.50))
-        scaledOutUnits = unitsToClose
 
-        if (oandaTradeId) {
-          await partialCloseOandaTrade(oandaTradeId, unitsToClose)
+        if (autoExecute || (confirmAction === 'CONFIRM' && actionType === 'SCALE_OUT')) {
+          scaledOutUnits = unitsToClose
+          if (oandaTradeId) {
+            await partialCloseOandaTrade(oandaTradeId, unitsToClose)
+          }
+
+          const remainingUnits = totalUnits - unitsToClose
+          await supabase
+            .from('trades_journal')
+            .update({
+              position_size: remainingUnits,
+              scaled_out: true,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', position.id)
+
+          actionTaken = actionTaken === 'NONE' ? 'PARTIAL_SCALE_OUT' : `${actionTaken}_AND_SCALED_OUT`
+        } else {
+          recommendation = {
+            action_type: 'SCALE_OUT',
+            proposed_units: unitsToClose,
+            reason: `Target reached ${(beProgressThreshold * 100).toFixed(0)}% TP progress. Lock 50% profit (${unitsToClose} units)?`,
+            confidence: 85,
+          }
         }
-
-        const remainingUnits = totalUnits - unitsToClose
-        await supabase
-          .from('trades_journal')
-          .update({
-            position_size: remainingUnits,
-            scaled_out: true,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', position.id)
-
-        actionTaken = actionTaken === 'NONE' ? 'PARTIAL_SCALE_OUT' : `${actionTaken}_AND_SCALED_OUT`
-
-        logger.info('[auto-manage] Partial Scale-Out', { position_id: position.id, unitsToClose, remainingUnits, instrument })
       }
     }
 
@@ -196,6 +241,7 @@ export async function POST(request: Request) {
       action_taken: actionTaken,
       updated_stop_loss: updatedSlPrice,
       scaled_out_units: scaledOutUnits,
+      recommendation,
     })
   } catch (e) {
     logger.error('[auto-manage] unexpected error', { error: e })

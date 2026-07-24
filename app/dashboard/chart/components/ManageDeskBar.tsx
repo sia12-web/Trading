@@ -59,6 +59,13 @@ export function ManageDeskBar({
   onAiVerdict,
 }: Props) {
   const [ai, setAi] = useState<AiVerdict | null>(null)
+  const [recommendation, setRecommendation] = useState<{
+    action_type: 'BREAKEVEN' | 'TRAIL_STOP' | 'SCALE_OUT'
+    proposed_price?: number
+    proposed_units?: number
+    reason: string
+    confidence: number
+  } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const exitingRef = useRef(false)
@@ -272,6 +279,52 @@ export function ManageDeskBar({
     }
   }
 
+  const handleConfirmRecommendation = async () => {
+    if (!recommendation) return
+    setBusy('CONFIRM')
+    try {
+      await fetch('/api/trading/positions/auto-manage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          position_id: position.id,
+          current_price: priceRef.current ?? undefined,
+          confirm_action: 'CONFIRM',
+          action_type: recommendation.action_type,
+        }),
+      })
+      setMsg(`Confirmed: ${recommendation.action_type}`)
+      setRecommendation(null)
+      onRefreshGate()
+    } catch {
+      setMsg('Confirmation failed')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const handleRejectRecommendation = async () => {
+    if (!recommendation) return
+    setBusy('REJECT')
+    try {
+      await fetch('/api/trading/positions/auto-manage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          position_id: position.id,
+          confirm_action: 'REJECT',
+          action_type: recommendation.action_type,
+        }),
+      })
+      setMsg(`Rejected: Position held untouched`)
+      setRecommendation(null)
+    } catch {
+      setMsg('Rejection failed')
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const verdictColor =
     ai?.verdict === 'reversal'
       ? 'text-red-400'
@@ -284,6 +337,39 @@ export function ManageDeskBar({
 
   return (
     <div className="rounded-xl border border-amber-800/40 bg-[#161b22] px-3 py-2.5 space-y-2">
+      {/* ── Interactive Confirmation Prompt Banner (Requires Trader CONFIRM / REJECT) ────── */}
+      {recommendation && (
+        <div className="rounded-lg border border-amber-500/70 bg-amber-950/40 p-2.5 shadow-lg flex flex-wrap items-center justify-between gap-3 animate-pulse">
+          <div className="flex items-center gap-2">
+            <span className="text-amber-400 text-sm font-bold">⚡</span>
+            <div>
+              <span className="text-xs font-extrabold uppercase tracking-wider text-amber-300">
+                AI Management Recommendation
+              </span>
+              <p className="text-xs text-gray-200 font-medium">{recommendation.reason}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={!!busy}
+              onClick={handleConfirmRecommendation}
+              className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold uppercase tracking-wider transition shadow"
+            >
+              ✅ CONFIRM
+            </button>
+            <button
+              type="button"
+              disabled={!!busy}
+              onClick={handleRejectRecommendation}
+              className="px-2.5 py-1 rounded bg-surface-700 hover:bg-surface-600 text-gray-300 hover:text-white text-xs font-semibold uppercase tracking-wider transition"
+            >
+              ❌ REJECT
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
         <span
           className={`font-bold px-2 py-0.5 rounded border ${
