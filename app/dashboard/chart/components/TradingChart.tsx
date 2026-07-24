@@ -669,8 +669,8 @@ export function TradingChart({
   }, [])
 
   const [showLevels,  setShowLevels] = useState(true)
-  /** Floating morning playbook — independent of chart level lines. */
-  const [playbookOpen, setPlaybookOpen] = useState(true)
+  /** Floating morning playbook — closed by default on chart refresh; open via Playbook (P). */
+  const [playbookOpen, setPlaybookOpen] = useState(false)
   const playbookUserClosedRef = useRef(false)
 
   const togglePlaybook = useCallback(() => {
