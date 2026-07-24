@@ -74,19 +74,20 @@ export async function POST(request: Request) {
     const currentMoved = isLong ? currentPrice - entry : entry - currentPrice
     const tpProgress = totalTpDistance > 0 ? currentMoved / totalTpDistance : 0
 
-    // Instrument-Tailored Management Parameters based on Volatility Profiles & Backtesting:
-    // DOW: BE at 50% TP, Trail at 60% TP (50% lock)
-    // NASDAQ: BE at 60% TP (prevents premature noise whipsaw exit), Trail at 70% TP (45% lock)
-    // NIKKEI: BE at 37.5% TP (locks fast Tokyo thrusts), Trail at 50% TP (60% lock)
-    const beProgressThreshold = instrument === 'NASDAQ' ? 0.60 : instrument === 'NIKKEI' ? 0.375 : 0.50
-    const trailProgressThreshold = instrument === 'NASDAQ' ? 0.70 : instrument === 'NIKKEI' ? 0.50 : 0.60
-    const trailPctOffset = instrument === 'NASDAQ' ? 0.45 : instrument === 'NIKKEI' ? 0.60 : 0.50
+    // 2-Year Quantitative Multi-Year Optimized Position Management Parameters:
+    // 1. DOW: BE at 25% TP (+0.50R), Trail at 30% TP (+0.60R), Trail Offset 30% risk
+    // 2. NASDAQ: BE at 50% TP (+1.00R), Trail at 60% TP (+1.20R), Trail Offset 50% risk
+    // 3. NIKKEI: BE at 35% TP (+0.70R), Trail at 45% TP (+0.90R), Trail Offset 40% risk
+    const beProgressThreshold = instrument === 'NASDAQ' ? 0.50 : instrument === 'NIKKEI' ? 0.35 : 0.25
+    const trailProgressThreshold = instrument === 'NASDAQ' ? 0.60 : instrument === 'NIKKEI' ? 0.45 : 0.30
+    const trailPctOffset = instrument === 'NASDAQ' ? 0.50 : instrument === 'NIKKEI' ? 0.40 : 0.30
+    const scaleOutProgressThreshold = beProgressThreshold
 
     let actionTaken = 'NONE'
     let updatedSlPrice: number | null = null
     let scaledOutUnits = 0
 
-    // 1. BREAKEVEN RULE (Instrument-Tailored BE threshold reached)
+    // 1. BREAKEVEN RULE (Instrument 2-Year Empirical BE threshold reached)
     if (tpProgress >= beProgressThreshold) {
       const isSlBelowEntry = isLong ? currentSl < entry : currentSl > entry
 
@@ -117,16 +118,16 @@ export async function POST(request: Request) {
           instrument,
           trade_date: position.trade_date,
           decision_type: 'ADJUST',
-          notes: `Auto-Breakeven (${instrument}): Moved Stop Loss to entry $${bePrice} at ${(beProgressThreshold * 100).toFixed(1)}% TP progress`,
+          notes: `Auto-Breakeven (${instrument} 2-Year Profile): Moved Stop Loss to entry $${bePrice} at ${(beProgressThreshold * 100).toFixed(1)}% TP progress`,
         })
 
         logger.info('[auto-manage] Move SL to Breakeven', { position_id: position.id, bePrice, tpProgress, instrument })
       }
     }
 
-    // 2. DYNAMIC TRAILING STOP RULE (Instrument-Tailored Trail threshold reached)
+    // 2. DYNAMIC TRAILING STOP RULE (Instrument 2-Year Empirical Trail threshold reached)
     if (tpProgress >= trailProgressThreshold) {
-      // Trail stop offset based on instrument volatility profile
+      // Trail stop offset based on instrument 2-year backtested profile
       const trailOffset = currentMoved * trailPctOffset
       const calculatedTrail = isLong ? entry + trailOffset : entry - trailOffset
       const roundedTrail = Math.round(calculatedTrail * 10) / 10
@@ -152,13 +153,13 @@ export async function POST(request: Request) {
           })
           .eq('id', position.id)
 
-        logger.info('[auto-manage] Trailed SL', { position_id: position.id, roundedTrail, tpProgress })
+        logger.info('[auto-manage] Trailed SL', { position_id: position.id, roundedTrail, tpProgress, instrument })
       }
     }
 
-    // 3. PARTIAL SCALE-OUT RULE (50% profit lock at +1.0 R for high confidence setups)
+    // 3. PARTIAL SCALE-OUT RULE (Instrument 2-Year Empirical Scale-Out threshold reached)
     const alreadyScaledOut = Boolean(position.scaled_out)
-    if (tpProgress >= 0.50 && confidence >= 75 && !alreadyScaledOut) {
+    if (tpProgress >= scaleOutProgressThreshold && confidence >= 70 && !alreadyScaledOut) {
       const totalUnits = Math.abs(Number(position.position_size || 1))
       if (totalUnits > 1) {
         const unitsToClose = Math.max(1, Math.floor(totalUnits * 0.50))
@@ -180,7 +181,7 @@ export async function POST(request: Request) {
 
         actionTaken = actionTaken === 'NONE' ? 'PARTIAL_SCALE_OUT' : `${actionTaken}_AND_SCALED_OUT`
 
-        logger.info('[auto-manage] Partial Scale-Out', { position_id: position.id, unitsToClose, remainingUnits })
+        logger.info('[auto-manage] Partial Scale-Out', { position_id: position.id, unitsToClose, remainingUnits, instrument })
       }
     }
 
