@@ -112,6 +112,17 @@ export function PositionStatusCard({
   const pollAi = useCallback(async () => {
     if (!position || closedMsg) return
     try {
+      // 1. Run Auto-Management (2-Year Empirical Profiles: Breakeven, Trailing Stop, Scale-Out)
+      fetch('/api/trading/positions/auto-manage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          position_id: position.id,
+          current_price: priceRef.current ?? undefined,
+        }),
+      }).catch(() => {})
+
+      // 2. Run AI Exit Check
       const res = await fetch('/api/trading/positions/ai-exit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
