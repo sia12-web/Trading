@@ -1941,12 +1941,12 @@ export function TradingChart({
       quoteTs: number,
       streamLive: boolean
     ) => {
-      // Guard: never paint / feed a quote from a different index scale
+      // Guard: never paint / feed a quote from a different index scale or bad tick spike
       const tip = lastCandleRef.current
       if (
         tip &&
         tip.close > 0 &&
-        Math.abs(price - tip.close) / tip.close > 0.015
+        Math.abs(price - tip.close) / tip.close > 0.0035
       ) {
         return
       }
