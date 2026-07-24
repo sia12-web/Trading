@@ -3143,6 +3143,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             return true
           }
         })
+      } else if (key === 'r') {
+        e.preventDefault()
+        cancelRiskBox()
+        cancelDrawnZone()
+        cancelDrawnTime()
+        setHighlightsListOpen(false)
+        setVoiceOpen(false)
       } else if (key === 'escape') {
         if (riskBoxActive || riskBox) {
           e.preventDefault()
@@ -3865,6 +3872,26 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             )}
           </svg>
           {isFullscreen ? 'Exit Full (Esc)' : 'Fullscreen (F)'}
+        </button>
+
+        {/* Reset / Remove All Tools Button (Press R) */}
+        <button
+          type="button"
+          title="Remove all active tools & drawings from chart (Press R)"
+          onClick={() => {
+            cancelRiskBox()
+            cancelDrawnZone()
+            cancelDrawnTime()
+            setHighlightsListOpen(false)
+            setVoiceOpen(false)
+          }}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg bg-transparent border-surface-600 text-gray-500 hover:text-red-300 hover:border-red-500/40 hover:bg-red-950/30"
+        >
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <path d="M2.5 8a5.5 5.5 0 1 1 1.6 3.9" strokeLinecap="round" />
+            <path d="M2.5 12V8h4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span>Reset Tools (R)</span>
         </button>
 
         {pendingLimit && !positionOverlay && (() => {
