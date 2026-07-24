@@ -3024,6 +3024,25 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     }
   }, [riskBox, onLevelSelect, cancelRiskBox])
 
+  const toggleRiskBoxDirection = useCallback(() => {
+    setRiskBox((prev) => {
+      if (!prev) return null
+      const newDir: 'LONG' | 'SHORT' = prev.direction === 'LONG' ? 'SHORT' : 'LONG'
+      const entryPx = prev.entryPrice
+      const slDist = Math.abs(prev.entryPrice - prev.stopLoss)
+      const tpDist = Math.abs(prev.profitTarget - prev.entryPrice)
+      const newSL = newDir === 'LONG' ? entryPx - slDist : entryPx + slDist
+      const newTP = newDir === 'LONG' ? entryPx + tpDist : entryPx - tpDist
+
+      return {
+        ...prev,
+        direction: newDir,
+        stopLoss: snapDeskPrice(instrument, newSL),
+        profitTarget: snapDeskPrice(instrument, newTP),
+      }
+    })
+  }, [instrument])
+
   // ── Keyboard shortcuts: V (Voice), L (Levels), P (Playbook), D (Draw Zone), T (Highlight Time), O (Risk Box), F (Fullscreen), Esc
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -3788,6 +3807,23 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           {riskBox && riskBox.orderType === 'MARKET' ? 'Market Order Active' : 'Market Order (M)'}
         </button>
 
+        {/* Toolbar Direction Switcher when Order tool is active */}
+        {riskBox && (
+          <button
+            type="button"
+            onClick={toggleRiskBoxDirection}
+            className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-mono font-extrabold uppercase rounded-lg border transition shadow-sm ${
+              riskBox.direction === 'LONG'
+                ? 'bg-red-950/80 border-red-500/70 text-red-300 hover:bg-red-900'
+                : 'bg-emerald-950/80 border-emerald-500/70 text-emerald-300 hover:bg-emerald-900'
+            }`}
+            title={`Switch mode from ${riskBox.direction} to ${riskBox.direction === 'LONG' ? 'SHORT' : 'LONG'}`}
+          >
+            <span>⇄</span>
+            <span>{riskBox.direction === 'LONG' ? 'SWITCH TO SHORT' : 'SWITCH TO LONG'}</span>
+          </button>
+        )}
+
         {/* Fullscreen mode button (Press F / Esc) */}
         <button
           type="button"
@@ -4313,11 +4349,29 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   >
                     {riskBox.orderType === 'MARKET'
                       ? riskBox.direction === 'LONG'
-                        ? 'Buy Market'
-                        : 'Sell Market'
+                        ? 'BUY MARKET'
+                        : 'SELL MARKET'
                       : riskBox.direction === 'LONG'
-                        ? 'Buy'
-                        : 'Sell'}
+                        ? 'BUY LIMIT'
+                        : 'SELL LIMIT'}
+                  </button>
+
+                  {/* Direction Switch Toggle Button — Switch to SHORT / LONG */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      toggleRiskBoxDirection()
+                    }}
+                    className={`px-2.5 py-1 text-[11px] font-mono font-extrabold uppercase rounded-md shadow-md transition border flex items-center gap-1.5 ${
+                      riskBox.direction === 'LONG'
+                        ? 'bg-red-950/90 border-red-500/80 text-red-300 hover:bg-red-900 hover:text-white hover:scale-105'
+                        : 'bg-emerald-950/90 border-emerald-500/80 text-emerald-300 hover:bg-emerald-900 hover:text-white hover:scale-105'
+                    }`}
+                    title={`Click to switch to ${riskBox.direction === 'LONG' ? 'SHORT / SELL' : 'LONG / BUY'} mode`}
+                  >
+                    <span className="text-xs">⇄</span>
+                    <span>{riskBox.direction === 'LONG' ? 'SHORT MARKET' : 'LONG MARKET'}</span>
                   </button>
 
                   {/* Pill Badge with Non-Clickable Order Type Label */}
