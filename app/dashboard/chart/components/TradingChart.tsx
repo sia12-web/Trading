@@ -634,6 +634,22 @@ export function TradingChart({
   const [tooltip,     setTooltip]    = useState<TooltipData | null>(null)
   const [livePrice,   setLivePrice]  = useState<number | null>(null)
   const [priceChange, setPriceChange] = useState<number>(0)
+  const [barCountdown, setBarCountdown] = useState<string>('')
+
+  useEffect(() => {
+    const updateCountdown = () => {
+      const nowSec = Math.floor(Date.now() / 1000)
+      const barSec = DESK_BAR_SECONDS
+      const rem = barSec - (nowSec % barSec)
+      const mins = Math.floor(rem / 60)
+      const secs = rem % 60
+      setBarCountdown(`${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`)
+    }
+    updateCountdown()
+    const timer = setInterval(updateCountdown, 1000)
+    return () => clearInterval(timer)
+  }, [])
+
   const [showLevels,  setShowLevels] = useState(true)
   /** Floating morning playbook — independent of chart level lines. */
   const [playbookOpen, setPlaybookOpen] = useState(true)
@@ -3850,6 +3866,18 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               >
                 {livePrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
+              {barCountdown && (
+                <div
+                  className="flex items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-950/70 px-2 py-0.5 font-mono text-xs font-bold text-emerald-300 shadow-sm"
+                  title="Time remaining until current 5-minute candle closes (TradingView Bar Countdown)"
+                >
+                  <svg className="w-3 h-3 text-emerald-400 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-[10px] text-emerald-400/80 uppercase tracking-wider font-semibold">5M</span>
+                  <span className="text-emerald-200 font-extrabold">{barCountdown}</span>
+                </div>
+              )}
               {dataMode === 'live' && (
                 <span className="text-[9px] uppercase tracking-wider text-gray-600" title="Broker feed for fills">
                   OANDA mid
