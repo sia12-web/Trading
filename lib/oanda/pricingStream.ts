@@ -96,8 +96,8 @@ function parsePriceLine(line: string): OandaPriceQuote | null {
   }
 }
 
-async function runUpstream(runId: number, symbols: string[]) {
-  if (!isOandaConfigured() || symbols.length === 0) return
+async function runUpstream(runId: number, symbols: string[]): Promise<number | null> {
+  if (!isOandaConfigured() || symbols.length === 0) return null
 
   const accountId = oandaAccountId()
   const url =
@@ -118,8 +118,10 @@ async function runUpstream(runId: number, symbols: string[]) {
       signal: abort.signal,
     })
     if (!res.ok || !res.body) {
-      console.error(`[OANDA] pricing stream ${res.status}`)
-      return
+      if (res.status !== 403) {
+        console.warn(`[OANDA] pricing stream ${res.status}`)
+      }
+      return res.status
     }
 
     const reader = res.body.getReader()
@@ -147,14 +149,16 @@ async function runUpstream(runId: number, symbols: string[]) {
       }
     }
   } catch (e) {
-    if ((e as Error)?.name === 'AbortError') return
+    if ((e as Error)?.name === 'AbortError') return null
     console.error(
       '[OANDA] pricing stream failed:',
       e instanceof Error ? e.message : e
     )
+    return null
   } finally {
     if (hub().abort === abort) hub().abort = null
   }
+  return null
 }
 
 function restartUpstream() {
@@ -168,10 +172,11 @@ function restartUpstream() {
     // Reconnect loop while this run is current and listeners remain
     while (hub().runId === runId && wantedSymbols().length > 0) {
       const syms = wantedSymbols()
-      await runUpstream(runId, syms)
+      const status = await runUpstream(runId, syms)
       if (hub().runId !== runId) break
       if (wantedSymbols().length === 0) break
-      await new Promise((r) => setTimeout(r, 750))
+      const delay = status === 403 ? 30_000 : 750
+      await new Promise((r) => setTimeout(r, delay))
     }
   })()
 }
