@@ -56,7 +56,32 @@ export async function getOandaPrice(
       signal: controller.signal,
     })
     if (!res.ok) {
-      console.error(`[OANDA] pricing ${res.status} ${symbol}`)
+      // Fall back to OANDA instrument candles M1 tick (never requires accountId permission)
+      const fbUrl = `${oandaBaseUrl()}/v3/instruments/${symbol}/candles?count=1&granularity=M1`
+      const fbRes = await fetch(fbUrl, {
+        headers: oandaHeaders(),
+        cache: 'no-store',
+        signal: controller.signal,
+      }).catch(() => null)
+      if (fbRes?.ok) {
+        const fbJson = await fbRes.json().catch(() => null)
+        const c = fbJson?.candles?.[fbJson.candles.length - 1]
+        if (c?.mid?.c) {
+          const px = parseFloat(c.mid.c)
+          if (px > 0) {
+            const quote: OandaPriceQuote = {
+              symbol,
+              price: px,
+              bid: parseFloat(c.mid.l || c.mid.c),
+              ask: parseFloat(c.mid.h || c.mid.c),
+              timestamp: Math.floor(new Date(c.time || Date.now()).getTime() / 1000),
+              source: 'oanda',
+            }
+            priceCache.set(instrument, { at: Date.now(), quote })
+            return quote
+          }
+        }
+      }
       return cached?.quote ?? null
     }
     const json = await res.json()
