@@ -69,7 +69,23 @@ import {
   isAnyLiveFocusWindowActive,
   liveVisibleInstruments,
   sessionFor,
+  type DeskInstrument,
 } from '@/lib/trading/sessionGate'
+import {
+  NYC_LUNCH_COLORS,
+  computeNycLunchRange,
+  isNycLunchInstrument,
+  nycLunchEndMarkers,
+  nycLunchLineSeriesData,
+  type NycLunchRange,
+} from '@/lib/chart/nycLunchSessionRange'
+import {
+  NIKKEI_US_RANGE_COLORS,
+  computeNikkeiUsRangeBreakout,
+  isNikkeiUsRangeInstrument,
+  nikkeiUsRangeLineSeriesData,
+  type NikkeiUsRangeResult,
+} from '@/lib/chart/nikkeiUsRangeBreakout'
 import {
   getDeskInstrumentPreference,
   setDeskInstrumentPreference,
@@ -616,6 +632,24 @@ export function TradingChart({
   const ibRangeRef = useRef<InitialBalanceRange | null>(null)
   const [ibShaped, setIbShaped] = useState(false)
   const [showIbBreakouts, setShowIbBreakouts] = useState(true)
+  /** NYC lunch 12:00–13:30 ET — DOW / NASDAQ only (Mind Over Markets range) */
+  const lunchSeriesRef = useRef<{
+    high: ISeriesApi<'Line'>
+    low: ISeriesApi<'Line'>
+    mid: ISeriesApi<'Line'>
+  } | null>(null)
+  const lunchRangeRef = useRef<NycLunchRange | null>(null)
+  const [lunchShaped, setLunchShaped] = useState(false)
+  const [showLunchRange, setShowLunchRange] = useState(true)
+  /** US session range H/L + Asia BRK/REJ — NIKKEI only */
+  const usRangeSeriesRef = useRef<{
+    high: ISeriesApi<'Line'>
+    low: ISeriesApi<'Line'>
+  } | null>(null)
+  const usRangeRef = useRef<NikkeiUsRangeResult | null>(null)
+  const [usRangeShaped, setUsRangeShaped] = useState(false)
+  /** Gates US H/L lines + Asia BRK/REJ markers together */
+  const [showUsRange, setShowUsRange] = useState(true)
   const levelLinesRef = useRef<any[]>([])
   /** Host for level/SL/TP price lines — seeded once; candle setData must not touch it */
   const priceLineHostRef = useRef<ISeriesApi<'Line'> | null>(null)
@@ -676,37 +710,152 @@ export function TradingChart({
   /** Floating morning playbook — closed by default on chart refresh; open via Playbook (P). */
   const [playbookOpen, setPlaybookOpen] = useState(false)
 
-  useEffect(() => {
+  /** Single marker channel — IB + Lunch + Nikkei US-range never overwrite each other. */
+  const paintDeskMarkers = useCallback((bars?: OHLCV[]) => {
     const candleSeries = candleRef.current
-    const ib = ibRangeRef.current
     if (!candleSeries) return
+    const list = bars ?? candlesRef.current
+    const deskBars = list.map((c) => ({
+      time: c.time as number,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+      volume: c.volume,
+    }))
 
-    if (showIbBreakouts && ib && candlesRef.current.length > 0) {
-      const deskBars = candlesRef.current.map((c) => ({
-        time: c.time as number,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-        volume: c.volume,
-      }))
-      const signals = computeIbSignals(deskBars, ib)
-      const markers = signals.map((s) => ({
-        time: s.time as UTCTimestamp,
-        position: s.position,
-        color: s.color,
-        shape: s.shape,
-        text: s.text,
-      }))
-      try {
-        candleSeries.setMarkers(markers)
-      } catch { /* ignore */ }
-    } else {
-      try {
-        candleSeries.setMarkers([])
-      } catch { /* ignore */ }
+    type Mk = {
+      time: UTCTimestamp
+      position: 'aboveBar' | 'belowBar'
+      color: string
+      shape: 'arrowUp' | 'arrowDown' | 'circle'
+      text: string
     }
-  }, [showIbBreakouts])
+    const markers: Mk[] = []
+
+    if (showIbBreakouts && ibRangeRef.current && deskBars.length > 0) {
+      for (const s of computeIbSignals(deskBars, ibRangeRef.current)) {
+        markers.push({
+          time: s.time as UTCTimestamp,
+          position: s.position,
+          color: s.color,
+          shape: s.shape,
+          text: s.text,
+        })
+      }
+    }
+
+    if (showLunchRange && lunchRangeRef.current) {
+      for (const m of nycLunchEndMarkers(lunchRangeRef.current)) {
+        markers.push({
+          time: m.time as UTCTimestamp,
+          position: m.position,
+          color: m.color,
+          shape: m.shape,
+          text: m.text,
+        })
+      }
+    }
+
+    if (showUsRange && usRangeRef.current) {
+      for (const s of usRangeRef.current.signals) {
+        markers.push({
+          time: s.time as UTCTimestamp,
+          position: s.position,
+          color: s.color,
+          shape: s.shape,
+          text: s.text,
+        })
+      }
+    }
+
+    try {
+      candleSeries.setMarkers(markers)
+    } catch {
+      /* ignore */
+    }
+  }, [showIbBreakouts, showLunchRange, showUsRange])
+
+  useEffect(() => {
+    paintDeskMarkers()
+  }, [showIbBreakouts, showLunchRange, showUsRange, paintDeskMarkers])
+
+  /** Apply / clear lunch line series from cached range (toggle without recompute). */
+  const paintLunchLines = useCallback(() => {
+    const series = lunchSeriesRef.current
+    if (!series) return
+    const lunch = lunchRangeRef.current
+    if (!showLunchRange || !lunch || !isNycLunchInstrument(instrument)) {
+      try {
+        series.high.setData([])
+        series.low.setData([])
+        series.mid.setData([])
+      } catch {
+        /* ignore */
+      }
+      setLunchShaped(false)
+      return
+    }
+    const tip = candlesRef.current[candlesRef.current.length - 1]?.time as number | undefined
+    const sess = sessionFor(instrument)
+    const todayLocal = new Intl.DateTimeFormat('en-CA', {
+      timeZone: sess.tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date())
+    const [ch, cm] = sess.marketClose.split(':').map(Number)
+    const closeUnix = nyDateTimeToUnix(todayLocal, ch!, cm || 0)
+    const pts = nycLunchLineSeriesData(lunch, Math.max(tip ?? closeUnix, closeUnix), {
+      showMid: true,
+    })
+    try {
+      series.high.setData(pts.high.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })))
+      series.low.setData(pts.low.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })))
+      series.mid.setData(pts.mid.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })))
+      setLunchShaped(true)
+    } catch {
+      series.high.setData([])
+      series.low.setData([])
+      series.mid.setData([])
+      setLunchShaped(false)
+    }
+  }, [showLunchRange, instrument])
+
+  /** Apply / clear Nikkei US-range lines from cached result. */
+  const paintUsRangeLines = useCallback(() => {
+    const series = usRangeSeriesRef.current
+    if (!series) return
+    const usRange = usRangeRef.current
+    if (!showUsRange || !usRange || !isNikkeiUsRangeInstrument(instrument)) {
+      try {
+        series.high.setData([])
+        series.low.setData([])
+      } catch {
+        /* ignore */
+      }
+      setUsRangeShaped(false)
+      return
+    }
+    const pts = nikkeiUsRangeLineSeriesData(usRange)
+    try {
+      series.high.setData(pts.high.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })))
+      series.low.setData(pts.low.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })))
+      setUsRangeShaped(usRange.visible && pts.high.length > 0)
+    } catch {
+      series.high.setData([])
+      series.low.setData([])
+      setUsRangeShaped(false)
+    }
+  }, [showUsRange, instrument])
+
+  useEffect(() => {
+    paintLunchLines()
+  }, [paintLunchLines])
+
+  useEffect(() => {
+    paintUsRangeLines()
+  }, [paintUsRangeLines])
 
   const ibProximity = useMemo(() => {
     if (!showIbBreakouts || !ibShaped || !ibRangeRef.current || !livePrice) return null
@@ -1295,6 +1444,48 @@ export function TradingChart({
       low: chart.addLineSeries({ ...ibLineOpts, title: 'IB L' }),
     }
 
+    // NYC Lunch Session Range (12:00–13:30 ET) — Dow / Nasdaq only
+    const lunchLineBase = {
+      lineWidth: 2 as const,
+      lineStyle: LineStyle.Solid,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      crosshairMarkerVisible: false,
+      ...ignoreScale,
+    }
+    const lunchSeries = {
+      high: chart.addLineSeries({
+        ...lunchLineBase,
+        color: NYC_LUNCH_COLORS.high,
+        title: 'Lunch H',
+      }),
+      low: chart.addLineSeries({
+        ...lunchLineBase,
+        color: NYC_LUNCH_COLORS.low,
+        title: 'Lunch L',
+      }),
+      mid: chart.addLineSeries({
+        ...lunchLineBase,
+        color: NYC_LUNCH_COLORS.mid,
+        title: 'Lunch 50%',
+      }),
+    }
+
+    // Nikkei — US session range H/L (Asia breakout / rejection script)
+    const usRangeLineOpts = {
+      color: NIKKEI_US_RANGE_COLORS.high,
+      lineWidth: 2 as const,
+      lineStyle: LineStyle.Solid,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      crosshairMarkerVisible: false,
+      ...ignoreScale,
+    }
+    const usRangeSeries = {
+      high: chart.addLineSeries({ ...usRangeLineOpts, title: 'US H' }),
+      low: chart.addLineSeries({ ...usRangeLineOpts, title: 'US L' }),
+    }
+
     // Full chart height — no volume so no bottom margin needed
     chart.priceScale('right').applyOptions({
       autoScale: true,
@@ -1356,6 +1547,8 @@ export function TradingChart({
     priceLineHostRef.current = priceLineHost
     vwapSeriesRef.current = vwapSeries
     ibSeriesRef.current = ibSeries
+    lunchSeriesRef.current = lunchSeries
+    usRangeSeriesRef.current = usRangeSeries
     setChartReady(true)
 
     // Sync React overlay coordinates on chart scroll/zoom
@@ -1387,9 +1580,13 @@ export function TradingChart({
       priceLineHostSeededRef.current = false
       vwapSeriesRef.current = null
       ibSeriesRef.current = null
+      lunchSeriesRef.current = null
+      usRangeSeriesRef.current = null
       levelLinesRef.current = []
       positionLinesRef.current = []
       setIbShaped(false)
+      setLunchShaped(false)
+      setUsRangeShaped(false)
     }
   }, []) // initialize once only
 
@@ -1550,6 +1747,29 @@ export function TradingChart({
       }
     }
     setIbShaped(false)
+    const lunchS = lunchSeriesRef.current
+    if (lunchS) {
+      try {
+        lunchS.high.setData([])
+        lunchS.low.setData([])
+        lunchS.mid.setData([])
+      } catch {
+        /* ignore */
+      }
+    }
+    lunchRangeRef.current = null
+    setLunchShaped(false)
+    const usR = usRangeSeriesRef.current
+    if (usR) {
+      try {
+        usR.high.setData([])
+        usR.low.setData([])
+      } catch {
+        /* ignore */
+      }
+    }
+    usRangeRef.current = null
+    setUsRangeShaped(false)
     try {
       host?.setData([])
     } catch {
@@ -1752,9 +1972,53 @@ export function TradingChart({
             ibSeries.low.setData([])
             setIbShaped(false)
           }
+        } else {
+          ibSeries.high.setData([])
+          ibSeries.low.setData([])
+          setIbShaped(false)
+        }
+      }
 
-          if (showIbBreakouts && candleRef.current) {
-            const deskBars = ordered.map((c) => ({
+      // NYC Lunch Session Range — 12:00–13:30 ET, Dow & Nasdaq only
+      const lunchSeries = lunchSeriesRef.current
+      if (lunchSeries) {
+        if (isNycLunchInstrument(instrument)) {
+          const sess = sessionFor(instrument as DeskInstrument)
+          const todayLocal = new Intl.DateTimeFormat('en-CA', {
+            timeZone: sess.tz,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+          }).format(new Date())
+          const [ch, cm] = sess.marketClose.split(':').map(Number)
+          const closeUnix = nyDateTimeToUnix(todayLocal, ch!, cm || 0)
+          const tipUnix = ordered.length
+            ? (ordered[ordered.length - 1]!.time as number)
+            : closeUnix
+          const nowUnix = Math.max(tipUnix, Math.floor(Date.now() / 1000))
+          const lunch = computeNycLunchRange(
+            ordered.map((c) => ({
+              time: c.time as number,
+              high: c.high,
+              low: c.low,
+            })),
+            todayLocal,
+            nowUnix
+          )
+          lunchRangeRef.current = lunch
+          paintLunchLines()
+        } else {
+          lunchRangeRef.current = null
+          paintLunchLines()
+        }
+      }
+
+      // Nikkei — US range H/L + Asia session breakout/rejection (Mind Over Markets)
+      const usRangeSeries = usRangeSeriesRef.current
+      if (usRangeSeries) {
+        if (isNikkeiUsRangeInstrument(instrument)) {
+          const usRange = computeNikkeiUsRangeBreakout(
+            ordered.map((c) => ({
               time: c.time as number,
               open: c.open,
               high: c.high,
@@ -1762,31 +2026,17 @@ export function TradingChart({
               close: c.close,
               volume: c.volume,
             }))
-            const signals = computeIbSignals(deskBars, ib)
-            const markers = signals.map((s) => ({
-              time: s.time as UTCTimestamp,
-              position: s.position,
-              color: s.color,
-              shape: s.shape,
-              text: s.text,
-            }))
-            try {
-              candleRef.current.setMarkers(markers)
-            } catch { /* ignore */ }
-          } else if (candleRef.current) {
-            try { candleRef.current.setMarkers([]) } catch { /* ignore */ }
-          }
+          )
+          usRangeRef.current = usRange
+          paintUsRangeLines()
         } else {
-          ibSeries.high.setData([])
-          ibSeries.low.setData([])
-          setIbShaped(false)
-          if (candleRef.current) {
-            try { candleRef.current.setMarkers([]) } catch { /* ignore */ }
-          }
+          usRangeRef.current = null
+          paintUsRangeLines()
         }
       }
 
-      // Seed host once (never again) so price lines bind to the right scale
+      // One marker list for IB + Lunch + Nikkei US-range
+      paintDeskMarkers(ordered)
       const host = priceLineHostRef.current
       if (host && !priceLineHostSeededRef.current && ordered.length > 0) {
         const a = ordered[0]!
@@ -3162,6 +3412,16 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       } else if (key === 'b') {
         e.preventDefault()
         setShowIbBreakouts((prev) => !prev)
+      } else if (key === 'n') {
+        e.preventDefault()
+        if (instrument === 'DOW' || instrument === 'NASDAQ') {
+          setShowLunchRange((prev) => !prev)
+        }
+      } else if (key === 'u') {
+        e.preventDefault()
+        if (instrument === 'NIKKEI') {
+          setShowUsRange((prev) => !prev)
+        }
       } else if (key === 'p') {
         e.preventDefault()
         togglePlaybook()
@@ -3256,7 +3516,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       window.removeEventListener('keydown', handleKeyDown)
       document.removeEventListener('fullscreenchange', onFsChange)
     }
-  }, [isFullscreen, drawZoneActive, drawnZone, drawTimeActive, drawnTime, toggleFullscreen, cancelDrawnZone, clearDrawnZoneLines, cancelDrawnTime])
+  }, [isFullscreen, drawZoneActive, drawnZone, drawTimeActive, drawnTime, toggleFullscreen, cancelDrawnZone, clearDrawnZoneLines, cancelDrawnTime, instrument])
 
   // ── Hover visible AI/structure level → preview entry / SL / TP ─
   // Morning: place preview. Afternoon: same geometry, watch-only (canPlaceOrder false).
@@ -3679,7 +3939,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </button>
         )}
 
-        {/* IB Breakout Signals toggle button (Press B) */}
+        {/* IB Breakout Signals toggle button (Press B) — all desks */}
         {deskSessionLive && (
           <button
             type="button"
@@ -3697,6 +3957,48 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           >
             <span className={`w-2 h-2 rounded-full inline-block ${showIbBreakouts ? 'bg-blue-400' : 'bg-gray-600'}`} />
             <span>IB Breakout (B)</span>
+          </button>
+        )}
+
+        {/* NYC Lunch Range — Dow & Nasdaq only (Press N) */}
+        {deskSessionLive && (instrument === 'DOW' || instrument === 'NASDAQ') && (
+          <button
+            type="button"
+            title={
+              showLunchRange
+                ? 'NYC Lunch range 12:00–13:30 ET visible (Press N)'
+                : 'Show NYC Lunch high / low / 50% (Press N)'
+            }
+            onClick={() => setShowLunchRange((v) => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+              showLunchRange
+                ? 'bg-orange-600/30 border-orange-500/50 text-orange-100'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-orange-200 hover:border-orange-500/40'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full inline-block ${showLunchRange ? 'bg-orange-400' : 'bg-gray-600'}`} />
+            <span>Lunch Range (N)</span>
+          </button>
+        )}
+
+        {/* Nikkei US Range BRK/REJ toggle (Press U) — separate from IB */}
+        {deskSessionLive && instrument === 'NIKKEI' && (
+          <button
+            type="button"
+            title={
+              showUsRange
+                ? 'US range lines + Asia breakout/rejection visible (Press U)'
+                : 'Show US session range + Asia BRK/REJ (Press U)'
+            }
+            onClick={() => setShowUsRange((v) => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+              showUsRange
+                ? 'bg-rose-600/30 border-rose-500/50 text-rose-100'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-rose-200 hover:border-rose-500/40'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full inline-block ${showUsRange ? 'bg-rose-400' : 'bg-gray-600'}`} />
+            <span>US Range (U)</span>
           </button>
         )}
 
@@ -4126,6 +4428,48 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               <span className="inline-block w-4 border-t-2 border-blue-500" />
               <span className="text-blue-500">IB H/L</span>
               <span className="text-gray-600">to session end</span>
+            </span>
+          </>
+        )}
+        {lunchShaped && (
+          <>
+            <span className="text-gray-600">·</span>
+            <span
+              className="flex items-center gap-1.5 normal-case tracking-normal"
+              title="NYC Lunch Session Range — 12:00–13:30 ET high / low / 50% half-back (Dow & Nasdaq)"
+            >
+              <span
+                className="inline-block w-4 border-t-2"
+                style={{ borderColor: NYC_LUNCH_COLORS.high }}
+              />
+              <span style={{ color: NYC_LUNCH_COLORS.high }}>Lunch H</span>
+              <span
+                className="inline-block w-4 border-t-2"
+                style={{ borderColor: NYC_LUNCH_COLORS.low }}
+              />
+              <span style={{ color: NYC_LUNCH_COLORS.low }}>L</span>
+              <span
+                className="inline-block w-4 border-t-2"
+                style={{ borderColor: NYC_LUNCH_COLORS.mid }}
+              />
+              <span style={{ color: NYC_LUNCH_COLORS.mid }}>50%</span>
+              <span className="text-gray-600">12:00–13:30 ET → PM</span>
+            </span>
+          </>
+        )}
+        {usRangeShaped && (
+          <>
+            <span className="text-gray-600">·</span>
+            <span
+              className="flex items-center gap-1.5 normal-case tracking-normal"
+              title="US session range (UTC 13:30–20:00) — Asia breakout/rejection on Nikkei"
+            >
+              <span
+                className="inline-block w-4 border-t-2"
+                style={{ borderColor: NIKKEI_US_RANGE_COLORS.high }}
+              />
+              <span style={{ color: NIKKEI_US_RANGE_COLORS.high }}>US H/L</span>
+              <span className="text-gray-600">Asia BRK / REJ</span>
             </span>
           </>
         )}
