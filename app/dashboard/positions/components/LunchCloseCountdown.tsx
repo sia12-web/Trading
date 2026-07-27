@@ -133,7 +133,7 @@ export function LunchCloseCountdown({
       : phase === 'afternoon'
         ? hasOpenPosition
           ? 'Open book auto-liquidates at cash close (lunch-range + leftovers)'
-          : 'Afternoon — lunch-range entries until cash close'
+          : 'Afternoon — lunch-range entries 13:30–15:15 (Tokyo to 15:00), then manage-only'
         : hasOpenPosition
           ? 'Open book on this desk'
           : 'No open book — place limits on Live Trading'
