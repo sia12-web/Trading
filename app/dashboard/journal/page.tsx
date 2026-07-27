@@ -71,11 +71,15 @@ interface Summary {
   starting_account?: number
   ending_equity?: number
   equity_change?: number
+  equity_source?: 'oanda_live' | 'journal_ticket'
   oanda_account?: {
     id: string
     balance: number
     NAV: number
     marginAvailable: number
+    marginUsed?: number
+    unrealizedPL?: number
+    openTradeCount?: number
     currency: string
   } | null
   days: number
@@ -447,27 +451,43 @@ function JournalPageInner() {
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="text-[10px] uppercase tracking-wider text-gray-500">
-                  Desk equity (ticket account ± realized P&amp;L)
+                  Desk equity (live OANDA balance ± window P&amp;L)
                 </div>
                 {summary.oanda_account && (
-                  <div className="flex items-center gap-2 rounded-full border border-emerald-500/40 bg-emerald-950/60 px-2.5 py-0.5 text-[10px] font-mono font-bold text-emerald-300">
+                  <div className="flex flex-wrap items-center justify-end gap-2 rounded-full border border-emerald-500/40 bg-emerald-950/60 px-2.5 py-0.5 text-[10px] font-mono font-bold text-emerald-300">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                     <span>OANDA LIVE ({summary.oanda_account.id})</span>
                     <span className="text-gray-500">|</span>
+                    <span>Balance: {fmtMoney(summary.oanda_account.balance)}</span>
+                    <span className="text-gray-500">|</span>
+                    <span>NAV: {fmtMoney(summary.oanda_account.NAV)}</span>
+                    <span className="text-gray-500">|</span>
                     <span>Margin Avail: {fmtMoney(summary.oanda_account.marginAvailable)}</span>
+                    {(summary.oanda_account.marginUsed ?? 0) > 0 && (
+                      <>
+                        <span className="text-gray-500">|</span>
+                        <span>Used: {fmtMoney(summary.oanda_account.marginUsed)}</span>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
               <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
                 <div>
-                  <div className="text-[10px] text-gray-500 uppercase">Starting account</div>
+                  <div className="text-[10px] text-gray-500 uppercase">
+                    Starting ({summary.days}d window)
+                  </div>
                   <div className="price-mono text-lg text-white">
                     {fmtMoney(summary.starting_account ?? 100000)}
                   </div>
                 </div>
                 <div className="text-gray-600 text-xl pb-0.5">→</div>
                 <div>
-                  <div className="text-[10px] text-gray-500 uppercase">After closed trades</div>
+                  <div className="text-[10px] text-gray-500 uppercase">
+                    {summary.equity_source === 'oanda_live'
+                      ? 'Live OANDA balance'
+                      : 'After closed trades'}
+                  </div>
                   <div className="price-mono text-lg text-white">
                     {fmtMoney(summary.ending_equity ?? summary.starting_account)}
                   </div>
@@ -486,9 +506,9 @@ function JournalPageInner() {
                 </div>
               </div>
               <p className="mt-2 text-[11px] text-gray-600">
-                Risk per trade is ~5% of ticket account size (shown as risk {deskCurrencyLabel()} on each order). Broker
-                fills and journal P&L are in {deskCurrencyLabel()} (OANDA account currency).
-                margin lives on OANDA; this trail is your desk bookkeeping from live fills.
+                Live numbers come from OANDA account summary (balance / NAV / margin). Starting is
+                live balance minus journal P&amp;L for this window. Risk per trade is ~5% of ticket
+                account size. Broker fills and journal P&amp;L are in {deskCurrencyLabel()}.
               </p>
             </div>
 

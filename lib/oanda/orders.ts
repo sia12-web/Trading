@@ -20,6 +20,7 @@ export type OandaAccountSummary = {
   NAV: number
   openTradeCount: number
   marginAvailable: number
+  marginUsed: number
 }
 
 export type PlaceMarketOrderInput = {
@@ -145,6 +146,7 @@ export async function getOandaAccountSummary(): Promise<
       NAV: Number(a.NAV),
       openTradeCount: Number(a.openTradeCount || 0),
       marginAvailable: Number(a.marginAvailable),
+      marginUsed: Number(a.marginUsed || 0),
     },
   }
 }

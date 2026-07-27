@@ -70,6 +70,7 @@ export async function GET(request: Request) {
     unrealizedPL: summary.account.unrealizedPL,
     openTradeCount: summary.account.openTradeCount,
     marginAvailable: summary.account.marginAvailable,
+    marginUsed: summary.account.marginUsed,
     instruments: {
       US30_USD: us30,
       NAS100_USD: nas100,
