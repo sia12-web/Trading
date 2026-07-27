@@ -27,17 +27,25 @@ import {
   MANUAL_RISK_PERCENT,
 } from '@/lib/trading/positionSizing'
 import {
+  MAX_DAY_ATTEMPTS,
+  MAX_STOP_HITS,
   deskMarketFor,
   instrumentsForDeskMarket,
   isDeskHoursNow,
   isLiveDeskInstrument,
   isNyDeskInstrument,
-  MAX_SESSION_ATTEMPTS,
-  MAX_STOP_HITS,
+  ibStrategyStartHms,
+  ibStrategyEndHms,
+  lunchRangeEntryStartHms,
+  lunchRangeEntryEndHms,
   resolveSessionGate,
   sessionFor,
   type DeskInstrument,
 } from '@/lib/trading/sessionGate'
+import {
+  deskPlaybookTitle,
+  resolveDeskPlaybookMode,
+} from '@/lib/trading/deskPlaybookMode'
 import { getESTDateString } from '@/lib/utils/timeUtils'
 import {
   resolveLiveVoiceStatus,
@@ -71,6 +79,9 @@ export type LiveVoiceDeskContext = {
     maxStopHits: number
     openPositionId: string | null
     entryWindow: 1 | 2 | 3 | null
+    rangeStrategy: 'ib' | 'lunch_range' | null
+    playbookMode: 'morning' | 'ib' | 'lunch_break' | 'lunch_range' | 'done'
+    playbookTitle: string
     tradeDate: string
     times: {
       analyzeStart: string
@@ -78,6 +89,8 @@ export type LiveVoiceDeskContext = {
       entryClose: string
       lunchClose: string
       marketClose: string
+      ibEntry: string
+      lunchRangeEntry: string
       tz: string
       tzLabel: string
     }
@@ -234,7 +247,7 @@ export async function buildLiveVoiceDeskContext(
       .maybeSingle(),
     supabase
       .from('trades_journal')
-      .select('id, exit_reason')
+      .select('id, instrument, exit_reason, entry_timestamp, created_at')
       .eq('user_id', userId)
       .eq('trade_date', tradeDate)
       .in('instrument', marketInstruments)
@@ -284,6 +297,11 @@ export async function buildLiveVoiceDeskContext(
   const attendedToday = !!attendance
 
   const contextInstrument = (lockedInstrument ?? viewing) as DeskInstrument
+  const attemptFills = filledTrades.map((t) => ({
+    instrument: (t.instrument as string) || contextInstrument,
+    entryTimestamp: t.entry_timestamp || t.created_at || null,
+    exitReason: (t.exit_reason as string) || null,
+  }))
   const voice = resolveLiveVoiceStatus({
     now,
     instrument: contextInstrument,
@@ -296,6 +314,7 @@ export async function buildLiveVoiceDeskContext(
     hasOpenPosition: !!openPos,
     attemptsUsed,
     stopLossHitCount: stopHits,
+    attemptFills,
     viewingInstrument: viewing,
     clockedIn,
     attendedToday,
@@ -430,6 +449,14 @@ export async function buildLiveVoiceDeskContext(
         ? userPins[0]!.price
         : null
 
+  const playbookMode = resolveDeskPlaybookMode({
+    instrument: contextInstrument,
+    now,
+    attemptsUsed: gate.attemptsUsed ?? attemptsUsed,
+    stopHits: gate.stopHits ?? stopHits,
+    rangeStrategy: gate.rangeStrategy,
+  })
+
   return {
     voice,
     session: {
@@ -440,11 +467,14 @@ export async function buildLiveVoiceDeskContext(
       canPlaceEntry: !!gate.canPlaceEntry,
       canManagePosition: !!gate.canManagePosition,
       attemptsUsed: gate.attemptsUsed ?? attemptsUsed,
-      maxAttempts: gate.maxAttempts ?? MAX_SESSION_ATTEMPTS,
+      maxAttempts: gate.maxAttempts ?? MAX_DAY_ATTEMPTS,
       stopHits: gate.stopHits ?? stopHits,
       maxStopHits: gate.maxStopHits ?? MAX_STOP_HITS,
       openPositionId: openPos?.id ?? null,
       entryWindow: gate.entryWindow,
+      rangeStrategy: gate.rangeStrategy ?? null,
+      playbookMode,
+      playbookTitle: deskPlaybookTitle(playbookMode, contextInstrument),
       tradeDate,
       times: {
         analyzeStart: hhmm(sess.analyzeStart),
@@ -452,6 +482,8 @@ export async function buildLiveVoiceDeskContext(
         entryClose: hhmm(sess.entryClose),
         lunchClose: hhmm(sess.lunchClose),
         marketClose: hhmm(sess.marketClose),
+        ibEntry: `${hhmm(ibStrategyStartHms(market))}–${hhmm(ibStrategyEndHms(market))}`,
+        lunchRangeEntry: `${hhmm(lunchRangeEntryStartHms(market))}–${hhmm(lunchRangeEntryEndHms(market))}`,
         tz: sess.tz,
         tzLabel,
       },
@@ -459,10 +491,10 @@ export async function buildLiveVoiceDeskContext(
     risk: {
       deskRiskPercent: DESK_RISK_PERCENT,
       manualRiskPercent: MANUAL_RISK_PERCENT,
-      maxAttempts: MAX_SESSION_ATTEMPTS,
+      maxAttempts: MAX_DAY_ATTEMPTS,
       maxStopHits: MAX_STOP_HITS,
       entryRule:
-        'Entries only marketOpen→entryClose (first ~45 min). AI/structure risk 5%; manual 1%. Max 2 filled attempts (SL or TP). Working limits do not count until filled. Voice never places orders.',
+        'Day max 4 fills: Morning playbook ≤2, IB ≤1 (if morning ≤1 and not revenge), Lunch-range ≤1 (only if IB unused/skipped). Revenge: 2 morning stop-outs → IB+lunch off. Any IB fill (SL or TP) turns lunch-range off. Working limits do not count until filled. Voice never places orders.',
     },
     avwap: {
       openLabel: clock.openLabel,

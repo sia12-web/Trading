@@ -5,6 +5,7 @@
 import {
   deskMarketFor,
   isLiveDeskInstrument,
+  lunchRangeEntryEndHms,
   sessionFor,
   type DeskInstrument,
   type DeskMarket,
@@ -84,7 +85,8 @@ export function liveVoiceDevBypassEnabled(): boolean {
 
 /**
  * Pure window + clock-in gate for Live Voice.
- * Window: analyzeStart ≤ local time < entryClose (first ~45 min ends here).
+ * Window: analyzeStart ≤ local time < lunch-range entry end
+ * (covers morning + IB + lunch-break prep + lunch-range entry).
  */
 export function resolveLiveVoiceStatus(input: {
   now?: Date
@@ -100,9 +102,10 @@ export function resolveLiveVoiceStatus(input: {
   const tzLabel = market === 'TOKYO' ? 'JST' : 'ET'
   const localTime = timeInTz(now, sess.tz)
   const tradeDate = localDateInTz(sess.tz, now)
+  const voiceEndHms = lunchRangeEntryEndHms(market)
   const window = {
     start: hhmm(sess.analyzeStart),
-    end: hhmm(sess.entryClose),
+    end: hhmm(voiceEndHms),
     tz: sess.tz,
     tzLabel,
   }
@@ -131,7 +134,7 @@ export function resolveLiveVoiceStatus(input: {
 
   const t = parseTimeToSeconds(localTime)
   const start = parseTimeToSeconds(sess.analyzeStart)
-  const end = parseTimeToSeconds(sess.entryClose)
+  const end = parseTimeToSeconds(voiceEndHms)
   const inVoiceWindow = bypass || (t >= start && t < end)
 
   if (!inVoiceWindow) {
@@ -143,7 +146,7 @@ export function resolveLiveVoiceStatus(input: {
       disableCode: before ? 'before_prep' : 'after_entry',
       reason: before
         ? `Live Voice opens at ${window.start} ${tzLabel} (prep)`
-        : `Live Voice closed after ${window.end} ${tzLabel} (entry window ended)`,
+        : `Live Voice closed after ${window.end} ${tzLabel} (lunch-range entry ended)`,
     }
   }
 

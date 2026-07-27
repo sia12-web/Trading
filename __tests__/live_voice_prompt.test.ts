@@ -45,6 +45,9 @@ const mock = {
     maxStopHits: 2,
     openPositionId: null,
     entryWindow: null,
+    rangeStrategy: null,
+    playbookMode: 'morning',
+    playbookTitle: 'Morning playbook',
     tradeDate: '2026-07-15',
     times: {
       analyzeStart: '09:00',
@@ -52,6 +55,8 @@ const mock = {
       entryClose: '10:15',
       lunchClose: '11:30',
       marketClose: '16:00',
+      ibEntry: '10:15–10:45',
+      lunchRangeEntry: '13:30–15:15',
       tz: 'America/New_York',
       tzLabel: 'ET',
     },
@@ -59,9 +64,9 @@ const mock = {
   risk: {
     deskRiskPercent: 5,
     manualRiskPercent: 1,
-    maxAttempts: 2,
+    maxAttempts: 4,
     maxStopHits: 2,
-    entryRule: 'first 45',
+    entryRule: 'day max 4',
   },
   avwap: {
     openLabel: 'NY 9:30',
@@ -111,6 +116,8 @@ const packed = formatLiveVoiceContextForLlm(mock)
 assert(packed.includes('42000'), 'includes AI level price')
 assert(packed.includes('bullish'), 'includes regime')
 assert(packed.includes('NY 9:30'), 'includes AVWAP label')
+assert(packed.includes('Morning playbook'), 'includes active playbook title')
+assert(packed.includes('IB 10:15'), 'includes IB window')
 assert(!packed.includes('99999'), 'no invented price')
 
 console.log('live_voice_prompt: all passed')

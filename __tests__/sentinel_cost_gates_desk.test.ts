@@ -361,6 +361,7 @@ test('autoLevelPrep wires peer tape + live tier', () => {
   assert(/buildPeerTapeBrief/.test(src), 'peer tape')
   assert(/llm_tier:\s*'live'/.test(src), 'live Opus tier')
   assert(/shouldRunLiveAiForInstrument/.test(src), 'AI attendance gate')
+  assert(/mode\?:\s*'morning'\s*\|\s*'ib'\s*\|\s*'lunch_range'/.test(src), 'IB/lunch-range modes')
 })
 
 // ── Boundary: exact open / lunch / close ─────────────────────────────────────

@@ -23,11 +23,13 @@ export interface AnalysisRequest {
   /** live = Opus (default); sim = cheap Haiku for replay practice */
   llm_tier?: 'live' | 'sim'
   /**
-   * morning = pre-open / morning prep.
-   * afternoon = lunch refresh for watch-only playbook (same tools, different brief).
+   * morning = pre-open / morning playbook.
+   * ib = Initial Balance playbook refresh (entry 10:15–10:45 local).
+   * lunch_range = Lunch break / lunch-range playbook refresh.
+   * afternoon = watch-only memory refresh after entry windows.
    */
-  analysis_mode?: 'morning' | 'afternoon'
-  /** Precomputed afternoon facts (IB, morning range/volume, reactions) — no new vendors */
+  analysis_mode?: 'morning' | 'ib' | 'lunch_range' | 'afternoon'
+  /** Precomputed IB / morning / lunch-range facts — no new vendors */
   afternoonBriefText?: string
   /**
    * NY twin tape (DOW↔NASDAQ): CONFIRM/DIVERGE only — never peer price levels.

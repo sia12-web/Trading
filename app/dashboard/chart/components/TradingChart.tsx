@@ -72,6 +72,14 @@ import {
   type DeskInstrument,
 } from '@/lib/trading/sessionGate'
 import {
+  resolveDeskPlaybookMode,
+  deskPlaybookTitle,
+  deskPlaybookButtonLabel,
+  deskPlaybookHint,
+  deskPlaybookUsesAfternoonLevels,
+} from '@/lib/trading/deskPlaybookMode'
+import { attemptLadderFromCounts } from '@/lib/trading/attemptLadder'
+import {
   NYC_LUNCH_COLORS,
   computeNycLunchRange,
   isNycLunchInstrument,
@@ -582,6 +590,13 @@ interface TradingChartProps {
   }) => void
   /** Morning session: allow placing limits from the chart */
   canPlaceOrder?: boolean
+  /** Active attempt-ladder strategy from session gate */
+  rangeStrategy?: 'ib' | 'lunch_range' | null
+  attemptsUsed?: number
+  stopHits?: number
+  morningAttempts?: number
+  ibAttempts?: number
+  lunchAttempts?: number
   /**
    * Live desk: paint playbook/levels only when clocked in or attended this market today.
    * Between sessions / other desk tabs → false (clear stale NY levels off NIKKEI).
@@ -616,6 +631,12 @@ export function TradingChart({
   onLevelSelect,
   onMarketOrder,
   canPlaceOrder = false,
+  rangeStrategy = null,
+  attemptsUsed: _attemptsUsed = 0,
+  stopHits = 0,
+  morningAttempts = 0,
+  ibAttempts = 0,
+  lunchAttempts = 0,
   deskLevelsActive = false,
   deskAttended = false,
   clockedIn = false,
@@ -1180,8 +1201,17 @@ export function TradingChart({
       return
     }
 
-    const afternoonWatch = isAfternoonWatchWindow(new Date(), inst)
-    const tokyoDesk = inst === 'NIKKEI'
+    const playbookMode = resolveDeskPlaybookMode({
+      instrument: inst,
+      rangeStrategy,
+      ladder: attemptLadderFromCounts({
+        morningAttempts,
+        ibAttempts,
+        lunchAttempts,
+        morningStopHits: stopHits,
+      }),
+    })
+    const useAfternoonLevels = deskPlaybookUsesAfternoonLevels(playbookMode)
     const byPrice = new Map<number, LevelLine>()
 
     let aiRows: unknown[] = []
@@ -1196,7 +1226,7 @@ export function TradingChart({
     }
 
     let afternoonCandidates: unknown[] = []
-    if (afternoonWatch) {
+    if (useAfternoonLevels) {
       try {
         const ap = await fetch(
           `/api/trading/afternoon-playbook?instrument=${encodeURIComponent(inst)}`
@@ -1206,7 +1236,7 @@ export function TradingChart({
           afternoonCandidates = Array.isArray(aj.candidates) ? aj.candidates : []
         }
       } catch {
-        /* optional until morning-review has run */
+        /* optional until morning-review / IB prep has run */
       }
     }
 
@@ -1233,8 +1263,8 @@ export function TradingChart({
         ? barsForFallback[barsForFallback.length - 1]!.close
         : null)
 
-    // Live morning: conviction rank. Afternoon: reaction + IB watch playbook.
-    const resolved = afternoonWatch
+    // Morning: conviction rank. IB / lunch-break / lunch-range / watch: afternoon merge (+ IB H/L).
+    const resolved = useAfternoonLevels
       ? resolveAfternoonDeskLevels(
           aiRows,
           afternoonCandidates,
@@ -1257,8 +1287,12 @@ export function TradingChart({
       const starLabel = `${'★'.repeat(stars)}${'☆'.repeat(5 - stars)}`
       const rank = l.rank === 'watch' ? 'WATCH' : 'PRIMARY'
       const status = reactionStatus(l.marketVerdict, l.marketOutcome)
-      // NY post-lunch = PM; Tokyo post-lunch is still the Asia cash day — no NY “PM” brand
-      const watchTag = afternoonWatch ? (tokyoDesk ? '' : 'PM · ') : ''
+      const watchTag =
+        playbookMode === 'ib'
+          ? 'IB · '
+          : playbookMode === 'lunch_break' || playbookMode === 'lunch_range'
+            ? 'LN · '
+            : ''
       byPrice.set(l.level, {
         price: l.level,
         type: isRes ? 'resistance' : 'support',
@@ -1284,7 +1318,7 @@ export function TradingChart({
     if (!playbookUserClosedRef.current && resolved.levels.some((l) => l.source === 'ai' || l.source === 'structure')) {
       setPlaybookOpen(true)
     }
-  }, [deskLevelsActive])
+  }, [deskLevelsActive, rangeStrategy, morningAttempts, ibAttempts, lunchAttempts, stopHits])
 
   // Keep axis / tooltips on the same desk clock as session colors (ET vs JST).
   // tickMarkFormatter is wired via chartFmtRef at create time (v4 applyOptions
@@ -3828,24 +3862,29 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
   }, [positionOverlay, pendingLimit, aiVerdict, chartReady, clearHoverPreview])
 
   const isUp = priceChange >= 0
-  /** Levels / Watch only / playbook — only while NY or Tokyo cash day is live (post-mount) */
+  /** Levels / playbook — strategy-aware titles (morning → IB → lunch break → lunch-range) */
   const tokyoDesk = instrument === 'NIKKEI'
-  // Watch-only only when afternoon AND entries are locked (not IB/lunch-range unlock)
   void focusTick
+  const playbookMode = resolveDeskPlaybookMode({
+    instrument,
+    rangeStrategy,
+    ladder: attemptLadderFromCounts({
+      morningAttempts,
+      ibAttempts,
+      lunchAttempts,
+      morningStopHits: stopHits,
+    }),
+  })
   const afternoonWatch =
     clockReady &&
     isAfternoonWatchWindow(new Date(), instrument) &&
-    !canPlaceOrder
-  const watchPlaybookTitle = tokyoDesk ? 'Tokyo watch' : 'Afternoon watch'
-  const watchPlaybookHint = tokyoDesk
-    ? 'Tokyo morning reaction + Initial Balance — watch only, no new orders.'
-    : 'Morning reaction + Initial Balance — watch only, no new orders.'
-  const playbookButtonLabel = afternoonWatch
-    ? tokyoDesk
-      ? 'Tokyo watch'
-      : 'PM watch'
-    : 'Playbook'
-  const playbookPanelTitle = afternoonWatch ? watchPlaybookTitle : 'Morning playbook'
+    !canPlaceOrder &&
+    (playbookMode === 'lunch_break' ||
+      playbookMode === 'lunch_range' ||
+      playbookMode === 'done')
+  const playbookButtonLabel = deskPlaybookButtonLabel(playbookMode)
+  const playbookPanelTitle = deskPlaybookTitle(playbookMode, instrument)
+  const watchPlaybookHint = deskPlaybookHint(playbookMode, instrument)
 
   const renderSavedHighlightBoxes = () => {
     const chart = chartRef.current
@@ -5078,7 +5117,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </div>
         )}
 
-        {/* Playbook — morning trade or post-lunch watch (read-only); NY vs Tokyo labels */}
+        {/* Playbook — morning / IB / lunch-break / lunch-range */}
         {deskLevelsActive &&
           playbookOpen &&
           levels.some((l) => l.source === 'ai' || l.source === 'structure') && (
@@ -5092,16 +5131,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             }}
           >
             <div className="space-y-1.5 p-2">
-              {afternoonWatch && (
-                <p className="px-1 pb-1 text-[10px] leading-snug text-gray-500">
-                  {watchPlaybookHint}
-                </p>
-              )}
-              {!afternoonWatch && !canPlaceOrder && (
-                <p className="px-1 pb-1 text-[10px] leading-snug text-gray-500">
-                  Morning prep — review levels now; place limits at cash open.
-                </p>
-              )}
+              <p className="px-1 pb-1 text-[10px] leading-snug text-gray-500">
+                {watchPlaybookHint}
+              </p>
               {levels
                 .filter((l) => l.source === 'ai' || l.source === 'structure')
                 .slice(0, 4)

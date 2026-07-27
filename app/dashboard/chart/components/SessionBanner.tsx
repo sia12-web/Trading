@@ -7,6 +7,11 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
+import {
+  deskPlaybookAnalysisMode,
+  resolveDeskPlaybookMode,
+} from '@/lib/trading/deskPlaybookMode'
+import { attemptLadderFromCounts } from '@/lib/trading/attemptLadder'
 
 export interface SessionGateState {
   phase: string
@@ -28,6 +33,17 @@ export interface SessionGateState {
   maxAttempts?: number
   stopHits?: number
   maxStopHits?: number
+  morningAttempts?: number
+  ibAttempts?: number
+  lunchAttempts?: number
+  maxMorningAttempts?: number
+  maxIbAttempts?: number
+  maxLunchAttempts?: number
+  revengeLocked?: boolean
+  dayLocked?: boolean
+  attemptLadderLabel?: string
+  /** IB / lunch-range unlock when morning unused */
+  rangeStrategy?: 'ib' | 'lunch_range' | null
 }
 
 /** Live banner clock — ET for NY desk, JST when Tokyo/NIKKEI is active. */
@@ -43,7 +59,9 @@ function formatDeskClock(market?: 'NY' | 'TOKYO' | null): { time: string; label:
   return { time, label: tokyo ? 'JST' : 'ET' }
 }
 
-function phaseLabel(phase: string): string {
+function phaseLabel(phase: string, rangeStrategy?: 'ib' | 'lunch_range' | null): string {
+  if (rangeStrategy === 'ib') return 'IB'
+  if (rangeStrategy === 'lunch_range') return 'LUNCH-RANGE'
   switch (phase) {
     case 'FLAT':
       return 'MORNING'
@@ -121,28 +139,76 @@ export function SessionBanner({
         entryWindow: json.entryWindow,
         open_position_id: json.open_position_id,
         attemptsUsed: Number(json.attemptsUsed ?? json.attempts_used ?? 0),
-        maxAttempts: Number(json.maxAttempts ?? json.max_attempts ?? 2),
+        maxAttempts: Number(json.maxAttempts ?? json.max_attempts ?? 4),
         stopHits: Number(json.stopHits ?? json.stop_hits ?? 0),
         maxStopHits: Number(json.maxStopHits ?? json.max_stop_hits ?? 2),
+        morningAttempts: Number(json.morningAttempts ?? json.morning_attempts ?? 0),
+        ibAttempts: Number(json.ibAttempts ?? json.ib_attempts ?? 0),
+        lunchAttempts: Number(json.lunchAttempts ?? json.lunch_attempts ?? 0),
+        maxMorningAttempts: Number(json.maxMorningAttempts ?? 2),
+        maxIbAttempts: Number(json.maxIbAttempts ?? 1),
+        maxLunchAttempts: Number(json.maxLunchAttempts ?? 1),
+        revengeLocked: !!(json.revengeLocked ?? json.revenge_locked),
+        dayLocked: !!(json.dayLocked ?? json.day_locked),
+        attemptLadderLabel:
+          typeof json.attemptLadderLabel === 'string'
+            ? json.attemptLadderLabel
+            : typeof json.attempt_ladder === 'string'
+              ? json.attempt_ladder
+              : undefined,
+        rangeStrategy:
+          json.rangeStrategy === 'ib' || json.rangeStrategy === 'lunch_range'
+            ? json.rangeStrategy
+            : null,
       }
       setGate(next)
       onGate?.(next)
 
-      // Only prep levels after clock-in — otherwise system does not care
-      if (next.clockedIn && (next.phase === 'RECOMMENDED' || next.phase === 'PREP' || next.phase === 'ENTRY')) {
+      // Prep / refresh levels for morning, IB, lunch-break prep, and lunch-range
+      if (
+        next.clockedIn &&
+        (next.phase === 'RECOMMENDED' ||
+          next.phase === 'PREP' ||
+          next.phase === 'ENTRY' ||
+          next.phase === 'FLAT' ||
+          next.phase === 'DONE')
+      ) {
         if (!next.lockedInstrument) {
           if (prepFiredRef.current !== 'market-open') {
             prepFiredRef.current = 'market-open'
             fetch('/api/trading/market-open', { method: 'POST' }).catch(() => {})
           }
         } else {
-          const key = `levels:${next.lockedInstrument}`
+          const playbookMode = resolveDeskPlaybookMode({
+            instrument: next.lockedInstrument,
+            rangeStrategy: next.rangeStrategy ?? null,
+            ladder: attemptLadderFromCounts({
+              morningAttempts: next.morningAttempts ?? 0,
+              ibAttempts: next.ibAttempts ?? 0,
+              lunchAttempts: next.lunchAttempts ?? 0,
+              morningStopHits: next.stopHits ?? 0,
+            }),
+          })
+          const mode = deskPlaybookAnalysisMode(playbookMode)
+          const key = `levels:${next.lockedInstrument}:${playbookMode}`
           if (prepFiredRef.current !== key) {
             prepFiredRef.current = key
-            fetch(
-              `/api/trading/auto-levels?instrument=${encodeURIComponent(next.lockedInstrument)}&force=0`,
-              { method: 'POST' }
-            ).catch(() => {})
+            // Morning prep only on ENTRY/PREP/RECOMMENDED; IB/lunch_range/afternoon always refresh
+            if (
+              mode === 'morning' &&
+              next.phase !== 'ENTRY' &&
+              next.phase !== 'PREP' &&
+              next.phase !== 'RECOMMENDED'
+            ) {
+              /* skip */
+            } else {
+              fetch(
+                `/api/trading/auto-levels?instrument=${encodeURIComponent(next.lockedInstrument)}&force=${
+                  mode === 'morning' ? '0' : '1'
+                }&mode=${encodeURIComponent(mode)}`,
+                { method: 'POST' }
+              ).catch(() => {})
+            }
           }
         }
       }
@@ -249,7 +315,9 @@ export function SessionBanner({
 
   return (
     <div className={`rounded-lg border px-3 py-2 text-xs flex flex-wrap items-center gap-3 ${tone}`}>
-      <span className="font-semibold tracking-wide uppercase">{phaseLabel(gate.phase)}</span>
+      <span className="font-semibold tracking-wide uppercase">
+        {phaseLabel(gate.phase, gate.rangeStrategy)}
+      </span>
       <span
         className="text-gray-400 font-mono tabular-nums min-w-[5.5rem]"
         title={
@@ -267,6 +335,10 @@ export function SessionBanner({
       {gate.clockedIn ? (
         <span className="rounded bg-emerald-500/25 px-2 py-0.5 text-emerald-200 font-semibold">
           CLOCKED IN
+        </span>
+      ) : gate.phase === 'MANAGE' && gate.canManagePosition ? (
+        <span className="rounded bg-amber-500/25 px-2 py-0.5 text-amber-200 font-semibold">
+          MANAGE OPEN
         </span>
       ) : gate.canClockIn ? (
         <button
@@ -297,14 +369,17 @@ export function SessionBanner({
       {gate.clockedIn && (
         <span
           className={`rounded px-2 py-0.5 font-semibold tabular-nums ${
-            (gate.stopHits ?? 0) >= (gate.maxStopHits ?? 2) ||
-            (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? 2)
+            gate.revengeLocked ||
+            gate.dayLocked ||
+            (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? 4)
               ? 'bg-red-500/25 text-red-200'
               : 'bg-sky-500/20 text-sky-200'
           }`}
-          title="Attempts = filled trades (max 2). Working limits do not count. Exit via stop or take-profit still used the attempt."
+          title="Day max 4 fills: Morning 2 + IB 1 + Lunch-range 1. Working limits do not count. 2 morning stop-outs = revenge lock (IB+lunch off). Any IB fill turns lunch off."
         >
-          Attempts {gate.attemptsUsed ?? 0}/{gate.maxAttempts ?? 2}
+          {gate.attemptLadderLabel ||
+            `Day ${gate.attemptsUsed ?? 0}/${gate.maxAttempts ?? 4} · AM ${gate.morningAttempts ?? 0}/${gate.maxMorningAttempts ?? 2} · IB ${gate.ibAttempts ?? 0}/${gate.maxIbAttempts ?? 1} · LN ${gate.lunchAttempts ?? 0}/${gate.maxLunchAttempts ?? 1}`}
+          {gate.revengeLocked ? ' · REVENGE' : ''}
           {(gate.stopHits ?? 0) > 0
             ? ` · Stops ${gate.stopHits}/${gate.maxStopHits ?? 2}`
             : ''}

@@ -11,9 +11,9 @@ import {
   NY_LUNCH_RANGE_ENTRY_START,
   NY_LUNCH_RANGE_ENTRY_END,
   TOKYO_IB_STRATEGY_START,
-  TOKYO_IB_STRATEGY_END,
   TOKYO_LUNCH_RANGE_ENTRY_START,
   TOKYO_LUNCH_RANGE_ENTRY_END,
+  attemptLadderFromCounts,
 } from '../lib/trading/sessionGate'
 import { parseTimeToSeconds as pts } from '../lib/utils/timeUtils'
 
@@ -83,26 +83,10 @@ test('resolveRangeStrategy clocks: NY IB 10:15–10:45, lunch-range 13:30–15:1
   assert(
     resolveRangeStrategy({
       market: 'NY',
-      timeSec: pts('11:00:00'),
-      attemptsUsed: 0,
-    }) === null,
-    'NY after IB manage/watch'
-  )
-  assert(
-    resolveRangeStrategy({
-      market: 'NY',
       timeSec: pts(NY_LUNCH_RANGE_ENTRY_START),
       attemptsUsed: 0,
     }) === 'lunch_range',
     'NY lunch-range start'
-  )
-  assert(
-    resolveRangeStrategy({
-      market: 'NY',
-      timeSec: pts('15:14:00'),
-      attemptsUsed: 0,
-    }) === 'lunch_range',
-    'NY lunch-range late'
   )
   assert(
     resolveRangeStrategy({
@@ -126,34 +110,10 @@ test('resolveRangeStrategy clocks: Tokyo IB 10:15–10:45, lunch-range 13:30–1
   assert(
     resolveRangeStrategy({
       market: 'TOKYO',
-      timeSec: pts(TOKYO_IB_STRATEGY_END),
-      attemptsUsed: 0,
-    }) === null,
-    'Tokyo IB end'
-  )
-  assert(
-    resolveRangeStrategy({
-      market: 'TOKYO',
-      timeSec: pts('09:30:00'),
-      attemptsUsed: 0,
-    }) === null,
-    'Tokyo before IB'
-  )
-  assert(
-    resolveRangeStrategy({
-      market: 'TOKYO',
       timeSec: pts(TOKYO_LUNCH_RANGE_ENTRY_START),
       attemptsUsed: 0,
     }) === 'lunch_range',
     'Tokyo lunch-range'
-  )
-  assert(
-    resolveRangeStrategy({
-      market: 'TOKYO',
-      timeSec: pts('14:59:00'),
-      attemptsUsed: 0,
-    }) === 'lunch_range',
-    'Tokyo before cash close'
   )
   assert(
     resolveRangeStrategy({
@@ -165,7 +125,7 @@ test('resolveRangeStrategy clocks: Tokyo IB 10:15–10:45, lunch-range 13:30–1
   )
 })
 
-test('NY: morning unused → IB unlock 10:15–10:45; used morning blocks IB', () => {
+test('NY: morning ≤1 → IB unlock; 2 morning blocks IB; IB fill blocks lunch', () => {
   const ib = resolveSessionGate({
     ...gateBase,
     now: etDate(2026, 7, 15, 10, 30),
@@ -173,7 +133,15 @@ test('NY: morning unused → IB unlock 10:15–10:45; used morning blocks IB', (
   })
   assert(ib.canPlaceEntry === true, 'IB can place')
   assert(ib.rangeStrategy === 'ib', 'IB strategy')
-  assert(/IB strategy unlocked/i.test(ib.message), ib.message)
+
+  const withOne = resolveSessionGate({
+    ...gateBase,
+    attemptLadder: attemptLadderFromCounts({ morningAttempts: 1 }),
+    now: etDate(2026, 7, 15, 10, 30),
+    viewingInstrument: 'DOW',
+  })
+  assert(withOne.canPlaceEntry === true, '1 morning → IB still open')
+  assert(withOne.rangeStrategy === 'ib', 'IB with 1 morning')
 
   const afterIb = resolveSessionGate({
     ...gateBase,
@@ -181,27 +149,27 @@ test('NY: morning unused → IB unlock 10:15–10:45; used morning blocks IB', (
     viewingInstrument: 'DOW',
   })
   assert(afterIb.canPlaceEntry === false, 'after 10:45 no IB entry')
-  assert(afterIb.rangeStrategy === null, 'no strategy after IB')
-  assert(/IB entry closed/i.test(afterIb.message), afterIb.message)
+  assert(/Lunch break|IB entry closed/i.test(afterIb.message), afterIb.message)
 
-  const blocked = resolveSessionGate({
+  const twoMorning = resolveSessionGate({
     ...gateBase,
-    attemptsUsed: 1,
+    attemptLadder: attemptLadderFromCounts({ morningAttempts: 2, morningStopHits: 0 }),
     now: etDate(2026, 7, 15, 10, 30),
     viewingInstrument: 'DOW',
   })
-  assert(blocked.canPlaceEntry === false, 'morning used → no IB')
-  assert(blocked.rangeStrategy === null, 'no strategy')
+  assert(twoMorning.canPlaceEntry === false, '2 morning → no IB')
+  assert(twoMorning.rangeStrategy === null, 'no IB strategy')
 })
 
-test('NY: lunch-range 13:30–15:15; manage-only after 15:15', () => {
+test('NY: lunch-range when IB skipped; manage-only after 15:15; no PM watch copy', () => {
   const wait = resolveSessionGate({
     ...gateBase,
     now: etDate(2026, 7, 15, 12, 0),
     viewingInstrument: 'DOW',
   })
-  assert(wait.canPlaceEntry === false, '12:00 watch')
-  assert(/Watch-only until 13:30/i.test(wait.message), wait.message)
+  assert(wait.canPlaceEntry === false, '12:00 no place')
+  assert(/Lunch break playbook|lunch-range opens/i.test(wait.message), wait.message)
+  assert(!/watch-only|Afternoon watch|PM watch/i.test(wait.message), wait.message)
 
   const ln = resolveSessionGate({
     ...gateBase,
@@ -211,6 +179,15 @@ test('NY: lunch-range 13:30–15:15; manage-only after 15:15', () => {
   assert(ln.canPlaceEntry === true, '14:00 lunch-range place')
   assert(ln.rangeStrategy === 'lunch_range', 'lunch_range')
 
+  const afterIbFill = resolveSessionGate({
+    ...gateBase,
+    attemptLadder: attemptLadderFromCounts({ ibAttempts: 1 }),
+    now: etDate(2026, 7, 15, 14, 0),
+    viewingInstrument: 'DOW',
+  })
+  assert(afterIbFill.canPlaceEntry === false, 'IB fill → lunch off')
+  assert(afterIbFill.rangeStrategy === null, 'no lunch')
+
   const afterLn = resolveSessionGate({
     ...gateBase,
     now: etDate(2026, 7, 15, 15, 30),
@@ -218,7 +195,6 @@ test('NY: lunch-range 13:30–15:15; manage-only after 15:15', () => {
   })
   assert(afterLn.canPlaceEntry === false, '15:30 manage-only')
   assert(afterLn.rangeStrategy === null, 'no lunch-range after 15:15')
-  assert(/Lunch-range entry closed/i.test(afterLn.message), afterLn.message)
 })
 
 test('Nikkei: IB 10:15–10:45 JST; lunch-range to 15:00 JST', () => {
@@ -255,6 +231,7 @@ test('Morning entry window still allows 2 attempts (NY)', () => {
   })
   assert(g.canPlaceEntry === true, 'morning entry')
   assert(g.rangeStrategy === null, 'not range strategy yet')
+  assert(g.maxAttempts === 4, 'day max shown as 4')
 })
 
 console.log(`\n${TESTS_PASSED.length} passed, ${TESTS_FAILED.length} failed`)

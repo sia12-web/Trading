@@ -285,7 +285,10 @@ export async function clockOut(
   return { ok: true, row: (data as DeskAttendanceRow) ?? existing }
 }
 
-/** Auto lunch clock-out for markets past lunchClose. */
+/** Auto lunch clock-out for markets past lunchClose.
+ * Skips when an open book still needs manage, or when morning+IB is still unused
+ * (lunch-range entry path remains).
+ */
 export async function autoLunchClockOut(
   supabase: SupabaseClient,
   userId: string,
@@ -312,13 +315,50 @@ export async function autoLunchClockOut(
       market === 'TOKYO' && estDate !== sessionDate
         ? [sessionDate, estDate]
         : [sessionDate]
+    const instruments = market === 'TOKYO' ? ['NIKKEI'] : ['DOW', 'NASDAQ']
+
+    const { data: openPos } = await supabase
+      .from('trades_journal')
+      .select('id, instrument')
+      .eq('user_id', userId)
+      .in('trade_date', dateFilter)
+      .eq('fill_status', 'filled')
+      .is('exit_timestamp', null)
+      .in('instrument', instruments)
+      .limit(1)
+      .maybeSingle()
+
+    // Open book → stay clocked in so MANAGE / confirm-close / cash-flat works
+    if (openPos) continue
+
+    const { data: fills } = await supabase
+      .from('trades_journal')
+      .select('instrument, exit_reason, entry_timestamp, created_at')
+      .eq('user_id', userId)
+      .in('trade_date', dateFilter)
+      .eq('fill_status', 'filled')
+      .in('instrument', instruments)
+
+    const { buildAttemptLadder } = await import('@/lib/trading/attemptLadder')
+    const ladder = buildAttemptLadder(
+      (fills || []).map((t) => ({
+        instrument: t.instrument as string,
+        entryTimestamp: t.entry_timestamp || t.created_at || null,
+        exitReason: (t.exit_reason as string) || null,
+      })),
+      market === 'TOKYO' ? 'NIKKEI' : 'DOW'
+    )
+
+    // IB or lunch-range still available → stay clocked in
+    if (ladder.ibEligible || ladder.lunchEligible) continue
+
     const { data: trade } = await supabase
       .from('trades_journal')
       .select('instrument')
       .eq('user_id', userId)
       .in('trade_date', dateFilter)
       .eq('fill_status', 'filled')
-      .in('instrument', market === 'TOKYO' ? ['NIKKEI'] : ['DOW', 'NASDAQ'])
+      .in('instrument', instruments)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()

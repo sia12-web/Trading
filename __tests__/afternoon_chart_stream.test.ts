@@ -93,12 +93,32 @@ assert(
   `afternoon phase: ${gate.phase}`
 )
 assert(
-  /lunch-range|afternoon watch|cash close|watch-only/i.test(gate.message),
+  /lunch-range|Lunch-range|cash close|manage|Day /i.test(gate.message),
   `gate: ${gate.message}`
 )
 
-// Used a fill → pure watch-only even if still clocked in
-const watchOnly = resolveSessionGate({
+// Open book after lunch clock-out → still manage (never lock the trader out of an open position)
+{
+  const manage = resolveSessionGate({
+    now: afternoonEt,
+    lockedInstrument: 'DOW',
+    viewingInstrument: 'DOW',
+    clockedIn: false,
+    attendedToday: true,
+    attemptsUsed: 1,
+    stopLossHitCount: 0,
+    hasOpenPosition: true,
+  })
+  assert(manage.phase === 'MANAGE', 'open book → MANAGE')
+  assert(manage.canManagePosition === true, 'open book still manageable when clocked out')
+  assert(manage.canPlaceEntry === false, 'open book → no new entries')
+  assert(manage.canViewLiveChart === true, 'open book keeps live chart')
+  assert(manage.canFetchLiveBars === true, 'open book keeps live bars')
+  assert(/Position open|Manage only/i.test(manage.message), `manage msg: ${manage.message}`)
+}
+
+// Used 1 morning fill → lunch-range still allowed (IB skipped)
+const stillLunch = resolveSessionGate({
   now: afternoonEt,
   lockedInstrument: 'DOW',
   viewingInstrument: 'DOW',
@@ -107,9 +127,39 @@ const watchOnly = resolveSessionGate({
   attemptsUsed: 1,
   stopLossHitCount: 0,
 })
-assert(watchOnly.canPlaceEntry === false, 'no entries after a fill')
-assert(watchOnly.phase === 'DONE', `watch phase: ${watchOnly.phase}`)
-assert(/watch|read-only/i.test(watchOnly.message), `watch msg: ${watchOnly.message}`)
+assert(stillLunch.canPlaceEntry === true, '1 morning fill → lunch-range still open')
+assert(stillLunch.rangeStrategy === 'lunch_range', 'lunch_range with 1 morning')
+
+// IB fill → lunch off
+const afterIb = resolveSessionGate({
+  now: afternoonEt,
+  lockedInstrument: 'DOW',
+  viewingInstrument: 'DOW',
+  clockedIn: true,
+  attendedToday: true,
+  attemptLadder: {
+    dayAttempts: 1,
+    morningAttempts: 0,
+    ibAttempts: 1,
+    lunchAttempts: 0,
+    morningStopHits: 0,
+    revengeLocked: false,
+    dayLocked: false,
+    morningEligible: true,
+    ibEligible: false,
+    lunchEligible: false,
+    maxDayAttempts: 4,
+    maxMorningAttempts: 2,
+    maxIbAttempts: 1,
+    maxLunchAttempts: 1,
+  },
+})
+assert(afterIb.canPlaceEntry === false, 'IB fill → no lunch entries')
+assert(afterIb.rangeStrategy === null, 'no lunch strategy after IB')
+assert(
+  /IB attempt used|lunch-range off|Entry windows done|Day /i.test(afterIb.message),
+  `after IB msg: ${afterIb.message}`
+)
 
 // Never clocked in → afternoon stays locked (DOW / NASDAQ / NIKKEI)
 for (const [inst, now] of [

@@ -67,10 +67,16 @@ class LevelFinderAgent {
     }
 
     const prompt = this.buildAnalysisPrompt(request)
+    const mode =
+      request.analysis_mode === 'ib' ||
+      request.analysis_mode === 'lunch_range' ||
+      request.analysis_mode === 'afternoon'
+        ? request.analysis_mode
+        : 'morning'
     const systemPrompt = this.buildSystemPrompt(
       request.index,
       request.historicalContext,
-      request.analysis_mode === 'afternoon' ? 'afternoon' : 'morning'
+      mode
     )
     const avwapBands = this.extractAvwapBandPrices(request)
     const vpAnchors = this.extractVolumeProfileAnchors(request)
@@ -480,7 +486,7 @@ How to use it (big-desk volume map):
   private buildSystemPrompt(
     index: 'DOW' | 'NASDAQ' | 'NIKKEI',
     historicalContext?: HistoricalContext,
-    analysisMode: 'morning' | 'afternoon' = 'morning'
+    analysisMode: 'morning' | 'ib' | 'lunch_range' | 'afternoon' = 'morning'
   ): string {
     const s = sessionFor(index)
     const open = s.marketOpen.slice(0, 5)
@@ -489,23 +495,39 @@ How to use it (big-desk volume map):
     const close = s.marketClose.slice(0, 5)
     const tzLabel = index === 'NIKKEI' ? 'JST' : 'ET'
     const marketLabel = index === 'NIKKEI' ? 'Tokyo' : 'NY'
+    const ibWindow = '10:15–10:45'
+    const lunchRangeWindow =
+      index === 'NIKKEI' ? '13:30–15:00' : '13:30–15:15'
 
-    const afternoonBlock =
-      analysisMode === 'afternoon'
+    const modeBlock =
+      analysisMode === 'ib'
         ? `
-AFTERNOON MODE (watch-only — this run is the lunch refresh):
-- Trading for the day is DONE. You are building the AFTERNOON WATCH list for memory and chart levels through cash close (${close} ${tzLabel}).
-- A pro after the morning session asks: Did we break Initial Balance with volume? Which morning levels held vs broke? Where is price vs IB / morning mid / AVWAP / POC?
-- Use ONLY the AFTERNOON DESK BRIEF and candle/AVWAP/volume-profile tables in the user message. Those come from our Yahoo candles, IB math, AVWAP, volume-by-price, and morning-review grades — do NOT invent news, order-flow, or other feeds.
-- Prefer levels at: IB high/low, morning high/low, FLIP (broken→flip side) and RETEST (held) from the brief, AVWAP/POC confluence.
-- Still hunt retail stop pools — but frame them as afternoon magnets to watch, not new morning entries.
+IB PLAYBOOK MODE (Initial Balance entry refresh):
+- Morning fills are still 0. Desk is live-trading the IB window (${ibWindow} ${tzLabel}) — ONE attempt.
+- Build tradeable IB levels: IB high/low breakout and mean-reversion magnets, FLIP/RETEST from the brief, AVWAP/POC confluence.
+- Use ONLY the DESK BRIEF + candle/AVWAP/volume-profile tables. Frame levels as IB playbook entries (not morning open drive, not afternoon watch-only).
 `
-        : ''
+        : analysisMode === 'lunch_range'
+          ? `
+LUNCH-RANGE / LUNCH BREAK PLAYBOOK MODE:
+- IB entry window is done (or we are prepping for PM). Levels update for Lunch break playbook → Lunch-range entry (${lunchRangeWindow} ${tzLabel}).
+- Prefer lunch-range high/low, morning IB extremes, FLIP/RETEST, AVWAP/POC. One lunch-range attempt when the PM window unlocks (still 0 morning+IB fills).
+- Use ONLY the DESK BRIEF + candle tables. Frame as lunch-range breakout / mean-reversion — not morning playbook.
+`
+          : analysisMode === 'afternoon'
+            ? `
+AFTERNOON MODE (watch-only — this run is the post-entry memory refresh):
+- Entry windows for the day are DONE (or fills already used). You are building the AFTERNOON WATCH list for chart memory through cash close (${close} ${tzLabel}).
+- A pro after the morning/IB session asks: Did we break Initial Balance with volume? Which levels held vs broke? Where is price vs IB / morning mid / AVWAP / POC / lunch range?
+- Use ONLY the AFTERNOON DESK BRIEF and candle/AVWAP/volume-profile tables. Prefer IB high/low, morning high/low, lunch-range, FLIP/RETEST, AVWAP/POC.
+- Frame levels as afternoon magnets to watch / manage — not new morning entries.
+`
+            : ''
 
     const basePrompt = `You are a senior institutional trader who runs execution for a large desk. You do NOT think like a retail trader — you think about where retail traders put their STOPS, because that stop liquidity is where your desk ENTERS to fill size.
 
 You are analyzing ${index}. Use the SAME methodology for DOW, NASDAQ, and NIKKEI — only the session clock differs (see DESK CADENCE).
-${afternoonBlock}
+${modeBlock}
 PEER TAPE (pro use — simple, not distracting):
 - NY only: when trading DOW, glance at NASDAQ (and vice versa). One twin. No S&P / ES / extras.
 - NIKKEI: no twin on this desk — ignore US names for levels.
@@ -536,10 +558,9 @@ WHAT TO LOOK FOR IN THE CANDLES (think like a day trader reading the tape before
 10. Round-number magnets — big figures and .00 / .50 (or index 100/50 handles) that align with overnight/London/impulse. Note in reasoning how the round shapes entry, implied stop (beyond the round), and take-profit.
 
 DESK CADENCE (your levels live inside this rhythm — ${marketLabel} clock for ${index}):
-- You call levels pre-open from YESTERDAY'S range + overnight only. Older multi-day level history is discarded — the next session does not care about last week's levels.
-- Traded ONLY in the morning window: entries ${open}–${entryEnd} ${tzLabel}, flat by ${lunch} ${tzLabel}.
-- At lunch every level is graded against what the morning actually did; that verdict enters memory. LIVE only: afternoon chart continues (read-only); trading stays morning-only. Simulation has no afternoon session.
-- Afternoon playbook (flips / retests) updates system memory for learning; it is not traded yet. Choose levels that give clean morning verdicts — a level the morning never reaches teaches nothing.
+- Morning playbook: entries ${open}–${entryEnd} ${tzLabel} (up to 2 fills). Then if still 0 fills → IB playbook ${ibWindow} ${tzLabel} (1 attempt). After IB → Lunch break playbook (levels update). If still 0 fills → lunch-range playbook ${lunchRangeWindow} ${tzLabel} (1 attempt). Else manage / watch through cash close ${close} ${tzLabel}.
+- Confirm-close at lunch ${lunch} ${tzLabel} for morning/IB books (not silent flatten). Cash-close auto-liquidates leftovers.
+- At lunch every level is graded against what price actually did; that verdict enters memory. LIVE: IB and lunch-range ARE traded when unlocked — do not treat them as "not traded yet".
 
 THE MARKET IS THE FINAL JUDGE (non-negotiable):
 - Your past calls are graded against real price action: tested_count = how many times the market actually tested a level, success_count = how many times it held. This is the market speaking. Never argue with it.
@@ -668,7 +689,10 @@ How to use it:
     const vwapSection = this.buildVwapSection(request)
     const vpSection = this.buildVolumeProfileSection(request)
     const afternoonSection =
-      request.analysis_mode === 'afternoon' && request.afternoonBriefText
+      (request.analysis_mode === 'afternoon' ||
+        request.analysis_mode === 'ib' ||
+        request.analysis_mode === 'lunch_range') &&
+      request.afternoonBriefText
         ? request.afternoonBriefText
         : ''
     const peerSection = request.peerTapeText?.trim()
@@ -679,14 +703,18 @@ How to use it:
     const s = sessionFor(request.index)
     const tzLabel = request.index === 'NIKKEI' ? 'JST' : 'ET'
     const modeLine =
-      request.analysis_mode === 'afternoon'
-        ? 'Mode: AFTERNOON WATCH refresh (flat for trading — levels for chart memory through cash close).'
-        : 'Mode: morning prep / Level Finder.'
+      request.analysis_mode === 'ib'
+        ? 'Mode: IB PLAYBOOK refresh — tradeable Initial Balance levels for the 10:15–10:45 local entry window.'
+        : request.analysis_mode === 'lunch_range'
+          ? 'Mode: LUNCH BREAK / LUNCH-RANGE PLAYBOOK refresh — levels for PM lunch-range entry (and lunch-break prep).'
+          : request.analysis_mode === 'afternoon'
+            ? 'Mode: AFTERNOON WATCH refresh (entry windows done — levels for chart memory through cash close).'
+            : 'Mode: Morning playbook / Level Finder.'
 
     return `Analyze these price charts for ${request.symbol} (${request.index}):
 
 Current Price: ${request.current_price}
-Desk clock: ${clock.openLabel} open · entries until ${s.entryClose.slice(0, 5)} ${tzLabel} · lunch ${s.lunchClose.slice(0, 5)} ${tzLabel}
+Desk clock: ${clock.openLabel} open · morning entries until ${s.entryClose.slice(0, 5)} ${tzLabel} · IB 10:15–10:45 · lunch ${s.lunchClose.slice(0, 5)} ${tzLabel} · lunch-range PM · cash close ${s.marketClose.slice(0, 5)} ${tzLabel}
 ${modeLine}
 Methodology is identical for DOW, NASDAQ, and NIKKEI — only this clock differs.
 ${afternoonSection}${peerSection}
@@ -713,10 +741,16 @@ Work through this before choosing levels:
 6. For each level, mentally place: ENTRY (liquidity), STOP (just beyond the round/structure so the magnet is not your exact stop), TAKE PROFIT (next opposing round / session extreme / AVWAP). Mention rounds when they matter for SL or TP.
 7. If PEER TAPE is present: apply CONFIRM/DIVERGE to conviction only — do not change level prices to match the peer.
 ${
-  request.analysis_mode === 'afternoon'
-    ? `8. Afternoon: cross-check every candidate against the AFTERNOON DESK BRIEF (IB state, morning H/L + volume, FLIP/RETEST, tip vs AVWAP/POC). Prefer those magnets.
+  request.analysis_mode === 'ib'
+    ? `8. IB playbook: cross-check every candidate against the DESK BRIEF (IB high/low, morning H/L + volume, FLIP/RETEST, tip vs AVWAP/POC). Prefer IB magnets for the live IB entry attempt.
 `
-    : ''
+    : request.analysis_mode === 'lunch_range'
+      ? `8. Lunch break / lunch-range: cross-check against the DESK BRIEF (IB + lunch-range magnets, FLIP/RETEST, AVWAP/POC). Prefer levels for the PM lunch-range attempt / lunch-break prep.
+`
+      : request.analysis_mode === 'afternoon'
+        ? `8. Afternoon: cross-check every candidate against the AFTERNOON DESK BRIEF (IB state, morning H/L + volume, FLIP/RETEST, tip vs AVWAP/POC). Prefer those magnets.
+`
+        : ''
 }
 Then identify 2-5 levels where INSTITUTIONS ENTER — i.e. retail stop-loss liquidity pools. Rules:
 - Do NOT return yesterday's / overnight / Asia / London exact high or low as the entry print — those are retail bait. Return the stop-pool JUST BEYOND them (and say which stops you target).

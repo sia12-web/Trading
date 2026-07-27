@@ -38,6 +38,67 @@ import {
   previewPositionSizing,
 } from '@/lib/trading/positionSizing'
 import { snapDeskPrice, snapStopToTick, snapTargetToTick } from '@/lib/trading/instrumentTicks'
+
+/** Why new entries are blocked — shown on market/limit place attempts. */
+function entryDeniedMessage(gate: SessionGateState | null | undefined): string | null {
+  if (!gate) return 'Session gate loading — try again in a moment.'
+  if (gate.phase === 'MANAGE' || gate.open_position_id) {
+    return 'Position open — manage only, no new entries.'
+  }
+  if (!gate.clockedIn) {
+    if (gate.canClockIn) {
+      return 'Clocked out — click “Today I trade” to resume entries.'
+    }
+    if (gate.revengeLocked) {
+      return 'Revenge lock — 2 morning stop-outs. IB and lunch-range off. No new entries.'
+    }
+    if (gate.dayLocked || (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? 4)) {
+      return 'Day attempt cap reached — trading switched off. No new entries.'
+    }
+    if (gate.phase === 'CLOSED') {
+      return 'Cash closed — desk is offline until the next session.'
+    }
+    return 'Clocked out — no new entries. Manage only if you have an open book.'
+  }
+  if (!gate.canPlaceEntry) {
+    if (gate.revengeLocked) {
+      return 'Revenge lock — 2 morning stop-outs. IB and lunch-range off. No new entries.'
+    }
+    if (gate.dayLocked || (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? 4)) {
+      return 'Day attempt cap reached — trading switched off. No new entries.'
+    }
+    if (gate.phase === 'FLAT') {
+      return 'Entry window closed — wait for IB or lunch-range unlock (if still eligible).'
+    }
+    if (gate.phase === 'DONE') {
+      return 'Entry windows done for today — manage if open, no new entries.'
+    }
+    if (gate.phase === 'CLOSED') {
+      return 'Cash closed — desk is offline until the next session.'
+    }
+    if (gate.phase === 'PREP' || gate.phase === 'RECOMMENDED') {
+      return 'Pre-open prep — entries open at cash open.'
+    }
+    return gate.message || 'Entries not available right now.'
+  }
+  return null
+}
+
+/** Cancelled working-limit copy — matches why the gate stopped the book. */
+function workingLimitCancelledMessage(gate: SessionGateState): string {
+  if (!gate.clockedIn) {
+    return gate.canClockIn
+      ? 'Working limit cancelled — clocked out. Re-clock in to place entries.'
+      : 'Working limit cancelled — clocked out. No new entries.'
+  }
+  if (gate.phase === 'FLAT') {
+    return 'Working limit cancelled — entry window closed (levels cleared)'
+  }
+  if (gate.phase === 'DONE') {
+    return 'Working limit cancelled — entry windows done for today.'
+  }
+  return 'Working limit cancelled — cash session closed.'
+}
 import { MorningLunchFlatConfirm } from './components/MorningLunchFlatConfirm'
 
 type Instrument = DeskInstrumentPref
@@ -165,6 +226,14 @@ export default function ChartPage() {
       reasoning: string
     }) => {
       if (managePos || positionOverlay || pending) return
+      const denied = entryDeniedMessage(gate)
+      if (denied) {
+        setOrderLevel(null)
+        setOrderLevelType(undefined)
+        setFillError(denied)
+        setOrderStatus('rejected')
+        return
+      }
       // Never open the limit ticket for market
       setOrderLevel(null)
       setOrderLevelType(undefined)
@@ -243,9 +312,7 @@ export default function ChartPage() {
       positionOverlay,
       pending,
       instrument,
-      gate?.clockedIn,
-      gate?.lockedInstrument,
-      gate?.entryWindow,
+      gate,
       regime,
       regimeConfidence,
     ]
@@ -266,6 +333,13 @@ export default function ChartPage() {
       }
     ) => {
       if (managePos || positionOverlay || pending) return
+
+      const denied = entryDeniedMessage(gate)
+      if (denied) {
+        setFillError(denied)
+        setOrderStatus('rejected')
+        return
+      }
 
       const side =
         meta?.side === 'BUY' || meta?.side === 'SHORT' ? meta.side : undefined
@@ -316,7 +390,7 @@ export default function ChartPage() {
             : 'ai'
       )
     },
-    [managePos, positionOverlay, pending, placeMarketOrder]
+    [managePos, positionOverlay, pending, placeMarketOrder, gate]
   )
 
   const refreshLevelsAfterExit = useCallback(
@@ -563,6 +637,14 @@ export default function ChartPage() {
   const handlePlaced = useCallback(
     (order: PendingLimitOrder) => {
       if (placingOrderRef.current || pendingRef.current || managePos) return
+      const denied = entryDeniedMessage(gate)
+      if (denied) {
+        setFillError(denied)
+        setOrderStatus('rejected')
+        setOrderLevel(null)
+        setOrderLevelType(undefined)
+        return
+      }
       placingOrderRef.current = true
       setOrderStatus('placing')
       setOrderLevel(null)
@@ -593,7 +675,7 @@ export default function ChartPage() {
       placingOrderRef.current = false
       void persistWorking(order)
     },
-    [fillPending, persistWorking, managePos]
+    [fillPending, persistWorking, managePos, gate]
   )
   handlePlacedRef.current = handlePlaced
 
@@ -605,40 +687,71 @@ export default function ChartPage() {
     void fillPending(pending, pending.level)
   }, [livePrice, pending, managePos, fillPending, orderStatus])
 
-  // After entryClose (FLAT) or session end: cancel unfilled working limits; levels gone
+  // Cancel unfilled working limits when entry closed, day done, cash closed, or clocked out
   useEffect(() => {
-    if (gate?.phase !== 'FLAT' && gate?.phase !== 'DONE' && gate?.phase !== 'CLOSED') return
-    if (pending) {
+    if (!gate) return
+    const phaseBlocks =
+      gate.phase === 'FLAT' || gate.phase === 'DONE' || gate.phase === 'CLOSED'
+    const clockedOutBlocks = !gate.clockedIn
+
+    if (pending && (phaseBlocks || clockedOutBlocks)) {
       const inst = (pending.instrument || gate.lockedInstrument || instrument) as Instrument
       orderGenRef.current += 1
       pendingRef.current = null
       setPending(null)
       setOrderStatus('idle')
-      setFillError(
-        gate.phase === 'FLAT'
-          ? 'Working limit cancelled — entry window closed (levels cleared)'
-          : 'Working limit cancelled — session closed'
-      )
-      if (gate.phase === 'FLAT') {
+      setFillError(workingLimitCancelledMessage(gate))
+      if (gate.phase === 'FLAT' || clockedOutBlocks) {
         void cancelWorkingLimit(inst)
       }
     }
-    // Expire working rows at lunch/DONE; cash-close flatten only after marketClose (CLOSED)
+
+    if (!phaseBlocks) return
+
+    // Reload levels when strategy window changes (morning → IB → lunch-break → lunch-range)
     if (gate.phase === 'DONE') {
       void expireWorkingLimits({ forceExpireWorking: true, forceCashClose: false })
     } else if (gate.phase === 'CLOSED') {
       void expireWorkingLimits({ forceExpireWorking: true, forceCashClose: true })
     }
-    // Reload levels once after lunch so afternoon watch playbook paints
-    if (gate.phase === 'DONE') {
-      if (!afternoonLevelsLoadedRef.current) {
+    if (
+      gate.phase === 'DONE' ||
+      gate.phase === 'FLAT' ||
+      gate.rangeStrategy === 'ib' ||
+      gate.rangeStrategy === 'lunch_range'
+    ) {
+      if (!afternoonLevelsLoadedRef.current || gate.rangeStrategy) {
         afternoonLevelsLoadedRef.current = true
         setLevelsRefreshKey((k) => k + 1)
       }
-    } else {
-      afternoonLevelsLoadedRef.current = false
     }
-  }, [gate?.phase, gate?.lockedInstrument, pending, expireWorkingLimits, cancelWorkingLimit, instrument])
+  }, [
+    gate?.phase,
+    gate?.rangeStrategy,
+    gate?.lockedInstrument,
+    gate?.clockedIn,
+    pending,
+    expireWorkingLimits,
+    cancelWorkingLimit,
+    instrument,
+  ])
+
+  // Bump levels paint when IB / lunch-range strategy unlocks (ENTRY phase too)
+  const lastPlaybookStratRef = useRef<string | null>(null)
+  useEffect(() => {
+    const key = `${gate?.rangeStrategy ?? 'none'}:${gate?.phase ?? ''}`
+    if (!gate?.clockedIn) return
+    if (lastPlaybookStratRef.current === key) return
+    if (
+      gate.rangeStrategy === 'ib' ||
+      gate.rangeStrategy === 'lunch_range' ||
+      gate.phase === 'FLAT' ||
+      gate.phase === 'DONE'
+    ) {
+      lastPlaybookStratRef.current = key
+      setLevelsRefreshKey((k) => k + 1)
+    }
+  }, [gate?.rangeStrategy, gate?.phase, gate?.clockedIn])
 
   // Past morning lunch with a morning/IB open book → confirm close (not lunch-range fills)
   useEffect(() => {
@@ -967,6 +1080,12 @@ export default function ChartPage() {
               onLevelSelect={handleLevelSelect}
               onMarketOrder={placeMarketOrder}
               canPlaceOrder={canTrade && dataMode === 'live'}
+              rangeStrategy={gate?.rangeStrategy ?? null}
+              attemptsUsed={gate?.attemptsUsed ?? 0}
+              stopHits={gate?.stopHits ?? 0}
+              morningAttempts={gate?.morningAttempts ?? 0}
+              ibAttempts={gate?.ibAttempts ?? 0}
+              lunchAttempts={gate?.lunchAttempts ?? 0}
               deskLevelsActive={deskLevelsActive}
               deskAttended={deskAttended}
               clockedIn={clockedIn}

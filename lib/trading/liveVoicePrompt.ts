@@ -14,13 +14,16 @@ IDENTITY & CO-ARCHITECT MASTERY
 
 DEEP TRADEPULSE ARCHITECTURE & SESSION CLOCK KNOWLEDGE
 - **Pre-Market Prep** (NY: <09:15 ET | Tokyo: <08:45 JST): Multi-TF candles ($D, 4H, 1H$) analyzed. Level Finder extracts AVWAP, Volume Profile POC/HVNs, and stop-pool liquidity sweeps- **Instrument Lock**: Once clocked in, the active instrument (e.g. DOW) is LOCKED for the morning session. You KNOW the active desk is locked and NEVER ask the trader to choose between DOW and NASDAQ or say "awaiting DOW vs NASDAQ recommendation" — we are trading the locked instrument only!
-- **Core Entry Window** (NY: 09:30-10:15 ET | Tokyo: 09:00-09:45 JST): The core 45-minute entry window! Limit fills are ONLY allowed here via Level Order Tickets.
+- **Morning playbook entry** (NY: 09:30-10:15 ET | Tokyo: 09:00-09:45 JST): Up to 2 fills. Limits only via Level Order Tickets.
+- **IB playbook** (NY/Tokyo local 10:15-10:45): Unlocks if morning fills are 0 or 1 (not 2) and not revenge-locked — one IB attempt. Chart title "IB playbook".
+- **Lunch break playbook** (after IB closes until lunch-range opens): Prep only — levels update. Title "Lunch break playbook".
+- **Lunch-range playbook** (NY: 13:30-15:15 ET | Tokyo: 13:30-15:00 JST): Only if IB was skipped/unused — one lunch-range attempt. Any IB fill (SL or TP) turns lunch-range OFF.
+- **Day hard cap: 4 fills total** (AM 2 + IB 1 + LN 1). At 4 → switched off.
+- **Revenge lock**: 2 morning fills that are BOTH stop-outs → IB and lunch-range switched OFF (no revenge trading).
 - **Active Management Phase** (Post-fill until exit): Monitoring SL/TP targets & AI Reversal exits.
 - **Morning lunch (11:30 local):** Morning/IB books are NOT auto-flattened — trader confirms close or keeps the book open.
 - **Cash-close auto-liquidation** (NY 16:00 ET / Tokyo 15:00 JST): Lunch-range fills and any leftover morning/IB positions are force-closed.
-- **Afternoon Session** (NY: 13:30-15:15 ET | Tokyo: 13:30-15:00 JST): Lunch-range unlock only if morning+IB still unused; after entry window ends → manage-only until cash-close flatten.
-- **IB entry** (NY/Tokyo local 10:15-10:45): Only if morning fills still 0; then manage-only.
-- **Risk Discipline Rules**: Single active position lock (max 1 position at a time). Max 2 filled attempts per morning session (each fill counts whether you exit via stop or take-profit; 2 stop hits also lock). Working limits do not count until filled.
+- **Risk Discipline Rules**: Single active position lock (max 1 position at a time). Working limits do not count until filled. No PM watch — when entry paths are done, manage-only until cash close.
 - **Position Geometry**: 5% risk on AI/structure levels, 1% on manual level pins. Mandatory Stop Loss & Take Profit on every trade.
 - **Confluence MVP Filter**: Levels MUST have $\ge 2$ of 3 pillars (AVWAP bands, Volume Profile POC/HVN, Stop Pool sweeps). Single-factor levels are discarded as retail bait.
 - **THE MARKET IS THE ONLY TRUTH — REAL-TIME ADAPTATION**:
@@ -33,14 +36,14 @@ DEEP TRADEPULSE ARCHITECTURE & SESSION CLOCK KNOWLEDGE
 
 FULL CHART & ORDER ORIGIN VISIBILITY
 - YOU SEE EVERYTHING THE TRADER SEES ON THE CHART: 5-day Anchored VWAP (AVWAP), yesterday/overnight session OHLC and gaps, Volume Profile POC/HVN, identified support/resistance levels, conviction scores, active working limit orders, open position P&L, trade attempts, and stop limits.
-- YOU SEE EXACT ORDER ORIGINS (AI MORNING PLAYBOOK VS MANUAL TRADER):
-  1) AI Playbook Entries: When the trader buys/shorts using the Morning Playbook buttons (Primary Buy, Primary Short, Watch Buy, Watch Short), you see the exact rank badge used (e.g. "AI Morning Playbook: Primary Buy Level", "AI Morning Playbook: Watch Short Level").
-  2) Manual Independent Entries: When the trader places a line manually on their own without using the Morning Playbook, you see "Manual Independent Line (placed by trader directly, not from AI playbook)".
+- YOU SEE EXACT ORDER ORIGINS (ACTIVE AI PLAYBOOK VS MANUAL TRADER):
+  1) AI Playbook Entries: When the trader buys/shorts using the active playbook buttons (Morning / IB / Lunch break / Lunch-range — Primary Buy, Primary Short, Watch Buy, Watch Short), you see the exact rank badge (e.g. "AI IB playbook: Primary Buy Level"). Always name the ACTIVE playbook from DESK CONTEXT (playbookTitle), never call it Morning when we are in IB or Lunch break.
+  2) Manual Independent Entries: When the trader places a line manually without using the playbook, you see "Manual Independent Line (placed by trader directly, not from AI playbook)".
 - ACKNOWLEDGE THE DIFFERENCE IN VOICE DEBATES:
-  * When speaking about AI Playbook orders: e.g., "I see you executed our AI Primary Buy level at 39,250, partner. Structure has 5% desk risk."
+  * When speaking about AI Playbook orders: e.g., "I see you executed our IB playbook Primary Buy at 39,250, partner. Structure has 5% desk risk."
   * When speaking about manual orders: e.g., "I see your independent manual BUY limit pending at 39,250. Remember that's capped at 1% manual risk."
 - VOCABULARY & TERMINOLOGY MAPPING:
-  * "AI Levels" or "AI morning playbook levels" refer ONLY to the machine-found levels in the AI levels section of your context.
+  * "AI Levels" / playbook levels refer ONLY to the machine-found levels in the AI levels section of your context for the ACTIVE playbookMode.
   * "Zones", "Drawn Zones", "My Zones" (e.g. Zone 1, Zone 2) refer ONLY to the trader's hand-drawn custom zones under the "User pins this session" section of your context.
   * Never confuse or mix these two terms. Address them exactly as the trader labels them.
 - CRITICAL SAFETY RULE — ZERO HALLUCINATION: NEVER invent prices, levels, or market data under any circumstances. Giving fake or hallucinated levels causes real trading losses.
@@ -63,18 +66,31 @@ HARD RULES
 OUTPUT
 - Plain spoken English sentences. No markdown, no bullet lists, no asterisks, no hashtags, no JSON.`
 
-export function formatEntrySourceLabel(src: string): string {
+export function formatEntrySourceLabel(
+  src: string,
+  playbookTitle = 'AI playbook'
+): string {
+  const book = playbookTitle.trim() || 'AI playbook'
   const s = src.toLowerCase()
-  if (s.includes('primary_buy') || s.includes('primary_long')) return 'AI Morning Playbook: Primary Buy Level'
-  if (s.includes('primary_short')) return 'AI Morning Playbook: Primary Short Level'
-  if (s.includes('watch_buy') || s.includes('watch_long')) return 'AI Morning Playbook: Watch Buy Level'
-  if (s.includes('watch_short')) return 'AI Morning Playbook: Watch Short Level'
-  if (s.includes('ai') || s.includes('structure')) return 'AI Morning Playbook Level'
+  if (s.includes('primary_buy') || s.includes('primary_long'))
+    return `AI ${book}: Primary Buy Level`
+  if (s.includes('primary_short')) return `AI ${book}: Primary Short Level`
+  if (s.includes('watch_buy') || s.includes('watch_long'))
+    return `AI ${book}: Watch Buy Level`
+  if (s.includes('watch_short')) return `AI ${book}: Watch Short Level`
+  if (s.includes('ai') || s.includes('structure')) return `AI ${book} Level`
   return 'Manual Independent Line (placed by trader directly, not from AI playbook)'
 }
 
 export function formatLiveVoiceContextForLlm(ctx: LiveVoiceDeskContext): string {
   const livePx = ctx.market?.livePrice
+  const playbookTitle = ctx.session.playbookTitle || 'Morning playbook'
+  const range =
+    ctx.session.rangeStrategy === 'ib'
+      ? 'IB strategy active'
+      : ctx.session.rangeStrategy === 'lunch_range'
+        ? 'Lunch-range strategy active'
+        : 'no range strategy (morning ladder)'
 
   const levels =
     ctx.levels.items.length === 0
@@ -102,12 +118,12 @@ export function formatLiveVoiceContextForLlm(ctx: LiveVoiceDeskContext): string 
       : ctx.workingOrders
           .map(
             (w) =>
-              `${w.direction} limit @ ${w.entryLevel} (SL: ${w.stopLoss}, TP: ${w.takeProfit ?? 'none'}, Origin: ${formatEntrySourceLabel(w.entrySource)})`
+              `${w.direction} limit @ ${w.entryLevel} (SL: ${w.stopLoss}, TP: ${w.takeProfit ?? 'none'}, Origin: ${formatEntrySourceLabel(w.entrySource, playbookTitle)})`
           )
           .join('; ')
 
   const activeLine = ctx.activePosition
-    ? `${ctx.activePosition.direction} filled @ ${ctx.activePosition.fillPrice} (SL: ${ctx.activePosition.stopLoss}, TP: ${ctx.activePosition.takeProfit ?? 'none'}, Origin: ${formatEntrySourceLabel(ctx.activePosition.entrySource)})`
+    ? `${ctx.activePosition.direction} filled @ ${ctx.activePosition.fillPrice} (SL: ${ctx.activePosition.stopLoss}, TP: ${ctx.activePosition.takeProfit ?? 'none'}, Origin: ${formatEntrySourceLabel(ctx.activePosition.entrySource, playbookTitle)})`
     : 'none (flat)'
 
   return `DESK CONTEXT (ground truth — do not invent beyond this):
@@ -115,16 +131,17 @@ Active Instrument: ${ctx.voice.instrument} (${ctx.voice.market} - LOCKED DESK FO
 Live Price Action: ${ctx.voice.instrument} @ ${livePx != null ? livePx.toLocaleString() : 'loading live tick'}
 Voice window: ${ctx.voice.window.start}–${ctx.voice.window.end} ${ctx.voice.window.tzLabel} · local ${ctx.voice.localTime}
 Phase: ${ctx.session.phase} — ${ctx.session.message}
+Active playbook: ${playbookTitle} (mode=${ctx.session.playbookMode}) · ${range}
 Attempts: ${ctx.session.attemptsUsed}/${ctx.session.maxAttempts} (filled) · Stops: ${ctx.session.stopHits}/${ctx.session.maxStopHits}
 Can place entry: ${ctx.session.canPlaceEntry} · Can manage: ${ctx.session.canManagePosition}
 Working limit orders: ${workingLines}
 Active filled position: ${activeLine}
-Session times: analyze ${ctx.session.times.analyzeStart} · open ${ctx.session.times.marketOpen} · entry close ${ctx.session.times.entryClose} · lunch ${ctx.session.times.lunchClose} (${ctx.session.times.tzLabel})
+Session times: analyze ${ctx.session.times.analyzeStart} · open ${ctx.session.times.marketOpen} · morning entry close ${ctx.session.times.entryClose} · IB ${ctx.session.times.ibEntry} · lunch ${ctx.session.times.lunchClose} · lunch-range ${ctx.session.times.lunchRangeEntry} · cash close ${ctx.session.times.marketClose} (${ctx.session.times.tzLabel})
 Risk: AI/structure ${ctx.risk.deskRiskPercent}% · manual ${ctx.risk.manualRiskPercent}% · ${ctx.risk.entryRule}
 AVWAP: ${ctx.avwap.bandNote}
 Overnight: ${overnightLine}
 ${ctx.overnight.newsSummary ? `News: ${ctx.overnight.newsSummary}` : ''}
-Playbook focus: ${ctx.levels.focusSide} — ${ctx.levels.focusHint}
+Playbook focus (${playbookTitle}): ${ctx.levels.focusSide} — ${ctx.levels.focusHint}
 AI levels (${ctx.levels.count}, source=${ctx.levels.source}):
 ${levels}
 User pins this session: ${

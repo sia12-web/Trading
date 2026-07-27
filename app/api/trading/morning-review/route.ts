@@ -209,10 +209,13 @@ async function runMorningReview(request: NextRequest) {
 
     await saveMorningJournal(supabase, attendance.id, morningJournal, afternoonCandidates)
 
-    // Refresh AI levels for afternoon memory (clocked-in days only; force past lunch)
+    // Refresh AI levels for lunch-break / lunch-range playbook (clocked-in days only)
     try {
       const { runAutoLevelPrep } = await import('@/lib/services/autoLevelPrep')
-      await runAutoLevelPrep(instrument as Instrument, { force: true })
+      await runAutoLevelPrep(instrument as Instrument, {
+        force: true,
+        mode: 'lunch_range',
+      })
     } catch (err) {
       logger.warn('morning-review.afternoon_levels_failed', { err })
     }
@@ -258,7 +261,7 @@ async function runMorningReview(request: NextRequest) {
           enabled: true,
           visible_on_live_chart: true,
           note:
-            'Afternoon levels paint on the live chart as watch-only (FLIP/RETEST + IB). Trading stays morning-only until next session.',
+            'Levels refresh for Lunch break playbook (FLIP/RETEST + IB). If morning+IB still unused, lunch-range entry unlocks PM; otherwise watch/manage until cash close.',
           candidates: afternoonCandidates,
         },
       },

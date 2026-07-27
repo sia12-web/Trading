@@ -63,13 +63,22 @@ async function handleAutoLevels(request: NextRequest) {
 
     // Cron may pass force=1; browser prep should not (default false)
     const force = request.nextUrl.searchParams.get('force') === '1'
-    logger.info('auto-levels.start', { instrument: param, force })
-    const result = await runAutoLevelPrep(param as DeskInstrument, { force })
+    const modeRaw = request.nextUrl.searchParams.get('mode')
+    const mode =
+      modeRaw === 'ib' ||
+      modeRaw === 'lunch_range' ||
+      modeRaw === 'afternoon' ||
+      modeRaw === 'morning'
+        ? modeRaw
+        : undefined
+    logger.info('auto-levels.start', { instrument: param, force, mode: mode ?? null })
+    const result = await runAutoLevelPrep(param as DeskInstrument, { force, mode })
     logger.info('auto-levels.done', {
       instrument: result.instrument,
       ok: result.ok,
       levels: result.levels,
       error: result.error ?? null,
+      mode: mode ?? null,
     })
 
     // Soft failure (no candles / LLM hiccup) must not 422 the browser console —

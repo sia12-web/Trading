@@ -95,7 +95,7 @@ export async function GET(request: Request) {
         .maybeSingle(),
       supabase
         .from('trades_journal')
-        .select('id, exit_timestamp, exit_reason, stop_loss_hit_count')
+        .select('id, instrument, exit_timestamp, exit_reason, entry_timestamp, created_at')
         .eq('user_id', user.id)
         .eq('trade_date', tradeDate)
         .in('instrument', marketInstruments)
@@ -111,6 +111,11 @@ export async function GET(request: Request) {
     // Attempts = filled trades only (working limits do not count). SL or TP both use the attempt.
     const attemptsUsed = filledTrades.length
     const stopHits = filledTrades.filter((t) => t.exit_reason === 'stop_hit').length
+    const attemptFills = filledTrades.map((t) => ({
+      instrument: (t.instrument as string) || lockedInstrument || 'DOW',
+      entryTimestamp: t.entry_timestamp || t.created_at || null,
+      exitReason: (t.exit_reason as string) || null,
+    }))
 
     // Lunch may have hit while the tab was open — auto clock-out
     await autoLunchClockOut(supabase, user.id)
@@ -155,6 +160,7 @@ export async function GET(request: Request) {
       hasOpenPosition: !!openPos,
       attemptsUsed,
       stopLossHitCount: stopHits,
+      attemptFills,
       viewingInstrument: viewingForGate,
       clockedIn,
       attendedToday,
@@ -175,6 +181,12 @@ export async function GET(request: Request) {
         max_attempts: gate.maxAttempts,
         stop_hits: gate.stopHits,
         max_stop_hits: gate.maxStopHits,
+        morning_attempts: gate.morningAttempts,
+        ib_attempts: gate.ibAttempts,
+        lunch_attempts: gate.lunchAttempts,
+        attempt_ladder: gate.attemptLadderLabel,
+        revenge_locked: gate.revengeLocked,
+        day_locked: gate.dayLocked,
         focus_market: focusMarket,
       },
       {

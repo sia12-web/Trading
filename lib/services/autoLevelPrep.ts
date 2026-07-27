@@ -94,7 +94,11 @@ export type AutoLevelPrepResult = {
  */
 export async function runAutoLevelPrep(
   instrument: Instrument,
-  opts: { force?: boolean } = {}
+  opts: {
+    force?: boolean
+    /** Explicit playbook refresh: morning | ib | lunch_range | afternoon */
+    mode?: 'morning' | 'ib' | 'lunch_range' | 'afternoon'
+  } = {}
 ): Promise<AutoLevelPrepResult> {
   try {
     if (!isDeskInstrument(instrument)) {
@@ -194,9 +198,20 @@ export async function runAutoLevelPrep(
 
     const agent = await getLevelFinderAgent()
 
-    // Afternoon lunch refresh (force) gets IB / morning volume / FLIP-RETEST brief + memory
-    const afternoonMode =
-      opts.force === true && isAfternoonWatchWindow(now, instrument)
+    // Playbook mode: explicit query wins; else lunch refresh → afternoon when in PM window
+    const analysis_mode: 'morning' | 'ib' | 'lunch_range' | 'afternoon' =
+      opts.mode === 'ib' ||
+      opts.mode === 'lunch_range' ||
+      opts.mode === 'afternoon' ||
+      opts.mode === 'morning'
+        ? opts.mode
+        : opts.force === true && isAfternoonWatchWindow(now, instrument)
+          ? 'afternoon'
+          : 'morning'
+    const needsAfternoonBrief =
+      analysis_mode === 'ib' ||
+      analysis_mode === 'lunch_range' ||
+      analysis_mode === 'afternoon'
     const h1Bars = (h1?.candles ?? []).map((c) => ({
       time: c.time,
       open: c.open,
@@ -205,7 +220,7 @@ export async function runAutoLevelPrep(
       close: c.close,
       volume: Math.max(1, c.volume || 0),
     }))
-    const brief = afternoonMode
+    const brief = needsAfternoonBrief
       ? buildAfternoonDeskBrief({
           instrument: instrument as DeskInstrument,
           candlesH1: h1Bars,
@@ -221,7 +236,7 @@ export async function runAutoLevelPrep(
     try {
       historicalContext =
         (await fetchLevelHistoricalContext(supabase, user.id, instrument, {
-          days: afternoonMode ? 2 : 30,
+          days: needsAfternoonBrief ? 2 : 30,
           limit: 20,
         })) ?? undefined
     } catch {
@@ -246,7 +261,7 @@ export async function runAutoLevelPrep(
       candles_daily,
       candles_h1,
       llm_tier: 'live',
-      analysis_mode: afternoonMode ? 'afternoon' : 'morning',
+      analysis_mode,
       afternoonBriefText: brief ? formatAfternoonDeskBriefForPrompt(brief) : undefined,
       peerTapeText,
       historicalContext,

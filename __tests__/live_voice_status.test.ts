@@ -40,7 +40,7 @@ function jstDate(h: number, m: number, s = 0): Date {
   })
   assert(r.enabled === true, 'NY 9:15 clocked in enabled')
   assert(r.inVoiceWindow === true, 'in window')
-  assert(r.window.start === '09:15' && r.window.end === '10:15', 'NY window labels')
+  assert(r.window.start === '09:15' && r.window.end === '15:15', 'NY window through lunch-range end')
   assert(r.micAllowed === true, 'mic allowed when voice enabled')
 }
 
@@ -57,21 +57,40 @@ function jstDate(h: number, m: number, s = 0): Date {
 
 {
   const r = resolveLiveVoiceStatus({
-    now: etDate(10, 15),
+    now: etDate(10, 30),
     instrument: 'DOW',
     clockedIn: true,
   })
-  assert(r.enabled === false, 'at entry close disabled')
+  assert(r.enabled === true, 'IB window still in voice')
+  assert(r.inVoiceWindow === true, 'IB inside voice window')
+}
+
+{
+  const r = resolveLiveVoiceStatus({
+    now: etDate(14, 0),
+    instrument: 'DOW',
+    clockedIn: true,
+  })
+  assert(r.enabled === true, 'lunch-range still in voice')
+}
+
+{
+  const r = resolveLiveVoiceStatus({
+    now: etDate(15, 15),
+    instrument: 'DOW',
+    clockedIn: true,
+  })
+  assert(r.enabled === false, 'at lunch-range end disabled')
   assert(r.disableCode === 'after_entry', 'after_entry')
 }
 
 {
   const r = resolveLiveVoiceStatus({
-    now: etDate(11, 0),
+    now: etDate(16, 0),
     instrument: 'DOW',
     clockedIn: true,
   })
-  assert(r.enabled === false, 'after entry still off (lunch not in voice window)')
+  assert(r.enabled === false, 'after lunch-range still off')
 }
 
 {
@@ -81,17 +100,26 @@ function jstDate(h: number, m: number, s = 0): Date {
     clockedIn: true,
   })
   assert(r.enabled === true, 'Tokyo prep start enabled')
-  assert(r.window.start === '08:45' && r.window.end === '09:45', 'Tokyo window')
+  assert(r.window.start === '08:45' && r.window.end === '15:00', 'Tokyo window through lunch-range end')
   assert(r.market === 'TOKYO', 'TOKYO market')
 }
 
 {
   const r = resolveLiveVoiceStatus({
-    now: jstDate(9, 45),
+    now: jstDate(14, 0),
     instrument: 'NIKKEI',
     clockedIn: true,
   })
-  assert(r.enabled === false, 'Tokyo entry close disabled')
+  assert(r.enabled === true, 'Tokyo lunch-range still in voice')
+}
+
+{
+  const r = resolveLiveVoiceStatus({
+    now: jstDate(15, 0),
+    instrument: 'NIKKEI',
+    clockedIn: true,
+  })
+  assert(r.enabled === false, 'Tokyo lunch-range end disabled')
 }
 
 {

@@ -133,7 +133,7 @@ export async function POST(request: Request) {
     const [filledRes, openRes, attendance] = await Promise.all([
       supabase
         .from('trades_journal')
-        .select('id, exit_reason')
+        .select('id, instrument, exit_reason, entry_timestamp, created_at')
         .eq('user_id', user.id)
         .eq('trade_date', tradeDate)
         .in('instrument', marketInstruments)
@@ -151,11 +151,17 @@ export async function POST(request: Request) {
     ])
 
     const filledRows = filledRes.data ?? []
+    const attemptFills = filledRows.map((t) => ({
+      instrument: (t.instrument as string) || instrument,
+      entryTimestamp: t.entry_timestamp || t.created_at || null,
+      exitReason: (t.exit_reason as string) || null,
+    }))
     const gate = resolveSessionGate({
       lockedInstrument: locked,
       hasOpenPosition: !!openRes.data,
       attemptsUsed: filledRows.length,
       stopLossHitCount: filledRows.filter((t) => t.exit_reason === 'stop_hit').length,
+      attemptFills,
       viewingInstrument: instrument,
       clockedIn: attendance?.status === 'clocked_in',
       attendedToday: !!attendance,

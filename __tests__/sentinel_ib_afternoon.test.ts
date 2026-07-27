@@ -19,6 +19,7 @@ import {
   isLiveDeskInstrument,
   resolveSessionGate,
   resolveSimMorningGate,
+  attemptLadderFromCounts,
 } from '../lib/trading/sessionGate'
 
 const TESTS_PASSED: string[] = []
@@ -192,7 +193,7 @@ test('NIKKEI afternoon watch uses JST cash close 15:00', () => {
   assert(isAfternoonWatchWindow(after, 'NIKKEI') === false, 'Tokyo after close')
 })
 
-test('Live gate: lunch-range unlock when morning unused; watch-only after a fill', () => {
+test('Live gate: lunch-range unlock when morning ≤1; IB fill blocks lunch', () => {
   const unlocked = resolveSessionGate({
     now: etDate(2026, 7, 15, 14, 0),
     lockedInstrument: 'DOW',
@@ -206,7 +207,7 @@ test('Live gate: lunch-range unlock when morning unused; watch-only after a fill
   assert(unlocked.rangeStrategy === 'lunch_range', 'lunch_range strategy')
   assert(isAfternoonWatchWindow(etDate(2026, 7, 15, 14, 0), 'DOW'), 'still afternoon clock')
 
-  const gate = resolveSessionGate({
+  const oneMorning = resolveSessionGate({
     now: etDate(2026, 7, 15, 14, 0),
     lockedInstrument: 'DOW',
     viewingInstrument: 'DOW',
@@ -215,8 +216,19 @@ test('Live gate: lunch-range unlock when morning unused; watch-only after a fill
     attemptsUsed: 1,
     stopLossHitCount: 0,
   })
-  assert(gate.canPlaceEntry === false, 'no entries after a fill')
-  assert(gate.rangeStrategy === null, 'no unlock after fill')
+  assert(oneMorning.canPlaceEntry === true, '1 morning → lunch still open')
+  assert(oneMorning.rangeStrategy === 'lunch_range', 'lunch with 1 morning')
+
+  const afterIb = resolveSessionGate({
+    now: etDate(2026, 7, 15, 14, 0),
+    lockedInstrument: 'DOW',
+    viewingInstrument: 'DOW',
+    clockedIn: true,
+    attendedToday: true,
+    attemptLadder: attemptLadderFromCounts({ ibAttempts: 1 }),
+  })
+  assert(afterIb.canPlaceEntry === false, 'IB fill → lunch off')
+  assert(afterIb.rangeStrategy === null, 'no unlock after IB')
 })
 
 test('Sim gate: morning-only — afternoon sim clock still locked for entries after lunch', () => {
