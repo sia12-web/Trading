@@ -85,10 +85,31 @@ const gate = resolveSessionGate({
   attemptsUsed: 0,
   stopLossHitCount: 0,
 })
-assert(gate.canPlaceEntry === false, 'no entries after lunch')
-assert(gate.phase === 'DONE', `afternoon phase: ${gate.phase}`)
+// Clocked out → no place even if lunch-range window is open
+assert(gate.canPlaceEntry === false, 'no entries when clocked out')
 assert(gate.canViewLiveChart === true, 'attended → afternoon chart ok')
-assert(/afternoon watch|cash close/i.test(gate.message), `gate: ${gate.message}`)
+assert(
+  gate.phase === 'ENTRY' || gate.phase === 'DONE',
+  `afternoon phase: ${gate.phase}`
+)
+assert(
+  /lunch-range|afternoon watch|cash close|watch-only/i.test(gate.message),
+  `gate: ${gate.message}`
+)
+
+// Used a fill → pure watch-only even if still clocked in
+const watchOnly = resolveSessionGate({
+  now: afternoonEt,
+  lockedInstrument: 'DOW',
+  viewingInstrument: 'DOW',
+  clockedIn: true,
+  attendedToday: true,
+  attemptsUsed: 1,
+  stopLossHitCount: 0,
+})
+assert(watchOnly.canPlaceEntry === false, 'no entries after a fill')
+assert(watchOnly.phase === 'DONE', `watch phase: ${watchOnly.phase}`)
+assert(/watch|read-only/i.test(watchOnly.message), `watch msg: ${watchOnly.message}`)
 
 // Never clocked in → afternoon stays locked (DOW / NASDAQ / NIKKEI)
 for (const [inst, now] of [
@@ -105,7 +126,11 @@ for (const [inst, now] of [
     attemptsUsed: 0,
     stopLossHitCount: 0,
   })
-  assert(missed.phase === 'DONE', `${inst} afternoon DONE`)
+  assert(
+    missed.phase === 'DONE' || missed.phase === 'ENTRY',
+    `${inst} afternoon phase ${missed.phase}`
+  )
+  assert(missed.canPlaceEntry === false, `${inst} no place without clock-in`)
   assert(missed.canViewLiveChart === false, `${inst} no chart without clock-in`)
   assert(missed.attendedToday === false, `${inst} not attended`)
   assert(/missed clock-in|locked until cash close/i.test(missed.message), `${inst}: ${missed.message}`)

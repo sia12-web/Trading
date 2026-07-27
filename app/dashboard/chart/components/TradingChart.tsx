@@ -564,6 +564,9 @@ interface TradingChartProps {
       source?: 'ai' | 'structure' | 'manual'
       side?: 'BUY' | 'SHORT'
       preferredDirection?: 'LONG' | 'SHORT'
+      orderType?: 'LIMIT' | 'MARKET'
+      stopLoss?: number
+      profitTarget?: number
     }
   ) => void
   /** Morning session: allow placing limits from the chart */
@@ -3350,9 +3353,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       onLevelSelect?.(entryPrice, {
         source: 'manual',
         type: isMarket ? 'market' : 'manual',
+        orderType: isMarket ? 'MARKET' : 'LIMIT',
         side: direction === 'LONG' ? 'BUY' : 'SHORT',
         preferredDirection: direction,
         reasoning: autoReason,
+        stopLoss,
+        profitTarget,
       })
       cancelRiskBox()
     } else {
@@ -3786,10 +3792,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
   const isUp = priceChange >= 0
   /** Levels / Watch only / playbook — only while NY or Tokyo cash day is live (post-mount) */
   const tokyoDesk = instrument === 'NIKKEI'
-  // Watch-only is afternoon only — morning prep/entry must never look like PM watch
+  // Watch-only only when afternoon AND entries are locked (not IB/lunch-range unlock)
   void focusTick
   const afternoonWatch =
-    clockReady && isAfternoonWatchWindow(new Date(), instrument)
+    clockReady &&
+    isAfternoonWatchWindow(new Date(), instrument) &&
+    !canPlaceOrder
   const watchPlaybookTitle = tokyoDesk ? 'Tokyo watch' : 'Afternoon watch'
   const watchPlaybookHint = tokyoDesk
     ? 'Tokyo morning reaction + Initial Balance — watch only, no new orders.'
@@ -4959,12 +4967,17 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 </button>
                 <button
                   onClick={() => {
+                    const isMarket = rationaleModal.orderType === 'MARKET'
                     const fullReason = `Manual ${rationaleModal.direction} entry: ${userRationale || 'Technical structure'} | SL/TP rationale: ${userSlTpRationale || 'Geometry bounds'}`
                     onLevelSelect?.(rationaleModal.entryPrice, {
                       source: 'manual',
+                      type: isMarket ? 'market' : 'manual',
+                      orderType: isMarket ? 'MARKET' : 'LIMIT',
                       side: rationaleModal.direction === 'LONG' ? 'BUY' : 'SHORT',
                       preferredDirection: rationaleModal.direction,
                       reasoning: fullReason,
+                      stopLoss: rationaleModal.stopLoss,
+                      profitTarget: rationaleModal.profitTarget,
                     })
                     setRationaleModal(null)
                     cancelRiskBox()

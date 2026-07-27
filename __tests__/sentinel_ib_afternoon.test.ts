@@ -192,8 +192,8 @@ test('NIKKEI afternoon watch uses JST cash close 15:00', () => {
   assert(isAfternoonWatchWindow(after, 'NIKKEI') === false, 'Tokyo after close')
 })
 
-test('Live gate: afternoon watch-only (no new entries)', () => {
-  const gate = resolveSessionGate({
+test('Live gate: lunch-range unlock when morning unused; watch-only after a fill', () => {
+  const unlocked = resolveSessionGate({
     now: etDate(2026, 7, 15, 14, 0),
     lockedInstrument: 'DOW',
     viewingInstrument: 'DOW',
@@ -202,8 +202,21 @@ test('Live gate: afternoon watch-only (no new entries)', () => {
     attemptsUsed: 0,
     stopLossHitCount: 0,
   })
-  assert(gate.canPlaceEntry === false, 'no entries')
-  assert(isAfternoonWatchWindow(etDate(2026, 7, 15, 14, 0), 'DOW'), 'watch window')
+  assert(unlocked.canPlaceEntry === true, 'lunch-range place when 0 fills')
+  assert(unlocked.rangeStrategy === 'lunch_range', 'lunch_range strategy')
+  assert(isAfternoonWatchWindow(etDate(2026, 7, 15, 14, 0), 'DOW'), 'still afternoon clock')
+
+  const gate = resolveSessionGate({
+    now: etDate(2026, 7, 15, 14, 0),
+    lockedInstrument: 'DOW',
+    viewingInstrument: 'DOW',
+    clockedIn: true,
+    attendedToday: true,
+    attemptsUsed: 1,
+    stopLossHitCount: 0,
+  })
+  assert(gate.canPlaceEntry === false, 'no entries after a fill')
+  assert(gate.rangeStrategy === null, 'no unlock after fill')
 })
 
 test('Sim gate: morning-only — afternoon sim clock still locked for entries after lunch', () => {

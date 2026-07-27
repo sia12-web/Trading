@@ -1,19 +1,19 @@
 /**
  * Trading desk session state — NY (DOW/NASDAQ) and Tokyo (NIKKEI).
  *
- * LIVE only:
- *   Morning trading: NY 09:30–11:30 ET / Tokyo 09:00–11:30 JST (entries until entryClose).
- *   Chart stream: cash day open continuum through afternoon until marketClose
- *     (no lunch freeze). After cash close the tip freezes — overnight is not traded.
- *   Next morning clock-in: full history (incl. prior afternoon) loads again.
- *   Lunch AI / morning-review still runs in the background for memory.
- *   AVWAP: always anchored at cash open of 5 trading days prior to the tip session.
+ * LIVE attempt ladder (both desks; local cash clock):
+ *   1) Morning levels: cash open → entryClose — up to 2 filled attempts.
+ *   2) If 0 morning fills → IB strategy from IB-shaped (open+60m) → lunchClose — 1 attempt
+ *      (BRK / mean-reversion on Initial Balance).
+ *   3) If still 0 fills → after local lunch-range lock (13:30) → marketClose — 1 attempt
+ *      (lunch-range BRK / mean-reversion).
+ *   Otherwise after morning entry: watch-only until cash close.
  *
- * SIMULATION: morning session only (open → lunch). No afternoon feature,
- * no background memory pass — use resolveSimMorningGate(), not the live gate.
+ *   NY:  open 09:30 · entry→10:15 · IB 10:30–11:30 · lunch-range 13:30–16:00 ET
+ *   Tokyo: open 09:00 · entry→09:45 · IB 10:00–11:30 · lunch-range 13:30–15:00 JST
  *
- * Prep (AI levels): analyzeStart → lunchClose.
- * Entries: marketOpen → entryClose (first ~45 min).
+ * Chart stream: cash open − 30m through marketClose. Lunch flatten closes open books
+ * at lunchClose. SIMULATION: morning only (resolveSimMorningGate).
  */
 
 import { getESTTimeString, parseTimeToSeconds } from '@/lib/utils/timeUtils'
@@ -29,6 +29,11 @@ export type SessionPhase =
   | 'FLAT'
   | 'DONE'
   | 'CLOSED'
+
+/** Unlocked IB / lunch-range strategy (null = not in an unlock window). */
+export type RangeStrategy = 'ib' | 'lunch_range' | null
+/** @deprecated use RangeStrategy */
+export type NyRangeStrategy = RangeStrategy
 
 export type DeskInstrument = 'DOW' | 'NASDAQ' | 'NIKKEI'
 export type DeskMarket = 'NY' | 'TOKYO'
@@ -60,7 +65,12 @@ export const NY_SESSION: MarketSessionTimes = {
   marketClose: '16:00:00',
 }
 
-/** TSE morning cash session; afternoon chart continues to 15:00 (trading stays morning-only). */
+/** IB shaped (NY open+60m) — range strategy entry opens if morning attempts unused. */
+export const NY_IB_STRATEGY_START = '10:30:00'
+/** NYC lunch range (12:00–13:30 ET) locked — PM lunch-range strategy opens. */
+export const NY_LUNCH_RANGE_ENTRY_START = '13:30:00'
+
+/** TSE morning cash session; afternoon chart continues to 15:00. */
 export const TOKYO_SESSION: MarketSessionTimes = {
   tz: 'Asia/Tokyo',
   analyzeStart: '08:45:00',
@@ -70,6 +80,11 @@ export const TOKYO_SESSION: MarketSessionTimes = {
   marketClose: '15:00:00',
 }
 
+/** IB shaped (Tokyo open+60m) — same ladder as NY on JST clock. */
+export const TOKYO_IB_STRATEGY_START = '10:00:00'
+/** Local lunch range 12:00–13:30 JST locks — PM lunch-range strategy to cash close. */
+export const TOKYO_LUNCH_RANGE_ENTRY_START = '13:30:00'
+
 /** Legacy alias — NY times only */
 export const SESSION_TIMES = NY_SESSION
 
@@ -77,6 +92,43 @@ export const SESSION_TIMES = NY_SESSION
 export const MAX_SESSION_ATTEMPTS = 2
 /** After this many stop-outs, trading locks (usually same as attempt cap). */
 export const MAX_STOP_HITS = 2
+
+/** Desk-local IB strategy start (when Initial Balance is shaped). */
+export function ibStrategyStartHms(market: DeskMarket): string {
+  return market === 'TOKYO' ? TOKYO_IB_STRATEGY_START : NY_IB_STRATEGY_START
+}
+
+/** Desk-local lunch-range PM entry start (after 12:00–13:30 local lunch range). */
+export function lunchRangeEntryStartHms(market: DeskMarket): string {
+  return market === 'TOKYO' ? TOKYO_LUNCH_RANGE_ENTRY_START : NY_LUNCH_RANGE_ENTRY_START
+}
+
+/**
+ * Which range-strategy window is open for this desk.
+ * Requires morning filled attempts === 0 (unused morning book).
+ */
+export function resolveRangeStrategy(args: {
+  market: DeskMarket
+  /** Seconds since midnight in desk TZ */
+  timeSec: number
+  attemptsUsed: number
+  stopHits?: number
+}): RangeStrategy {
+  const attemptsUsed = Math.max(0, Math.floor(args.attemptsUsed || 0))
+  const stopHits = Math.max(0, Math.floor(args.stopHits || 0))
+  if (attemptsUsed !== 0 || stopHits >= MAX_STOP_HITS) return null
+
+  const s = args.market === 'TOKYO' ? TOKYO_SESSION : NY_SESSION
+  const lunch = parseTimeToSeconds(s.lunchClose)
+  const close = parseTimeToSeconds(s.marketClose)
+  const ibStart = parseTimeToSeconds(ibStrategyStartHms(args.market))
+  const lnStart = parseTimeToSeconds(lunchRangeEntryStartHms(args.market))
+  const t = args.timeSec
+
+  if (t >= ibStart && t < lunch) return 'ib'
+  if (t >= lnStart && t < close) return 'lunch_range'
+  return null
+}
 
 /**
  * Session attempt book.
@@ -220,6 +272,8 @@ export interface SessionGateResult {
   /** Stop-outs this session (max MAX_STOP_HITS) */
   stopHits: number
   maxStopHits: number
+  /** IB / lunch-range unlock when morning attempts unused; else null */
+  rangeStrategy: RangeStrategy
 }
 
 function dateKeyInTz(date: Date, timeZone: string): string {
@@ -688,7 +742,15 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     maxAttempts: book.maxAttempts,
     stopHits: book.stopHits,
     maxStopHits: book.maxStopHits,
+    rangeStrategy: null as RangeStrategy,
   }
+
+  const rangeStrategy = resolveRangeStrategy({
+    market,
+    timeSec: t,
+    attemptsUsed: book.attemptsUsed,
+    stopHits: book.stopHits,
+  })
 
   const base = {
     timeEst: market === 'NY' ? timeEst : timeLocal,
@@ -707,13 +769,14 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     attendedToday,
     canClockIn,
     ...bookFields,
+    rangeStrategy,
   }
 
   // Live streaming only while currently clocked in; attendedToday keeps afternoon chart until cash close
   const canView =
     (clockedIn || (attendedToday && afternoonWatch)) &&
     !!locked &&
-    (bars.open || (attendedToday && afternoonWatch)) &&
+    (bars.open || (attendedToday && afternoonWatch) || (attendedToday && rangeStrategy != null)) &&
     (viewing == null || viewing === locked)
 
   const finish = (
@@ -743,6 +806,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
         canClockIn: canReClock,
         canPlaceEntry: false,
         canManagePosition: false,
+        rangeStrategy: null,
         // Chart may continue after lunch; no live trading bars once clocked out
         canFetchLiveBars: false,
         canViewLiveChart: !!locked && (afternoonWatch || r.canViewLiveChart),
@@ -762,6 +826,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       canFetchLiveBars: false,
       canPlaceEntry: false,
       canManagePosition: false,
+      rangeStrategy: null,
       message: skippedAfternoon
         ? 'Missed clock-in — no morning attendance. Live chart stays locked until cash close. Use Simulation.'
         : missedLate
@@ -772,50 +837,69 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     }
   }
 
-  if (!weekday || t < analyze || t >= lunch) {
-    const nextDesk =
-      market === 'TOKYO'
-        ? 'Next Tokyo desk: clock in from 8:45 JST.'
-        : 'Next NY desk: clock in from 9:15 ET.'
+  const tzShort = market === 'TOKYO' ? 'JST' : 'ET'
+  const ibStartHms = ibStrategyStartHms(market)
+  const lnStartHms = lunchRangeEntryStartHms(market)
+  const nextDesk =
+    market === 'TOKYO'
+      ? 'Next Tokyo desk: clock in from 8:45 JST.'
+      : 'Next NY desk: clock in from 9:15 ET.'
+
+  // Pre-session / weekend / after cash close
+  if (!weekday || t < analyze) {
     return finish({
       ...base,
-      phase: afternoonWatch ? 'DONE' : 'CLOSED',
-      // Afternoon watch chart only if you clocked in / attended this morning
-      canViewLiveChart: afternoonWatch && !!locked && attendedToday,
+      rangeStrategy: null,
+      phase: 'CLOSED',
+      canViewLiveChart: false,
       canFetchLiveBars: false,
       canPlaceEntry: false,
       canManagePosition: false,
-      message: afternoonWatch
-        ? dayDone
-          ? 'Session done for today. Afternoon watch — read-only until cash close.'
-          : 'Afternoon watch — read-only until cash close. Levels (AI + IB) are watch-only.'
-        : afterCashClose
-          ? `Cash closed. ${nextDesk}`
-          : t < analyze && weekday
-            ? market === 'TOKYO'
-              ? 'Pre-session. Tokyo desk opens 8:45 JST — clock in then to trade NIKKEI.'
-              : 'Pre-session. Clock-in opens 9:15 ET (15 min before cash open).'
-            : `Weekend — desk closed. ${nextDesk} Or use Simulation.`,
+      message:
+        t < analyze && weekday
+          ? market === 'TOKYO'
+            ? 'Pre-session. Tokyo desk opens 8:45 JST — clock in then to trade NIKKEI.'
+            : 'Pre-session. Clock-in opens 9:15 ET (15 min before cash open).'
+          : `Weekend — desk closed. ${nextDesk} Or use Simulation.`,
     })
   }
 
-  if (dayDone) {
+  if (afterCashClose) {
     return finish({
       ...base,
-      phase: 'DONE',
-      canViewLiveChart: canView,
+      rangeStrategy: null,
+      phase: 'CLOSED',
+      canViewLiveChart: false,
+      canFetchLiveBars: false,
+      canPlaceEntry: false,
+      canManagePosition: false,
+      message: `Cash closed. ${nextDesk}`,
+    })
+  }
+
+  // From here: weekday analyze ≤ t < marketClose
+
+  if (dayDone && rangeStrategy == null) {
+    return finish({
+      ...base,
+      rangeStrategy: null,
+      phase: afternoonWatch ? 'DONE' : 'DONE',
+      canViewLiveChart: canView || (afternoonWatch && !!locked && attendedToday),
       canFetchLiveBars: clockedIn && bars.open && !!locked,
       canPlaceEntry: false,
       canManagePosition: false,
       message:
         book.lockReason ||
-        'Session done for today (2 attempts). Trading locked.',
+        (afternoonWatch
+          ? 'Session done for today. Afternoon watch — read-only until cash close.'
+          : 'Session done for today (2 attempts). Trading locked.'),
     })
   }
 
   if (!locked) {
     return finish({
       ...base,
+      rangeStrategy: null,
       phase: t >= analyze && t < open ? 'RECOMMENDED' : 'PREP',
       canViewLiveChart: false,
       canFetchLiveBars: false,
@@ -828,12 +912,14 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     })
   }
 
+  // Open book — manage through cash close (incl. IB / lunch-range fills)
   if (hasOpen) {
     return finish({
       ...base,
+      rangeStrategy: null,
       phase: 'MANAGE',
       canViewLiveChart: clockedIn && locked === (viewing ?? locked),
-      canFetchLiveBars: clockedIn,
+      canFetchLiveBars: clockedIn && (bars.open || afternoonWatch),
       canPlaceEntry: false,
       canManagePosition: clockedIn,
       message: 'Position open. Manage only — no new entries.',
@@ -843,8 +929,9 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   if (t >= analyze && t < open) {
     return finish({
       ...base,
+      rangeStrategy: null,
       phase: 'RECOMMENDED',
-      canViewLiveChart: clockedIn, // prep chart once clocked in; bars still start at open
+      canViewLiveChart: clockedIn,
       canFetchLiveBars: false,
       canPlaceEntry: false,
       canManagePosition: false,
@@ -858,45 +945,114 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     })
   }
 
+  // Morning cash open → lunch flatten
   if (t >= open && t < lunch) {
     const inEntryWindow = t <= entryClose
-    const canAttempt =
+    const canMorningAttempt =
       book.attemptsUsed < MAX_SESSION_ATTEMPTS && book.stopHits < MAX_STOP_HITS
-    const tzShort = market === 'TOKYO' ? 'JST' : 'ET'
     const entryUntil = `${s.entryClose.slice(0, 5)} ${tzShort}`
     const entryRange = `${s.marketOpen.slice(0, 5)}–${s.entryClose.slice(0, 5)} ${tzShort}`
-    return finish({
-      ...base,
-      phase: inEntryWindow ? 'ENTRY' : 'FLAT',
-      canViewLiveChart: canView,
-      canFetchLiveBars: clockedIn,
-      // Entries ONLY until entryClose; max 2 filled attempts (SL or TP) per session.
-      canPlaceEntry: inEntryWindow && clockedIn && canAttempt,
-      canManagePosition: false,
-      message: inEntryWindow
-        ? canAttempt
+    const ibUntil = `${s.lunchClose.slice(0, 5)} ${tzShort}`
+
+    if (inEntryWindow) {
+      return finish({
+        ...base,
+        rangeStrategy: null,
+        phase: 'ENTRY',
+        canViewLiveChart: canView,
+        canFetchLiveBars: clockedIn,
+        canPlaceEntry: clockedIn && canMorningAttempt,
+        canManagePosition: false,
+        message: canMorningAttempt
           ? market === 'TOKYO'
             ? `Tokyo entry ${entryRange} — Attempts ${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS} used. Click a ${locked} level (until ${entryUntil}). Working limits do not count until filled.`
             : `Entry window ${entryWindow ?? '—'}/3 — Attempts ${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS} used. Click a ${locked} level (until ${entryUntil}). Working limits do not count until filled.`
           : book.lockReason ||
-            `No attempts left (${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS}). Trading locked.`
-        : `Entry window closed (${entryUntil}). Levels cleared — manage an open position if you have one; otherwise wait for lunch.`,
+            `No attempts left (${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS}). Trading locked.`,
+      })
+    }
+
+    // After morning entry window — IB strategy if 0 fills
+    if (rangeStrategy === 'ib') {
+      return finish({
+        ...base,
+        rangeStrategy: 'ib',
+        phase: 'ENTRY',
+        canViewLiveChart: canView || clockedIn,
+        canFetchLiveBars: clockedIn,
+        canPlaceEntry: clockedIn,
+        canManagePosition: false,
+        message: `IB strategy unlocked (morning unused) — 1 attempt ${ibStartHms.slice(0, 5)}–${ibUntil}. Trade IB breakout or mean-reversion. Working limits do not count until filled.`,
+      })
+    }
+
+    // Waiting for IB shape, or morning attempts already used
+    const waitingIb =
+      book.attemptsUsed === 0 &&
+      book.stopHits < MAX_STOP_HITS &&
+      t < parseTimeToSeconds(ibStartHms)
+    return finish({
+      ...base,
+      rangeStrategy: null,
+      phase: 'FLAT',
+      canViewLiveChart: canView || clockedIn,
+      canFetchLiveBars: clockedIn,
+      canPlaceEntry: false,
+      canManagePosition: false,
+      message: waitingIb
+        ? `Morning entry closed (${entryUntil}). IB shapes at ${ibStartHms.slice(0, 5)} ${tzShort} — 1 IB attempt unlocks if still 0/2 used.`
+        : book.attemptsUsed > 0
+          ? `Morning attempts used (${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS}). Watch-only until cash close — no IB / lunch-range unlock.`
+          : `Entry window closed (${entryUntil}). Levels cleared — manage an open position if you have one; otherwise wait for lunch.`,
     })
   }
 
-  // Fallback (should be unreachable — lunch+ handled above)
+  // Lunch → cash close: lunch-range unlock OR watch-only
+  if (t >= lunch && t < close) {
+    if (rangeStrategy === 'lunch_range') {
+      const closeLabel = `${s.marketClose.slice(0, 5)} ${tzShort}`
+      return finish({
+        ...base,
+        rangeStrategy: 'lunch_range',
+        phase: 'ENTRY',
+        canViewLiveChart: !!locked && (clockedIn || attendedToday),
+        canFetchLiveBars: false,
+        canPlaceEntry: clockedIn,
+        canManagePosition: false,
+        message: `Lunch-range strategy unlocked (still 0 fills) — 1 attempt ${lnStartHms.slice(0, 5)}–${closeLabel}. Trade lunch-range breakout or mean-reversion. Working limits do not count until filled.`,
+      })
+    }
+
+    const waitingLunchRange =
+      book.attemptsUsed === 0 &&
+      book.stopHits < MAX_STOP_HITS &&
+      t < parseTimeToSeconds(lnStartHms)
+
+    return finish({
+      ...base,
+      rangeStrategy: null,
+      phase: 'DONE',
+      canViewLiveChart: afternoonWatch && !!locked && attendedToday,
+      canFetchLiveBars: false,
+      canPlaceEntry: false,
+      canManagePosition: false,
+      message: waitingLunchRange
+        ? `Watch-only until ${lnStartHms.slice(0, 5)} ${tzShort} — lunch range locks then 1 attempt opens (morning + IB unused).`
+        : book.attemptsUsed > 0
+          ? 'Afternoon watch — read-only until cash close. Morning/IB attempt already used — no lunch-range unlock.'
+          : 'Afternoon watch — read-only until cash close. Levels (AI + IB) are watch-only.',
+    })
+  }
+
   return finish({
     ...base,
-    phase: afternoonWatch ? 'DONE' : 'CLOSED',
-    canViewLiveChart: afternoonWatch && !!locked && attendedToday,
+    rangeStrategy: null,
+    phase: 'CLOSED',
+    canViewLiveChart: false,
     canFetchLiveBars: false,
     canPlaceEntry: false,
     canManagePosition: false,
-    message: afternoonWatch
-      ? 'Afternoon watch — read-only until cash close. Levels (AI + IB) are watch-only.'
-      : market === 'TOKYO'
-        ? 'Cash closed. Next Tokyo desk: clock in from 8:45 JST.'
-        : 'Cash closed. Next NY desk: clock in from 9:15 ET.',
+    message: `Cash closed. ${nextDesk}`,
   })
 }
 
@@ -926,6 +1082,7 @@ export function resolveSimMorningGate(input: {
   | 'maxAttempts'
   | 'stopHits'
   | 'maxStopHits'
+  | 'rangeStrategy'
 > {
   const instrument = input.instrument
   const market = deskMarketFor(instrument)
@@ -952,6 +1109,7 @@ export function resolveSimMorningGate(input: {
     maxAttempts: book.maxAttempts,
     stopHits: book.stopHits,
     maxStopHits: book.maxStopHits,
+    rangeStrategy: null as const,
   }
 
   if (t >= lunch) {

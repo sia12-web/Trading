@@ -29,6 +29,11 @@ import {
   type DeskInstrumentPref,
 } from '@/lib/trading/deskInstrumentPreference'
 import { isAnyLiveFocusWindowActive } from '@/lib/trading/sessionGate'
+import {
+  MANUAL_RISK_PERCENT,
+  previewPositionSizing,
+} from '@/lib/trading/positionSizing'
+import { snapDeskPrice, snapStopToTick, snapTargetToTick } from '@/lib/trading/instrumentTicks'
 
 type Instrument = DeskInstrumentPref
 
@@ -140,6 +145,8 @@ export default function ChartPage() {
     setLivePrice(price)
   }, [])
 
+  const handlePlacedRef = useRef<(order: PendingLimitOrder) => void>(() => {})
+
   const handleLevelSelect = useCallback(
     (
       price: number,
@@ -149,10 +156,13 @@ export default function ChartPage() {
         source?: 'ai' | 'structure' | 'manual'
         side?: 'BUY' | 'SHORT'
         preferredDirection?: 'LONG' | 'SHORT'
+        orderType?: 'LIMIT' | 'MARKET'
+        stopLoss?: number
+        profitTarget?: number
       }
     ) => {
       if (managePos || positionOverlay || pending) return
-      // Always stash selection so the ticket can show "why this level"
+
       const side =
         meta?.side === 'BUY' || meta?.side === 'SHORT' ? meta.side : undefined
       const preferred =
@@ -163,6 +173,88 @@ export default function ChartPage() {
             : side === 'BUY'
               ? 'LONG'
               : undefined
+
+      // Market orders from the risk box — execute immediately (never open limit ticket)
+      const isMarket =
+        meta?.type === 'market' || meta?.orderType === 'MARKET'
+      if (isMarket) {
+        const direction: 'LONG' | 'SHORT' = preferred ?? 'LONG'
+        const lockedInst = gate?.lockedInstrument
+        const inst = (gate?.clockedIn && lockedInst
+          ? lockedInst
+          : instrument) as Instrument
+        const entry = snapDeskPrice(inst, price)
+        const rawStop =
+          typeof meta?.stopLoss === 'number' && meta.stopLoss > 0
+            ? meta.stopLoss
+            : direction === 'LONG'
+              ? entry * 0.9965
+              : entry * 1.0035
+        const stop = snapStopToTick(inst, entry, rawStop, direction)
+        if (
+          (direction === 'LONG' && !(stop < entry)) ||
+          (direction === 'SHORT' && !(stop > entry))
+        ) {
+          setFillError('Invalid market stop — adjust SL beyond entry')
+          return
+        }
+
+        void (async () => {
+          let accountSize = 100000
+          try {
+            const res = await fetch('/api/trading/oanda/status')
+            const data = res.ok ? await res.json() : null
+            const nav = Number(data?.NAV ?? data?.balance)
+            if (Number.isFinite(nav) && nav >= 100) {
+              accountSize = Math.round(nav * 100) / 100
+            }
+          } catch {
+            /* use fallback — open API still prefers live NAV */
+          }
+
+          const preview = previewPositionSizing(
+            entry,
+            accountSize,
+            direction,
+            stop,
+            MANUAL_RISK_PERCENT
+          )
+          if (!preview) {
+            setFillError('Could not size market order — check account / stop')
+            return
+          }
+
+          const rawTp =
+            typeof meta?.profitTarget === 'number' && meta.profitTarget > 0
+              ? meta.profitTarget
+              : preview.profit_target_price
+          const tp = snapTargetToTick(inst, entry, rawTp, direction)
+
+          handlePlacedRef.current({
+            instrument: inst,
+            level: entry,
+            levelType: 'market',
+            entryReason:
+              meta?.reasoning ||
+              `Manual ${direction} market @ ${entry.toLocaleString()}`,
+            entrySource: 'manual',
+            direction,
+            stopLoss: preview.stop_loss_price || stop,
+            profitTarget: tp,
+            positionSize: preview.position_size,
+            riskAmount: preview.risk_amount,
+            riskPercent: MANUAL_RISK_PERCENT,
+            accountSize,
+            entryWindow: (gate?.entryWindow ?? 1) as 1 | 2 | 3,
+            regime,
+            regimeConfidence,
+            placedAt: Date.now(),
+          })
+        })()
+        return
+      }
+
+      // Limit / playbook — open LevelOrderTicket
       setOrderLevel(price)
       setOrderLevelType(meta?.type)
       setOrderLevelSide(side)
@@ -175,9 +267,18 @@ export default function ChartPage() {
             ? 'structure'
             : 'ai'
       )
-
     },
-    [managePos, positionOverlay, pending]
+    [
+      managePos,
+      positionOverlay,
+      pending,
+      instrument,
+      gate?.clockedIn,
+      gate?.lockedInstrument,
+      gate?.entryWindow,
+      regime,
+      regimeConfidence,
+    ]
   )
 
   const refreshLevelsAfterExit = useCallback(
@@ -452,6 +553,7 @@ export default function ChartPage() {
     },
     [fillPending, persistWorking, managePos]
   )
+  handlePlacedRef.current = handlePlaced
 
   // Watch live quotes — fill only durable WORKING limits (not placing/rejected)
   useEffect(() => {
