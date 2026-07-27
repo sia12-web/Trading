@@ -1003,7 +1003,10 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
         ? `Morning entry closed (${entryUntil}). IB shapes at ${ibStartHms.slice(0, 5)} ${tzShort} — 1 IB attempt unlocks if still 0/2 used.`
         : book.attemptsUsed > 0
           ? `Morning attempts used (${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS}). Watch-only until cash close — no IB / lunch-range unlock.`
-          : `Entry window closed (${entryUntil}). Levels cleared — manage an open position if you have one; otherwise wait for lunch.`,
+          : book.stopHits >= MAX_STOP_HITS
+            ? book.lockReason ||
+              `Stopped out ${MAX_STOP_HITS}/${MAX_STOP_HITS} — trading locked. Manage if open; otherwise wait for next session.`
+            : `Morning entry closed (${entryUntil}). Next is IB strategy ${ibStartHms.slice(0, 5)}–${ibUntil} if still 0 fills — not lunch yet.`,
     })
   }
 
