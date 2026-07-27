@@ -193,11 +193,11 @@ export function evaluateSessionAttempts(input: {
   const sessionDone = (atAttemptCap || stoppedOut) && !hasOpen
   let lockReason: string | null = null
   if (stoppedOut) {
-    lockReason = `Stopped out ${MAX_STOP_HITS}/${MAX_STOP_HITS} times — morning book locked (revenge risk).`
+    lockReason = `Revenge lock — ${MAX_STOP_HITS} morning stop-outs. No more entries this session.`
   } else if (atAttemptCap && !hasOpen) {
     lockReason = `Morning attempts used (${MAX_SESSION_ATTEMPTS}/${MAX_SESSION_ATTEMPTS}).`
   } else if (hasOpen) {
-    lockReason = `In a trade — attempt ${Math.min(attemptsUsed, MAX_SESSION_ATTEMPTS)}/${MAX_SESSION_ATTEMPTS}. Manage only until flat.`
+    lockReason = `In a trade — morning ${Math.min(attemptsUsed, MAX_SESSION_ATTEMPTS)}/${MAX_SESSION_ATTEMPTS}. Manage only until flat.`
   }
   return {
     attemptsUsed,
@@ -1160,9 +1160,17 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
 }
 
 /**
- * SIMULATION morning gate only — open → lunch.
- * Same attempt/stop limits as live (MAX_SESSION_ATTEMPTS / MAX_STOP_HITS).
- * No afternoon session, no live freeze / background-memory messaging.
+ * SIMULATION morning gate only — cash open → lunch.
+ *
+ * Carries over from live (NY + Nikkei):
+ *   · Morning ≤2 fills
+ *   · Revenge lock on 2 morning stop-outs
+ *   · Entry window closes at market-local entryClose (then manage-only if open)
+ *
+ * Intentionally NOT on sim (live-only):
+ *   · IB unlock / lunch-range unlock
+ *   · Day cap 4
+ *   · Clock-in / attendance / cash-close flatten
  */
 export function resolveSimMorningGate(input: {
   now: Date
@@ -1186,10 +1194,12 @@ export function resolveSimMorningGate(input: {
   | 'stopHits'
   | 'maxStopHits'
   | 'rangeStrategy'
+  | 'revengeLocked'
 > {
   const instrument = input.instrument
   const market = deskMarketFor(instrument)
   const s = sessionFor(instrument)
+  const tzShort = market === 'TOKYO' ? 'JST' : 'ET'
   const timeLocal = timeInTz(input.now, s.tz)
   const t = parseTimeToSeconds(timeLocal)
   const open = parseTimeToSeconds(s.marketOpen)
@@ -1201,7 +1211,9 @@ export function resolveSimMorningGate(input: {
     stopHits: input.stopHits ?? 0,
     hasOpenPosition: hasOpen,
   })
+  const revengeLocked = book.stopHits >= MAX_STOP_HITS
   const dayDone = !!input.dayDone || book.sessionDone
+  const morningLabel = `Morning ${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS}`
 
   const base = {
     timeEst: market === 'NY' ? getESTTimeString(input.now) : timeLocal,
@@ -1213,6 +1225,7 @@ export function resolveSimMorningGate(input: {
     stopHits: book.stopHits,
     maxStopHits: book.maxStopHits,
     rangeStrategy: null as RangeStrategy,
+    revengeLocked,
   }
 
   if (t >= lunch) {
@@ -1221,7 +1234,8 @@ export function resolveSimMorningGate(input: {
       phase: 'DONE',
       canPlaceEntry: false,
       canManagePosition: false,
-      message: 'Morning replay ended at lunch. Simulation has no afternoon session.',
+      message:
+        'Morning replay ended at lunch. Sim has no IB / lunch-range — live desk continues after lunch.',
     }
   }
 
@@ -1233,7 +1247,7 @@ export function resolveSimMorningGate(input: {
       canManagePosition: false,
       message:
         book.lockReason ||
-        'Session done — 2 attempts reached. Trading locked.',
+        `Morning playbook done — ${morningLabel}. Trading locked.`,
     }
   }
 
@@ -1243,7 +1257,7 @@ export function resolveSimMorningGate(input: {
       phase: 'MANAGE',
       canPlaceEntry: false,
       canManagePosition: true,
-      message: `Position open — attempt ${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS}. Manage only until lunch.`,
+      message: `Position open — ${morningLabel}. Manage only until lunch (no IB window in sim).`,
     }
   }
 
@@ -1253,14 +1267,13 @@ export function resolveSimMorningGate(input: {
       phase: 'RECOMMENDED',
       canPlaceEntry: false,
       canManagePosition: false,
-      message: `Replay clock before cash open. Entries ${s.marketOpen.slice(0, 5)}–${s.lunchClose.slice(0, 5)}. Attempts ${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS}.`,
+      message: `Replay clock before cash open. Morning entries ${s.marketOpen.slice(0, 5)}–${s.entryClose.slice(0, 5)} ${tzShort}. ${morningLabel}.`,
     }
   }
 
   if (t < lunch) {
     const inEntry = t <= entryClose
-    const canAttempt =
-      book.attemptsUsed < MAX_SESSION_ATTEMPTS && book.stopHits < MAX_STOP_HITS
+    const canAttempt = !book.entriesLocked
     return {
       ...base,
       phase: inEntry ? 'ENTRY' : 'FLAT',
@@ -1268,9 +1281,9 @@ export function resolveSimMorningGate(input: {
       canManagePosition: false,
       message: inEntry
         ? canAttempt
-          ? `Entry window — Attempts ${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS} used. Click a ${instrument} level. Working limits do not count until filled.`
-          : book.lockReason || 'No attempts left. Trading locked.'
-        : `Entry window closed. Levels off — manage if in a trade; otherwise wait for lunch.`,
+          ? `Morning playbook — ${morningLabel}. Click a ${instrument} level. Working limits do not count until filled.`
+          : book.lockReason || 'No morning attempts left. Trading locked.'
+        : `Morning entry closed (${s.entryClose.slice(0, 5)} ${tzShort}). Sim has no IB / lunch-range — manage if in a trade, else wait for lunch.`,
     }
   }
 
@@ -1279,7 +1292,8 @@ export function resolveSimMorningGate(input: {
     phase: 'DONE',
     canPlaceEntry: false,
     canManagePosition: false,
-    message: 'Morning replay ended at lunch. Simulation has no afternoon session.',
+    message:
+      'Morning replay ended at lunch. Sim has no IB / lunch-range — live desk continues after lunch.',
   }
 }
 

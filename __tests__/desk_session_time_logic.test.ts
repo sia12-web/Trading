@@ -188,7 +188,7 @@ expectPhase('NIKKEI', jstDate(Y, M, D, 22, 0), { lunchFreeze: false, trade: fals
   )
 }
 
-// ── Gate: after lunch DONE, no entries; chart messaging ──────────────────────
+// ── Gate: after lunch — lunch-range unlock when eligible; clocked-out blocks place ─
 for (const inst of ['DOW', 'NASDAQ'] as const) {
   const gate = resolveSessionGate({
     now: etDate(Y, M, D, 14, 0),
@@ -199,9 +199,13 @@ for (const inst of ['DOW', 'NASDAQ'] as const) {
     attemptsUsed: 1,
     stopLossHitCount: 0,
   })
-  assert(gate.phase === 'DONE', `${inst} afternoon phase DONE`)
-  assert(gate.canPlaceEntry === false, `${inst} no entry afternoon`)
-  assert(gate.canManagePosition === false, `${inst} no manage after lunch clock-out`)
+  // 1 morning fill → IB unused → lunch-range message (place blocked while clocked out)
+  assert(gate.phase === 'ENTRY', `${inst} lunch-range phase ENTRY`)
+  assert(gate.canPlaceEntry === false, `${inst} clocked-out blocks place`)
+  assert(gate.canManagePosition === false, `${inst} no manage when flat`)
+  assert(!!gate.message?.includes('Lunch-range'), `${inst} lunch-range copy`)
+  // Flat + clocked-out clears rangeStrategy in finish(); re-clock restores unlock
+  assert(gate.rangeStrategy === null, `${inst} rangeStrategy cleared while clocked out flat`)
   assert(gate.market === 'NY', `${inst} market NY`)
 }
 

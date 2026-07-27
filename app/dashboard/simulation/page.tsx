@@ -127,8 +127,9 @@ export default function SimulationPage() {
         <p className="text-[10px] uppercase tracking-[0.2em] text-violet-400/90">Practice only</p>
         <h1 className="mt-1 text-2xl font-bold text-white">Simulation</h1>
         <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-          Replay a past morning (open → lunch) on this desk. Paper fills, SL/TP, and manage stay
-          here; closed paper orders land in{' '}
+          Replay a past morning (open → lunch) on this desk. Same morning rules as live:
+          ≤2 fills, revenge lock on 2 stop-outs. No IB / lunch-range windows here. Paper
+          fills, SL/TP, and manage stay here; closed paper orders land in{' '}
           <Link href="/dashboard/journal?tab=sim" className="text-violet-400 hover:underline">
             Order History (Simulation)
           </Link>

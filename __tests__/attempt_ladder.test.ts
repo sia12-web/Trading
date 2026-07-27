@@ -133,7 +133,7 @@ assert(MAX_DAY_ATTEMPTS === 4, 'day cap 4')
     ladder: attemptLadderFromCounts({ morningAttempts: 2, morningStopHits: 2 }),
   })
   assert(mode === 'done', 'revenge → done not PM watch')
-  assert(deskPlaybookTitle(mode) === 'Session locked', 'locked title')
+  assert(deskPlaybookTitle(mode) === 'Watch playbook', 'watch title when done')
 }
 
 {

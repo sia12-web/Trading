@@ -59,6 +59,12 @@ import {
   sessionLegendOrder,
   type SessionHighlightSpan,
 } from '@/lib/chart/sessionVwap'
+import {
+  formatChartClock,
+  formatChartDate,
+  mapTimesToChart,
+  toChartTime,
+} from '@/lib/chart/chartTime'
 import { DESK_CHART_THEME } from '@/lib/chart/deskChartTheme'
 import {
   computeSimOvernightBias,
@@ -174,20 +180,21 @@ type ChartFmt = {
   tzLabel: string
 }
 
-/** Market-local chart clocks — NY for DOW/NASDAQ, Tokyo for NIKKEI. */
+/** Market-local chart clocks — NY for DOW/NASDAQ, Tokyo for NIKKEI.
+ * Toolbar clock uses real unix + Intl TZ. Axis ticks use desk-shifted chart times. */
 function makeChartFormatters(timeZone: string, tzLabel: string): ChartFmt {
   const fmtTime = new Intl.DateTimeFormat('en-US', {
     timeZone,
     hour: '2-digit',
     minute: '2-digit',
-    hour12: false,
+    hourCycle: 'h23',
   })
   const fmtTimeSec = new Intl.DateTimeFormat('en-US', {
     timeZone,
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    hour12: false,
+    hourCycle: 'h23',
   })
   const fmtDay = new Intl.DateTimeFormat('en-US', {
     timeZone,
@@ -218,21 +225,22 @@ function makeChartFormatters(timeZone: string, tzLabel: string): ChartFmt {
     formatClock: (unix) => formatTime(unix, true),
     tzLabel,
     tickMarkFormatter: (time, tickMarkType) => {
+      // Chart series times are desk-shifted — read UTC comps as wall clock
       const unix =
         typeof time === 'number' ? time : Math.floor(new Date(String(time)).getTime() / 1000)
       if (!Number.isFinite(unix)) return ''
       switch (tickMarkType) {
         case TickMarkType.Year:
-          return formatDate(unix, 'year')
+          return formatChartDate(unix, 'year')
         case TickMarkType.Month:
-          return formatDate(unix, 'month')
+          return formatChartDate(unix, 'month')
         case TickMarkType.DayOfMonth:
-          return formatDate(unix, 'day')
+          return formatChartDate(unix, 'day')
         case TickMarkType.TimeWithSeconds:
-          return formatTime(unix, true)
+          return formatChartClock(unix, true)
         case TickMarkType.Time:
         default:
-          return formatTime(unix)
+          return formatChartClock(unix)
       }
     },
   }
@@ -727,12 +735,13 @@ function SimulationDeskInner() {
       },
       localization: {
         timeFormatter: (time: UTCTimestamp | string | number) => {
+          // Series times are desk-shifted — format UTC comps as wall clock
           const unix =
             typeof time === 'number'
               ? time
               : Math.floor(new Date(String(time)).getTime() / 1000)
           if (!Number.isFinite(unix)) return ''
-          return `${chartFmt.formatDate(unix, 'day')} ${chartFmt.formatTime(unix)} ${chartFmt.tzLabel}`
+          return `${formatChartDate(unix, 'day')} ${formatChartClock(unix)} ${chartFmt.tzLabel}`
         },
       },
       width: containerRef.current.clientWidth,
@@ -942,9 +951,14 @@ function SimulationDeskInner() {
       /* defaults */
     }
 
+    const tz = sess.tz
     const { rects } = projectSessionHighlightRects({
-      spans: cached.spans,
-      candleTimes: cached.candleTimes,
+      spans: cached.spans.map((s) => ({
+        ...s,
+        startT: toChartTime(s.startT, tz),
+        endT: toChartTime(s.endT, tz),
+      })),
+      candleTimes: cached.candleTimes.map((t) => toChartTime(t, tz)),
       timeScale: chart.timeScale(),
       priceToY: (price) => series.priceToCoordinate(price),
       priceScaleWidth: priceAxisW,
@@ -953,7 +967,7 @@ function SimulationDeskInner() {
       fullHeight: false, // high→low only — never wallpaper above/below price
     })
     paintSessionHighlightOverlay(host, rects, { keepPreviousIfEmpty: true })
-  }, [instrument])
+  }, [instrument, sess.tz])
 
   /**
    * Keep the sim tip on the right edge.
@@ -1055,12 +1069,18 @@ function SimulationDeskInner() {
       if (!force && endIdx === lastAppliedBarIdxRef.current) return
 
       const toBar = (c: Candle) => ({
-        time: c.time as UTCTimestamp,
+        time: toChartTime(c.time, sess.tz) as UTCTimestamp,
         open: c.open,
         high: c.high,
         low: c.low,
         close: c.close,
       })
+
+      const shiftBand = <T extends { time: number | UTCTimestamp; value: number }>(rows: T[]) =>
+        mapTimesToChart(
+          rows.map((r) => ({ time: r.time as number, value: r.value })),
+          sess.tz
+        ).map((r) => ({ time: r.time as UTCTimestamp, value: r.value }))
 
       if (force || lastAppliedBarIdxRef.current < 0) {
         const slice = candles.slice(0, endIdx + 1)
@@ -1071,13 +1091,13 @@ function SimulationDeskInner() {
         const bands = computeAnchoredVwap(slice, clock)
         const vs = vwapSeriesRef.current
         if (vs && bands) {
-          vs.vwap.setData(bands.vwap)
-          vs.upper1.setData(bands.upper1)
-          vs.lower1.setData(bands.lower1)
-          vs.upper2.setData(bands.upper2)
-          vs.lower2.setData(bands.lower2)
-          vs.upper3.setData(bands.upper3)
-          vs.lower3.setData(bands.lower3)
+          vs.vwap.setData(shiftBand(bands.vwap))
+          vs.upper1.setData(shiftBand(bands.upper1))
+          vs.lower1.setData(shiftBand(bands.lower1))
+          vs.upper2.setData(shiftBand(bands.upper2))
+          vs.lower2.setData(shiftBand(bands.lower2))
+          vs.upper3.setData(shiftBand(bands.upper3))
+          vs.lower3.setData(shiftBand(bands.lower3))
         } else if (vs) {
           vs.vwap.setData([])
           vs.upper1.setData([])
@@ -1108,18 +1128,8 @@ function SimulationDeskInner() {
             const sessionEnd = lunchUnix || tip
             const pts = ibLineSeriesData(ib, Math.max(tip, sessionEnd, simT))
             try {
-              ibs.high.setData(
-                pts.high.map((p) => ({
-                  time: p.time as UTCTimestamp,
-                  value: p.value,
-                }))
-              )
-              ibs.low.setData(
-                pts.low.map((p) => ({
-                  time: p.time as UTCTimestamp,
-                  value: p.value,
-                }))
-              )
+              ibs.high.setData(shiftBand(pts.high.map((p) => ({ time: p.time, value: p.value }))))
+              ibs.low.setData(shiftBand(pts.low.map((p) => ({ time: p.time, value: p.value }))))
               setIbShaped(true)
             } catch {
               ibs.high.setData([])
@@ -1139,8 +1149,8 @@ function SimulationDeskInner() {
           const a = slice[0]!
           const b = slice[slice.length - 1]!
           host.setData([
-            { time: a.time as UTCTimestamp, value: a.close },
-            { time: b.time as UTCTimestamp, value: b.close },
+            { time: toChartTime(a.time, sess.tz) as UTCTimestamp, value: a.close },
+            { time: toChartTime(b.time, sess.tz) as UTCTimestamp, value: b.close },
           ])
           priceLineHostSeededRef.current = true
           paintTradeLevelsRef.current()
@@ -1157,13 +1167,13 @@ function SimulationDeskInner() {
         const bands = computeAnchoredVwap(slice, deskClockFor(instrument))
         const vs = vwapSeriesRef.current
         if (vs && bands) {
-          vs.vwap.setData(bands.vwap)
-          vs.upper1.setData(bands.upper1)
-          vs.lower1.setData(bands.lower1)
-          vs.upper2.setData(bands.upper2)
-          vs.lower2.setData(bands.lower2)
-          vs.upper3.setData(bands.upper3)
-          vs.lower3.setData(bands.lower3)
+          vs.vwap.setData(shiftBand(bands.vwap))
+          vs.upper1.setData(shiftBand(bands.upper1))
+          vs.lower1.setData(shiftBand(bands.lower1))
+          vs.upper2.setData(shiftBand(bands.upper2))
+          vs.lower2.setData(shiftBand(bands.lower2))
+          vs.upper3.setData(shiftBand(bands.upper3))
+          vs.lower3.setData(shiftBand(bands.lower3))
         }
 
         const ibs = ibSeriesRef.current
@@ -1185,18 +1195,8 @@ function SimulationDeskInner() {
             const sessionEnd = lunchUnix || tip
             const pts = ibLineSeriesData(ib, Math.max(tip, sessionEnd, simT))
             try {
-              ibs.high.setData(
-                pts.high.map((p) => ({
-                  time: p.time as UTCTimestamp,
-                  value: p.value,
-                }))
-              )
-              ibs.low.setData(
-                pts.low.map((p) => ({
-                  time: p.time as UTCTimestamp,
-                  value: p.value,
-                }))
-              )
+              ibs.high.setData(shiftBand(pts.high.map((p) => ({ time: p.time, value: p.value }))))
+              ibs.low.setData(shiftBand(pts.low.map((p) => ({ time: p.time, value: p.value }))))
               setIbShaped(true)
             } catch {
               ibs.high.setData([])
@@ -1225,7 +1225,7 @@ function SimulationDeskInner() {
         requestAnimationFrame(() => refreshSessionHighlights())
       }
     },
-    [pinToLatest, refreshSessionHighlights, instrument, openUnix, lunchUnix]
+    [pinToLatest, refreshSessionHighlights, instrument, openUnix, lunchUnix, sess.tz]
   )
 
   // Initial / seek chart paint — use ref so callback identity churn does not force setData
@@ -1491,7 +1491,7 @@ function SimulationDeskInner() {
     setPosition(filled)
     setPending(null)
     setMsg(
-      `FILLED ${pend.direction} @ ${pend.level.toLocaleString()} — attempt ${attemptsUsedRef.current}/${MAX_SESSION_ATTEMPTS} (in a trade)`
+      `FILLED ${pend.direction} @ ${pend.level.toLocaleString()} — morning ${attemptsUsedRef.current}/${MAX_SESSION_ATTEMPTS} (in a trade)`
     )
   }, [])
 
@@ -1646,13 +1646,14 @@ function SimulationDeskInner() {
           setSimNow(next)
           applyChartDataRef.current(next)
           setPlaying(false)
-          const locked =
-            stopHitsRef.current >= MAX_STOP_HITS ||
-            attemptsUsedRef.current >= MAX_SESSION_ATTEMPTS
+          const revenge = stopHitsRef.current >= MAX_STOP_HITS
+          const capped = attemptsUsedRef.current >= MAX_SESSION_ATTEMPTS
           setMsg(
-            locked
-              ? `STOP HIT @ ${closed.stopLoss.toLocaleString()} — session locked (${attemptsUsedRef.current}/${MAX_SESSION_ATTEMPTS} attempts)`
-              : `STOP HIT @ ${closed.stopLoss.toLocaleString()} — attempt ${attemptsUsedRef.current}/${MAX_SESSION_ATTEMPTS} used`
+            revenge
+              ? `STOP HIT @ ${closed.stopLoss.toLocaleString()} — revenge lock (${MAX_STOP_HITS} morning stop-outs)`
+              : capped
+                ? `STOP HIT @ ${closed.stopLoss.toLocaleString()} — morning locked (${attemptsUsedRef.current}/${MAX_SESSION_ATTEMPTS})`
+                : `STOP HIT @ ${closed.stopLoss.toLocaleString()} — morning ${attemptsUsedRef.current}/${MAX_SESSION_ATTEMPTS} used`
           )
           setLevels((prev) =>
             applySimTradeOutcome(prev, closed.entry, closed.direction, 'stop')
@@ -1725,17 +1726,21 @@ function SimulationDeskInner() {
         return
       }
       if (stopHitsRef.current >= MAX_STOP_HITS) {
-        setMsg(`Stopped out ${MAX_STOP_HITS}/${MAX_STOP_HITS} — trading locked for this session`)
+        setMsg(
+          `Revenge lock — ${MAX_STOP_HITS} morning stop-outs. No more entries this replay.`
+        )
         return
       }
       if (attemptsUsedRef.current >= MAX_SESSION_ATTEMPTS) {
-        setMsg(`Both attempts used (${MAX_SESSION_ATTEMPTS}/${MAX_SESSION_ATTEMPTS}) — trading locked`)
+        setMsg(
+          `Morning attempts used (${MAX_SESSION_ATTEMPTS}/${MAX_SESSION_ATTEMPTS}) — trading locked`
+        )
         return
       }
       const now = simNowRef.current
       if (now > entryCloseUnix) {
         setMsg(
-          `Entry window closed (after ${sess.entryClose.slice(0, 5)} ${tzLabel} sim time)`
+          `Morning entry closed (after ${sess.entryClose.slice(0, 5)} ${tzLabel}). Sim has no IB window.`
         )
         return
       }
@@ -2219,10 +2224,11 @@ function SimulationDeskInner() {
                 ? 'bg-red-500/25 text-red-200'
                 : 'bg-sky-500/20 text-sky-200'
             }`}
-            title="Attempts = filled trades (max 2). Working limits do not count. Stop or take-profit both use the attempt."
+            title="Morning playbook ≤2 fills (same as live). Working limits do not count. 2 stop-outs = revenge lock. Sim has no IB / lunch-range."
           >
-            Attempts {attemptsUsed}/{MAX_SESSION_ATTEMPTS}
+            Morning {attemptsUsed}/{MAX_SESSION_ATTEMPTS}
             {stopHits > 0 ? ` · Stops ${stopHits}/${MAX_STOP_HITS}` : ''}
+            {stopHits >= MAX_STOP_HITS ? ' · REVENGE' : ''}
           </span>
           {overnightBias && (
             <span

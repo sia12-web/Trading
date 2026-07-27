@@ -42,6 +42,12 @@ import {
   type SessionHighlightSpan,
 } from '@/lib/chart/sessionVwap'
 import {
+  formatChartClock,
+  formatChartDate,
+  mapTimesToChart,
+  toChartTime,
+} from '@/lib/chart/chartTime'
+import {
   previewLevelOrderPrices,
   resolveChartLimitPick,
 } from '@/lib/trading/chartLevelPick'
@@ -73,10 +79,12 @@ import {
 } from '@/lib/trading/sessionGate'
 import {
   resolveDeskPlaybookMode,
-  deskPlaybookTitle,
-  deskPlaybookButtonLabel,
   deskPlaybookHint,
   deskPlaybookUsesAfternoonLevels,
+  deskPlaybookToolbarLabel,
+  deskPlaybookPanelTitle,
+  isDeskEntryWindowActive,
+  isDeskWatchOnlyPlaybook,
 } from '@/lib/trading/deskPlaybookMode'
 import { attemptLadderFromCounts } from '@/lib/trading/attemptLadder'
 import {
@@ -238,48 +246,20 @@ function describeTimeHighlightSpan(
   return `${label}: Move Details: 1st Click Start @ ${startDetail} -> 2nd Click Finish @ ${endDetail}, Net Move: ${moveStr}`
 }
 
-/** DOW/NASDAQ → ET · NIKKEI → JST — same clocks as session color bands. */
+/**
+ * Axis / crosshair formatters for desk-shifted chart times.
+ * Candle setData uses toChartTime() so UTC comps == ET/JST wall clock;
+ * labels therefore read UTC getters (not a second TZ conversion).
+ */
 function makeDeskChartFormatters(instrument: Instrument): DeskChartFmt {
-  const clock = deskClockFor(instrument)
   const tzLabel = instrument === 'NIKKEI' ? 'JST' : 'ET'
-  const fmtTime = new Intl.DateTimeFormat('en-US', {
-    timeZone: clock.timeZone,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
-  const fmtTimeSec = new Intl.DateTimeFormat('en-US', {
-    timeZone: clock.timeZone,
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  })
-  const fmtDay = new Intl.DateTimeFormat('en-US', {
-    timeZone: clock.timeZone,
-    day: 'numeric',
-    month: 'short',
-  })
-  const fmtMonth = new Intl.DateTimeFormat('en-US', {
-    timeZone: clock.timeZone,
-    month: 'short',
-    year: '2-digit',
-  })
-  const fmtYear = new Intl.DateTimeFormat('en-US', {
-    timeZone: clock.timeZone,
-    year: 'numeric',
-  })
-
-  const formatTime = (unix: number, withSeconds = false) =>
-    (withSeconds ? fmtTimeSec : fmtTime).format(new Date(unix * 1000))
-  const formatDate = (unix: number, style: 'day' | 'month' | 'year' = 'day') => {
-    const d = new Date(unix * 1000)
-    if (style === 'year') return fmtYear.format(d)
-    if (style === 'month') return fmtMonth.format(d)
-    return fmtDay.format(d)
-  }
   const toUnix = (time: UTCTimestamp | string | number) =>
     typeof time === 'number' ? time : Math.floor(new Date(String(time)).getTime() / 1000)
+
+  const formatTime = (chartUnix: number, withSeconds = false) =>
+    formatChartClock(chartUnix, withSeconds)
+  const formatDate = (chartUnix: number, style: 'day' | 'month' | 'year' = 'day') =>
+    formatChartDate(chartUnix, style)
 
   return {
     formatTime,
@@ -806,7 +786,12 @@ export function TradingChart({
     }
 
     try {
-      candleSeries.setMarkers(markers)
+      candleSeries.setMarkers(
+        mapTimesToChart(
+          markers.map((m) => ({ ...m, time: m.time as number })),
+          chartTzRef.current
+        ).map((m) => ({ ...m, time: m.time as UTCTimestamp }))
+      )
     } catch {
       /* ignore */
     }
@@ -845,10 +830,26 @@ export function TradingChart({
     const pts = nycLunchLineSeriesData(lunch, Math.max(tip ?? closeUnix, closeUnix), {
       showMid: true,
     })
+    const tz = chartTzRef.current
     try {
-      series.high.setData(pts.high.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })))
-      series.low.setData(pts.low.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })))
-      series.mid.setData(pts.mid.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })))
+      series.high.setData(
+        mapTimesToChart(
+          pts.high.map((p) => ({ time: p.time, value: p.value })),
+          tz
+        ).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
+      )
+      series.low.setData(
+        mapTimesToChart(
+          pts.low.map((p) => ({ time: p.time, value: p.value })),
+          tz
+        ).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
+      )
+      series.mid.setData(
+        mapTimesToChart(
+          pts.mid.map((p) => ({ time: p.time, value: p.value })),
+          tz
+        ).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
+      )
       setLunchShaped(true)
     } catch {
       series.high.setData([])
@@ -875,8 +876,19 @@ export function TradingChart({
     }
     const pts = nikkeiUsRangeLineSeriesData(usRange)
     try {
-      series.high.setData(pts.high.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })))
-      series.low.setData(pts.low.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })))
+      const tz = chartTzRef.current
+      series.high.setData(
+        mapTimesToChart(
+          pts.high.map((p) => ({ time: p.time, value: p.value })),
+          tz
+        ).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
+      )
+      series.low.setData(
+        mapTimesToChart(
+          pts.low.map((p) => ({ time: p.time, value: p.value })),
+          tz
+        ).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
+      )
       setUsRangeShaped(usRange.visible && pts.high.length > 0)
     } catch {
       series.high.setData([])
@@ -1066,6 +1078,8 @@ export function TradingChart({
   const hoverPreviewKeyRef = useRef<string | null>(null)
   /** Axis / tooltip clocks — ET for DOW/NASDAQ, JST for NIKKEI */
   const chartFmtRef = useRef<DeskChartFmt>(makeDeskChartFormatters('DOW'))
+  /** Desk TZ for toChartTime — must match candle setData shifts */
+  const chartTzRef = useRef(deskClockFor('DOW').timeZone)
 
   const clearHoverPreview = useCallback(() => {
     const host = priceLineHostRef.current
@@ -1321,10 +1335,10 @@ export function TradingChart({
   }, [deskLevelsActive, rangeStrategy, morningAttempts, ibAttempts, lunchAttempts, stopHits])
 
   // Keep axis / tooltips on the same desk clock as session colors (ET vs JST).
-  // tickMarkFormatter is wired via chartFmtRef at create time (v4 applyOptions
-  // does not accept tickMarkFormatter on timeScale).
+  // Candle setData shifts unix → chart time; tickMarkFormatter reads UTC comps.
   useEffect(() => {
     chartFmtRef.current = makeDeskChartFormatters(instrument)
+    chartTzRef.current = deskClockFor(instrument).timeZone
     const chart = chartRef.current
     if (!chart) return
     chart.applyOptions({
@@ -1911,8 +1925,9 @@ export function TradingChart({
     if (!candleRef.current || !chartRef.current || candles.length === 0) return
 
     const ordered = normalizeCandleTimes(candles)
+    const tz = chartTzRef.current
     const candleData: CandlestickData[] = ordered.map((c) => ({
-      time: c.time,
+      time: toChartTime(c.time as number, tz) as UTCTimestamp,
       open: c.open,
       high: c.high,
       low: c.low,
@@ -1948,13 +1963,18 @@ export function TradingChart({
       )
       const vs = vwapSeriesRef.current
       if (vs && bands) {
-        vs.vwap.setData(bands.vwap)
-        vs.upper1.setData(bands.upper1)
-        vs.lower1.setData(bands.lower1)
-        vs.upper2.setData(bands.upper2)
-        vs.lower2.setData(bands.lower2)
-        vs.upper3.setData(bands.upper3)
-        vs.lower3.setData(bands.lower3)
+        const shift = <T extends { time: number | UTCTimestamp; value: number }>(rows: T[]) =>
+          mapTimesToChart(
+            rows.map((r) => ({ time: r.time as number, value: r.value })),
+            tz
+          ).map((r) => ({ time: r.time as UTCTimestamp, value: r.value }))
+        vs.vwap.setData(shift(bands.vwap))
+        vs.upper1.setData(shift(bands.upper1))
+        vs.lower1.setData(shift(bands.lower1))
+        vs.upper2.setData(shift(bands.upper2))
+        vs.lower2.setData(shift(bands.lower2))
+        vs.upper3.setData(shift(bands.upper3))
+        vs.lower3.setData(shift(bands.lower3))
       } else if (vs) {
         vs.vwap.setData([])
         vs.upper1.setData([])
@@ -2004,13 +2024,19 @@ export function TradingChart({
           const pts = ibLineSeriesData(ib, Math.max(tipUnix, closeUnix))
           try {
             ibSeries.high.setData(
-              pts.high.map((p) => ({
+              mapTimesToChart(
+                pts.high.map((p) => ({ time: p.time, value: p.value })),
+                tz
+              ).map((p) => ({
                 time: p.time as UTCTimestamp,
                 value: p.value,
               }))
             )
             ibSeries.low.setData(
-              pts.low.map((p) => ({
+              mapTimesToChart(
+                pts.low.map((p) => ({ time: p.time, value: p.value })),
+                tz
+              ).map((p) => ({
                 time: p.time as UTCTimestamp,
                 value: p.value,
               }))
@@ -2091,11 +2117,22 @@ export function TradingChart({
         const a = ordered[0]!
         const b = ordered[ordered.length - 1]!
         if (ordered.length === 1 || a.time === b.time) {
-          host.setData([{ time: a.time, value: a.close }])
+          host.setData([
+            {
+              time: toChartTime(a.time as number, tz) as UTCTimestamp,
+              value: a.close,
+            },
+          ])
         } else {
           host.setData([
-            { time: a.time, value: a.close },
-            { time: b.time, value: b.close },
+            {
+              time: toChartTime(a.time as number, tz) as UTCTimestamp,
+              value: a.close,
+            },
+            {
+              time: toChartTime(b.time as number, tz) as UTCTimestamp,
+              value: b.close,
+            },
           ])
         }
         priceLineHostSeededRef.current = true
@@ -2125,7 +2162,7 @@ export function TradingChart({
         lastCandleRef.current = merged
         try {
           candleRef.current.update({
-            time: merged.time,
+            time: toChartTime(merged.time as number, chartTzRef.current) as UTCTimestamp,
             open: merged.open,
             high: merged.high,
             low: merged.low,
@@ -2138,7 +2175,7 @@ export function TradingChart({
         lastCandleRef.current = liveBefore
         try {
           candleRef.current.update({
-            time: liveBefore.time,
+            time: toChartTime(liveBefore.time as number, chartTzRef.current) as UTCTimestamp,
             open: liveBefore.open,
             high: liveBefore.high,
             low: liveBefore.low,
@@ -2224,9 +2261,14 @@ export function TradingChart({
       /* defaults */
     }
 
+    const tz = chartTzRef.current
     const { rects } = projectSessionHighlightRects({
-      spans: cached.spans,
-      candleTimes: cached.candleTimes,
+      spans: cached.spans.map((s) => ({
+        ...s,
+        startT: toChartTime(s.startT, tz),
+        endT: toChartTime(s.endT, tz),
+      })),
+      candleTimes: cached.candleTimes.map((t) => toChartTime(t, tz)),
       timeScale: chart.timeScale(),
       priceToY: (price) => series.priceToCoordinate(price),
       priceScaleWidth: priceAxisW,
@@ -2394,7 +2436,7 @@ export function TradingChart({
         }
         try {
           candleRef.current.update({
-            time: bar.time,
+            time: toChartTime(bar.time as number, chartTzRef.current) as UTCTimestamp,
             open: bar.open,
             high: bar.high,
             low: bar.low,
@@ -2415,7 +2457,7 @@ export function TradingChart({
       }
       try {
         candleRef.current.update({
-          time: updated.time,
+          time: toChartTime(updated.time as number, chartTzRef.current) as UTCTimestamp,
           open: updated.open,
           high: updated.high,
           low: updated.low,
@@ -2517,7 +2559,7 @@ export function TradingChart({
           const tip = trimmed[trimmed.length - 1]!
           try {
             candleRef.current?.update({
-              time: tip.time,
+              time: toChartTime(tip.time as number, chartTzRef.current) as UTCTimestamp,
               open: tip.open,
               high: tip.high,
               low: tip.low,
@@ -2999,8 +3041,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     const padding = Math.max(span * 0.2, 3600) // minimum 1 hour padding
     
     timeScale.setVisibleRange({
-      from: (hl.startUnix - padding) as UTCTimestamp,
-      to: (hl.endUnix + padding) as UTCTimestamp,
+      from: toChartTime(hl.startUnix - padding, chartTzRef.current) as UTCTimestamp,
+      to: toChartTime(hl.endUnix + padding, chartTzRef.current) as UTCTimestamp,
     })
   }, [])
 
@@ -3875,15 +3917,25 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       morningStopHits: stopHits,
     }),
   })
+  /** Active entry unlock — same rule for DOW/NASDAQ (ET) and NIKKEI (JST). */
+  const inEntryWindow = isDeskEntryWindowActive({
+    playbookMode,
+    rangeStrategy,
+    canPlaceEntry: canPlaceOrder,
+  })
+  /** Observe-only outside entry windows (lunch break / done). */
   const afternoonWatch =
     clockReady &&
     isAfternoonWatchWindow(new Date(), instrument) &&
     !canPlaceOrder &&
-    (playbookMode === 'lunch_break' ||
-      playbookMode === 'lunch_range' ||
-      playbookMode === 'done')
-  const playbookButtonLabel = deskPlaybookButtonLabel(playbookMode)
-  const playbookPanelTitle = deskPlaybookTitle(playbookMode, instrument)
+    !inEntryWindow &&
+    isDeskWatchOnlyPlaybook(playbookMode)
+  const playbookButtonLabel = deskPlaybookToolbarLabel(playbookMode, {
+    watchOnly: afternoonWatch,
+  })
+  const playbookPanelTitle = deskPlaybookPanelTitle(playbookMode, instrument, {
+    watchOnly: afternoonWatch,
+  })
   const watchPlaybookHint = deskPlaybookHint(playbookMode, instrument)
 
   const renderSavedHighlightBoxes = () => {
@@ -3923,8 +3975,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       if (!hl.visible) return null
 
       // Convert times directly to coordinates
-      const leftCoord = timeScale.timeToCoordinate(hl.startUnix as any)
-      const rightCoord = timeScale.timeToCoordinate(hl.endUnix as any)
+      const leftCoord = timeScale.timeToCoordinate(
+        toChartTime(hl.startUnix, chartTzRef.current) as UTCTimestamp
+      )
+      const rightCoord = timeScale.timeToCoordinate(
+        toChartTime(hl.endUnix, chartTzRef.current) as UTCTimestamp
+      )
       
       // Handle price boundaries: use exact priceHigh and priceLow drawn by user (do NOT extend vertically)
       const pHigh = hl.priceHigh || hl.rangeHigh || (candles.length > 0 ? Math.max(...candles.map(c => c.high)) : 100000)
@@ -4113,8 +4169,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   ? 'Show Tokyo watch playbook (Press P)'
                   : 'Show afternoon watch playbook (Press P)'
                 : canPlaceOrder
-                  ? 'Show morning playbook panel (Press P)'
-                  : 'Show morning playbook — entries at cash open (Press P)'
+                  ? `Show ${playbookButtonLabel} (Press P)`
+                  : inEntryWindow
+                    ? `Show ${playbookButtonLabel} — clock in to place (Press P)`
+                    : `Show ${playbookButtonLabel} (Press P)`
             }
             onClick={() => {
               playbookUserClosedRef.current = false
@@ -4137,8 +4195,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             className="rounded-lg border border-surface-600 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500"
             title={
               tokyoDesk
-                ? 'Tokyo morning trading closed — levels are watch-only until cash close'
-                : 'Morning trading closed — afternoon levels are watch-only'
+                ? 'Outside Tokyo entry windows — levels are watch-only until cash close'
+                : 'Outside entry windows (morning / IB / lunch-range) — levels are watch-only'
             }
           >
             Watch only
@@ -5177,7 +5235,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                           ? why
                           : afternoonWatch
                             ? `${why} · watch only (click to focus price)`
-                            : `${why} · prep (click to focus price; entries at cash open)`
+                            : inEntryWindow
+                              ? `${why} · clock in to place (click to focus)`
+                              : `${why} · prep (click to focus price)`
                       }
                     >
                       <div className="flex items-center justify-between gap-1">

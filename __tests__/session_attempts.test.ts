@@ -77,7 +77,7 @@ assert(MAX_STOP_HITS === 2, 'max stops must be 2')
   const twoStops = evaluateSessionAttempts({ attemptsUsed: 2, stopHits: 2 })
   assert(twoStops.sessionDone, 'two stops locks the session')
   assert(twoStops.entriesLocked, 'two stops blocks entries')
-  assert(!!twoStops.lockReason?.includes('Stopped out'), 'lock reason mentions stops')
+  assert(!!twoStops.lockReason?.includes('Revenge'), 'lock reason mentions revenge')
 }
 
 {
@@ -104,6 +104,66 @@ assert(MAX_STOP_HITS === 2, 'max stops must be 2')
   })
   assert(gate.phase === 'ENTRY', `expected ENTRY for second attempt, got ${gate.phase}`)
   assert(gate.canPlaceEntry === true, 'second attempt after one TP/fill')
+  assert(gate.revengeLocked === false, 'not revenge after one fill')
+}
+
+{
+  // Revenge: 2 morning stop-outs
+  const morning = new Date('2026-07-14T14:00:00.000Z')
+  const gate = resolveSimMorningGate({
+    now: morning,
+    instrument: 'DOW',
+    hasOpenPosition: false,
+    attemptsUsed: 2,
+    stopHits: 2,
+  })
+  assert(gate.revengeLocked === true, '2 stops → revenge')
+  assert(gate.canPlaceEntry === false, 'revenge blocks entries')
+  assert(!!gate.message?.toLowerCase().includes('revenge') || !!gate.message?.includes('Morning'), 'message mentions lock')
+}
+
+{
+  // After morning entryClose — no IB in sim (NY)
+  const afterEntry = new Date('2026-07-14T14:20:00.000Z') // 10:20 ET
+  const gate = resolveSimMorningGate({
+    now: afterEntry,
+    instrument: 'NASDAQ',
+    hasOpenPosition: false,
+    attemptsUsed: 0,
+    stopHits: 0,
+  })
+  assert(gate.phase === 'FLAT', `expected FLAT after entryClose, got ${gate.phase}`)
+  assert(gate.canPlaceEntry === false, 'no IB unlock on sim')
+  assert(!!gate.message?.includes('no IB'), 'message explains no IB in sim')
+}
+
+{
+  // Nikkei morning entry window (09:00–09:45 JST)
+  const nikkeiMorning = new Date('2026-07-14T00:15:00.000Z') // 09:15 JST
+  const gate = resolveSimMorningGate({
+    now: nikkeiMorning,
+    instrument: 'NIKKEI',
+    hasOpenPosition: false,
+    attemptsUsed: 0,
+    stopHits: 0,
+  })
+  assert(gate.market === 'TOKYO', 'Nikkei uses Tokyo')
+  assert(gate.phase === 'ENTRY', `Nikkei morning ENTRY, got ${gate.phase}`)
+  assert(gate.canPlaceEntry === true, 'Nikkei morning can place')
+}
+
+{
+  // Nikkei after 09:45 — no IB window in sim (live would unlock IB at 10:15)
+  const nikkeiFlat = new Date('2026-07-14T01:00:00.000Z') // 10:00 JST
+  const gate = resolveSimMorningGate({
+    now: nikkeiFlat,
+    instrument: 'NIKKEI',
+    hasOpenPosition: false,
+    attemptsUsed: 0,
+    stopHits: 0,
+  })
+  assert(gate.phase === 'FLAT', `Nikkei FLAT after morning entry, got ${gate.phase}`)
+  assert(gate.canPlaceEntry === false, 'Nikkei sim has no IB')
 }
 
 console.log('session_attempts: ok')

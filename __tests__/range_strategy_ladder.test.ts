@@ -223,6 +223,89 @@ test('Nikkei: IB 10:15–10:45 JST; lunch-range to 15:00 JST', () => {
   assert(ln.rangeStrategy === 'lunch_range', `got ${ln.rangeStrategy}`)
 })
 
+test('Nikkei: revenge lock blocks IB + lunch-range (parity with NY)', () => {
+  const fills = [
+    {
+      instrument: 'NIKKEI',
+      entryTimestamp: jstDate(2026, 7, 15, 9, 10),
+      exitReason: 'stop_hit',
+    },
+    {
+      instrument: 'NIKKEI',
+      entryTimestamp: jstDate(2026, 7, 15, 9, 30),
+      exitReason: 'stop_hit',
+    },
+  ]
+  const ib = resolveSessionGate({
+    lockedInstrument: 'NIKKEI',
+    viewingInstrument: 'NIKKEI',
+    clockedIn: true,
+    attendedToday: true,
+    attemptsUsed: 2,
+    stopLossHitCount: 2,
+    attemptFills: fills,
+    now: jstDate(2026, 7, 15, 10, 30),
+  })
+  assert(ib.revengeLocked === true, 'Nikkei revenge')
+  assert(ib.canPlaceEntry === false, 'Nikkei IB blocked by revenge')
+  assert(ib.rangeStrategy === null, 'no IB strategy when revenge')
+
+  const ln = resolveSessionGate({
+    lockedInstrument: 'NIKKEI',
+    viewingInstrument: 'NIKKEI',
+    clockedIn: true,
+    attendedToday: true,
+    attemptsUsed: 2,
+    stopLossHitCount: 2,
+    attemptFills: fills,
+    now: jstDate(2026, 7, 15, 14, 0),
+  })
+  assert(ln.canPlaceEntry === false, 'Nikkei lunch-range blocked by revenge')
+})
+
+test('Nikkei: morning ≤1 unlocks IB; any IB fill kills lunch', () => {
+  const morningOnly = [
+    {
+      instrument: 'NIKKEI',
+      entryTimestamp: jstDate(2026, 7, 15, 9, 20),
+      exitReason: 'take_profit',
+    },
+  ]
+  const ib = resolveSessionGate({
+    lockedInstrument: 'NIKKEI',
+    viewingInstrument: 'NIKKEI',
+    clockedIn: true,
+    attendedToday: true,
+    attemptsUsed: 1,
+    stopLossHitCount: 0,
+    attemptFills: morningOnly,
+    now: jstDate(2026, 7, 15, 10, 30),
+  })
+  assert(ib.canPlaceEntry === true, `Nikkei IB after 1 morning: ${ib.message}`)
+  assert(ib.rangeStrategy === 'ib', 'IB unlocked')
+
+  const afterIb = [
+    ...morningOnly,
+    {
+      instrument: 'NIKKEI',
+      entryTimestamp: jstDate(2026, 7, 15, 10, 25),
+      exitReason: 'take_profit',
+    },
+  ]
+  const ln = resolveSessionGate({
+    lockedInstrument: 'NIKKEI',
+    viewingInstrument: 'NIKKEI',
+    clockedIn: true,
+    attendedToday: true,
+    attemptsUsed: 2,
+    stopLossHitCount: 0,
+    attemptFills: afterIb,
+    now: jstDate(2026, 7, 15, 14, 0),
+  })
+  assert(ln.canPlaceEntry === false, 'IB fill kills lunch on Nikkei')
+  assert(ln.rangeStrategy === null, 'no lunch-range after IB fill')
+})
+
 test('Morning entry window still allows 2 attempts (NY)', () => {
   const g = resolveSessionGate({
     ...gateBase,
