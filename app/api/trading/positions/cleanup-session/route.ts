@@ -1,6 +1,6 @@
 /**
  * POST /api/trading/positions/cleanup-session
- * Expire unfilled working limits + lunch-flatten filled opens after morning session.
+ * Expire unfilled working limits + cash-close flatten filled opens after marketClose.
  */
 
 import { NextResponse } from 'next/server'
@@ -23,11 +23,12 @@ export async function POST(request: Request) {
     }
 
     let forceExpireWorking = false
-    let forceLunchClose = false
+    let forceCashClose = false
     try {
       const body = await request.json()
       forceExpireWorking = !!body?.force_expire_working
-      forceLunchClose = !!body?.force_lunch_close
+      // Prefer force_cash_close; force_lunch_close kept as deprecated alias
+      forceCashClose = !!(body?.force_cash_close || body?.force_lunch_close)
     } catch {
       /* empty body ok */
     }
@@ -35,25 +36,26 @@ export async function POST(request: Request) {
     const supabase = await createClient()
     const result = await cleanupDeskSession(supabase, user.id, {
       forceExpireWorking,
-      forceLunchClose,
+      forceCashClose,
     })
     const clockedOutMarkets = await autoLunchClockOut(supabase, user.id)
 
     logger.info('cleanup-session.done', {
       userId: user.id,
       expired: result.expiredWorking.length,
-      lunchClosed: result.lunchClosed.length,
+      cashClosed: result.cashClosed.length,
       lunchClockOut: clockedOutMarkets,
     })
 
     return NextResponse.json({
       success: true,
       expired_working: result.expiredWorking,
+      cash_closed: result.cashClosed,
       lunch_closed: result.lunchClosed,
       lunch_clock_out: clockedOutMarkets,
       message:
-        result.expiredWorking.length || result.lunchClosed.length || clockedOutMarkets.length
-          ? `Cleaned ${result.expiredWorking.length} unfilled limit(s), flattened ${result.lunchClosed.length} open position(s), clocked out ${clockedOutMarkets.join(',') || '—'}`
+        result.expiredWorking.length || result.cashClosed.length || clockedOutMarkets.length
+          ? `Cleaned ${result.expiredWorking.length} unfilled limit(s), cash-closed ${result.cashClosed.length} open position(s), clocked out ${clockedOutMarkets.join(',') || '—'}`
           : 'Nothing to clean',
     })
   } catch (error) {

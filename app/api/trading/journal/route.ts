@@ -186,6 +186,8 @@ export async function GET(request: NextRequest) {
         return 'AI early exit — system closed before take-profit (see management decisions)'
       }
       if (t.exit_reason === 'lunch_close') return 'Lunch flatten — morning desk closed'
+      if (t.exit_reason === 'cash_close')
+        return 'Cash-close flatten — lunch-range / leftover book closed at session end'
       if (t.exit_reason === 'manual') return 'Manual close'
       return t.exit_reason ? String(t.exit_reason) : 'Closed'
     }
@@ -197,7 +199,8 @@ export async function GET(request: NextRequest) {
       const earlyExit =
         t.exit_reason === 'ai_signal' ||
         t.exit_reason === 'manual' ||
-        t.exit_reason === 'lunch_close'
+        t.exit_reason === 'lunch_close' ||
+        t.exit_reason === 'cash_close'
       return {
         id: t.id,
         instrument: t.instrument,

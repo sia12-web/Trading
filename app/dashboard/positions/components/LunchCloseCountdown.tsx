@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Morning desk countdown — NY 11:30 ET / Tokyo 11:30 JST lunch flatten.
+ * Desk countdown — morning ends at lunch (confirm-to-close); cash-close auto-flat for leftovers / lunch-range.
  */
 
 import { useEffect, useState } from 'react'
@@ -48,8 +48,9 @@ export function LunchCloseCountdown({
   const sess = sessionFor(instrument)
   const tzLabel = instrument === 'NIKKEI' ? 'JST' : 'ET'
   const lunchLabel = `${sess.lunchClose.slice(0, 5)} ${tzLabel}`
+  const cashLabel = `${sess.marketClose.slice(0, 5)} ${tzLabel}`
   const [label, setLabel] = useState('—')
-  const [phase, setPhase] = useState<'pre' | 'open' | 'closed'>('closed')
+  const [phase, setPhase] = useState<'pre' | 'morning' | 'afternoon' | 'closed'>('closed')
 
   useEffect(() => {
     const tick = () => {
@@ -61,29 +62,39 @@ export function LunchCloseCountdown({
       }
       const open = parseHms(sess.marketOpen)
       const lunch = parseHms(sess.lunchClose)
+      const cash = parseHms(sess.marketClose)
+      const nowSec = mins * 60 + secs
       if (mins < open) {
         setPhase('pre')
-        const left = open * 60 - (mins * 60 + secs)
+        const left = open * 60 - nowSec
         const m = Math.floor(left / 60)
         const s = left % 60
         setLabel(`Opens in ${m}:${s.toString().padStart(2, '0')}`)
         return
       }
-      if (mins >= lunch) {
-        setPhase('closed')
-        setLabel('Morning closed')
+      if (mins < lunch) {
+        setPhase('morning')
+        const left = lunch * 60 - nowSec
+        const m = Math.floor(left / 60)
+        const s = left % 60
+        setLabel(`${m}:${s.toString().padStart(2, '0')}`)
         return
       }
-      setPhase('open')
-      const left = lunch * 60 - (mins * 60 + secs)
-      const m = Math.floor(left / 60)
-      const s = left % 60
-      setLabel(`${m}:${s.toString().padStart(2, '0')}`)
+      if (mins < cash) {
+        setPhase('afternoon')
+        const left = cash * 60 - nowSec
+        const m = Math.floor(left / 60)
+        const s = left % 60
+        setLabel(`${m}:${s.toString().padStart(2, '0')}`)
+        return
+      }
+      setPhase('closed')
+      setLabel('Cash closed')
     }
     tick()
     const id = setInterval(tick, 1000)
     return () => clearInterval(id)
-  }, [sess.tz, sess.marketOpen, sess.lunchClose])
+  }, [sess.tz, sess.marketOpen, sess.lunchClose, sess.marketClose])
 
   if (marketDisabled) {
     return (
@@ -97,37 +108,55 @@ export function LunchCloseCountdown({
   }
 
   const border =
-    phase === 'open'
+    phase === 'morning'
       ? 'border-amber-800/40 bg-amber-950/20'
-      : phase === 'pre'
-        ? 'border-sky-800/40 bg-sky-950/20'
-        : 'border-[#30363d] bg-[#161b22]'
+      : phase === 'afternoon'
+        ? 'border-orange-800/40 bg-orange-950/20'
+        : phase === 'pre'
+          ? 'border-sky-800/40 bg-sky-950/20'
+          : 'border-[#30363d] bg-[#161b22]'
+
+  const title =
+    phase === 'morning'
+      ? `Until morning desk end · ${lunchLabel}`
+      : phase === 'afternoon'
+        ? `Until cash-close auto-flat · ${cashLabel}`
+        : phase === 'pre'
+          ? `Pre-open · ${instrument}`
+          : `Session · ${instrument}`
+
+  const subtitle =
+    phase === 'morning'
+      ? hasOpenPosition
+        ? 'At lunch you will be asked to confirm close — not auto-flattened'
+        : 'No open book — place limits on Live Trading'
+      : phase === 'afternoon'
+        ? hasOpenPosition
+          ? 'Open book auto-liquidates at cash close (lunch-range + leftovers)'
+          : 'Afternoon — lunch-range entries until cash close'
+        : hasOpenPosition
+          ? 'Open book on this desk'
+          : 'No open book — place limits on Live Trading'
 
   return (
     <div className={`rounded-xl border px-4 py-3 ${border}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-[10px] uppercase tracking-wider text-gray-500">
-            {phase === 'open'
-              ? `Until lunch flatten · ${lunchLabel}`
-              : phase === 'pre'
-                ? `Pre-open · ${instrument}`
-                : `Session · ${instrument}`}
-          </p>
+          <p className="text-[10px] uppercase tracking-wider text-gray-500">{title}</p>
           <p className="mt-0.5 text-xs text-gray-400">
-            {hasOpenPosition
-              ? 'Open book must be flat by lunch'
-              : 'No open book — place limits on Live Trading'}
+            {subtitle}
             {stopLossHitCount > 0 ? ` · Stops ${stopLossHitCount}/2` : ''}
           </p>
         </div>
         <div
           className={`price-mono text-2xl font-bold tabular-nums ${
-            phase === 'open'
+            phase === 'morning'
               ? 'text-amber-300'
-              : phase === 'pre'
-                ? 'text-sky-300'
-                : 'text-gray-500'
+              : phase === 'afternoon'
+                ? 'text-orange-300'
+                : phase === 'pre'
+                  ? 'text-sky-300'
+                  : 'text-gray-500'
           }`}
         >
           {label}

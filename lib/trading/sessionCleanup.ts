@@ -1,7 +1,8 @@
 /**
  * Session cleanup for desk trades:
- * - Expire unfilled working limits (never reached → leave Positions)
- * - Lunch-flatten filled opens after the morning session
+ * - Expire unfilled working limits after entry close / lunch
+ * - Auto-flatten filled opens only at cash close (end of lunch-range window)
+ *   — morning/IB books are NOT force-closed at 11:30 (trader confirms)
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -37,21 +38,56 @@ function parseHms(hms: string): number {
   return (h || 0) * 3600 + (m || 0) * 60 + (s || 0)
 }
 
+/** Pure helper — filled opens auto-flatten only at/after cash close (not 11:30 lunch). */
+export function shouldAutoFlattenAtCashClose(args: {
+  timeSec: number
+  marketCloseSec: number
+  forceCashClose?: boolean
+}): boolean {
+  return args.forceCashClose === true || args.timeSec >= args.marketCloseSec
+}
+
+/** Working limits may expire after entry close or lunch (desk hours end). */
+export function shouldExpireWorkingLimit(args: {
+  timeSec: number
+  entryCloseSec: number
+  lunchCloseSec: number
+  deskHoursOpen: boolean
+  forceExpireWorking?: boolean
+}): boolean {
+  if (args.forceExpireWorking) return true
+  const pastEntry = args.timeSec >= args.entryCloseSec || !args.deskHoursOpen
+  const pastLunch = args.timeSec >= args.lunchCloseSec
+  return pastEntry || pastLunch
+}
+
 export type CleanupResult = {
   expiredWorking: string[]
+  /** Filled opens closed at cash close (includes leftovers from morning/IB). */
+  cashClosed: string[]
+  /** @deprecated alias of cashClosed */
   lunchClosed: string[]
 }
 
-/** Expire working limits past entry close / lunch; flatten filled opens past lunch. */
+export type CleanupOpts = {
+  forceExpireWorking?: boolean
+  /** Force flatten filled opens (cash close). */
+  forceCashClose?: boolean
+  /** @deprecated alias of forceCashClose */
+  forceLunchClose?: boolean
+}
+
+/** Expire working limits past entry/lunch; flatten filled opens only past cash close. */
 export async function cleanupDeskSession(
   supabase: SupabaseClient,
   userId: string,
-  opts?: { forceExpireWorking?: boolean; forceLunchClose?: boolean }
+  opts?: CleanupOpts
 ): Promise<CleanupResult> {
   const today = getESTDateString()
   const nowIso = new Date().toISOString()
   const expiredWorking: string[] = []
-  const lunchClosed: string[] = []
+  const cashClosed: string[] = []
+  const forceCashClose = !!(opts?.forceCashClose || opts?.forceLunchClose)
 
   const { data: openRows } = await supabase
     .from('trades_journal')
@@ -69,11 +105,21 @@ export async function cleanupDeskSession(
     const t = localNowSeconds(sess.tz)
     const entryClose = parseHms(sess.entryClose)
     const lunch = parseHms(sess.lunchClose)
-    const pastEntry = t >= entryClose || !isDeskHoursNow(new Date(), inst).open
-    const pastLunch = t >= lunch || opts?.forceLunchClose
+    const marketClose = parseHms(sess.marketClose)
+    const deskHoursOpen = isDeskHoursNow(new Date(), inst).open
 
     if (row.fill_status === 'working') {
-      if (!opts?.forceExpireWorking && !pastEntry && !pastLunch) continue
+      if (
+        !shouldExpireWorkingLimit({
+          timeSec: t,
+          entryCloseSec: entryClose,
+          lunchCloseSec: lunch,
+          deskHoursOpen,
+          forceExpireWorking: opts?.forceExpireWorking,
+        })
+      ) {
+        continue
+      }
       const { error } = await supabase
         .from('trades_journal')
         .update({
@@ -95,8 +141,15 @@ export async function cleanupDeskSession(
       continue
     }
 
-    // Filled open past lunch → flatten so Positions clears
-    if ((row.fill_status === 'filled' || !row.fill_status) && pastLunch) {
+    // Filled open past cash close → flatten (lunch-range + any leftover morning/IB)
+    if (
+      (row.fill_status === 'filled' || !row.fill_status) &&
+      shouldAutoFlattenAtCashClose({
+        timeSec: t,
+        marketCloseSec: marketClose,
+        forceCashClose,
+      })
+    ) {
       const entry = Number(row.entry_price)
       const size = Number(row.position_size)
       const dir = String(row.entry_direction || '').toUpperCase()
@@ -124,7 +177,7 @@ export async function cleanupDeskSession(
       }
 
       if (exitPrice == null || !(exitPrice > 0)) {
-        logger.error('cleanup.lunch_close_no_price', {
+        logger.error('cleanup.cash_close_no_price', {
           id: row.id,
           entry,
           oanda_trade_id: row.oanda_trade_id,
@@ -132,21 +185,20 @@ export async function cleanupDeskSession(
         continue
       }
 
-      // If broker already closed at/near TP, label as take_profit not lunch_close
+      // If broker already closed at/near TP, label as take_profit not cash_close
       const tp = Number(row.profit_target_price)
       const nearTp =
         Number.isFinite(tp) &&
         tp > 0 &&
         Math.abs(exitPrice - tp) / tp < 0.0005
-      const exitReason = nearTp ? 'take_profit' : 'lunch_close'
+      const exitReason = nearTp ? 'take_profit' : 'cash_close'
       const deskPnl =
         dir === 'LONG' ? (exitPrice - entry) * size : (entry - exitPrice) * size
-      // Prefer OANDA home-currency P&L (CAD)
       const pnlRounded =
         brokerPl != null
           ? Math.round(brokerPl * 100) / 100
           : Math.round(deskPnl * 100) / 100
-          const riskAmt = Number(row.risk_amount) || 0
+      const riskAmt = Number(row.risk_amount) || 0
       const pnlPct =
         riskAmt > 0
           ? Math.round((pnlRounded / riskAmt) * 10000) / 100
@@ -165,15 +217,15 @@ export async function cleanupDeskSession(
           exit_notes:
             exitReason === 'take_profit'
               ? `Take profit fill @ ${exitPrice} (source ${priceSource}${brokerPl != null ? ', CAD P&L from OANDA' : ''})`
-              : `Auto lunch flatten @ ${exitPrice} (source ${priceSource}${brokerPl != null ? ', CAD P&L from OANDA' : ''})`,
+              : `Auto cash-close flatten @ ${exitPrice} (source ${priceSource}${brokerPl != null ? ', CAD P&L from OANDA' : ''})`,
           updated_at: nowIso,
         })
         .eq('id', row.id)
         .eq('user_id', userId)
         .is('exit_timestamp', null)
       if (!error) {
-        lunchClosed.push(row.id)
-        logger.info('cleanup.lunch_close', {
+        cashClosed.push(row.id)
+        logger.info('cleanup.cash_close', {
           id: row.id,
           entry,
           exitPrice,
@@ -181,9 +233,9 @@ export async function cleanupDeskSession(
           exitReason,
           pnl: pnlRounded,
         })
-      } else logger.error('cleanup.lunch_close_failed', { id: row.id, error })
+      } else logger.error('cleanup.cash_close_failed', { id: row.id, error })
     }
   }
 
-  return { expiredWorking, lunchClosed }
+  return { expiredWorking, cashClosed, lunchClosed: cashClosed }
 }

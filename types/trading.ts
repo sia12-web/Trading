@@ -10,6 +10,7 @@ export type ExitReason =
   | 'stop_hit'
   | 'manual'
   | 'lunch_close'
+  | 'cash_close'
   | 'ai_signal'
   | 'take_profit'
   | 'limit_expired'

@@ -28,12 +28,13 @@ import {
   setDeskInstrumentPreference,
   type DeskInstrumentPref,
 } from '@/lib/trading/deskInstrumentPreference'
-import { isAnyLiveFocusWindowActive } from '@/lib/trading/sessionGate'
+import { isAnyLiveFocusWindowActive, isAfternoonWatchWindow, sessionFor } from '@/lib/trading/sessionGate'
 import {
   MANUAL_RISK_PERCENT,
   previewPositionSizing,
 } from '@/lib/trading/positionSizing'
 import { snapDeskPrice, snapStopToTick, snapTargetToTick } from '@/lib/trading/instrumentTicks'
+import { MorningLunchFlatConfirm } from './components/MorningLunchFlatConfirm'
 
 type Instrument = DeskInstrumentPref
 
@@ -94,6 +95,10 @@ export default function ChartPage() {
   const [lastQuoteAt, setLastQuoteAt] = useState<number | null>(null)
   const [dataMode, setDataMode] = useState<'live' | 'synthetic'>('live')
   const [fillError, setFillError] = useState<string | null>(null)
+  /** After 11:30 with open morning/IB book — ask before closing */
+  const [lunchFlatPrompt, setLunchFlatPrompt] = useState(false)
+  const [lunchFlatBusy, setLunchFlatBusy] = useState(false)
+  const lunchFlatDismissedRef = useRef(false)
   /** Placing → Working → Filled | Rejected */
   const [orderStatus, setOrderStatus] = useState<
     'idle' | 'placing' | 'working' | 'filled' | 'rejected'
@@ -532,20 +537,23 @@ export default function ChartPage() {
     }
   }, [])
 
-  const expireWorkingLimits = useCallback(async (force = false) => {
-    try {
-      await fetch('/api/trading/positions/cleanup-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          force_expire_working: force,
-          force_lunch_close: force,
-        }),
-      })
-    } catch {
-      /* non-fatal */
-    }
-  }, [])
+  const expireWorkingLimits = useCallback(
+    async (opts?: { forceExpireWorking?: boolean; forceCashClose?: boolean }) => {
+      try {
+        await fetch('/api/trading/positions/cleanup-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            force_expire_working: !!opts?.forceExpireWorking,
+            force_cash_close: !!opts?.forceCashClose,
+          }),
+        })
+      } catch {
+        /* non-fatal */
+      }
+    },
+    []
+  )
 
   const handlePlaced = useCallback(
     (order: PendingLimitOrder) => {
@@ -610,9 +618,11 @@ export default function ChartPage() {
         void cancelWorkingLimit(inst)
       }
     }
-    // Expire DB working rows + lunch-flatten any leftover filled opens
-    if (gate.phase === 'DONE' || gate.phase === 'CLOSED') {
-      void expireWorkingLimits(true)
+    // Expire working rows at lunch/DONE; cash-close flatten only after marketClose (CLOSED)
+    if (gate.phase === 'DONE') {
+      void expireWorkingLimits({ forceExpireWorking: true, forceCashClose: false })
+    } else if (gate.phase === 'CLOSED') {
+      void expireWorkingLimits({ forceExpireWorking: true, forceCashClose: true })
     }
     // Reload levels once after lunch so afternoon watch playbook paints
     if (gate.phase === 'DONE') {
@@ -624,6 +634,60 @@ export default function ChartPage() {
       afternoonLevelsLoadedRef.current = false
     }
   }, [gate?.phase, gate?.lockedInstrument, pending, expireWorkingLimits, cancelWorkingLimit, instrument])
+
+  // Past morning lunch with an open book → confirm close (no silent flatten)
+  useEffect(() => {
+    if (!managePos) {
+      setLunchFlatPrompt(false)
+      lunchFlatDismissedRef.current = false
+      return
+    }
+    const inst = managePos.instrument as Instrument
+    if (!isAfternoonWatchWindow(new Date(), inst)) {
+      setLunchFlatPrompt(false)
+      return
+    }
+    if (lunchFlatDismissedRef.current) {
+      setLunchFlatPrompt(false)
+      return
+    }
+    setLunchFlatPrompt(true)
+  }, [managePos, gateTick])
+
+  const confirmLunchFlatClose = useCallback(async () => {
+    if (!managePos || lunchFlatBusy) return
+    setLunchFlatBusy(true)
+    try {
+      const px = livePriceRef.current ?? managePos.entryPrice
+      const res = await fetch('/api/trading/positions/close', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          position_id: managePos.id,
+          instrument: managePos.instrument,
+          exit_price: px,
+          exit_reason: 'manual',
+          exit_notes: 'Confirmed close after morning lunch (trader confirm — not auto flatten)',
+        }),
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        setFillError(j.message || j.error || 'Close failed')
+        return
+      }
+      setLunchFlatPrompt(false)
+      lunchFlatDismissedRef.current = true
+      setManagePos(null)
+      setPositionOverlay(null)
+      setAiVerdict(null)
+      refreshGate()
+      void refreshLevelsAfterExit('manual')
+    } catch {
+      setFillError('Close failed — try Manage desk')
+    } finally {
+      setLunchFlatBusy(false)
+    }
+  }, [managePos, lunchFlatBusy, refreshGate, refreshLevelsAfterExit])
 
   // Load open position into manage desk when already filled (refresh / reopen)
   useEffect(() => {
@@ -804,6 +868,8 @@ export default function ChartPage() {
                 setManagePos(null)
                 setPositionOverlay(null)
                 setAiVerdict(null)
+                setLunchFlatPrompt(false)
+                lunchFlatDismissedRef.current = true
                 refreshGate()
                 void refreshLevelsAfterExit(exitReason)
               }}
@@ -811,6 +877,24 @@ export default function ChartPage() {
               onAiVerdict={setAiVerdict}
             />
           </div>
+        )}
+
+        {managePos && (
+          <MorningLunchFlatConfirm
+            open={lunchFlatPrompt}
+            instrument={managePos.instrument}
+            direction={managePos.direction}
+            entryPrice={managePos.entryPrice}
+            cashCloseLabel={`${sessionFor(managePos.instrument).marketClose.slice(0, 5)} ${
+              managePos.instrument === 'NIKKEI' ? 'JST' : 'ET'
+            }`}
+            busy={lunchFlatBusy}
+            onConfirm={() => void confirmLunchFlatClose()}
+            onKeepOpen={() => {
+              lunchFlatDismissedRef.current = true
+              setLunchFlatPrompt(false)
+            }}
+          />
         )}
 
         <div className="relative flex-1 w-full h-full min-h-0">

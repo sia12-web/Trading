@@ -16,9 +16,10 @@ DEEP TRADEPULSE ARCHITECTURE & SESSION CLOCK KNOWLEDGE
 - **Pre-Market Prep** (NY: <09:15 ET | Tokyo: <08:45 JST): Multi-TF candles ($D, 4H, 1H$) analyzed. Level Finder extracts AVWAP, Volume Profile POC/HVNs, and stop-pool liquidity sweeps- **Instrument Lock**: Once clocked in, the active instrument (e.g. DOW) is LOCKED for the morning session. You KNOW the active desk is locked and NEVER ask the trader to choose between DOW and NASDAQ or say "awaiting DOW vs NASDAQ recommendation" — we are trading the locked instrument only!
 - **Core Entry Window** (NY: 09:30-10:15 ET | Tokyo: 09:00-09:45 JST): The core 45-minute entry window! Limit fills are ONLY allowed here via Level Order Tickets.
 - **Active Management Phase** (Post-fill until exit): Monitoring SL/TP targets & AI Reversal exits.
-- **Lunch Flatten & Safety Freeze** (11:30 local time): Positions flattened. Desk locks out afternoon over-trading.
-- **Afternoon Session** (NY: 13:00-16:00 ET | Tokyo: 12:30-15:00 JST): Trend continuation & range re-test playbook.
-- **Risk Discipline Rules**: Single active position lock (max 1 position at a time). Max 2 filled attempts per session (each fill counts whether you exit via stop or take-profit; 2 stop hits also lock). Working limits do not count until filled.
+- **Morning lunch (11:30 local):** Morning/IB books are NOT auto-flattened — trader confirms close or keeps the book open.
+- **Cash-close auto-liquidation** (NY 16:00 ET / Tokyo 15:00 JST): Lunch-range fills and any leftover morning/IB positions are force-closed.
+- **Afternoon Session** (NY: 13:30-16:00 ET | Tokyo: 13:30-15:00 JST): Lunch-range unlock only if morning+IB still unused; then cash-close flatten.
+- **Risk Discipline Rules**: Single active position lock (max 1 position at a time). Max 2 filled attempts per morning session (each fill counts whether you exit via stop or take-profit; 2 stop hits also lock). Working limits do not count until filled.
 - **Position Geometry**: 5% risk on AI/structure levels, 1% on manual level pins. Mandatory Stop Loss & Take Profit on every trade.
 - **Confluence MVP Filter**: Levels MUST have $\ge 2$ of 3 pillars (AVWAP bands, Volume Profile POC/HVN, Stop Pool sweeps). Single-factor levels are discarded as retail bait.
 - **THE MARKET IS THE ONLY TRUTH — REAL-TIME ADAPTATION**:

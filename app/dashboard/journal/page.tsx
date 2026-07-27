@@ -130,6 +130,8 @@ function exitBadge(code: string | null | undefined): { label: string; className:
       }
     case 'lunch_close':
       return { label: 'LUNCH FLAT', className: 'bg-amber-900/40 text-amber-300 border-amber-800' }
+    case 'cash_close':
+      return { label: 'CASH CLOSE', className: 'bg-orange-900/40 text-orange-300 border-orange-800' }
     case 'manual':
       return { label: 'MANUAL', className: 'bg-slate-800 text-slate-300 border-slate-600' }
     default:
@@ -909,7 +911,7 @@ function JournalPageInner() {
         <p className="text-[11px] text-gray-600 leading-relaxed">
           {isSim
             ? 'Simulation tab reads paper closes from simulation_trades only — never mixes with live fills. Resetting a replay day clears that day’s paper history.'
-            : 'Live desk only. After the entry window, levels leave the chart; open books stay in MANAGE until stop, target, AI exit, or lunch flatten. Equity above is reconstructed from your ticket account size and closed-trade P&L in CAD (OANDA account currency) — not a live OANDA margin feed.'}
+            : 'Live desk only. After the entry window, levels leave the chart; open books stay in MANAGE until stop, target, AI exit, or your lunch confirm. Cash close auto-liquidates lunch-range fills and any leftovers. Equity above is reconstructed from your ticket account size and closed-trade P&L in CAD (OANDA account currency) — not a live OANDA margin feed.'}
         </p>
       </div>
     </div>

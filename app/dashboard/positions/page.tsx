@@ -5,11 +5,13 @@
  */
 
 import Link from 'next/link'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { PositionStatusCard } from './components/PositionStatusCard'
 import { LunchCloseCountdown } from './components/LunchCloseCountdown'
+import { MorningLunchFlatConfirm } from '@/app/dashboard/chart/components/MorningLunchFlatConfirm'
 import type { PositionStatusResponse, PositionStatus } from '@/types/positionManagement'
 import type { Instrument } from '@/types/trading'
+import { isAfternoonWatchWindow, sessionFor } from '@/lib/trading/sessionGate'
 
 const INSTRUMENTS: Instrument[] = ['DOW', 'NASDAQ', 'NIKKEI']
 
@@ -21,6 +23,9 @@ export default function PositionsPage() {
   )
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [lunchFlatPrompt, setLunchFlatPrompt] = useState(false)
+  const [lunchFlatBusy, setLunchFlatBusy] = useState(false)
+  const lunchFlatDismissedRef = useRef(false)
 
   const fetchOpenFlags = useCallback(async () => {
     const flags: Partial<Record<Instrument, boolean>> = {}
@@ -95,6 +100,55 @@ export default function PositionsPage() {
     const id = setInterval(() => void fetchPosition({ soft: true }), 30_000)
     return () => clearInterval(id)
   }, [position, fetchPosition])
+
+  // Past morning lunch with open book → confirm close (no silent flatten)
+  useEffect(() => {
+    if (!position) {
+      setLunchFlatPrompt(false)
+      lunchFlatDismissedRef.current = false
+      return
+    }
+    if (!isAfternoonWatchWindow(new Date(), position.instrument)) {
+      setLunchFlatPrompt(false)
+      return
+    }
+    if (lunchFlatDismissedRef.current) {
+      setLunchFlatPrompt(false)
+      return
+    }
+    setLunchFlatPrompt(true)
+  }, [position])
+
+  const confirmLunchFlatClose = useCallback(async () => {
+    if (!position || lunchFlatBusy) return
+    setLunchFlatBusy(true)
+    try {
+      const res = await fetch('/api/trading/positions/close', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          position_id: position.id,
+          instrument: position.instrument,
+          exit_price: position.entry_price,
+          exit_reason: 'manual',
+          exit_notes: 'Confirmed close after morning lunch (trader confirm — not auto flatten)',
+        }),
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        setError(j.message || j.error || 'Close failed')
+        return
+      }
+      setLunchFlatPrompt(false)
+      lunchFlatDismissedRef.current = true
+      setPosition(null)
+      setOpenByInstrument((prev) => ({ ...prev, [selectedInstrument]: false }))
+    } catch {
+      setError('Close failed')
+    } finally {
+      setLunchFlatBusy(false)
+    }
+  }, [position, lunchFlatBusy, selectedInstrument])
 
   // On first open-flags load, jump to an instrument that actually has a book
   useEffect(() => {
@@ -215,6 +269,8 @@ export default function PositionsPage() {
             position={position}
             onClosed={() => {
               setPosition(null)
+              lunchFlatDismissedRef.current = true
+              setLunchFlatPrompt(false)
               setOpenByInstrument((prev) => ({ ...prev, [selectedInstrument]: false }))
             }}
             onRefresh={() => {
@@ -224,9 +280,28 @@ export default function PositionsPage() {
           />
         )}
 
+        {position && (
+          <MorningLunchFlatConfirm
+            open={lunchFlatPrompt}
+            instrument={position.instrument}
+            direction={position.entry_direction}
+            entryPrice={position.entry_price}
+            cashCloseLabel={`${sessionFor(position.instrument).marketClose.slice(0, 5)} ${
+              position.instrument === 'NIKKEI' ? 'JST' : 'ET'
+            }`}
+            busy={lunchFlatBusy}
+            onConfirm={() => void confirmLunchFlatClose()}
+            onKeepOpen={() => {
+              lunchFlatDismissedRef.current = true
+              setLunchFlatPrompt(false)
+            }}
+          />
+        )}
+
         <p className="text-[11px] text-gray-600 leading-relaxed">
           Prefer managing from the chart while price is moving — this page is the dedicated manage
-          desk when you leave the chart. Fills, stops, and AI exits land in Order History.
+          desk when you leave the chart. Fills, stops, and AI exits land in Order History. Morning/IB
+          books ask for confirm at lunch; cash close auto-liquidates lunch-range and leftovers.
         </p>
       </div>
     </div>

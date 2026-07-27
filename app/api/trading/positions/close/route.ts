@@ -39,7 +39,7 @@ export async function POST(request: Request): Promise<NextResponse<ClosePosition
 
     // Validate exit reason
     if (
-      !['stop_hit', 'manual', 'lunch_close', 'ai_signal', 'take_profit', 'limit_expired'].includes(
+      !['stop_hit', 'manual', 'lunch_close', 'cash_close', 'ai_signal', 'take_profit', 'limit_expired'].includes(
         body.exit_reason
       )
     ) {
@@ -364,13 +364,15 @@ export async function POST(request: Request): Promise<NextResponse<ClosePosition
     })
 
     const messagePrefix =
-      body.exit_reason === 'lunch_close'
-        ? '🍽️ LUNCH CLOSE'
-        : body.exit_reason === 'stop_hit'
-          ? '🛑 STOP LOSS'
-          : body.exit_reason === 'ai_signal'
-            ? '🤖 AI SIGNAL'
-            : '📍 POSITION CLOSED'
+      body.exit_reason === 'cash_close'
+        ? '💵 CASH CLOSE'
+        : body.exit_reason === 'lunch_close'
+          ? '🍽️ LUNCH CLOSE'
+          : body.exit_reason === 'stop_hit'
+            ? '🛑 STOP LOSS'
+            : body.exit_reason === 'ai_signal'
+              ? '🤖 AI SIGNAL'
+              : '📍 POSITION CLOSED'
 
     return NextResponse.json(
       {

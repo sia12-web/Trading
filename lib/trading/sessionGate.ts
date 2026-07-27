@@ -12,8 +12,9 @@
  *   NY:  open 09:30 · entry→10:15 · IB 10:30–11:30 · lunch-range 13:30–16:00 ET
  *   Tokyo: open 09:00 · entry→09:45 · IB 10:00–11:30 · lunch-range 13:30–15:00 JST
  *
- * Chart stream: cash open − 30m through marketClose. Lunch flatten closes open books
- * at lunchClose. SIMULATION: morning only (resolveSimMorningGate).
+ * Chart stream: cash open − 30m through marketClose. Morning/IB books are not
+ * auto-flattened at lunchClose — trader confirms. Cash close auto-liquidates
+ * lunch-range fills and any leftover opens. SIMULATION: morning only.
  */
 
 import { getESTTimeString, parseTimeToSeconds } from '@/lib/utils/timeUtils'
