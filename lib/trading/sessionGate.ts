@@ -876,8 +876,8 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       message: inEntryWindow
         ? canAttempt
           ? market === 'TOKYO'
-            ? `Tokyo entry ${entryRange} — attempt ${book.attemptsUsed + 1}/${MAX_SESSION_ATTEMPTS}. Click a ${locked} level (until ${entryUntil}). Working limits do not count until filled.`
-            : `Entry window ${entryWindow ?? '—'}/3 — attempt ${book.attemptsUsed + 1}/${MAX_SESSION_ATTEMPTS}. Click a ${locked} level (until ${entryUntil}). Working limits do not count until filled.`
+            ? `Tokyo entry ${entryRange} — Attempts ${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS} used. Click a ${locked} level (until ${entryUntil}). Working limits do not count until filled.`
+            : `Entry window ${entryWindow ?? '—'}/3 — Attempts ${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS} used. Click a ${locked} level (until ${entryUntil}). Working limits do not count until filled.`
           : book.lockReason ||
             `No attempts left (${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS}). Trading locked.`
         : `Entry window closed (${entryUntil}). Levels cleared — manage an open position if you have one; otherwise wait for lunch.`,
@@ -1007,7 +1007,7 @@ export function resolveSimMorningGate(input: {
       canManagePosition: false,
       message: inEntry
         ? canAttempt
-          ? `Entry window — attempt ${book.attemptsUsed + 1}/${MAX_SESSION_ATTEMPTS}. Click a ${instrument} level. Working limits do not count until filled.`
+          ? `Entry window — Attempts ${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS} used. Click a ${instrument} level. Working limits do not count until filled.`
           : book.lockReason || 'No attempts left. Trading locked.'
         : `Entry window closed. Levels off — manage if in a trade; otherwise wait for lunch.`,
     }

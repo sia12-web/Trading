@@ -261,23 +261,29 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       )
     }
 
-    // Dynamic Account Size: Prefer live OANDA account NAV / balance, or DESK_ACCOUNT_SIZE / client value
-    let rawAccountSize = body.account_size
+    // Live OANDA equity wins for real sizing — do not let DESK_ACCOUNT_SIZE
+    // override broker NAV (that inflated playbook risk to a fake 100k).
+    let accountSize: number | null = null
     if (isOandaConfigured()) {
       const oandaRes = await getOandaAccountSummary()
       if (oandaRes.ok && oandaRes.account) {
-        const liveNav = oandaRes.account.balance ?? oandaRes.account.NAV
-        if (liveNav && liveNav > 0) {
-          rawAccountSize = liveNav
+        const liveNav = Number(oandaRes.account.NAV ?? oandaRes.account.balance)
+        if (Number.isFinite(liveNav) && liveNav >= 100 && liveNav <= 10_000_000) {
+          accountSize = Math.round(liveNav * 100) / 100
+          logger.info('POST /api/trading/positions/open: using live OANDA NAV', {
+            accountSize,
+            balance: oandaRes.account.balance,
+            NAV: oandaRes.account.NAV,
+          })
         }
       }
     }
-
-    const accountSize = resolveDeskAccountSize(rawAccountSize)
+    if (accountSize == null) {
+      accountSize = resolveDeskAccountSize(body.account_size)
+    }
     if (accountSize == null) {
       logger.error('POST /api/trading/positions/open: Invalid account size', {
         size: body.account_size,
-        rawAccountSize,
       })
       return NextResponse.json(
         {
@@ -290,7 +296,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
           risk_amount: 0,
           entry_direction: body.entry_direction,
           entry_window: body.entry_window,
-          message: 'Account size must be between $100 and $10,000,000 (or set DESK_ACCOUNT_SIZE)',
+          message: 'Account size must be between $100 and $10,000,000 (live OANDA NAV preferred)',
         },
         { status: 400 }
       )

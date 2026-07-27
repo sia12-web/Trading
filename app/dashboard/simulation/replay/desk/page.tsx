@@ -2655,6 +2655,8 @@ function SimulationDeskInner() {
           levelPrice={manualClickPrice ?? lastPrice ?? ticketLevel?.level ?? 0}
           entrySource="manual"
           levelType="manual"
+          useLiveAccount={false}
+          initialAccountSize={accountSize}
           regime={
             overnightBias?.bias === 'bearish'
               ? 'bearish'

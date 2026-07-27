@@ -74,6 +74,13 @@ interface Props {
   regimeConfidence: number
   canPlace: boolean
   entryWindow: 1 | 2 | 3
+  /**
+   * Live desk: fetch OANDA NAV for sizing (default true).
+   * Simulation: set false and pass initialAccountSize (paper equity).
+   */
+  useLiveAccount?: boolean
+  /** Fallback / sim equity before live NAV loads */
+  initialAccountSize?: number
   onClose: () => void
   /** Called when the working limit is accepted — NOT when filled. */
   onPlaced: (order: PendingLimitOrder) => void
@@ -97,6 +104,8 @@ export function LevelOrderTicket({
   regimeConfidence,
   canPlace,
   entryWindow,
+  useLiveAccount = true,
+  initialAccountSize,
   onClose,
   onPlaced,
 }: Props) {
@@ -131,7 +140,18 @@ export function LevelOrderTicket({
   const suggested: Direction =
     fromLevel ?? (regime === 'bearish' ? 'SHORT' : 'LONG')
   const [direction, setDirection] = useState<Direction>(suggested)
-  const [accountSize, setAccountSize] = useState(100000)
+  const seedAccount =
+    typeof initialAccountSize === 'number' &&
+    Number.isFinite(initialAccountSize) &&
+    initialAccountSize >= 100
+      ? initialAccountSize
+      : 100000
+  const [accountSize, setAccountSize] = useState(seedAccount)
+  const [accountSource, setAccountSource] = useState<'live' | 'paper' | 'fallback'>(
+    useLiveAccount ? 'fallback' : 'paper'
+  )
+  const [accountLoading, setAccountLoading] = useState(useLiveAccount)
+  const [marginAvailable, setMarginAvailable] = useState<number | null>(null)
   const [limitPrice, setLimitPrice] = useState(levelPrice)
   const [stopInput, setStopInput] = useState(() =>
     isManual
@@ -147,6 +167,57 @@ export function LevelOrderTicket({
   useEffect(() => {
     setDirection(suggested)
   }, [suggested, levelPrice])
+
+  // Live desk: size from real OANDA NAV (same equity the open API uses)
+  useEffect(() => {
+    if (!useLiveAccount) {
+      setAccountSource('paper')
+      setAccountLoading(false)
+      if (
+        typeof initialAccountSize === 'number' &&
+        Number.isFinite(initialAccountSize) &&
+        initialAccountSize >= 100
+      ) {
+        setAccountSize(initialAccountSize)
+      }
+      return
+    }
+
+    let cancelled = false
+    setAccountLoading(true)
+    fetch('/api/trading/oanda/status')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.ok) {
+          if (!cancelled) {
+            setAccountSource('fallback')
+            setAccountLoading(false)
+          }
+          return
+        }
+        const nav = Number(data.NAV ?? data.balance)
+        const free = Number(data.marginAvailable)
+        if (Number.isFinite(nav) && nav >= 100) {
+          setAccountSize(Math.round(nav * 100) / 100)
+          setAccountSource('live')
+        } else {
+          setAccountSource('fallback')
+        }
+        if (Number.isFinite(free) && free >= 0) {
+          setMarginAvailable(Math.round(free * 100) / 100)
+        }
+        setAccountLoading(false)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAccountSource('fallback')
+          setAccountLoading(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [useLiveAccount, initialAccountSize])
 
   useEffect(() => {
     const snappedLimit = snapDeskPrice(instrument, levelPrice)
@@ -202,6 +273,10 @@ export function LevelOrderTicket({
 
   const submit = () => {
     if (placingRef.current) return
+    if (useLiveAccount && accountLoading) {
+      setError('Wait for live OANDA equity to load before placing')
+      return
+    }
     if (!canPlace) {
       setError(
         'Entries locked — morning session only, max 2 filled attempts, locked instrument'
@@ -373,14 +448,42 @@ export function LevelOrderTicket({
         </div>
 
         <label className="mt-4 block text-[10px] uppercase tracking-wider text-gray-500">
-          Account size ({deskCurrencyLabel()})
+          {accountSource === 'live'
+            ? `Live OANDA NAV (${deskCurrencyLabel()})`
+            : accountSource === 'paper'
+              ? `Paper account (${deskCurrencyLabel()})`
+              : `Account size (${deskCurrencyLabel()})`}
           <input
             type="number"
             value={accountSize}
-            onChange={(e) => setAccountSize(Number(e.target.value) || 0)}
-            className="mt-1 w-full rounded-lg border border-[#30363d] bg-[#0d1117] px-3 py-2 text-sm text-white price-mono"
+            readOnly={accountSource === 'live'}
+            onChange={(e) => {
+              if (accountSource === 'live') return
+              setAccountSize(Number(e.target.value) || 0)
+            }}
+            className={`mt-1 w-full rounded-lg border border-[#30363d] bg-[#0d1117] px-3 py-2 text-sm text-white price-mono ${
+              accountSource === 'live' ? 'opacity-90 cursor-default' : ''
+            }`}
           />
         </label>
+        {accountLoading && (
+          <p className="mt-1 text-[10px] text-sky-400/90">Loading live OANDA equity…</p>
+        )}
+        {!accountLoading && accountSource === 'live' && (
+          <p className="mt-1 text-[10px] text-emerald-400/90">
+            Risk = {riskPct}% of live NAV
+            {marginAvailable != null
+              ? ` · free margin ${formatDeskMoney(marginAvailable)}`
+              : ''}
+            {' '}(server re-checks OANDA on place)
+          </p>
+        )}
+        {!accountLoading && accountSource === 'fallback' && useLiveAccount && (
+          <p className="mt-1 text-[10px] text-amber-300/90">
+            OANDA NAV unavailable — edit size carefully; place still prefers live equity when
+            connected.
+          </p>
+        )}
 
         {isManual && (
           <>
@@ -476,15 +579,17 @@ export function LevelOrderTicket({
           </button>
           <button
             type="button"
-            disabled={!canPlace || !preview || placing}
+            disabled={!canPlace || !preview || placing || (useLiveAccount && accountLoading)}
             onClick={submit}
             className="flex-[2] rounded-lg bg-sky-600 py-2.5 text-sm font-semibold text-white disabled:opacity-40 hover:bg-sky-500"
           >
             {!canPlace
               ? 'Trading locked'
-              : placing
-                ? 'Placing…'
-                : 'Place working limit'}
+              : useLiveAccount && accountLoading
+                ? 'Loading equity…'
+                : placing
+                  ? 'Placing…'
+                  : 'Place working limit'}
           </button>
         </div>
       </div>
