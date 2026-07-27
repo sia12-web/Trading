@@ -18,7 +18,8 @@ DEEP TRADEPULSE ARCHITECTURE & SESSION CLOCK KNOWLEDGE
 - **Active Management Phase** (Post-fill until exit): Monitoring SL/TP targets & AI Reversal exits.
 - **Morning lunch (11:30 local):** Morning/IB books are NOT auto-flattened — trader confirms close or keeps the book open.
 - **Cash-close auto-liquidation** (NY 16:00 ET / Tokyo 15:00 JST): Lunch-range fills and any leftover morning/IB positions are force-closed.
-- **Afternoon Session** (NY: 13:30-16:00 ET | Tokyo: 13:30-15:00 JST): Lunch-range unlock only if morning+IB still unused; then cash-close flatten.
+- **Afternoon Session** (NY: 13:30-15:15 ET | Tokyo: 13:30-15:00 JST): Lunch-range unlock only if morning+IB still unused; after entry window ends → manage-only until cash-close flatten.
+- **IB entry** (NY/Tokyo local 10:15-10:45): Only if morning fills still 0; then manage-only.
 - **Risk Discipline Rules**: Single active position lock (max 1 position at a time). Max 2 filled attempts per morning session (each fill counts whether you exit via stop or take-profit; 2 stop hits also lock). Working limits do not count until filled.
 - **Position Geometry**: 5% risk on AI/structure levels, 1% on manual level pins. Mandatory Stop Loss & Take Profit on every trade.
 - **Confluence MVP Filter**: Levels MUST have $\ge 2$ of 3 pillars (AVWAP bands, Volume Profile POC/HVN, Stop Pool sweeps). Single-factor levels are discarded as retail bait.

@@ -7,13 +7,14 @@ import {
   resolveSessionGate,
   resolveRangeStrategy,
   NY_IB_STRATEGY_START,
+  NY_IB_STRATEGY_END,
   NY_LUNCH_RANGE_ENTRY_START,
+  NY_LUNCH_RANGE_ENTRY_END,
   TOKYO_IB_STRATEGY_START,
+  TOKYO_IB_STRATEGY_END,
   TOKYO_LUNCH_RANGE_ENTRY_START,
-  parseTimeToSeconds,
+  TOKYO_LUNCH_RANGE_ENTRY_END,
 } from '../lib/trading/sessionGate'
-
-// parseTimeToSeconds is from timeUtils — import correctly
 import { parseTimeToSeconds as pts } from '../lib/utils/timeUtils'
 
 const TESTS_PASSED: string[] = []
@@ -54,7 +55,7 @@ const gateBase = {
   stopLossHitCount: 0,
 }
 
-test('resolveRangeStrategy clocks: NY IB 10:30–11:30, lunch-range 13:30–16:00', () => {
+test('resolveRangeStrategy clocks: NY IB 10:15–10:45, lunch-range 13:30–15:15', () => {
   assert(
     resolveRangeStrategy({
       market: 'NY',
@@ -66,7 +67,7 @@ test('resolveRangeStrategy clocks: NY IB 10:30–11:30, lunch-range 13:30–16:0
   assert(
     resolveRangeStrategy({
       market: 'NY',
-      timeSec: pts('11:29:00'),
+      timeSec: pts('10:44:00'),
       attemptsUsed: 0,
     }) === 'ib',
     'NY IB late'
@@ -74,10 +75,18 @@ test('resolveRangeStrategy clocks: NY IB 10:30–11:30, lunch-range 13:30–16:0
   assert(
     resolveRangeStrategy({
       market: 'NY',
-      timeSec: pts('11:30:00'),
+      timeSec: pts(NY_IB_STRATEGY_END),
       attemptsUsed: 0,
     }) === null,
-    'NY lunch flatten not IB'
+    'NY IB ended at 10:45'
+  )
+  assert(
+    resolveRangeStrategy({
+      market: 'NY',
+      timeSec: pts('11:00:00'),
+      attemptsUsed: 0,
+    }) === null,
+    'NY after IB manage/watch'
   )
   assert(
     resolveRangeStrategy({
@@ -90,14 +99,22 @@ test('resolveRangeStrategy clocks: NY IB 10:30–11:30, lunch-range 13:30–16:0
   assert(
     resolveRangeStrategy({
       market: 'NY',
-      timeSec: pts('15:59:00'),
+      timeSec: pts('15:14:00'),
       attemptsUsed: 0,
     }) === 'lunch_range',
     'NY lunch-range late'
   )
+  assert(
+    resolveRangeStrategy({
+      market: 'NY',
+      timeSec: pts(NY_LUNCH_RANGE_ENTRY_END),
+      attemptsUsed: 0,
+    }) === null,
+    'NY lunch-range ended 15:15'
+  )
 })
 
-test('resolveRangeStrategy clocks: Tokyo IB 10:00–11:30, lunch-range 13:30–15:00', () => {
+test('resolveRangeStrategy clocks: Tokyo IB 10:15–10:45, lunch-range 13:30–15:00', () => {
   assert(
     resolveRangeStrategy({
       market: 'TOKYO',
@@ -109,10 +126,18 @@ test('resolveRangeStrategy clocks: Tokyo IB 10:00–11:30, lunch-range 13:30–1
   assert(
     resolveRangeStrategy({
       market: 'TOKYO',
+      timeSec: pts(TOKYO_IB_STRATEGY_END),
+      attemptsUsed: 0,
+    }) === null,
+    'Tokyo IB end'
+  )
+  assert(
+    resolveRangeStrategy({
+      market: 'TOKYO',
       timeSec: pts('09:30:00'),
       attemptsUsed: 0,
     }) === null,
-    'Tokyo before IB shaped'
+    'Tokyo before IB'
   )
   assert(
     resolveRangeStrategy({
@@ -133,34 +158,43 @@ test('resolveRangeStrategy clocks: Tokyo IB 10:00–11:30, lunch-range 13:30–1
   assert(
     resolveRangeStrategy({
       market: 'TOKYO',
-      timeSec: pts('15:00:00'),
+      timeSec: pts(TOKYO_LUNCH_RANGE_ENTRY_END),
       attemptsUsed: 0,
     }) === null,
-    'Tokyo at cash close'
+    'Tokyo lunch-range end'
   )
 })
 
-test('NY: morning unused → IB unlock at 10:30; used morning blocks IB', () => {
+test('NY: morning unused → IB unlock 10:15–10:45; used morning blocks IB', () => {
   const ib = resolveSessionGate({
     ...gateBase,
-    now: etDate(2026, 7, 15, 10, 45),
+    now: etDate(2026, 7, 15, 10, 30),
     viewingInstrument: 'DOW',
   })
   assert(ib.canPlaceEntry === true, 'IB can place')
   assert(ib.rangeStrategy === 'ib', 'IB strategy')
   assert(/IB strategy unlocked/i.test(ib.message), ib.message)
 
+  const afterIb = resolveSessionGate({
+    ...gateBase,
+    now: etDate(2026, 7, 15, 11, 0),
+    viewingInstrument: 'DOW',
+  })
+  assert(afterIb.canPlaceEntry === false, 'after 10:45 no IB entry')
+  assert(afterIb.rangeStrategy === null, 'no strategy after IB')
+  assert(/IB entry closed/i.test(afterIb.message), afterIb.message)
+
   const blocked = resolveSessionGate({
     ...gateBase,
     attemptsUsed: 1,
-    now: etDate(2026, 7, 15, 10, 45),
+    now: etDate(2026, 7, 15, 10, 30),
     viewingInstrument: 'DOW',
   })
   assert(blocked.canPlaceEntry === false, 'morning used → no IB')
   assert(blocked.rangeStrategy === null, 'no strategy')
 })
 
-test('NY: still 0 fills → lunch-range unlock after 13:30; watch-only before', () => {
+test('NY: lunch-range 13:30–15:15; manage-only after 15:15', () => {
   const wait = resolveSessionGate({
     ...gateBase,
     now: etDate(2026, 7, 15, 12, 0),
@@ -176,18 +210,18 @@ test('NY: still 0 fills → lunch-range unlock after 13:30; watch-only before', 
   })
   assert(ln.canPlaceEntry === true, '14:00 lunch-range place')
   assert(ln.rangeStrategy === 'lunch_range', 'lunch_range')
-  assert(/Lunch-range strategy unlocked/i.test(ln.message), ln.message)
 
-  const used = resolveSessionGate({
+  const afterLn = resolveSessionGate({
     ...gateBase,
-    attemptsUsed: 1,
-    now: etDate(2026, 7, 15, 14, 0),
+    now: etDate(2026, 7, 15, 15, 30),
     viewingInstrument: 'DOW',
   })
-  assert(used.canPlaceEntry === false, 'fill used → watch')
+  assert(afterLn.canPlaceEntry === false, '15:30 manage-only')
+  assert(afterLn.rangeStrategy === null, 'no lunch-range after 15:15')
+  assert(/Lunch-range entry closed/i.test(afterLn.message), afterLn.message)
 })
 
-test('Nikkei: IB at 10:00 JST; lunch-range 13:30–15:00 JST', () => {
+test('Nikkei: IB 10:15–10:45 JST; lunch-range to 15:00 JST', () => {
   const ib = resolveSessionGate({
     lockedInstrument: 'NIKKEI',
     viewingInstrument: 'NIKKEI',
@@ -195,11 +229,8 @@ test('Nikkei: IB at 10:00 JST; lunch-range 13:30–15:00 JST', () => {
     attendedToday: true,
     attemptsUsed: 0,
     stopLossHitCount: 0,
-    now: jstDate(2026, 7, 15, 10, 15),
+    now: jstDate(2026, 7, 15, 10, 30),
   })
-  assert(ib.market === 'TOKYO' || ib.lockedInstrument === 'NIKKEI', 'tokyo desk')
-  // Focus market may be NY if both windows overlap in UTC — force via viewing when Tokyo focus
-  // At 10:15 JST = 01:15 UTC, NY is previous evening — Tokyo focus should win
   assert(ib.canPlaceEntry === true, `Nikkei IB place: ${ib.message}`)
   assert(ib.rangeStrategy === 'ib', `got ${ib.rangeStrategy}`)
 
