@@ -369,19 +369,19 @@ export function SessionBanner({
       {gate.clockedIn && (
         <span
           className={`rounded px-2 py-0.5 font-semibold tabular-nums ${
-            gate.revengeLocked ||
             gate.dayLocked ||
-            (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? 4)
+            (gate.morningAttempts ?? 0) > 0 ||
+            (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? 3)
               ? 'bg-red-500/25 text-red-200'
               : 'bg-sky-500/20 text-sky-200'
           }`}
-          title="Day max 4 fills: Morning 2 + IB 1 + Lunch-range 1. Working limits do not count. 2 morning stop-outs = revenge lock (IB+lunch off). Any IB fill turns lunch off."
+          title="Day max 3 fills: Morning 1 + IB 1 + Lunch-range 1. Skip-forward allowed. Any fill (SL, TP, or open book) locks later windows. Lunch 11:30 is confirm-close; unconfirmed books ride to cash close. Working limits do not count until filled."
         >
           {gate.attemptLadderLabel ||
-            `Day ${gate.attemptsUsed ?? 0}/${gate.maxAttempts ?? 4} · AM ${gate.morningAttempts ?? 0}/${gate.maxMorningAttempts ?? 2} · IB ${gate.ibAttempts ?? 0}/${gate.maxIbAttempts ?? 1} · LN ${gate.lunchAttempts ?? 0}/${gate.maxLunchAttempts ?? 1}`}
-          {gate.revengeLocked ? ' · REVENGE' : ''}
+            `Day ${gate.attemptsUsed ?? 0}/${gate.maxAttempts ?? 3} · AM ${gate.morningAttempts ?? 0}/${gate.maxMorningAttempts ?? 1} · IB ${gate.ibAttempts ?? 0}/${gate.maxIbAttempts ?? 1} · LN ${gate.lunchAttempts ?? 0}/${gate.maxLunchAttempts ?? 1}`}
+          {(gate.morningAttempts ?? 0) > 0 ? ' · LOCKED' : ''}
           {(gate.stopHits ?? 0) > 0
-            ? ` · Stops ${gate.stopHits}/${gate.maxStopHits ?? 2}`
+            ? ` · Stops ${gate.stopHits}/${gate.maxStopHits ?? 1}`
             : ''}
         </span>
       )}

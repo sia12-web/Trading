@@ -42,6 +42,7 @@ import {
   sessionFor,
   type DeskInstrument,
 } from '@/lib/trading/sessionGate'
+import { attemptLadderFromCounts } from '@/lib/trading/attemptLadder'
 import {
   deskPlaybookTitle,
   resolveDeskPlaybookMode,
@@ -62,6 +63,8 @@ export type LiveVoiceContextLevel = {
   reasoning: string | null
   source: 'ai' | 'structure'
   marketVerdict: string | null
+  testedCount: number | null
+  successCount: number | null
 }
 
 export type LiveVoiceDeskContext = {
@@ -77,6 +80,15 @@ export type LiveVoiceDeskContext = {
     maxAttempts: number
     stopHits: number
     maxStopHits: number
+    morningAttempts: number
+    ibAttempts: number
+    lunchAttempts: number
+    maxMorningAttempts: number
+    maxIbAttempts: number
+    maxLunchAttempts: number
+    ibEligible: boolean
+    lunchEligible: boolean
+    attemptLadderLabel: string
     openPositionId: string | null
     entryWindow: 1 | 2 | 3 | null
     rangeStrategy: 'ib' | 'lunch_range' | null
@@ -176,6 +188,8 @@ function toContextLevel(l: DeskLevel): LiveVoiceContextLevel {
     reasoning: l.reasoning?.trim() ? l.reasoning : null,
     source: l.source,
     marketVerdict: l.marketVerdict ?? null,
+    testedCount: l.testedCount ?? null,
+    successCount: l.successCount ?? null,
   }
 }
 
@@ -449,12 +463,23 @@ export async function buildLiveVoiceDeskContext(
         ? userPins[0]!.price
         : null
 
+  const morningAttempts = gate.morningAttempts ?? 0
+  const ibAttempts = gate.ibAttempts ?? 0
+  const lunchAttempts = gate.lunchAttempts ?? 0
+  const maxMorningAttempts = gate.maxMorningAttempts ?? 1
+  const maxIbAttempts = gate.maxIbAttempts ?? 1
+  const maxLunchAttempts = gate.maxLunchAttempts ?? 1
+  const ladder = attemptLadderFromCounts({
+    morningAttempts,
+    ibAttempts,
+    lunchAttempts,
+    morningStopHits: gate.stopHits ?? stopHits,
+  })
   const playbookMode = resolveDeskPlaybookMode({
     instrument: contextInstrument,
     now,
-    attemptsUsed: gate.attemptsUsed ?? attemptsUsed,
-    stopHits: gate.stopHits ?? stopHits,
     rangeStrategy: gate.rangeStrategy,
+    ladder,
   })
 
   return {
@@ -470,6 +495,17 @@ export async function buildLiveVoiceDeskContext(
       maxAttempts: gate.maxAttempts ?? MAX_DAY_ATTEMPTS,
       stopHits: gate.stopHits ?? stopHits,
       maxStopHits: gate.maxStopHits ?? MAX_STOP_HITS,
+      morningAttempts,
+      ibAttempts,
+      lunchAttempts,
+      maxMorningAttempts,
+      maxIbAttempts,
+      maxLunchAttempts,
+      ibEligible: ladder.ibEligible,
+      lunchEligible: ladder.lunchEligible,
+      attemptLadderLabel:
+        gate.attemptLadderLabel ||
+        `Day ${gate.attemptsUsed ?? attemptsUsed}/${gate.maxAttempts ?? MAX_DAY_ATTEMPTS} · AM ${morningAttempts}/${maxMorningAttempts} · IB ${ibAttempts}/${maxIbAttempts} · LN ${lunchAttempts}/${maxLunchAttempts}`,
       openPositionId: openPos?.id ?? null,
       entryWindow: gate.entryWindow,
       rangeStrategy: gate.rangeStrategy ?? null,
@@ -494,7 +530,7 @@ export async function buildLiveVoiceDeskContext(
       maxAttempts: MAX_DAY_ATTEMPTS,
       maxStopHits: MAX_STOP_HITS,
       entryRule:
-        'Day max 4 fills: Morning playbook ≤2, IB ≤1 (if morning ≤1 and not revenge), Lunch-range ≤1 (only if IB unused/skipped). Revenge: 2 morning stop-outs → IB+lunch off. Any IB fill (SL or TP) turns lunch-range off. Working limits do not count until filled. Voice never places orders.',
+        'Day max 3 fills (AM 1 + IB 1 + LN 1). Skip-forward: skip morning → IB; skip IB → lunch-range. Any fill (SL, TP, or still-open filled book) locks later windows — no second attempt in that window. Working limits do not count until filled. Lunch 11:30 is confirm-close only (not auto-flatten); if you keep the morning/IB book open it rides to cash-close flatten (NY 16:00 / Tokyo 15:00) and later windows stay locked. Voice never places orders.',
     },
     avwap: {
       openLabel: clock.openLabel,

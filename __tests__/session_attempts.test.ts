@@ -1,5 +1,5 @@
 /**
- * Attempts = filled trades (max 2). Working limits do not count.
+ * Attempts = filled trades (max 1 morning). Working limits do not count.
  * Exit via stop OR take-profit still used that attempt.
  * Run: npx tsx __tests__/session_attempts.test.ts
  */
@@ -15,8 +15,8 @@ function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(msg)
 }
 
-assert(MAX_SESSION_ATTEMPTS === 2, 'max attempts must be 2')
-assert(MAX_STOP_HITS === 2, 'max stops must be 2')
+assert(MAX_SESSION_ATTEMPTS === 1, 'max attempts must be 1')
+assert(MAX_STOP_HITS === 1, 'max stops must be 1')
 
 {
   const fresh = evaluateSessionAttempts({ attemptsUsed: 0, stopHits: 0 })
@@ -25,13 +25,11 @@ assert(MAX_STOP_HITS === 2, 'max stops must be 2')
 }
 
 {
-  // Working limit / no fills — still open
   const noFills = evaluateSessionAttempts({ attemptsUsed: 0, stopHits: 0 })
   assert(!noFills.entriesLocked, 'no fills → can place')
 }
 
 {
-  // One fill open = in a trade (manage only)
   const inTrade = evaluateSessionAttempts({
     attemptsUsed: 1,
     stopHits: 0,
@@ -42,42 +40,26 @@ assert(MAX_STOP_HITS === 2, 'max stops must be 2')
 }
 
 {
-  // One fill closed via TP — attempt used, can take second
+  // One fill closed via TP — morning done
   const afterTp = evaluateSessionAttempts({
     attemptsUsed: 1,
     stopHits: 0,
     hasOpenPosition: false,
   })
-  assert(!afterTp.entriesLocked, 'after TP — second attempt allowed')
-  assert(!afterTp.sessionDone, 'one attempt left')
+  assert(afterTp.entriesLocked, 'after TP — morning locked')
+  assert(afterTp.sessionDone, 'morning attempt used')
 }
 
 {
-  // One fill closed via SL — attempt used, can take second
+  // One fill closed via SL — morning done
   const afterSl = evaluateSessionAttempts({
     attemptsUsed: 1,
     stopHits: 1,
     hasOpenPosition: false,
   })
-  assert(!afterSl.entriesLocked, 'after one stop — second attempt allowed')
-  assert(!afterSl.sessionDone, 'one attempt left')
-}
-
-{
-  const twoAttemptsFlat = evaluateSessionAttempts({
-    attemptsUsed: 2,
-    stopHits: 0,
-    hasOpenPosition: false,
-  })
-  assert(twoAttemptsFlat.sessionDone, 'two fills (e.g. two TPs) → session done')
-  assert(twoAttemptsFlat.entriesLocked, 'two fills blocks entries')
-}
-
-{
-  const twoStops = evaluateSessionAttempts({ attemptsUsed: 2, stopHits: 2 })
-  assert(twoStops.sessionDone, 'two stops locks the session')
-  assert(twoStops.entriesLocked, 'two stops blocks entries')
-  assert(!!twoStops.lockReason?.includes('Revenge'), 'lock reason mentions revenge')
+  assert(afterSl.entriesLocked, 'after one stop — morning locked')
+  assert(afterSl.sessionDone, 'morning attempt used')
+  assert(!!afterSl.lockReason?.includes('Morning'), 'lock reason mentions morning')
 }
 
 {
@@ -86,11 +68,12 @@ assert(MAX_STOP_HITS === 2, 'max stops must be 2')
     now: morning,
     instrument: 'NASDAQ',
     hasOpenPosition: false,
-    attemptsUsed: 2,
-    stopHits: 2,
+    attemptsUsed: 1,
+    stopHits: 0,
   })
-  assert(gate.phase === 'DONE', `expected DONE after 2 attempts, got ${gate.phase}`)
-  assert(gate.canPlaceEntry === false, 'cannot place after 2 attempts')
+  assert(gate.phase === 'DONE', `expected DONE after 1 attempt, got ${gate.phase}`)
+  assert(gate.canPlaceEntry === false, 'cannot place after 1 attempt')
+  assert(gate.revengeLocked === false, 'revenge always false')
 }
 
 {
@@ -99,27 +82,11 @@ assert(MAX_STOP_HITS === 2, 'max stops must be 2')
     now: morning,
     instrument: 'NASDAQ',
     hasOpenPosition: false,
-    attemptsUsed: 1,
+    attemptsUsed: 0,
     stopHits: 0,
   })
-  assert(gate.phase === 'ENTRY', `expected ENTRY for second attempt, got ${gate.phase}`)
-  assert(gate.canPlaceEntry === true, 'second attempt after one TP/fill')
-  assert(gate.revengeLocked === false, 'not revenge after one fill')
-}
-
-{
-  // Revenge: 2 morning stop-outs
-  const morning = new Date('2026-07-14T14:00:00.000Z')
-  const gate = resolveSimMorningGate({
-    now: morning,
-    instrument: 'DOW',
-    hasOpenPosition: false,
-    attemptsUsed: 2,
-    stopHits: 2,
-  })
-  assert(gate.revengeLocked === true, '2 stops → revenge')
-  assert(gate.canPlaceEntry === false, 'revenge blocks entries')
-  assert(!!gate.message?.toLowerCase().includes('revenge') || !!gate.message?.includes('Morning'), 'message mentions lock')
+  assert(gate.phase === 'ENTRY', `expected ENTRY fresh, got ${gate.phase}`)
+  assert(gate.canPlaceEntry === true, 'fresh morning can place')
 }
 
 {

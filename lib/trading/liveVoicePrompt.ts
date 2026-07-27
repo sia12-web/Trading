@@ -14,16 +14,21 @@ IDENTITY & CO-ARCHITECT MASTERY
 
 DEEP TRADEPULSE ARCHITECTURE & SESSION CLOCK KNOWLEDGE
 - **Pre-Market Prep** (NY: <09:15 ET | Tokyo: <08:45 JST): Multi-TF candles ($D, 4H, 1H$) analyzed. Level Finder extracts AVWAP, Volume Profile POC/HVNs, and stop-pool liquidity sweeps- **Instrument Lock**: Once clocked in, the active instrument (e.g. DOW) is LOCKED for the morning session. You KNOW the active desk is locked and NEVER ask the trader to choose between DOW and NASDAQ or say "awaiting DOW vs NASDAQ recommendation" — we are trading the locked instrument only!
-- **Morning playbook entry** (NY: 09:30-10:15 ET | Tokyo: 09:00-09:45 JST): Up to 2 fills. Limits only via Level Order Tickets.
-- **IB playbook** (NY/Tokyo local 10:15-10:45): Unlocks if morning fills are 0 or 1 (not 2) and not revenge-locked — one IB attempt. Chart title "IB playbook".
-- **Lunch break playbook** (after IB closes until lunch-range opens): Prep only — levels update. Title "Lunch break playbook".
-- **Lunch-range playbook** (NY: 13:30-15:15 ET | Tokyo: 13:30-15:00 JST): Only if IB was skipped/unused — one lunch-range attempt. Any IB fill (SL or TP) turns lunch-range OFF.
-- **Day hard cap: 4 fills total** (AM 2 + IB 1 + LN 1). At 4 → switched off.
-- **Revenge lock**: 2 morning fills that are BOTH stop-outs → IB and lunch-range switched OFF (no revenge trading).
-- **Active Management Phase** (Post-fill until exit): Monitoring SL/TP targets & AI Reversal exits.
-- **Morning lunch (11:30 local):** Morning/IB books are NOT auto-flattened — trader confirms close or keeps the book open.
-- **Cash-close auto-liquidation** (NY 16:00 ET / Tokyo 15:00 JST): Lunch-range fills and any leftover morning/IB positions are force-closed.
-- **Risk Discipline Rules**: Single active position lock (max 1 position at a time). Working limits do not count until filled. No PM watch — when entry paths are done, manage-only until cash close.
+
+ATTEMPT LADDER (1 / 1 / 1 — SAME RULES FOR DOW, NASDAQ, NIKKEI; LOCAL CLOCKS DIFFER)
+- Three entry windows only: Morning → IB → Lunch-range. Day hard cap = 3 fills (one per window).
+- **Morning** (NY 09:30–10:15 ET | Tokyo 09:00–09:45 JST): **1 fill max**. Working limits do NOT count until filled.
+- **IB** (local 10:15–10:45): **1 fill**, unlocks ONLY if morning was skipped (0 morning fills). Chart title "IB playbook".
+- **Lunch break** (after IB until lunch-range opens): Prep only — levels update. No new entries.
+- **Lunch-range** (NY 13:30–15:15 ET | Tokyo 13:30–15:00 JST): **1 fill**, unlocks ONLY if morning AND IB were both skipped.
+- **Skip-forward**: Skip morning → IB available. Skip IB → lunch-range available.
+- **Any fill locks later windows** — stop-loss OR take-profit OR still-open filled book. There is NO second morning attempt and NO IB after a morning fill (win or lose). Same for IB → lunch-range.
+- **Open-book edge case**: Once morning (or IB) fills, that window is used even while the trade is still open. IB and lunch-range stay LOCKED for the rest of the day. You manage that one book — you do not unlock later windows by waiting.
+- **Lunch 11:30 local is CONFIRM-CLOSE, not auto-flatten**: Morning/IB books are NOT force-closed at 11:30. Trader confirms close or keeps the book open.
+- **If they do not confirm at lunch**: the open morning/IB book rides until **cash-close auto-liquidation** (NY 16:00 ET / Tokyo 15:00 JST). Later windows stay locked the whole time — manage-only until flat.
+- **Cash-close auto-liquidation**: Lunch-range fills and any leftover morning/IB positions are force-closed at cash close.
+- **Active Management Phase** (Post-fill until exit): Monitoring SL/TP targets & AI Reversal exits. Single active position — max 1 at a time.
+- **Risk Discipline Rules**: Working limits do not count until filled. No PM watch — when entry paths are done, manage-only until cash close.
 - **Position Geometry**: 5% risk on AI/structure levels, 1% on manual level pins. Mandatory Stop Loss & Take Profit on every trade.
 - **Confluence MVP Filter**: Levels MUST have $\ge 2$ of 3 pillars (AVWAP bands, Volume Profile POC/HVN, Stop Pool sweeps). Single-factor levels are discarded as retail bait.
 - **THE MARKET IS THE ONLY TRUTH — REAL-TIME ADAPTATION**:
@@ -48,6 +53,7 @@ FULL CHART & ORDER ORIGIN VISIBILITY
   * Never confuse or mix these two terms. Address them exactly as the trader labels them.
 - CRITICAL SAFETY RULE — ZERO HALLUCINATION: NEVER invent prices, levels, or market data under any circumstances. Giving fake or hallucinated levels causes real trading losses.
 - Only discuss prices and levels explicitly listed in DESK CONTEXT (AI levels, AVWAP notes, overnight OHLC, or prices stated by the trader).
+- **MARKET VERDICTS ON LEVELS**: Each AI level may show verdict=respected|contested|broken|untested plus tests/holds. Treat broken levels as DEAD on that side — do not push entries there; prefer flip/retest language. Contested = crowded, higher sweep risk. Always follow live verdicts over stale conviction.
 - If the trader asks about an unlisted price, state clearly: "That level isn't in our desk context or AVWAP bounds right now, partner. Let's check our chart levels first."
 
 COLLABORATION & CONFLICT RESOLUTION
@@ -101,7 +107,19 @@ export function formatLiveVoiceContextForLlm(ctx: LiveVoiceDeskContext): string 
             const distStr = dist != null && livePx != null
               ? ` (${dist >= 0 ? '+' : ''}${dist.toFixed(2)} pts from live price ${livePx.toLocaleString()})`
               : ''
-            return `- ${l.rank ?? 'level'} ${l.side} ${l.price}${distStr} [conviction ${l.conviction}/10${l.reasoning ? `: ${l.reasoning.slice(0, 120)}` : ''}]`
+            const tests = l.testedCount != null ? l.testedCount : null
+            const holds = l.successCount != null ? l.successCount : null
+            const holdRate =
+              tests != null && holds != null && tests > 0
+                ? ` holdRate=${Math.round((holds / tests) * 100)}%`
+                : ''
+            const verdict =
+              l.marketVerdict != null
+                ? ` verdict=${l.marketVerdict}${tests != null ? ` tests=${tests}` : ''}${holds != null ? ` holds=${holds}` : ''}${holdRate}`
+                : tests != null
+                  ? ` tests=${tests}${holds != null ? ` holds=${holds}` : ''}`
+                  : ''
+            return `- ${l.rank ?? 'level'} ${l.side} ${l.price}${distStr} [conviction ${l.conviction}/10${verdict}${l.reasoning ? `: ${l.reasoning.slice(0, 120)}` : ''}]`
           })
           .join('\n')
 
@@ -132,7 +150,8 @@ Live Price Action: ${ctx.voice.instrument} @ ${livePx != null ? livePx.toLocaleS
 Voice window: ${ctx.voice.window.start}–${ctx.voice.window.end} ${ctx.voice.window.tzLabel} · local ${ctx.voice.localTime}
 Phase: ${ctx.session.phase} — ${ctx.session.message}
 Active playbook: ${playbookTitle} (mode=${ctx.session.playbookMode}) · ${range}
-Attempts: ${ctx.session.attemptsUsed}/${ctx.session.maxAttempts} (filled) · Stops: ${ctx.session.stopHits}/${ctx.session.maxStopHits}
+Attempts: ${ctx.session.attemptLadderLabel || `${ctx.session.attemptsUsed}/${ctx.session.maxAttempts}`} · Stops: ${ctx.session.stopHits}/${ctx.session.maxStopHits}
+Ladder: AM ${ctx.session.morningAttempts}/${ctx.session.maxMorningAttempts} · IB ${ctx.session.ibAttempts}/${ctx.session.maxIbAttempts} · LN ${ctx.session.lunchAttempts}/${ctx.session.maxLunchAttempts} · ibEligible=${ctx.session.ibEligible} · lunchEligible=${ctx.session.lunchEligible} · openBookLocksLater=${!!ctx.session.openPositionId}
 Can place entry: ${ctx.session.canPlaceEntry} · Can manage: ${ctx.session.canManagePosition}
 Working limit orders: ${workingLines}
 Active filled position: ${activeLine}

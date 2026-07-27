@@ -183,15 +183,15 @@ export function deskPlaybookPanelTitle(
 export function deskPlaybookHint(mode: DeskPlaybookMode, _instrument?: string): string {
   switch (mode) {
     case 'ib':
-      return 'Initial Balance — 1 attempt. Day cap 4 (AM 2 + IB 1 + LN 1). IB fill turns lunch-range off.'
+      return 'Initial Balance — 1 attempt (only if morning skipped). Any IB fill turns lunch-range off.'
     case 'lunch_break':
-      return 'IB entry closed. Prep for lunch-range — levels update. Lunch opens only if IB was skipped.'
+      return 'IB entry closed. Prep for lunch-range — levels update. Lunch opens only if morning + IB were skipped.'
     case 'lunch_range':
       return 'Lunch-range — 1 attempt while the PM entry window is open.'
     case 'done':
-      return 'Entry windows done or day/revenge lock — manage if open, no new entries.'
+      return 'Entry windows done or earlier trade taken — manage if open (confirm lunch close or ride to cash close), no new entries.'
     default:
-      return 'Morning AI + structure — up to 2 attempts. 2 morning stop-outs → revenge lock (IB+lunch off).'
+      return 'Morning AI + structure — 1 attempt. Any fill (SL, TP, or open book) locks IB and lunch-range. Lunch 11:30 is confirm-close; unconfirmed books ride to cash close.'
   }
 }
 

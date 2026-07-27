@@ -16,6 +16,10 @@ function assert(cond: unknown, msg: string) {
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('NEVER place'), 'no-order rule')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('NEVER invent'), 'no-invent rule')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('20 seconds'), 'short reply')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('ATTEMPT LADDER'), 'ladder section')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('CONFIRM-CLOSE'), 'lunch confirm-close')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('cash-close auto-liquidation'), 'cash-close flatten')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('Skip-forward'), 'skip-forward')
 
 const mock = {
   voice: {
@@ -40,9 +44,18 @@ const mock = {
     canPlaceEntry: false,
     canManagePosition: false,
     attemptsUsed: 0,
-    maxAttempts: 2,
+    maxAttempts: 3,
     stopHits: 0,
-    maxStopHits: 2,
+    maxStopHits: 1,
+    morningAttempts: 0,
+    ibAttempts: 0,
+    lunchAttempts: 0,
+    maxMorningAttempts: 1,
+    maxIbAttempts: 1,
+    maxLunchAttempts: 1,
+    ibEligible: true,
+    lunchEligible: true,
+    attemptLadderLabel: 'Day 0/3 · AM 0/1 · IB 0/1 · LN 0/1',
     openPositionId: null,
     entryWindow: null,
     rangeStrategy: null,
@@ -64,9 +77,9 @@ const mock = {
   risk: {
     deskRiskPercent: 5,
     manualRiskPercent: 1,
-    maxAttempts: 4,
-    maxStopHits: 2,
-    entryRule: 'day max 4',
+    maxAttempts: 3,
+    maxStopHits: 1,
+    entryRule: 'day max 3',
   },
   avwap: {
     openLabel: 'NY 9:30',
@@ -103,6 +116,8 @@ const mock = {
         reasoning: 'liquidity',
         source: 'ai',
         marketVerdict: null,
+        testedCount: null,
+        successCount: null,
       },
     ],
   },
@@ -118,6 +133,26 @@ assert(packed.includes('bullish'), 'includes regime')
 assert(packed.includes('NY 9:30'), 'includes AVWAP label')
 assert(packed.includes('Morning playbook'), 'includes active playbook title')
 assert(packed.includes('IB 10:15'), 'includes IB window')
+assert(packed.includes('AM 0/1'), 'includes attempt ladder')
 assert(!packed.includes('99999'), 'no invented price')
 
+{
+  const withVerdict = {
+    ...mock,
+    levels: {
+      ...mock.levels,
+      items: [
+        {
+          ...mock.levels.items[0]!,
+          marketVerdict: 'broken',
+          testedCount: 2,
+          successCount: 0,
+        },
+      ],
+    },
+  } as LiveVoiceDeskContext
+  const p = formatLiveVoiceContextForLlm(withVerdict)
+  assert(p.includes('verdict=broken'), 'includes market verdict')
+  assert(p.includes('tests=2'), 'includes test count')
+}
 console.log('live_voice_prompt: all passed')

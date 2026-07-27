@@ -1,19 +1,24 @@
 /**
  * Live desk attempt ladder:
- *   Morning playbook ≤2 · IB ≤1 · Lunch-range ≤1 · Day ≤4 total
+ *   Morning playbook ≤1 · IB ≤1 · Lunch-range ≤1 · Day ≤3 total
  *
- * Revenge lock: 2 morning fills that are ALL stop-outs → IB + lunch off.
- * IB unlock: morning fills ≤1 (and not revenge / day-capped).
- * Lunch unlock: no IB fill yet (skipped or unused); IB fill (SL or TP) kills lunch.
+ * Skip-forward: unused earlier windows unlock later ones.
+ * Any fill (SL, TP, or still-open filled book) in a window locks all later windows.
+ *   Morning fill → IB + lunch off
+ *   IB fill → lunch off
+ *
+ * Open-book edge: lunch 11:30 is confirm-close only (not auto-flatten).
+ * If the trader keeps a morning/IB book open, it rides to cash-close flatten
+ * and later windows stay locked the whole time.
  */
 
 import { parseTimeToSeconds } from '@/lib/utils/timeUtils'
 
-export const MAX_MORNING_ATTEMPTS = 2
+export const MAX_MORNING_ATTEMPTS = 1
 export const MAX_IB_ATTEMPTS = 1
 export const MAX_LUNCH_RANGE_ATTEMPTS = 1
 /** Hard day cap across morning + IB + lunch-range. */
-export const MAX_DAY_ATTEMPTS = 4
+export const MAX_DAY_ATTEMPTS = 3
 
 export type AttemptBucket = 'morning' | 'ib' | 'lunch_range' | 'other'
 export type RangeStrategy = 'ib' | 'lunch_range' | null
@@ -32,9 +37,12 @@ export type AttemptLadder = {
   ibAttempts: number
   lunchAttempts: number
   morningStopHits: number
-  /** 2 morning fills, all stop-outs — no IB / lunch (anti-revenge). */
+  /**
+   * Kept for API/UI compat. Always false under 1/1/1 —
+   * earlier-fill locks are expressed via ibEligible / lunchEligible.
+   */
   revengeLocked: boolean
-  /** Day hit 4 fills — everything off. */
+  /** Day hit 3 fills — everything off. */
   dayLocked: boolean
   morningEligible: boolean
   ibEligible: boolean
@@ -127,9 +135,7 @@ function finalizeLadder(args: {
     morningStopHits,
   } = args
   const dayAttempts = morningAttempts + ibAttempts + lunchAttempts + otherAttempts
-  const revengeLocked =
-    morningAttempts >= MAX_MORNING_ATTEMPTS &&
-    morningStopHits >= MAX_MORNING_ATTEMPTS
+  const revengeLocked = false
   const dayLocked = dayAttempts >= MAX_DAY_ATTEMPTS
 
   return {
@@ -143,12 +149,11 @@ function finalizeLadder(args: {
     morningEligible: !dayLocked && morningAttempts < MAX_MORNING_ATTEMPTS,
     ibEligible:
       !dayLocked &&
-      !revengeLocked &&
-      morningAttempts <= 1 &&
+      morningAttempts === 0 &&
       ibAttempts < MAX_IB_ATTEMPTS,
     lunchEligible:
       !dayLocked &&
-      !revengeLocked &&
+      morningAttempts === 0 &&
       ibAttempts === 0 &&
       lunchAttempts < MAX_LUNCH_RANGE_ATTEMPTS,
     maxDayAttempts: MAX_DAY_ATTEMPTS,
@@ -247,11 +252,14 @@ export function formatAttemptLadderShort(ladder: AttemptLadder): string {
 }
 
 export function attemptLadderLockReason(ladder: AttemptLadder): string | null {
-  if (ladder.revengeLocked) {
-    return 'Revenge lock — 2 morning stop-outs. IB and lunch-range switched off for today.'
-  }
   if (ladder.dayLocked) {
     return `Day attempt cap hit (${ladder.dayAttempts}/${ladder.maxDayAttempts}). Trading switched off.`
+  }
+  if (ladder.morningAttempts > 0) {
+    return 'Morning trade taken — IB and lunch-range locked for today.'
+  }
+  if (ladder.ibAttempts > 0) {
+    return 'IB trade taken — lunch-range locked for today.'
   }
   return null
 }

@@ -82,7 +82,7 @@ function jstDate(h: number, m: number, s = 0): Date {
     now: etDate(14, 0),
     ladder: attemptLadderFromCounts({ morningAttempts: 1 }),
   })
-  assert(mode === 'done' || mode === 'lunch_break' || mode === 'lunch_range', 'post-morning framing')
+  assert(mode === 'done', 'morning fill → done (later windows locked)')
 }
 
 {
@@ -90,11 +90,11 @@ function jstDate(h: number, m: number, s = 0): Date {
     instrument: 'DOW',
     now: etDate(14, 0),
     ladder: attemptLadderFromCounts({
-      morningAttempts: 2,
-      morningStopHits: 2,
+      morningAttempts: 1,
+      morningStopHits: 1,
     }),
   })
-  assert(mode === 'done', 'revenge → session locked (no PM watch)')
+  assert(mode === 'done', 'morning trade → session locked (no PM watch)')
   assert(deskPlaybookTitle(mode) === 'Watch playbook', 'watch title when done')
   assert(deskPlaybookButtonLabel(mode) === 'Watch', 'Watch button when done')
   assert(deskPlaybookToolbarLabel(mode, { watchOnly: true }) === 'Watch', 'toolbar Watch')
@@ -184,11 +184,11 @@ function jstDate(h: number, m: number, s = 0): Date {
     instrument: 'NIKKEI',
     now: jstDate(14, 0),
     ladder: attemptLadderFromCounts({
-      morningAttempts: 2,
-      morningStopHits: 2,
+      morningAttempts: 1,
+      morningStopHits: 1,
     }),
   })
-  assert(mode === 'done', 'Nikkei revenge → done')
+  assert(mode === 'done', 'Nikkei morning fill → done')
   assert(deskPlaybookButtonLabel(mode) === 'Watch', 'Nikkei Watch button')
   assert(
     deskPlaybookPanelTitle(mode, 'NIKKEI', { watchOnly: true }) === 'Tokyo watch playbook',

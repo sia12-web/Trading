@@ -49,10 +49,10 @@ function entryDeniedMessage(gate: SessionGateState | null | undefined): string |
     if (gate.canClockIn) {
       return 'Clocked out — click “Today I trade” to resume entries.'
     }
-    if (gate.revengeLocked) {
-      return 'Revenge lock — 2 morning stop-outs. IB and lunch-range off. No new entries.'
+    if ((gate.morningAttempts ?? 0) > 0) {
+      return 'Morning trade taken — IB and lunch-range locked. No new entries.'
     }
-    if (gate.dayLocked || (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? 4)) {
+    if (gate.dayLocked || (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? 3)) {
       return 'Day attempt cap reached — trading switched off. No new entries.'
     }
     if (gate.phase === 'CLOSED') {
@@ -61,10 +61,10 @@ function entryDeniedMessage(gate: SessionGateState | null | undefined): string |
     return 'Clocked out — no new entries. Manage only if you have an open book.'
   }
   if (!gate.canPlaceEntry) {
-    if (gate.revengeLocked) {
-      return 'Revenge lock — 2 morning stop-outs. IB and lunch-range off. No new entries.'
+    if ((gate.morningAttempts ?? 0) > 0) {
+      return 'Morning trade taken — IB and lunch-range locked. No new entries.'
     }
-    if (gate.dayLocked || (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? 4)) {
+    if (gate.dayLocked || (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? 3)) {
       return 'Day attempt cap reached — trading switched off. No new entries.'
     }
     if (gate.phase === 'FLAT') {

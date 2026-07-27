@@ -125,7 +125,7 @@ test('resolveRangeStrategy clocks: Tokyo IB 10:15–10:45, lunch-range 13:30–1
   )
 })
 
-test('NY: morning ≤1 → IB unlock; 2 morning blocks IB; IB fill blocks lunch', () => {
+test('NY: morning skipped → IB unlock; morning fill blocks IB; IB fill blocks lunch', () => {
   const ib = resolveSessionGate({
     ...gateBase,
     now: etDate(2026, 7, 15, 10, 30),
@@ -140,8 +140,8 @@ test('NY: morning ≤1 → IB unlock; 2 morning blocks IB; IB fill blocks lunch'
     now: etDate(2026, 7, 15, 10, 30),
     viewingInstrument: 'DOW',
   })
-  assert(withOne.canPlaceEntry === true, '1 morning → IB still open')
-  assert(withOne.rangeStrategy === 'ib', 'IB with 1 morning')
+  assert(withOne.canPlaceEntry === false, '1 morning → IB locked')
+  assert(withOne.rangeStrategy === null, 'no IB after morning fill')
 
   const afterIb = resolveSessionGate({
     ...gateBase,
@@ -150,18 +150,9 @@ test('NY: morning ≤1 → IB unlock; 2 morning blocks IB; IB fill blocks lunch'
   })
   assert(afterIb.canPlaceEntry === false, 'after 10:45 no IB entry')
   assert(/Lunch break|IB entry closed/i.test(afterIb.message), afterIb.message)
-
-  const twoMorning = resolveSessionGate({
-    ...gateBase,
-    attemptLadder: attemptLadderFromCounts({ morningAttempts: 2, morningStopHits: 0 }),
-    now: etDate(2026, 7, 15, 10, 30),
-    viewingInstrument: 'DOW',
-  })
-  assert(twoMorning.canPlaceEntry === false, '2 morning → no IB')
-  assert(twoMorning.rangeStrategy === null, 'no IB strategy')
 })
 
-test('NY: lunch-range when IB skipped; manage-only after 15:15; no PM watch copy', () => {
+test('NY: lunch-range when morning + IB skipped; manage-only after 15:15; no PM watch copy', () => {
   const wait = resolveSessionGate({
     ...gateBase,
     now: etDate(2026, 7, 15, 12, 0),
@@ -178,6 +169,15 @@ test('NY: lunch-range when IB skipped; manage-only after 15:15; no PM watch copy
   })
   assert(ln.canPlaceEntry === true, '14:00 lunch-range place')
   assert(ln.rangeStrategy === 'lunch_range', 'lunch_range')
+
+  const afterMorning = resolveSessionGate({
+    ...gateBase,
+    attemptLadder: attemptLadderFromCounts({ morningAttempts: 1 }),
+    now: etDate(2026, 7, 15, 14, 0),
+    viewingInstrument: 'DOW',
+  })
+  assert(afterMorning.canPlaceEntry === false, 'morning fill → lunch off')
+  assert(afterMorning.rangeStrategy === null, 'no lunch after morning')
 
   const afterIbFill = resolveSessionGate({
     ...gateBase,
@@ -223,16 +223,11 @@ test('Nikkei: IB 10:15–10:45 JST; lunch-range to 15:00 JST', () => {
   assert(ln.rangeStrategy === 'lunch_range', `got ${ln.rangeStrategy}`)
 })
 
-test('Nikkei: revenge lock blocks IB + lunch-range (parity with NY)', () => {
+test('Nikkei: morning fill locks IB + lunch-range (parity with NY)', () => {
   const fills = [
     {
       instrument: 'NIKKEI',
       entryTimestamp: jstDate(2026, 7, 15, 9, 10),
-      exitReason: 'stop_hit',
-    },
-    {
-      instrument: 'NIKKEI',
-      entryTimestamp: jstDate(2026, 7, 15, 9, 30),
       exitReason: 'stop_hit',
     },
   ]
@@ -241,29 +236,29 @@ test('Nikkei: revenge lock blocks IB + lunch-range (parity with NY)', () => {
     viewingInstrument: 'NIKKEI',
     clockedIn: true,
     attendedToday: true,
-    attemptsUsed: 2,
-    stopLossHitCount: 2,
+    attemptsUsed: 1,
+    stopLossHitCount: 1,
     attemptFills: fills,
     now: jstDate(2026, 7, 15, 10, 30),
   })
-  assert(ib.revengeLocked === true, 'Nikkei revenge')
-  assert(ib.canPlaceEntry === false, 'Nikkei IB blocked by revenge')
-  assert(ib.rangeStrategy === null, 'no IB strategy when revenge')
+  assert(ib.revengeLocked === false, 'revenge always false')
+  assert(ib.canPlaceEntry === false, 'Nikkei IB blocked after morning fill')
+  assert(ib.rangeStrategy === null, 'no IB strategy after morning fill')
 
   const ln = resolveSessionGate({
     lockedInstrument: 'NIKKEI',
     viewingInstrument: 'NIKKEI',
     clockedIn: true,
     attendedToday: true,
-    attemptsUsed: 2,
-    stopLossHitCount: 2,
+    attemptsUsed: 1,
+    stopLossHitCount: 1,
     attemptFills: fills,
     now: jstDate(2026, 7, 15, 14, 0),
   })
-  assert(ln.canPlaceEntry === false, 'Nikkei lunch-range blocked by revenge')
+  assert(ln.canPlaceEntry === false, 'Nikkei lunch-range blocked after morning fill')
 })
 
-test('Nikkei: morning ≤1 unlocks IB; any IB fill kills lunch', () => {
+test('Nikkei: morning fill locks IB; any IB fill kills lunch', () => {
   const morningOnly = [
     {
       instrument: 'NIKKEI',
@@ -281,11 +276,10 @@ test('Nikkei: morning ≤1 unlocks IB; any IB fill kills lunch', () => {
     attemptFills: morningOnly,
     now: jstDate(2026, 7, 15, 10, 30),
   })
-  assert(ib.canPlaceEntry === true, `Nikkei IB after 1 morning: ${ib.message}`)
-  assert(ib.rangeStrategy === 'ib', 'IB unlocked')
+  assert(ib.canPlaceEntry === false, `Nikkei IB locked after morning: ${ib.message}`)
+  assert(ib.rangeStrategy === null, 'IB locked')
 
-  const afterIb = [
-    ...morningOnly,
+  const afterIbOnly = [
     {
       instrument: 'NIKKEI',
       entryTimestamp: jstDate(2026, 7, 15, 10, 25),
@@ -297,16 +291,16 @@ test('Nikkei: morning ≤1 unlocks IB; any IB fill kills lunch', () => {
     viewingInstrument: 'NIKKEI',
     clockedIn: true,
     attendedToday: true,
-    attemptsUsed: 2,
+    attemptsUsed: 1,
     stopLossHitCount: 0,
-    attemptFills: afterIb,
+    attemptFills: afterIbOnly,
     now: jstDate(2026, 7, 15, 14, 0),
   })
   assert(ln.canPlaceEntry === false, 'IB fill kills lunch on Nikkei')
   assert(ln.rangeStrategy === null, 'no lunch-range after IB fill')
 })
 
-test('Morning entry window still allows 2 attempts (NY)', () => {
+test('Morning entry window allows 1 attempt (NY)', () => {
   const g = resolveSessionGate({
     ...gateBase,
     now: etDate(2026, 7, 15, 9, 45),
@@ -314,7 +308,8 @@ test('Morning entry window still allows 2 attempts (NY)', () => {
   })
   assert(g.canPlaceEntry === true, 'morning entry')
   assert(g.rangeStrategy === null, 'not range strategy yet')
-  assert(g.maxAttempts === 4, 'day max shown as 4')
+  assert(g.maxAttempts === 3, 'day max shown as 3')
+  assert(g.maxMorningAttempts === 1, 'morning max 1')
 })
 
 console.log(`\n${TESTS_PASSED.length} passed, ${TESTS_FAILED.length} failed`)

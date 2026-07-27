@@ -193,7 +193,7 @@ test('NIKKEI afternoon watch uses JST cash close 15:00', () => {
   assert(isAfternoonWatchWindow(after, 'NIKKEI') === false, 'Tokyo after close')
 })
 
-test('Live gate: lunch-range unlock when morning ≤1; IB fill blocks lunch', () => {
+test('Live gate: lunch-range unlock when morning skipped; morning/IB fill blocks lunch', () => {
   const unlocked = resolveSessionGate({
     now: etDate(2026, 7, 15, 14, 0),
     lockedInstrument: 'DOW',
@@ -216,8 +216,8 @@ test('Live gate: lunch-range unlock when morning ≤1; IB fill blocks lunch', ()
     attemptsUsed: 1,
     stopLossHitCount: 0,
   })
-  assert(oneMorning.canPlaceEntry === true, '1 morning → lunch still open')
-  assert(oneMorning.rangeStrategy === 'lunch_range', 'lunch with 1 morning')
+  assert(oneMorning.canPlaceEntry === false, '1 morning → lunch locked')
+  assert(oneMorning.rangeStrategy === null, 'no lunch after morning fill')
 
   const afterIb = resolveSessionGate({
     now: etDate(2026, 7, 15, 14, 0),

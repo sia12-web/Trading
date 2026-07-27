@@ -1646,14 +1646,13 @@ function SimulationDeskInner() {
           setSimNow(next)
           applyChartDataRef.current(next)
           setPlaying(false)
-          const revenge = stopHitsRef.current >= MAX_STOP_HITS
-          const capped = attemptsUsedRef.current >= MAX_SESSION_ATTEMPTS
+          const capped =
+            stopHitsRef.current >= MAX_STOP_HITS ||
+            attemptsUsedRef.current >= MAX_SESSION_ATTEMPTS
           setMsg(
-            revenge
-              ? `STOP HIT @ ${closed.stopLoss.toLocaleString()} — revenge lock (${MAX_STOP_HITS} morning stop-outs)`
-              : capped
-                ? `STOP HIT @ ${closed.stopLoss.toLocaleString()} — morning locked (${attemptsUsedRef.current}/${MAX_SESSION_ATTEMPTS})`
-                : `STOP HIT @ ${closed.stopLoss.toLocaleString()} — morning ${attemptsUsedRef.current}/${MAX_SESSION_ATTEMPTS} used`
+            capped
+              ? `STOP HIT @ ${closed.stopLoss.toLocaleString()} — morning locked (${attemptsUsedRef.current}/${MAX_SESSION_ATTEMPTS})`
+              : `STOP HIT @ ${closed.stopLoss.toLocaleString()} — morning ${attemptsUsedRef.current}/${MAX_SESSION_ATTEMPTS} used`
           )
           setLevels((prev) =>
             applySimTradeOutcome(prev, closed.entry, closed.direction, 'stop')
@@ -1725,15 +1724,9 @@ function SimulationDeskInner() {
         setMsg('Already in a position — manage or close first')
         return
       }
-      if (stopHitsRef.current >= MAX_STOP_HITS) {
+      if (stopHitsRef.current >= MAX_STOP_HITS || attemptsUsedRef.current >= MAX_SESSION_ATTEMPTS) {
         setMsg(
-          `Revenge lock — ${MAX_STOP_HITS} morning stop-outs. No more entries this replay.`
-        )
-        return
-      }
-      if (attemptsUsedRef.current >= MAX_SESSION_ATTEMPTS) {
-        setMsg(
-          `Morning attempts used (${MAX_SESSION_ATTEMPTS}/${MAX_SESSION_ATTEMPTS}) — trading locked`
+          `Morning trade taken (${MAX_SESSION_ATTEMPTS}/${MAX_SESSION_ATTEMPTS}) — no more entries this replay.`
         )
         return
       }
@@ -2224,11 +2217,13 @@ function SimulationDeskInner() {
                 ? 'bg-red-500/25 text-red-200'
                 : 'bg-sky-500/20 text-sky-200'
             }`}
-            title="Morning playbook ≤2 fills (same as live). Working limits do not count. 2 stop-outs = revenge lock. Sim has no IB / lunch-range."
+            title="Morning playbook ≤1 fill (same as live). Working limits do not count. Sim has no IB / lunch-range."
           >
             Morning {attemptsUsed}/{MAX_SESSION_ATTEMPTS}
             {stopHits > 0 ? ` · Stops ${stopHits}/${MAX_STOP_HITS}` : ''}
-            {stopHits >= MAX_STOP_HITS ? ' · REVENGE' : ''}
+            {attemptsUsed >= MAX_SESSION_ATTEMPTS || stopHits >= MAX_STOP_HITS
+              ? ' · LOCKED'
+              : ''}
           </span>
           {overnightBias && (
             <span

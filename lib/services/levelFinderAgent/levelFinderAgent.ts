@@ -449,11 +449,16 @@ How to use it (big-desk volume map):
       const dup = existing.find((e) => Math.abs(Number(e.level) - Number(level.level)) <= DUP_THRESHOLD + 0.01)
       if (dup) {
         duplicates++
+        // Refresh AI read on the same print — do NOT bump tested_count
+        // (market grading owns tests/holds via validateLevelsAgainstMarket).
         await supabase
           .from('level_history')
           .update({
-            tested_count: (Number(dup.tested_count) || 0) + 1,
-            last_tested_date: new Date().toISOString(),
+            type: level.type,
+            conviction: level.conviction,
+            reasoning: level.reasoning,
+            timeframe: level.timeframe,
+            session_id: sessionId,
           })
           .eq('id', dup.id)
         continue
@@ -558,7 +563,7 @@ WHAT TO LOOK FOR IN THE CANDLES (think like a day trader reading the tape before
 10. Round-number magnets — big figures and .00 / .50 (or index 100/50 handles) that align with overnight/London/impulse. Note in reasoning how the round shapes entry, implied stop (beyond the round), and take-profit.
 
 DESK CADENCE (your levels live inside this rhythm — ${marketLabel} clock for ${index}):
-- Morning playbook: entries ${open}–${entryEnd} ${tzLabel} (up to 2 fills). Then if still 0 fills → IB playbook ${ibWindow} ${tzLabel} (1 attempt). After IB → Lunch break playbook (levels update). If still 0 fills → lunch-range playbook ${lunchRangeWindow} ${tzLabel} (1 attempt). Else manage / watch through cash close ${close} ${tzLabel}.
+- Morning playbook: entries ${open}–${entryEnd} ${tzLabel} (1 fill). Then if still 0 fills → IB playbook ${ibWindow} ${tzLabel} (1 attempt). After IB → Lunch break playbook (levels update). If still 0 fills → lunch-range playbook ${lunchRangeWindow} ${tzLabel} (1 attempt). Any fill (SL, TP, or open book) locks later windows — no second attempt in that window. Lunch ${lunch} ${tzLabel} is confirm-close only; unconfirmed morning/IB books ride to cash-close flatten at ${close} ${tzLabel}. Else manage / watch through cash close ${close} ${tzLabel}.
 - Confirm-close at lunch ${lunch} ${tzLabel} for morning/IB books (not silent flatten). Cash-close auto-liquidates leftovers.
 - At lunch every level is graded against what price actually did; that verdict enters memory. LIVE: IB and lunch-range ARE traded when unlocked — do not treat them as "not traded yet".
 

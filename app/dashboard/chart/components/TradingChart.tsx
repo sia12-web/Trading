@@ -79,6 +79,7 @@ import {
 } from '@/lib/trading/sessionGate'
 import {
   resolveDeskPlaybookMode,
+  deskPlaybookAnalysisMode,
   deskPlaybookHint,
   deskPlaybookUsesAfternoonLevels,
   deskPlaybookToolbarLabel,
@@ -1350,6 +1351,9 @@ export function TradingChart({
   }, [instrument])
 
   // Grade market reaction into level_history, then reload playbook (no LLM).
+  // If a level breaks/contests, force a Level Finder refresh (throttled) so AI
+  // levels adapt — does not consume attempt-ladder slots.
+  const reactionRefreshAtRef = useRef(0)
   const gradeLevels = useCallback(async (inst: Instrument) => {
     if (!deskLevelsActive || !isLevelPaintAllowed(new Date(), inst).open) {
       if (instrumentRef.current === inst) {
@@ -1358,8 +1362,9 @@ export function TradingChart({
       }
       return
     }
+    let needsAiRefresh = false
     try {
-      await fetch('/api/levels/respond', {
+      const res = await fetch('/api/levels/respond', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1369,11 +1374,56 @@ export function TradingChart({
             : 'cadence',
         }),
       })
+      if (res.ok) {
+        const json = (await res.json().catch(() => null)) as {
+          verdicts?: Array<{ verdict?: string }>
+        } | null
+        const verdicts = json?.verdicts ?? []
+        needsAiRefresh = verdicts.some(
+          (v) => v.verdict === 'broken' || v.verdict === 'contested'
+        )
+      }
     } catch {
       /* non-fatal — still try to paint last known verdicts */
     }
+
+    if (needsAiRefresh) {
+      const nowMs = Date.now()
+      // At most one Opus refresh every 5 minutes per chart session
+      if (nowMs - reactionRefreshAtRef.current >= 5 * 60_000) {
+        reactionRefreshAtRef.current = nowMs
+        const playbookMode = resolveDeskPlaybookMode({
+          instrument: inst,
+          rangeStrategy,
+          ladder: attemptLadderFromCounts({
+            morningAttempts,
+            ibAttempts,
+            lunchAttempts,
+            morningStopHits: stopHits,
+          }),
+        })
+        const mode = deskPlaybookAnalysisMode(playbookMode)
+        try {
+          await fetch(
+            `/api/trading/auto-levels?instrument=${encodeURIComponent(inst)}&force=1&mode=${encodeURIComponent(mode)}`,
+            { method: 'POST' }
+          )
+        } catch {
+          /* non-fatal */
+        }
+      }
+    }
+
     await loadLevels(inst)
-  }, [loadLevels, deskLevelsActive])
+  }, [
+    loadLevels,
+    deskLevelsActive,
+    rangeStrategy,
+    morningAttempts,
+    ibAttempts,
+    lunchAttempts,
+    stopHits,
+  ])
 
   // ── Initialize chart ─────────────────────────────────────────────────────────
   useEffect(() => {
