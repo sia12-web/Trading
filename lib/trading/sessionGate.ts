@@ -865,6 +865,22 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     })
   }
 
+  // Open book wins over cash-close CLOSED so MANAGE stays until flatten completes
+  if (hasOpen && locked) {
+    return finish({
+      ...base,
+      rangeStrategy: null,
+      phase: 'MANAGE',
+      canViewLiveChart: clockedIn && locked === (viewing ?? locked),
+      canFetchLiveBars: clockedIn && (bars.open || afternoonWatch || afterCashClose),
+      canPlaceEntry: false,
+      canManagePosition: clockedIn,
+      message: afterCashClose
+        ? 'Cash closed — flattening open book. Manage only until flat.'
+        : 'Position open. Manage only — no new entries.',
+    })
+  }
+
   if (afterCashClose) {
     return finish({
       ...base,
@@ -913,19 +929,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     })
   }
 
-  // Open book — manage through cash close (incl. IB / lunch-range fills)
-  if (hasOpen) {
-    return finish({
-      ...base,
-      rangeStrategy: null,
-      phase: 'MANAGE',
-      canViewLiveChart: clockedIn && locked === (viewing ?? locked),
-      canFetchLiveBars: clockedIn && (bars.open || afternoonWatch),
-      canPlaceEntry: false,
-      canManagePosition: clockedIn,
-      message: 'Position open. Manage only — no new entries.',
-    })
-  }
+  // (hasOpen already handled above — through cash close)
 
   if (t >= analyze && t < open) {
     return finish({

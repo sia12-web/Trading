@@ -12,6 +12,7 @@ import { MorningLunchFlatConfirm } from '@/app/dashboard/chart/components/Mornin
 import type { PositionStatusResponse, PositionStatus } from '@/types/positionManagement'
 import type { Instrument } from '@/types/trading'
 import { isAfternoonWatchWindow, sessionFor } from '@/lib/trading/sessionGate'
+import { isMorningOrIbEntry } from '@/lib/trading/morningLunchConfirm'
 
 const INSTRUMENTS: Instrument[] = ['DOW', 'NASDAQ', 'NIKKEI']
 
@@ -101,7 +102,7 @@ export default function PositionsPage() {
     return () => clearInterval(id)
   }, [position, fetchPosition])
 
-  // Past morning lunch with open book → confirm close (no silent flatten)
+  // Past morning lunch with morning/IB open book → confirm close
   useEffect(() => {
     if (!position) {
       setLunchFlatPrompt(false)
@@ -109,6 +110,10 @@ export default function PositionsPage() {
       return
     }
     if (!isAfternoonWatchWindow(new Date(), position.instrument)) {
+      setLunchFlatPrompt(false)
+      return
+    }
+    if (!isMorningOrIbEntry(position.instrument, position.entry_timestamp)) {
       setLunchFlatPrompt(false)
       return
     }

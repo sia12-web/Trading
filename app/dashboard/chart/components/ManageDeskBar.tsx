@@ -18,6 +18,8 @@ export interface ManagePosition {
   direction: Direction
   positionSize: number
   riskAmount: number
+  /** ISO entry time — used to skip morning-lunch confirm for lunch-range fills */
+  entryTimestamp?: string | null
 }
 
 export interface AiVerdict {

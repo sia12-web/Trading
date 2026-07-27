@@ -7,6 +7,7 @@ import {
   shouldAutoFlattenAtCashClose,
   shouldExpireWorkingLimit,
 } from '../lib/trading/sessionCleanup'
+import { isMorningOrIbEntry } from '../lib/trading/morningLunchConfirm'
 import { parseTimeToSeconds } from '../lib/utils/timeUtils'
 import { NY_SESSION, TOKYO_SESSION } from '../lib/trading/sessionGate'
 
@@ -116,6 +117,15 @@ test('working limits still expire at lunch', () => {
     }) === false,
     'still in morning window'
   )
+})
+
+test('morning/IB confirm only for pre-lunch entries', () => {
+  // 2026-07-15 10:45 ET = 14:45 UTC
+  const morningIb = new Date(Date.UTC(2026, 6, 15, 14, 45, 0)).toISOString()
+  // 2026-07-15 14:00 ET = 18:00 UTC
+  const lunchRange = new Date(Date.UTC(2026, 6, 15, 18, 0, 0)).toISOString()
+  assert(isMorningOrIbEntry('DOW', morningIb) === true, 'IB entry is morning book')
+  assert(isMorningOrIbEntry('DOW', lunchRange) === false, 'lunch-range fill skips morning confirm')
 })
 
 console.log(`\n${TESTS_PASSED.length} passed, ${TESTS_FAILED.length} failed`)

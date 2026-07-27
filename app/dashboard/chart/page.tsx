@@ -30,6 +30,10 @@ import {
 } from '@/lib/trading/deskInstrumentPreference'
 import { isAnyLiveFocusWindowActive, isAfternoonWatchWindow, sessionFor } from '@/lib/trading/sessionGate'
 import {
+  isMorningOrIbEntry,
+  isPastCashCloseNow,
+} from '@/lib/trading/morningLunchConfirm'
+import {
   MANUAL_RISK_PERCENT,
   previewPositionSizing,
 } from '@/lib/trading/positionSizing'
@@ -385,6 +389,7 @@ export default function ChartPage() {
         direction: dir,
         positionSize: order.position_size,
         riskAmount: order.risk_amount,
+        entryTimestamp: new Date().toISOString(),
       })
       refreshGate()
     },
@@ -635,7 +640,7 @@ export default function ChartPage() {
     }
   }, [gate?.phase, gate?.lockedInstrument, pending, expireWorkingLimits, cancelWorkingLimit, instrument])
 
-  // Past morning lunch with an open book → confirm close (no silent flatten)
+  // Past morning lunch with a morning/IB open book → confirm close (not lunch-range fills)
   useEffect(() => {
     if (!managePos) {
       setLunchFlatPrompt(false)
@@ -647,12 +652,30 @@ export default function ChartPage() {
       setLunchFlatPrompt(false)
       return
     }
+    if (!isMorningOrIbEntry(inst, managePos.entryTimestamp)) {
+      setLunchFlatPrompt(false)
+      return
+    }
     if (lunchFlatDismissedRef.current) {
       setLunchFlatPrompt(false)
       return
     }
     setLunchFlatPrompt(true)
   }, [managePos, gateTick])
+
+  // Cash close: force-flatten while MANAGE may still be active (open book past marketClose)
+  useEffect(() => {
+    if (!managePos) return
+    const inst = managePos.instrument as Instrument
+    const tick = () => {
+      if (isPastCashCloseNow(inst)) {
+        void expireWorkingLimits({ forceExpireWorking: true, forceCashClose: true })
+      }
+    }
+    tick()
+    const id = window.setInterval(tick, 15_000)
+    return () => window.clearInterval(id)
+  }, [managePos, expireWorkingLimits])
 
   const confirmLunchFlatClose = useCallback(async () => {
     if (!managePos || lunchFlatBusy) return
@@ -726,6 +749,7 @@ export default function ChartPage() {
           direction: dir,
           positionSize: p.position_size,
           riskAmount: p.risk_amount,
+          entryTimestamp: p.entry_timestamp ?? null,
         }
         setManagePos(manage)
         setPositionOverlay({
