@@ -569,6 +569,17 @@ interface TradingChartProps {
       profitTarget?: number
     }
   ) => void
+  /**
+   * Market risk-box confirm — must place/fill immediately.
+   * Never route through onLevelSelect (that opens the limit ticket).
+   */
+  onMarketOrder?: (order: {
+    entryPrice: number
+    stopLoss: number
+    profitTarget: number
+    direction: 'LONG' | 'SHORT'
+    reasoning: string
+  }) => void
   /** Morning session: allow placing limits from the chart */
   canPlaceOrder?: boolean
   /**
@@ -603,6 +614,7 @@ export function TradingChart({
   lockedInstrument,
   allowedInstruments = null,
   onLevelSelect,
+  onMarketOrder,
   canPlaceOrder = false,
   deskLevelsActive = false,
   deskAttended = false,
@@ -3350,10 +3362,22 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
     if (discussedWithLeo) {
       const autoReason = `Manual ${direction} ${isMarket ? 'Market' : 'Limit'} Zone (Discussed with Leo): Level @ ${entryPrice.toLocaleString()}, SL @ ${stopLoss.toLocaleString()}, TP @ ${profitTarget.toLocaleString()}`
+      // Market: dedicated callback — never onLevelSelect (limit ticket)
+      if (isMarket) {
+        onMarketOrder?.({
+          entryPrice,
+          stopLoss,
+          profitTarget,
+          direction,
+          reasoning: autoReason,
+        })
+        cancelRiskBox()
+        return
+      }
       onLevelSelect?.(entryPrice, {
         source: 'manual',
-        type: isMarket ? 'market' : 'manual',
-        orderType: isMarket ? 'MARKET' : 'LIMIT',
+        type: 'manual',
+        orderType: 'LIMIT',
         side: direction === 'LONG' ? 'BUY' : 'SHORT',
         preferredDirection: direction,
         reasoning: autoReason,
@@ -3375,7 +3399,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         suggestedReason: `Manual ${direction} ${isMarket ? 'market order' : 'limit'} @ ${entryPrice.toLocaleString()}`,
       })
     }
-  }, [riskBox, onLevelSelect, cancelRiskBox])
+  }, [riskBox, onLevelSelect, onMarketOrder, cancelRiskBox])
 
   const toggleRiskBoxDirection = useCallback(() => {
     setRiskBox((prev) => {
@@ -4969,16 +4993,26 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   onClick={() => {
                     const isMarket = rationaleModal.orderType === 'MARKET'
                     const fullReason = `Manual ${rationaleModal.direction} entry: ${userRationale || 'Technical structure'} | SL/TP rationale: ${userSlTpRationale || 'Geometry bounds'}`
-                    onLevelSelect?.(rationaleModal.entryPrice, {
-                      source: 'manual',
-                      type: isMarket ? 'market' : 'manual',
-                      orderType: isMarket ? 'MARKET' : 'LIMIT',
-                      side: rationaleModal.direction === 'LONG' ? 'BUY' : 'SHORT',
-                      preferredDirection: rationaleModal.direction,
-                      reasoning: fullReason,
-                      stopLoss: rationaleModal.stopLoss,
-                      profitTarget: rationaleModal.profitTarget,
-                    })
+                    if (isMarket) {
+                      onMarketOrder?.({
+                        entryPrice: rationaleModal.entryPrice,
+                        stopLoss: rationaleModal.stopLoss,
+                        profitTarget: rationaleModal.profitTarget,
+                        direction: rationaleModal.direction,
+                        reasoning: fullReason,
+                      })
+                    } else {
+                      onLevelSelect?.(rationaleModal.entryPrice, {
+                        source: 'manual',
+                        type: 'manual',
+                        orderType: 'LIMIT',
+                        side: rationaleModal.direction === 'LONG' ? 'BUY' : 'SHORT',
+                        preferredDirection: rationaleModal.direction,
+                        reasoning: fullReason,
+                        stopLoss: rationaleModal.stopLoss,
+                        profitTarget: rationaleModal.profitTarget,
+                      })
+                    }
                     setRationaleModal(null)
                     cancelRiskBox()
                   }}
