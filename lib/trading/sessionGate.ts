@@ -1112,7 +1112,7 @@ export function resolveSimMorningGate(input: {
     maxAttempts: book.maxAttempts,
     stopHits: book.stopHits,
     maxStopHits: book.maxStopHits,
-    rangeStrategy: null as const,
+    rangeStrategy: null as RangeStrategy,
   }
 
   if (t >= lunch) {
