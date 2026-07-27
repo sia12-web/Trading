@@ -3360,20 +3360,33 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       (l) => Math.abs(l.price - entryPrice) / entryPrice < 0.005
     )
 
+    const autoReason = discussedWithLeo
+      ? `Manual ${direction} ${isMarket ? 'Market' : 'Limit'} Zone (Discussed with Leo): Level @ ${entryPrice.toLocaleString()}, SL @ ${stopLoss.toLocaleString()}, TP @ ${profitTarget.toLocaleString()}`
+      : `Manual ${direction} ${isMarket ? 'market order' : 'limit'} @ ${entryPrice.toLocaleString()}`
+
+    // Market always needs an explicit confirm click — never place on first BUY/SHORT MARKET press
+    if (isMarket) {
+      setUserRationale(
+        discussedWithLeo
+          ? autoReason
+          : `Technical structure market entry @ ${entryPrice.toLocaleString()}`
+      )
+      setUserSlTpRationale(
+        `Protective SL @ ${stopLoss.toLocaleString()}, Target TP @ ${profitTarget.toLocaleString()}`
+      )
+      setRationaleModal({
+        open: true,
+        entryPrice,
+        stopLoss,
+        profitTarget,
+        direction,
+        orderType: 'MARKET',
+        suggestedReason: autoReason,
+      })
+      return
+    }
+
     if (discussedWithLeo) {
-      const autoReason = `Manual ${direction} ${isMarket ? 'Market' : 'Limit'} Zone (Discussed with Leo): Level @ ${entryPrice.toLocaleString()}, SL @ ${stopLoss.toLocaleString()}, TP @ ${profitTarget.toLocaleString()}`
-      // Market: dedicated callback — never onLevelSelect (limit ticket)
-      if (isMarket) {
-        onMarketOrder?.({
-          entryPrice,
-          stopLoss,
-          profitTarget,
-          direction,
-          reasoning: autoReason,
-        })
-        cancelRiskBox()
-        return
-      }
       onLevelSelect?.(entryPrice, {
         source: 'manual',
         type: 'manual',
@@ -3386,20 +3399,21 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       })
       cancelRiskBox()
     } else {
-      // Require user rationale for pure manual orders
-      setUserRationale(`Technical structure ${isMarket ? 'market' : 'limit'} entry @ ${entryPrice.toLocaleString()}`)
-      setUserSlTpRationale(`Protective SL @ ${stopLoss.toLocaleString()}, Target TP @ ${profitTarget.toLocaleString()}`)
+      setUserRationale(`Technical structure limit entry @ ${entryPrice.toLocaleString()}`)
+      setUserSlTpRationale(
+        `Protective SL @ ${stopLoss.toLocaleString()}, Target TP @ ${profitTarget.toLocaleString()}`
+      )
       setRationaleModal({
         open: true,
         entryPrice,
         stopLoss,
         profitTarget,
         direction,
-        orderType: isMarket ? 'MARKET' : 'LIMIT',
-        suggestedReason: `Manual ${direction} ${isMarket ? 'market order' : 'limit'} @ ${entryPrice.toLocaleString()}`,
+        orderType: 'LIMIT',
+        suggestedReason: autoReason,
       })
     }
-  }, [riskBox, onLevelSelect, onMarketOrder, cancelRiskBox])
+  }, [riskBox, onLevelSelect, cancelRiskBox])
 
   const toggleRiskBoxDirection = useCallback(() => {
     setRiskBox((prev) => {
@@ -4936,13 +4950,29 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           )
         })()}
 
-        {/* Required Rationale Modal for Pure Manual Orders (No Leo conversation) */}
+        {/* Confirm / journal before placing — market always stops here first */}
         {rationaleModal?.open && (
           <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
-            <div className="w-full max-w-md rounded-2xl border border-sky-500/40 bg-[#161b22] p-5 shadow-2xl space-y-4 animate-fade-in">
+            <div
+              className={`w-full max-w-md rounded-2xl border p-5 shadow-2xl space-y-4 animate-fade-in ${
+                rationaleModal.orderType === 'MARKET'
+                  ? 'border-amber-500/50 bg-[#161b22]'
+                  : 'border-sky-500/40 bg-[#161b22]'
+              }`}
+            >
               <div className="flex items-center justify-between border-b border-[#30363d] pb-3">
                 <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                  <span className="text-sky-400">📝</span> Manual Trade Journal Rationale
+                  {rationaleModal.orderType === 'MARKET' ? (
+                    <>
+                      <span className="text-amber-400">⚡</span>
+                      Confirm market{' '}
+                      {rationaleModal.direction === 'LONG' ? 'BUY' : 'SHORT'}
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-sky-400">📝</span> Manual Trade Journal Rationale
+                    </>
+                  )}
                 </h4>
                 <button
                   onClick={() => setRationaleModal(null)}
@@ -4950,9 +4980,22 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 >✕</button>
               </div>
 
-              <p className="text-xs text-gray-400 leading-relaxed">
-                Because this manual order was placed directly without a Live Voice discussion with Leo, please record your entry and SL/TP trade rationale for your daily performance journal:
-              </p>
+              {rationaleModal.orderType === 'MARKET' ? (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100 leading-relaxed space-y-1">
+                  <p className="font-semibold text-amber-200">
+                    Fills immediately at the live tip — this is not a working limit.
+                  </p>
+                  <p className="font-mono text-[11px] text-amber-100/90">
+                    Entry ~{rationaleModal.entryPrice.toLocaleString()} · SL{' '}
+                    {rationaleModal.stopLoss.toLocaleString()} · TP{' '}
+                    {rationaleModal.profitTarget.toLocaleString()}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 leading-relaxed">
+                  Because this manual order was placed directly without a Live Voice discussion with Leo, please record your entry and SL/TP trade rationale for your daily performance journal:
+                </p>
+              )}
 
               <div className="space-y-3">
                 <div>
@@ -4984,12 +5027,14 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
               <div className="flex gap-2 pt-2">
                 <button
+                  type="button"
                   onClick={() => setRationaleModal(null)}
                   className="flex-1 rounded-lg border border-[#30363d] bg-transparent py-2 text-xs font-semibold text-gray-400 hover:bg-[#21262d] hover:text-white transition"
                 >
                   Cancel
                 </button>
                 <button
+                  type="button"
                   onClick={() => {
                     const isMarket = rationaleModal.orderType === 'MARKET'
                     const fullReason = `Manual ${rationaleModal.direction} entry: ${userRationale || 'Technical structure'} | SL/TP rationale: ${userSlTpRationale || 'Geometry bounds'}`
@@ -5016,9 +5061,17 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     setRationaleModal(null)
                     cancelRiskBox()
                   }}
-                  className="flex-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white py-2 text-xs font-bold uppercase tracking-wider transition shadow-md"
+                  className={`flex-1 rounded-lg text-white py-2 text-xs font-bold uppercase tracking-wider transition shadow-md ${
+                    rationaleModal.orderType === 'MARKET'
+                      ? rationaleModal.direction === 'LONG'
+                        ? 'bg-emerald-600 hover:bg-emerald-500'
+                        : 'bg-red-600 hover:bg-red-500'
+                      : 'bg-sky-600 hover:bg-sky-500'
+                  }`}
                 >
-                  Confirm & Place Order
+                  {rationaleModal.orderType === 'MARKET'
+                    ? `Confirm MARKET ${rationaleModal.direction === 'LONG' ? 'BUY' : 'SHORT'}`
+                    : 'Confirm & Place Order'}
                 </button>
               </div>
             </div>
