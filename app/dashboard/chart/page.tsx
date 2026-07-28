@@ -30,6 +30,10 @@ import {
 } from '@/lib/trading/deskInstrumentPreference'
 import { isAnyLiveFocusWindowActive, isAfternoonWatchWindow, sessionFor } from '@/lib/trading/sessionGate'
 import {
+  TRADER_DISPLAY_LABEL,
+  deskLocalHmsAsTraderDisplay,
+} from '@/lib/chart/traderDisplayTz'
+import {
   isMorningOrIbEntry,
   isPastCashCloseNow,
 } from '@/lib/trading/morningLunchConfirm'
@@ -1022,9 +1026,10 @@ export default function ChartPage() {
             instrument={managePos.instrument}
             direction={managePos.direction}
             entryPrice={managePos.entryPrice}
-            cashCloseLabel={`${sessionFor(managePos.instrument).marketClose.slice(0, 5)} ${
-              managePos.instrument === 'NIKKEI' ? 'JST' : 'ET'
-            }`}
+            cashCloseLabel={(() => {
+              const s = sessionFor(managePos.instrument)
+              return `${deskLocalHmsAsTraderDisplay(s.marketClose, s.tz)} ${TRADER_DISPLAY_LABEL}`
+            })()}
             busy={lunchFlatBusy}
             onConfirm={() => void confirmLunchFlatClose()}
             onKeepOpen={() => {

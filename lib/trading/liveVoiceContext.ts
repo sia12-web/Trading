@@ -9,6 +9,7 @@ import {
   cashOpenUnixForYmd,
   deskClockFor,
 } from '@/lib/chart/sessionVwap'
+import { TRADER_DISPLAY_LABEL, TRADER_DISPLAY_TZ, deskLocalHmsAsTraderDisplay, deskLocalRangeAsTraderDisplay } from '@/lib/chart/traderDisplayTz'
 import {
   AI_LEVELS_QUERY,
   buildDeskPlaybook,
@@ -166,10 +167,6 @@ export type LiveVoiceDeskContext = {
     entrySource: string
   } | null
   voiceSessionId: string | null
-}
-
-function hhmm(hms: string): string {
-  return hms.slice(0, 5)
 }
 
 function biasFromRegime(regime: string | null | undefined): DeskBias {
@@ -335,7 +332,7 @@ export async function buildLiveVoiceDeskContext(
   })
 
   const sess = sessionFor(contextInstrument)
-  const tzLabel = deskMarketFor(contextInstrument) === 'TOKYO' ? 'JST' : 'ET'
+  const tzLabel = TRADER_DISPLAY_LABEL
   const clock = deskClockFor(contextInstrument)
 
   // Overnight / regime from regime_cache (live source — not simOvernightBias)
@@ -513,14 +510,24 @@ export async function buildLiveVoiceDeskContext(
       playbookTitle: deskPlaybookTitle(playbookMode, contextInstrument),
       tradeDate,
       times: {
-        analyzeStart: hhmm(sess.analyzeStart),
-        marketOpen: hhmm(sess.marketOpen),
-        entryClose: hhmm(sess.entryClose),
-        lunchClose: hhmm(sess.lunchClose),
-        marketClose: hhmm(sess.marketClose),
-        ibEntry: `${hhmm(ibStrategyStartHms(market))}–${hhmm(ibStrategyEndHms(market))}`,
-        lunchRangeEntry: `${hhmm(lunchRangeEntryStartHms(market))}–${hhmm(lunchRangeEntryEndHms(market))}`,
-        tz: sess.tz,
+        analyzeStart: deskLocalHmsAsTraderDisplay(sess.analyzeStart, sess.tz, now),
+        marketOpen: deskLocalHmsAsTraderDisplay(sess.marketOpen, sess.tz, now),
+        entryClose: deskLocalHmsAsTraderDisplay(sess.entryClose, sess.tz, now),
+        lunchClose: deskLocalHmsAsTraderDisplay(sess.lunchClose, sess.tz, now),
+        marketClose: deskLocalHmsAsTraderDisplay(sess.marketClose, sess.tz, now),
+        ibEntry: deskLocalRangeAsTraderDisplay(
+          ibStrategyStartHms(market),
+          ibStrategyEndHms(market),
+          sess.tz,
+          now
+        ).replace(` ${TRADER_DISPLAY_LABEL}`, ''),
+        lunchRangeEntry: deskLocalRangeAsTraderDisplay(
+          lunchRangeEntryStartHms(market),
+          lunchRangeEntryEndHms(market),
+          sess.tz,
+          now
+        ).replace(` ${TRADER_DISPLAY_LABEL}`, ''),
+        tz: TRADER_DISPLAY_TZ,
         tzLabel,
       },
     },

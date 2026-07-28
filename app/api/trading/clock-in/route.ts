@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error:
-            'No clock-in window. Clock in during prep only (NY 9:15–9:30 ET / Tokyo 8:45–9:00 JST). After cash open the session is skipped.',
+            'No clock-in window. Clock in during prep only (15 min before cash open, Montreal time). After cash open the session is skipped.',
         },
         { status: 403 }
       )

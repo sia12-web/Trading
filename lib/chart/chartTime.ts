@@ -1,8 +1,9 @@
 /**
  * lightweight-charts treats every timestamp as UTC for tick placement.
- * Desk charts must show America/New_York (DOW/NASDAQ) or Asia/Tokyo (NIKKEI).
+ * Desk charts show America/Toronto (Montreal) for every instrument.
+ * Instrument clocks (America/New_York / Asia/Tokyo) stay for session logic only.
  *
- * Shift real unix → "chart time" so UTC components equal the desk wall clock,
+ * Shift real unix → "chart time" so UTC components equal the trader wall clock,
  * then format axis labels with UTC getters. Reverse with fromChartTime for
  * crosshair / clicks. See: https://tradingview.github.io/lightweight-charts/docs/time-zones
  */

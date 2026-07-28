@@ -13,6 +13,10 @@ import {
   type DeskMarket,
 } from '@/lib/trading/sessionGate'
 import { getESTDateString, parseTimeToSeconds } from '@/lib/utils/timeUtils'
+import {
+  TRADER_DISPLAY_LABEL,
+  deskLocalHmsAsTraderDisplay,
+} from '@/lib/chart/traderDisplayTz'
 
 export type AttendanceStatus = 'clocked_in' | 'clocked_out' | 'missed'
 
@@ -107,10 +111,7 @@ export function canClockInNow(
   if (t < start) {
     return {
       ok: false,
-      reason:
-        market === 'TOKYO'
-          ? 'Clock-in opens 8:45 JST (15 min before Tokyo cash open)'
-          : 'Clock-in opens 9:15 ET (15 min before NY cash open)',
+      reason: `Clock-in opens ${deskLocalHmsAsTraderDisplay(s.analyzeStart, s.tz, now)} ${TRADER_DISPLAY_LABEL} (15 min before cash open)`,
     }
   }
   if (t >= open) {

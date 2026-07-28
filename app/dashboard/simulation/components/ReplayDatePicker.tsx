@@ -8,6 +8,7 @@ import {
   formatDateDisplay,
   getDayName,
 } from '@/lib/utils/dateUtils'
+import { deskLocalHmsAsTraderDisplay } from '@/lib/chart/traderDisplayTz'
 import type { AvailableDate, AvailableDatesResponse } from '@/types/trading'
 
 function AvailabilityBadge({ date }: { date: AvailableDate }) {
@@ -63,7 +64,10 @@ export function ReplayDatePicker({ onDateSelected }: ReplayDatePickerProps) {
       : selectedInstrument === 'NIKKEI'
         ? 'NIKKEI'
         : 'DOW'
-  const openLabel = instrument === 'NIKKEI' ? '9:00 AM JST' : '9:30 AM ET'
+  const openLabel =
+    instrument === 'NIKKEI'
+      ? `Nikkei cash open (${deskLocalHmsAsTraderDisplay('09:00:00', 'Asia/Tokyo')} ET)`
+      : '9:30 AM ET'
 
   const loadDates = useCallback(async () => {
     setIsLoadingDates(true)

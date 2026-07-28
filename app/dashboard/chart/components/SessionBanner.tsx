@@ -46,17 +46,16 @@ export interface SessionGateState {
   rangeStrategy?: 'ib' | 'lunch_range' | null
 }
 
-/** Live banner clock — ET for NY desk, JST when Tokyo/NIKKEI is active. */
-function formatDeskClock(market?: 'NY' | 'TOKYO' | null): { time: string; label: string } {
-  const tokyo = market === 'TOKYO'
+/** Live banner clock — always Montreal (Eastern). */
+function formatDeskClock(_market?: 'NY' | 'TOKYO' | null): { time: string; label: string } {
   const time = new Intl.DateTimeFormat('en-US', {
-    timeZone: tokyo ? 'Asia/Tokyo' : 'America/New_York',
+    timeZone: 'America/Toronto',
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
     hour12: false,
   }).format(new Date())
-  return { time, label: tokyo ? 'JST' : 'ET' }
+  return { time, label: 'ET' }
 }
 
 function phaseLabel(phase: string, rangeStrategy?: 'ib' | 'lunch_range' | null): string {
@@ -320,11 +319,7 @@ export function SessionBanner({
       </span>
       <span
         className="text-gray-400 font-mono tabular-nums min-w-[5.5rem]"
-        title={
-          gate.market === 'TOKYO'
-            ? 'Asia/Tokyo (NIKKEI desk)'
-            : 'America/New_York (NY desk)'
-        }
+        title="Montreal time (America/Toronto)"
         suppressHydrationWarning
       >
         {mounted && clockNow ? `${clockNow} ${clockLabel}` : `—:—:— ${clockLabel}`}
@@ -360,7 +355,7 @@ export function SessionBanner({
       {gate.phase === 'ENTRY' && gate.clockedIn && (
         <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-emerald-300">
           {gate.market === 'TOKYO'
-            ? 'Entry 09:00–09:45 JST'
+            ? 'Tokyo morning entry'
             : gate.entryWindow
               ? `Window ${gate.entryWindow}/3`
               : 'Entry window'}

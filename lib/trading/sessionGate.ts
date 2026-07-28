@@ -16,8 +16,14 @@
  * lunch-range fills and any leftover opens. SIMULATION: morning only (≤1).
  */
 
-import { getESTTimeString, parseTimeToSeconds } from '@/lib/utils/timeUtils'
+import { parseTimeToSeconds } from '@/lib/utils/timeUtils'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
+import {
+  TRADER_DISPLAY_LABEL,
+  deskLocalHmsAsTraderDisplay,
+  deskLocalRangeAsTraderDisplay,
+  timeInTraderDisplay,
+} from '@/lib/chart/traderDisplayTz'
 import { getWindowManager } from '@/lib/trading/windowManager'
 import type { Instrument } from '@/types/trading'
 import {
@@ -364,8 +370,8 @@ export function isLiveBarsAllowed(
       open: false,
       reason:
         deskMarketFor(instrument) === 'TOKYO'
-          ? 'Pre-open — Tokyo live desk opens 9:00 JST'
-          : 'Pre-open — NY live desk opens 9:30 ET',
+          ? `Pre-open — Tokyo live desk opens ${deskLocalHmsAsTraderDisplay(s.marketOpen, s.tz, now)} ${TRADER_DISPLAY_LABEL}`
+          : `Pre-open — NY live desk opens ${deskLocalHmsAsTraderDisplay(s.marketOpen, s.tz, now)} ${TRADER_DISPLAY_LABEL}`,
     }
   }
   if (t >= lunch) {
@@ -412,8 +418,8 @@ export function isChartStreamAllowed(
         open: false,
         reason:
           deskMarketFor(instrument) === 'TOKYO'
-            ? 'Pre-focus — NIKKEI tip starts 08:30 JST'
-            : 'Pre-focus — NY tip starts 09:00 ET',
+            ? `Pre-focus — NIKKEI tip starts ${deskLocalHmsAsTraderDisplay('08:30:00', s.tz, now)} ${TRADER_DISPLAY_LABEL}`
+            : `Pre-focus — NY tip starts ${deskLocalHmsAsTraderDisplay('09:00:00', s.tz, now)} ${TRADER_DISPLAY_LABEL}`,
       }
     }
     return { open: false, reason: 'Outside focus window — tip frozen' }
@@ -478,8 +484,8 @@ export function isDeskHoursNow(
       open: false,
       reason:
         deskMarketFor(instrument) === 'TOKYO'
-          ? 'Pre-session — Tokyo desk opens 8:45 JST'
-          : 'Pre-session — desk opens 9:15 ET',
+          ? `Pre-session — Tokyo desk opens ${deskLocalHmsAsTraderDisplay(s.analyzeStart, s.tz, now)} ${TRADER_DISPLAY_LABEL}`
+          : `Pre-session — desk opens ${deskLocalHmsAsTraderDisplay(s.analyzeStart, s.tz, now)} ${TRADER_DISPLAY_LABEL}`,
     }
   }
   if (t >= lunch) {
@@ -744,7 +750,8 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   const s = sessionFor(viewing ?? locked ?? (focusLive ? instrumentsForDeskMarket(focusMarket)[0]! : 'DOW'))
 
   const timeLocal = timeInTz(now, s.tz)
-  const timeEst = getESTTimeString(now) // keep EST label for NY-centric UI banner
+  /** Banner clock — always Montreal (trader wall clock), even on Tokyo desk. */
+  const timeEst = timeInTraderDisplay(now)
   const t = parseTimeToSeconds(timeLocal)
   const analyze = parseTimeToSeconds(s.analyzeStart)
   const open = parseTimeToSeconds(s.marketOpen)
@@ -817,7 +824,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   })
 
   const base = {
-    timeEst: market === 'NY' ? timeEst : timeLocal,
+    timeEst,
     lockedInstrument: locked,
     allowedInstruments: focusLive
       ? liveVisibleInstruments(now, {
@@ -908,15 +915,15 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     }
   }
 
-  const tzShort = market === 'TOKYO' ? 'JST' : 'ET'
   const ibStartHms = ibStrategyStartHms(market)
   const ibEndHms = ibStrategyEndHms(market)
   const lnStartHms = lunchRangeEntryStartHms(market)
   const lnEndHms = lunchRangeEntryEndHms(market)
+  const analyzeEt = deskLocalHmsAsTraderDisplay(s.analyzeStart, s.tz, now)
   const nextDesk =
     market === 'TOKYO'
-      ? 'Next Tokyo desk: clock in from 8:45 JST.'
-      : 'Next NY desk: clock in from 9:15 ET.'
+      ? `Next Tokyo desk: clock in from ${analyzeEt} ${TRADER_DISPLAY_LABEL}.`
+      : `Next NY desk: clock in from ${analyzeEt} ${TRADER_DISPLAY_LABEL}.`
 
   // Pre-session / weekend / after cash close
   if (!weekday || t < analyze) {
@@ -931,8 +938,8 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       message:
         t < analyze && weekday
           ? market === 'TOKYO'
-            ? 'Pre-session. Tokyo desk opens 8:45 JST — clock in then to trade NIKKEI.'
-            : 'Pre-session. Clock-in opens 9:15 ET (15 min before cash open).'
+            ? `Pre-session. Tokyo desk opens ${analyzeEt} ${TRADER_DISPLAY_LABEL} — clock in then to trade NIKKEI.`
+            : `Pre-session. Clock-in opens ${analyzeEt} ${TRADER_DISPLAY_LABEL} (15 min before cash open).`
           : `Weekend — desk closed. ${nextDesk} Or use Simulation.`,
     })
   }
@@ -1023,11 +1030,11 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       canManagePosition: false,
       message: clockedIn
         ? market === 'TOKYO'
-          ? `Clocked in on ${locked}. Pre-open prep — entries ${s.marketOpen.slice(0, 5)}–${s.entryClose.slice(0, 5)} JST.`
-          : `Clocked in on ${locked}. Pre-open prep — entries ${s.marketOpen.slice(0, 5)}–${s.entryClose.slice(0, 5)} ET.`
+          ? `Clocked in on ${locked}. Pre-open prep — entries ${deskLocalRangeAsTraderDisplay(s.marketOpen, s.entryClose, s.tz, now)}.`
+          : `Clocked in on ${locked}. Pre-open prep — entries ${deskLocalRangeAsTraderDisplay(s.marketOpen, s.entryClose, s.tz, now)}.`
         : market === 'TOKYO'
-          ? `Trade ${locked} today. Clock in to unlock the live desk (${s.marketOpen.slice(0, 5)}–${s.lunchClose.slice(0, 5)} JST).`
-          : `Trade ${locked} today. Clock in to unlock the live desk (${s.marketOpen.slice(0, 5)}–${s.lunchClose.slice(0, 5)} ET).`,
+          ? `Trade ${locked} today. Clock in to unlock the live desk (${deskLocalRangeAsTraderDisplay(s.marketOpen, s.lunchClose, s.tz, now)}).`
+          : `Trade ${locked} today. Clock in to unlock the live desk (${deskLocalRangeAsTraderDisplay(s.marketOpen, s.lunchClose, s.tz, now)}).`,
     })
   }
 
@@ -1036,10 +1043,21 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     // Morning levels end just before IB start when they share the same clock mark
     const inEntryWindow = t < parseTimeToSeconds(ibStartHms) && t <= entryClose
     const canMorningAttempt = ladder.morningEligible && !hasOpen
-    const entryUntil = `${s.entryClose.slice(0, 5)} ${tzShort}`
-    const entryRange = `${s.marketOpen.slice(0, 5)}–${s.entryClose.slice(0, 5)} ${tzShort}`
-    const ibUntil = `${ibEndHms.slice(0, 5)} ${tzShort}`
-    const ibRange = `${ibStartHms.slice(0, 5)}–${ibEndHms.slice(0, 5)} ${tzShort}`
+    const entryUntil = `${deskLocalHmsAsTraderDisplay(s.entryClose, s.tz, now)} ${TRADER_DISPLAY_LABEL}`
+    const entryRange = deskLocalRangeAsTraderDisplay(
+      s.marketOpen,
+      s.entryClose,
+      s.tz,
+      now
+    )
+    const ibUntil = `${deskLocalHmsAsTraderDisplay(ibEndHms, s.tz, now)} ${TRADER_DISPLAY_LABEL}`
+    const ibRange = deskLocalRangeAsTraderDisplay(ibStartHms, ibEndHms, s.tz, now)
+    const lunchRangeLabel = deskLocalRangeAsTraderDisplay(
+      lnStartHms,
+      lnEndHms,
+      s.tz,
+      now
+    )
     const ladderHint = formatAttemptLadderShort(ladder)
 
     if (inEntryWindow) {
@@ -1095,7 +1113,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
           : ladder.morningAttempts > 0
             ? `Morning trade taken — IB and lunch-range locked. ${ladderHint}`
             : ibEndedUnused
-              ? `IB entry closed (${ibUntil}). Lunch break playbook — lunch-range unlocks ${lnStartHms.slice(0, 5)}–${lnEndHms.slice(0, 5)} ${tzShort} if IB unused. ${ladderHint}`
+              ? `IB entry closed (${ibUntil}). Lunch break playbook — lunch-range unlocks ${lunchRangeLabel} if IB unused. ${ladderHint}`
               : ladder.ibAttempts > 0
                 ? `IB attempt used — lunch-range off. Manage if open. ${ladderHint}`
                 : `Morning entry closed (${entryUntil}). Next is IB ${ibRange} if morning skipped. ${ladderHint}`,
@@ -1105,7 +1123,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   // Lunch → cash close: lunch-range unlock OR manage-only (no PM watch)
   if (t >= lunch && t < close) {
     if (rangeStrategy === 'lunch_range') {
-      const lnUntil = `${lnEndHms.slice(0, 5)} ${tzShort}`
+      const lnUntil = `${deskLocalHmsAsTraderDisplay(lnEndHms, s.tz, now)} ${TRADER_DISPLAY_LABEL}`
       const ladderHint = formatAttemptLadderShort(ladder)
       return finish({
         ...base,
@@ -1115,7 +1133,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
         canFetchLiveBars: clockedIn || attendedToday,
         canPlaceEntry: clockedIn && ladder.lunchEligible && !hasOpen,
         canManagePosition: false,
-        message: `Lunch-range playbook unlocked — 1 attempt ${lnStartHms.slice(0, 5)}–${lnUntil}. ${ladderHint}. After that manage-only until cash close.`,
+        message: `Lunch-range playbook unlocked — 1 attempt ${deskLocalHmsAsTraderDisplay(lnStartHms, s.tz, now)}–${lnUntil}. ${ladderHint}. After that manage-only until cash close.`,
       })
     }
 
@@ -1124,6 +1142,12 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     const lunchRangeEnded =
       ladder.lunchEligible && t >= parseTimeToSeconds(lnEndHms)
     const ladderHint = formatAttemptLadderShort(ladder)
+    const lunchRangeLabel = deskLocalRangeAsTraderDisplay(
+      lnStartHms,
+      lnEndHms,
+      s.tz,
+      now
+    )
 
     return finish({
       ...base,
@@ -1136,7 +1160,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       message: ladderLock
         ? `${ladderLock} ${ladderHint}`
         : waitingLunchRange
-          ? `Lunch break playbook — lunch-range opens ${lnStartHms.slice(0, 5)}–${lnEndHms.slice(0, 5)} ${tzShort} (morning + IB skipped). ${ladderHint}`
+          ? `Lunch break playbook — lunch-range opens ${lunchRangeLabel} (morning + IB skipped). ${ladderHint}`
           : ladder.morningAttempts > 0
             ? `Morning trade taken — IB and lunch-range locked. Manage if open until cash close. ${ladderHint}`
             : ladder.ibAttempts > 0
@@ -1198,7 +1222,6 @@ export function resolveSimMorningGate(input: {
   const instrument = input.instrument
   const market = deskMarketFor(instrument)
   const s = sessionFor(instrument)
-  const tzShort = market === 'TOKYO' ? 'JST' : 'ET'
   const timeLocal = timeInTz(input.now, s.tz)
   const t = parseTimeToSeconds(timeLocal)
   const open = parseTimeToSeconds(s.marketOpen)
@@ -1213,9 +1236,16 @@ export function resolveSimMorningGate(input: {
   const revengeLocked = false
   const dayDone = !!input.dayDone || book.sessionDone
   const morningLabel = `Morning ${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS}`
+  const entryRangeEt = deskLocalRangeAsTraderDisplay(
+    s.marketOpen,
+    s.entryClose,
+    s.tz,
+    input.now
+  )
+  const entryCloseEt = `${deskLocalHmsAsTraderDisplay(s.entryClose, s.tz, input.now)} ${TRADER_DISPLAY_LABEL}`
 
   const base = {
-    timeEst: market === 'NY' ? getESTTimeString(input.now) : timeLocal,
+    timeEst: timeInTraderDisplay(input.now),
     lockedInstrument: instrument,
     entryWindow: (t >= open && t <= entryClose ? 1 : null) as 1 | 2 | 3 | null,
     market,
@@ -1266,7 +1296,7 @@ export function resolveSimMorningGate(input: {
       phase: 'RECOMMENDED',
       canPlaceEntry: false,
       canManagePosition: false,
-      message: `Replay clock before cash open. Morning entries ${s.marketOpen.slice(0, 5)}–${s.entryClose.slice(0, 5)} ${tzShort}. ${morningLabel}.`,
+      message: `Replay clock before cash open. Morning entries ${entryRangeEt}. ${morningLabel}.`,
     }
   }
 
@@ -1282,7 +1312,7 @@ export function resolveSimMorningGate(input: {
         ? canAttempt
           ? `Morning playbook — ${morningLabel}. Click a ${instrument} level. Working limits do not count until filled.`
           : book.lockReason || 'No morning attempts left. Trading locked.'
-        : `Morning entry closed (${s.entryClose.slice(0, 5)} ${tzShort}). Sim has no IB / lunch-range — manage if in a trade, else wait for lunch.`,
+        : `Morning entry closed (${entryCloseEt}). Sim has no IB / lunch-range — manage if in a trade, else wait for lunch.`,
     }
   }
 

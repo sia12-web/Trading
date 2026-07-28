@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { useReplayModeStore } from '@/lib/stores/replayModeStore'
 import { ReplayDatePicker } from './components/ReplayDatePicker'
 import { formatDateDisplay } from '@/lib/utils/dateUtils'
+import { deskLocalHmsAsTraderDisplay } from '@/lib/chart/traderDisplayTz'
 import type { CreateReplaySessionRequest, PlaybackSpeed } from '@/types/trading'
 
 const INSTRUMENTS: Array<'DOW' | 'NASDAQ' | 'NIKKEI'> = ['DOW', 'NASDAQ', 'NIKKEI']
@@ -62,7 +63,10 @@ export default function SimulationPage() {
       : selectedInstrument === 'NIKKEI'
         ? 'NIKKEI'
         : 'DOW'
-  const openLabel = deskInstrument === 'NIKKEI' ? '9:00 AM JST' : '9:30 AM ET'
+  const openLabel =
+    deskInstrument === 'NIKKEI'
+      ? `Nikkei cash open (${deskLocalHmsAsTraderDisplay('09:00:00', 'Asia/Tokyo')} ET)`
+      : '9:30 AM ET'
 
   const handlePlayReplay = async () => {
     if (!selectedDate) {

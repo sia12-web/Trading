@@ -696,7 +696,7 @@ export const TOKYO_DESK_CLOCK: DeskClock = {
   timeZone: 'Asia/Tokyo',
   cashOpenHour: 9, // Nikkei / TSE cash open — not NY 9:30
   overnightStartHour: 15, // TSE cash close
-  openLabel: 'Nikkei 9:00 JST',
+  openLabel: 'Nikkei cash open',
 }
 
 export function deskClockFor(instrument: string | null | undefined): DeskClock {

@@ -97,13 +97,11 @@ function marketFor(e: JournalEntry): string {
   return e.market || (e.instrument === 'NIKKEI' ? 'TOKYO' : 'NY')
 }
 
-function fmtTime(iso: string | null | undefined, market?: string): string {
+function fmtTime(iso: string | null | undefined, _market?: string): string {
   if (!iso) return '—'
-  const tz = market === 'TOKYO' ? 'Asia/Tokyo' : 'America/New_York'
-  const label = market === 'TOKYO' ? 'JST' : 'ET'
   try {
     const s = new Intl.DateTimeFormat('en-US', {
-      timeZone: tz,
+      timeZone: 'America/Toronto',
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
@@ -111,7 +109,7 @@ function fmtTime(iso: string | null | undefined, market?: string): string {
       second: '2-digit',
       hour12: false,
     }).format(new Date(iso))
-    return `${s} ${label}`
+    return `${s} ET`
   } catch {
     return iso
   }

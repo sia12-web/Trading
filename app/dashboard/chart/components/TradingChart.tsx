@@ -48,6 +48,10 @@ import {
   toChartTime,
 } from '@/lib/chart/chartTime'
 import {
+  TRADER_DISPLAY_LABEL,
+  TRADER_DISPLAY_TZ,
+} from '@/lib/chart/traderDisplayTz'
+import {
   previewLevelOrderPrices,
   resolveChartLimitPick,
 } from '@/lib/trading/chartLevelPick'
@@ -98,11 +102,19 @@ import {
 } from '@/lib/chart/nycLunchSessionRange'
 import {
   NIKKEI_US_RANGE_COLORS,
-  computeNikkeiUsRangeBreakout,
+  currentNikkeiUsRangeForChart,
   isNikkeiUsRangeInstrument,
   nikkeiUsRangeLineSeriesData,
-  type NikkeiUsRangeResult,
+  type NikkeiUsSessionRange,
 } from '@/lib/chart/nikkeiUsRangeBreakout'
+import {
+  OR30_COLORS,
+  computeOr30Range,
+  isOr30Instrument,
+  or30LineSeriesData,
+  or30WindowLabel,
+  type Or30Range,
+} from '@/lib/chart/openingRange30'
 import {
   getDeskInstrumentPreference,
   setDeskInstrumentPreference,
@@ -229,7 +241,7 @@ function describeTimeHighlightSpan(
   const endSess = deskSessionAt(endUnix, instrument) || 'Overnight'
   
   const nowUnix = Date.now() / 1000
-  const timeZone = instrument === 'NIKKEI' ? 'Asia/Tokyo' : 'America/New_York'
+  const timeZone = TRADER_DISPLAY_TZ
 
   const startDateStr = getRelativeTradingDayLabel(startUnix, nowUnix, timeZone)
   const endDateStr = getRelativeTradingDayLabel(endUnix, nowUnix, timeZone)
@@ -249,11 +261,11 @@ function describeTimeHighlightSpan(
 
 /**
  * Axis / crosshair formatters for desk-shifted chart times.
- * Candle setData uses toChartTime() so UTC comps == ET/JST wall clock;
+ * Candle setData uses toChartTime() so UTC comps == Montreal wall clock;
  * labels therefore read UTC getters (not a second TZ conversion).
  */
-function makeDeskChartFormatters(instrument: Instrument): DeskChartFmt {
-  const tzLabel = instrument === 'NIKKEI' ? 'JST' : 'ET'
+function makeDeskChartFormatters(_instrument: Instrument): DeskChartFmt {
+  const tzLabel = TRADER_DISPLAY_LABEL
   const toUnix = (time: UTCTimestamp | string | number) =>
     typeof time === 'number' ? time : Math.floor(new Date(String(time)).getTime() / 1000)
 
@@ -663,10 +675,18 @@ export function TradingChart({
     high: ISeriesApi<'Line'>
     low: ISeriesApi<'Line'>
   } | null>(null)
-  const usRangeRef = useRef<NikkeiUsRangeResult | null>(null)
+  const usRangeRef = useRef<NikkeiUsSessionRange | null>(null)
   const [usRangeShaped, setUsRangeShaped] = useState(false)
-  /** Gates US H/L lines + Asia BRK/REJ markers together */
+  /** Gates current-session US H/L lines (IB-style, no markers) */
   const [showUsRange, setShowUsRange] = useState(true)
+  /** First 30m opening range — NY 09:30–10:00 ET / Tokyo 09:00–09:30 JST */
+  const or30SeriesRef = useRef<{
+    high: ISeriesApi<'Line'>
+    low: ISeriesApi<'Line'>
+  } | null>(null)
+  const or30RangeRef = useRef<Or30Range | null>(null)
+  const [or30Shaped, setOr30Shaped] = useState(false)
+  const [showOr30, setShowOr30] = useState(true)
   const levelLinesRef = useRef<any[]>([])
   /** Host for level/SL/TP price lines — seeded once; candle setData must not touch it */
   const priceLineHostRef = useRef<ISeriesApi<'Line'> | null>(null)
@@ -774,17 +794,7 @@ export function TradingChart({
       }
     }
 
-    if (showUsRange && usRangeRef.current) {
-      for (const s of usRangeRef.current.signals) {
-        markers.push({
-          time: s.time as UTCTimestamp,
-          position: s.position,
-          color: s.color,
-          shape: s.shape,
-          text: s.text,
-        })
-      }
-    }
+    // US Range is IB-style H/L lines only — no BRK/REJ markers
 
     try {
       candleSeries.setMarkers(
@@ -796,11 +806,11 @@ export function TradingChart({
     } catch {
       /* ignore */
     }
-  }, [showIbBreakouts, showLunchRange, showUsRange])
+  }, [showIbBreakouts, showLunchRange])
 
   useEffect(() => {
     paintDeskMarkers()
-  }, [showIbBreakouts, showLunchRange, showUsRange, paintDeskMarkers])
+  }, [showIbBreakouts, showLunchRange, paintDeskMarkers])
 
   /** Apply / clear lunch line series from cached range (toggle without recompute). */
   const paintLunchLines = useCallback(() => {
@@ -860,7 +870,7 @@ export function TradingChart({
     }
   }, [showLunchRange, instrument])
 
-  /** Apply / clear Nikkei US-range lines from cached result. */
+  /** Apply / clear Nikkei US-range H/L (IB-style: current session, 2 red lines). */
   const paintUsRangeLines = useCallback(() => {
     const series = usRangeSeriesRef.current
     if (!series) return
@@ -875,7 +885,10 @@ export function TradingChart({
       setUsRangeShaped(false)
       return
     }
-    const pts = nikkeiUsRangeLineSeriesData(usRange)
+    const tipUnix = candlesRef.current.length
+      ? (candlesRef.current[candlesRef.current.length - 1]!.time as number)
+      : Math.floor(Date.now() / 1000)
+    const pts = nikkeiUsRangeLineSeriesData(usRange, tipUnix)
     try {
       const tz = chartTzRef.current
       series.high.setData(
@@ -890,13 +903,54 @@ export function TradingChart({
           tz
         ).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
       )
-      setUsRangeShaped(usRange.visible && pts.high.length > 0)
+      setUsRangeShaped(pts.high.length > 0)
     } catch {
       series.high.setData([])
       series.low.setData([])
       setUsRangeShaped(false)
     }
   }, [showUsRange, instrument])
+
+  /** Apply / clear first-30m opening range H/L (teal, IB-style). */
+  const paintOr30Lines = useCallback(() => {
+    const series = or30SeriesRef.current
+    if (!series) return
+    const range = or30RangeRef.current
+    if (!showOr30 || !range || !isOr30Instrument(instrument)) {
+      try {
+        series.high.setData([])
+        series.low.setData([])
+      } catch {
+        /* ignore */
+      }
+      setOr30Shaped(false)
+      return
+    }
+    const tipUnix = candlesRef.current.length
+      ? (candlesRef.current[candlesRef.current.length - 1]!.time as number)
+      : Math.floor(Date.now() / 1000)
+    const pts = or30LineSeriesData(range, tipUnix)
+    try {
+      const tz = chartTzRef.current
+      series.high.setData(
+        mapTimesToChart(
+          pts.high.map((p) => ({ time: p.time, value: p.value })),
+          tz
+        ).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
+      )
+      series.low.setData(
+        mapTimesToChart(
+          pts.low.map((p) => ({ time: p.time, value: p.value })),
+          tz
+        ).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
+      )
+      setOr30Shaped(pts.high.length > 0)
+    } catch {
+      series.high.setData([])
+      series.low.setData([])
+      setOr30Shaped(false)
+    }
+  }, [showOr30, instrument])
 
   useEffect(() => {
     paintLunchLines()
@@ -905,6 +959,10 @@ export function TradingChart({
   useEffect(() => {
     paintUsRangeLines()
   }, [paintUsRangeLines])
+
+  useEffect(() => {
+    paintOr30Lines()
+  }, [paintOr30Lines])
 
   const ibProximity = useMemo(() => {
     if (!showIbBreakouts || !ibShaped || !ibRangeRef.current || !livePrice) return null
@@ -1077,10 +1135,10 @@ export function TradingChart({
   /** Hover preview of entry/SL/TP for the nearest visible AI/structure level */
   const hoverPreviewLinesRef = useRef<any[]>([])
   const hoverPreviewKeyRef = useRef<string | null>(null)
-  /** Axis / tooltip clocks — ET for DOW/NASDAQ, JST for NIKKEI */
+  /** Axis / tooltip clocks — Montreal for every desk */
   const chartFmtRef = useRef<DeskChartFmt>(makeDeskChartFormatters('DOW'))
-  /** Desk TZ for toChartTime — must match candle setData shifts */
-  const chartTzRef = useRef(deskClockFor('DOW').timeZone)
+  /** Trader TZ for toChartTime — always America/Toronto */
+  const chartTzRef = useRef(TRADER_DISPLAY_TZ)
 
   const clearHoverPreview = useCallback(() => {
     const host = priceLineHostRef.current
@@ -1335,11 +1393,11 @@ export function TradingChart({
     }
   }, [deskLevelsActive, rangeStrategy, morningAttempts, ibAttempts, lunchAttempts, stopHits])
 
-  // Keep axis / tooltips on the same desk clock as session colors (ET vs JST).
+  // Chart axis / tooltips always Montreal — desk logic stays on instrument clock.
   // Candle setData shifts unix → chart time; tickMarkFormatter reads UTC comps.
   useEffect(() => {
     chartFmtRef.current = makeDeskChartFormatters(instrument)
-    chartTzRef.current = deskClockFor(instrument).timeZone
+    chartTzRef.current = TRADER_DISPLAY_TZ
     const chart = chartRef.current
     if (!chart) return
     chart.applyOptions({
@@ -1599,6 +1657,21 @@ export function TradingChart({
       low: chart.addLineSeries({ ...usRangeLineOpts, title: 'US L' }),
     }
 
+    // Opening range 30m H/L — NY 09:30–10:00 ET / Tokyo 09:00–09:30 JST
+    const or30LineOpts = {
+      color: OR30_COLORS.high,
+      lineWidth: 2 as const,
+      lineStyle: LineStyle.Solid,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      crosshairMarkerVisible: false,
+      ...ignoreScale,
+    }
+    const or30Series = {
+      high: chart.addLineSeries({ ...or30LineOpts, title: 'OR30 H' }),
+      low: chart.addLineSeries({ ...or30LineOpts, title: 'OR30 L' }),
+    }
+
     // Full chart height — no volume so no bottom margin needed
     chart.priceScale('right').applyOptions({
       autoScale: true,
@@ -1662,6 +1735,7 @@ export function TradingChart({
     ibSeriesRef.current = ibSeries
     lunchSeriesRef.current = lunchSeries
     usRangeSeriesRef.current = usRangeSeries
+    or30SeriesRef.current = or30Series
     setChartReady(true)
 
     // Sync React overlay coordinates on chart scroll/zoom
@@ -1695,11 +1769,13 @@ export function TradingChart({
       ibSeriesRef.current = null
       lunchSeriesRef.current = null
       usRangeSeriesRef.current = null
+      or30SeriesRef.current = null
       levelLinesRef.current = []
       positionLinesRef.current = []
       setIbShaped(false)
       setLunchShaped(false)
       setUsRangeShaped(false)
+      setOr30Shaped(false)
     }
   }, []) // initialize once only
 
@@ -1883,6 +1959,17 @@ export function TradingChart({
     }
     usRangeRef.current = null
     setUsRangeShaped(false)
+    const or30S = or30SeriesRef.current
+    if (or30S) {
+      try {
+        or30S.high.setData([])
+        or30S.low.setData([])
+      } catch {
+        /* ignore */
+      }
+    }
+    or30RangeRef.current = null
+    setOr30Shaped(false)
     try {
       host?.setData([])
     } catch {
@@ -2138,11 +2225,14 @@ export function TradingChart({
         }
       }
 
-      // Nikkei — US range H/L + Asia session breakout/rejection (Mind Over Markets)
+      // Nikkei — current US session H/L only (IB-style 2 red lines, no BRK/REJ markers)
       const usRangeSeries = usRangeSeriesRef.current
       if (usRangeSeries) {
         if (isNikkeiUsRangeInstrument(instrument)) {
-          const usRange = computeNikkeiUsRangeBreakout(
+          const tipUnix = ordered.length
+            ? (ordered[ordered.length - 1]!.time as number)
+            : Math.floor(Date.now() / 1000)
+          const usRange = currentNikkeiUsRangeForChart(
             ordered.map((c) => ({
               time: c.time as number,
               open: c.open,
@@ -2150,7 +2240,8 @@ export function TradingChart({
               low: c.low,
               close: c.close,
               volume: c.volume,
-            }))
+            })),
+            tipUnix
           )
           usRangeRef.current = usRange
           paintUsRangeLines()
@@ -2160,7 +2251,47 @@ export function TradingChart({
         }
       }
 
-      // One marker list for IB + Lunch + Nikkei US-range
+      // First 30m opening range — desk cash open (NY 09:30 / Tokyo 09:00)
+      const or30Series = or30SeriesRef.current
+      if (or30Series) {
+        if (isOr30Instrument(instrument)) {
+          const tipUnix = ordered.length
+            ? (ordered[ordered.length - 1]!.time as number)
+            : Math.floor(Date.now() / 1000)
+          const nowUnix = Math.max(tipUnix, Math.floor(Date.now() / 1000))
+          const sess = sessionFor(instrument)
+          const tipDay = new Intl.DateTimeFormat('en-CA', {
+            timeZone: sess.tz,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+          }).format(new Date(tipUnix * 1000))
+          const [oh, om] = sess.marketOpen.split(':').map(Number)
+          const openUnix =
+            instrument === 'NIKKEI'
+              ? tokyoDateTimeToUnix(tipDay, oh!, om || 0)
+              : nyDateTimeToUnix(tipDay, oh!, om || 0)
+          const or30 = computeOr30Range(
+            ordered.map((c) => ({
+              time: c.time as number,
+              open: c.open,
+              high: c.high,
+              low: c.low,
+              close: c.close,
+              volume: c.volume,
+            })),
+            openUnix,
+            nowUnix
+          )
+          or30RangeRef.current = or30
+          paintOr30Lines()
+        } else {
+          or30RangeRef.current = null
+          paintOr30Lines()
+        }
+      }
+
+      // One marker list for IB + Lunch (US Range / OR30 are lines-only)
       paintDeskMarkers(ordered)
       const host = priceLineHostRef.current
       if (host && !priceLineHostSeededRef.current && ordered.length > 0) {
@@ -2994,7 +3125,7 @@ export function TradingChart({
     )
 
     const fmtFull = new Intl.DateTimeFormat('en-US', {
-      timeZone: inst === 'NIKKEI' ? 'Asia/Tokyo' : 'America/New_York',
+      timeZone: TRADER_DISPLAY_TZ,
       weekday: 'short',
       month: 'short',
       day: 'numeric',
@@ -3006,7 +3137,7 @@ export function TradingChart({
 
     const fullStartStr = fmtFull.format(new Date(drawnTime.startUnix * 1000))
     const fullEndStr = fmtFull.format(new Date(drawnTime.endUnix * 1000))
-    const tzLabel = inst === 'NIKKEI' ? 'JST' : 'ET'
+    const tzLabel = TRADER_DISPLAY_LABEL
 
     const clickStartP = drawnTime.priceStart
     const clickEndP = drawnTime.priceEnd
@@ -3592,6 +3723,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         if (instrument === 'NIKKEI') {
           setShowUsRange((prev) => !prev)
         }
+      } else if (key === 'r') {
+        e.preventDefault()
+        if (isOr30Instrument(instrument)) {
+          setShowOr30((prev) => !prev)
+        }
       } else if (key === 'p') {
         e.preventDefault()
         togglePlaybook()
@@ -4172,24 +4308,45 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </button>
         )}
 
-        {/* Nikkei US Range BRK/REJ toggle (Press U) — separate from IB */}
+        {/* Nikkei US Range H/L toggle (Press U) — IB-style lines only */}
         {deskSessionLive && instrument === 'NIKKEI' && (
           <button
             type="button"
             title={
               showUsRange
-                ? 'US range lines + Asia breakout/rejection visible (Press U)'
-                : 'Show US session range + Asia BRK/REJ (Press U)'
+                ? 'US H/L lines visible (Press U)'
+                : 'Show current US session H/L (Press U)'
             }
             onClick={() => setShowUsRange((v) => !v)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
               showUsRange
-                ? 'bg-rose-600/30 border-rose-500/50 text-rose-100'
-                : 'bg-transparent border-surface-600 text-gray-500 hover:text-rose-200 hover:border-rose-500/40'
+                ? 'bg-red-600/30 border-red-500/50 text-red-100'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-red-200 hover:border-red-500/40'
             }`}
           >
-            <span className={`w-2 h-2 rounded-full inline-block ${showUsRange ? 'bg-rose-400' : 'bg-gray-600'}`} />
+            <span className={`w-2 h-2 rounded-full inline-block ${showUsRange ? 'bg-red-500' : 'bg-gray-600'}`} />
             <span>US Range (U)</span>
+          </button>
+        )}
+
+        {/* Opening range 30m (Press R) — NY 09:30–10:00 ET / Tokyo 09:00–09:30 JST */}
+        {deskSessionLive && isOr30Instrument(instrument) && (
+          <button
+            type="button"
+            title={
+              showOr30
+                ? `OR 30 H/L visible — ${or30WindowLabel(instrument)} (Press R)`
+                : `Show first 30m opening range — ${or30WindowLabel(instrument)} (Press R)`
+            }
+            onClick={() => setShowOr30((v) => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+              showOr30
+                ? 'bg-teal-600/30 border-teal-500/50 text-teal-100'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-teal-200 hover:border-teal-500/40'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full inline-block ${showOr30 ? 'bg-teal-400' : 'bg-gray-600'}`} />
+            <span>OR 30 (R)</span>
           </button>
         )}
 
@@ -4655,14 +4812,28 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             <span className="text-gray-600">·</span>
             <span
               className="flex items-center gap-1.5 normal-case tracking-normal"
-              title="US session range (UTC 13:30–20:00) — Asia breakout/rejection on Nikkei"
+              title="Last NYC session high/low — drawn only on current Tokyo cash (09:00→tip)"
             >
               <span
                 className="inline-block w-4 border-t-2"
                 style={{ borderColor: NIKKEI_US_RANGE_COLORS.high }}
               />
               <span style={{ color: NIKKEI_US_RANGE_COLORS.high }}>US H/L</span>
-              <span className="text-gray-600">Asia BRK / REJ</span>
+            </span>
+          </>
+        )}
+        {or30Shaped && (
+          <>
+            <span className="text-gray-600">·</span>
+            <span
+              className="flex items-center gap-1.5 normal-case tracking-normal"
+              title={`Opening range — first 30 minutes (${or30WindowLabel(instrument)})`}
+            >
+              <span
+                className="inline-block w-4 border-t-2"
+                style={{ borderColor: OR30_COLORS.high }}
+              />
+              <span style={{ color: OR30_COLORS.high }}>OR30 H/L</span>
             </span>
           </>
         )}

@@ -11,6 +11,12 @@ import {
   type DeskMarket,
 } from '@/lib/trading/sessionGate'
 import { parseTimeToSeconds } from '@/lib/utils/timeUtils'
+import {
+  TRADER_DISPLAY_LABEL,
+  TRADER_DISPLAY_TZ,
+  deskLocalHmsAsTraderDisplay,
+  timeInTraderDisplay,
+} from '@/lib/chart/traderDisplayTz'
 
 export type LiveVoiceDisableReason =
   | 'unauthorized'
@@ -70,10 +76,6 @@ function isWeekdayInTz(date: Date, timeZone: string): boolean {
   return d !== 'Sat' && d !== 'Sun'
 }
 
-function hhmm(hms: string): string {
-  return hms.slice(0, 5)
-}
-
 /**
  * Opt-in only: set LIVE_VOICE_DEV_BYPASS=true in .env.local to test outside the weekday window.
  * Off in production unless ALLOW_STAGING_VOICE_BYPASS=true is explicitly set for staging previews.
@@ -99,14 +101,17 @@ export function resolveLiveVoiceStatus(input: {
     : 'DOW'
   const market = deskMarketFor(instrument)
   const sess = sessionFor(instrument)
-  const tzLabel = market === 'TOKYO' ? 'JST' : 'ET'
-  const localTime = timeInTz(now, sess.tz)
+  const tzLabel = TRADER_DISPLAY_LABEL
+  /** Desk clock for window gates (Tokyo vs NY civil time). */
+  const deskLocalTime = timeInTz(now, sess.tz)
+  /** Trader wall clock — always Montreal for Leo UI / copy. */
+  const localTime = timeInTraderDisplay(now)
   const tradeDate = localDateInTz(sess.tz, now)
   const voiceEndHms = lunchRangeEntryEndHms(market)
   const window = {
-    start: hhmm(sess.analyzeStart),
-    end: hhmm(voiceEndHms),
-    tz: sess.tz,
+    start: deskLocalHmsAsTraderDisplay(sess.analyzeStart, sess.tz, now),
+    end: deskLocalHmsAsTraderDisplay(voiceEndHms, sess.tz, now),
+    tz: TRADER_DISPLAY_TZ,
     tzLabel,
   }
   const bypass = liveVoiceDevBypassEnabled()
@@ -132,7 +137,7 @@ export function resolveLiveVoiceStatus(input: {
     }
   }
 
-  const t = parseTimeToSeconds(localTime)
+  const t = parseTimeToSeconds(deskLocalTime)
   const start = parseTimeToSeconds(sess.analyzeStart)
   const end = parseTimeToSeconds(voiceEndHms)
   const inVoiceWindow = bypass || (t >= start && t < end)

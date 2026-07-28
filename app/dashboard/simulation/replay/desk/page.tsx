@@ -65,6 +65,11 @@ import {
   mapTimesToChart,
   toChartTime,
 } from '@/lib/chart/chartTime'
+import {
+  TRADER_DISPLAY_LABEL,
+  TRADER_DISPLAY_TZ,
+  deskLocalHmsAsTraderDisplay,
+} from '@/lib/chart/traderDisplayTz'
 import { DESK_CHART_THEME } from '@/lib/chart/deskChartTheme'
 import {
   computeSimOvernightBias,
@@ -180,8 +185,7 @@ type ChartFmt = {
   tzLabel: string
 }
 
-/** Market-local chart clocks — NY for DOW/NASDAQ, Tokyo for NIKKEI.
- * Toolbar clock uses real unix + Intl TZ. Axis ticks use desk-shifted chart times. */
+/** Trader wall-clock formatters — Montreal for every instrument. */
 function makeChartFormatters(timeZone: string, tzLabel: string): ChartFmt {
   const fmtTime = new Intl.DateTimeFormat('en-US', {
     timeZone,
@@ -284,10 +288,10 @@ function SimulationDeskInner() {
     ? Math.min(16, Math.max(0.25, parsedSpeed))
     : 0.25
   const sess = sessionFor(instrument)
-  const tzLabel = instrument === 'NIKKEI' ? 'JST' : 'ET'
+  const tzLabel = TRADER_DISPLAY_LABEL
   const chartFmt = useMemo(
-    () => makeChartFormatters(sess.tz, tzLabel),
-    [sess.tz, tzLabel]
+    () => makeChartFormatters(TRADER_DISPLAY_TZ, tzLabel),
+    [tzLabel]
   )
   const toUnix = instrument === 'NIKKEI' ? tokyoDateTimeToUnix : nyDateTimeToUnix
   const [openH, openM] = sess.marketOpen.split(':').map(Number)
@@ -629,7 +633,7 @@ function SimulationDeskInner() {
         setPlaybook(structure.playbook)
 
         const openLabel =
-          instrument === 'NIKKEI' ? '9:00 AM JST' : '9:30 AM ET'
+          `Cash open ${deskLocalHmsAsTraderDisplay(sess.marketOpen, sess.tz, new Date(`${replayDate}T12:00:00Z`))} ${TRADER_DISPLAY_LABEL}`
         setMsg(
           `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · loading AI levels (Haiku)…`
         )
@@ -951,7 +955,7 @@ function SimulationDeskInner() {
       /* defaults */
     }
 
-    const tz = sess.tz
+    const tz = TRADER_DISPLAY_TZ
     const { rects } = projectSessionHighlightRects({
       spans: cached.spans.map((s) => ({
         ...s,
@@ -1069,7 +1073,7 @@ function SimulationDeskInner() {
       if (!force && endIdx === lastAppliedBarIdxRef.current) return
 
       const toBar = (c: Candle) => ({
-        time: toChartTime(c.time, sess.tz) as UTCTimestamp,
+        time: toChartTime(c.time, TRADER_DISPLAY_TZ) as UTCTimestamp,
         open: c.open,
         high: c.high,
         low: c.low,
@@ -1079,7 +1083,7 @@ function SimulationDeskInner() {
       const shiftBand = <T extends { time: number | UTCTimestamp; value: number }>(rows: T[]) =>
         mapTimesToChart(
           rows.map((r) => ({ time: r.time as number, value: r.value })),
-          sess.tz
+          TRADER_DISPLAY_TZ
         ).map((r) => ({ time: r.time as UTCTimestamp, value: r.value }))
 
       if (force || lastAppliedBarIdxRef.current < 0) {
@@ -1149,8 +1153,8 @@ function SimulationDeskInner() {
           const a = slice[0]!
           const b = slice[slice.length - 1]!
           host.setData([
-            { time: toChartTime(a.time, sess.tz) as UTCTimestamp, value: a.close },
-            { time: toChartTime(b.time, sess.tz) as UTCTimestamp, value: b.close },
+            { time: toChartTime(a.time, TRADER_DISPLAY_TZ) as UTCTimestamp, value: a.close },
+            { time: toChartTime(b.time, TRADER_DISPLAY_TZ) as UTCTimestamp, value: b.close },
           ])
           priceLineHostSeededRef.current = true
           paintTradeLevelsRef.current()
@@ -1611,7 +1615,7 @@ function SimulationDeskInner() {
         setPlaying(false)
         setMsg(
           instrument === 'NIKKEI'
-            ? 'Sim clock reached lunch (11:30 JST) — morning finished'
+            ? `Sim clock reached lunch (${deskLocalHmsAsTraderDisplay(sess.lunchClose, sess.tz)} ${TRADER_DISPLAY_LABEL}) — morning finished`
             : 'Sim clock reached lunch (11:30 ET) — morning finished'
         )
         void markSessionCompleted()
@@ -1868,7 +1872,7 @@ function SimulationDeskInner() {
     resetSessionProgress()
     setMsg(
       instrument === 'NIKKEI'
-        ? 'Reset to 9:00 AM JST — double-click the chart or pick a level, then Play'
+        ? `Reset to ${deskLocalHmsAsTraderDisplay(sess.marketOpen, sess.tz)} ${TRADER_DISPLAY_LABEL} — double-click the chart or pick a level, then Play`
         : 'Reset to 9:30 AM ET — double-click the chart or pick a level, then Play'
     )
   }
@@ -1889,7 +1893,7 @@ function SimulationDeskInner() {
     resetSessionProgress()
     setMsg(
       instrument === 'NIKKEI'
-        ? 'Replay from 9:00 AM JST — double-click the chart or pick a level, or watch'
+        ? `Replay from ${deskLocalHmsAsTraderDisplay(sess.marketOpen, sess.tz)} ${TRADER_DISPLAY_LABEL} — double-click the chart or pick a level, or watch`
         : 'Replay from 9:30 AM ET — double-click the chart or pick a level, or watch'
     )
     setPlaying(true)
