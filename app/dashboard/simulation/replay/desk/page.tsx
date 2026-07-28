@@ -120,7 +120,13 @@ import {
   type StrategyRangeEdges,
   type StrategyRiskMagnets,
 } from '@/lib/trading/strategyRiskGeometry'
-import { resolveDeskPlaybookMode } from '@/lib/trading/deskPlaybookMode'
+import {
+  resolveDeskPlaybookMode,
+  deskPlaybookPanelTitle,
+  deskPlaybookHint,
+  deskPlaybookToolbarLabel,
+  isDeskWatchOnlyPlaybook,
+} from '@/lib/trading/deskPlaybookMode'
 import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
 
 type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI'
@@ -2614,6 +2620,39 @@ function SimulationDeskInner() {
   const midChip = instrument === 'NIKKEI' ? 'US' : 'IB'
   const lateChip = instrument === 'NIKKEI' ? 'IB' : 'LN'
 
+  const playbookMode = useMemo(() => {
+    if (!simNow) return 'morning' as const
+    return resolveDeskPlaybookMode({
+      instrument,
+      now: new Date(simNow * 1000),
+      rangeStrategy: gate?.rangeStrategy ?? undefined,
+      ladder: attemptLadderFromCounts({
+        morningAttempts,
+        ibAttempts,
+        lunchAttempts,
+        morningStopHits: Math.min(stopHits, morningAttempts),
+      }),
+    })
+  }, [
+    simNow,
+    instrument,
+    gate?.rangeStrategy,
+    morningAttempts,
+    ibAttempts,
+    lunchAttempts,
+    stopHits,
+  ])
+  const watchOnlyPlaybook =
+    isDeskWatchOnlyPlaybook(playbookMode) && !canEnter && !position
+  const playbookPanelTitle = deskPlaybookPanelTitle(playbookMode, instrument, {
+    watchOnly: watchOnlyPlaybook,
+  })
+  const playbookRangeHint = deskPlaybookHint(playbookMode, instrument)
+  const playbookButtonLabel = deskPlaybookToolbarLabel(playbookMode, {
+    watchOnly: watchOnlyPlaybook,
+    instrument,
+  })
+
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#0d1117]">
       {/* Full-bleed chart + session color bands (bands painted imperatively for smooth pan) */}
@@ -2931,11 +2970,11 @@ function SimulationDeskInner() {
           {!playbookOpen && (
             <button
               type="button"
-              title="Show morning playbook panel (Press P)"
+              title={`Show ${playbookPanelTitle} (Press P)`}
               onClick={() => setPlaybookOpen(true)}
               className="rounded border border-white/15 px-2 py-1 text-[10px] uppercase text-gray-400 hover:bg-white/10 hover:text-gray-200"
             >
-              Playbook (P)
+              {playbookButtonLabel} (P)
             </button>
           )}
           <button
@@ -3145,14 +3184,14 @@ function SimulationDeskInner() {
         )}
       </div>
 
-      {/* Morning playbook — close only hides this panel, not chart levels */}
+      {/* Playbook — morning / IB|US / lunch-break / lunch-range|Tokyo IB */}
       {playbookOpen && (
         <DraggableDeskWidget
           storageKey="desk-playbook-sim"
           defaultPos={{ x: 24, y: 72 }}
           title={
             <>
-              Morning playbook
+              {playbookPanelTitle}
               <span className="ml-1.5 font-normal normal-case tracking-normal text-violet-300/80">
                 · {levelsAiLoading ? 'AI…' : levelsSource === 'ai' ? 'AI Haiku' : 'structure'}
               </span>
@@ -3171,15 +3210,18 @@ function SimulationDeskInner() {
             </label>
           }
         >
-          {playbook && (
-            <div className="border-b border-[#30363d] bg-[#1a1430] px-3 py-2.5 space-y-1">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-violet-200">
-                Focus:{' '}
-                {playbook.focusSide === 'BOTH' ? 'Best ★ first' : playbook.focusSide}
-              </p>
-              <p className="text-[10px] leading-snug text-gray-300">{playbook.focusHint}</p>
-            </div>
-          )}
+          <div className="border-b border-[#30363d] bg-[#1a1430] px-3 py-2.5 space-y-1">
+            <p className="text-[10px] leading-snug text-violet-200/90">{playbookRangeHint}</p>
+            {playbook && (
+              <>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-violet-200">
+                  Focus:{' '}
+                  {playbook.focusSide === 'BOTH' ? 'Best ★ first' : playbook.focusSide}
+                </p>
+                <p className="text-[10px] leading-snug text-gray-300">{playbook.focusHint}</p>
+              </>
+            )}
+          </div>
           <div className="space-y-1.5 p-2">
             {levels.length === 0 && (
               <p className="p-2 text-[11px] text-amber-400">No levels for this session.</p>
