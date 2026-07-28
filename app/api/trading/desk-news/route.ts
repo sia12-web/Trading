@@ -92,15 +92,18 @@ export async function GET(request: Request) {
       windowHours,
       nowUnix: Math.floor(now.getTime() / 1000),
       limitPerDesk: 10,
-      sessionFilter,
-      focusMarket: sessionFilter ? focus : null,
     })
 
+    // Session filter only shapes ALL — per-desk tabs stay complete off-focus
+    const sessionOpts = {
+      sessionFilter,
+      focusMarket: sessionFilter ? focus : null,
+    }
     const byDesk = {
       DOW: filterCardsForDesk(allCards, 'DOW', 10),
       NASDAQ: filterCardsForDesk(allCards, 'NASDAQ', 10),
       NIKKEI: filterCardsForDesk(allCards, 'NIKKEI', 10),
-      ALL: filterCardsForDesk(allCards, 'ALL', 12),
+      ALL: filterCardsForDesk(allCards, 'ALL', 12, sessionOpts),
     }
 
     const calendar: DeskCalendarEvent[] = calendarRows

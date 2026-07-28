@@ -5,7 +5,7 @@
  * Context only. Soft-empty if the feed fails.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { liveFocusMarket } from '@/lib/trading/sessionGate'
 import type {
@@ -28,6 +28,13 @@ type NewsPayload = {
   calendar: DeskCalendarEvent[]
   disclaimer?: string
   error?: string
+}
+
+const EMPTY_BY_DESK: Record<DeskTab, DeskNewsCard[]> = {
+  ALL: [],
+  DOW: [],
+  NASDAQ: [],
+  NIKKEI: [],
 }
 
 const TABS: { id: DeskTab; label: string }[] = [
@@ -66,6 +73,13 @@ function formatClock(unix: number): string {
   }).format(new Date(unix * 1000))
 }
 
+function isAbortError(err: unknown): boolean {
+  return (
+    (err instanceof DOMException && err.name === 'AbortError') ||
+    (err instanceof Error && err.name === 'AbortError')
+  )
+}
+
 export default function DeskNewsPage() {
   const [tab, setTab] = useState<DeskTab>(() => {
     try {
@@ -80,28 +94,48 @@ export default function DeskNewsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [nowMs, setNowMs] = useState(() => Date.now())
+  const reqSeq = useRef(0)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
+    const seq = ++reqSeq.current
     try {
       const res = await fetch(
         `/api/trading/desk-news?window=${windowHours}&desk=${tab}&session=${sessionFilter ? '1' : '0'}&_=${Date.now()}`,
-        { cache: 'no-store' }
+        { cache: 'no-store', signal }
       )
+      if (signal?.aborted || seq !== reqSeq.current) return
+      if (res.status === 401) {
+        setError('Sign in required')
+        setData(null)
+        return
+      }
       const json = (await res.json()) as NewsPayload
-      setData(json)
+      if (signal?.aborted || seq !== reqSeq.current) return
+      setData({
+        ...json,
+        byDesk: json.byDesk || EMPTY_BY_DESK,
+        calendar: Array.isArray(json.calendar) ? json.calendar : [],
+      })
       setError(json.error || null)
-    } catch {
+    } catch (err) {
+      if (isAbortError(err) || seq !== reqSeq.current) return
       setError('News feed unavailable')
     } finally {
-      setLoading(false)
+      if (!signal?.aborted && seq === reqSeq.current) setLoading(false)
     }
   }, [windowHours, tab, sessionFilter])
 
   useEffect(() => {
+    const ac = new AbortController()
     setLoading(true)
-    void load()
-    const id = window.setInterval(() => void load(), 60_000)
-    return () => window.clearInterval(id)
+    void load(ac.signal)
+    const id = window.setInterval(() => {
+      if (!ac.signal.aborted) void load(ac.signal)
+    }, 60_000)
+    return () => {
+      ac.abort()
+      window.clearInterval(id)
+    }
   }, [load])
 
   useEffect(() => {
@@ -114,7 +148,12 @@ export default function DeskNewsPage() {
     return data.byDesk[tab] || []
   }, [data, tab])
 
-  const calendar = data?.calendar || []
+  const calendar = useMemo(() => {
+    const rows = data?.calendar || []
+    if (tab === 'ALL') return rows
+    return rows.filter((ev) => ev.instruments.includes(tab))
+  }, [data?.calendar, tab])
+
   const updatedLabel = data?.updatedAt
     ? formatAge(Math.floor(new Date(data.updatedAt).getTime() / 1000), nowMs)
     : null
@@ -188,7 +227,7 @@ export default function DeskNewsPage() {
               ? 'border-emerald-500/40 bg-emerald-600/20 text-emerald-100'
               : 'border-white/10 text-gray-500'
           }`}
-          title="When on, prefer headlines for the active live focus market"
+          title="When on, All desks prefers the active live focus market. Desk tabs always show that desk."
         >
           {sessionFilter ? 'Session filter on' : 'Show all'}
         </button>

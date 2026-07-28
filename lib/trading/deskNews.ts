@@ -69,6 +69,31 @@ const GEO_KEYS =
 const FLOW_KEYS =
   /\b(etf|flow|futures|option|put.?call|short.?interest|liquidation|squeeze|volume.?spike)\b/i
 
+/** Finnhub uses seconds; tolerate accidental ms. Reject nonsense. */
+export function normalizeNewsDatetime(raw: number, nowUnix = Math.floor(Date.now() / 1000)): number | null {
+  if (!Number.isFinite(raw) || raw <= 0) return null
+  let sec = raw > 1e12 ? Math.floor(raw / 1000) : Math.floor(raw)
+  // Reject far-future clock skew ( > 1h ahead )
+  if (sec > nowUnix + 3600) return null
+  // Reject ancient noise before year ~2000
+  if (sec < 946684800) return null
+  return sec
+}
+
+/** Only allow http(s) source links — drop javascript:/data: etc. */
+export function safeHttpUrl(url: string | null | undefined): string | null {
+  if (!url || typeof url !== 'string') return null
+  const trimmed = url.trim()
+  if (!/^https?:\/\//i.test(trimmed)) return null
+  try {
+    const u = new URL(trimmed)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null
+    return u.toString()
+  } catch {
+    return null
+  }
+}
+
 export function normalizeHeadlineKey(headline: string): string {
   return headline
     .toLowerCase()
@@ -153,22 +178,31 @@ function sourceRank(source: string): number {
   return idx === -1 ? 50 : idx
 }
 
+function matchesFocusMarket(
+  instruments: DeskNewsInstrument[],
+  focus: 'NY' | 'TOKYO'
+): boolean {
+  if (focus === 'NY') return instruments.includes('DOW') || instruments.includes('NASDAQ')
+  return instruments.includes('NIKKEI')
+}
+
+/**
+ * Build ranked, deduped cards for the window.
+ * Session filter is NOT applied here — apply via filterCardsForDesk so
+ * per-desk tabs stay complete when browsing off-focus desks.
+ */
 export function buildDeskNewsCards(
   raw: RawDeskHeadline[],
   opts?: {
     windowHours?: DeskNewsWindowHours
     nowUnix?: number
     limitPerDesk?: number
-    sessionFilter?: boolean
-    focusMarket?: 'NY' | 'TOKYO' | null
   }
 ): DeskNewsCard[] {
   const nowUnix = opts?.nowUnix ?? Math.floor(Date.now() / 1000)
   const windowHours = opts?.windowHours ?? 12
   const cutoff = nowUnix - windowHours * 3600
   const limit = opts?.limitPerDesk ?? 10
-  const sessionFilter = !!opts?.sessionFilter
-  const focus = opts?.focusMarket ?? null
 
   const seen = new Set<string>()
   const cards: DeskNewsCard[] = []
@@ -179,8 +213,9 @@ export function buildDeskNewsCards(
   })
 
   for (const item of sorted) {
-    if (!item.headline || !Number.isFinite(item.datetime)) continue
-    if (item.datetime < cutoff) continue
+    if (!item.headline) continue
+    const datetime = normalizeNewsDatetime(item.datetime, nowUnix)
+    if (datetime == null || datetime < cutoff) continue
     const key = normalizeHeadlineKey(item.headline)
     if (!key || seen.has(key)) continue
     seen.add(key)
@@ -191,21 +226,16 @@ export function buildDeskNewsCards(
       item.related,
       item.origin
     )
-    if (sessionFilter && focus === 'NY') {
-      if (!instruments.includes('DOW') && !instruments.includes('NASDAQ')) continue
-    }
-    if (sessionFilter && focus === 'TOKYO') {
-      if (!instruments.includes('NIKKEI')) continue
-    }
 
     const tag = tagDeskNews(item.headline, item.summary)
+    const source = (item.source || 'Finnhub').trim() || 'Finnhub'
     cards.push({
-      id: `${item.datetime}-${key.slice(0, 40)}`,
+      id: `${datetime}-${source.slice(0, 12)}-${key.slice(0, 48)}`,
       instruments,
       headline: item.headline.trim(),
-      source: (item.source || 'Finnhub').trim(),
-      url: item.url || null,
-      datetime: item.datetime,
+      source,
+      url: safeHttpUrl(item.url),
+      datetime,
       tag,
       deskNote: deskNoteFor(tag, instruments, item.headline),
       summary: item.summary?.trim() || null,
@@ -219,10 +249,21 @@ export function buildDeskNewsCards(
 export function filterCardsForDesk(
   cards: DeskNewsCard[],
   desk: DeskNewsInstrument | 'ALL',
-  limit = 10
+  limit = 10,
+  opts?: {
+    sessionFilter?: boolean
+    focusMarket?: 'NY' | 'TOKYO' | null
+  }
 ): DeskNewsCard[] {
-  if (desk === 'ALL') return cards.slice(0, limit)
-  return cards.filter((c) => c.instruments.includes(desk)).slice(0, limit)
+  let list =
+    desk === 'ALL' ? cards : cards.filter((c) => c.instruments.includes(desk))
+
+  // Session filter only shapes the ALL feed — desk tabs always show that desk's news
+  if (opts?.sessionFilter && opts.focusMarket && desk === 'ALL') {
+    list = list.filter((c) => matchesFocusMarket(c.instruments, opts.focusMarket!))
+  }
+
+  return list.slice(0, limit)
 }
 
 export function instrumentsForCalendarEvent(country: string, event: string): DeskNewsInstrument[] {

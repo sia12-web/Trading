@@ -152,11 +152,16 @@ export class FinnhubClient {
       sentiment: number
     }> | null
   > {
+    if (!this.apiKey) return null
     const maxRetries = 3
     let lastError: Error | null = null
     const symbol = this.getSymbol(instrument)
 
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
+    // Soft-fail path: 2 tries max — desk news must not block the session
+    const newsRetries = Math.min(maxRetries, 2)
+    for (let attempt = 0; attempt < newsRetries; attempt++) {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT)
       try {
         const today = new Date()
         const oneWeekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
@@ -166,14 +171,13 @@ export class FinnhubClient {
           `${FINNHUB_BASE_URL}/company-news?` +
           `symbol=${encodeURIComponent(symbol)}&from=${fromDate}&to=${toDate}&token=${this.apiKey}`
 
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT)
         const response = await fetch(url, { signal: controller.signal })
-        clearTimeout(timeoutId)
 
         if (!response.ok) {
           lastError = new Error(`HTTP ${response.status}`)
-          if (attempt < maxRetries - 1) {
+          // Auth / forbidden — retrying won't help
+          if (response.status === 401 || response.status === 403) return null
+          if (attempt < newsRetries - 1) {
             await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 1000))
             continue
           }
@@ -219,9 +223,11 @@ export class FinnhubClient {
         return rows
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error))
-        if (attempt < maxRetries - 1) {
+        if (attempt < newsRetries - 1) {
           await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 1000))
         }
+      } finally {
+        clearTimeout(timeoutId)
       }
     }
 
@@ -245,32 +251,37 @@ export class FinnhubClient {
       origin: string
     }> | null
   > {
+    if (!this.apiKey) return null
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT)
     try {
       const url = `${FINNHUB_BASE_URL}/news?category=${category}&token=${this.apiKey}`
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT)
       const response = await fetch(url, { signal: controller.signal })
-      clearTimeout(timeoutId)
       if (!response.ok) {
         logger.warn(`[FinnhubClient] Market news ${category} HTTP ${response.status}`)
         return null
       }
       const items = (await response.json()) as FinnhubNewsItem[]
       if (!Array.isArray(items)) return []
-      return items.slice(0, 40).map((item) => ({
-        headline: (item.headline || '').trim(),
-        source: (item.source || 'Finnhub').trim(),
-        datetime: Number(item.datetime) || 0,
-        url: item.url || null,
-        summary: item.summary || null,
-        related: item.related || null,
-        origin: `market:${category}`,
-      }))
+      return items
+        .slice(0, 40)
+        .map((item) => ({
+          headline: (item.headline || '').trim(),
+          source: (item.source || 'Finnhub').trim(),
+          datetime: Number(item.datetime) || 0,
+          url: item.url || null,
+          summary: item.summary || null,
+          related: item.related || null,
+          origin: `market:${category}`,
+        }))
+        .filter((h) => h.headline && h.datetime)
     } catch (error) {
       logger.warn('[FinnhubClient] Market news error', {
         err: error instanceof Error ? error.message : String(error),
       })
       return null
+    } finally {
+      clearTimeout(timeoutId)
     }
   }
 
@@ -289,14 +300,14 @@ export class FinnhubClient {
       prev?: string | number | null
     }>
   > {
+    if (!this.apiKey) return []
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT)
     try {
       const url =
         `${FINNHUB_BASE_URL}/calendar/economic?` +
         `from=${encodeURIComponent(fromYmd)}&to=${encodeURIComponent(toYmd)}&token=${this.apiKey}`
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT)
       const response = await fetch(url, { signal: controller.signal })
-      clearTimeout(timeoutId)
       if (!response.ok) {
         logger.warn(`[FinnhubClient] Economic calendar HTTP ${response.status}`)
         return []
@@ -319,6 +330,8 @@ export class FinnhubClient {
         err: error instanceof Error ? error.message : String(error),
       })
       return []
+    } finally {
+      clearTimeout(timeoutId)
     }
   }
 
