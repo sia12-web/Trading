@@ -732,6 +732,13 @@ export function TradingChart({
   const or30RangeRef = useRef<Or30Range | null>(null)
   const [or30Shaped, setOr30Shaped] = useState(false)
   const [showOr30, setShowOr30] = useState(true)
+  /** Live count of BRK/REJ markers currently painted (for toolbar status). */
+  const [rangeSignalSummary, setRangeSignalSummary] = useState<{
+    ib: number
+    or30: number
+    lunch: number
+    us: number
+  }>({ ib: 0, or30: 0, lunch: 0, us: 0 })
   /** Latest session AVWAP print — strategy TP magnet */
   const avwapLastRef = useRef<number | null>(null)
   const levelLinesRef = useRef<any[]>([])
@@ -817,9 +824,14 @@ export function TradingChart({
       text: string
     }
     const markers: Mk[] = []
+    let ibCount = 0
+    let or30Count = 0
+    let lunchCount = 0
+    let usCount = 0
 
     if (showIbBreakouts && ibRangeRef.current && deskBars.length > 0) {
       for (const s of computeIbSignals(deskBars, ibRangeRef.current)) {
+        ibCount += 1
         markers.push({
           time: s.time as UTCTimestamp,
           position: s.position,
@@ -832,6 +844,7 @@ export function TradingChart({
 
     if (showOr30 && or30RangeRef.current && deskBars.length > 0) {
       for (const s of computeOr30Signals(deskBars, or30RangeRef.current)) {
+        or30Count += 1
         markers.push({
           time: s.time as UTCTimestamp,
           position: s.position,
@@ -844,6 +857,7 @@ export function TradingChart({
 
     if (showLunchRange && lunchRangeRef.current) {
       for (const m of nycLunchEndMarkers(lunchRangeRef.current)) {
+        lunchCount += 1
         markers.push({
           time: m.time as UTCTimestamp,
           position: m.position,
@@ -854,6 +868,7 @@ export function TradingChart({
       }
       if (deskBars.length > 0) {
         for (const s of computeNycLunchSignals(deskBars, lunchRangeRef.current)) {
+          lunchCount += 1
           markers.push({
             time: s.time as UTCTimestamp,
             position: s.position,
@@ -873,6 +888,7 @@ export function TradingChart({
       const us = computeNikkeiUsRangeBreakout(deskBars)
       if (us) {
         for (const s of us.signals) {
+          usCount += 1
           markers.push({
             time: s.time as UTCTimestamp,
             position: s.position,
@@ -883,6 +899,15 @@ export function TradingChart({
         }
       }
     }
+
+    setRangeSignalSummary((prev) =>
+      prev.ib === ibCount &&
+      prev.or30 === or30Count &&
+      prev.lunch === lunchCount &&
+      prev.us === usCount
+        ? prev
+        : { ib: ibCount, or30: or30Count, lunch: lunchCount, us: usCount }
+    )
 
     try {
       candleSeries.setMarkers(
@@ -4597,14 +4622,14 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </button>
         )}
 
-        {/* IB Breakout Signals toggle button (Press B) — all desks */}
+        {/* IB BRK/REJ markers toggle (Press B) — blue IB H/L lines always paint when shaped */}
         {deskSessionLive && (
           <button
             type="button"
             title={
               showIbBreakouts
-                ? 'IB BRK (RVOL) + REJ markers visible (Press B)'
-                : 'Show IB breakout (volume) & rejection markers (Press B)'
+                ? 'IB BRK (needs close beyond H/L + RVOL when volume exists) + REJ (wick reject) markers on. Blue IB H/L lines stay on either way.'
+                : 'Show IB break / rejection markers (Press B). Blue IB H/L lines still paint when the first hour is locked.'
             }
             onClick={() => setShowIbBreakouts((v) => !v)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
@@ -4614,18 +4639,23 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             }`}
           >
             <span className={`w-2 h-2 rounded-full inline-block ${showIbBreakouts ? 'bg-blue-400' : 'bg-gray-600'}`} />
-            <span>IB Breakout (B)</span>
+            <span>IB BRK/REJ (B)</span>
+            {ibShaped && (
+              <span className="text-[10px] font-normal text-blue-300/80">
+                {rangeSignalSummary.ib > 0 ? `${rangeSignalSummary.ib}` : '0'}
+              </span>
+            )}
           </button>
         )}
 
-        {/* NYC Lunch Range — Dow & Nasdaq only (Press N) */}
+        {/* NYC Lunch Range — Dow & Nasdaq only (Press N) — not the “Lunch break” playbook prep */}
         {deskSessionLive && (instrument === 'DOW' || instrument === 'NASDAQ') && (
           <button
             type="button"
             title={
               showLunchRange
-                ? 'NYC Lunch range 12:00–13:30 ET visible (Press N)'
-                : 'Show NYC Lunch high / low / 50% (Press N)'
+                ? 'NYC Lunch range lines 12:00–13:30 ET + LN BRK/REJ after 13:30 (Press N)'
+                : 'Show NYC Lunch high / low / 50% (Press N). This is the lunch RANGE, not playbook “Lunch break” prep.'
             }
             onClick={() => setShowLunchRange((v) => !v)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
@@ -4636,6 +4666,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           >
             <span className={`w-2 h-2 rounded-full inline-block ${showLunchRange ? 'bg-orange-400' : 'bg-gray-600'}`} />
             <span>Lunch Range (N)</span>
+            {lunchShaped && (
+              <span className="text-[10px] font-normal text-orange-200/80">
+                {rangeSignalSummary.lunch > 0 ? `${rangeSignalSummary.lunch}` : '0'}
+              </span>
+            )}
           </button>
         )}
 
@@ -4660,14 +4695,14 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </button>
         )}
 
-        {/* Opening range 30m (Press R) — NY 09:30–10:00 ET / Tokyo 09:00–09:30 JST */}
+        {/* Opening range 30m (Press R) — lines + OR BRK/REJ markers */}
         {deskSessionLive && isOr30Instrument(instrument) && (
           <button
             type="button"
             title={
               showOr30
-                ? `OR 30 H/L visible — ${or30WindowLabel(instrument)} (Press R)`
-                : `Show first 30m opening range — ${or30WindowLabel(instrument)} (Press R)`
+                ? `OR30 H/L + OR BRK/REJ — ${or30WindowLabel(instrument)} (Press R). BRK = close beyond H/L (RVOL when volume exists). REJ = wick reject.`
+                : `Show first 30m opening range H/L + break/reject markers — ${or30WindowLabel(instrument)} (Press R)`
             }
             onClick={() => setShowOr30((v) => !v)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
@@ -4677,7 +4712,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             }`}
           >
             <span className={`w-2 h-2 rounded-full inline-block ${showOr30 ? 'bg-teal-400' : 'bg-gray-600'}`} />
-            <span>OR 30 (R)</span>
+            <span>OR30 BRK/REJ (R)</span>
+            {or30Shaped && (
+              <span className="text-[10px] font-normal text-teal-200/80">
+                {rangeSignalSummary.or30 > 0 ? `${rangeSignalSummary.or30}` : '0'}
+              </span>
+            )}
           </button>
         )}
 
@@ -5103,6 +5143,58 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       <div className="h-5">
         <OHLCVTooltip data={tooltip} color={meta.color} />
       </div>
+
+      {/* Range overlay status — lines vs BRK/REJ (no separate volume pane) */}
+      {deskSessionLive && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[10px] text-gray-500">
+          <span className="uppercase tracking-wider text-gray-600">Ranges</span>
+          <span title="Blue IB high/low after first cash hour locks (~10:30 ET / 10:00 JST)">
+            <span className={ibShaped ? 'text-blue-500' : 'text-gray-600'}>
+              IB H/L {ibShaped ? 'on' : 'waiting'}
+            </span>
+            {ibShaped && (
+              <span className="text-gray-600">
+                {' '}
+                · BRK/REJ {showIbBreakouts ? rangeSignalSummary.ib : 'off'}
+              </span>
+            )}
+          </span>
+          <span title="Teal opening-range high/low (first 30m)">
+            <span className={or30Shaped ? 'text-teal-500' : 'text-gray-600'}>
+              OR30 {or30Shaped ? 'on' : 'waiting'}
+            </span>
+            {or30Shaped && (
+              <span className="text-gray-600">
+                {' '}
+                · BRK/REJ {showOr30 ? rangeSignalSummary.or30 : 'off'}
+              </span>
+            )}
+          </span>
+          {(instrument === 'DOW' || instrument === 'NASDAQ') && (
+            <span title="NYC lunch 12:00–13:30 ET — different from playbook Lunch-break prep">
+              <span className={lunchShaped ? 'text-orange-400' : 'text-gray-600'}>
+                Lunch {lunchShaped ? 'on' : 'after 12:00 ET'}
+              </span>
+              {lunchShaped && (
+                <span className="text-gray-600">
+                  {' '}
+                  · LN {showLunchRange ? rangeSignalSummary.lunch : 'off'}
+                </span>
+              )}
+            </span>
+          )}
+          {instrument === 'NIKKEI' && (
+            <span title="Prior NYC session H/L on Tokyo cash">
+              <span className={usRangeShaped ? 'text-red-400' : 'text-gray-600'}>
+                US H/L {usRangeShaped ? 'on' : 'Tokyo cash only'}
+              </span>
+            </span>
+          )}
+          <span className="text-gray-600 normal-case tracking-normal">
+            BRK needs a close beyond H/L · REJ needs a wick beyond then close back inside · no volume histogram
+          </span>
+        </div>
+      )}
 
       {/* ── Chart container ──────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-3 px-1 text-[10px] uppercase tracking-wider text-gray-500">
