@@ -912,13 +912,16 @@ export default function ChartPage() {
   }, [gate?.phase, gate?.lockedInstrument, gate?.open_position_id, instrument, gateTick, pending])
 
   const locked = gate?.lockedInstrument ?? null
+  const suggested =
+    gate?.suggestedInstrument ?? recommendation?.instrument ?? null
   const clockedIn = !!gate?.clockedIn
   const attendedToday = !!gate?.attendedToday
-  // Never clocked in today → lock for the whole cash session (morning + afternoon).
-  // Clocked in then out (attendedToday) → afternoon watch chart is allowed (read-only).
+  // Never clocked in today → lock for the cash session AFTER open (or missed).
+  // Pre-open NY dual browse (canViewLiveChart) keeps the chart visible with both tabs.
   const chartLocked =
     gate != null &&
     !clockedIn &&
+    !gate.canViewLiveChart &&
     (!!gate.canClockIn ||
       (!attendedToday &&
         (gate.phase === 'PREP' ||
@@ -929,6 +932,11 @@ export default function ChartPage() {
           gate.phase === 'DONE')))
   const missedSessionLocked =
     chartLocked && !attendedToday && (gate?.phase === 'DONE' || gate?.phase === 'FLAT')
+  const showPreOpenClockIn =
+    !clockedIn &&
+    !!gate?.canViewLiveChart &&
+    !!gate?.canClockIn &&
+    gate.market === 'NY'
   const inManage = gate?.phase === 'MANAGE' || !!managePos
   const inEntry = gate?.phase === 'ENTRY' && !!gate?.canPlaceEntry
   const canTrade = inEntry && !pending && !managePos && clockedIn
@@ -1103,7 +1111,7 @@ export default function ChartPage() {
               }}
               aiVerdict={managePos ? aiVerdict : null}
               jumpToPriceRef={jumpToPriceRef}
-              // Hard-lock tabs to day's recommended / clocked instrument (no NASDAQ switch when DOW locked)
+              // Hard-lock tabs only after clock-in / open book (AI suggest stays soft)
               lockedInstrument={locked}
               allowedInstruments={gate?.allowedInstruments ?? undefined}
               onLevelSelect={handleLevelSelect}
@@ -1120,6 +1128,50 @@ export default function ChartPage() {
               clockedIn={clockedIn}
               levelsRefreshKey={levelsRefreshKey}
             />
+          )}
+
+          {showPreOpenClockIn && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-4 z-40 flex justify-center px-4">
+              <div className="pointer-events-auto max-w-lg w-full rounded-2xl border border-amber-500/40 bg-[#161b22]/95 px-4 py-3 shadow-2xl backdrop-blur-md space-y-2">
+                <p className="text-center text-[11px] font-extrabold uppercase tracking-wider text-amber-300">
+                  {suggested
+                    ? `AI suggests ${suggested} — clock in to commit`
+                    : 'Browse DOW & NASDAQ — clock in when ready'}
+                </p>
+                <div className="flex items-center justify-center gap-2">
+                  {(['DOW', 'NASDAQ'] as Instrument[]).map((inst) => {
+                    const isRec = suggested === inst
+                    return (
+                      <button
+                        key={inst}
+                        type="button"
+                        onClick={async () => {
+                          await fetch('/api/trading/clock-in', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              market: 'NY',
+                              instrument: inst,
+                            }),
+                          })
+                          setInstrument(inst)
+                          bannerRefreshRef.current?.()
+                          setGateTick((t) => t + 1)
+                        }}
+                        className={`flex-1 py-2.5 px-3 rounded-lg text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 border ${
+                          isRec
+                            ? 'bg-amber-500 text-black border-amber-400 shadow-lg shadow-amber-500/20 hover:bg-amber-400'
+                            : 'bg-surface-700 text-gray-200 border-surface-600 hover:bg-surface-600 hover:text-white'
+                        }`}
+                      >
+                        {isRec && <span>★ AI TOP PICK:</span>}
+                        <span>{inst}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
           )}
 
           {chartLocked && (
@@ -1141,10 +1193,12 @@ export default function ChartPage() {
 
                     <div>
                       <h3 className="text-lg font-extrabold text-white tracking-tight">
-                        {recommendation ? (
+                        {suggested || recommendation ? (
                           <>
                             AI Recommendation:{' '}
-                            <span className="text-amber-400">{recommendation.instrument}</span>
+                            <span className="text-amber-400">
+                              {suggested ?? recommendation?.instrument}
+                            </span>
                           </>
                         ) : (
                           'Pre-Market Session Analysis'
@@ -1152,7 +1206,9 @@ export default function ChartPage() {
                       </h3>
                       <p className="mt-1 text-xs text-amber-200/90 font-medium leading-relaxed">
                         {recommendation?.message ??
-                          'Level Finder has analyzed overnight structure, AVWAP, and market regime.'}
+                          (suggested
+                            ? `System pick: ${suggested}. Clock in on DOW or NASDAQ to unlock the live desk.`
+                            : 'Level Finder has analyzed overnight structure, AVWAP, and market regime.')}
                       </p>
                     </div>
 
@@ -1163,7 +1219,7 @@ export default function ChartPage() {
                         </span>
                         <div className="flex items-center justify-center gap-2">
                           {(gate.market === 'TOKYO' ? ['NIKKEI'] as Instrument[] : ['DOW', 'NASDAQ'] as Instrument[]).map((inst) => {
-                            const isRec = (recommendation?.instrument ?? 'DOW') === inst
+                            const isRec = (suggested ?? recommendation?.instrument ?? 'DOW') === inst
                             return (
                               <button
                                 key={inst}

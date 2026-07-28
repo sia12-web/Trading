@@ -199,6 +199,66 @@ test('AI: allow DOW when clocked into DOW', () => {
   assert(r.ok, r.reason)
 })
 
+test('NY 09:00 dual browse: both DOW+NASDAQ, no hard lock, chart viewable', () => {
+  const now = etDate(Y, M, D, 9, 0)
+  assert(liveFocusMarket(now) === 'NY', 'focus NY at 9:00')
+  const vis = liveVisibleInstruments(now)
+  assert(vis.includes('DOW') && vis.includes('NASDAQ'), 'both visible')
+  const gate = resolveSessionGate({
+    now,
+    lockedInstrument: null,
+    suggestedInstrument: null,
+    clockedIn: false,
+    attendedToday: false,
+    attemptsUsed: 0,
+    stopLossHitCount: 0,
+  })
+  assert(gate.lockedInstrument === null, 'no hard lock before clock-in')
+  assert(gate.canViewLiveChart === true, 'pre-open dual browse chart')
+  assert(gate.phase === 'PREP', `phase PREP got ${gate.phase}`)
+  assert(gate.canClockIn === false, 'clock-in opens at 9:15')
+  assert(/browse DOW and NASDAQ/i.test(gate.message), gate.message)
+})
+
+test('NY 09:15: AI suggest soft — both tabs stay, clock-in open', () => {
+  const now = etDate(Y, M, D, 9, 15)
+  const gate = resolveSessionGate({
+    now,
+    lockedInstrument: null,
+    suggestedInstrument: 'NASDAQ',
+    clockedIn: false,
+    attendedToday: false,
+    attemptsUsed: 0,
+    stopLossHitCount: 0,
+  })
+  assert(gate.lockedInstrument === null, 'suggest is not a hard lock')
+  assert(gate.suggestedInstrument === 'NASDAQ', 'suggested NASDAQ')
+  assert(
+    gate.allowedInstruments.includes('DOW') && gate.allowedInstruments.includes('NASDAQ'),
+    'both still allowed'
+  )
+  assert(gate.canViewLiveChart === true, 'still browsing pre-open')
+  assert(gate.canClockIn === true, 'clock-in window open')
+  assert(gate.phase === 'RECOMMENDED', `phase RECOMMENDED got ${gate.phase}`)
+  assert(/NASDAQ/i.test(gate.message), gate.message)
+})
+
+test('NY 09:20 clock-in locks tabs to committed instrument', () => {
+  const now = etDate(Y, M, D, 9, 20)
+  const gate = resolveSessionGate({
+    now,
+    lockedInstrument: 'DOW',
+    suggestedInstrument: 'NASDAQ',
+    clockedIn: true,
+    attendedToday: true,
+    attemptsUsed: 0,
+    stopLossHitCount: 0,
+  })
+  assert(gate.lockedInstrument === 'DOW', 'hard lock DOW')
+  assert(JSON.stringify(gate.allowedInstruments) === JSON.stringify(['DOW']), 'tabs locked')
+  assert(gate.canViewLiveChart === true, 'clocked chart on')
+})
+
 test('AI: allow NIKKEI during Tokyo focus after clock-in', () => {
   const now = jstDate(Y, M, D, 8, 50)
   const r = shouldRunLiveAiForInstrument('NIKKEI', now, {

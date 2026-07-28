@@ -17,6 +17,7 @@ export interface SessionGateState {
   phase: string
   message: string
   lockedInstrument: 'DOW' | 'NASDAQ' | 'NIKKEI' | null
+  suggestedInstrument?: 'DOW' | 'NASDAQ' | 'NIKKEI' | null
   allowedInstruments?: Array<'DOW' | 'NASDAQ' | 'NIKKEI'>
   canPlaceEntry: boolean
   canManagePosition: boolean
@@ -128,6 +129,8 @@ export function SessionBanner({
         phase: json.phase,
         message: json.message,
         lockedInstrument: json.lockedInstrument,
+        suggestedInstrument:
+          json.suggestedInstrument ?? json.suggested_instrument ?? null,
         allowedInstruments: Array.isArray(json.allowedInstruments)
           ? json.allowedInstruments
           : undefined,

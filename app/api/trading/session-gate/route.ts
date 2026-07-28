@@ -2,7 +2,7 @@
  * GET /api/trading/session-gate
  * Returns desk phase, locks, and trading permissions.
  * LIVE focus: one market at a time (Tokyo → NIKKEI only; NY → DOW/NASDAQ).
- * After clock-in, tabs lock to the committed instrument.
+ * NY 09:00–09:30: both DOW+NASDAQ visible; AI suggest at 09:15; hard lock only after clock-in.
  */
 
 import { NextResponse } from 'next/server'
@@ -47,6 +47,9 @@ export async function GET(request: Request) {
     const marketInstruments = instrumentsForDeskMarket(focusMarket)
     const nyRecDate = getESTDateString()
 
+    /** Soft AI / regime pick — never collapses NY tabs by itself */
+    let suggestedInstrument: DeskInstrument | null = null
+    /** Hard lock — attendance, open book, or Tokyo-only desk */
     let lockedInstrument: DeskInstrument | null = null
 
     if (focusMarket === 'TOKYO') {
@@ -61,7 +64,7 @@ export async function GET(request: Request) {
         .maybeSingle()
 
       if (rec?.recommended_instrument && isNyDeskInstrument(rec.recommended_instrument)) {
-        lockedInstrument = rec.recommended_instrument
+        suggestedInstrument = rec.recommended_instrument
       } else {
         const { data: regimes } = await supabase
           .from('regime_cache')
@@ -73,13 +76,17 @@ export async function GET(request: Request) {
 
         const top = regimes?.[0]
         if (top?.instrument && isNyDeskInstrument(top.instrument)) {
-          lockedInstrument = top.instrument
+          suggestedInstrument = top.instrument
         }
       }
     }
 
     const tradeDate = tradeDateForInstrument(
-      lockedInstrument ?? marketInstruments[0] ?? 'DOW',
+      lockedInstrument ??
+        viewingInstrument ??
+        suggestedInstrument ??
+        marketInstruments[0] ??
+        'DOW',
       now
     )
 
@@ -108,7 +115,6 @@ export async function GET(request: Request) {
     }
 
     const filledTrades = filledRes.data ?? []
-    // Attempts = filled trades only (working limits do not count). SL or TP both use the attempt.
     const attemptsUsed = filledTrades.length
     const stopHits = filledTrades.filter((t) => t.exit_reason === 'stop_hit').length
     const attemptFills = filledTrades.map((t) => ({
@@ -117,18 +123,11 @@ export async function GET(request: Request) {
       exitReason: (t.exit_reason as string) || null,
     }))
 
-    // Lunch may have hit while the tab was open — auto clock-out
     await autoLunchClockOut(supabase, user.id)
 
     const attendance = await getTodayAttendance(supabase, user.id, focusMarket, now)
     const clockedIn = attendance?.status === 'clocked_in'
     const attendedToday = !!attendance
-
-    // Trader's active choice (viewing tab or attendance commitment) wins over AI default recommendation
-    const userSelected =
-      viewingInstrument && marketInstruments.includes(viewingInstrument)
-        ? viewingInstrument
-        : null
 
     const attendanceFocus =
       (attendance?.traded_instrument &&
@@ -139,24 +138,22 @@ export async function GET(request: Request) {
         ? attendance.instrument
         : null)
 
+    // Hard lock only from clock-in / open book (not AI suggest or viewing tab)
     if (attendanceFocus && marketInstruments.includes(attendanceFocus)) {
       lockedInstrument = attendanceFocus
-    } else if (userSelected && !openPos) {
-      lockedInstrument = userSelected
     }
 
-    // During a live focus window, viewing must stay on that desk.
-    // Between sessions (all tabs visible), honor the chart tab so NIKKEI gets Tokyo copy.
     const focusLive = isAnyLiveFocusWindowActive(now)
     const viewingForGate =
       focusLive
         ? viewingInstrument && marketInstruments.includes(viewingInstrument)
           ? viewingInstrument
-          : lockedInstrument
+          : lockedInstrument ?? suggestedInstrument ?? marketInstruments[0] ?? null
         : viewingInstrument ?? lockedInstrument
 
     const gate = resolveSessionGate({
       lockedInstrument,
+      suggestedInstrument,
       hasOpenPosition: !!openPos,
       attemptsUsed,
       stopLossHitCount: stopHits,
@@ -171,6 +168,7 @@ export async function GET(request: Request) {
       {
         success: true,
         ...gate,
+        suggested_instrument: gate.suggestedInstrument,
         open_position_id: openPos?.id ?? null,
         open_instrument: openPos?.instrument ?? null,
         trade_date: tradeDate,

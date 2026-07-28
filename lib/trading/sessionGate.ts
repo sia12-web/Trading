@@ -262,8 +262,10 @@ function isWeekdayInTz(date: Date, timeZone: string): boolean {
 
 export interface SessionGateInput {
   now?: Date
-  /** Day's recommended / locked instrument */
+  /** Day's committed lock (clock-in / open book) — not a soft AI suggestion */
   lockedInstrument?: DeskInstrument | null
+  /** AI / regime pick for NY (DOW vs NASDAQ) — suggestion only until clock-in */
+  suggestedInstrument?: DeskInstrument | null
   /** True if an open position exists for the locked instrument today */
   hasOpenPosition?: boolean
   /** Filled trades today (open + closed) — each fill is one attempt (SL or TP) */
@@ -291,6 +293,11 @@ export interface SessionGateResult {
   phase: SessionPhase
   timeEst: string
   lockedInstrument: DeskInstrument | null
+  /**
+   * Soft NY pick (DOW or NASDAQ) from market-open / regime.
+   * Does not collapse tabs — clock-in commits the lock.
+   */
+  suggestedInstrument: DeskInstrument | null
   canViewLiveChart: boolean
   /** True only while morning session bars may stream */
   canFetchLiveBars: boolean
@@ -740,6 +747,16 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     focusLive && lockedRaw && deskMarketFor(lockedRaw) === focusMarket
       ? lockedRaw
       : null
+  const suggestedRaw = isDeskInstrument(input.suggestedInstrument)
+    ? input.suggestedInstrument
+    : null
+  const suggestedInstrument =
+    focusLive &&
+    suggestedRaw &&
+    deskMarketFor(suggestedRaw) === focusMarket &&
+    focusMarket === 'NY'
+      ? suggestedRaw
+      : null
   const viewingRaw = isDeskInstrument(input.viewingInstrument)
     ? input.viewingInstrument
     : locked
@@ -764,6 +781,17 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   const afternoonWatch = weekday && t >= lunch && t < close
   /** Past cash close (same weekday) or weekend — desk fully closed */
   const afterCashClose = weekday && t >= close
+  /**
+   * NY dual browse: cash open − 30m → cash open, both DOW+NASDAQ visible,
+   * tip on, no hard lock until clock-in. AI suggest lands at analyzeStart (9:15).
+   */
+  const nyDualBrowse =
+    market === 'NY' &&
+    focusLive &&
+    !locked &&
+    weekday &&
+    t >= open - LIVE_FOCUS_LEAD_MINUTES * 60 &&
+    t < open
 
   const hasOpen = !!input.hasOpenPosition
   const ladder: AttemptLadder =
@@ -827,6 +855,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   const base = {
     timeEst,
     lockedInstrument: locked,
+    suggestedInstrument,
     allowedInstruments: focusLive
       ? liveVisibleInstruments(now, {
           lockedInstrument: locked,
@@ -894,8 +923,22 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
             : r.message,
       }
     }
-    // Never attended: locked all day through afternoon watch until cash close
+    // Never attended: allow NY dual browse pre-open; otherwise lock until clock-in / next day
     const skippedAfternoon = afternoonWatch && !attendedToday
+    if (nyDualBrowse) {
+      return {
+        ...r,
+        clockedIn: false,
+        attendedToday: false,
+        canClockIn,
+        canViewLiveChart: true,
+        canFetchLiveBars: false,
+        canPlaceEntry: false,
+        canManagePosition: false,
+        rangeStrategy: null,
+        message: r.message,
+      }
+    }
     return {
       ...r,
       clockedIn: false,
@@ -927,7 +970,8 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       : `Next NY desk: clock in from ${analyzeEt} ${TRADER_DISPLAY_LABEL}.`
 
   // Pre-session / weekend / after cash close
-  if (!weekday || t < analyze) {
+  // NY dual browse opens at cash open − 30m (before analyzeStart / clock-in).
+  if (!weekday || (t < analyze && !nyDualBrowse)) {
     return finish({
       ...base,
       rangeStrategy: null,
@@ -940,8 +984,22 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
         t < analyze && weekday
           ? market === 'TOKYO'
             ? `Pre-session. Tokyo desk opens ${analyzeEt} ${TRADER_DISPLAY_LABEL} — clock in then to trade NIKKEI.`
-            : `Pre-session. Clock-in opens ${analyzeEt} ${TRADER_DISPLAY_LABEL} (15 min before cash open).`
+            : `Pre-session. NY tip + dual browse from ${deskLocalHmsAsTraderDisplay('09:00:00', s.tz, now)} ${TRADER_DISPLAY_LABEL}; AI pick + clock-in at ${analyzeEt} ${TRADER_DISPLAY_LABEL}.`
           : `Weekend — desk closed. ${nextDesk} Or use Simulation.`,
+    })
+  }
+
+  // NY focus lead-in (09:00–09:15): both DOW + NASDAQ, tip on, wait for AI pick
+  if (nyDualBrowse && t < analyze) {
+    return finish({
+      ...base,
+      rangeStrategy: null,
+      phase: 'PREP',
+      canViewLiveChart: true,
+      canFetchLiveBars: false,
+      canPlaceEntry: false,
+      canManagePosition: false,
+      message: `NY focus — browse DOW and NASDAQ. AI suggests which to trade at ${analyzeEt} ${TRADER_DISPLAY_LABEL}.`,
     })
   }
 
@@ -1011,18 +1069,25 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   }
 
   if (!locked) {
+    const pickHint = suggestedInstrument
+      ? `AI suggests ${suggestedInstrument}. Clock in on DOW or NASDAQ to commit today's desk.`
+      : 'Awaiting DOW vs NASDAQ recommendation…'
     return finish({
       ...base,
       rangeStrategy: null,
       phase: t >= analyze && t < open ? 'RECOMMENDED' : 'PREP',
-      canViewLiveChart: false,
+      canViewLiveChart: nyDualBrowse,
       canFetchLiveBars: false,
       canPlaceEntry: false,
       canManagePosition: false,
       message:
         market === 'TOKYO'
           ? 'No locked instrument for Tokyo session yet.'
-          : 'Awaiting DOW vs NASDAQ recommendation…',
+          : nyDualBrowse
+            ? t >= analyze
+              ? pickHint
+              : `NY focus — browse DOW and NASDAQ. AI suggests which to trade at ${analyzeEt} ${TRADER_DISPLAY_LABEL}.`
+            : pickHint,
     })
   }
 
