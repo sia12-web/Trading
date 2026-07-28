@@ -116,6 +116,7 @@ interface PositionOverlay {
   stopLoss: number
   profitTarget: number
   direction: 'long' | 'short'
+  positionSize?: number
 }
 
 export default function ChartPage() {
@@ -486,6 +487,7 @@ export default function ChartPage() {
         stopLoss: order.stop_loss_price,
         profitTarget: order.profit_target_price,
         direction: dir,
+        positionSize: order.position_size,
       }
       confirmedOverlayRef.current = overlay
       setPositionOverlay(overlay)
@@ -529,6 +531,7 @@ export default function ChartPage() {
           stopLoss: nextSl,
           profitTarget: nextTp,
           direction: pos.direction,
+          positionSize: pos.positionSize,
         }
         confirmedOverlayRef.current = nextOverlay
         setPositionOverlay(nextOverlay)
@@ -1031,6 +1034,7 @@ export default function ChartPage() {
           stopLoss: manage.stopLoss,
           profitTarget: manage.profitTarget,
           direction: manage.direction,
+          positionSize: manage.positionSize,
         }
         confirmedOverlayRef.current = overlay
         setPositionOverlay(overlay)
@@ -1225,6 +1229,7 @@ export default function ChartPage() {
                       stopLoss: managePos.stopLoss,
                       profitTarget: managePos.profitTarget,
                       direction: managePos.direction,
+                      positionSize: managePos.positionSize,
                     }
                   : null)
               }

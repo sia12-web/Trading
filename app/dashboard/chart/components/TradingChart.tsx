@@ -525,6 +525,8 @@ interface PositionOverlay {
   stopLoss:    number
   profitTarget: number
   direction:   'long' | 'short'
+  /** Contract/units size — used for $ P&L on SL/TP drag pills */
+  positionSize?: number
 }
 
 interface PendingLimitOverlay {
@@ -5537,6 +5539,16 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             ? candleSeries.priceToCoordinate(editableOverlay.stopLoss)
             : null
           const saving = bracketAdjustStatus === 'saving'
+          const units =
+            editableOverlay.positionSize != null &&
+            Number.isFinite(editableOverlay.positionSize) &&
+            editableOverlay.positionSize > 0
+              ? editableOverlay.positionSize
+              : 0
+          const lossPts = Math.abs(editableOverlay.entryPrice - editableOverlay.stopLoss)
+          const profitPts = Math.abs(editableOverlay.profitTarget - editableOverlay.entryPrice)
+          const lossCad = units > 0 ? (units * lossPts).toFixed(2) : null
+          const profitCad = units > 0 ? (units * profitPts).toFixed(2) : null
           return (
             <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
               {tpY != null && (
@@ -5546,10 +5558,14 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     saving ? 'cursor-wait opacity-70' : 'cursor-ns-resize'
                   }`}
                   style={{ left: '48%', top: `${tpY - 13}px` }}
-                  title="Drag Take Profit — saves on release"
+                  title={`Drag Take Profit @ ${editableOverlay.profitTarget.toLocaleString()} — saves on release`}
                 >
                   <div className="flex items-center rounded border border-dashed border-emerald-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-emerald-300 shadow-md">
-                    TP {editableOverlay.profitTarget.toLocaleString()}
+                    <span className="text-emerald-400">
+                      {profitCad != null
+                        ? `+${profitCad} CAD`
+                        : `TP ${editableOverlay.profitTarget.toLocaleString()}`}
+                    </span>
                   </div>
                   <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
                 </div>
@@ -5561,10 +5577,14 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     saving ? 'cursor-wait opacity-70' : 'cursor-ns-resize'
                   }`}
                   style={{ left: '48%', top: `${slY - 13}px` }}
-                  title="Drag Stop Loss — saves on release"
+                  title={`Drag Stop Loss @ ${editableOverlay.stopLoss.toLocaleString()} — saves on release`}
                 >
                   <div className="flex items-center rounded border border-dashed border-red-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-red-300 shadow-md">
-                    SL {editableOverlay.stopLoss.toLocaleString()}
+                    <span className="text-red-300">
+                      {lossCad != null
+                        ? `-${lossCad} CAD`
+                        : `SL ${editableOverlay.stopLoss.toLocaleString()}`}
+                    </span>
                   </div>
                   <div className="w-2.5 h-2.5 rounded-full bg-red-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
                 </div>
