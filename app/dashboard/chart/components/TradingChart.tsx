@@ -23,6 +23,7 @@ import {
   TickMarkType,
   type IChartApi,
   type ISeriesApi,
+  type IPriceLine,
   type CandlestickData,
   type UTCTimestamp,
 } from 'lightweight-charts'
@@ -101,6 +102,8 @@ import {
 import {
   filterLevelsInRangeEdgeBand,
   NO_IN_BAND_LEVELS_MESSAGE,
+  RANGE_EDGE_BAND_POINTS,
+  rangeEdgeBands,
 } from '@/lib/trading/rangeEdgeEntryGate'
 import {
   computeRangeEdgeTails,
@@ -763,6 +766,10 @@ export function TradingChart({
   /** Host for level/SL/TP price lines — seeded once; candle setData must not touch it */
   const priceLineHostRef = useRef<ISeriesApi<'Line'> | null>(null)
   const priceLineHostSeededRef = useRef(false)
+  /** ±10 allowed-entry band lines around active playbook H/L */
+  const entryBandLinesRef = useRef<IPriceLine[]>([])
+  const [entryBandsVisible, setEntryBandsVisible] = useState(false)
+  const [entryBandLabel, setEntryBandLabel] = useState<string | null>(null)
   const tickIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const candleRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const lastCandleRef = useRef<OHLCV | null>(null)
@@ -4579,6 +4586,127 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     return rangeEdgeProximity(livePrice, strategyRange)
   }, [canPlaceOrder, livePrice, playbookMode, instrument, rangeStrategy, morningAttempts])
 
+  /** Paint ±10 entry zones on chart (H±10 and L±10 of locked playbook range). */
+  useEffect(() => {
+    const host = priceLineHostRef.current
+    const clearBands = () => {
+      if (host) {
+        for (const line of entryBandLinesRef.current) {
+          try {
+            host.removePriceLine(line)
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+      entryBandLinesRef.current = []
+      setEntryBandsVisible(false)
+      setEntryBandLabel(null)
+    }
+
+    if (!chartReady || !host) {
+      clearBands()
+      return
+    }
+
+    const strategyRange = activeRangeForPlaybook({
+      playbookMode,
+      instrument,
+      or30: or30RangeRef.current,
+      ib: ibRangeRef.current,
+      usRange: usRangeRef.current,
+      lunchRange: lunchRangeRef.current,
+      morningAttempts,
+    })
+    const bands = strategyRange ? rangeEdgeBands(strategyRange) : []
+    if (!strategyRange || bands.length < 2) {
+      clearBands()
+      return
+    }
+
+    clearBands()
+    const bright = !!canPlaceOrder
+    const highColor = bright ? 'rgba(56, 189, 248, 0.95)' : 'rgba(56, 189, 248, 0.4)'
+    const lowColor = bright ? 'rgba(52, 211, 153, 0.95)' : 'rgba(52, 211, 153, 0.4)'
+    const label = strategyRange.label || 'range'
+    const highBand = bands.find((b) => b.edge === 'high')!
+    const lowBand = bands.find((b) => b.edge === 'low')!
+    const specs: Array<{
+      price: number
+      color: string
+      title: string
+    }> = [
+      {
+        price: highBand.max,
+        color: highColor,
+        title: `±${RANGE_EDGE_BAND_POINTS} ${label} H+`,
+      },
+      {
+        price: highBand.min,
+        color: highColor,
+        title: `±${RANGE_EDGE_BAND_POINTS} ${label} H−`,
+      },
+      {
+        price: lowBand.max,
+        color: lowColor,
+        title: `±${RANGE_EDGE_BAND_POINTS} ${label} L+`,
+      },
+      {
+        price: lowBand.min,
+        color: lowColor,
+        title: `±${RANGE_EDGE_BAND_POINTS} ${label} L−`,
+      },
+    ]
+
+    for (const s of specs) {
+      try {
+        entryBandLinesRef.current.push(
+          host.createPriceLine({
+            price: s.price,
+            color: s.color,
+            lineWidth: bright ? 2 : 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: s.title,
+          })
+        )
+      } catch {
+        /* ignore */
+      }
+    }
+    setEntryBandsVisible(entryBandLinesRef.current.length > 0)
+    setEntryBandLabel(
+      bright
+        ? `${label} ±${RANGE_EDGE_BAND_POINTS} entry zones`
+        : `${label} ±${RANGE_EDGE_BAND_POINTS} (locked — wait for window)`
+    )
+
+    return () => {
+      const h = priceLineHostRef.current
+      for (const line of entryBandLinesRef.current) {
+        try {
+          h?.removePriceLine(line)
+        } catch {
+          /* ignore */
+        }
+      }
+      entryBandLinesRef.current = []
+    }
+  }, [
+    chartReady,
+    canPlaceOrder,
+    playbookMode,
+    instrument,
+    rangeStrategy,
+    morningAttempts,
+    or30Locked,
+    ibShaped,
+    lunchLocked,
+    usRangeShaped,
+    livePrice,
+    focusTick,
+  ])
+
   const wasInEdgeBandRef = useRef(false)
   useEffect(() => {
     const nowIn = !!edgeProximity
@@ -5378,6 +5506,18 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       {deskSessionLive && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[10px] text-gray-500">
           <span className="uppercase tracking-wider text-gray-600">Ranges</span>
+          {entryBandsVisible && entryBandLabel && (
+            <span
+              className={
+                canPlaceOrder
+                  ? 'text-sky-300 font-semibold'
+                  : 'text-sky-300/50'
+              }
+              title="Cyan = high ±10 · Emerald = low ±10. Enter only inside these bands when the entry window is open."
+            >
+              {entryBandLabel}
+            </span>
+          )}
           <span title="Blue IB high/low after first cash hour locks (~10:30 ET / 10:00 JST)">
             <span className={ibShaped ? 'text-blue-500' : 'text-gray-600'}>
               IB H/L {ibShaped ? 'on' : 'waiting'}
