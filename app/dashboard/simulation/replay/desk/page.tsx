@@ -1298,7 +1298,7 @@ function SimulationDeskInner() {
           high: c.high,
           low: c.low,
           close: c.close,
-          volume: c.volume,
+          volume: Math.max(0, Number(c.volume) || 0),
         }))
         const tip = slice[slice.length - 1]?.time ?? simT
         const sessionEnd = cashCloseUnix || lunchUnix || tip
@@ -2877,8 +2877,8 @@ function SimulationDeskInner() {
             type="button"
             title={
               showIbBreakouts
-                ? 'IB Breakout & Rejection signals visible (Press B)'
-                : 'Show session Initial Balance Breakout & Rejection signals (Press B)'
+                ? 'IB BRK (RVOL) + REJ markers visible (Press B)'
+                : 'Show IB breakout (volume) & rejection markers (Press B)'
             }
             onClick={() => setShowIbBreakouts((v) => !v)}
             className={`flex items-center gap-1 rounded border px-2 py-1 text-[10px] font-semibold uppercase ${

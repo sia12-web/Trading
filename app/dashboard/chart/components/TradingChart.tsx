@@ -771,7 +771,7 @@ export function TradingChart({
       high: c.high,
       low: c.low,
       close: c.close,
-      volume: c.volume,
+      volume: Math.max(0, Number(c.volume) || 0),
     }))
 
     type Mk = {
@@ -4420,8 +4420,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             type="button"
             title={
               showIbBreakouts
-                ? 'IB Breakout & Rejection signals visible (Press B)'
-                : 'Show session Initial Balance Breakout & Rejection signals (Press B)'
+                ? 'IB BRK (RVOL) + REJ markers visible (Press B)'
+                : 'Show IB breakout (volume) & rejection markers (Press B)'
             }
             onClick={() => setShowIbBreakouts((v) => !v)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${

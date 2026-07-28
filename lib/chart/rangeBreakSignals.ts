@@ -5,6 +5,8 @@
  *   - BRK = close crosses beyond range H/L, requires RVOL (default 1.2× / 20)
  *   - REJ = wick beyond H/L with close back inside — price-only (no volume gate)
  *   - Once per side per range walk (anti-spam)
+ *   - If the feed has no usable volume history, BRK falls back to price-only
+ *     so CFD/index desks still paint breakouts.
  */
 
 export const DEFAULT_RANGE_RVOL = {
@@ -51,16 +53,28 @@ export function createRvolTracker(lookback: number) {
   let sum = 0
   const q: number[] = []
   return {
-    push(volume: number): number {
-      q.push(volume)
-      sum += volume
-      if (q.length > len) sum -= q.shift()!
+    /** Mean of the prior lookback bars already pushed (excludes current). */
+    avg(): number {
       return q.length >= len && len > 0 ? sum / len : NaN
     },
+    push(volume: number): number {
+      const v = Number.isFinite(volume) ? Math.max(0, volume) : 0
+      q.push(v)
+      sum += v
+      if (q.length > len) sum -= q.shift()!
+      return this.avg()
+    },
+    /**
+     * RVOL gate vs prior lookback average.
+     * Call BEFORE push(current) so the current bar is not in the average.
+     * Missing / zero volume history → allow (price-only BRK fallback).
+     */
     ok(volume: number, useVol: boolean, thresh: number): boolean {
       if (!useVol) return true
-      const avg = q.length >= len && len > 0 ? sum / len : NaN
-      return Number.isFinite(avg) && avg > 0 && volume > avg * thresh
+      const avg = this.avg()
+      if (!Number.isFinite(avg) || avg <= 0) return true
+      const v = Number.isFinite(volume) ? Math.max(0, volume) : 0
+      return v > avg * thresh
     },
   }
 }
@@ -100,15 +114,15 @@ export function computeRangeBreakRejectSignals(
 
   for (let i = 0; i < candles.length; i++) {
     const c = candles[i]!
-    const avgReady = rvol.push(c.volume)
-    void avgReady
+    // RVOL vs prior bars only — then fold this bar into the window
+    const rvolOk = rvol.ok(c.volume, useVol, volThresh)
+    rvol.push(c.volume)
 
     if (c.time < opts.signalAfterUnix) continue
     if (opts.inSignalWindow && !opts.inSignalWindow(c.time)) continue
     if (i === 0) continue
 
     const prev = candles[i - 1]!
-    const rvolOk = rvol.ok(c.volume, useVol, volThresh)
 
     const crossUp = prev.close <= range.high && c.close > range.high
     const crossDn = prev.close >= range.low && c.close < range.low

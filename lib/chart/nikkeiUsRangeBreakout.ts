@@ -165,8 +165,9 @@ export function computeNikkeiUsRangeBreakout(
       nySessionGapRestart(prevBar.time, c.time)
     const isUsStart = (inUs && !prevInUs) || gapNewSession
 
-    rvol.push(c.volume)
+    // RVOL vs prior bars only — then fold this bar into the window
     const rvolOk = rvol.ok(c.volume, useVol, volThresh)
+    rvol.push(c.volume)
 
     if (isUsStart) {
       usH = c.high
