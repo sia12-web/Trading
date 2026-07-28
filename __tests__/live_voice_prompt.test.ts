@@ -20,6 +20,17 @@ assert(LIVE_VOICE_SYSTEM_PROMPT.includes('ATTEMPT LADDER'), 'ladder section')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('CONFIRM-CLOSE'), 'lunch confirm-close')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('cash-close auto-liquidation'), 'cash-close flatten')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('Skip-forward'), 'skip-forward')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('US Range'), 'Nikkei US Range in Leo')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('OR30'), 'OR30 in Leo')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('NIKKEI ranges'), 'desk-specific Nikkei ladder')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('RANGE LIQUIDITY MAP'), 'Leo knows range liquidity map')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('retail BAIT'), 'Leo knows range H/L = bait')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('JUST BEYOND'), 'Leo knows stop pools beyond edges')
+assert(
+  LIVE_VOICE_SYSTEM_PROMPT.includes('buy the range low') ||
+    LIVE_VOICE_SYSTEM_PROMPT.includes('Reject "buy the range low'),
+  'Leo rejects retail range-edge entries'
+)
 
 const mock = {
   voice: {
@@ -134,7 +145,27 @@ assert(packed.includes('NY 9:30'), 'includes AVWAP label')
 assert(packed.includes('Morning playbook'), 'includes active playbook title')
 assert(packed.includes('IB 10:15'), 'includes IB window')
 assert(packed.includes('AM 0/1'), 'includes attempt ladder')
+assert(packed.includes('RANGE LIQUIDITY MAP'), 'packed context has range liquidity map')
+assert(packed.includes('Primary bait'), 'packed context has primary bait')
+assert(packed.includes('OR30'), 'packed primary OR30 for morning')
 assert(!packed.includes('99999'), 'no invented price')
+
+{
+  const nikkei = {
+    ...mock,
+    voice: { ...mock.voice, instrument: 'NIKKEI', market: 'TOKYO' },
+    session: {
+      ...mock.session,
+      playbookMode: 'us_range',
+      playbookTitle: 'US Range playbook',
+      rangeStrategy: 'us_range',
+    },
+  } as LiveVoiceDeskContext
+  const p = formatLiveVoiceContextForLlm(nikkei)
+  assert(p.includes('US Range'), 'Nikkei US Range in packed context')
+  assert(p.includes('OR30 → US Range'), 'Nikkei desk range chain')
+  assert(/Primary bait.*US Range/i.test(p), 'Nikkei primary bait US Range')
+}
 
 {
   const withVerdict = {

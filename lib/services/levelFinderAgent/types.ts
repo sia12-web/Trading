@@ -23,14 +23,20 @@ export interface AnalysisRequest {
   /** live = Opus (default); sim = cheap Haiku for replay practice */
   llm_tier?: 'live' | 'sim'
   /**
-   * morning = pre-open / morning playbook.
-   * ib = Initial Balance playbook refresh (entry 10:15–10:45 local).
-   * lunch_range = Lunch break / lunch-range playbook refresh.
+   * morning = pre-open / Morning OR30 playbook.
+   * ib = Initial Balance playbook (NY slot 2; Tokyo slot 3).
+   * us_range = Prior NYC session range playbook (Nikkei slot 2 only).
+   * lunch_range = Lunch break / lunch-range playbook (NY slot 3).
    * afternoon = watch-only memory refresh after entry windows.
    */
-  analysis_mode?: 'morning' | 'ib' | 'lunch_range' | 'afternoon'
+  analysis_mode?: 'morning' | 'ib' | 'us_range' | 'lunch_range' | 'afternoon'
   /** Precomputed IB / morning / lunch-range facts — no new vendors */
   afternoonBriefText?: string
+  /**
+   * Printed OR30 / slot-2 / slot-3 H/L + POC-inside-range + AVWAP.
+   * Connects retail-stop methodology to the three desk ranges.
+   */
+  rangeLiquidityBriefText?: string
   /**
    * NY twin tape (DOW↔NASDAQ): CONFIRM/DIVERGE only — never peer price levels.
    * NIKKEI has no twin.

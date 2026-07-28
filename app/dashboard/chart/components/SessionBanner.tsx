@@ -42,8 +42,8 @@ export interface SessionGateState {
   revengeLocked?: boolean
   dayLocked?: boolean
   attemptLadderLabel?: string
-  /** IB / lunch-range unlock when morning unused */
-  rangeStrategy?: 'ib' | 'lunch_range' | null
+  /** Slot-2 / slot-3 unlock (NY: ib|lunch_range · Tokyo: us_range|ib) */
+  rangeStrategy?: 'ib' | 'lunch_range' | 'us_range' | null
 }
 
 /** Live banner clock — always Montreal (Eastern). */
@@ -58,8 +58,13 @@ function formatDeskClock(_market?: 'NY' | 'TOKYO' | null): { time: string; label
   return { time, label: 'ET' }
 }
 
-function phaseLabel(phase: string, rangeStrategy?: 'ib' | 'lunch_range' | null): string {
-  if (rangeStrategy === 'ib') return 'IB'
+function phaseLabel(
+  phase: string,
+  rangeStrategy?: 'ib' | 'lunch_range' | 'us_range' | null,
+  instrument?: 'DOW' | 'NASDAQ' | 'NIKKEI' | null
+): string {
+  if (rangeStrategy === 'us_range') return 'US-RANGE'
+  if (rangeStrategy === 'ib') return instrument === 'NIKKEI' ? 'IB' : 'IB'
   if (rangeStrategy === 'lunch_range') return 'LUNCH-RANGE'
   switch (phase) {
     case 'FLAT':
@@ -156,7 +161,9 @@ export function SessionBanner({
               ? json.attempt_ladder
               : undefined,
         rangeStrategy:
-          json.rangeStrategy === 'ib' || json.rangeStrategy === 'lunch_range'
+          json.rangeStrategy === 'ib' ||
+          json.rangeStrategy === 'lunch_range' ||
+          json.rangeStrategy === 'us_range'
             ? json.rangeStrategy
             : null,
       }
@@ -188,7 +195,7 @@ export function SessionBanner({
               morningStopHits: next.stopHits ?? 0,
             }),
           })
-          const mode = deskPlaybookAnalysisMode(playbookMode)
+          const mode = deskPlaybookAnalysisMode(playbookMode, next.lockedInstrument)
           const key = `levels:${next.lockedInstrument}:${playbookMode}`
           if (prepFiredRef.current !== key) {
             prepFiredRef.current = key
@@ -315,7 +322,7 @@ export function SessionBanner({
   return (
     <div className={`rounded-lg border px-3 py-2 text-xs flex flex-wrap items-center gap-3 ${tone}`}>
       <span className="font-semibold tracking-wide uppercase">
-        {phaseLabel(gate.phase, gate.rangeStrategy)}
+        {phaseLabel(gate.phase, gate.rangeStrategy, gate.lockedInstrument)}
       </span>
       <span
         className="text-gray-400 font-mono tabular-nums min-w-[5.5rem]"
@@ -373,7 +380,9 @@ export function SessionBanner({
           title="Day max 3 fills: Morning 1 + IB 1 + Lunch-range 1. Skip-forward allowed. Any fill (SL, TP, or open book) locks later windows. Lunch 11:30 is confirm-close; unconfirmed books ride to cash close. Working limits do not count until filled."
         >
           {gate.attemptLadderLabel ||
-            `Day ${gate.attemptsUsed ?? 0}/${gate.maxAttempts ?? 3} · AM ${gate.morningAttempts ?? 0}/${gate.maxMorningAttempts ?? 1} · IB ${gate.ibAttempts ?? 0}/${gate.maxIbAttempts ?? 1} · LN ${gate.lunchAttempts ?? 0}/${gate.maxLunchAttempts ?? 1}`}
+            (gate.lockedInstrument === 'NIKKEI'
+              ? `Day ${gate.attemptsUsed ?? 0}/${gate.maxAttempts ?? 3} · AM ${gate.morningAttempts ?? 0}/${gate.maxMorningAttempts ?? 1} · US ${gate.ibAttempts ?? 0}/${gate.maxIbAttempts ?? 1} · IB ${gate.lunchAttempts ?? 0}/${gate.maxLunchAttempts ?? 1}`
+              : `Day ${gate.attemptsUsed ?? 0}/${gate.maxAttempts ?? 3} · AM ${gate.morningAttempts ?? 0}/${gate.maxMorningAttempts ?? 1} · IB ${gate.ibAttempts ?? 0}/${gate.maxIbAttempts ?? 1} · LN ${gate.lunchAttempts ?? 0}/${gate.maxLunchAttempts ?? 1}`)}
           {(gate.morningAttempts ?? 0) > 0 ? ' · LOCKED' : ''}
           {(gate.stopHits ?? 0) > 0
             ? ` · Stops ${gate.stopHits}/${gate.maxStopHits ?? 1}`

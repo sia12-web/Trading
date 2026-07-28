@@ -2,17 +2,12 @@
  * Mind Over Markets — Asian Session NYC/US Range Breakout & Rejection.
  * Port of the Pine overlay for NIKKEI live charts only (not Dow/Nasdaq).
  *
- * Session clocks match the chart bands (`tokyoDeskSessionAt`):
- *   - Build US H/L only in **New York** (JST 22:30 → 09:00)
+ *   - Build US H/L in **NY cash RTH** (09:30 → 16:00 ET) — traders in Nikkei
+ *     during the US day session
  *   - Emit US BRK / REJ only in **Tokyo/Asia** cash (JST 09:00 → 15:00)
- *   - Never signal in London (JST 17:00–22:30) or the post-cash dead zone
- *     (JST 15:00–17:00) — that was the UTC-Asia leak bug.
+ *   - Chart H/L lines draw only across current Tokyo cash (not through London/NY)
  *
- * Chart overlay: red H/L use last NYC levels but draw **only** across the
- * current Tokyo cash session (09:00→tip), never through London/NY history.
- *
- * Separate from Initial Balance (Tokyo cash first hour) and from the NY lunch
- * range overlay (Dow/Nasdaq only).
+ * Separate from Initial Balance (Tokyo cash first hour) and OR30.
  */
 
 import {
@@ -20,6 +15,10 @@ import {
   tokyoDeskSessionAt,
   zonedCivilToUnix,
 } from '@/lib/chart/sessionVwap'
+import {
+  DEFAULT_RANGE_RVOL,
+  createRvolTracker,
+} from '@/lib/chart/rangeBreakSignals'
 
 export const NIKKEI_US_RANGE_COLORS = {
   high: '#dc2626',
@@ -42,9 +41,9 @@ export const US_SESSION_UTC = { startHour: 13.5, endHour: 20 } as const
 export const ASIA_SESSION_UTC = { startHour: 0, endHour: 9 } as const
 
 export const DEFAULT_RVOL = {
-  useVol: true,
-  thresh: 1.2,
-  lookback: 20,
+  useVol: DEFAULT_RANGE_RVOL.useVol,
+  thresh: DEFAULT_RANGE_RVOL.thresh,
+  lookback: DEFAULT_RANGE_RVOL.lookback,
 } as const
 
 export type NikkeiUsRangeBar = {
@@ -91,9 +90,10 @@ export function isNikkeiUsRangeInstrument(
   return instrument === 'NIKKEI'
 }
 
-/** Form US H/L — chart New York band only (not London / dead zone). */
+/** Form US H/L — NY cash RTH 09:30–16:00 ET (Nikkei traders in the US day). */
 export function inNikkeiUsBuildSession(unix: number): boolean {
-  return tokyoDeskSessionAt(unix) === 'New York'
+  const h = hourInTz(unix, 'America/New_York')
+  return h >= 9.5 && h < 16
 }
 
 /** US BRK / REJ — Tokyo cash Asia band only (09:00–15:00 JST). */
@@ -148,9 +148,11 @@ export function computeNikkeiUsRangeBreakout(
   let prevBar: NikkeiUsRangeBar | null = null
 
   const signals: UsRangeSignalMarker[] = []
-
-  let volSum = 0
-  const volQ: number[] = []
+  const rvol = createRvolTracker(volLen)
+  let firedBrkLong = false
+  let firedBrkShort = false
+  let firedRejHigh = false
+  let firedRejLow = false
 
   for (let i = 0; i < candles.length; i++) {
     const c = candles[i]!
@@ -163,36 +165,34 @@ export function computeNikkeiUsRangeBreakout(
       nySessionGapRestart(prevBar.time, c.time)
     const isUsStart = (inUs && !prevInUs) || gapNewSession
 
-    volQ.push(c.volume)
-    volSum += c.volume
-    if (volQ.length > volLen) volSum -= volQ.shift()!
-    const avgVol = volQ.length >= volLen ? volSum / volLen : NaN
-    const rvolOk =
-      !useVol || (Number.isFinite(avgVol) && avgVol > 0 && c.volume > avgVol * volThresh)
+    rvol.push(c.volume)
+    const rvolOk = rvol.ok(c.volume, useVol, volThresh)
 
     if (isUsStart) {
       usH = c.high
       usL = c.low
       usFrom = c.time
+      firedBrkLong = firedBrkShort = firedRejHigh = firedRejLow = false
     } else if (inUs && usH != null && usL != null) {
       if (c.high > usH) usH = c.high
       if (c.low < usL) usL = c.low
     }
 
-    // Lines only while NY is building or Tokyo cash is reacting — never London / dead
+    // Visible while NY is building or Tokyo cash is reacting
     if ((inUs || inTokyoCash) && usH != null && usL != null) {
       visibleTo = c.time
     }
 
-    // Signals only during Tokyo cash with a formed US range
+    // Signals only during Tokyo cash — BRK needs RVOL; REJ price-only; once/side
     if (inTokyoCash && usH != null && usL != null && i > 0) {
       const prev = candles[i - 1]!
       const crossUp = prev.close <= usH && c.close > usH
       const crossDn = prev.close >= usL && c.close < usL
-      const rejectH = c.high > usH && c.close < usH
-      const rejectL = c.low < usL && c.close > usL
+      const rejectH = c.high > usH && c.close < usH && !crossUp
+      const rejectL = c.low < usL && c.close > usL && !crossDn
 
-      if (crossUp && rvolOk) {
+      if (crossUp && rvolOk && !firedBrkLong) {
+        firedBrkLong = true
         signals.push({
           time: c.time,
           type: 'US_BRK_LONG',
@@ -202,7 +202,8 @@ export function computeNikkeiUsRangeBreakout(
           position: 'belowBar',
           shape: 'arrowUp',
         })
-      } else if (crossDn && rvolOk) {
+      } else if (crossDn && rvolOk && !firedBrkShort) {
+        firedBrkShort = true
         signals.push({
           time: c.time,
           type: 'US_BRK_SHORT',
@@ -212,22 +213,24 @@ export function computeNikkeiUsRangeBreakout(
           position: 'aboveBar',
           shape: 'arrowDown',
         })
-      } else if (rejectH) {
+      } else if (rejectH && !firedRejHigh) {
+        firedRejHigh = true
         signals.push({
           time: c.time,
           type: 'US_REJ_HIGH',
           price: c.high,
-          text: 'REJ',
+          text: 'US REJ',
           color: NIKKEI_US_RANGE_COLORS.rejHigh,
           position: 'aboveBar',
           shape: 'arrowDown',
         })
-      } else if (rejectL) {
+      } else if (rejectL && !firedRejLow) {
+        firedRejLow = true
         signals.push({
           time: c.time,
           type: 'US_REJ_LOW',
           price: c.low,
-          text: 'REJ',
+          text: 'US REJ',
           color: NIKKEI_US_RANGE_COLORS.rejLow,
           position: 'belowBar',
           shape: 'arrowUp',

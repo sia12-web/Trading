@@ -8,6 +8,11 @@
 
 import { nyDateTimeToUnix } from '@/lib/utils/dateUtils'
 import { NY_INSTRUMENTS, type DeskInstrument } from '@/lib/trading/sessionGate'
+import {
+  computeRangeBreakRejectSignals,
+  type RangeBreakBar,
+  type RangeBreakSignal,
+} from '@/lib/chart/rangeBreakSignals'
 
 export const NYC_LUNCH_COLORS = {
   high: '#ef4444',
@@ -24,6 +29,9 @@ export type NycLunchBar = {
   time: number
   high: number
   low: number
+  open?: number
+  close?: number
+  volume?: number
 }
 
 export type NycLunchRange = {
@@ -175,4 +183,30 @@ export function nycLunchEndMarkers(range: NycLunchRange): NycLunchEndMarker[] {
       shape: 'arrowDown',
     },
   ]
+}
+
+/**
+ * Lunch H/L BRK (RVOL) + REJ (price-only) after 13:30 ET. Mid is not a breakout edge.
+ * Once per side. Signals fire in the PM session after lunch locks.
+ */
+export function computeNycLunchSignals(
+  candles: RangeBreakBar[],
+  range: NycLunchRange | null,
+  opts?: { useVol?: boolean; volThresh?: number; volLen?: number }
+): RangeBreakSignal[] {
+  if (!range || !range.complete) return []
+  return computeRangeBreakRejectSignals(candles, range, {
+    labelPrefix: 'LN',
+    colors: {
+      brkLong: '#22c55e',
+      brkShort: '#ef4444',
+      rejHigh: '#f97316',
+      rejLow: '#a855f7',
+    },
+    signalAfterUnix: range.lunchEndUnix,
+    useVol: opts?.useVol,
+    volThresh: opts?.volThresh,
+    volLen: opts?.volLen,
+    oncePerSide: true,
+  })
 }

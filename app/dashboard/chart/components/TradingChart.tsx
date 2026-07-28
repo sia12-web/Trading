@@ -95,6 +95,7 @@ import { attemptLadderFromCounts } from '@/lib/trading/attemptLadder'
 import {
   NYC_LUNCH_COLORS,
   computeNycLunchRange,
+  computeNycLunchSignals,
   isNycLunchInstrument,
   nycLunchEndMarkers,
   nycLunchLineSeriesData,
@@ -102,6 +103,7 @@ import {
 } from '@/lib/chart/nycLunchSessionRange'
 import {
   NIKKEI_US_RANGE_COLORS,
+  computeNikkeiUsRangeBreakout,
   currentNikkeiUsRangeForChart,
   isNikkeiUsRangeInstrument,
   nikkeiUsRangeLineSeriesData,
@@ -110,6 +112,7 @@ import {
 import {
   OR30_COLORS,
   computeOr30Range,
+  computeOr30Signals,
   isOr30Instrument,
   or30LineSeriesData,
   or30WindowLabel,
@@ -584,7 +587,7 @@ interface TradingChartProps {
   /** Morning session: allow placing limits from the chart */
   canPlaceOrder?: boolean
   /** Active attempt-ladder strategy from session gate */
-  rangeStrategy?: 'ib' | 'lunch_range' | null
+  rangeStrategy?: 'ib' | 'lunch_range' | 'us_range' | null
   attemptsUsed?: number
   stopHits?: number
   morningAttempts?: number
@@ -747,7 +750,7 @@ export function TradingChart({
   /** Floating morning playbook — closed by default on chart refresh; open via Playbook (P). */
   const [playbookOpen, setPlaybookOpen] = useState(false)
 
-  /** Single marker channel — IB + Lunch + Nikkei US-range never overwrite each other. */
+  /** Single marker channel — IB + OR30 + Lunch + Nikkei US-range. */
   const paintDeskMarkers = useCallback((bars?: OHLCV[]) => {
     const candleSeries = candleRef.current
     if (!candleSeries) return
@@ -782,6 +785,18 @@ export function TradingChart({
       }
     }
 
+    if (showOr30 && or30RangeRef.current && deskBars.length > 0) {
+      for (const s of computeOr30Signals(deskBars, or30RangeRef.current)) {
+        markers.push({
+          time: s.time as UTCTimestamp,
+          position: s.position,
+          color: s.color,
+          shape: s.shape,
+          text: s.text,
+        })
+      }
+    }
+
     if (showLunchRange && lunchRangeRef.current) {
       for (const m of nycLunchEndMarkers(lunchRangeRef.current)) {
         markers.push({
@@ -792,9 +807,37 @@ export function TradingChart({
           text: m.text,
         })
       }
+      if (deskBars.length > 0) {
+        for (const s of computeNycLunchSignals(deskBars, lunchRangeRef.current)) {
+          markers.push({
+            time: s.time as UTCTimestamp,
+            position: s.position,
+            color: s.color,
+            shape: s.shape,
+            text: s.text,
+          })
+        }
+      }
     }
 
-    // US Range is IB-style H/L lines only — no BRK/REJ markers
+    if (
+      showUsRange &&
+      isNikkeiUsRangeInstrument(instrument) &&
+      deskBars.length > 0
+    ) {
+      const us = computeNikkeiUsRangeBreakout(deskBars)
+      if (us) {
+        for (const s of us.signals) {
+          markers.push({
+            time: s.time as UTCTimestamp,
+            position: s.position,
+            color: s.color,
+            shape: s.shape,
+            text: s.text,
+          })
+        }
+      }
+    }
 
     try {
       candleSeries.setMarkers(
@@ -806,11 +849,11 @@ export function TradingChart({
     } catch {
       /* ignore */
     }
-  }, [showIbBreakouts, showLunchRange])
+  }, [showIbBreakouts, showLunchRange, showOr30, showUsRange, instrument])
 
   useEffect(() => {
     paintDeskMarkers()
-  }, [showIbBreakouts, showLunchRange, paintDeskMarkers])
+  }, [showIbBreakouts, showLunchRange, showOr30, showUsRange, paintDeskMarkers])
 
   /** Apply / clear lunch line series from cached range (toggle without recompute). */
   const paintLunchLines = useCallback(() => {
@@ -1361,11 +1404,15 @@ export function TradingChart({
       const rank = l.rank === 'watch' ? 'WATCH' : 'PRIMARY'
       const status = reactionStatus(l.marketVerdict, l.marketOutcome)
       const watchTag =
-        playbookMode === 'ib'
-          ? 'IB · '
-          : playbookMode === 'lunch_break' || playbookMode === 'lunch_range'
-            ? 'LN · '
-            : ''
+        playbookMode === 'us_range'
+          ? 'US · '
+          : playbookMode === 'ib'
+            ? 'IB · '
+            : playbookMode === 'lunch_break' || playbookMode === 'lunch_range'
+              ? instrument === 'NIKKEI'
+                ? 'IB · '
+                : 'LN · '
+              : ''
       byPrice.set(l.level, {
         price: l.level,
         type: isRes ? 'resistance' : 'support',
@@ -1460,7 +1507,7 @@ export function TradingChart({
             morningStopHits: stopHits,
           }),
         })
-        const mode = deskPlaybookAnalysisMode(playbookMode)
+        const mode = deskPlaybookAnalysisMode(playbookMode, inst)
         try {
           await fetch(
             `/api/trading/auto-levels?instrument=${encodeURIComponent(inst)}&force=1&mode=${encodeURIComponent(mode)}`,

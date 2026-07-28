@@ -8,6 +8,7 @@ export {
   NIKKEI_OR30_COLORS,
   computeOr30Range,
   computeNikkeiOr30Range,
+  computeOr30Signals,
   or30LineSeriesData,
   nikkeiOr30LineSeriesData,
   isOr30Instrument,

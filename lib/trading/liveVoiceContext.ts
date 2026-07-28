@@ -43,7 +43,7 @@ import {
   sessionFor,
   type DeskInstrument,
 } from '@/lib/trading/sessionGate'
-import { attemptLadderFromCounts } from '@/lib/trading/attemptLadder'
+import { attemptLadderFromCounts, formatAttemptLadderShort } from '@/lib/trading/attemptLadder'
 import {
   deskPlaybookTitle,
   resolveDeskPlaybookMode,
@@ -92,8 +92,8 @@ export type LiveVoiceDeskContext = {
     attemptLadderLabel: string
     openPositionId: string | null
     entryWindow: 1 | 2 | 3 | null
-    rangeStrategy: 'ib' | 'lunch_range' | null
-    playbookMode: 'morning' | 'ib' | 'lunch_break' | 'lunch_range' | 'done'
+    rangeStrategy: 'ib' | 'lunch_range' | 'us_range' | null
+    playbookMode: 'morning' | 'ib' | 'us_range' | 'lunch_break' | 'lunch_range' | 'done'
     playbookTitle: string
     tradeDate: string
     times: {
@@ -115,6 +115,8 @@ export type LiveVoiceDeskContext = {
     maxStopHits: number
     entryRule: string
   }
+  /** Printed OR30 / slot-2 / slot-3 bait facts for Leo (optional). */
+  rangeLiquidityBriefText?: string | null
   avwap: {
     openLabel: string
     lookbackTradingDays: number
@@ -502,7 +504,7 @@ export async function buildLiveVoiceDeskContext(
       lunchEligible: ladder.lunchEligible,
       attemptLadderLabel:
         gate.attemptLadderLabel ||
-        `Day ${gate.attemptsUsed ?? attemptsUsed}/${gate.maxAttempts ?? MAX_DAY_ATTEMPTS} · AM ${morningAttempts}/${maxMorningAttempts} · IB ${ibAttempts}/${maxIbAttempts} · LN ${lunchAttempts}/${maxLunchAttempts}`,
+        formatAttemptLadderShort(ladder, contextInstrument),
       openPositionId: openPos?.id ?? null,
       entryWindow: gate.entryWindow,
       rangeStrategy: gate.rangeStrategy ?? null,
@@ -537,8 +539,11 @@ export async function buildLiveVoiceDeskContext(
       maxAttempts: MAX_DAY_ATTEMPTS,
       maxStopHits: MAX_STOP_HITS,
       entryRule:
-        'Day max 3 fills (AM 1 + IB 1 + LN 1). Skip-forward: skip morning → IB; skip IB → lunch-range. Any fill (SL, TP, or still-open filled book) locks later windows — no second attempt in that window. Working limits do not count until filled. Lunch 11:30 is confirm-close only (not auto-flatten); if you keep the morning/IB book open it rides to cash-close flatten (NY 16:00 / Tokyo 15:00) and later windows stay locked. Voice never places orders.',
+        contextInstrument === 'NIKKEI'
+          ? 'Day max 3 fills (AM/OR30 1 + US Range 1 + IB 1). Skip-forward: skip morning → US Range; skip US Range → IB. Any fill locks later windows. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books ride to cash-close flatten. Voice never places orders. Range H/L = retail bait; desk hunts stops just beyond with POC/AVWAP confluence.'
+          : 'Day max 3 fills (AM/OR30 1 + IB 1 + LN 1). Skip-forward: skip morning → IB; skip IB → lunch-range. Any fill locks later windows. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books ride to cash-close flatten. Voice never places orders. Range H/L = retail bait; desk hunts stops just beyond with POC/AVWAP confluence.',
     },
+    rangeLiquidityBriefText: null,
     avwap: {
       openLabel: clock.openLabel,
       lookbackTradingDays: AVWAP_LOOKBACK_TRADING_DAYS,

@@ -117,7 +117,7 @@ assert(
   assert(/Position open|Manage only/i.test(manage.message), `manage msg: ${manage.message}`)
 }
 
-// Used 1 morning fill → lunch-range still allowed (IB skipped)
+// Used 1 morning fill → lunch-range locked (any fill locks later windows)
 const stillLunch = resolveSessionGate({
   now: afternoonEt,
   lockedInstrument: 'DOW',
@@ -127,8 +127,21 @@ const stillLunch = resolveSessionGate({
   attemptsUsed: 1,
   stopLossHitCount: 0,
 })
-assert(stillLunch.canPlaceEntry === true, '1 morning fill → lunch-range still open')
-assert(stillLunch.rangeStrategy === 'lunch_range', 'lunch_range with 1 morning')
+assert(stillLunch.canPlaceEntry === false, '1 morning fill → lunch-range locked')
+assert(stillLunch.rangeStrategy === null, 'no lunch-range after morning fill')
+
+// Morning + IB skipped → lunch-range open
+const lunchOpen = resolveSessionGate({
+  now: afternoonEt,
+  lockedInstrument: 'DOW',
+  viewingInstrument: 'DOW',
+  clockedIn: true,
+  attendedToday: true,
+  attemptsUsed: 0,
+  stopLossHitCount: 0,
+})
+assert(lunchOpen.canPlaceEntry === true, '0 fills → lunch-range open')
+assert(lunchOpen.rangeStrategy === 'lunch_range', 'lunch_range when skipped')
 
 // IB fill → lunch off
 const afterIb = resolveSessionGate({

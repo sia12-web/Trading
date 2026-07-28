@@ -23,6 +23,10 @@ import {
   buildAfternoonDeskBrief,
   formatAfternoonDeskBriefForPrompt,
 } from '@/lib/trading/afternoonDeskBrief'
+import {
+  buildRangeLiquidityBrief,
+  formatRangeLiquidityBriefForPrompt,
+} from '@/lib/trading/rangeLiquidityBrief'
 import { buildPeerTapeBrief } from '@/lib/trading/peerTapeBrief'
 import { fetchLevelHistoricalContext } from '@/lib/services/levelFinderAgent/historicalContext'
 import type { Candle } from '@/lib/services/levelFinderAgent/types'
@@ -97,7 +101,7 @@ export async function runAutoLevelPrep(
   opts: {
     force?: boolean
     /** Explicit playbook refresh: morning | ib | lunch_range | afternoon */
-    mode?: 'morning' | 'ib' | 'lunch_range' | 'afternoon'
+    mode?: 'morning' | 'ib' | 'us_range' | 'lunch_range' | 'afternoon'
   } = {}
 ): Promise<AutoLevelPrepResult> {
   try {
@@ -199,8 +203,9 @@ export async function runAutoLevelPrep(
     const agent = await getLevelFinderAgent()
 
     // Playbook mode: explicit query wins; else lunch refresh → afternoon when in PM window
-    const analysis_mode: 'morning' | 'ib' | 'lunch_range' | 'afternoon' =
+    const analysis_mode: 'morning' | 'ib' | 'us_range' | 'lunch_range' | 'afternoon' =
       opts.mode === 'ib' ||
+      opts.mode === 'us_range' ||
       opts.mode === 'lunch_range' ||
       opts.mode === 'afternoon' ||
       opts.mode === 'morning'
@@ -210,6 +215,7 @@ export async function runAutoLevelPrep(
           : 'morning'
     const needsAfternoonBrief =
       analysis_mode === 'ib' ||
+      analysis_mode === 'us_range' ||
       analysis_mode === 'lunch_range' ||
       analysis_mode === 'afternoon'
     const h1Bars = (h1?.candles ?? []).map((c) => ({
@@ -220,17 +226,25 @@ export async function runAutoLevelPrep(
       close: c.close,
       volume: Math.max(1, c.volume || 0),
     }))
+    const nowUnix = Math.floor(now.getTime() / 1000)
     const brief = needsAfternoonBrief
       ? buildAfternoonDeskBrief({
           instrument: instrument as DeskInstrument,
           candlesH1: h1Bars,
           tip: current_price,
-          nowUnix: Math.floor(now.getTime() / 1000),
+          nowUnix,
           afternoonCandidates: Array.isArray(attendance?.afternoon_levels)
             ? attendance!.afternoon_levels
             : [],
         })
       : null
+    const rangeBrief = buildRangeLiquidityBrief({
+      instrument: instrument as DeskInstrument,
+      candlesH1: h1Bars,
+      tip: current_price,
+      nowUnix,
+      analysisMode: analysis_mode,
+    })
 
     let historicalContext = undefined
     try {
@@ -263,6 +277,9 @@ export async function runAutoLevelPrep(
       llm_tier: 'live',
       analysis_mode,
       afternoonBriefText: brief ? formatAfternoonDeskBriefForPrompt(brief) : undefined,
+      rangeLiquidityBriefText: rangeBrief
+        ? formatRangeLiquidityBriefForPrompt(rangeBrief)
+        : undefined,
       peerTapeText,
       historicalContext,
     })

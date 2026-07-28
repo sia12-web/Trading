@@ -1,6 +1,7 @@
 /**
- * Live desk playbook mode — morning → IB → lunch-break → lunch-range.
- * No PM watch — when entry paths are done, UI stays on last playbook / manage-only.
+ * Live desk playbook mode — three ranges per desk:
+ *   DOW/NASDAQ: Morning (OR30) → IB → Lunch-break → Lunch-range
+ *   NIKKEI:     Morning (OR30) → US Range → IB prep → IB
  */
 
 import {
@@ -21,6 +22,7 @@ import { parseTimeToSeconds } from '@/lib/utils/timeUtils'
 export type DeskPlaybookMode =
   | 'morning'
   | 'ib'
+  | 'us_range'
   | 'lunch_break'
   | 'lunch_range'
   | 'done'
@@ -59,7 +61,7 @@ export function resolveDeskPlaybookMode(args: {
       stopHits: args.stopHits ?? 0,
     })
   const range =
-    args.rangeStrategy !== undefined
+    args.rangeStrategy != null
       ? args.rangeStrategy
       : resolveRangeStrategy({
           market,
@@ -67,62 +69,68 @@ export function resolveDeskPlaybookMode(args: {
           ladder,
         })
 
+  if (range === 'us_range') return 'us_range'
   if (range === 'ib') return 'ib'
   if (range === 'lunch_range') return 'lunch_range'
 
-  const ibEnd = parseTimeToSeconds(ibStrategyEndHms(market))
-  const lnStart = parseTimeToSeconds(lunchRangeEntryStartHms(market))
-  const lnEnd = parseTimeToSeconds(lunchRangeEntryEndHms(market))
+  const midEnd = parseTimeToSeconds(ibStrategyEndHms(market))
+  const lateStart = parseTimeToSeconds(lunchRangeEntryStartHms(market))
+  const lateEnd = parseTimeToSeconds(lunchRangeEntryEndHms(market))
   const close = parseTimeToSeconds(sess.marketClose)
 
-  // After IB → Lunch break playbook until lunch-range opens (if still eligible)
-  if (ladder.lunchEligible && t >= ibEnd && t < lnStart) {
+  // After slot-2 ends → prep until slot-3 opens (if still eligible)
+  if (ladder.lunchEligible && t >= midEnd && t < lateStart) {
     return 'lunch_break'
   }
 
-  // During lunch-range clock but not unlocked → still lunch break framing if eligible path was open
-  if (ladder.lunchEligible && t >= lnStart && t < lnEnd) {
-    return 'lunch_break'
-  }
-
-  // Entry paths exhausted or past lunch-range end
-  if (t >= ibEnd && t < close) {
+  // Slot-3 clock with no unlock (ineligible) → done. Never treat entry window as prep.
+  if (t >= lateStart && t < close) {
     if (
       ladder.revengeLocked ||
       ladder.dayLocked ||
       ladder.ibAttempts > 0 ||
       !ladder.lunchEligible ||
-      t >= lnEnd
+      t >= lateEnd
     ) {
       return 'done'
     }
+    // Eligible but resolveRangeStrategy returned null (should be rare) — prep framing
     return 'lunch_break'
   }
 
   return 'morning'
 }
 
-export function deskPlaybookTitle(mode: DeskPlaybookMode, _instrument?: string): string {
+export function deskPlaybookTitle(mode: DeskPlaybookMode, instrument?: string): string {
+  const tokyo = instrument === 'NIKKEI'
   switch (mode) {
+    case 'us_range':
+      return 'US Range playbook'
     case 'ib':
-      return 'IB playbook'
+      return tokyo ? 'IB playbook' : 'IB playbook'
     case 'lunch_break':
-      return 'Lunch break playbook'
+      return tokyo ? 'IB prep playbook' : 'Lunch break playbook'
     case 'lunch_range':
       return 'Lunch-range playbook'
     case 'done':
       return 'Watch playbook'
     default:
-      return 'Morning playbook'
+      return 'Morning playbook (OR30)'
   }
 }
 
-export function deskPlaybookButtonLabel(mode: DeskPlaybookMode): string {
+export function deskPlaybookButtonLabel(
+  mode: DeskPlaybookMode,
+  instrument?: string
+): string {
+  const tokyo = instrument === 'NIKKEI'
   switch (mode) {
+    case 'us_range':
+      return 'US Range'
     case 'ib':
       return 'IB playbook'
     case 'lunch_break':
-      return 'Lunch break'
+      return tokyo ? 'IB prep' : 'Lunch break'
     case 'lunch_range':
       return 'Lunch-range'
     case 'done':
@@ -132,43 +140,45 @@ export function deskPlaybookButtonLabel(mode: DeskPlaybookMode): string {
   }
 }
 
-/**
- * True while an entry unlock is live (morning entry / IB / lunch-range).
- * Same rule for NY (DOW/NASDAQ) and Tokyo (NIKKEI) — clocks come from playbookMode.
- * Morning mode alone is not enough (post–entryClose gap before IB is not an entry window).
- */
 export function isDeskEntryWindowActive(args: {
   playbookMode: DeskPlaybookMode
   rangeStrategy?: RangeStrategy
-  /** When known: morning ENTRY only counts if the gate still allows placing. */
   canPlaceEntry?: boolean
 }): boolean {
   const { playbookMode, rangeStrategy, canPlaceEntry } = args
-  if (rangeStrategy === 'ib' || rangeStrategy === 'lunch_range') return true
-  if (playbookMode === 'ib' || playbookMode === 'lunch_range') return true
+  if (
+    rangeStrategy === 'ib' ||
+    rangeStrategy === 'lunch_range' ||
+    rangeStrategy === 'us_range'
+  ) {
+    return true
+  }
+  if (
+    playbookMode === 'ib' ||
+    playbookMode === 'lunch_range' ||
+    playbookMode === 'us_range'
+  ) {
+    return true
+  }
   if (playbookMode === 'morning') {
-    // Unknown canPlaceEntry → treat morning playbook as entry (prep + open)
     if (canPlaceEntry === undefined) return true
     return canPlaceEntry
   }
   return false
 }
 
-/** Observe-only after entry paths: lunch break prep or done (same NY + Nikkei). */
 export function isDeskWatchOnlyPlaybook(mode: DeskPlaybookMode): boolean {
   return mode === 'lunch_break' || mode === 'done'
 }
 
-/** Toolbar label — Watch when entry paths are finished; else strategy name. */
 export function deskPlaybookToolbarLabel(
   mode: DeskPlaybookMode,
-  opts?: { watchOnly?: boolean }
+  opts?: { watchOnly?: boolean; instrument?: string }
 ): string {
   if (opts?.watchOnly && mode === 'done') return 'Watch'
-  return deskPlaybookButtonLabel(mode)
+  return deskPlaybookButtonLabel(mode, opts?.instrument)
 }
 
-/** Panel title — Tokyo gets an explicit watch title when done. */
 export function deskPlaybookPanelTitle(
   mode: DeskPlaybookMode,
   instrument?: string,
@@ -180,33 +190,52 @@ export function deskPlaybookPanelTitle(
   return deskPlaybookTitle(mode, instrument)
 }
 
-export function deskPlaybookHint(mode: DeskPlaybookMode, _instrument?: string): string {
+export function deskPlaybookHint(mode: DeskPlaybookMode, instrument?: string): string {
+  const tokyo = instrument === 'NIKKEI'
   switch (mode) {
+    case 'us_range':
+      return 'Prior NYC session range — 1 attempt (only if morning OR30 skipped). Any fill locks Tokyo IB.'
     case 'ib':
-      return 'Initial Balance — 1 attempt (only if morning skipped). Any IB fill turns lunch-range off.'
+      return tokyo
+        ? 'Tokyo IB range — 1 attempt (only if morning + US Range skipped).'
+        : 'Initial Balance — 1 attempt (only if morning OR30 skipped). Any IB fill turns lunch-range off.'
     case 'lunch_break':
-      return 'IB entry closed. Prep for lunch-range — levels update. Lunch opens only if morning + IB were skipped.'
+      return tokyo
+        ? 'US Range entry closed. Prep for Tokyo IB — levels update. IB opens only if morning + US Range were skipped.'
+        : 'IB entry closed. Prep for lunch-range — levels update. Lunch opens only if morning + IB were skipped.'
     case 'lunch_range':
-      return 'Lunch-range — 1 attempt while the PM entry window is open.'
+      return 'Lunch-range — 1 attempt while the PM entry window is open (morning + IB skipped).'
     case 'done':
       return 'Entry windows done or earlier trade taken — manage if open (confirm lunch close or ride to cash close), no new entries.'
     default:
-      return 'Morning AI + structure — 1 attempt. Any fill (SL, TP, or open book) locks IB and lunch-range. Lunch 11:30 is confirm-close; unconfirmed books ride to cash close.'
+      return tokyo
+        ? 'Morning OR30 — 1 attempt. Any fill locks US Range and IB. Lunch 11:30 is confirm-close; unconfirmed books ride to cash close.'
+        : 'Morning OR30 — 1 attempt. Any fill locks IB and lunch-range. Lunch 11:30 is confirm-close; unconfirmed books ride to cash close.'
   }
 }
 
-/** Levels paint path: afternoon merge (IB + FLIP/RETEST) for IB / lunch-break / lunch-range. */
 export function deskPlaybookUsesAfternoonLevels(mode: DeskPlaybookMode): boolean {
-  return mode === 'ib' || mode === 'lunch_break' || mode === 'lunch_range' || mode === 'done'
+  return (
+    mode === 'ib' ||
+    mode === 'us_range' ||
+    mode === 'lunch_break' ||
+    mode === 'lunch_range' ||
+    mode === 'done'
+  )
 }
 
 export function deskPlaybookAnalysisMode(
-  mode: DeskPlaybookMode
-): 'morning' | 'ib' | 'lunch_range' | 'afternoon' {
+  mode: DeskPlaybookMode,
+  instrument?: string
+): 'morning' | 'ib' | 'us_range' | 'lunch_range' | 'afternoon' {
   switch (mode) {
+    case 'us_range':
+      return 'us_range'
     case 'ib':
       return 'ib'
     case 'lunch_break':
+      // NY: prep for lunch-range · Tokyo: prep for IB
+      return instrument === 'NIKKEI' ? 'ib' : 'lunch_range'
     case 'lunch_range':
       return 'lunch_range'
     case 'done':

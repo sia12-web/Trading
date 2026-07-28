@@ -98,22 +98,22 @@ test('resolveRangeStrategy clocks: NY IB 10:15–10:45, lunch-range 13:30–15:1
   )
 })
 
-test('resolveRangeStrategy clocks: Tokyo IB 10:15–10:45, lunch-range 13:30–15:00', () => {
+test('resolveRangeStrategy clocks: Tokyo US Range 10:15–10:45, IB 13:30–15:00', () => {
   assert(
     resolveRangeStrategy({
       market: 'TOKYO',
       timeSec: pts(TOKYO_IB_STRATEGY_START),
       attemptsUsed: 0,
-    }) === 'ib',
-    'Tokyo IB start'
+    }) === 'us_range',
+    'Tokyo US Range start (slot 2)'
   )
   assert(
     resolveRangeStrategy({
       market: 'TOKYO',
       timeSec: pts(TOKYO_LUNCH_RANGE_ENTRY_START),
       attemptsUsed: 0,
-    }) === 'lunch_range',
-    'Tokyo lunch-range'
+    }) === 'ib',
+    'Tokyo IB (slot 3)'
   )
   assert(
     resolveRangeStrategy({
@@ -121,7 +121,7 @@ test('resolveRangeStrategy clocks: Tokyo IB 10:15–10:45, lunch-range 13:30–1
       timeSec: pts(TOKYO_LUNCH_RANGE_ENTRY_END),
       attemptsUsed: 0,
     }) === null,
-    'Tokyo lunch-range end'
+    'Tokyo IB end'
   )
 })
 
@@ -197,8 +197,8 @@ test('NY: lunch-range when morning + IB skipped; manage-only after 15:15; no PM 
   assert(afterLn.rangeStrategy === null, 'no lunch-range after 15:15')
 })
 
-test('Nikkei: IB 10:15–10:45 JST; lunch-range to 15:00 JST', () => {
-  const ib = resolveSessionGate({
+test('Nikkei: US Range 10:15–10:45 JST; IB to 15:00 JST', () => {
+  const us = resolveSessionGate({
     lockedInstrument: 'NIKKEI',
     viewingInstrument: 'NIKKEI',
     clockedIn: true,
@@ -207,10 +207,11 @@ test('Nikkei: IB 10:15–10:45 JST; lunch-range to 15:00 JST', () => {
     stopLossHitCount: 0,
     now: jstDate(2026, 7, 15, 10, 30),
   })
-  assert(ib.canPlaceEntry === true, `Nikkei IB place: ${ib.message}`)
-  assert(ib.rangeStrategy === 'ib', `got ${ib.rangeStrategy}`)
+  assert(us.canPlaceEntry === true, `Nikkei US Range place: ${us.message}`)
+  assert(us.rangeStrategy === 'us_range', `got ${us.rangeStrategy}`)
+  assert(/US Range/i.test(us.message), us.message)
 
-  const ln = resolveSessionGate({
+  const ib = resolveSessionGate({
     lockedInstrument: 'NIKKEI',
     viewingInstrument: 'NIKKEI',
     clockedIn: true,
@@ -219,11 +220,11 @@ test('Nikkei: IB 10:15–10:45 JST; lunch-range to 15:00 JST', () => {
     stopLossHitCount: 0,
     now: jstDate(2026, 7, 15, 14, 0),
   })
-  assert(ln.canPlaceEntry === true, `Nikkei lunch-range: ${ln.message}`)
-  assert(ln.rangeStrategy === 'lunch_range', `got ${ln.rangeStrategy}`)
+  assert(ib.canPlaceEntry === true, `Nikkei IB: ${ib.message}`)
+  assert(ib.rangeStrategy === 'ib', `got ${ib.rangeStrategy}`)
 })
 
-test('Nikkei: morning fill locks IB + lunch-range (parity with NY)', () => {
+test('Nikkei: morning fill locks US Range + IB', () => {
   const fills = [
     {
       instrument: 'NIKKEI',
@@ -231,7 +232,7 @@ test('Nikkei: morning fill locks IB + lunch-range (parity with NY)', () => {
       exitReason: 'stop_hit',
     },
   ]
-  const ib = resolveSessionGate({
+  const us = resolveSessionGate({
     lockedInstrument: 'NIKKEI',
     viewingInstrument: 'NIKKEI',
     clockedIn: true,
@@ -241,11 +242,11 @@ test('Nikkei: morning fill locks IB + lunch-range (parity with NY)', () => {
     attemptFills: fills,
     now: jstDate(2026, 7, 15, 10, 30),
   })
-  assert(ib.revengeLocked === false, 'revenge always false')
-  assert(ib.canPlaceEntry === false, 'Nikkei IB blocked after morning fill')
-  assert(ib.rangeStrategy === null, 'no IB strategy after morning fill')
+  assert(us.revengeLocked === false, 'revenge always false')
+  assert(us.canPlaceEntry === false, 'Nikkei US Range blocked after morning fill')
+  assert(us.rangeStrategy === null, 'no US Range strategy after morning fill')
 
-  const ln = resolveSessionGate({
+  const ib = resolveSessionGate({
     lockedInstrument: 'NIKKEI',
     viewingInstrument: 'NIKKEI',
     clockedIn: true,
@@ -255,10 +256,10 @@ test('Nikkei: morning fill locks IB + lunch-range (parity with NY)', () => {
     attemptFills: fills,
     now: jstDate(2026, 7, 15, 14, 0),
   })
-  assert(ln.canPlaceEntry === false, 'Nikkei lunch-range blocked after morning fill')
+  assert(ib.canPlaceEntry === false, 'Nikkei IB blocked after morning fill')
 })
 
-test('Nikkei: morning fill locks IB; any IB fill kills lunch', () => {
+test('Nikkei: morning fill locks US Range; any US Range fill kills IB', () => {
   const morningOnly = [
     {
       instrument: 'NIKKEI',
@@ -266,7 +267,7 @@ test('Nikkei: morning fill locks IB; any IB fill kills lunch', () => {
       exitReason: 'take_profit',
     },
   ]
-  const ib = resolveSessionGate({
+  const us = resolveSessionGate({
     lockedInstrument: 'NIKKEI',
     viewingInstrument: 'NIKKEI',
     clockedIn: true,
@@ -276,28 +277,28 @@ test('Nikkei: morning fill locks IB; any IB fill kills lunch', () => {
     attemptFills: morningOnly,
     now: jstDate(2026, 7, 15, 10, 30),
   })
-  assert(ib.canPlaceEntry === false, `Nikkei IB locked after morning: ${ib.message}`)
-  assert(ib.rangeStrategy === null, 'IB locked')
+  assert(us.canPlaceEntry === false, `Nikkei US Range locked after morning: ${us.message}`)
+  assert(us.rangeStrategy === null, 'US Range locked')
 
-  const afterIbOnly = [
+  const afterUsOnly = [
     {
       instrument: 'NIKKEI',
       entryTimestamp: jstDate(2026, 7, 15, 10, 25),
       exitReason: 'take_profit',
     },
   ]
-  const ln = resolveSessionGate({
+  const ib = resolveSessionGate({
     lockedInstrument: 'NIKKEI',
     viewingInstrument: 'NIKKEI',
     clockedIn: true,
     attendedToday: true,
     attemptsUsed: 1,
     stopLossHitCount: 0,
-    attemptFills: afterIbOnly,
+    attemptFills: afterUsOnly,
     now: jstDate(2026, 7, 15, 14, 0),
   })
-  assert(ln.canPlaceEntry === false, 'IB fill kills lunch on Nikkei')
-  assert(ln.rangeStrategy === null, 'no lunch-range after IB fill')
+  assert(ib.canPlaceEntry === false, 'US Range fill kills IB on Nikkei')
+  assert(ib.rangeStrategy === null, 'no IB after US Range fill')
 })
 
 test('Morning entry window allows 1 attempt (NY)', () => {

@@ -1,19 +1,18 @@
 /**
  * Trading desk session state — NY (DOW/NASDAQ) and Tokyo (NIKKEI).
  *
- * LIVE attempt ladder (both desks; local cash clock):
- *   1) Morning playbook: cash open → entryClose — 1 filled attempt.
- *   2) If morning skipped (0 fills): IB strategy 10:15–10:45 — 1 attempt.
- *   3) If morning + IB skipped: lunch-range PM window — 1 attempt.
- *   Day hard cap: 3 fills. Any fill (SL or TP) locks all later windows.
+ * LIVE attempt ladder (1 / 1 / 1 · day ≤ 3; local cash clock):
+ *   DOW/NASDAQ: Morning (OR30) → IB → Lunch-range
+ *   NIKKEI:     Morning (OR30) → US Range (prior NYC) → Tokyo IB
+ *   Skip-forward unlocks later windows; any fill locks later ones.
  *   No PM watch — manage-only when locked.
  *
- *   NY:  open 09:30 · entry→10:15 · IB 10:15–10:45 · lunch-range 13:30–15:15 ET
- *   Tokyo: open 09:00 · entry→09:45 · IB 10:15–10:45 · lunch-range 13:30–15:00 JST
+ *   NY:  open 09:30 · OR30→10:15 · IB 10:15–10:45 · lunch-range 13:30–15:15 ET
+ *   Tokyo: open 09:00 · OR30→09:45 · US Range 10:15–10:45 · IB 13:30–15:00 JST
  *
- * Chart stream: cash open − 30m through marketClose. Morning/IB books are not
+ * Chart stream: cash open − 30m through marketClose. Morning/slot-2 books are not
  * auto-flattened at lunchClose — trader confirms. Cash close auto-liquidates
- * lunch-range fills and any leftover opens. SIMULATION: morning only (≤1).
+ * slot-3 fills and any leftover opens. SIMULATION: morning only (≤1).
  */
 
 import { parseTimeToSeconds } from '@/lib/utils/timeUtils'
@@ -58,8 +57,8 @@ export type SessionPhase =
   | 'DONE'
   | 'CLOSED'
 
-/** Unlocked IB / lunch-range strategy (null = not in an unlock window). */
-export type RangeStrategy = 'ib' | 'lunch_range' | null
+/** Unlocked slot-2 / slot-3 strategy (null = not in an unlock window). */
+export type RangeStrategy = 'ib' | 'lunch_range' | 'us_range' | null
 /** @deprecated use RangeStrategy */
 export type NyRangeStrategy = RangeStrategy
 
@@ -147,7 +146,8 @@ export function lunchRangeEntryEndHms(market: DeskMarket): string {
 
 /**
  * Which range-strategy window is open for this desk.
- * IB if morning skipped; lunch if morning + IB skipped; day-cap kills both.
+ * NY: IB if morning skipped; lunch-range if morning + IB skipped.
+ * Tokyo: US Range if morning skipped; IB if morning + US Range skipped.
  */
 export function resolveRangeStrategy(args: {
   market: DeskMarket
@@ -799,7 +799,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   const entryWindow =
     market === 'NY' ? wm.getCurrentWindow(now) : t >= open && t <= entryClose ? 1 : null
 
-  const ladderLock = attemptLadderLockReason(ladder)
+  const ladderLock = attemptLadderLockReason(ladder, viewing ?? locked)
   const bookFields = {
     attemptsUsed: ladder.dayAttempts,
     maxAttempts: MAX_DAY_ATTEMPTS,
@@ -814,7 +814,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     maxLunchAttempts: ladder.maxLunchAttempts,
     revengeLocked: ladder.revengeLocked,
     dayLocked: ladder.dayLocked,
-    attemptLadderLabel: formatAttemptLadderShort(ladder),
+    attemptLadderLabel: formatAttemptLadderShort(ladder, viewing ?? locked),
   }
 
   const rangeStrategy = resolveRangeStrategy({
@@ -950,10 +950,18 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       (clockedIn || attendedToday) && locked === (viewing ?? locked)
     const openBookHint =
       ladder.morningAttempts > 0
-        ? 'Morning book open — IB and lunch-range locked for today. Confirm close at lunch (11:30) or ride until cash-close flatten. Manage only.'
+        ? market === 'TOKYO'
+          ? 'Morning (OR30) book open — US Range and IB locked for today. Confirm close at lunch (11:30) or ride until cash-close flatten. Manage only.'
+          : 'Morning (OR30) book open — IB and lunch-range locked for today. Confirm close at lunch (11:30) or ride until cash-close flatten. Manage only.'
         : ladder.ibAttempts > 0
-          ? 'IB book open — lunch-range locked for today. Manage only — no new entries.'
-          : 'Position open. Manage only — no new entries.'
+          ? market === 'TOKYO'
+            ? 'US Range book open — IB locked for today. Manage only — no new entries.'
+            : 'IB book open — lunch-range locked for today. Manage only — no new entries.'
+          : ladder.lunchAttempts > 0
+            ? market === 'TOKYO'
+              ? 'IB book open. Manage only — no new entries.'
+              : 'Lunch-range book open. Manage only — no new entries.'
+            : 'Position open. Manage only — no new entries.'
     return finish({
       ...base,
       rangeStrategy: null,
@@ -1058,7 +1066,11 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       s.tz,
       now
     )
-    const ladderHint = formatAttemptLadderShort(ladder)
+    const ladderHint = formatAttemptLadderShort(ladder, locked)
+    const midLabel = market === 'TOKYO' ? 'US Range' : 'IB'
+    const lateLabel = market === 'TOKYO' ? 'IB' : 'Lunch-range'
+    const prepAfterMid =
+      market === 'TOKYO' ? 'IB prep playbook' : 'Lunch break playbook'
 
     if (inEntryWindow) {
       return finish({
@@ -1071,32 +1083,33 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
         canManagePosition: false,
         message: canMorningAttempt
           ? market === 'TOKYO'
-            ? `Tokyo morning playbook ${entryRange} — ${ladderHint}. Click a ${locked} level (until ${entryUntil}). Working limits do not count until filled.`
-            : `Morning playbook ${entryRange} — ${ladderHint}. Click a ${locked} level (until ${entryUntil}). Working limits do not count until filled.`
+            ? `Morning (OR30) playbook ${entryRange} — ${ladderHint}. Click a ${locked} level (until ${entryUntil}). Working limits do not count until filled.`
+            : `Morning (OR30) playbook ${entryRange} — ${ladderHint}. Click a ${locked} level (until ${entryUntil}). Working limits do not count until filled.`
           : ladderLock ||
             book.lockReason ||
             `Morning attempts full (${ladder.morningAttempts}/${ladder.maxMorningAttempts}). ${ladderHint}`,
       })
     }
 
-    // IB strategy entry window if eligible (morning skipped)
-    if (rangeStrategy === 'ib') {
+    // Slot-2 unlock: NY = IB · TOKYO = US Range
+    if (rangeStrategy === 'ib' || rangeStrategy === 'us_range') {
+      const slot2Eligible = ladder.ibEligible
       return finish({
         ...base,
-        rangeStrategy: 'ib',
+        rangeStrategy,
         phase: 'ENTRY',
         canViewLiveChart: canView || clockedIn,
         canFetchLiveBars: clockedIn,
-        canPlaceEntry: clockedIn && ladder.ibEligible && !hasOpen,
+        canPlaceEntry: clockedIn && slot2Eligible && !hasOpen,
         canManagePosition: false,
-        message: `IB playbook unlocked — 1 attempt ${ibRange}. ${ladderHint}. After ${ibUntil} → Lunch break playbook. Working limits do not count until filled.`,
+        message: `${midLabel} playbook unlocked — 1 attempt ${ibRange}. ${ladderHint}. After ${ibUntil} → ${prepAfterMid}. Working limits do not count until filled.`,
       })
     }
 
-    // Waiting for IB, IB ended (lunch-break prep), or morning/IB path blocked
-    const waitingIb =
+    // Waiting for slot 2, slot 2 ended (prep for slot 3), or path blocked
+    const waitingMid =
       ladder.ibEligible && t < parseTimeToSeconds(ibStartHms)
-    const ibEndedUnused =
+    const midEndedUnused =
       ladder.lunchEligible && t >= parseTimeToSeconds(ibEndHms)
     return finish({
       ...base,
@@ -1108,32 +1121,33 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       canManagePosition: false,
       message: ladderLock
         ? `${ladderLock} ${ladderHint}`
-        : waitingIb
-          ? `Morning entry closed (${entryUntil}). IB playbook ${ibRange} if morning skipped. ${ladderHint}`
+        : waitingMid
+          ? `Morning entry closed (${entryUntil}). ${midLabel} playbook ${ibRange} if morning skipped. ${ladderHint}`
           : ladder.morningAttempts > 0
-            ? `Morning trade taken — IB and lunch-range locked. ${ladderHint}`
-            : ibEndedUnused
-              ? `IB entry closed (${ibUntil}). Lunch break playbook — lunch-range unlocks ${lunchRangeLabel} if IB unused. ${ladderHint}`
+            ? `Morning trade taken — ${midLabel} and ${lateLabel} locked. ${ladderHint}`
+            : midEndedUnused
+              ? `${midLabel} entry closed (${ibUntil}). ${prepAfterMid} — ${lateLabel} unlocks ${lunchRangeLabel} if unused. ${ladderHint}`
               : ladder.ibAttempts > 0
-                ? `IB attempt used — lunch-range off. Manage if open. ${ladderHint}`
-                : `Morning entry closed (${entryUntil}). Next is IB ${ibRange} if morning skipped. ${ladderHint}`,
+                ? `${midLabel} attempt used — ${lateLabel} off. Manage if open. ${ladderHint}`
+                : `Morning entry closed (${entryUntil}). Next is ${midLabel} ${ibRange} if morning skipped. ${ladderHint}`,
     })
   }
 
-  // Lunch → cash close: lunch-range unlock OR manage-only (no PM watch)
+  // Lunch → cash close: slot-3 unlock (NY lunch-range · TOKYO IB) OR manage-only
   if (t >= lunch && t < close) {
-    if (rangeStrategy === 'lunch_range') {
+    if (rangeStrategy === 'lunch_range' || (market === 'TOKYO' && rangeStrategy === 'ib')) {
       const lnUntil = `${deskLocalHmsAsTraderDisplay(lnEndHms, s.tz, now)} ${TRADER_DISPLAY_LABEL}`
-      const ladderHint = formatAttemptLadderShort(ladder)
+      const ladderHint = formatAttemptLadderShort(ladder, locked)
+      const lateLabel = market === 'TOKYO' ? 'IB' : 'Lunch-range'
       return finish({
         ...base,
-        rangeStrategy: 'lunch_range',
+        rangeStrategy,
         phase: 'ENTRY',
         canViewLiveChart: !!locked && (clockedIn || attendedToday),
         canFetchLiveBars: clockedIn || attendedToday,
         canPlaceEntry: clockedIn && ladder.lunchEligible && !hasOpen,
         canManagePosition: false,
-        message: `Lunch-range playbook unlocked — 1 attempt ${deskLocalHmsAsTraderDisplay(lnStartHms, s.tz, now)}–${lnUntil}. ${ladderHint}. After that manage-only until cash close.`,
+        message: `${lateLabel} playbook unlocked — 1 attempt ${deskLocalHmsAsTraderDisplay(lnStartHms, s.tz, now)}–${lnUntil}. ${ladderHint}. After that manage-only until cash close.`,
       })
     }
 
@@ -1141,13 +1155,17 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       ladder.lunchEligible && t < parseTimeToSeconds(lnStartHms)
     const lunchRangeEnded =
       ladder.lunchEligible && t >= parseTimeToSeconds(lnEndHms)
-    const ladderHint = formatAttemptLadderShort(ladder)
+    const ladderHint = formatAttemptLadderShort(ladder, locked)
     const lunchRangeLabel = deskLocalRangeAsTraderDisplay(
       lnStartHms,
       lnEndHms,
       s.tz,
       now
     )
+    const midLabel = market === 'TOKYO' ? 'US Range' : 'IB'
+    const lateLabel = market === 'TOKYO' ? 'IB' : 'Lunch-range'
+    const prepLabel =
+      market === 'TOKYO' ? 'IB prep playbook' : 'Lunch break playbook'
 
     return finish({
       ...base,
@@ -1160,11 +1178,11 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       message: ladderLock
         ? `${ladderLock} ${ladderHint}`
         : waitingLunchRange
-          ? `Lunch break playbook — lunch-range opens ${lunchRangeLabel} (morning + IB skipped). ${ladderHint}`
+          ? `${prepLabel} — ${lateLabel} opens ${lunchRangeLabel} (morning + ${midLabel} skipped). ${ladderHint}`
           : ladder.morningAttempts > 0
-            ? `Morning trade taken — IB and lunch-range locked. Manage if open until cash close. ${ladderHint}`
+            ? `Morning trade taken — ${midLabel} and ${lateLabel} locked. Manage if open until cash close. ${ladderHint}`
             : ladder.ibAttempts > 0
-              ? `IB attempt used — lunch-range off. Manage if open until cash close. ${ladderHint}`
+              ? `${midLabel} attempt used — ${lateLabel} off. Manage if open until cash close. ${ladderHint}`
               : lunchRangeEnded || !ladder.lunchEligible
                 ? `Entry windows done for today. Manage if open until cash close — no new entries. ${ladderHint}`
                 : `Manage if open until cash close — no new entries. ${ladderHint}`,
@@ -1264,7 +1282,7 @@ export function resolveSimMorningGate(input: {
       canPlaceEntry: false,
       canManagePosition: false,
       message:
-        'Morning replay ended at lunch. Sim has no IB / lunch-range — live desk continues after lunch.',
+        'Morning replay ended at lunch. Sim has no later range windows — live desk continues after lunch.',
     }
   }
 
@@ -1341,7 +1359,7 @@ export function assertCanOpenPosition(
         : 'Clocked out — no new entries. Manage only if you have an open book.'
     } else if (gate.morningAttempts != null && gate.morningAttempts > 0) {
       message =
-        'Morning trade taken — IB and lunch-range locked. No new entries.'
+        'Morning (OR30) trade taken — later ranges locked. No new entries.'
     } else if (gate.dayLocked) {
       message = 'Day attempt cap reached — trading switched off. No new entries.'
     } else if (gate.phase === 'MANAGE') {

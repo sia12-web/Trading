@@ -722,6 +722,7 @@ export default function ChartPage() {
       gate.phase === 'DONE' ||
       gate.phase === 'FLAT' ||
       gate.rangeStrategy === 'ib' ||
+      gate.rangeStrategy === 'us_range' ||
       gate.rangeStrategy === 'lunch_range'
     ) {
       if (!afternoonLevelsLoadedRef.current || gate.rangeStrategy) {
@@ -748,6 +749,7 @@ export default function ChartPage() {
     if (lastPlaybookStratRef.current === key) return
     if (
       gate.rangeStrategy === 'ib' ||
+      gate.rangeStrategy === 'us_range' ||
       gate.rangeStrategy === 'lunch_range' ||
       gate.phase === 'FLAT' ||
       gate.phase === 'DONE'

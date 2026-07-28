@@ -11,6 +11,10 @@ import {
   type DeskBar,
   type InitialBalanceRange,
 } from '@/lib/trading/deskLevels'
+import {
+  computeRangeBreakRejectSignals,
+  type RangeBreakSignal,
+} from '@/lib/chart/rangeBreakSignals'
 
 export const OR30_MINUTES = 30
 
@@ -126,4 +130,29 @@ export function nikkeiOr30LineSeriesData(
   low: { time: number; value: number }[]
 } {
   return or30LineSeriesData(range, extendToUnix)
+}
+
+/**
+ * OR30 BRK (RVOL) + REJ (price-only) after the 30m window. Once per side.
+ */
+export function computeOr30Signals(
+  candles: DeskBar[],
+  range: Or30Range | null,
+  opts?: { useVol?: boolean; volThresh?: number; volLen?: number }
+): RangeBreakSignal[] {
+  if (!range) return []
+  return computeRangeBreakRejectSignals(candles, range, {
+    labelPrefix: 'OR',
+    colors: {
+      brkLong: '#22c55e',
+      brkShort: '#ef4444',
+      rejHigh: '#f97316',
+      rejLow: '#a855f7',
+    },
+    signalAfterUnix: range.endUnix,
+    useVol: opts?.useVol,
+    volThresh: opts?.volThresh,
+    volLen: opts?.volLen,
+    oncePerSide: true,
+  })
 }

@@ -60,25 +60,26 @@ test('isNikkeiUsRangeInstrument: Nikkei only', () => {
   assert(isNikkeiUsRangeInstrument('NASDAQ') === false, 'NASDAQ off')
 })
 
-test('sessions match chart bands: NY builds, Tokyo signals, not London/dead', () => {
-  const ny = jstUnix(2026, 7, 15, 23, 0) // New York band
+test('sessions: US RTH builds, Tokyo signals, not London/dead', () => {
+  const nyRth = jstUnix(2026, 7, 15, 23, 0) // 10:00 ET — US RTH
   const tokyo = jstUnix(2026, 7, 16, 10, 0) // Tokyo cash
   const dead = jstUnix(2026, 7, 16, 16, 0) // 15:00–17:00 uncolored
-  const london = jstUnix(2026, 7, 16, 18, 0) // London yellow
+  const london = jstUnix(2026, 7, 16, 18, 0) // London / 05:00 ET
+  const afterCash = jstUnix(2026, 7, 16, 5, 30) // 16:30 ET prior — after US cash
 
-  assert(tokyoDeskSessionAt(ny) === 'New York', '23:00 JST = New York')
+  assert(tokyoDeskSessionAt(nyRth) === 'New York', '23:00 JST band = New York')
   assert(tokyoDeskSessionAt(tokyo) === 'Asia', '10:00 JST = Tokyo/Asia')
   assert(tokyoDeskSessionAt(dead) === null, '16:00 JST = dead')
   assert(tokyoDeskSessionAt(london) === 'London', '18:00 JST = London')
 
-  assert(inNikkeiUsBuildSession(ny) === true, 'build in NY')
+  assert(inNikkeiUsBuildSession(nyRth) === true, 'build in US RTH')
+  assert(inNikkeiUsBuildSession(afterCash) === false, 'no build after 16:00 ET')
   assert(inNikkeiUsBuildSession(london) === false, 'no build in London')
   assert(inNikkeiUsBuildSession(dead) === false, 'no build in dead')
   assert(inNikkeiUsSignalSession(tokyo) === true, 'signal in Tokyo')
   assert(inNikkeiUsSignalSession(london) === false, 'no signal in London')
   assert(inNikkeiUsSignalSession(dead) === false, 'no signal in dead')
-  // Deprecated aliases stay desk-aligned
-  assert(inUsSessionUtc(ny) === true, 'alias build')
+  assert(inUsSessionUtc(nyRth) === true, 'alias build')
   assert(inAsiaSessionUtc(tokyo) === true, 'alias signal')
   assert(inAsiaSessionUtc(london) === false, 'alias not London')
 })
@@ -119,6 +120,7 @@ test('Tokyo cash rejection at US high (no breakout close)', () => {
   assert(r != null, 'result')
   const rej = r!.signals.filter((s) => s.type === 'US_REJ_HIGH')
   assert(rej.length === 1, `one rej got ${rej.length}`)
+  assert(rej[0]!.text === 'US REJ', 'label')
 })
 
 test('no US BRK/REJ during London or dead zone', () => {

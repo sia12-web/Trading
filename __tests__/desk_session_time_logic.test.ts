@@ -196,10 +196,10 @@ for (const inst of ['DOW', 'NASDAQ'] as const) {
     viewingInstrument: inst,
     clockedIn: false,
     attendedToday: true,
-    attemptsUsed: 1,
+    attemptsUsed: 0,
     stopLossHitCount: 0,
   })
-  // 1 morning fill → IB unused → lunch-range message (place blocked while clocked out)
+  // 0 fills → lunch-range unlock message (place blocked while clocked out)
   assert(gate.phase === 'ENTRY', `${inst} lunch-range phase ENTRY`)
   assert(gate.canPlaceEntry === false, `${inst} clocked-out blocks place`)
   assert(gate.canManagePosition === false, `${inst} no manage when flat`)

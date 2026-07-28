@@ -1,6 +1,7 @@
 /**
- * Desk playbook mode titles / windows (morning → IB → lunch break → lunch-range).
- * Covers NY (DOW/NASDAQ) and Tokyo (NIKKEI) with the same ladder.
+ * Desk playbook mode titles / windows.
+ * DOW/NASDAQ: Morning OR30 → IB → lunch break → lunch-range
+ * NIKKEI:     Morning OR30 → US Range → IB prep → IB
  * Run: npx tsx __tests__/desk_playbook_mode.test.ts
  */
 
@@ -38,7 +39,7 @@ function jstDate(h: number, m: number, s = 0): Date {
     attemptsUsed: 0,
   })
   assert(mode === 'morning', 'morning open window')
-  assert(deskPlaybookTitle(mode) === 'Morning playbook', 'morning title')
+  assert(deskPlaybookTitle(mode) === 'Morning playbook (OR30)', 'morning title')
   assert(deskPlaybookUsesAfternoonLevels(mode) === false, 'morning uses morning levels')
 }
 
@@ -64,6 +65,10 @@ function jstDate(h: number, m: number, s = 0): Date {
   assert(mode === 'lunch_break', 'after IB → lunch break playbook')
   assert(deskPlaybookTitle(mode) === 'Lunch break playbook', 'lunch break title')
   assert(deskPlaybookAnalysisMode(mode) === 'lunch_range', 'lunch break prep uses lunch_range analysis')
+  assert(
+    deskPlaybookAnalysisMode(mode, 'NIKKEI') === 'ib',
+    'Tokyo lunch_break framing uses IB analysis'
+  )
 }
 
 {
@@ -104,7 +109,7 @@ function jstDate(h: number, m: number, s = 0): Date {
   )
 }
 
-// ── Nikkei (Tokyo JST) — same ladder, local clocks ───────────────────────────
+// ── Nikkei (Tokyo JST) — OR30 → US Range → IB ────────────────────────────────
 {
   const mode = resolveDeskPlaybookMode({
     instrument: 'NIKKEI',
@@ -116,10 +121,11 @@ function jstDate(h: number, m: number, s = 0): Date {
     isDeskEntryWindowActive({ playbookMode: mode, canPlaceEntry: true }) === true,
     'Nikkei morning entry active'
   )
+  assert(deskPlaybookTitle(mode, 'NIKKEI') === 'Morning playbook (OR30)', 'Nikkei OR30 title')
 }
 
 {
-  // After Tokyo morning entryClose 09:45, before IB 10:15 — not an entry window
+  // After Tokyo morning entryClose 09:45, before US Range 10:15 — not an entry window
   const mode = resolveDeskPlaybookMode({
     instrument: 'NIKKEI',
     now: jstDate(10, 0),
@@ -137,14 +143,16 @@ function jstDate(h: number, m: number, s = 0): Date {
     instrument: 'NIKKEI',
     now: jstDate(10, 30),
     attemptsUsed: 0,
-    rangeStrategy: 'ib',
+    rangeStrategy: 'us_range',
   })
-  assert(mode === 'ib', 'Nikkei IB 10:30 JST')
+  assert(mode === 'us_range', 'Nikkei US Range 10:30 JST')
   assert(
-    isDeskEntryWindowActive({ playbookMode: mode, rangeStrategy: 'ib' }) === true,
-    'Nikkei IB is entry'
+    isDeskEntryWindowActive({ playbookMode: mode, rangeStrategy: 'us_range' }) === true,
+    'Nikkei US Range is entry'
   )
-  assert(isDeskWatchOnlyPlaybook(mode) === false, 'IB not watch-only')
+  assert(deskPlaybookTitle(mode, 'NIKKEI') === 'US Range playbook', 'US Range title')
+  assert(deskPlaybookAnalysisMode(mode) === 'us_range', 'US Range analysis mode')
+  assert(isDeskWatchOnlyPlaybook(mode) === false, 'US Range not watch-only')
 }
 
 {
@@ -153,11 +161,12 @@ function jstDate(h: number, m: number, s = 0): Date {
     now: jstDate(12, 0),
     ladder: attemptLadderFromCounts({ morningAttempts: 0 }),
   })
-  assert(mode === 'lunch_break', 'Nikkei lunch break after IB')
-  assert(isDeskWatchOnlyPlaybook(mode) === true, 'lunch break is watch-only framing')
+  assert(mode === 'lunch_break', 'Nikkei IB prep after US Range')
+  assert(deskPlaybookTitle(mode, 'NIKKEI') === 'IB prep playbook', 'IB prep title')
+  assert(isDeskWatchOnlyPlaybook(mode) === true, 'IB prep is watch-only framing')
   assert(
     isDeskEntryWindowActive({ playbookMode: mode }) === false,
-    'Nikkei lunch break not entry'
+    'Nikkei IB prep not entry'
   )
 }
 
@@ -165,18 +174,18 @@ function jstDate(h: number, m: number, s = 0): Date {
   const mode = resolveDeskPlaybookMode({
     instrument: 'NIKKEI',
     now: jstDate(14, 0),
-    rangeStrategy: 'lunch_range',
+    rangeStrategy: 'ib',
   })
-  assert(mode === 'lunch_range', 'Nikkei lunch-range 14:00 JST')
+  assert(mode === 'ib', 'Nikkei IB 14:00 JST (slot 3)')
   assert(
     isDeskEntryWindowActive({
       playbookMode: mode,
-      rangeStrategy: 'lunch_range',
+      rangeStrategy: 'ib',
       canPlaceEntry: false,
     }) === true,
-    'Nikkei lunch-range stays entry even if clocked out'
+    'Nikkei IB stays entry even if clocked out'
   )
-  assert(deskPlaybookButtonLabel(mode) === 'Lunch-range', 'Nikkei lunch-range button')
+  assert(deskPlaybookButtonLabel(mode, 'NIKKEI') === 'IB playbook', 'Nikkei IB button')
 }
 
 {
@@ -194,6 +203,27 @@ function jstDate(h: number, m: number, s = 0): Date {
     deskPlaybookPanelTitle(mode, 'NIKKEI', { watchOnly: true }) === 'Tokyo watch playbook',
     'Tokyo watch panel title'
   )
+}
+
+{
+  // Explicit null rangeStrategy must still resolve from clock (SessionBanner passes null when clocked out)
+  const mode = resolveDeskPlaybookMode({
+    instrument: 'DOW',
+    now: etDate(14, 0),
+    ladder: attemptLadderFromCounts({ morningAttempts: 0 }),
+    rangeStrategy: null,
+  })
+  assert(mode === 'lunch_range', `null rangeStrategy at 14:00 → lunch_range got ${mode}`)
+}
+
+{
+  const mode = resolveDeskPlaybookMode({
+    instrument: 'NIKKEI',
+    now: jstDate(14, 0),
+    ladder: attemptLadderFromCounts({ morningAttempts: 0 }),
+    rangeStrategy: null,
+  })
+  assert(mode === 'ib', `Nikkei null rangeStrategy at 14:00 → ib got ${mode}`)
 }
 
 console.log('desk_playbook_mode: all passed (NY + Nikkei)')

@@ -19,6 +19,7 @@ import {
   deskSessionAt,
   type SessionName,
 } from '@/lib/chart/sessionVwap'
+import { computeRangeBreakRejectSignals } from '@/lib/chart/rangeBreakSignals'
 
 export type LevelSide = 'BUY' | 'SHORT'
 /** Overnight / regime lean used to pick the morning focus side */
@@ -1387,82 +1388,52 @@ export interface IbSignalMarker {
 
 /**
  * Compute Initial Balance Breakout (IB BRK) and Rejection (IB REJ) signals.
- * - Initiative Long (IB BRK ▲): Close crosses above IB High
- * - Initiative Short (IB BRK ▼): Close crosses below IB Low
- * - Reject High (IB REJ ▼): High spikes past IB High, Close stays inside IB High
- * - Reject Low (IB REJ ▲): Low spikes below IB Low, Close stays inside IB Low
- * No duplicate IB lines, balance, or excess labels. Binds strictly to system IB levels.
+ * BRK requires shared RVOL (1.2× / 20); REJ is price-only. Once per side.
  */
 export function computeIbSignals(
   candles: DeskBar[],
-  ib: InitialBalanceRange | null
+  ib: InitialBalanceRange | null,
+  opts?: { useVol?: boolean; volThresh?: number; volLen?: number }
 ): IbSignalMarker[] {
   if (!ib || !candles || candles.length < 2) return []
 
-  const signals: IbSignalMarker[] = []
-  const postIbBars = candles.filter((c) => c.time >= ib.fromTime)
+  const raw = computeRangeBreakRejectSignals(candles, ib, {
+    labelPrefix: 'IB',
+    colors: {
+      brkLong: '#22c55e',
+      brkShort: '#ef4444',
+      rejHigh: '#f97316',
+      rejLow: '#a855f7',
+    },
+    signalAfterUnix: ib.endUnix,
+    useVol: opts?.useVol,
+    volThresh: opts?.volThresh,
+    volLen: opts?.volLen,
+    oncePerSide: true,
+  })
 
-  for (let i = 0; i < postIbBars.length; i++) {
-    const c = postIbBars[i]!
-    if (c.time < ib.endUnix) continue
-
-    const prev = i > 0 ? postIbBars[i - 1]! : null
-
-    const closeAbove = c.close > ib.high
-    const closeBelow = c.close < ib.low
-    const prevCloseAbove = prev ? prev.close > ib.high : false
-    const prevCloseBelow = prev ? prev.close < ib.low : false
-
-    const crossUp = closeAbove && (!prev || !prevCloseAbove)
-    const crossDn = closeBelow && (!prev || !prevCloseBelow)
-
-    const rejectH = c.high > ib.high && c.close < ib.high && !crossUp
-    const rejectL = c.low < ib.low && c.close > ib.low && !crossDn
-
-    if (crossUp) {
-      signals.push({
-        time: c.time as number,
-        type: 'INITIATIVE_LONG',
-        price: c.low,
-        text: 'IB BRK ▲',
-        color: '#22c55e',
-        position: 'belowBar',
-        shape: 'arrowUp',
-      })
-    } else if (crossDn) {
-      signals.push({
-        time: c.time as number,
-        type: 'INITIATIVE_SHORT',
-        price: c.high,
-        text: 'IB BRK ▼',
-        color: '#ef4444',
-        position: 'aboveBar',
-        shape: 'arrowDown',
-      })
-    } else if (rejectH) {
-      signals.push({
-        time: c.time as number,
-        type: 'REJECT_HIGH',
-        price: c.high,
-        text: 'IB REJ ▼',
-        color: '#f97316',
-        position: 'aboveBar',
-        shape: 'arrowDown',
-      })
-    } else if (rejectL) {
-      signals.push({
-        time: c.time as number,
-        type: 'REJECT_LOW',
-        price: c.low,
-        text: 'IB REJ ▲',
-        color: '#a855f7',
-        position: 'belowBar',
-        shape: 'arrowUp',
-      })
-    }
-  }
-
-  return signals
+  return raw.map((s) => ({
+    time: s.time,
+    type:
+      s.type === 'BRK_LONG'
+        ? ('INITIATIVE_LONG' as const)
+        : s.type === 'BRK_SHORT'
+          ? ('INITIATIVE_SHORT' as const)
+          : s.type === 'REJ_HIGH'
+            ? ('REJECT_HIGH' as const)
+            : ('REJECT_LOW' as const),
+    price: s.price,
+    text: s.type.startsWith('BRK')
+      ? s.type === 'BRK_LONG'
+        ? 'IB BRK ▲'
+        : 'IB BRK ▼'
+      : s.type === 'REJ_HIGH'
+        ? 'IB REJ ▼'
+        : 'IB REJ ▲',
+    color: s.color,
+    position: s.position,
+    shape: s.shape,
+  }))
 }
 
 /** First-hour Initial Balance (cash open → +60m) as watch levels for afternoon. */

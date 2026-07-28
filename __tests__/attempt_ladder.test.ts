@@ -25,8 +25,20 @@ function etDate(h: number, m: number): Date {
   return new Date(Date.UTC(2026, 6, 15, h + 4, m, 0))
 }
 
+{
+  // Gap fill ("other") must lock later windows — any fill locks later
+  const gap = attemptLadderFromCounts({
+    morningAttempts: 0,
+    ibAttempts: 0,
+    otherAttempts: 1,
+  })
+  assert(!gap.ibEligible, 'other fill → IB locked')
+  assert(!gap.lunchEligible, 'other fill → lunch locked')
+}
+
 assert(MAX_DAY_ATTEMPTS === 3, 'day cap 3')
 assert(MAX_MORNING_ATTEMPTS === 1, 'morning cap 1')
+
 
 {
   const b = classifyAttemptBucket(
@@ -129,6 +141,21 @@ assert(MAX_MORNING_ATTEMPTS === 1, 'morning cap 1')
 }
 
 {
+  const tokyoUs = resolveRangeStrategyFromLadder({
+    market: 'TOKYO',
+    timeSec: pts('10:30:00'),
+    ladder: attemptLadderFromCounts({ morningAttempts: 0 }),
+  })
+  assert(tokyoUs === 'us_range', 'Tokyo mid = US Range')
+  const tokyoIb = resolveRangeStrategyFromLadder({
+    market: 'TOKYO',
+    timeSec: pts('14:00:00'),
+    ladder: attemptLadderFromCounts({ morningAttempts: 0 }),
+  })
+  assert(tokyoIb === 'ib', 'Tokyo late = IB')
+}
+
+{
   const mode = resolveDeskPlaybookMode({
     instrument: 'DOW',
     now: etDate(14, 0),
@@ -199,7 +226,9 @@ assert(MAX_MORNING_ATTEMPTS === 1, 'morning cap 1')
   assert(openMorning.canPlaceEntry === false, 'open morning → no IB entry')
   assert(openMorning.rangeStrategy === null, 'no IB strategy while open')
   assert(
-    /Morning book open|IB and lunch-range locked|confirm close/i.test(openMorning.message),
+    /Morning.*(OR30 )?book open|IB and lunch-range locked|US Range and IB locked|confirm close/i.test(
+      openMorning.message
+    ),
     openMorning.message
   )
 }

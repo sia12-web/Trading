@@ -1,15 +1,14 @@
 /**
- * Live desk attempt ladder:
- *   Morning playbook ≤1 · IB ≤1 · Lunch-range ≤1 · Day ≤3 total
+ * Live desk attempt ladder (1 / 1 / 1 · day ≤ 3):
+ *
+ *   DOW / NASDAQ: Morning (OR30) → IB → Lunch-range
+ *   NIKKEI:       Morning (OR30) → US Range (prior NYC) → IB
  *
  * Skip-forward: unused earlier windows unlock later ones.
- * Any fill (SL, TP, or still-open filled book) in a window locks all later windows.
- *   Morning fill → IB + lunch off
- *   IB fill → lunch off
+ * Any fill locks later windows.
  *
- * Open-book edge: lunch 11:30 is confirm-close only (not auto-flatten).
- * If the trader keeps a morning/IB book open, it rides to cash-close flatten
- * and later windows stay locked the whole time.
+ * Storage keeps morning / ib / lunch counters (slot 1 / 2 / 3).
+ * On TOKYO, slot 2 = US Range fills, slot 3 = IB fills (labels differ).
  */
 
 import { parseTimeToSeconds } from '@/lib/utils/timeUtils'
@@ -17,17 +16,22 @@ import { parseTimeToSeconds } from '@/lib/utils/timeUtils'
 export const MAX_MORNING_ATTEMPTS = 1
 export const MAX_IB_ATTEMPTS = 1
 export const MAX_LUNCH_RANGE_ATTEMPTS = 1
-/** Hard day cap across morning + IB + lunch-range. */
+/** Hard day cap across the three range attempts. */
 export const MAX_DAY_ATTEMPTS = 3
 
+/** Fill classification by clock (storage buckets). */
 export type AttemptBucket = 'morning' | 'ib' | 'lunch_range' | 'other'
-export type RangeStrategy = 'ib' | 'lunch_range' | null
+
+/**
+ * Live unlock strategy window.
+ * NY: ib | lunch_range
+ * TOKYO: us_range (slot 2) | ib (slot 3)
+ */
+export type RangeStrategy = 'ib' | 'lunch_range' | 'us_range' | null
 
 export type AttemptFill = {
   instrument?: string | null
-  /** Fill / entry time */
   entryTimestamp?: string | number | Date | null
-  /** null while still open */
   exitReason?: string | null
 }
 
@@ -37,12 +41,7 @@ export type AttemptLadder = {
   ibAttempts: number
   lunchAttempts: number
   morningStopHits: number
-  /**
-   * Kept for API/UI compat. Always false under 1/1/1 —
-   * earlier-fill locks are expressed via ibEligible / lunchEligible.
-   */
   revengeLocked: boolean
-  /** Day hit 3 fills — everything off. */
   dayLocked: boolean
   morningEligible: boolean
   ibEligible: boolean
@@ -58,17 +57,21 @@ type DeskMarket = 'NY' | 'TOKYO'
 const CLOCK = {
   NY: {
     tz: 'America/New_York',
-    ibStart: '10:15:00',
-    ibEnd: '10:45:00',
-    lnStart: '13:30:00',
-    lnEnd: '15:15:00',
+    /** Slot 2 — IB */
+    midStart: '10:15:00',
+    midEnd: '10:45:00',
+    /** Slot 3 — Lunch-range */
+    lateStart: '13:30:00',
+    lateEnd: '15:15:00',
   },
   TOKYO: {
     tz: 'Asia/Tokyo',
-    ibStart: '10:15:00',
-    ibEnd: '10:45:00',
-    lnStart: '13:30:00',
-    lnEnd: '15:00:00',
+    /** Slot 2 — US Range (prior NYC) */
+    midStart: '10:15:00',
+    midEnd: '10:45:00',
+    /** Slot 3 — Tokyo IB */
+    lateStart: '13:30:00',
+    lateEnd: '15:00:00',
   },
 } as const
 
@@ -98,25 +101,25 @@ function toDate(ts: string | number | Date | null | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
-/** Classify a fill by desk-local entry clock into morning / IB / lunch-range. */
+/** Classify a fill by desk-local entry clock into slot 1 / 2 / 3 storage buckets. */
 export function classifyAttemptBucket(
   instrument: string,
   entryTimestamp: string | number | Date | null | undefined
 ): AttemptBucket {
   const entry = toDate(entryTimestamp)
-  if (!entry) return 'morning' // unknown → morning (safer for caps)
+  if (!entry) return 'morning'
   const market = marketFor(instrument)
   const c = CLOCK[market]
   const t = parseTimeToSeconds(timeInTz(entry, c.tz))
-  const ibStart = parseTimeToSeconds(c.ibStart)
-  const ibEnd = parseTimeToSeconds(c.ibEnd)
-  const lnStart = parseTimeToSeconds(c.lnStart)
-  const lnEnd = parseTimeToSeconds(c.lnEnd)
+  const midStart = parseTimeToSeconds(c.midStart)
+  const midEnd = parseTimeToSeconds(c.midEnd)
+  const lateStart = parseTimeToSeconds(c.lateStart)
+  const lateEnd = parseTimeToSeconds(c.lateEnd)
 
-  if (t >= ibStart && t < ibEnd) return 'ib'
-  if (t >= lnStart && t < lnEnd) return 'lunch_range'
-  if (t < ibStart) return 'morning'
-  if (t < lnStart) return 'other'
+  if (t >= midStart && t < midEnd) return 'ib'
+  if (t >= lateStart && t < lateEnd) return 'lunch_range'
+  if (t < midStart) return 'morning'
+  if (t < lateStart) return 'other'
   return 'other'
 }
 
@@ -135,7 +138,6 @@ function finalizeLadder(args: {
     morningStopHits,
   } = args
   const dayAttempts = morningAttempts + ibAttempts + lunchAttempts + otherAttempts
-  const revengeLocked = false
   const dayLocked = dayAttempts >= MAX_DAY_ATTEMPTS
 
   return {
@@ -144,17 +146,19 @@ function finalizeLadder(args: {
     ibAttempts,
     lunchAttempts,
     morningStopHits,
-    revengeLocked,
+    revengeLocked: false,
     dayLocked,
     morningEligible: !dayLocked && morningAttempts < MAX_MORNING_ATTEMPTS,
     ibEligible:
       !dayLocked &&
       morningAttempts === 0 &&
+      otherAttempts === 0 &&
       ibAttempts < MAX_IB_ATTEMPTS,
     lunchEligible:
       !dayLocked &&
       morningAttempts === 0 &&
       ibAttempts === 0 &&
+      otherAttempts === 0 &&
       lunchAttempts < MAX_LUNCH_RANGE_ATTEMPTS,
     maxDayAttempts: MAX_DAY_ATTEMPTS,
     maxMorningAttempts: MAX_MORNING_ATTEMPTS,
@@ -197,7 +201,6 @@ export function buildAttemptLadder(
   })
 }
 
-/** For tests / callers that only have aggregate counts. */
 export function attemptLadderFromCounts(args: {
   morningAttempts?: number
   ibAttempts?: number
@@ -214,10 +217,6 @@ export function attemptLadderFromCounts(args: {
   })
 }
 
-/**
- * Backward-compatible helper when only totals are known (no fill timestamps).
- * Treats all fills as morning — conservative for eligibility.
- */
 export function attemptLadderFromTotals(args: {
   attemptsUsed: number
   stopHits?: number
@@ -236,30 +235,59 @@ export function resolveRangeStrategyFromLadder(args: {
   ladder: AttemptLadder
 }): RangeStrategy {
   const c = CLOCK[args.market]
-  const ibStart = parseTimeToSeconds(c.ibStart)
-  const ibEnd = parseTimeToSeconds(c.ibEnd)
-  const lnStart = parseTimeToSeconds(c.lnStart)
-  const lnEnd = parseTimeToSeconds(c.lnEnd)
+  const midStart = parseTimeToSeconds(c.midStart)
+  const midEnd = parseTimeToSeconds(c.midEnd)
+  const lateStart = parseTimeToSeconds(c.lateStart)
+  const lateEnd = parseTimeToSeconds(c.lateEnd)
   const t = args.timeSec
 
-  if (t >= ibStart && t < ibEnd && args.ladder.ibEligible) return 'ib'
-  if (t >= lnStart && t < lnEnd && args.ladder.lunchEligible) return 'lunch_range'
+  if (args.market === 'TOKYO') {
+    // Slot 2 = US Range · Slot 3 = Tokyo IB
+    if (t >= midStart && t < midEnd && args.ladder.ibEligible) return 'us_range'
+    if (t >= lateStart && t < lateEnd && args.ladder.lunchEligible) return 'ib'
+    return null
+  }
+
+  // NY: Slot 2 = IB · Slot 3 = Lunch-range
+  if (t >= midStart && t < midEnd && args.ladder.ibEligible) return 'ib'
+  if (t >= lateStart && t < lateEnd && args.ladder.lunchEligible) return 'lunch_range'
   return null
 }
 
-export function formatAttemptLadderShort(ladder: AttemptLadder): string {
+/** Short ladder chip — labels follow the desk’s three ranges. */
+export function formatAttemptLadderShort(
+  ladder: AttemptLadder,
+  instrument?: string | null
+): string {
+  if (instrument === 'NIKKEI') {
+    return `Day ${ladder.dayAttempts}/${ladder.maxDayAttempts} · AM ${ladder.morningAttempts}/${ladder.maxMorningAttempts} · US ${ladder.ibAttempts}/${ladder.maxIbAttempts} · IB ${ladder.lunchAttempts}/${ladder.maxLunchAttempts}`
+  }
   return `Day ${ladder.dayAttempts}/${ladder.maxDayAttempts} · AM ${ladder.morningAttempts}/${ladder.maxMorningAttempts} · IB ${ladder.ibAttempts}/${ladder.maxIbAttempts} · LN ${ladder.lunchAttempts}/${ladder.maxLunchAttempts}`
 }
 
-export function attemptLadderLockReason(ladder: AttemptLadder): string | null {
+export function attemptLadderLockReason(
+  ladder: AttemptLadder,
+  instrument?: string | null
+): string | null {
+  const tokyo = instrument === 'NIKKEI'
   if (ladder.dayLocked) {
     return `Day attempt cap hit (${ladder.dayAttempts}/${ladder.maxDayAttempts}). Trading switched off.`
   }
   if (ladder.morningAttempts > 0) {
-    return 'Morning trade taken — IB and lunch-range locked for today.'
+    return tokyo
+      ? 'Morning (OR30) trade taken — US Range and IB locked for today.'
+      : 'Morning (OR30) trade taken — IB and lunch-range locked for today.'
   }
   if (ladder.ibAttempts > 0) {
-    return 'IB trade taken — lunch-range locked for today.'
+    return tokyo
+      ? 'US Range trade taken — IB locked for today.'
+      : 'IB trade taken — lunch-range locked for today.'
+  }
+  // Gap fill between slot-2 and slot-3 (storage bucket "other")
+  if (ladder.dayAttempts > 0 && !ladder.lunchEligible && !ladder.ibEligible) {
+    return tokyo
+      ? 'Earlier fill used — later ranges locked for today.'
+      : 'Earlier fill used — later ranges locked for today.'
   }
   return null
 }

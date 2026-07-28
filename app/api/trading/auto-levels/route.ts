@@ -66,6 +66,7 @@ async function handleAutoLevels(request: NextRequest) {
     const modeRaw = request.nextUrl.searchParams.get('mode')
     const mode =
       modeRaw === 'ib' ||
+      modeRaw === 'us_range' ||
       modeRaw === 'lunch_range' ||
       modeRaw === 'afternoon' ||
       modeRaw === 'morning'
