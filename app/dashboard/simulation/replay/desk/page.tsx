@@ -81,9 +81,22 @@ import {
   computeInitialBalance,
   ibLineSeriesData,
   type DeskPlaybook,
-  zoneStopPrice,
   formatZone,
 } from '@/lib/trading/deskLevels'
+import {
+  OR30_COLORS,
+  computeOr30Range,
+  or30LineSeriesData,
+  or30WindowLabel,
+  type Or30Range,
+} from '@/lib/chart/openingRange30'
+import {
+  activeRangeForPlaybook,
+  strategyEntryRisk,
+  type StrategyRangeEdges,
+  type StrategyRiskMagnets,
+} from '@/lib/trading/strategyRiskGeometry'
+import { resolveDeskPlaybookMode } from '@/lib/trading/deskPlaybookMode'
 import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
 
 type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI'
@@ -413,6 +426,14 @@ function SimulationDeskInner() {
     low: ISeriesApi<'Line'>
   } | null>(null)
   const [ibShaped, setIbShaped] = useState(false)
+  const or30SeriesRef = useRef<{
+    high: ISeriesApi<'Line'>
+    low: ISeriesApi<'Line'>
+  } | null>(null)
+  const or30RangeRef = useRef<Or30Range | null>(null)
+  const ibRangeRef = useRef<{ high: number; low: number } | null>(null)
+  const avwapLastRef = useRef<number | null>(null)
+  const [or30Shaped, setOr30Shaped] = useState(false)
   const levelLinesRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]>([])
   const posLinesRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]>([])
   const hoverPreviewLinesRef = useRef<
@@ -836,6 +857,20 @@ function SimulationDeskInner() {
       low: chart.addLineSeries({ ...ibLineOpts, title: 'IB L' }),
     }
 
+    // OR30 — teal H/L (morning bait), same as live desk
+    const or30LineOpts = {
+      color: OR30_COLORS.high,
+      lineWidth: 2 as const,
+      lineStyle: LineStyle.Solid,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      crosshairMarkerVisible: false,
+    }
+    const or30Series = {
+      high: chart.addLineSeries({ ...or30LineOpts, title: 'OR30 H' }),
+      low: chart.addLineSeries({ ...or30LineOpts, title: 'OR30 L' }),
+    }
+
     chart.priceScale('right').applyOptions({
       autoScale: true,
       scaleMargins: { top: 0.05, bottom: 0.05 },
@@ -847,6 +882,7 @@ function SimulationDeskInner() {
     priceLineHostRef.current = priceLineHost
     vwapSeriesRef.current = vwapSeries
     ibSeriesRef.current = ibSeries
+    or30SeriesRef.current = or30Series
     setChartReady(true)
 
     const ro = new ResizeObserver(() => {
@@ -869,7 +905,12 @@ function SimulationDeskInner() {
       priceLineHostSeededRef.current = false
       vwapSeriesRef.current = null
       ibSeriesRef.current = null
+      or30SeriesRef.current = null
+      or30RangeRef.current = null
+      ibRangeRef.current = null
+      avwapLastRef.current = null
       setIbShaped(false)
+      setOr30Shaped(false)
       levelLinesRef.current = []
       posLinesRef.current = []
     }
@@ -1086,6 +1127,65 @@ function SimulationDeskInner() {
           TRADER_DISPLAY_TZ
         ).map((r) => ({ time: r.time as UTCTimestamp, value: r.value }))
 
+      const paintIbAndOr30 = (slice: Candle[]) => {
+        const bars = slice.map((c) => ({
+          time: c.time,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: c.volume,
+        }))
+        const tip = slice[slice.length - 1]?.time ?? simT
+        const sessionEnd = lunchUnix || tip
+        const extendTo = Math.max(tip, sessionEnd, simT)
+
+        const ibs = ibSeriesRef.current
+        if (ibs && openUnix) {
+          const ib = computeInitialBalance(bars, openUnix, simT)
+          if (ib) {
+            ibRangeRef.current = { high: ib.high, low: ib.low }
+            const pts = ibLineSeriesData(ib, extendTo)
+            try {
+              ibs.high.setData(shiftBand(pts.high.map((p) => ({ time: p.time, value: p.value }))))
+              ibs.low.setData(shiftBand(pts.low.map((p) => ({ time: p.time, value: p.value }))))
+              setIbShaped(true)
+            } catch {
+              ibs.high.setData([])
+              ibs.low.setData([])
+              setIbShaped(false)
+            }
+          } else {
+            ibRangeRef.current = null
+            ibs.high.setData([])
+            ibs.low.setData([])
+            setIbShaped(false)
+          }
+        }
+
+        const ors = or30SeriesRef.current
+        if (ors && openUnix) {
+          const or30 = computeOr30Range(bars, openUnix, simT)
+          or30RangeRef.current = or30
+          if (or30) {
+            const pts = or30LineSeriesData(or30, extendTo)
+            try {
+              ors.high.setData(shiftBand(pts.high.map((p) => ({ time: p.time, value: p.value }))))
+              ors.low.setData(shiftBand(pts.low.map((p) => ({ time: p.time, value: p.value }))))
+              setOr30Shaped(true)
+            } catch {
+              ors.high.setData([])
+              ors.low.setData([])
+              setOr30Shaped(false)
+            }
+          } else {
+            ors.high.setData([])
+            ors.low.setData([])
+            setOr30Shaped(false)
+          }
+        }
+      }
+
       if (force || lastAppliedBarIdxRef.current < 0) {
         const slice = candles.slice(0, endIdx + 1)
         series.setData(slice.map(toBar))
@@ -1102,6 +1202,9 @@ function SimulationDeskInner() {
           vs.lower2.setData(shiftBand(bands.lower2))
           vs.upper3.setData(shiftBand(bands.upper3))
           vs.lower3.setData(shiftBand(bands.lower3))
+          const lastV = bands.vwap[bands.vwap.length - 1]
+          avwapLastRef.current =
+            lastV && lastV.value > 0 ? lastV.value : null
         } else if (vs) {
           vs.vwap.setData([])
           vs.upper1.setData([])
@@ -1110,42 +1213,10 @@ function SimulationDeskInner() {
           vs.lower2.setData([])
           vs.upper3.setData([])
           vs.lower3.setData([])
+          avwapLastRef.current = null
         }
 
-        // IB high/low — shaped against replay clock (simT), not wall clock
-        const ibs = ibSeriesRef.current
-        if (ibs && openUnix) {
-          const ib = computeInitialBalance(
-            slice.map((c) => ({
-              time: c.time,
-              open: c.open,
-              high: c.high,
-              low: c.low,
-              close: c.close,
-              volume: c.volume,
-            })),
-            openUnix,
-            simT
-          )
-          if (ib) {
-            const tip = slice[slice.length - 1]?.time ?? simT
-            const sessionEnd = lunchUnix || tip
-            const pts = ibLineSeriesData(ib, Math.max(tip, sessionEnd, simT))
-            try {
-              ibs.high.setData(shiftBand(pts.high.map((p) => ({ time: p.time, value: p.value }))))
-              ibs.low.setData(shiftBand(pts.low.map((p) => ({ time: p.time, value: p.value }))))
-              setIbShaped(true)
-            } catch {
-              ibs.high.setData([])
-              ibs.low.setData([])
-              setIbShaped(false)
-            }
-          } else {
-            ibs.high.setData([])
-            ibs.low.setData([])
-            setIbShaped(false)
-          }
-        }
+        paintIbAndOr30(slice)
 
         // Seed host once so price lines bind to the right scale — never setData again
         const host = priceLineHostRef.current
@@ -1178,41 +1249,12 @@ function SimulationDeskInner() {
           vs.lower2.setData(shiftBand(bands.lower2))
           vs.upper3.setData(shiftBand(bands.upper3))
           vs.lower3.setData(shiftBand(bands.lower3))
+          const lastV = bands.vwap[bands.vwap.length - 1]
+          avwapLastRef.current =
+            lastV && lastV.value > 0 ? lastV.value : null
         }
 
-        const ibs = ibSeriesRef.current
-        if (ibs && openUnix) {
-          const ib = computeInitialBalance(
-            slice.map((c) => ({
-              time: c.time,
-              open: c.open,
-              high: c.high,
-              low: c.low,
-              close: c.close,
-              volume: c.volume,
-            })),
-            openUnix,
-            simT
-          )
-          if (ib) {
-            const tip = slice[slice.length - 1]?.time ?? simT
-            const sessionEnd = lunchUnix || tip
-            const pts = ibLineSeriesData(ib, Math.max(tip, sessionEnd, simT))
-            try {
-              ibs.high.setData(shiftBand(pts.high.map((p) => ({ time: p.time, value: p.value }))))
-              ibs.low.setData(shiftBand(pts.low.map((p) => ({ time: p.time, value: p.value }))))
-              setIbShaped(true)
-            } catch {
-              ibs.high.setData([])
-              ibs.low.setData([])
-              setIbShaped(false)
-            }
-          } else {
-            ibs.high.setData([])
-            ibs.low.setData([])
-            setIbShaped(false)
-          }
-        }
+        paintIbAndOr30(slice)
       }
 
       lastAppliedBarIdxRef.current = endIdx
@@ -1231,6 +1273,54 @@ function SimulationDeskInner() {
     },
     [pinToLatest, refreshSessionHighlights, instrument, openUnix, lunchUnix, sess.tz]
   )
+
+  /** Morning OR30 bait (+ IB magnets) for strategy SL/TP — same geometry as live. */
+  const getStrategyRiskBundle = useCallback((): {
+    strategyRange: StrategyRangeEdges | null
+    strategyMagnets: StrategyRiskMagnets
+  } => {
+    const playbookMode = resolveDeskPlaybookMode({
+      instrument,
+      now: new Date(simNowRef.current * 1000),
+      attemptsUsed: attemptsUsedRef.current,
+      stopHits: stopHitsRef.current,
+      rangeStrategy: null,
+    })
+    // Sim is morning-entry only today — keep OR30 primary even in prep modes
+    const modeForRange =
+      playbookMode === 'ib' ||
+      playbookMode === 'us_range' ||
+      playbookMode === 'lunch_range'
+        ? playbookMode
+        : 'morning'
+    const strategyRange = activeRangeForPlaybook({
+      playbookMode: modeForRange,
+      instrument,
+      or30: or30RangeRef.current,
+      ib: ibRangeRef.current,
+      usRange: null,
+      lunchRange: null,
+    })
+    const extras: number[] = []
+    for (const r of [or30RangeRef.current, ibRangeRef.current]) {
+      if (!r || !(r.high > r.low)) continue
+      if (
+        strategyRange &&
+        r.high === strategyRange.high &&
+        r.low === strategyRange.low
+      ) {
+        continue
+      }
+      extras.push(r.high, r.low)
+    }
+    return {
+      strategyRange,
+      strategyMagnets: {
+        avwap: avwapLastRef.current,
+        extras,
+      },
+    }
+  }, [instrument])
 
   // Initial / seek chart paint — use ref so callback identity churn does not force setData
   useEffect(() => {
@@ -1745,8 +1835,14 @@ function SimulationDeskInner() {
       placingOrderRef.current = true
       const entrySource = normalizeEntrySource(level.source, 'structure')
       const limit = snapDeskPrice(instrument, level.level)
-      const rawStop = zoneStopPrice(limit, direction)
-      const stop = snapStopToTick(instrument, limit, rawStop, direction)
+      const { strategyRange, strategyMagnets } = getStrategyRiskBundle()
+      const strat = strategyEntryRisk({
+        entry: limit,
+        direction,
+        activeRange: strategyRange,
+        magnets: strategyMagnets,
+      })
+      const stop = snapStopToTick(instrument, limit, strat.stop, direction)
       const preview = previewPositionSizing(
         limit,
         accountSize,
@@ -1762,7 +1858,7 @@ function SimulationDeskInner() {
       const target = snapTargetToTick(
         instrument,
         limit,
-        preview.profit_target_price,
+        strategyRange ? strat.target : preview.profit_target_price,
         direction
       )
       const order: PendingOrder = {
@@ -1809,6 +1905,7 @@ function SimulationDeskInner() {
       sess.entryClose,
       tzLabel,
       instrument,
+      getStrategyRiskBundle,
     ]
   )
 
@@ -2031,10 +2128,13 @@ function SimulationDeskInner() {
         return
       }
 
+      const { strategyRange, strategyMagnets } = getStrategyRiskBundle()
       const preview = previewLevelOrderPrices({
         level: pick.matched,
         instrument,
         accountSize,
+        activeRange: strategyRange,
+        magnets: strategyMagnets,
       })
       if (!preview) {
         clearHover()
@@ -2102,6 +2202,7 @@ function SimulationDeskInner() {
     gate?.canPlaceEntry,
     instrument,
     accountSize,
+    getStrategyRiskBundle,
   ])
 
   if (loading) {
@@ -2434,6 +2535,22 @@ function SimulationDeskInner() {
               {deskClockFor(instrument).openLabel} · 5 trading days prior · ±1/2/3σ
             </span>
           </span>
+          {or30Shaped && (
+            <>
+              <span className="text-gray-600">·</span>
+              <span
+                className="flex items-center gap-1.5 normal-case tracking-normal"
+                title={`Opening Range 30 — ${or30WindowLabel(instrument)} (morning bait)`}
+              >
+                <span
+                  className="inline-block w-4 border-t-2"
+                  style={{ borderColor: OR30_COLORS.high }}
+                />
+                <span style={{ color: OR30_COLORS.high }}>OR30 H/L</span>
+                <span className="text-gray-600">morning bait</span>
+              </span>
+            </>
+          )}
           {ibShaped && (
             <>
               <span className="text-gray-600">·</span>
@@ -2725,8 +2842,13 @@ function SimulationDeskInner() {
                   </span>
                   <br />
                   {ticketLevel.level.toLocaleString()}
-                  <span className="ml-1.5 text-gray-500">
-                    zone {formatZone(ticketLevel.level)}
+                  <span className="ml-1.5 text-sky-400/90">
+                    {(() => {
+                      const { strategyRange } = getStrategyRiskBundle()
+                      return strategyRange
+                        ? `SL/TP from ${strategyRange.label}`
+                        : `zone ${formatZone(ticketLevel.level)}`
+                    })()}
                   </span>
                 </p>
                 {ticketLevel.reasoning && (
@@ -2751,11 +2873,18 @@ function SimulationDeskInner() {
             </div>
             <div className="mt-4 flex gap-2">
               {(['LONG', 'SHORT'] as Direction[]).map((d) => {
+                const { strategyRange, strategyMagnets } = getStrategyRiskBundle()
+                const strat = strategyEntryRisk({
+                  entry: ticketLevel.level,
+                  direction: d,
+                  activeRange: strategyRange,
+                  magnets: strategyMagnets,
+                })
                 const prev = previewPositionSizing(
                   ticketLevel.level,
                   accountSize,
                   d,
-                  zoneStopPrice(ticketLevel.level, d),
+                  strat.stop,
                   DESK_RISK_PERCENT
                 )
                 const suggested = simSuggestedDirection(
@@ -2778,8 +2907,12 @@ function SimulationDeskInner() {
                     </div>
                     {prev && (
                       <div className="mt-1 font-normal opacity-80">
-                        SL {prev.stop_loss_price.toFixed(0)} · size{' '}
-                        {prev.position_size.toFixed(1)}
+                        SL {prev.stop_loss_price.toFixed(0)} · TP{' '}
+                        {(strategyRange
+                          ? strat.target
+                          : prev.profit_target_price
+                        ).toFixed(0)}{' '}
+                        · size {prev.position_size.toFixed(1)}
                       </div>
                     )}
                   </button>
