@@ -100,9 +100,15 @@ export interface FinnhubQuoteResponse {
 }
 
 export interface FinnhubNewsItem {
-  headline: string
-  source: string
+  category?: string
   datetime: number
+  headline: string
+  id?: number
+  image?: string
+  related?: string
+  source: string
+  summary?: string
+  url?: string
 }
 
 // Slice 2: Entry Window Detection & Position Opening

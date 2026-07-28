@@ -81,6 +81,12 @@ export default function DashboardHomePage() {
         >
           Order History
         </Link>
+        <Link
+          href="/dashboard/news"
+          className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-2.5 text-sm font-semibold text-amber-100 hover:bg-amber-500/20"
+        >
+          Desk News →
+        </Link>
       </div>
 
       <p className="mt-10 text-xs text-gray-600 leading-relaxed max-w-md">

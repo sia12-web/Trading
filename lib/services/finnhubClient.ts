@@ -125,134 +125,201 @@ export class FinnhubClient {
    * Fetch news for an instrument with exponential backoff retry
    */
   async getNews(instrument: Instrument): Promise<FinnhubNews['headlines'] | null> {
+    const rich = await this.getCompanyNewsItems(instrument)
+    if (!rich) return null
+    return rich.map((item) => ({
+      headline: item.headline,
+      source: item.source || 'Finnhub',
+      sentiment: item.sentiment,
+      timestamp: new Date(item.datetime * 1000).toISOString(),
+    }))
+  }
+
+  /**
+   * Rich company-news rows (keeps Finnhub source + url) for desk news UI.
+   */
+  async getCompanyNewsItems(
+    instrument: Instrument
+  ): Promise<
+    Array<{
+      headline: string
+      source: string
+      datetime: number
+      url: string | null
+      summary: string | null
+      related: string | null
+      origin: string
+      sentiment: number
+    }> | null
+  > {
     const maxRetries = 3
     let lastError: Error | null = null
+    const symbol = this.getSymbol(instrument)
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        const symbol = this.getSymbol(instrument)
         const today = new Date()
         const oneWeekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
-
         const fromDate = oneWeekAgo.toISOString().split('T')[0]
         const toDate = today.toISOString().split('T')[0]
-
         const url =
           `${FINNHUB_BASE_URL}/company-news?` +
-          `symbol=${symbol}&from=${fromDate}&to=${toDate}&limit=20&token=${this.apiKey}`
-
-        logger.debug(`[FinnhubClient] Fetching news for ${instrument} - attempt ${attempt + 1}/${maxRetries}`)
+          `symbol=${encodeURIComponent(symbol)}&from=${fromDate}&to=${toDate}&token=${this.apiKey}`
 
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT)
-
-        const response = await fetch(url, {
-          signal: controller.signal,
-        })
-
+        const response = await fetch(url, { signal: controller.signal })
         clearTimeout(timeoutId)
 
         if (!response.ok) {
-          const error = new Error(`HTTP ${response.status}`)
-          lastError = error
-
+          lastError = new Error(`HTTP ${response.status}`)
           if (attempt < maxRetries - 1) {
-            const delayMs = Math.pow(2, attempt) * 1000
-            logger.warn(
-              `[FinnhubClient] News fetch failed for ${instrument}: ${response.status}, retrying in ${delayMs}ms`
-            )
-            await new Promise((resolve) => setTimeout(resolve, delayMs))
+            await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 1000))
             continue
-          } else {
-            logger.error(`[FinnhubClient] News fetch failed for ${instrument}: HTTP ${response.status} (final attempt)`)
-            return null
           }
+          return null
         }
 
-        // Finnhub returns array directly
         const newsItems = (await response.json()) as FinnhubNewsItem[]
+        if (!Array.isArray(newsItems)) return []
 
-        // Transform to our format with deduplication
-        const seenHeadlines = new Set<string>()
-        const headlines = newsItems
+        const seen = new Set<string>()
+        const rows = newsItems
           .map((item) => {
-            // Simple sentiment analysis based on keywords
-            const headline = item.headline.toLowerCase()
+            const headline = (item.headline || '').trim()
+            const lower = headline.toLowerCase()
             let sentiment = 0
-
-            const bullishKeywords = [
-              'rally',
-              'up',
-              'surge',
-              'bullish',
-              'gains',
-              'recovery',
-              'strong',
-              'rise',
-            ]
-            const bearishKeywords = [
-              'fall',
-              'down',
-              'crash',
-              'bearish',
-              'loss',
-              'decline',
-              'weak',
-              'drop',
-            ]
-
-            // Count keyword matches but cap at 10/-10 per headline
-            bullishKeywords.forEach((keyword) => {
-              if (headline.includes(keyword)) sentiment += 2
-            })
-            bearishKeywords.forEach((keyword) => {
-              if (headline.includes(keyword)) sentiment -= 2
-            })
-
-            sentiment = Math.max(-10, Math.min(10, sentiment)) // Clamp to -10 to +10
-
+            for (const k of ['rally', 'surge', 'bullish', 'gains', 'rise', 'strong']) {
+              if (lower.includes(k)) sentiment += 2
+            }
+            for (const k of ['fall', 'crash', 'bearish', 'loss', 'decline', 'drop']) {
+              if (lower.includes(k)) sentiment -= 2
+            }
+            sentiment = Math.max(-10, Math.min(10, sentiment))
             return {
-              headline: item.headline,
-              source: 'Finnhub',
+              headline,
+              source: (item.source || 'Finnhub').trim(),
+              datetime: Number(item.datetime) || 0,
+              url: item.url || null,
+              summary: item.summary || null,
+              related: item.related || null,
+              origin: symbol,
               sentiment,
-              timestamp: new Date(item.datetime * 1000).toISOString(),
             }
           })
           .filter((h) => {
-            // Deduplicate headlines
-            if (seenHeadlines.has(h.headline)) return false
-            seenHeadlines.add(h.headline)
+            if (!h.headline || !h.datetime) return false
+            const key = h.headline.toLowerCase()
+            if (seen.has(key)) return false
+            seen.add(key)
             return true
           })
-          .slice(0, 10) // Top 10 headlines
+          .slice(0, 20)
 
-        logger.debug(`[FinnhubClient] Successfully fetched ${headlines.length} news items for ${instrument}`)
-
-        return headlines
+        return rows
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error))
-
-        if (error instanceof Error) {
-          if (error.name === 'AbortError') {
-            logger.warn(`[FinnhubClient] News fetch timeout for ${instrument} - attempt ${attempt + 1}/${maxRetries}`)
-          } else {
-            logger.warn(
-              `[FinnhubClient] News fetch error for ${instrument}: ${error.message} - attempt ${attempt + 1}/${maxRetries}`
-            )
-          }
-        }
-
         if (attempt < maxRetries - 1) {
-          const delayMs = Math.pow(2, attempt) * 1000
-          await new Promise((resolve) => setTimeout(resolve, delayMs))
+          await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 1000))
         }
       }
     }
 
-    logger.error(`[FinnhubClient] News fetch failed after ${maxRetries} attempts for ${instrument}`, {
+    logger.error(`[FinnhubClient] Company news failed for ${instrument}`, {
       lastError: lastError?.message,
     })
     return null
+  }
+
+  /** General / forex market news (not symbol-scoped). */
+  async getMarketNews(
+    category: 'general' | 'forex' | 'merger' = 'general'
+  ): Promise<
+    Array<{
+      headline: string
+      source: string
+      datetime: number
+      url: string | null
+      summary: string | null
+      related: string | null
+      origin: string
+    }> | null
+  > {
+    try {
+      const url = `${FINNHUB_BASE_URL}/news?category=${category}&token=${this.apiKey}`
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT)
+      const response = await fetch(url, { signal: controller.signal })
+      clearTimeout(timeoutId)
+      if (!response.ok) {
+        logger.warn(`[FinnhubClient] Market news ${category} HTTP ${response.status}`)
+        return null
+      }
+      const items = (await response.json()) as FinnhubNewsItem[]
+      if (!Array.isArray(items)) return []
+      return items.slice(0, 40).map((item) => ({
+        headline: (item.headline || '').trim(),
+        source: (item.source || 'Finnhub').trim(),
+        datetime: Number(item.datetime) || 0,
+        url: item.url || null,
+        summary: item.summary || null,
+        related: item.related || null,
+        origin: `market:${category}`,
+      }))
+    } catch (error) {
+      logger.warn('[FinnhubClient] Market news error', {
+        err: error instanceof Error ? error.message : String(error),
+      })
+      return null
+    }
+  }
+
+  /** Economic calendar (from/to YYYY-MM-DD). Soft-fails to []. */
+  async getEconomicCalendar(
+    fromYmd: string,
+    toYmd: string
+  ): Promise<
+    Array<{
+      time: string
+      country: string
+      event: string
+      impact: string
+      actual?: string | number | null
+      estimate?: string | number | null
+      prev?: string | number | null
+    }>
+  > {
+    try {
+      const url =
+        `${FINNHUB_BASE_URL}/calendar/economic?` +
+        `from=${encodeURIComponent(fromYmd)}&to=${encodeURIComponent(toYmd)}&token=${this.apiKey}`
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT)
+      const response = await fetch(url, { signal: controller.signal })
+      clearTimeout(timeoutId)
+      if (!response.ok) {
+        logger.warn(`[FinnhubClient] Economic calendar HTTP ${response.status}`)
+        return []
+      }
+      const data = (await response.json()) as {
+        economicCalendar?: Array<Record<string, unknown>>
+      }
+      const rows = Array.isArray(data?.economicCalendar) ? data.economicCalendar : []
+      return rows.map((r) => ({
+        time: String(r.time || r.date || ''),
+        country: String(r.country || ''),
+        event: String(r.event || ''),
+        impact: String(r.impact || ''),
+        actual: (r.actual as string | number | null | undefined) ?? null,
+        estimate: (r.estimate as string | number | null | undefined) ?? null,
+        prev: (r.prev as string | number | null | undefined) ?? null,
+      }))
+    } catch (error) {
+      logger.warn('[FinnhubClient] Economic calendar error', {
+        err: error instanceof Error ? error.message : String(error),
+      })
+      return []
+    }
   }
 
   /**
