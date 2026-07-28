@@ -43,9 +43,11 @@ import {
 } from '@/lib/trading/morningLunchConfirm'
 import {
   MANUAL_RISK_PERCENT,
+  RANGE_EDGE_RISK_PERCENT,
   previewPositionSizing,
 } from '@/lib/trading/positionSizing'
 import { snapDeskPrice, snapStopToTick, snapTargetToTick } from '@/lib/trading/instrumentTicks'
+import { assertRangeEdgeEntry } from '@/lib/trading/rangeEdgeEntryGate'
 
 /** Why new entries are blocked — shown on market/limit place attempts. */
 function entryDeniedMessage(gate: SessionGateState | null | undefined): string | null {
@@ -57,10 +59,7 @@ function entryDeniedMessage(gate: SessionGateState | null | undefined): string |
     if (gate.canClockIn) {
       return 'Clocked out — click “Today I trade” to resume entries.'
     }
-    if ((gate.morningAttempts ?? 0) > 0) {
-      return 'Morning trade taken — IB and lunch-range locked. No new entries.'
-    }
-    if (gate.dayLocked || (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? 3)) {
+    if (gate.dayLocked || (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? 6)) {
       return 'Day attempt cap reached — trading switched off. No new entries.'
     }
     if (gate.phase === 'CLOSED') {
@@ -69,10 +68,7 @@ function entryDeniedMessage(gate: SessionGateState | null | undefined): string |
     return 'Clocked out — no new entries. Manage only if you have an open book.'
   }
   if (!gate.canPlaceEntry) {
-    if ((gate.morningAttempts ?? 0) > 0) {
-      return 'Morning trade taken — IB and lunch-range locked. No new entries.'
-    }
-    if (gate.dayLocked || (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? 3)) {
+    if (gate.dayLocked || (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? 6)) {
       return 'Day attempt cap reached — trading switched off. No new entries.'
     }
     if (gate.phase === 'FLAT') {
@@ -244,6 +240,7 @@ export default function ChartPage() {
       profitTarget: number
       direction: 'LONG' | 'SHORT'
       reasoning: string
+      strategyRange?: StrategyRangeEdges | null
     }) => {
       if (managePos || positionOverlay || pending) return
       const denied = entryDeniedMessage(gate)
@@ -254,7 +251,6 @@ export default function ChartPage() {
         setOrderStatus('rejected')
         return
       }
-      // Never open the limit ticket for market
       setOrderLevel(null)
       setOrderLevelType(undefined)
 
@@ -264,6 +260,23 @@ export default function ChartPage() {
         : instrument) as Instrument
       const entry = snapDeskPrice(inst, order.entryPrice)
       const direction = order.direction
+      const range = order.strategyRange ?? orderStrategyRange
+      const edge = assertRangeEdgeEntry({ entry, range })
+      if (!edge.ok) {
+        setFillError(edge.message)
+        setOrderStatus('rejected')
+        return
+      }
+      // Market: live print must also sit in the ±10 band (plan rule)
+      const livePx = livePriceRef.current
+      if (livePx != null && Number.isFinite(livePx) && livePx > 0) {
+        const liveEdge = assertRangeEdgeEntry({ entry: livePx, range })
+        if (!liveEdge.ok) {
+          setFillError(liveEdge.message)
+          setOrderStatus('rejected')
+          return
+        }
+      }
       const stop = snapStopToTick(inst, entry, order.stopLoss, direction)
       if (
         (direction === 'LONG' && !(stop < entry)) ||
@@ -291,7 +304,7 @@ export default function ChartPage() {
           accountSize,
           direction,
           stop,
-          MANUAL_RISK_PERCENT
+          RANGE_EDGE_RISK_PERCENT
         )
         if (!preview) {
           setFillError('Could not size market order — check account / stop')
@@ -318,12 +331,13 @@ export default function ChartPage() {
           profitTarget: tp,
           positionSize: preview.position_size,
           riskAmount: preview.risk_amount,
-          riskPercent: MANUAL_RISK_PERCENT,
+          riskPercent: RANGE_EDGE_RISK_PERCENT,
           accountSize,
           entryWindow: (gate?.entryWindow ?? 1) as 1 | 2 | 3,
           regime,
           regimeConfidence,
           placedAt: Date.now(),
+          strategyRange: range ?? null,
         })
       })()
     },
@@ -335,6 +349,7 @@ export default function ChartPage() {
       gate,
       regime,
       regimeConfidence,
+      orderStrategyRange,
     ]
   )
 
@@ -669,6 +684,9 @@ export default function ChartPage() {
             entry_reason:
               pend.entryReason ||
               `${pend.direction} working limit filled at liquidity level ${pend.level.toLocaleString()} (${pend.levelType || 'desk level'})`,
+            range_high: pend.strategyRange?.high,
+            range_low: pend.strategyRange?.low,
+            range_label: pend.strategyRange?.label,
           }),
         })
         const json = await res.json()
@@ -754,6 +772,9 @@ export default function ChartPage() {
           regime_confidence: order.regimeConfidence,
           entry_reason: order.entryReason,
           entry_source: order.entrySource,
+          range_high: order.strategyRange?.high,
+          range_low: order.strategyRange?.low,
+          range_label: order.strategyRange?.label,
         }),
       })
       if (gen !== orderGenRef.current) return
@@ -802,6 +823,22 @@ export default function ChartPage() {
         setOrderLevelType(undefined)
         return
       }
+      const edge = assertRangeEdgeEntry({
+        entry: order.level,
+        range: order.strategyRange ?? orderStrategyRange,
+      })
+      if (!edge.ok) {
+        setFillError(edge.message)
+        setOrderStatus('rejected')
+        setOrderLevel(null)
+        setOrderLevelType(undefined)
+        return
+      }
+      // Attach range onto order for API if missing
+      const orderWithRange: PendingLimitOrder = {
+        ...order,
+        strategyRange: order.strategyRange ?? orderStrategyRange ?? null,
+      }
       placingOrderRef.current = true
       setOrderStatus('placing')
       setOrderLevel(null)
@@ -814,27 +851,41 @@ export default function ChartPage() {
       setOrderStrategyMagnets(null)
       setFillError(null)
 
-      // Immediate fill if market order or price is already through the limit
       const px = livePriceRef.current
-      const isMarket = order.levelType === 'market'
-      if (isMarket || (px != null && limitWouldFill(order.direction, order.level, px))) {
-        pendingRef.current = order
-        setPending(order)
-        const execPx = isMarket ? (px ?? order.level) : order.level
-        void fillPending(order, execPx).finally(() => {
+      const isMarket = orderWithRange.levelType === 'market'
+      if (isMarket && px != null && Number.isFinite(px) && px > 0) {
+        const liveEdge = assertRangeEdgeEntry({
+          entry: px,
+          range: orderWithRange.strategyRange,
+        })
+        if (!liveEdge.ok) {
+          placingOrderRef.current = false
+          setFillError(liveEdge.message)
+          setOrderStatus('rejected')
+          return
+        }
+      }
+      if (
+        isMarket ||
+        (px != null && limitWouldFill(orderWithRange.direction, orderWithRange.level, px))
+      ) {
+        pendingRef.current = orderWithRange
+        setPending(orderWithRange)
+        const execPx = isMarket ? (px ?? orderWithRange.level) : orderWithRange.level
+        void fillPending(orderWithRange, execPx).finally(() => {
           placingOrderRef.current = false
         })
         return
       }
 
       // Optimistic WORKING — paint lines before network
-      pendingRef.current = order
-      setPending(order)
+      pendingRef.current = orderWithRange
+      setPending(orderWithRange)
       setOrderStatus('working')
       placingOrderRef.current = false
-      void persistWorking(order)
+      void persistWorking(orderWithRange)
     },
-    [fillPending, persistWorking, managePos, gate]
+    [fillPending, persistWorking, managePos, gate, orderStrategyRange]
   )
   handlePlacedRef.current = handlePlaced
 

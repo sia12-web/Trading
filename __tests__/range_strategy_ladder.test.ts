@@ -125,7 +125,7 @@ test('resolveRangeStrategy clocks: Tokyo US Range 10:15–10:45, IB 13:30–15:0
   )
 })
 
-test('NY: morning skipped → IB unlock; morning fill blocks IB; IB fill blocks lunch', () => {
+test('NY: morning skipped → IB unlock; morning probe still allows IB after clock (Option B)', () => {
   const ib = resolveSessionGate({
     ...gateBase,
     now: etDate(2026, 7, 15, 10, 30),
@@ -140,8 +140,8 @@ test('NY: morning skipped → IB unlock; morning fill blocks IB; IB fill blocks 
     now: etDate(2026, 7, 15, 10, 30),
     viewingInstrument: 'DOW',
   })
-  assert(withOne.canPlaceEntry === false, '1 morning → IB locked')
-  assert(withOne.rangeStrategy === null, 'no IB after morning fill')
+  assert(withOne.canPlaceEntry === true, '1 morning probe → IB still open after AM clock')
+  assert(withOne.rangeStrategy === 'ib', 'IB after morning probe')
 
   const afterIb = resolveSessionGate({
     ...gateBase,
@@ -176,8 +176,8 @@ test('NY: lunch-range when morning + IB skipped; manage-only after 15:15; no PM 
     now: etDate(2026, 7, 15, 14, 0),
     viewingInstrument: 'DOW',
   })
-  assert(afterMorning.canPlaceEntry === false, 'morning fill → lunch off')
-  assert(afterMorning.rangeStrategy === null, 'no lunch after morning')
+  assert(afterMorning.canPlaceEntry === true, 'morning probe → lunch still open after clocks')
+  assert(afterMorning.rangeStrategy === 'lunch_range', 'lunch after morning probe')
 
   const afterIbFill = resolveSessionGate({
     ...gateBase,
@@ -185,8 +185,8 @@ test('NY: lunch-range when morning + IB skipped; manage-only after 15:15; no PM 
     now: etDate(2026, 7, 15, 14, 0),
     viewingInstrument: 'DOW',
   })
-  assert(afterIbFill.canPlaceEntry === false, 'IB fill → lunch off')
-  assert(afterIbFill.rangeStrategy === null, 'no lunch')
+  assert(afterIbFill.canPlaceEntry === true, 'IB probe → lunch still open after mid clock')
+  assert(afterIbFill.rangeStrategy === 'lunch_range', 'lunch after IB probe')
 
   const afterLn = resolveSessionGate({
     ...gateBase,
@@ -224,7 +224,7 @@ test('Nikkei: US Range 10:15–10:45 JST; IB to 15:00 JST', () => {
   assert(ib.rangeStrategy === 'ib', `got ${ib.rangeStrategy}`)
 })
 
-test('Nikkei: morning fill locks US Range + IB', () => {
+test('Nikkei: morning probe still allows US Range + IB after clocks (Option B)', () => {
   const fills = [
     {
       instrument: 'NIKKEI',
@@ -243,8 +243,8 @@ test('Nikkei: morning fill locks US Range + IB', () => {
     now: jstDate(2026, 7, 15, 10, 30),
   })
   assert(us.revengeLocked === false, 'revenge always false')
-  assert(us.canPlaceEntry === false, 'Nikkei US Range blocked after morning fill')
-  assert(us.rangeStrategy === null, 'no US Range strategy after morning fill')
+  assert(us.canPlaceEntry === true, 'Nikkei US Range open after morning probe')
+  assert(us.rangeStrategy === 'us_range', 'US Range after morning probe')
 
   const ib = resolveSessionGate({
     lockedInstrument: 'NIKKEI',
@@ -256,10 +256,11 @@ test('Nikkei: morning fill locks US Range + IB', () => {
     attemptFills: fills,
     now: jstDate(2026, 7, 15, 14, 0),
   })
-  assert(ib.canPlaceEntry === false, 'Nikkei IB blocked after morning fill')
+  assert(ib.canPlaceEntry === true, 'Nikkei IB open after morning probe + clocks')
+  assert(ib.rangeStrategy === 'ib', 'IB after morning probe')
 })
 
-test('Nikkei: morning fill locks US Range; any US Range fill kills IB', () => {
+test('Nikkei: US Range probe still allows IB after mid clock (Option B)', () => {
   const morningOnly = [
     {
       instrument: 'NIKKEI',
@@ -277,8 +278,8 @@ test('Nikkei: morning fill locks US Range; any US Range fill kills IB', () => {
     attemptFills: morningOnly,
     now: jstDate(2026, 7, 15, 10, 30),
   })
-  assert(us.canPlaceEntry === false, `Nikkei US Range locked after morning: ${us.message}`)
-  assert(us.rangeStrategy === null, 'US Range locked')
+  assert(us.canPlaceEntry === true, `Nikkei US Range after morning: ${us.message}`)
+  assert(us.rangeStrategy === 'us_range', 'US Range still open')
 
   const afterUsOnly = [
     {
@@ -297,11 +298,11 @@ test('Nikkei: morning fill locks US Range; any US Range fill kills IB', () => {
     attemptFills: afterUsOnly,
     now: jstDate(2026, 7, 15, 14, 0),
   })
-  assert(ib.canPlaceEntry === false, 'US Range fill kills IB on Nikkei')
-  assert(ib.rangeStrategy === null, 'no IB after US Range fill')
+  assert(ib.canPlaceEntry === true, 'US Range probe → IB still open after mid clock')
+  assert(ib.rangeStrategy === 'ib', 'IB after US Range probe')
 })
 
-test('Morning entry window allows 1 attempt (NY)', () => {
+test('Morning entry window allows 2 attempts (NY Option B)', () => {
   const g = resolveSessionGate({
     ...gateBase,
     now: etDate(2026, 7, 15, 9, 45),
@@ -309,8 +310,8 @@ test('Morning entry window allows 1 attempt (NY)', () => {
   })
   assert(g.canPlaceEntry === true, 'morning entry')
   assert(g.rangeStrategy === null, 'not range strategy yet')
-  assert(g.maxAttempts === 3, 'day max shown as 3')
-  assert(g.maxMorningAttempts === 1, 'morning max 1')
+  assert(g.maxAttempts === 6, 'day max shown as 6')
+  assert(g.maxMorningAttempts === 2, 'morning max 2')
 })
 
 console.log(`\n${TESTS_PASSED.length} passed, ${TESTS_FAILED.length} failed`)

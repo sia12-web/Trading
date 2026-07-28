@@ -12,7 +12,7 @@ import {
   type DeskTickInstrument,
 } from '@/lib/trading/instrumentTicks'
 import {
-  DESK_RISK_PERCENT,
+  RANGE_EDGE_RISK_PERCENT,
   previewPositionSizing,
 } from '@/lib/trading/positionSizing'
 import {
@@ -20,6 +20,7 @@ import {
   type StrategyRangeEdges,
   type StrategyRiskMagnets,
 } from '@/lib/trading/strategyRiskGeometry'
+import { filterLevelsInRangeEdgeBand } from '@/lib/trading/rangeEdgeEntryGate'
 
 /** Same band as live/sim click snap (~0.25%). */
 export const CHART_LEVEL_SNAP_PCT = 0.0025
@@ -81,6 +82,8 @@ export function resolveChartLimitPick(args: {
   levels: ChartPickLevel[]
   levelsVisible: boolean
   snapPct?: number
+  /** When set, only snap to levels inside the ±10 strategy bands */
+  activeRange?: StrategyRangeEdges | null
 }): ChartLimitPick {
   const raw = Number(args.rawPrice)
   if (!(raw > 0) || !Number.isFinite(raw)) {
@@ -92,12 +95,15 @@ export function resolveChartLimitPick(args: {
   }
 
   const snapPct = args.snapPct ?? CHART_LEVEL_SNAP_PCT
-  const tradeLevels = args.levels.filter(
+  let tradeLevels = args.levels.filter(
     (l) =>
       (l.source === 'ai' || l.source === 'structure') &&
       Number.isFinite(l.price) &&
       l.price > 0
   )
+  if (args.activeRange) {
+    tradeLevels = filterLevelsInRangeEdgeBand(tradeLevels, args.activeRange)
+  }
 
   let best = raw
   let matched: ChartPickLevel | null = null
@@ -158,7 +164,7 @@ export function previewLevelOrderPrices(args: {
     args.accountSize && args.accountSize > 0 ? args.accountSize : 100_000,
     direction,
     stop,
-    DESK_RISK_PERCENT
+    RANGE_EDGE_RISK_PERCENT
   )
   if (!preview) return null
 

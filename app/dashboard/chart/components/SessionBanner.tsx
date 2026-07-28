@@ -375,20 +375,18 @@ export function SessionBanner({
         <span
           className={`rounded px-2 py-0.5 font-semibold tabular-nums ${
             gate.dayLocked ||
-            (gate.morningAttempts ?? 0) > 0 ||
-            (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? 3)
+            (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? 6)
               ? 'bg-red-500/25 text-red-200'
               : 'bg-sky-500/20 text-sky-200'
           }`}
-          title="Day max 3 fills: Morning 1 + IB 1 + Lunch-range 1. Skip-forward allowed. Any fill (SL, TP, or open book) locks later windows. Lunch 11:30 is confirm-close; unconfirmed books ride to cash close. Working limits do not count until filled."
+          title="Day max 6 fills: 2 per window (Morning / IB / Lunch-range) @ 0.25% risk. Next window unlocks when prior clock ends or probes are exhausted. Lunch 11:30 is confirm-close; unconfirmed books ride to cash close. Working limits do not count until filled."
         >
           {gate.attemptLadderLabel ||
             (gate.lockedInstrument === 'NIKKEI'
-              ? `Day ${gate.attemptsUsed ?? 0}/${gate.maxAttempts ?? 3} · AM ${gate.morningAttempts ?? 0}/${gate.maxMorningAttempts ?? 1} · US ${gate.ibAttempts ?? 0}/${gate.maxIbAttempts ?? 1} · IB ${gate.lunchAttempts ?? 0}/${gate.maxLunchAttempts ?? 1}`
-              : `Day ${gate.attemptsUsed ?? 0}/${gate.maxAttempts ?? 3} · AM ${gate.morningAttempts ?? 0}/${gate.maxMorningAttempts ?? 1} · IB ${gate.ibAttempts ?? 0}/${gate.maxIbAttempts ?? 1} · LN ${gate.lunchAttempts ?? 0}/${gate.maxLunchAttempts ?? 1}`)}
-          {(gate.morningAttempts ?? 0) > 0 ? ' · LOCKED' : ''}
+              ? `Day ${gate.attemptsUsed ?? 0}/${gate.maxAttempts ?? 6} · AM ${gate.morningAttempts ?? 0}/${gate.maxMorningAttempts ?? 2} · US ${gate.ibAttempts ?? 0}/${gate.maxIbAttempts ?? 2} · IB ${gate.lunchAttempts ?? 0}/${gate.maxLunchAttempts ?? 2}`
+              : `Day ${gate.attemptsUsed ?? 0}/${gate.maxAttempts ?? 6} · AM ${gate.morningAttempts ?? 0}/${gate.maxMorningAttempts ?? 2} · IB ${gate.ibAttempts ?? 0}/${gate.maxIbAttempts ?? 2} · LN ${gate.lunchAttempts ?? 0}/${gate.maxLunchAttempts ?? 2}`)}
           {(gate.stopHits ?? 0) > 0
-            ? ` · Stops ${gate.stopHits}/${gate.maxStopHits ?? 1}`
+            ? ` · Stops ${gate.stopHits}/${gate.maxStopHits ?? 2}`
             : ''}
         </span>
       )}

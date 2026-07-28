@@ -2,14 +2,12 @@
 
 /**
  * Limit order ticket — places a WORKING limit.
- * AI/structure: strategy range SL/TP (active playbook bait) + desk risk (5%).
- * Manual: editable limit/SL/TP + 1% account risk (size auto-adjusts).
+ * Strategy entries: ±10 range-edge gate + 0.25% account risk per probe.
  */
 
 import { useMemo, useState, useEffect, useRef } from 'react'
 import {
-  DESK_RISK_PERCENT,
-  MANUAL_RISK_PERCENT,
+  RANGE_EDGE_RISK_PERCENT,
   normalizeEntrySource,
   previewPositionSizing,
   riskPercentForEntrySource,
@@ -22,6 +20,7 @@ import {
   type StrategyRangeEdges,
   type StrategyRiskMagnets,
 } from '@/lib/trading/strategyRiskGeometry'
+import { assertRangeEdgeEntry } from '@/lib/trading/rangeEdgeEntryGate'
 import {
   instrumentTick,
   snapDeskPrice,
@@ -51,6 +50,8 @@ export interface PendingLimitOrder {
   regime: 'bullish' | 'bearish' | 'choppy'
   regimeConfidence: number
   placedAt: number
+  /** Active playbook range for ±10 entry gate (API + fill) */
+  strategyRange?: StrategyRangeEdges | null
 }
 
 /** Filled position handed to MANAGE. */
@@ -358,8 +359,13 @@ export function LevelOrderTicket({
     }
     if (!canPlace) {
       setError(
-        'Entries locked — morning session only, max 2 filled attempts, locked instrument'
+        'Entries locked — check session gate / attempt ladder / locked instrument'
       )
+      return
+    }
+    const edge = assertRangeEdgeEntry({ entry: snappedLimit, range: strategyRange })
+    if (!edge.ok) {
+      setError(edge.message)
       return
     }
     if (!preview) {
@@ -418,6 +424,7 @@ export function LevelOrderTicket({
       regime,
       regimeConfidence,
       placedAt: Date.now(),
+      strategyRange: strategyRange ?? null,
     })
   }
 
@@ -621,7 +628,7 @@ export function LevelOrderTicket({
               />
             </label>
             <p className="mt-2 text-[10px] text-amber-300/90">
-              Risk fixed at {MANUAL_RISK_PERCENT}% of account — size adjusts when you widen or
+              Risk fixed at {RANGE_EDGE_RISK_PERCENT}% of account — size adjusts when you widen or
               tighten the stop.
             </p>
           </>
@@ -667,7 +674,7 @@ export function LevelOrderTicket({
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500">
-                Risk ({riskPct}%{isManual ? '' : ` desk / ${DESK_RISK_PERCENT}%`})
+                Risk ({riskPct}%)
               </span>
               <span className="price-mono text-amber-400">
                 {formatDeskMoney(preview.risk_amount, { compact: true })}

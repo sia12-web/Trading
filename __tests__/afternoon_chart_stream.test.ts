@@ -11,6 +11,7 @@ import {
   isLiveTipStreamAllowed,
   clipAfternoonBars,
   resolveSessionGate,
+  attemptLadderFromCounts,
 } from '../lib/trading/sessionGate'
 import {
   AVWAP_LOOKBACK_TRADING_DAYS,
@@ -117,7 +118,7 @@ assert(
   assert(/Position open|Manage only/i.test(manage.message), `manage msg: ${manage.message}`)
 }
 
-// Used 1 morning fill → lunch-range locked (any fill locks later windows)
+// Used 1 morning fill → lunch-range still open after clocks (Option B)
 const stillLunch = resolveSessionGate({
   now: afternoonEt,
   lockedInstrument: 'DOW',
@@ -127,8 +128,8 @@ const stillLunch = resolveSessionGate({
   attemptsUsed: 1,
   stopLossHitCount: 0,
 })
-assert(stillLunch.canPlaceEntry === false, '1 morning fill → lunch-range locked')
-assert(stillLunch.rangeStrategy === null, 'no lunch-range after morning fill')
+assert(stillLunch.canPlaceEntry === true, '1 morning fill → lunch-range still open after clocks')
+assert(stillLunch.rangeStrategy === 'lunch_range', 'lunch-range after morning probe')
 
 // Morning + IB skipped → lunch-range open
 const lunchOpen = resolveSessionGate({
@@ -143,36 +144,22 @@ const lunchOpen = resolveSessionGate({
 assert(lunchOpen.canPlaceEntry === true, '0 fills → lunch-range open')
 assert(lunchOpen.rangeStrategy === 'lunch_range', 'lunch_range when skipped')
 
-// IB fill → lunch off
+// IB probe → lunch still open after clocks (Option B)
 const afterIb = resolveSessionGate({
   now: afternoonEt,
   lockedInstrument: 'DOW',
   viewingInstrument: 'DOW',
   clockedIn: true,
   attendedToday: true,
-  attemptLadder: {
-    dayAttempts: 1,
-    morningAttempts: 0,
+  attemptLadder: attemptLadderFromCounts({
     ibAttempts: 1,
-    lunchAttempts: 0,
-    morningStopHits: 0,
-    revengeLocked: false,
-    dayLocked: false,
-    morningEligible: true,
-    ibEligible: false,
-    lunchEligible: false,
-    maxDayAttempts: 4,
-    maxMorningAttempts: 2,
-    maxIbAttempts: 1,
-    maxLunchAttempts: 1,
-  },
+    now: afternoonEt,
+    instrument: 'DOW',
+  }),
 })
-assert(afterIb.canPlaceEntry === false, 'IB fill → no lunch entries')
-assert(afterIb.rangeStrategy === null, 'no lunch strategy after IB')
-assert(
-  /IB attempt used|lunch-range off|Entry windows done|Day /i.test(afterIb.message),
-  `after IB msg: ${afterIb.message}`
-)
+assert(afterIb.canPlaceEntry === true, 'IB probe → lunch still open after clocks')
+assert(afterIb.rangeStrategy === 'lunch_range', 'lunch strategy after IB probe')
+assert(/Lunch-range playbook unlocked/i.test(afterIb.message), `after IB msg: ${afterIb.message}`)
 
 // Never clocked in → afternoon stays locked (DOW / NASDAQ / NIKKEI)
 for (const [inst, now] of [

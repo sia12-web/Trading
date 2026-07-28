@@ -2,7 +2,7 @@
 
 /**
  * Simulation replay desk (query-param driven).
- * Flow: pick day → cash open → full 1/1/1 session (OR30 → IB/US → Lunch-range) → cash close
+ * Flow: pick day → cash open → full 2/2/2 session (OR30 → IB/US → Lunch-range) → cash close
  */
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -41,6 +41,9 @@ import {
 } from '@/lib/trading/instrumentTicks'
 import {
   MAX_DAY_ATTEMPTS,
+  MAX_IB_ATTEMPTS,
+  MAX_LUNCH_RANGE_ATTEMPTS,
+  MAX_MORNING_ATTEMPTS,
   attemptLadderFromCounts,
   deskMarketFor,
   ibStrategyEndHms,
@@ -669,7 +672,7 @@ function SimulationDeskInner() {
       .catch(() => {})
   }, [replayDate, instrument, speed])
 
-  // Full-day sim gate — same 1/1/1 ladder as live (no clock-in)
+  // Full-day sim gate — same 2/2/2 ladder as live (no clock-in)
   const gate = useMemo(() => {
     if (!simNow) return null
     return resolveSimMorningGate({
@@ -2730,11 +2733,12 @@ function SimulationDeskInner() {
             }`}
             title={
               gate?.attemptLadderLabel ||
-              `Full session 1/1/1 · Day ≤ ${MAX_DAY_ATTEMPTS}. Skip-forward unlocks later windows.`
+              `Full session 2/2/2 · Day ≤ ${MAX_DAY_ATTEMPTS}. Next window unlocks when prior clock ends or probes are exhausted.`
             }
           >
-            Day {attemptsUsed}/{MAX_DAY_ATTEMPTS} · AM {morningAttempts}/1 · {midChip}{' '}
-            {ibAttempts}/1 · {lateChip} {lunchAttempts}/1
+            Day {attemptsUsed}/{MAX_DAY_ATTEMPTS} · AM {morningAttempts}/{MAX_MORNING_ATTEMPTS} ·{' '}
+            {midChip} {ibAttempts}/{MAX_IB_ATTEMPTS} · {lateChip}{' '}
+            {lunchAttempts}/{MAX_LUNCH_RANGE_ATTEMPTS}
             {attemptsUsed >= MAX_DAY_ATTEMPTS ? ' · LOCKED' : ''}
           </span>
           {overnightBias && (

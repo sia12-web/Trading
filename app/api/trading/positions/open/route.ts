@@ -25,6 +25,7 @@ import { getTodayAttendance, tradeDateForInstrument } from '@/lib/trading/deskAt
 import { isOandaConfigured, shouldExecuteOandaOrders } from '@/lib/oanda/config'
 import { getOandaAccountSummary } from '@/lib/oanda/orders'
 import { placeOandaMarketOrder, closeOandaTrade } from '@/lib/oanda/orders'
+import { assertRangeEdgeEntry } from '@/lib/trading/rangeEdgeEntryGate'
 import type { PositionOpenResponse } from '@/types/trading'
 
 interface OpenPositionRequest {
@@ -50,6 +51,10 @@ interface OpenPositionRequest {
   profit_target_price?: number
   /** Why we entered (liquidity thesis / level reasoning) — journaled */
   entry_reason?: string
+  /** Active playbook range edges — required for ±10 entry gate */
+  range_high?: number
+  range_low?: number
+  range_label?: string
 }
 
 export async function POST(request: Request): Promise<NextResponse<PositionOpenResponse>> {
@@ -234,6 +239,35 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
           message: gateCheck.message,
         },
         { status: gateCheck.status }
+      )
+    }
+
+    const edgeCheck = assertRangeEdgeEntry({
+      entry: body.entry_price,
+      range:
+        body.range_high != null && body.range_low != null
+          ? {
+              high: Number(body.range_high),
+              low: Number(body.range_low),
+              label: body.range_label ?? null,
+            }
+          : null,
+    })
+    if (!edgeCheck.ok) {
+      return NextResponse.json(
+        {
+          success: false,
+          position_id: '',
+          instrument: body.instrument,
+          entry_price: body.entry_price,
+          stop_loss_price: 0,
+          position_size: 0,
+          risk_amount: 0,
+          entry_direction: body.entry_direction,
+          entry_window: body.entry_window,
+          message: edgeCheck.message,
+        },
+        { status: 400 }
       )
     }
 

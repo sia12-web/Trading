@@ -551,14 +551,14 @@ AFTERNOON MODE (watch-only — this run is the post-entry memory refresh):
 `
               : `
 MORNING OR30 PLAYBOOK MODE:
-- First 30 minutes after cash open define the Opening Range (OR30). Build morning playbook levels for the OR30 / morning entry window (${open}–${entryEnd} ${tzLabel}) — ONE fill.
+- First 30 minutes after cash open define the Opening Range (OR30). Build morning playbook levels for the OR30 / morning entry window (${open}–${entryEnd} ${tzLabel}) — up to 2 fills @ 0.25% risk, entries within ±10 pts of OR30 high/low.
 - PRIMARY BAIT this run: OR30 H/L (once formed). Before OR30 locks, overnight/London stop pools may seed the morning book, then re-anchor to OR30.
 - Prefer OR30 high/low magnets, opening-drive structure, stop-pool liquidity beyond bait highs/lows, AVWAP/POC confluence.
 `
 
     const deskCadence = tokyo
-      ? `- Three ranges / three attempts: Morning OR30 ${open}–${entryEnd} ${tzLabel} (1 fill) → if still 0 fills → US Range (prior NYC H/L) ${midWindow} ${tzLabel} (1 attempt) → ${prepLabel} (levels update) → if still 0 fills → Tokyo IB ${lateWindow} ${tzLabel} (1 attempt). Any fill locks later windows. Lunch ${lunch} ${tzLabel} is confirm-close only; unconfirmed books ride to cash-close flatten at ${close} ${tzLabel}.`
-      : `- Three ranges / three attempts: Morning OR30 ${open}–${entryEnd} ${tzLabel} (1 fill) → if still 0 fills → IB ${midWindow} ${tzLabel} (1 attempt) → ${prepLabel} (levels update) → if still 0 fills → lunch-range ${lateWindow} ${tzLabel} (1 attempt). Any fill locks later windows. Lunch ${lunch} ${tzLabel} is confirm-close only; unconfirmed books ride to cash-close flatten at ${close} ${tzLabel}.`
+      ? `- Three ranges / up to 2 probes each @ 0.25% (day ≤ 6): Morning OR30 ${open}–${entryEnd} ${tzLabel} → US Range (prior NYC H/L) ${midWindow} ${tzLabel} → ${prepLabel} (levels update) → Tokyo IB ${lateWindow} ${tzLabel}. Next window unlocks when prior clock ends or probes are exhausted. Entries only within ±10 pts of active range high/low. Lunch ${lunch} ${tzLabel} is confirm-close only; unconfirmed books ride to cash-close flatten at ${close} ${tzLabel}.`
+      : `- Three ranges / up to 2 probes each @ 0.25% (day ≤ 6): Morning OR30 ${open}–${entryEnd} ${tzLabel} → IB ${midWindow} ${tzLabel} → ${prepLabel} (levels update) → lunch-range ${lateWindow} ${tzLabel}. Next window unlocks when prior clock ends or probes are exhausted. Entries only within ±10 pts of active range high/low. Lunch ${lunch} ${tzLabel} is confirm-close only; unconfirmed books ride to cash-close flatten at ${close} ${tzLabel}.`
 
     const rangeLiquidityMap = tokyo
       ? `

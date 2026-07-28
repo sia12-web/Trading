@@ -20,6 +20,7 @@ import {
 import { getTodayAttendance, tradeDateForInstrument } from '@/lib/trading/deskAttendance'
 import { logger } from '@/lib/utils/logger'
 import { normalizeEntrySource } from '@/lib/trading/positionSizing'
+import { assertRangeEdgeEntry } from '@/lib/trading/rangeEdgeEntryGate'
 
 export const dynamic = 'force-dynamic'
 
@@ -169,6 +170,21 @@ export async function POST(request: Request) {
     const gateCheck = assertCanOpenPosition(instrument, gate)
     if (!gateCheck.ok) {
       return NextResponse.json({ error: gateCheck.message }, { status: gateCheck.status })
+    }
+
+    const edgeCheck = assertRangeEdgeEntry({
+      entry: level,
+      range:
+        body.range_high != null && body.range_low != null
+          ? {
+              high: Number(body.range_high),
+              low: Number(body.range_low),
+              label: body.range_label ?? null,
+            }
+          : null,
+    })
+    if (!edgeCheck.ok) {
+      return NextResponse.json({ error: edgeCheck.message }, { status: 400 })
     }
 
     const stop = Number(body.stop_loss_price ?? body.stopLoss)

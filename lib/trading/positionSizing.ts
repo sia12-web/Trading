@@ -1,7 +1,6 @@
 /**
  * Position sizing calculator
- * Desk (AI/structure) levels: 5% account risk.
- * Manual chart/ticket entries: 1% account risk — size adapts to stop distance.
+ * Live range-edge desk: 0.25% account risk per probe (Option B).
  * Formula: position_size = risk_amount / |entry - stop|
  */
 
@@ -9,18 +8,21 @@ import { logger } from '@/lib/utils/logger'
 import { snapProfitToRound } from '@/lib/trading/deskLevels'
 import type { PositionSizing, EntryDirection } from '@/types/trading'
 
-/** AI / structure desk levels */
+/** @deprecated Prefer RANGE_EDGE_RISK_PERCENT for live desk probes */
 export const DESK_RISK_PERCENT = 5
-/** Manual limit orders — always 1% of account */
+/** @deprecated Prefer RANGE_EDGE_RISK_PERCENT for live desk probes */
 export const MANUAL_RISK_PERCENT = 1
+/** Live playbook probes — 0.25% of account per attempt */
+export const RANGE_EDGE_RISK_PERCENT = 0.25
 const MAX_LOSS_PERCENT = 0.05 // 5% max loss per trade (default disaster stop)
 /** With tight zone stops, cap exposure so risk-per-point can't blow up notional */
 const MAX_NOTIONAL_MULT = 5
 
 export type DeskEntrySource = 'ai' | 'structure' | 'manual'
 
-export function riskPercentForEntrySource(source?: DeskEntrySource | string | null): number {
-  return source === 'manual' ? MANUAL_RISK_PERCENT : DESK_RISK_PERCENT
+/** Live desk entries (ai / structure / manual chart) all size at 0.25% risk. */
+export function riskPercentForEntrySource(_source?: DeskEntrySource | string | null): number {
+  return RANGE_EDGE_RISK_PERCENT
 }
 
 const MIN_ACCOUNT = 100
@@ -65,7 +67,7 @@ export class PositionSizer {
     accountSize: number,
     direction: EntryDirection,
     stopLossPrice?: number,
-    riskPercent: number = DESK_RISK_PERCENT
+    riskPercent: number = RANGE_EDGE_RISK_PERCENT
   ): PositionSizing | null {
     // Validate inputs
     if (entryPrice <= 0) {
@@ -79,7 +81,7 @@ export class PositionSizer {
     }
 
     const riskPct =
-      Number.isFinite(riskPercent) && riskPercent > 0 ? riskPercent : DESK_RISK_PERCENT
+      Number.isFinite(riskPercent) && riskPercent > 0 ? riskPercent : RANGE_EDGE_RISK_PERCENT
     const riskAmount = accountSize * (riskPct / 100)
 
     // Stop: custom (zone-based) if valid for the direction, else default ±5%

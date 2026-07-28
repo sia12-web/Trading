@@ -24,7 +24,7 @@ import {
   tradeDateForInstrument,
 } from '@/lib/trading/deskAttendance'
 import {
-  DESK_RISK_PERCENT,
+  RANGE_EDGE_RISK_PERCENT,
   MANUAL_RISK_PERCENT,
 } from '@/lib/trading/positionSizing'
 import {
@@ -465,9 +465,9 @@ export async function buildLiveVoiceDeskContext(
   const morningAttempts = gate.morningAttempts ?? 0
   const ibAttempts = gate.ibAttempts ?? 0
   const lunchAttempts = gate.lunchAttempts ?? 0
-  const maxMorningAttempts = gate.maxMorningAttempts ?? 1
-  const maxIbAttempts = gate.maxIbAttempts ?? 1
-  const maxLunchAttempts = gate.maxLunchAttempts ?? 1
+  const maxMorningAttempts = gate.maxMorningAttempts ?? 2
+  const maxIbAttempts = gate.maxIbAttempts ?? 2
+  const maxLunchAttempts = gate.maxLunchAttempts ?? 2
   const ladder = attemptLadderFromCounts({
     morningAttempts,
     ibAttempts,
@@ -534,14 +534,14 @@ export async function buildLiveVoiceDeskContext(
       },
     },
     risk: {
-      deskRiskPercent: DESK_RISK_PERCENT,
+      deskRiskPercent: RANGE_EDGE_RISK_PERCENT,
       manualRiskPercent: MANUAL_RISK_PERCENT,
       maxAttempts: MAX_DAY_ATTEMPTS,
       maxStopHits: MAX_STOP_HITS,
       entryRule:
         contextInstrument === 'NIKKEI'
-          ? 'Day max 3 fills (AM/OR30 1 + US Range 1 + IB 1). Skip-forward: skip morning → US Range; skip US Range → IB. Any fill locks later windows. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books ride to cash-close flatten. Voice never places orders. Range H/L = retail bait; desk hunts stops just beyond with POC/AVWAP confluence. Ticket sets initial SL beyond active range (or zone floor) and TP at opposing edge/magnets; post-fill BE/trail manage is separate.'
-          : 'Day max 3 fills (AM/OR30 1 + IB 1 + LN 1). Skip-forward: skip morning → IB; skip IB → lunch-range. Any fill locks later windows. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books ride to cash-close flatten. Voice never places orders. Range H/L = retail bait; desk hunts stops just beyond with POC/AVWAP confluence. Ticket sets initial SL beyond active range (or zone floor) and TP at opposing edge/magnets; post-fill BE/trail manage is separate.',
+          ? 'Day max 6 fills (AM/OR30 2 + US Range 2 + IB 2) @ 0.25% risk each. Next window unlocks when prior clock ends or probes are exhausted. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books ride to cash-close flatten. Voice never places orders. Range H/L = retail bait; desk hunts stops just beyond with POC/AVWAP confluence. Entries only within ±10 pts of active range high/low. Ticket sets initial SL beyond active range (or zone floor) and TP at opposing edge/magnets; post-fill BE/trail manage is separate.'
+          : 'Day max 6 fills (AM/OR30 2 + IB 2 + LN 2) @ 0.25% risk each. Next window unlocks when prior clock ends or probes are exhausted. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books ride to cash-close flatten. Voice never places orders. Range H/L = retail bait; desk hunts stops just beyond with POC/AVWAP confluence. Entries only within ±10 pts of active range high/low. Ticket sets initial SL beyond active range (or zone floor) and TP at opposing edge/magnets; post-fill BE/trail manage is separate.',
     },
     rangeLiquidityBriefText: null,
     avwap: {

@@ -1,5 +1,5 @@
 /**
- * Morning book (evaluateSessionAttempts) + full-day SIM gate (1/1/1).
+ * Morning book (evaluateSessionAttempts) + full-day SIM gate (2/2/2).
  * Run: npx tsx __tests__/session_attempts.test.ts
  */
 
@@ -14,8 +14,8 @@ function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(msg)
 }
 
-assert(MAX_SESSION_ATTEMPTS === 1, 'max morning attempts must be 1')
-assert(MAX_STOP_HITS === 1, 'max stops must be 1')
+assert(MAX_SESSION_ATTEMPTS === 2, 'max morning attempts must be 2')
+assert(MAX_STOP_HITS === 2, 'max stops must be 2')
 
 {
   const fresh = evaluateSessionAttempts({ attemptsUsed: 0, stopHits: 0 })
@@ -39,30 +39,30 @@ assert(MAX_STOP_HITS === 1, 'max stops must be 1')
 }
 
 {
-  // One fill closed via TP — morning done
+  // One fill closed via TP — morning still has probes left (Option B)
   const afterTp = evaluateSessionAttempts({
     attemptsUsed: 1,
     stopHits: 0,
     hasOpenPosition: false,
   })
-  assert(afterTp.entriesLocked, 'after TP — morning locked')
-  assert(afterTp.sessionDone, 'morning attempt used')
+  assert(!afterTp.entriesLocked, 'after 1 TP — morning still open')
+  assert(!afterTp.sessionDone, 'morning probes remain')
 }
 
 {
-  // One fill closed via SL — morning done
+  // Two fills / two stops — morning book full
   const afterSl = evaluateSessionAttempts({
-    attemptsUsed: 1,
-    stopHits: 1,
+    attemptsUsed: 2,
+    stopHits: 2,
     hasOpenPosition: false,
   })
-  assert(afterSl.entriesLocked, 'after one stop — morning locked')
-  assert(afterSl.sessionDone, 'morning attempt used')
+  assert(afterSl.entriesLocked, 'after two stops — morning locked')
+  assert(afterSl.sessionDone, 'morning attempts used')
   assert(!!afterSl.lockReason?.includes('Morning'), 'lock reason mentions morning')
 }
 
 {
-  // Morning fill used during OR30 window → ENTRY but locked
+  // One morning probe during OR30 → ENTRY still open (Option B)
   const morning = new Date('2026-07-14T14:00:00.000Z') // 10:00 ET
   const gate = resolveSimMorningGate({
     now: morning,
@@ -72,22 +72,23 @@ assert(MAX_STOP_HITS === 1, 'max stops must be 1')
     stopHits: 0,
   })
   assert(gate.phase === 'ENTRY', `expected ENTRY (window open), got ${gate.phase}`)
-  assert(gate.canPlaceEntry === false, 'cannot place after morning fill')
+  assert(gate.canPlaceEntry === true, 'can place after 1 morning probe')
   assert(gate.morningAttempts === 1, 'morningAttempts counted')
 }
 
 {
-  // After morning entryClose with morning fill → later windows locked (FLAT)
+  // After morning entryClose with 1 morning probe → IB still unlocks (Option B)
   const afterEntry = new Date('2026-07-14T14:20:00.000Z') // 10:20 ET
-  const locked = resolveSimMorningGate({
+  const unlocked = resolveSimMorningGate({
     now: afterEntry,
     instrument: 'NASDAQ',
     hasOpenPosition: false,
     morningAttempts: 1,
     stopHits: 0,
   })
-  assert(locked.phase === 'FLAT', `expected FLAT after morning fill past entryClose, got ${locked.phase}`)
-  assert(locked.canPlaceEntry === false, 'IB locked after morning fill')
+  assert(unlocked.phase === 'ENTRY', `expected IB ENTRY after morning probe, got ${unlocked.phase}`)
+  assert(unlocked.canPlaceEntry === true, 'IB open after morning probe + clock')
+  assert(unlocked.rangeStrategy === 'ib', 'IB strategy')
 }
 
 {

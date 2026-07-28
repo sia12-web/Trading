@@ -98,6 +98,10 @@ import {
   type StrategyRiskMagnets,
 } from '@/lib/trading/strategyRiskGeometry'
 import {
+  filterLevelsInRangeEdgeBand,
+  NO_IN_BAND_LEVELS_MESSAGE,
+} from '@/lib/trading/rangeEdgeEntryGate'
+import {
   NYC_LUNCH_COLORS,
   computeNycLunchRange,
   computeNycLunchSignals,
@@ -604,6 +608,7 @@ interface TradingChartProps {
     profitTarget: number
     direction: 'LONG' | 'SHORT'
     reasoning: string
+    strategyRange?: StrategyRangeEdges | null
   }) => void
   /** Morning session: allow placing limits from the chart */
   canPlaceOrder?: boolean
@@ -734,6 +739,7 @@ export function TradingChart({
   const [instrument,  setInstrumentState] = useState<Instrument>('DOW')
   const [candles,     setCandles]    = useState<OHLCV[]>([])
   const [levels,      setLevels]     = useState<LevelLine[]>([])
+  const [noInBandLevelsMessage, setNoInBandLevelsMessage] = useState<string | null>(null)
   const levelsRef = useRef<LevelLine[]>([])
   const [tooltip,     setTooltip]    = useState<TooltipData | null>(null)
   const [livePrice,   setLivePrice]  = useState<number | null>(null)
@@ -1531,10 +1537,38 @@ export function TradingChart({
     // Keep playbook order (primary focus first), not price sort
     // Ignore stale responses after the user switched instruments
     if (instrumentRef.current !== inst) return
-    setLevels(
-      resolved.levels.map((l) => byPrice.get(l.level)!).filter(Boolean)
-    )
-    if (!playbookUserClosedRef.current && resolved.levels.some((l) => l.source === 'ai' || l.source === 'structure')) {
+
+    const strategyRange = activeRangeForPlaybook({
+      playbookMode,
+      instrument: inst,
+      or30: or30RangeRef.current,
+      ib: ibRangeRef.current,
+      usRange: usRangeRef.current,
+      lunchRange: lunchRangeRef.current,
+    })
+    const built = resolved.levels
+      .map((l) => byPrice.get(l.level)!)
+      .filter(Boolean) as LevelLine[]
+
+    let actionable = built
+    let bandMsg: string | null = null
+    if (strategyRange) {
+      const inBand = filterLevelsInRangeEdgeBand(built, strategyRange)
+      if (built.length > 0 && inBand.length === 0) {
+        bandMsg = NO_IN_BAND_LEVELS_MESSAGE
+        actionable = []
+      } else {
+        actionable = inBand
+      }
+    }
+
+    setLevels(actionable)
+    setNoInBandLevelsMessage(bandMsg)
+    if (
+      !playbookUserClosedRef.current &&
+      (actionable.some((l) => l.source === 'ai' || l.source === 'structure') ||
+        !!bandMsg)
+    ) {
       setPlaybookOpen(true)
     }
   }, [deskLevelsActive, rangeStrategy, morningAttempts, ibAttempts, lunchAttempts, stopHits])
@@ -4097,6 +4131,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         return
       }
 
+      const { strategyRange, strategyMagnets } = getStrategyRiskBundle()
       const pick = resolveChartLimitPick({
         rawPrice: Number(raw),
         levels: levelsRef.current.map((l) => ({
@@ -4108,13 +4143,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           reasoning: l.reasoning,
         })),
         levelsVisible: true,
+        activeRange: strategyRange,
       })
       if (pick.source === 'manual' || !pick.matched) {
         clearHoverPreview()
         return
       }
 
-      const { strategyRange, strategyMagnets } = getStrategyRiskBundle()
       const preview = previewLevelOrderPrices({
         level: pick.matched,
         instrument,
@@ -5697,14 +5732,17 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     const isMarket = rationaleModal.orderType === 'MARKET'
                     const fullReason = `Manual ${rationaleModal.direction} entry: ${userRationale || 'Technical structure'} | SL/TP rationale: ${userSlTpRationale || 'Geometry bounds'}`
                     if (isMarket) {
+                      const { strategyRange } = getStrategyRiskBundle()
                       onMarketOrder?.({
                         entryPrice: rationaleModal.entryPrice,
                         stopLoss: rationaleModal.stopLoss,
                         profitTarget: rationaleModal.profitTarget,
                         direction: rationaleModal.direction,
                         reasoning: fullReason,
+                        strategyRange,
                       })
                     } else {
+                      const { strategyRange, strategyMagnets } = getStrategyRiskBundle()
                       onLevelSelect?.(rationaleModal.entryPrice, {
                         source: 'manual',
                         type: 'manual',
@@ -5714,6 +5752,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                         reasoning: fullReason,
                         stopLoss: rationaleModal.stopLoss,
                         profitTarget: rationaleModal.profitTarget,
+                        strategyRange,
+                        strategyMagnets,
                       })
                     }
                     setRationaleModal(null)
@@ -5739,7 +5779,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         {/* Playbook — morning / IB / lunch-break / lunch-range */}
         {deskLevelsActive &&
           playbookOpen &&
-          levels.some((l) => l.source === 'ai' || l.source === 'structure') && (
+          (noInBandLevelsMessage ||
+            levels.some((l) => l.source === 'ai' || l.source === 'structure')) && (
           <DraggableDeskWidget
             storageKey="desk-playbook-live"
             defaultPos={{ x: 24, y: 88 }}
@@ -5753,6 +5794,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               <p className="px-1 pb-1 text-[10px] leading-snug text-gray-500">
                 {watchPlaybookHint}
               </p>
+              {noInBandLevelsMessage && (
+                <p className="rounded-md border border-amber-500/40 bg-amber-950/40 px-2 py-2 text-[11px] leading-snug text-amber-100">
+                  {noInBandLevelsMessage}
+                </p>
+              )}
               {levels
                 .filter((l) => l.source === 'ai' || l.source === 'structure')
                 .slice(0, 4)
