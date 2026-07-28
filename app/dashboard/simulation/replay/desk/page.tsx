@@ -83,13 +83,17 @@ import {
   convictionStars,
   resolveDeskLevels,
   computeInitialBalance,
+  computeIbSignals,
   ibLineSeriesData,
   type DeskPlaybook,
+  type InitialBalanceRange,
   formatZone,
 } from '@/lib/trading/deskLevels'
 import {
   OR30_COLORS,
   computeOr30Range,
+  computeOr30Signals,
+  isOr30Instrument,
   or30LineSeriesData,
   or30WindowLabel,
   type Or30Range,
@@ -97,11 +101,15 @@ import {
 import {
   NYC_LUNCH_COLORS,
   computeNycLunchRange,
+  computeNycLunchSignals,
   isNycLunchInstrument,
+  nycLunchEndMarkers,
   nycLunchLineSeriesData,
+  type NycLunchRange,
 } from '@/lib/chart/nycLunchSessionRange'
 import {
   NIKKEI_US_RANGE_COLORS,
+  computeNikkeiUsRangeBreakout,
   currentNikkeiUsRangeForChart,
   isNikkeiUsRangeInstrument,
   nikkeiUsRangeLineSeriesData,
@@ -398,6 +406,24 @@ function SimulationDeskInner() {
       } else if (key === 'l') {
         e.preventDefault()
         setLevelsOpen((prev) => !prev)
+      } else if (key === 'b') {
+        e.preventDefault()
+        setShowIbBreakouts((prev) => !prev)
+      } else if (key === 'n') {
+        e.preventDefault()
+        if (instrument === 'DOW' || instrument === 'NASDAQ') {
+          setShowLunchRange((prev) => !prev)
+        }
+      } else if (key === 'u') {
+        e.preventDefault()
+        if (instrument === 'NIKKEI') {
+          setShowUsRange((prev) => !prev)
+        }
+      } else if (key === 'r') {
+        e.preventDefault()
+        if (isOr30Instrument(instrument)) {
+          setShowOr30((prev) => !prev)
+        }
       } else if (key === 'p') {
         e.preventDefault()
         setPlaybookOpen((prev) => !prev)
@@ -426,7 +452,7 @@ function SimulationDeskInner() {
       window.removeEventListener('keydown', handleKeyDown)
       document.removeEventListener('fullscreenchange', onFsChange)
     }
-  }, [isFullscreen, manualTicketOpen, toggleFullscreen])
+  }, [isFullscreen, manualTicketOpen, toggleFullscreen, instrument])
 
   const containerRef = useRef<HTMLDivElement>(null)
   const sessionOverlayRef = useRef<HTMLDivElement>(null)
@@ -451,13 +477,24 @@ function SimulationDeskInner() {
     low: ISeriesApi<'Line'>
   } | null>(null)
   const [ibShaped, setIbShaped] = useState(false)
+  const [lunchShaped, setLunchShaped] = useState(false)
+  const [usRangeShaped, setUsRangeShaped] = useState(false)
+  /** Script overlays — same toggles as live (B / N / U / R) */
+  const [showIbBreakouts, setShowIbBreakouts] = useState(true)
+  const [showLunchRange, setShowLunchRange] = useState(true)
+  const [showUsRange, setShowUsRange] = useState(true)
+  const [showOr30, setShowOr30] = useState(true)
+  const showIbBreakoutsRef = useRef(true)
+  const showLunchRangeRef = useRef(true)
+  const showUsRangeRef = useRef(true)
+  const showOr30Ref = useRef(true)
   const or30SeriesRef = useRef<{
     high: ISeriesApi<'Line'>
     low: ISeriesApi<'Line'>
   } | null>(null)
   const or30RangeRef = useRef<Or30Range | null>(null)
-  const ibRangeRef = useRef<{ high: number; low: number } | null>(null)
-  const lunchRangeRef = useRef<{ high: number; low: number } | null>(null)
+  const ibRangeRef = useRef<InitialBalanceRange | null>(null)
+  const lunchRangeRef = useRef<NycLunchRange | null>(null)
   const usRangeRef = useRef<{ high: number; low: number } | null>(null)
   const lunchSeriesRef = useRef<{
     high: ISeriesApi<'Line'>
@@ -470,6 +507,20 @@ function SimulationDeskInner() {
   } | null>(null)
   const avwapLastRef = useRef<number | null>(null)
   const [or30Shaped, setOr30Shaped] = useState(false)
+
+  useEffect(() => {
+    showIbBreakoutsRef.current = showIbBreakouts
+  }, [showIbBreakouts])
+  useEffect(() => {
+    showLunchRangeRef.current = showLunchRange
+  }, [showLunchRange])
+  useEffect(() => {
+    showUsRangeRef.current = showUsRange
+  }, [showUsRange])
+  useEffect(() => {
+    showOr30Ref.current = showOr30
+  }, [showOr30])
+
   const levelLinesRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]>([])
   const posLinesRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]>([])
   const hoverPreviewLinesRef = useRef<
@@ -1016,6 +1067,8 @@ function SimulationDeskInner() {
       avwapLastRef.current = null
       setIbShaped(false)
       setOr30Shaped(false)
+      setLunchShaped(false)
+      setUsRangeShaped(false)
       levelLinesRef.current = []
       posLinesRef.current = []
     }
@@ -1248,8 +1301,9 @@ function SimulationDeskInner() {
         const ibs = ibSeriesRef.current
         if (ibs && openUnix) {
           const ib = computeInitialBalance(bars, openUnix, simT)
+          ibRangeRef.current = ib
+          // IB H/L lines always paint when shaped (live: B toggles markers only)
           if (ib) {
-            ibRangeRef.current = { high: ib.high, low: ib.low }
             const pts = ibLineSeriesData(ib, extendTo)
             try {
               ibs.high.setData(shiftBand(pts.high.map((p) => ({ time: p.time, value: p.value }))))
@@ -1261,7 +1315,6 @@ function SimulationDeskInner() {
               setIbShaped(false)
             }
           } else {
-            ibRangeRef.current = null
             ibs.high.setData([])
             ibs.low.setData([])
             setIbShaped(false)
@@ -1272,7 +1325,7 @@ function SimulationDeskInner() {
         if (ors && openUnix) {
           const or30 = computeOr30Range(bars, openUnix, simT)
           or30RangeRef.current = or30
-          if (or30) {
+          if (showOr30Ref.current && or30) {
             const pts = or30LineSeriesData(or30, extendTo)
             try {
               ors.high.setData(shiftBand(pts.high.map((p) => ({ time: p.time, value: p.value }))))
@@ -1286,7 +1339,7 @@ function SimulationDeskInner() {
           } else {
             ors.high.setData([])
             ors.low.setData([])
-            setOr30Shaped(false)
+            setOr30Shaped(!!or30 && showOr30Ref.current)
           }
         }
 
@@ -1299,29 +1352,31 @@ function SimulationDeskInner() {
               Math.max(tip, simT)
             )
             lunchRangeRef.current = lunch
-              ? { high: lunch.high, low: lunch.low }
-              : null
-            if (lunch) {
+            if (showLunchRangeRef.current && lunch) {
               const pts = nycLunchLineSeriesData(lunch, extendTo, { showMid: true })
               try {
                 lns.high.setData(shiftBand(pts.high))
                 lns.low.setData(shiftBand(pts.low))
                 lns.mid.setData(shiftBand(pts.mid))
+                setLunchShaped(true)
               } catch {
                 lns.high.setData([])
                 lns.low.setData([])
                 lns.mid.setData([])
+                setLunchShaped(false)
               }
             } else {
               lns.high.setData([])
               lns.low.setData([])
               lns.mid.setData([])
+              setLunchShaped(false)
             }
           } else {
             lunchRangeRef.current = null
             lns.high.setData([])
             lns.low.setData([])
             lns.mid.setData([])
+            setLunchShaped(false)
           }
         }
 
@@ -1330,23 +1385,110 @@ function SimulationDeskInner() {
           if (isNikkeiUsRangeInstrument(instrument)) {
             const us = currentNikkeiUsRangeForChart(bars, Math.max(tip, simT))
             usRangeRef.current = us ? { high: us.high, low: us.low } : null
-            if (us) {
+            if (showUsRangeRef.current && us) {
               const pts = nikkeiUsRangeLineSeriesData(us, extendTo)
               try {
                 uss.high.setData(shiftBand(pts.high))
                 uss.low.setData(shiftBand(pts.low))
+                setUsRangeShaped(true)
               } catch {
                 uss.high.setData([])
                 uss.low.setData([])
+                setUsRangeShaped(false)
               }
             } else {
               uss.high.setData([])
               uss.low.setData([])
+              setUsRangeShaped(false)
             }
           } else {
             usRangeRef.current = null
             uss.high.setData([])
             uss.low.setData([])
+            setUsRangeShaped(false)
+          }
+        }
+
+        // Script markers — IB / OR30 / Lunch / US Range (same as live)
+        const candleSeries = seriesRef.current
+        if (candleSeries) {
+          type Mk = {
+            time: UTCTimestamp
+            position: 'aboveBar' | 'belowBar'
+            color: string
+            shape: 'arrowUp' | 'arrowDown' | 'circle'
+            text: string
+          }
+          const markers: Mk[] = []
+          if (showIbBreakoutsRef.current && ibRangeRef.current) {
+            for (const s of computeIbSignals(bars, ibRangeRef.current)) {
+              markers.push({
+                time: s.time as UTCTimestamp,
+                position: s.position,
+                color: s.color,
+                shape: s.shape,
+                text: s.text,
+              })
+            }
+          }
+          if (showOr30Ref.current && or30RangeRef.current) {
+            for (const s of computeOr30Signals(bars, or30RangeRef.current)) {
+              markers.push({
+                time: s.time as UTCTimestamp,
+                position: s.position,
+                color: s.color,
+                shape: s.shape,
+                text: s.text,
+              })
+            }
+          }
+          if (showLunchRangeRef.current && lunchRangeRef.current) {
+            for (const m of nycLunchEndMarkers(lunchRangeRef.current)) {
+              markers.push({
+                time: m.time as UTCTimestamp,
+                position: m.position,
+                color: m.color,
+                shape: m.shape,
+                text: m.text,
+              })
+            }
+            for (const s of computeNycLunchSignals(bars, lunchRangeRef.current)) {
+              markers.push({
+                time: s.time as UTCTimestamp,
+                position: s.position,
+                color: s.color,
+                shape: s.shape,
+                text: s.text,
+              })
+            }
+          }
+          if (showUsRangeRef.current && isNikkeiUsRangeInstrument(instrument)) {
+            const us = computeNikkeiUsRangeBreakout(bars)
+            if (us) {
+              for (const s of us.signals) {
+                markers.push({
+                  time: s.time as UTCTimestamp,
+                  position: s.position,
+                  color: s.color,
+                  shape: s.shape,
+                  text: s.text,
+                })
+              }
+            }
+          }
+          try {
+            candleSeries.setMarkers(
+              mapTimesToChart(
+                markers.map((m) => ({ ...m, time: m.time as number })),
+                TRADER_DISPLAY_TZ
+              ).map((m) => ({ ...m, time: m.time as UTCTimestamp }))
+            )
+          } catch {
+            try {
+              candleSeries.setMarkers([])
+            } catch {
+              /* ignore */
+            }
           }
         }
       }
@@ -1609,6 +1751,12 @@ function SimulationDeskInner() {
     if (!chartReady) return
     paintTradeLevels()
   }, [levels, chartReady, levelsOpen, paintTradeLevels])
+
+  // Re-paint script overlays when toggles change
+  useEffect(() => {
+    if (!chartReady || !simNowRef.current) return
+    applyChartDataRef.current(simNowRef.current, { force: true })
+  }, [chartReady, showIbBreakouts, showLunchRange, showUsRange, showOr30])
 
   // Pending working limit + open position — on host series (survives candle setData).
   // Independent of Hide levels — AI/structure lines toggle separately.
@@ -2689,6 +2837,88 @@ function SimulationDeskInner() {
           <button
             type="button"
             title={
+              showIbBreakouts
+                ? 'IB Breakout & Rejection signals visible (Press B)'
+                : 'Show session Initial Balance Breakout & Rejection signals (Press B)'
+            }
+            onClick={() => setShowIbBreakouts((v) => !v)}
+            className={`flex items-center gap-1 rounded border px-2 py-1 text-[10px] font-semibold uppercase ${
+              showIbBreakouts
+                ? 'border-blue-500/50 bg-blue-600/30 text-blue-100'
+                : 'border-white/15 text-gray-500 hover:border-blue-500/40 hover:text-blue-200'
+            }`}
+          >
+            <span
+              className={`inline-block h-1.5 w-1.5 rounded-full ${showIbBreakouts ? 'bg-blue-400' : 'bg-gray-600'}`}
+            />
+            IB Breakout (B)
+          </button>
+          {(instrument === 'DOW' || instrument === 'NASDAQ') && (
+            <button
+              type="button"
+              title={
+                showLunchRange
+                  ? 'NYC Lunch range 12:00–13:30 ET visible (Press N)'
+                  : 'Show NYC Lunch high / low / 50% (Press N)'
+              }
+              onClick={() => setShowLunchRange((v) => !v)}
+              className={`flex items-center gap-1 rounded border px-2 py-1 text-[10px] font-semibold uppercase ${
+                showLunchRange
+                  ? 'border-orange-500/50 bg-orange-600/30 text-orange-100'
+                  : 'border-white/15 text-gray-500 hover:border-orange-500/40 hover:text-orange-200'
+              }`}
+            >
+              <span
+                className={`inline-block h-1.5 w-1.5 rounded-full ${showLunchRange ? 'bg-orange-400' : 'bg-gray-600'}`}
+              />
+              Lunch Range (N)
+            </button>
+          )}
+          {instrument === 'NIKKEI' && (
+            <button
+              type="button"
+              title={
+                showUsRange
+                  ? 'US H/L lines visible (Press U)'
+                  : 'Show current US session H/L (Press U)'
+              }
+              onClick={() => setShowUsRange((v) => !v)}
+              className={`flex items-center gap-1 rounded border px-2 py-1 text-[10px] font-semibold uppercase ${
+                showUsRange
+                  ? 'border-red-500/50 bg-red-600/30 text-red-100'
+                  : 'border-white/15 text-gray-500 hover:border-red-500/40 hover:text-red-200'
+              }`}
+            >
+              <span
+                className={`inline-block h-1.5 w-1.5 rounded-full ${showUsRange ? 'bg-red-500' : 'bg-gray-600'}`}
+              />
+              US Range (U)
+            </button>
+          )}
+          {isOr30Instrument(instrument) && (
+            <button
+              type="button"
+              title={
+                showOr30
+                  ? `OR 30 H/L visible — ${or30WindowLabel(instrument)} (Press R)`
+                  : `Show first 30m opening range — ${or30WindowLabel(instrument)} (Press R)`
+              }
+              onClick={() => setShowOr30((v) => !v)}
+              className={`flex items-center gap-1 rounded border px-2 py-1 text-[10px] font-semibold uppercase ${
+                showOr30
+                  ? 'border-teal-500/50 bg-teal-600/30 text-teal-100'
+                  : 'border-white/15 text-gray-500 hover:border-teal-500/40 hover:text-teal-200'
+              }`}
+            >
+              <span
+                className={`inline-block h-1.5 w-1.5 rounded-full ${showOr30 ? 'bg-teal-400' : 'bg-gray-600'}`}
+              />
+              OR 30 (R)
+            </button>
+          )}
+          <button
+            type="button"
+            title={
               levelsOpen
                 ? 'Hide AI/structure levels (Press L)'
                 : 'Show AI/structure levels (Press L)'
@@ -2776,11 +3006,41 @@ function SimulationDeskInner() {
               <span className="text-gray-600">·</span>
               <span
                 className="flex items-center gap-1.5 normal-case tracking-normal"
-                title="Initial Balance — first-hour high/low, extended to lunch (sim session end)"
+                title="Initial Balance — first-hour high/low, extended to cash close"
               >
                 <span className="inline-block w-4 border-t-2 border-blue-500" />
                 <span className="text-blue-500">IB H/L</span>
                 <span className="text-gray-600">to session end</span>
+              </span>
+            </>
+          )}
+          {lunchShaped && (
+            <>
+              <span className="text-gray-600">·</span>
+              <span
+                className="flex items-center gap-1.5 normal-case tracking-normal"
+                title="NYC Lunch Session Range 12:00–13:30 ET"
+              >
+                <span
+                  className="inline-block w-4 border-t-2"
+                  style={{ borderColor: NYC_LUNCH_COLORS.high }}
+                />
+                <span style={{ color: NYC_LUNCH_COLORS.high }}>Lunch H/L</span>
+              </span>
+            </>
+          )}
+          {usRangeShaped && (
+            <>
+              <span className="text-gray-600">·</span>
+              <span
+                className="flex items-center gap-1.5 normal-case tracking-normal"
+                title="Prior US session high/low for Nikkei"
+              >
+                <span
+                  className="inline-block w-4 border-t-2"
+                  style={{ borderColor: NIKKEI_US_RANGE_COLORS.high }}
+                />
+                <span style={{ color: NIKKEI_US_RANGE_COLORS.high }}>US H/L</span>
               </span>
             </>
           )}
