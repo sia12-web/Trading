@@ -554,6 +554,17 @@ interface TradingChartProps {
   pendingLimit?:       PendingLimitOverlay | null
   /** Cancel the working limit (chart toolbar + parent bar) */
   onCancelPending?:    () => void
+  /**
+   * After fill: drag SL/TP on the chart → parent syncs OANDA + journal.
+   * Entry stays fixed. Working limits are not editable here.
+   */
+  onAdjustBrackets?: (update: {
+    stopLoss?: number
+    profitTarget?: number
+  }) => void | Promise<void>
+  /** Parent feedback while a bracket save is in flight */
+  bracketAdjustStatus?: 'idle' | 'saving' | 'error' | null
+  bracketAdjustError?: string | null
   /** AI manage verdict (hold / take profit / reversal) drawn on the chart */
   aiVerdict?:          ChartAiVerdict | null
   jumpToPriceRef?:     React.MutableRefObject<((price: number) => void) | null>
@@ -628,6 +639,9 @@ export function TradingChart({
   positionOverlay,
   pendingLimit = null,
   onCancelPending,
+  onAdjustBrackets,
+  bracketAdjustStatus = null,
+  bracketAdjustError = null,
   aiVerdict = null,
   jumpToPriceRef,
   lockedInstrument,
@@ -1137,6 +1151,21 @@ export function TradingChart({
     profitTarget: number
   } | null>(null)
   const riskBoxLinesRef = useRef<any[]>([])
+
+  /** Local draft of filled overlay so SL/TP can drag before API confirms */
+  const [editableOverlay, setEditableOverlay] = useState<PositionOverlay | null>(null)
+  const editableOverlayRef = useRef<PositionOverlay | null>(null)
+  const draggingBracketRef = useRef<'SL' | 'TP' | null>(null)
+  const bracketDragStartRef = useRef<{ stopLoss: number; profitTarget: number } | null>(null)
+  const onAdjustBracketsRef = useRef(onAdjustBrackets)
+  onAdjustBracketsRef.current = onAdjustBrackets
+  editableOverlayRef.current = editableOverlay
+
+  useEffect(() => {
+    if (draggingBracketRef.current) return
+    setEditableOverlay(positionOverlay ?? null)
+  }, [positionOverlay])
+
   const [rationaleModal, setRationaleModal] = useState<{
     open: boolean
     entryPrice: number
@@ -3685,6 +3714,73 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     }
   }, [riskBox, instrument])
 
+  // Drag filled-position SL/TP (Entry fixed). Commit on mouseup via onAdjustBrackets.
+  const onBracketLineMouseDown = useCallback(
+    (type: 'SL' | 'TP') => (e: React.MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (bracketAdjustStatus === 'saving') return
+      const ov = editableOverlayRef.current
+      if (!ov || !onAdjustBracketsRef.current) return
+      draggingBracketRef.current = type
+      bracketDragStartRef.current = {
+        stopLoss: ov.stopLoss,
+        profitTarget: ov.profitTarget,
+      }
+    },
+    [bracketAdjustStatus]
+  )
+
+  useEffect(() => {
+    if (!editableOverlay || riskBox) return
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!draggingBracketRef.current || !containerRef.current || !candleRef.current) return
+      const rect = containerRef.current.getBoundingClientRect()
+      const y = e.clientY - rect.top
+      if (y < 0 || y > rect.height) return
+      const rawPrice = candleRef.current.coordinateToPrice(y)
+      if (rawPrice == null || !Number.isFinite(Number(rawPrice)) || Number(rawPrice) <= 0) return
+      const snapped = snapDeskPrice(instrument, Number(rawPrice))
+      const ov = editableOverlayRef.current
+      if (!ov) return
+      const isLong = ov.direction === 'long'
+
+      if (draggingBracketRef.current === 'SL') {
+        if (isLong ? !(snapped < ov.entryPrice) : !(snapped > ov.entryPrice)) return
+        setEditableOverlay((prev) => (prev ? { ...prev, stopLoss: snapped } : null))
+      } else if (draggingBracketRef.current === 'TP') {
+        if (isLong ? !(snapped > ov.entryPrice) : !(snapped < ov.entryPrice)) return
+        setEditableOverlay((prev) => (prev ? { ...prev, profitTarget: snapped } : null))
+      }
+    }
+
+    const onMouseUp = () => {
+      const type = draggingBracketRef.current
+      draggingBracketRef.current = null
+      if (!type) return
+      const ov = editableOverlayRef.current
+      const start = bracketDragStartRef.current
+      bracketDragStartRef.current = null
+      const cb = onAdjustBracketsRef.current
+      if (!ov || !start || !cb) return
+      const payload: { stopLoss?: number; profitTarget?: number } = {}
+      if (Math.abs(ov.stopLoss - start.stopLoss) > 1e-9) payload.stopLoss = ov.stopLoss
+      if (Math.abs(ov.profitTarget - start.profitTarget) > 1e-9) {
+        payload.profitTarget = ov.profitTarget
+      }
+      if (payload.stopLoss == null && payload.profitTarget == null) return
+      void cb(payload)
+    }
+
+    window.addEventListener('mousemove', onMouseMove, true)
+    window.addEventListener('mouseup', onMouseUp, true)
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove, true)
+      window.removeEventListener('mouseup', onMouseUp, true)
+    }
+  }, [editableOverlay, riskBox, instrument])
+
   // Auto-track live price for Market Orders (so Entry line stays locked to current price tick in real-time)
   useEffect(() => {
     if (!riskBox || riskBox.orderType !== 'MARKET' || draggingRiskLineRef.current) return
@@ -4166,7 +4262,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       }
     }
 
-    if (positionOverlay) {
+    if (positionOverlay || editableOverlay) {
+      const ov = editableOverlay ?? positionOverlay
+      if (!ov) return
       const v = (aiVerdict?.verdict || '').toLowerCase()
       const aiWantsTp = v === 'reversal' || v === 'take_profit' || v === 'pullback'
       const tpLabel =
@@ -4180,23 +4278,23 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       const tpColor = aiWantsTp && v === 'reversal' ? '#a78bfa' : '#22c55e'
       paint([
         {
-          price: positionOverlay.entryPrice,
+          price: ov.entryPrice,
           color: '#3b82f6',
-          label: `Entry ${positionOverlay.direction.toUpperCase()} ${fmt(positionOverlay.entryPrice)}`,
+          label: `Entry ${ov.direction.toUpperCase()} ${fmt(ov.entryPrice)}`,
           style: LineStyle.Solid,
           width: 2,
         },
         {
-          price: positionOverlay.stopLoss,
+          price: ov.stopLoss,
           color: '#ef4444',
-          label: `SL ${fmt(positionOverlay.stopLoss)}`,
+          label: `SL ${fmt(ov.stopLoss)}${onAdjustBrackets ? ' · drag' : ''}`,
           style: LineStyle.Dashed,
           width: 2,
         },
         {
-          price: positionOverlay.profitTarget,
+          price: ov.profitTarget,
           color: tpColor,
-          label: `${tpLabel} ${fmt(positionOverlay.profitTarget)}`,
+          label: `${tpLabel} ${fmt(ov.profitTarget)}${onAdjustBrackets ? ' · drag' : ''}`,
           style: LineStyle.Dashed,
           width: 2,
         },
@@ -4235,7 +4333,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     try {
       host.applyOptions({ autoscaleInfoProvider: (): null => null })
     } catch { /* ignore */ }
-  }, [positionOverlay, pendingLimit, aiVerdict, chartReady, clearHoverPreview])
+  }, [positionOverlay, editableOverlay, pendingLimit, aiVerdict, chartReady, clearHoverPreview, onAdjustBrackets])
 
   const isUp = priceChange >= 0
   /** Levels / playbook — strategy-aware titles (morning → IB → lunch break → lunch-range) */
@@ -5423,6 +5521,67 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     >✕</button>
                   </div>
                   <div className="w-2.5 h-2.5 rounded-full bg-amber-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
+                </div>
+              )}
+            </div>
+          )
+        })()}
+
+        {/* Filled position — drag SL / TP to adjust brackets on OANDA + journal */}
+        {editableOverlay && !riskBox && onAdjustBrackets && (() => {
+          const candleSeries = candleRef.current
+          const tpY = candleSeries
+            ? candleSeries.priceToCoordinate(editableOverlay.profitTarget)
+            : null
+          const slY = candleSeries
+            ? candleSeries.priceToCoordinate(editableOverlay.stopLoss)
+            : null
+          const saving = bracketAdjustStatus === 'saving'
+          return (
+            <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
+              {tpY != null && (
+                <div
+                  onMouseDown={saving ? undefined : onBracketLineMouseDown('TP')}
+                  className={`absolute flex items-center gap-1.5 pointer-events-auto group ${
+                    saving ? 'cursor-wait opacity-70' : 'cursor-ns-resize'
+                  }`}
+                  style={{ left: '48%', top: `${tpY - 13}px` }}
+                  title="Drag Take Profit — saves on release"
+                >
+                  <div className="flex items-center rounded border border-dashed border-emerald-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-emerald-300 shadow-md">
+                    TP {editableOverlay.profitTarget.toLocaleString()}
+                  </div>
+                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
+                </div>
+              )}
+              {slY != null && (
+                <div
+                  onMouseDown={saving ? undefined : onBracketLineMouseDown('SL')}
+                  className={`absolute flex items-center gap-1.5 pointer-events-auto group ${
+                    saving ? 'cursor-wait opacity-70' : 'cursor-ns-resize'
+                  }`}
+                  style={{ left: '48%', top: `${slY - 13}px` }}
+                  title="Drag Stop Loss — saves on release"
+                >
+                  <div className="flex items-center rounded border border-dashed border-red-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-red-300 shadow-md">
+                    SL {editableOverlay.stopLoss.toLocaleString()}
+                  </div>
+                  <div className="w-2.5 h-2.5 rounded-full bg-red-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
+                </div>
+              )}
+              {(bracketAdjustStatus === 'saving' ||
+                bracketAdjustStatus === 'error' ||
+                bracketAdjustError) && (
+                <div className="absolute left-3 bottom-3 pointer-events-none rounded-md border border-white/15 bg-black/80 px-2.5 py-1.5 text-[10px] font-semibold">
+                  {bracketAdjustStatus === 'saving' && (
+                    <span className="text-amber-200">Saving SL/TP…</span>
+                  )}
+                  {(bracketAdjustStatus === 'error' || bracketAdjustError) &&
+                    bracketAdjustStatus !== 'saving' && (
+                      <span className="text-red-300">
+                        {bracketAdjustError || 'Could not update brackets'}
+                      </span>
+                    )}
                 </div>
               )}
             </div>

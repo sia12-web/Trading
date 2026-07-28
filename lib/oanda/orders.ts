@@ -509,6 +509,52 @@ export async function updateOandaTradeStopLoss(
   return { ok: true }
 }
 
+/** Update Take Profit on an open OANDA trade. */
+export async function updateOandaTradeTakeProfit(
+  tradeId: string,
+  newTakeProfitPrice: number,
+  instrument: Instrument
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!isOandaConfigured()) {
+    return { ok: false, error: 'OANDA not configured' }
+  }
+  if (!tradeId) {
+    return { ok: false, error: 'Missing OANDA trade id' }
+  }
+
+  const symbol = toOandaInstrument(instrument)
+  const meta = symbol ? await getOandaInstrumentDetails(symbol) : null
+  const priceDecimals = meta?.displayPrecision ?? 1
+
+  const accountId = oandaAccountId()
+  const res = await oandaFetch(`/v3/accounts/${accountId}/trades/${tradeId}/orders`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      takeProfit: {
+        price: priceString(newTakeProfitPrice, priceDecimals),
+        timeInForce: 'GTC',
+      },
+    }),
+  })
+
+  const text = await res.text()
+  if (!res.ok) {
+    if (/does not exist|already|CLOSED|TOO_CLOSE/i.test(text)) {
+      logger.warn('oanda.take_profit_update_ignored', {
+        status: res.status,
+        tradeId,
+        msg: text.slice(0, 200),
+      })
+      return { ok: false, error: 'Trade closed or price too close' }
+    }
+    logger.error('oanda.take_profit_update_failed', { status: res.status, tradeId, text })
+    return { ok: false, error: text.slice(0, 300) }
+  }
+
+  logger.info('oanda.take_profit_updated', { tradeId, newTakeProfitPrice })
+  return { ok: true }
+}
+
 /** Partially close units on an open OANDA trade (Partial Scale-Out). */
 export async function partialCloseOandaTrade(
   tradeId: string,

@@ -172,6 +172,13 @@ export default function ChartPage() {
   const [lastQuoteAt, setLastQuoteAt] = useState<number | null>(null)
   const [dataMode, setDataMode] = useState<'live' | 'synthetic'>('live')
   const [fillError, setFillError] = useState<string | null>(null)
+  const [bracketAdjustStatus, setBracketAdjustStatus] = useState<
+    'idle' | 'saving' | 'error' | null
+  >(null)
+  const [bracketAdjustError, setBracketAdjustError] = useState<string | null>(null)
+  /** Snapshot to revert chart overlay if bracket API fails */
+  const confirmedOverlayRef = useRef<PositionOverlay | null>(null)
+  const bracketSavingRef = useRef(false)
   /** After 11:30 with open morning/IB book — ask before closing */
   const [lunchFlatPrompt, setLunchFlatPrompt] = useState(false)
   const [lunchFlatBusy, setLunchFlatBusy] = useState(false)
@@ -471,13 +478,17 @@ export default function ChartPage() {
       setPending(null)
       pendingRef.current = null
       setFillError(null)
+      setBracketAdjustStatus(null)
+      setBracketAdjustError(null)
       setOrderStatus('filled')
-      setPositionOverlay({
+      const overlay: PositionOverlay = {
         entryPrice: order.entry_price,
         stopLoss: order.stop_loss_price,
         profitTarget: order.profit_target_price,
         direction: dir,
-      })
+      }
+      confirmedOverlayRef.current = overlay
+      setPositionOverlay(overlay)
       setManagePos({
         id: order.position_id,
         instrument: inst,
@@ -492,6 +503,125 @@ export default function ChartPage() {
       refreshGate()
     },
     [refreshGate]
+  )
+
+  const adjustBrackets = useCallback(
+    async (update: { stopLoss?: number; profitTarget?: number }) => {
+      const pos = managePos
+      if (!pos) return
+      const prev = confirmedOverlayRef.current
+      bracketSavingRef.current = true
+      setBracketAdjustStatus('saving')
+      setBracketAdjustError(null)
+
+      setPositionOverlay((cur) => {
+        if (!cur) return cur
+        return {
+          ...cur,
+          stopLoss: update.stopLoss ?? cur.stopLoss,
+          profitTarget: update.profitTarget ?? cur.profitTarget,
+        }
+      })
+
+      const applyConfirmed = (nextSl: number, nextTp: number) => {
+        const nextOverlay: PositionOverlay = {
+          entryPrice: pos.entryPrice,
+          stopLoss: nextSl,
+          profitTarget: nextTp,
+          direction: pos.direction,
+        }
+        confirmedOverlayRef.current = nextOverlay
+        setPositionOverlay(nextOverlay)
+        setManagePos((m) =>
+          m
+            ? {
+                ...m,
+                stopLoss: nextSl,
+                profitTarget: nextTp,
+              }
+            : m
+        )
+      }
+
+      try {
+        const res = await fetch('/api/trading/positions/update-brackets', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            position_id: pos.id,
+            ...(update.stopLoss != null ? { stop_loss_price: update.stopLoss } : {}),
+            ...(update.profitTarget != null
+              ? { profit_target_price: update.profitTarget }
+              : {}),
+          }),
+        })
+        const json = (await res.json()) as {
+          ok?: boolean
+          partial?: boolean
+          error?: string
+          stop_loss_price?: number
+          profit_target_price?: number | null
+        }
+
+        const hasServerSl =
+          json.stop_loss_price != null && Number.isFinite(Number(json.stop_loss_price))
+        const hasServerTp =
+          json.profit_target_price != null &&
+          Number.isFinite(Number(json.profit_target_price))
+
+        if (hasServerSl || hasServerTp) {
+          applyConfirmed(
+            hasServerSl ? Number(json.stop_loss_price) : (prev?.stopLoss ?? pos.stopLoss),
+            hasServerTp
+              ? Number(json.profit_target_price)
+              : (prev?.profitTarget ?? pos.profitTarget)
+          )
+        }
+
+        if (json.ok && res.ok) {
+          if (!hasServerSl && !hasServerTp) {
+            applyConfirmed(
+              update.stopLoss ?? pos.stopLoss,
+              update.profitTarget ?? pos.profitTarget
+            )
+          }
+          setBracketAdjustStatus('idle')
+          setBracketAdjustError(null)
+          return
+        }
+
+        // Partial broker success: keep server prices, surface warning
+        if (json.partial && (hasServerSl || hasServerTp)) {
+          setBracketAdjustStatus('error')
+          const msg = json.error || 'Partial bracket update'
+          setBracketAdjustError(msg)
+          setFillError(msg)
+          return
+        }
+
+        // Full failure — revert to last confirmed
+        if (prev) {
+          confirmedOverlayRef.current = prev
+          setPositionOverlay(prev)
+        }
+        const msg = json.error || 'Bracket update failed'
+        setBracketAdjustStatus('error')
+        setBracketAdjustError(msg)
+        setFillError(msg)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Bracket update failed'
+        if (prev) {
+          confirmedOverlayRef.current = prev
+          setPositionOverlay(prev)
+        }
+        setBracketAdjustStatus('error')
+        setBracketAdjustError(msg)
+        setFillError(msg)
+      } finally {
+        bracketSavingRef.current = false
+      }
+    },
+    [managePos]
   )
 
   const cancelWorkingLimit = useCallback(
@@ -843,6 +973,7 @@ export default function ChartPage() {
       lunchFlatDismissedRef.current = true
       setManagePos(null)
       setPositionOverlay(null)
+      confirmedOverlayRef.current = null
       setAiVerdict(null)
       refreshGate()
       void refreshLevelsAfterExit('manual')
@@ -875,6 +1006,7 @@ export default function ChartPage() {
           json = res.ok ? await res.json() : null
         }
         if (cancelled || !json?.position) return
+        if (bracketSavingRef.current) return
         const p = json.position
         const dir =
           String(p.entry_direction || '').toUpperCase() === 'LONG' ? 'long' : 'short'
@@ -892,13 +1024,16 @@ export default function ChartPage() {
           riskAmount: p.risk_amount,
           entryTimestamp: p.entry_timestamp ?? null,
         }
+        if (bracketSavingRef.current) return
         setManagePos(manage)
-        setPositionOverlay({
+        const overlay = {
           entryPrice: manage.entryPrice,
           stopLoss: manage.stopLoss,
           profitTarget: manage.profitTarget,
           direction: manage.direction,
-        })
+        }
+        confirmedOverlayRef.current = overlay
+        setPositionOverlay(overlay)
       } catch {
         /* keep */
       }
@@ -1040,6 +1175,9 @@ export default function ChartPage() {
               onClosed={(exitReason = 'manual') => {
                 setManagePos(null)
                 setPositionOverlay(null)
+                confirmedOverlayRef.current = null
+                setBracketAdjustStatus(null)
+                setBracketAdjustError(null)
                 setAiVerdict(null)
                 setLunchFlatPrompt(false)
                 lunchFlatDismissedRef.current = true
@@ -1109,6 +1247,9 @@ export default function ChartPage() {
                 setOrderStatus('idle')
                 void cancelWorkingLimit(inst)
               }}
+              onAdjustBrackets={managePos ? adjustBrackets : undefined}
+              bracketAdjustStatus={managePos ? bracketAdjustStatus : null}
+              bracketAdjustError={managePos ? bracketAdjustError : null}
               aiVerdict={managePos ? aiVerdict : null}
               jumpToPriceRef={jumpToPriceRef}
               // Hard-lock tabs only after clock-in / open book (AI suggest stays soft)
