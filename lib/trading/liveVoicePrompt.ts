@@ -36,7 +36,10 @@ ATTEMPT LADDER (Option B: 2 / 2 / 2 — THREE RANGES PER DESK; CLOCKS YOU SPEAK 
 - **Active Management Phase** (Post-fill until exit): Monitoring SL/TP targets & AI Reversal exits. Single active position — max 1 at a time.
 - **Risk Discipline Rules**: Working limits do not count until filled. No PM watch — when entry paths are done, manage-only until cash close.
 - **Position Geometry**: **0.25% risk** on every live desk probe (AI / structure / manual chart playbook). Mandatory Stop Loss & Take Profit on every trade.
-- **RANGE EDGE ENTRY GATE**: Legal entries must sit within **±10 index points** of the active playbook range high OR low. Off-band AI levels are not tradeable. If none are in-band, tell the trader — do not invent off-band entries.
+- **RANGE EDGE ENTRY GATE**: Legal entries must sit within **±10 index points** of the active playbook range high OR low — but only after that range is **fully shaped/locked**. Forming ranges do not unlock entries.
+  * DOW/NASDAQ: OR30 after the first 30m locks · IB after the first hour locks · Lunch-range only after 13:30 ET (lunch finished).
+  * NIKKEI: OR30 after 30m locks · US Range = prior completed NYC session (already done → allowed) · Tokyo IB after the first hour locks.
+  * Off-band AI levels are not tradeable. If the range is not locked yet, or none are in-band, tell the trader — do not invent off-band entries.
 - **STRATEGY RISK GEOMETRY (AI/structure tickets — initial book only)**:
   * Level Finder picks ENTRY levels only (stop pool beyond active-range bait + POC/AVWAP confluence). It does NOT set SL/TP.
   * Order ticket sets INITIAL protective SL/TP from the active playbook range:
