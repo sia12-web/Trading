@@ -229,6 +229,10 @@ export function strategyEntryRisk(args: {
  *  ±10 entries require the range to be fully shaped (locked):
  *    DOW/NASDAQ: OR30 after 30m · IB after first hour · Lunch after 13:30 ET
  *    NIKKEI:     OR30 after 30m · prior NYC US Range (already complete) · Tokyo IB after first hour
+ *
+ *  OR30 sits inside the first-hour IB and is optional — never forced.
+ *  When IB is shaped and morning had 0 fills, OR30 is finished and bait hands off to IB
+ *  (Nikkei morning handoff → US Range once that slot is active).
  */
 export function activeRangeForPlaybook(args: {
   playbookMode: string
@@ -237,9 +241,13 @@ export function activeRangeForPlaybook(args: {
   ib?: { high: number; low: number; complete?: boolean } | null
   usRange?: { high: number; low: number; complete?: boolean } | null
   lunchRange?: { high: number; low: number; complete?: boolean } | null
+  /** Filled morning/OR30 attempts today — 0 means OR30 was skipped. */
+  morningAttempts?: number
 }): StrategyRangeEdges | null {
   const tokyo = args.instrument === 'NIKKEI'
   const mode = args.playbookMode
+  const morningFills = Math.max(0, Math.floor(args.morningAttempts ?? 0))
+  const or30Skipped = morningFills === 0
 
   const pick = (
     label: string,
@@ -267,6 +275,13 @@ export function activeRangeForPlaybook(args: {
       ? ibShaped ?? usShaped ?? or30Shaped
       : lunchShaped ?? ibShaped ?? or30Shaped
   }
-  // morning / done / default → shaped OR30 only (no mid-formation ±10; no IB fallback)
+
+  // morning / done / default
+  // OR30 is optional. Once the overlapping first-hour IB is locked and OR30 was
+  // never traded, finish OR30 and hand off to IB (NY). Nikkei keeps OR30 until
+  // the US Range slot is active (mode us_range) — prior NYC is already complete.
+  if (or30Skipped && !tokyo && ibShaped) {
+    return ibShaped
+  }
   return or30Shaped
 }

@@ -116,8 +116,31 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       instrument: 'DOW',
       or30: { high: 100, low: 90, complete: true },
       ib: { high: 110, low: 95 },
+      morningAttempts: 0,
     }),
-    { label: 'OR30', high: 100, low: 90 }
+    { label: 'IB', high: 110, low: 95 },
+    'OR30 skipped + IB shaped → auto handoff to IB (OR30 finished)'
+  )
+  assert.deepEqual(
+    activeRangeForPlaybook({
+      playbookMode: 'morning',
+      instrument: 'DOW',
+      or30: { high: 100, low: 90, complete: true },
+      morningAttempts: 0,
+    }),
+    { label: 'OR30', high: 100, low: 90 },
+    'OR30 optional while IB not shaped yet'
+  )
+  assert.deepEqual(
+    activeRangeForPlaybook({
+      playbookMode: 'morning',
+      instrument: 'DOW',
+      or30: { high: 100, low: 90, complete: true },
+      ib: { high: 110, low: 95 },
+      morningAttempts: 1,
+    }),
+    { label: 'OR30', high: 100, low: 90 },
+    'morning fill keeps OR30 bait (do not steal to IB mid-manage framing)'
   )
   assert.equal(
     activeRangeForPlaybook({
@@ -125,9 +148,10 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       instrument: 'DOW',
       or30: { high: 100, low: 90, complete: false },
       ib: { high: 110, low: 95 },
+      morningAttempts: 0,
     }),
     null,
-    'forming OR30 blocks morning ±10 — no IB fallback'
+    'forming OR30 + no IB handoff yet blocks ±10'
   )
   // Forming OR30 with no other shaped bait → null (deny entries)
   assert.equal(

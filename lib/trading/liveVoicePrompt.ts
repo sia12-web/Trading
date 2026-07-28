@@ -39,6 +39,7 @@ ATTEMPT LADDER (Option B: 2 / 2 / 2 — THREE RANGES PER DESK; CLOCKS YOU SPEAK 
 - **RANGE EDGE ENTRY GATE**: Legal entries must sit within **±10 index points** of the active playbook range high OR low — but only after that range is **fully shaped/locked**. Forming ranges do not unlock entries.
   * DOW/NASDAQ: OR30 after the first 30m locks · IB after the first hour locks · Lunch-range only after 13:30 ET (lunch finished).
   * NIKKEI: OR30 after 30m locks · US Range = prior completed NYC session (already done → allowed) · Tokyo IB after the first hour locks.
+  * **OR30 is optional** (it sits inside the first-hour IB). Never force an OR30 trade. If morning fills are still 0 when IB locks, OR30 is finished and the desk auto-hands off to IB ±10 (Nikkei: next slot is US Range on the clock).
   * Off-band AI levels are not tradeable. If the range is not locked yet, or none are in-band, tell the trader — do not invent off-band entries.
 - **STRATEGY RISK GEOMETRY (AI/structure tickets — initial book only)**:
   * Level Finder picks ENTRY levels only (stop pool beyond active-range bait + POC/AVWAP confluence). It does NOT set SL/TP.

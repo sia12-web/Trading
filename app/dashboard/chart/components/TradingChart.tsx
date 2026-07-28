@@ -1313,6 +1313,7 @@ export function TradingChart({
       ib: ibRangeRef.current,
       usRange: usRangeRef.current,
       lunchRange: lunchRangeRef.current,
+      morningAttempts,
     })
     const extras: number[] = []
     for (const r of [
@@ -1591,6 +1592,7 @@ export function TradingChart({
       ib: ibRangeRef.current,
       usRange: usRangeRef.current,
       lunchRange: lunchRangeRef.current,
+      morningAttempts,
     })
     const built = resolved.levels
       .map((l) => byPrice.get(l.level)!)
@@ -4447,9 +4449,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       ib: ibRangeRef.current,
       usRange: usRangeRef.current,
       lunchRange: lunchRangeRef.current,
+      morningAttempts,
     })
     return rangeEdgeProximity(livePrice, strategyRange)
-  }, [canPlaceOrder, livePrice, playbookMode, instrument, rangeStrategy])
+  }, [canPlaceOrder, livePrice, playbookMode, instrument, rangeStrategy, morningAttempts])
 
   const wasInEdgeBandRef = useRef(false)
   useEffect(() => {

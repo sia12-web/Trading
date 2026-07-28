@@ -219,7 +219,7 @@ export function deskPlaybookHint(mode: DeskPlaybookMode, instrument?: string): s
     case 'ib':
       return tokyo
         ? 'Tokyo IB range — up to 2 probes @ 0.25% (entries within ±10 pts). Unlocks after US Range clock ends or US Range probes are exhausted.'
-        : 'Initial Balance — up to 2 probes @ 0.25% (entries within ±10 pts). Unlocks after morning clock ends or morning probes are exhausted.'
+        : 'Initial Balance — up to 2 probes @ 0.25% (entries within ±10 pts). Auto-takes over when IB locks if OR30 was skipped (OR30 is optional and sits inside the first hour).'
     case 'lunch_break':
       return tokyo
         ? 'US Range entry closed. Prep for Tokyo IB — levels update. IB opens on the clock (or earlier if US Range probes were exhausted).'
@@ -230,8 +230,8 @@ export function deskPlaybookHint(mode: DeskPlaybookMode, instrument?: string): s
       return 'Entry windows done for today — manage if open (confirm lunch close or ride to cash close), no new entries.'
     default:
       return tokyo
-        ? 'Morning OR30 — up to 2 probes @ 0.25% (entries within ±10 pts). Next: US Range then Tokyo IB (day cap 6). Lunch 11:30 is confirm-close; unconfirmed books ride to cash close.'
-        : 'Morning OR30 — up to 2 probes @ 0.25% (entries within ±10 pts). Next: IB then lunch-range (day cap 6). Lunch 11:30 is confirm-close; unconfirmed books ride to cash close.'
+        ? 'Morning OR30 — optional (up to 2 probes @ 0.25%, ±10 pts once locked). Skip freely → US Range then Tokyo IB (day cap 6).'
+        : 'Morning OR30 — optional (up to 2 probes @ 0.25%, ±10 pts once locked). Skip freely; when IB locks with no morning fill, desk auto-moves to IB (OR30 finished).'
   }
 }
 
