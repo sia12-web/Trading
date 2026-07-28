@@ -56,16 +56,18 @@ const PREFERRED_SOURCES = [
 const DOW_KEYS =
   /\b(dow|djia|industrial average|blue.?chip|dia\b|caterpillar|boeing|walmart|goldman|jpmorgan|home depot)\b/i
 const NASDAQ_KEYS =
-  /\b(nasdaq|ndx|qqq|mega.?cap tech|nvidia|nvda|apple|aapl|microsoft|msft|meta|amazon|amzn|tesla|tsla|google|alphabet|googl)\b/i
+  /\b(nasdaq|ndx|qqq|mega.?cap tech|nvidia|nvda|apple|aapl|microsoft|msft|meta|amazon|amzn|tesla|tsla|google|alphabet|googl|samsung|sk.?hynix|semiconductor|chip)\b/i
 const NIKKEI_KEYS =
   /\b(nikkei|japan|tokyo|boj|yen|usdjpy|softbank|toyota|sony|nintendo|japan.?equity|asia.?session)\b/i
+const KOREA_KEYS =
+  /\b(korea|korean|seoul|krw|samsung|sk.?hynix|north korea|dprk|peninsula)\b/i
 
 const MACRO_KEYS =
   /\b(fed|fomc|cpi|inflation|jobs|payroll|nfp|gdp|rate.?cut|rate.?hike|treasury|yield|powell|boj|ecb|pce|unemployment)\b/i
 const EARNINGS_KEYS =
   /\b(earn(ings)?|guidance|eps|revenue|beat|miss|quarterly|results)\b/i
 const GEO_KEYS =
-  /\b(war|sanction|tariff|geopolit|election|conflict|missile|invasion|opec|middle east|taiwan|china.?risk)\b/i
+  /\b(war|sanction|tariff|geopolit|election|conflict|missile|invasion|opec|middle east|taiwan|china.?risk|korea|korean|north korea|dprk|peninsula)\b/i
 const FLOW_KEYS =
   /\b(etf|flow|futures|option|put.?call|short.?interest|liquidation|squeeze|volume.?spike)\b/i
 
@@ -124,6 +126,15 @@ export function instrumentsForHeadline(
   if (NASDAQ_KEYS.test(text) || /\bQQQ\b/.test(origin || '')) hit.add('NASDAQ')
   if (NIKKEI_KEYS.test(text) || /\bEWJ\b/.test(origin || '')) hit.add('NIKKEI')
 
+  // Korea / peninsula risk → US indices first (semis/risk), Asia if Japan session channel
+  if (KOREA_KEYS.test(text)) {
+    hit.add('NASDAQ')
+    hit.add('DOW')
+    if (/\b(asia|japan|nikkei|overnight|risk.?off)\b/i.test(text)) {
+      hit.add('NIKKEI')
+    }
+  }
+
   // Proxy origin without keyword hit still maps to that desk
   if (origin === 'DIA') hit.add('DOW')
   if (origin === 'QQQ') hit.add('NASDAQ')
@@ -164,6 +175,9 @@ export function deskNoteFor(
     case 'EARNINGS':
       return `Earnings/guidance — name-level flow that can leak into ${desks}.`
     case 'GEO':
+      if (KOREA_KEYS.test(lower)) {
+        return `Korea/peninsula risk — watch NASDAQ semis & US risk appetite; ${desks} may feel spillover.`
+      }
       return `Geopolitical risk — risk-off impulse possible for ${desks}.`
     case 'FLOW':
       return `Flow/positioning headline — watch for chase or squeeze in ${desks}.`
