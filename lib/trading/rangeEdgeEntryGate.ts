@@ -59,7 +59,8 @@ export function assertRangeEdgeEntry(args: {
   if (!range || !Number.isFinite(range.high) || !Number.isFinite(range.low) || !(range.high > range.low)) {
     return {
       ok: false,
-      message: 'Active strategy range is not ready — wait for the playbook high/low to lock.',
+      message:
+        'Active strategy range is not shaped yet — wait for OR30 / IB / lunch (or Nikkei US Range) to lock, then enter within ±10 pts of high or low.',
     }
   }
   const entry = Number(args.entry)

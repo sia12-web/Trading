@@ -225,39 +225,48 @@ export function strategyEntryRisk(args: {
   }
 }
 
-/** Pick which named range is the active bait for the current playbook mode. */
+/** Pick which named range is the active bait for the current playbook mode.
+ *  ±10 entries require the range to be fully shaped (locked):
+ *    DOW/NASDAQ: OR30 after 30m · IB after first hour · Lunch after 13:30 ET
+ *    NIKKEI:     OR30 after 30m · prior NYC US Range (already complete) · Tokyo IB after first hour
+ */
 export function activeRangeForPlaybook(args: {
   playbookMode: string
   instrument: string
-  or30?: { high: number; low: number } | null
-  ib?: { high: number; low: number } | null
-  usRange?: { high: number; low: number } | null
-  lunchRange?: { high: number; low: number } | null
+  or30?: { high: number; low: number; complete?: boolean } | null
+  ib?: { high: number; low: number; complete?: boolean } | null
+  usRange?: { high: number; low: number; complete?: boolean } | null
+  lunchRange?: { high: number; low: number; complete?: boolean } | null
 }): StrategyRangeEdges | null {
   const tokyo = args.instrument === 'NIKKEI'
   const mode = args.playbookMode
+
   const pick = (
     label: string,
-    r: { high: number; low: number } | null | undefined
-  ): StrategyRangeEdges | null =>
-    r && r.high > r.low ? { label, high: r.high, low: r.low } : null
+    r: { high: number; low: number; complete?: boolean } | null | undefined,
+    opts?: { /** When true, require complete === true (forming ranges blocked). */ mustBeComplete?: boolean }
+  ): StrategyRangeEdges | null => {
+    if (!r || !(r.high > r.low)) return null
+    if (opts?.mustBeComplete && r.complete !== true) return null
+    return { label, high: r.high, low: r.low }
+  }
 
-  if (mode === 'us_range') return pick('US Range', args.usRange)
-  if (mode === 'lunch_range') return pick('Lunch-range', args.lunchRange)
-  if (mode === 'ib') {
-    return tokyo
-      ? pick('Tokyo IB', args.ib)
-      : pick('IB', args.ib)
-  }
+  // IB from computeInitialBalance is only returned after the hour locks → always shaped.
+  const ibShaped = pick(tokyo ? 'Tokyo IB' : 'IB', args.ib)
+  // Prior NYC session for Nikkei — only when that US cash day is complete.
+  const usShaped = pick('US Range', args.usRange, { mustBeComplete: true })
+  const or30Shaped = pick('OR30', args.or30, { mustBeComplete: true })
+  const lunchShaped = pick('Lunch-range', args.lunchRange, { mustBeComplete: true })
+
+  if (mode === 'us_range') return usShaped
+  if (mode === 'lunch_range') return lunchShaped
+  if (mode === 'ib') return ibShaped
   if (mode === 'lunch_break') {
-    // Prep for next slot — use the next range if formed, else prior
+    // Prep for next slot — only shaped next/prior ranges (never a forming lunch/OR30).
     return tokyo
-      ? pick('Tokyo IB', args.ib) ?? pick('US Range', args.usRange) ?? pick('OR30', args.or30)
-      : pick('Lunch-range', args.lunchRange) ?? pick('IB', args.ib) ?? pick('OR30', args.or30)
+      ? ibShaped ?? usShaped ?? or30Shaped
+      : lunchShaped ?? ibShaped ?? or30Shaped
   }
-  // morning / done / default → OR30, then IB/US as fallback magnets for SL structure
-  return (
-    pick('OR30', args.or30) ??
-    (tokyo ? pick('US Range', args.usRange) : pick('IB', args.ib))
-  )
+  // morning / done / default → shaped OR30 only (no mid-formation ±10; no IB fallback)
+  return or30Shaped
 }

@@ -114,16 +114,35 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
     activeRangeForPlaybook({
       playbookMode: 'morning',
       instrument: 'DOW',
-      or30: { high: 100, low: 90 },
+      or30: { high: 100, low: 90, complete: true },
       ib: { high: 110, low: 95 },
     }),
     { label: 'OR30', high: 100, low: 90 }
   )
   assert.equal(
     activeRangeForPlaybook({
+      playbookMode: 'morning',
+      instrument: 'DOW',
+      or30: { high: 100, low: 90, complete: false },
+      ib: { high: 110, low: 95 },
+    }),
+    null,
+    'forming OR30 blocks morning ±10 — no IB fallback'
+  )
+  // Forming OR30 with no other shaped bait → null (deny entries)
+  assert.equal(
+    activeRangeForPlaybook({
+      playbookMode: 'morning',
+      instrument: 'DOW',
+      or30: { high: 100, low: 90, complete: false },
+    }),
+    null
+  )
+  assert.equal(
+    activeRangeForPlaybook({
       playbookMode: 'ib',
       instrument: 'DOW',
-      or30: { high: 100, low: 90 },
+      or30: { high: 100, low: 90, complete: true },
       ib: { high: 110, low: 95 },
     })?.label,
     'IB'
@@ -132,10 +151,19 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
     activeRangeForPlaybook({
       playbookMode: 'us_range',
       instrument: 'NIKKEI',
-      usRange: { high: 40_000, low: 39_500 },
-      or30: { high: 39_800, low: 39_600 },
+      usRange: { high: 40_000, low: 39_500, complete: true },
+      or30: { high: 39_800, low: 39_600, complete: true },
     })?.label,
     'US Range'
+  )
+  assert.equal(
+    activeRangeForPlaybook({
+      playbookMode: 'us_range',
+      instrument: 'NIKKEI',
+      usRange: { high: 40_000, low: 39_500, complete: false },
+    }),
+    null,
+    'incomplete NYC session must not unlock Nikkei US Range entries'
   )
   assert.equal(
     activeRangeForPlaybook({
@@ -149,9 +177,18 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
     activeRangeForPlaybook({
       playbookMode: 'lunch_range',
       instrument: 'NASDAQ',
-      lunchRange: { high: 18_500, low: 18_400 },
+      lunchRange: { high: 18_500, low: 18_400, complete: true },
     })?.label,
     'Lunch-range'
+  )
+  assert.equal(
+    activeRangeForPlaybook({
+      playbookMode: 'lunch_range',
+      instrument: 'NASDAQ',
+      lunchRange: { high: 18_500, low: 18_400, complete: false },
+    }),
+    null,
+    'lunch must finish (13:30 ET) before ±10 lunch-range entries'
   )
 }
 

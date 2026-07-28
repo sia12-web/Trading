@@ -714,6 +714,7 @@ export function TradingChart({
   } | null>(null)
   const lunchRangeRef = useRef<NycLunchRange | null>(null)
   const [lunchShaped, setLunchShaped] = useState(false)
+  const [lunchLocked, setLunchLocked] = useState(false)
   const [showLunchRange, setShowLunchRange] = useState(true)
   /** US session range H/L + Asia BRK/REJ — NIKKEI only */
   const usRangeSeriesRef = useRef<{
@@ -731,6 +732,7 @@ export function TradingChart({
   } | null>(null)
   const or30RangeRef = useRef<Or30Range | null>(null)
   const [or30Shaped, setOr30Shaped] = useState(false)
+  const [or30Locked, setOr30Locked] = useState(false)
   const [showOr30, setShowOr30] = useState(true)
   /** Live count of BRK/REJ markers currently painted (for toolbar status). */
   const [rangeSignalSummary, setRangeSignalSummary] = useState<{
@@ -939,6 +941,7 @@ export function TradingChart({
         /* ignore */
       }
       setLunchShaped(false)
+      setLunchLocked(false)
       return
     }
     const tip = candlesRef.current[candlesRef.current.length - 1]?.time as number | undefined
@@ -975,11 +978,13 @@ export function TradingChart({
         ).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
       )
       setLunchShaped(true)
+      setLunchLocked(!!lunch.complete)
     } catch {
       series.high.setData([])
       series.low.setData([])
       series.mid.setData([])
       setLunchShaped(false)
+      setLunchLocked(false)
     }
   }, [showLunchRange, instrument])
 
@@ -1037,6 +1042,7 @@ export function TradingChart({
         /* ignore */
       }
       setOr30Shaped(false)
+      setOr30Locked(false)
       return
     }
     const tipUnix = candlesRef.current.length
@@ -1058,10 +1064,12 @@ export function TradingChart({
         ).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
       )
       setOr30Shaped(pts.high.length > 0)
+      setOr30Locked(!!range.complete)
     } catch {
       series.high.setData([])
       series.low.setData([])
       setOr30Shaped(false)
+      setOr30Locked(false)
     }
   }, [showOr30, instrument])
 
@@ -1992,8 +2000,10 @@ export function TradingChart({
       positionLinesRef.current = []
       setIbShaped(false)
       setLunchShaped(false)
+      setLunchLocked(false)
       setUsRangeShaped(false)
       setOr30Shaped(false)
+      setOr30Locked(false)
     }
   }, []) // initialize once only
 
@@ -2172,6 +2182,7 @@ export function TradingChart({
     }
     lunchRangeRef.current = null
     setLunchShaped(false)
+    setLunchLocked(false)
     const usR = usRangeSeriesRef.current
     if (usR) {
       try {
@@ -2194,6 +2205,7 @@ export function TradingChart({
     }
     or30RangeRef.current = null
     setOr30Shaped(false)
+    setOr30Locked(false)
     try {
       host?.setData([])
     } catch {
@@ -5159,9 +5171,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               </span>
             )}
           </span>
-          <span title="Teal opening-range high/low (first 30m)">
+          <span title="Teal opening-range high/low (first 30m). ±10 entries only after the 30m window locks.">
             <span className={or30Shaped ? 'text-teal-500' : 'text-gray-600'}>
-              OR30 {or30Shaped ? 'on' : 'waiting'}
+              OR30 {or30Shaped ? (or30Locked ? 'locked' : 'forming') : 'waiting'}
             </span>
             {or30Shaped && (
               <span className="text-gray-600">
@@ -5171,9 +5183,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             )}
           </span>
           {(instrument === 'DOW' || instrument === 'NASDAQ') && (
-            <span title="NYC lunch 12:00–13:30 ET — different from playbook Lunch-break prep">
+            <span title="NYC lunch 12:00–13:30 ET — ±10 entries only after 13:30 lock">
               <span className={lunchShaped ? 'text-orange-400' : 'text-gray-600'}>
-                Lunch {lunchShaped ? 'on' : 'after 12:00 ET'}
+                Lunch {lunchShaped ? (lunchLocked ? 'locked' : 'forming') : 'after 12:00 ET'}
               </span>
               {lunchShaped && (
                 <span className="text-gray-600">
@@ -5191,7 +5203,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             </span>
           )}
           <span className="text-gray-600 normal-case tracking-normal">
-            BRK needs a close beyond H/L · REJ needs a wick beyond then close back inside · no volume histogram
+            ±10 entries only after the active range locks · BRK needs close beyond H/L · REJ needs wick reject
           </span>
         </div>
       )}

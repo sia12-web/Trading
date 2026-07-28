@@ -29,7 +29,10 @@ export const OR30_COLORS = {
 /** @deprecated use OR30_COLORS */
 export const NIKKEI_OR30_COLORS = OR30_COLORS
 
-export type Or30Range = InitialBalanceRange
+export type Or30Range = InitialBalanceRange & {
+  /** True only after the 30m window has closed — required for ±10 entries. */
+  complete: boolean
+}
 
 /** @deprecated use Or30Range */
 export type NikkeiOr30Range = Or30Range
@@ -58,7 +61,8 @@ export function or30WindowLabel(
 
 /**
  * First 30m H/L from cash open (pass the desk’s open unix).
- * Forms live once ≥2 bars exist; locks after the 30m window.
+ * Forms live on the chart once ≥2 bars exist; `complete` flips true after the
+ * 30m window — ±10 range-edge entries require complete.
  */
 export function computeOr30Range(
   candles: DeskBar[],
@@ -72,11 +76,12 @@ export function computeOr30Range(
   const bars = candles.filter(
     (c) => c.time >= openUnix && c.time < endUnix && c.time <= nowUnix
   )
+  const complete = nowUnix >= endUnix
 
   if (bars.length < 2) {
-    return nowUnix >= endUnix
-      ? computeInitialBalance(candles, openUnix, nowUnix, OR30_MINUTES)
-      : null
+    if (!complete) return null
+    const locked = computeInitialBalance(candles, openUnix, nowUnix, OR30_MINUTES)
+    return locked ? { ...locked, complete: true } : null
   }
 
   let hi = -Infinity
@@ -98,6 +103,7 @@ export function computeOr30Range(
     endUnix,
     fromTime,
     toTime,
+    complete,
   }
 }
 
