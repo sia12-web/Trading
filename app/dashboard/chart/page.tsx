@@ -42,7 +42,6 @@ import {
   isPastCashCloseNow,
 } from '@/lib/trading/morningLunchConfirm'
 import {
-  MANUAL_RISK_PERCENT,
   RANGE_EDGE_RISK_PERCENT,
   previewPositionSizing,
 } from '@/lib/trading/positionSizing'

@@ -1236,7 +1236,6 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       s.tz,
       now
     )
-    const midLabel = market === 'TOKYO' ? 'US Range' : 'IB'
     const lateLabel = market === 'TOKYO' ? 'IB' : 'Lunch-range'
     const prepLabel =
       market === 'TOKYO' ? 'IB prep playbook' : 'Lunch break playbook'
