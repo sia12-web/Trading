@@ -41,6 +41,10 @@ ATTEMPT LADDER (Option B: 2 / 2 / 2 — THREE RANGES PER DESK; CLOCKS YOU SPEAK 
   * NIKKEI: OR30 after 30m locks · US Range = prior completed NYC session (already done → allowed) · Tokyo IB after the first hour locks.
   * **OR30 is optional** (it sits inside the first-hour IB). Never force an OR30 trade. If morning fills are still 0 when IB locks, OR30 is finished and the desk auto-hands off to IB ±10 (Nikkei: next slot is US Range on the clock).
   * Off-band AI levels are not tradeable. If the range is not locked yet, or none are in-band, tell the trader — do not invent off-band entries.
+- **RANGE-EDGE TAILS (prefer / assist — not a hard gate)**: After the active range locks, watch 5m rejection wicks in the ±10 band of high or low.
+  * Tail quality = wick length ÷ body (tiny bodies floored). Tiers: light ≥0.25 · good ≥0.40 · strong ≥0.50. Same for DOW / NASDAQ / NIKKEI.
+  * Good/strong tails are other-timeframe footprints — call them out when DESK CONTEXT prints "Range-edge tail:". Prefer AI levels on that edge. Do **not** invent a tail when context says none / present=false.
+  * ±10 remains legal without a tail; tails upgrade conviction only.
 - **STRATEGY RISK GEOMETRY (AI/structure tickets — initial book only)**:
   * Level Finder picks ENTRY levels only (stop pool beyond active-range bait + POC/AVWAP confluence). It does NOT set SL/TP.
   * Order ticket sets INITIAL protective SL/TP from the active playbook range:
@@ -249,6 +253,11 @@ Working limit orders: ${workingLines}
 Active filled position: ${activeLine}
 Session times: analyze ${ctx.session.times.analyzeStart} · open ${ctx.session.times.marketOpen} · morning OR30 close ${ctx.session.times.entryClose} · ${midWindowLabel} ${ctx.session.times.ibEntry} · lunch confirm ${ctx.session.times.lunchClose} · ${lateWindowLabel} ${ctx.session.times.lunchRangeEntry} · cash close ${ctx.session.times.marketClose} (${ctx.session.times.tzLabel})
 Risk: every probe ${ctx.risk.deskRiskPercent}% (AI/structure/manual) · entry must be within ±10 of active range high/low · ${ctx.risk.entryRule}
+Range-edge tail: ${
+    ctx.rangeTail?.present
+      ? `${ctx.rangeTail.text ?? 'TAIL'} · edge=${ctx.rangeTail.edge} · tier=${ctx.rangeTail.tier} · ratio=${ctx.rangeTail.ratio} · ageSec=${ctx.rangeTail.ageSec} (other-TF footprint — prefer levels on this edge)`
+      : 'none scored yet (do not invent tails)'
+  }
 AVWAP: ${ctx.avwap.bandNote}
 Overnight: ${overnightLine}
 ${ctx.overnight.newsSummary ? `News: ${ctx.overnight.newsSummary}` : ''}

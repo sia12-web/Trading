@@ -53,6 +53,7 @@ import {
   type LiveVoiceStatus,
 } from '@/lib/trading/liveVoice'
 import { loadLiveVoicePins, type LiveVoicePin } from '@/lib/trading/liveVoiceSession'
+import { buildRangeEdgeTailBrief } from '@/lib/trading/rangeEdgeTailBrief'
 
 export type LiveVoiceContextLevel = {
   price: number
@@ -116,6 +117,18 @@ export type LiveVoiceDeskContext = {
   }
   /** Printed OR30 / slot-2 / slot-3 bait facts for Leo (optional). */
   rangeLiquidityBriefText?: string | null
+  /** Latest good/strong ±10 range-edge tail (other-TF footprint). */
+  rangeTail?: {
+    present: boolean
+    edge: 'high' | 'low' | null
+    tier: 'light' | 'good' | 'strong' | null
+    ratio: number | null
+    label: string | null
+    text: string | null
+    ageSec: number | null
+    wickPts: number | null
+    bodyPts: number | null
+  } | null
   avwap: {
     openLabel: string
     lookbackTradingDays: number
@@ -480,6 +493,26 @@ export async function buildLiveVoiceDeskContext(
     ladder,
   })
 
+  const rangeTail = await buildRangeEdgeTailBrief({
+    instrument: contextInstrument,
+    now,
+    ladder,
+    rangeStrategy: gate.rangeStrategy ?? null,
+    morningAttempts,
+  })
+
+  let levelItems = playbook.levels.map(toContextLevel)
+  if (rangeTail.present && (rangeTail.tier === 'good' || rangeTail.tier === 'strong')) {
+    levelItems = levelItems
+      .map((l) => {
+        const matchHigh = rangeTail.edge === 'high' && l.side === 'SHORT'
+        const matchLow = rangeTail.edge === 'low' && l.side === 'BUY'
+        if (!matchHigh && !matchLow) return l
+        return { ...l, conviction: Math.min(10, l.conviction + 2) }
+      })
+      .sort((a, b) => b.conviction - a.conviction)
+  }
+
   return {
     voice,
     session: {
@@ -543,6 +576,7 @@ export async function buildLiveVoiceDeskContext(
           : 'Day max 6 fills (AM/OR30 2 + IB 2 + LN 2) @ 0.25% risk each. Next window unlocks when prior clock ends or probes are exhausted. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books ride to cash-close flatten. Voice never places orders. Range H/L = retail bait; desk hunts stops just beyond with POC/AVWAP confluence. Entries only within ±10 pts of active range high/low. Ticket sets initial SL beyond active range (or zone floor) and TP at opposing edge/magnets; post-fill BE/trail manage is separate.',
     },
     rangeLiquidityBriefText: null,
+    rangeTail,
     avwap: {
       openLabel: clock.openLabel,
       lookbackTradingDays: AVWAP_LOOKBACK_TRADING_DAYS,
@@ -556,10 +590,10 @@ export async function buildLiveVoiceDeskContext(
     },
     levels: {
       source: playbook.levels.length > 0 ? 'ai' : 'empty',
-      count: playbook.levels.length,
+      count: levelItems.length,
       focusSide: playbook.focusSide,
       focusHint: playbook.focusHint,
-      items: playbook.levels.map(toContextLevel),
+      items: levelItems,
     },
     userPins,
     workingOrders,

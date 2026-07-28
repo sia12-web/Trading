@@ -102,6 +102,13 @@ import {
   NO_IN_BAND_LEVELS_MESSAGE,
 } from '@/lib/trading/rangeEdgeEntryGate'
 import {
+  computeRangeEdgeTails,
+  latestQualityTail,
+  preferLevelsWithRangeEdgeTail,
+  type RangeEdgeTail,
+  type ShapedRangeForTails,
+} from '@/lib/chart/rangeEdgeTails'
+import {
   formatRangeEdgeAlertMessage,
   rangeEdgeProximity,
   shouldFireRangeEdgeAlert,
@@ -741,6 +748,12 @@ export function TradingChart({
     lunch: number
     us: number
   }>({ ib: 0, or30: 0, lunch: 0, us: 0 })
+  const [latestTailStatus, setLatestTailStatus] = useState<{
+    edge: 'high' | 'low'
+    tier: 'light' | 'good' | 'strong'
+    label: string
+  } | null>(null)
+  const rangeTailsRef = useRef<RangeEdgeTail[]>([])
   /** Latest session AVWAP print — strategy TP magnet */
   const avwapLastRef = useRef<number | null>(null)
   const levelLinesRef = useRef<any[]>([])
@@ -804,7 +817,7 @@ export function TradingChart({
   /** Floating morning playbook — closed by default on chart refresh; open via Playbook (P). */
   const [playbookOpen, setPlaybookOpen] = useState(false)
 
-  /** Single marker channel — IB + OR30 + Lunch + Nikkei US-range. */
+  /** Single marker channel — IB + OR30 + Lunch + Nikkei US-range + range-edge tails. */
   const paintDeskMarkers = useCallback((bars?: OHLCV[]) => {
     const candleSeries = candleRef.current
     if (!candleSeries) return
@@ -902,6 +915,100 @@ export function TradingChart({
       }
     }
 
+    // Range-edge tails on the active shaped playbook bait (±10 band)
+    const playbookModeForTails = resolveDeskPlaybookMode({
+      instrument,
+      rangeStrategy,
+      ladder: attemptLadderFromCounts({
+        morningAttempts,
+        ibAttempts,
+        lunchAttempts,
+        morningStopHits: stopHits,
+      }),
+    })
+    const strategyRangeForTails = activeRangeForPlaybook({
+      playbookMode: playbookModeForTails,
+      instrument,
+      or30: or30RangeRef.current,
+      ib: ibRangeRef.current,
+      usRange: usRangeRef.current,
+      lunchRange: lunchRangeRef.current,
+      morningAttempts,
+    })
+    let shapedForTails: ShapedRangeForTails | null = null
+    if (strategyRangeForTails) {
+      const or30 = or30RangeRef.current
+      const ib = ibRangeRef.current
+      const lunch = lunchRangeRef.current
+      const us = usRangeRef.current
+      if (
+        or30?.complete &&
+        or30.high === strategyRangeForTails.high &&
+        or30.low === strategyRangeForTails.low
+      ) {
+        shapedForTails = {
+          ...strategyRangeForTails,
+          complete: true,
+          lockedUnix: or30.endUnix,
+        }
+      } else if (
+        ib &&
+        ib.high === strategyRangeForTails.high &&
+        ib.low === strategyRangeForTails.low
+      ) {
+        shapedForTails = {
+          ...strategyRangeForTails,
+          complete: true,
+          lockedUnix: ib.endUnix,
+        }
+      } else if (
+        lunch?.complete &&
+        lunch.high === strategyRangeForTails.high &&
+        lunch.low === strategyRangeForTails.low
+      ) {
+        shapedForTails = {
+          ...strategyRangeForTails,
+          complete: true,
+          lockedUnix: lunch.lunchEndUnix,
+        }
+      } else if (
+        us?.complete &&
+        us.high === strategyRangeForTails.high &&
+        us.low === strategyRangeForTails.low
+      ) {
+        shapedForTails = {
+          ...strategyRangeForTails,
+          complete: true,
+          lockedUnix: us.toTime,
+        }
+      }
+    }
+
+    const tails =
+      shapedForTails && deskBars.length > 0
+        ? computeRangeEdgeTails(deskBars, shapedForTails)
+        : []
+    rangeTailsRef.current = tails
+    for (const t of tails) {
+      markers.push({
+        time: t.time as UTCTimestamp,
+        position: t.position,
+        color: t.color,
+        shape: t.shape,
+        text: t.text,
+      })
+    }
+    const qualityTail = latestQualityTail(tails, 'good')
+    setLatestTailStatus(
+      qualityTail
+        ? {
+            edge: qualityTail.edge,
+            tier: qualityTail.tier,
+            label: qualityTail.label,
+          }
+        : null
+    )
+
     setRangeSignalSummary((prev) =>
       prev.ib === ibCount &&
       prev.or30 === or30Count &&
@@ -921,7 +1028,18 @@ export function TradingChart({
     } catch {
       /* ignore */
     }
-  }, [showIbBreakouts, showLunchRange, showOr30, showUsRange, instrument])
+  }, [
+    showIbBreakouts,
+    showLunchRange,
+    showOr30,
+    showUsRange,
+    instrument,
+    rangeStrategy,
+    morningAttempts,
+    ibAttempts,
+    lunchAttempts,
+    stopHits,
+  ])
 
   useEffect(() => {
     paintDeskMarkers()
@@ -1606,7 +1724,11 @@ export function TradingChart({
         bandMsg = NO_IN_BAND_LEVELS_MESSAGE
         actionable = []
       } else {
-        actionable = inBand
+        actionable = preferLevelsWithRangeEdgeTail(
+          inBand,
+          strategyRange,
+          rangeTailsRef.current
+        )
       }
     }
 
@@ -5205,8 +5327,17 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               </span>
             </span>
           )}
+          {latestTailStatus && (
+            <span
+              className="text-amber-400 normal-case tracking-normal"
+              title="Rejection wick at the ±10 band after the active range locked — other-timeframe footprint"
+            >
+              TAIL {latestTailStatus.edge === 'high' ? 'H' : 'L'} ·{' '}
+              {latestTailStatus.tier} · {latestTailStatus.label}
+            </span>
+          )}
           <span className="text-gray-600 normal-case tracking-normal">
-            ±10 entries only after the active range locks · BRK needs close beyond H/L · REJ needs wick reject
+            ±10 entries only after the active range locks · tails prefer good/strong wicks (≥0.4× body) · BRK needs close beyond H/L
           </span>
         </div>
       )}
