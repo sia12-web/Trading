@@ -2,7 +2,7 @@
 
 /**
  * Simulation replay desk (query-param driven).
- * Flow: pick day → cash open (ET/JST) → structure levels → pending → fill → manage → lunch done
+ * Flow: pick day → cash open → full 1/1/1 session (OR30 → IB/US → Lunch-range) → cash close
  */
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -40,11 +40,15 @@ import {
   snapTargetToTick,
 } from '@/lib/trading/instrumentTicks'
 import {
-  MAX_SESSION_ATTEMPTS,
-  MAX_STOP_HITS,
+  MAX_DAY_ATTEMPTS,
+  attemptLadderFromCounts,
+  deskMarketFor,
+  ibStrategyEndHms,
+  lunchRangeEntryEndHms,
   resolveSimMorningGate,
   sessionFor,
 } from '@/lib/trading/sessionGate'
+import { classifyAttemptBucket } from '@/lib/trading/attemptLadder'
 import { LevelOrderTicket } from '@/app/dashboard/chart/components/LevelOrderTicket'
 import {
   SESSION_STYLES,
@@ -90,6 +94,18 @@ import {
   or30WindowLabel,
   type Or30Range,
 } from '@/lib/chart/openingRange30'
+import {
+  NYC_LUNCH_COLORS,
+  computeNycLunchRange,
+  isNycLunchInstrument,
+  nycLunchLineSeriesData,
+} from '@/lib/chart/nycLunchSessionRange'
+import {
+  NIKKEI_US_RANGE_COLORS,
+  currentNikkeiUsRangeForChart,
+  isNikkeiUsRangeInstrument,
+  nikkeiUsRangeLineSeriesData,
+} from '@/lib/chart/nikkeiUsRangeBreakout'
 import {
   activeRangeForPlaybook,
   strategyEntryRisk,
@@ -170,6 +186,8 @@ interface PendingOrder {
   entryReason?: string
   conviction?: number
   entrySource: DeskEntrySource
+  /** Sim clock when this window's working limit expires */
+  windowEndUnix: number
 }
 
 interface PaperPosition {
@@ -325,11 +343,17 @@ function SimulationDeskInner() {
   const [playing, setPlaying] = useState(false)
   const [pending, setPending] = useState<PendingOrder | null>(null)
   const [position, setPosition] = useState<PaperPosition | null>(null)
-  /** Filled trades this replay (same max-2 book as live) */
+  /** Day fill count (AM + IB/US + LN) — hard cap 3 */
   const [attemptsUsed, setAttemptsUsed] = useState(0)
-  /** Stop-outs this replay — 2 locks the session */
+  const [morningAttempts, setMorningAttempts] = useState(0)
+  const [ibAttempts, setIbAttempts] = useState(0)
+  const [lunchAttempts, setLunchAttempts] = useState(0)
+  /** Stop-outs this replay (informational; fill itself locks the slot) */
   const [stopHits, setStopHits] = useState(0)
   const attemptsUsedRef = useRef(0)
+  const morningAttemptsRef = useRef(0)
+  const ibAttemptsRef = useRef(0)
+  const lunchAttemptsRef = useRef(0)
   const stopHitsRef = useRef(0)
   const [accountSize, setAccountSize] = useState(100000)
   const [ticketLevel, setTicketLevel] = useState<AiLevel | null>(null)
@@ -433,6 +457,17 @@ function SimulationDeskInner() {
   } | null>(null)
   const or30RangeRef = useRef<Or30Range | null>(null)
   const ibRangeRef = useRef<{ high: number; low: number } | null>(null)
+  const lunchRangeRef = useRef<{ high: number; low: number } | null>(null)
+  const usRangeRef = useRef<{ high: number; low: number } | null>(null)
+  const lunchSeriesRef = useRef<{
+    high: ISeriesApi<'Line'>
+    low: ISeriesApi<'Line'>
+    mid: ISeriesApi<'Line'>
+  } | null>(null)
+  const usRangeSeriesRef = useRef<{
+    high: ISeriesApi<'Line'>
+    low: ISeriesApi<'Line'>
+  } | null>(null)
   const avwapLastRef = useRef<number | null>(null)
   const [or30Shaped, setOr30Shaped] = useState(false)
   const levelLinesRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]>([])
@@ -513,6 +548,17 @@ function SimulationDeskInner() {
     () => (replayDate ? toUnix(replayDate, closeH!, closeM || 0) : 0),
     [replayDate, toUnix, closeH, closeM]
   )
+  const market = deskMarketFor(instrument)
+  const midEndUnix = useMemo(() => {
+    if (!replayDate) return 0
+    const [h, m] = ibStrategyEndHms(market).split(':').map(Number)
+    return toUnix(replayDate, h!, m || 0)
+  }, [replayDate, toUnix, market])
+  const lateEndUnix = useMemo(() => {
+    if (!replayDate) return 0
+    const [h, m] = lunchRangeEntryEndHms(market).split(':').map(Number)
+    return toUnix(replayDate, h!, m || 0)
+  }, [replayDate, toUnix, market])
 
   useEffect(() => {
     lunchUnixRef.current = lunchUnix
@@ -566,7 +612,7 @@ function SimulationDeskInner() {
       .catch(() => {})
   }, [replayDate, instrument, speed])
 
-  // Morning-only sim gate — same attempt/stop limits as live
+  // Full-day sim gate — same 1/1/1 ladder as live (no clock-in)
   const gate = useMemo(() => {
     if (!simNow) return null
     return resolveSimMorningGate({
@@ -574,10 +620,21 @@ function SimulationDeskInner() {
       instrument,
       hasOpenPosition: !!position,
       dayDone: cashCloseUnix > 0 && simNow >= cashCloseUnix,
-      attemptsUsed,
+      morningAttempts,
+      ibAttempts,
+      lunchAttempts,
       stopHits,
     })
-  }, [simNow, instrument, position, cashCloseUnix, attemptsUsed, stopHits])
+  }, [
+    simNow,
+    instrument,
+    position,
+    cashCloseUnix,
+    morningAttempts,
+    ibAttempts,
+    lunchAttempts,
+    stopHits,
+  ])
 
   // Validate date + load candles/levels
   useEffect(() => {
@@ -880,6 +937,39 @@ function SimulationDeskInner() {
       low: chart.addLineSeries({ ...or30LineOpts, title: 'OR30 L' }),
     }
 
+    const lunchLineOpts = {
+      color: NYC_LUNCH_COLORS.high,
+      lineWidth: 2 as const,
+      lineStyle: LineStyle.Solid,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      crosshairMarkerVisible: false,
+    }
+    const lunchSeries = {
+      high: chart.addLineSeries({ ...lunchLineOpts, color: NYC_LUNCH_COLORS.high, title: 'LN H' }),
+      low: chart.addLineSeries({ ...lunchLineOpts, color: NYC_LUNCH_COLORS.low, title: 'LN L' }),
+      mid: chart.addLineSeries({
+        ...lunchLineOpts,
+        color: NYC_LUNCH_COLORS.mid,
+        lineWidth: 1 as const,
+        lineStyle: LineStyle.Dashed,
+        title: 'LN 50%',
+      }),
+    }
+
+    const usLineOpts = {
+      color: NIKKEI_US_RANGE_COLORS.high,
+      lineWidth: 2 as const,
+      lineStyle: LineStyle.Solid,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      crosshairMarkerVisible: false,
+    }
+    const usRangeSeries = {
+      high: chart.addLineSeries({ ...usLineOpts, title: 'US H' }),
+      low: chart.addLineSeries({ ...usLineOpts, title: 'US L' }),
+    }
+
     chart.priceScale('right').applyOptions({
       autoScale: true,
       scaleMargins: { top: 0.05, bottom: 0.05 },
@@ -892,6 +982,8 @@ function SimulationDeskInner() {
     vwapSeriesRef.current = vwapSeries
     ibSeriesRef.current = ibSeries
     or30SeriesRef.current = or30Series
+    lunchSeriesRef.current = lunchSeries
+    usRangeSeriesRef.current = usRangeSeries
     setChartReady(true)
 
     const ro = new ResizeObserver(() => {
@@ -915,8 +1007,12 @@ function SimulationDeskInner() {
       vwapSeriesRef.current = null
       ibSeriesRef.current = null
       or30SeriesRef.current = null
+      lunchSeriesRef.current = null
+      usRangeSeriesRef.current = null
       or30RangeRef.current = null
       ibRangeRef.current = null
+      lunchRangeRef.current = null
+      usRangeRef.current = null
       avwapLastRef.current = null
       setIbShaped(false)
       setOr30Shaped(false)
@@ -1193,6 +1289,66 @@ function SimulationDeskInner() {
             setOr30Shaped(false)
           }
         }
+
+        const lns = lunchSeriesRef.current
+        if (lns) {
+          if (isNycLunchInstrument(instrument) && replayDate) {
+            const lunch = computeNycLunchRange(
+              bars.map((c) => ({ time: c.time, high: c.high, low: c.low })),
+              replayDate,
+              Math.max(tip, simT)
+            )
+            lunchRangeRef.current = lunch
+              ? { high: lunch.high, low: lunch.low }
+              : null
+            if (lunch) {
+              const pts = nycLunchLineSeriesData(lunch, extendTo, { showMid: true })
+              try {
+                lns.high.setData(shiftBand(pts.high))
+                lns.low.setData(shiftBand(pts.low))
+                lns.mid.setData(shiftBand(pts.mid))
+              } catch {
+                lns.high.setData([])
+                lns.low.setData([])
+                lns.mid.setData([])
+              }
+            } else {
+              lns.high.setData([])
+              lns.low.setData([])
+              lns.mid.setData([])
+            }
+          } else {
+            lunchRangeRef.current = null
+            lns.high.setData([])
+            lns.low.setData([])
+            lns.mid.setData([])
+          }
+        }
+
+        const uss = usRangeSeriesRef.current
+        if (uss) {
+          if (isNikkeiUsRangeInstrument(instrument)) {
+            const us = currentNikkeiUsRangeForChart(bars, Math.max(tip, simT))
+            usRangeRef.current = us ? { high: us.high, low: us.low } : null
+            if (us) {
+              const pts = nikkeiUsRangeLineSeriesData(us, extendTo)
+              try {
+                uss.high.setData(shiftBand(pts.high))
+                uss.low.setData(shiftBand(pts.low))
+              } catch {
+                uss.high.setData([])
+                uss.low.setData([])
+              }
+            } else {
+              uss.high.setData([])
+              uss.low.setData([])
+            }
+          } else {
+            usRangeRef.current = null
+            uss.high.setData([])
+            uss.low.setData([])
+          }
+        }
       }
 
       if (force || lastAppliedBarIdxRef.current < 0) {
@@ -1280,38 +1436,40 @@ function SimulationDeskInner() {
         requestAnimationFrame(() => refreshSessionHighlights())
       }
     },
-    [pinToLatest, refreshSessionHighlights, instrument, openUnix, lunchUnix, cashCloseUnix, sess.tz]
+    [pinToLatest, refreshSessionHighlights, instrument, openUnix, lunchUnix, cashCloseUnix, sess.tz, replayDate]
   )
 
-  /** Morning OR30 bait (+ IB magnets) for strategy SL/TP — same geometry as live. */
+  /** Active playbook range (+ other magnets) for strategy SL/TP — same geometry as live. */
   const getStrategyRiskBundle = useCallback((): {
     strategyRange: StrategyRangeEdges | null
     strategyMagnets: StrategyRiskMagnets
   } => {
+    const ladder = attemptLadderFromCounts({
+      morningAttempts: morningAttemptsRef.current,
+      ibAttempts: ibAttemptsRef.current,
+      lunchAttempts: lunchAttemptsRef.current,
+      morningStopHits: Math.min(stopHitsRef.current, morningAttemptsRef.current),
+    })
     const playbookMode = resolveDeskPlaybookMode({
       instrument,
       now: new Date(simNowRef.current * 1000),
-      attemptsUsed: attemptsUsedRef.current,
-      stopHits: stopHitsRef.current,
-      rangeStrategy: null,
+      ladder,
     })
-    // Sim is morning-entry only today — keep OR30 primary even in prep modes
-    const modeForRange =
-      playbookMode === 'ib' ||
-      playbookMode === 'us_range' ||
-      playbookMode === 'lunch_range'
-        ? playbookMode
-        : 'morning'
     const strategyRange = activeRangeForPlaybook({
-      playbookMode: modeForRange,
+      playbookMode,
       instrument,
       or30: or30RangeRef.current,
       ib: ibRangeRef.current,
-      usRange: null,
-      lunchRange: null,
+      usRange: usRangeRef.current,
+      lunchRange: lunchRangeRef.current,
     })
     const extras: number[] = []
-    for (const r of [or30RangeRef.current, ibRangeRef.current]) {
+    for (const r of [
+      or30RangeRef.current,
+      ibRangeRef.current,
+      usRangeRef.current,
+      lunchRangeRef.current,
+    ]) {
       if (!r || !(r.high > r.low)) continue
       if (
         strategyRange &&
@@ -1572,31 +1730,70 @@ function SimulationDeskInner() {
     }
   }, [position, pending, chartReady])
 
-  const fillPending = useCallback((pend: PendingOrder, at: number) => {
-    const filled: PaperPosition = {
-      entry: pend.level,
-      direction: pend.direction,
-      stopLoss: pend.stopLoss,
-      target: pend.target,
-      size: pend.size,
-      risk: pend.risk,
-      accountSize: pend.accountSize,
-      filledAt: at,
-      entryReason: pend.entryReason,
-      conviction: pend.conviction,
-      entrySource: pend.entrySource || 'ai',
-    }
-    // Sync refs before next playback tick (16x can fire before React effects)
-    pendingRef.current = null
-    positionRef.current = filled
-    attemptsUsedRef.current += 1
-    setAttemptsUsed(attemptsUsedRef.current)
-    setPosition(filled)
-    setPending(null)
-    setMsg(
-      `FILLED ${pend.direction} @ ${pend.level.toLocaleString()} — morning ${attemptsUsedRef.current}/${MAX_SESSION_ATTEMPTS} (in a trade)`
-    )
-  }, [])
+  const fillPending = useCallback(
+    (pend: PendingOrder, at: number) => {
+      const filled: PaperPosition = {
+        entry: pend.level,
+        direction: pend.direction,
+        stopLoss: pend.stopLoss,
+        target: pend.target,
+        size: pend.size,
+        risk: pend.risk,
+        accountSize: pend.accountSize,
+        filledAt: at,
+        entryReason: pend.entryReason,
+        conviction: pend.conviction,
+        entrySource: pend.entrySource || 'ai',
+      }
+      pendingRef.current = null
+      positionRef.current = filled
+
+      const bucket = classifyAttemptBucket(instrument, at * 1000)
+      if (bucket === 'morning') {
+        morningAttemptsRef.current += 1
+        setMorningAttempts(morningAttemptsRef.current)
+      } else if (bucket === 'ib') {
+        ibAttemptsRef.current += 1
+        setIbAttempts(ibAttemptsRef.current)
+      } else if (bucket === 'lunch_range') {
+        lunchAttemptsRef.current += 1
+        setLunchAttempts(lunchAttemptsRef.current)
+      }
+      const day =
+        morningAttemptsRef.current +
+        ibAttemptsRef.current +
+        lunchAttemptsRef.current
+      attemptsUsedRef.current = day
+      setAttemptsUsed(day)
+
+      setPosition(filled)
+      setPending(null)
+      const slot =
+        bucket === 'ib'
+          ? instrument === 'NIKKEI'
+            ? 'US'
+            : 'IB'
+          : bucket === 'lunch_range'
+            ? instrument === 'NIKKEI'
+              ? 'IB'
+              : 'LN'
+            : 'AM'
+      setMsg(
+        'FILLED ' +
+          pend.direction +
+          ' @ ' +
+          pend.level.toLocaleString() +
+          ' — ' +
+          slot +
+          ' · day ' +
+          day +
+          '/' +
+          MAX_DAY_ATTEMPTS +
+          ' (in a trade)'
+      )
+    },
+    [instrument]
+  )
 
   const recordPaperClose = useCallback(
     (
@@ -1751,13 +1948,8 @@ function SimulationDeskInner() {
           setSimNow(next)
           applyChartDataRef.current(next)
           setPlaying(false)
-          const capped =
-            stopHitsRef.current >= MAX_STOP_HITS ||
-            attemptsUsedRef.current >= MAX_SESSION_ATTEMPTS
           setMsg(
-            capped
-              ? `STOP HIT @ ${closed.stopLoss.toLocaleString()} — morning locked (${attemptsUsedRef.current}/${MAX_SESSION_ATTEMPTS})`
-              : `STOP HIT @ ${closed.stopLoss.toLocaleString()} — morning ${attemptsUsedRef.current}/${MAX_SESSION_ATTEMPTS} used`
+            `STOP HIT @ ${closed.stopLoss.toLocaleString()} — day ${attemptsUsedRef.current}/${MAX_DAY_ATTEMPTS}`
           )
           setLevels((prev) =>
             applySimTradeOutcome(prev, closed.entry, closed.direction, 'stop')
@@ -1804,14 +1996,14 @@ function SimulationDeskInner() {
     if (simNow >= cashCloseUnix) void markSessionCompleted()
   }, [simNow, cashCloseUnix, markSessionCompleted])
 
-  // Unfilled sim limits expire when the entry window ends
+  // Unfilled sim limits expire when that slot's entry window ends
   useEffect(() => {
     if (!pending) return
-    if (simNow <= entryCloseUnix) return
+    if (simNow <= pending.windowEndUnix) return
     pendingRef.current = null
     setPending(null)
     setMsg('Working limit cancelled — entry window closed (never filled)')
-  }, [simNow, entryCloseUnix, pending])
+  }, [simNow, pending])
 
   const cancelPending = useCallback(() => {
     if (!pendingRef.current) return
@@ -1829,19 +2021,33 @@ function SimulationDeskInner() {
         setMsg('Already in a position — manage or close first')
         return
       }
-      if (stopHitsRef.current >= MAX_STOP_HITS || attemptsUsedRef.current >= MAX_SESSION_ATTEMPTS) {
-        setMsg(
-          `Morning trade taken (${MAX_SESSION_ATTEMPTS}/${MAX_SESSION_ATTEMPTS}) — no more entries this replay.`
-        )
-        return
-      }
       const now = simNowRef.current
-      if (now > entryCloseUnix) {
+      const liveGate = resolveSimMorningGate({
+        now: new Date(now * 1000),
+        instrument,
+        hasOpenPosition: !!positionRef.current,
+        morningAttempts: morningAttemptsRef.current,
+        ibAttempts: ibAttemptsRef.current,
+        lunchAttempts: lunchAttemptsRef.current,
+        stopHits: stopHitsRef.current,
+      })
+      if (!liveGate.canPlaceEntry) {
+        setMsg(liveGate.message || 'Entries locked for this window')
+        return
+      }
+      if (attemptsUsedRef.current >= MAX_DAY_ATTEMPTS) {
         setMsg(
-          `Morning entry closed (after ${sess.entryClose.slice(0, 5)} ${tzLabel}). Sim has no IB window.`
+          `Day attempt cap (${MAX_DAY_ATTEMPTS}/${MAX_DAY_ATTEMPTS}) — no more entries this replay.`
         )
         return
       }
+
+      const windowEndUnix =
+        liveGate.entryWindow === 3
+          ? lateEndUnix
+          : liveGate.entryWindow === 2
+            ? midEndUnix
+            : entryCloseUnix
 
       placingOrderRef.current = true
       const entrySource = normalizeEntrySource(level.source, 'structure')
@@ -1887,6 +2093,7 @@ function SimulationDeskInner() {
           } level`,
         conviction: level.conviction,
         entrySource,
+        windowEndUnix: windowEndUnix || cashCloseUnix,
       }
 
       // Immediate fill if any bar from open→now already touched
@@ -1910,11 +2117,12 @@ function SimulationDeskInner() {
     [
       position,
       entryCloseUnix,
+      midEndUnix,
+      lateEndUnix,
+      cashCloseUnix,
       accountSize,
       openUnix,
       fillPending,
-      sess.entryClose,
-      tzLabel,
       instrument,
       getStrategyRiskBundle,
     ]
@@ -1940,8 +2148,14 @@ function SimulationDeskInner() {
     tradesCountRef.current = 0
     realizedPnlRef.current = 0
     attemptsUsedRef.current = 0
+    morningAttemptsRef.current = 0
+    ibAttemptsRef.current = 0
+    lunchAttemptsRef.current = 0
     stopHitsRef.current = 0
     setAttemptsUsed(0)
+    setMorningAttempts(0)
+    setIbAttempts(0)
+    setLunchAttempts(0)
     setStopHits(0)
     pendingRef.current = null
     positionRef.current = null
@@ -2015,11 +2229,9 @@ function SimulationDeskInner() {
       !position &&
       !pending &&
       simNow > 0 &&
-      simNow <= entryCloseUnix &&
       simNow >= openUnix &&
-      attemptsUsed < MAX_SESSION_ATTEMPTS &&
-      stopHits < MAX_STOP_HITS &&
-      gate?.canPlaceEntry !== false
+      attemptsUsed < MAX_DAY_ATTEMPTS &&
+      gate?.canPlaceEntry === true
 
     if (!container || !seriesRef.current || !canPlace) return
 
@@ -2073,10 +2285,8 @@ function SimulationDeskInner() {
     position,
     pending,
     simNow,
-    entryCloseUnix,
     openUnix,
     attemptsUsed,
-    stopHits,
     gate?.canPlaceEntry,
   ])
 
@@ -2102,8 +2312,7 @@ function SimulationDeskInner() {
       !pending &&
       levelsOpen &&
       simNow > 0 &&
-      simNow <= entryCloseUnix &&
-      gate?.canPlaceEntry !== false
+      gate?.canPlaceEntry === true
 
     if (!container || !seriesRef.current || !host || !canHover) {
       clearHover()
@@ -2209,7 +2418,6 @@ function SimulationDeskInner() {
     pending,
     levelsOpen,
     simNow,
-    entryCloseUnix,
     gate?.canPlaceEntry,
     instrument,
     accountSize,
@@ -2252,11 +2460,11 @@ function SimulationDeskInner() {
   const canEnter =
     !position &&
     !pending &&
-    simNow <= entryCloseUnix &&
     simNow >= openUnix &&
-    attemptsUsed < MAX_SESSION_ATTEMPTS &&
-    stopHits < MAX_STOP_HITS &&
-    gate?.canPlaceEntry !== false
+    attemptsUsed < MAX_DAY_ATTEMPTS &&
+    gate?.canPlaceEntry === true
+  const midChip = instrument === 'NIKKEI' ? 'US' : 'IB'
+  const lateChip = instrument === 'NIKKEI' ? 'IB' : 'LN'
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#0d1117]">
@@ -2329,17 +2537,18 @@ function SimulationDeskInner() {
           </span>
           <span
             className={`rounded px-1.5 py-0.5 font-semibold tabular-nums ${
-              stopHits >= MAX_STOP_HITS || attemptsUsed >= MAX_SESSION_ATTEMPTS
+              attemptsUsed >= MAX_DAY_ATTEMPTS
                 ? 'bg-red-500/25 text-red-200'
                 : 'bg-sky-500/20 text-sky-200'
             }`}
-            title="Morning playbook ≤1 fill. Afternoon chart continues to cash close (watch-only). No IB / lunch-range entries in sim yet."
+            title={
+              gate?.attemptLadderLabel ||
+              `Full session 1/1/1 · Day ≤ ${MAX_DAY_ATTEMPTS}. Skip-forward unlocks later windows.`
+            }
           >
-            Morning {attemptsUsed}/{MAX_SESSION_ATTEMPTS}
-            {stopHits > 0 ? ` · Stops ${stopHits}/${MAX_STOP_HITS}` : ''}
-            {attemptsUsed >= MAX_SESSION_ATTEMPTS || stopHits >= MAX_STOP_HITS
-              ? ' · LOCKED'
-              : ''}
+            Day {attemptsUsed}/{MAX_DAY_ATTEMPTS} · AM {morningAttempts}/1 · {midChip}{' '}
+            {ibAttempts}/1 · {lateChip} {lunchAttempts}/1
+            {attemptsUsed >= MAX_DAY_ATTEMPTS ? ' · LOCKED' : ''}
           </span>
           {overnightBias && (
             <span
@@ -2799,7 +3008,9 @@ function SimulationDeskInner() {
           }
           regimeConfidence={70}
           canPlace={canEnter}
-          entryWindow={1}
+          entryWindow={(gate?.entryWindow as 1 | 2 | 3 | null) ?? 1}
+          strategyRange={getStrategyRiskBundle().strategyRange}
+          strategyMagnets={getStrategyRiskBundle().strategyMagnets}
           onClose={() => {
             setManualTicketOpen(false)
             setManualClickPrice(null)
@@ -2807,6 +3018,12 @@ function SimulationDeskInner() {
           onPlaced={(order) => {
             setManualTicketOpen(false)
             setManualClickPrice(null)
+            const windowEndUnix =
+              gate?.entryWindow === 3
+                ? lateEndUnix
+                : gate?.entryWindow === 2
+                  ? midEndUnix
+                  : entryCloseUnix
             const pend: PendingOrder = {
               level: order.level,
               direction: order.direction,
@@ -2817,6 +3034,7 @@ function SimulationDeskInner() {
               accountSize: order.accountSize,
               entryReason: order.entryReason,
               entrySource: 'manual',
+              windowEndUnix: windowEndUnix || cashCloseUnix,
             }
             const now = simNowRef.current
             const touched = allCandlesRef.current.find(

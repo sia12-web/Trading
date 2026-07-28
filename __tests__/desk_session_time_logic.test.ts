@@ -253,17 +253,33 @@ for (const inst of ['DOW', 'NASDAQ'] as const) {
   assert(gate.canPlaceEntry === true, 'NIKKEI can place in entry window')
 }
 
-// Sim afternoon: chart continues (FLAT watch), no entries
+// Sim afternoon: lunch-range unlock when morning + IB skipped
 {
   const sim = resolveSimMorningGate({
     now: etDate(Y, M, D, 14, 0),
     instrument: 'DOW',
     hasOpenPosition: false,
-    attemptsUsed: 0,
+    morningAttempts: 0,
+    ibAttempts: 0,
+    lunchAttempts: 0,
     stopHits: 0,
   })
-  assert(sim.phase === 'FLAT', 'sim afternoon is FLAT watch (chart continues)')
-  assert(sim.canPlaceEntry === false, 'sim no afternoon entries')
+  assert(sim.phase === 'ENTRY', 'sim afternoon lunch-range ENTRY')
+  assert(sim.canPlaceEntry === true, 'sim lunch-range can place')
+  assert(sim.rangeStrategy === 'lunch_range', 'lunch_range strategy')
+}
+
+// Sim afternoon locked after morning fill
+{
+  const sim = resolveSimMorningGate({
+    now: etDate(Y, M, D, 14, 0),
+    instrument: 'DOW',
+    hasOpenPosition: false,
+    morningAttempts: 1,
+    stopHits: 0,
+  })
+  assert(sim.phase === 'FLAT', 'sim afternoon FLAT after morning fill')
+  assert(sim.canPlaceEntry === false, 'sim no afternoon entries after morning')
 }
 
 // ── VWAP: 5 trading days prior, per-desk cash open ───────────────────────────

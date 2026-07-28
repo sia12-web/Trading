@@ -231,15 +231,31 @@ test('Live gate: lunch-range unlock when morning skipped; morning/IB fill blocks
   assert(afterIb.rangeStrategy === null, 'no unlock after IB')
 })
 
-test('Sim gate: morning-only entries — afternoon sim clock locked for entries but chart continues', () => {
+test('Sim gate: full-day ladder — lunch-range entries when morning+IB skipped', () => {
   const simPm = resolveSimMorningGate({
     now: etDate(2026, 7, 15, 14, 0),
     instrument: 'DOW',
-    attemptsUsed: 0,
+    morningAttempts: 0,
+    ibAttempts: 0,
+    lunchAttempts: 0,
     stopHits: 0,
   })
-  assert(simPm.canPlaceEntry === false, 'sim no afternoon entries')
-  assert(simPm.phase === 'FLAT', 'sim afternoon watch phase')
+  assert(simPm.canPlaceEntry === true, 'sim lunch-range entries when skipped forward')
+  assert(simPm.phase === 'ENTRY', 'sim lunch-range ENTRY phase')
+  assert(simPm.rangeStrategy === 'lunch_range', 'lunch_range unlocked')
+})
+
+test('Sim gate: morning fill locks afternoon entries (chart still continues)', () => {
+  const simPm = resolveSimMorningGate({
+    now: etDate(2026, 7, 15, 14, 0),
+    instrument: 'DOW',
+    morningAttempts: 1,
+    ibAttempts: 0,
+    lunchAttempts: 0,
+    stopHits: 0,
+  })
+  assert(simPm.canPlaceEntry === false, 'morning fill locks later windows')
+  assert(simPm.phase === 'FLAT', 'sim afternoon locked → FLAT')
 })
 
 // ── Afternoon playbook merge (reaction + IB + AI) ────────────────────────────
