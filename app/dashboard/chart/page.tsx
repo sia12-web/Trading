@@ -47,8 +47,14 @@ import {
 } from '@/lib/trading/positionSizing'
 import { snapDeskPrice, snapStopToTick, snapTargetToTick } from '@/lib/trading/instrumentTicks'
 import { assertRangeEdgeEntry } from '@/lib/trading/rangeEdgeEntryGate'
-import { formatWindowUnlockAlertMessage } from '@/lib/trading/rangeEdgeAlerts'
+import {
+  formatEntryPermissionNote,
+  formatSessionStartNote,
+  formatSessionEndNote,
+  claimDeskNoteOnce,
+} from '@/lib/trading/rangeEdgeAlerts'
 import { infoToast, warningToast } from '@/lib/utils/toastUtils'
+import type { DeskInstrument } from '@/lib/trading/sessionGate'
 
 /** Why new entries are blocked — shown on market/limit place attempts. */
 function entryDeniedMessage(gate: SessionGateState | null | undefined): string | null {
@@ -470,6 +476,8 @@ export default function ChartPage() {
   const lastUnlockKeyRef = useRef<string | null>(null)
   const prevCanPlaceRef = useRef(false)
   const lastEdgeAlertAtRef = useRef(0)
+  const prevGatePhaseRef = useRef<string | null>(null)
+  const prevFetchLiveRef = useRef(false)
 
   const pushDeskAlert = useCallback(
     (alert: { kind: string; title: string; body: string; telegram: string }) => {
@@ -485,15 +493,17 @@ export default function ChartPage() {
 
   const handleDeskAlert = useCallback(
     (alert: {
-      kind: 'range_edge'
+      kind: string
       title: string
       body: string
       telegram: string
     }) => {
       const now = Date.now()
-      // Cooldown so tick noise doesn't spam Telegram
-      if (now - lastEdgeAlertAtRef.current < 90_000) return
-      lastEdgeAlertAtRef.current = now
+      // Cooldown only for ±10 band noise; range lock / session notes are once/day
+      if (alert.kind === 'range_edge') {
+        if (now - lastEdgeAlertAtRef.current < 90_000) return
+        lastEdgeAlertAtRef.current = now
+      }
       pushDeskAlert(alert)
     },
     [pushDeskAlert]
@@ -525,7 +535,7 @@ export default function ChartPage() {
       const key = `${g.lockedInstrument}:${windowLabel}:${g.phase}:${g.rangeStrategy ?? 'morning'}`
       if (lastUnlockKeyRef.current !== key) {
         lastUnlockKeyRef.current = key
-        const msg = formatWindowUnlockAlertMessage({
+        const msg = formatEntryPermissionNote({
           instrument: g.lockedInstrument,
           windowLabel,
           ladderHint: g.attemptLadderLabel,
@@ -534,9 +544,42 @@ export default function ChartPage() {
         void fetch('/api/notify/desk-alert', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ kind: 'window_unlock', ...msg }),
+          body: JSON.stringify(msg),
         }).catch(() => {})
       }
+    }
+
+    // Session START = cash open (live bars unlock). Session END = cash close.
+    const inst = g.lockedInstrument as DeskInstrument | null
+    const prevPhase = prevGatePhaseRef.current
+    const fetchLive = !!g.clockedIn && !!g.canFetchLiveBars
+    const wasFetchLive = prevFetchLiveRef.current
+    prevGatePhaseRef.current = g.phase
+    prevFetchLiveRef.current = fetchLive
+
+    if (inst && fetchLive && !wasFetchLive && claimDeskNoteOnce('session_start', inst)) {
+      const msg = formatSessionStartNote({ instrument: inst })
+      infoToast(msg.title, 6000)
+      void fetch('/api/notify/desk-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(msg),
+      }).catch(() => {})
+    }
+    if (
+      inst &&
+      g.phase === 'CLOSED' &&
+      prevPhase != null &&
+      prevPhase !== 'CLOSED' &&
+      claimDeskNoteOnce('session_end', inst)
+    ) {
+      const msg = formatSessionEndNote({ instrument: inst })
+      warningToast(msg.title, 8000)
+      void fetch('/api/notify/desk-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(msg),
+      }).catch(() => {})
     }
 
     // Regime / recommendation is day-stable — fetch once, not every 5s gate poll

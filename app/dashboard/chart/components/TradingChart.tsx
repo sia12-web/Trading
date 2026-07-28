@@ -71,6 +71,7 @@ import { LiveVoicePanel } from '@/app/dashboard/chart/components/LiveVoicePanel'
 import { DESK_CHART_THEME } from '@/lib/chart/deskChartTheme'
 import {
   DESK_INSTRUMENTS,
+  isDeskInstrument,
   isLiveBarsAllowed,
   isChartStreamAllowed,
   isLiveTipStreamAllowed,
@@ -110,6 +111,8 @@ import {
 } from '@/lib/chart/rangeEdgeTails'
 import {
   formatRangeEdgeAlertMessage,
+  formatRangeShapedNote,
+  claimDeskNoteOnce,
   rangeEdgeProximity,
   shouldFireRangeEdgeAlert,
 } from '@/lib/trading/rangeEdgeAlerts'
@@ -647,7 +650,7 @@ interface TradingChartProps {
   levelsRefreshKey?: number
   /** Rising-edge desk alerts (range ±10 band while entries unlocked) */
   onDeskAlert?: (alert: {
-    kind: 'range_edge'
+    kind: string
     title: string
     body: string
     telegram: string
@@ -4595,6 +4598,96 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     }
     wasInEdgeBandRef.current = nowIn
   }, [edgeProximity, livePrice, instrument, onDeskAlert])
+
+  /** Rising edge: OR30 / IB / lunch / US Range fully shaped → structured Telegram note. */
+  const prevRangeLocksRef = useRef({
+    or30: false,
+    ib: false,
+    lunch: false,
+    us: false,
+  })
+  useEffect(() => {
+    if (!onDeskAlert || !isDeskInstrument(instrument)) return
+    const prev = prevRangeLocksRef.current
+    const next = {
+      or30: or30Locked,
+      ib: ibShaped,
+      lunch: lunchLocked,
+      us: usRangeShaped && instrument === 'NIKKEI',
+    }
+
+    if (next.or30 && !prev.or30) {
+      const r = or30RangeRef.current
+      if (r && claimDeskNoteOnce('range_or30', instrument)) {
+        onDeskAlert(
+          formatRangeShapedNote({
+            instrument,
+            rangeLabel: 'OR30',
+            high: r.high,
+            low: r.low,
+            nextHint:
+              'Optional morning probe (±10 H/L). If unused when IB locks → hand off to IB.',
+          })
+        )
+      }
+    }
+    if (next.ib && !prev.ib) {
+      const r = ibRangeRef.current
+      if (r && claimDeskNoteOnce('range_ib', instrument)) {
+        const label = instrument === 'NIKKEI' ? 'Tokyo IB' : 'IB'
+        onDeskAlert(
+          formatRangeShapedNote({
+            instrument,
+            rangeLabel: label,
+            high: r.high,
+            low: r.low,
+            nextHint:
+              instrument === 'NIKKEI'
+                ? 'Tokyo IB entry when that window unlocks (±10 of locked H/L).'
+                : 'IB entry when that window unlocks (±10 of locked H/L).',
+          })
+        )
+      }
+    }
+    if (next.lunch && !prev.lunch) {
+      const r = lunchRangeRef.current
+      if (r && claimDeskNoteOnce('range_lunch', instrument)) {
+        onDeskAlert(
+          formatRangeShapedNote({
+            instrument,
+            rangeLabel: 'Lunch-range',
+            high: r.high,
+            low: r.low,
+            nextHint: 'Lunch-range entry after 13:30 ET (±10 of locked H/L).',
+          })
+        )
+      }
+    }
+    if (next.us && !prev.us) {
+      const r = usRangeRef.current
+      if (r && claimDeskNoteOnce('range_us', instrument)) {
+        onDeskAlert(
+          formatRangeShapedNote({
+            instrument,
+            rangeLabel: 'US Range (prior NYC)',
+            high: r.high,
+            low: r.low,
+            nextHint:
+              'Already shaped from prior NYC session. Entry when US Range window unlocks (±10 H/L).',
+          })
+        )
+      }
+    }
+
+    prevRangeLocksRef.current = next
+  }, [
+    or30Locked,
+    ibShaped,
+    lunchLocked,
+    usRangeShaped,
+    instrument,
+    onDeskAlert,
+  ])
 
   /** Active entry unlock — same rule for DOW/NASDAQ (ET) and NIKKEI (JST). */
   const inEntryWindow = isDeskEntryWindowActive({

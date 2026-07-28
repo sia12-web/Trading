@@ -94,6 +94,32 @@ export async function POST(request: NextRequest) {
       date: sessionDateForMarket(market),
     })
 
+    // Structured Telegram session note (soft-fail if Telegram unset)
+    if (prepInstrument) {
+      try {
+        const { formatClockInNote } = await import('@/lib/notify/deskSessionNotes')
+        const { sendTelegramMessage } = await import('@/lib/notify/telegram')
+        const note = formatClockInNote({
+          instrument: prepInstrument as DeskInstrument,
+          market,
+          sessionDate: sessionDateForMarket(market),
+        })
+        void sendTelegramMessage(note.telegram).then((r) => {
+          if (!r.ok) {
+            logger.warn('desk.clock_in_telegram_failed', { error: r.error })
+          } else if ('skipped' in r && r.skipped) {
+            logger.info('desk.clock_in_telegram_skipped', { reason: r.reason })
+          } else {
+            logger.info('desk.clock_in_telegram_sent', {
+              instrument: prepInstrument,
+            })
+          }
+        })
+      } catch (e) {
+        logger.warn('desk.clock_in_telegram_error', { err: e })
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       attendance: result.row,
