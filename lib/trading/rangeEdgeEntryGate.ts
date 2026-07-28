@@ -41,6 +41,36 @@ export function isEntryWithinRangeEdgeBand(
   return rangeEdgeBands(range, bandPoints).some((band) => entry >= band.min && entry <= band.max)
 }
 
+/**
+ * Keep (or move) a price into the nearest legal ±band of range H/L.
+ * Already in-band → unchanged. Mid-range / outside → clamped onto the
+ * closest band edge so Market/Limit tools open on the highlighted zones.
+ * Returns null when range is missing/invalid.
+ */
+export function clampPriceToRangeEdgeBands(
+  price: number,
+  range: RangeEdgeLevels | null | undefined,
+  bandPoints: number = RANGE_EDGE_BAND_POINTS
+): number | null {
+  if (!range || !Number.isFinite(price) || !(price > 0)) return null
+  const bands = rangeEdgeBands(range, bandPoints)
+  if (bands.length === 0) return null
+  for (const band of bands) {
+    if (price >= band.min && price <= band.max) return price
+  }
+  let best = bands[0]!.center
+  let bestDist = Infinity
+  for (const band of bands) {
+    const clamped = Math.min(band.max, Math.max(band.min, price))
+    const d = Math.abs(price - clamped)
+    if (d < bestDist) {
+      bestDist = d
+      best = clamped
+    }
+  }
+  return best
+}
+
 export function nearestRangeEdge(
   entry: number,
   range: RangeEdgeLevels

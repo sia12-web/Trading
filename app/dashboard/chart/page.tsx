@@ -435,16 +435,9 @@ export default function ChartPage() {
             ? 'structure'
             : 'ai'
       )
-      setOrderStrategyRange(
-        meta?.source === 'manual' || meta?.type === 'manual'
-          ? null
-          : meta?.strategyRange ?? null
-      )
-      setOrderStrategyMagnets(
-        meta?.source === 'manual' || meta?.type === 'manual'
-          ? null
-          : meta?.strategyMagnets ?? null
-      )
+      // Keep playbook ±10 range for manual Market/Limit too — gate needs it
+      setOrderStrategyRange(meta?.strategyRange ?? null)
+      setOrderStrategyMagnets(meta?.strategyMagnets ?? null)
     },
     [managePos, positionOverlay, pending, placeMarketOrder, gate]
   )

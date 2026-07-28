@@ -20,7 +20,7 @@ import {
   type StrategyRangeEdges,
   type StrategyRiskMagnets,
 } from '@/lib/trading/strategyRiskGeometry'
-import { assertRangeEdgeEntry } from '@/lib/trading/rangeEdgeEntryGate'
+import { assertRangeEdgeEntry, clampPriceToRangeEdgeBands, RANGE_EDGE_BAND_POINTS } from '@/lib/trading/rangeEdgeEntryGate'
 import {
   instrumentTick,
   snapDeskPrice,
@@ -246,7 +246,11 @@ export function LevelOrderTicket({
   }, [useLiveAccount, initialAccountSize])
 
   useEffect(() => {
-    const snappedLimit = snapDeskPrice(instrument, levelPrice)
+    const clamped =
+      strategyRange != null
+        ? clampPriceToRangeEdgeBands(levelPrice, strategyRange) ?? levelPrice
+        : levelPrice
+    const snappedLimit = snapDeskPrice(instrument, clamped)
     setLimitPrice(snappedLimit)
     const dir = suggested
     if (isManual) {
@@ -603,12 +607,24 @@ export function LevelOrderTicket({
                 value={limitPrice}
                 onChange={(e) => {
                   const v = Number(e.target.value)
-                  setLimitPrice(v)
+                  if (!Number.isFinite(v)) return
+                  const clamped =
+                    strategyRange != null
+                      ? clampPriceToRangeEdgeBands(v, strategyRange) ?? v
+                      : v
+                  setLimitPrice(clamped)
                   setTpInput(null)
                 }}
                 className="mt-1 w-full rounded-lg border border-[#30363d] bg-[#0d1117] px-3 py-2 text-sm text-white price-mono"
               />
             </label>
+            {strategyRange && (
+              <p className="mt-1 text-[10px] text-sky-400/80">
+                Entry locked to ±{RANGE_EDGE_BAND_POINTS} of {strategyRange.label || 'range'} H (
+                {strategyRange.high.toLocaleString()}) / L (
+                {strategyRange.low.toLocaleString()}) — drag or type within the band.
+              </p>
+            )}
             <label className="mt-3 block text-[10px] uppercase tracking-wider text-gray-500">
               Stop loss
               <input

@@ -100,6 +100,7 @@ import {
   type StrategyRiskMagnets,
 } from '@/lib/trading/strategyRiskGeometry'
 import {
+  clampPriceToRangeEdgeBands,
   filterLevelsInRangeEdgeBand,
   NO_IN_BAND_LEVELS_MESSAGE,
   RANGE_EDGE_BAND_POINTS,
@@ -1475,6 +1476,32 @@ export function TradingChart({
     lunchAttempts,
     stopHits,
   ])
+
+  /** Open Limit/Market risk box with entry snapped into the highlighted ±10 bands. */
+  const openRiskBox = useCallback(
+    (orderType: 'LIMIT' | 'MARKET', preferredPrice?: number) => {
+      const rawPx =
+        preferredPrice != null && Number.isFinite(preferredPrice) && preferredPrice > 0
+          ? preferredPrice
+          : livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 67000)
+      const { strategyRange } = getStrategyRiskBundle()
+      const inBand =
+        strategyRange != null
+          ? clampPriceToRangeEdgeBands(Number(rawPx), strategyRange)
+          : null
+      const entry = snapDeskPrice(instrument, inBand ?? Number(rawPx))
+      const dir: 'LONG' | 'SHORT' = 'LONG'
+      setRiskBox({
+        direction: dir,
+        orderType,
+        entryPrice: entry,
+        stopLoss: defaultManualStop(entry, dir),
+        profitTarget: snapDeskPrice(instrument, entry * 1.0105),
+      })
+      setRiskBoxActive(true)
+    },
+    [livePrice, candles, instrument, getStrategyRiskBundle]
+  )
 
   // Recompute focus tabs on a short clock so NIKKEI appears at Tokyo−30m without refresh.
   // Clock-gated UI must NOT run during the hydrate render (Railway TZ ≠ browser → React #418).
@@ -3243,17 +3270,7 @@ export function TradingChart({
       if (y < 0 || y > rect.height) return
       const price = candleRef.current.coordinateToPrice(y)
       if (price == null || !Number.isFinite(Number(price)) || Number(price) <= 0) return
-
-      const snapped = snapDeskPrice(instrument, Number(price))
-      const dir = 'LONG'
-      setRiskBox({
-        direction: dir,
-        orderType: 'LIMIT',
-        entryPrice: snapped,
-        stopLoss: defaultManualStop(snapped, dir),
-        profitTarget: snapDeskPrice(instrument, snapped * 1.0105),
-      })
-      setRiskBoxActive(true)
+      openRiskBox('LIMIT', Number(price))
     }
 
     const onDblClick = (e: MouseEvent) => {
@@ -3273,7 +3290,7 @@ export function TradingChart({
         c.removeEventListener('dblclick', onDblClick, true)
       }
     }
-  }, [chartReady, positionOverlay, pendingLimit, instrument])
+  }, [chartReady, positionOverlay, pendingLimit, openRiskBox])
 
   // ── Draw Zone tool — drag to draw a rectangle price zone ────────────────────
   useEffect(() => {
@@ -3902,7 +3919,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       const rawPrice = candleRef.current.coordinateToPrice(y)
       if (rawPrice == null || !Number.isFinite(Number(rawPrice)) || Number(rawPrice) <= 0) return
 
-      const snapped = snapDeskPrice(instrument, Number(rawPrice))
+      const snappedRaw = snapDeskPrice(instrument, Number(rawPrice))
+      const { strategyRange } = getStrategyRiskBundle()
+      const inBand =
+        strategyRange != null
+          ? clampPriceToRangeEdgeBands(snappedRaw, strategyRange)
+          : null
+      const snapped = snapDeskPrice(instrument, inBand ?? snappedRaw)
 
       if (draggingRiskLineRef.current === 'ENTRY') {
         setRiskBox((prev) => {
@@ -3916,9 +3939,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           }
         })
       } else if (draggingRiskLineRef.current === 'TP') {
-        setRiskBox((prev) => (prev ? { ...prev, profitTarget: snapped } : null))
+        setRiskBox((prev) => (prev ? { ...prev, profitTarget: snappedRaw } : null))
       } else if (draggingRiskLineRef.current === 'SL') {
-        setRiskBox((prev) => (prev ? { ...prev, stopLoss: snapped } : null))
+        setRiskBox((prev) => (prev ? { ...prev, stopLoss: snappedRaw } : null))
       }
     }
 
@@ -3932,7 +3955,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       window.removeEventListener('mousemove', onMouseMove, true)
       window.removeEventListener('mouseup', onMouseUp, true)
     }
-  }, [riskBox, instrument])
+  }, [riskBox, instrument, getStrategyRiskBundle])
 
   // Drag filled-position SL/TP (Entry fixed). Commit on mouseup via onAdjustBrackets.
   const onBracketLineMouseDown = useCallback(
@@ -4001,24 +4024,32 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     }
   }, [editableOverlay, riskBox, instrument])
 
-  // Auto-track live price for Market Orders (so Entry line stays locked to current price tick in real-time)
+  // Auto-track live price for Market — only while print stays in ±10 bands
   useEffect(() => {
     if (!riskBox || riskBox.orderType !== 'MARKET' || draggingRiskLineRef.current) return
     if (livePrice == null || !(livePrice > 0)) return
     const currentLive = snapDeskPrice(instrument, livePrice)
-    if (currentLive === riskBox.entryPrice) return
+    const { strategyRange } = getStrategyRiskBundle()
+    const tracked =
+      strategyRange != null
+        ? snapDeskPrice(
+            instrument,
+            clampPriceToRangeEdgeBands(currentLive, strategyRange) ?? currentLive
+          )
+        : currentLive
+    if (tracked === riskBox.entryPrice) return
 
-    const diff = currentLive - riskBox.entryPrice
+    const diff = tracked - riskBox.entryPrice
     setRiskBox((prev) => {
       if (!prev || prev.orderType !== 'MARKET') return prev
       return {
         ...prev,
-        entryPrice: currentLive,
+        entryPrice: tracked,
         stopLoss: snapDeskPrice(instrument, prev.stopLoss + diff),
         profitTarget: snapDeskPrice(instrument, prev.profitTarget + diff),
       }
     })
-  }, [livePrice, riskBox, instrument])
+  }, [livePrice, riskBox, instrument, getStrategyRiskBundle])
 
   // Paint interactive risk box lines on chart
   useEffect(() => {
@@ -4104,6 +4135,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     }
 
     if (discussedWithLeo) {
+      const { strategyRange, strategyMagnets } = getStrategyRiskBundle()
       onLevelSelect?.(entryPrice, {
         source: 'manual',
         type: 'manual',
@@ -4113,6 +4145,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         reasoning: autoReason,
         stopLoss,
         profitTarget,
+        strategyRange,
+        strategyMagnets,
       })
       cancelRiskBox()
     } else {
@@ -4130,7 +4164,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         suggestedReason: autoReason,
       })
     }
-  }, [riskBox, onLevelSelect, cancelRiskBox])
+  }, [riskBox, onLevelSelect, cancelRiskBox, getStrategyRiskBundle])
 
   const toggleRiskBoxDirection = useCallback(() => {
     setRiskBox((prev) => {
@@ -4216,42 +4250,18 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         })
       } else if (key === 'o') {
         e.preventDefault()
-        setRiskBoxActive((prev) => {
-          if (prev && riskBox?.orderType === 'LIMIT') {
-            cancelRiskBox()
-            return false
-          } else {
-            const rawPx = livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 67000)
-            const dir = 'LONG'
-            setRiskBox({
-              direction: dir,
-              orderType: 'LIMIT',
-              entryPrice: rawPx,
-              stopLoss: defaultManualStop(rawPx, dir),
-              profitTarget: dir === 'LONG' ? snapDeskPrice(instrument, rawPx * 1.0105) : snapDeskPrice(instrument, rawPx * 0.9895),
-            })
-            return true
-          }
-        })
+        if (riskBoxActive && riskBox?.orderType === 'LIMIT') {
+          cancelRiskBox()
+        } else {
+          openRiskBox('LIMIT')
+        }
       } else if (key === 'm') {
         e.preventDefault()
-        setRiskBoxActive((prev) => {
-          if (prev && riskBox?.orderType === 'MARKET') {
-            cancelRiskBox()
-            return false
-          } else {
-            const rawPx = livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 67000)
-            const dir = 'LONG'
-            setRiskBox({
-              direction: dir,
-              orderType: 'MARKET',
-              entryPrice: rawPx,
-              stopLoss: defaultManualStop(rawPx, dir),
-              profitTarget: dir === 'LONG' ? snapDeskPrice(instrument, rawPx * 1.0105) : snapDeskPrice(instrument, rawPx * 0.9895),
-            })
-            return true
-          }
-        })
+        if (riskBoxActive && riskBox?.orderType === 'MARKET') {
+          cancelRiskBox()
+        } else {
+          openRiskBox('MARKET')
+        }
       } else if (key === 'escape') {
         if (riskBoxActive || riskBox) {
           e.preventDefault()
@@ -4282,7 +4292,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       window.removeEventListener('keydown', handleKeyDown)
       document.removeEventListener('fullscreenchange', onFsChange)
     }
-  }, [isFullscreen, drawZoneActive, drawnZone, drawTimeActive, drawnTime, toggleFullscreen, cancelDrawnZone, clearDrawnZoneLines, cancelDrawnTime, instrument])
+  }, [isFullscreen, drawZoneActive, drawnZone, drawTimeActive, drawnTime, toggleFullscreen, cancelDrawnZone, clearDrawnZoneLines, cancelDrawnTime, instrument, riskBoxActive, riskBox, cancelRiskBox, openRiskBox])
 
   // ── Hover visible AI/structure level → preview entry / SL / TP ─
   // Morning: place preview. Afternoon: same geometry, watch-only (canPlaceOrder false).
@@ -5277,16 +5287,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             if (riskBoxActive && riskBox?.orderType === 'LIMIT') {
               cancelRiskBox()
             } else {
-              const rawPx = livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 67000)
-              const dir = 'LONG'
-              setRiskBox({
-                direction: dir,
-                orderType: 'LIMIT',
-                entryPrice: rawPx,
-                stopLoss: defaultManualStop(rawPx, dir),
-                profitTarget: snapDeskPrice(instrument, rawPx * 1.0105),
-              })
-              setRiskBoxActive(true)
+              openRiskBox('LIMIT')
             }
           }}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
@@ -5315,16 +5316,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             if (riskBoxActive && riskBox?.orderType === 'MARKET') {
               cancelRiskBox()
             } else {
-              const rawPx = livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 67000)
-              const dir = 'LONG'
-              setRiskBox({
-                direction: dir,
-                orderType: 'MARKET',
-                entryPrice: rawPx,
-                stopLoss: defaultManualStop(rawPx, dir),
-                profitTarget: snapDeskPrice(instrument, rawPx * 1.0105),
-              })
-              setRiskBoxActive(true)
+              openRiskBox('MARKET')
             }
           }}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
@@ -5992,7 +5984,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     left: '32%',
                     top: `${entryY - 14}px`,
                   }}
-                  title="Drag Entry line up or down"
+                  title="Drag Entry within ±10 of range high or low"
                 >
                   {/* Explicit Buy / Sell Placement Button — ONLY BUTTON THAT PLACES ORDER */}
                   <button

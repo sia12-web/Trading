@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict'
 import {
   assertRangeEdgeEntry,
+  clampPriceToRangeEdgeBands,
   filterLevelsInRangeEdgeBand,
   isEntryWithinRangeEdgeBand,
   rangeEdgeBands,
@@ -54,6 +55,17 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
     kept.map((l) => l.price),
     [40005, 39895]
   )
+}
+
+{
+  assert.equal(clampPriceToRangeEdgeBands(40005, range), 40005, 'in-band unchanged')
+  assert.equal(clampPriceToRangeEdgeBands(39905, range), 39905, 'low band unchanged')
+  assert.equal(clampPriceToRangeEdgeBands(39950, range), 39990, 'exact mid ties to high band edge')
+  assert.equal(clampPriceToRangeEdgeBands(39980, range), 39990, 'near high snaps to high min')
+  assert.equal(clampPriceToRangeEdgeBands(39920, range), 39910, 'near low snaps to low max')
+  assert.equal(clampPriceToRangeEdgeBands(40050, range), 40010, 'above high clamps to high max')
+  assert.equal(clampPriceToRangeEdgeBands(39800, range), 39890, 'below low clamps to low min')
+  assert.equal(clampPriceToRangeEdgeBands(40000, null), null)
 }
 
 console.log('range_edge_entry_gate: all passed')
