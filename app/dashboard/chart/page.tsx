@@ -47,6 +47,8 @@ import {
 } from '@/lib/trading/positionSizing'
 import { snapDeskPrice, snapStopToTick, snapTargetToTick } from '@/lib/trading/instrumentTicks'
 import { assertRangeEdgeEntry } from '@/lib/trading/rangeEdgeEntryGate'
+import { formatWindowUnlockAlertMessage } from '@/lib/trading/rangeEdgeAlerts'
+import { infoToast, warningToast } from '@/lib/utils/toastUtils'
 
 /** Why new entries are blocked — shown on market/limit place attempts. */
 function entryDeniedMessage(gate: SessionGateState | null | undefined): string | null {
@@ -465,8 +467,78 @@ export default function ChartPage() {
     bannerRefreshRef.current?.()
   }, [])
 
+  const lastUnlockKeyRef = useRef<string | null>(null)
+  const prevCanPlaceRef = useRef(false)
+  const lastEdgeAlertAtRef = useRef(0)
+
+  const pushDeskAlert = useCallback(
+    (alert: { kind: string; title: string; body: string; telegram: string }) => {
+      warningToast(`${alert.title} — ${alert.body}`, 8000)
+      void fetch('/api/notify/desk-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(alert),
+      }).catch(() => {})
+    },
+    []
+  )
+
+  const handleDeskAlert = useCallback(
+    (alert: {
+      kind: 'range_edge'
+      title: string
+      body: string
+      telegram: string
+    }) => {
+      const now = Date.now()
+      // Cooldown so tick noise doesn't spam Telegram
+      if (now - lastEdgeAlertAtRef.current < 90_000) return
+      lastEdgeAlertAtRef.current = now
+      pushDeskAlert(alert)
+    },
+    [pushDeskAlert]
+  )
+
   const handleGate = useCallback((g: SessionGateState) => {
     setGate(g)
+
+    const unlocked =
+      !!g.clockedIn &&
+      !!g.canPlaceEntry &&
+      (g.rangeStrategy === 'ib' ||
+        g.rangeStrategy === 'us_range' ||
+        g.rangeStrategy === 'lunch_range' ||
+        (g.phase === 'ENTRY' && !g.rangeStrategy))
+    const becameUnlocked = unlocked && !prevCanPlaceRef.current
+    prevCanPlaceRef.current = !!g.canPlaceEntry
+    if (becameUnlocked && g.lockedInstrument) {
+      const windowLabel =
+        g.rangeStrategy === 'us_range'
+          ? 'US Range'
+          : g.rangeStrategy === 'ib'
+            ? g.lockedInstrument === 'NIKKEI'
+              ? 'Tokyo IB'
+              : 'IB'
+            : g.rangeStrategy === 'lunch_range'
+              ? 'Lunch-range'
+              : 'Morning (OR30)'
+      const key = `${g.lockedInstrument}:${windowLabel}:${g.phase}:${g.rangeStrategy ?? 'morning'}`
+      if (lastUnlockKeyRef.current !== key) {
+        lastUnlockKeyRef.current = key
+        const msg = formatWindowUnlockAlertMessage({
+          instrument: g.lockedInstrument,
+          windowLabel,
+          ladderHint: g.attemptLadderLabel,
+        })
+        infoToast(`${msg.title} — ${msg.body}`, 7000)
+        void fetch('/api/notify/desk-alert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kind: 'window_unlock', ...msg }),
+        }).catch(() => {})
+      }
+    }
+
     // Regime / recommendation is day-stable — fetch once, not every 5s gate poll
     if (regimeFetchedRef.current) return
     regimeFetchedRef.current = true
@@ -1313,6 +1385,7 @@ export default function ChartPage() {
               onLevelSelect={handleLevelSelect}
               onMarketOrder={placeMarketOrder}
               canPlaceOrder={canTrade && dataMode === 'live'}
+              onDeskAlert={handleDeskAlert}
               rangeStrategy={gate?.rangeStrategy ?? null}
               attemptsUsed={gate?.attemptsUsed ?? 0}
               stopHits={gate?.stopHits ?? 0}

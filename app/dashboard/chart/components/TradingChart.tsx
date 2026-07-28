@@ -102,6 +102,11 @@ import {
   NO_IN_BAND_LEVELS_MESSAGE,
 } from '@/lib/trading/rangeEdgeEntryGate'
 import {
+  formatRangeEdgeAlertMessage,
+  rangeEdgeProximity,
+  shouldFireRangeEdgeAlert,
+} from '@/lib/trading/rangeEdgeAlerts'
+import {
   NYC_LUNCH_COLORS,
   computeNycLunchRange,
   computeNycLunchSignals,
@@ -633,6 +638,13 @@ interface TradingChartProps {
   clockedIn?: boolean
   /** Bump to force a levels reload after SL/TP (system memory updated) */
   levelsRefreshKey?: number
+  /** Rising-edge desk alerts (range ±10 band while entries unlocked) */
+  onDeskAlert?: (alert: {
+    kind: 'range_edge'
+    title: string
+    body: string
+    telegram: string
+  }) => void
 }
 
 // ─── Main TradingChart component ──────────────────────────────────────────────
@@ -666,6 +678,7 @@ export function TradingChart({
   deskAttended = false,
   clockedIn = false,
   levelsRefreshKey = 0,
+  onDeskAlert,
 }: TradingChartProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const sessionOverlayRef = useRef<HTMLDivElement>(null)
@@ -4386,6 +4399,41 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       morningStopHits: stopHits,
     }),
   })
+
+  /** ±10 of active playbook range while entries unlocked (limit or market). */
+  const edgeProximity = useMemo(() => {
+    if (!canPlaceOrder || !livePrice) return null
+    const strategyRange = activeRangeForPlaybook({
+      playbookMode,
+      instrument,
+      or30: or30RangeRef.current,
+      ib: ibRangeRef.current,
+      usRange: usRangeRef.current,
+      lunchRange: lunchRangeRef.current,
+    })
+    return rangeEdgeProximity(livePrice, strategyRange)
+  }, [canPlaceOrder, livePrice, playbookMode, instrument, rangeStrategy])
+
+  const wasInEdgeBandRef = useRef(false)
+  useEffect(() => {
+    const nowIn = !!edgeProximity
+    if (
+      shouldFireRangeEdgeAlert(wasInEdgeBandRef.current, nowIn) &&
+      edgeProximity &&
+      livePrice != null &&
+      onDeskAlert
+    ) {
+      const msg = formatRangeEdgeAlertMessage({
+        instrument,
+        proximity: edgeProximity,
+        livePrice,
+        mode: 'either',
+      })
+      onDeskAlert({ kind: 'range_edge', ...msg })
+    }
+    wasInEdgeBandRef.current = nowIn
+  }, [edgeProximity, livePrice, instrument, onDeskAlert])
+
   /** Active entry unlock — same rule for DOW/NASDAQ (ET) and NIKKEI (JST). */
   const inEntryWindow = isDeskEntryWindowActive({
     playbookMode,
@@ -4644,6 +4692,21 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             title={`Price is testing Initial Balance ${ibProximity.level} (${ibProximity.price.toLocaleString()})`}
           >
             ⚡ TESTING IB {ibProximity.level} ({ibProximity.price.toLocaleString()})
+          </span>
+        )}
+
+        {/* Active playbook ±10 band — entries unlocked (limit or market) */}
+        {edgeProximity && canPlaceOrder && (
+          <span
+            className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-extrabold uppercase tracking-wide animate-pulse shadow-sm ${
+              edgeProximity.edge === 'high'
+                ? 'border-sky-500/80 bg-sky-950/80 text-sky-100'
+                : 'border-emerald-500/80 bg-emerald-950/80 text-emerald-100'
+            }`}
+            title={`Live price is within ±10 of ${edgeProximity.label} ${edgeProximity.edge} (${edgeProximity.center.toLocaleString()}). Limit or market allowed.`}
+          >
+            IN BAND · {edgeProximity.label} {edgeProximity.edge.toUpperCase()} (
+            {edgeProximity.center.toLocaleString()})
           </span>
         )}
 
