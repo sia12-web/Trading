@@ -10,7 +10,23 @@ import {
   isAnyLiveFocusWindowActive,
   liveFocusMarket,
   nextLiveDeskMarket,
+  TOKYO_SESSION,
+  NY_SESSION,
 } from '@/lib/trading/sessionGate'
+import {
+  TRADER_DISPLAY_LABEL,
+  deskLocalHmsAsTraderDisplay,
+} from '@/lib/chart/traderDisplayTz'
+
+/** Focus unlock = cash open − 30m, shown in Montreal (ET). */
+function focusUnlockMontreal(market: 'NY' | 'TOKYO', now: Date): string {
+  if (market === 'TOKYO') {
+    // Tokyo open 09:00 JST → focus 08:30 JST → Montreal ET
+    return `${deskLocalHmsAsTraderDisplay('08:30:00', TOKYO_SESSION.tz, now)} ${TRADER_DISPLAY_LABEL}`
+  }
+  // NY open 09:30 → focus 09:00 America/New_York (= Montreal ET)
+  return `${deskLocalHmsAsTraderDisplay('09:00:00', NY_SESSION.tz, now)} ${TRADER_DISPLAY_LABEL}`
+}
 
 export default function DashboardHomePage() {
   const [focusLive, setFocusLive] = useState(false)
@@ -30,10 +46,11 @@ export default function DashboardHomePage() {
         )
       } else {
         const next = nextLiveDeskMarket(now)
+        const unlockAt = focusUnlockMontreal(next === 'TOKYO' ? 'TOKYO' : 'NY', now)
         setNextHint(
           next === 'TOKYO'
-            ? 'No live session. Live Trading unlocks 30 minutes before Tokyo open (08:30 JST).'
-            : 'No live session. Live Trading unlocks 30 minutes before NY open (09:00 ET).'
+            ? `No live session. Live Trading unlocks 30 minutes before Tokyo open (${unlockAt}).`
+            : `No live session. Live Trading unlocks 30 minutes before NY open (${unlockAt}).`
         )
       }
     }
@@ -58,7 +75,7 @@ export default function DashboardHomePage() {
         ) : (
           <span
             className="rounded-lg border border-surface-600 bg-surface-800/80 px-4 py-2.5 text-sm font-semibold text-gray-500"
-            title="Unlocks 30 minutes before NY or Tokyo cash open"
+            title="Unlocks 30 minutes before NY or Tokyo cash open (Montreal / ET)"
           >
             Live Trading locked
           </span>
@@ -92,7 +109,7 @@ export default function DashboardHomePage() {
       <p className="mt-10 text-xs text-gray-600 leading-relaxed max-w-md">
         Clock in during prep (15 minutes before cash open). Late after the open means that
         session is skipped — no AI, no trades. Tip and desk unlock 30 minutes before the next
-        open.
+        open. All desk clocks show Montreal time ({TRADER_DISPLAY_LABEL}).
       </p>
     </div>
   )
