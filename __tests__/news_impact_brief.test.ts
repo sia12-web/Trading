@@ -57,4 +57,25 @@ assert.ok(digest)
 assert.equal(digest!.ranked.length, 2)
 assert.ok(digest!.koreaNote)
 
+const oneDup = parseOneBrief(
+  'h2',
+  JSON.stringify({
+    plainEnglish: 'Dup desks.',
+    deskImpacts: [
+      { desk: 'DOW', bias: 'bullish', note: 'a' },
+      { desk: 'DOW', bias: 'bearish', note: 'b' },
+      { desk: 'NASDAQ', bias: 'noise', note: 'c' },
+    ],
+    why: 'test',
+    horizon: 'minutes',
+    koreaTransmission: null,
+  }),
+  'test'
+)
+assert.ok(oneDup)
+assert.equal(oneDup!.deskImpacts.length, 3, 'deduped + filled NIKKEI')
+assert.equal(oneDup!.deskImpacts[0]!.desk, 'DOW')
+assert.equal(oneDup!.deskImpacts[0]!.bias, 'bullish', 'keep first DOW')
+assert.equal(oneDup!.deskImpacts[2]!.desk, 'NIKKEI')
+
 console.log('news_impact_brief: all passed')

@@ -122,9 +122,11 @@ export default function DeskNewsPage() {
   const [error, setError] = useState<string | null>(null)
   const [nowMs, setNowMs] = useState(() => Date.now())
   const [briefs, setBriefs] = useState<Record<string, NewsImpactBrief>>({})
+  const [openBriefIds, setOpenBriefIds] = useState<Record<string, boolean>>({})
   const [briefLoadingId, setBriefLoadingId] = useState<string | null>(null)
   const [briefErrors, setBriefErrors] = useState<Record<string, string>>({})
   const [digest, setDigest] = useState<Top5NewsDigest | null>(null)
+  const [digestOpen, setDigestOpen] = useState(false)
   const [digestLoading, setDigestLoading] = useState(false)
   const [digestError, setDigestError] = useState<string | null>(null)
   const reqSeq = useRef(0)
@@ -164,7 +166,7 @@ export default function DeskNewsPage() {
   useEffect(() => {
     const ac = new AbortController()
     setLoading(true)
-    setDigest(null)
+    setDigestOpen(false)
     setDigestError(null)
     void load(ac.signal)
     const id = window.setInterval(() => {
@@ -198,17 +200,12 @@ export default function DeskNewsPage() {
 
   const explainOne = useCallback(
     async (card: DeskNewsCard) => {
+      if (openBriefIds[card.id]) {
+        setOpenBriefIds((prev) => ({ ...prev, [card.id]: false }))
+        return
+      }
       if (briefs[card.id]) {
-        setBriefs((prev) => {
-          const next = { ...prev }
-          delete next[card.id]
-          return next
-        })
-        setBriefErrors((prev) => {
-          const next = { ...prev }
-          delete next[card.id]
-          return next
-        })
+        setOpenBriefIds((prev) => ({ ...prev, [card.id]: true }))
         return
       }
       setBriefLoadingId(card.id)
@@ -236,22 +233,26 @@ export default function DeskNewsPage() {
           return
         }
         setBriefs((prev) => ({ ...prev, [card.id]: json.brief as NewsImpactBrief }))
+        setOpenBriefIds((prev) => ({ ...prev, [card.id]: true }))
       } catch {
         setBriefErrors((prev) => ({
           ...prev,
           [card.id]: 'Brief unavailable',
         }))
       } finally {
-        setBriefLoadingId(null)
+        setBriefLoadingId((cur) => (cur === card.id ? null : cur))
       }
     },
-    [briefs, tab]
+    [briefs, openBriefIds, tab]
   )
 
   const briefTop5 = useCallback(async () => {
-    if (digest) {
-      setDigest(null)
-      setDigestError(null)
+    if (digestOpen) {
+      setDigestOpen(false)
+      return
+    }
+    if (digest && digest.tab === tab) {
+      setDigestOpen(true)
       return
     }
     const top = items.slice(0, 5)
@@ -274,12 +275,13 @@ export default function DeskNewsPage() {
         return
       }
       setDigest(json.digest as Top5NewsDigest)
+      setDigestOpen(true)
     } catch {
       setDigestError('Brief unavailable')
     } finally {
       setDigestLoading(false)
     }
-  }, [digest, items, tab])
+  }, [digest, digestOpen, items, tab])
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 space-y-6">
@@ -386,7 +388,7 @@ export default function DeskNewsPage() {
             >
               {digestLoading
                 ? 'Briefing…'
-                : digest
+                : digestOpen
                   ? 'Hide top 5'
                   : 'Brief top 5'}
             </button>
@@ -399,7 +401,7 @@ export default function DeskNewsPage() {
             {digestError}
           </p>
         )}
-        {digest && (
+        {digestOpen && digest && (
           <div className="rounded-xl border border-violet-500/30 bg-violet-950/25 px-3.5 py-3 space-y-2">
             <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-violet-200">
               Session news bias · Haiku
@@ -449,9 +451,10 @@ export default function DeskNewsPage() {
               key={card.id}
               card={card}
               nowMs={nowMs}
-              brief={briefs[card.id] || null}
+              brief={openBriefIds[card.id] ? briefs[card.id] || null : null}
               briefError={briefErrors[card.id] || null}
               loading={briefLoadingId === card.id}
+              open={!!openBriefIds[card.id]}
               onExplain={() => void explainOne(card)}
             />
           ))}
@@ -472,6 +475,7 @@ function NewsCard({
   brief,
   briefError,
   loading,
+  open,
   onExplain,
 }: {
   card: DeskNewsCard
@@ -479,6 +483,7 @@ function NewsCard({
   brief: NewsImpactBrief | null
   briefError: string | null
   loading: boolean
+  open: boolean
   onExplain: () => void
 }) {
   return (
@@ -520,7 +525,7 @@ function NewsCard({
           disabled={loading}
           className="rounded border border-violet-500/35 bg-violet-600/15 px-2 py-0.5 text-[10px] font-semibold text-violet-100 hover:bg-violet-600/25 disabled:opacity-50"
         >
-          {loading ? 'Haiku…' : brief ? 'Hide brief' : 'Explain impact'}
+          {loading ? 'Haiku…' : open ? 'Hide brief' : 'Explain impact'}
         </button>
       </div>
 
