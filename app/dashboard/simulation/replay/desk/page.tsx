@@ -23,8 +23,7 @@ import {
   getLastNTokyoTradingDays,
 } from '@/lib/utils/dateUtils'
 import {
-  DESK_RISK_PERCENT,
-  MANUAL_RISK_PERCENT,
+  RANGE_EDGE_RISK_PERCENT,
   normalizeEntrySource,
   previewPositionSizing,
   riskPercentForEntrySource,
@@ -3353,7 +3352,7 @@ function SimulationDeskInner() {
             pendingRef.current = pend
             setPending(pend)
             setMsg(
-              `Manual ${order.direction} limit @ ${order.level.toLocaleString()} — ${MANUAL_RISK_PERCENT}% risk · press Play until fill`
+              `Manual ${order.direction} limit @ ${order.level.toLocaleString()} — ${RANGE_EDGE_RISK_PERCENT}% risk · press Play until fill`
             )
           }}
         />
@@ -3373,7 +3372,7 @@ function SimulationDeskInner() {
                     }
                   >
                     {ticketLevel.source === 'ai' ? 'AI level' : 'Structure'} ·{' '}
-                    {DESK_RISK_PERCENT}% risk
+                    {RANGE_EDGE_RISK_PERCENT}% risk
                   </span>
                   <br />
                   {ticketLevel.level.toLocaleString()}
@@ -3420,7 +3419,7 @@ function SimulationDeskInner() {
                   accountSize,
                   d,
                   strat.stop,
-                  DESK_RISK_PERCENT
+                  RANGE_EDGE_RISK_PERCENT
                 )
                 const suggested = simSuggestedDirection(
                   overnightBias?.bias ?? 'none',

@@ -194,23 +194,23 @@ export function deskPlaybookHint(mode: DeskPlaybookMode, instrument?: string): s
   const tokyo = instrument === 'NIKKEI'
   switch (mode) {
     case 'us_range':
-      return 'Prior NYC session range — 1 attempt (only if morning OR30 skipped). Any fill locks Tokyo IB.'
+      return 'Prior NYC session range — up to 2 probes @ 0.25% (entries within ±10 pts of range high/low). Unlocks after morning clock ends or morning probes are exhausted.'
     case 'ib':
       return tokyo
-        ? 'Tokyo IB range — 1 attempt (only if morning + US Range skipped).'
-        : 'Initial Balance — 1 attempt (only if morning OR30 skipped). Any IB fill turns lunch-range off.'
+        ? 'Tokyo IB range — up to 2 probes @ 0.25% (entries within ±10 pts). Unlocks after US Range clock ends or US Range probes are exhausted.'
+        : 'Initial Balance — up to 2 probes @ 0.25% (entries within ±10 pts). Unlocks after morning clock ends or morning probes are exhausted.'
     case 'lunch_break':
       return tokyo
-        ? 'US Range entry closed. Prep for Tokyo IB — levels update. IB opens only if morning + US Range were skipped.'
-        : 'IB entry closed. Prep for lunch-range — levels update. Lunch opens only if morning + IB were skipped.'
+        ? 'US Range entry closed. Prep for Tokyo IB — levels update. IB opens on the clock (or earlier if US Range probes were exhausted).'
+        : 'IB entry closed. Prep for lunch-range — levels update. Lunch opens on the clock (or earlier if IB probes were exhausted).'
     case 'lunch_range':
-      return 'Lunch-range — 1 attempt while the PM entry window is open (morning + IB skipped).'
+      return 'Lunch-range — up to 2 probes @ 0.25% while the PM entry window is open (entries within ±10 pts of range high/low).'
     case 'done':
-      return 'Entry windows done or earlier trade taken — manage if open (confirm lunch close or ride to cash close), no new entries.'
+      return 'Entry windows done for today — manage if open (confirm lunch close or ride to cash close), no new entries.'
     default:
       return tokyo
-        ? 'Morning OR30 — 1 attempt. Any fill locks US Range and IB. Lunch 11:30 is confirm-close; unconfirmed books ride to cash close.'
-        : 'Morning OR30 — 1 attempt. Any fill locks IB and lunch-range. Lunch 11:30 is confirm-close; unconfirmed books ride to cash close.'
+        ? 'Morning OR30 — up to 2 probes @ 0.25% (entries within ±10 pts). Next: US Range then Tokyo IB (day cap 6). Lunch 11:30 is confirm-close; unconfirmed books ride to cash close.'
+        : 'Morning OR30 — up to 2 probes @ 0.25% (entries within ±10 pts). Next: IB then lunch-range (day cap 6). Lunch 11:30 is confirm-close; unconfirmed books ride to cash close.'
   }
 }
 

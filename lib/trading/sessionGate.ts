@@ -1022,16 +1022,16 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     const openBookHint =
       ladder.morningAttempts > 0
         ? market === 'TOKYO'
-          ? 'Morning (OR30) book open — US Range and IB locked for today. Confirm close at lunch (11:30) or ride until cash-close flatten. Manage only.'
-          : 'Morning (OR30) book open — IB and lunch-range locked for today. Confirm close at lunch (11:30) or ride until cash-close flatten. Manage only.'
+          ? 'Morning (OR30) book open — manage only (one book at a time). Confirm close at lunch (11:30) or ride until cash-close flatten. US Range / IB still unlock on the clock after you flatten (up to 2 probes each @ 0.25%).'
+          : 'Morning (OR30) book open — manage only (one book at a time). Confirm close at lunch (11:30) or ride until cash-close flatten. IB / lunch-range still unlock on the clock after you flatten (up to 2 probes each @ 0.25%).'
         : ladder.ibAttempts > 0
           ? market === 'TOKYO'
-            ? 'US Range book open — IB locked for today. Manage only — no new entries.'
-            : 'IB book open — lunch-range locked for today. Manage only — no new entries.'
+            ? 'US Range book open — manage only. Tokyo IB still unlocks on the clock after you flatten (up to 2 probes @ 0.25%).'
+            : 'IB book open — manage only. Lunch-range still unlocks on the clock after you flatten (up to 2 probes @ 0.25%).'
           : ladder.lunchAttempts > 0
             ? market === 'TOKYO'
-              ? 'IB book open. Manage only — no new entries.'
-              : 'Lunch-range book open. Manage only — no new entries.'
+              ? 'IB book open. Manage only — no new entries while this book is open.'
+              : 'Lunch-range book open. Manage only — no new entries while this book is open.'
             : 'Position open. Manage only — no new entries.'
     return finish({
       ...base,
@@ -1443,7 +1443,7 @@ export function resolveSimMorningGate(input: {
         'Position open — manage only. ' +
         ladderHint +
         (ladder.dayLocked
-          ? ' Later windows locked.'
+          ? ' Day attempt cap reached.'
           : ''),
     }
   }

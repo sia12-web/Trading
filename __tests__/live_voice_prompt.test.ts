@@ -71,18 +71,18 @@ const mock = {
     canPlaceEntry: false,
     canManagePosition: false,
     attemptsUsed: 0,
-    maxAttempts: 3,
+    maxAttempts: 6,
     stopHits: 0,
-    maxStopHits: 1,
+    maxStopHits: 2,
     morningAttempts: 0,
     ibAttempts: 0,
     lunchAttempts: 0,
-    maxMorningAttempts: 1,
-    maxIbAttempts: 1,
-    maxLunchAttempts: 1,
+    maxMorningAttempts: 2,
+    maxIbAttempts: 2,
+    maxLunchAttempts: 2,
     ibEligible: true,
     lunchEligible: true,
-    attemptLadderLabel: 'Day 0/3 · AM 0/1 · IB 0/1 · LN 0/1',
+    attemptLadderLabel: 'Day 0/6 · AM 0/2 · IB 0/2 · LN 0/2',
     openPositionId: null,
     entryWindow: null,
     rangeStrategy: null,
@@ -102,11 +102,11 @@ const mock = {
     },
   },
   risk: {
-    deskRiskPercent: 5,
-    manualRiskPercent: 1,
-    maxAttempts: 3,
-    maxStopHits: 1,
-    entryRule: 'day max 3',
+    deskRiskPercent: 0.25,
+    manualRiskPercent: 0.25,
+    maxAttempts: 6,
+    maxStopHits: 2,
+    entryRule: 'day max 6',
   },
   avwap: {
     openLabel: 'NY 9:30',
@@ -160,7 +160,7 @@ assert(packed.includes('bullish'), 'includes regime')
 assert(packed.includes('NY 9:30'), 'includes AVWAP label')
 assert(packed.includes('Morning playbook'), 'includes active playbook title')
 assert(packed.includes('IB 10:15'), 'includes IB window')
-assert(packed.includes('AM 0/1'), 'includes attempt ladder')
+assert(packed.includes('AM 0/2'), 'includes attempt ladder')
 assert(packed.includes('RANGE LIQUIDITY MAP'), 'packed context has range liquidity map')
 assert(packed.includes('Primary bait'), 'packed context has primary bait')
 assert(packed.includes('OR30'), 'packed primary OR30 for morning')
