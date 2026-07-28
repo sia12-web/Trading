@@ -19,7 +19,8 @@ import type { Instrument } from '@/types/price-feed'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 /** Railway / long-lived SSE — keep connection open through the cash session */
-export const maxDuration = 300
+/** Long-lived SSE — Railway hobby/pro allow up to 800s; client EventSource reconnects on drop */
+export const maxDuration = 800
 
 const dayPrevClose = new Map<string, number>()
 

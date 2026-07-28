@@ -61,7 +61,8 @@ async function fetchChunk(
     const json = await res.json()
     const out: OandaCandle[] = []
     for (const c of json.candles || []) {
-      if (c.complete === false) continue
+      // Include the forming (incomplete) bar — TradingView shows it live; skipping
+      // it left the tip only on tick synthesis and could lag OHLC vs the broker.
       const mid = c.mid
       if (!mid) continue
       const t = Math.floor(new Date(c.time).getTime() / 1000)

@@ -1177,6 +1177,8 @@ export function TradingChart({
   const instrumentRef = useRef<Instrument>(instrument)
   /** LIVE = real Yahoo data; SYNTHETIC = random fallback (never trade off this) */
   const [dataMode, setDataModeState] = useState<'live' | 'synthetic'>('live')
+  /** Candle history feed — yahoo means PA may diverge from OANDA/TV mid */
+  const [candleFeed, setCandleFeed] = useState<'oanda' | 'yahoo' | 'empty'>('oanda')
   const setDataMode = useCallback(
     (mode: 'live' | 'synthetic') => {
       setDataModeState(mode)
@@ -1922,6 +1924,9 @@ export function TradingChart({
           const trimmed = normalizeCandleTimes(toDeskCandles(mapped, instrument))
           setCandles(trimmed)
           setDataMode('live')
+          setCandleFeed(
+            json.source === 'yahoo' ? 'yahoo' : json.source === 'oanda' ? 'oanda' : 'empty'
+          )
           const last = mapped[mapped.length - 1]
           setLivePrice(json.quote?.price ?? last?.close ?? null)
           setPriceChange(json.quote?.change_pct ?? 0)
@@ -1937,6 +1942,7 @@ export function TradingChart({
       if (!tradeLive.open) {
         setCandles([])
         setDataMode('live')
+        setCandleFeed('empty')
         setLivePrice(null)
         setLevels([])
         return
@@ -1945,6 +1951,7 @@ export function TradingChart({
       if (process.env.NODE_ENV === 'production') {
         setCandles([])
         setDataMode('live')
+        setCandleFeed('empty')
         setLivePrice(null)
         setLevels([])
         return
@@ -1953,6 +1960,7 @@ export function TradingChart({
       const generated = generateCandles(meta.basePrice, tfSec)
       setCandles(generated)
       setDataMode('synthetic')
+      setCandleFeed('empty')
       setLivePrice(generated[generated.length - 1]?.close ?? null)
       setPriceChange(0)
       loadLevels(instrument, generated)
@@ -2454,11 +2462,16 @@ export function TradingChart({
       const liveT = liveBefore.time as number
       const serverT = serverTip.time as number
       if (liveT === serverT) {
+        const tipDiv =
+          serverTip.close > 0
+            ? Math.abs(liveBefore.close - serverTip.close) / serverTip.close
+            : 0
+        const close = tipDiv <= 0.012 ? liveBefore.close : serverTip.close
         const merged: OHLCV = {
           ...serverTip,
-          high: Math.max(serverTip.high, liveBefore.high, liveBefore.close),
-          low: Math.min(serverTip.low, liveBefore.low, liveBefore.close),
-          close: liveBefore.close,
+          high: Math.max(serverTip.high, liveBefore.high, liveBefore.close, close),
+          low: Math.min(serverTip.low, liveBefore.low, liveBefore.close, close),
+          close,
         }
         lastCandleRef.current = merged
         try {
@@ -2681,7 +2694,7 @@ export function TradingChart({
     if (!chartReady || !streamArmed || dataMode === 'synthetic') return
     if (!tipStreamActive) return
 
-    const CANDLE_REFRESH_MS = 5_000
+    const CANDLE_REFRESH_MS = 3_000
     let lastUiPriceAt = 0
     const fetchGen = ++candleFetchGenRef.current
     let sseHealthy = false
@@ -2696,12 +2709,13 @@ export function TradingChart({
       quoteTs: number,
       streamLive: boolean
     ) => {
-      // Guard: never paint / feed a quote from a different index scale or bad tick spike
+      // Guard only true bad ticks / wrong-scale bleed (e.g. leftover tip).
+      // 0.35% was too tight for index opens/gaps and froze the tip vs TradingView.
       const tip = lastCandleRef.current
       if (
         tip &&
         tip.close > 0 &&
-        Math.abs(price - tip.close) / tip.close > 0.0035
+        Math.abs(price - tip.close) / tip.close > 0.015
       ) {
         return
       }
@@ -2830,11 +2844,18 @@ export function TradingChart({
           if (liveT > lastT) {
             trimmed.push(live)
           } else if (liveT === lastT) {
+            // Prefer broker forming-bar mid when tick tip diverged (stale/spike-stuck).
+            // Otherwise keep the faster tick close for TradingView-like tip speed.
+            const tipDiv =
+              last.close > 0
+                ? Math.abs(live.close - last.close) / last.close
+                : 0
+            const close = tipDiv <= 0.012 ? live.close : last.close
             trimmed[trimmed.length - 1] = {
               ...last,
-              high: Math.max(last.high, live.high, live.close),
-              low: Math.min(last.low, live.low, live.close),
-              close: live.close,
+              high: Math.max(last.high, live.high, live.close, close),
+              low: Math.min(last.low, live.low, live.close, close),
+              close,
             }
           }
         }
@@ -2871,6 +2892,9 @@ export function TradingChart({
           }
         }
         setDataMode('live')
+        if (json.source === 'yahoo' || json.source === 'oanda') {
+          setCandleFeed(json.source)
+        }
       } catch {
         /* ignore */
       }
@@ -2926,12 +2950,12 @@ export function TradingChart({
       if (!tipOpen()) return
       if (sseHealthy) return
       void pollQuote()
-    }, 1_000)
+    }, 500)
     // Safety reconcile even when SSE is healthy (drift / missed reconnect)
     const reconcile = setInterval(() => {
       if (!tipOpen()) return
       void pollQuote()
-    }, 8_000)
+    }, 4_000)
 
     return () => {
       candleFetchGenRef.current += 1
@@ -4848,9 +4872,22 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             </span>
           )}
           {dataMode === 'live' ? (
-            <span className="flex items-center gap-1 text-xs text-green-500">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-              LIVE
+            <span
+              className={`flex items-center gap-1 text-xs ${
+                candleFeed === 'yahoo' ? 'text-amber-400' : 'text-green-500'
+              }`}
+              title={
+                candleFeed === 'yahoo'
+                  ? 'Candles from Yahoo (cash index) — may diverge from TradingView OANDA mid. Tip still prefers OANDA when streaming.'
+                  : 'OANDA mid feed — match TradingView to US30_USD / NAS100_USD / JP225_USD Mid'
+              }
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full animate-pulse ${
+                  candleFeed === 'yahoo' ? 'bg-amber-400' : 'bg-green-500'
+                }`}
+              />
+              {candleFeed === 'yahoo' ? 'LIVE · YAHOO' : 'LIVE · OANDA'}
             </span>
           ) : (
             <span
