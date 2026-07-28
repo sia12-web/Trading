@@ -4594,7 +4594,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         livePrice,
         mode: 'either',
       })
-      onDeskAlert({ kind: 'range_edge', ...msg })
+      onDeskAlert(msg)
     }
     wasInEdgeBandRef.current = nowIn
   }, [edgeProximity, livePrice, instrument, onDeskAlert])
