@@ -101,7 +101,10 @@ assert(MAX_STOP_HITS === 1, 'max stops must be 1')
   })
   assert(gate.phase === 'FLAT', `expected FLAT after entryClose, got ${gate.phase}`)
   assert(gate.canPlaceEntry === false, 'no IB unlock on sim')
-  assert(!!gate.message?.includes('no IB'), 'message explains no IB in sim')
+  assert(
+    !!gate.message?.includes('Chart continues') || !!gate.message?.includes('no IB'),
+    'message explains chart continues / no IB in sim'
+  )
 }
 
 {

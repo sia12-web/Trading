@@ -231,7 +231,7 @@ test('Live gate: lunch-range unlock when morning skipped; morning/IB fill blocks
   assert(afterIb.rangeStrategy === null, 'no unlock after IB')
 })
 
-test('Sim gate: morning-only — afternoon sim clock still locked for entries after lunch', () => {
+test('Sim gate: morning-only entries — afternoon sim clock locked for entries but chart continues', () => {
   const simPm = resolveSimMorningGate({
     now: etDate(2026, 7, 15, 14, 0),
     instrument: 'DOW',
@@ -239,6 +239,7 @@ test('Sim gate: morning-only — afternoon sim clock still locked for entries af
     stopHits: 0,
   })
   assert(simPm.canPlaceEntry === false, 'sim no afternoon entries')
+  assert(simPm.phase === 'FLAT', 'sim afternoon watch phase')
 })
 
 // ── Afternoon playbook merge (reaction + IB + AI) ────────────────────────────

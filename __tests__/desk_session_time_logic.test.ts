@@ -253,7 +253,7 @@ for (const inst of ['DOW', 'NASDAQ'] as const) {
   assert(gate.canPlaceEntry === true, 'NIKKEI can place in entry window')
 }
 
-// Sim still ends at lunch (no afternoon)
+// Sim afternoon: chart continues (FLAT watch), no entries
 {
   const sim = resolveSimMorningGate({
     now: etDate(Y, M, D, 14, 0),
@@ -262,7 +262,7 @@ for (const inst of ['DOW', 'NASDAQ'] as const) {
     attemptsUsed: 0,
     stopHits: 0,
   })
-  assert(sim.phase === 'DONE', 'sim afternoon is DONE (no afternoon session)')
+  assert(sim.phase === 'FLAT', 'sim afternoon is FLAT watch (chart continues)')
   assert(sim.canPlaceEntry === false, 'sim no afternoon entries')
 }
 

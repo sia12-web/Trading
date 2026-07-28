@@ -310,6 +310,7 @@ function SimulationDeskInner() {
   const [openH, openM] = sess.marketOpen.split(':').map(Number)
   const [entryH, entryM] = sess.entryClose.split(':').map(Number)
   const [lunchH, lunchM] = sess.lunchClose.split(':').map(Number)
+  const [closeH, closeM] = sess.marketClose.split(':').map(Number)
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -458,6 +459,7 @@ function SimulationDeskInner() {
   const simNowRef = useRef(0)
   const speedRef = useRef(initialSpeed)
   const lunchUnixRef = useRef(0)
+  const cashCloseUnixRef = useRef(0)
   const playingRef = useRef(false)
   const followLiveRef = useRef(true)
   const ignoreRangeChangeRef = useRef(false)
@@ -507,10 +509,17 @@ function SimulationDeskInner() {
     () => (replayDate ? toUnix(replayDate, lunchH!, lunchM || 0) : 0),
     [replayDate, toUnix, lunchH, lunchM]
   )
+  const cashCloseUnix = useMemo(
+    () => (replayDate ? toUnix(replayDate, closeH!, closeM || 0) : 0),
+    [replayDate, toUnix, closeH, closeM]
+  )
 
   useEffect(() => {
     lunchUnixRef.current = lunchUnix
   }, [lunchUnix])
+  useEffect(() => {
+    cashCloseUnixRef.current = cashCloseUnix
+  }, [cashCloseUnix])
 
   // Last 5 trading days prior to this replay session → AVWAP from that cash open
   const sessionCandles = useMemo(
@@ -564,11 +573,11 @@ function SimulationDeskInner() {
       now: new Date(simNow * 1000),
       instrument,
       hasOpenPosition: !!position,
-      dayDone: simNow >= lunchUnix,
+      dayDone: cashCloseUnix > 0 && simNow >= cashCloseUnix,
       attemptsUsed,
       stopHits,
     })
-  }, [simNow, instrument, position, lunchUnix, attemptsUsed, stopHits])
+  }, [simNow, instrument, position, cashCloseUnix, attemptsUsed, stopHits])
 
   // Validate date + load candles/levels
   useEffect(() => {
@@ -1137,7 +1146,7 @@ function SimulationDeskInner() {
           volume: c.volume,
         }))
         const tip = slice[slice.length - 1]?.time ?? simT
-        const sessionEnd = lunchUnix || tip
+        const sessionEnd = cashCloseUnix || lunchUnix || tip
         const extendTo = Math.max(tip, sessionEnd, simT)
 
         const ibs = ibSeriesRef.current
@@ -1271,7 +1280,7 @@ function SimulationDeskInner() {
         requestAnimationFrame(() => refreshSessionHighlights())
       }
     },
-    [pinToLatest, refreshSessionHighlights, instrument, openUnix, lunchUnix, sess.tz]
+    [pinToLatest, refreshSessionHighlights, instrument, openUnix, lunchUnix, cashCloseUnix, sess.tz]
   )
 
   /** Morning OR30 bait (+ IB magnets) for strategy SL/TP — same geometry as live. */
@@ -1651,7 +1660,11 @@ function SimulationDeskInner() {
     if (!replayDate || sessionCompletedRef.current) return
     const epoch = sessionEpochRef.current
     sessionCompletedRef.current = true
-    const duration = Math.max(0, (simNowRef.current || lunchUnixRef.current) - (openUnix || 0))
+    const duration = Math.max(
+      0,
+      (simNowRef.current || cashCloseUnixRef.current || lunchUnixRef.current) -
+        (openUnix || 0)
+    )
     try {
       const res = await fetch('/api/trading/replays', {
         method: 'PATCH',
@@ -1663,7 +1676,7 @@ function SimulationDeskInner() {
           final_pnl: Math.round(realizedPnlRef.current * 100) / 100,
           trades_count: tradesCountRef.current,
           replay_duration_seconds: duration,
-          notes: 'Morning session finished at lunch',
+          notes: 'Sim day finished at cash close',
         }),
       })
       // Ignore stale completes after Reset/Replay; retry if request failed
@@ -1690,23 +1703,21 @@ function SimulationDeskInner() {
     const stepOnce = () => {
       const candles = allCandlesRef.current
       const prev = simNowRef.current
-      const lunch = lunchUnixRef.current
-      if (!lunch || candles.length === 0) {
+      const endAt = cashCloseUnixRef.current || lunchUnixRef.current
+      if (!endAt || candles.length === 0) {
         setPlaying(false)
         return
       }
 
       // Next bar after the current sim clock (binary search)
       const nextIdx = lastIndexAtOrBefore(candles, prev) + 1
-      if (nextIdx >= candles.length || candles[nextIdx]!.time > lunch) {
-        simNowRef.current = lunch
-        setSimNow(lunch)
-        applyChartDataRef.current(lunch)
+      if (nextIdx >= candles.length || candles[nextIdx]!.time > endAt) {
+        simNowRef.current = endAt
+        setSimNow(endAt)
+        applyChartDataRef.current(endAt)
         setPlaying(false)
         setMsg(
-          instrument === 'NIKKEI'
-            ? `Sim clock reached lunch (${deskLocalHmsAsTraderDisplay(sess.lunchClose, sess.tz)} ${TRADER_DISPLAY_LABEL}) — morning finished`
-            : 'Sim clock reached lunch (11:30 ET) — morning finished'
+          `Sim clock reached cash close (${deskLocalHmsAsTraderDisplay(sess.marketClose, sess.tz)} ${TRADER_DISPLAY_LABEL}) — day finished`
         )
         void markSessionCompleted()
         return
@@ -1787,11 +1798,11 @@ function SimulationDeskInner() {
     }
   }, [playing, openUnix, speed, instrument, markSessionCompleted, recordPaperClose])
 
-  // If clock is already at/after lunch (paused at end), flip picker to "done"
+  // If clock is already at/after cash close (paused at end), flip picker to "done"
   useEffect(() => {
-    if (!lunchUnix || !simNow) return
-    if (simNow >= lunchUnix) void markSessionCompleted()
-  }, [simNow, lunchUnix, markSessionCompleted])
+    if (!cashCloseUnix || !simNow) return
+    if (simNow >= cashCloseUnix) void markSessionCompleted()
+  }, [simNow, cashCloseUnix, markSessionCompleted])
 
   // Unfilled sim limits expire when the entry window ends
   useEffect(() => {
@@ -2322,7 +2333,7 @@ function SimulationDeskInner() {
                 ? 'bg-red-500/25 text-red-200'
                 : 'bg-sky-500/20 text-sky-200'
             }`}
-            title="Morning playbook ≤1 fill (same as live). Working limits do not count. Sim has no IB / lunch-range."
+            title="Morning playbook ≤1 fill. Afternoon chart continues to cash close (watch-only). No IB / lunch-range entries in sim yet."
           >
             Morning {attemptsUsed}/{MAX_SESSION_ATTEMPTS}
             {stopHits > 0 ? ` · Stops ${stopHits}/${MAX_STOP_HITS}` : ''}

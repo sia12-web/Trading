@@ -1202,11 +1202,12 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
 }
 
 /**
- * SIMULATION morning gate only — cash open → lunch.
+ * SIMULATION desk gate — morning entries only; chart continues to cash close.
  *
  * Carries over from live (NY + Nikkei):
  *   · Morning ≤1 fill
  *   · Entry window closes at market-local entryClose (then manage-only if open)
+ *   · Afternoon continuum for watch / manage until cash close
  *
  * Intentionally NOT on sim (live-only):
  *   · IB unlock / lunch-range unlock
@@ -1245,6 +1246,7 @@ export function resolveSimMorningGate(input: {
   const open = parseTimeToSeconds(s.marketOpen)
   const entryClose = parseTimeToSeconds(s.entryClose)
   const lunch = parseTimeToSeconds(s.lunchClose)
+  const close = parseTimeToSeconds(s.marketClose)
   const hasOpen = !!input.hasOpenPosition
   const book = evaluateSessionAttempts({
     attemptsUsed: input.attemptsUsed ?? 0,
@@ -1253,14 +1255,22 @@ export function resolveSimMorningGate(input: {
   })
   const revengeLocked = false
   const dayDone = !!input.dayDone || book.sessionDone
-  const morningLabel = `Morning ${book.attemptsUsed}/${MAX_SESSION_ATTEMPTS}`
+  const morningLabel =
+    'Morning ' + book.attemptsUsed + '/' + MAX_SESSION_ATTEMPTS
   const entryRangeEt = deskLocalRangeAsTraderDisplay(
     s.marketOpen,
     s.entryClose,
     s.tz,
     input.now
   )
-  const entryCloseEt = `${deskLocalHmsAsTraderDisplay(s.entryClose, s.tz, input.now)} ${TRADER_DISPLAY_LABEL}`
+  const entryCloseEt =
+    deskLocalHmsAsTraderDisplay(s.entryClose, s.tz, input.now) +
+    ' ' +
+    TRADER_DISPLAY_LABEL
+  const cashCloseEt =
+    deskLocalHmsAsTraderDisplay(s.marketClose, s.tz, input.now) +
+    ' ' +
+    TRADER_DISPLAY_LABEL
 
   const base = {
     timeEst: timeInTraderDisplay(input.now),
@@ -1275,18 +1285,33 @@ export function resolveSimMorningGate(input: {
     revengeLocked,
   }
 
-  if (t >= lunch) {
+  if (t >= close) {
     return {
       ...base,
       phase: 'DONE',
       canPlaceEntry: false,
       canManagePosition: false,
-      message:
-        'Morning replay ended at lunch. Sim has no later range windows — live desk continues after lunch.',
+      message: 'Cash close (' + cashCloseEt + '). Sim day finished.',
     }
   }
 
-  if (dayDone) {
+  if (t >= lunch) {
+    return {
+      ...base,
+      phase: hasOpen ? 'MANAGE' : 'FLAT',
+      canPlaceEntry: false,
+      canManagePosition: hasOpen,
+      message: hasOpen
+        ? 'Afternoon watch — manage open book until cash close (' +
+          cashCloseEt +
+          '). No new sim entries.'
+        : 'Afternoon chart continues (watch-only until ' +
+          cashCloseEt +
+          '). Morning entries closed — no IB / lunch-range unlock in sim yet.',
+    }
+  }
+
+  if (dayDone && !hasOpen) {
     return {
       ...base,
       phase: 'DONE',
@@ -1294,7 +1319,9 @@ export function resolveSimMorningGate(input: {
       canManagePosition: false,
       message:
         book.lockReason ||
-        `Morning playbook done — ${morningLabel}. Trading locked.`,
+        'Morning playbook done — ' +
+          morningLabel +
+          '. Chart continues to cash close.',
     }
   }
 
@@ -1304,7 +1331,10 @@ export function resolveSimMorningGate(input: {
       phase: 'MANAGE',
       canPlaceEntry: false,
       canManagePosition: true,
-      message: `Position open — ${morningLabel}. Manage only until lunch (no IB window in sim).`,
+      message:
+        'Position open — ' +
+        morningLabel +
+        '. Manage only (sim has no IB entry window).',
     }
   }
 
@@ -1314,33 +1344,33 @@ export function resolveSimMorningGate(input: {
       phase: 'RECOMMENDED',
       canPlaceEntry: false,
       canManagePosition: false,
-      message: `Replay clock before cash open. Morning entries ${entryRangeEt}. ${morningLabel}.`,
+      message:
+        'Replay clock before cash open. Morning entries ' +
+        entryRangeEt +
+        '. ' +
+        morningLabel +
+        '.',
     }
   }
 
-  if (t < lunch) {
-    const inEntry = t <= entryClose
-    const canAttempt = !book.entriesLocked
-    return {
-      ...base,
-      phase: inEntry ? 'ENTRY' : 'FLAT',
-      canPlaceEntry: inEntry && canAttempt,
-      canManagePosition: false,
-      message: inEntry
-        ? canAttempt
-          ? `Morning playbook — ${morningLabel}. Click a ${instrument} level. Working limits do not count until filled.`
-          : book.lockReason || 'No morning attempts left. Trading locked.'
-        : `Morning entry closed (${entryCloseEt}). Sim has no IB / lunch-range — manage if in a trade, else wait for lunch.`,
-    }
-  }
-
+  const inEntry = t <= entryClose
+  const canAttempt = !book.entriesLocked
   return {
     ...base,
-    phase: 'DONE',
-    canPlaceEntry: false,
+    phase: inEntry ? 'ENTRY' : 'FLAT',
+    canPlaceEntry: inEntry && canAttempt,
     canManagePosition: false,
-    message:
-      'Morning replay ended at lunch. Sim has no IB / lunch-range — live desk continues after lunch.',
+    message: inEntry
+      ? canAttempt
+        ? 'Morning playbook — ' +
+          morningLabel +
+          '. Click a ' +
+          instrument +
+          ' level. Working limits do not count until filled.'
+        : book.lockReason || 'No morning attempts left. Trading locked.'
+      : 'Morning entry closed (' +
+        entryCloseEt +
+        '). Chart continues — no IB / lunch-range entries in sim yet.',
   }
 }
 

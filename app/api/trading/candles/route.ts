@@ -2,7 +2,7 @@
  * GET /api/trading/candles?instrument=DOW|NASDAQ|NIKKEI&timeframe=5m&days=5
  * All desk indices: OANDA first (incl. JP225 for NIKKEI), Yahoo fallback.
  * Live: full day continuum (morning + afternoon + overnight). Trading stays morning-only.
- * Sim/dated: morning window only.
+ * Sim/dated: full cash session continuum (entries still morning-gated in the UI).
  */
 
 import { NextResponse } from 'next/server'
@@ -13,7 +13,6 @@ import { getYahooQuote } from '@/lib/yahoo/quote'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import {
   clipAfternoonBars,
-  clipAllAfternoonBars,
   isLiveDeskInstrument,
   sessionFor,
 } from '@/lib/trading/sessionGate'
@@ -59,7 +58,6 @@ export async function GET(request: Request) {
     const resolution = RES_MAP[timeframe] || '5'
     const sess = sessionFor(instrument)
     const toUnix = instrument === 'NIKKEI' ? tokyoDateTimeToUnix : nyDateTimeToUnix
-    const [lh, lm] = sess.lunchClose.split(':').map(Number)
     const includeQuote = searchParams.get('quote') !== '0'
 
     type CandleRow = {
@@ -74,8 +72,10 @@ export async function GET(request: Request) {
     let source: 'oanda' | 'yahoo' | 'empty' = 'empty'
 
     if (endDate && /^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
-      // Sim / dated: end at lunch so morning session is the visible window
-      const endUnix = toUnix(endDate, lh!, lm || 0) + 60
+      // Sim / dated: full cash session (open → close) so afternoon chart keeps printing.
+      // Entries stay morning-gated in the sim desk UI — not by truncating candles.
+      const [ch, cm] = sess.marketClose.split(':').map(Number)
+      const endUnix = toUnix(endDate, ch!, cm || 0) + 60
       // Extra lead-in for Tokyo overnight + Yahoo/OANDA gaps
       const leadDays = instrument === 'NIKKEI' ? 3 : 2
       const startUnix =
@@ -92,10 +92,7 @@ export async function GET(request: Request) {
         candles = yahoo.candles
         source = 'yahoo'
       }
-      // Sim: strip afternoon on every day (morning replay only)
-      if (candles?.length) {
-        candles = clipAllAfternoonBars(candles, instrument)
-      }
+      // Keep afternoon bars on the replay day (and priors) — matches live continuum
     } else {
       // Live desk: OANDA (US30 / NAS100 / JP225) then Yahoo — same path for all three
       // Floor must cover AVWAP 5-trading-day-prior anchor (weekends truncate `days=5`)
