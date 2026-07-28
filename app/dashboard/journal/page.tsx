@@ -10,6 +10,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { entrySourceLabel, entrySourceTone } from '@/lib/trading/entrySourceBadge'
 import { formatDeskMoney, deskCurrencyLabel } from '@/lib/trading/currency'
+import { RANGE_EDGE_RISK_PERCENT } from '@/lib/trading/positionSizing'
 
 type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'ALL'
 type HistoryTab = 'live' | 'sim' | 'voice'
@@ -796,9 +797,7 @@ function JournalPageInner() {
                                         className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${entrySourceTone(e.fill.source)}`}
                                       >
                                         {entrySourceLabel(e.fill.source)}
-                                        {e.fill.source === 'manual'
-                                          ? ' · 1% risk'
-                                          : ' · desk risk'}
+                                        {` · ${RANGE_EDGE_RISK_PERCENT}% risk`}
                                       </span>
                                     </p>
                                   )}

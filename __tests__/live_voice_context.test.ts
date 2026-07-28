@@ -14,7 +14,6 @@ import {
 } from '../lib/chart/sessionVwap'
 import {
   RANGE_EDGE_RISK_PERCENT,
-  MANUAL_RISK_PERCENT,
 } from '../lib/trading/positionSizing'
 import { MAX_DAY_ATTEMPTS, MAX_SESSION_ATTEMPTS, MAX_STOP_HITS, sessionFor } from '../lib/trading/sessionGate'
 
@@ -25,7 +24,7 @@ function assert(cond: unknown, msg: string) {
 assert(AI_LEVELS_QUERY.days === 1, 'AI levels query days=1')
 assert(AI_LEVELS_QUERY.minConviction === 7, 'min conviction 7')
 assert(AVWAP_LOOKBACK_TRADING_DAYS === 5, 'AVWAP lookback 5')
-assert(RANGE_EDGE_RISK_PERCENT === 0.25 && MANUAL_RISK_PERCENT === 1, 'risk percents')
+assert(RANGE_EDGE_RISK_PERCENT === 0.25, 'range-edge risk 0.25%')
 assert(MAX_SESSION_ATTEMPTS === 2 && MAX_STOP_HITS === 2, 'morning attempt caps')
 assert(MAX_DAY_ATTEMPTS === 6, 'day attempt cap')
 

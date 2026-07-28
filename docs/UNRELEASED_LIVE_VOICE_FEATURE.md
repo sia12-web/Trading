@@ -32,7 +32,7 @@ Rather than functioning as a passive utility or standard virtual assistant, the 
   - *Instrument Lock*: NY 09:15–09:30 ET regime lock (DOW vs NASDAQ) and Tokyo 08:45–09:00 JST regime lock (NIKKEI).
   - *Core 45-Min Entry Window*: NY 09:30–10:15 ET and Tokyo 09:00–09:45 JST (fills strictly locked to chart tickets in this window).
   - *Lunch Flatten & Safety Freeze*: 11:30 AM local time position flatten and morning tip chart freeze to eliminate afternoon over-trading.
-  - *Risk Discipline Architecture*: Enforces 1 active position lock, max 2 filled attempts / 2 stop-outs per morning (2 stop hits auto-locks desk to phase DONE), 5% risk on AI/structure levels vs 1% manual pins, and $\ge 2 / 3$ factor Confluence MVP filtering.
+  - *Risk Discipline Architecture*: Enforces 1 active position lock, Option B ladder (2 probes per window @ 0.25% risk, day cap 6), entries within ±10 pts of active range high/low, and $\ge 2 / 3$ factor Confluence MVP filtering.
 
 ```mermaid
 graph TD

@@ -443,10 +443,10 @@ export function LevelOrderTicket({
 
   const sourceBadge =
     entrySource === 'manual'
-      ? 'Manual · 1% risk'
+      ? `Manual · ${RANGE_EDGE_RISK_PERCENT}% risk`
       : entrySource === 'structure'
-        ? 'Structure · desk risk'
-        : 'AI level · desk risk'
+        ? `Structure · ${RANGE_EDGE_RISK_PERCENT}% risk`
+        : `AI level · ${RANGE_EDGE_RISK_PERCENT}% risk`
 
   return (
     <div

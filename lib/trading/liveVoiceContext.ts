@@ -25,7 +25,6 @@ import {
 } from '@/lib/trading/deskAttendance'
 import {
   RANGE_EDGE_RISK_PERCENT,
-  MANUAL_RISK_PERCENT,
 } from '@/lib/trading/positionSizing'
 import {
   MAX_DAY_ATTEMPTS,
@@ -535,7 +534,7 @@ export async function buildLiveVoiceDeskContext(
     },
     risk: {
       deskRiskPercent: RANGE_EDGE_RISK_PERCENT,
-      manualRiskPercent: MANUAL_RISK_PERCENT,
+      manualRiskPercent: RANGE_EDGE_RISK_PERCENT,
       maxAttempts: MAX_DAY_ATTEMPTS,
       maxStopHits: MAX_STOP_HITS,
       entryRule:
