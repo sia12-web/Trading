@@ -99,9 +99,9 @@ export function LunchCloseCountdown({
   if (marketDisabled) {
     return (
       <div className="rounded-xl border border-red-800/50 bg-red-950/30 px-4 py-3">
-        <p className="text-sm font-semibold text-red-300">Desk locked — 2 stops today</p>
+        <p className="text-sm font-semibold text-red-300">Desk locked for this session</p>
         <p className="mt-1 text-xs text-red-400/80">
-          No new entries on {instrument} for the rest of this session (max 2 attempts).
+          No new entries on {instrument}. Manage if open until flat — later range windows stay off once the day is locked.
         </p>
       </div>
     )

@@ -513,7 +513,7 @@ How to use it (big-desk volume map):
       analysisMode === 'us_range'
         ? `
 US RANGE PLAYBOOK MODE (Nikkei slot 2 — prior NYC session range):
-- Morning OR30 fills are still 0. Desk is live-trading the US Range window (${midWindow} ${tzLabel}) — ONE attempt.
+- Desk is live-trading the US Range window (${midWindow} ${tzLabel}) — up to 2 probes @ 0.25% (entries within ±10 pts of US Range H/L). Morning OR30 does not lock this window.
 - PRIMARY BAIT this run: US Range (prior NYC H/L). Prefer stop pools beyond NYC extremes + POC/AVWAP. Do not frame as Tokyo IB or morning OR30.
 - Build tradeable levels off the prior NYC session high/low (breakout / mean-reversion), FLIP/RETEST from the brief, AVWAP/POC confluence.
 - Use ONLY the DESK BRIEF + RANGE LIQUIDITY MAP + candle/AVWAP/volume-profile tables. Frame as US Range playbook — NOT Tokyo IB, NOT morning OR30.
@@ -522,14 +522,14 @@ US RANGE PLAYBOOK MODE (Nikkei slot 2 — prior NYC session range):
           ? tokyo
             ? `
 IB PLAYBOOK MODE (Tokyo Initial Balance — slot 3):
-- Morning OR30 and US Range fills are still 0. Desk is live-trading Tokyo IB (${lateWindow} ${tzLabel}) — ONE attempt.
+- Desk is live-trading Tokyo IB (${lateWindow} ${tzLabel}) — up to 2 probes @ 0.25% (entries within ±10 pts of Tokyo IB H/L). Earlier OR30/US Range fills do not lock this window.
 - PRIMARY BAIT this run: Tokyo IB H/L. Prefer stop pools beyond Tokyo IB extremes + POC/AVWAP. OR30/US Range are secondary only.
 - Build tradeable IB levels: IB high/low breakout and mean-reversion magnets, FLIP/RETEST from the brief, AVWAP/POC confluence.
 - Use ONLY the DESK BRIEF + RANGE LIQUIDITY MAP + candle tables. Frame as Tokyo IB playbook — not US Range, not morning OR30.
 `
             : `
 IB PLAYBOOK MODE (Initial Balance entry refresh — NY slot 2):
-- Morning OR30 fills are still 0. Desk is live-trading the IB window (${midWindow} ${tzLabel}) — ONE attempt.
+- Desk is live-trading the IB window (${midWindow} ${tzLabel}) — up to 2 probes @ 0.25% (entries within ±10 pts of IB H/L). Morning OR30 does not lock this window.
 - PRIMARY BAIT this run: IB H/L. Prefer stop pools beyond IB extremes + POC/AVWAP. OR30 is secondary only.
 - Build tradeable IB levels: IB high/low breakout and mean-reversion magnets, FLIP/RETEST from the brief, AVWAP/POC confluence.
 - Use ONLY the DESK BRIEF + RANGE LIQUIDITY MAP + candle/AVWAP/volume-profile tables. Frame levels as IB playbook entries (not morning OR30, not lunch-range).
@@ -539,7 +539,7 @@ IB PLAYBOOK MODE (Initial Balance entry refresh — NY slot 2):
 LUNCH-RANGE / LUNCH BREAK PLAYBOOK MODE (NY slot 3):
 - IB entry window is done (or we are prepping for PM). Levels update for Lunch break playbook → Lunch-range entry (${lateWindow} ${tzLabel}).
 - PRIMARY BAIT this run: Lunch-range H/L (12:00–13:30 ET). Prefer stop pools beyond lunch-range extremes + POC/AVWAP. OR30/IB are secondary / polarity.
-- Prefer lunch-range high/low, morning IB extremes, FLIP/RETEST, AVWAP/POC. One lunch-range attempt when the PM window unlocks (still 0 morning+IB fills).
+- Prefer lunch-range high/low, morning IB extremes, FLIP/RETEST, AVWAP/POC. Up to 2 lunch-range probes @ 0.25% when the PM window unlocks (earlier fills do not lock lunch-range).
 - Use ONLY the DESK BRIEF + RANGE LIQUIDITY MAP + candle tables. Frame as lunch-range breakout / mean-reversion — not morning OR30.
 `
             : analysisMode === 'afternoon'

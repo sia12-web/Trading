@@ -16,7 +16,10 @@ import {
   type RangeStrategy,
   type AttemptLadder,
 } from '@/lib/trading/sessionGate'
-import { attemptLadderFromTotals } from '@/lib/trading/attemptLadder'
+import {
+  attemptLadderFromCounts,
+  attemptLadderFromTotals,
+} from '@/lib/trading/attemptLadder'
 import { parseTimeToSeconds } from '@/lib/utils/timeUtils'
 
 export type DeskPlaybookMode =
@@ -54,12 +57,30 @@ export function resolveDeskPlaybookMode(args: {
   const market: DeskMarket = deskMarketFor(args.instrument)
   const sess = sessionFor(args.instrument)
   const t = parseTimeToSeconds(timeInTz(now, sess.tz))
-  const ladder =
+  const baseLadder =
     args.ladder ??
     attemptLadderFromTotals({
       attemptsUsed: args.attemptsUsed ?? 0,
       stopHits: args.stopHits ?? 0,
+      now,
+      instrument: args.instrument,
     })
+  // Re-bind eligibility to the evaluation clock (counts may have been built without `now`).
+  const ladder = attemptLadderFromCounts({
+    morningAttempts: baseLadder.morningAttempts,
+    ibAttempts: baseLadder.ibAttempts,
+    lunchAttempts: baseLadder.lunchAttempts,
+    morningStopHits: baseLadder.morningStopHits,
+    otherAttempts: Math.max(
+      0,
+      baseLadder.dayAttempts -
+        baseLadder.morningAttempts -
+        baseLadder.ibAttempts -
+        baseLadder.lunchAttempts
+    ),
+    now,
+    instrument: args.instrument,
+  })
   const range =
     args.rangeStrategy != null
       ? args.rangeStrategy
@@ -84,11 +105,11 @@ export function resolveDeskPlaybookMode(args: {
   }
 
   // Slot-3 clock with no unlock (ineligible) → done. Never treat entry window as prep.
+  // Option B: earlier-window fills do NOT lock lunch / Tokyo IB.
   if (t >= lateStart && t < close) {
     if (
       ladder.revengeLocked ||
       ladder.dayLocked ||
-      ladder.ibAttempts > 0 ||
       !ladder.lunchEligible ||
       t >= lateEnd
     ) {

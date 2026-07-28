@@ -146,9 +146,9 @@ export function lunchRangeEntryEndHms(market: DeskMarket): string {
 }
 
 /**
- * Which range-strategy window is open for this desk.
- * NY: IB if morning skipped; lunch-range if morning + IB skipped.
- * Tokyo: US Range if morning skipped; IB if morning + US Range skipped.
+ * Which range-strategy window is open for this desk (Option B).
+ * NY: IB after morning clock/exhaust; lunch-range after IB clock/exhaust.
+ * Tokyo: US Range after morning clock/exhaust; IB after US Range clock/exhaust.
  */
 export function resolveRangeStrategy(args: {
   market: DeskMarket
@@ -1200,7 +1200,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       message: ladderLock
         ? `${ladderLock} ${ladderHint}`
         : waitingMid
-          ? `Morning entry closed (${entryUntil}). ${midLabel} playbook ${ibRange} if morning skipped. ${ladderHint}`
+          ? `Morning entry closed (${entryUntil}). ${midLabel} playbook ${ibRange} (up to 2 probes). ${ladderHint}`
           : midEnded
             ? `${midLabel} entry closed (${ibUntil}). ${prepAfterMid} — ${lateLabel} unlocks ${lunchRangeLabel}. ${ladderHint}`
             : `Morning entry closed (${entryUntil}). Next is ${midLabel} ${ibRange}. ${ladderHint}`,
@@ -1520,7 +1520,7 @@ export function resolveSimMorningGate(input: {
           midLabel +
           ' playbook ' +
           ibRange +
-          ' if morning skipped. ' +
+          ' (up to 2 probes). ' +
           ladderHint
         : midEnded
           ? midLabel +

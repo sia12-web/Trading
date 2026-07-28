@@ -87,7 +87,7 @@ function jstDate(h: number, m: number, s = 0): Date {
     now: etDate(14, 0),
     ladder: attemptLadderFromCounts({ morningAttempts: 1 }),
   })
-  assert(mode === 'done', 'morning fill → done (later windows locked)')
+  assert(mode === 'lunch_range', 'morning fill does not lock lunch-range (Option B)')
 }
 
 {
@@ -95,11 +95,12 @@ function jstDate(h: number, m: number, s = 0): Date {
     instrument: 'DOW',
     now: etDate(14, 0),
     ladder: attemptLadderFromCounts({
-      morningAttempts: 1,
-      morningStopHits: 1,
+      morningAttempts: 2,
+      ibAttempts: 2,
+      lunchAttempts: 2,
     }),
   })
-  assert(mode === 'done', 'morning trade → session locked (no PM watch)')
+  assert(mode === 'done', 'day probes exhausted → watch / manage-only')
   assert(deskPlaybookTitle(mode) === 'Watch playbook', 'watch title when done')
   assert(deskPlaybookButtonLabel(mode) === 'Watch', 'Watch button when done')
   assert(deskPlaybookToolbarLabel(mode, { watchOnly: true }) === 'Watch', 'toolbar Watch')
@@ -197,7 +198,21 @@ function jstDate(h: number, m: number, s = 0): Date {
       morningStopHits: 1,
     }),
   })
-  assert(mode === 'done', 'Nikkei morning fill → done')
+  assert(mode === 'ib', 'Nikkei morning fill does not lock Tokyo IB (Option B)')
+  assert(deskPlaybookButtonLabel(mode, 'NIKKEI') === 'IB playbook', 'Nikkei IB button after morning fill')
+}
+
+{
+  const mode = resolveDeskPlaybookMode({
+    instrument: 'NIKKEI',
+    now: jstDate(14, 0),
+    ladder: attemptLadderFromCounts({
+      morningAttempts: 2,
+      ibAttempts: 2,
+      lunchAttempts: 2,
+    }),
+  })
+  assert(mode === 'done', 'Nikkei day probes exhausted → watch')
   assert(deskPlaybookButtonLabel(mode) === 'Watch', 'Nikkei Watch button')
   assert(
     deskPlaybookPanelTitle(mode, 'NIKKEI', { watchOnly: true }) === 'Tokyo watch playbook',
