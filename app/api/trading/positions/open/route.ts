@@ -27,6 +27,7 @@ import { getOandaAccountSummary } from '@/lib/oanda/orders'
 import { placeOandaMarketOrder, closeOandaTrade } from '@/lib/oanda/orders'
 import { assertRangeEdgeEntry } from '@/lib/trading/rangeEdgeEntryGate'
 import type { PositionOpenResponse } from '@/types/trading'
+import { logEntryDenied } from '@/lib/utils/deskAuditLog'
 
 interface OpenPositionRequest {
   instrument: 'DOW' | 'NASDAQ' | 'NIKKEI'
@@ -75,6 +76,13 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
 
     if (!user) {
       logger.error('POST /api/trading/positions/open: Unauthorized', { error: authError })
+      logEntryDenied({
+        route: 'open',
+        reason: 'unauthorized',
+        instrument: body.instrument,
+        message: 'Unauthorized',
+        status: 401,
+      })
       return NextResponse.json(
         {
           success: false,
@@ -225,6 +233,23 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
 
     const gateCheck = assertCanOpenPosition(body.instrument, gate)
     if (!gateCheck.ok) {
+      logEntryDenied({
+        route: 'open',
+        reason: 'session_gate',
+        instrument: body.instrument,
+        message: gateCheck.message,
+        status: gateCheck.status,
+        phase: gate.phase,
+        canPlaceEntry: gate.canPlaceEntry,
+        clockedIn: gate.clockedIn,
+        dayLocked: gate.dayLocked,
+        revengeLocked: gate.revengeLocked,
+        ladder: gate.attemptLadderLabel,
+        rangeStrategy: gate.rangeStrategy,
+        entry: body.entry_price,
+        direction: body.entry_direction,
+        entrySource: body.entry_source ?? null,
+      })
       return NextResponse.json(
         {
           success: false,
@@ -254,6 +279,22 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
           : null,
     })
     if (!edgeCheck.ok) {
+      logEntryDenied({
+        route: 'open',
+        reason: 'range_edge',
+        instrument: body.instrument,
+        message: edgeCheck.message,
+        status: 400,
+        phase: gate.phase,
+        ladder: gate.attemptLadderLabel,
+        rangeStrategy: gate.rangeStrategy,
+        entry: body.entry_price,
+        direction: body.entry_direction,
+        rangeHigh: body.range_high != null ? Number(body.range_high) : null,
+        rangeLow: body.range_low != null ? Number(body.range_low) : null,
+        rangeLabel: body.range_label ?? null,
+        entrySource: body.entry_source ?? null,
+      })
       return NextResponse.json(
         {
           success: false,
@@ -785,7 +826,16 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       entry_price: fillPrice,
       stop_loss_price: sizing.stop_loss_price,
       position_size: sizing.position_size,
+      risk_amount: sizing.risk_amount,
+      entry_direction: body.entry_direction,
+      entry_source: deskEntrySource,
+      phase: gate.phase,
+      ladder: gate.attemptLadderLabel,
+      rangeStrategy: gate.rangeStrategy,
+      range_high: body.range_high ?? null,
+      range_low: body.range_low ?? null,
       oanda_trade_id: oandaTradeId,
+      oanda_executed: Boolean(oandaTradeId),
     })
 
     return NextResponse.json(

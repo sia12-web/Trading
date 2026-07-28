@@ -21,6 +21,7 @@ import { getTodayAttendance, tradeDateForInstrument } from '@/lib/trading/deskAt
 import { logger } from '@/lib/utils/logger'
 import { normalizeEntrySource } from '@/lib/trading/positionSizing'
 import { assertRangeEdgeEntry } from '@/lib/trading/rangeEdgeEntryGate'
+import { logEntryDenied, logWorkingPlaced } from '@/lib/utils/deskAuditLog'
 
 export const dynamic = 'force-dynamic'
 
@@ -78,6 +79,15 @@ export async function POST(request: Request) {
       .maybeSingle()
 
     if (filledOpen) {
+      logEntryDenied({
+        route: 'working',
+        reason: 'already_open',
+        instrument,
+        message: 'Already in a filled position today',
+        status: 409,
+        entry: level,
+        direction,
+      })
       return NextResponse.json(
         { error: 'Already in a filled position today', position_id: filledOpen.id },
         { status: 409 }
@@ -169,6 +179,23 @@ export async function POST(request: Request) {
     })
     const gateCheck = assertCanOpenPosition(instrument, gate)
     if (!gateCheck.ok) {
+      logEntryDenied({
+        route: 'working',
+        reason: 'session_gate',
+        instrument,
+        message: gateCheck.message,
+        status: gateCheck.status,
+        phase: gate.phase,
+        canPlaceEntry: gate.canPlaceEntry,
+        clockedIn: gate.clockedIn,
+        dayLocked: gate.dayLocked,
+        revengeLocked: gate.revengeLocked,
+        ladder: gate.attemptLadderLabel,
+        rangeStrategy: gate.rangeStrategy,
+        entry: level,
+        direction,
+        entrySource: body.entry_source ?? null,
+      })
       return NextResponse.json({ error: gateCheck.message }, { status: gateCheck.status })
     }
 
@@ -184,6 +211,22 @@ export async function POST(request: Request) {
           : null,
     })
     if (!edgeCheck.ok) {
+      logEntryDenied({
+        route: 'working',
+        reason: 'range_edge',
+        instrument,
+        message: edgeCheck.message,
+        status: 400,
+        phase: gate.phase,
+        ladder: gate.attemptLadderLabel,
+        rangeStrategy: gate.rangeStrategy,
+        entry: level,
+        direction,
+        rangeHigh: body.range_high != null ? Number(body.range_high) : null,
+        rangeLow: body.range_low != null ? Number(body.range_low) : null,
+        rangeLabel: body.range_label ?? null,
+        entrySource: body.entry_source ?? null,
+      })
       return NextResponse.json({ error: edgeCheck.message }, { status: 400 })
     }
 
@@ -271,6 +314,19 @@ export async function POST(request: Request) {
           .select('id')
           .single()
         if (!retry.error && retry.data) {
+          logWorkingPlaced({
+            workingId: retry.data.id,
+            instrument,
+            level,
+            direction,
+            phase: gate.phase,
+            ladder: gate.attemptLadderLabel,
+            rangeStrategy: gate.rangeStrategy,
+            rangeHigh: body.range_high != null ? Number(body.range_high) : null,
+            rangeLow: body.range_low != null ? Number(body.range_low) : null,
+            rangeLabel: body.range_label ?? null,
+            entrySource: normalizeEntrySource(body.entry_source),
+          })
           return NextResponse.json({
             success: true,
             working_id: retry.data.id,
@@ -284,6 +340,20 @@ export async function POST(request: Request) {
       logger.error('working.place_failed', { error })
       return NextResponse.json({ error: error?.message || 'Insert failed' }, { status: 500 })
     }
+
+    logWorkingPlaced({
+      workingId: row.id,
+      instrument,
+      level,
+      direction,
+      phase: gate.phase,
+      ladder: gate.attemptLadderLabel,
+      rangeStrategy: gate.rangeStrategy,
+      rangeHigh: body.range_high != null ? Number(body.range_high) : null,
+      rangeLow: body.range_low != null ? Number(body.range_low) : null,
+      rangeLabel: body.range_label ?? null,
+      entrySource: normalizeEntrySource(body.entry_source),
+    })
 
     return NextResponse.json({
       success: true,

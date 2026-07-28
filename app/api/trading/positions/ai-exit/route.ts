@@ -105,6 +105,20 @@ export async function POST(request: Request) {
 
     const { verdict, confidence, reason, factors } = scored
 
+    logger.info('ai-exit.verdict', {
+      position_id: position.id,
+      instrument,
+      direction: dir,
+      verdict,
+      confidence,
+      reason,
+      move_pct: Math.round(movePct * 100) / 100,
+      rvol: rvolSnap.rvol,
+      rvol_source: rvolSnap.source,
+      options_bias: optionsFlow?.bias ?? null,
+      will_close: verdict === 'reversal' && confidence >= 70,
+    })
+
     let closed = false
     if (verdict === 'reversal' && confidence >= 70) {
       let profitLoss: number
@@ -132,6 +146,13 @@ export async function POST(request: Request) {
 
       if (!closeErr) {
         closed = true
+        logger.info('ai-exit.closed', {
+          position_id: position.id,
+          instrument,
+          exit_price: px,
+          confidence,
+          reason,
+        })
         try {
           await supabase.from('management_decisions').insert({
             user_id: user.id,

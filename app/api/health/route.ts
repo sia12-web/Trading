@@ -30,7 +30,8 @@ export async function GET() {
   if (!env.ok) {
     logger.error('health.check_failed', { missing: env.missing, warnings: env.warnings })
   } else {
-    logger.info('health.ok', {
+    // Health probes are frequent — keep success at debug to avoid Railway noise
+    logger.debug('health.ok', {
       deskMode: process.env.DESK_MODE || null,
       warnings: env.warnings,
     })

@@ -24,6 +24,7 @@ import {
   autoLunchClockOut,
   tradeDateForInstrument,
 } from '@/lib/trading/deskAttendance'
+import { noteSessionGateTransition } from '@/lib/utils/deskAuditLog'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -162,6 +163,24 @@ export async function GET(request: Request) {
       clockedIn,
       attendedToday,
       now,
+    })
+
+    noteSessionGateTransition({
+      userId: user.id,
+      viewing: viewingForGate,
+      snap: {
+        phase: gate.phase,
+        canPlaceEntry: gate.canPlaceEntry,
+        canManagePosition: gate.canManagePosition,
+        clockedIn: gate.clockedIn,
+        dayLocked: gate.dayLocked,
+        revengeLocked: gate.revengeLocked,
+        rangeStrategy: gate.rangeStrategy,
+        ladder: gate.attemptLadderLabel,
+        lockedInstrument: gate.lockedInstrument,
+        openPositionId: openPos?.id ?? null,
+        message: gate.message,
+      },
     })
 
     return NextResponse.json(
