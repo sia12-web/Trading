@@ -36,6 +36,17 @@ ATTEMPT LADDER (1 / 1 / 1 — THREE RANGES PER DESK; CLOCKS YOU SPEAK ARE ET)
 - **Active Management Phase** (Post-fill until exit): Monitoring SL/TP targets & AI Reversal exits. Single active position — max 1 at a time.
 - **Risk Discipline Rules**: Working limits do not count until filled. No PM watch — when entry paths are done, manage-only until cash close.
 - **Position Geometry**: 5% risk on AI/structure levels, 1% on manual level pins. Mandatory Stop Loss & Take Profit on every trade.
+- **STRATEGY RISK GEOMETRY (AI/structure tickets — initial book only)**:
+  * Level Finder picks ENTRY levels only (stop pool beyond active-range bait + POC/AVWAP confluence). It does NOT set SL/TP.
+  * Order ticket sets INITIAL protective SL/TP from the active playbook range:
+    - SL = beyond the active range edge (past the hunt), never tighter than the zone floor. LONG → beyond range low; SHORT → beyond range high. Stop-pool entries often land on the zone floor because it is wider than a thin liquidity pad — that is correct. If the range is not formed yet → zone stop fallback.
+    - TP = opposing range edge first, then mid / AVWAP / POC when reward ≥ 1.5R; else 2R fallback.
+  * Manual pins: trader edits SL/TP; 1% risk. Do not invent strategy magnets for manual.
+  * POST-FILL MANAGE is SEPARATE: after fill only, desk auto-management may move to breakeven / trail / scale / reversal exits. That is not the ticket’s initial geometry. Working limits do not start manage. Never tell the trader to ignore strategy SL/TP on AI/structure when a formed range is active.
+- **DESK EXECUTION FLOW**:
+  1) Level Finder → tradeable entry levels for the active playbook.
+  2) Trader clicks a level → ticket computes strategy SL/TP (AI/structure) or editable SL/TP (manual) → places WORKING limit.
+  3) On FILL only → MANAGE / auto-manage (breakeven, trail, reversal). Leo never places or moves orders.
 - **Confluence MVP Filter**: Levels MUST have $\ge 2$ of 3 pillars (AVWAP bands, Volume Profile POC/HVN, Stop Pool sweeps). Single-factor levels are discarded as retail bait.
 - **RANGE LIQUIDITY MAP (how Level Finder + you read the three ranges)**:
   * One rule: each range's High/Low is retail BAIT (where retail enters). Retail stops sit JUST BEYOND those edges. Desk entries hunt that stop pool — never the exact range H/L print. Prefer confluence with Volume Profile POC/HVN and AVWAP.
@@ -131,6 +142,8 @@ export function formatLeoRangeLiquidityReminder(args: {
     `Desk ranges: ${desk}`,
     `Primary bait now: ${primary}`,
     'Rule: range H/L = retail bait; desk hunts stops JUST BEYOND with POC/HVN + AVWAP confluence. Never sell/buy the exact range print. Name which range bait an AI level sits beyond when you debate it.',
+    'Initial SL/TP (ticket, AI/structure): SL beyond active range edge or zone floor (never tighter); TP = opposing edge / mid / AVWAP / POC (≥1.5R) else 2R. Level Finder sets ENTRY only.',
+    'Post-fill MANAGE is separate (breakeven / trail / reversal) — starts only after fill, not on working limits.',
   ].join('\n')
 }
 

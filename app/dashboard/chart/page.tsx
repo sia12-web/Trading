@@ -18,6 +18,10 @@ import {
   type PendingLimitOrder,
   limitWouldFill,
 } from './components/LevelOrderTicket'
+import type {
+  StrategyRangeEdges,
+  StrategyRiskMagnets,
+} from '@/lib/trading/strategyRiskGeometry'
 import {
   ManageDeskBar,
   type AiVerdict,
@@ -158,6 +162,10 @@ export default function ChartPage() {
   >()
   const [orderLevelReason, setOrderLevelReason] = useState<string | undefined>()
   const [orderEntrySource, setOrderEntrySource] = useState<'ai' | 'structure' | 'manual'>('ai')
+  const [orderStrategyRange, setOrderStrategyRange] =
+    useState<StrategyRangeEdges | null>(null)
+  const [orderStrategyMagnets, setOrderStrategyMagnets] =
+    useState<StrategyRiskMagnets | null>(null)
   const [regime, setRegime] = useState<'bullish' | 'bearish' | 'choppy'>('bullish')
   const [regimeConfidence, setRegimeConfidence] = useState(70)
   const [gateTick, setGateTick] = useState(0)
@@ -334,6 +342,8 @@ export default function ChartPage() {
         orderType?: 'LIMIT' | 'MARKET'
         stopLoss?: number
         profitTarget?: number
+        strategyRange?: StrategyRangeEdges | null
+        strategyMagnets?: StrategyRiskMagnets | null
       }
     ) => {
       if (managePos || positionOverlay || pending) return
@@ -392,6 +402,16 @@ export default function ChartPage() {
           : meta?.source === 'structure'
             ? 'structure'
             : 'ai'
+      )
+      setOrderStrategyRange(
+        meta?.source === 'manual' || meta?.type === 'manual'
+          ? null
+          : meta?.strategyRange ?? null
+      )
+      setOrderStrategyMagnets(
+        meta?.source === 'manual' || meta?.type === 'manual'
+          ? null
+          : meta?.strategyMagnets ?? null
       )
     },
     [managePos, positionOverlay, pending, placeMarketOrder, gate]
@@ -657,6 +677,8 @@ export default function ChartPage() {
       setOrderPreferredDirection(undefined)
       setOrderLevelReason(undefined)
       setOrderEntrySource('ai')
+      setOrderStrategyRange(null)
+      setOrderStrategyMagnets(null)
       setFillError(null)
 
       // Immediate fill if market order or price is already through the limit
@@ -1207,6 +1229,8 @@ export default function ChartPage() {
             preferredDirection={orderPreferredDirection}
             entryReason={orderLevelReason}
             entrySource={orderEntrySource}
+            strategyRange={orderStrategyRange}
+            strategyMagnets={orderStrategyMagnets}
             regime={regime}
             regimeConfidence={regimeConfidence}
             canPlace={canTrade && dataMode === 'live'}
@@ -1218,6 +1242,8 @@ export default function ChartPage() {
               setOrderPreferredDirection(undefined)
               setOrderLevelReason(undefined)
               setOrderEntrySource('ai')
+              setOrderStrategyRange(null)
+              setOrderStrategyMagnets(null)
             }}
             onPlaced={handlePlaced}
           />

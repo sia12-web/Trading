@@ -69,7 +69,7 @@ export function buildLevelTagReactionText(ev: LevelTagEvent): string {
   if (ev.verdict === 'broke') {
     return `${src} ${label} looks broken through. Invalidate that plan unless you see a clean reclaim.`
   }
-  return `${src} ${label} held. Plan still valid if it fits your first-45-minute rules and attempts left.`
+  return `${src} ${label} held. Plan still valid if it fits the active range window and attempts left.`
 }
 
 /** Prefer pin over AI when the same price appears twice in watch lists. */

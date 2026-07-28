@@ -93,6 +93,11 @@ import {
 } from '@/lib/trading/deskPlaybookMode'
 import { attemptLadderFromCounts } from '@/lib/trading/attemptLadder'
 import {
+  activeRangeForPlaybook,
+  type StrategyRangeEdges,
+  type StrategyRiskMagnets,
+} from '@/lib/trading/strategyRiskGeometry'
+import {
   NYC_LUNCH_COLORS,
   computeNycLunchRange,
   computeNycLunchSignals,
@@ -571,6 +576,9 @@ interface TradingChartProps {
       orderType?: 'LIMIT' | 'MARKET'
       stopLoss?: number
       profitTarget?: number
+      /** Active playbook range for strategy SL/TP (AI/structure) */
+      strategyRange?: StrategyRangeEdges | null
+      strategyMagnets?: StrategyRiskMagnets | null
     }
   ) => void
   /**
@@ -690,6 +698,8 @@ export function TradingChart({
   const or30RangeRef = useRef<Or30Range | null>(null)
   const [or30Shaped, setOr30Shaped] = useState(false)
   const [showOr30, setShowOr30] = useState(true)
+  /** Latest session AVWAP print — strategy TP magnet */
+  const avwapLastRef = useRef<number | null>(null)
   const levelLinesRef = useRef<any[]>([])
   /** Host for level/SL/TP price lines — seeded once; candle setData must not touch it */
   const priceLineHostRef = useRef<ISeriesApi<'Line'> | null>(null)
@@ -1195,6 +1205,62 @@ export function TradingChart({
     hoverPreviewLinesRef.current = []
     hoverPreviewKeyRef.current = null
   }, [])
+
+  /** Active playbook range + magnets for strategy SL/TP (reads live range refs). */
+  const getStrategyRiskBundle = useCallback((): {
+    strategyRange: StrategyRangeEdges | null
+    strategyMagnets: StrategyRiskMagnets
+  } => {
+    const playbookMode = resolveDeskPlaybookMode({
+      instrument,
+      rangeStrategy,
+      ladder: attemptLadderFromCounts({
+        morningAttempts,
+        ibAttempts,
+        lunchAttempts,
+        morningStopHits: stopHits,
+      }),
+    })
+    const strategyRange = activeRangeForPlaybook({
+      playbookMode,
+      instrument,
+      or30: or30RangeRef.current,
+      ib: ibRangeRef.current,
+      usRange: usRangeRef.current,
+      lunchRange: lunchRangeRef.current,
+    })
+    const extras: number[] = []
+    for (const r of [
+      or30RangeRef.current,
+      ibRangeRef.current,
+      usRangeRef.current,
+      lunchRangeRef.current,
+    ]) {
+      if (!r || !(r.high > r.low)) continue
+      if (
+        strategyRange &&
+        r.high === strategyRange.high &&
+        r.low === strategyRange.low
+      ) {
+        continue
+      }
+      extras.push(r.high, r.low)
+    }
+    return {
+      strategyRange,
+      strategyMagnets: {
+        avwap: avwapLastRef.current,
+        extras,
+      },
+    }
+  }, [
+    instrument,
+    rangeStrategy,
+    morningAttempts,
+    ibAttempts,
+    lunchAttempts,
+    stopHits,
+  ])
 
   // Recompute focus tabs on a short clock so NIKKEI appears at Tokyo−30m without refresh.
   // Clock-gated UI must NOT run during the hydrate render (Railway TZ ≠ browser → React #418).
@@ -2145,6 +2211,13 @@ export function TradingChart({
         })),
         deskClockFor(instrument)
       )
+      if (bands?.vwap?.length) {
+        const last = bands.vwap[bands.vwap.length - 1]
+        avwapLastRef.current =
+          last && last.value > 0 ? last.value : null
+      } else {
+        avwapLastRef.current = null
+      }
       const vs = vwapSeriesRef.current
       if (vs && bands) {
         const shift = <T extends { time: number | UTCTimestamp; value: number }>(rows: T[]) =>
@@ -3919,9 +3992,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         return
       }
 
+      const { strategyRange, strategyMagnets } = getStrategyRiskBundle()
       const preview = previewLevelOrderPrices({
         level: pick.matched,
         instrument,
+        activeRange: strategyRange,
+        magnets: strategyMagnets,
       })
       if (!preview) {
         clearHoverPreview()
@@ -3997,6 +4073,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     showLevels,
     instrument,
     clearHoverPreview,
+    getStrategyRiskBundle,
   ])
 
   // ── Position / working-limit overlay lines (host series — survives candle setData)
@@ -5484,13 +5561,17 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                       onClick={(e) => {
                         e.stopPropagation()
                         jumpToPriceRef?.current?.(l.price)
-                        // Trigger standard LevelOrderTicket modal with pre-calculated zone SL and TP
+                        // Strategy SL/TP from active playbook range (not zone-only)
+                        const { strategyRange, strategyMagnets } =
+                          getStrategyRiskBundle()
                         onLevelSelect?.(l.price, {
                           type: side === 'SHORT' ? 'resistance' : 'support',
                           side,
                           preferredDirection: side === 'SHORT' ? 'SHORT' : 'LONG',
                           reasoning: l.reasoning || why,
                           source: l.source === 'structure' ? 'structure' : 'ai',
+                          strategyRange,
+                          strategyMagnets,
                         })
                       }}
                       className={`w-full rounded-xl border px-2.5 py-2.5 text-left text-[11px] transition-all hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 ${

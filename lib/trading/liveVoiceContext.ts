@@ -540,8 +540,8 @@ export async function buildLiveVoiceDeskContext(
       maxStopHits: MAX_STOP_HITS,
       entryRule:
         contextInstrument === 'NIKKEI'
-          ? 'Day max 3 fills (AM/OR30 1 + US Range 1 + IB 1). Skip-forward: skip morning → US Range; skip US Range → IB. Any fill locks later windows. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books ride to cash-close flatten. Voice never places orders. Range H/L = retail bait; desk hunts stops just beyond with POC/AVWAP confluence.'
-          : 'Day max 3 fills (AM/OR30 1 + IB 1 + LN 1). Skip-forward: skip morning → IB; skip IB → lunch-range. Any fill locks later windows. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books ride to cash-close flatten. Voice never places orders. Range H/L = retail bait; desk hunts stops just beyond with POC/AVWAP confluence.',
+          ? 'Day max 3 fills (AM/OR30 1 + US Range 1 + IB 1). Skip-forward: skip morning → US Range; skip US Range → IB. Any fill locks later windows. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books ride to cash-close flatten. Voice never places orders. Range H/L = retail bait; desk hunts stops just beyond with POC/AVWAP confluence. Ticket sets initial SL beyond active range (or zone floor) and TP at opposing edge/magnets; post-fill BE/trail manage is separate.'
+          : 'Day max 3 fills (AM/OR30 1 + IB 1 + LN 1). Skip-forward: skip morning → IB; skip IB → lunch-range. Any fill locks later windows. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books ride to cash-close flatten. Voice never places orders. Range H/L = retail bait; desk hunts stops just beyond with POC/AVWAP confluence. Ticket sets initial SL beyond active range (or zone floor) and TP at opposing edge/magnets; post-fill BE/trail manage is separate.',
     },
     rangeLiquidityBriefText: null,
     avwap: {

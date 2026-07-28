@@ -95,6 +95,19 @@ assert(
   assert(prev!.target < prev!.entry, 'SHORT target below')
 }
 
+{
+  const range = { label: 'OR30', high: 42_200, low: 42_000 }
+  const prev = previewLevelOrderPrices({
+    level: { ...aiBuy, price: 41_980 },
+    instrument: 'DOW',
+    activeRange: range,
+  })
+  assert(prev != null, 'strategy preview')
+  assert(prev!.stop <= range.low, 'strategy LONG stop beyond OR30 low')
+  assert(prev!.rangeLabel === 'OR30', 'range label')
+  assert(prev!.target > prev!.entry, 'strategy TP above')
+}
+
 assert(!isChartDragGesture(100, 100, 102, 101), 'tiny move = click')
 assert(isChartDragGesture(100, 100, 100 + CHART_CLICK_DRAG_PX + 1, 100), 'pan = drag')
 

@@ -27,6 +27,22 @@ assert(LIVE_VOICE_SYSTEM_PROMPT.includes('RANGE LIQUIDITY MAP'), 'Leo knows rang
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('retail BAIT'), 'Leo knows range H/L = bait')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('JUST BEYOND'), 'Leo knows stop pools beyond edges')
 assert(
+  LIVE_VOICE_SYSTEM_PROMPT.includes('STRATEGY RISK GEOMETRY'),
+  'Leo knows strategy SL/TP geometry'
+)
+assert(
+  LIVE_VOICE_SYSTEM_PROMPT.includes('DESK EXECUTION FLOW'),
+  'Leo knows Level Finder → ticket → fill → manage'
+)
+assert(
+  LIVE_VOICE_SYSTEM_PROMPT.includes('POST-FILL MANAGE'),
+  'Leo knows post-fill manage is separate'
+)
+assert(
+  LIVE_VOICE_SYSTEM_PROMPT.includes('opposing range edge'),
+  'Leo knows opposing-edge TP'
+)
+assert(
   LIVE_VOICE_SYSTEM_PROMPT.includes('buy the range low') ||
     LIVE_VOICE_SYSTEM_PROMPT.includes('Reject "buy the range low'),
   'Leo rejects retail range-edge entries'
@@ -148,6 +164,8 @@ assert(packed.includes('AM 0/1'), 'includes attempt ladder')
 assert(packed.includes('RANGE LIQUIDITY MAP'), 'packed context has range liquidity map')
 assert(packed.includes('Primary bait'), 'packed context has primary bait')
 assert(packed.includes('OR30'), 'packed primary OR30 for morning')
+assert(packed.includes('Initial SL/TP'), 'packed reminder has strategy SL/TP')
+assert(packed.includes('Post-fill MANAGE'), 'packed reminder separates post-fill manage')
 assert(!packed.includes('99999'), 'no invented price')
 
 {

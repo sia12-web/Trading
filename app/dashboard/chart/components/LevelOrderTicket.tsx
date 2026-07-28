@@ -2,7 +2,7 @@
 
 /**
  * Limit order ticket — places a WORKING limit.
- * AI/structure: zone stop + desk risk (5%).
+ * AI/structure: strategy range SL/TP (active playbook bait) + desk risk (5%).
  * Manual: editable limit/SL/TP + 1% account risk (size auto-adjusts).
  */
 
@@ -15,7 +15,13 @@ import {
   riskPercentForEntrySource,
   type DeskEntrySource,
 } from '@/lib/trading/positionSizing'
-import { zoneStopPrice, formatZone } from '@/lib/trading/deskLevels'
+import { formatZone } from '@/lib/trading/deskLevels'
+import {
+  strategyEntryRisk,
+  strategyTakeProfitPrice,
+  type StrategyRangeEdges,
+  type StrategyRiskMagnets,
+} from '@/lib/trading/strategyRiskGeometry'
 import {
   instrumentTick,
   snapDeskPrice,
@@ -81,6 +87,9 @@ interface Props {
   useLiveAccount?: boolean
   /** Fallback / sim equity before live NAV loads */
   initialAccountSize?: number
+  /** Active playbook range for strategy SL/TP (AI/structure only) */
+  strategyRange?: StrategyRangeEdges | null
+  strategyMagnets?: StrategyRiskMagnets | null
   onClose: () => void
   /** Called when the working limit is accepted — NOT when filled. */
   onPlaced: (order: PendingLimitOrder) => void
@@ -106,6 +115,8 @@ export function LevelOrderTicket({
   entryWindow,
   useLiveAccount = true,
   initialAccountSize,
+  strategyRange = null,
+  strategyMagnets = null,
   onClose,
   onPlaced,
 }: Props) {
@@ -153,12 +164,26 @@ export function LevelOrderTicket({
   const [accountLoading, setAccountLoading] = useState(useLiveAccount)
   const [marginAvailable, setMarginAvailable] = useState<number | null>(null)
   const [limitPrice, setLimitPrice] = useState(levelPrice)
-  const [stopInput, setStopInput] = useState(() =>
-    isManual
-      ? defaultManualStop(levelPrice, suggested)
-      : zoneStopPrice(levelPrice, suggested)
-  )
-  const [tpInput, setTpInput] = useState<number | null>(null)
+  const [stopInput, setStopInput] = useState(() => {
+    if (isManual) return defaultManualStop(levelPrice, suggested)
+    const strat = strategyEntryRisk({
+      entry: levelPrice,
+      direction: suggested,
+      activeRange: strategyRange,
+      magnets: strategyMagnets,
+    })
+    return strat.stop
+  })
+  const [tpInput, setTpInput] = useState<number | null>(() => {
+    if (isManual || !strategyRange) return null
+    const strat = strategyEntryRisk({
+      entry: levelPrice,
+      direction: suggested,
+      activeRange: strategyRange,
+      magnets: strategyMagnets,
+    })
+    return strat.target
+  })
   const [error, setError] = useState<string | null>(null)
   const [placing, setPlacing] = useState(false)
   const placingRef = useRef(false)
@@ -223,26 +248,55 @@ export function LevelOrderTicket({
     const snappedLimit = snapDeskPrice(instrument, levelPrice)
     setLimitPrice(snappedLimit)
     const dir = suggested
-    const rawStop = isManual
-      ? defaultManualStop(snappedLimit, dir)
-      : zoneStopPrice(snappedLimit, dir)
-    setStopInput(snapStopToTick(instrument, snappedLimit, rawStop, dir))
-    setTpInput(null)
+    if (isManual) {
+      setStopInput(snapStopToTick(instrument, snappedLimit, defaultManualStop(snappedLimit, dir), dir))
+      setTpInput(null)
+    } else {
+      const strat = strategyEntryRisk({
+        entry: snappedLimit,
+        direction: dir,
+        activeRange: strategyRange,
+        magnets: strategyMagnets,
+      })
+      setStopInput(snapStopToTick(instrument, snappedLimit, strat.stop, dir))
+      setTpInput(
+        strategyRange
+          ? snapTargetToTick(instrument, snappedLimit, strat.target, dir)
+          : null
+      )
+    }
     placingRef.current = false
     setPlacing(false)
-  }, [levelPrice, isManual, suggested, instrument])
+  }, [levelPrice, isManual, suggested, instrument, strategyRange, strategyMagnets])
 
   const snappedLimit = useMemo(
     () => snapDeskPrice(instrument, limitPrice),
     [instrument, limitPrice]
   )
 
+  const strategyRisk = useMemo(() => {
+    if (isManual) return null
+    return strategyEntryRisk({
+      entry: snappedLimit,
+      direction,
+      activeRange: strategyRange,
+      magnets: strategyMagnets,
+    })
+  }, [
+    isManual,
+    snappedLimit,
+    direction,
+    strategyRange,
+    strategyMagnets,
+  ])
+
   const stopForSizing = useMemo(() => {
     if (!isManual) {
+      if (!strategyRisk) return undefined
       return snapStopToTick(
         instrument,
         snappedLimit,
-        zoneStopPrice(snappedLimit, direction),
+        strategyRisk.stop,
         direction
       )
     }
@@ -251,7 +305,14 @@ export function LevelOrderTicket({
     const ok =
       direction === 'LONG' ? snapped < snappedLimit : snapped > snappedLimit
     return ok ? snapped : undefined
-  }, [isManual, stopInput, snappedLimit, direction, instrument])
+  }, [
+    isManual,
+    stopInput,
+    snappedLimit,
+    direction,
+    instrument,
+    strategyRisk,
+  ])
 
   const preview = useMemo(
     () =>
@@ -265,7 +326,25 @@ export function LevelOrderTicket({
     [snappedLimit, accountSize, direction, stopForSizing, riskPct]
   )
 
-  const displayTpRaw = tpInput ?? preview?.profit_target_price ?? 0
+  const strategyTp = useMemo(() => {
+    if (!strategyRisk || !strategyRange || !stopForSizing) return null
+    return strategyTakeProfitPrice({
+      entry: snappedLimit,
+      stop: stopForSizing,
+      direction,
+      activeRange: strategyRange,
+      magnets: strategyMagnets,
+    })
+  }, [
+    strategyRisk,
+    strategyRange,
+    strategyMagnets,
+    snappedLimit,
+    direction,
+    stopForSizing,
+  ])
+
+  const displayTpRaw = tpInput ?? strategyTp ?? preview?.profit_target_price ?? 0
   const displayTp =
     displayTpRaw > 0
       ? snapTargetToTick(instrument, snappedLimit, displayTpRaw, direction)
@@ -392,7 +471,15 @@ export function LevelOrderTicket({
             {!isManual && (
               <p className="mt-1 text-xs text-gray-400">
                 <span className="price-mono text-white">{levelPrice.toLocaleString()}</span>
-                <span className="ml-1.5 text-gray-500">zone {formatZone(levelPrice)}</span>
+                {strategyRange ? (
+                  <span className="ml-1.5 text-sky-400/90">
+                    {strategyRisk?.stopSource === 'range'
+                      ? `SL beyond ${strategyRange.label}`
+                      : `SL zone floor · TP from ${strategyRange.label}`}
+                  </span>
+                ) : (
+                  <span className="ml-1.5 text-gray-500">zone {formatZone(levelPrice)}</span>
+                )}
               </p>
             )}
             {entryReason && entryReason.trim() && (
@@ -432,6 +519,21 @@ export function LevelOrderTicket({
                 if (isManual) {
                   setStopInput(defaultManualStop(limitPrice, d))
                   setTpInput(null)
+                } else {
+                  const strat = strategyEntryRisk({
+                    entry: snappedLimit,
+                    direction: d,
+                    activeRange: strategyRange,
+                    magnets: strategyMagnets,
+                  })
+                  setStopInput(
+                    snapStopToTick(instrument, snappedLimit, strat.stop, d)
+                  )
+                  setTpInput(
+                    strategyRange
+                      ? snapTargetToTick(instrument, snappedLimit, strat.target, d)
+                      : null
+                  )
                 }
               }}
               className={`flex-1 rounded-lg py-2 text-xs font-semibold ${
@@ -535,14 +637,24 @@ export function LevelOrderTicket({
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500">
-                {isManual ? 'Stop' : 'Stop (beyond zone)'}
+                {isManual
+                  ? 'Stop'
+                  : strategyRisk?.stopSource === 'range' && strategyRange
+                    ? `Stop (beyond ${strategyRange.label})`
+                    : 'Stop (zone floor)'}
               </span>
               <span className="price-mono text-red-400 font-semibold">
                 {preview.stop_loss_price.toLocaleString('en-US', { maximumFractionDigits: 0 })}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Target {isManual ? '' : '(2R)'}</span>
+              <span className="text-gray-500">
+                {isManual
+                  ? 'Target'
+                  : strategyRange
+                    ? `Target (${strategyRange.label} / magnets)`
+                    : 'Target (2R)'}
+              </span>
               <span className="price-mono text-green-400">
                 {displayTp.toLocaleString('en-US', { maximumFractionDigits: 0 })}
               </span>

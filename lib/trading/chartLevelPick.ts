@@ -15,6 +15,11 @@ import {
   DESK_RISK_PERCENT,
   previewPositionSizing,
 } from '@/lib/trading/positionSizing'
+import {
+  strategyEntryRisk,
+  type StrategyRangeEdges,
+  type StrategyRiskMagnets,
+} from '@/lib/trading/strategyRiskGeometry'
 
 /** Same band as live/sim click snap (~0.25%). */
 export const CHART_LEVEL_SNAP_PCT = 0.0025
@@ -125,18 +130,28 @@ export function previewLevelOrderPrices(args: {
   level: ChartPickLevel
   instrument: DeskTickInstrument
   accountSize?: number
+  /** Active playbook range — strategy SL/TP when present */
+  activeRange?: StrategyRangeEdges | null
+  magnets?: StrategyRiskMagnets | null
 }): {
   direction: 'LONG' | 'SHORT'
   entry: number
   stop: number
   target: number
   tick: number
+  rangeLabel: string | null
 } | null {
   const direction = directionFromChartLevel(args.level)
   const entry = snapDeskPrice(args.instrument, args.level.price)
   if (!(entry > 0)) return null
 
-  const stopRaw = zoneStopPrice(entry, direction)
+  const strat = strategyEntryRisk({
+    entry,
+    direction,
+    activeRange: args.activeRange,
+    magnets: args.magnets,
+  })
+  const stopRaw = args.activeRange ? strat.stop : zoneStopPrice(entry, direction)
   const stop = snapStopToTick(args.instrument, entry, stopRaw, direction)
   const preview = previewPositionSizing(
     entry,
@@ -147,10 +162,13 @@ export function previewLevelOrderPrices(args: {
   )
   if (!preview) return null
 
+  const targetRaw = args.activeRange
+    ? strat.target
+    : preview.profit_target_price
   const target = snapTargetToTick(
     args.instrument,
     entry,
-    preview.profit_target_price,
+    targetRaw,
     direction
   )
   return {
@@ -159,5 +177,6 @@ export function previewLevelOrderPrices(args: {
     stop,
     target,
     tick: instrumentTick(args.instrument),
+    rangeLabel: strat.rangeLabel,
   }
 }
