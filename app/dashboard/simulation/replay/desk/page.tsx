@@ -376,7 +376,7 @@ function SimulationDeskInner() {
   const [manualClickPrice, setManualClickPrice] = useState<number | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [levelsOpen, setLevelsOpen] = useState(true)
-  /** Floating morning playbook — independent of chart level lines. */
+  /** Floating playbook panel — title follows active range window. */
   const [playbookOpen, setPlaybookOpen] = useState(true)
   const levelsOpenRef = useRef(true)
   const [reasoningOpen, setReasoningOpen] = useState<number | null>(null)
