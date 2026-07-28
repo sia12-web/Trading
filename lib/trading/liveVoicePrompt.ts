@@ -19,12 +19,12 @@ DEEP TRADEPULSE ARCHITECTURE & SESSION CLOCK KNOWLEDGE
 ATTEMPT LADDER (Option B: 2 / 2 / 2 — THREE RANGES PER DESK; CLOCKS YOU SPEAK ARE ET)
 - Day hard cap = 6 fills (up to 2 probes @ 0.25% risk per range window). Next window unlocks when the prior window's clock ends OR its 2 probes are exhausted. Working limits do NOT count until filled.
 - **DOW / NASDAQ ranges**: Morning (OR30) → IB → Lunch-range.
-  * Morning OR30 (09:30–10:15 ET): up to **2 fills @ 0.25%**. Chart: Morning playbook (OR30).
-  * IB (10:15–10:45 ET): up to **2 fills @ 0.25%** after morning clock ends (or morning probes exhausted). Chart: IB playbook.
+  * Morning OR30 (±10 after 10:00 lock → 10:15 ET): up to **2 fills @ 0.25%**. Chart: Morning playbook (OR30). Forming 09:30–10:00 = watch only.
+  * IB (10:30–10:45 ET — when first-hour IB locks): up to **2 fills @ 0.25%** after morning clock ends (or morning probes exhausted). Chart: IB playbook.
   * Lunch break (after IB until lunch-range): Prep only — levels update. No new entries until lunch-range opens.
   * Lunch-range (13:30–15:15 ET): up to **2 fills @ 0.25%** after IB clock ends (or IB probes exhausted).
 - **NIKKEI ranges** (same 2/2/2 unlock rules, DIFFERENT range names): Morning (OR30) → US Range → IB.
-  * Morning OR30 (20:00–20:45 ET): up to **2 fills @ 0.25%**. Chart: Morning playbook (OR30).
+  * Morning OR30 (±10 after 09:30 lock → 09:45 JST / 20:30–20:45 ET): up to **2 fills @ 0.25%**. Chart: Morning playbook (OR30).
   * US Range (21:15–21:45 ET): up to **2 fills @ 0.25%** after morning clock — prior NYC session high/low. Chart: US Range playbook. NOT "IB".
   * IB prep (after US Range until IB opens): Prep only — levels update. No new entries.
   * Tokyo IB (00:30–02:00 ET next calendar morning): up to **2 fills @ 0.25%** after US Range clock ends (or US Range probes exhausted). Chart: IB playbook.

@@ -20,7 +20,7 @@ import {
 import { getTodayAttendance, tradeDateForInstrument } from '@/lib/trading/deskAttendance'
 import { logger } from '@/lib/utils/logger'
 import { normalizeEntrySource } from '@/lib/trading/positionSizing'
-import { assertRangeEdgeEntry } from '@/lib/trading/rangeEdgeEntryGate'
+import { assertServerRangeEdgeEntry } from '@/lib/trading/serverPlaybookRange'
 import { logEntryDenied, logWorkingPlaced } from '@/lib/utils/deskAuditLog'
 
 export const dynamic = 'force-dynamic'
@@ -199,9 +199,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: gateCheck.message }, { status: gateCheck.status })
     }
 
-    const edgeCheck = assertRangeEdgeEntry({
+    const edgeCheck = await assertServerRangeEdgeEntry({
+      instrument,
       entry: level,
-      range:
+      clientRange:
         body.range_high != null && body.range_low != null
           ? {
               high: Number(body.range_high),
@@ -209,6 +210,10 @@ export async function POST(request: Request) {
               label: body.range_label ?? null,
             }
           : null,
+      rangeStrategy: gate.rangeStrategy,
+      morningAttempts: gate.morningAttempts,
+      ibAttempts: gate.ibAttempts,
+      lunchAttempts: gate.lunchAttempts,
     })
     if (!edgeCheck.ok) {
       logEntryDenied({

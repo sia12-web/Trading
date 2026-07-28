@@ -79,10 +79,10 @@ assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
 }
 
 {
-  // Clock past midStart with 1 morning fill → IB unlocked (Option B)
+  // Clock past midStart (10:30) with 1 morning fill → IB unlocked (Option B)
   const afterAm = attemptLadderFromCounts({
     morningAttempts: 1,
-    now: etDate(10, 20),
+    now: etDate(10, 30),
     instrument: 'DOW',
   })
   assert(afterAm.ibEligible, 'after morning clock → IB ok with prior fill')
@@ -153,9 +153,9 @@ assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
 }
 
 {
-  // Gate smoke — morning entry still works
+  // Gate smoke — morning entry after OR30 lock (10:00)
   const g = resolveSessionGate({
-    now: etDate(9, 45),
+    now: etDate(10, 5),
     lockedInstrument: 'DOW',
     clockedIn: true,
     attendedToday: true,

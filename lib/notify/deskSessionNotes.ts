@@ -8,10 +8,10 @@ import {
   NY_IB_STRATEGY_START,
   NY_LUNCH_RANGE_ENTRY_END,
   NY_LUNCH_RANGE_ENTRY_START,
-  TOKYO_IB_STRATEGY_END,
-  TOKYO_IB_STRATEGY_START,
   TOKYO_LUNCH_RANGE_ENTRY_END,
   TOKYO_LUNCH_RANGE_ENTRY_START,
+  TOKYO_US_RANGE_STRATEGY_END,
+  TOKYO_US_RANGE_STRATEGY_START,
   deskMarketFor,
   sessionFor,
   type DeskInstrument,
@@ -55,8 +55,8 @@ export function formatSessionScheduleBlock(
 
   if (market === 'TOKYO') {
     const usWin = deskLocalRangeAsTraderDisplay(
-      TOKYO_IB_STRATEGY_START,
-      TOKYO_IB_STRATEGY_END,
+      TOKYO_US_RANGE_STRATEGY_START,
+      TOKYO_US_RANGE_STRATEGY_END,
       s.tz,
       now
     )
@@ -70,11 +70,9 @@ export function formatSessionScheduleBlock(
       `Schedule (${tz}) — NIKKEI`,
       `• Prep / clock-in from ${prep}`,
       `• Session START (cash open) ${open}`,
-      `• OR30 locks ~${deskLocalHmsAsTraderDisplay('09:30:00', s.tz, now)} (first 30m)`,
-      `• Morning entry ends ${morningEnd}`,
+      `• OR30 locks ~${deskLocalHmsAsTraderDisplay('09:30:00', s.tz, now)} — morning entry until ${morningEnd}`,
       `• US Range window ${usWin} (prior NYC H/L — already shaped)`,
-      `• Tokyo IB locks ~${deskLocalHmsAsTraderDisplay('10:00:00', s.tz, now)} (first hour)`,
-      `• Tokyo IB entry ${ibWin}`,
+      `• Tokyo IB locks ~${deskLocalHmsAsTraderDisplay('10:00:00', s.tz, now)} (first hour) — entry ${ibWin}`,
       `• Lunch confirm ${lunchConfirm}`,
       `• Session END (cash close) ${close}`,
       `• Ladder 2/2/2 @ 0.25% · ±10 only after active range locks`,
@@ -97,10 +95,8 @@ export function formatSessionScheduleBlock(
     `Schedule (${tz}) — ${instrument}`,
     `• Prep / clock-in from ${prep}`,
     `• Session START (cash open) ${open}`,
-    `• OR30 locks ~${deskLocalHmsAsTraderDisplay('10:00:00', s.tz, now)} (first 30m)`,
-    `• Morning entry ends ${morningEnd}`,
-    `• IB locks ~${deskLocalHmsAsTraderDisplay('10:30:00', s.tz, now)} (first hour)`,
-    `• IB entry window ${ibWin}`,
+    `• OR30 locks ~${deskLocalHmsAsTraderDisplay('10:00:00', s.tz, now)} — morning entry until ${morningEnd}`,
+    `• IB locks ~${deskLocalHmsAsTraderDisplay('10:30:00', s.tz, now)} · entry ${ibWin}`,
     `• Lunch-range locks 13:30 · entry ${lunchWin}`,
     `• Lunch confirm ${lunchConfirm}`,
     `• Session END (cash close) ${close}`,
@@ -140,7 +136,7 @@ export function formatSessionStartNote(args: {
   const title = `Session START · ${args.instrument}`
   const body = [
     `Cash open ${open} ${TRADER_DISPLAY_LABEL}`,
-    `OR30 is forming — ±10 entries wait until the active range locks.`,
+    `OR30 is forming — ±10 morning entries unlock after the first 30 minutes.`,
     '',
     formatSessionScheduleBlock(args.instrument, now),
   ].join('\n')

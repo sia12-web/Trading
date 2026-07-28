@@ -55,14 +55,22 @@ const gateBase = {
   stopLossHitCount: 0,
 }
 
-test('resolveRangeStrategy clocks: NY IB 10:15–10:45, lunch-range 13:30–15:15', () => {
+test('resolveRangeStrategy clocks: NY IB 10:30–10:45, lunch-range 13:30–15:15', () => {
+  assert(
+    resolveRangeStrategy({
+      market: 'NY',
+      timeSec: pts('10:15:00'),
+      attemptsUsed: 0,
+    }) === null,
+    'NY before IB lock (10:15) — no IB yet'
+  )
   assert(
     resolveRangeStrategy({
       market: 'NY',
       timeSec: pts(NY_IB_STRATEGY_START),
       attemptsUsed: 0,
     }) === 'ib',
-    'NY IB start'
+    'NY IB start at 10:30'
   )
   assert(
     resolveRangeStrategy({
@@ -142,6 +150,14 @@ test('NY: morning skipped → IB unlock; morning probe still allows IB after clo
   })
   assert(withOne.canPlaceEntry === true, '1 morning probe → IB still open after AM clock')
   assert(withOne.rangeStrategy === 'ib', 'IB after morning probe')
+
+  const beforeLock = resolveSessionGate({
+    ...gateBase,
+    now: etDate(2026, 7, 15, 10, 20),
+    viewingInstrument: 'DOW',
+  })
+  assert(beforeLock.canPlaceEntry === false, '10:20 — IB not shaped yet, no entry')
+  assert(beforeLock.rangeStrategy == null, 'no IB strategy before 10:30')
 
   const afterIb = resolveSessionGate({
     ...gateBase,
@@ -303,12 +319,19 @@ test('Nikkei: US Range probe still allows IB after mid clock (Option B)', () => 
 })
 
 test('Morning entry window allows 2 attempts (NY Option B)', () => {
-  const g = resolveSessionGate({
+  const forming = resolveSessionGate({
     ...gateBase,
     now: etDate(2026, 7, 15, 9, 45),
     viewingInstrument: 'DOW',
   })
-  assert(g.canPlaceEntry === true, 'morning entry')
+  assert(forming.canPlaceEntry === false, 'OR30 forming — no entry yet')
+
+  const g = resolveSessionGate({
+    ...gateBase,
+    now: etDate(2026, 7, 15, 10, 5),
+    viewingInstrument: 'DOW',
+  })
+  assert(g.canPlaceEntry === true, 'morning entry after OR30 lock')
   assert(g.rangeStrategy === null, 'not range strategy yet')
   assert(g.maxAttempts === 6, 'day max shown as 6')
   assert(g.maxMorningAttempts === 2, 'morning max 2')

@@ -77,22 +77,47 @@ assert(MAX_STOP_HITS === 2, 'max stops must be 2')
 }
 
 {
-  // After morning entryClose with 1 morning probe → IB still unlocks (Option B)
-  const afterEntry = new Date('2026-07-14T14:20:00.000Z') // 10:20 ET
-  const unlocked = resolveSimMorningGate({
-    now: afterEntry,
+  // After morning entryClose — IB unlocks only once first-hour IB locks (10:30)
+  const beforeIbLock = new Date('2026-07-14T14:20:00.000Z') // 10:20 ET
+  const waiting = resolveSimMorningGate({
+    now: beforeIbLock,
     instrument: 'NASDAQ',
     hasOpenPosition: false,
     morningAttempts: 1,
     stopHits: 0,
   })
-  assert(unlocked.phase === 'ENTRY', `expected IB ENTRY after morning probe, got ${unlocked.phase}`)
-  assert(unlocked.canPlaceEntry === true, 'IB open after morning probe + clock')
+  assert(waiting.canPlaceEntry === false, 'no IB entry before 10:30 lock')
+  assert(waiting.rangeStrategy !== 'ib', 'IB strategy not open at 10:20')
+
+  const afterIbLock = new Date('2026-07-14T14:35:00.000Z') // 10:35 ET
+  const unlocked = resolveSimMorningGate({
+    now: afterIbLock,
+    instrument: 'NASDAQ',
+    hasOpenPosition: false,
+    morningAttempts: 1,
+    stopHits: 0,
+  })
+  assert(unlocked.phase === 'ENTRY', `expected IB ENTRY after IB lock, got ${unlocked.phase}`)
+  assert(unlocked.canPlaceEntry === true, 'IB open after morning probe + IB lock')
   assert(unlocked.rangeStrategy === 'ib', 'IB strategy')
 }
 
 {
-  const morning = new Date('2026-07-14T14:00:00.000Z')
+  // OR30 forming — no morning entry yet
+  const forming = new Date('2026-07-14T13:45:00.000Z') // 09:45 ET
+  const gate = resolveSimMorningGate({
+    now: forming,
+    instrument: 'NASDAQ',
+    hasOpenPosition: false,
+    attemptsUsed: 0,
+    stopHits: 0,
+  })
+  assert(gate.canPlaceEntry === false, 'OR30 forming blocks morning entry')
+  assert(/OR30 forming/i.test(gate.message), gate.message)
+}
+
+{
+  const morning = new Date('2026-07-14T14:00:00.000Z') // 10:00 ET — OR30 lock
   const gate = resolveSimMorningGate({
     now: morning,
     instrument: 'NASDAQ',
@@ -101,12 +126,12 @@ assert(MAX_STOP_HITS === 2, 'max stops must be 2')
     stopHits: 0,
   })
   assert(gate.phase === 'ENTRY', `expected ENTRY fresh, got ${gate.phase}`)
-  assert(gate.canPlaceEntry === true, 'fresh morning can place')
+  assert(gate.canPlaceEntry === true, 'fresh morning can place after OR30 lock')
 }
 
 {
-  // After morning entryClose — IB unlock when morning skipped (NY)
-  const afterEntry = new Date('2026-07-14T14:20:00.000Z') // 10:20 ET
+  // After morning entryClose — IB unlock when morning skipped (NY) at 10:30+
+  const afterEntry = new Date('2026-07-14T14:35:00.000Z') // 10:35 ET
   const gate = resolveSimMorningGate({
     now: afterEntry,
     instrument: 'NASDAQ',
@@ -120,8 +145,8 @@ assert(MAX_STOP_HITS === 2, 'max stops must be 2')
 }
 
 {
-  // Nikkei morning entry window (09:00–09:45 JST)
-  const nikkeiMorning = new Date('2026-07-14T00:15:00.000Z') // 09:15 JST
+  // Nikkei morning entry after OR30 lock (09:30–09:45 JST)
+  const nikkeiMorning = new Date('2026-07-14T00:35:00.000Z') // 09:35 JST
   const gate = resolveSimMorningGate({
     now: nikkeiMorning,
     instrument: 'NIKKEI',

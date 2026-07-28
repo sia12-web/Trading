@@ -76,8 +76,8 @@ function tipVsRange(tip: number, high: number, low: number): TipVsRange {
 }
 
 /**
- * IB H/L — locked after first cash hour, or forming once ≥2 bars exist in-window.
- * Needed so Level Finder sees IB bait during 10:15–10:30 (before lock).
+ * IB H/L — locked after first cash hour. Forming preview for Level Finder prep only
+ * (NY IB entries unlock at 10:30 when the hour locks).
  */
 function computeIbEdges(
   bars: DeskBar[],

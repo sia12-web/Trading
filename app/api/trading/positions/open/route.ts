@@ -25,7 +25,7 @@ import { getTodayAttendance, tradeDateForInstrument } from '@/lib/trading/deskAt
 import { isOandaConfigured, shouldExecuteOandaOrders } from '@/lib/oanda/config'
 import { getOandaAccountSummary } from '@/lib/oanda/orders'
 import { placeOandaMarketOrder, closeOandaTrade } from '@/lib/oanda/orders'
-import { assertRangeEdgeEntry } from '@/lib/trading/rangeEdgeEntryGate'
+import { assertServerRangeEdgeEntry } from '@/lib/trading/serverPlaybookRange'
 import type { PositionOpenResponse } from '@/types/trading'
 import { logEntryDenied } from '@/lib/utils/deskAuditLog'
 
@@ -267,9 +267,10 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       )
     }
 
-    const edgeCheck = assertRangeEdgeEntry({
+    const edgeCheck = await assertServerRangeEdgeEntry({
+      instrument: body.instrument,
       entry: body.entry_price,
-      range:
+      clientRange:
         body.range_high != null && body.range_low != null
           ? {
               high: Number(body.range_high),
@@ -277,6 +278,10 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
               label: body.range_label ?? null,
             }
           : null,
+      rangeStrategy: gate.rangeStrategy,
+      morningAttempts: gate.morningAttempts,
+      ibAttempts: gate.ibAttempts,
+      lunchAttempts: gate.lunchAttempts,
     })
     if (!edgeCheck.ok) {
       logEntryDenied({

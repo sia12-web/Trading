@@ -79,7 +79,9 @@ function entryDeniedMessage(gate: SessionGateState | null | undefined): string |
       return 'Day attempt cap reached — trading switched off. No new entries.'
     }
     if (gate.phase === 'FLAT') {
-      return 'Entry window closed — wait for IB or lunch-range unlock (if still eligible).'
+      return gate.market === 'TOKYO'
+        ? 'Entry window closed — wait for US Range or Tokyo IB unlock (if still eligible).'
+        : 'Entry window closed — wait for IB or lunch-range unlock (if still eligible).'
     }
     if (gate.phase === 'DONE') {
       return 'Entry windows done for today — manage if open, no new entries.'
@@ -88,7 +90,7 @@ function entryDeniedMessage(gate: SessionGateState | null | undefined): string |
       return 'Cash closed — desk is offline until the next session.'
     }
     if (gate.phase === 'PREP' || gate.phase === 'RECOMMENDED') {
-      return 'Pre-open prep — entries open at cash open.'
+      return 'Pre-open prep — ±10 entries after OR30 locks (open + 30m).'
     }
     return gate.message || 'Entries not available right now.'
   }
@@ -478,6 +480,7 @@ export default function ChartPage() {
   const lastEdgeAlertAtRef = useRef(0)
   const prevGatePhaseRef = useRef<string | null>(null)
   const prevFetchLiveRef = useRef(false)
+  const prevPastCloseRef = useRef(false)
 
   const pushDeskAlert = useCallback(
     (alert: { kind: string; title: string; body: string; telegram: string }) => {
@@ -512,16 +515,16 @@ export default function ChartPage() {
   const handleGate = useCallback((g: SessionGateState) => {
     setGate(g)
 
-    const unlocked =
+    // Entry permission on strategy / morning-ENTRY change (not only canPlaceEntry rising edge)
+    const entryUnlocked =
       !!g.clockedIn &&
       !!g.canPlaceEntry &&
       (g.rangeStrategy === 'ib' ||
         g.rangeStrategy === 'us_range' ||
         g.rangeStrategy === 'lunch_range' ||
         (g.phase === 'ENTRY' && !g.rangeStrategy))
-    const becameUnlocked = unlocked && !prevCanPlaceRef.current
     prevCanPlaceRef.current = !!g.canPlaceEntry
-    if (becameUnlocked && g.lockedInstrument) {
+    if (entryUnlocked && g.lockedInstrument) {
       const windowLabel =
         g.rangeStrategy === 'us_range'
           ? 'US Range'
@@ -532,7 +535,7 @@ export default function ChartPage() {
             : g.rangeStrategy === 'lunch_range'
               ? 'Lunch-range'
               : 'Morning (OR30)'
-      const key = `${g.lockedInstrument}:${windowLabel}:${g.phase}:${g.rangeStrategy ?? 'morning'}`
+      const key = `${g.lockedInstrument}:${g.rangeStrategy ?? 'morning'}:${windowLabel}`
       if (lastUnlockKeyRef.current !== key) {
         lastUnlockKeyRef.current = key
         const msg = formatEntryPermissionNote({
@@ -549,9 +552,9 @@ export default function ChartPage() {
       }
     }
 
-    // Session START = cash open (live bars unlock). Session END = cash close.
-    const inst = g.lockedInstrument as DeskInstrument | null
-    const prevPhase = prevGatePhaseRef.current
+    // Session START = cash open (live bars unlock). Session END = cash close wall-clock.
+    const inst = (g.lockedInstrument ||
+      (g.market === 'TOKYO' ? 'NIKKEI' : null)) as DeskInstrument | null
     const fetchLive = !!g.clockedIn && !!g.canFetchLiveBars
     const wasFetchLive = prevFetchLiveRef.current
     prevGatePhaseRef.current = g.phase
@@ -566,11 +569,16 @@ export default function ChartPage() {
         body: JSON.stringify(msg),
       }).catch(() => {})
     }
+
+    // Cash close: CLOSED phase, or still MANAGE past marketClose
+    const pastClose =
+      !!inst &&
+      (g.phase === 'CLOSED' ||
+        (g.phase === 'MANAGE' && isPastCashCloseNow(inst)))
     if (
       inst &&
-      g.phase === 'CLOSED' &&
-      prevPhase != null &&
-      prevPhase !== 'CLOSED' &&
+      pastClose &&
+      !prevPastCloseRef.current &&
       claimDeskNoteOnce('session_end', inst)
     ) {
       const msg = formatSessionEndNote({ instrument: inst })
@@ -581,6 +589,7 @@ export default function ChartPage() {
         body: JSON.stringify(msg),
       }).catch(() => {})
     }
+    prevPastCloseRef.current = pastClose
 
     // Regime / recommendation is day-stable — fetch once, not every 5s gate poll
     if (regimeFetchedRef.current) return

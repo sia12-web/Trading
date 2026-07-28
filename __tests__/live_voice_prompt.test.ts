@@ -104,7 +104,7 @@ const mock = {
       entryClose: '10:15',
       lunchClose: '11:30',
       marketClose: '16:00',
-      ibEntry: '10:15–10:45',
+      ibEntry: '10:30–10:45',
       lunchRangeEntry: '13:30–15:15',
       tz: 'America/New_York',
       tzLabel: 'ET',
@@ -168,7 +168,7 @@ assert(packed.includes('42000'), 'includes AI level price')
 assert(packed.includes('bullish'), 'includes regime')
 assert(packed.includes('NY 9:30'), 'includes AVWAP label')
 assert(packed.includes('Morning playbook'), 'includes active playbook title')
-assert(packed.includes('IB 10:15'), 'includes IB window')
+assert(packed.includes('IB 10:30'), 'includes IB window')
 assert(packed.includes('AM 0/2'), 'includes attempt ladder')
 assert(packed.includes('RANGE LIQUIDITY MAP'), 'packed context has range liquidity map')
 assert(packed.includes('Primary bait'), 'packed context has primary bait')

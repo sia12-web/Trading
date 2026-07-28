@@ -10,6 +10,9 @@
  *
  * Storage keeps morning / ib / lunch counters (slot 1 / 2 / 3).
  * On TOKYO, slot 2 = US Range fills, slot 3 = IB fills (labels differ).
+ *
+ * NY IB entry starts at 10:30 ET (when first-hour IB locks), not 10:15.
+ * Tokyo US Range stays 10:15 JST (prior NYC already shaped).
  */
 
 import { parseTimeToSeconds } from '@/lib/utils/timeUtils'
@@ -58,8 +61,8 @@ type DeskMarket = 'NY' | 'TOKYO'
 const CLOCK = {
   NY: {
     tz: 'America/New_York',
-    /** Slot 2 — IB */
-    midStart: '10:15:00',
+    /** Slot 2 — IB (aligns with first-hour lock at 10:30) */
+    midStart: '10:30:00',
     midEnd: '10:45:00',
     /** Slot 3 — Lunch-range */
     lateStart: '13:30:00',
@@ -67,7 +70,7 @@ const CLOCK = {
   },
   TOKYO: {
     tz: 'Asia/Tokyo',
-    /** Slot 2 — US Range (prior NYC) */
+    /** Slot 2 — US Range (prior NYC — already shaped) */
     midStart: '10:15:00',
     midEnd: '10:45:00',
     /** Slot 3 — Tokyo IB */
@@ -120,7 +123,6 @@ export function classifyAttemptBucket(
   if (t >= midStart && t < midEnd) return 'ib'
   if (t >= lateStart && t < lateEnd) return 'lunch_range'
   if (t < midStart) return 'morning'
-  if (t < lateStart) return 'other'
   return 'other'
 }
 
@@ -248,33 +250,45 @@ export function attemptLadderFromCounts(args: {
   morningAttempts?: number
   ibAttempts?: number
   lunchAttempts?: number
-  morningStopHits?: number
   otherAttempts?: number
+  morningStopHits?: number
   now?: Date | null
   instrument?: string | null
 }): AttemptLadder {
   return finalizeLadder({
-    morningAttempts: Math.max(0, Math.floor(args.morningAttempts || 0)),
-    ibAttempts: Math.max(0, Math.floor(args.ibAttempts || 0)),
-    lunchAttempts: Math.max(0, Math.floor(args.lunchAttempts || 0)),
-    otherAttempts: Math.max(0, Math.floor(args.otherAttempts || 0)),
-    morningStopHits: Math.max(0, Math.floor(args.morningStopHits || 0)),
-    now: args.now ?? null,
-    instrument: args.instrument ?? 'DOW',
+    morningAttempts: Math.max(0, Math.floor(args.morningAttempts ?? 0)),
+    ibAttempts: Math.max(0, Math.floor(args.ibAttempts ?? 0)),
+    lunchAttempts: Math.max(0, Math.floor(args.lunchAttempts ?? 0)),
+    otherAttempts: Math.max(0, Math.floor(args.otherAttempts ?? 0)),
+    morningStopHits: Math.max(0, Math.floor(args.morningStopHits ?? 0)),
+    now: args.now,
+    instrument: args.instrument,
   })
 }
 
 export function attemptLadderFromTotals(args: {
-  attemptsUsed: number
+  attemptsUsed?: number
   stopHits?: number
   now?: Date | null
   instrument?: string | null
 }): AttemptLadder {
-  const attemptsUsed = Math.max(0, Math.floor(args.attemptsUsed || 0))
-  const stopHits = Math.max(0, Math.floor(args.stopHits || 0))
-  return attemptLadderFromCounts({
-    morningAttempts: attemptsUsed,
-    morningStopHits: Math.min(stopHits, attemptsUsed),
+  const used = Math.max(0, Math.floor(args.attemptsUsed ?? 0))
+  const stops = Math.max(0, Math.floor(args.stopHits ?? 0))
+  return finalizeLadder({
+    morningAttempts: Math.min(used, MAX_MORNING_ATTEMPTS),
+    ibAttempts: Math.min(
+      Math.max(0, used - MAX_MORNING_ATTEMPTS),
+      MAX_IB_ATTEMPTS
+    ),
+    lunchAttempts: Math.min(
+      Math.max(0, used - MAX_MORNING_ATTEMPTS - MAX_IB_ATTEMPTS),
+      MAX_LUNCH_RANGE_ATTEMPTS
+    ),
+    otherAttempts: Math.max(
+      0,
+      used - MAX_MORNING_ATTEMPTS - MAX_IB_ATTEMPTS - MAX_LUNCH_RANGE_ATTEMPTS
+    ),
+    morningStopHits: Math.min(stops, MAX_MORNING_ATTEMPTS),
     now: args.now,
     instrument: args.instrument,
   })
@@ -322,9 +336,13 @@ export function attemptLadderLockReason(
   if (ladder.dayLocked) {
     return `Day attempt cap hit (${ladder.dayAttempts}/${ladder.maxDayAttempts}). Trading switched off.`
   }
-  if (ladder.morningAttempts >= ladder.maxMorningAttempts && !ladder.ibEligible && !ladder.lunchEligible) {
+  if (
+    ladder.morningAttempts >= ladder.maxMorningAttempts &&
+    !ladder.ibEligible &&
+    !ladder.lunchEligible
+  ) {
     return tokyo
-      ? 'Morning (OR30) probes used (2/2) — wait for US Range / IB window.'
+      ? 'Morning (OR30) probes used (2/2) — wait for US Range / Tokyo IB window.'
       : 'Morning (OR30) probes used (2/2) — wait for IB / lunch-range window.'
   }
   if (ladder.ibAttempts >= ladder.maxIbAttempts && !ladder.lunchEligible) {
@@ -334,8 +352,8 @@ export function attemptLadderLockReason(
   }
   if (ladder.lunchAttempts >= ladder.maxLunchAttempts) {
     return tokyo
-      ? 'Tokyo IB probes used (2/2) for today.'
-      : 'Lunch-range probes used (2/2) for today.'
+      ? 'Tokyo IB probes used (2/2) — no new entries.'
+      : 'Lunch-range probes used (2/2) — no new entries.'
   }
   return null
 }

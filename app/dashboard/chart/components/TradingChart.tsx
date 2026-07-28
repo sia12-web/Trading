@@ -4643,8 +4643,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             low: r.low,
             nextHint:
               instrument === 'NIKKEI'
-                ? 'Tokyo IB entry when that window unlocks (±10 of locked H/L).'
-                : 'IB entry when that window unlocks (±10 of locked H/L).',
+                ? 'Tokyo IB shaped now — entry window opens 13:30 JST (±10 of locked H/L). Until then US Range is slot 2.'
+                : 'IB entry window is open (±10 of locked H/L).',
           })
         )
       }
@@ -4658,7 +4658,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             rangeLabel: 'Lunch-range',
             high: r.high,
             low: r.low,
-            nextHint: 'Lunch-range entry after 13:30 ET (±10 of locked H/L).',
+            nextHint: 'Lunch-range entry window is open (±10 of locked H/L).',
           })
         )
       }

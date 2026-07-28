@@ -131,7 +131,7 @@ function tokyoBars(): Array<{
 }
 
 {
-  // During IB entry window (10:20) IB must print as forming — not wait until 10:30 lock
+  // During morning (10:20) IB may print as forming for Level Finder prep — entries wait until 10:30
   const ibWin = buildRangeLiquidityBrief({
     instrument: 'DOW',
     candlesH1: nyBars(),
@@ -139,7 +139,7 @@ function tokyoBars(): Array<{
     nowUnix: NY_OPEN + 50 * 60, // 10:20 ET
     analysisMode: 'ib',
   })
-  assert(ibWin != null && ibWin.slot2 != null, 'IB edges during IB window')
+  assert(ibWin != null && ibWin.slot2 != null, 'IB edges during IB prep')
   assert(ibWin!.slot2!.complete === false, 'IB still forming at 10:20')
   assert(ibWin!.activeLabel === 'IB', 'active IB')
 }
