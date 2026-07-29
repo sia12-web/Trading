@@ -299,9 +299,8 @@ export function activeRangeForPlaybook(args: {
  * Entry legality still uses {@link activeRangeForPlaybook} + session gates —
  * this only controls which ±10 highlights are painted for study.
  *
- * IB / Tokyo IB: pass `showIb: true` whenever IB H/L lines are painted.
- * Do not wire `showIb` to the BRK/REJ markers toggle — markers are independent
- * of the H/L overlay (live chart: H/L + ±10 stay on when shaped; B = markers).
+ * IB / Tokyo IB: pass `showIb: true` when IB H/L overlay is visible (same as BRK/REJ toggle).
+ * Markers and H/L share one toolbar control on the live chart.
  */
 export function visibleOverlayEntryRanges(args: {
   instrument: string

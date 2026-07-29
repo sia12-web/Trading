@@ -709,8 +709,8 @@ export function TradingChart({
   const [ibShaped, setIbShaped] = useState(false)
   /** Mirrored IB H/L for ±10 band effect deps (refs alone do not re-render). */
   const [ibLevels, setIbLevels] = useState<{ high: number; low: number } | null>(null)
-  /** IB BRK/REJ markers only — blue IB H/L (+ ±10 bands) stay on whenever shaped. */
-  const [showIbBreakouts, setShowIbBreakouts] = useState(true)
+  /** IB H/L + BRK/REJ markers + ±10 bands — off on refresh; user toggles on (Press B). */
+  const [showIbBreakouts, setShowIbBreakouts] = useState(false)
   /** NYC lunch 12:00–13:30 ET — DOW / NASDAQ only (Mind Over Markets range) */
   const lunchSeriesRef = useRef<{
     high: ISeriesApi<'Line'>
@@ -720,7 +720,7 @@ export function TradingChart({
   const lunchRangeRef = useRef<NycLunchRange | null>(null)
   const [lunchShaped, setLunchShaped] = useState(false)
   const [lunchLocked, setLunchLocked] = useState(false)
-  const [showLunchRange, setShowLunchRange] = useState(true)
+  const [showLunchRange, setShowLunchRange] = useState(false)
   /** US session range H/L + Asia BRK/REJ — NIKKEI only */
   const usRangeSeriesRef = useRef<{
     high: ISeriesApi<'Line'>
@@ -729,7 +729,7 @@ export function TradingChart({
   const usRangeRef = useRef<NikkeiUsSessionRange | null>(null)
   const [usRangeShaped, setUsRangeShaped] = useState(false)
   /** Gates current-session US H/L lines (IB-style, no markers) */
-  const [showUsRange, setShowUsRange] = useState(true)
+  const [showUsRange, setShowUsRange] = useState(false)
   /** First 30m opening range — NY 09:30–10:00 ET / Tokyo 09:00–09:30 JST */
   const or30SeriesRef = useRef<{
     high: ISeriesApi<'Line'>
@@ -738,7 +738,7 @@ export function TradingChart({
   const or30RangeRef = useRef<Or30Range | null>(null)
   const [or30Shaped, setOr30Shaped] = useState(false)
   const [or30Locked, setOr30Locked] = useState(false)
-  const [showOr30, setShowOr30] = useState(true)
+  const [showOr30, setShowOr30] = useState(false)
   /** Live count of BRK/REJ markers currently painted (for toolbar status). */
   const [rangeSignalSummary, setRangeSignalSummary] = useState<{
     ib: number
@@ -815,7 +815,7 @@ export function TradingChart({
     return () => clearInterval(timer)
   }, [])
 
-  const [showLevels,  setShowLevels] = useState(true)
+  const [showLevels,  setShowLevels] = useState(false)
   /** Floating morning playbook — closed by default on chart refresh; open via Playbook (P). */
   const [playbookOpen, setPlaybookOpen] = useState(false)
 
@@ -944,6 +944,7 @@ export function TradingChart({
       const lunch = lunchRangeRef.current
       const us = usRangeRef.current
       if (
+        showOr30 &&
         or30?.complete &&
         or30.high === strategyRangeForTails.high &&
         or30.low === strategyRangeForTails.low
@@ -954,6 +955,7 @@ export function TradingChart({
           lockedUnix: or30.endUnix,
         }
       } else if (
+        showIbBreakouts &&
         ib &&
         ib.high === strategyRangeForTails.high &&
         ib.low === strategyRangeForTails.low
@@ -964,6 +966,7 @@ export function TradingChart({
           lockedUnix: ib.endUnix,
         }
       } else if (
+        showLunchRange &&
         lunch?.complete &&
         lunch.high === strategyRangeForTails.high &&
         lunch.low === strategyRangeForTails.low
@@ -1047,6 +1050,68 @@ export function TradingChart({
   useEffect(() => {
     paintDeskMarkers()
   }, [showIbBreakouts, showLunchRange, showOr30, showUsRange, paintDeskMarkers])
+
+  /** Apply / clear IB first-hour H/L (blue). Off until user toggles IB BRK/REJ (B). */
+  const paintIbLines = useCallback(() => {
+    const series = ibSeriesRef.current
+    if (!series) return
+    const ib = ibRangeRef.current
+    if (!showIbBreakouts || !ib) {
+      try {
+        series.high.setData([])
+        series.low.setData([])
+      } catch {
+        /* ignore */
+      }
+      setIbShaped(false)
+      setIbLevels(null)
+      return
+    }
+    const tipUnix = candlesRef.current.length
+      ? (candlesRef.current[candlesRef.current.length - 1]!.time as number)
+      : Math.floor(Date.now() / 1000)
+    const sess = sessionFor(instrument)
+    const tipDay = new Intl.DateTimeFormat('en-CA', {
+      timeZone: sess.tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date(tipUnix * 1000))
+    const [ch, cm] = sess.marketClose.split(':').map(Number)
+    const closeUnix =
+      instrument === 'NIKKEI'
+        ? tokyoDateTimeToUnix(tipDay, ch!, cm || 0)
+        : nyDateTimeToUnix(tipDay, ch!, cm || 0)
+    const pts = ibLineSeriesData(ib, Math.max(tipUnix, closeUnix))
+    const tz = chartTzRef.current
+    try {
+      series.high.setData(
+        mapTimesToChart(
+          pts.high.map((p) => ({ time: p.time, value: p.value })),
+          tz
+        ).map((p) => ({
+          time: p.time as UTCTimestamp,
+          value: p.value,
+        }))
+      )
+      series.low.setData(
+        mapTimesToChart(
+          pts.low.map((p) => ({ time: p.time, value: p.value })),
+          tz
+        ).map((p) => ({
+          time: p.time as UTCTimestamp,
+          value: p.value,
+        }))
+      )
+      setIbShaped(true)
+      setIbLevels({ high: ib.high, low: ib.low })
+    } catch {
+      series.high.setData([])
+      series.low.setData([])
+      setIbShaped(false)
+      setIbLevels(null)
+    }
+  }, [showIbBreakouts, instrument])
 
   /** Apply / clear lunch line series from cached range (toggle without recompute). */
   const paintLunchLines = useCallback(() => {
@@ -1193,6 +1258,10 @@ export function TradingChart({
       setOr30Locked(false)
     }
   }, [showOr30, instrument])
+
+  useEffect(() => {
+    paintIbLines()
+  }, [paintIbLines])
 
   useEffect(() => {
     paintLunchLines()
@@ -1371,11 +1440,8 @@ export function TradingChart({
     }
   }, [isFullscreen])
 
-  // Open Live Voice once when you clock in (same discoverability as playbook)
-  useEffect(() => {
-    if (clockedIn) setVoiceOpen(true)
-  }, [clockedIn])
-  const showLevelsRef = useRef(true)
+  // Voice stays closed on refresh / clock-in — user opens via toolbar (V).
+  const showLevelsRef = useRef(false)
   const [chartReady,  setChartReady] = useState(false)
   const candlesRef = useRef<OHLCV[]>([])
   const instrumentRef = useRef<Instrument>(instrument)
@@ -2521,7 +2587,7 @@ export function TradingChart({
         vs.lower3.setData([])
       }
 
-      // Initial Balance — first-hour H/L, line extended through cash close
+      // Initial Balance — first-hour H/L (lines only when IB toggle is on)
       // Open day follows tip candle (same as OR30) so Nikkei overnight stays aligned.
       const ibSeries = ibSeriesRef.current
       if (ibSeries) {
@@ -2537,15 +2603,10 @@ export function TradingChart({
           day: '2-digit',
         }).format(new Date(tipUnix * 1000))
         const [oh, om] = sess.marketOpen.split(':').map(Number)
-        const [ch, cm] = sess.marketClose.split(':').map(Number)
         const openUnix =
           instrument === 'NIKKEI'
             ? tokyoDateTimeToUnix(tipDay, oh!, om || 0)
             : nyDateTimeToUnix(tipDay, oh!, om || 0)
-        const closeUnix =
-          instrument === 'NIKKEI'
-            ? tokyoDateTimeToUnix(tipDay, ch!, cm || 0)
-            : nyDateTimeToUnix(tipDay, ch!, cm || 0)
         const ib = computeInitialBalance(
           ordered.map((c) => ({
             time: c.time as number,
@@ -2559,41 +2620,7 @@ export function TradingChart({
           nowUnix
         )
         ibRangeRef.current = ib
-        if (ib) {
-          const pts = ibLineSeriesData(ib, Math.max(tipUnix, closeUnix))
-          try {
-            ibSeries.high.setData(
-              mapTimesToChart(
-                pts.high.map((p) => ({ time: p.time, value: p.value })),
-                tz
-              ).map((p) => ({
-                time: p.time as UTCTimestamp,
-                value: p.value,
-              }))
-            )
-            ibSeries.low.setData(
-              mapTimesToChart(
-                pts.low.map((p) => ({ time: p.time, value: p.value })),
-                tz
-              ).map((p) => ({
-                time: p.time as UTCTimestamp,
-                value: p.value,
-              }))
-            )
-            setIbShaped(true)
-            setIbLevels({ high: ib.high, low: ib.low })
-          } catch {
-            ibSeries.high.setData([])
-            ibSeries.low.setData([])
-            setIbShaped(false)
-            setIbLevels(null)
-          }
-        } else {
-          ibSeries.high.setData([])
-          ibSeries.low.setData([])
-          setIbShaped(false)
-          setIbLevels(null)
-        }
+        paintIbLines()
       }
 
       // NYC Lunch Session Range — 12:00–13:30 ET, Dow & Nasdaq only
@@ -4572,9 +4599,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     const overlays = visibleOverlayEntryRanges({
       instrument,
       showOr30,
-      // IB H/L overlay is always-on when shaped (Press B = BRK/REJ markers only).
-      // ±10 must follow H/L — never gate on showIbBreakouts.
-      showIb: true,
+      // IB H/L + ±10 follow the IB BRK/REJ toolbar toggle (off on refresh).
+      showIb: showIbBreakouts,
       showUsRange,
       showLunchRange,
       or30: or30RangeRef.current,
@@ -4721,6 +4747,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     lunchLocked,
     usRangeShaped,
     showOr30,
+    showIbBreakouts,
     showUsRange,
     showLunchRange,
     livePrice,
@@ -5000,14 +5027,14 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </button>
         )}
 
-        {/* IB BRK/REJ markers toggle (Press B) — blue IB H/L lines always paint when shaped */}
+        {/* IB H/L + BRK/REJ + ±10 (Press B) — off on refresh */}
         {deskSessionLive && (
           <button
             type="button"
             title={
               showIbBreakouts
-                ? 'IB BRK (needs close beyond H/L + RVOL when volume exists) + REJ (wick reject) markers on. Blue IB H/L + ±10 bands stay on either way when shaped.'
-                : 'Show IB break / rejection markers (Press B). Blue IB H/L + ±10 bands still paint when the first hour is locked.'
+                ? 'IB H/L + BRK/REJ markers + ±10 bands on. BRK needs close beyond H/L + RVOL when volume exists; REJ = wick reject (Press B).'
+                : 'Show IB high/low, break/reject markers, and ±10 bands (Press B)'
             }
             onClick={() => setShowIbBreakouts((v) => !v)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
@@ -5493,14 +5520,14 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               {entryBandLabel}
             </span>
           )}
-          <span title="Blue IB high/low + ±10 bands after first cash hour locks (~10:30 ET / 10:00 JST). Press B only toggles BRK/REJ markers.">
+          <span title="Blue IB high/low + BRK/REJ + ±10 — toggle with Press B (off on refresh).">
             <span className={ibShaped ? 'text-blue-500' : 'text-gray-600'}>
-              IB H/L {ibShaped ? 'on' : 'waiting'}
+              IB H/L {ibShaped ? 'on' : showIbBreakouts ? 'waiting' : 'off'}
             </span>
             {ibShaped && (
               <span className="text-gray-600">
                 {' '}
-                · ±10 on · BRK/REJ {showIbBreakouts ? rangeSignalSummary.ib : 'off'}
+                · ±10 on · BRK/REJ {rangeSignalSummary.ib}
               </span>
             )}
           </span>
