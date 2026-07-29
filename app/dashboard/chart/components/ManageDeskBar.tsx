@@ -68,22 +68,50 @@ export function ManageDeskBar({
     reason: string
     confidence: number
   } | null>(null)
+  /** AI wants out — never auto-closes; trader must CONFIRM */
+  const [exitPrompt, setExitPrompt] = useState<{
+    reason: string
+    confidence: number
+  } | null>(null)
+  const [exitDismissed, setExitDismissed] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const exitingRef = useRef(false)
+  const aiPollInFlightRef = useRef(false)
+  const exitDismissedRef = useRef(false)
   const priceRef = useRef(currentPrice)
+  const onClosedRef = useRef(onClosed)
+  const onRefreshGateRef = useRef(onRefreshGate)
+  const onAiVerdictRef = useRef(onAiVerdict)
+
+  useEffect(() => {
+    setExitPrompt(null)
+    setExitDismissed(false)
+    exitDismissedRef.current = false
+    exitingRef.current = false
+  }, [position.id])
 
   useEffect(() => {
     priceRef.current = currentPrice
   }, [currentPrice])
 
   useEffect(() => {
-    onAiVerdict?.(ai)
-  }, [ai, onAiVerdict])
+    exitDismissedRef.current = exitDismissed
+  }, [exitDismissed])
 
   useEffect(() => {
-    return () => onAiVerdict?.(null)
-  }, [onAiVerdict])
+    onClosedRef.current = onClosed
+    onRefreshGateRef.current = onRefreshGate
+    onAiVerdictRef.current = onAiVerdict
+  }, [onClosed, onRefreshGate, onAiVerdict])
+
+  useEffect(() => {
+    onAiVerdictRef.current?.(ai)
+  }, [ai])
+
+  useEffect(() => {
+    return () => onAiVerdictRef.current?.(null)
+  }, [])
 
   const isLong = position.direction === 'long'
   /** Geometric progress 0→1 from entry toward TP (not AI confidence). */
@@ -115,6 +143,8 @@ export function ManageDeskBar({
       : null
 
   const pollAi = useCallback(async () => {
+    if (aiPollInFlightRef.current || exitingRef.current) return
+    aiPollInFlightRef.current = true
     try {
       // 1. Run Auto-Management Rules (Breakeven, Trailing Stop, Partial Scale-Out)
       fetch('/api/trading/positions/auto-manage', {
@@ -148,21 +178,27 @@ export function ManageDeskBar({
         rvol_source: json.rvol_source,
         factors: json.factors,
         options: json.options ?? null,
-        closed: json.closed,
+        closed: false,
       })
-      if (json.closed) {
-        setMsg('AI closed on reversal')
-        onClosed('ai_signal')
-        onRefreshGate()
+      if (json.requires_confirmation && !exitDismissedRef.current) {
+        setExitPrompt({
+          reason: json.reason || 'AI recommends exiting on reversal',
+          confidence: json.confidence ?? 0,
+        })
+      } else if (!json.requires_confirmation) {
+        setExitPrompt(null)
+        setExitDismissed(false)
       }
     } catch {
       /* keep last */
+    } finally {
+      aiPollInFlightRef.current = false
     }
-  }, [position.id, onClosed, onRefreshGate])
+  }, [position.id])
 
   useEffect(() => {
-    pollAi()
-    const id = setInterval(pollAi, 20000)
+    void pollAi()
+    const id = setInterval(() => void pollAi(), 20000)
     return () => clearInterval(id)
   }, [pollAi])
 
@@ -327,6 +363,67 @@ export function ManageDeskBar({
     }
   }
 
+  const handleConfirmAiExit = async () => {
+    if (!exitPrompt || exitingRef.current) return
+    exitingRef.current = true
+    setBusy('AI_EXIT')
+    setMsg(null)
+    const exitPrice = priceRef.current ?? position.entryPrice
+    try {
+      // Single close attempt — close route writes one TAKE_PROFIT history row.
+      const closeRes = await fetch('/api/trading/positions/close', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          position_id: position.id,
+          instrument: position.instrument,
+          exit_price: exitPrice,
+          exit_reason: 'ai_signal',
+          reason: `Trader confirmed AI exit: ${exitPrompt.reason}`,
+        }),
+      })
+      const closeJson = await closeRes.json()
+      if (!closeRes.ok || !closeJson.success) {
+        exitingRef.current = false
+        setMsg(closeJson.message || 'AI exit close failed')
+        return
+      }
+      setExitPrompt(null)
+      setMsg(`Closed @ ${exitPrice.toLocaleString()} — AI exit confirmed`)
+      onClosedRef.current('ai_signal')
+      onRefreshGateRef.current()
+    } catch {
+      exitingRef.current = false
+      setMsg('AI exit confirmation failed')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const handleRejectAiExit = async () => {
+    setBusy('AI_HOLD')
+    try {
+      await fetch('/api/trading/positions/management-decisions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          position_id: position.id,
+          decision_type: 'HOLD',
+          notes: exitPrompt
+            ? `Trader rejected AI exit: ${exitPrompt.reason}`
+            : 'Trader rejected AI exit',
+        }),
+      })
+      setExitDismissed(true)
+      setExitPrompt(null)
+      setMsg('AI exit rejected — position held')
+    } catch {
+      setMsg('Could not record HOLD')
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const verdictColor =
     ai?.verdict === 'reversal'
       ? 'text-red-400'
@@ -339,11 +436,42 @@ export function ManageDeskBar({
 
   return (
     <div className="rounded-xl border border-amber-800/40 bg-[#161b22] px-3 py-2.5 space-y-2">
-      {/* ── Interactive Confirmation Prompt Banner (Requires Trader CONFIRM / REJECT) ────── */}
-      {recommendation && (
-        <div className="rounded-lg border border-amber-500/70 bg-amber-950/40 p-2.5 shadow-lg flex flex-wrap items-center justify-between gap-3 animate-pulse">
+      {/* ── AI exit requires explicit trader CONFIRM (never auto-closes) ────── */}
+      {exitPrompt && (
+        <div className="rounded-lg border border-red-500/70 bg-red-950/40 p-2.5 shadow-lg flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="min-w-0">
+              <span className="text-xs font-extrabold uppercase tracking-wider text-red-300">
+                AI exit suggestion · {exitPrompt.confidence}% — confirm to close
+              </span>
+              <p className="text-xs text-gray-200 font-medium truncate">{exitPrompt.reason}</p>
+            </div>
+          </div>
           <div className="flex items-center gap-2">
-            <span className="text-amber-400 text-sm font-bold">⚡</span>
+            <button
+              type="button"
+              disabled={!!busy}
+              onClick={() => void handleConfirmAiExit()}
+              className="px-3 py-1 rounded bg-red-600 hover:bg-red-500 text-white text-xs font-extrabold uppercase tracking-wider transition shadow"
+            >
+              {busy === 'AI_EXIT' ? '…' : 'CONFIRM EXIT'}
+            </button>
+            <button
+              type="button"
+              disabled={!!busy}
+              onClick={() => void handleRejectAiExit()}
+              className="px-2.5 py-1 rounded bg-surface-700 hover:bg-surface-600 text-gray-300 hover:text-white text-xs font-semibold uppercase tracking-wider transition"
+            >
+              {busy === 'AI_HOLD' ? '…' : 'HOLD'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Bracket recommendation (breakeven / trail / scale) — CONFIRM / REJECT ────── */}
+      {recommendation && (
+        <div className="rounded-lg border border-amber-500/70 bg-amber-950/40 p-2.5 shadow-lg flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
             <div>
               <span className="text-xs font-extrabold uppercase tracking-wider text-amber-300">
                 AI Management Recommendation
@@ -358,7 +486,7 @@ export function ManageDeskBar({
               onClick={handleConfirmRecommendation}
               className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold uppercase tracking-wider transition shadow"
             >
-              ✅ CONFIRM
+              CONFIRM
             </button>
             <button
               type="button"
@@ -366,7 +494,7 @@ export function ManageDeskBar({
               onClick={handleRejectRecommendation}
               className="px-2.5 py-1 rounded bg-surface-700 hover:bg-surface-600 text-gray-300 hover:text-white text-xs font-semibold uppercase tracking-wider transition"
             >
-              ❌ REJECT
+              REJECT
             </button>
           </div>
         </div>

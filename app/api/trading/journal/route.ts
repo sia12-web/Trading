@@ -200,7 +200,7 @@ export async function GET(request: NextRequest) {
       if (t.exit_reason === 'stop_hit') return 'Stop loss hit — exit before or at stop'
       if (t.exit_reason === 'take_profit') return 'Take profit hit'
       if (t.exit_reason === 'ai_signal') {
-        return 'AI early exit — system closed before take-profit (see management decisions)'
+        return 'AI early exit — trader confirmed before take-profit (see management decisions)'
       }
       if (t.exit_reason === 'lunch_close') return 'Lunch flatten — morning desk closed'
       if (t.exit_reason === 'cash_close')

@@ -11,6 +11,7 @@ import { getPositionManager } from '@/lib/trading/positionManager'
 import { getESTDateString } from '@/lib/utils/timeUtils'
 import { shouldExecuteOandaOrders } from '@/lib/oanda/config'
 import { closeOandaTrade } from '@/lib/oanda/orders'
+import { interpretAiExitClaim } from '@/lib/trading/aiExitClaim'
 import type { ClosePositionRequest, ClosePositionResponse, TradePosition } from '@/types/trading'
 
 export async function POST(request: Request): Promise<NextResponse<ClosePositionResponse>> {
@@ -282,11 +283,15 @@ export async function POST(request: Request): Promise<NextResponse<ClosePosition
       updatePayload.stop_loss_hit_count = (position.stop_loss_hit_count || 0) + 1
     }
 
-    let { error: updateError } = await supabase
+    // Atomic claim — only one concurrent close wins Order History + journal write.
+    let { data: claimed, error: updateError } = await supabase
       .from('trades_journal')
       .update(updatePayload)
       .eq('id', body.position_id)
       .eq('user_id', user.id)
+      .is('exit_timestamp', null)
+      .select('id')
+      .maybeSingle()
 
     // Soft-fallback if take_profit / exit_notes columns not migrated yet
     if (updateError && /take_profit|exit_notes|exit_reason/i.test(updateError.message || '')) {
@@ -309,10 +314,16 @@ export async function POST(request: Request): Promise<NextResponse<ClosePosition
         .update(fallback)
         .eq('id', body.position_id)
         .eq('user_id', user.id)
+        .is('exit_timestamp', null)
+        .select('id')
+        .maybeSingle()
       updateError = retry.error
+      claimed = retry.data
     }
 
-    if (updateError) {
+    const claim = interpretAiExitClaim({ data: claimed, error: updateError })
+
+    if (claim.kind === 'error') {
       logger.error('POST /api/trading/positions/close: Update failed', { error: updateError })
       return NextResponse.json(
         {
@@ -331,19 +342,36 @@ export async function POST(request: Request): Promise<NextResponse<ClosePosition
       )
     }
 
-    // Record closure decision in management_decisions for audit trail
+    if (claim.kind === 'already_closed') {
+      logger.info('POST /api/trading/positions/close: already closed (idempotent)', {
+        position_id: body.position_id,
+      })
+      return NextResponse.json(
+        {
+          success: true,
+          position_id: body.position_id,
+          instrument: body.instrument,
+          exit_price: exitPrice,
+          entry_price: Number(position.entry_price),
+          position_size: Number(position.position_size),
+          profit_loss: profitLoss,
+          profit_loss_percent: profitLossPercent,
+          exit_reason: body.exit_reason,
+          message: 'Position already closed',
+        },
+        { status: 200 }
+      )
+    }
+
+    // Winner only: one Order History row (correct management_decisions schema)
     const closureReason = body.reason || `Position closed via ${body.exit_reason}`
     const { error: decisionError } = await supabase.from('management_decisions').insert({
+      user_id: user.id,
       position_id: body.position_id,
       instrument: body.instrument,
-      trade_date: today,
-      decision: 'TAKE_PROFIT',
-      decision_price: exitPrice,
-      decision_time: closeTime,
-      reason: closureReason,
-      confidence_at_decision: position.best_level_break_confidence || 0,
-      current_p_l: profitLoss,
-      current_p_l_percent: profitLossPercent,
+      trade_date: position.trade_date || today,
+      decision_type: 'TAKE_PROFIT',
+      notes: closureReason,
     })
 
     if (decisionError) {

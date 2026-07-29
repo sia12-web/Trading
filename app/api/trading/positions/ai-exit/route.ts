@@ -1,7 +1,7 @@
 /**
  * POST /api/trading/positions/ai-exit
- * While MANAGE: score pullback vs reversal using news + price + RVOL + options flow;
- * liquidate on strong reversal.
+ * While MANAGE: score pullback vs reversal using news + price + RVOL + options flow.
+ * Never liquidates — trader must CONFIRM an exit (or hit SL/TP / manual close).
  */
 
 import { NextResponse } from 'next/server'
@@ -23,6 +23,8 @@ interface Body {
   position_id: string
   current_price?: number
 }
+
+const EXIT_CONFIDENCE_FLOOR = 70
 
 export async function POST(request: Request) {
   try {
@@ -104,6 +106,8 @@ export async function POST(request: Request) {
     })
 
     const { verdict, confidence, reason, factors } = scored
+    const requiresConfirmation =
+      verdict === 'reversal' && confidence >= EXIT_CONFIDENCE_FLOOR
 
     logger.info('ai-exit.verdict', {
       position_id: position.id,
@@ -116,59 +120,9 @@ export async function POST(request: Request) {
       rvol: rvolSnap.rvol,
       rvol_source: rvolSnap.source,
       options_bias: optionsFlow?.bias ?? null,
-      will_close: verdict === 'reversal' && confidence >= 70,
+      requires_confirmation: requiresConfirmation,
+      will_close: false,
     })
-
-    let closed = false
-    if (verdict === 'reversal' && confidence >= 70) {
-      let profitLoss: number
-      if (dir === 'LONG') {
-        profitLoss = (px - entry) * Number(position.position_size)
-      } else {
-        profitLoss = (entry - px) * Number(position.position_size)
-      }
-      profitLoss = Math.round(profitLoss * 100) / 100
-      const plPct = Math.round((profitLoss / Number(position.risk_amount)) * 10000) / 100
-
-      const exitNotes = `AI early exit (TP not hit): ${reason}`
-      const { error: closeErr } = await supabase
-        .from('trades_journal')
-        .update({
-          exit_timestamp: new Date().toISOString(),
-          exit_price: px,
-          exit_reason: 'ai_signal',
-          exit_notes: exitNotes,
-          profit_loss: profitLoss,
-          profit_loss_percent: plPct,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', position.id)
-
-      if (!closeErr) {
-        closed = true
-        logger.info('ai-exit.closed', {
-          position_id: position.id,
-          instrument,
-          exit_price: px,
-          confidence,
-          reason,
-        })
-        try {
-          await supabase.from('management_decisions').insert({
-            user_id: user.id,
-            position_id: position.id,
-            instrument,
-            trade_date: position.trade_date,
-            decision_type: 'TAKE_PROFIT',
-            notes: `AI exit: ${reason}`,
-          })
-        } catch {
-          /* audit optional */
-        }
-      } else {
-        logger.error('[ai-exit] close failed', { error: closeErr })
-      }
-    }
 
     return NextResponse.json({
       success: true,
@@ -192,7 +146,10 @@ export async function POST(request: Request) {
             source: optionsFlow.source,
           }
         : null,
-      closed,
+      /** Strong reversal — UI must ask trader to CONFIRM before closing */
+      requires_confirmation: requiresConfirmation,
+      /** Always false: AI never auto-liquidates */
+      closed: false,
     })
   } catch (e) {
     logger.error('[ai-exit]', { error: e })
