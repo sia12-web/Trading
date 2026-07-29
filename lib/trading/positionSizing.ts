@@ -273,7 +273,7 @@ export function previewPositionSizing(
   accountSize: number,
   direction: EntryDirection,
   stopLossPrice?: number,
-  riskPercent: number = DESK_RISK_PERCENT
+  riskPercent: number = RANGE_EDGE_RISK_PERCENT
 ): {
   stop_loss_price: number
   position_size: number
@@ -284,7 +284,7 @@ export function previewPositionSizing(
 } | null {
   if (entryPrice <= 0 || accountSize <= 0) return null
   const riskPct =
-    Number.isFinite(riskPercent) && riskPercent > 0 ? riskPercent : DESK_RISK_PERCENT
+    Number.isFinite(riskPercent) && riskPercent > 0 ? riskPercent : RANGE_EDGE_RISK_PERCENT
   const risk_amount = accountSize * (riskPct / 100)
 
   const customStopValid =

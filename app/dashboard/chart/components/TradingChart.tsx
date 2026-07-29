@@ -57,7 +57,7 @@ import {
   previewLevelOrderPrices,
   resolveChartLimitPick,
 } from '@/lib/trading/chartLevelPick'
-import { previewPositionSizing } from '@/lib/trading/positionSizing'
+import { previewPositionSizing, RANGE_EDGE_RISK_PERCENT } from '@/lib/trading/positionSizing'
 import {
   aiLevelsUrl,
   resolveDeskLevels,
@@ -6330,18 +6330,19 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           const tpY = candleSeries ? candleSeries.priceToCoordinate(riskBox.profitTarget) : null
           const slY = candleSeries ? candleSeries.priceToCoordinate(riskBox.stopLoss) : null
 
+          // Must match LevelOrderTicket / open-route: 0.25% desk risk — never 1%.
           const sz = previewPositionSizing(
             riskBox.entryPrice,
             liveAccountSize,
             riskBox.direction,
             riskBox.stopLoss,
-            1.0
+            RANGE_EDGE_RISK_PERCENT
           )
           const rawUnits = sz?.position_size ?? 1
           const posSize = typeof rawUnits === 'number' && Number.isFinite(rawUnits)
             ? (rawUnits >= 1 ? Math.round(rawUnits * 100) / 100 : Math.round(rawUnits * 1000) / 1000)
             : 1
-          const lossVal = (sz?.risk_amount ?? 100).toFixed(2)
+          const lossVal = (sz?.risk_amount ?? 0).toFixed(2)
           const targetPts = Math.abs(riskBox.profitTarget - riskBox.entryPrice)
           const profitVal = (posSize * targetPts).toFixed(2)
 
@@ -6447,7 +6448,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 </div>
               )}
 
-              {/* Stop Loss (SL) Line Pill Badge — Drag to adjust SL (Dynamic 1% Sizing) */}
+              {/* Stop Loss (SL) Line Pill Badge — Drag to adjust SL (0.25% desk risk) */}
               {slY != null && (
                 <div
                   onMouseDown={onRiskLineMouseDown('SL')}
@@ -6456,10 +6457,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     left: '42%',
                     top: `${slY - 13}px`,
                   }}
-                  title="Drag Stop Loss line up or down to adjust risk size"
+                  title={`Drag Stop Loss — size adjusts to keep ${RANGE_EDGE_RISK_PERCENT}% account risk`}
                 >
                   <div className="flex items-center rounded border border-dashed border-amber-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-amber-300 shadow-md group-hover:border-amber-300 transition">
-                    <span className="text-amber-400">-{lossVal} CAD</span>
+                    <span className="text-amber-400">
+                      -{lossVal} CAD · {RANGE_EDGE_RISK_PERCENT}%
+                    </span>
                     <span className="text-amber-600 mx-1.5">|</span>
                     <button
                       onClick={(e) => { e.stopPropagation(); cancelRiskBox() }}
