@@ -232,7 +232,8 @@ export function strategyEntryRisk(args: {
  *
  *  OR30 sits inside the first-hour IB and is optional — never forced.
  *  When IB is shaped and morning had 0 fills, OR30 is finished and bait hands off to IB
- *  (Nikkei morning handoff → US Range once that slot is active).
+ *  (Nikkei: morning playbook keeps locked OR30 ±10; US Range only after playbookMode is us_range,
+ *  or as a preview while OR30 is still forming).
  */
 export function activeRangeForPlaybook(args: {
   playbookMode: string
@@ -278,14 +279,14 @@ export function activeRangeForPlaybook(args: {
 
   // morning / done / default
   // OR30 is optional. Once the overlapping first-hour IB is locked and OR30 was
-  // never traded, finish OR30 and hand off to IB (NY). Nikkei: prior NYC US Range
-  // is already complete — preview it as bait whenever OR30 was skipped or is still
-  // forming so ±10 bands show; US Range entries open at Tokyo cash (09:00 JST).
+  // never traded, finish OR30 and hand off to IB (NY). Nikkei: while morning
+  // playbook owns the optional OR30 probe (locked), prefer OR30 ±10 — do not let
+  // prior NYC US Range steal the highlight. Preview US Range only while OR30 is
+  // still forming/absent; once playbookMode is us_range, US owns the bands.
   if (tokyo) {
-    // Actively probing OR30 (at least one morning fill) → keep OR30 bait
-    if (or30Shaped && !or30Skipped) return or30Shaped
+    if (or30Shaped) return or30Shaped
     if (usShaped) return usShaped
-    return or30Shaped
+    return null
   }
   if (or30Skipped && ibShaped) {
     return ibShaped

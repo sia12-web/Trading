@@ -970,6 +970,7 @@ export function TradingChart({
           lockedUnix: lunch.lunchEndUnix,
         }
       } else if (
+        showUsRange &&
         us?.complete &&
         us.high === strategyRangeForTails.high &&
         us.low === strategyRangeForTails.low
@@ -4555,6 +4556,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       lunchRange: lunchRangeRef.current,
       morningAttempts,
     })
+    // US Range overlay toggle clears H/L, BRK/REJ, tails, and ±10 bands from that feature
+    if (strategyRange?.label === 'US Range' && !showUsRange) {
+      clearBands()
+      return
+    }
     const bands = strategyRange ? rangeEdgeBands(strategyRange) : []
     if (!strategyRange || bands.length < 2) {
       clearBands()
@@ -4647,6 +4653,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     ibShaped,
     lunchLocked,
     usRangeShaped,
+    showUsRange,
     livePrice,
     focusTick,
   ])
