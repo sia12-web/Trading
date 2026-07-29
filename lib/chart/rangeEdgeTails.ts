@@ -250,7 +250,7 @@ export function preferLevelsWithRangeEdgeTail<
     .map((l) => {
       const px = Number(l.price)
       const nearest = nearestRangeEdge(px, range)
-      if (!nearest || !edges.has(nearest)) return l
+      if (!nearest || nearest === 'mid' || !edges.has(nearest)) return l
       const center = nearest === 'high' ? range.high : range.low
       if (!(Math.abs(px - center) < edgeProximity)) return l
       const conv = Number(l.conviction)
