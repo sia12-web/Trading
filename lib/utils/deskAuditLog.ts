@@ -11,6 +11,7 @@ export type DeskEntryDenyReason =
   | 'session_gate'
   | 'range_edge'
   | 'already_open'
+  | 'already_working'
   | 'validation'
   | 'unauthorized'
   | 'broker'

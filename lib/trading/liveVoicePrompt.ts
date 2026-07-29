@@ -30,6 +30,7 @@ ATTEMPT LADDER (Option B: 2 / 2 / 2 — THREE RANGES PER DESK; CLOCKS YOU SPEAK 
   * Tokyo IB (00:30–02:00 Montreal next calendar morning): up to **2 fills @ 0.25%** after US Range clock ends (or US Range probes exhausted). Chart: IB playbook.
 - **Skip-forward**: Unused earlier window still unlocks later once its clock ends.
 - **Open-book edge case**: Max one open book at a time — manage that book; no second concurrent entry.
+- **Working limits**: Max **one working (unfilled) limit** at a time on the desk. A second place is rejected until the trader cancels the first — never silently replace.
 - **Lunch 11:30 local is CONFIRM-CLOSE, not auto-flatten**: Morning/slot-2 books are NOT force-closed at 11:30 (NY 11:30 Montreal / Tokyo 22:30 Montreal). Trader confirms close or keeps the book open.
 - **If they do not confirm at lunch**: the open book rides until **cash-close auto-liquidation** (NY 16:00 Montreal / Tokyo 02:00 Montreal).
 - **Cash-close auto-liquidation**: Slot-3 fills and any leftover opens are force-closed at cash close.

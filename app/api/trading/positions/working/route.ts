@@ -22,6 +22,7 @@ import { logger } from '@/lib/utils/logger'
 import { normalizeEntrySource } from '@/lib/trading/positionSizing'
 import { assertServerRangeEdgeEntry } from '@/lib/trading/serverPlaybookRange'
 import { logEntryDenied, logWorkingPlaced } from '@/lib/utils/deskAuditLog'
+import { WORKING_LIMIT_ALREADY_MESSAGE } from '@/lib/trading/workingLimitGate'
 
 export const dynamic = 'force-dynamic'
 
@@ -48,25 +49,42 @@ export async function POST(request: Request) {
     const tradeDate = tradeDateForInstrument(instrument)
     // NY recommendation row is keyed by EST calendar date
     const nyRecDate = getESTDateString()
+    const market = deskMarketFor(instrument)
+    const marketInstruments = instrumentsForDeskMarket(market)
 
-    // Cancel any prior working limit for this session date on this instrument
-    await supabase
+    // One working limit at a time — never silently replace
+    const { data: existingWorking } = await supabase
       .from('trades_journal')
-      .update({
-        fill_status: 'cancelled',
-        exit_timestamp: new Date().toISOString(),
-        exit_price: level,
-        exit_reason: 'limit_expired',
-        profit_loss: 0,
-        profit_loss_percent: 0,
-        exit_notes: 'Replaced by a new working limit',
-        updated_at: new Date().toISOString(),
-      })
+      .select('id, instrument, entry_price, entry_direction')
       .eq('user_id', user.id)
-      .eq('instrument', instrument)
       .eq('trade_date', tradeDate)
+      .in('instrument', marketInstruments)
       .eq('fill_status', 'working')
       .is('exit_timestamp', null)
+      .maybeSingle()
+
+    if (existingWorking) {
+      const msg = WORKING_LIMIT_ALREADY_MESSAGE
+      logEntryDenied({
+        route: 'working',
+        reason: 'already_working',
+        instrument,
+        message: msg,
+        status: 409,
+        entry: level,
+        direction,
+      })
+      return NextResponse.json(
+        {
+          error: msg,
+          working_id: existingWorking.id,
+          existing_instrument: existingWorking.instrument,
+          existing_level: existingWorking.entry_price,
+          existing_direction: existingWorking.entry_direction,
+        },
+        { status: 409 }
+      )
+    }
 
     const { data: filledOpen } = await supabase
       .from('trades_journal')
@@ -137,9 +155,6 @@ export async function POST(request: Request) {
         { status: 403 }
       )
     }
-
-    const market = deskMarketFor(instrument)
-    const marketInstruments = instrumentsForDeskMarket(market)
 
     const [filledRes, openRes, attendance] = await Promise.all([
       supabase

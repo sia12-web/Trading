@@ -42,6 +42,7 @@ import {
   isPastCashCloseNow,
 } from '@/lib/trading/morningLunchConfirm'
 import { assertRangeEdgeEntry } from '@/lib/trading/rangeEdgeEntryGate'
+import { WORKING_LIMIT_ALREADY_MESSAGE } from '@/lib/trading/workingLimitGate'
 import {
   formatEntryPermissionNote,
   formatSessionStartNote,
@@ -259,7 +260,13 @@ export default function ChartPage() {
         strategyMagnets?: StrategyRiskMagnets | null
       }
     ) => {
-      if (managePos || positionOverlay || pending) return
+      if (managePos || positionOverlay || pending) {
+        if (pending) {
+          setFillError(WORKING_LIMIT_ALREADY_MESSAGE)
+          setOrderStatus('rejected')
+        }
+        return
+      }
 
       const denied = entryDeniedMessage(gate)
       if (denied) {
@@ -845,7 +852,13 @@ export default function ChartPage() {
 
   const handlePlaced = useCallback(
     (order: PendingLimitOrder) => {
-      if (placingOrderRef.current || pendingRef.current || managePos) return
+      if (placingOrderRef.current || pendingRef.current || managePos) {
+        if (pendingRef.current) {
+          setFillError(WORKING_LIMIT_ALREADY_MESSAGE)
+          setOrderStatus('rejected')
+        }
+        return
+      }
       const denied = entryDeniedMessage(gate)
       if (denied) {
         setFillError(denied)
