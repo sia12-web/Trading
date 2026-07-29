@@ -17,6 +17,12 @@ import {
   instrumentsForDeskMarket,
   type DeskInstrument,
 } from '@/lib/trading/sessionGate'
+import {
+  assertBucketEntryEligible,
+  attemptLadderFromCounts,
+  bucketForRangeLabel,
+  deskClockSeconds,
+} from '@/lib/trading/attemptLadder'
 import { getTodayAttendance, tradeDateForInstrument } from '@/lib/trading/deskAttendance'
 import { logger } from '@/lib/utils/logger'
 import { normalizeEntrySource } from '@/lib/trading/positionSizing'
@@ -194,24 +200,56 @@ export async function POST(request: Request) {
     })
     const gateCheck = assertCanOpenPosition(instrument, gate)
     if (!gateCheck.ok) {
-      logEntryDenied({
-        route: 'working',
-        reason: 'session_gate',
-        instrument,
-        message: gateCheck.message,
-        status: gateCheck.status,
-        phase: gate.phase,
-        canPlaceEntry: gate.canPlaceEntry,
-        clockedIn: gate.clockedIn,
-        dayLocked: gate.dayLocked,
-        revengeLocked: gate.revengeLocked,
-        ladder: gate.attemptLadderLabel,
-        rangeStrategy: gate.rangeStrategy,
-        entry: level,
-        direction,
-        entrySource: body.entry_source ?? null,
-      })
-      return NextResponse.json({ error: gateCheck.message }, { status: gateCheck.status })
+      // See open/route.ts: the blanket gate follows the single sequential
+      // "active" range and can deny a click on a range with its own budget
+      // left (e.g. IB still 1/2 while the clock highlight has moved to
+      // Lunch). Universal blocks always win; otherwise allow the
+      // range-specific bucket to override — assertServerRangeEdgeEntry below
+      // re-verifies authoritatively regardless.
+      const universalBlock =
+        !gate.clockedIn || gate.dayLocked || gate.phase === 'MANAGE' || gate.phase === 'CLOSED'
+      let rangeOverrideOk = false
+      if (!universalBlock && body.range_label) {
+        const bucket = bucketForRangeLabel(instrument, body.range_label)
+        if (bucket) {
+          const rangeLadder = attemptLadderFromCounts({
+            morningAttempts: gate.morningAttempts,
+            ibAttempts: gate.ibAttempts,
+            lunchAttempts: gate.lunchAttempts,
+            now: new Date(),
+            instrument,
+          })
+          const bucketCheck = assertBucketEntryEligible({
+            instrument,
+            market,
+            timeSec: deskClockSeconds(instrument),
+            ladder: rangeLadder,
+            rangeLabel: body.range_label,
+          })
+          rangeOverrideOk = bucketCheck.ok
+        }
+      }
+
+      if (!rangeOverrideOk) {
+        logEntryDenied({
+          route: 'working',
+          reason: 'session_gate',
+          instrument,
+          message: gateCheck.message,
+          status: gateCheck.status,
+          phase: gate.phase,
+          canPlaceEntry: gate.canPlaceEntry,
+          clockedIn: gate.clockedIn,
+          dayLocked: gate.dayLocked,
+          revengeLocked: gate.revengeLocked,
+          ladder: gate.attemptLadderLabel,
+          rangeStrategy: gate.rangeStrategy,
+          entry: level,
+          direction,
+          entrySource: body.entry_source ?? null,
+        })
+        return NextResponse.json({ error: gateCheck.message }, { status: gateCheck.status })
+      }
     }
 
     const edgeCheck = await assertServerRangeEdgeEntry({

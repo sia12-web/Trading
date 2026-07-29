@@ -82,6 +82,7 @@ import {
   isAnyLiveFocusWindowActive,
   liveVisibleInstruments,
   sessionFor,
+  deskMarketFor,
   type DeskInstrument,
 } from '@/lib/trading/sessionGate'
 import {
@@ -94,7 +95,11 @@ import {
   isDeskEntryWindowActive,
   isDeskWatchOnlyPlaybook,
 } from '@/lib/trading/deskPlaybookMode'
-import { attemptLadderFromCounts } from '@/lib/trading/attemptLadder'
+import {
+  attemptLadderFromCounts,
+  assertBucketEntryEligible,
+  deskClockSeconds,
+} from '@/lib/trading/attemptLadder'
 import {
   activeRangeForPlaybook,
   entryEligibleOverlayRanges,
@@ -3443,11 +3448,29 @@ export function TradingChart({
       if (!hit) return
 
       const label = hit.range.label || 'range'
+      // OR30 has no independent afternoon bucket — it only trades inside its
+      // own locked morning window, gated upstream (chart hides it once that
+      // window closes; treat any hit here as preview-only).
       const liveOk =
-        !!strategyRange &&
-        strategyRange.label === hit.range.label &&
-        strategyRange.high === hit.range.high &&
-        strategyRange.low === hit.range.low
+        label === 'OR30'
+          ? !!strategyRange &&
+            strategyRange.label === hit.range.label &&
+            strategyRange.high === hit.range.high &&
+            strategyRange.low === hit.range.low
+          : assertBucketEntryEligible({
+              instrument,
+              market: deskMarketFor(instrument),
+              timeSec: deskClockSeconds(instrument),
+              ladder: attemptLadderFromCounts({
+                morningAttempts,
+                ibAttempts,
+                lunchAttempts,
+                morningStopHits: stopHits,
+                now: new Date(),
+                instrument,
+              }),
+              rangeLabel: hit.range.label,
+            }).ok
 
       if (!liveOk) {
         onDeskAlert?.({
@@ -3456,7 +3479,7 @@ export function TradingChart({
           body:
             label === 'OR30'
               ? 'OR30 morning ±10 window is closed — enter on the live US Range / IB / lunch playbook when unlocked.'
-              : `${label} ±10 is preview only — click the live playbook band (${strategyRange?.label ?? 'active range'}) to place.`,
+              : `${label} probes are exhausted or its entry window is not open right now.`,
           telegram: '',
           instrument,
         })
@@ -3503,6 +3526,10 @@ export function TradingChart({
     openRiskBox,
     onDeskAlert,
     instrument,
+    morningAttempts,
+    ibAttempts,
+    lunchAttempts,
+    stopHits,
   ])
 
   // ── Draw Zone tool — drag to draw a rectangle price zone ────────────────────
@@ -4312,7 +4339,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       : `Manual ${direction} limit @ ${entryPrice.toLocaleString()}`
 
     if (discussedWithLeo) {
-      const { strategyRange, strategyMagnets } = getStrategyRiskBundle()
+      const { strategyRange, strategyMagnets, snapRanges } = getStrategyRiskBundle()
+      // Attribute to the SPECIFIC range the entry price sits in (±10 band) —
+      // never the single sequential "active" range, so an IB/Lunch click
+      // stays billed to the range actually clicked.
+      const attributedRange =
+        findRangeEdgeBandHit(entryPrice, snapRanges)?.range ?? strategyRange
       onLevelSelect?.(entryPrice, {
         source: 'manual',
         type: 'manual',
@@ -4322,7 +4354,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         reasoning: autoReason,
         stopLoss,
         profitTarget,
-        strategyRange,
+        strategyRange: attributedRange,
         strategyMagnets,
       })
       cancelRiskBox()
@@ -6579,7 +6611,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   type="button"
                   onClick={() => {
                     const fullReason = `Manual ${rationaleModal.direction} entry: ${userRationale || 'Technical structure'} | SL/TP rationale: ${userSlTpRationale || 'Geometry bounds'}`
-                    const { strategyRange, strategyMagnets } = getStrategyRiskBundle()
+                    const { strategyRange, strategyMagnets, snapRanges } = getStrategyRiskBundle()
+                    // Attribute to the SPECIFIC range this entry price sits in
+                    // (±10 band) — never the single sequential "active" range.
+                    const attributedRange =
+                      findRangeEdgeBandHit(rationaleModal.entryPrice, snapRanges)?.range ??
+                      strategyRange
                     onLevelSelect?.(rationaleModal.entryPrice, {
                       source: 'manual',
                       type: 'manual',
@@ -6589,7 +6626,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                       reasoning: fullReason,
                       stopLoss: rationaleModal.stopLoss,
                       profitTarget: rationaleModal.profitTarget,
-                      strategyRange,
+                      strategyRange: attributedRange,
                       strategyMagnets,
                     })
                     setRationaleModal(null)

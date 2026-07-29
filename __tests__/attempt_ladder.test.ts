@@ -1,5 +1,5 @@
 /**
- * Attempt ladder + playbook modes (Option B: 2/2/2 · day ≤ 6).
+ * Attempt ladder + playbook modes (per-window 2/2/2, session cap ≤ 3).
  * Run: npx tsx __tests__/attempt_ladder.test.ts
  */
 
@@ -36,7 +36,7 @@ function etDate(h: number, m: number): Date {
   assert(gap.lunchEligible, 'other fill → lunch still eligible when mid skipped')
 }
 
-assert(MAX_DAY_ATTEMPTS === 6, 'day cap 6')
+assert(MAX_DAY_ATTEMPTS === 3, 'session cap 3')
 assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
 
 {
@@ -115,8 +115,37 @@ assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
     ibAttempts: 2,
     lunchAttempts: 2,
   })
-  assert(dayCap.dayLocked, '6 fills day locked')
+  assert(dayCap.dayLocked, '6 fills → day locked well past session cap')
   assert(!dayCap.morningEligible && !dayCap.ibEligible && !dayCap.lunchEligible, 'all off')
+}
+
+{
+  // Session (day) cap = 3 overrides per-window caps even when a window still
+  // has spare probes — e.g. 1 morning + 1 IB + 1 lunch = 3 fills total, but
+  // IB and Lunch each only used 1/2. Every window must still lock.
+  const sessionCap = attemptLadderFromCounts({
+    morningAttempts: 1,
+    ibAttempts: 1,
+    lunchAttempts: 1,
+  })
+  assert(sessionCap.dayAttempts === 3, 'session total = 3')
+  assert(sessionCap.dayLocked, 'session cap (3) hit → day locked even with spare window probes')
+  assert(
+    !sessionCap.morningEligible && !sessionCap.ibEligible && !sessionCap.lunchEligible,
+    'session cap overrides per-window caps (IB 1/2, Lunch 1/2 both still show spare probes)'
+  )
+}
+
+{
+  // Just under the session cap: 1 fill total (IB), IB window has 1/2 used
+  // → IB should remain eligible (session cap not yet hit at 1/3).
+  const underCap = attemptLadderFromCounts({
+    morningAttempts: 0,
+    ibAttempts: 1,
+  })
+  assert(underCap.dayAttempts === 1, 'session total = 1, under cap')
+  assert(!underCap.dayLocked, 'session cap not yet hit at 1/3')
+  assert(underCap.ibEligible, 'IB still eligible with 1/2 used and session 1/3')
 }
 
 {

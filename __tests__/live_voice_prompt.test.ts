@@ -16,7 +16,8 @@ function assert(cond: unknown, msg: string) {
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('NEVER place'), 'no-order rule')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('NEVER invent'), 'no-invent rule')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('20 seconds'), 'short reply')
-assert(LIVE_VOICE_SYSTEM_PROMPT.includes('Option B: 2 / 2 / 2'), 'Leo knows 2/2/2 ladder')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('2 / 2 / 2 per window'), 'Leo knows 2/2/2 per-window ladder')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('Session hard cap = 3 fills'), 'Leo knows session cap is 3 fills total')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('0.25% risk'), 'Leo knows 0.25% risk')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('RANGE EDGE ENTRY GATE'), 'Leo knows ±10 entry gate')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('±10 index points'), 'Leo knows ±10 band')
@@ -94,7 +95,7 @@ const mock = {
     maxLunchAttempts: 2,
     ibEligible: true,
     lunchEligible: true,
-    attemptLadderLabel: 'Day 0/6 · AM 0/2 · IB 0/2 · LN 0/2',
+    attemptLadderLabel: 'Session 0/3 · AM 0/2 · IB 0/2 · LN 0/2',
     openPositionId: null,
     entryWindow: null,
     rangeStrategy: null,

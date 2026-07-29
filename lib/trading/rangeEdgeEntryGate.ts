@@ -160,8 +160,8 @@ export function nearestRangeEdge(
   return candidates[0]!.edge
 }
 
-export type RangeEdgeBandHit = {
-  range: RangeEdgeLevels
+export type RangeEdgeBandHit<T extends RangeEdgeLevels = RangeEdgeLevels> = {
+  range: T
   edge: RangeEdgeKind
   /** Band center (H, 50% mid, or L) — place limit here on click-to-enter. */
   center: number
@@ -172,14 +172,18 @@ export type RangeEdgeBandHit = {
 /**
  * Painted ±band containing `price` closest to its center.
  * Used for click-to-enter on chart entry highlights.
+ *
+ * Generic over the caller's own range shape (e.g. StrategyRangeEdges, which
+ * requires a non-optional `label`) so the hit's `.range` keeps that exact
+ * type instead of being widened to the base `RangeEdgeLevels`.
  */
-export function findRangeEdgeBandHit(
+export function findRangeEdgeBandHit<T extends RangeEdgeLevels>(
   price: number,
-  ranges: Array<RangeEdgeLevels | null | undefined>,
+  ranges: Array<T | null | undefined>,
   bandPoints: number = RANGE_EDGE_BAND_POINTS
-): RangeEdgeBandHit | null {
+): RangeEdgeBandHit<T> | null {
   if (!Number.isFinite(price) || !(price > 0)) return null
-  let best: RangeEdgeBandHit | null = null
+  let best: RangeEdgeBandHit<T> | null = null
   let bestDist = Infinity
   for (const range of ranges) {
     if (!range) continue

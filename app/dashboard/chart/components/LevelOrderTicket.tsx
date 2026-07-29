@@ -93,6 +93,16 @@ interface Props {
   strategyMagnets?: StrategyRiskMagnets | null
   /** Advise-only ATR pad/trail line from chart */
   atrAdviceLine?: string | null
+  /** Already-decided manual SL/TP (from the risk-box / journal rationale flow) */
+  presetStopLoss?: number | null
+  presetProfitTarget?: number | null
+  /**
+   * Skip the confirmation UI and submit as soon as sizing is ready — used
+   * when the trader already confirmed entry + SL/TP + rationale upstream
+   * (risk-box drag + journal modal) so there is no second "place limit"
+   * dialog to click through.
+   */
+  autoConfirm?: boolean
   onClose: () => void
   /** Called when the working limit is accepted — NOT when filled. */
   onPlaced: (order: PendingLimitOrder) => void
@@ -121,6 +131,9 @@ export function LevelOrderTicket({
   strategyRange = null,
   strategyMagnets = null,
   atrAdviceLine = null,
+  presetStopLoss = null,
+  presetProfitTarget = null,
+  autoConfirm = false,
   onClose,
   onPlaced,
 }: Props) {
@@ -169,7 +182,11 @@ export function LevelOrderTicket({
   const [marginAvailable, setMarginAvailable] = useState<number | null>(null)
   const [limitPrice, setLimitPrice] = useState(levelPrice)
   const [stopInput, setStopInput] = useState(() => {
-    if (isManual) return defaultManualStop(levelPrice, suggested)
+    if (isManual) {
+      return presetStopLoss != null && Number.isFinite(presetStopLoss)
+        ? presetStopLoss
+        : defaultManualStop(levelPrice, suggested)
+    }
     const strat = strategyEntryRisk({
       entry: levelPrice,
       direction: suggested,
@@ -179,7 +196,12 @@ export function LevelOrderTicket({
     return strat.stop
   })
   const [tpInput, setTpInput] = useState<number | null>(() => {
-    if (isManual || !strategyRange) return null
+    if (isManual) {
+      return presetProfitTarget != null && Number.isFinite(presetProfitTarget)
+        ? presetProfitTarget
+        : null
+    }
+    if (!strategyRange) return null
     const strat = strategyEntryRisk({
       entry: levelPrice,
       direction: suggested,
@@ -257,8 +279,16 @@ export function LevelOrderTicket({
     setLimitPrice(snappedLimit)
     const dir = suggested
     if (isManual) {
-      setStopInput(snapStopToTick(instrument, snappedLimit, defaultManualStop(snappedLimit, dir), dir))
-      setTpInput(null)
+      const baseStop =
+        presetStopLoss != null && Number.isFinite(presetStopLoss)
+          ? presetStopLoss
+          : defaultManualStop(snappedLimit, dir)
+      setStopInput(snapStopToTick(instrument, snappedLimit, baseStop, dir))
+      setTpInput(
+        presetProfitTarget != null && Number.isFinite(presetProfitTarget)
+          ? snapTargetToTick(instrument, snappedLimit, presetProfitTarget, dir)
+          : null
+      )
     } else {
       const strat = strategyEntryRisk({
         entry: snappedLimit,
@@ -275,7 +305,16 @@ export function LevelOrderTicket({
     }
     placingRef.current = false
     setPlacing(false)
-  }, [levelPrice, isManual, suggested, instrument, strategyRange, strategyMagnets])
+  }, [
+    levelPrice,
+    isManual,
+    suggested,
+    instrument,
+    strategyRange,
+    strategyMagnets,
+    presetStopLoss,
+    presetProfitTarget,
+  ])
 
   const snappedLimit = useMemo(
     () => snapDeskPrice(instrument, limitPrice),
@@ -435,6 +474,17 @@ export function LevelOrderTicket({
     })
   }
 
+  // Auto-confirm (risk-box / journal-rationale flow already collected entry
+  // + SL/TP + rationale) — submit as soon as live sizing is ready, no second
+  // "place limit" dialog for the trader to click through.
+  useEffect(() => {
+    if (!autoConfirm) return
+    if (placingRef.current) return
+    if (useLiveAccount && accountLoading) return
+    submit()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoConfirm, useLiveAccount, accountLoading, snappedLimit, stopForSizing, direction])
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -447,6 +497,10 @@ export function LevelOrderTicket({
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
+
+  // No second confirmation dialog for risk-box / journal-rationale entries —
+  // the auto-confirm effect above submits as soon as sizing is ready.
+  if (autoConfirm) return null
 
   const sourceBadge =
     entrySource === 'manual'

@@ -370,7 +370,7 @@ test('Morning entry window allows 2 attempts (NY Option B)', () => {
   })
   assert(g.canPlaceEntry === true, 'morning entry after OR30 lock')
   assert(g.rangeStrategy === null, 'not range strategy yet')
-  assert(g.maxAttempts === 6, 'day max shown as 6')
+  assert(g.maxAttempts === 3, 'session max shown as 3')
   assert(g.maxMorningAttempts === 2, 'morning max 2')
 })
 

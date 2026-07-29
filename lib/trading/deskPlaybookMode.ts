@@ -230,7 +230,7 @@ export function deskPlaybookHint(mode: DeskPlaybookMode, instrument?: string): s
       return 'Entry windows done for today — manage if open (confirm lunch close or ride to cash close), no new entries.'
     default:
       return tokyo
-        ? 'Morning OR30 — optional (up to 2 probes @ 0.25%, ±10 of H / 50% / L once locked). Skip freely → US Range then Tokyo IB (day cap 6).'
+        ? 'Morning OR30 — optional (up to 2 probes @ 0.25%, ±10 of H / 50% / L once locked). Skip freely → US Range then Tokyo IB (session cap 3 fills total).'
         : 'Morning OR30 — optional (up to 2 probes @ 0.25%, ±10 of H / 50% / L once locked). Skip freely; when IB locks with no morning fill, desk auto-moves to IB (OR30 finished).'
   }
 }

@@ -2193,7 +2193,7 @@ function SimulationDeskInner() {
       }
       if (attemptsUsedRef.current >= MAX_DAY_ATTEMPTS) {
         setMsg(
-          `Day attempt cap (${MAX_DAY_ATTEMPTS}/${MAX_DAY_ATTEMPTS}) — no more entries this replay.`
+          `Session attempt cap (${MAX_DAY_ATTEMPTS}/${MAX_DAY_ATTEMPTS}) — no more entries this replay.`
         )
         return
       }
@@ -2732,10 +2732,10 @@ function SimulationDeskInner() {
             }`}
             title={
               gate?.attemptLadderLabel ||
-              `Full session 2/2/2 · Day ≤ ${MAX_DAY_ATTEMPTS}. Next window unlocks when prior clock ends or probes are exhausted.`
+              `Up to 2/2/2 per window · Session ≤ ${MAX_DAY_ATTEMPTS} fills total. Next window unlocks when prior clock ends or probes are exhausted, but the session cap always wins.`
             }
           >
-            Day {attemptsUsed}/{MAX_DAY_ATTEMPTS} · AM {morningAttempts}/{MAX_MORNING_ATTEMPTS} ·{' '}
+            Session {attemptsUsed}/{MAX_DAY_ATTEMPTS} · AM {morningAttempts}/{MAX_MORNING_ATTEMPTS} ·{' '}
             {midChip} {ibAttempts}/{MAX_IB_ATTEMPTS} · {lateChip}{' '}
             {lunchAttempts}/{MAX_LUNCH_RANGE_ATTEMPTS}
             {attemptsUsed >= MAX_DAY_ATTEMPTS ? ' · LOCKED' : ''}

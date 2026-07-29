@@ -11,7 +11,7 @@ import {
   deskPlaybookAnalysisMode,
   resolveDeskPlaybookMode,
 } from '@/lib/trading/deskPlaybookMode'
-import { attemptLadderFromCounts } from '@/lib/trading/attemptLadder'
+import { attemptLadderFromCounts, MAX_DAY_ATTEMPTS } from '@/lib/trading/attemptLadder'
 
 export interface SessionGateState {
   phase: string
@@ -146,7 +146,7 @@ export function SessionBanner({
         entryWindow: json.entryWindow,
         open_position_id: json.open_position_id,
         attemptsUsed: Number(json.attemptsUsed ?? json.attempts_used ?? 0),
-        maxAttempts: Number(json.maxAttempts ?? json.max_attempts ?? 6),
+        maxAttempts: Number(json.maxAttempts ?? json.max_attempts ?? MAX_DAY_ATTEMPTS),
         stopHits: Number(json.stopHits ?? json.stop_hits ?? 0),
         maxStopHits: Number(json.maxStopHits ?? json.max_stop_hits ?? 2),
         morningAttempts: Number(json.morningAttempts ?? json.morning_attempts ?? 0),
@@ -375,16 +375,16 @@ export function SessionBanner({
         <span
           className={`rounded px-2 py-0.5 font-semibold tabular-nums ${
             gate.dayLocked ||
-            (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? 6)
+            (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? MAX_DAY_ATTEMPTS)
               ? 'bg-red-500/25 text-red-200'
               : 'bg-sky-500/20 text-sky-200'
           }`}
-          title="Day max 6 fills: 2 per window (Morning / IB / Lunch-range) @ 0.25% risk. Next window unlocks when prior clock ends or probes are exhausted. Lunch 11:30 is confirm-close; unconfirmed books ride to cash close. Working limits do not count until filled."
+          title="Session max 3 fills total, regardless of profit/loss (up to 2 per window: Morning / IB / Lunch-range) @ 0.25% risk. Next window unlocks when prior clock ends or probes are exhausted, but the session cap always wins. Lunch 11:30 is confirm-close; unconfirmed books ride to cash close. Working limits do not count until filled."
         >
           {gate.attemptLadderLabel ||
             (gate.lockedInstrument === 'NIKKEI'
-              ? `Day ${gate.attemptsUsed ?? 0}/${gate.maxAttempts ?? 6} · AM ${gate.morningAttempts ?? 0}/${gate.maxMorningAttempts ?? 2} · US ${gate.ibAttempts ?? 0}/${gate.maxIbAttempts ?? 2} · IB ${gate.lunchAttempts ?? 0}/${gate.maxLunchAttempts ?? 2}`
-              : `Day ${gate.attemptsUsed ?? 0}/${gate.maxAttempts ?? 6} · AM ${gate.morningAttempts ?? 0}/${gate.maxMorningAttempts ?? 2} · IB ${gate.ibAttempts ?? 0}/${gate.maxIbAttempts ?? 2} · LN ${gate.lunchAttempts ?? 0}/${gate.maxLunchAttempts ?? 2}`)}
+              ? `Session ${gate.attemptsUsed ?? 0}/${gate.maxAttempts ?? MAX_DAY_ATTEMPTS} · AM ${gate.morningAttempts ?? 0}/${gate.maxMorningAttempts ?? 2} · US ${gate.ibAttempts ?? 0}/${gate.maxIbAttempts ?? 2} · IB ${gate.lunchAttempts ?? 0}/${gate.maxLunchAttempts ?? 2}`
+              : `Session ${gate.attemptsUsed ?? 0}/${gate.maxAttempts ?? MAX_DAY_ATTEMPTS} · AM ${gate.morningAttempts ?? 0}/${gate.maxMorningAttempts ?? 2} · IB ${gate.ibAttempts ?? 0}/${gate.maxIbAttempts ?? 2} · LN ${gate.lunchAttempts ?? 0}/${gate.maxLunchAttempts ?? 2}`)}
           {(gate.stopHits ?? 0) > 0
             ? ` · Stops ${gate.stopHits}/${gate.maxStopHits ?? 2}`
             : ''}

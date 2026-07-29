@@ -1,10 +1,12 @@
 /**
  * Trading desk session state — NY (DOW/NASDAQ) and Tokyo (NIKKEI).
  *
- * LIVE attempt ladder (Option B: 2 / 2 / 2 · day ≤ 6; local cash clock):
+ * LIVE attempt ladder (per-window 2 / 2 / 2, session cap ≤ 3; local cash clock):
  *   DOW/NASDAQ: Morning (OR30) → IB → Lunch-range
  *   NIKKEI:     Morning (OR30) → US Range (prior NYC) → Tokyo IB
  *   Next window unlocks when prior clock ends OR attempts are exhausted.
+ *   Session (day) total is hard-capped at 3 fills — every window locks once
+ *   that cap is hit, even if a window still shows spare probes.
  *   No PM watch — manage-only when locked.
  *
  *   NY:  open 09:30 · OR30 lock 10:00→10:15 · IB 10:30–10:45 · lunch-range 13:30–15:15 ET
@@ -226,7 +228,7 @@ export function resolveRangeStrategy(args: {
 
 /**
  * Morning / simulation attempt book.
- * Live day cap (9) + IB/lunch rules live in attemptLadder.ts.
+ * Live session cap (3) + IB/lunch rules live in attemptLadder.ts.
  */
 export function evaluateSessionAttempts(input: {
   /** Filled trades today (open + closed) — each fill is one attempt */
@@ -1528,7 +1530,7 @@ export function resolveSimMorningGate(input: {
         'Position open — manage only. ' +
         ladderHint +
         (ladder.dayLocked
-          ? ' Day attempt cap reached.'
+          ? ' Session attempt cap reached.'
           : ''),
     }
   }
@@ -1695,7 +1697,7 @@ export function resolveSimMorningGate(input: {
     canPlaceEntry: false,
     canManagePosition: false,
     message: ladder.dayLocked
-      ? 'Day attempt cap reached. Chart continues until cash close. ' + ladderHint
+      ? 'Session attempt cap reached. Chart continues until cash close. ' + ladderHint
       : waitingLunchRange
         ? prepAfterMid +
           ' — ' +
@@ -1733,7 +1735,7 @@ export function assertCanOpenPosition(
         ? 'Clocked out — click “Today I trade” to resume entries.'
         : 'Clocked out — no new entries. Manage only if you have an open book.'
     } else if (gate.dayLocked) {
-      message = 'Day attempt cap reached — trading switched off. No new entries.'
+      message = 'Session attempt cap reached — trading switched off. No new entries.'
     } else if (gate.phase === 'MANAGE') {
       message = 'Position open — manage only, no new entries.'
     } else if (gate.message && gate.message.trim()) {

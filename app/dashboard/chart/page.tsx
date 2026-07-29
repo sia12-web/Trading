@@ -32,7 +32,7 @@ import {
   setDeskInstrumentPreference,
   type DeskInstrumentPref,
 } from '@/lib/trading/deskInstrumentPreference'
-import { isAnyLiveFocusWindowActive, isAfternoonWatchWindow, sessionFor } from '@/lib/trading/sessionGate'
+import { isAnyLiveFocusWindowActive, isAfternoonWatchWindow, sessionFor, deskMarketFor } from '@/lib/trading/sessionGate'
 import {
   TRADER_DISPLAY_LABEL,
   deskLocalHmsAsTraderDisplay,
@@ -42,6 +42,13 @@ import {
   isPastCashCloseNow,
 } from '@/lib/trading/morningLunchConfirm'
 import { assertRangeEdgeEntry } from '@/lib/trading/rangeEdgeEntryGate'
+import {
+  assertBucketEntryEligible,
+  attemptLadderFromCounts,
+  bucketForRangeLabel,
+  deskClockSeconds,
+  MAX_DAY_ATTEMPTS as SESSION_MAX_ATTEMPTS,
+} from '@/lib/trading/attemptLadder'
 import { WORKING_LIMIT_ALREADY_MESSAGE } from '@/lib/trading/workingLimitGate'
 import {
   formatEntryPermissionNote,
@@ -63,8 +70,8 @@ function entryDeniedMessage(gate: SessionGateState | null | undefined): string |
     if (gate.canClockIn) {
       return 'Clocked out — click “Today I trade” to resume entries.'
     }
-    if (gate.dayLocked || (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? 6)) {
-      return 'Day attempt cap reached — trading switched off. No new entries.'
+    if (gate.dayLocked || (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? SESSION_MAX_ATTEMPTS)) {
+      return 'Session attempt cap reached — trading switched off. No new entries.'
     }
     if (gate.phase === 'CLOSED') {
       return 'Cash closed — desk is offline until the next session.'
@@ -72,8 +79,8 @@ function entryDeniedMessage(gate: SessionGateState | null | undefined): string |
     return 'Clocked out — no new entries. Manage only if you have an open book.'
   }
   if (!gate.canPlaceEntry) {
-    if (gate.dayLocked || (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? 6)) {
-      return 'Day attempt cap reached — trading switched off. No new entries.'
+    if (gate.dayLocked || (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? SESSION_MAX_ATTEMPTS)) {
+      return 'Session attempt cap reached — trading switched off. No new entries.'
     }
     // Prefer the live gate copy (OR30 forming / wait for US Range clock / etc.)
     // over a blunt FLAT fallback — US Range H/L can be painted before its entry window.
@@ -97,6 +104,46 @@ function entryDeniedMessage(gate: SessionGateState | null | undefined): string |
     return 'Entries not available right now.'
   }
   return null
+}
+
+/**
+ * Range-aware override: the blanket gate above follows the single sequential
+ * "active" range and can deny a click on a range with its own budget left
+ * (e.g. IB still 1/2 while the clock highlight has moved to Lunch-range).
+ * Session (day) total cap always wins — 3 trades/session regardless of which
+ * window still shows spare probes.
+ */
+function rangeAwareEntryDeniedMessage(
+  gate: SessionGateState | null | undefined,
+  instrument: string,
+  rangeLabel: string | null | undefined
+): string | null {
+  const denied = entryDeniedMessage(gate)
+  if (!denied) return null
+  if (!gate || !gate.clockedIn || gate.dayLocked || gate.phase === 'MANAGE' || gate.phase === 'CLOSED') {
+    return denied
+  }
+  if ((gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? SESSION_MAX_ATTEMPTS)) {
+    return denied
+  }
+  if (!rangeLabel) return denied
+  const bucket = bucketForRangeLabel(instrument, rangeLabel)
+  if (!bucket) return denied
+  const ladder = attemptLadderFromCounts({
+    morningAttempts: gate.morningAttempts,
+    ibAttempts: gate.ibAttempts,
+    lunchAttempts: gate.lunchAttempts,
+    now: new Date(),
+    instrument,
+  })
+  const check = assertBucketEntryEligible({
+    instrument,
+    market: deskMarketFor(instrument),
+    timeSec: deskClockSeconds(instrument),
+    ladder,
+    rangeLabel,
+  })
+  return check.ok ? null : denied
 }
 
 /** Cancelled working-limit copy — matches why the gate stopped the book. */
@@ -174,6 +221,11 @@ export default function ChartPage() {
     useState<StrategyRangeEdges | null>(null)
   const [orderStrategyMagnets, setOrderStrategyMagnets] =
     useState<StrategyRiskMagnets | null>(null)
+  /** Manual/journal-rationale flows already collected SL/TP up front — skip the
+   *  redundant second "Place manual limit" confirm and auto-submit instead. */
+  const [orderPresetStopLoss, setOrderPresetStopLoss] = useState<number | null>(null)
+  const [orderPresetProfitTarget, setOrderPresetProfitTarget] = useState<number | null>(null)
+  const [orderAutoConfirm, setOrderAutoConfirm] = useState(false)
   const [regime, setRegime] = useState<'bullish' | 'bearish' | 'choppy'>('bullish')
   const [regimeConfidence, setRegimeConfidence] = useState(70)
   const [gateTick, setGateTick] = useState(0)
@@ -269,7 +321,8 @@ export default function ChartPage() {
         return
       }
 
-      const denied = entryDeniedMessage(gate)
+      const inst = (gate?.lockedInstrument || instrument) as Instrument
+      const denied = rangeAwareEntryDeniedMessage(gate, inst, meta?.strategyRange?.label)
       if (denied) {
         setFillError(denied)
         setOrderStatus('rejected')
@@ -286,6 +339,15 @@ export default function ChartPage() {
             : side === 'BUY'
               ? 'LONG'
               : undefined
+
+      // Manual / journal-rationale flows (risk-box drag, rationale modal) already
+      // collected SL + TP before calling onLevelSelect — auto-submit immediately
+      // instead of opening a second "Place manual limit" ticket to click through.
+      const hasPresetRisk =
+        meta?.stopLoss != null &&
+        Number.isFinite(meta.stopLoss) &&
+        meta?.profitTarget != null &&
+        Number.isFinite(meta.profitTarget)
 
       // Desk is limit-only — always open the working-limit ticket
       setOrderLevel(price)
@@ -304,8 +366,11 @@ export default function ChartPage() {
       )
       setOrderStrategyRange(meta?.strategyRange ?? null)
       setOrderStrategyMagnets(meta?.strategyMagnets ?? null)
+      setOrderPresetStopLoss(hasPresetRisk ? (meta!.stopLoss as number) : null)
+      setOrderPresetProfitTarget(hasPresetRisk ? (meta!.profitTarget as number) : null)
+      setOrderAutoConfirm(hasPresetRisk)
     },
-    [managePos, positionOverlay, pending, gate]
+    [managePos, positionOverlay, pending, gate, instrument]
   )
 
   const refreshLevelsAfterExit = useCallback(
@@ -877,7 +942,11 @@ export default function ChartPage() {
         }
         return
       }
-      const denied = entryDeniedMessage(gate)
+      const denied = rangeAwareEntryDeniedMessage(
+        gate,
+        order.instrument,
+        (order.strategyRange ?? orderStrategyRange)?.label
+      )
       if (denied) {
         setFillError(denied)
         setOrderStatus('rejected')
@@ -911,6 +980,9 @@ export default function ChartPage() {
       setOrderEntrySource('ai')
       setOrderStrategyRange(null)
       setOrderStrategyMagnets(null)
+      setOrderPresetStopLoss(null)
+      setOrderPresetProfitTarget(null)
+      setOrderAutoConfirm(false)
       setFillError(null)
 
       const px = livePriceRef.current
@@ -1540,6 +1612,9 @@ export default function ChartPage() {
             regimeConfidence={regimeConfidence}
             canPlace={canTrade && dataMode === 'live'}
             entryWindow={gate?.entryWindow ?? 1}
+            presetStopLoss={orderPresetStopLoss}
+            presetProfitTarget={orderPresetProfitTarget}
+            autoConfirm={orderAutoConfirm}
             onClose={() => {
               setOrderLevel(null)
               setOrderLevelType(undefined)
@@ -1549,6 +1624,9 @@ export default function ChartPage() {
               setOrderEntrySource('ai')
               setOrderStrategyRange(null)
               setOrderStrategyMagnets(null)
+              setOrderPresetStopLoss(null)
+              setOrderPresetProfitTarget(null)
+              setOrderAutoConfirm(false)
             }}
             onPlaced={handlePlaced}
           />

@@ -236,6 +236,46 @@ export function strategyEntryRisk(args: {
  *  (Nikkei: morning playbook keeps locked OR30 ±10; US Range only after playbookMode is us_range,
  *  or as a preview while OR30 is still forming).
  */
+/**
+ * All four painted ranges, independently resolved to their shaped H/L
+ * (or null while forming/absent) — used both by {@link activeRangeForPlaybook}
+ * (single sequential pick) and by callers that need to attribute a specific
+ * clicked price to its OWN range (IB vs Lunch vs OR30 vs US Range), never
+ * just the current sequential pick.
+ */
+export function shapedPlaybookRanges(args: {
+  instrument: string
+  or30?: { high: number; low: number; complete?: boolean } | null
+  ib?: { high: number; low: number; complete?: boolean } | null
+  usRange?: { high: number; low: number; complete?: boolean } | null
+  lunchRange?: { high: number; low: number; complete?: boolean } | null
+}): {
+  or30: StrategyRangeEdges | null
+  ib: StrategyRangeEdges | null
+  usRange: StrategyRangeEdges | null
+  lunchRange: StrategyRangeEdges | null
+} {
+  const tokyo = args.instrument === 'NIKKEI'
+  const pick = (
+    label: string,
+    r: { high: number; low: number; complete?: boolean } | null | undefined,
+    opts?: { /** When true, require complete === true (forming ranges blocked). */ mustBeComplete?: boolean }
+  ): StrategyRangeEdges | null => {
+    if (!r || !(r.high > r.low)) return null
+    if (opts?.mustBeComplete && r.complete !== true) return null
+    return { label, high: r.high, low: r.low }
+  }
+
+  return {
+    // IB from computeInitialBalance is only returned after the hour locks → always shaped.
+    ib: pick(tokyo ? 'Tokyo IB' : 'IB', args.ib),
+    // Prior NYC session for Nikkei — only when that US cash day is complete.
+    usRange: pick('US Range', args.usRange, { mustBeComplete: true }),
+    or30: pick('OR30', args.or30, { mustBeComplete: true }),
+    lunchRange: pick('Lunch-range', args.lunchRange, { mustBeComplete: true }),
+  }
+}
+
 export function activeRangeForPlaybook(args: {
   playbookMode: string
   instrument: string
@@ -251,22 +291,12 @@ export function activeRangeForPlaybook(args: {
   const morningFills = Math.max(0, Math.floor(args.morningAttempts ?? 0))
   const or30Skipped = morningFills === 0
 
-  const pick = (
-    label: string,
-    r: { high: number; low: number; complete?: boolean } | null | undefined,
-    opts?: { /** When true, require complete === true (forming ranges blocked). */ mustBeComplete?: boolean }
-  ): StrategyRangeEdges | null => {
-    if (!r || !(r.high > r.low)) return null
-    if (opts?.mustBeComplete && r.complete !== true) return null
-    return { label, high: r.high, low: r.low }
-  }
-
-  // IB from computeInitialBalance is only returned after the hour locks → always shaped.
-  const ibShaped = pick(tokyo ? 'Tokyo IB' : 'IB', args.ib)
-  // Prior NYC session for Nikkei — only when that US cash day is complete.
-  const usShaped = pick('US Range', args.usRange, { mustBeComplete: true })
-  const or30Shaped = pick('OR30', args.or30, { mustBeComplete: true })
-  const lunchShaped = pick('Lunch-range', args.lunchRange, { mustBeComplete: true })
+  const {
+    or30: or30Shaped,
+    ib: ibShaped,
+    usRange: usShaped,
+    lunchRange: lunchShaped,
+  } = shapedPlaybookRanges(args)
 
   if (mode === 'us_range') return usShaped
   if (mode === 'lunch_range') return lunchShaped

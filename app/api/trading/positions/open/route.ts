@@ -21,6 +21,12 @@ import {
   deskMarketFor,
   instrumentsForDeskMarket,
 } from '@/lib/trading/sessionGate'
+import {
+  assertBucketEntryEligible,
+  attemptLadderFromCounts,
+  bucketForRangeLabel,
+  deskClockSeconds,
+} from '@/lib/trading/attemptLadder'
 import { getTodayAttendance, tradeDateForInstrument } from '@/lib/trading/deskAttendance'
 import { isOandaConfigured, shouldExecuteOandaOrders } from '@/lib/oanda/config'
 import { getOandaAccountSummary } from '@/lib/oanda/orders'
@@ -188,7 +194,9 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
     const [filledRes, openRes, attendance] = await Promise.all([
       supabase
         .from('trades_journal')
-        .select('id, instrument, exit_timestamp, exit_reason, entry_timestamp, created_at')
+        .select(
+          'id, instrument, exit_timestamp, exit_reason, entry_timestamp, created_at, range_bucket'
+        )
         .eq('user_id', user.id)
         .eq('trade_date', tradeDate)
         .in('instrument', marketInstruments)
@@ -216,6 +224,14 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       instrument: (t.instrument as string) || body.instrument,
       entryTimestamp: t.entry_timestamp || t.created_at || null,
       exitReason: (t.exit_reason as string) || null,
+      rangeBucket:
+        (t as { range_bucket?: string | null }).range_bucket as
+          | 'morning'
+          | 'ib'
+          | 'lunch_range'
+          | 'other'
+          | null
+          | undefined,
     }))
     const clockedIn = attendance?.status === 'clocked_in'
     const attendedToday = !!attendance
@@ -233,38 +249,71 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
 
     const gateCheck = assertCanOpenPosition(body.instrument, gate)
     if (!gateCheck.ok) {
-      logEntryDenied({
-        route: 'open',
-        reason: 'session_gate',
-        instrument: body.instrument,
-        message: gateCheck.message,
-        status: gateCheck.status,
-        phase: gate.phase,
-        canPlaceEntry: gate.canPlaceEntry,
-        clockedIn: gate.clockedIn,
-        dayLocked: gate.dayLocked,
-        revengeLocked: gate.revengeLocked,
-        ladder: gate.attemptLadderLabel,
-        rangeStrategy: gate.rangeStrategy,
-        entry: body.entry_price,
-        direction: body.entry_direction,
-        entrySource: body.entry_source ?? null,
-      })
-      return NextResponse.json(
-        {
-          success: false,
-          position_id: '',
+      // The blanket gate resolves a single SEQUENTIAL "active" range for the
+      // clock (morning → IB → lunch) and can deny a click on a range that has
+      // its own budget left once the sequential pick has moved on (e.g. IB
+      // still 1/2 while the clock highlight sits on Lunch). Universal blocks
+      // (not clocked in / day cap / position open / cash closed) always win;
+      // otherwise let the range-specific bucket eligibility override, and let
+      // assertServerRangeEdgeEntry re-verify authoritatively below.
+      const universalBlock =
+        !gate.clockedIn || gate.dayLocked || gate.phase === 'MANAGE' || gate.phase === 'CLOSED'
+      let rangeOverrideOk = false
+      if (!universalBlock && body.range_label) {
+        const bucket = bucketForRangeLabel(body.instrument, body.range_label)
+        if (bucket) {
+          const rangeLadder = attemptLadderFromCounts({
+            morningAttempts: gate.morningAttempts,
+            ibAttempts: gate.ibAttempts,
+            lunchAttempts: gate.lunchAttempts,
+            now: new Date(),
+            instrument: body.instrument,
+          })
+          const bucketCheck = assertBucketEntryEligible({
+            instrument: body.instrument,
+            market,
+            timeSec: deskClockSeconds(body.instrument),
+            ladder: rangeLadder,
+            rangeLabel: body.range_label,
+          })
+          rangeOverrideOk = bucketCheck.ok
+        }
+      }
+
+      if (!rangeOverrideOk) {
+        logEntryDenied({
+          route: 'open',
+          reason: 'session_gate',
           instrument: body.instrument,
-          entry_price: body.entry_price,
-          stop_loss_price: 0,
-          position_size: 0,
-          risk_amount: 0,
-          entry_direction: body.entry_direction,
-          entry_window: body.entry_window,
           message: gateCheck.message,
-        },
-        { status: gateCheck.status }
-      )
+          status: gateCheck.status,
+          phase: gate.phase,
+          canPlaceEntry: gate.canPlaceEntry,
+          clockedIn: gate.clockedIn,
+          dayLocked: gate.dayLocked,
+          revengeLocked: gate.revengeLocked,
+          ladder: gate.attemptLadderLabel,
+          rangeStrategy: gate.rangeStrategy,
+          entry: body.entry_price,
+          direction: body.entry_direction,
+          entrySource: body.entry_source ?? null,
+        })
+        return NextResponse.json(
+          {
+            success: false,
+            position_id: '',
+            instrument: body.instrument,
+            entry_price: body.entry_price,
+            stop_loss_price: 0,
+            position_size: 0,
+            risk_amount: 0,
+            entry_direction: body.entry_direction,
+            entry_window: body.entry_window,
+            message: gateCheck.message,
+          },
+          { status: gateCheck.status }
+        )
+      }
     }
 
     const edgeCheck = await assertServerRangeEdgeEntry({
@@ -677,6 +726,10 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
         ? body.entry_reason.trim().slice(0, 2000)
         : `Chart ${body.entry_direction} at level ${body.best_break_level ?? body.entry_price}`
 
+    // Attempt-ladder bucket attributed by the authoritative ±10 check above
+    // (price-based, server-verified) — never the client's claimed label.
+    const rangeBucket = bucketForRangeLabel(body.instrument, edgeCheck.range.label)
+
     const tradePosition = {
       user_id: user.id,
       instrument: body.instrument,
@@ -688,6 +741,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       stop_loss_price: sizing.stop_loss_price,
       stop_loss_hit_at: null as null,
       stop_loss_hit_count: 0,
+      range_bucket: rangeBucket,
       position_size: sizing.position_size,
       risk_amount: sizing.risk_amount,
       account_size: body.account_size,
@@ -738,7 +792,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
     // If enrichment columns missing (migration not applied), retry without them
     if (
       insertError &&
-      /entry_reason|entry_source|profit_target_price|oanda_trade_id|oanda_order_id|broker_fill_price|fill_status/i.test(
+      /entry_reason|entry_source|profit_target_price|oanda_trade_id|oanda_order_id|broker_fill_price|fill_status|range_bucket/i.test(
         insertError.message || ''
       )
     ) {
@@ -750,6 +804,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
         oanda_order_id: _oo,
         broker_fill_price: _bf,
         fill_status: _fs,
+        range_bucket: _rb,
         notes: _n,
         updated_at: _u,
         ...baseRow
