@@ -112,31 +112,33 @@ function jstDate(h: number, m: number, s = 0): Date {
 
 // ── Nikkei (Tokyo JST) — OR30 → US Range → IB ────────────────────────────────
 {
+  // Tokyo cash open — US Range entry (prior NYC already shaped); not OR30-blocked
   const mode = resolveDeskPlaybookMode({
     instrument: 'NIKKEI',
     now: jstDate(9, 20),
     attemptsUsed: 0,
+    rangeStrategy: 'us_range',
   })
-  assert(mode === 'morning', 'Nikkei morning 09:20 JST')
+  assert(mode === 'us_range', 'Nikkei US Range 09:20 JST')
+  assert(
+    isDeskEntryWindowActive({ playbookMode: mode, rangeStrategy: 'us_range' }) === true,
+    'Nikkei US Range entry active at open'
+  )
+}
+
+{
+  // Optional OR30 morning slice 09:30–09:45
+  const mode = resolveDeskPlaybookMode({
+    instrument: 'NIKKEI',
+    now: jstDate(9, 35),
+    attemptsUsed: 0,
+  })
+  assert(mode === 'morning', 'Nikkei morning OR30 09:35 JST')
   assert(
     isDeskEntryWindowActive({ playbookMode: mode, canPlaceEntry: true }) === true,
     'Nikkei morning entry active'
   )
   assert(deskPlaybookTitle(mode, 'NIKKEI') === 'Morning playbook (OR30)', 'Nikkei OR30 title')
-}
-
-{
-  // After Tokyo morning entryClose 09:45, before US Range 10:15 — not an entry window
-  const mode = resolveDeskPlaybookMode({
-    instrument: 'NIKKEI',
-    now: jstDate(10, 0),
-    attemptsUsed: 0,
-  })
-  assert(mode === 'morning', 'Nikkei gap still morning framing')
-  assert(
-    isDeskEntryWindowActive({ playbookMode: mode, canPlaceEntry: false }) === false,
-    'Nikkei post-entryClose gap is not entry'
-  )
 }
 
 {

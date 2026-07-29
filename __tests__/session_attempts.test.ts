@@ -160,10 +160,25 @@ assert(MAX_STOP_HITS === 2, 'max stops must be 2')
 }
 
 {
-  // Nikkei US Range unlock 10:15–10:45 JST when morning skipped
-  const nikkeiUs = new Date('2026-07-14T01:20:00.000Z') // 10:20 JST
+  // Nikkei US Range from cash open when morning skipped / OR30 still forming
+  const nikkeiUs = new Date('2026-07-14T00:20:00.000Z') // 09:20 JST
   const gate = resolveSimMorningGate({
     now: nikkeiUs,
+    instrument: 'NIKKEI',
+    hasOpenPosition: false,
+    attemptsUsed: 0,
+    stopHits: 0,
+  })
+  assert(gate.phase === 'ENTRY', `Nikkei US Range ENTRY at 09:20, got ${gate.phase}`)
+  assert(gate.canPlaceEntry === true, 'Nikkei US Range unlock at open')
+  assert(gate.rangeStrategy === 'us_range', 'US range strategy at 09:20')
+}
+
+{
+  // Nikkei US Range still open 10:20 JST
+  const nikkeiUsLate = new Date('2026-07-14T01:20:00.000Z') // 10:20 JST
+  const gate = resolveSimMorningGate({
+    now: nikkeiUsLate,
     instrument: 'NIKKEI',
     hasOpenPosition: false,
     attemptsUsed: 0,

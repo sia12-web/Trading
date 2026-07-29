@@ -4694,7 +4694,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       bright
         ? `${label} ±${RANGE_EDGE_BAND_POINTS} entry zones`
         : isUsPreview
-          ? `US Range ±${RANGE_EDGE_BAND_POINTS} (shaped — entries 21:15–21:45 ET)`
+          ? `US Range ±${RANGE_EDGE_BAND_POINTS} (shaped — entries open at Tokyo cash)`
           : `${label} ±${RANGE_EDGE_BAND_POINTS} (locked — wait for window)`
     )
 

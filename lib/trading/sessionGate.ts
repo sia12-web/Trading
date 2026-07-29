@@ -8,7 +8,8 @@
  *   No PM watch — manage-only when locked.
  *
  *   NY:  open 09:30 · OR30 lock 10:00→10:15 · IB 10:30–10:45 · lunch-range 13:30–15:15 ET
- *   Tokyo: open 09:00 · OR30 lock 09:30→09:45 · US Range 10:15–10:45 · IB 13:30–15:00 JST
+ *   Tokyo: open 09:00 · US Range from open→10:45 (prior NYC shaped) · optional OR30 09:30→09:45
+ *          · Tokyo IB 13:30–15:00 JST
  *
  * Chart stream: cash open − 30m through marketClose. Morning/slot-2 books are not
  * auto-flattened at lunchClose — trader confirms. Cash close auto-liquidates
@@ -113,10 +114,12 @@ export const TOKYO_SESSION: MarketSessionTimes = {
 
 /** IB entry window (Tokyo local) — same clock shape as NY; then manage-only. */
 /**
- * Tokyo slot-2 entry window — prior NYC US Range (already shaped).
+ * Tokyo slot-2 entry window — prior NYC US Range (already shaped overnight).
+ * Opens at Tokyo cash open so US BRK/REJ can be traded immediately; optional
+ * OR30 still owns 09:30–09:45 when morning probes remain.
  * Name kept as TOKYO_IB_STRATEGY_* for import stability; prefer TOKYO_US_RANGE_*.
  */
-export const TOKYO_US_RANGE_STRATEGY_START = '10:15:00'
+export const TOKYO_US_RANGE_STRATEGY_START = '09:00:00'
 export const TOKYO_US_RANGE_STRATEGY_END = '10:45:00'
 /** @deprecated Use TOKYO_US_RANGE_STRATEGY_START — this is US Range, not Tokyo IB. */
 export const TOKYO_IB_STRATEGY_START = TOKYO_US_RANGE_STRATEGY_START
@@ -1154,10 +1157,15 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
 
   // Morning cash open → lunch (11:30)
   if (t >= open && t < lunch) {
-    // Morning ±10 only after OR30 locks (open + 30m); window ends at entryClose
+    // Morning ±10 only after OR30 locks (open + 30m); window ends at entryClose.
+    // Tokyo US Range starts at cash open (before OR30), so OR30 is an exclusive
+    // 09:30–09:45 slice — do not require t < US Range start.
     const or30Lock = or30LockSecFromOpen(open)
+    const midStartSec = parseTimeToSeconds(ibStartHms)
     const inEntryWindow =
-      t >= or30Lock && t < parseTimeToSeconds(ibStartHms) && t <= entryClose
+      market === 'TOKYO'
+        ? t >= or30Lock && t <= entryClose
+        : t >= or30Lock && t < midStartSec && t <= entryClose
     const canMorningAttempt = ladder.morningEligible && !hasOpen
     const or30Hms = or30LockHms(market)
     const entryUntil = `${deskLocalHmsAsTraderDisplay(s.entryClose, s.tz, now)} ${TRADER_DISPLAY_LABEL}`
@@ -1181,27 +1189,31 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     const prepAfterMid =
       market === 'TOKYO' ? 'IB prep playbook' : 'Lunch break playbook'
 
-    if (inEntryWindow) {
+    // Optional OR30 morning probes — only when still eligible (else fall through to US Range / IB)
+    if (inEntryWindow && canMorningAttempt) {
       return finish({
         ...base,
         rangeStrategy: null,
         phase: 'ENTRY',
         canViewLiveChart: canView,
         canFetchLiveBars: clockedIn,
-        canPlaceEntry: clockedIn && canMorningAttempt,
+        canPlaceEntry: clockedIn,
         canManagePosition: false,
-        message: canMorningAttempt
-          ? market === 'TOKYO'
+        message:
+          market === 'TOKYO'
             ? `Morning (OR30) playbook ${entryRange} — ${ladderHint}. OR30 locked — click a ${locked} level (until ${entryUntil}). Working limits do not count until filled.`
-            : `Morning (OR30) playbook ${entryRange} — ${ladderHint}. OR30 locked — click a ${locked} level (until ${entryUntil}). Working limits do not count until filled.`
-          : ladderLock ||
-            book.lockReason ||
-            `Morning attempts full (${ladder.morningAttempts}/${ladder.maxMorningAttempts}). ${ladderHint}`,
+            : `Morning (OR30) playbook ${entryRange} — ${ladderHint}. OR30 locked — click a ${locked} level (until ${entryUntil}). Working limits do not count until filled.`,
       })
     }
 
-    // Forming OR30 (cash open → lock) — watch only
-    if (t < or30Lock && ladder.morningEligible && !hasOpen) {
+    // Forming OR30 (cash open → lock) — watch only for OR30 probes.
+    // Tokyo: prior NYC US Range is already shaped — do not block US Range entries.
+    if (
+      t < or30Lock &&
+      ladder.morningEligible &&
+      !hasOpen &&
+      !(market === 'TOKYO' && rangeStrategy === 'us_range')
+    ) {
       return finish({
         ...base,
         rangeStrategy: null,
@@ -1212,7 +1224,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
         canManagePosition: false,
         message: clockedIn
           ? market === 'TOKYO'
-            ? `OR30 forming — ±10 entries unlock at ${deskLocalHmsAsTraderDisplay(or30Hms, s.tz, now)} ${TRADER_DISPLAY_LABEL}. US Range (prior NYC H/L) unlocks later ${ibRange}. ${ladderHint}`
+            ? `OR30 forming — ±10 entries unlock at ${deskLocalHmsAsTraderDisplay(or30Hms, s.tz, now)} ${TRADER_DISPLAY_LABEL}. US Range (prior NYC H/L) is open ${ibRange}. ${ladderHint}`
             : `OR30 forming — ±10 entries unlock at ${deskLocalHmsAsTraderDisplay(or30Hms, s.tz, now)} ${TRADER_DISPLAY_LABEL}. ${ladderHint}`
           : `Clock in to trade — OR30 forming until ${deskLocalHmsAsTraderDisplay(or30Hms, s.tz, now)} ${TRADER_DISPLAY_LABEL}.`,
       })
@@ -1514,18 +1526,21 @@ export function resolveSimMorningGate(input: {
     }
   }
 
-  // Morning OR30 entry
+  // Morning OR30 entry + Tokyo US Range (from cash open)
   if (t >= open && t < lunch) {
     const or30Lock = or30LockSecFromOpen(open)
     const or30Hms = or30LockHms(market)
+    const midStartSec = parseTimeToSeconds(ibStartHms)
     const inEntryWindow =
-      t >= or30Lock && t <= entryClose && t < parseTimeToSeconds(ibStartHms)
-    if (inEntryWindow) {
+      market === 'TOKYO'
+        ? t >= or30Lock && t <= entryClose
+        : t >= or30Lock && t <= entryClose && t < midStartSec
+    if (inEntryWindow && ladder.morningEligible) {
       return {
         ...base,
         rangeStrategy: null,
         phase: 'ENTRY',
-        canPlaceEntry: ladder.morningEligible,
+        canPlaceEntry: true,
         canManagePosition: false,
         message: ladder.morningEligible
           ? 'Morning (OR30) playbook ' +
@@ -1539,7 +1554,11 @@ export function resolveSimMorningGate(input: {
       }
     }
 
-    if (t < or30Lock && ladder.morningEligible) {
+    if (
+      t < or30Lock &&
+      ladder.morningEligible &&
+      !(market === 'TOKYO' && rangeStrategy === 'us_range')
+    ) {
       return {
         ...base,
         rangeStrategy: null,
@@ -1701,7 +1720,7 @@ export function assertCanOpenPosition(
     } else if (gate.phase === 'FLAT') {
       message =
         gate.market === 'TOKYO'
-          ? 'Entry window closed — wait for US Range (10:15–10:45 JST) or Tokyo IB (13:30 JST) if still eligible.'
+          ? 'Entry window closed — wait for US Range (09:00–10:45 JST) or Tokyo IB (13:30 JST) if still eligible.'
           : 'Entry window closed — wait for IB or lunch-range unlock (if still eligible).'
     } else if (gate.phase === 'DONE') {
       message = 'Entry windows done for today — manage if open, no new entries.'

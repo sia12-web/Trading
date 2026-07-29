@@ -502,7 +502,7 @@ How to use it (big-desk volume map):
     const tzLabel = index === 'NIKKEI' ? 'JST' : 'ET'
     const marketLabel = index === 'NIKKEI' ? 'Tokyo' : 'NY'
     const tokyo = index === 'NIKKEI'
-    const midWindow = tokyo ? '10:15–10:45' : '10:30–10:45'
+    const midWindow = tokyo ? '09:00–10:45' : '10:30–10:45'
     const lateWindow =
       index === 'NIKKEI' ? '13:30–15:00' : '13:30–15:15'
     const midLabel = tokyo ? 'US Range' : 'IB'
@@ -768,7 +768,7 @@ How to use it:
     const lateLabel = tokyo ? 'IB' : 'lunch-range'
     const modeLine =
       request.analysis_mode === 'us_range'
-        ? 'Mode: US RANGE PLAYBOOK refresh — prior NYC session range levels for the 10:15–10:45 local entry window (Nikkei slot 2).'
+        ? 'Mode: US RANGE PLAYBOOK refresh — prior NYC session range levels for Nikkei slot 2 (Tokyo cash open→10:45; already shaped overnight).'
         : request.analysis_mode === 'ib'
           ? tokyo
             ? 'Mode: TOKYO IB PLAYBOOK refresh — tradeable Initial Balance levels for the 13:30–15:00 local entry window (slot 3).'

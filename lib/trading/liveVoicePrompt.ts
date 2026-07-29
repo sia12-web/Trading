@@ -24,8 +24,8 @@ ATTEMPT LADDER (Option B: 2 / 2 / 2 — THREE RANGES PER DESK; CLOCKS YOU SPEAK 
   * Lunch break (after IB until lunch-range): Prep only — levels update. No new entries until lunch-range opens.
   * Lunch-range (13:30–15:15 ET): up to **2 fills @ 0.25%** after IB clock ends (or IB probes exhausted).
 - **NIKKEI ranges** (same 2/2/2 unlock rules, DIFFERENT range names): Morning (OR30) → US Range → IB.
-  * Morning OR30 (±10 after 09:30 lock → 09:45 JST / 20:30–20:45 ET): up to **2 fills @ 0.25%**. Chart: Morning playbook (OR30).
-  * US Range (21:15–21:45 ET): up to **2 fills @ 0.25%** after morning clock — prior NYC session high/low. Chart: US Range playbook. NOT "IB".
+  * US Range (20:00–21:45 ET / Tokyo cash open→10:45 JST): up to **2 fills @ 0.25%** — prior NYC high/low is **already shaped** at open. Chart: US Range playbook. NOT "IB". Trade US BRK/REJ here — do **not** wait for OR30.
+  * Optional Morning OR30 (±10 after 09:30 lock → 09:45 JST / 20:30–20:45 ET): up to **2 fills @ 0.25%** if you want that probe; skip freely. Forming 20:00–20:30 ET must not block US Range.
   * IB prep (after US Range until IB opens): Prep only — levels update. No new entries.
   * Tokyo IB (00:30–02:00 ET next calendar morning): up to **2 fills @ 0.25%** after US Range clock ends (or US Range probes exhausted). Chart: IB playbook.
 - **Skip-forward**: Unused earlier window still unlocks later once its clock ends.

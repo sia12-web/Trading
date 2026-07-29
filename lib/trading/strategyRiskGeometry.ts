@@ -280,7 +280,7 @@ export function activeRangeForPlaybook(args: {
   // OR30 is optional. Once the overlapping first-hour IB is locked and OR30 was
   // never traded, finish OR30 and hand off to IB (NY). Nikkei: prior NYC US Range
   // is already complete — preview it as bait whenever OR30 was skipped or is still
-  // forming so ±10 bands show before the 10:15 JST US Range entry clock.
+  // forming so ±10 bands show; US Range entries open at Tokyo cash (09:00 JST).
   if (tokyo) {
     // Actively probing OR30 (at least one morning fill) → keep OR30 bait
     if (or30Shaped && !or30Skipped) return or30Shaped

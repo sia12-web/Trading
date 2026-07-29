@@ -106,14 +106,38 @@ test('resolveRangeStrategy clocks: NY IB 10:30–10:45, lunch-range 13:30–15:1
   )
 })
 
-test('resolveRangeStrategy clocks: Tokyo US Range 10:15–10:45, IB 13:30–15:00', () => {
+test('resolveRangeStrategy clocks: Tokyo US Range 09:00–10:45, IB 13:30–15:00', () => {
+  assert(
+    resolveRangeStrategy({
+      market: 'TOKYO',
+      timeSec: pts('09:00:00'),
+      attemptsUsed: 0,
+    }) === 'us_range',
+    'Tokyo US Range at cash open'
+  )
+  assert(
+    resolveRangeStrategy({
+      market: 'TOKYO',
+      timeSec: pts('09:20:00'),
+      attemptsUsed: 0,
+    }) === 'us_range',
+    'Tokyo US Range while OR30 forming'
+  )
+  assert(
+    resolveRangeStrategy({
+      market: 'TOKYO',
+      timeSec: pts('09:35:00'),
+      attemptsUsed: 0,
+    }) === null,
+    'Tokyo OR30 morning slice prefers morning (null strategy)'
+  )
   assert(
     resolveRangeStrategy({
       market: 'TOKYO',
       timeSec: pts(TOKYO_IB_STRATEGY_START),
       attemptsUsed: 0,
     }) === 'us_range',
-    'Tokyo US Range start (slot 2)'
+    'Tokyo US Range start constant'
   )
   assert(
     resolveRangeStrategy({
@@ -213,7 +237,20 @@ test('NY: lunch-range when morning + IB skipped; manage-only after 15:15; no PM 
   assert(afterLn.rangeStrategy === null, 'no lunch-range after 15:15')
 })
 
-test('Nikkei: US Range 10:15–10:45 JST; IB to 15:00 JST', () => {
+test('Nikkei: US Range from cash open; IB to 15:00 JST', () => {
+  const early = resolveSessionGate({
+    lockedInstrument: 'NIKKEI',
+    viewingInstrument: 'NIKKEI',
+    clockedIn: true,
+    attendedToday: true,
+    attemptsUsed: 0,
+    stopLossHitCount: 0,
+    now: jstDate(2026, 7, 15, 9, 20),
+  })
+  assert(early.canPlaceEntry === true, `Nikkei US Range at 09:20: ${early.message}`)
+  assert(early.rangeStrategy === 'us_range', `got ${early.rangeStrategy}`)
+  assert(!/OR30 forming/i.test(early.message), early.message)
+
   const us = resolveSessionGate({
     lockedInstrument: 'NIKKEI',
     viewingInstrument: 'NIKKEI',

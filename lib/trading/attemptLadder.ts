@@ -12,7 +12,8 @@
  * On TOKYO, slot 2 = US Range fills, slot 3 = IB fills (labels differ).
  *
  * NY IB entry starts at 10:30 ET (when first-hour IB locks), not 10:15.
- * Tokyo US Range stays 10:15 JST (prior NYC already shaped).
+ * Tokyo US Range opens at cash open 09:00 JST (prior NYC already shaped);
+ * optional OR30 still owns 09:30–09:45 when morning probes remain.
  */
 
 import { parseTimeToSeconds } from '@/lib/utils/timeUtils'
@@ -70,14 +71,17 @@ const CLOCK = {
   },
   TOKYO: {
     tz: 'Asia/Tokyo',
-    /** Slot 2 — US Range (prior NYC — already shaped) */
-    midStart: '10:15:00',
+    /** Slot 2 — US Range from cash open (prior NYC already shaped) */
+    midStart: '09:00:00',
     midEnd: '10:45:00',
     /** Slot 3 — Tokyo IB */
     lateStart: '13:30:00',
     lateEnd: '15:00:00',
   },
 } as const
+
+/** Optional Nikkei OR30 probe window — owns the morning attempt bucket. */
+const TOKYO_OR30_MORNING = { start: '09:30:00', end: '09:45:00' } as const
 
 function marketFor(instrument: string | null | undefined): DeskMarket {
   return instrument === 'NIKKEI' ? 'TOKYO' : 'NY'
@@ -119,6 +123,17 @@ export function classifyAttemptBucket(
   const midEnd = parseTimeToSeconds(c.midEnd)
   const lateStart = parseTimeToSeconds(c.lateStart)
   const lateEnd = parseTimeToSeconds(c.lateEnd)
+
+  if (market === 'TOKYO') {
+    const or30Start = parseTimeToSeconds(TOKYO_OR30_MORNING.start)
+    const or30End = parseTimeToSeconds(TOKYO_OR30_MORNING.end)
+    // Optional OR30 probes count as morning even though US Range window overlaps
+    if (t >= or30Start && t < or30End) return 'morning'
+    if (t >= midStart && t < midEnd) return 'ib'
+    if (t >= lateStart && t < lateEnd) return 'lunch_range'
+    if (t < midStart) return 'morning'
+    return 'other'
+  }
 
   if (t >= midStart && t < midEnd) return 'ib'
   if (t >= lateStart && t < lateEnd) return 'lunch_range'
@@ -307,6 +322,16 @@ export function resolveRangeStrategyFromLadder(args: {
   const t = args.timeSec
 
   if (args.market === 'TOKYO') {
+    const or30Start = parseTimeToSeconds(TOKYO_OR30_MORNING.start)
+    const or30End = parseTimeToSeconds(TOKYO_OR30_MORNING.end)
+    // Optional OR30 owns 09:30–09:45 when morning probes remain
+    if (
+      t >= or30Start &&
+      t < or30End &&
+      args.ladder.morningEligible
+    ) {
+      return null
+    }
     if (t >= midStart && t < midEnd && args.ladder.ibEligible) return 'us_range'
     if (t >= lateStart && t < lateEnd && args.ladder.lunchEligible) return 'ib'
     return null

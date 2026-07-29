@@ -85,7 +85,7 @@ function entryDeniedMessage(gate: SessionGateState | null | undefined): string |
     }
     if (gate.phase === 'FLAT') {
       return gate.market === 'TOKYO'
-        ? 'Entry window closed — wait for US Range (10:15–10:45 JST) or Tokyo IB (13:30 JST) if still eligible.'
+        ? 'Entry window closed — wait for US Range (09:00–10:45 JST) or Tokyo IB (13:30 JST) if still eligible.'
         : 'Entry window closed — wait for IB or lunch-range unlock (if still eligible).'
     }
     if (gate.phase === 'DONE') {
