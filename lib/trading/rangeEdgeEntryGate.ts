@@ -75,6 +75,11 @@ export function clampPriceToRangeEdgeBands(
  * Drag / place magnets across multiple painted ±10 zones (e.g. US Range + Tokyo IB).
  * Picks the nearest single-range clamp. Already in any band → unchanged.
  * Entry legality still uses {@link assertRangeEdgeEntry} on the active playbook range.
+ *
+ * Do **not** call this on every pointermove while dragging — continuous nearest-band
+ * clamp traps the pointer on the high (or low) edge and blocks crossing mid-range
+ * to the opposite ±10 band. Prefer {@link clampPriceToRangeEdgeEnvelope} during drag
+ * and this helper on pointerup / place.
  */
 export function clampPriceToNearestRangeEdgeBands(
   price: number,
@@ -94,6 +99,41 @@ export function clampPriceToNearestRangeEdgeBands(
     }
   }
   return best
+}
+
+/**
+ * Outer price span covering every ±band across the given ranges
+ * (lowest band.min → highest band.max). Used while dragging so the entry
+ * can move freely between high and low edges without teleporting to the
+ * nearest band on every mouse move.
+ */
+export function rangeEdgeBandsEnvelope(
+  ranges: Array<RangeEdgeLevels | null | undefined>,
+  bandPoints: number = RANGE_EDGE_BAND_POINTS
+): { min: number; max: number } | null {
+  let min = Infinity
+  let max = -Infinity
+  for (const range of ranges) {
+    if (!range) continue
+    for (const band of rangeEdgeBands(range, bandPoints)) {
+      if (band.min < min) min = band.min
+      if (band.max > max) max = band.max
+    }
+  }
+  if (!(Number.isFinite(min) && Number.isFinite(max) && max > min)) return null
+  return { min, max }
+}
+
+/** Soft-clamp into the outer envelope of all ±10 bands (free mid-range drag). */
+export function clampPriceToRangeEdgeEnvelope(
+  price: number,
+  ranges: Array<RangeEdgeLevels | null | undefined>,
+  bandPoints: number = RANGE_EDGE_BAND_POINTS
+): number | null {
+  if (!Number.isFinite(price) || !(price > 0)) return null
+  const envelope = rangeEdgeBandsEnvelope(ranges, bandPoints)
+  if (!envelope) return null
+  return Math.min(envelope.max, Math.max(envelope.min, price))
 }
 
 export function nearestRangeEdge(

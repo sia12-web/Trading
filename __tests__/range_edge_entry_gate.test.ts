@@ -7,9 +7,11 @@ import {
   assertRangeEdgeEntry,
   clampPriceToNearestRangeEdgeBands,
   clampPriceToRangeEdgeBands,
+  clampPriceToRangeEdgeEnvelope,
   filterLevelsInRangeEdgeBand,
   isEntryWithinRangeEdgeBand,
   rangeEdgeBands,
+  rangeEdgeBandsEnvelope,
   RANGE_EDGE_BAND_POINTS,
 } from '../lib/trading/rangeEdgeEntryGate'
 
@@ -106,6 +108,22 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
   )
   assert.equal(clampPriceToNearestRangeEdgeBands(40000, []), null)
   assert.equal(clampPriceToNearestRangeEdgeBands(40000, [null]), null)
+}
+
+{
+  // Continuous nearest-band clamp traps drag on the high edge; envelope must
+  // span high↔low so dragging down through mid-range stays free until release snap.
+  const env = rangeEdgeBandsEnvelope([range])
+  assert.deepEqual(env, { min: 39890, max: 40010 })
+  assert.equal(clampPriceToRangeEdgeEnvelope(39950, [range]), 39950, 'mid-range free during drag')
+  assert.equal(clampPriceToRangeEdgeEnvelope(39980, [range]), 39980, 'just below high band stays put')
+  assert.equal(clampPriceToRangeEdgeEnvelope(39920, [range]), 39920, 'just above low band stays put')
+  assert.equal(clampPriceToRangeEdgeEnvelope(40100, [range]), 40010, 'above envelope clamps to max')
+  assert.equal(clampPriceToRangeEdgeEnvelope(39800, [range]), 39890, 'below envelope clamps to min')
+  assert.equal(clampPriceToRangeEdgeEnvelope(39950, []), null)
+  // After free mid drag, release snap still lands on a legal edge band
+  assert.equal(clampPriceToNearestRangeEdgeBands(39950, [range]), 39990)
+  assert.equal(clampPriceToNearestRangeEdgeBands(39920, [range]), 39910)
 }
 
 console.log('range_edge_entry_gate: all passed')

@@ -103,6 +103,7 @@ import {
 } from '@/lib/trading/strategyRiskGeometry'
 import {
   clampPriceToNearestRangeEdgeBands,
+  clampPriceToRangeEdgeEnvelope,
   filterLevelsInRangeEdgeBand,
   NO_IN_BAND_LEVELS_MESSAGE,
   RANGE_EDGE_BAND_POINTS,
@@ -3975,10 +3976,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
       const snappedRaw = snapDeskPrice(instrument, Number(rawPrice))
       const { snapRanges } = getStrategyRiskBundle()
-      const inBand = clampPriceToNearestRangeEdgeBands(snappedRaw, snapRanges)
-      const snapped = snapDeskPrice(instrument, inBand ?? snappedRaw)
 
       if (draggingRiskLineRef.current === 'ENTRY') {
+        // Free vertical follow within the outer ±10 envelope (high↔low reachable).
+        // Nearest-band snap on mouseup — continuous nearest-band clamp traps on the
+        // high edge and blocks dragging down to the low band.
+        const enveloped = clampPriceToRangeEdgeEnvelope(snappedRaw, snapRanges)
+        const snapped = snapDeskPrice(instrument, enveloped ?? snappedRaw)
         setRiskBox((prev) => {
           if (!prev) return null
           const diff = snapped - prev.entryPrice
@@ -3997,7 +4001,24 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     }
 
     const onMouseUp = () => {
+      const was = draggingRiskLineRef.current
       draggingRiskLineRef.current = null
+      if (was !== 'ENTRY') return
+      const { snapRanges } = getStrategyRiskBundle()
+      setRiskBox((prev) => {
+        if (!prev) return null
+        const inBand = clampPriceToNearestRangeEdgeBands(prev.entryPrice, snapRanges)
+        if (inBand == null) return prev
+        const snapped = snapDeskPrice(instrument, inBand)
+        if (snapped === prev.entryPrice) return prev
+        const diff = snapped - prev.entryPrice
+        return {
+          ...prev,
+          entryPrice: snapped,
+          stopLoss: snapDeskPrice(instrument, prev.stopLoss + diff),
+          profitTarget: snapDeskPrice(instrument, prev.profitTarget + diff),
+        }
+      })
     }
 
     window.addEventListener('mousemove', onMouseMove, true)
