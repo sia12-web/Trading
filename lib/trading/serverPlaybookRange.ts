@@ -113,9 +113,23 @@ export async function resolveServerPlaybookRange(args: {
 }
 
 /**
- * Prefer server-computed locked range; fall back to client only if OANDA is down.
- * When both exist and disagree beyond 1 pt, reject (possible spoof / stale chart).
+ * Server range is the sole authority for ±10 entry checks.
+ * Client H/L is ignored for pass/fail (chart live-tip merge / stale paint /
+ * Yahoo fallback can differ from OANDA by more than 1pt without spoofing).
+ * Spoofed client ranges cannot widen the band — entry is always checked vs server.
  */
+export function gateEntryAgainstAuthoritativeRange(args: {
+  entry: number
+  serverRange: RangeEdgeLevels | null
+  clientRange: RangeEdgeLevels | null
+}): { ok: true; range: RangeEdgeLevels } | { ok: false; message: string } {
+  if (args.serverRange) {
+    return assertRangeEdgeEntry({ entry: args.entry, range: args.serverRange })
+  }
+  return assertRangeEdgeEntry({ entry: args.entry, range: args.clientRange })
+}
+
+/** Prefer server-computed locked range; fall back to client only if OANDA is down. */
 export async function assertServerRangeEdgeEntry(args: {
   instrument: DeskInstrument
   entry: number
@@ -135,20 +149,27 @@ export async function assertServerRangeEdgeEntry(args: {
     ladder: args.ladder,
   })
 
-  if (server) {
-    if (args.clientRange) {
-      const dh = Math.abs(Number(args.clientRange.high) - server.high)
-      const dl = Math.abs(Number(args.clientRange.low) - server.low)
-      if (dh > 1 || dl > 1) {
-        return {
-          ok: false,
-          message: `Range mismatch — server ${server.label ?? 'strategy'} H ${server.high} / L ${server.low}. Refresh the chart and retry.`,
-        }
-      }
+  if (server && args.clientRange) {
+    const dh = Math.abs(Number(args.clientRange.high) - server.high)
+    const dl = Math.abs(Number(args.clientRange.low) - server.low)
+    if (dh > 1 || dl > 1) {
+      logger.info('server_playbook_range.client_stale', {
+        instrument: args.instrument,
+        serverLabel: server.label,
+        serverHigh: server.high,
+        serverLow: server.low,
+        clientHigh: args.clientRange.high,
+        clientLow: args.clientRange.low,
+        clientLabel: args.clientRange.label ?? null,
+        dh,
+        dl,
+      })
     }
-    return assertRangeEdgeEntry({ entry: args.entry, range: server })
   }
 
-  // Soft-fail: OANDA unavailable — still require client shaped range
-  return assertRangeEdgeEntry({ entry: args.entry, range: args.clientRange })
+  return gateEntryAgainstAuthoritativeRange({
+    entry: args.entry,
+    serverRange: server,
+    clientRange: args.clientRange,
+  })
 }
