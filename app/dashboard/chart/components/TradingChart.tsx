@@ -119,6 +119,9 @@ import {
   formatRangeEdgeAlertMessage,
   formatRangeShapedNote,
   claimDeskNoteOnce,
+  claimDeskNoteCooldown,
+  deskNoteClaimKey,
+  hasDeskNoteClaim,
   rangeEdgeProximity,
   shouldFireRangeEdgeAlert,
 } from '@/lib/trading/rangeEdgeAlerts'
@@ -648,6 +651,8 @@ interface TradingChartProps {
     title: string
     body: string
     telegram: string
+    dedupeKey?: string
+    instrument?: string
   }) => void
 }
 
@@ -4773,13 +4778,34 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
   ])
 
   const wasInEdgeBandRef = useRef(false)
+  const edgeAlertPrimedRef = useRef(false)
+  const edgeAlertInstrumentRef = useRef(instrument)
   useEffect(() => {
     const nowIn = !!edgeProximity
+    if (edgeAlertInstrumentRef.current !== instrument) {
+      edgeAlertInstrumentRef.current = instrument
+      edgeAlertPrimedRef.current = false
+      wasInEdgeBandRef.current = false
+    }
+    // Remount/refresh: wait for a live price, then seed band membership so
+    // already-in-band after load ≠ rising edge (bare chart still computes ranges).
+    if (!edgeAlertPrimedRef.current) {
+      if (livePrice == null) return
+      edgeAlertPrimedRef.current = true
+      wasInEdgeBandRef.current = nowIn
+      return
+    }
     if (
       shouldFireRangeEdgeAlert(wasInEdgeBandRef.current, nowIn) &&
       edgeProximity &&
       livePrice != null &&
-      onDeskAlert
+      onDeskAlert &&
+      isDeskInstrument(instrument) &&
+      claimDeskNoteCooldown(
+        `range_edge_${edgeProximity.label}_${edgeProximity.edge}`,
+        instrument,
+        90_000
+      )
     ) {
       const msg = formatRangeEdgeAlertMessage({
         instrument,
@@ -4787,7 +4813,14 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         livePrice,
         mode: 'either',
       })
-      onDeskAlert(msg)
+      onDeskAlert({
+        ...msg,
+        instrument,
+        dedupeKey: deskNoteClaimKey(
+          `range_edge_${edgeProximity.label}_${edgeProximity.edge}`,
+          instrument
+        ),
+      })
     }
     wasInEdgeBandRef.current = nowIn
   }, [edgeProximity, livePrice, instrument, onDeskAlert])
@@ -4799,9 +4832,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     lunch: false,
     us: false,
   })
+  const rangeNotesPrimedRef = useRef(false)
+  const rangeNotesInstrumentRef = useRef(instrument)
   useEffect(() => {
     if (!onDeskAlert || !isDeskInstrument(instrument)) return
-    const prev = prevRangeLocksRef.current
     const next = {
       or30: or30Locked,
       ib: ibShaped,
@@ -4809,66 +4843,97 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       us: usRangeShaped && instrument === 'NIKKEI',
     }
 
+    // Instrument tab change or first mount: seed from durable claims + current locks.
+    // Refresh must not re-send shaped notes (bare-chart still computes ranges under the hood).
+    if (
+      !rangeNotesPrimedRef.current ||
+      rangeNotesInstrumentRef.current !== instrument
+    ) {
+      rangeNotesPrimedRef.current = true
+      rangeNotesInstrumentRef.current = instrument
+      prevRangeLocksRef.current = {
+        or30: next.or30 || hasDeskNoteClaim('range_or30', instrument),
+        ib: next.ib || hasDeskNoteClaim('range_ib', instrument),
+        lunch: next.lunch || hasDeskNoteClaim('range_lunch', instrument),
+        us: next.us || hasDeskNoteClaim('range_us', instrument),
+      }
+      return
+    }
+
+    const prev = prevRangeLocksRef.current
+
     if (next.or30 && !prev.or30) {
       const r = or30RangeRef.current
       if (r && claimDeskNoteOnce('range_or30', instrument)) {
-        onDeskAlert(
-          formatRangeShapedNote({
-            instrument,
-            rangeLabel: 'OR30',
-            high: r.high,
-            low: r.low,
-            nextHint:
-              'Optional morning probe (±10 H/L). If unused when IB locks → hand off to IB.',
-          })
-        )
+        const note = formatRangeShapedNote({
+          instrument,
+          rangeLabel: 'OR30',
+          high: r.high,
+          low: r.low,
+          nextHint:
+            'Optional morning probe (±10 H/L). If unused when IB locks → hand off to IB.',
+        })
+        onDeskAlert({
+          ...note,
+          instrument,
+          dedupeKey: deskNoteClaimKey('range_or30', instrument),
+        })
       }
     }
     if (next.ib && !prev.ib) {
       const r = ibRangeRef.current
       if (r && claimDeskNoteOnce('range_ib', instrument)) {
         const label = instrument === 'NIKKEI' ? 'Tokyo IB' : 'IB'
-        onDeskAlert(
-          formatRangeShapedNote({
-            instrument,
-            rangeLabel: label,
-            high: r.high,
-            low: r.low,
-            nextHint:
-              instrument === 'NIKKEI'
-                ? 'Tokyo IB shaped now — entry window opens 13:30 JST (±10 of locked H/L). Until then US Range is slot 2.'
-                : 'IB entry window is open (±10 of locked H/L).',
-          })
-        )
+        const note = formatRangeShapedNote({
+          instrument,
+          rangeLabel: label,
+          high: r.high,
+          low: r.low,
+          nextHint:
+            instrument === 'NIKKEI'
+              ? 'Tokyo IB shaped now — entry window opens 13:30 JST (±10 of locked H/L). Until then US Range is slot 2.'
+              : 'IB entry window is open (±10 of locked H/L).',
+        })
+        onDeskAlert({
+          ...note,
+          instrument,
+          dedupeKey: deskNoteClaimKey('range_ib', instrument),
+        })
       }
     }
     if (next.lunch && !prev.lunch) {
       const r = lunchRangeRef.current
       if (r && claimDeskNoteOnce('range_lunch', instrument)) {
-        onDeskAlert(
-          formatRangeShapedNote({
-            instrument,
-            rangeLabel: 'Lunch-range',
-            high: r.high,
-            low: r.low,
-            nextHint: 'Lunch-range entry window is open (±10 of locked H/L).',
-          })
-        )
+        const note = formatRangeShapedNote({
+          instrument,
+          rangeLabel: 'Lunch-range',
+          high: r.high,
+          low: r.low,
+          nextHint: 'Lunch-range entry window is open (±10 of locked H/L).',
+        })
+        onDeskAlert({
+          ...note,
+          instrument,
+          dedupeKey: deskNoteClaimKey('range_lunch', instrument),
+        })
       }
     }
     if (next.us && !prev.us) {
       const r = usRangeRef.current
       if (r && claimDeskNoteOnce('range_us', instrument)) {
-        onDeskAlert(
-          formatRangeShapedNote({
-            instrument,
-            rangeLabel: 'US Range (prior NYC)',
-            high: r.high,
-            low: r.low,
-            nextHint:
-              'Already shaped from prior NYC session. Entry when US Range window unlocks (±10 H/L).',
-          })
-        )
+        const note = formatRangeShapedNote({
+          instrument,
+          rangeLabel: 'US Range (prior NYC)',
+          high: r.high,
+          low: r.low,
+          nextHint:
+            'Already shaped from prior NYC session. Entry when US Range window unlocks (±10 H/L).',
+        })
+        onDeskAlert({
+          ...note,
+          instrument,
+          dedupeKey: deskNoteClaimKey('range_us', instrument),
+        })
       }
     }
 

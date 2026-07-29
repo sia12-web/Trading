@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { sendTelegramMessage, telegramConfigured } from '@/lib/notify/telegram'
+import { claimServerDeskNoteOnce } from '@/lib/notify/deskNoteServerClaim'
 import { logger } from '@/lib/utils/logger'
 import { logDeskAlert } from '@/lib/utils/deskAuditLog'
 
@@ -11,6 +12,9 @@ type Body = {
   title?: string
   body?: string
   telegram?: string
+  /** Client durable key (tp.deskNote.*) — blocks refresh re-sends server-side too */
+  dedupeKey?: string
+  instrument?: string
 }
 
 export async function POST(request: Request) {
@@ -34,6 +38,24 @@ export async function POST(request: Request) {
         error: 'Empty alert',
       })
       return NextResponse.json({ error: 'Empty alert' }, { status: 400 })
+    }
+
+    const rawDedupe =
+      typeof json.dedupeKey === 'string' ? json.dedupeKey.trim() : ''
+    const serverKey = rawDedupe ? `${user.id}:${rawDedupe}` : ''
+    if (serverKey && !claimServerDeskNoteOnce(serverKey)) {
+      logDeskAlert({
+        kind,
+        ok: true,
+        telegramConfigured: telegramConfigured(),
+        error: 'deduped',
+      })
+      return NextResponse.json({
+        success: true,
+        kind,
+        deduped: true,
+        configured: telegramConfigured(),
+      })
     }
 
     const result = await sendTelegramMessage(telegramText)

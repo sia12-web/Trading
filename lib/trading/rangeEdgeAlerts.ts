@@ -50,4 +50,8 @@ export {
   formatSessionEndNote,
   formatSessionScheduleBlock,
   claimDeskNoteOnce,
+  claimDeskNoteCooldown,
+  hasDeskNoteClaim,
+  deskNoteClaimKey,
+  deskNoteTradeDate,
 } from '@/lib/notify/deskSessionNotes'

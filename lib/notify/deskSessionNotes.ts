@@ -262,26 +262,100 @@ export function scheduleHmsLabel(hms: string): string {
   return hmsShort(hms)
 }
 
-/** Once-per-session-day dedupe for Telegram notes (browser localStorage). */
-export function claimDeskNoteOnce(
-  kind: string,
+/** Session-local calendar day for desk note keys (instrument TZ). */
+export function deskNoteTradeDate(
   instrument: DeskInstrument,
   now: Date = new Date()
-): boolean {
+): string {
   const s = sessionFor(instrument)
-  const day = new Intl.DateTimeFormat('en-CA', {
+  return new Intl.DateTimeFormat('en-CA', {
     timeZone: s.tz,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
   }).format(now)
-  const key = `tp.deskNote.${kind}.${instrument}.${day}`
-  try {
-    if (typeof localStorage === 'undefined') return true
-    if (localStorage.getItem(key)) return false
-    localStorage.setItem(key, String(Date.now()))
-    return true
-  } catch {
-    return true
+}
+
+/** Stable dedupe key: trade_date + instrument + event kind. */
+export function deskNoteClaimKey(
+  kind: string,
+  instrument: DeskInstrument,
+  now: Date = new Date()
+): string {
+  return `tp.deskNote.${kind}.${instrument}.${deskNoteTradeDate(instrument, now)}`
+}
+
+/** Survives remount within the same JS realm (not a full page refresh). */
+const memoryDeskNoteClaims = new Map<string, number>()
+
+function readDeskNoteClaim(key: string): number | null {
+  const mem = memoryDeskNoteClaims.get(key)
+  if (mem != null) return mem
+  for (const store of [typeof localStorage !== 'undefined' ? localStorage : null, typeof sessionStorage !== 'undefined' ? sessionStorage : null]) {
+    if (!store) continue
+    try {
+      const raw = store.getItem(key)
+      if (!raw) continue
+      const n = Number(raw)
+      return Number.isFinite(n) ? n : Date.now()
+    } catch {
+      /* private mode / quota */
+    }
   }
+  return null
+}
+
+function writeDeskNoteClaim(key: string, ts: number): void {
+  memoryDeskNoteClaims.set(key, ts)
+  const value = String(ts)
+  for (const store of [typeof localStorage !== 'undefined' ? localStorage : null, typeof sessionStorage !== 'undefined' ? sessionStorage : null]) {
+    if (!store) continue
+    try {
+      store.setItem(key, value)
+    } catch {
+      /* private mode / quota — memory claim still blocks same-tab remount */
+    }
+  }
+}
+
+export function hasDeskNoteClaim(
+  kind: string,
+  instrument: DeskInstrument,
+  now: Date = new Date()
+): boolean {
+  return readDeskNoteClaim(deskNoteClaimKey(kind, instrument, now)) != null
+}
+
+/**
+ * Once-per-session-day dedupe for Telegram notes.
+ * Durable across refresh via localStorage + sessionStorage; memory covers remount.
+ * Returns true only on the first successful claim (caller may send).
+ */
+export function claimDeskNoteOnce(
+  kind: string,
+  instrument: DeskInstrument,
+  now: Date = new Date()
+): boolean {
+  const key = deskNoteClaimKey(kind, instrument, now)
+  if (readDeskNoteClaim(key) != null) return false
+  writeDeskNoteClaim(key, Date.now())
+  return true
+}
+
+/**
+ * Cooldown dedupe (ms) that survives refresh — for noisy range-edge band alerts.
+ * Returns true only when enough time has elapsed since the last claim.
+ */
+export function claimDeskNoteCooldown(
+  kind: string,
+  instrument: DeskInstrument,
+  cooldownMs: number,
+  now: Date = new Date()
+): boolean {
+  const key = deskNoteClaimKey(kind, instrument, now)
+  const prev = readDeskNoteClaim(key)
+  const ts = Date.now()
+  if (prev != null && ts - prev < cooldownMs) return false
+  writeDeskNoteClaim(key, ts)
+  return true
 }

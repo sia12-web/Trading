@@ -47,6 +47,7 @@ import {
   formatSessionStartNote,
   formatSessionEndNote,
   claimDeskNoteOnce,
+  deskNoteClaimKey,
 } from '@/lib/trading/rangeEdgeAlerts'
 import { infoToast, warningToast } from '@/lib/utils/toastUtils'
 import type { DeskInstrument } from '@/lib/trading/sessionGate'
@@ -331,9 +332,18 @@ export default function ChartPage() {
   const prevGatePhaseRef = useRef<string | null>(null)
   const prevFetchLiveRef = useRef(false)
   const prevPastCloseRef = useRef(false)
+  /** First gate snapshot seeds rising-edge refs — refresh must not look like a transition. */
+  const gateNotesPrimedRef = useRef(false)
 
   const pushDeskAlert = useCallback(
-    (alert: { kind: string; title: string; body: string; telegram: string }) => {
+    (alert: {
+      kind: string
+      title: string
+      body: string
+      telegram: string
+      dedupeKey?: string
+      instrument?: string
+    }) => {
       warningToast(`${alert.title} — ${alert.body}`, 8000)
       void fetch('/api/notify/desk-alert', {
         method: 'POST',
@@ -350,9 +360,11 @@ export default function ChartPage() {
       title: string
       body: string
       telegram: string
+      dedupeKey?: string
+      instrument?: string
     }) => {
       const now = Date.now()
-      // Cooldown only for ±10 band noise; range lock / session notes are once/day
+      // In-memory cooldown only for ±10 band noise; durable claim lives in TradingChart
       if (alert.kind === 'range_edge') {
         if (now - lastEdgeAlertAtRef.current < 90_000) return
         lastEdgeAlertAtRef.current = now
@@ -374,72 +386,118 @@ export default function ChartPage() {
         g.rangeStrategy === 'lunch_range' ||
         (g.phase === 'ENTRY' && !g.rangeStrategy))
     prevCanPlaceRef.current = !!g.canPlaceEntry
-    if (entryUnlocked && g.lockedInstrument) {
-      const windowLabel =
-        g.rangeStrategy === 'us_range'
-          ? 'US Range'
-          : g.rangeStrategy === 'ib'
-            ? g.lockedInstrument === 'NIKKEI'
-              ? 'Tokyo IB'
-              : 'IB'
-            : g.rangeStrategy === 'lunch_range'
-              ? 'Lunch-range'
-              : 'Morning (OR30)'
-      const key = `${g.lockedInstrument}:${g.rangeStrategy ?? 'morning'}:${windowLabel}`
-      if (lastUnlockKeyRef.current !== key) {
-        lastUnlockKeyRef.current = key
-        const msg = formatEntryPermissionNote({
-          instrument: g.lockedInstrument,
-          windowLabel,
-          ladderHint: g.attemptLadderLabel,
-        })
-        infoToast(`${msg.title} — ${msg.body}`, 7000)
-        void fetch('/api/notify/desk-alert', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(msg),
-        }).catch(() => {})
-      }
-    }
 
     // Session START = cash open (live bars unlock). Session END = cash close wall-clock.
     const inst = (g.lockedInstrument ||
       (g.market === 'TOKYO' ? 'NIKKEI' : null)) as DeskInstrument | null
     const fetchLive = !!g.clockedIn && !!g.canFetchLiveBars
-    const wasFetchLive = prevFetchLiveRef.current
-    prevGatePhaseRef.current = g.phase
-    prevFetchLiveRef.current = fetchLive
-
-    if (inst && fetchLive && !wasFetchLive && claimDeskNoteOnce('session_start', inst)) {
-      const msg = formatSessionStartNote({ instrument: inst })
-      infoToast(msg.title, 6000)
-      void fetch('/api/notify/desk-alert', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(msg),
-      }).catch(() => {})
-    }
-
-    // Cash close: CLOSED phase, or still MANAGE past marketClose
     const pastClose =
       !!inst &&
       (g.phase === 'CLOSED' ||
         (g.phase === 'MANAGE' && isPastCashCloseNow(inst)))
-    if (
-      inst &&
-      pastClose &&
-      !prevPastCloseRef.current &&
-      claimDeskNoteOnce('session_end', inst)
-    ) {
-      const msg = formatSessionEndNote({ instrument: inst })
-      warningToast(msg.title, 8000)
-      void fetch('/api/notify/desk-alert', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(msg),
-      }).catch(() => {})
+
+    // Remount/refresh: seed prev* from current gate so we do not re-fire Telegram.
+    if (!gateNotesPrimedRef.current) {
+      gateNotesPrimedRef.current = true
+      prevGatePhaseRef.current = g.phase
+      prevFetchLiveRef.current = fetchLive
+      prevPastCloseRef.current = pastClose
+      if (entryUnlocked && g.lockedInstrument) {
+        const windowLabel =
+          g.rangeStrategy === 'us_range'
+            ? 'US Range'
+            : g.rangeStrategy === 'ib'
+              ? g.lockedInstrument === 'NIKKEI'
+                ? 'Tokyo IB'
+                : 'IB'
+              : g.rangeStrategy === 'lunch_range'
+                ? 'Lunch-range'
+                : 'Morning (OR30)'
+        lastUnlockKeyRef.current = `${g.lockedInstrument}:${g.rangeStrategy ?? 'morning'}:${windowLabel}`
+      }
+      // Still allow regime fetch below — only Telegram rising-edges are suppressed.
+    } else {
+      if (entryUnlocked && g.lockedInstrument) {
+        const windowLabel =
+          g.rangeStrategy === 'us_range'
+            ? 'US Range'
+            : g.rangeStrategy === 'ib'
+              ? g.lockedInstrument === 'NIKKEI'
+                ? 'Tokyo IB'
+                : 'IB'
+              : g.rangeStrategy === 'lunch_range'
+                ? 'Lunch-range'
+                : 'Morning (OR30)'
+        const key = `${g.lockedInstrument}:${g.rangeStrategy ?? 'morning'}:${windowLabel}`
+        const claimKind = `entry_${g.rangeStrategy ?? 'morning'}`
+        if (
+          lastUnlockKeyRef.current !== key &&
+          claimDeskNoteOnce(claimKind, g.lockedInstrument)
+        ) {
+          lastUnlockKeyRef.current = key
+          const msg = formatEntryPermissionNote({
+            instrument: g.lockedInstrument,
+            windowLabel,
+            ladderHint: g.attemptLadderLabel,
+          })
+          infoToast(`${msg.title} — ${msg.body}`, 7000)
+          void fetch('/api/notify/desk-alert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...msg,
+              instrument: g.lockedInstrument,
+              dedupeKey: deskNoteClaimKey(claimKind, g.lockedInstrument),
+            }),
+          }).catch(() => {})
+        } else if (lastUnlockKeyRef.current !== key) {
+          lastUnlockKeyRef.current = key
+        }
+      }
+
+      const wasFetchLive = prevFetchLiveRef.current
+      prevGatePhaseRef.current = g.phase
+      prevFetchLiveRef.current = fetchLive
+
+      if (
+        inst &&
+        fetchLive &&
+        !wasFetchLive &&
+        claimDeskNoteOnce('session_start', inst)
+      ) {
+        const msg = formatSessionStartNote({ instrument: inst })
+        infoToast(msg.title, 6000)
+        void fetch('/api/notify/desk-alert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...msg,
+            instrument: inst,
+            dedupeKey: deskNoteClaimKey('session_start', inst),
+          }),
+        }).catch(() => {})
+      }
+
+      if (
+        inst &&
+        pastClose &&
+        !prevPastCloseRef.current &&
+        claimDeskNoteOnce('session_end', inst)
+      ) {
+        const msg = formatSessionEndNote({ instrument: inst })
+        warningToast(msg.title, 8000)
+        void fetch('/api/notify/desk-alert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...msg,
+            instrument: inst,
+            dedupeKey: deskNoteClaimKey('session_end', inst),
+          }),
+        }).catch(() => {})
+      }
+      prevPastCloseRef.current = pastClose
     }
-    prevPastCloseRef.current = pastClose
 
     // Regime / recommendation is day-stable — fetch once, not every 5s gate poll
     if (regimeFetchedRef.current) return
