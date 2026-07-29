@@ -378,8 +378,8 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       ...shaped,
       morningAttempts: 0,
     }).map((o) => o.label),
-    ['US Range'],
-    'Nikkei after OR30 entryClose: OR30 ±10 gone even with OR30 toggle on; US Range remains'
+    ['US Range', 'Tokyo IB'],
+    'Nikkei after OR30 entryClose: OR30 ±10 gone; US + Tokyo IB stay when toggled'
   )
 
   assert.ok(
@@ -467,6 +467,89 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       .map((o) => o.label)
       .includes('OR30'),
     'NY lunch window never resurrects OR30 ±10'
+  )
+
+  // Toggle OFF → never paint that range’s ±10 (even when it is the live playbook).
+  assert.deepEqual(
+    entryEligibleOverlayRanges({
+      playbookMode: 'ib',
+      instrument: 'NASDAQ',
+      now: nyAfterOr30,
+      showOr30: false,
+      showIb: false,
+      showLunchRange: false,
+      or30: shaped.or30,
+      ib: { high: 18_250, low: 18_050 },
+      lunchRange: shaped.lunchRange,
+      morningAttempts: 0,
+    }).map((o) => o.label),
+    [],
+    'IB playbook with showIb false paints no IB ±10 (no active-bypass)'
+  )
+  assert.deepEqual(
+    entryEligibleOverlayRanges({
+      playbookMode: 'us_range',
+      instrument: 'NIKKEI',
+      now: nikkeiAfterOr30,
+      showOr30: false,
+      showIb: false,
+      showUsRange: false,
+      ...shaped,
+      morningAttempts: 0,
+    }).map((o) => o.label),
+    [],
+    'US Range live playbook with showUsRange false paints nothing'
+  )
+  assert.ok(
+    !entryEligibleOverlayRanges({
+      playbookMode: 'lunch_range',
+      instrument: 'DOW',
+      now: new Date('2026-07-28T18:00:00.000Z'),
+      showOr30: false,
+      showIb: false,
+      showLunchRange: false,
+      or30: shaped.or30,
+      ib: { high: 18_250, low: 18_050 },
+      lunchRange: shaped.lunchRange,
+      morningAttempts: 2,
+    })
+      .map((o) => o.label)
+      .includes('Lunch-range'),
+    'Lunch toggle off drops lunch ±10 even in lunch_range mode'
+  )
+
+  // US / IB stay as study ±10 when toggle ON after their live window (OR30 does not).
+  assert.ok(
+    entryEligibleOverlayRanges({
+      playbookMode: 'ib',
+      instrument: 'NIKKEI',
+      now: nikkeiAfterOr30,
+      showOr30: true,
+      showIb: false,
+      showUsRange: true,
+      ...shaped,
+      morningAttempts: 0,
+    })
+      .map((o) => o.label)
+      .includes('US Range'),
+    'US Range script ON still paints ±10 after US entry window (study / dim)'
+  )
+  assert.ok(
+    entryEligibleOverlayRanges({
+      playbookMode: 'lunch_range',
+      instrument: 'NASDAQ',
+      now: new Date('2026-07-28T18:00:00.000Z'),
+      showOr30: false,
+      showIb: true,
+      showLunchRange: true,
+      or30: shaped.or30,
+      ib: { high: 18_250, low: 18_050 },
+      lunchRange: shaped.lunchRange,
+      morningAttempts: 2,
+    })
+      .map((o) => o.label)
+      .includes('IB'),
+    'IB script ON still paints ±10 after IB handoff (study / dim)'
   )
 }
 

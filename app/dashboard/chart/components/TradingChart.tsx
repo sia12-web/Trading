@@ -1496,7 +1496,7 @@ export function TradingChart({
   /** Active playbook range + magnets for strategy SL/TP (reads live range refs). */
   const getStrategyRiskBundle = useCallback((): {
     strategyRange: StrategyRangeEdges | null
-    /** Entry-eligible ±10 zones (+ active) — limit drag/open/click snap. */
+    /** Visible (toggled) ±10 zones — limit drag/open/click snap. */
     snapRanges: StrategyRangeEdges[]
     strategyMagnets: StrategyRiskMagnets
   } => {
@@ -1532,7 +1532,7 @@ export function TradingChart({
       lunchRange: lunchRangeRef.current,
       morningAttempts,
     })
-    // Snap only to entry-eligible bands (dead OR30 after entryClose excluded).
+    // Snap only to visible toggled bands (dead OR30 after entryClose excluded).
     const activeForSnap =
       strategyRange &&
       eligible.some(
@@ -4748,7 +4748,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     return rangeEdgeProximity(livePrice, strategyRange)
   }, [canPlaceOrder, livePrice, playbookMode, instrument, rangeStrategy, morningAttempts])
 
-  /** Paint ±10 entry zones for entry-eligible playbook ranges (not dead OR30). */
+  /** Paint ±10 zones for toggled shaped overlays (OR30 only while morning window open). */
   useEffect(() => {
     const host = priceLineHostRef.current
     const clearBands = () => {
