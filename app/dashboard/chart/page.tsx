@@ -78,9 +78,14 @@ function entryDeniedMessage(gate: SessionGateState | null | undefined): string |
     if (gate.dayLocked || (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? 6)) {
       return 'Day attempt cap reached — trading switched off. No new entries.'
     }
+    // Prefer the live gate copy (OR30 forming / wait for US Range clock / etc.)
+    // over a blunt FLAT fallback — US Range H/L can be painted before its entry window.
+    if (gate.message && gate.message.trim()) {
+      return gate.message.trim()
+    }
     if (gate.phase === 'FLAT') {
       return gate.market === 'TOKYO'
-        ? 'Entry window closed — wait for US Range or Tokyo IB unlock (if still eligible).'
+        ? 'Entry window closed — wait for US Range (10:15–10:45 JST) or Tokyo IB (13:30 JST) if still eligible.'
         : 'Entry window closed — wait for IB or lunch-range unlock (if still eligible).'
     }
     if (gate.phase === 'DONE') {
@@ -92,7 +97,7 @@ function entryDeniedMessage(gate: SessionGateState | null | undefined): string |
     if (gate.phase === 'PREP' || gate.phase === 'RECOMMENDED') {
       return 'Pre-open prep — ±10 entries after OR30 locks (open + 30m).'
     }
-    return gate.message || 'Entries not available right now.'
+    return 'Entries not available right now.'
   }
   return null
 }

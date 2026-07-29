@@ -1211,7 +1211,9 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
         canPlaceEntry: false,
         canManagePosition: false,
         message: clockedIn
-          ? `OR30 forming — ±10 entries unlock at ${deskLocalHmsAsTraderDisplay(or30Hms, s.tz, now)} ${TRADER_DISPLAY_LABEL}. ${ladderHint}`
+          ? market === 'TOKYO'
+            ? `OR30 forming — ±10 entries unlock at ${deskLocalHmsAsTraderDisplay(or30Hms, s.tz, now)} ${TRADER_DISPLAY_LABEL}. US Range (prior NYC H/L) unlocks later ${ibRange}. ${ladderHint}`
+            : `OR30 forming — ±10 entries unlock at ${deskLocalHmsAsTraderDisplay(or30Hms, s.tz, now)} ${TRADER_DISPLAY_LABEL}. ${ladderHint}`
           : `Clock in to trade — OR30 forming until ${deskLocalHmsAsTraderDisplay(or30Hms, s.tz, now)} ${TRADER_DISPLAY_LABEL}.`,
       })
     }
@@ -1247,7 +1249,9 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       message: ladderLock
         ? `${ladderLock} ${ladderHint}`
         : waitingMid
-          ? `Morning entry closed (${entryUntil}). ${midLabel} playbook ${ibRange} (up to 2 probes). ${ladderHint}`
+          ? market === 'TOKYO'
+            ? `Morning entry closed (${entryUntil}). Prior NYC US Range is shaped — ±10 entries unlock ${ibRange} (up to 2 probes). ${ladderHint}`
+            : `Morning entry closed (${entryUntil}). ${midLabel} playbook ${ibRange} (up to 2 probes). ${ladderHint}`
           : midEnded
             ? `${midLabel} entry closed (${ibUntil}). ${prepAfterMid} — ${lateLabel} unlocks ${lunchRangeLabel}. ${ladderHint}`
             : `Morning entry closed (${entryUntil}). Next is ${midLabel} ${ibRange}. ${ladderHint}`,
@@ -1691,17 +1695,20 @@ export function assertCanOpenPosition(
       message = 'Day attempt cap reached — trading switched off. No new entries.'
     } else if (gate.phase === 'MANAGE') {
       message = 'Position open — manage only, no new entries.'
+    } else if (gate.message && gate.message.trim()) {
+      // OR30 forming / wait for US Range clock / mid ended — use precise desk copy
+      message = gate.message.trim()
     } else if (gate.phase === 'FLAT') {
       message =
         gate.market === 'TOKYO'
-          ? 'Entry window closed — wait for US Range or Tokyo IB unlock (if still eligible).'
+          ? 'Entry window closed — wait for US Range (10:15–10:45 JST) or Tokyo IB (13:30 JST) if still eligible.'
           : 'Entry window closed — wait for IB or lunch-range unlock (if still eligible).'
     } else if (gate.phase === 'DONE') {
       message = 'Entry windows done for today — manage if open, no new entries.'
     } else if (gate.phase === 'CLOSED') {
       message = 'Cash closed — desk is offline until the next session.'
     } else {
-      message = gate.message || `Cannot place entry in phase ${gate.phase}`
+      message = `Cannot place entry in phase ${gate.phase}`
     }
     return { ok: false, status: 403, message }
   }
