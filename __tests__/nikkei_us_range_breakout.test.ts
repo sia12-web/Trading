@@ -123,6 +123,46 @@ test('Tokyo cash rejection at US high (no breakout close)', () => {
   assert(rej[0]!.text === 'US REJ', 'label')
 })
 
+test('Tokyo cash downside US BRK short (symmetric with high)', () => {
+  const candles: NikkeiUsRangeBar[] = []
+  for (let i = 0; i < 20; i++) {
+    candles.push(bar(jstUnix(2026, 7, 15, 18, i), 100, 101, 99, 100, 1000))
+  }
+  candles.push(bar(jstUnix(2026, 7, 15, 22, 30), 105, 108, 104, 106, 1000))
+  candles.push(bar(jstUnix(2026, 7, 15, 23, 0), 106, 110, 105, 109, 1000))
+  candles.push(bar(jstUnix(2026, 7, 16, 4, 0), 109, 109.5, 100, 101, 1000))
+  candles.push(bar(jstUnix(2026, 7, 16, 10, 0), 105, 106, 104, 105, 1000))
+  candles.push(bar(jstUnix(2026, 7, 16, 10, 5), 105, 105.5, 97, 98, 2500))
+
+  const r = computeNikkeiUsRangeBreakout(candles)
+  assert(r != null, 'result')
+  assert(r!.high === 110, `high ${r!.high}`)
+  assert(r!.low === 100, `low ${r!.low}`)
+  const brk = r!.signals.filter((s) => s.type === 'US_BRK_SHORT')
+  assert(brk.length === 1, `one short brk got ${brk.length}`)
+  assert(brk[0]!.text === 'US BRK', 'label')
+  assert(brk[0]!.shape === 'arrowDown', 'arrow down')
+})
+
+test('US BRK short still fires after quiet first beyond bar (sticky RVOL)', () => {
+  const candles: NikkeiUsRangeBar[] = []
+  for (let i = 0; i < 20; i++) {
+    candles.push(bar(jstUnix(2026, 7, 15, 18, i), 100, 101, 99, 100, 1000))
+  }
+  candles.push(bar(jstUnix(2026, 7, 15, 23, 0), 105, 110, 100, 105, 1000))
+  candles.push(bar(jstUnix(2026, 7, 16, 10, 0), 105, 106, 104, 105, 1000))
+  // First close beyond L — below RVOL threshold (must not permanently suppress)
+  candles.push(bar(jstUnix(2026, 7, 16, 10, 5), 105, 105.5, 98, 99, 800))
+  // Still beyond L with RVOL — must paint US BRK short
+  candles.push(bar(jstUnix(2026, 7, 16, 10, 10), 99, 99.5, 95, 96, 2500))
+
+  const r = computeNikkeiUsRangeBreakout(candles)
+  assert(r != null, 'result')
+  const brk = r!.signals.filter((s) => s.type === 'US_BRK_SHORT')
+  assert(brk.length === 1, `sticky short brk got ${brk.length}`)
+  assert(brk[0]!.time === jstUnix(2026, 7, 16, 10, 10), 'fires on RVOL bar')
+})
+
 test('no US BRK/REJ during London or dead zone', () => {
   const candles: NikkeiUsRangeBar[] = []
   candles.push(bar(jstUnix(2026, 7, 15, 23, 0), 105, 110, 100, 105, 1000))

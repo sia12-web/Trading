@@ -184,15 +184,16 @@ export function computeNikkeiUsRangeBreakout(
       visibleTo = c.time
     }
 
-    // Signals only during Tokyo cash — BRK needs RVOL; REJ price-only; once/side
+    // Signals only during Tokyo cash — BRK needs RVOL; REJ price-only; once/side.
+    // BRK = first RVOL-confirmed close beyond H/L (sticky while beyond) so a quiet
+    // first beyond bar does not permanently suppress the short/long marker.
     if (inTokyoCash && usH != null && usL != null && i > 0) {
-      const prev = candles[i - 1]!
-      const crossUp = prev.close <= usH && c.close > usH
-      const crossDn = prev.close >= usL && c.close < usL
-      const rejectH = c.high > usH && c.close < usH && !crossUp
-      const rejectL = c.low < usL && c.close > usL && !crossDn
+      const beyondH = c.close > usH
+      const beyondL = c.close < usL
+      const rejectH = c.high > usH && c.close < usH
+      const rejectL = c.low < usL && c.close > usL
 
-      if (crossUp && rvolOk && !firedBrkLong) {
+      if (beyondH && rvolOk && !firedBrkLong) {
         firedBrkLong = true
         signals.push({
           time: c.time,
@@ -203,7 +204,7 @@ export function computeNikkeiUsRangeBreakout(
           position: 'belowBar',
           shape: 'arrowUp',
         })
-      } else if (crossDn && rvolOk && !firedBrkShort) {
+      } else if (beyondL && rvolOk && !firedBrkShort) {
         firedBrkShort = true
         signals.push({
           time: c.time,

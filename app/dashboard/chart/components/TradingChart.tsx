@@ -737,6 +737,8 @@ export function TradingChart({
   const [usRangeShaped, setUsRangeShaped] = useState(false)
   /** Gates current-session US H/L lines (IB-style, no markers) */
   const [showUsRange, setShowUsRange] = useState(false)
+  /** Stable paint hook for tip-stream refresh (avoids restarting SSE on marker deps). */
+  const paintDeskMarkersRef = useRef<(bars?: OHLCV[]) => void>(() => {})
   /** First 30m opening range — NY 09:30–10:00 ET / Tokyo 09:00–09:30 JST */
   const or30SeriesRef = useRef<{
     high: ISeriesApi<'Line'>
@@ -1032,12 +1034,12 @@ export function TradingChart({
     )
 
     try {
-      candleSeries.setMarkers(
-        mapTimesToChart(
-          markers.map((m) => ({ ...m, time: m.time as number })),
-          chartTzRef.current
-        ).map((m) => ({ ...m, time: m.time as UTCTimestamp }))
-      )
+      const mapped = mapTimesToChart(
+        markers.map((m) => ({ ...m, time: m.time as number })),
+        chartTzRef.current
+      ).map((m) => ({ ...m, time: m.time as UTCTimestamp }))
+      mapped.sort((a, b) => (a.time as number) - (b.time as number))
+      candleSeries.setMarkers(mapped)
     } catch {
       /* ignore */
     }
@@ -1053,6 +1055,10 @@ export function TradingChart({
     lunchAttempts,
     stopHits,
   ])
+
+  useEffect(() => {
+    paintDeskMarkersRef.current = paintDeskMarkers
+  }, [paintDeskMarkers])
 
   useEffect(() => {
     paintDeskMarkers()
@@ -3027,12 +3033,28 @@ export function TradingChart({
 
     const CANDLE_REFRESH_MS = 3_000
     let lastUiPriceAt = 0
+    let lastMarkerPaintAt = 0
     const fetchGen = ++candleFetchGenRef.current
     let sseHealthy = false
 
     /** Parent encodes focus + afternoon attendance; re-check chart stream for clock edge */
     const tipOpen = () =>
       tipStreamActive && isChartStreamAllowed(instrument).open
+
+    const syncTipMarkers = (tipBar: OHLCV) => {
+      const bars = candlesRef.current
+      if (bars.length === 0) return
+      const last = bars[bars.length - 1]!
+      const next =
+        (last.time as number) === (tipBar.time as number)
+          ? [...bars.slice(0, -1), { ...last, ...tipBar, volume: last.volume || tipBar.volume }]
+          : [...bars, tipBar]
+      candlesRef.current = next
+      const now = Date.now()
+      if (now - lastMarkerPaintAt < 1000) return
+      lastMarkerPaintAt = now
+      paintDeskMarkersRef.current(next)
+    }
 
     const applyQuote = (
       price: number,
@@ -3089,6 +3111,7 @@ export function TradingChart({
             close: bar.close,
           })
           lastCandleRef.current = bar
+          syncTipMarkers(bar)
         } catch {
           /* ignore — do not advance ref on failed update */
         }
@@ -3110,6 +3133,7 @@ export function TradingChart({
           close: updated.close,
         })
         lastCandleRef.current = updated
+        syncTipMarkers(updated)
       } catch {
         /* ignore */
       }
@@ -3221,6 +3245,10 @@ export function TradingChart({
           } catch {
             setCandles(trimmed)
           }
+          // Tip OHLC can cross US/IB/OR H/L without a new bar — keep ref + BRK/REJ
+          // markers in sync (setCandles is skipped to avoid yanking the viewport).
+          candlesRef.current = trimmed
+          paintDeskMarkersRef.current(trimmed)
         }
         setDataMode('live')
         if (json.source === 'yahoo' || json.source === 'oanda') {

@@ -115,6 +115,29 @@ for (let i = 0; i < 20; i++) {
 
 {
   const open = t0
+  const candles = [
+    ...warm,
+    bar(open + 0, 100, 102, 99, 101, 1000),
+    bar(open + 300, 101, 103, 100, 102, 1000),
+    // after OR30 end: quiet close below low (no BRK yet)
+    bar(open + 30 * 60, 102, 102.5, 97, 98, 800),
+    // still beyond low with RVOL — sticky BRK short
+    bar(open + 35 * 60, 98, 98.5, 95, 96, 2500),
+  ]
+  const range = { high: 103, low: 99 }
+  const sigs = computeRangeBreakRejectSignals(candles, range, {
+    labelPrefix: 'OR',
+    colors,
+    signalAfterUnix: open + 30 * 60,
+    oncePerSide: true,
+  })
+  const brks = sigs.filter((s) => s.type === 'BRK_SHORT')
+  assert.equal(brks.length, 1, 'sticky BRK short after quiet beyond')
+  assert.equal(brks[0]!.time, open + 35 * 60)
+}
+
+{
+  const open = t0
   const orBars = [
     ...warm,
     bar(open + 0, 100, 102, 99, 101, 1000),

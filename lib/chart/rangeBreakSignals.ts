@@ -2,7 +2,8 @@
  * Shared range breakout / rejection signals for IB, OR30, Lunch, and US Range.
  *
  * Rules (desk grill):
- *   - BRK = close crosses beyond range H/L, requires RVOL (default 1.2× / 20)
+ *   - BRK = close beyond range H/L with RVOL (default 1.2× / 20). First
+ *     RVOL-ok bar while beyond counts (sticky) — not only the edge-cross bar.
  *   - REJ = wick beyond H/L with close back inside — price-only (no volume gate)
  *   - Once per side per range walk (anti-spam)
  *   - If the feed has no usable volume history, BRK falls back to price-only
@@ -122,14 +123,14 @@ export function computeRangeBreakRejectSignals(
     if (opts.inSignalWindow && !opts.inSignalWindow(c.time)) continue
     if (i === 0) continue
 
-    const prev = candles[i - 1]!
+    // BRK = first RVOL-confirmed close beyond H/L (sticky while beyond).
+    // Edge-cross-only missed forever when the first beyond bar failed RVOL.
+    const beyondH = c.close > range.high
+    const beyondL = c.close < range.low
+    const rejectH = c.high > range.high && c.close < range.high
+    const rejectL = c.low < range.low && c.close > range.low
 
-    const crossUp = prev.close <= range.high && c.close > range.high
-    const crossDn = prev.close >= range.low && c.close < range.low
-    const rejectH = c.high > range.high && c.close < range.high && !crossUp
-    const rejectL = c.low < range.low && c.close > range.low && !crossDn
-
-    if (crossUp && rvolOk && (!once || !firedBrkLong)) {
+    if (beyondH && rvolOk && (!once || !firedBrkLong)) {
       firedBrkLong = true
       signals.push({
         time: c.time,
@@ -140,7 +141,7 @@ export function computeRangeBreakRejectSignals(
         position: 'belowBar',
         shape: 'arrowUp',
       })
-    } else if (crossDn && rvolOk && (!once || !firedBrkShort)) {
+    } else if (beyondL && rvolOk && (!once || !firedBrkShort)) {
       firedBrkShort = true
       signals.push({
         time: c.time,
