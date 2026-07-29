@@ -41,11 +41,6 @@ import {
   isMorningOrIbEntry,
   isPastCashCloseNow,
 } from '@/lib/trading/morningLunchConfirm'
-import {
-  RANGE_EDGE_RISK_PERCENT,
-  previewPositionSizing,
-} from '@/lib/trading/positionSizing'
-import { snapDeskPrice, snapStopToTick, snapTargetToTick } from '@/lib/trading/instrumentTicks'
 import { assertRangeEdgeEntry } from '@/lib/trading/rangeEdgeEntryGate'
 import {
   formatEntryPermissionNote,
@@ -247,126 +242,6 @@ export default function ChartPage() {
 
   const handlePlacedRef = useRef<(order: PendingLimitOrder) => void>(() => {})
 
-  const placeMarketOrder = useCallback(
-    (order: {
-      entryPrice: number
-      stopLoss: number
-      profitTarget: number
-      direction: 'LONG' | 'SHORT'
-      reasoning: string
-      strategyRange?: StrategyRangeEdges | null
-    }) => {
-      if (managePos || positionOverlay || pending) return
-      const denied = entryDeniedMessage(gate)
-      if (denied) {
-        setOrderLevel(null)
-        setOrderLevelType(undefined)
-        setFillError(denied)
-        setOrderStatus('rejected')
-        return
-      }
-      setOrderLevel(null)
-      setOrderLevelType(undefined)
-
-      const lockedInst = gate?.lockedInstrument
-      const inst = (gate?.clockedIn && lockedInst
-        ? lockedInst
-        : instrument) as Instrument
-      const entry = snapDeskPrice(inst, order.entryPrice)
-      const direction = order.direction
-      const range = order.strategyRange ?? orderStrategyRange
-      const edge = assertRangeEdgeEntry({ entry, range })
-      if (!edge.ok) {
-        setFillError(edge.message)
-        setOrderStatus('rejected')
-        return
-      }
-      // Market: live print must also sit in the ±10 band (plan rule)
-      const livePx = livePriceRef.current
-      if (livePx != null && Number.isFinite(livePx) && livePx > 0) {
-        const liveEdge = assertRangeEdgeEntry({ entry: livePx, range })
-        if (!liveEdge.ok) {
-          setFillError(liveEdge.message)
-          setOrderStatus('rejected')
-          return
-        }
-      }
-      const stop = snapStopToTick(inst, entry, order.stopLoss, direction)
-      if (
-        (direction === 'LONG' && !(stop < entry)) ||
-        (direction === 'SHORT' && !(stop > entry))
-      ) {
-        setFillError('Invalid market stop — adjust SL beyond entry')
-        return
-      }
-
-      void (async () => {
-        let accountSize = 100000
-        try {
-          const res = await fetch('/api/trading/oanda/status')
-          const data = res.ok ? await res.json() : null
-          const nav = Number(data?.NAV ?? data?.balance)
-          if (Number.isFinite(nav) && nav >= 100) {
-            accountSize = Math.round(nav * 100) / 100
-          }
-        } catch {
-          /* open API still prefers live NAV */
-        }
-
-        const preview = previewPositionSizing(
-          entry,
-          accountSize,
-          direction,
-          stop,
-          RANGE_EDGE_RISK_PERCENT
-        )
-        if (!preview) {
-          setFillError('Could not size market order — check account / stop')
-          return
-        }
-
-        const tp = snapTargetToTick(
-          inst,
-          entry,
-          order.profitTarget > 0 ? order.profitTarget : preview.profit_target_price,
-          direction
-        )
-
-        handlePlacedRef.current({
-          instrument: inst,
-          level: entry,
-          levelType: 'market',
-          entryReason:
-            order.reasoning ||
-            `Manual ${direction} market @ ${entry.toLocaleString()}`,
-          entrySource: 'manual',
-          direction,
-          stopLoss: preview.stop_loss_price || stop,
-          profitTarget: tp,
-          positionSize: preview.position_size,
-          riskAmount: preview.risk_amount,
-          riskPercent: RANGE_EDGE_RISK_PERCENT,
-          accountSize,
-          entryWindow: (gate?.entryWindow ?? 1) as 1 | 2 | 3,
-          regime,
-          regimeConfidence,
-          placedAt: Date.now(),
-          strategyRange: range ?? null,
-        })
-      })()
-    },
-    [
-      managePos,
-      positionOverlay,
-      pending,
-      instrument,
-      gate,
-      regime,
-      regimeConfidence,
-      orderStrategyRange,
-    ]
-  )
-
   const handleLevelSelect = useCallback(
     (
       price: number,
@@ -376,7 +251,7 @@ export default function ChartPage() {
         source?: 'ai' | 'structure' | 'manual'
         side?: 'BUY' | 'SHORT'
         preferredDirection?: 'LONG' | 'SHORT'
-        orderType?: 'LIMIT' | 'MARKET'
+        orderType?: 'LIMIT'
         stopLoss?: number
         profitTarget?: number
         strategyRange?: StrategyRangeEdges | null
@@ -403,48 +278,25 @@ export default function ChartPage() {
               ? 'LONG'
               : undefined
 
-      // Safety net: market-tagged select must not open the limit ticket
-      const isMarket =
-        meta?.type === 'market' || meta?.orderType === 'MARKET'
-      if (isMarket) {
-        placeMarketOrder({
-          entryPrice: price,
-          stopLoss:
-            typeof meta?.stopLoss === 'number' && meta.stopLoss > 0
-              ? meta.stopLoss
-              : preferred === 'SHORT'
-                ? price * 1.0035
-                : price * 0.9965,
-          profitTarget:
-            typeof meta?.profitTarget === 'number' && meta.profitTarget > 0
-              ? meta.profitTarget
-              : 0,
-          direction: preferred ?? 'LONG',
-          reasoning:
-            meta?.reasoning ||
-            `Manual ${preferred ?? 'LONG'} market @ ${price.toLocaleString()}`,
-        })
-        return
-      }
-
-      // Limit / playbook — open LevelOrderTicket
+      // Desk is limit-only — always open the working-limit ticket
       setOrderLevel(price)
-      setOrderLevelType(meta?.type)
+      setOrderLevelType(meta?.type === 'market' ? 'manual' : meta?.type)
       setOrderLevelSide(side)
       setOrderPreferredDirection(preferred)
       setOrderLevelReason(meta?.reasoning)
       setOrderEntrySource(
-        meta?.source === 'manual' || meta?.type === 'manual'
+        meta?.source === 'manual' ||
+          meta?.type === 'manual' ||
+          meta?.type === 'market'
           ? 'manual'
           : meta?.source === 'structure'
             ? 'structure'
             : 'ai'
       )
-      // Keep playbook ±10 range for manual Market/Limit too — gate needs it
       setOrderStrategyRange(meta?.strategyRange ?? null)
       setOrderStrategyMagnets(meta?.strategyMagnets ?? null)
     },
-    [managePos, positionOverlay, pending, placeMarketOrder, gate]
+    [managePos, positionOverlay, pending, gate]
   )
 
   const refreshLevelsAfterExit = useCallback(
@@ -973,27 +825,14 @@ export default function ChartPage() {
       setFillError(null)
 
       const px = livePriceRef.current
-      const isMarket = orderWithRange.levelType === 'market'
-      if (isMarket && px != null && Number.isFinite(px) && px > 0) {
-        const liveEdge = assertRangeEdgeEntry({
-          entry: px,
-          range: orderWithRange.strategyRange,
-        })
-        if (!liveEdge.ok) {
-          placingOrderRef.current = false
-          setFillError(liveEdge.message)
-          setOrderStatus('rejected')
-          return
-        }
-      }
+      // Limit-only desk: if price already through the limit, fill immediately; else work it
       if (
-        isMarket ||
-        (px != null && limitWouldFill(orderWithRange.direction, orderWithRange.level, px))
+        px != null &&
+        limitWouldFill(orderWithRange.direction, orderWithRange.level, px)
       ) {
         pendingRef.current = orderWithRange
         setPending(orderWithRange)
-        const execPx = isMarket ? (px ?? orderWithRange.level) : orderWithRange.level
-        void fillPending(orderWithRange, execPx).finally(() => {
+        void fillPending(orderWithRange, orderWithRange.level).finally(() => {
           placingOrderRef.current = false
         })
         return
@@ -1433,7 +1272,6 @@ export default function ChartPage() {
               lockedInstrument={locked}
               allowedInstruments={gate?.allowedInstruments ?? undefined}
               onLevelSelect={handleLevelSelect}
-              onMarketOrder={placeMarketOrder}
               canPlaceOrder={canTrade && dataMode === 'live'}
               onDeskAlert={handleDeskAlert}
               rangeStrategy={gate?.rangeStrategy ?? null}
