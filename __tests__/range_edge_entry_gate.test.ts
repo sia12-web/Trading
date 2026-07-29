@@ -162,4 +162,31 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
   assert.equal(findRangeEdgeBandHit(39970, [range]), null, 'gap between mid and high is not a hit')
 }
 
+{
+  // 50% mid is universal — every desk instrument × every slot range
+  const deskRanges: Array<{ instrument: string; label: string; high: number; low: number }> = [
+    { instrument: 'DOW', label: 'OR30', high: 42_200, low: 42_000 },
+    { instrument: 'DOW', label: 'IB', high: 42_300, low: 41_900 },
+    { instrument: 'DOW', label: 'Lunch-range', high: 42_400, low: 42_100 },
+    { instrument: 'NASDAQ', label: 'OR30', high: 18_200, low: 18_100 },
+    { instrument: 'NASDAQ', label: 'IB', high: 18_250, low: 18_050 },
+    { instrument: 'NASDAQ', label: 'Lunch-range', high: 18_500, low: 18_400 },
+    { instrument: 'NIKKEI', label: 'OR30', high: 40_050, low: 39_950 },
+    { instrument: 'NIKKEI', label: 'US Range', high: 40_000, low: 39_500 },
+    { instrument: 'NIKKEI', label: 'Tokyo IB', high: 40_100, low: 39_900 },
+  ]
+  for (const r of deskRanges) {
+    const mid = rangeMidpoint(r)
+    assert.ok(mid != null, `${r.instrument} ${r.label} mid`)
+    const bands = rangeEdgeBands(r)
+    assert.equal(bands.length, 3, `${r.instrument} ${r.label} has H/mid/L bands`)
+    assert.equal(bands[1]!.edge, 'mid')
+    assert.equal(bands[1]!.center, mid)
+    const ok = assertRangeEdgeEntry({ entry: mid!, range: r })
+    assert.equal(ok.ok, true, `${r.instrument} ${r.label} 50% mid is a legal entry`)
+    const hit = findRangeEdgeBandHit(mid!, [r])
+    assert.equal(hit?.edge, 'mid', `${r.instrument} ${r.label} click hits 50%`)
+  }
+}
+
 console.log('range_edge_entry_gate: all passed')

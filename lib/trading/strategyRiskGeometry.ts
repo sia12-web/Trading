@@ -301,6 +301,9 @@ export function activeRangeForPlaybook(args: {
  * {@link entryEligibleOverlayRanges} for paint / snap.
  *
  * IB / Tokyo IB: pass `showIb: true` when IB H/L overlay is visible (same as BRK/REJ toggle).
+ *
+ * Every returned range uses the shared gate: ±10 of **H / 50% mid / L**
+ * (DOW · NASDAQ · NIKKEI — OR30, US Range, IB/Tokyo IB, Lunch-range alike).
  */
 export function visibleOverlayEntryRanges(args: {
   instrument: string
@@ -342,6 +345,9 @@ export function visibleOverlayEntryRanges(args: {
  * Unified toggle rule — never paint a range when its script toggle is OFF:
  * - **OR30:** toggle ON + morning OR30 entry window still open (no ±10 after entryClose).
  * - **US / IB / Lunch:** toggle ON + shaped (chart dims when not the live entry window).
+ *
+ * Band geometry is always H + **50% mid** + L via {@link rangeEdgeBands} for every
+ * desk instrument (DOW / NASDAQ / NIKKEI) and every slot range.
  *
  * Place-order legality still uses {@link activeRangeForPlaybook} + session gates.
  * `morningAttempts` is accepted for API stability (unused here).
