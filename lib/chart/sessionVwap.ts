@@ -43,13 +43,17 @@ export const SESSION_WINDOWS = {
 } as const
 
 /**
- * Nikkei morning desk — Asia/Tokyo clock so cash open (09:00) is the Asia start.
- * After Tokyo cash close (15:00) → 17:00 JST is uncolored (not London).
+ * Nikkei morning desk — Asia/Tokyo cash, then London until US open,
+ * New York = US RTH only (America/New_York 09:30–16:00).
+ * After US cash close until Tokyo 09:00 is uncolored (Nikkei may still print —
+ * must NOT stay painted as New York).
+ * After Tokyo cash close (15:00) → 17:00 JST is also uncolored.
  */
 export const TOKYO_SESSION_WINDOWS = {
   Asia: { tz: 'Asia/Tokyo', start: 9, end: 15 }, // Tokyo cash 09:00 → 15:00
-  London: { tz: 'Asia/Tokyo', start: 17, end: 22.5 }, // after post-cash gap → US open
-  'New York': { tz: 'Asia/Tokyo', start: 22.5, end: 9 }, // US hours → next Tokyo open
+  London: { tz: 'Asia/Tokyo', start: 17, end: 22.5 }, // after post-cash gap → US open (end approx; classifier uses ET)
+  /** Documented for legends — actual NY band is SESSION_WINDOWS['New York'] via ET */
+  'New York': { tz: 'America/New_York', start: 9.5, end: 16 },
 } as const
 
 /**
@@ -68,22 +72,34 @@ export function nyDeskSessionAt(unix: number): SessionName | null {
 }
 
 /**
- * Nikkei: Tokyo cash open starts Asia — overnight US is New York until 09:00 JST.
- * 15:00–17:00 JST after cash close is uncolored.
+ * Nikkei: Tokyo cash = Asia; US RTH only = New York (DST-safe via ET);
+ * after US cash close until Tokyo open = uncolored; 15:00–17:00 JST = uncolored.
  */
 export function tokyoDeskSessionAt(unix: number): SessionName | null {
-  const h = hourInTz(unix, 'Asia/Tokyo')
-  if (h >= TOKYO_SESSION_WINDOWS.Asia.start && h < TOKYO_SESSION_WINDOWS.Asia.end) {
-    return 'Asia'
-  }
-  // Post–Tokyo cash close before London band: uncolored
-  if (h >= TOKYO_SESSION_WINDOWS.Asia.end && h < TOKYO_SESSION_WINDOWS.London.start) {
-    return null
-  }
-  if (h >= TOKYO_SESSION_WINDOWS.London.start && h < TOKYO_SESSION_WINDOWS.London.end) {
-    return 'London'
-  }
-  return 'New York'
+  const hJst = hourInTz(unix, 'Asia/Tokyo')
+  const hEt = hourInTz(unix, 'America/New_York')
+  const asiaStart = TOKYO_SESSION_WINDOWS.Asia.start
+  const asiaEnd = TOKYO_SESSION_WINDOWS.Asia.end
+  const londonStart = TOKYO_SESSION_WINDOWS.London.start
+  const nyStart = SESSION_WINDOWS['New York'].start
+  const nyEnd = SESSION_WINDOWS['New York'].end
+
+  // Tokyo cash session
+  if (hJst >= asiaStart && hJst < asiaEnd) return 'Asia'
+
+  // Post–Tokyo cash close before evening band
+  if (hJst >= asiaEnd && hJst < londonStart) return null
+
+  // US regular hours only — never extend NY paint past US cash close
+  if (hEt >= nyStart && hEt < nyEnd) return 'New York'
+
+  // After US cash close until next Tokyo cash open (Nikkei may still trade)
+  if (hEt >= nyEnd && hJst < asiaStart) return null
+
+  // Evening after Tokyo gap until US cash open
+  if (hJst >= londonStart) return 'London'
+
+  return null
 }
 
 /** Per-instrument session paint clock — null = no session band (dead zone). */
@@ -404,8 +420,9 @@ const DESK_BAR_SECONDS = 300
 /**
  * Expensive once: paint contiguous session columns from every bar’s clock.
  * DOW / NASDAQ use America/New_York Asia/London/NY windows.
- * NIKKEI uses Asia/Tokyo so cash open (09:00) starts Asia — not mid-NYC Asia.
- * Bars in the post–cash-close dead zone (null session) get NO color.
+ * NIKKEI uses Asia/Tokyo for cash open, but New York paint follows US RTH
+ * (09:30–16:00 ET) only — post–US-close until Tokyo open stays uncolored.
+ * Bars in dead zones (null session) get NO color.
  * Call again only when candle tip / as-of clock changes — not on every pan frame.
  */
 export function computeSessionHighlightSpans(args: {
