@@ -18,6 +18,7 @@ import {
   type DeskNewsWindowHours,
   type RawDeskHeadline,
 } from '@/lib/trading/deskNews'
+import { isHighImpact, parseCalendarEventMs } from '@/lib/trading/deskNewsHazard'
 import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
@@ -44,55 +45,73 @@ export async function GET(request: Request) {
         : 'ALL'
     ) as DeskNewsInstrument | 'ALL'
     const sessionFilter = searchParams.get('session') !== '0'
+    const calendarOnly = searchParams.get('calendarOnly') === '1'
     const now = new Date()
     const focus = liveFocusMarket(now)
 
     const finnhub = getFinnhubClient()
     const instruments: DeskNewsInstrument[] = ['DOW', 'NASDAQ', 'NIKKEI']
 
-    const [companySets, generalNews, forexNews, calendarRows] = await Promise.all([
-      Promise.all(instruments.map((inst) => finnhub.getCompanyNewsItems(inst))),
-      finnhub.getMarketNews('general'),
-      finnhub.getMarketNews('forex'),
-      finnhub.getEconomicCalendar(ymd(now), ymd(new Date(now.getTime() + 2 * 86400000))),
-    ])
+    const calendarRowsPromise = finnhub.getEconomicCalendar(
+      ymd(now),
+      ymd(new Date(now.getTime() + 2 * 86400000))
+    )
 
-    const raw: RawDeskHeadline[] = []
-    for (let i = 0; i < instruments.length; i++) {
-      const rows = companySets[i]
-      if (!rows) continue
-      for (const r of rows) {
-        raw.push({
-          headline: r.headline,
-          source: r.source,
-          datetime: r.datetime,
-          url: r.url,
-          summary: r.summary,
-          related: r.related,
-          origin: r.origin,
-        })
-      }
-    }
-    for (const set of [generalNews, forexNews]) {
-      if (!set) continue
-      for (const r of set) {
-        raw.push({
-          headline: r.headline,
-          source: r.source,
-          datetime: r.datetime,
-          url: r.url,
-          summary: r.summary,
-          related: r.related,
-          origin: r.origin,
-        })
-      }
-    }
-
-    const allCards = buildDeskNewsCards(raw, {
+    let allCards = buildDeskNewsCards([], {
       windowHours,
       nowUnix: Math.floor(now.getTime() / 1000),
       limitPerDesk: 10,
     })
+    let calendarRows: Awaited<ReturnType<typeof finnhub.getEconomicCalendar>> = []
+
+    if (calendarOnly) {
+      calendarRows = await calendarRowsPromise
+    } else {
+      const [companySets, generalNews, forexNews, cal] = await Promise.all([
+        Promise.all(instruments.map((inst) => finnhub.getCompanyNewsItems(inst))),
+        finnhub.getMarketNews('general'),
+        finnhub.getMarketNews('forex'),
+        calendarRowsPromise,
+      ])
+      calendarRows = cal
+
+      const raw: RawDeskHeadline[] = []
+      for (let i = 0; i < instruments.length; i++) {
+        const rows = companySets[i]
+        if (!rows) continue
+        for (const r of rows) {
+          raw.push({
+            headline: r.headline,
+            source: r.source,
+            datetime: r.datetime,
+            url: r.url,
+            summary: r.summary,
+            related: r.related,
+            origin: r.origin,
+          })
+        }
+      }
+      for (const set of [generalNews, forexNews]) {
+        if (!set) continue
+        for (const r of set) {
+          raw.push({
+            headline: r.headline,
+            source: r.source,
+            datetime: r.datetime,
+            url: r.url,
+            summary: r.summary,
+            related: r.related,
+            origin: r.origin,
+          })
+        }
+      }
+
+      allCards = buildDeskNewsCards(raw, {
+        windowHours,
+        nowUnix: Math.floor(now.getTime() / 1000),
+        limitPerDesk: 10,
+      })
+    }
 
     // Session filter only shapes ALL — per-desk tabs stay complete off-focus
     const sessionOpts = {
@@ -106,9 +125,9 @@ export async function GET(request: Request) {
       ALL: filterCardsForDesk(allCards, 'ALL', 12, sessionOpts),
     }
 
-    const calendar: DeskCalendarEvent[] = calendarRows
+    const nowMs = now.getTime()
+    const mapped: DeskCalendarEvent[] = calendarRows
       .filter((e) => e.event && e.time)
-      .slice(0, 20)
       .map((e, idx) => {
         const instrumentsHit = instrumentsForCalendarEvent(e.country, e.event)
         return {
@@ -122,6 +141,24 @@ export async function GET(request: Request) {
         }
       })
 
+    // Prefer HIGH impact first so a dense low-impact flood never drops CPI/FOMC/BoJ.
+    // Then sort by clock. Cap after prioritization.
+    const high = mapped.filter((e) => isHighImpact(e.impact))
+    const rest = mapped.filter((e) => !isHighImpact(e.impact))
+    const byTime = (a: DeskCalendarEvent, b: DeskCalendarEvent) => {
+      const am = parseCalendarEventMs(a.time, nowMs) ?? Number.POSITIVE_INFINITY
+      const bm = parseCalendarEventMs(b.time, nowMs) ?? Number.POSITIVE_INFINITY
+      return am - bm
+    }
+    high.sort(byTime)
+    rest.sort(byTime)
+    let calendar = [...high, ...rest].slice(0, 40)
+
+    // Optional desk filter for chart banner polls
+    if (desk !== 'ALL') {
+      calendar = calendar.filter((e) => e.instruments.includes(desk))
+    }
+
     return NextResponse.json(
       {
         ok: true,
@@ -133,6 +170,7 @@ export async function GET(request: Request) {
         items: byDesk[desk],
         byDesk,
         calendar,
+        calendarOnly,
         source: 'finnhub',
         disclaimer: 'Context only — not a trade signal.',
       },

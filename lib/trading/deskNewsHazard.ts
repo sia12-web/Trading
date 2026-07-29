@@ -68,7 +68,13 @@ export function parseCalendarEventMs(
 }
 
 export function isHighImpact(impact: string | null | undefined): boolean {
-  return /high|3/i.test(String(impact || ''))
+  const s = String(impact || '')
+    .trim()
+    .toLowerCase()
+  if (!s) return false
+  // Finnhub uses "high" / "medium" / "low"; some feeds use "3" for red/high.
+  if (s === '3' || s === 'red') return true
+  return /\bhigh\b/.test(s)
 }
 
 export function formatMontrealHms(atMs: number): string {
@@ -146,21 +152,18 @@ export function buildDeskNewsHazards(args: {
     const level = classifyNewsHazardLevel(atMs, nowMs)
     const montrealHms = atMs != null ? formatMontrealHms(atMs) : null
 
-    // Day digest: keep today's remaining highs even if >60m away
+    // Day digest: keep upcoming highs even if >60m away; also keep
+    // unparseable high-impact rows so we never silently drop a red print.
     const includeIdleUpcoming =
       !!args.includeUpcomingDay &&
-      atMs != null &&
-      atMs >= nowMs - NEWS_STAND_ASIDE_MS &&
-      atMs <= nowMs + 24 * 3600 * 1000
+      (atMs == null ||
+        (atMs >= nowMs - NEWS_STAND_ASIDE_MS && atMs <= nowMs + 24 * 3600 * 1000))
 
     if (level === 'none' && !includeIdleUpcoming) continue
 
-    const copy = hazardCopy(
-      level === 'none' ? 'none' : level,
-      montrealHms,
-      ev.country,
-      ev.event
-    )
+    const effectiveLevel: NewsHazardLevel =
+      level === 'none' && includeIdleUpcoming ? 'none' : level
+    const copy = hazardCopy(effectiveLevel, montrealHms, ev.country, ev.event)
     out.push({
       id: ev.id,
       event: ev.event,
@@ -169,7 +172,7 @@ export function buildDeskNewsHazards(args: {
       instruments: ev.instruments,
       atMs,
       montrealHms,
-      level: level === 'none' && includeIdleUpcoming ? 'none' : level,
+      level: effectiveLevel,
       chip: copy.chip,
       title: copy.title,
       body: copy.body,

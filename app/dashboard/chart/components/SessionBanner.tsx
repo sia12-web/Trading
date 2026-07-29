@@ -249,7 +249,7 @@ export function SessionBanner({
     const load = async () => {
       try {
         const res = await fetch(
-          `/api/trading/desk-news?window=24&desk=${desk}&session=0&_=${Date.now()}`,
+          `/api/trading/desk-news?window=24&desk=${desk}&session=0&calendarOnly=1&_=${Date.now()}`,
           { cache: 'no-store' }
         )
         const json = (await res.json().catch(() => null)) as {
