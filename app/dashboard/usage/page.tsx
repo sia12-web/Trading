@@ -47,7 +47,7 @@ type UsagePayload = {
 function fmtTime(iso: string): string {
   try {
     return new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/New_York',
+      timeZone: 'America/Toronto',
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
@@ -226,7 +226,7 @@ export default function LlmUsagePage() {
                   <table className="w-full text-left text-xs">
                     <thead className="text-gray-500 border-b border-surface-700">
                       <tr>
-                        <th className="px-3 py-2 font-medium">When (ET)</th>
+                        <th className="px-3 py-2 font-medium">When (Montreal)</th>
                         <th className="px-3 py-2 font-medium">Role</th>
                         <th className="px-3 py-2 font-medium">Model</th>
                         <th className="px-3 py-2 font-medium">Route</th>

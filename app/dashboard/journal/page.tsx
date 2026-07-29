@@ -110,7 +110,7 @@ function fmtTime(iso: string | null | undefined, _market?: string): string {
       second: '2-digit',
       hour12: false,
     }).format(new Date(iso))
-    return `${s} ET`
+    return `${s} Montreal`
   } catch {
     return iso
   }

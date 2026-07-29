@@ -13,6 +13,10 @@ import type { PositionStatusResponse, PositionStatus } from '@/types/positionMan
 import type { Instrument } from '@/types/trading'
 import { isAfternoonWatchWindow, sessionFor } from '@/lib/trading/sessionGate'
 import { isMorningOrIbEntry } from '@/lib/trading/morningLunchConfirm'
+import {
+  TRADER_DISPLAY_LABEL,
+  deskLocalHmsAsTraderDisplay,
+} from '@/lib/chart/traderDisplayTz'
 
 const INSTRUMENTS: Instrument[] = ['DOW', 'NASDAQ', 'NIKKEI']
 
@@ -291,9 +295,10 @@ export default function PositionsPage() {
             instrument={position.instrument}
             direction={position.entry_direction}
             entryPrice={position.entry_price}
-            cashCloseLabel={`${sessionFor(position.instrument).marketClose.slice(0, 5)} ${
-              position.instrument === 'NIKKEI' ? 'JST' : 'ET'
-            }`}
+            cashCloseLabel={`${(() => {
+              const s = sessionFor(position.instrument)
+              return `${deskLocalHmsAsTraderDisplay(s.marketClose, s.tz)} ${TRADER_DISPLAY_LABEL}`
+            })()}`}
             busy={lunchFlatBusy}
             onConfirm={() => void confirmLunchFlatClose()}
             onKeepOpen={() => {

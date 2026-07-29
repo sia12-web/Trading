@@ -9,7 +9,8 @@
 import { zonedCivilToUnix } from '@/lib/chart/sessionVwap'
 
 export const TRADER_DISPLAY_TZ = 'America/Toronto'
-export const TRADER_DISPLAY_LABEL = 'ET'
+/** Short label on trader-facing clocks (status, banners, Leo, Telegram). */
+export const TRADER_DISPLAY_LABEL = 'Montreal'
 
 function dayKeyInTz(unix: number, timeZone: string): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -75,7 +76,7 @@ export function deskLocalHmsAsTraderDisplay(
   return formatUnixTraderDisplay(unix, false)
 }
 
-/** e.g. "20:00–20:45 ET" from Tokyo 09:00–09:45. */
+/** e.g. "20:00–20:45 Montreal" from Tokyo 09:00–09:45. */
 export function deskLocalRangeAsTraderDisplay(
   startHms: string,
   endHms: string,

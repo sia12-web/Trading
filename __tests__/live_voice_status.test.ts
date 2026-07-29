@@ -100,8 +100,8 @@ function jstDate(h: number, m: number, s = 0): Date {
     clockedIn: true,
   })
   assert(r.enabled === true, 'Tokyo prep start enabled')
-  assert(r.window.start === '19:45' && r.window.end === '02:00', 'Tokyo window in Montreal ET')
-  assert(r.window.tzLabel === 'ET', 'Leo shows ET')
+  assert(r.window.start === '19:45' && r.window.end === '02:00', 'Tokyo window in Montreal')
+  assert(r.window.tzLabel === 'Montreal', 'Leo shows Montreal')
   assert(r.market === 'TOKYO', 'TOKYO market')
 }
 

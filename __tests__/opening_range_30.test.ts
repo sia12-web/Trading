@@ -16,8 +16,13 @@ assert.equal(isOr30Instrument('DOW'), true)
 assert.equal(isOr30Instrument('NASDAQ'), true)
 assert.equal(isOr30Instrument('FOO'), false)
 assert.equal(OR30_MINUTES, 30)
-assert.equal(or30WindowLabel('DOW'), '09:30–10:00 ET')
-assert.match(or30WindowLabel('NIKKEI'), /09:00–09:30 JST/)
+assert.equal(or30WindowLabel('DOW'), '09:30–10:00 Montreal')
+assert.match(or30WindowLabel('NIKKEI'), /Montreal/)
+// Summer EDT: Tokyo 09:00–09:30 → 20:00–20:30 Montreal
+assert.match(
+  or30WindowLabel('NIKKEI', new Date('2026-07-27T12:00:00.000Z')),
+  /20:00–20:30 Montreal/
+)
 
 function barsAround(open: number) {
   return [

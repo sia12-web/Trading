@@ -199,7 +199,7 @@ assert(gateClosed.phase === 'CLOSED', `after close phase: ${gateClosed.phase}`)
 assert(/cash closed/i.test(gateClosed.message), `after close: ${gateClosed.message}`)
 assert(!/afternoon watch/i.test(gateClosed.message), 'no afternoon copy after cash close')
 assert(gateClosed.market === 'NY', 'DOW tab → NY market copy')
-assert(/NY desk|9:15 ET/i.test(gateClosed.message), `NY copy: ${gateClosed.message}`)
+assert(/NY desk|9:15 Montreal/i.test(gateClosed.message), `NY copy: ${gateClosed.message}`)
 
 // Same wall time, NIKKEI tab → Tokyo desk messaging (not sticky NY copy)
 const gateNikkeiBrowse = resolveSessionGate({
@@ -213,10 +213,10 @@ const gateNikkeiBrowse = resolveSessionGate({
 })
 assert(gateNikkeiBrowse.market === 'TOKYO', 'NIKKEI tab → TOKYO market')
 assert(
-  /Tokyo|JST|NIKKEI/i.test(gateNikkeiBrowse.message),
+  /Tokyo|Montreal|NIKKEI/i.test(gateNikkeiBrowse.message),
   `Tokyo copy: ${gateNikkeiBrowse.message}`
 )
-assert(!/Next NY desk|9:15 ET/i.test(gateNikkeiBrowse.message), 'no NY next-desk on NIKKEI tab')
+assert(!/Next NY desk|9:15 Montreal/i.test(gateNikkeiBrowse.message), 'no NY next-desk on NIKKEI tab')
 
 assert(AVWAP_LOOKBACK_TRADING_DAYS === 5, 'VWAP lookback = 5')
 {

@@ -56,7 +56,7 @@ function formatDeskClock(_market?: 'NY' | 'TOKYO' | null): { time: string; label
     second: '2-digit',
     hour12: false,
   }).format(new Date())
-  return { time, label: 'ET' }
+  return { time, label: 'Montreal' }
 }
 
 function phaseLabel(
@@ -101,7 +101,7 @@ export function SessionBanner({
   const [gate, setGate] = useState<SessionGateState | null>(null)
   const [gateError, setGateError] = useState<string | null>(null)
   const [clockNow, setClockNow] = useState<string | null>(null)
-  const [clockLabel, setClockLabel] = useState('ET')
+  const [clockLabel, setClockLabel] = useState('Montreal')
   const [mounted, setMounted] = useState(false)
   const [clocking, setClocking] = useState(false)
   const prepFiredRef = useRef<string | null>(null)

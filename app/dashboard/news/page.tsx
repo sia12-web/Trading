@@ -501,7 +501,7 @@ function NewsCard({
           </span>
         ))}
         <span className="text-gray-500">{card.source}</span>
-        <span className="text-gray-600 tabular-nums">{formatClock(card.datetime)} ET</span>
+        <span className="text-gray-600 tabular-nums">{formatClock(card.datetime)} Montreal</span>
         <span className="text-gray-600 tabular-nums">{formatAge(card.datetime, nowMs)}</span>
       </div>
       {card.url ? (

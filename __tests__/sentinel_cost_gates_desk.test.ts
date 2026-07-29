@@ -275,8 +275,8 @@ test('Gate browse NIKKEI after NY close → Tokyo message not NY next-desk', () 
     attendedToday: true,
   })
   assert(gate.market === 'TOKYO', 'market TOKYO')
-  assert(!/Next NY desk|9:15 ET/i.test(gate.message), gate.message)
-  assert(/Tokyo|JST|NIKKEI|Pre-session/i.test(gate.message), gate.message)
+  assert(!/Next NY desk|9:15 Montreal/i.test(gate.message), gate.message)
+  assert(/Tokyo|Montreal|NIKKEI|Pre-session/i.test(gate.message), gate.message)
 })
 
 // ── Level Finder model quality (not cut for cost) ────────────────────────────

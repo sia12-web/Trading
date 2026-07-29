@@ -18,13 +18,13 @@ import {
   deskLocalHmsAsTraderDisplay,
 } from '@/lib/chart/traderDisplayTz'
 
-/** Focus unlock = cash open − 30m, shown in Montreal (ET). */
+/** Focus unlock = cash open − 30m, shown in Montreal. */
 function focusUnlockMontreal(market: 'NY' | 'TOKYO', now: Date): string {
   if (market === 'TOKYO') {
-    // Tokyo open 09:00 JST → focus 08:30 JST → Montreal ET
+    // Tokyo open 09:00 JST → focus 08:30 JST → Montreal
     return `${deskLocalHmsAsTraderDisplay('08:30:00', TOKYO_SESSION.tz, now)} ${TRADER_DISPLAY_LABEL}`
   }
-  // NY open 09:30 → focus 09:00 America/New_York (= Montreal ET)
+  // NY open 09:30 → focus 09:00 America/New_York (= Montreal)
   return `${deskLocalHmsAsTraderDisplay('09:00:00', NY_SESSION.tz, now)} ${TRADER_DISPLAY_LABEL}`
 }
 
@@ -75,7 +75,7 @@ export default function DashboardHomePage() {
         ) : (
           <span
             className="rounded-lg border border-surface-600 bg-surface-800/80 px-4 py-2.5 text-sm font-semibold text-gray-500"
-            title="Unlocks 30 minutes before NY or Tokyo cash open (Montreal / ET)"
+            title="Unlocks 30 minutes before NY or Tokyo cash open (Montreal)"
           >
             Live Trading locked
           </span>

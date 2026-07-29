@@ -7,6 +7,10 @@
 import { useEffect, useState } from 'react'
 import { sessionFor } from '@/lib/trading/sessionGate'
 import type { Instrument } from '@/types/trading'
+import {
+  TRADER_DISPLAY_LABEL,
+  deskLocalHmsAsTraderDisplay,
+} from '@/lib/chart/traderDisplayTz'
 
 interface LunchCloseCountdownProps {
   instrument: Instrument
@@ -46,9 +50,8 @@ export function LunchCloseCountdown({
   hasOpenPosition,
 }: LunchCloseCountdownProps) {
   const sess = sessionFor(instrument)
-  const tzLabel = instrument === 'NIKKEI' ? 'JST' : 'ET'
-  const lunchLabel = `${sess.lunchClose.slice(0, 5)} ${tzLabel}`
-  const cashLabel = `${sess.marketClose.slice(0, 5)} ${tzLabel}`
+  const lunchLabel = `${deskLocalHmsAsTraderDisplay(sess.lunchClose, sess.tz)} ${TRADER_DISPLAY_LABEL}`
+  const cashLabel = `${deskLocalHmsAsTraderDisplay(sess.marketClose, sess.tz)} ${TRADER_DISPLAY_LABEL}`
   const [label, setLabel] = useState('—')
   const [phase, setPhase] = useState<'pre' | 'morning' | 'afternoon' | 'closed'>('closed')
 

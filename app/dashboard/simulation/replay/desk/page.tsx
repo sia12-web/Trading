@@ -2351,7 +2351,7 @@ function SimulationDeskInner() {
     setMsg(
       instrument === 'NIKKEI'
         ? `Reset to ${deskLocalHmsAsTraderDisplay(sess.marketOpen, sess.tz)} ${TRADER_DISPLAY_LABEL} — double-click the chart or pick a level, then Play`
-        : 'Reset to 9:30 AM ET — double-click the chart or pick a level, then Play'
+        : `Reset to 9:30 AM ${TRADER_DISPLAY_LABEL} — double-click the chart or pick a level, then Play`
     )
   }
 
@@ -2372,7 +2372,7 @@ function SimulationDeskInner() {
     setMsg(
       instrument === 'NIKKEI'
         ? `Replay from ${deskLocalHmsAsTraderDisplay(sess.marketOpen, sess.tz)} ${TRADER_DISPLAY_LABEL} — double-click the chart or pick a level, or watch`
-        : 'Replay from 9:30 AM ET — double-click the chart or pick a level, or watch'
+        : `Replay from 9:30 AM ${TRADER_DISPLAY_LABEL} — double-click the chart or pick a level, or watch`
     )
     setPlaying(true)
   }
@@ -2900,7 +2900,7 @@ function SimulationDeskInner() {
               type="button"
               title={
                 showLunchRange
-                  ? 'NYC Lunch range 12:00–13:30 ET visible (Press N)'
+                  ? `NYC Lunch range 12:00–13:30 ${TRADER_DISPLAY_LABEL} visible (Press N)`
                   : 'Show NYC Lunch high / low / 50% (Press N)'
               }
               onClick={() => setShowLunchRange((v) => !v)}
@@ -3061,7 +3061,7 @@ function SimulationDeskInner() {
               <span className="text-gray-600">·</span>
               <span
                 className="flex items-center gap-1.5 normal-case tracking-normal"
-                title="NYC Lunch Session Range 12:00–13:30 ET"
+                title={`NYC Lunch Session Range 12:00–13:30 ${TRADER_DISPLAY_LABEL}`}
               >
                 <span
                   className="inline-block w-4 border-t-2"

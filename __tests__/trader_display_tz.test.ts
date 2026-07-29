@@ -18,7 +18,7 @@ assert.equal(deskLocalHmsAsTraderDisplay('08:45:00', 'Asia/Tokyo', evening), '19
 assert.equal(deskLocalHmsAsTraderDisplay('09:00:00', 'Asia/Tokyo', evening), '20:00')
 assert.equal(
   deskLocalRangeAsTraderDisplay('09:00:00', '09:45:00', 'Asia/Tokyo', evening),
-  '20:00–20:45 ET'
+  '20:00–20:45 Montreal'
 )
 
 // NY schedule stays Eastern

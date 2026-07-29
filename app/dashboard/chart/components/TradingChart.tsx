@@ -51,6 +51,7 @@ import {
 import {
   TRADER_DISPLAY_LABEL,
   TRADER_DISPLAY_TZ,
+  deskLocalHmsAsTraderDisplay,
 } from '@/lib/chart/traderDisplayTz'
 import {
   previewLevelOrderPrices,
@@ -4940,7 +4941,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           low: r.low,
           nextHint:
             instrument === 'NIKKEI'
-              ? 'Tokyo IB shaped now — entry window opens 13:30 JST (±10 of locked H/L). Until then US Range is slot 2.'
+              ? `Tokyo IB shaped now — entry window opens ${deskLocalHmsAsTraderDisplay('13:30:00', 'Asia/Tokyo')} ${TRADER_DISPLAY_LABEL} (±10 of locked H/L). Until then US Range is slot 2.`
               : 'IB entry window is open (±10 of locked H/L).',
         })
         onDeskAlert({
@@ -5191,7 +5192,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             type="button"
             title={
               showLunchRange
-                ? 'NYC Lunch range lines 12:00–13:30 ET + LN BRK/REJ after 13:30 (Press N)'
+                ? `NYC Lunch range lines 12:00–13:30 ${TRADER_DISPLAY_LABEL} + LN BRK/REJ after 13:30 (Press N)`
                 : 'Show NYC Lunch high / low / 50% (Press N). This is the lunch RANGE, not playbook “Lunch break” prep.'
             }
             onClick={() => setShowLunchRange((v) => !v)}
@@ -5675,9 +5676,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             )}
           </span>
           {(instrument === 'DOW' || instrument === 'NASDAQ') && (
-            <span title="NYC lunch 12:00–13:30 ET — ±10 entries only after 13:30 lock">
+            <span title={`NYC lunch 12:00–13:30 ${TRADER_DISPLAY_LABEL} — ±10 entries only after 13:30 lock`}>
               <span className={lunchShaped ? 'text-orange-400' : 'text-gray-600'}>
-                Lunch {lunchShaped ? (lunchLocked ? 'locked' : 'forming') : 'after 12:00 ET'}
+                Lunch {lunchShaped ? (lunchLocked ? 'locked' : 'forming') : `after 12:00 ${TRADER_DISPLAY_LABEL}`}
               </span>
               {lunchShaped && (
                 <span className="text-gray-600">
@@ -5750,7 +5751,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             <span className="text-gray-600">·</span>
             <span
               className="flex items-center gap-1.5 normal-case tracking-normal"
-              title="NYC Lunch Session Range — 12:00–13:30 ET high / low / 50% half-back (Dow & Nasdaq)"
+              title={`NYC Lunch Session Range — 12:00–13:30 ${TRADER_DISPLAY_LABEL} high / low / 50% half-back (Dow & Nasdaq)`}
             >
               <span
                 className="inline-block w-4 border-t-2"
@@ -5767,7 +5768,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 style={{ borderColor: NYC_LUNCH_COLORS.mid }}
               />
               <span style={{ color: NYC_LUNCH_COLORS.mid }}>50%</span>
-              <span className="text-gray-600">12:00–13:30 ET → PM</span>
+              <span className="text-gray-600">12:00–13:30 {TRADER_DISPLAY_LABEL} → PM</span>
             </span>
           </>
         )}

@@ -1720,7 +1720,7 @@ export function assertCanOpenPosition(
     } else if (gate.phase === 'FLAT') {
       message =
         gate.market === 'TOKYO'
-          ? 'Entry window closed — wait for US Range (09:00–10:45 JST) or Tokyo IB (13:30 JST) if still eligible.'
+          ? 'Entry window closed — wait for US Range or Tokyo IB unlock (if still eligible).'
           : 'Entry window closed — wait for IB or lunch-range unlock (if still eligible).'
     } else if (gate.phase === 'DONE') {
       message = 'Entry windows done for today — manage if open, no new entries.'

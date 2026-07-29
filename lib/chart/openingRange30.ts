@@ -15,6 +15,7 @@ import {
   computeRangeBreakRejectSignals,
   type RangeBreakSignal,
 } from '@/lib/chart/rangeBreakSignals'
+import { deskLocalRangeAsTraderDisplay } from '@/lib/chart/traderDisplayTz'
 
 export const OR30_MINUTES = 30
 
@@ -50,13 +51,20 @@ export function isNikkeiOr30Instrument(
   return instrument === 'NIKKEI'
 }
 
-/** Short schedule hint for tooltips / legend. */
+/** Short schedule hint for tooltips / legend — Montreal wall clock. */
 export function or30WindowLabel(
-  instrument: string | null | undefined
+  instrument: string | null | undefined,
+  now: Date = new Date()
 ): string {
-  return instrument === 'NIKKEI'
-    ? '09:00–09:30 JST · 20:00–20:30 ET'
-    : '09:30–10:00 ET'
+  if (instrument === 'NIKKEI') {
+    return deskLocalRangeAsTraderDisplay('09:00:00', '09:30:00', 'Asia/Tokyo', now)
+  }
+  return deskLocalRangeAsTraderDisplay(
+    '09:30:00',
+    '10:00:00',
+    'America/New_York',
+    now
+  )
 }
 
 /**

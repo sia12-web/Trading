@@ -12,6 +12,10 @@ import {
 import { computeVolumeProfile } from '@/lib/chart/volumeProfile'
 import { filterByConfluence } from '@/lib/trading/levelConfluence'
 import { sessionFor } from '@/lib/trading/sessionGate'
+import {
+  TRADER_DISPLAY_LABEL,
+  deskLocalHmsAsTraderDisplay,
+} from '@/lib/chart/traderDisplayTz'
 import { createClient } from '@/lib/supabase/server'
 import { groundLevels, onlyGrounded } from '@/lib/llm/antiHallucination'
 import { llmComplete } from '@/lib/llm/complete'
@@ -495,16 +499,19 @@ How to use it (big-desk volume map):
     analysisMode: 'morning' | 'ib' | 'us_range' | 'lunch_range' | 'afternoon' = 'morning'
   ): string {
     const s = sessionFor(index)
-    const open = s.marketOpen.slice(0, 5)
-    const entryEnd = s.entryClose.slice(0, 5)
-    const lunch = s.lunchClose.slice(0, 5)
-    const close = s.marketClose.slice(0, 5)
-    const tzLabel = index === 'NIKKEI' ? 'JST' : 'ET'
+    const open = deskLocalHmsAsTraderDisplay(s.marketOpen, s.tz)
+    const entryEnd = deskLocalHmsAsTraderDisplay(s.entryClose, s.tz)
+    const lunch = deskLocalHmsAsTraderDisplay(s.lunchClose, s.tz)
+    const close = deskLocalHmsAsTraderDisplay(s.marketClose, s.tz)
+    const tzLabel = TRADER_DISPLAY_LABEL
     const marketLabel = index === 'NIKKEI' ? 'Tokyo' : 'NY'
     const tokyo = index === 'NIKKEI'
-    const midWindow = tokyo ? '09:00–10:45' : '10:30–10:45'
-    const lateWindow =
-      index === 'NIKKEI' ? '13:30–15:00' : '13:30–15:15'
+    const midWindow = tokyo
+      ? `${deskLocalHmsAsTraderDisplay('09:00:00', s.tz)}–${deskLocalHmsAsTraderDisplay('10:45:00', s.tz)}`
+      : `${deskLocalHmsAsTraderDisplay('10:30:00', s.tz)}–${deskLocalHmsAsTraderDisplay('10:45:00', s.tz)}`
+    const lateWindow = tokyo
+      ? `${deskLocalHmsAsTraderDisplay('13:30:00', s.tz)}–${deskLocalHmsAsTraderDisplay('15:00:00', s.tz)}`
+      : `${deskLocalHmsAsTraderDisplay('13:30:00', s.tz)}–${deskLocalHmsAsTraderDisplay('15:15:00', s.tz)}`
     const midLabel = tokyo ? 'US Range' : 'IB'
     const lateLabel = tokyo ? 'IB' : 'lunch-range'
     const prepLabel = tokyo ? 'IB prep playbook' : 'Lunch break playbook'
@@ -538,7 +545,7 @@ IB PLAYBOOK MODE (Initial Balance entry refresh — NY slot 2):
             ? `
 LUNCH-RANGE / LUNCH BREAK PLAYBOOK MODE (NY slot 3):
 - IB entry window is done (or we are prepping for PM). Levels update for Lunch break playbook → Lunch-range entry (${lateWindow} ${tzLabel}).
-- PRIMARY BAIT this run: Lunch-range H/L (12:00–13:30 ET). Prefer stop pools beyond lunch-range extremes + POC/AVWAP. OR30/IB are secondary / polarity.
+- PRIMARY BAIT this run: Lunch-range H/L (12:00–13:30 Montreal). Prefer stop pools beyond lunch-range extremes + POC/AVWAP. OR30/IB are secondary / polarity.
 - Prefer lunch-range high/low, morning IB extremes, FLIP/RETEST, AVWAP/POC. Up to 2 lunch-range probes @ 0.25% when the PM window unlocks (earlier fills do not lock lunch-range).
 - Use ONLY the DESK BRIEF + RANGE LIQUIDITY MAP + candle tables. Frame as lunch-range breakout / mean-reversion — not morning OR30.
 `
@@ -575,7 +582,7 @@ RANGE LIQUIDITY MAP (how VP + retail stops connect to our three ranges on ${inde
 - Same method every window: range H/L = retail BAIT → stops sit JUST BEYOND → desk ENTERS into that stop pool. POC/HVN + AVWAP = confluence. Never return the exact range H/L as the entry print.
 - Slot 1 OR30: bait = Opening Range H/L. Hunt stops above ORH (short) / below ORL (buy). Opening-drive volume matters most.
 - Slot 2 IB: bait = Initial Balance (first cash hour) H/L. Hunt stops beyond IB high/low.
-- Slot 3 Lunch-range: bait = NYC lunch session (12:00–13:30 ET) H/L. Hunt stops beyond lunch-range extremes. Morning OR30/IB = secondary magnets or polarity flips if broken.
+- Slot 3 Lunch-range: bait = NYC lunch session (12:00–13:30 Montreal) H/L. Hunt stops beyond lunch-range extremes. Morning OR30/IB = secondary magnets or polarity flips if broken.
 - Active playbook = PRIMARY bait. Earlier formed ranges = secondary. Later ranges ignored until unlocked.
 - When RANGE LIQUIDITY MAP facts are printed in the user message, every level's reasoning MUST name which range bait it hunts (e.g. "OR30 high X bait — sell liquidity above near POC").
 `
@@ -762,10 +769,13 @@ How to use it:
 
     const clock = deskClockFor(request.index)
     const s = sessionFor(request.index)
-    const tzLabel = request.index === 'NIKKEI' ? 'JST' : 'ET'
+    const tzLabel = TRADER_DISPLAY_LABEL
     const tokyo = request.index === 'NIKKEI'
     const midLabel = tokyo ? 'US Range' : 'IB'
     const lateLabel = tokyo ? 'IB' : 'lunch-range'
+    const entryUntil = deskLocalHmsAsTraderDisplay(s.entryClose, s.tz)
+    const lunchAt = deskLocalHmsAsTraderDisplay(s.lunchClose, s.tz)
+    const closeAt = deskLocalHmsAsTraderDisplay(s.marketClose, s.tz)
     const modeLine =
       request.analysis_mode === 'us_range'
         ? 'Mode: US RANGE PLAYBOOK refresh — prior NYC session range levels for Nikkei slot 2 (Tokyo cash open→10:45; already shaped overnight).'
@@ -782,7 +792,7 @@ How to use it:
     return `Analyze these price charts for ${request.symbol} (${request.index}):
 
 Current Price: ${request.current_price}
-Desk clock: ${clock.openLabel} open · morning OR30 until ${s.entryClose.slice(0, 5)} ${tzLabel} · ${midLabel} mid window · lunch ${s.lunchClose.slice(0, 5)} ${tzLabel} · ${lateLabel} late window · cash close ${s.marketClose.slice(0, 5)} ${tzLabel}
+Desk clock: ${clock.openLabel} open · morning OR30 until ${entryUntil} ${tzLabel} · ${midLabel} mid window · lunch ${lunchAt} ${tzLabel} · ${lateLabel} late window · cash close ${closeAt} ${tzLabel}
 ${modeLine}
 Methodology is identical for DOW, NASDAQ, and NIKKEI — only this clock and the three named ranges differ (${tokyo ? 'OR30 → US Range → IB' : 'OR30 → IB → Lunch-range'}).
 ${rangeLiquiditySection}${afternoonSection}${peerSection}
