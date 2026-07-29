@@ -1,6 +1,6 @@
 /**
- * Range Edge Entry Gate — entries only within ±N index points of
- * the active playbook range high or low.
+ * Range Edge Entry Gate — entries within ±N index points of the active
+ * playbook range high, low, or 50% midpoint (mean-reversion magnet).
  */
 
 export const RANGE_EDGE_BAND_POINTS = 10
@@ -11,11 +11,21 @@ export type RangeEdgeLevels = {
   label?: string | null
 }
 
+export type RangeEdgeKind = 'high' | 'low' | 'mid'
+
 export type RangeEdgeBand = {
-  edge: 'high' | 'low'
+  edge: RangeEdgeKind
   center: number
   min: number
   max: number
+}
+
+/** Exact 50% of a shaped range (H+L)/2. */
+export function rangeMidpoint(range: RangeEdgeLevels): number | null {
+  const high = Number(range.high)
+  const low = Number(range.low)
+  if (!Number.isFinite(high) || !Number.isFinite(low) || !(high > low)) return null
+  return (high + low) / 2
 }
 
 export function rangeEdgeBands(
@@ -26,8 +36,10 @@ export function rangeEdgeBands(
   const low = Number(range.low)
   if (!Number.isFinite(high) || !Number.isFinite(low) || !(high > low)) return []
   const b = Math.max(0, bandPoints)
+  const mid = (high + low) / 2
   return [
     { edge: 'high', center: high, min: high - b, max: high + b },
+    { edge: 'mid', center: mid, min: mid - b, max: mid + b },
     { edge: 'low', center: low, min: low - b, max: low + b },
   ]
 }
@@ -42,9 +54,8 @@ export function isEntryWithinRangeEdgeBand(
 }
 
 /**
- * Keep (or move) a price into the nearest legal ±band of range H/L.
- * Already in-band → unchanged. Mid-range / outside → clamped onto the
- * closest band edge so Market/Limit tools open on the highlighted zones.
+ * Keep (or move) a price into the nearest legal ±band of range H / 50% / L.
+ * Already in-band → unchanged. Outside → clamped onto the closest band edge.
  * Returns null when range is missing/invalid.
  */
 export function clampPriceToRangeEdgeBands(
@@ -77,9 +88,8 @@ export function clampPriceToRangeEdgeBands(
  * Entry legality still uses {@link assertRangeEdgeEntry} on the active playbook range.
  *
  * Do **not** call this on every pointermove while dragging — continuous nearest-band
- * clamp traps the pointer on the high (or low) edge and blocks crossing mid-range
- * to the opposite ±10 band. Prefer {@link clampPriceToRangeEdgeEnvelope} during drag
- * and this helper on pointerup / place.
+ * clamp traps the pointer on one edge. Prefer {@link clampPriceToRangeEdgeEnvelope}
+ * during drag and this helper on pointerup / place.
  */
 export function clampPriceToNearestRangeEdgeBands(
   price: number,
@@ -104,8 +114,7 @@ export function clampPriceToNearestRangeEdgeBands(
 /**
  * Outer price span covering every ±band across the given ranges
  * (lowest band.min → highest band.max). Used while dragging so the entry
- * can move freely between high and low edges without teleporting to the
- * nearest band on every mouse move.
+ * can move freely between high and low edges without teleporting.
  */
 export function rangeEdgeBandsEnvelope(
   ranges: Array<RangeEdgeLevels | null | undefined>,
@@ -139,22 +148,29 @@ export function clampPriceToRangeEdgeEnvelope(
 export function nearestRangeEdge(
   entry: number,
   range: RangeEdgeLevels
-): 'high' | 'low' | null {
+): RangeEdgeKind | null {
   if (!Number.isFinite(entry) || !(range.high > range.low)) return null
-  return Math.abs(entry - range.high) <= Math.abs(entry - range.low) ? 'high' : 'low'
+  const mid = (range.high + range.low) / 2
+  const candidates: Array<{ edge: RangeEdgeKind; d: number }> = [
+    { edge: 'high', d: Math.abs(entry - range.high) },
+    { edge: 'mid', d: Math.abs(entry - mid) },
+    { edge: 'low', d: Math.abs(entry - range.low) },
+  ]
+  candidates.sort((a, b) => a.d - b.d)
+  return candidates[0]!.edge
 }
 
 export type RangeEdgeBandHit = {
   range: RangeEdgeLevels
-  edge: 'high' | 'low'
-  /** Range high or low (band center) — place limit here on click-to-enter. */
+  edge: RangeEdgeKind
+  /** Band center (H, 50% mid, or L) — place limit here on click-to-enter. */
   center: number
   min: number
   max: number
 }
 
 /**
- * First painted ±band containing `price` (high before low within each range).
+ * Painted ±band containing `price` closest to its center.
  * Used for click-to-enter on chart entry highlights.
  */
 export function findRangeEdgeBandHit(
@@ -196,7 +212,7 @@ export function assertRangeEdgeEntry(args: {
     return {
       ok: false,
       message:
-        'Active strategy range is not shaped yet — wait for OR30 / IB / lunch (or Nikkei US Range) to lock, then enter within ±10 pts of high or low.',
+        'Active strategy range is not shaped yet — wait for OR30 / IB / lunch (or Nikkei US Range) to lock, then enter within ±10 pts of high, 50% mid, or low.',
     }
   }
   const entry = Number(args.entry)
@@ -205,15 +221,17 @@ export function assertRangeEdgeEntry(args: {
   }
   if (!isEntryWithinRangeEdgeBand(entry, range, band)) {
     const label = range.label ? `${range.label} ` : ''
+    const mid = rangeMidpoint(range)
+    const midTxt = mid != null ? mid.toLocaleString() : '—'
     return {
       ok: false,
-      message: `Entry must be within ${band} pts of ${label}range high (${range.high}) or low (${range.low}).`,
+      message: `Entry must be within ${band} pts of ${label}range high (${range.high}), 50% mid (${midTxt}), or low (${range.low}).`,
     }
   }
   return { ok: true, range }
 }
 
-/** Keep only levels whose price sits in a ±band of range high or low. */
+/** Keep only levels whose price sits in a ±band of range high, mid, or low. */
 export function filterLevelsInRangeEdgeBand<T extends { price: number }>(
   levels: T[],
   range: RangeEdgeLevels | null | undefined,
@@ -224,4 +242,4 @@ export function filterLevelsInRangeEdgeBand<T extends { price: number }>(
 }
 
 export const NO_IN_BAND_LEVELS_MESSAGE =
-  'No liquidity levels in the ±10 strategy band — stand by or place manually at the range edge.'
+  'No liquidity levels in the ±10 strategy bands (H / 50% / L) — stand by or place manually at those magnets.'

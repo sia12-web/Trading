@@ -215,23 +215,23 @@ export function deskPlaybookHint(mode: DeskPlaybookMode, instrument?: string): s
   const tokyo = instrument === 'NIKKEI'
   switch (mode) {
     case 'us_range':
-      return 'Prior NYC session range — up to 2 probes @ 0.25% (entries within ±10 pts of range high/low). Unlocks after morning clock ends or morning probes are exhausted.'
+      return 'Prior NYC session range — up to 2 probes @ 0.25% (entries within ±10 pts of range high, 50% mid, or low). Unlocks after morning clock ends or morning probes are exhausted.'
     case 'ib':
       return tokyo
-        ? 'Tokyo IB range — up to 2 probes @ 0.25% (entries within ±10 pts). Unlocks after US Range clock ends or US Range probes are exhausted.'
-        : 'Initial Balance — up to 2 probes @ 0.25% (entries within ±10 pts). Auto-takes over when IB locks if OR30 was skipped (OR30 is optional and sits inside the first hour).'
+        ? 'Tokyo IB range — up to 2 probes @ 0.25% (entries within ±10 pts of H / 50% / L). Unlocks after US Range clock ends or US Range probes are exhausted.'
+        : 'Initial Balance — up to 2 probes @ 0.25% (entries within ±10 pts of H / 50% / L). Auto-takes over when IB locks if OR30 was skipped (OR30 is optional and sits inside the first hour).'
     case 'lunch_break':
       return tokyo
         ? 'US Range entry closed. Prep for Tokyo IB — levels update. IB opens on the clock (or earlier if US Range probes were exhausted).'
         : 'IB entry closed. Prep for lunch-range — levels update. Lunch opens on the clock (or earlier if IB probes were exhausted).'
     case 'lunch_range':
-      return 'Lunch-range — up to 2 probes @ 0.25% while the PM entry window is open (entries within ±10 pts of range high/low).'
+      return 'Lunch-range — up to 2 probes @ 0.25% while the PM entry window is open (entries within ±10 pts of range high, 50% mid, or low).'
     case 'done':
       return 'Entry windows done for today — manage if open (confirm lunch close or ride to cash close), no new entries.'
     default:
       return tokyo
-        ? 'Morning OR30 — optional (up to 2 probes @ 0.25%, ±10 pts once locked). Skip freely → US Range then Tokyo IB (day cap 6).'
-        : 'Morning OR30 — optional (up to 2 probes @ 0.25%, ±10 pts once locked). Skip freely; when IB locks with no morning fill, desk auto-moves to IB (OR30 finished).'
+        ? 'Morning OR30 — optional (up to 2 probes @ 0.25%, ±10 of H / 50% / L once locked). Skip freely → US Range then Tokyo IB (day cap 6).'
+        : 'Morning OR30 — optional (up to 2 probes @ 0.25%, ±10 of H / 50% / L once locked). Skip freely; when IB locks with no morning fill, desk auto-moves to IB (OR30 finished).'
   }
 }
 

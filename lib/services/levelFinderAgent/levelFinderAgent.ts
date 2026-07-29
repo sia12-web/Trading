@@ -520,7 +520,7 @@ How to use it (big-desk volume map):
       analysisMode === 'us_range'
         ? `
 US RANGE PLAYBOOK MODE (Nikkei slot 2 — prior NYC session range):
-- Desk is live-trading the US Range window (${midWindow} ${tzLabel}) — up to 2 probes @ 0.25% (entries within ±10 pts of US Range H/L). Morning OR30 does not lock this window.
+- Desk is live-trading the US Range window (${midWindow} ${tzLabel}) — up to 2 probes @ 0.25% (entries within ±10 pts of US Range H / 50% mid / L). Morning OR30 does not lock this window.
 - PRIMARY BAIT this run: US Range (prior NYC H/L). Prefer stop pools beyond NYC extremes + POC/AVWAP. Do not frame as Tokyo IB or morning OR30.
 - Build tradeable levels off the prior NYC session high/low (breakout / mean-reversion), FLIP/RETEST from the brief, AVWAP/POC confluence.
 - Use ONLY the DESK BRIEF + RANGE LIQUIDITY MAP + candle/AVWAP/volume-profile tables. Frame as US Range playbook — NOT Tokyo IB, NOT morning OR30.
@@ -529,14 +529,14 @@ US RANGE PLAYBOOK MODE (Nikkei slot 2 — prior NYC session range):
           ? tokyo
             ? `
 IB PLAYBOOK MODE (Tokyo Initial Balance — slot 3):
-- Desk is live-trading Tokyo IB (${lateWindow} ${tzLabel}) — up to 2 probes @ 0.25% (entries within ±10 pts of Tokyo IB H/L). Earlier OR30/US Range fills do not lock this window.
+- Desk is live-trading Tokyo IB (${lateWindow} ${tzLabel}) — up to 2 probes @ 0.25% (entries within ±10 pts of Tokyo IB H / 50% mid / L). Earlier OR30/US Range fills do not lock this window.
 - PRIMARY BAIT this run: Tokyo IB H/L. Prefer stop pools beyond Tokyo IB extremes + POC/AVWAP. OR30/US Range are secondary only.
 - Build tradeable IB levels: IB high/low breakout and mean-reversion magnets, FLIP/RETEST from the brief, AVWAP/POC confluence.
 - Use ONLY the DESK BRIEF + RANGE LIQUIDITY MAP + candle tables. Frame as Tokyo IB playbook — not US Range, not morning OR30.
 `
             : `
 IB PLAYBOOK MODE (Initial Balance entry refresh — NY slot 2):
-- Desk is live-trading the IB window (${midWindow} ${tzLabel}) — up to 2 probes @ 0.25% (entries within ±10 pts of IB H/L). Morning OR30 does not lock this window.
+- Desk is live-trading the IB window (${midWindow} ${tzLabel}) — up to 2 probes @ 0.25% (entries within ±10 pts of IB H / 50% mid / L). Morning OR30 does not lock this window.
 - PRIMARY BAIT this run: IB H/L. Prefer stop pools beyond IB extremes + POC/AVWAP. OR30 is secondary only.
 - Build tradeable IB levels: IB high/low breakout and mean-reversion magnets, FLIP/RETEST from the brief, AVWAP/POC confluence.
 - Use ONLY the DESK BRIEF + RANGE LIQUIDITY MAP + candle/AVWAP/volume-profile tables. Frame levels as IB playbook entries (not morning OR30, not lunch-range).
@@ -558,14 +558,14 @@ AFTERNOON MODE (watch-only — this run is the post-entry memory refresh):
 `
               : `
 MORNING OR30 PLAYBOOK MODE:
-- First 30 minutes after cash open define the Opening Range (OR30). Build morning playbook levels for the OR30 / morning entry window (${open}–${entryEnd} ${tzLabel}) — up to 2 fills @ 0.25% risk, entries within ±10 pts of OR30 high/low.
+- First 30 minutes after cash open define the Opening Range (OR30). Build morning playbook levels for the OR30 / morning entry window (${open}–${entryEnd} ${tzLabel}) — up to 2 fills @ 0.25% risk, entries within ±10 pts of OR30 high / 50% mid / low.
 - PRIMARY BAIT this run: OR30 H/L (once formed). Before OR30 locks, overnight/London stop pools may seed the morning book, then re-anchor to OR30.
 - Prefer OR30 high/low magnets, opening-drive structure, stop-pool liquidity beyond bait highs/lows, AVWAP/POC confluence.
 `
 
     const deskCadence = tokyo
-      ? `- Three ranges / up to 2 probes each @ 0.25% (day ≤ 6): Morning OR30 ${open}–${entryEnd} ${tzLabel} → US Range (prior NYC H/L) ${midWindow} ${tzLabel} → ${prepLabel} (levels update) → Tokyo IB ${lateWindow} ${tzLabel}. Next window unlocks when prior clock ends or probes are exhausted. Entries only within ±10 pts of active range high/low. Lunch ${lunch} ${tzLabel} is confirm-close only; unconfirmed books ride to cash-close flatten at ${close} ${tzLabel}.`
-      : `- Three ranges / up to 2 probes each @ 0.25% (day ≤ 6): Morning OR30 ${open}–${entryEnd} ${tzLabel} → IB ${midWindow} ${tzLabel} → ${prepLabel} (levels update) → lunch-range ${lateWindow} ${tzLabel}. Next window unlocks when prior clock ends or probes are exhausted. Entries only within ±10 pts of active range high/low. Lunch ${lunch} ${tzLabel} is confirm-close only; unconfirmed books ride to cash-close flatten at ${close} ${tzLabel}.`
+      ? `- Three ranges / up to 2 probes each @ 0.25% (day ≤ 6): Morning OR30 ${open}–${entryEnd} ${tzLabel} → US Range (prior NYC H/L) ${midWindow} ${tzLabel} → ${prepLabel} (levels update) → Tokyo IB ${lateWindow} ${tzLabel}. Next window unlocks when prior clock ends or probes are exhausted. Entries only within ±10 pts of active range high, 50% mid, or low. Lunch ${lunch} ${tzLabel} is confirm-close only; unconfirmed books ride to cash-close flatten at ${close} ${tzLabel}.`
+      : `- Three ranges / up to 2 probes each @ 0.25% (day ≤ 6): Morning OR30 ${open}–${entryEnd} ${tzLabel} → IB ${midWindow} ${tzLabel} → ${prepLabel} (levels update) → lunch-range ${lateWindow} ${tzLabel}. Next window unlocks when prior clock ends or probes are exhausted. Entries only within ±10 pts of active range high, 50% mid, or low. Lunch ${lunch} ${tzLabel} is confirm-close only; unconfirmed books ride to cash-close flatten at ${close} ${tzLabel}.`
 
     const rangeLiquidityMap = tokyo
       ? `

@@ -301,7 +301,7 @@ export function formatRangeLiquidityBriefForPrompt(
     `Instrument: ${brief.instrument} · tip ${brief.tip} · desk ranges: ${deskMap}`,
     `Analysis mode: ${brief.analysisMode} · primary bait: ${brief.activeLabel ?? 'none (watch all formed ranges)'}`,
     '',
-    'RULE: Range H/L = retail BAIT (where retail enters). Desk ENTRY = stop pool JUST BEYOND that edge (±0.05–0.12% / wick pad). Prefer confluence with printed POC/HVN or AVWAP. Never return the exact range H/L as the entry print.',
+    'RULE: Range H/L = retail BAIT (where retail enters). 50% mid = pullback / reverse magnet (legal ±10 entry). Desk EDGE ENTRY = stop pool JUST BEYOND H/L (±0.05–0.12% / wick pad). Prefer confluence with printed POC/HVN or AVWAP. Never return the exact range H/L as the edge-hunt entry print (mid entries sit on equilibrium).',
     '',
   ]
 
@@ -317,7 +317,7 @@ export function formatRangeLiquidityBriefForPrompt(
   if (brief.active) {
     lines.push(
       '',
-      `PRIMARY BAIT (${brief.active.label}): hunt stops ABOVE ${brief.active.high} (short liquidity) and BELOW ${brief.active.low} (buy liquidity). Earlier ranges = secondary magnets / polarity flips if broken.`
+      `PRIMARY BAIT (${brief.active.label}): hunt stops ABOVE ${brief.active.high} (short liquidity) and BELOW ${brief.active.low} (buy liquidity). 50% mid ${brief.active.mid} = pullback/reverse entry magnet (±10). Earlier ranges = secondary magnets / polarity flips if broken.`
     )
   } else if (brief.analysisMode === 'afternoon') {
     lines.push(

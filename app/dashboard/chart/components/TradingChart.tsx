@@ -3455,7 +3455,15 @@ export function TradingChart({
 
       e.preventDefault()
       e.stopPropagation()
-      const dir: 'LONG' | 'SHORT' = hit.edge === 'high' ? 'SHORT' : 'LONG'
+      const dir: 'LONG' | 'SHORT' =
+        hit.edge === 'high'
+          ? 'SHORT'
+          : hit.edge === 'low'
+            ? 'LONG'
+            : // 50% mid: fade from whichever side price is on (above mid → short bias)
+              livePrice != null && Number.isFinite(livePrice) && livePrice > hit.center
+              ? 'SHORT'
+              : 'LONG'
       openRiskBox(hit.center, { direction: dir })
     }
 
@@ -4846,7 +4854,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     let anyLive = false
     for (const strategyRange of overlays) {
       const bands = rangeEdgeBands(strategyRange)
-      if (bands.length < 2) continue
+      if (bands.length < 3) continue
       const label = strategyRange.label || 'range'
       const entryLive =
         !!canPlaceOrder &&
@@ -4858,7 +4866,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       const colors = palette[label] ?? fallback
       const highColor = entryLive ? colors.high : colors.highDim
       const lowColor = entryLive ? colors.low : colors.lowDim
+      const midColor = entryLive ? 'rgba(168, 85, 247, 0.95)' : 'rgba(168, 85, 247, 0.4)'
       const highBand = bands.find((b) => b.edge === 'high')!
+      const midBand = bands.find((b) => b.edge === 'mid')!
       const lowBand = bands.find((b) => b.edge === 'low')!
       const specs: Array<{ price: number; color: string; title: string }> = [
         {
@@ -4870,6 +4880,16 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           price: highBand.min,
           color: highColor,
           title: `±${RANGE_EDGE_BAND_POINTS} ${label} H−`,
+        },
+        {
+          price: midBand.max,
+          color: midColor,
+          title: `±${RANGE_EDGE_BAND_POINTS} ${label} 50%+`,
+        },
+        {
+          price: midBand.min,
+          color: midColor,
+          title: `±${RANGE_EDGE_BAND_POINTS} ${label} 50%−`,
         },
         {
           price: lowBand.max,
@@ -4905,8 +4925,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     const nameList = names.join(' · ')
     setEntryBandLabel(
       anyLive
-        ? `${nameList} ±${RANGE_EDGE_BAND_POINTS} entry zones`
-        : `${nameList} ±${RANGE_EDGE_BAND_POINTS} (shaped — entry window closed or inactive)`
+        ? `${nameList} ±${RANGE_EDGE_BAND_POINTS} H / 50% / L entry zones`
+        : `${nameList} ±${RANGE_EDGE_BAND_POINTS} H / 50% / L (shaped — entry window closed or inactive)`
     )
 
     return () => {
@@ -5034,7 +5054,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           high: r.high,
           low: r.low,
           nextHint:
-            'Optional morning probe (±10 H/L). If unused when IB locks → hand off to IB.',
+            'Optional morning probe (±10 H / 50% / L). If unused when IB locks → hand off to IB.',
         })
         onDeskAlert({
           ...note,
@@ -5054,8 +5074,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           low: r.low,
           nextHint:
             instrument === 'NIKKEI'
-              ? `Tokyo IB shaped now — entry window opens ${deskLocalHmsAsTraderDisplay('13:30:00', 'Asia/Tokyo')} ${TRADER_DISPLAY_LABEL} (±10 of locked H/L). Until then US Range is slot 2.`
-              : 'IB entry window is open (±10 of locked H/L).',
+              ? `Tokyo IB shaped now — entry window opens ${deskLocalHmsAsTraderDisplay('13:30:00', 'Asia/Tokyo')} ${TRADER_DISPLAY_LABEL} (±10 of locked H / 50% / L). Until then US Range is slot 2.`
+              : 'IB entry window is open (±10 of locked H / 50% / L).',
         })
         onDeskAlert({
           ...note,
@@ -5072,7 +5092,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           rangeLabel: 'Lunch-range',
           high: r.high,
           low: r.low,
-          nextHint: 'Lunch-range entry window is open (±10 of locked H/L).',
+          nextHint: 'Lunch-range entry window is open (±10 of locked H / 50% / L).',
         })
         onDeskAlert({
           ...note,
@@ -5090,7 +5110,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           high: r.high,
           low: r.low,
           nextHint:
-            'Already shaped from prior NYC session. Entry when US Range window unlocks (±10 H/L).',
+            'Already shaped from prior NYC session. Entry when US Range window unlocks (±10 H / 50% / L).',
         })
         onDeskAlert({
           ...note,
@@ -5392,11 +5412,14 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-extrabold uppercase tracking-wide animate-pulse shadow-sm ${
               edgeProximity.edge === 'high'
                 ? 'border-sky-500/80 bg-sky-950/80 text-sky-100'
-                : 'border-emerald-500/80 bg-emerald-950/80 text-emerald-100'
+                : edgeProximity.edge === 'mid'
+                  ? 'border-violet-500/80 bg-violet-950/80 text-violet-100'
+                  : 'border-emerald-500/80 bg-emerald-950/80 text-emerald-100'
             }`}
-            title={`Live price is within ±10 of ${edgeProximity.label} ${edgeProximity.edge} (${edgeProximity.center.toLocaleString()}). Limit or market allowed.`}
+            title={`Live price is within ±10 of ${edgeProximity.label} ${edgeProximity.edge === 'mid' ? '50% mid' : edgeProximity.edge} (${edgeProximity.center.toLocaleString()}). Limit allowed.`}
           >
-            IN BAND · {edgeProximity.label} {edgeProximity.edge.toUpperCase()} (
+            IN BAND · {edgeProximity.label}{' '}
+            {edgeProximity.edge === 'mid' ? '50%' : edgeProximity.edge.toUpperCase()} (
             {edgeProximity.center.toLocaleString()})
           </span>
         )}
@@ -6240,7 +6263,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     left: '32%',
                     top: `${entryY - 14}px`,
                   }}
-                  title="Drag Entry within ±10 of range high or low"
+                  title="Drag Entry within ±10 of range high, 50% mid, or low"
                 >
                   {/* Explicit Buy / Sell Placement Button — ONLY BUTTON THAT PLACES ORDER */}
                   <button

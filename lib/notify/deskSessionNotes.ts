@@ -75,7 +75,7 @@ export function formatSessionScheduleBlock(
       `• Tokyo IB locks ~${deskLocalHmsAsTraderDisplay('10:00:00', s.tz, now)} (first hour) — entry ${ibWin}`,
       `• Lunch confirm ${lunchConfirm}`,
       `• Session END (cash close) ${close}`,
-      `• Ladder 2/2/2 @ 0.25% · ±10 only after active range locks`,
+      `• Ladder 2/2/2 @ 0.25% · ±10 of H / 50% mid / L after active range locks`,
     ].join('\n')
   }
 
@@ -100,7 +100,7 @@ export function formatSessionScheduleBlock(
     `• Lunch-range locks 13:30 · entry ${lunchWin}`,
     `• Lunch confirm ${lunchConfirm}`,
     `• Session END (cash close) ${close}`,
-    `• Ladder 2/2/2 @ 0.25% · ±10 only after active range locks · OR30 optional`,
+    `• Ladder 2/2/2 @ 0.25% · ±10 of H / 50% mid / L after active range locks · OR30 optional`,
   ].join('\n')
 }
 
@@ -181,7 +181,8 @@ export function formatRangeShapedNote(args: {
   const body = [
     `High ${args.high.toLocaleString()}`,
     `Low  ${args.low.toLocaleString()}`,
-    `±10 bands are live around H and L.`,
+    `±10 bands are live around H, 50% mid, and L.`,
+    `Mid ${(Math.round(((args.high + args.low) / 2) * 100) / 100).toLocaleString()} — pullback / reverse magnet.`,
     args.nextHint || 'Entries allowed when this playbook window is unlocked.',
   ].join('\n')
   return {
@@ -201,11 +202,12 @@ export function formatEntryPermissionNote(args: {
 }): DeskNotePayload {
   const title = `${args.instrument} · ENTRY OPEN · ${args.windowLabel}`
   const lines = [
-    `You may place probes in this window (2 @ 0.25%, ±10 of locked range H/L).`,
+    `You may place probes in this window (2 @ 0.25%, ±10 of locked range H / 50% mid / L).`,
   ]
   if (args.rangeHigh != null && args.rangeLow != null) {
+    const mid = Math.round(((args.rangeHigh + args.rangeLow) / 2) * 100) / 100
     lines.push(
-      `Active range H ${args.rangeHigh.toLocaleString()} · L ${args.rangeLow.toLocaleString()}`
+      `Active range H ${args.rangeHigh.toLocaleString()} · 50% ${mid.toLocaleString()} · L ${args.rangeLow.toLocaleString()}`
     )
   }
   if (args.ladderHint) lines.push(`Ladder: ${args.ladderHint}`)
@@ -233,18 +235,23 @@ export function formatWindowUnlockAlertMessage(args: {
 
 export function formatRangeEdgeAlertMessage(args: {
   instrument: string
-  proximity: { edge: 'high' | 'low'; center: number; label: string }
+  proximity: { edge: 'high' | 'low' | 'mid'; center: number; label: string }
   livePrice: number
   mode: 'limit' | 'market' | 'either'
 }): DeskNotePayload {
-  const edgeLabel = args.proximity.edge === 'high' ? 'HIGH' : 'LOW'
+  const edgeLabel =
+    args.proximity.edge === 'high'
+      ? 'HIGH'
+      : args.proximity.edge === 'low'
+        ? 'LOW'
+        : '50% MID'
   const title = `${args.instrument} · IN BAND · ${args.proximity.label} ${edgeLabel}`
   const modeHint =
     args.mode === 'market'
-      ? 'Market entry is in the ±10 band.'
+      ? 'Market entry is in the ±10 band (H / 50% / L).'
       : args.mode === 'limit'
-        ? 'Limit / market entries allowed in the ±10 band.'
-        : 'Limit or market — price is in the ±10 strategy band.'
+        ? 'Limit entries allowed in the ±10 band (H / 50% mid / L).'
+        : 'Limit — price is in the ±10 strategy band (H / 50% mid / L).'
   const body = [
     modeHint,
     `Live ${args.livePrice.toLocaleString()} · ${edgeLabel} ${args.proximity.center.toLocaleString()} (±10)`,

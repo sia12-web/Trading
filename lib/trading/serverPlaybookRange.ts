@@ -1,5 +1,5 @@
 /**
- * Server-side locked playbook range for ±10 entry checks.
+ * Server-side locked playbook range for ±10 entry checks (H / 50% mid / L).
  * Recomputes OR30 / IB / US Range / Lunch from OANDA candles so clients
  * cannot spoof range_high / range_low.
  */
@@ -113,7 +113,7 @@ export async function resolveServerPlaybookRange(args: {
 }
 
 /**
- * Server range is the sole authority for ±10 entry checks.
+ * Server range is the sole authority for ±10 entry checks (H / 50% mid / L).
  * Client H/L is ignored for pass/fail (chart live-tip merge / stale paint /
  * Yahoo fallback can differ from OANDA by more than 1pt without spoofing).
  * Spoofed client ranges cannot widen the band — entry is always checked vs server.

@@ -11,8 +11,10 @@ import {
   filterLevelsInRangeEdgeBand,
   findRangeEdgeBandHit,
   isEntryWithinRangeEdgeBand,
+  nearestRangeEdge,
   rangeEdgeBands,
   rangeEdgeBandsEnvelope,
+  rangeMidpoint,
   RANGE_EDGE_BAND_POINTS,
 } from '../lib/trading/rangeEdgeEntryGate'
 
@@ -20,12 +22,14 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
 
 {
   assert.equal(RANGE_EDGE_BAND_POINTS, 10)
+  assert.equal(rangeMidpoint(range), 39950)
   const bands = rangeEdgeBands(range)
-  assert.equal(bands.length, 2)
+  assert.equal(bands.length, 3)
   assert.deepEqual(
     bands.map((b) => [b.edge, b.min, b.max]),
     [
       ['high', 39990, 40010],
+      ['mid', 39940, 39960],
       ['low', 39890, 39910],
     ]
   )
@@ -37,7 +41,9 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
   assert.equal(isEntryWithinRangeEdgeBand(39990, range), true)
   assert.equal(isEntryWithinRangeEdgeBand(39900, range), true)
   assert.equal(isEntryWithinRangeEdgeBand(39910, range), true)
-  assert.equal(isEntryWithinRangeEdgeBand(39950, range), false, 'mid-range illegal')
+  assert.equal(isEntryWithinRangeEdgeBand(39950, range), true, '50% mid is legal')
+  assert.equal(isEntryWithinRangeEdgeBand(39945, range), true, 'mid band interior')
+  assert.equal(isEntryWithinRangeEdgeBand(39970, range), false, 'between mid and high illegal')
   assert.equal(isEntryWithinRangeEdgeBand(40011, range), false)
   assert.equal(isEntryWithinRangeEdgeBand(39889, range), false)
 }
@@ -45,31 +51,41 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
 {
   const ok = assertRangeEdgeEntry({ entry: 40005, range })
   assert.equal(ok.ok, true)
-  const bad = assertRangeEdgeEntry({ entry: 39950, range })
+  const midOk = assertRangeEdgeEntry({ entry: 39950, range })
+  assert.equal(midOk.ok, true)
+  const bad = assertRangeEdgeEntry({ entry: 39970, range })
   assert.equal(bad.ok, false)
-  if (!bad.ok) assert.match(bad.message, /within 10 pts/i)
+  if (!bad.ok) assert.match(bad.message, /50% mid/i)
   const missing = assertRangeEdgeEntry({ entry: 40000, range: null })
   assert.equal(missing.ok, false)
 }
 
 {
-  const levels = [{ price: 40005 }, { price: 39950 }, { price: 39895 }]
+  const levels = [{ price: 40005 }, { price: 39950 }, { price: 39970 }, { price: 39895 }]
   const kept = filterLevelsInRangeEdgeBand(levels, range)
   assert.deepEqual(
     kept.map((l) => l.price),
-    [40005, 39895]
+    [40005, 39950, 39895]
   )
 }
 
 {
   assert.equal(clampPriceToRangeEdgeBands(40005, range), 40005, 'in-band unchanged')
   assert.equal(clampPriceToRangeEdgeBands(39905, range), 39905, 'low band unchanged')
-  assert.equal(clampPriceToRangeEdgeBands(39950, range), 39990, 'exact mid ties to high band edge')
+  assert.equal(clampPriceToRangeEdgeBands(39950, range), 39950, 'exact mid stays')
+  assert.equal(clampPriceToRangeEdgeBands(39955, range), 39955, 'mid band interior')
   assert.equal(clampPriceToRangeEdgeBands(39980, range), 39990, 'near high snaps to high min')
   assert.equal(clampPriceToRangeEdgeBands(39920, range), 39910, 'near low snaps to low max')
+  assert.equal(clampPriceToRangeEdgeBands(39965, range), 39960, 'between mid/high snaps to mid max')
   assert.equal(clampPriceToRangeEdgeBands(40050, range), 40010, 'above high clamps to high max')
   assert.equal(clampPriceToRangeEdgeBands(39800, range), 39890, 'below low clamps to low min')
   assert.equal(clampPriceToRangeEdgeBands(40000, null), null)
+}
+
+{
+  assert.equal(nearestRangeEdge(39950, range), 'mid')
+  assert.equal(nearestRangeEdge(40000, range), 'high')
+  assert.equal(nearestRangeEdge(39900, range), 'low')
 }
 
 {
@@ -86,6 +102,11 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
     clampPriceToNearestRangeEdgeBands(40005, [us, ib, or30]),
     40005,
     'in US high band stays put'
+  )
+  assert.equal(
+    clampPriceToNearestRangeEdgeBands(39750, [us, ib, or30]),
+    39750,
+    'US 50% mid band stays put'
   )
   assert.equal(
     clampPriceToNearestRangeEdgeBands(40045, [us, ib, or30]),
@@ -122,9 +143,10 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
   assert.equal(clampPriceToRangeEdgeEnvelope(40100, [range]), 40010, 'above envelope clamps to max')
   assert.equal(clampPriceToRangeEdgeEnvelope(39800, [range]), 39890, 'below envelope clamps to min')
   assert.equal(clampPriceToRangeEdgeEnvelope(39950, []), null)
-  // After free mid drag, release snap still lands on a legal edge band
-  assert.equal(clampPriceToNearestRangeEdgeBands(39950, [range]), 39990)
+  // After free mid drag, release snap lands on nearest legal band (mid preferred at exact mid)
+  assert.equal(clampPriceToNearestRangeEdgeBands(39950, [range]), 39950)
   assert.equal(clampPriceToNearestRangeEdgeBands(39920, [range]), 39910)
+  assert.equal(clampPriceToNearestRangeEdgeBands(39970, [range]), 39960)
 }
 
 {
@@ -134,7 +156,10 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
   const hitLow = findRangeEdgeBandHit(39905, [range])
   assert.equal(hitLow?.edge, 'low')
   assert.equal(hitLow?.center, 39900)
-  assert.equal(findRangeEdgeBandHit(39950, [range]), null, 'mid-range is not a band hit')
+  const hitMid = findRangeEdgeBandHit(39950, [range])
+  assert.equal(hitMid?.edge, 'mid')
+  assert.equal(hitMid?.center, 39950)
+  assert.equal(findRangeEdgeBandHit(39970, [range]), null, 'gap between mid and high is not a hit')
 }
 
 console.log('range_edge_entry_gate: all passed')

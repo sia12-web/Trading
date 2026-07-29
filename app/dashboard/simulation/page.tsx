@@ -133,7 +133,7 @@ export default function SimulationPage() {
         <p className="text-sm text-gray-500 mt-1 max-w-2xl">
           Replay a past full session on this desk. Same rules as live: up to 2
           probes per window @ 0.25% (Morning → IB/US → Lunch-range), day cap 6,
-          entries within ±10 pts of range high/low. Paper
+          entries within ±10 pts of range high, 50% mid, or low. Paper
           fills, SL/TP, and manage stay here; closed paper orders land in{' '}
           <Link href="/dashboard/journal?tab=sim" className="text-violet-400 hover:underline">
             Order History (Simulation)
