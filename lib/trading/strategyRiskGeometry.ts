@@ -293,3 +293,42 @@ export function activeRangeForPlaybook(args: {
   }
   return or30Shaped
 }
+
+/**
+ * Chart overlay ±10 bands: every shaped range whose script/toggle is ON.
+ * Entry legality still uses {@link activeRangeForPlaybook} + session gates —
+ * this only controls which ±10 highlights are painted for study.
+ */
+export function visibleOverlayEntryRanges(args: {
+  instrument: string
+  showOr30?: boolean
+  showIb?: boolean
+  showUsRange?: boolean
+  showLunchRange?: boolean
+  or30?: { high: number; low: number; complete?: boolean } | null
+  ib?: { high: number; low: number; complete?: boolean } | null
+  usRange?: { high: number; low: number; complete?: boolean } | null
+  lunchRange?: { high: number; low: number; complete?: boolean } | null
+}): StrategyRangeEdges[] {
+  const tokyo = args.instrument === 'NIKKEI'
+  const out: StrategyRangeEdges[] = []
+
+  const push = (
+    label: string,
+    r: { high: number; low: number; complete?: boolean } | null | undefined,
+    show: boolean | undefined,
+    mustBeComplete: boolean
+  ) => {
+    if (!show) return
+    if (!r || !(r.high > r.low)) return
+    if (mustBeComplete && r.complete !== true) return
+    out.push({ label, high: r.high, low: r.low })
+  }
+
+  // OR30 / US / lunch require an explicit lock; IB is only present after the hour locks.
+  push('OR30', args.or30, args.showOr30, true)
+  push('US Range', args.usRange, args.showUsRange && tokyo, true)
+  push(tokyo ? 'Tokyo IB' : 'IB', args.ib, args.showIb, false)
+  push('Lunch-range', args.lunchRange, args.showLunchRange && !tokyo, true)
+  return out
+}

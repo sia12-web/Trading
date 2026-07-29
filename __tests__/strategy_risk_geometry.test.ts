@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict'
 import {
   activeRangeForPlaybook,
+  visibleOverlayEntryRanges,
   strategyEntryRisk,
   strategyStopDetail,
   strategyStopPrice,
@@ -257,6 +258,48 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
     }),
     null,
     'lunch must finish (13:30 ET) before ±10 lunch-range entries'
+  )
+
+  const overlays = visibleOverlayEntryRanges({
+    instrument: 'NIKKEI',
+    showOr30: true,
+    showIb: true,
+    showUsRange: true,
+    showLunchRange: true,
+    or30: { high: 40_050, low: 39_950, complete: true },
+    ib: { high: 40_100, low: 39_900 },
+    usRange: { high: 40_000, low: 39_500, complete: true },
+    lunchRange: { high: 18_500, low: 18_400, complete: true },
+  })
+  assert.deepEqual(
+    overlays.map((o) => o.label),
+    ['OR30', 'US Range', 'Tokyo IB'],
+    'Nikkei overlays paint OR30 + US + Tokyo IB when toggled (no NYC lunch)'
+  )
+  assert.deepEqual(
+    visibleOverlayEntryRanges({
+      instrument: 'NIKKEI',
+      showOr30: false,
+      showIb: true,
+      showUsRange: false,
+      or30: { high: 40_050, low: 39_950, complete: true },
+      ib: { high: 40_100, low: 39_900 },
+      usRange: { high: 40_000, low: 39_500, complete: true },
+    }).map((o) => o.label),
+    ['Tokyo IB'],
+    'toggling OR30/US off leaves only Tokyo IB ±10'
+  )
+  assert.deepEqual(
+    visibleOverlayEntryRanges({
+      instrument: 'NASDAQ',
+      showOr30: true,
+      showIb: true,
+      showLunchRange: true,
+      or30: { high: 18_200, low: 18_100, complete: true },
+      ib: { high: 18_250, low: 18_050 },
+      lunchRange: { high: 18_500, low: 18_400, complete: true },
+    }).map((o) => o.label),
+    ['OR30', 'IB', 'Lunch-range']
   )
 }
 

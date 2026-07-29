@@ -96,6 +96,7 @@ import {
 import { attemptLadderFromCounts } from '@/lib/trading/attemptLadder'
 import {
   activeRangeForPlaybook,
+  visibleOverlayEntryRanges,
   type StrategyRangeEdges,
   type StrategyRiskMagnets,
 } from '@/lib/trading/strategyRiskGeometry'
@@ -4524,7 +4525,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     return rangeEdgeProximity(livePrice, strategyRange)
   }, [canPlaceOrder, livePrice, playbookMode, instrument, rangeStrategy, morningAttempts])
 
-  /** Paint ±10 entry zones on chart (H±10 and L±10 of locked playbook range). */
+  /** Paint ±10 entry zones for every shaped range whose overlay toggle is ON. */
   useEffect(() => {
     const host = priceLineHostRef.current
     const clearBands = () => {
@@ -4547,7 +4548,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       return
     }
 
-    const strategyRange = activeRangeForPlaybook({
+    const active = activeRangeForPlaybook({
       playbookMode,
       instrument,
       or30: or30RangeRef.current,
@@ -4556,79 +4557,130 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       lunchRange: lunchRangeRef.current,
       morningAttempts,
     })
-    // US Range overlay toggle clears H/L, BRK/REJ, tails, and ±10 bands from that feature
-    if (strategyRange?.label === 'US Range' && !showUsRange) {
-      clearBands()
-      return
-    }
-    const bands = strategyRange ? rangeEdgeBands(strategyRange) : []
-    if (!strategyRange || bands.length < 2) {
+    const overlays = visibleOverlayEntryRanges({
+      instrument,
+      showOr30,
+      showIb: showIbBreakouts,
+      showUsRange,
+      showLunchRange,
+      or30: or30RangeRef.current,
+      ib: ibRangeRef.current,
+      usRange: usRangeRef.current,
+      lunchRange: lunchRangeRef.current,
+    })
+    if (overlays.length === 0) {
       clearBands()
       return
     }
 
     clearBands()
-    const bright = !!canPlaceOrder
-    const highColor = bright ? 'rgba(56, 189, 248, 0.95)' : 'rgba(56, 189, 248, 0.4)'
-    const lowColor = bright ? 'rgba(52, 211, 153, 0.95)' : 'rgba(52, 211, 153, 0.4)'
-    const label = strategyRange.label || 'range'
-    const highBand = bands.find((b) => b.edge === 'high')!
-    const lowBand = bands.find((b) => b.edge === 'low')!
-    const specs: Array<{
-      price: number
-      color: string
-      title: string
-    }> = [
-      {
-        price: highBand.max,
-        color: highColor,
-        title: `±${RANGE_EDGE_BAND_POINTS} ${label} H+`,
-      },
-      {
-        price: highBand.min,
-        color: highColor,
-        title: `±${RANGE_EDGE_BAND_POINTS} ${label} H−`,
-      },
-      {
-        price: lowBand.max,
-        color: lowColor,
-        title: `±${RANGE_EDGE_BAND_POINTS} ${label} L+`,
-      },
-      {
-        price: lowBand.min,
-        color: lowColor,
-        title: `±${RANGE_EDGE_BAND_POINTS} ${label} L−`,
-      },
-    ]
 
-    for (const s of specs) {
-      try {
-        entryBandLinesRef.current.push(
-          host.createPriceLine({
-            price: s.price,
-            color: s.color,
-            lineWidth: bright ? 2 : 1,
-            lineStyle: LineStyle.Dashed,
-            axisLabelVisible: true,
-            title: s.title,
-          })
-        )
-      } catch {
-        /* ignore */
+    const palette: Record<
+      string,
+      { high: string; low: string; highDim: string; lowDim: string }
+    > = {
+      OR30: {
+        high: 'rgba(45, 212, 191, 0.95)',
+        low: 'rgba(52, 211, 153, 0.95)',
+        highDim: 'rgba(45, 212, 191, 0.4)',
+        lowDim: 'rgba(52, 211, 153, 0.4)',
+      },
+      IB: {
+        high: 'rgba(56, 189, 248, 0.95)',
+        low: 'rgba(96, 165, 250, 0.95)',
+        highDim: 'rgba(56, 189, 248, 0.4)',
+        lowDim: 'rgba(96, 165, 250, 0.4)',
+      },
+      'Tokyo IB': {
+        high: 'rgba(56, 189, 248, 0.95)',
+        low: 'rgba(96, 165, 250, 0.95)',
+        highDim: 'rgba(56, 189, 248, 0.4)',
+        lowDim: 'rgba(96, 165, 250, 0.4)',
+      },
+      'US Range': {
+        high: 'rgba(248, 113, 113, 0.95)',
+        low: 'rgba(251, 146, 60, 0.95)',
+        highDim: 'rgba(248, 113, 113, 0.4)',
+        lowDim: 'rgba(251, 146, 60, 0.4)',
+      },
+      'Lunch-range': {
+        high: 'rgba(251, 146, 60, 0.95)',
+        low: 'rgba(252, 211, 77, 0.95)',
+        highDim: 'rgba(251, 146, 60, 0.4)',
+        lowDim: 'rgba(252, 211, 77, 0.4)',
+      },
+    }
+    const fallback = {
+      high: 'rgba(56, 189, 248, 0.95)',
+      low: 'rgba(52, 211, 153, 0.95)',
+      highDim: 'rgba(56, 189, 248, 0.4)',
+      lowDim: 'rgba(52, 211, 153, 0.4)',
+    }
+
+    let anyLive = false
+    for (const strategyRange of overlays) {
+      const bands = rangeEdgeBands(strategyRange)
+      if (bands.length < 2) continue
+      const label = strategyRange.label || 'range'
+      const entryLive =
+        !!canPlaceOrder &&
+        !!active &&
+        active.label === label &&
+        active.high === strategyRange.high &&
+        active.low === strategyRange.low
+      if (entryLive) anyLive = true
+      const colors = palette[label] ?? fallback
+      const highColor = entryLive ? colors.high : colors.highDim
+      const lowColor = entryLive ? colors.low : colors.lowDim
+      const highBand = bands.find((b) => b.edge === 'high')!
+      const lowBand = bands.find((b) => b.edge === 'low')!
+      const specs: Array<{ price: number; color: string; title: string }> = [
+        {
+          price: highBand.max,
+          color: highColor,
+          title: `±${RANGE_EDGE_BAND_POINTS} ${label} H+`,
+        },
+        {
+          price: highBand.min,
+          color: highColor,
+          title: `±${RANGE_EDGE_BAND_POINTS} ${label} H−`,
+        },
+        {
+          price: lowBand.max,
+          color: lowColor,
+          title: `±${RANGE_EDGE_BAND_POINTS} ${label} L+`,
+        },
+        {
+          price: lowBand.min,
+          color: lowColor,
+          title: `±${RANGE_EDGE_BAND_POINTS} ${label} L−`,
+        },
+      ]
+      for (const s of specs) {
+        try {
+          entryBandLinesRef.current.push(
+            host.createPriceLine({
+              price: s.price,
+              color: s.color,
+              lineWidth: entryLive ? 2 : 1,
+              lineStyle: LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: s.title,
+            })
+          )
+        } catch {
+          /* ignore */
+        }
       }
     }
+
     setEntryBandsVisible(entryBandLinesRef.current.length > 0)
-    const isUsPreview =
-      instrument === 'NIKKEI' &&
-      label === 'US Range' &&
-      !bright &&
-      playbookMode !== 'us_range'
+    const names = overlays.map((o) => o.label).filter(Boolean)
+    const nameList = names.join(' · ')
     setEntryBandLabel(
-      bright
-        ? `${label} ±${RANGE_EDGE_BAND_POINTS} entry zones`
-        : isUsPreview
-          ? `US Range ±${RANGE_EDGE_BAND_POINTS} (shaped — entries open at Tokyo cash)`
-          : `${label} ±${RANGE_EDGE_BAND_POINTS} (locked — wait for window)`
+      anyLive
+        ? `${nameList} ±${RANGE_EDGE_BAND_POINTS} entry zones`
+        : `${nameList} ±${RANGE_EDGE_BAND_POINTS} (shaped — entry window closed or inactive)`
     )
 
     return () => {
@@ -4653,7 +4705,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     ibShaped,
     lunchLocked,
     usRangeShaped,
+    showOr30,
+    showIbBreakouts,
     showUsRange,
+    showLunchRange,
     livePrice,
     focusTick,
   ])
