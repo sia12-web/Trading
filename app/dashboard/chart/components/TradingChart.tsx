@@ -707,6 +707,9 @@ export function TradingChart({
   } | null>(null)
   const ibRangeRef = useRef<InitialBalanceRange | null>(null)
   const [ibShaped, setIbShaped] = useState(false)
+  /** Mirrored IB H/L for ±10 band effect deps (refs alone do not re-render). */
+  const [ibLevels, setIbLevels] = useState<{ high: number; low: number } | null>(null)
+  /** IB BRK/REJ markers only — blue IB H/L (+ ±10 bands) stay on whenever shaped. */
   const [showIbBreakouts, setShowIbBreakouts] = useState(true)
   /** NYC lunch 12:00–13:30 ET — DOW / NASDAQ only (Mind Over Markets range) */
   const lunchSeriesRef = useRef<{
@@ -2149,6 +2152,7 @@ export function TradingChart({
       levelLinesRef.current = []
       positionLinesRef.current = []
       setIbShaped(false)
+      setIbLevels(null)
       setLunchShaped(false)
       setLunchLocked(false)
       setUsRangeShaped(false)
@@ -2320,6 +2324,8 @@ export function TradingChart({
       }
     }
     setIbShaped(false)
+    setIbLevels(null)
+    ibRangeRef.current = null
     const lunchS = lunchSeriesRef.current
     if (lunchS) {
       try {
@@ -2516,28 +2522,30 @@ export function TradingChart({
       }
 
       // Initial Balance — first-hour H/L, line extended through cash close
+      // Open day follows tip candle (same as OR30) so Nikkei overnight stays aligned.
       const ibSeries = ibSeriesRef.current
       if (ibSeries) {
         const sess = sessionFor(instrument)
-        const todayLocal = new Intl.DateTimeFormat('en-CA', {
+        const tipUnix = ordered.length
+          ? (ordered[ordered.length - 1]!.time as number)
+          : Math.floor(Date.now() / 1000)
+        const nowUnix = Math.max(tipUnix, Math.floor(Date.now() / 1000))
+        const tipDay = new Intl.DateTimeFormat('en-CA', {
           timeZone: sess.tz,
           year: 'numeric',
           month: '2-digit',
           day: '2-digit',
-        }).format(new Date())
+        }).format(new Date(tipUnix * 1000))
         const [oh, om] = sess.marketOpen.split(':').map(Number)
         const [ch, cm] = sess.marketClose.split(':').map(Number)
         const openUnix =
           instrument === 'NIKKEI'
-            ? tokyoDateTimeToUnix(todayLocal, oh!, om || 0)
-            : nyDateTimeToUnix(todayLocal, oh!, om || 0)
+            ? tokyoDateTimeToUnix(tipDay, oh!, om || 0)
+            : nyDateTimeToUnix(tipDay, oh!, om || 0)
         const closeUnix =
           instrument === 'NIKKEI'
-            ? tokyoDateTimeToUnix(todayLocal, ch!, cm || 0)
-            : nyDateTimeToUnix(todayLocal, ch!, cm || 0)
-        const tipUnix = ordered.length
-          ? (ordered[ordered.length - 1]!.time as number)
-          : closeUnix
+            ? tokyoDateTimeToUnix(tipDay, ch!, cm || 0)
+            : nyDateTimeToUnix(tipDay, ch!, cm || 0)
         const ib = computeInitialBalance(
           ordered.map((c) => ({
             time: c.time as number,
@@ -2547,7 +2555,8 @@ export function TradingChart({
             close: c.close,
             volume: c.volume,
           })),
-          openUnix
+          openUnix,
+          nowUnix
         )
         ibRangeRef.current = ib
         if (ib) {
@@ -2572,15 +2581,18 @@ export function TradingChart({
               }))
             )
             setIbShaped(true)
+            setIbLevels({ high: ib.high, low: ib.low })
           } catch {
             ibSeries.high.setData([])
             ibSeries.low.setData([])
             setIbShaped(false)
+            setIbLevels(null)
           }
         } else {
           ibSeries.high.setData([])
           ibSeries.low.setData([])
           setIbShaped(false)
+          setIbLevels(null)
         }
       }
 
@@ -4560,11 +4572,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     const overlays = visibleOverlayEntryRanges({
       instrument,
       showOr30,
-      showIb: showIbBreakouts,
+      // IB H/L overlay is always-on when shaped (Press B = BRK/REJ markers only).
+      // ±10 must follow H/L — never gate on showIbBreakouts.
+      showIb: true,
       showUsRange,
       showLunchRange,
       or30: or30RangeRef.current,
-      ib: ibRangeRef.current,
+      ib: ibLevels ?? ibRangeRef.current,
       usRange: usRangeRef.current,
       lunchRange: lunchRangeRef.current,
     })
@@ -4703,10 +4717,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     morningAttempts,
     or30Locked,
     ibShaped,
+    ibLevels,
     lunchLocked,
     usRangeShaped,
     showOr30,
-    showIbBreakouts,
     showUsRange,
     showLunchRange,
     livePrice,
@@ -4992,8 +5006,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             type="button"
             title={
               showIbBreakouts
-                ? 'IB BRK (needs close beyond H/L + RVOL when volume exists) + REJ (wick reject) markers on. Blue IB H/L lines stay on either way.'
-                : 'Show IB break / rejection markers (Press B). Blue IB H/L lines still paint when the first hour is locked.'
+                ? 'IB BRK (needs close beyond H/L + RVOL when volume exists) + REJ (wick reject) markers on. Blue IB H/L + ±10 bands stay on either way when shaped.'
+                : 'Show IB break / rejection markers (Press B). Blue IB H/L + ±10 bands still paint when the first hour is locked.'
             }
             onClick={() => setShowIbBreakouts((v) => !v)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
@@ -5479,14 +5493,14 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               {entryBandLabel}
             </span>
           )}
-          <span title="Blue IB high/low after first cash hour locks (~10:30 ET / 10:00 JST)">
+          <span title="Blue IB high/low + ±10 bands after first cash hour locks (~10:30 ET / 10:00 JST). Press B only toggles BRK/REJ markers.">
             <span className={ibShaped ? 'text-blue-500' : 'text-gray-600'}>
               IB H/L {ibShaped ? 'on' : 'waiting'}
             </span>
             {ibShaped && (
               <span className="text-gray-600">
                 {' '}
-                · BRK/REJ {showIbBreakouts ? rangeSignalSummary.ib : 'off'}
+                · ±10 on · BRK/REJ {showIbBreakouts ? rangeSignalSummary.ib : 'off'}
               </span>
             )}
           </span>

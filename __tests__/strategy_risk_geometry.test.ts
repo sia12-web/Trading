@@ -291,6 +291,19 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
   )
   assert.deepEqual(
     visibleOverlayEntryRanges({
+      instrument: 'NIKKEI',
+      showOr30: true,
+      showIb: false,
+      showUsRange: true,
+      or30: { high: 40_050, low: 39_950, complete: true },
+      ib: { high: 40_100, low: 39_900 },
+      usRange: { high: 40_000, low: 39_500, complete: true },
+    }).map((o) => o.label),
+    ['OR30', 'US Range'],
+    'showIb false drops Tokyo IB ±10 (chart must pass showIb:true with H/L, not markers toggle)'
+  )
+  assert.deepEqual(
+    visibleOverlayEntryRanges({
       instrument: 'NASDAQ',
       showOr30: true,
       showIb: true,
@@ -300,6 +313,17 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       lunchRange: { high: 18_500, low: 18_400, complete: true },
     }).map((o) => o.label),
     ['OR30', 'IB', 'Lunch-range']
+  )
+  assert.deepEqual(
+    visibleOverlayEntryRanges({
+      instrument: 'NASDAQ',
+      showOr30: false,
+      showIb: true,
+      showLunchRange: false,
+      ib: { high: 18_250, low: 18_050 },
+    }).map((o) => o.label),
+    ['IB'],
+    'NY desks paint IB ±10 whenever showIb + shaped IB (independent of OR30/lunch)'
   )
 }
 
