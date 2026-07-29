@@ -71,6 +71,31 @@ export function clampPriceToRangeEdgeBands(
   return best
 }
 
+/**
+ * Drag / place magnets across multiple painted ±10 zones (e.g. US Range + Tokyo IB).
+ * Picks the nearest single-range clamp. Already in any band → unchanged.
+ * Entry legality still uses {@link assertRangeEdgeEntry} on the active playbook range.
+ */
+export function clampPriceToNearestRangeEdgeBands(
+  price: number,
+  ranges: Array<RangeEdgeLevels | null | undefined>,
+  bandPoints: number = RANGE_EDGE_BAND_POINTS
+): number | null {
+  if (!Number.isFinite(price) || !(price > 0)) return null
+  let best: number | null = null
+  let bestDist = Infinity
+  for (const range of ranges) {
+    const clamped = clampPriceToRangeEdgeBands(price, range, bandPoints)
+    if (clamped == null) continue
+    const d = Math.abs(price - clamped)
+    if (d < bestDist) {
+      bestDist = d
+      best = clamped
+    }
+  }
+  return best
+}
+
 export function nearestRangeEdge(
   entry: number,
   range: RangeEdgeLevels

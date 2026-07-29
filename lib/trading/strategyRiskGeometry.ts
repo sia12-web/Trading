@@ -335,3 +335,27 @@ export function visibleOverlayEntryRanges(args: {
   push('Lunch-range', args.lunchRange, args.showLunchRange && !tokyo, true)
   return out
 }
+
+/**
+ * Limit drag / open-box snap targets: active playbook range plus every painted
+ * overlay ±10 zone (OR30 / IB / US Range / Lunch when toggled on and shaped).
+ * Dedupes by label+H/L. Place-order legality still uses
+ * {@link activeRangeForPlaybook} alone (server gate stays playbook-strict).
+ */
+export function studyEntrySnapRanges(args: {
+  active: StrategyRangeEdges | null | undefined
+  overlays: StrategyRangeEdges[]
+}): StrategyRangeEdges[] {
+  const out: StrategyRangeEdges[] = []
+  const seen = new Set<string>()
+  const push = (r: StrategyRangeEdges | null | undefined) => {
+    if (!r || !(r.high > r.low)) return
+    const key = `${r.label}:${r.high}:${r.low}`
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push(r)
+  }
+  push(args.active ?? null)
+  for (const o of args.overlays) push(o)
+  return out
+}

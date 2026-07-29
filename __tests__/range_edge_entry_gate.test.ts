@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict'
 import {
   assertRangeEdgeEntry,
+  clampPriceToNearestRangeEdgeBands,
   clampPriceToRangeEdgeBands,
   filterLevelsInRangeEdgeBand,
   isEntryWithinRangeEdgeBand,
@@ -66,6 +67,45 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
   assert.equal(clampPriceToRangeEdgeBands(40050, range), 40010, 'above high clamps to high max')
   assert.equal(clampPriceToRangeEdgeBands(39800, range), 39890, 'below low clamps to low min')
   assert.equal(clampPriceToRangeEdgeBands(40000, null), null)
+}
+
+{
+  // US Range H=40000 L=39500 · Tokyo IB H=40100 L=39900 · OR30 H=40050 L=39950
+  const us = { high: 40000, low: 39500, label: 'US Range' }
+  const ib = { high: 40100, low: 39900, label: 'Tokyo IB' }
+  const or30 = { high: 40050, low: 39950, label: 'OR30' }
+  assert.equal(
+    clampPriceToNearestRangeEdgeBands(40095, [us, ib, or30]),
+    40095,
+    'in Tokyo IB high band stays put (not yanked to US)'
+  )
+  assert.equal(
+    clampPriceToNearestRangeEdgeBands(40005, [us, ib, or30]),
+    40005,
+    'in US high band stays put'
+  )
+  assert.equal(
+    clampPriceToNearestRangeEdgeBands(40045, [us, ib, or30]),
+    40045,
+    'in OR30 high band stays put'
+  )
+  assert.equal(
+    clampPriceToNearestRangeEdgeBands(40085, [us, ib, or30]),
+    40090,
+    'near Tokyo IB high snaps to IB high band (not US)'
+  )
+  assert.equal(
+    clampPriceToNearestRangeEdgeBands(40062, [us, ib, or30]),
+    40060,
+    'near OR30 high snaps to OR30 high band (not US)'
+  )
+  assert.equal(
+    clampPriceToNearestRangeEdgeBands(39480, [us, ib, or30]),
+    39490,
+    'below US low snaps to US low band'
+  )
+  assert.equal(clampPriceToNearestRangeEdgeBands(40000, []), null)
+  assert.equal(clampPriceToNearestRangeEdgeBands(40000, [null]), null)
 }
 
 console.log('range_edge_entry_gate: all passed')

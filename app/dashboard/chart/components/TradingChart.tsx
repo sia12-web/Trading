@@ -96,12 +96,13 @@ import {
 import { attemptLadderFromCounts } from '@/lib/trading/attemptLadder'
 import {
   activeRangeForPlaybook,
+  studyEntrySnapRanges,
   visibleOverlayEntryRanges,
   type StrategyRangeEdges,
   type StrategyRiskMagnets,
 } from '@/lib/trading/strategyRiskGeometry'
 import {
-  clampPriceToRangeEdgeBands,
+  clampPriceToNearestRangeEdgeBands,
   filterLevelsInRangeEdgeBand,
   NO_IN_BAND_LEVELS_MESSAGE,
   RANGE_EDGE_BAND_POINTS,
@@ -1481,6 +1482,8 @@ export function TradingChart({
   /** Active playbook range + magnets for strategy SL/TP (reads live range refs). */
   const getStrategyRiskBundle = useCallback((): {
     strategyRange: StrategyRangeEdges | null
+    /** Painted overlay ±10 zones (+ active) — limit drag/open snap only. */
+    snapRanges: StrategyRangeEdges[]
     strategyMagnets: StrategyRiskMagnets
   } => {
     const playbookMode = resolveDeskPlaybookMode({
@@ -1502,6 +1505,21 @@ export function TradingChart({
       lunchRange: lunchRangeRef.current,
       morningAttempts,
     })
+    const overlays = visibleOverlayEntryRanges({
+      instrument,
+      showOr30,
+      showIb: showIbBreakouts,
+      showUsRange,
+      showLunchRange,
+      or30: or30RangeRef.current,
+      ib: ibLevels ?? ibRangeRef.current,
+      usRange: usRangeRef.current,
+      lunchRange: lunchRangeRef.current,
+    })
+    const snapRanges = studyEntrySnapRanges({
+      active: strategyRange,
+      overlays,
+    })
     const extras: number[] = []
     for (const r of [
       or30RangeRef.current,
@@ -1521,6 +1539,7 @@ export function TradingChart({
     }
     return {
       strategyRange,
+      snapRanges,
       strategyMagnets: {
         avwap: avwapLastRef.current,
         extras,
@@ -1533,20 +1552,22 @@ export function TradingChart({
     ibAttempts,
     lunchAttempts,
     stopHits,
+    showOr30,
+    showIbBreakouts,
+    showUsRange,
+    showLunchRange,
+    ibLevels,
   ])
 
-  /** Open Limit risk box with entry snapped into the highlighted ±10 bands. */
+  /** Open Limit risk box with entry snapped into painted ±10 bands (study overlays). */
   const openRiskBox = useCallback(
     (preferredPrice?: number) => {
       const rawPx =
         preferredPrice != null && Number.isFinite(preferredPrice) && preferredPrice > 0
           ? preferredPrice
           : livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 67000)
-      const { strategyRange } = getStrategyRiskBundle()
-      const inBand =
-        strategyRange != null
-          ? clampPriceToRangeEdgeBands(Number(rawPx), strategyRange)
-          : null
+      const { snapRanges } = getStrategyRiskBundle()
+      const inBand = clampPriceToNearestRangeEdgeBands(Number(rawPx), snapRanges)
       const entry = snapDeskPrice(instrument, inBand ?? Number(rawPx))
       const dir: 'LONG' | 'SHORT' = 'LONG'
       setRiskBox({
@@ -3948,11 +3969,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       if (rawPrice == null || !Number.isFinite(Number(rawPrice)) || Number(rawPrice) <= 0) return
 
       const snappedRaw = snapDeskPrice(instrument, Number(rawPrice))
-      const { strategyRange } = getStrategyRiskBundle()
-      const inBand =
-        strategyRange != null
-          ? clampPriceToRangeEdgeBands(snappedRaw, strategyRange)
-          : null
+      const { snapRanges } = getStrategyRiskBundle()
+      const inBand = clampPriceToNearestRangeEdgeBands(snappedRaw, snapRanges)
       const snapped = snapDeskPrice(instrument, inBand ?? snappedRaw)
 
       if (draggingRiskLineRef.current === 'ENTRY') {

@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict'
 import {
   activeRangeForPlaybook,
+  studyEntrySnapRanges,
   visibleOverlayEntryRanges,
   strategyEntryRisk,
   strategyStopDetail,
@@ -324,6 +325,23 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
     }).map((o) => o.label),
     ['IB'],
     'NY desks paint IB ±10 whenever showIb + shaped IB (independent of OR30/lunch)'
+  )
+
+  const usActive = { label: 'US Range', high: 40_000, low: 39_500 }
+  const tokyoIb = { label: 'Tokyo IB', high: 40_100, low: 39_900 }
+  const or30 = { label: 'OR30', high: 40_050, low: 39_950 }
+  assert.deepEqual(
+    studyEntrySnapRanges({
+      active: usActive,
+      overlays: [or30, usActive, tokyoIb],
+    }).map((r) => r.label),
+    ['US Range', 'OR30', 'Tokyo IB'],
+    'drag snap includes active + painted overlays (dedupes US)'
+  )
+  assert.deepEqual(
+    studyEntrySnapRanges({ active: usActive, overlays: [] }).map((r) => r.label),
+    ['US Range'],
+    'active alone still snaps when overlays off'
   )
 }
 
