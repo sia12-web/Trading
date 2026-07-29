@@ -51,6 +51,8 @@ interface Props {
   onRefreshGate: () => void
   /** Mirror AI manage verdict onto the chart canvas */
   onAiVerdict?: (verdict: AiVerdict | null) => void
+  /** Advise-only ATR trail/pad suggestion from active range */
+  atrAdviceLine?: string | null
 }
 
 export function ManageDeskBar({
@@ -59,6 +61,7 @@ export function ManageDeskBar({
   onClosed,
   onRefreshGate,
   onAiVerdict,
+  atrAdviceLine = null,
 }: Props) {
   const [ai, setAi] = useState<AiVerdict | null>(null)
   const [recommendation, setRecommendation] = useState<{
@@ -436,6 +439,14 @@ export function ManageDeskBar({
 
   return (
     <div className="rounded-xl border border-amber-800/40 bg-[#161b22] px-3 py-2.5 space-y-2">
+      {atrAdviceLine && (
+        <p
+          className="text-[10px] leading-snug text-violet-200/85"
+          title="Advise only — does not auto-move SL/TP"
+        >
+          {atrAdviceLine}
+        </p>
+      )}
       {/* ── AI exit requires explicit trader CONFIRM (never auto-closes) ────── */}
       {exitPrompt && (
         <div className="rounded-lg border border-red-500/70 bg-red-950/40 p-2.5 shadow-lg flex flex-wrap items-center justify-between gap-3">

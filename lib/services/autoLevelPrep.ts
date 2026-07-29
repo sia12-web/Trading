@@ -170,10 +170,11 @@ export async function runAutoLevelPrep(
       }
     }
 
-    const [daily, h1, h4, quote] = await Promise.all([
+    const [daily, h1, h4, m5, quote] = await Promise.all([
       getYahooCandles(instrument, 'D', 30),
       getYahooCandles(instrument, '60', 10),
       getYahooCandles(instrument, '240', 15),
+      getYahooCandles(instrument, '5', 5),
       getYahooQuote(instrument),
     ])
 
@@ -226,6 +227,11 @@ export async function runAutoLevelPrep(
       close: c.close,
       volume: Math.max(1, c.volume || 0),
     }))
+    const m5Bars = (m5?.candles ?? []).map((c) => ({
+      high: c.high,
+      low: c.low,
+      close: c.close,
+    }))
     const nowUnix = Math.floor(now.getTime() / 1000)
     const brief = needsAfternoonBrief
       ? buildAfternoonDeskBrief({
@@ -244,6 +250,7 @@ export async function runAutoLevelPrep(
       tip: current_price,
       nowUnix,
       analysisMode: analysis_mode,
+      candles5m: m5Bars.length ? m5Bars : undefined,
     })
 
     let historicalContext = undefined

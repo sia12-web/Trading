@@ -23,6 +23,11 @@ import {
   type DeskBar,
 } from '@/lib/trading/deskLevels'
 import { sessionFor, type DeskInstrument } from '@/lib/trading/sessionGate'
+import {
+  buildRangeAtrSnapshot,
+  formatRangeAtrAdviceLine,
+  type RangeAtrSnapshot,
+} from '@/lib/trading/rangeAtr'
 
 export type TipVsRange = 'above' | 'inside' | 'below' | 'unknown'
 
@@ -57,6 +62,8 @@ export type RangeLiquidityBrief = {
   avwap: number | null
   tipVsAvwapPct: number | null
   analysisMode: 'morning' | 'ib' | 'us_range' | 'lunch_range' | 'afternoon'
+  /** Active-range ATR(14) 5m — advise-only pad/trail (null if no 5m / no active range) */
+  activeAtr: RangeAtrSnapshot | null
 }
 
 function dateKeyInTz(unix: number, timeZone: string): string {
@@ -152,6 +159,8 @@ export function buildRangeLiquidityBrief(args: {
   tip: number
   nowUnix?: number
   analysisMode?: RangeLiquidityBrief['analysisMode']
+  /** 5m bars for ATR(14) — optional; without them activeAtr stays null */
+  candles5m?: Array<{ high: number; low: number; close: number }>
 }): RangeLiquidityBrief | null {
   const { instrument, tip } = args
   const analysisMode = args.analysisMode ?? 'morning'
@@ -262,6 +271,16 @@ export function buildRangeLiquidityBrief(args: {
       ? Math.round(((tip - avwap) / avwap) * 10000) / 100
       : null
 
+  const activeAtr =
+    active && args.candles5m && args.candles5m.length > 0
+      ? buildRangeAtrSnapshot({
+          rangeLabel: active.label,
+          high: active.high,
+          low: active.low,
+          bars: args.candles5m,
+        })
+      : null
+
   return {
     instrument,
     tip: Math.round(tip * 100) / 100,
@@ -280,6 +299,7 @@ export function buildRangeLiquidityBrief(args: {
     avwap,
     tipVsAvwapPct,
     analysisMode,
+    activeAtr,
   }
 }
 
@@ -323,6 +343,14 @@ export function formatRangeLiquidityBriefForPrompt(
     lines.push(
       '',
       'WATCH MODE: use all formed range edges as magnets; note which held vs broke.'
+    )
+  }
+
+  if (brief.activeAtr) {
+    lines.push(
+      '',
+      'RANGE VOLATILITY (ATR — advise only; does NOT change ±10 H/50%/L entry gate; does NOT auto-move SL/TP):',
+      formatRangeAtrAdviceLine(brief.activeAtr)
     )
   }
 

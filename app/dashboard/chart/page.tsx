@@ -198,6 +198,7 @@ export default function ChartPage() {
   const [levelsRefreshKey, setLevelsRefreshKey] = useState(0)
   const afternoonLevelsLoadedRef = useRef(false)
   const [aiVerdict, setAiVerdict] = useState<AiVerdict | null>(null)
+  const [rangeAtrAdvice, setRangeAtrAdvice] = useState<string | null>(null)
   const [recommendation, setRecommendation] = useState<{
     instrument: Instrument
     regime: string
@@ -379,6 +380,23 @@ export default function ChartPage() {
       pushDeskAlert(alert)
     },
     [pushDeskAlert]
+  )
+
+  const handleRangeAtr = useCallback(
+    (snap: {
+      height: number
+      atr: number | null
+      stopPad: number
+      trailStep: number
+      wide: boolean
+    } | null) => {
+      setRangeAtrAdvice(
+        snap
+          ? `Vol: Hgt ${snap.height} · ATR ${snap.atr ?? '—'} · pad ~${snap.stopPad} · trail ~${snap.trailStep}${snap.wide ? ' (wide)' : ''} (advise only)`
+          : null
+      )
+    },
+    []
   )
 
   const handleGate = useCallback((g: SessionGateState) => {
@@ -1258,6 +1276,7 @@ export default function ChartPage() {
             <ManageDeskBar
               position={managePos}
               currentPrice={livePrice}
+              atrAdviceLine={rangeAtrAdvice}
               onClosed={(exitReason = 'manual') => {
                 setManagePos(null)
                 setPositionOverlay(null)
@@ -1345,6 +1364,7 @@ export default function ChartPage() {
               onLevelSelect={handleLevelSelect}
               canPlaceOrder={canTrade && dataMode === 'live'}
               onDeskAlert={handleDeskAlert}
+              onRangeAtr={handleRangeAtr}
               rangeStrategy={gate?.rangeStrategy ?? null}
               attemptsUsed={gate?.attemptsUsed ?? 0}
               stopHits={gate?.stopHits ?? 0}
@@ -1515,6 +1535,7 @@ export default function ChartPage() {
             entrySource={orderEntrySource}
             strategyRange={orderStrategyRange}
             strategyMagnets={orderStrategyMagnets}
+            atrAdviceLine={rangeAtrAdvice}
             regime={regime}
             regimeConfidence={regimeConfidence}
             canPlace={canTrade && dataMode === 'live'}

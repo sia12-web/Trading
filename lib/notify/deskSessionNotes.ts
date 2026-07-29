@@ -176,6 +176,8 @@ export function formatRangeShapedNote(args: {
   low: number
   /** What this unlocks for the trader */
   nextHint?: string
+  /** Optional ATR / height volatility block */
+  atrLine?: string | null
 }): DeskNotePayload {
   const title = `${args.instrument} · ${args.rangeLabel} LOCKED`
   const body = [
@@ -183,8 +185,11 @@ export function formatRangeShapedNote(args: {
     `Low  ${args.low.toLocaleString()}`,
     `±10 bands are live around H, 50% mid, and L.`,
     `Mid ${(Math.round(((args.high + args.low) / 2) * 100) / 100).toLocaleString()} — pullback / reverse magnet.`,
+    args.atrLine || null,
     args.nextHint || 'Entries allowed when this playbook window is unlocked.',
-  ].join('\n')
+  ]
+    .filter(Boolean)
+    .join('\n')
   return {
     kind: 'range_shaped',
     title,

@@ -37,12 +37,18 @@ ATTEMPT LADDER (Option B: 2 / 2 / 2 — THREE RANGES PER DESK; CLOCKS YOU SPEAK 
 - **Active Management Phase** (Post-fill until exit): Monitoring SL/TP targets & AI Reversal exits. Single active position — max 1 at a time.
 - **Risk Discipline Rules**: Working limits do not count until filled. No PM watch — when entry paths are done, manage-only until cash close.
 - **Position Geometry**: **0.25% risk** on every live desk probe (AI / structure / manual chart playbook). Mandatory Stop Loss & Take Profit on every trade.
-- **RANGE EDGE ENTRY GATE**: Legal entries must sit within **±10 index points** of the active playbook range **high, 50% midpoint, OR low** — but only after that range is **fully shaped/locked**. Forming ranges do not unlock entries.
+- **RANGE VOLATILITY (ATR — advise only)**: When a range locks, desk measures **ATR(14) on 5m** + **range height (H−L)** and **height/ATR**.
+  * Telegram/Leo get one lock note with: height · ATR · ratio · suggested **stop pad ~0.35×ATR (floor 10 pts)** · **trail ~0.25×ATR** (or **0.5×ATR** if height/ATR ≥ 2).
+  * ATR does **not** replace ±10 H/50%/L entry gates and does **not** auto-move SL/TP — you adjust trail/stops using the suggestion.
+  * Same points formula for DOW / NASDAQ / NIKKEI.
+  * When DESK CONTEXT prints RANGE LIQUIDITY MAP / RANGE VOLATILITY facts, treat those numbers as ground truth for pad/trail debate.
+- **RANGE EDGE ENTRY GATE**: Entries only within **±10 index points** of the active range high, **50% mid**, or low. Off-band AI levels are not tradeable — do not invent off-band entries.
+- **RANGE LOCK TIMING (entries)**:
   * DOW/NASDAQ: OR30 after the first 30m locks · IB after the first hour locks · Lunch-range only after 13:30 Montreal (lunch finished).
   * NIKKEI: OR30 after 30m locks · US Range = prior completed NYC session (already done → allowed) · Tokyo IB after the first hour locks.
   * **50% mid** is a pullback / reverse magnet — price often retests equilibrium then continues or reverses. Same ±10 band as H/L.
   * **OR30 is optional** (it sits inside the first-hour IB). Never force an OR30 trade. If morning fills are still 0 when IB locks, OR30 is finished and the desk auto-hands off to IB ±10 (Nikkei: next slot is US Range on the clock).
-  * Off-band AI levels are not tradeable. If the range is not locked yet, or none are in-band, tell the trader — do not invent off-band entries.
+  * If the range is not locked yet, or none are in-band, tell the trader — do not invent off-band entries.
 - **RANGE-EDGE TAILS (prefer / assist — not a hard gate)**: After the active range locks, watch 5m rejection wicks in the ±10 band of high or low (mid tails are secondary).
   * Tail quality = wick length ÷ body (tiny bodies floored). Tiers: light ≥0.25 · good ≥0.40 · strong ≥0.50. Same for DOW / NASDAQ / NIKKEI.
   * Good/strong tails are other-timeframe footprints — call them out when DESK CONTEXT prints "Range-edge tail:". Prefer AI levels on that edge. Do **not** invent a tail when context says none / present=false.

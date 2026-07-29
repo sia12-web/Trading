@@ -45,6 +45,7 @@ import {
 import { attemptLadderFromCounts, formatAttemptLadderShort } from '@/lib/trading/attemptLadder'
 import {
   deskPlaybookTitle,
+  deskPlaybookAnalysisMode,
   resolveDeskPlaybookMode,
 } from '@/lib/trading/deskPlaybookMode'
 import { getESTDateString } from '@/lib/utils/timeUtils'
@@ -54,6 +55,12 @@ import {
 } from '@/lib/trading/liveVoice'
 import { loadLiveVoicePins, type LiveVoicePin } from '@/lib/trading/liveVoiceSession'
 import { buildRangeEdgeTailBrief } from '@/lib/trading/rangeEdgeTailBrief'
+import {
+  buildRangeLiquidityBrief,
+  formatRangeLiquidityBriefForPrompt,
+} from '@/lib/trading/rangeLiquidityBrief'
+import { getYahooCandles } from '@/lib/yahoo/candles'
+import { getYahooQuote } from '@/lib/yahoo/quote'
 
 export type LiveVoiceContextLevel = {
   price: number
@@ -501,6 +508,46 @@ export async function buildLiveVoiceDeskContext(
     morningAttempts,
   })
 
+  let rangeLiquidityBriefText: string | null = null
+  try {
+    const analysisMode = deskPlaybookAnalysisMode(playbookMode, contextInstrument)
+    const [h1, m5, quote] = await Promise.all([
+      getYahooCandles(contextInstrument, '60', 10),
+      getYahooCandles(contextInstrument, '5', 5),
+      getYahooQuote(contextInstrument),
+    ])
+    const h1Bars = (h1?.candles ?? []).map((c) => ({
+      time: c.time,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+      volume: Math.max(1, c.volume || 0),
+    }))
+    const m5Bars = (m5?.candles ?? []).map((c) => ({
+      high: c.high,
+      low: c.low,
+      close: c.close,
+    }))
+    const tip =
+      quote?.price ??
+      (h1Bars.length ? h1Bars[h1Bars.length - 1]!.close : null) ??
+      activeLivePrice
+    if (tip != null && tip > 0 && h1Bars.length >= 2) {
+      const brief = buildRangeLiquidityBrief({
+        instrument: contextInstrument,
+        candlesH1: h1Bars,
+        tip,
+        nowUnix: Math.floor(now.getTime() / 1000),
+        analysisMode,
+        candles5m: m5Bars.length ? m5Bars : undefined,
+      })
+      if (brief) rangeLiquidityBriefText = formatRangeLiquidityBriefForPrompt(brief)
+    }
+  } catch {
+    /* optional — Leo still has system ATR rules */
+  }
+
   let levelItems = playbook.levels.map(toContextLevel)
   if (rangeTail.present && (rangeTail.tier === 'good' || rangeTail.tier === 'strong')) {
     levelItems = levelItems
@@ -575,7 +622,7 @@ export async function buildLiveVoiceDeskContext(
           ? 'Day max 6 fills (AM/OR30 2 + US Range 2 + IB 2) @ 0.25% risk each. Next window unlocks when prior clock ends or probes are exhausted. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books ride to cash-close flatten. Voice never places orders. Range H/L = retail bait; 50% mid = pullback/reverse magnet; desk hunts stops just beyond edges with POC/AVWAP confluence. Entries only within ±10 pts of active range high, 50% mid, or low. Ticket sets initial SL beyond active range (or zone floor) and TP at opposing edge/magnets; post-fill BE/trail manage is separate.'
           : 'Day max 6 fills (AM/OR30 2 + IB 2 + LN 2) @ 0.25% risk each. Next window unlocks when prior clock ends or probes are exhausted. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books ride to cash-close flatten. Voice never places orders. Range H/L = retail bait; 50% mid = pullback/reverse magnet; desk hunts stops just beyond edges with POC/AVWAP confluence. Entries only within ±10 pts of active range high, 50% mid, or low. Ticket sets initial SL beyond active range (or zone floor) and TP at opposing edge/magnets; post-fill BE/trail manage is separate.',
     },
-    rangeLiquidityBriefText: null,
+    rangeLiquidityBriefText,
     rangeTail,
     avwap: {
       openLabel: clock.openLabel,

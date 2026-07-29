@@ -129,6 +129,12 @@ import {
   shouldFireRangeEdgeAlert,
 } from '@/lib/trading/rangeEdgeAlerts'
 import {
+  buildRangeAtrSnapshot,
+  formatRangeAtrAdviceLine,
+  formatRangeAtrChip,
+  type RangeAtrSnapshot,
+} from '@/lib/trading/rangeAtr'
+import {
   NYC_LUNCH_COLORS,
   computeNycLunchRange,
   computeNycLunchSignals,
@@ -657,6 +663,8 @@ interface TradingChartProps {
     dedupeKey?: string
     instrument?: string
   }) => void
+  /** Active playbook range ATR snapshot (advise-only pad/trail) */
+  onRangeAtr?: (snap: RangeAtrSnapshot | null) => void
 }
 
 // ─── Main TradingChart component ──────────────────────────────────────────────
@@ -690,6 +698,7 @@ export function TradingChart({
   clockedIn = false,
   levelsRefreshKey = 0,
   onDeskAlert,
+  onRangeAtr,
 }: TradingChartProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const sessionOverlayRef = useRef<HTMLDivElement>(null)
@@ -773,6 +782,7 @@ export function TradingChart({
   const entryBandLinesRef = useRef<IPriceLine[]>([])
   const [entryBandsVisible, setEntryBandsVisible] = useState(false)
   const [entryBandLabel, setEntryBandLabel] = useState<string | null>(null)
+  const [rangeAtrSnap, setRangeAtrSnap] = useState<RangeAtrSnapshot | null>(null)
   const tickIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const candleRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const lastCandleRef = useRef<OHLCV | null>(null)
@@ -4960,6 +4970,60 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     focusTick,
   ])
 
+  // Active playbook range ATR chip (advise-only; refresh with focusTick / range shape)
+  const onRangeAtrRef = useRef(onRangeAtr)
+  useEffect(() => {
+    onRangeAtrRef.current = onRangeAtr
+  }, [onRangeAtr])
+  useEffect(() => {
+    void focusTick
+    const strategyRange = activeRangeForPlaybook({
+      playbookMode,
+      instrument,
+      or30: or30RangeRef.current,
+      ib: ibRangeRef.current,
+      usRange: usRangeRef.current,
+      lunchRange: lunchRangeRef.current,
+      morningAttempts,
+    })
+    if (!strategyRange || !(strategyRange.high > strategyRange.low)) {
+      setRangeAtrSnap((prev) => (prev == null ? prev : null))
+      onRangeAtrRef.current?.(null)
+      return
+    }
+    const snap = buildRangeAtrSnapshot({
+      rangeLabel: strategyRange.label,
+      high: strategyRange.high,
+      low: strategyRange.low,
+      bars: candlesRef.current,
+    })
+    setRangeAtrSnap((prev) => {
+      if (
+        prev &&
+        snap &&
+        prev.rangeLabel === snap.rangeLabel &&
+        prev.height === snap.height &&
+        prev.atr === snap.atr &&
+        prev.stopPad === snap.stopPad &&
+        prev.trailStep === snap.trailStep
+      ) {
+        return prev
+      }
+      return snap
+    })
+    onRangeAtrRef.current?.(snap)
+  }, [
+    playbookMode,
+    instrument,
+    rangeStrategy,
+    morningAttempts,
+    or30Locked,
+    ibShaped,
+    lunchLocked,
+    usRangeShaped,
+    focusTick,
+  ])
+
   const wasInEdgeBandRef = useRef(false)
   const edgeAlertPrimedRef = useRef(false)
   const edgeAlertInstrumentRef = useRef(instrument)
@@ -5048,11 +5112,18 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     if (next.or30 && !prev.or30) {
       const r = or30RangeRef.current
       if (r && claimDeskNoteOnce('range_or30', instrument)) {
+        const atrSnap = buildRangeAtrSnapshot({
+          rangeLabel: 'OR30',
+          high: r.high,
+          low: r.low,
+          bars: candlesRef.current,
+        })
         const note = formatRangeShapedNote({
           instrument,
           rangeLabel: 'OR30',
           high: r.high,
           low: r.low,
+          atrLine: atrSnap ? formatRangeAtrAdviceLine(atrSnap) : null,
           nextHint:
             'Optional morning probe (±10 H / 50% / L). If unused when IB locks → hand off to IB.',
         })
@@ -5067,11 +5138,18 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       const r = ibRangeRef.current
       if (r && claimDeskNoteOnce('range_ib', instrument)) {
         const label = instrument === 'NIKKEI' ? 'Tokyo IB' : 'IB'
+        const atrSnap = buildRangeAtrSnapshot({
+          rangeLabel: label,
+          high: r.high,
+          low: r.low,
+          bars: candlesRef.current,
+        })
         const note = formatRangeShapedNote({
           instrument,
           rangeLabel: label,
           high: r.high,
           low: r.low,
+          atrLine: atrSnap ? formatRangeAtrAdviceLine(atrSnap) : null,
           nextHint:
             instrument === 'NIKKEI'
               ? `Tokyo IB shaped now — entry window opens ${deskLocalHmsAsTraderDisplay('13:30:00', 'Asia/Tokyo')} ${TRADER_DISPLAY_LABEL} (±10 of locked H / 50% / L). Until then US Range is slot 2.`
@@ -5087,11 +5165,18 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     if (next.lunch && !prev.lunch) {
       const r = lunchRangeRef.current
       if (r && claimDeskNoteOnce('range_lunch', instrument)) {
+        const atrSnap = buildRangeAtrSnapshot({
+          rangeLabel: 'Lunch-range',
+          high: r.high,
+          low: r.low,
+          bars: candlesRef.current,
+        })
         const note = formatRangeShapedNote({
           instrument,
           rangeLabel: 'Lunch-range',
           high: r.high,
           low: r.low,
+          atrLine: atrSnap ? formatRangeAtrAdviceLine(atrSnap) : null,
           nextHint: 'Lunch-range entry window is open (±10 of locked H / 50% / L).',
         })
         onDeskAlert({
@@ -5104,11 +5189,18 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     if (next.us && !prev.us) {
       const r = usRangeRef.current
       if (r && claimDeskNoteOnce('range_us', instrument)) {
+        const atrSnap = buildRangeAtrSnapshot({
+          rangeLabel: 'US Range',
+          high: r.high,
+          low: r.low,
+          bars: candlesRef.current,
+        })
         const note = formatRangeShapedNote({
           instrument,
           rangeLabel: 'US Range (prior NYC)',
           high: r.high,
           low: r.low,
+          atrLine: atrSnap ? formatRangeAtrAdviceLine(atrSnap) : null,
           nextHint:
             'Already shaped from prior NYC session. Entry when US Range window unlocks (±10 H / 50% / L).',
         })
@@ -5787,6 +5879,14 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               title="Cyan = high ±10 · Emerald = low ±10. Enter only inside these bands when the entry window is open."
             >
               {entryBandLabel}
+            </span>
+          )}
+          {rangeAtrSnap && (
+            <span
+              className="text-violet-300/90 font-medium tabular-nums"
+              title={formatRangeAtrAdviceLine(rangeAtrSnap)}
+            >
+              {formatRangeAtrChip(rangeAtrSnap)}
             </span>
           )}
           <span title="Blue IB high/low + BRK/REJ + ±10 — toggle with Press B (off on refresh).">

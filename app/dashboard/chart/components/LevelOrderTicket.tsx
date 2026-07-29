@@ -91,6 +91,8 @@ interface Props {
   /** Active playbook range for strategy SL/TP (AI/structure only) */
   strategyRange?: StrategyRangeEdges | null
   strategyMagnets?: StrategyRiskMagnets | null
+  /** Advise-only ATR pad/trail line from chart */
+  atrAdviceLine?: string | null
   onClose: () => void
   /** Called when the working limit is accepted — NOT when filled. */
   onPlaced: (order: PendingLimitOrder) => void
@@ -118,6 +120,7 @@ export function LevelOrderTicket({
   initialAccountSize,
   strategyRange = null,
   strategyMagnets = null,
+  atrAdviceLine = null,
   onClose,
   onPlaced,
 }: Props) {
@@ -499,6 +502,14 @@ export function LevelOrderTicket({
                   Why this level
                 </span>
                 {entryReason.trim()}
+              </p>
+            )}
+            {atrAdviceLine && (
+              <p
+                className="mt-1.5 rounded-lg border border-violet-500/25 bg-violet-500/5 px-2.5 py-1.5 text-[10px] leading-snug text-violet-200/90"
+                title="Advise only — does not auto-move SL/TP"
+              >
+                {atrAdviceLine}
               </p>
             )}
             <p className="mt-1 text-[10px] text-amber-400/90">

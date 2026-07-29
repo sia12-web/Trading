@@ -576,6 +576,7 @@ RANGE LIQUIDITY MAP (how VP + retail stops connect to our three ranges on ${inde
 - Slot 3 Tokyo IB: bait = Tokyo first-hour IB H/L. Hunt stops beyond IB extremes. Earlier OR30/US Range = secondary magnets or polarity flips if broken.
 - Active playbook = PRIMARY bait. Earlier formed ranges = secondary. Later ranges ignored until unlocked.
 - When RANGE LIQUIDITY MAP facts are printed in the user message, every level's reasoning MUST name which range bait it hunts (e.g. "US Range high X bait — sell liquidity above near POC").
+- RANGE VOLATILITY (ATR — advise only): When the map prints ATR(14) 5m + height/ATR + suggested stop pad / trail, use those ONLY to size stop-pool offset / discuss pad-trail. ATR never changes ±10 H/50%/L entry legality and never auto-sets SL/TP.
 `
       : `
 RANGE LIQUIDITY MAP (how VP + retail stops connect to our three ranges on ${index}):
@@ -585,6 +586,7 @@ RANGE LIQUIDITY MAP (how VP + retail stops connect to our three ranges on ${inde
 - Slot 3 Lunch-range: bait = NYC lunch session (12:00–13:30 Montreal) H/L. Hunt stops beyond lunch-range extremes. Morning OR30/IB = secondary magnets or polarity flips if broken.
 - Active playbook = PRIMARY bait. Earlier formed ranges = secondary. Later ranges ignored until unlocked.
 - When RANGE LIQUIDITY MAP facts are printed in the user message, every level's reasoning MUST name which range bait it hunts (e.g. "OR30 high X bait — sell liquidity above near POC").
+- RANGE VOLATILITY (ATR — advise only): When the map prints ATR(14) 5m + height/ATR + suggested stop pad / trail, use those ONLY to size stop-pool offset / discuss pad-trail. ATR never changes ±10 H/50%/L entry legality and never auto-sets SL/TP.
 `
 
     const basePrompt = `You are a senior institutional trader who runs execution for a large desk. You do NOT think like a retail trader — you think about where retail traders put their STOPS, because that stop liquidity is where your desk ENTERS to fill size.

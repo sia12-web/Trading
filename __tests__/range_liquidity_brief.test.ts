@@ -115,6 +115,29 @@ function tokyoBars(): Array<{
   assert(/PRIMARY BAIT \(Lunch-range\)/i.test(text), 'primary bait')
   assert(/retail BAIT/i.test(text), 'bait rule')
   assert(/OR30 → IB → Lunch-range/.test(text), 'NY desk map')
+  assert(brief!.activeAtr == null, 'no ATR without 5m bars')
+}
+
+{
+  const m5: Array<{ high: number; low: number; close: number }> = []
+  let c = 52000
+  for (let i = 0; i < 40; i++) {
+    m5.push({ high: c + 25, low: c - 25, close: c + 2 })
+    c += 3
+  }
+  const withAtr = buildRangeLiquidityBrief({
+    instrument: 'DOW',
+    candlesH1: nyBars(),
+    tip: 52050,
+    nowUnix: NY_OPEN + 4 * 3600,
+    analysisMode: 'lunch_range',
+    candles5m: m5,
+  })
+  assert(withAtr != null, 'brief with 5m')
+  assert(withAtr!.activeAtr != null, 'active ATR when 5m present')
+  const atrText = formatRangeLiquidityBriefForPrompt(withAtr!)
+  assert(/RANGE VOLATILITY/i.test(atrText), 'ATR block in prompt')
+  assert(/advise only/i.test(atrText), 'advise-only wording')
 }
 
 {
