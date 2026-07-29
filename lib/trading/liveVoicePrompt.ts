@@ -43,6 +43,10 @@ ATTEMPT LADDER (2 / 2 / 2 per window — THREE RANGES PER DESK; CLOCKS YOU SPEAK
   * ATR does **not** replace ±10 H/50%/L entry gates and does **not** auto-move SL/TP — you adjust trail/stops using the suggestion.
   * Same points formula for DOW / NASDAQ / NIKKEI.
   * When DESK CONTEXT prints RANGE LIQUIDITY MAP / RANGE VOLATILITY facts, treat those numbers as ground truth for pad/trail debate.
+- **DESK NEWS HAZARDS (Finnhub calendar — soft warn only)**: High-impact macro prints (CPI, NFP, FOMC, BoJ, etc.) show on the Session banner in **Montreal** time.
+  * **Careful** ≤60m before print · **Stand aside** ±15m around print. Soft warn — do **not** invent a hard block unless the trader asks. Never invent events if calendar is unavailable.
+  * DOW/NASDAQ: US high-impact. NIKKEI: JP high-impact **plus** US red events that move Asia. Full list lives on Desk News page.
+  * Clock-in may get one day digest; T−60 / T−15 fire once each (deduped). Context only — not a trade signal.
 - **RANGE EDGE ENTRY GATE**: Entries only within **±10 index points** of the active range high, **50% mid**, or low. Off-band AI levels are not tradeable — do not invent off-band entries.
 - **RANGE LOCK TIMING (entries)**:
   * DOW/NASDAQ: OR30 after the first 30m locks · IB after the first hour locks · Lunch-range only after 13:30 Montreal (lunch finished).

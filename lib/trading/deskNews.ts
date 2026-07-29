@@ -282,8 +282,11 @@ export function filterCardsForDesk(
 
 export function instrumentsForCalendarEvent(country: string, event: string): DeskNewsInstrument[] {
   const text = `${country} ${event}`
+  // Japan prints → Nikkei. US red (CPI/NFP/FOMC) also hits Nikkei overnight risk.
   if (/\b(JP|Japan|BoJ|Tokyo)\b/i.test(text)) return ['NIKKEI']
-  if (/\b(US|USA|United States|Fed|FOMC)\b/i.test(text)) return ['DOW', 'NASDAQ']
+  if (/\b(US|USA|United States|Fed|FOMC)\b/i.test(text)) {
+    return ['DOW', 'NASDAQ', 'NIKKEI']
+  }
   if (/\b(EU|ECB|UK|GBP|Euro)\b/i.test(text)) return ['DOW', 'NASDAQ', 'NIKKEI']
   return ['DOW', 'NASDAQ', 'NIKKEI']
 }

@@ -12,6 +12,12 @@ import {
   resolveDeskPlaybookMode,
 } from '@/lib/trading/deskPlaybookMode'
 import { attemptLadderFromCounts, MAX_DAY_ATTEMPTS } from '@/lib/trading/attemptLadder'
+import {
+  buildDeskNewsHazards,
+  pickBannerHazard,
+  type DeskNewsHazard,
+} from '@/lib/trading/deskNewsHazard'
+import type { DeskCalendarEvent } from '@/lib/trading/deskNews'
 
 export interface SessionGateState {
   phase: string
@@ -105,6 +111,8 @@ export function SessionBanner({
   const [mounted, setMounted] = useState(false)
   const [clocking, setClocking] = useState(false)
   const prepFiredRef = useRef<string | null>(null)
+  const [newsHazard, setNewsHazard] = useState<DeskNewsHazard | null>(null)
+  const [newsUnavailable, setNewsUnavailable] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
@@ -225,6 +233,58 @@ export function SessionBanner({
       setGateError('Session gate unreachable — check deploy / network')
     }
   }, [onGate, viewingInstrument])
+
+  // Finnhub economic calendar → soft news hazard chip (high-impact only)
+  useEffect(() => {
+    let cancelled = false
+    const desk =
+      gate?.lockedInstrument ||
+      viewingInstrument ||
+      null
+    if (!desk) {
+      setNewsHazard(null)
+      return
+    }
+
+    const load = async () => {
+      try {
+        const res = await fetch(
+          `/api/trading/desk-news?window=24&desk=${desk}&session=0&_=${Date.now()}`,
+          { cache: 'no-store' }
+        )
+        const json = (await res.json().catch(() => null)) as {
+          ok?: boolean
+          calendar?: DeskCalendarEvent[]
+          error?: string
+        } | null
+        if (cancelled) return
+        if (!json?.ok || !Array.isArray(json.calendar)) {
+          setNewsUnavailable(true)
+          setNewsHazard(null)
+          return
+        }
+        setNewsUnavailable(false)
+        const hazards = buildDeskNewsHazards({
+          calendar: json.calendar,
+          instrument: desk,
+          includeUpcomingDay: true,
+        })
+        setNewsHazard(pickBannerHazard(hazards))
+      } catch {
+        if (!cancelled) {
+          setNewsUnavailable(true)
+          setNewsHazard(null)
+        }
+      }
+    }
+
+    void load()
+    const id = window.setInterval(load, 120_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [gate?.lockedInstrument, viewingInstrument, refreshKey])
 
   const handleClockIn = useCallback(async () => {
     if (clocking) return
@@ -390,6 +450,34 @@ export function SessionBanner({
             : ''}
         </span>
       )}
+      {newsUnavailable ? (
+        <Link
+          href="/dashboard/news"
+          className="rounded bg-gray-500/25 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400 hover:text-gray-200"
+          title="Finnhub calendar unreachable"
+        >
+          News: unavailable
+        </Link>
+      ) : newsHazard ? (
+        <Link
+          href="/dashboard/news"
+          className={`max-w-[18rem] truncate rounded px-2 py-0.5 text-[10px] font-semibold ${
+            newsHazard.level === 'stand_aside'
+              ? 'bg-red-500/30 text-red-100 hover:bg-red-500/40'
+              : newsHazard.level === 'careful'
+                ? 'bg-amber-500/30 text-amber-100 hover:bg-amber-500/40'
+                : 'bg-violet-500/20 text-violet-100 hover:bg-violet-500/30'
+          }`}
+          title={`${newsHazard.body} Soft warn only — not a trade signal.`}
+        >
+          {newsHazard.level === 'stand_aside'
+            ? '⛔ '
+            : newsHazard.level === 'careful'
+              ? '⚠ '
+              : '📰 '}
+          {newsHazard.chip}
+        </Link>
+      ) : null}
       <span className="flex-1 min-w-[12rem]">{phaseHint(gate.phase, gate.message)}</span>
 
       <span

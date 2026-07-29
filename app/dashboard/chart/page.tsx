@@ -57,6 +57,11 @@ import {
   claimDeskNoteOnce,
   deskNoteClaimKey,
 } from '@/lib/trading/rangeEdgeAlerts'
+import {
+  buildDeskNewsHazards,
+  formatDayNewsDigest,
+} from '@/lib/trading/deskNewsHazard'
+import type { DeskCalendarEvent } from '@/lib/trading/deskNews'
 import { infoToast, warningToast } from '@/lib/utils/toastUtils'
 import type { DeskInstrument } from '@/lib/trading/sessionGate'
 
@@ -608,6 +613,99 @@ export default function ChartPage() {
         regimeFetchedRef.current = false
       })
   }, [])
+
+  // Finnhub high-impact calendar → soft Leo/Telegram warns (clock-in digest + T−60 / T−15)
+  useEffect(() => {
+    const inst = (gate?.lockedInstrument || instrument) as
+      | 'DOW'
+      | 'NASDAQ'
+      | 'NIKKEI'
+      | null
+    if (!gate?.clockedIn || !inst) return
+
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const res = await fetch(
+          `/api/trading/desk-news?window=24&desk=${inst}&session=0&_=${Date.now()}`,
+          { cache: 'no-store' }
+        )
+        const json = (await res.json().catch(() => null)) as {
+          ok?: boolean
+          calendar?: DeskCalendarEvent[]
+        } | null
+        if (cancelled || !json?.ok || !Array.isArray(json.calendar)) return
+
+        const hazards = buildDeskNewsHazards({
+          calendar: json.calendar,
+          instrument: inst,
+          includeUpcomingDay: true,
+        })
+
+        if (claimDeskNoteOnce('news_day_digest', inst)) {
+          const digest = formatDayNewsDigest(hazards, inst)
+          if (digest) {
+            infoToast(`${digest.title} — ${digest.body}`, 9000)
+            void fetch('/api/notify/desk-alert', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                kind: 'news_day_digest',
+                title: digest.title,
+                body: digest.body,
+                telegram: digest.telegram,
+                instrument: inst,
+                dedupeKey: deskNoteClaimKey('news_day_digest', inst),
+              }),
+            }).catch(() => {})
+          }
+        }
+
+        for (const h of hazards) {
+          const safeId = h.id.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64)
+          if (h.level === 'careful' && claimDeskNoteOnce(`news_t60_${safeId}`, inst)) {
+            warningToast(`${h.title} — ${h.body}`, 8000)
+            void fetch('/api/notify/desk-alert', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                kind: 'news_careful',
+                title: h.title,
+                body: h.body,
+                telegram: `${h.title}\n${h.body}`,
+                instrument: inst,
+                dedupeKey: deskNoteClaimKey(`news_t60_${safeId}`, inst),
+              }),
+            }).catch(() => {})
+          }
+          if (h.level === 'stand_aside' && claimDeskNoteOnce(`news_t15_${safeId}`, inst)) {
+            warningToast(`${h.title} — ${h.body}`, 10000)
+            void fetch('/api/notify/desk-alert', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                kind: 'news_stand_aside',
+                title: h.title,
+                body: h.body,
+                telegram: `${h.title}\n${h.body}`,
+                instrument: inst,
+                dedupeKey: deskNoteClaimKey(`news_t15_${safeId}`, inst),
+              }),
+            }).catch(() => {})
+          }
+        }
+      } catch {
+        /* soft-fail */
+      }
+    }
+
+    void poll()
+    const id = window.setInterval(poll, 60_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [gate?.clockedIn, gate?.lockedInstrument, instrument])
 
   const enterManage = useCallback(
     (order: FilledOrder, inst: string) => {
