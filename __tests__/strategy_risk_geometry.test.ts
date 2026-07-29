@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict'
 import {
   activeRangeForPlaybook,
+  entryEligibleOverlayRanges,
   studyEntrySnapRanges,
   visibleOverlayEntryRanges,
   strategyEntryRisk,
@@ -12,6 +13,7 @@ import {
   strategyStopPrice,
   strategyTakeProfitPrice,
 } from '../lib/trading/strategyRiskGeometry'
+import { isOr30MorningEntryWindowOpen } from '../lib/trading/sessionGate'
 import { zoneStopPrice } from '../lib/trading/deskLevels'
 
 const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
@@ -329,11 +331,11 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
 
   const usActive = { label: 'US Range', high: 40_000, low: 39_500 }
   const tokyoIb = { label: 'Tokyo IB', high: 40_100, low: 39_900 }
-  const or30 = { label: 'OR30', high: 40_050, low: 39_950 }
+  const or30Snap = { label: 'OR30', high: 40_050, low: 39_950 }
   assert.deepEqual(
     studyEntrySnapRanges({
       active: usActive,
-      overlays: [or30, usActive, tokyoIb],
+      overlays: [or30Snap, usActive, tokyoIb],
     }).map((r) => r.label),
     ['US Range', 'OR30', 'Tokyo IB'],
     'drag snap includes active + painted overlays (dedupes US)'
@@ -342,6 +344,129 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
     studyEntrySnapRanges({ active: usActive, overlays: [] }).map((r) => r.label),
     ['US Range'],
     'active alone still snaps when overlays off'
+  )
+}
+
+{
+  // OR30 ±10 excluded after morning entryClose — Nikkei (09:45 JST) + NY (10:15 ET)
+  // 2026-07-28 weekday. Tokyo 10:00 JST = 01:00 UTC. NY 10:30 ET (EDT) = 14:30 UTC.
+  const nikkeiAfterOr30 = new Date('2026-07-28T01:00:00.000Z') // 10:00 JST
+  const nikkeiDuringOr30 = new Date('2026-07-27T00:35:00.000Z') // 09:35 JST
+  const nyAfterOr30 = new Date('2026-07-28T14:30:00.000Z') // 10:30 ET
+  const nyDuringOr30 = new Date('2026-07-28T14:05:00.000Z') // 10:05 ET
+
+  assert.equal(isOr30MorningEntryWindowOpen('NIKKEI', nikkeiAfterOr30), false)
+  assert.equal(isOr30MorningEntryWindowOpen('NIKKEI', nikkeiDuringOr30), true)
+  assert.equal(isOr30MorningEntryWindowOpen('DOW', nyAfterOr30), false)
+  assert.equal(isOr30MorningEntryWindowOpen('NASDAQ', nyDuringOr30), true)
+
+  const shaped = {
+    or30: { high: 40_050, low: 39_950, complete: true as const },
+    ib: { high: 40_100, low: 39_900 },
+    usRange: { high: 40_000, low: 39_500, complete: true as const },
+    lunchRange: { high: 18_500, low: 18_400, complete: true as const },
+  }
+
+  assert.deepEqual(
+    entryEligibleOverlayRanges({
+      playbookMode: 'us_range',
+      instrument: 'NIKKEI',
+      now: nikkeiAfterOr30,
+      showOr30: true,
+      showIb: true,
+      showUsRange: true,
+      ...shaped,
+      morningAttempts: 0,
+    }).map((o) => o.label),
+    ['US Range'],
+    'Nikkei after OR30 entryClose: OR30 ±10 gone even with OR30 toggle on; US Range remains'
+  )
+
+  assert.ok(
+    entryEligibleOverlayRanges({
+      playbookMode: 'morning',
+      instrument: 'NIKKEI',
+      now: nikkeiDuringOr30,
+      showOr30: true,
+      showUsRange: true,
+      showIb: true,
+      ...shaped,
+      morningAttempts: 0,
+    })
+      .map((o) => o.label)
+      .includes('OR30'),
+    'Nikkei during OR30 window: OR30 ±10 still eligible'
+  )
+
+  assert.ok(
+    !entryEligibleOverlayRanges({
+      playbookMode: 'morning',
+      instrument: 'DOW',
+      now: nyAfterOr30,
+      showOr30: true,
+      showIb: true,
+      showLunchRange: true,
+      or30: shaped.or30,
+      ib: { high: 18_250, low: 18_050 },
+      lunchRange: shaped.lunchRange,
+      morningAttempts: 0,
+    })
+      .map((o) => o.label)
+      .includes('OR30'),
+    'NY after OR30 entryClose: OR30 ±10 excluded'
+  )
+
+  assert.ok(
+    entryEligibleOverlayRanges({
+      playbookMode: 'ib',
+      instrument: 'NASDAQ',
+      now: nyAfterOr30,
+      showOr30: true,
+      showIb: true,
+      showLunchRange: true,
+      or30: shaped.or30,
+      ib: { high: 18_250, low: 18_050 },
+      lunchRange: shaped.lunchRange,
+      morningAttempts: 0,
+    })
+      .map((o) => o.label)
+      .includes('IB'),
+    'NY IB playbook keeps IB ±10 after OR30 window'
+  )
+
+  assert.ok(
+    entryEligibleOverlayRanges({
+      playbookMode: 'lunch_range',
+      instrument: 'DOW',
+      now: new Date('2026-07-28T18:00:00.000Z'), // 14:00 ET
+      showOr30: true,
+      showIb: true,
+      showLunchRange: true,
+      or30: shaped.or30,
+      ib: { high: 18_250, low: 18_050 },
+      lunchRange: shaped.lunchRange,
+      morningAttempts: 2,
+    })
+      .map((o) => o.label)
+      .includes('Lunch-range'),
+    'NY lunch-range playbook paints lunch ±10; OR30 stay out'
+  )
+  assert.ok(
+    !entryEligibleOverlayRanges({
+      playbookMode: 'lunch_range',
+      instrument: 'DOW',
+      now: new Date('2026-07-28T18:00:00.000Z'),
+      showOr30: true,
+      showIb: true,
+      showLunchRange: true,
+      or30: shaped.or30,
+      ib: { high: 18_250, low: 18_050 },
+      lunchRange: shaped.lunchRange,
+      morningAttempts: 2,
+    })
+      .map((o) => o.label)
+      .includes('OR30'),
+    'NY lunch window never resurrects OR30 ±10'
   )
 }
 

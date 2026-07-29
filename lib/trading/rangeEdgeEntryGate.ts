@@ -144,6 +144,47 @@ export function nearestRangeEdge(
   return Math.abs(entry - range.high) <= Math.abs(entry - range.low) ? 'high' : 'low'
 }
 
+export type RangeEdgeBandHit = {
+  range: RangeEdgeLevels
+  edge: 'high' | 'low'
+  /** Range high or low (band center) — place limit here on click-to-enter. */
+  center: number
+  min: number
+  max: number
+}
+
+/**
+ * First painted ±band containing `price` (high before low within each range).
+ * Used for click-to-enter on chart entry highlights.
+ */
+export function findRangeEdgeBandHit(
+  price: number,
+  ranges: Array<RangeEdgeLevels | null | undefined>,
+  bandPoints: number = RANGE_EDGE_BAND_POINTS
+): RangeEdgeBandHit | null {
+  if (!Number.isFinite(price) || !(price > 0)) return null
+  let best: RangeEdgeBandHit | null = null
+  let bestDist = Infinity
+  for (const range of ranges) {
+    if (!range) continue
+    for (const band of rangeEdgeBands(range, bandPoints)) {
+      if (price < band.min || price > band.max) continue
+      const d = Math.abs(price - band.center)
+      if (d < bestDist) {
+        bestDist = d
+        best = {
+          range,
+          edge: band.edge,
+          center: band.center,
+          min: band.min,
+          max: band.max,
+        }
+      }
+    }
+  }
+  return best
+}
+
 export function assertRangeEdgeEntry(args: {
   entry: number
   range: RangeEdgeLevels | null | undefined

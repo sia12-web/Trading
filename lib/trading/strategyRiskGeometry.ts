@@ -20,6 +20,7 @@ import {
   snapProfitToRound,
   zoneStopPrice,
 } from '@/lib/trading/deskLevels'
+import { isOr30MorningEntryWindowOpen } from '@/lib/trading/sessionGate'
 
 export type StrategyRangeEdges = {
   label: string
@@ -301,6 +302,9 @@ export function activeRangeForPlaybook(args: {
  *
  * IB / Tokyo IB: pass `showIb: true` when IB H/L overlay is visible (same as BRK/REJ toggle).
  * Markers and H/L share one toolbar control on the live chart.
+ *
+ * Prefer {@link entryEligibleOverlayRanges} for live entry bands / snap — this
+ * helper alone still includes dead OR30 after its morning window closes.
  */
 export function visibleOverlayEntryRanges(args: {
   instrument: string
@@ -337,8 +341,93 @@ export function visibleOverlayEntryRanges(args: {
 }
 
 /**
- * Limit drag / open-box snap targets: active playbook range plus every painted
- * overlay ±10 zone (OR30 / IB / US Range / Lunch when toggled on and shaped).
+ * ±10 entry highlights + drag/click snap targets: shaped toggled overlays filtered
+ * by entry-window / playbook eligibility (not every study overlay forever).
+ *
+ * Rule: paint the active playbook bait when that window can accept entries, plus
+ * faded next-playbook previews the desk already surfaces (e.g. Nikkei US while
+ * OR30 is still forming; NY IB after OR30 handoff). OR30 ±10 is excluded after
+ * morning entryClose even if the OR30 H/L toggle stays on.
+ */
+export function entryEligibleOverlayRanges(args: {
+  playbookMode: string
+  instrument: string
+  now?: Date
+  showOr30?: boolean
+  showIb?: boolean
+  showUsRange?: boolean
+  showLunchRange?: boolean
+  or30?: { high: number; low: number; complete?: boolean } | null
+  ib?: { high: number; low: number; complete?: boolean } | null
+  usRange?: { high: number; low: number; complete?: boolean } | null
+  lunchRange?: { high: number; low: number; complete?: boolean } | null
+  morningAttempts?: number
+}): StrategyRangeEdges[] {
+  const tokyo = args.instrument === 'NIKKEI'
+  const mode = args.playbookMode
+  const now = args.now ?? new Date()
+  const or30Open = isOr30MorningEntryWindowOpen(args.instrument, now)
+  const active = activeRangeForPlaybook({
+    playbookMode: mode,
+    instrument: args.instrument,
+    or30: args.or30,
+    ib: args.ib,
+    usRange: args.usRange,
+    lunchRange: args.lunchRange,
+    morningAttempts: args.morningAttempts,
+  })
+  const toggled = visibleOverlayEntryRanges(args)
+
+  const labelEligible = (label: string): boolean => {
+    if (label === 'OR30') {
+      return mode === 'morning' && or30Open
+    }
+    if (label === 'US Range') {
+      if (!tokyo) return false
+      return (
+        mode === 'us_range' ||
+        (mode === 'morning' && (!or30Open || active?.label === 'US Range')) ||
+        (mode === 'lunch_break' && active?.label === 'US Range')
+      )
+    }
+    if (label === 'IB' || label === 'Tokyo IB') {
+      if (mode === 'ib') return true
+      if (mode === 'morning' && active?.label === label) return true
+      // NY: after OR30 window, IB is the next live/preview bait
+      if (mode === 'morning' && !or30Open && !tokyo && label === 'IB') return true
+      // Tokyo IB prep after US Range slot
+      if (mode === 'lunch_break' && tokyo && label === 'Tokyo IB') return true
+      return false
+    }
+    if (label === 'Lunch-range') {
+      return (
+        mode === 'lunch_range' ||
+        (mode === 'lunch_break' && !tokyo)
+      )
+    }
+    return active?.label === label
+  }
+
+  const out: StrategyRangeEdges[] = []
+  const seen = new Set<string>()
+  const push = (r: StrategyRangeEdges | null | undefined) => {
+    if (!r || !(r.high > r.low)) return
+    if (!labelEligible(r.label)) return
+    const key = `${r.label}:${r.high}:${r.low}`
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push(r)
+  }
+
+  // Active first even when its overlay toggle is off (place/snap still needs it).
+  push(active)
+  for (const o of toggled) push(o)
+  return out
+}
+
+/**
+ * Limit drag / open-box snap targets: active playbook range plus every
+ * entry-eligible ±10 zone (see {@link entryEligibleOverlayRanges}).
  * Dedupes by label+H/L. Place-order legality still uses
  * {@link activeRangeForPlaybook} alone (server gate stays playbook-strict).
  */

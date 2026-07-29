@@ -97,8 +97,8 @@ import {
 import { attemptLadderFromCounts } from '@/lib/trading/attemptLadder'
 import {
   activeRangeForPlaybook,
+  entryEligibleOverlayRanges,
   studyEntrySnapRanges,
-  visibleOverlayEntryRanges,
   type StrategyRangeEdges,
   type StrategyRiskMagnets,
 } from '@/lib/trading/strategyRiskGeometry'
@@ -106,6 +106,7 @@ import {
   clampPriceToNearestRangeEdgeBands,
   clampPriceToRangeEdgeEnvelope,
   filterLevelsInRangeEdgeBand,
+  findRangeEdgeBandHit,
   NO_IN_BAND_LEVELS_MESSAGE,
   RANGE_EDGE_BAND_POINTS,
   rangeEdgeBands,
@@ -1495,7 +1496,7 @@ export function TradingChart({
   /** Active playbook range + magnets for strategy SL/TP (reads live range refs). */
   const getStrategyRiskBundle = useCallback((): {
     strategyRange: StrategyRangeEdges | null
-    /** Painted overlay ±10 zones (+ active) — limit drag/open snap only. */
+    /** Entry-eligible ±10 zones (+ active) — limit drag/open/click snap. */
     snapRanges: StrategyRangeEdges[]
     strategyMagnets: StrategyRiskMagnets
   } => {
@@ -1518,7 +1519,8 @@ export function TradingChart({
       lunchRange: lunchRangeRef.current,
       morningAttempts,
     })
-    const overlays = visibleOverlayEntryRanges({
+    const eligible = entryEligibleOverlayRanges({
+      playbookMode,
       instrument,
       showOr30,
       showIb: showIbBreakouts,
@@ -1528,10 +1530,22 @@ export function TradingChart({
       ib: ibLevels ?? ibRangeRef.current,
       usRange: usRangeRef.current,
       lunchRange: lunchRangeRef.current,
+      morningAttempts,
     })
+    // Snap only to entry-eligible bands (dead OR30 after entryClose excluded).
+    const activeForSnap =
+      strategyRange &&
+      eligible.some(
+        (r) =>
+          r.label === strategyRange.label &&
+          r.high === strategyRange.high &&
+          r.low === strategyRange.low
+      )
+        ? strategyRange
+        : null
     const snapRanges = studyEntrySnapRanges({
-      active: strategyRange,
-      overlays,
+      active: activeForSnap,
+      overlays: eligible,
     })
     const extras: number[] = []
     for (const r of [
@@ -1574,7 +1588,10 @@ export function TradingChart({
 
   /** Open Limit risk box with entry snapped into painted ±10 bands (study overlays). */
   const openRiskBox = useCallback(
-    (preferredPrice?: number) => {
+    (
+      preferredPrice?: number,
+      opts?: { direction?: 'LONG' | 'SHORT' }
+    ) => {
       const rawPx =
         preferredPrice != null && Number.isFinite(preferredPrice) && preferredPrice > 0
           ? preferredPrice
@@ -1582,13 +1599,16 @@ export function TradingChart({
       const { snapRanges } = getStrategyRiskBundle()
       const inBand = clampPriceToNearestRangeEdgeBands(Number(rawPx), snapRanges)
       const entry = snapDeskPrice(instrument, inBand ?? Number(rawPx))
-      const dir: 'LONG' | 'SHORT' = 'LONG'
+      const dir: 'LONG' | 'SHORT' = opts?.direction ?? 'LONG'
       setRiskBox({
         direction: dir,
         orderType: 'LIMIT',
         entryPrice: entry,
         stopLoss: defaultManualStop(entry, dir),
-        profitTarget: snapDeskPrice(instrument, entry * 1.0105),
+        profitTarget: snapDeskPrice(
+          instrument,
+          dir === 'LONG' ? entry * 1.0105 : entry * (1 - 0.0105)
+        ),
       })
       setRiskBoxActive(true)
     },
@@ -3376,6 +3396,97 @@ export function TradingChart({
     }
   }, [chartReady, positionOverlay, pendingLimit, openRiskBox])
 
+  // ── Click painted ±10 entry band → open limit ticket at that edge ─────────
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || !candleRef.current || !chartReady) return
+    if (positionOverlay || pendingLimit) return
+    if (drawZoneActive || drawTimeActive || riskBox) return
+
+    let down: { x: number; y: number } | null = null
+
+    const onDown = (e: MouseEvent) => {
+      if (e.button !== 0) return
+      down = { x: e.clientX, y: e.clientY }
+    }
+
+    const onUp = (e: MouseEvent) => {
+      if (!down || e.button !== 0 || !candleRef.current) {
+        down = null
+        return
+      }
+      const dx = Math.abs(e.clientX - down.x)
+      const dy = Math.abs(e.clientY - down.y)
+      down = null
+      // Ignore pans / drags
+      if (dx > 6 || dy > 6) return
+
+      const rect = container.getBoundingClientRect()
+      const y = e.clientY - rect.top
+      if (y < 0 || y > rect.height) return
+      const raw = candleRef.current.coordinateToPrice(y)
+      if (raw == null || !Number.isFinite(Number(raw)) || Number(raw) <= 0) return
+      const price = Number(raw)
+
+      const { strategyRange, snapRanges } = getStrategyRiskBundle()
+      const hit = findRangeEdgeBandHit(price, snapRanges)
+      if (!hit) return
+
+      const label = hit.range.label || 'range'
+      const liveOk =
+        !!strategyRange &&
+        strategyRange.label === hit.range.label &&
+        strategyRange.high === hit.range.high &&
+        strategyRange.low === hit.range.low
+
+      if (!liveOk) {
+        onDeskAlert?.({
+          kind: 'entry_band_deny',
+          title: `${label} entry closed`,
+          body:
+            label === 'OR30'
+              ? 'OR30 morning ±10 window is closed — enter on the live US Range / IB / lunch playbook when unlocked.'
+              : `${label} ±10 is preview only — click the live playbook band (${strategyRange?.label ?? 'active range'}) to place.`,
+          telegram: '',
+          instrument,
+        })
+        return
+      }
+
+      e.preventDefault()
+      e.stopPropagation()
+      const dir: 'LONG' | 'SHORT' = hit.edge === 'high' ? 'SHORT' : 'LONG'
+      openRiskBox(hit.center, { direction: dir })
+    }
+
+    container.addEventListener('mousedown', onDown, true)
+    container.addEventListener('mouseup', onUp, true)
+    const canvases = Array.from(container.querySelectorAll('canvas'))
+    for (const c of canvases) {
+      c.addEventListener('mousedown', onDown, true)
+      c.addEventListener('mouseup', onUp, true)
+    }
+    return () => {
+      container.removeEventListener('mousedown', onDown, true)
+      container.removeEventListener('mouseup', onUp, true)
+      for (const c of canvases) {
+        c.removeEventListener('mousedown', onDown, true)
+        c.removeEventListener('mouseup', onUp, true)
+      }
+    }
+  }, [
+    chartReady,
+    positionOverlay,
+    pendingLimit,
+    drawZoneActive,
+    drawTimeActive,
+    riskBox,
+    getStrategyRiskBundle,
+    openRiskBox,
+    onDeskAlert,
+    instrument,
+  ])
+
   // ── Draw Zone tool — drag to draw a rectangle price zone ────────────────────
   useEffect(() => {
     const container = containerRef.current
@@ -4637,7 +4748,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     return rangeEdgeProximity(livePrice, strategyRange)
   }, [canPlaceOrder, livePrice, playbookMode, instrument, rangeStrategy, morningAttempts])
 
-  /** Paint ±10 entry zones for every shaped range whose overlay toggle is ON. */
+  /** Paint ±10 entry zones for entry-eligible playbook ranges (not dead OR30). */
   useEffect(() => {
     const host = priceLineHostRef.current
     const clearBands = () => {
@@ -4669,7 +4780,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       lunchRange: lunchRangeRef.current,
       morningAttempts,
     })
-    const overlays = visibleOverlayEntryRanges({
+    const overlays = entryEligibleOverlayRanges({
+      playbookMode,
       instrument,
       showOr30,
       // IB H/L + ±10 follow the IB BRK/REJ toolbar toggle (off on refresh).
@@ -4680,6 +4792,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       ib: ibLevels ?? ibRangeRef.current,
       usRange: usRangeRef.current,
       lunchRange: lunchRangeRef.current,
+      morningAttempts,
     })
     if (overlays.length === 0) {
       clearBands()

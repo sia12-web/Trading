@@ -161,6 +161,28 @@ export function or30LockHms(market: DeskMarket): string {
   return `${pad(h)}:${pad(m)}:${pad(s)}`
 }
 
+/**
+ * Optional morning OR30 ±10 entry window is open (after lock, through entryClose).
+ * Tokyo: 09:30–09:45 JST · NY: 10:00–10:15 ET (and before IB unlock at 10:30).
+ * Chart entry highlights / snap must hide OR30 after this closes.
+ */
+export function isOr30MorningEntryWindowOpen(
+  instrument: string | null | undefined,
+  now: Date = new Date()
+): boolean {
+  const market = deskMarketFor(instrument)
+  const s = sessionFor(instrument)
+  const t = parseTimeToSeconds(timeInTz(now, s.tz))
+  const open = parseTimeToSeconds(s.marketOpen)
+  const entryClose = parseTimeToSeconds(s.entryClose)
+  const or30Lock = or30LockSecFromOpen(open)
+  if (market === 'TOKYO') {
+    return t >= or30Lock && t <= entryClose
+  }
+  const midStart = parseTimeToSeconds(ibStrategyStartHms(market))
+  return t >= or30Lock && t < midStart && t <= entryClose
+}
+
 /** Desk-local mid-slot strategy end (NY IB · Tokyo US Range). */
 export function ibStrategyEndHms(market: DeskMarket): string {
   return market === 'TOKYO' ? TOKYO_US_RANGE_STRATEGY_END : NY_IB_STRATEGY_END

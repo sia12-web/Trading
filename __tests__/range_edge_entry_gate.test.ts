@@ -9,6 +9,7 @@ import {
   clampPriceToRangeEdgeBands,
   clampPriceToRangeEdgeEnvelope,
   filterLevelsInRangeEdgeBand,
+  findRangeEdgeBandHit,
   isEntryWithinRangeEdgeBand,
   rangeEdgeBands,
   rangeEdgeBandsEnvelope,
@@ -124,6 +125,16 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
   // After free mid drag, release snap still lands on a legal edge band
   assert.equal(clampPriceToNearestRangeEdgeBands(39950, [range]), 39990)
   assert.equal(clampPriceToNearestRangeEdgeBands(39920, [range]), 39910)
+}
+
+{
+  const hitHigh = findRangeEdgeBandHit(40005, [range])
+  assert.equal(hitHigh?.edge, 'high')
+  assert.equal(hitHigh?.center, 40000)
+  const hitLow = findRangeEdgeBandHit(39905, [range])
+  assert.equal(hitLow?.edge, 'low')
+  assert.equal(hitLow?.center, 39900)
+  assert.equal(findRangeEdgeBandHit(39950, [range]), null, 'mid-range is not a band hit')
 }
 
 console.log('range_edge_entry_gate: all passed')
