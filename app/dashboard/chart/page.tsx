@@ -1615,6 +1615,7 @@ export default function ChartPage() {
             presetStopLoss={orderPresetStopLoss}
             presetProfitTarget={orderPresetProfitTarget}
             autoConfirm={orderAutoConfirm}
+            sessionFillsUsed={gate?.attemptsUsed ?? 0}
             onClose={() => {
               setOrderLevel(null)
               setOrderLevelType(undefined)

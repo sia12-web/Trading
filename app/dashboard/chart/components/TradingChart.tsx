@@ -57,7 +57,7 @@ import {
   previewLevelOrderPrices,
   resolveChartLimitPick,
 } from '@/lib/trading/chartLevelPick'
-import { previewPositionSizing, RANGE_EDGE_RISK_PERCENT } from '@/lib/trading/positionSizing'
+import { previewPositionSizing, riskPercentForSessionAttempt } from '@/lib/trading/positionSizing'
 import {
   aiLevelsUrl,
   resolveDeskLevels,
@@ -693,7 +693,7 @@ export function TradingChart({
   onLevelSelect,
   canPlaceOrder = false,
   rangeStrategy = null,
-  attemptsUsed: _attemptsUsed = 0,
+  attemptsUsed = 0,
   stopHits = 0,
   morningAttempts = 0,
   ibAttempts = 0,
@@ -6330,13 +6330,14 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           const tpY = candleSeries ? candleSeries.priceToCoordinate(riskBox.profitTarget) : null
           const slY = candleSeries ? candleSeries.priceToCoordinate(riskBox.stopLoss) : null
 
-          // Must match LevelOrderTicket / open-route: 0.25% desk risk — never 1%.
+          // Progressive session risk: fill #1 = 1%, #2 = 0.5%, #3 = 0.25%
+          const sessionRiskPct = riskPercentForSessionAttempt(attemptsUsed)
           const sz = previewPositionSizing(
             riskBox.entryPrice,
             liveAccountSize,
             riskBox.direction,
             riskBox.stopLoss,
-            RANGE_EDGE_RISK_PERCENT
+            sessionRiskPct
           )
           const rawUnits = sz?.position_size ?? 1
           const posSize = typeof rawUnits === 'number' && Number.isFinite(rawUnits)
@@ -6448,7 +6449,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 </div>
               )}
 
-              {/* Stop Loss (SL) Line Pill Badge — Drag to adjust SL (0.25% desk risk) */}
+              {/* Stop Loss (SL) Line Pill Badge — Drag to adjust SL (progressive session risk) */}
               {slY != null && (
                 <div
                   onMouseDown={onRiskLineMouseDown('SL')}
@@ -6457,11 +6458,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     left: '42%',
                     top: `${slY - 13}px`,
                   }}
-                  title={`Drag Stop Loss — size adjusts to keep ${RANGE_EDGE_RISK_PERCENT}% account risk`}
+                  title={`Drag Stop Loss — size adjusts to keep ${sessionRiskPct}% account risk (fill ${Math.min(attemptsUsed + 1, 3)}/3)`}
                 >
                   <div className="flex items-center rounded border border-dashed border-amber-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-amber-300 shadow-md group-hover:border-amber-300 transition">
                     <span className="text-amber-400">
-                      -{lossVal} CAD · {RANGE_EDGE_RISK_PERCENT}%
+                      -{lossVal} CAD · {sessionRiskPct}%
                     </span>
                     <span className="text-amber-600 mx-1.5">|</span>
                     <button

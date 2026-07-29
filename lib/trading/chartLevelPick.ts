@@ -12,7 +12,7 @@ import {
   type DeskTickInstrument,
 } from '@/lib/trading/instrumentTicks'
 import {
-  RANGE_EDGE_RISK_PERCENT,
+  riskPercentForSessionAttempt,
   previewPositionSizing,
 } from '@/lib/trading/positionSizing'
 import {
@@ -139,6 +139,8 @@ export function previewLevelOrderPrices(args: {
   /** Active playbook range — strategy SL/TP when present */
   activeRange?: StrategyRangeEdges | null
   magnets?: StrategyRiskMagnets | null
+  /** Filled session attempts — progressive 1% → 0.5% → 0.25% */
+  sessionFillsUsed?: number
 }): {
   direction: 'LONG' | 'SHORT'
   entry: number
@@ -164,7 +166,7 @@ export function previewLevelOrderPrices(args: {
     args.accountSize && args.accountSize > 0 ? args.accountSize : 100_000,
     direction,
     stop,
-    RANGE_EDGE_RISK_PERCENT
+    riskPercentForSessionAttempt(args.sessionFillsUsed)
   )
   if (!preview) return null
 

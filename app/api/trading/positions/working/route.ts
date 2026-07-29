@@ -25,7 +25,11 @@ import {
 } from '@/lib/trading/attemptLadder'
 import { getTodayAttendance, tradeDateForInstrument } from '@/lib/trading/deskAttendance'
 import { logger } from '@/lib/utils/logger'
-import { normalizeEntrySource } from '@/lib/trading/positionSizing'
+import {
+  normalizeEntrySource,
+  riskPercentForEntrySource,
+  getPositionSizer,
+} from '@/lib/trading/positionSizing'
 import { assertServerRangeEdgeEntry } from '@/lib/trading/serverPlaybookRange'
 import { logEntryDenied, logWorkingPlaced } from '@/lib/utils/deskAuditLog'
 import { WORKING_LIMIT_ALREADY_MESSAGE } from '@/lib/trading/workingLimitGate'
@@ -290,16 +294,32 @@ export async function POST(request: Request) {
 
     const stop = Number(body.stop_loss_price ?? body.stopLoss)
     const target = Number(body.profit_target_price ?? body.profitTarget)
-    const size = Number(body.position_size ?? body.positionSize)
-    const risk = Number(body.risk_amount ?? body.riskAmount)
     const account = Number(body.account_size ?? body.accountSize) || 100000
     const entryWindow = Number(body.entry_window ?? body.entryWindow) || 1
     const regime = body.regime || 'bullish'
     const regimeConf = Number(body.regime_confidence ?? body.regimeConfidence) || 70
+    const entrySource = normalizeEntrySource(body.entry_source)
 
-    if (!Number.isFinite(stop) || stop <= 0 || !Number.isFinite(size) || size <= 0) {
-      return NextResponse.json({ error: 'Invalid stop or size' }, { status: 400 })
+    if (!Number.isFinite(stop) || stop <= 0) {
+      return NextResponse.json({ error: 'Invalid stop' }, { status: 400 })
     }
+
+    // Server-authoritative progressive risk (1% → 0.5% → 0.25%) from filled
+    // session attempts — ignore client-claimed size/risk so chart/ticket can't
+    // under/over-size vs the ladder.
+    const riskPct = riskPercentForEntrySource(entrySource, gate.attemptsUsed)
+    const sizing = getPositionSizer().calculatePosition(
+      level,
+      account,
+      direction,
+      stop,
+      riskPct
+    )
+    if (!sizing) {
+      return NextResponse.json({ error: 'Invalid stop or account for sizing' }, { status: 400 })
+    }
+    const size = sizing.position_size
+    const risk = sizing.risk_amount
 
     const now = new Date().toISOString()
     const { data: row, error } = await supabase
@@ -329,7 +349,7 @@ export async function POST(request: Request) {
           typeof body.entry_reason === 'string' && body.entry_reason.trim()
             ? body.entry_reason.trim().slice(0, 2000)
             : `WORKING ${direction} limit @ ${level}`,
-        entry_source: normalizeEntrySource(body.entry_source),
+        entry_source: entrySource,
         fill_status: 'working',
         notes: 'Working limit — not filled yet',
       })
@@ -383,7 +403,7 @@ export async function POST(request: Request) {
             rangeHigh: body.range_high != null ? Number(body.range_high) : null,
             rangeLow: body.range_low != null ? Number(body.range_low) : null,
             rangeLabel: body.range_label ?? null,
-            entrySource: normalizeEntrySource(body.entry_source),
+            entrySource,
           })
           return NextResponse.json({
             success: true,
@@ -392,6 +412,12 @@ export async function POST(request: Request) {
             level,
             direction,
             fill_status: 'working',
+            position_size: size,
+            risk_amount: risk,
+            risk_percent: riskPct,
+            account_size: account,
+            stop_loss_price: stop,
+            profit_target_price: Number.isFinite(target) ? target : null,
           })
         }
       }
@@ -410,7 +436,7 @@ export async function POST(request: Request) {
       rangeHigh: body.range_high != null ? Number(body.range_high) : null,
       rangeLow: body.range_low != null ? Number(body.range_low) : null,
       rangeLabel: body.range_label ?? null,
-      entrySource: normalizeEntrySource(body.entry_source),
+      entrySource,
     })
 
     return NextResponse.json({
@@ -420,6 +446,12 @@ export async function POST(request: Request) {
       level,
       direction,
       fill_status: 'working',
+      position_size: size,
+      risk_amount: risk,
+      risk_percent: riskPct,
+      account_size: account,
+      stop_loss_price: stop,
+      profit_target_price: Number.isFinite(target) ? target : null,
       message: 'Working limit placed — not on Positions until filled',
     })
   } catch (error) {

@@ -515,8 +515,8 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       )
     }
 
-    // Calculate position sizing — risk is server-derived only (manual = 1%, else desk 5%)
-    const riskPct = riskPercentForEntrySource(deskEntrySource)
+    // Progressive session risk: fill #1 = 1%, #2 = 0.5%, #3 = 0.25% (W/L same)
+    const riskPct = riskPercentForEntrySource(deskEntrySource, gate.attemptsUsed)
     const sizing = positionSizer.calculatePosition(
       body.entry_price,
       body.account_size,

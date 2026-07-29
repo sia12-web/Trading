@@ -24,7 +24,7 @@ import {
   tradeDateForInstrument,
 } from '@/lib/trading/deskAttendance'
 import {
-  RANGE_EDGE_RISK_PERCENT,
+  riskPercentForSessionAttempt,
 } from '@/lib/trading/positionSizing'
 import {
   MAX_DAY_ATTEMPTS,
@@ -613,14 +613,14 @@ export async function buildLiveVoiceDeskContext(
       },
     },
     risk: {
-      deskRiskPercent: RANGE_EDGE_RISK_PERCENT,
-      manualRiskPercent: RANGE_EDGE_RISK_PERCENT,
+      deskRiskPercent: riskPercentForSessionAttempt(gate.attemptsUsed ?? attemptsUsed),
+      manualRiskPercent: riskPercentForSessionAttempt(gate.attemptsUsed ?? attemptsUsed),
       maxAttempts: MAX_DAY_ATTEMPTS,
       maxStopHits: MAX_STOP_HITS,
       entryRule:
         contextInstrument === 'NIKKEI'
-          ? 'Session max 3 fills total, win/loss/breakeven all count (up to 2 each: AM/OR30 + US Range + IB) @ 0.25% risk each. Next window unlocks when prior clock ends or probes are exhausted, but the 3-fill session cap always wins even with spare window probes. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books ride to cash-close flatten. Voice never places orders. Range H/L = retail bait; 50% mid = pullback/reverse magnet; desk hunts stops just beyond edges with POC/AVWAP confluence. Entries only within ±10 pts of active range high, 50% mid, or low. Ticket sets initial SL beyond active range (or zone floor) and TP at opposing edge/magnets; post-fill BE/trail manage is separate.'
-          : 'Session max 3 fills total, win/loss/breakeven all count (up to 2 each: AM/OR30 + IB + LN) @ 0.25% risk each. Next window unlocks when prior clock ends or probes are exhausted, but the 3-fill session cap always wins even with spare window probes. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books ride to cash-close flatten. Voice never places orders. Range H/L = retail bait; 50% mid = pullback/reverse magnet; desk hunts stops just beyond edges with POC/AVWAP confluence. Entries only within ±10 pts of active range high, 50% mid, or low. Ticket sets initial SL beyond active range (or zone floor) and TP at opposing edge/magnets; post-fill BE/trail manage is separate.',
+          ? 'Session max 3 fills total, win/loss/breakeven all count (up to 2 each: AM/OR30 + US Range + IB). Progressive risk 1% → 0.5% → 0.25% by fill # (outcome does not matter). Next window unlocks when prior clock ends or probes are exhausted, but the 3-fill session cap always wins even with spare window probes. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books ride to cash-close flatten. Voice never places orders. Range H/L = retail bait; 50% mid = pullback/reverse magnet; desk hunts stops just beyond edges with POC/AVWAP confluence. Entries only within ±10 pts of active range high, 50% mid, or low. Ticket sets initial SL beyond active range (or zone floor) and TP at opposing edge/magnets; post-fill BE/trail manage is separate.'
+          : 'Session max 3 fills total, win/loss/breakeven all count (up to 2 each: AM/OR30 + IB + LN). Progressive risk 1% → 0.5% → 0.25% by fill # (outcome does not matter). Next window unlocks when prior clock ends or probes are exhausted, but the 3-fill session cap always wins even with spare window probes. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books ride to cash-close flatten. Voice never places orders. Range H/L = retail bait; 50% mid = pullback/reverse magnet; desk hunts stops just beyond edges with POC/AVWAP confluence. Entries only within ±10 pts of active range high, 50% mid, or low. Ticket sets initial SL beyond active range (or zone floor) and TP at opposing edge/magnets; post-fill BE/trail manage is separate.',
     },
     rangeLiquidityBriefText,
     rangeTail,

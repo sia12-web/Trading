@@ -23,7 +23,6 @@ import {
   getLastNTokyoTradingDays,
 } from '@/lib/utils/dateUtils'
 import {
-  RANGE_EDGE_RISK_PERCENT,
   normalizeEntrySource,
   previewPositionSizing,
   riskPercentForEntrySource,
@@ -2221,7 +2220,7 @@ function SimulationDeskInner() {
         accountSize,
         direction,
         stop,
-        riskPercentForEntrySource(entrySource)
+        riskPercentForEntrySource(entrySource, attemptsUsedRef.current)
       )
       if (!preview) {
         placingOrderRef.current = false
@@ -3352,7 +3351,7 @@ function SimulationDeskInner() {
             pendingRef.current = pend
             setPending(pend)
             setMsg(
-              `Manual ${order.direction} limit @ ${order.level.toLocaleString()} — ${RANGE_EDGE_RISK_PERCENT}% risk · press Play until fill`
+              `Manual ${order.direction} limit @ ${order.level.toLocaleString()} — ${riskPercentForEntrySource(order.entrySource, attemptsUsedRef.current)}% risk · press Play until fill`
             )
           }}
         />
@@ -3372,7 +3371,11 @@ function SimulationDeskInner() {
                     }
                   >
                     {ticketLevel.source === 'ai' ? 'AI level' : 'Structure'} ·{' '}
-                    {RANGE_EDGE_RISK_PERCENT}% risk
+                    {riskPercentForEntrySource(
+                      ticketLevel.source === 'ai' ? 'ai' : 'structure',
+                      attemptsUsed
+                    )}
+                    % risk
                   </span>
                   <br />
                   {ticketLevel.level.toLocaleString()}
@@ -3419,7 +3422,10 @@ function SimulationDeskInner() {
                   accountSize,
                   d,
                   strat.stop,
-                  RANGE_EDGE_RISK_PERCENT
+                  riskPercentForEntrySource(
+                    ticketLevel.source === 'ai' ? 'ai' : 'structure',
+                    attemptsUsed
+                  )
                 )
                 const suggested = simSuggestedDirection(
                   overnightBias?.bias ?? 'none',

@@ -1,6 +1,7 @@
 /**
  * Position sizing calculator
- * Live range-edge desk: 0.25% account risk per probe (Option B).
+ * Live range-edge desk: progressive session risk 1% → 0.5% → 0.25%
+ * (fill #1 / #2 / #3), win or loss — then session locks at 3 fills.
  * Formula: position_size = risk_amount / |entry - stop|
  */
 
@@ -8,21 +9,58 @@ import { logger } from '@/lib/utils/logger'
 import { snapProfitToRound } from '@/lib/trading/deskLevels'
 import type { PositionSizing, EntryDirection } from '@/types/trading'
 
-/** @deprecated Prefer RANGE_EDGE_RISK_PERCENT for live desk probes */
+/** @deprecated Prefer riskPercentForSessionAttempt */
 export const DESK_RISK_PERCENT = 5
-/** @deprecated Prefer RANGE_EDGE_RISK_PERCENT for live desk probes */
+/** @deprecated Prefer riskPercentForSessionAttempt */
 export const MANUAL_RISK_PERCENT = 1
-/** Live playbook probes — 0.25% of account per attempt */
-export const RANGE_EDGE_RISK_PERCENT = 0.25
+/** Session fill #1 risk */
+export const SESSION_RISK_FIRST_PERCENT = 1
+/** Session fill #2 risk (after any W/L on #1) */
+export const SESSION_RISK_SECOND_PERCENT = 0.5
+/** Session fill #3 (last) risk */
+export const SESSION_RISK_THIRD_PERCENT = 0.25
+/**
+ * Floor / last-probe risk — kept for callers that still import the old name.
+ * Prefer {@link riskPercentForSessionAttempt}.
+ */
+export const RANGE_EDGE_RISK_PERCENT = SESSION_RISK_THIRD_PERCENT
 const MAX_LOSS_PERCENT = 0.05 // 5% max loss per trade (default disaster stop)
 /** With tight zone stops, cap exposure so risk-per-point can't blow up notional */
 const MAX_NOTIONAL_MULT = 5
 
 export type DeskEntrySource = 'ai' | 'structure' | 'manual'
 
-/** Live desk entries (ai / structure / manual chart) all size at 0.25% risk. */
-export function riskPercentForEntrySource(_source?: DeskEntrySource | string | null): number {
-  return RANGE_EDGE_RISK_PERCENT
+/**
+ * Progressive desk risk from how many session fills already landed
+ * (working limits do not count until filled). Win/loss/breakeven all the same:
+ *   0 fills → 1% (first probe)
+ *   1 fill  → 0.5% (second)
+ *   2+      → 0.25% (third / last before session lock)
+ */
+export function riskPercentForSessionAttempt(sessionFillsUsed?: number | null): number {
+  const used = Math.max(0, Math.floor(Number(sessionFillsUsed) || 0))
+  if (used <= 0) return SESSION_RISK_FIRST_PERCENT
+  if (used === 1) return SESSION_RISK_SECOND_PERCENT
+  return SESSION_RISK_THIRD_PERCENT
+}
+
+/** Short chip: `Risk 1% (fill 1/3)` */
+export function formatSessionRiskChip(sessionFillsUsed?: number | null): string {
+  const used = Math.max(0, Math.floor(Number(sessionFillsUsed) || 0))
+  const pct = riskPercentForSessionAttempt(used)
+  const fillNum = Math.min(used + 1, 3)
+  return `Risk ${pct}% (fill ${fillNum}/3)`
+}
+
+/**
+ * Live desk entries (ai / structure / manual) share the same progressive ladder.
+ * Pass today's filled attempt count so risk steps 1 → 0.5 → 0.25.
+ */
+export function riskPercentForEntrySource(
+  _source?: DeskEntrySource | string | null,
+  sessionFillsUsed?: number | null
+): number {
+  return riskPercentForSessionAttempt(sessionFillsUsed)
 }
 
 const MIN_ACCOUNT = 100

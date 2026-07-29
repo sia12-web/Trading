@@ -2,12 +2,11 @@
 
 /**
  * Limit order ticket — places a WORKING limit.
- * Strategy entries: ±10 range-edge gate + 0.25% account risk per probe.
+ * Strategy entries: ±10 range-edge gate + progressive session risk (1% → 0.5% → 0.25%).
  */
 
 import { useMemo, useState, useEffect, useRef } from 'react'
 import {
-  RANGE_EDGE_RISK_PERCENT,
   normalizeEntrySource,
   previewPositionSizing,
   riskPercentForEntrySource,
@@ -103,6 +102,8 @@ interface Props {
    * dialog to click through.
    */
   autoConfirm?: boolean
+  /** Filled session attempts so far (working limits excluded) — drives 1→0.5→0.25% */
+  sessionFillsUsed?: number
   onClose: () => void
   /** Called when the working limit is accepted — NOT when filled. */
   onPlaced: (order: PendingLimitOrder) => void
@@ -134,6 +135,7 @@ export function LevelOrderTicket({
   presetStopLoss = null,
   presetProfitTarget = null,
   autoConfirm = false,
+  sessionFillsUsed = 0,
   onClose,
   onPlaced,
 }: Props) {
@@ -143,7 +145,7 @@ export function LevelOrderTicket({
     levelType === 'structure' ? 'structure' : 'ai'
   )
   const isManual = entrySource === 'manual'
-  const riskPct = riskPercentForEntrySource(entrySource)
+  const riskPct = riskPercentForEntrySource(entrySource, sessionFillsUsed)
 
   // preferredDirection / playbook side win; then type; regime last
   const typeLower = String(levelType || '').toLowerCase()
@@ -504,10 +506,10 @@ export function LevelOrderTicket({
 
   const sourceBadge =
     entrySource === 'manual'
-      ? `Manual · ${RANGE_EDGE_RISK_PERCENT}% risk`
+      ? `Manual · ${riskPct}% risk (fill ${Math.min(sessionFillsUsed + 1, 3)}/3)`
       : entrySource === 'structure'
-        ? `Structure · ${RANGE_EDGE_RISK_PERCENT}% risk`
-        : `AI level · ${RANGE_EDGE_RISK_PERCENT}% risk`
+        ? `Structure · ${riskPct}% risk (fill ${Math.min(sessionFillsUsed + 1, 3)}/3)`
+        : `AI level · ${riskPct}% risk (fill ${Math.min(sessionFillsUsed + 1, 3)}/3)`
 
   return (
     <div
@@ -709,8 +711,8 @@ export function LevelOrderTicket({
               />
             </label>
             <p className="mt-2 text-[10px] text-amber-300/90">
-              Risk fixed at {RANGE_EDGE_RISK_PERCENT}% of account — size adjusts when you widen or
-              tighten the stop.
+              Risk steps 1% → 0.5% → 0.25% by session fill (this probe {riskPct}%) —
+              size adjusts when you widen or tighten the stop.
             </p>
           </>
         )}
