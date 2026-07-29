@@ -182,6 +182,39 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
   )
   assert.equal(
     activeRangeForPlaybook({
+      playbookMode: 'morning',
+      instrument: 'NIKKEI',
+      usRange: { high: 40_000, low: 39_500, complete: true },
+      or30: { high: 39_800, low: 39_600, complete: false },
+      morningAttempts: 0,
+    })?.label,
+    'US Range',
+    'Nikkei OR30 forming + prior NYC complete → preview US Range ±10'
+  )
+  assert.equal(
+    activeRangeForPlaybook({
+      playbookMode: 'morning',
+      instrument: 'NIKKEI',
+      usRange: { high: 40_000, low: 39_500, complete: true },
+      or30: { high: 39_800, low: 39_600, complete: true },
+      morningAttempts: 0,
+    })?.label,
+    'US Range',
+    'Nikkei OR30 skipped (0 fills) → US Range bait before slot clock'
+  )
+  assert.equal(
+    activeRangeForPlaybook({
+      playbookMode: 'morning',
+      instrument: 'NIKKEI',
+      usRange: { high: 40_000, low: 39_500, complete: true },
+      or30: { high: 39_800, low: 39_600, complete: true },
+      morningAttempts: 1,
+    })?.label,
+    'OR30',
+    'Nikkei actively probing OR30 → keep OR30 bait'
+  )
+  assert.equal(
+    activeRangeForPlaybook({
       playbookMode: 'us_range',
       instrument: 'NIKKEI',
       usRange: { high: 40_000, low: 39_500, complete: false },

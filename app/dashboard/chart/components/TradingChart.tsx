@@ -4685,10 +4685,17 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       }
     }
     setEntryBandsVisible(entryBandLinesRef.current.length > 0)
+    const isUsPreview =
+      instrument === 'NIKKEI' &&
+      label === 'US Range' &&
+      !bright &&
+      playbookMode !== 'us_range'
     setEntryBandLabel(
       bright
         ? `${label} ±${RANGE_EDGE_BAND_POINTS} entry zones`
-        : `${label} ±${RANGE_EDGE_BAND_POINTS} (locked — wait for window)`
+        : isUsPreview
+          ? `US Range ±${RANGE_EDGE_BAND_POINTS} (shaped — entries 21:15–21:45 ET)`
+          : `${label} ±${RANGE_EDGE_BAND_POINTS} (locked — wait for window)`
     )
 
     return () => {
