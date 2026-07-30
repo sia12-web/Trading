@@ -16,7 +16,7 @@ import {
   type DeskInstrument,
   type DeskMarket,
 } from '@/lib/trading/sessionGate'
-import { getESTDateString, parseTimeToSeconds } from '@/lib/utils/timeUtils'
+import { parseTimeToSeconds } from '@/lib/utils/timeUtils'
 import {
   TRADER_DISPLAY_LABEL,
   deskLocalHmsAsTraderDisplay,
@@ -317,22 +317,16 @@ export async function autoLunchClockOut(
     const row = await getTodayAttendance(supabase, userId, market, now)
     if (row?.status !== 'clocked_in') continue
 
-    // Prefer instrument that had a filled trade today.
-    // Trades currently store EST calendar dates; Tokyo session_date is JST — check both.
-    let traded: DeskInstrument | null = null
+    // Ladder must match session-gate (desk session date only). Do not merge EST
+    // calendar day — that double-counts Nikkei fills near the JST/ET boundary.
     const sessionDate = sessionDateForMarket(market, now)
-    const estDate = getESTDateString(now)
-    const dateFilter =
-      market === 'TOKYO' && estDate !== sessionDate
-        ? [sessionDate, estDate]
-        : [sessionDate]
     const instruments = market === 'TOKYO' ? ['NIKKEI'] : ['DOW', 'NASDAQ']
 
     const { data: openPos } = await supabase
       .from('trades_journal')
       .select('id, instrument')
       .eq('user_id', userId)
-      .in('trade_date', dateFilter)
+      .eq('trade_date', sessionDate)
       .eq('fill_status', 'filled')
       .is('exit_timestamp', null)
       .in('instrument', instruments)
@@ -346,7 +340,7 @@ export async function autoLunchClockOut(
       .from('trades_journal')
       .select('instrument, exit_reason, entry_timestamp, created_at')
       .eq('user_id', userId)
-      .in('trade_date', dateFilter)
+      .eq('trade_date', sessionDate)
       .eq('fill_status', 'filled')
       .in('instrument', instruments)
 
@@ -363,11 +357,12 @@ export async function autoLunchClockOut(
     // Session slots or later windows remain → stay clocked in
     if (shouldRetainClockInAtLunch(ladder)) continue
 
+    let traded: DeskInstrument | null = null
     const { data: trade } = await supabase
       .from('trades_journal')
       .select('instrument')
       .eq('user_id', userId)
-      .in('trade_date', dateFilter)
+      .eq('trade_date', sessionDate)
       .eq('fill_status', 'filled')
       .in('instrument', instruments)
       .order('created_at', { ascending: false })

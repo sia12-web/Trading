@@ -81,7 +81,7 @@ assert(
   'message must not say clocked out while clocked in'
 )
 
-// Session cap 3/3 → auto clock-out allowed
+// Session cap 3/3 on same desk day → auto clock-out allowed
 const capped = buildAttemptLadder(
   [
     ...fills,
@@ -96,5 +96,27 @@ const capped = buildAttemptLadder(
 )
 assert(capped.dayLocked, '3/3 session locked')
 assert(!shouldRetainClockInAtLunch(capped), 'no retain at session cap')
+
+// Session gate / auto lunch must use desk session_date only — not EST day
+const sessionOnly = buildAttemptLadder(fills, 'NIKKEI', ibPrep)
+assert(sessionOnly.dayAttempts === 2, '2 session fills')
+assert(shouldRetainClockInAtLunch(sessionOnly), 'retain at 2/3')
+
+// If auto lunch wrongly merged prior EST-calendar fill, cap would hit 3/3
+const priorEstDayFill = {
+  instrument: 'NIKKEI',
+  entryTimestamp: jstDate(Y, M, D, 8, 45).toISOString(),
+  exitReason: 'target_hit',
+}
+const wronglyMerged = buildAttemptLadder(
+  [priorEstDayFill, ...fills],
+  'NIKKEI',
+  ibPrep
+)
+assert(wronglyMerged.dayAttempts === 3, 'merged cross-day would be 3 fills')
+assert(
+  !shouldRetainClockInAtLunch(wronglyMerged),
+  'wrong merge would wrongly auto clock-out at lunch'
+)
 
 console.log('auto_lunch_clock_out: all passed')
