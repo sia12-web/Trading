@@ -79,6 +79,7 @@ export function ManageDeskBar({
   const [exitDismissed, setExitDismissed] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
+  const [newsExpanded, setNewsExpanded] = useState(false)
   const exitingRef = useRef(false)
   const aiPollInFlightRef = useRef(false)
   const exitDismissedRef = useRef(false)
@@ -90,6 +91,7 @@ export function ManageDeskBar({
   useEffect(() => {
     setExitPrompt(null)
     setExitDismissed(false)
+    setNewsExpanded(false)
     exitDismissedRef.current = false
     exitingRef.current = false
   }, [position.id])
@@ -437,43 +439,46 @@ export function ManageDeskBar({
   const rvolOk =
     ai?.rvol != null && Number.isFinite(ai.rvol) && ai.rvol > 0
 
+  const headlinePreview =
+    ai?.headlines && ai.headlines.length > 0
+      ? ai.headlines.slice(0, 2).join(' · ')
+      : null
+
   return (
-    <div className="rounded-xl border border-amber-800/40 bg-[#161b22] px-3 py-2.5 space-y-2">
+    <div className="w-[min(300px,calc(100vw-1.5rem))] rounded-lg border border-amber-800/40 bg-[#161b22]/95 px-2 py-1.5 shadow-xl backdrop-blur-md space-y-1">
       {atrAdviceLine && (
         <p
-          className="text-[10px] leading-snug text-violet-200/85"
-          title="Advise only — does not auto-move SL/TP"
+          className="text-[9px] leading-tight text-violet-200/85 truncate"
+          title={`${atrAdviceLine} — advise only, does not auto-move SL/TP`}
         >
           {atrAdviceLine}
         </p>
       )}
       {/* ── AI exit requires explicit trader CONFIRM (never auto-closes) ────── */}
       {exitPrompt && (
-        <div className="rounded-lg border border-red-500/70 bg-red-950/40 p-2.5 shadow-lg flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="min-w-0">
-              <span className="text-xs font-extrabold uppercase tracking-wider text-red-300">
-                AI exit suggestion · {exitPrompt.confidence}% — confirm to close
-              </span>
-              <p className="text-xs text-gray-200 font-medium truncate">{exitPrompt.reason}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
+        <div className="rounded border border-red-500/70 bg-red-950/40 p-1.5 space-y-1">
+          <p className="text-[9px] font-bold uppercase tracking-wide text-red-300">
+            AI exit · {exitPrompt.confidence}%
+          </p>
+          <p className="text-[10px] text-gray-200 leading-snug line-clamp-2">
+            {exitPrompt.reason}
+          </p>
+          <div className="flex items-center gap-1">
             <button
               type="button"
               disabled={!!busy}
               onClick={() => void handleConfirmAiExit()}
-              className="px-3 py-1 rounded bg-red-600 hover:bg-red-500 text-white text-xs font-extrabold uppercase tracking-wider transition shadow"
+              className="px-2 py-0.5 rounded bg-red-600 hover:bg-red-500 text-white text-[9px] font-bold uppercase tracking-wide transition"
             >
-              {busy === 'AI_EXIT' ? '…' : 'CONFIRM EXIT'}
+              {busy === 'AI_EXIT' ? '…' : 'Exit'}
             </button>
             <button
               type="button"
               disabled={!!busy}
               onClick={() => void handleRejectAiExit()}
-              className="px-2.5 py-1 rounded bg-surface-700 hover:bg-surface-600 text-gray-300 hover:text-white text-xs font-semibold uppercase tracking-wider transition"
+              className="px-2 py-0.5 rounded bg-surface-700 hover:bg-surface-600 text-gray-300 hover:text-white text-[9px] font-semibold uppercase tracking-wide transition"
             >
-              {busy === 'AI_HOLD' ? '…' : 'HOLD'}
+              {busy === 'AI_HOLD' ? '…' : 'Hold'}
             </button>
           </div>
         </div>
@@ -481,39 +486,37 @@ export function ManageDeskBar({
 
       {/* ── Bracket recommendation (breakeven / trail / scale) — CONFIRM / REJECT ────── */}
       {recommendation && (
-        <div className="rounded-lg border border-amber-500/70 bg-amber-950/40 p-2.5 shadow-lg flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <div>
-              <span className="text-xs font-extrabold uppercase tracking-wider text-amber-300">
-                AI Management Recommendation
-              </span>
-              <p className="text-xs text-gray-200 font-medium">{recommendation.reason}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
+        <div className="rounded border border-amber-500/70 bg-amber-950/40 p-1.5 space-y-1">
+          <p className="text-[9px] font-bold uppercase tracking-wide text-amber-300">
+            AI bracket · {recommendation.action_type}
+          </p>
+          <p className="text-[10px] text-gray-200 leading-snug line-clamp-2">
+            {recommendation.reason}
+          </p>
+          <div className="flex items-center gap-1">
             <button
               type="button"
               disabled={!!busy}
               onClick={handleConfirmRecommendation}
-              className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold uppercase tracking-wider transition shadow"
+              className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[9px] font-bold uppercase tracking-wide transition"
             >
-              CONFIRM
+              Confirm
             </button>
             <button
               type="button"
               disabled={!!busy}
               onClick={handleRejectRecommendation}
-              className="px-2.5 py-1 rounded bg-surface-700 hover:bg-surface-600 text-gray-300 hover:text-white text-xs font-semibold uppercase tracking-wider transition"
+              className="px-2 py-0.5 rounded bg-surface-700 hover:bg-surface-600 text-gray-300 hover:text-white text-[9px] font-semibold uppercase tracking-wide transition"
             >
-              REJECT
+              Reject
             </button>
           </div>
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px]">
         <span
-          className={`font-bold px-2 py-0.5 rounded border ${
+          className={`font-bold px-1.5 py-px rounded border text-[9px] ${
             isLong
               ? 'border-emerald-700/60 bg-emerald-950/40 text-emerald-200'
               : 'border-red-700/60 bg-red-950/40 text-red-200'
@@ -522,7 +525,7 @@ export function ManageDeskBar({
           {isLong ? 'LONG' : 'SHORT'}
         </span>
         <span className="text-gray-500">
-          Entry{' '}
+          E{' '}
           <span className="price-mono text-blue-400">
             {position.entryPrice.toLocaleString()}
           </span>
@@ -539,10 +542,13 @@ export function ManageDeskBar({
             {position.profitTarget.toLocaleString()}
           </span>
         </span>
-        <span className="ml-auto flex flex-wrap items-center gap-3 text-[10px] tracking-wide text-gray-500">
+      </div>
+
+      {(pathToTp != null || riskToSl != null) && (
+        <div className="flex flex-wrap items-center gap-x-2 text-[9px] text-gray-500">
           {pathToTp != null && (
             <span title="How far price has moved from entry toward take-profit">
-              Entry→TP{' '}
+              →TP{' '}
               <span className="price-mono text-sky-300">
                 {Math.round(pathToTp * 100)}%
               </span>
@@ -550,117 +556,118 @@ export function ManageDeskBar({
           )}
           {riskToSl != null && (
             <span title="Room left before stop">
-              Room to SL{' '}
+              SL room{' '}
               <span className="price-mono text-gray-300">
                 {Math.round(riskToSl * 100)}%
               </span>
             </span>
           )}
-        </span>
-      </div>
+        </div>
+      )}
 
-      <div className="flex flex-wrap items-start gap-3 text-[11px]">
-        <div className="flex-1 min-w-[200px]">
-          {ai ? (
-            <>
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                <span className={`font-semibold uppercase ${verdictColor}`}>
-                  {ai.verdict}
+      {ai ? (
+        <div className="space-y-0.5 text-[10px]">
+          <div className="flex items-baseline gap-x-1.5 min-w-0">
+            <span className={`font-semibold uppercase shrink-0 ${verdictColor}`}>
+              {ai.verdict}
+            </span>
+            <span
+              className="text-gray-500 shrink-0"
+              title="AI confidence — not Entry→TP progress"
+            >
+              {ai.confidence}%
+            </span>
+            <span className="text-gray-400 truncate min-w-0" title={ai.reason}>
+              {ai.reason}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-x-2 text-[9px] uppercase tracking-wide text-gray-500">
+            {rvolOk ? (
+              <span title={ai.rvol_source ?? undefined}>
+                RVOL{' '}
+                <span className="price-mono text-gray-300 normal-case">
+                  {ai.rvol!.toFixed(2)}×
                 </span>
-                <span
-                  className="text-gray-500"
-                  title="AI confidence in this manage call — not Entry→TP progress"
-                >
-                  AI confidence{' '}
-                  <span className="price-mono text-gray-300">
-                    {ai.confidence}%
-                  </span>
+              </span>
+            ) : (
+              <span className="text-gray-600 normal-case">RVOL —</span>
+            )}
+            {ai.options && (
+              <span title={`${ai.options.proxy} · ${ai.options.source}`}>
+                P/C{' '}
+                <span className="price-mono text-gray-300 normal-case">
+                  {ai.options.put_call_volume != null
+                    ? ai.options.put_call_volume.toFixed(2)
+                    : '—'}
                 </span>
-              </div>
-              <p className="text-gray-400 mt-0.5 leading-snug">{ai.reason}</p>
-              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] uppercase tracking-wide text-gray-500">
-                {rvolOk ? (
-                  <span title={ai.rvol_source ?? undefined}>
-                    RVOL{' '}
-                    <span className="price-mono text-gray-300 normal-case">
-                      {ai.rvol!.toFixed(2)}×
-                    </span>
-                  </span>
-                ) : (
-                  <span className="text-gray-600 normal-case">RVOL —</span>
-                )}
-                {ai.options && (
-                  <span title={`${ai.options.proxy} · ${ai.options.source}`}>
-                    P/C{' '}
-                    <span className="price-mono text-gray-300 normal-case">
-                      {ai.options.put_call_volume != null
-                        ? ai.options.put_call_volume.toFixed(2)
-                        : '—'}
-                    </span>
-                    <span className="ml-1 normal-case text-gray-600">
-                      {ai.options.bias > 0
-                        ? 'calls'
-                        : ai.options.bias < 0
-                          ? 'puts'
-                          : 'flat'}
-                    </span>
-                  </span>
-                )}
-                {typeof ai.news_score === 'number' && (
-                  <span>
-                    News{' '}
-                    <span className="price-mono text-gray-300 normal-case">
-                      {ai.news_score}
-                    </span>
-                  </span>
-                )}
-              </div>
-              {ai.headlines && ai.headlines.length > 0 && (
-                <ul className="mt-1 text-gray-600 list-disc list-inside">
-                  {ai.headlines.slice(0, 2).map((h, i) => (
-                    <li key={i} className="truncate">
-                      {h}
-                    </li>
+              </span>
+            )}
+            {typeof ai.news_score === 'number' && (
+              <span>
+                News{' '}
+                <span className="price-mono text-gray-300 normal-case">
+                  {ai.news_score}
+                </span>
+              </span>
+            )}
+          </div>
+          {headlinePreview && (
+            <div className="text-[9px] text-gray-600">
+              {newsExpanded ? (
+                <ul className="list-disc list-inside space-y-0.5">
+                  {ai.headlines!.slice(0, 2).map((h, i) => (
+                    <li key={i}>{h}</li>
                   ))}
                 </ul>
+              ) : (
+                <p className="truncate" title={headlinePreview}>
+                  {headlinePreview}
+                </p>
               )}
-            </>
-          ) : (
-            <span className="text-gray-600 animate-pulse">
-              Scoring news + RVOL + options…
-            </span>
+              <button
+                type="button"
+                onClick={() => setNewsExpanded((v) => !v)}
+                className="mt-0.5 text-gray-500 hover:text-gray-300 normal-case tracking-normal"
+              >
+                {newsExpanded ? 'Less' : 'More'}
+              </button>
+            </div>
           )}
         </div>
+      ) : (
+        <span className="text-[10px] text-gray-600 animate-pulse">
+          Scoring…
+        </span>
+      )}
 
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          <button
-            type="button"
-            disabled={!!busy}
-            onClick={() => decide('HOLD')}
-            className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-[#30363d] text-gray-300 hover:border-blue-700 hover:text-blue-400 disabled:opacity-40"
-          >
-            {busy === 'HOLD' ? '…' : 'HOLD'}
-          </button>
-          <button
-            type="button"
-            disabled={!!busy}
-            onClick={() => decide('TAKE_PROFIT')}
-            className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-emerald-800 text-emerald-400 hover:bg-emerald-900/30 disabled:opacity-40"
-          >
-            {busy === 'TAKE_PROFIT' ? '…' : 'TAKE PROFIT'}
-          </button>
-          <button
-            type="button"
-            disabled={!!busy}
-            onClick={() => pollAi()}
-            className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-[#30363d] text-gray-500 hover:text-white"
-            title="Re-run AI check now"
-          >
-            ↻ AI
-          </button>
-        </div>
+      <div className="flex items-center gap-1 pt-0.5">
+        <button
+          type="button"
+          disabled={!!busy}
+          onClick={() => decide('HOLD')}
+          className="px-2 py-1 rounded text-[10px] font-semibold border border-[#30363d] text-gray-300 hover:border-blue-700 hover:text-blue-400 disabled:opacity-40"
+        >
+          {busy === 'HOLD' ? '…' : 'HOLD'}
+        </button>
+        <button
+          type="button"
+          disabled={!!busy}
+          onClick={() => decide('TAKE_PROFIT')}
+          className="px-2 py-1 rounded text-[10px] font-semibold border border-emerald-800 text-emerald-400 hover:bg-emerald-900/30 disabled:opacity-40"
+        >
+          {busy === 'TAKE_PROFIT' ? '…' : 'TAKE PROFIT'}
+        </button>
+        <button
+          type="button"
+          disabled={!!busy}
+          onClick={() => pollAi()}
+          className="px-2 py-1 rounded text-[10px] font-semibold border border-[#30363d] text-gray-500 hover:text-white"
+          title="Re-run AI check now"
+        >
+          ↻ AI
+        </button>
       </div>
-      {msg && <p className="text-[11px] text-gray-400">{msg}</p>}
+      {msg && <p className="text-[9px] text-gray-400 truncate">{msg}</p>}
     </div>
   )
 }

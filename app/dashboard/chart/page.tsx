@@ -1526,7 +1526,7 @@ export default function ChartPage() {
         )}
 
         {inManage && managePos && (
-          <div className="absolute bottom-14 left-4 z-30">
+          <div className="absolute bottom-14 left-3 z-30 pointer-events-auto">
             <ManageDeskBar
               position={managePos}
               currentPrice={livePrice}
