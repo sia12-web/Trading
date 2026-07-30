@@ -49,7 +49,12 @@ import {
   deskClockSeconds,
   MAX_DAY_ATTEMPTS as SESSION_MAX_ATTEMPTS,
 } from '@/lib/trading/attemptLadder'
-import { WORKING_LIMIT_ALREADY_MESSAGE } from '@/lib/trading/workingLimitGate'
+import {
+  WORKING_LIMIT_ALREADY_MESSAGE,
+  formatWorkingLimitAlreadyMessage,
+  workingRowToPending,
+  type WorkingLimitRow,
+} from '@/lib/trading/workingLimitGate'
 import {
   formatEntryPermissionNote,
   formatSessionStartNote,
@@ -876,6 +881,61 @@ export default function ChartPage() {
     []
   )
 
+  /** Paint durable working limit from server (refresh, 409, or instrument switch). */
+  const applyWorkingFromServer = useCallback(
+    (row: WorkingLimitRow, opts?: { notifyBlocked?: boolean }) => {
+      if (managePos || placingOrderRef.current) return
+      const order = workingRowToPending(row) as PendingLimitOrder
+      pendingRef.current = order
+      setPending(order)
+      setOrderStatus('working')
+      if (opts?.notifyBlocked) {
+        setFillError(
+          formatWorkingLimitAlreadyMessage({
+            instrument: order.instrument,
+            direction: order.direction,
+            level: order.level,
+          })
+        )
+      } else {
+        setFillError(null)
+      }
+      if (order.instrument !== instrument) {
+        setInstrument(order.instrument)
+      }
+      window.setTimeout(() => jumpToPriceRef.current?.(order.level), 150)
+    },
+    [managePos, instrument, setInstrument]
+  )
+
+  // Hydrate working limit overlay from DB on load / gate refresh (survives tab reload)
+  useEffect(() => {
+    if (managePos || placingOrderRef.current) return
+    if (pendingRef.current && orderStatus === 'working') return
+    if (gate?.phase === 'MANAGE') return
+
+    let cancelled = false
+    const load = async () => {
+      try {
+        const res = await fetch(
+          `/api/trading/positions/working?instrument=${encodeURIComponent(instrument)}`,
+          { cache: 'no-store' }
+        )
+        if (!res.ok || cancelled) return
+        const json = (await res.json()) as { working?: WorkingLimitRow | null }
+        if (cancelled || !json.working) return
+        if (managePos || placingOrderRef.current) return
+        applyWorkingFromServer(json.working)
+      } catch {
+        /* soft-fail */
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [gateTick, gate?.phase, managePos, instrument, orderStatus, applyWorkingFromServer])
+
   /** Open the journal position only after the working limit fills. */
   const fillPending = useCallback(
     async (pend: PendingLimitOrder, fillPrice: number) => {
@@ -998,7 +1058,28 @@ export default function ChartPage() {
       })
       if (gen !== orderGenRef.current) return
       if (!res.ok) {
-        const j = await res.json().catch(() => ({}))
+        const j = (await res.json().catch(() => ({}))) as {
+          error?: string
+          working?: WorkingLimitRow
+          existing_instrument?: string
+          existing_level?: number
+          existing_direction?: string
+        }
+        if (res.status === 409 && j.working) {
+          applyWorkingFromServer(j.working, { notifyBlocked: true })
+          return
+        }
+        if (res.status === 409 && j.existing_instrument && j.existing_level != null) {
+          applyWorkingFromServer(
+            {
+              instrument: j.existing_instrument,
+              entry_price: Number(j.existing_level),
+              entry_direction: j.existing_direction || 'LONG',
+            },
+            { notifyBlocked: true }
+          )
+          return
+        }
         setOrderStatus('rejected')
         setFillError(j.error || 'Working limit rejected by server')
         pendingRef.current = null
@@ -1011,7 +1092,7 @@ export default function ChartPage() {
       pendingRef.current = null
       setPending(null)
     }
-  }, [])
+  }, [applyWorkingFromServer])
 
   const expireWorkingLimits = useCallback(
     async (opts?: { forceExpireWorking?: boolean; forceCashClose?: boolean }) => {

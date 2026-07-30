@@ -7,6 +7,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getESTDateString } from '@/lib/utils/timeUtils'
+import { tradeDateForInstrument } from '@/lib/trading/deskAttendance'
 import {
   isDeskHoursNow,
   sessionFor,
@@ -83,7 +84,9 @@ export async function cleanupDeskSession(
   userId: string,
   opts?: CleanupOpts
 ): Promise<CleanupResult> {
-  const today = getESTDateString()
+  const tradeDates = Array.from(
+    new Set([getESTDateString(), tradeDateForInstrument('NIKKEI')])
+  )
   const nowIso = new Date().toISOString()
   const expiredWorking: string[] = []
   const cashClosed: string[] = []
@@ -95,7 +98,7 @@ export async function cleanupDeskSession(
       'id, instrument, fill_status, entry_price, entry_direction, position_size, risk_amount, oanda_trade_id, stop_loss_price, profit_target_price'
     )
     .eq('user_id', userId)
-    .eq('trade_date', today)
+    .in('trade_date', tradeDates)
     .is('exit_timestamp', null)
     .in('instrument', ['DOW', 'NASDAQ', 'NIKKEI'])
 

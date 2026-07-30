@@ -1,6 +1,6 @@
 /**
- * POST /api/trading/positions/working
- * Persist a WORKING limit (not filled). Positions page ignores these until fill.
+ * GET  /api/trading/positions/working — hydrate chart overlay from durable row
+ * POST /api/trading/positions/working — persist a WORKING limit (not filled)
  */
 
 import { NextResponse } from 'next/server'
@@ -15,6 +15,8 @@ import {
   resolveSessionGate,
   deskMarketFor,
   instrumentsForDeskMarket,
+  liveFocusMarket,
+  sessionFor,
   type DeskInstrument,
 } from '@/lib/trading/sessionGate'
 import {
@@ -32,9 +34,120 @@ import {
 } from '@/lib/trading/positionSizing'
 import { assertServerRangeEdgeEntry } from '@/lib/trading/serverPlaybookRange'
 import { logEntryDenied, logWorkingPlaced } from '@/lib/utils/deskAuditLog'
-import { WORKING_LIMIT_ALREADY_MESSAGE } from '@/lib/trading/workingLimitGate'
+import { formatWorkingLimitAlreadyMessage } from '@/lib/trading/workingLimitGate'
+import {
+  shouldExpireWorkingLimit,
+} from '@/lib/trading/sessionCleanup'
 
 export const dynamic = 'force-dynamic'
+
+const WORKING_SELECT =
+  'id, instrument, trade_date, entry_price, entry_direction, stop_loss_price, profit_target_price, position_size, risk_amount, account_size, entry_window, regime, regime_confidence, entry_timestamp, entry_reason, entry_source'
+
+function tradeDatesForMarket(instruments: DeskInstrument[], now = new Date()): string[] {
+  return Array.from(new Set(instruments.map((i) => tradeDateForInstrument(i, now))))
+}
+
+function localNowSeconds(tz: string, now = new Date()): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(now)
+  const h = parseInt(parts.find((p) => p.type === 'hour')?.value ?? '0', 10)
+  const m = parseInt(parts.find((p) => p.type === 'minute')?.value ?? '0', 10)
+  const s = parseInt(parts.find((p) => p.type === 'second')?.value ?? '0', 10)
+  const hour = h === 24 ? 0 : h
+  return hour * 3600 + m * 60 + s
+}
+
+function parseHms(hms: string): number {
+  const [h, m, sec] = hms.split(':').map(Number)
+  return (h || 0) * 3600 + (m || 0) * 60 + (sec || 0)
+}
+
+/** GET — return today's durable working limit for the active desk market (if any). */
+export async function GET(request: Request) {
+  try {
+    const user = await getOrCreateUser(request)
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { searchParams } = new URL(request.url)
+    const viewingParam = searchParams.get('instrument')
+    const viewingInstrument = isLiveDeskInstrument(viewingParam || '')
+      ? (viewingParam as DeskInstrument)
+      : null
+
+    const now = new Date()
+    const focusMarket = liveFocusMarket(now)
+    const marketInstruments = instrumentsForDeskMarket(focusMarket)
+    const tradeDates = tradeDatesForMarket(marketInstruments, now)
+
+    const supabase = await createClient()
+    const { data: row, error } = await supabase
+      .from('trades_journal')
+      .select(WORKING_SELECT)
+      .eq('user_id', user.id)
+      .in('instrument', marketInstruments)
+      .in('trade_date', tradeDates)
+      .eq('fill_status', 'working')
+      .is('exit_timestamp', null)
+      .maybeSingle()
+
+    if (error) {
+      logger.error('working.fetch_failed', { error })
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    if (!row) {
+      return NextResponse.json({ success: true, working: null })
+    }
+
+    const inst = row.instrument as DeskInstrument
+    const sess = sessionFor(inst)
+    const t = localNowSeconds(sess.tz, now)
+    const expired = shouldExpireWorkingLimit({
+      timeSec: t,
+      entryCloseSec: parseHms(sess.entryClose),
+      lunchCloseSec: parseHms(sess.lunchClose),
+      deskHoursOpen: isDeskHoursNow(now, inst).open,
+    })
+
+    if (expired) {
+      const nowIso = now.toISOString()
+      await supabase
+        .from('trades_journal')
+        .update({
+          fill_status: 'cancelled',
+          exit_timestamp: nowIso,
+          exit_price: row.entry_price,
+          exit_reason: 'limit_expired',
+          profit_loss: 0,
+          profit_loss_percent: 0,
+          exit_notes: 'Working limit never filled — auto-expired on fetch',
+          updated_at: nowIso,
+        })
+        .eq('id', row.id)
+        .eq('user_id', user.id)
+        .eq('fill_status', 'working')
+        .is('exit_timestamp', null)
+      return NextResponse.json({ success: true, working: null, expired_id: row.id })
+    }
+
+    return NextResponse.json({
+      success: true,
+      working: row,
+      viewing_instrument: viewingInstrument,
+    })
+  } catch (error) {
+    logger.error('working.fetch_unexpected', { err: error })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -61,20 +174,25 @@ export async function POST(request: Request) {
     const nyRecDate = getESTDateString()
     const market = deskMarketFor(instrument)
     const marketInstruments = instrumentsForDeskMarket(market)
+    const tradeDates = tradeDatesForMarket(marketInstruments)
 
     // One working limit at a time — never silently replace
     const { data: existingWorking } = await supabase
       .from('trades_journal')
-      .select('id, instrument, entry_price, entry_direction')
+      .select(WORKING_SELECT)
       .eq('user_id', user.id)
-      .eq('trade_date', tradeDate)
+      .in('trade_date', tradeDates)
       .in('instrument', marketInstruments)
       .eq('fill_status', 'working')
       .is('exit_timestamp', null)
       .maybeSingle()
 
     if (existingWorking) {
-      const msg = WORKING_LIMIT_ALREADY_MESSAGE
+      const msg = formatWorkingLimitAlreadyMessage({
+        instrument: existingWorking.instrument,
+        direction: existingWorking.entry_direction,
+        level: Number(existingWorking.entry_price),
+      })
       logEntryDenied({
         route: 'working',
         reason: 'already_working',
@@ -91,6 +209,7 @@ export async function POST(request: Request) {
           existing_instrument: existingWorking.instrument,
           existing_level: existingWorking.entry_price,
           existing_direction: existingWorking.entry_direction,
+          working: existingWorking,
         },
         { status: 409 }
       )
