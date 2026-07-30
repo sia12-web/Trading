@@ -1727,6 +1727,21 @@ export default function ChartPage() {
               setOrderPresetProfitTarget(null)
               setOrderAutoConfirm(false)
             }}
+            onAutoConfirmError={(msg) => {
+              setFillError(msg)
+              setOrderStatus('rejected')
+              setOrderLevel(null)
+              setOrderLevelType(undefined)
+              setOrderLevelSide(undefined)
+              setOrderPreferredDirection(undefined)
+              setOrderLevelReason(undefined)
+              setOrderEntrySource('ai')
+              setOrderStrategyRange(null)
+              setOrderStrategyMagnets(null)
+              setOrderPresetStopLoss(null)
+              setOrderPresetProfitTarget(null)
+              setOrderAutoConfirm(false)
+            }}
             onPlaced={handlePlaced}
           />
         )}

@@ -4502,43 +4502,27 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
     const autoReason = discussedWithLeo
       ? `Manual ${direction} Limit Zone (Discussed with Leo): Level @ ${entryPrice.toLocaleString()}, SL @ ${stopLoss.toLocaleString()}, TP @ ${profitTarget.toLocaleString()}`
-      : `Manual ${direction} limit @ ${entryPrice.toLocaleString()}`
+      : `Manual ${direction} entry: Technical structure limit @ ${entryPrice.toLocaleString()} | SL/TP rationale: Protective SL @ ${stopLoss.toLocaleString()}, Target TP @ ${profitTarget.toLocaleString()}`
 
-    if (discussedWithLeo) {
-      const { strategyRange, strategyMagnets, snapRanges } = getStrategyRiskBundle()
-      // Attribute to the SPECIFIC range the entry price sits in (±10 band) —
-      // never the single sequential "active" range, so an IB/Lunch click
-      // stays billed to the range actually clicked.
-      const attributedRange =
-        findRangeEdgeBandHit(entryPrice, snapRanges)?.range ?? strategyRange
-      onLevelSelect?.(entryPrice, {
-        source: 'manual',
-        type: 'manual',
-        orderType: 'LIMIT',
-        side: direction === 'LONG' ? 'BUY' : 'SHORT',
-        preferredDirection: direction,
-        reasoning: autoReason,
-        stopLoss,
-        profitTarget,
-        strategyRange: attributedRange,
-        strategyMagnets,
-      })
-      cancelRiskBox()
-    } else {
-      setUserRationale(`Technical structure limit entry @ ${entryPrice.toLocaleString()}`)
-      setUserSlTpRationale(
-        `Protective SL @ ${stopLoss.toLocaleString()}, Target TP @ ${profitTarget.toLocaleString()}`
-      )
-      setRationaleModal({
-        open: true,
-        entryPrice,
-        stopLoss,
-        profitTarget,
-        direction,
-        orderType: 'LIMIT',
-        suggestedReason: autoReason,
-      })
-    }
+    const { strategyRange, strategyMagnets, snapRanges } = getStrategyRiskBundle()
+    // Attribute to the SPECIFIC range the entry price sits in (±10 band) —
+    // never the single sequential "active" range, so an IB/Lunch/US Range click
+    // stays billed to the range actually clicked.
+    const attributedRange =
+      findRangeEdgeBandHit(entryPrice, snapRanges)?.range ?? strategyRange
+    onLevelSelect?.(entryPrice, {
+      source: 'manual',
+      type: 'manual',
+      orderType: 'LIMIT',
+      side: direction === 'LONG' ? 'BUY' : 'SHORT',
+      preferredDirection: direction,
+      reasoning: autoReason,
+      stopLoss,
+      profitTarget,
+      strategyRange: attributedRange,
+      strategyMagnets,
+    })
+    cancelRiskBox()
   }, [riskBox, onLevelSelect, cancelRiskBox, getStrategyRiskBundle])
 
   const toggleRiskBoxDirection = useCallback(() => {

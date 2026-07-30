@@ -9,6 +9,9 @@ import {
   MAX_DAY_ATTEMPTS,
   MAX_MORNING_ATTEMPTS,
   resolveRangeStrategyFromLadder,
+  bucketForRangeLabel,
+  assertBucketEntryEligible,
+  deskClockSeconds,
 } from '../lib/trading/attemptLadder'
 import { parseTimeToSeconds as pts } from '../lib/utils/timeUtils'
 import {
@@ -201,6 +204,22 @@ assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
     ladder: attemptLadderFromCounts({ morningAttempts: 0 }),
   })
   assert(deskPlaybookTitle(mode).length > 0, 'playbook title')
+}
+
+{
+  // Nikkei US Range bills to the ib storage bucket (slot 2)
+  assert(bucketForRangeLabel('NIKKEI', 'US Range') === 'ib', 'US Range → ib bucket on NIKKEI')
+  assert(bucketForRangeLabel('DOW', 'US Range') === null, 'US Range not a NY bucket label')
+  const ladder = attemptLadderFromCounts({ morningAttempts: 0, ibAttempts: 0 })
+  const tokyoOpen = new Date(Date.UTC(2026, 6, 30, 0, 22, 0)) // 09:22 JST
+  const check = assertBucketEntryEligible({
+    instrument: 'NIKKEI',
+    market: 'TOKYO',
+    timeSec: deskClockSeconds('NIKKEI', tokyoOpen),
+    ladder,
+    rangeLabel: 'US Range',
+  })
+  assert(check.ok, `US Range mid-window eligible: ${!check.ok ? check.message : ''}`)
 }
 
 console.log('attempt_ladder: all passed')

@@ -105,6 +105,8 @@ interface Props {
   /** Filled session attempts so far (working limits excluded) — drives 1→0.5→0.25% */
   sessionFillsUsed?: number
   onClose: () => void
+  /** Auto-confirm submit failed — parent should surface this (ticket UI is hidden). */
+  onAutoConfirmError?: (message: string) => void
   /** Called when the working limit is accepted — NOT when filled. */
   onPlaced: (order: PendingLimitOrder) => void
 }
@@ -137,6 +139,7 @@ export function LevelOrderTicket({
   autoConfirm = false,
   sessionFillsUsed = 0,
   onClose,
+  onAutoConfirmError,
   onPlaced,
 }: Props) {
   const entrySource = normalizeEntrySource(
@@ -399,30 +402,38 @@ export function LevelOrderTicket({
       ? snapTargetToTick(instrument, snappedLimit, displayTpRaw, direction)
       : 0
 
+  const failSubmit = (message: string) => {
+    setError(message)
+    if (autoConfirm) {
+      onAutoConfirmError?.(message)
+      onClose?.()
+    }
+  }
+
   const submit = () => {
-    if (placingRef.current) return
+    if (placingRef.current) return false
     if (useLiveAccount && accountLoading) {
-      setError('Wait for live OANDA equity to load before placing')
-      return
+      failSubmit('Wait for live OANDA equity to load before placing')
+      return false
     }
     if (!canPlace) {
-      setError(
+      failSubmit(
         'Entries locked — check session gate / attempt ladder / locked instrument'
       )
-      return
+      return false
     }
     const edge = assertRangeEdgeEntry({ entry: snappedLimit, range: strategyRange })
     if (!edge.ok) {
-      setError(edge.message)
-      return
+      failSubmit(edge.message)
+      return false
     }
     if (!preview) {
-      setError(
+      failSubmit(
         isManual
           ? 'Set a valid limit and stop (stop must be beyond the limit)'
           : 'Invalid account size or level price'
       )
-      return
+      return false
     }
 
     placingRef.current = true
@@ -437,14 +448,14 @@ export function LevelOrderTicket({
     if (direction === 'LONG' && tp <= limit) {
       placingRef.current = false
       setPlacing(false)
-      setError('Take profit must be above the limit for LONG')
-      return
+      failSubmit('Take profit must be above the limit for LONG')
+      return false
     }
     if (direction === 'SHORT' && tp >= limit) {
       placingRef.current = false
       setPlacing(false)
-      setError('Take profit must be below the limit for SHORT')
-      return
+      failSubmit('Take profit must be below the limit for SHORT')
+      return false
     }
 
     // Re-size off snapped prices so risk stays exact
@@ -474,18 +485,28 @@ export function LevelOrderTicket({
       placedAt: Date.now(),
       strategyRange: strategyRange ?? null,
     })
+    return true
   }
 
-  // Auto-confirm (risk-box / journal-rationale flow already collected entry
-  // + SL/TP + rationale) — submit as soon as live sizing is ready, no second
-  // "place limit" dialog for the trader to click through.
+  // Auto-confirm (risk-box flow already collected entry + SL/TP) — submit as
+  // soon as live sizing is ready, no second "place limit" dialog.
   useEffect(() => {
     if (!autoConfirm) return
     if (placingRef.current) return
     if (useLiveAccount && accountLoading) return
     submit()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoConfirm, useLiveAccount, accountLoading, snappedLimit, stopForSizing, direction])
+  }, [
+    autoConfirm,
+    useLiveAccount,
+    accountLoading,
+    snappedLimit,
+    stopForSizing,
+    direction,
+    canPlace,
+    strategyRange,
+    preview,
+  ])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
