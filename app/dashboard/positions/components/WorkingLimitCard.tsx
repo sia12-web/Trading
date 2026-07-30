@@ -142,6 +142,7 @@ export function WorkingLimitCard({ working, viewingInstrument, onCancelled }: Pr
               <p className="price-mono font-semibold text-red-300">
                 {fmt(working.stop_loss_price)}
               </p>
+              <p className="mt-0.5 text-[10px] text-amber-300/80">Locked — sized at place</p>
             </div>
             <div>
               <p className="text-[10px] uppercase tracking-wider text-emerald-400/80">
@@ -150,6 +151,7 @@ export function WorkingLimitCard({ working, viewingInstrument, onCancelled }: Pr
               <p className="price-mono font-semibold text-emerald-300">
                 {fmt(working.profit_target_price)}
               </p>
+              <p className="mt-0.5 text-[10px] text-emerald-400/70">Editable on chart</p>
             </div>
           </div>
         </div>

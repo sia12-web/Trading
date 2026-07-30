@@ -13,6 +13,7 @@ export type DeskEntryDenyReason =
   | 'stop_guard'
   | 'already_open'
   | 'already_working'
+  | 'working_sl_locked'
   | 'validation'
   | 'unauthorized'
   | 'broker'

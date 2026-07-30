@@ -33,6 +33,7 @@ import { getOandaAccountSummary } from '@/lib/oanda/orders'
 import { placeOandaMarketOrder, closeOandaTrade } from '@/lib/oanda/orders'
 import { assertServerRangeEdgeEntry } from '@/lib/trading/serverPlaybookRange'
 import { assertProtectiveStop } from '@/lib/trading/stopLossGuard'
+import { assertWorkingStopLocked } from '@/lib/trading/workingBracketUpdate'
 import type { PositionOpenResponse } from '@/types/trading'
 import { logEntryDenied } from '@/lib/utils/deskAuditLog'
 
@@ -575,15 +576,83 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
     }
     body.stop_loss_price = stopGuard.stop
 
+    // Working limit fill: SL + size locked at place — never recalc from client amend
+    const { data: workingForFill } = await supabase
+      .from('trades_journal')
+      .select(
+        'id, entry_price, stop_loss_price, profit_target_price, position_size, risk_amount'
+      )
+      .eq('user_id', user.id)
+      .eq('instrument', body.instrument)
+      .eq('trade_date', tradeDate)
+      .eq('fill_status', 'working')
+      .is('exit_timestamp', null)
+      .maybeSingle()
+
+    let sizing: {
+      stop_loss_price: number
+      position_size: number
+      risk_amount: number
+    } | null = null
+
+    if (workingForFill?.id) {
+      const lockedSl = Number(workingForFill.stop_loss_price)
+      const slCheck = assertWorkingStopLocked(
+        body.stop_loss_price,
+        lockedSl,
+        Number(workingForFill.entry_price) || body.entry_price
+      )
+      if (!slCheck.ok) {
+        logEntryDenied({
+          route: 'open',
+          reason: 'working_sl_locked',
+          instrument: body.instrument,
+          message: slCheck.error,
+          status: 403,
+          entry: body.entry_price,
+          direction: body.entry_direction,
+          entrySource: deskEntrySource,
+        })
+        return NextResponse.json(
+          {
+            success: false,
+            position_id: '',
+            instrument: body.instrument,
+            entry_price: body.entry_price,
+            stop_loss_price: lockedSl,
+            position_size: Number(workingForFill.position_size) || 0,
+            risk_amount: Number(workingForFill.risk_amount) || 0,
+            entry_direction: body.entry_direction,
+            entry_window: body.entry_window,
+            message: slCheck.error,
+          },
+          { status: 403 }
+        )
+      }
+      sizing = {
+        stop_loss_price: lockedSl,
+        position_size: Number(workingForFill.position_size),
+        risk_amount: Number(workingForFill.risk_amount) || 0,
+      }
+      if (
+        workingForFill.profit_target_price != null &&
+        Number.isFinite(Number(workingForFill.profit_target_price))
+      ) {
+        body.profit_target_price = Number(workingForFill.profit_target_price)
+      }
+    }
+
     // Progressive session risk: fill #1 = 1%, #2 = 0.5%, #3 = 0.25% (W/L same)
     const riskPct = riskPercentForEntrySource(deskEntrySource, gate.attemptsUsed)
-    const sizing = positionSizer.calculatePosition(
-      body.entry_price,
-      body.account_size,
-      body.entry_direction,
-      body.stop_loss_price,
-      riskPct
-    )
+    if (!sizing) {
+      sizing = positionSizer.calculatePosition(
+        body.entry_price,
+        body.account_size,
+        body.entry_direction,
+        body.stop_loss_price,
+        riskPct
+      )
+    }
     if (!sizing) {
       logger.error('POST /api/trading/positions/open: Position sizing failed', { body })
       return NextResponse.json(
@@ -657,20 +726,12 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
         .eq('fill_status', 'filled')
         .is('exit_timestamp', null)
         .maybeSingle(),
-      supabase
-        .from('trades_journal')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('instrument', body.instrument)
-        .eq('trade_date', tradeDate)
-        .eq('fill_status', 'working')
-        .is('exit_timestamp', null)
-        .maybeSingle(),
+      Promise.resolve({ data: workingForFill ?? null, error: null }),
     ])
 
     const existingPosition = existingRes.data
     const queryError = existingRes.error
-    const workingRow = workingRes.data
+    const workingRow = workingRes.data ?? workingForFill
 
     if (queryError) {
       logger.error('POST /api/trading/positions/open: Database query error', { error: queryError })

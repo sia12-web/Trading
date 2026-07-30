@@ -246,9 +246,14 @@ export default function ChartPage() {
     'idle' | 'saving' | 'error' | null
   >(null)
   const [bracketAdjustError, setBracketAdjustError] = useState<string | null>(null)
+  const [workingBracketAdjustStatus, setWorkingBracketAdjustStatus] = useState<
+    'idle' | 'saving' | 'error' | null
+  >(null)
+  const [workingBracketAdjustError, setWorkingBracketAdjustError] = useState<string | null>(null)
   /** Snapshot to revert chart overlay if bracket API fails */
   const confirmedOverlayRef = useRef<PositionOverlay | null>(null)
   const bracketSavingRef = useRef(false)
+  const workingBracketSavingRef = useRef(false)
   /** After 11:30 with open morning/IB book — ask before closing */
   const [lunchFlatPrompt, setLunchFlatPrompt] = useState(false)
   const [lunchFlatBusy, setLunchFlatBusy] = useState(false)
@@ -866,6 +871,67 @@ export default function ChartPage() {
     [managePos]
   )
 
+  const adjustWorkingBrackets = useCallback(
+    async (update: { profitTarget?: number }) => {
+      const pend = pendingRef.current
+      if (!pend?.workingId || update.profitTarget == null) return
+      workingBracketSavingRef.current = true
+      setWorkingBracketAdjustStatus('saving')
+      setWorkingBracketAdjustError(null)
+
+      const nextPending = { ...pend, profitTarget: update.profitTarget }
+      pendingRef.current = nextPending
+      setPending(nextPending)
+
+      try {
+        const res = await fetch('/api/trading/positions/update-working-brackets', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            working_id: pend.workingId,
+            profit_target_price: update.profitTarget,
+          }),
+        })
+        const json = (await res.json()) as {
+          ok?: boolean
+          error?: string
+          sl_locked?: boolean
+          profit_target_price?: number
+        }
+
+        if (res.ok && json.ok) {
+          const tp =
+            json.profit_target_price != null && Number.isFinite(Number(json.profit_target_price))
+              ? Number(json.profit_target_price)
+              : update.profitTarget
+          const confirmed = { ...nextPending, profitTarget: tp }
+          pendingRef.current = confirmed
+          setPending(confirmed)
+          setWorkingBracketAdjustStatus('idle')
+          setWorkingBracketAdjustError(null)
+          return
+        }
+
+        pendingRef.current = pend
+        setPending(pend)
+        const msg = json.error || 'Take profit update failed'
+        setWorkingBracketAdjustStatus('error')
+        setWorkingBracketAdjustError(msg)
+        setFillError(msg)
+      } catch (err) {
+        pendingRef.current = pend
+        setPending(pend)
+        const msg = err instanceof Error ? err.message : 'Take profit update failed'
+        setWorkingBracketAdjustStatus('error')
+        setWorkingBracketAdjustError(msg)
+        setFillError(msg)
+      } finally {
+        workingBracketSavingRef.current = false
+      }
+    },
+    []
+  )
+
   const cancelWorkingLimit = useCallback(
     async (inst: Instrument) => {
       try {
@@ -1057,6 +1123,15 @@ export default function ChartPage() {
         }),
       })
       if (gen !== orderGenRef.current) return
+      if (res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { working_id?: string }
+        if (j.working_id && pendingRef.current) {
+          const withId = { ...pendingRef.current, workingId: j.working_id }
+          pendingRef.current = withId
+          setPending(withId)
+        }
+        return
+      }
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as {
           error?: string
@@ -1482,8 +1557,10 @@ export default function ChartPage() {
                   {pending.direction} @ {pending.level.toLocaleString()}
                 </span>
                 <span className="opacity-80">
-                  SL {pending.stopLoss.toLocaleString()} · TP{' '}
-                  {pending.profitTarget.toLocaleString()}
+                  SL {pending.stopLoss.toLocaleString()}{' '}
+                  <span className="text-amber-300/90">(locked — sized at place)</span>
+                  · TP {pending.profitTarget.toLocaleString()}{' '}
+                  <span className="text-emerald-300/80">(drag on chart)</span>
                 </span>
               </>
             )}
@@ -1608,8 +1685,19 @@ export default function ChartPage() {
                 void cancelWorkingLimit(inst)
               }}
               onAdjustBrackets={managePos ? adjustBrackets : undefined}
+              onAdjustWorkingBrackets={
+                pending && orderStatus === 'working' && pending.workingId
+                  ? adjustWorkingBrackets
+                  : undefined
+              }
               bracketAdjustStatus={managePos ? bracketAdjustStatus : null}
               bracketAdjustError={managePos ? bracketAdjustError : null}
+              workingBracketAdjustStatus={
+                pending && orderStatus === 'working' ? workingBracketAdjustStatus : null
+              }
+              workingBracketAdjustError={
+                pending && orderStatus === 'working' ? workingBracketAdjustError : null
+              }
               aiVerdict={managePos ? aiVerdict : null}
               jumpToPriceRef={jumpToPriceRef}
               // Hard-lock tabs only after clock-in / open book (AI suggest stays soft)

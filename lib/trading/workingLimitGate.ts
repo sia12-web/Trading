@@ -44,6 +44,8 @@ export type WorkingLimitRow = {
   entry_source?: string | null
 }
 
+export const WORKING_SL_LOCKED_HINT = 'SL locked — sized at place'
+
 /** Map durable working row → chart pending overlay (client). */
 export function workingRowToPending(row: WorkingLimitRow): {
   instrument: 'DOW' | 'NASDAQ' | 'NIKKEI'
@@ -61,6 +63,7 @@ export function workingRowToPending(row: WorkingLimitRow): {
   placedAt: number
   entryReason?: string
   entrySource: 'ai' | 'structure' | 'manual'
+  workingId?: string
 } {
   const instrument = row.instrument as 'DOW' | 'NASDAQ' | 'NIKKEI'
   const level = Number(row.entry_price)
@@ -102,5 +105,6 @@ export function workingRowToPending(row: WorkingLimitRow): {
     placedAt: row.entry_timestamp ? Date.parse(row.entry_timestamp) : Date.now(),
     entryReason: row.entry_reason ?? undefined,
     entrySource,
+    workingId: row.id ?? undefined,
   }
 }

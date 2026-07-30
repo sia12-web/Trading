@@ -50,6 +50,8 @@ export interface PendingLimitOrder {
   regime: 'bullish' | 'bearish' | 'choppy'
   regimeConfidence: number
   placedAt: number
+  /** Durable trades_journal row — required for TP amend while working */
+  workingId?: string
   /** Active playbook range for ±10 entry gate (API + fill) */
   strategyRange?: StrategyRangeEdges | null
 }
