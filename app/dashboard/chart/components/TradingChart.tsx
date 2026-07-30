@@ -172,6 +172,13 @@ import {
   deskBarSpacing,
 } from '@/lib/trading/deskInstrumentPreference'
 import { snapDeskPrice } from '@/lib/trading/instrumentTicks'
+import {
+  didPriceTouchAlert,
+  formatPriceTouchAlert,
+  loadStoredPriceAlert,
+  saveStoredPriceAlert,
+  type StoredPriceAlert,
+} from '@/lib/trading/priceTouchAlert'
 
 function defaultManualStop(limit: number, direction: 'LONG' | 'SHORT'): number {
   const pct = 0.0035
@@ -1426,6 +1433,14 @@ export function TradingChart({
   } | null>(null)
   const riskBoxLinesRef = useRef<any[]>([])
 
+  // Draggable chart price alert — Telegram on touch (A key / toolbar)
+  const [priceAlert, setPriceAlert] = useState<StoredPriceAlert | null>(null)
+  const priceAlertLineRef = useRef<IPriceLine | null>(null)
+  const draggingPriceAlertRef = useRef(false)
+  const prevLivePriceForAlertRef = useRef<number | null>(null)
+  const priceAlertPrimedRef = useRef(false)
+  const priceAlertInstrumentRef = useRef(instrument)
+
   /** Local draft of filled overlay so SL/TP can drag before API confirms */
   const [editableOverlay, setEditableOverlay] = useState<PositionOverlay | null>(null)
   const editableOverlayRef = useRef<PositionOverlay | null>(null)
@@ -1629,6 +1644,59 @@ export function TradingChart({
     },
     [livePrice, candles, instrument, getStrategyRiskBundle]
   )
+
+  useEffect(() => {
+    priceAlertInstrumentRef.current = instrument
+    priceAlertPrimedRef.current = false
+    prevLivePriceForAlertRef.current = null
+    setPriceAlert(loadStoredPriceAlert(instrument))
+  }, [instrument])
+
+  useEffect(() => {
+    if (priceAlertInstrumentRef.current !== instrument) return
+    saveStoredPriceAlert(instrument, priceAlert)
+  }, [priceAlert, instrument])
+
+  const clearPriceAlertLine = useCallback(() => {
+    const host = priceLineHostRef.current
+    if (host && priceAlertLineRef.current) {
+      try {
+        host.removePriceLine(priceAlertLineRef.current)
+      } catch {
+        /* silent */
+      }
+    }
+    priceAlertLineRef.current = null
+  }, [])
+
+  const dismissPriceAlert = useCallback(() => {
+    setPriceAlert(null)
+    clearPriceAlertLine()
+    priceAlertPrimedRef.current = false
+    prevLivePriceForAlertRef.current = null
+  }, [clearPriceAlertLine])
+
+  const openPriceAlert = useCallback(() => {
+    const rawPx =
+      livePrice != null && Number.isFinite(livePrice) && livePrice > 0
+        ? livePrice
+        : candles.length > 0
+          ? candles[candles.length - 1]!.close
+          : null
+    if (rawPx == null || !Number.isFinite(Number(rawPx)) || Number(rawPx) <= 0) return
+    const price = snapDeskPrice(instrument, Number(rawPx))
+    priceAlertPrimedRef.current = false
+    prevLivePriceForAlertRef.current = null
+    setPriceAlert({ price, armed: true })
+  }, [livePrice, candles, instrument])
+
+  const togglePriceAlert = useCallback(() => {
+    if (priceAlert) {
+      dismissPriceAlert()
+    } else {
+      openPriceAlert()
+    }
+  }, [priceAlert, dismissPriceAlert, openPriceAlert])
 
   // Recompute focus tabs on a short clock so NIKKEI appears at Tokyo−30m without refresh.
   // Clock-gated UI must NOT run during the hydrate render (Railway TZ ≠ browser → React #418).
@@ -4325,6 +4393,104 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     riskBoxLinesRef.current = [lineEntry, lineSl, lineTp]
   }, [riskBox, chartReady, instrument, clearRiskBoxLines])
 
+  const onPriceAlertLineMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    draggingPriceAlertRef.current = true
+  }, [])
+
+  useEffect(() => {
+    if (!priceAlert?.armed) return
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!draggingPriceAlertRef.current || !containerRef.current || !candleRef.current) return
+      const rect = containerRef.current.getBoundingClientRect()
+      const y = e.clientY - rect.top
+      if (y < 0 || y > rect.height) return
+      const rawPrice = candleRef.current.coordinateToPrice(y)
+      if (rawPrice == null || !Number.isFinite(Number(rawPrice)) || Number(rawPrice) <= 0) return
+      const snapped = snapDeskPrice(instrument, Number(rawPrice))
+      priceAlertPrimedRef.current = false
+      prevLivePriceForAlertRef.current = null
+      setPriceAlert((prev) => (prev ? { ...prev, price: snapped } : null))
+    }
+
+    const onMouseUp = () => {
+      draggingPriceAlertRef.current = false
+    }
+
+    window.addEventListener('mousemove', onMouseMove, true)
+    window.addEventListener('mouseup', onMouseUp, true)
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove, true)
+      window.removeEventListener('mouseup', onMouseUp, true)
+    }
+  }, [priceAlert?.armed, instrument])
+
+  useEffect(() => {
+    clearPriceAlertLine()
+    if (!priceAlert || !chartReady) return
+    const host = priceLineHostRef.current
+    if (!host) return
+
+    const armed = priceAlert.armed !== false
+    const line = host.createPriceLine({
+      price: priceAlert.price,
+      color: armed ? 'rgba(168, 85, 247, 0.95)' : 'rgba(168, 85, 247, 0.35)',
+      lineWidth: armed ? 2 : 1,
+      lineStyle: armed ? 2 : 1,
+      axisLabelVisible: true,
+      title: armed
+        ? `🔔 ALERT @ ${priceAlert.price.toLocaleString()}`
+        : `🔔 FIRED @ ${priceAlert.price.toLocaleString()}`,
+    })
+    priceAlertLineRef.current = line
+  }, [priceAlert, chartReady, instrument, clearPriceAlertLine])
+
+  useEffect(() => {
+    priceAlertPrimedRef.current = false
+    prevLivePriceForAlertRef.current = null
+  }, [priceAlert?.price, priceAlert?.armed])
+
+  useEffect(() => {
+    if (!priceAlert?.armed || !onDeskAlert) return
+    if (livePrice == null) return
+
+    if (!priceAlertPrimedRef.current) {
+      priceAlertPrimedRef.current = true
+      prevLivePriceForAlertRef.current = livePrice
+      return
+    }
+
+    const prev = prevLivePriceForAlertRef.current
+    prevLivePriceForAlertRef.current = livePrice
+
+    if (
+      !didPriceTouchAlert({
+        prevPrice: prev,
+        livePrice,
+        alertPrice: priceAlert.price,
+      })
+    ) {
+      return
+    }
+
+    const claimKind = `price_touch_${Math.round(priceAlert.price)}`
+    if (!claimDeskNoteOnce(claimKind, instrument)) return
+
+    const msg = formatPriceTouchAlert({
+      instrument,
+      alertPrice: priceAlert.price,
+      livePrice,
+    })
+    onDeskAlert({
+      ...msg,
+      instrument,
+      dedupeKey: deskNoteClaimKey(claimKind, instrument),
+    })
+    setPriceAlert({ price: priceAlert.price, armed: false })
+  }, [livePrice, priceAlert, instrument, onDeskAlert])
+
   const confirmRiskBoxOrder = useCallback(() => {
     if (!riskBox) return
     const { entryPrice, stopLoss, profitTarget, direction } = riskBox
@@ -4464,10 +4630,16 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         } else {
           openRiskBox()
         }
+      } else if (key === 'a') {
+        e.preventDefault()
+        togglePriceAlert()
       } else if (key === 'escape') {
         if (riskBoxActive || riskBox) {
           e.preventDefault()
           cancelRiskBox()
+        } else if (priceAlert) {
+          e.preventDefault()
+          dismissPriceAlert()
         } else if (drawZoneActive || drawnZone) {
           e.preventDefault()
           cancelDrawnZone()
@@ -4494,7 +4666,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       window.removeEventListener('keydown', handleKeyDown)
       document.removeEventListener('fullscreenchange', onFsChange)
     }
-  }, [isFullscreen, drawZoneActive, drawnZone, drawTimeActive, drawnTime, toggleFullscreen, cancelDrawnZone, clearDrawnZoneLines, cancelDrawnTime, instrument, riskBoxActive, riskBox, cancelRiskBox, openRiskBox])
+  }, [isFullscreen, drawZoneActive, drawnZone, drawTimeActive, drawnTime, toggleFullscreen, cancelDrawnZone, clearDrawnZoneLines, cancelDrawnTime, instrument, riskBoxActive, riskBox, cancelRiskBox, openRiskBox, priceAlert, dismissPriceAlert, togglePriceAlert])
 
   // ── Hover visible AI/structure level → preview entry / SL / TP ─
   // Morning: place preview. Afternoon: same geometry, watch-only (canPlaceOrder false).
@@ -5734,6 +5906,36 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           {riskBox ? 'Limit Order Active' : 'Limit Order (O)'}
         </button>
 
+        {/* Draggable price alert — Telegram on touch (A key) */}
+        <button
+          type="button"
+          title={
+            priceAlert
+              ? priceAlert.armed !== false
+                ? 'Price alert armed — drag line or Esc to dismiss (A)'
+                : 'Price alert fired — dismiss (A / Esc)'
+              : 'Place draggable price alert (Press A)'
+          }
+          onClick={togglePriceAlert}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+            priceAlert
+              ? priceAlert.armed !== false
+                ? 'bg-violet-600/30 border-violet-500/50 text-violet-100 animate-pulse'
+                : 'bg-violet-950/40 border-violet-500/30 text-violet-300/70'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-violet-200 hover:border-violet-500/40'
+          }`}
+        >
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8 2v2M8 12v2M3.5 8H2M14 8h-1.5M4.2 4.2l1 1M10.8 10.8l1 1M4.2 11.8l1-1M10.8 5.2l1-1" />
+            <circle cx="8" cy="8" r="2.5" className="fill-violet-500/40 stroke-violet-400" />
+          </svg>
+          {priceAlert
+            ? priceAlert.armed !== false
+              ? 'Price Alert Active'
+              : 'Alert Fired'
+            : 'Price Alert (A)'}
+        </button>
+
         {/* Toolbar Direction Switcher when Order tool is active */}
         {riskBox && (
           <button
@@ -6472,6 +6674,70 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     >✕</button>
                   </div>
                   <div className="w-2.5 h-2.5 rounded-full bg-amber-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
+                </div>
+              )}
+            </div>
+          )
+        })()}
+
+        {/* Draggable price alert line + pill badge */}
+        {priceAlert && !riskBox && (() => {
+          const candleSeries = candleRef.current
+          const alertY = candleSeries
+            ? candleSeries.priceToCoordinate(priceAlert.price)
+            : null
+          const armed = priceAlert.armed !== false
+
+          return (
+            <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
+              {alertY != null && (
+                <div
+                  onMouseDown={armed ? onPriceAlertLineMouseDown : undefined}
+                  className={`absolute flex items-center gap-2 pointer-events-auto group ${
+                    armed ? 'cursor-ns-resize' : 'cursor-default'
+                  }`}
+                  style={{
+                    left: '38%',
+                    top: `${alertY - 14}px`,
+                  }}
+                  title={
+                    armed
+                      ? 'Drag alert line — Telegram when price touches (soft signal, not an order)'
+                      : 'Alert fired — dismiss with ✕ or press A / Esc'
+                  }
+                >
+                  <div
+                    className={`flex items-center rounded-md border px-3 py-1 text-xs font-mono font-bold shadow-xl transition ${
+                      armed
+                        ? 'border-violet-400 bg-violet-950/95 text-violet-100 group-hover:border-violet-300'
+                        : 'border-violet-500/40 bg-violet-950/50 text-violet-300/70'
+                    }`}
+                  >
+                    <span className="font-sans uppercase font-extrabold tracking-wider text-[11px] select-none">
+                      {armed ? 'Alert' : 'Fired'}
+                    </span>
+                    <span className="text-violet-400 mx-1.5">@</span>
+                    <span>{priceAlert.price.toLocaleString()}</span>
+                    <span className="text-violet-500/60 mx-1.5">|</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        dismissPriceAlert()
+                      }}
+                      className="text-violet-400/80 hover:text-violet-200 transition font-bold"
+                      title="Dismiss alert"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div
+                    className={`w-3 h-3 rounded-full border-2 border-white shadow-md transition-transform ${
+                      armed
+                        ? 'bg-violet-500 group-hover:scale-125'
+                        : 'bg-violet-500/40'
+                    }`}
+                  />
                 </div>
               )}
             </div>
