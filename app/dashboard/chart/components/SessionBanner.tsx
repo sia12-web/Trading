@@ -110,6 +110,7 @@ export function SessionBanner({
   const [clockLabel, setClockLabel] = useState('Montreal')
   const [mounted, setMounted] = useState(false)
   const [clocking, setClocking] = useState(false)
+  const [clockInError, setClockInError] = useState<string | null>(null)
   const prepFiredRef = useRef<string | null>(null)
   const [newsHazard, setNewsHazard] = useState<DeskNewsHazard | null>(null)
   const [newsUnavailable, setNewsUnavailable] = useState(false)
@@ -289,6 +290,7 @@ export function SessionBanner({
   const handleClockIn = useCallback(async () => {
     if (clocking) return
     setClocking(true)
+    setClockInError(null)
     try {
       const market = gate?.market || (gate?.lockedInstrument === 'NIKKEI' ? 'TOKYO' : 'NY')
       const allowed = gate?.allowedInstruments
@@ -309,9 +311,17 @@ export function SessionBanner({
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) {
-        console.warn('clock-in failed', json.error)
+        const msg =
+          typeof json.error === 'string' && json.error
+            ? json.error
+            : `Clock-in failed (${res.status})`
+        setClockInError(msg)
+        return
       }
+      setClockInError(null)
       await refresh()
+    } catch {
+      setClockInError('Clock-in unreachable — check network or deploy')
     } finally {
       setClocking(false)
     }
@@ -422,6 +432,14 @@ export function SessionBanner({
           CLOCKED OUT
         </span>
       ) : null}
+      {clockInError && (
+        <span
+          className="rounded bg-red-500/25 px-2 py-0.5 text-red-200 font-semibold max-w-[20rem]"
+          title={clockInError}
+        >
+          {clockInError}
+        </span>
+      )}
       {gate.phase === 'ENTRY' && gate.clockedIn && (
         <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-emerald-300">
           {gate.market === 'TOKYO'
