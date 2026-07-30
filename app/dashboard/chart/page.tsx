@@ -67,7 +67,7 @@ import {
   formatDayNewsDigest,
 } from '@/lib/trading/deskNewsHazard'
 import type { DeskCalendarEvent } from '@/lib/trading/deskNews'
-import { infoToast, warningToast } from '@/lib/utils/toastUtils'
+import { infoToast, warningToast, successToast } from '@/lib/utils/toastUtils'
 import type { DeskInstrument } from '@/lib/trading/sessionGate'
 
 /** Why new entries are blocked — shown on market/limit place attempts. */
@@ -281,6 +281,7 @@ export default function ChartPage() {
   const placingOrderRef = useRef(false)
   /** Bumped on cancel / session expire so in-flight fills do not re-arm a cancelled limit */
   const orderGenRef = useRef(0)
+  const positionExitHandledRef = useRef(false)
   const livePriceRef = useRef<number | null>(null)
   const regimeFetchedRef = useRef(false)
   const lastParentPriceAt = useRef(0)
@@ -413,6 +414,102 @@ export default function ChartPage() {
     setGateTick((n) => n + 1)
     bannerRefreshRef.current?.()
   }, [])
+
+  const clearPositionUi = useCallback(
+    (exitReason: 'stop_hit' | 'take_profit' | 'manual' | 'ai_signal' = 'manual') => {
+      setManagePos(null)
+      setPositionOverlay(null)
+      confirmedOverlayRef.current = null
+      setBracketAdjustStatus(null)
+      setBracketAdjustError(null)
+      setAiVerdict(null)
+      setLunchFlatPrompt(false)
+      lunchFlatDismissedRef.current = true
+      setOrderStatus('idle')
+      refreshGate()
+      void refreshLevelsAfterExit(exitReason === 'ai_signal' ? 'manual' : exitReason)
+    },
+    [refreshGate, refreshLevelsAfterExit]
+  )
+
+  const handleBrokerExit = useCallback(
+    (payload: {
+      exitReason: 'stop_hit' | 'take_profit' | 'manual'
+      exitPrice: number
+    }) => {
+      if (positionExitHandledRef.current) return
+      positionExitHandledRef.current = true
+      const label =
+        payload.exitReason === 'stop_hit'
+          ? `Stop loss hit @ ${payload.exitPrice.toLocaleString()}`
+          : payload.exitReason === 'take_profit'
+            ? `Take profit hit @ ${payload.exitPrice.toLocaleString()}`
+            : `Position closed @ ${payload.exitPrice.toLocaleString()}`
+      if (payload.exitReason === 'stop_hit') {
+        warningToast(label, 9000)
+      } else {
+        successToast(label, 9000)
+      }
+      clearPositionUi(
+        payload.exitReason === 'stop_hit'
+          ? 'stop_hit'
+          : payload.exitReason === 'take_profit'
+            ? 'take_profit'
+            : 'manual'
+      )
+    },
+    [clearPositionUi]
+  )
+
+  const handleBreakEvenAvailable = useCallback(
+    (payload: {
+      positionId: string
+      instrument: string
+      proposedPrice: number
+      reason: string
+    }) => {
+      const inst = payload.instrument as DeskInstrument
+      if (payload.reason === '__confirmed__') {
+        const msg = `Break-even confirmed — SL locked @ ${payload.proposedPrice.toLocaleString()}`
+        successToast(msg, 7000)
+        const kind = `be_confirmed_${payload.positionId.slice(0, 8)}`
+        if (claimDeskNoteOnce(kind, inst)) {
+          void fetch('/api/notify/desk-alert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              kind: 'break_even_confirmed',
+              title: 'Break-even confirmed',
+              body: msg,
+              telegram: `Break-even confirmed — SL @ ${payload.proposedPrice.toLocaleString()} (${inst})`,
+              instrument: inst,
+              dedupeKey: deskNoteClaimKey(kind, inst),
+            }),
+          }).catch(() => {})
+        }
+        return
+      }
+      const title = 'Break-even available'
+      const body = `Confirm to lock SL at entry (${payload.proposedPrice.toLocaleString()})`
+      infoToast(`${title} — ${body}`, 8000)
+      const kind = `be_available_${payload.positionId.slice(0, 8)}`
+      if (claimDeskNoteOnce(kind, inst)) {
+        void fetch('/api/notify/desk-alert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            kind: 'break_even_available',
+            title,
+            body: `${body}. ${payload.reason}`,
+            telegram: `Break-even available — confirm to lock SL at entry (${inst})`,
+            instrument: inst,
+            dedupeKey: deskNoteClaimKey(kind, inst),
+          }),
+        }).catch(() => {})
+      }
+    },
+    []
+  )
 
   const lastUnlockKeyRef = useRef<string | null>(null)
   const prevCanPlaceRef = useRef(false)
@@ -719,6 +816,7 @@ export default function ChartPage() {
 
   const enterManage = useCallback(
     (order: FilledOrder, inst: string) => {
+      positionExitHandledRef.current = false
       const dir = order.entry_direction === 'LONG' ? 'long' : 'short'
       setPending(null)
       pendingRef.current = null
@@ -1416,28 +1514,53 @@ export default function ChartPage() {
     }
   }, [managePos, lunchFlatBusy, refreshGate, refreshLevelsAfterExit])
 
-  // Load open position into manage desk when already filled (refresh / reopen)
+  // Load / reconcile open position — refresh UI when broker or journal goes flat
   useEffect(() => {
-    if (gate?.phase !== 'MANAGE') {
+    if (!managePos && gate?.phase !== 'MANAGE') {
       if (gate?.phase !== 'ENTRY' && gate?.phase !== 'FLAT' && !pending) {
         setManagePos(null)
+        setPositionOverlay(null)
       }
       return
     }
-    if (pending) setPending(null) // DB position wins over stale working limit
-    const inst = gate.lockedInstrument || instrument
+
+    const inst = managePos?.instrument || gate?.lockedInstrument || instrument
     let cancelled = false
+
     const load = async () => {
       try {
         let res = await fetch(
-          `/api/trading/current-position?instrument=${encodeURIComponent(inst)}`
+          `/api/trading/current-position?instrument=${encodeURIComponent(inst)}&reconcile=1&_=${Date.now()}`,
+          { cache: 'no-store' }
         )
         let json = res.ok ? await res.json() : null
-        if (!json?.position) {
-          res = await fetch('/api/trading/current-position?any=1')
+        if (!json?.position && managePos) {
+          res = await fetch(
+            `/api/trading/current-position?any=1&reconcile=1&_=${Date.now()}`,
+            { cache: 'no-store' }
+          )
           json = res.ok ? await res.json() : null
         }
-        if (cancelled || !json?.position) return
+        if (cancelled || !json) return
+
+        if (json.reconciled?.closed) {
+          handleBrokerExit({
+            exitReason: json.reconciled.exit_reason,
+            exitPrice: json.reconciled.exit_price,
+          })
+          return
+        }
+
+        if (!json.position) {
+          if (managePos && !positionExitHandledRef.current) {
+            handleBrokerExit({
+              exitReason: 'manual',
+              exitPrice: livePriceRef.current ?? managePos.entryPrice,
+            })
+          }
+          return
+        }
+
         if (bracketSavingRef.current) return
         const p = json.position
         const dir =
@@ -1456,7 +1579,6 @@ export default function ChartPage() {
           riskAmount: p.risk_amount,
           entryTimestamp: p.entry_timestamp ?? null,
         }
-        if (bracketSavingRef.current) return
         setManagePos(manage)
         const overlay = {
           entryPrice: manage.entryPrice,
@@ -1467,17 +1589,67 @@ export default function ChartPage() {
         }
         confirmedOverlayRef.current = overlay
         setPositionOverlay(overlay)
+        if (pending) {
+          pendingRef.current = null
+          setPending(null)
+        }
       } catch {
         /* keep */
       }
     }
-    load()
-    const id = setInterval(load, 15000)
+
+    void load()
+    const pollMs = managePos || gate?.phase === 'MANAGE' ? 4000 : 15000
+    const id = setInterval(load, pollMs)
     return () => {
       cancelled = true
       clearInterval(id)
     }
-  }, [gate?.phase, gate?.lockedInstrument, gate?.open_position_id, instrument, gateTick, pending])
+  }, [
+    managePos,
+    gate?.phase,
+    gate?.lockedInstrument,
+    gate?.open_position_id,
+    instrument,
+    gateTick,
+    pending,
+    clearPositionUi,
+    handleBrokerExit,
+  ])
+
+  // Quote-driven reconcile while in trade (catch broker SL/TP between polls)
+  useEffect(() => {
+    if (!managePos || livePrice == null) return
+    let cancelled = false
+    const t = window.setTimeout(async () => {
+      if (cancelled) return
+      try {
+        const res = await fetch(
+          `/api/trading/current-position?instrument=${encodeURIComponent(managePos.instrument)}&reconcile=1&_=${Date.now()}`,
+          { cache: 'no-store' }
+        )
+        if (!res.ok || cancelled) return
+        const json = await res.json()
+        if (json.reconciled?.closed) {
+          handleBrokerExit({
+            exitReason: json.reconciled.exit_reason,
+            exitPrice: json.reconciled.exit_price,
+          })
+        } else if (!json.position && managePos && !positionExitHandledRef.current) {
+          handleBrokerExit({
+            exitReason: 'manual',
+            exitPrice: livePriceRef.current ?? managePos.entryPrice,
+          })
+        }
+      } catch {
+        /* soft-fail */
+      }
+    }, 800)
+    return () => {
+      cancelled = true
+      window.clearTimeout(t)
+    }
+  }, [livePrice, managePos, handleBrokerExit])
 
   const locked = gate?.lockedInstrument ?? null
   const suggested =
@@ -1609,19 +1781,24 @@ export default function ChartPage() {
               currentPrice={livePrice}
               atrAdviceLine={rangeAtrAdvice}
               onClosed={(exitReason = 'manual') => {
-                setManagePos(null)
-                setPositionOverlay(null)
-                confirmedOverlayRef.current = null
-                setBracketAdjustStatus(null)
-                setBracketAdjustError(null)
-                setAiVerdict(null)
-                setLunchFlatPrompt(false)
-                lunchFlatDismissedRef.current = true
-                refreshGate()
-                void refreshLevelsAfterExit(exitReason)
+                positionExitHandledRef.current = true
+                if (exitReason === 'stop_hit') {
+                  warningToast(
+                    `Stop loss hit @ ${managePos.stopLoss.toLocaleString()}`,
+                    9000
+                  )
+                } else if (exitReason === 'take_profit') {
+                  successToast(
+                    `Take profit @ ${managePos.profitTarget.toLocaleString()}`,
+                    9000
+                  )
+                }
+                clearPositionUi(exitReason)
               }}
               onRefreshGate={refreshGate}
               onAiVerdict={setAiVerdict}
+              onBreakEvenAvailable={handleBreakEvenAvailable}
+              onBrokerExit={handleBrokerExit}
             />
           </div>
         )}

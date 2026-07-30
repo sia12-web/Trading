@@ -72,10 +72,34 @@ export async function POST(request: Request) {
     const confidence = Number(position.regime_confidence || 75)
     const oandaTradeId = position.oanda_trade_id ? String(position.oanda_trade_id) : null
 
+    // Skip BE re-prompt if trader already rejected for this position
+    const { data: priorDecisions } = await supabase
+      .from('management_decisions')
+      .select('notes, decision_type')
+      .eq('position_id', position.id)
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(12)
+    const beRejected = (priorDecisions || []).some(
+      (d) =>
+        d.decision_type === 'HOLD' &&
+        typeof d.notes === 'string' &&
+        /rejected.*BREAKEVEN|Breakeven/i.test(d.notes)
+    )
+    const beConfirmed = (priorDecisions || []).some(
+      (d) =>
+        d.decision_type === 'ADJUST' &&
+        typeof d.notes === 'string' &&
+        /Breakeven|BREAKEVEN/i.test(d.notes)
+    )
+
     // Distance metrics
     const totalTpDistance = isLong ? tp - entry : entry - tp
     const currentMoved = isLong ? currentPrice - entry : entry - currentPrice
     const tpProgress = totalTpDistance > 0 ? currentMoved / totalTpDistance : 0
+    const initialRisk = isLong ? entry - currentSl : currentSl - entry
+    const rMultiple =
+      initialRisk > 0 && Number.isFinite(currentMoved) ? currentMoved / initialRisk : 0
 
     // 2-Year Quantitative Multi-Year Optimized Position Management Parameters:
     // 1. DOW: BE at 25% TP (+0.50R), Trail at 30% TP (+0.60R), Trail Offset 30% risk
@@ -118,12 +142,17 @@ export async function POST(request: Request) {
     let updatedSlPrice: number | null = null
     let scaledOutUnits = 0
 
-    // 1. BREAKEVEN RULE (Instrument 2-Year Empirical BE threshold reached)
-    if (tpProgress >= beProgressThreshold) {
+    // 1. BREAKEVEN RULE — instrument TP-progress threshold OR +1R (whichever qualifies first)
+    const beByProgress = tpProgress >= beProgressThreshold
+    const beByR = rMultiple >= 1.0
+    if ((beByProgress || beByR) && !beRejected && !beConfirmed) {
       const isSlBelowEntry = isLong ? currentSl < entry : currentSl > entry
 
       if (isSlBelowEntry) {
         const bePrice = Math.round(entry * 10) / 10
+        const beReason = beByR
+          ? `+${rMultiple.toFixed(2)}R achieved — move Stop Loss to Breakeven ($${bePrice})?`
+          : `Target reached ${(beProgressThreshold * 100).toFixed(0)}% TP progress. Move Stop Loss to Breakeven ($${bePrice})?`
         if (autoExecute || (confirmAction === 'CONFIRM' && actionType === 'BREAKEVEN')) {
           updatedSlPrice = bePrice
           actionTaken = 'MOVED_TO_BREAKEVEN'
@@ -152,8 +181,8 @@ export async function POST(request: Request) {
           recommendation = {
             action_type: 'BREAKEVEN',
             proposed_price: bePrice,
-            reason: `Target reached ${(beProgressThreshold * 100).toFixed(0)}% TP progress. Move Stop Loss to Breakeven ($${bePrice})?`,
-            confidence: 85,
+            reason: beReason,
+            confidence: beByR ? 90 : 85,
           }
         }
       }
@@ -238,6 +267,7 @@ export async function POST(request: Request) {
       instrument,
       current_price: currentPrice,
       tp_progress: Math.round(tpProgress * 100) / 100,
+      r_multiple: Math.round(rMultiple * 100) / 100,
       action_taken: actionTaken,
       updated_stop_loss: updatedSlPrice,
       scaled_out_units: scaledOutUnits,

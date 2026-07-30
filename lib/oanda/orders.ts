@@ -414,25 +414,52 @@ export async function closeOandaTrade(tradeId: string): Promise<CloseTradeResult
   }
 }
 
+export type OandaTradeSnapshot = {
+  state: 'open' | 'closed' | 'missing'
+  fillPrice: number | null
+  realizedPL: number | null
+}
+
+/** Read open/closed state + close fill for a broker trade id. */
+export async function getOandaTradeSnapshot(tradeId: string): Promise<OandaTradeSnapshot> {
+  if (!isOandaConfigured() || !tradeId) {
+    return { state: 'missing', fillPrice: null, realizedPL: null }
+  }
+  try {
+    const accountId = oandaAccountId()
+    const res = await oandaFetch(`/v3/accounts/${accountId}/trades/${tradeId}`)
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      if (/does not exist|CLOSED|not found/i.test(text)) {
+        return { state: 'missing', fillPrice: null, realizedPL: null }
+      }
+      return { state: 'missing', fillPrice: null, realizedPL: null }
+    }
+    const body = await res.json()
+    const trade = body?.trade
+    const stateRaw = String(trade?.state || '').toUpperCase()
+    const currentUnits = Math.abs(Number(trade?.currentUnits || 0))
+    const avg = Number(trade?.averageClosePrice || 0)
+    const pl = Number(trade?.realizedPL)
+    if (stateRaw === 'CLOSED' || currentUnits === 0) {
+      return {
+        state: 'closed',
+        fillPrice: avg > 0 ? avg : null,
+        realizedPL: Number.isFinite(pl) ? pl : null,
+      }
+    }
+    return { state: 'open', fillPrice: null, realizedPL: null }
+  } catch {
+    return { state: 'missing', fillPrice: null, realizedPL: null }
+  }
+}
+
 /** Read averageClosePrice + realizedPL for a trade that is already CLOSED. */
 async function fetchOandaClosedTradeSnapshot(
   tradeId: string
 ): Promise<ClosedTradeSnapshot> {
-  try {
-    const accountId = oandaAccountId()
-    const res = await oandaFetch(`/v3/accounts/${accountId}/trades/${tradeId}`)
-    if (!res.ok) return { fillPrice: null, realizedPL: null }
-    const body = await res.json()
-    const trade = body?.trade
-    const avg = Number(trade?.averageClosePrice || 0)
-    const pl = Number(trade?.realizedPL)
-    return {
-      fillPrice: avg > 0 ? avg : null,
-      realizedPL: Number.isFinite(pl) ? pl : null,
-    }
-  } catch {
-    return { fillPrice: null, realizedPL: null }
-  }
+  const snap = await getOandaTradeSnapshot(tradeId)
+  return { fillPrice: snap.fillPrice, realizedPL: snap.realizedPL }
 }
 
 /** Close by instrument if we lost the trade id (fallback). */

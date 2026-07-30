@@ -11,12 +11,23 @@ import { getWindowManager } from '@/lib/trading/windowManager'
 import { MAX_STOP_HITS } from '@/lib/trading/sessionGate'
 import { getESTDateString } from '@/lib/utils/timeUtils'
 import type { CurrentPositionResponse, TradePosition } from '@/types/trading'
+import { reconcileBrokerClosedPosition } from '@/lib/trading/brokerPositionReconcile'
 
-export async function GET(request: Request): Promise<NextResponse<CurrentPositionResponse>> {
+export type CurrentPositionWithReconcile = CurrentPositionResponse & {
+  reconciled?: {
+    closed: true
+    exit_reason: 'stop_hit' | 'take_profit' | 'manual'
+    exit_price: number
+    profit_loss: number
+  }
+}
+
+export async function GET(request: Request): Promise<NextResponse<CurrentPositionWithReconcile>> {
   try {
     const { searchParams } = new URL(request.url)
     const instrument = searchParams.get('instrument') as 'DOW' | 'NASDAQ' | 'NIKKEI' | null
     const anyNy = searchParams.get('any') === '1'
+    const reconcile = searchParams.get('reconcile') === '1'
 
     if (!anyNy && (!instrument || !['DOW', 'NASDAQ', 'NIKKEI'].includes(instrument))) {
       logger.error('GET /api/trading/current-position: Invalid or missing instrument', { instrument })
@@ -58,12 +69,12 @@ export async function GET(request: Request): Promise<NextResponse<CurrentPositio
     let query = supabase
       .from('trades_journal')
       .select(
-        `id, instrument, trade_date, entry_window, entry_timestamp, entry_price,
+        `id, user_id, instrument, trade_date, entry_window, entry_timestamp, entry_price,
          entry_direction, stop_loss_price, stop_loss_hit_at, stop_loss_hit_count,
          position_size, risk_amount, account_size, exit_timestamp, exit_price,
          exit_reason, profit_loss, profit_loss_percent, regime, regime_confidence,
          best_level_break_confidence, best_break_level, profit_target_price,
-         created_at, updated_at`
+         oanda_trade_id, created_at, updated_at`
       )
       .eq('user_id', user.id)
       .eq('trade_date', today)
@@ -122,21 +133,40 @@ export async function GET(request: Request): Promise<NextResponse<CurrentPositio
       market_disabled: marketDisabled,
     })
 
+    let openPosition = position as TradePosition | null
+    let reconciled: CurrentPositionWithReconcile['reconciled'] | undefined
+
+    if (reconcile && openPosition) {
+      const result = await reconcileBrokerClosedPosition(supabase, openPosition as never)
+      if (result.changed) {
+        reconciled = {
+          closed: true,
+          exit_reason: result.exit_reason,
+          exit_price: result.exit_price,
+          profit_loss: result.profit_loss,
+        }
+        openPosition = null
+      }
+    }
+
     const locked =
-      (position?.instrument as 'DOW' | 'NASDAQ' | 'NIKKEI' | undefined) ?? instrument ?? null
+      (openPosition?.instrument as 'DOW' | 'NASDAQ' | 'NIKKEI' | undefined) ?? instrument ?? null
 
     return NextResponse.json(
       {
-        position: position as TradePosition | null,
+        position: openPosition,
         locked_instrument: locked,
         entry_window_active: currentWindow,
         next_entry_window: nextWindow,
         market_disabled: marketDisabled,
-        message: position
-          ? `Position open at $${position.entry_price} (Stop: $${position.stop_loss_price})`
-          : entryWindowsClosed
-            ? 'Entry windows closed for today'
-            : 'No open position',
+        reconciled,
+        message: openPosition
+          ? `Position open at $${openPosition.entry_price} (Stop: $${openPosition.stop_loss_price})`
+          : reconciled
+            ? `Position closed (${reconciled.exit_reason}) @ ${reconciled.exit_price}`
+            : entryWindowsClosed
+              ? 'Entry windows closed for today'
+              : 'No open position',
       },
       { status: 200 }
     )

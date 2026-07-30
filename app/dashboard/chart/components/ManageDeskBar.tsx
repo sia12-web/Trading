@@ -53,6 +53,18 @@ interface Props {
   onAiVerdict?: (verdict: AiVerdict | null) => void
   /** Advise-only ATR trail/pad suggestion from active range */
   atrAdviceLine?: string | null
+  /** Soft desk alert when break-even becomes available (once per trade) */
+  onBreakEvenAvailable?: (payload: {
+    positionId: string
+    instrument: string
+    proposedPrice: number
+    reason: string
+  }) => void
+  /** Broker/journal sync detected position already closed */
+  onBrokerExit?: (payload: {
+    exitReason: 'stop_hit' | 'take_profit' | 'manual'
+    exitPrice: number
+  }) => void
 }
 
 export function ManageDeskBar({
@@ -62,6 +74,8 @@ export function ManageDeskBar({
   onRefreshGate,
   onAiVerdict,
   atrAdviceLine = null,
+  onBreakEvenAvailable,
+  onBrokerExit,
 }: Props) {
   const [ai, setAi] = useState<AiVerdict | null>(null)
   const [recommendation, setRecommendation] = useState<{
@@ -80,6 +94,11 @@ export function ManageDeskBar({
   const [busy, setBusy] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [newsExpanded, setNewsExpanded] = useState(false)
+  const [beDismissed, setBeDismissed] = useState(false)
+  const beNotifiedRef = useRef(false)
+  const beDismissedRef = useRef(false)
+  const onBreakEvenAvailableRef = useRef(onBreakEvenAvailable)
+  const onBrokerExitRef = useRef(onBrokerExit)
   const exitingRef = useRef(false)
   const aiPollInFlightRef = useRef(false)
   const exitDismissedRef = useRef(false)
@@ -92,9 +111,22 @@ export function ManageDeskBar({
     setExitPrompt(null)
     setExitDismissed(false)
     setNewsExpanded(false)
+    setRecommendation(null)
+    setBeDismissed(false)
+    beNotifiedRef.current = false
+    beDismissedRef.current = false
     exitDismissedRef.current = false
     exitingRef.current = false
   }, [position.id])
+
+  useEffect(() => {
+    beDismissedRef.current = beDismissed
+  }, [beDismissed])
+
+  useEffect(() => {
+    onBreakEvenAvailableRef.current = onBreakEvenAvailable
+    onBrokerExitRef.current = onBrokerExit
+  }, [onBreakEvenAvailable, onBrokerExit])
 
   useEffect(() => {
     priceRef.current = currentPrice
@@ -151,15 +183,51 @@ export function ManageDeskBar({
     if (aiPollInFlightRef.current || exitingRef.current) return
     aiPollInFlightRef.current = true
     try {
-      // 1. Run Auto-Management Rules (Breakeven, Trailing Stop, Partial Scale-Out)
-      fetch('/api/trading/positions/auto-manage', {
+      // 1. Auto-manage (BE / trail / scale) — trader must CONFIRM
+      const manageRes = await fetch('/api/trading/positions/auto-manage', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           position_id: position.id,
           current_price: priceRef.current ?? undefined,
         }),
-      }).catch(() => {})
+      })
+      if (manageRes.ok && !beDismissedRef.current) {
+        const manageJson = (await manageRes.json()) as {
+          recommendation?: {
+            action_type: 'BREAKEVEN' | 'TRAIL_STOP' | 'SCALE_OUT'
+            proposed_price?: number
+            proposed_units?: number
+            reason: string
+            confidence: number
+          } | null
+          action_taken?: string
+          updated_stop_loss?: number | null
+        }
+        if (
+          manageJson.action_taken === 'MOVED_TO_BREAKEVEN' ||
+          manageJson.action_taken === 'BREAKEVEN_AND_TRAILED'
+        ) {
+          setRecommendation(null)
+        } else if (manageJson.recommendation && !beDismissedRef.current) {
+          setRecommendation(manageJson.recommendation)
+          if (
+            manageJson.recommendation.action_type === 'BREAKEVEN' &&
+            !beNotifiedRef.current
+          ) {
+            beNotifiedRef.current = true
+            onBreakEvenAvailableRef.current?.({
+              positionId: position.id,
+              instrument: position.instrument,
+              proposedPrice:
+                manageJson.recommendation.proposed_price ?? position.entryPrice,
+              reason: manageJson.recommendation.reason,
+            })
+          }
+        } else if (!manageJson.recommendation) {
+          setRecommendation(null)
+        }
+      }
 
       // 2. Run AI Reversal & News / RVOL Exit Check
       const res = await fetch('/api/trading/positions/ai-exit', {
@@ -203,9 +271,65 @@ export function ManageDeskBar({
 
   useEffect(() => {
     void pollAi()
-    const id = setInterval(() => void pollAi(), 20000)
+    const id = setInterval(() => void pollAi(), 12000)
     return () => clearInterval(id)
   }, [pollAi])
+
+  /** Broker/journal reconcile — detect OANDA SL/TP while chart still shows open */
+  const pollReconcile = useCallback(async () => {
+    if (exitingRef.current) return
+    try {
+      const res = await fetch(
+        `/api/trading/current-position?instrument=${encodeURIComponent(position.instrument)}&reconcile=1&_=${Date.now()}`,
+        { cache: 'no-store' }
+      )
+      if (!res.ok) return
+      const json = (await res.json()) as {
+        position?: unknown | null
+        reconciled?: {
+          closed: true
+          exit_reason: 'stop_hit' | 'take_profit' | 'manual'
+          exit_price: number
+        }
+      }
+      if (json.reconciled?.closed) {
+        exitingRef.current = true
+        const reason = json.reconciled.exit_reason
+        setMsg(
+          reason === 'stop_hit'
+            ? `STOP HIT @ ${json.reconciled.exit_price.toLocaleString()}`
+            : reason === 'take_profit'
+              ? `TAKE PROFIT @ ${json.reconciled.exit_price.toLocaleString()}`
+              : `CLOSED @ ${json.reconciled.exit_price.toLocaleString()}`
+        )
+        onBrokerExitRef.current?.({
+          exitReason: reason,
+          exitPrice: json.reconciled.exit_price,
+        })
+        return
+      }
+      if (!json.position) {
+        exitingRef.current = true
+        onBrokerExitRef.current?.({
+          exitReason: 'manual',
+          exitPrice: priceRef.current ?? position.entryPrice,
+        })
+      }
+    } catch {
+      /* soft-fail */
+    }
+  }, [position.id, position.instrument])
+
+  useEffect(() => {
+    void pollReconcile()
+    const id = setInterval(() => void pollReconcile(), 4000)
+    return () => clearInterval(id)
+  }, [pollReconcile])
+
+  useEffect(() => {
+    if (currentPrice == null) return
+    void pollReconcile()
+  }, [currentPrice, pollReconcile])
 
   // Auto-exit when live price hits stop or take-profit
   useEffect(() => {
@@ -241,6 +365,11 @@ export function ManageDeskBar({
         if (cancelled) return
         const closeJson = await closeRes.json()
         if (!closeRes.ok || !closeJson.success) {
+          // Journal may already be closed (broker SL/TP) — reconcile and clear UI
+          if (closeRes.status === 404 || /already closed/i.test(String(closeJson.message || ''))) {
+            await pollReconcile()
+            return
+          }
           exitingRef.current = false
           setMsg(closeJson.message || `${exitReason} close failed`)
           return
@@ -326,7 +455,7 @@ export function ManageDeskBar({
     if (!recommendation) return
     setBusy('CONFIRM')
     try {
-      await fetch('/api/trading/positions/auto-manage', {
+      const res = await fetch('/api/trading/positions/auto-manage', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -336,8 +465,28 @@ export function ManageDeskBar({
           action_type: recommendation.action_type,
         }),
       })
-      setMsg(`Confirmed: ${recommendation.action_type}`)
+      const json = (await res.json().catch(() => ({}))) as {
+        action_taken?: string
+        updated_stop_loss?: number | null
+        error?: string
+      }
+      if (!res.ok) {
+        setMsg(json.error || 'Confirmation failed')
+        return
+      }
+      if (recommendation.action_type === 'BREAKEVEN') {
+        setMsg(`Break-even confirmed — SL @ ${(json.updated_stop_loss ?? position.entryPrice).toLocaleString()}`)
+        onBreakEvenAvailableRef.current?.({
+          positionId: position.id,
+          instrument: position.instrument,
+          proposedPrice: json.updated_stop_loss ?? position.entryPrice,
+          reason: '__confirmed__',
+        })
+      } else {
+        setMsg(`Confirmed: ${recommendation.action_type}`)
+      }
       setRecommendation(null)
+      setBeDismissed(true)
       onRefreshGate()
     } catch {
       setMsg('Confirmation failed')
@@ -359,8 +508,13 @@ export function ManageDeskBar({
           action_type: recommendation.action_type,
         }),
       })
-      setMsg(`Rejected: Position held untouched`)
+      setMsg(
+        recommendation.action_type === 'BREAKEVEN'
+          ? 'Break-even dismissed — SL unchanged'
+          : 'Rejected — position held untouched'
+      )
       setRecommendation(null)
+      setBeDismissed(true)
     } catch {
       setMsg('Rejection failed')
     } finally {
@@ -488,27 +642,31 @@ export function ManageDeskBar({
       {recommendation && (
         <div className="rounded border border-amber-500/70 bg-amber-950/40 p-1.5 space-y-1">
           <p className="text-[9px] font-bold uppercase tracking-wide text-amber-300">
-            AI bracket · {recommendation.action_type}
+            {recommendation.action_type === 'BREAKEVEN'
+              ? 'Break-even available'
+              : `AI bracket · ${recommendation.action_type}`}
           </p>
           <p className="text-[10px] text-gray-200 leading-snug line-clamp-2">
-            {recommendation.reason}
+            {recommendation.action_type === 'BREAKEVEN'
+              ? `Confirm to lock SL at entry (${recommendation.proposed_price?.toLocaleString() ?? position.entryPrice.toLocaleString()}) — ${recommendation.reason}`
+              : recommendation.reason}
           </p>
           <div className="flex items-center gap-1">
             <button
               type="button"
               disabled={!!busy}
-              onClick={handleConfirmRecommendation}
+              onClick={() => void handleConfirmRecommendation()}
               className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[9px] font-bold uppercase tracking-wide transition"
             >
-              Confirm
+              {busy === 'CONFIRM' ? '…' : recommendation.action_type === 'BREAKEVEN' ? 'Move to BE' : 'Confirm'}
             </button>
             <button
               type="button"
               disabled={!!busy}
-              onClick={handleRejectRecommendation}
+              onClick={() => void handleRejectRecommendation()}
               className="px-2 py-0.5 rounded bg-surface-700 hover:bg-surface-600 text-gray-300 hover:text-white text-[9px] font-semibold uppercase tracking-wide transition"
             >
-              Reject
+              {busy === 'REJECT' ? '…' : 'Not now'}
             </button>
           </div>
         </div>
