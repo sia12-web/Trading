@@ -6,6 +6,10 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
+  buildAttemptLadder,
+  type AttemptLadder,
+} from '@/lib/trading/attemptLadder'
+import {
   deskMarketFor,
   isDeskInstrument,
   sessionFor,
@@ -163,7 +167,7 @@ export async function isClockedInForInstrument(
   return isClockedIn(supabase, userId, market, now)
 }
 
-/** Re-clock after early manual out — until lunch (they already committed today). */
+/** Re-clock after early manual/auto out — until cash close (already committed today). */
 export function canReClockInNow(
   market: DeskMarket,
   now = new Date()
@@ -175,14 +179,20 @@ export function canReClockInNow(
   }
   const t = parseTimeToSeconds(timeInTz(now, s.tz))
   const start = parseTimeToSeconds(s.analyzeStart)
-  const lunch = parseTimeToSeconds(s.lunchClose)
+  const close = parseTimeToSeconds(s.marketClose)
   if (t < start) {
     return { ok: false, reason: 'Desk prep not open yet' }
   }
-  if (t >= lunch) {
-    return { ok: false, reason: 'Morning session ended at lunch — re-clock closed' }
+  if (t >= close) {
+    return { ok: false, reason: 'Cash close — re-clock closed for today' }
   }
-  return { ok: true, reason: 'Re-clock window open until lunch' }
+  return { ok: true, reason: 'Re-clock window open until cash close' }
+}
+
+/** Keep desk clocked in through lunch when later entry windows still have probes. */
+export function shouldRetainClockInAtLunch(ladder: AttemptLadder): boolean {
+  if (ladder.dayLocked) return false
+  return ladder.ibEligible || ladder.lunchEligible
 }
 
 export async function clockIn(
@@ -213,7 +223,7 @@ export async function clockIn(
     return { ok: true, row: existing }
   }
   if (existing?.status === 'clocked_out') {
-    // Already attended today — may re-enter until lunch (not a late first clock-in)
+    // Already attended today — may re-enter until cash close (not a late first clock-in)
     const re = canReClockInNow(args.market)
     if (!re.ok) return { ok: false, error: re.reason }
     const { data, error } = await supabase
@@ -287,8 +297,8 @@ export async function clockOut(
 }
 
 /** Auto lunch clock-out for markets past lunchClose.
- * Skips when an open book still needs manage, or when morning+IB is still unused
- * (lunch-range entry path remains).
+ * Skips when an open book still needs manage, or when session fills remain and a
+ * later entry window is still eligible (e.g. Nikkei IB prep after 11:30 JST lunch).
  */
 export async function autoLunchClockOut(
   supabase: SupabaseClient,
@@ -340,18 +350,18 @@ export async function autoLunchClockOut(
       .eq('fill_status', 'filled')
       .in('instrument', instruments)
 
-    const { buildAttemptLadder } = await import('@/lib/trading/attemptLadder')
     const ladder = buildAttemptLadder(
       (fills || []).map((t) => ({
         instrument: t.instrument as string,
         entryTimestamp: t.entry_timestamp || t.created_at || null,
         exitReason: (t.exit_reason as string) || null,
       })),
-      market === 'TOKYO' ? 'NIKKEI' : 'DOW'
+      market === 'TOKYO' ? 'NIKKEI' : 'DOW',
+      now
     )
 
-    // IB or lunch-range still available → stay clocked in
-    if (ladder.ibEligible || ladder.lunchEligible) continue
+    // Session slots or later windows remain → stay clocked in
+    if (shouldRetainClockInAtLunch(ladder)) continue
 
     const { data: trade } = await supabase
       .from('trades_journal')

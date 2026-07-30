@@ -883,9 +883,9 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   const attendedToday = !!input.attendedToday || clockedIn
   /** First clock-in: prep only (analyze → cash open). Late first entry = missed. */
   const inFirstClockWindow = isWeekdayInTz(now, s.tz) && t >= analyze && t < open
-  /** Re-clock after early out: until lunch if already attended today. */
-  const inDeskWindow = isWeekdayInTz(now, s.tz) && t >= analyze && t < lunch
-  // First commit: prep only. Already attended (early out): re-enter until lunch.
+  /** Re-clock after early out: until cash close if already attended today. */
+  const inDeskWindow = isWeekdayInTz(now, s.tz) && t >= analyze && t < close
+  // First commit: prep only. Already attended (early out): re-enter until cash close.
   const canClockIn =
     !clockedIn && (!!input.attendedToday ? inDeskWindow : inFirstClockWindow)
 
