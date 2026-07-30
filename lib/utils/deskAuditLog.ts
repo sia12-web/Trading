@@ -10,6 +10,7 @@ import { logger } from '@/lib/utils/logger'
 export type DeskEntryDenyReason =
   | 'session_gate'
   | 'range_edge'
+  | 'stop_guard'
   | 'already_open'
   | 'already_working'
   | 'validation'

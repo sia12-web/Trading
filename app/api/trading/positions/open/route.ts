@@ -520,12 +520,31 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       )
     }
 
+    const clientStop = Number(body.stop_loss_price)
+    if (!Number.isFinite(clientStop) || clientStop <= 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          position_id: '',
+          instrument: body.instrument,
+          entry_price: body.entry_price,
+          stop_loss_price: 0,
+          position_size: 0,
+          risk_amount: 0,
+          entry_direction: body.entry_direction,
+          entry_window: body.entry_window,
+          message: 'Invalid stop loss price',
+        },
+        { status: 400 }
+      )
+    }
+
     const stopGuard = assertProtectiveStop({
       instrument: body.instrument,
       entry: body.entry_price,
-      stop: body.stop_loss_price,
+      stop: clientStop,
       direction: body.entry_direction,
-      plannedStop: body.stop_loss_price,
+      plannedStop: clientStop,
     })
     if (!stopGuard.ok) {
       logEntryDenied({
