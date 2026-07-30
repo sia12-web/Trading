@@ -1502,6 +1502,8 @@ export function TradingChart({
     [onDataModeChange]
   )
   const positionLinesRef = useRef<any[]>([])
+  /** Entry/SL/TP for working limit or open position — folded into candle autoscale only */
+  const overlayFitPricesRef = useRef<number[]>([])
   /** Hover preview of entry/SL/TP for the nearest visible AI/structure level */
   const hoverPreviewLinesRef = useRef<any[]>([])
   const hoverPreviewKeyRef = useRef<string | null>(null)
@@ -2122,6 +2124,13 @@ export function TradingChart({
         min = Math.min(min, tip.low, tip.close)
         max = Math.max(max, tip.high, tip.close)
       }
+      for (const p of overlayFitPricesRef.current) {
+        if (Number.isFinite(p) && p > 0) {
+          min = Math.min(min, p)
+          max = Math.max(max, p)
+        }
+      }
+
       if (!(max > min) || !Number.isFinite(min) || !Number.isFinite(max)) return null
       const pad = Math.max((max - min) * 0.05, Math.abs(max) * 0.0005)
       return {
@@ -4795,10 +4804,19 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     })
     positionLinesRef.current = []
 
-    if (!host || !chartReady) {
+    const refreshOverlayAutoscale = () => {
       try {
-        host?.applyOptions({ autoscaleInfoProvider: (): null => null })
-      } catch { /* ignore */ }
+        chartRef.current?.priceScale('right').applyOptions({
+          autoScale: true,
+          scaleMargins: { top: 0.05, bottom: 0.05 },
+        })
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (!host || !chartReady) {
+      overlayFitPricesRef.current = []
       return
     }
 
@@ -4825,35 +4843,17 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           )
         } catch { /* ignore */ }
       }
-      // Expand candle scale just enough to keep entry/SL/TP in view — never orphan lines alone
-      if (prices.length >= 1) {
-        let min = Math.min(...prices)
-        let max = Math.max(...prices)
-        for (const c of candlesRef.current) {
-          min = Math.min(min, c.low)
-          max = Math.max(max, c.high)
-        }
-        const pad = Math.max((max - min) * 0.08, max * 0.0008)
-        try {
-          host.applyOptions({
-            autoscaleInfoProvider: () => ({
-              priceRange: {
-                minValue: min - pad,
-                maxValue: max + pad,
-              },
-            }),
-          })
-        } catch { /* ignore */ }
-      } else {
-        try {
-          host.applyOptions({ autoscaleInfoProvider: (): null => null })
-        } catch { /* ignore */ }
-      }
+      // Fold entry/SL/TP into candle autoscale (visible bars only) — never full history or distant overlays
+      overlayFitPricesRef.current = prices
+      if (prices.length >= 1) refreshOverlayAutoscale()
     }
 
     if (positionOverlay || editableOverlay) {
       const ov = editableOverlay ?? positionOverlay
-      if (!ov) return
+      if (!ov) {
+        overlayFitPricesRef.current = []
+        return
+      }
       const v = (aiVerdict?.verdict || '').toLowerCase()
       const aiWantsTp = v === 'reversal' || v === 'take_profit' || v === 'pullback'
       const tpLabel =
@@ -4919,9 +4919,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       return
     }
 
-    try {
-      host.applyOptions({ autoscaleInfoProvider: (): null => null })
-    } catch { /* ignore */ }
+    overlayFitPricesRef.current = []
+    refreshOverlayAutoscale()
   }, [positionOverlay, editableOverlay, pendingLimit, aiVerdict, chartReady, clearHoverPreview, onAdjustBrackets])
 
   const isUp = priceChange >= 0
