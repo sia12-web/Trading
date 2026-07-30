@@ -32,6 +32,7 @@ import { isOandaConfigured, shouldExecuteOandaOrders } from '@/lib/oanda/config'
 import { getOandaAccountSummary } from '@/lib/oanda/orders'
 import { placeOandaMarketOrder, closeOandaTrade } from '@/lib/oanda/orders'
 import { assertServerRangeEdgeEntry } from '@/lib/trading/serverPlaybookRange'
+import { assertProtectiveStop } from '@/lib/trading/stopLossGuard'
 import type { PositionOpenResponse } from '@/types/trading'
 import { logEntryDenied } from '@/lib/utils/deskAuditLog'
 
@@ -316,22 +317,27 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       }
     }
 
-    const edgeCheck = await assertServerRangeEdgeEntry({
-      instrument: body.instrument,
-      entry: body.entry_price,
-      clientRange:
-        body.range_high != null && body.range_low != null
-          ? {
-              high: Number(body.range_high),
-              low: Number(body.range_low),
-              label: body.range_label ?? null,
-            }
-          : null,
-      rangeStrategy: gate.rangeStrategy,
-      morningAttempts: gate.morningAttempts,
-      ibAttempts: gate.ibAttempts,
-      lunchAttempts: gate.lunchAttempts,
-    })
+    const deskEntrySource = normalizeEntrySource(body.entry_source)
+
+    const edgeCheck =
+      deskEntrySource === 'manual'
+        ? ({ ok: true as const, range: { high: 0, low: 0 } })
+        : await assertServerRangeEdgeEntry({
+            instrument: body.instrument,
+            entry: body.entry_price,
+            clientRange:
+              body.range_high != null && body.range_low != null
+                ? {
+                    high: Number(body.range_high),
+                    low: Number(body.range_low),
+                    label: body.range_label ?? null,
+                  }
+                : null,
+            rangeStrategy: gate.rangeStrategy,
+            morningAttempts: gate.morningAttempts,
+            ibAttempts: gate.ibAttempts,
+            lunchAttempts: gate.lunchAttempts,
+          })
     if (!edgeCheck.ok) {
       logEntryDenied({
         route: 'open',
@@ -367,7 +373,6 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
     }
 
     // Skip ultra-tight deep extreme check when entry is from chart level click
-    const deskEntrySource = normalizeEntrySource(body.entry_source)
     const fromChartLevel =
       body.entry_source === 'chart_level' ||
       body.entry_source === 'ai' ||
@@ -514,6 +519,42 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
         { status: 400 }
       )
     }
+
+    const stopGuard = assertProtectiveStop({
+      instrument: body.instrument,
+      entry: body.entry_price,
+      stop: body.stop_loss_price,
+      direction: body.entry_direction,
+      plannedStop: body.stop_loss_price,
+    })
+    if (!stopGuard.ok) {
+      logEntryDenied({
+        route: 'open',
+        reason: 'stop_guard',
+        instrument: body.instrument,
+        message: stopGuard.message,
+        status: 400,
+        entry: body.entry_price,
+        direction: body.entry_direction,
+        entrySource: deskEntrySource,
+      })
+      return NextResponse.json(
+        {
+          success: false,
+          position_id: '',
+          instrument: body.instrument,
+          entry_price: body.entry_price,
+          stop_loss_price: 0,
+          position_size: 0,
+          risk_amount: 0,
+          entry_direction: body.entry_direction,
+          entry_window: body.entry_window,
+          message: stopGuard.message,
+        },
+        { status: 400 }
+      )
+    }
+    body.stop_loss_price = stopGuard.stop
 
     // Progressive session risk: fill #1 = 1%, #2 = 0.5%, #3 = 0.25% (W/L same)
     const riskPct = riskPercentForEntrySource(deskEntrySource, gate.attemptsUsed)

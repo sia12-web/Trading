@@ -1133,11 +1133,14 @@ export default function ChartPage() {
         setOrderLevelType(undefined)
         return
       }
-      const edge = assertRangeEdgeEntry({
-        entry: order.level,
-        range: order.strategyRange ?? orderStrategyRange,
-      })
-      if (!edge.ok) {
+      const edge =
+        order.entrySource === 'manual'
+          ? null
+          : assertRangeEdgeEntry({
+              entry: order.level,
+              range: order.strategyRange ?? orderStrategyRange,
+            })
+      if (edge && !edge.ok) {
         setFillError(edge.message)
         setOrderStatus('rejected')
         setOrderLevel(null)

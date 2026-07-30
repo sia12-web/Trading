@@ -20,6 +20,7 @@ import {
   type StrategyRiskMagnets,
 } from '@/lib/trading/strategyRiskGeometry'
 import { assertRangeEdgeEntry, clampPriceToRangeEdgeBands, RANGE_EDGE_BAND_POINTS } from '@/lib/trading/rangeEdgeEntryGate'
+import { assertProtectiveStop } from '@/lib/trading/stopLossGuard'
 import {
   instrumentTick,
   snapDeskPrice,
@@ -276,8 +277,11 @@ export function LevelOrderTicket({
   }, [useLiveAccount, initialAccountSize])
 
   useEffect(() => {
+    // Manual / risk-box limits keep the trader's chosen structure price — never
+    // clamp to ±10 playbook bands (that silently moved 62203 → 61955 and
+    // collapsed SL to entry−1 via snapStopToTick).
     const clamped =
-      strategyRange != null
+      !isManual && strategyRange != null
         ? clampPriceToRangeEdgeBands(levelPrice, strategyRange) ?? levelPrice
         : levelPrice
     const snappedLimit = snapDeskPrice(instrument, clamped)
@@ -288,7 +292,14 @@ export function LevelOrderTicket({
         presetStopLoss != null && Number.isFinite(presetStopLoss)
           ? presetStopLoss
           : defaultManualStop(snappedLimit, dir)
-      setStopInput(snapStopToTick(instrument, snappedLimit, baseStop, dir))
+      const guard = assertProtectiveStop({
+        instrument,
+        entry: snappedLimit,
+        stop: baseStop,
+        direction: dir,
+        plannedStop: baseStop,
+      })
+      setStopInput(guard.ok ? guard.stop : baseStop)
       setTpInput(
         presetProfitTarget != null && Number.isFinite(presetProfitTarget)
           ? snapTargetToTick(instrument, snappedLimit, presetProfitTarget, dir)
@@ -422,10 +433,12 @@ export function LevelOrderTicket({
       )
       return false
     }
-    const edge = assertRangeEdgeEntry({ entry: snappedLimit, range: strategyRange })
-    if (!edge.ok) {
-      failSubmit(edge.message)
-      return false
+    if (!isManual) {
+      const edge = assertRangeEdgeEntry({ entry: snappedLimit, range: strategyRange })
+      if (!edge.ok) {
+        failSubmit(edge.message)
+        return false
+      }
     }
     if (!preview) {
       failSubmit(
@@ -440,7 +453,20 @@ export function LevelOrderTicket({
     setPlacing(true)
 
     const limit = snappedLimit
-    const stop = snapStopToTick(instrument, limit, preview.stop_loss_price, direction)
+    const stopGuard = assertProtectiveStop({
+      instrument,
+      entry: limit,
+      stop: isManual && Number.isFinite(stopInput) ? stopInput : preview.stop_loss_price,
+      direction,
+      plannedStop: isManual && Number.isFinite(stopInput) ? stopInput : preview.stop_loss_price,
+    })
+    if (!stopGuard.ok) {
+      placingRef.current = false
+      setPlacing(false)
+      failSubmit(stopGuard.message)
+      return false
+    }
+    const stop = stopGuard.stop
     let tp = displayTp
     if (!Number.isFinite(tp) || tp <= 0) {
       tp = snapTargetToTick(instrument, limit, preview.profit_target_price, direction)

@@ -38,6 +38,7 @@ import { formatWorkingLimitAlreadyMessage } from '@/lib/trading/workingLimitGate
 import {
   shouldExpireWorkingLimit,
 } from '@/lib/trading/sessionCleanup'
+import { assertProtectiveStop } from '@/lib/trading/stopLossGuard'
 
 export const dynamic = 'force-dynamic'
 
@@ -375,22 +376,33 @@ export async function POST(request: Request) {
       }
     }
 
-    const edgeCheck = await assertServerRangeEdgeEntry({
-      instrument,
-      entry: level,
-      clientRange:
-        body.range_high != null && body.range_low != null
-          ? {
-              high: Number(body.range_high),
-              low: Number(body.range_low),
-              label: body.range_label ?? null,
-            }
-          : null,
-      rangeStrategy: gate.rangeStrategy,
-      morningAttempts: gate.morningAttempts,
-      ibAttempts: gate.ibAttempts,
-      lunchAttempts: gate.lunchAttempts,
-    })
+    const stop = Number(body.stop_loss_price ?? body.stopLoss)
+    const target = Number(body.profit_target_price ?? body.profitTarget)
+    const account = Number(body.account_size ?? body.accountSize) || 100000
+    const entryWindow = Number(body.entry_window ?? body.entryWindow) || 1
+    const regime = body.regime || 'bullish'
+    const regimeConf = Number(body.regime_confidence ?? body.regimeConfidence) || 70
+    const entrySource = normalizeEntrySource(body.entry_source)
+
+    const edgeCheck =
+      entrySource === 'manual'
+        ? ({ ok: true as const, range: { high: 0, low: 0 } })
+        : await assertServerRangeEdgeEntry({
+            instrument,
+            entry: level,
+            clientRange:
+              body.range_high != null && body.range_low != null
+                ? {
+                    high: Number(body.range_high),
+                    low: Number(body.range_low),
+                    label: body.range_label ?? null,
+                  }
+                : null,
+            rangeStrategy: gate.rangeStrategy,
+            morningAttempts: gate.morningAttempts,
+            ibAttempts: gate.ibAttempts,
+            lunchAttempts: gate.lunchAttempts,
+          })
     if (!edgeCheck.ok) {
       logEntryDenied({
         route: 'working',
@@ -411,17 +423,31 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: edgeCheck.message }, { status: 400 })
     }
 
-    const stop = Number(body.stop_loss_price ?? body.stopLoss)
-    const target = Number(body.profit_target_price ?? body.profitTarget)
-    const account = Number(body.account_size ?? body.accountSize) || 100000
-    const entryWindow = Number(body.entry_window ?? body.entryWindow) || 1
-    const regime = body.regime || 'bullish'
-    const regimeConf = Number(body.regime_confidence ?? body.regimeConfidence) || 70
-    const entrySource = normalizeEntrySource(body.entry_source)
-
     if (!Number.isFinite(stop) || stop <= 0) {
       return NextResponse.json({ error: 'Invalid stop' }, { status: 400 })
     }
+
+    const stopGuard = assertProtectiveStop({
+      instrument,
+      entry: level,
+      stop,
+      direction: direction as 'LONG' | 'SHORT',
+      plannedStop: stop,
+    })
+    if (!stopGuard.ok) {
+      logEntryDenied({
+        route: 'working',
+        reason: 'stop_guard',
+        instrument,
+        message: stopGuard.message,
+        status: 400,
+        entry: level,
+        direction,
+        entrySource,
+      })
+      return NextResponse.json({ error: stopGuard.message }, { status: 400 })
+    }
+    const stopLossPrice = stopGuard.stop
 
     // Server-authoritative progressive risk (1% → 0.5% → 0.25%) from filled
     // session attempts — ignore client-claimed size/risk so chart/ticket can't
@@ -431,7 +457,7 @@ export async function POST(request: Request) {
       level,
       account,
       direction,
-      stop,
+      stopLossPrice,
       riskPct
     )
     if (!sizing) {
@@ -451,7 +477,7 @@ export async function POST(request: Request) {
         entry_timestamp: now,
         entry_price: level,
         entry_direction: direction,
-        stop_loss_price: stop,
+        stop_loss_price: stopLossPrice,
         stop_loss_hit_count: 0,
         position_size: size,
         risk_amount: risk || 0,
@@ -488,7 +514,7 @@ export async function POST(request: Request) {
             entry_timestamp: now,
             entry_price: level,
             entry_direction: direction,
-            stop_loss_price: stop,
+            stop_loss_price: stopLossPrice,
             stop_loss_hit_count: 0,
             position_size: size,
             risk_amount: risk || 0,
@@ -535,7 +561,7 @@ export async function POST(request: Request) {
             risk_amount: risk,
             risk_percent: riskPct,
             account_size: account,
-            stop_loss_price: stop,
+            stop_loss_price: stopLossPrice,
             profit_target_price: Number.isFinite(target) ? target : null,
           })
         }
@@ -569,7 +595,7 @@ export async function POST(request: Request) {
       risk_amount: risk,
       risk_percent: riskPct,
       account_size: account,
-      stop_loss_price: stop,
+      stop_loss_price: stopLossPrice,
       profit_target_price: Number.isFinite(target) ? target : null,
       message: 'Working limit placed — not on Positions until filled',
     })

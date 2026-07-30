@@ -2,15 +2,22 @@
 
 /**
  * Live Positions — manage open books with path meters, AI, and clear exits.
+ * Also surfaces unfilled working limits (cancel + view on chart).
  */
 
 import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { PositionStatusCard } from './components/PositionStatusCard'
+import { WorkingLimitCard } from './components/WorkingLimitCard'
 import { LunchCloseCountdown } from './components/LunchCloseCountdown'
 import { MorningLunchFlatConfirm } from '@/app/dashboard/chart/components/MorningLunchFlatConfirm'
-import type { PositionStatusResponse, PositionStatus } from '@/types/positionManagement'
+import type {
+  PositionStatusResponse,
+  PositionStatus,
+  WorkingLimitStatus,
+} from '@/types/positionManagement'
 import type { Instrument } from '@/types/trading'
+import { workingRowToPending, type WorkingLimitRow } from '@/lib/trading/workingLimitGate'
 import { isAfternoonWatchWindow, sessionFor } from '@/lib/trading/sessionGate'
 import { isMorningOrIbEntry } from '@/lib/trading/morningLunchConfirm'
 import {
@@ -20,12 +27,33 @@ import {
 
 const INSTRUMENTS: Instrument[] = ['DOW', 'NASDAQ', 'NIKKEI']
 
+function mapWorkingRow(row: WorkingLimitRow & { id?: string }): WorkingLimitStatus {
+  const p = workingRowToPending(row)
+  return {
+    id: String(row.id || ''),
+    instrument: p.instrument,
+    trade_date: String((row as { trade_date?: string }).trade_date || ''),
+    entry_price: p.level,
+    entry_direction: p.direction,
+    stop_loss_price: p.stopLoss,
+    profit_target_price: p.profitTarget,
+    position_size: p.positionSize,
+    risk_amount: p.riskAmount,
+    account_size: p.accountSize,
+    entry_timestamp:
+      row.entry_timestamp || new Date(p.placedAt).toISOString(),
+    entry_reason: p.entryReason ?? row.entry_reason,
+    entry_source: p.entrySource,
+  }
+}
+
 export default function PositionsPage() {
   const [selectedInstrument, setSelectedInstrument] = useState<Instrument>('DOW')
   const [position, setPosition] = useState<PositionStatus | null>(null)
   const [openByInstrument, setOpenByInstrument] = useState<Partial<Record<Instrument, boolean>>>(
     {}
   )
+  const [workingLimit, setWorkingLimit] = useState<WorkingLimitStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [lunchFlatPrompt, setLunchFlatPrompt] = useState(false)
@@ -50,6 +78,21 @@ export default function PositionsPage() {
       })
     )
     setOpenByInstrument(flags)
+  }, [])
+
+  const fetchWorkingLimit = useCallback(async () => {
+    try {
+      const res = await fetch('/api/trading/positions/working', { cache: 'no-store' })
+      if (!res.ok) return
+      const data = (await res.json()) as { working?: WorkingLimitRow | null }
+      if (data.working?.id) {
+        setWorkingLimit(mapWorkingRow(data.working))
+      } else {
+        setWorkingLimit(null)
+      }
+    } catch {
+      /* soft-fail */
+    }
   }, [])
 
   const fetchPosition = useCallback(async (opts?: { soft?: boolean }) => {
@@ -93,18 +136,22 @@ export default function PositionsPage() {
 
   useEffect(() => {
     void fetchPosition()
-  }, [fetchPosition])
+    void fetchWorkingLimit()
+  }, [fetchPosition, fetchWorkingLimit])
 
   useEffect(() => {
     void fetchOpenFlags()
   }, [fetchOpenFlags])
 
-  // Soft refresh while managing
+  // Soft refresh while managing or working
   useEffect(() => {
-    if (!position) return
-    const id = setInterval(() => void fetchPosition({ soft: true }), 30_000)
+    if (!position && !workingLimit) return
+    const id = setInterval(() => {
+      void fetchPosition({ soft: true })
+      void fetchWorkingLimit()
+    }, 30_000)
     return () => clearInterval(id)
-  }, [position, fetchPosition])
+  }, [position, workingLimit, fetchPosition, fetchWorkingLimit])
 
   // Past morning lunch with morning/IB open book → confirm close
   useEffect(() => {
@@ -159,17 +206,23 @@ export default function PositionsPage() {
     }
   }, [position, lunchFlatBusy, selectedInstrument])
 
-  // On first open-flags load, jump to an instrument that actually has a book
+  // On first load, jump to instrument with open book or working limit
   useEffect(() => {
     const openInst = INSTRUMENTS.find((i) => openByInstrument[i])
-    if (!openInst) return
+    const workingInst = workingLimit?.instrument
     if (openByInstrument[selectedInstrument]) return
-    setSelectedInstrument(openInst)
-    // intentionally once when flags populate for another market
+    if (workingInst && selectedInstrument === workingInst) return
+    if (openInst) {
+      setSelectedInstrument(openInst)
+      return
+    }
+    if (workingInst) setSelectedInstrument(workingInst)
+    // intentionally when flags / working populate
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openByInstrument])
+  }, [openByInstrument, workingLimit?.instrument])
 
   const anyOpen = INSTRUMENTS.some((i) => openByInstrument[i])
+  const hasWorking = !!workingLimit
 
   return (
     <div className="min-h-screen bg-[#0d1117] text-gray-200">
@@ -181,8 +234,9 @@ export default function PositionsPage() {
             </p>
             <h1 className="mt-1 text-2xl font-semibold text-white">Live positions</h1>
             <p className="mt-1 text-sm text-gray-500 max-w-lg">
-              Manage today’s open live book (path to TP, room to SL, AI, take profit). Simulation
-              paper trades stay on the Simulation desk — they never show here.
+              Manage today’s open live book (path to TP, room to SL, AI, take profit). Unfilled
+              working limits show here too — cancel or open the chart. Simulation paper trades stay
+              on the Simulation desk.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -204,6 +258,8 @@ export default function PositionsPage() {
         <div className="flex flex-wrap items-center gap-2">
           {INSTRUMENTS.map((instrument) => {
             const open = !!openByInstrument[instrument]
+            const working =
+              !!workingLimit && workingLimit.instrument === instrument
             const selected = selectedInstrument === instrument
             return (
               <button
@@ -223,6 +279,12 @@ export default function PositionsPage() {
                     title="Open position"
                   />
                 )}
+                {!open && working && (
+                  <span
+                    className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-sky-400 shadow-[0_0_6px_rgba(56,189,248,0.8)]"
+                    title="Working limit"
+                  />
+                )}
               </button>
             )
           })}
@@ -231,6 +293,7 @@ export default function PositionsPage() {
             onClick={() => {
               void fetchPosition()
               void fetchOpenFlags()
+              void fetchWorkingLimit()
             }}
             className="ml-auto rounded-lg border border-[#30363d] px-3 py-1.5 text-xs text-gray-400 hover:text-white"
           >
@@ -238,10 +301,11 @@ export default function PositionsPage() {
           </button>
         </div>
 
-        {!loading && anyOpen && (
-          <p className="text-[11px] text-emerald-400/90">
-            Green dot = open book on that market. You can only manage one instrument’s desk day at a
-            time.
+        {!loading && (anyOpen || hasWorking) && (
+          <p className="text-[11px] text-gray-400">
+            <span className="text-emerald-400/90">Green dot</span> = filled open book ·{' '}
+            <span className="text-sky-400/90">Blue dot</span> = working limit (unfilled). One
+            working limit per desk session at a time.
           </p>
         )}
 
@@ -273,6 +337,17 @@ export default function PositionsPage() {
           </div>
         )}
 
+        {!loading && !error && workingLimit && !position && (
+          <WorkingLimitCard
+            working={workingLimit}
+            viewingInstrument={selectedInstrument}
+            onCancelled={() => {
+              setWorkingLimit(null)
+              void fetchWorkingLimit()
+            }}
+          />
+        )}
+
         {!loading && !error && (
           <PositionStatusCard
             position={position}
@@ -285,7 +360,9 @@ export default function PositionsPage() {
             onRefresh={() => {
               void fetchPosition({ soft: true })
               void fetchOpenFlags()
+              void fetchWorkingLimit()
             }}
+            hideEmptyWhenWorking={!!workingLimit && !position}
           />
         )}
 
@@ -310,8 +387,8 @@ export default function PositionsPage() {
 
         <p className="text-[11px] text-gray-600 leading-relaxed">
           Prefer managing from the chart while price is moving — this page is the dedicated manage
-          desk when you leave the chart. Fills, stops, and AI exits land in Order History. Morning/IB
-          books ask for confirm at lunch; cash close auto-liquidates lunch-range and leftovers.
+          desk when you leave the chart. Working limits and fills both appear here; cancel unfilled
+          limits or manage after fill. Stops and AI exits land in Order History.
         </p>
       </div>
     </div>

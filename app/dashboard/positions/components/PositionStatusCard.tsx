@@ -17,6 +17,8 @@ interface PositionStatusCardProps {
   position: PositionStatus | null
   onClosed?: () => void
   onRefresh?: () => void
+  /** When a working limit card is shown above, skip the empty-state placeholder. */
+  hideEmptyWhenWorking?: boolean
 }
 
 interface AiVerdict {
@@ -42,6 +44,7 @@ export function PositionStatusCard({
   position,
   onClosed,
   onRefresh,
+  hideEmptyWhenWorking = false,
 }: PositionStatusCardProps) {
   const [currentPrice, setCurrentPrice] = useState<number | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -391,12 +394,13 @@ export function PositionStatusCard({
   }
 
   if (!position) {
+    if (hideEmptyWhenWorking) return null
     return (
       <div className="rounded-xl border border-dashed border-[#30363d] bg-[#161b22] px-6 py-14 text-center">
         <p className="text-lg font-semibold text-white">No open position</p>
         <p className="mt-2 text-sm text-gray-500 max-w-md mx-auto leading-relaxed">
-          Working limits and fills live on the chart. Clock in, place a level during the morning
-          window — this page manages the open book.
+          Clock in and place a level during the entry window — filled books and working limits both
+          show on this page and on Live Trading.
         </p>
         <Link
           href="/dashboard/chart"

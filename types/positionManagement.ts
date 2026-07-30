@@ -53,6 +53,29 @@ export interface PositionStatusResponse {
   message: string
 }
 
+/** Unfilled working limit — visible on Live Positions + chart until fill or cancel. */
+export interface WorkingLimitStatus {
+  id: string
+  instrument: Instrument
+  trade_date: string
+  entry_price: number
+  entry_direction: EntryDirection
+  stop_loss_price: number
+  profit_target_price: number
+  position_size: number
+  risk_amount: number
+  account_size: number
+  entry_timestamp: string
+  entry_reason?: string | null
+  entry_source?: 'ai' | 'structure' | 'manual' | null
+}
+
+export interface WorkingLimitResponse {
+  success: boolean
+  working: WorkingLimitStatus | null
+  message?: string
+}
+
 export interface PositionWithLivePnL {
   position: PositionStatus
   currentPrice: number
