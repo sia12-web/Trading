@@ -18,6 +18,11 @@ function jstDate(y: number, m: number, d: number, h: number, min: number): Date 
   return new Date(Date.UTC(y, m - 1, d, h - 9, min, 0))
 }
 
+function etDate(y: number, m: number, d: number, h: number, min: number): Date {
+  // EDT = UTC-4 (Jul)
+  return new Date(Date.UTC(y, m - 1, d, h + 4, min, 0))
+}
+
 const Y = 2026
 const M = 7
 const D = 29
@@ -42,10 +47,6 @@ const ibPrep = jstDate(Y, M, D, 12, 30)
 const ladderNoNow = buildAttemptLadder(fills, 'NIKKEI')
 assert(!ladderNoNow.ibEligible, 'without now: ibEligible false after morning fill')
 assert(!ladderNoNow.lunchEligible, 'without now: lunchEligible false after morning fill')
-assert(
-  !(ladderNoNow.ibEligible || ladderNoNow.lunchEligible),
-  'old lunch check would wrongly auto clock-out at lunch'
-)
 
 const ladder = buildAttemptLadder(fills, 'NIKKEI', ibPrep)
 assert(ladder.dayAttempts === 2, '2 session fills')
@@ -53,7 +54,7 @@ assert(ladder.ibEligible, 'US Range still eligible (1/2)')
 assert(ladder.lunchEligible, 'Tokyo IB still eligible (0/2)')
 assert(
   shouldRetainClockInAtLunch(ladder),
-  'retain clock-in while IB window remains'
+  'retain clock-in while session slots remain (2/3)'
 )
 
 // Re-clock must stay open through IB prep (not cut at 11:30 lunch)
@@ -97,7 +98,7 @@ const capped = buildAttemptLadder(
 assert(capped.dayLocked, '3/3 session locked')
 assert(!shouldRetainClockInAtLunch(capped), 'no retain at session cap')
 
-// Session gate / auto lunch must use desk session_date only — not EST day
+// Retain at 2/3 even if window eligibility looks closed (policy: until 3 fills)
 const sessionOnly = buildAttemptLadder(fills, 'NIKKEI', ibPrep)
 assert(sessionOnly.dayAttempts === 2, '2 session fills')
 assert(shouldRetainClockInAtLunch(sessionOnly), 'retain at 2/3')
@@ -117,6 +118,42 @@ assert(wronglyMerged.dayAttempts === 3, 'merged cross-day would be 3 fills')
 assert(
   !shouldRetainClockInAtLunch(wronglyMerged),
   'wrong merge would wrongly auto clock-out at lunch'
+)
+
+// NY ~15:20 after Session 3/3 — must NOT offer “Today I trade”
+const nyFills = [
+  {
+    instrument: 'DOW',
+    entryTimestamp: etDate(2026, 7, 31, 10, 1).toISOString(),
+    exitReason: 'stop_hit',
+  },
+  {
+    instrument: 'DOW',
+    entryTimestamp: etDate(2026, 7, 31, 10, 39).toISOString(),
+    exitReason: 'stop_hit',
+  },
+  {
+    instrument: 'DOW',
+    entryTimestamp: etDate(2026, 7, 31, 15, 3).toISOString(),
+    exitReason: 'stop_hit',
+  },
+]
+const nyAfterFlat = etDate(2026, 7, 31, 15, 20)
+const nyGate = resolveSessionGate({
+  now: nyAfterFlat,
+  lockedInstrument: 'DOW',
+  viewingInstrument: 'DOW',
+  clockedIn: false,
+  attendedToday: true,
+  hasOpenPosition: false,
+  attemptFills: nyFills,
+})
+assert(nyGate.dayLocked, 'NY day locked at 3/3')
+assert(!nyGate.canClockIn, 'no Today I trade after Session 3/3')
+assert(
+  nyGate.message?.toLowerCase().includes('day locked') ||
+    nyGate.message?.includes('3/3'),
+  `day-locked copy, got: ${nyGate.message}`
 )
 
 console.log('auto_lunch_clock_out: all passed')

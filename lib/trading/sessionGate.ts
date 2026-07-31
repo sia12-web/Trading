@@ -864,10 +864,18 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
           instrument: lockedRaw ?? viewingRaw ?? 'DOW',
         }))
   // Re-apply Option B clock unlock against `now` (pre-built ladders may omit clock)
+  const otherAttempts = Math.max(
+    0,
+    ladderRaw.dayAttempts -
+      ladderRaw.morningAttempts -
+      ladderRaw.ibAttempts -
+      ladderRaw.lunchAttempts
+  )
   const ladder: AttemptLadder = attemptLadderFromCounts({
     morningAttempts: ladderRaw.morningAttempts,
     ibAttempts: ladderRaw.ibAttempts,
     lunchAttempts: ladderRaw.lunchAttempts,
+    otherAttempts,
     morningStopHits: ladderRaw.morningStopHits,
     now,
     instrument: lockedRaw ?? viewingRaw ?? 'DOW',
@@ -967,7 +975,8 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     // Attended earlier today (lunch/manual clock-out)
     if (attendedToday) {
       const openBook = r.phase === 'MANAGE' || hasOpen
-      const canReClock = inDeskWindow && !openBook
+      // Never offer “Today I trade” after Session 3/3 — day is locked
+      const canReClock = inDeskWindow && !openBook && !r.dayLocked
       return {
         ...r,
         clockedIn: false,
@@ -985,9 +994,11 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
           : !!locked && (afternoonWatch || r.canViewLiveChart),
         message: openBook
           ? r.message || 'Position open. Manage only — no new entries.'
-          : canReClock
-            ? 'Clocked out — re-clock in with “Today I trade” to resume the live desk.'
-            : r.message,
+          : r.dayLocked
+            ? `Session ${r.attemptsUsed ?? ladder.dayAttempts}/${r.maxAttempts ?? MAX_DAY_ATTEMPTS} — day locked. No re-clock / new entries.`
+            : canReClock
+              ? 'Clocked out — re-clock in with “Today I trade” to resume the live desk.'
+              : r.message,
       }
     }
     // Never attended: allow NY dual browse pre-open; otherwise lock until clock-in / next day

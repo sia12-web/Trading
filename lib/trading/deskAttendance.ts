@@ -189,10 +189,13 @@ export function canReClockInNow(
   return { ok: true, reason: 'Re-clock window open until cash close' }
 }
 
-/** Keep desk clocked in through lunch when later entry windows still have probes. */
+/**
+ * Keep desk clocked in through lunch while session fills remain (< 3).
+ * Do not auto clock-out merely because IB/LN window probes look closed —
+ * trader stays for manage / leftover session slots until the hard 3-fill cap.
+ */
 export function shouldRetainClockInAtLunch(ladder: AttemptLadder): boolean {
-  if (ladder.dayLocked) return false
-  return ladder.ibEligible || ladder.lunchEligible
+  return !ladder.dayLocked
 }
 
 export async function clockIn(
@@ -226,6 +229,33 @@ export async function clockIn(
     // Already attended today — may re-enter until cash close (not a late first clock-in)
     const re = canReClockInNow(args.market)
     if (!re.ok) return { ok: false, error: re.reason }
+
+    // Session 3/3 → no “Today I trade” re-entry (day locked)
+    const sessionDate = sessionDateForMarket(args.market)
+    const instruments = args.market === 'TOKYO' ? ['NIKKEI'] : ['DOW', 'NASDAQ']
+    const { data: fills } = await supabase
+      .from('trades_journal')
+      .select('instrument, exit_reason, entry_timestamp, created_at')
+      .eq('user_id', userId)
+      .eq('trade_date', sessionDate)
+      .eq('fill_status', 'filled')
+      .in('instrument', instruments)
+    const ladder = buildAttemptLadder(
+      (fills || []).map((t) => ({
+        instrument: t.instrument as string,
+        entryTimestamp: t.entry_timestamp || t.created_at || null,
+        exitReason: (t.exit_reason as string) || null,
+      })),
+      args.market === 'TOKYO' ? 'NIKKEI' : 'DOW',
+      new Date()
+    )
+    if (ladder.dayLocked) {
+      return {
+        ok: false,
+        error: `Session ${ladder.dayAttempts}/${ladder.maxDayAttempts} — day locked. No re-clock / new entries.`,
+      }
+    }
+
     const { data, error } = await supabase
       .from('desk_attendance')
       .update({

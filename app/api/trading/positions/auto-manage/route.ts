@@ -142,6 +142,44 @@ export async function POST(request: Request) {
     let updatedSlPrice: number | null = null
     let scaledOutUnits = 0
 
+    /** Never place a stop through/into live price — that instantly flat-closes the book. */
+    const stopSafeVsMarket = (stop: number): boolean => {
+      const pad = 2
+      if (!(stop > 0) || !(currentPrice > 0)) return false
+      return isLong ? stop < currentPrice - pad : stop > currentPrice + pad
+    }
+
+    const applyStopLoss = async (stop: number, label: string): Promise<boolean> => {
+      if (!stopSafeVsMarket(stop)) {
+        logger.warn('[auto-manage] refused stop through market', {
+          position_id: position.id,
+          label,
+          stop,
+          currentPrice,
+          isLong,
+        })
+        return false
+      }
+      if (oandaTradeId) {
+        const oanda = await updateOandaTradeStopLoss(oandaTradeId, stop, instrument)
+        if (!oanda.ok) {
+          logger.warn('[auto-manage] oanda SL update failed', {
+            position_id: position.id,
+            error: oanda.error,
+          })
+          return false
+        }
+      }
+      await supabase
+        .from('trades_journal')
+        .update({
+          stop_loss_price: stop,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', position.id)
+      return true
+    }
+
     // 1. BREAKEVEN RULE — instrument TP-progress threshold OR +1R (whichever qualifies first)
     const beByProgress = tpProgress >= beProgressThreshold
     const beByR = rMultiple >= 1.0
@@ -154,29 +192,28 @@ export async function POST(request: Request) {
           ? `+${rMultiple.toFixed(2)}R achieved — move Stop Loss to Breakeven ($${bePrice})?`
           : `Target reached ${(beProgressThreshold * 100).toFixed(0)}% TP progress. Move Stop Loss to Breakeven ($${bePrice})?`
         if (autoExecute || (confirmAction === 'CONFIRM' && actionType === 'BREAKEVEN')) {
-          updatedSlPrice = bePrice
-          actionTaken = 'MOVED_TO_BREAKEVEN'
+          if (await applyStopLoss(bePrice, 'BREAKEVEN')) {
+            updatedSlPrice = bePrice
+            actionTaken = 'MOVED_TO_BREAKEVEN'
 
-          if (oandaTradeId) {
-            await updateOandaTradeStopLoss(oandaTradeId, bePrice, instrument)
-          }
-
-          await supabase
-            .from('trades_journal')
-            .update({
-              stop_loss_price: bePrice,
-              updated_at: new Date().toISOString(),
+            await supabase.from('management_decisions').insert({
+              user_id: user.id,
+              position_id: position.id,
+              instrument,
+              trade_date: position.trade_date,
+              decision_type: 'ADJUST',
+              notes: `Confirmed Auto-Breakeven (${instrument}): Moved Stop Loss to entry $${bePrice}`,
             })
-            .eq('id', position.id)
-
-          await supabase.from('management_decisions').insert({
-            user_id: user.id,
-            position_id: position.id,
-            instrument,
-            trade_date: position.trade_date,
-            decision_type: 'ADJUST',
-            notes: `Confirmed Auto-Breakeven (${instrument}): Moved Stop Loss to entry $${bePrice}`,
-          })
+          } else {
+            return NextResponse.json(
+              {
+                success: false,
+                error:
+                  'Break-even stop would hit live price immediately — refused. Wait for more room above/below entry.',
+              },
+              { status: 409 }
+            )
+          }
         } else {
           recommendation = {
             action_type: 'BREAKEVEN',
@@ -199,22 +236,22 @@ export async function POST(request: Request) {
         ? roundedTrail > effectiveSl && (roundedTrail - effectiveSl) >= 1.5
         : roundedTrail < effectiveSl && (effectiveSl - roundedTrail) >= 1.5
 
-      if (isTrailTighter) {
+      if (isTrailTighter && stopSafeVsMarket(roundedTrail)) {
         if (autoExecute || (confirmAction === 'CONFIRM' && actionType === 'TRAIL_STOP')) {
-          updatedSlPrice = roundedTrail
-          actionTaken = actionTaken === 'MOVED_TO_BREAKEVEN' ? 'BREAKEVEN_AND_TRAILED' : 'TRAILED_STOP'
-
-          if (oandaTradeId) {
-            await updateOandaTradeStopLoss(oandaTradeId, roundedTrail, instrument)
+          if (await applyStopLoss(roundedTrail, 'TRAIL_STOP')) {
+            updatedSlPrice = roundedTrail
+            actionTaken =
+              actionTaken === 'MOVED_TO_BREAKEVEN' ? 'BREAKEVEN_AND_TRAILED' : 'TRAILED_STOP'
+          } else {
+            return NextResponse.json(
+              {
+                success: false,
+                error:
+                  'Trail stop would hit live price immediately — refused. Position left open.',
+              },
+              { status: 409 }
+            )
           }
-
-          await supabase
-            .from('trades_journal')
-            .update({
-              stop_loss_price: roundedTrail,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', position.id)
         } else {
           recommendation = {
             action_type: 'TRAIL_STOP',
