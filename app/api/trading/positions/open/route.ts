@@ -320,25 +320,22 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
 
     const deskEntrySource = normalizeEntrySource(body.entry_source)
 
-    const edgeCheck =
-      deskEntrySource === 'manual'
-        ? ({ ok: true as const, range: { high: 0, low: 0 } })
-        : await assertServerRangeEdgeEntry({
-            instrument: body.instrument,
-            entry: body.entry_price,
-            clientRange:
-              body.range_high != null && body.range_low != null
-                ? {
-                    high: Number(body.range_high),
-                    low: Number(body.range_low),
-                    label: body.range_label ?? null,
-                  }
-                : null,
-            rangeStrategy: gate.rangeStrategy,
-            morningAttempts: gate.morningAttempts,
-            ibAttempts: gate.ibAttempts,
-            lunchAttempts: gate.lunchAttempts,
-          })
+    const edgeCheck = await assertServerRangeEdgeEntry({
+      instrument: body.instrument,
+      entry: body.entry_price,
+      clientRange:
+        body.range_high != null && body.range_low != null
+          ? {
+              high: Number(body.range_high),
+              low: Number(body.range_low),
+              label: body.range_label ?? null,
+            }
+          : null,
+      rangeStrategy: gate.rangeStrategy,
+      morningAttempts: gate.morningAttempts,
+      ibAttempts: gate.ibAttempts,
+      lunchAttempts: gate.lunchAttempts,
+    })
     if (!edgeCheck.ok) {
       logEntryDenied({
         route: 'open',

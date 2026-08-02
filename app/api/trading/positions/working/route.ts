@@ -384,25 +384,22 @@ export async function POST(request: Request) {
     const regimeConf = Number(body.regime_confidence ?? body.regimeConfidence) || 70
     const entrySource = normalizeEntrySource(body.entry_source)
 
-    const edgeCheck =
-      entrySource === 'manual'
-        ? ({ ok: true as const, range: { high: 0, low: 0 } })
-        : await assertServerRangeEdgeEntry({
-            instrument,
-            entry: level,
-            clientRange:
-              body.range_high != null && body.range_low != null
-                ? {
-                    high: Number(body.range_high),
-                    low: Number(body.range_low),
-                    label: body.range_label ?? null,
-                  }
-                : null,
-            rangeStrategy: gate.rangeStrategy,
-            morningAttempts: gate.morningAttempts,
-            ibAttempts: gate.ibAttempts,
-            lunchAttempts: gate.lunchAttempts,
-          })
+    const edgeCheck = await assertServerRangeEdgeEntry({
+      instrument,
+      entry: level,
+      clientRange:
+        body.range_high != null && body.range_low != null
+          ? {
+              high: Number(body.range_high),
+              low: Number(body.range_low),
+              label: body.range_label ?? null,
+            }
+          : null,
+      rangeStrategy: gate.rangeStrategy,
+      morningAttempts: gate.morningAttempts,
+      ibAttempts: gate.ibAttempts,
+      lunchAttempts: gate.lunchAttempts,
+    })
     if (!edgeCheck.ok) {
       logEntryDenied({
         route: 'working',

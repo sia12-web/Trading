@@ -16,6 +16,7 @@ import {
   rangeEdgeBandsEnvelope,
   rangeMidpoint,
   RANGE_EDGE_BAND_POINTS,
+  RANGE_EDGE_OFF_BAND_MESSAGE,
 } from '../lib/trading/rangeEdgeEntryGate'
 
 const range = { high: 40000, low: 39900, label: 'OR30' }
@@ -55,7 +56,7 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
   assert.equal(midOk.ok, true)
   const bad = assertRangeEdgeEntry({ entry: 39970, range })
   assert.equal(bad.ok, false)
-  if (!bad.ok) assert.match(bad.message, /50% mid/i)
+  if (!bad.ok) assert.match(bad.message, /highlighted ±10 H\/Mid\/L/i)
   const missing = assertRangeEdgeEntry({ entry: 40000, range: null })
   assert.equal(missing.ok, false)
 }
@@ -187,6 +188,24 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
     const hit = findRangeEdgeBandHit(mid!, [r])
     assert.equal(hit?.edge, 'mid', `${r.instrument} ${r.label} click hits 50%`)
   }
+}
+
+{
+  // Reject off-band — never silently accept a clamped substitute as legal entry.
+  const ib = { high: 40_100, low: 39_900, label: 'IB' }
+  for (const entry of [40_100, 40_000, 39_900]) {
+    const ok = assertRangeEdgeEntry({ entry, range: ib })
+    assert.equal(ok.ok, true, `IB band entry ${entry} OK`)
+  }
+  const offBand = assertRangeEdgeEntry({ entry: 40_050, range: ib })
+  assert.equal(offBand.ok, false, 'mid-gap between IB bands rejected')
+  if (!offBand.ok) assert.equal(offBand.message, RANGE_EDGE_OFF_BAND_MESSAGE)
+
+  const clamped = clampPriceToRangeEdgeBands(40_050, ib)
+  assert.notEqual(clamped, 40_050, 'clamp moves off-band price')
+  const clampedCheck = assertRangeEdgeEntry({ entry: clamped!, range: ib })
+  assert.equal(clampedCheck.ok, true, 'clamped price lands in legal band')
+  assert.notEqual(40_050, clamped, 'policy: reject original — do not silently trade clamped level')
 }
 
 console.log('range_edge_entry_gate: all passed')

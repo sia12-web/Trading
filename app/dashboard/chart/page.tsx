@@ -345,6 +345,22 @@ export default function ChartPage() {
         return
       }
 
+      const isManualFlow =
+        meta?.source === 'manual' ||
+        meta?.type === 'manual' ||
+        meta?.type === 'market'
+      if (isManualFlow) {
+        const edge = assertRangeEdgeEntry({
+          entry: price,
+          range: meta?.strategyRange ?? null,
+        })
+        if (!edge.ok) {
+          setFillError(edge.message)
+          setOrderStatus('rejected')
+          return
+        }
+      }
+
       const side =
         meta?.side === 'BUY' || meta?.side === 'SHORT' ? meta.side : undefined
       const preferred =
@@ -1306,14 +1322,11 @@ export default function ChartPage() {
         setOrderLevelType(undefined)
         return
       }
-      const edge =
-        order.entrySource === 'manual'
-          ? null
-          : assertRangeEdgeEntry({
-              entry: order.level,
-              range: order.strategyRange ?? orderStrategyRange,
-            })
-      if (edge && !edge.ok) {
+      const edge = assertRangeEdgeEntry({
+        entry: order.level,
+        range: order.strategyRange ?? orderStrategyRange,
+      })
+      if (!edge.ok) {
         setFillError(edge.message)
         setOrderStatus('rejected')
         setOrderLevel(null)

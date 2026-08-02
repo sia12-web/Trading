@@ -114,6 +114,7 @@ import {
   findRangeEdgeBandHit,
   NO_IN_BAND_LEVELS_MESSAGE,
   RANGE_EDGE_BAND_POINTS,
+  RANGE_EDGE_OFF_BAND_MESSAGE,
   rangeEdgeBands,
 } from '@/lib/trading/rangeEdgeEntryGate'
 import {
@@ -4577,6 +4578,20 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     if (!riskBox) return
     const { entryPrice, stopLoss, profitTarget, direction } = riskBox
 
+    const { strategyRange, strategyMagnets, snapRanges } = getStrategyRiskBundle()
+    const hit = findRangeEdgeBandHit(entryPrice, snapRanges)
+    if (!hit) {
+      onDeskAlert?.({
+        kind: 'entry_band_deny',
+        title: 'Off-band entry',
+        body: RANGE_EDGE_OFF_BAND_MESSAGE,
+        telegram: '',
+        instrument,
+      })
+      return
+    }
+    const attributedRange = hit.range
+
     // Check if Leo was consulted for this session / price
     const discussedWithLeo = (levelsRef.current || []).some(
       (l) => Math.abs(l.price - entryPrice) / entryPrice < 0.005
@@ -4586,12 +4601,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       ? `Manual ${direction} Limit Zone (Discussed with Leo): Level @ ${entryPrice.toLocaleString()}, SL @ ${stopLoss.toLocaleString()}, TP @ ${profitTarget.toLocaleString()}`
       : `Manual ${direction} entry: Technical structure limit @ ${entryPrice.toLocaleString()} | SL/TP rationale: Protective SL @ ${stopLoss.toLocaleString()}, Target TP @ ${profitTarget.toLocaleString()}`
 
-    const { strategyRange, strategyMagnets, snapRanges } = getStrategyRiskBundle()
-    // Attribute to the SPECIFIC range the entry price sits in (±10 band) —
-    // never the single sequential "active" range, so an IB/Lunch/US Range click
-    // stays billed to the range actually clicked.
-    const attributedRange =
-      findRangeEdgeBandHit(entryPrice, snapRanges)?.range ?? strategyRange
     onLevelSelect?.(entryPrice, {
       source: 'manual',
       type: 'manual',
@@ -4605,7 +4614,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       strategyMagnets,
     })
     cancelRiskBox()
-  }, [riskBox, onLevelSelect, cancelRiskBox, getStrategyRiskBundle])
+  }, [riskBox, onLevelSelect, cancelRiskBox, getStrategyRiskBundle, onDeskAlert, instrument])
 
   const toggleRiskBoxDirection = useCallback(() => {
     setRiskBox((prev) => {
@@ -7000,12 +7009,18 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   type="button"
                   onClick={() => {
                     const fullReason = `Manual ${rationaleModal.direction} entry: ${userRationale || 'Technical structure'} | SL/TP rationale: ${userSlTpRationale || 'Geometry bounds'}`
-                    const { strategyRange, strategyMagnets, snapRanges } = getStrategyRiskBundle()
-                    // Attribute to the SPECIFIC range this entry price sits in
-                    // (±10 band) — never the single sequential "active" range.
-                    const attributedRange =
-                      findRangeEdgeBandHit(rationaleModal.entryPrice, snapRanges)?.range ??
-                      strategyRange
+                    const { strategyMagnets, snapRanges } = getStrategyRiskBundle()
+                    const hit = findRangeEdgeBandHit(rationaleModal.entryPrice, snapRanges)
+                    if (!hit) {
+                      onDeskAlert?.({
+                        kind: 'entry_band_deny',
+                        title: 'Off-band entry',
+                        body: RANGE_EDGE_OFF_BAND_MESSAGE,
+                        telegram: '',
+                        instrument,
+                      })
+                      return
+                    }
                     onLevelSelect?.(rationaleModal.entryPrice, {
                       source: 'manual',
                       type: 'manual',
@@ -7015,7 +7030,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                       reasoning: fullReason,
                       stopLoss: rationaleModal.stopLoss,
                       profitTarget: rationaleModal.profitTarget,
-                      strategyRange: attributedRange,
+                      strategyRange: hit.range,
                       strategyMagnets,
                     })
                     setRationaleModal(null)

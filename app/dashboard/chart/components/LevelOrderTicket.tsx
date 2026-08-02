@@ -19,7 +19,12 @@ import {
   type StrategyRangeEdges,
   type StrategyRiskMagnets,
 } from '@/lib/trading/strategyRiskGeometry'
-import { assertRangeEdgeEntry, clampPriceToRangeEdgeBands, RANGE_EDGE_BAND_POINTS } from '@/lib/trading/rangeEdgeEntryGate'
+import {
+  assertRangeEdgeEntry,
+  clampPriceToRangeEdgeBands,
+  RANGE_EDGE_BAND_POINTS,
+  RANGE_EDGE_OFF_BAND_MESSAGE,
+} from '@/lib/trading/rangeEdgeEntryGate'
 import { assertProtectiveStop } from '@/lib/trading/stopLossGuard'
 import {
   instrumentTick,
@@ -435,12 +440,10 @@ export function LevelOrderTicket({
       )
       return false
     }
-    if (!isManual) {
-      const edge = assertRangeEdgeEntry({ entry: snappedLimit, range: strategyRange })
-      if (!edge.ok) {
-        failSubmit(edge.message)
-        return false
-      }
+    const edge = assertRangeEdgeEntry({ entry: snappedLimit, range: strategyRange })
+    if (!edge.ok) {
+      failSubmit(edge.message)
+      return false
     }
     if (!preview) {
       failSubmit(
@@ -724,11 +727,7 @@ export function LevelOrderTicket({
                 onChange={(e) => {
                   const v = Number(e.target.value)
                   if (!Number.isFinite(v)) return
-                  const clamped =
-                    strategyRange != null
-                      ? clampPriceToRangeEdgeBands(v, strategyRange) ?? v
-                      : v
-                  setLimitPrice(clamped)
+                  setLimitPrice(v)
                   setTpInput(null)
                 }}
                 className="mt-1 w-full rounded-lg border border-[#30363d] bg-[#0d1117] px-3 py-2 text-sm text-white price-mono"
@@ -736,9 +735,9 @@ export function LevelOrderTicket({
             </label>
             {strategyRange && (
               <p className="mt-1 text-[10px] text-sky-400/80">
-                Entry locked to ±{RANGE_EDGE_BAND_POINTS} of {strategyRange.label || 'range'} H (
-                {strategyRange.high.toLocaleString()}) / L (
-                {strategyRange.low.toLocaleString()}) — drag or type within the band.
+                {RANGE_EDGE_OFF_BAND_MESSAGE} Place at ±{RANGE_EDGE_BAND_POINTS} of{' '}
+                {strategyRange.label || 'range'} H ({strategyRange.high.toLocaleString()}) / 50% mid
+                / L ({strategyRange.low.toLocaleString()}).
               </p>
             )}
             <label className="mt-3 block text-[10px] uppercase tracking-wider text-gray-500">

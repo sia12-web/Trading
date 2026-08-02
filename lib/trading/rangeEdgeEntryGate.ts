@@ -5,6 +5,10 @@
 
 export const RANGE_EDGE_BAND_POINTS = 10
 
+/** Chart / fillError copy when a limit lands outside painted ±10 H/Mid/L bands. */
+export const RANGE_EDGE_OFF_BAND_MESSAGE =
+  'Entry only at highlighted ±10 H/Mid/L.'
+
 export type RangeEdgeLevels = {
   high: number
   low: number
@@ -224,13 +228,7 @@ export function assertRangeEdgeEntry(args: {
     return { ok: false, message: 'Invalid entry price' }
   }
   if (!isEntryWithinRangeEdgeBand(entry, range, band)) {
-    const label = range.label ? `${range.label} ` : ''
-    const mid = rangeMidpoint(range)
-    const midTxt = mid != null ? mid.toLocaleString() : '—'
-    return {
-      ok: false,
-      message: `Entry must be within ${band} pts of ${label}range high (${range.high}), 50% mid (${midTxt}), or low (${range.low}).`,
-    }
+    return { ok: false, message: RANGE_EDGE_OFF_BAND_MESSAGE }
   }
   return { ok: true, range }
 }

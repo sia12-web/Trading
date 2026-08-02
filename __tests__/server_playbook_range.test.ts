@@ -34,8 +34,7 @@ const serverOr30 = { label: 'OR30', high: 63_281.3, low: 62_508.8 }
   })
   assert.equal(result.ok, false, 'entry outside server ±10 must fail')
   if (!result.ok) {
-    assert.match(result.message, /within 10 pts/i)
-    assert.match(result.message, /63281\.3/)
+    assert.match(result.message, /highlighted ±10 H\/Mid\/L/i)
   }
 }
 
