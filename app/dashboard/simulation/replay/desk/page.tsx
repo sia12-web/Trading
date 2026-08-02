@@ -2579,38 +2579,7 @@ function SimulationDeskInner() {
     getStrategyRiskBundle,
   ])
 
-  if (loading) {
-    return (
-      <div className="flex h-screen flex-col items-center justify-center gap-3 text-gray-500 text-sm">
-        <p className="animate-pulse">Loading…</p>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="p-6 space-y-3">
-        <p className="text-red-400 text-sm">{error}</p>
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            className="text-xs text-brand-400 hover:text-brand-300"
-          >
-            Retry
-          </button>
-          <button
-            type="button"
-            onClick={() => router.push('/dashboard/simulation')}
-            className="text-xs text-gray-400 hover:text-white"
-          >
-            ← Back to simulation
-          </button>
-        </div>
-      </div>
-    )
-  }
-
+  // Hooks must run unconditionally — early returns below come AFTER all hooks.
   const phase = position ? 'MANAGE' : gate?.phase ?? 'ENTRY'
   const canEnter =
     !position &&
@@ -2653,6 +2622,38 @@ function SimulationDeskInner() {
     watchOnly: watchOnlyPlaybook,
     instrument,
   })
+
+  if (loading) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-3 text-gray-500 text-sm">
+        <p className="animate-pulse">Loading…</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="p-6 space-y-3">
+        <p className="text-red-400 text-sm">{error}</p>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="text-xs text-brand-400 hover:text-brand-300"
+          >
+            Retry
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push('/dashboard/simulation')}
+            className="text-xs text-gray-400 hover:text-white"
+          >
+            ← Back to simulation
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#0d1117]">
