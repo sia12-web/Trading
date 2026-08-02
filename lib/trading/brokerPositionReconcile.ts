@@ -70,7 +70,10 @@ export async function reconcileBrokerClosedPosition(
   if (!tradeId) return { changed: false }
 
   const snap = await getOandaTradeSnapshot(tradeId)
-  if (snap.state === 'open') return { changed: false }
+  // 'unknown' = broker check inconclusive (network/5xx/rate-limit/auth hiccup) —
+  // never force-close the journal on an inconclusive read. Only a confirmed
+  // 'closed' or 'missing' (trade id no longer exists on OANDA) proceeds.
+  if (snap.state === 'open' || snap.state === 'unknown') return { changed: false }
 
   const entry = Number(row.entry_price)
   const dir = String(row.entry_direction || '').toUpperCase()

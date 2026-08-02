@@ -4578,7 +4578,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     if (!riskBox) return
     const { entryPrice, stopLoss, profitTarget, direction } = riskBox
 
-    const { strategyRange, strategyMagnets, snapRanges } = getStrategyRiskBundle()
+    const { strategyMagnets, snapRanges } = getStrategyRiskBundle()
     const hit = findRangeEdgeBandHit(entryPrice, snapRanges)
     if (!hit) {
       onDeskAlert?.({

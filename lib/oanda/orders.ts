@@ -415,7 +415,13 @@ export async function closeOandaTrade(tradeId: string): Promise<CloseTradeResult
 }
 
 export type OandaTradeSnapshot = {
-  state: 'open' | 'closed' | 'missing'
+  /**
+   * 'missing' means OANDA confirmed the trade id does not exist (already
+   * closed/archived). 'unknown' means we could not confirm either way
+   * (network error, timeout, 5xx, rate limit, auth hiccup) — callers must
+   * treat 'unknown' the same as 'open' (never force-close on it).
+   */
+  state: 'open' | 'closed' | 'missing' | 'unknown'
   fillPrice: number | null
   realizedPL: number | null
 }
@@ -423,17 +429,19 @@ export type OandaTradeSnapshot = {
 /** Read open/closed state + close fill for a broker trade id. */
 export async function getOandaTradeSnapshot(tradeId: string): Promise<OandaTradeSnapshot> {
   if (!isOandaConfigured() || !tradeId) {
-    return { state: 'missing', fillPrice: null, realizedPL: null }
+    return { state: 'unknown', fillPrice: null, realizedPL: null }
   }
   try {
     const accountId = oandaAccountId()
     const res = await oandaFetch(`/v3/accounts/${accountId}/trades/${tradeId}`)
     if (!res.ok) {
       const text = await res.text().catch(() => '')
-      if (/does not exist|CLOSED|not found/i.test(text)) {
+      // Only a confirmed "trade id no longer exists" reply means broker-closed.
+      // Any other error (429/5xx/auth/network) is unknown — do not assume closed.
+      if (/does not exist|not found/i.test(text)) {
         return { state: 'missing', fillPrice: null, realizedPL: null }
       }
-      return { state: 'missing', fillPrice: null, realizedPL: null }
+      return { state: 'unknown', fillPrice: null, realizedPL: null }
     }
     const body = await res.json()
     const trade = body?.trade
@@ -450,7 +458,8 @@ export async function getOandaTradeSnapshot(tradeId: string): Promise<OandaTrade
     }
     return { state: 'open', fillPrice: null, realizedPL: null }
   } catch {
-    return { state: 'missing', fillPrice: null, realizedPL: null }
+    // Network/timeout error — unknown, not a confirmed close.
+    return { state: 'unknown', fillPrice: null, realizedPL: null }
   }
 }
 
