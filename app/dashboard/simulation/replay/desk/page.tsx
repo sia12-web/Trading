@@ -49,8 +49,20 @@ import {
   resolveSimMorningGate,
   sessionFor,
 } from '@/lib/trading/sessionGate'
-import { classifyAttemptBucket } from '@/lib/trading/attemptLadder'
+import {
+  assertBucketEntryEligible,
+  bucketForRangeLabel,
+  classifyAttemptBucket,
+  deskClockSeconds,
+} from '@/lib/trading/attemptLadder'
+import {
+  assertRangeEdgeEntry,
+  rangeEdgeBands,
+  RANGE_EDGE_BAND_POINTS,
+} from '@/lib/trading/rangeEdgeEntryGate'
+import { assertProtectiveStop } from '@/lib/trading/stopLossGuard'
 import { LevelOrderTicket } from '@/app/dashboard/chart/components/LevelOrderTicket'
+import { MorningLunchFlatConfirm } from '@/app/dashboard/chart/components/MorningLunchFlatConfirm'
 import {
   SESSION_STYLES,
   VWAP_COLORS,
@@ -203,6 +215,8 @@ interface PendingOrder {
   entrySource: DeskEntrySource
   /** Sim clock when this window's working limit expires */
   windowEndUnix: number
+  /** Playbook range label for bucket billing (±10 H/Mid/L) */
+  strategyRangeLabel?: string | null
 }
 
 interface PaperPosition {
@@ -217,6 +231,9 @@ interface PaperPosition {
   entryReason?: string
   conviction?: number
   entrySource: DeskEntrySource
+  strategyRangeLabel?: string | null
+  /** SL moved to entry after trader confirms break-even */
+  breakEvenSet?: boolean
 }
 
 /** Trailing window while following the sim tip — readable bars, tip pinned right */
@@ -569,6 +586,10 @@ function SimulationDeskInner() {
   const sessionEpochRef = useRef(0)
   const [lastPrice, setLastPrice] = useState<number | null>(null)
   const [followingLive, setFollowingLive] = useState(true)
+  const [breakEvenAvailable, setBreakEvenAvailable] = useState(false)
+  const [breakEvenDismissed, setBreakEvenDismissed] = useState(false)
+  const [lunchFlatPrompt, setLunchFlatPrompt] = useState(false)
+  const lunchFlatPromptedRef = useRef(false)
 
   useEffect(() => {
     allCandlesRef.current = allCandles
@@ -1826,18 +1847,58 @@ function SimulationDeskInner() {
         {
           price: pending.stopLoss,
           color: '#ef4444',
-          title: `SL ${fmt(pending.stopLoss)}`,
+          title: `SL · locked — sized at place ${fmt(pending.stopLoss)}`,
           style: LineStyle.Dotted,
           width: 2,
         },
         {
           price: pending.target,
           color: '#22c55e',
-          title: `TP ${fmt(pending.target)}`,
+          title: `TP ${fmt(pending.target)} (editable on live; fixed in sim)`,
           style: LineStyle.Dotted,
           width: 2,
         }
       )
+    }
+
+    // Mirror live ±10 H / 50% / L band edges when a strategy range is shaped
+    const entryOpen =
+      !position &&
+      !pending &&
+      simNowRef.current >= openUnix &&
+      attemptsUsedRef.current < MAX_DAY_ATTEMPTS
+    if (entryOpen || pending) {
+      const { strategyRange } = getStrategyRiskBundle()
+      if (strategyRange && strategyRange.high > strategyRange.low) {
+        const bands = rangeEdgeBands(strategyRange)
+        const label = strategyRange.label || 'range'
+        for (const band of bands) {
+          const color =
+            band.edge === 'mid'
+              ? 'rgba(168, 85, 247, 0.85)'
+              : band.edge === 'high'
+                ? 'rgba(56, 189, 248, 0.75)'
+                : 'rgba(52, 211, 153, 0.75)'
+          const tag =
+            band.edge === 'mid' ? '50%' : band.edge === 'high' ? 'H' : 'L'
+          specs.push(
+            {
+              price: band.max,
+              color,
+              title: `±${RANGE_EDGE_BAND_POINTS} ${label} ${tag}+`,
+              style: LineStyle.SparseDotted,
+              width: 1,
+            },
+            {
+              price: band.min,
+              color,
+              title: `±${RANGE_EDGE_BAND_POINTS} ${label} ${tag}−`,
+              style: LineStyle.SparseDotted,
+              width: 1,
+            }
+          )
+        }
+      }
     }
 
     const prices: number[] = []
@@ -1883,7 +1944,7 @@ function SimulationDeskInner() {
         /* ignore */
       }
     }
-  }, [position, pending, chartReady])
+  }, [position, pending, chartReady, simNow, getStrategyRiskBundle, openUnix])
 
   const fillPending = useCallback(
     (pend: PendingOrder, at: number) => {
@@ -1899,11 +1960,17 @@ function SimulationDeskInner() {
         entryReason: pend.entryReason,
         conviction: pend.conviction,
         entrySource: pend.entrySource || 'ai',
+        strategyRangeLabel: pend.strategyRangeLabel ?? null,
+        breakEvenSet: false,
       }
       pendingRef.current = null
       positionRef.current = filled
+      setBreakEvenAvailable(false)
+      setBreakEvenDismissed(false)
 
-      const bucket = classifyAttemptBucket(instrument, at * 1000)
+      const labeled = bucketForRangeLabel(instrument, pend.strategyRangeLabel)
+      const bucket =
+        labeled ?? classifyAttemptBucket(instrument, at * 1000)
       if (bucket === 'morning') {
         morningAttemptsRef.current += 1
         setMorningAttempts(morningAttemptsRef.current)
@@ -2208,13 +2275,56 @@ function SimulationDeskInner() {
       const entrySource = normalizeEntrySource(level.source, 'structure')
       const limit = snapDeskPrice(instrument, level.level)
       const { strategyRange, strategyMagnets } = getStrategyRiskBundle()
+
+      const edge = assertRangeEdgeEntry({ entry: limit, range: strategyRange })
+      if (!edge.ok) {
+        placingOrderRef.current = false
+        setMsg(edge.message)
+        return
+      }
+
+      const ladder = attemptLadderFromCounts({
+        morningAttempts: morningAttemptsRef.current,
+        ibAttempts: ibAttemptsRef.current,
+        lunchAttempts: lunchAttemptsRef.current,
+        morningStopHits: Math.min(stopHitsRef.current, morningAttemptsRef.current),
+        now: new Date(now * 1000),
+        instrument,
+      })
+      if (strategyRange?.label) {
+        const bucketOk = assertBucketEntryEligible({
+          instrument,
+          market: deskMarketFor(instrument),
+          timeSec: deskClockSeconds(instrument, new Date(now * 1000)),
+          ladder,
+          rangeLabel: strategyRange.label,
+        })
+        if (!bucketOk.ok) {
+          placingOrderRef.current = false
+          setMsg(bucketOk.message)
+          return
+        }
+      }
+
       const strat = strategyEntryRisk({
         entry: limit,
         direction,
         activeRange: strategyRange,
         magnets: strategyMagnets,
       })
-      const stop = snapStopToTick(instrument, limit, strat.stop, direction)
+      const stopGuard = assertProtectiveStop({
+        instrument,
+        entry: limit,
+        stop: strat.stop,
+        direction,
+        plannedStop: strat.stop,
+      })
+      if (!stopGuard.ok) {
+        placingOrderRef.current = false
+        setMsg(stopGuard.message)
+        return
+      }
+      const stop = stopGuard.stop
       const preview = previewPositionSizing(
         limit,
         accountSize,
@@ -2249,6 +2359,7 @@ function SimulationDeskInner() {
         conviction: level.conviction,
         entrySource,
         windowEndUnix: windowEndUnix || cashCloseUnix,
+        strategyRangeLabel: strategyRange?.label ?? null,
       }
 
       // Immediate fill if any bar from open→now already touched
@@ -2265,7 +2376,7 @@ function SimulationDeskInner() {
       pendingRef.current = order
       setPending(order)
       setMsg(
-        `Working ${direction} @ ${limit.toLocaleString()} — press Play until fill`
+        `Working ${direction} @ ${limit.toLocaleString()} — SL locked at place · press Play until fill`
       )
       placingOrderRef.current = false
     },
@@ -2295,7 +2406,55 @@ function SimulationDeskInner() {
     )
     setPosition(null)
     setPlaying(false)
+    setBreakEvenAvailable(false)
+    setLunchFlatPrompt(false)
   }
+
+  const moveStopToBreakEven = useCallback(() => {
+    const pos = positionRef.current
+    if (!pos || pos.breakEvenSet) return
+    const be = snapStopToTick(instrument, pos.entry, pos.entry, pos.direction)
+    const next: PaperPosition = { ...pos, stopLoss: be, breakEvenSet: true }
+    positionRef.current = next
+    setPosition(next)
+    setBreakEvenAvailable(false)
+    setBreakEvenDismissed(true)
+    setMsg(`Break-even confirmed — SL @ ${be.toLocaleString()}`)
+  }, [instrument])
+
+  // Break-even available at +1R (same idea as live ManageDeskBar)
+  useEffect(() => {
+    if (!position || lastPrice == null || position.breakEvenSet || breakEvenDismissed) {
+      if (!position) setBreakEvenAvailable(false)
+      return
+    }
+    const r = Math.abs(position.entry - position.stopLoss)
+    if (!(r > 0)) return
+    const move =
+      position.direction === 'LONG'
+        ? lastPrice - position.entry
+        : position.entry - lastPrice
+    const stillNeedsBe =
+      position.direction === 'LONG'
+        ? position.stopLoss < position.entry
+        : position.stopLoss > position.entry
+    setBreakEvenAvailable(stillNeedsBe && move >= r)
+  }, [position, lastPrice, breakEvenDismissed])
+
+  // Morning lunch flat confirm — mirror live MorningLunchFlatConfirm
+  useEffect(() => {
+    if (!position || !lunchUnix || !simNow) return
+    if (lunchFlatPromptedRef.current) return
+    if (simNow < lunchUnix) return
+    // Only for morning/IB books (not lunch-range fills)
+    const bucket =
+      bucketForRangeLabel(instrument, position.strategyRangeLabel) ??
+      classifyAttemptBucket(instrument, position.filledAt * 1000)
+    if (bucket === 'lunch_range') return
+    lunchFlatPromptedRef.current = true
+    setLunchFlatPrompt(true)
+    setPlaying(false)
+  }, [position, simNow, lunchUnix, instrument])
 
   const resetSessionProgress = () => {
     sessionEpochRef.current += 1
@@ -2312,6 +2471,10 @@ function SimulationDeskInner() {
     setIbAttempts(0)
     setLunchAttempts(0)
     setStopHits(0)
+    setBreakEvenAvailable(false)
+    setBreakEvenDismissed(false)
+    setLunchFlatPrompt(false)
+    lunchFlatPromptedRef.current = false
     pendingRef.current = null
     positionRef.current = null
     if (replayDate) {
@@ -3183,9 +3346,48 @@ function SimulationDeskInner() {
             >
               CLOSE
             </button>
+            {breakEvenAvailable && (
+              <>
+                <button
+                  type="button"
+                  onClick={moveStopToBreakEven}
+                  className="rounded-lg border border-amber-500/60 bg-amber-600/90 px-2.5 py-1 text-[11px] font-bold uppercase text-white hover:bg-amber-500"
+                >
+                  Move to BE
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBreakEvenAvailable(false)
+                    setBreakEvenDismissed(true)
+                  }}
+                  className="rounded-lg border border-white/15 px-2 py-1 text-[10px] text-gray-400 hover:text-white"
+                >
+                  Not now
+                </button>
+              </>
+            )}
+            {position.breakEvenSet && (
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-300/90">
+                BE locked
+              </span>
+            )}
           </div>
         )}
       </div>
+
+      <MorningLunchFlatConfirm
+        open={lunchFlatPrompt && !!position}
+        instrument={instrument}
+        direction={position?.direction || 'LONG'}
+        entryPrice={position?.entry || 0}
+        cashCloseLabel={`${deskLocalHmsAsTraderDisplay(sess.marketClose, sess.tz)} ${TRADER_DISPLAY_LABEL}`}
+        onConfirm={() => {
+          setLunchFlatPrompt(false)
+          closeAtMarket()
+        }}
+        onKeepOpen={() => setLunchFlatPrompt(false)}
+      />
 
       {/* Playbook — morning / IB|US / lunch-break / lunch-range|Tokyo IB */}
       {playbookOpen && (
@@ -3295,11 +3497,12 @@ function SimulationDeskInner() {
       )}
 
       {manualTicketOpen &&
-        (manualClickPrice != null || lastPrice != null || ticketLevel != null) && (
+        !ticketLevel &&
+        (manualClickPrice != null || lastPrice != null) && (
         <LevelOrderTicket
           key={manualClickPrice != null ? `click-${manualClickPrice}` : 'toolbar-manual'}
           instrument={instrument}
-          levelPrice={manualClickPrice ?? lastPrice ?? ticketLevel?.level ?? 0}
+          levelPrice={manualClickPrice ?? lastPrice ?? 0}
           entrySource="manual"
           levelType="manual"
           useLiveAccount={false}
@@ -3316,6 +3519,12 @@ function SimulationDeskInner() {
           entryWindow={(gate?.entryWindow as 1 | 2 | 3 | null) ?? 1}
           strategyRange={getStrategyRiskBundle().strategyRange}
           strategyMagnets={getStrategyRiskBundle().strategyMagnets}
+          sessionFillsUsed={attemptsUsed}
+          atrAdviceLine={
+            overnightBias?.detail
+              ? `${overnightBias.detail} · Sim only: overnight gap + prior session. No news.`
+              : 'Sim only: overnight gap + prior session. No news.'
+          }
           onClose={() => {
             setManualTicketOpen(false)
             setManualClickPrice(null)
@@ -3340,6 +3549,10 @@ function SimulationDeskInner() {
               entryReason: order.entryReason,
               entrySource: 'manual',
               windowEndUnix: windowEndUnix || cashCloseUnix,
+              strategyRangeLabel:
+                getStrategyRiskBundle().strategyRange?.label ??
+                order.strategyRange?.label ??
+                null,
             }
             const now = simNowRef.current
             const touched = allCandlesRef.current.find(
@@ -3358,113 +3571,44 @@ function SimulationDeskInner() {
         />
       )}
 
-      {ticketLevel && (
-        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-sm rounded-xl border border-[#30363d] bg-[#161b22] p-4">
-            <div className="flex justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-white">Sim limit order</h3>
-                <p className="mt-1 text-xs text-gray-400">
-                  {instrument} ·{' '}
-                  <span
-                    className={
-                      ticketLevel.source === 'ai' ? 'text-emerald-300' : 'text-violet-300'
-                    }
-                  >
-                    {ticketLevel.source === 'ai' ? 'AI level' : 'Structure'} ·{' '}
-                    {riskPercentForEntrySource(
-                      ticketLevel.source === 'ai' ? 'ai' : 'structure',
-                      attemptsUsed
-                    )}
-                    % risk
-                  </span>
-                  <br />
-                  {ticketLevel.level.toLocaleString()}
-                  <span className="ml-1.5 text-sky-400/90">
-                    {(() => {
-                      const { strategyRange } = getStrategyRiskBundle()
-                      return strategyRange
-                        ? `SL/TP from ${strategyRange.label}`
-                        : `zone ${formatZone(ticketLevel.level)}`
-                    })()}
-                  </span>
-                </p>
-                {ticketLevel.reasoning && (
-                  <p className="mt-2 text-[11px] leading-relaxed text-gray-300">
-                    <span className="font-semibold uppercase tracking-wide text-gray-500">
-                      Why ·{' '}
-                    </span>
-                    {ticketLevel.reasoning}
-                  </p>
-                )}
-                {overnightBias && (
-                  <p className="mt-1 text-[11px] text-gray-500">{overnightBias.detail}</p>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => setTicketLevel(null)}
-                className="text-gray-500"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="mt-4 flex gap-2">
-              {(['LONG', 'SHORT'] as Direction[]).map((d) => {
-                const { strategyRange, strategyMagnets } = getStrategyRiskBundle()
-                const strat = strategyEntryRisk({
-                  entry: ticketLevel.level,
-                  direction: d,
-                  activeRange: strategyRange,
-                  magnets: strategyMagnets,
-                })
-                const prev = previewPositionSizing(
-                  ticketLevel.level,
-                  accountSize,
-                  d,
-                  strat.stop,
-                  riskPercentForEntrySource(
-                    ticketLevel.source === 'ai' ? 'ai' : 'structure',
-                    attemptsUsed
-                  )
-                )
-                const suggested = simSuggestedDirection(
-                  overnightBias?.bias ?? 'none',
-                  ticketLevel.type
-                )
-                const isSuggested = d === suggested
-                return (
-                  <button
-                    key={d}
-                    type="button"
-                    onClick={() => placePending(ticketLevel, d)}
-                    className={`flex-1 rounded-lg py-3 text-xs font-semibold transition ${
-                      d === 'LONG' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
-                    } ${isSuggested ? 'ring-2 ring-white/70 scale-[1.02]' : 'opacity-55'}`}
-                  >
-                    <div>
-                      {d === 'LONG' ? 'Deep Buy' : 'Deep Short'}
-                      {isSuggested ? ' · suggested' : ''}
-                    </div>
-                    {prev && (
-                      <div className="mt-1 font-normal opacity-80">
-                        SL {prev.stop_loss_price.toFixed(0)} · TP{' '}
-                        {(strategyRange
-                          ? strat.target
-                          : prev.profit_target_price
-                        ).toFixed(0)}{' '}
-                        · size {prev.position_size.toFixed(1)}
-                      </div>
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-            <p className="mt-3 text-[10px] text-gray-500">
-              Sim only: overnight gap + prior session. No news. You can still override.
-            </p>
-          </div>
-        </div>
+      {ticketLevel && !manualTicketOpen && (
+        <LevelOrderTicket
+          key={`level-${ticketLevel.level}-${ticketLevel.source ?? 'structure'}-${ticketLevel.type}`}
+          instrument={instrument}
+          levelPrice={ticketLevel.level}
+          levelType={ticketLevel.type}
+          levelSide={ticketLevel.side}
+          preferredDirection={simSuggestedDirection(
+            overnightBias?.bias ?? 'none',
+            ticketLevel.type
+          )}
+          entryReason={ticketLevel.reasoning}
+          entrySource={ticketLevel.source === 'ai' ? 'ai' : 'structure'}
+          useLiveAccount={false}
+          initialAccountSize={accountSize}
+          regime={
+            overnightBias?.bias === 'bearish'
+              ? 'bearish'
+              : overnightBias?.bias === 'bullish'
+                ? 'bullish'
+                : 'choppy'
+          }
+          regimeConfidence={70}
+          canPlace={canEnter}
+          entryWindow={(gate?.entryWindow as 1 | 2 | 3 | null) ?? 1}
+          strategyRange={getStrategyRiskBundle().strategyRange}
+          strategyMagnets={getStrategyRiskBundle().strategyMagnets}
+          sessionFillsUsed={attemptsUsed}
+          atrAdviceLine={
+            overnightBias?.detail
+              ? `${overnightBias.detail} · Sim only: overnight gap + prior session. No news. You can still override.`
+              : 'Sim only: overnight gap + prior session. No news. You can still override.'
+          }
+          onClose={() => setTicketLevel(null)}
+          onPlaced={(order) => {
+            placePending(ticketLevel, order.direction)
+          }}
+        />
       )}
     </div>
   )
