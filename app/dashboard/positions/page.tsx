@@ -6,7 +6,7 @@
  */
 
 import Link from 'next/link'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { PositionStatusCard } from './components/PositionStatusCard'
 import { WorkingLimitCard } from './components/WorkingLimitCard'
 import { LunchCloseCountdown } from './components/LunchCloseCountdown'
@@ -19,7 +19,13 @@ import type {
 import type { Instrument } from '@/types/trading'
 import { workingRowToPending, type WorkingLimitRow } from '@/lib/trading/workingLimitGate'
 import { isAfternoonWatchWindow, sessionFor } from '@/lib/trading/sessionGate'
-import { isMorningOrIbEntry } from '@/lib/trading/morningLunchConfirm'
+import {
+  clearLunchFlatKeepOpen,
+  hasLunchFlatKeepOpen,
+  isMorningOrIbEntry,
+  liveLunchFlatKeepOpenKey,
+  markLunchFlatKeepOpen,
+} from '@/lib/trading/morningLunchConfirm'
 import {
   TRADER_DISPLAY_LABEL,
   deskLocalHmsAsTraderDisplay,
@@ -58,7 +64,6 @@ export default function PositionsPage() {
   const [error, setError] = useState<string | null>(null)
   const [lunchFlatPrompt, setLunchFlatPrompt] = useState(false)
   const [lunchFlatBusy, setLunchFlatBusy] = useState(false)
-  const lunchFlatDismissedRef = useRef(false)
 
   const fetchOpenFlags = useCallback(async () => {
     const flags: Partial<Record<Instrument, boolean>> = {}
@@ -157,7 +162,6 @@ export default function PositionsPage() {
   useEffect(() => {
     if (!position) {
       setLunchFlatPrompt(false)
-      lunchFlatDismissedRef.current = false
       return
     }
     if (!isAfternoonWatchWindow(new Date(), position.instrument)) {
@@ -168,7 +172,7 @@ export default function PositionsPage() {
       setLunchFlatPrompt(false)
       return
     }
-    if (lunchFlatDismissedRef.current) {
+    if (hasLunchFlatKeepOpen(liveLunchFlatKeepOpenKey(position.id))) {
       setLunchFlatPrompt(false)
       return
     }
@@ -195,8 +199,8 @@ export default function PositionsPage() {
         setError(j.message || j.error || 'Close failed')
         return
       }
+      clearLunchFlatKeepOpen(liveLunchFlatKeepOpenKey(position.id))
       setLunchFlatPrompt(false)
-      lunchFlatDismissedRef.current = true
       setPosition(null)
       setOpenByInstrument((prev) => ({ ...prev, [selectedInstrument]: false }))
     } catch {
@@ -352,8 +356,8 @@ export default function PositionsPage() {
           <PositionStatusCard
             position={position}
             onClosed={() => {
+              if (position?.id) clearLunchFlatKeepOpen(liveLunchFlatKeepOpenKey(position.id))
               setPosition(null)
-              lunchFlatDismissedRef.current = true
               setLunchFlatPrompt(false)
               setOpenByInstrument((prev) => ({ ...prev, [selectedInstrument]: false }))
             }}
@@ -379,7 +383,7 @@ export default function PositionsPage() {
             busy={lunchFlatBusy}
             onConfirm={() => void confirmLunchFlatClose()}
             onKeepOpen={() => {
-              lunchFlatDismissedRef.current = true
+              markLunchFlatKeepOpen(liveLunchFlatKeepOpenKey(position.id))
               setLunchFlatPrompt(false)
             }}
           />

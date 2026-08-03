@@ -68,6 +68,12 @@ import { assertProtectiveStop } from '@/lib/trading/stopLossGuard'
 import { LevelOrderTicket } from '@/app/dashboard/chart/components/LevelOrderTicket'
 import { MorningLunchFlatConfirm } from '@/app/dashboard/chart/components/MorningLunchFlatConfirm'
 import {
+  clearLunchFlatKeepOpen,
+  hasLunchFlatKeepOpen,
+  markLunchFlatKeepOpen,
+  simLunchFlatKeepOpenKey,
+} from '@/lib/trading/morningLunchConfirm'
+import {
   SESSION_STYLES,
   VWAP_COLORS,
   computeAnchoredVwap,
@@ -602,7 +608,6 @@ function SimulationDeskInner() {
   const [breakEvenAvailable, setBreakEvenAvailable] = useState(false)
   const [breakEvenDismissed, setBreakEvenDismissed] = useState(false)
   const [lunchFlatPrompt, setLunchFlatPrompt] = useState(false)
-  const lunchFlatPromptedRef = useRef(false)
 
   useEffect(() => {
     allCandlesRef.current = allCandles
@@ -2300,6 +2305,13 @@ function SimulationDeskInner() {
             : bar.low <= pos.target
         if (hitSl) {
           const closed = pos
+          clearLunchFlatKeepOpen(
+            simLunchFlatKeepOpenKey({
+              instrument,
+              replayDate,
+              filledAt: closed.filledAt,
+            })
+          )
           recordPaperClose(closed, closed.stopLoss, 'stop_hit')
           positionRef.current = null
           stopHitsRef.current += 1
@@ -2315,10 +2327,18 @@ function SimulationDeskInner() {
             applySimTradeOutcome(prev, closed.entry, closed.direction, 'stop')
           )
           setPosition(null)
+          setLunchFlatPrompt(false)
           return
         }
         if (hitTp) {
           const closed = pos
+          clearLunchFlatKeepOpen(
+            simLunchFlatKeepOpenKey({
+              instrument,
+              replayDate,
+              filledAt: closed.filledAt,
+            })
+          )
           recordPaperClose(closed, closed.target, 'take_profit')
           positionRef.current = null
           simNowRef.current = next
@@ -2330,6 +2350,7 @@ function SimulationDeskInner() {
             applySimTradeOutcome(prev, closed.entry, closed.direction, 'target')
           )
           setPosition(null)
+          setLunchFlatPrompt(false)
           return
         }
       }
@@ -2551,6 +2572,13 @@ function SimulationDeskInner() {
     const price = lastPriceRef.current ?? lastPrice
     if (!position || price == null) return
     const closed = position
+    clearLunchFlatKeepOpen(
+      simLunchFlatKeepOpenKey({
+        instrument,
+        replayDate,
+        filledAt: closed.filledAt,
+      })
+    )
     recordPaperClose(closed, price, 'manual')
     positionRef.current = null
     setMsg(`Closed @ ${price.toLocaleString()} — manage ended`)
@@ -2597,17 +2625,24 @@ function SimulationDeskInner() {
   // Morning lunch flat confirm — mirror live MorningLunchFlatConfirm
   useEffect(() => {
     if (!position || !lunchUnix || !simNow) return
-    if (lunchFlatPromptedRef.current) return
     if (simNow < lunchUnix) return
     // Only for morning/IB books (not lunch-range fills)
     const bucket =
       bucketForRangeLabel(instrument, position.strategyRangeLabel) ??
       classifyAttemptBucket(instrument, position.filledAt * 1000)
     if (bucket === 'lunch_range') return
-    lunchFlatPromptedRef.current = true
+    const keepKey = simLunchFlatKeepOpenKey({
+      instrument,
+      replayDate,
+      filledAt: position.filledAt,
+    })
+    if (hasLunchFlatKeepOpen(keepKey)) {
+      setLunchFlatPrompt(false)
+      return
+    }
     setLunchFlatPrompt(true)
     setPlaying(false)
-  }, [position, simNow, lunchUnix, instrument])
+  }, [position, simNow, lunchUnix, instrument, replayDate])
 
   const resetSessionProgress = () => {
     sessionEpochRef.current += 1
@@ -2627,7 +2662,15 @@ function SimulationDeskInner() {
     setBreakEvenAvailable(false)
     setBreakEvenDismissed(false)
     setLunchFlatPrompt(false)
-    lunchFlatPromptedRef.current = false
+    if (position) {
+      clearLunchFlatKeepOpen(
+        simLunchFlatKeepOpenKey({
+          instrument,
+          replayDate,
+          filledAt: position.filledAt,
+        })
+      )
+    }
     pendingRef.current = null
     positionRef.current = null
     if (replayDate) {
@@ -3570,7 +3613,18 @@ function SimulationDeskInner() {
           setLunchFlatPrompt(false)
           closeAtMarket()
         }}
-        onKeepOpen={() => setLunchFlatPrompt(false)}
+        onKeepOpen={() => {
+          if (position) {
+            markLunchFlatKeepOpen(
+              simLunchFlatKeepOpenKey({
+                instrument,
+                replayDate,
+                filledAt: position.filledAt,
+              })
+            )
+          }
+          setLunchFlatPrompt(false)
+        }}
       />
 
       {/* Playbook — morning / IB|US / lunch-break / lunch-range|Tokyo IB */}

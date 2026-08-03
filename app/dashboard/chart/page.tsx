@@ -38,8 +38,12 @@ import {
   deskLocalHmsAsTraderDisplay,
 } from '@/lib/chart/traderDisplayTz'
 import {
+  clearLunchFlatKeepOpen,
+  hasLunchFlatKeepOpen,
   isMorningOrIbEntry,
   isPastCashCloseNow,
+  liveLunchFlatKeepOpenKey,
+  markLunchFlatKeepOpen,
 } from '@/lib/trading/morningLunchConfirm'
 import { assertRangeEdgeEntry } from '@/lib/trading/rangeEdgeEntryGate'
 import {
@@ -258,7 +262,6 @@ export default function ChartPage() {
   /** After 11:30 with open morning/IB book — ask before closing */
   const [lunchFlatPrompt, setLunchFlatPrompt] = useState(false)
   const [lunchFlatBusy, setLunchFlatBusy] = useState(false)
-  const lunchFlatDismissedRef = useRef(false)
   /** Placing → Working → Filled | Rejected */
   const [orderStatus, setOrderStatus] = useState<
     'idle' | 'placing' | 'working' | 'filled' | 'rejected'
@@ -434,6 +437,7 @@ export default function ChartPage() {
 
   const clearPositionUi = useCallback(
     (exitReason: 'stop_hit' | 'take_profit' | 'manual' | 'ai_signal' = 'manual') => {
+      if (managePos?.id) clearLunchFlatKeepOpen(liveLunchFlatKeepOpenKey(managePos.id))
       setManagePos(null)
       setPositionOverlay(null)
       confirmedOverlayRef.current = null
@@ -441,12 +445,11 @@ export default function ChartPage() {
       setBracketAdjustError(null)
       setAiVerdict(null)
       setLunchFlatPrompt(false)
-      lunchFlatDismissedRef.current = true
       setOrderStatus('idle')
       refreshGate()
       void refreshLevelsAfterExit(exitReason === 'ai_signal' ? 'manual' : exitReason)
     },
-    [refreshGate, refreshLevelsAfterExit]
+    [managePos?.id, refreshGate, refreshLevelsAfterExit]
   )
 
   const handleBrokerExit = useCallback(
@@ -1459,7 +1462,6 @@ export default function ChartPage() {
   useEffect(() => {
     if (!managePos) {
       setLunchFlatPrompt(false)
-      lunchFlatDismissedRef.current = false
       return
     }
     const inst = managePos.instrument as Instrument
@@ -1471,7 +1473,7 @@ export default function ChartPage() {
       setLunchFlatPrompt(false)
       return
     }
-    if (lunchFlatDismissedRef.current) {
+    if (hasLunchFlatKeepOpen(liveLunchFlatKeepOpenKey(managePos.id))) {
       setLunchFlatPrompt(false)
       return
     }
@@ -1513,8 +1515,8 @@ export default function ChartPage() {
         setFillError(j.message || j.error || 'Close failed')
         return
       }
+      clearLunchFlatKeepOpen(liveLunchFlatKeepOpenKey(managePos.id))
       setLunchFlatPrompt(false)
-      lunchFlatDismissedRef.current = true
       setManagePos(null)
       setPositionOverlay(null)
       confirmedOverlayRef.current = null
@@ -1952,7 +1954,7 @@ export default function ChartPage() {
             busy={lunchFlatBusy}
             onConfirm={() => void confirmLunchFlatClose()}
             onKeepOpen={() => {
-              lunchFlatDismissedRef.current = true
+              markLunchFlatKeepOpen(liveLunchFlatKeepOpenKey(managePos.id))
               setLunchFlatPrompt(false)
             }}
           />
