@@ -115,6 +115,7 @@ import {
   NO_IN_BAND_LEVELS_MESSAGE,
   RANGE_EDGE_BAND_POINTS,
   RANGE_EDGE_OFF_BAND_MESSAGE,
+  rangeEdgeBandLegend,
   rangeEdgeBands,
 } from '@/lib/trading/rangeEdgeEntryGate'
 import {
@@ -5138,7 +5139,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     let anyLive = false
     for (const strategyRange of overlays) {
       const bands = rangeEdgeBands(strategyRange)
-      if (bands.length < 3) continue
+      if (bands.length === 0) continue
       const label = strategyRange.label || 'range'
       const entryLive =
         !!canPlaceOrder &&
@@ -5151,41 +5152,53 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       const highColor = entryLive ? colors.high : colors.highDim
       const lowColor = entryLive ? colors.low : colors.lowDim
       const midColor = entryLive ? 'rgba(168, 85, 247, 0.95)' : 'rgba(168, 85, 247, 0.4)'
-      const highBand = bands.find((b) => b.edge === 'high')!
-      const midBand = bands.find((b) => b.edge === 'mid')!
-      const lowBand = bands.find((b) => b.edge === 'low')!
-      const specs: Array<{ price: number; color: string; title: string }> = [
-        {
-          price: highBand.max,
-          color: highColor,
-          title: `±${RANGE_EDGE_BAND_POINTS} ${label} H+`,
-        },
-        {
-          price: highBand.min,
-          color: highColor,
-          title: `±${RANGE_EDGE_BAND_POINTS} ${label} H−`,
-        },
-        {
-          price: midBand.max,
-          color: midColor,
-          title: `±${RANGE_EDGE_BAND_POINTS} ${label} 50%+`,
-        },
-        {
-          price: midBand.min,
-          color: midColor,
-          title: `±${RANGE_EDGE_BAND_POINTS} ${label} 50%−`,
-        },
-        {
-          price: lowBand.max,
-          color: lowColor,
-          title: `±${RANGE_EDGE_BAND_POINTS} ${label} L+`,
-        },
-        {
-          price: lowBand.min,
-          color: lowColor,
-          title: `±${RANGE_EDGE_BAND_POINTS} ${label} L−`,
-        },
-      ]
+      const highBand = bands.find((b) => b.edge === 'high')
+      const midBand = bands.find((b) => b.edge === 'mid')
+      const lowBand = bands.find((b) => b.edge === 'low')
+      const specs: Array<{ price: number; color: string; title: string }> = []
+      if (highBand) {
+        specs.push(
+          {
+            price: highBand.max,
+            color: highColor,
+            title: `±${RANGE_EDGE_BAND_POINTS} ${label} H+`,
+          },
+          {
+            price: highBand.min,
+            color: highColor,
+            title: `±${RANGE_EDGE_BAND_POINTS} ${label} H−`,
+          }
+        )
+      }
+      // US Range: H/L only — no purple 50% mid band paint
+      if (midBand) {
+        specs.push(
+          {
+            price: midBand.max,
+            color: midColor,
+            title: `±${RANGE_EDGE_BAND_POINTS} ${label} 50%+`,
+          },
+          {
+            price: midBand.min,
+            color: midColor,
+            title: `±${RANGE_EDGE_BAND_POINTS} ${label} 50%−`,
+          }
+        )
+      }
+      if (lowBand) {
+        specs.push(
+          {
+            price: lowBand.max,
+            color: lowColor,
+            title: `±${RANGE_EDGE_BAND_POINTS} ${label} L+`,
+          },
+          {
+            price: lowBand.min,
+            color: lowColor,
+            title: `±${RANGE_EDGE_BAND_POINTS} ${label} L−`,
+          }
+        )
+      }
       for (const s of specs) {
         try {
           entryBandLinesRef.current.push(
@@ -5205,12 +5218,15 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     }
 
     setEntryBandsVisible(entryBandLinesRef.current.length > 0)
-    const names = overlays.map((o) => o.label).filter(Boolean)
-    const nameList = names.join(' · ')
+    const legendParts = overlays.map((o) => {
+      const name = o.label || 'range'
+      return `${name} ${rangeEdgeBandLegend(o)}`
+    })
+    const legendList = legendParts.join(' · ')
     setEntryBandLabel(
       anyLive
-        ? `${nameList} ±${RANGE_EDGE_BAND_POINTS} H / 50% / L entry zones`
-        : `${nameList} ±${RANGE_EDGE_BAND_POINTS} H / 50% / L (shaped — entry window closed or inactive)`
+        ? `±${RANGE_EDGE_BAND_POINTS} ${legendList} entry zones`
+        : `±${RANGE_EDGE_BAND_POINTS} ${legendList} (shaped — entry window closed or inactive)`
     )
 
     return () => {
@@ -5476,7 +5492,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           low: r.low,
           atrLine: atrSnap ? formatRangeAtrAdviceLine(atrSnap) : null,
           nextHint:
-            'Already shaped from prior NYC session. Entry when US Range window unlocks (±10 H / 50% / L).',
+            'Already shaped from prior NYC session. Entry when US Range window unlocks (±10 H / L only — no 50% mid).',
         })
         onDeskAlert({
           ...note,
@@ -6669,7 +6685,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     left: '32%',
                     top: `${entryY - 14}px`,
                   }}
-                  title="Drag Entry within ±10 of range high, 50% mid, or low"
+                  title="Drag Entry within ±10 of painted range edges (H / L; OR30/IB/lunch also allow 50% mid)"
                 >
                   {/* Explicit Buy / Sell Placement Button — ONLY BUTTON THAT PLACES ORDER */}
                   <button

@@ -520,7 +520,7 @@ How to use it (big-desk volume map):
       analysisMode === 'us_range'
         ? `
 US RANGE PLAYBOOK MODE (Nikkei slot 2 — prior NYC session range):
-- Desk is live-trading the US Range window (${midWindow} ${tzLabel}) — up to 2 probes @ 0.25% (entries within ±10 pts of US Range H / 50% mid / L). Morning OR30 does not lock this window.
+- Desk is live-trading the US Range window (${midWindow} ${tzLabel}) — up to 2 probes @ 0.25% (entries within ±10 pts of US Range H / L only — no 50% mid). Morning OR30 does not lock this window.
 - PRIMARY BAIT this run: US Range (prior NYC H/L). Prefer stop pools beyond NYC extremes + POC/AVWAP. Do not frame as Tokyo IB or morning OR30.
 - Build tradeable levels off the prior NYC session high/low (breakout / mean-reversion), FLIP/RETEST from the brief, AVWAP/POC confluence.
 - Use ONLY the DESK BRIEF + RANGE LIQUIDITY MAP + candle/AVWAP/volume-profile tables. Frame as US Range playbook — NOT Tokyo IB, NOT morning OR30.
@@ -564,7 +564,7 @@ MORNING OR30 PLAYBOOK MODE:
 `
 
     const deskCadence = tokyo
-      ? `- Three ranges / up to 2 probes each (session cap ≤ 3 fills total, win/loss/breakeven all count; progressive risk 1% → 0.5% → 0.25% by fill #): Morning OR30 ${open}–${entryEnd} ${tzLabel} → US Range (prior NYC H/L) ${midWindow} ${tzLabel} → ${prepLabel} (levels update) → Tokyo IB ${lateWindow} ${tzLabel}. Next window unlocks when prior clock ends or probes are exhausted, but the session cap always wins even if a window still has spare probes. Entries only within ±10 pts of active range high, 50% mid, or low. Lunch ${lunch} ${tzLabel} is confirm-close only; unconfirmed books ride to cash-close flatten at ${close} ${tzLabel}.`
+      ? `- Three ranges / up to 2 probes each (session cap ≤ 3 fills total, win/loss/breakeven all count; progressive risk 1% → 0.5% → 0.25% by fill #): Morning OR30 ${open}–${entryEnd} ${tzLabel} → US Range (prior NYC H/L) ${midWindow} ${tzLabel} → ${prepLabel} (levels update) → Tokyo IB ${lateWindow} ${tzLabel}. Next window unlocks when prior clock ends or probes are exhausted, but the session cap always wins even if a window still has spare probes. Entries only within ±10 pts of active range high / low (OR30 / Tokyo IB also allow 50% mid; US Range is H/L only). Lunch ${lunch} ${tzLabel} is confirm-close only; unconfirmed books ride to cash-close flatten at ${close} ${tzLabel}.`
       : `- Three ranges / up to 2 probes each (session cap ≤ 3 fills total, win/loss/breakeven all count; progressive risk 1% → 0.5% → 0.25% by fill #): Morning OR30 ${open}–${entryEnd} ${tzLabel} → IB ${midWindow} ${tzLabel} → ${prepLabel} (levels update) → lunch-range ${lateWindow} ${tzLabel}. Next window unlocks when prior clock ends or probes are exhausted, but the session cap always wins even if a window still has spare probes. Entries only within ±10 pts of active range high, 50% mid, or low. Lunch ${lunch} ${tzLabel} is confirm-close only; unconfirmed books ride to cash-close flatten at ${close} ${tzLabel}.`
 
     const rangeLiquidityMap = tokyo

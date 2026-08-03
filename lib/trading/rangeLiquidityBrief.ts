@@ -321,7 +321,7 @@ export function formatRangeLiquidityBriefForPrompt(
     `Instrument: ${brief.instrument} · tip ${brief.tip} · desk ranges: ${deskMap}`,
     `Analysis mode: ${brief.analysisMode} · primary bait: ${brief.activeLabel ?? 'none (watch all formed ranges)'}`,
     '',
-    'RULE: Range H/L = retail BAIT (where retail enters). 50% mid = pullback / reverse magnet (legal ±10 entry). Desk EDGE ENTRY = stop pool JUST BEYOND H/L (±0.05–0.12% / wick pad). Prefer confluence with printed POC/HVN or AVWAP. Never return the exact range H/L as the edge-hunt entry print (mid entries sit on equilibrium).',
+    'RULE: Range H/L = retail BAIT (where retail enters). 50% mid = pullback / reverse magnet (legal ±10 entry on OR30 / IB / lunch; NOT on US Range). Desk EDGE ENTRY = stop pool JUST BEYOND H/L (±0.05–0.12% / wick pad). Prefer confluence with printed POC/HVN or AVWAP. Never return the exact range H/L as the edge-hunt entry print (mid entries sit on equilibrium when mid is legal).',
     '',
   ]
 
@@ -335,9 +335,13 @@ export function formatRangeLiquidityBriefForPrompt(
   else lines.push(`Slot 3 — ${brief.slot3Label}: not shaped yet`)
 
   if (brief.active) {
+    const usOnly =
+      brief.active.label === 'US Range'
+        ? ` US Range entries are ±10 of H / L only — 50% mid ${brief.active.mid} is NOT a legal entry.`
+        : ` 50% mid ${brief.active.mid} = pullback/reverse entry magnet (±10).`
     lines.push(
       '',
-      `PRIMARY BAIT (${brief.active.label}): hunt stops ABOVE ${brief.active.high} (short liquidity) and BELOW ${brief.active.low} (buy liquidity). 50% mid ${brief.active.mid} = pullback/reverse entry magnet (±10). Earlier ranges = secondary magnets / polarity flips if broken.`
+      `PRIMARY BAIT (${brief.active.label}): hunt stops ABOVE ${brief.active.high} (short liquidity) and BELOW ${brief.active.low} (buy liquidity).${usOnly} Earlier ranges = secondary magnets / polarity flips if broken.`
     )
   } else if (brief.analysisMode === 'afternoon') {
     lines.push(

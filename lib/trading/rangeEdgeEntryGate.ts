@@ -1,6 +1,8 @@
 /**
  * Range Edge Entry Gate — entries within ±N index points of the active
- * playbook range high, low, or 50% midpoint (mean-reversion magnet).
+ * playbook range high, low, or (where allowed) 50% midpoint.
+ *
+ * US Range (Nikkei prior NYC) is high/low only — no mid entry band.
  */
 
 export const RANGE_EDGE_BAND_POINTS = 10
@@ -8,6 +10,10 @@ export const RANGE_EDGE_BAND_POINTS = 10
 /** Chart / fillError copy when a limit lands outside painted ±10 H/Mid/L bands. */
 export const RANGE_EDGE_OFF_BAND_MESSAGE =
   'Entry only at highlighted ±10 H/Mid/L.'
+
+/** US Range mid (±10 of 50%) is never a legal entry. */
+export const RANGE_EDGE_US_MID_REJECTED_MESSAGE =
+  'US Range entries are ±10 of high or low only — 50% mid is not a legal entry.'
 
 export type RangeEdgeLevels = {
   high: number
@@ -22,6 +28,24 @@ export type RangeEdgeBand = {
   center: number
   min: number
   max: number
+}
+
+/**
+ * Whether this range paints / accepts a 50% mid entry band.
+ * US Range (Nikkei prior NYC) is H/L only; OR30 / IB / lunch keep mid.
+ */
+export function rangeAllowsMidEdge(
+  range: RangeEdgeLevels | null | undefined
+): boolean {
+  if (!range?.label) return true
+  return !/^us\s*range$/i.test(String(range.label).trim())
+}
+
+/** Short band legend for UI: "H / 50% / L" or "H / L" for US Range. */
+export function rangeEdgeBandLegend(
+  range: RangeEdgeLevels | null | undefined
+): string {
+  return rangeAllowsMidEdge(range) ? 'H / 50% / L' : 'H / L'
 }
 
 /** Exact 50% of a shaped range (H+L)/2. */
@@ -40,12 +64,15 @@ export function rangeEdgeBands(
   const low = Number(range.low)
   if (!Number.isFinite(high) || !Number.isFinite(low) || !(high > low)) return []
   const b = Math.max(0, bandPoints)
-  const mid = (high + low) / 2
-  return [
+  const bands: RangeEdgeBand[] = [
     { edge: 'high', center: high, min: high - b, max: high + b },
-    { edge: 'mid', center: mid, min: mid - b, max: mid + b },
-    { edge: 'low', center: low, min: low - b, max: low + b },
   ]
+  if (rangeAllowsMidEdge(range)) {
+    const mid = (high + low) / 2
+    bands.push({ edge: 'mid', center: mid, min: mid - b, max: mid + b })
+  }
+  bands.push({ edge: 'low', center: low, min: low - b, max: low + b })
+  return bands
 }
 
 export function isEntryWithinRangeEdgeBand(
@@ -58,9 +85,9 @@ export function isEntryWithinRangeEdgeBand(
 }
 
 /**
- * Keep (or move) a price into the nearest legal ±band of range H / 50% / L.
- * Already in-band → unchanged. Outside → clamped onto the closest band edge.
- * Returns null when range is missing/invalid.
+ * Keep (or move) a price into the nearest legal ±band of range H / 50% / L
+ * (US Range: H / L only). Already in-band → unchanged. Outside → clamped onto
+ * the closest band edge. Returns null when range is missing/invalid.
  */
 export function clampPriceToRangeEdgeBands(
   price: number,
@@ -154,12 +181,14 @@ export function nearestRangeEdge(
   range: RangeEdgeLevels
 ): RangeEdgeKind | null {
   if (!Number.isFinite(entry) || !(range.high > range.low)) return null
-  const mid = (range.high + range.low) / 2
   const candidates: Array<{ edge: RangeEdgeKind; d: number }> = [
     { edge: 'high', d: Math.abs(entry - range.high) },
-    { edge: 'mid', d: Math.abs(entry - mid) },
     { edge: 'low', d: Math.abs(entry - range.low) },
   ]
+  if (rangeAllowsMidEdge(range)) {
+    const mid = (range.high + range.low) / 2
+    candidates.push({ edge: 'mid', d: Math.abs(entry - mid) })
+  }
   candidates.sort((a, b) => a.d - b.d)
   return candidates[0]!.edge
 }
@@ -220,7 +249,7 @@ export function assertRangeEdgeEntry(args: {
     return {
       ok: false,
       message:
-        'Active strategy range is not shaped yet — wait for OR30 / IB / lunch (or Nikkei US Range) to lock, then enter within ±10 pts of high, 50% mid, or low.',
+        'Active strategy range is not shaped yet — wait for OR30 / IB / lunch (or Nikkei US Range) to lock, then enter within ±10 pts of the painted edge bands.',
     }
   }
   const entry = Number(args.entry)
@@ -228,6 +257,16 @@ export function assertRangeEdgeEntry(args: {
     return { ok: false, message: 'Invalid entry price' }
   }
   if (!isEntryWithinRangeEdgeBand(entry, range, band)) {
+    if (!rangeAllowsMidEdge(range)) {
+      const mid = (range.high + range.low) / 2
+      if (Number.isFinite(mid) && Math.abs(entry - mid) <= band) {
+        return { ok: false, message: RANGE_EDGE_US_MID_REJECTED_MESSAGE }
+      }
+      return {
+        ok: false,
+        message: `Entry only at highlighted ±10 ${rangeEdgeBandLegend(range)}.`,
+      }
+    }
     return { ok: false, message: RANGE_EDGE_OFF_BAND_MESSAGE }
   }
   return { ok: true, range }

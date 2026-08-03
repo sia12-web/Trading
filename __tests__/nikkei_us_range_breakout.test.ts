@@ -252,7 +252,7 @@ test('lastNikkeiUsSessionRange: last completed NYC H/L only', () => {
  * starts after Friday 16:00 ET, so prior NYC is missing while the chart (12d)
  * still paints US H/L/mid. Server playbook must use ≥5 days.
  */
-test('Monday Tokyo: 2d lookback misses Friday NYC; 5d recovers US Range mid gate', () => {
+test('Monday Tokyo: 2d lookback misses Friday NYC; 5d recovers US Range H/L gate', () => {
   assert(
     SERVER_PLAYBOOK_CANDLE_DAYS >= 5,
     `SERVER_PLAYBOOK_CANDLE_DAYS must be ≥5 (got ${SERVER_PLAYBOOK_CANDLE_DAYS})`
@@ -307,12 +307,17 @@ test('Monday Tokyo: 2d lookback misses Friday NYC; 5d recovers US Range mid gate
   assert(active?.label === 'US Range', 'us_range playbook selects US')
 
   const mid = (us5!.high + us5!.low) / 2
-  const edge = assertRangeEdgeEntry({ entry: mid, range: active })
-  assert(edge.ok === true, '50% mid accepted on shaped US Range')
+  const edgeMid = assertRangeEdgeEntry({ entry: mid, range: active })
+  assert(edgeMid.ok === false, '50% mid rejected on shaped US Range')
+
+  const edgeHigh = assertRangeEdgeEntry({ entry: us5!.high, range: active })
+  assert(edgeHigh.ok === true, 'US Range high still accepted')
+  const edgeLow = assertRangeEdgeEntry({ entry: us5!.low, range: active })
+  assert(edgeLow.ok === true, 'US Range low still accepted')
 
   // Empty server candidates + chart US Range → client fallback (weekend gap)
   const fallback = gateEntryAgainstAuthoritativeRange({
-    entry: mid,
+    entry: us5!.high,
     serverRange: null,
     clientRange: { label: 'US Range', high: us5!.high, low: us5!.low },
   })

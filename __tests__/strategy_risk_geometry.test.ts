@@ -256,7 +256,7 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       usRange: { high: 40_000, low: 39_500, complete: true },
     })?.label,
     'US Range',
-    'US Range with complete:true unlocks mid/H/L ±10'
+    'US Range with complete:true unlocks H/L ±10'
   )
   assert.equal(
     activeRangeForPlaybook({

@@ -75,34 +75,51 @@ const serverOr30 = { label: 'OR30', high: 63_281.3, low: 62_508.8 }
 }
 
 {
-  // Chart-painted Nikkei US Range mid while server history missed Friday NYC
+  // Chart-painted Nikkei US Range high while server history missed Friday NYC
   const us = { label: 'US Range', high: 40_100, low: 39_900 }
-  const mid = (us.high + us.low) / 2
   const ok = gateEntryAgainstAuthoritativeRange({
+    entry: us.high,
+    serverRange: null,
+    clientRange: us,
+  })
+  assert.equal(ok.ok, true, 'US Range high accepted via client when server null')
+  if (!ok.ok) assert.fail(ok.message)
+
+  const mid = (us.high + us.low) / 2
+  const midRejected = gateEntryAgainstAuthoritativeRange({
     entry: mid,
     serverRange: null,
     clientRange: us,
   })
-  assert.equal(ok.ok, true, 'US Range 50% mid accepted via client when server null')
-  if (!ok.ok) assert.fail(ok.message)
+  assert.equal(midRejected.ok, false, 'US Range 50% mid rejected even via client fallback')
 }
 
 {
   // Monday OR30 window: server shaped today's OR30 but missed Friday NYC.
-  // Client US mid must win soft-fallback *before* sequential active=OR30.
+  // Client US high must win soft-fallback *before* sequential active=OR30.
   const or30 = { label: 'OR30', high: 40_050, low: 39_950 }
   const us = { label: 'US Range', high: 41_000, low: 40_800 }
-  const mid = (us.high + us.low) / 2 // 40900 — outside OR30 ±10
+  const usHigh = us.high // 41000 — outside OR30 ±10
   const { range, usedUsClientFallback } = attributeServerPlaybookEntry({
-    entry: mid,
+    entry: usHigh,
     shaped: { or30, ib: null, usRange: null, lunchRange: null },
     active: or30,
     clientRange: us,
   })
   assert.equal(usedUsClientFallback, true, 'US client fallback must run before active OR30')
-  assert.equal(range?.label, 'US Range', 'US mid billed to client US Range')
+  assert.equal(range?.label, 'US Range', 'US high billed to client US Range')
   assert.equal(range?.high, us.high)
   assert.equal(range?.low, us.low)
+
+  // US mid must NOT soft-fallback (mid is not a legal US entry)
+  const usMid = (us.high + us.low) / 2
+  const midAttr = attributeServerPlaybookEntry({
+    entry: usMid,
+    shaped: { or30, ib: null, usRange: null, lunchRange: null },
+    active: or30,
+    clientRange: us,
+  })
+  assert.equal(midAttr.usedUsClientFallback, false, 'US mid does not trigger client fallback')
 }
 
 {
@@ -123,9 +140,8 @@ const serverOr30 = { label: 'OR30', high: 63_281.3, low: 62_508.8 }
   // Server-shaped US Range is authoritative — client H/L cannot substitute
   const serverUs = { label: 'US Range', high: 40_100, low: 39_900 }
   const clientUs = { label: 'US Range', high: 41_000, low: 40_000 }
-  const mid = (serverUs.high + serverUs.low) / 2
   const { range, usedUsClientFallback } = attributeServerPlaybookEntry({
-    entry: mid,
+    entry: serverUs.high,
     shaped: { or30: null, ib: null, usRange: serverUs, lunchRange: null },
     active: serverUs,
     clientRange: clientUs,

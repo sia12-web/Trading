@@ -1,12 +1,14 @@
 /**
- * Server-side locked playbook range for ±10 entry checks (H / 50% mid / L).
+ * Server-side locked playbook range for ±10 entry checks (H / 50% mid / L;
+ * US Range is H / L only).
  * Recomputes OR30 / IB / US Range / Lunch from OANDA candles so clients
  * cannot spoof range_high / range_low.
  *
  * Entries are attributed to the SPECIFIC range the price sits in (±10 of its
- * H / 50% / L) — never just the single sequential "active" range — so an IB
- * click stays billed to IB even once the desk clock has moved the default
- * highlight on to Lunch-range (and vice versa). See assertBucketEntryEligible.
+ * H / 50% / L, or H / L for US Range) — never just the single sequential
+ * "active" range — so an IB click stays billed to IB even once the desk clock
+ * has moved the default highlight on to Lunch-range (and vice versa). See
+ * assertBucketEntryEligible.
  */
 
 import { getOandaCandles } from '@/lib/oanda/candles'
@@ -171,7 +173,8 @@ export async function resolveServerPlaybookRange(args: {
 }
 
 /**
- * Server range is the sole authority for ±10 entry checks (H / 50% mid / L).
+ * Server range is the sole authority for ±10 entry checks (H / 50% mid / L;
+ * US Range H / L only).
  * Client H/L is ignored for pass/fail (chart live-tip merge / stale paint /
  * Yahoo fallback can differ from OANDA by more than 1pt without spoofing).
  * Spoofed client ranges cannot widen the band — entry is always checked vs server.

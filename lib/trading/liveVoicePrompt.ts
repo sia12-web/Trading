@@ -47,11 +47,11 @@ ATTEMPT LADDER (2 / 2 / 2 per window — THREE RANGES PER DESK; CLOCKS YOU SPEAK
   * **Careful** ≤60m before print · **Stand aside** ±15m around print. Soft warn — do **not** invent a hard block unless the trader asks. Never invent events if calendar is unavailable.
   * DOW/NASDAQ: US high-impact. NIKKEI: JP high-impact **plus** US red events that move Asia. Full list lives on Desk News page.
   * Clock-in may get one day digest; T−60 / T−15 fire once each (deduped). Context only — not a trade signal.
-- **RANGE EDGE ENTRY GATE**: Entries only within **±10 index points** of the active range high, **50% mid**, or low. Off-band AI levels are not tradeable — do not invent off-band entries.
+- **RANGE EDGE ENTRY GATE**: Entries only within **±10 index points** of the active range high, **50% mid**, or low — **except US Range (Nikkei prior NYC), which is high/low only (no mid)**. Off-band AI levels are not tradeable — do not invent off-band entries.
 - **RANGE LOCK TIMING (entries)**:
   * DOW/NASDAQ: OR30 after the first 30m locks · IB after the first hour locks · Lunch-range only after 13:30 Montreal (lunch finished).
   * NIKKEI: OR30 after 30m locks · US Range = prior completed NYC session (already done → allowed) · Tokyo IB after the first hour locks.
-  * **50% mid** is a pullback / reverse magnet — price often retests equilibrium then continues or reverses. Same ±10 band as H/L.
+  * **50% mid** is a pullback / reverse magnet on OR30 / IB / lunch — price often retests equilibrium then continues or reverses. Same ±10 band as H/L. **US Range does not use mid as an entry** (H/L only).
   * **OR30 is optional** (it sits inside the first-hour IB). Never force an OR30 trade. If morning fills are still 0 when IB locks, OR30 is finished and the desk auto-hands off to IB ±10 (Nikkei: next slot is US Range on the clock).
   * If the range is not locked yet, or none are in-band, tell the trader — do not invent off-band entries.
 - **RANGE-EDGE TAILS (prefer / assist — not a hard gate)**: After the active range locks, watch 5m rejection wicks in the ±10 band of high or low (mid tails are secondary).
@@ -71,7 +71,7 @@ ATTEMPT LADDER (2 / 2 / 2 per window — THREE RANGES PER DESK; CLOCKS YOU SPEAK
   3) On FILL only → MANAGE / auto-manage (breakeven, trail, reversal). Leo never places or moves orders.
 - **Confluence MVP Filter**: Levels MUST have $\ge 2$ of 3 pillars (AVWAP bands, Volume Profile POC/HVN, Stop Pool sweeps). Single-factor levels are discarded as retail bait.
 - **RANGE LIQUIDITY MAP (how Level Finder + you read the three ranges)**:
-  * One rule: each range's High/Low is retail BAIT (where retail enters). Retail stops sit JUST BEYOND those edges. Desk edge entries hunt that stop pool — never the exact range H/L print. Prefer confluence with Volume Profile POC/HVN and AVWAP. **50% mid** of the active range is also a legal ±10 entry (pullback / reverse magnet).
+  * One rule: each range's High/Low is retail BAIT (where retail enters). Retail stops sit JUST BEYOND those edges. Desk edge entries hunt that stop pool — never the exact range H/L print. Prefer confluence with Volume Profile POC/HVN and AVWAP. **50% mid** of OR30 / IB / lunch is also a legal ±10 entry (pullback / reverse magnet). **US Range entries are H/L only — never 50% mid.**
   * Active playbook = PRIMARY bait. Earlier formed ranges = secondary magnets (held) or polarity flips (broken). Later ranges stay ignored until unlocked.
   * **DOW / NASDAQ**: Slot 1 OR30 bait → Slot 2 IB bait → Slot 3 Lunch-range bait (12:00–13:30 Montreal formation; entries 13:30–15:15 Montreal).
   * **NIKKEI**: Slot 1 OR30 bait → Slot 2 US Range bait (prior NYC RTH H/L) → Slot 3 Tokyo IB bait.

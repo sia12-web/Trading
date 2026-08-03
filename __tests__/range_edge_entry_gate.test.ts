@@ -12,11 +12,14 @@ import {
   findRangeEdgeBandHit,
   isEntryWithinRangeEdgeBand,
   nearestRangeEdge,
+  rangeAllowsMidEdge,
+  rangeEdgeBandLegend,
   rangeEdgeBands,
   rangeEdgeBandsEnvelope,
   rangeMidpoint,
   RANGE_EDGE_BAND_POINTS,
   RANGE_EDGE_OFF_BAND_MESSAGE,
+  RANGE_EDGE_US_MID_REJECTED_MESSAGE,
 } from '../lib/trading/rangeEdgeEntryGate'
 
 const range = { high: 40000, low: 39900, label: 'OR30' }
@@ -94,6 +97,10 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
   const us = { high: 40000, low: 39500, label: 'US Range' }
   const ib = { high: 40100, low: 39900, label: 'Tokyo IB' }
   const or30 = { high: 40050, low: 39950, label: 'OR30' }
+  assert.equal(rangeAllowsMidEdge(us), false, 'US Range drops mid')
+  assert.equal(rangeEdgeBandLegend(us), 'H / L')
+  assert.equal(rangeEdgeBands(us).length, 2, 'US Range has H/L only')
+  assert.equal(rangeEdgeBands(us).some((b) => b.edge === 'mid'), false)
   assert.equal(
     clampPriceToNearestRangeEdgeBands(40095, [us, ib, or30]),
     40095,
@@ -104,10 +111,16 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
     40005,
     'in US high band stays put'
   )
+  // Former US mid (39750) is no longer a legal magnet on US alone
   assert.equal(
-    clampPriceToNearestRangeEdgeBands(39750, [us, ib, or30]),
-    39750,
-    'US 50% mid band stays put'
+    clampPriceToRangeEdgeBands(39750, us),
+    39990,
+    'US mid price snaps to nearest legal US high band (not mid)'
+  )
+  assert.equal(
+    isEntryWithinRangeEdgeBand(39750, us),
+    false,
+    'US 50% mid is off-band'
   )
   assert.equal(
     clampPriceToNearestRangeEdgeBands(40045, [us, ib, or30]),
@@ -164,8 +177,8 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
 }
 
 {
-  // 50% mid is universal — every desk instrument × every slot range
-  const deskRanges: Array<{ instrument: string; label: string; high: number; low: number }> = [
+  // 50% mid for OR30 / IB / lunch; US Range is H/L only
+  const midOkRanges: Array<{ instrument: string; label: string; high: number; low: number }> = [
     { instrument: 'DOW', label: 'OR30', high: 42_200, low: 42_000 },
     { instrument: 'DOW', label: 'IB', high: 42_300, low: 41_900 },
     { instrument: 'DOW', label: 'Lunch-range', high: 42_400, low: 42_100 },
@@ -173,10 +186,9 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
     { instrument: 'NASDAQ', label: 'IB', high: 18_250, low: 18_050 },
     { instrument: 'NASDAQ', label: 'Lunch-range', high: 18_500, low: 18_400 },
     { instrument: 'NIKKEI', label: 'OR30', high: 40_050, low: 39_950 },
-    { instrument: 'NIKKEI', label: 'US Range', high: 40_000, low: 39_500 },
     { instrument: 'NIKKEI', label: 'Tokyo IB', high: 40_100, low: 39_900 },
   ]
-  for (const r of deskRanges) {
+  for (const r of midOkRanges) {
     const mid = rangeMidpoint(r)
     assert.ok(mid != null, `${r.instrument} ${r.label} mid`)
     const bands = rangeEdgeBands(r)
@@ -188,6 +200,23 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
     const hit = findRangeEdgeBandHit(mid!, [r])
     assert.equal(hit?.edge, 'mid', `${r.instrument} ${r.label} click hits 50%`)
   }
+
+  const us = { instrument: 'NIKKEI', label: 'US Range', high: 40_000, low: 39_500 }
+  const usMid = rangeMidpoint(us)!
+  assert.equal(rangeAllowsMidEdge(us), false)
+  assert.equal(rangeEdgeBands(us).length, 2, 'US Range H/L only')
+  assert.equal(isEntryWithinRangeEdgeBand(usMid, us), false, 'US mid not in-band')
+  assert.equal(findRangeEdgeBandHit(usMid, [us]), null, 'US mid click is not a hit')
+  assert.equal(nearestRangeEdge(usMid, us), 'high', 'US mid nearest is H or L, not mid')
+  const usMidReject = assertRangeEdgeEntry({ entry: usMid, range: us })
+  assert.equal(usMidReject.ok, false, 'US Range 50% mid rejected')
+  if (!usMidReject.ok) {
+    assert.equal(usMidReject.message, RANGE_EDGE_US_MID_REJECTED_MESSAGE)
+  }
+  const usHigh = assertRangeEdgeEntry({ entry: 40_000, range: us })
+  assert.equal(usHigh.ok, true, 'US Range high still legal')
+  const usLow = assertRangeEdgeEntry({ entry: 39_500, range: us })
+  assert.equal(usLow.ok, true, 'US Range low still legal')
 }
 
 {

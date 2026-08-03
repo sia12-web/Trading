@@ -24,6 +24,8 @@ import {
   clampPriceToRangeEdgeBands,
   RANGE_EDGE_BAND_POINTS,
   RANGE_EDGE_OFF_BAND_MESSAGE,
+  rangeAllowsMidEdge,
+  rangeEdgeBandLegend,
 } from '@/lib/trading/rangeEdgeEntryGate'
 import { assertProtectiveStop } from '@/lib/trading/stopLossGuard'
 import {
@@ -735,9 +737,13 @@ export function LevelOrderTicket({
             </label>
             {strategyRange && (
               <p className="mt-1 text-[10px] text-sky-400/80">
-                {RANGE_EDGE_OFF_BAND_MESSAGE} Place at ±{RANGE_EDGE_BAND_POINTS} of{' '}
-                {strategyRange.label || 'range'} H ({strategyRange.high.toLocaleString()}) / 50% mid
-                / L ({strategyRange.low.toLocaleString()}).
+                {rangeAllowsMidEdge(strategyRange)
+                  ? RANGE_EDGE_OFF_BAND_MESSAGE
+                  : `Entry only at highlighted ±${RANGE_EDGE_BAND_POINTS} ${rangeEdgeBandLegend(strategyRange)}.`}{' '}
+                Place at ±{RANGE_EDGE_BAND_POINTS} of {strategyRange.label || 'range'} H (
+                {strategyRange.high.toLocaleString()})
+                {rangeAllowsMidEdge(strategyRange) ? ' / 50% mid' : ''} / L (
+                {strategyRange.low.toLocaleString()}).
               </p>
             )}
             <label className="mt-3 block text-[10px] uppercase tracking-wider text-gray-500">

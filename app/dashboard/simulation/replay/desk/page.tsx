@@ -1882,7 +1882,8 @@ function SimulationDeskInner() {
       )
     }
 
-    // Mirror live ±10 H / 50% / L band edges when a strategy range is shaped
+    // Mirror live ±10 entry band edges when a strategy range is shaped
+    // (H / 50% / L, or H / L only for US Range)
     const entryOpen =
       !position &&
       !pending &&

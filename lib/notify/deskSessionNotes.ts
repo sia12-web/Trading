@@ -75,7 +75,7 @@ export function formatSessionScheduleBlock(
       `• Tokyo IB locks ~${deskLocalHmsAsTraderDisplay('10:00:00', s.tz, now)} (first hour) — entry ${ibWin}`,
       `• Lunch confirm ${lunchConfirm}`,
       `• Session END (cash close) ${close}`,
-      `• Ladder 2/2/2 @ 0.25% · ±10 of H / 50% mid / L after active range locks`,
+      `• Ladder 2/2/2 @ 0.25% · ±10 of H / L (US Range) or H / 50% mid / L (OR30 / Tokyo IB) after active range locks`,
     ].join('\n')
   }
 
@@ -180,11 +180,16 @@ export function formatRangeShapedNote(args: {
   atrLine?: string | null
 }): DeskNotePayload {
   const title = `${args.instrument} · ${args.rangeLabel} LOCKED`
+  const midAllowed = !/^us\s*range$/i.test(String(args.rangeLabel).trim())
   const body = [
     `High ${args.high.toLocaleString()}`,
     `Low  ${args.low.toLocaleString()}`,
-    `±10 bands are live around H, 50% mid, and L.`,
-    `Mid ${(Math.round(((args.high + args.low) / 2) * 100) / 100).toLocaleString()} — pullback / reverse magnet.`,
+    midAllowed
+      ? `±10 bands are live around H, 50% mid, and L.`
+      : `±10 bands are live around H and L only (US Range — no 50% mid entry).`,
+    midAllowed
+      ? `Mid ${(Math.round(((args.high + args.low) / 2) * 100) / 100).toLocaleString()} — pullback / reverse magnet.`
+      : null,
     args.atrLine || null,
     args.nextHint || 'Entries allowed when this playbook window is unlocked.',
   ]
@@ -206,13 +211,18 @@ export function formatEntryPermissionNote(args: {
   rangeLow?: number | null
 }): DeskNotePayload {
   const title = `${args.instrument} · ENTRY OPEN · ${args.windowLabel}`
+  const usOnly = /us\s*range/i.test(String(args.windowLabel))
   const lines = [
-    `You may place probes in this window (2 @ 0.25%, ±10 of locked range H / 50% mid / L).`,
+    usOnly
+      ? `You may place probes in this window (2 @ 0.25%, ±10 of locked range H / L only — no 50% mid).`
+      : `You may place probes in this window (2 @ 0.25%, ±10 of locked range H / 50% mid / L).`,
   ]
   if (args.rangeHigh != null && args.rangeLow != null) {
     const mid = Math.round(((args.rangeHigh + args.rangeLow) / 2) * 100) / 100
     lines.push(
-      `Active range H ${args.rangeHigh.toLocaleString()} · 50% ${mid.toLocaleString()} · L ${args.rangeLow.toLocaleString()}`
+      usOnly
+        ? `Active range H ${args.rangeHigh.toLocaleString()} · L ${args.rangeLow.toLocaleString()} (mid ${mid.toLocaleString()} is not an entry)`
+        : `Active range H ${args.rangeHigh.toLocaleString()} · 50% ${mid.toLocaleString()} · L ${args.rangeLow.toLocaleString()}`
     )
   }
   if (args.ladderHint) lines.push(`Ladder: ${args.ladderHint}`)

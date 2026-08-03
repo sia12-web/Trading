@@ -215,7 +215,7 @@ export function deskPlaybookHint(mode: DeskPlaybookMode, instrument?: string): s
   const tokyo = instrument === 'NIKKEI'
   switch (mode) {
     case 'us_range':
-      return 'Prior NYC session range — up to 2 probes @ 0.25% (entries within ±10 pts of range high, 50% mid, or low). Unlocks after morning clock ends or morning probes are exhausted.'
+      return 'Prior NYC session range — up to 2 probes @ 0.25% (entries within ±10 pts of range high or low only — no 50% mid). Unlocks after morning clock ends or morning probes are exhausted.'
     case 'ib':
       return tokyo
         ? 'Tokyo IB range — up to 2 probes @ 0.25% (entries within ±10 pts of H / 50% / L). Unlocks after US Range clock ends or US Range probes are exhausted.'
