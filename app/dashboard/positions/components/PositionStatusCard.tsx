@@ -92,13 +92,10 @@ export function PositionStatusCard({
     setExitDismissed(false)
     exitDismissedRef.current = false
     exitingRef.current = false
-    if (position) {
-      setCurrentPrice(position.entry_price)
-      priceRef.current = position.entry_price
-    } else {
-      setCurrentPrice(null)
-      priceRef.current = null
-    }
+    // Do NOT seed currentPrice to entry — after Move-to-BE, SL≈entry and
+    // `entry <= stop` would instantly market-close a still-open book.
+    setCurrentPrice(null)
+    priceRef.current = null
   }, [position?.id])
 
   const applyPrice = useCallback((price: number) => {
@@ -202,7 +199,7 @@ export function PositionStatusCard({
   // Auto SL / TP
   useEffect(() => {
     if (!position || closedMsg || exitingRef.current) return
-    if (currentPrice == null) return
+    if (currentPrice == null || !(currentPrice > 0)) return
     const isLong = position.entry_direction === 'LONG'
     const hitSl = isLong
       ? currentPrice <= position.stop_loss_price
@@ -211,6 +208,15 @@ export function PositionStatusCard({
       ? currentPrice >= position.profit_target_price
       : currentPrice <= position.profit_target_price
     if (!hitSl && !hitTp) return
+
+    // Same BE false-flatten guard as ManageDeskBar
+    if (
+      hitSl &&
+      Math.abs(currentPrice - position.entry_price) < 0.51 &&
+      Math.abs(position.stop_loss_price - position.entry_price) <= 2
+    ) {
+      return
+    }
 
     exitingRef.current = true
     const exitReason = hitSl ? 'stop_hit' : 'take_profit'

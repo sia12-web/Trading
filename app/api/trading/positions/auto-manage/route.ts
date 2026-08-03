@@ -12,6 +12,10 @@ import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { logger } from '@/lib/utils/logger'
 import { getOandaPrice } from '@/lib/oanda/pricing'
 import { updateOandaTradeStopLoss, partialCloseOandaTrade } from '@/lib/oanda/orders'
+import {
+  breakEvenStopPrice,
+  stopSafeVersusMarket,
+} from '@/lib/trading/breakEvenStop'
 import type { Instrument } from '@/types/trading'
 import type { Instrument as PriceInstrument } from '@/types/price-feed'
 
@@ -143,11 +147,8 @@ export async function POST(request: Request) {
     let scaledOutUnits = 0
 
     /** Never place a stop through/into live price — that instantly flat-closes the book. */
-    const stopSafeVsMarket = (stop: number): boolean => {
-      const pad = 2
-      if (!(stop > 0) || !(currentPrice > 0)) return false
-      return isLong ? stop < currentPrice - pad : stop > currentPrice + pad
-    }
+    const stopSafeVsMarket = (stop: number): boolean =>
+      stopSafeVersusMarket({ stop, currentPrice, isLong, pad: 2 })
 
     const applyStopLoss = async (stop: number, label: string): Promise<boolean> => {
       if (!stopSafeVsMarket(stop)) {
@@ -187,7 +188,14 @@ export async function POST(request: Request) {
       const isSlBelowEntry = isLong ? currentSl < entry : currentSl > entry
 
       if (isSlBelowEntry) {
-        const bePrice = Math.round(entry * 10) / 10
+        // One tick past entry (never exact entry) — exact entry false-triggers client
+        // auto-exit (`price <= stop` while price is still seeded at entry) and can
+        // market-flatten a profitable OANDA book.
+        const bePrice = breakEvenStopPrice(
+          instrument,
+          entry,
+          isLong ? 'LONG' : 'SHORT'
+        )
         const beReason = beByR
           ? `+${rMultiple.toFixed(2)}R achieved — move Stop Loss to Breakeven ($${bePrice})?`
           : `Target reached ${(beProgressThreshold * 100).toFixed(0)}% TP progress. Move Stop Loss to Breakeven ($${bePrice})?`
@@ -202,7 +210,7 @@ export async function POST(request: Request) {
               instrument,
               trade_date: position.trade_date,
               decision_type: 'ADJUST',
-              notes: `Confirmed Auto-Breakeven (${instrument}): Moved Stop Loss to entry $${bePrice}`,
+              notes: `Confirmed Auto-Breakeven (${instrument}): Moved Stop Loss to BE $${bePrice} (entry $${entry})`,
             })
           } else {
             return NextResponse.json(

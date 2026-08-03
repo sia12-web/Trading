@@ -11,8 +11,11 @@ import { getPositionManager } from '@/lib/trading/positionManager'
 import { getESTDateString } from '@/lib/utils/timeUtils'
 import { shouldExecuteOandaOrders } from '@/lib/oanda/config'
 import { closeOandaTrade } from '@/lib/oanda/orders'
+import { getOandaPrice } from '@/lib/oanda/pricing'
 import { interpretAiExitClaim } from '@/lib/trading/aiExitClaim'
+import { livePriceConfirmsStopHit } from '@/lib/trading/breakEvenStop'
 import type { ClosePositionRequest, ClosePositionResponse, TradePosition } from '@/types/trading'
+import type { Instrument as PriceInstrument } from '@/types/price-feed'
 
 export async function POST(request: Request): Promise<NextResponse<ClosePositionResponse>> {
   try {
@@ -204,6 +207,54 @@ export async function POST(request: Request): Promise<NextResponse<ClosePosition
     if (shouldExecuteOandaOrders()) {
       const tradeId = (position as { oanda_trade_id?: string | null }).oanda_trade_id
       if (tradeId) {
+        // Refuse false client "stop_hit" market closes while mid is still far past the stop
+        // (e.g. Move-to-BE set SL≈entry, then client seeded price=entry and flattened at +R).
+        if (body.exit_reason === 'stop_hit') {
+          const stopLoss = Number(position.stop_loss_price)
+          const isLong = String(position.entry_direction || '').toUpperCase() === 'LONG'
+          let liveMid = typeof body.exit_price === 'number' ? body.exit_price : 0
+          try {
+            const quote = await getOandaPrice(body.instrument as PriceInstrument)
+            if (quote?.price && quote.price > 0) liveMid = quote.price
+          } catch {
+            /* use body.exit_price */
+          }
+          if (
+            stopLoss > 0 &&
+            liveMid > 0 &&
+            !livePriceConfirmsStopHit({
+              currentPrice: liveMid,
+              stopLoss,
+              isLong,
+              tolerance: 5,
+            })
+          ) {
+            logger.warn('POST /api/trading/positions/close: refused false stop_hit', {
+              position_id: body.position_id,
+              liveMid,
+              stopLoss,
+              bodyExit: body.exit_price,
+              isLong,
+            })
+            return NextResponse.json(
+              {
+                success: false,
+                position_id: body.position_id,
+                instrument: body.instrument,
+                exit_price: body.exit_price,
+                entry_price: Number(position.entry_price),
+                position_size: Number(position.position_size),
+                profit_loss: 0,
+                profit_loss_percent: 0,
+                exit_reason: body.exit_reason,
+                message:
+                  'Stop not hit on live price — refused market close (book left open). If SL was just moved to BE, wait for a real stop touch.',
+              },
+              { status: 409 }
+            )
+          }
+        }
+
         const broker = await closeOandaTrade(tradeId)
         if (!broker.ok) {
           logger.error('POST /api/trading/positions/close: OANDA close failed', {

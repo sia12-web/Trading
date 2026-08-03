@@ -355,7 +355,8 @@ export function ManageDeskBar({
   // Auto-exit when live price hits stop or take-profit
   useEffect(() => {
     if (exitingRef.current) return
-    if (currentPrice == null || !Number.isFinite(currentPrice)) return
+    // Require a real live quote — never treat a missing/stale seed as a stop touch
+    if (currentPrice == null || !Number.isFinite(currentPrice) || currentPrice <= 0) return
     const hitSl = isLong
       ? currentPrice <= position.stopLoss
       : currentPrice >= position.stopLoss
@@ -363,6 +364,16 @@ export function ManageDeskBar({
       ? currentPrice >= position.profitTarget
       : currentPrice <= position.profitTarget
     if (!hitSl && !hitTp) return
+
+    // BE stop sits 1 tick off entry. If the quote is still exactly at entry (seed /
+    // uncleared), do not market-flatten — wait for a real adverse print through SL.
+    if (
+      hitSl &&
+      Math.abs(currentPrice - position.entryPrice) < 0.51 &&
+      Math.abs(position.stopLoss - position.entryPrice) <= 2
+    ) {
+      return
+    }
 
     exitingRef.current = true
     let cancelled = false
@@ -376,10 +387,10 @@ export function ManageDeskBar({
           body: JSON.stringify({
             position_id: position.id,
             instrument: position.instrument,
-            exit_price: exitPrice,
+            exit_price: currentPrice,
             exit_reason: hitSl ? 'stop_hit' : 'take_profit',
             reason: hitSl
-              ? `Stop loss hit — price reached ${exitPrice}`
+              ? `Stop loss hit — price reached ${currentPrice}`
               : `Take profit hit — price reached ${exitPrice}`,
           }),
         })
@@ -418,6 +429,7 @@ export function ManageDeskBar({
     isLong,
     position.id,
     position.instrument,
+    position.entryPrice,
     position.stopLoss,
     position.profitTarget,
     onClosed,

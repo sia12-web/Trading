@@ -532,6 +532,13 @@ export async function updateOandaTradeStopLoss(
   })
 
   const text = await res.text()
+  let json: any = null
+  try {
+    json = JSON.parse(text)
+  } catch {
+    /* ignore */
+  }
+
   if (!res.ok) {
     if (/does not exist|already|CLOSED|TOO_CLOSE/i.test(text)) {
       logger.warn('oanda.stop_loss_update_ignored', { status: res.status, tradeId, msg: text.slice(0, 200) })
@@ -539,6 +546,18 @@ export async function updateOandaTradeStopLoss(
     }
     logger.error('oanda.stop_loss_update_failed', { status: res.status, tradeId, text })
     return { ok: false, error: text.slice(0, 300) }
+  }
+
+  // If the new stop was immediately marketable, OANDA may close the trade in-batch.
+  const tradesClosed =
+    json?.orderFillTransaction?.tradesClosed ||
+    json?.stopLossOrderFillTransaction?.tradesClosed
+  if (Array.isArray(tradesClosed) && tradesClosed.length > 0) {
+    logger.warn('oanda.stop_loss_update_closed_trade', {
+      tradeId,
+      newStopLossPrice,
+    })
+    return { ok: false, error: 'Stop amend immediately closed the trade' }
   }
 
   logger.info('oanda.stop_loss_updated', { tradeId, newStopLossPrice })

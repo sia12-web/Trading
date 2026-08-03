@@ -492,6 +492,18 @@ export default function ChartPage() {
       if (payload.reason === '__confirmed__') {
         const msg = `Break-even confirmed — SL locked @ ${payload.proposedPrice.toLocaleString()}`
         successToast(msg, 7000)
+        // Optimistic SL update so ManageDeskBar / overlay do not keep the pre-BE stop
+        setManagePos((m) =>
+          m && m.id === payload.positionId
+            ? { ...m, stopLoss: payload.proposedPrice }
+            : m
+        )
+        setPositionOverlay((ov) =>
+          ov ? { ...ov, stopLoss: payload.proposedPrice } : ov
+        )
+        confirmedOverlayRef.current = confirmedOverlayRef.current
+          ? { ...confirmedOverlayRef.current, stopLoss: payload.proposedPrice }
+          : confirmedOverlayRef.current
         const kind = `be_confirmed_${payload.positionId.slice(0, 8)}`
         if (claimDeskNoteOnce(kind, inst)) {
           void fetch('/api/notify/desk-alert', {

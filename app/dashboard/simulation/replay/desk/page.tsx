@@ -2594,7 +2594,9 @@ function SimulationDeskInner() {
   const moveStopToBreakEven = useCallback(() => {
     const pos = positionRef.current
     if (!pos || pos.breakEvenSet) return
+    // One tick past entry (same as live breakEvenStopPrice / snapStopToTick)
     const be = snapStopToTick(instrument, pos.entry, pos.entry, pos.direction)
+    if (be === pos.entry) return
     const next: PaperPosition = { ...pos, stopLoss: be, breakEvenSet: true }
     positionRef.current = next
     setPosition(next)
