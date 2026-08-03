@@ -57,6 +57,7 @@ import {
 } from '@/lib/trading/attemptLadder'
 import {
   assertRangeEdgeEntry,
+  findRangeEdgeBandHit,
   rangeEdgeBands,
   RANGE_EDGE_BAND_POINTS,
 } from '@/lib/trading/rangeEdgeEntryGate'
@@ -126,9 +127,11 @@ import {
   currentNikkeiUsRangeForChart,
   isNikkeiUsRangeInstrument,
   nikkeiUsRangeLineSeriesData,
+  type NikkeiUsSessionRange,
 } from '@/lib/chart/nikkeiUsRangeBreakout'
 import {
   activeRangeForPlaybook,
+  shapedPlaybookRanges,
   strategyEntryRisk,
   type StrategyRangeEdges,
   type StrategyRiskMagnets,
@@ -519,7 +522,8 @@ function SimulationDeskInner() {
   const or30RangeRef = useRef<Or30Range | null>(null)
   const ibRangeRef = useRef<InitialBalanceRange | null>(null)
   const lunchRangeRef = useRef<NycLunchRange | null>(null)
-  const usRangeRef = useRef<{ high: number; low: number } | null>(null)
+  /** Full session range — must keep `complete` so shapedPlaybookRanges unlocks US ±10. */
+  const usRangeRef = useRef<NikkeiUsSessionRange | null>(null)
   const lunchSeriesRef = useRef<{
     high: ISeriesApi<'Line'>
     low: ISeriesApi<'Line'>
@@ -1412,7 +1416,9 @@ function SimulationDeskInner() {
         if (uss) {
           if (isNikkeiUsRangeInstrument(instrument)) {
             const us = currentNikkeiUsRangeForChart(bars, Math.max(tip, simT))
-            usRangeRef.current = us ? { high: us.high, low: us.low } : null
+            // Keep complete/fromTime/toTime — stripping complete made activeRangeForPlaybook
+            // return null during us_range and reject mid/H/L with "not shaped yet".
+            usRangeRef.current = us
             if (showUsRangeRef.current && us) {
               const pts = nikkeiUsRangeLineSeriesData(us, extendTo)
               try {
@@ -1612,6 +1618,8 @@ function SimulationDeskInner() {
   /** Active playbook range (+ other magnets) for strategy SL/TP — same geometry as live. */
   const getStrategyRiskBundle = useCallback((): {
     strategyRange: StrategyRangeEdges | null
+    /** All shaped ±10 candidates (OR30 / US Range / IB / Lunch) for price attribution. */
+    shapedRanges: StrategyRangeEdges[]
     strategyMagnets: StrategyRiskMagnets
   } => {
     const ladder = attemptLadderFromCounts({
@@ -1625,6 +1633,7 @@ function SimulationDeskInner() {
       now: new Date(simNowRef.current * 1000),
       ladder,
     })
+    const morningAttempts = morningAttemptsRef.current
     const strategyRange = activeRangeForPlaybook({
       playbookMode,
       instrument,
@@ -1632,7 +1641,18 @@ function SimulationDeskInner() {
       ib: ibRangeRef.current,
       usRange: usRangeRef.current,
       lunchRange: lunchRangeRef.current,
+      morningAttempts,
     })
+    const shaped = shapedPlaybookRanges({
+      instrument,
+      or30: or30RangeRef.current,
+      ib: ibRangeRef.current,
+      usRange: usRangeRef.current,
+      lunchRange: lunchRangeRef.current,
+    })
+    const shapedRanges = [shaped.or30, shaped.ib, shaped.usRange, shaped.lunchRange].filter(
+      (r): r is StrategyRangeEdges => !!r
+    )
     const extras: number[] = []
     for (const r of [
       or30RangeRef.current,
@@ -1652,6 +1672,7 @@ function SimulationDeskInner() {
     }
     return {
       strategyRange,
+      shapedRanges,
       strategyMagnets: {
         avwap: avwapLastRef.current,
         extras,
@@ -2274,9 +2295,13 @@ function SimulationDeskInner() {
       placingOrderRef.current = true
       const entrySource = normalizeEntrySource(level.source, 'structure')
       const limit = snapDeskPrice(instrument, level.level)
-      const { strategyRange, strategyMagnets } = getStrategyRiskBundle()
+      const { strategyRange, shapedRanges, strategyMagnets } = getStrategyRiskBundle()
+      // Price-based attribution (same as live/server): bill to the shaped range
+      // whose ±10 H/mid/L band contains the limit — not only the sequential active pick.
+      const hit = findRangeEdgeBandHit(limit, shapedRanges)
+      const attributedRange = hit?.range ?? strategyRange
 
-      const edge = assertRangeEdgeEntry({ entry: limit, range: strategyRange })
+      const edge = assertRangeEdgeEntry({ entry: limit, range: attributedRange })
       if (!edge.ok) {
         placingOrderRef.current = false
         setMsg(edge.message)
@@ -2291,13 +2316,13 @@ function SimulationDeskInner() {
         now: new Date(now * 1000),
         instrument,
       })
-      if (strategyRange?.label) {
+      if (attributedRange?.label) {
         const bucketOk = assertBucketEntryEligible({
           instrument,
           market: deskMarketFor(instrument),
           timeSec: deskClockSeconds(instrument, new Date(now * 1000)),
           ladder,
-          rangeLabel: strategyRange.label,
+          rangeLabel: attributedRange.label,
         })
         if (!bucketOk.ok) {
           placingOrderRef.current = false
@@ -2309,7 +2334,7 @@ function SimulationDeskInner() {
       const strat = strategyEntryRisk({
         entry: limit,
         direction,
-        activeRange: strategyRange,
+        activeRange: attributedRange,
         magnets: strategyMagnets,
       })
       const stopGuard = assertProtectiveStop({
@@ -2340,7 +2365,7 @@ function SimulationDeskInner() {
       const target = snapTargetToTick(
         instrument,
         limit,
-        strategyRange ? strat.target : preview.profit_target_price,
+        attributedRange ? strat.target : preview.profit_target_price,
         direction
       )
       const order: PendingOrder = {
@@ -2359,7 +2384,7 @@ function SimulationDeskInner() {
         conviction: level.conviction,
         entrySource,
         windowEndUnix: windowEndUnix || cashCloseUnix,
-        strategyRangeLabel: strategyRange?.label ?? null,
+        strategyRangeLabel: attributedRange?.label ?? null,
       }
 
       // Immediate fill if any bar from open→now already touched
@@ -3550,8 +3575,8 @@ function SimulationDeskInner() {
               entrySource: 'manual',
               windowEndUnix: windowEndUnix || cashCloseUnix,
               strategyRangeLabel:
-                getStrategyRiskBundle().strategyRange?.label ??
                 order.strategyRange?.label ??
+                getStrategyRiskBundle().strategyRange?.label ??
                 null,
             }
             const now = simNowRef.current

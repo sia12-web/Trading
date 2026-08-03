@@ -237,6 +237,27 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
     null,
     'incomplete NYC session must not unlock Nikkei US Range entries'
   )
+  // Regression: callers that strip `complete` (sim desk used to store {high,low}
+  // only) must not unlock — same as incomplete. Full NikkeiUsSessionRange with
+  // complete:true is required for mid/H/L ±10 during us_range playbook.
+  assert.equal(
+    activeRangeForPlaybook({
+      playbookMode: 'us_range',
+      instrument: 'NIKKEI',
+      usRange: { high: 40_000, low: 39_500 },
+    }),
+    null,
+    'US Range without complete:true must not unlock (stripped-flag regression)'
+  )
+  assert.equal(
+    activeRangeForPlaybook({
+      playbookMode: 'us_range',
+      instrument: 'NIKKEI',
+      usRange: { high: 40_000, low: 39_500, complete: true },
+    })?.label,
+    'US Range',
+    'US Range with complete:true unlocks mid/H/L ±10'
+  )
   assert.equal(
     activeRangeForPlaybook({
       playbookMode: 'ib',

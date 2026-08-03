@@ -451,6 +451,11 @@ export function nikkeiUsRangeLineSeriesData(
 /**
  * Chart overlay: last completed NYC range during Tokyo cash only.
  * Hidden overnight / London / dead zone — those sessions must not show US H/L.
+ *
+ * Sparse OANDA/Yahoo history sometimes ends mid-NY (no exit bar), so the walk
+ * marks the session `complete: false`. Once the tip is already in Tokyo cash,
+ * prior NYC RTH is over — promote to complete so painted H/L and ±10 entry
+ * gates stay aligned (otherwise mid rejects with "not shaped yet").
  */
 export function currentNikkeiUsRangeForChart(
   candles: NikkeiUsRangeBar[],
@@ -459,5 +464,13 @@ export function currentNikkeiUsRangeForChart(
   if (!inNikkeiUsSignalSession(nowUnix)) {
     return null
   }
-  return lastNikkeiUsSessionRange(candles, { preferCompleted: true })
+  const sessions = listNikkeiUsSessionRanges(candles)
+  for (let i = sessions.length - 1; i >= 0; i--) {
+    if (sessions[i]!.complete) return sessions[i]!
+  }
+  const last = sessions[sessions.length - 1]
+  if (last && last.high > last.low) {
+    return { ...last, complete: true }
+  }
+  return null
 }

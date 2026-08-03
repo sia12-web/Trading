@@ -201,6 +201,7 @@ test('IB-style line series draws US H/L only on Tokyo cash session', () => {
   assert(pts.high[0]!.time === jstUnix(2026, 7, 16, 9, 0), 'starts at Tokyo cash open')
   assert(pts.high[1]!.time === tip, 'extends to tip')
   assert(pts.high[0]!.time > cur!.fromTime, 'does not start in NY band')
+  assert(cur!.complete === true, 'Tokyo cash tip promotes sparse NY walk to complete')
 
   // Overnight / London tip → no chart lines
   const overnight = currentNikkeiUsRangeForChart(candles, jstUnix(2026, 7, 16, 4, 0))
