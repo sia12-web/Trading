@@ -1,8 +1,17 @@
 /**
  * Draggable chart price alert — Telegram when live price touches/crosses.
+ *
+ * Place-at-spot must not fire: alerts start `pendingAway` until price leaves
+ * the level, then arm for a later re-touch / cross.
  */
 
 export const PRICE_ALERT_TOUCH_TOLERANCE = 1
+
+/**
+ * Points beyond the touch band that count as "left the alert".
+ * Place-at-spot stays pending until live clears this gap, then arms.
+ */
+export const PRICE_ALERT_AWAY_POINTS = 2
 
 /**
  * True when price has crossed or entered ±tol of alertLevel.
@@ -29,6 +38,23 @@ export function didPriceTouchAlert(args: {
   return false
 }
 
+/** True when live has cleared the touch band by {@link PRICE_ALERT_AWAY_POINTS}. */
+export function hasPriceLeftAlert(args: {
+  livePrice: number | null | undefined
+  alertPrice: number
+  touchTolerance?: number
+  awayPoints?: number
+}): boolean {
+  const live = Number(args.livePrice)
+  const alert = Number(args.alertPrice)
+  if (!Number.isFinite(live) || live <= 0 || !Number.isFinite(alert) || alert <= 0) {
+    return false
+  }
+  const touch = Math.max(0, args.touchTolerance ?? PRICE_ALERT_TOUCH_TOLERANCE)
+  const away = Math.max(0, args.awayPoints ?? PRICE_ALERT_AWAY_POINTS)
+  return Math.abs(live - alert) > touch + away
+}
+
 export function formatPriceTouchAlert(args: {
   instrument: string
   alertPrice: number
@@ -50,8 +76,13 @@ const storageKey = (instrument: string) => `tp.priceAlert.${instrument}`
 
 export type StoredPriceAlert = {
   price: number
-  /** Still waiting for touch */
+  /** Still waiting for touch (false = already fired) */
   armed: boolean
+  /**
+   * Just placed / dragged onto spot — wait until price leaves before any fire.
+   * Once live clears the away gap, clear this and keep `armed: true`.
+   */
+  pendingAway?: boolean
 }
 
 export function loadStoredPriceAlert(instrument: string): StoredPriceAlert | null {
@@ -61,7 +92,11 @@ export function loadStoredPriceAlert(instrument: string): StoredPriceAlert | nul
     if (!raw) return null
     const parsed = JSON.parse(raw) as StoredPriceAlert
     if (!parsed || !Number.isFinite(parsed.price) || parsed.price <= 0) return null
-    return { price: parsed.price, armed: parsed.armed !== false }
+    return {
+      price: parsed.price,
+      armed: parsed.armed !== false,
+      pendingAway: parsed.pendingAway === true,
+    }
   } catch {
     return null
   }

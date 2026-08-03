@@ -176,6 +176,7 @@ import { snapDeskPrice } from '@/lib/trading/instrumentTicks'
 import {
   didPriceTouchAlert,
   formatPriceTouchAlert,
+  hasPriceLeftAlert,
   loadStoredPriceAlert,
   saveStoredPriceAlert,
   type StoredPriceAlert,
@@ -1760,7 +1761,8 @@ export function TradingChart({
     const price = snapDeskPrice(instrument, Number(rawPx))
     priceAlertPrimedRef.current = false
     prevLivePriceForAlertRef.current = null
-    setPriceAlert({ price, armed: true })
+    // Always pendingAway on create — place-at-spot must not fire until price leaves.
+    setPriceAlert({ price, armed: true, pendingAway: true })
   }, [livePrice, candles, instrument])
 
   const togglePriceAlert = useCallback(() => {
@@ -3632,7 +3634,9 @@ export function TradingChart({
           strategyRange.low === hit.range.low
         if (!or30Live) {
           denyBody =
-            'OR30 morning ±10 window is closed — enter on the live US Range / IB / lunch playbook when unlocked.'
+            instrument === 'NIKKEI'
+              ? 'OR30 morning ±10 window is closed — enter on the live US Range / Tokyo IB playbook when unlocked.'
+              : 'OR30 morning ±10 window is closed — enter on the live IB / lunch-range playbook when unlocked.'
         }
       } else {
         const bucketCheck = assertBucketEntryEligible({
@@ -4532,7 +4536,21 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       const snapped = snapDeskPrice(instrument, Number(rawPrice))
       priceAlertPrimedRef.current = false
       prevLivePriceForAlertRef.current = null
-      setPriceAlert((prev) => (prev ? { ...prev, price: snapped } : null))
+      // Dragging near live restarts arm-after-away so we don't fire on release.
+      const nearSpot =
+        livePrice != null &&
+        Number.isFinite(livePrice) &&
+        !hasPriceLeftAlert({ livePrice, alertPrice: snapped })
+      setPriceAlert((prev) =>
+        prev
+          ? {
+              ...prev,
+              price: snapped,
+              armed: true,
+              pendingAway: nearSpot || prev.pendingAway === true,
+            }
+          : null
+      )
     }
 
     const onMouseUp = () => {
@@ -4545,7 +4563,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       window.removeEventListener('mousemove', onMouseMove, true)
       window.removeEventListener('mouseup', onMouseUp, true)
     }
-  }, [priceAlert?.armed, instrument])
+  }, [priceAlert?.armed, instrument, livePrice])
 
   useEffect(() => {
     clearPriceAlertLine()
@@ -4554,15 +4572,22 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     if (!host) return
 
     const armed = priceAlert.armed !== false
+    const pending = armed && priceAlert.pendingAway === true
     const line = host.createPriceLine({
       price: priceAlert.price,
-      color: armed ? 'rgba(168, 85, 247, 0.95)' : 'rgba(168, 85, 247, 0.35)',
-      lineWidth: armed ? 2 : 1,
+      color: armed
+        ? pending
+          ? 'rgba(168, 85, 247, 0.55)'
+          : 'rgba(168, 85, 247, 0.95)'
+        : 'rgba(168, 85, 247, 0.35)',
+      lineWidth: armed && !pending ? 2 : 1,
       lineStyle: armed ? 2 : 1,
       axisLabelVisible: true,
-      title: armed
-        ? `🔔 ALERT @ ${priceAlert.price.toLocaleString()}`
-        : `🔔 FIRED @ ${priceAlert.price.toLocaleString()}`,
+      title: !armed
+        ? `🔔 FIRED @ ${priceAlert.price.toLocaleString()}`
+        : pending
+          ? `🔔 ARMING @ ${priceAlert.price.toLocaleString()}`
+          : `🔔 ALERT @ ${priceAlert.price.toLocaleString()}`,
     })
     priceAlertLineRef.current = line
   }, [priceAlert, chartReady, instrument, clearPriceAlertLine])
@@ -4570,11 +4595,25 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
   useEffect(() => {
     priceAlertPrimedRef.current = false
     prevLivePriceForAlertRef.current = null
-  }, [priceAlert?.price, priceAlert?.armed])
+  }, [priceAlert?.price, priceAlert?.armed, priceAlert?.pendingAway])
 
   useEffect(() => {
     if (!priceAlert?.armed || !onDeskAlert) return
     if (livePrice == null) return
+
+    // Arm-after-away: stay pending until live clears the level, then arm for later touch.
+    if (priceAlert.pendingAway === true) {
+      if (hasPriceLeftAlert({ livePrice, alertPrice: priceAlert.price })) {
+        priceAlertPrimedRef.current = false
+        prevLivePriceForAlertRef.current = livePrice
+        setPriceAlert((prev) =>
+          prev && prev.armed !== false
+            ? { ...prev, pendingAway: false, armed: true }
+            : prev
+        )
+      }
+      return
+    }
 
     if (!priceAlertPrimedRef.current) {
       priceAlertPrimedRef.current = true
@@ -4608,7 +4647,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       instrument,
       dedupeKey: deskNoteClaimKey(claimKind, instrument),
     })
-    setPriceAlert({ price: priceAlert.price, armed: false })
+    setPriceAlert({ price: priceAlert.price, armed: false, pendingAway: false })
   }, [livePrice, priceAlert, instrument, onDeskAlert])
 
   const confirmRiskBoxOrder = useCallback(() => {
@@ -6048,22 +6087,26 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           {riskBox ? 'Limit Order Active' : 'Limit Order (O)'}
         </button>
 
-        {/* Draggable price alert — Telegram on touch (A key) */}
+        {/* Draggable price alert — Telegram on touch (A key); arms after price leaves */}
         <button
           type="button"
           title={
             priceAlert
-              ? priceAlert.armed !== false
-                ? 'Price alert armed — drag line or Esc to dismiss (A)'
-                : 'Price alert fired — dismiss (A / Esc)'
+              ? priceAlert.armed === false
+                ? 'Price alert fired — dismiss (A / Esc)'
+                : priceAlert.pendingAway
+                  ? 'Waiting for price to leave alert, then re-touch fires (drag / Esc)'
+                  : 'Price alert armed — drag line or Esc to dismiss (A)'
               : 'Place draggable price alert (Press A)'
           }
           onClick={togglePriceAlert}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
             priceAlert
-              ? priceAlert.armed !== false
-                ? 'bg-violet-600/30 border-violet-500/50 text-violet-100 animate-pulse'
-                : 'bg-violet-950/40 border-violet-500/30 text-violet-300/70'
+              ? priceAlert.armed === false
+                ? 'bg-violet-950/40 border-violet-500/30 text-violet-300/70'
+                : priceAlert.pendingAway
+                  ? 'bg-violet-600/20 border-violet-500/40 text-violet-200/90'
+                  : 'bg-violet-600/30 border-violet-500/50 text-violet-100 animate-pulse'
               : 'bg-transparent border-surface-600 text-gray-500 hover:text-violet-200 hover:border-violet-500/40'
           }`}
         >
@@ -6072,9 +6115,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             <circle cx="8" cy="8" r="2.5" className="fill-violet-500/40 stroke-violet-400" />
           </svg>
           {priceAlert
-            ? priceAlert.armed !== false
-              ? 'Price Alert Active'
-              : 'Alert Fired'
+            ? priceAlert.armed === false
+              ? 'Alert Fired'
+              : priceAlert.pendingAway
+                ? 'Alert Arming…'
+                : 'Price Alert Active'
             : 'Price Alert (A)'}
         </button>
 
@@ -6832,6 +6877,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             ? candleSeries.priceToCoordinate(priceAlert.price)
             : null
           const armed = priceAlert.armed !== false
+          const pending = armed && priceAlert.pendingAway === true
 
           return (
             <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
@@ -6846,20 +6892,24 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     top: `${alertY - 14}px`,
                   }}
                   title={
-                    armed
-                      ? 'Drag alert line — Telegram when price touches (soft signal, not an order)'
-                      : 'Alert fired — dismiss with ✕ or press A / Esc'
+                    !armed
+                      ? 'Alert fired — dismiss with ✕ or press A / Esc'
+                      : pending
+                        ? 'Waiting for price to leave, then re-touch fires Telegram'
+                        : 'Drag alert line — Telegram when price touches (soft signal, not an order)'
                   }
                 >
                   <div
                     className={`flex items-center rounded-md border px-3 py-1 text-xs font-mono font-bold shadow-xl transition ${
-                      armed
-                        ? 'border-violet-400 bg-violet-950/95 text-violet-100 group-hover:border-violet-300'
-                        : 'border-violet-500/40 bg-violet-950/50 text-violet-300/70'
+                      !armed
+                        ? 'border-violet-500/40 bg-violet-950/50 text-violet-300/70'
+                        : pending
+                          ? 'border-violet-400/70 bg-violet-950/80 text-violet-200/90'
+                          : 'border-violet-400 bg-violet-950/95 text-violet-100 group-hover:border-violet-300'
                     }`}
                   >
                     <span className="font-sans uppercase font-extrabold tracking-wider text-[11px] select-none">
-                      {armed ? 'Alert' : 'Fired'}
+                      {!armed ? 'Fired' : pending ? 'Arming' : 'Alert'}
                     </span>
                     <span className="text-violet-400 mx-1.5">@</span>
                     <span>{priceAlert.price.toLocaleString()}</span>
@@ -6878,9 +6928,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   </div>
                   <div
                     className={`w-3 h-3 rounded-full border-2 border-white shadow-md transition-transform ${
-                      armed
-                        ? 'bg-violet-500 group-hover:scale-125'
-                        : 'bg-violet-500/40'
+                      !armed
+                        ? 'bg-violet-500/40'
+                        : pending
+                          ? 'bg-violet-400/70'
+                          : 'bg-violet-500 group-hover:scale-125'
                     }`}
                   />
                 </div>

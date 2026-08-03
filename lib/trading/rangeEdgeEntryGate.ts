@@ -307,7 +307,7 @@ export function assertRangeEdgeEntry(args: {
     return {
       ok: false,
       message:
-        'Active strategy range is not shaped yet — wait for OR30 / IB / lunch (or Nikkei US Range) to lock, then enter within ±10 pts of the painted edge bands.',
+        'Active strategy range is not shaped yet — wait for the painted playbook range to lock, then enter within ±10 pts of the edge bands.',
     }
   }
   const entry = Number(args.entry)

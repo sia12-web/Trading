@@ -6,6 +6,8 @@ import assert from 'node:assert/strict'
 import {
   didPriceTouchAlert,
   formatPriceTouchAlert,
+  hasPriceLeftAlert,
+  PRICE_ALERT_AWAY_POINTS,
   PRICE_ALERT_TOUCH_TOLERANCE,
 } from '../lib/trading/priceTouchAlert'
 
@@ -43,6 +45,80 @@ assert.equal(
   false,
   'still below'
 )
+
+{
+  // Arm-after-away: place at spot must not count as left
+  assert.equal(
+    hasPriceLeftAlert({ livePrice: 100, alertPrice: 100 }),
+    false,
+    'at alert → still pending'
+  )
+  assert.equal(
+    hasPriceLeftAlert({
+      livePrice: 100 + PRICE_ALERT_TOUCH_TOLERANCE,
+      alertPrice: 100,
+    }),
+    false,
+    'inside touch band → still pending'
+  )
+  assert.equal(
+    hasPriceLeftAlert({
+      livePrice: 100 + PRICE_ALERT_TOUCH_TOLERANCE + PRICE_ALERT_AWAY_POINTS,
+      alertPrice: 100,
+    }),
+    false,
+    'exactly at touch+away boundary is not yet away (strict >)'
+  )
+  assert.equal(
+    hasPriceLeftAlert({
+      livePrice: 100 + PRICE_ALERT_TOUCH_TOLERANCE + PRICE_ALERT_AWAY_POINTS + 1,
+      alertPrice: 100,
+    }),
+    true,
+    'cleared away gap → can arm'
+  )
+  assert.equal(
+    hasPriceLeftAlert({ livePrice: 96, alertPrice: 100 }),
+    true,
+    'below away gap → can arm'
+  )
+  assert.equal(
+    hasPriceLeftAlert({ livePrice: null, alertPrice: 100 }),
+    false,
+    'no live → stay pending'
+  )
+}
+
+{
+  // Full place → leave → return cycle (logic the chart effect uses)
+  const alert = 40_000
+  let pendingAway = true
+  let armed = true
+  // create at spot
+  assert.equal(hasPriceLeftAlert({ livePrice: alert, alertPrice: alert }), false)
+  assert.equal(
+    didPriceTouchAlert({ prevPrice: alert, livePrice: alert, alertPrice: alert }),
+    true,
+    'would touch — but pendingAway must block fire'
+  )
+  // leave
+  const awayPx = alert + PRICE_ALERT_TOUCH_TOLERANCE + PRICE_ALERT_AWAY_POINTS + 1
+  assert.equal(hasPriceLeftAlert({ livePrice: awayPx, alertPrice: alert }), true)
+  pendingAway = false
+  // return / cross
+  assert.equal(
+    didPriceTouchAlert({
+      prevPrice: awayPx,
+      livePrice: alert,
+      alertPrice: alert,
+    }),
+    true,
+    're-touch after leave fires'
+  )
+  armed = false
+  assert.equal(pendingAway, false)
+  assert.equal(armed, false)
+}
 
 const msg = formatPriceTouchAlert({
   instrument: 'NASDAQ',

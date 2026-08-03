@@ -79,6 +79,14 @@ function jstDate(h: number, m: number, s = 0): Date {
   })
   assert(mode === 'lunch_range', 'lunch-range entry')
   assert(deskPlaybookTitle(mode) === 'Lunch-range playbook', 'lunch-range title')
+  assert(
+    deskPlaybookTitle(mode, 'NIKKEI') === 'Tokyo IB playbook',
+    'Nikkei lunch_range framing uses Tokyo IB title'
+  )
+  assert(
+    deskPlaybookTitle(mode, 'DOW') === 'Lunch-range playbook',
+    'DOW lunch_range keeps Lunch-range title'
+  )
 }
 
 {

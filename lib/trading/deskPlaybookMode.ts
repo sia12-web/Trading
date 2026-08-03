@@ -132,7 +132,7 @@ export function deskPlaybookTitle(mode: DeskPlaybookMode, instrument?: string): 
     case 'lunch_break':
       return tokyo ? 'IB prep playbook' : 'Lunch break playbook'
     case 'lunch_range':
-      return 'Lunch-range playbook'
+      return tokyo ? 'Tokyo IB playbook' : 'Lunch-range playbook'
     case 'done':
       return 'Watch playbook'
     default:
@@ -153,7 +153,7 @@ export function deskPlaybookButtonLabel(
     case 'lunch_break':
       return tokyo ? 'IB prep' : 'Lunch break'
     case 'lunch_range':
-      return 'Lunch-range'
+      return tokyo ? 'Tokyo IB' : 'Lunch-range'
     case 'done':
       return 'Watch'
     default:
@@ -225,7 +225,9 @@ export function deskPlaybookHint(mode: DeskPlaybookMode, instrument?: string): s
         ? 'Waiting for first-hour Tokyo IB lock (21:00 Montreal) — levels update. IB ±10 opens when the hour locks (or earlier if US Range probes were exhausted).'
         : 'IB entry closed. Prep for lunch-range — levels update. Lunch opens on the clock (or earlier if IB probes were exhausted).'
     case 'lunch_range':
-      return 'Lunch-range — up to 2 probes @ 0.25% while the PM entry window is open (entries within ±10 pts of range high, 50% mid, or low).'
+      return tokyo
+        ? 'Tokyo IB — up to 2 probes @ 0.25% while the PM entry window is open (entries within ±10 pts of H / 50% / L).'
+        : 'Lunch-range — up to 2 probes @ 0.25% while the PM entry window is open (entries within ±10 pts of range high, 50% mid, or low).'
     case 'done':
       return 'Entry windows done for today — manage if open (confirm lunch close or ride to cash close), no new entries.'
     default:
