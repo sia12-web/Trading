@@ -308,17 +308,38 @@ export function ManageDeskBar({
         })
         return
       }
-      if (!json.position) {
-        exitingRef.current = true
-        onBrokerExitRef.current?.({
-          exitReason: 'manual',
-          exitPrice: priceRef.current ?? position.entryPrice,
-        })
+      if (json.position) return
+
+      // Never toast "closed" on a lone null — confirm Live Positions SoT + working limit.
+      // (Wrong trade_date / race used to false-close Nikkei US Range books.)
+      const [statusRes, workingRes] = await Promise.all([
+        fetch(
+          `/api/trading/positions/management-status?instrument=${encodeURIComponent(position.instrument)}`,
+          { cache: 'no-store' }
+        ),
+        fetch(
+          `/api/trading/positions/working?instrument=${encodeURIComponent(position.instrument)}`,
+          { cache: 'no-store' }
+        ),
+      ])
+      if (statusRes.ok) {
+        const statusJson = (await statusRes.json()) as { success?: boolean; position?: unknown }
+        if (statusJson.success && statusJson.position) return
       }
+      if (workingRes.ok) {
+        const workingJson = (await workingRes.json()) as { working?: unknown }
+        if (workingJson.working) return
+      }
+
+      exitingRef.current = true
+      onBrokerExitRef.current?.({
+        exitReason: 'manual',
+        exitPrice: priceRef.current ?? position.entryPrice,
+      })
     } catch {
       /* soft-fail */
     }
-  }, [position.id, position.instrument])
+  }, [position.id, position.instrument, position.entryPrice])
 
   useEffect(() => {
     void pollReconcile()

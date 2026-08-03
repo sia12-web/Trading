@@ -55,6 +55,7 @@ import {
   workingRowToPending,
   type WorkingLimitRow,
 } from '@/lib/trading/workingLimitGate'
+import { shouldClearChartAsClosed } from '@/lib/trading/currentPositionQuery'
 import {
   formatEntryPermissionNote,
   formatSessionStartNote,
@@ -1063,8 +1064,8 @@ export default function ChartPage() {
 
   /** Paint durable working limit from server (refresh, 409, or instrument switch). */
   const applyWorkingFromServer = useCallback(
-    (row: WorkingLimitRow, opts?: { notifyBlocked?: boolean }) => {
-      if (managePos || placingOrderRef.current) return
+    (row: WorkingLimitRow, opts?: { notifyBlocked?: boolean; force?: boolean }) => {
+      if (!opts?.force && (managePos || placingOrderRef.current)) return
       const order = workingRowToPending(row) as PendingLimitOrder
       pendingRef.current = order
       setPending(order)
@@ -1566,10 +1567,93 @@ export default function ChartPage() {
 
         if (!json.position) {
           if (managePos && !positionExitHandledRef.current) {
-            handleBrokerExit({
-              exitReason: 'manual',
-              exitPrice: livePriceRef.current ?? managePos.entryPrice,
-            })
+            // Confirm against Live Positions SoT + working — never false-close on null alone
+            let hasFilledOpen = false
+            let hasWorkingLimit = false
+            try {
+              const [statusRes, workingRes] = await Promise.all([
+                fetch(
+                  `/api/trading/positions/management-status?instrument=${encodeURIComponent(managePos.instrument)}`,
+                  { cache: 'no-store' }
+                ),
+                fetch(
+                  `/api/trading/positions/working?instrument=${encodeURIComponent(managePos.instrument)}`,
+                  { cache: 'no-store' }
+                ),
+              ])
+              if (statusRes.ok) {
+                const statusJson = (await statusRes.json()) as {
+                  success?: boolean
+                  position?: {
+                    id: string
+                    instrument: string
+                    entry_price: number
+                    stop_loss_price: number
+                    profit_target_price?: number | null
+                    entry_direction?: string
+                    position_size: number
+                    risk_amount: number
+                    entry_timestamp?: string | null
+                  } | null
+                }
+                if (statusJson.success && statusJson.position) {
+                  hasFilledOpen = true
+                  const p = statusJson.position
+                  const dir =
+                    String(p.entry_direction || '').toUpperCase() === 'LONG' ? 'long' : 'short'
+                  const target =
+                    p.profit_target_price ??
+                    (dir === 'long' ? p.entry_price * 1.01 : p.entry_price * 0.99)
+                  const manage: ManagePosition = {
+                    id: p.id,
+                    instrument: p.instrument,
+                    entryPrice: p.entry_price,
+                    stopLoss: p.stop_loss_price,
+                    profitTarget: target,
+                    direction: dir,
+                    positionSize: p.position_size,
+                    riskAmount: p.risk_amount,
+                    entryTimestamp: p.entry_timestamp ?? null,
+                  }
+                  setManagePos(manage)
+                  const overlay = {
+                    entryPrice: manage.entryPrice,
+                    stopLoss: manage.stopLoss,
+                    profitTarget: manage.profitTarget,
+                    direction: manage.direction,
+                    positionSize: manage.positionSize,
+                  }
+                  confirmedOverlayRef.current = overlay
+                  setPositionOverlay(overlay)
+                }
+              }
+              if (workingRes.ok) {
+                const workingJson = (await workingRes.json()) as {
+                  working?: WorkingLimitRow | null
+                }
+                if (workingJson.working) {
+                  hasWorkingLimit = true
+                  setManagePos(null)
+                  setPositionOverlay(null)
+                  confirmedOverlayRef.current = null
+                  applyWorkingFromServer(workingJson.working, { force: true })
+                }
+              }
+            } catch {
+              /* keep local UI on confirm failure */
+            }
+            if (
+              shouldClearChartAsClosed({
+                reconciledClosed: false,
+                hasFilledOpen,
+                hasWorkingLimit,
+              })
+            ) {
+              handleBrokerExit({
+                exitReason: 'manual',
+                exitPrice: livePriceRef.current ?? managePos.entryPrice,
+              })
+            }
           }
           return
         }
@@ -1628,6 +1712,7 @@ export default function ChartPage() {
     pending,
     clearPositionUi,
     handleBrokerExit,
+    applyWorkingFromServer,
   ])
 
   // Quote-driven reconcile while in trade (catch broker SL/TP between polls)
@@ -1648,11 +1733,49 @@ export default function ChartPage() {
             exitReason: json.reconciled.exit_reason,
             exitPrice: json.reconciled.exit_price,
           })
-        } else if (!json.position && managePos && !positionExitHandledRef.current) {
-          handleBrokerExit({
-            exitReason: 'manual',
-            exitPrice: livePriceRef.current ?? managePos.entryPrice,
-          })
+          return
+        }
+        if (!json.position && managePos && !positionExitHandledRef.current) {
+          let hasFilledOpen = false
+          let hasWorkingLimit = false
+          try {
+            const [statusRes, workingRes] = await Promise.all([
+              fetch(
+                `/api/trading/positions/management-status?instrument=${encodeURIComponent(managePos.instrument)}`,
+                { cache: 'no-store' }
+              ),
+              fetch(
+                `/api/trading/positions/working?instrument=${encodeURIComponent(managePos.instrument)}`,
+                { cache: 'no-store' }
+              ),
+            ])
+            if (statusRes.ok) {
+              const statusJson = (await statusRes.json()) as {
+                success?: boolean
+                position?: unknown
+              }
+              if (statusJson.success && statusJson.position) hasFilledOpen = true
+            }
+            if (workingRes.ok) {
+              const workingJson = (await workingRes.json()) as { working?: unknown }
+              if (workingJson.working) hasWorkingLimit = true
+            }
+          } catch {
+            /* keep */
+          }
+          if (cancelled) return
+          if (
+            shouldClearChartAsClosed({
+              reconciledClosed: false,
+              hasFilledOpen,
+              hasWorkingLimit,
+            })
+          ) {
+            handleBrokerExit({
+              exitReason: 'manual',
+              exitPrice: livePriceRef.current ?? managePos.entryPrice,
+            })
+          }
         }
       } catch {
         /* soft-fail */

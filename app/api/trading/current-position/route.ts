@@ -10,6 +10,8 @@ import { logger } from '@/lib/utils/logger'
 import { getWindowManager } from '@/lib/trading/windowManager'
 import { MAX_STOP_HITS } from '@/lib/trading/sessionGate'
 import { getESTDateString } from '@/lib/utils/timeUtils'
+import { tradeDateForInstrument } from '@/lib/trading/deskAttendance'
+import { scopeForCurrentPositionQuery } from '@/lib/trading/currentPositionQuery'
 import type { CurrentPositionResponse, TradePosition } from '@/types/trading'
 import { reconcileBrokerClosedPosition } from '@/lib/trading/brokerPositionReconcile'
 
@@ -63,10 +65,11 @@ export async function GET(request: Request): Promise<NextResponse<CurrentPositio
 
     const windowManager = getWindowManager()
     const now = new Date()
-    const today = getESTDateString()
+    // Same session calendar as open / working / management-status (JST for NIKKEI).
+    // EST-only missed Tokyo US Range books and chart treated null as "closed".
+    const scope = scopeForCurrentPositionQuery({ instrument, anyNy, now })
 
-    // Query for today's open position (ET date) for this user only
-    let query = supabase
+    const { data: position, error: queryError } = await supabase
       .from('trades_journal')
       .select(
         `id, user_id, instrument, trade_date, entry_window, entry_timestamp, entry_price,
@@ -77,17 +80,11 @@ export async function GET(request: Request): Promise<NextResponse<CurrentPositio
          oanda_trade_id, created_at, updated_at`
       )
       .eq('user_id', user.id)
-      .eq('trade_date', today)
+      .in('instrument', scope.instruments)
+      .in('trade_date', scope.tradeDates)
       .eq('fill_status', 'filled')
       .is('exit_timestamp', null)
-
-    if (anyNy || !instrument) {
-      query = query.in('instrument', ['DOW', 'NASDAQ'])
-    } else {
-      query = query.eq('instrument', instrument)
-    }
-
-    const { data: position, error: queryError } = await query.maybeSingle()
+      .maybeSingle()
 
     if (queryError) {
       logger.error('GET /api/trading/current-position: Query error', { error: queryError })
@@ -108,12 +105,15 @@ export async function GET(request: Request): Promise<NextResponse<CurrentPositio
     const nextWindow = windowManager.getNextWindow(now)
     const entryWindowsClosed = windowManager.areEntryWindowsClosed(now)
 
-    // Session lock: 2 stop-outs today (same book as live/sim desk)
+    // Session lock: 2 stop-outs today (NY ET + Tokyo JST calendars)
+    const stopTradeDates = Array.from(
+      new Set([getESTDateString(now), tradeDateForInstrument('NIKKEI', now)])
+    )
     const { count: stopHitCount } = await supabase
       .from('trades_journal')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', user.id)
-      .eq('trade_date', today)
+      .in('trade_date', stopTradeDates)
       .in('instrument', ['DOW', 'NASDAQ', 'NIKKEI'])
       .eq('fill_status', 'filled')
       .eq('exit_reason', 'stop_hit')
