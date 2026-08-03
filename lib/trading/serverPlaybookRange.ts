@@ -65,7 +65,7 @@ export type ServerPlaybookBundle = {
   ladder: AttemptLadder
 }
 
-async function resolveServerPlaybookBundle(args: {
+export async function resolveServerPlaybookBundle(args: {
   instrument: DeskInstrument
   now?: Date
   ladder?: AttemptLadder

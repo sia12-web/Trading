@@ -1,7 +1,8 @@
 /**
  * POST /api/trading/clock-in
  * "Today I trade" — unlocks live chart and Level Finder for this market.
- * Window: prep only (analyzeStart → cash open). Late after open = rejected (session skipped).
+ * Window: prep (analyzeStart → cash open) OR late join through cash close.
+ * Late join records late_join=true; dead books stay closed.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error:
-            'No clock-in window. Clock in during prep only (15 min before cash open, Montreal time). After cash open the session is skipped.',
+            'No clock-in window. Clock in from prep (15 min before cash open) through cash close (Montreal time). After cash close, wait for the next desk.',
         },
         { status: 403 }
       )
@@ -66,14 +67,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: result.error }, { status: 403 })
     }
 
-    // Kick level prep when we know the instrument (NY waits for recommendation via banner)
     const prepInstrument =
       result.row.instrument ||
       instrument ||
       (market === 'TOKYO' ? 'NIKKEI' : null)
     if (prepInstrument) {
-      // Fire-and-forget — do not await (keeps clock-in snappy). Absolute URL can fail
-      // behind proxies; relative fetch on same host via nextUrl is fine for desk.
       const origin = request.nextUrl.origin
       void fetch(
         `${origin}/api/trading/auto-levels?instrument=${encodeURIComponent(prepInstrument)}&force=1`,
@@ -87,14 +85,16 @@ export async function POST(request: NextRequest) {
       ).catch(() => {})
     }
 
+    const lateJoin = !!(result.row as { late_join?: boolean }).late_join
+
     logger.info('desk.clock_in', {
       userId: user.id,
       market,
       instrument: prepInstrument,
+      lateJoin,
       date: sessionDateForMarket(market),
     })
 
-    // Structured Telegram session note (soft-fail if Telegram unset)
     if (prepInstrument) {
       try {
         const { formatClockInNote } = await import('@/lib/notify/deskSessionNotes')
@@ -103,6 +103,7 @@ export async function POST(request: NextRequest) {
           instrument: prepInstrument as DeskInstrument,
           market,
           sessionDate: sessionDateForMarket(market),
+          lateJoin,
         })
         void sendTelegramMessage(note.telegram).then((r) => {
           if (!r.ok) {
@@ -112,6 +113,7 @@ export async function POST(request: NextRequest) {
           } else {
             logger.info('desk.clock_in_telegram_sent', {
               instrument: prepInstrument,
+              lateJoin,
             })
           }
         })
@@ -123,7 +125,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       attendance: result.row,
-      message: `Clocked in for ${market} — live chart unlocked. Levels will be graded today.`,
+      late_join: lateJoin,
+      message: lateJoin
+        ? `Late clock-in for ${market} — remaining probes only (dead books stay closed).`
+        : `Clocked in for ${market} — live chart unlocked. Levels will be graded today.`,
     })
   } catch (error) {
     logger.error('desk.clock_in_failed', { err: error })

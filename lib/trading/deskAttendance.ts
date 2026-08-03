@@ -35,6 +35,8 @@ export type DeskAttendanceRow = {
   clock_out_at: string | null
   clock_out_reason: 'lunch' | 'manual' | 'eod' | null
   traded_instrument: DeskInstrument | null
+  /** First clock-in after cash open (late join). Does not unlock dead books. */
+  late_join: boolean
   morning_journal: Record<string, unknown>
   afternoon_levels: unknown[]
   eod_journal: Record<string, unknown>
@@ -70,8 +72,25 @@ function weekdayInTz(now: Date, timeZone: string): boolean {
 }
 
 /**
+ * True when first clock-in would be after cash open (still inside cash session).
+ * Late join unlocks remaining probes only — dead OR30/IB books stay closed.
+ */
+export function isLateJoinClockIn(
+  market: DeskMarket,
+  now = new Date()
+): boolean {
+  const probe = market === 'TOKYO' ? 'NIKKEI' : 'DOW'
+  const s = sessionFor(probe)
+  if (!weekdayInTz(now, s.tz)) return false
+  const t = parseTimeToSeconds(timeInTz(now, s.tz))
+  const open = parseTimeToSeconds(s.marketOpen)
+  const close = parseTimeToSeconds(s.marketClose)
+  return t >= open && t < close
+}
+
+/**
  * Markets in the clock-in window right now.
- * Prep only: analyzeStart → cash open. Late after open = missed session (no clock-in).
+ * Cash session: analyzeStart → cash close (prep + late join after open).
  */
 export function activeClockMarkets(now = new Date()): DeskMarket[] {
   const out: DeskMarket[] = []
@@ -81,8 +100,8 @@ export function activeClockMarkets(now = new Date()): DeskMarket[] {
     if (!weekdayInTz(now, s.tz)) continue
     const t = parseTimeToSeconds(timeInTz(now, s.tz))
     const start = parseTimeToSeconds(s.analyzeStart)
-    const open = parseTimeToSeconds(s.marketOpen)
-    if (t >= start && t < open) out.push(market)
+    const close = parseTimeToSeconds(s.marketClose)
+    if (t >= start && t < close) out.push(market)
   }
   return out
 }
@@ -112,17 +131,24 @@ export function canClockInNow(
   const t = parseTimeToSeconds(timeInTz(now, s.tz))
   const start = parseTimeToSeconds(s.analyzeStart)
   const open = parseTimeToSeconds(s.marketOpen)
+  const close = parseTimeToSeconds(s.marketClose)
   if (t < start) {
     return {
       ok: false,
       reason: `Clock-in opens ${deskLocalHmsAsTraderDisplay(s.analyzeStart, s.tz, now)} ${TRADER_DISPLAY_LABEL} (15 min before cash open)`,
     }
   }
-  if (t >= open) {
+  if (t >= close) {
     return {
       ok: false,
+      reason: `Cash close — clock-in closed until next prep (${deskLocalHmsAsTraderDisplay(s.analyzeStart, s.tz, now)} ${TRADER_DISPLAY_LABEL}).`,
+    }
+  }
+  if (t >= open) {
+    return {
+      ok: true,
       reason:
-        'Cash open already passed — late clock-in closed. This session is skipped (no AI / no trades).',
+        'Late clock-in open — remaining probes only (dead OR30/IB books stay closed)',
     }
   }
   return { ok: true, reason: 'Clock-in window open (prep until cash open)' }
@@ -142,7 +168,9 @@ export async function getTodayAttendance(
     .eq('market', market)
     .eq('session_date', sessionDate)
     .maybeSingle()
-  return (data as DeskAttendanceRow | null) ?? null
+  if (!data) return null
+  const row = data as DeskAttendanceRow
+  return { ...row, late_join: !!row.late_join }
 }
 
 /** True if user is currently clocked in for this market today. */
@@ -281,9 +309,11 @@ export async function clockIn(
     return { ok: true, row: data as DeskAttendanceRow }
   }
 
-  // First clock-in of the day — prep only (before cash open)
+  // First clock-in of the day — prep or late join during cash session
   const check = canClockInNow(args.market)
   if (!check.ok) return { ok: false, error: check.reason }
+
+  const lateJoin = isLateJoinClockIn(args.market)
 
   const { data, error } = await supabase
     .from('desk_attendance')
@@ -294,6 +324,7 @@ export async function clockIn(
       instrument,
       status: 'clocked_in',
       clock_in_at: new Date().toISOString(),
+      late_join: lateJoin,
     })
     .select('*')
     .single()

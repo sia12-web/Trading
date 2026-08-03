@@ -109,20 +109,42 @@ export function formatClockInNote(args: {
   market: 'NY' | 'TOKYO'
   sessionDate: string
   now?: Date
+  lateJoin?: boolean
 }): DeskNotePayload {
   const now = args.now ?? new Date()
-  const title = `Clocked in · ${args.instrument} (${args.market})`
+  const late = !!args.lateJoin
+  const title = late
+    ? `Late clock-in · ${args.instrument} (${args.market})`
+    : `Clocked in · ${args.instrument} (${args.market})`
   const body = [
     `Session date ${args.sessionDate}`,
-    `Live desk unlocked for ${args.instrument}.`,
+    late
+      ? `Late join — live desk unlocked for ${args.instrument}. Dead books stay closed; remaining probes only under 2/2/2 + session 3.`
+      : `Live desk unlocked for ${args.instrument}.`,
     '',
     formatSessionScheduleBlock(args.instrument, now),
   ].join('\n')
   return {
-    kind: 'clock_in',
+    kind: late ? 'late_clock_in' : 'clock_in',
     title,
     body,
-    telegram: `${header('CLOCK IN', title)}\n${body}`,
+    telegram: `${header(late ? 'LATE CLOCK IN' : 'CLOCK IN', title)}\n${body}`,
+  }
+}
+
+/** Telegram Late Desk Brief — inform only; does not clock in. */
+export function formatLateDeskBriefNote(args: {
+  body: string
+  asOfDisplay: string
+  focus?: string
+}): DeskNotePayload {
+  const focus = args.focus ? ` · ${args.focus}` : ''
+  const title = `Late Desk Brief${focus} · as of ${args.asOfDisplay}`
+  return {
+    kind: 'late_desk_brief',
+    title,
+    body: args.body,
+    telegram: `${header('LATE DESK BRIEF', title)}\n${args.body}`,
   }
 }
 

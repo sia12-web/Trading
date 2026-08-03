@@ -161,7 +161,7 @@ assert(afterIb.canPlaceEntry === true, 'IB probe → lunch still open after cloc
 assert(afterIb.rangeStrategy === 'lunch_range', 'lunch strategy after IB probe')
 assert(/Lunch-range playbook unlocked/i.test(afterIb.message), `after IB msg: ${afterIb.message}`)
 
-// Never clocked in → afternoon stays locked (DOW / NASDAQ / NIKKEI)
+// Never clocked in → afternoon chart locked until late clock-in (or cash close)
 for (const [inst, now] of [
   ['DOW', afternoonEt],
   ['NASDAQ', afternoonEt],
@@ -183,7 +183,11 @@ for (const [inst, now] of [
   assert(missed.canPlaceEntry === false, `${inst} no place without clock-in`)
   assert(missed.canViewLiveChart === false, `${inst} no chart without clock-in`)
   assert(missed.attendedToday === false, `${inst} not attended`)
-  assert(/missed clock-in|locked until cash close/i.test(missed.message), `${inst}: ${missed.message}`)
+  assert(missed.canClockIn === true, `${inst} late clock-in still open`)
+  assert(
+    /late clock-in|remaining probes/i.test(missed.message),
+    `${inst}: ${missed.message}`
+  )
 }
 
 const gateClosed = resolveSessionGate({

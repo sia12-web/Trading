@@ -1,13 +1,22 @@
 /**
- * Late clock-in after cash open = missed session.
+ * Late clock-in during cash session + live desk brief ranking.
  * Run: npx tsx __tests__/late_clock_in.test.ts
  */
 
-import { canClockInNow, activeClockMarkets } from '../lib/trading/deskAttendance'
+import {
+  canClockInNow,
+  activeClockMarkets,
+  isLateJoinClockIn,
+} from '../lib/trading/deskAttendance'
 import {
   resolveSessionGate,
   isLiveTipStreamAllowed,
 } from '../lib/trading/sessionGate'
+import {
+  buildInstrumentDeskCard,
+  buildLiveDeskBrief,
+} from '../lib/trading/liveDeskBrief'
+import { attemptLadderFromCounts } from '../lib/trading/attemptLadder'
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(msg)
@@ -26,13 +35,20 @@ function jstDate(h: number, m: number) {
 assert(canClockInNow('NY', etDate(9, 14)).ok === false, 'before prep closed')
 assert(canClockInNow('NY', etDate(9, 20)).ok === true, 'prep clock-in open')
 assert(activeClockMarkets(etDate(9, 20)).includes('NY'), 'prep active')
-assert(canClockInNow('NY', etDate(9, 30)).ok === false, 'exact open closed')
+assert(isLateJoinClockIn('NY', etDate(9, 20)) === false, 'prep is not late join')
 
-// After cash open 09:30 — late
+// At / after cash open — late join allowed through cash close
+assert(canClockInNow('NY', etDate(9, 30)).ok === true, 'exact open late join ok')
+assert(isLateJoinClockIn('NY', etDate(9, 30)) === true, 'exact open is late')
 const late = canClockInNow('NY', etDate(10, 0))
-assert(late.ok === false, 'late clock-in rejected')
-assert(/skipped|passed|late/i.test(late.reason), late.reason)
-assert(!activeClockMarkets(etDate(10, 0)).includes('NY'), 'not in active clock markets after open')
+assert(late.ok === true, 'late clock-in allowed')
+assert(/late|remaining/i.test(late.reason), late.reason)
+assert(activeClockMarkets(etDate(10, 0)).includes('NY'), 'active after open for late join')
+assert(isLateJoinClockIn('NY', etDate(10, 0)) === true, '10:00 is late join')
+
+assert(canClockInNow('NY', etDate(15, 59)).ok === true, 'until cash close')
+assert(canClockInNow('NY', etDate(16, 0)).ok === false, 'at cash close closed')
+assert(!activeClockMarkets(etDate(16, 0)).includes('NY'), 'not active after close')
 
 const gate = resolveSessionGate({
   now: etDate(10, 0),
@@ -41,19 +57,26 @@ const gate = resolveSessionGate({
   clockedIn: false,
   attendedToday: false,
 })
-assert(gate.canClockIn === false, 'gate canClockIn false after open')
-assert(gate.canPlaceEntry === false, 'no entries')
-assert(/missed|skipped/i.test(gate.message), gate.message)
+assert(gate.canClockIn === true, 'gate canClockIn true after open (late join)')
+assert(gate.canPlaceEntry === false, 'no entries until clock-in')
+assert(gate.canViewLiveChart === false, 'chart locked until clock-in')
+assert(/late/i.test(gate.message), gate.message)
 assert(
   isLiveTipStreamAllowed('DOW', etDate(10, 0), { attendedToday: false }).open === false,
-  'missed → tip off'
+  'not clocked in → tip off'
+)
+assert(
+  isLiveTipStreamAllowed('DOW', etDate(10, 0), { attendedToday: true }).open === true,
+  'late join attended → tip on'
 )
 
 // Tokyo late
 assert(canClockInNow('TOKYO', jstDate(8, 50)).ok === true, 'Tokyo prep')
-assert(canClockInNow('TOKYO', jstDate(9, 30)).ok === false, 'Tokyo late')
+assert(canClockInNow('TOKYO', jstDate(9, 30)).ok === true, 'Tokyo late join')
+assert(isLateJoinClockIn('TOKYO', jstDate(9, 30)) === true, 'Tokyo late flag')
+assert(canClockInNow('TOKYO', jstDate(15, 0)).ok === false, 'Tokyo after cash close')
 
-// First clock-in late = blocked; re-clock after early out still allowed until lunch
+// Re-clock after early out still allowed until cash close
 const re = resolveSessionGate({
   now: etDate(10, 0),
   lockedInstrument: 'DOW',
@@ -61,7 +84,7 @@ const re = resolveSessionGate({
   clockedIn: false,
   attendedToday: true,
 })
-assert(re.canClockIn === true, 're-clock until lunch if already attended')
+assert(re.canClockIn === true, 're-clock until cash close if already attended')
 
 const afterLunch = resolveSessionGate({
   now: etDate(12, 0),
@@ -70,6 +93,105 @@ const afterLunch = resolveSessionGate({
   clockedIn: false,
   attendedToday: true,
 })
-assert(afterLunch.canClockIn === false, 'no re-clock after lunch')
+assert(afterLunch.canClockIn === true, 're-clock after lunch until cash close')
+
+// ── Brief ranking helpers ───────────────────────────────────────────────────
+
+const or30Open = buildInstrumentDeskCard(
+  {
+    instrument: 'DOW',
+    ladder: attemptLadderFromCounts({
+      morningAttempts: 0,
+      ibAttempts: 0,
+      lunchAttempts: 0,
+      now: etDate(10, 5),
+      instrument: 'DOW',
+    }),
+    or30: { high: 40000, low: 39900, complete: true },
+  },
+  etDate(10, 5)
+)
+assert(or30Open.tradeableNow === true, 'DOW OR30 tradeable at 10:05')
+assert(or30Open.openBook === 'OR30', 'open book OR30')
+assert(or30Open.books.find((b) => b.label === 'OR30')?.state === 'open', 'OR30 open')
+
+const or30Dead = buildInstrumentDeskCard(
+  {
+    instrument: 'DOW',
+    ladder: attemptLadderFromCounts({
+      morningAttempts: 0,
+      ibAttempts: 0,
+      lunchAttempts: 0,
+      now: etDate(10, 20),
+      instrument: 'DOW',
+    }),
+    or30: { high: 40000, low: 39900, complete: true },
+  },
+  etDate(10, 20)
+)
+assert(
+  or30Dead.books.find((b) => b.label === 'OR30')?.state === 'dead',
+  'OR30 dead after morning entry close'
+)
+assert(/do not enter/i.test(or30Dead.books.find((b) => b.label === 'OR30')!.note), 'honesty copy')
+
+const ranked = buildLiveDeskBrief(
+  [
+    {
+      instrument: 'DOW',
+      ladder: attemptLadderFromCounts({
+        morningAttempts: 0,
+        now: etDate(10, 5),
+        instrument: 'DOW',
+      }),
+      or30: { high: 40000, low: 39900, complete: true },
+    },
+    {
+      instrument: 'NASDAQ',
+      ladder: attemptLadderFromCounts({
+        morningAttempts: 2,
+        now: etDate(10, 5),
+        instrument: 'NASDAQ',
+      }),
+      or30: { high: 18000, low: 17900, complete: true },
+    },
+    {
+      instrument: 'NIKKEI',
+      ladder: attemptLadderFromCounts({
+        morningAttempts: 0,
+        now: etDate(10, 5),
+        instrument: 'NIKKEI',
+      }),
+    },
+  ],
+  etDate(10, 5)
+)
+assert(ranked.instruments[0]!.instrument === 'DOW', 'DOW ranks first when OR30 open')
+assert(ranked.suggestion.kind === 'trade', 'suggest trade')
+if (ranked.suggestion.kind === 'trade') {
+  assert(ranked.suggestion.instrument === 'DOW', 'suggest DOW')
+  assert(ranked.suggestion.book === 'OR30', 'suggest OR30 book')
+}
+assert(ranked.asOfDisplay.length > 0, 'as-of display present')
+assert(ranked.bullets.length >= 2, 'bullets present')
+
+const sitOut = buildLiveDeskBrief(
+  [
+    {
+      instrument: 'DOW',
+      ladder: attemptLadderFromCounts({
+        morningAttempts: 3,
+        ibAttempts: 0,
+        lunchAttempts: 0,
+        now: etDate(11, 0),
+        instrument: 'DOW',
+      }),
+    },
+    { instrument: 'NASDAQ' },
+    { instrument: 'NIKKEI' },
+  ],
+  etDate(16, 30)
+)
+assert(sitOut.suggestion.kind === 'sit_out', 'sit out when nothing left')
 
 console.log('late_clock_in: all passed')

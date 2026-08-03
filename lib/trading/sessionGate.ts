@@ -540,7 +540,7 @@ export function isLiveTipStreamAllowed(
   if (attended) return { open: true, reason: 'Session tip (clocked in)' }
   return {
     open: false,
-    reason: 'Missed clock-in — session skipped (no tip / no AI)',
+    reason: 'Not clocked in — tip locked until clock-in (late join still available during cash session)',
   }
 }
 
@@ -906,11 +906,11 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     !!input.dayDone || !!input.marketDisabled || ladder.dayLocked
   const clockedIn = !!input.clockedIn
   const attendedToday = !!input.attendedToday || clockedIn
-  /** First clock-in: prep only (analyze → cash open). Late first entry = missed. */
-  const inFirstClockWindow = isWeekdayInTz(now, s.tz) && t >= analyze && t < open
+  /** First clock-in: prep through cash close (late join after open = remaining probes only). */
+  const inFirstClockWindow = isWeekdayInTz(now, s.tz) && t >= analyze && t < close
   /** Re-clock after early out: until cash close if already attended today. */
   const inDeskWindow = isWeekdayInTz(now, s.tz) && t >= analyze && t < close
-  // First commit: prep only. Already attended (early out): re-enter until cash close.
+  // First commit or re-enter: anytime during cash session (analyze → close).
   const canClockIn =
     !clockedIn && (!!input.attendedToday ? inDeskWindow : inFirstClockWindow)
 
@@ -988,7 +988,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
         r.phase === 'FLAT' ||
         r.phase === 'MANAGE')
     const missedLate =
-      needClock && isWeekdayInTz(now, s.tz) && t >= open && t < lunch
+      needClock && isWeekdayInTz(now, s.tz) && t >= open && t < close
     // Attended earlier today (lunch/manual clock-out)
     if (attendedToday) {
       const openBook = r.phase === 'MANAGE' || hasOpen
@@ -1044,12 +1044,12 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       canPlaceEntry: false,
       canManagePosition: false,
       rangeStrategy: null,
-      message: skippedAfternoon
-        ? 'Missed clock-in — no morning attendance. Live chart stays locked until cash close. Use Simulation.'
-        : missedLate
-          ? 'Missed clock-in — cash open already passed. This session is skipped (no AI, no trades). Use Simulation or wait for the next desk.'
+      message: canClockIn && missedLate
+        ? 'Late clock-in still open — remaining probes only (dead OR30/IB books stay closed). Open Live Trading for the desk brief, then clock in.'
+        : skippedAfternoon
+          ? 'No clock-in today — live chart locked. Use Simulation, or wait for the next desk prep window.'
           : needClock
-            ? 'Live chart is closed — clock in (“Today I trade”) before cash open to unlock, or try Simulation.'
+            ? 'Live chart is closed — clock in (“Today I trade”) to unlock, or try Simulation.'
             : r.message,
     }
   }

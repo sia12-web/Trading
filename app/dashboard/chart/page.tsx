@@ -73,7 +73,8 @@ import {
 } from '@/lib/trading/deskNewsHazard'
 import type { DeskCalendarEvent } from '@/lib/trading/deskNews'
 import { infoToast, warningToast, successToast } from '@/lib/utils/toastUtils'
-import type { DeskInstrument } from '@/lib/trading/sessionGate'
+import { LiveDeskBriefPanel } from './components/LiveDeskBriefPanel'
+import type { LiveDeskBrief } from '@/lib/trading/liveDeskBrief'
 
 /** Why new entries are blocked — shown on market/limit place attempts. */
 function entryDeniedMessage(gate: SessionGateState | null | undefined): string | null {
@@ -277,6 +278,10 @@ export default function ChartPage() {
     recommendation_confidence: number
     message: string
   } | null>(null)
+  const [liveBrief, setLiveBrief] = useState<LiveDeskBrief | null>(null)
+  const [liveBriefLoading, setLiveBriefLoading] = useState(false)
+  const [liveBriefError, setLiveBriefError] = useState<string | null>(null)
+  const liveBriefFetchedRef = useRef(false)
 
   const jumpToPriceRef = useRef<((price: number) => void) | null>(null)
   const bannerRefreshRef = useRef<(() => void) | null>(null)
@@ -752,6 +757,46 @@ export default function ChartPage() {
         regimeFetchedRef.current = false
       })
   }, [])
+
+  // Late / live desk brief — recompute when late-join lock appears (stale mitigation via asOf)
+  useEffect(() => {
+    const late =
+      !!gate &&
+      !gate.clockedIn &&
+      !!gate.canClockIn &&
+      !gate.attendedToday &&
+      (gate.phase === 'ENTRY' ||
+        gate.phase === 'FLAT' ||
+        gate.phase === 'MANAGE' ||
+        gate.phase === 'DONE')
+    if (!late) {
+      liveBriefFetchedRef.current = false
+      return
+    }
+    if (liveBriefFetchedRef.current && liveBrief) return
+    liveBriefFetchedRef.current = true
+    setLiveBriefLoading(true)
+    setLiveBriefError(null)
+    const focus = gate.market === 'TOKYO' ? 'TOKYO' : 'NY'
+    fetch(`/api/trading/live-desk-brief?focus=${focus}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j?.brief) setLiveBrief(j.brief as LiveDeskBrief)
+        else setLiveBriefError(j?.error || 'Brief unavailable')
+      })
+      .catch(() => {
+        liveBriefFetchedRef.current = false
+        setLiveBriefError('Brief failed to load')
+      })
+      .finally(() => setLiveBriefLoading(false))
+  }, [
+    gate?.clockedIn,
+    gate?.canClockIn,
+    gate?.attendedToday,
+    gate?.phase,
+    gate?.market,
+    liveBrief,
+  ])
 
   // Finnhub high-impact calendar → soft Leo/Telegram warns (clock-in digest + T−60 / T−15)
   useEffect(() => {
@@ -1820,8 +1865,20 @@ export default function ChartPage() {
           gate.phase === 'FLAT' ||
           gate.phase === 'MANAGE' ||
           gate.phase === 'DONE')))
+  /** Late join after cash open — show ranked brief + clock-in (not “session skipped”). */
+  const lateJoinLocked =
+    chartLocked &&
+    !!gate?.canClockIn &&
+    !attendedToday &&
+    (gate.phase === 'ENTRY' ||
+      gate.phase === 'FLAT' ||
+      gate.phase === 'MANAGE' ||
+      gate.phase === 'DONE')
   const missedSessionLocked =
-    chartLocked && !attendedToday && (gate?.phase === 'DONE' || gate?.phase === 'FLAT')
+    chartLocked &&
+    !attendedToday &&
+    !gate?.canClockIn &&
+    (gate?.phase === 'DONE' || gate?.phase === 'FLAT')
   const showPreOpenClockIn =
     !clockedIn &&
     !!gate?.canViewLiveChart &&
@@ -2093,12 +2150,83 @@ export default function ChartPage() {
 
           {chartLocked && (
             <div className="absolute inset-0 z-30 flex items-center justify-center rounded-xl border border-surface-600 bg-[#0d1117]/95 backdrop-blur-md p-6">
-              <div className="max-w-md w-full px-6 py-5 text-center bg-[#161b22]/95 border border-amber-500/30 rounded-2xl shadow-2xl space-y-4">
-                {missedSessionLocked ? (
+              <div
+                className={`w-full px-6 py-5 text-center bg-[#161b22]/95 border border-amber-500/30 rounded-2xl shadow-2xl space-y-4 ${
+                  lateJoinLocked ? 'max-w-lg' : 'max-w-md'
+                }`}
+              >
+                {lateJoinLocked ? (
                   <>
-                    <p className="text-lg font-bold text-white tracking-tight">Session Skipped</p>
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[11px] font-extrabold uppercase tracking-wider">
+                      Late clock-in open
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-extrabold text-white tracking-tight">
+                        Live Desk Brief
+                      </h3>
+                      <p className="mt-1 text-xs text-gray-400 leading-relaxed">
+                        Cash open passed — you can still join for remaining probes. Dead OR30/IB
+                        books stay closed. Telegram does not clock you in.
+                      </p>
+                    </div>
+                    <LiveDeskBriefPanel
+                      brief={liveBrief}
+                      loading={liveBriefLoading}
+                      error={liveBriefError}
+                    />
+                    {gate?.canClockIn && (
+                      <div className="pt-2 flex flex-col gap-2">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                          Clock in late — select desk:
+                        </span>
+                        <div className="flex items-center justify-center gap-2">
+                          {(gate.market === 'TOKYO'
+                            ? (['NIKKEI'] as Instrument[])
+                            : (['DOW', 'NASDAQ'] as Instrument[])
+                          ).map((inst) => {
+                            const top =
+                              liveBrief?.suggestion.kind === 'trade' &&
+                              liveBrief.suggestion.instrument === inst
+                            return (
+                              <button
+                                key={inst}
+                                type="button"
+                                onClick={async () => {
+                                  const market =
+                                    gate.market || (inst === 'NIKKEI' ? 'TOKYO' : 'NY')
+                                  await fetch('/api/trading/clock-in', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      market,
+                                      instrument: inst,
+                                    }),
+                                  })
+                                  setInstrument(inst)
+                                  bannerRefreshRef.current?.()
+                                  setGateTick((t) => t + 1)
+                                }}
+                                className={`flex-1 py-2.5 px-3 rounded-lg text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 border ${
+                                  top
+                                    ? 'bg-amber-500 text-black border-amber-400 shadow-lg shadow-amber-500/20 hover:bg-amber-400'
+                                    : 'bg-surface-700 text-gray-200 border-surface-600 hover:bg-surface-600 hover:text-white'
+                                }`}
+                              >
+                                {top && <span>★ BRIEF:</span>}
+                                <span>{inst}</span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : missedSessionLocked ? (
+                  <>
+                    <p className="text-lg font-bold text-white tracking-tight">Session closed</p>
                     <p className="text-xs text-gray-400 leading-relaxed">
-                      You did not clock in this morning, so the live desk (DOW, NASDAQ, and NIKKEI) stays locked through afternoon watch until cash close. Use Simulation, or wait for the next session.
+                      Cash close passed with no clock-in — live desk stays locked. Use Simulation,
+                      or wait for the next prep window.
                     </p>
                   </>
                 ) : (

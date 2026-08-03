@@ -105,24 +105,26 @@ test('Weekend: tip + nav off', () => {
 
 // ── Late clock-in / missed session ───────────────────────────────────────────
 
-test('Clock-in open only in NY prep 09:15–09:30', () => {
+test('Clock-in open NY prep through cash close (late join after open)', () => {
   assert(canClockInNow('NY', etDate(9, 14)).ok === false, 'before prep')
   assert(canClockInNow('NY', etDate(9, 15)).ok === true, 'prep start')
   assert(canClockInNow('NY', etDate(9, 29)).ok === true, 'prep end')
-  assert(canClockInNow('NY', etDate(9, 30)).ok === false, 'at open closed')
-  assert(canClockInNow('NY', etDate(10, 15)).ok === false, 'mid session closed')
-  assert(!activeClockMarkets(etDate(10, 0)).includes('NY'), 'not active after open')
+  assert(canClockInNow('NY', etDate(9, 30)).ok === true, 'at open late join')
+  assert(canClockInNow('NY', etDate(10, 15)).ok === true, 'mid session late join')
+  assert(activeClockMarkets(etDate(10, 0)).includes('NY'), 'active after open')
   assert(activeClockMarkets(etDate(9, 20)).includes('NY'), 'active in prep')
+  assert(canClockInNow('NY', etDate(16, 0)).ok === false, 'cash close')
 })
 
-test('Tokyo clock-in only 08:45–09:00 JST', () => {
+test('Tokyo clock-in 08:45 → cash close JST', () => {
   assert(canClockInNow('TOKYO', jstDate(8, 44)).ok === false, 'before prep')
   assert(canClockInNow('TOKYO', jstDate(8, 50)).ok === true, 'prep')
-  assert(canClockInNow('TOKYO', jstDate(9, 0)).ok === false, 'at open')
-  assert(canClockInNow('TOKYO', jstDate(10, 0)).ok === false, 'late')
+  assert(canClockInNow('TOKYO', jstDate(9, 0)).ok === true, 'at open late join')
+  assert(canClockInNow('TOKYO', jstDate(10, 0)).ok === true, 'late join')
+  assert(canClockInNow('TOKYO', jstDate(15, 0)).ok === false, 'cash close')
 })
 
-test('Gate: late without clock-in → missed message, no AI path', () => {
+test('Gate: late without clock-in → late join open, no entries until clock-in', () => {
   const gate = resolveSessionGate({
     now: etDate(10, 0),
     lockedInstrument: 'DOW',
@@ -130,20 +132,20 @@ test('Gate: late without clock-in → missed message, no AI path', () => {
     clockedIn: false,
     attendedToday: false,
   })
-  assert(gate.canClockIn === false, 'no late clock-in')
+  assert(gate.canClockIn === true, 'late clock-in allowed')
   assert(gate.canPlaceEntry === false, 'no entries')
   assert(gate.canManagePosition === false, 'no manage')
-  assert(/missed|skipped/i.test(gate.message), gate.message)
+  assert(/late/i.test(gate.message), gate.message)
   assert(
     isLiveTipStreamAllowed('DOW', etDate(10, 0), { attendedToday: false }).open ===
       false,
-    'tip off when missed'
+    'tip off until clock-in'
   )
 })
 
-test('Gate: clocked in before open → tip + entries in window', () => {
+test('Gate: clocked in → tip + entries after OR30 lock', () => {
   const gate = resolveSessionGate({
-    now: etDate(9, 45),
+    now: etDate(10, 5),
     lockedInstrument: 'DOW',
     viewingInstrument: 'DOW',
     clockedIn: true,
@@ -151,7 +153,7 @@ test('Gate: clocked in before open → tip + entries in window', () => {
   })
   assert(gate.canPlaceEntry === true, 'can place in entry window')
   assert(
-    isLiveTipStreamAllowed('DOW', etDate(9, 45), {
+    isLiveTipStreamAllowed('DOW', etDate(10, 5), {
       clockedIn: true,
       attendedToday: true,
     }).open === true,
