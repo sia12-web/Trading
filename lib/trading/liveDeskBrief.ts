@@ -7,6 +7,7 @@
 import {
   attemptLadderFromCounts,
   bucketDisplayLabel,
+  bucketWindowSec,
   bucketWindowUnlockMessage,
   formatAttemptLadderShort,
   isBucketWindowOpen,
@@ -246,7 +247,10 @@ function midBookLine(
     }
   }
   if (!open) {
-    if (t < parseTimeToSeconds(sessionFor(instrument).marketOpen)) {
+    // Eligible early (morning probes exhausted) but mid window not started yet
+    // → upcoming, never "dead" before the unlock clock.
+    const win = bucketWindowSec(market, 'ib')
+    if (win && t < win.start) {
       return {
         label,
         state: 'upcoming',
@@ -328,15 +332,22 @@ function lateBookLine(
     }
   }
   if (!open) {
+    const win = bucketWindowSec(market, 'lunch_range')
+    if (win && t < win.start) {
+      return {
+        label,
+        state: 'upcoming',
+        probesUsed: used,
+        probesMax: max,
+        note: bucketWindowUnlockMessage(market, 'lunch_range', instrument, now),
+      }
+    }
     return {
       label,
-      state: t < parseTimeToSeconds(sessionFor(instrument).marketOpen) ? 'upcoming' : 'dead',
+      state: 'dead',
       probesUsed: used,
       probesMax: max,
-      note:
-        t < parseTimeToSeconds(sessionFor(instrument).marketOpen)
-          ? bucketWindowUnlockMessage(market, 'lunch_range', instrument, now)
-          : `${label} closed — window over. Do not enter.`,
+      note: `${label} closed — window over. Do not enter.`,
     }
   }
   if (!range || (label !== 'Tokyo IB' && range.complete !== true)) {
@@ -524,12 +535,27 @@ function buildBullets(
   return bullets.slice(0, 5)
 }
 
-function buildSuggestion(cards: InstrumentDeskCard[]): LiveDeskSuggestion {
-  const best = cards.find((c) => c.tradeableNow && c.openBook)
+function buildSuggestion(
+  cards: InstrumentDeskCard[],
+  focusMarket: DeskMarket | 'ALL' = 'ALL'
+): LiveDeskSuggestion {
+  // Telegram digests are desk-scoped — never suggest the off-focus market.
+  const scoped =
+    focusMarket === 'ALL'
+      ? cards
+      : cards.filter((c) => c.market === focusMarket)
+  const pool = scoped.length > 0 ? scoped : cards
+  const best = pool.find((c) => c.tradeableNow && c.openBook)
   if (!best || !best.openBook) {
+    const desk =
+      focusMarket === 'TOKYO'
+        ? 'NIKKEI'
+        : focusMarket === 'NY'
+          ? 'DOW / NASDAQ'
+          : 'DOW / NASDAQ / NIKKEI'
     return {
       kind: 'sit_out',
-      text: 'Sit out — no eligible open books right now. Dead ranges stay closed; wait for the next unlock or next session.',
+      text: `Sit out — no eligible open books on ${desk} right now. Dead ranges stay closed; wait for the next unlock or next session.`,
     }
   }
   return {
@@ -562,13 +588,23 @@ export function buildLiveDeskBrief(
   )
   cards.sort((a, b) => b.rankScore - a.rankScore || a.instrument.localeCompare(b.instrument))
 
+  // Focus desk cards first in the ranked list (still show all three for Live Trading).
+  if (focusMarket === 'NY' || focusMarket === 'TOKYO') {
+    cards.sort((a, b) => {
+      const aFocus = a.market === focusMarket ? 1 : 0
+      const bFocus = b.market === focusMarket ? 1 : 0
+      if (aFocus !== bFocus) return bFocus - aFocus
+      return b.rankScore - a.rankScore || a.instrument.localeCompare(b.instrument)
+    })
+  }
+
   return {
     asOfIso: now.toISOString(),
     asOfDisplay: `${montrealClock(now)} ${TRADER_DISPLAY_LABEL}`,
     focusMarket,
     instruments: cards,
     bullets: buildBullets(cards, factsByInst, now),
-    suggestion: buildSuggestion(cards),
+    suggestion: buildSuggestion(cards, focusMarket),
   }
 }
 

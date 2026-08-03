@@ -282,7 +282,6 @@ export default function ChartPage() {
   const [liveBrief, setLiveBrief] = useState<LiveDeskBrief | null>(null)
   const [liveBriefLoading, setLiveBriefLoading] = useState(false)
   const [liveBriefError, setLiveBriefError] = useState<string | null>(null)
-  const liveBriefFetchedRef = useRef(false)
 
   const jumpToPriceRef = useRef<((price: number) => void) | null>(null)
   const bannerRefreshRef = useRef<(() => void) | null>(null)
@@ -759,7 +758,7 @@ export default function ChartPage() {
       })
   }, [])
 
-  // Late / live desk brief — recompute when late-join lock appears (stale mitigation via asOf)
+  // Late / live desk brief — refresh while locked (stale mitigation via asOf + poll)
   useEffect(() => {
     const late =
       !!gate &&
@@ -771,32 +770,40 @@ export default function ChartPage() {
         gate.phase === 'MANAGE' ||
         gate.phase === 'DONE')
     if (!late) {
-      liveBriefFetchedRef.current = false
       return
     }
-    if (liveBriefFetchedRef.current && liveBrief) return
-    liveBriefFetchedRef.current = true
-    setLiveBriefLoading(true)
-    setLiveBriefError(null)
+    let cancelled = false
     const focus = gate.market === 'TOKYO' ? 'TOKYO' : 'NY'
-    fetch(`/api/trading/live-desk-brief?focus=${focus}`)
-      .then((r) => r.json())
-      .then((j) => {
-        if (j?.brief) setLiveBrief(j.brief as LiveDeskBrief)
-        else setLiveBriefError(j?.error || 'Brief unavailable')
-      })
-      .catch(() => {
-        liveBriefFetchedRef.current = false
-        setLiveBriefError('Brief failed to load')
-      })
-      .finally(() => setLiveBriefLoading(false))
+    const load = (isRefresh: boolean) => {
+      if (!isRefresh) setLiveBriefLoading(true)
+      setLiveBriefError(null)
+      fetch(`/api/trading/live-desk-brief?focus=${focus}`)
+        .then((r) => r.json())
+        .then((j) => {
+          if (cancelled) return
+          if (j?.brief) setLiveBrief(j.brief as LiveDeskBrief)
+          else setLiveBriefError(j?.error || 'Brief unavailable')
+        })
+        .catch(() => {
+          if (cancelled) return
+          setLiveBriefError('Brief failed to load')
+        })
+        .finally(() => {
+          if (!cancelled) setLiveBriefLoading(false)
+        })
+    }
+    load(false)
+    const id = window.setInterval(() => load(true), 60_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
   }, [
     gate?.clockedIn,
     gate?.canClockIn,
     gate?.attendedToday,
     gate?.phase,
     gate?.market,
-    liveBrief,
   ])
 
   // Finnhub high-impact calendar → soft Leo/Telegram warns (clock-in digest + T−60 / T−15)
@@ -2195,17 +2202,29 @@ export default function ChartPage() {
                                 onClick={async () => {
                                   const market =
                                     gate.market || (inst === 'NIKKEI' ? 'TOKYO' : 'NY')
-                                  await fetch('/api/trading/clock-in', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                      market,
-                                      instrument: inst,
-                                    }),
-                                  })
-                                  setInstrument(inst)
-                                  bannerRefreshRef.current?.()
-                                  setGateTick((t) => t + 1)
+                                  try {
+                                    const res = await fetch('/api/trading/clock-in', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({
+                                        market,
+                                        instrument: inst,
+                                      }),
+                                    })
+                                    const j = await res.json().catch(() => ({}))
+                                    if (!res.ok) {
+                                      warningToast(
+                                        (j as { error?: string }).error ||
+                                          'Clock-in failed — try again'
+                                      )
+                                      return
+                                    }
+                                    setInstrument(inst)
+                                    bannerRefreshRef.current?.()
+                                    setGateTick((t) => t + 1)
+                                  } catch {
+                                    warningToast('Clock-in failed — network error')
+                                  }
                                 }}
                                 className={`flex-1 py-2.5 px-3 rounded-lg text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 border ${
                                   top

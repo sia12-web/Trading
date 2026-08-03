@@ -28,3 +28,10 @@ export function claimServerDeskNoteOnce(key: string): boolean {
   claims.set(k, Date.now())
   return true
 }
+
+/** Drop a claim so a failed send can retry later (same process). */
+export function releaseServerDeskNoteClaim(key: string): void {
+  const k = key.trim()
+  if (!k) return
+  claims.delete(k)
+}

@@ -135,6 +135,28 @@ assert(
 )
 assert(/do not enter/i.test(or30Dead.books.find((b) => b.label === 'OR30')!.note), 'honesty copy')
 
+// Morning probes exhausted before IB unlock → IB is upcoming, not dead
+const ibUpcoming = buildInstrumentDeskCard(
+  {
+    instrument: 'DOW',
+    ladder: attemptLadderFromCounts({
+      morningAttempts: 2,
+      ibAttempts: 0,
+      lunchAttempts: 0,
+      now: etDate(10, 5),
+      instrument: 'DOW',
+    }),
+    or30: { high: 40000, low: 39900, complete: true },
+  },
+  etDate(10, 5)
+)
+assert(
+  ibUpcoming.books.find((b) => b.label === 'IB')?.state === 'upcoming',
+  `IB must be upcoming before 10:30, got ${ibUpcoming.books.find((b) => b.label === 'IB')?.state}`
+)
+assert(ibUpcoming.tradeableNow === false, 'not tradeable until IB unlocks')
+assert(/IB:/i.test(ibUpcoming.nextUnlock || ''), 'nextUnlock points at IB')
+
 const ranked = buildLiveDeskBrief(
   [
     {
@@ -193,5 +215,33 @@ const sitOut = buildLiveDeskBrief(
   etDate(16, 30)
 )
 assert(sitOut.suggestion.kind === 'sit_out', 'sit out when nothing left')
+
+// Focus-scoped suggestion: NY digest must not suggest NIKKEI even if Tokyo IB is live
+const nyFocus = buildLiveDeskBrief(
+  [
+    { instrument: 'DOW' },
+    { instrument: 'NASDAQ' },
+    {
+      instrument: 'NIKKEI',
+      ladder: attemptLadderFromCounts({
+        morningAttempts: 0,
+        ibAttempts: 0,
+        lunchAttempts: 0,
+        now: jstDate(10, 15),
+        instrument: 'NIKKEI',
+      }),
+      ib: { high: 40000, low: 39900, complete: true },
+    },
+  ],
+  jstDate(10, 15),
+  'NY'
+)
+assert(nyFocus.suggestion.kind === 'sit_out', 'NY focus sits out when NY books dead')
+assert(/DOW|NASDAQ/i.test(nyFocus.suggestion.text), nyFocus.suggestion.text)
+if (nyFocus.suggestion.kind === 'trade') {
+  throw new Error('must not suggest trade off-focus')
+}
+const nikkeiCard = nyFocus.instruments.find((c) => c.instrument === 'NIKKEI')
+assert(nikkeiCard?.tradeableNow === true, 'NIKKEI still ranked as live for awareness')
 
 console.log('late_clock_in: all passed')

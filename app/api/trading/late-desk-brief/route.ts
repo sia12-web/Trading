@@ -23,7 +23,10 @@ import {
 } from '@/lib/trading/liveDeskBrief'
 import { formatLateDeskBriefNote } from '@/lib/notify/deskSessionNotes'
 import { sendTelegramMessage, telegramConfigured } from '@/lib/notify/telegram'
-import { claimServerDeskNoteOnce } from '@/lib/notify/deskNoteServerClaim'
+import {
+  claimServerDeskNoteOnce,
+  releaseServerDeskNoteClaim,
+} from '@/lib/notify/deskNoteServerClaim'
 import type { DeskMarket } from '@/lib/trading/sessionGate'
 import { logger } from '@/lib/utils/logger'
 
@@ -99,16 +102,6 @@ export async function POST(request: NextRequest) {
       focus: market,
     })
 
-    const dedupeKey = `late_desk_brief:${market}:${sessionDateForMarket(market, now)}:${user.id}`
-    if (!claimServerDeskNoteOnce(dedupeKey)) {
-      return NextResponse.json({
-        ok: true,
-        skipped: true,
-        reason: 'Already sent this session (dedupe)',
-        market,
-      })
-    }
-
     if (!telegramConfigured()) {
       logger.info('late_desk_brief.telegram_unset', { market })
       return NextResponse.json({
@@ -121,8 +114,19 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    const dedupeKey = `late_desk_brief:${market}:${sessionDateForMarket(market, now)}:${user.id}`
+    if (!claimServerDeskNoteOnce(dedupeKey)) {
+      return NextResponse.json({
+        ok: true,
+        skipped: true,
+        reason: 'Already sent this session (dedupe)',
+        market,
+      })
+    }
+
     const sent = await sendTelegramMessage(note.telegram)
     if (!sent.ok) {
+      releaseServerDeskNoteClaim(dedupeKey)
       logger.warn('late_desk_brief.telegram_failed', { error: sent.error, market })
       return NextResponse.json(
         { ok: false, error: sent.error || 'Telegram send failed', market },
