@@ -41,6 +41,16 @@ import {
 } from '@/lib/trading/rangeEdgeEntryGate'
 import { logger } from '@/lib/utils/logger'
 
+/**
+ * Calendar days of M5 history for server ±10 gates.
+ *
+ * Must clear the Friday NYC → Monday Tokyo gap: a 2-day window from Monday
+ * morning JST (Sunday evening ET) starts *after* Friday 16:00 ET, so the prior
+ * NYC session is missing while the live chart (12d) still paints US H/L/mid.
+ * Five days covers that weekend hole plus a holiday cushion.
+ */
+export const SERVER_PLAYBOOK_CANDLE_DAYS = 5
+
 export type ServerPlaybookBundle = {
   active: StrategyRangeEdges | null
   shaped: {
@@ -64,7 +74,11 @@ async function resolveServerPlaybookBundle(args: {
   const now = args.now ?? new Date()
   const nowUnix = Math.floor(now.getTime() / 1000)
   try {
-    const packed = await getOandaCandles(args.instrument as Instrument, '5', 2)
+    const packed = await getOandaCandles(
+      args.instrument as Instrument,
+      '5',
+      SERVER_PLAYBOOK_CANDLE_DAYS
+    )
     const candles = packed?.candles ?? []
     if (!candles.length) return null
 
@@ -216,15 +230,53 @@ export async function assertServerRangeEdgeEntry(args: {
     (r): r is StrategyRangeEdges => !!r
   )
 
+  // OANDA returned bars but nothing shaped (weekend lookback still short, or
+  // sparse history) — treat like OANDA-down and allow the chart's locked
+  // client range through the same ±10 check. When any server range is shaped,
+  // client H/L cannot widen or substitute.
+  if (candidates.length === 0) {
+    return gateEntryAgainstAuthoritativeRange({
+      entry: args.entry,
+      serverRange: null,
+      clientRange: args.clientRange,
+    })
+  }
+
   // Price-based attribution across every shaped range (server-authoritative —
   // never trusts the client's claimed label for WHICH range this is).
   const hit = findRangeEdgeBandHit(args.entry, candidates)
-  const attributed: StrategyRangeEdges | null =
+  let attributed: StrategyRangeEdges | null =
     hit?.range ??
     (args.clientRange
       ? candidates.find((r) => r.label === args.clientRange!.label) ?? null
       : null) ??
     active
+
+  // Weekend gap: server shaped OR30/IB from *today* but 2d history missed Friday
+  // NYC — chart still paints US H/L. Accept client US Range only when the
+  // server could not shape one (never overrides a server US Range).
+  if (
+    !attributed &&
+    !shaped.usRange &&
+    args.clientRange &&
+    args.clientRange.label === 'US Range'
+  ) {
+    const clientUs: StrategyRangeEdges = {
+      label: 'US Range',
+      high: Number(args.clientRange.high),
+      low: Number(args.clientRange.low),
+    }
+    const trial = assertRangeEdgeEntry({ entry: args.entry, range: clientUs })
+    if (trial.ok) {
+      logger.info('server_playbook_range.us_range_client_fallback', {
+        instrument: args.instrument,
+        high: clientUs.high,
+        low: clientUs.low,
+        entry: args.entry,
+      })
+      attributed = clientUs
+    }
+  }
 
   if (args.clientRange && attributed) {
     const dh = Math.abs(Number(args.clientRange.high) - attributed.high)

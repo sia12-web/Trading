@@ -3,7 +3,15 @@
  * Run: npx tsx __tests__/server_playbook_range.test.ts
  */
 import assert from 'node:assert/strict'
-import { gateEntryAgainstAuthoritativeRange } from '../lib/trading/serverPlaybookRange'
+import {
+  gateEntryAgainstAuthoritativeRange,
+  SERVER_PLAYBOOK_CANDLE_DAYS,
+} from '../lib/trading/serverPlaybookRange'
+
+assert.ok(
+  SERVER_PLAYBOOK_CANDLE_DAYS >= 5,
+  'Nikkei US Range needs ≥5 calendar days so Monday Tokyo still sees Friday NYC'
+)
 
 const serverOr30 = { label: 'OR30', high: 63_281.3, low: 62_508.8 }
 
@@ -63,6 +71,19 @@ const serverOr30 = { label: 'OR30', high: 63_281.3, low: 62_508.8 }
     clientRange: client,
   })
   assert.equal(bad.ok, false, 'client fallback still enforces ±10')
+}
+
+{
+  // Chart-painted Nikkei US Range mid while server history missed Friday NYC
+  const us = { label: 'US Range', high: 40_100, low: 39_900 }
+  const mid = (us.high + us.low) / 2
+  const ok = gateEntryAgainstAuthoritativeRange({
+    entry: mid,
+    serverRange: null,
+    clientRange: us,
+  })
+  assert.equal(ok.ok, true, 'US Range 50% mid accepted via client when server null')
+  if (!ok.ok) assert.fail(ok.message)
 }
 
 console.log('server_playbook_range.test.ts: ok')

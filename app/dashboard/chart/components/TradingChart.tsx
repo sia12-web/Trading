@@ -2832,6 +2832,9 @@ export function TradingChart({
           const tipUnix = ordered.length
             ? (ordered[ordered.length - 1]!.time as number)
             : Math.floor(Date.now() / 1000)
+          // Wall clock wins when tip lags — matches OR30/lunch and keeps
+          // inNikkeiUsSignalSession aligned with the live Tokyo cash window.
+          const nowUnix = Math.max(tipUnix, Math.floor(Date.now() / 1000))
           const usRange = currentNikkeiUsRangeForChart(
             ordered.map((c) => ({
               time: c.time as number,
@@ -2841,7 +2844,7 @@ export function TradingChart({
               close: c.close,
               volume: c.volume,
             })),
-            tipUnix
+            nowUnix
           )
           usRangeRef.current = usRange
           paintUsRangeLines()

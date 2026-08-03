@@ -27,6 +27,7 @@ import { activeRangeForPlaybook } from '@/lib/trading/strategyRiskGeometry'
 import {
   resolveDeskPlaybookMode,
 } from '@/lib/trading/deskPlaybookMode'
+import { SERVER_PLAYBOOK_CANDLE_DAYS } from '@/lib/trading/serverPlaybookRange'
 import {
   sessionFor,
   type DeskInstrument,
@@ -75,7 +76,11 @@ export async function buildRangeEdgeTailBrief(args: {
   const now = args.now ?? new Date()
   const nowUnix = Math.floor(now.getTime() / 1000)
   try {
-    const packed = await getOandaCandles(args.instrument as Instrument, '5', 2)
+    const packed = await getOandaCandles(
+      args.instrument as Instrument,
+      '5',
+      SERVER_PLAYBOOK_CANDLE_DAYS
+    )
     const candles = packed?.candles ?? []
     if (!candles.length) return emptyBrief()
 

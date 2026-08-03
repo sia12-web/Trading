@@ -17,6 +17,16 @@ import {
   type NikkeiUsRangeBar,
 } from '../lib/chart/nikkeiUsRangeBreakout'
 import { tokyoDeskSessionAt } from '../lib/chart/sessionVwap'
+import { nyDateTimeToUnix } from '../lib/utils/dateUtils'
+import {
+  activeRangeForPlaybook,
+  shapedPlaybookRanges,
+} from '../lib/trading/strategyRiskGeometry'
+import { assertRangeEdgeEntry } from '../lib/trading/rangeEdgeEntryGate'
+import {
+  gateEntryAgainstAuthoritativeRange,
+  SERVER_PLAYBOOK_CANDLE_DAYS,
+} from '../lib/trading/serverPlaybookRange'
 
 const TESTS_PASSED: string[] = []
 const TESTS_FAILED: Array<{ name: string; error: string }> = []
@@ -235,6 +245,78 @@ test('lastNikkeiUsSessionRange: last completed NYC H/L only', () => {
   assert(last!.high === 220, `high ${last!.high}`)
   assert(last!.low === 200, `low ${last!.low}`)
   assert(last!.rangePts === 20, `range ${last!.rangePts}`)
+})
+
+/**
+ * Live-desk regression: Monday Tokyo cash + 2 calendar days of OANDA history
+ * starts after Friday 16:00 ET, so prior NYC is missing while the chart (12d)
+ * still paints US H/L/mid. Server playbook must use ≥5 days.
+ */
+test('Monday Tokyo: 2d lookback misses Friday NYC; 5d recovers US Range mid gate', () => {
+  assert(
+    SERVER_PLAYBOOK_CANDLE_DAYS >= 5,
+    `SERVER_PLAYBOOK_CANDLE_DAYS must be ≥5 (got ${SERVER_PLAYBOOK_CANDLE_DAYS})`
+  )
+
+  // Friday 2026-07-31 NYC RTH (EDT) — prior US Range for Monday Tokyo
+  const friBars: NikkeiUsRangeBar[] = []
+  for (let h = 10; h < 16; h++) {
+    for (let m = 0; m < 60; m += 5) {
+      const t = nyDateTimeToUnix('2026-07-31', h, m)
+      friBars.push(bar(t, 40000, 40100, 39900, 40050, 1000))
+    }
+  }
+  // Monday 09:15 JST tip (= Sun 20:15 ET) — US Range window
+  const tip = jstUnix(2026, 8, 3, 9, 15)
+
+  const twoDayStart = tip - 2 * 86400
+  const fiveDayStart = tip - SERVER_PLAYBOOK_CANDLE_DAYS * 86400
+  const twoDayBars = friBars.filter((c) => c.time >= twoDayStart && c.time <= tip)
+  const fiveDayBars = [
+    ...friBars.filter((c) => c.time >= fiveDayStart && c.time <= tip),
+    bar(tip, 40050, 40060, 40040, 40055, 500),
+  ]
+
+  assert(twoDayBars.length === 0, '2d window starts after Friday RTH close — no NYC bars')
+  assert(fiveDayBars.length > 10, '5d window includes Friday NYC bars')
+
+  const us2 = currentNikkeiUsRangeForChart(twoDayBars, tip)
+  assert(us2 == null, '2d history → no US Range (live server bug before fix)')
+
+  const us5 = currentNikkeiUsRangeForChart(fiveDayBars, tip)
+  assert(us5 != null && us5.complete === true, '5d history → complete US Range')
+  assert(us5!.high === 40100 && us5!.low === 39900, 'Friday H/L')
+
+  const shaped2 = shapedPlaybookRanges({
+    instrument: 'NIKKEI',
+    usRange: us2,
+  })
+  assert(shaped2.usRange == null, '2d → US not shaped for gate')
+
+  const shaped5 = shapedPlaybookRanges({
+    instrument: 'NIKKEI',
+    usRange: us5,
+  })
+  assert(shaped5.usRange?.label === 'US Range', '5d → US shaped')
+
+  const active = activeRangeForPlaybook({
+    playbookMode: 'us_range',
+    instrument: 'NIKKEI',
+    usRange: us5,
+  })
+  assert(active?.label === 'US Range', 'us_range playbook selects US')
+
+  const mid = (us5!.high + us5!.low) / 2
+  const edge = assertRangeEdgeEntry({ entry: mid, range: active })
+  assert(edge.ok === true, '50% mid accepted on shaped US Range')
+
+  // Empty server candidates + chart US Range → client fallback (weekend gap)
+  const fallback = gateEntryAgainstAuthoritativeRange({
+    entry: mid,
+    serverRange: null,
+    clientRange: { label: 'US Range', high: us5!.high, low: us5!.low },
+  })
+  assert(fallback.ok === true, 'client US Range soft-fallback when server null')
 })
 
 console.log(`\n${TESTS_PASSED.length} passed, ${TESTS_FAILED.length} failed`)
