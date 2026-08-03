@@ -228,8 +228,8 @@ assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
 }
 
 {
-  // Tokyo IB used=0 during US Range window — unlock copy, NOT "probes used (0/2)"
-  const duringUs = new Date(Date.UTC(2026, 6, 30, 0, 30, 0)) // 09:30 JST
+  // Tokyo IB used=0 before first-hour lock — unlock copy (Montreal), NOT "probes used (0/2)"
+  const duringUs = new Date(Date.UTC(2026, 6, 30, 0, 30, 0)) // 09:30 JST / 20:30 Montreal
   const ladder = attemptLadderFromCounts({
     morningAttempts: 0,
     ibAttempts: 0,
@@ -237,7 +237,7 @@ assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
     now: duringUs,
     instrument: 'NIKKEI',
   })
-  assert(!ladder.lunchEligible, 'Tokyo IB not unlocked while US Range clock holds')
+  assert(!ladder.lunchEligible, 'Tokyo IB not unlocked before first-hour lock')
   const denied = assertBucketEntryEligible({
     instrument: 'NIKKEI',
     market: 'TOKYO',
@@ -245,17 +245,39 @@ assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
     ladder,
     rangeLabel: 'Tokyo IB',
   })
-  assert(!denied.ok, 'Tokyo IB blocked during US Range window')
+  assert(!denied.ok, 'Tokyo IB blocked before first-hour lock')
   if (!denied.ok) {
     assert(
       !/probes used \(0\/2\)/i.test(denied.message),
       `must not say probes used 0/2, got: ${denied.message}`
     )
     assert(
-      /13:30–15:00 JST/i.test(denied.message),
-      `must name Tokyo IB unlock hours, got: ${denied.message}`
+      /21:00–02:00 Montreal/i.test(denied.message),
+      `must name Tokyo IB unlock in Montreal, got: ${denied.message}`
     )
+    assert(!/\bJST\b/.test(denied.message), `must not show JST to trader, got: ${denied.message}`)
   }
+}
+
+{
+  // After first-hour lock (10:19 JST / 21:19 Montreal) Tokyo IB is eligible with probes left
+  const afterIbLock = new Date(Date.UTC(2026, 6, 30, 1, 19, 0)) // 10:19 JST
+  const ladder = attemptLadderFromCounts({
+    morningAttempts: 1,
+    ibAttempts: 1,
+    lunchAttempts: 0,
+    now: afterIbLock,
+    instrument: 'NIKKEI',
+  })
+  assert(ladder.lunchEligible, 'Tokyo IB unlocked at first-hour lock')
+  const check = assertBucketEntryEligible({
+    instrument: 'NIKKEI',
+    market: 'TOKYO',
+    timeSec: deskClockSeconds('NIKKEI', afterIbLock),
+    ladder,
+    rangeLabel: 'Tokyo IB',
+  })
+  assert(check.ok, `Tokyo IB eligible after lock: ${!check.ok ? check.message : ''}`)
 }
 
 {

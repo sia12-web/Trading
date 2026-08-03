@@ -20,7 +20,29 @@ import {
   snapProfitToRound,
   zoneStopPrice,
 } from '@/lib/trading/deskLevels'
-import { isOr30MorningEntryWindowOpen } from '@/lib/trading/sessionGate'
+import {
+  bucketForRangeLabel,
+  deskClockSeconds,
+  isBucketWindowOpen,
+} from '@/lib/trading/attemptLadder'
+import {
+  deskMarketFor,
+  isOr30MorningEntryWindowOpen,
+} from '@/lib/trading/sessionGate'
+
+/** Whether a painted overlay label is the current playbook's tradeable range. */
+function isActivePlaybookOverlayLabel(
+  mode: string,
+  label: string,
+  instrument: string
+): boolean {
+  const tokyo = instrument === 'NIKKEI'
+  if (mode === 'morning') return label === 'OR30'
+  if (mode === 'us_range') return label === 'US Range'
+  if (mode === 'ib') return label === (tokyo ? 'Tokyo IB' : 'IB')
+  if (mode === 'lunch_range') return label === 'Lunch-range'
+  return false
+}
 
 export type StrategyRangeEdges = {
   label: string
@@ -375,7 +397,14 @@ export function visibleOverlayEntryRanges(args: {
  *
  * Unified toggle rule — never paint a range when its script toggle is OFF:
  * - **OR30:** toggle ON + morning OR30 entry window still open (no ±10 after entryClose).
- * - **US / IB / Lunch:** toggle ON + shaped (chart dims when not the live entry window).
+ * - **US / IB / Tokyo IB / Lunch:** toggle ON + shaped, and either:
+ *     (a) this label is the active playbook range, or
+ *     (b) that range's own entry-bucket clock is open (e.g. NY leftover IB
+ *         probes through 15:15 while lunch is also live).
+ *
+ * Tokyo IB H/L study lines may still draw via the IB toggle; ±10 entry
+ * highlights wait until first-hour lock (10:00 desk / 21:00 Montreal) so the
+ * chart does not invite illegal clicks before IB is shaped.
  *
  * Band geometry is H + **50% mid** + L via {@link rangeEdgeBands} for OR30 /
  * IB / lunch. **US Range drops mid** (H + L only).
@@ -401,13 +430,22 @@ export function entryEligibleOverlayRanges(args: {
   const now = args.now ?? new Date()
   const or30Open = isOr30MorningEntryWindowOpen(args.instrument, now)
   const toggled = visibleOverlayEntryRanges(args)
+  const market = deskMarketFor(args.instrument)
+  const timeSec = deskClockSeconds(args.instrument, now)
 
   return toggled.filter((r) => {
     if (r.label === 'OR30') {
       return mode === 'morning' && or30Open
     }
-    // US / IB / Tokyo IB / Lunch: shaped + toggle already enforced by visibleOverlayEntryRanges.
-    return true
+    // Active playbook always paints its ±10 (tradeable highlight).
+    if (isActivePlaybookOverlayLabel(mode, r.label, args.instrument)) {
+      return true
+    }
+    // Otherwise only while that range's own entry bucket is clock-open
+    // (leftover probes — never paint a future window like Tokyo IB before 10:00 lock).
+    const bucket = bucketForRangeLabel(args.instrument, r.label)
+    if (!bucket || bucket === 'morning' || bucket === 'other') return false
+    return isBucketWindowOpen(market, bucket, timeSec)
   })
 }
 

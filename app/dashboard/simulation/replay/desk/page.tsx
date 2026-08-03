@@ -131,7 +131,7 @@ import {
 } from '@/lib/chart/nikkeiUsRangeBreakout'
 import {
   activeRangeForPlaybook,
-  shapedPlaybookRanges,
+  entryEligibleOverlayRanges,
   strategyEntryRisk,
   type StrategyRangeEdges,
   type StrategyRiskMagnets,
@@ -1618,19 +1618,22 @@ function SimulationDeskInner() {
   /** Active playbook range (+ other magnets) for strategy SL/TP — same geometry as live. */
   const getStrategyRiskBundle = useCallback((): {
     strategyRange: StrategyRangeEdges | null
-    /** All shaped ±10 candidates (OR30 / US Range / IB / Lunch) for price attribution. */
+    /** Entry-eligible ±10 candidates (bucket open / active playbook) for price attribution. */
     shapedRanges: StrategyRangeEdges[]
     strategyMagnets: StrategyRiskMagnets
   } => {
+    const simNow = new Date(simNowRef.current * 1000)
     const ladder = attemptLadderFromCounts({
       morningAttempts: morningAttemptsRef.current,
       ibAttempts: ibAttemptsRef.current,
       lunchAttempts: lunchAttemptsRef.current,
       morningStopHits: Math.min(stopHitsRef.current, morningAttemptsRef.current),
+      now: simNow,
+      instrument,
     })
     const playbookMode = resolveDeskPlaybookMode({
       instrument,
-      now: new Date(simNowRef.current * 1000),
+      now: simNow,
       ladder,
     })
     const morningAttempts = morningAttemptsRef.current
@@ -1643,16 +1646,21 @@ function SimulationDeskInner() {
       lunchRange: lunchRangeRef.current,
       morningAttempts,
     })
-    const shaped = shapedPlaybookRanges({
+    // Same paint/snap gate as live — do not invite Tokyo IB ±10 before first-hour lock.
+    const shapedRanges = entryEligibleOverlayRanges({
+      playbookMode,
       instrument,
+      now: simNow,
+      showOr30: showOr30Ref.current,
+      showIb: showIbBreakoutsRef.current,
+      showUsRange: showUsRangeRef.current,
+      showLunchRange: showLunchRangeRef.current,
       or30: or30RangeRef.current,
       ib: ibRangeRef.current,
       usRange: usRangeRef.current,
       lunchRange: lunchRangeRef.current,
+      morningAttempts,
     })
-    const shapedRanges = [shaped.or30, shaped.ib, shaped.usRange, shaped.lunchRange].filter(
-      (r): r is StrategyRangeEdges => !!r
-    )
     const extras: number[] = []
     for (const r of [
       or30RangeRef.current,

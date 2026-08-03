@@ -11,7 +11,7 @@
  *
  *   NY:  open 09:30 · OR30 lock 10:00→10:15 · IB 10:30–10:45 · lunch-range 13:30–15:15 ET
  *   Tokyo: open 09:00 · US Range from open→10:45 (prior NYC shaped) · optional OR30 09:30→09:45
- *          · Tokyo IB 13:30–15:00 JST
+ *          · Tokyo IB entries 10:00–15:00 (first-hour lock → cash close; = 21:00–02:00 Montreal)
  *
  * Chart stream: cash open − 30m through marketClose. Morning/slot-2 books are not
  * auto-flattened at lunchClose — trader confirms. Cash close auto-liquidates
@@ -127,8 +127,12 @@ export const TOKYO_US_RANGE_STRATEGY_END = '10:45:00'
 export const TOKYO_IB_STRATEGY_START = TOKYO_US_RANGE_STRATEGY_START
 /** @deprecated Use TOKYO_US_RANGE_STRATEGY_END — this is US Range, not Tokyo IB. */
 export const TOKYO_IB_STRATEGY_END = TOKYO_US_RANGE_STRATEGY_END
-/** Local lunch range locks 13:30 JST — entries until cash close (15:00). */
-export const TOKYO_LUNCH_RANGE_ENTRY_START = '13:30:00'
+/**
+ * Tokyo IB (slot 3) entry window — unlocks when first-hour IB locks (10:00),
+ * same moment the range is shaped. Runs through cash close (15:00).
+ * Trader-facing: 21:00–02:00 Montreal. Overlaps US Range for 10:00–10:45.
+ */
+export const TOKYO_LUNCH_RANGE_ENTRY_START = '10:00:00'
 export const TOKYO_LUNCH_RANGE_ENTRY_END = '15:00:00'
 
 /** Legacy alias — NY times only */
@@ -190,12 +194,12 @@ export function ibStrategyEndHms(market: DeskMarket): string {
   return market === 'TOKYO' ? TOKYO_US_RANGE_STRATEGY_END : NY_IB_STRATEGY_END
 }
 
-/** Desk-local lunch-range PM entry start (after 12:00–13:30 local lunch range). */
+/** Desk-local late-slot entry start (NY lunch-range · Tokyo IB at first-hour lock). */
 export function lunchRangeEntryStartHms(market: DeskMarket): string {
   return market === 'TOKYO' ? TOKYO_LUNCH_RANGE_ENTRY_START : NY_LUNCH_RANGE_ENTRY_START
 }
 
-/** Desk-local lunch-range PM entry end (after this → manage-only until cash close). */
+/** Desk-local late-slot entry end (after this → manage-only until cash close). */
 export function lunchRangeEntryEndHms(market: DeskMarket): string {
   return market === 'TOKYO' ? TOKYO_LUNCH_RANGE_ENTRY_END : NY_LUNCH_RANGE_ENTRY_END
 }

@@ -17,9 +17,15 @@
  * NY IB entry starts at 10:30 ET (when first-hour IB locks), not 10:15.
  * Tokyo US Range opens at cash open 09:00 JST (prior NYC already shaped);
  * optional OR30 still owns 09:30–09:45 when morning probes remain.
+ * Tokyo IB entries unlock at first-hour lock 10:00 JST (= 21:00 Montreal),
+ * overlapping the tail of US Range (through 10:45 JST / 21:45 Montreal).
  */
 
 import { parseTimeToSeconds } from '@/lib/utils/timeUtils'
+import {
+  TRADER_DISPLAY_LABEL,
+  deskLocalRangeAsTraderDisplay,
+} from '@/lib/chart/traderDisplayTz'
 
 export const MAX_MORNING_ATTEMPTS = 2
 export const MAX_IB_ATTEMPTS = 2
@@ -80,8 +86,11 @@ const CLOCK = {
     /** Slot 2 — US Range from cash open (prior NYC already shaped) */
     midStart: '09:00:00',
     midEnd: '10:45:00',
-    /** Slot 3 — Tokyo IB */
-    lateStart: '13:30:00',
+    /**
+     * Slot 3 — Tokyo IB entries from first-hour lock (10:00 JST = 21:00 Montreal)
+     * through cash close (15:00 JST = 02:00 Montreal). Overlaps US Range 10:00–10:45.
+     */
+    lateStart: '10:00:00',
     lateEnd: '15:00:00',
   },
 } as const
@@ -165,7 +174,11 @@ export function isMorningWindowReleased(args: {
   return clockSec(args.now, market) >= midStart
 }
 
-/** Mid slot released → late slot may take budget (after mid clock ends or mid exhausted). */
+/** Mid slot released → late slot may take budget.
+ *  NY: after IB clock ends (midEnd) or mid probes exhausted.
+ *  Tokyo: after first-hour IB locks (lateStart = 10:00) or US probes exhausted —
+ *  so Tokyo IB is tradable from 21:00 Montreal while US Range may still run to 21:45.
+ */
 export function isMidWindowReleased(args: {
   ibAttempts: number
   now?: Date | null
@@ -174,8 +187,12 @@ export function isMidWindowReleased(args: {
   if (args.ibAttempts >= MAX_IB_ATTEMPTS) return true
   if (!args.now) return args.ibAttempts === 0
   const market = marketFor(args.instrument)
-  const midEnd = parseTimeToSeconds(CLOCK[market].midEnd)
-  return clockSec(args.now, market) >= midEnd
+  const c = CLOCK[market]
+  const releaseAt =
+    market === 'TOKYO'
+      ? parseTimeToSeconds(c.lateStart)
+      : parseTimeToSeconds(c.midEnd)
+  return clockSec(args.now, market) >= releaseAt
 }
 
 function finalizeLadder(args: {
@@ -445,8 +462,8 @@ export function bucketDisplayLabel(
  * single sequential picker. NY IB is intentionally wide (10:30 → lunch-range
  * close, 15:15 ET) so a leftover IB probe stays clickable through the
  * afternoon instead of being clock-evicted into the lunch-range bucket.
- * Tokyo's US Range (09:00–10:45) and Tokyo IB (13:30–15:00) keep their
- * original bounds — Nikkei's schedule is unchanged.
+ * Tokyo US Range stays 09:00–10:45; Tokyo IB opens at first-hour lock
+ * (10:00–15:00) and may overlap US for the last 45 minutes.
  */
 export function bucketWindowSec(
   market: DeskMarket,
@@ -499,28 +516,32 @@ function bucketCounts(
   return { used: ladder.lunchAttempts, max: ladder.maxLunchAttempts }
 }
 
-/** Trader-facing unlock hours for a bucket's own entry window. */
+/** Trader-facing unlock hours for a bucket's own entry window (Montreal times). */
 export function bucketWindowUnlockMessage(
   market: DeskMarket,
   bucket: AttemptBucket,
-  instrument?: string | null
+  instrument?: string | null,
+  now: Date = new Date()
 ): string {
   const label = bucketDisplayLabel(bucket, instrument)
   const c = CLOCK[market]
-  const hhmm = (hms: string) => hms.slice(0, 5)
   if (bucket === 'ib') {
     if (market === 'TOKYO') {
-      return `${label} entries unlock ${hhmm(c.midStart)}–${hhmm(c.midEnd)} JST (after Morning/OR30 ends or morning probes are exhausted).`
+      const win = deskLocalRangeAsTraderDisplay(c.midStart, c.midEnd, c.tz, now)
+      return `${label} entries unlock ${win} (after Morning/OR30 ends or morning probes are exhausted).`
     }
-    return `${label} entries unlock ${hhmm(c.midStart)}–${hhmm(c.lateEnd)} ET (after Morning/OR30 ends or morning probes are exhausted).`
+    const win = deskLocalRangeAsTraderDisplay(c.midStart, c.lateEnd, c.tz, now)
+    return `${label} entries unlock ${win} (after Morning/OR30 ends or morning probes are exhausted).`
   }
   if (bucket === 'lunch_range') {
     if (market === 'TOKYO') {
-      return `${label} entries unlock ${hhmm(c.lateStart)}–${hhmm(c.lateEnd)} JST (after US Range ends or US Range probes are exhausted).`
+      const win = deskLocalRangeAsTraderDisplay(c.lateStart, c.lateEnd, c.tz, now)
+      return `${label} entries unlock ${win} (after first-hour IB locks, or sooner if US Range probes are exhausted).`
     }
-    return `${label} entries unlock ${hhmm(c.lateStart)}–${hhmm(c.lateEnd)} ET (after IB ends or IB probes are exhausted).`
+    const win = deskLocalRangeAsTraderDisplay(c.lateStart, c.lateEnd, c.tz, now)
+    return `${label} entries unlock ${win} (after IB ends or IB probes are exhausted).`
   }
-  return `${label} entry window is not open right now.`
+  return `${label} entry window is not open right now (${TRADER_DISPLAY_LABEL}).`
 }
 
 /**

@@ -11,6 +11,7 @@ import {
   NY_LUNCH_RANGE_ENTRY_START,
   NY_LUNCH_RANGE_ENTRY_END,
   TOKYO_IB_STRATEGY_START,
+  TOKYO_US_RANGE_STRATEGY_END,
   TOKYO_LUNCH_RANGE_ENTRY_START,
   TOKYO_LUNCH_RANGE_ENTRY_END,
   attemptLadderFromCounts,
@@ -106,7 +107,7 @@ test('resolveRangeStrategy clocks: NY IB 10:30–10:45, lunch-range 13:30–15:1
   )
 })
 
-test('resolveRangeStrategy clocks: Tokyo US Range 09:00–10:45, IB 13:30–15:00', () => {
+test('resolveRangeStrategy clocks: Tokyo US Range 09:00–10:45, IB from 10:00 lock', () => {
   assert(
     resolveRangeStrategy({
       market: 'TOKYO',
@@ -139,13 +140,22 @@ test('resolveRangeStrategy clocks: Tokyo US Range 09:00–10:45, IB 13:30–15:0
     }) === 'us_range',
     'Tokyo US Range start constant'
   )
+  // Sequential picker still prefers US while mid window open; IB bucket is also live.
   assert(
     resolveRangeStrategy({
       market: 'TOKYO',
       timeSec: pts(TOKYO_LUNCH_RANGE_ENTRY_START),
       attemptsUsed: 0,
+    }) === 'us_range',
+    'Tokyo at IB lock still shows US Range as sequential playbook (overlap)'
+  )
+  assert(
+    resolveRangeStrategy({
+      market: 'TOKYO',
+      timeSec: pts(TOKYO_US_RANGE_STRATEGY_END),
+      attemptsUsed: 0,
     }) === 'ib',
-    'Tokyo IB (slot 3)'
+    'Tokyo IB sequential after US Range end'
   )
   assert(
     resolveRangeStrategy({

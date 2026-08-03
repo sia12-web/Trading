@@ -159,17 +159,18 @@ function jstDate(h: number, m: number, s = 0): Date {
 }
 
 {
+  // After US Range end, Tokyo IB is the live playbook (no long IB-prep gap to 13:30)
   const mode = resolveDeskPlaybookMode({
     instrument: 'NIKKEI',
     now: jstDate(12, 0),
     ladder: attemptLadderFromCounts({ morningAttempts: 0 }),
   })
-  assert(mode === 'lunch_break', 'Nikkei IB prep after US Range')
-  assert(deskPlaybookTitle(mode, 'NIKKEI') === 'IB prep playbook', 'IB prep title')
-  assert(isDeskWatchOnlyPlaybook(mode) === true, 'IB prep is watch-only framing')
+  assert(mode === 'ib', 'Nikkei IB playbook after US Range (from first-hour lock)')
+  assert(deskPlaybookTitle(mode, 'NIKKEI') === 'IB playbook', 'IB title after US')
+  assert(isDeskWatchOnlyPlaybook(mode) === false, 'Tokyo IB is entry after lock')
   assert(
-    isDeskEntryWindowActive({ playbookMode: mode }) === false,
-    'Nikkei IB prep not entry'
+    isDeskEntryWindowActive({ playbookMode: mode, rangeStrategy: 'ib' }) === true,
+    'Nikkei IB is entry'
   )
 }
 

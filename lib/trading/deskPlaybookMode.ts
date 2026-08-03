@@ -218,11 +218,11 @@ export function deskPlaybookHint(mode: DeskPlaybookMode, instrument?: string): s
       return 'Prior NYC session range — up to 2 probes @ 0.25% (entries within ±10 pts of range high or low only — no 50% mid). Unlocks after morning clock ends or morning probes are exhausted.'
     case 'ib':
       return tokyo
-        ? 'Tokyo IB range — up to 2 probes @ 0.25% (entries within ±10 pts of H / 50% / L). Unlocks after US Range clock ends or US Range probes are exhausted.'
+        ? 'Tokyo IB range — up to 2 probes @ 0.25% (entries within ±10 pts of H / 50% / L). Unlocks when first-hour IB locks (21:00 Montreal), or sooner if US Range probes are exhausted.'
         : 'Initial Balance — up to 2 probes @ 0.25% (entries within ±10 pts of H / 50% / L). Auto-takes over when IB locks if OR30 was skipped (OR30 is optional and sits inside the first hour).'
     case 'lunch_break':
       return tokyo
-        ? 'US Range entry closed. Prep for Tokyo IB — levels update. IB opens on the clock (or earlier if US Range probes were exhausted).'
+        ? 'Waiting for first-hour Tokyo IB lock (21:00 Montreal) — levels update. IB ±10 opens when the hour locks (or earlier if US Range probes were exhausted).'
         : 'IB entry closed. Prep for lunch-range — levels update. Lunch opens on the clock (or earlier if IB probes were exhausted).'
     case 'lunch_range':
       return 'Lunch-range — up to 2 probes @ 0.25% while the PM entry window is open (entries within ±10 pts of range high, 50% mid, or low).'

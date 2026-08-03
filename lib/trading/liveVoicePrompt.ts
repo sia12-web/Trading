@@ -27,8 +27,7 @@ ATTEMPT LADDER (2 / 2 / 2 per window — THREE RANGES PER DESK; CLOCKS YOU SPEAK
 - **NIKKEI ranges** (same 2/2/2 unlock rules, DIFFERENT range names): Morning (OR30) → US Range → IB.
   * US Range (20:00–21:45 Montreal / Tokyo cash open→10:45 local): up to **2 fills** — prior NYC high/low is **already shaped** at open. Chart: US Range playbook. NOT "IB". Trade US BRK/REJ here — do **not** wait for OR30.
   * Optional Morning OR30 (±10 after 09:30 lock → 09:45 Tokyo local / 20:30–20:45 Montreal): up to **2 fills** if you want that probe; skip freely. Forming 20:00–20:30 Montreal must not block US Range.
-  * IB prep (after US Range until IB opens): Prep only — levels update. No new entries.
-  * Tokyo IB (00:30–02:00 Montreal next calendar morning): up to **2 fills** after US Range clock ends (or US Range probes exhausted). Chart: IB playbook.
+  * Tokyo IB (21:00–02:00 Montreal = first-hour lock→cash close): up to **2 fills** once IB locks at 21:00 Montreal (or sooner if US Range probes exhausted). Overlaps US Range until 21:45. Chart: IB playbook. No separate "IB prep until 00:30".
 - **Skip-forward**: Unused earlier window still unlocks later once its clock ends.
 - **Open-book edge case**: Max one open book at a time — manage that book; no second concurrent entry.
 - **Working limits**: Max **one working (unfilled) limit** at a time on the desk. A second place is rejected until the trader cancels the first — never silently replace.

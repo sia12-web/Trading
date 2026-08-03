@@ -5494,7 +5494,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           atrLine: atrSnap ? formatRangeAtrAdviceLine(atrSnap) : null,
           nextHint:
             instrument === 'NIKKEI'
-              ? `Tokyo IB shaped now — entry window opens ${deskLocalHmsAsTraderDisplay('13:30:00', 'Asia/Tokyo')} ${TRADER_DISPLAY_LABEL} (±10 of locked H / 50% / L). Until then US Range is slot 2.`
+              ? `Tokyo IB shaped — ±10 entries are open now (${deskLocalHmsAsTraderDisplay('10:00:00', 'Asia/Tokyo')}–${deskLocalHmsAsTraderDisplay('15:00:00', 'Asia/Tokyo')} ${TRADER_DISPLAY_LABEL}). US Range may still run until ${deskLocalHmsAsTraderDisplay('10:45:00', 'Asia/Tokyo')} ${TRADER_DISPLAY_LABEL}.`
               : 'IB entry window is open (±10 of locked H / 50% / L).',
         })
         onDeskAlert({

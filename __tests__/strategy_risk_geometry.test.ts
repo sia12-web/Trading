@@ -388,11 +388,29 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
     lunchRange: { high: 18_500, low: 18_400, complete: true as const },
   }
 
+  // Before first-hour IB lock (09:50 JST / 20:50 Montreal): US ±10 only
+  const nikkeiBeforeIbLock = new Date('2026-07-28T00:50:00.000Z') // 09:50 JST
   assert.deepEqual(
     entryEligibleOverlayRanges({
       playbookMode: 'us_range',
       instrument: 'NIKKEI',
-      now: nikkeiAfterOr30,
+      now: nikkeiBeforeIbLock,
+      showOr30: true,
+      showIb: true,
+      showUsRange: true,
+      ...shaped,
+      morningAttempts: 0,
+    }).map((o) => o.label),
+    ['US Range'],
+    'Nikkei before IB lock: paint US ±10 only — Tokyo IB waits until 21:00 Montreal'
+  )
+
+  // At/after first-hour lock during US Range tail (10:00 / 10:19 JST = 21:00 / 21:19 Montreal)
+  assert.deepEqual(
+    entryEligibleOverlayRanges({
+      playbookMode: 'us_range',
+      instrument: 'NIKKEI',
+      now: nikkeiAfterOr30, // 10:00 JST
       showOr30: true,
       showIb: true,
       showUsRange: true,
@@ -400,7 +418,23 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       morningAttempts: 0,
     }).map((o) => o.label),
     ['US Range', 'Tokyo IB'],
-    'Nikkei after OR30 entryClose: OR30 ±10 gone; US + Tokyo IB stay when toggled'
+    'Nikkei at IB lock: US + Tokyo IB ±10 both paint (overlap to 21:45 Montreal)'
+  )
+
+  const nikkeiDuringUsAfterIbLock = new Date('2026-07-28T01:19:00.000Z') // 10:19 JST
+  assert.deepEqual(
+    entryEligibleOverlayRanges({
+      playbookMode: 'us_range',
+      instrument: 'NIKKEI',
+      now: nikkeiDuringUsAfterIbLock,
+      showOr30: true,
+      showIb: true,
+      showUsRange: true,
+      ...shaped,
+      morningAttempts: 1,
+    }).map((o) => o.label),
+    ['US Range', 'Tokyo IB'],
+    'Nikkei 21:19 Montreal: Tokyo IB ±10 is hot after first-hour lock'
   )
 
   assert.ok(
@@ -539,21 +573,35 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
     'Lunch toggle off drops lunch ±10 even in lunch_range mode'
   )
 
-  // US / IB stay as study ±10 when toggle ON after their live window (OR30 does not).
+  // Closed buckets: no ±10 invite. NY IB bucket stays open to 15:15 for leftover probes.
   assert.ok(
-    entryEligibleOverlayRanges({
+    !entryEligibleOverlayRanges({
       playbookMode: 'ib',
       instrument: 'NIKKEI',
-      now: nikkeiAfterOr30,
+      now: new Date('2026-07-28T05:00:00.000Z'), // 14:00 JST — Tokyo IB window
       showOr30: true,
-      showIb: false,
+      showIb: true,
       showUsRange: true,
       ...shaped,
       morningAttempts: 0,
     })
       .map((o) => o.label)
       .includes('US Range'),
-    'US Range script ON still paints ±10 after US entry window (study / dim)'
+    'US Range ±10 off after US entry clock (Tokyo IB playbook owns paint)'
+  )
+  assert.deepEqual(
+    entryEligibleOverlayRanges({
+      playbookMode: 'ib',
+      instrument: 'NIKKEI',
+      now: new Date('2026-07-28T05:00:00.000Z'), // 14:00 JST
+      showOr30: false,
+      showIb: true,
+      showUsRange: true,
+      ...shaped,
+      morningAttempts: 0,
+    }).map((o) => o.label),
+    ['Tokyo IB'],
+    'Tokyo IB ±10 paints in its 10:00–15:00 desk / 21:00–02:00 Montreal window'
   )
   assert.ok(
     entryEligibleOverlayRanges({
@@ -570,7 +618,21 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
     })
       .map((o) => o.label)
       .includes('IB'),
-    'IB script ON still paints ±10 after IB handoff (study / dim)'
+    'NY IB ±10 stays while leftover IB bucket window is open (through 15:15 ET)'
+  )
+  assert.deepEqual(
+    entryEligibleOverlayRanges({
+      playbookMode: 'us_range',
+      instrument: 'NIKKEI',
+      now: nikkeiBeforeIbLock,
+      showOr30: true,
+      showIb: true,
+      showUsRange: false,
+      ...shaped,
+      morningAttempts: 0,
+    }).map((o) => o.label),
+    [],
+    'Nikkei before IB lock with US toggle off: no ±10 invite on future Tokyo IB'
   )
 }
 
