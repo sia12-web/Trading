@@ -133,7 +133,7 @@ export default function SimulationPage() {
         <p className="text-sm text-gray-500 mt-1 max-w-2xl">
           Replay a past full session on this desk. Same rules as live: up to 2
           probes per window with progressive risk 1% → 0.5% → 0.25% (Morning → IB/US → Lunch-range), session cap 3,
-          entries within ±10 pts of range high, 50% mid, or low. Paper
+          entries within ±10 pts of painted range high / low (and 50% mid where the playbook allows — US Range is H/L only). Paper
           fills, SL/TP, and manage stay here; closed paper orders land in{' '}
           <Link href="/dashboard/journal?tab=sim" className="text-violet-400 hover:underline">
             Order History (Simulation)

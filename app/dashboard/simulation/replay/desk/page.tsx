@@ -60,6 +60,7 @@ import {
   assertRangeEdgeEntry,
   attributePlaybookBandEntry,
   rangeEdgeBands,
+  snapEntryToOpenBandCenter,
   RANGE_EDGE_BAND_POINTS,
   RANGE_EDGE_OFF_BAND_MESSAGE,
 } from '@/lib/trading/rangeEdgeEntryGate'
@@ -135,6 +136,7 @@ import {
   activeRangeForPlaybook,
   entryEligibleOverlayRanges,
   strategyEntryRisk,
+  studyEntrySnapRanges,
   type StrategyRangeEdges,
   type StrategyRiskMagnets,
 } from '@/lib/trading/strategyRiskGeometry'
@@ -397,6 +399,10 @@ function SimulationDeskInner() {
   const [manualTicketOpen, setManualTicketOpen] = useState(false)
   /** Chart-click price for manual ticket; null = use lastPrice (toolbar Place limit). */
   const [manualClickPrice, setManualClickPrice] = useState<number | null>(null)
+  /** Attributed playbook range when opening a ticket from a painted ±10 band. */
+  const [ticketRangeOverride, setTicketRangeOverride] = useState<StrategyRangeEdges | null>(
+    null
+  )
   const [msg, setMsg] = useState<string | null>(null)
   const [levelsOpen, setLevelsOpen] = useState(true)
   /** Floating playbook panel — title follows active range window. */
@@ -461,6 +467,7 @@ function SimulationDeskInner() {
           e.preventDefault()
           setManualTicketOpen(false)
           setManualClickPrice(null)
+          setTicketRangeOverride(null)
         } else if (isFullscreen) {
           e.preventDefault()
           if (document.exitFullscreen && document.fullscreenElement) {
@@ -1622,6 +1629,9 @@ function SimulationDeskInner() {
     strategyRange: StrategyRangeEdges | null
     /** Entry-eligible ±10 candidates (bucket open / active playbook) for price attribution. */
     shapedRanges: StrategyRangeEdges[]
+    /** Visible toggled ±10 zones — open/click snap (same as live). */
+    snapRanges: StrategyRangeEdges[]
+    ladder: ReturnType<typeof attemptLadderFromCounts>
     strategyMagnets: StrategyRiskMagnets
   } => {
     const simNow = new Date(simNowRef.current * 1000)
@@ -1663,6 +1673,20 @@ function SimulationDeskInner() {
       lunchRange: lunchRangeRef.current,
       morningAttempts,
     })
+    const activeForSnap =
+      strategyRange &&
+      shapedRanges.some(
+        (r) =>
+          r.label === strategyRange.label &&
+          r.high === strategyRange.high &&
+          r.low === strategyRange.low
+      )
+        ? strategyRange
+        : null
+    const snapRanges = studyEntrySnapRanges({
+      active: activeForSnap,
+      overlays: shapedRanges,
+    })
     const extras: number[] = []
     for (const r of [
       or30RangeRef.current,
@@ -1683,12 +1707,85 @@ function SimulationDeskInner() {
     return {
       strategyRange,
       shapedRanges,
+      snapRanges,
+      ladder,
       strategyMagnets: {
         avwap: avwapLastRef.current,
         extras,
       },
     }
   }, [instrument])
+
+  /** Snap a price onto a live-open ±10 band center, or reject (never soft-clamp). */
+  const snapSimEntryOrDeny = useCallback(
+    (
+      rawPrice: number
+    ): { price: number; range: StrategyRangeEdges } | { deny: string } => {
+      const { strategyRange, snapRanges, ladder } = getStrategyRiskBundle()
+      const now = new Date(simNowRef.current * 1000)
+      const liveOk = (range: StrategyRangeEdges) => {
+        if (range.label === 'OR30') {
+          return (
+            !!strategyRange &&
+            strategyRange.label === range.label &&
+            strategyRange.high === range.high &&
+            strategyRange.low === range.low
+          )
+        }
+        return assertBucketEntryEligible({
+          instrument,
+          market: deskMarketFor(instrument),
+          timeSec: deskClockSeconds(instrument, now),
+          ladder,
+          rangeLabel: range.label,
+        }).ok
+      }
+      const snapped = snapEntryToOpenBandCenter({
+        entry: rawPrice,
+        candidates: snapRanges,
+        preferLabel: strategyRange?.label ?? null,
+        liveOk,
+      })
+      if (!snapped) {
+        // Prefer attribution deny copy (closed bucket / mid) over generic off-band.
+        const hit = attributePlaybookBandEntry({
+          entry: rawPrice,
+          candidates: snapRanges,
+          preferLabel: strategyRange?.label ?? null,
+          liveOk,
+        })
+        if (hit) {
+          if (hit.range.label === 'OR30') {
+            return {
+              deny:
+                instrument === 'NIKKEI'
+                  ? 'OR30 morning ±10 window is closed — enter on the live US Range / Tokyo IB playbook when unlocked.'
+                  : 'OR30 morning ±10 window is closed — enter on the live IB / lunch-range playbook when unlocked.',
+            }
+          }
+          const bucketOk = assertBucketEntryEligible({
+            instrument,
+            market: deskMarketFor(instrument),
+            timeSec: deskClockSeconds(instrument, now),
+            ladder,
+            rangeLabel: hit.range.label,
+          })
+          if (!bucketOk.ok) return { deny: bucketOk.message }
+          const edge = assertRangeEdgeEntry({
+            entry: rawPrice,
+            range: hit.range,
+          })
+          if (!edge.ok) return { deny: edge.message }
+        }
+        return { deny: RANGE_EDGE_OFF_BAND_MESSAGE }
+      }
+      return {
+        price: snapDeskPrice(instrument, snapped.price),
+        range: snapped.hit.range,
+      }
+    },
+    [getStrategyRiskBundle, instrument]
+  )
 
   // Initial / seek chart paint — use ref so callback identity churn does not force setData
   useEffect(() => {
@@ -1892,16 +1989,17 @@ function SimulationDeskInner() {
       )
     }
 
-    // Mirror live ±10 entry band edges when a strategy range is shaped
-    // (H / 50% / L, or H / L only for US Range)
+    // Mirror live ±10 entry band edges for all entry-eligible overlays
+    // (H / 50% / L, or H / L only for US Range) — not only the active playbook.
     const entryOpen =
       !position &&
       !pending &&
       simNowRef.current >= openUnix &&
       attemptsUsedRef.current < MAX_DAY_ATTEMPTS
     if (entryOpen || pending) {
-      const { strategyRange } = getStrategyRiskBundle()
-      if (strategyRange && strategyRange.high > strategyRange.low) {
+      const { snapRanges } = getStrategyRiskBundle()
+      for (const strategyRange of snapRanges) {
+        if (!(strategyRange.high > strategyRange.low)) continue
         const bands = rangeEdgeBands(strategyRange)
         const label = strategyRange.label || 'range'
         for (const band of bands) {
@@ -2305,20 +2403,13 @@ function SimulationDeskInner() {
 
       placingOrderRef.current = true
       const entrySource = normalizeEntrySource(level.source, 'structure')
-      const limit = snapDeskPrice(instrument, level.level)
-      const { strategyRange, shapedRanges, strategyMagnets } = getStrategyRiskBundle()
+      const rawLimit = snapDeskPrice(instrument, level.level)
+      const { strategyRange, snapRanges, strategyMagnets, ladder } =
+        getStrategyRiskBundle()
       // Prefer bucket-open ranges so US Range playbook never bills Tokyo IB mid.
-      const ladder = attemptLadderFromCounts({
-        morningAttempts: morningAttemptsRef.current,
-        ibAttempts: ibAttemptsRef.current,
-        lunchAttempts: lunchAttemptsRef.current,
-        morningStopHits: Math.min(stopHitsRef.current, morningAttemptsRef.current),
-        now: new Date(now * 1000),
-        instrument,
-      })
       const hit = attributePlaybookBandEntry({
-        entry: limit,
-        candidates: shapedRanges,
+        entry: rawLimit,
+        candidates: snapRanges,
         preferLabel: strategyRange?.label ?? null,
         liveOk: (range) =>
           assertBucketEntryEligible({
@@ -2334,6 +2425,8 @@ function SimulationDeskInner() {
         setMsg(RANGE_EDGE_OFF_BAND_MESSAGE)
         return
       }
+      // Lock to band center — never place mid-band interior (same as live).
+      const limit = snapDeskPrice(instrument, hit.center)
       const attributedRange = hit.range
 
       const edge = assertRangeEdgeEntry({ entry: limit, range: attributedRange })
@@ -2560,6 +2653,7 @@ function SimulationDeskInner() {
     setTicketLevel(null)
     setManualTicketOpen(false)
     setManualClickPrice(null)
+    setTicketRangeOverride(null)
     setLevelsOpen(true)
     resetSessionProgress()
     setMsg(
@@ -2581,6 +2675,7 @@ function SimulationDeskInner() {
     setTicketLevel(null)
     setManualTicketOpen(false)
     setManualClickPrice(null)
+    setTicketRangeOverride(null)
     setLevelsOpen(true)
     resetSessionProgress()
     setMsg(
@@ -2632,15 +2727,27 @@ function SimulationDeskInner() {
           (l) => Math.abs(l.level - pick.price) < 1e-6
         )
         if (matched) {
+          const snapped = snapSimEntryOrDeny(matched.level)
+          if ('deny' in snapped) {
+            setMsg(snapped.deny)
+            return
+          }
           setManualTicketOpen(false)
           setManualClickPrice(null)
-          setTicketLevel(matched)
+          setTicketRangeOverride(snapped.range)
+          setTicketLevel({ ...matched, level: snapped.price })
           return
         }
       }
 
+      const snapped = snapSimEntryOrDeny(pick.price)
+      if ('deny' in snapped) {
+        setMsg(snapped.deny)
+        return
+      }
       setTicketLevel(null)
-      setManualClickPrice(pick.price)
+      setTicketRangeOverride(snapped.range)
+      setManualClickPrice(snapped.price)
       setManualTicketOpen(true)
     }
 
@@ -2658,6 +2765,7 @@ function SimulationDeskInner() {
     openUnix,
     attemptsUsed,
     gate?.canPlaceEntry,
+    snapSimEntryOrDeny,
   ])
 
   // Hover visible level → preview entry / SL / TP (same math as AI ticket)
@@ -3081,12 +3189,20 @@ function SimulationDeskInner() {
             <button
               type="button"
               onClick={() => {
-                setManualClickPrice(null)
+                const seed =
+                  lastPriceRef.current ?? lastPrice ?? 0
+                const snapped = snapSimEntryOrDeny(seed)
+                if ('deny' in snapped) {
+                  setMsg(snapped.deny)
+                  return
+                }
                 setTicketLevel(null)
+                setTicketRangeOverride(snapped.range)
+                setManualClickPrice(snapped.price)
                 setManualTicketOpen(true)
               }}
               className="rounded border border-amber-500/50 bg-amber-600/80 px-2 py-1 text-[10px] font-bold uppercase text-white hover:bg-amber-500"
-              title="Manual limit — 1% account risk, size adjusts to your stop"
+              title="Manual limit — entry locks to nearest painted ±10 band; adjust TP / SL only"
             >
               Place limit
             </button>
@@ -3144,8 +3260,8 @@ function SimulationDeskInner() {
               type="button"
               title={
                 showUsRange
-                  ? 'US H/L lines visible (Press U)'
-                  : 'Show current US session H/L (Press U)'
+                  ? 'US Range H/L visible — no 50% mid (Press U)'
+                  : 'Show prior NYC US session H/L only — no mid (Press U)'
               }
               onClick={() => setShowUsRange((v) => !v)}
               className={`flex items-center gap-1 rounded border px-2 py-1 text-[10px] font-semibold uppercase ${
@@ -3513,7 +3629,17 @@ function SimulationDeskInner() {
                   <button
                     type="button"
                     disabled={!canEnter}
-                    onClick={() => setTicketLevel(l)}
+                    onClick={() => {
+                      const snapped = snapSimEntryOrDeny(l.level)
+                      if ('deny' in snapped) {
+                        setMsg(snapped.deny)
+                        return
+                      }
+                      setManualTicketOpen(false)
+                      setManualClickPrice(null)
+                      setTicketRangeOverride(snapped.range)
+                      setTicketLevel({ ...l, level: snapped.price })
+                    }}
                     className="w-full px-2.5 py-2.5 text-left transition-all disabled:opacity-40 hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
                   >
                     <div className="flex items-center justify-between gap-1">
@@ -3560,7 +3686,11 @@ function SimulationDeskInner() {
         !ticketLevel &&
         (manualClickPrice != null || lastPrice != null) && (
         <LevelOrderTicket
-          key={manualClickPrice != null ? `click-${manualClickPrice}` : 'toolbar-manual'}
+          key={
+            manualClickPrice != null
+              ? `click-${manualClickPrice}-${ticketRangeOverride?.label ?? 'r'}`
+              : 'toolbar-manual'
+          }
           instrument={instrument}
           levelPrice={manualClickPrice ?? lastPrice ?? 0}
           entrySource="manual"
@@ -3577,7 +3707,9 @@ function SimulationDeskInner() {
           regimeConfidence={70}
           canPlace={canEnter}
           entryWindow={(gate?.entryWindow as 1 | 2 | 3 | null) ?? 1}
-          strategyRange={getStrategyRiskBundle().strategyRange}
+          strategyRange={
+            ticketRangeOverride ?? getStrategyRiskBundle().strategyRange
+          }
           strategyMagnets={getStrategyRiskBundle().strategyMagnets}
           sessionFillsUsed={attemptsUsed}
           atrAdviceLine={
@@ -3588,10 +3720,26 @@ function SimulationDeskInner() {
           onClose={() => {
             setManualTicketOpen(false)
             setManualClickPrice(null)
+            setTicketRangeOverride(null)
           }}
           onPlaced={(order) => {
+            // Server-less paper path: re-assert band + open-bucket attribution locally.
+            const snapped = snapSimEntryOrDeny(order.level)
+            if ('deny' in snapped) {
+              setMsg(snapped.deny)
+              return
+            }
+            const edge = assertRangeEdgeEntry({
+              entry: snapped.price,
+              range: snapped.range,
+            })
+            if (!edge.ok) {
+              setMsg(edge.message)
+              return
+            }
             setManualTicketOpen(false)
             setManualClickPrice(null)
+            setTicketRangeOverride(null)
             const windowEndUnix =
               gate?.entryWindow === 3
                 ? lateEndUnix
@@ -3599,7 +3747,7 @@ function SimulationDeskInner() {
                   ? midEndUnix
                   : entryCloseUnix
             const pend: PendingOrder = {
-              level: order.level,
+              level: snapped.price,
               direction: order.direction,
               stopLoss: order.stopLoss,
               target: order.profitTarget,
@@ -3609,10 +3757,7 @@ function SimulationDeskInner() {
               entryReason: order.entryReason,
               entrySource: 'manual',
               windowEndUnix: windowEndUnix || cashCloseUnix,
-              strategyRangeLabel:
-                order.strategyRange?.label ??
-                getStrategyRiskBundle().strategyRange?.label ??
-                null,
+              strategyRangeLabel: snapped.range.label ?? null,
             }
             const now = simNowRef.current
             const touched = allCandlesRef.current.find(
@@ -3625,7 +3770,7 @@ function SimulationDeskInner() {
             pendingRef.current = pend
             setPending(pend)
             setMsg(
-              `Manual ${order.direction} limit @ ${order.level.toLocaleString()} — ${riskPercentForEntrySource(order.entrySource, attemptsUsedRef.current)}% risk · press Play until fill`
+              `Manual ${order.direction} limit @ ${snapped.price.toLocaleString()} — ${riskPercentForEntrySource(order.entrySource, attemptsUsedRef.current)}% risk · press Play until fill`
             )
           }}
         />
@@ -3656,7 +3801,9 @@ function SimulationDeskInner() {
           regimeConfidence={70}
           canPlace={canEnter}
           entryWindow={(gate?.entryWindow as 1 | 2 | 3 | null) ?? 1}
-          strategyRange={getStrategyRiskBundle().strategyRange}
+          strategyRange={
+            ticketRangeOverride ?? getStrategyRiskBundle().strategyRange
+          }
           strategyMagnets={getStrategyRiskBundle().strategyMagnets}
           sessionFillsUsed={attemptsUsed}
           atrAdviceLine={
@@ -3664,9 +3811,16 @@ function SimulationDeskInner() {
               ? `${overnightBias.detail} · Sim only: overnight gap + prior session. No news. You can still override.`
               : 'Sim only: overnight gap + prior session. No news. You can still override.'
           }
-          onClose={() => setTicketLevel(null)}
+          onClose={() => {
+            setTicketLevel(null)
+            setTicketRangeOverride(null)
+          }}
           onPlaced={(order) => {
-            placePending(ticketLevel, order.direction)
+            setTicketRangeOverride(null)
+            placePending(
+              { ...ticketLevel, level: order.level },
+              order.direction
+            )
           }}
         />
       )}
