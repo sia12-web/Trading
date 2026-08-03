@@ -188,6 +188,65 @@ export function gateEntryAgainstAuthoritativeRange(args: {
 }
 
 /**
+ * Attribute an entry to a shaped playbook range (pure — used by the server gate
+ * and unit-tested for the Monday weekend-gap US Range soft-fallback).
+ *
+ * Order:
+ * 1. Price hit on a server-shaped ±10 band (never trusts client label)
+ * 2. Client label match among server-shaped candidates
+ * 3. Client US Range soft-fallback when server could not shape US (weekend gap)
+ *    — must run *before* sequential `active`, otherwise OR30/IB as active
+ *    swallows US mid and the fallback never fires
+ * 4. Sequential active highlight
+ */
+export function attributeServerPlaybookEntry(args: {
+  entry: number
+  shaped: ServerPlaybookBundle['shaped']
+  active: StrategyRangeEdges | null
+  clientRange: { high: number; low: number; label?: string | null } | null
+}): { range: StrategyRangeEdges | null; usedUsClientFallback: boolean } {
+  const candidates = [
+    args.shaped.or30,
+    args.shaped.ib,
+    args.shaped.usRange,
+    args.shaped.lunchRange,
+  ].filter((r): r is StrategyRangeEdges => !!r)
+
+  const hit = findRangeEdgeBandHit(args.entry, candidates)
+  let attributed: StrategyRangeEdges | null =
+    hit?.range ??
+    (args.clientRange
+      ? candidates.find((r) => r.label === args.clientRange!.label) ?? null
+      : null)
+
+  let usedUsClientFallback = false
+  // Weekend gap: server shaped OR30/IB from *today* but history missed Friday
+  // NYC — chart still paints US H/L. Accept client US Range only when the
+  // server could not shape one (never overrides a server US Range). Must not
+  // wait until after `active` — morning OR30 as active would block this path.
+  if (
+    !attributed &&
+    !args.shaped.usRange &&
+    args.clientRange &&
+    args.clientRange.label === 'US Range'
+  ) {
+    const clientUs: StrategyRangeEdges = {
+      label: 'US Range',
+      high: Number(args.clientRange.high),
+      low: Number(args.clientRange.low),
+    }
+    const trial = assertRangeEdgeEntry({ entry: args.entry, range: clientUs })
+    if (trial.ok) {
+      attributed = clientUs
+      usedUsClientFallback = true
+    }
+  }
+
+  if (!attributed) attributed = args.active
+  return { range: attributed, usedUsClientFallback }
+}
+
+/**
  * Prefer server-computed locked ranges; fall back to client only if OANDA is
  * down. Attribution: the entry is billed against whichever SHAPED range's
  * ±10 band the price actually sits in (server-authoritative, price-based) —
@@ -242,40 +301,20 @@ export async function assertServerRangeEdgeEntry(args: {
     })
   }
 
-  // Price-based attribution across every shaped range (server-authoritative —
-  // never trusts the client's claimed label for WHICH range this is).
-  const hit = findRangeEdgeBandHit(args.entry, candidates)
-  let attributed: StrategyRangeEdges | null =
-    hit?.range ??
-    (args.clientRange
-      ? candidates.find((r) => r.label === args.clientRange!.label) ?? null
-      : null) ??
-    active
+  const { range: attributed, usedUsClientFallback } = attributeServerPlaybookEntry({
+    entry: args.entry,
+    shaped,
+    active,
+    clientRange: args.clientRange,
+  })
 
-  // Weekend gap: server shaped OR30/IB from *today* but 2d history missed Friday
-  // NYC — chart still paints US H/L. Accept client US Range only when the
-  // server could not shape one (never overrides a server US Range).
-  if (
-    !attributed &&
-    !shaped.usRange &&
-    args.clientRange &&
-    args.clientRange.label === 'US Range'
-  ) {
-    const clientUs: StrategyRangeEdges = {
-      label: 'US Range',
-      high: Number(args.clientRange.high),
-      low: Number(args.clientRange.low),
-    }
-    const trial = assertRangeEdgeEntry({ entry: args.entry, range: clientUs })
-    if (trial.ok) {
-      logger.info('server_playbook_range.us_range_client_fallback', {
-        instrument: args.instrument,
-        high: clientUs.high,
-        low: clientUs.low,
-        entry: args.entry,
-      })
-      attributed = clientUs
-    }
+  if (usedUsClientFallback && attributed) {
+    logger.info('server_playbook_range.us_range_client_fallback', {
+      instrument: args.instrument,
+      high: attributed.high,
+      low: attributed.low,
+      entry: args.entry,
+    })
   }
 
   if (args.clientRange && attributed) {
