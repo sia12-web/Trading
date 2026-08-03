@@ -296,6 +296,53 @@ export function snapEntryToOpenBandCenter<T extends RangeEdgeLevels>(args: {
   return { price: hit.center, hit }
 }
 
+/**
+ * Limit-button / “place near” snap: if already in a live ±10 band → that center;
+ * otherwise snap to the nearest live-open band center (H / L / mid when allowed).
+ * Returns null when no live placeable bands exist (closed window / exhausted / day lock).
+ *
+ * Distinct from {@link snapEntryToOpenBandCenter}, which hard-rejects outside a band —
+ * that path is for click-on-highlight and server attribution. Soft nearest-center here
+ * is intentional so Limit does not fail with off-band while painted live zones exist.
+ */
+export function snapEntryToNearestOpenBandCenter<T extends RangeEdgeLevels>(args: {
+  entry: number
+  candidates: Array<T | null | undefined>
+  preferLabel?: string | null
+  liveOk?: (range: T) => boolean
+  bandPoints?: number
+}): { price: number; hit: RangeEdgeBandHit<T> } | null {
+  const inBand = snapEntryToOpenBandCenter(args)
+  if (inBand) return inBand
+
+  const bandPoints = args.bandPoints ?? RANGE_EDGE_BAND_POINTS
+  const all = args.candidates.filter((r): r is T => !!r)
+  const live = args.liveOk ? all.filter((r) => args.liveOk!(r)) : all
+  if (live.length === 0) return null
+
+  let best: RangeEdgeBandHit<T> | null = null
+  let bestDist = Infinity
+  for (const range of live) {
+    for (const band of rangeEdgeBands(range, bandPoints)) {
+      const d = Math.abs(args.entry - band.center)
+      // Tiny prefer-label boost so ties land on the active playbook range.
+      const score =
+        d + (args.preferLabel && range.label === args.preferLabel ? -1e-6 : 0)
+      if (score < bestDist) {
+        bestDist = score
+        best = {
+          range,
+          edge: band.edge,
+          center: band.center,
+          min: band.min,
+          max: band.max,
+        }
+      }
+    }
+  }
+  return best ? { price: best.center, hit: best } : null
+}
+
 export function assertRangeEdgeEntry(args: {
   entry: number
   range: RangeEdgeLevels | null | undefined

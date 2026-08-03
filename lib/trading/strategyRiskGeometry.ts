@@ -395,16 +395,19 @@ export function visibleOverlayEntryRanges(args: {
 /**
  * Painted ±10 bands + drag/click snap targets.
  *
- * Unified toggle rule — never paint a range when its script toggle is OFF:
- * - **OR30:** toggle ON + morning OR30 entry window still open (no ±10 after entryClose).
- * - **US / IB / Tokyo IB / Lunch:** toggle ON + shaped, and either:
+ * Entry ±10 paint (independent of BRK/REJ study toggles when the clock allows):
+ * - **OR30:** morning playbook + OR30 entry window still open (no ±10 after entryClose).
+ * - **US / IB / Tokyo IB / Lunch:** shaped, and either:
  *     (a) this label is the active playbook range, or
- *     (b) that range's own entry-bucket clock is open (e.g. NY leftover IB
- *         probes through 15:15 while lunch is also live).
+ *     (b) that range's own entry-bucket clock is open (e.g. Tokyo IB 21:00–02:00
+ *         Montreal after US Range ends; NY leftover IB probes through 15:15).
  *
- * Tokyo IB H/L study lines may still draw via the IB toggle; ±10 entry
- * highlights wait until first-hour lock (10:00 desk / 21:00 Montreal) so the
- * chart does not invite illegal clicks before IB is shaped.
+ * Study toggles (`showIb` / `showUsRange` / …) still gate H/L BRK-REJ markers
+ * via {@link visibleOverlayEntryRanges}, but entry highlights must remain
+ * clickable while the window + probes are live — otherwise Limit fails with
+ * off-band after a refresh (toggles default OFF).
+ *
+ * Tokyo IB ±10 waits until first-hour lock (10:00 desk / 21:00 Montreal).
  *
  * Band geometry is H + **50% mid** + L via {@link rangeEdgeBands} for OR30 /
  * IB / lunch. **US Range drops mid** (H + L only).
@@ -430,10 +433,11 @@ export function entryEligibleOverlayRanges(args: {
   const now = args.now ?? new Date()
   const or30Open = isOr30MorningEntryWindowOpen(args.instrument, now)
   const toggled = visibleOverlayEntryRanges(args)
+  const shaped = shapedPlaybookRanges(args)
   const market = deskMarketFor(args.instrument)
   const timeSec = deskClockSeconds(args.instrument, now)
 
-  return toggled.filter((r) => {
+  const isEntryClockEligible = (r: StrategyRangeEdges): boolean => {
     if (r.label === 'OR30') {
       return mode === 'morning' && or30Open
     }
@@ -446,7 +450,21 @@ export function entryEligibleOverlayRanges(args: {
     const bucket = bucketForRangeLabel(args.instrument, r.label)
     if (!bucket || bucket === 'morning' || bucket === 'other') return false
     return isBucketWindowOpen(market, bucket, timeSec)
-  })
+  }
+
+  // Union: toggled studies ∩ clock, plus shaped ranges that are clock-eligible
+  // even when the BRK/REJ toggle is off (Limit / click need painted snap targets).
+  const byKey = new Map<string, StrategyRangeEdges>()
+  const push = (r: StrategyRangeEdges | null | undefined) => {
+    if (!r || !(r.high > r.low) || !isEntryClockEligible(r)) return
+    byKey.set(`${r.label}:${r.high}:${r.low}`, r)
+  }
+  for (const r of toggled) push(r)
+  push(shaped.or30)
+  push(shaped.ib)
+  push(shaped.usRange)
+  push(shaped.lunchRange)
+  return [...byKey.values()]
 }
 
 /**

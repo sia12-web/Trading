@@ -60,7 +60,7 @@ import {
   assertRangeEdgeEntry,
   attributePlaybookBandEntry,
   rangeEdgeBands,
-  snapEntryToOpenBandCenter,
+  snapEntryToNearestOpenBandCenter,
   RANGE_EDGE_BAND_POINTS,
   RANGE_EDGE_OFF_BAND_MESSAGE,
 } from '@/lib/trading/rangeEdgeEntryGate'
@@ -1716,7 +1716,7 @@ function SimulationDeskInner() {
     }
   }, [instrument])
 
-  /** Snap a price onto a live-open ±10 band center, or reject (never soft-clamp). */
+  /** Snap Limit / place-near onto nearest live ±10 band center (or deny). */
   const snapSimEntryOrDeny = useCallback(
     (
       rawPrice: number
@@ -1740,7 +1740,7 @@ function SimulationDeskInner() {
           rangeLabel: range.label,
         }).ok
       }
-      const snapped = snapEntryToOpenBandCenter({
+      const snapped = snapEntryToNearestOpenBandCenter({
         entry: rawPrice,
         candidates: snapRanges,
         preferLabel: strategyRange?.label ?? null,
@@ -1754,6 +1754,14 @@ function SimulationDeskInner() {
           preferLabel: strategyRange?.label ?? null,
           liveOk,
         })
+        if (snapRanges.length === 0) {
+          return {
+            deny:
+              instrument === 'NIKKEI'
+                ? 'No live ±10 entry bands — wait for US Range / Tokyo IB to unlock.'
+                : 'No live ±10 entry bands — wait for IB / lunch-range to unlock.',
+          }
+        }
         if (hit) {
           if (hit.range.label === 'OR30') {
             return {

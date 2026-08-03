@@ -18,6 +18,7 @@ import {
   rangeEdgeBandsEnvelope,
   rangeMidpoint,
   snapEntryToOpenBandCenter,
+  snapEntryToNearestOpenBandCenter,
   RANGE_EDGE_BAND_POINTS,
   RANGE_EDGE_OFF_BAND_MESSAGE,
   RANGE_EDGE_US_MID_REJECTED_MESSAGE,
@@ -283,6 +284,38 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
     candidates: [us],
   })
   assert.equal(usMidReject, null, 'US Range mid is never a placeable snap')
+
+  // Limit / place-near: nearest live band center when price is between bands
+  const nearest = snapEntryToNearestOpenBandCenter({
+    entry: 40_050,
+    candidates: [us, ib],
+    preferLabel: 'Tokyo IB',
+    liveOk: (r) => r.label === 'Tokyo IB',
+  })
+  assert.equal(nearest?.price, 40_100, 'nearest live IB high when mid-gap')
+  assert.equal(nearest?.hit.range.label, 'Tokyo IB')
+
+  const nearestUs = snapEntryToNearestOpenBandCenter({
+    entry: 39_750,
+    candidates: [us, ib],
+    preferLabel: 'US Range',
+    liveOk: (r) => r.label === 'US Range',
+  })
+  assert.equal(
+    nearestUs?.price === us.high || nearestUs?.price === us.low,
+    true,
+    'US mid snaps to nearest US H or L (no mid band)'
+  )
+
+  assert.equal(
+    snapEntryToNearestOpenBandCenter({
+      entry: 40_050,
+      candidates: [us, ib],
+      liveOk: () => false,
+    }),
+    null,
+    'no live bands → nearest snap rejects'
+  )
 }
 
 console.log('range_edge_entry_gate: all passed')

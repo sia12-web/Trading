@@ -108,7 +108,7 @@ import {
   type StrategyRiskMagnets,
 } from '@/lib/trading/strategyRiskGeometry'
 import {
-  snapEntryToOpenBandCenter,
+  snapEntryToNearestOpenBandCenter,
   filterLevelsInRangeEdgeBand,
   attributePlaybookBandEntry,
   NO_IN_BAND_LEVELS_MESSAGE,
@@ -1664,33 +1664,71 @@ export function TradingChart({
           ? preferredPrice
           : livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 67000)
       const { strategyRange, snapRanges, ladder } = getStrategyRiskBundle()
-      const snapped = snapEntryToOpenBandCenter({
+      const liveOk = (range: { label: string; high: number; low: number }) => {
+        if (range.label === 'OR30') {
+          return (
+            !!strategyRange &&
+            strategyRange.label === range.label &&
+            strategyRange.high === range.high &&
+            strategyRange.low === range.low
+          )
+        }
+        return assertBucketEntryEligible({
+          instrument,
+          market: deskMarketFor(instrument),
+          timeSec: deskClockSeconds(instrument),
+          ladder,
+          rangeLabel: range.label,
+        }).ok
+      }
+      // Limit / place-near: snap to nearest live band center (in-band → that center).
+      const snapped = snapEntryToNearestOpenBandCenter({
         entry: Number(rawPx),
         candidates: snapRanges,
         preferLabel: strategyRange?.label ?? null,
-        liveOk: (range) => {
-          if (range.label === 'OR30') {
-            return (
-              !!strategyRange &&
-              strategyRange.label === range.label &&
-              strategyRange.high === range.high &&
-              strategyRange.low === range.low
-            )
-          }
-          return assertBucketEntryEligible({
-            instrument,
-            market: deskMarketFor(instrument),
-            timeSec: deskClockSeconds(instrument),
-            ladder,
-            rangeLabel: range.label,
-          }).ok
-        },
+        liveOk,
       })
       if (!snapped) {
+        // Prefer bucket / unlock copy over generic off-band when bands exist but aren't live.
+        const hit = attributePlaybookBandEntry({
+          entry: Number(rawPx),
+          candidates: snapRanges,
+          preferLabel: strategyRange?.label ?? null,
+          liveOk,
+        })
+        let body = RANGE_EDGE_OFF_BAND_MESSAGE
+        let title = 'Off-band entry'
+        if (snapRanges.length === 0) {
+          title = 'No entry bands'
+          body =
+            instrument === 'NIKKEI'
+              ? 'No live ±10 entry bands — wait for US Range / Tokyo IB to unlock, or refresh after first-hour IB lock.'
+              : 'No live ±10 entry bands — wait for IB / lunch-range to unlock.'
+        } else if (hit) {
+          if (hit.range.label === 'OR30') {
+            title = 'OR30 entry closed'
+            body =
+              instrument === 'NIKKEI'
+                ? 'OR30 morning ±10 window is closed — enter on the live US Range / Tokyo IB playbook when unlocked.'
+                : 'OR30 morning ±10 window is closed — enter on the live IB / lunch-range playbook when unlocked.'
+          } else {
+            const bucketCheck = assertBucketEntryEligible({
+              instrument,
+              market: deskMarketFor(instrument),
+              timeSec: deskClockSeconds(instrument),
+              ladder,
+              rangeLabel: hit.range.label,
+            })
+            if (!bucketCheck.ok) {
+              title = `${hit.range.label} entry closed`
+              body = bucketCheck.message
+            }
+          }
+        }
         onDeskAlert?.({
           kind: 'entry_band_deny',
-          title: 'Off-band entry',
-          body: RANGE_EDGE_OFF_BAND_MESSAGE,
+          title,
+          body,
           telegram: '',
           instrument,
         })
