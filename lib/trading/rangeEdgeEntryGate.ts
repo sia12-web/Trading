@@ -238,6 +238,45 @@ export function findRangeEdgeBandHit<T extends RangeEdgeLevels>(
   return best
 }
 
+/**
+ * Attribute an entry price to a playbook range when several painted ±10 bands
+ * overlap (common on Nikkei: US Range H/L vs Tokyo IB H / 50% / L).
+ *
+ * Live billing prefers ranges that pass `liveOk` (bucket window open + probes
+ * left) so the US Range playbook banner cannot reject as Tokyo IB. Among live
+ * candidates, an explicit preferLabel (ticket / active) wins when in-band;
+ * otherwise nearest center. If no live candidate contains the price, fall back
+ * to all candidates so the caller can surface the unlock / exhaustion message.
+ */
+export function attributePlaybookBandEntry<T extends RangeEdgeLevels>(args: {
+  entry: number
+  candidates: Array<T | null | undefined>
+  preferLabel?: string | null
+  liveOk?: (range: T) => boolean
+  bandPoints?: number
+}): RangeEdgeBandHit<T> | null {
+  const all = args.candidates.filter((r): r is T => !!r)
+  if (all.length === 0) return null
+  const live = args.liveOk ? all.filter((r) => args.liveOk!(r)) : all
+
+  const pickPreferred = (pool: T[]): RangeEdgeBandHit<T> | null => {
+    if (!args.preferLabel) return findRangeEdgeBandHit(args.entry, pool, args.bandPoints)
+    const prefer = pool.find((r) => r.label === args.preferLabel)
+    if (prefer && isEntryWithinRangeEdgeBand(args.entry, prefer, args.bandPoints)) {
+      return findRangeEdgeBandHit(args.entry, [prefer], args.bandPoints)
+    }
+    return findRangeEdgeBandHit(args.entry, pool, args.bandPoints)
+  }
+
+  if (live.length > 0) {
+    const liveHit = pickPreferred(live)
+    if (liveHit) return liveHit
+  }
+  // Price only sits in a closed painted band (e.g. Tokyo IB during US Range) —
+  // return that hit so the gate can show unlock copy, not silent active fallback.
+  return pickPreferred(all)
+}
+
 export function assertRangeEdgeEntry(args: {
   entry: number
   range: RangeEdgeLevels | null | undefined

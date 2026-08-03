@@ -57,7 +57,7 @@ import {
 } from '@/lib/trading/attemptLadder'
 import {
   assertRangeEdgeEntry,
-  findRangeEdgeBandHit,
+  attributePlaybookBandEntry,
   rangeEdgeBands,
   RANGE_EDGE_BAND_POINTS,
 } from '@/lib/trading/rangeEdgeEntryGate'
@@ -2297,9 +2297,28 @@ function SimulationDeskInner() {
       const entrySource = normalizeEntrySource(level.source, 'structure')
       const limit = snapDeskPrice(instrument, level.level)
       const { strategyRange, shapedRanges, strategyMagnets } = getStrategyRiskBundle()
-      // Price-based attribution (same as live/server): bill to the shaped range
-      // whose ±10 H/mid/L band contains the limit — not only the sequential active pick.
-      const hit = findRangeEdgeBandHit(limit, shapedRanges)
+      // Prefer bucket-open ranges so US Range playbook never bills Tokyo IB mid.
+      const ladder = attemptLadderFromCounts({
+        morningAttempts: morningAttemptsRef.current,
+        ibAttempts: ibAttemptsRef.current,
+        lunchAttempts: lunchAttemptsRef.current,
+        morningStopHits: Math.min(stopHitsRef.current, morningAttemptsRef.current),
+        now: new Date(now * 1000),
+        instrument,
+      })
+      const hit = attributePlaybookBandEntry({
+        entry: limit,
+        candidates: shapedRanges,
+        preferLabel: strategyRange?.label ?? null,
+        liveOk: (range) =>
+          assertBucketEntryEligible({
+            instrument,
+            market: deskMarketFor(instrument),
+            timeSec: deskClockSeconds(instrument, new Date(now * 1000)),
+            ladder,
+            rangeLabel: range.label,
+          }).ok,
+      })
       const attributedRange = hit?.range ?? strategyRange
 
       const edge = assertRangeEdgeEntry({ entry: limit, range: attributedRange })
@@ -2309,14 +2328,6 @@ function SimulationDeskInner() {
         return
       }
 
-      const ladder = attemptLadderFromCounts({
-        morningAttempts: morningAttemptsRef.current,
-        ibAttempts: ibAttemptsRef.current,
-        lunchAttempts: lunchAttemptsRef.current,
-        morningStopHits: Math.min(stopHitsRef.current, morningAttemptsRef.current),
-        now: new Date(now * 1000),
-        instrument,
-      })
       if (attributedRange?.label) {
         const bucketOk = assertBucketEntryEligible({
           instrument,

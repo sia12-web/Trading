@@ -499,6 +499,30 @@ function bucketCounts(
   return { used: ladder.lunchAttempts, max: ladder.maxLunchAttempts }
 }
 
+/** Trader-facing unlock hours for a bucket's own entry window. */
+export function bucketWindowUnlockMessage(
+  market: DeskMarket,
+  bucket: AttemptBucket,
+  instrument?: string | null
+): string {
+  const label = bucketDisplayLabel(bucket, instrument)
+  const c = CLOCK[market]
+  const hhmm = (hms: string) => hms.slice(0, 5)
+  if (bucket === 'ib') {
+    if (market === 'TOKYO') {
+      return `${label} entries unlock ${hhmm(c.midStart)}–${hhmm(c.midEnd)} JST (after Morning/OR30 ends or morning probes are exhausted).`
+    }
+    return `${label} entries unlock ${hhmm(c.midStart)}–${hhmm(c.lateEnd)} ET (after Morning/OR30 ends or morning probes are exhausted).`
+  }
+  if (bucket === 'lunch_range') {
+    if (market === 'TOKYO') {
+      return `${label} entries unlock ${hhmm(c.lateStart)}–${hhmm(c.lateEnd)} JST (after US Range ends or US Range probes are exhausted).`
+    }
+    return `${label} entries unlock ${hhmm(c.lateStart)}–${hhmm(c.lateEnd)} ET (after IB ends or IB probes are exhausted).`
+  }
+  return `${label} entry window is not open right now.`
+}
+
 /**
  * Explicit-target entry gate: given the SPECIFIC range label the trader
  * clicked, check that range's own attempt budget + window — never the
@@ -526,8 +550,10 @@ export function assertBucketEntryEligible(args: {
       message: `Session attempt cap hit (${args.ladder.dayAttempts}/${args.ladder.maxDayAttempts}). Trading switched off.`,
     }
   }
-  if (!bucketEligible(args.ladder, bucket)) {
-    const { used, max } = bucketCounts(args.ladder, bucket)
+  const { used, max } = bucketCounts(args.ladder, bucket)
+  // Exhaustion only — never claim "probes used (0/2)" when the bucket is merely
+  // locked behind a prior window / outside its own clock.
+  if (used >= max) {
     return {
       ok: false,
       message: `${label} probes used (${used}/${max}) — no new entries in this range.`,
@@ -536,7 +562,13 @@ export function assertBucketEntryEligible(args: {
   if (!isBucketWindowOpen(args.market, bucket, args.timeSec)) {
     return {
       ok: false,
-      message: `${label} entry window is not open right now.`,
+      message: bucketWindowUnlockMessage(args.market, bucket, args.instrument),
+    }
+  }
+  if (!bucketEligible(args.ladder, bucket)) {
+    return {
+      ok: false,
+      message: `${label} not unlocked yet — wait for the prior range window to end or exhaust its probes.`,
     }
   }
   return { ok: true, bucket }

@@ -111,7 +111,7 @@ import {
   clampPriceToNearestRangeEdgeBands,
   clampPriceToRangeEdgeEnvelope,
   filterLevelsInRangeEdgeBand,
-  findRangeEdgeBandHit,
+  attributePlaybookBandEntry,
   NO_IN_BAND_LEVELS_MESSAGE,
   RANGE_EDGE_BAND_POINTS,
   RANGE_EDGE_OFF_BAND_MESSAGE,
@@ -1553,6 +1553,7 @@ export function TradingChart({
     strategyRange: StrategyRangeEdges | null
     /** Visible (toggled) ±10 zones — limit drag/open/click snap. */
     snapRanges: StrategyRangeEdges[]
+    ladder: ReturnType<typeof attemptLadderFromCounts>
     strategyMagnets: StrategyRiskMagnets
   } => {
     const playbookMode = resolveDeskPlaybookMode({
@@ -1563,6 +1564,8 @@ export function TradingChart({
         ibAttempts,
         lunchAttempts,
         morningStopHits: stopHits,
+        now: new Date(),
+        instrument,
       }),
     })
     const strategyRange = activeRangeForPlaybook({
@@ -1602,6 +1605,14 @@ export function TradingChart({
       active: activeForSnap,
       overlays: eligible,
     })
+    const ladder = attemptLadderFromCounts({
+      morningAttempts,
+      ibAttempts,
+      lunchAttempts,
+      morningStopHits: stopHits,
+      now: new Date(),
+      instrument,
+    })
     const extras: number[] = []
     for (const r of [
       or30RangeRef.current,
@@ -1622,6 +1633,7 @@ export function TradingChart({
     return {
       strategyRange,
       snapRanges,
+      ladder,
       strategyMagnets: {
         avwap: avwapLastRef.current,
         extras,
@@ -3546,43 +3558,62 @@ export function TradingChart({
       if (raw == null || !Number.isFinite(Number(raw)) || Number(raw) <= 0) return
       const price = Number(raw)
 
-      const { strategyRange, snapRanges } = getStrategyRiskBundle()
-      const hit = findRangeEdgeBandHit(price, snapRanges)
+      const { strategyRange, snapRanges, ladder } = getStrategyRiskBundle()
+      const hit = attributePlaybookBandEntry({
+        entry: price,
+        candidates: snapRanges,
+        preferLabel: strategyRange?.label ?? null,
+        liveOk: (range) => {
+          if (range.label === 'OR30') {
+            return (
+              !!strategyRange &&
+              strategyRange.label === range.label &&
+              strategyRange.high === range.high &&
+              strategyRange.low === range.low
+            )
+          }
+          return assertBucketEntryEligible({
+            instrument,
+            market: deskMarketFor(instrument),
+            timeSec: deskClockSeconds(instrument),
+            ladder,
+            rangeLabel: range.label,
+          }).ok
+        },
+      })
       if (!hit) return
 
       const label = hit.range.label || 'range'
       // OR30 has no independent afternoon bucket — it only trades inside its
       // own locked morning window, gated upstream (chart hides it once that
       // window closes; treat any hit here as preview-only).
-      const liveOk =
-        label === 'OR30'
-          ? !!strategyRange &&
-            strategyRange.label === hit.range.label &&
-            strategyRange.high === hit.range.high &&
-            strategyRange.low === hit.range.low
-          : assertBucketEntryEligible({
-              instrument,
-              market: deskMarketFor(instrument),
-              timeSec: deskClockSeconds(instrument),
-              ladder: attemptLadderFromCounts({
-                morningAttempts,
-                ibAttempts,
-                lunchAttempts,
-                morningStopHits: stopHits,
-                now: new Date(),
-                instrument,
-              }),
-              rangeLabel: hit.range.label,
-            }).ok
+      let denyBody: string | null = null
+      if (label === 'OR30') {
+        const or30Live =
+          !!strategyRange &&
+          strategyRange.label === hit.range.label &&
+          strategyRange.high === hit.range.high &&
+          strategyRange.low === hit.range.low
+        if (!or30Live) {
+          denyBody =
+            'OR30 morning ±10 window is closed — enter on the live US Range / IB / lunch playbook when unlocked.'
+        }
+      } else {
+        const bucketCheck = assertBucketEntryEligible({
+          instrument,
+          market: deskMarketFor(instrument),
+          timeSec: deskClockSeconds(instrument),
+          ladder,
+          rangeLabel: hit.range.label,
+        })
+        if (!bucketCheck.ok) denyBody = bucketCheck.message
+      }
 
-      if (!liveOk) {
+      if (denyBody) {
         onDeskAlert?.({
           kind: 'entry_band_deny',
           title: `${label} entry closed`,
-          body:
-            label === 'OR30'
-              ? 'OR30 morning ±10 window is closed — enter on the live US Range / IB / lunch playbook when unlocked.'
-              : `${label} probes are exhausted or its entry window is not open right now.`,
+          body: denyBody,
           telegram: '',
           instrument,
         })
@@ -4582,8 +4613,29 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     if (!riskBox) return
     const { entryPrice, stopLoss, profitTarget, direction } = riskBox
 
-    const { strategyMagnets, snapRanges } = getStrategyRiskBundle()
-    const hit = findRangeEdgeBandHit(entryPrice, snapRanges)
+    const { strategyMagnets, snapRanges, strategyRange, ladder } = getStrategyRiskBundle()
+    const hit = attributePlaybookBandEntry({
+      entry: entryPrice,
+      candidates: snapRanges,
+      preferLabel: strategyRange?.label ?? null,
+      liveOk: (range) => {
+        if (range.label === 'OR30') {
+          return (
+            !!strategyRange &&
+            strategyRange.label === range.label &&
+            strategyRange.high === range.high &&
+            strategyRange.low === range.low
+          )
+        }
+        return assertBucketEntryEligible({
+          instrument,
+          market: deskMarketFor(instrument),
+          timeSec: deskClockSeconds(instrument),
+          ladder,
+          rangeLabel: range.label,
+        }).ok
+      },
+    })
     if (!hit) {
       onDeskAlert?.({
         kind: 'entry_band_deny',
@@ -7028,8 +7080,30 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   type="button"
                   onClick={() => {
                     const fullReason = `Manual ${rationaleModal.direction} entry: ${userRationale || 'Technical structure'} | SL/TP rationale: ${userSlTpRationale || 'Geometry bounds'}`
-                    const { strategyMagnets, snapRanges } = getStrategyRiskBundle()
-                    const hit = findRangeEdgeBandHit(rationaleModal.entryPrice, snapRanges)
+                    const { strategyMagnets, snapRanges, strategyRange, ladder } =
+                      getStrategyRiskBundle()
+                    const hit = attributePlaybookBandEntry({
+                      entry: rationaleModal.entryPrice,
+                      candidates: snapRanges,
+                      preferLabel: strategyRange?.label ?? null,
+                      liveOk: (range) => {
+                        if (range.label === 'OR30') {
+                          return (
+                            !!strategyRange &&
+                            strategyRange.label === range.label &&
+                            strategyRange.high === range.high &&
+                            strategyRange.low === range.low
+                          )
+                        }
+                        return assertBucketEntryEligible({
+                          instrument,
+                          market: deskMarketFor(instrument),
+                          timeSec: deskClockSeconds(instrument),
+                          ladder,
+                          rangeLabel: range.label,
+                        }).ok
+                      },
+                    })
                     if (!hit) {
                       onDeskAlert?.({
                         kind: 'entry_band_deny',

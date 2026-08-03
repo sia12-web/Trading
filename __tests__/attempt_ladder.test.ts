@@ -210,7 +210,12 @@ assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
   // Nikkei US Range bills to the ib storage bucket (slot 2)
   assert(bucketForRangeLabel('NIKKEI', 'US Range') === 'ib', 'US Range → ib bucket on NIKKEI')
   assert(bucketForRangeLabel('DOW', 'US Range') === null, 'US Range not a NY bucket label')
-  const ladder = attemptLadderFromCounts({ morningAttempts: 0, ibAttempts: 0 })
+  const ladder = attemptLadderFromCounts({
+    morningAttempts: 0,
+    ibAttempts: 0,
+    now: new Date(Date.UTC(2026, 6, 30, 0, 22, 0)),
+    instrument: 'NIKKEI',
+  })
   const tokyoOpen = new Date(Date.UTC(2026, 6, 30, 0, 22, 0)) // 09:22 JST
   const check = assertBucketEntryEligible({
     instrument: 'NIKKEI',
@@ -220,6 +225,64 @@ assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
     rangeLabel: 'US Range',
   })
   assert(check.ok, `US Range mid-window eligible: ${!check.ok ? check.message : ''}`)
+}
+
+{
+  // Tokyo IB used=0 during US Range window — unlock copy, NOT "probes used (0/2)"
+  const duringUs = new Date(Date.UTC(2026, 6, 30, 0, 30, 0)) // 09:30 JST
+  const ladder = attemptLadderFromCounts({
+    morningAttempts: 0,
+    ibAttempts: 0,
+    lunchAttempts: 0,
+    now: duringUs,
+    instrument: 'NIKKEI',
+  })
+  assert(!ladder.lunchEligible, 'Tokyo IB not unlocked while US Range clock holds')
+  const denied = assertBucketEntryEligible({
+    instrument: 'NIKKEI',
+    market: 'TOKYO',
+    timeSec: deskClockSeconds('NIKKEI', duringUs),
+    ladder,
+    rangeLabel: 'Tokyo IB',
+  })
+  assert(!denied.ok, 'Tokyo IB blocked during US Range window')
+  if (!denied.ok) {
+    assert(
+      !/probes used \(0\/2\)/i.test(denied.message),
+      `must not say probes used 0/2, got: ${denied.message}`
+    )
+    assert(
+      /13:30–15:00 JST/i.test(denied.message),
+      `must name Tokyo IB unlock hours, got: ${denied.message}`
+    )
+  }
+}
+
+{
+  // Real exhaustion still says probes used (2/2)
+  const duringIb = new Date(Date.UTC(2026, 6, 30, 5, 0, 0)) // 14:00 JST
+  const exhausted = attemptLadderFromCounts({
+    morningAttempts: 0,
+    ibAttempts: 0,
+    lunchAttempts: 2,
+    now: duringIb,
+    instrument: 'NIKKEI',
+  })
+  assert(!exhausted.dayLocked, 'session under day cap so bucket exhaustion copy can fire')
+  const denied = assertBucketEntryEligible({
+    instrument: 'NIKKEI',
+    market: 'TOKYO',
+    timeSec: deskClockSeconds('NIKKEI', duringIb),
+    ladder: exhausted,
+    rangeLabel: 'Tokyo IB',
+  })
+  assert(!denied.ok, 'exhausted Tokyo IB blocked')
+  if (!denied.ok) {
+    assert(
+      /probes used \(2\/2\)/i.test(denied.message),
+      `exhaustion copy, got: ${denied.message}`
+    )
+  }
 }
 
 console.log('attempt_ladder: all passed')

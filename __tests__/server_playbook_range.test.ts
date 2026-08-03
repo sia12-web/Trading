@@ -8,6 +8,7 @@ import {
   gateEntryAgainstAuthoritativeRange,
   SERVER_PLAYBOOK_CANDLE_DAYS,
 } from '../lib/trading/serverPlaybookRange'
+import { attemptLadderFromCounts } from '../lib/trading/attemptLadder'
 
 assert.ok(
   SERVER_PLAYBOOK_CANDLE_DAYS >= 5,
@@ -149,6 +150,73 @@ const serverOr30 = { label: 'OR30', high: 63_281.3, low: 62_508.8 }
   assert.equal(usedUsClientFallback, false)
   assert.equal(range?.high, serverUs.high)
   assert.equal(range?.low, serverUs.low)
+}
+
+{
+  // Overlap: US Range high == Tokyo IB 50% mid → prefer bucket-open US Range
+  // (candidates list Tokyo IB before US — nearest-only used to mis-bill to IB
+  // while the banner still said "US Range unlocked").
+  const us = { label: 'US Range', high: 40_000, low: 39_500 }
+  const tokyoIb = { label: 'Tokyo IB', high: 40_100, low: 39_900 } // mid = 40000
+  const duringUs = new Date(Date.UTC(2026, 6, 30, 0, 30, 0)) // 09:30 JST
+  const ladder = attemptLadderFromCounts({
+    morningAttempts: 1,
+    ibAttempts: 1,
+    lunchAttempts: 0,
+    now: duringUs,
+    instrument: 'NIKKEI',
+  })
+
+  const { range: claimed } = attributeServerPlaybookEntry({
+    entry: us.high,
+    shaped: { or30: null, ib: tokyoIb, usRange: us, lunchRange: null },
+    active: us,
+    clientRange: { high: us.high, low: us.low, label: 'US Range' },
+    instrument: 'NIKKEI',
+    ladder,
+    now: duringUs,
+  })
+  assert.equal(claimed?.label, 'US Range', 'client US claim wins over overlapping Tokyo IB mid')
+
+  // Even with a wrong Tokyo IB client claim, live-open US bucket must win
+  const { range: wrongClaim } = attributeServerPlaybookEntry({
+    entry: us.high,
+    shaped: { or30: null, ib: tokyoIb, usRange: us, lunchRange: null },
+    active: us,
+    clientRange: { high: tokyoIb.high, low: tokyoIb.low, label: 'Tokyo IB' },
+    instrument: 'NIKKEI',
+    ladder,
+    now: duringUs,
+  })
+  assert.equal(
+    wrongClaim?.label,
+    'US Range',
+    'banner US Range playbook must not reject as Tokyo IB on overlap'
+  )
+
+  // No client claim — active US Range playbook still wins over Tokyo IB mid
+  const { range: activePref } = attributeServerPlaybookEntry({
+    entry: us.high,
+    shaped: { or30: null, ib: tokyoIb, usRange: us, lunchRange: null },
+    active: us,
+    clientRange: null,
+    instrument: 'NIKKEI',
+    ladder,
+    now: duringUs,
+  })
+  assert.equal(activePref?.label, 'US Range', 'active US Range preferred on overlap without client')
+
+  // Explicit Tokyo IB-only price (not in US bands) still attributes to Tokyo IB
+  const { range: ibOnly } = attributeServerPlaybookEntry({
+    entry: tokyoIb.high,
+    shaped: { or30: null, ib: tokyoIb, usRange: us, lunchRange: null },
+    active: us,
+    clientRange: { high: tokyoIb.high, low: tokyoIb.low, label: 'Tokyo IB' },
+    instrument: 'NIKKEI',
+    ladder,
+    now: duringUs,
+  })
+  assert.equal(ibOnly?.label, 'Tokyo IB', 'Tokyo IB-only price still attributes to IB for deny copy')
 }
 
 console.log('server_playbook_range.test.ts: ok')

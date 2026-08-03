@@ -38,7 +38,7 @@ import type { Instrument } from '@/types/price-feed'
 import type { StrategyRangeEdges } from '@/lib/trading/strategyRiskGeometry'
 import {
   assertRangeEdgeEntry,
-  findRangeEdgeBandHit,
+  attributePlaybookBandEntry,
   type RangeEdgeLevels,
 } from '@/lib/trading/rangeEdgeEntryGate'
 import { logger } from '@/lib/utils/logger'
@@ -202,11 +202,25 @@ export function gateEntryAgainstAuthoritativeRange(args: {
  *    swallows US mid and the fallback never fires
  * 4. Sequential active highlight
  */
+/**
+ * Attribute an entry to a shaped playbook range (pure — used by the server gate
+ * and unit-tested for the Monday weekend-gap US Range soft-fallback).
+ *
+ * Order:
+ * 1. Among bucket-open shaped ranges, prefer client label / active when in-band
+ *    (US Range playbook must not bill overlapping Tokyo IB mid)
+ * 2. Nearest open-band hit
+ * 3. Client US Range soft-fallback when server could not shape US (weekend gap)
+ * 4. Sequential active highlight / nearest closed band (for deny messaging)
+ */
 export function attributeServerPlaybookEntry(args: {
   entry: number
   shaped: ServerPlaybookBundle['shaped']
   active: StrategyRangeEdges | null
   clientRange: { high: number; low: number; label?: string | null } | null
+  instrument?: string
+  ladder?: AttemptLadder
+  now?: Date
 }): { range: StrategyRangeEdges | null; usedUsClientFallback: boolean } {
   const candidates = [
     args.shaped.or30,
@@ -215,12 +229,32 @@ export function attributeServerPlaybookEntry(args: {
     args.shaped.lunchRange,
   ].filter((r): r is StrategyRangeEdges => !!r)
 
-  const hit = findRangeEdgeBandHit(args.entry, candidates)
-  let attributed: StrategyRangeEdges | null =
-    hit?.range ??
-    (args.clientRange
-      ? candidates.find((r) => r.label === args.clientRange!.label) ?? null
-      : null)
+  const preferLabel =
+    args.clientRange?.label ?? args.active?.label ?? null
+
+  const liveOk =
+    args.instrument && args.ladder
+      ? (range: StrategyRangeEdges) => {
+          const market = deskMarketFor(args.instrument!)
+          const timeSec = deskClockSeconds(args.instrument!, args.now ?? new Date())
+          return assertBucketEntryEligible({
+            instrument: args.instrument!,
+            market,
+            timeSec,
+            ladder: args.ladder!,
+            rangeLabel: range.label,
+          }).ok
+        }
+      : undefined
+
+  const hit = attributePlaybookBandEntry({
+    entry: args.entry,
+    candidates,
+    preferLabel,
+    liveOk,
+  })
+
+  let attributed: StrategyRangeEdges | null = hit?.range ?? null
 
   let usedUsClientFallback = false
   // Weekend gap: server shaped OR30/IB from *today* but history missed Friday
@@ -245,7 +279,10 @@ export function attributeServerPlaybookEntry(args: {
     }
   }
 
-  if (!attributed) attributed = args.active
+  if (!attributed) {
+    // Soft-fallback / active only when we still have no band hit at all.
+    attributed = args.active
+  }
   return { range: attributed, usedUsClientFallback }
 }
 
@@ -309,6 +346,9 @@ export async function assertServerRangeEdgeEntry(args: {
     shaped,
     active,
     clientRange: args.clientRange,
+    instrument: args.instrument,
+    ladder,
+    now: args.now,
   })
 
   if (usedUsClientFallback && attributed) {
