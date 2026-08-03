@@ -263,21 +263,6 @@ function midBookLine(
       note: `${label} closed — window over. Do not enter.`,
     }
   }
-  if (label === 'IB' || label === 'Tokyo IB') {
-    // IB must be locked (complete) before ±10
-    if (!range || (range.complete === false && label !== 'US Range')) {
-      // computeInitialBalance returns null until lock — treat missing as forming inside window
-      if (!range) {
-        return {
-          label,
-          state: 'forming',
-          probesUsed: used,
-          probesMax: max,
-          note: `${label} still forming — do not enter until first-hour lock`,
-        }
-      }
-    }
-  }
   if (label === 'US Range') {
     if (!range || range.complete !== true) {
       return {
@@ -294,7 +279,7 @@ function midBookLine(
       state: 'forming',
       probesUsed: used,
       probesMax: max,
-      note: `${label} not locked yet — do not enter`,
+      note: `${label} still forming — do not enter until first-hour lock`,
     }
   }
 

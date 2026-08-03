@@ -75,6 +75,7 @@ import type { DeskCalendarEvent } from '@/lib/trading/deskNews'
 import { infoToast, warningToast, successToast } from '@/lib/utils/toastUtils'
 import { LiveDeskBriefPanel } from './components/LiveDeskBriefPanel'
 import type { LiveDeskBrief } from '@/lib/trading/liveDeskBrief'
+import type { DeskInstrument } from '@/lib/trading/sessionGate'
 
 /** Why new entries are blocked — shown on market/limit place attempts. */
 function entryDeniedMessage(gate: SessionGateState | null | undefined): string | null {
