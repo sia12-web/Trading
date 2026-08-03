@@ -5,6 +5,7 @@
 
 import {
   attemptLadderFromCounts,
+  buildAttemptLadder,
   classifyAttemptBucket,
   MAX_DAY_ATTEMPTS,
   MAX_MORNING_ATTEMPTS,
@@ -305,6 +306,30 @@ assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
       `exhaustion copy, got: ${denied.message}`
     )
   }
+}
+
+{
+  // Prefer stored range_bucket over clock during Tokyo US/IB overlap (10:00–10:45 JST).
+  // 01:30 UTC = 10:30 JST — clock alone would bill as US (`ib`); DB lunch_range = Tokyo IB.
+  const overlapTs = '2026-08-03T01:30:36.182Z'
+  assert(
+    classifyAttemptBucket('NIKKEI', overlapTs) === 'ib',
+    'clock fallback at 10:30 JST → US (ib) during overlap'
+  )
+  const preferred = buildAttemptLadder(
+    [
+      {
+        instrument: 'NIKKEI',
+        entryTimestamp: overlapTs,
+        exitReason: 'stop_hit',
+        rangeBucket: 'lunch_range',
+      },
+    ],
+    'NIKKEI'
+  )
+  assert(preferred.lunchAttempts === 1, 'stored lunch_range → Tokyo IB slot')
+  assert(preferred.ibAttempts === 0, 'stored lunch_range must not inflate US slot')
+  assert(preferred.dayAttempts === 1, 'one fill still counts once toward session')
 }
 
 console.log('attempt_ladder: all passed')

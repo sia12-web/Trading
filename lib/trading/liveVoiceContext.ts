@@ -279,7 +279,7 @@ export async function buildLiveVoiceDeskContext(
       .maybeSingle(),
     supabase
       .from('trades_journal')
-      .select('id, instrument, exit_reason, entry_timestamp, created_at')
+      .select('id, instrument, exit_reason, entry_timestamp, created_at, range_bucket')
       .eq('user_id', userId)
       .eq('trade_date', tradeDate)
       .in('instrument', marketInstruments)
@@ -333,6 +333,14 @@ export async function buildLiveVoiceDeskContext(
     instrument: (t.instrument as string) || contextInstrument,
     entryTimestamp: t.entry_timestamp || t.created_at || null,
     exitReason: (t.exit_reason as string) || null,
+    rangeBucket:
+      (t as { range_bucket?: string | null }).range_bucket as
+        | 'morning'
+        | 'ib'
+        | 'lunch_range'
+        | 'other'
+        | null
+        | undefined,
   }))
   const voice = resolveLiveVoiceStatus({
     now,
