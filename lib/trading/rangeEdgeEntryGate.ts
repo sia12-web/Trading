@@ -296,13 +296,25 @@ export function snapEntryToOpenBandCenter<T extends RangeEdgeLevels>(args: {
   return { price: hit.center, hit }
 }
 
+/** Distance from price to a ±band (0 when inside; else to nearest band edge). */
+export function distanceToRangeEdgeBand(
+  price: number,
+  band: RangeEdgeBand
+): number {
+  if (price >= band.min && price <= band.max) return 0
+  if (price < band.min) return band.min - price
+  return price - band.max
+}
+
 /**
  * Limit-button / “place near” snap: if already in a live ±10 band → that center;
- * otherwise snap to the nearest live-open band center (H / L / mid when allowed).
+ * otherwise pick the nearest live-open band by **edge distance** (H / Mid / L
+ * treated equally — never prefer mid via geometric center bias), then lock to
+ * that band’s center.
  * Returns null when no live placeable bands exist (closed window / exhausted / day lock).
  *
  * Distinct from {@link snapEntryToOpenBandCenter}, which hard-rejects outside a band —
- * that path is for click-on-highlight and server attribution. Soft nearest-center here
+ * that path is for click-on-highlight and server attribution. Soft nearest-band here
  * is intentional so Limit does not fail with off-band while painted live zones exist.
  */
 export function snapEntryToNearestOpenBandCenter<T extends RangeEdgeLevels>(args: {
@@ -324,8 +336,9 @@ export function snapEntryToNearestOpenBandCenter<T extends RangeEdgeLevels>(args
   let bestDist = Infinity
   for (const range of live) {
     for (const band of rangeEdgeBands(range, bandPoints)) {
-      const d = Math.abs(args.entry - band.center)
+      const d = distanceToRangeEdgeBand(args.entry, band)
       // Tiny prefer-label boost so ties land on the active playbook range.
+      // Do not boost mid over H/L — edges compete equally.
       const score =
         d + (args.preferLabel && range.label === args.preferLabel ? -1e-6 : 0)
       if (score < bestDist) {

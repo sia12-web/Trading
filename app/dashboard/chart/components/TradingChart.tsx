@@ -109,6 +109,7 @@ import {
 } from '@/lib/trading/strategyRiskGeometry'
 import {
   snapEntryToNearestOpenBandCenter,
+  clampPriceToRangeEdgeEnvelope,
   filterLevelsInRangeEdgeBand,
   attributePlaybookBandEntry,
   NO_IN_BAND_LEVELS_MESSAGE,
@@ -1657,12 +1658,20 @@ export function TradingChart({
   const openRiskBox = useCallback(
     (
       preferredPrice?: number,
-      opts?: { direction?: 'LONG' | 'SHORT' }
+      opts?: {
+        direction?: 'LONG' | 'SHORT'
+        /**
+         * Click-on-band: keep that painted edge center (H / Mid / L).
+         * Prevents re-attribution from flipping a high/low click onto mid
+         * when ranges overlap.
+         */
+        lockHit?: {
+          center: number
+          edge: 'high' | 'low' | 'mid'
+          range: StrategyRangeEdges
+        }
+      }
     ) => {
-      const rawPx =
-        preferredPrice != null && Number.isFinite(preferredPrice) && preferredPrice > 0
-          ? preferredPrice
-          : livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 67000)
       const { strategyRange, snapRanges, ladder } = getStrategyRiskBundle()
       const liveOk = (range: { label: string; high: number; low: number }) => {
         if (range.label === 'OR30') {
@@ -1681,6 +1690,55 @@ export function TradingChart({
           rangeLabel: range.label,
         }).ok
       }
+
+      if (opts?.lockHit) {
+        const { center, edge, range } = opts.lockHit
+        if (!liveOk(range)) {
+          const bucketCheck = assertBucketEntryEligible({
+            instrument,
+            market: deskMarketFor(instrument),
+            timeSec: deskClockSeconds(instrument),
+            ladder,
+            rangeLabel: range.label,
+          })
+          onDeskAlert?.({
+            kind: 'entry_band_deny',
+            title: `${range.label || 'range'} entry closed`,
+            body:
+              range.label === 'OR30'
+                ? instrument === 'NIKKEI'
+                  ? 'OR30 morning ±10 window is closed — enter on the live US Range / Tokyo IB playbook when unlocked.'
+                  : 'OR30 morning ±10 window is closed — enter on the live IB / lunch-range playbook when unlocked.'
+                : bucketCheck.ok
+                  ? RANGE_EDGE_OFF_BAND_MESSAGE
+                  : bucketCheck.message,
+            telegram: '',
+            instrument,
+          })
+          return
+        }
+        const entry = snapDeskPrice(instrument, center)
+        const dir: 'LONG' | 'SHORT' =
+          opts.direction ??
+          (edge === 'high' ? 'SHORT' : edge === 'low' ? 'LONG' : 'LONG')
+        setRiskBox({
+          direction: dir,
+          orderType: 'LIMIT',
+          entryPrice: entry,
+          stopLoss: defaultManualStop(entry, dir),
+          profitTarget: snapDeskPrice(
+            instrument,
+            dir === 'LONG' ? entry * 1.0105 : entry * (1 - 0.0105)
+          ),
+        })
+        setRiskBoxActive(true)
+        return
+      }
+
+      const rawPx =
+        preferredPrice != null && Number.isFinite(preferredPrice) && preferredPrice > 0
+          ? preferredPrice
+          : livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 67000)
       // Limit / place-near: snap to nearest live band center (in-band → that center).
       const snapped = snapEntryToNearestOpenBandCenter({
         entry: Number(rawPx),
@@ -3709,7 +3767,14 @@ export function TradingChart({
               livePrice != null && Number.isFinite(livePrice) && livePrice > hit.center
               ? 'SHORT'
               : 'LONG'
-      openRiskBox(hit.center, { direction: dir })
+      openRiskBox(hit.center, {
+        direction: dir,
+        lockHit: {
+          center: hit.center,
+          edge: hit.edge,
+          range: hit.range,
+        },
+      })
     }
 
     container.addEventListener('mousedown', onDown, true)
@@ -4351,10 +4416,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     clearRiskBoxLines()
   }, [clearRiskBoxLines])
 
-  // Mouse dragging for Risk Box lines (TP / SL only — entry locked to band)
-  const draggingRiskLineRef = useRef<'TP' | 'SL' | null>(null)
+  // Mouse dragging for Risk Box lines (Entry between open-band centers; TP / SL free)
+  const draggingRiskLineRef = useRef<'ENTRY' | 'TP' | 'SL' | null>(null)
 
-  const onRiskLineMouseDown = useCallback((type: 'TP' | 'SL') => (e: React.MouseEvent) => {
+  const onRiskLineMouseDown = useCallback((type: 'ENTRY' | 'TP' | 'SL') => (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
     draggingRiskLineRef.current = type
@@ -4362,6 +4427,28 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
   useEffect(() => {
     if (!riskBox) return
+
+    const liveOkForSnap = (
+      range: { label: string; high: number; low: number },
+      strategyRange: StrategyRangeEdges | null,
+      ladder: ReturnType<typeof attemptLadderFromCounts>
+    ) => {
+      if (range.label === 'OR30') {
+        return (
+          !!strategyRange &&
+          strategyRange.label === range.label &&
+          strategyRange.high === range.high &&
+          strategyRange.low === range.low
+        )
+      }
+      return assertBucketEntryEligible({
+        instrument,
+        market: deskMarketFor(instrument),
+        timeSec: deskClockSeconds(instrument),
+        ladder,
+        rangeLabel: range.label,
+      }).ok
+    }
 
     const onMouseMove = (e: MouseEvent) => {
       if (!draggingRiskLineRef.current || !containerRef.current || !candleRef.current) return
@@ -4372,8 +4459,24 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       if (rawPrice == null || !Number.isFinite(Number(rawPrice)) || Number(rawPrice) <= 0) return
 
       const snappedRaw = snapDeskPrice(instrument, Number(rawPrice))
+      const { snapRanges } = getStrategyRiskBundle()
 
-      if (draggingRiskLineRef.current === 'TP') {
+      if (draggingRiskLineRef.current === 'ENTRY') {
+        // Free vertical follow within the outer ±10 envelope (H ↔ Mid ↔ L reachable).
+        // Snap to a band center on mouseup — continuous center clamp traps mid.
+        const enveloped = clampPriceToRangeEdgeEnvelope(snappedRaw, snapRanges)
+        const snapped = snapDeskPrice(instrument, enveloped ?? snappedRaw)
+        setRiskBox((prev) => {
+          if (!prev) return null
+          const diff = snapped - prev.entryPrice
+          return {
+            ...prev,
+            entryPrice: snapped,
+            stopLoss: snapDeskPrice(instrument, prev.stopLoss + diff),
+            profitTarget: snapDeskPrice(instrument, prev.profitTarget + diff),
+          }
+        })
+      } else if (draggingRiskLineRef.current === 'TP') {
         setRiskBox((prev) => (prev ? { ...prev, profitTarget: snappedRaw } : null))
       } else if (draggingRiskLineRef.current === 'SL') {
         setRiskBox((prev) => (prev ? { ...prev, stopLoss: snappedRaw } : null))
@@ -4381,7 +4484,29 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     }
 
     const onMouseUp = () => {
+      const was = draggingRiskLineRef.current
       draggingRiskLineRef.current = null
+      if (was !== 'ENTRY') return
+      const { snapRanges, strategyRange, ladder } = getStrategyRiskBundle()
+      setRiskBox((prev) => {
+        if (!prev) return null
+        const snapped = snapEntryToNearestOpenBandCenter({
+          entry: prev.entryPrice,
+          candidates: snapRanges,
+          preferLabel: strategyRange?.label ?? null,
+          liveOk: (range) => liveOkForSnap(range, strategyRange, ladder),
+        })
+        if (!snapped) return prev
+        const next = snapDeskPrice(instrument, snapped.price)
+        if (next === prev.entryPrice) return prev
+        const diff = next - prev.entryPrice
+        return {
+          ...prev,
+          entryPrice: next,
+          stopLoss: snapDeskPrice(instrument, prev.stopLoss + diff),
+          profitTarget: snapDeskPrice(instrument, prev.profitTarget + diff),
+        }
+      })
     }
 
     window.addEventListener('mousemove', onMouseMove, true)
@@ -4390,7 +4515,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       window.removeEventListener('mousemove', onMouseMove, true)
       window.removeEventListener('mouseup', onMouseUp, true)
     }
-  }, [riskBox, instrument])
+  }, [riskBox, instrument, getStrategyRiskBundle])
 
   // Drag filled-position SL/TP (Entry fixed). Commit on mouseup via onAdjustBrackets.
   const onBracketLineMouseDown = useCallback(
@@ -6815,15 +6940,16 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 </div>
               )}
 
-              {/* Entry Line Pill Badge — entry locked to band; TP/SL remain draggable */}
+              {/* Entry Line Pill Badge — drag between open ±10 band centers; TP/SL free */}
               {entryY != null && (
                 <div
-                  className="absolute flex items-center gap-2 pointer-events-auto group"
+                  onMouseDown={onRiskLineMouseDown('ENTRY')}
+                  className="absolute flex items-center gap-2 pointer-events-auto cursor-ns-resize group"
                   style={{
                     left: '32%',
                     top: `${entryY - 14}px`,
                   }}
-                  title="Entry locked to painted ±10 band — drag TP / SL only"
+                  title="Drag Entry between painted ±10 band centers (H / Mid / L; US Range H / L only)"
                 >
                   {/* Explicit Buy / Sell Placement Button — ONLY BUTTON THAT PLACES ORDER */}
                   <button

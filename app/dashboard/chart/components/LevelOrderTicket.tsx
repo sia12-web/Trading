@@ -742,7 +742,7 @@ export function LevelOrderTicket({
                 Entry stays on ±{RANGE_EDGE_BAND_POINTS} of {strategyRange.label || 'range'} H (
                 {strategyRange.high.toLocaleString()})
                 {rangeAllowsMidEdge(strategyRange) ? ' / 50% mid' : ''} / L (
-                {strategyRange.low.toLocaleString()}) — adjust TP / SL only.
+                {strategyRange.low.toLocaleString()}) — on chart, drag entry between those band centers; adjust TP / SL here.
               </p>
             )}
             <label className="mt-3 block text-[10px] uppercase tracking-wider text-gray-500">

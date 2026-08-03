@@ -307,6 +307,55 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
     'US mid snaps to nearest US H or L (no mid band)'
   )
 
+  // Edge-distance nearest: price in the upper gap nearer the high ±10 band must
+  // lock high center — not mid — so Limit near H+ / H− does not bias 50%.
+  const ibWide = { high: 40_200, low: 40_000, label: 'IB' }
+  const nearHighGap = snapEntryToNearestOpenBandCenter({
+    entry: 40_175, // outside mid (±10 of 40100) and outside high (±10 of 40200); closer to high band
+    candidates: [ibWide],
+  })
+  assert.equal(nearHighGap?.price, 40_200, 'gap nearer high band → high center')
+  assert.equal(nearHighGap?.hit.edge, 'high')
+
+  const nearLowGap = snapEntryToNearestOpenBandCenter({
+    entry: 40_025,
+    candidates: [ibWide],
+  })
+  assert.equal(nearLowGap?.price, 40_000, 'gap nearer low band → low center')
+  assert.equal(nearLowGap?.hit.edge, 'low')
+
+  const nearMidGap = snapEntryToNearestOpenBandCenter({
+    entry: 40_100,
+    candidates: [ibWide],
+  })
+  assert.equal(nearMidGap?.price, 40_100, 'exact mid → mid center')
+  assert.equal(nearMidGap?.hit.edge, 'mid')
+
+  // In-band click prices lock that edge center (H / Mid / L), never always mid
+  assert.equal(
+    snapEntryToOpenBandCenter({ entry: 40_198, candidates: [ibWide] })?.hit.edge,
+    'high',
+    'IB high-band click → high'
+  )
+  assert.equal(
+    snapEntryToOpenBandCenter({ entry: 40_102, candidates: [ibWide] })?.hit.edge,
+    'mid',
+    'IB mid-band click → mid'
+  )
+  assert.equal(
+    snapEntryToOpenBandCenter({ entry: 40_005, candidates: [ibWide] })?.hit.edge,
+    'low',
+    'IB low-band click → low'
+  )
+  assert.equal(
+    snapEntryToOpenBandCenter({
+      entry: (us.high + us.low) / 2,
+      candidates: [us],
+    }),
+    null,
+    'US Range mid still not placeable'
+  )
+
   assert.equal(
     snapEntryToNearestOpenBandCenter({
       entry: 40_050,
