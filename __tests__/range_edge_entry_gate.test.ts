@@ -17,6 +17,7 @@ import {
   rangeEdgeBands,
   rangeEdgeBandsEnvelope,
   rangeMidpoint,
+  snapEntryToOpenBandCenter,
   RANGE_EDGE_BAND_POINTS,
   RANGE_EDGE_OFF_BAND_MESSAGE,
   RANGE_EDGE_US_MID_REJECTED_MESSAGE,
@@ -235,6 +236,53 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
   const clampedCheck = assertRangeEdgeEntry({ entry: clamped!, range: ib })
   assert.equal(clampedCheck.ok, true, 'clamped price lands in legal band')
   assert.notEqual(40_050, clamped, 'policy: reject original — do not silently trade clamped level')
+}
+
+{
+  // Place/snap: in-band → band center; outside → null (hard reject, no soft place)
+  const us = { high: 40_000, low: 39_500, label: 'US Range' }
+  const ib = { high: 40_100, low: 39_900, label: 'Tokyo IB' }
+  const snapHigh = snapEntryToOpenBandCenter({
+    entry: 40_005,
+    candidates: [us, ib],
+    preferLabel: 'US Range',
+  })
+  assert.equal(snapHigh?.price, 40_000, 'US high band snaps to high center')
+  assert.equal(snapHigh?.hit.edge, 'high')
+  assert.equal(snapHigh?.hit.range.label, 'US Range')
+
+  const snapIb = snapEntryToOpenBandCenter({
+    entry: 40_095,
+    candidates: [us, ib],
+    preferLabel: 'US Range',
+  })
+  assert.equal(snapIb?.price, 40_100, 'Tokyo IB-only click snaps to IB high')
+  assert.equal(snapIb?.hit.range.label, 'Tokyo IB')
+
+  assert.equal(
+    snapEntryToOpenBandCenter({ entry: 39_750, candidates: [us, ib] }),
+    null,
+    'US mid / gap rejects — no soft snap place'
+  )
+  assert.equal(
+    snapEntryToOpenBandCenter({ entry: 40_050, candidates: [us, ib] }),
+    null,
+    'between US high and IB mid rejects'
+  )
+
+  // liveOk closed → not placeable even if painted
+  const closed = snapEntryToOpenBandCenter({
+    entry: 40_100,
+    candidates: [us, ib],
+    liveOk: (r) => r.label === 'US Range',
+  })
+  assert.equal(closed, null, 'closed-bucket band is not a placeable snap')
+
+  const usMidReject = snapEntryToOpenBandCenter({
+    entry: (us.high + us.low) / 2,
+    candidates: [us],
+  })
+  assert.equal(usMidReject, null, 'US Range mid is never a placeable snap')
 }
 
 console.log('range_edge_entry_gate: all passed')

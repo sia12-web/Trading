@@ -39,6 +39,7 @@ import type { StrategyRangeEdges } from '@/lib/trading/strategyRiskGeometry'
 import {
   assertRangeEdgeEntry,
   attributePlaybookBandEntry,
+  RANGE_EDGE_OFF_BAND_MESSAGE,
   type RangeEdgeLevels,
 } from '@/lib/trading/rangeEdgeEntryGate'
 import { logger } from '@/lib/utils/logger'
@@ -195,23 +196,14 @@ export function gateEntryAgainstAuthoritativeRange(args: {
  * and unit-tested for the Monday weekend-gap US Range soft-fallback).
  *
  * Order:
- * 1. Price hit on a server-shaped ±10 band (never trusts client label)
- * 2. Client label match among server-shaped candidates
- * 3. Client US Range soft-fallback when server could not shape US (weekend gap)
- *    — must run *before* sequential `active`, otherwise OR30/IB as active
- *    swallows US mid and the fallback never fires
- * 4. Sequential active highlight
- */
-/**
- * Attribute an entry to a shaped playbook range (pure — used by the server gate
- * and unit-tested for the Monday weekend-gap US Range soft-fallback).
- *
- * Order:
  * 1. Among bucket-open shaped ranges, prefer client label / active when in-band
  *    (US Range playbook must not bill overlapping Tokyo IB mid)
- * 2. Nearest open-band hit
+ * 2. Nearest open-band hit (including closed painted bands for deny messaging)
  * 3. Client US Range soft-fallback when server could not shape US (weekend gap)
- * 4. Sequential active highlight / nearest closed band (for deny messaging)
+ *
+ * Never fall back to sequential `active` for an off-band price — that used to
+ * let assertRangeEdgeEntry run against the wrong range and (combined with
+ * client soft-clamps) accept entries outside painted highlights.
  */
 export function attributeServerPlaybookEntry(args: {
   entry: number
@@ -279,10 +271,7 @@ export function attributeServerPlaybookEntry(args: {
     }
   }
 
-  if (!attributed) {
-    // Soft-fallback / active only when we still have no band hit at all.
-    attributed = args.active
-  }
+  // Off-band: leave null so the server gate hard-rejects (no active soft-accept).
   return { range: attributed, usedUsClientFallback }
 }
 
@@ -378,6 +367,10 @@ export async function assertServerRangeEdgeEntry(args: {
     }
   }
 
+  if (!attributed) {
+    return { ok: false, message: RANGE_EDGE_OFF_BAND_MESSAGE }
+  }
+
   const edge = assertRangeEdgeEntry({ entry: args.entry, range: attributed })
   if (!edge.ok) return edge
 
@@ -388,11 +381,11 @@ export async function assertServerRangeEdgeEntry(args: {
     market,
     timeSec: nowSec,
     ladder,
-    rangeLabel: attributed?.label ?? null,
+    rangeLabel: attributed.label,
   })
   if (!bucketCheck.ok) {
     return { ok: false, message: bucketCheck.message }
   }
 
-  return { ok: true, range: attributed as RangeEdgeLevels }
+  return { ok: true, range: attributed }
 }

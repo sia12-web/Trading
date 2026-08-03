@@ -277,6 +277,25 @@ export function attributePlaybookBandEntry<T extends RangeEdgeLevels>(args: {
   return pickPreferred(all)
 }
 
+/**
+ * Lock a place/click price onto a painted ±10 band center (H / L / mid when allowed).
+ * Returns null when the price is not inside any candidate band — callers must reject
+ * (never soft-clamp off-band into a placeable entry).
+ */
+export function snapEntryToOpenBandCenter<T extends RangeEdgeLevels>(args: {
+  entry: number
+  candidates: Array<T | null | undefined>
+  preferLabel?: string | null
+  liveOk?: (range: T) => boolean
+  bandPoints?: number
+}): { price: number; hit: RangeEdgeBandHit<T> } | null {
+  const hit = attributePlaybookBandEntry(args)
+  if (!hit) return null
+  // Prefer live-open bands only for placeable snaps. Closed-band hits are for deny copy.
+  if (args.liveOk && !args.liveOk(hit.range)) return null
+  return { price: hit.center, hit }
+}
+
 export function assertRangeEdgeEntry(args: {
   entry: number
   range: RangeEdgeLevels | null | undefined

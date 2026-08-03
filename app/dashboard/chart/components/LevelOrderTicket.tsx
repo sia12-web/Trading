@@ -21,7 +21,7 @@ import {
 } from '@/lib/trading/strategyRiskGeometry'
 import {
   assertRangeEdgeEntry,
-  clampPriceToRangeEdgeBands,
+  findRangeEdgeBandHit,
   RANGE_EDGE_BAND_POINTS,
   RANGE_EDGE_OFF_BAND_MESSAGE,
   rangeAllowsMidEdge,
@@ -286,14 +286,17 @@ export function LevelOrderTicket({
   }, [useLiveAccount, initialAccountSize])
 
   useEffect(() => {
-    // Manual / risk-box limits keep the trader's chosen structure price — never
-    // clamp to ±10 playbook bands (that silently moved 62203 → 61955 and
-    // collapsed SL to entry−1 via snapStopToTick).
-    const clamped =
-      !isManual && strategyRange != null
-        ? clampPriceToRangeEdgeBands(levelPrice, strategyRange) ?? levelPrice
-        : levelPrice
-    const snappedLimit = snapDeskPrice(instrument, clamped)
+    // Snap into a painted ±10 band when in-band; never soft-clamp off-band into a
+    // placeable price (that silently moved structure picks and accepted outside).
+    let seed = levelPrice
+    if (strategyRange != null) {
+      const hit = findRangeEdgeBandHit(levelPrice, [strategyRange])
+      if (hit) {
+        seed = hit.center
+      }
+      // Off-band seed stays as-is so submit's assertRangeEdgeEntry rejects.
+    }
+    const snappedLimit = snapDeskPrice(instrument, seed)
     setLimitPrice(snappedLimit)
     const dir = suggested
     if (isManual) {
@@ -721,29 +724,25 @@ export function LevelOrderTicket({
 
         {isManual && (
           <>
-            <label className="mt-3 block text-[10px] uppercase tracking-wider text-gray-500">
-              Limit price
-              <input
-                type="number"
-                value={limitPrice}
-                onChange={(e) => {
-                  const v = Number(e.target.value)
-                  if (!Number.isFinite(v)) return
-                  setLimitPrice(v)
-                  setTpInput(null)
-                }}
-                className="mt-1 w-full rounded-lg border border-[#30363d] bg-[#0d1117] px-3 py-2 text-sm text-white price-mono"
-              />
-            </label>
+            <div className="mt-3 rounded-lg border border-[#30363d] bg-[#0d1117] px-3 py-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-[10px] uppercase tracking-wider text-gray-500">
+                  Limit price (locked to band)
+                </span>
+                <span className="price-mono text-sky-300 font-semibold">
+                  {snappedLimit.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                </span>
+              </div>
+            </div>
             {strategyRange && (
               <p className="mt-1 text-[10px] text-sky-400/80">
                 {rangeAllowsMidEdge(strategyRange)
                   ? RANGE_EDGE_OFF_BAND_MESSAGE
                   : `Entry only at highlighted ±${RANGE_EDGE_BAND_POINTS} ${rangeEdgeBandLegend(strategyRange)}.`}{' '}
-                Place at ±{RANGE_EDGE_BAND_POINTS} of {strategyRange.label || 'range'} H (
+                Entry stays on ±{RANGE_EDGE_BAND_POINTS} of {strategyRange.label || 'range'} H (
                 {strategyRange.high.toLocaleString()})
                 {rangeAllowsMidEdge(strategyRange) ? ' / 50% mid' : ''} / L (
-                {strategyRange.low.toLocaleString()}).
+                {strategyRange.low.toLocaleString()}) — adjust TP / SL only.
               </p>
             )}
             <label className="mt-3 block text-[10px] uppercase tracking-wider text-gray-500">

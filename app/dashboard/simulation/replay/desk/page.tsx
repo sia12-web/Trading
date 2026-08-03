@@ -60,6 +60,7 @@ import {
   attributePlaybookBandEntry,
   rangeEdgeBands,
   RANGE_EDGE_BAND_POINTS,
+  RANGE_EDGE_OFF_BAND_MESSAGE,
 } from '@/lib/trading/rangeEdgeEntryGate'
 import { assertProtectiveStop } from '@/lib/trading/stopLossGuard'
 import { LevelOrderTicket } from '@/app/dashboard/chart/components/LevelOrderTicket'
@@ -2327,7 +2328,12 @@ function SimulationDeskInner() {
             rangeLabel: range.label,
           }).ok,
       })
-      const attributedRange = hit?.range ?? strategyRange
+      if (!hit) {
+        placingOrderRef.current = false
+        setMsg(RANGE_EDGE_OFF_BAND_MESSAGE)
+        return
+      }
+      const attributedRange = hit.range
 
       const edge = assertRangeEdgeEntry({ entry: limit, range: attributedRange })
       if (!edge.ok) {

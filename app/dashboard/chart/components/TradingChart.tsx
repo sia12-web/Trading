@@ -108,8 +108,7 @@ import {
   type StrategyRiskMagnets,
 } from '@/lib/trading/strategyRiskGeometry'
 import {
-  clampPriceToNearestRangeEdgeBands,
-  clampPriceToRangeEdgeEnvelope,
+  snapEntryToOpenBandCenter,
   filterLevelsInRangeEdgeBand,
   attributePlaybookBandEntry,
   NO_IN_BAND_LEVELS_MESSAGE,
@@ -1653,7 +1652,7 @@ export function TradingChart({
     ibLevels,
   ])
 
-  /** Open Limit risk box with entry snapped into painted ±10 bands (study overlays). */
+  /** Open Limit risk box with entry locked to a painted ±10 band center. */
   const openRiskBox = useCallback(
     (
       preferredPrice?: number,
@@ -1663,10 +1662,47 @@ export function TradingChart({
         preferredPrice != null && Number.isFinite(preferredPrice) && preferredPrice > 0
           ? preferredPrice
           : livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 67000)
-      const { snapRanges } = getStrategyRiskBundle()
-      const inBand = clampPriceToNearestRangeEdgeBands(Number(rawPx), snapRanges)
-      const entry = snapDeskPrice(instrument, inBand ?? Number(rawPx))
-      const dir: 'LONG' | 'SHORT' = opts?.direction ?? 'LONG'
+      const { strategyRange, snapRanges, ladder } = getStrategyRiskBundle()
+      const snapped = snapEntryToOpenBandCenter({
+        entry: Number(rawPx),
+        candidates: snapRanges,
+        preferLabel: strategyRange?.label ?? null,
+        liveOk: (range) => {
+          if (range.label === 'OR30') {
+            return (
+              !!strategyRange &&
+              strategyRange.label === range.label &&
+              strategyRange.high === range.high &&
+              strategyRange.low === range.low
+            )
+          }
+          return assertBucketEntryEligible({
+            instrument,
+            market: deskMarketFor(instrument),
+            timeSec: deskClockSeconds(instrument),
+            ladder,
+            rangeLabel: range.label,
+          }).ok
+        },
+      })
+      if (!snapped) {
+        onDeskAlert?.({
+          kind: 'entry_band_deny',
+          title: 'Off-band entry',
+          body: RANGE_EDGE_OFF_BAND_MESSAGE,
+          telegram: '',
+          instrument,
+        })
+        return
+      }
+      const entry = snapDeskPrice(instrument, snapped.price)
+      const dir: 'LONG' | 'SHORT' =
+        opts?.direction ??
+        (snapped.hit.edge === 'high'
+          ? 'SHORT'
+          : snapped.hit.edge === 'low'
+            ? 'LONG'
+            : 'LONG')
       setRiskBox({
         direction: dir,
         orderType: 'LIMIT',
@@ -1679,7 +1715,7 @@ export function TradingChart({
       })
       setRiskBoxActive(true)
     },
-    [livePrice, candles, instrument, getStrategyRiskBundle]
+    [livePrice, candles, instrument, getStrategyRiskBundle, onDeskAlert]
   )
 
   useEffect(() => {
@@ -4273,10 +4309,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     clearRiskBoxLines()
   }, [clearRiskBoxLines])
 
-  // Mouse dragging for Risk Box lines (Entry, TP, SL)
-  const draggingRiskLineRef = useRef<'ENTRY' | 'TP' | 'SL' | null>(null)
+  // Mouse dragging for Risk Box lines (TP / SL only — entry locked to band)
+  const draggingRiskLineRef = useRef<'TP' | 'SL' | null>(null)
 
-  const onRiskLineMouseDown = useCallback((type: 'ENTRY' | 'TP' | 'SL') => (e: React.MouseEvent) => {
+  const onRiskLineMouseDown = useCallback((type: 'TP' | 'SL') => (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
     draggingRiskLineRef.current = type
@@ -4294,25 +4330,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       if (rawPrice == null || !Number.isFinite(Number(rawPrice)) || Number(rawPrice) <= 0) return
 
       const snappedRaw = snapDeskPrice(instrument, Number(rawPrice))
-      const { snapRanges } = getStrategyRiskBundle()
 
-      if (draggingRiskLineRef.current === 'ENTRY') {
-        // Free vertical follow within the outer ±10 envelope (high↔low reachable).
-        // Nearest-band snap on mouseup — continuous nearest-band clamp traps on the
-        // high edge and blocks dragging down to the low band.
-        const enveloped = clampPriceToRangeEdgeEnvelope(snappedRaw, snapRanges)
-        const snapped = snapDeskPrice(instrument, enveloped ?? snappedRaw)
-        setRiskBox((prev) => {
-          if (!prev) return null
-          const diff = snapped - prev.entryPrice
-          return {
-            ...prev,
-            entryPrice: snapped,
-            stopLoss: snapDeskPrice(instrument, prev.stopLoss + diff),
-            profitTarget: snapDeskPrice(instrument, prev.profitTarget + diff),
-          }
-        })
-      } else if (draggingRiskLineRef.current === 'TP') {
+      if (draggingRiskLineRef.current === 'TP') {
         setRiskBox((prev) => (prev ? { ...prev, profitTarget: snappedRaw } : null))
       } else if (draggingRiskLineRef.current === 'SL') {
         setRiskBox((prev) => (prev ? { ...prev, stopLoss: snappedRaw } : null))
@@ -4320,24 +4339,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     }
 
     const onMouseUp = () => {
-      const was = draggingRiskLineRef.current
       draggingRiskLineRef.current = null
-      if (was !== 'ENTRY') return
-      const { snapRanges } = getStrategyRiskBundle()
-      setRiskBox((prev) => {
-        if (!prev) return null
-        const inBand = clampPriceToNearestRangeEdgeBands(prev.entryPrice, snapRanges)
-        if (inBand == null) return prev
-        const snapped = snapDeskPrice(instrument, inBand)
-        if (snapped === prev.entryPrice) return prev
-        const diff = snapped - prev.entryPrice
-        return {
-          ...prev,
-          entryPrice: snapped,
-          stopLoss: snapDeskPrice(instrument, prev.stopLoss + diff),
-          profitTarget: snapDeskPrice(instrument, prev.profitTarget + diff),
-        }
-      })
     }
 
     window.addEventListener('mousemove', onMouseMove, true)
@@ -4346,7 +4348,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       window.removeEventListener('mousemove', onMouseMove, true)
       window.removeEventListener('mouseup', onMouseUp, true)
     }
-  }, [riskBox, instrument, getStrategyRiskBundle])
+  }, [riskBox, instrument])
 
   // Drag filled-position SL/TP (Entry fixed). Commit on mouseup via onAdjustBrackets.
   const onBracketLineMouseDown = useCallback(
@@ -4611,11 +4613,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
   const confirmRiskBoxOrder = useCallback(() => {
     if (!riskBox) return
-    const { entryPrice, stopLoss, profitTarget, direction } = riskBox
+    const { entryPrice: boxEntry, stopLoss, profitTarget, direction } = riskBox
 
     const { strategyMagnets, snapRanges, strategyRange, ladder } = getStrategyRiskBundle()
     const hit = attributePlaybookBandEntry({
-      entry: entryPrice,
+      entry: boxEntry,
       candidates: snapRanges,
       preferLabel: strategyRange?.label ?? null,
       liveOk: (range) => {
@@ -4646,6 +4648,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       })
       return
     }
+    // Lock to band center — never place mid-band interior from a drifted risk box.
+    const entryPrice = snapDeskPrice(instrument, hit.center)
     const attributedRange = hit.range
 
     // Check if Leo was consulted for this session / price
@@ -6728,16 +6732,15 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 </div>
               )}
 
-              {/* Entry Line Pill Badge: [ Buy ] / [ Sell ] (Places Order) | [ Units | Limit | ✕ ] (Drag to adjust Entry) */}
+              {/* Entry Line Pill Badge — entry locked to band; TP/SL remain draggable */}
               {entryY != null && (
                 <div
-                  onMouseDown={onRiskLineMouseDown('ENTRY')}
-                  className="absolute flex items-center gap-2 pointer-events-auto cursor-ns-resize group"
+                  className="absolute flex items-center gap-2 pointer-events-auto group"
                   style={{
                     left: '32%',
                     top: `${entryY - 14}px`,
                   }}
-                  title="Drag Entry within ±10 of painted range edges (H / L; OR30/IB/lunch also allow 50% mid)"
+                  title="Entry locked to painted ±10 band — drag TP / SL only"
                 >
                   {/* Explicit Buy / Sell Placement Button — ONLY BUTTON THAT PLACES ORDER */}
                   <button
@@ -6770,9 +6773,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   </button>
 
                   {/* Pill Badge with Non-Clickable Order Type Label */}
-                  <div className="flex items-center rounded-md border border-blue-400 bg-white/95 px-3 py-1 text-xs font-mono font-bold text-gray-900 shadow-xl transition hover:border-blue-500">
+                  <div className="flex items-center rounded-md border border-blue-400 bg-white/95 px-3 py-1 text-xs font-mono font-bold text-gray-900 shadow-xl transition">
                     <span className="font-sans uppercase font-extrabold tracking-wider text-[11px] select-none">
                       Limit
+                    </span>
+                    <span className="text-gray-400 mx-1.5">|</span>
+                    <span className="text-[9px] font-sans uppercase tracking-wide text-sky-700">
+                      locked
                     </span>
                     <span className="text-gray-400 mx-1.5">|</span>
                     <button
@@ -6785,7 +6792,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     </button>
                   </div>
 
-                  <div className="w-3 h-3 rounded-full border-2 border-white shadow-md bg-blue-500 group-hover:scale-125 transition-transform" />
+                  <div className="w-3 h-3 rounded-full border-2 border-white shadow-md bg-blue-500" />
                 </div>
               )}
 

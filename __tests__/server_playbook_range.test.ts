@@ -219,4 +219,27 @@ const serverOr30 = { label: 'OR30', high: 63_281.3, low: 62_508.8 }
   assert.equal(ibOnly?.label, 'Tokyo IB', 'Tokyo IB-only price still attributes to IB for deny copy')
 }
 
+{
+  // Off-band must NOT soft-fallback to sequential active (that used to accept
+  // outside painted highlights when combined with client soft-clamps).
+  const us = { label: 'US Range', high: 40_000, low: 39_500 }
+  const tokyoIb = { label: 'Tokyo IB', high: 40_100, low: 39_900 }
+  const offBand = 39_750 // US mid — illegal; also outside IB bands
+  const { range } = attributeServerPlaybookEntry({
+    entry: offBand,
+    shaped: { or30: null, ib: tokyoIb, usRange: us, lunchRange: null },
+    active: us,
+    clientRange: { high: us.high, low: us.low, label: 'US Range' },
+  })
+  assert.equal(range, null, 'off-band leaves attribution null — hard reject upstream')
+
+  const midGap = attributeServerPlaybookEntry({
+    entry: 40_050, // between US high and IB mid
+    shaped: { or30: null, ib: tokyoIb, usRange: us, lunchRange: null },
+    active: us,
+    clientRange: null,
+  })
+  assert.equal(midGap.range, null, 'mid-gap between painted bands is not active-fallback')
+}
+
 console.log('server_playbook_range.test.ts: ok')
