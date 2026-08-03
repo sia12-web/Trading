@@ -7,6 +7,8 @@
 import {
   NY_SESSION,
   TOKYO_SESSION,
+  TOKYO_CASH_LUNCH_END,
+  nikkeiCashLunchMontrealLabel,
   sessionFor,
   deskMarketFor,
   isLunchFreezeActive,
@@ -58,6 +60,13 @@ assert(TOKYO_SESSION.analyzeStart === '08:45:00', 'Tokyo prep 8:45')
 assert(TOKYO_SESSION.marketOpen === '09:00:00', 'Tokyo open 9:00')
 assert(TOKYO_SESSION.entryClose === '09:45:00', 'Tokyo entry close 9:45')
 assert(TOKYO_SESSION.lunchClose === '11:30:00', 'Tokyo lunch 11:30')
+assert(TOKYO_CASH_LUNCH_END === '12:30:00', 'TSE cash lunch ends 12:30 JST')
+// EDT: 11:30–12:30 JST → 22:30–23:30 Montreal
+assert(
+  nikkeiCashLunchMontrealLabel(new Date('2026-08-03T00:00:00Z')) ===
+    'Lunch 22:30–23:30 Montreal',
+  'Nikkei cash lunch Montreal label'
+)
 assert(TOKYO_SESSION.marketClose === '15:00:00', 'Tokyo close 15:00')
 
 assert(sessionFor('DOW') === NY_SESSION, 'DOW → NY')

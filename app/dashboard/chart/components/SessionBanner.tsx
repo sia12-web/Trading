@@ -18,6 +18,7 @@ import {
   type DeskNewsHazard,
 } from '@/lib/trading/deskNewsHazard'
 import type { DeskCalendarEvent } from '@/lib/trading/deskNews'
+import { nikkeiCashLunchMontrealLabel } from '@/lib/trading/sessionGate'
 
 export interface SessionGateState {
   phase: string
@@ -406,6 +407,14 @@ export function SessionBanner({
       </span>
       {gate.lockedInstrument && (
         <span className="rounded bg-white/10 px-2 py-0.5 font-medium">{gate.lockedInstrument}</span>
+      )}
+      {viewingInstrument === 'NIKKEI' && (
+        <span
+          className="text-[10px] text-gray-500 tabular-nums"
+          title="Tokyo Stock Exchange cash lunch (11:30–12:30 JST) · Montreal wall clock"
+        >
+          {nikkeiCashLunchMontrealLabel()}
+        </span>
       )}
       {gate.clockedIn ? (
         <span className="rounded bg-emerald-500/25 px-2 py-0.5 text-emerald-200 font-semibold">

@@ -46,6 +46,7 @@ import {
   deskMarketFor,
   ibStrategyEndHms,
   lunchRangeEntryEndHms,
+  nikkeiCashLunchMontrealLabel,
   resolveSimMorningGate,
   sessionFor,
 } from '@/lib/trading/sessionGate'
@@ -2932,6 +2933,14 @@ function SimulationDeskInner() {
             {chartFmt.formatClock(simNow)} {tzLabel}
           </span>
           <span className="rounded bg-white/10 px-1.5 py-0.5 text-gray-200">{instrument}</span>
+          {instrument === 'NIKKEI' && (
+            <span
+              className="text-[10px] text-gray-500 tabular-nums normal-case tracking-normal"
+              title="Tokyo Stock Exchange cash lunch (11:30–12:30 JST) · Montreal wall clock"
+            >
+              {nikkeiCashLunchMontrealLabel()}
+            </span>
+          )}
           <span className="hidden text-gray-500 sm:inline">
             {formatDateDisplay(replayDate)}
           </span>

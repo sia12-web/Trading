@@ -114,6 +114,19 @@ export const TOKYO_SESSION: MarketSessionTimes = {
   marketClose: '15:00:00',
 }
 
+/** TSE cash lunch resume (11:30–12:30 JST). Distinct from Tokyo IB entry window. */
+export const TOKYO_CASH_LUNCH_END = '12:30:00'
+
+/** Muted banner copy — TSE cash lunch in Montreal only (no JST). */
+export function nikkeiCashLunchMontrealLabel(now: Date = new Date()): string {
+  return `Lunch ${deskLocalRangeAsTraderDisplay(
+    TOKYO_SESSION.lunchClose,
+    TOKYO_CASH_LUNCH_END,
+    TOKYO_SESSION.tz,
+    now
+  )}`
+}
+
 /** IB entry window (Tokyo local) — same clock shape as NY; then manage-only. */
 /**
  * Tokyo slot-2 entry window — prior NYC US Range (already shaped overnight).
