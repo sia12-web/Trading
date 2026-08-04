@@ -524,8 +524,9 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
     'NY lunch window never resurrects OR30 ±10'
   )
 
-  // Toggle OFF for BRK/REJ studies — entry ±10 still paints for live open buckets /
-  // active playbook so Limit / click-to-enter keep snap targets after refresh.
+  // Toggle OFF for BRK/REJ studies — OR30 / IB / lunch entry ±10 still paints for
+  // live open buckets / active playbook so Limit / click keep snap targets after
+  // refresh. US Range is the exception: always requires the U study toggle.
   assert.deepEqual(
     entryEligibleOverlayRanges({
       playbookMode: 'ib',
@@ -552,11 +553,9 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       showUsRange: false,
       ...shaped,
       morningAttempts: 0,
-    })
-      .map((o) => o.label)
-      .sort(),
-    ['Tokyo IB', 'US Range'],
-    'Nikkei US+IB clock: entry ±10 paints without study toggles'
+    }).map((o) => o.label),
+    ['Tokyo IB'],
+    'Nikkei US+IB clock: Tokyo IB auto-paints; US Range stays dark without U toggle'
   )
   assert.ok(
     entryEligibleOverlayRanges({
@@ -634,8 +633,22 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       ...shaped,
       morningAttempts: 0,
     }).map((o) => o.label),
+    [],
+    'Nikkei before IB lock: US ±10 stays dark without U toggle; Tokyo IB waits until 21:00'
+  )
+  assert.deepEqual(
+    entryEligibleOverlayRanges({
+      playbookMode: 'us_range',
+      instrument: 'NIKKEI',
+      now: nikkeiBeforeIbLock,
+      showOr30: false,
+      showIb: false,
+      showUsRange: true,
+      ...shaped,
+      morningAttempts: 0,
+    }).map((o) => o.label),
     ['US Range'],
-    'Nikkei before IB lock: US ±10 paints without toggle; Tokyo IB stays dark until 21:00'
+    'Nikkei before IB lock: U toggle ON paints US ±10 only'
   )
 }
 

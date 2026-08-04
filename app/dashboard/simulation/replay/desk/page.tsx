@@ -521,14 +521,14 @@ function SimulationDeskInner() {
   const [ibShaped, setIbShaped] = useState(false)
   const [lunchShaped, setLunchShaped] = useState(false)
   const [usRangeShaped, setUsRangeShaped] = useState(false)
-  /** Script overlays — same toggles as live (B / N / U / R) */
+  /** Script overlays — same toggles as live (B / N / U / R). US Range defaults OFF. */
   const [showIbBreakouts, setShowIbBreakouts] = useState(true)
   const [showLunchRange, setShowLunchRange] = useState(true)
-  const [showUsRange, setShowUsRange] = useState(true)
+  const [showUsRange, setShowUsRange] = useState(false)
   const [showOr30, setShowOr30] = useState(true)
   const showIbBreakoutsRef = useRef(true)
   const showLunchRangeRef = useRef(true)
-  const showUsRangeRef = useRef(true)
+  const showUsRangeRef = useRef(false)
   const showOr30Ref = useRef(true)
   const or30SeriesRef = useRef<{
     high: ISeriesApi<'Line'>
