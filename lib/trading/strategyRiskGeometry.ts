@@ -461,7 +461,8 @@ export function entryEligibleOverlayRanges(args: {
 
   // Union: toggled studies ∩ clock, plus shaped OR30 / IB / lunch that are
   // clock-eligible even when the BRK/REJ toggle is off (Limit / click need
-  // painted snap targets). US Range is never auto-pushed — only via toggle.
+  // painted snap targets). US Range only when the U toggle is on (via toggled
+  // and/or shaped — never auto from clock alone).
   const byKey = new Map<string, StrategyRangeEdges>()
   const push = (r: StrategyRangeEdges | null | undefined) => {
     if (!r || !(r.high > r.low) || !isEntryClockEligible(r)) return
@@ -470,6 +471,7 @@ export function entryEligibleOverlayRanges(args: {
   for (const r of toggled) push(r)
   push(shaped.or30)
   push(shaped.ib)
+  if (args.showUsRange) push(shaped.usRange)
   push(shaped.lunchRange)
   return [...byKey.values()]
 }

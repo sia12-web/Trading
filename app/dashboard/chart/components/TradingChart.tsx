@@ -1440,6 +1440,8 @@ export function TradingChart({
     entryPrice: number
     stopLoss: number
     profitTarget: number
+    /** Band book from click/snap — confirm must not re-bill US H/L as Tokyo IB mid. */
+    preferRangeLabel?: string | null
   } | null>(null)
   const riskBoxLinesRef = useRef<any[]>([])
 
@@ -1730,6 +1732,7 @@ export function TradingChart({
             instrument,
             dir === 'LONG' ? entry * 1.0105 : entry * (1 - 0.0105)
           ),
+          preferRangeLabel: range.label ?? strategyRange?.label ?? null,
         })
         setRiskBoxActive(true)
         return
@@ -1809,6 +1812,7 @@ export function TradingChart({
           instrument,
           dir === 'LONG' ? entry * 1.0105 : entry * (1 - 0.0105)
         ),
+        preferRangeLabel: snapped.hit.range.label ?? strategyRange?.label ?? null,
       })
       setRiskBoxActive(true)
     },
@@ -4493,18 +4497,23 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         const snapped = snapEntryToNearestOpenBandCenter({
           entry: prev.entryPrice,
           candidates: snapRanges,
-          preferLabel: strategyRange?.label ?? null,
+          preferLabel: prev.preferRangeLabel ?? strategyRange?.label ?? null,
           liveOk: (range) => liveOkForSnap(range, strategyRange, ladder),
         })
         if (!snapped) return prev
         const next = snapDeskPrice(instrument, snapped.price)
-        if (next === prev.entryPrice) return prev
+        const preferRangeLabel =
+          snapped.hit.range.label ?? prev.preferRangeLabel ?? strategyRange?.label ?? null
+        if (next === prev.entryPrice && preferRangeLabel === prev.preferRangeLabel) {
+          return prev
+        }
         const diff = next - prev.entryPrice
         return {
           ...prev,
           entryPrice: next,
           stopLoss: snapDeskPrice(instrument, prev.stopLoss + diff),
           profitTarget: snapDeskPrice(instrument, prev.profitTarget + diff),
+          preferRangeLabel,
         }
       })
     }
@@ -4818,10 +4827,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     const { entryPrice: boxEntry, stopLoss, profitTarget, direction } = riskBox
 
     const { strategyMagnets, snapRanges, strategyRange, ladder } = getStrategyRiskBundle()
+    const preferLabel =
+      riskBox.preferRangeLabel ?? strategyRange?.label ?? null
     const hit = attributePlaybookBandEntry({
       entry: boxEntry,
       candidates: snapRanges,
-      preferLabel: strategyRange?.label ?? null,
+      preferLabel,
       liveOk: (range) => {
         if (range.label === 'OR30') {
           return (
@@ -7308,7 +7319,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     const hit = attributePlaybookBandEntry({
                       entry: rationaleModal.entryPrice,
                       candidates: snapRanges,
-                      preferLabel: strategyRange?.label ?? null,
+                      preferLabel:
+                        riskBox?.preferRangeLabel ?? strategyRange?.label ?? null,
                       liveOk: (range) => {
                         if (range.label === 'OR30') {
                           return (

@@ -217,6 +217,30 @@ const serverOr30 = { label: 'OR30', high: 63_281.3, low: 62_508.8 }
     now: duringUs,
   })
   assert.equal(ibOnly?.label, 'Tokyo IB', 'Tokyo IB-only price still attributes to IB for deny copy')
+
+  // After first-hour lock both books are live — US H (== IB mid) must stay US
+  const duringOverlap = new Date(Date.UTC(2026, 6, 30, 1, 15, 0)) // 10:15 JST
+  const ladderOverlap = attemptLadderFromCounts({
+    morningAttempts: 0,
+    ibAttempts: 0,
+    lunchAttempts: 0,
+    now: duringOverlap,
+    instrument: 'NIKKEI',
+  })
+  const { range: overlapUs } = attributeServerPlaybookEntry({
+    entry: us.high,
+    shaped: { or30: null, ib: tokyoIb, usRange: us, lunchRange: null },
+    active: us,
+    clientRange: { high: tokyoIb.high, low: tokyoIb.low, label: 'Tokyo IB' },
+    instrument: 'NIKKEI',
+    ladder: ladderOverlap,
+    now: duringOverlap,
+  })
+  assert.equal(
+    overlapUs?.label,
+    'US Range',
+    'during US+IB overlap US H beats Tokyo IB mid even with IB client claim'
+  )
 }
 
 {

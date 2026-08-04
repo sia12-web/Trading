@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict'
 import {
   assertRangeEdgeEntry,
+  attributePlaybookBandEntry,
   clampPriceToNearestRangeEdgeBands,
   clampPriceToRangeEdgeBands,
   clampPriceToRangeEdgeEnvelope,
@@ -365,6 +366,35 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
     null,
     'no live bands → nearest snap rejects'
   )
+
+  // Overlap during US+Tokyo IB both live: US high == Tokyo IB mid must stay US H/L
+  const bothLive = (r: { label?: string | null }) =>
+    r.label === 'US Range' || r.label === 'Tokyo IB'
+  const usHighVsIbMid = attributePlaybookBandEntry({
+    entry: us.high,
+    candidates: [ib, us], // IB listed first (would win nearest-only)
+    preferLabel: 'Tokyo IB',
+    liveOk: bothLive,
+  })
+  assert.equal(usHighVsIbMid?.range.label, 'US Range', 'US H beats Tokyo IB mid when both live')
+  assert.equal(usHighVsIbMid?.edge, 'high')
+
+  const usLowSnap = snapEntryToOpenBandCenter({
+    entry: us.low,
+    candidates: [ib, us],
+    preferLabel: 'Tokyo IB',
+    liveOk: bothLive,
+  })
+  assert.equal(usLowSnap?.hit.range.label, 'US Range', 'US L placeable when both live')
+  assert.equal(usLowSnap?.price, us.low)
+
+  const ibOnlyHigh = snapEntryToOpenBandCenter({
+    entry: ib.high,
+    candidates: [ib, us],
+    preferLabel: 'US Range',
+    liveOk: bothLive,
+  })
+  assert.equal(ibOnlyHigh?.hit.range.label, 'Tokyo IB', 'Tokyo IB-only H still places as IB')
 }
 
 console.log('range_edge_entry_gate: all passed')

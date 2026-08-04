@@ -247,6 +247,9 @@ export function findRangeEdgeBandHit<T extends RangeEdgeLevels>(
  * candidates, an explicit preferLabel (ticket / active) wins when in-band;
  * otherwise nearest center. If no live candidate contains the price, fall back
  * to all candidates so the caller can surface the unlock / exhaustion message.
+ *
+ * Overlap rule: a live US Range H/L print beats another live range's **mid** at
+ * the same price (US has no mid — never let Tokyo IB 50% steal US high/low).
  */
 export function attributePlaybookBandEntry<T extends RangeEdgeLevels>(args: {
   entry: number
@@ -259,12 +262,37 @@ export function attributePlaybookBandEntry<T extends RangeEdgeLevels>(args: {
   if (all.length === 0) return null
   const live = args.liveOk ? all.filter((r) => args.liveOk!(r)) : all
 
-  const pickPreferred = (pool: T[]): RangeEdgeBandHit<T> | null => {
-    if (!args.preferLabel) return findRangeEdgeBandHit(args.entry, pool, args.bandPoints)
-    const prefer = pool.find((r) => r.label === args.preferLabel)
-    if (prefer && isEntryWithinRangeEdgeBand(args.entry, prefer, args.bandPoints)) {
-      return findRangeEdgeBandHit(args.entry, [prefer], args.bandPoints)
+  const usHlOverOtherMid = (pool: T[]): RangeEdgeBandHit<T> | null => {
+    const us = pool.find((r) => r.label === 'US Range')
+    if (!us || !isEntryWithinRangeEdgeBand(args.entry, us, args.bandPoints)) {
+      return null
     }
+    const usHit = findRangeEdgeBandHit(args.entry, [us], args.bandPoints)
+    if (!usHit || (usHit.edge !== 'high' && usHit.edge !== 'low')) return null
+    const others = pool.filter((r) => r.label !== 'US Range')
+    if (others.length === 0) return usHit
+    const otherHit = findRangeEdgeBandHit(args.entry, others, args.bandPoints)
+    // Prefer US H/L when the only competing live hit is another range's mid.
+    if (!otherHit || otherHit.edge === 'mid') return usHit
+    return null
+  }
+
+  const pickPreferred = (pool: T[]): RangeEdgeBandHit<T> | null => {
+    if (args.preferLabel) {
+      const prefer = pool.find((r) => r.label === args.preferLabel)
+      if (prefer && isEntryWithinRangeEdgeBand(args.entry, prefer, args.bandPoints)) {
+        if (prefer.label === 'US Range') {
+          return findRangeEdgeBandHit(args.entry, [prefer], args.bandPoints)
+        }
+        // Prefer-label is another book, but price is US H/L vs that book's mid —
+        // keep US so Limit on US high/low is not blocked / mis-billed.
+        const usWin = usHlOverOtherMid(pool)
+        if (usWin) return usWin
+        return findRangeEdgeBandHit(args.entry, [prefer], args.bandPoints)
+      }
+    }
+    const usWin = usHlOverOtherMid(pool)
+    if (usWin) return usWin
     return findRangeEdgeBandHit(args.entry, pool, args.bandPoints)
   }
 
