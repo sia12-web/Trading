@@ -59,10 +59,22 @@ function jstDate(h: number, m: number, s = 0): Date {
 {
   const mode = resolveDeskPlaybookMode({
     instrument: 'DOW',
-    now: etDate(11, 0),
+    now: etDate(11, 30),
     ladder: attemptLadderFromCounts({ morningAttempts: 0 }),
   })
-  assert(mode === 'lunch_break', 'after IB → lunch break playbook')
+  assert(mode === 'ib', '11:30 still IB (open until lunch-range)')
+  assert(deskPlaybookTitle(mode) === 'IB playbook', 'IB title at 11:30')
+  assert(deskPlaybookAnalysisMode(mode) === 'ib', 'IB analysis while IB window open')
+}
+
+{
+  // IB probes exhausted early → lunch_break prep until lunch-range clock
+  const mode = resolveDeskPlaybookMode({
+    instrument: 'DOW',
+    now: etDate(11, 0),
+    ladder: attemptLadderFromCounts({ morningAttempts: 0, ibAttempts: 2 }),
+  })
+  assert(mode === 'lunch_break', 'IB exhausted early → lunch break prep')
   assert(deskPlaybookTitle(mode) === 'Lunch break playbook', 'lunch break title')
   assert(deskPlaybookAnalysisMode(mode) === 'lunch_range', 'lunch break prep uses lunch_range analysis')
   assert(

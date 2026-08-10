@@ -400,7 +400,7 @@ export function visibleOverlayEntryRanges(args: {
  * - **IB / Tokyo IB / Lunch:** shaped, and either:
  *     (a) this label is the active playbook range, or
  *     (b) that range's own entry-bucket clock is open (e.g. Tokyo IB 21:00–02:00
- *         Montreal after US Range ends; NY leftover IB probes through 15:15).
+ *         Montreal after US Range ends; NY IB probes through lunch-range start).
  * - **US Range (Nikkei):** always requires the US Range (U) study toggle — never
  *     auto-paints from the active playbook or open bucket clock. H/L study lines
  *     and ±10 snap targets stay dark until the trader clicks U.

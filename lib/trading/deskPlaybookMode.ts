@@ -6,6 +6,7 @@
 
 import {
   deskMarketFor,
+  ibStrategyStartHms,
   ibStrategyEndHms,
   lunchRangeEntryStartHms,
   lunchRangeEntryEndHms,
@@ -94,13 +95,20 @@ export function resolveDeskPlaybookMode(args: {
   if (range === 'ib') return 'ib'
   if (range === 'lunch_range') return 'lunch_range'
 
+  const midStart = parseTimeToSeconds(ibStrategyStartHms(market))
   const midEnd = parseTimeToSeconds(ibStrategyEndHms(market))
   const lateStart = parseTimeToSeconds(lunchRangeEntryStartHms(market))
   const lateEnd = parseTimeToSeconds(lunchRangeEntryEndHms(market))
   const close = parseTimeToSeconds(sess.marketClose)
 
-  // After slot-2 ends → prep until slot-3 opens (if still eligible)
-  if (ladder.lunchEligible && t >= midEnd && t < lateStart) {
+  // Prep until slot-3 opens: after mid clock ends, or sooner if mid probes exhausted
+  // (NY IB end === lunch start, so the exhaustion path is the main prep gap).
+  if (
+    ladder.lunchEligible &&
+    t < lateStart &&
+    t >= midStart &&
+    (t >= midEnd || !ladder.ibEligible)
+  ) {
     return 'lunch_break'
   }
 
@@ -218,8 +226,8 @@ export function deskPlaybookHint(mode: DeskPlaybookMode, instrument?: string): s
       return 'Prior NYC session range — up to 2 probes @ 0.25% (entries within ±10 pts of range high or low only — no 50% mid). Unlocks after morning clock ends or morning probes are exhausted.'
     case 'ib':
       return tokyo
-        ? 'Tokyo IB range — up to 2 probes @ 0.25% (entries within ±10 pts of H / 50% / L). Unlocks when first-hour IB locks (21:00 Montreal), or sooner if US Range probes are exhausted.'
-        : 'Initial Balance — up to 2 probes @ 0.25% (entries within ±10 pts of H / 50% / L). Auto-takes over when IB locks if OR30 was skipped (OR30 is optional and sits inside the first hour).'
+        ? 'Tokyo IB range — up to 2 probes @ 0.25% (entries within ±10 pts of H / 50% / L). Unlocks when first-hour IB locks (21:00 Montreal), or sooner if US Range probes are exhausted — open through cash close (02:00 Montreal).'
+        : 'Initial Balance — up to 2 probes @ 0.25% (entries within ±10 pts of H / 50% / L). Opens when IB locks (10:30 Montreal) and stays open until lunch-range starts (13:30 Montreal). Auto-takes over when IB locks if OR30 was skipped.'
     case 'lunch_break':
       return tokyo
         ? 'Waiting for first-hour Tokyo IB lock (21:00 Montreal) — levels update. IB ±10 opens when the hour locks (or earlier if US Range probes were exhausted).'

@@ -56,7 +56,7 @@ const gateBase = {
   stopLossHitCount: 0,
 }
 
-test('resolveRangeStrategy clocks: NY IB 10:30–10:45, lunch-range 13:30–15:15', () => {
+test('resolveRangeStrategy clocks: NY IB 10:30–13:30, lunch-range 13:30–15:15', () => {
   assert(
     resolveRangeStrategy({
       market: 'NY',
@@ -76,19 +76,28 @@ test('resolveRangeStrategy clocks: NY IB 10:30–10:45, lunch-range 13:30–15:1
   assert(
     resolveRangeStrategy({
       market: 'NY',
-      timeSec: pts('10:44:00'),
+      timeSec: pts('11:30:00'),
       attemptsUsed: 0,
     }) === 'ib',
-    'NY IB late'
+    'NY IB still open at 11:30 (until lunch-range)'
+  )
+  assert(
+    resolveRangeStrategy({
+      market: 'NY',
+      timeSec: pts('13:29:00'),
+      attemptsUsed: 0,
+    }) === 'ib',
+    'NY IB late — still open just before lunch-range'
   )
   assert(
     resolveRangeStrategy({
       market: 'NY',
       timeSec: pts(NY_IB_STRATEGY_END),
       attemptsUsed: 0,
-    }) === null,
-    'NY IB ended at 10:45'
+    }) === 'lunch_range',
+    'NY IB ends at lunch-range start (13:30)'
   )
+  assert(NY_IB_STRATEGY_END === NY_LUNCH_RANGE_ENTRY_START, 'IB end === lunch start')
   assert(
     resolveRangeStrategy({
       market: 'NY',
@@ -195,11 +204,28 @@ test('NY: morning skipped → IB unlock; morning probe still allows IB after clo
 
   const afterIb = resolveSessionGate({
     ...gateBase,
-    now: etDate(2026, 7, 15, 11, 0),
+    now: etDate(2026, 7, 15, 11, 30),
     viewingInstrument: 'DOW',
   })
-  assert(afterIb.canPlaceEntry === false, 'after 10:45 no IB entry')
-  assert(/Lunch break|IB entry closed/i.test(afterIb.message), afterIb.message)
+  assert(afterIb.canPlaceEntry === true, '11:30 — IB still open until lunch-range')
+  assert(afterIb.rangeStrategy === 'ib', 'IB strategy at 11:30')
+  assert(/open until lunch-range/i.test(afterIb.message), afterIb.message)
+
+  const justBeforeLn = resolveSessionGate({
+    ...gateBase,
+    now: etDate(2026, 7, 15, 13, 29),
+    viewingInstrument: 'DOW',
+  })
+  assert(justBeforeLn.canPlaceEntry === true, '13:29 — IB still open')
+  assert(justBeforeLn.rangeStrategy === 'ib', 'IB at 13:29')
+
+  const atLn = resolveSessionGate({
+    ...gateBase,
+    now: etDate(2026, 7, 15, 13, 30),
+    viewingInstrument: 'DOW',
+  })
+  assert(atLn.canPlaceEntry === true, '13:30 — lunch-range opens')
+  assert(atLn.rangeStrategy === 'lunch_range', 'lunch-range at 13:30')
 })
 
 test('NY: lunch-range when morning + IB skipped; manage-only after 15:15; no PM watch copy', () => {
@@ -208,8 +234,9 @@ test('NY: lunch-range when morning + IB skipped; manage-only after 15:15; no PM 
     now: etDate(2026, 7, 15, 12, 0),
     viewingInstrument: 'DOW',
   })
-  assert(wait.canPlaceEntry === false, '12:00 no place')
-  assert(/Lunch break playbook|lunch-range opens/i.test(wait.message), wait.message)
+  assert(wait.canPlaceEntry === true, '12:00 IB still placeable (until lunch-range)')
+  assert(wait.rangeStrategy === 'ib', '12:00 still IB')
+  assert(/open until lunch-range/i.test(wait.message), wait.message)
   assert(!/watch-only|Afternoon watch|PM watch/i.test(wait.message), wait.message)
 
   const ln = resolveSessionGate({

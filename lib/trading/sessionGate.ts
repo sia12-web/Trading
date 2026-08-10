@@ -9,7 +9,7 @@
  *   that cap is hit, even if a window still shows spare probes.
  *   No PM watch — manage-only when locked.
  *
- *   NY:  open 09:30 · OR30 lock 10:00→10:15 · IB 10:30–10:45 · lunch-range 13:30–15:15 ET
+ *   NY:  open 09:30 · OR30 lock 10:00→10:15 · IB 10:30–13:30 · lunch-range 13:30–15:15 ET
  *   Tokyo: open 09:00 · US Range from open→10:45 (prior NYC shaped) · optional OR30 09:30→09:45
  *          · Tokyo IB entries 10:00–15:00 (first-hour lock → cash close; = 21:00–02:00 Montreal)
  *
@@ -96,10 +96,10 @@ export const NY_SESSION: MarketSessionTimes = {
   marketClose: '16:00:00',
 }
 
-/** IB entry window (NY) — after morning entry close; then manage-only. */
-/** NY IB entry — starts when first-hour IB locks (not before). */
+/** IB entry window (NY) — from first-hour lock until lunch-range entry starts. */
+/** NY IB entry — starts when first-hour IB locks; stays open until lunch-range opens. */
 export const NY_IB_STRATEGY_START = '10:30:00'
-export const NY_IB_STRATEGY_END = '10:45:00'
+export const NY_IB_STRATEGY_END = '13:30:00'
 /** NYC lunch range (12:00–13:30 ET) locked — PM lunch-range entries until 15:15. */
 export const NY_LUNCH_RANGE_ENTRY_START = '13:30:00'
 export const NY_LUNCH_RANGE_ENTRY_END = '15:15:00'
@@ -1239,7 +1239,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     const midLabel = market === 'TOKYO' ? 'US Range' : 'IB'
     const lateLabel = market === 'TOKYO' ? 'IB' : 'Lunch-range'
     const prepAfterMid =
-      market === 'TOKYO' ? 'IB prep playbook' : 'Lunch break playbook'
+      market === 'TOKYO' ? 'IB prep playbook' : 'Lunch-range opens next'
 
     // Optional OR30 morning probes — only when still eligible (else fall through to US Range / IB)
     if (inEntryWindow && canMorningAttempt) {
@@ -1293,7 +1293,10 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
         canFetchLiveBars: clockedIn,
         canPlaceEntry: clockedIn && slot2Eligible && !hasOpen,
         canManagePosition: false,
-        message: `${midLabel} playbook unlocked — up to 2 probes @ 0.25% ${ibRange}. ${ladderHint}. After ${ibUntil} → ${prepAfterMid}. Working limits do not count until filled.`,
+        message:
+          market === 'TOKYO'
+            ? `${midLabel} playbook unlocked — up to 2 probes @ 0.25% ${ibRange}. ${ladderHint}. After ${ibUntil} → ${prepAfterMid}. Working limits do not count until filled.`
+            : `${midLabel} playbook unlocked — up to 2 probes @ 0.25% ${ibRange} ${TRADER_DISPLAY_LABEL} (open until lunch-range starts). ${ladderHint}. Working limits do not count until filled.`,
       })
     }
 
@@ -1322,8 +1325,30 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     })
   }
 
-  // Lunch → cash close: slot-3 unlock (NY lunch-range · TOKYO IB) OR manage-only
+  // Lunch → cash close: NY IB may still be open until 13:30; then slot-3
+  // (NY lunch-range · TOKYO IB) OR manage-only
   if (t >= lunch && t < close) {
+    // NY IB continues past morning lunch confirm (11:30) until lunch-range opens
+    if (market === 'NY' && rangeStrategy === 'ib') {
+      const ladderHint = formatAttemptLadderShort(ladder, locked)
+      const ibRange = deskLocalRangeAsTraderDisplay(
+        ibStartHms,
+        ibEndHms,
+        s.tz,
+        now
+      )
+      return finish({
+        ...base,
+        rangeStrategy,
+        phase: 'ENTRY',
+        canViewLiveChart: !!locked && (clockedIn || attendedToday),
+        canFetchLiveBars: clockedIn || attendedToday,
+        canPlaceEntry: clockedIn && ladder.ibEligible && !hasOpen,
+        canManagePosition: false,
+        message: `IB playbook unlocked — up to 2 probes @ 0.25% ${ibRange} ${TRADER_DISPLAY_LABEL} (open until lunch-range starts). ${ladderHint}. Working limits do not count until filled.`,
+      })
+    }
+
     if (rangeStrategy === 'lunch_range' || (market === 'TOKYO' && rangeStrategy === 'ib')) {
       const lnUntil = `${deskLocalHmsAsTraderDisplay(lnEndHms, s.tz, now)} ${TRADER_DISPLAY_LABEL}`
       const ladderHint = formatAttemptLadderShort(ladder, locked)
@@ -1474,7 +1499,7 @@ export function resolveSimMorningGate(input: {
   const midLabel = market === 'TOKYO' ? 'US Range' : 'IB'
   const lateLabel = market === 'TOKYO' ? 'IB' : 'Lunch-range'
   const prepAfterMid =
-    market === 'TOKYO' ? 'IB prep playbook' : 'Lunch break playbook'
+    market === 'TOKYO' ? 'IB prep playbook' : 'Lunch-range opens next'
 
   const entryRange = deskLocalRangeAsTraderDisplay(
     s.marketOpen,
@@ -1634,16 +1659,25 @@ export function resolveSimMorningGate(input: {
         canPlaceEntry: ladder.ibEligible,
         canManagePosition: false,
         message:
-          midLabel +
-          ' playbook unlocked — up to 2 probes @ 0.25% ' +
-          ibRange +
-          '. ' +
-          ladderHint +
-          '. After ' +
-          ibUntil +
-          ' → ' +
-          prepAfterMid +
-          '.',
+          market === 'TOKYO'
+            ? midLabel +
+              ' playbook unlocked — up to 2 probes @ 0.25% ' +
+              ibRange +
+              '. ' +
+              ladderHint +
+              '. After ' +
+              ibUntil +
+              ' → ' +
+              prepAfterMid +
+              '.'
+            : midLabel +
+              ' playbook unlocked — up to 2 probes @ 0.25% ' +
+              ibRange +
+              ' ' +
+              TRADER_DISPLAY_LABEL +
+              ' (open until lunch-range starts). ' +
+              ladderHint +
+              '.',
       }
     }
 
@@ -1687,7 +1721,24 @@ export function resolveSimMorningGate(input: {
     }
   }
 
-  // Afternoon: lunch → cash close
+  // Afternoon: lunch → cash close (NY IB may still be open until 13:30)
+  if (market === 'NY' && rangeStrategy === 'ib') {
+    return {
+      ...base,
+      phase: 'ENTRY',
+      canPlaceEntry: ladder.ibEligible,
+      canManagePosition: false,
+      message:
+        'IB playbook unlocked — up to 2 probes @ 0.25% ' +
+        ibRange +
+        ' ' +
+        TRADER_DISPLAY_LABEL +
+        ' (open until lunch-range starts). ' +
+        ladderHint +
+        '.',
+    }
+  }
+
   if (
     rangeStrategy === 'lunch_range' ||
     (market === 'TOKYO' && rangeStrategy === 'ib')

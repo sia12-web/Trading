@@ -114,7 +114,7 @@ const mock = {
       entryClose: '10:15',
       lunchClose: '11:30',
       marketClose: '16:00',
-      ibEntry: '10:30–10:45',
+      ibEntry: '10:30–13:30',
       lunchRangeEntry: '13:30–15:15',
       tz: 'America/Toronto',
       tzLabel: 'Montreal',

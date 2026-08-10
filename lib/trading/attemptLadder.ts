@@ -14,11 +14,13 @@
  * Storage keeps morning / ib / lunch counters (slot 1 / 2 / 3).
  * On TOKYO, slot 2 = US Range fills, slot 3 = IB fills (labels differ).
  *
- * NY IB entry starts at 10:30 ET (when first-hour IB locks), not 10:15.
+ * NY IB entry starts at 10:30 ET (when first-hour IB locks) and stays open
+ * until lunch-range entry starts (13:30 ET) — not a tiny 15-minute slice.
  * Tokyo US Range opens at cash open 09:00 JST (prior NYC already shaped);
  * optional OR30 still owns 09:30–09:45 when morning probes remain.
  * Tokyo IB entries unlock at first-hour lock 10:00 JST (= 21:00 Montreal),
- * overlapping the tail of US Range (through 10:45 JST / 21:45 Montreal).
+ * overlapping the tail of US Range (through 10:45 JST / 21:45 Montreal),
+ * and run through cash close (15:00 JST / 02:00 Montreal).
  */
 
 import { parseTimeToSeconds } from '@/lib/utils/timeUtils'
@@ -74,9 +76,12 @@ type DeskMarket = 'NY' | 'TOKYO'
 const CLOCK = {
   NY: {
     tz: 'America/New_York',
-    /** Slot 2 — IB (aligns with first-hour lock at 10:30) */
+    /**
+     * Slot 2 — IB from first-hour lock (10:30) until lunch-range opens (13:30).
+     * midEnd === lateStart so lunch never steals IB before lunch starts.
+     */
     midStart: '10:30:00',
-    midEnd: '10:45:00',
+    midEnd: '13:30:00',
     /** Slot 3 — Lunch-range */
     lateStart: '13:30:00',
     lateEnd: '15:15:00',
@@ -175,7 +180,7 @@ export function isMorningWindowReleased(args: {
 }
 
 /** Mid slot released → late slot may take budget.
- *  NY: after IB clock ends (midEnd) or mid probes exhausted.
+ *  NY: after IB clock ends (midEnd = lunch-range start) or mid probes exhausted.
  *  Tokyo: after first-hour IB locks (lateStart = 10:00) or US probes exhausted —
  *  so Tokyo IB is tradable from 21:00 Montreal while US Range may still run to 21:45.
  */
@@ -459,9 +464,8 @@ export function bucketDisplayLabel(
 
 /**
  * Bucket's own entry-window bounds (desk-local seconds) — independent of the
- * single sequential picker. NY IB is intentionally wide (10:30 → lunch-range
- * close, 15:15 ET) so a leftover IB probe stays clickable through the
- * afternoon instead of being clock-evicted into the lunch-range bucket.
+ * single sequential picker. NY IB runs 10:30 → lunch-range start (13:30 ET)
+ * so leftover IB probes stay clickable until lunch opens (not through LN).
  * Tokyo US Range stays 09:00–10:45; Tokyo IB opens at first-hour lock
  * (10:00–15:00) and may overlap US for the last 45 minutes.
  */
@@ -473,7 +477,8 @@ export function bucketWindowSec(
   if (bucket === 'ib') {
     return {
       start: parseTimeToSeconds(c.midStart),
-      end: parseTimeToSeconds(market === 'NY' ? c.lateEnd : c.midEnd),
+      // NY: IB ends when lunch-range starts (midEnd === lateStart).
+      end: parseTimeToSeconds(c.midEnd),
     }
   }
   if (bucket === 'lunch_range') {
@@ -530,8 +535,8 @@ export function bucketWindowUnlockMessage(
       const win = deskLocalRangeAsTraderDisplay(c.midStart, c.midEnd, c.tz, now)
       return `${label} entries unlock ${win} (after Morning/OR30 ends or morning probes are exhausted).`
     }
-    const win = deskLocalRangeAsTraderDisplay(c.midStart, c.lateEnd, c.tz, now)
-    return `${label} entries unlock ${win} (after Morning/OR30 ends or morning probes are exhausted).`
+    const win = deskLocalRangeAsTraderDisplay(c.midStart, c.midEnd, c.tz, now)
+    return `${label} entries unlock ${win} ${TRADER_DISPLAY_LABEL} — open until lunch-range starts (after Morning/OR30 ends or morning probes are exhausted).`
   }
   if (bucket === 'lunch_range') {
     if (market === 'TOKYO') {

@@ -508,7 +508,7 @@ How to use it (big-desk volume map):
     const tokyo = index === 'NIKKEI'
     const midWindow = tokyo
       ? `${deskLocalHmsAsTraderDisplay('09:00:00', s.tz)}–${deskLocalHmsAsTraderDisplay('10:45:00', s.tz)}`
-      : `${deskLocalHmsAsTraderDisplay('10:30:00', s.tz)}–${deskLocalHmsAsTraderDisplay('10:45:00', s.tz)}`
+      : `${deskLocalHmsAsTraderDisplay('10:30:00', s.tz)}–${deskLocalHmsAsTraderDisplay('13:30:00', s.tz)}`
     const lateWindow = tokyo
       ? `${deskLocalHmsAsTraderDisplay('13:30:00', s.tz)}–${deskLocalHmsAsTraderDisplay('15:00:00', s.tz)}`
       : `${deskLocalHmsAsTraderDisplay('13:30:00', s.tz)}–${deskLocalHmsAsTraderDisplay('15:15:00', s.tz)}`
@@ -784,7 +784,7 @@ How to use it:
         : request.analysis_mode === 'ib'
           ? tokyo
             ? 'Mode: TOKYO IB PLAYBOOK refresh — tradeable Initial Balance levels for the 13:30–15:00 local entry window (slot 3).'
-            : 'Mode: IB PLAYBOOK refresh — tradeable Initial Balance levels for the 10:30–10:45 local entry window.'
+            : 'Mode: IB PLAYBOOK refresh — tradeable Initial Balance levels for the 10:30–13:30 Montreal entry window (open until lunch-range starts).'
           : request.analysis_mode === 'lunch_range'
             ? 'Mode: LUNCH BREAK / LUNCH-RANGE PLAYBOOK refresh — levels for PM lunch-range entry (and lunch-break prep).'
             : request.analysis_mode === 'afternoon'

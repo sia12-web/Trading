@@ -575,7 +575,7 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
     'Lunch playbook paints lunch ±10 even with toggles off'
   )
 
-  // Closed buckets: no ±10 invite. NY IB bucket stays open to 15:15 for leftover probes.
+  // Closed buckets: no ±10 invite. NY IB bucket stays open until lunch-range start (13:30).
   assert.ok(
     !entryEligibleOverlayRanges({
       playbookMode: 'ib',
@@ -607,9 +607,26 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
   )
   assert.ok(
     entryEligibleOverlayRanges({
+      playbookMode: 'ib',
+      instrument: 'NASDAQ',
+      now: new Date('2026-07-28T15:30:00.000Z'), // 11:30 ET — still in IB window
+      showOr30: false,
+      showIb: true,
+      showLunchRange: false,
+      or30: shaped.or30,
+      ib: { high: 18_250, low: 18_050 },
+      lunchRange: shaped.lunchRange,
+      morningAttempts: 2,
+    })
+      .map((o) => o.label)
+      .includes('IB'),
+    'NY IB ±10 paints at 11:30 ET while IB bucket is open until lunch-range'
+  )
+  assert.ok(
+    !entryEligibleOverlayRanges({
       playbookMode: 'lunch_range',
       instrument: 'NASDAQ',
-      now: new Date('2026-07-28T18:00:00.000Z'),
+      now: new Date('2026-07-28T18:00:00.000Z'), // 14:00 ET — lunch-range owns; IB closed
       showOr30: false,
       showIb: true,
       showLunchRange: true,
@@ -620,7 +637,7 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
     })
       .map((o) => o.label)
       .includes('IB'),
-    'NY IB ±10 stays while leftover IB bucket window is open (through 15:15 ET)'
+    'NY IB ±10 off after lunch-range starts (IB ends at 13:30)'
   )
   assert.deepEqual(
     entryEligibleOverlayRanges({

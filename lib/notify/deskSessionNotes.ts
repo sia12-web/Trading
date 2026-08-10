@@ -96,9 +96,9 @@ export function formatSessionScheduleBlock(
     `• Prep / clock-in from ${prep}`,
     `• Session START (cash open) ${open}`,
     `• OR30 locks ~${deskLocalHmsAsTraderDisplay('10:00:00', s.tz, now)} — morning entry until ${morningEnd}`,
-    `• IB locks ~${deskLocalHmsAsTraderDisplay('10:30:00', s.tz, now)} · entry ${ibWin}`,
+    `• IB locks ~${deskLocalHmsAsTraderDisplay('10:30:00', s.tz, now)} · entry ${ibWin} (open until lunch-range starts)`,
     `• Lunch-range locks 13:30 · entry ${lunchWin}`,
-    `• Lunch confirm ${lunchConfirm}`,
+    `• Lunch confirm ${lunchConfirm} (morning books — IB stay open past confirm)`,
     `• Session END (cash close) ${close}`,
     `• Ladder 2/2/2 @ 0.25% · ±10 of H / 50% mid / L after active range locks · OR30 optional`,
   ].join('\n')

@@ -93,14 +93,26 @@ assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
 }
 
 {
-  // Clock past midEnd with 1 IB fill → lunch unlocked (Option B)
+  // Clock past IB end (lunch-range start) with 1 IB fill → lunch unlocked (Option B)
   const afterMid = attemptLadderFromCounts({
     morningAttempts: 0,
     ibAttempts: 1,
-    now: etDate(11, 0),
+    now: etDate(13, 30),
     instrument: 'DOW',
   })
   assert(afterMid.lunchEligible, 'after IB clock → lunch ok with prior IB fill')
+}
+
+{
+  // During extended IB window (11:30) with 1 IB fill — lunch must NOT steal yet
+  const duringIb = attemptLadderFromCounts({
+    morningAttempts: 0,
+    ibAttempts: 1,
+    now: etDate(11, 30),
+    instrument: 'DOW',
+  })
+  assert(duringIb.ibEligible, '11:30 IB still eligible with 1/2 used')
+  assert(!duringIb.lunchEligible, '11:30 lunch must not steal IB before lunch starts')
 }
 
 {

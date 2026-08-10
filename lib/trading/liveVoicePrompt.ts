@@ -21,7 +21,7 @@ ATTEMPT LADDER (2 / 2 / 2 per window — THREE RANGES PER DESK; CLOCKS YOU SPEAK
 - **PROGRESSIVE RISK (same for AI / structure / manual)**: fill #1 = **1%**, fill #2 = **0.5%**, fill #3 (last) = **0.25%**. Outcome of prior fills does not matter — the step always applies. Say the active risk % when discussing size.
 - **DOW / NASDAQ ranges**: Morning (OR30) → IB → Lunch-range.
   * Morning OR30 (±10 after 10:00 lock → 10:15 Montreal): up to **2 fills** (session risk ladder). Chart: Morning playbook (OR30). Forming 09:30–10:00 = watch only.
-  * IB (10:30–10:45 Montreal — when first-hour IB locks; leftover IB probes stay clickable to 15:15): up to **2 fills** after morning clock ends (or morning probes exhausted). Chart: IB playbook.
+  * IB (10:30–13:30 Montreal — when first-hour IB locks until lunch-range opens): up to **2 fills** after morning clock ends (or morning probes exhausted). Chart: IB playbook.
   * Lunch break (after IB until lunch-range): Prep only — levels update. No new entries until lunch-range opens.
   * Lunch-range (13:30–15:15 Montreal): up to **2 fills** after IB clock ends (or IB probes exhausted).
 - **NIKKEI ranges** (same 2/2/2 unlock rules, DIFFERENT range names): Morning (OR30) → US Range → IB.
