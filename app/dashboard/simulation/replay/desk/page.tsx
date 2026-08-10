@@ -521,12 +521,12 @@ function SimulationDeskInner() {
   const [ibShaped, setIbShaped] = useState(false)
   const [lunchShaped, setLunchShaped] = useState(false)
   const [usRangeShaped, setUsRangeShaped] = useState(false)
-  /** Script overlays — same toggles as live (B / N / U / R). US Range defaults OFF. */
-  const [showIbBreakouts, setShowIbBreakouts] = useState(true)
+  /** Script overlays — same toggles as live (B / N / U / R). IB + US Range default OFF. */
+  const [showIbBreakouts, setShowIbBreakouts] = useState(false)
   const [showLunchRange, setShowLunchRange] = useState(true)
   const [showUsRange, setShowUsRange] = useState(false)
   const [showOr30, setShowOr30] = useState(true)
-  const showIbBreakoutsRef = useRef(true)
+  const showIbBreakoutsRef = useRef(false)
   const showLunchRangeRef = useRef(true)
   const showUsRangeRef = useRef(false)
   const showOr30Ref = useRef(true)
@@ -1348,8 +1348,8 @@ function SimulationDeskInner() {
         if (ibs && openUnix) {
           const ib = computeInitialBalance(bars, openUnix, simT)
           ibRangeRef.current = ib
-          // IB H/L lines always paint when shaped (live: B toggles markers only)
-          if (ib) {
+          // IB H/L + ±10 follow B toggle (same as live) — keep range ref for playbook.
+          if (showIbBreakoutsRef.current && ib) {
             const pts = ibLineSeriesData(ib, extendTo)
             try {
               ibs.high.setData(shiftBand(pts.high.map((p) => ({ time: p.time, value: p.value }))))

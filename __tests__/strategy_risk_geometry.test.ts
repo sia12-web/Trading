@@ -524,9 +524,8 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
     'NY lunch window never resurrects OR30 ±10'
   )
 
-  // Toggle OFF for BRK/REJ studies — OR30 / IB / lunch entry ±10 still paints for
-  // live open buckets / active playbook so Limit / click keep snap targets after
-  // refresh. US Range is the exception: always requires the U study toggle.
+  // Toggle OFF — lunch (and OR30 in its window) may still auto-paint for Limit
+  // snap after refresh. IB and US Range always require their B / U study toggles.
   assert.deepEqual(
     entryEligibleOverlayRanges({
       playbookMode: 'ib',
@@ -540,8 +539,24 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       lunchRange: shaped.lunchRange,
       morningAttempts: 0,
     }).map((o) => o.label),
+    [],
+    'IB ±10 stays dark without B toggle even when IB playbook / bucket is live'
+  )
+  assert.deepEqual(
+    entryEligibleOverlayRanges({
+      playbookMode: 'ib',
+      instrument: 'NASDAQ',
+      now: nyAfterOr30,
+      showOr30: false,
+      showIb: true,
+      showLunchRange: false,
+      or30: shaped.or30,
+      ib: { high: 18_250, low: 18_050 },
+      lunchRange: shaped.lunchRange,
+      morningAttempts: 0,
+    }).map((o) => o.label),
     ['IB'],
-    'IB playbook paints IB ±10 even when BRK/REJ toggle is off'
+    'IB B toggle ON paints IB ±10 while IB bucket is open'
   )
   assert.deepEqual(
     entryEligibleOverlayRanges({
@@ -554,8 +569,22 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       ...shaped,
       morningAttempts: 0,
     }).map((o) => o.label),
+    [],
+    'Nikkei US+IB clock: IB and US Range stay dark without B / U toggles'
+  )
+  assert.deepEqual(
+    entryEligibleOverlayRanges({
+      playbookMode: 'us_range',
+      instrument: 'NIKKEI',
+      now: nikkeiAfterOr30,
+      showOr30: false,
+      showIb: true,
+      showUsRange: false,
+      ...shaped,
+      morningAttempts: 0,
+    }).map((o) => o.label),
     ['Tokyo IB'],
-    'Nikkei US+IB clock: Tokyo IB auto-paints; US Range stays dark without U toggle'
+    'Nikkei after IB lock: B toggle ON paints Tokyo IB ±10; US stays dark without U'
   )
   assert.ok(
     entryEligibleOverlayRanges({
