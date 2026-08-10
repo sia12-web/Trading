@@ -536,7 +536,7 @@ export function bucketWindowUnlockMessage(
       return `${label} entries unlock ${win} (after Morning/OR30 ends or morning probes are exhausted).`
     }
     const win = deskLocalRangeAsTraderDisplay(c.midStart, c.midEnd, c.tz, now)
-    return `${label} entries unlock ${win} ${TRADER_DISPLAY_LABEL} — open until lunch-range starts (after Morning/OR30 ends or morning probes are exhausted).`
+    return `${label} entries unlock ${win} — open until lunch-range starts (after Morning/OR30 ends or morning probes are exhausted).`
   }
   if (bucket === 'lunch_range') {
     if (market === 'TOKYO') {
