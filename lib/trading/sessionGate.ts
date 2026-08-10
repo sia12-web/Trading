@@ -1296,7 +1296,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
         message:
           market === 'TOKYO'
             ? `${midLabel} playbook unlocked — up to 2 probes @ 0.25% ${ibRange}. ${ladderHint}. After ${ibUntil} → ${prepAfterMid}. Working limits do not count until filled.`
-            : `${midLabel} playbook unlocked — up to 2 probes @ 0.25% ${ibRange} ${TRADER_DISPLAY_LABEL} (open until lunch-range starts). ${ladderHint}. Working limits do not count until filled.`,
+            : `${midLabel} playbook unlocked — up to 2 probes @ 0.25% ${ibRange} (open until lunch-range starts). ${ladderHint}. Working limits do not count until filled.`,
       })
     }
 
@@ -1345,7 +1345,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
         canFetchLiveBars: clockedIn || attendedToday,
         canPlaceEntry: clockedIn && ladder.ibEligible && !hasOpen,
         canManagePosition: false,
-        message: `IB playbook unlocked — up to 2 probes @ 0.25% ${ibRange} ${TRADER_DISPLAY_LABEL} (open until lunch-range starts). ${ladderHint}. Working limits do not count until filled.`,
+        message: `IB playbook unlocked — up to 2 probes @ 0.25% ${ibRange} (open until lunch-range starts). ${ladderHint}. Working limits do not count until filled.`,
       })
     }
 
@@ -1673,8 +1673,6 @@ export function resolveSimMorningGate(input: {
             : midLabel +
               ' playbook unlocked — up to 2 probes @ 0.25% ' +
               ibRange +
-              ' ' +
-              TRADER_DISPLAY_LABEL +
               ' (open until lunch-range starts). ' +
               ladderHint +
               '.',
@@ -1731,8 +1729,6 @@ export function resolveSimMorningGate(input: {
       message:
         'IB playbook unlocked — up to 2 probes @ 0.25% ' +
         ibRange +
-        ' ' +
-        TRADER_DISPLAY_LABEL +
         ' (open until lunch-range starts). ' +
         ladderHint +
         '.',
