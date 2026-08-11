@@ -639,7 +639,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       }
     }
 
-    // Progressive session risk: fill #1 = 1%, #2 = 0.5%, #3 = 0.25% (W/L same)
+    // Progressive session risk: fill #1 = 2%, #2 = 1%, #3 = 0.5% (W/L same)
     const riskPct = riskPercentForEntrySource(deskEntrySource, gate.attemptsUsed)
     if (!sizing) {
       sizing = positionSizer.calculatePosition(

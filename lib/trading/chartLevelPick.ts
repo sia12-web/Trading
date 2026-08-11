@@ -139,7 +139,7 @@ export function previewLevelOrderPrices(args: {
   /** Active playbook range — strategy SL/TP when present */
   activeRange?: StrategyRangeEdges | null
   magnets?: StrategyRiskMagnets | null
-  /** Filled session attempts — progressive 1% → 0.5% → 0.25% */
+  /** Filled session attempts — progressive 2% → 1% → 0.5% */
   sessionFillsUsed?: number
 }): {
   direction: 'LONG' | 'SHORT'

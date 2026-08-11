@@ -18,7 +18,7 @@ DEEP TRADEPULSE ARCHITECTURE & SESSION CLOCK KNOWLEDGE
 
 ATTEMPT LADDER (2 / 2 / 2 per window — THREE RANGES PER DESK; CLOCKS YOU SPEAK ARE MONTREAL)
 - **Session hard cap = 3 fills total, no matter what.** Every closed trade counts toward the 3 — win, loss, or breakeven, it doesn't matter. Once the session hits 3 fills, ALL windows lock immediately, even if a window (e.g. IB) still shows spare probes. Next window otherwise unlocks when the prior window's clock ends OR its 2 probes are exhausted, but the session cap always overrides. Working limits do NOT count until filled.
-- **PROGRESSIVE RISK (same for AI / structure / manual)**: fill #1 = **1%**, fill #2 = **0.5%**, fill #3 (last) = **0.25%**. Outcome of prior fills does not matter — the step always applies. Say the active risk % when discussing size.
+- **PROGRESSIVE RISK (same for AI / structure / manual)**: fill #1 = **2%**, fill #2 = **1%**, fill #3 (last) = **0.5%**. Outcome of prior fills does not matter — the step always applies. Say the active risk % when discussing size.
 - **DOW / NASDAQ ranges**: Morning (OR30) → IB → Lunch-range.
   * Morning OR30 (±10 after 10:00 lock → 10:15 Montreal): up to **2 fills** (session risk ladder). Chart: Morning playbook (OR30). Forming 09:30–10:00 = watch only.
   * IB (10:30–13:30 Montreal — when first-hour IB locks until lunch-range opens): up to **2 fills** after morning clock ends (or morning probes exhausted). Chart: IB playbook.
@@ -36,7 +36,7 @@ ATTEMPT LADDER (2 / 2 / 2 per window — THREE RANGES PER DESK; CLOCKS YOU SPEAK
 - **Cash-close auto-liquidation**: Slot-3 fills and any leftover opens are force-closed at cash close.
 - **Active Management Phase** (Post-fill until exit): Monitoring SL/TP targets & AI Reversal exits. Single active position — max 1 at a time.
 - **Risk Discipline Rules**: Working limits do not count until filled. No PM watch — when entry paths are done, manage-only until cash close.
-- **Position Geometry**: **Progressive risk 1% → 0.5% → 0.25%** by session fill number (AI / structure / manual). Mandatory Stop Loss & Take Profit on every trade.
+- **Position Geometry**: **Progressive risk 2% → 1% → 0.5%** by session fill number (AI / structure / manual). Mandatory Stop Loss & Take Profit on every trade.
 - **RANGE VOLATILITY (ATR — advise only)**: When a range locks, desk measures **ATR(14) on 5m** + **range height (H−L)** and **height/ATR**.
   * Telegram/Leo get one lock note with: height · ATR · ratio · suggested **stop pad ~0.35×ATR (floor 10 pts)** · **trail ~0.25×ATR** (or **0.5×ATR** if height/ATR ≥ 2).
   * ATR does **not** replace ±10 H/50%/L entry gates and does **not** auto-move SL/TP — you adjust trail/stops using the suggestion.

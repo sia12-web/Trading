@@ -4,7 +4,7 @@
  *   DOW / NASDAQ: Morning (OR30) → IB → Lunch-range
  *   NIKKEI:       Morning (OR30) → US Range (prior NYC) → IB
  *
- * Each window: up to 2 fills @ range-edge risk, BUT the session (day) total
+ * Each window: up to 2 fills (progressive session risk), BUT the session (day) total
  * is hard-capped at 3 trades regardless of profit/loss or which window still
  * shows spare probes — once 3 fills land, every window locks.
  * Next window unlocks when prior clock ends OR prior attempts exhausted

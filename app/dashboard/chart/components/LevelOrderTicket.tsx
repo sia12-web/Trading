@@ -2,7 +2,7 @@
 
 /**
  * Limit order ticket — places a WORKING limit.
- * Strategy entries: ±10 range-edge gate + progressive session risk (1% → 0.5% → 0.25%).
+ * Strategy entries: ±10 range-edge gate + progressive session risk (2% → 1% → 0.5%).
  */
 
 import { useMemo, useState, useEffect, useRef } from 'react'
@@ -112,7 +112,7 @@ interface Props {
    * dialog to click through.
    */
   autoConfirm?: boolean
-  /** Filled session attempts so far (working limits excluded) — drives 1→0.5→0.25% */
+  /** Filled session attempts so far (working limits excluded) — drives 2→1→0.5% */
   sessionFillsUsed?: number
   onClose: () => void
   /** Auto-confirm submit failed — parent should surface this (ticket UI is hidden). */
@@ -764,7 +764,7 @@ export function LevelOrderTicket({
               />
             </label>
             <p className="mt-2 text-[10px] text-amber-300/90">
-              Risk steps 1% → 0.5% → 0.25% by session fill (this probe {riskPct}%) —
+              Risk steps 2% → 1% → 0.5% by session fill (this probe {riskPct}%) —
               size adjusts when you widen or tighten the stop.
             </p>
           </>

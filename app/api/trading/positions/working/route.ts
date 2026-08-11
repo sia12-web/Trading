@@ -454,7 +454,7 @@ export async function POST(request: Request) {
     }
     const stopLossPrice = stopGuard.stop
 
-    // Server-authoritative progressive risk (1% → 0.5% → 0.25%) from filled
+    // Server-authoritative progressive risk (2% → 1% → 0.5%) from filled
     // session attempts — ignore client-claimed size/risk so chart/ticket can't
     // under/over-size vs the ladder.
     const riskPct = riskPercentForEntrySource(entrySource, gate.attemptsUsed)

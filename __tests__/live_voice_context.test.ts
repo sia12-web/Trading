@@ -24,7 +24,7 @@ function assert(cond: unknown, msg: string) {
 assert(AI_LEVELS_QUERY.days === 1, 'AI levels query days=1')
 assert(AI_LEVELS_QUERY.minConviction === 7, 'min conviction 7')
 assert(AVWAP_LOOKBACK_TRADING_DAYS === 5, 'AVWAP lookback 5')
-assert(RANGE_EDGE_RISK_PERCENT === 0.25, 'range-edge risk 0.25%')
+assert(RANGE_EDGE_RISK_PERCENT === 0.5, 'range-edge floor risk 0.5%')
 assert(MAX_SESSION_ATTEMPTS === 2 && MAX_STOP_HITS === 2, 'morning attempt caps')
 assert(MAX_DAY_ATTEMPTS === 3, 'session attempt cap')
 

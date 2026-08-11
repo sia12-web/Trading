@@ -1105,12 +1105,12 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     const openBookHint =
       ladder.morningAttempts > 0
         ? market === 'TOKYO'
-          ? 'Morning (OR30) book open — manage only (one book at a time). Confirm close at lunch (11:30) or ride until cash-close flatten. US Range / IB still unlock on the clock after you flatten (up to 2 probes each @ 0.25%).'
-          : 'Morning (OR30) book open — manage only (one book at a time). Confirm close at lunch (11:30) or ride until cash-close flatten. IB / lunch-range still unlock on the clock after you flatten (up to 2 probes each @ 0.25%).'
+          ? 'Morning (OR30) book open — manage only (one book at a time). Confirm close at lunch (11:30) or ride until cash-close flatten. US Range / IB still unlock on the clock after you flatten (up to 2 probes each (progressive risk)).'
+          : 'Morning (OR30) book open — manage only (one book at a time). Confirm close at lunch (11:30) or ride until cash-close flatten. IB / lunch-range still unlock on the clock after you flatten (up to 2 probes each (progressive risk)).'
         : ladder.ibAttempts > 0
           ? market === 'TOKYO'
-            ? 'US Range book open — manage only. Tokyo IB still unlocks on the clock after you flatten (up to 2 probes @ 0.25%).'
-            : 'IB book open — manage only. Lunch-range still unlocks on the clock after you flatten (up to 2 probes @ 0.25%).'
+            ? 'US Range book open — manage only. Tokyo IB still unlocks on the clock after you flatten (up to 2 probes (progressive risk)).'
+            : 'IB book open — manage only. Lunch-range still unlocks on the clock after you flatten (up to 2 probes (progressive risk)).'
           : ladder.lunchAttempts > 0
             ? market === 'TOKYO'
               ? 'IB book open. Manage only — no new entries while this book is open.'
@@ -1295,8 +1295,8 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
         canManagePosition: false,
         message:
           market === 'TOKYO'
-            ? `${midLabel} playbook unlocked — up to 2 probes @ 0.25% ${ibRange}. ${ladderHint}. After ${ibUntil} → ${prepAfterMid}. Working limits do not count until filled.`
-            : `${midLabel} playbook unlocked — up to 2 probes @ 0.25% ${ibRange} (open until lunch-range starts). ${ladderHint}. Working limits do not count until filled.`,
+            ? `${midLabel} playbook unlocked — up to 2 probes (progressive risk) ${ibRange}. ${ladderHint}. After ${ibUntil} → ${prepAfterMid}. Working limits do not count until filled.`
+            : `${midLabel} playbook unlocked — up to 2 probes (progressive risk) ${ibRange} (open until lunch-range starts). ${ladderHint}. Working limits do not count until filled.`,
       })
     }
 
@@ -1345,7 +1345,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
         canFetchLiveBars: clockedIn || attendedToday,
         canPlaceEntry: clockedIn && ladder.ibEligible && !hasOpen,
         canManagePosition: false,
-        message: `IB playbook unlocked — up to 2 probes @ 0.25% ${ibRange} (open until lunch-range starts). ${ladderHint}. Working limits do not count until filled.`,
+        message: `IB playbook unlocked — up to 2 probes (progressive risk) ${ibRange} (open until lunch-range starts). ${ladderHint}. Working limits do not count until filled.`,
       })
     }
 
@@ -1361,7 +1361,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
         canFetchLiveBars: clockedIn || attendedToday,
         canPlaceEntry: clockedIn && ladder.lunchEligible && !hasOpen,
         canManagePosition: false,
-        message: `${lateLabel} playbook unlocked — up to 2 probes @ 0.25% ${deskLocalHmsAsTraderDisplay(lnStartHms, s.tz, now)}–${lnUntil}. ${ladderHint}. After that manage-only until cash close.`,
+        message: `${lateLabel} playbook unlocked — up to 2 probes (progressive risk) ${deskLocalHmsAsTraderDisplay(lnStartHms, s.tz, now)}–${lnUntil}. ${ladderHint}. After that manage-only until cash close.`,
       })
     }
 
@@ -1661,7 +1661,7 @@ export function resolveSimMorningGate(input: {
         message:
           market === 'TOKYO'
             ? midLabel +
-              ' playbook unlocked — up to 2 probes @ 0.25% ' +
+              ' playbook unlocked — up to 2 probes (progressive risk) ' +
               ibRange +
               '. ' +
               ladderHint +
@@ -1671,7 +1671,7 @@ export function resolveSimMorningGate(input: {
               prepAfterMid +
               '.'
             : midLabel +
-              ' playbook unlocked — up to 2 probes @ 0.25% ' +
+              ' playbook unlocked — up to 2 probes (progressive risk) ' +
               ibRange +
               ' (open until lunch-range starts). ' +
               ladderHint +
@@ -1727,7 +1727,7 @@ export function resolveSimMorningGate(input: {
       canPlaceEntry: ladder.ibEligible,
       canManagePosition: false,
       message:
-        'IB playbook unlocked — up to 2 probes @ 0.25% ' +
+        'IB playbook unlocked — up to 2 probes (progressive risk) ' +
         ibRange +
         ' (open until lunch-range starts). ' +
         ladderHint +
@@ -1750,7 +1750,7 @@ export function resolveSimMorningGate(input: {
       canManagePosition: false,
       message:
         lateLabel +
-        ' playbook unlocked — up to 2 probes @ 0.25% ' +
+        ' playbook unlocked — up to 2 probes (progressive risk) ' +
         deskLocalHmsAsTraderDisplay(lnStartHms, s.tz, input.now) +
         '–' +
         lnUntil +

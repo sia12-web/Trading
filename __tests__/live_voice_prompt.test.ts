@@ -19,9 +19,10 @@ assert(LIVE_VOICE_SYSTEM_PROMPT.includes('20 seconds'), 'short reply')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('2 / 2 / 2 per window'), 'Leo knows 2/2/2 per-window ladder')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('Session hard cap = 3 fills'), 'Leo knows session cap is 3 fills total')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('PROGRESSIVE RISK'), 'Leo knows progressive risk ladder')
-assert(LIVE_VOICE_SYSTEM_PROMPT.includes('1%'), 'Leo knows first fill 1%')
-assert(LIVE_VOICE_SYSTEM_PROMPT.includes('0.5%'), 'Leo knows second fill 0.5%')
-assert(LIVE_VOICE_SYSTEM_PROMPT.includes('0.25%'), 'Leo knows third fill 0.25%')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('fill #1 = **2%**'), 'Leo knows first fill 2%')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('fill #2 = **1%**'), 'Leo knows second fill 1%')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('fill #3 (last) = **0.5%**'), 'Leo knows third fill 0.5%')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('2% → 1% → 0.5%'), 'Leo knows progressive ladder string')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('DESK NEWS HAZARDS'), 'Leo knows desk news hazards')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('Stand aside'), 'Leo knows stand-aside window')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('Finnhub calendar'), 'Leo knows Finnhub calendar source')
@@ -121,8 +122,8 @@ const mock = {
     },
   },
   risk: {
-    deskRiskPercent: 0.25,
-    manualRiskPercent: 0.25,
+    deskRiskPercent: 2,
+    manualRiskPercent: 2,
     maxAttempts: 6,
     maxStopHits: 2,
     entryRule: 'day max 6',

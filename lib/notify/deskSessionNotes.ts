@@ -75,7 +75,7 @@ export function formatSessionScheduleBlock(
       `• Tokyo IB locks ~${deskLocalHmsAsTraderDisplay('10:00:00', s.tz, now)} (first hour) — entry ${ibWin}`,
       `• Lunch confirm ${lunchConfirm}`,
       `• Session END (cash close) ${close}`,
-      `• Ladder 2/2/2 @ 0.25% · ±10 of H / L (US Range) or H / 50% mid / L (OR30 / Tokyo IB) after active range locks`,
+      `• Ladder 2/2/2 · progressive 2% → 1% → 0.5% · ±10 of H / L (US Range) or H / 50% mid / L (OR30 / Tokyo IB) after active range locks`,
     ].join('\n')
   }
 
@@ -100,7 +100,7 @@ export function formatSessionScheduleBlock(
     `• Lunch-range locks 13:30 · entry ${lunchWin}`,
     `• Lunch confirm ${lunchConfirm} (morning books — IB stay open past confirm)`,
     `• Session END (cash close) ${close}`,
-    `• Ladder 2/2/2 @ 0.25% · ±10 of H / 50% mid / L after active range locks · OR30 optional`,
+    `• Ladder 2/2/2 · progressive 2% → 1% → 0.5% · ±10 of H / 50% mid / L after active range locks · OR30 optional`,
   ].join('\n')
 }
 
@@ -236,8 +236,8 @@ export function formatEntryPermissionNote(args: {
   const usOnly = /us\s*range/i.test(String(args.windowLabel))
   const lines = [
     usOnly
-      ? `You may place probes in this window (2 @ 0.25%, ±10 of locked range H / L only — no 50% mid).`
-      : `You may place probes in this window (2 @ 0.25%, ±10 of locked range H / 50% mid / L).`,
+      ? `You may place probes in this window (2 · progressive risk, ±10 of locked range H / L only — no 50% mid).`
+      : `You may place probes in this window (2 · progressive risk, ±10 of locked range H / 50% mid / L).`,
   ]
   if (args.rangeHigh != null && args.rangeLow != null) {
     const mid = Math.round(((args.rangeHigh + args.rangeLow) / 2) * 100) / 100

@@ -466,7 +466,7 @@ export function SessionBanner({
               ? 'bg-red-500/25 text-red-200'
               : 'bg-sky-500/20 text-sky-200'
           }`}
-          title="Session max 3 fills · progressive risk 1% → 0.5% → 0.25% (win/loss same). Up to 2 per window (Morning / IB / Lunch-range). Session cap always wins. Lunch 11:30 is confirm-close; unconfirmed books ride to cash close. Working limits do not count until filled."
+          title="Session max 3 fills · progressive risk 2% → 1% → 0.5% (win/loss same). Up to 2 per window (Morning / IB / Lunch-range). Session cap always wins. Lunch 11:30 is confirm-close; unconfirmed books ride to cash close. Working limits do not count until filled."
         >
           {gate.attemptLadderLabel ||
             (gate.lockedInstrument === 'NIKKEI'

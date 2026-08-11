@@ -6893,7 +6893,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           const tpY = candleSeries ? candleSeries.priceToCoordinate(riskBox.profitTarget) : null
           const slY = candleSeries ? candleSeries.priceToCoordinate(riskBox.stopLoss) : null
 
-          // Progressive session risk: fill #1 = 1%, #2 = 0.5%, #3 = 0.25%
+          // Progressive session risk: fill #1 = 2%, #2 = 1%, #3 = 0.5%
           const sessionRiskPct = riskPercentForSessionAttempt(attemptsUsed)
           const sz = previewPositionSizing(
             riskBox.entryPrice,

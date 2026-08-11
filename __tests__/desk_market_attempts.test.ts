@@ -1,5 +1,5 @@
 /**
- * NY and Tokyo attempt books must not share caps; risk is 0.25% for all desk sources.
+ * NY and Tokyo attempt books must not share caps; all desk sources share progressive risk.
  * Run: npx tsx __tests__/desk_market_attempts.test.ts
  */
 
@@ -10,18 +10,21 @@ import {
 import {
   riskPercentForEntrySource,
   RANGE_EDGE_RISK_PERCENT,
+  SESSION_RISK_FIRST_PERCENT,
+  SESSION_RISK_THIRD_PERCENT,
 } from '../lib/trading/positionSizing'
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(msg)
 }
 
-assert(RANGE_EDGE_RISK_PERCENT === 0.25, 'range-edge risk 0.25%')
-assert(riskPercentForEntrySource('manual') === RANGE_EDGE_RISK_PERCENT, 'manual = 0.25%')
-assert(riskPercentForEntrySource('ai') === RANGE_EDGE_RISK_PERCENT, 'ai = 0.25%')
-assert(riskPercentForEntrySource('structure') === RANGE_EDGE_RISK_PERCENT, 'structure = 0.25%')
-assert(riskPercentForEntrySource(undefined) === RANGE_EDGE_RISK_PERCENT, 'default = 0.25%')
-assert(riskPercentForEntrySource('fake_source') === RANGE_EDGE_RISK_PERCENT, 'unknown source still 0.25%')
+assert(RANGE_EDGE_RISK_PERCENT === 0.5, 'range-edge floor = third step 0.5%')
+assert(RANGE_EDGE_RISK_PERCENT === SESSION_RISK_THIRD_PERCENT, 'floor aliases third')
+assert(riskPercentForEntrySource('manual') === SESSION_RISK_FIRST_PERCENT, 'manual first = 2%')
+assert(riskPercentForEntrySource('ai') === SESSION_RISK_FIRST_PERCENT, 'ai first = 2%')
+assert(riskPercentForEntrySource('structure') === SESSION_RISK_FIRST_PERCENT, 'structure first = 2%')
+assert(riskPercentForEntrySource(undefined) === SESSION_RISK_FIRST_PERCENT, 'default first = 2%')
+assert(riskPercentForEntrySource('fake_source') === SESSION_RISK_FIRST_PERCENT, 'unknown source still first step')
 
 assert(deskMarketFor('NIKKEI') === 'TOKYO', 'NIKKEI → TOKYO')
 assert(deskMarketFor('DOW') === 'NY', 'DOW → NY')
