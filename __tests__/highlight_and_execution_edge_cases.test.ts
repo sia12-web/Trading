@@ -8,7 +8,10 @@ import {
 import {
   PositionSizer,
   riskPercentForEntrySource,
-  MANUAL_RISK_PERCENT,
+  riskPercentForSessionAttempt,
+  SESSION_RISK_FIRST_PERCENT,
+  SESSION_RISK_SECOND_PERCENT,
+  SESSION_RISK_THIRD_PERCENT,
 } from '../lib/trading/positionSizing'
 
 // ─── 1. HIGHLIGHTING TIME & PRICE EDGE CASES ────────────────────────────────
@@ -80,32 +83,35 @@ function testPositionSizingProtection() {
   const sizer = new PositionSizer()
   const accountSize = 100000 // $100k account
 
-  // 1. Risk Percent checks for manual vs desk entries
-  assert.equal(riskPercentForEntrySource('manual'), 1, 'Manual entry risk must be 1%')
-  assert.equal(riskPercentForEntrySource('ai'), 5, 'AI entry risk must be 5%')
+  // 1. Progressive ladder: all sources share 2% → 1% → 0.5% by session fills
+  assert.equal(riskPercentForEntrySource('manual', 0), SESSION_RISK_FIRST_PERCENT, 'Manual first fill = 2%')
+  assert.equal(riskPercentForEntrySource('ai', 0), SESSION_RISK_FIRST_PERCENT, 'AI first fill = 2%')
+  assert.equal(riskPercentForEntrySource('structure', 1), SESSION_RISK_SECOND_PERCENT, 'Structure second = 1%')
+  assert.equal(riskPercentForEntrySource('manual', 2), SESSION_RISK_THIRD_PERCENT, 'Manual third = 0.5%')
+  assert.equal(riskPercentForSessionAttempt(0), 2, '0 fills → 2%')
 
-  // 2. Standard 1% Manual Risk ($1,000 risk) for mid price (2000 entry, 1900 stop = 100 pt stop distance)
-  const sizeMid = sizer.calculatePosition(2000, accountSize, 'LONG', 1900, MANUAL_RISK_PERCENT)
+  // 2. Standard 2% first-probe risk ($2,000) for mid price (2000 entry, 1900 stop = 100 pt)
+  const risk2 = riskPercentForSessionAttempt(0)
+  const sizeMid = sizer.calculatePosition(2000, accountSize, 'LONG', 1900, risk2)
   assert.notEqual(sizeMid, null)
-  assert.equal(sizeMid?.risk_amount, 1000, 'Risk amount must be exactly $1,000 (1% of 100k)')
-  assert.equal(sizeMid?.position_size, 10, 'Position units must equal 1000 / 100 = 10 units when under 10k price')
+  assert.equal(sizeMid?.risk_amount, 2000, 'Risk amount must be exactly $2,000 (2% of 100k)')
+  assert.equal(sizeMid?.position_size, 20, 'Position units must equal 2000 / 100 = 20 units when under 10k price')
 
   // 3. High Index Price (>10,000 entry: e.g. 20000 entry)
   // Margin safety cap restricts position_size to max 2.0 units to prevent OANDA margin rejections
-  const size1 = sizer.calculatePosition(20000, accountSize, 'LONG', 19900, MANUAL_RISK_PERCENT)
+  const size1 = sizer.calculatePosition(20000, accountSize, 'LONG', 19900, risk2)
   assert.notEqual(size1, null)
   assert.equal(size1?.position_size, 2, 'Position units for >10,000 price index must be capped at 2.0 units for OANDA margin safety')
 
-  // 4. Wider Stop Loss (200 pt stop distance: Entry @ 2000, Stop @ 1800)
-  // Position units should drop to 5 units to keep risk capped at $1,000!
-  const sizeWider = sizer.calculatePosition(2000, accountSize, 'LONG', 1800, MANUAL_RISK_PERCENT)
+  // 4. Wider Stop Loss (200 pt stop distance: Entry @ 2000, Stop @ 1800) at 2%
+  const sizeWider = sizer.calculatePosition(2000, accountSize, 'LONG', 1800, risk2)
   assert.notEqual(sizeWider, null)
-  assert.equal(sizeWider?.risk_amount, 1000, 'Risk amount must stay capped at $1,000 with wider stop')
-  assert.equal(sizeWider?.position_size, 5, 'Position units must decrease to 5 units for wider stop')
+  assert.equal(sizeWider?.risk_amount, 2000, 'Risk amount must stay at $2,000 with wider stop')
+  assert.equal(sizeWider?.position_size, 10, 'Position units must decrease to 10 units for wider stop at 2%')
 
-  // 4. Tighter Stop Loss (20 pt stop distance: Entry @ 20000, Stop @ 19980)
+  // 5. Tighter Stop Loss (20 pt stop distance: Entry @ 20000, Stop @ 19980)
   // Leverage safety cap for high indices (>1000 price) caps notional at 1.5x account size
-  const sizeTight = sizer.calculatePosition(20000, accountSize, 'LONG', 19980, MANUAL_RISK_PERCENT)
+  const sizeTight = sizer.calculatePosition(20000, accountSize, 'LONG', 19980, risk2)
   assert.notEqual(sizeTight, null)
   assert.ok(sizeTight!.position_size * 20000 <= accountSize * 1.5, 'Notional value must be capped at 1.5x account size')
 
