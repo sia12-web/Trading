@@ -57,7 +57,11 @@ import {
   previewLevelOrderPrices,
   resolveChartLimitPick,
 } from '@/lib/trading/chartLevelPick'
-import { previewPositionSizing, riskPercentForSessionAttempt } from '@/lib/trading/positionSizing'
+import {
+  previewPositionSizing,
+  riskPercentForSessionAttempt,
+  takeProfitFromStopR,
+} from '@/lib/trading/positionSizing'
 import {
   aiLevelsUrl,
   resolveDeskLevels,
@@ -65,6 +69,7 @@ import {
   computeInitialBalance,
   computeIbSignals,
   ibLineSeriesData,
+  snapProfitToRound,
   type InitialBalanceRange,
 } from '@/lib/trading/deskLevels'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
@@ -4483,7 +4488,24 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       } else if (draggingRiskLineRef.current === 'TP') {
         setRiskBox((prev) => (prev ? { ...prev, profitTarget: snappedRaw } : null))
       } else if (draggingRiskLineRef.current === 'SL') {
-        setRiskBox((prev) => (prev ? { ...prev, stopLoss: snappedRaw } : null))
+        // Manual SL drag: TP follows 2R of new |entry−SL| (magnets only seed initial suggest)
+        setRiskBox((prev) => {
+          if (!prev) return null
+          const isLong = prev.direction === 'LONG'
+          if (isLong ? !(snappedRaw < prev.entryPrice) : !(snappedRaw > prev.entryPrice)) {
+            return prev
+          }
+          const rawTp = takeProfitFromStopR({
+            entry: prev.entryPrice,
+            stop: snappedRaw,
+            direction: prev.direction,
+          })
+          const tp = snapDeskPrice(
+            instrument,
+            snapProfitToRound(prev.entryPrice, snappedRaw, rawTp, prev.direction)
+          )
+          return { ...prev, stopLoss: snappedRaw, profitTarget: tp }
+        })
       }
     }
 
@@ -4560,7 +4582,21 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
       if (draggingBracketRef.current === 'SL') {
         if (isLong ? !(snapped < ov.entryPrice) : !(snapped > ov.entryPrice)) return
-        setEditableOverlay((prev) => (prev ? { ...prev, stopLoss: snapped } : null))
+        // Filled position: SL drag re-locks TP to 2R of new stop distance
+        setEditableOverlay((prev) => {
+          if (!prev) return null
+          const dir = prev.direction === 'long' ? 'LONG' : 'SHORT'
+          const rawTp = takeProfitFromStopR({
+            entry: prev.entryPrice,
+            stop: snapped,
+            direction: dir,
+          })
+          const tp = snapDeskPrice(
+            instrument,
+            snapProfitToRound(prev.entryPrice, snapped, rawTp, dir)
+          )
+          return { ...prev, stopLoss: snapped, profitTarget: tp }
+        })
       } else if (draggingBracketRef.current === 'TP') {
         if (isLong ? !(snapped > ov.entryPrice) : !(snapped < ov.entryPrice)) return
         setEditableOverlay((prev) => (prev ? { ...prev, profitTarget: snapped } : null))

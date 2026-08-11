@@ -10,6 +10,7 @@ import {
   normalizeEntrySource,
   previewPositionSizing,
   riskPercentForEntrySource,
+  takeProfitFromStopR,
   type DeskEntrySource,
 } from '@/lib/trading/positionSizing'
 import { formatZone } from '@/lib/trading/deskLevels'
@@ -750,7 +751,25 @@ export function LevelOrderTicket({
               <input
                 type="number"
                 value={stopInput}
-                onChange={(e) => setStopInput(Number(e.target.value))}
+                onChange={(e) => {
+                  const next = Number(e.target.value)
+                  setStopInput(next)
+                  // SL edit → TP tracks 2R (magnets / presets only seed initial suggest)
+                  if (
+                    Number.isFinite(next) &&
+                    next > 0 &&
+                    (direction === 'LONG' ? next < snappedLimit : next > snappedLimit)
+                  ) {
+                    const rawTp = takeProfitFromStopR({
+                      entry: snappedLimit,
+                      stop: next,
+                      direction,
+                    })
+                    setTpInput(
+                      snapTargetToTick(instrument, snappedLimit, rawTp, direction)
+                    )
+                  }
+                }}
                 className="mt-1 w-full rounded-lg border border-red-900/40 bg-[#0d1117] px-3 py-2 text-sm text-red-300 price-mono"
               />
             </label>

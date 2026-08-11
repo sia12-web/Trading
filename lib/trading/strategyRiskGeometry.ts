@@ -20,6 +20,7 @@ import {
   snapProfitToRound,
   zoneStopPrice,
 } from '@/lib/trading/deskLevels'
+import { takeProfitFromStopR } from '@/lib/trading/positionSizing'
 import {
   bucketForRangeLabel,
   deskClockSeconds,
@@ -178,10 +179,7 @@ export function strategyTakeProfitPrice(args: {
   magnets?: StrategyRiskMagnets | null
 }): number {
   const { entry, stop, direction } = args
-  const risk = Math.abs(entry - stop)
-  const fallbackDist = Math.max(risk * 2, entry * 0.005)
-  const fallback =
-    direction === 'LONG' ? entry + fallbackDist : entry - fallbackDist
+  const fallback = takeProfitFromStopR({ entry, stop, direction })
 
   const candidates: { price: number; priority: number }[] = []
   const range = args.activeRange

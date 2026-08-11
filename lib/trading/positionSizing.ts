@@ -28,7 +28,40 @@ const MAX_LOSS_PERCENT = 0.05 // 5% max loss per trade (default disaster stop)
 /** With tight zone stops, cap exposure so risk-per-point can't blow up notional */
 const MAX_NOTIONAL_MULT = 5
 
+/**
+ * Default reward multiple when SL moves: TP = entry ± R × |entry − stop|.
+ * Magnets may seed the initial ticket TP; manual SL edits re-lock to this R.
+ */
+export const DEFAULT_TAKE_PROFIT_R = 2
+/** Floor reward distance as a fraction of entry (same as sizing preview / strategy 2R fallback). */
+export const MIN_TAKE_PROFIT_ENTRY_FRAC = 0.005
+
 export type DeskEntrySource = 'ai' | 'structure' | 'manual'
+
+/**
+ * Recompute take-profit from stop distance at a fixed R-multiple.
+ * Used when the trader drags/edits SL so TP tracks risk (not sticky magnets).
+ */
+export function takeProfitFromStopR(args: {
+  entry: number
+  stop: number
+  direction: 'LONG' | 'SHORT' | 'long' | 'short'
+  rMultiple?: number
+}): number {
+  const entry = Number(args.entry)
+  const stop = Number(args.stop)
+  const dir =
+    String(args.direction).toUpperCase() === 'SHORT' ? 'SHORT' : 'LONG'
+  const r =
+    args.rMultiple != null && Number.isFinite(args.rMultiple) && args.rMultiple > 0
+      ? args.rMultiple
+      : DEFAULT_TAKE_PROFIT_R
+  if (!(entry > 0) || !Number.isFinite(stop)) return entry
+  const risk = Math.abs(entry - stop)
+  if (!(risk > 0)) return entry
+  const rewardDistance = Math.max(risk * r, entry * MIN_TAKE_PROFIT_ENTRY_FRAC)
+  return dir === 'LONG' ? entry + rewardDistance : entry - rewardDistance
+}
 
 /**
  * Progressive desk risk from how many session fills already landed
@@ -348,11 +381,16 @@ export function previewPositionSizing(
   if (!Number.isFinite(position_size) || position_size <= 0) return null
   // Target: with a zone stop use 2R (risk-symmetric, min 0.5% move);
   // with the default disaster stop keep the classic 1% day-trade target
-  const rewardDistance = customStopValid
-    ? Math.max(priceDistance * 2, entryPrice * 0.005)
-    : entryPrice * 0.01
-  const rawTarget =
-    direction === 'LONG' ? entryPrice + rewardDistance : entryPrice - rewardDistance
+  const rawTarget = customStopValid
+    ? takeProfitFromStopR({
+        entry: entryPrice,
+        stop: stop_loss_price,
+        direction,
+        rMultiple: DEFAULT_TAKE_PROFIT_R,
+      })
+    : direction === 'LONG'
+      ? entryPrice * 1.01
+      : entryPrice * 0.99
   const profit_target_price = snapProfitToRound(
     entryPrice,
     stop_loss_price,
