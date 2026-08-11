@@ -1,11 +1,12 @@
 /**
- * One working limit at a time.
+ * One working limit at a time + refresh must not cancel.
  * Run: npx tsx __tests__/working_limit_gate.test.ts
  */
 import assert from 'node:assert/strict'
 import {
   WORKING_LIMIT_ALREADY_MESSAGE,
   formatWorkingLimitAlreadyMessage,
+  shouldCancelWorkingForGate,
   workingRowToPending,
 } from '../lib/trading/workingLimitGate'
 
@@ -35,6 +36,72 @@ import {
   assert.equal(pending.instrument, 'DOW')
   assert.equal(pending.direction, 'SHORT')
   assert.equal(pending.level, 42000)
+}
+
+{
+  // Refresh/remount: first gate observation while clocked out must KEEP (hydrate ghost)
+  assert.equal(
+    shouldCancelWorkingForGate({
+      phase: 'ENTRY',
+      clockedIn: false,
+      hadClockedIn: null,
+      hasPending: true,
+    }),
+    'keep',
+    'refresh while clocked-out must not cancel'
+  )
+  assert.equal(
+    shouldCancelWorkingForGate({
+      phase: 'ENTRY',
+      clockedIn: true,
+      hadClockedIn: null,
+      hasPending: true,
+    }),
+    'keep',
+    'refresh while clocked-in must not cancel'
+  )
+  // True clock-out transition cancels
+  assert.equal(
+    shouldCancelWorkingForGate({
+      phase: 'ENTRY',
+      clockedIn: false,
+      hadClockedIn: true,
+      hasPending: true,
+    }),
+    'cancel',
+    'clock-out transition cancels'
+  )
+  // Window gap / day end
+  assert.equal(
+    shouldCancelWorkingForGate({
+      phase: 'FLAT',
+      clockedIn: true,
+      hadClockedIn: true,
+      hasPending: true,
+    }),
+    'cancel',
+    'FLAT window gap cancels'
+  )
+  assert.equal(
+    shouldCancelWorkingForGate({
+      phase: 'DONE',
+      clockedIn: true,
+      hadClockedIn: true,
+      hasPending: true,
+    }),
+    'expire-via-cleanup',
+    'DONE clears via cleanup'
+  )
+  assert.equal(
+    shouldCancelWorkingForGate({
+      phase: 'ENTRY',
+      clockedIn: true,
+      hadClockedIn: true,
+      hasPending: false,
+    }),
+    'keep',
+    'no pending → keep'
+  )
 }
 
 console.log('working_limit_gate: all passed')

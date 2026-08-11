@@ -11,6 +11,34 @@ export type WorkingLimitSummary = {
   level: number
 }
 
+/**
+ * Chart gate effect — whether to cancel / clear a working limit.
+ *
+ * Refresh/remount must NOT cancel: clockedOut alone on first observation is a
+ * keep (hydrate the ghost). Only cancel on FLAT window gap, or a true clock-out
+ * transition (was clocked in → now out). DONE/CLOSED clear local UI and let
+ * cleanup-session expire.
+ */
+export function shouldCancelWorkingForGate(args: {
+  phase: string
+  clockedIn: boolean
+  /** null = gate never observed yet this mount (refresh/hydrate). */
+  hadClockedIn: boolean | null
+  hasPending: boolean
+}): 'keep' | 'cancel' | 'expire-via-cleanup' {
+  if (!args.hasPending) return 'keep'
+
+  const phaseBlocks =
+    args.phase === 'FLAT' || args.phase === 'DONE' || args.phase === 'CLOSED'
+  const clockedOutTransition =
+    args.hadClockedIn === true && !args.clockedIn
+
+  if (!phaseBlocks && !clockedOutTransition) return 'keep'
+  if (args.phase === 'FLAT' || clockedOutTransition) return 'cancel'
+  // DONE / CLOSED — clear local overlay; durable expire via cleanup-session
+  return 'expire-via-cleanup'
+}
+
 /** User-facing block message — includes instrument + price when known. */
 export function formatWorkingLimitAlreadyMessage(
   w?: WorkingLimitSummary | null

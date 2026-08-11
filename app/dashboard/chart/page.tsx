@@ -56,6 +56,7 @@ import {
 import {
   WORKING_LIMIT_ALREADY_MESSAGE,
   formatWorkingLimitAlreadyMessage,
+  shouldCancelWorkingForGate,
   workingRowToPending,
   type WorkingLimitRow,
 } from '@/lib/trading/workingLimitGate'
@@ -290,6 +291,8 @@ export default function ChartPage() {
   const placingOrderRef = useRef(false)
   /** Bumped on cancel / session expire so in-flight fills do not re-arm a cancelled limit */
   const orderGenRef = useRef(0)
+  /** Last observed clockedIn — null until first gate (so refresh does not cancel as "clocked out"). */
+  const hadClockedInRef = useRef<boolean | null>(null)
   const positionExitHandledRef = useRef(false)
   const livePriceRef = useRef<number | null>(null)
   const regimeFetchedRef = useRef(false)
@@ -1455,25 +1458,33 @@ export default function ChartPage() {
     void fillPending(pending, pending.level)
   }, [livePrice, pending, managePos, fillPending, orderStatus])
 
-  // Cancel unfilled working limits when entry closed, day done, cash closed, or clocked out
+  // Cancel unfilled working limits only on intentional gate rules — NEVER on refresh/remount.
+  // Refresh: hadClockedIn is null → clocked-out alone keeps the book so hydrate can re-paint.
   useEffect(() => {
     if (!gate) return
-    const phaseBlocks =
-      gate.phase === 'FLAT' || gate.phase === 'DONE' || gate.phase === 'CLOSED'
-    const clockedOutBlocks = !gate.clockedIn
+    const action = shouldCancelWorkingForGate({
+      phase: gate.phase,
+      clockedIn: !!gate.clockedIn,
+      hadClockedIn: hadClockedInRef.current,
+      hasPending: !!pending,
+    })
+    // Seed / update after the decision so first observation cannot look like a clock-out.
+    hadClockedInRef.current = !!gate.clockedIn
 
-    if (pending && (phaseBlocks || clockedOutBlocks)) {
+    if (action !== 'keep' && pending) {
       const inst = (pending.instrument || gate.lockedInstrument || instrument) as Instrument
       orderGenRef.current += 1
       pendingRef.current = null
       setPending(null)
       setOrderStatus('idle')
       setFillError(workingLimitCancelledMessage(gate))
-      if (gate.phase === 'FLAT' || clockedOutBlocks) {
+      if (action === 'cancel') {
         void cancelWorkingLimit(inst)
       }
     }
 
+    const phaseBlocks =
+      gate.phase === 'FLAT' || gate.phase === 'DONE' || gate.phase === 'CLOSED'
     if (!phaseBlocks) return
 
     // Reload levels when strategy window changes (morning → IB → lunch-break → lunch-range)

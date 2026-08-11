@@ -1,15 +1,19 @@
 /**
  * Session cleanup for desk trades:
- * - Expire unfilled working limits after entry close / lunch
+ * - Expire unfilled working limits after the day's last entry window (not morning entryClose)
  * - Auto-flatten filled opens only at cash close (end of lunch-range window)
  *   — morning/IB books are NOT force-closed at 11:30 (trader confirms)
+ *
+ * Between-window FLAT cancels stay on the chart client (gate phase). GET /working
+ * must never expire — refresh/hydrate is read-only.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getESTDateString } from '@/lib/utils/timeUtils'
 import { tradeDateForInstrument } from '@/lib/trading/deskAttendance'
 import {
-  isDeskHoursNow,
+  deskMarketFor,
+  lunchRangeEntryEndHms,
   sessionFor,
   type DeskInstrument,
 } from '@/lib/trading/sessionGate'
@@ -48,18 +52,23 @@ export function shouldAutoFlattenAtCashClose(args: {
   return args.forceCashClose === true || args.timeSec >= args.marketCloseSec
 }
 
-/** Working limits may expire after entry close or lunch (desk hours end). */
+/**
+ * Working limits survive morning → IB/US-Range → lunch-range.
+ * Expire only after the day's last entry window (or cash close), never at
+ * morning entryClose — otherwise refresh during IB/lunch-range kills the book.
+ * Between-window FLAT cancel is client-side (gate phase), not this helper.
+ */
 export function shouldExpireWorkingLimit(args: {
   timeSec: number
-  entryCloseSec: number
-  lunchCloseSec: number
-  deskHoursOpen: boolean
+  /** End of late-slot entries (NY lunch-range end · Tokyo IB end). */
+  lastEntryCloseSec: number
+  marketCloseSec: number
   forceExpireWorking?: boolean
 }): boolean {
   if (args.forceExpireWorking) return true
-  const pastEntry = args.timeSec >= args.entryCloseSec || !args.deskHoursOpen
-  const pastLunch = args.timeSec >= args.lunchCloseSec
-  return pastEntry || pastLunch
+  return (
+    args.timeSec >= args.lastEntryCloseSec || args.timeSec >= args.marketCloseSec
+  )
 }
 
 export type CleanupResult = {
@@ -106,18 +115,15 @@ export async function cleanupDeskSession(
     const inst = row.instrument as DeskInstrument
     const sess = sessionFor(inst)
     const t = localNowSeconds(sess.tz)
-    const entryClose = parseHms(sess.entryClose)
-    const lunch = parseHms(sess.lunchClose)
     const marketClose = parseHms(sess.marketClose)
-    const deskHoursOpen = isDeskHoursNow(new Date(), inst).open
+    const lastEntryClose = parseHms(lunchRangeEntryEndHms(deskMarketFor(inst)))
 
     if (row.fill_status === 'working') {
       if (
         !shouldExpireWorkingLimit({
           timeSec: t,
-          entryCloseSec: entryClose,
-          lunchCloseSec: lunch,
-          deskHoursOpen,
+          lastEntryCloseSec: lastEntryClose,
+          marketCloseSec: marketClose,
           forceExpireWorking: opts?.forceExpireWorking,
         })
       ) {

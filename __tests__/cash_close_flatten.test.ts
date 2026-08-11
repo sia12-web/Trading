@@ -9,7 +9,11 @@ import {
 } from '../lib/trading/sessionCleanup'
 import { isMorningOrIbEntry } from '../lib/trading/morningLunchConfirm'
 import { parseTimeToSeconds } from '../lib/utils/timeUtils'
-import { NY_SESSION, TOKYO_SESSION } from '../lib/trading/sessionGate'
+import {
+  NY_SESSION,
+  TOKYO_SESSION,
+  NY_LUNCH_RANGE_ENTRY_END,
+} from '../lib/trading/sessionGate'
 
 const TESTS_PASSED: string[] = []
 const TESTS_FAILED: Array<{ name: string; error: string }> = []
@@ -98,24 +102,40 @@ test('forceCashClose overrides clock', () => {
   )
 })
 
-test('working limits still expire at lunch', () => {
+test('working limits expire after last entry window, not morning entryClose', () => {
+  const nyLastEntry = parseTimeToSeconds(NY_LUNCH_RANGE_ENTRY_END)
   assert(
     shouldExpireWorkingLimit({
-      timeSec: nyLunch,
-      entryCloseSec: parseTimeToSeconds(NY_SESSION.entryClose),
-      lunchCloseSec: nyLunch,
-      deskHoursOpen: false,
+      timeSec: nyLastEntry,
+      lastEntryCloseSec: nyLastEntry,
+      marketCloseSec: nyClose,
     }) === true,
-    'expire at lunch'
+    'expire at lunch-range end'
+  )
+  assert(
+    shouldExpireWorkingLimit({
+      timeSec: parseTimeToSeconds('10:45:00'),
+      lastEntryCloseSec: nyLastEntry,
+      marketCloseSec: nyClose,
+    }) === false,
+    'IB window must not expire on morning entryClose'
+  )
+  assert(
+    shouldExpireWorkingLimit({
+      timeSec: parseTimeToSeconds('14:00:00'),
+      lastEntryCloseSec: nyLastEntry,
+      marketCloseSec: nyClose,
+    }) === false,
+    'lunch-range working limits must survive past morning lunch'
   )
   assert(
     shouldExpireWorkingLimit({
       timeSec: parseTimeToSeconds('10:00:00'),
-      entryCloseSec: parseTimeToSeconds(NY_SESSION.entryClose),
-      lunchCloseSec: nyLunch,
-      deskHoursOpen: true,
-    }) === false,
-    'still in morning window'
+      lastEntryCloseSec: nyLastEntry,
+      marketCloseSec: nyClose,
+      forceExpireWorking: true,
+    }) === true,
+    'force still expires early'
   )
 })
 

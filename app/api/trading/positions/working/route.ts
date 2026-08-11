@@ -16,7 +16,6 @@ import {
   deskMarketFor,
   instrumentsForDeskMarket,
   liveFocusMarket,
-  sessionFor,
   type DeskInstrument,
 } from '@/lib/trading/sessionGate'
 import {
@@ -35,9 +34,6 @@ import {
 import { assertServerRangeEdgeEntry } from '@/lib/trading/serverPlaybookRange'
 import { logEntryDenied, logWorkingPlaced } from '@/lib/utils/deskAuditLog'
 import { formatWorkingLimitAlreadyMessage } from '@/lib/trading/workingLimitGate'
-import {
-  shouldExpireWorkingLimit,
-} from '@/lib/trading/sessionCleanup'
 import { assertProtectiveStop } from '@/lib/trading/stopLossGuard'
 
 export const dynamic = 'force-dynamic'
@@ -47,26 +43,6 @@ const WORKING_SELECT =
 
 function tradeDatesForMarket(instruments: DeskInstrument[], now = new Date()): string[] {
   return Array.from(new Set(instruments.map((i) => tradeDateForInstrument(i, now))))
-}
-
-function localNowSeconds(tz: string, now = new Date()): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).formatToParts(now)
-  const h = parseInt(parts.find((p) => p.type === 'hour')?.value ?? '0', 10)
-  const m = parseInt(parts.find((p) => p.type === 'minute')?.value ?? '0', 10)
-  const s = parseInt(parts.find((p) => p.type === 'second')?.value ?? '0', 10)
-  const hour = h === 24 ? 0 : h
-  return hour * 3600 + m * 60 + s
-}
-
-function parseHms(hms: string): number {
-  const [h, m, sec] = hms.split(':').map(Number)
-  return (h || 0) * 3600 + (m || 0) * 60 + (sec || 0)
 }
 
 /** GET — return today's durable working limit for the active desk market (if any). */
@@ -108,37 +84,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: true, working: null })
     }
 
-    const inst = row.instrument as DeskInstrument
-    const sess = sessionFor(inst)
-    const t = localNowSeconds(sess.tz, now)
-    const expired = shouldExpireWorkingLimit({
-      timeSec: t,
-      entryCloseSec: parseHms(sess.entryClose),
-      lunchCloseSec: parseHms(sess.lunchClose),
-      deskHoursOpen: isDeskHoursNow(now, inst).open,
-    })
-
-    if (expired) {
-      const nowIso = now.toISOString()
-      await supabase
-        .from('trades_journal')
-        .update({
-          fill_status: 'cancelled',
-          exit_timestamp: nowIso,
-          exit_price: row.entry_price,
-          exit_reason: 'limit_expired',
-          profit_loss: 0,
-          profit_loss_percent: 0,
-          exit_notes: 'Working limit never filled — auto-expired on fetch',
-          updated_at: nowIso,
-        })
-        .eq('id', row.id)
-        .eq('user_id', user.id)
-        .eq('fill_status', 'working')
-        .is('exit_timestamp', null)
-      return NextResponse.json({ success: true, working: null, expired_id: row.id })
-    }
-
+    // Read-only hydrate — NEVER cancel/expire here.
+    // Refresh/remount must re-paint the working ghost; expiry is cleanup-session,
+    // explicit cancel-working, or intentional gate rules (FLAT / clock-out transition).
     return NextResponse.json({
       success: true,
       working: row,
