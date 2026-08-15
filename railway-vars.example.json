@@ -21,5 +21,7 @@
   "OANDA_EXECUTE_ORDERS": "true",
   "TELEGRAM_BOT_TOKEN": "optional-from-BotFather",
   "TELEGRAM_CHAT_ID": "optional-your-chat-id",
-  "NEXT_PUBLIC_BASE_URL": "https://YOUR_SERVICE.up.railway.app"
+  "NEXT_PUBLIC_BASE_URL": "https://YOUR_SERVICE.up.railway.app",
+  "TRADEIFY_ACCOUNT_NAME": "TDFYG-your-account",
+  "TRADEIFY_ORDER_ID": "your-tradeify-order-id"
 }

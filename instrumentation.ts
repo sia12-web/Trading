@@ -37,6 +37,13 @@ export async function register() {
     logger.error('boot.env_incomplete', { missing: env.missing })
   }
 
+  const isRailway = Boolean(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID)
+  const isBuild = process.env.NEXT_PHASE === 'phase-production-build'
+  if (isRailway && process.env.NODE_ENV === 'production' && !isBuild) {
+    const { startTradeifyFlattenWatch } = await import('./lib/trading/tradeifyFlattenWatch')
+    startTradeifyFlattenWatch()
+  }
+
   // Catch escapes that would otherwise only show as a crash with no context
   if (!(globalThis as { __tradingDeskHandlers?: boolean }).__tradingDeskHandlers) {
     ;(globalThis as { __tradingDeskHandlers?: boolean }).__tradingDeskHandlers = true

@@ -25,9 +25,21 @@ import {
 import {
   normalizeEntrySource,
   previewPositionSizing,
+  previewPositionSizingFromRiskAmount,
   riskPercentForEntrySource,
   type DeskEntrySource,
 } from '@/lib/trading/positionSizing'
+import {
+  getDeskRiskProfile,
+  isTradeifyGrowth50k,
+  setDeskRiskProfile,
+  DESK_RISK_PROFILE_EVENT,
+} from '@/lib/trading/tradeifyProfile'
+import {
+  TRADEIFY_STARTING_BALANCE,
+  resolveTradeifyPlace,
+  tradeifyFlattenOverridesKeepOpen,
+} from '@/lib/trading/tradeifyGrowth50k'
 import {
   previewLevelOrderPrices,
   resolveChartLimitPick,
@@ -395,12 +407,16 @@ function SimulationDeskInner() {
   const [lunchAttempts, setLunchAttempts] = useState(0)
   /** Stop-outs this replay (informational; fill itself locks the slot) */
   const [stopHits, setStopHits] = useState(0)
+  const [paperDayPnl, setPaperDayPnl] = useState(0)
   const attemptsUsedRef = useRef(0)
   const morningAttemptsRef = useRef(0)
   const ibAttemptsRef = useRef(0)
   const lunchAttemptsRef = useRef(0)
   const stopHitsRef = useRef(0)
   const [accountSize, setAccountSize] = useState(100000)
+  const [riskProfile, setRiskProfile] = useState<'oanda_cash' | 'tradeify_growth_50k'>(
+    'oanda_cash'
+  )
   const [ticketLevel, setTicketLevel] = useState<AiLevel | null>(null)
   const [manualTicketOpen, setManualTicketOpen] = useState(false)
   /** Chart-click price for manual ticket; null = use lastPrice (toolbar Place limit). */
@@ -432,6 +448,17 @@ function SimulationDeskInner() {
       setIsFullscreen(false)
     }
   }, [isFullscreen])
+
+  useEffect(() => {
+    const sync = () => setRiskProfile(getDeskRiskProfile())
+    sync()
+    window.addEventListener(DESK_RISK_PROFILE_EVENT, sync)
+    window.addEventListener('storage', sync)
+    return () => {
+      window.removeEventListener(DESK_RISK_PROFILE_EVENT, sync)
+      window.removeEventListener('storage', sync)
+    }
+  }, [])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -2172,6 +2199,7 @@ function SimulationDeskInner() {
         : (pos.entry - exitPrice) * pos.size
       const profitLoss = Math.round(pnl * 100) / 100
       realizedPnlRef.current += profitLoss
+      setPaperDayPnl(realizedPnlRef.current)
       tradesCountRef.current += 1
 
       if (!replayDate) return
@@ -2499,13 +2527,35 @@ function SimulationDeskInner() {
         return
       }
       const stop = stopGuard.stop
-      const preview = previewPositionSizing(
-        limit,
-        accountSize,
-        direction,
-        stop,
-        riskPercentForEntrySource(entrySource, attemptsUsedRef.current)
-      )
+      const tradeifyOn = isTradeifyGrowth50k(riskProfile)
+      const tf = tradeifyOn
+        ? resolveTradeifyPlace({
+            now: simNowRef.current > 0 ? new Date(simNowRef.current * 1000) : undefined,
+            fillsUsed: attemptsUsedRef.current,
+            stopOutsToday: stopHitsRef.current,
+            dailyPnl: realizedPnlRef.current,
+          })
+        : null
+      if (tf && !tf.allowed) {
+        placingOrderRef.current = false
+        setMsg(tf.refuseMessage)
+        return
+      }
+      const preview = tf
+        ? previewPositionSizingFromRiskAmount(
+            limit,
+            TRADEIFY_STARTING_BALANCE,
+            direction,
+            stop,
+            tf.riskDollars
+          )
+        : previewPositionSizing(
+            limit,
+            accountSize,
+            direction,
+            stop,
+            riskPercentForEntrySource(entrySource, attemptsUsedRef.current)
+          )
       if (!preview) {
         placingOrderRef.current = false
         setMsg('Invalid sizing')
@@ -2565,6 +2615,7 @@ function SimulationDeskInner() {
       fillPending,
       instrument,
       getStrategyRiskBundle,
+      riskProfile,
     ]
   )
 
@@ -2638,19 +2689,27 @@ function SimulationDeskInner() {
       replayDate,
       filledAt: position.filledAt,
     })
+    if (
+      isTradeifyGrowth50k(riskProfile) &&
+      tradeifyFlattenOverridesKeepOpen(new Date(simNow * 1000))
+    ) {
+      setLunchFlatPrompt(false)
+      return
+    }
     if (hasLunchFlatKeepOpen(keepKey)) {
       setLunchFlatPrompt(false)
       return
     }
     setLunchFlatPrompt(true)
     setPlaying(false)
-  }, [position, simNow, lunchUnix, instrument, replayDate])
+  }, [position, simNow, lunchUnix, instrument, replayDate, riskProfile])
 
   const resetSessionProgress = () => {
     sessionEpochRef.current += 1
     sessionCompletedRef.current = false
     tradesCountRef.current = 0
     realizedPnlRef.current = 0
+    setPaperDayPnl(0)
     attemptsUsedRef.current = 0
     morningAttemptsRef.current = 0
     ibAttemptsRef.current = 0
@@ -2957,12 +3016,21 @@ function SimulationDeskInner() {
 
   // Hooks must run unconditionally — early returns below come AFTER all hooks.
   const phase = position ? 'MANAGE' : gate?.phase ?? 'ENTRY'
+  const tradeifyDayLock = isTradeifyGrowth50k(riskProfile)
+    ? resolveTradeifyPlace({
+        now: simNow > 0 ? new Date(simNow * 1000) : undefined,
+        fillsUsed: attemptsUsed,
+        stopOutsToday: stopHits,
+        dailyPnl: paperDayPnl,
+      })
+    : null
   const canEnter =
     !position &&
     !pending &&
     simNow >= openUnix &&
     attemptsUsed < MAX_DAY_ATTEMPTS &&
-    gate?.canPlaceEntry === true
+    gate?.canPlaceEntry === true &&
+    !(tradeifyDayLock && !tradeifyDayLock.allowed)
   const midChip = instrument === 'NIKKEI' ? 'US' : 'IB'
   const lateChip = instrument === 'NIKKEI' ? 'IB' : 'LN'
 
@@ -3259,6 +3327,34 @@ function SimulationDeskInner() {
             >
               Place limit
             </button>
+            <button
+              type="button"
+              onClick={() =>
+                setDeskRiskProfile(
+                  isTradeifyGrowth50k(riskProfile) ? 'oanda_cash' : 'tradeify_growth_50k'
+                )
+              }
+              className={`shrink-0 rounded px-2 py-1 text-[10px] font-bold uppercase ${
+                isTradeifyGrowth50k(riskProfile)
+                  ? 'bg-amber-500 text-black'
+                  : 'border border-white/15 text-gray-400 hover:text-white'
+              }`}
+              title="Toggle Tradeify $50k dollar risk vs OANDA %"
+            >
+              {isTradeifyGrowth50k(riskProfile) ? 'Tradeify $50k' : 'OANDA %'}
+            </button>
+            {tradeifyDayLock && !tradeifyDayLock.allowed && (
+              <span
+                className="max-w-[16rem] truncate text-[10px] font-semibold text-red-300"
+                title={tradeifyDayLock.refuseMessage}
+              >
+                {tradeifyDayLock.refuseReason === 'day_locked_stops'
+                  ? '2 stops — sit'
+                  : tradeifyDayLock.refuseReason === 'day_locked_green'
+                    ? 'Green-day lock'
+                    : 'No new entries'}
+              </span>
+            )}
           )}
           {canEnter && (
             <span

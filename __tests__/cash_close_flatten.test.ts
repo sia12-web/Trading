@@ -102,6 +102,27 @@ test('forceCashClose overrides clock', () => {
   )
 })
 
+test('OANDA: Tradeify flag omitted — Tokyo before close does not flatten', () => {
+  assert(
+    shouldAutoFlattenAtCashClose({
+      timeSec: parseTimeToSeconds('14:00:00'),
+      marketCloseSec: tokyoClose,
+    }) === false,
+    'OANDA Nikkei 14:00 JST stays open'
+  )
+})
+
+test('Tradeify flatten flag beats Tokyo cash-close clock', () => {
+  assert(
+    shouldAutoFlattenAtCashClose({
+      timeSec: parseTimeToSeconds('14:00:00'),
+      marketCloseSec: tokyoClose,
+      tradeifyMustFlatten: true,
+    }) === true,
+    'Tradeify flattens Nikkei before 15:00 JST'
+  )
+})
+
 test('working limits expire after last entry window, not morning entryClose', () => {
   const nyLastEntry = parseTimeToSeconds(NY_LUNCH_RANGE_ENTRY_END)
   assert(

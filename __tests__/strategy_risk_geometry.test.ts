@@ -82,7 +82,7 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
 }
 
 {
-  // TP prefers opposing range edge when RR ≥ 1.5
+  // Initial TP is 1.5R of the protective stop (not opposing-edge magnet)
   const entry = 42_050
   const stop = strategyStopPrice({
     entry,
@@ -97,7 +97,10 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
   })
   assert.ok(tp > entry, 'LONG TP above')
   const risk = entry - stop
-  assert.ok(tp - entry >= risk * 1.5 - 1e-6, 'TP at least ~1.5R')
+  const rr = (tp - entry) / risk
+  assert.ok(rr >= 1.5 - 1e-6, 'TP at least ~1.5R')
+  // Soft round-snap may stretch a few ticks; opposing-edge magnets used to 2–4R
+  assert.ok(rr < 2.2, 'TP stays near 1.5R (not opposing-edge magnet)')
 }
 
 {

@@ -1,6 +1,6 @@
 /**
  * When the trader adjusts stop loss, take profit must track R × |entry − SL|.
- * Magnets may seed the initial ticket TP; manual SL edits re-lock to DEFAULT_TAKE_PROFIT_R (2).
+ * Initial ticket and SL edits re-lock to DEFAULT_TAKE_PROFIT_R (1.5).
  * Run: npx tsx __tests__/sl_tp_r_multiple.test.ts
  */
 
@@ -15,7 +15,7 @@ function approxEqual(a: number, b: number, tol: number, msg: string) {
   assert.ok(Math.abs(a - b) <= tol, `${msg}: expected ${b}, got ${a} (tol ${tol})`)
 }
 
-assert.equal(DEFAULT_TAKE_PROFIT_R, 2, 'product default reward multiple is 2R')
+assert.equal(DEFAULT_TAKE_PROFIT_R, 1.5, 'product default reward multiple is 1.5R')
 
 const entry = 40000
 
@@ -40,8 +40,8 @@ assert.ok(
   tightTpLong < wideTpLong,
   `tighter SL → closer TP (got tight=${tightTpLong} wide=${wideTpLong})`
 )
-approxEqual(wideTpLong - entry, Math.abs(entry - wideStopLong) * 2, 1e-9, 'wide LONG = 2R')
-approxEqual(tightTpLong - entry, Math.abs(entry - tightStopLong) * 2, 1e-9, 'tight LONG = 2R')
+approxEqual(wideTpLong - entry, Math.abs(entry - wideStopLong) * 1.5, 1e-9, 'wide LONG = 1.5R')
+approxEqual(tightTpLong - entry, Math.abs(entry - tightStopLong) * 1.5, 1e-9, 'tight LONG = 1.5R')
 
 // ─── LONG: widen SL → TP moves farther ───────────────────────────────────────
 
@@ -79,8 +79,8 @@ assert.ok(
   tightTpShort > wideTpShort,
   `tighter SHORT SL → TP closer to entry (tight=${tightTpShort} wide=${wideTpShort})`
 )
-approxEqual(entry - wideTpShort, Math.abs(entry - wideStopShort) * 2, 1e-9, 'wide SHORT = 2R')
-approxEqual(entry - tightTpShort, Math.abs(entry - tightStopShort) * 2, 1e-9, 'tight SHORT = 2R')
+approxEqual(entry - wideTpShort, Math.abs(entry - wideStopShort) * 1.5, 1e-9, 'wide SHORT = 1.5R')
+approxEqual(entry - tightTpShort, Math.abs(entry - tightStopShort) * 1.5, 1e-9, 'tight SHORT = 1.5R')
 
 const widerStopShort = 40600
 const widerTpShort = takeProfitFromStopR({
@@ -105,16 +105,16 @@ const expectedRaw = takeProfitFromStopR({
   stop: tightStopLong,
   direction: 'LONG',
 })
-// preview may soft-snap to rounds but must stay ≈ 2R (not sticky magnet)
+// preview may soft-snap to rounds but must stay ≈ 1.5R (not sticky magnet)
 approxEqual(
   (prev.profit_target_price - entry) / Math.abs(entry - tightStopLong),
   DEFAULT_TAKE_PROFIT_R,
   0.15,
-  'preview TP ≈ 2R of stop (allow soft round snap)'
+  'preview TP ≈ 1.5R of stop (allow soft round snap)'
 )
 assert.ok(
   Math.abs(prev.profit_target_price - expectedRaw) / entry < 0.003,
-  'preview TP near raw 2R helper'
+  'preview TP near raw 1.5R helper'
 )
 
 // lowercase direction accepted (chart overlay uses 'long'/'short')

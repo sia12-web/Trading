@@ -49,6 +49,7 @@ export async function POST(request: Request) {
       side?: string | null
       source?: string
       verdict?: string
+      risk_profile?: string
     } | null
 
     const instrumentRaw = String(body?.instrument || 'DOW')
@@ -84,6 +85,8 @@ export async function POST(request: Request) {
         source,
         verdict: verdict as LevelTagVerdict,
       },
+      riskProfile: body?.risk_profile,
+      cookieHeader: request.headers.get('cookie'),
     })
 
     return NextResponse.json({ success: true, ...result })

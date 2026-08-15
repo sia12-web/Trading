@@ -34,9 +34,20 @@ export async function POST(request: Request) {
     }
 
     const supabase = await createClient()
+    const { resolveDeskRiskProfileForUser } = await import('@/lib/trading/tradeifyProfileStore')
+    const { isTradeifyGrowth50k } = await import('@/lib/trading/tradeifyProfile')
+    const { tradeifyMustFlatten } = await import('@/lib/trading/tradeifyGrowth50k')
+    const profile = await resolveDeskRiskProfileForUser({
+      supabase,
+      userId: user.id,
+      cookieHeader: request.headers.get('cookie'),
+    })
+    const tradeifyFlatten =
+      isTradeifyGrowth50k(profile) && tradeifyMustFlatten()
     const result = await cleanupDeskSession(supabase, user.id, {
-      forceExpireWorking,
-      forceCashClose,
+      forceExpireWorking: forceExpireWorking || tradeifyFlatten,
+      forceCashClose: forceCashClose || tradeifyFlatten,
+      tradeifyMustFlatten: tradeifyFlatten,
     })
     const clockedOutMarkets = await autoLunchClockOut(supabase, user.id)
 

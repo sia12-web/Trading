@@ -21,6 +21,7 @@ import {
   deskLocalHmsAsTraderDisplay,
   deskLocalRangeAsTraderDisplay,
 } from '@/lib/chart/traderDisplayTz'
+import { tradeifyScheduleRiskLine } from '@/lib/trading/tradeifyLeoBlock'
 
 const RULE = '────────────'
 
@@ -42,7 +43,8 @@ function header(kind: string, title: string): string {
 /** Shared session schedule block for NY or Tokyo. */
 export function formatSessionScheduleBlock(
   instrument: DeskInstrument,
-  now: Date = new Date()
+  now: Date = new Date(),
+  opts?: { tradeify?: boolean }
 ): string {
   const market = deskMarketFor(instrument)
   const s = sessionFor(instrument)
@@ -75,7 +77,9 @@ export function formatSessionScheduleBlock(
       `• Tokyo IB locks ~${deskLocalHmsAsTraderDisplay('10:00:00', s.tz, now)} (first hour) — entry ${ibWin}`,
       `• Lunch confirm ${lunchConfirm}`,
       `• Session END (cash close) ${close}`,
-      `• Ladder 2/2/2 · progressive 2% → 1% → 0.5% · ±10 of H / L (US Range) or H / 50% mid / L (OR30 / Tokyo IB) after active range locks`,
+      opts?.tradeify
+        ? `• ${tradeifyScheduleRiskLine()} · ±10 of H / L (US Range) or H / 50% mid / L (OR30 / Tokyo IB) after active range locks`
+        : `• Ladder 2/2/2 · progressive 2% → 1% → 0.5% · ±10 of H / L (US Range) or H / 50% mid / L (OR30 / Tokyo IB) after active range locks`,
     ].join('\n')
   }
 
@@ -100,7 +104,9 @@ export function formatSessionScheduleBlock(
     `• Lunch-range locks 13:30 · entry ${lunchWin}`,
     `• Lunch confirm ${lunchConfirm} (morning books — IB stay open past confirm)`,
     `• Session END (cash close) ${close}`,
-    `• Ladder 2/2/2 · progressive 2% → 1% → 0.5% · ±10 of H / 50% mid / L after active range locks · OR30 optional`,
+    opts?.tradeify
+      ? `• ${tradeifyScheduleRiskLine()} · ±10 of H / 50% mid / L after active range locks · OR30 optional`
+      : `• Ladder 2/2/2 · progressive 2% → 1% → 0.5% · ±10 of H / 50% mid / L after active range locks · OR30 optional`,
   ].join('\n')
 }
 
@@ -110,6 +116,8 @@ export function formatClockInNote(args: {
   sessionDate: string
   now?: Date
   lateJoin?: boolean
+  tradeify?: boolean
+  tradeifyLine?: string | null
 }): DeskNotePayload {
   const now = args.now ?? new Date()
   const late = !!args.lateJoin
@@ -122,8 +130,11 @@ export function formatClockInNote(args: {
       ? `Late join — live desk unlocked for ${args.instrument}. Dead books stay closed; remaining probes only under 2/2/2 + session 3.`
       : `Live desk unlocked for ${args.instrument}.`,
     '',
-    formatSessionScheduleBlock(args.instrument, now),
-  ].join('\n')
+    formatSessionScheduleBlock(args.instrument, now, { tradeify: !!args.tradeify }),
+    args.tradeifyLine ? `\n${args.tradeifyLine}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
   return {
     kind: late ? 'late_clock_in' : 'clock_in',
     title,
@@ -137,20 +148,25 @@ export function formatLateDeskBriefNote(args: {
   body: string
   asOfDisplay: string
   focus?: string
+  tradeifyLine?: string | null
 }): DeskNotePayload {
   const focus = args.focus ? ` · ${args.focus}` : ''
   const title = `Late Desk Brief${focus} · as of ${args.asOfDisplay}`
+  const body = args.tradeifyLine
+    ? `${args.body}\n\n${args.tradeifyLine}`
+    : args.body
   return {
     kind: 'late_desk_brief',
     title,
-    body: args.body,
-    telegram: `${header('LATE DESK BRIEF', title)}\n${args.body}`,
+    body,
+    telegram: `${header('LATE DESK BRIEF', title)}\n${body}`,
   }
 }
 
 export function formatSessionStartNote(args: {
   instrument: DeskInstrument
   now?: Date
+  tradeify?: boolean
 }): DeskNotePayload {
   const now = args.now ?? new Date()
   const s = sessionFor(args.instrument)
@@ -160,7 +176,7 @@ export function formatSessionStartNote(args: {
     `Cash open ${open} ${TRADER_DISPLAY_LABEL}`,
     `OR30 is forming — ±10 morning entries unlock after the first 30 minutes.`,
     '',
-    formatSessionScheduleBlock(args.instrument, now),
+    formatSessionScheduleBlock(args.instrument, now, { tradeify: !!args.tradeify }),
   ].join('\n')
   return {
     kind: 'session_start',

@@ -23,9 +23,15 @@ import {
   clearLunchFlatKeepOpen,
   hasLunchFlatKeepOpen,
   isMorningOrIbEntry,
+  isPastCashCloseNow,
   liveLunchFlatKeepOpenKey,
   markLunchFlatKeepOpen,
 } from '@/lib/trading/morningLunchConfirm'
+import { getDeskRiskProfile, isTradeifyGrowth50k } from '@/lib/trading/tradeifyProfile'
+import {
+  tradeifyFlattenOverridesKeepOpen,
+  tradeifyMustFlatten,
+} from '@/lib/trading/tradeifyGrowth50k'
 import {
   TRADER_DISPLAY_LABEL,
   deskLocalHmsAsTraderDisplay,
@@ -172,11 +178,47 @@ export default function PositionsPage() {
       setLunchFlatPrompt(false)
       return
     }
+    const tradeifyOn = isTradeifyGrowth50k(getDeskRiskProfile())
+    if (tradeifyOn && tradeifyFlattenOverridesKeepOpen()) {
+      setLunchFlatPrompt(false)
+      void fetch('/api/trading/positions/cleanup-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          force_expire_working: true,
+          force_cash_close: true,
+        }),
+      }).catch(() => {})
+      return
+    }
     if (hasLunchFlatKeepOpen(liveLunchFlatKeepOpenKey(position.id))) {
       setLunchFlatPrompt(false)
       return
     }
     setLunchFlatPrompt(true)
+  }, [position])
+
+  useEffect(() => {
+    if (!position) return
+    const tick = () => {
+      const tradeifyOn = isTradeifyGrowth50k(getDeskRiskProfile())
+      if (
+        (tradeifyOn && tradeifyMustFlatten()) ||
+        isPastCashCloseNow(position.instrument)
+      ) {
+        void fetch('/api/trading/positions/cleanup-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            force_expire_working: true,
+            force_cash_close: true,
+          }),
+        }).catch(() => {})
+      }
+    }
+    tick()
+    const id = window.setInterval(tick, 15_000)
+    return () => window.clearInterval(id)
   }, [position])
 
   const confirmLunchFlatClose = useCallback(async () => {

@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { LiveVoiceStatus } from '@/lib/trading/liveVoice'
 import { classifyLevelReaction } from '@/lib/trading/liveVoiceReactionCore'
+import { getDeskRiskProfile } from '@/lib/trading/tradeifyProfile'
 
 type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI'
 
@@ -129,7 +130,7 @@ export function LiveVoicePanel({
     setCtxLoading(true)
     try {
       const res = await fetch(
-        `/api/trading/live-voice/context?instrument=${encodeURIComponent(instrument)}&_=${Date.now()}`,
+        `/api/trading/live-voice/context?instrument=${encodeURIComponent(instrument)}&risk_profile=${encodeURIComponent(getDeskRiskProfile())}&_=${Date.now()}`,
         { cache: 'no-store' }
       )
       const json = await res.json().catch(() => null)
@@ -338,6 +339,7 @@ export function LiveVoicePanel({
               side: lvl.side,
               source: lvl.source,
               verdict,
+              risk_profile: getDeskRiskProfile(),
             }),
           })
           const json = await res.json().catch(() => null)
@@ -379,6 +381,7 @@ export function LiveVoicePanel({
       try {
         const form = new FormData()
         form.set('instrument', instrument)
+        form.set('risk_profile', getDeskRiskProfile())
         if (speechFallback.trim()) form.set('transcript', speechFallback.trim())
         if (audioBlob && audioBlob.size > 0) {
           form.set('audio', audioBlob, 'hold.webm')

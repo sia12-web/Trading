@@ -48,7 +48,10 @@ export function shouldAutoFlattenAtCashClose(args: {
   timeSec: number
   marketCloseSec: number
   forceCashClose?: boolean
+  /** Tradeify 16:59 ET window — beats instrument cash close and keep-open. */
+  tradeifyMustFlatten?: boolean
 }): boolean {
+  if (args.tradeifyMustFlatten === true) return true
   return args.forceCashClose === true || args.timeSec >= args.marketCloseSec
 }
 
@@ -64,8 +67,9 @@ export function shouldExpireWorkingLimit(args: {
   lastEntryCloseSec: number
   marketCloseSec: number
   forceExpireWorking?: boolean
+  tradeifyMustFlatten?: boolean
 }): boolean {
-  if (args.forceExpireWorking) return true
+  if (args.forceExpireWorking || args.tradeifyMustFlatten) return true
   return (
     args.timeSec >= args.lastEntryCloseSec || args.timeSec >= args.marketCloseSec
   )
@@ -85,6 +89,8 @@ export type CleanupOpts = {
   forceCashClose?: boolean
   /** @deprecated alias of forceCashClose */
   forceLunchClose?: boolean
+  /** Tradeify flatten window — flatten every desk, including Nikkei before 02:00. */
+  tradeifyMustFlatten?: boolean
 }
 
 /** Expire working limits past entry/lunch; flatten filled opens only past cash close. */
@@ -100,6 +106,7 @@ export async function cleanupDeskSession(
   const expiredWorking: string[] = []
   const cashClosed: string[] = []
   const forceCashClose = !!(opts?.forceCashClose || opts?.forceLunchClose)
+  const tradeifyMustFlatten = !!opts?.tradeifyMustFlatten
 
   const { data: openRows } = await supabase
     .from('trades_journal')
@@ -125,6 +132,7 @@ export async function cleanupDeskSession(
           lastEntryCloseSec: lastEntryClose,
           marketCloseSec: marketClose,
           forceExpireWorking: opts?.forceExpireWorking,
+          tradeifyMustFlatten,
         })
       ) {
         continue
@@ -157,6 +165,7 @@ export async function cleanupDeskSession(
         timeSec: t,
         marketCloseSec: marketClose,
         forceCashClose,
+        tradeifyMustFlatten,
       })
     ) {
       const entry = Number(row.entry_price)

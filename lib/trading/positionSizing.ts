@@ -29,11 +29,11 @@ const MAX_LOSS_PERCENT = 0.05 // 5% max loss per trade (default disaster stop)
 const MAX_NOTIONAL_MULT = 5
 
 /**
- * Default reward multiple when SL moves: TP = entry ± R × |entry − stop|.
- * Magnets may seed the initial ticket TP; manual SL edits re-lock to this R.
+ * Default reward multiple: TP = entry ± R × |entry − stop| (1:1.5).
+ * Initial ticket and SL edits both use this R.
  */
-export const DEFAULT_TAKE_PROFIT_R = 2
-/** Floor reward distance as a fraction of entry (same as sizing preview / strategy 2R fallback). */
+export const DEFAULT_TAKE_PROFIT_R = 1.5
+/** Floor reward distance as a fraction of entry (same as sizing preview / strategy 1.5R fallback). */
 export const MIN_TAKE_PROFIT_ENTRY_FRAC = 0.005
 
 export type DeskEntrySource = 'ai' | 'structure' | 'manual'
@@ -59,7 +59,7 @@ export function takeProfitFromStopR(args: {
   if (!(entry > 0) || !Number.isFinite(stop)) return entry
   const risk = Math.abs(entry - stop)
   if (!(risk > 0)) return entry
-  const rewardDistance = Math.max(risk * r, entry * MIN_TAKE_PROFIT_ENTRY_FRAC)
+  const rewardDistance = risk * r
   return dir === 'LONG' ? entry + rewardDistance : entry - rewardDistance
 }
 
@@ -236,6 +236,37 @@ export class PositionSizer {
   }
 
   /**
+   * Size from a fixed dollar stop (Tradeify $400 / $250 / $150).
+   * Does not use OANDA % of live NAV.
+   */
+  calculatePositionFromRiskAmount(
+    entryPrice: number,
+    accountSize: number,
+    direction: EntryDirection,
+    stopLossPrice: number,
+    riskAmount: number
+  ): PositionSizing | null {
+    if (!(entryPrice > 0) || !(accountSize > 0) || !(riskAmount > 0)) return null
+    const customStopValid =
+      stopLossPrice > 0 &&
+      (direction === 'LONG' ? stopLossPrice < entryPrice : stopLossPrice > entryPrice)
+    if (!customStopValid) return null
+    const priceDistance = Math.abs(entryPrice - stopLossPrice)
+    if (priceDistance < 0.01) return null
+    const positionSize = riskAmount / priceDistance
+    if (!(positionSize > 0) || !Number.isFinite(positionSize)) return null
+    return {
+      account_size: accountSize,
+      risk_percent: (riskAmount / accountSize) * 100,
+      risk_amount: riskAmount,
+      entry_price: entryPrice,
+      stop_loss_price: stopLossPrice,
+      position_size: positionSize,
+      direction,
+    }
+  }
+
+  /**
    * Validate position sizing parameters
    */
   validatePositionSize(position: PositionSizing): boolean {
@@ -379,7 +410,7 @@ export function previewPositionSizing(
     position_size = 2.0
   }
   if (!Number.isFinite(position_size) || position_size <= 0) return null
-  // Target: with a zone stop use 2R (risk-symmetric, min 0.5% move);
+  // Target: with a zone stop use 1.5R (risk-symmetric, min 0.5% move);
   // with the default disaster stop keep the classic 1% day-trade target
   const rawTarget = customStopValid
     ? takeProfitFromStopR({
@@ -404,5 +435,49 @@ export function previewPositionSizing(
     risk_percent: riskPct,
     notional: position_size * entryPrice,
     profit_target_price,
+  }
+}
+
+/** Client preview using a fixed dollar stop (Tradeify profile). */
+export function previewPositionSizingFromRiskAmount(
+  entryPrice: number,
+  accountSize: number,
+  direction: EntryDirection,
+  stopLossPrice: number,
+  riskAmount: number
+): {
+  stop_loss_price: number
+  position_size: number
+  risk_amount: number
+  risk_percent: number
+  notional: number
+  profit_target_price: number
+} | null {
+  const sized = getPositionSizer().calculatePositionFromRiskAmount(
+    entryPrice,
+    accountSize,
+    direction,
+    stopLossPrice,
+    riskAmount
+  )
+  if (!sized) return null
+  const rawTarget = takeProfitFromStopR({
+    entry: entryPrice,
+    stop: sized.stop_loss_price,
+    direction,
+    rMultiple: DEFAULT_TAKE_PROFIT_R,
+  })
+  return {
+    stop_loss_price: sized.stop_loss_price,
+    position_size: sized.position_size,
+    risk_amount: sized.risk_amount,
+    risk_percent: sized.risk_percent,
+    notional: sized.position_size * entryPrice,
+    profit_target_price: snapProfitToRound(
+      entryPrice,
+      sized.stop_loss_price,
+      rawTarget,
+      direction
+    ),
   }
 }

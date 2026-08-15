@@ -19,6 +19,15 @@ import {
 } from '@/lib/trading/deskNewsHazard'
 import type { DeskCalendarEvent } from '@/lib/trading/deskNews'
 import { nikkeiCashLunchMontrealLabel } from '@/lib/trading/sessionGate'
+import {
+  getDeskRiskProfile,
+  syncDeskRiskProfileToServer,
+  isTradeifyGrowth50k,
+  setDeskRiskProfile,
+  DESK_RISK_PROFILE_EVENT,
+  type DeskRiskProfile,
+} from '@/lib/trading/tradeifyProfile'
+import { formatTradeifyBannerChip } from '@/lib/trading/tradeifyGrowth50k'
 
 export interface SessionGateState {
   phase: string
@@ -52,6 +61,14 @@ export interface SessionGateState {
   attemptLadderLabel?: string
   /** Slot-2 / slot-3 unlock (NY: ib|lunch_range · Tokyo: us_range|ib) */
   rangeStrategy?: 'ib' | 'lunch_range' | 'us_range' | null
+  tradeifyDayLocked?: boolean
+  tradeifyLockMessage?: string | null
+  tradeifyRefuseReason?: string | null
+  tradeifyMustFlatten?: boolean
+  tradeifyLeftoverDll?: number | null
+  tradeifyFloorRoom?: number | null
+  tradeifyStatus?: 'can_trade' | 'day_locked' | 'must_flatten' | null
+  tradeifyFlattenMontreal?: string | null
 }
 
 /** Live banner clock — always Montreal (Eastern). */
@@ -115,6 +132,33 @@ export function SessionBanner({
   const prepFiredRef = useRef<string | null>(null)
   const [newsHazard, setNewsHazard] = useState<DeskNewsHazard | null>(null)
   const [newsUnavailable, setNewsUnavailable] = useState(false)
+  const [riskProfile, setRiskProfile] = useState<DeskRiskProfile>('oanda_cash')
+
+  useEffect(() => {
+    const sync = () => setRiskProfile(getDeskRiskProfile())
+    sync()
+    syncDeskRiskProfileToServer(getDeskRiskProfile())
+    window.addEventListener(DESK_RISK_PROFILE_EVENT, sync)
+    window.addEventListener('storage', sync)
+    return () => {
+      window.removeEventListener(DESK_RISK_PROFILE_EVENT, sync)
+      window.removeEventListener('storage', sync)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!gate) return
+    if (
+      !isTradeifyGrowth50k(riskProfile) ||
+      !(gate.tradeifyDayLocked || gate.tradeifyMustFlatten)
+    )
+      return
+    if (!gate.canPlaceEntry) return
+    const next = { ...gate, canPlaceEntry: false }
+    setGate(next)
+    onGate?.(next)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [riskProfile, gate?.tradeifyDayLocked, gate?.tradeifyMustFlatten])
 
   const refresh = useCallback(async () => {
     try {
@@ -179,6 +223,36 @@ export function SessionBanner({
           json.rangeStrategy === 'us_range'
             ? json.rangeStrategy
             : null,
+        tradeifyDayLocked: !!(json.tradeify?.dayLocked || json.tradeify?.allowed === false),
+        tradeifyLockMessage:
+          typeof json.tradeify?.refuseMessage === 'string'
+            ? json.tradeify.refuseMessage
+            : null,
+        tradeifyRefuseReason:
+          typeof json.tradeify?.refuseReason === 'string'
+            ? json.tradeify.refuseReason
+            : null,
+        tradeifyMustFlatten: !!json.tradeify?.mustFlatten,
+        tradeifyLeftoverDll:
+          typeof json.tradeify?.leftoverDll === 'number' ? json.tradeify.leftoverDll : null,
+        tradeifyFloorRoom:
+          typeof json.tradeify?.floorRoom === 'number' ? json.tradeify.floorRoom : null,
+        tradeifyStatus:
+          json.tradeify?.status === 'must_flatten' ||
+          json.tradeify?.status === 'day_locked' ||
+          json.tradeify?.status === 'can_trade'
+            ? json.tradeify.status
+            : null,
+        tradeifyFlattenMontreal:
+          typeof json.tradeify?.flattenMontreal === 'string'
+            ? json.tradeify.flattenMontreal
+            : null,
+      }
+      if (
+        isTradeifyGrowth50k(getDeskRiskProfile()) &&
+        (next.tradeifyDayLocked || next.tradeifyMustFlatten)
+      ) {
+        next.canPlaceEntry = false
       }
       setGate(next)
       onGate?.(next)
@@ -392,6 +466,21 @@ export function SessionBanner({
       ? Math.max(0, Math.floor(Date.now() / 1000) - lastQuoteAt)
       : null
   const feedOk = dataMode === 'live' && quoteAgeSec != null && quoteAgeSec < 10
+  const tradeifyChip = isTradeifyGrowth50k(riskProfile)
+    ? formatTradeifyBannerChip({
+        leftoverDll: gate.tradeifyLeftoverDll ?? 1250,
+        floorRoom: gate.tradeifyFloorRoom ?? 2000,
+        status:
+          gate.tradeifyStatus ??
+          (gate.tradeifyMustFlatten
+            ? 'must_flatten'
+            : gate.tradeifyDayLocked
+              ? 'day_locked'
+              : 'can_trade'),
+        refuseReason: gate.tradeifyRefuseReason,
+        flattenMontreal: gate.tradeifyFlattenMontreal,
+      })
+    : null
 
   return (
     <div className={`rounded-lg border px-3 py-2 text-xs flex flex-wrap items-center gap-3 ${tone}`}>
@@ -456,6 +545,40 @@ export function SessionBanner({
             : gate.entryWindow
               ? `Window ${gate.entryWindow}/3`
               : 'Entry window'}
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={() =>
+          setDeskRiskProfile(
+            isTradeifyGrowth50k(riskProfile) ? 'oanda_cash' : 'tradeify_growth_50k'
+          )
+        }
+        className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+          isTradeifyGrowth50k(riskProfile)
+            ? 'bg-amber-500/90 text-black'
+            : 'bg-white/10 text-gray-300 hover:bg-white/20'
+        }`}
+        title={
+          isTradeifyGrowth50k(riskProfile)
+            ? 'Tradeify Growth $50k on — $400 / $250 / $150 stops, shared daily budget. Click for OANDA 2% → 1% → 0.5%.'
+            : 'OANDA cash risk 2% → 1% → 0.5%. Click to size as Tradeify Growth $50k.'
+        }
+      >
+        {isTradeifyGrowth50k(riskProfile) ? 'Tradeify $50k' : 'OANDA %'}
+      </button>
+      {tradeifyChip && (
+        <span
+          className={`rounded px-2 py-0.5 text-[10px] font-semibold max-w-[22rem] truncate ${
+            tradeifyChip.tone === 'flatten'
+              ? 'bg-red-500/40 text-red-50'
+              : tradeifyChip.tone === 'lock'
+                ? 'bg-red-500/30 text-red-100'
+                : 'bg-amber-500/20 text-amber-100'
+          }`}
+          title={gate.tradeifyLockMessage || tradeifyChip.title}
+        >
+          {tradeifyChip.label}
         </span>
       )}
       {gate.clockedIn && (

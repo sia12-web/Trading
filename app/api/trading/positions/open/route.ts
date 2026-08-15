@@ -36,6 +36,10 @@ import { assertProtectiveStop } from '@/lib/trading/stopLossGuard'
 import { assertWorkingStopLocked } from '@/lib/trading/workingBracketUpdate'
 import type { PositionOpenResponse } from '@/types/trading'
 import { logEntryDenied } from '@/lib/utils/deskAuditLog'
+import { isTradeifyGrowth50k } from '@/lib/trading/tradeifyProfile'
+import { resolveMoneyRiskProfile } from '@/lib/trading/tradeifyProfileStore'
+import { resolveServerTradeifyPlace } from '@/lib/trading/tradeifySessionState'
+import { TRADEIFY_STARTING_BALANCE } from '@/lib/trading/tradeifyGrowth50k'
 
 interface OpenPositionRequest {
   instrument: 'DOW' | 'NASDAQ' | 'NIKKEI'
@@ -64,6 +68,8 @@ interface OpenPositionRequest {
   range_high?: number
   range_low?: number
   range_label?: string
+  /** oanda_cash (default) | tradeify_growth_50k */
+  risk_profile?: string
 }
 
 export async function POST(request: Request): Promise<NextResponse<PositionOpenResponse>> {
@@ -639,16 +645,61 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       }
     }
 
-    // Progressive session risk: fill #1 = 2%, #2 = 1%, #3 = 0.5% (W/L same)
+    // Progressive session risk: Tradeify dollars or OANDA 2% → 1% → 0.5%
     const riskPct = riskPercentForEntrySource(deskEntrySource, gate.attemptsUsed)
     if (!sizing) {
-      sizing = positionSizer.calculatePosition(
-        body.entry_price,
-        body.account_size,
-        body.entry_direction,
-        body.stop_loss_price,
-        riskPct
-      )
+      const moneyProfile = await resolveMoneyRiskProfile({
+        supabase,
+        userId: user.id,
+        hint: body.risk_profile,
+        cookieHeader: request.headers.get('cookie'),
+      })
+      if (isTradeifyGrowth50k(moneyProfile)) {
+        const decision = await resolveServerTradeifyPlace(supabase, user.id)
+        if (!decision.allowed) {
+          logEntryDenied({
+            route: 'open',
+            reason: 'tradeify_gate',
+            instrument: body.instrument,
+            message: decision.refuseMessage,
+            status: 400,
+            entry: body.entry_price,
+            direction: body.entry_direction,
+            entrySource: deskEntrySource,
+          })
+          return NextResponse.json(
+            {
+              success: false,
+              position_id: '',
+              instrument: body.instrument,
+              entry_price: body.entry_price,
+              stop_loss_price: 0,
+              position_size: 0,
+              risk_amount: 0,
+              entry_direction: body.entry_direction,
+              entry_window: body.entry_window,
+              message: decision.refuseMessage,
+            },
+            { status: 400 }
+          )
+        }
+        body.account_size = TRADEIFY_STARTING_BALANCE
+        sizing = positionSizer.calculatePositionFromRiskAmount(
+          body.entry_price,
+          TRADEIFY_STARTING_BALANCE,
+          body.entry_direction,
+          body.stop_loss_price ?? 0,
+          decision.riskDollars
+        )
+      } else {
+        sizing = positionSizer.calculatePosition(
+          body.entry_price,
+          body.account_size,
+          body.entry_direction,
+          body.stop_loss_price,
+          riskPct
+        )
+      }
     }
     if (!sizing) {
       logger.error('POST /api/trading/positions/open: Position sizing failed', { body })

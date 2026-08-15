@@ -59,8 +59,8 @@ assert(
   'Leo knows post-fill manage is separate'
 )
 assert(
-  LIVE_VOICE_SYSTEM_PROMPT.includes('opposing range edge'),
-  'Leo knows opposing-edge TP'
+  LIVE_VOICE_SYSTEM_PROMPT.includes('1.5R of the protective stop'),
+  'Leo knows initial TP is 1:1.5'
 )
 assert(
   LIVE_VOICE_SYSTEM_PROMPT.includes('buy the range low') ||
@@ -119,6 +119,38 @@ const mock = {
       lunchRangeEntry: '13:30–15:15',
       tz: 'America/Toronto',
       tzLabel: 'Montreal',
+    },
+    timing: {
+      asOfIso: '2026-07-15T13:20:00.000Z',
+      montrealTime: '09:20:00',
+      montrealLabel: 'Montreal',
+      deskLocalTime: '09:20:00',
+      deskTz: 'America/New_York',
+      deskTzLabel: 'NY desk clock',
+      instrument: 'DOW',
+      market: 'NY',
+      playbookMode: 'morning',
+      or30: {
+        status: 'forming',
+        sentence: 'OR30 is FORMING — entry CLOSED until lock at 10:00 Montreal.',
+      },
+      mid: {
+        label: 'IB',
+        status: 'not_yet',
+        sentence: 'IB not open yet — opens when first-hour IB locks at 10:30 Montreal.',
+      },
+      late: {
+        label: 'Lunch-range',
+        status: 'not_yet',
+        sentence: 'Lunch-range not open until 13:30 Montreal — do not call lunch open.',
+      },
+      facts: [
+        'Wall clock NOW: 09:20:00 Montreal · desk local 09:20:00 (NY desk clock).',
+        'OR30 is FORMING — entry CLOSED until lock at 10:00 Montreal.',
+        'IB not open yet — opens when first-hour IB locks at 10:30 Montreal.',
+        'Lunch-range not open until 13:30 Montreal — do not call lunch open.',
+        'Active playbook mode from clocks: morning.',
+      ],
     },
   },
   risk: {
@@ -186,7 +218,13 @@ assert(packed.includes('Primary bait'), 'packed context has primary bait')
 assert(packed.includes('OR30'), 'packed primary OR30 for morning')
 assert(packed.includes('Initial SL/TP'), 'packed reminder has strategy SL/TP')
 assert(packed.includes('Post-fill MANAGE'), 'packed reminder separates post-fill manage')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('SESSION CLOCK STATUS'), 'Leo knows SESSION CLOCK STATUS ground truth')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('never invent that OR30 is still open'), 'Leo must not invent OR30 open')
+assert(packed.includes('SESSION CLOCK STATUS'), 'packed context has SESSION CLOCK STATUS')
+assert(packed.includes('OR30 status=forming'), 'packed OR30 forming from mock timing')
+assert(packed.includes('Lunch-range not open until 13:30'), 'packed lunch not-yet sentence')
 assert(!packed.includes('99999'), 'no invented price')
+assert(!packed.includes('TRADEIFY GROWTH $50k'), 'profile off stays silent')
 
 {
   const nikkei = {
@@ -197,12 +235,37 @@ assert(!packed.includes('99999'), 'no invented price')
       playbookMode: 'us_range',
       playbookTitle: 'US Range playbook',
       rangeStrategy: 'us_range',
+      timing: {
+        ...mock.session.timing,
+        instrument: 'NIKKEI' as const,
+        market: 'TOKYO' as const,
+        playbookMode: 'us_range',
+        deskTz: 'Asia/Tokyo',
+        deskTzLabel: 'Tokyo desk clock',
+        or30: {
+          status: 'finished' as const,
+          sentence: 'OR30 entry is CLOSED (finished) — morning ±10 ended.',
+        },
+        mid: {
+          label: 'US Range',
+          status: 'open' as const,
+          sentence: 'US Range is OPEN — prior NYC H/L.',
+        },
+        late: {
+          label: 'Tokyo IB',
+          status: 'not_yet' as const,
+          sentence: 'Tokyo IB not open yet — unlocks at first-hour lock.',
+        },
+        facts: mock.session.timing.facts,
+      },
     },
   } as LiveVoiceDeskContext
   const p = formatLiveVoiceContextForLlm(nikkei)
   assert(p.includes('US Range'), 'Nikkei US Range in packed context')
   assert(p.includes('OR30 → US Range'), 'Nikkei desk range chain')
   assert(/Primary bait.*US Range/i.test(p), 'Nikkei primary bait US Range')
+  assert(p.includes('US Range status=open'), 'Nikkei packed US Range status')
+  assert(p.includes('Tokyo IB status=not_yet'), 'Nikkei packed Tokyo IB not_yet')
 }
 
 {

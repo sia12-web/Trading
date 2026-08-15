@@ -96,10 +96,23 @@ export async function POST(request: NextRequest) {
 
     const brief = await loadLiveDeskBrief({ now, focusMarket: market })
     const body = formatLiveDeskBriefText(brief)
+    const { resolveDeskRiskProfileForUser } = await import('@/lib/trading/tradeifyProfileStore')
+    const { isTradeifyGrowth50k } = await import('@/lib/trading/tradeifyProfile')
+    const { loadTradeifyLeoSnapshot } = await import('@/lib/trading/tradeifySessionState')
+    const { formatTradeifyTelegramBlock } = await import('@/lib/trading/tradeifyLeoBlock')
+    const profile = await resolveDeskRiskProfileForUser({
+      supabase,
+      userId: user.id,
+      cookieHeader: request.headers.get('cookie'),
+    })
+    const tradeifyLine = isTradeifyGrowth50k(profile)
+      ? formatTradeifyTelegramBlock(await loadTradeifyLeoSnapshot(supabase, user.id, now))
+      : null
     const note = formatLateDeskBriefNote({
       body,
       asOfDisplay: brief.asOfDisplay,
       focus: market,
+      tradeifyLine,
     })
 
     if (!telegramConfigured()) {

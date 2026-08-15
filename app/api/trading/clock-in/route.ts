@@ -99,11 +99,26 @@ export async function POST(request: NextRequest) {
       try {
         const { formatClockInNote } = await import('@/lib/notify/deskSessionNotes')
         const { sendTelegramMessage } = await import('@/lib/notify/telegram')
+        const { resolveDeskRiskProfileForUser } = await import('@/lib/trading/tradeifyProfileStore')
+        const { isTradeifyGrowth50k } = await import('@/lib/trading/tradeifyProfile')
+        const { loadTradeifyLeoSnapshot } = await import('@/lib/trading/tradeifySessionState')
+        const { formatTradeifyTelegramBlock } = await import('@/lib/trading/tradeifyLeoBlock')
+        const profile = await resolveDeskRiskProfileForUser({
+          supabase,
+          userId: user.id,
+          cookieHeader: request.headers.get('cookie'),
+        })
+        const tradeifyOn = isTradeifyGrowth50k(profile)
+        const tradeifyLine = tradeifyOn
+          ? formatTradeifyTelegramBlock(await loadTradeifyLeoSnapshot(supabase, user.id))
+          : null
         const note = formatClockInNote({
           instrument: prepInstrument as DeskInstrument,
           market,
           sessionDate: sessionDateForMarket(market),
           lateJoin,
+          tradeify: tradeifyOn,
+          tradeifyLine,
         })
         void sendTelegramMessage(note.telegram).then((r) => {
           if (!r.ok) {

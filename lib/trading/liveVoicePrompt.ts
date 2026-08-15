@@ -3,6 +3,11 @@
  */
 
 import type { LiveVoiceDeskContext } from '@/lib/trading/liveVoiceContext'
+import { formatLeoSessionTimingForPrompt } from '@/lib/trading/leoSessionTiming'
+import {
+  LIVE_VOICE_TRADEIFY_ADDENDUM,
+  formatTradeifyLeoBlock,
+} from '@/lib/trading/tradeifyLeoBlock'
 
 export const LIVE_VOICE_SYSTEM_PROMPT = `You are Leo — senior execution trader and desk partner who co-created TradePulse side-by-side with the user. You trade US30 (DOW), NAS100 (NASDAQ), and JP225 (NIKKEI 225) on this prop desk.
 
@@ -13,6 +18,7 @@ IDENTITY & CO-ARCHITECT MASTERY
 - Tone is calm, pragmatic, data-driven, and objective. You challenge low-confluence ideas and confirm high-confluence ones.
 
 DEEP TRADEPULSE ARCHITECTURE & SESSION CLOCK KNOWLEDGE
+- Every turn includes a fresh **SESSION CLOCK STATUS** block (Montreal now + desk local now + OR30 / IB|US Range / Lunch-range|Tokyo IB status). That block is ground truth — never invent that OR30 is still open, that lunch has started, or that IB is closed when the block says otherwise.
 - All times you speak to the trader are **Montreal** (America/Toronto). Never say JST or ET — say Montreal.
 - **Pre-Market Prep** (NY: <09:15 Montreal | Tokyo/NIKKEI: <19:45 Montreal previous evening): Multi-TF candles ($D, 4H, 1H$) analyzed. Level Finder extracts AVWAP, Volume Profile POC/HVNs, and stop-pool liquidity sweeps- **Instrument Lock**: Once clocked in, the active instrument (e.g. DOW) is LOCKED for the morning session. You KNOW the active desk is locked and NEVER ask the trader to choose between DOW and NASDAQ or say "awaiting DOW vs NASDAQ recommendation" — we are trading the locked instrument only!
 
@@ -61,7 +67,7 @@ ATTEMPT LADDER (2 / 2 / 2 per window — THREE RANGES PER DESK; CLOCKS YOU SPEAK
   * Level Finder picks ENTRY levels only (stop pool beyond active-range bait + POC/AVWAP confluence). It does NOT set SL/TP.
   * Order ticket sets INITIAL protective SL/TP from the active playbook range:
     - SL = beyond the active range edge (past the hunt), never tighter than the zone floor. LONG → beyond range low; SHORT → beyond range high. Stop-pool entries often land on the zone floor because it is wider than a thin liquidity pad — that is correct. If the range is not formed yet → zone stop fallback.
-    - TP = opposing range edge first, then mid / AVWAP / POC when reward ≥ 1.5R; else 2R fallback.
+    - TP = 1.5R of the protective stop (1:1.5). Trader can drag TP after. Magnets do not set the initial target.
   * Manual pins: trader edits SL/TP; still uses the **progressive session risk ladder**. Do not invent strategy magnets for manual.
   * POST-FILL MANAGE is SEPARATE: after fill only, desk auto-management may move to breakeven / trail / scale / reversal exits. That is not the ticket’s initial geometry. Working limits do not start manage. Never tell the trader to ignore strategy SL/TP on AI/structure when a formed range is active.
 - **DESK EXECUTION FLOW**:
@@ -118,6 +124,13 @@ HARD RULES
 OUTPUT
 - Plain spoken English sentences. No markdown, no bullet lists, no asterisks, no hashtags, no JSON.`
 
+export function liveVoiceSystemPromptFor(ctx: LiveVoiceDeskContext): string {
+  if (ctx.tradeify?.active) {
+    return `${LIVE_VOICE_SYSTEM_PROMPT}\n${LIVE_VOICE_TRADEIFY_ADDENDUM}`
+  }
+  return LIVE_VOICE_SYSTEM_PROMPT
+}
+
 export function formatEntrySourceLabel(
   src: string,
   playbookTitle = 'AI playbook'
@@ -164,7 +177,7 @@ export function formatLeoRangeLiquidityReminder(args: {
     `Desk ranges: ${desk}`,
     `Primary bait now: ${primary}`,
     'Rule: range H/L = retail bait; desk hunts stops JUST BEYOND with POC/HVN + AVWAP confluence. Never sell/buy the exact range print. Name which range bait an AI level sits beyond when you debate it.',
-    'Initial SL/TP (ticket, AI/structure): SL beyond active range edge or zone floor (never tighter); TP = opposing edge / mid / AVWAP / POC (≥1.5R) else 2R. Level Finder sets ENTRY only.',
+    'Initial SL/TP (ticket, AI/structure): SL beyond active range edge or zone floor (never tighter); TP = 1.5R of that stop (1:1.5). Level Finder sets ENTRY only.',
     'Post-fill MANAGE is separate (breakeven / trail / reversal) — starts only after fill, not on working limits.',
   ].join('\n')
 }
@@ -251,10 +264,19 @@ export function formatLiveVoiceContextForLlm(ctx: LiveVoiceDeskContext): string 
     ? `${ctx.activePosition.direction} filled @ ${ctx.activePosition.fillPrice} (SL: ${ctx.activePosition.stopLoss}, TP: ${ctx.activePosition.takeProfit ?? 'none'}, Origin: ${formatEntrySourceLabel(ctx.activePosition.entrySource, playbookTitle)})`
     : 'none (flat)'
 
+  const timingBlock =
+    ctx.session.timing != null
+      ? `${formatLeoSessionTimingForPrompt(ctx.session.timing)}\n`
+      : ''
+  const tradeifyBlock = formatTradeifyLeoBlock(ctx.tradeify)
+  const riskLine = ctx.tradeify?.active
+    ? `Risk: Tradeify $${ctx.tradeify.riskDollars} this fill (step $${ctx.tradeify.stepDollars}) · leftover DLL $${ctx.tradeify.leftoverDll} · floor room $${ctx.tradeify.floorRoom} · flatten ${ctx.tradeify.flattenMontreal} · ${ctx.risk.entryRule}`
+    : `Risk: every probe ${ctx.risk.deskRiskPercent}% (AI/structure/manual) · entry must be within ±10 of active range high / 50% mid / low · ${ctx.risk.entryRule}`
+
   return `DESK CONTEXT (ground truth — do not invent beyond this):
 Active Instrument: ${ctx.voice.instrument} (${ctx.voice.market} - LOCKED DESK FOR TODAY'S SESSION. We are ALREADY clocked in to ${ctx.voice.instrument}. Do NOT discuss choosing between DOW vs NASDAQ or waiting for instrument choice—${ctx.voice.instrument} is active!)
 Live Price Action: ${ctx.voice.instrument} @ ${livePx != null ? livePx.toLocaleString() : 'loading live tick'}
-Voice window: ${ctx.voice.window.start}–${ctx.voice.window.end} ${ctx.voice.window.tzLabel} · local ${ctx.voice.localTime}
+${timingBlock}${tradeifyBlock ? `${tradeifyBlock}\n` : ''}Voice window: ${ctx.voice.window.start}–${ctx.voice.window.end} ${ctx.voice.window.tzLabel} · local ${ctx.voice.localTime}
 Phase: ${ctx.session.phase} — ${ctx.session.message}
 Active playbook: ${playbookTitle} (mode=${ctx.session.playbookMode}) · ${range}
 Attempts: ${ctx.session.attemptLadderLabel || `${ctx.session.attemptsUsed}/${ctx.session.maxAttempts}`} · Stops: ${ctx.session.stopHits}/${ctx.session.maxStopHits}
@@ -265,7 +287,7 @@ Can place entry: ${ctx.session.canPlaceEntry} · Can manage: ${ctx.session.canMa
 Working limit orders: ${workingLines}
 Active filled position: ${activeLine}
 Session times: analyze ${ctx.session.times.analyzeStart} · open ${ctx.session.times.marketOpen} · morning OR30 close ${ctx.session.times.entryClose} · ${midWindowLabel} ${ctx.session.times.ibEntry} · lunch confirm ${ctx.session.times.lunchClose} · ${lateWindowLabel} ${ctx.session.times.lunchRangeEntry} · cash close ${ctx.session.times.marketClose} (${ctx.session.times.tzLabel})
-Risk: every probe ${ctx.risk.deskRiskPercent}% (AI/structure/manual) · entry must be within ±10 of active range high / 50% mid / low · ${ctx.risk.entryRule}
+${riskLine}
 Range-edge tail: ${
     ctx.rangeTail?.present
       ? `${ctx.rangeTail.text ?? 'TAIL'} · edge=${ctx.rangeTail.edge} · tier=${ctx.rangeTail.tier} · ratio=${ctx.rangeTail.ratio} · ageSec=${ctx.rangeTail.ageSec} (other-TF footprint — prefer levels on this edge)`

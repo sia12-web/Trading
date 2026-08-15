@@ -17,6 +17,7 @@ import {
   TRADER_DISPLAY_LABEL,
   deskLocalHmsAsTraderDisplay,
 } from '@/lib/chart/traderDisplayTz'
+import { TradeifyProgressPanel } from './components/TradeifyProgressPanel'
 
 /** Focus unlock = cash open − 30m, shown in Montreal. */
 function focusUnlockMontreal(market: 'NY' | 'TOKYO', now: Date): string {
@@ -93,6 +94,12 @@ export default function DashboardHomePage() {
           Positions
         </Link>
         <Link
+          href="/dashboard/tradeify"
+          className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-sm font-semibold text-amber-100 hover:bg-amber-500/20"
+        >
+          Tradeify $50k
+        </Link>
+        <Link
           href="/dashboard/journal"
           className="rounded-lg border border-surface-600 px-4 py-2.5 text-sm font-semibold text-gray-300 hover:border-surface-500 hover:text-white"
         >
@@ -104,6 +111,10 @@ export default function DashboardHomePage() {
         >
           Desk News →
         </Link>
+      </div>
+
+      <div className="mt-10">
+        <TradeifyProgressPanel compact />
       </div>
 
       <p className="mt-10 text-xs text-gray-600 leading-relaxed max-w-md">

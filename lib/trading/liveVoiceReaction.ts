@@ -71,11 +71,15 @@ export async function runLiveVoiceLevelReaction(args: {
   userId: string
   instrument: DeskInstrument
   event: LevelTagEvent
+  riskProfile?: string | null
+  cookieHeader?: string | null
 }): Promise<LiveVoiceReactResult> {
   const ctx = await buildLiveVoiceDeskContext(
     args.supabase,
     args.userId,
-    args.instrument
+    args.instrument,
+    new Date(),
+    { riskProfile: args.riskProfile, cookieHeader: args.cookieHeader }
   )
 
   if (!ctx.voice.clockedIn) {

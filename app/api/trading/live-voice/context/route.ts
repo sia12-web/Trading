@@ -29,7 +29,10 @@ export async function GET(request: Request) {
       : 'DOW'
 
     const supabase = await createClient()
-    const context = await buildLiveVoiceDeskContext(supabase, user.id, instrument)
+    const context = await buildLiveVoiceDeskContext(supabase, user.id, instrument, new Date(), {
+      riskProfile: searchParams.get('risk_profile'),
+      cookieHeader: request.headers.get('cookie'),
+    })
 
     if (!context.voice.clockedIn) {
       return NextResponse.json(

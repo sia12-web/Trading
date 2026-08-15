@@ -8,7 +8,8 @@
  *   SL  = beyond the active range edge (past the hunt), never tighter than zone.
  *         Stop-pool entries (beyond bait) usually land on the zone floor because
  *         it is wider than a thin liquidity pad — that is intentional.
- *   TP  = opposing range edge / mid / AVWAP / POC when RR ≥ 1.5; else 2R fallback.
+ *   TP  = 1.5R of the protective stop (trader can drag after). Magnets do not
+ *         override the initial 1:1.5 display.
  */
 
 import {
@@ -67,10 +68,6 @@ function zoneStopRaw(entry: number, direction: 'LONG' | 'SHORT'): number {
   return direction === 'LONG'
     ? entry - half - buffer
     : entry + half + buffer
-}
-
-function mid(r: StrategyRangeEdges): number {
-  return (r.high + r.low) / 2
 }
 
 function rangePad(entry: number, range: StrategyRangeEdges): number {
@@ -153,22 +150,8 @@ export function strategyStopDetail(args: {
   return { stop, source }
 }
 
-function rewardOk(
-  entry: number,
-  stop: number,
-  target: number,
-  direction: 'LONG' | 'SHORT',
-  minR: number
-): boolean {
-  const risk = Math.abs(entry - stop)
-  if (!(risk > 0)) return false
-  const reward =
-    direction === 'LONG' ? target - entry : entry - target
-  return reward >= risk * minR
-}
-
 /**
- * Initial take-profit from strategy magnets, then 2R fallback.
+ * Initial take-profit is always 1.5R of |entry − stop|.
  * Soft-snaps to rounds without shrinking below 1.5R.
  */
 export function strategyTakeProfitPrice(args: {
@@ -179,43 +162,8 @@ export function strategyTakeProfitPrice(args: {
   magnets?: StrategyRiskMagnets | null
 }): number {
   const { entry, stop, direction } = args
-  const fallback = takeProfitFromStopR({ entry, stop, direction })
-
-  const candidates: { price: number; priority: number }[] = []
-  const range = args.activeRange
-  if (range && range.high > range.low) {
-    // Opposing range edge = primary strategy target
-    candidates.push({
-      price: direction === 'LONG' ? range.high : range.low,
-      priority: 0,
-    })
-    candidates.push({ price: mid(range), priority: 2 })
-  }
-
-  const m = args.magnets
-  if (m?.avwap != null && m.avwap > 0) {
-    candidates.push({ price: m.avwap, priority: 1 })
-  }
-  if (m?.poc != null && m.poc > 0) {
-    candidates.push({ price: m.poc, priority: 1 })
-  }
-  for (const x of m?.extras ?? []) {
-    if (x > 0) candidates.push({ price: x, priority: 3 })
-  }
-
-  const valid = candidates
-    .filter((c) =>
-      direction === 'LONG' ? c.price > entry : c.price < entry
-    )
-    .filter((c) => rewardOk(entry, stop, c.price, direction, 1.5))
-    .sort((a, b) => {
-      if (a.priority !== b.priority) return a.priority - b.priority
-      // Prefer closer valid magnet (realistic day-trade target)
-      return Math.abs(a.price - entry) - Math.abs(b.price - entry)
-    })
-
-  const chosen = valid[0]?.price ?? fallback
-  return snapProfitToRound(entry, stop, chosen, direction)
+  const raw = takeProfitFromStopR({ entry, stop, direction })
+  return snapProfitToRound(entry, stop, raw, direction)
 }
 
 /** Full initial SL + TP for an AI/structure limit at `entry`. */

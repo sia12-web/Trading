@@ -16,7 +16,7 @@ import {
 } from '@/lib/speech/openaiSpeech'
 import { buildLiveVoiceDeskContext } from '@/lib/trading/liveVoiceContext'
 import {
-  LIVE_VOICE_SYSTEM_PROMPT,
+  liveVoiceSystemPromptFor,
   buildLiveVoiceUserMessage,
 } from '@/lib/trading/liveVoicePrompt'
 import {
@@ -74,11 +74,16 @@ export async function runLiveVoiceTurn(args: {
     side: 'BUY' | 'SHORT'
     reason: string
   } | null
+  riskProfile?: string | null
+  cookieHeader?: string | null
 }): Promise<LiveVoiceTurnResult> {
+  const now = new Date()
   const ctx = await buildLiveVoiceDeskContext(
     args.supabase,
     args.userId,
-    args.instrument
+    args.instrument,
+    now,
+    { riskProfile: args.riskProfile, cookieHeader: args.cookieHeader }
   )
 
   if (!ctx.voice.clockedIn) {
@@ -132,7 +137,7 @@ export async function runLiveVoiceTurn(args: {
     const result = await llmComplete({
       provider,
       model,
-      system: LIVE_VOICE_SYSTEM_PROMPT,
+      system: liveVoiceSystemPromptFor(ctx),
       user: buildLiveVoiceUserMessage(transcript, ctx),
       maxTokens: MAX_REPLY_TOKENS,
       temperature: 0.35,

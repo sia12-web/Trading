@@ -25,6 +25,15 @@ import {
   tradeDateForInstrument,
 } from '@/lib/trading/deskAttendance'
 import { noteSessionGateTransition } from '@/lib/utils/deskAuditLog'
+import { loadTradeifySessionSnapshot } from '@/lib/trading/tradeifySessionState'
+import {
+  resolveTradeifyPlace,
+  tradeifyDeskStatus,
+  tradeifyDllUsed,
+  tradeifyMustFlatten,
+  TRADEIFY_DLL_DOLLARS,
+} from '@/lib/trading/tradeifyGrowth50k'
+import { tradeifyFlattenMontreal } from '@/lib/trading/tradeifyLeoBlock'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -91,7 +100,7 @@ export async function GET(request: Request) {
       now
     )
 
-    const [openPosRes, filledRes] = await Promise.all([
+    const [openPosRes, filledRes, tradeifySnap] = await Promise.all([
       supabase
         .from('trades_journal')
         .select('id, instrument, stop_loss_hit_count')
@@ -110,6 +119,7 @@ export async function GET(request: Request) {
         .eq('trade_date', tradeDate)
         .in('instrument', marketInstruments)
         .eq('fill_status', 'filled'),
+      loadTradeifySessionSnapshot(supabase, user.id, now),
     ])
 
     const openPos = openPosRes.data
@@ -175,6 +185,8 @@ export async function GET(request: Request) {
       now,
     })
 
+    const tradeify = resolveTradeifyPlace(tradeifySnap)
+
     noteSessionGateTransition({
       userId: user.id,
       viewing: viewingForGate,
@@ -215,6 +227,23 @@ export async function GET(request: Request) {
         revenge_locked: gate.revengeLocked,
         day_locked: gate.dayLocked,
         focus_market: focusMarket,
+        tradeify: {
+          sessionKey: tradeify.sessionKey,
+          fillsUsed: tradeify.fillsUsed,
+          dailyPnl: tradeifySnap.dailyPnl ?? 0,
+          stopOutsToday: tradeifySnap.stopOutsToday ?? 0,
+          leftoverDll: tradeify.leftoverDll,
+          dllUsed: tradeifyDllUsed(tradeifySnap.dailyPnl),
+          dllCap: TRADEIFY_DLL_DOLLARS,
+          floorRoom: tradeify.floorRoom,
+          allowed: tradeify.allowed,
+          refuseReason: tradeify.refuseReason,
+          refuseMessage: tradeify.refuseMessage,
+          dayLocked: !tradeify.allowed,
+          mustFlatten: tradeifyMustFlatten(now),
+          status: tradeifyDeskStatus(tradeify, now),
+          flattenMontreal: tradeifyFlattenMontreal(now),
+        },
       },
       {
         headers: {

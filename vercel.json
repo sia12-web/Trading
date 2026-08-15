@@ -33,6 +33,14 @@
       "schedule": "35 2 * * 1-5"
     },
     {
+      "path": "/api/trading/positions/cleanup-session",
+      "schedule": "59 20 * * 1-5"
+    },
+    {
+      "path": "/api/trading/positions/cleanup-session",
+      "schedule": "2 21 * * 1-5"
+    },
+    {
       "path": "/api/trading/eod-journal",
       "schedule": "5 20 * * 1-5"
     },

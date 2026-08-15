@@ -34,12 +34,15 @@ assert(
   'NASDAQ trade_date = ET'
 )
 
+const prev = process.env.DESK_ACCOUNT_SIZE
+delete process.env.DESK_ACCOUNT_SIZE
+
 assert(resolveDeskAccountSize(100_000) === 100_000, 'valid client size')
-assert(resolveDeskAccountSize(100) === null, 'too small')
-assert(resolveDeskAccountSize(2_000_000) === null, 'too large')
+assert(resolveDeskAccountSize(99) === null, 'below $100 min')
+assert(resolveDeskAccountSize(100) === 100, 'min $100 allowed')
+assert(resolveDeskAccountSize(10_000_001) === null, 'too large')
 assert(resolveDeskAccountSize(undefined) === null, 'missing')
 
-const prev = process.env.DESK_ACCOUNT_SIZE
 process.env.DESK_ACCOUNT_SIZE = '250000'
 assert(resolveDeskAccountSize(999_999) === 250_000, 'env overrides client')
 if (prev === undefined) delete process.env.DESK_ACCOUNT_SIZE

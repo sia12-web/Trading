@@ -32,6 +32,7 @@ async function parseBody(request: Request): Promise<{
     side: 'BUY' | 'SHORT'
     reason: string
   } | null
+  riskProfile: string | null
 }> {
   const contentType = request.headers.get('content-type') || ''
 
@@ -54,12 +55,16 @@ async function parseBody(request: Request): Promise<{
       audio = Buffer.from(await f.arrayBuffer())
       audioFilename = f.name || audioFilename
     }
-    return { instrument, transcript, audio, audioFilename, customPin: null }
+    const riskRaw = form.get('risk_profile')
+    const riskProfile =
+      typeof riskRaw === 'string' && riskRaw.trim() ? riskRaw.trim() : null
+    return { instrument, transcript, audio, audioFilename, customPin: null, riskProfile }
   }
 
   const json = (await request.json().catch(() => null)) as {
     instrument?: string
     transcript?: string
+    risk_profile?: string
     customPin?: {
       price: number
       side: 'BUY' | 'SHORT'
@@ -71,7 +76,8 @@ async function parseBody(request: Request): Promise<{
     ? instrumentRaw
     : 'DOW'
   const transcript = String(json?.transcript || '').trim() || null
-  return { instrument, transcript, audio: null, audioFilename: 'audio.webm', customPin: json?.customPin ?? null }
+  const riskProfile = String(json?.risk_profile || '').trim() || null
+  return { instrument, transcript, audio: null, audioFilename: 'audio.webm', customPin: json?.customPin ?? null, riskProfile }
 }
 
 export async function POST(request: Request) {
@@ -121,6 +127,8 @@ export async function POST(request: Request) {
       audio: body.audio,
       audioFilename: body.audioFilename,
       customPin: body.customPin,
+      riskProfile: body.riskProfile,
+      cookieHeader: request.headers.get('cookie'),
     })
 
     logger.info('live_voice.turn_request_success', {

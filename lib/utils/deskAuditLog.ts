@@ -18,6 +18,7 @@ export type DeskEntryDenyReason =
   | 'unauthorized'
   | 'broker'
   | 'db'
+  | 'tradeify_gate'
 
 export function logEntryDenied(fields: {
   route: 'open' | 'working' | 'cancel-working'

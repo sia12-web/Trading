@@ -31,6 +31,16 @@ const nikkei = formatSessionScheduleBlock(
 )
 assert.match(nikkei, /US Range/)
 assert.match(nikkei, /Tokyo IB/)
+assert.match(nikkei, /2% → 1% → 0.5%/)
+assert.doesNotMatch(nikkei, /Tradeify \$400/)
+
+const nikkeiTf = formatSessionScheduleBlock(
+  'NIKKEI',
+  new Date('2026-07-28T00:00:00Z'),
+  { tradeify: true }
+)
+assert.match(nikkeiTf, /Tradeify \$400/)
+assert.doesNotMatch(nikkeiTf, /2% → 1% → 0.5%/)
 
 const start = formatSessionStartNote({ instrument: 'NASDAQ' })
 assert.match(start.telegram, /SESSION START/)

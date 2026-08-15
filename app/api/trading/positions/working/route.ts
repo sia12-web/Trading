@@ -31,6 +31,10 @@ import {
   riskPercentForEntrySource,
   getPositionSizer,
 } from '@/lib/trading/positionSizing'
+import { isTradeifyGrowth50k } from '@/lib/trading/tradeifyProfile'
+import { resolveMoneyRiskProfile } from '@/lib/trading/tradeifyProfileStore'
+import { resolveServerTradeifyPlace } from '@/lib/trading/tradeifySessionState'
+import { TRADEIFY_STARTING_BALANCE } from '@/lib/trading/tradeifyGrowth50k'
 import { assertServerRangeEdgeEntry } from '@/lib/trading/serverPlaybookRange'
 import { logEntryDenied, logWorkingPlaced } from '@/lib/utils/deskAuditLog'
 import { formatWorkingLimitAlreadyMessage } from '@/lib/trading/workingLimitGate'
@@ -402,22 +406,61 @@ export async function POST(request: Request) {
     }
     const stopLossPrice = stopGuard.stop
 
-    // Server-authoritative progressive risk (2% → 1% → 0.5%) from filled
-    // session attempts — ignore client-claimed size/risk so chart/ticket can't
-    // under/over-size vs the ladder.
-    const riskPct = riskPercentForEntrySource(entrySource, gate.attemptsUsed)
-    const sizing = getPositionSizer().calculatePosition(
-      level,
-      account,
-      direction,
-      stopLossPrice,
-      riskPct
-    )
-    if (!sizing) {
-      return NextResponse.json({ error: 'Invalid stop or account for sizing' }, { status: 400 })
+    // Server-authoritative risk: Tradeify $400/$250/$150 when profile is on,
+    // else OANDA 2% → 1% → 0.5%. Ignore client-claimed size/risk.
+    let size: number
+    let risk: number
+    let accountForRow = account
+    const moneyProfile = await resolveMoneyRiskProfile({
+      supabase,
+      userId: user.id,
+      hint: body.risk_profile,
+      cookieHeader: request.headers.get('cookie'),
+    })
+    if (isTradeifyGrowth50k(moneyProfile)) {
+      const decision = await resolveServerTradeifyPlace(supabase, user.id)
+      if (!decision.allowed) {
+        logEntryDenied({
+          route: 'working',
+          reason: 'tradeify_gate',
+          instrument,
+          message: decision.refuseMessage,
+          status: 400,
+          entry: level,
+          direction,
+          entrySource,
+        })
+        return NextResponse.json({ error: decision.refuseMessage }, { status: 400 })
+      }
+      const tfSizing = getPositionSizer().calculatePositionFromRiskAmount(
+        level,
+        TRADEIFY_STARTING_BALANCE,
+        direction,
+        stopLossPrice,
+        decision.riskDollars
+      )
+      if (!tfSizing) {
+        return NextResponse.json({ error: 'Invalid stop or account for sizing' }, { status: 400 })
+      }
+      size = tfSizing.position_size
+      risk = tfSizing.risk_amount
+      accountForRow = TRADEIFY_STARTING_BALANCE
+    } else {
+      const riskPct = riskPercentForEntrySource(entrySource, gate.attemptsUsed)
+      const sizing = getPositionSizer().calculatePosition(
+        level,
+        account,
+        direction,
+        stopLossPrice,
+        riskPct
+      )
+      if (!sizing) {
+        return NextResponse.json({ error: 'Invalid stop or account for sizing' }, { status: 400 })
+      }
+      size = sizing.position_size
+      risk = sizing.risk_amount
     }
-    const size = sizing.position_size
-    const risk = sizing.risk_amount
+    const riskPct = accountForRow > 0 ? (risk / accountForRow) * 100 : 0
 
     const now = new Date().toISOString()
     const { data: row, error } = await supabase
@@ -434,7 +477,7 @@ export async function POST(request: Request) {
         stop_loss_hit_count: 0,
         position_size: size,
         risk_amount: risk || 0,
-        account_size: account,
+        account_size: accountForRow,
         exit_timestamp: null,
         exit_price: null,
         exit_reason: null,
@@ -471,7 +514,7 @@ export async function POST(request: Request) {
             stop_loss_hit_count: 0,
             position_size: size,
             risk_amount: risk || 0,
-            account_size: account,
+            account_size: accountForRow,
             exit_timestamp: null,
             exit_price: null,
             exit_reason: null,
@@ -513,7 +556,7 @@ export async function POST(request: Request) {
             position_size: size,
             risk_amount: risk,
             risk_percent: riskPct,
-            account_size: account,
+            account_size: accountForRow,
             stop_loss_price: stopLossPrice,
             profit_target_price: Number.isFinite(target) ? target : null,
           })
@@ -547,7 +590,7 @@ export async function POST(request: Request) {
       position_size: size,
       risk_amount: risk,
       risk_percent: riskPct,
-      account_size: account,
+      account_size: accountForRow,
       stop_loss_price: stopLossPrice,
       profit_target_price: Number.isFinite(target) ? target : null,
       message: 'Working limit placed — not on Positions until filled',

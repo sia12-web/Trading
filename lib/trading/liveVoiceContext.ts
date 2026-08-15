@@ -59,6 +59,20 @@ import {
   buildRangeLiquidityBrief,
   formatRangeLiquidityBriefForPrompt,
 } from '@/lib/trading/rangeLiquidityBrief'
+import {
+  buildLeoSessionTiming,
+  type LeoSessionTiming,
+} from '@/lib/trading/leoSessionTiming'
+import {
+  tradeifyLeoEntryRule,
+  type TradeifyLeoSnapshot,
+} from '@/lib/trading/tradeifyLeoBlock'
+import { isTradeifyGrowth50k } from '@/lib/trading/tradeifyProfile'
+import { resolveDeskRiskProfileForUser } from '@/lib/trading/tradeifyProfileStore'
+import {
+  loadTradeifySessionSnapshot,
+  toTradeifyLeoSnapshot,
+} from '@/lib/trading/tradeifySessionState'
 import { getYahooCandles } from '@/lib/yahoo/candles'
 import { getYahooQuote } from '@/lib/yahoo/quote'
 
@@ -114,6 +128,8 @@ export type LiveVoiceDeskContext = {
       tz: string
       tzLabel: string
     }
+    /** Fresh wall-clock OR30 / IB / lunch (or Nikkei US / Tokyo IB) status for Leo. */
+    timing: LeoSessionTiming
   }
   risk: {
     deskRiskPercent: number
@@ -122,6 +138,8 @@ export type LiveVoiceDeskContext = {
     maxStopHits: number
     entryRule: string
   }
+  /** Present only when Tradeify $50k profile is on — Leo/Telegram stay silent otherwise. */
+  tradeify?: TradeifyLeoSnapshot | null
   /** Printed OR30 / slot-2 / slot-3 bait facts for Leo (optional). */
   rangeLiquidityBriefText?: string | null
   /** Latest good/strong ±10 range-edge tail (other-TF footprint). */
@@ -254,7 +272,8 @@ export async function buildLiveVoiceDeskContext(
   supabase: SupabaseClient,
   userId: string,
   viewingInstrument: string | null | undefined,
-  now = new Date()
+  now = new Date(),
+  opts?: { riskProfile?: string | null; cookieHeader?: string | null }
 ): Promise<LiveVoiceDeskContext> {
   const viewing: DeskInstrument = isLiveDeskInstrument(viewingInstrument || '')
     ? (viewingInstrument as DeskInstrument)
@@ -267,7 +286,7 @@ export async function buildLiveVoiceDeskContext(
   const marketInstruments = instrumentsForDeskMarket(market)
   const tradeDate = tradeDateForInstrument(lockedInstrument ?? viewing, now)
 
-  const [openPosRes, filledRes, workingRes] = await Promise.all([
+  const [openPosRes, filledRes, workingRes, riskProfile, tradeifySnap] = await Promise.all([
     supabase
       .from('trades_journal')
       .select('id, instrument, direction, fill_price, entry_level, stop_loss, take_profit, entry_source')
@@ -291,6 +310,13 @@ export async function buildLiveVoiceDeskContext(
       .eq('trade_date', tradeDate)
       .in('instrument', marketInstruments)
       .eq('fill_status', 'working'),
+    resolveDeskRiskProfileForUser({
+      supabase,
+      userId,
+      hint: opts?.riskProfile,
+      cookieHeader: opts?.cookieHeader,
+    }),
+    loadTradeifySessionSnapshot(supabase, userId, now),
   ])
 
   const openPos = openPosRes.data
@@ -508,6 +534,13 @@ export async function buildLiveVoiceDeskContext(
     ladder,
   })
 
+  // Always rebuild from this request's `now` — never reuse a stale snapshot.
+  const timing = buildLeoSessionTiming({
+    instrument: contextInstrument,
+    now,
+    ladder,
+  })
+
   const rangeTail = await buildRangeEdgeTailBrief({
     instrument: contextInstrument,
     now,
@@ -619,17 +652,22 @@ export async function buildLiveVoiceDeskContext(
         tz: TRADER_DISPLAY_TZ,
         tzLabel,
       },
+      timing,
     },
     risk: {
       deskRiskPercent: riskPercentForSessionAttempt(gate.attemptsUsed ?? attemptsUsed),
       manualRiskPercent: riskPercentForSessionAttempt(gate.attemptsUsed ?? attemptsUsed),
       maxAttempts: MAX_DAY_ATTEMPTS,
       maxStopHits: MAX_STOP_HITS,
-      entryRule:
-        contextInstrument === 'NIKKEI'
-          ? 'Session max 3 fills total, win/loss/breakeven all count (up to 2 each: AM/OR30 + US Range + IB). Progressive risk 2% → 1% → 0.5% by fill # (outcome does not matter). Next window unlocks when prior clock ends or probes are exhausted, but the 3-fill session cap always wins even with spare window probes. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books ride to cash-close flatten. Voice never places orders. Range H/L = retail bait; 50% mid = pullback/reverse magnet on OR30/Tokyo IB (not US Range). Desk hunts stops just beyond edges with POC/AVWAP confluence. Entries within ±10 of active range H/L (OR30/IB also allow 50% mid; US Range is H/L only). Ticket sets initial SL beyond active range (or zone floor) and TP at opposing edge/magnets; post-fill BE/trail manage is separate.'
-          : 'Session max 3 fills total, win/loss/breakeven all count (up to 2 each: AM/OR30 + IB + LN). Progressive risk 2% → 1% → 0.5% by fill # (outcome does not matter). Next window unlocks when prior clock ends or probes are exhausted, but the 3-fill session cap always wins even with spare window probes. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books ride to cash-close flatten. Voice never places orders. Range H/L = retail bait; 50% mid = pullback/reverse magnet; desk hunts stops just beyond edges with POC/AVWAP confluence. Entries only within ±10 pts of active range high, 50% mid, or low. Ticket sets initial SL beyond active range (or zone floor) and TP at opposing edge/magnets; post-fill BE/trail manage is separate.',
+      entryRule: isTradeifyGrowth50k(riskProfile)
+        ? tradeifyLeoEntryRule(contextInstrument)
+        : contextInstrument === 'NIKKEI'
+          ? 'Session max 3 fills total, win/loss/breakeven all count (up to 2 each: AM/OR30 + US Range + IB). Progressive risk 2% → 1% → 0.5% by fill # (outcome does not matter). Next window unlocks when prior clock ends or probes are exhausted, but the 3-fill session cap always wins even with spare window probes. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books ride to cash-close flatten. Voice never places orders. Range H/L = retail bait; 50% mid = pullback/reverse magnet on OR30/Tokyo IB (not US Range). Desk hunts stops just beyond edges with POC/AVWAP confluence. Entries within ±10 of active range H/L (OR30/IB also allow 50% mid; US Range is H/L only). Ticket sets initial SL beyond active range (or zone floor) and TP at 1.5R of that stop (1:1.5); post-fill BE/trail manage is separate.'
+          : 'Session max 3 fills total, win/loss/breakeven all count (up to 2 each: AM/OR30 + IB + LN). Progressive risk 2% → 1% → 0.5% by fill # (outcome does not matter). Next window unlocks when prior clock ends or probes are exhausted, but the 3-fill session cap always wins even with spare window probes. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books ride to cash-close flatten. Voice never places orders. Range H/L = retail bait; 50% mid = pullback/reverse magnet; desk hunts stops just beyond edges with POC/AVWAP confluence. Entries only within ±10 pts of active range high, 50% mid, or low. Ticket sets initial SL beyond active range (or zone floor) and TP at 1.5R of that stop (1:1.5); post-fill BE/trail manage is separate.',
     },
+    tradeify: isTradeifyGrowth50k(riskProfile)
+      ? toTradeifyLeoSnapshot(tradeifySnap, now)
+      : null,
     rangeLiquidityBriefText,
     rangeTail,
     avwap: {

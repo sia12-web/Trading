@@ -9,10 +9,23 @@ import { useMemo, useState, useEffect, useRef } from 'react'
 import {
   normalizeEntrySource,
   previewPositionSizing,
+  previewPositionSizingFromRiskAmount,
   riskPercentForEntrySource,
   takeProfitFromStopR,
   type DeskEntrySource,
 } from '@/lib/trading/positionSizing'
+import {
+  DESK_RISK_PROFILE_EVENT,
+  getDeskRiskProfile,
+  isTradeifyGrowth50k,
+  type DeskRiskProfile,
+} from '@/lib/trading/tradeifyProfile'
+import {
+  TRADEIFY_STARTING_BALANCE,
+  formatTradeifyRiskChip,
+  resolveTradeifyPlace,
+  type TradeifyPlaceDecision,
+} from '@/lib/trading/tradeifyGrowth50k'
 import { formatZone } from '@/lib/trading/deskLevels'
 import {
   strategyEntryRisk,
@@ -58,6 +71,7 @@ export interface PendingLimitOrder {
   regime: 'bullish' | 'bearish' | 'choppy'
   regimeConfidence: number
   placedAt: number
+  riskProfile?: 'oanda_cash' | 'tradeify_growth_50k'
   /** Durable trades_journal row — required for TP amend while working */
   workingId?: string
   /** Active playbook range for ±10 entry gate (API + fill) */
@@ -159,7 +173,61 @@ export function LevelOrderTicket({
     levelType === 'structure' ? 'structure' : 'ai'
   )
   const isManual = entrySource === 'manual'
-  const riskPct = riskPercentForEntrySource(entrySource, sessionFillsUsed)
+  const [riskProfile, setRiskProfile] = useState<DeskRiskProfile>('oanda_cash')
+  const [tradeifyDecision, setTradeifyDecision] = useState<TradeifyPlaceDecision | null>(
+    null
+  )
+  const tradeifyOn = isTradeifyGrowth50k(riskProfile)
+  const tradeifyFills = tradeifyDecision?.fillsUsed ?? sessionFillsUsed
+  const oandaRiskPct = riskPercentForEntrySource(entrySource, sessionFillsUsed)
+  const riskPct = tradeifyOn
+    ? tradeifyDecision
+      ? (tradeifyDecision.riskDollars / TRADEIFY_STARTING_BALANCE) * 100
+      : 0.8
+    : oandaRiskPct
+
+  useEffect(() => {
+    const sync = () => setRiskProfile(getDeskRiskProfile())
+    sync()
+    window.addEventListener(DESK_RISK_PROFILE_EVENT, sync)
+    window.addEventListener('storage', sync)
+    return () => {
+      window.removeEventListener(DESK_RISK_PROFILE_EVENT, sync)
+      window.removeEventListener('storage', sync)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!tradeifyOn) {
+      setTradeifyDecision(null)
+      return
+    }
+    let cancelled = false
+    fetch('/api/trading/tradeify-snapshot', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (cancelled) return
+        if (json?.ok) {
+          setTradeifyDecision(
+            resolveTradeifyPlace({
+              fillsUsed: json.fillsUsed,
+              dailyPnl: json.dailyPnl,
+              stopOutsToday: json.stopOutsToday,
+            })
+          )
+          return
+        }
+        setTradeifyDecision(resolveTradeifyPlace({ fillsUsed: sessionFillsUsed }))
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTradeifyDecision(resolveTradeifyPlace({ fillsUsed: sessionFillsUsed }))
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [tradeifyOn, sessionFillsUsed])
 
   // preferredDirection / playbook side win; then type; regime last
   const typeLower = String(levelType || '').toLowerCase()
@@ -390,17 +458,33 @@ export function LevelOrderTicket({
     strategyRisk,
   ])
 
-  const preview = useMemo(
-    () =>
-      previewPositionSizing(
+  const preview = useMemo(() => {
+    if (tradeifyOn && tradeifyDecision && stopForSizing != null) {
+      if (!tradeifyDecision.allowed) return null
+      return previewPositionSizingFromRiskAmount(
         snappedLimit,
-        accountSize,
+        TRADEIFY_STARTING_BALANCE,
         direction,
         stopForSizing,
-        riskPct
-      ),
-    [snappedLimit, accountSize, direction, stopForSizing, riskPct]
-  )
+        tradeifyDecision.riskDollars
+      )
+    }
+    return previewPositionSizing(
+      snappedLimit,
+      accountSize,
+      direction,
+      stopForSizing,
+      riskPct
+    )
+  }, [
+    tradeifyOn,
+    tradeifyDecision,
+    snappedLimit,
+    accountSize,
+    direction,
+    stopForSizing,
+    riskPct,
+  ])
 
   const strategyTp = useMemo(() => {
     if (!strategyRisk || !strategyRange || !stopForSizing) return null
@@ -444,6 +528,10 @@ export function LevelOrderTicket({
       failSubmit(
         'Entries locked — check session gate / attempt ladder / locked instrument'
       )
+      return false
+    }
+    if (tradeifyOn && tradeifyDecision && !tradeifyDecision.allowed) {
+      failSubmit(tradeifyDecision.refuseMessage)
       return false
     }
     const edge = assertRangeEdgeEntry({ entry: snappedLimit, range: strategyRange })
@@ -497,7 +585,15 @@ export function LevelOrderTicket({
 
     // Re-size off snapped prices so risk stays exact
     const sized =
-      previewPositionSizing(limit, accountSize, direction, stop, riskPct) ?? preview
+      (tradeifyOn && tradeifyDecision
+        ? previewPositionSizingFromRiskAmount(
+            limit,
+            TRADEIFY_STARTING_BALANCE,
+            direction,
+            stop,
+            tradeifyDecision.riskDollars
+          )
+        : previewPositionSizing(limit, accountSize, direction, stop, riskPct)) ?? preview
 
     onPlaced({
       instrument,
@@ -507,15 +603,20 @@ export function LevelOrderTicket({
       entryReason:
         entryReason ||
         (isManual
-          ? `Manual ${direction} limit @ ${limit.toLocaleString()} — ${riskPct}% risk`
+          ? `Manual ${direction} limit @ ${limit.toLocaleString()} — ${
+              tradeifyOn
+                ? formatTradeifyRiskChip(tradeifyFills)
+                : `${riskPct}% risk`
+            }`
           : `${direction} at ${levelType || 'desk'} level ${limit.toLocaleString()} — liquidity / stop-pool thesis`),
       direction,
       stopLoss: stop,
       profitTarget: tp,
       positionSize: sized.position_size,
       riskAmount: sized.risk_amount,
-      riskPercent: riskPct,
-      accountSize,
+      riskPercent: sized.risk_percent,
+      accountSize: tradeifyOn ? TRADEIFY_STARTING_BALANCE : accountSize,
+      riskProfile: tradeifyOn ? 'tradeify_growth_50k' : 'oanda_cash',
       entryWindow,
       regime,
       regimeConfidence,
@@ -562,8 +663,9 @@ export function LevelOrderTicket({
   // the auto-confirm effect above submits as soon as sizing is ready.
   if (autoConfirm) return null
 
-  const sourceBadge =
-    entrySource === 'manual'
+  const sourceBadge = tradeifyOn
+    ? `${entrySource === 'manual' ? 'Manual' : entrySource === 'structure' ? 'Structure' : 'AI'} · ${formatTradeifyRiskChip(tradeifyFills)}`
+    : entrySource === 'manual'
       ? `Manual · ${riskPct}% risk (fill ${Math.min(sessionFillsUsed + 1, 3)}/3)`
       : entrySource === 'structure'
         ? `Structure · ${riskPct}% risk (fill ${Math.min(sessionFillsUsed + 1, 3)}/3)`
@@ -686,15 +788,17 @@ export function LevelOrderTicket({
         </div>
 
         <label className="mt-4 block text-[10px] uppercase tracking-wider text-gray-500">
-          {accountSource === 'live'
+          {tradeifyOn
+            ? 'Tradeify Growth $50k (sizing account)'
+            : accountSource === 'live'
             ? `Live OANDA NAV (${deskCurrencyLabel()})`
             : accountSource === 'paper'
               ? `Paper account (${deskCurrencyLabel()})`
               : `Account size (${deskCurrencyLabel()})`}
           <input
             type="number"
-            value={accountSize}
-            readOnly={accountSource === 'live'}
+            value={tradeifyOn ? TRADEIFY_STARTING_BALANCE : accountSize}
+            readOnly={tradeifyOn || accountSource === 'live'}
             onChange={(e) => {
               if (accountSource === 'live') return
               setAccountSize(Number(e.target.value) || 0)
@@ -707,7 +811,18 @@ export function LevelOrderTicket({
         {accountLoading && (
           <p className="mt-1 text-[10px] text-sky-400/90">Loading live OANDA equity…</p>
         )}
-        {!accountLoading && accountSource === 'live' && (
+        {tradeifyOn && tradeifyDecision && (
+          <p
+            className={`mt-1 text-[10px] ${
+              tradeifyDecision.allowed ? 'text-sky-300/90' : 'text-red-300'
+            }`}
+          >
+            {tradeifyDecision.allowed
+              ? `${formatTradeifyRiskChip(tradeifyFills)} · leftover DLL $${Math.round(tradeifyDecision.leftoverDll)} · floor room $${Math.round(tradeifyDecision.floorRoom)}`
+              : tradeifyDecision.refuseMessage}
+          </p>
+        )}
+        {!tradeifyOn && !accountLoading && accountSource === 'live' && (
           <p className="mt-1 text-[10px] text-emerald-400/90">
             Risk = {riskPct}% of live NAV
             {marginAvailable != null
@@ -754,7 +869,7 @@ export function LevelOrderTicket({
                 onChange={(e) => {
                   const next = Number(e.target.value)
                   setStopInput(next)
-                  // SL edit → TP tracks 2R (magnets / presets only seed initial suggest)
+                  // SL edit → TP tracks 1.5R (initial ticket is always 1:1.5)
                   if (
                     Number.isFinite(next) &&
                     next > 0 &&
@@ -815,7 +930,7 @@ export function LevelOrderTicket({
                   ? 'Target'
                   : strategyRange
                     ? `Target (${strategyRange.label} / magnets)`
-                    : 'Target (2R)'}
+                    : 'Target (1.5R)'}
               </span>
               <span className="price-mono text-green-400">
                 {displayTp.toLocaleString('en-US', { maximumFractionDigits: 0 })}

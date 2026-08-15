@@ -193,6 +193,14 @@ function defaultManualStop(limit: number, direction: 'LONG' | 'SHORT'): number {
   return direction === 'LONG' ? limit * (1 - pct) : limit * (1 + pct)
 }
 
+function defaultManualTarget(
+  entry: number,
+  stop: number,
+  direction: 'LONG' | 'SHORT'
+): number {
+  return takeProfitFromStopR({ entry, stop, direction })
+}
+
 const HIGHLIGHT_COLOR_PALETTES = [
   {
     border: 'border-violet-500',
@@ -1448,6 +1456,8 @@ export function TradingChart({
     /** Band book from click/snap — confirm must not re-bill US H/L as Tokyo IB mid. */
     preferRangeLabel?: string | null
   } | null>(null)
+  const riskBoxRef = useRef(riskBox)
+  riskBoxRef.current = riskBox
   const riskBoxLinesRef = useRef<any[]>([])
 
   // Draggable chart price alert — Telegram on touch (A key / toolbar)
@@ -1462,6 +1472,7 @@ export function TradingChart({
   const [editableOverlay, setEditableOverlay] = useState<PositionOverlay | null>(null)
   const editableOverlayRef = useRef<PositionOverlay | null>(null)
   const draggingBracketRef = useRef<'SL' | 'TP' | null>(null)
+  const ignorePriceFromPointerUntilRef = useRef(0)
   const bracketDragStartRef = useRef<{ stopLoss: number; profitTarget: number } | null>(null)
   const onAdjustBracketsRef = useRef(onAdjustBrackets)
   onAdjustBracketsRef.current = onAdjustBrackets
@@ -1660,6 +1671,8 @@ export function TradingChart({
     showLunchRange,
     ibLevels,
   ])
+  const getStrategyRiskBundleRef = useRef(getStrategyRiskBundle)
+  getStrategyRiskBundleRef.current = getStrategyRiskBundle
 
   /** Open Limit risk box with entry locked to a painted ±10 band center. */
   const openRiskBox = useCallback(
@@ -1728,15 +1741,13 @@ export function TradingChart({
         const dir: 'LONG' | 'SHORT' =
           opts.direction ??
           (edge === 'high' ? 'SHORT' : edge === 'low' ? 'LONG' : 'LONG')
+        const sl = defaultManualStop(entry, dir)
         setRiskBox({
           direction: dir,
           orderType: 'LIMIT',
           entryPrice: entry,
-          stopLoss: defaultManualStop(entry, dir),
-          profitTarget: snapDeskPrice(
-            instrument,
-            dir === 'LONG' ? entry * 1.0105 : entry * (1 - 0.0105)
-          ),
+          stopLoss: sl,
+          profitTarget: snapDeskPrice(instrument, defaultManualTarget(entry, sl, dir)),
           preferRangeLabel: range.label ?? strategyRange?.label ?? null,
         })
         setRiskBoxActive(true)
@@ -1808,15 +1819,13 @@ export function TradingChart({
           : snapped.hit.edge === 'low'
             ? 'LONG'
             : 'LONG')
+      const sl = defaultManualStop(entry, dir)
       setRiskBox({
         direction: dir,
         orderType: 'LIMIT',
         entryPrice: entry,
-        stopLoss: defaultManualStop(entry, dir),
-        profitTarget: snapDeskPrice(
-          instrument,
-          dir === 'LONG' ? entry * 1.0105 : entry * (1 - 0.0105)
-        ),
+        stopLoss: sl,
+        profitTarget: snapDeskPrice(instrument, defaultManualTarget(entry, sl, dir)),
         preferRangeLabel: snapped.hit.range.label ?? strategyRange?.label ?? null,
       })
       setRiskBoxActive(true)
@@ -2516,6 +2525,7 @@ export function TradingChart({
     // Responsive resize
     const ro = new ResizeObserver(() => {
       if (containerRef.current && chartRef.current) {
+        ignorePriceFromPointerUntilRef.current = Date.now() + 350
         chartRef.current.resize(
           containerRef.current.clientWidth,
           containerRef.current.clientHeight
@@ -4461,6 +4471,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
     const onMouseMove = (e: MouseEvent) => {
       if (!draggingRiskLineRef.current || !containerRef.current || !candleRef.current) return
+      if (Date.now() < ignorePriceFromPointerUntilRef.current) return
       const rect = containerRef.current.getBoundingClientRect()
       const y = e.clientY - rect.top
       if (y < 0 || y > rect.height) return
@@ -4468,7 +4479,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       if (rawPrice == null || !Number.isFinite(Number(rawPrice)) || Number(rawPrice) <= 0) return
 
       const snappedRaw = snapDeskPrice(instrument, Number(rawPrice))
-      const { snapRanges } = getStrategyRiskBundle()
+      const { snapRanges } = getStrategyRiskBundleRef.current()
 
       if (draggingRiskLineRef.current === 'ENTRY') {
         // Free vertical follow within the outer ±10 envelope (H ↔ Mid ↔ L reachable).
@@ -4488,7 +4499,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       } else if (draggingRiskLineRef.current === 'TP') {
         setRiskBox((prev) => (prev ? { ...prev, profitTarget: snappedRaw } : null))
       } else if (draggingRiskLineRef.current === 'SL') {
-        // Manual SL drag: TP follows 2R of new |entry−SL| (magnets only seed initial suggest)
+        // Manual SL drag: TP follows 1.5R of new |entry−SL|
         setRiskBox((prev) => {
           if (!prev) return null
           const isLong = prev.direction === 'LONG'
@@ -4513,7 +4524,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       const was = draggingRiskLineRef.current
       draggingRiskLineRef.current = null
       if (was !== 'ENTRY') return
-      const { snapRanges, strategyRange, ladder } = getStrategyRiskBundle()
+      const { snapRanges, strategyRange, ladder } = getStrategyRiskBundleRef.current()
       setRiskBox((prev) => {
         if (!prev) return null
         const snapped = snapEntryToNearestOpenBandCenter({
@@ -4546,7 +4557,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       window.removeEventListener('mousemove', onMouseMove, true)
       window.removeEventListener('mouseup', onMouseUp, true)
     }
-  }, [riskBox, instrument, getStrategyRiskBundle])
+  }, [riskBox != null, instrument])
 
   // Drag filled-position SL/TP (Entry fixed). Commit on mouseup via onAdjustBrackets.
   const onBracketLineMouseDown = useCallback(
@@ -4570,6 +4581,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
     const onMouseMove = (e: MouseEvent) => {
       if (!draggingBracketRef.current || !containerRef.current || !candleRef.current) return
+      if (Date.now() < ignorePriceFromPointerUntilRef.current) return
       const rect = containerRef.current.getBoundingClientRect()
       const y = e.clientY - rect.top
       if (y < 0 || y > rect.height) return
@@ -4582,7 +4594,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
       if (draggingBracketRef.current === 'SL') {
         if (isLong ? !(snapped < ov.entryPrice) : !(snapped > ov.entryPrice)) return
-        // Filled position: SL drag re-locks TP to 2R of new stop distance
+        // Filled position: SL drag re-locks TP to 1.5R of new stop distance
         setEditableOverlay((prev) => {
           if (!prev) return null
           const dir = prev.direction === 'long' ? 'LONG' : 'SHORT'
@@ -4627,7 +4639,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       window.removeEventListener('mousemove', onMouseMove, true)
       window.removeEventListener('mouseup', onMouseUp, true)
     }
-  }, [editableOverlay, riskBox, instrument])
+  }, [editableOverlay != null, riskBox != null, instrument])
 
   const onWorkingTpMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -4648,6 +4660,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
     const onMouseMove = (e: MouseEvent) => {
       if (!draggingWorkingBracketRef.current || !containerRef.current || !candleRef.current) return
+      if (Date.now() < ignorePriceFromPointerUntilRef.current) return
       const rect = containerRef.current.getBoundingClientRect()
       const y = e.clientY - rect.top
       if (y < 0 || y > rect.height) return
@@ -4679,7 +4692,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       window.removeEventListener('mousemove', onMouseMove, true)
       window.removeEventListener('mouseup', onMouseUp, true)
     }
-  }, [editablePending, riskBox, positionOverlay, instrument])
+  }, [editablePending != null, riskBox != null, positionOverlay != null, instrument])
 
   // Paint interactive limit risk-box lines on chart
   useEffect(() => {
@@ -5042,6 +5055,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
     const onFsChange = () => {
       setIsFullscreen(!!document.fullscreenElement)
+      ignorePriceFromPointerUntilRef.current = Date.now() + 400
+      draggingRiskLineRef.current = null
+      draggingBracketRef.current = null
+      draggingWorkingBracketRef.current = null
+      bracketDragStartRef.current = null
     }
 
     window.addEventListener('keydown', handleKeyDown)

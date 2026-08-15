@@ -77,6 +77,11 @@ import { infoToast, warningToast, successToast } from '@/lib/utils/toastUtils'
 import { LiveDeskBriefPanel } from './components/LiveDeskBriefPanel'
 import type { LiveDeskBrief } from '@/lib/trading/liveDeskBrief'
 import type { DeskInstrument } from '@/lib/trading/sessionGate'
+import { getDeskRiskProfile, isTradeifyGrowth50k } from '@/lib/trading/tradeifyProfile'
+import {
+  tradeifyFlattenOverridesKeepOpen,
+  tradeifyMustFlatten,
+} from '@/lib/trading/tradeifyGrowth50k'
 
 /** Why new entries are blocked — shown on market/limit place attempts. */
 function entryDeniedMessage(gate: SessionGateState | null | undefined): string | null {
@@ -707,7 +712,10 @@ export default function ChartPage() {
         !wasFetchLive &&
         claimDeskNoteOnce('session_start', inst)
       ) {
-        const msg = formatSessionStartNote({ instrument: inst })
+        const msg = formatSessionStartNote({
+          instrument: inst,
+          tradeify: isTradeifyGrowth50k(getDeskRiskProfile()),
+        })
         infoToast(msg.title, 6000)
         void fetch('/api/notify/desk-alert', {
           method: 'POST',
@@ -1218,6 +1226,7 @@ export default function ChartPage() {
             range_high: pend.strategyRange?.high,
             range_low: pend.strategyRange?.low,
             range_label: pend.strategyRange?.label,
+            risk_profile: pend.riskProfile ?? 'oanda_cash',
           }),
         })
         const json = await res.json()
@@ -1306,6 +1315,7 @@ export default function ChartPage() {
           range_high: order.strategyRange?.high,
           range_low: order.strategyRange?.low,
           range_label: order.strategyRange?.label,
+          risk_profile: order.riskProfile ?? 'oanda_cash',
         }),
       })
       if (gen !== orderGenRef.current) return
@@ -1549,18 +1559,29 @@ export default function ChartPage() {
       setLunchFlatPrompt(false)
       return
     }
+    const tradeifyOn = isTradeifyGrowth50k(getDeskRiskProfile())
+    if (tradeifyOn && tradeifyFlattenOverridesKeepOpen()) {
+      setLunchFlatPrompt(false)
+      void expireWorkingLimits({ forceExpireWorking: true, forceCashClose: true })
+      return
+    }
     if (hasLunchFlatKeepOpen(liveLunchFlatKeepOpenKey(managePos.id))) {
       setLunchFlatPrompt(false)
       return
     }
     setLunchFlatPrompt(true)
-  }, [managePos, gateTick])
+  }, [managePos, gateTick, expireWorkingLimits])
 
-  // Cash close: force-flatten while MANAGE may still be active (open book past marketClose)
+  // Cash close + Tradeify 16:59 flatten (beats keep-open / Nikkei 02:00 hold)
   useEffect(() => {
     if (!managePos) return
     const inst = managePos.instrument as Instrument
     const tick = () => {
+      const tradeifyOn = isTradeifyGrowth50k(getDeskRiskProfile())
+      if (tradeifyOn && tradeifyMustFlatten()) {
+        void expireWorkingLimits({ forceExpireWorking: true, forceCashClose: true })
+        return
+      }
       if (isPastCashCloseNow(inst)) {
         void expireWorkingLimits({ forceExpireWorking: true, forceCashClose: true })
       }
