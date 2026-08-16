@@ -158,14 +158,25 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
               pnl == null
                 ? '—'
                 : `${pnl >= 0 ? '+' : ''}$${Math.abs(pnl).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+            const sl =
+              p.stop == null
+                ? 'SL —'
+                : p.stopStatus && p.stopStatus !== 'working'
+                  ? `SL ${p.stop} (${p.stopStatus})`
+                  : `SL ${p.stop}`
+            const tp =
+              p.target == null
+                ? 'TP —'
+                : p.targetStatus && p.targetStatus !== 'working'
+                  ? `TP ${p.target} (${p.targetStatus})`
+                  : `TP ${p.target}`
             return (
               <p key={p.sourceId} className="text-xs text-gray-300">
                 <span className={p.side === 'BUY' ? 'text-emerald-300' : 'text-red-300'}>
                   {p.side}
                 </span>{' '}
                 {p.label} × {p.quantity}
-                {p.stop != null ? ` · SL ${p.stop}` : ' · SL —'}
-                {p.target != null ? ` · TP ${p.target}` : ' · TP —'}
+                {` · ${sl} · ${tp}`}
                 {' · live '}
                 <span
                   className={
@@ -177,6 +188,26 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
               </p>
             )
           })}
+        </div>
+      ) : null}
+
+      {book?.levels.length ? (
+        <div className="mt-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+            All stops & targets
+          </p>
+          <div className="mt-1.5 space-y-1">
+            {book.levels.map((l) => (
+              <p key={`${l.kind}-${l.sourceId}`} className="text-xs text-gray-300">
+                <span className={l.kind === 'sl' ? 'text-red-300' : 'text-emerald-300'}>
+                  {l.kind === 'sl' ? 'SL' : 'TP'}
+                </span>{' '}
+                {l.label} @ {l.price}
+                {' · '}
+                {l.status}
+              </p>
+            ))}
+          </div>
         </div>
       ) : null}
 

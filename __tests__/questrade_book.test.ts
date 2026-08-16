@@ -179,4 +179,144 @@ const noIndex = buildQuestradeTradeifyTransfer({
 assert.equal(noIndex.ticket, null)
 assert.match(noIndex.note, /No index last/)
 
+assert.equal(book.levels.length, 2)
+assert.ok(book.levels.some((l) => l.kind === 'sl' && l.price === 300 && l.status === 'working'))
+assert.ok(book.levels.some((l) => l.kind === 'tp' && l.price === 320 && l.status === 'working'))
+
+const now = new Date('2026-08-15T21:00:00-04:00')
+const optionSides = pairQuestradeBook({
+  now,
+  orders: [
+    {
+      id: 40,
+      symbol: 'NVDA  22Aug26C180.00',
+      side: 'BTO',
+      orderType: 'Limit',
+      state: 'Executed',
+      totalQuantity: 2,
+      avgExecPrice: 6.4,
+      orderGroupId: 900,
+      orderClass: 'Primary',
+      updateTime: '2026-08-15T14:00:00Z',
+    },
+    {
+      id: 41,
+      symbol: 'NVDA  22Aug26C180.00',
+      side: 'STC',
+      orderType: 'TrailStopInDollar',
+      state: 'Accepted',
+      totalQuantity: 2,
+      stopPrice: 4.1,
+      orderGroupId: 900,
+      orderClass: 'StopLoss',
+      updateTime: '2026-08-15T14:01:00Z',
+    },
+    {
+      id: 42,
+      symbol: 'NVDA  22Aug26C180.00',
+      side: 'STC',
+      orderType: 'Limit',
+      state: 'ContingentOrder',
+      totalQuantity: 2,
+      limitPrice: 9.2,
+      orderGroupId: 900,
+      orderClass: 'Limit',
+      updateTime: '2026-08-15T14:01:00Z',
+    },
+  ],
+  positions: [
+    {
+      symbol: 'NVDA  22Aug26C180.00',
+      openQuantity: 2,
+      averageEntryPrice: 6.4,
+      currentPrice: 7.1,
+      openPnl: 140,
+    },
+  ],
+})
+const nvda = optionSides.openPositions[0]
+assert.ok(nvda)
+assert.equal(nvda.stop, 4.1)
+assert.equal(nvda.target, 9.2)
+assert.equal(nvda.stopStatus, 'working')
+assert.equal(nvda.targetStatus, 'working')
+
+const flattened = pairQuestradeBook({
+  now,
+  orders: [
+    {
+      id: 50,
+      symbol: 'AMD',
+      side: 'Buy',
+      orderType: 'Limit',
+      state: 'Executed',
+      totalQuantity: 10,
+      avgExecPrice: 160,
+      updateTime: '2026-08-15T15:00:00Z',
+    },
+    {
+      id: 51,
+      symbol: 'AMD',
+      side: 'Sell',
+      orderType: 'Stop',
+      state: 'Canceled',
+      totalQuantity: 10,
+      stopPrice: 154,
+      parentId: 50,
+      updateTime: '2026-08-15T15:40:00Z',
+    },
+    {
+      id: 52,
+      symbol: 'AMD',
+      side: 'Sell',
+      orderType: 'Limit',
+      state: 'Canceled',
+      totalQuantity: 10,
+      limitPrice: 172,
+      parentId: 50,
+      updateTime: '2026-08-15T15:40:00Z',
+    },
+  ],
+})
+const amd = flattened.history[0]
+assert.ok(amd)
+assert.equal(amd.stop, 154)
+assert.equal(amd.target, 172)
+assert.equal(amd.stopStatus, 'cancelled')
+assert.equal(amd.targetStatus, 'cancelled')
+assert.ok(flattened.levels.some((l) => l.kind === 'sl' && l.price === 154 && l.status === 'cancelled'))
+assert.ok(flattened.levels.some((l) => l.kind === 'tp' && l.price === 172 && l.status === 'cancelled'))
+
+const orphanStop = pairQuestradeBook({
+  now,
+  orders: [
+    {
+      id: 61,
+      symbol: 'META  22Aug26P500.00',
+      side: 'STC',
+      orderType: 'StopLimit',
+      state: 'Working',
+      totalQuantity: 1,
+      stopPrice: 8.5,
+      limitPrice: 8.4,
+      parentId: 999,
+      updateTime: '2026-08-15T16:00:00Z',
+    },
+  ],
+  positions: [
+    {
+      symbol: 'META  22Aug26P500.00',
+      openQuantity: 1,
+      averageEntryPrice: 12,
+      currentPrice: 11,
+      openPnl: -100,
+    },
+  ],
+})
+const meta = orphanStop.openPositions[0]
+assert.ok(meta)
+assert.equal(meta.stop, 8.5)
+assert.equal(orphanStop.levels.length, 1)
+assert.equal(orphanStop.levels[0]?.kind, 'sl')
+
 console.log('questrade_book.test.ts: ok')

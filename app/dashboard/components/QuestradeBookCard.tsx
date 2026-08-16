@@ -14,7 +14,7 @@ import {
   YAxis,
 } from 'recharts'
 import type { QuestradeBookPayload } from '@/lib/trading/questradeBook'
-import type { QuestradeBookRow } from '@/lib/trading/questradeOrders'
+import type { QuestradeBookRow, QuestradeProtectiveLevel } from '@/lib/trading/questradeOrders'
 import type { QuestradeTradeifyTransfer } from '@/lib/trading/questradeTransfer'
 
 function money(n: number | null | undefined, digits = 0): string {
@@ -43,6 +43,16 @@ function pnlClass(n: number | null | undefined): string {
   return 'text-gray-400'
 }
 
+function levelTag(
+  kind: 'SL' | 'TP',
+  price: number | null,
+  status?: QuestradeBookRow['stopStatus']
+): string {
+  if (price == null) return `${kind} —`
+  if (status && status !== 'working') return `${kind} ${price} (${status})`
+  return `${kind} ${price}`
+}
+
 function Ticket({ row }: { row: QuestradeBookRow }) {
   const buy = row.side === 'BUY'
   return (
@@ -64,8 +74,8 @@ function Ticket({ row }: { row: QuestradeBookRow }) {
       <div className="mt-1 text-xs text-gray-400">
         Entry {row.entry}
         {row.mark != null ? ` · mark ${row.mark}` : ''}
-        {row.stop != null ? ` · SL ${row.stop}` : ' · SL —'}
-        {row.target != null ? ` · TP ${row.target}` : ' · TP —'}
+        {` · ${levelTag('SL', row.stop, row.stopStatus)}`}
+        {` · ${levelTag('TP', row.target, row.targetStatus)}`}
         {' · '}risk {money(row.stockRiskDollars, 2)}
         {row.kind === 'open_position' ? (
           <>
@@ -75,6 +85,21 @@ function Ticket({ row }: { row: QuestradeBookRow }) {
         ) : null}
       </div>
     </div>
+  )
+}
+
+function LevelRow({ level }: { level: QuestradeProtectiveLevel }) {
+  return (
+    <p className="text-xs text-gray-300">
+      <span className={level.kind === 'sl' ? 'text-red-300' : 'text-emerald-300'}>
+        {level.kind === 'sl' ? 'SL' : 'TP'}
+      </span>{' '}
+      {level.label} @ {level.price}
+      {' · '}
+      {level.status}
+      {level.quantity ? ` · × ${level.quantity}` : ''}
+      {level.updatedAt ? ` · ${montrealStamp(level.updatedAt)}` : ''}
+    </p>
   )
 }
 
@@ -217,6 +242,20 @@ export function QuestradeBookCard() {
           book.transfers.map((t) => <TransferCard key={t.sourceId} item={t} />)
         ) : (
           <p className="text-xs text-gray-500">Nothing to transfer until a limit or open stock prints.</p>
+        )}
+      </div>
+
+      <h3 className="mt-5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+        All stops & targets
+      </h3>
+      <p className="mt-1 text-[11px] text-gray-500">
+        Working, filled, and cancelled — they often flatten before SL/TP prints.
+      </p>
+      <div className="mt-2 space-y-1.5">
+        {book?.levels.length ? (
+          book.levels.map((l) => <LevelRow key={`${l.kind}-${l.sourceId}`} level={l} />)
+        ) : (
+          <p className="text-xs text-gray-500">No stop or target orders in the lookback.</p>
         )}
       </div>
 

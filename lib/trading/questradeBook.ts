@@ -14,6 +14,7 @@ import { getQuestradeApiCreds, loadQuestradeAccountSnapshot } from '@/lib/tradin
 import {
   pairQuestradeBook,
   type QuestradeBookRow,
+  type QuestradeProtectiveLevel,
   type QuestradeRawOrder,
 } from '@/lib/trading/questradeOrders'
 import {
@@ -31,6 +32,7 @@ export type QuestradeBookPayload = {
   workingLimits: QuestradeBookRow[]
   openPositions: QuestradeBookRow[]
   history: QuestradeBookRow[]
+  levels: QuestradeProtectiveLevel[]
   transfers: QuestradeTradeifyTransfer[]
   equityCurve: QuestradeEquityPoint[]
 }
@@ -153,6 +155,7 @@ export async function loadQuestradeBook(
     workingLimits: book.workingLimits,
     openPositions: book.openPositions,
     history: book.history,
+    levels: book.levels,
     transfers,
     equityCurve,
   }
