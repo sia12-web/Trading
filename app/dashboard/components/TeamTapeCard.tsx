@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import type { TeamCopyAdvice, TeamTapeSignal } from '@/lib/trading/teamTape'
 import type { QuestradeAccountSnapshot } from '@/lib/trading/questradeReadOnly'
+import type { QuestradeBookPayload } from '@/lib/trading/questradeBook'
 
 type Payload = {
   ok?: boolean
@@ -59,18 +60,24 @@ function TicketRow({ signal }: { signal: TeamTapeSignal }) {
 
 export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
   const [data, setData] = useState<Payload | null>(null)
+  const [book, setBook] = useState<QuestradeBookPayload | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/trading/team-tape', { cache: 'no-store' })
-      const json = (await res.json()) as Payload
-      if (!res.ok) {
+      const [tapeRes, bookRes] = await Promise.all([
+        fetch('/api/trading/team-tape', { cache: 'no-store' }),
+        fetch('/api/trading/questrade/book', { cache: 'no-store' }),
+      ])
+      const json = (await tapeRes.json()) as Payload
+      if (!tapeRes.ok) {
         setError(json.error || 'Could not load team tape')
         return
       }
       setError(null)
       setData(json)
+      const bookJson = (await bookRes.json()) as QuestradeBookPayload | { ok: false }
+      if (bookJson.ok) setBook(bookJson)
     } catch {
       setError('Could not load team tape')
     }
@@ -93,8 +100,8 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
         <div>
           <h2 className="text-sm font-semibold text-sky-100">Team tape</h2>
           <p className="mt-0.5 text-xs text-gray-400">
-            NYC stocks — see only. Their fill is not your 3/3. Copy on DOW or NASDAQ
-            only, Tradeify $ size, flatten 16:59 ET.
+            NYC stocks and options — see only. Their fill is not your 3/3. Copy stocks
+            on DOW or NASDAQ only, Tradeify $ size, flatten 16:59 ET.
           </p>
         </div>
         {compact ? (
@@ -143,16 +150,48 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
         </div>
       ) : null}
 
+      {book?.openPositions.length ? (
+        <div className="mt-3 space-y-1.5">
+          {book.openPositions.map((p) => {
+            const pnl = p.livePnl
+            const pnlTxt =
+              pnl == null
+                ? '—'
+                : `${pnl >= 0 ? '+' : ''}$${Math.abs(pnl).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+            return (
+              <p key={p.sourceId} className="text-xs text-gray-300">
+                <span className={p.side === 'BUY' ? 'text-emerald-300' : 'text-red-300'}>
+                  {p.side}
+                </span>{' '}
+                {p.label} × {p.quantity}
+                {p.stop != null ? ` · SL ${p.stop}` : ' · SL —'}
+                {p.target != null ? ` · TP ${p.target}` : ' · TP —'}
+                {' · live '}
+                <span
+                  className={
+                    pnl == null ? 'text-gray-500' : pnl >= 0 ? 'text-emerald-300' : 'text-red-300'
+                  }
+                >
+                  {pnlTxt}
+                </span>
+              </p>
+            )
+          })}
+        </div>
+      ) : null}
+
       {compact ? (
         <p className="mt-3 text-xs text-gray-400">
-          {open.length === 0
-            ? 'No team tickets yet.'
-            : `Open now: ${open.length}${last ? ` · last ${last.symbol} ${last.side.toLowerCase()}` : ''}`}
+          {book?.openPositions.length
+            ? `${book.openPositions.length} live position${book.openPositions.length === 1 ? '' : 's'}`
+            : open.length === 0
+              ? 'No team tickets yet.'
+              : `Open now: ${open.length}${last ? ` · last ${last.symbol} ${last.side.toLowerCase()}` : ''}`}
         </p>
       ) : (
         <>
           <h3 className="mt-5 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Open now
+            Recent tape
           </h3>
           <div className="mt-2 space-y-2">
             {open.length === 0 ? (

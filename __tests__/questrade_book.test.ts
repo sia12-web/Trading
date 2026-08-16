@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict'
 import {
   pairQuestradeBook,
+  parseQuestradeSymbol,
   suggestTradeifyIndex,
 } from '../lib/trading/questradeOrders'
 import {
@@ -19,6 +20,11 @@ const midday = new Date('2026-08-18T11:30:00-04:00')
 
 assert.equal(suggestTradeifyIndex('AAPL'), 'NASDAQ')
 assert.equal(suggestTradeifyIndex('JPM'), 'DOW')
+assert.equal(suggestTradeifyIndex('AAPL  21Aug26C150.00'), 'NASDAQ')
+const opt = parseQuestradeSymbol('AAPL  21Aug26C150.00')
+assert.equal(opt?.asset, 'option')
+assert.equal(opt?.label, 'AAPL 21AUG26 $150 Call')
+assert.equal(opt?.multiplier, 100)
 
 const book = pairQuestradeBook({
   orders: [
@@ -62,16 +68,80 @@ const book = pairQuestradeBook({
       limitPrice: 400,
     },
   ],
-  positions: [{ symbol: 'AAPL', openQuantity: 1, averageEntryPrice: 306.71 }],
+  positions: [
+    {
+      symbol: 'AAPL',
+      openQuantity: 1,
+      averageEntryPrice: 306.71,
+      currentPrice: 305.93,
+      openPnl: -0.78,
+    },
+  ],
 })
 
 assert.equal(book.workingLimits.length, 1)
-assert.equal(book.workingLimits[0].symbol, 'MSFT')
-assert.equal(book.workingLimits[0].kind, 'entry_limit')
-assert.equal(book.openPositions[0].symbol, 'AAPL')
-assert.equal(book.openPositions[0].stop, 300)
-assert.equal(book.openPositions[0].target, 320)
-assert.equal(book.history[0].symbol, 'AAPL')
+const msft = book.workingLimits[0]
+const aapl = book.openPositions[0]
+const hist = book.history[0]
+assert.ok(msft && aapl && hist)
+assert.equal(msft.symbol, 'MSFT')
+assert.equal(msft.kind, 'entry_limit')
+assert.equal(aapl.symbol, 'AAPL')
+assert.equal(aapl.stop, 300)
+assert.equal(aapl.target, 320)
+assert.equal(aapl.livePnl, -0.78)
+assert.equal(aapl.mark, 305.93)
+assert.equal(hist.symbol, 'AAPL')
+
+const optionBook = pairQuestradeBook({
+  orders: [
+    {
+      id: 30,
+      symbol: 'QQQ  06Aug26C670.00',
+      side: 'Buy',
+      orderType: 'Limit',
+      state: 'Executed',
+      totalQuantity: 1,
+      avgExecPrice: 23.73,
+    },
+    {
+      id: 31,
+      symbol: 'QQQ  06Aug26C670.00',
+      side: 'Sell',
+      orderType: 'Stop',
+      state: 'Working',
+      totalQuantity: 1,
+      stopPrice: 18,
+      parentId: 30,
+    },
+    {
+      id: 32,
+      symbol: 'QQQ  06Aug26C670.00',
+      side: 'Sell',
+      orderType: 'Limit',
+      state: 'Working',
+      totalQuantity: 1,
+      limitPrice: 30,
+      parentId: 30,
+    },
+  ],
+  positions: [
+    {
+      symbol: 'QQQ  06Aug26C670.00',
+      openQuantity: 1,
+      averageEntryPrice: 23.73,
+      currentPrice: 26.1,
+      openPnl: 237,
+    },
+  ],
+})
+const qqq = optionBook.openPositions[0]
+assert.ok(qqq)
+assert.equal(qqq.asset, 'option')
+assert.equal(qqq.stop, 18)
+assert.equal(qqq.target, 30)
+assert.equal(qqq.livePnl, 237)
+assert.equal(qqq.stockRiskDollars, 573)
 
 const pct = stockRiskPct(306.71, 300)
 assert.ok(pct != null && pct > 0.02 && pct < 0.03)
@@ -91,7 +161,7 @@ const advice = teamCopyAdviceFromInput({
   clockedIn: true,
 })
 const transfer = buildQuestradeTradeifyTransfer({
-  row: book.openPositions[0],
+  row: aapl,
   advice,
   indexLast: { NASDAQ: 20000, DOW: 39000 },
 })
@@ -103,7 +173,7 @@ assert.ok(transfer.ticket!.entry > 1000)
 assert.match(transfer.note, /not your Tradovate size/)
 
 const noIndex = buildQuestradeTradeifyTransfer({
-  row: book.workingLimits[0],
+  row: msft,
   advice,
 })
 assert.equal(noIndex.ticket, null)

@@ -36,6 +36,13 @@ function montrealStamp(iso?: string | null): string {
   }).format(d)
 }
 
+function pnlClass(n: number | null | undefined): string {
+  if (n == null) return 'text-gray-400'
+  if (n > 0) return 'text-emerald-300'
+  if (n < 0) return 'text-red-300'
+  return 'text-gray-400'
+}
+
 function Ticket({ row }: { row: QuestradeBookRow }) {
   const buy = row.side === 'BUY'
   return (
@@ -43,18 +50,29 @@ function Ticket({ row }: { row: QuestradeBookRow }) {
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="text-sm font-semibold text-white">
           <span className={buy ? 'text-emerald-300' : 'text-red-300'}>{row.side}</span>{' '}
-          {row.symbol} <span className="font-normal text-gray-400">× {row.quantity}</span>
+          {row.label}{' '}
+          <span className="font-normal text-gray-400">
+            × {row.quantity}
+            {row.asset === 'option' ? ' ct' : ''}
+          </span>
         </div>
         <div className="text-[11px] text-gray-500">
+          {row.asset === 'option' ? 'option' : 'stock'} ·{' '}
           {row.kind === 'entry_limit' ? 'LIMIT' : row.status} · {montrealStamp(row.filledAt)}
         </div>
       </div>
       <div className="mt-1 text-xs text-gray-400">
         Entry {row.entry}
+        {row.mark != null ? ` · mark ${row.mark}` : ''}
         {row.stop != null ? ` · SL ${row.stop}` : ' · SL —'}
         {row.target != null ? ` · TP ${row.target}` : ' · TP —'}
         {' · '}risk {money(row.stockRiskDollars, 2)}
-        {' · '}notional {money(row.notional, 0)}
+        {row.kind === 'open_position' ? (
+          <>
+            {' · '}live{' '}
+            <span className={pnlClass(row.livePnl)}>{money(row.livePnl, 2)}</span>
+          </>
+        ) : null}
       </div>
     </div>
   )
@@ -187,7 +205,7 @@ export function QuestradeBookCard() {
         {book?.workingLimits.length ? (
           book.workingLimits.map((r) => <Ticket key={r.sourceId} row={r} />)
         ) : (
-          <p className="text-xs text-gray-500">No working stock limits.</p>
+          <p className="text-xs text-gray-500">No working limits.</p>
         )}
       </div>
 
@@ -203,13 +221,13 @@ export function QuestradeBookCard() {
       </div>
 
       <h3 className="mt-5 text-xs font-semibold uppercase tracking-wide text-gray-500">
-        Open positions
+        Open positions — live P&L · SL/TP
       </h3>
       <div className="mt-2 space-y-2">
         {book?.openPositions.length ? (
           book.openPositions.map((r) => <Ticket key={r.sourceId} row={r} />)
         ) : (
-          <p className="text-xs text-gray-500">No open stock positions.</p>
+          <p className="text-xs text-gray-500">No open positions.</p>
         )}
       </div>
 
@@ -220,7 +238,7 @@ export function QuestradeBookCard() {
         {book?.history.length ? (
           book.history.map((r) => <Ticket key={`${r.sourceId}-${r.filledAt}`} row={r} />)
         ) : (
-          <p className="text-xs text-gray-500">No stock fills in the lookback.</p>
+          <p className="text-xs text-gray-500">No fills in the lookback.</p>
         )}
       </div>
     </section>
