@@ -115,6 +115,8 @@ function tokyoBars(): Array<{
   assert(/PRIMARY BAIT \(Lunch-range\)/i.test(text), 'primary bait')
   assert(/retail BAIT/i.test(text), 'bait rule')
   assert(/OR30 → IB → Lunch-range/.test(text), 'NY desk map')
+  assert(/OPENING TYPE/.test(text), 'opening type always in brief')
+  assert(/CONTROL \(Dalton — RF \+ dPOC\)/.test(text), 'control always in brief')
   assert(brief!.activeAtr == null, 'no ATR without 5m bars')
 }
 
@@ -212,6 +214,10 @@ function tokyoBars(): Array<{
   )
   assert(/RANGE LIQUIDITY MAP/.test(src), 'Level Finder has RANGE LIQUIDITY MAP')
   assert(/YESTERDAY PROFILE/.test(src), 'Level Finder has YESTERDAY PROFILE')
+  assert(/OPENING TYPE/.test(src), 'Level Finder has OPENING TYPE')
+  assert(/CONTROL \(Dalton — RF \+ dPOC\)/.test(src), 'Level Finder has CONTROL')
+  assert(/does not pick entries/.test(src), 'Level Finder must not pick entries from RF')
+  assert(/not volume POC/.test(src), 'Level Finder dPOC ≠ volume POC')
   assert(/Slot 1 OR30/.test(src), 'OR30 slot in prompt')
   assert(/Slot 2 US Range/.test(src), 'US Range slot in prompt')
   assert(/Slot 3 Lunch-range/.test(src), 'Lunch-range slot in prompt')

@@ -140,6 +140,20 @@ import {
   yesterdayProfilePaintKey,
 } from '@/lib/trading/yesterdayProfile'
 import {
+  computeOpeningActivity,
+  openingActivityBadgeText,
+  openingActivityLineSpecs,
+  openingActivityPaintKey,
+  resolveOpeningAsOfUnix,
+} from '@/lib/trading/openingActivity'
+import {
+  computeMarketControl,
+  marketControlBadgeText,
+  marketControlLineSpecs,
+  marketControlPaintKey,
+  resolveMarketControlAsOfUnix,
+} from '@/lib/trading/marketControl'
+import {
   OR30_COLORS,
   computeOr30Range,
   computeOr30Signals,
@@ -574,13 +588,23 @@ function SimulationDeskInner() {
   const [showOr30, setShowOr30] = useState(false)
   const [showYesterdayProfile, setShowYesterdayProfile] = useState(false)
   const [yesterdayBadge, setYesterdayBadge] = useState('Yday off')
+  const [showOpeningActivity, setShowOpeningActivity] = useState(false)
+  const [openingBadge, setOpeningBadge] = useState('WAIT')
+  const [showMarketControl, setShowMarketControl] = useState(false)
+  const [controlBadge, setControlBadge] = useState('RF WAIT')
   const showIbBreakoutsRef = useRef(false)
   const showLunchRangeRef = useRef(false)
   const showUsRangeRef = useRef(false)
   const showOr30Ref = useRef(false)
   const showYesterdayProfileRef = useRef(false)
+  const showOpeningActivityRef = useRef(false)
+  const showMarketControlRef = useRef(false)
   const ydayLinesRef = useRef<IPriceLine[]>([])
   const ydayPaintKeyRef = useRef('')
+  const openingLinesRef = useRef<IPriceLine[]>([])
+  const openingPaintKeyRef = useRef('')
+  const controlLinesRef = useRef<IPriceLine[]>([])
+  const controlPaintKeyRef = useRef('')
   const or30SeriesRef = useRef<{
     high: ISeriesApi<'Line'>
     low: ISeriesApi<'Line'>
@@ -619,6 +643,12 @@ function SimulationDeskInner() {
   useEffect(() => {
     showYesterdayProfileRef.current = showYesterdayProfile
   }, [showYesterdayProfile])
+  useEffect(() => {
+    showOpeningActivityRef.current = showOpeningActivity
+  }, [showOpeningActivity])
+  useEffect(() => {
+    showMarketControlRef.current = showMarketControl
+  }, [showMarketControl])
 
   const levelLinesRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]>([])
   const posLinesRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]>([])
@@ -1594,6 +1624,84 @@ function SimulationDeskInner() {
             }
           }
         }
+
+        const opening = computeOpeningActivity({
+          instrument,
+          candles: bars,
+          asOfUnix: resolveOpeningAsOfUnix(instrument, simT, simT),
+        })
+        const openingVisible = showOpeningActivityRef.current
+        const openingText = openingActivityBadgeText(opening)
+        setOpeningBadge((prev) => (prev === openingText ? prev : openingText))
+        const openingKey = openingActivityPaintKey(openingVisible, opening)
+        if (openingKey !== openingPaintKeyRef.current) {
+          openingPaintKeyRef.current = openingKey
+          for (const line of openingLinesRef.current) {
+            try {
+              host?.removePriceLine(line)
+            } catch {
+              /* ignore */
+            }
+          }
+          openingLinesRef.current = []
+          if (openingVisible && host) {
+            for (const spec of openingActivityLineSpecs(opening)) {
+              try {
+                openingLinesRef.current.push(
+                  host.createPriceLine({
+                    price: spec.price,
+                    color: spec.color,
+                    title: spec.title,
+                    lineWidth: spec.title === 'Open' ? 2 : 1,
+                    lineStyle: spec.dashed ? LineStyle.Dashed : LineStyle.Solid,
+                    axisLabelVisible: true,
+                  })
+                )
+              } catch {
+                /* ignore */
+              }
+            }
+          }
+        }
+
+        const control = computeMarketControl({
+          instrument,
+          candles: bars,
+          asOfUnix: resolveMarketControlAsOfUnix(instrument, simT, simT),
+        })
+        const controlVisible = showMarketControlRef.current
+        const controlText = marketControlBadgeText(control)
+        setControlBadge((prev) => (prev === controlText ? prev : controlText))
+        const controlKey = marketControlPaintKey(controlVisible, control)
+        if (controlKey !== controlPaintKeyRef.current) {
+          controlPaintKeyRef.current = controlKey
+          for (const line of controlLinesRef.current) {
+            try {
+              host?.removePriceLine(line)
+            } catch {
+              /* ignore */
+            }
+          }
+          controlLinesRef.current = []
+          if (controlVisible && host) {
+            for (const spec of marketControlLineSpecs(control)) {
+              try {
+                controlLinesRef.current.push(
+                  host.createPriceLine({
+                    price: spec.price,
+                    color: spec.color,
+                    title: spec.title,
+                    lineWidth: 2,
+                    lineStyle: LineStyle.Solid,
+                    axisLabelVisible: true,
+                  })
+                )
+              } catch {
+                /* ignore */
+              }
+            }
+          }
+        }
       }
 
       if (force || lastAppliedBarIdxRef.current < 0) {
@@ -2187,7 +2295,7 @@ function SimulationDeskInner() {
   useEffect(() => {
     if (!chartReady || !simNowRef.current) return
     applyChartDataRef.current(simNowRef.current, { force: true })
-  }, [chartReady, showIbBreakouts, showLunchRange, showUsRange, showOr30, showYesterdayProfile])
+  }, [chartReady, showIbBreakouts, showLunchRange, showUsRange, showOr30, showYesterdayProfile, showOpeningActivity, showMarketControl])
 
   // Pending working limit + open position — on host series (survives candle setData).
   // Working limit / position lines stay on the host series.
@@ -3385,6 +3493,50 @@ function SimulationDeskInner() {
               </span>
             )}
           </button>
+          <button
+            type="button"
+            title={
+              showOpeningActivity
+                ? 'Dalton opening type lines on — open + first 5m H/L. Click to hide lines (type still updates).'
+                : 'Show Dalton opening type: Drive / Test-Drive / Rejection-Reverse / Auction. Click for open + first-bar H/L.'
+            }
+            onClick={() => setShowOpeningActivity((v) => !v)}
+            className={`flex items-center gap-1 rounded border px-2 py-1 text-[10px] font-semibold uppercase ${
+              showOpeningActivity
+                ? 'border-cyan-500/50 bg-cyan-600/30 text-cyan-100'
+                : 'border-white/15 text-gray-500 hover:border-cyan-500/40 hover:text-cyan-200'
+            }`}
+          >
+            <span
+              className={`inline-block h-1.5 w-1.5 rounded-full ${showOpeningActivity ? 'bg-cyan-400' : 'bg-gray-600'}`}
+            />
+            Open
+            <span className="normal-case tracking-normal text-[10px] font-normal text-cyan-200/80">
+              {openingBadge}
+            </span>
+          </button>
+          <button
+            type="button"
+            title={
+              showMarketControl
+                ? 'Dalton control dPOC line on. Click to hide the line (RF type still updates).'
+                : 'Show Dalton control: Rotation Factor + developing POC. Click for the dPOC line.'
+            }
+            onClick={() => setShowMarketControl((v) => !v)}
+            className={`flex items-center gap-1 rounded border px-2 py-1 text-[10px] font-semibold uppercase ${
+              showMarketControl
+                ? 'border-indigo-500/50 bg-indigo-600/30 text-indigo-100'
+                : 'border-white/15 text-gray-500 hover:border-indigo-500/40 hover:text-indigo-200'
+            }`}
+          >
+            <span
+              className={`inline-block h-1.5 w-1.5 rounded-full ${showMarketControl ? 'bg-indigo-400' : 'bg-gray-600'}`}
+            />
+            Ctrl
+            <span className="normal-case tracking-normal text-[10px] font-normal text-indigo-200/80">
+              {controlBadge}
+            </span>
+          </button>
           {(instrument === 'DOW' || instrument === 'NASDAQ') && (
             <button
               type="button"
@@ -3525,6 +3677,26 @@ function SimulationDeskInner() {
             <span style={{ color: VWAP_COLORS.vwap }}>AVWAP</span>
             <span className="text-gray-600">
               {deskClockFor(instrument).openLabel} · 5 trading days prior · ±1/2/3σ
+            </span>
+          </span>
+          <span className="text-gray-600">·</span>
+          <span
+            className="flex items-center gap-1.5 normal-case tracking-normal"
+            title="Dalton opening type — first cash 5m. Click Open chip for open + first-bar H/L."
+          >
+            <span className="inline-block w-4 border-t-2 border-cyan-400" />
+            <span className={showOpeningActivity ? 'text-cyan-400' : 'text-gray-500'}>
+              Open {openingBadge}
+            </span>
+          </span>
+          <span className="text-gray-600">·</span>
+          <span
+            className="flex items-center gap-1.5 normal-case tracking-normal"
+            title="Dalton control — RF + developing POC. Click Ctrl chip for the dPOC line."
+          >
+            <span className="inline-block w-4 border-t-2 border-indigo-400" />
+            <span className={showMarketControl ? 'text-indigo-400' : 'text-gray-500'}>
+              Ctrl {controlBadge}
             </span>
           </span>
           {or30Shaped && (

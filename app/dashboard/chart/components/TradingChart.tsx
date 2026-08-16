@@ -75,6 +75,20 @@ import {
   yesterdayProfileLineSpecs,
   yesterdayProfilePaintKey,
 } from '@/lib/trading/yesterdayProfile'
+import {
+  computeOpeningActivity,
+  openingActivityBadgeText,
+  openingActivityLineSpecs,
+  openingActivityPaintKey,
+  resolveOpeningAsOfUnix,
+} from '@/lib/trading/openingActivity'
+import {
+  computeMarketControl,
+  marketControlBadgeText,
+  marketControlLineSpecs,
+  marketControlPaintKey,
+  resolveMarketControlAsOfUnix,
+} from '@/lib/trading/marketControl'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
 import { LiveVoicePanel } from '@/app/dashboard/chart/components/LiveVoicePanel'
@@ -806,6 +820,8 @@ export function TradingChart({
   /** Stable paint hook for tip-stream refresh (avoids restarting SSE on marker deps). */
   const paintDeskMarkersRef = useRef<(bars?: OHLCV[]) => void>(() => {})
   const paintYesterdayProfileRef = useRef<() => void>(() => {})
+  const paintOpeningActivityRef = useRef<() => void>(() => {})
+  const paintMarketControlRef = useRef<() => void>(() => {})
   /** First 30m opening range — NY 09:30–10:00 ET / Tokyo 09:00–09:30 JST */
   const or30SeriesRef = useRef<{
     high: ISeriesApi<'Line'>
@@ -819,6 +835,14 @@ export function TradingChart({
   const ydayLinesRef = useRef<IPriceLine[]>([])
   const ydayPaintKeyRef = useRef('')
   const [yesterdayBadge, setYesterdayBadge] = useState('Yday off')
+  const [showOpeningActivity, setShowOpeningActivity] = useState(false)
+  const openingLinesRef = useRef<IPriceLine[]>([])
+  const openingPaintKeyRef = useRef('')
+  const [openingBadge, setOpeningBadge] = useState('WAIT')
+  const [showMarketControl, setShowMarketControl] = useState(false)
+  const controlLinesRef = useRef<IPriceLine[]>([])
+  const controlPaintKeyRef = useRef('')
+  const [controlBadge, setControlBadge] = useState('RF WAIT')
   /** Live count of BRK/REJ markers currently painted (for toolbar status). */
   const [rangeSignalSummary, setRangeSignalSummary] = useState<{
     ib: number
@@ -1364,6 +1388,112 @@ export function TradingChart({
     }
   }, [showYesterdayProfile, instrument])
 
+  const paintOpeningActivity = useCallback(() => {
+    const host = priceLineHostRef.current
+    const list = candlesRef.current
+    const lastBar = list.length ? (list[list.length - 1]!.time as number) : null
+    const asOfUnix = resolveOpeningAsOfUnix(
+      instrument,
+      lastBar,
+      Math.floor(Date.now() / 1000)
+    )
+    const activity = computeOpeningActivity({
+      instrument,
+      candles: list.map((c) => ({
+        time: c.time as number,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      })),
+      asOfUnix,
+    })
+    const badge = openingActivityBadgeText(activity)
+    setOpeningBadge((prev) => (prev === badge ? prev : badge))
+    const key = openingActivityPaintKey(showOpeningActivity, activity)
+    if (key === openingPaintKeyRef.current) return
+    openingPaintKeyRef.current = key
+    for (const line of openingLinesRef.current) {
+      try {
+        host?.removePriceLine(line)
+      } catch {
+        /* ignore */
+      }
+    }
+    openingLinesRef.current = []
+    if (!showOpeningActivity || !host) return
+    for (const spec of openingActivityLineSpecs(activity)) {
+      try {
+        openingLinesRef.current.push(
+          host.createPriceLine({
+            price: spec.price,
+            color: spec.color,
+            title: spec.title,
+            lineWidth: spec.title === 'Open' ? 2 : 1,
+            lineStyle: spec.dashed ? LineStyle.Dashed : LineStyle.Solid,
+            axisLabelVisible: true,
+          })
+        )
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [showOpeningActivity, instrument])
+
+  const paintMarketControl = useCallback(() => {
+    const host = priceLineHostRef.current
+    const list = candlesRef.current
+    const lastBar = list.length ? (list[list.length - 1]!.time as number) : null
+    const asOfUnix = resolveMarketControlAsOfUnix(
+      instrument,
+      lastBar,
+      Math.floor(Date.now() / 1000)
+    )
+    const control = computeMarketControl({
+      instrument,
+      candles: list.map((c) => ({
+        time: c.time as number,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      })),
+      asOfUnix,
+    })
+    const badge = marketControlBadgeText(control)
+    setControlBadge((prev) => (prev === badge ? prev : badge))
+    const key = marketControlPaintKey(showMarketControl, control)
+    if (key === controlPaintKeyRef.current) return
+    controlPaintKeyRef.current = key
+    for (const line of controlLinesRef.current) {
+      try {
+        host?.removePriceLine(line)
+      } catch {
+        /* ignore */
+      }
+    }
+    controlLinesRef.current = []
+    if (!showMarketControl || !host) return
+    for (const spec of marketControlLineSpecs(control)) {
+      try {
+        controlLinesRef.current.push(
+          host.createPriceLine({
+            price: spec.price,
+            color: spec.color,
+            title: spec.title,
+            lineWidth: 2,
+            lineStyle: LineStyle.Solid,
+            axisLabelVisible: true,
+          })
+        )
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [showMarketControl, instrument])
+
   useEffect(() => {
     paintIbLines()
   }, [paintIbLines])
@@ -1387,6 +1517,22 @@ export function TradingChart({
   useEffect(() => {
     paintYesterdayProfile()
   }, [paintYesterdayProfile])
+
+  useEffect(() => {
+    paintOpeningActivityRef.current = paintOpeningActivity
+  }, [paintOpeningActivity])
+
+  useEffect(() => {
+    paintOpeningActivity()
+  }, [paintOpeningActivity])
+
+  useEffect(() => {
+    paintMarketControlRef.current = paintMarketControl
+  }, [paintMarketControl])
+
+  useEffect(() => {
+    paintMarketControl()
+  }, [paintMarketControl])
 
   const ibProximity = useMemo(() => {
     if (!showIbBreakouts || !ibShaped || !ibRangeRef.current || !livePrice) return null
@@ -2838,6 +2984,30 @@ export function TradingChart({
       ydayLinesRef.current = []
       ydayPaintKeyRef.current = ''
     }
+    {
+      const host = priceLineHostRef.current
+      for (const line of openingLinesRef.current) {
+        try {
+          host?.removePriceLine(line)
+        } catch {
+          /* ignore */
+        }
+      }
+      openingLinesRef.current = []
+      openingPaintKeyRef.current = ''
+    }
+    {
+      const host = priceLineHostRef.current
+      for (const line of controlLinesRef.current) {
+        try {
+          host?.removePriceLine(line)
+        } catch {
+          /* ignore */
+        }
+      }
+      controlLinesRef.current = []
+      controlPaintKeyRef.current = ''
+    }
     const or30S = or30SeriesRef.current
     if (or30S) {
       try {
@@ -3046,6 +3216,8 @@ export function TradingChart({
       }
 
       paintYesterdayProfileRef.current()
+      paintOpeningActivityRef.current()
+      paintMarketControlRef.current()
 
       // NYC Lunch Session Range — 12:00–13:30 ET, Dow & Nasdaq only
       const lunchSeries = lunchSeriesRef.current
@@ -6152,6 +6324,48 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </button>
         )}
 
+        {deskSessionLive && (
+          <button
+            type="button"
+            title={
+              showOpeningActivity
+                ? 'Dalton opening type lines on — open + first 5m H/L. Click to hide lines (type still updates).'
+                : 'Show Dalton opening type: Drive / Test-Drive / Rejection-Reverse / Auction. Click for open + first-bar H/L.'
+            }
+            onClick={() => setShowOpeningActivity((v) => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+              showOpeningActivity
+                ? 'bg-cyan-600/30 border-cyan-500/50 text-cyan-100'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-cyan-200 hover:border-cyan-500/40'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full inline-block ${showOpeningActivity ? 'bg-cyan-400' : 'bg-gray-600'}`} />
+            <span>Open</span>
+            <span className="text-[10px] font-normal text-cyan-200/80">{openingBadge}</span>
+          </button>
+        )}
+
+        {deskSessionLive && (
+          <button
+            type="button"
+            title={
+              showMarketControl
+                ? 'Dalton control dPOC line on. Click to hide the line (RF type still updates).'
+                : 'Show Dalton control: Rotation Factor + developing POC. Click for the dPOC line (off on refresh).'
+            }
+            onClick={() => setShowMarketControl((v) => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+              showMarketControl
+                ? 'bg-indigo-600/30 border-indigo-500/50 text-indigo-100'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-indigo-200 hover:border-indigo-500/40'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full inline-block ${showMarketControl ? 'bg-indigo-400' : 'bg-gray-600'}`} />
+            <span>Ctrl</span>
+            <span className="text-[10px] font-normal text-indigo-200/80">{controlBadge}</span>
+          </button>
+        )}
+
         {/* NYC Lunch Range — Dow & Nasdaq only (Press N) — not the “Lunch break” playbook prep */}
         {deskSessionLive && (instrument === 'DOW' || instrument === 'NASDAQ') && (
           <button
@@ -6669,6 +6883,16 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           <span title="Gold yesterday YH/YL/VA/POC + Dalton open type — toggle with Press Y (off on refresh).">
             <span className={showYesterdayProfile ? 'text-amber-500' : 'text-gray-600'}>
               {yesterdayBadge}
+            </span>
+          </span>
+          <span title="Cyan Dalton opening type — first cash 5m. Click Open chip for open + first-bar H/L (off on refresh).">
+            <span className={showOpeningActivity ? 'text-cyan-400' : 'text-gray-600'}>
+              Open {openingBadge}
+            </span>
+          </span>
+          <span title="Indigo Dalton control — RF + developing POC. Click Ctrl chip for the dPOC line (off on refresh).">
+            <span className={showMarketControl ? 'text-indigo-400' : 'text-gray-600'}>
+              Ctrl {controlBadge}
             </span>
           </span>
           <span title="Blue IB high/low + BRK/REJ + ±10 — toggle with Press B (off on refresh).">

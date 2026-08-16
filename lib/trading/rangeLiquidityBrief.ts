@@ -23,6 +23,16 @@ import {
   formatYesterdayProfileForPrompt,
 } from '@/lib/trading/yesterdayProfile'
 import {
+  computeOpeningActivity,
+  formatOpeningActivityForPrompt,
+  resolveOpeningAsOfUnix,
+} from '@/lib/trading/openingActivity'
+import {
+  computeMarketControl,
+  formatMarketControlForPrompt,
+  resolveMarketControlAsOfUnix,
+} from '@/lib/trading/marketControl'
+import {
   computeInitialBalance,
   type DeskBar,
 } from '@/lib/trading/deskLevels'
@@ -70,6 +80,10 @@ export type RangeLiquidityBrief = {
   activeAtr: RangeAtrSnapshot | null
   /** Prior-cash TPO profile (YH/YL/VA/POC + open type + superimpose). */
   yesterdayProfileText: string | null
+  /** Dalton opening activity (Drive / Test-Drive / Rej-Rev / Auction). */
+  openingActivityText: string | null
+  /** Dalton Rotation Factor + developing time-POC (same helper as the Ctrl chip). */
+  marketControlText: string | null
 }
 
 function dateKeyInTz(unix: number, timeZone: string): string {
@@ -317,6 +331,25 @@ export function buildRangeLiquidityBrief(args: {
         })
       : null
   const yesterdayProfileText = formatYesterdayProfileForPrompt(yesterday)
+  const last5 = yesterdayBars.length
+    ? yesterdayBars[yesterdayBars.length - 1]!.time
+    : nowUnix
+  const openingAsOf = resolveOpeningAsOfUnix(instrument, last5, nowUnix)
+  const openingActivityText = formatOpeningActivityForPrompt(
+    computeOpeningActivity({
+      instrument,
+      candles: yesterdayBars,
+      asOfUnix: openingAsOf,
+    })
+  )
+  const controlAsOf = resolveMarketControlAsOfUnix(instrument, last5, nowUnix)
+  const marketControlText = formatMarketControlForPrompt(
+    computeMarketControl({
+      instrument,
+      candles: yesterdayBars,
+      asOfUnix: controlAsOf,
+    })
+  )
 
   return {
     instrument,
@@ -338,6 +371,8 @@ export function buildRangeLiquidityBrief(args: {
     analysisMode,
     activeAtr,
     yesterdayProfileText,
+    openingActivityText,
+    marketControlText,
   }
 }
 
@@ -426,6 +461,12 @@ export function formatRangeLiquidityBriefForPrompt(
 
   if (brief.yesterdayProfileText) {
     lines.push('', brief.yesterdayProfileText.trim())
+  }
+  if (brief.openingActivityText) {
+    lines.push('', brief.openingActivityText.trim())
+  }
+  if (brief.marketControlText) {
+    lines.push('', brief.marketControlText.trim())
   }
 
   return '\n' + lines.join('\n') + '\n'
