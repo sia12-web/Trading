@@ -580,6 +580,11 @@ export async function buildLiveVoiceDeskContext(
         nowUnix: Math.floor(now.getTime() / 1000),
         analysisMode,
         candles5m: m5Bars.length ? m5Bars : undefined,
+        bookLocked:
+          (gate.attemptsUsed ?? attemptsUsed) >= MAX_DAY_ATTEMPTS ||
+          !!gate.dayLocked ||
+          !!openPos ||
+          workingOrders.length > 0,
       })
       if (brief) rangeLiquidityBriefText = formatRangeLiquidityBriefForPrompt(brief)
     }

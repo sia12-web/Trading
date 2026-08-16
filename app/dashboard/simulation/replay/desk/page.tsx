@@ -154,6 +154,17 @@ import {
   resolveMarketControlAsOfUnix,
 } from '@/lib/trading/marketControl'
 import {
+  CALL_COLORS,
+  computeDeskCall,
+  deskCallBadgeText,
+  formatDeskCallScoreStrip,
+  resolveDeskCallAsOfUnix,
+  scoreDeskCallSession,
+  tallyDeskCallScores,
+  type DeskCallScoreRow,
+  type DeskCallScoreTally,
+} from '@/lib/trading/deskCall'
+import {
   OR30_COLORS,
   computeOr30Range,
   computeOr30Signals,
@@ -592,6 +603,8 @@ function SimulationDeskInner() {
   const [openingBadge, setOpeningBadge] = useState('WAIT')
   const [showMarketControl, setShowMarketControl] = useState(false)
   const [controlBadge, setControlBadge] = useState('RF WAIT')
+  const [callBadge, setCallBadge] = useState('WAIT')
+  const [callScoreText, setCallScoreText] = useState('')
   const showIbBreakoutsRef = useRef(false)
   const showLunchRangeRef = useRef(false)
   const showUsRangeRef = useRef(false)
@@ -605,6 +618,10 @@ function SimulationDeskInner() {
   const openingPaintKeyRef = useRef('')
   const controlLinesRef = useRef<IPriceLine[]>([])
   const controlPaintKeyRef = useRef('')
+  const callTallyRef = useRef<DeskCallScoreTally>({ windows: 0, broke: 0, tagged: 0 })
+  const callScoreKeyRef = useRef('')
+  /** Days already added to the running tally — survives Reset so replay cannot double-count. */
+  const callScoredDaysRef = useRef<Set<string>>(new Set())
   const or30SeriesRef = useRef<{
     high: ISeriesApi<'Line'>
     low: ISeriesApi<'Line'>
@@ -1702,6 +1719,31 @@ function SimulationDeskInner() {
             }
           }
         }
+
+        const playbookMode = resolveDeskPlaybookMode({
+          instrument,
+          now: new Date(simT * 1000),
+          ladder: attemptLadderFromCounts({
+            morningAttempts: morningAttemptsRef.current,
+            ibAttempts: ibAttemptsRef.current,
+            lunchAttempts: lunchAttemptsRef.current,
+            morningStopHits: Math.min(
+              stopHitsRef.current,
+              morningAttemptsRef.current
+            ),
+            now: new Date(simT * 1000),
+            instrument,
+          }),
+        })
+        const deskCall = computeDeskCall({
+          instrument,
+          candles: bars,
+          asOfUnix: resolveDeskCallAsOfUnix(instrument, simT, simT),
+          playbookMode,
+          bookLocked: tradesCountRef.current >= 3,
+        })
+        const callText = deskCallBadgeText(deskCall)
+        setCallBadge((prev) => (prev === callText ? prev : callText))
       }
 
       if (force || lastAppliedBarIdxRef.current < 0) {
@@ -2634,9 +2676,40 @@ function SimulationDeskInner() {
     }
   }, [instrument, replayDate, openUnix])
 
+  const finalizeCallScore = useCallback(
+    (asOfUnix: number) => {
+      if (!replayDate || !Number.isFinite(asOfUnix)) return
+      const key = `${instrument}|${replayDate}`
+      if (callScoreKeyRef.current === key) return
+      callScoreKeyRef.current = key
+      const rows: DeskCallScoreRow[] = scoreDeskCallSession({
+        instrument,
+        candles: allCandlesRef.current,
+        asOfUnix,
+        bookLocked: tradesCountRef.current >= 3,
+      })
+      const day = tallyDeskCallScores(rows)
+      if (!callScoredDaysRef.current.has(key)) {
+        callScoredDaysRef.current.add(key)
+        callTallyRef.current = {
+          windows: callTallyRef.current.windows + day.windows,
+          broke: callTallyRef.current.broke + day.broke,
+          tagged: callTallyRef.current.tagged + day.tagged,
+        }
+      }
+      setCallScoreText(formatDeskCallScoreStrip(rows, callTallyRef.current))
+    },
+    [instrument, replayDate]
+  )
+
   useEffect(() => {
     applyChartDataRef.current = applyChartData
   }, [applyChartData])
+  useEffect(() => {
+    setCallBadge('WAIT')
+    setCallScoreText('')
+    callScoreKeyRef.current = ''
+  }, [instrument, replayDate])
   useEffect(() => {
     fillPendingRef.current = fillPending
   }, [fillPending])
@@ -2664,6 +2737,7 @@ function SimulationDeskInner() {
         setMsg(
           `Sim clock reached cash close (${deskLocalHmsAsTraderDisplay(sess.marketClose, sess.tz)} ${TRADER_DISPLAY_LABEL}) — day finished`
         )
+        finalizeCallScore(endAt)
         void markSessionCompleted()
         return
       }
@@ -2787,13 +2861,16 @@ function SimulationDeskInner() {
     return () => {
       window.clearInterval(timer)
     }
-  }, [playing, openUnix, speed, instrument, markSessionCompleted, recordPaperClose])
+  }, [playing, openUnix, speed, instrument, markSessionCompleted, recordPaperClose, finalizeCallScore])
 
   // If clock is already at/after cash close (paused at end), flip picker to "done"
   useEffect(() => {
     if (!cashCloseUnix || !simNow) return
-    if (simNow >= cashCloseUnix) void markSessionCompleted()
-  }, [simNow, cashCloseUnix, markSessionCompleted])
+    if (simNow >= cashCloseUnix) {
+      finalizeCallScore(cashCloseUnix)
+      void markSessionCompleted()
+    }
+  }, [simNow, cashCloseUnix, markSessionCompleted, finalizeCallScore])
 
   // Unfilled sim limits expire when that slot's entry window ends
   useEffect(() => {
@@ -2939,6 +3016,9 @@ function SimulationDeskInner() {
     ibAttemptsRef.current = 0
     lunchAttemptsRef.current = 0
     stopHitsRef.current = 0
+    setCallBadge('WAIT')
+    setCallScoreText('')
+    callScoreKeyRef.current = ''
     setAttemptsUsed(0)
     setMorningAttempts(0)
     setIbAttempts(0)
@@ -3537,6 +3617,19 @@ function SimulationDeskInner() {
               {controlBadge}
             </span>
           </button>
+          <span
+            title="Desk CALL — bias + legal ±10 of the active range. Advise only; not a ticket. No line."
+            className="flex items-center gap-1 rounded border border-zinc-500/40 px-2 py-1 text-[10px] font-semibold uppercase text-zinc-400"
+          >
+            <span
+              className="inline-block h-1.5 w-1.5 rounded-full"
+              style={{ backgroundColor: CALL_COLORS.badge }}
+            />
+            Call
+            <span className="normal-case tracking-normal text-[10px] font-normal text-zinc-400/80">
+              {callBadge}
+            </span>
+          </span>
           {(instrument === 'DOW' || instrument === 'NASDAQ') && (
             <button
               type="button"
@@ -3699,6 +3792,28 @@ function SimulationDeskInner() {
               Ctrl {controlBadge}
             </span>
           </span>
+          <span className="text-gray-600">·</span>
+          <span
+            className="flex items-center gap-1.5 normal-case tracking-normal"
+            title="Desk CALL — bias + legal ±10. Advise only; badge always on; no line."
+          >
+            <span
+              className="inline-block w-4 border-t-2"
+              style={{ borderColor: CALL_COLORS.badge }}
+            />
+            <span className="text-zinc-400">Call {callBadge}</span>
+          </span>
+          {callScoreText ? (
+            <>
+              <span className="text-gray-600">·</span>
+              <span
+                className="normal-case tracking-normal text-zinc-400"
+                title="Per-window CALL score for this clip + running tally this browser session"
+              >
+                {callScoreText}
+              </span>
+            </>
+          ) : null}
           {or30Shaped && (
             <>
               <span className="text-gray-600">·</span>

@@ -89,6 +89,12 @@ import {
   marketControlPaintKey,
   resolveMarketControlAsOfUnix,
 } from '@/lib/trading/marketControl'
+import {
+  CALL_COLORS,
+  computeDeskCall,
+  deskCallBadgeText,
+  resolveDeskCallAsOfUnix,
+} from '@/lib/trading/deskCall'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
 import { LiveVoicePanel } from '@/app/dashboard/chart/components/LiveVoicePanel'
@@ -822,6 +828,7 @@ export function TradingChart({
   const paintYesterdayProfileRef = useRef<() => void>(() => {})
   const paintOpeningActivityRef = useRef<() => void>(() => {})
   const paintMarketControlRef = useRef<() => void>(() => {})
+  const paintDeskCallRef = useRef<() => void>(() => {})
   /** First 30m opening range — NY 09:30–10:00 ET / Tokyo 09:00–09:30 JST */
   const or30SeriesRef = useRef<{
     high: ISeriesApi<'Line'>
@@ -843,6 +850,7 @@ export function TradingChart({
   const controlLinesRef = useRef<IPriceLine[]>([])
   const controlPaintKeyRef = useRef('')
   const [controlBadge, setControlBadge] = useState('RF WAIT')
+  const [callBadge, setCallBadge] = useState('WAIT')
   /** Live count of BRK/REJ markers currently painted (for toolbar status). */
   const [rangeSignalSummary, setRangeSignalSummary] = useState<{
     ib: number
@@ -1494,6 +1502,52 @@ export function TradingChart({
     }
   }, [showMarketControl, instrument])
 
+  const paintDeskCall = useCallback(() => {
+    const list = candlesRef.current
+    const lastBar = list.length ? (list[list.length - 1]!.time as number) : null
+    const nowUnix = Math.floor(Date.now() / 1000)
+    const asOfUnix = resolveDeskCallAsOfUnix(instrument, lastBar, nowUnix)
+    const playbookMode = resolveDeskPlaybookMode({
+      instrument,
+      rangeStrategy,
+      ladder: attemptLadderFromCounts({
+        morningAttempts,
+        ibAttempts,
+        lunchAttempts,
+        morningStopHits: stopHits,
+        now: new Date(),
+        instrument,
+      }),
+    })
+    const call = computeDeskCall({
+      instrument,
+      candles: list.map((c) => ({
+        time: c.time as number,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      })),
+      asOfUnix,
+      playbookMode,
+      bookLocked:
+        attemptsUsed >= 3 || !!positionOverlay || !!pendingLimit,
+    })
+    const badge = deskCallBadgeText(call)
+    setCallBadge((prev) => (prev === badge ? prev : badge))
+  }, [
+    instrument,
+    rangeStrategy,
+    morningAttempts,
+    ibAttempts,
+    lunchAttempts,
+    stopHits,
+    attemptsUsed,
+    positionOverlay,
+    pendingLimit,
+  ])
+
   useEffect(() => {
     paintIbLines()
   }, [paintIbLines])
@@ -1533,6 +1587,14 @@ export function TradingChart({
   useEffect(() => {
     paintMarketControl()
   }, [paintMarketControl])
+
+  useEffect(() => {
+    paintDeskCallRef.current = paintDeskCall
+  }, [paintDeskCall])
+
+  useEffect(() => {
+    paintDeskCall()
+  }, [paintDeskCall])
 
   const ibProximity = useMemo(() => {
     if (!showIbBreakouts || !ibShaped || !ibRangeRef.current || !livePrice) return null
@@ -3008,6 +3070,7 @@ export function TradingChart({
       controlLinesRef.current = []
       controlPaintKeyRef.current = ''
     }
+    setCallBadge('WAIT')
     const or30S = or30SeriesRef.current
     if (or30S) {
       try {
@@ -3218,6 +3281,7 @@ export function TradingChart({
       paintYesterdayProfileRef.current()
       paintOpeningActivityRef.current()
       paintMarketControlRef.current()
+      paintDeskCallRef.current()
 
       // NYC Lunch Session Range — 12:00–13:30 ET, Dow & Nasdaq only
       const lunchSeries = lunchSeriesRef.current
@@ -6366,6 +6430,20 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </button>
         )}
 
+        {deskSessionLive && (
+          <span
+            title="Desk CALL — bias + legal ±10 of the active range. Advise only; not a ticket. No line."
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border rounded-lg bg-transparent border-zinc-500/40 text-zinc-400"
+          >
+            <span
+              className="w-2 h-2 rounded-full inline-block"
+              style={{ backgroundColor: CALL_COLORS.badge }}
+            />
+            <span>Call</span>
+            <span className="text-[10px] font-normal text-zinc-400/80">{callBadge}</span>
+          </span>
+        )}
+
         {/* NYC Lunch Range — Dow & Nasdaq only (Press N) — not the “Lunch break” playbook prep */}
         {deskSessionLive && (instrument === 'DOW' || instrument === 'NASDAQ') && (
           <button
@@ -6893,6 +6971,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           <span title="Indigo Dalton control — RF + developing POC. Click Ctrl chip for the dPOC line (off on refresh).">
             <span className={showMarketControl ? 'text-indigo-400' : 'text-gray-600'}>
               Ctrl {controlBadge}
+            </span>
+          </span>
+          <span title="Zinc desk CALL — bias + legal ±10. Advise only; badge always on; no line.">
+            <span className="text-zinc-400">
+              Call {callBadge}
             </span>
           </span>
           <span title="Blue IB high/low + BRK/REJ + ±10 — toggle with Press B (off on refresh).">

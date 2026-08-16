@@ -33,6 +33,12 @@ import {
   resolveMarketControlAsOfUnix,
 } from '@/lib/trading/marketControl'
 import {
+  computeDeskCall,
+  formatDeskCallForPrompt,
+  resolveDeskCallAsOfUnix,
+} from '@/lib/trading/deskCall'
+import type { DeskPlaybookMode } from '@/lib/trading/deskPlaybookMode'
+import {
   computeInitialBalance,
   type DeskBar,
 } from '@/lib/trading/deskLevels'
@@ -84,6 +90,19 @@ export type RangeLiquidityBrief = {
   openingActivityText: string | null
   /** Dalton Rotation Factor + developing time-POC (same helper as the Ctrl chip). */
   marketControlText: string | null
+  /** Desk CALL — bias + legal ±10 (same helper as the Call chip). */
+  deskCallText: string | null
+}
+
+function playbookFromAnalysis(
+  mode: RangeLiquidityBrief['analysisMode'],
+  tokyo: boolean
+): DeskPlaybookMode {
+  if (mode === 'us_range') return 'us_range'
+  if (mode === 'ib') return 'ib'
+  if (mode === 'lunch_range') return 'lunch_range'
+  if (mode === 'afternoon') return tokyo ? 'ib' : 'lunch_range'
+  return 'morning'
 }
 
 function dateKeyInTz(unix: number, timeZone: string): string {
@@ -188,6 +207,8 @@ export function buildRangeLiquidityBrief(args: {
     close: number
     volume?: number
   }>
+  /** 3/3, day-lock, working limit, or open book — CALL stays the read, not a fill. */
+  bookLocked?: boolean
 }): RangeLiquidityBrief | null {
   const { instrument, tip } = args
   const analysisMode = args.analysisMode ?? 'morning'
@@ -350,6 +371,16 @@ export function buildRangeLiquidityBrief(args: {
       asOfUnix: controlAsOf,
     })
   )
+  const callAsOf = resolveDeskCallAsOfUnix(instrument, last5, nowUnix)
+  const deskCallText = formatDeskCallForPrompt(
+    computeDeskCall({
+      instrument,
+      candles: yesterdayBars,
+      asOfUnix: callAsOf,
+      playbookMode: playbookFromAnalysis(analysisMode, tokyo),
+      bookLocked: args.bookLocked,
+    })
+  )
 
   return {
     instrument,
@@ -373,6 +404,7 @@ export function buildRangeLiquidityBrief(args: {
     yesterdayProfileText,
     openingActivityText,
     marketControlText,
+    deskCallText,
   }
 }
 
@@ -467,6 +499,9 @@ export function formatRangeLiquidityBriefForPrompt(
   }
   if (brief.marketControlText) {
     lines.push('', brief.marketControlText.trim())
+  }
+  if (brief.deskCallText) {
+    lines.push('', brief.deskCallText.trim())
   }
 
   return '\n' + lines.join('\n') + '\n'

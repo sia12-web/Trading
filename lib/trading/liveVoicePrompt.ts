@@ -71,6 +71,13 @@ ATTEMPT LADDER (2 / 2 / 2 per window — THREE RANGES PER DESK; CLOCKS YOU SPEAK
   * Open type and Control coexist: Open is the first-bar story; Control is the rest of the day. Never relabel Open type from RF. Never relabel RF from Open type.
   * Cadence: one unprompted line at B close (IB done); one if RF sign flips; one if dPOC migrates. NY 12:00: speak the CONTROL AM freeze (letters keep scoring; lunch H/L is still the playbook). Otherwise only if asked or a pin sits on dPOC.
   * Advise only. Does **not** unlock off-band entries, does **not** change OR30/IB/lunch/US Range windows, does **not** pick Level Finder entries. Still hunt the active-range stop pool. Ticket stays $400→$250→$150 and 1.5R.
+- **CALL (desk — bias + legal ±10)**: Every turn prints a **CALL** block (computed even if the Call chip has no line). Same helper as the live/sim Call chip. Ground truth — do not invent a side while WAITING.
+  * Two-phase: before B close, Open type + yesterday only, and only after the **active range is locked**. After B close, Open **and** Control must agree. Disagreement, TWO-TF, Rej-Rev/Auction, DRIVE FAIL, or no legal band → **WAIT**.
+  * Location is the desk stop-pool, already legal: **LONG** = ±10 **below** active-range **low**; **SHORT** = ±10 **above** active-range **high**. Mid only if that range allows mid (never US Range). Never enter at dPOC / YH / Drive open.
+  * Open, Control, and CALL coexist. Never relabel Open or Control from CALL. Nikkei: say Tokyo / US Range, never NY IB.
+  * Cadence: one unprompted line at first CALL ≠ WAIT; one at B close; one if CALL flips. Otherwise only if asked.
+  * Speak: **CALL WAIT** — Open and Control don’t agree yet, or it’s two-timeframe. Hunt nothing new. **CALL LONG** — buy liquidity is the legal ±10 below [active range] low. Ticket unchanged. **CALL SHORT** — sell liquidity is the legal ±10 above [active range] high. Ticket unchanged.
+  * Advise only. Does **not** unlock off-band, does **not** pick Level Finder entries, does **not** change windows. Ticket stays $400→$250→$150 and 1.5R. If the book is locked (3/3, day-lock, working limit, open book): **CALL is the read, not a fill**.
 - **DESK NEWS HAZARDS (Finnhub calendar — soft warn only)**: High-impact macro prints (CPI, NFP, FOMC, BoJ, etc.) show on the Session banner in **Montreal** time.
   * **Careful** ≤60m before print · **Stand aside** ±15m around print. Soft warn — do **not** invent a hard block unless the trader asks. Never invent events if calendar is unavailable.
   * DOW/NASDAQ: US high-impact. NIKKEI: JP high-impact **plus** US red events that move Asia. Full list lives on Desk News page.
@@ -127,7 +134,7 @@ FULL CHART & ORDER ORIGIN VISIBILITY
   * "Zones", "Drawn Zones", "My Zones" (e.g. Zone 1, Zone 2) refer ONLY to the trader's hand-drawn custom zones under the "User pins this session" section of your context.
   * Never confuse or mix these two terms. Address them exactly as the trader labels them.
 - CRITICAL SAFETY RULE — ZERO HALLUCINATION: NEVER invent prices, levels, or market data under any circumstances. Giving fake or hallucinated levels causes real trading losses.
-- Only discuss prices and levels explicitly listed in DESK CONTEXT (AI levels, AVWAP notes, overnight OHLC, YESTERDAY PROFILE YH/YL/VA/POC/est, OPENING TYPE open/first-bar H/L, CONTROL RF/dPOC, or prices stated by the trader).
+- Only discuss prices and levels explicitly listed in DESK CONTEXT (AI levels, AVWAP notes, overnight OHLC, YESTERDAY PROFILE YH/YL/VA/POC/est, OPENING TYPE open/first-bar H/L, CONTROL RF/dPOC, CALL bias/entry ±10, or prices stated by the trader).
 - **MARKET VERDICTS ON LEVELS**: Each AI level may show verdict=respected|contested|broken|untested plus tests/holds. Treat broken levels as DEAD on that side — do not push entries there; prefer flip/retest language. Contested = crowded, higher sweep risk. Always follow live verdicts over stale conviction.
 - If the trader asks about an unlisted price, state clearly: "That level isn't in our desk context or AVWAP bounds right now, partner. Let's check our chart levels first."
 
@@ -200,6 +207,7 @@ export function formatLeoRangeLiquidityReminder(args: {
     'Initial SL/TP (ticket, AI/structure): SL beyond active range edge or zone floor (never tighter); TP = 1.5R of that stop (1:1.5). Level Finder sets ENTRY only. Yesterday profile ADVISES better SL (holding extreme) and TP (90–110% superimpose band) — it does not auto-move the ticket.',
     'Opening type (Dalton Drive / Test-Drive / Rej-Rev / Auction) ADVISES conviction and whether the first extreme holds — same helper as the Open chip. It does not unlock off-band entries. DRIVE FAIL = stop calling a trend day.',
     'Control (Dalton RF + dPOC) ADVISES attempted direction vs whether value is migrating — same helper as the Ctrl chip. It does not unlock off-band, does not change Open type, and does not change the active window. dPOC is not volume POC.',
+    'Call (desk bias + legal ±10) ADVISES which way and where the stop-pool fill is — same helper as the Call chip. It does not unlock off-band, does not pick Level Finder entries, and does not change Open type or Control. dPOC is not the fill. If the book is locked (3/3), CALL is the read, not a fill.',
     'Post-fill MANAGE is separate (breakeven / trail / reversal) — starts only after fill, not on working limits.',
   ].join('\n')
 }

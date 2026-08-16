@@ -117,6 +117,7 @@ function tokyoBars(): Array<{
   assert(/OR30 → IB → Lunch-range/.test(text), 'NY desk map')
   assert(/OPENING TYPE/.test(text), 'opening type always in brief')
   assert(/CONTROL \(Dalton — RF \+ dPOC\)/.test(text), 'control always in brief')
+  assert(/CALL \(desk — bias \+ legal ±10\)/.test(text), 'CALL always in brief')
   assert(brief!.activeAtr == null, 'no ATR without 5m bars')
 }
 
@@ -216,6 +217,10 @@ function tokyoBars(): Array<{
   assert(/YESTERDAY PROFILE/.test(src), 'Level Finder has YESTERDAY PROFILE')
   assert(/OPENING TYPE/.test(src), 'Level Finder has OPENING TYPE')
   assert(/CONTROL \(Dalton — RF \+ dPOC\)/.test(src), 'Level Finder has CONTROL')
+  assert(/CALL \(desk — bias \+ legal ±10\)/.test(src), 'Level Finder has CALL')
+  assert(/does not pick extra entries/.test(src), 'Level Finder must not pick extra entries from CALL')
+  assert(/never NY IB/.test(src), 'Level Finder Nikkei CALL is not NY IB')
+  assert(/dPOC is not the fill/.test(src), 'Level Finder CALL dPOC is not the fill')
   assert(/does not pick entries/.test(src), 'Level Finder must not pick entries from RF')
   assert(/not volume POC/.test(src), 'Level Finder dPOC ≠ volume POC')
   assert(/Slot 1 OR30/.test(src), 'OR30 slot in prompt')
