@@ -3239,8 +3239,15 @@ export function TradingChart({
       autoScale: true,
       scaleMargins: DESK_CHART_THEME.rightPriceScale.scaleMargins,
     })
+    const list = candlesRef.current
+    const width = containerRef.current?.clientWidth ?? 900
     try {
-      chart.timeScale().fitContent()
+      const ts = chart.timeScale()
+      ts.applyOptions({
+        barSpacing: deskBarSpacing(width, list.length),
+        rightOffset: DESK_CHART_THEME.timeScale.rightOffset,
+      })
+      ts.setVisibleLogicalRange(deskVisibleLogicalRange(list.length, width))
     } catch {
       /* ignore */
     }

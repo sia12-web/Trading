@@ -8,6 +8,8 @@
  *   - Once per side per range walk (anti-spam)
  *   - If the feed has no usable volume history, BRK falls back to price-only
  *     so CFD/index desks still paint breakouts.
+ *   - OANDA futures/CFD tick counts (~6–10k) look like “volume” but never
+ *     spike on breakdowns, so they are treated as unusable (same fallback).
  */
 
 export const DEFAULT_RANGE_RVOL = {
@@ -15,6 +17,9 @@ export const DEFAULT_RANGE_RVOL = {
   thresh: 1.2,
   lookback: 20,
 } as const
+
+/** Cash-index volume is millions; CFD tick counts sit well below this. */
+export const INDEX_RVOL_FLOOR = 100_000
 
 export type RangeBreakBar = {
   time: number
@@ -74,6 +79,7 @@ export function createRvolTracker(lookback: number) {
       if (!useVol) return true
       const avg = this.avg()
       if (!Number.isFinite(avg) || avg <= 0) return true
+      if (avg < INDEX_RVOL_FLOOR) return true
       const v = Number.isFinite(volume) ? Math.max(0, volume) : 0
       return v > avg * thresh
     },

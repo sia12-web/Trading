@@ -6,6 +6,7 @@ import assert from 'node:assert/strict'
 import {
   computeRangeBreakRejectSignals,
   createRvolTracker,
+  INDEX_RVOL_FLOOR,
 } from '../lib/chart/rangeBreakSignals'
 import { computeOr30Signals, computeOr30Range } from '../lib/chart/openingRange30'
 import { computeNycLunchSignals, computeNycLunchRange } from '../lib/chart/nycLunchSessionRange'
@@ -30,18 +31,19 @@ const colors = {
   rejLow: '#a855f7',
 }
 
-// Warm volume average ~1000
+// Index-scale volume (~1M) so the 1.2× RVOL gate is actually enforced
+const INDEX_VOL = 1_000_000
 const warm: ReturnType<typeof bar>[] = []
 const t0 = nyDateTimeToUnix('2026-07-15', 9, 30)
 for (let i = 0; i < 20; i++) {
-  warm.push(bar(t0 - (20 - i) * 300, 100, 101, 99, 100, 1000))
+  warm.push(bar(t0 - (20 - i) * 300, 100, 101, 99, 100, INDEX_VOL))
 }
 
 {
   const rvol = createRvolTracker(20)
   for (const b of warm) rvol.push(b.volume)
-  assert.equal(rvol.ok(1000, true, 1.2), false, 'at avg not ok')
-  assert.equal(rvol.ok(1201, true, 1.2), true, 'above 1.2× ok')
+  assert.equal(rvol.ok(INDEX_VOL, true, 1.2), false, 'at avg not ok')
+  assert.equal(rvol.ok(INDEX_VOL * 1.201, true, 1.2), true, 'above 1.2× ok')
   assert.equal(rvol.ok(500, false, 1.2), true, 'useVol off always ok')
 }
 
@@ -57,12 +59,12 @@ for (let i = 0; i < 20; i++) {
   const open = t0
   const candles = [
     ...warm,
-    bar(open + 0, 100, 102, 99, 101, 1000),
-    bar(open + 300, 101, 103, 100, 102, 1000),
+    bar(open + 0, 100, 102, 99, 101, INDEX_VOL),
+    bar(open + 300, 101, 103, 100, 102, INDEX_VOL),
     // after OR30 end (30m): break high with volume
-    bar(open + 30 * 60, 102, 106, 101, 105, 2500),
+    bar(open + 30 * 60, 102, 106, 101, 105, INDEX_VOL * 2.5),
     // second break — should be suppressed (once)
-    bar(open + 35 * 60, 105, 108, 104, 107, 2500),
+    bar(open + 35 * 60, 105, 108, 104, 107, INDEX_VOL * 2.5),
   ]
   const range = { high: 103, low: 99 }
   const sigs = computeRangeBreakRejectSignals(candles, range, {
@@ -117,12 +119,12 @@ for (let i = 0; i < 20; i++) {
   const open = t0
   const candles = [
     ...warm,
-    bar(open + 0, 100, 102, 99, 101, 1000),
-    bar(open + 300, 101, 103, 100, 102, 1000),
+    bar(open + 0, 100, 102, 99, 101, INDEX_VOL),
+    bar(open + 300, 101, 103, 100, 102, INDEX_VOL),
     // after OR30 end: quiet close below low (no BRK yet)
-    bar(open + 30 * 60, 102, 102.5, 97, 98, 800),
+    bar(open + 30 * 60, 102, 102.5, 97, 98, INDEX_VOL * 0.8),
     // still beyond low with RVOL — sticky BRK short
-    bar(open + 35 * 60, 98, 98.5, 95, 96, 2500),
+    bar(open + 35 * 60, 98, 98.5, 95, 96, INDEX_VOL * 2.5),
   ]
   const range = { high: 103, low: 99 }
   const sigs = computeRangeBreakRejectSignals(candles, range, {
@@ -137,16 +139,40 @@ for (let i = 0; i < 20; i++) {
 }
 
 {
+  // OANDA-scale tick volume (~7k) must not block IB BRK (2026-08-14 NASDAQ regression)
+  assert.ok(7200 < INDEX_RVOL_FLOOR)
+  const open = t0
+  const cfdWarm: ReturnType<typeof bar>[] = []
+  for (let i = 0; i < 20; i++) {
+    cfdWarm.push(bar(t0 - (20 - i) * 300, 30120, 30140, 30100, 30120, 7200))
+  }
+  const candles = [
+    ...cfdWarm,
+    bar(open + 0, 30120, 30140, 30100, 30120, 7200),
+    bar(open + 3600, 30080, 30090, 30020, 30038, 6000),
+  ]
+  const sigs = computeRangeBreakRejectSignals(candles, { high: 30196, low: 30050 }, {
+    labelPrefix: 'IB',
+    colors,
+    signalAfterUnix: open + 3600,
+  })
+  assert.ok(
+    sigs.some((s) => s.type === 'BRK_SHORT'),
+    'CFD tick volume must not block IB BRK'
+  )
+}
+
+{
   const open = t0
   const orBars = [
     ...warm,
-    bar(open + 0, 100, 102, 99, 101, 1000),
-    bar(open + 300, 101, 105, 100, 104, 1000),
-    bar(open + 600, 104, 106, 103, 105, 1000),
-    bar(open + 900, 105, 107, 98, 106, 1000),
-    bar(open + 1200, 106, 108, 105, 107, 1000),
-    bar(open + 1500, 107, 109, 106, 108, 1000),
-    bar(open + 1800, 108, 112, 107, 111, 2500),
+    bar(open + 0, 100, 102, 99, 101, INDEX_VOL),
+    bar(open + 300, 101, 105, 100, 104, INDEX_VOL),
+    bar(open + 600, 104, 106, 103, 105, INDEX_VOL),
+    bar(open + 900, 105, 107, 98, 106, INDEX_VOL),
+    bar(open + 1200, 106, 108, 105, 107, INDEX_VOL),
+    bar(open + 1500, 107, 109, 106, 108, INDEX_VOL),
+    bar(open + 1800, 108, 112, 107, 111, INDEX_VOL * 2.5),
   ]
   const or = computeOr30Range(orBars, open, open + 40 * 60)
   assert.ok(or)
@@ -159,11 +185,11 @@ for (let i = 0; i < 20; i++) {
   const lunchStart = nyDateTimeToUnix(day, 12, 0)
   const candles = [
     ...warm,
-    bar(lunchStart + 0, 100, 110, 100, 105, 1000),
-    bar(lunchStart + 300, 105, 112, 104, 110, 1000),
-    bar(lunchStart + 600, 110, 115, 109, 112, 1000),
+    bar(lunchStart + 0, 100, 110, 100, 105, INDEX_VOL),
+    bar(lunchStart + 300, 105, 112, 104, 110, INDEX_VOL),
+    bar(lunchStart + 600, 110, 115, 109, 112, INDEX_VOL),
     // after 13:30 — break lunch high with volume
-    bar(lunchStart + 90 * 60, 112, 120, 111, 118, 2500),
+    bar(lunchStart + 90 * 60, 112, 120, 111, 118, INDEX_VOL * 2.5),
   ]
   const lunch = computeNycLunchRange(
     candles.map((c) => ({ time: c.time, high: c.high, low: c.low })),

@@ -50,6 +50,7 @@ assert.ok(sim.includes('const extendTo = Math.max(tip, simT)'), 'sim adds no fut
 
 const live = src('app/dashboard/chart/components/TradingChart.tsx')
 assert.ok(live.includes('sessionFocusHighLow'), 'live Y-axis follows current session')
+assert.ok(!live.includes('fitContent()'), 'live Reset scale does not zoom to full history')
 assert.ok(live.includes('deskVisibleLogicalRange(ordered.length, width)'), 'live bar count follows pane width')
 assert.ok(live.includes('ibLineSeriesData(ib, tipUnix)'), 'live IB ends at latest bar')
 assert.ok(!live.includes('Math.max(tipUnix, closeUnix)'), 'live IB adds no future close point')

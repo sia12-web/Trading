@@ -157,14 +157,14 @@ test('Tokyo cash downside US BRK short (symmetric with high)', () => {
 test('US BRK short still fires after quiet first beyond bar (sticky RVOL)', () => {
   const candles: NikkeiUsRangeBar[] = []
   for (let i = 0; i < 20; i++) {
-    candles.push(bar(jstUnix(2026, 7, 15, 18, i), 100, 101, 99, 100, 1000))
+    candles.push(bar(jstUnix(2026, 7, 15, 18, i), 100, 101, 99, 100, 1_000_000))
   }
-  candles.push(bar(jstUnix(2026, 7, 15, 23, 0), 105, 110, 100, 105, 1000))
-  candles.push(bar(jstUnix(2026, 7, 16, 10, 0), 105, 106, 104, 105, 1000))
+  candles.push(bar(jstUnix(2026, 7, 15, 23, 0), 105, 110, 100, 105, 1_000_000))
+  candles.push(bar(jstUnix(2026, 7, 16, 10, 0), 105, 106, 104, 105, 1_000_000))
   // First close beyond L — below RVOL threshold (must not permanently suppress)
-  candles.push(bar(jstUnix(2026, 7, 16, 10, 5), 105, 105.5, 98, 99, 800))
+  candles.push(bar(jstUnix(2026, 7, 16, 10, 5), 105, 105.5, 98, 99, 800_000))
   // Still beyond L with RVOL — must paint US BRK short
-  candles.push(bar(jstUnix(2026, 7, 16, 10, 10), 99, 99.5, 95, 96, 2500))
+  candles.push(bar(jstUnix(2026, 7, 16, 10, 10), 99, 99.5, 95, 96, 2_500_000))
 
   const r = computeNikkeiUsRangeBreakout(candles)
   assert(r != null, 'result')
