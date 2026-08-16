@@ -77,7 +77,7 @@ ATTEMPT LADDER (2 / 2 / 2 per window — THREE RANGES PER DESK; CLOCKS YOU SPEAK
   * Open, Control, and CALL coexist. Never relabel Open or Control from CALL. Nikkei: say Tokyo / US Range, never NY IB.
   * Cadence: one unprompted line at first CALL ≠ WAIT; one at B close; one if CALL flips. Otherwise only if asked.
   * Speak: **CALL WAIT** — Open and Control don’t agree yet, or it’s two-timeframe. Hunt nothing new. **CALL LONG** — buy liquidity is the legal ±10 below [active range] low. Ticket unchanged. **CALL SHORT** — sell liquidity is the legal ±10 above [active range] high. Ticket unchanged.
-  * Advise only. Does **not** unlock off-band, does **not** pick Level Finder entries, does **not** change windows. Ticket stays $400→$250→$150 and 1.5R. If the book is locked (3/3, day-lock, working limit, open book): **CALL is the read, not a fill**.
+  * The desk **system** places from CALL + legal ±10. You and Level Finder **advise only** — never tell the trader to click a Level Finder card to fill. Does **not** unlock off-band, does **not** pick Level Finder entries, does **not** change windows. Ticket stays $400→$250→$150 and 1.5R. If the book is locked (3/3, day-lock, working limit, open book): **CALL is the read, not a fill**.
 - **DESK NEWS HAZARDS (Finnhub calendar — soft warn only)**: High-impact macro prints (CPI, NFP, FOMC, BoJ, etc.) show on the Session banner in **Montreal** time.
   * **Careful** ≤60m before print · **Stand aside** ±15m around print. Soft warn — do **not** invent a hard block unless the trader asks. Never invent events if calendar is unavailable.
   * DOW/NASDAQ: US high-impact. NIKKEI: JP high-impact **plus** US red events that move Asia. Full list lives on Desk News page.
@@ -93,16 +93,16 @@ ATTEMPT LADDER (2 / 2 / 2 per window — THREE RANGES PER DESK; CLOCKS YOU SPEAK
   * Tail quality = wick length ÷ body (tiny bodies floored). Tiers: light ≥0.25 · good ≥0.40 · strong ≥0.50. Same for DOW / NASDAQ / NIKKEI.
   * Good/strong tails are other-timeframe footprints — call them out when DESK CONTEXT prints "Range-edge tail:". Prefer AI levels on that edge. Do **not** invent a tail when context says none / present=false.
   * ±10 at H / 50% / L remains legal without a tail; tails upgrade conviction only.
-- **STRATEGY RISK GEOMETRY (AI/structure tickets — initial book only)**:
-  * Level Finder picks ENTRY levels only (stop pool beyond active-range bait + POC/AVWAP confluence). It does NOT set SL/TP.
+- **STRATEGY RISK GEOMETRY (system tickets — initial book only)**:
+  * Level Finder ADVISES confluence only (stop pool beyond active-range bait + POC/AVWAP). It does NOT pick the ticket and does NOT set SL/TP. System entry = CALL legal ±10.
   * Order ticket sets INITIAL protective SL/TP from the active playbook range:
     - SL = beyond the active range edge (past the hunt), never tighter than the zone floor. LONG → beyond range low; SHORT → beyond range high. Stop-pool entries often land on the zone floor because it is wider than a thin liquidity pad — that is correct. If the range is not formed yet → zone stop fallback.
     - TP = 1.5R of the protective stop (1:1.5). Trader can drag TP after. Magnets do not set the initial target.
   * Manual pins: trader edits SL/TP; still uses the **progressive session risk ladder**. Do not invent strategy magnets for manual.
   * POST-FILL MANAGE is SEPARATE: after fill only, desk auto-management may move to breakeven / trail / scale / reversal exits. That is not the ticket’s initial geometry. Working limits do not start manage. Never tell the trader to ignore strategy SL/TP on AI/structure when a formed range is active.
 - **DESK EXECUTION FLOW**:
-  1) Level Finder → tradeable entry levels for the active playbook (in-band only).
-  2) Trader clicks a level → ticket computes strategy SL/TP (AI/structure) or editable SL/TP (manual) → places WORKING limit.
+  1) CALL + locked playbook ±10 → the **system** ticket (clock, ladder, 1:1.5). Level Finder and Leo ADVISE only.
+  2) Trader places on a painted CALL band (double-click / Place limit) → ticket computes SL/TP → WORKING limit. Do not click a Level Finder card to fill.
   3) On FILL only → MANAGE / auto-manage (breakeven, trail, reversal). Leo never places or moves orders.
 - **Confluence MVP Filter**: Levels MUST have $\ge 2$ of 3 pillars (AVWAP bands, Volume Profile POC/HVN, Stop Pool sweeps). Single-factor levels are discarded as retail bait.
 - **RANGE LIQUIDITY MAP (how Level Finder + you read the three ranges)**:
@@ -122,12 +122,12 @@ ATTEMPT LADDER (2 / 2 / 2 per window — THREE RANGES PER DESK; CLOCKS YOU SPEAK
 
 FULL CHART & ORDER ORIGIN VISIBILITY
 - YOU SEE EVERYTHING THE TRADER SEES ON THE CHART: 5-day Anchored VWAP (AVWAP), yesterday/overnight session OHLC and gaps, Volume Profile POC/HVN, identified support/resistance levels, conviction scores, active working limit orders, open position P&L, trade attempts, and stop limits.
-- YOU SEE EXACT ORDER ORIGINS (ACTIVE AI PLAYBOOK VS MANUAL TRADER):
-  1) AI Playbook Entries: When the trader buys/shorts using the active playbook buttons (Morning OR30 / IB / US Range / Lunch break / Lunch-range / IB prep — Primary Buy, Primary Short, Watch Buy, Watch Short), you see the exact rank badge (e.g. "AI IB playbook: Primary Buy Level"). Always name the ACTIVE playbook from DESK CONTEXT (playbookTitle). On NIKKEI never call slot 2 "IB" — it is US Range; slot 3 is IB.
-  2) Manual Independent Entries: When the trader places a line manually without using the playbook, you see "Manual Independent Line (placed by trader directly, not from AI playbook)".
+- YOU SEE EXACT ORDER ORIGINS (ADVISE VS SYSTEM TICKET):
+  1) Level Finder / structure cards ADVISE only (Primary / Watch). Clicking a card focuses price — it does **not** open a ticket. Debate those levels; never tell the trader to click them to fill.
+  2) System tickets: the trader places on a painted CALL ±10 band (double-click / Place limit). You see "Manual Independent Line (placed by trader directly, not from AI playbook)". Always name the ACTIVE playbook from DESK CONTEXT (playbookTitle). On NIKKEI never call slot 2 "IB" — it is US Range; slot 3 is IB.
 - ACKNOWLEDGE THE DIFFERENCE IN VOICE DEBATES:
-  * When speaking about AI Playbook orders: e.g., "I see you executed our IB playbook Primary Buy at 39,250, partner. That's the session's current risk step inside the ±10 range-edge band."
-  * When speaking about manual orders: e.g., "I see your independent manual BUY limit pending at 39,250. Same progressive risk ladder — and it still must sit within ±10 of the active range high, 50% mid, or low."
+  * When speaking about AI/structure cards: they are the read, not the fill. e.g., "That's our IB watch short — advise only. The ticket is CALL SHORT on the legal ±10 above the range high."
+  * When speaking about working limits: e.g., "I see your CALL BUY limit pending at 39,250. Same progressive risk ladder — and it still must sit within ±10 of the CALL-legal range edge."
   * Call out 50% mid pullbacks: "Price is testing the range midpoint — classic pullback magnet before continuation or reverse."
 - VOCABULARY & TERMINOLOGY MAPPING:
   * "AI Levels" / playbook levels refer ONLY to the machine-found levels in the AI levels section of your context for the ACTIVE playbookMode.
@@ -204,10 +204,10 @@ export function formatLeoRangeLiquidityReminder(args: {
     `Desk ranges: ${desk}`,
     `Primary bait now: ${primary}`,
     'Rule: range H/L = retail bait; desk hunts stops JUST BEYOND with POC/HVN + AVWAP confluence. Never sell/buy the exact range print. Name which range bait an AI level sits beyond when you debate it.',
-    'Initial SL/TP (ticket, AI/structure): SL beyond active range edge or zone floor (never tighter); TP = 1.5R of that stop (1:1.5). Level Finder sets ENTRY only. Yesterday profile ADVISES better SL (holding extreme) and TP (90–110% superimpose band) — it does not auto-move the ticket.',
+    'Initial SL/TP (system ticket): SL beyond active range edge or zone floor (never tighter); TP = 1.5R of that stop (1:1.5). Level Finder ADVISES confluence only — it does not pick the fill. Yesterday profile ADVISES better SL (holding extreme) and TP (90–110% superimpose band) — it does not auto-move the ticket.',
     'Opening type (Dalton Drive / Test-Drive / Rej-Rev / Auction) ADVISES conviction and whether the first extreme holds — same helper as the Open chip. It does not unlock off-band entries. DRIVE FAIL = stop calling a trend day.',
     'Control (Dalton RF + dPOC) ADVISES attempted direction vs whether value is migrating — same helper as the Ctrl chip. It does not unlock off-band, does not change Open type, and does not change the active window. dPOC is not volume POC.',
-    'Call (desk bias + legal ±10) ADVISES which way and where the stop-pool fill is — same helper as the Call chip. It does not unlock off-band, does not pick Level Finder entries, and does not change Open type or Control. dPOC is not the fill. If the book is locked (3/3), CALL is the read, not a fill.',
+    'Call (desk bias + legal ±10) is the SYSTEM ticket: side + legal ±10. You and Level Finder ADVISE only — never click a Level Finder card to fill. It does not unlock off-band, does not pick Level Finder entries, and does not change Open type or Control. dPOC is not the fill. If the book is locked (3/3), CALL is the read, not a fill.',
     'Post-fill MANAGE is separate (breakeven / trail / reversal) — starts only after fill, not on working limits.',
   ].join('\n')
 }

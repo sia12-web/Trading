@@ -94,6 +94,9 @@ import {
   computeDeskCall,
   deskCallBadgeText,
   resolveDeskCallAsOfUnix,
+  assertDeskCallEntry,
+  deskCallLegalEdges,
+  type DeskCall,
 } from '@/lib/trading/deskCall'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
@@ -829,6 +832,7 @@ export function TradingChart({
   const paintOpeningActivityRef = useRef<() => void>(() => {})
   const paintMarketControlRef = useRef<() => void>(() => {})
   const paintDeskCallRef = useRef<() => void>(() => {})
+  const deskCallRef = useRef<DeskCall | null>(null)
   /** First 30m opening range — NY 09:30–10:00 ET / Tokyo 09:00–09:30 JST */
   const or30SeriesRef = useRef<{
     high: ISeriesApi<'Line'>
@@ -1536,6 +1540,7 @@ export function TradingChart({
     })
     const badge = deskCallBadgeText(call)
     setCallBadge((prev) => (prev === badge ? prev : badge))
+    deskCallRef.current = call
   }, [
     instrument,
     rangeStrategy,
@@ -1841,10 +1846,11 @@ export function TradingChart({
   /** Active playbook range + magnets for strategy SL/TP (reads live range refs). */
   const getStrategyRiskBundle = useCallback((): {
     strategyRange: StrategyRangeEdges | null
-    /** Visible (toggled) ±10 zones — limit drag/open/click snap. */
+    /** Locked playbook ±10 plus eligible overlays — CALL filters the edge. */
     snapRanges: StrategyRangeEdges[]
     ladder: ReturnType<typeof attemptLadderFromCounts>
     strategyMagnets: StrategyRiskMagnets
+    call: DeskCall
   } => {
     const playbookMode = resolveDeskPlaybookMode({
       instrument,
@@ -1880,19 +1886,9 @@ export function TradingChart({
       lunchRange: lunchRangeRef.current,
       morningAttempts,
     })
-    // Snap only to visible toggled bands (dead OR30 after entryClose excluded).
-    const activeForSnap =
-      strategyRange &&
-      eligible.some(
-        (r) =>
-          r.label === strategyRange.label &&
-          r.high === strategyRange.high &&
-          r.low === strategyRange.low
-      )
-        ? strategyRange
-        : null
+    // Always snap the locked playbook range — do not require OR30/IB/Lunch/US toggles.
     const snapRanges = studyEntrySnapRanges({
-      active: activeForSnap,
+      active: strategyRange,
       overlays: eligible,
     })
     const ladder = attemptLadderFromCounts({
@@ -1920,6 +1916,25 @@ export function TradingChart({
       }
       extras.push(r.high, r.low)
     }
+    const list = candlesRef.current
+    const lastBar = list.length ? (list[list.length - 1]!.time as number) : null
+    const nowUnix = Math.floor(Date.now() / 1000)
+    const call = computeDeskCall({
+      instrument,
+      candles: list.map((c) => ({
+        time: c.time as number,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      })),
+      asOfUnix: resolveDeskCallAsOfUnix(instrument, lastBar, nowUnix),
+      playbookMode,
+      bookLocked:
+        attemptsUsed >= 3 || !!positionOverlay || !!pendingLimit,
+    })
+    deskCallRef.current = call
     return {
       strategyRange,
       snapRanges,
@@ -1928,6 +1943,7 @@ export function TradingChart({
         avwap: avwapLastRef.current,
         extras,
       },
+      call,
     }
   }, [
     instrument,
@@ -1941,6 +1957,9 @@ export function TradingChart({
     showUsRange,
     showLunchRange,
     ibLevels,
+    attemptsUsed,
+    positionOverlay,
+    pendingLimit,
   ])
   const getStrategyRiskBundleRef = useRef(getStrategyRiskBundle)
   getStrategyRiskBundleRef.current = getStrategyRiskBundle
@@ -1963,7 +1982,18 @@ export function TradingChart({
         }
       }
     ) => {
-      const { strategyRange, snapRanges, ladder } = getStrategyRiskBundle()
+      const { strategyRange, snapRanges, ladder, call } = getStrategyRiskBundle()
+      const wait = assertDeskCallEntry({ call })
+      if (!wait.ok) {
+        onDeskAlert?.({
+          kind: 'entry_band_deny',
+          title: 'CALL WAIT',
+          body: wait.message,
+          telegram: '',
+          instrument,
+        })
+        return
+      }
       const liveOk = (range: { label: string; high: number; low: number }) => {
         if (range.label === 'OR30') {
           return (
@@ -2008,10 +2038,19 @@ export function TradingChart({
           })
           return
         }
+        const gated = assertDeskCallEntry({ call, edge })
+        if (!gated.ok) {
+          onDeskAlert?.({
+            kind: 'entry_band_deny',
+            title: 'CALL blocks this edge',
+            body: gated.message,
+            telegram: '',
+            instrument,
+          })
+          return
+        }
         const entry = snapDeskPrice(instrument, center)
-        const dir: 'LONG' | 'SHORT' =
-          opts.direction ??
-          (edge === 'high' ? 'SHORT' : edge === 'low' ? 'LONG' : 'LONG')
+        const dir = gated.side
         const sl = defaultManualStop(entry, dir)
         setRiskBox({
           direction: dir,
@@ -2082,14 +2121,19 @@ export function TradingChart({
         })
         return
       }
+      const gated = assertDeskCallEntry({ call, edge: snapped.hit.edge })
+      if (!gated.ok) {
+        onDeskAlert?.({
+          kind: 'entry_band_deny',
+          title: 'CALL blocks this edge',
+          body: gated.message,
+          telegram: '',
+          instrument,
+        })
+        return
+      }
       const entry = snapDeskPrice(instrument, snapped.price)
-      const dir: 'LONG' | 'SHORT' =
-        opts?.direction ??
-        (snapped.hit.edge === 'high'
-          ? 'SHORT'
-          : snapped.hit.edge === 'low'
-            ? 'LONG'
-            : 'LONG')
+      const dir = gated.side
       const sl = defaultManualStop(entry, dir)
       setRiskBox({
         direction: dir,
@@ -2426,13 +2470,8 @@ export function TradingChart({
 
     setLevels(actionable)
     setNoInBandLevelsMessage(bandMsg)
-    if (
-      !playbookUserClosedRef.current &&
-      (actionable.some((l) => l.source === 'ai' || l.source === 'structure') ||
-        !!bandMsg)
-    ) {
-      setPlaybookOpen(true)
-    }
+    // Playbook / level cards stay closed until the trader hits Playbook (P).
+    // Still refresh the book in the background.
   }, [deskLevelsActive, rangeStrategy, morningAttempts, ibAttempts, lunchAttempts, stopHits])
 
   // Chart axis / tooltips always Montreal — desk logic stays on instrument clock.
@@ -3071,6 +3110,7 @@ export function TradingChart({
       controlPaintKeyRef.current = ''
     }
     setCallBadge('WAIT')
+    deskCallRef.current = null
     const or30S = or30SeriesRef.current
     if (or30S) {
       try {
@@ -3134,7 +3174,26 @@ export function TradingChart({
     if (!showLevelsRef.current) return
 
     const tip = lastCandleRef.current?.close
-    for (const level of levelsRef.current) {
+    const call = deskCallRef.current
+    const wantSide: 'BUY' | 'SHORT' | null =
+      call?.side === 'SHORT' ? 'SHORT' : call?.side === 'LONG' ? 'BUY' : null
+    const source = levelsRef.current
+    const aligned = wantSide
+      ? source.filter((level) => {
+          const isRes =
+            level.type === 'resistance' ||
+            String(level.type).toLowerCase().includes('resist')
+          const side: 'BUY' | 'SHORT' =
+            level.side === 'BUY' || level.side === 'SHORT'
+              ? level.side
+              : isRes
+                ? 'SHORT'
+                : 'BUY'
+          return side === wantSide
+        })
+      : source
+    const paintList = aligned.length > 0 ? aligned : source
+    for (const level of paintList) {
       // Skip wrong-scale leftovers (e.g. Nikkei ~65k while DOW prints ~52k)
       if (
         tip != null &&
@@ -3656,7 +3715,7 @@ export function TradingChart({
   useEffect(() => {
     if (!chartReady) return
     paintLevelLines()
-  }, [levels, showLevels, chartReady, paintLevelLines])
+  }, [levels, showLevels, callBadge, chartReady, paintLevelLines])
 
   // Arm live quote/candle stream once bars exist (do not restart on every new print)
   useEffect(() => {
@@ -4103,17 +4162,7 @@ export function TradingChart({
 
       e.preventDefault()
       e.stopPropagation()
-      const dir: 'LONG' | 'SHORT' =
-        hit.edge === 'high'
-          ? 'SHORT'
-          : hit.edge === 'low'
-            ? 'LONG'
-            : // 50% mid: fade from whichever side price is on (above mid → short bias)
-              livePrice != null && Number.isFinite(livePrice) && livePrice > hit.center
-              ? 'SHORT'
-              : 'LONG'
       openRiskBox(hit.center, {
-        direction: dir,
         lockHit: {
           center: hit.center,
           edge: hit.edge,
@@ -4759,6 +4808,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
   const draggingRiskLineRef = useRef<'ENTRY' | 'TP' | 'SL' | null>(null)
 
   const onRiskLineMouseDown = useCallback((type: 'ENTRY' | 'TP' | 'SL') => (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement | null)?.closest('button')) return
     e.preventDefault()
     e.stopPropagation()
     draggingRiskLineRef.current = type
@@ -4806,7 +4856,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       if (draggingRiskLineRef.current === 'ENTRY') {
         // Free vertical follow within the outer ±10 envelope (H ↔ Mid ↔ L reachable).
         // Snap to a band center on mouseup — continuous center clamp traps mid.
-        const enveloped = clampPriceToRangeEdgeEnvelope(snappedRaw, snapRanges)
+        const enveloped = clampPriceToRangeEdgeEnvelope(
+          snappedRaw,
+          snapRanges,
+          undefined,
+          deskCallLegalEdges(deskCallRef.current ?? getStrategyRiskBundleRef.current().call)
+        )
         const snapped = snapDeskPrice(instrument, enveloped ?? snappedRaw)
         setRiskBox((prev) => {
           if (!prev) return null
@@ -4866,7 +4921,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       const was = draggingRiskLineRef.current
       draggingRiskLineRef.current = null
       if (was !== 'ENTRY') return
-      const { snapRanges, strategyRange, ladder } = getStrategyRiskBundleRef.current()
+      const { snapRanges, strategyRange, ladder, call } = getStrategyRiskBundleRef.current()
       setRiskBox((prev) => {
         if (!prev) return null
         const snapped = snapEntryToNearestOpenBandCenter({
@@ -4874,6 +4929,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           candidates: snapRanges,
           preferLabel: prev.preferRangeLabel ?? strategyRange?.label ?? null,
           liveOk: (range) => liveOkForSnap(range, strategyRange, ladder),
+          allowedEdges: deskCallLegalEdges(call),
         })
         if (!snapped) return prev
         const next = snapDeskPrice(instrument, snapped.price)
@@ -5210,7 +5266,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     if (!riskBox) return
     const { entryPrice: boxEntry, stopLoss, profitTarget, direction } = riskBox
 
-    const { strategyMagnets, snapRanges, strategyRange, ladder } = getStrategyRiskBundle()
+    const { strategyMagnets, snapRanges, strategyRange, ladder, call } = getStrategyRiskBundle()
     const preferLabel =
       riskBox.preferRangeLabel ?? strategyRange?.label ?? null
     const hit = attributePlaybookBandEntry({
@@ -5245,6 +5301,21 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       })
       return
     }
+    const gated = assertDeskCallEntry({
+      call,
+      edge: hit.edge,
+      direction,
+    })
+    if (!gated.ok) {
+      onDeskAlert?.({
+        kind: 'entry_band_deny',
+        title: 'CALL blocks this ticket',
+        body: gated.message,
+        telegram: '',
+        instrument,
+      })
+      return
+    }
     // Lock to band center — never place mid-band interior from a drifted risk box.
     const entryPrice = snapDeskPrice(instrument, hit.center)
     const attributedRange = hit.range
@@ -5274,9 +5345,22 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
   }, [riskBox, onLevelSelect, cancelRiskBox, getStrategyRiskBundle, onDeskAlert, instrument])
 
   const toggleRiskBoxDirection = useCallback(() => {
+    if (!riskBox) return
+    const newDir: 'LONG' | 'SHORT' = riskBox.direction === 'LONG' ? 'SHORT' : 'LONG'
+    const call = deskCallRef.current ?? getStrategyRiskBundle().call
+    const gated = assertDeskCallEntry({ call, direction: newDir })
+    if (!gated.ok) {
+      onDeskAlert?.({
+        kind: 'entry_band_deny',
+        title: 'CALL side is locked',
+        body: gated.message,
+        telegram: '',
+        instrument,
+      })
+      return
+    }
     setRiskBox((prev) => {
       if (!prev) return null
-      const newDir: 'LONG' | 'SHORT' = prev.direction === 'LONG' ? 'SHORT' : 'LONG'
       const entryPx = prev.entryPrice
       const slDist = Math.abs(prev.entryPrice - prev.stopLoss)
       const tpDist = Math.abs(prev.profitTarget - prev.entryPrice)
@@ -5290,7 +5374,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         profitTarget: snapDeskPrice(instrument, newTP),
       }
     })
-  }, [instrument])
+  }, [instrument, riskBox, getStrategyRiskBundle, onDeskAlert])
 
   // ── Keyboard shortcuts: V (Voice), L (Levels), P (Playbook), D (Draw Zone), T (Highlight Time), O (Risk Box), F (Fullscreen), Esc
   useEffect(() => {
@@ -5750,7 +5834,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       lunchRange: lunchRangeRef.current,
       morningAttempts,
     })
-    if (overlays.length === 0) {
+    const snapRanges = studyEntrySnapRanges({
+      active,
+      overlays,
+    })
+    const call = deskCallRef.current
+    const legal = new Set(call ? deskCallLegalEdges(call) : [])
+    if (legal.size === 0 || snapRanges.length === 0) {
       clearBands()
       return
     }
@@ -5800,8 +5890,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     }
 
     let anyLive = false
-    for (const strategyRange of overlays) {
-      const bands = rangeEdgeBands(strategyRange)
+    for (const strategyRange of snapRanges) {
+      const bands = rangeEdgeBands(strategyRange).filter((b) => legal.has(b.edge))
       if (bands.length === 0) continue
       const label = strategyRange.label || 'range'
       const entryLive =
@@ -5881,15 +5971,15 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     }
 
     setEntryBandsVisible(entryBandLinesRef.current.length > 0)
-    const legendParts = overlays.map((o) => {
+    const legendParts = snapRanges.map((o) => {
       const name = o.label || 'range'
       return `${name} ${rangeEdgeBandLegend(o)}`
     })
     const legendList = legendParts.join(' · ')
     setEntryBandLabel(
       anyLive
-        ? `±${RANGE_EDGE_BAND_POINTS} ${legendList} entry zones`
-        : `±${RANGE_EDGE_BAND_POINTS} ${legendList} (shaped — entry window closed or inactive)`
+        ? `±${RANGE_EDGE_BAND_POINTS} CALL ${legendList} entry zones`
+        : `±${RANGE_EDGE_BAND_POINTS} CALL ${legendList} (shaped — entry window closed or inactive)`
     )
 
     return () => {
@@ -5921,6 +6011,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     showLunchRange,
     livePrice,
     focusTick,
+    callBadge,
   ])
 
   // Active playbook range ATR chip (advise-only; refresh with focusTick / range shape)
@@ -6195,6 +6286,25 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     watchOnly: afternoonWatch,
   })
   const watchPlaybookHint = deskPlaybookHint(playbookMode, instrument)
+  const callAdviseSide: 'BUY' | 'SHORT' | null = callBadge.includes('SHORT')
+    ? 'SHORT'
+    : callBadge.includes('LONG')
+      ? 'BUY'
+      : null
+  const playbookAdviseLevels = (() => {
+    const cards = levels.filter((l) => l.source === 'ai' || l.source === 'structure')
+    if (!callAdviseSide) return cards.slice(0, 4)
+    const aligned = cards.filter((l) => {
+      const side: 'BUY' | 'SHORT' =
+        l.side === 'BUY' || l.side === 'SHORT'
+          ? l.side
+          : l.type === 'resistance'
+            ? 'SHORT'
+            : 'BUY'
+      return side === callAdviseSide
+    })
+    return (aligned.length > 0 ? aligned : cards).slice(0, 4)
+  })()
 
   const renderSavedHighlightBoxes = () => {
     const chart = chartRef.current
@@ -6432,7 +6542,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
         {deskSessionLive && (
           <span
-            title="Desk CALL — bias + legal ±10 of the active range. Advise only; not a ticket. No line."
+            title="Desk CALL — system places on legal ±10. Leo and Level Finder advise only. No line."
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border rounded-lg bg-transparent border-zinc-500/40 text-zinc-400"
           >
             <span
@@ -6549,28 +6659,24 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </span>
         )}
 
-        {deskSessionLive &&
-          deskLevelsActive &&
-          !playbookOpen &&
-          levels.some((l) => l.source === 'ai' || l.source === 'structure') && (
+        {deskSessionLive && deskLevelsActive && (
           <button
             type="button"
             title={
-              afternoonWatch
-                ? tokyoDesk
-                  ? 'Show Tokyo watch playbook (Press P)'
-                  : 'Show afternoon watch playbook (Press P)'
-                : canPlaceOrder
-                  ? `Show ${playbookButtonLabel} (Press P)`
-                  : inEntryWindow
-                    ? `Show ${playbookButtonLabel} — clock in to place (Press P)`
-                    : `Show ${playbookButtonLabel} (Press P)`
+              playbookOpen
+                ? `Hide ${playbookButtonLabel} (Press P) — advise only`
+                : afternoonWatch
+                  ? tokyoDesk
+                    ? 'Show Tokyo watch playbook (Press P) — advise only'
+                    : 'Show afternoon watch playbook (Press P) — advise only'
+                  : `Show ${playbookButtonLabel} (Press P) — advise only; place on CALL ±10`
             }
-            onClick={() => {
-              playbookUserClosedRef.current = false
-              setPlaybookOpen(true)
-            }}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg bg-transparent border-surface-600 text-gray-500 hover:text-gray-300"
+            onClick={togglePlaybook}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+              playbookOpen
+                ? 'bg-surface-600 border-surface-400 text-gray-200'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-gray-300'
+            }`}
           >
             {playbookButtonLabel} (P)
           </button>
@@ -7442,6 +7548,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     <span className="text-emerald-600 mx-1.5">|</span>
                     <button
                       onClick={(e) => { e.stopPropagation(); cancelRiskBox() }}
+                    onMouseDown={(e) => e.stopPropagation()}
                       className="text-gray-400 hover:text-emerald-200 transition font-bold"
                       title="Remove TP"
                     >✕</button>
@@ -7468,6 +7575,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                       e.stopPropagation()
                       confirmRiskBoxOrder()
                     }}
+                    onMouseDown={(e) => e.stopPropagation()}
                     className={`px-3 py-1 text-xs font-extrabold uppercase rounded-md shadow-md transition border ${
                       riskBox.direction === 'LONG'
                         ? 'bg-blue-600 border-blue-400 text-white hover:bg-blue-500 hover:scale-105'
@@ -7485,6 +7593,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                       e.stopPropagation()
                       toggleRiskBoxDirection()
                     }}
+                    onMouseDown={(e) => e.stopPropagation()}
                     className="w-7 h-7 flex items-center justify-center text-xs font-mono font-extrabold rounded-md shadow-md bg-[#161b22]/95 border border-gray-600 text-gray-200 hover:text-white hover:border-amber-400 hover:bg-surface-700 transition"
                     title={`Click to switch to ${riskBox.direction === 'LONG' ? 'SHORT / SELL' : 'LONG / BUY'} mode`}
                   >
@@ -7504,6 +7613,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); cancelRiskBox() }}
+                    onMouseDown={(e) => e.stopPropagation()}
                       className="text-gray-400 hover:text-red-500 transition font-bold"
                       title="Close (Esc)"
                     >
@@ -7533,6 +7643,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     <span className="text-amber-600 mx-1.5">|</span>
                     <button
                       onClick={(e) => { e.stopPropagation(); cancelRiskBox() }}
+                    onMouseDown={(e) => e.stopPropagation()}
                       className="text-gray-400 hover:text-amber-200 transition font-bold"
                       title="Remove SL"
                     >✕</button>
@@ -7822,7 +7933,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   type="button"
                   onClick={() => {
                     const fullReason = `Manual ${rationaleModal.direction} entry: ${userRationale || 'Technical structure'} | SL/TP rationale: ${userSlTpRationale || 'Geometry bounds'}`
-                    const { strategyMagnets, snapRanges, strategyRange, ladder } =
+                    const { strategyMagnets, snapRanges, strategyRange, ladder, call } =
                       getStrategyRiskBundle()
                     const hit = attributePlaybookBandEntry({
                       entry: rationaleModal.entryPrice,
@@ -7857,6 +7968,21 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                       })
                       return
                     }
+                    const gated = assertDeskCallEntry({
+                      call,
+                      edge: hit.edge,
+                      direction: rationaleModal.direction,
+                    })
+                    if (!gated.ok) {
+                      onDeskAlert?.({
+                        kind: 'entry_band_deny',
+                        title: 'CALL blocks this ticket',
+                        body: gated.message,
+                        telegram: '',
+                        instrument,
+                      })
+                      return
+                    }
                     onLevelSelect?.(rationaleModal.entryPrice, {
                       source: 'manual',
                       type: 'manual',
@@ -7881,11 +8007,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </div>
         )}
 
-        {/* Playbook — morning / IB / lunch-break / lunch-range */}
-        {deskLevelsActive &&
-          playbookOpen &&
-          (noInBandLevelsMessage ||
-            levels.some((l) => l.source === 'ai' || l.source === 'structure')) && (
+        {/* Playbook — hidden until Playbook (P); cards still refresh in the background */}
+        {deskLevelsActive && playbookOpen && (
           <DraggableDeskWidget
             storageKey="desk-playbook-live"
             defaultPos={{ x: 24, y: 88 }}
@@ -7897,6 +8020,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           >
             <div className="space-y-1.5 p-2">
               <p className="px-1 pb-1 text-[10px] leading-snug text-gray-500">
+                Level Finder advises only. Place on CALL ±10 (double-click or a painted band).
+              </p>
+              <p className="px-1 pb-1 text-[10px] leading-snug text-gray-500">
                 {watchPlaybookHint}
               </p>
               {noInBandLevelsMessage && (
@@ -7904,9 +8030,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   {noInBandLevelsMessage}
                 </p>
               )}
-              {levels
-                .filter((l) => l.source === 'ai' || l.source === 'structure')
-                .slice(0, 4)
+              {playbookAdviseLevels.length === 0 && (
+                <p className="rounded-md border border-white/10 bg-black/30 px-2 py-2 text-[11px] leading-snug text-gray-400">
+                  No in-band advise levels yet — the book still updates with CALL and the
+                  locked playbook. Place on CALL ±10.
+                </p>
+              )}
+              {playbookAdviseLevels
                 .map((l, i) => {
                   const side: 'BUY' | 'SHORT' =
                     l.side === 'BUY' || l.side === 'SHORT'
@@ -7928,33 +8058,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                       onClick={(e) => {
                         e.stopPropagation()
                         jumpToPriceRef?.current?.(l.price)
-                        // Strategy SL/TP from active playbook range (not zone-only)
-                        const { strategyRange, strategyMagnets } =
-                          getStrategyRiskBundle()
-                        onLevelSelect?.(l.price, {
-                          type: side === 'SHORT' ? 'resistance' : 'support',
-                          side,
-                          preferredDirection: side === 'SHORT' ? 'SHORT' : 'LONG',
-                          reasoning: l.reasoning || why,
-                          source: l.source === 'structure' ? 'structure' : 'ai',
-                          strategyRange,
-                          strategyMagnets,
-                        })
                       }}
                       className={`w-full rounded-xl border px-2.5 py-2.5 text-left text-[11px] transition-all hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 ${
                         isRes
                           ? 'border-red-800/80 bg-[#2a1518] text-red-200'
                           : 'border-emerald-800/80 bg-[#12241c] text-emerald-200'
                       } ${isPrimary ? 'ring-1 ring-white/25' : 'opacity-90'}`}
-                      title={
-                        canPlaceOrder
-                          ? why
-                          : afternoonWatch
-                            ? `${why} · watch only (click to focus price)`
-                            : inEntryWindow
-                              ? `${why} · clock in to place (click to focus)`
-                              : `${why} · prep (click to focus price)`
-                      }
+                      title={`${why} · advise only (click to focus) — place on CALL ±10`}
                     >
                       <div className="flex items-center justify-between gap-1">
                         <span className="text-[9px] font-bold uppercase tracking-wide">

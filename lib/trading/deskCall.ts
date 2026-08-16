@@ -1,9 +1,10 @@
 /**
- * Desk CALL — one advise-only binary read from Open type + Control +
- * yesterday veto + the locked playbook range (stop-pool ±10).
+ * Desk CALL — binary read from Open type + Control + yesterday veto +
+ * the locked playbook range (stop-pool ±10). Governs ticket side and
+ * legal edge. Level Finder and Leo advise only — they never place.
  *
- * Not a new clock, not a price line, not a ticket gate. Ticket stays
- * 1:1.5 and $400→$250→$150. Does not unlock ±10.
+ * Not a new clock, not a price line. Ticket stays 1:1.5 and
+ * $400→$250→$150. Does not unlock ±10.
  */
 
 import { computeOr30Range } from '@/lib/chart/openingRange30'
@@ -252,6 +253,58 @@ function decideSide(args: {
 export function deskCallBadgeText(p: DeskCall): string {
   if (p.side === 'WAIT' || !p.rangeKey) return 'WAIT'
   return `${p.rangeKey} ${p.side}`
+}
+
+export type DeskCallEdge = 'high' | 'low' | 'mid'
+
+const CALL_WAIT_ENTRY =
+  'CALL WAIT — hunt nothing new. Open and Control don’t agree yet, or there is no legal ±10.'
+
+/** Which painted ±10 edges CALL allows (live + sim). WAIT → none. */
+export function deskCallLegalEdges(call: DeskCall): DeskCallEdge[] {
+  if (call.side === 'WAIT' || !call.rangeKey) return []
+  if (call.side === 'LONG') {
+    return call.midAllowed ? ['low', 'mid'] : ['low']
+  }
+  return call.midAllowed ? ['high', 'mid'] : ['high']
+}
+
+/**
+ * Ticket gate — CALL picks side and legal edge. Does not unlock off-band.
+ * Level Finder / Leo never place.
+ */
+export function assertDeskCallEntry(args: {
+  call: DeskCall
+  edge?: DeskCallEdge | null
+  direction?: 'LONG' | 'SHORT' | null
+}): { ok: true; side: 'LONG' | 'SHORT' } | { ok: false; message: string } {
+  if (args.call.side === 'WAIT' || !args.call.rangeKey) {
+    return { ok: false, message: CALL_WAIT_ENTRY }
+  }
+  const side = args.call.side
+  if (args.direction && args.direction !== side) {
+    return {
+      ok: false,
+      message: `CALL is ${side} — this ticket must be a ${
+        side === 'LONG' ? 'buy' : 'sell'
+      }.`,
+    }
+  }
+  if (args.edge && !deskCallLegalEdges(args.call).includes(args.edge)) {
+    if (side === 'LONG') {
+      return {
+        ok: false,
+        message:
+          'CALL LONG — buy liquidity is the legal ±10 below the range low. Mid is a pullback in the same CALL, never the opposite edge.',
+      }
+    }
+    return {
+      ok: false,
+      message:
+        'CALL SHORT — sell liquidity is the legal ±10 above the range high. Mid is a pullback in the same CALL, never the opposite edge.',
+    }
+  }
+  return { ok: true, side }
 }
 
 export function playLineForCall(

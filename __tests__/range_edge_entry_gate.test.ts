@@ -17,6 +17,7 @@ import {
   rangeEdgeBandLegend,
   rangeEdgeBands,
   rangeEdgeBandsEnvelope,
+  rangeEdgeKindAt,
   rangeMidpoint,
   snapEntryToOpenBandCenter,
   snapEntryToNearestOpenBandCenter,
@@ -53,6 +54,10 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
   assert.equal(isEntryWithinRangeEdgeBand(39970, range), false, 'between mid and high illegal')
   assert.equal(isEntryWithinRangeEdgeBand(40011, range), false)
   assert.equal(isEntryWithinRangeEdgeBand(39889, range), false)
+  assert.equal(rangeEdgeKindAt(40005, range), 'high')
+  assert.equal(rangeEdgeKindAt(39950, range), 'mid')
+  assert.equal(rangeEdgeKindAt(39895, range), 'low')
+  assert.equal(rangeEdgeKindAt(39970, range), null)
 }
 
 {
@@ -395,6 +400,32 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
     liveOk: bothLive,
   })
   assert.equal(ibOnlyHigh?.hit.range.label, 'Tokyo IB', 'Tokyo IB-only H still places as IB')
+}
+
+{
+  const range = { high: 40000, low: 39900, label: 'OR30' }
+  const highSnap = snapEntryToNearestOpenBandCenter({
+    entry: 40005,
+    candidates: [range],
+    allowedEdges: ['low', 'mid'],
+  })
+  assert.equal(highSnap?.hit.edge, 'mid', 'CALL LONG must not snap a high drag onto the high')
+  assert.equal(highSnap?.price, 39950)
+
+  const lowSnap = snapEntryToNearestOpenBandCenter({
+    entry: 39895,
+    candidates: [range],
+    allowedEdges: ['low', 'mid'],
+  })
+  assert.equal(lowSnap?.hit.edge, 'low')
+  assert.equal(lowSnap?.price, 39900)
+
+  const none = snapEntryToNearestOpenBandCenter({
+    entry: 40000,
+    candidates: [range],
+    allowedEdges: [],
+  })
+  assert.equal(none, null, 'WAIT / no legal edges → no snap')
 }
 
 console.log('range_edge_entry_gate: all passed')

@@ -19,6 +19,7 @@ import { useStickySeriesLayout } from '@/app/dashboard/chart/components/useStick
 import {
   clampPriceToRangeEdgeEnvelope,
   snapEntryToNearestOpenBandCenter,
+  type RangeEdgeKind,
 } from '@/lib/trading/rangeEdgeEntryGate'
 import type { StrategyRangeEdges } from '@/lib/trading/strategyRiskGeometry'
 
@@ -81,6 +82,8 @@ export function DeskRiskBoxOverlay({
   riskDollars,
   fillsUsed,
   layoutTick,
+  allowedEdges = null,
+  lockDirection = false,
 }: {
   containerRef: React.RefObject<HTMLElement | null>
   series: ISeriesApi<'Candlestick'> | null
@@ -95,6 +98,10 @@ export function DeskRiskBoxOverlay({
   riskDollars: number
   fillsUsed: number
   layoutTick: number
+  /** CALL-legal ±10 edges. Null = all painted edges. */
+  allowedEdges?: ReadonlyArray<RangeEdgeKind> | null
+  /** When true, ⇄ cannot flip against the system CALL. */
+  lockDirection?: boolean
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const draggingRef = useRef<'ENTRY' | 'TP' | 'SL' | null>(null)
@@ -104,8 +111,8 @@ export function DeskRiskBoxOverlay({
   boxRef.current = riskBox
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
-  const snapRef = useRef({ snapRanges, strategyRange, liveOk })
-  snapRef.current = { snapRanges, strategyRange, liveOk }
+  const snapRef = useRef({ snapRanges, strategyRange, liveOk, allowedEdges })
+  snapRef.current = { snapRanges, strategyRange, liveOk, allowedEdges }
   const layoutTickSticky = useStickySeriesLayout(series, [
     riskBox.entryPrice,
     riskBox.stopLoss,
@@ -114,6 +121,9 @@ export function DeskRiskBoxOverlay({
 
   const onHandlePointerDown = useCallback(
     (type: 'ENTRY' | 'TP' | 'SL') => (e: React.PointerEvent) => {
+      // Buttons (BUY / ✕ / ⇄) live on the same row — do not start a drag or
+      // preventDefault, or the click never fires.
+      if ((e.target as HTMLElement | null)?.closest('button')) return
       e.preventDefault()
       e.stopPropagation()
       draggingRef.current = type
@@ -138,7 +148,9 @@ export function DeskRiskBoxOverlay({
       if (type === 'ENTRY') {
         const enveloped = clampPriceToRangeEdgeEnvelope(
           snapDeskPrice(instrument, raw),
-          snapRef.current.snapRanges
+          snapRef.current.snapRanges,
+          undefined,
+          snapRef.current.allowedEdges
         )
         const snapped = snapDeskPrice(instrument, enveloped ?? raw)
         const diff = snapped - prev.entryPrice
@@ -202,13 +214,15 @@ export function DeskRiskBoxOverlay({
       const was = draggingRef.current
       draggingRef.current = null
       if (was !== 'ENTRY') return
-      const { snapRanges: ranges, strategyRange: active, liveOk: ok } = snapRef.current
+      const { snapRanges: ranges, strategyRange: active, liveOk: ok, allowedEdges } =
+        snapRef.current
       const prev = boxRef.current
       const snapped = snapEntryToNearestOpenBandCenter({
         entry: prev.entryPrice,
         candidates: ranges,
         preferLabel: prev.preferRangeLabel ?? active?.label ?? null,
         liveOk: ok,
+        allowedEdges,
       })
       if (!snapped) return
       const next = snapDeskPrice(instrument, snapped.price)
@@ -242,6 +256,7 @@ export function DeskRiskBoxOverlay({
   }, [containerRef, series, instrument])
 
   const toggleDirection = useCallback(() => {
+    if (lockDirection) return
     const prev = boxRef.current
     const newDir: 'LONG' | 'SHORT' = prev.direction === 'LONG' ? 'SHORT' : 'LONG'
     const slDist = Math.abs(prev.entryPrice - prev.stopLoss)
@@ -262,7 +277,7 @@ export function DeskRiskBoxOverlay({
         newDir
       ),
     })
-  }, [instrument, onChange])
+  }, [instrument, onChange, lockDirection])
 
   const entryY = overlayTopFromPrice(
     series,
@@ -310,6 +325,7 @@ export function DeskRiskBoxOverlay({
             <span className="text-emerald-600 mx-1.5">|</span>
             <button
               type="button"
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation()
                 onCancel()
@@ -333,6 +349,7 @@ export function DeskRiskBoxOverlay({
         >
           <button
             type="button"
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation()
               onConfirm()
@@ -346,8 +363,10 @@ export function DeskRiskBoxOverlay({
           >
             {riskBox.direction === 'LONG' ? 'BUY LIMIT' : 'SELL LIMIT'}
           </button>
+          {!lockDirection && (
           <button
             type="button"
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation()
               toggleDirection()
@@ -357,6 +376,7 @@ export function DeskRiskBoxOverlay({
           >
             ⇄
           </button>
+          )}
           <div className="flex items-center rounded-md border border-blue-400 bg-white/95 px-3 py-1 text-xs font-mono font-bold text-gray-900 shadow-xl">
             <span className="font-sans uppercase font-extrabold tracking-wider text-[11px] select-none">
               Limit
@@ -368,6 +388,7 @@ export function DeskRiskBoxOverlay({
             <span className="text-gray-400 mx-1.5">|</span>
             <button
               type="button"
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation()
                 onCancel()
@@ -396,6 +417,7 @@ export function DeskRiskBoxOverlay({
             <span className="text-amber-600 mx-1.5">|</span>
             <button
               type="button"
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation()
                 onCancel()
@@ -422,6 +444,7 @@ export function DeskWorkingBracketOverlay({
   stopLoss,
   profitTarget,
   onTargetChange,
+  onCancel,
   layoutTick,
 }: {
   containerRef: React.RefObject<HTMLElement | null>
@@ -432,6 +455,7 @@ export function DeskWorkingBracketOverlay({
   stopLoss: number
   profitTarget: number
   onTargetChange: (target: number) => void
+  onCancel?: () => void
   layoutTick: number
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -509,6 +533,7 @@ export function DeskWorkingBracketOverlay({
       {tpY != null && (
         <div
           onPointerDown={(e) => {
+            if ((e.target as HTMLElement | null)?.closest('button')) return
             e.preventDefault()
             e.stopPropagation()
             draggingRef.current = true
@@ -526,6 +551,23 @@ export function DeskWorkingBracketOverlay({
         >
           <div className="flex items-center rounded border border-dashed border-emerald-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-emerald-300 shadow-md">
             TP {draft.toLocaleString()}
+            {onCancel && (
+              <>
+                <span className="text-emerald-600 mx-1.5">|</span>
+                <button
+                  type="button"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onCancel()
+                  }}
+                  className="text-gray-400 hover:text-white transition font-bold"
+                  title="Cancel working limit"
+                >
+                  ✕
+                </button>
+              </>
+            )}
           </div>
           <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
         </div>

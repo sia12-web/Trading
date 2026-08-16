@@ -75,6 +75,17 @@ export function rangeEdgeBands(
   return bands
 }
 
+/** Keep only CALL-legal (or otherwise allowed) ±10 edges. `null` = all edges. */
+export function filterRangeEdgeBands(
+  bands: RangeEdgeBand[],
+  allowedEdges?: ReadonlyArray<RangeEdgeKind> | null
+): RangeEdgeBand[] {
+  if (allowedEdges == null) return bands
+  if (allowedEdges.length === 0) return []
+  const ok = new Set(allowedEdges)
+  return bands.filter((b) => ok.has(b.edge))
+}
+
 export function isEntryWithinRangeEdgeBand(
   entry: number,
   range: RangeEdgeLevels,
@@ -82,6 +93,18 @@ export function isEntryWithinRangeEdgeBand(
 ): boolean {
   if (!Number.isFinite(entry) || entry <= 0) return false
   return rangeEdgeBands(range, bandPoints).some((band) => entry >= band.min && entry <= band.max)
+}
+
+export function rangeEdgeKindAt(
+  entry: number,
+  range: RangeEdgeLevels | null | undefined,
+  bandPoints: number = RANGE_EDGE_BAND_POINTS
+): RangeEdgeKind | null {
+  if (!range || !Number.isFinite(entry) || entry <= 0) return null
+  const hit = rangeEdgeBands(range, bandPoints).find(
+    (band) => entry >= band.min && entry <= band.max
+  )
+  return hit?.edge ?? null
 }
 
 /**
@@ -149,13 +172,17 @@ export function clampPriceToNearestRangeEdgeBands(
  */
 export function rangeEdgeBandsEnvelope(
   ranges: Array<RangeEdgeLevels | null | undefined>,
-  bandPoints: number = RANGE_EDGE_BAND_POINTS
+  bandPoints: number = RANGE_EDGE_BAND_POINTS,
+  allowedEdges?: ReadonlyArray<RangeEdgeKind> | null
 ): { min: number; max: number } | null {
   let min = Infinity
   let max = -Infinity
   for (const range of ranges) {
     if (!range) continue
-    for (const band of rangeEdgeBands(range, bandPoints)) {
+    for (const band of filterRangeEdgeBands(
+      rangeEdgeBands(range, bandPoints),
+      allowedEdges
+    )) {
       if (band.min < min) min = band.min
       if (band.max > max) max = band.max
     }
@@ -168,10 +195,11 @@ export function rangeEdgeBandsEnvelope(
 export function clampPriceToRangeEdgeEnvelope(
   price: number,
   ranges: Array<RangeEdgeLevels | null | undefined>,
-  bandPoints: number = RANGE_EDGE_BAND_POINTS
+  bandPoints: number = RANGE_EDGE_BAND_POINTS,
+  allowedEdges?: ReadonlyArray<RangeEdgeKind> | null
 ): number | null {
   if (!Number.isFinite(price) || !(price > 0)) return null
-  const envelope = rangeEdgeBandsEnvelope(ranges, bandPoints)
+  const envelope = rangeEdgeBandsEnvelope(ranges, bandPoints, allowedEdges)
   if (!envelope) return null
   return Math.min(envelope.max, Math.max(envelope.min, price))
 }
@@ -316,11 +344,13 @@ export function snapEntryToOpenBandCenter<T extends RangeEdgeLevels>(args: {
   preferLabel?: string | null
   liveOk?: (range: T) => boolean
   bandPoints?: number
+  allowedEdges?: ReadonlyArray<RangeEdgeKind> | null
 }): { price: number; hit: RangeEdgeBandHit<T> } | null {
   const hit = attributePlaybookBandEntry(args)
   if (!hit) return null
   // Prefer live-open bands only for placeable snaps. Closed-band hits are for deny copy.
   if (args.liveOk && !args.liveOk(hit.range)) return null
+  if (args.allowedEdges && !args.allowedEdges.includes(hit.edge)) return null
   return { price: hit.center, hit }
 }
 
@@ -351,6 +381,7 @@ export function snapEntryToNearestOpenBandCenter<T extends RangeEdgeLevels>(args
   preferLabel?: string | null
   liveOk?: (range: T) => boolean
   bandPoints?: number
+  allowedEdges?: ReadonlyArray<RangeEdgeKind> | null
 }): { price: number; hit: RangeEdgeBandHit<T> } | null {
   const inBand = snapEntryToOpenBandCenter(args)
   if (inBand) return inBand
@@ -363,7 +394,10 @@ export function snapEntryToNearestOpenBandCenter<T extends RangeEdgeLevels>(args
   let best: RangeEdgeBandHit<T> | null = null
   let bestDist = Infinity
   for (const range of live) {
-    for (const band of rangeEdgeBands(range, bandPoints)) {
+    for (const band of filterRangeEdgeBands(
+      rangeEdgeBands(range, bandPoints),
+      args.allowedEdges
+    )) {
       const d = distanceToRangeEdgeBand(args.entry, band)
       // Tiny prefer-label boost so ties land on the active playbook range.
       // Do not boost mid over H/L — edges compete equally.

@@ -20,7 +20,7 @@ import {
 } from '@/lib/chart/nycLunchSessionRange'
 import { currentNikkeiUsRangeForChart } from '@/lib/chart/nikkeiUsRangeBreakout'
 import { activeRangeForPlaybook, shapedPlaybookRanges } from '@/lib/trading/strategyRiskGeometry'
-import { resolveDeskPlaybookMode } from '@/lib/trading/deskPlaybookMode'
+import { resolveDeskPlaybookMode, type DeskPlaybookMode } from '@/lib/trading/deskPlaybookMode'
 import {
   sessionFor,
   deskMarketFor,
@@ -39,9 +39,15 @@ import type { StrategyRangeEdges } from '@/lib/trading/strategyRiskGeometry'
 import {
   assertRangeEdgeEntry,
   attributePlaybookBandEntry,
+  rangeEdgeKindAt,
   RANGE_EDGE_OFF_BAND_MESSAGE,
   type RangeEdgeLevels,
 } from '@/lib/trading/rangeEdgeEntryGate'
+import {
+  assertDeskCallEntry,
+  computeDeskCall,
+  type DeskCallBar,
+} from '@/lib/trading/deskCall'
 import { logger } from '@/lib/utils/logger'
 
 /**
@@ -63,6 +69,8 @@ export type ServerPlaybookBundle = {
     lunchRange: StrategyRangeEdges | null
   }
   ladder: AttemptLadder
+  playbookMode: DeskPlaybookMode
+  deskBars: DeskCallBar[]
 }
 
 export async function resolveServerPlaybookBundle(args: {
@@ -152,7 +160,7 @@ export async function resolveServerPlaybookBundle(args: {
       morningAttempts: ladder.morningAttempts,
     })
 
-    return { active, shaped, ladder }
+    return { active, shaped, ladder, playbookMode, deskBars }
   } catch (err) {
     logger.warn('server_playbook_range.failed', { err, instrument: args.instrument })
     return null
@@ -293,6 +301,7 @@ export async function assertServerRangeEdgeEntry(args: {
   lunchAttempts?: number
   ladder?: AttemptLadder
   now?: Date
+  direction?: 'LONG' | 'SHORT'
 }): Promise<{ ok: true; range: RangeEdgeLevels } | { ok: false; message: string }> {
   const bundle = await resolveServerPlaybookBundle({
     instrument: args.instrument,
@@ -385,6 +394,22 @@ export async function assertServerRangeEdgeEntry(args: {
   })
   if (!bucketCheck.ok) {
     return { ok: false, message: bucketCheck.message }
+  }
+
+  const nowUnix = Math.floor((args.now ?? new Date()).getTime() / 1000)
+  const call = computeDeskCall({
+    instrument: args.instrument,
+    candles: bundle.deskBars,
+    asOfUnix: nowUnix,
+    playbookMode: bundle.playbookMode,
+  })
+  const callGate = assertDeskCallEntry({
+    call,
+    edge: rangeEdgeKindAt(args.entry, attributed),
+    direction: args.direction ?? null,
+  })
+  if (!callGate.ok) {
+    return { ok: false, message: callGate.message }
   }
 
   return { ok: true, range: attributed }

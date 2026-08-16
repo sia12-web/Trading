@@ -341,6 +341,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       morningAttempts: gate.morningAttempts,
       ibAttempts: gate.ibAttempts,
       lunchAttempts: gate.lunchAttempts,
+      direction: body.entry_direction,
     })
     if (!edgeCheck.ok) {
       logEntryDenied({

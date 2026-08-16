@@ -15,8 +15,10 @@ import { RANGE_EDGE_BAND_POINTS } from '../lib/trading/rangeEdgeEntryGate'
 import {
   CALL_BAND_POINTS,
   CALL_COLORS,
+  assertDeskCallEntry,
   computeDeskCall,
   deskCallBadgeText,
+  deskCallLegalEdges,
   deskCallLineSpecs,
   deskCallPaintKey,
   formatDeskCallForPrompt,
@@ -541,6 +543,36 @@ function auctionThenBuy(openU: number): DeskCallBar[] {
   const strip = formatDeskCallScoreStrip(rows, tally)
   assert.ok(strip.startsWith('Call score'))
   assert.ok(strip.includes('session'))
+}
+
+{
+  const wait = computeDeskCall({
+    instrument: 'DOW',
+    candles: [],
+    asOfUnix: mondayOpen,
+    playbookMode: 'morning',
+  })
+  assert.deepEqual(deskCallLegalEdges(wait), [])
+  const waitGate = assertDeskCallEntry({ call: wait, edge: 'low' })
+  assert.equal(waitGate.ok, false)
+  if (!waitGate.ok) {
+    assert.ok(waitGate.message.includes('CALL WAIT'))
+  }
+
+  const long = computeDeskCall({
+    instrument: 'DOW',
+    candles: [...friday, ...driveUpSession(mondayOpen, 1)],
+    asOfUnix: mondayOpen + 30 * 60,
+    playbookMode: 'morning',
+  })
+  assert.equal(long.side, 'LONG')
+  assert.ok(deskCallLegalEdges(long).includes('low'))
+  assert.ok(!deskCallLegalEdges(long).includes('high'))
+  assert.equal(assertDeskCallEntry({ call: long, edge: 'low' }).ok, true)
+  const high = assertDeskCallEntry({ call: long, edge: 'high' })
+  assert.equal(high.ok, false)
+  const flip = assertDeskCallEntry({ call: long, direction: 'SHORT' })
+  assert.equal(flip.ok, false)
 }
 
 console.log('desk_call: all passed')

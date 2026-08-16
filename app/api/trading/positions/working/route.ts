@@ -359,6 +359,7 @@ export async function POST(request: Request) {
       morningAttempts: gate.morningAttempts,
       ibAttempts: gate.ibAttempts,
       lunchAttempts: gate.lunchAttempts,
+      direction,
     })
     if (!edgeCheck.ok) {
       logEntryDenied({
