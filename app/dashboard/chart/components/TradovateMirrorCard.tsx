@@ -8,6 +8,7 @@ import {
   type DeskIndex,
 } from '@/lib/trading/tradovateMirror'
 import { tradeifyMustFlatten } from '@/lib/trading/tradeifyGrowth50k'
+import { CopyChip, CopyChipRow } from '@/app/dashboard/components/CopyChip'
 
 type Props = {
   instrument: DeskIndex
@@ -105,10 +106,18 @@ export function TradovateMirrorCard(props: Props) {
         {ticket.side} {ticket.qty > 0 ? ticket.qty : '—'} {ticket.symbol} {ticket.orderType} ·{' '}
         {ticket.tif}
       </p>
-      <p className="mt-0.5 font-mono text-[11px] text-gray-300">
-        L {ticket.entry.toLocaleString()} · SL {ticket.stop.toLocaleString()} · TP{' '}
-        {ticket.target.toLocaleString()}
-      </p>
+      <CopyChipRow>
+        <CopyChip
+          label="Size"
+          value={ticket.qty > 0 ? ticket.qty : null}
+          display={ticket.qty > 0 ? ticket.sizeLabel : undefined}
+          tone="size"
+        />
+        <CopyChip label="SL" value={ticket.stop} tone="sl" />
+        <CopyChip label="TP" value={ticket.target} tone="tp" />
+        <CopyChip label="Entry" value={ticket.entry} />
+      </CopyChipRow>
+      <p className="mt-1 text-[10px] text-gray-500">Click size, SL, or TP to copy that number.</p>
       <p className="mt-0.5 font-mono text-[10px] text-gray-400">
         TradePulse ${ticket.pulseRiskDollars.toFixed(0)}
         {ticket.qty > 0

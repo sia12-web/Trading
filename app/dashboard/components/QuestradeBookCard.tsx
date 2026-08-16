@@ -16,6 +16,7 @@ import {
 import type { QuestradeBookPayload } from '@/lib/trading/questradeBook'
 import type { QuestradeBookRow, QuestradeProtectiveLevel } from '@/lib/trading/questradeOrders'
 import type { QuestradeTradeifyTransfer } from '@/lib/trading/questradeTransfer'
+import { CopyChip, CopyChipRow } from '@/app/dashboard/components/CopyChip'
 
 function money(n: number | null | undefined, digits = 0): string {
   if (n == null || !Number.isFinite(n)) return '—'
@@ -43,16 +44,6 @@ function pnlClass(n: number | null | undefined): string {
   return 'text-gray-400'
 }
 
-function levelTag(
-  kind: 'SL' | 'TP',
-  price: number | null,
-  status?: QuestradeBookRow['stopStatus']
-): string {
-  if (price == null) return `${kind} —`
-  if (status && status !== 'working') return `${kind} ${price} (${status})`
-  return `${kind} ${price}`
-}
-
 function Ticket({ row }: { row: QuestradeBookRow }) {
   const buy = row.side === 'BUY'
   return (
@@ -60,11 +51,7 @@ function Ticket({ row }: { row: QuestradeBookRow }) {
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="text-sm font-semibold text-white">
           <span className={buy ? 'text-emerald-300' : 'text-red-300'}>{row.side}</span>{' '}
-          {row.label}{' '}
-          <span className="font-normal text-gray-400">
-            × {row.quantity}
-            {row.asset === 'option' ? ' ct' : ''}
-          </span>
+          {row.label}
         </div>
         <div className="text-[11px] text-gray-500">
           {row.asset === 'option' ? 'option' : 'stock'} ·{' '}
@@ -74,8 +61,6 @@ function Ticket({ row }: { row: QuestradeBookRow }) {
       <div className="mt-1 text-xs text-gray-400">
         Entry {row.entry}
         {row.mark != null ? ` · mark ${row.mark}` : ''}
-        {` · ${levelTag('SL', row.stop, row.stopStatus)}`}
-        {` · ${levelTag('TP', row.target, row.targetStatus)}`}
         {' · '}risk {money(row.stockRiskDollars, 2)}
         {row.kind === 'open_position' ? (
           <>
@@ -83,23 +68,42 @@ function Ticket({ row }: { row: QuestradeBookRow }) {
             <span className={pnlClass(row.livePnl)}>{money(row.livePnl, 2)}</span>
           </>
         ) : null}
+        {row.stopStatus && row.stopStatus !== 'working' ? ` · SL ${row.stopStatus}` : ''}
+        {row.targetStatus && row.targetStatus !== 'working' ? ` · TP ${row.targetStatus}` : ''}
       </div>
+      <CopyChipRow>
+        <CopyChip label="Size" value={row.quantity} tone="size" />
+        <CopyChip label="SL" value={row.stop} tone="sl" />
+        <CopyChip label="TP" value={row.target} tone="tp" />
+      </CopyChipRow>
     </div>
   )
 }
 
 function LevelRow({ level }: { level: QuestradeProtectiveLevel }) {
   return (
-    <p className="text-xs text-gray-300">
-      <span className={level.kind === 'sl' ? 'text-red-300' : 'text-emerald-300'}>
-        {level.kind === 'sl' ? 'SL' : 'TP'}
-      </span>{' '}
-      {level.label} @ {level.price}
-      {' · '}
-      {level.status}
-      {level.quantity ? ` · × ${level.quantity}` : ''}
-      {level.updatedAt ? ` · ${montrealStamp(level.updatedAt)}` : ''}
-    </p>
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+      <div className="min-w-0">
+        <p className="text-xs text-gray-200">
+          <span className={level.kind === 'sl' ? 'text-red-300' : 'text-emerald-300'}>
+            {level.kind === 'sl' ? 'SL' : 'TP'}
+          </span>{' '}
+          {level.label}
+        </p>
+        <p className="text-[11px] text-gray-500">
+          {level.status}
+          {level.updatedAt ? ` · ${montrealStamp(level.updatedAt)}` : ''}
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        <CopyChip label="Size" value={level.quantity} tone="size" />
+        <CopyChip
+          label={level.kind === 'sl' ? 'SL' : 'TP'}
+          value={level.price}
+          tone={level.kind === 'sl' ? 'sl' : 'tp'}
+        />
+      </div>
+    </div>
   )
 }
 
@@ -130,6 +134,16 @@ function TransferCard({ item }: { item: QuestradeTradeifyTransfer }) {
           ? ` · ${item.instrument} ${item.indexEntry}${item.indexStop != null ? ` / SL ${item.indexStop}` : ''}${item.indexTarget != null ? ` / TP ${item.indexTarget}` : ''}`
           : ''}
       </p>
+      <CopyChipRow>
+        <CopyChip
+          label="Size"
+          value={item.ticket?.qty ?? item.stockQty}
+          display={item.ticket ? item.ticket.sizeLabel : String(item.stockQty)}
+          tone="size"
+        />
+        <CopyChip label="SL" value={item.ticket?.stop ?? item.stockStop} tone="sl" />
+        <CopyChip label="TP" value={item.ticket?.target ?? item.stockTarget} tone="tp" />
+      </CopyChipRow>
       <p className="mt-1 text-[11px] text-gray-500">{item.advice.headline}</p>
       {item.ticket ? (
         <button
@@ -237,6 +251,9 @@ export function QuestradeBookCard() {
       <h3 className="mt-5 text-xs font-semibold uppercase tracking-wide text-gray-500">
         Tradeify look-book
       </h3>
+      <p className="mt-1 text-[11px] text-gray-500">
+        Click size, SL, or TP to copy the Tradovate number.
+      </p>
       <div className="mt-2 space-y-2">
         {book?.transfers.length ? (
           book.transfers.map((t) => <TransferCard key={t.sourceId} item={t} />)

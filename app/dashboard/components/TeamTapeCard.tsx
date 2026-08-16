@@ -2,6 +2,7 @@
 
 /**
  * NYC team tape — see only. A team stock fill is not a Tradeify attempt.
+ * Click size / SL / TP to copy that number.
  */
 
 import { useCallback, useEffect, useState } from 'react'
@@ -9,6 +10,8 @@ import Link from 'next/link'
 import type { TeamCopyAdvice, TeamTapeSignal } from '@/lib/trading/teamTape'
 import type { QuestradeAccountSnapshot } from '@/lib/trading/questradeReadOnly'
 import type { QuestradeBookPayload } from '@/lib/trading/questradeBook'
+import type { QuestradeBookRow, QuestradeProtectiveLevel } from '@/lib/trading/questradeOrders'
+import { CopyChip, CopyChipRow } from '@/app/dashboard/components/CopyChip'
 
 type Payload = {
   ok?: boolean
@@ -33,6 +36,13 @@ function montrealStamp(iso?: string | null): string {
   }).format(d)
 }
 
+function pnlClass(n: number | null | undefined): string {
+  if (n == null) return 'text-gray-500'
+  if (n > 0) return 'text-emerald-300'
+  if (n < 0) return 'text-red-300'
+  return 'text-gray-400'
+}
+
 function TicketRow({ signal }: { signal: TeamTapeSignal }) {
   const buy = signal.side === 'BUY'
   return (
@@ -40,20 +50,74 @@ function TicketRow({ signal }: { signal: TeamTapeSignal }) {
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="text-sm font-semibold text-white">
           <span className={buy ? 'text-emerald-300' : 'text-red-300'}>{signal.side}</span>{' '}
-          {signal.symbol}{' '}
-          <span className="font-normal text-gray-400">× {signal.quantity}</span>
+          {signal.symbol}
         </div>
         <div className="text-[11px] text-gray-500">
-          {montrealStamp(signal.filledAt)} Montreal
+          {montrealStamp(signal.filledAt)} Montreal · {signal.status}
         </div>
       </div>
-      <div className="mt-1 text-xs text-gray-400">
-        Entry {signal.entry}
-        {signal.stop != null ? ` · SL ${signal.stop}` : ''}
-        {signal.target != null ? ` · 1.5R ${signal.target}` : ''}
-        {' · '}
-        {signal.status}
+      <p className="mt-1 text-[11px] text-gray-500">Entry {signal.entry}</p>
+      <CopyChipRow>
+        <CopyChip label="Size" value={signal.quantity} tone="size" />
+        <CopyChip label="SL" value={signal.stop} tone="sl" />
+        <CopyChip label="TP" value={signal.target} tone="tp" />
+      </CopyChipRow>
+    </div>
+  )
+}
+
+function LivePositionCard({ row }: { row: QuestradeBookRow }) {
+  const buy = row.side === 'BUY'
+  const pnl = row.livePnl
+  const pnlTxt =
+    pnl == null
+      ? '—'
+      : `${pnl >= 0 ? '+' : ''}$${Math.abs(pnl).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2.5">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div className="text-sm font-semibold text-white">
+          <span className={buy ? 'text-emerald-300' : 'text-red-300'}>{row.side}</span>{' '}
+          {row.label}
+        </div>
+        <div className={`text-[11px] font-medium ${pnlClass(pnl)}`}>live {pnlTxt}</div>
       </div>
+      <p className="mt-1 text-[11px] text-gray-500">
+        {row.asset === 'option' ? 'option' : 'stock'}
+        {row.entry != null ? ` · entry ${row.entry}` : ''}
+        {row.mark != null ? ` · mark ${row.mark}` : ''}
+        {row.stopStatus && row.stopStatus !== 'working' ? ` · SL ${row.stopStatus}` : ''}
+        {row.targetStatus && row.targetStatus !== 'working' ? ` · TP ${row.targetStatus}` : ''}
+      </p>
+      <CopyChipRow>
+        <CopyChip label="Size" value={row.quantity} tone="size" />
+        <CopyChip label="SL" value={row.stop} tone="sl" />
+        <CopyChip label="TP" value={row.target} tone="tp" />
+      </CopyChipRow>
+    </div>
+  )
+}
+
+function LevelCard({ level }: { level: QuestradeProtectiveLevel }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+      <div className="min-w-0">
+        <p className="text-xs text-gray-200">
+          <span className={level.kind === 'sl' ? 'text-red-300' : 'text-emerald-300'}>
+            {level.kind === 'sl' ? 'SL' : 'TP'}
+          </span>{' '}
+          {level.label}
+        </p>
+        <p className="text-[11px] text-gray-500">{level.status}</p>
+      </div>
+      <CopyChipRow>
+        <CopyChip label="Size" value={level.quantity} tone="size" />
+        <CopyChip
+          label={level.kind === 'sl' ? 'SL' : 'TP'}
+          value={level.price}
+          tone={level.kind === 'sl' ? 'sl' : 'tp'}
+        />
+      </CopyChipRow>
     </div>
   )
 }
@@ -93,6 +157,7 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
   const open = data?.open ?? []
   const history = data?.history ?? []
   const last = open[0]
+  const levels = compact ? (book?.levels ?? []).slice(0, 8) : book?.levels ?? []
 
   return (
     <section className="rounded-xl border border-sky-500/25 bg-sky-500/[0.06] p-4">
@@ -100,8 +165,8 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
         <div>
           <h2 className="text-sm font-semibold text-sky-100">Team tape</h2>
           <p className="mt-0.5 text-xs text-gray-400">
-            NYC stocks and options — see only. Their fill is not your 3/3. Copy stocks
-            on DOW or NASDAQ only, Tradeify $ size, flatten 16:59 ET.
+            NYC stocks and options — see only. Click size, SL, or TP to copy that number.
+            Their fill is not your 3/3.
           </p>
         </div>
         {compact ? (
@@ -151,61 +216,21 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
       ) : null}
 
       {book?.openPositions.length ? (
-        <div className="mt-3 space-y-1.5">
-          {book.openPositions.map((p) => {
-            const pnl = p.livePnl
-            const pnlTxt =
-              pnl == null
-                ? '—'
-                : `${pnl >= 0 ? '+' : ''}$${Math.abs(pnl).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
-            const sl =
-              p.stop == null
-                ? 'SL —'
-                : p.stopStatus && p.stopStatus !== 'working'
-                  ? `SL ${p.stop} (${p.stopStatus})`
-                  : `SL ${p.stop}`
-            const tp =
-              p.target == null
-                ? 'TP —'
-                : p.targetStatus && p.targetStatus !== 'working'
-                  ? `TP ${p.target} (${p.targetStatus})`
-                  : `TP ${p.target}`
-            return (
-              <p key={p.sourceId} className="text-xs text-gray-300">
-                <span className={p.side === 'BUY' ? 'text-emerald-300' : 'text-red-300'}>
-                  {p.side}
-                </span>{' '}
-                {p.label} × {p.quantity}
-                {` · ${sl} · ${tp}`}
-                {' · live '}
-                <span
-                  className={
-                    pnl == null ? 'text-gray-500' : pnl >= 0 ? 'text-emerald-300' : 'text-red-300'
-                  }
-                >
-                  {pnlTxt}
-                </span>
-              </p>
-            )
-          })}
+        <div className="mt-3 space-y-2">
+          {book.openPositions.map((p) => (
+            <LivePositionCard key={p.sourceId} row={p} />
+          ))}
         </div>
       ) : null}
 
-      {book?.levels.length ? (
+      {levels.length ? (
         <div className="mt-3">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
             All stops & targets
           </p>
-          <div className="mt-1.5 space-y-1">
-            {book.levels.map((l) => (
-              <p key={`${l.kind}-${l.sourceId}`} className="text-xs text-gray-300">
-                <span className={l.kind === 'sl' ? 'text-red-300' : 'text-emerald-300'}>
-                  {l.kind === 'sl' ? 'SL' : 'TP'}
-                </span>{' '}
-                {l.label} @ {l.price}
-                {' · '}
-                {l.status}
-              </p>
+          <div className="mt-1.5 space-y-1.5">
+            {levels.map((l) => (
+              <LevelCard key={`${l.kind}-${l.sourceId}`} level={l} />
             ))}
           </div>
         </div>
