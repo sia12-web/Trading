@@ -122,8 +122,19 @@ function TransferCard({ item }: { item: QuestradeTradeifyTransfer }) {
 
   return (
     <div className="rounded-lg border border-amber-500/25 bg-amber-500/[0.06] px-3 py-3">
-      <div className="text-sm font-semibold text-amber-100">
-        {item.symbol} → {item.instrument} {item.side} · Tradeify {money(item.tradeifyRiskDollars)}
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div className="text-sm font-semibold text-amber-100">
+          {item.symbol} → {item.instrument} {item.side}
+        </div>
+        <span
+          className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+            item.canSize
+              ? 'bg-amber-500/20 text-amber-100'
+              : 'bg-white/10 text-gray-300'
+          }`}
+        >
+          {item.riskLabel}
+        </span>
       </div>
       <p className="mt-1 text-xs leading-relaxed text-gray-400">{item.note}</p>
       <p className="mt-2 text-xs text-gray-300">
@@ -151,11 +162,17 @@ function TransferCard({ item }: { item: QuestradeTradeifyTransfer }) {
           onClick={() => void copy()}
           className="mt-2 rounded-md border border-amber-400/40 px-2.5 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-500/20"
         >
-          {copied ? 'Copied' : `Copy ${item.ticket.sizeLabel} Tradovate ticket`}
+          {copied
+            ? 'Copied'
+            : item.canSize
+              ? `Copy ${item.ticket.sizeLabel} Tradovate ticket`
+              : `Next session: ${item.ticket.sizeLabel}`}
         </button>
       ) : (
         <p className="mt-2 text-[11px] text-gray-500">
-          Index last not available (weekend / outside focus). Look at SL/TP here, place at NY open.
+          {item.canSize
+            ? 'Index last not available (weekend / outside focus). Look at SL/TP here, place at NY open.'
+            : item.riskLabel}
         </p>
       )}
     </div>

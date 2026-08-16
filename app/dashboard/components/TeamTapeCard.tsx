@@ -11,6 +11,7 @@ import type { TeamCopyAdvice, TeamTapeSignal } from '@/lib/trading/teamTape'
 import type { QuestradeAccountSnapshot } from '@/lib/trading/questradeReadOnly'
 import type { QuestradeBookPayload } from '@/lib/trading/questradeBook'
 import type { QuestradeBookRow, QuestradeProtectiveLevel } from '@/lib/trading/questradeOrders'
+import type { QuestradeTradeifyTransfer } from '@/lib/trading/questradeTransfer'
 import { CopyChip, CopyChipRow } from '@/app/dashboard/components/CopyChip'
 
 type Payload = {
@@ -66,7 +67,13 @@ function TicketRow({ signal }: { signal: TeamTapeSignal }) {
   )
 }
 
-function LivePositionCard({ row }: { row: QuestradeBookRow }) {
+function LivePositionCard({
+  row,
+  transfer,
+}: {
+  row: QuestradeBookRow
+  transfer?: QuestradeTradeifyTransfer
+}) {
   const buy = row.side === 'BUY'
   const pnl = row.livePnl
   const pnlTxt =
@@ -89,11 +96,33 @@ function LivePositionCard({ row }: { row: QuestradeBookRow }) {
         {row.stopStatus && row.stopStatus !== 'working' ? ` · SL ${row.stopStatus}` : ''}
         {row.targetStatus && row.targetStatus !== 'working' ? ` · TP ${row.targetStatus}` : ''}
       </p>
+      <p className="mt-1 text-[10px] uppercase tracking-wide text-gray-500">Their book</p>
       <CopyChipRow>
         <CopyChip label="Size" value={row.quantity} tone="size" />
         <CopyChip label="SL" value={row.stop} tone="sl" />
         <CopyChip label="TP" value={row.target} tone="tp" />
       </CopyChipRow>
+      {transfer ? (
+        <div className="mt-2 rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-2 py-1.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+            Your Tradeify copy · {transfer.riskLabel}
+          </p>
+          <CopyChipRow>
+            <CopyChip
+              label="Size"
+              value={transfer.ticket?.qty ?? transfer.tradeifyRiskDollars}
+              display={
+                transfer.ticket
+                  ? transfer.ticket.sizeLabel
+                  : `$${transfer.tradeifyRiskDollars}`
+              }
+              tone="size"
+            />
+            <CopyChip label="SL" value={transfer.ticket?.stop ?? transfer.indexStop} tone="sl" />
+            <CopyChip label="TP" value={transfer.ticket?.target ?? transfer.indexTarget} tone="tp" />
+          </CopyChipRow>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -210,6 +239,9 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
           ) : null}
           <p className="mt-1 text-[11px] text-gray-400">
             {advice.fillsUsed}/3 used · {advice.fillsLeft} left
+            {advice.mustFlatten
+              ? ' · session over, next size is fill 1/3 · $400'
+              : ` · next $${advice.riskDollars || 400}`}
             {advice.clockedIn ? '' : ' · not clocked in'}
           </p>
         </div>
@@ -218,7 +250,11 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
       {book?.openPositions.length ? (
         <div className="mt-3 space-y-2">
           {book.openPositions.map((p) => (
-            <LivePositionCard key={p.sourceId} row={p} />
+            <LivePositionCard
+              key={p.sourceId}
+              row={p}
+              transfer={book.transfers.find((t) => t.sourceId === p.sourceId)}
+            />
           ))}
         </div>
       ) : null}

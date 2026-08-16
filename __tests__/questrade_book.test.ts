@@ -178,6 +178,77 @@ const noIndex = buildQuestradeTradeifyTransfer({
 })
 assert.equal(noIndex.ticket, null)
 assert.match(noIndex.note, /No index last/)
+assert.equal(transfer.fillNumber, 1)
+assert.equal(transfer.tradeifyRiskDollars, 400)
+assert.equal(transfer.canSize, true)
+assert.match(transfer.riskLabel, /Fill 1\/3/)
+
+const secondAdvice = teamCopyAdviceFromInput({
+  now: midday,
+  fillsUsed: 1,
+  clockedIn: true,
+})
+const secondXfer = buildQuestradeTradeifyTransfer({
+  row: aapl,
+  advice: secondAdvice,
+  indexLast: { NASDAQ: 20000, DOW: 39000 },
+})
+assert.equal(secondXfer.fillNumber, 2)
+assert.equal(secondXfer.tradeifyRiskDollars, 250)
+assert.ok(secondXfer.ticket)
+assert.ok(transfer.ticket && secondXfer.ticket.qty <= transfer.ticket.qty)
+
+const thirdAdvice = teamCopyAdviceFromInput({
+  now: midday,
+  fillsUsed: 2,
+  clockedIn: true,
+})
+const thirdXfer = buildQuestradeTradeifyTransfer({
+  row: aapl,
+  advice: thirdAdvice,
+  indexLast: { NASDAQ: 20000, DOW: 39000 },
+})
+assert.equal(thirdXfer.fillNumber, 3)
+assert.equal(thirdXfer.tradeifyRiskDollars, 150)
+
+const flattenAdvice = teamCopyAdviceFromInput({
+  now: new Date('2026-08-18T17:05:00-04:00'),
+  fillsUsed: 2,
+  clockedIn: true,
+})
+const flattenXfer = buildQuestradeTradeifyTransfer({
+  row: aapl,
+  advice: flattenAdvice,
+  indexLast: { NASDAQ: 20000, DOW: 39000 },
+})
+assert.equal(flattenXfer.sessionReset, true)
+assert.equal(flattenXfer.fillNumber, 1)
+assert.equal(flattenXfer.tradeifyRiskDollars, 400)
+assert.equal(flattenXfer.canSize, false)
+assert.match(flattenXfer.riskLabel, /fill 1\/3/)
+
+const fullAdvice = teamCopyAdviceFromInput({
+  now: midday,
+  fillsUsed: 3,
+  clockedIn: true,
+})
+const fullXfer = buildQuestradeTradeifyTransfer({
+  row: aapl,
+  advice: fullAdvice,
+  indexLast: { NASDAQ: 20000, DOW: 39000 },
+})
+assert.equal(fullXfer.canSize, false)
+assert.equal(fullXfer.ticket, null)
+
+const optionXfer = buildQuestradeTradeifyTransfer({
+  row: qqq,
+  advice,
+  indexLast: { NASDAQ: 20000, DOW: 39000 },
+})
+assert.equal(optionXfer.ticket, null)
+assert.equal(optionXfer.tradeifyRiskDollars, 400)
+assert.equal(optionXfer.fillNumber, 1)
+assert.match(optionXfer.note, /Option/)
 
 assert.equal(book.levels.length, 2)
 assert.ok(book.levels.some((l) => l.kind === 'sl' && l.price === 300 && l.status === 'working'))

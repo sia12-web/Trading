@@ -122,9 +122,7 @@ export async function loadQuestradeBook(
   if (dow?.price) indexLast.DOW = dow.price
   if (nasdaq?.price) indexLast.NASDAQ = nasdaq.price
   const accountName = tradeifyAccountName()
-  const transferRows = [...book.workingLimits, ...book.openPositions].filter(
-    (row) => row.asset === 'stock'
-  )
+  const transferRows = [...book.workingLimits, ...book.openPositions]
   const transfers = transferRows.map((row) =>
     buildQuestradeTradeifyTransfer({
       row,
