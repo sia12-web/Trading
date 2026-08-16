@@ -25,8 +25,10 @@ export type SessionScaleBar = {
 }
 
 const MIN_FOCUS_BARS = 6
+/** If the live session is only a sliver of the window (5-day zoom-out), fit all visible bars. */
+const SESSION_FOCUS_SHARE = 0.35
 
-/** High/low of the session on the last bar; falls back to all bars if too few. */
+/** High/low of the session on the last bar; falls back to all visible bars when zoomed out. */
 export function sessionFocusHighLow(
   bars: SessionScaleBar[],
   instrument?: string | null
@@ -39,7 +41,11 @@ export function sessionFocusHighLow(
     focus != null
       ? bars.filter((b) => deskSessionAt(b.time, instrument) === focus)
       : bars
-  const use = focused.length >= MIN_FOCUS_BARS ? focused : bars
+  const use =
+    focused.length >= MIN_FOCUS_BARS &&
+    focused.length >= bars.length * SESSION_FOCUS_SHARE
+      ? focused
+      : bars
   let min = Infinity
   let max = -Infinity
   for (const b of use) {

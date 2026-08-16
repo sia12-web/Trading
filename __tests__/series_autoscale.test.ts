@@ -46,6 +46,12 @@ assert.ok(focus.min >= 30080, `NY session low ${focus.min}`)
 assert.ok(focus.max <= 30150, `NY session high ${focus.max}`)
 assert.ok(focus.min > 29200, 'overnight Asia must not pull NY to the top')
 
+const week = [...barsAt('2026-08-10', 20, 29200, 29100, 200), ...ny]
+const wide = sessionFocusHighLow(week, 'NASDAQ')
+assert.ok(wide)
+assert.ok(wide.min <= 29100, '5-day zoom-out includes the full visible range')
+assert.ok(wide.max >= 30150)
+
 const onlyOvernight = sessionFocusHighLow(overnight, 'NASDAQ')
 assert.ok(onlyOvernight)
 assert.ok(onlyOvernight.max <= 29200)

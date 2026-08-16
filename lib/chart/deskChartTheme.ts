@@ -14,8 +14,8 @@ export const DESK_CANDLE_DOWN = '#f23645'
 
 /** Pixel width of one candle slot — keeps bodies readable like TradingView. */
 export const DESK_BAR_SPACING = 12
-/** Floor so zoom-out cannot crush wicks into slivers. */
-export const DESK_MIN_BAR_SPACING = 7
+/** Wheel zoom-out floor — ~5 days of 5m bars on a desktop pane. Default stays 12px. */
+export const DESK_MIN_BAR_SPACING = 0.5
 
 export const DESK_CHART_THEME = {
   layout: {
