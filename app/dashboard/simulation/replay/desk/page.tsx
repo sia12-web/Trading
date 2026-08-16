@@ -3379,6 +3379,11 @@ function SimulationDeskInner() {
               className={`inline-block h-1.5 w-1.5 rounded-full ${showYesterdayProfile ? 'bg-amber-400' : 'bg-gray-600'}`}
             />
             Yday (Y)
+            {showYesterdayProfile && (
+              <span className="normal-case tracking-normal text-[10px] font-normal text-amber-200/80">
+                {yesterdayBadge}
+              </span>
+            )}
           </button>
           {(instrument === 'DOW' || instrument === 'NASDAQ') && (
             <button
