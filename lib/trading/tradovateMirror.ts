@@ -202,6 +202,8 @@ export function buildTradovateMirrorTicket(args: {
       ? `NOTE     Prices snapped to ${picked.symbol} tick ${tick} (TradePulse ${fmt(pulseEntry, tick)} / ${fmt(pulseStop, tick)} / ${fmt(pulseTarget, tick)})`
       : null,
     picked.overCap ? `NOTE     Capped at Tradeify 50k max for ${picked.symbol}` : null,
+    `NOTE     Front month only — do not mix a mini and a micro at the same time`,
+    `NOTE     Flatten: cancel leftover working orders by 16:59 ET (12:59 ET holiday)`,
   ]
     .filter(Boolean)
     .join('\n')

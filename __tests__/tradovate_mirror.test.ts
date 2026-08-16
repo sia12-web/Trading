@@ -36,6 +36,8 @@ assert.ok(nq!.copyText.includes('SL       19980'))
 assert.ok(nq!.copyText.includes('TP       20030'))
 assert.ok(!nq!.copyText.includes('NQ /'))
 assert.ok(!nq!.copyText.includes('MNK'))
+assert.ok(nq!.copyText.includes('Front month'))
+assert.ok(nq!.copyText.includes('16:59 ET'))
 
 const ym = buildTradovateMirrorTicket({
   instrument: 'DOW',

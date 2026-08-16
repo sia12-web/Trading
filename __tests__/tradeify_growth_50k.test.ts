@@ -132,7 +132,7 @@ assert(oandaLadderWouldBreachTradeify({ fillsUsed: 0, dailyPnl: -400 }), 'but OA
 
 const tightDll = resolveTradeifyPlace({ now: midday, fillsUsed: 0, dailyPnl: -1100 })
 assert(tightDll.allowed, 'shrink when leftover $150 >= min $50')
-assert(tightDll.riskDollars === 150, 'shrink first step 400 → leftover 150')
+assert(tightDll.riskDollars === 75, 'haircut $75 so placeable is $75 not full leftover $150')
 assert(tightDll.leftoverDll === 150, 'leftover DLL 150')
 
 const dllGone = resolveTradeifyPlace({ now: midday, fillsUsed: 0, dailyPnl: -1250 })

@@ -655,7 +655,10 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
         cookieHeader: request.headers.get('cookie'),
       })
       if (isTradeifyGrowth50k(moneyProfile)) {
-        const decision = await resolveServerTradeifyPlace(supabase, user.id)
+        const decision = await resolveServerTradeifyPlace(supabase, user.id, new Date(), {
+          instrument: body.instrument,
+          direction: body.entry_direction,
+        })
         if (!decision.allowed) {
           logEntryDenied({
             route: 'open',

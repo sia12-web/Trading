@@ -418,7 +418,10 @@ export async function POST(request: Request) {
       cookieHeader: request.headers.get('cookie'),
     })
     if (isTradeifyGrowth50k(moneyProfile)) {
-      const decision = await resolveServerTradeifyPlace(supabase, user.id)
+      const decision = await resolveServerTradeifyPlace(supabase, user.id, new Date(), {
+        instrument,
+        direction,
+      })
       if (!decision.allowed) {
         logEntryDenied({
           route: 'working',

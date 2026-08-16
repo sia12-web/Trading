@@ -19,6 +19,13 @@ import {
   type TradeifyPlaceInput,
 } from '@/lib/trading/tradeifyGrowth50k'
 import {
+  equityIndexHedgeConflict,
+  openRiskReserved,
+  peakEodFromFills,
+  realizedSessionPnl,
+  tradeifyRedNewsBlocks,
+} from '@/lib/trading/tradeifySafety'
+import {
   tradeifyFlattenMontreal,
   type TradeifyLeoSnapshot,
 } from '@/lib/trading/tradeifyLeoBlock'
@@ -32,6 +39,7 @@ export type TradeifyFillRow = {
   exit_reason?: string | null
   profit_loss?: number | null
   risk_amount?: number | null
+  entry_direction?: string | null
 }
 
 export type TradeifyInstrumentBreak = {
@@ -87,18 +95,17 @@ export function summarizeTradeifyFills(
 ): TradeifyPlaceInput & { sessionKey: string; fills: TradeifyFillRow[] } {
   const { sessionKey, startIso, endIso } = tradeifySessionWindow(now)
   const fills = rows.filter((r) => fillInTradeifyWindow(r, startIso, endIso))
-  let dailyPnl = 0
   let stopOutsToday = 0
   for (const r of fills) {
-    const pnl = Number(r.profit_loss)
-    if (Number.isFinite(pnl)) dailyPnl += pnl
     if (r.exit_reason === 'stop_hit') stopOutsToday += 1
   }
   return {
     now,
     sessionKey,
     fillsUsed: fills.length,
-    dailyPnl: Math.round(dailyPnl * 100) / 100,
+    dailyPnl: realizedSessionPnl(fills),
+    openReserved: openRiskReserved(fills),
+    peakEodBalance: peakEodFromFills(rows, now),
     stopOutsToday,
     fills,
   }
@@ -110,16 +117,17 @@ export async function loadTradeifySessionSnapshot(
   now: Date = new Date()
 ): Promise<TradeifyPlaceInput & { sessionKey: string; fills: TradeifyFillRow[] }> {
   const { startIso, endIso, sessionKey } = tradeifySessionWindow(now)
+  const lookback = new Date(now)
+  lookback.setUTCDate(lookback.getUTCDate() - 90)
   const { data, error } = await supabase
     .from('trades_journal')
     .select(
-      'instrument, fill_status, entry_timestamp, created_at, exit_timestamp, exit_reason, profit_loss, risk_amount'
+      'instrument, fill_status, entry_timestamp, created_at, exit_timestamp, exit_reason, profit_loss, risk_amount, entry_direction'
     )
     .eq('user_id', userId)
     .in('instrument', ['DOW', 'NASDAQ', 'NIKKEI'])
     .eq('fill_status', 'filled')
-    .gte('entry_timestamp', startIso)
-    .lt('entry_timestamp', endIso)
+    .gte('entry_timestamp', lookback.toISOString())
 
   if (error) {
     return { now, sessionKey, fillsUsed: 0, dailyPnl: 0, stopOutsToday: 0, fills: [] }
@@ -130,6 +138,8 @@ export async function loadTradeifySessionSnapshot(
     sessionKey: summarized.sessionKey,
     fillsUsed: summarized.fillsUsed,
     dailyPnl: summarized.dailyPnl,
+    openReserved: summarized.openReserved,
+    peakEodBalance: summarized.peakEodBalance,
     stopOutsToday: summarized.stopOutsToday,
     fills: summarized.fills,
   }
@@ -197,11 +207,39 @@ export async function loadTradeifyLeoSnapshot(
   return toTradeifyLeoSnapshot(snap, now)
 }
 
+function etCalendarYmd(now: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now)
+}
+
+async function loadTradeifyNewsLock(now: Date): Promise<boolean> {
+  try {
+    const { getFinnhubClient } = await import('@/lib/services/finnhubClient')
+    const today = etCalendarYmd(now)
+    const yest = etCalendarYmd(new Date(now.getTime() - 36 * 3600 * 1000))
+    const rows = await getFinnhubClient().getEconomicCalendar(yest, today)
+    return tradeifyRedNewsBlocks(rows, now)
+  } catch {
+    return false
+  }
+}
+
 export async function resolveServerTradeifyPlace(
   supabase: SupabaseClient,
   userId: string,
-  now: Date = new Date()
+  now: Date = new Date(),
+  next?: { instrument?: string | null; direction?: string | null }
 ): Promise<TradeifyPlaceDecision> {
   const snap = await loadTradeifySessionSnapshot(supabase, userId, now)
-  return resolveTradeifyPlace(snap)
+  const newsBlocked = await loadTradeifyNewsLock(now)
+  const hedgeBlocked = equityIndexHedgeConflict(
+    snap.fills ?? [],
+    next?.instrument,
+    next?.direction
+  )
+  return resolveTradeifyPlace({ ...snap, now, newsBlocked, hedgeBlocked })
 }

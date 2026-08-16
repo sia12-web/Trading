@@ -72,6 +72,14 @@ assert(
   'Tradeify: expire working Nikkei limits in flatten window'
 )
 assert(tradeifyMustFlatten(flattenEt), '17:05 ET is flatten window')
+assert(
+  tradeifyMustFlatten(new Date('2026-11-27T13:05:00-05:00')),
+  'holiday early close 13:05 ET is flatten'
+)
+assert(
+  !tradeifyMustFlatten(new Date('2026-11-27T12:00:00-05:00')),
+  'holiday 12:00 ET is before 12:59 flatten'
+)
 assert(tradeifyFlattenOverridesKeepOpen(flattenEt), 'keep-open does not survive 16:59 ET')
 assert(!tradeifyFlattenOverridesKeepOpen(middayEt), 'keep-open still valid at 11:30 ET')
 assert(!tradeifyFlattenOverridesKeepOpen(afterRoll), 'after 18:00 roll keep-open overlay off')

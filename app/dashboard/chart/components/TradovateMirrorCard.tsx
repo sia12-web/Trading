@@ -7,6 +7,7 @@ import {
   tradovateMirrorStorageKey,
   type DeskIndex,
 } from '@/lib/trading/tradovateMirror'
+import { tradeifyMustFlatten } from '@/lib/trading/tradeifyGrowth50k'
 
 type Props = {
   instrument: DeskIndex
@@ -128,6 +129,16 @@ export function TradovateMirrorCard(props: Props) {
       {ticket.overCap && (
         <p className="mt-0.5 text-[10px] text-red-300">
           Qty capped at Tradeify 50k max for {ticket.symbol}.
+        </p>
+      )}
+      <p className="mt-0.5 text-[10px] text-gray-500">
+        Front month only. Do not hold a mini and a micro together. Opposite YM / NQ / NKD is a
+        hedge.
+      </p>
+      {tradeifyMustFlatten() && (
+        <p className="mt-1 text-[10px] font-semibold text-red-300">
+          Flatten now — close the Tradovate position and cancel leftover working orders (16:59 ET
+          / 12:59 ET holiday).
         </p>
       )}
       <div className="mt-2 flex flex-wrap gap-1.5">

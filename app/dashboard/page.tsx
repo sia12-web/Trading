@@ -18,6 +18,7 @@ import {
   deskLocalHmsAsTraderDisplay,
 } from '@/lib/chart/traderDisplayTz'
 import { TradeifyProgressPanel } from './components/TradeifyProgressPanel'
+import { TeamTapeCard } from './components/TeamTapeCard'
 
 /** Focus unlock = cash open − 30m, shown in Montreal. */
 function focusUnlockMontreal(market: 'NY' | 'TOKYO', now: Date): string {
@@ -111,10 +112,17 @@ export default function DashboardHomePage() {
         >
           Desk News →
         </Link>
+        <Link
+          href="/dashboard/swing"
+          className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-4 py-2.5 text-sm font-semibold text-sky-100 hover:bg-sky-500/20"
+        >
+          Team tape →
+        </Link>
       </div>
 
-      <div className="mt-10">
+      <div className="mt-10 space-y-6">
         <TradeifyProgressPanel compact />
+        <TeamTapeCard compact />
       </div>
 
       <p className="mt-10 text-xs text-gray-600 leading-relaxed max-w-md">

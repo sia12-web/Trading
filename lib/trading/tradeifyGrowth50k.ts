@@ -32,6 +32,20 @@ export const TRADEIFY_FLATTEN_ET = '16:59:00'
 
 export const TRADEIFY_GREEN_DAY_LOCK_DOLLARS = 700
 export const TRADEIFY_MAX_STOP_OUTS = 2
+export const TRADEIFY_SLIPPAGE_BUFFER_DOLLARS = 75
+export const TRADEIFY_COMMISSION_PER_FILL_EST = 20
+/** CME equity early-close days — flatten from 12:59 ET (Tradeify holiday rule). */
+export const TRADEIFY_EARLY_CLOSE_ET_YMD = new Set([
+  '2025-07-03',
+  '2025-11-28',
+  '2025-12-24',
+  '2026-07-02',
+  '2026-11-27',
+  '2026-12-24',
+  '2027-07-02',
+  '2027-11-26',
+  '2027-12-24',
+])
 
 const ET = 'America/New_York'
 
@@ -46,6 +60,8 @@ export type TradeifyRefuseReason =
   | 'stop_exceeds_floor'
   | 'risk_too_small'
   | 'must_flatten'
+  | 'hedge_conflict'
+  | 'news_lock'
 
 export type TradeifyPlaceDecision = {
   allowed: boolean
@@ -76,6 +92,10 @@ export type TradeifyPlaceInput = {
   peakEodBalance?: number | null
   stopOutsToday?: number | null
   greenDayLocked?: boolean | null
+  /** Open stop $ (or worse unrealized) still hanging on this session. */
+  openReserved?: number | null
+  hedgeBlocked?: boolean | null
+  newsBlocked?: boolean | null
 }
 
 function etYmdAndHms(now: Date): { ymd: string; hms: string; hour: number } {
@@ -127,10 +147,16 @@ export function tradeifyEtMinutes(now: Date = new Date()): number {
   return hour * 60 + minute
 }
 
-/** After 16:59 ET and before 18:00 ET roll — must be flat. */
+export function tradeifyIsEarlyCloseDay(now: Date = new Date()): boolean {
+  return TRADEIFY_EARLY_CLOSE_ET_YMD.has(etYmdAndHms(now).ymd)
+}
+
+/** Regular 16:59 ET, or 12:59 ET on CME early-close days, until 18:00 roll. */
 export function tradeifyMustFlatten(now: Date = new Date()): boolean {
   const m = tradeifyEtMinutes(now)
-  return m >= 16 * 60 + 59 && m < 18 * 60
+  if (m >= 18 * 60) return false
+  const cut = tradeifyIsEarlyCloseDay(now) ? 12 * 60 + 59 : 16 * 60 + 59
+  return m >= cut
 }
 
 export type TradeifyDeskStatus = 'can_trade' | 'day_locked' | 'must_flatten'
@@ -238,7 +264,11 @@ function refuseMessage(reason: TradeifyRefuseReason, extra?: { leftover?: number
     case 'risk_too_small':
       return `Leftover room is under $${TRADEIFY_MIN_RISK_DOLLARS} — sit out.`
     case 'must_flatten':
-      return 'Tradeify flatten window — be flat by 16:59 ET. No new holds until the 18:00 ET session roll.'
+      return 'Tradeify flatten — close Tradovate AND cancel working orders. Regular 16:59 ET / holiday 12:59 ET. No new holds until 18:00 ET.'
+    case 'hedge_conflict':
+      return 'Tradeify hedge — an open index is the other way. Flatten that book before the opposite ticket (YM/NQ/NKD group).'
+    case 'news_lock':
+      return 'Tradeify news lock — no new entries ±5 minutes around CPI / FOMC / NFP.'
     default:
       return 'Tradeify gate refused this entry.'
   }
@@ -248,16 +278,29 @@ function refuseMessage(reason: TradeifyRefuseReason, extra?: { leftover?: number
  * Decide planned stop $ and whether a new entry is legal.
  * Shrinks the step to leftover DLL / floor room; never grows above the step.
  */
+export function tradeifyPlaceHaircut(fillsUsed?: number | null): number {
+  const used = Math.max(0, Math.floor(Number(fillsUsed) || 0))
+  return TRADEIFY_SLIPPAGE_BUFFER_DOLLARS + used * TRADEIFY_COMMISSION_PER_FILL_EST
+}
+
 export function resolveTradeifyPlace(input: TradeifyPlaceInput = {}): TradeifyPlaceDecision {
   const now = input.now ?? new Date()
   const fillsUsed = Math.max(0, Math.floor(Number(input.fillsUsed) || 0))
   const sessionKey = tradeifySessionKey(now)
-  const leftoverDll = tradeifyLeftoverDll(input.dailyPnl)
-  const floorRoom = tradeifyFloorRoom({
-    equity: input.equity,
-    dailyPnl: input.dailyPnl,
-    peakEodBalance: input.peakEodBalance,
-  })
+  const reserved = Math.max(0, Number(input.openReserved) || 0)
+  const leftoverDll = Math.max(0, Math.round((tradeifyLeftoverDll(input.dailyPnl) - reserved) * 100) / 100)
+  const floorRoom = Math.max(
+    0,
+    Math.round(
+      (tradeifyFloorRoom({
+        equity: input.equity,
+        dailyPnl: input.dailyPnl,
+        peakEodBalance: input.peakEodBalance,
+      }) -
+        reserved) *
+        100
+    ) / 100
+  )
   const floorLevel = tradeifyFloorLevel(input.peakEodBalance)
   const stepDollars = tradeifyRiskStepDollars(fillsUsed)
   const stopOuts = Math.max(0, Math.floor(Number(input.stopOutsToday) || 0))
@@ -265,6 +308,9 @@ export function resolveTradeifyPlace(input: TradeifyPlaceInput = {}): TradeifyPl
   const greenLocked =
     input.greenDayLocked === true ||
     (Number.isFinite(dailyPnl) && dailyPnl >= TRADEIFY_GREEN_DAY_LOCK_DOLLARS)
+  const haircut = tradeifyPlaceHaircut(fillsUsed)
+  const placeableDll = Math.max(0, Math.round((leftoverDll - haircut) * 100) / 100)
+  const placeableFloor = Math.max(0, Math.round((floorRoom - haircut) * 100) / 100)
 
   const base = {
     profileId: TRADEIFY_PROFILE_ID,
@@ -285,13 +331,15 @@ export function resolveTradeifyPlace(input: TradeifyPlaceInput = {}): TradeifyPl
   })
 
   if (tradeifyMustFlatten(now)) return deny('must_flatten')
+  if (input.newsBlocked) return deny('news_lock')
+  if (input.hedgeBlocked) return deny('hedge_conflict')
   if (fillsUsed >= 3) return deny('session_full')
   if (stopOuts >= TRADEIFY_MAX_STOP_OUTS) return deny('day_locked_stops')
   if (greenLocked) return deny('day_locked_green')
   if (leftoverDll < TRADEIFY_MIN_RISK_DOLLARS) return deny('dll_exhausted')
   if (floorRoom < TRADEIFY_MIN_RISK_DOLLARS) return deny('floor_exhausted')
 
-  const riskDollars = Math.min(stepDollars, leftoverDll, floorRoom)
+  const riskDollars = Math.min(stepDollars, placeableDll, placeableFloor)
   if (riskDollars < TRADEIFY_MIN_RISK_DOLLARS) return deny('risk_too_small')
   if (riskDollars > leftoverDll) return deny('stop_exceeds_dll', riskDollars)
   if (riskDollars > floorRoom) return deny('stop_exceeds_floor', riskDollars)

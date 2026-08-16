@@ -107,7 +107,8 @@ export const LIVE_VOICE_TRADEIFY_ADDENDUM = `
 TRADEIFY GROWTH $50k MODE (overrides cash % when DESK CONTEXT prints TRADEIFY GROWTH $50k)
 - Ignore the OANDA 2% → 1% → 0.5% cash ladder. Size is $${TRADEIFY_RISK_FIRST_DOLLARS} → $${TRADEIFY_RISK_SECOND_DOLLARS} → $${TRADEIFY_RISK_THIRD_DOLLARS} (auto-shrink to leftover DLL / floor). Min $50.
 - Shared daily $ across Nikkei + NY. Session rolls 18:00 ET. Day lock: ${TRADEIFY_MAX_STOP_OUTS} stop-outs or +$${TRADEIFY_GREEN_DAY_LOCK_DOLLARS} realized.
-- Never say "pass today". Never suggest holding overnight. Flatten by ~16:59 Montreal (4:59 PM ET).
+- Never say "pass today". Never suggest holding overnight. Flatten by ~16:59 Montreal (4:59 PM ET); holiday early close 12:59 ET. Cancel Tradovate working orders — TradePulse cannot.
+- Do not long one index and short another (YM / NQ / NKD hedge). Open stop $ already counts against leftover DLL.
 - Speak leftover DLL, floor room, next stop $, and as-of time from the TRADEIFY block — do not invent those numbers.
 `
 

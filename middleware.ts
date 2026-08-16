@@ -13,8 +13,10 @@ import {
  */
 const EDGE_GATE_PASSWORD = process.env.DESK_GATE_PASSWORD
 const EDGE_GATE_SECRET = process.env.DESK_AUTH_SECRET
+const EDGE_TEAM_TAPE_SECRET = process.env.TEAM_TAPE_SECRET
 void EDGE_GATE_PASSWORD
 void EDGE_GATE_SECRET
+void EDGE_TEAM_TAPE_SECRET
 
 /**
  * Public paths — no desk_gate cookie required.
@@ -42,6 +44,14 @@ function hasCronBearer(request: NextRequest): boolean {
   if (!cronSecret) return false
   const auth = request.headers.get('authorization')
   return auth === `Bearer ${cronSecret}`
+}
+
+function hasTeamTapeBearer(request: NextRequest): boolean {
+  const secret = EDGE_TEAM_TAPE_SECRET || process.env.TEAM_TAPE_SECRET
+  if (!secret) return false
+  const auth = request.headers.get('authorization')
+  const header = request.headers.get('x-team-tape-secret')
+  return auth === `Bearer ${secret}` || header === secret
 }
 
 function loginRedirect(request: NextRequest): NextResponse {
@@ -113,7 +123,11 @@ export async function middleware(request: NextRequest) {
     }
 
     if (!isPublicPath(pathname)) {
-      const cronOk = isApi && hasCronBearer(request)
+      const cronOk =
+        isApi &&
+        (hasCronBearer(request) ||
+          (pathname.startsWith('/api/trading/team-tape/ingest') &&
+            hasTeamTapeBearer(request)))
       if (!cronOk && !authed) {
         if (isApi) {
           const res = NextResponse.json(
