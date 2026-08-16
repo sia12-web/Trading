@@ -3327,34 +3327,34 @@ function SimulationDeskInner() {
             >
               Place limit
             </button>
-            <button
-              type="button"
-              onClick={() =>
-                setDeskRiskProfile(
-                  isTradeifyGrowth50k(riskProfile) ? 'oanda_cash' : 'tradeify_growth_50k'
-                )
-              }
-              className={`shrink-0 rounded px-2 py-1 text-[10px] font-bold uppercase ${
-                isTradeifyGrowth50k(riskProfile)
-                  ? 'bg-amber-500 text-black'
-                  : 'border border-white/15 text-gray-400 hover:text-white'
-              }`}
-              title="Toggle Tradeify $50k dollar risk vs OANDA %"
+          )}
+          <button
+            type="button"
+            onClick={() =>
+              setDeskRiskProfile(
+                isTradeifyGrowth50k(riskProfile) ? 'oanda_cash' : 'tradeify_growth_50k'
+              )
+            }
+            className={`shrink-0 rounded px-2 py-1 text-[10px] font-bold uppercase ${
+              isTradeifyGrowth50k(riskProfile)
+                ? 'bg-amber-500 text-black'
+                : 'border border-white/15 text-gray-400 hover:text-white'
+            }`}
+            title="Toggle Tradeify $50k dollar risk vs OANDA %"
+          >
+            {isTradeifyGrowth50k(riskProfile) ? 'Tradeify $50k' : 'OANDA %'}
+          </button>
+          {tradeifyDayLock && !tradeifyDayLock.allowed && (
+            <span
+              className="max-w-[16rem] truncate text-[10px] font-semibold text-red-300"
+              title={tradeifyDayLock.refuseMessage}
             >
-              {isTradeifyGrowth50k(riskProfile) ? 'Tradeify $50k' : 'OANDA %'}
-            </button>
-            {tradeifyDayLock && !tradeifyDayLock.allowed && (
-              <span
-                className="max-w-[16rem] truncate text-[10px] font-semibold text-red-300"
-                title={tradeifyDayLock.refuseMessage}
-              >
-                {tradeifyDayLock.refuseReason === 'day_locked_stops'
-                  ? '2 stops — sit'
-                  : tradeifyDayLock.refuseReason === 'day_locked_green'
-                    ? 'Green-day lock'
-                    : 'No new entries'}
-              </span>
-            )}
+              {tradeifyDayLock.refuseReason === 'day_locked_stops'
+                ? '2 stops — sit'
+                : tradeifyDayLock.refuseReason === 'day_locked_green'
+                  ? 'Green-day lock'
+                  : 'No new entries'}
+            </span>
           )}
           {canEnter && (
             <span
