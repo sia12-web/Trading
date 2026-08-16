@@ -83,11 +83,6 @@ export function buildTeamCopyAdvice(args: {
   const riskDollars = args.place.allowed
     ? args.place.riskDollars
     : tradeifyRiskStepDollars(fillsUsed)
-  const canCopy =
-    args.clockedIn &&
-    !mustFlatten &&
-    args.place.allowed &&
-    fillsLeft > 0
 
   if (mustFlatten) {
     return {

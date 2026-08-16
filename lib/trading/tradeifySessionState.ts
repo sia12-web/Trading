@@ -116,7 +116,7 @@ export async function loadTradeifySessionSnapshot(
   userId: string,
   now: Date = new Date()
 ): Promise<TradeifyPlaceInput & { sessionKey: string; fills: TradeifyFillRow[] }> {
-  const { startIso, endIso, sessionKey } = tradeifySessionWindow(now)
+  const { sessionKey } = tradeifySessionWindow(now)
   const lookback = new Date(now)
   lookback.setUTCDate(lookback.getUTCDate() - 90)
   const { data, error } = await supabase

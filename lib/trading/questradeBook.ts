@@ -137,7 +137,8 @@ export async function loadQuestradeBook(
     t: String(p.recorded_at),
     equity: Number(p.equity),
   }))
-  if (account.ok && (equityCurve.length === 0 || equityCurve[equityCurve.length - 1].equity !== account.equity)) {
+  const lastPoint = equityCurve[equityCurve.length - 1]
+  if (account.ok && (!lastPoint || lastPoint.equity !== account.equity)) {
     equityCurve.push({ t: account.asOfIso, equity: account.equity })
   }
 

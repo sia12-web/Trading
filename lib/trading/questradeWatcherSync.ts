@@ -10,21 +10,26 @@ export async function syncQuestradeSessionFromWatcher(
 ): Promise<boolean> {
   const url = process.env.QUESTRADE_WATCHER_DATABASE_URL?.trim()
   if (!url) return false
-  let Client: new (cfg: { connectionString: string; ssl: object }) => {
-    connect: () => Promise<void>
+  type PgClient = {
+    connect: () => Promise<unknown>
     query: (sql: string) => Promise<{ rows: Array<Record<string, unknown>> }>
-    end: () => Promise<void>
+    end: () => Promise<unknown>
   }
+  let client: PgClient
   try {
-    const pg = (await import('pg')) as { default?: { Client: typeof Client }; Client?: typeof Client }
-    Client = (pg.Client || pg.default?.Client) as typeof Client
+    const pg = (await import('pg')) as unknown as {
+      Client: new (cfg: { connectionString: string; ssl: object }) => PgClient
+      default?: { Client: new (cfg: { connectionString: string; ssl: object }) => PgClient }
+    }
+    const Client = pg.Client || pg.default?.Client
+    if (!Client) return false
+    client = new Client({
+      connectionString: url,
+      ssl: { rejectUnauthorized: false },
+    })
   } catch {
     return false
   }
-  const client = new Client({
-    connectionString: url,
-    ssl: { rejectUnauthorized: false },
-  })
   try {
     await client.connect()
     const { rows } = await client.query(
