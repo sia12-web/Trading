@@ -86,13 +86,16 @@ export function parseQuestradeSymbol(raw?: string | null): {
   if (opt) {
     const underlying = opt[1]
     const expiry = opt[2]
-    const kind = opt[3] === 'P' ? 'Put' : 'Call'
-    const strikeNum = Number(opt[4])
+    const right = opt[3]
+    const strikeRaw = opt[4]
+    if (!underlying || !expiry || !right || !strikeRaw) return null
+    const kind = right === 'P' ? 'Put' : 'Call'
+    const strikeNum = Number(strikeRaw)
     const strike = Number.isFinite(strikeNum)
       ? strikeNum % 1 === 0
         ? String(strikeNum)
         : strikeNum.toFixed(2)
-      : opt[4]
+      : strikeRaw
     return {
       raw: key,
       key,
