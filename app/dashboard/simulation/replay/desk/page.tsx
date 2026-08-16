@@ -112,7 +112,15 @@ import {
   TRADER_DISPLAY_TZ,
   deskLocalHmsAsTraderDisplay,
 } from '@/lib/chart/traderDisplayTz'
-import { DESK_CHART_THEME } from '@/lib/chart/deskChartTheme'
+import {
+  DESK_BAR_SPACING,
+  DESK_CANDLE_DOWN,
+  DESK_CANDLE_UP,
+  DESK_CHART_THEME,
+} from '@/lib/chart/deskChartTheme'
+import { lockToCandleAutoscale, paddedCandlePriceRange, sessionFocusHighLow } from '@/lib/chart/seriesAutoscale'
+import { priceFromClientY } from '@/lib/chart/chartPointerPrice'
+import { deskBarSpacing, deskVisibleLogicalRange } from '@/lib/trading/deskInstrumentPreference'
 import {
   computeSimOvernightBias,
 } from '@/lib/trading/simOvernightBias'
@@ -251,9 +259,9 @@ interface PaperPosition {
   breakEvenSet?: boolean
 }
 
-/** Trailing window while following the sim tip — readable bars, tip pinned right */
-const FOLLOW_RIGHT_PAD = 8
-const FOLLOW_BAR_SPACING = 7
+/** Trailing window while following the sim tip — same bar width as live */
+const FOLLOW_RIGHT_PAD = DESK_CHART_THEME.timeScale.rightOffset
+const FOLLOW_BAR_SPACING = DESK_BAR_SPACING
 
 type ChartFmt = {
   formatTime: (unix: number, withSeconds?: boolean) => string
@@ -420,6 +428,8 @@ function SimulationDeskInner() {
     'tradeify_growth_50k'
   )
   const [riskBox, setRiskBox] = useState<DeskRiskBoxState | null>(null)
+  const riskBoxRef = useRef<DeskRiskBoxState | null>(null)
+  riskBoxRef.current = riskBox
   const [overlayTick, setOverlayTick] = useState(0)
   const openRiskBoxFromPriceRef = useRef<() => void>(() => {})
   const [msg, setMsg] = useState<string | null>(null)
@@ -502,6 +512,15 @@ function SimulationDeskInner() {
 
     const onFsChange = () => {
       setIsFullscreen(!!document.fullscreenElement)
+      requestAnimationFrame(() => {
+        if (containerRef.current && chartRef.current) {
+          chartRef.current.resize(
+            containerRef.current.clientWidth,
+            containerRef.current.clientHeight
+          )
+        }
+        requestAnimationFrame(() => setOverlayTick((n) => n + 1))
+      })
     }
 
     window.addEventListener('keydown', handleKeyDown)
@@ -565,6 +584,8 @@ function SimulationDeskInner() {
     low: ISeriesApi<'Line'>
   } | null>(null)
   const avwapLastRef = useRef<number | null>(null)
+  const instrumentRef = useRef(instrument)
+  instrumentRef.current = instrument
   const [or30Shaped, setOr30Shaped] = useState(false)
 
   useEffect(() => {
@@ -870,41 +891,62 @@ function SimulationDeskInner() {
       height: containerRef.current.clientHeight,
     })
 
-    const series = chart.addCandlestickSeries({
-      upColor: '#26a69a',
-      downColor: '#ef5350',
-      borderUpColor: '#26a69a',
-      borderDownColor: '#ef5350',
-      wickUpColor: '#26a69a',
-      wickDownColor: '#ef5350',
-      autoscaleInfoProvider: () => {
-        const list = allCandlesRef.current
-        if (!list || list.length === 0) return null
-        const range = chart.timeScale().getVisibleLogicalRange()
-        let visible = list
-        if (range && Number.isFinite(range.from) && Number.isFinite(range.to)) {
-          const fromIdx = Math.max(0, Math.floor(range.from))
-          const toIdx = Math.min(list.length - 1, Math.ceil(range.to))
-          if (fromIdx <= toIdx) {
-            visible = list.slice(fromIdx, toIdx + 1)
-          }
+    const candleAutoscale = () => {
+      // Series logical indexes match the replay slice, not the multi-day fetch.
+      // Using allCandles here flattened the current day against unrelated history.
+      const list = visibleCandlesRef.current
+      if (!list || list.length === 0) return null
+      const range = chart.timeScale().getVisibleLogicalRange()
+      let visible = list
+      if (range && Number.isFinite(range.from) && Number.isFinite(range.to)) {
+        const fromIdx = Math.max(0, Math.floor(range.from))
+        const toIdx = Math.min(list.length - 1, Math.ceil(range.to))
+        if (fromIdx <= toIdx) {
+          visible = list.slice(fromIdx, toIdx + 1)
         }
-        if (visible.length === 0 || !visible[0]) return null
-        let minValue = visible[0].low
-        let maxValue = visible[0].high
+      }
+      if (visible.length === 0 || !visible[0]) return null
+      const session = sessionFocusHighLow(
+        visible.map((c) => ({ time: c.time, high: c.high, low: c.low })),
+        instrumentRef.current
+      )
+      let minValue = session?.min ?? visible[0].low
+      let maxValue = session?.max ?? visible[0].high
+      if (!session) {
         for (let i = 1; i < visible.length; i++) {
           const c = visible[i]
           if (c && c.low < minValue) minValue = c.low
           if (c && c.high > maxValue) maxValue = c.high
         }
-        return {
-          priceRange: {
-            minValue,
-            maxValue,
-          },
-        }
-      },
+      }
+
+      const risk = riskBoxRef.current
+      const pending = pendingRef.current
+      const position = positionRef.current
+      const fitPrices = risk
+        ? [risk.entryPrice, risk.stopLoss, risk.profitTarget]
+        : pending
+          ? [pending.level, pending.stopLoss, pending.target]
+          : position
+            ? [position.entry, position.stopLoss, position.target]
+            : []
+      return paddedCandlePriceRange(minValue, maxValue, fitPrices)
+    }
+
+    const series = chart.addCandlestickSeries({
+      upColor: DESK_CANDLE_UP,
+      downColor: DESK_CANDLE_DOWN,
+      borderUpColor: DESK_CANDLE_UP,
+      borderDownColor: DESK_CANDLE_DOWN,
+      wickUpColor: DESK_CANDLE_UP,
+      wickDownColor: DESK_CANDLE_DOWN,
+      borderVisible: true,
+      wickVisible: true,
+      autoscaleInfoProvider: candleAutoscale,
     })
+
+    // Studies stay on the pane at true prices but vote for the candle window.
+    const ignoreScale = lockToCandleAutoscale(candleAutoscale)
 
     // Dedicated host for BUY/SHORT + working/manage lines. Candle/VWAP setData
     // must never touch this series or the levels vanish after a few seconds.
@@ -915,6 +957,7 @@ function SimulationDeskInner() {
       priceLineVisible: false,
       crosshairMarkerVisible: false,
       priceScaleId: 'right',
+      ...ignoreScale,
     })
 
     const bandOpts = {
@@ -923,6 +966,7 @@ function SimulationDeskInner() {
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
+      ...ignoreScale,
     }
     const vwapSeries = {
       upper3: chart.addLineSeries({ ...bandOpts, title: '+3σ' }),
@@ -934,6 +978,7 @@ function SimulationDeskInner() {
         priceLineVisible: false,
         lastValueVisible: false,
         title: 'AVWAP',
+        ...ignoreScale,
       }),
       lower1: chart.addLineSeries({ ...bandOpts, title: '-1σ' }),
       lower2: chart.addLineSeries({ ...bandOpts, title: '-2σ' }),
@@ -948,6 +993,7 @@ function SimulationDeskInner() {
       priceLineVisible: false,
       lastValueVisible: true,
       crosshairMarkerVisible: false,
+      ...ignoreScale,
     }
     const ibSeries = {
       high: chart.addLineSeries({ ...ibLineOpts, title: 'IB H' }),
@@ -962,6 +1008,7 @@ function SimulationDeskInner() {
       priceLineVisible: false,
       lastValueVisible: true,
       crosshairMarkerVisible: false,
+      ...ignoreScale,
     }
     const or30Series = {
       high: chart.addLineSeries({ ...or30LineOpts, title: 'OR30 H' }),
@@ -975,6 +1022,7 @@ function SimulationDeskInner() {
       priceLineVisible: false,
       lastValueVisible: true,
       crosshairMarkerVisible: false,
+      ...ignoreScale,
     }
     const lunchSeries = {
       high: chart.addLineSeries({ ...lunchLineOpts, color: NYC_LUNCH_COLORS.high, title: 'LN H' }),
@@ -995,6 +1043,7 @@ function SimulationDeskInner() {
       priceLineVisible: false,
       lastValueVisible: true,
       crosshairMarkerVisible: false,
+      ...ignoreScale,
     }
     const usRangeSeries = {
       high: chart.addLineSeries({ ...usLineOpts, title: 'US H' }),
@@ -1003,7 +1052,7 @@ function SimulationDeskInner() {
 
     chart.priceScale('right').applyOptions({
       autoScale: true,
-      scaleMargins: { top: 0.05, bottom: 0.05 },
+      scaleMargins: DESK_CHART_THEME.rightPriceScale.scaleMargins,
       borderVisible: false,
     })
 
@@ -1025,12 +1074,18 @@ function SimulationDeskInner() {
           containerRef.current.clientWidth,
           containerRef.current.clientHeight
         )
+        requestAnimationFrame(() => {
+          requestAnimationFrame(bumpOverlay)
+        })
       }
     })
     ro.observe(containerRef.current)
+    const onWheelLayout = () => bumpOverlay()
+    containerRef.current.addEventListener('wheel', onWheelLayout, { passive: true })
 
     return () => {
       ro.disconnect()
+      containerRef.current?.removeEventListener('wheel', onWheelLayout)
       try {
         chart.timeScale().unsubscribeVisibleLogicalRangeChange(bumpOverlay)
       } catch {
@@ -1172,24 +1227,19 @@ function SimulationDeskInner() {
       const ts = chart.timeScale()
       ignoreRangeChangeRef.current = true
       const resetSpacing = !!opts?.resetSpacing || !didFitRef.current
-      const to = endIdx + FOLLOW_RIGHT_PAD
+      const to = deskVisibleLogicalRange(endIdx + 1).to
 
       if (resetSpacing) {
-        barSpacingRef.current = FOLLOW_BAR_SPACING
+        const width = containerRef.current?.clientWidth ?? 900
+        const spacing = deskBarSpacing(width, endIdx + 1)
+        barSpacingRef.current = spacing
         ts.applyOptions({
           rightOffset: FOLLOW_RIGHT_PAD,
-          barSpacing: FOLLOW_BAR_SPACING,
+          barSpacing: spacing,
         })
-        const width = containerRef.current?.clientWidth ?? 900
-        const barsVisible = Math.max(
-          40,
-          Math.floor((width - 80) / FOLLOW_BAR_SPACING) - FOLLOW_RIGHT_PAD
-        )
-        pinnedSpanRef.current = barsVisible + FOLLOW_RIGHT_PAD
-        ts.setVisibleLogicalRange({
-          from: Math.max(-2, endIdx - barsVisible),
-          to,
-        })
+        const fitted = deskVisibleLogicalRange(endIdx + 1, width)
+        pinnedSpanRef.current = fitted.to - fitted.from
+        ts.setVisibleLogicalRange(fitted)
       } else {
         // Preserve user's zoom: keep the same logical span, only slide to tip
         const cur = ts.getVisibleLogicalRange()
@@ -1226,7 +1276,7 @@ function SimulationDeskInner() {
     if (!chart) return
     chart.priceScale('right').applyOptions({
       autoScale: true,
-      scaleMargins: { top: 0.05, bottom: 0.05 },
+      scaleMargins: DESK_CHART_THEME.rightPriceScale.scaleMargins,
     })
     // Sim: snap to tip with default spacing (fitContent zooms out across all history)
     const endIdx = lastAppliedBarIdxRef.current
@@ -1282,8 +1332,9 @@ function SimulationDeskInner() {
           volume: Math.max(0, Number(c.volume) || 0),
         }))
         const tip = slice[slice.length - 1]?.time ?? simT
-        const sessionEnd = cashCloseUnix || lunchUnix || tip
-        const extendTo = Math.max(tip, sessionEnd, simT)
+        // Never inject future 16:00 points: they create a large blank right side.
+        // Extend ranges only as replay time advances, like TradingView.
+        const extendTo = Math.max(tip, simT)
 
         const ibs = ibSeriesRef.current
         if (ibs && openUnix) {
@@ -1484,8 +1535,8 @@ function SimulationDeskInner() {
 
       if (force || lastAppliedBarIdxRef.current < 0) {
         const slice = candles.slice(0, endIdx + 1)
-        series.setData(slice.map(toBar))
         visibleCandlesRef.current = slice
+        series.setData(slice.map(toBar))
 
         const clock = deskClockFor(instrument)
         const bands = computeAnchoredVwap(slice, clock)
@@ -1528,11 +1579,11 @@ function SimulationDeskInner() {
         }
       } else {
         // Incremental: only append new bars (cheap path during Play)
+        const slice = candles.slice(0, endIdx + 1)
+        visibleCandlesRef.current = slice
         for (let i = lastAppliedBarIdxRef.current + 1; i <= endIdx; i++) {
           series.update(toBar(candles[i]!))
         }
-        const slice = candles.slice(0, endIdx + 1)
-        visibleCandlesRef.current = slice
 
         // VWAP bands only refresh when a bar is added (not every clock tick)
         const bands = computeAnchoredVwap(slice, deskClockFor(instrument))
@@ -2235,30 +2286,6 @@ function SimulationDeskInner() {
         /* ignore */
       }
     }
-
-    if (prices.length >= 2) {
-      const min = Math.min(...prices)
-      const max = Math.max(...prices)
-      const pad = Math.max((max - min) * 0.1, max * 0.0008)
-      try {
-        host.applyOptions({
-          autoscaleInfoProvider: () => ({
-            priceRange: {
-              minValue: min - pad,
-              maxValue: max + pad,
-            },
-          }),
-        })
-      } catch {
-        /* ignore */
-      }
-    } else {
-      try {
-        host.applyOptions({ autoscaleInfoProvider: undefined })
-      } catch {
-        /* ignore */
-      }
-    }
   }, [
     position,
     pending,
@@ -2837,10 +2864,8 @@ function SimulationDeskInner() {
     const onDblClick = (e: MouseEvent) => {
       e.preventDefault()
       if (!seriesRef.current) return
-      const rect = container.getBoundingClientRect()
-      const y = e.clientY - rect.top
-      const raw = seriesRef.current.coordinateToPrice(y)
-      if (raw == null || !Number.isFinite(Number(raw)) || Number(raw) <= 0) return
+      const raw = priceFromClientY(container, seriesRef.current, e.clientY)
+      if (raw == null) return
 
       const snapped = snapSimEntryOrDeny(Number(raw))
       if ('deny' in snapped) {

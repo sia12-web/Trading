@@ -9,19 +9,19 @@ import type { UTCTimestamp } from 'lightweight-charts'
 /** Soft pastel fills for light chart panes (TradingView-like). */
 export const SESSION_STYLES = {
   Asia: {
-    color: 'rgba(147, 197, 253, 0.32)',
+    color: 'rgba(147, 197, 253, 0.14)',
     zIndex: 1,
     line: '#2563eb',
     short: 'Asia',
   },
   London: {
-    color: 'rgba(250, 204, 21, 0.30)',
+    color: 'rgba(250, 204, 21, 0.13)',
     zIndex: 2,
     line: '#ca8a04',
     short: 'Lon',
   },
   'New York': {
-    color: 'rgba(74, 222, 128, 0.30)',
+    color: 'rgba(74, 222, 128, 0.12)',
     zIndex: 3,
     line: '#16a34a',
     short: 'NY',
@@ -137,7 +137,7 @@ export interface SessionHighlightRect {
 
 export const VWAP_COLORS = {
   vwap: '#b8a04a',
-  band: '#3d8f7a',
+  band: 'rgba(61, 143, 122, 0.48)',
 } as const
 
 export interface SessionBar {

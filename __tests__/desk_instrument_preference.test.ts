@@ -37,7 +37,7 @@ assert(parseDeskInstrument('') === null, 'empty')
 
 {
   const spacing = deskBarSpacing(900, 3000)
-  assert(spacing >= 3 && spacing <= 8, `spacing ${spacing}`)
+  assert(spacing >= 12 && spacing <= 14, `spacing ${spacing}`)
 }
 
 console.log('desk_instrument_preference.test.ts: all passed')

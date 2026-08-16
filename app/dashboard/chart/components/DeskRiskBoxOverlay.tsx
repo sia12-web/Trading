@@ -8,8 +8,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ISeriesApi } from 'lightweight-charts'
 import { takeProfitFromStopR } from '@/lib/trading/positionSizing'
-import { snapDeskPrice } from '@/lib/trading/instrumentTicks'
+import { snapDeskPrice, snapStopToTick, snapTargetToTick } from '@/lib/trading/instrumentTicks'
 import { snapProfitToRound } from '@/lib/trading/deskLevels'
+import {
+  overlayTopFromPrice,
+  priceFromClientY,
+  riskBoxDollarPreview,
+} from '@/lib/chart/chartPointerPrice'
+import { useStickySeriesLayout } from '@/app/dashboard/chart/components/useStickySeriesLayout'
 import {
   clampPriceToRangeEdgeEnvelope,
   snapEntryToNearestOpenBandCenter,
@@ -29,13 +35,7 @@ function priceFromPointer(
   series: ISeriesApi<'Candlestick'> | null,
   clientY: number
 ): number | null {
-  if (!container || !series) return null
-  const rect = container.getBoundingClientRect()
-  const y = clientY - rect.top
-  if (y < 0 || y > rect.height) return null
-  const raw = series.coordinateToPrice(y)
-  if (raw == null || !Number.isFinite(Number(raw)) || Number(raw) <= 0) return null
-  return Number(raw)
+  return priceFromClientY(container, series, clientY)
 }
 
 function defaultManualStop(limit: number, direction: 'LONG' | 'SHORT'): number {
@@ -96,63 +96,109 @@ export function DeskRiskBoxOverlay({
   fillsUsed: number
   layoutTick: number
 }) {
+  const hostRef = useRef<HTMLDivElement>(null)
   const draggingRef = useRef<'ENTRY' | 'TP' | 'SL' | null>(null)
+  const pendingYRef = useRef<number | null>(null)
+  const rafRef = useRef(0)
   const boxRef = useRef(riskBox)
   boxRef.current = riskBox
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
   const snapRef = useRef({ snapRanges, strategyRange, liveOk })
   snapRef.current = { snapRanges, strategyRange, liveOk }
+  const layoutTickSticky = useStickySeriesLayout(series, [
+    riskBox.entryPrice,
+    riskBox.stopLoss,
+    riskBox.profitTarget,
+  ])
 
-  const onMouseDown = useCallback(
-    (type: 'ENTRY' | 'TP' | 'SL') => (e: React.MouseEvent) => {
+  const onHandlePointerDown = useCallback(
+    (type: 'ENTRY' | 'TP' | 'SL') => (e: React.PointerEvent) => {
       e.preventDefault()
       e.stopPropagation()
       draggingRef.current = type
+      pendingYRef.current = e.clientY
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId)
+      } catch {
+        /* capture optional */
+      }
     },
     []
   )
 
   useEffect(() => {
-    const onMouseMove = (e: MouseEvent) => {
+    const applyY = (clientY: number) => {
       const type = draggingRef.current
       if (!type) return
-      const raw = priceFromPointer(containerRef.current, series, e.clientY)
+      const raw = priceFromPointer(containerRef.current, series, clientY)
       if (raw == null) return
-      const snappedRaw = snapDeskPrice(instrument, raw)
       const prev = boxRef.current
 
       if (type === 'ENTRY') {
-        const enveloped = clampPriceToRangeEdgeEnvelope(snappedRaw, snapRef.current.snapRanges)
-        const snapped = snapDeskPrice(instrument, enveloped ?? snappedRaw)
+        const enveloped = clampPriceToRangeEdgeEnvelope(
+          snapDeskPrice(instrument, raw),
+          snapRef.current.snapRanges
+        )
+        const snapped = snapDeskPrice(instrument, enveloped ?? raw)
         const diff = snapped - prev.entryPrice
         onChangeRef.current({
           ...prev,
           entryPrice: snapped,
-          stopLoss: snapDeskPrice(instrument, prev.stopLoss + diff),
-          profitTarget: snapDeskPrice(instrument, prev.profitTarget + diff),
+          stopLoss: snapStopToTick(instrument, snapped, prev.stopLoss + diff, prev.direction),
+          profitTarget: snapTargetToTick(
+            instrument,
+            snapped,
+            prev.profitTarget + diff,
+            prev.direction
+          ),
         })
         return
       }
       if (type === 'TP') {
-        onChangeRef.current({ ...prev, profitTarget: snappedRaw })
+        const tp = snapTargetToTick(instrument, prev.entryPrice, raw, prev.direction)
+        onChangeRef.current({ ...prev, profitTarget: tp })
         return
       }
+      const sl = snapStopToTick(instrument, prev.entryPrice, raw, prev.direction)
       const isLong = prev.direction === 'LONG'
-      if (isLong ? !(snappedRaw < prev.entryPrice) : !(snappedRaw > prev.entryPrice)) return
+      if (isLong ? !(sl < prev.entryPrice) : !(sl > prev.entryPrice)) return
       const rawTp = takeProfitFromStopR({
         entry: prev.entryPrice,
-        stop: snappedRaw,
+        stop: sl,
         direction: prev.direction,
       })
-      const tp = snapDeskPrice(
+      const tp = snapTargetToTick(
         instrument,
-        snapProfitToRound(prev.entryPrice, snappedRaw, rawTp, prev.direction)
+        prev.entryPrice,
+        snapProfitToRound(prev.entryPrice, sl, rawTp, prev.direction),
+        prev.direction
       )
-      onChangeRef.current({ ...prev, stopLoss: snappedRaw, profitTarget: tp })
+      onChangeRef.current({ ...prev, stopLoss: sl, profitTarget: tp })
     }
 
-    const onMouseUp = () => {
+    const flush = () => {
+      rafRef.current = 0
+      const y = pendingYRef.current
+      if (y == null || !draggingRef.current) return
+      applyY(y)
+    }
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!draggingRef.current) return
+      pendingYRef.current = e.clientY
+      if (rafRef.current) return
+      rafRef.current = requestAnimationFrame(flush)
+    }
+
+    const onPointerUp = () => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = 0
+      }
+      const y = pendingYRef.current
+      if (y != null && draggingRef.current) applyY(y)
+      pendingYRef.current = null
       const was = draggingRef.current
       draggingRef.current = null
       if (was !== 'ENTRY') return
@@ -173,17 +219,25 @@ export function DeskRiskBoxOverlay({
       onChangeRef.current({
         ...prev,
         entryPrice: next,
-        stopLoss: snapDeskPrice(instrument, prev.stopLoss + diff),
-        profitTarget: snapDeskPrice(instrument, prev.profitTarget + diff),
+        stopLoss: snapStopToTick(instrument, next, prev.stopLoss + diff, prev.direction),
+        profitTarget: snapTargetToTick(
+          instrument,
+          next,
+          prev.profitTarget + diff,
+          prev.direction
+        ),
         preferRangeLabel,
       })
     }
 
-    window.addEventListener('mousemove', onMouseMove, true)
-    window.addEventListener('mouseup', onMouseUp, true)
+    window.addEventListener('pointermove', onPointerMove, true)
+    window.addEventListener('pointerup', onPointerUp, true)
+    window.addEventListener('pointercancel', onPointerUp, true)
     return () => {
-      window.removeEventListener('mousemove', onMouseMove, true)
-      window.removeEventListener('mouseup', onMouseUp, true)
+      window.removeEventListener('pointermove', onPointerMove, true)
+      window.removeEventListener('pointerup', onPointerUp, true)
+      window.removeEventListener('pointercancel', onPointerUp, true)
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
   }, [containerRef, series, instrument])
 
@@ -195,39 +249,64 @@ export function DeskRiskBoxOverlay({
     onChange({
       ...prev,
       direction: newDir,
-      stopLoss: snapDeskPrice(
+      stopLoss: snapStopToTick(
         instrument,
-        newDir === 'LONG' ? prev.entryPrice - slDist : prev.entryPrice + slDist
+        prev.entryPrice,
+        newDir === 'LONG' ? prev.entryPrice - slDist : prev.entryPrice + slDist,
+        newDir
       ),
-      profitTarget: snapDeskPrice(
+      profitTarget: snapTargetToTick(
         instrument,
-        newDir === 'LONG' ? prev.entryPrice + tpDist : prev.entryPrice - tpDist
+        prev.entryPrice,
+        newDir === 'LONG' ? prev.entryPrice + tpDist : prev.entryPrice - tpDist,
+        newDir
       ),
     })
   }, [instrument, onChange])
 
-  const entryY = series ? series.priceToCoordinate(riskBox.entryPrice) : null
-  const tpY = series ? series.priceToCoordinate(riskBox.profitTarget) : null
-  const slY = series ? series.priceToCoordinate(riskBox.stopLoss) : null
+  const entryY = overlayTopFromPrice(
+    series,
+    riskBox.entryPrice,
+    hostRef.current,
+    containerRef.current
+  )
+  const tpY = overlayTopFromPrice(
+    series,
+    riskBox.profitTarget,
+    hostRef.current,
+    containerRef.current
+  )
+  const slY = overlayTopFromPrice(
+    series,
+    riskBox.stopLoss,
+    hostRef.current,
+    containerRef.current
+  )
   void layoutTick
+  void layoutTickSticky
 
-  const slPts = Math.abs(riskBox.entryPrice - riskBox.stopLoss)
-  const tpPts = Math.abs(riskBox.profitTarget - riskBox.entryPrice)
-  const size = slPts > 0 ? riskDollars / slPts : 0
-  const profitVal = size > 0 ? (size * tpPts).toFixed(0) : '—'
+  const dollars = riskBoxDollarPreview({
+    entry: riskBox.entryPrice,
+    stop: riskBox.stopLoss,
+    target: riskBox.profitTarget,
+    riskDollars,
+  })
+  const profitVal = dollars.size > 0 ? dollars.profitDollars.toFixed(0) : '—'
   const fillN = Math.min(fillsUsed + 1, 3)
 
   return (
-    <div className="absolute inset-0 z-30 overflow-hidden pointer-events-none">
+    <div ref={hostRef} className="absolute inset-0 z-30 overflow-hidden pointer-events-none">
       {tpY != null && (
         <div
-          onMouseDown={onMouseDown('TP')}
-          className="absolute flex items-center gap-1.5 pointer-events-auto cursor-ns-resize group"
+          onPointerDown={onHandlePointerDown('TP')}
+          className="absolute flex items-center gap-1.5 pointer-events-auto cursor-ns-resize group touch-none select-none"
           style={{ left: '42%', top: `${tpY - 13}px` }}
-          title="Drag Take Profit"
+          title={`Drag Take Profit @ ${riskBox.profitTarget.toLocaleString()}`}
         >
           <div className="flex items-center rounded border border-dashed border-emerald-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-emerald-300 shadow-md group-hover:border-emerald-300 transition">
-            <span className="text-emerald-400">+{profitVal}</span>
+            <span className="text-emerald-400">
+              +{profitVal} · {riskBox.profitTarget.toLocaleString()}
+            </span>
             <span className="text-emerald-600 mx-1.5">|</span>
             <button
               type="button"
@@ -247,10 +326,10 @@ export function DeskRiskBoxOverlay({
 
       {entryY != null && (
         <div
-          onMouseDown={onMouseDown('ENTRY')}
-          className="absolute flex items-center gap-2 pointer-events-auto cursor-ns-resize group"
+          onPointerDown={onHandlePointerDown('ENTRY')}
+          className="absolute flex items-center gap-2 pointer-events-auto cursor-ns-resize group touch-none select-none"
           style={{ left: '32%', top: `${entryY - 14}px` }}
-          title="Drag Entry between painted ±10 band centers"
+          title={`Drag Entry @ ${riskBox.entryPrice.toLocaleString()} — ±10 band centers`}
         >
           <button
             type="button"
@@ -305,14 +384,14 @@ export function DeskRiskBoxOverlay({
 
       {slY != null && (
         <div
-          onMouseDown={onMouseDown('SL')}
-          className="absolute flex items-center gap-1.5 pointer-events-auto cursor-ns-resize group"
+          onPointerDown={onHandlePointerDown('SL')}
+          className="absolute flex items-center gap-1.5 pointer-events-auto cursor-ns-resize group touch-none select-none"
           style={{ left: '42%', top: `${slY - 13}px` }}
-          title={`Drag Stop Loss — size keeps $${riskDollars} risk (fill ${fillN}/3)`}
+          title={`Drag Stop Loss @ ${riskBox.stopLoss.toLocaleString()} — $${riskDollars} risk (fill ${fillN}/3)`}
         >
           <div className="flex items-center rounded border border-dashed border-amber-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-amber-300 shadow-md group-hover:border-amber-300 transition">
             <span className="text-amber-400">
-              −${riskDollars} · fill {fillN}/3
+              −${riskDollars} · {riskBox.stopLoss.toLocaleString()} · {fillN}/3
             </span>
             <span className="text-amber-600 mx-1.5">|</span>
             <button
@@ -355,12 +434,16 @@ export function DeskWorkingBracketOverlay({
   onTargetChange: (target: number) => void
   layoutTick: number
 }) {
+  const hostRef = useRef<HTMLDivElement>(null)
   const draggingRef = useRef(false)
   const startRef = useRef(profitTarget)
   const draftRef = useRef(profitTarget)
+  const pendingYRef = useRef<number | null>(null)
+  const rafRef = useRef(0)
   const [draft, setDraft] = useState(profitTarget)
   const onChangeRef = useRef(onTargetChange)
   onChangeRef.current = onTargetChange
+  const layoutTickSticky = useStickySeriesLayout(series, [entry, stopLoss, draft])
 
   useEffect(() => {
     if (draggingRef.current) return
@@ -369,46 +452,75 @@ export function DeskWorkingBracketOverlay({
   }, [profitTarget])
 
   useEffect(() => {
-    const onMouseMove = (e: MouseEvent) => {
+    const applyY = (clientY: number) => {
       if (!draggingRef.current) return
-      const raw = priceFromPointer(containerRef.current, series, e.clientY)
+      const raw = priceFromPointer(containerRef.current, series, clientY)
       if (raw == null) return
-      const snapped = snapDeskPrice(instrument, raw)
+      const snapped = snapTargetToTick(instrument, entry, raw, direction)
       const isLong = direction === 'LONG'
       if (isLong ? !(snapped > entry) : !(snapped < entry)) return
       draftRef.current = snapped
       setDraft(snapped)
     }
-    const onMouseUp = () => {
+    const flush = () => {
+      rafRef.current = 0
+      const y = pendingYRef.current
+      if (y == null) return
+      applyY(y)
+    }
+    const onPointerMove = (e: PointerEvent) => {
+      if (!draggingRef.current) return
+      pendingYRef.current = e.clientY
+      if (rafRef.current) return
+      rafRef.current = requestAnimationFrame(flush)
+    }
+    const onPointerUp = () => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = 0
+      }
+      const y = pendingYRef.current
+      if (y != null) applyY(y)
+      pendingYRef.current = null
       if (!draggingRef.current) return
       draggingRef.current = false
       if (Math.abs(draftRef.current - startRef.current) > 1e-9) {
         onChangeRef.current(draftRef.current)
       }
     }
-    window.addEventListener('mousemove', onMouseMove, true)
-    window.addEventListener('mouseup', onMouseUp, true)
+    window.addEventListener('pointermove', onPointerMove, true)
+    window.addEventListener('pointerup', onPointerUp, true)
+    window.addEventListener('pointercancel', onPointerUp, true)
     return () => {
-      window.removeEventListener('mousemove', onMouseMove, true)
-      window.removeEventListener('mouseup', onMouseUp, true)
+      window.removeEventListener('pointermove', onPointerMove, true)
+      window.removeEventListener('pointerup', onPointerUp, true)
+      window.removeEventListener('pointercancel', onPointerUp, true)
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
   }, [containerRef, series, instrument, direction, entry])
 
-  const tpY = series ? series.priceToCoordinate(draft) : null
-  const slY = series ? series.priceToCoordinate(stopLoss) : null
+  const tpY = overlayTopFromPrice(series, draft, hostRef.current, containerRef.current)
+  const slY = overlayTopFromPrice(series, stopLoss, hostRef.current, containerRef.current)
   void layoutTick
+  void layoutTickSticky
 
   return (
-    <div className="absolute inset-0 z-30 overflow-hidden pointer-events-none">
+    <div ref={hostRef} className="absolute inset-0 z-30 overflow-hidden pointer-events-none">
       {tpY != null && (
         <div
-          onMouseDown={(e) => {
+          onPointerDown={(e) => {
             e.preventDefault()
             e.stopPropagation()
             draggingRef.current = true
             startRef.current = draftRef.current
+            pendingYRef.current = e.clientY
+            try {
+              e.currentTarget.setPointerCapture(e.pointerId)
+            } catch {
+              /* optional */
+            }
           }}
-          className="absolute flex items-center gap-1.5 pointer-events-auto cursor-ns-resize group"
+          className="absolute flex items-center gap-1.5 pointer-events-auto cursor-ns-resize group touch-none select-none"
           style={{ left: '48%', top: `${tpY - 13}px` }}
           title={`Drag Take Profit @ ${draft.toLocaleString()}`}
         >
@@ -460,12 +572,20 @@ export function DeskManageBracketOverlay({
   onCommit: (next: { stopLoss: number; profitTarget: number }) => void
   layoutTick: number
 }) {
+  const hostRef = useRef<HTMLDivElement>(null)
   const draggingRef = useRef<'SL' | 'TP' | null>(null)
   const startRef = useRef({ stopLoss, profitTarget })
   const draftRef = useRef({ stopLoss, profitTarget })
+  const pendingYRef = useRef<number | null>(null)
+  const rafRef = useRef(0)
   const [draft, setDraft] = useState({ stopLoss, profitTarget })
   const onCommitRef = useRef(onCommit)
   onCommitRef.current = onCommit
+  const layoutTickSticky = useStickySeriesLayout(series, [
+    entry,
+    draft.stopLoss,
+    draft.profitTarget,
+  ])
 
   useEffect(() => {
     if (draggingRef.current) return
@@ -475,32 +595,57 @@ export function DeskManageBracketOverlay({
   }, [stopLoss, profitTarget])
 
   useEffect(() => {
-    const onMouseMove = (e: MouseEvent) => {
+    const applyY = (clientY: number) => {
       const type = draggingRef.current
       if (!type) return
-      const raw = priceFromPointer(containerRef.current, series, e.clientY)
+      const raw = priceFromPointer(containerRef.current, series, clientY)
       if (raw == null) return
-      const snapped = snapDeskPrice(instrument, raw)
       const isLong = direction === 'LONG'
       if (type === 'SL') {
-        if (isLong ? !(snapped < entry) : !(snapped > entry)) return
+        const sl = snapStopToTick(instrument, entry, raw, direction)
+        if (isLong ? !(sl < entry) : !(sl > entry)) return
         const rawTp = takeProfitFromStopR({
           entry,
-          stop: snapped,
+          stop: sl,
           direction,
         })
-        const tp = snapDeskPrice(instrument, snapProfitToRound(entry, snapped, rawTp, direction))
-        const next = { stopLoss: snapped, profitTarget: tp }
+        const tp = snapTargetToTick(
+          instrument,
+          entry,
+          snapProfitToRound(entry, sl, rawTp, direction),
+          direction
+        )
+        const next = { stopLoss: sl, profitTarget: tp }
         draftRef.current = next
         setDraft(next)
         return
       }
-      if (isLong ? !(snapped > entry) : !(snapped < entry)) return
-      const next = { ...draftRef.current, profitTarget: snapped }
+      const tp = snapTargetToTick(instrument, entry, raw, direction)
+      if (isLong ? !(tp > entry) : !(tp < entry)) return
+      const next = { ...draftRef.current, profitTarget: tp }
       draftRef.current = next
       setDraft(next)
     }
-    const onMouseUp = () => {
+    const flush = () => {
+      rafRef.current = 0
+      const y = pendingYRef.current
+      if (y == null) return
+      applyY(y)
+    }
+    const onPointerMove = (e: PointerEvent) => {
+      if (!draggingRef.current) return
+      pendingYRef.current = e.clientY
+      if (rafRef.current) return
+      rafRef.current = requestAnimationFrame(flush)
+    }
+    const onPointerUp = () => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = 0
+      }
+      const y = pendingYRef.current
+      if (y != null) applyY(y)
+      pendingYRef.current = null
       const type = draggingRef.current
       draggingRef.current = null
       if (!type) return
@@ -514,17 +659,26 @@ export function DeskManageBracketOverlay({
       }
       onCommitRef.current(cur)
     }
-    window.addEventListener('mousemove', onMouseMove, true)
-    window.addEventListener('mouseup', onMouseUp, true)
+    window.addEventListener('pointermove', onPointerMove, true)
+    window.addEventListener('pointerup', onPointerUp, true)
+    window.addEventListener('pointercancel', onPointerUp, true)
     return () => {
-      window.removeEventListener('mousemove', onMouseMove, true)
-      window.removeEventListener('mouseup', onMouseUp, true)
+      window.removeEventListener('pointermove', onPointerMove, true)
+      window.removeEventListener('pointerup', onPointerUp, true)
+      window.removeEventListener('pointercancel', onPointerUp, true)
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
   }, [containerRef, series, instrument, direction, entry])
 
-  const tpY = series ? series.priceToCoordinate(draft.profitTarget) : null
-  const slY = series ? series.priceToCoordinate(draft.stopLoss) : null
+  const tpY = overlayTopFromPrice(
+    series,
+    draft.profitTarget,
+    hostRef.current,
+    containerRef.current
+  )
+  const slY = overlayTopFromPrice(series, draft.stopLoss, hostRef.current, containerRef.current)
   void layoutTick
+  void layoutTickSticky
   const units = Number.isFinite(size) && size > 0 ? size : 0
   const lossPts = Math.abs(entry - draft.stopLoss)
   const profitPts = Math.abs(draft.profitTarget - entry)
@@ -532,39 +686,55 @@ export function DeskManageBracketOverlay({
   const profitCad = units > 0 ? (units * profitPts).toFixed(0) : null
 
   return (
-    <div className="absolute inset-0 z-30 overflow-hidden pointer-events-none">
+    <div ref={hostRef} className="absolute inset-0 z-30 overflow-hidden pointer-events-none">
       {tpY != null && (
         <div
-          onMouseDown={(e) => {
+          onPointerDown={(e) => {
             e.preventDefault()
             e.stopPropagation()
             draggingRef.current = 'TP'
             startRef.current = draftRef.current
+            pendingYRef.current = e.clientY
+            try {
+              e.currentTarget.setPointerCapture(e.pointerId)
+            } catch {
+              /* optional */
+            }
           }}
-          className="absolute flex items-center gap-1.5 pointer-events-auto cursor-ns-resize group"
+          className="absolute flex items-center gap-1.5 pointer-events-auto cursor-ns-resize group touch-none select-none"
           style={{ left: '48%', top: `${tpY - 13}px` }}
           title={`Drag Take Profit @ ${draft.profitTarget.toLocaleString()}`}
         >
           <div className="flex items-center rounded border border-dashed border-emerald-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-emerald-300 shadow-md">
-            {profitCad != null ? `+${profitCad}` : `TP ${draft.profitTarget.toLocaleString()}`}
+            {profitCad != null
+              ? `+${profitCad} · ${draft.profitTarget.toLocaleString()}`
+              : `TP ${draft.profitTarget.toLocaleString()}`}
           </div>
           <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
         </div>
       )}
       {slY != null && (
         <div
-          onMouseDown={(e) => {
+          onPointerDown={(e) => {
             e.preventDefault()
             e.stopPropagation()
             draggingRef.current = 'SL'
             startRef.current = draftRef.current
+            pendingYRef.current = e.clientY
+            try {
+              e.currentTarget.setPointerCapture(e.pointerId)
+            } catch {
+              /* optional */
+            }
           }}
-          className="absolute flex items-center gap-1.5 pointer-events-auto cursor-ns-resize group"
+          className="absolute flex items-center gap-1.5 pointer-events-auto cursor-ns-resize group touch-none select-none"
           style={{ left: '48%', top: `${slY - 13}px` }}
           title={`Drag Stop Loss @ ${draft.stopLoss.toLocaleString()}`}
         >
           <div className="flex items-center rounded border border-dashed border-red-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-red-300 shadow-md">
-            {lossCad != null ? `−${lossCad}` : `SL ${draft.stopLoss.toLocaleString()}`}
+            {lossCad != null
+              ? `−${lossCad} · ${draft.stopLoss.toLocaleString()}`
+              : `SL ${draft.stopLoss.toLocaleString()}`}
           </div>
           <div className="w-2.5 h-2.5 rounded-full bg-red-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
         </div>

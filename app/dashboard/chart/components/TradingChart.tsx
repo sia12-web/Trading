@@ -57,11 +57,7 @@ import {
   previewLevelOrderPrices,
   resolveChartLimitPick,
 } from '@/lib/trading/chartLevelPick'
-import {
-  previewPositionSizing,
-  riskPercentForSessionAttempt,
-  takeProfitFromStopR,
-} from '@/lib/trading/positionSizing'
+import { takeProfitFromStopR } from '@/lib/trading/positionSizing'
 import {
   aiLevelsUrl,
   resolveDeskLevels,
@@ -75,7 +71,16 @@ import {
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
 import { LiveVoicePanel } from '@/app/dashboard/chart/components/LiveVoicePanel'
-import { DESK_CHART_THEME } from '@/lib/chart/deskChartTheme'
+import {
+  DESK_CANDLE_DOWN,
+  DESK_CANDLE_UP,
+  DESK_CHART_THEME,
+} from '@/lib/chart/deskChartTheme'
+import {
+  lockToCandleAutoscale,
+  paddedCandlePriceRange,
+  sessionFocusHighLow,
+} from '@/lib/chart/seriesAutoscale'
 import {
   DESK_INSTRUMENTS,
   isDeskInstrument,
@@ -178,7 +183,14 @@ import {
   deskVisibleLogicalRange,
   deskBarSpacing,
 } from '@/lib/trading/deskInstrumentPreference'
-import { snapDeskPrice } from '@/lib/trading/instrumentTicks'
+import { snapDeskPrice, snapStopToTick, snapTargetToTick } from '@/lib/trading/instrumentTicks'
+import {
+  overlayTopFromPrice,
+  priceFromClientY,
+  riskBoxDollarPreview,
+} from '@/lib/chart/chartPointerPrice'
+import { useStickySeriesLayout } from '@/app/dashboard/chart/components/useStickySeriesLayout'
+import { resolveTradeifyPlace } from '@/lib/trading/tradeifyGrowth50k'
 import {
   didPriceTouchAlert,
   formatPriceTouchAlert,
@@ -736,6 +748,7 @@ export function TradingChart({
   onRangeAtr,
 }: TradingChartProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const chartFrameRef = useRef<HTMLDivElement>(null)
   const sessionOverlayRef = useRef<HTMLDivElement>(null)
   const sessionSpansRef = useRef<{
     key: string
@@ -838,25 +851,6 @@ export function TradingChart({
   const [livePrice,   setLivePrice]  = useState<number | null>(null)
   const [priceChange, setPriceChange] = useState<number>(0)
   const [barCountdown, setBarCountdown] = useState<string>('')
-  const [liveAccountSize, setLiveAccountSize] = useState<number>(100000)
-
-  useEffect(() => {
-    let isMounted = true
-    fetch('/api/trading/oanda/status')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!isMounted || !data?.ok) return
-        const nav = Number(data.NAV ?? data.balance)
-        if (Number.isFinite(nav) && nav > 0) {
-          setLiveAccountSize(nav)
-        }
-      })
-      .catch(() => {})
-    return () => {
-      isMounted = false
-    }
-  }, [])
-
   useEffect(() => {
     const updateCountdown = () => {
       const nowSec = Math.floor(Date.now() / 1000)
@@ -1130,19 +1124,8 @@ export function TradingChart({
     const tipUnix = candlesRef.current.length
       ? (candlesRef.current[candlesRef.current.length - 1]!.time as number)
       : Math.floor(Date.now() / 1000)
-    const sess = sessionFor(instrument)
-    const tipDay = new Intl.DateTimeFormat('en-CA', {
-      timeZone: sess.tz,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(new Date(tipUnix * 1000))
-    const [ch, cm] = sess.marketClose.split(':').map(Number)
-    const closeUnix =
-      instrument === 'NIKKEI'
-        ? tokyoDateTimeToUnix(tipDay, ch!, cm || 0)
-        : nyDateTimeToUnix(tipDay, ch!, cm || 0)
-    const pts = ibLineSeriesData(ib, Math.max(tipUnix, closeUnix))
+    // Do not add a future cash-close point: it reserves blank chart space.
+    const pts = ibLineSeriesData(ib, tipUnix)
     const tz = chartTzRef.current
     try {
       series.high.setData(
@@ -1191,16 +1174,7 @@ export function TradingChart({
       return
     }
     const tip = candlesRef.current[candlesRef.current.length - 1]?.time as number | undefined
-    const sess = sessionFor(instrument)
-    const todayLocal = new Intl.DateTimeFormat('en-CA', {
-      timeZone: sess.tz,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(new Date())
-    const [ch, cm] = sess.marketClose.split(':').map(Number)
-    const closeUnix = nyDateTimeToUnix(todayLocal, ch!, cm || 0)
-    const pts = nycLunchLineSeriesData(lunch, Math.max(tip ?? closeUnix, closeUnix), {
+    const pts = nycLunchLineSeriesData(lunch, tip ?? lunch.toTime, {
       showMid: true,
     })
     const tz = chartTzRef.current
@@ -1530,6 +1504,16 @@ export function TradingChart({
   // Voice stays closed on refresh / clock-in — user opens via toolbar (V).
   const showLevelsRef = useRef(false)
   const [chartReady,  setChartReady] = useState(false)
+  const stickyPrices = riskBox
+    ? [riskBox.entryPrice, riskBox.stopLoss, riskBox.profitTarget]
+    : editableOverlay
+      ? [editableOverlay.entryPrice, editableOverlay.stopLoss, editableOverlay.profitTarget]
+      : editablePending
+        ? [editablePending.price, editablePending.stopLoss, editablePending.profitTarget]
+        : priceAlert
+          ? [priceAlert.price]
+          : []
+  const stickyTick = useStickySeriesLayout(chartReady ? candleRef.current : null, stickyPrices)
   const candlesRef = useRef<OHLCV[]>([])
   const instrumentRef = useRef<Instrument>(instrument)
   /** LIVE = real Yahoo data; SYNTHETIC = random fallback (never trade off this) */
@@ -2298,12 +2282,20 @@ export function TradingChart({
 
       let min = Infinity
       let max = -Infinity
+      const visibleBars: Array<{ time: number; high: number; low: number }> = []
       for (let i = startIndex; i <= endIndex; i++) {
         const c = list[i]
         if (c) {
+          visibleBars.push({ time: c.time as number, high: c.high, low: c.low })
           if (Number.isFinite(c.low) && c.low > 0) min = Math.min(min, c.low)
           if (Number.isFinite(c.high) && c.high > 0) max = Math.max(max, c.high)
         }
+      }
+
+      const session = sessionFocusHighLow(visibleBars, instrumentRef.current)
+      if (session) {
+        min = session.min
+        max = session.max
       }
 
       const tip = lastCandleRef.current
@@ -2318,29 +2310,22 @@ export function TradingChart({
         }
       }
 
-      if (!(max > min) || !Number.isFinite(min) || !Number.isFinite(max)) return null
-      const pad = Math.max((max - min) * 0.05, Math.abs(max) * 0.0005)
-      return {
-        priceRange: {
-          minValue: min - pad,
-          maxValue: max + pad,
-        },
-      }
+      return paddedCandlePriceRange(min, max)
     }
 
     const candleSeries = chart.addCandlestickSeries({
-      upColor:         '#089981',
-      downColor:       '#f23645',
-      borderUpColor:   '#089981',
-      borderDownColor: '#f23645',
-      wickUpColor:     '#089981',
-      wickDownColor:   '#f23645',
+      upColor:         DESK_CANDLE_UP,
+      downColor:       DESK_CANDLE_DOWN,
+      borderUpColor:   DESK_CANDLE_UP,
+      borderDownColor: DESK_CANDLE_DOWN,
+      wickUpColor:     DESK_CANDLE_UP,
+      wickDownColor:   DESK_CANDLE_DOWN,
       borderVisible:   true,
       wickVisible:     true,
       autoscaleInfoProvider: candleAutoscale,
     })
 
-    const ignoreScale = { autoscaleInfoProvider: (): null => null }
+    const ignoreScale = lockToCandleAutoscale(candleAutoscale)
 
     const priceLineHost = chart.addLineSeries({
       color: 'rgba(0,0,0,0)',
@@ -2453,7 +2438,7 @@ export function TradingChart({
     // Full chart height — no volume so no bottom margin needed
     chart.priceScale('right').applyOptions({
       autoScale: true,
-      scaleMargins: { top: 0.05, bottom: 0.05 },
+      scaleMargins: DESK_CHART_THEME.rightPriceScale.scaleMargins,
       borderVisible: false,
     })
 
@@ -2522,20 +2507,32 @@ export function TradingChart({
     }
     chart.timeScale().subscribeVisibleLogicalRangeChange(onScroll)
 
-    // Responsive resize
+    // Responsive resize — re-stick SL/TP after zoom / fullscreen
     const ro = new ResizeObserver(() => {
       if (containerRef.current && chartRef.current) {
-        ignorePriceFromPointerUntilRef.current = Date.now() + 350
+        const dragging =
+          draggingRiskLineRef.current ||
+          draggingBracketRef.current ||
+          draggingWorkingBracketRef.current
+        if (!dragging) {
+          ignorePriceFromPointerUntilRef.current = Date.now() + 80
+        }
         chartRef.current.resize(
           containerRef.current.clientWidth,
           containerRef.current.clientHeight
         )
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => setChartScrollTrigger((n) => n + 1))
+        })
       }
     })
     ro.observe(containerRef.current)
+    const onWheelLayout = () => setChartScrollTrigger((n) => n + 1)
+    containerRef.current.addEventListener('wheel', onWheelLayout, { passive: true })
 
     return () => {
       ro.disconnect()
+      containerRef.current?.removeEventListener('wheel', onWheelLayout)
       try {
         chart.timeScale().unsubscribeVisibleLogicalRangeChange(onScroll)
       } catch {}
@@ -2773,7 +2770,7 @@ export function TradingChart({
     try {
       chartRef.current?.priceScale('right').applyOptions({
         autoScale: true,
-        scaleMargins: { top: 0.05, bottom: 0.05 },
+        scaleMargins: DESK_CHART_THEME.rightPriceScale.scaleMargins,
       })
     } catch {
       /* ignore */
@@ -3154,14 +3151,14 @@ export function TradingChart({
       // Tip-anchored window — never fit all ~3k history bars (looks randomly zoomed out)
       const width = containerRef.current?.clientWidth ?? 900
       const spacing = deskBarSpacing(width, ordered.length)
-      ts.applyOptions({ barSpacing: spacing, rightOffset: 8 })
+      ts.applyOptions({ barSpacing: spacing, rightOffset: DESK_CHART_THEME.timeScale.rightOffset })
       requestAnimationFrame(() => {
         try {
           chartRef.current?.priceScale('right').applyOptions({
             autoScale: true,
-            scaleMargins: { top: 0.05, bottom: 0.05 },
+            scaleMargins: DESK_CHART_THEME.rightPriceScale.scaleMargins,
           })
-          ts.setVisibleLogicalRange(deskVisibleLogicalRange(ordered.length))
+          ts.setVisibleLogicalRange(deskVisibleLogicalRange(ordered.length, width))
           didFitRef.current = true
         } catch {
           /* ignore */
@@ -3240,7 +3237,7 @@ export function TradingChart({
     if (!chart) return
     chart.priceScale('right').applyOptions({
       autoScale: true,
-      scaleMargins: { top: 0.05, bottom: 0.05 },
+      scaleMargins: DESK_CHART_THEME.rightPriceScale.scaleMargins,
     })
     try {
       chart.timeScale().fitContent()
@@ -3652,12 +3649,9 @@ export function TradingChart({
 
     const placeAtClientY = (clientY: number) => {
       if (!candleRef.current) return
-      const rect = container.getBoundingClientRect()
-      const y = clientY - rect.top
-      if (y < 0 || y > rect.height) return
-      const price = candleRef.current.coordinateToPrice(y)
-      if (price == null || !Number.isFinite(Number(price)) || Number(price) <= 0) return
-      openRiskBox(Number(price))
+      const price = priceFromClientY(container, candleRef.current, clientY)
+      if (price == null) return
+      openRiskBox(price)
     }
 
     const onDblClick = (e: MouseEvent) => {
@@ -3704,12 +3698,8 @@ export function TradingChart({
       // Ignore pans / drags
       if (dx > 6 || dy > 6) return
 
-      const rect = container.getBoundingClientRect()
-      const y = e.clientY - rect.top
-      if (y < 0 || y > rect.height) return
-      const raw = candleRef.current.coordinateToPrice(y)
-      if (raw == null || !Number.isFinite(Number(raw)) || Number(raw) <= 0) return
-      const price = Number(raw)
+      const price = priceFromClientY(container, candleRef.current, e.clientY)
+      if (price == null) return
 
       const { strategyRange, snapRanges, ladder } = getStrategyRiskBundle()
       const hit = attributePlaybookBandEntry({
@@ -3855,12 +3845,9 @@ export function TradingChart({
 
     const priceAtY = (clientY: number): number | null => {
       if (!candleRef.current) return null
-      const rect = container.getBoundingClientRect()
-      const y = clientY - rect.top
-      if (y < 0 || y > rect.height) return null
-      const price = candleRef.current.coordinateToPrice(y)
-      if (price == null || !Number.isFinite(Number(price)) || Number(price) <= 0) return null
-      return Math.round(Number(price) * 100) / 100
+      const price = priceFromClientY(container, candleRef.current, clientY)
+      if (price == null) return null
+      return Math.round(price * 100) / 100
     }
 
     const renderHandles = (highPrice: number | null, lowPrice: number | null) => {
@@ -4222,12 +4209,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
     const priceAtY = (clientY: number): number | null => {
       if (!candleRef.current) return null
-      const rect = container.getBoundingClientRect()
-      const y = clientY - rect.top
-      if (y < 0 || y > rect.height) return null
-      const price = candleRef.current.coordinateToPrice(y)
-      if (price == null || !Number.isFinite(Number(price)) || Number(price) <= 0) return null
-      return Math.round(Number(price) * 100) / 100
+      const price = priceFromClientY(container, candleRef.current, clientY)
+      if (price == null) return null
+      return Math.round(price * 100) / 100
     }
 
     const renderHandles = (highPrice: number | null, lowPrice: number | null, hintText?: string) => {
@@ -4471,14 +4455,16 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
     const onMouseMove = (e: MouseEvent) => {
       if (!draggingRiskLineRef.current || !containerRef.current || !candleRef.current) return
-      if (Date.now() < ignorePriceFromPointerUntilRef.current) return
-      const rect = containerRef.current.getBoundingClientRect()
-      const y = e.clientY - rect.top
-      if (y < 0 || y > rect.height) return
-      const rawPrice = candleRef.current.coordinateToPrice(y)
-      if (rawPrice == null || !Number.isFinite(Number(rawPrice)) || Number(rawPrice) <= 0) return
+      if (
+        Date.now() < ignorePriceFromPointerUntilRef.current &&
+        !draggingRiskLineRef.current
+      ) {
+        return
+      }
+      const rawPrice = priceFromClientY(containerRef.current, candleRef.current, e.clientY)
+      if (rawPrice == null) return
 
-      const snappedRaw = snapDeskPrice(instrument, Number(rawPrice))
+      const snappedRaw = snapDeskPrice(instrument, rawPrice)
       const { snapRanges } = getStrategyRiskBundleRef.current()
 
       if (draggingRiskLineRef.current === 'ENTRY') {
@@ -4492,30 +4478,50 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           return {
             ...prev,
             entryPrice: snapped,
-            stopLoss: snapDeskPrice(instrument, prev.stopLoss + diff),
-            profitTarget: snapDeskPrice(instrument, prev.profitTarget + diff),
+            stopLoss: snapStopToTick(instrument, snapped, prev.stopLoss + diff, prev.direction),
+            profitTarget: snapTargetToTick(
+              instrument,
+              snapped,
+              prev.profitTarget + diff,
+              prev.direction
+            ),
           }
         })
       } else if (draggingRiskLineRef.current === 'TP') {
-        setRiskBox((prev) => (prev ? { ...prev, profitTarget: snappedRaw } : null))
+        setRiskBox((prev) =>
+          prev
+            ? {
+                ...prev,
+                profitTarget: snapTargetToTick(
+                  instrument,
+                  prev.entryPrice,
+                  snappedRaw,
+                  prev.direction
+                ),
+              }
+            : null
+        )
       } else if (draggingRiskLineRef.current === 'SL') {
         // Manual SL drag: TP follows 1.5R of new |entry−SL|
         setRiskBox((prev) => {
           if (!prev) return null
+          const sl = snapStopToTick(instrument, prev.entryPrice, snappedRaw, prev.direction)
           const isLong = prev.direction === 'LONG'
-          if (isLong ? !(snappedRaw < prev.entryPrice) : !(snappedRaw > prev.entryPrice)) {
+          if (isLong ? !(sl < prev.entryPrice) : !(sl > prev.entryPrice)) {
             return prev
           }
           const rawTp = takeProfitFromStopR({
             entry: prev.entryPrice,
-            stop: snappedRaw,
+            stop: sl,
             direction: prev.direction,
           })
-          const tp = snapDeskPrice(
+          const tp = snapTargetToTick(
             instrument,
-            snapProfitToRound(prev.entryPrice, snappedRaw, rawTp, prev.direction)
+            prev.entryPrice,
+            snapProfitToRound(prev.entryPrice, sl, rawTp, prev.direction),
+            prev.direction
           )
-          return { ...prev, stopLoss: snappedRaw, profitTarget: tp }
+          return { ...prev, stopLoss: sl, profitTarget: tp }
         })
       }
     }
@@ -4581,37 +4587,36 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
     const onMouseMove = (e: MouseEvent) => {
       if (!draggingBracketRef.current || !containerRef.current || !candleRef.current) return
-      if (Date.now() < ignorePriceFromPointerUntilRef.current) return
-      const rect = containerRef.current.getBoundingClientRect()
-      const y = e.clientY - rect.top
-      if (y < 0 || y > rect.height) return
-      const rawPrice = candleRef.current.coordinateToPrice(y)
-      if (rawPrice == null || !Number.isFinite(Number(rawPrice)) || Number(rawPrice) <= 0) return
-      const snapped = snapDeskPrice(instrument, Number(rawPrice))
+      const rawPrice = priceFromClientY(containerRef.current, candleRef.current, e.clientY)
+      if (rawPrice == null) return
       const ov = editableOverlayRef.current
       if (!ov) return
+      const dir = ov.direction === 'long' ? 'LONG' : 'SHORT'
       const isLong = ov.direction === 'long'
 
       if (draggingBracketRef.current === 'SL') {
-        if (isLong ? !(snapped < ov.entryPrice) : !(snapped > ov.entryPrice)) return
+        const sl = snapStopToTick(instrument, ov.entryPrice, rawPrice, dir)
+        if (isLong ? !(sl < ov.entryPrice) : !(sl > ov.entryPrice)) return
         // Filled position: SL drag re-locks TP to 1.5R of new stop distance
         setEditableOverlay((prev) => {
           if (!prev) return null
-          const dir = prev.direction === 'long' ? 'LONG' : 'SHORT'
           const rawTp = takeProfitFromStopR({
             entry: prev.entryPrice,
-            stop: snapped,
+            stop: sl,
             direction: dir,
           })
-          const tp = snapDeskPrice(
+          const tp = snapTargetToTick(
             instrument,
-            snapProfitToRound(prev.entryPrice, snapped, rawTp, dir)
+            prev.entryPrice,
+            snapProfitToRound(prev.entryPrice, sl, rawTp, dir),
+            dir
           )
-          return { ...prev, stopLoss: snapped, profitTarget: tp }
+          return { ...prev, stopLoss: sl, profitTarget: tp }
         })
       } else if (draggingBracketRef.current === 'TP') {
-        if (isLong ? !(snapped > ov.entryPrice) : !(snapped < ov.entryPrice)) return
-        setEditableOverlay((prev) => (prev ? { ...prev, profitTarget: snapped } : null))
+        const tp = snapTargetToTick(instrument, ov.entryPrice, rawPrice, dir)
+        if (isLong ? !(tp > ov.entryPrice) : !(tp < ov.entryPrice)) return
+        setEditableOverlay((prev) => (prev ? { ...prev, profitTarget: tp } : null))
       }
     }
 
@@ -4660,15 +4665,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
     const onMouseMove = (e: MouseEvent) => {
       if (!draggingWorkingBracketRef.current || !containerRef.current || !candleRef.current) return
-      if (Date.now() < ignorePriceFromPointerUntilRef.current) return
-      const rect = containerRef.current.getBoundingClientRect()
-      const y = e.clientY - rect.top
-      if (y < 0 || y > rect.height) return
-      const rawPrice = candleRef.current.coordinateToPrice(y)
-      if (rawPrice == null || !Number.isFinite(Number(rawPrice)) || Number(rawPrice) <= 0) return
-      const snapped = snapDeskPrice(instrument, Number(rawPrice))
+      const rawPrice = priceFromClientY(containerRef.current, candleRef.current, e.clientY)
+      if (rawPrice == null) return
       const pend = editablePendingRef.current
       if (!pend) return
+      const dir = pend.direction === 'long' ? 'LONG' : 'SHORT'
+      const snapped = snapTargetToTick(instrument, pend.price, rawPrice, dir)
       const isLong = pend.direction === 'long'
       if (isLong ? !(snapped > pend.price) : !(snapped < pend.price)) return
       setEditablePending((prev) => (prev ? { ...prev, profitTarget: snapped } : null))
@@ -4749,12 +4751,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
     const onMouseMove = (e: MouseEvent) => {
       if (!draggingPriceAlertRef.current || !containerRef.current || !candleRef.current) return
-      const rect = containerRef.current.getBoundingClientRect()
-      const y = e.clientY - rect.top
-      if (y < 0 || y > rect.height) return
-      const rawPrice = candleRef.current.coordinateToPrice(y)
-      if (rawPrice == null || !Number.isFinite(Number(rawPrice)) || Number(rawPrice) <= 0) return
-      const snapped = snapDeskPrice(instrument, Number(rawPrice))
+      const rawPrice = priceFromClientY(containerRef.current, candleRef.current, e.clientY)
+      if (rawPrice == null) return
+      const snapped = snapDeskPrice(instrument, rawPrice)
       priceAlertPrimedRef.current = false
       prevLivePriceForAlertRef.current = null
       // Dragging near live restarts arm-after-away so we don't fire on release.
@@ -5055,11 +5054,15 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
     const onFsChange = () => {
       setIsFullscreen(!!document.fullscreenElement)
-      ignorePriceFromPointerUntilRef.current = Date.now() + 400
-      draggingRiskLineRef.current = null
-      draggingBracketRef.current = null
-      draggingWorkingBracketRef.current = null
-      bracketDragStartRef.current = null
+      requestAnimationFrame(() => {
+        if (containerRef.current && chartRef.current) {
+          chartRef.current.resize(
+            containerRef.current.clientWidth,
+            containerRef.current.clientHeight
+          )
+        }
+        requestAnimationFrame(() => setChartScrollTrigger((n) => n + 1))
+      })
     }
 
     window.addEventListener('keydown', handleKeyDown)
@@ -5093,10 +5096,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
     const onMove = (e: MouseEvent) => {
       if (!candleRef.current || !priceLineHostRef.current) return
-      const rect = container.getBoundingClientRect()
-      const y = e.clientY - rect.top
-      const raw = candleRef.current.coordinateToPrice(y)
-      if (raw == null || !Number.isFinite(Number(raw)) || Number(raw) <= 0) {
+      const raw = priceFromClientY(container, candleRef.current, e.clientY)
+      if (raw == null) {
         clearHoverPreview()
         return
       }
@@ -5217,7 +5218,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       try {
         chartRef.current?.priceScale('right').applyOptions({
           autoScale: true,
-          scaleMargins: { top: 0.05, bottom: 0.05 },
+          scaleMargins: DESK_CHART_THEME.rightPriceScale.scaleMargins,
         })
       } catch {
         /* ignore */
@@ -5862,8 +5863,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     if (!chart || !series) return null
     const timeScale = chart.timeScale()
 
-    // Reference chartScrollTrigger to register active scroll updates and solve compiler checks
+    // Reference chartScrollTrigger / stickyTick so zoom, resize, and fullscreen re-stick pills
     void chartScrollTrigger
+    void stickyTick
 
     // Combine saved highlights and the currently active unsent drawnTime highlight
     const listToRender = [...savedHighlights]
@@ -6688,7 +6690,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </>
         )}
       </div>
-      <div className="flex-1 relative rounded-xl border border-gray-300 overflow-hidden bg-[#fafafa]" style={{ minHeight: 400 }}>
+      <div
+        ref={chartFrameRef}
+        className="flex-1 relative rounded-xl border border-gray-300 overflow-hidden bg-[#fafafa]"
+        style={{ minHeight: 400 }}
+      >
         <div ref={containerRef} className="absolute inset-0 z-0" />
         <div
           ref={sessionOverlayRef}
@@ -6943,26 +6949,25 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         {/* TradingView Order Line Overlay Badges (Attached Directly to Price Lines on Chart) */}
         {riskBox && (() => {
           const candleSeries = candleRef.current
-          const entryY = candleSeries ? candleSeries.priceToCoordinate(riskBox.entryPrice) : null
-          const tpY = candleSeries ? candleSeries.priceToCoordinate(riskBox.profitTarget) : null
-          const slY = candleSeries ? candleSeries.priceToCoordinate(riskBox.stopLoss) : null
+          const host = chartFrameRef.current
+          const chartEl = containerRef.current
+          const entryY = overlayTopFromPrice(candleSeries, riskBox.entryPrice, host, chartEl)
+          const tpY = overlayTopFromPrice(candleSeries, riskBox.profitTarget, host, chartEl)
+          const slY = overlayTopFromPrice(candleSeries, riskBox.stopLoss, host, chartEl)
 
-          // Progressive session risk: fill #1 = 2%, #2 = 1%, #3 = 0.5%
-          const sessionRiskPct = riskPercentForSessionAttempt(attemptsUsed)
-          const sz = previewPositionSizing(
-            riskBox.entryPrice,
-            liveAccountSize,
-            riskBox.direction,
-            riskBox.stopLoss,
-            sessionRiskPct
-          )
-          const rawUnits = sz?.position_size ?? 1
-          const posSize = typeof rawUnits === 'number' && Number.isFinite(rawUnits)
-            ? (rawUnits >= 1 ? Math.round(rawUnits * 100) / 100 : Math.round(rawUnits * 1000) / 1000)
-            : 1
-          const lossVal = (sz?.risk_amount ?? 0).toFixed(2)
-          const targetPts = Math.abs(riskBox.profitTarget - riskBox.entryPrice)
-          const profitVal = (posSize * targetPts).toFixed(2)
+          const place = resolveTradeifyPlace({
+            fillsUsed: attemptsUsed,
+            stopOutsToday: stopHits,
+          })
+          const dollars = riskBoxDollarPreview({
+            entry: riskBox.entryPrice,
+            stop: riskBox.stopLoss,
+            target: riskBox.profitTarget,
+            riskDollars: place.riskDollars,
+          })
+          const lossVal = dollars.size > 0 ? dollars.lossDollars.toFixed(0) : '—'
+          const profitVal = dollars.size > 0 ? dollars.profitDollars.toFixed(0) : '—'
+          const fillN = Math.min(attemptsUsed + 1, 3)
 
           const minLineY = entryY != null && tpY != null && slY != null ? Math.min(entryY, tpY, slY) : null
           const maxLineY = entryY != null && tpY != null && slY != null ? Math.max(entryY, tpY, slY) : null
@@ -6993,7 +6998,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   title="Drag Take Profit line up or down"
                 >
                   <div className="flex items-center rounded border border-dashed border-emerald-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-emerald-300 shadow-md group-hover:border-emerald-300 transition">
-                    <span className="text-emerald-400">+{profitVal} CAD</span>
+                    <span className="text-emerald-400">
+                      +{profitVal} · {riskBox.profitTarget.toLocaleString()}
+                    </span>
                     <span className="text-emerald-600 mx-1.5">|</span>
                     <button
                       onClick={(e) => { e.stopPropagation(); cancelRiskBox() }}
@@ -7079,11 +7086,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     left: '42%',
                     top: `${slY - 13}px`,
                   }}
-                  title={`Drag Stop Loss — size adjusts to keep ${sessionRiskPct}% account risk (fill ${Math.min(attemptsUsed + 1, 3)}/3)`}
+                  title={`Drag Stop Loss @ ${riskBox.stopLoss.toLocaleString()} — $${lossVal} risk (fill ${fillN}/3)`}
                 >
                   <div className="flex items-center rounded border border-dashed border-amber-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-amber-300 shadow-md group-hover:border-amber-300 transition">
                     <span className="text-amber-400">
-                      -{lossVal} CAD · {sessionRiskPct}%
+                      −{lossVal} · {riskBox.stopLoss.toLocaleString()} · {fillN}/3
                     </span>
                     <span className="text-amber-600 mx-1.5">|</span>
                     <button
@@ -7102,9 +7109,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         {/* Draggable price alert line + pill badge */}
         {priceAlert && !riskBox && (() => {
           const candleSeries = candleRef.current
-          const alertY = candleSeries
-            ? candleSeries.priceToCoordinate(priceAlert.price)
-            : null
+          const alertY = overlayTopFromPrice(
+            candleSeries,
+            priceAlert.price,
+            chartFrameRef.current,
+            containerRef.current
+          )
           const armed = priceAlert.armed !== false
           const pending = armed && priceAlert.pendingAway === true
 
@@ -7173,12 +7183,15 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         {/* Filled position — drag SL / TP to adjust brackets on OANDA + journal */}
         {editableOverlay && !riskBox && onAdjustBrackets && (() => {
           const candleSeries = candleRef.current
-          const tpY = candleSeries
-            ? candleSeries.priceToCoordinate(editableOverlay.profitTarget)
-            : null
-          const slY = candleSeries
-            ? candleSeries.priceToCoordinate(editableOverlay.stopLoss)
-            : null
+          const host = chartFrameRef.current
+          const chartEl = containerRef.current
+          const tpY = overlayTopFromPrice(
+            candleSeries,
+            editableOverlay.profitTarget,
+            host,
+            chartEl
+          )
+          const slY = overlayTopFromPrice(candleSeries, editableOverlay.stopLoss, host, chartEl)
           const saving = bracketAdjustStatus === 'saving'
           const units =
             editableOverlay.positionSize != null &&
@@ -7252,12 +7265,15 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         {/* Working limit — TP draggable; SL locked at place (sets size) */}
         {editablePending && !positionOverlay && !riskBox && onAdjustWorkingBrackets && (() => {
           const candleSeries = candleRef.current
-          const tpY = candleSeries
-            ? candleSeries.priceToCoordinate(editablePending.profitTarget)
-            : null
-          const slY = candleSeries
-            ? candleSeries.priceToCoordinate(editablePending.stopLoss)
-            : null
+          const host = chartFrameRef.current
+          const chartEl = containerRef.current
+          const tpY = overlayTopFromPrice(
+            candleSeries,
+            editablePending.profitTarget,
+            host,
+            chartEl
+          )
+          const slY = overlayTopFromPrice(candleSeries, editablePending.stopLoss, host, chartEl)
           const saving = workingBracketAdjustStatus === 'saving'
           return (
             <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">

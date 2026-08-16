@@ -4,6 +4,8 @@
  * the stored preference (otherwise refresh always snaps back to the locked desk).
  */
 
+import { DESK_BAR_SPACING } from '../chart/deskChartTheme'
+
 export type DeskInstrumentPref = 'DOW' | 'NASDAQ' | 'NIKKEI'
 
 const STORAGE_KEY = 'tradepulse.desk.instrument'
@@ -47,19 +49,27 @@ export function setDeskInstrumentPreference(instrument: DeskInstrumentPref): voi
 /**
  * Desk viewport after load / instrument switch — tip-anchored, not full history.
  * Fitting all ~3k bars makes the chart look randomly "zoomed out."
+ * Bar count follows pane width so each candle stays ~DESK_BAR_SPACING px.
  */
-export const DESK_VISIBLE_BARS = 420
+export const DESK_VISIBLE_BARS = 90
 
-export function deskVisibleLogicalRange(barCount: number): { from: number; to: number } {
+export function deskVisibleBarCount(containerWidth: number, barCount: number): number {
+  const byWidth = Math.floor(Math.max(containerWidth - 80, 240) / DESK_BAR_SPACING)
+  return Math.min(Math.max(barCount, 1), Math.max(40, byWidth))
+}
+
+export function deskVisibleLogicalRange(
+  barCount: number,
+  containerWidth = 1160
+): { from: number; to: number } {
   const last = Math.max(barCount - 1, 0)
-  const visible = Math.min(Math.max(barCount, 1), DESK_VISIBLE_BARS)
+  const visible = deskVisibleBarCount(containerWidth, barCount)
   return {
     from: last - visible + 1,
     to: last + 3,
   }
 }
 
-export function deskBarSpacing(containerWidth: number, barCount: number): number {
-  const visible = Math.min(Math.max(barCount, 1), DESK_VISIBLE_BARS)
-  return Math.min(8, Math.max(3, (containerWidth - 40) / visible))
+export function deskBarSpacing(_containerWidth: number, _barCount: number): number {
+  return DESK_BAR_SPACING
 }

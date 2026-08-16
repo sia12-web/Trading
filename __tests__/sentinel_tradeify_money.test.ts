@@ -402,6 +402,19 @@ test('chart initial risk-box TP uses 1.5R helper not 1.0105', () => {
   assert.ok(!s.includes('1.0105'), 'old 1.05% TP gone')
 })
 
+test('live + sim SL/TP drag use pane coordinates and Tradeify $', () => {
+  const live = src('app/dashboard/chart/components/TradingChart.tsx')
+  const sim = src('app/dashboard/chart/components/DeskRiskBoxOverlay.tsx')
+  assert.ok(live.includes('priceFromClientY'), 'live drag maps pane Y')
+  assert.ok(live.includes('overlayTopFromPrice'), 'live pills stick to pane')
+  assert.ok(live.includes('resolveTradeifyPlace'), 'live pills use Tradeify $')
+  assert.ok(live.includes('riskBoxDollarPreview'), 'live $ from stop distance')
+  assert.ok(!live.includes('riskPercentForSessionAttempt'), 'OANDA % gone from live pills')
+  assert.ok(sim.includes('priceFromClientY'), 'sim drag maps pane Y')
+  assert.ok(sim.includes('overlayTopFromPrice'), 'sim pills stick to pane')
+  assert.ok(sim.includes('riskBoxDollarPreview'), 'sim $ from stop distance')
+})
+
 // ─── Report ──────────────────────────────────────────────────────────────────
 
 if (failed.length) {
