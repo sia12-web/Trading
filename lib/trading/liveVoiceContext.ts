@@ -67,7 +67,6 @@ import {
   tradeifyLeoEntryRule,
   type TradeifyLeoSnapshot,
 } from '@/lib/trading/tradeifyLeoBlock'
-import { resolveDeskRiskProfileForUser } from '@/lib/trading/tradeifyProfileStore'
 import {
   loadTradeifySessionSnapshot,
   toTradeifyLeoSnapshot,
@@ -272,7 +271,7 @@ export async function buildLiveVoiceDeskContext(
   userId: string,
   viewingInstrument: string | null | undefined,
   now = new Date(),
-  opts?: { riskProfile?: string | null; cookieHeader?: string | null }
+  _opts?: { riskProfile?: string | null; cookieHeader?: string | null }
 ): Promise<LiveVoiceDeskContext> {
   const viewing: DeskInstrument = isLiveDeskInstrument(viewingInstrument || '')
     ? (viewingInstrument as DeskInstrument)
@@ -285,7 +284,7 @@ export async function buildLiveVoiceDeskContext(
   const marketInstruments = instrumentsForDeskMarket(market)
   const tradeDate = tradeDateForInstrument(lockedInstrument ?? viewing, now)
 
-  const [openPosRes, filledRes, workingRes, _riskProfile, tradeifySnap] = await Promise.all([
+  const [openPosRes, filledRes, workingRes, tradeifySnap] = await Promise.all([
     supabase
       .from('trades_journal')
       .select('id, instrument, direction, fill_price, entry_level, stop_loss, take_profit, entry_source')
@@ -309,12 +308,6 @@ export async function buildLiveVoiceDeskContext(
       .eq('trade_date', tradeDate)
       .in('instrument', marketInstruments)
       .eq('fill_status', 'working'),
-    resolveDeskRiskProfileForUser({
-      supabase,
-      userId,
-      hint: opts?.riskProfile,
-      cookieHeader: opts?.cookieHeader,
-    }),
     loadTradeifySessionSnapshot(supabase, userId, now),
   ])
 

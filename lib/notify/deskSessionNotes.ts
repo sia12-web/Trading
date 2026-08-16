@@ -44,7 +44,7 @@ function header(kind: string, title: string): string {
 export function formatSessionScheduleBlock(
   instrument: DeskInstrument,
   now: Date = new Date(),
-  opts?: { tradeify?: boolean }
+  _opts?: { tradeify?: boolean }
 ): string {
   const market = deskMarketFor(instrument)
   const s = sessionFor(instrument)
