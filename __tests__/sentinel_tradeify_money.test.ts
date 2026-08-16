@@ -128,7 +128,7 @@ test('mergeMoneyRiskProfile: persist Tradeify beats hostile client hint', () => 
     mergeMoneyRiskProfile(`' OR 1=1 --`, 'tradeify_growth_50k'),
     'tradeify_growth_50k'
   )
-  assert.equal(mergeMoneyRiskProfile('<script>', 'oanda_cash'), 'oanda_cash')
+  assert.equal(mergeMoneyRiskProfile('<script>', 'oanda_cash'), 'tradeify_growth_50k')
   assert.equal(mergeMoneyRiskProfile('tradeify', null), 'tradeify_growth_50k')
 })
 
@@ -384,7 +384,7 @@ test('risk-profile: GET/POST require desk user', () => {
   const s = src('app/api/trading/risk-profile/route.ts')
   assert.ok(s.includes('getOrCreateUser'))
   assert.ok(s.includes('Unauthorized'))
-  assert.ok(s.includes('parseDeskRiskProfile'), 'unknown body cannot invent profile')
+  assert.ok(s.includes('TRADEIFY_PROFILE_ID'), 'desk is Tradeify only')
 })
 
 test('Railway flatten watch is wired on boot', () => {

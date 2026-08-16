@@ -77,9 +77,7 @@ export function formatSessionScheduleBlock(
       `• Tokyo IB locks ~${deskLocalHmsAsTraderDisplay('10:00:00', s.tz, now)} (first hour) — entry ${ibWin}`,
       `• Lunch confirm ${lunchConfirm}`,
       `• Session END (cash close) ${close}`,
-      opts?.tradeify
-        ? `• ${tradeifyScheduleRiskLine()} · ±10 of H / L (US Range) or H / 50% mid / L (OR30 / Tokyo IB) after active range locks`
-        : `• Ladder 2/2/2 · progressive 2% → 1% → 0.5% · ±10 of H / L (US Range) or H / 50% mid / L (OR30 / Tokyo IB) after active range locks`,
+      `• ${tradeifyScheduleRiskLine()} · SL beyond range · TP 1.5R (1:1.5) · ±10 of H / L (US Range) or H / 50% mid / L (OR30 / Tokyo IB) after active range locks`,
     ].join('\n')
   }
 
@@ -104,9 +102,7 @@ export function formatSessionScheduleBlock(
     `• Lunch-range locks 13:30 · entry ${lunchWin}`,
     `• Lunch confirm ${lunchConfirm} (morning books — IB stay open past confirm)`,
     `• Session END (cash close) ${close}`,
-    opts?.tradeify
-      ? `• ${tradeifyScheduleRiskLine()} · ±10 of H / 50% mid / L after active range locks · OR30 optional`
-      : `• Ladder 2/2/2 · progressive 2% → 1% → 0.5% · ±10 of H / 50% mid / L after active range locks · OR30 optional`,
+    `• ${tradeifyScheduleRiskLine()} · SL beyond range · TP 1.5R (1:1.5) · ±10 of H / 50% mid / L after active range locks · OR30 optional`,
   ].join('\n')
 }
 

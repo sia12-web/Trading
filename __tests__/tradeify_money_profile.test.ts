@@ -23,13 +23,13 @@ assert.equal(
 )
 assert.equal(
   mergeMoneyRiskProfile('oanda_cash', 'oanda_cash'),
-  'oanda_cash',
-  'both OANDA stays cash'
+  'tradeify_growth_50k',
+  'desk is Tradeify only — OANDA hints are ignored'
 )
 assert.equal(
   mergeMoneyRiskProfile(undefined, undefined),
-  'oanda_cash',
-  'empty defaults to cash'
+  'tradeify_growth_50k',
+  'empty defaults to Tradeify'
 )
 
 console.log('tradeify_money_profile.test.ts: all assertions passed')

@@ -68,7 +68,7 @@ interface OpenPositionRequest {
   range_high?: number
   range_low?: number
   range_label?: string
-  /** oanda_cash (default) | tradeify_growth_50k */
+  /** Desk is Tradeify Growth $50k — client hint is ignored. */
   risk_profile?: string
 }
 
@@ -645,7 +645,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       }
     }
 
-    // Progressive session risk: Tradeify dollars or OANDA 2% → 1% → 0.5%
+    // Progressive session risk: Tradeify $400 → $250 → $150
     const riskPct = riskPercentForEntrySource(deskEntrySource, gate.attemptsUsed)
     if (!sizing) {
       const moneyProfile = await resolveMoneyRiskProfile({

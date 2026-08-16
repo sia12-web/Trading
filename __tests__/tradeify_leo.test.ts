@@ -192,10 +192,10 @@ assert(sys.includes(LIVE_VOICE_TRADEIFY_ADDENDUM.trim().slice(0, 20)), 'addendum
 
 const off = { ...mock, tradeify: null } as LiveVoiceDeskContext
 const packedOff = formatLiveVoiceContextForLlm(off)
-assert(!packedOff.includes('TRADEIFY GROWTH $50k'), 'off: no Tradeify header')
-assert(packedOff.includes('Risk: every probe'), 'off: OANDA % risk line')
-assert(liveVoiceSystemPromptFor(off) === LIVE_VOICE_SYSTEM_PROMPT, 'off: default system prompt')
-assert(!LIVE_VOICE_SYSTEM_PROMPT.includes('TRADEIFY GROWTH $50k MODE'), 'default prompt stays OANDA')
+assert(packedOff.includes('Tradeify $400'), 'desk always names Tradeify ladder')
+assert(!/Risk: every probe \d+%/.test(packedOff), 'never print OANDA % risk line')
+assert(liveVoiceSystemPromptFor(off).includes('TRADEIFY GROWTH $50k MODE'), 'addendum always on')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('$400 → $250 → $150'), 'base prompt is Tradeify')
 
 assert(formatTradeifyLeoBlock(null) === '', 'null snapshot → empty Leo block')
 assert(formatTradeifyTelegramBlock(undefined) === '', 'undefined → empty TG block')
@@ -208,8 +208,9 @@ assert(tg.includes('no pass-today'), 'TG no pass-today')
 assert(tg.includes('$1,100') || tg.includes('$1100'), 'TG leftover DLL')
 
 const schedOff = formatSessionScheduleBlock('DOW', now)
-assert(schedOff.includes('2% → 1% → 0.5%'), 'schedule off keeps OANDA %')
-assert(!schedOff.includes('Tradeify $400'), 'schedule off silent')
+assert(schedOff.includes('Tradeify $400'), 'schedule is Tradeify')
+assert(!schedOff.includes('2% → 1% → 0.5%'), 'schedule never prints OANDA %')
+assert(schedOff.includes('1.5R'), 'schedule names 1:1.5')
 
 const schedOn = formatSessionScheduleBlock('DOW', now, { tradeify: true })
 assert(schedOn.includes('Tradeify $400'), 'schedule on uses dollar ladder')
@@ -238,7 +239,7 @@ void resolveDeskRiskProfileForUser({ userId: 'user-1' }).then((fromMem) => {
     hint: 'oanda_cash',
   })
 }).then((hintWins) => {
-  assert(hintWins === 'oanda_cash', 'explicit hint wins over memory')
+  assert(hintWins === 'tradeify_growth_50k', 'OANDA hint cannot switch the desk')
   console.log('tradeify_leo: all passed')
 }).catch((err) => {
   console.error(err)

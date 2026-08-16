@@ -1,18 +1,13 @@
 /**
  * GET/POST /api/trading/risk-profile
- * Persist OANDA vs Tradeify $50k so Leo + Telegram crons can read it.
+ * Desk is Tradeify Growth $50k only — POST cannot switch to OANDA.
  */
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
-import { parseDeskRiskProfile } from '@/lib/trading/tradeifyProfile'
-import {
-  loadPersistedRiskProfile,
-  persistServerRiskProfile,
-  resolveDeskRiskProfileForUser,
-  riskProfileCookieHeader,
-} from '@/lib/trading/tradeifyProfileStore'
+import { TRADEIFY_PROFILE_ID } from '@/lib/trading/tradeifyGrowth50k'
+import { persistServerRiskProfile, riskProfileCookieHeader } from '@/lib/trading/tradeifyProfileStore'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,15 +17,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const supabase = await createClient()
-  const persisted = await loadPersistedRiskProfile(supabase, user.id)
-  const profile =
-    persisted ??
-    (await resolveDeskRiskProfileForUser({
-      supabase,
-      userId: user.id,
-      cookieHeader: request.headers.get('cookie'),
-    }))
-  return NextResponse.json({ ok: true, profile })
+  await persistServerRiskProfile(supabase, user.id, TRADEIFY_PROFILE_ID)
+  const res = NextResponse.json({ ok: true, profile: TRADEIFY_PROFILE_ID })
+  res.headers.set('Set-Cookie', riskProfileCookieHeader(TRADEIFY_PROFILE_ID))
+  return res
 }
 
 export async function POST(request: Request) {
@@ -38,11 +28,10 @@ export async function POST(request: Request) {
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  const body = (await request.json().catch(() => null)) as { profile?: string } | null
-  const profile = parseDeskRiskProfile(body?.profile)
+  await request.json().catch(() => null)
   const supabase = await createClient()
-  await persistServerRiskProfile(supabase, user.id, profile)
-  const res = NextResponse.json({ ok: true, profile })
-  res.headers.set('Set-Cookie', riskProfileCookieHeader(profile))
+  await persistServerRiskProfile(supabase, user.id, TRADEIFY_PROFILE_ID)
+  const res = NextResponse.json({ ok: true, profile: TRADEIFY_PROFILE_ID })
+  res.headers.set('Set-Cookie', riskProfileCookieHeader(TRADEIFY_PROFILE_ID))
   return res
 }

@@ -23,7 +23,6 @@ import {
   getDeskRiskProfile,
   hydrateDeskRiskProfileFromServer,
   isTradeifyGrowth50k,
-  setDeskRiskProfile,
   DESK_RISK_PROFILE_EVENT,
   type DeskRiskProfile,
 } from '@/lib/trading/tradeifyProfile'
@@ -132,7 +131,7 @@ export function SessionBanner({
   const prepFiredRef = useRef<string | null>(null)
   const [newsHazard, setNewsHazard] = useState<DeskNewsHazard | null>(null)
   const [newsUnavailable, setNewsUnavailable] = useState(false)
-  const [riskProfile, setRiskProfile] = useState<DeskRiskProfile>('oanda_cash')
+  const [riskProfile, setRiskProfile] = useState<DeskRiskProfile>('tradeify_growth_50k')
 
   useEffect(() => {
     let cancelled = false
@@ -550,26 +549,12 @@ export function SessionBanner({
               : 'Entry window'}
         </span>
       )}
-      <button
-        type="button"
-        onClick={() =>
-          setDeskRiskProfile(
-            isTradeifyGrowth50k(riskProfile) ? 'oanda_cash' : 'tradeify_growth_50k'
-          )
-        }
-        className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-          isTradeifyGrowth50k(riskProfile)
-            ? 'bg-amber-500/90 text-black'
-            : 'bg-white/10 text-gray-300 hover:bg-white/20'
-        }`}
-        title={
-          isTradeifyGrowth50k(riskProfile)
-            ? 'Tradeify Growth $50k on — $400 / $250 / $150 stops, shared daily budget. Click for OANDA 2% → 1% → 0.5%.'
-            : 'OANDA cash risk 2% → 1% → 0.5%. Click to size as Tradeify Growth $50k.'
-        }
+      <span
+        className="rounded bg-amber-500/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-black"
+        title="Tradeify Growth $50k — $400 / $250 / $150 stops, shared daily budget."
       >
-        {isTradeifyGrowth50k(riskProfile) ? 'Tradeify $50k' : 'OANDA %'}
-      </button>
+        Tradeify $50k
+      </span>
       {tradeifyChip && (
         <span
           className={`rounded px-2 py-0.5 text-[10px] font-semibold max-w-[22rem] truncate ${
@@ -592,7 +577,7 @@ export function SessionBanner({
               ? 'bg-red-500/25 text-red-200'
               : 'bg-sky-500/20 text-sky-200'
           }`}
-          title="Session max 3 fills · progressive risk 2% → 1% → 0.5% (win/loss same). Up to 2 per window (Morning / IB / Lunch-range). Session cap always wins. Lunch 11:30 is confirm-close; unconfirmed books ride to cash close. Working limits do not count until filled."
+          title="Tradeify $50k · $400 → $250 → $150 · SL beyond range · TP 1.5R (1:1.5). Session max 3 fills. Up to 2 per window. Flatten 16:59 ET. Working limits do not count until filled."
         >
           {gate.attemptLadderLabel ||
             (gate.lockedInstrument === 'NIKKEI'

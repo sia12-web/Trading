@@ -1,5 +1,5 @@
 /**
- * Persist desk risk profile (OANDA cash vs Tradeify Growth $50k).
+ * Desk risk profile. Live desk is Tradeify Growth $50k only — no OANDA switch.
  * Client localStorage + cookie + POST /api/trading/risk-profile for Leo / Telegram.
  */
 
@@ -31,24 +31,16 @@ export function isTradeifyGrowth50k(raw?: string | null): boolean {
   return parseDeskRiskProfile(raw) === TRADEIFY_PROFILE_ID
 }
 
-/** Tradeify wins if either side says so — never size 2% on a $50k eval. */
+/** Live money path is Tradeify only — never size OANDA 2% on this desk. */
 export function mergeMoneyRiskProfile(
-  client?: string | null,
-  persisted?: string | null
+  _client?: string | null,
+  _persisted?: string | null
 ): DeskRiskProfile {
-  if (isTradeifyGrowth50k(client) || isTradeifyGrowth50k(persisted)) {
-    return TRADEIFY_PROFILE_ID
-  }
-  return 'oanda_cash'
+  return TRADEIFY_PROFILE_ID
 }
 
 export function getDeskRiskProfile(): DeskRiskProfile {
-  if (typeof window === 'undefined') return 'oanda_cash'
-  try {
-    return parseDeskRiskProfile(localStorage.getItem(DESK_RISK_PROFILE_STORAGE_KEY))
-  } catch {
-    return 'oanda_cash'
-  }
+  return TRADEIFY_PROFILE_ID
 }
 
 function applyLocalDeskRiskProfile(profile: DeskRiskProfile): void {
@@ -63,21 +55,12 @@ function applyLocalDeskRiskProfile(profile: DeskRiskProfile): void {
   }
 }
 
-/** Pull desk_settings so a stale OANDA cookie cannot hide Tradeify after a reset. */
+/** Overwrite a stale OANDA cookie / desk_settings row with Tradeify. */
 export async function hydrateDeskRiskProfileFromServer(): Promise<DeskRiskProfile> {
-  if (typeof window === 'undefined') return 'oanda_cash'
-  try {
-    const res = await fetch('/api/trading/risk-profile', { cache: 'no-store' })
-    const json = (await res.json().catch(() => null)) as { profile?: string } | null
-    if (res.ok && json?.profile) {
-      const profile = parseDeskRiskProfile(json.profile)
-      applyLocalDeskRiskProfile(profile)
-      return profile
-    }
-  } catch {
-    /* offline */
-  }
-  return getDeskRiskProfile()
+  if (typeof window === 'undefined') return TRADEIFY_PROFILE_ID
+  applyLocalDeskRiskProfile(TRADEIFY_PROFILE_ID)
+  syncDeskRiskProfileToServer(TRADEIFY_PROFILE_ID)
+  return TRADEIFY_PROFILE_ID
 }
 
 function writeRiskProfileCookie(profile: DeskRiskProfile): void {
@@ -98,8 +81,8 @@ export function syncDeskRiskProfileToServer(profile: DeskRiskProfile = getDeskRi
   }).catch(() => {})
 }
 
-export function setDeskRiskProfile(profile: DeskRiskProfile): void {
+export function setDeskRiskProfile(_profile?: DeskRiskProfile): void {
   if (typeof window === 'undefined') return
-  applyLocalDeskRiskProfile(profile)
-  syncDeskRiskProfileToServer(profile)
+  applyLocalDeskRiskProfile(TRADEIFY_PROFILE_ID)
+  syncDeskRiskProfileToServer(TRADEIFY_PROFILE_ID)
 }

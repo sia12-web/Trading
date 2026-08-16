@@ -407,7 +407,7 @@ export async function POST(request: Request) {
     const stopLossPrice = stopGuard.stop
 
     // Server-authoritative risk: Tradeify $400/$250/$150 when profile is on,
-    // else OANDA 2% → 1% → 0.5%. Ignore client-claimed size/risk.
+    // Tradeify $400 → $250 → $150. Ignore client-claimed size/risk.
     let size: number
     let risk: number
     let accountForRow = account

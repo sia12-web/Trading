@@ -1,11 +1,10 @@
 /**
  * Server-readable desk risk profile (Slice 5).
- * Client localStorage is not visible to Leo / Telegram crons.
- *
- * Resolve order: explicit hint → cookie → memory → supabase desk_settings → env.
+ * Live desk is Tradeify Growth $50k only — cookie / hint / env cannot switch to OANDA.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { TRADEIFY_PROFILE_ID } from '@/lib/trading/tradeifyGrowth50k'
 import {
   mergeMoneyRiskProfile,
   parseDeskRiskProfile,
@@ -102,38 +101,22 @@ export async function persistServerRiskProfile(
 }
 
 /**
- * Money path: Tradeify wins if persist, cookie, or client says so.
- * Prevents a missing/stale `risk_profile` body from sizing 2% on a $50k eval.
+ * Money path is Tradeify only — stale OANDA cookie / hint cannot size 2%.
  */
-export async function resolveMoneyRiskProfile(args: {
+export async function resolveMoneyRiskProfile(_args: {
   supabase?: SupabaseClient | null
   userId?: string | null
   hint?: string | null
   cookieHeader?: string | null
 }): Promise<DeskRiskProfile> {
-  const client = parseDeskRiskProfile(args.hint)
-  const persisted = await resolveDeskRiskProfileForUser({
-    supabase: args.supabase,
-    userId: args.userId,
-    cookieHeader: args.cookieHeader,
-  })
-  return mergeMoneyRiskProfile(client, persisted)
+  return mergeMoneyRiskProfile(null, null)
 }
 
-export async function resolveDeskRiskProfileForUser(args: {
+export async function resolveDeskRiskProfileForUser(_args: {
   supabase?: SupabaseClient | null
   userId?: string | null
   hint?: string | null
   cookieHeader?: string | null
 }): Promise<DeskRiskProfile> {
-  if (args.hint != null && String(args.hint).trim() !== '') {
-    return parseDeskRiskProfile(args.hint)
-  }
-  const fromCookie = cookieValue(args.cookieHeader, DESK_RISK_PROFILE_COOKIE)
-  if (fromCookie) return parseDeskRiskProfile(fromCookie)
-  if (args.userId) {
-    const persisted = await loadPersistedRiskProfile(args.supabase, args.userId)
-    if (persisted) return persisted
-  }
-  return envRiskProfile() ?? 'oanda_cash'
+  return TRADEIFY_PROFILE_ID
 }

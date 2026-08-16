@@ -173,7 +173,7 @@ export function LevelOrderTicket({
     levelType === 'structure' ? 'structure' : 'ai'
   )
   const isManual = entrySource === 'manual'
-  const [riskProfile, setRiskProfile] = useState<DeskRiskProfile>('oanda_cash')
+  const [riskProfile, setRiskProfile] = useState<DeskRiskProfile>('tradeify_growth_50k')
   const [tradeifyDecision, setTradeifyDecision] = useState<TradeifyPlaceDecision | null>(
     null
   )
@@ -898,8 +898,9 @@ export function LevelOrderTicket({
               />
             </label>
             <p className="mt-2 text-[10px] text-amber-300/90">
-              Risk steps 2% → 1% → 0.5% by session fill (this probe {riskPct}%) —
-              size adjusts when you widen or tighten the stop.
+              {tradeifyOn
+                ? `${formatTradeifyRiskChip(tradeifyFills)} · SL beyond the range · TP 1.5R (1:1.5) — size holds the dollar stop when you drag SL.`
+                : `Risk steps 2% → 1% → 0.5% by session fill (this probe ${riskPct}%) — size adjusts when you widen or tighten the stop.`}
             </p>
           </>
         )}

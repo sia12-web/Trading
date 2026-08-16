@@ -67,7 +67,6 @@ import {
   tradeifyLeoEntryRule,
   type TradeifyLeoSnapshot,
 } from '@/lib/trading/tradeifyLeoBlock'
-import { isTradeifyGrowth50k } from '@/lib/trading/tradeifyProfile'
 import { resolveDeskRiskProfileForUser } from '@/lib/trading/tradeifyProfileStore'
 import {
   loadTradeifySessionSnapshot,
@@ -286,7 +285,7 @@ export async function buildLiveVoiceDeskContext(
   const marketInstruments = instrumentsForDeskMarket(market)
   const tradeDate = tradeDateForInstrument(lockedInstrument ?? viewing, now)
 
-  const [openPosRes, filledRes, workingRes, riskProfile, tradeifySnap] = await Promise.all([
+  const [openPosRes, filledRes, workingRes, _riskProfile, tradeifySnap] = await Promise.all([
     supabase
       .from('trades_journal')
       .select('id, instrument, direction, fill_price, entry_level, stop_loss, take_profit, entry_source')
@@ -659,15 +658,9 @@ export async function buildLiveVoiceDeskContext(
       manualRiskPercent: riskPercentForSessionAttempt(gate.attemptsUsed ?? attemptsUsed),
       maxAttempts: MAX_DAY_ATTEMPTS,
       maxStopHits: MAX_STOP_HITS,
-      entryRule: isTradeifyGrowth50k(riskProfile)
-        ? tradeifyLeoEntryRule(contextInstrument)
-        : contextInstrument === 'NIKKEI'
-          ? 'Session max 3 fills total, win/loss/breakeven all count (up to 2 each: AM/OR30 + US Range + IB). Progressive risk 2% → 1% → 0.5% by fill # (outcome does not matter). Next window unlocks when prior clock ends or probes are exhausted, but the 3-fill session cap always wins even with spare window probes. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books ride to cash-close flatten. Voice never places orders. Range H/L = retail bait; 50% mid = pullback/reverse magnet on OR30/Tokyo IB (not US Range). Desk hunts stops just beyond edges with POC/AVWAP confluence. Entries within ±10 of active range H/L (OR30/IB also allow 50% mid; US Range is H/L only). Ticket sets initial SL beyond active range (or zone floor) and TP at 1.5R of that stop (1:1.5); post-fill BE/trail manage is separate.'
-          : 'Session max 3 fills total, win/loss/breakeven all count (up to 2 each: AM/OR30 + IB + LN). Progressive risk 2% → 1% → 0.5% by fill # (outcome does not matter). Next window unlocks when prior clock ends or probes are exhausted, but the 3-fill session cap always wins even with spare window probes. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books ride to cash-close flatten. Voice never places orders. Range H/L = retail bait; 50% mid = pullback/reverse magnet; desk hunts stops just beyond edges with POC/AVWAP confluence. Entries only within ±10 pts of active range high, 50% mid, or low. Ticket sets initial SL beyond active range (or zone floor) and TP at 1.5R of that stop (1:1.5); post-fill BE/trail manage is separate.',
+      entryRule: tradeifyLeoEntryRule(contextInstrument),
     },
-    tradeify: isTradeifyGrowth50k(riskProfile)
-      ? toTradeifyLeoSnapshot(tradeifySnap, now)
-      : null,
+    tradeify: toTradeifyLeoSnapshot(tradeifySnap, now),
     rangeLiquidityBriefText,
     rangeTail,
     avwap: {

@@ -31,8 +31,8 @@ const nikkei = formatSessionScheduleBlock(
 )
 assert.match(nikkei, /US Range/)
 assert.match(nikkei, /Tokyo IB/)
-assert.match(nikkei, /2% → 1% → 0.5%/)
-assert.doesNotMatch(nikkei, /Tradeify \$400/)
+assert.match(nikkei, /Tradeify \$400/)
+assert.doesNotMatch(nikkei, /2% → 1% → 0.5%/)
 
 const nikkeiTf = formatSessionScheduleBlock(
   'NIKKEI',

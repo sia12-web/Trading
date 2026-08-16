@@ -132,9 +132,9 @@ export default function SimulationPage() {
         <p className="text-[10px] uppercase tracking-[0.2em] text-violet-400/90">Practice only</p>
         <h1 className="mt-1 text-2xl font-bold text-white">Simulation</h1>
         <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-          Replay a past full session on this desk. Same rules as live: up to 2
-          probes per window with progressive risk 2% → 1% → 0.5% (Morning → IB/US → Lunch-range), session cap 3,
-          entries within ±10 pts of painted range high / low (and 50% mid where the playbook allows — US Range is H/L only). Paper
+          Replay a past full session as Tradeify Growth $50k. Same as live: $400 → $250 → $150,
+          SL beyond the painted range, TP at 1.5R (1:1.5), session cap 3, entries within ±10 of
+          a range you turn on (H / 50% mid / L — US Range is H/L only). Paper
           fills, SL/TP, and manage stay here; closed paper orders land in{' '}
           <Link href="/dashboard/journal?tab=sim" className="text-violet-400 hover:underline">
             Order History (Simulation)

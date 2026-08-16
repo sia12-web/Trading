@@ -6,14 +6,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import {
-  DESK_RISK_PROFILE_EVENT,
-  getDeskRiskProfile,
-  hydrateDeskRiskProfileFromServer,
-  isTradeifyGrowth50k,
-  setDeskRiskProfile,
-  type DeskRiskProfile,
-} from '@/lib/trading/tradeifyProfile'
+import { hydrateDeskRiskProfileFromServer } from '@/lib/trading/tradeifyProfile'
 
 type InstrumentBreak = {
   fills: number
@@ -73,24 +66,12 @@ function Bar({
 }
 
 export function TradeifyProgressPanel({ compact = false }: { compact?: boolean }) {
-  const [profile, setProfile] = useState<DeskRiskProfile>('oanda_cash')
   const [snap, setSnap] = useState<Snapshot | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    let cancelled = false
-    const sync = () => setProfile(getDeskRiskProfile())
-    void hydrateDeskRiskProfileFromServer().then((next) => {
-      if (!cancelled) setProfile(next)
-    })
-    window.addEventListener(DESK_RISK_PROFILE_EVENT, sync)
-    window.addEventListener('storage', sync)
-    return () => {
-      cancelled = true
-      window.removeEventListener(DESK_RISK_PROFILE_EVENT, sync)
-      window.removeEventListener('storage', sync)
-    }
+    void hydrateDeskRiskProfileFromServer()
   }, [])
 
   const load = useCallback(async () => {
@@ -116,36 +97,10 @@ export function TradeifyProgressPanel({ compact = false }: { compact?: boolean }
   }, [])
 
   useEffect(() => {
-    if (!isTradeifyGrowth50k(profile)) return
     void load()
     const id = window.setInterval(load, 30_000)
     return () => window.clearInterval(id)
-  }, [profile, load])
-
-  const on = isTradeifyGrowth50k(profile)
-
-  if (!on) {
-    return (
-      <div className="rounded-xl border border-white/10 bg-[#161b22] p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-white">Tradeify $50k</h2>
-            <p className="mt-1 text-[11px] text-gray-500">
-              Profile off — desk uses OANDA 2% → 1% → 0.5%. Turn on to track Growth eval
-              DLL / floor / $3,000 target.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setDeskRiskProfile('tradeify_growth_50k')}
-            className="shrink-0 rounded-lg bg-amber-500 px-3 py-1.5 text-[11px] font-bold uppercase text-black"
-          >
-            Enable
-          </button>
-        </div>
-      </div>
-    )
-  }
+  }, [load])
 
   const status = snap?.status ?? 'can_trade'
   const statusLabel =
@@ -178,18 +133,9 @@ export function TradeifyProgressPanel({ compact = false }: { compact?: boolean }
             Session {snap?.sessionKey ?? '—'} · flatten {snap?.flattenMontreal ?? '16:59 Montreal'}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ${statusClass}`}>
-            {statusLabel}
-          </span>
-          <button
-            type="button"
-            onClick={() => setDeskRiskProfile('oanda_cash')}
-            className="text-[10px] text-gray-500 hover:text-white"
-          >
-            Use OANDA %
-          </button>
-        </div>
+        <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ${statusClass}`}>
+          {statusLabel}
+        </span>
       </div>
 
       {error && (

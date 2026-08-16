@@ -23,22 +23,28 @@ import {
   getLastNTokyoTradingDays,
 } from '@/lib/utils/dateUtils'
 import {
-  riskPercentForEntrySource,
+  previewPositionSizingFromRiskAmount,
   type DeskEntrySource,
 } from '@/lib/trading/positionSizing'
 import {
   getDeskRiskProfile,
   isTradeifyGrowth50k,
-  setDeskRiskProfile,
   DESK_RISK_PROFILE_EVENT,
 } from '@/lib/trading/tradeifyProfile'
 import {
+  TRADEIFY_DLL_DOLLARS,
+  TRADEIFY_STARTING_BALANCE,
+  formatTradeifyRiskChip,
   resolveTradeifyPlace,
+  tradeifyDeskStatus,
   tradeifyFlattenOverridesKeepOpen,
+  tradeifyMustFlatten,
 } from '@/lib/trading/tradeifyGrowth50k'
+import { tradeifyFlattenMontreal } from '@/lib/trading/tradeifyLeoBlock'
 import {
   snapDeskPrice,
   snapStopToTick,
+  snapTargetToTick,
 } from '@/lib/trading/instrumentTicks'
 import {
   MAX_DAY_ATTEMPTS,
@@ -67,7 +73,14 @@ import {
   RANGE_EDGE_BAND_POINTS,
   RANGE_EDGE_OFF_BAND_MESSAGE,
 } from '@/lib/trading/rangeEdgeEntryGate'
-import { LevelOrderTicket } from '@/app/dashboard/chart/components/LevelOrderTicket'
+import {
+  DeskManageBracketOverlay,
+  DeskRiskBoxOverlay,
+  DeskWorkingBracketOverlay,
+  openDeskRiskBox,
+  type DeskRiskBoxState,
+} from '@/app/dashboard/chart/components/DeskRiskBoxOverlay'
+import { assertProtectiveStop } from '@/lib/trading/stopLossGuard'
 import { MorningLunchFlatConfirm } from '@/app/dashboard/chart/components/MorningLunchFlatConfirm'
 import {
   clearLunchFlatKeepOpen,
@@ -105,11 +118,9 @@ import {
 } from '@/lib/trading/simOvernightBias'
 import {
   convictionStars,
-  resolveDeskLevels,
   computeInitialBalance,
   computeIbSignals,
   ibLineSeriesData,
-  type DeskPlaybook,
   type InitialBalanceRange,
 } from '@/lib/trading/deskLevels'
 import {
@@ -140,19 +151,11 @@ import {
 } from '@/lib/chart/nikkeiUsRangeBreakout'
 import {
   activeRangeForPlaybook,
-  entryEligibleOverlayRanges,
-  studyEntrySnapRanges,
+  visibleOverlayEntryRanges,
   type StrategyRangeEdges,
   type StrategyRiskMagnets,
 } from '@/lib/trading/strategyRiskGeometry'
-import {
-  resolveDeskPlaybookMode,
-  deskPlaybookPanelTitle,
-  deskPlaybookHint,
-  deskPlaybookToolbarLabel,
-  isDeskWatchOnlyPlaybook,
-} from '@/lib/trading/deskPlaybookMode'
-import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
+import { resolveDeskPlaybookMode } from '@/lib/trading/deskPlaybookMode'
 
 type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI'
 type Direction = 'LONG' | 'SHORT'
@@ -395,7 +398,6 @@ function SimulationDeskInner() {
   const [allCandles, setAllCandles] = useState<Candle[]>([])
   const [levels, setLevels] = useState<AiLevel[]>([])
   const levelsRef = useRef<AiLevel[]>([])
-  const [playbook, setPlaybook] = useState<DeskPlaybook | null>(null)
   const [simNow, setSimNow] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [pending, setPending] = useState<PendingOrder | null>(null)
@@ -413,21 +415,15 @@ function SimulationDeskInner() {
   const ibAttemptsRef = useRef(0)
   const lunchAttemptsRef = useRef(0)
   const stopHitsRef = useRef(0)
-  const [accountSize, setAccountSize] = useState(100000)
+  const [accountSize] = useState(TRADEIFY_STARTING_BALANCE)
   const [riskProfile, setRiskProfile] = useState<'oanda_cash' | 'tradeify_growth_50k'>(
-    'oanda_cash'
+    'tradeify_growth_50k'
   )
-  const [manualTicketOpen, setManualTicketOpen] = useState(false)
-  /** Chart-click price for manual ticket; null = use lastPrice (toolbar Place limit). */
-  const [manualClickPrice, setManualClickPrice] = useState<number | null>(null)
-  /** Attributed playbook range when opening a ticket from a painted ±10 band. */
-  const [ticketRangeOverride, setTicketRangeOverride] = useState<StrategyRangeEdges | null>(
-    null
-  )
+  const [riskBox, setRiskBox] = useState<DeskRiskBoxState | null>(null)
+  const [overlayTick, setOverlayTick] = useState(0)
+  const openRiskBoxFromPriceRef = useRef<() => void>(() => {})
   const [msg, setMsg] = useState<string | null>(null)
   const [levelsOpen, setLevelsOpen] = useState(true)
-  /** Floating playbook panel — title follows active range window. */
-  const [playbookOpen, setPlaybookOpen] = useState(true)
   const levelsOpenRef = useRef(true)
   const [chartReady, setChartReady] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -487,15 +483,13 @@ function SimulationDeskInner() {
         if (isOr30Instrument(instrument)) {
           setShowOr30((prev) => !prev)
         }
-      } else if (key === 'p') {
+      } else if (key === 'o') {
         e.preventDefault()
-        setPlaybookOpen((prev) => !prev)
+        openRiskBoxFromPriceRef.current()
       } else if (key === 'escape') {
-        if (manualTicketOpen) {
+        if (riskBox) {
           e.preventDefault()
-          setManualTicketOpen(false)
-          setManualClickPrice(null)
-          setTicketRangeOverride(null)
+          setRiskBox(null)
         } else if (isFullscreen) {
           e.preventDefault()
           if (document.exitFullscreen && document.fullscreenElement) {
@@ -516,7 +510,7 @@ function SimulationDeskInner() {
       window.removeEventListener('keydown', handleKeyDown)
       document.removeEventListener('fullscreenchange', onFsChange)
     }
-  }, [isFullscreen, manualTicketOpen, toggleFullscreen, instrument])
+  }, [isFullscreen, riskBox, toggleFullscreen, instrument])
 
   const containerRef = useRef<HTMLDivElement>(null)
   const sessionOverlayRef = useRef<HTMLDivElement>(null)
@@ -545,13 +539,13 @@ function SimulationDeskInner() {
   const [usRangeShaped, setUsRangeShaped] = useState(false)
   /** Script overlays — same toggles as live (B / N / U / R). IB + US Range default OFF. */
   const [showIbBreakouts, setShowIbBreakouts] = useState(false)
-  const [showLunchRange, setShowLunchRange] = useState(true)
+  const [showLunchRange, setShowLunchRange] = useState(false)
   const [showUsRange, setShowUsRange] = useState(false)
-  const [showOr30, setShowOr30] = useState(true)
+  const [showOr30, setShowOr30] = useState(false)
   const showIbBreakoutsRef = useRef(false)
-  const showLunchRangeRef = useRef(true)
+  const showLunchRangeRef = useRef(false)
   const showUsRangeRef = useRef(false)
-  const showOr30Ref = useRef(true)
+  const showOr30Ref = useRef(false)
   const or30SeriesRef = useRef<{
     high: ISeriesApi<'Line'>
     low: ISeriesApi<'Line'>
@@ -818,22 +812,9 @@ function SimulationDeskInner() {
 
         if (cancelled) return
 
-        // Fast path: structure playbook so the desk opens immediately
-        const biasProbe = computeSimOvernightBias(mapped, startOpen, sess.tz)
-        const bias =
-          biasProbe?.bias === 'bullish'
-            ? 'bullish'
-            : biasProbe?.bias === 'bearish'
-              ? 'bearish'
-              : 'none'
-        const structure = resolveDeskLevels([], mapped, startOpen, sess.tz, bias)
         setLevels([])
-        setPlaybook(structure.playbook)
-
-        const openLabel =
-          `Cash open ${deskLocalHmsAsTraderDisplay(sess.marketOpen, sess.tz, new Date(`${replayDate}T12:00:00Z`))} ${TRADER_DISPLAY_LABEL}`
         setMsg(
-          `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · double-click the chart to place a working limit, then Play`
+          `${instrument} · ${formatDateDisplay(replayDate)} · Tradeify $50k · turn on OR30 / IB / Lunch / US Range, then drag SL/TP`
         )
         setLoading(false)
       } catch (e) {
@@ -1029,6 +1010,8 @@ function SimulationDeskInner() {
     chartRef.current = chart
     seriesRef.current = series
     priceLineHostRef.current = priceLineHost
+    const bumpOverlay = () => setOverlayTick((n) => n + 1)
+    chart.timeScale().subscribeVisibleLogicalRangeChange(bumpOverlay)
     vwapSeriesRef.current = vwapSeries
     ibSeriesRef.current = ibSeries
     or30SeriesRef.current = or30Series
@@ -1048,6 +1031,11 @@ function SimulationDeskInner() {
 
     return () => {
       ro.disconnect()
+      try {
+        chart.timeScale().unsubscribeVisibleLogicalRangeChange(bumpOverlay)
+      } catch {
+        /* chart already gone */
+      }
       setChartReady(false)
       chart.remove()
       chartRef.current = null
@@ -1607,7 +1595,7 @@ function SimulationDeskInner() {
       ladder,
     })
     const morningAttempts = morningAttemptsRef.current
-    const strategyRange = activeRangeForPlaybook({
+    const preferred = activeRangeForPlaybook({
       playbookMode,
       instrument,
       or30: or30RangeRef.current,
@@ -1616,11 +1604,9 @@ function SimulationDeskInner() {
       lunchRange: lunchRangeRef.current,
       morningAttempts,
     })
-    // Same paint/snap gate as live — do not invite Tokyo IB ±10 before first-hour lock.
-    const shapedRanges = entryEligibleOverlayRanges({
-      playbookMode,
+    // Sim: only the ranges the trader turned on — never auto-paint playbook ±10.
+    const snapRanges = visibleOverlayEntryRanges({
       instrument,
-      now: simNow,
       showOr30: showOr30Ref.current,
       showIb: showIbBreakoutsRef.current,
       showUsRange: showUsRangeRef.current,
@@ -1629,30 +1615,19 @@ function SimulationDeskInner() {
       ib: ibRangeRef.current,
       usRange: usRangeRef.current,
       lunchRange: lunchRangeRef.current,
-      morningAttempts,
     })
-    const activeForSnap =
-      strategyRange &&
-      shapedRanges.some(
-        (r) =>
-          r.label === strategyRange.label &&
-          r.high === strategyRange.high &&
-          r.low === strategyRange.low
-      )
-        ? strategyRange
-        : null
-    const snapRanges = studyEntrySnapRanges({
-      active: activeForSnap,
-      overlays: shapedRanges,
-    })
+    const strategyRange =
+      (preferred &&
+        snapRanges.find(
+          (r) =>
+            r.label === preferred.label &&
+            r.high === preferred.high &&
+            r.low === preferred.low
+        )) ||
+      snapRanges[0] ||
+      null
     const extras: number[] = []
-    for (const r of [
-      or30RangeRef.current,
-      ibRangeRef.current,
-      usRangeRef.current,
-      lunchRangeRef.current,
-    ]) {
-      if (!r || !(r.high > r.low)) continue
+    for (const r of snapRanges) {
       if (
         strategyRange &&
         r.high === strategyRange.high &&
@@ -1664,7 +1639,7 @@ function SimulationDeskInner() {
     }
     return {
       strategyRange,
-      shapedRanges,
+      shapedRanges: snapRanges,
       snapRanges,
       ladder,
       strategyMagnets: {
@@ -1716,8 +1691,8 @@ function SimulationDeskInner() {
           return {
             deny:
               instrument === 'NIKKEI'
-                ? 'No live ±10 entry bands — wait for US Range / Tokyo IB to unlock.'
-                : 'No live ±10 entry bands — wait for IB / lunch-range to unlock.',
+                ? 'Turn on OR30, US Range, or IB to show ±10 bands and place.'
+                : 'Turn on OR30, IB, or Lunch Range to show ±10 bands and place.',
           }
         }
         if (hit) {
@@ -1752,6 +1727,226 @@ function SimulationDeskInner() {
     },
     [getStrategyRiskBundle, instrument]
   )
+
+  const openRiskBoxFromPrice = useCallback(
+    (rawPrice?: number | null) => {
+      if (positionRef.current || pendingRef.current || riskBox) return
+      const seed = rawPrice ?? lastPriceRef.current
+      if (seed == null || !(seed > 0)) {
+        setMsg('No price to place from — wait for the sim bar')
+        return
+      }
+      const snapped = snapSimEntryOrDeny(seed)
+      if ('deny' in snapped) {
+        setMsg(snapped.deny)
+        return
+      }
+      const { snapRanges, strategyRange, ladder } = getStrategyRiskBundle()
+      const now = new Date(simNowRef.current * 1000)
+      const hit = attributePlaybookBandEntry({
+        entry: snapped.price,
+        candidates: snapRanges,
+        preferLabel: strategyRange?.label ?? null,
+        liveOk: (range) => {
+          if (range.label === 'OR30') {
+            return (
+              !!strategyRange &&
+              strategyRange.label === range.label &&
+              strategyRange.high === range.high &&
+              strategyRange.low === range.low
+            )
+          }
+          return assertBucketEntryEligible({
+            instrument,
+            market: deskMarketFor(instrument),
+            timeSec: deskClockSeconds(instrument, now),
+            ladder,
+            rangeLabel: range.label,
+          }).ok
+        },
+      })
+      const dir: Direction =
+        hit?.edge === 'high' ? 'SHORT' : hit?.edge === 'low' ? 'LONG' : 'LONG'
+      setPlaying(false)
+      setRiskBox(
+        openDeskRiskBox({
+          entry: snapped.price,
+          direction: dir,
+          instrument,
+          preferRangeLabel: snapped.range.label ?? strategyRange?.label ?? null,
+        })
+      )
+      setMsg('Drag SL / TP on the chart, then BUY LIMIT or SELL LIMIT')
+    },
+    [getStrategyRiskBundle, instrument, riskBox, snapSimEntryOrDeny]
+  )
+  openRiskBoxFromPriceRef.current = () =>
+    openRiskBoxFromPrice(lastPriceRef.current)
+
+  const placeSimWorkingLimit = useCallback(
+    (order: {
+      level: number
+      direction: Direction
+      stopLoss: number
+      profitTarget: number
+      size: number
+      risk: number
+      accountSize: number
+      entryReason: string
+      strategyRangeLabel?: string | null
+    }) => {
+      const snapped = snapSimEntryOrDeny(order.level)
+      if ('deny' in snapped) {
+        setMsg(snapped.deny)
+        return
+      }
+      const edge = assertRangeEdgeEntry({
+        entry: snapped.price,
+        range: snapped.range,
+      })
+      if (!edge.ok) {
+        setMsg(edge.message)
+        return
+      }
+      const windowEndUnix =
+        gate?.entryWindow === 3
+          ? lateEndUnix
+          : gate?.entryWindow === 2
+            ? midEndUnix
+            : entryCloseUnix
+      const pend: PendingOrder = {
+        level: snapped.price,
+        direction: order.direction,
+        stopLoss: order.stopLoss,
+        target: order.profitTarget,
+        size: order.size,
+        risk: order.risk,
+        accountSize: order.accountSize,
+        entryReason: order.entryReason,
+        entrySource: 'manual',
+        windowEndUnix: windowEndUnix || cashCloseUnix,
+        strategyRangeLabel: snapped.range.label ?? order.strategyRangeLabel ?? null,
+      }
+      setRiskBox(null)
+      const now = simNowRef.current
+      const touched = currentBarIfTouches(
+        allCandlesRef.current,
+        openUnix,
+        now,
+        pend.level
+      )
+      if (touched) {
+        fillPendingRef.current(pend, touched.time)
+        return
+      }
+      pendingRef.current = pend
+      setPending(pend)
+      setMsg(
+        `Manual ${order.direction} limit @ ${snapped.price.toLocaleString()} — drag TP on the chart · press Play until fill`
+      )
+    },
+    [
+      snapSimEntryOrDeny,
+      gate?.entryWindow,
+      lateEndUnix,
+      midEndUnix,
+      entryCloseUnix,
+      cashCloseUnix,
+      openUnix,
+    ]
+  )
+
+  const confirmRiskBox = useCallback(() => {
+    if (!riskBox) return
+    const { snapRanges, strategyRange, ladder } = getStrategyRiskBundle()
+    const now = new Date(simNowRef.current * 1000)
+    const hit = attributePlaybookBandEntry({
+      entry: riskBox.entryPrice,
+      candidates: snapRanges,
+      preferLabel: riskBox.preferRangeLabel ?? strategyRange?.label ?? null,
+      liveOk: (range) => {
+        if (range.label === 'OR30') {
+          return (
+            !!strategyRange &&
+            strategyRange.label === range.label &&
+            strategyRange.high === range.high &&
+            strategyRange.low === range.low
+          )
+        }
+        return assertBucketEntryEligible({
+          instrument,
+          market: deskMarketFor(instrument),
+          timeSec: deskClockSeconds(instrument, now),
+          ladder,
+          rangeLabel: range.label,
+        }).ok
+      },
+    })
+    if (!hit) {
+      setMsg(RANGE_EDGE_OFF_BAND_MESSAGE)
+      return
+    }
+    const entry = snapDeskPrice(instrument, hit.center)
+    const stopGuard = assertProtectiveStop({
+      instrument,
+      entry,
+      stop: riskBox.stopLoss,
+      direction: riskBox.direction,
+    })
+    if (!stopGuard.ok) {
+      setMsg(stopGuard.message)
+      return
+    }
+    const stop = stopGuard.stop
+    let tp = riskBox.profitTarget
+    if (riskBox.direction === 'LONG' && !(tp > entry)) {
+      setMsg('Take profit must be above the limit for LONG')
+      return
+    }
+    if (riskBox.direction === 'SHORT' && !(tp < entry)) {
+      setMsg('Take profit must be below the limit for SHORT')
+      return
+    }
+    tp = snapTargetToTick(instrument, entry, tp, riskBox.direction)
+    const decision = resolveTradeifyPlace({
+      now,
+      fillsUsed: attemptsUsedRef.current,
+      stopOutsToday: stopHitsRef.current,
+      dailyPnl: paperDayPnl,
+    })
+    if (!decision.allowed) {
+      setMsg(decision.refuseMessage)
+      return
+    }
+    const sized = previewPositionSizingFromRiskAmount(
+      entry,
+      TRADEIFY_STARTING_BALANCE,
+      riskBox.direction,
+      stop,
+      decision.riskDollars
+    )
+    if (!sized) {
+      setMsg('Could not size this stop — widen SL or pick another band')
+      return
+    }
+    placeSimWorkingLimit({
+      level: entry,
+      direction: riskBox.direction,
+      stopLoss: stop,
+      profitTarget: tp,
+      size: sized.position_size,
+      risk: sized.risk_amount,
+      accountSize: TRADEIFY_STARTING_BALANCE,
+      entryReason: `Manual ${riskBox.direction} limit @ ${entry.toLocaleString()} | SL ${stop.toLocaleString()} TP ${tp.toLocaleString()}`,
+      strategyRangeLabel: hit.range.label ?? null,
+    })
+  }, [
+    riskBox,
+    getStrategyRiskBundle,
+    instrument,
+    paperDayPnl,
+    placeSimWorkingLimit,
+  ])
 
   // Initial / seek chart paint — use ref so callback identity churn does not force setData
   useEffect(() => {
@@ -1905,7 +2100,31 @@ function SimulationDeskInner() {
       width: 1 | 2 | 3 | 4
     }> = []
 
-    if (position) {
+    if (riskBox) {
+      specs.push(
+        {
+          price: riskBox.entryPrice,
+          color: '#3b82f6',
+          title: `◆ ENTRY ${riskBox.direction} @ ${fmt(riskBox.entryPrice)}`,
+          style: LineStyle.Solid,
+          width: 2,
+        },
+        {
+          price: riskBox.stopLoss,
+          color: '#f59e0b',
+          title: `▁ SL @ ${fmt(riskBox.stopLoss)}`,
+          style: LineStyle.Dashed,
+          width: 2,
+        },
+        {
+          price: riskBox.profitTarget,
+          color: '#22c55e',
+          title: `▔ TP @ ${fmt(riskBox.profitTarget)}`,
+          style: LineStyle.Dashed,
+          width: 2,
+        }
+      )
+    } else if (position) {
       specs.push(
         {
           price: position.entry,
@@ -1917,14 +2136,14 @@ function SimulationDeskInner() {
         {
           price: position.stopLoss,
           color: '#ef4444',
-          title: `SL ${fmt(position.stopLoss)}`,
+          title: `SL ${fmt(position.stopLoss)} · drag`,
           style: LineStyle.Dashed,
           width: 2,
         },
         {
           price: position.target,
           color: '#22c55e',
-          title: `TP ${fmt(position.target)}`,
+          title: `TP ${fmt(position.target)} · drag`,
           style: LineStyle.Dashed,
           width: 2,
         }
@@ -1948,7 +2167,7 @@ function SimulationDeskInner() {
         {
           price: pending.target,
           color: '#22c55e',
-          title: `TP ${fmt(pending.target)} (editable on live; fixed in sim)`,
+          title: `TP · drag ${fmt(pending.target)}`,
           style: LineStyle.Dotted,
           width: 2,
         }
@@ -1962,7 +2181,7 @@ function SimulationDeskInner() {
       !pending &&
       simNowRef.current >= openUnix &&
       attemptsUsedRef.current < MAX_DAY_ATTEMPTS
-    if (entryOpen || pending) {
+    if (entryOpen || pending || riskBox) {
       const { snapRanges } = getStrategyRiskBundle()
       for (const strategyRange of snapRanges) {
         if (!(strategyRange.high > strategyRange.low)) continue
@@ -2040,7 +2259,19 @@ function SimulationDeskInner() {
         /* ignore */
       }
     }
-  }, [position, pending, chartReady, simNow, getStrategyRiskBundle, openUnix])
+  }, [
+    position,
+    pending,
+    riskBox,
+    chartReady,
+    simNow,
+    getStrategyRiskBundle,
+    openUnix,
+    showOr30,
+    showIbBreakouts,
+    showLunchRange,
+    showUsRange,
+  ])
 
   const fillPending = useCallback(
     (pend: PendingOrder, at: number) => {
@@ -2247,6 +2478,41 @@ function SimulationDeskInner() {
         fillPendingRef.current(pend, bar.time)
       }
 
+      const flattenAt = tradeifyMustFlatten(new Date(next * 1000))
+      if (flattenAt) {
+        const pendFlat = pendingRef.current
+        if (pendFlat) {
+          pendingRef.current = null
+          setPending(null)
+        }
+        const posFlat = positionRef.current
+        if (posFlat) {
+          clearLunchFlatKeepOpen(
+            simLunchFlatKeepOpenKey({
+              instrument,
+              replayDate,
+              filledAt: posFlat.filledAt,
+            })
+          )
+          recordPaperClose(posFlat, bar.close, 'manual')
+          positionRef.current = null
+          setPosition(null)
+          setLunchFlatPrompt(false)
+        }
+        simNowRef.current = next
+        setSimNow(next)
+        applyChartDataRef.current(next)
+        setPlaying(false)
+        setMsg(
+          posFlat
+            ? `Tradeify flatten @ ${bar.close.toLocaleString()} — 16:59 ET. No new holds.`
+            : pendFlat
+              ? 'Tradeify flatten — working limit cancelled. No new holds until 18:00 ET.'
+              : 'Tradeify flatten window — no new entries until 18:00 ET.'
+        )
+        return
+      }
+
       const pos = positionRef.current
       if (pos) {
         const hitSl =
@@ -2339,6 +2605,36 @@ function SimulationDeskInner() {
     setPending(null)
     setMsg('Working limit cancelled — entry window closed (never filled)')
   }, [simNow, pending])
+
+  // Tradeify 16:59 ET flatten — cancel working + close the book if the clock is already there
+  useEffect(() => {
+    if (playing || !simNow) return
+    if (!tradeifyMustFlatten(new Date(simNow * 1000))) return
+    if (pendingRef.current) {
+      pendingRef.current = null
+      setPending(null)
+    }
+    const pos = positionRef.current
+    if (pos) {
+      const px = lastPriceRef.current ?? pos.entry
+      clearLunchFlatKeepOpen(
+        simLunchFlatKeepOpenKey({
+          instrument,
+          replayDate,
+          filledAt: pos.filledAt,
+        })
+      )
+      recordPaperClose(pos, px, 'manual')
+      positionRef.current = null
+      setPosition(null)
+      setLunchFlatPrompt(false)
+      setMsg(`Tradeify flatten @ ${px.toLocaleString()} — 16:59 ET. No new holds.`)
+      return
+    }
+    if (pending) {
+      setMsg('Tradeify flatten — working limit cancelled. No new holds until 18:00 ET.')
+    }
+  }, [playing, simNow, pending, instrument, replayDate, recordPaperClose])
 
   const cancelPending = useCallback(() => {
     if (!pendingRef.current) return
@@ -2492,15 +2788,13 @@ function SimulationDeskInner() {
     setPlaying(false)
     setPending(null)
     setPosition(null)
-    setManualTicketOpen(false)
-    setManualClickPrice(null)
-    setTicketRangeOverride(null)
+    setRiskBox(null)
     setLevelsOpen(true)
     resetSessionProgress()
     setMsg(
       instrument === 'NIKKEI'
-        ? `Reset to ${deskLocalHmsAsTraderDisplay(sess.marketOpen, sess.tz)} ${TRADER_DISPLAY_LABEL} — double-click the chart to place a working limit, then Play`
-        : `Reset to 9:30 AM ${TRADER_DISPLAY_LABEL} — double-click the chart to place a working limit, then Play`
+        ? `Reset to ${deskLocalHmsAsTraderDisplay(sess.marketOpen, sess.tz)} ${TRADER_DISPLAY_LABEL} — turn on a range, drag SL/TP, then Play`
+        : `Reset to 9:30 AM ${TRADER_DISPLAY_LABEL} — turn on a range, drag SL/TP, then Play`
     )
   }
 
@@ -2513,15 +2807,13 @@ function SimulationDeskInner() {
     applyChartData(openUnix, { force: true, fit: true })
     setPending(null)
     setPosition(null)
-    setManualTicketOpen(false)
-    setManualClickPrice(null)
-    setTicketRangeOverride(null)
+    setRiskBox(null)
     setLevelsOpen(true)
     resetSessionProgress()
     setMsg(
       instrument === 'NIKKEI'
-        ? `Replay from ${deskLocalHmsAsTraderDisplay(sess.marketOpen, sess.tz)} ${TRADER_DISPLAY_LABEL} — double-click the chart to place a working limit, or watch`
-        : `Replay from 9:30 AM ${TRADER_DISPLAY_LABEL} — double-click the chart to place a working limit, or watch`
+        ? `Replay from ${deskLocalHmsAsTraderDisplay(sess.marketOpen, sess.tz)} ${TRADER_DISPLAY_LABEL} — turn on a range to trade Tradeify`
+        : `Replay from 9:30 AM ${TRADER_DISPLAY_LABEL} — turn on a range to trade Tradeify`
     )
     setPlaying(true)
   }
@@ -2533,6 +2825,7 @@ function SimulationDeskInner() {
       chartReady &&
       !position &&
       !pending &&
+      !riskBox &&
       simNow > 0 &&
       simNow >= openUnix &&
       attemptsUsed < MAX_DAY_ATTEMPTS &&
@@ -2554,9 +2847,7 @@ function SimulationDeskInner() {
         setMsg(snapped.deny)
         return
       }
-      setTicketRangeOverride(snapped.range)
-      setManualClickPrice(snapped.price)
-      setManualTicketOpen(true)
+      openRiskBoxFromPrice(snapped.price)
     }
 
     container.style.cursor = 'crosshair'
@@ -2574,60 +2865,33 @@ function SimulationDeskInner() {
     attemptsUsed,
     gate?.canPlaceEntry,
     snapSimEntryOrDeny,
+    openRiskBoxFromPrice,
+    riskBox,
   ])
 
   // Hooks must run unconditionally — early returns below come AFTER all hooks.
   const phase = position ? 'MANAGE' : gate?.phase ?? 'ENTRY'
-  const tradeifyDayLock = isTradeifyGrowth50k(riskProfile)
-    ? resolveTradeifyPlace({
-        now: simNow > 0 ? new Date(simNow * 1000) : undefined,
-        fillsUsed: attemptsUsed,
-        stopOutsToday: stopHits,
-        dailyPnl: paperDayPnl,
-      })
-    : null
+  const tradeifyNow = simNow > 0 ? new Date(simNow * 1000) : undefined
+  const tradeifyDayLock = resolveTradeifyPlace({
+    now: tradeifyNow,
+    fillsUsed: attemptsUsed,
+    stopOutsToday: stopHits,
+    dailyPnl: paperDayPnl,
+  })
+  const tradeifyStatus = tradeifyDeskStatus(
+    tradeifyDayLock,
+    tradeifyNow ?? new Date()
+  )
   const canEnter =
     !position &&
     !pending &&
+    !riskBox &&
     simNow >= openUnix &&
     attemptsUsed < MAX_DAY_ATTEMPTS &&
     gate?.canPlaceEntry === true &&
-    !(tradeifyDayLock && !tradeifyDayLock.allowed)
+    tradeifyDayLock.allowed
   const midChip = instrument === 'NIKKEI' ? 'US' : 'IB'
   const lateChip = instrument === 'NIKKEI' ? 'IB' : 'LN'
-
-  const playbookMode = useMemo(() => {
-    if (!simNow) return 'morning' as const
-    return resolveDeskPlaybookMode({
-      instrument,
-      now: new Date(simNow * 1000),
-      rangeStrategy: gate?.rangeStrategy ?? undefined,
-      ladder: attemptLadderFromCounts({
-        morningAttempts,
-        ibAttempts,
-        lunchAttempts,
-        morningStopHits: Math.min(stopHits, morningAttempts),
-      }),
-    })
-  }, [
-    simNow,
-    instrument,
-    gate?.rangeStrategy,
-    morningAttempts,
-    ibAttempts,
-    lunchAttempts,
-    stopHits,
-  ])
-  const watchOnlyPlaybook =
-    isDeskWatchOnlyPlaybook(playbookMode) && !canEnter && !position
-  const playbookPanelTitle = deskPlaybookPanelTitle(playbookMode, instrument, {
-    watchOnly: watchOnlyPlaybook,
-  })
-  const playbookRangeHint = deskPlaybookHint(playbookMode, instrument)
-  const playbookButtonLabel = deskPlaybookToolbarLabel(playbookMode, {
-    watchOnly: watchOnlyPlaybook,
-    instrument,
-  })
 
   if (loading) {
     return (
@@ -2671,6 +2935,90 @@ function SimulationDeskInner() {
           className="pointer-events-none absolute inset-0 z-[1]"
           style={{ opacity: 1, transition: 'none', willChange: 'opacity' }}
         />
+        {riskBox && chartReady && (
+          <DeskRiskBoxOverlay
+            containerRef={containerRef}
+            series={seriesRef.current}
+            instrument={instrument}
+            riskBox={riskBox}
+            onChange={setRiskBox}
+            onConfirm={confirmRiskBox}
+            onCancel={() => setRiskBox(null)}
+            snapRanges={getStrategyRiskBundle().snapRanges}
+            strategyRange={getStrategyRiskBundle().strategyRange}
+            liveOk={(range) => {
+              const { strategyRange, ladder } = getStrategyRiskBundle()
+              if (range.label === 'OR30') {
+                return (
+                  !!strategyRange &&
+                  strategyRange.label === range.label &&
+                  strategyRange.high === range.high &&
+                  strategyRange.low === range.low
+                )
+              }
+              return assertBucketEntryEligible({
+                instrument,
+                market: deskMarketFor(instrument),
+                timeSec: deskClockSeconds(instrument, new Date(simNowRef.current * 1000)),
+                ladder,
+                rangeLabel: range.label,
+              }).ok
+            }}
+            riskDollars={
+              resolveTradeifyPlace({
+                now: simNow > 0 ? new Date(simNow * 1000) : undefined,
+                fillsUsed: attemptsUsed,
+                stopOutsToday: stopHits,
+                dailyPnl: paperDayPnl,
+              }).riskDollars
+            }
+            fillsUsed={attemptsUsed}
+            layoutTick={overlayTick + simNow}
+          />
+        )}
+        {pending && !position && !riskBox && chartReady && (
+          <DeskWorkingBracketOverlay
+            containerRef={containerRef}
+            series={seriesRef.current}
+            instrument={instrument}
+            entry={pending.level}
+            direction={pending.direction}
+            stopLoss={pending.stopLoss}
+            profitTarget={pending.target}
+            onTargetChange={(target) => {
+              const next = { ...pending, target }
+              pendingRef.current = next
+              setPending(next)
+              setMsg(`Working TP → ${target.toLocaleString()}`)
+            }}
+            layoutTick={overlayTick + simNow}
+          />
+        )}
+        {position && !riskBox && chartReady && (
+          <DeskManageBracketOverlay
+            containerRef={containerRef}
+            series={seriesRef.current}
+            instrument={instrument}
+            entry={position.entry}
+            direction={position.direction}
+            stopLoss={position.stopLoss}
+            profitTarget={position.target}
+            size={position.size}
+            onCommit={(next) => {
+              const updated = {
+                ...position,
+                stopLoss: next.stopLoss,
+                target: next.profitTarget,
+              }
+              positionRef.current = updated
+              setPosition(updated)
+              setMsg(
+                `Brackets updated — SL ${next.stopLoss.toLocaleString()} · TP ${next.profitTarget.toLocaleString()}`
+              )
+            }}
+            layoutTick={overlayTick + simNow}
+          />
+        )}
         {(position || pending) && (
           <div className="pointer-events-none absolute left-3 top-14 z-20 max-w-[min(360px,75%)]">
             <div
@@ -2871,41 +3219,20 @@ function SimulationDeskInner() {
           {canEnter && (
             <button
               type="button"
-              onClick={() => {
-                const seed =
-                  lastPriceRef.current ?? lastPrice ?? 0
-                const snapped = snapSimEntryOrDeny(seed)
-                if ('deny' in snapped) {
-                  setMsg(snapped.deny)
-                  return
-                }
-                setTicketRangeOverride(snapped.range)
-                setManualClickPrice(snapped.price)
-                setManualTicketOpen(true)
-              }}
+              onClick={() => openRiskBoxFromPrice(lastPriceRef.current ?? lastPrice)}
               className="rounded border border-amber-500/50 bg-amber-600/80 px-2 py-1 text-[10px] font-bold uppercase text-white hover:bg-amber-500"
-              title="Manual limit — entry locks to nearest painted ±10 band; adjust TP / SL only"
+              title="Open limit on chart — drag SL / TP, then BUY LIMIT or SELL LIMIT"
             >
               Place limit
             </button>
           )}
-          <button
-            type="button"
-            onClick={() =>
-              setDeskRiskProfile(
-                isTradeifyGrowth50k(riskProfile) ? 'oanda_cash' : 'tradeify_growth_50k'
-              )
-            }
-            className={`shrink-0 rounded px-2 py-1 text-[10px] font-bold uppercase ${
-              isTradeifyGrowth50k(riskProfile)
-                ? 'bg-amber-500 text-black'
-                : 'border border-white/15 text-gray-400 hover:text-white'
-            }`}
-            title="Toggle Tradeify $50k dollar risk vs OANDA %"
+          <span
+            className="shrink-0 rounded bg-amber-500 px-2 py-1 text-[10px] font-bold uppercase text-black"
+            title="Tradeify $50k dollar risk — $400 / $250 / $150"
           >
-            {isTradeifyGrowth50k(riskProfile) ? 'Tradeify $50k' : 'OANDA %'}
-          </button>
-          {tradeifyDayLock && !tradeifyDayLock.allowed && (
+            Tradeify $50k
+          </span>
+          {!tradeifyDayLock.allowed && (
             <span
               className="max-w-[16rem] truncate text-[10px] font-semibold text-red-300"
               title={tradeifyDayLock.refuseMessage}
@@ -2914,13 +3241,15 @@ function SimulationDeskInner() {
                 ? '2 stops — sit'
                 : tradeifyDayLock.refuseReason === 'day_locked_green'
                   ? 'Green-day lock'
-                  : 'No new entries'}
+                  : tradeifyDayLock.refuseReason === 'must_flatten'
+                    ? 'Flatten now'
+                    : 'No new entries'}
             </span>
           )}
           {canEnter && (
             <span
               className="hidden text-[10px] text-gray-500 sm:inline"
-              title="Double-click chart · or use playbook / Place limit"
+              title="Turn on a range, then double-click the chart or Place limit"
             >
               Double-click chart
             </span>
@@ -3007,16 +3336,6 @@ function SimulationDeskInner() {
               OR 30 (R)
             </button>
           )}
-          {!playbookOpen && (
-            <button
-              type="button"
-              title={`Show ${playbookPanelTitle} (Press P)`}
-              onClick={() => setPlaybookOpen(true)}
-              className="rounded border border-white/15 px-2 py-1 text-[10px] uppercase text-gray-400 hover:bg-white/10 hover:text-gray-200"
-            >
-              {playbookButtonLabel} (P)
-            </button>
-          )}
           <button
             type="button"
             title={
@@ -3036,6 +3355,38 @@ function SimulationDeskInner() {
           >
             Exit
           </button>
+        </div>
+
+        <div
+          className={`pointer-events-none mt-1.5 flex max-w-4xl flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-2.5 py-1.5 text-[10px] backdrop-blur ${
+            tradeifyStatus === 'must_flatten'
+              ? 'border-red-500/40 bg-red-950/80 text-red-100'
+              : tradeifyStatus === 'day_locked'
+                ? 'border-amber-500/40 bg-amber-950/80 text-amber-100'
+                : 'border-amber-500/25 bg-[#161b22]/90 text-amber-100'
+          }`}
+        >
+          <span className="font-bold uppercase tracking-wide">Tradeify $50k</span>
+          <span className="text-white">
+            {formatTradeifyRiskChip(attemptsUsed)}
+          </span>
+          <span>
+            Fills {attemptsUsed}/3 · stops {stopHits}/2
+          </span>
+          <span className={paperDayPnl >= 0 ? 'text-emerald-300' : 'text-red-300'}>
+            Day {paperDayPnl >= 0 ? '+' : '−'}$
+            {Math.abs(Math.round(paperDayPnl)).toLocaleString()}
+          </span>
+          <span>
+            DLL ${Math.round(tradeifyDayLock.leftoverDll)} / ${TRADEIFY_DLL_DOLLARS}
+          </span>
+          <span>Floor ${Math.round(tradeifyDayLock.floorRoom)}</span>
+          <span>Flatten {tradeifyFlattenMontreal(tradeifyNow ?? new Date())}</span>
+          {tradeifyStatus !== 'can_trade' && (
+            <span className="font-semibold uppercase">
+              {tradeifyStatus === 'must_flatten' ? 'Flatten now' : 'Day locked'}
+            </span>
+          )}
         </div>
 
         {/* Session + AVWAP legend */}
@@ -3137,7 +3488,7 @@ function SimulationDeskInner() {
               MANAGE · {position.direction}
             </span>
             <span className="text-[10px] uppercase tracking-wide text-sky-400/90">
-              Watching SL / TP
+              Drag SL / TP on chart
             </span>
             <span className="text-gray-500">
               Entry{' '}
@@ -3273,133 +3624,6 @@ function SimulationDeskInner() {
           setLunchFlatPrompt(false)
         }}
       />
-
-      {/* Playbook — morning / IB|US / lunch-break / lunch-range|Tokyo IB */}
-      {playbookOpen && (
-        <DraggableDeskWidget
-          storageKey="desk-playbook-sim"
-          defaultPos={{ x: 24, y: 72 }}
-          title={playbookPanelTitle}
-          onClose={() => setPlaybookOpen(false)}
-          footer={
-            <label className="block text-[9px] font-semibold uppercase tracking-wider text-gray-500">
-              Account $
-              <input
-                type="number"
-                value={accountSize}
-                onChange={(e) => setAccountSize(Number(e.target.value) || 0)}
-                className="price-mono mt-1.5 w-full rounded-lg border border-white/10 bg-[#161b22] px-2.5 py-1.5 text-xs font-semibold text-white focus:border-violet-500/40 focus:outline-none"
-              />
-            </label>
-          }
-        >
-          <div className="border-b border-[#30363d] bg-[#1a1430] px-3 py-2.5 space-y-1">
-            <p className="text-[10px] leading-snug text-violet-200/90">{playbookRangeHint}</p>
-            {playbook ? (
-              <p className="text-[10px] leading-snug text-gray-300">
-                Trade the painted range edges (OR30 / IB / lunch).
-              </p>
-            ) : null}
-          </div>
-          <div className="space-y-1.5 p-2">
-            <p className="px-1 py-1 text-[11px] leading-relaxed text-gray-400">
-              Double-click the chart to place a working limit — same as live. Set your own
-              size, SL, and TP. Press Play until price fills it.
-            </p>
-          </div>
-        </DraggableDeskWidget>
-      )}
-
-      {manualTicketOpen &&
-        (manualClickPrice != null || lastPrice != null) && (
-        <LevelOrderTicket
-          key={
-            manualClickPrice != null
-              ? `click-${manualClickPrice}-${ticketRangeOverride?.label ?? 'r'}`
-              : 'toolbar-manual'
-          }
-          instrument={instrument}
-          levelPrice={manualClickPrice ?? lastPrice ?? 0}
-          entrySource="manual"
-          levelType="manual"
-          useLiveAccount={false}
-          initialAccountSize={accountSize}
-          regime={
-            overnightBias?.bias === 'bearish'
-              ? 'bearish'
-              : overnightBias?.bias === 'bullish'
-                ? 'bullish'
-                : 'choppy'
-          }
-          regimeConfidence={70}
-          canPlace={canEnter}
-          entryWindow={(gate?.entryWindow as 1 | 2 | 3 | null) ?? 1}
-          strategyRange={
-            ticketRangeOverride ?? getStrategyRiskBundle().strategyRange
-          }
-          strategyMagnets={getStrategyRiskBundle().strategyMagnets}
-          sessionFillsUsed={attemptsUsed}
-          onClose={() => {
-            setManualTicketOpen(false)
-            setManualClickPrice(null)
-            setTicketRangeOverride(null)
-          }}
-          onPlaced={(order) => {
-            // Server-less paper path: re-assert band + open-bucket attribution locally.
-            const snapped = snapSimEntryOrDeny(order.level)
-            if ('deny' in snapped) {
-              setMsg(snapped.deny)
-              return
-            }
-            const edge = assertRangeEdgeEntry({
-              entry: snapped.price,
-              range: snapped.range,
-            })
-            if (!edge.ok) {
-              setMsg(edge.message)
-              return
-            }
-            setManualTicketOpen(false)
-            setManualClickPrice(null)
-            setTicketRangeOverride(null)
-            const windowEndUnix =
-              gate?.entryWindow === 3
-                ? lateEndUnix
-                : gate?.entryWindow === 2
-                  ? midEndUnix
-                  : entryCloseUnix
-            const pend: PendingOrder = {
-              level: snapped.price,
-              direction: order.direction,
-              stopLoss: order.stopLoss,
-              target: order.profitTarget,
-              size: order.positionSize,
-              risk: order.riskAmount,
-              accountSize: order.accountSize,
-              entryReason: order.entryReason,
-              entrySource: 'manual',
-              windowEndUnix: windowEndUnix || cashCloseUnix,
-              strategyRangeLabel: snapped.range.label ?? null,
-            }
-            const now = simNowRef.current
-            const touched = currentBarIfTouches(
-              allCandlesRef.current,
-              openUnix,
-              now,
-              pend.level
-            )
-            if (touched) {
-              fillPending(pend, touched.time)
-              return
-            }
-            pendingRef.current = pend
-            setPending(pend)
-            setMsg(
-              `Manual ${order.direction} limit @ ${snapped.price.toLocaleString()} — ${riskPercentForEntrySource(order.entrySource, attemptsUsedRef.current)}% risk · press Play until fill`
-            )
-          }}
-        />
-      )}
 
     </div>
   )

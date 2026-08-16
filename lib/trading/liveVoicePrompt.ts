@@ -24,7 +24,7 @@ DEEP TRADEPULSE ARCHITECTURE & SESSION CLOCK KNOWLEDGE
 
 ATTEMPT LADDER (2 / 2 / 2 per window — THREE RANGES PER DESK; CLOCKS YOU SPEAK ARE MONTREAL)
 - **Session hard cap = 3 fills total, no matter what.** Every closed trade counts toward the 3 — win, loss, or breakeven, it doesn't matter. Once the session hits 3 fills, ALL windows lock immediately, even if a window (e.g. IB) still shows spare probes. Next window otherwise unlocks when the prior window's clock ends OR its 2 probes are exhausted, but the session cap always overrides. Working limits do NOT count until filled.
-- **PROGRESSIVE RISK (same for AI / structure / manual)**: fill #1 = **2%**, fill #2 = **1%**, fill #3 (last) = **0.5%**. Outcome of prior fills does not matter — the step always applies. Say the active risk % when discussing size.
+- **PROGRESSIVE RISK (Tradeify Growth $50k — same for AI / structure / manual)**: fill #1 = **$400**, fill #2 = **$250**, fill #3 = **$150** (auto-shrink to leftover DLL / floor; min $50). Outcome of prior fills does not matter. Say the next stop $ when discussing size. Never use OANDA 2% cash risk.
 - **DOW / NASDAQ ranges**: Morning (OR30) → IB → Lunch-range.
   * Morning OR30 (±10 after 10:00 lock → 10:15 Montreal): up to **2 fills** (session risk ladder). Chart: Morning playbook (OR30). Forming 09:30–10:00 = watch only.
   * IB (10:30–13:30 Montreal — when first-hour IB locks until lunch-range opens): up to **2 fills** after morning clock ends (or morning probes exhausted). Chart: IB playbook.
@@ -42,7 +42,7 @@ ATTEMPT LADDER (2 / 2 / 2 per window — THREE RANGES PER DESK; CLOCKS YOU SPEAK
 - **Cash-close auto-liquidation**: Slot-3 fills and any leftover opens are force-closed at cash close.
 - **Active Management Phase** (Post-fill until exit): Monitoring SL/TP targets & AI Reversal exits. Single active position — max 1 at a time.
 - **Risk Discipline Rules**: Working limits do not count until filled. No PM watch — when entry paths are done, manage-only until cash close.
-- **Position Geometry**: **Progressive risk 2% → 1% → 0.5%** by session fill number (AI / structure / manual). Mandatory Stop Loss & Take Profit on every trade.
+- **Position Geometry**: Tradeify **$400 → $250 → $150** by fill #. Every ticket has a protective SL and a TP. **SL** sits beyond the active range edge (or zone floor). **TP = 1.5R of that stop (1:1.5)** — same on live and sim. Trader can drag TP after; dragging SL re-locks TP to 1.5R. ATR is advise-only (pad/trail talk) — it does **not** set the ticket SL/TP.
 - **RANGE VOLATILITY (ATR — advise only)**: When a range locks, desk measures **ATR(14) on 5m** + **range height (H−L)** and **height/ATR**.
   * Telegram/Leo get one lock note with: height · ATR · ratio · suggested **stop pad ~0.35×ATR (floor 10 pts)** · **trail ~0.25×ATR** (or **0.5×ATR** if height/ATR ≥ 2).
   * ATR does **not** replace ±10 H/50%/L entry gates and does **not** auto-move SL/TP — you adjust trail/stops using the suggestion.
@@ -124,11 +124,8 @@ HARD RULES
 OUTPUT
 - Plain spoken English sentences. No markdown, no bullet lists, no asterisks, no hashtags, no JSON.`
 
-export function liveVoiceSystemPromptFor(ctx: LiveVoiceDeskContext): string {
-  if (ctx.tradeify?.active) {
-    return `${LIVE_VOICE_SYSTEM_PROMPT}\n${LIVE_VOICE_TRADEIFY_ADDENDUM}`
-  }
-  return LIVE_VOICE_SYSTEM_PROMPT
+export function liveVoiceSystemPromptFor(_ctx: LiveVoiceDeskContext): string {
+  return `${LIVE_VOICE_SYSTEM_PROMPT}\n${LIVE_VOICE_TRADEIFY_ADDENDUM}`
 }
 
 export function formatEntrySourceLabel(
@@ -270,8 +267,8 @@ export function formatLiveVoiceContextForLlm(ctx: LiveVoiceDeskContext): string 
       : ''
   const tradeifyBlock = formatTradeifyLeoBlock(ctx.tradeify)
   const riskLine = ctx.tradeify?.active
-    ? `Risk: Tradeify $${ctx.tradeify.riskDollars} this fill (step $${ctx.tradeify.stepDollars}) · leftover DLL $${ctx.tradeify.leftoverDll} · floor room $${ctx.tradeify.floorRoom} · flatten ${ctx.tradeify.flattenMontreal} · ${ctx.risk.entryRule}`
-    : `Risk: every probe ${ctx.risk.deskRiskPercent}% (AI/structure/manual) · entry must be within ±10 of active range high / 50% mid / low · ${ctx.risk.entryRule}`
+    ? `Risk: Tradeify $${ctx.tradeify.riskDollars} this fill (step $${ctx.tradeify.stepDollars}) · leftover DLL $${ctx.tradeify.leftoverDll} · floor room $${ctx.tradeify.floorRoom} · flatten ${ctx.tradeify.flattenMontreal} · SL beyond range · TP 1.5R (1:1.5) · ${ctx.risk.entryRule}`
+    : `Risk: Tradeify $400 → $250 → $150 · SL beyond active range · TP 1.5R of that stop (1:1.5) · entry within ±10 of active range high / 50% mid / low · ${ctx.risk.entryRule}`
 
   return `DESK CONTEXT (ground truth — do not invent beyond this):
 Active Instrument: ${ctx.voice.instrument} (${ctx.voice.market} - LOCKED DESK FOR TODAY'S SESSION. We are ALREADY clocked in to ${ctx.voice.instrument}. Do NOT discuss choosing between DOW vs NASDAQ or waiting for instrument choice—${ctx.voice.instrument} is active!)
