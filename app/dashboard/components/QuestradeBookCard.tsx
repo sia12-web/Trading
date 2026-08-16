@@ -172,7 +172,7 @@ export function QuestradeBookCard() {
                   border: '1px solid #334155',
                   fontSize: 12,
                 }}
-                formatter={(v: number) => [money(v), 'Equity']}
+                formatter={(value) => [money(Number(value) || 0), 'Equity']}
               />
               <Line type="monotone" dataKey="equity" stroke="#34d399" dot={false} strokeWidth={2} />
             </LineChart>
