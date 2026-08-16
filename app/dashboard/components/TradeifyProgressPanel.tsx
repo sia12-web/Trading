@@ -9,6 +9,7 @@ import Link from 'next/link'
 import {
   DESK_RISK_PROFILE_EVENT,
   getDeskRiskProfile,
+  hydrateDeskRiskProfileFromServer,
   isTradeifyGrowth50k,
   setDeskRiskProfile,
   type DeskRiskProfile,
@@ -78,11 +79,15 @@ export function TradeifyProgressPanel({ compact = false }: { compact?: boolean }
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
+    let cancelled = false
     const sync = () => setProfile(getDeskRiskProfile())
-    sync()
+    void hydrateDeskRiskProfileFromServer().then((next) => {
+      if (!cancelled) setProfile(next)
+    })
     window.addEventListener(DESK_RISK_PROFILE_EVENT, sync)
     window.addEventListener('storage', sync)
     return () => {
+      cancelled = true
       window.removeEventListener(DESK_RISK_PROFILE_EVENT, sync)
       window.removeEventListener('storage', sync)
     }

@@ -51,6 +51,35 @@ export function getDeskRiskProfile(): DeskRiskProfile {
   }
 }
 
+function applyLocalDeskRiskProfile(profile: DeskRiskProfile): void {
+  try {
+    localStorage.setItem(DESK_RISK_PROFILE_STORAGE_KEY, profile)
+    writeRiskProfileCookie(profile)
+    window.dispatchEvent(
+      new CustomEvent(DESK_RISK_PROFILE_EVENT, { detail: { profile } })
+    )
+  } catch {
+    /* private mode */
+  }
+}
+
+/** Pull desk_settings so a stale OANDA cookie cannot hide Tradeify after a reset. */
+export async function hydrateDeskRiskProfileFromServer(): Promise<DeskRiskProfile> {
+  if (typeof window === 'undefined') return 'oanda_cash'
+  try {
+    const res = await fetch('/api/trading/risk-profile', { cache: 'no-store' })
+    const json = (await res.json().catch(() => null)) as { profile?: string } | null
+    if (res.ok && json?.profile) {
+      const profile = parseDeskRiskProfile(json.profile)
+      applyLocalDeskRiskProfile(profile)
+      return profile
+    }
+  } catch {
+    /* offline */
+  }
+  return getDeskRiskProfile()
+}
+
 function writeRiskProfileCookie(profile: DeskRiskProfile): void {
   try {
     document.cookie = `${DESK_RISK_PROFILE_COOKIE}=${encodeURIComponent(profile)}; Path=/; Max-Age=31536000; SameSite=Lax`
@@ -71,14 +100,6 @@ export function syncDeskRiskProfileToServer(profile: DeskRiskProfile = getDeskRi
 
 export function setDeskRiskProfile(profile: DeskRiskProfile): void {
   if (typeof window === 'undefined') return
-  try {
-    localStorage.setItem(DESK_RISK_PROFILE_STORAGE_KEY, profile)
-    writeRiskProfileCookie(profile)
-    window.dispatchEvent(
-      new CustomEvent(DESK_RISK_PROFILE_EVENT, { detail: { profile } })
-    )
-  } catch {
-    /* private mode */
-  }
+  applyLocalDeskRiskProfile(profile)
   syncDeskRiskProfileToServer(profile)
 }

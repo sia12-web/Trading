@@ -258,4 +258,15 @@ assert(
   '2-stop decision → day_locked status'
 )
 
+const emptyBook = summarizeTradeifyFills([], nasdaqTue)
+assert(emptyBook.fillsUsed === 0, 'reset journal → 0 fills')
+assert(emptyBook.dailyPnl === 0, 'reset journal → $0 pnl')
+assert(emptyBook.stopOutsToday === 0, 'reset journal → 0 stops')
+const emptyDash = buildTradeifyDashboardPayload(emptyBook, nasdaqTue)
+assert(emptyDash.allowed, 'empty Tradeify book can place')
+assert(emptyDash.stepDollars === 400, 'empty book first step $400')
+assert(emptyDash.riskDollars === 400, 'empty book risk $400 not 2%')
+assert(emptyDash.dllUsed === 0, 'empty book unused DLL')
+assert(emptyDash.status === 'can_trade', 'empty book can_trade')
+
 console.log('tradeify_growth_50k.test.ts: all passed')

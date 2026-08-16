@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { parseDeskRiskProfile } from '@/lib/trading/tradeifyProfile'
 import {
+  loadPersistedRiskProfile,
   persistServerRiskProfile,
   resolveDeskRiskProfileForUser,
   riskProfileCookieHeader,
@@ -21,11 +22,14 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const supabase = await createClient()
-  const profile = await resolveDeskRiskProfileForUser({
-    supabase,
-    userId: user.id,
-    cookieHeader: request.headers.get('cookie'),
-  })
+  const persisted = await loadPersistedRiskProfile(supabase, user.id)
+  const profile =
+    persisted ??
+    (await resolveDeskRiskProfileForUser({
+      supabase,
+      userId: user.id,
+      cookieHeader: request.headers.get('cookie'),
+    }))
   return NextResponse.json({ ok: true, profile })
 }
 

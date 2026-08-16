@@ -58,23 +58,23 @@ export async function loadPersistedRiskProfile(
   supabase: SupabaseClient | null | undefined,
   userId: string
 ): Promise<DeskRiskProfile | null> {
-  const mem = readRememberedRiskProfile(userId)
-  if (mem) return mem
-  if (!supabase || !userId) return envRiskProfile()
-  try {
-    const { data, error } = await supabase
-      .from('desk_settings')
-      .select('risk_profile')
-      .eq('user_id', userId)
-      .maybeSingle()
-    if (error || !data) return envRiskProfile()
-    const profile = parseDeskRiskProfile((data as { risk_profile?: string }).risk_profile)
-    rememberServerRiskProfile(userId, profile)
-    return profile
-  } catch (err) {
-    logger.warn('tradeify.profile_load_failed', { err })
-    return envRiskProfile()
+  if (supabase && userId) {
+    try {
+      const { data, error } = await supabase
+        .from('desk_settings')
+        .select('risk_profile')
+        .eq('user_id', userId)
+        .maybeSingle()
+      if (!error && data) {
+        const profile = parseDeskRiskProfile((data as { risk_profile?: string }).risk_profile)
+        rememberServerRiskProfile(userId, profile)
+        return profile
+      }
+    } catch (err) {
+      logger.warn('tradeify.profile_load_failed', { err })
+    }
   }
+  return readRememberedRiskProfile(userId) ?? envRiskProfile()
 }
 
 export async function persistServerRiskProfile(

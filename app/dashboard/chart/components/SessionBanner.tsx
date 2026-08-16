@@ -21,7 +21,7 @@ import type { DeskCalendarEvent } from '@/lib/trading/deskNews'
 import { nikkeiCashLunchMontrealLabel } from '@/lib/trading/sessionGate'
 import {
   getDeskRiskProfile,
-  syncDeskRiskProfileToServer,
+  hydrateDeskRiskProfileFromServer,
   isTradeifyGrowth50k,
   setDeskRiskProfile,
   DESK_RISK_PROFILE_EVENT,
@@ -135,12 +135,15 @@ export function SessionBanner({
   const [riskProfile, setRiskProfile] = useState<DeskRiskProfile>('oanda_cash')
 
   useEffect(() => {
+    let cancelled = false
     const sync = () => setRiskProfile(getDeskRiskProfile())
-    sync()
-    syncDeskRiskProfileToServer(getDeskRiskProfile())
+    void hydrateDeskRiskProfileFromServer().then((profile) => {
+      if (!cancelled) setRiskProfile(profile)
+    })
     window.addEventListener(DESK_RISK_PROFILE_EVENT, sync)
     window.addEventListener('storage', sync)
     return () => {
+      cancelled = true
       window.removeEventListener(DESK_RISK_PROFILE_EVENT, sync)
       window.removeEventListener('storage', sync)
     }

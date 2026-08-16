@@ -77,7 +77,13 @@ import { infoToast, warningToast, successToast } from '@/lib/utils/toastUtils'
 import { LiveDeskBriefPanel } from './components/LiveDeskBriefPanel'
 import type { LiveDeskBrief } from '@/lib/trading/liveDeskBrief'
 import type { DeskInstrument } from '@/lib/trading/sessionGate'
-import { getDeskRiskProfile, isTradeifyGrowth50k } from '@/lib/trading/tradeifyProfile'
+import {
+  DESK_RISK_PROFILE_EVENT,
+  getDeskRiskProfile,
+  hydrateDeskRiskProfileFromServer,
+  isTradeifyGrowth50k,
+} from '@/lib/trading/tradeifyProfile'
+import { TradovateMirrorCard } from './components/TradovateMirrorCard'
 import {
   tradeifyFlattenOverridesKeepOpen,
   tradeifyMustFlatten,
@@ -231,6 +237,9 @@ export default function ChartPage() {
   const [positionOverlay, setPositionOverlay] = useState<PositionOverlay | null>(null)
   const [managePos, setManagePos] = useState<ManagePosition | null>(null)
   const [pending, setPending] = useState<PendingLimitOrder | null>(null)
+  const [tradeifyAccountName, setTradeifyAccountName] = useState<string | null>(null)
+  const [riskProfile, setRiskProfile] = useState(getDeskRiskProfile)
+  const lastTradeifyRiskRef = useRef(0)
   const [gate, setGate] = useState<SessionGateState | null>(null)
   const [orderLevel, setOrderLevel] = useState<number | null>(null)
   const [orderLevelType, setOrderLevelType] = useState<string | undefined>()
@@ -306,6 +315,45 @@ export default function ChartPage() {
   useEffect(() => {
     pendingRef.current = pending
   }, [pending])
+  useEffect(() => {
+    let cancelled = false
+    const sync = () => setRiskProfile(getDeskRiskProfile())
+    void hydrateDeskRiskProfileFromServer().then((profile) => {
+      if (!cancelled) setRiskProfile(profile)
+    })
+    window.addEventListener(DESK_RISK_PROFILE_EVENT, sync)
+    return () => {
+      cancelled = true
+      window.removeEventListener(DESK_RISK_PROFILE_EVENT, sync)
+    }
+  }, [])
+  useEffect(() => {
+    if (pending?.riskAmount && pending.riskAmount > 0) {
+      lastTradeifyRiskRef.current = pending.riskAmount
+    } else if (managePos?.riskAmount && managePos.riskAmount > 0) {
+      lastTradeifyRiskRef.current = managePos.riskAmount
+    }
+  }, [pending?.riskAmount, managePos?.riskAmount])
+  useEffect(() => {
+    if (!isTradeifyGrowth50k(riskProfile)) {
+      setTradeifyAccountName(null)
+      return
+    }
+    let cancelled = false
+    void fetch('/api/trading/tradeify-snapshot', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (cancelled) return
+        const name = typeof json?.accountName === 'string' ? json.accountName.trim() : ''
+        setTradeifyAccountName(name || null)
+      })
+      .catch(() => {
+        if (!cancelled) setTradeifyAccountName(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [riskProfile])
   useEffect(() => {
     livePriceRef.current = livePrice
   }, [livePrice])
@@ -2014,6 +2062,39 @@ export default function ChartPage() {
             )}
           </div>
         ) : null}
+
+        {isTradeifyGrowth50k(riskProfile) && pending && !managePos && (
+          <TradovateMirrorCard
+            instrument={pending.instrument}
+            direction={pending.direction}
+            entry={pending.level}
+            stop={pending.stopLoss}
+            target={pending.profitTarget}
+            riskDollars={pending.riskAmount}
+            bookId={pending.workingId}
+            accountName={tradeifyAccountName}
+            phase="working"
+          />
+        )}
+        {isTradeifyGrowth50k(riskProfile) && managePos && (
+          <TradovateMirrorCard
+            instrument={(managePos.instrument || instrument) as 'DOW' | 'NASDAQ' | 'NIKKEI'}
+            direction={
+              String(managePos.direction).toUpperCase() === 'SHORT' ? 'SHORT' : 'LONG'
+            }
+            entry={managePos.entryPrice}
+            stop={managePos.stopLoss}
+            target={managePos.profitTarget}
+            riskDollars={
+              (managePos.riskAmount ?? 0) > 0
+                ? managePos.riskAmount
+                : lastTradeifyRiskRef.current
+            }
+            bookId={managePos.id}
+            accountName={tradeifyAccountName}
+            phase="filled"
+          />
+        )}
 
         {fillError && (
           <p className="absolute bottom-14 left-4 z-30 px-2.5 py-1 text-xs text-red-300 bg-red-950/90 rounded border border-red-700/60 shadow-lg backdrop-blur-md">
