@@ -10,7 +10,8 @@ export default function TradeifyDashboardPage() {
         <div>
           <h1 className="text-xl font-bold text-white">Tradeify $50k</h1>
           <p className="mt-1 text-sm text-gray-400">
-            Growth eval progress — shared daily budget across Nikkei, NASDAQ, and DOW.
+            Growth eval — futures only: E-mini Dow (YM/MYM), E-mini Nasdaq (NQ/MNQ),
+            Nikkei USD (NKD). Not US stock options. Shared daily budget across all three.
           </p>
         </div>
         <Link href="/dashboard" className="text-xs text-gray-500 hover:text-white">

@@ -13,6 +13,7 @@ export type TradovateContract = {
   /** Null when Tradeify does not list a micro (Nikkei = NKD only). */
   microSymbol: string | null
   name: string
+  microName: string | null
   pointValue: number
   microPointValue: number | null
   tick: number
@@ -26,6 +27,7 @@ export const TRADOVATE_CONTRACTS: Record<DeskIndex, TradovateContract> = {
     symbol: 'YM',
     microSymbol: 'MYM',
     name: 'E-mini Dow',
+    microName: 'Micro E-mini Dow',
     pointValue: 5,
     microPointValue: 0.5,
     tick: 1,
@@ -35,7 +37,8 @@ export const TRADOVATE_CONTRACTS: Record<DeskIndex, TradovateContract> = {
   NASDAQ: {
     symbol: 'NQ',
     microSymbol: 'MNQ',
-    name: 'E-mini Nasdaq',
+    name: 'E-mini Nasdaq-100',
+    microName: 'Micro E-mini Nasdaq-100',
     pointValue: 20,
     microPointValue: 2,
     tick: 0.25,
@@ -45,13 +48,35 @@ export const TRADOVATE_CONTRACTS: Record<DeskIndex, TradovateContract> = {
   NIKKEI: {
     symbol: 'NKD',
     microSymbol: null,
-    name: 'Nikkei USD',
+    name: 'Nikkei 225 USD',
+    microName: null,
     pointValue: 5,
     microPointValue: null,
     tick: 5,
     maxMinis: 4,
     maxMicros: 0,
   },
+}
+
+/** Short chart-tab label: E-mini Dow, E-mini Nasdaq, Nikkei USD. */
+export function deskFuturesTitle(instrument: DeskIndex): string {
+  return TRADOVATE_CONTRACTS[instrument].name
+}
+
+/** YM / MYM · NQ / MNQ · NKD */
+export function deskFuturesSymbols(instrument: DeskIndex): string {
+  const c = TRADOVATE_CONTRACTS[instrument]
+  return c.microSymbol ? `${c.symbol} / ${c.microSymbol}` : c.symbol
+}
+
+export function deskFuturesTabLabel(instrument: DeskIndex): string {
+  return `${deskFuturesTitle(instrument)} (${deskFuturesSymbols(instrument)})`
+}
+
+export function contractDisplayName(symbol: string, instrument: DeskIndex): string {
+  const c = TRADOVATE_CONTRACTS[instrument]
+  if (c.microSymbol && symbol === c.microSymbol) return c.microName || c.name
+  return c.name
 }
 
 export type TradovateMirrorTicket = {
@@ -71,6 +96,7 @@ export type TradovateMirrorTicket = {
   snapped: boolean
   overCap: boolean
   sizeLabel: string
+  contractLabel: string
   copyText: string
 }
 
@@ -182,10 +208,15 @@ export function buildTradovateMirrorTicket(args: {
   const snapped =
     entry !== pulseEntry || stop !== pulseStop || target !== pulseTarget
   const acct = args.accountName?.trim() || 'Tradeify Growth'
-  const sizeLabel = picked.qty > 0 ? `${picked.qty} ${picked.symbol}` : `set qty to risk $${Math.round(pulseRisk) || '—'}`
+  const contractLabel = contractDisplayName(picked.symbol, args.instrument)
+  const sizeLabel =
+    picked.qty > 0
+      ? `${picked.qty} ${picked.symbol} · ${contractLabel}`
+      : `set qty to risk $${Math.round(pulseRisk) || '—'}`
 
   const copyText = [
     `ACCOUNT  ${acct}`,
+    `CONTRACT ${contractLabel}`,
     `SYMBOL   ${picked.symbol}`,
     `SIDE     ${side}`,
     `TYPE     LIMIT`,
@@ -225,6 +256,7 @@ export function buildTradovateMirrorTicket(args: {
     snapped,
     overCap: picked.overCap,
     sizeLabel,
+    contractLabel,
     copyText,
   }
 }

@@ -16,6 +16,7 @@ import {
 import type { QuestradeBookPayload } from '@/lib/trading/questradeBook'
 import type { QuestradeBookRow, QuestradeProtectiveLevel } from '@/lib/trading/questradeOrders'
 import type { QuestradeTradeifyTransfer } from '@/lib/trading/questradeTransfer'
+import { deskFuturesTitle } from '@/lib/trading/tradovateMirror'
 import { CopyChip, CopyChipRow } from '@/app/dashboard/components/CopyChip'
 
 function money(n: number | null | undefined, digits = 0): string {
@@ -124,7 +125,7 @@ function TransferCard({ item }: { item: QuestradeTradeifyTransfer }) {
     <div className="rounded-lg border border-amber-500/25 bg-amber-500/[0.06] px-3 py-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="text-sm font-semibold text-amber-100">
-          {item.symbol} → {item.instrument} {item.side}
+          {item.symbol} → {deskFuturesTitle(item.instrument)} {item.side}
         </div>
         <span
           className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${

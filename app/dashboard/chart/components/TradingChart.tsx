@@ -423,9 +423,9 @@ interface TooltipData {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const INSTRUMENT_META: Record<Instrument, { label: string; symbol: string; color: string; basePrice: number }> = {
-  DOW:    { label: 'Dow Jones', symbol: '^DJI',  color: '#3b7eff', basePrice: 39500 },
-  NASDAQ: { label: 'NASDAQ 100', symbol: '^NDX', color: '#3b7eff', basePrice: 28500 },
-  NIKKEI: { label: 'Nikkei 225', symbol: '^N225', color: '#f472b6', basePrice: 38000 },
+  DOW:    { label: 'E-mini Dow', symbol: 'YM',  color: '#3b7eff', basePrice: 39500 },
+  NASDAQ: { label: 'E-mini Nasdaq', symbol: 'NQ', color: '#3b7eff', basePrice: 28500 },
+  NIKKEI: { label: 'Nikkei USD', symbol: 'NKD', color: '#f472b6', basePrice: 38000 },
 }
 
 const LEVEL_COLORS: Record<string, string> = {

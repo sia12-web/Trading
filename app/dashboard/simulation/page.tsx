@@ -8,6 +8,7 @@ import { ReplayDatePicker } from './components/ReplayDatePicker'
 import { formatDateDisplay } from '@/lib/utils/dateUtils'
 import { deskLocalHmsAsTraderDisplay, TRADER_DISPLAY_LABEL } from '@/lib/chart/traderDisplayTz'
 import type { CreateReplaySessionRequest, PlaybackSpeed } from '@/types/trading'
+import { deskFuturesTitle } from '@/lib/trading/tradovateMirror'
 
 const INSTRUMENTS: Array<'DOW' | 'NASDAQ' | 'NIKKEI'> = ['DOW', 'NASDAQ', 'NIKKEI']
 const PLAYBACK_SPEEDS: PlaybackSpeed[] = [0.25, 0.5, 1, 2, 4, 16]
@@ -179,7 +180,7 @@ export default function SimulationPage() {
                       : 'bg-surface-700 text-gray-400 hover:text-white'
                   }`}
                 >
-                  {inst}
+                  {deskFuturesTitle(inst)}
                 </button>
               ))}
             </div>
@@ -212,7 +213,7 @@ export default function SimulationPage() {
               Session flow
             </p>
             <p>1. Opens at cash open with levels on the chart</p>
-            <p>2. Double-click the chart or pick a level → size + place limit</p>
+            <p>2. Double-click the chart → size + place a working limit</p>
             <p>3. Play → wait for fill</p>
             <p>4. Manage SL / TP / close</p>
           </div>

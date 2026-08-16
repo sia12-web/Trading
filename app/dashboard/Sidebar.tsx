@@ -55,7 +55,7 @@ const LIVE_ITEMS: NavItem[] = [
   {
     href: '/dashboard/news',
     label: 'Desk News',
-    hint: 'DOW · NASDAQ · NIKKEI',
+    hint: 'YM · NQ · NKD',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-4 h-4">
         <path

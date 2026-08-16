@@ -102,7 +102,8 @@ export function TradovateMirrorCard(props: Props) {
           </span>
         )}
       </div>
-      <p className="mt-2 font-mono text-[12px] text-white">
+      <p className="mt-2 text-[11px] text-amber-100/90">{ticket.contractLabel}</p>
+      <p className="mt-0.5 font-mono text-[12px] text-white">
         {ticket.side} {ticket.qty > 0 ? ticket.qty : '—'} {ticket.symbol} {ticket.orderType} ·{' '}
         {ticket.tif}
       </p>

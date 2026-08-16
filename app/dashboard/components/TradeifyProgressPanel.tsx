@@ -249,7 +249,9 @@ export function TradeifyProgressPanel({ compact = false }: { compact?: boolean }
                 const row = snap.byInstrument![inst]
                 return (
                   <div key={inst} className="rounded-lg border border-white/10 px-2 py-1.5">
-                    <p className="text-[10px] font-semibold text-gray-400">{inst}</p>
+                    <p className="text-[10px] font-semibold text-gray-400">
+                      {inst === 'DOW' ? 'E-mini Dow' : inst === 'NASDAQ' ? 'E-mini Nasdaq' : 'Nikkei USD'}
+                    </p>
                     <p className="text-white">
                       {row.fills} fill{row.fills === 1 ? '' : 's'} · {money(row.pnl)}
                     </p>
