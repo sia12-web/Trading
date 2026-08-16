@@ -23,9 +23,6 @@ import {
   getLastNTokyoTradingDays,
 } from '@/lib/utils/dateUtils'
 import {
-  normalizeEntrySource,
-  previewPositionSizing,
-  previewPositionSizingFromRiskAmount,
   riskPercentForEntrySource,
   type DeskEntrySource,
 } from '@/lib/trading/positionSizing'
@@ -36,18 +33,12 @@ import {
   DESK_RISK_PROFILE_EVENT,
 } from '@/lib/trading/tradeifyProfile'
 import {
-  TRADEIFY_STARTING_BALANCE,
   resolveTradeifyPlace,
   tradeifyFlattenOverridesKeepOpen,
 } from '@/lib/trading/tradeifyGrowth50k'
 import {
-  previewLevelOrderPrices,
-  resolveChartLimitPick,
-} from '@/lib/trading/chartLevelPick'
-import {
   snapDeskPrice,
   snapStopToTick,
-  snapTargetToTick,
 } from '@/lib/trading/instrumentTicks'
 import {
   MAX_DAY_ATTEMPTS,
@@ -76,7 +67,6 @@ import {
   RANGE_EDGE_BAND_POINTS,
   RANGE_EDGE_OFF_BAND_MESSAGE,
 } from '@/lib/trading/rangeEdgeEntryGate'
-import { assertProtectiveStop } from '@/lib/trading/stopLossGuard'
 import { LevelOrderTicket } from '@/app/dashboard/chart/components/LevelOrderTicket'
 import { MorningLunchFlatConfirm } from '@/app/dashboard/chart/components/MorningLunchFlatConfirm'
 import {
@@ -112,7 +102,6 @@ import {
 import { DESK_CHART_THEME } from '@/lib/chart/deskChartTheme'
 import {
   computeSimOvernightBias,
-  simSuggestedDirection,
 } from '@/lib/trading/simOvernightBias'
 import {
   convictionStars,
@@ -122,7 +111,6 @@ import {
   ibLineSeriesData,
   type DeskPlaybook,
   type InitialBalanceRange,
-  formatZone,
 } from '@/lib/trading/deskLevels'
 import {
   OR30_COLORS,
@@ -153,7 +141,6 @@ import {
 import {
   activeRangeForPlaybook,
   entryEligibleOverlayRanges,
-  strategyEntryRisk,
   studyEntrySnapRanges,
   type StrategyRangeEdges,
   type StrategyRiskMagnets,
@@ -342,6 +329,21 @@ function barTouches(bar: Candle, level: number): boolean {
   return bar.low <= level && bar.high >= level
 }
 
+/** Live-style: only the current sim bar can fill a new limit — not earlier bars. */
+function currentBarIfTouches(
+  candles: Candle[],
+  openUnix: number,
+  now: number,
+  level: number
+): Candle | undefined {
+  let last: Candle | undefined
+  for (const c of candles) {
+    if (c.time < openUnix || c.time > now) continue
+    last = c
+  }
+  return last && barTouches(last, level) ? last : undefined
+}
+
 /** Last index with candle.time <= t (candles must be sorted ascending). */
 function lastIndexAtOrBefore(candles: Candle[], t: number): number {
   let lo = 0
@@ -393,8 +395,6 @@ function SimulationDeskInner() {
   const [allCandles, setAllCandles] = useState<Candle[]>([])
   const [levels, setLevels] = useState<AiLevel[]>([])
   const levelsRef = useRef<AiLevel[]>([])
-  const [levelsSource, setLevelsSource] = useState<'ai' | 'structure'>('structure')
-  const [levelsAiLoading, setLevelsAiLoading] = useState(false)
   const [playbook, setPlaybook] = useState<DeskPlaybook | null>(null)
   const [simNow, setSimNow] = useState(0)
   const [playing, setPlaying] = useState(false)
@@ -417,7 +417,6 @@ function SimulationDeskInner() {
   const [riskProfile, setRiskProfile] = useState<'oanda_cash' | 'tradeify_growth_50k'>(
     'oanda_cash'
   )
-  const [ticketLevel, setTicketLevel] = useState<AiLevel | null>(null)
   const [manualTicketOpen, setManualTicketOpen] = useState(false)
   /** Chart-click price for manual ticket; null = use lastPrice (toolbar Place limit). */
   const [manualClickPrice, setManualClickPrice] = useState<number | null>(null)
@@ -430,7 +429,6 @@ function SimulationDeskInner() {
   /** Floating playbook panel — title follows active range window. */
   const [playbookOpen, setPlaybookOpen] = useState(true)
   const levelsOpenRef = useRef(true)
-  const [reasoningOpen, setReasoningOpen] = useState<number | null>(null)
   const [chartReady, setChartReady] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
 
@@ -471,9 +469,6 @@ function SimulationDeskInner() {
       if (key === 'f') {
         e.preventDefault()
         toggleFullscreen()
-      } else if (key === 'l') {
-        e.preventDefault()
-        setLevelsOpen((prev) => !prev)
       } else if (key === 'b') {
         e.preventDefault()
         setShowIbBreakouts((prev) => !prev)
@@ -593,10 +588,6 @@ function SimulationDeskInner() {
 
   const levelLinesRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]>([])
   const posLinesRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]>([])
-  const hoverPreviewLinesRef = useRef<
-    ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]
-  >([])
-  const hoverPreviewKeyRef = useRef<string | null>(null)
   /** Invisible series that hosts level/SL/TP price lines — seeded once, never updated again */
   const priceLineHostRef = useRef<ISeriesApi<'Line'> | null>(null)
   const priceLineHostSeededRef = useRef(false)
@@ -783,14 +774,11 @@ function SimulationDeskInner() {
 
     let cancelled = false
     const candleController = new AbortController()
-    const aiController = new AbortController()
     const candleTimeoutId = window.setTimeout(() => candleController.abort(), 20_000)
-    const aiTimeoutId = window.setTimeout(() => aiController.abort(), 55_000)
 
     ;(async () => {
       setLoading(true)
       setError(null)
-      setLevelsAiLoading(false)
       try {
         const startOpen = toUnix(replayDate, openH!, openM || 0)
         setSimNow(startOpen)
@@ -839,75 +827,15 @@ function SimulationDeskInner() {
               ? 'bearish'
               : 'none'
         const structure = resolveDeskLevels([], mapped, startOpen, sess.tz, bias)
-        setLevels(structure.levels as AiLevel[])
-        setLevelsSource(structure.source)
+        setLevels([])
         setPlaybook(structure.playbook)
 
         const openLabel =
           `Cash open ${deskLocalHmsAsTraderDisplay(sess.marketOpen, sess.tz, new Date(`${replayDate}T12:00:00Z`))} ${TRADER_DISPLAY_LABEL}`
         setMsg(
-          `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · loading AI levels (Haiku)…`
+          `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · double-click the chart to place a working limit, then Play`
         )
         setLoading(false)
-
-        // Cheap AI (llm_tier=sim / Haiku) — upgrades structure when ready
-        setLevelsAiLoading(true)
-        try {
-          const aiRes = await fetch('/api/trading/sim-levels', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            signal: aiController.signal,
-            body: JSON.stringify({
-              instrument,
-              date: replayDate,
-              candles_5m: mapped.map((c) => ({
-                time: c.time,
-                open: c.open,
-                high: c.high,
-                low: c.low,
-                close: c.close,
-                volume: c.volume,
-              })),
-            }),
-          })
-          const aiJson = await aiRes.json().catch(() => ({}))
-          if (cancelled) return
-
-          if (aiRes.ok && Array.isArray(aiJson.levels) && aiJson.levels.length > 0) {
-            const withAi = resolveDeskLevels(
-              aiJson.levels,
-              mapped,
-              startOpen,
-              sess.tz,
-              bias
-            )
-            setLevels(withAi.levels as AiLevel[])
-            setLevelsSource(withAi.source)
-            setPlaybook(withAi.playbook)
-            setMsg(
-              `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · AI levels (Haiku) — double-click the chart or pick a level, then Play`
-            )
-          } else {
-            setMsg(
-              `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · structure levels (AI unavailable) — double-click the chart or pick a level, then Play`
-            )
-          }
-        } catch (aiErr) {
-          if (cancelled) return
-          const aborted =
-            (aiErr instanceof Error && aiErr.name === 'AbortError') ||
-            (typeof aiErr === 'object' &&
-              aiErr !== null &&
-              'name' in aiErr &&
-              (aiErr as { name: string }).name === 'AbortError')
-          setMsg(
-            `${instrument} · ${formatDateDisplay(replayDate)} · clock at ${openLabel} · structure levels${
-              aborted ? ' (AI timed out)' : ' (AI failed)'
-            } — double-click the chart or pick a level, then Play`
-          )
-        } finally {
-          if (!cancelled) setLevelsAiLoading(false)
-        }
       } catch (e) {
         if (cancelled) return
         const aborted =
@@ -929,9 +857,7 @@ function SimulationDeskInner() {
     return () => {
       cancelled = true
       candleController.abort()
-      aiController.abort()
       window.clearTimeout(candleTimeoutId)
-      window.clearTimeout(aiTimeoutId)
     }
   }, [instrument, replayDate, openH, openM, toUnix, sess.tz])
 
@@ -1955,7 +1881,7 @@ function SimulationDeskInner() {
   }, [chartReady, showIbBreakouts, showLunchRange, showUsRange, showOr30])
 
   // Pending working limit + open position — on host series (survives candle setData).
-  // Independent of Hide levels — AI/structure lines toggle separately.
+  // Working limit / position lines stay on the host series.
   useEffect(() => {
     const host = priceLineHostRef.current
     if (!host || !chartReady) return
@@ -2423,202 +2349,6 @@ function SimulationDeskInner() {
     setMsg('Working limit cancelled')
   }, [])
 
-  const placePending = useCallback(
-    (level: AiLevel, direction: Direction) => {
-      if (placingOrderRef.current || pendingRef.current) return
-      if (position) {
-        setMsg('Already in a position — manage or close first')
-        return
-      }
-      const now = simNowRef.current
-      const liveGate = resolveSimMorningGate({
-        now: new Date(now * 1000),
-        instrument,
-        hasOpenPosition: !!positionRef.current,
-        morningAttempts: morningAttemptsRef.current,
-        ibAttempts: ibAttemptsRef.current,
-        lunchAttempts: lunchAttemptsRef.current,
-        stopHits: stopHitsRef.current,
-      })
-      if (!liveGate.canPlaceEntry) {
-        setMsg(liveGate.message || 'Entries locked for this window')
-        return
-      }
-      if (attemptsUsedRef.current >= MAX_DAY_ATTEMPTS) {
-        setMsg(
-          `Session attempt cap (${MAX_DAY_ATTEMPTS}/${MAX_DAY_ATTEMPTS}) — no more entries this replay.`
-        )
-        return
-      }
-
-      const windowEndUnix =
-        liveGate.entryWindow === 3
-          ? lateEndUnix
-          : liveGate.entryWindow === 2
-            ? midEndUnix
-            : entryCloseUnix
-
-      placingOrderRef.current = true
-      const entrySource = normalizeEntrySource(level.source, 'structure')
-      const rawLimit = snapDeskPrice(instrument, level.level)
-      const { strategyRange, snapRanges, strategyMagnets, ladder } =
-        getStrategyRiskBundle()
-      // Prefer bucket-open ranges so US Range playbook never bills Tokyo IB mid.
-      const hit = attributePlaybookBandEntry({
-        entry: rawLimit,
-        candidates: snapRanges,
-        preferLabel: strategyRange?.label ?? null,
-        liveOk: (range) =>
-          assertBucketEntryEligible({
-            instrument,
-            market: deskMarketFor(instrument),
-            timeSec: deskClockSeconds(instrument, new Date(now * 1000)),
-            ladder,
-            rangeLabel: range.label,
-          }).ok,
-      })
-      if (!hit) {
-        placingOrderRef.current = false
-        setMsg(RANGE_EDGE_OFF_BAND_MESSAGE)
-        return
-      }
-      // Lock to band center — never place mid-band interior (same as live).
-      const limit = snapDeskPrice(instrument, hit.center)
-      const attributedRange = hit.range
-
-      const edge = assertRangeEdgeEntry({ entry: limit, range: attributedRange })
-      if (!edge.ok) {
-        placingOrderRef.current = false
-        setMsg(edge.message)
-        return
-      }
-
-      if (attributedRange?.label) {
-        const bucketOk = assertBucketEntryEligible({
-          instrument,
-          market: deskMarketFor(instrument),
-          timeSec: deskClockSeconds(instrument, new Date(now * 1000)),
-          ladder,
-          rangeLabel: attributedRange.label,
-        })
-        if (!bucketOk.ok) {
-          placingOrderRef.current = false
-          setMsg(bucketOk.message)
-          return
-        }
-      }
-
-      const strat = strategyEntryRisk({
-        entry: limit,
-        direction,
-        activeRange: attributedRange,
-        magnets: strategyMagnets,
-      })
-      const stopGuard = assertProtectiveStop({
-        instrument,
-        entry: limit,
-        stop: strat.stop,
-        direction,
-        plannedStop: strat.stop,
-      })
-      if (!stopGuard.ok) {
-        placingOrderRef.current = false
-        setMsg(stopGuard.message)
-        return
-      }
-      const stop = stopGuard.stop
-      const tradeifyOn = isTradeifyGrowth50k(riskProfile)
-      const tf = tradeifyOn
-        ? resolveTradeifyPlace({
-            now: simNowRef.current > 0 ? new Date(simNowRef.current * 1000) : undefined,
-            fillsUsed: attemptsUsedRef.current,
-            stopOutsToday: stopHitsRef.current,
-            dailyPnl: realizedPnlRef.current,
-          })
-        : null
-      if (tf && !tf.allowed) {
-        placingOrderRef.current = false
-        setMsg(tf.refuseMessage)
-        return
-      }
-      const preview = tf
-        ? previewPositionSizingFromRiskAmount(
-            limit,
-            TRADEIFY_STARTING_BALANCE,
-            direction,
-            stop,
-            tf.riskDollars
-          )
-        : previewPositionSizing(
-            limit,
-            accountSize,
-            direction,
-            stop,
-            riskPercentForEntrySource(entrySource, attemptsUsedRef.current)
-          )
-      if (!preview) {
-        placingOrderRef.current = false
-        setMsg('Invalid sizing')
-        return
-      }
-      const target = snapTargetToTick(
-        instrument,
-        limit,
-        attributedRange ? strat.target : preview.profit_target_price,
-        direction
-      )
-      const order: PendingOrder = {
-        level: limit,
-        direction,
-        stopLoss: stop,
-        target,
-        size: preview.position_size,
-        risk: preview.risk_amount,
-        accountSize,
-        entryReason:
-          level.reasoning ||
-          `${level.rank === 'primary' ? 'PRIMARY' : 'WATCH'} ${
-            level.side || (direction === 'LONG' ? 'BUY' : 'SHORT')
-          } level`,
-        conviction: level.conviction,
-        entrySource,
-        windowEndUnix: windowEndUnix || cashCloseUnix,
-        strategyRangeLabel: attributedRange?.label ?? null,
-      }
-
-      // Immediate fill if any bar from open→now already touched
-      const touched = allCandlesRef.current.find(
-        (c) => c.time >= openUnix && c.time <= now && barTouches(c, order.level)
-      )
-      setTicketLevel(null)
-      if (touched) {
-        fillPending(order, touched.time)
-        placingOrderRef.current = false
-        return
-      }
-
-      pendingRef.current = order
-      setPending(order)
-      setMsg(
-        `Working ${direction} @ ${limit.toLocaleString()} — SL locked at place · press Play until fill`
-      )
-      placingOrderRef.current = false
-    },
-    [
-      position,
-      entryCloseUnix,
-      midEndUnix,
-      lateEndUnix,
-      cashCloseUnix,
-      accountSize,
-      openUnix,
-      fillPending,
-      instrument,
-      getStrategyRiskBundle,
-      riskProfile,
-    ]
-  )
-
   const closeAtMarket = () => {
     const price = lastPriceRef.current ?? lastPrice
     if (!position || price == null) return
@@ -2762,7 +2492,6 @@ function SimulationDeskInner() {
     setPlaying(false)
     setPending(null)
     setPosition(null)
-    setTicketLevel(null)
     setManualTicketOpen(false)
     setManualClickPrice(null)
     setTicketRangeOverride(null)
@@ -2770,8 +2499,8 @@ function SimulationDeskInner() {
     resetSessionProgress()
     setMsg(
       instrument === 'NIKKEI'
-        ? `Reset to ${deskLocalHmsAsTraderDisplay(sess.marketOpen, sess.tz)} ${TRADER_DISPLAY_LABEL} — double-click the chart or pick a level, then Play`
-        : `Reset to 9:30 AM ${TRADER_DISPLAY_LABEL} — double-click the chart or pick a level, then Play`
+        ? `Reset to ${deskLocalHmsAsTraderDisplay(sess.marketOpen, sess.tz)} ${TRADER_DISPLAY_LABEL} — double-click the chart to place a working limit, then Play`
+        : `Reset to 9:30 AM ${TRADER_DISPLAY_LABEL} — double-click the chart to place a working limit, then Play`
     )
   }
 
@@ -2784,7 +2513,6 @@ function SimulationDeskInner() {
     applyChartData(openUnix, { force: true, fit: true })
     setPending(null)
     setPosition(null)
-    setTicketLevel(null)
     setManualTicketOpen(false)
     setManualClickPrice(null)
     setTicketRangeOverride(null)
@@ -2792,8 +2520,8 @@ function SimulationDeskInner() {
     resetSessionProgress()
     setMsg(
       instrument === 'NIKKEI'
-        ? `Replay from ${deskLocalHmsAsTraderDisplay(sess.marketOpen, sess.tz)} ${TRADER_DISPLAY_LABEL} — double-click the chart or pick a level, or watch`
-        : `Replay from 9:30 AM ${TRADER_DISPLAY_LABEL} — double-click the chart or pick a level, or watch`
+        ? `Replay from ${deskLocalHmsAsTraderDisplay(sess.marketOpen, sess.tz)} ${TRADER_DISPLAY_LABEL} — double-click the chart to place a working limit, or watch`
+        : `Replay from 9:30 AM ${TRADER_DISPLAY_LABEL} — double-click the chart to place a working limit, or watch`
     )
     setPlaying(true)
   }
@@ -2821,43 +2549,11 @@ function SimulationDeskInner() {
       const raw = seriesRef.current.coordinateToPrice(y)
       if (raw == null || !Number.isFinite(Number(raw)) || Number(raw) <= 0) return
 
-      // Snap to AI/structure only when levels are visible — hidden → always manual
-      const pick = resolveChartLimitPick({
-        rawPrice: Number(raw),
-        levels: levelsRef.current.map((l) => ({
-          price: l.level,
-          type: l.type,
-          source: l.source,
-          reasoning: l.reasoning,
-          side: l.side ?? null,
-        })),
-        levelsVisible: levelsOpenRef.current,
-      })
-
-      if (pick.matched && pick.source !== 'manual') {
-        const matched = levelsRef.current.find(
-          (l) => Math.abs(l.level - pick.price) < 1e-6
-        )
-        if (matched) {
-          const snapped = snapSimEntryOrDeny(matched.level)
-          if ('deny' in snapped) {
-            setMsg(snapped.deny)
-            return
-          }
-          setManualTicketOpen(false)
-          setManualClickPrice(null)
-          setTicketRangeOverride(snapped.range)
-          setTicketLevel({ ...matched, level: snapped.price })
-          return
-        }
-      }
-
-      const snapped = snapSimEntryOrDeny(pick.price)
+      const snapped = snapSimEntryOrDeny(Number(raw))
       if ('deny' in snapped) {
         setMsg(snapped.deny)
         return
       }
-      setTicketLevel(null)
       setTicketRangeOverride(snapped.range)
       setManualClickPrice(snapped.price)
       setManualTicketOpen(true)
@@ -2878,140 +2574,6 @@ function SimulationDeskInner() {
     attemptsUsed,
     gate?.canPlaceEntry,
     snapSimEntryOrDeny,
-  ])
-
-  // Hover visible level → preview entry / SL / TP (same math as AI ticket)
-  useEffect(() => {
-    const container = containerRef.current
-    const host = priceLineHostRef.current
-    const clearHover = () => {
-      hoverPreviewLinesRef.current.forEach((line) => {
-        try {
-          host?.removePriceLine(line)
-        } catch {
-          /* ignore */
-        }
-      })
-      hoverPreviewLinesRef.current = []
-      hoverPreviewKeyRef.current = null
-    }
-
-    const canHover =
-      chartReady &&
-      !position &&
-      !pending &&
-      levelsOpen &&
-      simNow > 0 &&
-      gate?.canPlaceEntry === true
-
-    if (!container || !seriesRef.current || !host || !canHover) {
-      clearHover()
-      return
-    }
-
-    const fmt = (n: number) =>
-      n.toLocaleString('en-US', { maximumFractionDigits: 0 })
-
-    const onMove = (e: MouseEvent) => {
-      if (!seriesRef.current || !priceLineHostRef.current) return
-      const rect = container.getBoundingClientRect()
-      const y = e.clientY - rect.top
-      const raw = seriesRef.current.coordinateToPrice(y)
-      if (raw == null || !Number.isFinite(Number(raw)) || Number(raw) <= 0) {
-        clearHover()
-        return
-      }
-
-      const pick = resolveChartLimitPick({
-        rawPrice: Number(raw),
-        levels: levelsRef.current.map((l) => ({
-          price: l.level,
-          type: l.type,
-          source: l.source,
-          reasoning: l.reasoning,
-          side: l.side ?? null,
-        })),
-        levelsVisible: true,
-      })
-      if (pick.source === 'manual' || !pick.matched) {
-        clearHover()
-        return
-      }
-
-      const { strategyRange, strategyMagnets } = getStrategyRiskBundle()
-      const preview = previewLevelOrderPrices({
-        level: pick.matched,
-        instrument,
-        accountSize,
-        activeRange: strategyRange,
-        magnets: strategyMagnets,
-      })
-      if (!preview) {
-        clearHover()
-        return
-      }
-
-      const key = `${preview.direction}:${preview.entry}:${preview.stop}:${preview.target}`
-      if (hoverPreviewKeyRef.current === key) return
-      clearHover()
-      hoverPreviewKeyRef.current = key
-      const h = priceLineHostRef.current
-      if (!h) return
-
-      for (const s of [
-        {
-          price: preview.entry,
-          color: 'rgba(56, 189, 248, 0.85)',
-          title: `HOVER ${preview.direction} ${fmt(preview.entry)}`,
-          style: LineStyle.Dashed,
-        },
-        {
-          price: preview.stop,
-          color: 'rgba(239, 68, 68, 0.75)',
-          title: `SL ${fmt(preview.stop)}`,
-          style: LineStyle.Dotted,
-        },
-        {
-          price: preview.target,
-          color: 'rgba(34, 197, 94, 0.75)',
-          title: `TP ${fmt(preview.target)}`,
-          style: LineStyle.Dotted,
-        },
-      ] as const) {
-        try {
-          hoverPreviewLinesRef.current.push(
-            h.createPriceLine({
-              price: s.price,
-              color: s.color,
-              lineStyle: s.style,
-              lineWidth: 1,
-              axisLabelVisible: true,
-              title: s.title,
-            })
-          )
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-
-    container.addEventListener('mousemove', onMove)
-    container.addEventListener('mouseleave', clearHover)
-    return () => {
-      container.removeEventListener('mousemove', onMove)
-      container.removeEventListener('mouseleave', clearHover)
-      clearHover()
-    }
-  }, [
-    chartReady,
-    position,
-    pending,
-    levelsOpen,
-    simNow,
-    gate?.canPlaceEntry,
-    instrument,
-    accountSize,
-    getStrategyRiskBundle,
   ])
 
   // Hooks must run unconditionally — early returns below come AFTER all hooks.
@@ -3317,7 +2879,6 @@ function SimulationDeskInner() {
                   setMsg(snapped.deny)
                   return
                 }
-                setTicketLevel(null)
                 setTicketRangeOverride(snapped.range)
                 setManualClickPrice(snapped.price)
                 setManualTicketOpen(true)
@@ -3446,18 +3007,6 @@ function SimulationDeskInner() {
               OR 30 (R)
             </button>
           )}
-          <button
-            type="button"
-            title={
-              levelsOpen
-                ? 'Hide AI/structure levels (Press L)'
-                : 'Show AI/structure levels (Press L)'
-            }
-            onClick={() => setLevelsOpen((o) => !o)}
-            className="rounded border border-white/15 px-2 py-1 text-[10px] uppercase text-gray-300 hover:bg-white/10"
-          >
-            {levelsOpen ? 'Levels (L)' : 'Show levels (L)'}
-          </button>
           {!playbookOpen && (
             <button
               type="button"
@@ -3730,14 +3279,7 @@ function SimulationDeskInner() {
         <DraggableDeskWidget
           storageKey="desk-playbook-sim"
           defaultPos={{ x: 24, y: 72 }}
-          title={
-            <>
-              {playbookPanelTitle}
-              <span className="ml-1.5 font-normal normal-case tracking-normal text-violet-300/80">
-                · {levelsAiLoading ? 'AI…' : levelsSource === 'ai' ? 'AI Haiku' : 'structure'}
-              </span>
-            </>
-          }
+          title={playbookPanelTitle}
           onClose={() => setPlaybookOpen(false)}
           footer={
             <label className="block text-[9px] font-semibold uppercase tracking-wider text-gray-500">
@@ -3753,97 +3295,22 @@ function SimulationDeskInner() {
         >
           <div className="border-b border-[#30363d] bg-[#1a1430] px-3 py-2.5 space-y-1">
             <p className="text-[10px] leading-snug text-violet-200/90">{playbookRangeHint}</p>
-            {playbook && (
-              <>
-                <p className="text-[10px] font-bold uppercase tracking-wide text-violet-200">
-                  Focus:{' '}
-                  {playbook.focusSide === 'BOTH' ? 'Best ★ first' : playbook.focusSide}
-                </p>
-                <p className="text-[10px] leading-snug text-gray-300">{playbook.focusHint}</p>
-              </>
-            )}
+            {playbook ? (
+              <p className="text-[10px] leading-snug text-gray-300">
+                Trade the painted range edges (OR30 / IB / lunch).
+              </p>
+            ) : null}
           </div>
           <div className="space-y-1.5 p-2">
-            {levels.length === 0 && (
-              <p className="p-2 text-[11px] text-amber-400">No levels for this session.</p>
-            )}
-            {levels.map((l, i) => {
-              const isRes = String(l.type).toLowerCase().includes('resist')
-              const whyOpen = reasoningOpen === i
-              const isPrimary = l.rank !== 'watch'
-              const { label: stars } = convictionStars(l.conviction)
-              const why =
-                l.reasoning?.trim() ||
-                (isRes
-                  ? 'SHORT zone — sell liquidity above bait highs.'
-                  : 'BUY zone — buy liquidity below bait lows.')
-              return (
-                <div
-                  key={`${l.level}-${i}`}
-                  className={`rounded-xl border text-[11px] ${
-                    isRes
-                      ? 'border-red-800/80 bg-[#2a1518] text-red-200'
-                      : 'border-emerald-800/80 bg-[#12241c] text-emerald-200'
-                  } ${isPrimary ? 'ring-1 ring-white/25' : 'opacity-90'}`}
-                >
-                  <button
-                    type="button"
-                    disabled={!canEnter}
-                    onClick={() => {
-                      const snapped = snapSimEntryOrDeny(l.level)
-                      if ('deny' in snapped) {
-                        setMsg(snapped.deny)
-                        return
-                      }
-                      setManualTicketOpen(false)
-                      setManualClickPrice(null)
-                      setTicketRangeOverride(snapped.range)
-                      setTicketLevel({ ...l, level: snapped.price })
-                    }}
-                    className="w-full px-2.5 py-2.5 text-left transition-all disabled:opacity-40 hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="text-[9px] font-bold uppercase tracking-wide">
-                        {isPrimary ? 'PRIMARY' : 'WATCH'} {isRes ? 'SHORT' : 'BUY'}
-                      </span>
-                      <span
-                        className="text-amber-300 text-[10px]"
-                        title={`Conviction ${l.conviction}/10`}
-                      >
-                        {stars}
-                      </span>
-                    </div>
-                    <div className="price-mono mt-1 text-base font-bold tracking-tight text-white">
-                      {l.level.toLocaleString()}
-                    </div>
-                    <div className="mt-0.5 text-[9px] text-gray-400">
-                      zone {formatZone(l.level)} · {levelsSource}
-                    </div>
-                  </button>
-                  <div className="border-t border-white/10 px-2.5 pb-2">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setReasoningOpen(whyOpen ? null : i)
-                      }}
-                      className="mt-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400 hover:text-white"
-                    >
-                      {whyOpen ? 'Hide why ▾' : 'Why this level ▸'}
-                    </button>
-                    {whyOpen && (
-                      <p className="mt-1.5 text-[11px] leading-relaxed text-gray-300">{why}</p>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
+            <p className="px-1 py-1 text-[11px] leading-relaxed text-gray-400">
+              Double-click the chart to place a working limit — same as live. Set your own
+              size, SL, and TP. Press Play until price fills it.
+            </p>
           </div>
         </DraggableDeskWidget>
       )}
 
       {manualTicketOpen &&
-        !ticketLevel &&
         (manualClickPrice != null || lastPrice != null) && (
         <LevelOrderTicket
           key={
@@ -3872,11 +3339,6 @@ function SimulationDeskInner() {
           }
           strategyMagnets={getStrategyRiskBundle().strategyMagnets}
           sessionFillsUsed={attemptsUsed}
-          atrAdviceLine={
-            overnightBias?.detail
-              ? `${overnightBias.detail} · Sim only: overnight gap + prior session. No news.`
-              : 'Sim only: overnight gap + prior session. No news.'
-          }
           onClose={() => {
             setManualTicketOpen(false)
             setManualClickPrice(null)
@@ -3920,8 +3382,11 @@ function SimulationDeskInner() {
               strategyRangeLabel: snapped.range.label ?? null,
             }
             const now = simNowRef.current
-            const touched = allCandlesRef.current.find(
-              (c) => c.time >= openUnix && c.time <= now && barTouches(c, pend.level)
+            const touched = currentBarIfTouches(
+              allCandlesRef.current,
+              openUnix,
+              now,
+              pend.level
             )
             if (touched) {
               fillPending(pend, touched.time)
@@ -3936,54 +3401,6 @@ function SimulationDeskInner() {
         />
       )}
 
-      {ticketLevel && !manualTicketOpen && (
-        <LevelOrderTicket
-          key={`level-${ticketLevel.level}-${ticketLevel.source ?? 'structure'}-${ticketLevel.type}`}
-          instrument={instrument}
-          levelPrice={ticketLevel.level}
-          levelType={ticketLevel.type}
-          levelSide={ticketLevel.side}
-          preferredDirection={simSuggestedDirection(
-            overnightBias?.bias ?? 'none',
-            ticketLevel.type
-          )}
-          entryReason={ticketLevel.reasoning}
-          entrySource={ticketLevel.source === 'ai' ? 'ai' : 'structure'}
-          useLiveAccount={false}
-          initialAccountSize={accountSize}
-          regime={
-            overnightBias?.bias === 'bearish'
-              ? 'bearish'
-              : overnightBias?.bias === 'bullish'
-                ? 'bullish'
-                : 'choppy'
-          }
-          regimeConfidence={70}
-          canPlace={canEnter}
-          entryWindow={(gate?.entryWindow as 1 | 2 | 3 | null) ?? 1}
-          strategyRange={
-            ticketRangeOverride ?? getStrategyRiskBundle().strategyRange
-          }
-          strategyMagnets={getStrategyRiskBundle().strategyMagnets}
-          sessionFillsUsed={attemptsUsed}
-          atrAdviceLine={
-            overnightBias?.detail
-              ? `${overnightBias.detail} · Sim only: overnight gap + prior session. No news. You can still override.`
-              : 'Sim only: overnight gap + prior session. No news. You can still override.'
-          }
-          onClose={() => {
-            setTicketLevel(null)
-            setTicketRangeOverride(null)
-          }}
-          onPlaced={(order) => {
-            setTicketRangeOverride(null)
-            placePending(
-              { ...ticketLevel, level: order.level },
-              order.direction
-            )
-          }}
-        />
-      )}
     </div>
   )
 }
