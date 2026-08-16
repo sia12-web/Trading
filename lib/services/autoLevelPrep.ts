@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { getYahooCandles } from '@/lib/yahoo/candles'
 import { getYahooQuote } from '@/lib/yahoo/quote'
+import { getOandaCandles } from '@/lib/oanda/candles'
 import { getLevelFinderAgent } from '@/lib/services/levelFinderAgent'
 import { validateLevelsAgainstMarket } from '@/lib/services/levelValidation'
 import {
@@ -170,13 +171,15 @@ export async function runAutoLevelPrep(
       }
     }
 
-    const [daily, h1, h4, m5, quote] = await Promise.all([
+    const [daily, h1, h4, m5Yahoo, m5Oanda, quote] = await Promise.all([
       getYahooCandles(instrument, 'D', 30),
       getYahooCandles(instrument, '60', 10),
       getYahooCandles(instrument, '240', 15),
-      getYahooCandles(instrument, '5', 5),
+      getYahooCandles(instrument, '5', 12),
+      getOandaCandles(instrument, '5', 12).catch(() => null),
       getYahooQuote(instrument),
     ])
+    const m5 = m5Oanda?.candles?.length ? m5Oanda : m5Yahoo
 
     const candles_daily = toAgentCandles(daily?.candles ?? []).slice(-15)
     const candles_h1 = toAgentCandles(h1?.candles ?? []).slice(-40)
@@ -228,9 +231,12 @@ export async function runAutoLevelPrep(
       volume: Math.max(1, c.volume || 0),
     }))
     const m5Bars = (m5?.candles ?? []).map((c) => ({
+      time: c.time,
+      open: c.open,
       high: c.high,
       low: c.low,
       close: c.close,
+      volume: Math.max(1, c.volume || 0),
     }))
     const nowUnix = Math.floor(now.getTime() / 1000)
     const brief = needsAfternoonBrief

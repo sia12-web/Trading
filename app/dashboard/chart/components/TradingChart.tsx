@@ -68,7 +68,13 @@ import {
   snapProfitToRound,
   type InitialBalanceRange,
 } from '@/lib/trading/deskLevels'
-import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
+import {
+  computeYesterdayProfile,
+  resolveYesterdayAsOfUnix,
+  yesterdayProfileBadgeText,
+  yesterdayProfileLineSpecs,
+  yesterdayProfilePaintKey,
+} from '@/lib/trading/yesterdayProfile'
 import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
 import { LiveVoicePanel } from '@/app/dashboard/chart/components/LiveVoicePanel'
 import {
@@ -798,6 +804,7 @@ export function TradingChart({
   const [showUsRange, setShowUsRange] = useState(false)
   /** Stable paint hook for tip-stream refresh (avoids restarting SSE on marker deps). */
   const paintDeskMarkersRef = useRef<(bars?: OHLCV[]) => void>(() => {})
+  const paintYesterdayProfileRef = useRef<() => void>(() => {})
   /** First 30m opening range — NY 09:30–10:00 ET / Tokyo 09:00–09:30 JST */
   const or30SeriesRef = useRef<{
     high: ISeriesApi<'Line'>
@@ -807,6 +814,10 @@ export function TradingChart({
   const [or30Shaped, setOr30Shaped] = useState(false)
   const [or30Locked, setOr30Locked] = useState(false)
   const [showOr30, setShowOr30] = useState(false)
+  const [showYesterdayProfile, setShowYesterdayProfile] = useState(false)
+  const ydayLinesRef = useRef<IPriceLine[]>([])
+  const ydayPaintKeyRef = useRef('')
+  const [yesterdayBadge, setYesterdayBadge] = useState('Yday off')
   /** Live count of BRK/REJ markers currently painted (for toolbar status). */
   const [rangeSignalSummary, setRangeSignalSummary] = useState<{
     ib: number
@@ -1293,6 +1304,65 @@ export function TradingChart({
     }
   }, [showOr30, instrument])
 
+  const paintYesterdayProfile = useCallback(() => {
+    const host = priceLineHostRef.current
+    const list = candlesRef.current
+    const lastBar = list.length ? (list[list.length - 1]!.time as number) : null
+    const asOfUnix = resolveYesterdayAsOfUnix(
+      instrument,
+      lastBar,
+      Math.floor(Date.now() / 1000)
+    )
+    const profile = computeYesterdayProfile({
+      instrument,
+      candles: list.map((c) => ({
+        time: c.time as number,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      })),
+      asOfUnix,
+    })
+    const badge = showYesterdayProfile
+      ? yesterdayProfileBadgeText(profile)
+      : 'Yday off'
+    setYesterdayBadge((prev) => (prev === badge ? prev : badge))
+    const key = yesterdayProfilePaintKey(showYesterdayProfile, profile)
+    if (key === ydayPaintKeyRef.current) return
+    ydayPaintKeyRef.current = key
+    for (const line of ydayLinesRef.current) {
+      try {
+        host?.removePriceLine(line)
+      } catch {
+        /* ignore */
+      }
+    }
+    ydayLinesRef.current = []
+    if (!showYesterdayProfile || !profile || !host) return
+    for (const spec of yesterdayProfileLineSpecs(profile)) {
+      try {
+        ydayLinesRef.current.push(
+          host.createPriceLine({
+            price: spec.price,
+            color: spec.color,
+            title: spec.title,
+            lineWidth: spec.title === 'POC' ? 2 : 1,
+            lineStyle: spec.dotted
+              ? LineStyle.Dotted
+              : spec.dashed
+                ? LineStyle.Dashed
+                : LineStyle.Solid,
+            axisLabelVisible: true,
+          })
+        )
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [showYesterdayProfile, instrument])
+
   useEffect(() => {
     paintIbLines()
   }, [paintIbLines])
@@ -1308,6 +1378,14 @@ export function TradingChart({
   useEffect(() => {
     paintOr30Lines()
   }, [paintOr30Lines])
+
+  useEffect(() => {
+    paintYesterdayProfileRef.current = paintYesterdayProfile
+  }, [paintYesterdayProfile])
+
+  useEffect(() => {
+    paintYesterdayProfile()
+  }, [paintYesterdayProfile])
 
   const ibProximity = useMemo(() => {
     if (!showIbBreakouts || !ibShaped || !ibRangeRef.current || !livePrice) return null
@@ -2747,6 +2825,18 @@ export function TradingChart({
     }
     usRangeRef.current = null
     setUsRangeShaped(false)
+    {
+      const host = priceLineHostRef.current
+      for (const line of ydayLinesRef.current) {
+        try {
+          host?.removePriceLine(line)
+        } catch {
+          /* ignore */
+        }
+      }
+      ydayLinesRef.current = []
+      ydayPaintKeyRef.current = ''
+    }
     const or30S = or30SeriesRef.current
     if (or30S) {
       try {
@@ -2953,6 +3043,8 @@ export function TradingChart({
         ibRangeRef.current = ib
         paintIbLines()
       }
+
+      paintYesterdayProfileRef.current()
 
       // NYC Lunch Session Range — 12:00–13:30 ET, Dow & Nasdaq only
       const lunchSeries = lunchSeriesRef.current
@@ -4985,6 +5077,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       } else if (key === 'b') {
         e.preventDefault()
         setShowIbBreakouts((prev) => !prev)
+      } else if (key === 'y') {
+        e.preventDefault()
+        setShowYesterdayProfile((prev) => !prev)
       } else if (key === 'n') {
         e.preventDefault()
         if (instrument === 'DOW' || instrument === 'NASDAQ') {
@@ -6033,6 +6128,29 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </button>
         )}
 
+        {deskSessionLive && (
+          <button
+            type="button"
+            title={
+              showYesterdayProfile
+                ? 'Yesterday YH/YL/VA/POC + day type + superimposed range on (Press Y)'
+                : 'Show yesterday cash profile: YH/YL/VAH/VAL/POC and open type (Press Y)'
+            }
+            onClick={() => setShowYesterdayProfile((v) => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+              showYesterdayProfile
+                ? 'bg-amber-600/30 border-amber-500/50 text-amber-100'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-amber-200 hover:border-amber-500/40'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full inline-block ${showYesterdayProfile ? 'bg-amber-400' : 'bg-gray-600'}`} />
+            <span>Yday (Y)</span>
+            {showYesterdayProfile && (
+              <span className="text-[10px] font-normal text-amber-200/80">{yesterdayBadge}</span>
+            )}
+          </button>
+        )}
+
         {/* NYC Lunch Range — Dow & Nasdaq only (Press N) — not the “Lunch break” playbook prep */}
         {deskSessionLive && (instrument === 'DOW' || instrument === 'NASDAQ') && (
           <button
@@ -6547,6 +6665,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               {formatRangeAtrChip(rangeAtrSnap)}
             </span>
           )}
+          <span title="Gold yesterday YH/YL/VA/POC + Dalton open type — toggle with Press Y (off on refresh).">
+            <span className={showYesterdayProfile ? 'text-amber-500' : 'text-gray-600'}>
+              {yesterdayBadge}
+            </span>
+          </span>
           <span title="Blue IB high/low + BRK/REJ + ±10 — toggle with Press B (off on refresh).">
             <span className={ibShaped ? 'text-blue-500' : 'text-gray-600'}>
               IB H/L {ibShaped ? 'on' : showIbBreakouts ? 'waiting' : 'off'}

@@ -63,6 +63,10 @@ assert(
   LIVE_VOICE_SYSTEM_PROMPT.includes('1.5R of the protective stop'),
   'Leo knows initial TP is 1:1.5'
 )
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('YESTERDAY PROFILE'), 'Leo knows yesterday profile')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('90–110%'), 'Leo knows superimpose band')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('holding extreme'), 'Leo knows holding extreme SL')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('not US Range'), 'Leo knows Nikkei yesterday is Tokyo cash')
 assert(
   LIVE_VOICE_SYSTEM_PROMPT.includes('buy the range low') ||
     LIVE_VOICE_SYSTEM_PROMPT.includes('Reject "buy the range low'),

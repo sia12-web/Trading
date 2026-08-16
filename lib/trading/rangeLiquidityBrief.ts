@@ -19,6 +19,10 @@ import {
 } from '@/lib/chart/sessionVwap'
 import { computeVolumeProfile } from '@/lib/chart/volumeProfile'
 import {
+  computeYesterdayProfile,
+  formatYesterdayProfileForPrompt,
+} from '@/lib/trading/yesterdayProfile'
+import {
   computeInitialBalance,
   type DeskBar,
 } from '@/lib/trading/deskLevels'
@@ -64,6 +68,8 @@ export type RangeLiquidityBrief = {
   analysisMode: 'morning' | 'ib' | 'us_range' | 'lunch_range' | 'afternoon'
   /** Active-range ATR(14) 5m — advise-only pad/trail (null if no 5m / no active range) */
   activeAtr: RangeAtrSnapshot | null
+  /** Prior-cash TPO profile (YH/YL/VA/POC + open type + superimpose). */
+  yesterdayProfileText: string | null
 }
 
 function dateKeyInTz(unix: number, timeZone: string): string {
@@ -159,8 +165,15 @@ export function buildRangeLiquidityBrief(args: {
   tip: number
   nowUnix?: number
   analysisMode?: RangeLiquidityBrief['analysisMode']
-  /** 5m bars for ATR(14) — optional; without them activeAtr stays null */
-  candles5m?: Array<{ high: number; low: number; close: number }>
+  /** 5m bars for ATR(14) + yesterday TPO profile */
+  candles5m?: Array<{
+    time?: number
+    open?: number
+    high: number
+    low: number
+    close: number
+    volume?: number
+  }>
 }): RangeLiquidityBrief | null {
   const { instrument, tip } = args
   const analysisMode = args.analysisMode ?? 'morning'
@@ -281,6 +294,30 @@ export function buildRangeLiquidityBrief(args: {
         })
       : null
 
+  const yesterdayBars = (args.candles5m ?? []).filter(
+    (b): b is {
+      time: number
+      open: number
+      high: number
+      low: number
+      close: number
+      volume?: number
+    } =>
+      typeof b.time === 'number' &&
+      b.time > 0 &&
+      typeof b.open === 'number' &&
+      b.open > 0
+  )
+  const yesterday =
+    yesterdayBars.length >= 8
+      ? computeYesterdayProfile({
+          instrument,
+          candles: yesterdayBars,
+          asOfUnix: nowUnix,
+        })
+      : null
+  const yesterdayProfileText = formatYesterdayProfileForPrompt(yesterday)
+
   return {
     instrument,
     tip: Math.round(tip * 100) / 100,
@@ -300,6 +337,7 @@ export function buildRangeLiquidityBrief(args: {
     tipVsAvwapPct,
     analysisMode,
     activeAtr,
+    yesterdayProfileText,
   }
 }
 
@@ -385,6 +423,10 @@ export function formatRangeLiquidityBriefForPrompt(
     'Reasoning must name the range bait, e.g. "OR30 high 44280 bait — retail shorts stop above; sell liquidity ~44310 near POC".',
     'When the primary range is formed, reject levels that only cite Asia/London with no tie to that range edge (unless prep before OR30 exists).'
   )
+
+  if (brief.yesterdayProfileText) {
+    lines.push('', brief.yesterdayProfileText.trim())
+  }
 
   return '\n' + lines.join('\n') + '\n'
 }

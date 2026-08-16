@@ -577,6 +577,7 @@ RANGE LIQUIDITY MAP (how VP + retail stops connect to our three ranges on ${inde
 - Active playbook = PRIMARY bait. Earlier formed ranges = secondary. Later ranges ignored until unlocked.
 - When RANGE LIQUIDITY MAP facts are printed in the user message, every level's reasoning MUST name which range bait it hunts (e.g. "US Range high X bait — sell liquidity above near POC").
 - RANGE VOLATILITY (ATR — advise only): When the map prints ATR(14) 5m + height/ATR + suggested stop pad / trail, use those ONLY to size stop-pool offset / discuss pad-trail. ATR never changes ±10 H/50%/L entry legality and never auto-sets SL/TP.
+- YESTERDAY PROFILE (Dalton): When facts print YH/YL/VAH/VAL/POC + day type + 90–110% superimpose band, those are ground truth. NIKKEI yesterday = Tokyo cash, not US Range. Prefer confluence with VA/POC. SL/TP advise only: holding extreme = invalidation; band = TP magnet. Ticket stays 1.5R / progressive dollars.
 `
       : `
 RANGE LIQUIDITY MAP (how VP + retail stops connect to our three ranges on ${index}):
@@ -587,6 +588,7 @@ RANGE LIQUIDITY MAP (how VP + retail stops connect to our three ranges on ${inde
 - Active playbook = PRIMARY bait. Earlier formed ranges = secondary. Later ranges ignored until unlocked.
 - When RANGE LIQUIDITY MAP facts are printed in the user message, every level's reasoning MUST name which range bait it hunts (e.g. "OR30 high X bait — sell liquidity above near POC").
 - RANGE VOLATILITY (ATR — advise only): When the map prints ATR(14) 5m + height/ATR + suggested stop pad / trail, use those ONLY to size stop-pool offset / discuss pad-trail. ATR never changes ±10 H/50%/L entry legality and never auto-sets SL/TP.
+- YESTERDAY PROFILE (Dalton): When facts print YH/YL/VAH/VAL/POC + day type + 90–110% superimpose band, those are ground truth. Prefer confluence with VA/POC. SL/TP advise only: holding extreme = invalidation; band = TP magnet. Ticket stays 1.5R / progressive dollars.
 `
 
     const basePrompt = `You are a senior institutional trader who runs execution for a large desk. You do NOT think like a retail trader — you think about where retail traders put their STOPS, because that stop liquidity is where your desk ENTERS to fill size.

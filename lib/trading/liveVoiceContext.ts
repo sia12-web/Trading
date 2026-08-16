@@ -73,6 +73,7 @@ import {
 } from '@/lib/trading/tradeifySessionState'
 import { getYahooCandles } from '@/lib/yahoo/candles'
 import { getYahooQuote } from '@/lib/yahoo/quote'
+import { getOandaCandles } from '@/lib/oanda/candles'
 
 export type LiveVoiceContextLevel = {
   price: number
@@ -544,11 +545,13 @@ export async function buildLiveVoiceDeskContext(
   let rangeLiquidityBriefText: string | null = null
   try {
     const analysisMode = deskPlaybookAnalysisMode(playbookMode, contextInstrument)
-    const [h1, m5, quote] = await Promise.all([
+    const [h1, m5Yahoo, m5Oanda, quote] = await Promise.all([
       getYahooCandles(contextInstrument, '60', 10),
-      getYahooCandles(contextInstrument, '5', 5),
+      getYahooCandles(contextInstrument, '5', 12),
+      getOandaCandles(contextInstrument, '5', 12).catch(() => null),
       getYahooQuote(contextInstrument),
     ])
+    const m5 = m5Oanda?.candles?.length ? m5Oanda : m5Yahoo
     const h1Bars = (h1?.candles ?? []).map((c) => ({
       time: c.time,
       open: c.open,
@@ -558,9 +561,12 @@ export async function buildLiveVoiceDeskContext(
       volume: Math.max(1, c.volume || 0),
     }))
     const m5Bars = (m5?.candles ?? []).map((c) => ({
+      time: c.time,
+      open: c.open,
       high: c.high,
       low: c.low,
       close: c.close,
+      volume: Math.max(1, c.volume || 0),
     }))
     const tip =
       quote?.price ??

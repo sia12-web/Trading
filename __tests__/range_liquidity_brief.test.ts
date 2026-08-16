@@ -211,6 +211,7 @@ function tokyoBars(): Array<{
     'utf8'
   )
   assert(/RANGE LIQUIDITY MAP/.test(src), 'Level Finder has RANGE LIQUIDITY MAP')
+  assert(/YESTERDAY PROFILE/.test(src), 'Level Finder has YESTERDAY PROFILE')
   assert(/Slot 1 OR30/.test(src), 'OR30 slot in prompt')
   assert(/Slot 2 US Range/.test(src), 'US Range slot in prompt')
   assert(/Slot 3 Lunch-range/.test(src), 'Lunch-range slot in prompt')

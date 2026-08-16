@@ -13,6 +13,7 @@ import {
   TickMarkType,
   type IChartApi,
   type ISeriesApi,
+  type IPriceLine,
   type UTCTimestamp,
 } from 'lightweight-charts'
 import {
@@ -131,6 +132,13 @@ import {
   ibLineSeriesData,
   type InitialBalanceRange,
 } from '@/lib/trading/deskLevels'
+import {
+  computeYesterdayProfile,
+  resolveYesterdayAsOfUnix,
+  yesterdayProfileBadgeText,
+  yesterdayProfileLineSpecs,
+  yesterdayProfilePaintKey,
+} from '@/lib/trading/yesterdayProfile'
 import {
   OR30_COLORS,
   computeOr30Range,
@@ -478,6 +486,9 @@ function SimulationDeskInner() {
       } else if (key === 'b') {
         e.preventDefault()
         setShowIbBreakouts((prev) => !prev)
+      } else if (key === 'y') {
+        e.preventDefault()
+        setShowYesterdayProfile((prev) => !prev)
       } else if (key === 'n') {
         e.preventDefault()
         if (instrument === 'DOW' || instrument === 'NASDAQ') {
@@ -561,10 +572,15 @@ function SimulationDeskInner() {
   const [showLunchRange, setShowLunchRange] = useState(false)
   const [showUsRange, setShowUsRange] = useState(false)
   const [showOr30, setShowOr30] = useState(false)
+  const [showYesterdayProfile, setShowYesterdayProfile] = useState(false)
+  const [yesterdayBadge, setYesterdayBadge] = useState('Yday off')
   const showIbBreakoutsRef = useRef(false)
   const showLunchRangeRef = useRef(false)
   const showUsRangeRef = useRef(false)
   const showOr30Ref = useRef(false)
+  const showYesterdayProfileRef = useRef(false)
+  const ydayLinesRef = useRef<IPriceLine[]>([])
+  const ydayPaintKeyRef = useRef('')
   const or30SeriesRef = useRef<{
     high: ISeriesApi<'Line'>
     low: ISeriesApi<'Line'>
@@ -600,6 +616,9 @@ function SimulationDeskInner() {
   useEffect(() => {
     showOr30Ref.current = showOr30
   }, [showOr30])
+  useEffect(() => {
+    showYesterdayProfileRef.current = showYesterdayProfile
+  }, [showYesterdayProfile])
 
   const levelLinesRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]>([])
   const posLinesRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]>([])
@@ -799,7 +818,7 @@ function SimulationDeskInner() {
         setSimNow(startOpen)
 
         const candlesRes = await fetch(
-          `/api/trading/candles?instrument=${instrument}&timeframe=5m&days=7&date=${replayDate}&_=${Date.now()}`,
+          `/api/trading/candles?instrument=${instrument}&timeframe=5m&days=12&date=${replayDate}&_=${Date.now()}`,
           { cache: 'no-store', signal: candleController.signal }
         )
 
@@ -1531,6 +1550,50 @@ function SimulationDeskInner() {
             }
           }
         }
+
+        const host = priceLineHostRef.current
+        const yday = computeYesterdayProfile({
+          instrument,
+          candles: bars,
+          asOfUnix: resolveYesterdayAsOfUnix(instrument, simT, simT),
+        })
+        const visible = showYesterdayProfileRef.current
+        const badge = visible ? yesterdayProfileBadgeText(yday) : 'Yday off'
+        setYesterdayBadge((prev) => (prev === badge ? prev : badge))
+        const key = yesterdayProfilePaintKey(visible, yday)
+        if (key !== ydayPaintKeyRef.current) {
+          ydayPaintKeyRef.current = key
+          for (const line of ydayLinesRef.current) {
+            try {
+              host?.removePriceLine(line)
+            } catch {
+              /* ignore */
+            }
+          }
+          ydayLinesRef.current = []
+          if (visible && yday && host) {
+            for (const spec of yesterdayProfileLineSpecs(yday)) {
+              try {
+                ydayLinesRef.current.push(
+                  host.createPriceLine({
+                    price: spec.price,
+                    color: spec.color,
+                    title: spec.title,
+                    lineWidth: spec.title === 'POC' ? 2 : 1,
+                    lineStyle: spec.dotted
+                      ? LineStyle.Dotted
+                      : spec.dashed
+                        ? LineStyle.Dashed
+                        : LineStyle.Solid,
+                    axisLabelVisible: true,
+                  })
+                )
+              } catch {
+                /* ignore */
+              }
+            }
+          }
+        }
       }
 
       if (force || lastAppliedBarIdxRef.current < 0) {
@@ -2124,7 +2187,7 @@ function SimulationDeskInner() {
   useEffect(() => {
     if (!chartReady || !simNowRef.current) return
     applyChartDataRef.current(simNowRef.current, { force: true })
-  }, [chartReady, showIbBreakouts, showLunchRange, showUsRange, showOr30])
+  }, [chartReady, showIbBreakouts, showLunchRange, showUsRange, showOr30, showYesterdayProfile])
 
   // Pending working limit + open position — on host series (survives candle setData).
   // Working limit / position lines stay on the host series.
@@ -3297,6 +3360,25 @@ function SimulationDeskInner() {
               className={`inline-block h-1.5 w-1.5 rounded-full ${showIbBreakouts ? 'bg-blue-400' : 'bg-gray-600'}`}
             />
             IB Breakout (B)
+          </button>
+          <button
+            type="button"
+            title={
+              showYesterdayProfile
+                ? 'Yesterday YH/YL/VA/POC + day type + superimposed range on (Press Y)'
+                : 'Show yesterday cash profile (Press Y)'
+            }
+            onClick={() => setShowYesterdayProfile((v) => !v)}
+            className={`flex items-center gap-1 rounded border px-2 py-1 text-[10px] font-semibold uppercase ${
+              showYesterdayProfile
+                ? 'border-amber-500/50 bg-amber-600/30 text-amber-100'
+                : 'border-white/15 text-gray-500 hover:border-amber-500/40 hover:text-amber-200'
+            }`}
+          >
+            <span
+              className={`inline-block h-1.5 w-1.5 rounded-full ${showYesterdayProfile ? 'bg-amber-400' : 'bg-gray-600'}`}
+            />
+            Yday (Y)
           </button>
           {(instrument === 'DOW' || instrument === 'NASDAQ') && (
             <button
