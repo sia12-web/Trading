@@ -9,6 +9,7 @@ import {
   deskBarSpacing,
   encodeDeskViewport,
   decodeDeskViewport,
+  resolveInitialDeskChartInstrument,
   DESK_VISIBLE_BARS,
 } from '../lib/trading/deskInstrumentPreference'
 
@@ -23,6 +24,19 @@ assert(parseDeskInstrument('NIKKEI') === 'NIKKEI', 'NIKKEI')
 assert(parseDeskInstrument('SPX') === null, 'reject junk')
 assert(parseDeskInstrument(null) === null, 'null')
 assert(parseDeskInstrument('') === null, 'empty')
+
+assert(
+  resolveInitialDeskChartInstrument({ clockLock: 'NASDAQ', preference: 'DOW' }) === 'NASDAQ',
+  'clock lock beats remembered DOW tab'
+)
+assert(
+  resolveInitialDeskChartInstrument({ clockLock: null, preference: 'NASDAQ' }) === 'NASDAQ',
+  'preference used when no clock lock'
+)
+assert(
+  resolveInitialDeskChartInstrument({ clockLock: null, preference: null }) === 'DOW',
+  'empty defaults DOW'
+)
 
 {
   const r = deskVisibleLogicalRange(3000)

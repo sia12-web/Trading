@@ -12,6 +12,7 @@ import { successToast, errorToast } from '@/lib/utils/toastUtils'
 import type { PositionStatus } from '@/types/positionManagement'
 import { entrySourceLabel, entrySourceTone } from '@/lib/trading/entrySourceBadge'
 import { formatDeskMoney } from '@/lib/trading/currency'
+import { quoteBelongsToBook } from '@/lib/trading/deskExitGuard'
 
 interface PositionStatusCardProps {
   position: PositionStatus | null
@@ -208,6 +209,15 @@ export function PositionStatusCard({
       ? currentPrice >= position.profit_target_price
       : currentPrice <= position.profit_target_price
     if (!hitSl && !hitTp) return
+    if (
+      !quoteBelongsToBook({
+        instrument: position.instrument,
+        entry: position.entry_price,
+        quote: currentPrice,
+      })
+    ) {
+      return
+    }
 
     // Same BE false-flatten guard as ManageDeskBar
     if (

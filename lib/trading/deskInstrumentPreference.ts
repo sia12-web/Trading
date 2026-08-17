@@ -19,6 +19,57 @@ export function parseDeskInstrument(
   return null
 }
 
+const CLOCK_LOCK_KEY = 'tradepulse.desk.clockLock'
+
+export function loadDeskClockLock(): DeskInstrumentPref | null {
+  if (typeof window === 'undefined') return null
+  try {
+    return parseDeskInstrument(sessionStorage.getItem(CLOCK_LOCK_KEY))
+  } catch {
+    return null
+  }
+}
+
+export function saveDeskClockLock(instrument: DeskInstrumentPref | null): void {
+  if (typeof window === 'undefined') return
+  try {
+    if (!instrument) sessionStorage.removeItem(CLOCK_LOCK_KEY)
+    else sessionStorage.setItem(CLOCK_LOCK_KEY, instrument)
+  } catch {
+    /* private mode */
+  }
+}
+
+/**
+ * First chart name: clock-in lock beats a remembered DOW tab.
+ * SSR has no sessionStorage — callers must hold candles until client boot.
+ */
+export function resolveInitialDeskChartInstrument(args: {
+  clockLock?: string | null
+  preference?: string | null
+}): DeskInstrumentPref {
+  return (
+    parseDeskInstrument(args.clockLock) ??
+    parseDeskInstrument(args.preference) ??
+    'DOW'
+  )
+}
+
+export function initialDeskChartInstrument(): DeskInstrumentPref {
+  if (typeof window === 'undefined') return 'DOW'
+  try {
+    const fromUrl = parseDeskInstrument(
+      new URLSearchParams(window.location.search).get('instrument')
+    )
+    return resolveInitialDeskChartInstrument({
+      clockLock: loadDeskClockLock(),
+      preference: fromUrl ?? parseDeskInstrument(localStorage.getItem(STORAGE_KEY)),
+    })
+  } catch {
+    return 'DOW'
+  }
+}
+
 /** Read URL first, then localStorage. Safe on SSR (returns DOW). */
 export function getDeskInstrumentPreference(): DeskInstrumentPref {
   if (typeof window === 'undefined') return 'DOW'

@@ -14,6 +14,7 @@ import { closeOandaTrade } from '@/lib/oanda/orders'
 import { getOandaPrice } from '@/lib/oanda/pricing'
 import { interpretAiExitClaim } from '@/lib/trading/aiExitClaim'
 import { livePriceConfirmsStopHit } from '@/lib/trading/breakEvenStop'
+import { deskFuturesCashPnl, quoteBelongsToBook } from '@/lib/trading/deskExitGuard'
 import type { ClosePositionRequest, ClosePositionResponse, TradePosition } from '@/types/trading'
 import type { Instrument as PriceInstrument } from '@/types/price-feed'
 
@@ -195,11 +196,48 @@ export async function POST(request: Request): Promise<NextResponse<ClosePosition
       })
     }
 
-    // Calculate final P&L
-    const pnl = positionManager.calculateCurrentPnL(
-      position as TradePosition,
-      body.exit_price
-    )
+    if (
+      !quoteBelongsToBook({
+        instrument: String(position.instrument),
+        entry: Number(position.entry_price),
+        quote: body.exit_price,
+      })
+    ) {
+      logger.warn('POST /api/trading/positions/close: refused cross-index exit quote', {
+        position_id: body.position_id,
+        instrument: position.instrument,
+        entry: position.entry_price,
+        exit: body.exit_price,
+      })
+      return NextResponse.json(
+        {
+          success: false,
+          position_id: body.position_id,
+          instrument: body.instrument,
+          exit_price: body.exit_price,
+          entry_price: Number(position.entry_price),
+          position_size: Number(position.position_size),
+          profit_loss: 0,
+          profit_loss_percent: 0,
+          exit_reason: body.exit_reason,
+          message: 'Exit quote is not this index — book left open.',
+        },
+        { status: 409 }
+      )
+    }
+
+    const cashPnl = deskFuturesCashPnl({
+      instrument: String(position.instrument),
+      direction: String(position.entry_direction),
+      entry: Number(position.entry_price),
+      exit: body.exit_price,
+      qty: Number(position.position_size),
+    })
+    const riskAmt = Number(position.risk_amount) || 0
+    const pnl = {
+      profitLoss: cashPnl,
+      profitLossPercent: riskAmt > 0 ? Math.round((cashPnl / riskAmt) * 10000) / 100 : 0,
+    }
 
     // Close on OANDA when this journal row has a broker trade id
     let brokerExitPrice: number | null = null

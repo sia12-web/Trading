@@ -6,6 +6,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { quoteBelongsToBook } from '@/lib/trading/deskExitGuard'
 
 type Direction = 'long' | 'short'
 
@@ -368,6 +369,15 @@ export function ManageDeskBar({
       ? currentPrice >= position.profitTarget
       : currentPrice <= position.profitTarget
     if (!hitSl && !hitTp) return
+    if (
+      !quoteBelongsToBook({
+        instrument: position.instrument,
+        entry: position.entryPrice,
+        quote: currentPrice,
+      })
+    ) {
+      return
+    }
 
     // BE stop sits 1 tick off entry. If the quote is still exactly at entry (seed /
     // uncleared), do not market-flatten — wait for a real adverse print through SL.

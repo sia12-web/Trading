@@ -698,6 +698,8 @@ interface TradingChartProps {
   /** AI manage verdict (hold / take profit / reversal) drawn on the chart */
   aiVerdict?:          ChartAiVerdict | null
   jumpToPriceRef?:     React.MutableRefObject<((price: number) => void) | null>
+  /** First paint name — clock lock / preference. Avoids a DOW candle flash. */
+  initialInstrument?:  Instrument
   /** Lock tabs to day's recommended desk instrument */
   lockedInstrument?:   Instrument | null
   /**
@@ -782,6 +784,7 @@ export function TradingChart({
   workingBracketAdjustError = null,
   aiVerdict = null,
   jumpToPriceRef,
+  initialInstrument,
   lockedInstrument,
   allowedInstruments = null,
   onLevelSelect,
@@ -920,7 +923,9 @@ export function TradingChart({
   /** Arm live stream once we have bars — avoid restarting intervals on every new print */
   const [streamArmed, setStreamArmed] = useState(false)
 
-  const [instrument,  setInstrumentState] = useState<Instrument>('DOW')
+  const [instrument,  setInstrumentState] = useState<Instrument>(
+    () => initialInstrument ?? lockedInstrument ?? 'DOW'
+  )
   const [candles,     setCandles]    = useState<OHLCV[]>([])
   const [levels,      setLevels]     = useState<LevelLine[]>([])
   const [noInBandLevelsMessage, setNoInBandLevelsMessage] = useState<string | null>(null)
@@ -1684,6 +1689,7 @@ export function TradingChart({
 
   useEffect(() => {
     playbookUserClosedRef.current = false
+    setLivePrice(null)
   }, [instrument])
   const [voiceOpen, setVoiceOpen] = useState(false)
   // Draw Zone tool — drag on chart to draw a rectangle zone for Leo
@@ -2977,6 +2983,7 @@ export function TradingChart({
   // ── Load candle data when instrument changes (5m only) ───────────────────────
   useEffect(() => {
     if (!chartReady) return
+    if (lockedInstrument && instrument !== lockedInstrument) return
     let cancelled = false
 
     const load = async () => {
@@ -3050,7 +3057,7 @@ export function TradingChart({
     return () => {
       cancelled = true
     }
-  }, [instrument, chartReady, loadLevels, levelsRefreshKey])
+  }, [instrument, chartReady, loadLevels, levelsRefreshKey, lockedInstrument])
 
   // Mid-morning: re-grade levels against candles every 2 minutes (rule engine only)
   useEffect(() => {

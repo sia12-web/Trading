@@ -28,12 +28,14 @@ import {
   type ManagePosition,
 } from './components/ManageDeskBar'
 import {
-  getDeskInstrumentPreference,
+  initialDeskChartInstrument,
+  saveDeskClockLock,
   setDeskInstrumentPreference,
   type DeskInstrumentPref,
 } from '@/lib/trading/deskInstrumentPreference'
 import { isAnyLiveFocusWindowActive, isAfternoonWatchWindow, sessionFor, deskMarketFor } from '@/lib/trading/sessionGate'
 import { LIVE_CLOCK_REFUSE, clockedNameOnlyMessage } from '@/lib/trading/liveDeskBook'
+import { quoteBelongsToBook } from '@/lib/trading/deskExitGuard'
 import {
   TRADER_DISPLAY_LABEL,
   deskLocalHmsAsTraderDisplay,
@@ -220,6 +222,7 @@ export default function ChartPage() {
   const router = useRouter()
   // SSR/hydration always starts DOW — restore preference after mount (see effect below)
   const [instrument, setInstrumentState] = useState<Instrument>('DOW')
+  const [chartBooted, setChartBooted] = useState(false)
 
   const gateRef = useRef<SessionGateState | null>(null)
 
@@ -239,7 +242,8 @@ export default function ChartPage() {
   }, [])
 
   useEffect(() => {
-    setInstrumentState(getDeskInstrumentPreference())
+    setInstrumentState(initialDeskChartInstrument())
+    setChartBooted(true)
   }, [])
 
   // Outside focus (−30m→close): send home — Live Trading is locked
@@ -266,7 +270,11 @@ export default function ChartPage() {
   // Clocked name owns the chart on refresh — preference DOW must not hide NASDAQ/MNQ.
   useEffect(() => {
     const locked = gate?.lockedInstrument
-    if (!gate?.clockedIn || !locked) return
+    if (!gate?.clockedIn || !locked) {
+      if (gate && !gate.clockedIn) saveDeskClockLock(null)
+      return
+    }
+    saveDeskClockLock(locked)
     setInstrumentState(locked)
   }, [gate?.clockedIn, gate?.lockedInstrument])
   const [orderLevel, setOrderLevel] = useState<number | null>(null)
@@ -385,6 +393,11 @@ export default function ChartPage() {
   useEffect(() => {
     livePriceRef.current = livePrice
   }, [livePrice])
+
+  useEffect(() => {
+    setLivePrice(null)
+    livePriceRef.current = null
+  }, [instrument, gate?.lockedInstrument, managePos?.instrument])
 
   // Fill detection needs every tick on the ref; UI state is throttled unless a limit is working
   const pendingActiveRef = useRef(false)
@@ -1542,6 +1555,15 @@ export default function ChartPage() {
   useEffect(() => {
     if (!pending || managePos || livePrice == null) return
     if (orderStatus !== 'working') return
+    if (
+      !quoteBelongsToBook({
+        instrument: pending.instrument,
+        entry: pending.level,
+        quote: livePrice,
+      })
+    ) {
+      return
+    }
     if (!limitWouldFill(pending.direction, pending.level, livePrice)) return
     void fillPending(pending, pending.level)
   }, [livePrice, pending, managePos, fillPending, orderStatus])
@@ -2141,7 +2163,16 @@ export default function ChartPage() {
           <div className="absolute bottom-14 left-3 z-30 pointer-events-auto">
             <ManageDeskBar
               position={managePos}
-              currentPrice={livePrice}
+              currentPrice={
+                livePrice != null &&
+                quoteBelongsToBook({
+                  instrument: managePos.instrument,
+                  entry: managePos.entryPrice,
+                  quote: livePrice,
+                })
+                  ? livePrice
+                  : null
+              }
               atrAdviceLine={rangeAtrAdvice}
               onClosed={(exitReason = 'manual') => {
                 positionExitHandledRef.current = true
@@ -2186,8 +2217,9 @@ export default function ChartPage() {
         )}
 
         <div className="relative flex-1 w-full h-full min-h-0">
-          {!chartLocked && (
+          {!chartLocked && chartBooted && (
             <TradingChart
+              initialInstrument={instrument}
               onInstrumentChange={setInstrument}
               onInstrumentSync={syncInstrument}
               onPriceUpdate={onPriceUpdate}
@@ -2282,6 +2314,7 @@ export default function ChartPage() {
                         key={inst}
                         type="button"
                         onClick={async () => {
+                          saveDeskClockLock(inst)
                           await fetch('/api/trading/clock-in', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -2353,6 +2386,7 @@ export default function ChartPage() {
                                 onClick={async () => {
                                   const market = 'NY'
                                   try {
+                                    saveDeskClockLock(inst)
                                     const res = await fetch('/api/trading/clock-in', {
                                       method: 'POST',
                                       headers: { 'Content-Type': 'application/json' },
@@ -2441,6 +2475,7 @@ export default function ChartPage() {
                                 type="button"
                                 onClick={async () => {
                                   const market = 'NY'
+                                  saveDeskClockLock(inst)
                                   await fetch('/api/trading/clock-in', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
