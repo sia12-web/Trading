@@ -161,6 +161,7 @@ import {
   assertDeskCallEntry,
   computeDeskCall,
   deskCallBadgeText,
+  deskCallHoverText,
   deskCallLegalEdges,
   formatDeskCallScoreStrip,
   resolveDeskCallAsOfUnix,
@@ -654,6 +655,9 @@ function SimulationDeskInner() {
   const [showMarketControl, setShowMarketControl] = useState(false)
   const [controlBadge, setControlBadge] = useState('RF WAIT')
   const [callBadge, setCallBadge] = useState('WAIT')
+  const [callHover, setCallHover] = useState(
+    'CALL WAIT — no ticket\n\nLeo and Level Finder advise only. No line.'
+  )
   const [callScoreText, setCallScoreText] = useState('')
   const showIbBreakoutsRef = useRef(false)
   const showLunchRangeRef = useRef(false)
@@ -695,6 +699,7 @@ function SimulationDeskInner() {
   const instrumentRef = useRef(instrument)
   instrumentRef.current = instrument
   const [or30Shaped, setOr30Shaped] = useState(false)
+  const [or30Locked, setOr30Locked] = useState(false)
 
   useEffect(() => {
     showIbBreakoutsRef.current = showIbBreakouts
@@ -1227,6 +1232,7 @@ function SimulationDeskInner() {
       avwapLastRef.current = null
       setIbShaped(false)
       setOr30Shaped(false)
+      setOr30Locked(false)
       setLunchShaped(false)
       setUsRangeShaped(false)
       levelLinesRef.current = []
@@ -1518,6 +1524,7 @@ function SimulationDeskInner() {
         if (ors && openUnix) {
           const or30 = computeOr30Range(bars, openUnix, simT)
           or30RangeRef.current = or30
+          setOr30Locked(!!or30?.complete)
           if (showOr30Ref.current && or30) {
             const pts = or30LineSeriesData(or30, extendTo)
             try {
@@ -1837,6 +1844,8 @@ function SimulationDeskInner() {
         deskCallRef.current = deskCall
         const callText = deskCallBadgeText(deskCall)
         setCallBadge((prev) => (prev === callText ? prev : callText))
+        const hover = deskCallHoverText(deskCall)
+        setCallHover((prev) => (prev === hover ? prev : hover))
 
         // Refresh advise book when CALL playbook / locked ±10 changes.
         // Do not open P/L — trader opts in. Structure only (no Level Finder spend).
@@ -2891,6 +2900,9 @@ function SimulationDeskInner() {
   }, [applyChartData])
   useEffect(() => {
     setCallBadge('WAIT')
+    setCallHover(
+      'CALL WAIT — no ticket\n\nLeo and Level Finder advise only. No line.'
+    )
     setCallScoreText('')
     callScoreKeyRef.current = ''
     deskCallRef.current = null
@@ -3202,6 +3214,9 @@ function SimulationDeskInner() {
     lunchAttemptsRef.current = 0
     stopHitsRef.current = 0
     setCallBadge('WAIT')
+    setCallHover(
+      'CALL WAIT — no ticket\n\nLeo and Level Finder advise only. No line.'
+    )
     setCallScoreText('')
     callScoreKeyRef.current = ''
     deskCallRef.current = null
@@ -3844,8 +3859,8 @@ function SimulationDeskInner() {
             </span>
           </button>
           <span
-            title="Desk CALL — system places on legal ±10. Leo and Level Finder advise only. No line."
-            className="flex items-center gap-1 rounded border border-zinc-500/40 px-2 py-1 text-[10px] font-semibold uppercase text-zinc-400"
+            title={callHover}
+            className="group relative flex cursor-help items-center gap-1 rounded border border-zinc-500/40 px-2 py-1 text-[10px] font-semibold uppercase text-zinc-400"
           >
             <span
               className="inline-block h-1.5 w-1.5 rounded-full"
@@ -3854,6 +3869,12 @@ function SimulationDeskInner() {
             Call
             <span className="normal-case tracking-normal text-[10px] font-normal text-zinc-400/80">
               {callBadge}
+            </span>
+            <span
+              role="tooltip"
+              className="pointer-events-none invisible absolute left-0 top-full z-50 mt-1 w-[22rem] whitespace-pre-wrap rounded-lg border border-zinc-500/40 bg-[#0d1117] px-2.5 py-2 text-left text-[10px] font-normal normal-case leading-snug tracking-normal text-zinc-200 shadow-xl group-hover:visible"
+            >
+              {callHover}
             </span>
           </span>
           <button
@@ -3919,8 +3940,8 @@ function SimulationDeskInner() {
               type="button"
               title={
                 showOr30
-                  ? `OR 30 H/L visible — ${or30WindowLabel(instrument)} (Press R)`
-                  : `Show first 30m opening range — ${or30WindowLabel(instrument)} (Press R)`
+                  ? `OR 30 H/L visible — ${or30WindowLabel(instrument)} (Press R). Range is calculated even if you missed the window.`
+                  : `OR30 is calculated from cash open even if you arrive late. Press R to show H/L — ${or30WindowLabel(instrument)}`
               }
               onClick={() => setShowOr30((v) => !v)}
               className={`flex items-center gap-1 rounded border px-2 py-1 text-[10px] font-semibold uppercase ${
@@ -3933,6 +3954,7 @@ function SimulationDeskInner() {
                 className={`inline-block h-1.5 w-1.5 rounded-full ${showOr30 ? 'bg-teal-400' : 'bg-gray-600'}`}
               />
               OR 30 (R)
+              {or30Locked && !showOr30 ? ' locked' : ''}
             </button>
           )}
           <button
@@ -4037,7 +4059,7 @@ function SimulationDeskInner() {
           <span className="text-gray-600">·</span>
           <span
             className="flex items-center gap-1.5 normal-case tracking-normal"
-            title="Desk CALL — bias + legal ±10. Advise only; badge always on; no line."
+            title={callHover}
           >
             <span
               className="inline-block w-4 border-t-2"
@@ -4056,19 +4078,23 @@ function SimulationDeskInner() {
               </span>
             </>
           ) : null}
-          {or30Shaped && (
+          {(or30Shaped || or30Locked) && (
             <>
               <span className="text-gray-600">·</span>
               <span
                 className="flex items-center gap-1.5 normal-case tracking-normal"
-                title={`Opening Range 30 — ${or30WindowLabel(instrument)} (morning bait)`}
+                title={`Opening Range 30 — ${or30WindowLabel(instrument)}. Calculated even if you skip/miss the window. Press R to show lines.`}
               >
                 <span
                   className="inline-block w-4 border-t-2"
                   style={{ borderColor: OR30_COLORS.high }}
                 />
-                <span style={{ color: OR30_COLORS.high }}>OR30 H/L</span>
-                <span className="text-gray-600">morning bait</span>
+                <span style={{ color: OR30_COLORS.high }}>
+                  OR30 {or30Locked ? 'locked' : 'H/L'}
+                </span>
+                <span className="text-gray-600">
+                  {or30Shaped ? 'morning bait' : 'calculated · R off'}
+                </span>
               </span>
             </>
           )}

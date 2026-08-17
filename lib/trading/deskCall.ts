@@ -24,11 +24,13 @@ import {
 } from '@/lib/trading/rangeEdgeEntryGate'
 import {
   computeOpeningActivity,
+  openingActivityBadgeText,
   type OpeningActivity,
   type OpeningBar,
 } from '@/lib/trading/openingActivity'
 import {
   computeMarketControl,
+  marketControlBadgeText,
   type ControlBar,
   type MarketControl,
 } from '@/lib/trading/marketControl'
@@ -58,6 +60,8 @@ export type DeskCall = {
   playLine: string
   openingType: OpeningActivity['type']
   controlLabel: MarketControl['label']
+  /** Hover checklist — every WAIT / CALL decision, same on live and sim. */
+  hoverText: string
 }
 
 export type DeskCallWindowScore = {
@@ -153,6 +157,18 @@ function waiting(
     playLine: locked ? `${reason} ${BOOK_LOCKED} ${TICKET}` : `${reason} ${TICKET}`,
     openingType: extra?.openingType ?? 'WAITING',
     controlLabel: extra?.controlLabel ?? 'WAIT',
+    hoverText:
+      extra?.hoverText ??
+      [
+        'CALL WAIT — no ticket',
+        '',
+        reason,
+        locked ? BOOK_LOCKED : null,
+        '',
+        'Leo and Level Finder advise only. No line.',
+      ]
+        .filter((line) => line != null)
+        .join('\n'),
   }
 }
 
@@ -248,6 +264,124 @@ function decideSide(args: {
     if (args.peerSide !== side) return 'WAIT'
   }
   return side
+}
+
+function ydayHoverLabel(openType: YesterdayOpenType | undefined): string {
+  if (!openType || openType === 'WAITING') return 'not ready'
+  if (openType === 'IN_VALUE') return 'opened in value'
+  if (openType === 'IN_RANGE') return 'opened in range'
+  return 'opened outside range'
+}
+
+function buildCallHoverText(args: {
+  instrument: string
+  side: DeskCallSide
+  range: { key: DeskCallRangeKey; high: number; low: number } | null
+  opening: OpeningActivity
+  control: MarketControl
+  ydayType: YesterdayOpenType | undefined
+  bookLocked: boolean
+  peerSide?: DeskCallSide | null
+  midAllowed: boolean
+  entryPrice: number | null
+}): string {
+  const tokyo = args.instrument === 'NIKKEI'
+  const openBadge = openingActivityBadgeText(args.opening)
+  const ctrlBadge = marketControlBadgeText(args.control)
+  const fromOpen = openBias(args.opening)
+  const fromCtrl = controlBias(args.control)
+  const ctrlReady = args.control.label !== 'WAIT'
+  const veto = ydayVetoes(args.ydayType, args.opening)
+  const rows: string[] = []
+
+  if (!args.range) {
+    rows.push('BLOCK  Range: not locked — no legal ±10')
+  } else {
+    rows.push(
+      `OK     Range: ${speakRange(args.range.key, tokyo)} locked · H ${px(args.range.high)} / L ${px(args.range.low)}`
+    )
+  }
+
+  if (args.opening.failedDrive) {
+    rows.push(`BLOCK  Open: ${openBadge} — failed drive, no side`)
+  } else if (fromOpen === 'WAIT') {
+    rows.push(
+      `BLOCK  Open: ${openBadge} — needs Drive or Test-Drive (up or down)`
+    )
+  } else {
+    rows.push(`OK     Open: ${openBadge} → ${fromOpen}`)
+  }
+
+  if (veto) {
+    rows.push(
+      `BLOCK  Yday: ${ydayHoverLabel(args.ydayType)} + Open ${openBadge} — in-value Auction/Rej-Rev veto`
+    )
+  } else {
+    rows.push(`OK     Yday: ${ydayHoverLabel(args.ydayType)} — no veto`)
+  }
+
+  if (!ctrlReady) {
+    rows.push(
+      `OK     Ctrl: ${ctrlBadge} — not scored yet; Open can CALL alone`
+    )
+  } else if (fromCtrl === 'WAIT') {
+    rows.push(
+      `BLOCK  Ctrl: ${ctrlBadge} · ${args.control.label} — needs ONE-TF BUY or SELL`
+    )
+  } else if (fromOpen !== 'WAIT' && fromCtrl !== fromOpen) {
+    rows.push(
+      `BLOCK  Ctrl: ${ctrlBadge} · ${args.control.label} → ${fromCtrl} — disagrees with Open ${fromOpen}`
+    )
+  } else {
+    rows.push(
+      `OK     Ctrl: ${ctrlBadge} · ${args.control.label} → ${fromCtrl}`
+    )
+  }
+
+  if (args.peerSide === 'LONG' || args.peerSide === 'SHORT') {
+    if (fromOpen !== 'WAIT' && args.peerSide !== fromOpen) {
+      rows.push(`BLOCK  Twin desk: ${args.peerSide} — disagrees with this CALL`)
+    } else {
+      rows.push(`OK     Twin desk: ${args.peerSide}`)
+    }
+  }
+
+  rows.push(
+    args.bookLocked
+      ? 'BLOCK  Book locked — CALL is the read, not a fill'
+      : 'OK     Book open'
+  )
+
+  const header =
+    args.side === 'WAIT' || !args.range
+      ? 'CALL WAIT — no ticket'
+      : `CALL ${args.range.key} ${args.side} — ticket allowed`
+  const hunt =
+    args.side === 'WAIT' || !args.range || args.entryPrice == null
+      ? 'Hunt nothing new until Open and Control agree on one side.'
+      : args.side === 'LONG'
+        ? `Hunt: ±${CALL_BAND_POINTS} below ${speakRange(args.range.key, tokyo)} low ${args.entryPrice}${
+            args.midAllowed ? ' (mid is a pullback in the same CALL)' : ''
+          }`
+        : `Hunt: ±${CALL_BAND_POINTS} above ${speakRange(args.range.key, tokyo)} high ${args.entryPrice}${
+            args.midAllowed ? ' (mid is a pullback in the same CALL)' : ''
+          }`
+
+  return [
+    header,
+    '',
+    ...rows,
+    '',
+    hunt,
+    tokyo ? 'Nikkei Open/Control = Tokyo cash, not US Range TPO.' : null,
+    'Leo and Level Finder advise only. No line.',
+  ]
+    .filter((line) => line != null)
+    .join('\n')
+}
+
+export function deskCallHoverText(p: DeskCall): string {
+  return p.hoverText
 }
 
 export function deskCallBadgeText(p: DeskCall): string {
@@ -580,6 +714,18 @@ export function computeDeskCall(args: {
       ...baseWait,
       reason:
         'CALL WAIT — no locked playbook range yet, so there is no legal ±10.',
+      hoverText: buildCallHoverText({
+        instrument,
+        side: 'WAIT',
+        range: null,
+        opening,
+        control,
+        ydayType: yday?.openType,
+        bookLocked,
+        peerSide: args.peerSide,
+        midAllowed: false,
+        entryPrice: null,
+      }),
     })
   }
 
@@ -602,6 +748,18 @@ export function computeDeskCall(args: {
       rangeHigh: px(range.high),
       rangeLow: px(range.low),
       midAllowed,
+      hoverText: buildCallHoverText({
+        instrument,
+        side: 'WAIT',
+        range,
+        opening,
+        control,
+        ydayType: yday?.openType,
+        bookLocked,
+        peerSide: args.peerSide,
+        midAllowed,
+        entryPrice: null,
+      }),
     })
   }
 
@@ -621,7 +779,20 @@ export function computeDeskCall(args: {
     playLine: '',
     openingType: opening.type,
     controlLabel: control.label,
+    hoverText: '',
   }
   call.playLine = playLineForCall(call)
+  call.hoverText = buildCallHoverText({
+    instrument,
+    side,
+    range,
+    opening,
+    control,
+    ydayType: yday?.openType,
+    bookLocked,
+    peerSide: args.peerSide,
+    midAllowed,
+    entryPrice,
+  })
   return call
 }

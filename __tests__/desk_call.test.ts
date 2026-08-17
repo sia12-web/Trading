@@ -18,6 +18,7 @@ import {
   assertDeskCallEntry,
   computeDeskCall,
   deskCallBadgeText,
+  deskCallHoverText,
   deskCallLegalEdges,
   deskCallLineSpecs,
   deskCallPaintKey,
@@ -224,6 +225,9 @@ function auctionThenBuy(openU: number): DeskCallBar[] {
   assert.ok(call.playLine.includes('Ticket unchanged'))
   assert.ok(call.playLine.includes('off-band'))
   assert.ok(formatDeskCallForPrompt(call).includes('dPOC is not the fill'))
+  assert.ok(deskCallHoverText(call).includes('CALL OR30 LONG — ticket allowed'))
+  assert.ok(deskCallHoverText(call).includes('OK     Open:'))
+  assert.ok(deskCallHoverText(call).includes('Hunt:'))
   assert.equal(deskCallLineSpecs(call).length, 0)
   assert.equal(CALL_COLORS.badge, '#a1a1aa')
   assert.equal(CALL_BAND_POINTS, RANGE_EDGE_BAND_POINTS)
@@ -241,6 +245,12 @@ function auctionThenBuy(openU: number): DeskCallBar[] {
   assert.equal(call.controlLabel, 'ONE-TF BUY')
   assert.equal(call.side, 'WAIT', 'Auction + ONE-TF BUY → WAIT')
   assert.equal(deskCallBadgeText(call), 'WAIT')
+  const hover = deskCallHoverText(call)
+  assert.ok(hover.includes('CALL WAIT — no ticket'))
+  assert.ok(hover.includes('BLOCK  Open: AUCTION'))
+  assert.ok(hover.includes('Drive or Test-Drive'))
+  assert.ok(hover.includes('OK     Ctrl:'))
+  assert.ok(hover.includes('Leo and Level Finder advise only. No line.'))
 }
 
 {

@@ -58,7 +58,7 @@ test('Call chip sits after Ctrl; zinc; not a toggle', () => {
   )
   assert.ok(
     sim.indexOf('Dalton control dPOC line on') <
-      sim.indexOf('Leo and Level Finder advise only. No line.'),
+      sim.indexOf('title={callHover}'),
     'Call after Ctrl on sim'
   )
   assert.ok(live.includes('text-zinc-400'))
@@ -68,18 +68,20 @@ test('Call chip sits after Ctrl; zinc; not a toggle', () => {
   assert.equal(CALL_COLORS.badge, '#a1a1aa')
   const liveChip = sliceBetween(
     live,
-    'Leo and Level Finder advise only. No line.',
+    'title={callHover}',
     '{callBadge}'
   )
   assert.ok(!liveChip.includes('onClick'))
   assert.ok(!live.includes('setShowDeskCall'))
   assert.ok(!sim.includes('setShowDeskCall'))
+  assert.ok(live.includes('deskCallHoverText'))
+  assert.ok(sim.includes('deskCallHoverText'))
 })
 
 test('Call is not Open cyan / Ctrl indigo / Y amber / lunch orange / go-button green-red', () => {
   const liveChip = sliceBetween(
     live,
-    'Leo and Level Finder advise only. No line.',
+    'title={callHover}',
     '{callBadge}'
   )
   assert.ok(liveChip.includes('zinc-400'))
@@ -151,7 +153,7 @@ test('sim Reset cannot double-count a scored day', () => {
 test('Call chip is a span, not innerHTML', () => {
   const liveChip = sliceBetween(
     live,
-    'Leo and Level Finder advise only. No line.',
+    'title={callHover}',
     '{callBadge}'
   )
   assert.ok(liveChip.includes('<span'))

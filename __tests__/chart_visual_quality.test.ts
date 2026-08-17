@@ -56,5 +56,14 @@ assert.ok(!live.includes('fitContent()'), 'live Reset scale does not zoom to ful
 assert.ok(live.includes('deskVisibleLogicalRange(ordered.length, width)'), 'live bar count follows pane width')
 assert.ok(live.includes('ibLineSeriesData(ib, tipUnix)'), 'live IB ends at latest bar')
 assert.ok(!live.includes('Math.max(tipUnix, closeUnix)'), 'live IB adds no future close point')
+assert.ok(
+  live.includes('late clock-in still has a calculated OR30'),
+  'OR30 lock survives skipped/missed window'
+)
+assert.ok(
+  live.includes("OR30 {or30Locked ? 'locked' : or30Shaped ? 'forming' : showOr30 ? 'waiting' : 'off'}"),
+  'legend reports locked OR30 even when R is off'
+)
+assert.ok(sim.includes('setOr30Locked(!!or30?.complete)'), 'sim locks OR30 from bars, not R toggle')
 
 console.log('chart_visual_quality.test.ts: all passed')

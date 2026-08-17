@@ -93,6 +93,7 @@ import {
   CALL_COLORS,
   computeDeskCall,
   deskCallBadgeText,
+  deskCallHoverText,
   resolveDeskCallAsOfUnix,
   assertDeskCallEntry,
   deskCallLegalEdges,
@@ -855,6 +856,9 @@ export function TradingChart({
   const controlPaintKeyRef = useRef('')
   const [controlBadge, setControlBadge] = useState('RF WAIT')
   const [callBadge, setCallBadge] = useState('WAIT')
+  const [callHover, setCallHover] = useState(
+    'CALL WAIT — no ticket\n\nLeo and Level Finder advise only. No line.'
+  )
   /** Live count of BRK/REJ markers currently painted (for toolbar status). */
   const [rangeSignalSummary, setRangeSignalSummary] = useState<{
     ib: number
@@ -1297,12 +1301,16 @@ export function TradingChart({
     }
   }, [showUsRange, instrument])
 
-  /** Apply / clear first-30m opening range H/L (teal, IB-style). */
+  /** Apply / clear first-30m opening range H/L (teal, IB-style).
+   *  Lock is independent of R — late clock-in still has a calculated OR30. */
   const paintOr30Lines = useCallback(() => {
     const series = or30SeriesRef.current
     if (!series) return
     const range = or30RangeRef.current
-    if (!showOr30 || !range || !isOr30Instrument(instrument)) {
+    const allowed = isOr30Instrument(instrument)
+    setOr30Locked(!!(allowed && range?.complete))
+
+    if (!showOr30 || !range || !allowed) {
       try {
         series.high.setData([])
         series.low.setData([])
@@ -1310,7 +1318,6 @@ export function TradingChart({
         /* ignore */
       }
       setOr30Shaped(false)
-      setOr30Locked(false)
       return
     }
     const tipUnix = candlesRef.current.length
@@ -1332,12 +1339,10 @@ export function TradingChart({
         ).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
       )
       setOr30Shaped(pts.high.length > 0)
-      setOr30Locked(!!range.complete)
     } catch {
       series.high.setData([])
       series.low.setData([])
       setOr30Shaped(false)
-      setOr30Locked(false)
     }
   }, [showOr30, instrument])
 
@@ -1540,6 +1545,8 @@ export function TradingChart({
     })
     const badge = deskCallBadgeText(call)
     setCallBadge((prev) => (prev === badge ? prev : badge))
+    const hover = deskCallHoverText(call)
+    setCallHover((prev) => (prev === hover ? prev : hover))
     deskCallRef.current = call
   }, [
     instrument,
@@ -3110,6 +3117,9 @@ export function TradingChart({
       controlPaintKeyRef.current = ''
     }
     setCallBadge('WAIT')
+    setCallHover(
+      'CALL WAIT — no ticket\n\nLeo and Level Finder advise only. No line.'
+    )
     deskCallRef.current = null
     const or30S = or30SeriesRef.current
     if (or30S) {
@@ -3438,6 +3448,7 @@ export function TradingChart({
             nowUnix
           )
           or30RangeRef.current = or30
+          setOr30Locked(!!or30?.complete)
           paintOr30Lines()
         } else {
           or30RangeRef.current = null
@@ -6542,8 +6553,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
         {deskSessionLive && (
           <span
-            title="Desk CALL — system places on legal ±10. Leo and Level Finder advise only. No line."
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border rounded-lg bg-transparent border-zinc-500/40 text-zinc-400"
+            title={callHover}
+            className="group relative flex cursor-help items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border rounded-lg bg-transparent border-zinc-500/40 text-zinc-400"
           >
             <span
               className="w-2 h-2 rounded-full inline-block"
@@ -6551,6 +6562,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             />
             <span>Call</span>
             <span className="text-[10px] font-normal text-zinc-400/80">{callBadge}</span>
+            <span
+              role="tooltip"
+              className="pointer-events-none invisible absolute left-0 top-full z-50 mt-1 w-[22rem] whitespace-pre-wrap rounded-lg border border-zinc-500/40 bg-[#0d1117] px-2.5 py-2 text-left text-[10px] font-normal normal-case leading-snug tracking-normal text-zinc-200 shadow-xl group-hover:visible"
+            >
+              {callHover}
+            </span>
           </span>
         )}
 
@@ -6607,8 +6624,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             type="button"
             title={
               showOr30
-                ? `OR30 H/L + OR BRK/REJ — ${or30WindowLabel(instrument)} (Press R). BRK = close beyond H/L (RVOL when volume exists). REJ = wick reject.`
-                : `Show first 30m opening range H/L + break/reject markers — ${or30WindowLabel(instrument)} (Press R)`
+                ? `OR30 H/L + OR BRK/REJ — ${or30WindowLabel(instrument)} (Press R). Range is calculated even if you missed the window. BRK = close beyond H/L (RVOL when volume exists). REJ = wick reject.`
+                : `OR30 is calculated from cash open even if you arrive late. Press R to show H/L + BRK/REJ — ${or30WindowLabel(instrument)}`
             }
             onClick={() => setShowOr30((v) => !v)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
@@ -6619,6 +6636,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           >
             <span className={`w-2 h-2 rounded-full inline-block ${showOr30 ? 'bg-teal-400' : 'bg-gray-600'}`} />
             <span>OR30 BRK/REJ (R)</span>
+            {or30Locked && !showOr30 && (
+              <span className="text-[10px] font-normal text-teal-200/80">locked</span>
+            )}
             {or30Shaped && (
               <span className="text-[10px] font-normal text-teal-200/80">
                 {rangeSignalSummary.or30 > 0 ? `${rangeSignalSummary.or30}` : '0'}
@@ -7079,7 +7099,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               Ctrl {controlBadge}
             </span>
           </span>
-          <span title="Zinc desk CALL — bias + legal ±10. Advise only; badge always on; no line.">
+          <span title={callHover}>
             <span className="text-zinc-400">
               Call {callBadge}
             </span>
@@ -7095,9 +7115,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               </span>
             )}
           </span>
-          <span title="Teal opening-range high/low (first 30m). ±10 entries only after the 30m window locks.">
-            <span className={or30Shaped ? 'text-teal-500' : 'text-gray-600'}>
-              OR30 {or30Shaped ? (or30Locked ? 'locked' : 'forming') : 'waiting'}
+          <span title="First 30m range is always calculated (even if you skip/miss the window). Press R to show H/L. Morning ±10 stays closed after OR30 clock — late desk uses IB / US Range.">
+            <span className={or30Locked || or30Shaped ? 'text-teal-500' : 'text-gray-600'}>
+              OR30 {or30Locked ? 'locked' : or30Shaped ? 'forming' : showOr30 ? 'waiting' : 'off'}
             </span>
             {or30Shaped && (
               <span className="text-gray-600">
