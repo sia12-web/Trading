@@ -33,6 +33,7 @@ import {
   type DeskInstrumentPref,
 } from '@/lib/trading/deskInstrumentPreference'
 import { isAnyLiveFocusWindowActive, isAfternoonWatchWindow, sessionFor, deskMarketFor } from '@/lib/trading/sessionGate'
+import { LIVE_CLOCK_REFUSE, clockedNameOnlyMessage } from '@/lib/trading/liveDeskBook'
 import {
   TRADER_DISPLAY_LABEL,
   deskLocalHmsAsTraderDisplay,
@@ -115,8 +116,8 @@ function entryDeniedMessage(gate: SessionGateState | null | undefined): string |
     return (
       gate.message?.trim() ||
       (gate.lockedInstrument
-        ? `Clocked into ${gate.lockedInstrument} — this chart is glance only.`
-        : 'This chart is glance only.')
+        ? clockedNameOnlyMessage(gate.lockedInstrument)
+        : LIVE_CLOCK_REFUSE)
     )
   }
   if (!gate.canPlaceEntry) {
@@ -220,10 +221,16 @@ export default function ChartPage() {
   // SSR/hydration always starts DOW — restore preference after mount (see effect below)
   const [instrument, setInstrumentState] = useState<Instrument>('DOW')
 
-  /** User tab click — persist across refresh */
+  const gateRef = useRef<SessionGateState | null>(null)
+
+  /** User tab click — persist unclocked browse or the clocked name */
   const setInstrument = useCallback((i: Instrument) => {
     setInstrumentState(i)
-    setDeskInstrumentPreference(i)
+    const g = gateRef.current
+    const locked = g?.lockedInstrument
+    if (!g?.clockedIn || !locked || i === locked) {
+      setDeskInstrumentPreference(i)
+    }
   }, [])
 
   /** Gate/lock sync — update view only, do not clobber saved preference */
@@ -254,6 +261,14 @@ export default function ChartPage() {
   const [riskProfile, setRiskProfile] = useState(getDeskRiskProfile)
   const lastTradeifyRiskRef = useRef(0)
   const [gate, setGate] = useState<SessionGateState | null>(null)
+  gateRef.current = gate
+
+  // Clocked name owns the chart on refresh — preference DOW must not hide NASDAQ/MNQ.
+  useEffect(() => {
+    const locked = gate?.lockedInstrument
+    if (!gate?.clockedIn || !locked) return
+    setInstrumentState(locked)
+  }, [gate?.clockedIn, gate?.lockedInstrument])
   const [orderLevel, setOrderLevel] = useState<number | null>(null)
   const [orderLevelType, setOrderLevelType] = useState<string | undefined>()
   const [orderLevelSide, setOrderLevelSide] = useState<'BUY' | 'SHORT' | undefined>()

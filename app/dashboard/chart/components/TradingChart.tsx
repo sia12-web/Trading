@@ -213,11 +213,19 @@ import {
   type Or30Range,
 } from '@/lib/chart/openingRange30'
 import {
-  getDeskInstrumentPreference,
   setDeskInstrumentPreference,
   deskVisibleLogicalRange,
   deskBarSpacing,
+  loadDeskViewport,
+  saveDeskViewport,
+  loadDeskOverlayToggles,
+  saveDeskOverlayToggles,
 } from '@/lib/trading/deskInstrumentPreference'
+import {
+  liveDeskContractLabel,
+  liveDeskIndexHint,
+  resolveClockedChartInstrument,
+} from '@/lib/trading/liveDeskBook'
 import { snapDeskPrice, snapStopToTick, snapTargetToTick } from '@/lib/trading/instrumentTicks'
 import { deskBookLines } from '@/lib/trading/tradovateMirror'
 import {
@@ -471,8 +479,8 @@ interface TooltipData {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const INSTRUMENT_META: Record<Instrument, { label: string; symbol: string; color: string; basePrice: number }> = {
-  DOW:    { label: 'E-mini Dow', symbol: 'YM',  color: '#3b7eff', basePrice: 39500 },
-  NASDAQ: { label: 'E-mini Nasdaq', symbol: 'NQ', color: '#3b7eff', basePrice: 28500 },
+  DOW:    { label: 'Micro Dow · MYM', symbol: 'MYM',  color: '#3b7eff', basePrice: 39500 },
+  NASDAQ: { label: 'Micro Nasdaq · MNQ', symbol: 'MNQ', color: '#3b7eff', basePrice: 28500 },
   NIKKEI: { label: 'Nikkei USD', symbol: 'NKD', color: '#f472b6', basePrice: 38000 },
 }
 
@@ -820,8 +828,8 @@ export function TradingChart({
   const [ibShaped, setIbShaped] = useState(false)
   /** Mirrored IB H/L for ±10 band effect deps (refs alone do not re-render). */
   const [ibLevels, setIbLevels] = useState<{ high: number; low: number } | null>(null)
-  /** IB H/L + BRK/REJ markers + ±10 bands — off on refresh; user toggles on (Press B). */
-  const [showIbBreakouts, setShowIbBreakouts] = useState(false)
+  /** IB H/L + BRK/REJ markers + ±10 bands — remembered across refresh. */
+  const [showIbBreakouts, setShowIbBreakouts] = useState(() => loadDeskOverlayToggles().ib)
   /** NYC lunch 12:00–13:30 ET — DOW / NASDAQ only (Mind Over Markets range) */
   const lunchSeriesRef = useRef<{
     high: ISeriesApi<'Line'>
@@ -831,7 +839,7 @@ export function TradingChart({
   const lunchRangeRef = useRef<NycLunchRange | null>(null)
   const [lunchShaped, setLunchShaped] = useState(false)
   const [lunchLocked, setLunchLocked] = useState(false)
-  const [showLunchRange, setShowLunchRange] = useState(false)
+  const [showLunchRange, setShowLunchRange] = useState(() => loadDeskOverlayToggles().lunch)
   /** US session range H/L + Asia BRK/REJ — NIKKEI only */
   const usRangeSeriesRef = useRef<{
     high: ISeriesApi<'Line'>
@@ -840,7 +848,7 @@ export function TradingChart({
   const usRangeRef = useRef<NikkeiUsSessionRange | null>(null)
   const [usRangeShaped, setUsRangeShaped] = useState(false)
   /** Gates current-session US H/L lines (IB-style, no markers) */
-  const [showUsRange, setShowUsRange] = useState(false)
+  const [showUsRange, setShowUsRange] = useState(() => loadDeskOverlayToggles().us)
   /** Stable paint hook for tip-stream refresh (avoids restarting SSE on marker deps). */
   const paintDeskMarkersRef = useRef<(bars?: OHLCV[]) => void>(() => {})
   const paintYesterdayProfileRef = useRef<() => void>(() => {})
@@ -860,16 +868,16 @@ export function TradingChart({
   const or30RangeRef = useRef<Or30Range | null>(null)
   const [or30Shaped, setOr30Shaped] = useState(false)
   const [or30Locked, setOr30Locked] = useState(false)
-  const [showOr30, setShowOr30] = useState(false)
-  const [showYesterdayProfile, setShowYesterdayProfile] = useState(false)
+  const [showOr30, setShowOr30] = useState(() => loadDeskOverlayToggles().or30)
+  const [showYesterdayProfile, setShowYesterdayProfile] = useState(() => loadDeskOverlayToggles().yday)
   const ydayLinesRef = useRef<IPriceLine[]>([])
   const ydayPaintKeyRef = useRef('')
   const [yesterdayBadge, setYesterdayBadge] = useState('Yday off')
-  const [showOpeningActivity, setShowOpeningActivity] = useState(false)
+  const [showOpeningActivity, setShowOpeningActivity] = useState(() => loadDeskOverlayToggles().opening)
   const openingLinesRef = useRef<IPriceLine[]>([])
   const openingPaintKeyRef = useRef('')
   const [openingBadge, setOpeningBadge] = useState('WAIT')
-  const [showMarketControl, setShowMarketControl] = useState(false)
+  const [showMarketControl, setShowMarketControl] = useState(() => loadDeskOverlayToggles().control)
   const controlLinesRef = useRef<IPriceLine[]>([])
   const controlPaintKeyRef = useRef('')
   const [controlBadge, setControlBadge] = useState('RF WAIT')
@@ -935,7 +943,28 @@ export function TradingChart({
     return () => clearInterval(timer)
   }, [])
 
-  const [showLevels,  setShowLevels] = useState(false)
+  const [showLevels,  setShowLevels] = useState(() => loadDeskOverlayToggles().levels)
+  useEffect(() => {
+    saveDeskOverlayToggles({
+      levels: showLevels,
+      or30: showOr30,
+      ib: showIbBreakouts,
+      lunch: showLunchRange,
+      us: showUsRange,
+      yday: showYesterdayProfile,
+      opening: showOpeningActivity,
+      control: showMarketControl,
+    })
+  }, [
+    showLevels,
+    showOr30,
+    showIbBreakouts,
+    showLunchRange,
+    showUsRange,
+    showYesterdayProfile,
+    showOpeningActivity,
+    showMarketControl,
+  ])
   /** Floating morning playbook — closed by default on chart refresh; open via Playbook (P). */
   const [playbookOpen, setPlaybookOpen] = useState(false)
 
@@ -2293,9 +2322,8 @@ export function TradingChart({
       attendedToday: deskAttended,
     }) as Instrument[]
     if (allowedInstruments && allowedInstruments.length > 0) {
-      setVisibleInstruments(
-        allowedInstruments.filter((i) => live.includes(i) || allowedInstruments.includes(i))
-      )
+      const fromGate = allowedInstruments.filter((i) => live.includes(i))
+      setVisibleInstruments(fromGate.length > 0 ? fromGate : live)
       return
     }
     setVisibleInstruments(live)
@@ -2314,24 +2342,18 @@ export function TradingChart({
   const setInstrument = useCallback((inst: Instrument) => {
     if (!visibleInstruments.includes(inst)) return
     setInstrumentState(inst)
-    if (!lockedInstrument) setDeskInstrumentPreference(inst)
+    if (!lockedInstrument || inst === lockedInstrument) setDeskInstrumentPreference(inst)
     onInstrumentChange?.(inst)
   }, [onInstrumentChange, lockedInstrument, visibleInstruments])
 
-  // Hydrate remembered market once; stay on the twin when glancing
   useEffect(() => {
     setInstrumentState((prev) => {
-      if (visibleInstruments.includes(prev)) return prev
-      const next =
-        (lockedInstrument && visibleInstruments.includes(lockedInstrument)
-          ? lockedInstrument
-          : null) ||
-        (visibleInstruments.includes(getDeskInstrumentPreference())
-          ? getDeskInstrumentPreference()
-          : null) ||
-        visibleInstruments[0] ||
-        'DOW'
-      onInstrumentSync?.(next)
+      const next = resolveClockedChartInstrument({
+        locked: lockedInstrument,
+        viewing: prev,
+        visible: visibleInstruments,
+      }) as Instrument
+      if (next !== prev) onInstrumentSync?.(next)
       return next
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3618,7 +3640,10 @@ export function TradingChart({
             autoScale: true,
             scaleMargins: DESK_CHART_THEME.rightPriceScale.scaleMargins,
           })
-          ts.setVisibleLogicalRange(deskVisibleLogicalRange(ordered.length, width))
+          const restored = loadDeskViewport(instrument, ordered.length, width)
+          ts.setVisibleLogicalRange(
+            restored ?? deskVisibleLogicalRange(ordered.length, width)
+          )
           didFitRef.current = true
         } catch {
           /* ignore */
@@ -3708,6 +3733,7 @@ export function TradingChart({
         rightOffset: DESK_CHART_THEME.timeScale.rightOffset,
       })
       ts.setVisibleLogicalRange(deskVisibleLogicalRange(list.length, width))
+      saveDeskViewport(instrumentRef.current, deskVisibleLogicalRange(list.length, width), list.length)
     } catch {
       /* ignore */
     }
@@ -3737,6 +3763,17 @@ export function TradingChart({
         if (pointerDown) return
         interactingRef.current = false
         paintNow()
+        if (didFitRef.current && chartRef.current) {
+          try {
+            const range = chartRef.current.timeScale().getVisibleLogicalRange()
+            const list = candlesRef.current
+            if (range && list.length > 1) {
+              saveDeskViewport(instrumentRef.current, range, list.length)
+            }
+          } catch {
+            /* ignore */
+          }
+        }
       }, 180)
     }
 
@@ -5909,7 +5946,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       playbookMode,
       instrument,
       showOr30,
-      // IB H/L + ±10 follow the IB BRK/REJ toolbar toggle (off on refresh).
+      // IB H/L + ±10 follow the IB BRK/REJ toolbar toggle (remembered across refresh).
       showIb: showIbBreakouts,
       showUsRange,
       showLunchRange,
@@ -6541,7 +6578,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               className={`tab ${instrument === inst ? 'tab-active' : ''}`}
               style={instrument === inst ? { backgroundColor: INSTRUMENT_META[inst].color + '33', color: INSTRUMENT_META[inst].color } : {}}
             >
-              {inst}
+              {liveDeskContractLabel(inst)}
             </button>
           ))}
         </div>
@@ -6578,7 +6615,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </button>
         )}
 
-        {/* IB H/L + BRK/REJ + ±10 (Press B) — off on refresh */}
+        {/* IB H/L + BRK/REJ + ±10 (Press B) — remembered across refresh */}
         {deskSessionLive && (
           <button
             type="button"
@@ -7110,11 +7147,19 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           {livePrice && (
             <div className="flex flex-col items-end leading-tight">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">{INSTRUMENT_META[instrument].label}</span>
+                <span
+                  className="text-xs text-gray-500"
+                  title={liveDeskIndexHint(instrument)}
+                >
+                  {INSTRUMENT_META[instrument].label}
+                </span>
                 <span
                   className="price-mono text-xl font-extrabold transition-colors duration-300"
                   style={{ color: INSTRUMENT_META[instrument].color }}
-                  title="OANDA mid (bid+ask)/2 — compare TradingView to OANDA:US30USD / NAS100USD / JP225USD"
+                  title={
+                    liveDeskIndexHint(instrument) ||
+                    'OANDA mid (bid+ask)/2 — compare TradingView to the same index (MNQ vs MYM are different markets)'
+                  }
                 >
                   {livePrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>

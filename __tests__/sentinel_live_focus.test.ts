@@ -124,34 +124,34 @@ test('Tokyo afternoon stream: only NIKKEI', () => {
   )
 })
 
-test('DOW locked: both NY tabs stay (twin is glance-only)', () => {
+test('DOW locked: only DOW tab (no twin glance)', () => {
   const now = etDate(Y, M, D, 10, 0)
   const vis = liveVisibleInstruments(now, {
     lockedInstrument: 'DOW',
     clockedIn: false,
     attendedToday: false,
   })
-  assert(vis.includes('DOW') && vis.includes('NASDAQ'), `got ${vis}`)
+  assert(JSON.stringify(vis) === JSON.stringify(['DOW']), `got ${vis}`)
 })
 
-test('Clocked into DOW: both NY tabs stay for glance', () => {
+test('Clocked into DOW: only DOW tab', () => {
   const now = etDate(Y, M, D, 10, 0)
   const vis = liveVisibleInstruments(now, {
     lockedInstrument: 'DOW',
     clockedIn: true,
     attendedToday: true,
   })
-  assert(vis.includes('DOW') && vis.includes('NASDAQ'), `got ${vis}`)
+  assert(JSON.stringify(vis) === JSON.stringify(['DOW']), `got ${vis}`)
 })
 
-test('Attended NASDAQ after lunch: both NY tabs stay', () => {
+test('Attended NASDAQ after lunch: only NASDAQ tab', () => {
   const now = etDate(Y, M, D, 14, 0)
   const vis = liveVisibleInstruments(now, {
     lockedInstrument: 'NASDAQ',
     clockedIn: false,
     attendedToday: true,
   })
-  assert(vis.includes('DOW') && vis.includes('NASDAQ'), `got ${vis}`)
+  assert(JSON.stringify(vis) === JSON.stringify(['NASDAQ']), `got ${vis}`)
 })
 
 test('Off-session lock ignored: NY rec does not surface during Tokyo', () => {
@@ -243,7 +243,7 @@ test('NY 09:15: AI suggest soft — both tabs stay, clock-in open', () => {
   assert(/NASDAQ/i.test(gate.message), gate.message)
 })
 
-test('NY 09:20 clock-in keeps both tabs; tickets stay on committed name', () => {
+test('NY 09:20 clock-in is one name; tickets stay on committed name', () => {
   const now = etDate(Y, M, D, 9, 20)
   const gate = resolveSessionGate({
     now,
@@ -257,8 +257,8 @@ test('NY 09:20 clock-in keeps both tabs; tickets stay on committed name', () => 
   })
   assert(gate.lockedInstrument === 'DOW', 'hard lock DOW')
   assert(
-    gate.allowedInstruments.includes('DOW') && gate.allowedInstruments.includes('NASDAQ'),
-    'twin tabs stay'
+    JSON.stringify(gate.allowedInstruments) === JSON.stringify(['DOW']),
+    'one door'
   )
   assert(gate.canViewLiveChart === true, 'clocked chart on')
   assert(gate.glanceOnly === false, 'on clocked name')

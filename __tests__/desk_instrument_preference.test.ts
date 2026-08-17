@@ -7,6 +7,8 @@ import {
   parseDeskInstrument,
   deskVisibleLogicalRange,
   deskBarSpacing,
+  encodeDeskViewport,
+  decodeDeskViewport,
   DESK_VISIBLE_BARS,
 } from '../lib/trading/deskInstrumentPreference'
 
@@ -38,6 +40,15 @@ assert(parseDeskInstrument('') === null, 'empty')
 {
   const spacing = deskBarSpacing(900, 3000)
   assert(spacing >= 12 && spacing <= 14, `spacing ${spacing}`)
+}
+
+{
+  const fitted = deskVisibleLogicalRange(3000)
+  const encoded = encodeDeskViewport(fitted, 3000)
+  assert(!!encoded, 'encode tip window')
+  const later = decodeDeskViewport(encoded!, 3100)
+  assert(later.to - later.from === encoded!.span, `span held ${later.to - later.from}`)
+  assert(3100 - 1 - later.from === encoded!.fromEnd, 'stays tip-relative after new bars')
 }
 
 console.log('desk_instrument_preference.test.ts: all passed')

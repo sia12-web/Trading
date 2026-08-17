@@ -7,8 +7,12 @@ import assert from 'node:assert/strict'
 import {
   LIVE_CLOCK_REFUSE,
   assertLiveClockIn,
+  clockedNameOnlyMessage,
   isLiveClockInstrument,
   isNyGlanceChart,
+  liveDeskContractLabel,
+  liveDeskIndexHint,
+  resolveClockedChartInstrument,
 } from '../lib/trading/liveDeskBook'
 import {
   assertCanOpenPosition,
@@ -27,6 +31,40 @@ assert.equal(isLiveClockInstrument('NASDAQ'), true)
 assert.equal(isLiveClockInstrument('NIKKEI'), false)
 assert.equal(isNyGlanceChart('NASDAQ', 'DOW'), true)
 assert.equal(isNyGlanceChart('NASDAQ', 'NASDAQ'), false)
+
+assert.equal(liveDeskContractLabel('DOW'), 'DOW · MYM')
+assert.equal(liveDeskContractLabel('NASDAQ'), 'NASDAQ · MNQ')
+assert.ok(liveDeskIndexHint('NASDAQ').includes('30k'))
+assert.ok(liveDeskIndexHint('DOW').includes('53k'))
+assert.ok(clockedNameOnlyMessage('NASDAQ').includes('MNQ'))
+assert.ok(clockedNameOnlyMessage('NASDAQ').includes('one name'))
+
+assert.equal(
+  resolveClockedChartInstrument({
+    locked: 'NASDAQ',
+    viewing: 'DOW',
+    visible: ['NASDAQ'],
+  }),
+  'NASDAQ',
+  'clocked name is the only door'
+)
+assert.equal(
+  resolveClockedChartInstrument({
+    locked: 'NASDAQ',
+    viewing: 'DOW',
+    visible: ['DOW', 'NASDAQ'],
+  }),
+  'NASDAQ',
+  'lock wins even if a twin is still in the list'
+)
+assert.equal(
+  resolveClockedChartInstrument({
+    locked: null,
+    viewing: 'DOW',
+    visible: ['DOW', 'NASDAQ'],
+  }),
+  'DOW'
+)
 
 const noName = assertLiveClockIn({ market: 'NY', instrument: null })
 assert.equal(noName.ok, false)
@@ -56,10 +94,11 @@ const vis = liveVisibleInstruments(now, {
   clockedIn: true,
   attendedToday: true,
 })
-assert.ok(vis.includes('DOW') && vis.includes('NASDAQ'), `twin tabs ${vis}`)
+assert.deepEqual(vis, ['NASDAQ'], `one door ${vis}`)
+assert.ok(!vis.includes('DOW'))
 assert.ok(!vis.includes('NIKKEI'))
 
-const glance = resolveSessionGate({
+const staleTwin = resolveSessionGate({
   now,
   lockedInstrument: 'NASDAQ',
   viewingInstrument: 'DOW',
@@ -68,17 +107,16 @@ const glance = resolveSessionGate({
   attemptsUsed: 0,
   stopLossHitCount: 0,
 })
-assert.equal(glance.glanceOnly, true)
-assert.equal(glance.canPlaceEntry, false)
-assert.equal(glance.lockedInstrument, 'NASDAQ')
-assert.ok(glance.allowedInstruments.includes('DOW'))
-assert.ok(/glance only/i.test(glance.message))
+assert.equal(staleTwin.glanceOnly, false)
+assert.equal(staleTwin.lockedInstrument, 'NASDAQ')
+assert.deepEqual(staleTwin.allowedInstruments, ['NASDAQ'])
+assert.ok(!staleTwin.allowedInstruments.includes('DOW'))
 
-const denied = assertCanOpenPosition('DOW', glance)
+const denied = assertCanOpenPosition('DOW', staleTwin)
 assert.equal(denied.ok, false)
-if (!denied.ok) assert.ok(/glance only|NASDAQ/i.test(denied.message))
+if (!denied.ok) assert.ok(/NASDAQ|MNQ|one name/i.test(denied.message))
 
-const nikkeiTicket = assertCanOpenPosition('NIKKEI', glance)
+const nikkeiTicket = assertCanOpenPosition('NIKKEI', staleTwin)
 assert.equal(nikkeiTicket.ok, false)
 if (!nikkeiTicket.ok) assert.equal(nikkeiTicket.message, LIVE_CLOCK_REFUSE)
 

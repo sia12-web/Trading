@@ -42,6 +42,7 @@ import {
 } from '@/lib/trading/attemptLadder'
 import {
   LIVE_CLOCK_REFUSE,
+  clockedNameOnlyMessage,
   isLiveClockInstrument,
   isNyGlanceChart,
 } from '@/lib/trading/liveDeskBook'
@@ -391,7 +392,8 @@ export interface SessionGateResult {
   /** Clock-in window open (prep → lunch) and not yet clocked in */
   canClockIn: boolean
   /**
-   * Viewing the unclocked NY twin, or live Nikkei — chart ok, no tickets.
+   * Live Nikkei refuse (simulation only) — chart copy, no live tickets.
+   * NY twin glance is gone: clock-in shows one name.
    */
   glanceOnly: boolean
   /** Filled trades used today (day total) — SL or TP */
@@ -768,11 +770,8 @@ export function liveVisibleInstruments(
       ? opts.lockedInstrument
       : null
 
-  // NY clock-in keeps both tabs (glance-only twin). Tickets stay on locked name.
+  // Clocked / day-locked name is the only door — no twin glance tab.
   if (locked && deskMarketFor(locked) === market) {
-    if (market === 'NY' && isLiveClockInstrument(locked)) {
-      return [...sessionList]
-    }
     return [locked]
   }
   return [...sessionList]
@@ -828,24 +827,7 @@ export function shouldRunLiveAiForInstrument(
   return { ok: true, reason: 'ok' }
 }
 
-function applyLiveBookGate(
-  r: SessionGateResult,
-  args: {
-    viewing: DeskInstrument | null
-    locked: DeskInstrument | null
-  }
-): SessionGateResult {
-  if (isNyGlanceChart(args.locked, args.viewing) && r.clockedIn) {
-    return {
-      ...r,
-      canPlaceEntry: false,
-      canManagePosition: false,
-      glanceOnly: true,
-      canViewLiveChart: true,
-      canFetchLiveBars: true,
-      message: `Clocked into ${args.locked} — this chart is glance only.`,
-    }
-  }
+function applyLiveBookGate(r: SessionGateResult): SessionGateResult {
   return { ...r, glanceOnly: r.glanceOnly ?? false }
 }
 
@@ -876,10 +858,12 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   const viewingRaw = isDeskInstrument(input.viewingInstrument)
     ? input.viewingInstrument
     : locked
-  const viewing =
+  const viewingUnforced =
     focusLive && viewingRaw && deskMarketFor(viewingRaw) === focusMarket
       ? viewingRaw
       : locked ?? (focusLive ? instrumentsForDeskMarket(focusMarket)[0]! : viewingRaw ?? 'DOW')
+  const viewing =
+    locked && isNyGlanceChart(locked, viewingUnforced) ? locked : viewingUnforced
   const market = focusLive ? focusMarket : deskMarketFor(viewing ?? 'DOW')
   const s = sessionFor(viewing ?? locked ?? (focusLive ? instrumentsForDeskMarket(focusMarket)[0]! : 'DOW'))
 
@@ -1001,12 +985,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       : [...DESK_INSTRUMENTS],
     entryWindow: entryWindow as 1 | 2 | 3 | null,
     market,
-    canFetchLiveBars:
-      bars.open &&
-      !!locked &&
-      (!viewing ||
-        viewing === locked ||
-        isNyGlanceChart(locked, viewing)),
+    canFetchLiveBars: bars.open && !!locked && (!viewing || viewing === locked),
     clockedIn,
     attendedToday,
     canClockIn,
@@ -1014,17 +993,14 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     rangeStrategy,
   }
 
-  const nyTwinOk =
-    viewing == null ||
-    viewing === locked ||
-    isNyGlanceChart(locked, viewing)
+  const onClockedName = viewing == null || viewing === locked
 
   // Live streaming only while currently clocked in; attendedToday keeps afternoon chart until cash close
   const canView =
     (clockedIn || (attendedToday && afternoonWatch)) &&
     !!locked &&
     (bars.open || (attendedToday && afternoonWatch) || (attendedToday && rangeStrategy != null)) &&
-    nyTwinOk
+    onClockedName
 
   const finish = (
     r: Omit<SessionGateResult, 'clockedIn' | 'canClockIn' | 'attendedToday' | 'glanceOnly'>
@@ -1063,7 +1039,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
           ? !!(r.canFetchLiveBars || bars.open || afternoonWatch || afterCashClose)
           : false,
         canViewLiveChart: openBook
-          ? !!locked && nyTwinOk
+          ? !!locked && onClockedName
           : !!locked && (afternoonWatch || r.canViewLiveChart),
         message: openBook
           ? r.message || 'Position open. Manage only — no new entries.'
@@ -1115,7 +1091,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     }
     }
     }
-    return applyLiveBookGate(out, { viewing, locked })
+    return applyLiveBookGate(out)
   }
 
   const ibStartHms = ibStrategyStartHms(market)
@@ -1876,7 +1852,7 @@ export function assertCanOpenPosition(
       status: 403,
       message:
         gate.lockedInstrument && instrument !== gate.lockedInstrument
-          ? `Clocked into ${gate.lockedInstrument} — this chart is glance only.`
+          ? clockedNameOnlyMessage(gate.lockedInstrument)
           : gate.message || LIVE_CLOCK_REFUSE,
     }
   }
@@ -1911,7 +1887,7 @@ export function assertCanOpenPosition(
     return {
       ok: false,
       status: 403,
-      message: `Clocked into ${gate.lockedInstrument} — this chart is glance only.`,
+      message: clockedNameOnlyMessage(gate.lockedInstrument),
     }
   }
   return { ok: true }

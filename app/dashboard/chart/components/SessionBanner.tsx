@@ -19,6 +19,7 @@ import {
 } from '@/lib/trading/deskNewsHazard'
 import type { DeskCalendarEvent } from '@/lib/trading/deskNews'
 import { nikkeiCashLunchMontrealLabel } from '@/lib/trading/sessionGate'
+import { liveDeskContractLabel } from '@/lib/trading/liveDeskBook'
 import {
   getDeskRiskProfile,
   hydrateDeskRiskProfileFromServer,
@@ -534,14 +535,8 @@ export function SessionBanner({
         {mounted && clockNow ? `${clockNow} ${clockLabel}` : `—:—:— ${clockLabel}`}
       </span>
       {gate.lockedInstrument && (
-        <span className="rounded bg-white/10 px-2 py-0.5 font-medium">{gate.lockedInstrument}</span>
-      )}
-      {gate.glanceOnly && gate.lockedInstrument && viewingInstrument && viewingInstrument !== gate.lockedInstrument && (
-        <span
-          className="rounded bg-sky-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase text-sky-200"
-          title={`Clocked into ${gate.lockedInstrument} — tickets stay on that name`}
-        >
-          Glance only
+        <span className="rounded bg-white/10 px-2 py-0.5 font-medium">
+          {liveDeskContractLabel(gate.lockedInstrument)}
         </span>
       )}
       {viewingInstrument === 'NIKKEI' && (

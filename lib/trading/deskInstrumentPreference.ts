@@ -1,7 +1,7 @@
 /**
  * Remember the live desk instrument across refresh (DOW / NASDAQ / NIKKEI).
- * Clock-in lock still overrides the *view* while active, but must NOT overwrite
- * the stored preference (otherwise refresh always snaps back to the locked desk).
+ * Clock-in lock owns the *view* while active. Preference is only for unclocked
+ * browse — a remembered DOW tab must not hide a NASDAQ clock-in (MYM ~53k vs MNQ ~30k).
  */
 
 import { DESK_BAR_SPACING } from '../chart/deskChartTheme'
@@ -72,4 +72,125 @@ export function deskVisibleLogicalRange(
 
 export function deskBarSpacing(_containerWidth: number, _barCount: number): number {
   return DESK_BAR_SPACING
+}
+
+/** Tip-relative viewport so new prints keep the same window after refresh. */
+export type SavedDeskViewport = {
+  fromEnd: number
+  span: number
+}
+
+export function encodeDeskViewport(
+  range: { from: number; to: number },
+  barCount: number
+): SavedDeskViewport | null {
+  const last = Math.max(barCount - 1, 0)
+  const span = range.to - range.from
+  if (!Number.isFinite(span) || span < 8) return null
+  return {
+    fromEnd: last - range.from,
+    span,
+  }
+}
+
+export function decodeDeskViewport(
+  saved: SavedDeskViewport,
+  barCount: number,
+  containerWidth = 1160
+): { from: number; to: number } {
+  const fallback = deskVisibleLogicalRange(barCount, containerWidth)
+  if (!Number.isFinite(saved.fromEnd) || !Number.isFinite(saved.span) || saved.span < 8) {
+    return fallback
+  }
+  const last = Math.max(barCount - 1, 0)
+  const span = Math.min(Math.max(saved.span, 20), Math.max(barCount + 6, 20))
+  const from = Math.max(0, Math.min(last, last - saved.fromEnd))
+  return { from, to: from + span }
+}
+
+const VIEW_KEY = (instrument: string) => `tradepulse.chart.view.${instrument}`
+
+export function saveDeskViewport(
+  instrument: string,
+  range: { from: number; to: number },
+  barCount: number
+): void {
+  if (typeof window === 'undefined' || barCount < 2) return
+  const encoded = encodeDeskViewport(range, barCount)
+  if (!encoded) return
+  try {
+    sessionStorage.setItem(VIEW_KEY(instrument), JSON.stringify(encoded))
+  } catch {
+    /* private mode */
+  }
+}
+
+export function loadDeskViewport(
+  instrument: string,
+  barCount: number,
+  containerWidth = 1160
+): { from: number; to: number } | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = sessionStorage.getItem(VIEW_KEY(instrument))
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as SavedDeskViewport
+    return decodeDeskViewport(parsed, barCount, containerWidth)
+  } catch {
+    return null
+  }
+}
+
+export type DeskOverlayToggles = {
+  levels: boolean
+  or30: boolean
+  ib: boolean
+  lunch: boolean
+  us: boolean
+  yday: boolean
+  opening: boolean
+  control: boolean
+}
+
+const OVERLAY_DEFAULTS: DeskOverlayToggles = {
+  levels: false,
+  or30: false,
+  ib: false,
+  lunch: false,
+  us: false,
+  yday: false,
+  opening: false,
+  control: false,
+}
+
+const OVERLAY_KEY = 'tradepulse.chart.overlays'
+
+export function loadDeskOverlayToggles(): DeskOverlayToggles {
+  if (typeof window === 'undefined') return { ...OVERLAY_DEFAULTS }
+  try {
+    const raw = sessionStorage.getItem(OVERLAY_KEY)
+    if (!raw) return { ...OVERLAY_DEFAULTS }
+    const parsed = JSON.parse(raw) as Partial<DeskOverlayToggles>
+    return {
+      levels: !!parsed.levels,
+      or30: !!parsed.or30,
+      ib: !!parsed.ib,
+      lunch: !!parsed.lunch,
+      us: !!parsed.us,
+      yday: !!parsed.yday,
+      opening: !!parsed.opening,
+      control: !!parsed.control,
+    }
+  } catch {
+    return { ...OVERLAY_DEFAULTS }
+  }
+}
+
+export function saveDeskOverlayToggles(toggles: DeskOverlayToggles): void {
+  if (typeof window === 'undefined') return
+  try {
+    sessionStorage.setItem(OVERLAY_KEY, JSON.stringify(toggles))
+  } catch {
+    /* private mode */
+  }
 }

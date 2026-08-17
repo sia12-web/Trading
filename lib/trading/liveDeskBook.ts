@@ -15,6 +15,7 @@ export function isLiveClockInstrument(
   return instrument === 'DOW' || instrument === 'NASDAQ'
 }
 
+/** True when the chart/API is on the unclocked NY twin — not a tradable view. */
 export function isNyGlanceChart(
   locked: string | null | undefined,
   viewing: string | null | undefined
@@ -24,6 +25,42 @@ export function isNyGlanceChart(
     isLiveClockInstrument(viewing) &&
     locked !== viewing
   )
+}
+
+/** Live book labels — micros only. DOW≠NASDAQ (Dow ~53k vs Nasdaq-100 ~30k). */
+export function liveDeskContractLabel(instrument: string | null | undefined): string {
+  if (instrument === 'DOW') return 'DOW · MYM'
+  if (instrument === 'NASDAQ') return 'NASDAQ · MNQ'
+  if (instrument === 'NIKKEI') return 'NIKKEI'
+  return instrument?.trim() || '—'
+}
+
+export function liveDeskIndexHint(instrument: string | null | undefined): string {
+  if (instrument === 'DOW') {
+    return 'Micro Dow MYM — Dow points (~53k). TradingView MNQ is Nasdaq-100 (~30k), a different index.'
+  }
+  if (instrument === 'NASDAQ') {
+    return 'Micro Nasdaq MNQ — Nasdaq-100 points (~30k). Match TradingView MNQ, not MYM/Dow (~53k).'
+  }
+  return ''
+}
+
+export function clockedNameOnlyMessage(locked: string | null | undefined): string {
+  return `Clocked ${liveDeskContractLabel(locked)} — one name today. Tickets stay on ${liveDeskContractLabel(locked)}.`
+}
+
+/** Clocked name owns the chart. No twin tab / glance view while the lock is live. */
+export function resolveClockedChartInstrument(args: {
+  locked: string | null | undefined
+  viewing: string | null | undefined
+  visible: readonly string[]
+}): string {
+  const visible = args.visible.filter((v) => typeof v === 'string' && v.length > 0)
+  const locked = args.locked && visible.includes(args.locked) ? args.locked : null
+  const viewing =
+    args.viewing && visible.includes(args.viewing) ? args.viewing : null
+  if (locked) return locked
+  return viewing || visible[0] || 'DOW'
 }
 
 export function assertLiveClockIn(args: {
