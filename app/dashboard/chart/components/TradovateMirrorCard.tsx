@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  TRADOVATE_TRADER_URL,
   buildTradovateMirrorTicket,
   tradovateMirrorStorageKey,
+  tradingViewChartUrl,
   type DeskIndex,
 } from '@/lib/trading/tradovateMirror'
 import { tradeifyMustFlatten } from '@/lib/trading/tradeifyGrowth50k'
@@ -89,11 +89,11 @@ export function TradovateMirrorCard(props: Props) {
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-wide text-amber-300">
-            Tradovate transfer
+            TradingView ticket
           </p>
           <p className="mt-0.5 text-[10px] text-gray-400">
             TradePulse already has this {props.phase === 'filled' ? 'fill' : 'working limit'}.
-            Place this exact ticket on Tradovate — Growth eval has no API.
+            Paste Price, Units, SL, and TP into TradingView Limit (Day).
           </p>
         </div>
         {mirrored && (
@@ -109,7 +109,7 @@ export function TradovateMirrorCard(props: Props) {
       </p>
       <CopyChipRow>
         <CopyChip
-          label="Size"
+          label="Units"
           value={ticket.qty > 0 ? ticket.qty : null}
           display={ticket.qty > 0 ? ticket.sizeLabel : undefined}
           tone="size"
@@ -118,11 +118,13 @@ export function TradovateMirrorCard(props: Props) {
         <CopyChip label="TP" value={ticket.target} tone="tp" />
         <CopyChip label="Entry" value={ticket.entry} />
       </CopyChipRow>
-      <p className="mt-1 text-[10px] text-gray-500">Click size, SL, or TP to copy that number.</p>
+      <p className="mt-1 text-[10px] text-gray-500">
+        Click Units, Entry, SL, or TP — paste into the TradingView order ticket.
+      </p>
       <p className="mt-0.5 font-mono text-[10px] text-gray-400">
         TradePulse ${ticket.pulseRiskDollars.toFixed(0)}
         {ticket.qty > 0
-          ? ` → Tradovate $${ticket.tradovateRiskDollars.toFixed(0)} (${ticket.stopPts} pts)`
+          ? ` → ${ticket.symbol} $${ticket.tradovateRiskDollars.toFixed(0)} (${ticket.stopPts} pts)`
           : ' — set qty so stop $ matches'}
       </p>
       {riskMismatch && ticket.qty > 0 && (
@@ -133,7 +135,7 @@ export function TradovateMirrorCard(props: Props) {
       )}
       {ticket.snapped && (
         <p className="mt-0.5 text-[10px] text-amber-200">
-          Prices snapped to {ticket.symbol} tick so Tradovate accepts the same side/SL/TP.
+          Prices snapped to {ticket.symbol} tick so TradingView accepts the same side/SL/TP.
         </p>
       )}
       {ticket.overCap && (
@@ -142,13 +144,12 @@ export function TradovateMirrorCard(props: Props) {
         </p>
       )}
       <p className="mt-0.5 text-[10px] text-gray-500">
-        Front month only. Do not hold a mini and a micro together. Opposite YM / NQ / NKD is a
-        hedge.
+        Front month only. Micro only — do not add YM or NQ. One name this session.
       </p>
       {tradeifyMustFlatten() && (
         <p className="mt-1 text-[10px] font-semibold text-red-300">
-          Flatten now — close the Tradovate position and cancel leftover working orders (16:59 ET
-          / 12:59 ET holiday).
+          Flatten now — close the TradingView / Tradeify position and cancel leftover working
+          orders (16:59 ET / 12:59 ET holiday).
         </p>
       )}
       <div className="mt-2 flex flex-wrap gap-1.5">
@@ -160,12 +161,12 @@ export function TradovateMirrorCard(props: Props) {
           {copied ? 'Copied' : 'Copy ticket'}
         </button>
         <a
-          href={TRADOVATE_TRADER_URL}
+          href={tradingViewChartUrl(ticket.symbol)}
           target="_blank"
           rel="noreferrer"
           className="rounded border border-white/15 px-2 py-1 text-[10px] font-bold uppercase text-gray-200 hover:bg-white/10"
         >
-          Open Tradovate
+          Open TradingView
         </a>
         {!mirrored && (
           <button
@@ -173,7 +174,7 @@ export function TradovateMirrorCard(props: Props) {
             onClick={markMirrored}
             className="rounded border border-emerald-500/40 px-2 py-1 text-[10px] font-bold uppercase text-emerald-200 hover:bg-emerald-500/15"
           >
-            Placed on Tradovate
+            Placed on TradingView
           </button>
         )}
       </div>

@@ -107,6 +107,14 @@ function entryDeniedMessage(gate: SessionGateState | null | undefined): string |
     }
     return 'Clocked out — no new entries. Manage only if you have an open book.'
   }
+  if (gate.glanceOnly) {
+    return (
+      gate.message?.trim() ||
+      (gate.lockedInstrument
+        ? `Clocked into ${gate.lockedInstrument} — this chart is glance only.`
+        : 'This chart is glance only.')
+    )
+  }
   if (!gate.canPlaceEntry) {
     if (gate.dayLocked || (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? SESSION_MAX_ATTEMPTS)) {
       return 'Session attempt cap reached — trading switched off. No new entries.'
@@ -1974,14 +1982,14 @@ export default function ChartPage() {
     gate.market === 'NY'
   const inManage = gate?.phase === 'MANAGE' || !!managePos
   const inEntry = gate?.phase === 'ENTRY' && !!gate?.canPlaceEntry
-  const canTrade = inEntry && !pending && !managePos && clockedIn
+  const callModeChosen = gate?.useCall === true || gate?.useCall === false
+  const canTrade = inEntry && !pending && !managePos && clockedIn && callModeChosen
   const inWorking = !!pending && !managePos
   // Playbook/levels only for the desk you clocked into — not on browse tabs after close
   const deskLevelsActive =
     !!gate &&
     gate.phase !== 'CLOSED' &&
     (clockedIn || attendedToday) &&
-    (!locked || locked === instrument) &&
     (!gate.allowedInstruments || gate.allowedInstruments.includes(instrument))
   const deskAttended = clockedIn || attendedToday
 
@@ -2063,7 +2071,10 @@ export default function ChartPage() {
           </div>
         ) : null}
 
-        {isTradeifyGrowth50k(riskProfile) && pending && !managePos && (
+        {isTradeifyGrowth50k(riskProfile) &&
+          pending &&
+          !managePos &&
+          pending.instrument !== 'NIKKEI' && (
           <TradovateMirrorCard
             instrument={pending.instrument}
             direction={pending.direction}
@@ -2076,7 +2087,9 @@ export default function ChartPage() {
             phase="working"
           />
         )}
-        {isTradeifyGrowth50k(riskProfile) && managePos && (
+        {isTradeifyGrowth50k(riskProfile) &&
+          managePos &&
+          (managePos.instrument || instrument) !== 'NIKKEI' && (
           <TradovateMirrorCard
             instrument={(managePos.instrument || instrument) as 'DOW' | 'NASDAQ' | 'NIKKEI'}
             direction={
@@ -2221,6 +2234,7 @@ export default function ChartPage() {
               deskLevelsActive={deskLevelsActive}
               deskAttended={deskAttended}
               clockedIn={clockedIn}
+              useCall={clockedIn ? (gate?.useCall ?? null) : true}
               levelsRefreshKey={levelsRefreshKey}
             />
           )}
@@ -2260,7 +2274,7 @@ export default function ChartPage() {
                         }`}
                       >
                         {isRec && <span>★ AI TOP PICK:</span>}
-                        <span>{inst}</span>
+                        <span>{inst === 'DOW' ? 'DOW · MYM' : 'NASDAQ · MNQ'}</span>
                       </button>
                     )
                   })}
@@ -2301,10 +2315,7 @@ export default function ChartPage() {
                           Clock in late — select desk:
                         </span>
                         <div className="flex items-center justify-center gap-2">
-                          {(gate.market === 'TOKYO'
-                            ? (['NIKKEI'] as Instrument[])
-                            : (['DOW', 'NASDAQ'] as Instrument[])
-                          ).map((inst) => {
+                          {(['DOW', 'NASDAQ'] as Instrument[]).map((inst) => {
                             const top =
                               liveBrief?.suggestion.kind === 'trade' &&
                               liveBrief.suggestion.instrument === inst
@@ -2313,8 +2324,7 @@ export default function ChartPage() {
                                 key={inst}
                                 type="button"
                                 onClick={async () => {
-                                  const market =
-                                    gate.market || (inst === 'NIKKEI' ? 'TOKYO' : 'NY')
+                                  const market = 'NY'
                                   try {
                                     const res = await fetch('/api/trading/clock-in', {
                                       method: 'POST',
@@ -2346,7 +2356,7 @@ export default function ChartPage() {
                                 }`}
                               >
                                 {top && <span>★ BRIEF:</span>}
-                                <span>{inst}</span>
+                                <span>{inst === 'DOW' ? 'DOW · MYM' : 'NASDAQ · MNQ'}</span>
                               </button>
                             )
                           })}
@@ -2396,14 +2406,14 @@ export default function ChartPage() {
                           Select Desk & Clock In for Today:
                         </span>
                         <div className="flex items-center justify-center gap-2">
-                          {(gate.market === 'TOKYO' ? ['NIKKEI'] as Instrument[] : ['DOW', 'NASDAQ'] as Instrument[]).map((inst) => {
+                          {(['DOW', 'NASDAQ'] as Instrument[]).map((inst) => {
                             const isRec = (suggested ?? recommendation?.instrument ?? 'DOW') === inst
                             return (
                               <button
                                 key={inst}
                                 type="button"
                                 onClick={async () => {
-                                  const market = gate.market || (inst === 'NIKKEI' ? 'TOKYO' : 'NY')
+                                  const market = 'NY'
                                   await fetch('/api/trading/clock-in', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
@@ -2423,7 +2433,7 @@ export default function ChartPage() {
                                 }`}
                               >
                                 {isRec && <span>★ AI TOP PICK:</span>}
-                                <span>{inst}</span>
+                                <span>{inst === 'DOW' ? 'DOW · MYM' : 'NASDAQ · MNQ'}</span>
                                 {isRec && recommendation?.recommendation_confidence && (
                                   <span className="text-[10px] opacity-80">({recommendation.recommendation_confidence}%)</span>
                                 )}

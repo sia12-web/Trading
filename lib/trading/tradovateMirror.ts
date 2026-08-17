@@ -1,10 +1,11 @@
 /**
- * TradePulse → Tradovate transfer ticket.
+ * TradePulse → TradingView transfer ticket (Tradeify / CME front month).
  * Same side, entry, SL, TP, and dollar risk — one legal Tradeify contract.
- * Growth eval has no API; the trader pastes this into Tradovate.
+ * Growth eval has no API; paste Price / Units / SL / TP into TradingView.
  */
 
 export const TRADOVATE_TRADER_URL = 'https://trader.tradovate.com'
+export const TRADINGVIEW_CHART_URL = 'https://www.tradingview.com/chart/'
 
 export type DeskIndex = 'DOW' | 'NASDAQ' | 'NIKKEI'
 
@@ -141,10 +142,13 @@ function pickQty(args: {
     })
   }
 
+  // Live $50k book is micro-only (MYM / MNQ). Never fall back to YM / NQ
+  // even when 1 mini is a closer dollar match. Nikkei has no micro → NKD (sim).
   if (contract.microSymbol && contract.microPointValue && contract.maxMicros > 0) {
     consider(contract.microSymbol, contract.microPointValue, contract.maxMicros)
+  } else {
+    consider(contract.symbol, contract.pointValue, contract.maxMinis)
   }
-  consider(contract.symbol, contract.pointValue, contract.maxMinis)
 
   opts.sort((a, b) => {
     if (Math.abs(a.err - b.err) > 0.01) return a.err - b.err
@@ -229,6 +233,10 @@ export function buildTradovateMirrorTicket(args: {
     pulseRisk > 0 && Math.abs(tradovateRisk - pulseRisk) > 1
       ? `NOTE     TradePulse risk was $${pulseRisk.toFixed(2)} — qty chosen to stay closest`
       : `NOTE     Same book as TradePulse ${args.instrument} ${isShort ? 'SHORT' : 'LONG'}`,
+    `NOTE     Paste into TradingView Limit: Price = ENTRY, Units = QTY. Turn on SL/TP and paste those prices.`,
+    contract.microSymbol
+      ? `NOTE     Micro only — do not use the E-mini (${contract.symbol}).`
+      : null,
     snapped
       ? `NOTE     Prices snapped to ${picked.symbol} tick ${tick} (TradePulse ${fmt(pulseEntry, tick)} / ${fmt(pulseStop, tick)} / ${fmt(pulseTarget, tick)})`
       : null,
@@ -263,4 +271,26 @@ export function buildTradovateMirrorTicket(args: {
 
 export function tradovateMirrorStorageKey(id: string): string {
   return `tradepulse.tradovate.mirrored.${id}`
+}
+
+/** TradingView continuous root for the sized Tradeify contract. */
+export function tradingViewSymbol(symbol: string): string {
+  switch (symbol) {
+    case 'MNQ':
+      return 'CME_MINI:MNQ1!'
+    case 'NQ':
+      return 'CME_MINI:NQ1!'
+    case 'MYM':
+      return 'CBOT_MINI:MYM1!'
+    case 'YM':
+      return 'CBOT_MINI:YM1!'
+    case 'NKD':
+      return 'CME:NKD1!'
+    default:
+      return symbol
+  }
+}
+
+export function tradingViewChartUrl(symbol: string): string {
+  return `${TRADINGVIEW_CHART_URL}?symbol=${encodeURIComponent(tradingViewSymbol(symbol))}`
 }

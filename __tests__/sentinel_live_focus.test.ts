@@ -124,34 +124,34 @@ test('Tokyo afternoon stream: only NIKKEI', () => {
   )
 })
 
-test('DOW locked (even before clock-in): only DOW — cannot switch to NASDAQ', () => {
+test('DOW locked: both NY tabs stay (twin is glance-only)', () => {
   const now = etDate(Y, M, D, 10, 0)
   const vis = liveVisibleInstruments(now, {
     lockedInstrument: 'DOW',
     clockedIn: false,
     attendedToday: false,
   })
-  assert(vis.length === 1 && vis[0] === 'DOW', `got ${vis}`)
+  assert(vis.includes('DOW') && vis.includes('NASDAQ'), `got ${vis}`)
 })
 
-test('Clocked into DOW: only DOW visible', () => {
+test('Clocked into DOW: both NY tabs stay for glance', () => {
   const now = etDate(Y, M, D, 10, 0)
   const vis = liveVisibleInstruments(now, {
     lockedInstrument: 'DOW',
     clockedIn: true,
     attendedToday: true,
   })
-  assert(vis.length === 1 && vis[0] === 'DOW', `got ${vis}`)
+  assert(vis.includes('DOW') && vis.includes('NASDAQ'), `got ${vis}`)
 })
 
-test('Attended NASDAQ after lunch: only NASDAQ for afternoon watch', () => {
+test('Attended NASDAQ after lunch: both NY tabs stay', () => {
   const now = etDate(Y, M, D, 14, 0)
   const vis = liveVisibleInstruments(now, {
     lockedInstrument: 'NASDAQ',
     clockedIn: false,
     attendedToday: true,
   })
-  assert(vis.length === 1 && vis[0] === 'NASDAQ', `got ${vis}`)
+  assert(vis.includes('DOW') && vis.includes('NASDAQ'), `got ${vis}`)
 })
 
 test('Off-session lock ignored: NY rec does not surface during Tokyo', () => {
@@ -243,7 +243,7 @@ test('NY 09:15: AI suggest soft — both tabs stay, clock-in open', () => {
   assert(/NASDAQ/i.test(gate.message), gate.message)
 })
 
-test('NY 09:20 clock-in locks tabs to committed instrument', () => {
+test('NY 09:20 clock-in keeps both tabs; tickets stay on committed name', () => {
   const now = etDate(Y, M, D, 9, 20)
   const gate = resolveSessionGate({
     now,
@@ -253,20 +253,25 @@ test('NY 09:20 clock-in locks tabs to committed instrument', () => {
     attendedToday: true,
     attemptsUsed: 0,
     stopLossHitCount: 0,
+    viewingInstrument: 'DOW',
   })
   assert(gate.lockedInstrument === 'DOW', 'hard lock DOW')
-  assert(JSON.stringify(gate.allowedInstruments) === JSON.stringify(['DOW']), 'tabs locked')
+  assert(
+    gate.allowedInstruments.includes('DOW') && gate.allowedInstruments.includes('NASDAQ'),
+    'twin tabs stay'
+  )
   assert(gate.canViewLiveChart === true, 'clocked chart on')
+  assert(gate.glanceOnly === false, 'on clocked name')
 })
 
-test('AI: allow NIKKEI during Tokyo focus after clock-in', () => {
+test('AI: skip live NIKKEI even during Tokyo focus', () => {
   const now = jstDate(Y, M, D, 8, 50)
   const r = shouldRunLiveAiForInstrument('NIKKEI', now, {
     lockedInstrument: 'NIKKEI',
     clockedIn: true,
     attendedToday: true,
   })
-  assert(r.ok, r.reason)
+  assert(!r.ok, r.reason)
 })
 
 test('AI: skip without clock-in even in focus', () => {

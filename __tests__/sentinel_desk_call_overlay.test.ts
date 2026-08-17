@@ -51,7 +51,12 @@ test('live and sim compute CALL with the same helper', () => {
   assert.ok(sim.includes('resolveDeskCallAsOfUnix'))
 })
 
-test('Call chip sits after Ctrl; zinc; not a toggle', () => {
+test('clock-in asks CALL or regular; Call chip is still not a toggle', () => {
+  const banner = src('app/dashboard/chart/components/SessionBanner.tsx')
+  assert.ok(banner.includes('DeskCallModePrompt'))
+  assert.ok(banner.includes('/api/trading/call-mode'))
+  assert.ok(src('app/api/trading/session-gate/route.ts').includes('useCall:'))
+  assert.ok(src('app/api/trading/call-mode/route.ts').includes('setAttendanceUseCall'))
   assert.ok(
     live.indexOf('<span>Ctrl</span>') < live.indexOf('<span>Call</span>'),
     'Call after Ctrl on live'
@@ -162,20 +167,28 @@ test('Call chip is a span, not innerHTML', () => {
   assert.ok(!sim.includes('dangerouslySetInnerHTML'))
 })
 
-test('sim CALL governs entries — no AI, no toggle-to-trade', () => {
+test('sim CALL governs entries when opted in — no AI, no toggle-to-trade', () => {
   assert.ok(!sim.includes('LiveVoicePanel'))
   assert.ok(sim.includes('assertDeskCallEntry'))
+  assert.ok(sim.includes('assertDeskTicketEntry'))
+  assert.ok(sim.includes('DeskCallModePrompt'))
   assert.ok(sim.includes('studyEntrySnapRanges'))
   assert.ok(sim.includes('entryEligibleOverlayRanges'))
   assert.ok(sim.includes('deskCallLegalEdges'))
+  assert.ok(sim.includes('ticketAllowedEdges'))
   assert.ok(!sim.includes('Turn on OR30'))
   assert.ok(!sim.includes('turn on a range to trade'))
   assert.ok(sim.includes('CALL + playbook ±10 govern entries'))
 })
 
-test('live CALL governs entries; Level Finder cards advise only', () => {
+test('live CALL governs entries when opted in; Level Finder cards advise only', () => {
   assert.ok(live.includes('assertDeskCallEntry'))
+  assert.ok(live.includes('assertDeskTicketEntry'))
   assert.ok(live.includes('deskCallLegalEdges'))
+  assert.ok(live.includes('ticketAllowedEdges'))
+  assert.ok(live.includes('control: marketControlRef.current'))
+  assert.ok(sim.includes('control: marketControlRef.current'))
+  assert.ok(src('lib/trading/marketControl.ts').includes('RF ${rf} 2TF'))
   assert.ok(live.includes('active: strategyRange'))
   assert.ok(live.includes('Level Finder advises only. Place on CALL ±10'))
   const card = sliceBetween(
@@ -188,6 +201,9 @@ test('live CALL governs entries; Level Finder cards advise only', () => {
   assert.ok(card.includes('advise only (click to focus)'))
   assert.ok(
     src('lib/trading/serverPlaybookRange.ts').includes('assertDeskCallEntry')
+  )
+  assert.ok(
+    src('lib/trading/serverPlaybookRange.ts').includes('useCall !== false')
   )
   assert.ok(
     src('app/api/trading/positions/working/route.ts').includes('direction,')
@@ -205,7 +221,8 @@ test('sim BUY/cancel buttons are not drag handles', () => {
   assert.ok(overlay.includes('onPointerDown={(e) => e.stopPropagation()}'))
   assert.ok(sim.includes('onCancel={cancelPending}'))
   assert.ok(sim.includes('lockDirection'))
-  assert.ok(sim.includes('allowedEdges={deskCallLegalEdges'))
+  assert.ok(sim.includes('allowedEdges={ticketAllowedEdges'))
+  assert.ok(sim.includes('lockDirection={useCall !== false}'))
   assert.ok(live.includes("closest('button')"))
 })
 

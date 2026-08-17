@@ -313,6 +313,7 @@ test('|RF| of 1 stays TWO-TF even if dPOC migrates', () => {
   })
   assert.equal(p.rf, 1)
   assert.equal(p.label, 'TWO-TF')
+  assert.equal(marketControlBadgeText(p), 'RF +1 2TF')
 })
 
 test('NASDAQ uses NY cash open (same B lock as DOW)', () => {
@@ -413,6 +414,7 @@ test('RF +2 with dPOC stuck (sub-tick shift) is TWO-TF, not ONE-TF BUY', () => {
   assert.equal(p.rf, 2)
   assert.equal(p.dpocDir, 'stuck')
   assert.equal(p.label, 'TWO-TF')
+  assert.equal(marketControlBadgeText(p), 'RF +2 2TF')
 })
 
 test('missing period B: C vs A still scores (skip, do not invent B)', () => {

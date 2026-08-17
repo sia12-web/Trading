@@ -166,7 +166,7 @@ function TransferCard({ item }: { item: QuestradeTradeifyTransfer }) {
           {copied
             ? 'Copied'
             : item.canSize
-              ? `Copy ${item.ticket.sizeLabel} Tradovate ticket`
+              ? `Copy ${item.ticket.sizeLabel} TradingView ticket`
               : `Next session: ${item.ticket.sizeLabel}`}
         </button>
       ) : (

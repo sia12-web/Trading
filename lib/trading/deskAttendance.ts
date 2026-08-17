@@ -21,6 +21,11 @@ import {
   TRADER_DISPLAY_LABEL,
   deskLocalHmsAsTraderDisplay,
 } from '@/lib/chart/traderDisplayTz'
+import {
+  DESK_CALL_MODE_JOURNAL_KEY,
+  attendanceCallMode,
+} from '@/lib/trading/deskCallMode'
+import { assertLiveClockIn, LIVE_CLOCK_REFUSE } from '@/lib/trading/liveDeskBook'
 
 export type AttendanceStatus = 'clocked_in' | 'clocked_out' | 'missed'
 
@@ -94,7 +99,7 @@ export function isLateJoinClockIn(
  */
 export function activeClockMarkets(now = new Date()): DeskMarket[] {
   const out: DeskMarket[] = []
-  for (const market of ['NY', 'TOKYO'] as DeskMarket[]) {
+  for (const market of ['NY'] as DeskMarket[]) {
     const probe = market === 'TOKYO' ? 'NIKKEI' : 'DOW'
     const s = sessionFor(probe)
     if (!weekdayInTz(now, s.tz)) continue
@@ -123,6 +128,9 @@ export function canClockInNow(
   market: DeskMarket,
   now = new Date()
 ): { ok: boolean; reason: string } {
+  if (market === 'TOKYO') {
+    return { ok: false, reason: LIVE_CLOCK_REFUSE }
+  }
   const probe = market === 'TOKYO' ? 'NIKKEI' : 'DOW'
   const s = sessionFor(probe)
   if (!weekdayInTz(now, s.tz)) {
@@ -200,6 +208,9 @@ export function canReClockInNow(
   market: DeskMarket,
   now = new Date()
 ): { ok: boolean; reason: string } {
+  if (market === 'TOKYO') {
+    return { ok: false, reason: LIVE_CLOCK_REFUSE }
+  }
   const probe = market === 'TOKYO' ? 'NIKKEI' : 'DOW'
   const s = sessionFor(probe)
   if (!weekdayInTz(now, s.tz)) {
@@ -231,26 +242,24 @@ export async function clockIn(
   userId: string,
   args: { market: DeskMarket; instrument?: DeskInstrument | null }
 ): Promise<{ ok: true; row: DeskAttendanceRow } | { ok: false; error: string }> {
+  const live = assertLiveClockIn({
+    market: args.market,
+    instrument: args.instrument ?? null,
+  })
+  if (!live.ok) return { ok: false, error: live.error }
+  const instrument = live.instrument
+
   const sessionDate = sessionDateForMarket(args.market)
-  const instrument =
-    args.instrument && isDeskInstrument(args.instrument) ? args.instrument : null
 
   const existing = await getTodayAttendance(supabase, userId, args.market)
   if (existing?.status === 'clocked_in') {
-    if (instrument && instrument !== existing.instrument && !existing.traded_instrument) {
-      const { data, error } = await supabase
-        .from('desk_attendance')
-        .update({
-          instrument: instrument,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', existing.id)
-        .select('*')
-        .single()
-      if (!error && data) {
-        return { ok: true, row: data as DeskAttendanceRow }
-      }
-    }
+    const switchLock = assertLiveClockIn({
+      market: args.market,
+      instrument,
+      existingInstrument: existing.instrument,
+      alreadyClockedIn: true,
+    })
+    if (!switchLock.ok) return { ok: false, error: switchLock.error }
     return { ok: true, row: existing }
   }
   if (existing?.status === 'clocked_out') {
@@ -292,6 +301,16 @@ export async function clockIn(
       }
     }
 
+    if (
+      existing.instrument &&
+      existing.instrument !== instrument
+    ) {
+      return {
+        ok: false,
+        error: `Already clocked into ${existing.instrument} — name is locked for this session.`,
+      }
+    }
+
     const { data, error } = await supabase
       .from('desk_attendance')
       .update({
@@ -299,7 +318,7 @@ export async function clockIn(
         clock_in_at: new Date().toISOString(),
         clock_out_at: null,
         clock_out_reason: null,
-        instrument: instrument ?? existing.instrument,
+        instrument: existing.instrument ?? instrument,
         updated_at: new Date().toISOString(),
       })
       .eq('id', existing.id)
@@ -457,6 +476,47 @@ export async function autoLunchClockOut(
     closed.push(market)
   }
   return closed
+}
+
+export { attendanceCallMode }
+
+/**
+ * Persist the post clock-in CALL / regular choice on today's attendance.
+ * Locked for the session once set (same-day re-clock keeps it).
+ */
+export async function setAttendanceUseCall(
+  supabase: SupabaseClient,
+  userId: string,
+  args: { market: DeskMarket; useCall: boolean }
+): Promise<{ ok: true; row: DeskAttendanceRow } | { ok: false; error: string }> {
+  const existing = await getTodayAttendance(supabase, userId, args.market)
+  if (!existing || existing.status !== 'clocked_in') {
+    return { ok: false, error: 'Clock in first' }
+  }
+  const current = attendanceCallMode(existing.morning_journal)
+  if (current !== null && current !== args.useCall) {
+    return { ok: false, error: 'CALL / regular is locked for this session' }
+  }
+  if (current === args.useCall) {
+    return { ok: true, row: existing }
+  }
+  const journal = {
+    ...existing.morning_journal,
+    [DESK_CALL_MODE_JOURNAL_KEY]: args.useCall,
+  }
+  const { data, error } = await supabase
+    .from('desk_attendance')
+    .update({
+      morning_journal: journal,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', existing.id)
+    .select('*')
+    .single()
+  if (error || !data) {
+    return { ok: false, error: error?.message || 'Failed to save CALL choice' }
+  }
+  return { ok: true, row: data as DeskAttendanceRow }
 }
 
 export async function saveMorningJournal(

@@ -14,7 +14,6 @@ import {
   riskPercentForEntrySource,
   resolveDeskAccountSize,
 } from '@/lib/trading/positionSizing'
-import { getESTDateString } from '@/lib/utils/timeUtils'
 import {
   resolveSessionGate,
   assertCanOpenPosition,
@@ -27,7 +26,7 @@ import {
   bucketForRangeLabel,
   deskClockSeconds,
 } from '@/lib/trading/attemptLadder'
-import { getTodayAttendance, tradeDateForInstrument } from '@/lib/trading/deskAttendance'
+import { getTodayAttendance, tradeDateForInstrument, attendanceCallMode } from '@/lib/trading/deskAttendance'
 import { isOandaConfigured, shouldExecuteOandaOrders } from '@/lib/oanda/config'
 import { getOandaAccountSummary } from '@/lib/oanda/orders'
 import { placeOandaMarketOrder, closeOandaTrade } from '@/lib/oanda/orders'
@@ -40,6 +39,7 @@ import { isTradeifyGrowth50k } from '@/lib/trading/tradeifyProfile'
 import { resolveMoneyRiskProfile } from '@/lib/trading/tradeifyProfileStore'
 import { resolveServerTradeifyPlace } from '@/lib/trading/tradeifySessionState'
 import { TRADEIFY_STARTING_BALANCE } from '@/lib/trading/tradeifyGrowth50k'
+import { LIVE_CLOCK_REFUSE, isLiveClockInstrument } from '@/lib/trading/liveDeskBook'
 
 interface OpenPositionRequest {
   instrument: 'DOW' | 'NASDAQ' | 'NIKKEI'
@@ -134,12 +134,8 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       )
     }
 
-    // Desk: DOW / NASDAQ / NIKKEI + session gate
-    if (
-      body.instrument !== 'DOW' &&
-      body.instrument !== 'NASDAQ' &&
-      body.instrument !== 'NIKKEI'
-    ) {
+    // Live $50k book: DOW / NASDAQ micros only. Nikkei is Simulation.
+    if (!isLiveClockInstrument(body.instrument)) {
       return NextResponse.json(
         {
           success: false,
@@ -151,55 +147,24 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
           risk_amount: 0,
           entry_direction: body.entry_direction,
           entry_window: body.entry_window,
-          message: 'Desk only allows DOW, NASDAQ, or NIKKEI',
+          message: LIVE_CLOCK_REFUSE,
         },
-        { status: 400 }
+        { status: 403 }
       )
     }
 
     const tradeDate = tradeDateForInstrument(body.instrument)
-    const nyRecDate = getESTDateString()
 
-    // Locked instrument from today's recommendation (NY) or Tokyo morning (NIKKEI)
-    let lockedInstrument: 'DOW' | 'NASDAQ' | 'NIKKEI' | null = null
-    const { data: rec } = await supabase
-      .from('market_recommendations')
-      .select('recommended_instrument')
-      .eq('date', nyRecDate)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    if (rec?.recommended_instrument === 'DOW' || rec?.recommended_instrument === 'NASDAQ') {
-      lockedInstrument = rec.recommended_instrument
-    } else {
-      const { data: regimes } = await supabase
-        .from('regime_cache')
-        .select('instrument, recommendation_confidence')
-        .eq('date', nyRecDate)
-        .in('instrument', ['DOW', 'NASDAQ'])
-        .order('recommendation_confidence', { ascending: false })
-        .limit(1)
-      if (regimes?.[0]?.instrument === 'DOW' || regimes?.[0]?.instrument === 'NASDAQ') {
-        lockedInstrument = regimes[0].instrument
-      }
-    }
-    // Fallback: check today's clocked-in attendance instrument
-    if (!lockedInstrument && (body.instrument === 'DOW' || body.instrument === 'NASDAQ')) {
-      const attend = await getTodayAttendance(supabase, user.id, 'NY')
-      if (attend?.instrument && (attend.instrument === 'DOW' || attend.instrument === 'NASDAQ')) {
-        lockedInstrument = attend.instrument
-      }
-    }
-    if (body.instrument === 'NIKKEI') {
-      lockedInstrument = 'NIKKEI'
-    }
+    const attendEarly = await getTodayAttendance(supabase, user.id, 'NY')
+    const lockedInstrument: 'DOW' | 'NASDAQ' | null =
+      attendEarly?.instrument === 'DOW' || attendEarly?.instrument === 'NASDAQ'
+        ? attendEarly.instrument
+        : null
 
-    // Filled trades only — working/cancelled limits must not count as attempts.
-    // Scope to this desk market so NY and Tokyo do not share the attempt book.
     const market = deskMarketFor(body.instrument)
     const marketInstruments = instrumentsForDeskMarket(market)
 
-    const [filledRes, openRes, attendance] = await Promise.all([
+    const [filledRes, openRes] = await Promise.all([
       supabase
         .from('trades_journal')
         .select(
@@ -218,8 +183,9 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
         .eq('fill_status', 'filled')
         .is('exit_timestamp', null)
         .maybeSingle(),
-      getTodayAttendance(supabase, user.id, market),
     ])
+
+    const attendance = attendEarly
 
     const filledToday = filledRes.data
     const openNy = openRes.data
@@ -342,6 +308,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       ibAttempts: gate.ibAttempts,
       lunchAttempts: gate.lunchAttempts,
       direction: body.entry_direction,
+      useCall: attendanceCallMode(attendance?.morning_journal),
     })
     if (!edgeCheck.ok) {
       logEntryDenied({

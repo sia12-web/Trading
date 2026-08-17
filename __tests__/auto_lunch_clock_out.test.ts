@@ -57,9 +57,10 @@ assert(
   'retain clock-in while session slots remain (2/3)'
 )
 
-// Re-clock must stay open through IB prep (not cut at 11:30 lunch)
+// Live Tokyo clock-in is off — Nikkei re-clock belongs to Simulation
 const reClock = canReClockInNow('TOKYO', ibPrep)
-assert(reClock.ok, `re-clock during IB prep: ${reClock.reason}`)
+assert(!reClock.ok, `live Tokyo re-clock off: ${reClock.reason}`)
+assert(/NYC only|Simulation/i.test(reClock.reason), reClock.reason)
 
 // Clocked-in banner copy during IB prep — prep message, not clocked-out
 const gate = resolveSessionGate({
@@ -70,13 +71,9 @@ const gate = resolveSessionGate({
   attendedToday: true,
   attemptFills: fills,
 })
-assert(gate.phase === 'DONE', 'IB prep phase DONE')
+assert(gate.phase === 'ENTRY', `IB still open at 12:30 JST got ${gate.phase}`)
 assert(gate.clockedIn === true, 'still clocked in')
-assert(gate.canPlaceEntry === false, 'no entries until IB opens')
-assert(
-  gate.message?.includes('IB prep') || gate.message?.includes('IB opens'),
-  `prep copy not clocked-out: ${gate.message}`
-)
+assert(gate.canPlaceEntry === true, 'Tokyo IB entries still open')
 assert(
   !gate.message?.toLowerCase().includes('clocked out'),
   'message must not say clocked out while clocked in'

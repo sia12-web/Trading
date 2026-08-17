@@ -4,7 +4,11 @@
  */
 
 import assert from 'node:assert/strict'
-import { buildTradovateMirrorTicket } from '../lib/trading/tradovateMirror'
+import {
+  buildTradovateMirrorTicket,
+  tradingViewChartUrl,
+  tradingViewSymbol,
+} from '../lib/trading/tradovateMirror'
 
 const nq = buildTradovateMirrorTicket({
   instrument: 'NASDAQ',
@@ -40,6 +44,8 @@ assert.ok(!nq!.copyText.includes('NQ /'))
 assert.ok(!nq!.copyText.includes('MNK'))
 assert.ok(nq!.copyText.includes('Front month'))
 assert.ok(nq!.copyText.includes('16:59 ET'))
+assert.ok(nq!.copyText.includes('Paste into TradingView Limit'))
+assert.ok(nq!.copyText.includes('Micro only'))
 
 const ym = buildTradovateMirrorTicket({
   instrument: 'DOW',
@@ -175,5 +181,12 @@ const overCap = buildTradovateMirrorTicket({
 assert.ok(overCap)
 assert.ok(overCap!.qty <= 40)
 assert.equal(overCap!.overCap, true)
+
+assert.equal(tradingViewSymbol('MNQ'), 'CME_MINI:MNQ1!')
+assert.equal(tradingViewSymbol('MYM'), 'CBOT_MINI:MYM1!')
+assert.equal(tradingViewSymbol('NKD'), 'CME:NKD1!')
+assert.ok(tradingViewChartUrl('MNQ').includes(encodeURIComponent('CME_MINI:MNQ1!')))
+assert.ok(tradingViewChartUrl('MYM').includes(encodeURIComponent('CBOT_MINI:MYM1!')))
+assert.ok(tradingViewChartUrl('NKD').includes(encodeURIComponent('CME:NKD1!')))
 
 console.log('tradovate_mirror.test.ts: all assertions passed')

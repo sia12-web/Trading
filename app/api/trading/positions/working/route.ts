@@ -6,12 +6,10 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
-import { getESTDateString } from '@/lib/utils/timeUtils'
 import {
   assertCanOpenPosition,
   isLiveDeskInstrument,
   isNyDeskInstrument,
-  isDeskHoursNow,
   resolveSessionGate,
   deskMarketFor,
   instrumentsForDeskMarket,
@@ -24,7 +22,8 @@ import {
   bucketForRangeLabel,
   deskClockSeconds,
 } from '@/lib/trading/attemptLadder'
-import { getTodayAttendance, tradeDateForInstrument } from '@/lib/trading/deskAttendance'
+import { getTodayAttendance, tradeDateForInstrument, attendanceCallMode } from '@/lib/trading/deskAttendance'
+import { LIVE_CLOCK_REFUSE, isLiveClockInstrument } from '@/lib/trading/liveDeskBook'
 import { logger } from '@/lib/utils/logger'
 import {
   normalizeEntrySource,
@@ -111,8 +110,8 @@ export async function POST(request: Request) {
 
     const body = await request.json()
     const instrument = body.instrument
-    if (!isLiveDeskInstrument(instrument)) {
-      return NextResponse.json({ error: 'Invalid instrument' }, { status: 400 })
+    if (!isLiveClockInstrument(instrument)) {
+      return NextResponse.json({ error: LIVE_CLOCK_REFUSE }, { status: 403 })
     }
 
     const level = Number(body.level ?? body.entry_price)
@@ -123,8 +122,6 @@ export async function POST(request: Request) {
 
     const supabase = await createClient()
     const tradeDate = tradeDateForInstrument(instrument)
-    // NY recommendation row is keyed by EST calendar date
-    const nyRecDate = getESTDateString()
     const market = deskMarketFor(instrument)
     const marketInstruments = instrumentsForDeskMarket(market)
     const tradeDates = tradeDatesForMarket(marketInstruments)
@@ -194,46 +191,15 @@ export async function POST(request: Request) {
       )
     }
 
-    const { data: rec } = await supabase
-      .from('market_recommendations')
-      .select('recommended_instrument')
-      .eq('date', nyRecDate)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    // NY lock from recommendation / regime only — never from client body (Sentinel C2)
-    let locked: DeskInstrument | null =
-      rec?.recommended_instrument && isNyDeskInstrument(rec.recommended_instrument)
-        ? rec.recommended_instrument
+    const attend = await getTodayAttendance(supabase, user.id, 'NY')
+    const locked: DeskInstrument | null =
+      attend?.instrument && isNyDeskInstrument(attend.instrument)
+        ? attend.instrument
         : null
-    if (!locked) {
-      const { data: regimes } = await supabase
-        .from('regime_cache')
-        .select('instrument, recommendation_confidence')
-        .eq('date', nyRecDate)
-        .in('instrument', ['DOW', 'NASDAQ'])
-        .order('recommendation_confidence', { ascending: false })
-        .limit(1)
-      const top = regimes?.[0]
-      if (top?.instrument && isNyDeskInstrument(top.instrument)) {
-        locked = top.instrument
-      }
-    }
-    // Fallback: check today's clocked-in attendance instrument
-    if (!locked && isNyDeskInstrument(instrument)) {
-      const attend = await getTodayAttendance(supabase, user.id, 'NY')
-      if (attend?.instrument && isNyDeskInstrument(attend.instrument)) {
-        locked = attend.instrument
-      }
-    }
-    if (instrument === 'NIKKEI' || isDeskHoursNow(new Date(), 'NIKKEI').open) {
-      locked = 'NIKKEI'
-    }
 
-    if (isNyDeskInstrument(instrument) && !locked) {
+    if (!locked) {
       return NextResponse.json(
-        { error: 'No locked NY instrument yet — wait for morning recommendation' },
+        { error: 'Clock in on DOW or NASDAQ (MYM / MNQ) before placing a ticket.' },
         { status: 403 }
       )
     }
@@ -360,6 +326,7 @@ export async function POST(request: Request) {
       ibAttempts: gate.ibAttempts,
       lunchAttempts: gate.lunchAttempts,
       direction,
+      useCall: attendanceCallMode(attendance?.morning_journal),
     })
     if (!edgeCheck.ok) {
       logEntryDenied({

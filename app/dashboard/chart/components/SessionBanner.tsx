@@ -27,6 +27,7 @@ import {
   type DeskRiskProfile,
 } from '@/lib/trading/tradeifyProfile'
 import { formatTradeifyBannerChip } from '@/lib/trading/tradeifyGrowth50k'
+import { DeskCallModePrompt } from './DeskCallModePrompt'
 
 export interface SessionGateState {
   phase: string
@@ -41,6 +42,9 @@ export interface SessionGateState {
   clockedIn?: boolean
   attendedToday?: boolean
   canClockIn?: boolean
+  glanceOnly?: boolean
+  /** Clock-in CALL choice: true = CALL gate, false = regular ±10, null = not answered */
+  useCall?: boolean | null
   market?: 'NY' | 'TOKYO'
   timeEst: string
   entryWindow: 1 | 2 | 3 | null
@@ -128,6 +132,8 @@ export function SessionBanner({
   const [mounted, setMounted] = useState(false)
   const [clocking, setClocking] = useState(false)
   const [clockInError, setClockInError] = useState<string | null>(null)
+  const [callModeBusy, setCallModeBusy] = useState(false)
+  const [callModeError, setCallModeError] = useState<string | null>(null)
   const prepFiredRef = useRef<string | null>(null)
   const [newsHazard, setNewsHazard] = useState<DeskNewsHazard | null>(null)
   const [newsUnavailable, setNewsUnavailable] = useState(false)
@@ -197,6 +203,9 @@ export function SessionBanner({
         clockedIn: !!json.clockedIn,
         attendedToday: !!json.attendedToday,
         canClockIn: !!json.canClockIn,
+        glanceOnly: !!json.glanceOnly,
+        useCall:
+          json.useCall === true ? true : json.useCall === false ? false : null,
         market: json.market,
         timeEst: json.timeEst,
         entryWindow: json.entryWindow,
@@ -364,52 +373,79 @@ export function SessionBanner({
     }
   }, [gate?.lockedInstrument, viewingInstrument, refreshKey])
 
-  const handleClockIn = useCallback(async () => {
-    if (clocking) return
-    setClocking(true)
-    setClockInError(null)
-    try {
-      const market = gate?.market || (gate?.lockedInstrument === 'NIKKEI' ? 'TOKYO' : 'NY')
-      const allowed = gate?.allowedInstruments
-      const focusInstrument =
-        (viewingInstrument &&
-        (!allowed || allowed.includes(viewingInstrument))
-          ? viewingInstrument
-          : null) ||
-        gate?.lockedInstrument ||
-        undefined
-      const res = await fetch('/api/trading/clock-in', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          market,
-          instrument: focusInstrument,
-        }),
-      })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        const msg =
-          typeof json.error === 'string' && json.error
-            ? json.error
-            : `Clock-in failed (${res.status})`
-        setClockInError(msg)
-        return
-      }
+  const handleClockInName = useCallback(
+    async (inst: 'DOW' | 'NASDAQ') => {
+      if (clocking) return
+      setClocking(true)
       setClockInError(null)
-      await refresh()
-    } catch {
-      setClockInError('Clock-in unreachable — check network or deploy')
-    } finally {
-      setClocking(false)
-    }
-  }, [
-    clocking,
-    gate?.market,
-    gate?.lockedInstrument,
-    gate?.allowedInstruments,
-    viewingInstrument,
-    refresh,
-  ])
+      try {
+        const res = await fetch('/api/trading/clock-in', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            market: 'NY',
+            instrument: inst,
+          }),
+        })
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          const msg =
+            typeof json.error === 'string' && json.error
+              ? json.error
+              : `Clock-in failed (${res.status})`
+          setClockInError(msg)
+          return
+        }
+        setClockInError(null)
+        await refresh()
+      } catch {
+        setClockInError('Clock-in unreachable — check network or deploy')
+      } finally {
+        setClocking(false)
+      }
+    },
+    [clocking, refresh]
+  )
+
+  const handleCallMode = useCallback(
+    async (useCall: boolean) => {
+      if (callModeBusy) return
+      setCallModeBusy(true)
+      setCallModeError(null)
+      try {
+        const res = await fetch('/api/trading/call-mode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            useCall,
+            market: gate?.market,
+            instrument: viewingInstrument || gate?.lockedInstrument,
+          }),
+        })
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          setCallModeError(
+            typeof json.error === 'string' && json.error
+              ? json.error
+              : `CALL choice failed (${res.status})`
+          )
+          return
+        }
+        await refresh()
+      } catch {
+        setCallModeError('Could not save CALL choice — check network')
+      } finally {
+        setCallModeBusy(false)
+      }
+    },
+    [
+      callModeBusy,
+      gate?.market,
+      gate?.lockedInstrument,
+      viewingInstrument,
+      refresh,
+    ]
+  )
 
   useEffect(() => {
     setMounted(true)
@@ -485,6 +521,7 @@ export function SessionBanner({
     : null
 
   return (
+    <>
     <div className={`rounded-lg border px-3 py-2 text-xs flex flex-wrap items-center gap-3 ${tone}`}>
       <span className="font-semibold tracking-wide uppercase">
         {phaseLabel(gate.phase, gate.rangeStrategy, gate.lockedInstrument)}
@@ -498,6 +535,14 @@ export function SessionBanner({
       </span>
       {gate.lockedInstrument && (
         <span className="rounded bg-white/10 px-2 py-0.5 font-medium">{gate.lockedInstrument}</span>
+      )}
+      {gate.glanceOnly && gate.lockedInstrument && viewingInstrument && viewingInstrument !== gate.lockedInstrument && (
+        <span
+          className="rounded bg-sky-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase text-sky-200"
+          title={`Clocked into ${gate.lockedInstrument} — tickets stay on that name`}
+        >
+          Glance only
+        </span>
       )}
       {viewingInstrument === 'NIKKEI' && (
         <span
@@ -515,15 +560,20 @@ export function SessionBanner({
         <span className="rounded bg-amber-500/25 px-2 py-0.5 text-amber-200 font-semibold">
           MANAGE OPEN
         </span>
-      ) : gate.canClockIn ? (
-        <button
-          type="button"
-          onClick={handleClockIn}
-          disabled={clocking}
-          className="rounded bg-amber-500/90 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-black hover:bg-amber-400 disabled:opacity-60"
-        >
-          {clocking ? 'Clocking in…' : 'Today I trade'}
-        </button>
+      ) : gate.canClockIn && gate.market !== 'TOKYO' ? (
+        <span className="flex items-center gap-1.5">
+          {(['DOW', 'NASDAQ'] as const).map((inst) => (
+            <button
+              key={inst}
+              type="button"
+              onClick={() => void handleClockInName(inst)}
+              disabled={clocking}
+              className="rounded bg-amber-500/90 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-black hover:bg-amber-400 disabled:opacity-60"
+            >
+              {clocking ? '…' : inst === 'DOW' ? 'DOW · MYM' : 'NASDAQ · MNQ'}
+            </button>
+          ))}
+        </span>
       ) : gate.attendedToday &&
         !gate.canClockIn &&
         // Afternoon watch only — hide once cash close clears the day lock / focus
@@ -532,6 +582,22 @@ export function SessionBanner({
           CLOCKED OUT
         </span>
       ) : null}
+      {gate.clockedIn && gate.useCall === true && (
+        <span
+          className="rounded bg-zinc-500/25 px-2 py-0.5 text-zinc-200 font-semibold"
+          title="CALL must agree — tickets only on CALL-legal ±10"
+        >
+          CALL ON
+        </span>
+      )}
+      {gate.clockedIn && gate.useCall === false && (
+        <span
+          className="rounded bg-sky-500/20 px-2 py-0.5 text-sky-200 font-semibold"
+          title="Regular playbook ±10 — OR30, IB, US Range, lunch-range. CALL is advise only."
+        >
+          Regular ±10
+        </span>
+      )}
       {clockInError && (
         <span
           className="rounded bg-red-500/25 px-2 py-0.5 text-red-200 font-semibold max-w-[20rem]"
@@ -661,5 +727,12 @@ export function SessionBanner({
         Refresh
       </button>
     </div>
+    <DeskCallModePrompt
+      open={!!gate.clockedIn && gate.useCall == null}
+      busy={callModeBusy}
+      error={callModeError}
+      onChoose={handleCallMode}
+    />
+    </>
   )
 }

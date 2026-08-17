@@ -23,6 +23,7 @@ import {
   getTodayAttendance,
   autoLunchClockOut,
   tradeDateForInstrument,
+  attendanceCallMode,
 } from '@/lib/trading/deskAttendance'
 import { noteSessionGateTransition } from '@/lib/utils/deskAuditLog'
 import { loadTradeifySessionSnapshot } from '@/lib/trading/tradeifySessionState'
@@ -34,6 +35,7 @@ import {
   TRADEIFY_DLL_DOLLARS,
 } from '@/lib/trading/tradeifyGrowth50k'
 import { tradeifyFlattenMontreal } from '@/lib/trading/tradeifyLeoBlock'
+import { LIVE_CLOCK_REFUSE } from '@/lib/trading/liveDeskBook'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -59,12 +61,10 @@ export async function GET(request: Request) {
 
     /** Soft AI / regime pick — never collapses NY tabs by itself */
     let suggestedInstrument: DeskInstrument | null = null
-    /** Hard lock — attendance, open book, or Tokyo-only desk */
+    /** Hard lock — attendance or open book (NY only). Never auto-lock Nikkei. */
     let lockedInstrument: DeskInstrument | null = null
 
-    if (focusMarket === 'TOKYO') {
-      lockedInstrument = 'NIKKEI'
-    } else {
+    if (focusMarket === 'NY') {
       const { data: rec } = await supabase
         .from('market_recommendations')
         .select('recommended_instrument')
@@ -123,8 +123,8 @@ export async function GET(request: Request) {
     ])
 
     const openPos = openPosRes.data
-    if (openPos?.instrument && isLiveDeskInstrument(openPos.instrument)) {
-      lockedInstrument = openPos.instrument as DeskInstrument
+    if (openPos?.instrument && isNyDeskInstrument(openPos.instrument)) {
+      lockedInstrument = openPos.instrument
     }
 
     const filledTrades = filledRes.data ?? []
@@ -152,10 +152,10 @@ export async function GET(request: Request) {
 
     const attendanceFocus =
       (attendance?.traded_instrument &&
-      isLiveDeskInstrument(attendance.traded_instrument)
+      isNyDeskInstrument(attendance.traded_instrument)
         ? attendance.traded_instrument
         : null) ||
-      (attendance?.instrument && isLiveDeskInstrument(attendance.instrument)
+      (attendance?.instrument && isNyDeskInstrument(attendance.instrument)
         ? attendance.instrument
         : null)
 
@@ -187,35 +187,52 @@ export async function GET(request: Request) {
 
     const tradeify = resolveTradeifyPlace(tradeifySnap)
 
+    const liveTokyoOff =
+      focusMarket === 'TOKYO' ||
+      viewingForGate === 'NIKKEI' ||
+      gate.market === 'TOKYO'
+    const liveGate = liveTokyoOff
+      ? {
+          ...gate,
+          canClockIn: false,
+          canPlaceEntry: false,
+          glanceOnly: true,
+          canViewLiveChart: true,
+          canFetchLiveBars: true,
+          message: LIVE_CLOCK_REFUSE,
+        }
+      : gate
+
     noteSessionGateTransition({
       userId: user.id,
       viewing: viewingForGate,
       snap: {
-        phase: gate.phase,
-        canPlaceEntry: gate.canPlaceEntry,
-        canManagePosition: gate.canManagePosition,
-        clockedIn: gate.clockedIn,
-        dayLocked: gate.dayLocked,
-        revengeLocked: gate.revengeLocked,
-        rangeStrategy: gate.rangeStrategy,
-        ladder: gate.attemptLadderLabel,
-        lockedInstrument: gate.lockedInstrument,
+        phase: liveGate.phase,
+        canPlaceEntry: liveGate.canPlaceEntry,
+        canManagePosition: liveGate.canManagePosition,
+        clockedIn: liveGate.clockedIn,
+        dayLocked: liveGate.dayLocked,
+        revengeLocked: liveGate.revengeLocked,
+        rangeStrategy: liveGate.rangeStrategy,
+        ladder: liveGate.attemptLadderLabel,
+        lockedInstrument: liveGate.lockedInstrument,
         openPositionId: openPos?.id ?? null,
-        message: gate.message,
+        message: liveGate.message,
       },
     })
 
     return NextResponse.json(
       {
         success: true,
-        ...gate,
-        suggested_instrument: gate.suggestedInstrument,
+        ...liveGate,
+        suggested_instrument: liveGate.suggestedInstrument,
         open_position_id: openPos?.id ?? null,
         open_instrument: openPos?.instrument ?? null,
         trade_date: tradeDate,
         server_now_et: gate.timeEst,
         attendance_id: attendance?.id ?? null,
         attendance_status: attendance?.status ?? null,
+        useCall: clockedIn ? attendanceCallMode(attendance?.morning_journal) : null,
         attempts_used: gate.attemptsUsed,
         max_attempts: gate.maxAttempts,
         stop_hits: gate.stopHits,

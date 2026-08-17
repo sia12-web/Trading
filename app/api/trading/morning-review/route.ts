@@ -28,6 +28,9 @@ import {
   autoLunchClockOut,
   type DeskAttendanceRow,
 } from '@/lib/trading/deskAttendance'
+import {
+  DESK_CALL_MODE_JOURNAL_KEY,
+} from '@/lib/trading/deskCallMode'
 import type { Instrument } from '@/types/price-feed'
 import { logger } from '@/lib/utils/logger'
 import { withApiLog } from '@/lib/utils/withApiLog'
@@ -178,6 +181,8 @@ async function runMorningReview(request: NextRequest) {
       market,
       session: market === 'TOKYO' ? 'morning (09:00–11:30 JST)' : 'morning (09:30–11:30 ET)',
       filled_or_not: 'journaled regardless of fill',
+      [DESK_CALL_MODE_JOURNAL_KEY]:
+        attendance.morning_journal?.[DESK_CALL_MODE_JOURNAL_KEY] ?? null,
       reactions: {
         validated: respected.map(({ level, type, tests, holds }) => ({
           level,

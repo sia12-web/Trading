@@ -116,11 +116,11 @@ test('Clock-in open NY prep through cash close (late join after open)', () => {
   assert(canClockInNow('NY', etDate(16, 0)).ok === false, 'cash close')
 })
 
-test('Tokyo clock-in 08:45 → cash close JST', () => {
+test('Tokyo live clock-in is off (Nikkei is Simulation)', () => {
   assert(canClockInNow('TOKYO', jstDate(8, 44)).ok === false, 'before prep')
-  assert(canClockInNow('TOKYO', jstDate(8, 50)).ok === true, 'prep')
-  assert(canClockInNow('TOKYO', jstDate(9, 0)).ok === true, 'at open late join')
-  assert(canClockInNow('TOKYO', jstDate(10, 0)).ok === true, 'late join')
+  assert(canClockInNow('TOKYO', jstDate(8, 50)).ok === false, 'prep off')
+  assert(canClockInNow('TOKYO', jstDate(9, 0)).ok === false, 'open off')
+  assert(canClockInNow('TOKYO', jstDate(10, 0)).ok === false, 'late join off')
   assert(canClockInNow('TOKYO', jstDate(15, 0)).ok === false, 'cash close')
 })
 

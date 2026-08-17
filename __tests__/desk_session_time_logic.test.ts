@@ -228,7 +228,7 @@ for (const inst of ['DOW', 'NASDAQ'] as const) {
     attemptsUsed: 0,
     stopLossHitCount: 0,
   })
-  assert(gate.phase === 'DONE', 'NIKKEI afternoon DONE')
+  assert(gate.phase === 'ENTRY', `NIKKEI afternoon still IB entry got ${gate.phase}`)
   assert(gate.canPlaceEntry === false, 'NIKKEI no entry')
   assert(gate.market === 'TOKYO', 'NIKKEI market TOKYO')
 }
@@ -236,7 +236,7 @@ for (const inst of ['DOW', 'NASDAQ'] as const) {
 // Morning entry still works when clocked in
 {
   const gate = resolveSessionGate({
-    now: etDate(Y, M, D, 9, 45),
+    now: etDate(Y, M, D, 10, 5),
     lockedInstrument: 'NASDAQ',
     viewingInstrument: 'NASDAQ',
     clockedIn: true,
@@ -278,7 +278,7 @@ for (const inst of ['DOW', 'NASDAQ'] as const) {
   assert(sim.rangeStrategy === 'lunch_range', 'lunch_range strategy')
 }
 
-// Sim afternoon locked after morning fill
+// Sim afternoon: morning fill does not kill lunch-range (Option B)
 {
   const sim = resolveSimMorningGate({
     now: etDate(Y, M, D, 14, 0),
@@ -287,8 +287,8 @@ for (const inst of ['DOW', 'NASDAQ'] as const) {
     morningAttempts: 1,
     stopHits: 0,
   })
-  assert(sim.phase === 'FLAT', 'sim afternoon FLAT after morning fill')
-  assert(sim.canPlaceEntry === false, 'sim no afternoon entries after morning')
+  assert(sim.canPlaceEntry === true, 'sim lunch-range still open after morning fill')
+  assert(sim.rangeStrategy === 'lunch_range', 'lunch_range strategy after morning fill')
 }
 
 // ── VWAP: 5 trading days prior, per-desk cash open ───────────────────────────

@@ -70,10 +70,10 @@ assert(
   'late join attended → tip on'
 )
 
-// Tokyo late
-assert(canClockInNow('TOKYO', jstDate(8, 50)).ok === true, 'Tokyo prep')
-assert(canClockInNow('TOKYO', jstDate(9, 30)).ok === true, 'Tokyo late join')
-assert(isLateJoinClockIn('TOKYO', jstDate(9, 30)) === true, 'Tokyo late flag')
+// Tokyo live clock-in is off — Nikkei is Simulation
+assert(canClockInNow('TOKYO', jstDate(8, 50)).ok === false, 'Tokyo live clock-in off')
+assert(canClockInNow('TOKYO', jstDate(9, 30)).ok === false, 'Tokyo late join off')
+assert(isLateJoinClockIn('TOKYO', jstDate(9, 30)) === true, 'Tokyo late flag still time-true')
 assert(canClockInNow('TOKYO', jstDate(15, 0)).ok === false, 'Tokyo after cash close')
 
 // Re-clock after early out still allowed until cash close

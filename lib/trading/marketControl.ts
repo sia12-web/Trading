@@ -380,9 +380,11 @@ export function formatMarketControlForPrompt(p: MarketControl): string {
 
 export function marketControlBadgeText(p: MarketControl): string {
   if (p.label === 'WAIT' || p.rf == null) return 'RF WAIT'
-  if (p.rf > 0) return `RF +${p.rf} ↑`
-  if (p.rf < 0) return `RF ${p.rf} ↓`
-  return 'RF 0 ROT'
+  const rf = p.rf > 0 ? `+${p.rf}` : String(p.rf)
+  if (p.label === 'ONE-TF BUY') return `RF ${rf} ↑`
+  if (p.label === 'ONE-TF SELL') return `RF ${rf} ↓`
+  if (p.rf === 0) return 'RF 0 ROT'
+  return `RF ${rf} 2TF`
 }
 
 export function marketControlPaintKey(

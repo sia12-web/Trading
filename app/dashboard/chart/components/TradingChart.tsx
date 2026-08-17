@@ -88,6 +88,7 @@ import {
   marketControlLineSpecs,
   marketControlPaintKey,
   resolveMarketControlAsOfUnix,
+  type MarketControl,
 } from '@/lib/trading/marketControl'
 import {
   CALL_COLORS,
@@ -96,9 +97,12 @@ import {
   deskCallHoverText,
   resolveDeskCallAsOfUnix,
   assertDeskCallEntry,
+  assertDeskTicketEntry,
   deskCallLegalEdges,
+  ticketAllowedEdges,
   type DeskCall,
 } from '@/lib/trading/deskCall'
+import { deskCallModeHoverPrefix } from '@/lib/trading/deskCallMode'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
 import { LiveVoicePanel } from '@/app/dashboard/chart/components/LiveVoicePanel'
@@ -158,6 +162,7 @@ import {
   RANGE_EDGE_OFF_BAND_MESSAGE,
   rangeEdgeBandLegend,
   rangeEdgeBands,
+  filterRangeEdgeBands,
 } from '@/lib/trading/rangeEdgeEntryGate'
 import {
   computeRangeEdgeTails,
@@ -727,6 +732,11 @@ interface TradingChartProps {
   deskAttended?: boolean
   /** Currently clocked in — enables Live Voice panel entry */
   clockedIn?: boolean
+  /**
+   * Clock-in CALL choice. `true` / omitted = CALL ticket gate.
+   * `false` = regular playbook ±10. `null` = not answered (no tickets).
+   */
+  useCall?: boolean | null
   /** Bump to force a levels reload after SL/TP (system memory updated) */
   levelsRefreshKey?: number
   /** Rising-edge desk alerts (range ±10 band while entries unlocked) */
@@ -774,6 +784,7 @@ export function TradingChart({
   deskLevelsActive = false,
   deskAttended = false,
   clockedIn = false,
+  useCall: useCallProp,
   levelsRefreshKey = 0,
   onDeskAlert,
   onRangeAtr,
@@ -834,6 +845,10 @@ export function TradingChart({
   const paintMarketControlRef = useRef<() => void>(() => {})
   const paintDeskCallRef = useRef<() => void>(() => {})
   const deskCallRef = useRef<DeskCall | null>(null)
+  const marketControlRef = useRef<MarketControl | null>(null)
+  const resolvedUseCall: boolean | null = useCallProp === undefined ? true : useCallProp
+  const useCallRef = useRef<boolean | null>(resolvedUseCall)
+  useCallRef.current = resolvedUseCall
   /** First 30m opening range — NY 09:30–10:00 ET / Tokyo 09:00–09:30 JST */
   const or30SeriesRef = useRef<{
     high: ISeriesApi<'Line'>
@@ -1481,6 +1496,7 @@ export function TradingChart({
     })
     const badge = marketControlBadgeText(control)
     setControlBadge((prev) => (prev === badge ? prev : badge))
+    marketControlRef.current = control
     const key = marketControlPaintKey(showMarketControl, control)
     if (key === controlPaintKeyRef.current) return
     controlPaintKeyRef.current = key
@@ -1542,10 +1558,11 @@ export function TradingChart({
       playbookMode,
       bookLocked:
         attemptsUsed >= 3 || !!positionOverlay || !!pendingLimit,
+      control: marketControlRef.current,
     })
     const badge = deskCallBadgeText(call)
     setCallBadge((prev) => (prev === badge ? prev : badge))
-    const hover = deskCallHoverText(call)
+    const hover = `${deskCallModeHoverPrefix(useCallRef.current)}${deskCallHoverText(call)}`
     setCallHover((prev) => (prev === hover ? prev : hover))
     deskCallRef.current = call
   }, [
@@ -1558,6 +1575,7 @@ export function TradingChart({
     attemptsUsed,
     positionOverlay,
     pendingLimit,
+    resolvedUseCall,
   ])
 
   useEffect(() => {
@@ -1940,6 +1958,7 @@ export function TradingChart({
       playbookMode,
       bookLocked:
         attemptsUsed >= 3 || !!positionOverlay || !!pendingLimit,
+      control: marketControlRef.current,
     })
     deskCallRef.current = call
     return {
@@ -1990,7 +2009,10 @@ export function TradingChart({
       }
     ) => {
       const { strategyRange, snapRanges, ladder, call } = getStrategyRiskBundle()
-      const wait = assertDeskCallEntry({ call })
+      const wait = assertDeskTicketEntry({
+        useCall: useCallRef.current,
+        call,
+      })
       if (!wait.ok) {
         onDeskAlert?.({
           kind: 'entry_band_deny',
@@ -2045,7 +2067,11 @@ export function TradingChart({
           })
           return
         }
-        const gated = assertDeskCallEntry({ call, edge })
+        const gated = assertDeskTicketEntry({
+          useCall: useCallRef.current,
+          call,
+          edge,
+        })
         if (!gated.ok) {
           onDeskAlert?.({
             kind: 'entry_band_deny',
@@ -2128,7 +2154,11 @@ export function TradingChart({
         })
         return
       }
-      const gated = assertDeskCallEntry({ call, edge: snapped.hit.edge })
+      const gated = assertDeskTicketEntry({
+        useCall: useCallRef.current,
+        call,
+        edge: snapped.hit.edge,
+      })
       if (!gated.ok) {
         onDeskAlert?.({
           kind: 'entry_band_deny',
@@ -2215,7 +2245,6 @@ export function TradingChart({
   const [clockReady, setClockReady] = useState(false)
   const [deskSessionLive, setDeskSessionLive] = useState(false)
   const [visibleInstruments, setVisibleInstruments] = useState<Instrument[]>(() => {
-    if (lockedInstrument) return [lockedInstrument]
     if (allowedInstruments && allowedInstruments.length > 0) return [...allowedInstruments]
     return [...DESK_INSTRUMENTS] as Instrument[]
   })
@@ -2229,17 +2258,19 @@ export function TradingChart({
     const now = new Date()
     setClockReady(true)
     setDeskSessionLive(isAnyLiveFocusWindowActive(now))
-    if (lockedInstrument) {
-      setVisibleInstruments([lockedInstrument])
-      return
-    }
-    const live = liveVisibleInstruments(now) as Instrument[]
+    const live = liveVisibleInstruments(now, {
+      lockedInstrument,
+      clockedIn: deskAttended,
+      attendedToday: deskAttended,
+    }) as Instrument[]
     if (allowedInstruments && allowedInstruments.length > 0) {
-      setVisibleInstruments(allowedInstruments.filter((i) => live.includes(i)))
+      setVisibleInstruments(
+        allowedInstruments.filter((i) => live.includes(i) || allowedInstruments.includes(i))
+      )
       return
     }
     setVisibleInstruments(live)
-  }, [allowedInstruments, lockedInstrument, focusTick])
+  }, [allowedInstruments, lockedInstrument, focusTick, deskAttended])
 
   /** Tip/SSE: pre-open focus free; after open / afternoon only if attended */
   const tipStreamActive = useMemo(() => {
@@ -2252,27 +2283,28 @@ export function TradingChart({
   }, [instrument, deskAttended, focusTick, clockReady])
 
   const setInstrument = useCallback((inst: Instrument) => {
-    if (lockedInstrument && inst !== lockedInstrument) return
     if (!visibleInstruments.includes(inst)) return
     setInstrumentState(inst)
-    // Persist only intentional tab clicks — never gate/lock sync
     if (!lockedInstrument) setDeskInstrumentPreference(inst)
     onInstrumentChange?.(inst)
   }, [onInstrumentChange, lockedInstrument, visibleInstruments])
 
-  // Hydrate remembered market once; then follow clock-in lock / session focus
+  // Hydrate remembered market once; stay on the twin when glancing
   useEffect(() => {
-    if (lockedInstrument && visibleInstruments.includes(lockedInstrument)) {
-      setInstrumentState(lockedInstrument)
-      onInstrumentSync?.(lockedInstrument)
-      return
-    }
-    const preferred = getDeskInstrumentPreference()
-    const next = visibleInstruments.includes(preferred)
-      ? preferred
-      : visibleInstruments[0] ?? 'DOW'
-    setInstrumentState(next)
-    onInstrumentSync?.(next)
+    setInstrumentState((prev) => {
+      if (visibleInstruments.includes(prev)) return prev
+      const next =
+        (lockedInstrument && visibleInstruments.includes(lockedInstrument)
+          ? lockedInstrument
+          : null) ||
+        (visibleInstruments.includes(getDeskInstrumentPreference())
+          ? getDeskInstrumentPreference()
+          : null) ||
+        visibleInstruments[0] ||
+        'DOW'
+      onInstrumentSync?.(next)
+      return next
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lockedInstrument, visibleInstruments.join('|')])
 
@@ -4871,7 +4903,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           snappedRaw,
           snapRanges,
           undefined,
-          deskCallLegalEdges(deskCallRef.current ?? getStrategyRiskBundleRef.current().call)
+          ticketAllowedEdges({
+            useCall: useCallRef.current,
+            call: deskCallRef.current ?? getStrategyRiskBundleRef.current().call,
+          })
         )
         const snapped = snapDeskPrice(instrument, enveloped ?? snappedRaw)
         setRiskBox((prev) => {
@@ -4940,7 +4975,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           candidates: snapRanges,
           preferLabel: prev.preferRangeLabel ?? strategyRange?.label ?? null,
           liveOk: (range) => liveOkForSnap(range, strategyRange, ladder),
-          allowedEdges: deskCallLegalEdges(call),
+          allowedEdges: ticketAllowedEdges({
+            useCall: useCallRef.current,
+            call,
+          }),
         })
         if (!snapped) return prev
         const next = snapDeskPrice(instrument, snapped.price)
@@ -5312,7 +5350,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       })
       return
     }
-    const gated = assertDeskCallEntry({
+    const gated = assertDeskTicketEntry({
+      useCall: useCallRef.current,
       call,
       edge: hit.edge,
       direction,
@@ -5359,7 +5398,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     if (!riskBox) return
     const newDir: 'LONG' | 'SHORT' = riskBox.direction === 'LONG' ? 'SHORT' : 'LONG'
     const call = deskCallRef.current ?? getStrategyRiskBundle().call
-    const gated = assertDeskCallEntry({ call, direction: newDir })
+    const gated = assertDeskTicketEntry({
+      useCall: useCallRef.current,
+      call,
+      direction: newDir,
+    })
     if (!gated.ok) {
       onDeskAlert?.({
         kind: 'entry_band_deny',
@@ -5850,8 +5893,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       overlays,
     })
     const call = deskCallRef.current
-    const legal = new Set(call ? deskCallLegalEdges(call) : [])
-    if (legal.size === 0 || snapRanges.length === 0) {
+    const mode = useCallRef.current
+    if (snapRanges.length === 0 || mode == null) {
+      clearBands()
+      return
+    }
+    const allowed = ticketAllowedEdges({ useCall: mode, call })
+    if (allowed != null && allowed.length === 0) {
       clearBands()
       return
     }
@@ -5902,7 +5950,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
     let anyLive = false
     for (const strategyRange of snapRanges) {
-      const bands = rangeEdgeBands(strategyRange).filter((b) => legal.has(b.edge))
+      const bands = filterRangeEdgeBands(rangeEdgeBands(strategyRange), allowed)
       if (bands.length === 0) continue
       const label = strategyRange.label || 'range'
       const entryLive =
@@ -5987,10 +6035,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       return `${name} ${rangeEdgeBandLegend(o)}`
     })
     const legendList = legendParts.join(' · ')
+    const callTag = mode === false ? 'playbook' : 'CALL'
     setEntryBandLabel(
       anyLive
-        ? `±${RANGE_EDGE_BAND_POINTS} CALL ${legendList} entry zones`
-        : `±${RANGE_EDGE_BAND_POINTS} CALL ${legendList} (shaped — entry window closed or inactive)`
+        ? `±${RANGE_EDGE_BAND_POINTS} ${callTag} ${legendList} entry zones`
+        : `±${RANGE_EDGE_BAND_POINTS} ${callTag} ${legendList} (shaped — entry window closed or inactive)`
     )
 
     return () => {
@@ -6023,6 +6072,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     livePrice,
     focusTick,
     callBadge,
+    resolvedUseCall,
   ])
 
   // Active playbook range ATR chip (advise-only; refresh with focusTick / range shape)
@@ -6535,8 +6585,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             type="button"
             title={
               showMarketControl
-                ? 'Dalton control dPOC line on. Click to hide the line (RF type still updates).'
-                : 'Show Dalton control: Rotation Factor + developing POC. Click for the dPOC line (off on refresh).'
+                ? 'Dalton control dPOC line on. Click to hide the line (RF type still updates). ↑ / ↓ = ONE-TF. 2TF = RF without matching dPOC.'
+                : 'Show Dalton control: Rotation Factor + developing POC. ↑ / ↓ = ONE-TF BUY/SELL. 2TF is not a CALL. Click for the dPOC line (off on refresh).'
             }
             onClick={() => setShowMarketControl((v) => !v)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
@@ -6897,8 +6947,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             : 'Price Alert (A)'}
         </button>
 
-        {/* Toolbar Direction Switcher when Order tool is active */}
-        {riskBox && (
+        {/* Toolbar Direction Switcher — regular ±10 only; CALL locks side */}
+        {riskBox && resolvedUseCall === false && (
           <button
             type="button"
             onClick={toggleRiskBoxDirection}
@@ -7988,7 +8038,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                       })
                       return
                     }
-                    const gated = assertDeskCallEntry({
+                    const gated = assertDeskTicketEntry({
+                      useCall: useCallRef.current,
                       call,
                       edge: hit.edge,
                       direction: rationaleModal.direction,

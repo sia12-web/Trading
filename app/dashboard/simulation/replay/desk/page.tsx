@@ -71,6 +71,7 @@ import {
   attributePlaybookBandEntry,
   filterLevelsInRangeEdgeBand,
   rangeEdgeBands,
+  filterRangeEdgeBands,
   snapEntryToNearestOpenBandCenter,
   RANGE_EDGE_BAND_POINTS,
   RANGE_EDGE_OFF_BAND_MESSAGE,
@@ -155,14 +156,17 @@ import {
   marketControlLineSpecs,
   marketControlPaintKey,
   resolveMarketControlAsOfUnix,
+  type MarketControl,
 } from '@/lib/trading/marketControl'
 import {
   CALL_COLORS,
   assertDeskCallEntry,
+  assertDeskTicketEntry,
   computeDeskCall,
   deskCallBadgeText,
   deskCallHoverText,
   deskCallLegalEdges,
+  ticketAllowedEdges,
   formatDeskCallScoreStrip,
   resolveDeskCallAsOfUnix,
   scoreDeskCallSession,
@@ -171,6 +175,12 @@ import {
   type DeskCallScoreRow,
   type DeskCallScoreTally,
 } from '@/lib/trading/deskCall'
+import {
+  deskCallModeHoverPrefix,
+  readSimCallMode,
+  writeSimCallMode,
+} from '@/lib/trading/deskCallMode'
+import { DeskCallModePrompt } from '@/app/dashboard/chart/components/DeskCallModePrompt'
 import {
   OR30_COLORS,
   computeOr30Range,
@@ -658,6 +668,21 @@ function SimulationDeskInner() {
   const [callHover, setCallHover] = useState(
     'CALL WAIT — no ticket\n\nLeo and Level Finder advise only. No line.'
   )
+  const [useCall, setUseCall] = useState<boolean | null>(() =>
+    readSimCallMode(instrument, replayDate)
+  )
+  const useCallRef = useRef<boolean | null>(useCall)
+  useCallRef.current = useCall
+
+  useEffect(() => {
+    setUseCall(readSimCallMode(instrument, replayDate))
+  }, [instrument, replayDate])
+  useEffect(() => {
+    const call = deskCallRef.current
+    if (!call) return
+    const hover = `${deskCallModeHoverPrefix(useCall)}${deskCallHoverText(call)}`
+    setCallHover(hover)
+  }, [useCall])
   const [callScoreText, setCallScoreText] = useState('')
   const showIbBreakoutsRef = useRef(false)
   const showLunchRangeRef = useRef(false)
@@ -677,6 +702,7 @@ function SimulationDeskInner() {
   /** Days already added to the running tally — survives Reset so replay cannot double-count. */
   const callScoredDaysRef = useRef<Set<string>>(new Set())
   const deskCallRef = useRef<DeskCall | null>(null)
+  const marketControlRef = useRef<MarketControl | null>(null)
   const or30SeriesRef = useRef<{
     high: ISeriesApi<'Line'>
     low: ISeriesApi<'Line'>
@@ -1782,6 +1808,7 @@ function SimulationDeskInner() {
           candles: bars,
           asOfUnix: resolveMarketControlAsOfUnix(instrument, simT, simT),
         })
+        marketControlRef.current = control
         const controlVisible = showMarketControlRef.current
         const controlText = marketControlBadgeText(control)
         setControlBadge((prev) => (prev === controlText ? prev : controlText))
@@ -1840,11 +1867,12 @@ function SimulationDeskInner() {
             tradesCountRef.current >= 3 ||
             !!positionRef.current ||
             !!pendingRef.current,
+          control,
         })
         deskCallRef.current = deskCall
         const callText = deskCallBadgeText(deskCall)
         setCallBadge((prev) => (prev === callText ? prev : callText))
-        const hover = deskCallHoverText(deskCall)
+        const hover = `${deskCallModeHoverPrefix(useCallRef.current)}${deskCallHoverText(deskCall)}`
         setCallHover((prev) => (prev === hover ? prev : hover))
 
         // Refresh advise book when CALL playbook / locked ±10 changes.
@@ -2054,6 +2082,7 @@ function SimulationDeskInner() {
         tradesCountRef.current >= 3 ||
         !!positionRef.current ||
         !!pendingRef.current,
+      control: marketControlRef.current,
     })
     deskCallRef.current = call
     return {
@@ -2075,7 +2104,10 @@ function SimulationDeskInner() {
       rawPrice: number
     ): { price: number; range: StrategyRangeEdges } | { deny: string } => {
       const { strategyRange, snapRanges, ladder, call } = getStrategyRiskBundle()
-      const wait = assertDeskCallEntry({ call })
+      const wait = assertDeskTicketEntry({
+        useCall: useCallRef.current,
+        call,
+      })
       if (!wait.ok) return { deny: wait.message }
       const now = new Date(simNowRef.current * 1000)
       const liveOk = (range: StrategyRangeEdges) => {
@@ -2116,7 +2148,11 @@ function SimulationDeskInner() {
           }
         }
         if (hit) {
-          const gated = assertDeskCallEntry({ call, edge: hit.edge })
+          const gated = assertDeskTicketEntry({
+            useCall: useCallRef.current,
+            call,
+            edge: hit.edge,
+          })
           if (!gated.ok) return { deny: gated.message }
           if (hit.range.label === 'OR30') {
             return {
@@ -2142,7 +2178,11 @@ function SimulationDeskInner() {
         }
         return { deny: RANGE_EDGE_OFF_BAND_MESSAGE }
       }
-      const gated = assertDeskCallEntry({ call, edge: snapped.hit.edge })
+      const gated = assertDeskTicketEntry({
+        useCall: useCallRef.current,
+        call,
+        edge: snapped.hit.edge,
+      })
       if (!gated.ok) return { deny: gated.message }
       return {
         price: snapDeskPrice(instrument, snapped.price),
@@ -2189,7 +2229,8 @@ function SimulationDeskInner() {
           }).ok
         },
       })
-      const gated = assertDeskCallEntry({
+      const gated = assertDeskTicketEntry({
+        useCall: useCallRef.current,
         call,
         edge: hit?.edge ?? null,
       })
@@ -2208,9 +2249,13 @@ function SimulationDeskInner() {
         })
       )
       setMsg(
-        `CALL ${dir} — drag SL / TP on the chart, then ${
-          dir === 'LONG' ? 'BUY LIMIT' : 'SELL LIMIT'
-        }`
+        useCallRef.current === false
+          ? `Regular ${dir} — drag SL / TP on the chart, then ${
+              dir === 'LONG' ? 'BUY LIMIT' : 'SELL LIMIT'
+            }`
+          : `CALL ${dir} — drag SL / TP on the chart, then ${
+              dir === 'LONG' ? 'BUY LIMIT' : 'SELL LIMIT'
+            }`
       )
     },
     [getStrategyRiskBundle, instrument, riskBox, snapSimEntryOrDeny]
@@ -2236,7 +2281,8 @@ function SimulationDeskInner() {
         return
       }
       const { call } = getStrategyRiskBundle()
-      const gated = assertDeskCallEntry({
+      const gated = assertDeskTicketEntry({
+        useCall: useCallRef.current,
         call,
         direction: order.direction,
       })
@@ -2331,7 +2377,8 @@ function SimulationDeskInner() {
       setMsg(RANGE_EDGE_OFF_BAND_MESSAGE)
       return
     }
-    const gated = assertDeskCallEntry({
+    const gated = assertDeskTicketEntry({
+      useCall: useCallRef.current,
       call,
       edge: hit.edge,
       direction: riskBox.direction,
@@ -2637,14 +2684,16 @@ function SimulationDeskInner() {
       attemptsUsedRef.current < MAX_DAY_ATTEMPTS
     if (entryOpen || pending || riskBox) {
       const { snapRanges, call } = getStrategyRiskBundle()
-      const legal = new Set(deskCallLegalEdges(call))
+      const allowed = ticketAllowedEdges({
+        useCall: useCallRef.current,
+        call,
+      })
+      if (allowed == null || allowed.length > 0) {
       for (const strategyRange of snapRanges) {
         if (!(strategyRange.high > strategyRange.low)) continue
-        if (legal.size === 0) continue
-        const bands = rangeEdgeBands(strategyRange)
+        const bands = filterRangeEdgeBands(rangeEdgeBands(strategyRange), allowed)
         const label = strategyRange.label || 'range'
         for (const band of bands) {
-          if (!legal.has(band.edge)) continue
           const color =
             band.edge === 'mid'
               ? 'rgba(168, 85, 247, 0.85)'
@@ -2670,6 +2719,7 @@ function SimulationDeskInner() {
             }
           )
         }
+      }
       }
     }
 
@@ -2704,6 +2754,7 @@ function SimulationDeskInner() {
     showIbBreakouts,
     showLunchRange,
     showUsRange,
+    useCall,
   ])
 
   const fillPending = useCallback(
@@ -3421,6 +3472,13 @@ function SimulationDeskInner() {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#0d1117]">
+      <DeskCallModePrompt
+        open={useCall == null}
+        onChoose={(next) => {
+          writeSimCallMode(instrument, replayDate, next)
+          setUseCall(next)
+        }}
+      />
       {/* Full-bleed chart + session color bands (bands painted imperatively for smooth pan) */}
       <div className="absolute inset-0 z-0">
         <div ref={containerRef} className="absolute inset-0 z-0" />
@@ -3440,8 +3498,11 @@ function SimulationDeskInner() {
             onCancel={() => setRiskBox(null)}
             snapRanges={getStrategyRiskBundle().snapRanges}
             strategyRange={getStrategyRiskBundle().strategyRange}
-            allowedEdges={deskCallLegalEdges(getStrategyRiskBundle().call)}
-            lockDirection
+            allowedEdges={ticketAllowedEdges({
+              useCall,
+              call: getStrategyRiskBundle().call,
+            })}
+            lockDirection={useCall !== false}
             liveOk={(range) => {
               const { strategyRange, ladder } = getStrategyRiskBundle()
               if (range.label === 'OR30') {
@@ -3877,6 +3938,16 @@ function SimulationDeskInner() {
               {callHover}
             </span>
           </span>
+          {useCall === true && (
+            <span className="rounded border border-zinc-500/40 px-2 py-1 text-[10px] font-semibold uppercase text-zinc-300">
+              CALL ON
+            </span>
+          )}
+          {useCall === false && (
+            <span className="rounded border border-sky-500/40 px-2 py-1 text-[10px] font-semibold uppercase text-sky-200">
+              Regular ±10
+            </span>
+          )}
           <button
             type="button"
             title={

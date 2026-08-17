@@ -16,10 +16,12 @@ import {
   CALL_BAND_POINTS,
   CALL_COLORS,
   assertDeskCallEntry,
+  assertDeskTicketEntry,
   computeDeskCall,
   deskCallBadgeText,
   deskCallHoverText,
   deskCallLegalEdges,
+  ticketAllowedEdges,
   deskCallLineSpecs,
   deskCallPaintKey,
   formatDeskCallForPrompt,
@@ -30,6 +32,10 @@ import {
   tallyDeskCallScores,
   type DeskCallBar,
 } from '../lib/trading/deskCall'
+import {
+  CALL_MODE_UNSET_MESSAGE,
+  parseDeskCallMode,
+} from '../lib/trading/deskCallMode'
 import { CONTROL_PERIOD_SEC } from '../lib/trading/marketControl'
 import { OPENING_BAR_SEC } from '../lib/trading/openingActivity'
 
@@ -583,6 +589,68 @@ function auctionThenBuy(openU: number): DeskCallBar[] {
   assert.equal(high.ok, false)
   const flip = assertDeskCallEntry({ call: long, direction: 'SHORT' })
   assert.equal(flip.ok, false)
+
+  assert.equal(parseDeskCallMode(undefined), null)
+  assert.equal(parseDeskCallMode(true), true)
+  assert.equal(parseDeskCallMode(false), false)
+  const unset = assertDeskTicketEntry({ useCall: null, call: wait })
+  assert.equal(unset.ok, false)
+  if (!unset.ok) assert.equal(unset.message, CALL_MODE_UNSET_MESSAGE)
+  const regularWait = assertDeskTicketEntry({
+    useCall: false,
+    call: wait,
+    edge: 'high',
+  })
+  assert.equal(regularWait.ok, true)
+  if (regularWait.ok) assert.equal(regularWait.side, 'SHORT')
+  const regularFlip = assertDeskTicketEntry({
+    useCall: false,
+    call: long,
+    edge: 'high',
+    direction: 'SHORT',
+  })
+  assert.equal(regularFlip.ok, true)
+  const stillGated = assertDeskTicketEntry({
+    useCall: true,
+    call: wait,
+    edge: 'low',
+  })
+  assert.equal(stillGated.ok, false)
+  assert.deepEqual(ticketAllowedEdges({ useCall: false, call: wait }), null)
+  assert.deepEqual(ticketAllowedEdges({ useCall: true, call: wait }), [])
+  assert.ok(ticketAllowedEdges({ useCall: true, call: long })?.includes('low'))
+}
+
+{
+  const twoTf = computeDeskCall({
+    instrument: 'DOW',
+    candles: [...friday, ...driveUpSession(mondayOpen, 2)],
+    asOfUnix: mondayOpen + 60 * 60,
+    playbookMode: 'ib',
+    control: {
+      instrument: 'DOW',
+      sourceSession: 'NY_RTH',
+      sessionDate: '2026-08-17',
+      label: 'TWO-TF',
+      rf: 2,
+      rfTop: 1,
+      rfBot: 1,
+      dpoc: 42120,
+      dpocDir: 'stuck',
+      amRf: null,
+      amDpoc: null,
+      periodCount: 2,
+      playLine: 'TWO-TF',
+    },
+  })
+  assert.equal(twoTf.side, 'WAIT', 'RF +2 with TWO-TF is not a CALL')
+  assert.equal(twoTf.controlLabel, 'TWO-TF')
+  const twoTfHover = deskCallHoverText(twoTf)
+  assert.ok(twoTfHover.includes('BLOCK  Ctrl:'))
+  assert.ok(twoTfHover.includes('RF +2 2TF'))
+  assert.ok(twoTfHover.includes('dPOC stuck'))
+  assert.ok(!twoTfHover.includes('RF +2 ↑'), '↑ is ONE-TF only')
+  assert.ok(!twoTfHover.includes('RF 0 ROT'))
 }
 
 console.log('desk_call: all passed')

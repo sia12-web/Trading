@@ -34,6 +34,7 @@ import {
   type ControlBar,
   type MarketControl,
 } from '@/lib/trading/marketControl'
+import { CALL_MODE_UNSET_MESSAGE } from '@/lib/trading/deskCallMode'
 import {
   computeYesterdayProfile,
   type YesterdayBar,
@@ -273,6 +274,19 @@ function ydayHoverLabel(openType: YesterdayOpenType | undefined): string {
   return 'opened outside range'
 }
 
+function ctrlHoverDetail(control: MarketControl): string {
+  const badge = marketControlBadgeText(control)
+  const dpoc =
+    control.dpocDir === 'up'
+      ? 'dPOC up'
+      : control.dpocDir === 'down'
+        ? 'dPOC down'
+        : control.dpocDir === 'stuck'
+          ? 'dPOC stuck'
+          : 'dPOC n/a'
+  return `${badge} · ${control.label} · ${dpoc}`
+}
+
 function buildCallHoverText(args: {
   instrument: string
   side: DeskCallSide
@@ -287,7 +301,7 @@ function buildCallHoverText(args: {
 }): string {
   const tokyo = args.instrument === 'NIKKEI'
   const openBadge = openingActivityBadgeText(args.opening)
-  const ctrlBadge = marketControlBadgeText(args.control)
+  const ctrlDetail = ctrlHoverDetail(args.control)
   const fromOpen = openBias(args.opening)
   const fromCtrl = controlBias(args.control)
   const ctrlReady = args.control.label !== 'WAIT'
@@ -322,19 +336,19 @@ function buildCallHoverText(args: {
 
   if (!ctrlReady) {
     rows.push(
-      `OK     Ctrl: ${ctrlBadge} — not scored yet; Open can CALL alone`
+      `OK     Ctrl: ${ctrlDetail} — not scored yet; Open can CALL alone`
     )
   } else if (fromCtrl === 'WAIT') {
     rows.push(
-      `BLOCK  Ctrl: ${ctrlBadge} · ${args.control.label} — needs ONE-TF BUY or SELL`
+      `BLOCK  Ctrl: ${ctrlDetail} — needs ONE-TF BUY or SELL`
     )
   } else if (fromOpen !== 'WAIT' && fromCtrl !== fromOpen) {
     rows.push(
-      `BLOCK  Ctrl: ${ctrlBadge} · ${args.control.label} → ${fromCtrl} — disagrees with Open ${fromOpen}`
+      `BLOCK  Ctrl: ${ctrlDetail} → ${fromCtrl} — disagrees with Open ${fromOpen}`
     )
   } else {
     rows.push(
-      `OK     Ctrl: ${ctrlBadge} · ${args.control.label} → ${fromCtrl}`
+      `OK     Ctrl: ${ctrlDetail} → ${fromCtrl}`
     )
   }
 
@@ -439,6 +453,48 @@ export function assertDeskCallEntry(args: {
     }
   }
   return { ok: true, side }
+}
+
+/**
+ * Ticket gate after the clock-in CALL / regular choice.
+ * `useCall: true` — same as {@link assertDeskCallEntry}.
+ * `useCall: false` — any playbook ±10; trader picks side.
+ * `useCall: null` — not answered; no tickets.
+ */
+export function assertDeskTicketEntry(args: {
+  useCall: boolean | null
+  call: DeskCall
+  edge?: DeskCallEdge | null
+  direction?: 'LONG' | 'SHORT' | null
+}): { ok: true; side: 'LONG' | 'SHORT' } | { ok: false; message: string } {
+  if (args.useCall == null) {
+    return { ok: false, message: CALL_MODE_UNSET_MESSAGE }
+  }
+  if (args.useCall) {
+    return assertDeskCallEntry({
+      call: args.call,
+      edge: args.edge,
+      direction: args.direction,
+    })
+  }
+  const side =
+    args.direction ?? (args.edge === 'high' ? 'SHORT' : 'LONG')
+  return { ok: true, side }
+}
+
+/**
+ * Painted / drag-legal ±10 edges for the current CALL mode.
+ * `null` = all playbook edges (US Range still drops mid via rangeEdgeBands).
+ * Empty = none (WAIT, or CALL/regular not chosen).
+ */
+export function ticketAllowedEdges(args: {
+  useCall: boolean | null
+  call: DeskCall | null
+}): ReadonlyArray<DeskCallEdge> | null {
+  if (args.useCall == null) return []
+  if (!args.useCall) return null
+  if (!args.call) return []
+  return deskCallLegalEdges(args.call)
 }
 
 export function playLineForCall(
@@ -656,6 +712,8 @@ export function computeDeskCall(args: {
   playbookMode: DeskPlaybookMode
   bookLocked?: boolean
   peerSide?: DeskCallSide | null
+  /** Same Control snapshot as the Ctrl chip — CALL must not recompute a second RF. */
+  control?: MarketControl
 }): DeskCall {
   const instrument = String(args.instrument || '')
   const bookLocked = args.bookLocked === true
@@ -683,11 +741,13 @@ export function computeDeskCall(args: {
     candles: candles as YesterdayBar[],
     asOfUnix: args.asOfUnix,
   })
-  const control = computeMarketControl({
-    instrument,
-    candles: candles as ControlBar[],
-    asOfUnix: args.asOfUnix,
-  })
+  const control =
+    args.control ??
+    computeMarketControl({
+      instrument,
+      candles: candles as ControlBar[],
+      asOfUnix: args.asOfUnix,
+    })
   const yday = computeYesterdayProfile({
     instrument,
     candles: candles as YesterdayBar[],

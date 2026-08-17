@@ -67,10 +67,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: result.error }, { status: 403 })
     }
 
-    const prepInstrument =
-      result.row.instrument ||
-      instrument ||
-      (market === 'TOKYO' ? 'NIKKEI' : null)
+    const prepInstrument = result.row.instrument || instrument
     if (prepInstrument) {
       const origin = request.nextUrl.origin
       void fetch(

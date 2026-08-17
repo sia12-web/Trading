@@ -48,6 +48,7 @@ import {
   computeDeskCall,
   type DeskCallBar,
 } from '@/lib/trading/deskCall'
+import { CALL_MODE_UNSET_MESSAGE } from '@/lib/trading/deskCallMode'
 import { logger } from '@/lib/utils/logger'
 
 /**
@@ -302,7 +303,15 @@ export async function assertServerRangeEdgeEntry(args: {
   ladder?: AttemptLadder
   now?: Date
   direction?: 'LONG' | 'SHORT'
+  /**
+   * Clock-in CALL choice. `true` / omitted = CALL must agree.
+   * `false` = regular playbook ±10. `null` = not answered.
+   */
+  useCall?: boolean | null
 }): Promise<{ ok: true; range: RangeEdgeLevels } | { ok: false; message: string }> {
+  if (args.useCall === null) {
+    return { ok: false, message: CALL_MODE_UNSET_MESSAGE }
+  }
   const bundle = await resolveServerPlaybookBundle({
     instrument: args.instrument,
     rangeStrategy: args.rangeStrategy,
@@ -396,20 +405,22 @@ export async function assertServerRangeEdgeEntry(args: {
     return { ok: false, message: bucketCheck.message }
   }
 
-  const nowUnix = Math.floor((args.now ?? new Date()).getTime() / 1000)
-  const call = computeDeskCall({
-    instrument: args.instrument,
-    candles: bundle.deskBars,
-    asOfUnix: nowUnix,
-    playbookMode: bundle.playbookMode,
-  })
-  const callGate = assertDeskCallEntry({
-    call,
-    edge: rangeEdgeKindAt(args.entry, attributed),
-    direction: args.direction ?? null,
-  })
-  if (!callGate.ok) {
-    return { ok: false, message: callGate.message }
+  if (args.useCall !== false) {
+    const nowUnix = Math.floor((args.now ?? new Date()).getTime() / 1000)
+    const call = computeDeskCall({
+      instrument: args.instrument,
+      candles: bundle.deskBars,
+      asOfUnix: nowUnix,
+      playbookMode: bundle.playbookMode,
+    })
+    const callGate = assertDeskCallEntry({
+      call,
+      edge: rangeEdgeKindAt(args.entry, attributed),
+      direction: args.direction ?? null,
+    })
+    if (!callGate.ok) {
+      return { ok: false, message: callGate.message }
+    }
   }
 
   return { ok: true, range: attributed }
