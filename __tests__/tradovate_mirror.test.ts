@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict'
 import {
   buildTradovateMirrorTicket,
+  deskBookLines,
   tradingViewChartUrl,
   tradingViewSymbol,
 } from '../lib/trading/tradovateMirror'
@@ -188,5 +189,33 @@ assert.equal(tradingViewSymbol('NKD'), 'CME:NKD1!')
 assert.ok(tradingViewChartUrl('MNQ').includes(encodeURIComponent('CME_MINI:MNQ1!')))
 assert.ok(tradingViewChartUrl('MYM').includes(encodeURIComponent('CBOT_MINI:MYM1!')))
 assert.ok(tradingViewChartUrl('NKD').includes(encodeURIComponent('CME:NKD1!')))
+
+{
+  const lines = deskBookLines({
+    instrument: 'NASDAQ',
+    direction: 'long',
+    entry: 20000.13,
+    stop: 19980.13,
+    target: 20030.13,
+    riskDollars: 400,
+  })
+  assert.equal(lines.entry, 20000.25)
+  assert.equal(lines.stop, 19980.25)
+  assert.equal(lines.symbol, 'MNQ')
+  assert.equal(lines.qty, 10)
+  assert.equal(lines.sizeNote, '10 MNQ')
+}
+
+{
+  const { readFileSync } = require('fs') as typeof import('fs')
+  const { join } = require('path') as typeof import('path')
+  const chart = readFileSync(
+    join(__dirname, '../app/dashboard/chart/components/TradingChart.tsx'),
+    'utf8'
+  )
+  assert.ok(chart.includes('workingBook?.stop'), 'working limit paints TV SL')
+  assert.ok(chart.includes('workingBook?.target'), 'working limit paints TV TP')
+  assert.ok(chart.includes('workingBook?.sizeNote'), 'working chip shows MYM/MNQ size')
+}
 
 console.log('tradovate_mirror.test.ts: all assertions passed')

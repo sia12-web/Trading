@@ -212,6 +212,7 @@ interface PositionOverlay {
   profitTarget: number
   direction: 'long' | 'short'
   positionSize?: number
+  riskDollars?: number
 }
 
 export default function ChartPage() {
@@ -2186,6 +2187,10 @@ export default function ChartPage() {
                       profitTarget: managePos.profitTarget,
                       direction: managePos.direction,
                       positionSize: managePos.positionSize,
+                      riskDollars:
+                        (managePos.riskAmount ?? 0) > 0
+                          ? managePos.riskAmount
+                          : lastTradeifyRiskRef.current,
                     }
                   : null)
               }
@@ -2196,6 +2201,7 @@ export default function ChartPage() {
                       direction: pending.direction === 'LONG' ? 'long' : 'short',
                       stopLoss: pending.stopLoss,
                       profitTarget: pending.profitTarget,
+                      riskDollars: pending.riskAmount,
                     }
                   : null
               }

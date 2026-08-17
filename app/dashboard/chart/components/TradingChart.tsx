@@ -219,6 +219,7 @@ import {
   deskBarSpacing,
 } from '@/lib/trading/deskInstrumentPreference'
 import { snapDeskPrice, snapStopToTick, snapTargetToTick } from '@/lib/trading/instrumentTicks'
+import { deskBookLines } from '@/lib/trading/tradovateMirror'
 import {
   overlayTopFromPrice,
   priceFromClientY,
@@ -639,6 +640,8 @@ interface PositionOverlay {
   direction:   'long' | 'short'
   /** Contract/units size — used for $ P&L on SL/TP drag pills */
   positionSize?: number
+  /** Session risk $ — sizes MYM/MNQ on the chart to match the TradingView ticket */
+  riskDollars?: number
 }
 
 interface PendingLimitOverlay {
@@ -646,6 +649,7 @@ interface PendingLimitOverlay {
   direction: 'long' | 'short'
   stopLoss: number
   profitTarget: number
+  riskDollars?: number
 }
 
 /** Live manage AI — shown on the chart canvas while in a filled position */
@@ -1786,6 +1790,32 @@ export function TradingChart({
     if (draggingBracketRef.current) return
     setEditableOverlay(positionOverlay ?? null)
   }, [positionOverlay])
+
+  const workingBook = useMemo(() => {
+    const pend = editablePending ?? pendingLimit
+    if (!pend) return null
+    return deskBookLines({
+      instrument,
+      direction: pend.direction,
+      entry: pend.price,
+      stop: pend.stopLoss,
+      target: pend.profitTarget,
+      riskDollars: pend.riskDollars,
+    })
+  }, [editablePending, pendingLimit, instrument])
+
+  const filledBook = useMemo(() => {
+    const ov = editableOverlay ?? positionOverlay
+    if (!ov) return null
+    return deskBookLines({
+      instrument,
+      direction: ov.direction,
+      entry: ov.entryPrice,
+      stop: ov.stopLoss,
+      target: ov.profitTarget,
+      riskDollars: ov.riskDollars,
+    })
+  }, [editableOverlay, positionOverlay, instrument])
 
   const [rationaleModal, setRationaleModal] = useState<{
     open: boolean
@@ -5751,25 +5781,26 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               ? 'AI HOLD · Target'
               : 'Target'
       const tpColor = aiWantsTp && v === 'reversal' ? '#a78bfa' : '#22c55e'
+      const size = filledBook?.sizeNote ? ` · ${filledBook.sizeNote}` : ''
       paint([
         {
-          price: ov.entryPrice,
+          price: filledBook?.entry ?? ov.entryPrice,
           color: '#3b82f6',
-          label: `Entry ${ov.direction.toUpperCase()} ${fmt(ov.entryPrice)}`,
+          label: `Entry ${ov.direction.toUpperCase()} ${fmt(filledBook?.entry ?? ov.entryPrice)}${size}`,
           style: LineStyle.Solid,
           width: 2,
         },
         {
-          price: ov.stopLoss,
+          price: filledBook?.stop ?? ov.stopLoss,
           color: '#ef4444',
-          label: `SL ${fmt(ov.stopLoss)}${onAdjustBrackets ? ' · drag' : ''}`,
+          label: `SL ${fmt(filledBook?.stop ?? ov.stopLoss)}${onAdjustBrackets ? ' · drag' : ''}`,
           style: LineStyle.Dashed,
           width: 2,
         },
         {
-          price: ov.profitTarget,
+          price: filledBook?.target ?? ov.profitTarget,
           color: tpColor,
-          label: `${tpLabel} ${fmt(ov.profitTarget)}${onAdjustBrackets ? ' · drag' : ''}`,
+          label: `${tpLabel} ${fmt(filledBook?.target ?? ov.profitTarget)}${onAdjustBrackets ? ' · drag' : ''}`,
           style: LineStyle.Dashed,
           width: 2,
         },
@@ -5781,25 +5812,26 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       const pend = editablePending ?? pendingLimit
       const dir = pend.direction.toUpperCase()
       const tpDrag = onAdjustWorkingBrackets ? ' · drag' : ''
+      const size = workingBook?.sizeNote ? ` · ${workingBook.sizeNote}` : ''
       paint([
         {
-          price: pend.price,
+          price: workingBook?.entry ?? pend.price,
           color: '#38bdf8',
-          label: `WORKING ${dir} ${fmt(pend.price)}`,
+          label: `WORKING ${dir} ${fmt(workingBook?.entry ?? pend.price)}${size}`,
           style: LineStyle.Solid,
           width: 3,
         },
         {
-          price: pend.stopLoss,
+          price: workingBook?.stop ?? pend.stopLoss,
           color: '#ef4444',
-          label: `SL ${fmt(pend.stopLoss)} · locked — sized at place`,
+          label: `SL ${fmt(workingBook?.stop ?? pend.stopLoss)} · locked`,
           style: LineStyle.Dotted,
           width: 2,
         },
         {
-          price: pend.profitTarget,
+          price: workingBook?.target ?? pend.profitTarget,
           color: '#22c55e',
-          label: `TP ${fmt(pend.profitTarget)}${tpDrag}`,
+          label: `TP ${fmt(workingBook?.target ?? pend.profitTarget)}${tpDrag}`,
           style: LineStyle.Dotted,
           width: 2,
         },
@@ -5809,7 +5841,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
     overlayFitPricesRef.current = []
     refreshOverlayAutoscale()
-  }, [positionOverlay, editableOverlay, pendingLimit, editablePending, aiVerdict, chartReady, clearHoverPreview, onAdjustBrackets, onAdjustWorkingBrackets])
+  }, [positionOverlay, editableOverlay, pendingLimit, editablePending, filledBook, workingBook, aiVerdict, chartReady, clearHoverPreview, onAdjustBrackets, onAdjustWorkingBrackets])
 
   const isUp = priceChange >= 0
   /** Levels / playbook — strategy-aware titles (morning → IB → lunch break → lunch-range) */
@@ -7041,7 +7073,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 }`}
               >
                 {isBroken ? '⚠️ Level Invalidated (Structure Broke) · Working ' : 'Working '}
-                {pendingLimit.direction} @ {pendingLimit.price.toLocaleString()}
+                {pendingLimit.direction} · E{' '}
+                {(workingBook?.entry ?? pendingLimit.price).toLocaleString()} · SL{' '}
+                {(workingBook?.stop ?? pendingLimit.stopLoss).toLocaleString()} · TP{' '}
+                {(workingBook?.target ?? pendingLimit.profitTarget).toLocaleString()}
+                {workingBook?.sizeNote ? ` · ${workingBook.sizeNote}` : ''}
               </span>
               {onCancelPending && (
                 <button
@@ -7062,7 +7098,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
         {positionOverlay && (
           <span className="rounded-lg border border-blue-700/50 bg-blue-950/40 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-blue-200">
-            In trade · Entry / SL / TP on chart
+            In trade · E {(filledBook?.entry ?? positionOverlay.entryPrice).toLocaleString()} · SL{' '}
+            {(filledBook?.stop ?? positionOverlay.stopLoss).toLocaleString()} · TP{' '}
+            {(filledBook?.target ?? positionOverlay.profitTarget).toLocaleString()}
+            {filledBook?.sizeNote ? ` · ${filledBook.sizeNote}` : ''}
           </span>
         )}
 
@@ -7109,6 +7148,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           {pendingLimit && !positionOverlay && (
             <span className="text-xs px-2 py-0.5 rounded font-semibold border text-sky-300 border-sky-800 bg-sky-900/30">
               WORKING {pendingLimit.direction.toUpperCase()}
+              {workingBook?.sizeNote ? ` · ${workingBook.sizeNote}` : ''}
             </span>
           )}
           {dataMode === 'live' ? (

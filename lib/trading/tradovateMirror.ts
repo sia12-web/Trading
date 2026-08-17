@@ -273,6 +273,51 @@ export function tradovateMirrorStorageKey(id: string): string {
   return `tradepulse.tradovate.mirrored.${id}`
 }
 
+/** Chart lines + chips use the same Entry / SL / TP / size as the TradingView paste card. */
+export function deskBookLines(args: {
+  instrument: string
+  direction: string
+  entry: number
+  stop: number
+  target: number
+  riskDollars?: number
+}): {
+  entry: number
+  stop: number
+  target: number
+  qty: number
+  symbol: string | null
+  sizeNote: string
+} {
+  const pulse = {
+    entry: Number(args.entry),
+    stop: Number(args.stop),
+    target: Number(args.target),
+    qty: 0,
+    symbol: null as string | null,
+    sizeNote: '',
+  }
+  const inst = args.instrument
+  if (inst !== 'DOW' && inst !== 'NASDAQ' && inst !== 'NIKKEI') return pulse
+  const ticket = buildTradovateMirrorTicket({
+    instrument: inst,
+    direction: args.direction as 'LONG' | 'SHORT',
+    entry: args.entry,
+    stop: args.stop,
+    target: args.target,
+    riskDollars: args.riskDollars ?? 0,
+  })
+  if (!ticket) return pulse
+  return {
+    entry: ticket.entry,
+    stop: ticket.stop,
+    target: ticket.target,
+    qty: ticket.qty,
+    symbol: ticket.symbol,
+    sizeNote: ticket.qty > 0 ? `${ticket.qty} ${ticket.symbol}` : ticket.symbol,
+  }
+}
+
 /** TradingView continuous root for the sized Tradeify contract. */
 export function tradingViewSymbol(symbol: string): string {
   switch (symbol) {

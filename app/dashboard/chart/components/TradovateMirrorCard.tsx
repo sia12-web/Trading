@@ -92,8 +92,9 @@ export function TradovateMirrorCard(props: Props) {
             TradingView ticket
           </p>
           <p className="mt-0.5 text-[10px] text-gray-400">
-            TradePulse already has this {props.phase === 'filled' ? 'fill' : 'working limit'}.
-            Paste Price, Units, SL, and TP into TradingView Limit (Day).
+            TradePulse already has this {props.phase === 'filled' ? 'fill' : 'working limit'} —
+            same Entry, SL, TP, and units as the chart. Paste those four into TradingView Limit
+            (Day).
           </p>
         </div>
         {mirrored && (
