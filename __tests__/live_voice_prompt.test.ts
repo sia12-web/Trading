@@ -73,6 +73,7 @@ assert(LIVE_VOICE_SYSTEM_PROMPT.includes('Never relabel Open type'), 'Leo must n
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('dPOC'), 'Leo knows dPOC')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('Never call it volume POC'), 'Leo must not call dPOC volume POC')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('CALL (desk — bias + legal ±10)'), 'Leo knows desk CALL')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('speak the CALL setup'), 'Leo still speaks CALL when Regular')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('CALL WAIT'), 'Leo knows CALL WAIT copy')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('never NY IB'), 'Leo Nikkei CALL is not NY IB')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('CALL is the read, not a fill'), 'Leo mutes CALL fills when book locked')

@@ -458,7 +458,7 @@ export function assertDeskCallEntry(args: {
 /**
  * Ticket gate after the clock-in CALL / regular choice.
  * `useCall: true` — same as {@link assertDeskCallEntry}.
- * `useCall: false` — any playbook ±10; trader picks side.
+ * `useCall: false` — any playbook ±10; CALL is still the setup read.
  * `useCall: null` — not answered; no tickets.
  */
 export function assertDeskTicketEntry(args: {
@@ -495,6 +495,12 @@ export function ticketAllowedEdges(args: {
   if (!args.useCall) return null
   if (!args.call) return []
   return deskCallLegalEdges(args.call)
+}
+
+/** CALL setup edges to highlight even when tickets are regular ±10. */
+export function deskCallSetupEdges(call: DeskCall | null): ReadonlyArray<DeskCallEdge> {
+  if (!call) return []
+  return deskCallLegalEdges(call)
 }
 
 export function playLineForCall(

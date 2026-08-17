@@ -20,11 +20,11 @@ export function DeskCallModePrompt({ open, busy = false, error = null, onChoose 
       <div className="w-full max-w-md rounded-2xl border border-zinc-500/40 bg-[#161b22] p-5 shadow-2xl space-y-4">
         <h4 className="text-sm font-bold text-white">Use CALL?</h4>
         <p className="text-xs text-gray-300 leading-relaxed">
-          Yes — CALL must agree (Open + Control). Tickets only on CALL-legal ±10.
+          Yes — tickets only when CALL agrees (Open + Control) on CALL-legal ±10.
         </p>
         <p className="text-xs text-gray-300 leading-relaxed">
-          No — regular trading on painted ±10 of the 30-minute range, IB, US Range (Nikkei),
-          and lunch-range (DOW / NASDAQ). CALL stays advise-only.
+          No — tickets on any painted playbook ±10. CALL still reads the setup (Call chip stays
+          live). Switch later on the banner.
         </p>
         {error && (
           <p className="text-xs text-red-300 font-semibold">{error}</p>

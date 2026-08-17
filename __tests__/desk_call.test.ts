@@ -21,6 +21,7 @@ import {
   deskCallBadgeText,
   deskCallHoverText,
   deskCallLegalEdges,
+  deskCallSetupEdges,
   ticketAllowedEdges,
   deskCallLineSpecs,
   deskCallPaintKey,
@@ -35,6 +36,7 @@ import {
 import {
   CALL_MODE_UNSET_MESSAGE,
   parseDeskCallMode,
+  deskCallModeHoverPrefix,
 } from '../lib/trading/deskCallMode'
 import { CONTROL_PERIOD_SEC } from '../lib/trading/marketControl'
 import { OPENING_BAR_SEC } from '../lib/trading/openingActivity'
@@ -619,6 +621,9 @@ function auctionThenBuy(openU: number): DeskCallBar[] {
   assert.deepEqual(ticketAllowedEdges({ useCall: false, call: wait }), null)
   assert.deepEqual(ticketAllowedEdges({ useCall: true, call: wait }), [])
   assert.ok(ticketAllowedEdges({ useCall: true, call: long })?.includes('low'))
+  assert.ok(deskCallSetupEdges(long).includes('low'))
+  assert.ok(!deskCallSetupEdges(wait).length)
+  assert.ok(deskCallModeHoverPrefix(false).includes('setup is still live'))
 }
 
 {

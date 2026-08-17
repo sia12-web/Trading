@@ -482,7 +482,7 @@ export { attendanceCallMode }
 
 /**
  * Persist the post clock-in CALL / regular choice on today's attendance.
- * Locked for the session once set (same-day re-clock keeps it).
+ * First answer is required; later switches are allowed (ticket gate only).
  */
 export async function setAttendanceUseCall(
   supabase: SupabaseClient,
@@ -494,9 +494,6 @@ export async function setAttendanceUseCall(
     return { ok: false, error: 'Clock in first' }
   }
   const current = attendanceCallMode(existing.morning_journal)
-  if (current !== null && current !== args.useCall) {
-    return { ok: false, error: 'CALL / regular is locked for this session' }
-  }
   if (current === args.useCall) {
     return { ok: true, row: existing }
   }

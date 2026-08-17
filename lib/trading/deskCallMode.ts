@@ -2,9 +2,10 @@
  * After clock-in the trader chooses CALL or regular playbook ±10.
  * Stored on desk_attendance.morning_journal.use_call (live) or sessionStorage (sim).
  *
- * true  — CALL must agree (side + legal edge). Current ticket gate.
- * false — regular trading on painted OR30 / IB / US Range / lunch-range ±10.
+ * true  — CALL must agree (side + legal edge). Ticket gate on.
+ * false — regular playbook ±10. CALL still computes the setup (advise).
  * null  — not answered yet; no tickets.
+ * Switch anytime after the first choice.
  */
 
 export const DESK_CALL_MODE_JOURNAL_KEY = 'use_call'
@@ -30,7 +31,7 @@ export function deskCallModeHoverPrefix(useCall: boolean | null): string {
     return 'Choose CALL or regular after clock-in before placing.\n\n'
   }
   if (!useCall) {
-    return 'CALL is advise only. Tickets use regular playbook ±10 (OR30, IB, US Range, lunch-range).\n\n'
+    return 'CALL setup is still live (advise). Tickets use any painted playbook ±10 — CALL does not block.\n\n'
   }
   return 'CALL must agree — tickets only on CALL-legal ±10.\n\n'
 }

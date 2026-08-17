@@ -57,6 +57,11 @@ test('clock-in asks CALL or regular; Call chip is still not a toggle', () => {
   assert.ok(banner.includes('/api/trading/call-mode'))
   assert.ok(src('app/api/trading/session-gate/route.ts').includes('useCall:'))
   assert.ok(src('app/api/trading/call-mode/route.ts').includes('setAttendanceUseCall'))
+  assert.ok(!src('lib/trading/deskAttendance.ts').includes('CALL / regular is locked'))
+  assert.ok(banner.includes('onClick={() => void handleCallMode(false)}'))
+  assert.ok(banner.includes('onClick={() => void handleCallMode(true)}'))
+  assert.ok(sim.includes('writeSimCallMode(instrument, replayDate, false)'))
+  assert.ok(sim.includes('writeSimCallMode(instrument, replayDate, true)'))
   assert.ok(
     live.indexOf('<span>Ctrl</span>') < live.indexOf('<span>Call</span>'),
     'Call after Ctrl on live'
@@ -79,8 +84,8 @@ test('clock-in asks CALL or regular; Call chip is still not a toggle', () => {
   assert.ok(!liveChip.includes('onClick'))
   assert.ok(!live.includes('setShowDeskCall'))
   assert.ok(!sim.includes('setShowDeskCall'))
-  assert.ok(live.includes('deskCallHoverText'))
-  assert.ok(sim.includes('deskCallHoverText'))
+  assert.ok(live.includes('deskCallSetupEdges'))
+  assert.ok(sim.includes('deskCallSetupEdges'))
 })
 
 test('Call is not Open cyan / Ctrl indigo / Y amber / lunch orange / go-button green-red', () => {

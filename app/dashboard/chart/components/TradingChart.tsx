@@ -96,10 +96,9 @@ import {
   deskCallBadgeText,
   deskCallHoverText,
   resolveDeskCallAsOfUnix,
-  assertDeskCallEntry,
   assertDeskTicketEntry,
-  deskCallLegalEdges,
   ticketAllowedEdges,
+  deskCallSetupEdges,
   type DeskCall,
 } from '@/lib/trading/deskCall'
 import { deskCallModeHoverPrefix } from '@/lib/trading/deskCallMode'
@@ -5903,6 +5902,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       clearBands()
       return
     }
+    const setupEdges = mode === false ? deskCallSetupEdges(call) : []
 
     clearBands()
 
@@ -5961,9 +5961,45 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         active.low === strategyRange.low
       if (entryLive) anyLive = true
       const colors = palette[label] ?? fallback
-      const highColor = entryLive ? colors.high : colors.highDim
-      const lowColor = entryLive ? colors.low : colors.lowDim
-      const midColor = entryLive ? 'rgba(168, 85, 247, 0.95)' : 'rgba(168, 85, 247, 0.4)'
+      const setupHigh = setupEdges.includes('high')
+      const setupLow = setupEdges.includes('low')
+      const setupMid = setupEdges.includes('mid')
+      const highColor =
+        mode === false
+          ? setupEdges.length === 0
+            ? entryLive
+              ? colors.high
+              : colors.highDim
+            : setupHigh
+              ? colors.high
+              : colors.highDim
+          : entryLive
+            ? colors.high
+            : colors.highDim
+      const lowColor =
+        mode === false
+          ? setupEdges.length === 0
+            ? entryLive
+              ? colors.low
+              : colors.lowDim
+            : setupLow
+              ? colors.low
+              : colors.lowDim
+          : entryLive
+            ? colors.low
+            : colors.lowDim
+      const midColor =
+        mode === false
+          ? setupEdges.length === 0
+            ? entryLive
+              ? 'rgba(168, 85, 247, 0.95)'
+              : 'rgba(168, 85, 247, 0.4)'
+            : setupMid
+              ? 'rgba(168, 85, 247, 0.95)'
+              : 'rgba(168, 85, 247, 0.4)'
+          : entryLive
+            ? 'rgba(168, 85, 247, 0.95)'
+            : 'rgba(168, 85, 247, 0.4)'
       const highBand = bands.find((b) => b.edge === 'high')
       const midBand = bands.find((b) => b.edge === 'mid')
       const lowBand = bands.find((b) => b.edge === 'low')
@@ -6035,7 +6071,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       return `${name} ${rangeEdgeBandLegend(o)}`
     })
     const legendList = legendParts.join(' · ')
-    const callTag = mode === false ? 'playbook' : 'CALL'
+    const callTag = mode === false ? 'setup' : 'CALL'
     setEntryBandLabel(
       anyLive
         ? `±${RANGE_EDGE_BAND_POINTS} ${callTag} ${legendList} entry zones`

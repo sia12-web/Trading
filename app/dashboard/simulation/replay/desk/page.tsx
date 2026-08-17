@@ -160,13 +160,12 @@ import {
 } from '@/lib/trading/marketControl'
 import {
   CALL_COLORS,
-  assertDeskCallEntry,
   assertDeskTicketEntry,
   computeDeskCall,
   deskCallBadgeText,
   deskCallHoverText,
-  deskCallLegalEdges,
   ticketAllowedEdges,
+  deskCallSetupEdges,
   formatDeskCallScoreStrip,
   resolveDeskCallAsOfUnix,
   scoreDeskCallSession,
@@ -2693,13 +2692,24 @@ function SimulationDeskInner() {
         if (!(strategyRange.high > strategyRange.low)) continue
         const bands = filterRangeEdgeBands(rangeEdgeBands(strategyRange), allowed)
         const label = strategyRange.label || 'range'
+        const setupEdges =
+          useCallRef.current === false ? deskCallSetupEdges(call) : []
         for (const band of bands) {
+          const setup = setupEdges.includes(band.edge)
+          const emphasize =
+            useCallRef.current !== false || setupEdges.length === 0 || setup
           const color =
             band.edge === 'mid'
-              ? 'rgba(168, 85, 247, 0.85)'
+              ? emphasize
+                ? 'rgba(168, 85, 247, 0.85)'
+                : 'rgba(168, 85, 247, 0.4)'
               : band.edge === 'high'
-                ? 'rgba(56, 189, 248, 0.75)'
-                : 'rgba(52, 211, 153, 0.75)'
+                ? emphasize
+                  ? 'rgba(56, 189, 248, 0.75)'
+                  : 'rgba(56, 189, 248, 0.35)'
+                : emphasize
+                  ? 'rgba(52, 211, 153, 0.75)'
+                  : 'rgba(52, 211, 153, 0.35)'
           const tag =
             band.edge === 'mid' ? '50%' : band.edge === 'high' ? 'H' : 'L'
           specs.push(
@@ -3939,14 +3949,30 @@ function SimulationDeskInner() {
             </span>
           </span>
           {useCall === true && (
-            <span className="rounded border border-zinc-500/40 px-2 py-1 text-[10px] font-semibold uppercase text-zinc-300">
+            <button
+              type="button"
+              title="CALL gate on. Click for regular ±10 — CALL setup stays on the chip."
+              onClick={() => {
+                setUseCall(false)
+                writeSimCallMode(instrument, replayDate, false)
+              }}
+              className="rounded border border-zinc-500/40 px-2 py-1 text-[10px] font-semibold uppercase text-zinc-300 hover:bg-zinc-500/20"
+            >
               CALL ON
-            </span>
+            </button>
           )}
           {useCall === false && (
-            <span className="rounded border border-sky-500/40 px-2 py-1 text-[10px] font-semibold uppercase text-sky-200">
+            <button
+              type="button"
+              title="Regular ±10. CALL still shows the setup. Click to gate tickets on CALL."
+              onClick={() => {
+                setUseCall(true)
+                writeSimCallMode(instrument, replayDate, true)
+              }}
+              className="rounded border border-sky-500/40 px-2 py-1 text-[10px] font-semibold uppercase text-sky-200 hover:bg-sky-500/20"
+            >
               Regular ±10
-            </span>
+            </button>
           )}
           <button
             type="button"
