@@ -47,11 +47,9 @@ export function isOandaConfigured(): boolean {
   return Boolean(oandaApiKey() && oandaAccountId())
 }
 
-/** When true (default if configured), open/close hit the broker. */
+/** Live desk is Tradeify / TradingView paste — never send OANDA orders. */
 export function shouldExecuteOandaOrders(): boolean {
-  if (!isOandaConfigured()) return false
-  const flag = (process.env.OANDA_EXECUTE_ORDERS || 'true').toLowerCase()
-  return flag !== 'false' && flag !== '0' && flag !== 'off'
+  return false
 }
 
 export function oandaHeaders(): HeadersInit {

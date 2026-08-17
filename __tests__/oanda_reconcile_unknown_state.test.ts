@@ -136,15 +136,16 @@ async function main() {
   assert.equal(resultOpen.changed, false, 'must not close while broker reports open')
   assert.equal(updateCalled, false, 'no journal write while broker reports open')
 
-  // Confirmed closed on broker — SHOULD close (normal SL/TP-hit path)
+  // Tradeify desk never executes OANDA — even a CLOSED broker trade must not
+  // flatten the journal (that path ate live session slots on false NAS100 fills).
   installFetch(async () =>
     jsonResponse(200, {
       trade: { state: 'CLOSED', currentUnits: 0, averageClosePrice: 41895, realizedPL: -105 },
     })
   )
   const resultClosed = await reconcileBrokerClosedPosition(chainableSupabase, baseRow)
-  assert.equal(resultClosed.changed, true, 'must close when broker confirms CLOSED')
-  assert.equal(updateCalled, true, 'journal write expected on confirmed close')
+  assert.equal(resultClosed.changed, false, 'Tradeify desk must not flatten from OANDA CLOSED')
+  assert.equal(updateCalled, false, 'no journal write when OANDA execute is locked off')
 
   console.log('oanda_reconcile_unknown_state: reconcileBrokerClosedPosition guard passed')
 }
