@@ -11,6 +11,15 @@ import {
   summarizeOptionsFlow,
   type OptionsFlowSummary,
 } from '@/lib/trading/manageSignals'
+import {
+  structureFromRangeBrief,
+  type ManageBookStructure,
+} from '@/lib/trading/manageOpenBook'
+import { buildRangeLiquidityBrief } from '@/lib/trading/rangeLiquidityBrief'
+import {
+  deskPlaybookAnalysisMode,
+  resolveDeskPlaybookMode,
+} from '@/lib/trading/deskPlaybookMode'
 
 export type ManageRvolSnapshot = {
   rvol: number | null
@@ -128,6 +137,64 @@ export async function fetchManageOptionsFlow(
     const puts = (chain.puts || []) as YahooOptionContract[]
     if (!calls.length && !puts.length) return null
     return summarizeOptionsFlow(calls, puts, proxy, 'yahoo-options')
+  } catch {
+    return null
+  }
+}
+
+/** Range H/L + Opening / Control / CALL vs this open book. Optional — never blocks scoring. */
+export async function fetchManageStructure(args: {
+  instrument: 'DOW' | 'NASDAQ' | 'NIKKEI'
+  tip: number
+  direction: 'LONG' | 'SHORT'
+  now?: Date
+}): Promise<ManageBookStructure | null> {
+  try {
+    const now = args.now ?? new Date()
+    const nowUnix = Math.floor(now.getTime() / 1000)
+    const playbookMode = resolveDeskPlaybookMode({
+      instrument: args.instrument,
+      now,
+    })
+    const analysisMode = deskPlaybookAnalysisMode(playbookMode, args.instrument)
+    const [h1, m5Yahoo, m5Oanda] = await Promise.all([
+      getYahooCandles(args.instrument as Instrument, '60', 10),
+      getYahooCandles(args.instrument as Instrument, '5', 5),
+      getOandaCandles(args.instrument as Instrument, '5', 3).catch(() => null),
+    ])
+    const m5 = m5Oanda?.candles?.length ? m5Oanda : m5Yahoo
+    const h1Bars = (h1?.candles ?? []).map((c) => ({
+      time: c.time,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+      volume: Math.max(1, c.volume || 0),
+    }))
+    const m5Bars = (m5?.candles ?? []).map((c) => ({
+      time: c.time,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+      volume: Math.max(1, c.volume || 0),
+    }))
+    if (h1Bars.length < 2 || !(args.tip > 0)) return null
+    const brief = buildRangeLiquidityBrief({
+      instrument: args.instrument,
+      candlesH1: h1Bars,
+      tip: args.tip,
+      nowUnix,
+      analysisMode,
+      candles5m: m5Bars.length ? m5Bars : undefined,
+      bookLocked: true,
+    })
+    if (!brief) return null
+    return structureFromRangeBrief({
+      direction: args.direction,
+      tip: args.tip,
+      brief,
+    })
   } catch {
     return null
   }

@@ -32,6 +32,10 @@ export interface AiVerdict {
   rvol?: number | null
   rvol_source?: string | null
   factors?: string[]
+  range_state?: string | null
+  range_label?: string | null
+  range_high?: number | null
+  range_low?: number | null
   options?: {
     proxy: string
     put_call_volume: number | null
@@ -790,6 +794,18 @@ export function ManageDeskBar({
                   {ai.options.put_call_volume != null
                     ? ai.options.put_call_volume.toFixed(2)
                     : '—'}
+                </span>
+              </span>
+            )}
+            {ai.range_state && ai.range_state !== 'unknown' && (
+              <span title={
+                ai.range_high != null && ai.range_low != null
+                  ? `${ai.range_label || 'range'} H ${ai.range_high} / L ${ai.range_low}`
+                  : undefined
+              }>
+                {ai.range_label || 'Range'}{' '}
+                <span className="price-mono text-gray-300 normal-case">
+                  {ai.range_state.replace(/_/g, ' ')}
                 </span>
               </span>
             )}

@@ -1,7 +1,10 @@
 /**
- * Live MANAGE scoring — pullback vs reversal using price, news, RVOL, options flow.
+ * Live MANAGE scoring — pullback vs reversal using price, news, RVOL, options flow,
+ * plus range H/L / Opening / Control / CALL when those facts are present.
  * Pure helpers (no I/O) so unit tests stay deterministic.
  */
+
+import type { ManageBookStructure } from '@/lib/trading/manageOpenBook'
 
 export const MANAGE_RVOL_PERIOD = 20
 /** Initiative volume vs recent average */
@@ -21,6 +24,8 @@ export type ManageScoreInput = {
    */
   optionsBias: number | null
   direction: 'LONG' | 'SHORT'
+  /** Range H/L + Opening / Control / CALL vs this book. Optional. */
+  structure?: ManageBookStructure | null
 }
 
 export type ManageScoreResult = {
@@ -148,95 +153,171 @@ export function scoreManageVerdict(input: ManageScoreInput): ManageScoreResult {
   const newsBad = newsScore <= 0
   const newsGood = newsScore > 0
 
+  let scored: ManageScoreResult
+
   // Trade in favor
   if (movePct > 0.2) {
     let confidence = 70
     if (optionsSupport) confidence += 5
     if (quietRvol || (rvol != null && rvol < MANAGE_RVOL_HIGH)) confidence += 3
     if (optionsOppose && highRvol) {
-      return {
+      scored = {
         verdict: 'hold',
         confidence: 55,
         reason: `In favor (+${movePct.toFixed(2)}%) but options/RVOL warn — stay alert`,
         factors,
       }
+    } else {
+      scored = {
+        verdict: 'hold',
+        confidence: Math.min(90, confidence),
+        reason: `Trade in favor (+${movePct.toFixed(2)}%) — hold`,
+        factors,
+      }
     }
-    return {
-      verdict: 'hold',
-      confidence: Math.min(90, confidence),
-      reason: `Trade in favor (+${movePct.toFixed(2)}%) — hold`,
-      factors,
-    }
-  }
-
-  // Sharp adverse + initiative volume or opposing flow → reversal
-  if (movePct < -0.5 && (spikeRvol || optionsOppose || newsBad)) {
-    return {
+  } else if (movePct < -0.5 && (spikeRvol || optionsOppose || newsBad)) {
+    scored = {
       verdict: 'reversal',
       confidence: Math.min(95, 78 + Math.abs(movePct) * 6 + (spikeRvol ? 5 : 0)),
       reason: `Sharp adverse ${movePct.toFixed(2)}%${spikeRvol ? ' on high RVOL' : ''}${optionsOppose ? ' with opposing options' : ''} — exit bias`,
       factors,
     }
-  }
-
-  if (movePct < -0.35 && (highRvol || optionsOppose) && newsBad) {
-    return {
+  } else if (movePct < -0.35 && (highRvol || optionsOppose) && newsBad) {
+    scored = {
       verdict: 'reversal',
       confidence: Math.min(92, 68 + Math.abs(movePct) * 8),
       reason: `Adverse ${movePct.toFixed(2)}% + elevated RVOL/options vs you — likely reversal`,
       factors,
     }
-  }
-
-  if (movePct < -0.35 && newsBad) {
-    return {
+  } else if (movePct < -0.35 && newsBad) {
+    scored = {
       verdict: 'reversal',
       confidence: Math.min(90, 60 + Math.abs(movePct) * 10),
       reason: `Adverse move ${movePct.toFixed(2)}% with non-supportive news (score ${newsScore})`,
       factors,
     }
-  }
-
-  // Mild adverse + supportive tape/news + not exploding volume → pullback
-  if (
+  } else if (
     movePct < -0.12 &&
     movePct >= -0.4 &&
     (newsGood || optionsSupport || quietRvol) &&
     !spikeRvol &&
     !optionsOppose
   ) {
-    return {
+    scored = {
       verdict: 'pullback',
       confidence: newsGood || optionsSupport ? 72 : 62,
       reason: `Mild adverse ${movePct.toFixed(2)}% with supportive news/options${quietRvol ? ' and quiet RVOL' : ''} — treat as pullback`,
       factors,
     }
-  }
-
-  if (movePct < -0.5) {
-    return {
+  } else if (movePct < -0.5) {
+    scored = {
       verdict: 'reversal',
       confidence: 80,
       reason: `Sharp adverse move ${movePct.toFixed(2)}% — likely reversal`,
       factors,
     }
-  }
-
-  if (movePct < -0.2 && highRvol && optionsOppose) {
-    return {
+  } else if (movePct < -0.2 && highRvol && optionsOppose) {
+    scored = {
       verdict: 'reversal',
       confidence: 74,
       reason: `Adverse ${movePct.toFixed(2)}% with high RVOL and opposing options flow`,
       factors,
     }
+  } else {
+    scored = {
+      verdict: 'hold',
+      confidence: 50,
+      reason: 'No strong manage signal — watch price, RVOL, and options',
+      factors,
+    }
   }
 
-  return {
-    verdict: 'hold',
-    confidence: 50,
-    reason: 'No strong manage signal — watch price, RVOL, and options',
-    factors,
+  return applyManageStructure(scored, input)
+}
+
+function applyManageStructure(
+  scored: ManageScoreResult,
+  input: ManageScoreInput
+): ManageScoreResult {
+  const st = input.structure
+  if (!st) return scored
+
+  const factors = [...scored.factors, ...st.factors]
+  const { movePct, rvol } = input
+  const highRvol = rvol != null && rvol >= MANAGE_RVOL_HIGH
+  const spikeRvol = rvol != null && rvol >= MANAGE_RVOL_SPIKE
+  const quietRvol = rvol != null && rvol < 1.0
+  const rangeTag = st.rangeLabel || 'range'
+
+  if (
+    st.rangeState === 'broke_against' &&
+    (highRvol || spikeRvol || st.callAgainst || st.controlAgainst || st.openingAgainst)
+  ) {
+    return {
+      verdict: 'reversal',
+      confidence: Math.min(95, 80 + (spikeRvol ? 6 : 0)),
+      reason: `Broke ${rangeTag} against the book${spikeRvol ? ' on initiative volume' : ''} — leave / reverse`,
+      factors,
+    }
   }
+
+  if (st.openingAgainst && movePct < 0) {
+    return {
+      verdict: 'reversal',
+      confidence: Math.min(92, 76 + Math.abs(movePct) * 8),
+      reason: 'Open-Drive FAIL against this book — leave; do not wait for a perfect pullback',
+      factors,
+    }
+  }
+
+  if (st.callAgainst && st.controlAgainst && movePct < -0.12) {
+    return {
+      verdict: 'reversal',
+      confidence: 78,
+      reason: 'CALL and Control flipped against the book — reverse / leave',
+      factors,
+    }
+  }
+
+  if (scored.verdict === 'reversal') {
+    return { ...scored, factors }
+  }
+
+  if (
+    st.rangeState === 'inside' &&
+    st.midPullback &&
+    movePct < -0.08 &&
+    movePct >= -0.45 &&
+    !spikeRvol &&
+    !st.callAgainst
+  ) {
+    return {
+      verdict: 'pullback',
+      confidence: quietRvol ? 74 : 66,
+      reason: `Inside ${rangeTag} at 50% mid${quietRvol ? ' with quiet volume' : ''} — treat as pullback`,
+      factors,
+    }
+  }
+
+  if (st.rangeState === 'broke_in_favor' && movePct > 0) {
+    return {
+      verdict: 'hold',
+      confidence: Math.min(90, Math.max(scored.confidence, 72)),
+      reason: `Broke ${rangeTag} in favor${highRvol ? ' on volume' : ''} — hold, trail the move`,
+      factors,
+    }
+  }
+
+  if (st.rangeState === 'broke_against' && movePct < -0.12) {
+    return {
+      verdict: 'reversal',
+      confidence: 72,
+      reason: `Price through opposite ${rangeTag} H/L — leave bias`,
+      factors,
+    }
+  }
+
+  return { ...scored, factors }
 }
 
 /** ETF proxies for index options (cash indices have no liquid listed chains here). */

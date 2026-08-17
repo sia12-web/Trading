@@ -60,6 +60,11 @@ import {
   formatRangeLiquidityBriefForPrompt,
 } from '@/lib/trading/rangeLiquidityBrief'
 import {
+  formatOpenBookManageForPrompt,
+  structureFromRangeBrief,
+} from '@/lib/trading/manageOpenBook'
+import { computeRvol } from '@/lib/trading/manageSignals'
+import {
   buildLeoSessionTiming,
   type LeoSessionTiming,
 } from '@/lib/trading/leoSessionTiming'
@@ -141,6 +146,8 @@ export type LiveVoiceDeskContext = {
   tradeify?: TradeifyLeoSnapshot | null
   /** Printed OR30 / slot-2 / slot-3 bait facts for Leo (optional). */
   rangeLiquidityBriefText?: string | null
+  /** When a book is filled — leave / pullback / reverse facts for Leo. */
+  openBookManageText?: string | null
   /** Latest good/strong ±10 range-edge tail (other-TF footprint). */
   rangeTail?: {
     present: boolean
@@ -543,6 +550,7 @@ export async function buildLiveVoiceDeskContext(
   })
 
   let rangeLiquidityBriefText: string | null = null
+  let openBookManageText: string | null = null
   try {
     const analysisMode = deskPlaybookAnalysisMode(playbookMode, contextInstrument)
     const [h1, m5Yahoo, m5Oanda, quote] = await Promise.all([
@@ -587,9 +595,34 @@ export async function buildLiveVoiceDeskContext(
           workingOrders.length > 0,
       })
       if (brief) rangeLiquidityBriefText = formatRangeLiquidityBriefForPrompt(brief)
+      if (brief && activePosition) {
+        const structure = structureFromRangeBrief({
+          direction: activePosition.direction,
+          tip,
+          brief,
+        })
+        openBookManageText = formatOpenBookManageForPrompt({
+          direction: activePosition.direction,
+          fillPrice: activePosition.fillPrice,
+          livePrice: tip,
+          stopLoss: activePosition.stopLoss,
+          takeProfit: activePosition.takeProfit,
+          rvol: computeRvol(m5Bars.map((b) => b.volume)),
+          structure,
+        })
+      }
     }
   } catch {
     /* optional — Leo still has system ATR rules */
+  }
+  if (!openBookManageText && activePosition) {
+    openBookManageText = formatOpenBookManageForPrompt({
+      direction: activePosition.direction,
+      fillPrice: activePosition.fillPrice,
+      livePrice: activeLivePrice,
+      stopLoss: activePosition.stopLoss,
+      takeProfit: activePosition.takeProfit,
+    })
   }
 
   let levelItems = playbook.levels.map(toContextLevel)
@@ -666,6 +699,7 @@ export async function buildLiveVoiceDeskContext(
     },
     tradeify: toTradeifyLeoSnapshot(tradeifySnap, now),
     rangeLiquidityBriefText,
+    openBookManageText,
     rangeTail,
     avwap: {
       openLabel: clock.openLabel,

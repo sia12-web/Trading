@@ -719,7 +719,7 @@ export function computeDeskCall(args: {
   bookLocked?: boolean
   peerSide?: DeskCallSide | null
   /** Same Control snapshot as the Ctrl chip — CALL must not recompute a second RF. */
-  control?: MarketControl
+  control?: MarketControl | null
 }): DeskCall {
   const instrument = String(args.instrument || '')
   const bookLocked = args.bookLocked === true

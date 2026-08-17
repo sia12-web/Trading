@@ -14,6 +14,7 @@ import { logger } from '@/lib/utils/logger'
 import {
   fetchManageOptionsFlow,
   fetchManageRvol,
+  fetchManageStructure,
 } from '@/lib/trading/manageMarketData'
 import { scoreManageVerdict } from '@/lib/trading/manageSignals'
 import type { Instrument } from '@/types/trading'
@@ -92,9 +93,15 @@ export async function POST(request: Request) {
     const movePct = dir === 'LONG' ? ((px - entry) / entry) * 100 : ((entry - px) / entry) * 100
 
     const deskInstrument = instrument as 'DOW' | 'NASDAQ' | 'NIKKEI'
-    const [rvolSnap, optionsFlow] = await Promise.all([
+    const bookDir = dir === 'SHORT' ? 'SHORT' : 'LONG'
+    const [rvolSnap, optionsFlow, structure] = await Promise.all([
       fetchManageRvol(deskInstrument),
       fetchManageOptionsFlow(deskInstrument),
+      fetchManageStructure({
+        instrument: deskInstrument,
+        tip: px,
+        direction: bookDir,
+      }),
     ])
 
     const scored = scoreManageVerdict({
@@ -102,7 +109,8 @@ export async function POST(request: Request) {
       newsScore,
       rvol: rvolSnap.rvol,
       optionsBias: optionsFlow?.bias ?? null,
-      direction: dir === 'SHORT' ? 'SHORT' : 'LONG',
+      direction: bookDir,
+      structure,
     })
 
     const { verdict, confidence, reason, factors } = scored
@@ -120,6 +128,7 @@ export async function POST(request: Request) {
       rvol: rvolSnap.rvol,
       rvol_source: rvolSnap.source,
       options_bias: optionsFlow?.bias ?? null,
+      range_state: structure?.rangeState ?? null,
       requires_confirmation: requiresConfirmation,
       will_close: false,
     })
@@ -146,6 +155,10 @@ export async function POST(request: Request) {
             source: optionsFlow.source,
           }
         : null,
+      range_state: structure?.rangeState ?? null,
+      range_label: structure?.rangeLabel ?? null,
+      range_high: structure?.rangeHigh ?? null,
+      range_low: structure?.rangeLow ?? null,
       /** Strong reversal — UI must ask trader to CONFIRM before closing */
       requires_confirmation: requiresConfirmation,
       /** Always false: AI never auto-liquidates */

@@ -100,6 +100,12 @@ ATTEMPT LADDER (2 / 2 / 2 per window — THREE RANGES PER DESK; CLOCKS YOU SPEAK
     - TP = 1.5R of the protective stop (1:1.5). Trader can drag TP after. Magnets do not set the initial target.
   * Manual pins: trader edits SL/TP; still uses the **progressive session risk ladder**. Do not invent strategy magnets for manual.
   * POST-FILL MANAGE is SEPARATE: after fill only, desk auto-management may move to breakeven / trail / scale / reversal exits. That is not the ticket’s initial geometry. Working limits do not start manage. Never tell the trader to ignore strategy SL/TP on AI/structure when a formed range is active.
+- **OPEN-BOOK MANAGE (filled — advise only)**: When DESK CONTEXT shows an **active filled position**, your job is manage, not a second hunt. AI levels, RVOL, options P/C + OI, and news still support or veto the move. Newer desk facts do the same: **range High/Low** (held vs broke), **volume** (quiet = pullback; initiative through the opposite H/L = reverse), Opening type (Drive FAIL = leave), Control (ONE-TF against you), CALL flipped against the book, 50% mid, yesterday YH/YL, ATR pad/trail.
+  * Lead with one of: **HOLD** · **PULLBACK** · **LEAVE** · **REVERSE**. Trader confirms any exit — you never auto-close.
+  * Quiet volume + still inside the traded H–L (or tagging 50% mid) + CALL/Control with you + supportive AI/news/options → **PULLBACK**, stay.
+  * Initiative volume through the opposite H/L, Drive fail, Control ONE-TF against you, or CALL against the book → **REVERSE / LEAVE**.
+  * If DESK CONTEXT prints an **OPEN BOOK MANAGE** block, treat those H/L, RVOL, and structure lines as ground truth — do not invent them.
+  * Cadence: when the trader speaks during a fill, lead with that four-call. Unprompted only if they ask or a level-tag reaction already fires. Never hunt a second concurrent entry.
 - **DESK EXECUTION FLOW**:
   1) CALL + locked playbook ±10 → the **system** ticket (clock, ladder, 1:1.5). Level Finder and Leo ADVISE only.
   2) Trader places on a painted CALL band (double-click / Place limit) → ticket computes SL/TP → WORKING limit. Do not click a Level Finder card to fill.
@@ -209,6 +215,7 @@ export function formatLeoRangeLiquidityReminder(args: {
     'Control (Dalton RF + dPOC) ADVISES attempted direction vs whether value is migrating — same helper as the Ctrl chip. It does not unlock off-band, does not change Open type, and does not change the active window. dPOC is not volume POC.',
     'Call (desk bias + legal ±10) is the SYSTEM ticket: side + legal ±10. You and Level Finder ADVISE only — never click a Level Finder card to fill. It does not unlock off-band, does not pick Level Finder entries, and does not change Open type or Control. dPOC is not the fill. If the book is locked (3/3), CALL is the read, not a fill.',
     'Post-fill MANAGE is separate (breakeven / trail / reversal) — starts only after fill, not on working limits.',
+    'Open book: range H/L + volume + Opening/Control/CALL + AI/RVOL/options/news decide HOLD / PULLBACK / LEAVE / REVERSE. Never auto-close.',
   ].join('\n')
 }
 
@@ -316,7 +323,11 @@ Primary bait this playbook: ${primaryBait}
 Can place entry: ${ctx.session.canPlaceEntry} · Can manage: ${ctx.session.canManagePosition}
 Working limit orders: ${workingLines}
 Active filled position: ${activeLine}
-Session times: analyze ${ctx.session.times.analyzeStart} · open ${ctx.session.times.marketOpen} · morning OR30 close ${ctx.session.times.entryClose} · ${midWindowLabel} ${ctx.session.times.ibEntry} · lunch confirm ${ctx.session.times.lunchClose} · ${lateWindowLabel} ${ctx.session.times.lunchRangeEntry} · cash close ${ctx.session.times.marketClose} (${ctx.session.times.tzLabel})
+${
+    ctx.openBookManageText?.trim()
+      ? `${ctx.openBookManageText.trim()}\n`
+      : ''
+  }Session times: analyze ${ctx.session.times.analyzeStart} · open ${ctx.session.times.marketOpen} · morning OR30 close ${ctx.session.times.entryClose} · ${midWindowLabel} ${ctx.session.times.ibEntry} · lunch confirm ${ctx.session.times.lunchClose} · ${lateWindowLabel} ${ctx.session.times.lunchRangeEntry} · cash close ${ctx.session.times.marketClose} (${ctx.session.times.tzLabel})
 ${riskLine}
 Range-edge tail: ${
     ctx.rangeTail?.present

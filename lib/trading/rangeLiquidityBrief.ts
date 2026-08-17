@@ -26,16 +26,19 @@ import {
   computeOpeningActivity,
   formatOpeningActivityForPrompt,
   resolveOpeningAsOfUnix,
+  type OpeningActivity,
 } from '@/lib/trading/openingActivity'
 import {
   computeMarketControl,
   formatMarketControlForPrompt,
   resolveMarketControlAsOfUnix,
+  type MarketControl,
 } from '@/lib/trading/marketControl'
 import {
   computeDeskCall,
   formatDeskCallForPrompt,
   resolveDeskCallAsOfUnix,
+  type DeskCall,
 } from '@/lib/trading/deskCall'
 import type { DeskPlaybookMode } from '@/lib/trading/deskPlaybookMode'
 import {
@@ -88,10 +91,13 @@ export type RangeLiquidityBrief = {
   yesterdayProfileText: string | null
   /** Dalton opening activity (Drive / Test-Drive / Rej-Rev / Auction). */
   openingActivityText: string | null
+  opening: OpeningActivity | null
   /** Dalton Rotation Factor + developing time-POC (same helper as the Ctrl chip). */
   marketControlText: string | null
+  control: MarketControl | null
   /** Desk CALL — bias + legal ±10 (same helper as the Call chip). */
   deskCallText: string | null
+  call: DeskCall | null
 }
 
 function playbookFromAnalysis(
@@ -356,31 +362,28 @@ export function buildRangeLiquidityBrief(args: {
     ? yesterdayBars[yesterdayBars.length - 1]!.time
     : nowUnix
   const openingAsOf = resolveOpeningAsOfUnix(instrument, last5, nowUnix)
-  const openingActivityText = formatOpeningActivityForPrompt(
-    computeOpeningActivity({
-      instrument,
-      candles: yesterdayBars,
-      asOfUnix: openingAsOf,
-    })
-  )
+  const opening = computeOpeningActivity({
+    instrument,
+    candles: yesterdayBars,
+    asOfUnix: openingAsOf,
+  })
+  const openingActivityText = formatOpeningActivityForPrompt(opening)
   const controlAsOf = resolveMarketControlAsOfUnix(instrument, last5, nowUnix)
-  const marketControlText = formatMarketControlForPrompt(
-    computeMarketControl({
-      instrument,
-      candles: yesterdayBars,
-      asOfUnix: controlAsOf,
-    })
-  )
+  const control = computeMarketControl({
+    instrument,
+    candles: yesterdayBars,
+    asOfUnix: controlAsOf,
+  })
+  const marketControlText = formatMarketControlForPrompt(control)
   const callAsOf = resolveDeskCallAsOfUnix(instrument, last5, nowUnix)
-  const deskCallText = formatDeskCallForPrompt(
-    computeDeskCall({
-      instrument,
-      candles: yesterdayBars,
-      asOfUnix: callAsOf,
-      playbookMode: playbookFromAnalysis(analysisMode, tokyo),
-      bookLocked: args.bookLocked,
-    })
-  )
+  const call = computeDeskCall({
+    instrument,
+    candles: yesterdayBars,
+    asOfUnix: callAsOf,
+    playbookMode: playbookFromAnalysis(analysisMode, tokyo),
+    bookLocked: args.bookLocked,
+  })
+  const deskCallText = formatDeskCallForPrompt(call)
 
   return {
     instrument,
@@ -403,8 +406,11 @@ export function buildRangeLiquidityBrief(args: {
     activeAtr,
     yesterdayProfileText,
     openingActivityText,
+    opening,
     marketControlText,
+    control,
     deskCallText,
+    call,
   }
 }
 

@@ -60,6 +60,17 @@ assert(
   'Leo knows post-fill manage is separate'
 )
 assert(
+  LIVE_VOICE_SYSTEM_PROMPT.includes('OPEN-BOOK MANAGE'),
+  'Leo knows open-book leave/pullback/reverse'
+)
+assert(
+  LIVE_VOICE_SYSTEM_PROMPT.includes('HOLD') &&
+    LIVE_VOICE_SYSTEM_PROMPT.includes('PULLBACK') &&
+    LIVE_VOICE_SYSTEM_PROMPT.includes('LEAVE') &&
+    LIVE_VOICE_SYSTEM_PROMPT.includes('REVERSE'),
+  'Leo open-book four-call'
+)
+assert(
   LIVE_VOICE_SYSTEM_PROMPT.includes('1.5R of the protective stop'),
   'Leo knows initial TP is 1:1.5'
 )
@@ -247,6 +258,7 @@ assert(
   'Leo CALL must not pick Level Finder entries'
 )
 assert(packed.includes('Post-fill MANAGE'), 'packed reminder separates post-fill manage')
+assert(packed.includes('HOLD / PULLBACK / LEAVE / REVERSE'), 'packed reminder has open-book four-call')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('SESSION CLOCK STATUS'), 'Leo knows SESSION CLOCK STATUS ground truth')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('never invent that OR30 is still open'), 'Leo must not invent OR30 open')
 assert(packed.includes('SESSION CLOCK STATUS'), 'packed context has SESSION CLOCK STATUS')
@@ -316,4 +328,27 @@ assert(!packed.includes('TRADEIFY GROWTH $50k'), 'profile off stays silent')
   assert(p.includes('verdict=broken'), 'includes market verdict')
   assert(p.includes('tests=2'), 'includes test count')
 }
+
+{
+  const inTrade = {
+    ...mock,
+    session: { ...mock.session, canManagePosition: true, openPositionId: 'pos-1' },
+    activePosition: {
+      id: 'pos-1',
+      instrument: 'DOW',
+      direction: 'LONG',
+      fillPrice: 44210,
+      stopLoss: 44150,
+      takeProfit: 44300,
+      entrySource: 'call_band',
+    },
+    openBookManageText:
+      'OPEN BOOK MANAGE (filled — advise only, never auto-close):\nLONG @ 44210 · live 44180 · SL 44150 · TP 44300 · 5m RVOL 0.80×',
+  } as LiveVoiceDeskContext
+  const p = formatLiveVoiceContextForLlm(inTrade)
+  assert(p.includes('OPEN BOOK MANAGE'), 'packed open-book manage block')
+  assert(p.includes('LONG @ 44210'), 'packed fill price')
+  assert(p.includes('5m RVOL 0.80×'), 'packed RVOL on open book')
+}
+
 console.log('live_voice_prompt: all passed')
