@@ -10,6 +10,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { isOandaConfigured } from '@/lib/oanda/config'
 import { getOandaAccountSummary } from '@/lib/oanda/orders'
+import { isVisibleLiveJournalRow } from '@/lib/trading/journalHistory'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,10 +35,11 @@ export async function GET(request: NextRequest) {
          stop_loss_price, stop_loss_hit_at, stop_loss_hit_count, position_size, risk_amount, account_size,
          exit_timestamp, exit_price, exit_reason, profit_loss, profit_loss_percent,
          regime, regime_confidence, best_break_level, best_level_break_confidence,
-         entry_reason, entry_source, exit_notes, profit_target_price, created_at, updated_at`
+         entry_reason, entry_source, exit_notes, profit_target_price, fill_status, notes,
+         created_at, updated_at`
       )
       .eq('user_id', user.id)
-      .neq('fill_status', 'cancelled')
+      .not('fill_status', 'in', '(cancelled,working)')
       .order('entry_timestamp', { ascending: false })
       .limit(limit)
 
@@ -95,12 +97,7 @@ export async function GET(request: NextRequest) {
     }
 
     const rawRows = trades ?? []
-    const rows = rawRows.filter(
-      (t) =>
-        t.fill_status !== 'cancelled' &&
-        t.exit_reason !== 'broker_rejected' &&
-        !/failed|rejected|insufficient margin/i.test(String(t.notes || ''))
-    )
+    const rows = rawRows.filter(isVisibleLiveJournalRow)
     const ids = rows.map((t) => t.id).filter(Boolean)
 
     let decisions: Array<Record<string, unknown>> = []
