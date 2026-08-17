@@ -15,7 +15,7 @@ export function isVisibleLiveJournalRow(row: {
 }
 
 export type JournalEquityRow = {
-  id: string
+  id?: string | number | null
   account_size?: number | string | null
   exit_timestamp?: string | null
   profit_loss?: number | string | null
@@ -24,7 +24,7 @@ export type JournalEquityRow = {
 }
 
 /** Tradeify ticket trail — never OANDA balance / NAV / margin. */
-export function journalTicketEquity(rows: JournalEquityRow[]): {
+export function journalTicketEquity(rows: readonly JournalEquityRow[]): {
   startingAccount: number
   endingEquity: number
   equityChange: number
@@ -44,11 +44,13 @@ export function journalTicketEquity(rows: JournalEquityRow[]): {
   const equityAfter = new Map<string, number>()
   const equityBefore = new Map<string, number>()
   for (const t of chrono) {
-    equityBefore.set(t.id, Math.round(running * 100) / 100)
+    const id = String(t.id ?? '')
+    if (!id) continue
+    equityBefore.set(id, Math.round(running * 100) / 100)
     if (t.exit_timestamp && t.profit_loss != null) {
       running += Number(t.profit_loss) || 0
     }
-    equityAfter.set(t.id, Math.round(running * 100) / 100)
+    equityAfter.set(id, Math.round(running * 100) / 100)
   }
 
   const endingEquity = Math.round(running * 100) / 100

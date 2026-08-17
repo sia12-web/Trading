@@ -79,6 +79,11 @@ assert.equal(dow.equityChange, 90)
 assert.equal(dow.equityBefore.get('dow-1'), 50_000)
 assert.equal(dow.equityAfter.get('dow-1'), 50_090)
 
+const skipped = journalTicketEquity([
+  { account_size: 50_000, profit_loss: 10, exit_timestamp: '2026-08-17T14:00:00Z' },
+])
+assert.equal(skipped.endingEquity, TRADEIFY_STARTING_BALANCE, 'rows without id do not move equity')
+
 const journalPage = readFileSync('app/dashboard/journal/page.tsx', 'utf8')
 assert.ok(!/OANDA LIVE/.test(journalPage), 'order history must not paint OANDA LIVE')
 assert.ok(!/oanda_account/.test(journalPage), 'order history must not bind OANDA account summary')
