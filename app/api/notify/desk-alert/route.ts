@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { sendTelegramMessage, telegramConfigured } from '@/lib/notify/telegram'
 import { claimServerDeskNoteOnce } from '@/lib/notify/deskNoteServerClaim'
+import { deskAlertTelegramText } from '@/lib/notify/deskAlertTelegram'
 import { logger } from '@/lib/utils/logger'
 import { logDeskAlert } from '@/lib/utils/deskAuditLog'
 
@@ -26,18 +27,22 @@ export async function POST(request: Request) {
 
     const json = (await request.json().catch(() => ({}))) as Body
     const kind = json.kind ?? 'desk_alert'
-    const telegramText =
-      (typeof json.telegram === 'string' && json.telegram.trim()) ||
-      [json.title, json.body].filter(Boolean).join('\n')
+    const telegramText = deskAlertTelegramText(json)
 
     if (!telegramText) {
       logDeskAlert({
         kind,
-        ok: false,
+        ok: true,
         telegramConfigured: telegramConfigured(),
-        error: 'Empty alert',
+        error: 'toast_only',
       })
-      return NextResponse.json({ error: 'Empty alert' }, { status: 400 })
+      return NextResponse.json({
+        success: true,
+        kind,
+        skipped: true,
+        reason: 'toast_only',
+        configured: telegramConfigured(),
+      })
     }
 
     const rawDedupe =

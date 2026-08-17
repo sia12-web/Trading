@@ -74,6 +74,10 @@ import {
 } from '@/lib/trading/deskNewsHazard'
 import type { DeskCalendarEvent } from '@/lib/trading/deskNews'
 import { infoToast, warningToast, successToast } from '@/lib/utils/toastUtils'
+import {
+  deskAlertTelegramText,
+  formatDeskAlertToast,
+} from '@/lib/notify/deskAlertTelegram'
 import { LiveDeskBriefPanel } from './components/LiveDeskBriefPanel'
 import type { LiveDeskBrief } from '@/lib/trading/liveDeskBrief'
 import type { DeskInstrument } from '@/lib/trading/sessionGate'
@@ -630,11 +634,13 @@ export default function ChartPage() {
       dedupeKey?: string
       instrument?: string
     }) => {
-      warningToast(`${alert.title} — ${alert.body}`, 8000)
+      warningToast(formatDeskAlertToast(alert.title, alert.body), 8000)
+      const telegram = deskAlertTelegramText(alert)
+      if (!telegram) return
       void fetch('/api/notify/desk-alert', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(alert),
+        body: JSON.stringify({ ...alert, telegram }),
       }).catch(() => {})
     },
     []
