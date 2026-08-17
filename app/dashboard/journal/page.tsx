@@ -11,6 +11,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { entrySourceLabel, entrySourceTone } from '@/lib/trading/entrySourceBadge'
 import { formatDeskMoney, deskCurrencyLabel } from '@/lib/trading/currency'
 import { RANGE_EDGE_RISK_PERCENT } from '@/lib/trading/positionSizing'
+import { TRADEIFY_STARTING_BALANCE } from '@/lib/trading/tradeifyGrowth50k'
 
 type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'ALL'
 type HistoryTab = 'live' | 'sim' | 'voice'
@@ -72,17 +73,7 @@ interface Summary {
   starting_account?: number
   ending_equity?: number
   equity_change?: number
-  equity_source?: 'oanda_live' | 'journal_ticket'
-  oanda_account?: {
-    id: string
-    balance: number
-    NAV: number
-    marginAvailable: number
-    marginUsed?: number
-    unrealizedPL?: number
-    openTradeCount?: number
-    currency: string
-  } | null
+  equity_source?: 'journal_ticket'
   days: number
 }
 
@@ -450,26 +441,8 @@ function JournalPageInner() {
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="text-[10px] uppercase tracking-wider text-gray-500">
-                  Desk equity (live OANDA balance ± window P&amp;L)
+                  Desk equity (Tradeify journal)
                 </div>
-                {summary.oanda_account && (
-                  <div className="flex flex-wrap items-center justify-end gap-2 rounded-full border border-emerald-500/40 bg-emerald-950/60 px-2.5 py-0.5 text-[10px] font-mono font-bold text-emerald-300">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>OANDA LIVE ({summary.oanda_account.id})</span>
-                    <span className="text-gray-500">|</span>
-                    <span>Balance: {fmtMoney(summary.oanda_account.balance)}</span>
-                    <span className="text-gray-500">|</span>
-                    <span>NAV: {fmtMoney(summary.oanda_account.NAV)}</span>
-                    <span className="text-gray-500">|</span>
-                    <span>Margin Avail: {fmtMoney(summary.oanda_account.marginAvailable)}</span>
-                    {(summary.oanda_account.marginUsed ?? 0) > 0 && (
-                      <>
-                        <span className="text-gray-500">|</span>
-                        <span>Used: {fmtMoney(summary.oanda_account.marginUsed)}</span>
-                      </>
-                    )}
-                  </div>
-                )}
               </div>
               <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
                 <div>
@@ -477,16 +450,12 @@ function JournalPageInner() {
                     Starting ({summary.days}d window)
                   </div>
                   <div className="price-mono text-lg text-white">
-                    {fmtMoney(summary.starting_account ?? 100000)}
+                    {fmtMoney(summary.starting_account ?? TRADEIFY_STARTING_BALANCE)}
                   </div>
                 </div>
                 <div className="text-gray-600 text-xl pb-0.5">→</div>
                 <div>
-                  <div className="text-[10px] text-gray-500 uppercase">
-                    {summary.equity_source === 'oanda_live'
-                      ? 'Live OANDA balance'
-                      : 'After closed trades'}
-                  </div>
+                  <div className="text-[10px] text-gray-500 uppercase">After closed trades</div>
                   <div className="price-mono text-lg text-white">
                     {fmtMoney(summary.ending_equity ?? summary.starting_account)}
                   </div>
@@ -505,9 +474,9 @@ function JournalPageInner() {
                 </div>
               </div>
               <p className="mt-2 text-[11px] text-gray-600">
-                Live numbers come from OANDA account summary (balance / NAV / margin). Starting is
-                live balance minus journal P&amp;L for this window. Risk per trade is ~5% of ticket
-                account size. Broker fills and journal P&amp;L are in {deskCurrencyLabel()}.
+                Equity is reconstructed from Tradeify ticket size and closed-trade P&amp;L. Working
+                limits and cancelled fills are not on this tape. Broker fills and journal P&amp;L
+                are in {deskCurrencyLabel()}.
               </p>
             </div>
 
@@ -928,7 +897,7 @@ function JournalPageInner() {
         <p className="text-[11px] text-gray-600 leading-relaxed">
           {isSim
             ? 'Simulation tab reads paper closes from simulation_trades only — never mixes with live fills. Resetting a replay day clears that day’s paper history.'
-            : 'Live desk only. After the entry window, levels leave the chart; open books stay in MANAGE until stop, target, your confirmed AI exit, or lunch confirm. Cash close auto-liquidates lunch-range fills and any leftovers. Equity above is reconstructed from your ticket account size and closed-trade P&L in CAD (OANDA account currency) — not a live OANDA margin feed.'}
+            : 'Live desk only. After the entry window, levels leave the chart; open books stay in MANAGE until stop, target, your confirmed AI exit, or lunch confirm. Cash close auto-liquidates lunch-range fills and any leftovers. Equity above is reconstructed from Tradeify ticket size and closed-trade P&L — not an OANDA margin feed.'}
         </p>
       </div>
     </div>

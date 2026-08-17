@@ -8,9 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
-import { isOandaConfigured } from '@/lib/oanda/config'
-import { getOandaAccountSummary } from '@/lib/oanda/orders'
-import { isVisibleLiveJournalRow } from '@/lib/trading/journalHistory'
+import { isVisibleLiveJournalRow, journalTicketEquity } from '@/lib/trading/journalHistory'
 
 export const dynamic = 'force-dynamic'
 
@@ -126,64 +124,8 @@ export async function GET(request: NextRequest) {
     const tps = closed.filter((t) => t.exit_reason === 'take_profit')
     const aiExits = closed.filter((t) => t.exit_reason === 'ai_signal')
     const totalPnl = closed.reduce((s, t) => s + (Number(t.profit_loss) || 0), 0)
-
-    // Desk equity trail: prefer live OANDA balance when configured.
-    // Ticket account_size snapshots go stale; Margin Available alone looked "wrong"
-    // when Starting/After were reconstructed from old NAV tickets ± journal P&L.
-    const chrono = [...rows].sort((a, b) => {
-      const ta = new Date(a.entry_timestamp || a.created_at || 0).getTime()
-      const tb = new Date(b.entry_timestamp || b.created_at || 0).getTime()
-      return ta - tb
-    })
-
-    let startingAccount =
-      chrono.find((t) => Number(t.account_size) > 0)?.account_size != null
-        ? Number(chrono.find((t) => Number(t.account_size) > 0)!.account_size)
-        : 100000
-
-    let oandaAccountInfo: Record<string, any> | null = null
-    let equitySource: 'oanda_live' | 'journal_ticket' = 'journal_ticket'
-    if (isOandaConfigured()) {
-      const oandaRes = await getOandaAccountSummary()
-      if (oandaRes.ok) {
-        const bal = Number(oandaRes.account.balance)
-        const nav = Number(oandaRes.account.NAV)
-        const marginAvail = Number(oandaRes.account.marginAvailable)
-        const marginUsed = Number(oandaRes.account.marginUsed)
-        oandaAccountInfo = {
-          id: oandaRes.account.id,
-          balance: bal,
-          NAV: nav,
-          marginAvailable: marginAvail,
-          marginUsed,
-          unrealizedPL: Number(oandaRes.account.unrealizedPL),
-          openTradeCount: oandaRes.account.openTradeCount,
-          currency: oandaRes.account.currency,
-        }
-        if (Number.isFinite(bal)) {
-          equitySource = 'oanda_live'
-          // After closed / current cash = live broker balance
-          // Starting for this journal window = balance − window realized P&L
-          startingAccount = Math.round((bal - totalPnl) * 100) / 100
-        }
-      }
-    }
-
-    let running = startingAccount
-    const equityAfter = new Map<string, number>()
-    const equityBefore = new Map<string, number>()
-    for (const t of chrono) {
-      equityBefore.set(t.id, Math.round(running * 100) / 100)
-      if (t.exit_timestamp && t.profit_loss != null) {
-        running += Number(t.profit_loss) || 0
-      }
-      equityAfter.set(t.id, Math.round(running * 100) / 100)
-    }
-    // When OANDA is live, ending equity is the broker balance (not journal reconstruction)
-    const endingEquity =
-      equitySource === 'oanda_live' && oandaAccountInfo
-        ? Math.round(Number(oandaAccountInfo.balance) * 100) / 100
-        : Math.round(running * 100) / 100
+    const equity = journalTicketEquity(rows)
+    const { startingAccount, endingEquity, equityBefore, equityAfter } = equity
 
     const resolveExitNotes = (
       t: Record<string, any>,
@@ -291,9 +233,8 @@ export async function GET(request: NextRequest) {
         total_pnl: Math.round(totalPnl * 100) / 100,
         starting_account: startingAccount,
         ending_equity: endingEquity,
-        equity_change: Math.round((endingEquity - startingAccount) * 100) / 100,
-        equity_source: equitySource,
-        oanda_account: oandaAccountInfo,
+        equity_change: equity.equityChange,
+        equity_source: equity.equitySource,
         days,
       },
       entries,
