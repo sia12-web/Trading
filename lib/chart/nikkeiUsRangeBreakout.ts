@@ -12,6 +12,7 @@
 
 import {
   hourInTz,
+  isWeekdayYmd,
   tokyoDeskSessionAt,
   zonedCivilToUnix,
 } from '@/lib/chart/sessionVwap'
@@ -395,7 +396,8 @@ function addCalendarDaysYmd(ymd: string, delta: number): string {
 
 /**
  * Tokyo cash open (09:00 JST) that trades this NY range.
- * NY runs 22:30 → 09:00; the Asia session that follows starts that morning at 09:00.
+ * NY RTH that ends Fri 16:00 ET is Sat 05:00 JST — cash open is the next
+ * weekday (Mon 09:00), not Saturday (no Tokyo bars → invisible stub).
  */
 export function tokyoCashOpenForUsRange(
   range: Pick<NikkeiUsSessionRange, 'fromTime' | 'toTime'>
@@ -405,6 +407,10 @@ export function tokyoCashOpenForUsRange(
   let ymd = tokyoDayKey(t)
   // Evening NY / London on calendar day D → cash open is next morning (D+1)
   if (h >= 17) {
+    ymd = addCalendarDaysYmd(ymd, 1)
+  }
+  let guard = 0
+  while (!isWeekdayYmd(ymd, 'Asia/Tokyo') && guard++ < 14) {
     ymd = addCalendarDaysYmd(ymd, 1)
   }
   return zonedCivilToUnix(ymd, 9, 'Asia/Tokyo')

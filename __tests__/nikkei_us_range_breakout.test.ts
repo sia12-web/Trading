@@ -222,6 +222,30 @@ test('IB-style line series draws US H/L only on Tokyo cash session', () => {
   const deadPts = nikkeiUsRangeLineSeriesData(last!, deadTip)
   assert(deadPts.high.length === 0, 'no lines in dead zone')
 })
+
+test('Friday NYC paints US H/L across Monday Tokyo cash, not the weekend gap', () => {
+  const candles: NikkeiUsRangeBar[] = []
+  // Friday NY RTH: Fri 22:30 JST → Sat 05:00 JST (16:00 ET)
+  candles.push(bar(jstUnix(2026, 8, 14, 22, 30), 68000, 69005.5, 68500, 68600, 1000))
+  candles.push(bar(jstUnix(2026, 8, 15, 5, 0), 68600, 68700, 68470.5, 68550, 1000))
+  const tip = jstUnix(2026, 8, 17, 12, 55)
+  candles.push(bar(tip, 68800, 68900, 68700, 68888.7, 1000))
+
+  const cur = currentNikkeiUsRangeForChart(candles, tip)
+  assert(cur != null, 'Friday NYC available on Monday Tokyo')
+  const pts = nikkeiUsRangeLineSeriesData(cur!, tip)
+  const monOpen = jstUnix(2026, 8, 17, 9, 0)
+  assert(pts.high.length === 2 && pts.low.length === 2, 'line has a span')
+  assert(pts.high[0]!.time === monOpen, `starts Monday cash open got ${pts.high[0]!.time}`)
+  assert(pts.high[1]!.time === tip, 'extends to Monday tip')
+  assert(pts.high[0]!.value === cur!.high, 'high level')
+  assert(pts.low[0]!.value === cur!.low, 'low level')
+  assert(
+    pts.high[0]!.time !== jstUnix(2026, 8, 15, 9, 0),
+    'must not sit on Saturday (no Tokyo bars)'
+  )
+})
+
 test('lastNikkeiUsSessionRange: last completed NYC H/L only', () => {
   const candles: NikkeiUsRangeBar[] = []
   // Day 1 NY (JST evening)
