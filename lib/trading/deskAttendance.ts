@@ -131,8 +131,7 @@ export function canClockInNow(
   if (market === 'TOKYO') {
     return { ok: false, reason: LIVE_CLOCK_REFUSE }
   }
-  const probe = market === 'TOKYO' ? 'NIKKEI' : 'DOW'
-  const s = sessionFor(probe)
+  const s = sessionFor('DOW')
   if (!weekdayInTz(now, s.tz)) {
     return { ok: false, reason: 'Weekend — desk closed' }
   }
@@ -211,8 +210,7 @@ export function canReClockInNow(
   if (market === 'TOKYO') {
     return { ok: false, reason: LIVE_CLOCK_REFUSE }
   }
-  const probe = market === 'TOKYO' ? 'NIKKEI' : 'DOW'
-  const s = sessionFor(probe)
+  const s = sessionFor('DOW')
   if (!weekdayInTz(now, s.tz)) {
     return { ok: false, reason: 'Weekend — desk closed' }
   }
