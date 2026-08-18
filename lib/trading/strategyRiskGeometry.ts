@@ -339,18 +339,16 @@ export function visibleOverlayEntryRanges(args: {
 }
 
 /**
- * Painted ±10 bands + drag/click snap targets.
+ * Painted ±10 bands (right-scale tags). Drag/click snap still uses
+ * {@link studyEntrySnapRanges} with the locked playbook range even when the
+ * matching study toggle is off.
  *
- * Entry ±10 paint:
- * - **OR30:** morning playbook + OR30 entry window still open (no ±10 after entryClose).
- *   May auto-paint from the open morning window even when the OR30 toggle is off.
- * - **Lunch-range:** shaped, and either active playbook or open lunch bucket — may
- *   auto-paint when the lunch toggle is off (Limit snap after refresh).
- * - **IB / Tokyo IB:** always requires the IB (B) study toggle — never auto-paints
- *   from the active playbook or open bucket clock. H/L study lines, 50% mid, and
- *   ±10 snap targets stay dark until the trader clicks B.
- * - **US Range (Nikkei):** always requires the US Range (U) study toggle — never
- *   auto-paints from the active playbook or open bucket clock.
+ * Entry ±10 paint requires the matching study toggle for every range:
+ * - **OR30:** R toggle + morning playbook + OR30 entry window still open.
+ * - **Lunch-range:** N toggle + shaped lunch, and either active playbook or
+ *   open lunch bucket.
+ * - **IB / Tokyo IB:** B toggle — never auto-paints from the playbook clock.
+ * - **US Range (Nikkei):** U toggle — never auto-paints from the playbook clock.
  *
  * Tokyo IB ±10 also waits until first-hour lock (10:00 desk / 21:00 Montreal).
  *
@@ -384,16 +382,19 @@ export function entryEligibleOverlayRanges(args: {
 
   const isEntryClockEligible = (r: StrategyRangeEdges): boolean => {
     if (r.label === 'OR30') {
-      return mode === 'morning' && or30Open
+      return !!args.showOr30 && mode === 'morning' && or30Open
     }
-    // US Range + IB / Tokyo IB: toggle-gated always (even when playbook / bucket is live).
+    // Every study is toggle-gated — playbook / bucket clock never auto-paints ±10.
     if (r.label === 'US Range' && !args.showUsRange) {
       return false
     }
     if ((r.label === 'IB' || r.label === 'Tokyo IB') && !args.showIb) {
       return false
     }
-    // Active playbook always paints its ±10 (tradeable highlight).
+    if (r.label === 'Lunch-range' && !args.showLunchRange) {
+      return false
+    }
+    // Active playbook still highlights among toggled studies.
     if (isActivePlaybookOverlayLabel(mode, r.label, args.instrument)) {
       return true
     }
@@ -404,19 +405,17 @@ export function entryEligibleOverlayRanges(args: {
     return isBucketWindowOpen(market, bucket, timeSec)
   }
 
-  // Union: toggled studies ∩ clock, plus shaped OR30 / lunch that are
-  // clock-eligible even when their study toggle is off. IB and US Range only
-  // when their B / U toggles are on — never auto from clock alone.
+  // Toggled studies ∩ clock. Shaped extras only when that study is ON.
   const byKey = new Map<string, StrategyRangeEdges>()
   const push = (r: StrategyRangeEdges | null | undefined) => {
     if (!r || !(r.high > r.low) || !isEntryClockEligible(r)) return
     byKey.set(`${r.label}:${r.high}:${r.low}`, r)
   }
   for (const r of toggled) push(r)
-  push(shaped.or30)
+  if (args.showOr30) push(shaped.or30)
   if (args.showIb) push(shaped.ib)
   if (args.showUsRange) push(shaped.usRange)
-  push(shaped.lunchRange)
+  if (args.showLunchRange) push(shaped.lunchRange)
   return [...byKey.values()]
 }
 

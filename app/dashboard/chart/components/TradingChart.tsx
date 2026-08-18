@@ -65,6 +65,7 @@ import {
   computeInitialBalance,
   computeIbSignals,
   ibLineSeriesData,
+  axisLabelSeriesData,
   snapProfitToRound,
   type InitialBalanceRange,
 } from '@/lib/trading/deskLevels'
@@ -115,6 +116,7 @@ import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
 import { LiveVoicePanel } from '@/app/dashboard/chart/components/LiveVoicePanel'
 import {
+  DESK_BAR_SPACING,
   DESK_CANDLE_DOWN,
   DESK_CANDLE_UP,
   DESK_CHART_THEME,
@@ -263,6 +265,33 @@ function defaultManualTarget(
   direction: 'LONG' | 'SHORT'
 ): number {
   return takeProfitFromStopR({ entry, stop, direction })
+}
+
+/** Candle width before range overlays / last-value tags relayout the pane. */
+function readDeskBarSpacing(chart: { timeScale: () => { options: () => { barSpacing: number } } } | null): number {
+  try {
+    const n = chart?.timeScale().options().barSpacing
+    return typeof n === 'number' && n > 0 ? n : DESK_BAR_SPACING
+  } catch {
+    return DESK_BAR_SPACING
+  }
+}
+
+/** Range unlock must not shrink candle barSpacing — restore after LWC relayout. */
+function keepDeskBarSpacing(
+  chart: { timeScale: () => { applyOptions: (o: { barSpacing: number }) => void } } | null,
+  spacing: number
+) {
+  if (!chart || !(spacing > 0)) return
+  const apply = () => {
+    try {
+      chart.timeScale().applyOptions({ barSpacing: spacing })
+    } catch {
+      /* ignore */
+    }
+  }
+  apply()
+  requestAnimationFrame(apply)
 }
 
 const HIGHLIGHT_COLOR_PALETTES = [
@@ -1291,12 +1320,14 @@ export function TradingChart({
       ? (candlesRef.current[candlesRef.current.length - 1]!.time as number)
       : Math.floor(Date.now() / 1000)
     // Do not add a future cash-close point: it reserves blank chart space.
+    // Last point only — right-scale label, no spanning H/L line.
     const pts = ibLineSeriesData(ib, tipUnix)
     const tz = chartTzRef.current
+    const savedSpacing = readDeskBarSpacing(chartRef.current)
     try {
       series.high.setData(
         mapTimesToChart(
-          pts.high.map((p) => ({ time: p.time, value: p.value })),
+          axisLabelSeriesData(pts.high).map((p) => ({ time: p.time, value: p.value })),
           tz
         ).map((p) => ({
           time: p.time as UTCTimestamp,
@@ -1305,7 +1336,7 @@ export function TradingChart({
       )
       series.low.setData(
         mapTimesToChart(
-          pts.low.map((p) => ({ time: p.time, value: p.value })),
+          axisLabelSeriesData(pts.low).map((p) => ({ time: p.time, value: p.value })),
           tz
         ).map((p) => ({
           time: p.time as UTCTimestamp,
@@ -1314,6 +1345,7 @@ export function TradingChart({
       )
       setIbShaped(true)
       setIbLevels({ high: ib.high, low: ib.low })
+      keepDeskBarSpacing(chartRef.current, savedSpacing)
     } catch {
       series.high.setData([])
       series.low.setData([])
@@ -1344,27 +1376,29 @@ export function TradingChart({
       showMid: true,
     })
     const tz = chartTzRef.current
+    const savedSpacing = readDeskBarSpacing(chartRef.current)
     try {
       series.high.setData(
         mapTimesToChart(
-          pts.high.map((p) => ({ time: p.time, value: p.value })),
+          axisLabelSeriesData(pts.high).map((p) => ({ time: p.time, value: p.value })),
           tz
         ).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
       )
       series.low.setData(
         mapTimesToChart(
-          pts.low.map((p) => ({ time: p.time, value: p.value })),
+          axisLabelSeriesData(pts.low).map((p) => ({ time: p.time, value: p.value })),
           tz
         ).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
       )
       series.mid.setData(
         mapTimesToChart(
-          pts.mid.map((p) => ({ time: p.time, value: p.value })),
+          axisLabelSeriesData(pts.mid).map((p) => ({ time: p.time, value: p.value })),
           tz
         ).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
       )
       setLunchShaped(true)
       setLunchLocked(!!lunch.complete)
+      keepDeskBarSpacing(chartRef.current, savedSpacing)
     } catch {
       series.high.setData([])
       series.low.setData([])
@@ -1393,21 +1427,23 @@ export function TradingChart({
       ? (candlesRef.current[candlesRef.current.length - 1]!.time as number)
       : Math.floor(Date.now() / 1000)
     const pts = nikkeiUsRangeLineSeriesData(usRange, tipUnix)
+    const savedSpacing = readDeskBarSpacing(chartRef.current)
     try {
       const tz = chartTzRef.current
       series.high.setData(
         mapTimesToChart(
-          pts.high.map((p) => ({ time: p.time, value: p.value })),
+          axisLabelSeriesData(pts.high).map((p) => ({ time: p.time, value: p.value })),
           tz
         ).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
       )
       series.low.setData(
         mapTimesToChart(
-          pts.low.map((p) => ({ time: p.time, value: p.value })),
+          axisLabelSeriesData(pts.low).map((p) => ({ time: p.time, value: p.value })),
           tz
         ).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
       )
       setUsRangeShaped(pts.high.length > 0)
+      keepDeskBarSpacing(chartRef.current, savedSpacing)
     } catch {
       series.high.setData([])
       series.low.setData([])
@@ -1438,21 +1474,23 @@ export function TradingChart({
       ? (candlesRef.current[candlesRef.current.length - 1]!.time as number)
       : Math.floor(Date.now() / 1000)
     const pts = or30LineSeriesData(range, tipUnix)
+    const savedSpacing = readDeskBarSpacing(chartRef.current)
     try {
       const tz = chartTzRef.current
       series.high.setData(
         mapTimesToChart(
-          pts.high.map((p) => ({ time: p.time, value: p.value })),
+          axisLabelSeriesData(pts.high).map((p) => ({ time: p.time, value: p.value })),
           tz
         ).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
       )
       series.low.setData(
         mapTimesToChart(
-          pts.low.map((p) => ({ time: p.time, value: p.value })),
+          axisLabelSeriesData(pts.low).map((p) => ({ time: p.time, value: p.value })),
           tz
         ).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
       )
       setOr30Shaped(pts.high.length > 0)
+      keepDeskBarSpacing(chartRef.current, savedSpacing)
     } catch {
       series.high.setData([])
       series.low.setData([])
@@ -2153,6 +2191,7 @@ export function TradingChart({
       swing
     )
     // Always snap the locked playbook range — do not require OR30/IB/Lunch/US toggles.
+    // ±10 right-scale tags still require the matching study (R / B / N / U).
     const snapRanges = studyEntrySnapRanges({
       active: strategyRange,
       overlays: eligible,
@@ -2969,13 +3008,15 @@ export function TradingChart({
       lower3: chart.addLineSeries({ ...bandOpts, title: '-3σ' }),
     }
 
-    // Initial Balance — blue H/L from first hour, extended to session end
+    // Initial Balance — right-scale H/L labels only (no spanning line)
     const ibLineOpts = {
       color: '#3b82f6',
       lineWidth: 2 as const,
       lineStyle: LineStyle.Solid,
       priceLineVisible: false,
       lastValueVisible: true,
+      lineVisible: false,
+      pointMarkersVisible: false,
       crosshairMarkerVisible: false,
       ...ignoreScale,
     }
@@ -2990,6 +3031,8 @@ export function TradingChart({
       lineStyle: LineStyle.Solid,
       priceLineVisible: false,
       lastValueVisible: true,
+      lineVisible: false,
+      pointMarkersVisible: false,
       crosshairMarkerVisible: false,
       ...ignoreScale,
     }
@@ -3018,6 +3061,8 @@ export function TradingChart({
       lineStyle: LineStyle.Solid,
       priceLineVisible: false,
       lastValueVisible: true,
+      lineVisible: false,
+      pointMarkersVisible: false,
       crosshairMarkerVisible: false,
       ...ignoreScale,
     }
@@ -3033,6 +3078,8 @@ export function TradingChart({
       lineStyle: LineStyle.Solid,
       priceLineVisible: false,
       lastValueVisible: true,
+      lineVisible: false,
+      pointMarkersVisible: false,
       crosshairMarkerVisible: false,
       ...ignoreScale,
     }
@@ -3530,6 +3577,7 @@ export function TradingChart({
 
     const ts = chartRef.current.timeScale()
     let savedRange: { from: number; to: number } | null = null
+    const savedSpacing = didFitRef.current ? readDeskBarSpacing(chartRef.current) : DESK_BAR_SPACING
     if (didFitRef.current) {
       try {
         savedRange = ts.getVisibleLogicalRange()
@@ -3843,10 +3891,11 @@ export function TradingChart({
         }
       })
     } else if (savedRange) {
-      // New prints / refresh must not yank the viewport while the user is panned
+      // New prints / range unlock must not shrink candles (last-value tags widen the axis)
       requestAnimationFrame(() => {
         try {
           ts.setVisibleLogicalRange(savedRange)
+          keepDeskBarSpacing(chartRef.current, savedSpacing)
         } catch {
           /* ignore */
         }
@@ -6203,19 +6252,21 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       }),
       swing
     )
-    const snapRanges = studyEntrySnapRanges({
-      active,
-      overlays,
-    })
+    // Right-scale ±10 tags follow the study toggles (R / B / N / U) — not the
+    // active playbook. Snap/place still uses studyEntrySnapRanges + active.
+    const chart = chartRef.current
+    const savedSpacing = readDeskBarSpacing(chart)
     const call = deskCallRef.current
     const mode = useCallRef.current
-    if (snapRanges.length === 0 || mode == null) {
+    if (overlays.length === 0 || mode == null) {
       clearBands()
+      keepDeskBarSpacing(chart, savedSpacing)
       return
     }
     const allowed = ticketAllowedEdges({ useCall: mode, call })
     if (allowed != null && allowed.length === 0) {
       clearBands()
+      keepDeskBarSpacing(chart, savedSpacing)
       return
     }
     const setupEdges = mode === false ? deskCallSetupEdges(call) : []
@@ -6265,7 +6316,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     }
 
     let anyLive = false
-    for (const strategyRange of snapRanges) {
+    for (const strategyRange of overlays) {
       const bands = filterRangeEdgeBands(rangeEdgeBands(strategyRange), allowed)
       if (bands.length === 0) continue
       const label = strategyRange.label || 'range'
@@ -6321,57 +6372,39 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       const lowBand = bands.find((b) => b.edge === 'low')
       const specs: Array<{ price: number; color: string; title: string }> = []
       if (highBand) {
-        specs.push(
-          {
-            price: highBand.max,
-            color: highColor,
-            title: `±${RANGE_EDGE_BAND_POINTS} ${label} H+`,
-          },
-          {
-            price: highBand.min,
-            color: highColor,
-            title: `±${RANGE_EDGE_BAND_POINTS} ${label} H−`,
-          }
-        )
+        specs.push({
+          price: strategyRange.high,
+          color: highColor,
+          title: `${label} H`,
+        })
       }
-      // US Range: H/L only — no purple 50% mid band paint
       if (midBand) {
-        specs.push(
-          {
-            price: midBand.max,
-            color: midColor,
-            title: `±${RANGE_EDGE_BAND_POINTS} ${label} 50%+`,
-          },
-          {
-            price: midBand.min,
-            color: midColor,
-            title: `±${RANGE_EDGE_BAND_POINTS} ${label} 50%−`,
-          }
-        )
+        specs.push({
+          price: (strategyRange.high + strategyRange.low) / 2,
+          color: midColor,
+          title: `${label} 50%`,
+        })
       }
       if (lowBand) {
-        specs.push(
-          {
-            price: lowBand.max,
-            color: lowColor,
-            title: `±${RANGE_EDGE_BAND_POINTS} ${label} L+`,
-          },
-          {
-            price: lowBand.min,
-            color: lowColor,
-            title: `±${RANGE_EDGE_BAND_POINTS} ${label} L−`,
-          }
-        )
+        specs.push({
+          price: strategyRange.low,
+          color: lowColor,
+          title: `${label} L`,
+        })
       }
       for (const s of specs) {
         try {
           entryBandLinesRef.current.push(
             host.createPriceLine({
               price: s.price,
-              color: s.color,
-              lineWidth: entryLive ? 3 : 1,
-              lineStyle: LineStyle.Dashed,
+              // Transparent stroke — only the right-scale tag should show (IB included).
+              color: 'rgba(0,0,0,0)',
+              axisLabelColor: s.color,
+              axisLabelTextColor: '#f8fafc',
+              lineWidth: 1,
+              lineStyle: LineStyle.SparseDotted,
               axisLabelVisible: true,
+              lineVisible: false,
               title: s.title,
             })
           )
@@ -6382,7 +6415,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     }
 
     setEntryBandsVisible(entryBandLinesRef.current.length > 0)
-    const legendParts = snapRanges.map((o) => {
+    const legendParts = overlays.map((o) => {
       const name = o.label || 'range'
       return `${name} ${rangeEdgeBandLegend(o)}`
     })
@@ -6393,6 +6426,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         ? `±${RANGE_EDGE_BAND_POINTS} ${callTag} ${legendList} entry zones`
         : `±${RANGE_EDGE_BAND_POINTS} ${callTag} ${legendList} (shaped — entry window closed or inactive)`
     )
+    keepDeskBarSpacing(chart, savedSpacing)
 
     return () => {
       const h = priceLineHostRef.current

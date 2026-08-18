@@ -527,8 +527,8 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
     'NY lunch window never resurrects OR30 ±10'
   )
 
-  // Toggle OFF — lunch (and OR30 in its window) may still auto-paint for Limit
-  // snap after refresh. IB and US Range always require their B / U study toggles.
+  // Toggle OFF — ±10 tags stay dark until the trader clicks R / B / N / U.
+  // Snap still uses studyEntrySnapRanges(active) independently of paint.
   assert.deepEqual(
     entryEligibleOverlayRanges({
       playbookMode: 'ib',
@@ -589,7 +589,7 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
     ['Tokyo IB'],
     'Nikkei after IB lock: B toggle ON paints Tokyo IB ±10; US stays dark without U'
   )
-  assert.ok(
+  assert.deepEqual(
     entryEligibleOverlayRanges({
       playbookMode: 'lunch_range',
       instrument: 'DOW',
@@ -601,10 +601,42 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       ib: { high: 18_250, low: 18_050 },
       lunchRange: shaped.lunchRange,
       morningAttempts: 2,
+    }).map((o) => o.label),
+    [],
+    'Lunch ±10 stays dark without N toggle even when lunch playbook is live'
+  )
+  assert.deepEqual(
+    entryEligibleOverlayRanges({
+      playbookMode: 'morning',
+      instrument: 'NASDAQ',
+      now: nyDuringOr30,
+      showOr30: false,
+      showIb: false,
+      showLunchRange: false,
+      or30: shaped.or30,
+      ib: { high: 18_250, low: 18_050 },
+      lunchRange: shaped.lunchRange,
+      morningAttempts: 0,
+    }).map((o) => o.label),
+    [],
+    'OR30 ±10 stays dark without R toggle even during the morning window'
+  )
+  assert.ok(
+    entryEligibleOverlayRanges({
+      playbookMode: 'morning',
+      instrument: 'NASDAQ',
+      now: nyDuringOr30,
+      showOr30: true,
+      showIb: false,
+      showLunchRange: false,
+      or30: shaped.or30,
+      ib: { high: 18_250, low: 18_050 },
+      lunchRange: shaped.lunchRange,
+      morningAttempts: 0,
     })
       .map((o) => o.label)
-      .includes('Lunch-range'),
-    'Lunch playbook paints lunch ±10 even with toggles off'
+      .includes('OR30'),
+    'OR30 R toggle ON paints ±10 during the morning window'
   )
 
   // Closed buckets: no ±10 invite. NY IB bucket stays open until lunch-range start (13:30).

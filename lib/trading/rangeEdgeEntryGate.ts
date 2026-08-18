@@ -1,19 +1,21 @@
 /**
  * Range Edge Entry Gate — entries within ±N index points of the active
- * playbook range high, low, or (where allowed) 50% midpoint.
- *
- * US Range (Nikkei prior NYC) is high/low only — no mid entry band.
+ * playbook range high or low. 50% mid is never a legal entry (OR30, IB,
+ * lunch, US Range). Mid may still print as a location fact for manage.
  */
 
 export const RANGE_EDGE_BAND_POINTS = 10
 
-/** Chart / fillError copy when a limit lands outside painted ±10 H/Mid/L bands. */
+/** Chart / fillError copy when a limit lands outside painted ±10 H/L bands. */
 export const RANGE_EDGE_OFF_BAND_MESSAGE =
-  'Entry only at highlighted ±10 H/Mid/L.'
+  'Entry only at highlighted ±10 H/L.'
 
-/** US Range mid (±10 of 50%) is never a legal entry. */
-export const RANGE_EDGE_US_MID_REJECTED_MESSAGE =
-  'US Range entries are ±10 of high or low only — 50% mid is not a legal entry.'
+/** 50% mid (±10 of equilibrium) is never a legal entry. */
+export const RANGE_EDGE_MID_REJECTED_MESSAGE =
+  'Entries are ±10 of high or low only — 50% mid is not a legal entry.'
+
+/** @deprecated Same as RANGE_EDGE_MID_REJECTED_MESSAGE */
+export const RANGE_EDGE_US_MID_REJECTED_MESSAGE = RANGE_EDGE_MID_REJECTED_MESSAGE
 
 export type RangeEdgeLevels = {
   high: number
@@ -32,20 +34,19 @@ export type RangeEdgeBand = {
 
 /**
  * Whether this range paints / accepts a 50% mid entry band.
- * US Range (Nikkei prior NYC) is H/L only; OR30 / IB / lunch keep mid.
+ * Always false — OR30 / IB / lunch / US Range are H/L only.
  */
 export function rangeAllowsMidEdge(
-  range: RangeEdgeLevels | null | undefined
+  _range?: RangeEdgeLevels | null
 ): boolean {
-  if (!range?.label) return true
-  return !/^us\s*range$/i.test(String(range.label).trim())
+  return false
 }
 
-/** Short band legend for UI: "H / 50% / L" or "H / L" for US Range. */
+/** Short band legend for UI — every playbook range is H / L. */
 export function rangeEdgeBandLegend(
-  range: RangeEdgeLevels | null | undefined
+  _range?: RangeEdgeLevels | null
 ): string {
-  return rangeAllowsMidEdge(range) ? 'H / 50% / L' : 'H / L'
+  return 'H / L'
 }
 
 /** Exact 50% of a shaped range (H+L)/2. */
@@ -108,9 +109,9 @@ export function rangeEdgeKindAt(
 }
 
 /**
- * Keep (or move) a price into the nearest legal ±band of range H / 50% / L
- * (US Range: H / L only). Already in-band → unchanged. Outside → clamped onto
- * the closest band edge. Returns null when range is missing/invalid.
+ * Keep (or move) a price into the nearest legal ±band of range H / L.
+ * Already in-band → unchanged. Outside → clamped onto the closest band
+ * edge. Returns null when range is missing/invalid.
  */
 export function clampPriceToRangeEdgeBands(
   price: number,
@@ -268,7 +269,7 @@ export function findRangeEdgeBandHit<T extends RangeEdgeLevels>(
 
 /**
  * Attribute an entry price to a playbook range when several painted ±10 bands
- * overlap (common on Nikkei: US Range H/L vs Tokyo IB H / 50% / L).
+ * overlap (common on Nikkei: US Range H/L vs Tokyo IB H/L).
  *
  * Live billing prefers ranges that pass `liveOk` (bucket window open + probes
  * left) so the US Range playbook banner cannot reject as Tokyo IB. Among live
@@ -276,8 +277,8 @@ export function findRangeEdgeBandHit<T extends RangeEdgeLevels>(
  * otherwise nearest center. If no live candidate contains the price, fall back
  * to all candidates so the caller can surface the unlock / exhaustion message.
  *
- * Overlap rule: a live US Range H/L print beats another live range's **mid** at
- * the same price (US has no mid — never let Tokyo IB 50% steal US high/low).
+ * Overlap rule: a live US Range H/L print beats another live range at
+ * the same price when the other hit is not also H/L.
  */
 export function attributePlaybookBandEntry<T extends RangeEdgeLevels>(args: {
   entry: number
@@ -334,7 +335,7 @@ export function attributePlaybookBandEntry<T extends RangeEdgeLevels>(args: {
 }
 
 /**
- * Lock a place/click price onto a painted ±10 band center (H / L / mid when allowed).
+ * Lock a place/click price onto a painted ±10 band center (H / L).
  * Returns null when the price is not inside any candidate band — callers must reject
  * (never soft-clamp off-band into a placeable entry).
  */
@@ -366,9 +367,8 @@ export function distanceToRangeEdgeBand(
 
 /**
  * Limit-button / “place near” snap: if already in a live ±10 band → that center;
- * otherwise pick the nearest live-open band by **edge distance** (H / Mid / L
- * treated equally — never prefer mid via geometric center bias), then lock to
- * that band’s center.
+ * otherwise pick the nearest live-open band by **edge distance** (H / L
+ * treated equally), then lock to that band’s center.
  * Returns null when no live placeable bands exist (closed window / exhausted / day lock).
  *
  * Distinct from {@link snapEntryToOpenBandCenter}, which hard-rejects outside a band —
@@ -452,7 +452,7 @@ export function assertRangeEdgeEntry(args: {
   return { ok: true, range }
 }
 
-/** Keep only levels whose price sits in a ±band of range high, mid, or low. */
+/** Keep only levels whose price sits in a ±band of range high or low. */
 export function filterLevelsInRangeEdgeBand<T extends { price: number }>(
   levels: T[],
   range: RangeEdgeLevels | null | undefined,
@@ -463,4 +463,4 @@ export function filterLevelsInRangeEdgeBand<T extends { price: number }>(
 }
 
 export const NO_IN_BAND_LEVELS_MESSAGE =
-  'No liquidity levels in the ±10 strategy bands (H / 50% / L) — stand by or place manually at those magnets.'
+  'No liquidity levels in the ±10 strategy bands (H / L) — stand by or place manually at those magnets.'

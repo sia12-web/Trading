@@ -1366,6 +1366,15 @@ export function computeInitialBalance(
 }
 
 /**
+ * Keep the last point so lastValueVisible still paints the right scale,
+ * without drawing a spanning H/L line across the pane.
+ */
+export function axisLabelSeriesData<T>(points: T[]): T[] {
+  if (points.length === 0) return []
+  return [points[points.length - 1]!]
+}
+
+/**
  * IB high/low line series — levels fixed from the first hour, drawn from IB start
  * through `extendToUnix` (session tip / cash close). Falls back to IB window end.
  */

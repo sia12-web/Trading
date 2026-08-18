@@ -21,8 +21,8 @@ assert(
   'toast does not duplicate CALL WAIT'
 )
 assert(
-  formatDeskAlertToast('Off-band entry', 'Stay inside ±10 of H / mid / L') ===
-    'Off-band entry — Stay inside ±10 of H / mid / L',
+  formatDeskAlertToast('Off-band entry', 'Stay inside ±10 of H / L') ===
+    'Off-band entry — Stay inside ±10 of H / L',
   'toast joins distinct title and body'
 )
 

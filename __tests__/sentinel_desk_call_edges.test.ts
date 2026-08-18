@@ -331,7 +331,7 @@ test('agreeing twin does not veto; bookLocked false omits locked copy', () => {
   assert.ok(!call.playLine.includes('book is locked'))
 })
 
-test('OR30/IB/LN allow mid copy; US Range never does', () => {
+test('OR30/IB/LN never allow mid copy; US Range neither', () => {
   const or30 = computeDeskCall({
     instrument: 'DOW',
     candles: [...friday, ...driveUpSession(mondayOpen, 1)],
@@ -339,8 +339,8 @@ test('OR30/IB/LN allow mid copy; US Range never does', () => {
     playbookMode: 'morning',
   })
   assert.equal(or30.side, 'LONG')
-  assert.equal(or30.midAllowed, true)
-  assert.ok(or30.playLine.includes('Mid is a pullback line'))
+  assert.equal(or30.midAllowed, false)
+  assert.ok(!or30.playLine.includes('Mid is a pullback line'))
 
   const usLine = playLineForCall({
     side: 'LONG',
@@ -360,7 +360,7 @@ test('Nikkei IB playLine says Tokyo IB, never NY IB', () => {
     rangeKey: 'IB',
     instrument: 'NIKKEI',
     bookLocked: false,
-    midAllowed: true,
+    midAllowed: false,
   })
   assert.ok(line.includes('Tokyo IB'))
   assert.ok(!line.includes('below IB low'))

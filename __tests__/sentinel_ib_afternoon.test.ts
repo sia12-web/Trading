@@ -8,6 +8,7 @@ import { join } from 'path'
 import {
   computeInitialBalance,
   ibLineSeriesData,
+  axisLabelSeriesData,
   initialBalanceLevelsFromCandles,
   mapAfternoonCandidates,
   resolveAfternoonDeskLevels,
@@ -160,6 +161,16 @@ test('ibLineSeriesData: without extend still spans IB window', () => {
   const ib = computeInitialBalance(bars, OPEN, IB_END)!
   const pts = ibLineSeriesData(ib)
   assert(pts.high[1]!.time === ib.toTime, 'toTime default')
+})
+
+test('axisLabelSeriesData: last point only so the pane stays clear', () => {
+  const pts = [
+    { time: 1, value: 10 },
+    { time: 2, value: 20 },
+  ]
+  const last = axisLabelSeriesData(pts)
+  assert(last.length === 1 && last[0]!.time === 2 && last[0]!.value === 20, 'keeps last point')
+  assert(axisLabelSeriesData([]).length === 0, 'empty stays empty')
 })
 
 // ── Afternoon gate / paint windows ───────────────────────────────────────────

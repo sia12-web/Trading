@@ -134,6 +134,7 @@ import {
   computeInitialBalance,
   computeIbSignals,
   ibLineSeriesData,
+  axisLabelSeriesData,
   resolveAfternoonDeskLevels,
   resolveDeskLevels,
   type InitialBalanceRange,
@@ -1152,13 +1153,15 @@ function SimulationDeskInner() {
       lower3: chart.addLineSeries({ ...bandOpts, title: '-3σ' }),
     }
 
-    // Initial Balance — same blue H/L as live (extended to sim lunch)
+    // Initial Balance — right-scale H/L labels only (no spanning line)
     const ibLineOpts = {
       color: '#3b82f6',
       lineWidth: 2 as const,
       lineStyle: LineStyle.Solid,
       priceLineVisible: false,
       lastValueVisible: true,
+      lineVisible: false,
+      pointMarkersVisible: false,
       crosshairMarkerVisible: false,
       ...ignoreScale,
     }
@@ -1174,6 +1177,8 @@ function SimulationDeskInner() {
       lineStyle: LineStyle.Solid,
       priceLineVisible: false,
       lastValueVisible: true,
+      lineVisible: false,
+      pointMarkersVisible: false,
       crosshairMarkerVisible: false,
       ...ignoreScale,
     }
@@ -1188,6 +1193,8 @@ function SimulationDeskInner() {
       lineStyle: LineStyle.Solid,
       priceLineVisible: false,
       lastValueVisible: true,
+      lineVisible: false,
+      pointMarkersVisible: false,
       crosshairMarkerVisible: false,
       ...ignoreScale,
     }
@@ -1209,6 +1216,8 @@ function SimulationDeskInner() {
       lineStyle: LineStyle.Solid,
       priceLineVisible: false,
       lastValueVisible: true,
+      lineVisible: false,
+      pointMarkersVisible: false,
       crosshairMarkerVisible: false,
       ...ignoreScale,
     }
@@ -1456,11 +1465,12 @@ function SimulationDeskInner() {
             ? cur.to - cur.from
             : pinnedSpanRef.current || 104
         pinnedSpanRef.current = span
-        ts.applyOptions({ rightOffset: FOLLOW_RIGHT_PAD })
+        ts.applyOptions({ rightOffset: FOLLOW_RIGHT_PAD, barSpacing: barSpacingRef.current })
         ts.setVisibleLogicalRange({
           from: to - span,
           to,
         })
+        ts.applyOptions({ barSpacing: barSpacingRef.current })
       }
 
       didFitRef.current = true
@@ -1552,8 +1562,8 @@ function SimulationDeskInner() {
           if (showIbBreakoutsRef.current && ib) {
             const pts = ibLineSeriesData(ib, extendTo)
             try {
-              ibs.high.setData(shiftBand(pts.high.map((p) => ({ time: p.time, value: p.value }))))
-              ibs.low.setData(shiftBand(pts.low.map((p) => ({ time: p.time, value: p.value }))))
+              ibs.high.setData(shiftBand(axisLabelSeriesData(pts.high.map((p) => ({ time: p.time, value: p.value })))))
+              ibs.low.setData(shiftBand(axisLabelSeriesData(pts.low.map((p) => ({ time: p.time, value: p.value })))))
               setIbShaped(true)
             } catch {
               ibs.high.setData([])
@@ -1575,8 +1585,8 @@ function SimulationDeskInner() {
           if (showOr30Ref.current && or30) {
             const pts = or30LineSeriesData(or30, extendTo)
             try {
-              ors.high.setData(shiftBand(pts.high.map((p) => ({ time: p.time, value: p.value }))))
-              ors.low.setData(shiftBand(pts.low.map((p) => ({ time: p.time, value: p.value }))))
+              ors.high.setData(shiftBand(axisLabelSeriesData(pts.high.map((p) => ({ time: p.time, value: p.value })))))
+              ors.low.setData(shiftBand(axisLabelSeriesData(pts.low.map((p) => ({ time: p.time, value: p.value })))))
               setOr30Shaped(true)
             } catch {
               ors.high.setData([])
@@ -1602,9 +1612,9 @@ function SimulationDeskInner() {
             if (showLunchRangeRef.current && lunch) {
               const pts = nycLunchLineSeriesData(lunch, extendTo, { showMid: true })
               try {
-                lns.high.setData(shiftBand(pts.high))
-                lns.low.setData(shiftBand(pts.low))
-                lns.mid.setData(shiftBand(pts.mid))
+                lns.high.setData(shiftBand(axisLabelSeriesData(pts.high)))
+                lns.low.setData(shiftBand(axisLabelSeriesData(pts.low)))
+                lns.mid.setData(shiftBand(axisLabelSeriesData(pts.mid)))
                 setLunchShaped(true)
               } catch {
                 lns.high.setData([])
@@ -1637,8 +1647,8 @@ function SimulationDeskInner() {
             if (showUsRangeRef.current && us) {
               const pts = nikkeiUsRangeLineSeriesData(us, extendTo)
               try {
-                uss.high.setData(shiftBand(pts.high))
-                uss.low.setData(shiftBand(pts.low))
+                uss.high.setData(shiftBand(axisLabelSeriesData(pts.high)))
+                uss.low.setData(shiftBand(axisLabelSeriesData(pts.low)))
                 setUsRangeShaped(true)
               } catch {
                 uss.high.setData([])
@@ -2081,6 +2091,8 @@ function SimulationDeskInner() {
     strategyRange: StrategyRangeEdges | null
     /** Entry-eligible ±10 candidates (bucket open / active playbook) for price attribution. */
     shapedRanges: StrategyRangeEdges[]
+    /** Visible study ±10 (R / B / N / U). Paint uses this; snap may still add active. */
+    paintRanges: StrategyRangeEdges[]
     /** Visible + active-playbook ±10 (CALL governs which edge is legal). */
     snapRanges: StrategyRangeEdges[]
     ladder: ReturnType<typeof attemptLadderFromCounts>
@@ -2132,7 +2144,7 @@ function SimulationDeskInner() {
       }),
       swing
     )
-    // Sim has no Level Finder — always snap/paint the locked playbook range.
+    // Snap the locked playbook range without the study toggle. Paint stays toggle-gated.
     const snapRanges = studyEntrySnapRanges({
       active: preferred,
       overlays,
@@ -2168,6 +2180,7 @@ function SimulationDeskInner() {
     return {
       strategyRange,
       shapedRanges: snapRanges,
+      paintRanges: overlays,
       snapRanges,
       ladder,
       strategyMagnets: {
@@ -2679,6 +2692,7 @@ function SimulationDeskInner() {
       title: string
       style: LineStyle
       width: 1 | 2 | 3 | 4
+      lineVisible?: boolean
     }> = []
 
     if (riskBox) {
@@ -2755,21 +2769,21 @@ function SimulationDeskInner() {
       )
     }
 
-    // Mirror live ±10 entry band edges for all entry-eligible overlays
-    // (H / 50% / L, or H / L only for US Range) — not only the active playbook.
+    // Mirror live ±10 entry band edges for toggled studies only
+    // (H / 50% / L, or H / L only for US Range) — click R / B / N / U to show.
     const entryOpen =
       !position &&
       !pending &&
       simNowRef.current >= openUnix &&
       attemptsUsedRef.current < MAX_DAY_ATTEMPTS
     if (entryOpen || pending || riskBox) {
-      const { snapRanges, call } = getStrategyRiskBundle()
+      const { paintRanges, call } = getStrategyRiskBundle()
       const allowed = ticketAllowedEdges({
         useCall: useCallRef.current,
         call,
       })
       if (allowed == null || allowed.length > 0) {
-      for (const strategyRange of snapRanges) {
+      for (const strategyRange of paintRanges) {
         if (!(strategyRange.high > strategyRange.low)) continue
         const bands = filterRangeEdgeBands(rangeEdgeBands(strategyRange), allowed)
         const label = strategyRange.label || 'range'
@@ -2793,22 +2807,20 @@ function SimulationDeskInner() {
                   : 'rgba(52, 211, 153, 0.35)'
           const tag =
             band.edge === 'mid' ? '50%' : band.edge === 'high' ? 'H' : 'L'
-          specs.push(
-            {
-              price: band.max,
-              color,
-              title: `±${RANGE_EDGE_BAND_POINTS} ${label} ${tag}+`,
-              style: LineStyle.SparseDotted,
-              width: 1,
-            },
-            {
-              price: band.min,
-              color,
-              title: `±${RANGE_EDGE_BAND_POINTS} ${label} ${tag}−`,
-              style: LineStyle.SparseDotted,
-              width: 1,
-            }
-          )
+          const price =
+            band.edge === 'high'
+              ? strategyRange.high
+              : band.edge === 'low'
+                ? strategyRange.low
+                : (strategyRange.high + strategyRange.low) / 2
+          specs.push({
+            price,
+            color,
+            title: `${label} ${tag}`,
+            style: LineStyle.SparseDotted,
+            width: 1,
+            lineVisible: false,
+          })
         }
       }
       }
@@ -2822,16 +2834,24 @@ function SimulationDeskInner() {
         posLinesRef.current.push(
           host.createPriceLine({
             price: s.price,
-            color: s.color,
+            color: s.lineVisible === false ? 'rgba(0,0,0,0)' : s.color,
+            axisLabelColor: s.color,
+            axisLabelTextColor: '#f8fafc',
             lineWidth: s.width,
             lineStyle: s.style,
             axisLabelVisible: true,
+            lineVisible: s.lineVisible ?? true,
             title: s.title,
           })
         )
       } catch {
         /* ignore */
       }
+    }
+    try {
+      chartRef.current?.timeScale().applyOptions({ barSpacing: barSpacingRef.current })
+    } catch {
+      /* ignore */
     }
   }, [
     position,

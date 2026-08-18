@@ -57,6 +57,16 @@ assert.ok(live.includes('deskVisibleLogicalRange(ordered.length, width)'), 'live
 assert.ok(live.includes('loadDeskViewport(instrument, ordered.length, width)'), 'refresh restores pan/zoom')
 assert.ok(live.includes('resolveClockedChartInstrument'), 'clocked name wins over remembered DOW tab')
 assert.ok(live.includes('ibLineSeriesData(ib, tipUnix)'), 'live IB ends at latest bar')
+assert.ok(live.includes('axisLabelSeriesData'), 'live range H/L is right-scale only')
+assert.ok(sim.includes('axisLabelSeriesData'), 'sim range H/L is right-scale only')
+assert.ok(live.includes('lineVisible: false'), 'live ±10 bands are axis labels only')
+assert.ok(sim.includes('lineVisible: false'), 'sim ±10 bands are axis labels only')
+assert.ok(live.includes("color: 'rgba(0,0,0,0)'"), 'live range ±10 stroke is invisible')
+assert.ok(live.includes('axisLabelColor: s.color'), 'live range ±10 keeps the right-scale tag')
+assert.ok(!live.includes('entryLive ? 3 : 1'), 'live IB ±10 is not a thick spanning line')
+assert.ok(live.includes('keepDeskBarSpacing'), 'range unlock does not shrink candle width')
+assert.ok(live.includes('title: `${label} H`'), 'live range tags are one H/L/mid label')
+assert.ok(sim.includes('paintRanges: overlays'), 'sim ±10 paint is toggle-gated')
 assert.ok(!live.includes('Math.max(tipUnix, closeUnix)'), 'live IB adds no future close point')
 assert.ok(
   live.includes('late clock-in still has a calculated OR30'),
