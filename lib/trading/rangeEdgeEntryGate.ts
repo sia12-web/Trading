@@ -8,7 +8,7 @@ export const RANGE_EDGE_BAND_POINTS = 10
 
 /** Chart / fillError copy when a limit lands outside painted ±10 H/L bands. */
 export const RANGE_EDGE_OFF_BAND_MESSAGE =
-  'Entry only at highlighted ±10 H/L.'
+  'Entry only at highlighted ±10 H / L.'
 
 /** 50% mid (±10 of equilibrium) is never a legal entry. */
 export const RANGE_EDGE_MID_REJECTED_MESSAGE =
@@ -444,7 +444,7 @@ export function assertRangeEdgeEntry(args: {
       }
       return {
         ok: false,
-        message: `Entry only at highlighted ±10 ${rangeEdgeBandLegend(range)}.`,
+        message: RANGE_EDGE_OFF_BAND_MESSAGE,
       }
     }
     return { ok: false, message: RANGE_EDGE_OFF_BAND_MESSAGE }

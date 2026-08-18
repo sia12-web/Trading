@@ -69,7 +69,7 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
   if (!midOk.ok) assert.equal(midOk.message, RANGE_EDGE_US_MID_REJECTED_MESSAGE)
   const bad = assertRangeEdgeEntry({ entry: 39970, range })
   assert.equal(bad.ok, false)
-  if (!bad.ok) assert.match(bad.message, /highlighted ±10 H\/L/i)
+  if (!bad.ok) assert.match(bad.message, /highlighted ±10 H \/ L/i)
   const missing = assertRangeEdgeEntry({ entry: 40000, range: null })
   assert.equal(missing.ok, false)
 }
