@@ -12,7 +12,7 @@ import { errorToast, successToast } from '@/lib/utils/toastUtils'
 import type { WorkingLimitStatus } from '@/types/positionManagement'
 import { entrySourceLabel, entrySourceTone } from '@/lib/trading/entrySourceBadge'
 import { formatDeskMoney } from '@/lib/trading/currency'
-import { setDeskInstrumentPreference } from '@/lib/trading/deskInstrumentPreference'
+import { parseDeskInstrument, setDeskInstrumentPreference } from '@/lib/trading/deskInstrumentPreference'
 
 interface Props {
   working: WorkingLimitStatus
@@ -187,7 +187,10 @@ export function WorkingLimitCard({ working, viewingInstrument, onCancelled }: Pr
       <div className="flex flex-wrap items-center gap-2 border-t border-[#30363d] bg-[#0d1117]/60 px-5 py-4">
         <Link
           href={chartHref}
-          onClick={() => setDeskInstrumentPreference(working.instrument)}
+          onClick={() => {
+            const inst = parseDeskInstrument(working.instrument)
+            if (inst) setDeskInstrumentPreference(inst)
+          }}
           className="rounded-lg bg-brand-600 px-4 py-2 text-xs font-semibold text-white hover:bg-brand-500"
         >
           View on chart

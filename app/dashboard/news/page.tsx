@@ -1,13 +1,12 @@
 'use client'
 
 /**
- * Desk news — Finnhub headlines + calendar for DOW / NASDAQ / NIKKEI.
+ * Desk news — Finnhub headlines + calendar for DOW / NASDAQ.
  * Optional Haiku impact briefs (on demand). Context only.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { liveFocusMarket } from '@/lib/trading/sessionGate'
 import type {
   DeskCalendarEvent,
   DeskNewsCard,
@@ -48,7 +47,6 @@ const TABS: { id: DeskTab; label: string }[] = [
   { id: 'ALL', label: 'All desks' },
   { id: 'DOW', label: 'DOW' },
   { id: 'NASDAQ', label: 'NASDAQ' },
-  { id: 'NIKKEI', label: 'NIKKEI' },
 ]
 
 const WINDOWS: DeskNewsWindowHours[] = [2, 12, 24]
@@ -108,13 +106,7 @@ function cardToPayload(card: DeskNewsCard) {
 }
 
 export default function DeskNewsPage() {
-  const [tab, setTab] = useState<DeskTab>(() => {
-    try {
-      return liveFocusMarket() === 'TOKYO' ? 'NIKKEI' : 'DOW'
-    } catch {
-      return 'DOW'
-    }
-  })
+  const [tab, setTab] = useState<DeskTab>('DOW')
   const [windowHours, setWindowHours] = useState<DeskNewsWindowHours>(12)
   const [sessionFilter, setSessionFilter] = useState(true)
   const [data, setData] = useState<NewsPayload | null>(null)
@@ -289,7 +281,7 @@ export default function DeskNewsPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-white">Desk News</h1>
           <p className="mt-1 text-sm text-gray-400 max-w-xl leading-relaxed">
-            Catalysts that can move DOW, NASDAQ, and NIKKEI — including Korea→US
+            Catalysts that can move DOW and NASDAQ — including Korea→US
             transmission. Haiku briefs on demand. Context only, not entries.
           </p>
         </div>

@@ -15,10 +15,11 @@ import {
 } from '@/lib/trading/deskAttendance'
 import {
   deskMarketFor,
-  isDeskInstrument,
+  isNyDeskInstrument,
   type DeskInstrument,
   type DeskMarket,
 } from '@/lib/trading/sessionGate'
+import { LIVE_CLOCK_REFUSE } from '@/lib/trading/liveDeskBook'
 import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
@@ -37,12 +38,16 @@ export async function POST(request: NextRequest) {
       /* empty body ok */
     }
 
-    const instrument = isDeskInstrument(body.instrument || '')
+    const instrument = isNyDeskInstrument(body.instrument || '')
       ? (body.instrument as DeskInstrument)
       : null
 
+    if (body.market === 'TOKYO' || body.instrument === 'NIKKEI') {
+      return NextResponse.json({ error: LIVE_CLOCK_REFUSE }, { status: 403 })
+    }
+
     let market: DeskMarket | null = null
-    if (body.market === 'NY' || body.market === 'TOKYO') {
+    if (body.market === 'NY') {
       market = body.market
     } else if (instrument) {
       market = deskMarketFor(instrument)

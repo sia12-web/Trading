@@ -228,9 +228,9 @@ for (const inst of ['DOW', 'NASDAQ'] as const) {
     attemptsUsed: 0,
     stopLossHitCount: 0,
   })
-  assert(gate.phase === 'ENTRY', `NIKKEI afternoon still IB entry got ${gate.phase}`)
-  assert(gate.canPlaceEntry === false, 'NIKKEI no entry')
-  assert(gate.market === 'TOKYO', 'NIKKEI market TOKYO')
+  assert(gate.market === 'NY', 'live NIKKEI lock ignored — stays NY')
+  assert(gate.lockedInstrument !== 'NIKKEI', 'NIKKEI lock dropped')
+  assert(!gate.allowedInstruments.includes('NIKKEI'), 'no live NIKKEI')
 }
 
 // Morning entry still works when clocked in
@@ -249,17 +249,16 @@ for (const inst of ['DOW', 'NASDAQ'] as const) {
 }
 
 {
-  const gate = resolveSessionGate({
+  const gate = resolveSimMorningGate({
     now: jstDate(Y, M, D, 9, 20),
-    lockedInstrument: 'NIKKEI',
-    viewingInstrument: 'NIKKEI',
-    clockedIn: true,
-    attendedToday: true,
+    instrument: 'NIKKEI',
+    hasOpenPosition: false,
     attemptsUsed: 0,
-    stopLossHitCount: 0,
+    stopHits: 0,
   })
-  assert(gate.phase === 'ENTRY', `NIKKEI morning ENTRY got ${gate.phase}`)
-  assert(gate.canPlaceEntry === true, 'NIKKEI can place in entry window')
+  assert(gate.phase === 'ENTRY', `NIKKEI sim morning ENTRY got ${gate.phase}`)
+  assert(gate.canPlaceEntry === true, 'NIKKEI sim can place in entry window')
+  assert(gate.market === 'TOKYO', 'sim NIKKEI stays Tokyo')
 }
 
 // Sim afternoon: lunch-range unlock when morning + IB skipped

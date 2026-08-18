@@ -190,13 +190,13 @@ export function TradeifyProgressPanel({ compact = false }: { compact?: boolean }
           </div>
 
           {!compact && snap.byInstrument && (
-            <div className="mt-4 grid grid-cols-3 gap-2 text-[11px]">
-              {(['NIKKEI', 'NASDAQ', 'DOW'] as const).map((inst) => {
+            <div className="mt-4 grid grid-cols-2 gap-2 text-[11px]">
+              {(['NASDAQ', 'DOW'] as const).map((inst) => {
                 const row = snap.byInstrument![inst]
                 return (
                   <div key={inst} className="rounded-lg border border-white/10 px-2 py-1.5">
                     <p className="text-[10px] font-semibold text-gray-400">
-                      {inst === 'DOW' ? 'E-mini Dow' : inst === 'NASDAQ' ? 'E-mini Nasdaq' : 'Nikkei USD'}
+                      {inst === 'DOW' ? 'E-mini Dow' : 'E-mini Nasdaq'}
                     </p>
                     <p className="text-white">
                       {row.fills} fill{row.fills === 1 ? '' : 's'} · {money(row.pnl)}

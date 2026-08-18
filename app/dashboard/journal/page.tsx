@@ -336,6 +336,10 @@ function JournalPageInner() {
   const lostMoney = equityChange < 0
   const isSim = tab === 'sim'
 
+  useEffect(() => {
+    if (!isSim && instrument === 'NIKKEI') setInstrument('ALL')
+  }, [isSim, instrument])
+
   return (
     <div className="min-h-screen bg-[#0d1117] text-gray-200">
       <div className="mx-auto max-w-5xl px-4 py-8 space-y-6">
@@ -393,7 +397,7 @@ function JournalPageInner() {
               🎙️ Voice Chat Journal
             </button>
           </div>
-          {(['ALL', 'DOW', 'NASDAQ', 'NIKKEI'] as Instrument[]).map((inst) => (
+          {(['ALL', 'DOW', 'NASDAQ', ...(isSim ? (['NIKKEI'] as const) : [])] as Instrument[]).map((inst) => (
             <button
               key={inst}
               type="button"

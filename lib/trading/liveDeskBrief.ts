@@ -1,6 +1,7 @@
 /**
- * Live / late desk brief — ranks DOW · NASDAQ · NIKKEI on what is still
+ * Live / late desk brief — ranks DOW · NASDAQ on what is still
  * tradeable NOW vs dead. Rules-first from clocks, ladder, shaped ranges.
+ * Nikkei is Simulation-only and is not ranked on the live brief.
  * Used by the live chart late-join overlay and Telegram Late Desk Brief.
  */
 
@@ -498,12 +499,10 @@ function buildBullets(
   const bullets: string[] = []
   const ny = cards.find((c) => c.instrument === 'DOW')
   const nas = cards.find((c) => c.instrument === 'NASDAQ')
-  const nik = cards.find((c) => c.instrument === 'NIKKEI')
 
   const overnight =
     factsByInst.get('DOW')?.overnightNote ||
-    factsByInst.get('NASDAQ')?.overnightNote ||
-    factsByInst.get('NIKKEI')?.overnightNote
+    factsByInst.get('NASDAQ')?.overnightNote
   if (overnight) {
     bullets.push(`Overnight / bias: ${overnight}`)
   } else {
@@ -512,7 +511,7 @@ function buildBullets(
     )
   }
 
-  for (const card of [ny, nas, nik].filter(Boolean) as InstrumentDeskCard[]) {
+  for (const card of [ny, nas].filter(Boolean) as InstrumentDeskCard[]) {
     const or30 = card.books.find((b) => b.label === 'OR30')
     if (or30?.state === 'dead') {
       bullets.push(`${card.instrument}: OR30 closed — do not enter.`)
@@ -525,7 +524,7 @@ function buildBullets(
 
   const live = cards.filter((c) => c.tradeableNow)
   if (live.length === 0) {
-    bullets.push('Nothing left to trade across DOW / NASDAQ / NIKKEI — sit out.')
+    bullets.push('Nothing left to trade across DOW / NASDAQ — sit out.')
   } else {
     bullets.push(
       `Still live: ${live.map((c) => `${c.instrument} ${c.openBook}`).join(', ')}.`
@@ -547,12 +546,7 @@ function buildSuggestion(
   const pool = scoped.length > 0 ? scoped : cards
   const best = pool.find((c) => c.tradeableNow && c.openBook)
   if (!best || !best.openBook) {
-    const desk =
-      focusMarket === 'TOKYO'
-        ? 'NIKKEI'
-        : focusMarket === 'NY'
-          ? 'DOW / NASDAQ'
-          : 'DOW / NASDAQ / NIKKEI'
+    const desk = 'DOW / NASDAQ'
     return {
       kind: 'sit_out',
       text: `Sit out — no eligible open books on ${desk} right now. Dead ranges stay closed; wait for the next unlock or next session.`,
@@ -569,7 +563,7 @@ function buildSuggestion(
 }
 
 /**
- * Rank DOW / NASDAQ / NIKKEI for the late / live desk brief.
+ * Rank DOW / NASDAQ for the late / live desk brief. Nikkei is Simulation-only.
  */
 export function buildLiveDeskBrief(
   factsList: InstrumentBriefFacts[],
@@ -577,9 +571,12 @@ export function buildLiveDeskBrief(
   focusMarket: DeskMarket | 'ALL' = 'ALL'
 ): LiveDeskBrief {
   const factsByInst = new Map<DeskInstrument, InstrumentBriefFacts>()
-  for (const f of factsList) factsByInst.set(f.instrument, f)
+  for (const f of factsList) {
+    if (f.instrument === 'NIKKEI') continue
+    factsByInst.set(f.instrument, f)
+  }
 
-  const instruments: DeskInstrument[] = ['DOW', 'NASDAQ', 'NIKKEI']
+  const instruments: DeskInstrument[] = ['DOW', 'NASDAQ']
   const cards = instruments.map((instrument) =>
     buildInstrumentDeskCard(
       factsByInst.get(instrument) ?? { instrument },
@@ -588,8 +585,8 @@ export function buildLiveDeskBrief(
   )
   cards.sort((a, b) => b.rankScore - a.rankScore || a.instrument.localeCompare(b.instrument))
 
-  // Focus desk cards first in the ranked list (still show all three for Live Trading).
-  if (focusMarket === 'NY' || focusMarket === 'TOKYO') {
+  // Focus desk cards first in the ranked list (NY names only).
+  if (focusMarket === 'NY') {
     cards.sort((a, b) => {
       const aFocus = a.market === focusMarket ? 1 : 0
       const bFocus = b.market === focusMarket ? 1 : 0

@@ -4,7 +4,7 @@
  * Chart Page — live desk: morning trading; afternoon chart continues (read-only).
  * Flow: place WORKING limit → wait for fill → then MANAGE (morning only).
  * NY:  DOW/NASDAQ  9:30–11:30 ET trade / chart through 16:00
- * Tokyo: NIKKEI    9:00–11:30 JST trade / chart through 15:00
+ * Nikkei stays on Simulation — not a live desk.
  */
 
 import Link from 'next/link'
@@ -132,9 +132,7 @@ function entryDeniedMessage(gate: SessionGateState | null | undefined): string |
       return gate.message.trim()
     }
     if (gate.phase === 'FLAT') {
-      return gate.market === 'TOKYO'
-        ? 'Entry window closed — wait for US Range or Tokyo IB unlock (if still eligible).'
-        : 'Entry window closed — wait for IB or lunch-range unlock (if still eligible).'
+      return 'Entry window closed — wait for IB or lunch-range unlock (if still eligible).'
     }
     if (gate.phase === 'DONE') {
       return 'Entry windows done for today — manage if open, no new entries.'
@@ -209,6 +207,10 @@ import { MorningLunchFlatConfirm } from './components/MorningLunchFlatConfirm'
 
 type Instrument = DeskInstrumentPref
 
+function asLiveNy(i: string | null | undefined): Instrument {
+  return i === 'NASDAQ' ? 'NASDAQ' : 'DOW'
+}
+
 interface PositionOverlay {
   entryPrice: number
   stopLoss: number
@@ -227,18 +229,19 @@ export default function ChartPage() {
   const gateRef = useRef<SessionGateState | null>(null)
 
   /** User tab click — persist unclocked browse or the clocked name */
-  const setInstrument = useCallback((i: Instrument) => {
-    setInstrumentState(i)
+  const setInstrument = useCallback((i: string) => {
+    const next = asLiveNy(i)
+    setInstrumentState(next)
     const g = gateRef.current
     const locked = g?.lockedInstrument
-    if (!g?.clockedIn || !locked || i === locked) {
-      setDeskInstrumentPreference(i)
+    if (!g?.clockedIn || !locked || next === locked) {
+      setDeskInstrumentPreference(next)
     }
   }, [])
 
   /** Gate/lock sync — update view only, do not clobber saved preference */
-  const syncInstrument = useCallback((i: Instrument) => {
-    setInstrumentState(i)
+  const syncInstrument = useCallback((i: string) => {
+    setInstrumentState(asLiveNy(i))
   }, [])
 
   useEffect(() => {
@@ -274,8 +277,8 @@ export default function ChartPage() {
       if (gate && !gate.clockedIn) saveDeskClockLock(null)
       return
     }
-    saveDeskClockLock(locked)
-    setInstrumentState(locked)
+    saveDeskClockLock(asLiveNy(locked))
+    setInstrumentState(asLiveNy(locked))
   }, [gate?.clockedIn, gate?.lockedInstrument])
   const [orderLevel, setOrderLevel] = useState<number | null>(null)
   const [orderLevelType, setOrderLevelType] = useState<string | undefined>()
@@ -726,8 +729,9 @@ export default function ChartPage() {
     prevCanPlaceRef.current = !!g.canPlaceEntry
 
     // Session START = cash open (live bars unlock). Session END = cash close wall-clock.
-    const inst = (g.lockedInstrument ||
-      (g.market === 'TOKYO' ? 'NIKKEI' : null)) as DeskInstrument | null
+    const inst = (g.lockedInstrument && g.lockedInstrument !== 'NIKKEI'
+      ? g.lockedInstrument
+      : null) as DeskInstrument | null
     const fetchLive = !!g.clockedIn && !!g.canFetchLiveBars
     const pastClose =
       !!inst &&
@@ -745,9 +749,7 @@ export default function ChartPage() {
           g.rangeStrategy === 'us_range'
             ? 'US Range'
             : g.rangeStrategy === 'ib'
-              ? g.lockedInstrument === 'NIKKEI'
-                ? 'Tokyo IB'
-                : 'IB'
+              ? 'IB'
               : g.rangeStrategy === 'lunch_range'
                 ? 'Lunch-range'
                 : 'Morning (OR30)'
@@ -760,9 +762,7 @@ export default function ChartPage() {
           g.rangeStrategy === 'us_range'
             ? 'US Range'
             : g.rangeStrategy === 'ib'
-              ? g.lockedInstrument === 'NIKKEI'
-                ? 'Tokyo IB'
-                : 'IB'
+              ? 'IB'
               : g.rangeStrategy === 'lunch_range'
                 ? 'Lunch-range'
                 : 'Morning (OR30)'
@@ -875,7 +875,7 @@ export default function ChartPage() {
       return
     }
     let cancelled = false
-    const focus = gate.market === 'TOKYO' ? 'TOKYO' : 'NY'
+    const focus = 'NY'
     const load = (isRefresh: boolean) => {
       if (!isRefresh) setLiveBriefLoading(true)
       setLiveBriefError(null)
@@ -2105,7 +2105,7 @@ export default function ChartPage() {
                   setPending(null)
                   setFillError(null)
                   setOrderStatus('idle')
-                  void cancelWorkingLimit(inst)
+                  void cancelWorkingLimit(asLiveNy(inst))
                 }}
                 className="ml-auto rounded border border-sky-600/50 px-2 py-1 text-[10px] font-semibold uppercase text-sky-200 hover:bg-sky-900/50"
               >

@@ -79,8 +79,6 @@ async function resolveInstrument(
     return fromAttendance
   }
 
-  if (focus === 'TOKYO') return 'NIKKEI'
-
   const todayNy = getESTDateString()
   const { data: rec } = await supabase
     .from('market_recommendations')

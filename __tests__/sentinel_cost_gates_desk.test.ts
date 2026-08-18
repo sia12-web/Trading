@@ -255,20 +255,22 @@ test('Peer tape prompt rules forbid foreign prices / S&P', () => {
 
 // ── Focus tabs / browse ──────────────────────────────────────────────────────
 
-test('NY focus hides NIKKEI; after close all three', () => {
+test('NY focus hides NIKKEI; after close still NY names only', () => {
   const am = liveVisibleInstruments(etDate(10, 0))
   assert(am.includes('DOW') && am.includes('NASDAQ'), 'NY names')
   assert(!am.includes('NIKKEI'), 'NIKKEI hidden')
   const eve = liveVisibleInstruments(etDate(17, 0))
-  assert(eve.length === 3, 'browse all after close')
+  assert(!eve.includes('NIKKEI'), 'no NIKKEI after close')
+  assert(eve.includes('DOW') && eve.includes('NASDAQ'), 'NY names after close')
 })
 
-test('Tokyo focus: NIKKEI only', () => {
+test('Tokyo hours: live still NY — never NIKKEI-only tabs', () => {
   const v = liveVisibleInstruments(jstDate(10, 0))
-  assert(v.length === 1 && v[0] === 'NIKKEI', `got ${v.join(',')}`)
+  assert(!v.includes('NIKKEI'), `got ${v.join(',')}`)
+  assert(v.includes('DOW') && v.includes('NASDAQ'), 'NY names overnight')
 })
 
-test('Gate browse NIKKEI after NY close → Tokyo message not NY next-desk', () => {
+test('Gate viewing NIKKEI after NY close snaps to NY — next desk is NY', () => {
   const gate = resolveSessionGate({
     now: etDate(17, 0),
     lockedInstrument: 'DOW',
@@ -276,9 +278,10 @@ test('Gate browse NIKKEI after NY close → Tokyo message not NY next-desk', () 
     clockedIn: false,
     attendedToday: true,
   })
-  assert(gate.market === 'TOKYO', 'market TOKYO')
-  assert(!/Next NY desk|9:15 Montreal/i.test(gate.message), gate.message)
-  assert(/Tokyo|Montreal|NIKKEI|Pre-session/i.test(gate.message), gate.message)
+  assert(gate.market === 'NY', 'market NY')
+  assert(!gate.allowedInstruments.includes('NIKKEI'), 'no live NIKKEI')
+  assert(/Next NY desk|NY tip|Cash closed|Simulation/i.test(gate.message), gate.message)
+  assert(!/clock in then to trade NIKKEI|Next Tokyo desk/i.test(gate.message), gate.message)
 })
 
 // ── Level Finder model quality (not cut for cost) ────────────────────────────

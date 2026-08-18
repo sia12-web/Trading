@@ -1,6 +1,6 @@
 /**
  * Server-side Live Desk Brief — loads OANDA playbook ranges + optional
- * overnight regime for DOW / NASDAQ / NIKKEI.
+ * overnight regime for DOW / NASDAQ.
  */
 
 import { createClient } from '@/lib/supabase/server'
@@ -14,22 +14,14 @@ import type { DeskInstrument, DeskMarket } from '@/lib/trading/sessionGate'
 import { getESTDateString } from '@/lib/utils/timeUtils'
 import { logger } from '@/lib/utils/logger'
 
-const ALL: DeskInstrument[] = ['DOW', 'NASDAQ', 'NIKKEI']
+const ALL: DeskInstrument[] = ['DOW', 'NASDAQ']
 
 async function overnightNoteFor(
   instrument: DeskInstrument
 ): Promise<string | null> {
   try {
     const supabase = await createClient()
-    const date =
-      instrument === 'NIKKEI'
-        ? new Intl.DateTimeFormat('en-CA', {
-            timeZone: 'Asia/Tokyo',
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-          }).format(new Date())
-        : getESTDateString()
+    const date = getESTDateString()
     const { data } = await supabase
       .from('regime_cache')
       .select('regime, regime_confidence, gap_percent')
@@ -89,7 +81,7 @@ async function factsForInstrument(
   }
 }
 
-/** Build ranked live desk brief for all three instruments. */
+/** Build ranked live desk brief for NY names. */
 export async function loadLiveDeskBrief(args?: {
   now?: Date
   focusMarket?: DeskMarket | 'ALL'

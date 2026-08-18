@@ -1,12 +1,13 @@
 /**
- * Remember the live desk instrument across refresh (DOW / NASDAQ / NIKKEI).
+ * Remember the live desk instrument across refresh (DOW / NASDAQ).
  * Clock-in lock owns the *view* while active. Preference is only for unclocked
  * browse — a remembered DOW tab must not hide a NASDAQ clock-in (MYM ~53k vs MNQ ~30k).
+ * Persisted NIKKEI is ignored (live desk is NYC only; Nikkei stays on Simulation).
  */
 
 import { DESK_BAR_SPACING } from '../chart/deskChartTheme'
 
-export type DeskInstrumentPref = 'DOW' | 'NASDAQ' | 'NIKKEI'
+export type DeskInstrumentPref = 'DOW' | 'NASDAQ'
 
 const STORAGE_KEY = 'tradepulse.desk.instrument'
 
@@ -15,7 +16,7 @@ export function parseDeskInstrument(
 ): DeskInstrumentPref | null {
   if (!value) return null
   const u = value.trim().toUpperCase()
-  if (u === 'DOW' || u === 'NASDAQ' || u === 'NIKKEI') return u
+  if (u === 'DOW' || u === 'NASDAQ') return u
   return null
 }
 

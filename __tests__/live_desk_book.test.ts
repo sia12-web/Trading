@@ -134,6 +134,26 @@ const skipNikkeiAi = shouldRunLiveAiForInstrument('NIKKEI', now, {
 })
 assert.equal(skipNikkeiAi.ok, false)
 
+const nikkeiLockIgnored = liveVisibleInstruments(etDate(10, 0), {
+  lockedInstrument: 'NIKKEI',
+  clockedIn: true,
+  attendedToday: true,
+})
+assert.ok(!nikkeiLockIgnored.includes('NIKKEI'))
+assert.deepEqual(nikkeiLockIgnored, ['DOW', 'NASDAQ'])
+
+const tokyoHours = new Date(Date.UTC(2026, 6, 15, 0, 30, 0)) // 09:30 JST
+assert.ok(!liveVisibleInstruments(tokyoHours).includes('NIKKEI'))
+const tokyoGate = resolveSessionGate({
+  now: tokyoHours,
+  viewingInstrument: 'NIKKEI',
+  lockedInstrument: 'NIKKEI',
+  clockedIn: false,
+  attendedToday: false,
+})
+assert.equal(tokyoGate.market, 'NY')
+assert.ok(!tokyoGate.allowedInstruments.includes('NIKKEI'))
+
 // Tight stop: 1 NQ would match $400 exactly; live book must still print MNQ.
 const tight = buildTradovateMirrorTicket({
   instrument: 'NASDAQ',

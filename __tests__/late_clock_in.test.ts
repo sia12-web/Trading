@@ -241,7 +241,9 @@ assert(/DOW|NASDAQ/i.test(nyFocus.suggestion.text), nyFocus.suggestion.text)
 if (nyFocus.suggestion.kind === 'trade') {
   throw new Error('must not suggest trade off-focus')
 }
-const nikkeiCard = nyFocus.instruments.find((c) => c.instrument === 'NIKKEI')
-assert(nikkeiCard?.tradeableNow === true, 'NIKKEI still ranked as live for awareness')
+assert(
+  !nyFocus.instruments.some((c) => c.instrument === 'NIKKEI'),
+  'live brief does not rank NIKKEI'
+)
 
 console.log('late_clock_in: all passed')

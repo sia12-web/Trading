@@ -5,6 +5,7 @@
 
 import {
   resolveSessionGate,
+  resolveSimMorningGate,
   resolveRangeStrategy,
   NY_IB_STRATEGY_START,
   NY_IB_STRATEGY_END,
@@ -274,119 +275,83 @@ test('NY: lunch-range when morning + IB skipped; manage-only after 15:15; no PM 
   assert(afterLn.rangeStrategy === null, 'no lunch-range after 15:15')
 })
 
-test('Nikkei: US Range from cash open; IB to 15:00 JST', () => {
-  const early = resolveSessionGate({
-    lockedInstrument: 'NIKKEI',
-    viewingInstrument: 'NIKKEI',
-    clockedIn: true,
-    attendedToday: true,
-    attemptsUsed: 0,
-    stopLossHitCount: 0,
+test('Nikkei (simulation): US Range from cash open; IB to 15:00 JST', () => {
+  const early = resolveSimMorningGate({
+    instrument: 'NIKKEI',
     now: jstDate(2026, 7, 15, 9, 20),
+    attemptsUsed: 0,
+    stopHits: 0,
   })
   assert(early.canPlaceEntry === true, `Nikkei US Range at 09:20: ${early.message}`)
   assert(early.rangeStrategy === 'us_range', `got ${early.rangeStrategy}`)
   assert(!/OR30 forming/i.test(early.message), early.message)
 
-  const us = resolveSessionGate({
-    lockedInstrument: 'NIKKEI',
-    viewingInstrument: 'NIKKEI',
-    clockedIn: true,
-    attendedToday: true,
-    attemptsUsed: 0,
-    stopLossHitCount: 0,
+  const us = resolveSimMorningGate({
+    instrument: 'NIKKEI',
     now: jstDate(2026, 7, 15, 10, 30),
+    attemptsUsed: 0,
+    stopHits: 0,
   })
   assert(us.canPlaceEntry === true, `Nikkei US Range place: ${us.message}`)
   assert(us.rangeStrategy === 'us_range', `got ${us.rangeStrategy}`)
   assert(/US Range/i.test(us.message), us.message)
 
-  const ib = resolveSessionGate({
-    lockedInstrument: 'NIKKEI',
-    viewingInstrument: 'NIKKEI',
-    clockedIn: true,
-    attendedToday: true,
-    attemptsUsed: 0,
-    stopLossHitCount: 0,
+  const ib = resolveSimMorningGate({
+    instrument: 'NIKKEI',
     now: jstDate(2026, 7, 15, 14, 0),
+    attemptsUsed: 0,
+    stopHits: 0,
   })
   assert(ib.canPlaceEntry === true, `Nikkei IB: ${ib.message}`)
   assert(ib.rangeStrategy === 'ib', `got ${ib.rangeStrategy}`)
-})
 
-test('Nikkei: morning probe still allows US Range + IB after clocks (Option B)', () => {
-  const fills = [
-    {
-      instrument: 'NIKKEI',
-      entryTimestamp: jstDate(2026, 7, 15, 9, 10),
-      exitReason: 'stop_hit',
-    },
-  ]
-  const us = resolveSessionGate({
+  const liveSnap = resolveSessionGate({
     lockedInstrument: 'NIKKEI',
     viewingInstrument: 'NIKKEI',
     clockedIn: true,
     attendedToday: true,
-    attemptsUsed: 1,
-    stopLossHitCount: 1,
-    attemptFills: fills,
+    now: jstDate(2026, 7, 15, 9, 20),
+  })
+  assert(liveSnap.market === 'NY', 'live gate never becomes Tokyo')
+  assert(!liveSnap.allowedInstruments.includes('NIKKEI'), 'no live NIKKEI')
+})
+
+test('Nikkei (simulation): morning probe still allows US Range + IB after clocks (Option B)', () => {
+  const us = resolveSimMorningGate({
+    instrument: 'NIKKEI',
     now: jstDate(2026, 7, 15, 10, 30),
+    morningAttempts: 1,
+    stopHits: 1,
   })
   assert(us.revengeLocked === false, 'revenge always false')
   assert(us.canPlaceEntry === true, 'Nikkei US Range open after morning probe')
   assert(us.rangeStrategy === 'us_range', 'US Range after morning probe')
 
-  const ib = resolveSessionGate({
-    lockedInstrument: 'NIKKEI',
-    viewingInstrument: 'NIKKEI',
-    clockedIn: true,
-    attendedToday: true,
-    attemptsUsed: 1,
-    stopLossHitCount: 1,
-    attemptFills: fills,
+  const ib = resolveSimMorningGate({
+    instrument: 'NIKKEI',
     now: jstDate(2026, 7, 15, 14, 0),
+    morningAttempts: 1,
+    stopHits: 1,
   })
   assert(ib.canPlaceEntry === true, 'Nikkei IB open after morning probe + clocks')
   assert(ib.rangeStrategy === 'ib', 'IB after morning probe')
 })
 
-test('Nikkei: US Range probe still allows IB after mid clock (Option B)', () => {
-  const morningOnly = [
-    {
-      instrument: 'NIKKEI',
-      entryTimestamp: jstDate(2026, 7, 15, 9, 20),
-      exitReason: 'take_profit',
-    },
-  ]
-  const us = resolveSessionGate({
-    lockedInstrument: 'NIKKEI',
-    viewingInstrument: 'NIKKEI',
-    clockedIn: true,
-    attendedToday: true,
-    attemptsUsed: 1,
-    stopLossHitCount: 0,
-    attemptFills: morningOnly,
+test('Nikkei (simulation): US Range probe still allows IB after mid clock (Option B)', () => {
+  const us = resolveSimMorningGate({
+    instrument: 'NIKKEI',
     now: jstDate(2026, 7, 15, 10, 30),
+    morningAttempts: 1,
+    stopHits: 0,
   })
   assert(us.canPlaceEntry === true, `Nikkei US Range after morning: ${us.message}`)
   assert(us.rangeStrategy === 'us_range', 'US Range still open')
 
-  const afterUsOnly = [
-    {
-      instrument: 'NIKKEI',
-      entryTimestamp: jstDate(2026, 7, 15, 10, 25),
-      exitReason: 'take_profit',
-    },
-  ]
-  const ib = resolveSessionGate({
-    lockedInstrument: 'NIKKEI',
-    viewingInstrument: 'NIKKEI',
-    clockedIn: true,
-    attendedToday: true,
-    attemptsUsed: 1,
-    stopLossHitCount: 0,
-    attemptFills: afterUsOnly,
+  const ib = resolveSimMorningGate({
+    instrument: 'NIKKEI',
     now: jstDate(2026, 7, 15, 14, 0),
+    ibAttempts: 1,
+    stopHits: 0,
   })
   assert(ib.canPlaceEntry === true, 'US Range probe → IB still open after mid clock')
   assert(ib.rangeStrategy === 'ib', 'IB after US Range probe')

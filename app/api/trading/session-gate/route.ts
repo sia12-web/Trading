@@ -1,7 +1,7 @@
 /**
  * GET /api/trading/session-gate
  * Returns desk phase, locks, and trading permissions.
- * LIVE focus: one market at a time (Tokyo → NIKKEI only; NY → DOW/NASDAQ).
+ * LIVE focus: NY only (DOW/NASDAQ). Nikkei is Simulation.
  * NY 09:00–09:30: both DOW+NASDAQ visible; AI suggest at 09:15; hard lock only after clock-in.
  */
 
@@ -13,7 +13,6 @@ import { logger } from '@/lib/utils/logger'
 import {
   resolveSessionGate,
   isNyDeskInstrument,
-  isLiveDeskInstrument,
   liveFocusMarket,
   isAnyLiveFocusWindowActive,
   instrumentsForDeskMarket,
@@ -49,7 +48,7 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url)
     const viewingParam = searchParams.get('instrument')
-    const viewingInstrument = isLiveDeskInstrument(viewingParam || '')
+    const viewingInstrument = isNyDeskInstrument(viewingParam || '')
       ? (viewingParam as DeskInstrument)
       : null
 

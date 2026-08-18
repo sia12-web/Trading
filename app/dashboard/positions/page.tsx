@@ -37,7 +37,7 @@ import {
   deskLocalHmsAsTraderDisplay,
 } from '@/lib/chart/traderDisplayTz'
 
-const INSTRUMENTS: Instrument[] = ['DOW', 'NASDAQ', 'NIKKEI']
+const INSTRUMENTS: Instrument[] = ['DOW', 'NASDAQ']
 
 function mapWorkingRow(row: WorkingLimitRow & { id?: string }): WorkingLimitStatus {
   const p = workingRowToPending(row)

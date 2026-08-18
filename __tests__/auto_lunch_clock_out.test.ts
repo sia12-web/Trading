@@ -8,7 +8,7 @@ import {
   canReClockInNow,
   shouldRetainClockInAtLunch,
 } from '../lib/trading/deskAttendance'
-import { resolveSessionGate } from '../lib/trading/sessionGate'
+import { resolveSessionGate, resolveSimMorningGate } from '../lib/trading/sessionGate'
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(msg)
@@ -62,21 +62,21 @@ const reClock = canReClockInNow('TOKYO', ibPrep)
 assert(!reClock.ok, `live Tokyo re-clock off: ${reClock.reason}`)
 assert(/NYC only|Simulation/i.test(reClock.reason), reClock.reason)
 
-// Clocked-in banner copy during IB prep — prep message, not clocked-out
-const gate = resolveSessionGate({
+// Simulation banner copy during IB prep — live Tokyo clock-in is off
+const gate = resolveSimMorningGate({
   now: ibPrep,
-  lockedInstrument: 'NIKKEI',
-  viewingInstrument: 'NIKKEI',
-  clockedIn: true,
-  attendedToday: true,
-  attemptFills: fills,
+  instrument: 'NIKKEI',
+  hasOpenPosition: false,
+  morningAttempts: 2,
+  ibAttempts: 0,
+  lunchAttempts: 0,
+  stopHits: 0,
 })
 assert(gate.phase === 'ENTRY', `IB still open at 12:30 JST got ${gate.phase}`)
-assert(gate.clockedIn === true, 'still clocked in')
-assert(gate.canPlaceEntry === true, 'Tokyo IB entries still open')
+assert(gate.canPlaceEntry === true, 'Tokyo IB entries still open on sim')
 assert(
   !gate.message?.toLowerCase().includes('clocked out'),
-  'message must not say clocked out while clocked in'
+  'message must not say clocked out while sim IB is open'
 )
 
 // Session cap 3/3 on same desk day → auto clock-out allowed

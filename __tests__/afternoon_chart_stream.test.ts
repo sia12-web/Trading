@@ -165,7 +165,6 @@ assert(/Lunch-range playbook unlocked/i.test(afterIb.message), `after IB msg: ${
 for (const [inst, now] of [
   ['DOW', afternoonEt],
   ['NASDAQ', afternoonEt],
-  ['NIKKEI', new Date('2026-07-15T04:00:00.000Z')], // 13:00 JST
 ] as const) {
   const missed = resolveSessionGate({
     now,
@@ -205,7 +204,7 @@ assert(!/afternoon watch/i.test(gateClosed.message), 'no afternoon copy after ca
 assert(gateClosed.market === 'NY', 'DOW tab → NY market copy')
 assert(/NY desk|9:15 Montreal/i.test(gateClosed.message), `NY copy: ${gateClosed.message}`)
 
-// Same wall time, NIKKEI tab → Tokyo desk messaging (not sticky NY copy)
+// Same wall time, NIKKEI tab snaps to NY — live desk never becomes Tokyo
 const gateNikkeiBrowse = resolveSessionGate({
   now: afterCloseEt,
   lockedInstrument: 'DOW',
@@ -215,12 +214,10 @@ const gateNikkeiBrowse = resolveSessionGate({
   attemptsUsed: 0,
   stopLossHitCount: 0,
 })
-assert(gateNikkeiBrowse.market === 'TOKYO', 'NIKKEI tab → TOKYO market')
-assert(
-  /Tokyo|Montreal|NIKKEI/i.test(gateNikkeiBrowse.message),
-  `Tokyo copy: ${gateNikkeiBrowse.message}`
-)
-assert(!/Next NY desk|9:15 Montreal/i.test(gateNikkeiBrowse.message), 'no NY next-desk on NIKKEI tab')
+assert(gateNikkeiBrowse.market === 'NY', 'live NIKKEI tab snaps to NY')
+assert(!gateNikkeiBrowse.allowedInstruments.includes('NIKKEI'), 'no live NIKKEI')
+assert(/NY desk|Cash closed|9:15 Montreal/i.test(gateNikkeiBrowse.message), `NY copy: ${gateNikkeiBrowse.message}`)
+assert(!/Next Tokyo desk|clock in then to trade NIKKEI/i.test(gateNikkeiBrowse.message), 'no Tokyo next-desk')
 
 assert(AVWAP_LOOKBACK_TRADING_DAYS === 5, 'VWAP lookback = 5')
 {

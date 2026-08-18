@@ -1,6 +1,6 @@
 /**
  * GET /api/trading/live-desk-brief
- * Ranked DOW / NASDAQ / NIKKEI late / live desk brief for the chart overlay.
+ * Ranked DOW / NASDAQ late / live desk brief for the chart overlay.
  * Always recomputes (stale-brief mitigation — asOf timestamp on payload).
  */
 

@@ -6,7 +6,6 @@
 
 import {
   LIVE_FOCUS_LEAD_MINUTES,
-  isLiveFocusWindowActive,
   liveFocusMarket,
   liveVisibleInstruments,
   nextLiveDeskMarket,
@@ -66,15 +65,16 @@ test('NY afternoon stream: still NY focus — NIKKEI hidden', () => {
   assert(!liveVisibleInstruments(now).includes('NIKKEI'), 'no NIKKEI PM')
 })
 
-test('After NY cash close: all three instruments visible again (normal state)', () => {
-  // 16:30 ET — past NY cash close 16:00, before Tokyo focus 08:30 JST
+test('After NY cash close: NY names only — never NIKKEI', () => {
+  // 16:30 ET — past NY cash close 16:00; overnight is not a Tokyo live desk
   const now = etDate(Y, M, D, 16, 30)
   const vis = liveVisibleInstruments(now, {
     lockedInstrument: 'DOW',
     clockedIn: false,
     attendedToday: true,
   })
-  assert(vis.includes('DOW') && vis.includes('NASDAQ') && vis.includes('NIKKEI'), `all three got ${vis}`)
+  assert(vis.includes('DOW'), `DOW lock held got ${vis}`)
+  assert(!vis.includes('NIKKEI'), `no live NIKKEI got ${vis}`)
   const gate = resolveSessionGate({
     now,
     lockedInstrument: 'DOW',
@@ -85,43 +85,42 @@ test('After NY cash close: all three instruments visible again (normal state)', 
     stopLossHitCount: 0,
   })
   assert(gate.lockedInstrument === null, 'lock cleared after cash close')
-  assert(gate.allowedInstruments.length === 3, 'gate allows all three')
+  assert(gate.market === 'NY', 'live overnight stays NY')
+  assert(!gate.allowedInstruments.includes('NIKKEI'), 'gate never allows live NIKKEI')
+  assert(gate.allowedInstruments.includes('DOW') && gate.allowedInstruments.includes('NASDAQ'), 'NY names')
 })
 
-test('After NY close before Tokyo−30m: focus sticky NY but tabs browse all', () => {
+test('After NY close: live desk stays NY — no Tokyo browse tabs', () => {
   const now = etDate(Y, M, D, 17, 0)
-  assert(liveFocusMarket(now) === 'NY', 'sticky NY after close')
-  assert(liveVisibleInstruments(now).length === 3, 'browse all between sessions')
+  assert(liveFocusMarket(now) === 'NY', 'stays NY after close')
+  const vis = liveVisibleInstruments(now)
+  assert(!vis.includes('NIKKEI'), 'no NIKKEI overnight')
+  assert(vis.includes('DOW') && vis.includes('NASDAQ'), 'NY names')
 })
 
-test('NIKKEI becomes visible 30m before Tokyo open (08:30 JST)', () => {
+test('Tokyo hours: live tabs stay NY — never NIKKEI', () => {
   const before = jstDate(Y, M, D, 8, 29)
-  assert(!isLiveFocusWindowActive('NIKKEI', before), 'not yet at 8:29')
-  assert(liveFocusMarket(before) !== 'TOKYO' || !liveVisibleInstruments(before).includes('NIKKEI') || true, 'pre-window')
+  assert(liveFocusMarket(before) === 'NY', 'pre-Tokyo still NY live')
+  assert(!liveVisibleInstruments(before).includes('NIKKEI'), 'no NIKKEI before Tokyo')
 
   const atLead = jstDate(Y, M, D, 8, 30)
-  assert(isLiveFocusWindowActive('NIKKEI', atLead), 'window opens 8:30')
-  assert(liveFocusMarket(atLead) === 'TOKYO', 'focus TOKYO at 8:30')
-  assert(
-    JSON.stringify(liveVisibleInstruments(atLead)) === JSON.stringify(['NIKKEI']),
-    'only NIKKEI at 8:30'
-  )
+  assert(liveFocusMarket(atLead) === 'NY', 'live focus stays NY at Tokyo −30m')
+  assert(!liveVisibleInstruments(atLead).includes('NIKKEI'), 'no live NIKKEI at 8:30 JST')
+  assert(liveVisibleInstruments(atLead).includes('DOW'), 'NY names at Tokyo −30m')
 })
 
-test('Tokyo morning: only NIKKEI, no DOW/NASDAQ', () => {
+test('Tokyo morning: live still NY names, never NIKKEI', () => {
   const now = jstDate(Y, M, D, 9, 30)
-  assert(liveFocusMarket(now) === 'TOKYO', 'focus TOKYO')
+  assert(liveFocusMarket(now) === 'NY', 'live focus NY during Tokyo hours')
   const vis = liveVisibleInstruments(now)
-  assert(vis.length === 1 && vis[0] === 'NIKKEI', `only NIKKEI got ${vis}`)
+  assert(!vis.includes('NIKKEI'), `no NIKKEI got ${vis}`)
+  assert(vis.includes('DOW') && vis.includes('NASDAQ'), 'NY names')
 })
 
-test('Tokyo afternoon stream: only NIKKEI', () => {
+test('Tokyo afternoon: live still NY names, never NIKKEI', () => {
   const now = jstDate(Y, M, D, 13, 0)
-  assert(liveFocusMarket(now) === 'TOKYO', 'Tokyo PM')
-  assert(
-    JSON.stringify(liveVisibleInstruments(now)) === JSON.stringify(['NIKKEI']),
-    'NIKKEI only'
-  )
+  assert(liveFocusMarket(now) === 'NY', 'live stays NY')
+  assert(!liveVisibleInstruments(now).includes('NIKKEI'), 'no NIKKEI')
 })
 
 test('DOW locked: only DOW tab (no twin glance)', () => {
@@ -154,21 +153,30 @@ test('Attended NASDAQ after lunch: only NASDAQ tab', () => {
   assert(JSON.stringify(vis) === JSON.stringify(['NASDAQ']), `got ${vis}`)
 })
 
-test('Off-session lock ignored: NY rec does not surface during Tokyo', () => {
+test('Persisted NIKKEI lock ignored on live — NY names, not Tokyo', () => {
   const now = jstDate(Y, M, D, 10, 0)
+  const vis = liveVisibleInstruments(now, {
+    lockedInstrument: 'NIKKEI',
+    clockedIn: true,
+    attendedToday: true,
+  })
+  assert(!vis.includes('NIKKEI'), `ignored NIKKEI lock got ${vis}`)
+  assert(vis.includes('DOW') && vis.includes('NASDAQ'), 'falls back to NY names')
+
   const gate = resolveSessionGate({
     now,
-    lockedInstrument: 'DOW', // stale NY lock
-    viewingInstrument: 'DOW',
+    lockedInstrument: 'NIKKEI',
+    viewingInstrument: 'NIKKEI',
     clockedIn: true,
     attendedToday: true,
     attemptsUsed: 0,
     stopLossHitCount: 0,
   })
-  assert(gate.market === 'TOKYO', 'market TOKYO')
-  assert(gate.lockedInstrument === null || gate.lockedInstrument === 'NIKKEI', 'no DOW lock')
-  assert(!gate.allowedInstruments.includes('DOW'), 'DOW not allowed')
-  assert(gate.allowedInstruments.includes('NIKKEI'), 'NIKKEI allowed')
+  assert(gate.market === 'NY', 'live viewing NIKKEI snaps to NY')
+  assert(gate.lockedInstrument !== 'NIKKEI', 'NIKKEI lock dropped')
+  assert(!gate.allowedInstruments.includes('NIKKEI'), 'NIKKEI not allowed')
+  assert(gate.allowedInstruments.includes('DOW'), 'DOW allowed')
+  assert(!/Tokyo IB|wait for Tokyo/i.test(gate.message), gate.message)
 })
 
 // ── AI token gate ────────────────────────────────────────────────────────────
@@ -280,21 +288,26 @@ test('AI: skip without clock-in even in focus', () => {
   assert(!r.ok && /clock in/i.test(r.reason), r.reason)
 })
 
-test('AI: skip DOW during Tokyo session', () => {
+test('AI: skip DOW/NASDAQ overnight (Tokyo hours are not a live session)', () => {
   const now = jstDate(Y, M, D, 9, 30)
   assert(
     !shouldRunLiveAiForInstrument('DOW', now, { clockedIn: true, attendedToday: true }).ok,
-    'skip DOW'
+    'skip DOW between NY sessions'
   )
   assert(
     !shouldRunLiveAiForInstrument('NASDAQ', now, { clockedIn: true, attendedToday: true }).ok,
-    'skip NASDAQ'
+    'skip NASDAQ between NY sessions'
+  )
+  assert(
+    !shouldRunLiveAiForInstrument('NIKKEI', now, { clockedIn: true, attendedToday: true }).ok,
+    'never live NIKKEI AI'
   )
 })
 
-test('nextLiveDeskMarket returns NY or TOKYO', () => {
+test('nextLiveDeskMarket is always NY', () => {
   const m = nextLiveDeskMarket(etDate(Y, M, D, 17, 0))
-  assert(m === 'NY' || m === 'TOKYO', `got ${m}`)
+  assert(m === 'NY', `got ${m}`)
+  assert(nextLiveDeskMarket(jstDate(Y, M, D, 9, 0)) === 'NY', 'Tokyo hours still next NY')
 })
 
 console.log('')

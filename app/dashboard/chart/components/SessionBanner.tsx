@@ -18,7 +18,6 @@ import {
   type DeskNewsHazard,
 } from '@/lib/trading/deskNewsHazard'
 import type { DeskCalendarEvent } from '@/lib/trading/deskNews'
-import { nikkeiCashLunchMontrealLabel } from '@/lib/trading/sessionGate'
 import { liveDeskContractLabel } from '@/lib/trading/liveDeskBook'
 import {
   getDeskRiskProfile,
@@ -539,14 +538,6 @@ export function SessionBanner({
           {liveDeskContractLabel(gate.lockedInstrument)}
         </span>
       )}
-      {viewingInstrument === 'NIKKEI' && (
-        <span
-          className="text-[10px] text-gray-500 tabular-nums"
-          title="Tokyo Stock Exchange cash lunch (11:30–12:30 JST) · Montreal wall clock"
-        >
-          {nikkeiCashLunchMontrealLabel()}
-        </span>
-      )}
       {gate.clockedIn ? (
         <span className="rounded bg-emerald-500/25 px-2 py-0.5 text-emerald-200 font-semibold">
           CLOCKED IN
@@ -609,11 +600,7 @@ export function SessionBanner({
       )}
       {gate.phase === 'ENTRY' && gate.clockedIn && (
         <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-emerald-300">
-          {gate.market === 'TOKYO'
-            ? 'Tokyo morning entry'
-            : gate.entryWindow
-              ? `Window ${gate.entryWindow}/3`
-              : 'Entry window'}
+          {gate.entryWindow ? `Window ${gate.entryWindow}/3` : 'Entry window'}
         </span>
       )}
       <span
@@ -647,9 +634,7 @@ export function SessionBanner({
           title="Tradeify $50k · $400 → $250 → $150 · SL beyond range · TP 1.5R (1:1.5). Session max 3 fills. Up to 2 per window. Flatten 16:59 ET. Working limits do not count until filled."
         >
           {gate.attemptLadderLabel ||
-            (gate.lockedInstrument === 'NIKKEI'
-              ? `Session ${gate.attemptsUsed ?? 0}/${gate.maxAttempts ?? MAX_DAY_ATTEMPTS} · AM ${gate.morningAttempts ?? 0}/${gate.maxMorningAttempts ?? 2} · US ${gate.ibAttempts ?? 0}/${gate.maxIbAttempts ?? 2} · IB ${gate.lunchAttempts ?? 0}/${gate.maxLunchAttempts ?? 2}`
-              : `Session ${gate.attemptsUsed ?? 0}/${gate.maxAttempts ?? MAX_DAY_ATTEMPTS} · AM ${gate.morningAttempts ?? 0}/${gate.maxMorningAttempts ?? 2} · IB ${gate.ibAttempts ?? 0}/${gate.maxIbAttempts ?? 2} · LN ${gate.lunchAttempts ?? 0}/${gate.maxLunchAttempts ?? 2}`)}
+            `Session ${gate.attemptsUsed ?? 0}/${gate.maxAttempts ?? MAX_DAY_ATTEMPTS} · AM ${gate.morningAttempts ?? 0}/${gate.maxMorningAttempts ?? 2} · IB ${gate.ibAttempts ?? 0}/${gate.maxIbAttempts ?? 2} · LN ${gate.lunchAttempts ?? 0}/${gate.maxLunchAttempts ?? 2}`}
           {(gate.stopHits ?? 0) > 0
             ? ` · Stops ${gate.stopHits}/${gate.maxStopHits ?? 2}`
             : ''}

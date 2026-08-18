@@ -40,7 +40,7 @@ async function handleAutoLevels(request: NextRequest) {
 
     const now = new Date()
     const focus = liveFocusMarket(now)
-    const focusDefault = liveVisibleInstruments(now)[0] ?? (focus === 'TOKYO' ? 'NIKKEI' : 'DOW')
+    const focusDefault = liveVisibleInstruments(now)[0] ?? 'DOW'
     const raw = request.nextUrl.searchParams.get('instrument') || focusDefault
     if (!isDeskInstrument(raw)) {
       return NextResponse.json(

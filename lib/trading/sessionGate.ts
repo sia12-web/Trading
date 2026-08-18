@@ -19,7 +19,6 @@
  */
 
 import { parseTimeToSeconds } from '@/lib/utils/timeUtils'
-import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import {
   TRADER_DISPLAY_LABEL,
   deskLocalHmsAsTraderDisplay,
@@ -658,123 +657,47 @@ export function isLiveCashDayActive(
   return isLiveFocusWindowActive(instrument, now)
 }
 
-function isPastMarketClose(instrument: DeskInstrument, now: Date): boolean {
-  const s = sessionFor(instrument)
-  if (!isWeekdayInTz(now, s.tz)) return false
-  const t = parseTimeToSeconds(timeInTz(now, s.tz))
-  return t >= parseTimeToSeconds(s.marketClose)
-}
-
-function isBeforeFocusStart(instrument: DeskInstrument, now: Date): boolean {
-  const s = sessionFor(instrument)
-  if (!isWeekdayInTz(now, s.tz)) return true
-  const t = parseTimeToSeconds(timeInTz(now, s.tz))
-  const open = parseTimeToSeconds(s.marketOpen)
-  return t < open - LIVE_FOCUS_LEAD_MINUTES * 60
+/** Next LIVE desk is always NY. Simulation must not use this. */
+export function nextLiveDeskMarket(_now: Date = new Date()): DeskMarket {
+  return 'NY'
 }
 
 /**
- * Seconds until the next weekday focus start (cash open − lead) for this instrument.
- * Used only when neither cash desk is in its focus window (gap / weekend).
- */
-function secondsUntilNextFocusStart(now: Date, instrument: DeskInstrument): number {
-  const s = sessionFor(instrument)
-  const nowSec = Math.floor(now.getTime() / 1000)
-  const [oh, om] = s.marketOpen.split(':').map(Number)
-  const leadSec = LIVE_FOCUS_LEAD_MINUTES * 60
-  for (let i = 0; i < 10; i++) {
-    const probe = new Date(now.getTime() + i * 86_400_000)
-    if (!isWeekdayInTz(probe, s.tz)) continue
-    const ymd = dateKeyInTz(probe, s.tz)
-    const openUnix =
-      deskMarketFor(instrument) === 'TOKYO'
-        ? tokyoDateTimeToUnix(ymd, oh!, om || 0)
-        : nyDateTimeToUnix(ymd, oh!, om || 0)
-    const focusUnix = openUnix - leadSec
-    if (focusUnix > nowSec) return focusUnix - nowSec
-  }
-  return Number.MAX_SAFE_INTEGER
-}
-
-/** Next LIVE desk market to open (gap / weekend). Simulation must not use this. */
-export function nextLiveDeskMarket(now: Date = new Date()): DeskMarket {
-  const ny = secondsUntilNextFocusStart(now, 'DOW')
-  const tokyo = secondsUntilNextFocusStart(now, 'NIKKEI')
-  return tokyo < ny ? 'TOKYO' : 'NY'
-}
-
-/**
- * Which LIVE desk market is in focus right now (never both).
- * - Tokyo focus window → NIKKEI only
- * - NY focus window → DOW/NASDAQ
- * - Between closes: sticky prior market so NIKKEI does not appear until 30m before Tokyo open
+ * LIVE desk market is NYC only. Never TOKYO / NIKKEI on live UI.
  * Simulation must not use this.
  */
-export function liveFocusMarket(now: Date = new Date()): DeskMarket {
-  const tokyoLive = isLiveFocusWindowActive('NIKKEI', now)
-  const nyLive = isLiveFocusWindowActive('DOW', now)
-
-  if (tokyoLive && !nyLive) return 'TOKYO'
-  if (nyLive && !tokyoLive) return 'NY'
-  if (tokyoLive && nyLive) {
-    if (isDeskHoursNow(now, 'NIKKEI').open) return 'TOKYO'
-    if (isDeskHoursNow(now, 'DOW').open) return 'NY'
-    return 'TOKYO'
-  }
-
-  // Gap: stay on the desk that just closed until the other focus window opens
-  if (isPastMarketClose('DOW', now) && isBeforeFocusStart('NIKKEI', now)) {
-    return 'NY'
-  }
-  if (isPastMarketClose('NIKKEI', now) && isBeforeFocusStart('DOW', now)) {
-    return 'TOKYO'
-  }
-
-  return nextLiveDeskMarket(now)
+export function liveFocusMarket(_now: Date = new Date()): DeskMarket {
+  return 'NY'
 }
 
 /**
- * True while either NY or Tokyo cash-day focus window is open
- * (cash open − 30m → cash close). Outside this = between sessions.
+ * True while the NY cash-day focus window is open
+ * (cash open − 30m → cash close). Overnight / Tokyo hours are not a live session.
  */
 export function isAnyLiveFocusWindowActive(now: Date = new Date()): boolean {
-  return (
-    isLiveFocusWindowActive('DOW', now) || isLiveFocusWindowActive('NIKKEI', now)
-  )
+  return isLiveFocusWindowActive('DOW', now)
 }
 
 /**
- * Instruments shown on the LIVE chart for the current session.
- * Focus market only while a cash day is live (NY hides NIKKEI; Tokyo hides DOW/NASDAQ).
- * When a day lock exists, only that name.
- * After cash close / between sessions → all three (normal browse state).
+ * Instruments shown on the LIVE chart.
+ * NEVER includes NIKKEI (Simulation keeps Nikkei). If clocked lock is DOW|NASDAQ,
+ * only that name; otherwise NY names — including after NY close / overnight.
+ * A persisted NIKKEI lock is ignored.
  * Simulation must not use this.
  */
 export function liveVisibleInstruments(
-  now: Date = new Date(),
+  _now: Date = new Date(),
   opts?: {
     lockedInstrument?: DeskInstrument | null
     clockedIn?: boolean
     attendedToday?: boolean
   }
 ): DeskInstrument[] {
-  // Session over / weekend gap — back to normal (all desks visible)
-  if (!isAnyLiveFocusWindowActive(now)) {
-    return [...DESK_INSTRUMENTS]
-  }
-
-  const market = liveFocusMarket(now)
-  const sessionList = instrumentsForDeskMarket(market)
-  const locked =
-    opts?.lockedInstrument && isDeskInstrument(opts.lockedInstrument)
-      ? opts.lockedInstrument
-      : null
-
-  // Clocked / day-locked name is the only door — no twin glance tab.
-  if (locked && deskMarketFor(locked) === market) {
-    return [locked]
-  }
-  return [...sessionList]
+  const locked = isLiveClockInstrument(opts?.lockedInstrument)
+    ? opts!.lockedInstrument
+    : null
+  if (locked) return [locked]
+  return [...NY_INSTRUMENTS]
 }
 
 /**
@@ -839,33 +762,32 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   const now = input.now ?? new Date()
   const focusMarket = liveFocusMarket(now)
   const focusLive = isAnyLiveFocusWindowActive(now)
-  const lockedRaw = isDeskInstrument(input.lockedInstrument) ? input.lockedInstrument : null
-  // Lock + focus tabs only while a cash-day focus window is open; after close → browse all
+  const lockedRaw = isLiveClockInstrument(input.lockedInstrument)
+    ? input.lockedInstrument
+    : null
+  // Lock + focus tabs only while NY cash-day focus is open; after close → browse NY names
   const locked =
     focusLive && lockedRaw && deskMarketFor(lockedRaw) === focusMarket
       ? lockedRaw
       : null
-  const suggestedRaw = isDeskInstrument(input.suggestedInstrument)
+  const suggestedRaw = isLiveClockInstrument(input.suggestedInstrument)
     ? input.suggestedInstrument
     : null
   const suggestedInstrument =
-    focusLive &&
-    suggestedRaw &&
-    deskMarketFor(suggestedRaw) === focusMarket &&
-    focusMarket === 'NY'
+    focusLive && suggestedRaw && deskMarketFor(suggestedRaw) === 'NY'
       ? suggestedRaw
       : null
-  const viewingRaw = isDeskInstrument(input.viewingInstrument)
+  const viewingRaw = isLiveClockInstrument(input.viewingInstrument)
     ? input.viewingInstrument
     : locked
   const viewingUnforced =
-    focusLive && viewingRaw && deskMarketFor(viewingRaw) === focusMarket
+    focusLive && viewingRaw && deskMarketFor(viewingRaw) === 'NY'
       ? viewingRaw
-      : locked ?? (focusLive ? instrumentsForDeskMarket(focusMarket)[0]! : viewingRaw ?? 'DOW')
+      : locked ?? (focusLive ? NY_INSTRUMENTS[0]! : viewingRaw ?? 'DOW')
   const viewing =
     locked && isNyGlanceChart(locked, viewingUnforced) ? locked : viewingUnforced
-  const market = focusLive ? focusMarket : deskMarketFor(viewing ?? 'DOW')
-  const s = sessionFor(viewing ?? locked ?? (focusLive ? instrumentsForDeskMarket(focusMarket)[0]! : 'DOW'))
+  const market = focusLive ? focusMarket : 'NY'
+  const s = sessionFor(viewing ?? locked ?? 'DOW')
 
   const timeLocal = timeInTz(now, s.tz)
   /** Banner clock — always Montreal (trader wall clock), even on Tokyo desk. */
@@ -976,13 +898,11 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     timeEst,
     lockedInstrument: locked,
     suggestedInstrument,
-    allowedInstruments: focusLive
-      ? liveVisibleInstruments(now, {
-          lockedInstrument: locked,
-          clockedIn,
-          attendedToday,
-        })
-      : [...DESK_INSTRUMENTS],
+    allowedInstruments: liveVisibleInstruments(now, {
+      lockedInstrument: locked,
+      clockedIn,
+      attendedToday,
+    }),
     entryWindow: entryWindow as 1 | 2 | 3 | null,
     market,
     canFetchLiveBars: bars.open && !!locked && (!viewing || viewing === locked),
@@ -1099,10 +1019,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   const lnStartHms = lunchRangeEntryStartHms(market)
   const lnEndHms = lunchRangeEntryEndHms(market)
   const analyzeEt = deskLocalHmsAsTraderDisplay(s.analyzeStart, s.tz, now)
-  const nextDesk =
-    market === 'TOKYO'
-      ? `Next Tokyo desk: clock in from ${analyzeEt} ${TRADER_DISPLAY_LABEL}.`
-      : `Next NY desk: clock in from ${analyzeEt} ${TRADER_DISPLAY_LABEL}.`
+  const nextDesk = `Next NY desk: clock in from ${analyzeEt} ${TRADER_DISPLAY_LABEL}.`
 
   // Pre-session / weekend / after cash close
   // NY dual browse opens at cash open − 30m (before analyzeStart / clock-in).
@@ -1117,9 +1034,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       canManagePosition: false,
       message:
         t < analyze && weekday
-          ? market === 'TOKYO'
-            ? `Pre-session. Tokyo desk opens ${analyzeEt} ${TRADER_DISPLAY_LABEL} — clock in then to trade NIKKEI.`
-            : `Pre-session. NY tip + dual browse from ${deskLocalHmsAsTraderDisplay('09:00:00', s.tz, now)} ${TRADER_DISPLAY_LABEL}; AI pick + clock-in at ${analyzeEt} ${TRADER_DISPLAY_LABEL}.`
+          ? `Pre-session. NY tip + dual browse from ${deskLocalHmsAsTraderDisplay('09:00:00', s.tz, now)} ${TRADER_DISPLAY_LABEL}; AI pick + clock-in at ${analyzeEt} ${TRADER_DISPLAY_LABEL}.`
           : `Weekend — desk closed. ${nextDesk} Or use Simulation.`,
     })
   }
@@ -1215,14 +1130,11 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       canFetchLiveBars: false,
       canPlaceEntry: false,
       canManagePosition: false,
-      message:
-        market === 'TOKYO'
-          ? 'No locked instrument for Tokyo session yet.'
-          : nyDualBrowse
-            ? t >= analyze
-              ? pickHint
-              : `NY focus — browse DOW and NASDAQ. AI suggests which to trade at ${analyzeEt} ${TRADER_DISPLAY_LABEL}.`
-            : pickHint,
+      message: nyDualBrowse
+        ? t >= analyze
+          ? pickHint
+          : `NY focus — browse DOW and NASDAQ. AI suggests which to trade at ${analyzeEt} ${TRADER_DISPLAY_LABEL}.`
+        : pickHint,
     })
   }
 
@@ -1238,12 +1150,8 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       canPlaceEntry: false,
       canManagePosition: false,
       message: clockedIn
-        ? market === 'TOKYO'
-          ? `Clocked in on ${locked}. Pre-open prep — ±10 after OR30 locks ${deskLocalRangeAsTraderDisplay(or30LockHms(market), s.entryClose, s.tz, now)}.`
-          : `Clocked in on ${locked}. Pre-open prep — ±10 after OR30 locks ${deskLocalRangeAsTraderDisplay(or30LockHms(market), s.entryClose, s.tz, now)}.`
-        : market === 'TOKYO'
-          ? `Trade ${locked} today. Clock in to unlock the live desk (${deskLocalRangeAsTraderDisplay(s.marketOpen, s.lunchClose, s.tz, now)}).`
-          : `Trade ${locked} today. Clock in to unlock the live desk (${deskLocalRangeAsTraderDisplay(s.marketOpen, s.lunchClose, s.tz, now)}).`,
+        ? `Clocked in on ${locked}. Pre-open prep — ±10 after OR30 locks ${deskLocalRangeAsTraderDisplay(or30LockHms(market), s.entryClose, s.tz, now)}.`
+        : `Trade ${locked} today. Clock in to unlock the live desk (${deskLocalRangeAsTraderDisplay(s.marketOpen, s.lunchClose, s.tz, now)}).`,
     })
   }
 

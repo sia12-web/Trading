@@ -116,7 +116,6 @@ import {
   sessionFocusHighLow,
 } from '@/lib/chart/seriesAutoscale'
 import {
-  DESK_INSTRUMENTS,
   isDeskInstrument,
   isLiveBarsAllowed,
   isChartStreamAllowed,
@@ -2303,14 +2302,16 @@ export function TradingChart({
     }
   }, [priceAlert, dismissPriceAlert, openPriceAlert])
 
-  // Recompute focus tabs on a short clock so NIKKEI appears at Tokyo−30m without refresh.
+  // Recompute focus tabs on a short clock so NY names update at open − 30m without refresh.
   // Clock-gated UI must NOT run during the hydrate render (Railway TZ ≠ browser → React #418).
   const [focusTick, setFocusTick] = useState(0)
   const [clockReady, setClockReady] = useState(false)
   const [deskSessionLive, setDeskSessionLive] = useState(false)
   const [visibleInstruments, setVisibleInstruments] = useState<Instrument[]>(() => {
-    if (allowedInstruments && allowedInstruments.length > 0) return [...allowedInstruments]
-    return [...DESK_INSTRUMENTS] as Instrument[]
+    if (allowedInstruments && allowedInstruments.length > 0) {
+      return allowedInstruments.filter((i) => i !== 'NIKKEI')
+    }
+    return ['DOW', 'NASDAQ']
   })
 
   useEffect(() => {
@@ -2326,9 +2327,9 @@ export function TradingChart({
       lockedInstrument,
       clockedIn: deskAttended,
       attendedToday: deskAttended,
-    }) as Instrument[]
+    }).filter((i) => i !== 'NIKKEI') as Instrument[]
     if (allowedInstruments && allowedInstruments.length > 0) {
-      const fromGate = allowedInstruments.filter((i) => live.includes(i))
+      const fromGate = allowedInstruments.filter((i) => live.includes(i) && i !== 'NIKKEI')
       setVisibleInstruments(fromGate.length > 0 ? fromGate : live)
       return
     }
@@ -2346,9 +2347,11 @@ export function TradingChart({
   }, [instrument, deskAttended, focusTick, clockReady])
 
   const setInstrument = useCallback((inst: Instrument) => {
-    if (!visibleInstruments.includes(inst)) return
+    if (!visibleInstruments.includes(inst) || inst === 'NIKKEI') return
     setInstrumentState(inst)
-    if (!lockedInstrument || inst === lockedInstrument) setDeskInstrumentPreference(inst)
+    if (!lockedInstrument || inst === lockedInstrument) {
+      if (inst === 'DOW' || inst === 'NASDAQ') setDeskInstrumentPreference(inst)
+    }
     onInstrumentChange?.(inst)
   }, [onInstrumentChange, lockedInstrument, visibleInstruments])
 

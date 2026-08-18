@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Late / live desk brief panel — ranks DOW · NASDAQ · NIKKEI for late clock-in.
+ * Late / live desk brief panel — ranks DOW · NASDAQ for late clock-in.
  */
 
 import type { LiveDeskBrief } from '@/lib/trading/liveDeskBrief'
@@ -32,7 +32,9 @@ export function LiveDeskBriefPanel({ brief, loading, error }: Props) {
       </p>
 
       <ol className="space-y-2">
-        {brief.instruments.map((card, i) => (
+        {brief.instruments
+          .filter((card) => card.instrument !== 'NIKKEI')
+          .map((card, i) => (
           <li
             key={card.instrument}
             className={`rounded-lg border px-3 py-2 ${
