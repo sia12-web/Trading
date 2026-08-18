@@ -1,5 +1,5 @@
 /**
- * Desk alerts — price enters ±10 of active playbook range (H / 50% / L)
+ * Desk alerts — price enters ±10 of active playbook range (H / L)
  * while entries are unlocked. Message templates live in deskSessionNotes.
  */
 

@@ -285,10 +285,10 @@ export function formatRangeEdgeAlertMessage(args: {
   const title = `${args.instrument} · IN BAND · ${args.proximity.label} ${edgeLabel}`
   const modeHint =
     args.mode === 'market'
-      ? 'Market entry is in the ±10 band (H / 50% / L).'
+      ? 'Market entry is in the ±10 band (H / L).'
       : args.mode === 'limit'
-        ? 'Limit entries allowed in the ±10 band (H / 50% mid / L).'
-        : 'Limit — price is in the ±10 strategy band (H / 50% mid / L).'
+        ? 'Limit entries allowed in the ±10 band (H / L).'
+        : 'Limit — price is in the ±10 strategy band (H / L).'
   const body = [
     modeHint,
     `Live ${args.livePrice.toLocaleString()} · ${edgeLabel} ${args.proximity.center.toLocaleString()} (±10)`,

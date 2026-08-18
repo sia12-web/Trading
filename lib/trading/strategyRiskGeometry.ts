@@ -300,9 +300,9 @@ export function activeRangeForPlaybook(args: {
  *
  * IB / Tokyo IB: pass `showIb: true` when IB H/L overlay is visible (same as BRK/REJ toggle).
  *
- * Every returned range uses the shared gate: ±10 of **H / 50% mid / L**
- * (DOW · NASDAQ · NIKKEI — OR30, IB/Tokyo IB, Lunch-range). **US Range is
- * H / L only** — no 50% mid entry band (see {@link rangeEdgeBands}).
+ * Every returned range uses the shared gate: ±10 of **H / L**
+ * (DOW · NASDAQ · NIKKEI — OR30, IB/Tokyo IB, Lunch-range, US Range).
+ * 50% mid is never a legal entry (see {@link rangeEdgeBands}).
  */
 export function visibleOverlayEntryRanges(args: {
   instrument: string
@@ -352,8 +352,8 @@ export function visibleOverlayEntryRanges(args: {
  *
  * Tokyo IB ±10 also waits until first-hour lock (10:00 desk / 21:00 Montreal).
  *
- * Band geometry is H + **50% mid** + L via {@link rangeEdgeBands} for OR30 /
- * IB / lunch. **US Range drops mid** (H + L only).
+ * Band geometry is H + L via {@link rangeEdgeBands} for every playbook
+ * range. **50% mid is never an entry.**
  *
  * Place-order legality still uses {@link activeRangeForPlaybook} + session gates.
  * `morningAttempts` is accepted for API stability (unused here).
