@@ -77,7 +77,7 @@ export function formatSessionScheduleBlock(
       `• Tokyo IB locks ~${deskLocalHmsAsTraderDisplay('10:00:00', s.tz, now)} (first hour) — entry ${ibWin}`,
       `• Lunch confirm ${lunchConfirm}`,
       `• Session END (cash close) ${close}`,
-      `• ${tradeifyScheduleRiskLine()} · SL beyond range · TP 1.5R (1:1.5) · ±10 of H / L (US Range) or H / 50% mid / L (OR30 / Tokyo IB) after active range locks`,
+      `• ${tradeifyScheduleRiskLine()} · SL beyond range · TP 1.5R (1:1.5) · ±10 of H / L after active range locks`,
     ].join('\n')
   }
 
@@ -102,7 +102,7 @@ export function formatSessionScheduleBlock(
     `• Lunch-range locks 13:30 · entry ${lunchWin}`,
     `• Lunch confirm ${lunchConfirm} (morning books — IB stay open past confirm)`,
     `• Session END (cash close) ${close}`,
-    `• ${tradeifyScheduleRiskLine()} · SL beyond range · TP 1.5R (1:1.5) · ±10 of H / 50% mid / L after active range locks · OR30 optional`,
+    `• ${tradeifyScheduleRiskLine()} · SL beyond range · TP 1.5R (1:1.5) · ±10 of H / L after active range locks · OR30 optional`,
   ].join('\n')
 }
 
@@ -214,16 +214,10 @@ export function formatRangeShapedNote(args: {
   atrLine?: string | null
 }): DeskNotePayload {
   const title = `${args.instrument} · ${args.rangeLabel} LOCKED`
-  const midAllowed = !/^us\s*range$/i.test(String(args.rangeLabel).trim())
   const body = [
     `High ${args.high.toLocaleString()}`,
     `Low  ${args.low.toLocaleString()}`,
-    midAllowed
-      ? `±10 bands are live around H, 50% mid, and L.`
-      : `±10 bands are live around H and L only (US Range — no 50% mid entry).`,
-    midAllowed
-      ? `Mid ${(Math.round(((args.high + args.low) / 2) * 100) / 100).toLocaleString()} — pullback / reverse magnet.`
-      : null,
+    `±10 bands are live around H and L only — 50% mid is not an entry.`,
     args.atrLine || null,
     args.nextHint || 'Entries allowed when this playbook window is unlocked.',
   ]
@@ -245,18 +239,12 @@ export function formatEntryPermissionNote(args: {
   rangeLow?: number | null
 }): DeskNotePayload {
   const title = `${args.instrument} · ENTRY OPEN · ${args.windowLabel}`
-  const usOnly = /us\s*range/i.test(String(args.windowLabel))
   const lines = [
-    usOnly
-      ? `You may place probes in this window (2 · progressive risk, ±10 of locked range H / L only — no 50% mid).`
-      : `You may place probes in this window (2 · progressive risk, ±10 of locked range H / 50% mid / L).`,
+    `You may place probes in this window (2 · progressive risk, ±10 of locked range H / L only).`,
   ]
   if (args.rangeHigh != null && args.rangeLow != null) {
-    const mid = Math.round(((args.rangeHigh + args.rangeLow) / 2) * 100) / 100
     lines.push(
-      usOnly
-        ? `Active range H ${args.rangeHigh.toLocaleString()} · L ${args.rangeLow.toLocaleString()} (mid ${mid.toLocaleString()} is not an entry)`
-        : `Active range H ${args.rangeHigh.toLocaleString()} · 50% ${mid.toLocaleString()} · L ${args.rangeLow.toLocaleString()}`
+      `Active range H ${args.rangeHigh.toLocaleString()} · L ${args.rangeLow.toLocaleString()} (50% mid is not an entry)`
     )
   }
   if (args.ladderHint) lines.push(`Ladder: ${args.ladderHint}`)
