@@ -520,7 +520,7 @@ How to use it (big-desk volume map):
       analysisMode === 'us_range'
         ? `
 US RANGE PLAYBOOK MODE (Nikkei slot 2 — prior NYC session range):
-- Desk is live-trading the US Range window (${midWindow} ${tzLabel}) — up to 2 probes (progressive risk) (entries within ±10 pts of US Range H / L only — no 50% mid). Morning OR30 does not lock this window.
+- Desk is live-trading the US Range window (${midWindow} ${tzLabel}) — up to 2 probes (progressive risk) (entries within ±10 pts of US Range H / L only). Morning OR30 does not lock this window.
 - PRIMARY BAIT this run: US Range (prior NYC H/L). Prefer stop pools beyond NYC extremes + POC/AVWAP. Do not frame as Tokyo IB or morning OR30.
 - Build tradeable levels off the prior NYC session high/low (breakout / mean-reversion), FLIP/RETEST from the brief, AVWAP/POC confluence.
 - Use ONLY the DESK BRIEF + RANGE LIQUIDITY MAP + candle/AVWAP/volume-profile tables. Frame as US Range playbook — NOT Tokyo IB, NOT morning OR30.
@@ -529,14 +529,14 @@ US RANGE PLAYBOOK MODE (Nikkei slot 2 — prior NYC session range):
           ? tokyo
             ? `
 IB PLAYBOOK MODE (Tokyo Initial Balance — slot 3):
-- Desk is live-trading Tokyo IB (${lateWindow} ${tzLabel}) — up to 2 probes (progressive risk) (entries within ±10 pts of Tokyo IB H / 50% mid / L). Earlier OR30/US Range fills do not lock this window.
+- Desk is live-trading Tokyo IB (${lateWindow} ${tzLabel}) — up to 2 probes (progressive risk) (entries within ±10 pts of Tokyo IB H / L). Earlier OR30/US Range fills do not lock this window.
 - PRIMARY BAIT this run: Tokyo IB H/L. Prefer stop pools beyond Tokyo IB extremes + POC/AVWAP. OR30/US Range are secondary only.
 - Build tradeable IB levels: IB high/low breakout and mean-reversion magnets, FLIP/RETEST from the brief, AVWAP/POC confluence.
 - Use ONLY the DESK BRIEF + RANGE LIQUIDITY MAP + candle tables. Frame as Tokyo IB playbook — not US Range, not morning OR30.
 `
             : `
 IB PLAYBOOK MODE (Initial Balance entry refresh — NY slot 2):
-- Desk is live-trading the IB window (${midWindow} ${tzLabel}) — up to 2 probes (progressive risk) (entries within ±10 pts of IB H / 50% mid / L). Morning OR30 does not lock this window.
+- Desk is live-trading the IB window (${midWindow} ${tzLabel}) — up to 2 probes (progressive risk) (entries within ±10 pts of IB H / L). Morning OR30 does not lock this window.
 - IB = context BOX, not the entry magnet once a swing exists. First tag of IB H/L is NOT the entry (label waiting / liquidity building).
 - Tradable liquidity = one swing high at/beyond IB high or swing low at/beyond IB low, printed after IB locks. The trade is the TEST of that swing (raid), not the first tag.
 - Raid + accepted outside → EXTEND (enter pullback to the broken swing / IB edge, not the wick). Raid + accepted back inside → BALANCE / mean revert toward session VWAP, yesterday POC, developing POC.
@@ -560,14 +560,14 @@ AFTERNOON MODE (watch-only — this run is the post-entry memory refresh):
 `
               : `
 MORNING OR30 PLAYBOOK MODE:
-- First 30 minutes after cash open define the Opening Range (OR30). Build morning playbook levels for the OR30 / morning entry window (${open}–${entryEnd} ${tzLabel}) — up to 2 fills (progressive risk), entries within ±10 pts of OR30 high / 50% mid / low.
+- First 30 minutes after cash open define the Opening Range (OR30). Build morning playbook levels for the OR30 / morning entry window (${open}–${entryEnd} ${tzLabel}) — up to 2 fills (progressive risk), entries within ±10 pts of OR30 high / low.
 - PRIMARY BAIT this run: OR30 H/L (once formed). Before OR30 locks, overnight/London stop pools may seed the morning book, then re-anchor to OR30.
 - Prefer OR30 high/low magnets, opening-drive structure, stop-pool liquidity beyond bait highs/lows, AVWAP/POC confluence.
 `
 
     const deskCadence = tokyo
-      ? `- Three ranges / up to 2 probes each (session cap ≤ 3 fills total, win/loss/breakeven all count; progressive risk 2% → 1% → 0.5% by fill #): Morning OR30 ${open}–${entryEnd} ${tzLabel} → US Range (prior NYC H/L) ${midWindow} ${tzLabel} → ${prepLabel} (levels update) → Tokyo IB ${lateWindow} ${tzLabel}. Next window unlocks when prior clock ends or probes are exhausted, but the session cap always wins even if a window still has spare probes. Entries only within ±10 pts of active range high / low (OR30 / Tokyo IB also allow 50% mid; US Range is H/L only). Lunch ${lunch} ${tzLabel} is confirm-close only; unconfirmed books ride to cash-close flatten at ${close} ${tzLabel}.`
-      : `- Three ranges / up to 2 probes each (session cap ≤ 3 fills total, win/loss/breakeven all count; progressive risk 2% → 1% → 0.5% by fill #): Morning OR30 ${open}–${entryEnd} ${tzLabel} → IB ${midWindow} ${tzLabel} → ${prepLabel} (levels update) → lunch-range ${lateWindow} ${tzLabel}. Next window unlocks when prior clock ends or probes are exhausted, but the session cap always wins even if a window still has spare probes. Entries only within ±10 pts of active range high, 50% mid, or low. Lunch ${lunch} ${tzLabel} is confirm-close only; unconfirmed books ride to cash-close flatten at ${close} ${tzLabel}.`
+      ? `- Three ranges / up to 2 probes each (session cap ≤ 3 fills total, win/loss/breakeven all count; progressive risk 2% → 1% → 0.5% by fill #): Morning OR30 ${open}–${entryEnd} ${tzLabel} → US Range (prior NYC H/L) ${midWindow} ${tzLabel} → ${prepLabel} (levels update) → Tokyo IB ${lateWindow} ${tzLabel}. Next window unlocks when prior clock ends or probes are exhausted, but the session cap always wins even if a window still has spare probes. Entries only within ±10 pts of active range high / low (never 50% mid). Lunch ${lunch} ${tzLabel} is confirm-close only; unconfirmed books ride to cash-close flatten at ${close} ${tzLabel}.`
+      : `- Three ranges / up to 2 probes each (session cap ≤ 3 fills total, win/loss/breakeven all count; progressive risk 2% → 1% → 0.5% by fill #): Morning OR30 ${open}–${entryEnd} ${tzLabel} → IB ${midWindow} ${tzLabel} → ${prepLabel} (levels update) → lunch-range ${lateWindow} ${tzLabel}. Next window unlocks when prior clock ends or probes are exhausted, but the session cap always wins even if a window still has spare probes. Entries only within ±10 pts of active range high or low (never 50% mid). Lunch ${lunch} ${tzLabel} is confirm-close only; unconfirmed books ride to cash-close flatten at ${close} ${tzLabel}.`
 
     const rangeLiquidityMap = tokyo
       ? `
@@ -578,7 +578,7 @@ RANGE LIQUIDITY MAP (how VP + retail stops connect to our three ranges on ${inde
 - Slot 3 Tokyo IB: bait = Tokyo first-hour IB H/L. Hunt stops beyond IB extremes. Earlier OR30/US Range = secondary magnets or polarity flips if broken.
 - Active playbook = PRIMARY bait. Earlier formed ranges = secondary. Later ranges ignored until unlocked.
 - When RANGE LIQUIDITY MAP facts are printed in the user message, every level's reasoning MUST name which range bait it hunts (e.g. "US Range high X bait — sell liquidity above near POC").
-- RANGE VOLATILITY (ATR — advise only): When the map prints ATR(14) 5m + height/ATR + suggested stop pad / trail, use those ONLY to size stop-pool offset / discuss pad-trail. ATR never changes ±10 H/50%/L entry legality and never auto-sets SL/TP.
+- RANGE VOLATILITY (ATR — advise only): When the map prints ATR(14) 5m + height/ATR + suggested stop pad / trail, use those ONLY to size stop-pool offset / discuss pad-trail. ATR never changes ±10 H/L entry legality and never auto-sets SL/TP.
 - YESTERDAY PROFILE (Dalton): When facts print YH/YL/VAH/VAL/POC + day type + 90–110% superimpose band, those are ground truth. NIKKEI yesterday = Tokyo cash, not US Range. Prefer confluence with VA/POC. SL/TP advise only: holding extreme = invalidation; band = TP magnet. Ticket stays 1.5R / progressive dollars.
 - OPENING TYPE (Dalton): When facts print Drive / Test-Drive / Rejection-Reverse / Auction (or WAITING / DRIVE FAIL), those are ground truth from the same helper as the live/sim Open chip. Nikkei open = Tokyo cash 09:00 JST, not US Range. Advise only: Drive extreme = day reference (through the open = out). Test-Drive = with the drive near the tested ref. Rej-Rev/Auction = do not chase the first spike; they do not block CALL — after IB, hunt the CALL from Control ONE-TF. Never unlocks ±10. Ticket stays 1.5R / progressive dollars.
 - CONTROL (Dalton — RF + dPOC): When facts print Rotation Factor, dPOC (developing time-POC — not volume POC, not yesterday POC), and WAIT / ONE-TF BUY / ONE-TF SELL / TWO-TF, those are ground truth from the same helper as the live/sim Ctrl chip. Nikkei = Tokyo cash letters, not US Range. Advise only: does not pick entries, does not unlock ±10, does not relabel Open type, does not change OR30/US Range/IB windows. Hunt stop pools on the ACTIVE range. Ticket stays 1.5R / progressive dollars.
@@ -592,7 +592,7 @@ RANGE LIQUIDITY MAP (how VP + retail stops connect to our three ranges on ${inde
 - Slot 3 Lunch-range: bait = NYC lunch session (12:00–13:30 Montreal) H/L. Hunt stops beyond lunch-range extremes. Morning OR30/IB = secondary magnets or polarity flips if broken.
 - Active playbook = PRIMARY bait. Earlier formed ranges = secondary. Later ranges ignored until unlocked.
 - When RANGE LIQUIDITY MAP facts are printed in the user message, every level's reasoning MUST name which range bait it hunts (e.g. "OR30 high X bait — sell liquidity above near POC").
-- RANGE VOLATILITY (ATR — advise only): When the map prints ATR(14) 5m + height/ATR + suggested stop pad / trail, use those ONLY to size stop-pool offset / discuss pad-trail. ATR never changes ±10 H/50%/L entry legality and never auto-sets SL/TP.
+- RANGE VOLATILITY (ATR — advise only): When the map prints ATR(14) 5m + height/ATR + suggested stop pad / trail, use those ONLY to size stop-pool offset / discuss pad-trail. ATR never changes ±10 H/L entry legality and never auto-sets SL/TP.
 - YESTERDAY PROFILE (Dalton): When facts print YH/YL/VAH/VAL/POC + day type + 90–110% superimpose band, those are ground truth. Prefer confluence with VA/POC. SL/TP advise only: holding extreme = invalidation; band = TP magnet. Ticket stays 1.5R / progressive dollars.
 - OPENING TYPE (Dalton): When facts print Drive / Test-Drive / Rejection-Reverse / Auction (or WAITING / DRIVE FAIL), those are ground truth from the same helper as the live/sim Open chip. Advise only: Drive extreme = day reference (through the open = out). Test-Drive = with the drive near the tested ref. Rej-Rev/Auction = do not chase the first spike; they do not block CALL — after IB, hunt the CALL from Control ONE-TF. Never unlocks ±10. Ticket stays 1.5R / progressive dollars.
 - CONTROL (Dalton — RF + dPOC): When facts print Rotation Factor, dPOC (developing time-POC — not volume POC, not yesterday POC), and WAIT / ONE-TF BUY / ONE-TF SELL / TWO-TF, those are ground truth from the same helper as the live/sim Ctrl chip. Advise only: does not pick entries, does not unlock ±10, does not relabel Open type, does not change OR30/IB/lunch windows. Hunt stop pools on the ACTIVE range. Ticket stays 1.5R / progressive dollars.
