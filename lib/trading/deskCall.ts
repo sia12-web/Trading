@@ -1,7 +1,9 @@
 /**
- * Desk CALL — binary read from Open type + Control + yesterday veto +
- * the locked playbook range (stop-pool ±10). Governs ticket side and
- * legal edge. Level Finder and Leo advise only — they never place.
+ * Desk CALL — binary read from Drive/Test-Drive (morning) + Control
+ * (after IB) + the locked playbook range (stop-pool ±10). Governs
+ * ticket side and legal edge. Open-Auction / Rejection-Reverse stay
+ * on the Open chip — they do not gate CALL. Level Finder and Leo
+ * advise only — they never place.
  *
  * Not a new clock, not a price line. Ticket stays 1:1.5 and
  * $400→$250→$150. Does not unlock ±10.
@@ -142,7 +144,7 @@ function waiting(
 ): DeskCall {
   const reason =
     extra?.reason ??
-    'CALL WAIT — Open and Control don’t agree yet, or it’s two-timeframe. Hunt nothing new.'
+    'CALL WAIT — Control isn’t ONE-TF yet, Drive/Test-Drive didn’t give a morning side, or it’s two-timeframe. Hunt nothing new.'
   const locked = extra?.bookLocked === true
   return {
     instrument,
@@ -192,15 +194,20 @@ function controlBias(control: MarketControl): DeskCallSide {
   return 'WAIT'
 }
 
-function ydayVetoes(
-  openType: YesterdayOpenType | undefined,
+function sideFromOpenAndControl(args: {
   opening: OpeningActivity
-): boolean {
-  if (openType !== 'IN_VALUE') return false
-  return (
-    opening.type === 'OPEN_REJECTION_REVERSE' ||
-    opening.type === 'OPEN_AUCTION'
-  )
+  control: MarketControl
+}): DeskCallSide {
+  if (args.opening.failedDrive) return 'WAIT'
+  const fromOpen = openBias(args.opening)
+  const fromCtrl = controlBias(args.control)
+  const ctrlReady = args.control.label !== 'WAIT'
+  if (fromOpen !== 'WAIT') {
+    if (!ctrlReady) return fromOpen
+    return fromCtrl === fromOpen ? fromOpen : 'WAIT'
+  }
+  if (fromCtrl === 'LONG' || fromCtrl === 'SHORT') return fromCtrl
+  return 'WAIT'
 }
 
 function resolveActiveRange(args: {
@@ -243,26 +250,17 @@ function resolveActiveRange(args: {
 function decideSide(args: {
   opening: OpeningActivity
   control: MarketControl
-  ydayType: YesterdayOpenType | undefined
   peerSide?: DeskCallSide | null
 }): DeskCallSide {
-  if (ydayVetoes(args.ydayType, args.opening)) return 'WAIT'
-  const fromOpen = openBias(args.opening)
-  if (fromOpen === 'WAIT') return 'WAIT'
-
-  const afterIb = args.control.label !== 'WAIT'
-  let side: DeskCallSide = fromOpen
-  if (afterIb) {
-    const fromCtrl = controlBias(args.control)
-    if (fromCtrl === 'WAIT' || fromCtrl !== fromOpen) return 'WAIT'
-    side = fromOpen
-  }
-
+  const side = sideFromOpenAndControl({
+    opening: args.opening,
+    control: args.control,
+  })
   if (
     args.peerSide === 'LONG' ||
     args.peerSide === 'SHORT'
   ) {
-    if (args.peerSide !== side) return 'WAIT'
+    if (side === 'WAIT' || args.peerSide !== side) return 'WAIT'
   }
   return side
 }
@@ -305,7 +303,10 @@ function buildCallHoverText(args: {
   const fromOpen = openBias(args.opening)
   const fromCtrl = controlBias(args.control)
   const ctrlReady = args.control.label !== 'WAIT'
-  const veto = ydayVetoes(args.ydayType, args.opening)
+  const localSide = sideFromOpenAndControl({
+    opening: args.opening,
+    control: args.control,
+  })
   const rows: string[] = []
 
   if (!args.range) {
@@ -320,23 +321,21 @@ function buildCallHoverText(args: {
     rows.push(`BLOCK  Open: ${openBadge} — failed drive, no side`)
   } else if (fromOpen === 'WAIT') {
     rows.push(
-      `BLOCK  Open: ${openBadge} — needs Drive or Test-Drive (up or down)`
+      `ADVISE Open: ${openBadge} — chip only; Auction / Rej-Rev does not gate CALL`
     )
   } else {
     rows.push(`OK     Open: ${openBadge} → ${fromOpen}`)
   }
 
-  if (veto) {
-    rows.push(
-      `BLOCK  Yday: ${ydayHoverLabel(args.ydayType)} + Open ${openBadge} — in-value Auction/Rej-Rev veto`
-    )
-  } else {
-    rows.push(`OK     Yday: ${ydayHoverLabel(args.ydayType)} — no veto`)
-  }
+  rows.push(
+    `OK     Yday: ${ydayHoverLabel(args.ydayType)} — location only, not a CALL gate`
+  )
 
   if (!ctrlReady) {
     rows.push(
-      `OK     Ctrl: ${ctrlDetail} — not scored yet; Open can CALL alone`
+      fromOpen !== 'WAIT'
+        ? `OK     Ctrl: ${ctrlDetail} — not scored yet; Drive/Test-Drive can CALL alone`
+        : `OK     Ctrl: ${ctrlDetail} — not scored yet; wait for ONE-TF or a Drive`
     )
   } else if (fromCtrl === 'WAIT') {
     rows.push(
@@ -348,12 +347,14 @@ function buildCallHoverText(args: {
     )
   } else {
     rows.push(
-      `OK     Ctrl: ${ctrlDetail} → ${fromCtrl}`
+      fromOpen === 'WAIT'
+        ? `OK     Ctrl: ${ctrlDetail} → ${fromCtrl} — CALL from Control (Open is chip only)`
+        : `OK     Ctrl: ${ctrlDetail} → ${fromCtrl}`
     )
   }
 
   if (args.peerSide === 'LONG' || args.peerSide === 'SHORT') {
-    if (fromOpen !== 'WAIT' && args.peerSide !== fromOpen) {
+    if (localSide !== 'WAIT' && args.peerSide !== localSide) {
       rows.push(`BLOCK  Twin desk: ${args.peerSide} — disagrees with this CALL`)
     } else {
       rows.push(`OK     Twin desk: ${args.peerSide}`)
@@ -372,7 +373,7 @@ function buildCallHoverText(args: {
       : `CALL ${args.range.key} ${args.side} — ticket allowed`
   const hunt =
     args.side === 'WAIT' || !args.range || args.entryPrice == null
-      ? 'Hunt nothing new until Open and Control agree on one side.'
+      ? 'Hunt nothing new until Control is ONE-TF, or Drive/Test-Drive gives a morning side.'
       : args.side === 'LONG'
         ? `Hunt: ±${CALL_BAND_POINTS} below ${speakRange(args.range.key, tokyo)} low ${args.entryPrice}${
             args.midAllowed ? ' (mid is a pullback in the same CALL)' : ''
@@ -406,7 +407,7 @@ export function deskCallBadgeText(p: DeskCall): string {
 export type DeskCallEdge = 'high' | 'low' | 'mid'
 
 const CALL_WAIT_ENTRY =
-  'CALL WAIT — hunt nothing new. Open and Control don’t agree yet, or there is no legal ±10.'
+  'CALL WAIT — hunt nothing new. Control isn’t ONE-TF yet, or there is no legal ±10.'
 
 /** Which painted ±10 edges CALL allows (live + sim). WAIT → none. */
 export function deskCallLegalEdges(call: DeskCall): DeskCallEdge[] {
@@ -512,7 +513,7 @@ export function playLineForCall(
   const tokyo = p.instrument === 'NIKKEI'
   const locked = p.bookLocked ? ` ${BOOK_LOCKED}` : ''
   if (p.side === 'WAIT' || !p.rangeKey) {
-    return `CALL WAIT — Open and Control don’t agree yet, or it’s two-timeframe. Hunt nothing new.${locked} ${TICKET}`
+    return `CALL WAIT — Control isn’t ONE-TF yet, Drive/Test-Drive didn’t give a morning side, or it’s two-timeframe. Hunt nothing new.${locked} ${TICKET}`
   }
   const name = speakRange(p.rangeKey, tokyo)
   const mid =
@@ -798,7 +799,6 @@ export function computeDeskCall(args: {
   const side = decideSide({
     opening,
     control,
-    ydayType: yday?.openType,
     peerSide: args.peerSide,
   })
   const midAllowed = rangeAllowsMidEdge({

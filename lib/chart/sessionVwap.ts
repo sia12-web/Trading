@@ -624,9 +624,6 @@ export function projectSessionHighlightRects(args: {
       height,
       color: showColumns ? style.colorFull : style.color,
       zIndex: style.zIndex + 10,
-      borderColor: style.line,
-      borderTopWidth: showColumns ? 2 : 1,
-      borderBottomWidth: showColumns ? 2 : 1,
     })
   }
 

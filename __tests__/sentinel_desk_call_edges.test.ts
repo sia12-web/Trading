@@ -218,6 +218,66 @@ test('DRIVE FAIL stays WAIT even with a locked OR30', () => {
   assert.ok(call.openingType === 'OPEN_REJECTION_REVERSE' || call.playLine.includes('WAIT'))
 })
 
+test('Auction + ONE-TF BUY after IB → CALL from Control', () => {
+  const a: DeskCallBar[] = [
+    {
+      time: mondayOpen,
+      open: 42100,
+      high: 42130,
+      low: 42070,
+      close: 42100,
+      volume: 1,
+    },
+    {
+      time: mondayOpen + 300,
+      open: 42105,
+      high: 42125,
+      low: 42085,
+      close: 42110,
+      volume: 1,
+    },
+    {
+      time: mondayOpen + 600,
+      open: 42110,
+      high: 42135,
+      low: 42090,
+      close: 42100,
+      volume: 1,
+    },
+  ]
+  for (let i = 3; i < 6; i++) {
+    a.push({
+      time: mondayOpen + i * 300,
+      open: 42110,
+      high: 42140,
+      low: 42080,
+      close: 42115,
+      volume: 1,
+    })
+  }
+  const start = mondayOpen + CONTROL_PERIOD_SEC
+  for (let i = 0; i < 6; i++) {
+    a.push({
+      time: start + i * 300,
+      open: 42180,
+      high: 42220,
+      low: 42160,
+      close: 42200,
+      volume: 1,
+    })
+  }
+  const call = computeDeskCall({
+    instrument: 'DOW',
+    candles: [...friday, ...a],
+    asOfUnix: mondayOpen + 60 * 60,
+    playbookMode: 'ib',
+  })
+  assert.equal(call.openingType, 'OPEN_AUCTION')
+  assert.equal(call.controlLabel, 'ONE-TF BUY')
+  assert.equal(call.side, 'LONG')
+  assert.equal(deskCallBadgeText(call), 'IB LONG')
+})
+
 test('US Range on DOW is not a legal CALL range', () => {
   const call = computeDeskCall({
     instrument: 'DOW',

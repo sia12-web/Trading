@@ -251,14 +251,32 @@ function auctionThenBuy(openU: number): DeskCallBar[] {
   })
   assert.equal(call.openingType, 'OPEN_AUCTION')
   assert.equal(call.controlLabel, 'ONE-TF BUY')
-  assert.equal(call.side, 'WAIT', 'Auction + ONE-TF BUY → WAIT')
-  assert.equal(deskCallBadgeText(call), 'WAIT')
+  assert.equal(call.side, 'LONG', 'Auction + ONE-TF BUY → CALL from Control')
+  assert.equal(deskCallBadgeText(call), 'IB LONG')
   const hover = deskCallHoverText(call)
-  assert.ok(hover.includes('CALL WAIT — no ticket'))
-  assert.ok(hover.includes('BLOCK  Open: AUCTION'))
-  assert.ok(hover.includes('Drive or Test-Drive'))
+  assert.ok(hover.includes('CALL IB LONG — ticket allowed'))
+  assert.ok(hover.includes('ADVISE Open: AUCTION'))
+  assert.ok(hover.includes('does not gate CALL'))
   assert.ok(hover.includes('OK     Ctrl:'))
+  assert.ok(hover.includes('CALL from Control'))
   assert.ok(hover.includes('Leo and Level Finder advise only. No line.'))
+}
+
+{
+  const bars = auctionThenBuy(mondayOpen).filter((c) => c.time < mondayOpen + 30 * 60)
+  const call = computeDeskCall({
+    instrument: 'DOW',
+    candles: [...friday, ...bars],
+    asOfUnix: mondayOpen + 30 * 60,
+    playbookMode: 'morning',
+  })
+  assert.equal(call.openingType, 'OPEN_AUCTION')
+  assert.equal(call.controlLabel, 'WAIT')
+  assert.equal(
+    call.side,
+    'WAIT',
+    'Auction before IB still WAIT — no Drive and Control not scored'
+  )
 }
 
 {

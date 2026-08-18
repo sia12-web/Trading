@@ -283,6 +283,52 @@ for (const name of ['Asia', 'London', 'New York'] as const) {
   )
 }
 
+{
+  const start = et(2026, 8, 17, 18, 0)
+  const end = et(2026, 8, 18, 9, 30)
+  const { spans, candleTimes } = computeSessionHighlightSpans({
+    candles: makeBars(start, end),
+    asOfUnix: end,
+    instrument: 'NASDAQ',
+  })
+  const boxes = projectSessionHighlightRects({
+    spans,
+    candleTimes,
+    timeScale: {
+      timeToCoordinate: (t) => Number(t) - start,
+      height: () => 400,
+    },
+    priceToY: (price) => 200 - (price - 100) * 10,
+    priceScaleWidth: 70,
+    containerWidth: 900,
+    containerHeight: 400,
+    sessionPaint: 'range',
+  })
+  assert(boxes.rects.length >= 1, 'Default range paint draws high→low boxes')
+  assert(
+    boxes.rects.every((r) => !r.borderTopWidth && !r.borderBottomWidth),
+    'Session boxes must not have top/bottom H/L lines'
+  )
+  const full = projectSessionHighlightRects({
+    spans,
+    candleTimes,
+    timeScale: {
+      timeToCoordinate: (t) => Number(t) - start,
+      height: () => 400,
+    },
+    priceToY: (price) => 200 - (price - 100) * 10,
+    priceScaleWidth: 70,
+    containerWidth: 900,
+    containerHeight: 400,
+    sessionPaint: 'full',
+  })
+  const rangeBoxes = full.rects.filter((r) => r.top > 0)
+  assert(
+    rangeBoxes.every((r) => !r.borderTopWidth && !r.borderBottomWidth),
+    'Sessions (H) range boxes must not have top/bottom H/L lines'
+  )
+}
+
 console.log(
   '✅ session_desk_instruments: dead zones after cash close; Nikkei NY = US RTH only'
 )
