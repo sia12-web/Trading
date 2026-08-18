@@ -85,7 +85,7 @@ export function TradovateMirrorCard(props: Props) {
   const riskMismatch = Math.abs(ticket.riskDeltaDollars) > 1
 
   return (
-    <div className="absolute bottom-28 left-4 z-30 w-[min(26rem,calc(100vw-2rem))] rounded-lg border border-amber-500/40 bg-[#0d1117]/95 px-3 py-2.5 text-[11px] text-amber-50 shadow-xl backdrop-blur-md">
+    <div className="w-[min(26rem,calc(100vw-2rem))] rounded-lg border border-amber-500/40 bg-[#0d1117]/95 px-3 py-2.5 text-[11px] text-amber-50 shadow-xl backdrop-blur-md">
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-wide text-amber-300">

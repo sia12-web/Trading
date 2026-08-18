@@ -4,6 +4,8 @@
  */
 
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
   LIVE_CLOCK_REFUSE,
   assertLiveClockIn,
@@ -180,5 +182,24 @@ const tightDow = buildTradovateMirrorTicket({
 assert.ok(tightDow)
 assert.equal(tightDow!.symbol, 'MYM')
 assert.notEqual(tightDow!.symbol, 'YM')
+
+const livePage = readFileSync(
+  join(__dirname, '../app/dashboard/chart/page.tsx'),
+  'utf8'
+)
+const ticketCard = readFileSync(
+  join(__dirname, '../app/dashboard/chart/components/TradovateMirrorCard.tsx'),
+  'utf8'
+)
+assert.ok(livePage.includes('<ManageDeskBar'), 'manage card stays on the live desk')
+assert.ok(livePage.includes('<TradovateMirrorCard'), 'TradingView ticket stays on the live desk')
+assert.ok(
+  livePage.includes('flex flex-col gap-2 items-start'),
+  'manage + ticket stack instead of overlapping'
+)
+assert.ok(
+  !ticketCard.includes('absolute bottom-28'),
+  'ticket card is not independently pinned over the manage strip'
+)
 
 console.log('live_desk_book.test.ts: all assertions passed')

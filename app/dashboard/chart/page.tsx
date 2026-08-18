@@ -2072,6 +2072,26 @@ export default function ChartPage() {
   const callModeChosen = gate?.useCall === true || gate?.useCall === false
   const canTrade = inEntry && !pending && !managePos && clockedIn && callModeChosen
   const inWorking = !!pending && !managePos
+  const showWorkingStrip =
+    (inWorking && pending != null) ||
+    orderStatus === 'rejected' ||
+    orderStatus === 'placing'
+  const showWorkingTicket =
+    isTradeifyGrowth50k(riskProfile) &&
+    pending != null &&
+    !managePos &&
+    pending.instrument !== 'NIKKEI'
+  const showFilledTicket =
+    isTradeifyGrowth50k(riskProfile) &&
+    managePos != null &&
+    (managePos.instrument || instrument) !== 'NIKKEI'
+  const showManageBar = inManage && managePos != null
+  const showDeskOverlay =
+    showWorkingStrip ||
+    showWorkingTicket ||
+    showFilledTicket ||
+    showManageBar ||
+    !!fillError
   // Playbook/levels only for the desk you clocked into — not on browse tabs after close
   const deskLevelsActive =
     !!gate &&
@@ -2096,150 +2116,147 @@ export default function ChartPage() {
       </div>
 
       <div className="flex-1 w-full h-full min-h-0 min-w-0 relative p-1 flex flex-col gap-1">
-        {(inWorking && pending) || orderStatus === 'rejected' || orderStatus === 'placing' ? (
-          <div
-            className={`absolute bottom-14 left-4 z-30 flex items-center gap-3 rounded-lg border px-3 py-1.5 text-xs shadow-xl backdrop-blur-md ${
-              orderStatus === 'rejected'
-                ? 'border-red-700/50 bg-red-950/90 text-red-100'
-                : 'border-sky-700/50 bg-sky-950/90 text-sky-100'
-            }`}
-          >
-            <span className="font-semibold uppercase tracking-wide">
-              {orderStatus === 'placing'
-                ? 'Placing'
-                : orderStatus === 'rejected'
-                  ? 'Rejected'
-                  : orderStatus === 'filled'
-                    ? 'Filled'
-                    : 'Working'}
-            </span>
-            {pending && (
-              <>
-                <span className="price-mono">
-                  {pending.direction} @ {pending.level.toLocaleString()}
-                </span>
-                <span className="opacity-80">
-                  SL {pending.stopLoss.toLocaleString()}{' '}
-                  <span className="text-amber-300/90">(locked — sized at place)</span>
-                  · TP {pending.profitTarget.toLocaleString()}{' '}
-                  <span className="text-emerald-300/80">(drag on chart)</span>
-                </span>
-              </>
-            )}
-            {pending && livePrice != null && orderStatus === 'working' && (
-              <span className="text-gray-400">
-                last {livePrice.toLocaleString()} ·{' '}
-                {pending.direction === 'LONG'
-                  ? livePrice > pending.level
-                    ? 'waiting for price ≤ limit'
-                    : 'at/through limit…'
-                  : livePrice < pending.level
-                    ? 'waiting for price ≥ limit'
-                    : 'at/through limit…'}
-              </span>
-            )}
-            {pending && (
-              <button
-                type="button"
-                onClick={() => {
-                  const inst = pending.instrument
-                  orderGenRef.current += 1
-                  pendingRef.current = null
-                  setPending(null)
-                  setFillError(null)
-                  setOrderStatus('idle')
-                  void cancelWorkingLimit(asLiveNy(inst))
+        {showDeskOverlay ? (
+          <div className="absolute bottom-14 left-3 z-30 pointer-events-auto flex flex-col gap-2 items-start max-h-[min(72vh,calc(100%-3.5rem))] overflow-y-auto">
+            {showManageBar && managePos ? (
+              <ManageDeskBar
+                position={managePos}
+                currentPrice={
+                  livePrice != null &&
+                  quoteBelongsToBook({
+                    instrument: managePos.instrument,
+                    entry: managePos.entryPrice,
+                    quote: livePrice,
+                  })
+                    ? livePrice
+                    : null
+                }
+                atrAdviceLine={rangeAtrAdvice}
+                onClosed={(exitReason = 'manual') => {
+                  positionExitHandledRef.current = true
+                  if (exitReason === 'stop_hit') {
+                    warningToast(
+                      `Stop loss hit @ ${managePos.stopLoss.toLocaleString()}`,
+                      9000
+                    )
+                  } else if (exitReason === 'take_profit') {
+                    successToast(
+                      `Take profit @ ${managePos.profitTarget.toLocaleString()}`,
+                      9000
+                    )
+                  }
+                  clearPositionUi(exitReason)
                 }}
-                className="ml-auto rounded border border-sky-600/50 px-2 py-1 text-[10px] font-semibold uppercase text-sky-200 hover:bg-sky-900/50"
+                onRefreshGate={refreshGate}
+                onAiVerdict={setAiVerdict}
+                onBreakEvenAvailable={handleBreakEvenAvailable}
+                onValueAccepted={handleValueAccepted}
+                onBrokerExit={handleBrokerExit}
+              />
+            ) : null}
+
+            {showWorkingTicket && pending ? (
+              <TradovateMirrorCard
+                instrument={pending.instrument}
+                direction={pending.direction}
+                entry={pending.level}
+                stop={pending.stopLoss}
+                target={pending.profitTarget}
+                riskDollars={pending.riskAmount}
+                bookId={pending.workingId}
+                accountName={tradeifyAccountName}
+                phase="working"
+              />
+            ) : null}
+            {showFilledTicket && managePos ? (
+              <TradovateMirrorCard
+                instrument={(managePos.instrument || instrument) as 'DOW' | 'NASDAQ' | 'NIKKEI'}
+                direction={
+                  String(managePos.direction).toUpperCase() === 'SHORT' ? 'SHORT' : 'LONG'
+                }
+                entry={managePos.entryPrice}
+                stop={managePos.stopLoss}
+                target={managePos.profitTarget}
+                riskDollars={
+                  (managePos.riskAmount ?? 0) > 0
+                    ? managePos.riskAmount
+                    : lastTradeifyRiskRef.current
+                }
+                bookId={managePos.id}
+                accountName={tradeifyAccountName}
+                phase="filled"
+              />
+            ) : null}
+
+            {showWorkingStrip ? (
+              <div
+                className={`flex items-center gap-3 rounded-lg border px-3 py-1.5 text-xs shadow-xl backdrop-blur-md ${
+                  orderStatus === 'rejected'
+                    ? 'border-red-700/50 bg-red-950/90 text-red-100'
+                    : 'border-sky-700/50 bg-sky-950/90 text-sky-100'
+                }`}
               >
-                Cancel
-              </button>
-            )}
+                <span className="font-semibold uppercase tracking-wide">
+                  {orderStatus === 'placing'
+                    ? 'Placing'
+                    : orderStatus === 'rejected'
+                      ? 'Rejected'
+                      : orderStatus === 'filled'
+                        ? 'Filled'
+                        : 'Working'}
+                </span>
+                {pending && (
+                  <>
+                    <span className="price-mono">
+                      {pending.direction} @ {pending.level.toLocaleString()}
+                    </span>
+                    <span className="opacity-80">
+                      SL {pending.stopLoss.toLocaleString()}{' '}
+                      <span className="text-amber-300/90">(locked — sized at place)</span>
+                      · TP {pending.profitTarget.toLocaleString()}{' '}
+                      <span className="text-emerald-300/80">(drag on chart)</span>
+                    </span>
+                  </>
+                )}
+                {pending && livePrice != null && orderStatus === 'working' && (
+                  <span className="text-gray-400">
+                    last {livePrice.toLocaleString()} ·{' '}
+                    {pending.direction === 'LONG'
+                      ? livePrice > pending.level
+                        ? 'waiting for price ≤ limit'
+                        : 'at/through limit…'
+                      : livePrice < pending.level
+                        ? 'waiting for price ≥ limit'
+                        : 'at/through limit…'}
+                  </span>
+                )}
+                {pending && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const inst = pending.instrument
+                      orderGenRef.current += 1
+                      pendingRef.current = null
+                      setPending(null)
+                      setFillError(null)
+                      setOrderStatus('idle')
+                      void cancelWorkingLimit(asLiveNy(inst))
+                    }}
+                    className="ml-auto rounded border border-sky-600/50 px-2 py-1 text-[10px] font-semibold uppercase text-sky-200 hover:bg-sky-900/50"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+            ) : null}
+
+            {fillError ? (
+              <p className="px-2.5 py-1 text-xs text-red-300 bg-red-950/90 rounded border border-red-700/60 shadow-lg backdrop-blur-md">
+                {fillError}
+              </p>
+            ) : null}
           </div>
         ) : null}
-
-        {isTradeifyGrowth50k(riskProfile) &&
-          pending &&
-          !managePos &&
-          pending.instrument !== 'NIKKEI' && (
-          <TradovateMirrorCard
-            instrument={pending.instrument}
-            direction={pending.direction}
-            entry={pending.level}
-            stop={pending.stopLoss}
-            target={pending.profitTarget}
-            riskDollars={pending.riskAmount}
-            bookId={pending.workingId}
-            accountName={tradeifyAccountName}
-            phase="working"
-          />
-        )}
-        {isTradeifyGrowth50k(riskProfile) &&
-          managePos &&
-          (managePos.instrument || instrument) !== 'NIKKEI' && (
-          <TradovateMirrorCard
-            instrument={(managePos.instrument || instrument) as 'DOW' | 'NASDAQ' | 'NIKKEI'}
-            direction={
-              String(managePos.direction).toUpperCase() === 'SHORT' ? 'SHORT' : 'LONG'
-            }
-            entry={managePos.entryPrice}
-            stop={managePos.stopLoss}
-            target={managePos.profitTarget}
-            riskDollars={
-              (managePos.riskAmount ?? 0) > 0
-                ? managePos.riskAmount
-                : lastTradeifyRiskRef.current
-            }
-            bookId={managePos.id}
-            accountName={tradeifyAccountName}
-            phase="filled"
-          />
-        )}
-
-        {fillError && (
-          <p className="absolute bottom-14 left-4 z-30 px-2.5 py-1 text-xs text-red-300 bg-red-950/90 rounded border border-red-700/60 shadow-lg backdrop-blur-md">
-            {fillError}
-          </p>
-        )}
-
-        {inManage && managePos && (
-          <div className="absolute bottom-14 left-3 z-30 pointer-events-auto">
-            <ManageDeskBar
-              position={managePos}
-              currentPrice={
-                livePrice != null &&
-                quoteBelongsToBook({
-                  instrument: managePos.instrument,
-                  entry: managePos.entryPrice,
-                  quote: livePrice,
-                })
-                  ? livePrice
-                  : null
-              }
-              atrAdviceLine={rangeAtrAdvice}
-              onClosed={(exitReason = 'manual') => {
-                positionExitHandledRef.current = true
-                if (exitReason === 'stop_hit') {
-                  warningToast(
-                    `Stop loss hit @ ${managePos.stopLoss.toLocaleString()}`,
-                    9000
-                  )
-                } else if (exitReason === 'take_profit') {
-                  successToast(
-                    `Take profit @ ${managePos.profitTarget.toLocaleString()}`,
-                    9000
-                  )
-                }
-                clearPositionUi(exitReason)
-              }}
-              onRefreshGate={refreshGate}
-              onAiVerdict={setAiVerdict}
-              onBreakEvenAvailable={handleBreakEvenAvailable}
-              onValueAccepted={handleValueAccepted}
-              onBrokerExit={handleBrokerExit}
-            />
-          </div>
-        )}
 
         {managePos && (
           <MorningLunchFlatConfirm
