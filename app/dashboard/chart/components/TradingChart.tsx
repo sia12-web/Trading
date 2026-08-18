@@ -2277,7 +2277,7 @@ export function TradingChart({
       opts?: {
         direction?: 'LONG' | 'SHORT'
         /**
-         * Click-on-band: keep that painted edge center (H / Mid / L).
+         * Click-on-band: keep that painted edge center (H / L).
          * Prevents re-attribution from flipping a high/low click onto mid
          * when ranges overlap.
          */
@@ -6617,7 +6617,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           low: r.low,
           atrLine: atrSnap ? formatRangeAtrAdviceLine(atrSnap) : null,
           nextHint:
-            'Optional morning probe (±10 H / 50% / L). If unused when IB locks → hand off to IB.',
+            'Optional morning probe (±10 H / L). If unused when IB locks → hand off to IB.',
         })
         onDeskAlert({
           ...note,
@@ -6645,7 +6645,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           nextHint:
             instrument === 'NIKKEI'
               ? `Tokyo IB shaped — ±10 entries are open now (${deskLocalHmsAsTraderDisplay('10:00:00', 'Asia/Tokyo')}–${deskLocalHmsAsTraderDisplay('15:00:00', 'Asia/Tokyo')} ${TRADER_DISPLAY_LABEL}). US Range may still run until ${deskLocalHmsAsTraderDisplay('10:45:00', 'Asia/Tokyo')} ${TRADER_DISPLAY_LABEL}.`
-              : 'IB entry window is open (±10 of locked H / 50% / L).',
+              : 'IB entry window is open (±10 of locked H / L).',
         })
         onDeskAlert({
           ...note,
@@ -6669,7 +6669,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           high: r.high,
           low: r.low,
           atrLine: atrSnap ? formatRangeAtrAdviceLine(atrSnap) : null,
-          nextHint: 'Lunch-range entry window is open (±10 of locked H / 50% / L).',
+          nextHint: 'Lunch-range entry window is open (±10 of locked H / L).',
         })
         onDeskAlert({
           ...note,
@@ -6694,7 +6694,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           low: r.low,
           atrLine: atrSnap ? formatRangeAtrAdviceLine(atrSnap) : null,
           nextHint:
-            'Already shaped from prior NYC session. Entry when US Range window unlocks (±10 H / L only — no 50% mid).',
+            'Already shaped from prior NYC session. Entry when US Range window unlocks (±10 H / L only).',
         })
         onDeskAlert({
           ...note,
@@ -8080,7 +8080,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     left: '32%',
                     top: `${entryY - 14}px`,
                   }}
-                  title="Drag Entry between painted ±10 band centers (H / Mid / L; US Range H / L only)"
+                  title="Drag Entry between painted ±10 band centers (H / L)"
                 >
                   {/* Explicit Buy / Sell Placement Button — ONLY BUTTON THAT PLACES ORDER */}
                   <button

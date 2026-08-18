@@ -327,7 +327,7 @@ interface PendingOrder {
   entrySource: DeskEntrySource
   /** Sim clock when this window's working limit expires */
   windowEndUnix: number
-  /** Playbook range label for bucket billing (±10 H/Mid/L) */
+  /** Playbook range label for bucket billing (±10 H/L) */
   strategyRangeLabel?: string | null
 }
 
@@ -2770,7 +2770,7 @@ function SimulationDeskInner() {
     }
 
     // Mirror live ±10 entry band edges for toggled studies only
-    // (H / 50% / L, or H / L only for US Range) — click R / B / N / U to show.
+    // (H / L) — click R / B / N / U to show.
     const entryOpen =
       !position &&
       !pending &&
@@ -4164,7 +4164,7 @@ function SimulationDeskInner() {
               type="button"
               title={
                 showUsRange
-                  ? 'US Range H/L visible — no 50% mid (Press U)'
+                  ? 'US Range H/L visible (Press U)'
                   : 'Show prior NYC US session H/L only — no mid (Press U)'
               }
               onClick={() => setShowUsRange((v) => !v)}

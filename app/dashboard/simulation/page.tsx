@@ -134,7 +134,7 @@ export default function SimulationPage() {
         <p className="text-sm text-gray-500 mt-1 max-w-2xl">
           Replay a past full session as Tradeify Growth $50k. Same as live: $400 → $250 → $150,
           SL beyond the painted range, TP at 1.5R (1:1.5), session cap 3, entries within ±10 of
-          a range you turn on (H / 50% mid / L — US Range is H/L only). Paper
+          a range you turn on (H / L). Paper
           fills, SL/TP, and manage stay here; closed paper orders land in{' '}
           <Link href="/dashboard/journal?tab=sim" className="text-violet-400 hover:underline">
             Order History (Simulation)
