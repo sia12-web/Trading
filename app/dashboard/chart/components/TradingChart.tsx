@@ -239,6 +239,7 @@ import {
 import { snapDeskPrice, snapStopToTick, snapTargetToTick } from '@/lib/trading/instrumentTicks'
 import { deskBookLines } from '@/lib/trading/tradovateMirror'
 import {
+  clickIsOnPriceScale,
   overlayTopFromPrice,
   priceFromClientY,
   riskBoxDollarPreview,
@@ -4491,28 +4492,38 @@ export function TradingChart({
       if (price == null) return
 
       const { strategyRange, snapRanges, ladder } = getStrategyRiskBundle()
-      const hit = attributePlaybookBandEntry({
+      const liveOk = (range: { label: string; high: number; low: number }) => {
+        if (range.label === 'OR30') {
+          return (
+            !!strategyRange &&
+            strategyRange.label === range.label &&
+            strategyRange.high === range.high &&
+            strategyRange.low === range.low
+          )
+        }
+        return assertBucketEntryEligible({
+          instrument,
+          market: deskMarketFor(instrument),
+          timeSec: deskClockSeconds(instrument),
+          ladder,
+          rangeLabel: range.label,
+        }).ok
+      }
+      const snapArgs = {
         entry: price,
         candidates: snapRanges,
         preferLabel: strategyRange?.label ?? null,
-        liveOk: (range) => {
-          if (range.label === 'OR30') {
-            return (
-              !!strategyRange &&
-              strategyRange.label === range.label &&
-              strategyRange.high === range.high &&
-              strategyRange.low === range.low
-            )
-          }
-          return assertBucketEntryEligible({
-            instrument,
-            market: deskMarketFor(instrument),
-            timeSec: deskClockSeconds(instrument),
-            ladder,
-            rangeLabel: range.label,
-          }).ok
-        },
-      })
+        liveOk,
+      }
+      let hit = attributePlaybookBandEntry(snapArgs)
+      if (!hit) {
+        // Right-scale H/L tags sit on the price axis — Y can miss the ±10
+        // band by a few points. Snap that click onto the nearest live H/L.
+        if (clickIsOnPriceScale(container, e.clientX)) {
+          const nearest = snapEntryToNearestOpenBandCenter(snapArgs)
+          hit = nearest?.hit ?? null
+        }
+      }
       if (!hit) return
 
       const label = hit.range.label || 'range'
@@ -5669,29 +5680,30 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     const { strategyMagnets, snapRanges, strategyRange, ladder, call } = getStrategyRiskBundle()
     const preferLabel =
       riskBox.preferRangeLabel ?? strategyRange?.label ?? null
-    const hit = attributePlaybookBandEntry({
+    const liveOk = (range: { label: string; high: number; low: number }) => {
+      if (range.label === 'OR30') {
+        return (
+          !!strategyRange &&
+          strategyRange.label === range.label &&
+          strategyRange.high === range.high &&
+          strategyRange.low === range.low
+        )
+      }
+      return assertBucketEntryEligible({
+        instrument,
+        market: deskMarketFor(instrument),
+        timeSec: deskClockSeconds(instrument),
+        ladder,
+        rangeLabel: range.label,
+      }).ok
+    }
+    const snapped = snapEntryToNearestOpenBandCenter({
       entry: boxEntry,
       candidates: snapRanges,
       preferLabel,
-      liveOk: (range) => {
-        if (range.label === 'OR30') {
-          return (
-            !!strategyRange &&
-            strategyRange.label === range.label &&
-            strategyRange.high === range.high &&
-            strategyRange.low === range.low
-          )
-        }
-        return assertBucketEntryEligible({
-          instrument,
-          market: deskMarketFor(instrument),
-          timeSec: deskClockSeconds(instrument),
-          ladder,
-          rangeLabel: range.label,
-        }).ok
-      },
+      liveOk,
     })
-    if (!hit) {
+    if (!snapped) {
       onDeskAlert?.({
         kind: 'entry_band_deny',
         title: 'Off-band entry',
@@ -5701,6 +5713,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       })
       return
     }
+    const hit = snapped.hit
     const gated = assertDeskTicketEntry({
       useCall: useCallRef.current,
       call,
@@ -7501,20 +7514,20 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           {dataMode === 'live' ? (
             <span
               className={`flex items-center gap-1 text-xs ${
-                candleFeed === 'yahoo' ? 'text-amber-400' : 'text-green-500'
+                candleFeed === 'yahoo' ? 'text-emerald-400' : 'text-amber-400'
               }`}
               title={
                 candleFeed === 'yahoo'
-                  ? 'Candles from Yahoo (cash index) — may diverge from TradingView OANDA mid. Tip still prefers OANDA when streaming.'
-                  : 'OANDA mid feed — match TradingView to US30_USD / NAS100_USD / JP225_USD Mid'
+                  ? 'CME futures (MYM / MNQ / NKD) — IB matches Tradovate, not OANDA US30/NAS100 cash'
+                  : 'OANDA CFD fallback — IB will not match Tradovate. Refresh if this stays on.'
               }
             >
               <span
                 className={`w-1.5 h-1.5 rounded-full animate-pulse ${
-                  candleFeed === 'yahoo' ? 'bg-amber-400' : 'bg-green-500'
+                  candleFeed === 'yahoo' ? 'bg-emerald-400' : 'bg-amber-400'
                 }`}
               />
-              {candleFeed === 'yahoo' ? 'LIVE · YAHOO' : 'LIVE · OANDA'}
+              {candleFeed === 'yahoo' ? 'LIVE · CME' : 'LIVE · OANDA'}
             </span>
           ) : (
             <span
@@ -8449,7 +8462,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     const fullReason = `Manual ${rationaleModal.direction} entry: ${userRationale || 'Technical structure'} | SL/TP rationale: ${userSlTpRationale || 'Geometry bounds'}`
                     const { strategyMagnets, snapRanges, strategyRange, ladder, call } =
                       getStrategyRiskBundle()
-                    const hit = attributePlaybookBandEntry({
+                    const snapped = snapEntryToNearestOpenBandCenter({
                       entry: rationaleModal.entryPrice,
                       candidates: snapRanges,
                       preferLabel:
@@ -8472,7 +8485,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                         }).ok
                       },
                     })
-                    if (!hit) {
+                    if (!snapped) {
                       onDeskAlert?.({
                         kind: 'entry_band_deny',
                         title: 'Off-band entry',
@@ -8482,6 +8495,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                       })
                       return
                     }
+                    const hit = snapped.hit
                     const gated = assertDeskTicketEntry({
                       useCall: useCallRef.current,
                       call,
@@ -8498,7 +8512,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                       })
                       return
                     }
-                    onLevelSelect?.(rationaleModal.entryPrice, {
+                    onLevelSelect?.(snapDeskPrice(instrument, snapped.price), {
                       source: 'manual',
                       type: 'manual',
                       orderType: 'LIMIT',

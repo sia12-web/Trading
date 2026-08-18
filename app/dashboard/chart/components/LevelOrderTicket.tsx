@@ -36,6 +36,7 @@ import {
 import {
   assertRangeEdgeEntry,
   findRangeEdgeBandHit,
+  snapEntryToNearestOpenBandCenter,
   RANGE_EDGE_BAND_POINTS,
   RANGE_EDGE_OFF_BAND_MESSAGE,
   rangeAllowsMidEdge,
@@ -362,8 +363,13 @@ export function LevelOrderTicket({
       const hit = findRangeEdgeBandHit(levelPrice, [strategyRange])
       if (hit) {
         seed = hit.center
+      } else {
+        const nearest = snapEntryToNearestOpenBandCenter({
+          entry: levelPrice,
+          candidates: [strategyRange],
+        })
+        if (nearest) seed = nearest.price
       }
-      // Off-band seed stays as-is so submit's assertRangeEdgeEntry rejects.
     }
     const snappedLimit = snapDeskPrice(instrument, seed)
     setLimitPrice(snappedLimit)
@@ -534,7 +540,19 @@ export function LevelOrderTicket({
       failSubmit(tradeifyDecision.refuseMessage)
       return false
     }
-    const edge = assertRangeEdgeEntry({ entry: snappedLimit, range: strategyRange })
+    const range = strategyRange
+    let limit = snappedLimit
+    let edge = assertRangeEdgeEntry({ entry: limit, range })
+    if (!edge.ok && range) {
+      const snapped = snapEntryToNearestOpenBandCenter({
+        entry: limit,
+        candidates: [range],
+      })
+      if (snapped) {
+        limit = snapped.price
+        edge = assertRangeEdgeEntry({ entry: limit, range: snapped.hit.range })
+      }
+    }
     if (!edge.ok) {
       failSubmit(edge.message)
       return false
@@ -551,7 +569,6 @@ export function LevelOrderTicket({
     placingRef.current = true
     setPlacing(true)
 
-    const limit = snappedLimit
     const stopGuard = assertProtectiveStop({
       instrument,
       entry: limit,

@@ -34,18 +34,23 @@ const serverOr30 = { label: 'OR30', high: 63_281.3, low: 62_508.8 }
 }
 
 {
-  // Entry only valid on stale client band — still reject vs server
-  const entry = 63_295 // in stale client high±10, outside server high±10
+  // Painted chart high a few points off OANDA — still the same OR30 high.
+  const entry = 63_295 // in stale client high±10, 13.7 pts above server high
   const clientStale = { label: 'OR30', high: 63_295.0, low: 62_500.0 }
   const result = gateEntryAgainstAuthoritativeRange({
     entry,
     serverRange: serverOr30,
     clientRange: clientStale,
   })
-  assert.equal(result.ok, false, 'entry outside server ±10 must fail')
-  if (!result.ok) {
-    assert.match(result.message, /highlighted ±10 H\/Mid\/L/i)
-  }
+  assert.equal(result.ok, true, 'painted high a few points off OANDA must still place')
+
+  const spoof = { label: 'OR30', high: 64_000, low: 63_000 }
+  const spoofed = gateEntryAgainstAuthoritativeRange({
+    entry: 64_000,
+    serverRange: serverOr30,
+    clientRange: spoof,
+  })
+  assert.equal(spoofed.ok, false, 'unrelated client H/L cannot spoof the server range')
 }
 
 {
@@ -264,6 +269,17 @@ const serverOr30 = { label: 'OR30', high: 63_281.3, low: 62_508.8 }
     clientRange: null,
   })
   assert.equal(midGap.range, null, 'mid-gap between painted bands is not active-fallback')
+
+  // Chart OR30 high 14pts above server — still attributes to that OR30
+  const serverOr = { label: 'OR30', high: 40_000, low: 39_900 }
+  const paintedOr = { label: 'OR30', high: 40_014, low: 39_902 }
+  const paintedHit = attributeServerPlaybookEntry({
+    entry: 40_014,
+    shaped: { or30: serverOr, ib: null, usRange: null, lunchRange: null },
+    active: serverOr,
+    clientRange: paintedOr,
+  })
+  assert.equal(paintedHit.range?.label, 'OR30', 'painted high attributes to server OR30')
 }
 
 console.log('server_playbook_range.test.ts: ok')

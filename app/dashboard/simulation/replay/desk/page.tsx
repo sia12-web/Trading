@@ -2443,7 +2443,7 @@ function SimulationDeskInner() {
     if (!riskBox) return
     const { snapRanges, strategyRange, ladder, call } = getStrategyRiskBundle()
     const now = new Date(simNowRef.current * 1000)
-    const hit = attributePlaybookBandEntry({
+    const snapped = snapEntryToNearestOpenBandCenter({
       entry: riskBox.entryPrice,
       candidates: snapRanges,
       preferLabel: riskBox.preferRangeLabel ?? strategyRange?.label ?? null,
@@ -2465,10 +2465,11 @@ function SimulationDeskInner() {
         }).ok
       },
     })
-    if (!hit) {
+    if (!snapped) {
       setMsg(RANGE_EDGE_OFF_BAND_MESSAGE)
       return
     }
+    const hit = snapped.hit
     const gated = assertDeskTicketEntry({
       useCall: useCallRef.current,
       call,

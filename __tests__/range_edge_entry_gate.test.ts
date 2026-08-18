@@ -24,6 +24,10 @@ import {
   RANGE_EDGE_BAND_POINTS,
   RANGE_EDGE_OFF_BAND_MESSAGE,
   RANGE_EDGE_US_MID_REJECTED_MESSAGE,
+  RANGE_PAINT_DRIFT_POINTS,
+  assertRangeEdgeEntryAllowingPaint,
+  clientPaintTracksServerRange,
+  paintedHlEdgeAt,
 } from '../lib/trading/rangeEdgeEntryGate'
 
 const range = { high: 40000, low: 39900, label: 'OR30' }
@@ -403,6 +407,35 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
   })
   assert.equal(usLowSnap?.hit.range.label, 'US Range', 'US L placeable when both live')
   assert.equal(usLowSnap?.price, us.low)
+
+{
+  assert.equal(RANGE_PAINT_DRIFT_POINTS, 30)
+  const server = { label: 'OR30', high: 40_000, low: 39_900 }
+  const painted = { label: 'OR30', high: 40_014, low: 39_902 }
+  assert.equal(paintedHlEdgeAt(40_014, painted), 'high')
+  assert.equal(paintedHlEdgeAt(39_902, painted), 'low')
+  assert.equal(paintedHlEdgeAt(39_950, painted), null)
+  assert.equal(clientPaintTracksServerRange(painted, server), true)
+  const okHigh = assertRangeEdgeEntryAllowingPaint({
+    entry: 40_014,
+    serverRange: server,
+    clientRange: painted,
+  })
+  assert.equal(okHigh.ok, true, 'painted high a few points off OANDA still places')
+  const okLow = assertRangeEdgeEntryAllowingPaint({
+    entry: 39_902,
+    serverRange: server,
+    clientRange: painted,
+  })
+  assert.equal(okLow.ok, true, 'painted low a few points off OANDA still places')
+  const spoof = { label: 'OR30', high: 41_000, low: 40_000 }
+  const spoofed = assertRangeEdgeEntryAllowingPaint({
+    entry: 41_000,
+    serverRange: server,
+    clientRange: spoof,
+  })
+  assert.equal(spoofed.ok, false, 'unrelated client H/L cannot spoof the server range')
+}
 
   const ibOnlyHigh = snapEntryToOpenBandCenter({
     entry: ib.high,

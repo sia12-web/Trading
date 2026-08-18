@@ -6,6 +6,12 @@
 
 export const RANGE_EDGE_BAND_POINTS = 10
 
+/**
+ * Chart H/L (live wick / Yahoo merge) can print a few points off OANDA 5m.
+ * Clicks on the painted tag must still count as that range’s high or low.
+ */
+export const RANGE_PAINT_DRIFT_POINTS = 30
+
 /** Chart / fillError copy when a limit lands outside painted ±10 H/L bands. */
 export const RANGE_EDGE_OFF_BAND_MESSAGE =
   'Entry only at highlighted ±10 H / L.'
@@ -106,6 +112,34 @@ export function rangeEdgeKindAt(
     (band) => entry >= band.min && entry <= band.max
   )
   return hit?.edge ?? null
+}
+
+/** Painted high/low ±10 — never mid. */
+export function paintedHlEdgeAt(
+  entry: number,
+  range: RangeEdgeLevels | null | undefined,
+  bandPoints: number = RANGE_EDGE_BAND_POINTS
+): 'high' | 'low' | null {
+  const kind = rangeEdgeKindAt(entry, range, bandPoints)
+  return kind === 'high' || kind === 'low' ? kind : null
+}
+
+/** Same playbook range: matching label and each edge within paint-drift. */
+export function clientPaintTracksServerRange(
+  client: RangeEdgeLevels | null | undefined,
+  server: RangeEdgeLevels | null | undefined,
+  maxDrift: number = RANGE_PAINT_DRIFT_POINTS
+): boolean {
+  if (!client || !server) return false
+  const clientLabel = client.label != null ? String(client.label) : ''
+  const serverLabel = server.label != null ? String(server.label) : ''
+  if (clientLabel && serverLabel && clientLabel !== serverLabel) return false
+  const ch = Number(client.high)
+  const cl = Number(client.low)
+  const sh = Number(server.high)
+  const sl = Number(server.low)
+  if (![ch, cl, sh, sl].every((n) => Number.isFinite(n))) return false
+  return Math.abs(ch - sh) <= maxDrift && Math.abs(cl - sl) <= maxDrift
 }
 
 /**
@@ -450,6 +484,41 @@ export function assertRangeEdgeEntry(args: {
     return { ok: false, message: RANGE_EDGE_OFF_BAND_MESSAGE }
   }
   return { ok: true, range }
+}
+
+/**
+ * Server H/L is authoritative, but a click on the chart’s painted H/L tag
+ * must pass when that print is the same range drifted by a few points.
+ */
+export function assertRangeEdgeEntryAllowingPaint(args: {
+  entry: number
+  serverRange: RangeEdgeLevels | null | undefined
+  clientRange?: RangeEdgeLevels | null
+  bandPoints?: number
+}): { ok: true; range: RangeEdgeLevels } | { ok: false; message: string } {
+  const server = args.serverRange
+  if (server) {
+    const direct = assertRangeEdgeEntry({
+      entry: args.entry,
+      range: server,
+      bandPoints: args.bandPoints,
+    })
+    if (direct.ok) return direct
+    const client = args.clientRange
+    if (
+      client &&
+      clientPaintTracksServerRange(client, server) &&
+      paintedHlEdgeAt(args.entry, client, args.bandPoints)
+    ) {
+      return { ok: true, range: server }
+    }
+    return direct
+  }
+  return assertRangeEdgeEntry({
+    entry: args.entry,
+    range: args.clientRange,
+    bandPoints: args.bandPoints,
+  })
 }
 
 /** Keep only levels whose price sits in a ±band of range high or low. */

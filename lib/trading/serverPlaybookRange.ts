@@ -19,6 +19,10 @@ import {
 } from '@/lib/chart/nycLunchSessionRange'
 import { currentNikkeiUsRangeForChart } from '@/lib/chart/nikkeiUsRangeBreakout'
 import { activeRangeForPlaybook, shapedPlaybookRanges } from '@/lib/trading/strategyRiskGeometry'
+import {
+  applyIbLiquiditySwingToRange,
+  findIbLiquiditySwing,
+} from '@/lib/trading/ibExtendAdvice'
 import { resolveDeskPlaybookMode, type DeskPlaybookMode } from '@/lib/trading/deskPlaybookMode'
 import {
   sessionFor,
@@ -37,7 +41,10 @@ import type { Instrument } from '@/types/price-feed'
 import type { StrategyRangeEdges } from '@/lib/trading/strategyRiskGeometry'
 import {
   assertRangeEdgeEntry,
+  assertRangeEdgeEntryAllowingPaint,
   attributePlaybookBandEntry,
+  clientPaintTracksServerRange,
+  paintedHlEdgeAt,
   rangeEdgeKindAt,
   RANGE_EDGE_OFF_BAND_MESSAGE,
   type RangeEdgeLevels,
@@ -142,15 +149,22 @@ export async function resolveServerPlaybookBundle(args: {
       ladder,
     })
 
-    const shaped = shapedPlaybookRanges({
+    const shapedRaw = shapedPlaybookRanges({
       instrument: args.instrument,
       or30,
       ib,
       usRange: us,
       lunchRange: lunch,
     })
+    const swing = ib ? findIbLiquiditySwing(deskBars, ib) : null
+    const shaped = {
+      ...shapedRaw,
+      ib: shapedRaw.ib
+        ? applyIbLiquiditySwingToRange(shapedRaw.ib, swing)
+        : null,
+    }
 
-    const active = activeRangeForPlaybook({
+    const activeRaw = activeRangeForPlaybook({
       playbookMode,
       instrument: args.instrument,
       or30,
@@ -159,6 +173,9 @@ export async function resolveServerPlaybookBundle(args: {
       lunchRange: lunch,
       morningAttempts: ladder.morningAttempts,
     })
+    const active = activeRaw
+      ? applyIbLiquiditySwingToRange(activeRaw, swing)
+      : null
 
     return { active, shaped, ladder, playbookMode, deskBars }
   } catch (err) {
@@ -193,7 +210,11 @@ export function gateEntryAgainstAuthoritativeRange(args: {
   clientRange: RangeEdgeLevels | null
 }): { ok: true; range: RangeEdgeLevels } | { ok: false; message: string } {
   if (args.serverRange) {
-    return assertRangeEdgeEntry({ entry: args.entry, range: args.serverRange })
+    return assertRangeEdgeEntryAllowingPaint({
+      entry: args.entry,
+      serverRange: args.serverRange,
+      clientRange: args.clientRange,
+    })
   }
   return assertRangeEdgeEntry({ entry: args.entry, range: args.clientRange })
 }
@@ -254,6 +275,16 @@ export function attributeServerPlaybookEntry(args: {
   })
 
   let attributed: StrategyRangeEdges | null = hit?.range ?? null
+
+  if (!attributed && args.clientRange && paintedHlEdgeAt(args.entry, args.clientRange)) {
+    const prefer = args.clientRange.label
+    const twin = prefer
+      ? candidates.find((r) => r.label === prefer)
+      : args.active
+    if (twin && clientPaintTracksServerRange({ ...args.clientRange, label: twin.label }, twin)) {
+      attributed = twin
+    }
+  }
 
   let usedUsClientFallback = false
   // Weekend gap: server shaped OR30/IB from *today* but history missed Friday
@@ -387,7 +418,11 @@ export async function assertServerRangeEdgeEntry(args: {
     return { ok: false, message: RANGE_EDGE_OFF_BAND_MESSAGE }
   }
 
-  const edge = assertRangeEdgeEntry({ entry: args.entry, range: attributed })
+  const edge = assertRangeEdgeEntryAllowingPaint({
+    entry: args.entry,
+    serverRange: attributed,
+    clientRange: args.clientRange,
+  })
   if (!edge.ok) return edge
 
   const market = deskMarketFor(args.instrument)

@@ -56,6 +56,20 @@ export function priceFromClientY(
   return Number(raw)
 }
 
+/** True when the pointer is on (or just inside) the right price scale. */
+export function clickIsOnPriceScale(container: HTMLElement | null, clientX: number): boolean {
+  if (!container || !Number.isFinite(clientX)) return false
+  const tds = container.querySelectorAll('table tr td')
+  const axis = tds.length >= 2 ? tds[tds.length - 1] : null
+  if (axis instanceof HTMLElement) {
+    const r = axis.getBoundingClientRect()
+    if (r.width > 0) return clientX >= r.left - 8
+  }
+  const pane = chartPaneElement(container)
+  const paneRight = pane?.getBoundingClientRect().right ?? 0
+  return paneRight > 0 && clientX >= paneRight - 12
+}
+
 export function overlayTopFromPrice(
   series: { priceToCoordinate: (price: number) => number | null } | null,
   price: number,

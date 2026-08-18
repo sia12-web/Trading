@@ -48,7 +48,7 @@ import {
   liveLunchFlatKeepOpenKey,
   markLunchFlatKeepOpen,
 } from '@/lib/trading/morningLunchConfirm'
-import { assertRangeEdgeEntry } from '@/lib/trading/rangeEdgeEntryGate'
+import { assertRangeEdgeEntry, snapEntryToNearestOpenBandCenter } from '@/lib/trading/rangeEdgeEntryGate'
 import {
   assertBucketEntryEligible,
   attemptLadderFromCounts,
@@ -458,11 +458,26 @@ export default function ChartPage() {
         meta?.source === 'manual' ||
         meta?.type === 'manual' ||
         meta?.type === 'market'
+      let workingPrice = price
       if (isManualFlow) {
-        const edge = assertRangeEdgeEntry({
-          entry: price,
-          range: meta?.strategyRange ?? null,
+        const range = meta?.strategyRange ?? null
+        let edge = assertRangeEdgeEntry({
+          entry: workingPrice,
+          range,
         })
+        if (!edge.ok && range) {
+          const snapped = snapEntryToNearestOpenBandCenter({
+            entry: workingPrice,
+            candidates: [range],
+          })
+          if (snapped) {
+            workingPrice = snapped.price
+            edge = assertRangeEdgeEntry({
+              entry: workingPrice,
+              range: snapped.hit.range,
+            })
+          }
+        }
         if (!edge.ok) {
           setFillError(edge.message)
           setOrderStatus('rejected')
@@ -491,7 +506,7 @@ export default function ChartPage() {
         Number.isFinite(meta.profitTarget)
 
       // Desk is limit-only — always open the working-limit ticket
-      setOrderLevel(price)
+      setOrderLevel(workingPrice)
       setOrderLevelType(meta?.type === 'market' ? 'manual' : meta?.type)
       setOrderLevelSide(side)
       setOrderPreferredDirection(preferred)
@@ -1538,10 +1553,22 @@ export default function ChartPage() {
         setOrderLevelType(undefined)
         return
       }
-      const edge = assertRangeEdgeEntry({
-        entry: order.level,
-        range: order.strategyRange ?? orderStrategyRange,
+      const range = order.strategyRange ?? orderStrategyRange
+      let level = order.level
+      let edge = assertRangeEdgeEntry({
+        entry: level,
+        range,
       })
+      if (!edge.ok && range) {
+        const snapped = snapEntryToNearestOpenBandCenter({
+          entry: level,
+          candidates: [range],
+        })
+        if (snapped) {
+          level = snapped.price
+          edge = assertRangeEdgeEntry({ entry: level, range: snapped.hit.range })
+        }
+      }
       if (!edge.ok) {
         setFillError(edge.message)
         setOrderStatus('rejected')
@@ -1552,7 +1579,8 @@ export default function ChartPage() {
       // Attach range onto order for API if missing
       const orderWithRange: PendingLimitOrder = {
         ...order,
-        strategyRange: order.strategyRange ?? orderStrategyRange ?? null,
+        level,
+        strategyRange: range ?? null,
       }
       placingOrderRef.current = true
       setOrderStatus('placing')
