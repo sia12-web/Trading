@@ -162,7 +162,7 @@ export async function fetchManageStructure(args: {
       getYahooCandles(args.instrument as Instrument, '5', 5),
       getOandaCandles(args.instrument as Instrument, '5', 3).catch(() => null),
     ])
-    const m5 = m5Oanda?.candles?.length ? m5Oanda : m5Yahoo
+    const m5 = m5Yahoo?.candles?.length ? m5Yahoo : m5Oanda
     const h1Bars = (h1?.candles ?? []).map((c) => ({
       time: c.time,
       open: c.open,

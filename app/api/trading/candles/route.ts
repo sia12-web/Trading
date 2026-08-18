@@ -1,6 +1,6 @@
 /**
  * GET /api/trading/candles?instrument=DOW|NASDAQ|NIKKEI&timeframe=5m&days=5
- * All desk indices: OANDA first (incl. JP225 for NIKKEI), Yahoo fallback.
+ * CME futures first (MYM / MNQ / NKD) so IB matches Tradovate; OANDA CFD fallback.
  * Live: full day continuum (morning + afternoon + overnight). Trading stays morning-only.
  * Sim/dated: full cash session continuum (entries still morning-gated in the UI).
  */
@@ -81,32 +81,32 @@ export async function GET(request: Request) {
       const startUnix =
         endUnix - Math.max(days, 5) * 24 * 3600 - leadDays * 24 * 3600
 
-      const [oanda, yahoo] = await Promise.all([
-        getOandaCandlesRange(instrument, resolution, startUnix, endUnix),
+      const [yahoo, oanda] = await Promise.all([
         getYahooCandlesRange(instrument, resolution, startUnix, endUnix),
+        getOandaCandlesRange(instrument, resolution, startUnix, endUnix),
       ])
-      if (oanda?.candles?.length) {
-        candles = oanda.candles
-        source = 'oanda'
-      } else if (yahoo?.candles?.length) {
+      if (yahoo?.candles?.length) {
         candles = yahoo.candles
         source = 'yahoo'
+      } else if (oanda?.candles?.length) {
+        candles = oanda.candles
+        source = 'oanda'
       }
       // Keep afternoon bars on the replay day (and priors) — matches live continuum
     } else {
-      // Live desk: OANDA (US30 / NAS100 / JP225) then Yahoo — same path for all three
+      // Live desk: CME futures (MYM / MNQ / NKD) then OANDA CFD if Yahoo is dark
       // Floor must cover AVWAP 5-trading-day-prior anchor (weekends truncate `days=5`)
       const fetchDays = Math.max(days, AVWAP_CANDLE_FETCH_CALENDAR_DAYS)
-      const [oanda, yahoo] = await Promise.all([
-        getOandaCandles(instrument, resolution, fetchDays),
+      const [yahoo, oanda] = await Promise.all([
         getYahooCandles(instrument, resolution, fetchDays),
+        getOandaCandles(instrument, resolution, fetchDays),
       ])
-      if (oanda?.candles?.length) {
-        candles = oanda.candles
-        source = 'oanda'
-      } else if (yahoo?.candles?.length) {
+      if (yahoo?.candles?.length) {
         candles = yahoo.candles
         source = 'yahoo'
+      } else if (oanda?.candles?.length) {
+        candles = oanda.candles
+        source = 'oanda'
       }
       // Live: afternoon included (lunch freeze off); sim still strips via clipAllAfternoonBars
       if (candles?.length) {

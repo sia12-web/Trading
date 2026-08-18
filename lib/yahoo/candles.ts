@@ -1,15 +1,10 @@
 /**
  * Yahoo Finance chart candles (no API key).
- * Primary fallback for NY desk index OHLC (^DJI / ^NDX) — same scale as OANDA US30/NAS100.
+ * Live desk uses CME micros (MYM / MNQ / NKD) so IB matches Tradovate, not OANDA CFDs.
  */
 
 import type { Instrument } from '@/types/price-feed'
-
-const YAHOO_SYMBOLS: Record<Instrument, string> = {
-  DOW: '^DJI',
-  NASDAQ: '^NDX',
-  NIKKEI: '^N225',
-}
+import { YAHOO_SYMBOLS } from '@/lib/yahoo/symbols'
 
 const INTERVAL_MAP: Record<string, string> = {
   '1': '1m',

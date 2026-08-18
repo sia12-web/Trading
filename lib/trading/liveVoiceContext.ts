@@ -559,7 +559,7 @@ export async function buildLiveVoiceDeskContext(
       getOandaCandles(contextInstrument, '5', 12).catch(() => null),
       getYahooQuote(contextInstrument),
     ])
-    const m5 = m5Oanda?.candles?.length ? m5Oanda : m5Yahoo
+    const m5 = m5Yahoo?.candles?.length ? m5Yahoo : m5Oanda
     const h1Bars = (h1?.candles ?? []).map((c) => ({
       time: c.time,
       open: c.open,

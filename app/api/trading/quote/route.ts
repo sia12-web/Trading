@@ -1,11 +1,12 @@
 /**
  * GET /api/trading/quote?instrument=DOW
- * Prefer OANDA mid (same feed as desk candles) then Yahoo — lowest latency tip.
+ * CME last (MYM / MNQ / NKD) first so the tip matches Tradovate IB; OANDA+basis if needed.
  */
 
 import { NextResponse } from 'next/server'
 import { getYahooQuote } from '@/lib/yahoo/quote'
 import { getOandaPrice } from '@/lib/oanda/pricing'
+import { applyCmeBasis, cmeBasisFromPair } from '@/lib/trading/cmeBasis'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import {
   isChartStreamAllowed,
@@ -59,13 +60,47 @@ export async function GET(request: Request) {
       )
     }
 
-    // OANDA first — matches TradingView OANDA CFD tip; do not await Yahoo here
-    const oanda = await getOandaPrice(instrument)
+    // CME last first (Tradovate scale). If OANDA is faster, shift it by the live basis.
+    const [yahoo, oanda] = await Promise.all([
+      getYahooQuote(instrument),
+      getOandaPrice(instrument),
+    ])
+
+    if (yahoo?.price && yahoo.price > 0) {
+      const basis = oanda?.price
+        ? cmeBasisFromPair(oanda.price, yahoo.price)
+        : null
+      const price =
+        oanda?.price && basis != null
+          ? applyCmeBasis(oanda.price, basis)
+          : yahoo.price
+      if (yahoo.previous_close > 0) {
+        dayPrevClose.set(instrument, yahoo.previous_close)
+      }
+      const previous_close =
+        dayPrevClose.get(instrument) ?? yahoo.previous_close ?? price
+      const change = price - previous_close
+      const change_pct = previous_close ? (change / previous_close) * 100 : 0
+
+      return NextResponse.json(
+        {
+          instrument,
+          source: 'cme',
+          price,
+          bid: oanda?.bid && basis != null ? applyCmeBasis(oanda.bid, basis) : undefined,
+          ask: oanda?.ask && basis != null ? applyCmeBasis(oanda.ask, basis) : undefined,
+          change,
+          change_pct,
+          previous_close,
+          timestamp: oanda?.timestamp ?? yahoo.timestamp,
+        },
+        { headers }
+      )
+    }
+
     if (oanda?.price && oanda.price > 0) {
       const prev = dayPrevClose.get(instrument)
       if (!prev) refreshDayPrevClose(instrument)
-      else if (Math.random() < 0.02) refreshDayPrevClose(instrument) // occasional refresh
-
       const previous_close = prev ?? oanda.price
       const change = oanda.price - previous_close
       const change_pct = previous_close ? (change / previous_close) * 100 : 0
@@ -86,29 +121,9 @@ export async function GET(request: Request) {
       )
     }
 
-    const quote = await getYahooQuote(instrument)
-    if (!quote) {
-      return NextResponse.json(
-        { error: 'No quote', instrument, price: null },
-        { status: 200, headers }
-      )
-    }
-
-    if (quote.previous_close > 0) {
-      dayPrevClose.set(instrument, quote.previous_close)
-    }
-
     return NextResponse.json(
-      {
-        instrument,
-        source: 'yahoo',
-        price: quote.price,
-        change: quote.change,
-        change_pct: quote.change_pct,
-        previous_close: quote.previous_close,
-        timestamp: quote.timestamp,
-      },
-      { headers }
+      { error: 'No quote', instrument, price: null },
+      { status: 200, headers }
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Quote fetch failed'

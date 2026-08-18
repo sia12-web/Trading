@@ -1,15 +1,10 @@
 /**
- * Low-latency Yahoo last price for index symbols (no API key).
+ * Low-latency Yahoo last price for CME micros (no API key).
  * Uses the lightweight quote endpoint — not a full candle chart slice.
  */
 
 import type { Instrument } from '@/types/price-feed'
-
-const YAHOO_SYMBOLS: Record<Instrument, string> = {
-  DOW: '^DJI',
-  NASDAQ: '^NDX',
-  NIKKEI: '^N225',
-}
+import { YAHOO_SYMBOLS } from '@/lib/yahoo/symbols'
 
 export type YahooQuote = {
   symbol: string

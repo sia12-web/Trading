@@ -32,12 +32,7 @@ import { buildPeerTapeBrief } from '@/lib/trading/peerTapeBrief'
 import { fetchLevelHistoricalContext } from '@/lib/services/levelFinderAgent/historicalContext'
 import type { Candle } from '@/lib/services/levelFinderAgent/types'
 import type { Instrument } from '@/types/price-feed'
-
-const SYMBOL: Record<string, string> = {
-  DOW: '^DJI',
-  NASDAQ: '^NDX',
-  NIKKEI: '^N225',
-}
+import { YAHOO_CME_SYMBOLS } from '@/lib/yahoo/symbols'
 
 function toAgentCandles(
   bars: Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }>
@@ -179,7 +174,7 @@ export async function runAutoLevelPrep(
       getOandaCandles(instrument, '5', 12).catch(() => null),
       getYahooQuote(instrument),
     ])
-    const m5 = m5Oanda?.candles?.length ? m5Oanda : m5Yahoo
+    const m5 = m5Yahoo?.candles?.length ? m5Yahoo : m5Oanda
 
     const candles_daily = toAgentCandles(daily?.candles ?? []).slice(-15)
     const candles_h1 = toAgentCandles(h1?.candles ?? []).slice(-40)
@@ -281,7 +276,7 @@ export async function runAutoLevelPrep(
 
     const analysis = await agent.analyzePriceAction({
       session_id: sessionId,
-      symbol: SYMBOL[instrument] || instrument,
+      symbol: YAHOO_CME_SYMBOLS[instrument as Instrument] || instrument,
       index: instrument,
       current_price,
       candles_4h,

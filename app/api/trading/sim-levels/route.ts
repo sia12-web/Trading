@@ -20,15 +20,10 @@ import { sessionFor } from '@/lib/trading/sessionGate'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import type { Candle } from '@/lib/services/levelFinderAgent/types'
 import type { Instrument } from '@/types/price-feed'
+import { YAHOO_CME_SYMBOLS } from '@/lib/yahoo/symbols'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
-
-const SYMBOL: Record<string, string> = {
-  DOW: '^DJI',
-  NASDAQ: '^NDX',
-  NIKKEI: '^N225',
-}
 
 function toAgentCandles(
   bars: Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }>
@@ -193,7 +188,7 @@ export async function POST(request: NextRequest) {
     const sessionId = `sim-${instrument}-${date}`
     const analysis = await agent.analyzePriceAction({
       session_id: sessionId,
-      symbol: SYMBOL[instrument] || instrument,
+      symbol: YAHOO_CME_SYMBOLS[instrument] || instrument,
       index: instrument,
       current_price,
       candles_4h,

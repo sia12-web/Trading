@@ -1,6 +1,6 @@
 /**
  * GET /api/trading/quote/stream?instrument=DOW
- * Server-Sent Events — live OANDA mid pushed on every PRICE tick.
+ * Server-Sent Events — OANDA ticks shifted onto CME (Tradovate MYM / MNQ / NKD) scale.
  */
 
 import { getYahooQuote } from '@/lib/yahoo/quote'
@@ -9,6 +9,7 @@ import {
   subscribeOandaPriceStream,
 } from '@/lib/oanda/pricingStream'
 import { isOandaConfigured } from '@/lib/oanda/config'
+import { applyCmeBasis, cmeBasisFromPair } from '@/lib/trading/cmeBasis'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import {
   isChartStreamAllowed,
@@ -39,7 +40,8 @@ function payloadFor(
   price: number,
   bid: number,
   ask: number,
-  timestamp: number
+  timestamp: number,
+  source: 'cme' | 'oanda' = 'oanda'
 ) {
   const prev = dayPrevClose.get(instrument)
   if (!prev) refreshDayPrevClose(instrument)
@@ -48,7 +50,7 @@ function payloadFor(
   const change_pct = previous_close ? (change / previous_close) * 100 : 0
   return {
     instrument,
-    source: 'oanda' as const,
+    source,
     price,
     bid,
     ask,
@@ -104,10 +106,18 @@ export async function GET(request: Request) {
   const encoder = new TextEncoder()
   let unsubscribe: (() => void) | null = null
   let heartbeat: ReturnType<typeof setInterval> | null = null
+  let basisTimer: ReturnType<typeof setInterval> | null = null
   let closed = false
 
   const stream = new ReadableStream({
     start(controller) {
+      let basis: number | null = null
+      let primed = false
+      let pending: ReturnType<typeof getLastStreamedPrice> = getLastStreamedPrice(
+        instrument,
+        60_000
+      )
+
       const send = (obj: unknown) => {
         if (closed) return
         try {
@@ -119,11 +129,39 @@ export async function GET(request: Request) {
         }
       }
 
+      const flush = (q: NonNullable<typeof pending>) => {
+        const src = basis != null ? 'cme' : 'oanda'
+        send(
+          payloadFor(
+            instrument,
+            applyCmeBasis(q.price, basis),
+            applyCmeBasis(q.bid, basis),
+            applyCmeBasis(q.ask, basis),
+            q.timestamp,
+            src
+          )
+        )
+      }
+
+      const refreshBasis = () => {
+        void getYahooQuote(instrument)
+          .then((y) => {
+            if (closed || !(y?.price && y.price > 0)) return
+            const o = getLastStreamedPrice(instrument, 8_000)
+            if (!(o?.price && o.price > 0)) return
+            const next = cmeBasisFromPair(o.price, y.price)
+            if (next != null) basis = next
+          })
+          .catch(() => {})
+      }
+
       const cleanup = () => {
         if (closed) return
         closed = true
         if (heartbeat) clearInterval(heartbeat)
         heartbeat = null
+        if (basisTimer) clearInterval(basisTimer)
+        basisTimer = null
         unsubscribe?.()
         unsubscribe = null
         try {
@@ -133,31 +171,28 @@ export async function GET(request: Request) {
         }
       }
 
-      // Snapshot if hub already has a tick
-      const last = getLastStreamedPrice(instrument, 60_000)
-      if (last) {
-        send(
-          payloadFor(
-            instrument,
-            last.price,
-            last.bid,
-            last.ask,
-            last.timestamp
-          )
-        )
-      }
+      void getYahooQuote(instrument)
+        .then((y) => {
+          if (closed) return
+          const o = getLastStreamedPrice(instrument, 60_000)
+          if (y?.price && o?.price) {
+            basis = cmeBasisFromPair(o.price, y.price)
+          }
+          primed = true
+          if (pending) flush(pending)
+        })
+        .catch(() => {
+          primed = true
+          if (!closed && pending) flush(pending)
+        })
 
       unsubscribe = subscribeOandaPriceStream(instrument, (quote) => {
-        send(
-          payloadFor(
-            instrument,
-            quote.price,
-            quote.bid,
-            quote.ask,
-            quote.timestamp
-          )
-        )
+        pending = quote
+        if (!primed) return
+        flush(quote)
       })
+
+      basisTimer = setInterval(refreshBasis, 2_000)
 
       // Keep proxies / browsers from treating the connection as idle
       heartbeat = setInterval(() => {
@@ -174,6 +209,7 @@ export async function GET(request: Request) {
     cancel() {
       closed = true
       if (heartbeat) clearInterval(heartbeat)
+      if (basisTimer) clearInterval(basisTimer)
       unsubscribe?.()
     },
   })
