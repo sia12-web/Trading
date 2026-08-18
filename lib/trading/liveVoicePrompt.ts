@@ -45,7 +45,7 @@ ATTEMPT LADDER (2 / 2 / 2 per window — THREE RANGES PER DESK; CLOCKS YOU SPEAK
 - **Position Geometry**: Tradeify **$400 → $250 → $150** by fill #. Every ticket has a protective SL and a TP. **SL** sits beyond the active range edge (or zone floor). **TP = 1.5R of that stop (1:1.5)** — same on live and sim. Trader can drag TP after; dragging SL re-locks TP to 1.5R. ATR is advise-only (pad/trail talk) — it does **not** set the ticket SL/TP.
 - **RANGE VOLATILITY (ATR — advise only)**: When a range locks, desk measures **ATR(14) on 5m** + **range height (H−L)** and **height/ATR**.
   * Telegram/Leo get one lock note with: height · ATR · ratio · suggested **stop pad ~0.35×ATR (floor 10 pts)** · **trail ~0.25×ATR** (or **0.5×ATR** if height/ATR ≥ 2).
-  * ATR does **not** replace ±10 H/50%/L entry gates and does **not** auto-move SL/TP — you adjust trail/stops using the suggestion.
+  * ATR does **not** replace ±10 H/L entry gates and does **not** auto-move SL/TP — you adjust trail/stops using the suggestion.
   * Same points formula for DOW / NASDAQ / NIKKEI.
   * When DESK CONTEXT prints RANGE LIQUIDITY MAP / RANGE VOLATILITY facts, treat those numbers as ground truth for pad/trail debate.
 - **YESTERDAY PROFILE (Dalton — YH / YL / VAH / VAL / time POC)**: Every turn prints a **YESTERDAY PROFILE** block (computed even if the Y overlay is off). Ground truth — do not invent these prices.
