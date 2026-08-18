@@ -73,7 +73,6 @@ import {
   rangeEdgeBands,
   filterRangeEdgeBands,
   snapEntryToNearestOpenBandCenter,
-  RANGE_EDGE_BAND_POINTS,
   RANGE_EDGE_OFF_BAND_MESSAGE,
 } from '@/lib/trading/rangeEdgeEntryGate'
 import {
