@@ -120,7 +120,7 @@ function resolveOr30(
   }
   return {
     status: 'locked',
-    sentence: `OR30 is LOCKED — entry OPEN until ${closeMtl} ${TRADER_DISPLAY_LABEL} (±10 of H / 50% / L).`,
+    sentence: `OR30 is LOCKED — entry OPEN until ${closeMtl} ${TRADER_DISPLAY_LABEL} (±10 of H / L).`,
   }
 }
 
@@ -172,7 +172,7 @@ function resolveMid(
     status: 'open',
     sentence: tokyo
       ? `US Range is OPEN (${untilHint}) — prior NYC H/L; ±10 H/L only (no mid).${ladderNote}`
-      : `IB is OPEN until lunch (${untilHint}) — ±10 of H / 50% / L.${ladderNote}`,
+      : `IB is OPEN until lunch (${untilHint}) — ±10 of H / L.${ladderNote}`,
   }
 }
 
@@ -219,8 +219,8 @@ function resolveLate(
     label,
     status: 'open',
     sentence: tokyo
-      ? `Tokyo IB is OPEN until cash close (${endMtl} ${TRADER_DISPLAY_LABEL}) — ±10 of H / 50% / L.${ladderNote}`
-      : `Lunch-range is OPEN until ${endMtl} ${TRADER_DISPLAY_LABEL} — ±10 of H / 50% / L.${ladderNote}`,
+      ? `Tokyo IB is OPEN until cash close (${endMtl} ${TRADER_DISPLAY_LABEL}) — ±10 of H / L.${ladderNote}`
+      : `Lunch-range is OPEN until ${endMtl} ${TRADER_DISPLAY_LABEL} — ±10 of H / L.${ladderNote}`,
   }
 }
 
