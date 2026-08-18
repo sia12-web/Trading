@@ -487,9 +487,42 @@ interface TooltipData {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const INSTRUMENT_META: Record<Instrument, { label: string; symbol: string; color: string; basePrice: number }> = {
-  DOW:    { label: 'Micro Dow · MYM', symbol: 'MYM',  color: '#3b7eff', basePrice: 39500 },
-  NASDAQ: { label: 'Micro Nasdaq · MNQ', symbol: 'MNQ', color: '#3b7eff', basePrice: 28500 },
+  DOW:    { label: 'Micro Dow · MYM', symbol: 'MYM',  color: '#1d4ed8', basePrice: 39500 },
+  NASDAQ: { label: 'Micro Nasdaq · MNQ', symbol: 'MNQ', color: '#0f766e', basePrice: 28500 },
   NIKKEI: { label: 'Nikkei USD', symbol: 'NKD', color: '#f472b6', basePrice: 38000 },
+}
+
+function paintPositionBandOverlay(
+  host: HTMLElement | null,
+  bands: Array<{ top: number; height: number; color: string; border: string; title: string }>,
+  opts?: { keepPreviousIfEmpty?: boolean }
+) {
+  if (!host) return
+  if (bands.length === 0 && opts?.keepPreviousIfEmpty && host.childElementCount > 0) return
+  while (host.childElementCount < bands.length) {
+    const d = document.createElement('div')
+    d.className = 'pointer-events-none absolute'
+    d.style.position = 'absolute'
+    d.style.left = '0'
+    d.style.right = '0'
+    d.style.margin = '0'
+    d.style.padding = '0'
+    d.style.boxSizing = 'border-box'
+    host.appendChild(d)
+  }
+  while (host.childElementCount > bands.length) {
+    host.removeChild(host.lastElementChild!)
+  }
+  for (let i = 0; i < bands.length; i++) {
+    const b = bands[i]!
+    const d = host.children[i] as HTMLElement
+    d.style.top = `${b.top}px`
+    d.style.height = `${Math.max(0, b.height)}px`
+    d.style.backgroundColor = b.color
+    d.style.borderLeft = `4px solid ${b.border}`
+    d.style.zIndex = '1'
+    d.title = b.title
+  }
 }
 
 const LEVEL_COLORS: Record<string, string> = {
@@ -814,6 +847,7 @@ export function TradingChart({
   const containerRef = useRef<HTMLDivElement>(null)
   const chartFrameRef = useRef<HTMLDivElement>(null)
   const sessionOverlayRef = useRef<HTMLDivElement>(null)
+  const positionBandOverlayRef = useRef<HTMLDivElement>(null)
   const sessionSpansRef = useRef<{
     key: string
     spans: SessionHighlightSpan[]
@@ -1972,6 +2006,18 @@ export function TradingChart({
       riskDollars: ov.riskDollars,
     })
   }, [editableOverlay, positionOverlay, instrument])
+
+  const bookBandRef = useRef<{ entry: number; stop: number; target: number } | null>(null)
+  {
+    const ov = editableOverlay ?? positionOverlay
+    bookBandRef.current = ov
+      ? {
+          entry: filledBook?.entry ?? ov.entryPrice,
+          stop: filledBook?.stop ?? ov.stopLoss,
+          target: filledBook?.target ?? ov.profitTarget,
+        }
+      : null
+  }
 
   const [rationaleModal, setRationaleModal] = useState<{
     open: boolean
@@ -3364,6 +3410,7 @@ export function TradingChart({
       /* ignore */
     }
     paintSessionHighlightOverlay(sessionOverlayRef.current, [])
+    paintPositionBandOverlay(positionBandOverlayRef.current, [])
 
     // Fresh autoscaling for the next instrument's price universe
     try {
@@ -3812,6 +3859,7 @@ export function TradingChart({
     const host = sessionOverlayRef.current
     if (!chart || !series || !containerRef.current || list.length === 0) {
       paintSessionHighlightOverlay(host, [])
+      paintPositionBandOverlay(positionBandOverlayRef.current, [])
       return
     }
 
@@ -3857,6 +3905,41 @@ export function TradingChart({
       fullHeight: false, // time columns + high→low box when the range is on screen
     })
     paintSessionHighlightOverlay(host, rects, { keepPreviousIfEmpty: true })
+
+    const book = bookBandRef.current
+    const bandHost = positionBandOverlayRef.current
+    if (!book) {
+      paintPositionBandOverlay(bandHost, [])
+    } else {
+      const chartH = containerRef.current.clientHeight
+      const yEntry = series.priceToCoordinate(book.entry)
+      const yStop = series.priceToCoordinate(book.stop)
+      const yTp = series.priceToCoordinate(book.target)
+      const bands: Array<{
+        top: number
+        height: number
+        color: string
+        border: string
+        title: string
+      }> = []
+      const pushBand = (
+        a: number | null,
+        b: number | null,
+        color: string,
+        border: string,
+        title: string
+      ) => {
+        if (a == null || b == null || !Number.isFinite(a) || !Number.isFinite(b)) return
+        const top = Math.max(Math.min(a, b), 0)
+        const bottom = Math.min(Math.max(a, b), chartH)
+        const height = bottom - top
+        if (height < 2) return
+        bands.push({ top, height, color, border, title })
+      }
+      pushBand(yEntry, yTp, 'rgba(22, 163, 74, 0.28)', '#15803d', 'Position TP zone')
+      pushBand(yEntry, yStop, 'rgba(220, 38, 38, 0.28)', '#b91c1c', 'Position SL zone')
+      paintPositionBandOverlay(bandHost, bands, { keepPreviousIfEmpty: true })
+    }
   }, [instrument])
 
   /** TradingView-style: re-enable auto price scale after manual zoom on the axis */
@@ -3882,6 +3965,10 @@ export function TradingChart({
     }
     requestAnimationFrame(() => refreshSessionHighlights())
   }, [refreshSessionHighlights])
+
+  useEffect(() => {
+    requestAnimationFrame(() => refreshSessionHighlights())
+  }, [positionOverlay, editableOverlay, filledBook, refreshSessionHighlights])
 
   useEffect(() => {
     if (!chartReady || !chartRef.current) return
@@ -5965,24 +6052,24 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       paint([
         {
           price: filledBook?.entry ?? ov.entryPrice,
-          color: '#3b82f6',
+          color: '#1d4ed8',
           label: `Entry ${ov.direction.toUpperCase()} ${fmt(filledBook?.entry ?? ov.entryPrice)}${size}`,
           style: LineStyle.Solid,
-          width: 2,
+          width: 3,
         },
         {
           price: filledBook?.stop ?? ov.stopLoss,
-          color: '#ef4444',
+          color: '#dc2626',
           label: `SL ${fmt(filledBook?.stop ?? ov.stopLoss)}${onAdjustBrackets ? ' · drag' : ''}`,
-          style: LineStyle.Dashed,
-          width: 2,
+          style: LineStyle.Solid,
+          width: 3,
         },
         {
           price: filledBook?.target ?? ov.profitTarget,
           color: tpColor,
           label: `${tpLabel} ${fmt(filledBook?.target ?? ov.profitTarget)}${onAdjustBrackets ? ' · drag' : ''}`,
-          style: LineStyle.Dashed,
-          width: 2,
+          style: LineStyle.Solid,
+          width: 3,
         },
       ])
       return
@@ -6273,7 +6360,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             host.createPriceLine({
               price: s.price,
               color: s.color,
-              lineWidth: entryLive ? 2 : 1,
+              lineWidth: entryLive ? 3 : 1,
               lineStyle: LineStyle.Dashed,
               axisLabelVisible: true,
               title: s.title,
@@ -7604,6 +7691,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           ref={sessionOverlayRef}
           className="pointer-events-none absolute inset-0 z-[1]"
           style={{ opacity: 1, transition: 'none', willChange: 'opacity' }}
+        />
+        <div
+          ref={positionBandOverlayRef}
+          className="pointer-events-none absolute inset-0 z-[2]"
         />
 
         {/* Render Saved 2D Time Highlights */}
