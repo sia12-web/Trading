@@ -397,6 +397,7 @@ export function buildRangeLiquidityBrief(args: {
         high: Number(b.high),
         low: Number(b.low),
         close: Number(b.close),
+        volume: Math.max(1, Number((b as { volume?: number }).volume) || 0),
       }))
       .filter((b) => b.time > 0 && b.high > 0 && b.low > 0)
     const ibLocked = computeInitialBalance(swingSrc, openUnix, nowUnix, 60)
