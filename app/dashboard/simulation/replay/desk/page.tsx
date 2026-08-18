@@ -124,6 +124,8 @@ import {
 import { lockToCandleAutoscale, paddedCandlePriceRange, sessionFocusHighLow } from '@/lib/chart/seriesAutoscale'
 import { priceFromClientY } from '@/lib/chart/chartPointerPrice'
 import { deskBarSpacing, deskVisibleLogicalRange } from '@/lib/trading/deskInstrumentPreference'
+import { scoreValueAcceptance, toEpochMs } from '@/lib/trading/valueAcceptance'
+import { ValueAcceptanceRead } from '@/app/dashboard/chart/components/ValueAcceptanceRead'
 import {
   computeSimOvernightBias,
 } from '@/lib/trading/simOvernightBias'
@@ -179,6 +181,13 @@ import {
   readSimCallMode,
   writeSimCallMode,
 } from '@/lib/trading/deskCallMode'
+import {
+  applyIbLiquiditySwingToRange,
+  applyIbLiquiditySwingToRanges,
+  computeIbExtendAdvice,
+  findIbLiquiditySwing,
+  type IbExtendAdvice,
+} from '@/lib/trading/ibExtendAdvice'
 import { DeskCallModePrompt } from '@/app/dashboard/chart/components/DeskCallModePrompt'
 import {
   OR30_COLORS,
@@ -667,6 +676,12 @@ function SimulationDeskInner() {
   const [callHover, setCallHover] = useState(
     'CALL WAIT — no ticket\n\nLeo and Level Finder advise only. No line.'
   )
+  const [ibExtendBadge, setIbExtendBadge] = useState('—')
+  const [ibExtendHover, setIbExtendHover] = useState(
+    'IB extend vs revert — advice only after IB locks. First tag is not the entry.'
+  )
+  const ibExtendRef = useRef<IbExtendAdvice | null>(null)
+  const ibLiqLinesRef = useRef<IPriceLine[]>([])
   const [useCall, setUseCall] = useState<boolean | null>(() =>
     readSimCallMode(instrument, replayDate)
   )
@@ -1657,6 +1672,16 @@ function SimulationDeskInner() {
                 text: s.text,
               })
             }
+            const swing = findIbLiquiditySwing(bars, ibRangeRef.current)
+            if (swing) {
+              markers.push({
+                time: swing.time as UTCTimestamp,
+                position: swing.kind === 'high' ? 'aboveBar' : 'belowBar',
+                color: '#eab308',
+                shape: 'circle',
+                text: swing.kind === 'high' ? 'LIQ H' : 'LIQ L',
+              })
+            }
           }
           if (showOr30Ref.current && or30RangeRef.current) {
             for (const s of computeOr30Signals(bars, or30RangeRef.current)) {
@@ -1874,9 +1899,48 @@ function SimulationDeskInner() {
         const hover = `${deskCallModeHoverPrefix(useCallRef.current)}${deskCallHoverText(deskCall)}`
         setCallHover((prev) => (prev === hover ? prev : hover))
 
+        const lastBar = bars.length ? bars[bars.length - 1] : null
+        const ibAdvice = computeIbExtendAdvice({
+          instrument,
+          ib: ibRangeRef.current,
+          candles: bars,
+          nowUnix: simT,
+          useCall: useCallRef.current,
+          callSide: deskCall.side,
+          lastPrice: lastBar?.close ?? null,
+        })
+        ibExtendRef.current = ibAdvice
+        setIbExtendBadge((prev) => (prev === ibAdvice.chip ? prev : ibAdvice.chip))
+        const ibHover = ibAdvice.message
+        setIbExtendHover((prev) => (prev === ibHover ? prev : ibHover))
+        for (const line of ibLiqLinesRef.current) {
+          try {
+            host?.removePriceLine(line)
+          } catch {
+            /* ignore */
+          }
+        }
+        ibLiqLinesRef.current = []
+        if (host && ibAdvice.swing) {
+          try {
+            ibLiqLinesRef.current.push(
+              host.createPriceLine({
+                price: ibAdvice.swing.price,
+                color: '#eab308',
+                title: ibAdvice.swing.kind === 'high' ? 'Liq H' : 'Liq L',
+                lineWidth: 2,
+                lineStyle: LineStyle.Dashed,
+                axisLabelVisible: true,
+              })
+            )
+          } catch {
+            /* ignore */
+          }
+        }
+
         // Refresh advise book when CALL playbook / locked ±10 changes.
         // Do not open P/L — trader opts in. Structure only (no Level Finder spend).
-        const preferred = activeRangeForPlaybook({
+        const preferredRaw = activeRangeForPlaybook({
           playbookMode,
           instrument,
           or30: or30RangeRef.current,
@@ -1885,6 +1949,9 @@ function SimulationDeskInner() {
           lunchRange: lunchRangeRef.current,
           morningAttempts: morningAttemptsRef.current,
         })
+        const preferred = preferredRaw
+          ? applyIbLiquiditySwingToRange(preferredRaw, ibAdvice.swing)
+          : null
         const bookKey = `${playbookMode}:${preferred?.label ?? ''}:${preferred?.high ?? ''}:${preferred?.low ?? ''}`
         if (openUnix && bookKey !== adviseBookKeyRef.current) {
           adviseBookKeyRef.current = bookKey
@@ -2028,7 +2095,8 @@ function SimulationDeskInner() {
       ladder,
     })
     const morningAttempts = morningAttemptsRef.current
-    const preferred = activeRangeForPlaybook({
+    const swing = ibExtendRef.current?.swing ?? null
+    const preferredRaw = activeRangeForPlaybook({
       playbookMode,
       instrument,
       or30: or30RangeRef.current,
@@ -2037,20 +2105,26 @@ function SimulationDeskInner() {
       lunchRange: lunchRangeRef.current,
       morningAttempts,
     })
-    const overlays = entryEligibleOverlayRanges({
-      playbookMode,
-      instrument,
-      now: simNow,
-      showOr30: showOr30Ref.current,
-      showIb: showIbBreakoutsRef.current,
-      showUsRange: showUsRangeRef.current,
-      showLunchRange: showLunchRangeRef.current,
-      or30: or30RangeRef.current,
-      ib: ibRangeRef.current,
-      usRange: usRangeRef.current,
-      lunchRange: lunchRangeRef.current,
-      morningAttempts,
-    })
+    const preferred = preferredRaw
+      ? applyIbLiquiditySwingToRange(preferredRaw, swing)
+      : null
+    const overlays = applyIbLiquiditySwingToRanges(
+      entryEligibleOverlayRanges({
+        playbookMode,
+        instrument,
+        now: simNow,
+        showOr30: showOr30Ref.current,
+        showIb: showIbBreakoutsRef.current,
+        showUsRange: showUsRangeRef.current,
+        showLunchRange: showLunchRangeRef.current,
+        or30: or30RangeRef.current,
+        ib: ibRangeRef.current,
+        usRange: usRangeRef.current,
+        lunchRange: lunchRangeRef.current,
+        morningAttempts,
+      }),
+      swing
+    )
     // Sim has no Level Finder — always snap/paint the locked playbook range.
     const snapRanges = studyEntrySnapRanges({
       active: preferred,
@@ -3234,6 +3308,25 @@ function SimulationDeskInner() {
     setBreakEvenAvailable(stillNeedsBe && move >= r)
   }, [position, lastPrice, breakEvenDismissed])
 
+  const valueAcceptance = useMemo(() => {
+    if (!position || lastPrice == null || !simNow) return null
+    const filledAtMs = toEpochMs(position.filledAt)
+    if (filledAtMs == null) return null
+    const bars = sessionCandles
+      .filter((c) => c.time >= position.filledAt && c.time <= simNow)
+      .map((c) => ({ high: c.high, low: c.low }))
+    return scoreValueAcceptance({
+      side: position.direction,
+      entry: position.entry,
+      stopLoss: position.stopLoss,
+      takeProfit: position.target,
+      nowMs: simNow * 1000,
+      filledAtMs,
+      lastPrice,
+      recentBars: bars,
+    })
+  }, [position, lastPrice, simNow, sessionCandles])
+
   // Morning lunch flat confirm — mirror live MorningLunchFlatConfirm
   useEffect(() => {
     if (!position || !lunchUnix || !simNow) return
@@ -3948,6 +4041,15 @@ function SimulationDeskInner() {
               {callHover}
             </span>
           </span>
+          <span
+            title={ibExtendHover}
+            className="flex items-center gap-1 rounded border border-amber-700/40 px-2 py-1 text-[10px] font-semibold uppercase text-amber-200/90"
+          >
+            IB
+            <span className="normal-case tracking-normal text-[10px] font-normal text-amber-100/80">
+              {ibExtendBadge}
+            </span>
+          </span>
           {useCall === true && (
             <button
               type="button"
@@ -4164,6 +4266,14 @@ function SimulationDeskInner() {
             />
             <span className="text-zinc-400">Call {callBadge}</span>
           </span>
+          <span className="text-gray-600">·</span>
+          <span
+            className="flex items-center gap-1.5 normal-case tracking-normal"
+            title={ibExtendHover}
+          >
+            <span className="inline-block w-4 border-t-2 border-amber-400" />
+            <span className="text-amber-300/90">IB {ibExtendBadge}</span>
+          </span>
           {callScoreText ? (
             <>
               <span className="text-gray-600">·</span>
@@ -4328,6 +4438,7 @@ function SimulationDeskInner() {
                 )
               })()}
             </span>
+            {valueAcceptance && <ValueAcceptanceRead read={valueAcceptance} />}
             <button
               type="button"
               onClick={closeAtMarket}

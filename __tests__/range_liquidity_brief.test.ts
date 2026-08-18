@@ -226,6 +226,7 @@ function tokyoBars(): Array<{
   assert(/Slot 1 OR30/.test(src), 'OR30 slot in prompt')
   assert(/Slot 2 US Range/.test(src), 'US Range slot in prompt')
   assert(/Slot 3 Lunch-range/.test(src), 'Lunch-range slot in prompt')
+  assert(/First tag of IB H\/L is NOT the entry/.test(src), 'first IB tag is not the entry')
   assert(/rangeLiquidityBriefText/.test(src), 'user prompt wires range brief')
 }
 

@@ -537,8 +537,10 @@ IB PLAYBOOK MODE (Tokyo Initial Balance — slot 3):
             : `
 IB PLAYBOOK MODE (Initial Balance entry refresh — NY slot 2):
 - Desk is live-trading the IB window (${midWindow} ${tzLabel}) — up to 2 probes (progressive risk) (entries within ±10 pts of IB H / 50% mid / L). Morning OR30 does not lock this window.
-- PRIMARY BAIT this run: IB H/L. Prefer stop pools beyond IB extremes + POC/AVWAP. OR30 is secondary only.
-- Build tradeable IB levels: IB high/low breakout and mean-reversion magnets, FLIP/RETEST from the brief, AVWAP/POC confluence.
+- IB = context BOX, not the entry magnet once a swing exists. First tag of IB H/L is NOT the entry (label waiting / liquidity building).
+- Tradable liquidity = one swing high at/beyond IB high or swing low at/beyond IB low, printed after IB locks. The trade is the TEST of that swing (raid), not the first tag.
+- Raid + accepted outside → EXTEND (enter pullback to the broken swing / IB edge, not the wick). Raid + accepted back inside → BALANCE / mean revert toward session VWAP, yesterday POC, developing POC.
+- PRIMARY levels: the liquidity swing. Means = session VWAP / yPOC / dPOC. Do NOT return first-tag IB break as a valid entry. Prefer stop pools beyond the swing + POC/AVWAP. OR30 is secondary only.
 - Use ONLY the DESK BRIEF + RANGE LIQUIDITY MAP + candle/AVWAP/volume-profile tables. Frame levels as IB playbook entries (not morning OR30, not lunch-range).
 `
           : analysisMode === 'lunch_range'
@@ -586,7 +588,7 @@ RANGE LIQUIDITY MAP (how VP + retail stops connect to our three ranges on ${inde
 RANGE LIQUIDITY MAP (how VP + retail stops connect to our three ranges on ${index}):
 - Same method every window: range H/L = retail BAIT → stops sit JUST BEYOND → desk ENTERS into that stop pool. POC/HVN + AVWAP = confluence. Never return the exact range H/L as the entry print.
 - Slot 1 OR30: bait = Opening Range H/L. Hunt stops above ORH (short) / below ORL (buy). Opening-drive volume matters most.
-- Slot 2 IB: bait = Initial Balance (first cash hour) H/L. Hunt stops beyond IB high/low.
+- Slot 2 IB: bait = Initial Balance (first cash hour) H/L = context BOX. First tag of IB H/L is NOT the entry. Hunt the liquidity swing at/beyond IB H/L (the test of that swing), then VWAP / yPOC / dPOC as means. Do not return first-tag IB break as the entry print.
 - Slot 3 Lunch-range: bait = NYC lunch session (12:00–13:30 Montreal) H/L. Hunt stops beyond lunch-range extremes. Morning OR30/IB = secondary magnets or polarity flips if broken.
 - Active playbook = PRIMARY bait. Earlier formed ranges = secondary. Later ranges ignored until unlocked.
 - When RANGE LIQUIDITY MAP facts are printed in the user message, every level's reasoning MUST name which range bait it hunts (e.g. "OR30 high X bait — sell liquidity above near POC").
@@ -836,7 +838,7 @@ ${
       ? tokyo
         ? `8. Tokyo IB playbook: cross-check every candidate against the RANGE LIQUIDITY MAP (Tokyo IB H/L) + DESK BRIEF. Prefer stop pools beyond IB extremes for the live IB attempt (slot 3).
 `
-        : `8. IB playbook: cross-check every candidate against the RANGE LIQUIDITY MAP (IB H/L) + DESK BRIEF. Prefer stop pools beyond IB extremes for the live IB entry attempt.
+        : `8. IB playbook: IB H/L is the context box. First IB tag is NOT the entry. Cross-check every candidate against the RANGE LIQUIDITY MAP. Tradable = liquidity swing at/beyond IB; means = VWAP / yPOC / dPOC. Do not emit first-tag IB break as the entry.
 `
       : request.analysis_mode === 'lunch_range'
         ? `8. Lunch break / lunch-range: cross-check against the RANGE LIQUIDITY MAP (Lunch-range H/L) + DESK BRIEF. Prefer stop pools beyond lunch-range extremes for the PM attempt / lunch-break prep.

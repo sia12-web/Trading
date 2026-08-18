@@ -45,6 +45,7 @@ import {
   computeInitialBalance,
   type DeskBar,
 } from '@/lib/trading/deskLevels'
+import { findIbLiquiditySwing } from '@/lib/trading/ibExtendAdvice'
 import { sessionFor, type DeskInstrument } from '@/lib/trading/sessionGate'
 import {
   buildRangeAtrSnapshot,
@@ -98,6 +99,8 @@ export type RangeLiquidityBrief = {
   /** Desk CALL — bias + legal ±10 (same helper as the Call chip). */
   deskCallText: string | null
   call: DeskCall | null
+  /** NY IB: one liquidity swing at/beyond IB after lock (null while waiting). */
+  ibSwingText: string | null
 }
 
 function playbookFromAnalysis(
@@ -385,6 +388,26 @@ export function buildRangeLiquidityBrief(args: {
   })
   const deskCallText = formatDeskCallForPrompt(call)
 
+  let ibSwingText: string | null = null
+  if (!tokyo) {
+    const swingSrc = (args.candles5m && args.candles5m.length >= 3 ? args.candles5m : bars)
+      .map((b) => ({
+        time: Number(b.time) || 0,
+        open: Number((b as { open?: number }).open) || Number(b.close) || 0,
+        high: Number(b.high),
+        low: Number(b.low),
+        close: Number(b.close),
+      }))
+      .filter((b) => b.time > 0 && b.high > 0 && b.low > 0)
+    const ibLocked = computeInitialBalance(swingSrc, openUnix, nowUnix, 60)
+    const swing = ibLocked ? findIbLiquiditySwing(swingSrc, ibLocked) : null
+    ibSwingText = swing
+      ? `Liquidity swing ${swing.kind} ${swing.price} (IB is the box; first tag is not the entry)`
+      : slot2?.complete
+        ? 'IB locked — no swing yet. First IB tag is liquidity building, not the entry.'
+        : null
+  }
+
   return {
     instrument,
     tip: Math.round(tip * 100) / 100,
@@ -411,6 +434,7 @@ export function buildRangeLiquidityBrief(args: {
     control,
     deskCallText,
     call,
+    ibSwingText,
   }
 }
 
@@ -454,6 +478,12 @@ export function formatRangeLiquidityBriefForPrompt(
       '',
       `PRIMARY BAIT (${brief.active.label}): hunt stops ABOVE ${brief.active.high} (short liquidity) and BELOW ${brief.active.low} (buy liquidity).${usOnly} Earlier ranges = secondary magnets / polarity flips if broken.`
     )
+    if (!brief.tokyo && brief.active.label === 'IB') {
+      lines.push(
+        'IB EXTEND vs REVERT: IB H/L is the context BOX. First tag of IB H/L is NOT the entry. Tradable = the liquidity swing at/beyond IB (test of that swing). Raid accepted outside → EXTEND (pullback to the broken swing, not the wick). Raid accepted back inside → BALANCE toward VWAP / yPOC / dPOC. Do not emit first-tag IB break as the entry.'
+      )
+      if (brief.ibSwingText) lines.push(`IB LIQUIDITY: ${brief.ibSwingText}`)
+    }
   } else if (brief.analysisMode === 'afternoon') {
     lines.push(
       '',

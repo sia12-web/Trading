@@ -310,6 +310,8 @@ test('resolveAfternoonDeskLevels: includes IB even when AI/review present', () =
   assert(prices.includes(ib.high), `IB high ${ib.high} in ${prices}`)
   assert(prices.includes(ib.low), `IB low ${ib.low} in ${prices}`)
   assert(resolved.source === 'ai', 'source ai when review/AI present')
+  const ibPrimary = resolved.playbook.primaryBuy?.level === ib.low || resolved.playbook.primaryShort?.level === ib.high
+  assert(!ibPrimary, 'raw IB H/L is not PRIMARY when other levels exist')
 })
 
 test('resolveAfternoonDeskLevels: IB alone can seed playbook when no AI', () => {

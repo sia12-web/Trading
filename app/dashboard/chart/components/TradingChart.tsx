@@ -102,6 +102,15 @@ import {
   type DeskCall,
 } from '@/lib/trading/deskCall'
 import { deskCallModeHoverPrefix } from '@/lib/trading/deskCallMode'
+import {
+  applyIbLiquiditySwingToRange,
+  applyIbLiquiditySwingToRanges,
+  computeIbExtendAdvice,
+  findIbLiquiditySwing,
+  ibExtendAlertKind,
+  type IbExtendAdvice,
+} from '@/lib/trading/ibExtendAdvice'
+import { quoteBelongsToBook } from '@/lib/trading/deskExitGuard'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
 import { LiveVoicePanel } from '@/app/dashboard/chart/components/LiveVoicePanel'
@@ -887,6 +896,13 @@ export function TradingChart({
   const [callHover, setCallHover] = useState(
     'CALL WAIT — no ticket\n\nLeo and Level Finder advise only. No line.'
   )
+  const [ibExtendBadge, setIbExtendBadge] = useState('—')
+  const [ibExtendHover, setIbExtendHover] = useState(
+    'IB extend vs revert — advice only after IB locks. First tag is not the entry.'
+  )
+  const ibExtendRef = useRef<IbExtendAdvice | null>(null)
+  const ibLiqLinesRef = useRef<IPriceLine[]>([])
+  const paintIbExtendRef = useRef<() => void>(() => {})
   /** Live count of BRK/REJ markers currently painted (for toolbar status). */
   const [rangeSignalSummary, setRangeSignalSummary] = useState<{
     ib: number
@@ -1008,6 +1024,16 @@ export function TradingChart({
           color: s.color,
           shape: s.shape,
           text: s.text,
+        })
+      }
+      const swing = findIbLiquiditySwing(deskBars, ibRangeRef.current)
+      if (swing) {
+        markers.push({
+          time: swing.time as UTCTimestamp,
+          position: swing.kind === 'high' ? 'aboveBar' : 'belowBar',
+          color: '#eab308',
+          shape: 'circle',
+          text: swing.kind === 'high' ? 'LIQ H' : 'LIQ L',
         })
       }
     }
@@ -1614,6 +1640,94 @@ export function TradingChart({
     resolvedUseCall,
   ])
 
+  const paintIbExtend = useCallback(() => {
+    const host = priceLineHostRef.current
+    const list = candlesRef.current
+    const ib = ibRangeRef.current
+    const nowUnix = Math.floor(Date.now() / 1000)
+    const last = list.length ? list[list.length - 1] : null
+    const call = deskCallRef.current
+    const advice = computeIbExtendAdvice({
+      instrument,
+      ib,
+      candles: list.map((c) => ({
+        time: c.time as number,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+      })),
+      nowUnix: Math.max(nowUnix, last ? (last.time as number) : nowUnix),
+      useCall: useCallRef.current,
+      callSide: call?.side ?? 'WAIT',
+      lastPrice: last?.close ?? null,
+    })
+    ibExtendRef.current = advice
+    const chip = advice.chip
+    setIbExtendBadge((prev) => (prev === chip ? prev : chip))
+    const hover = `${advice.message}${
+      advice.entryAdvice != null && advice.stopAdvice != null
+        ? `\nPullback ~${advice.entryAdvice} · stop ~${advice.stopAdvice} (advise only — you place on TradingView).`
+        : ''
+    }\nAdvice only. Does not place. CALL ON still gates tickets.`
+    setIbExtendHover((prev) => (prev === hover ? prev : hover))
+
+    for (const line of ibLiqLinesRef.current) {
+      try {
+        host?.removePriceLine(line)
+      } catch {
+        /* ignore */
+      }
+    }
+    ibLiqLinesRef.current = []
+    if (host && advice.swing) {
+      try {
+        ibLiqLinesRef.current.push(
+          host.createPriceLine({
+            price: advice.swing.price,
+            color: '#eab308',
+            title: advice.swing.kind === 'high' ? 'Liq H' : 'Liq L',
+            lineWidth: 2,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+          })
+        )
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const alertKind = advice.regime ? ibExtendAlertKind(advice.regime) : null
+    if (
+      alertKind &&
+      advice.ibComplete &&
+      isDeskInstrument(instrument) &&
+      claimDeskNoteOnce(alertKind, instrument)
+    ) {
+      const quote = last?.close
+      const pivot = advice.swing?.price ?? advice.entryAdvice
+      if (
+        quote != null &&
+        pivot != null &&
+        !quoteBelongsToBook({
+          instrument,
+          entry: pivot,
+          quote,
+        })
+      ) {
+        return
+      }
+      onDeskAlert?.({
+        kind: alertKind,
+        title: advice.chip,
+        body: advice.message,
+        telegram: '',
+        dedupeKey: deskNoteClaimKey(alertKind, instrument),
+        instrument,
+      })
+    }
+  }, [instrument, onDeskAlert, resolvedUseCall])
+
   useEffect(() => {
     paintIbLines()
   }, [paintIbLines])
@@ -1661,6 +1775,14 @@ export function TradingChart({
   useEffect(() => {
     paintDeskCall()
   }, [paintDeskCall])
+
+  useEffect(() => {
+    paintIbExtendRef.current = paintIbExtend
+  }, [paintIbExtend])
+
+  useEffect(() => {
+    paintIbExtend()
+  }, [paintIbExtend])
 
   const ibProximity = useMemo(() => {
     if (!showIbBreakouts || !ibShaped || !ibRangeRef.current || !livePrice) return null
@@ -1952,7 +2074,8 @@ export function TradingChart({
         instrument,
       }),
     })
-    const strategyRange = activeRangeForPlaybook({
+    const swing = ibExtendRef.current?.swing ?? null
+    let strategyRange = activeRangeForPlaybook({
       playbookMode,
       instrument,
       or30: or30RangeRef.current,
@@ -1961,19 +2084,25 @@ export function TradingChart({
       lunchRange: lunchRangeRef.current,
       morningAttempts,
     })
-    const eligible = entryEligibleOverlayRanges({
-      playbookMode,
-      instrument,
-      showOr30,
-      showIb: showIbBreakouts,
-      showUsRange,
-      showLunchRange,
-      or30: or30RangeRef.current,
-      ib: ibLevels ?? ibRangeRef.current,
-      usRange: usRangeRef.current,
-      lunchRange: lunchRangeRef.current,
-      morningAttempts,
-    })
+    if (strategyRange) {
+      strategyRange = applyIbLiquiditySwingToRange(strategyRange, swing)
+    }
+    const eligible = applyIbLiquiditySwingToRanges(
+      entryEligibleOverlayRanges({
+        playbookMode,
+        instrument,
+        showOr30,
+        showIb: showIbBreakouts,
+        showUsRange,
+        showLunchRange,
+        or30: or30RangeRef.current,
+        ib: ibLevels ?? ibRangeRef.current,
+        usRange: usRangeRef.current,
+        lunchRange: lunchRangeRef.current,
+        morningAttempts,
+      }),
+      swing
+    )
     // Always snap the locked playbook range — do not require OR30/IB/Lunch/US toggles.
     const snapRanges = studyEntrySnapRanges({
       active: strategyRange,
@@ -2538,7 +2667,7 @@ export function TradingChart({
     // Ignore stale responses after the user switched instruments
     if (instrumentRef.current !== inst) return
 
-    const strategyRange = activeRangeForPlaybook({
+    const strategyRangeRaw = activeRangeForPlaybook({
       playbookMode,
       instrument: inst,
       or30: or30RangeRef.current,
@@ -2547,6 +2676,9 @@ export function TradingChart({
       lunchRange: lunchRangeRef.current,
       morningAttempts,
     })
+    const strategyRange = strategyRangeRaw
+      ? applyIbLiquiditySwingToRange(strategyRangeRaw, ibExtendRef.current?.swing)
+      : null
     const built = resolved.levels
       .map((l) => byPrice.get(l.level)!)
       .filter(Boolean) as LevelLine[]
@@ -3444,6 +3576,7 @@ export function TradingChart({
       paintOpeningActivityRef.current()
       paintMarketControlRef.current()
       paintDeskCallRef.current()
+      paintIbExtendRef.current()
 
       // NYC Lunch Session Range — 12:00–13:30 ET, Dow & Nasdaq only
       const lunchSeries = lunchSeriesRef.current
@@ -5908,7 +6041,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
   /** ±10 of active playbook range while entries unlocked (limit or market). */
   const edgeProximity = useMemo(() => {
     if (!canPlaceOrder || !livePrice) return null
-    const strategyRange = activeRangeForPlaybook({
+    const strategyRangeRaw = activeRangeForPlaybook({
       playbookMode,
       instrument,
       or30: or30RangeRef.current,
@@ -5917,8 +6050,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       lunchRange: lunchRangeRef.current,
       morningAttempts,
     })
+    const strategyRange = strategyRangeRaw
+      ? applyIbLiquiditySwingToRange(strategyRangeRaw, ibExtendRef.current?.swing)
+      : null
     return rangeEdgeProximity(livePrice, strategyRange)
-  }, [canPlaceOrder, livePrice, playbookMode, instrument, rangeStrategy, morningAttempts])
+  }, [canPlaceOrder, livePrice, playbookMode, instrument, rangeStrategy, morningAttempts, ibExtendBadge])
 
   /** Paint ±10 zones for toggled shaped overlays (OR30 only while morning window open). */
   useEffect(() => {
@@ -5943,7 +6079,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       return
     }
 
-    const active = activeRangeForPlaybook({
+    const swing = ibExtendRef.current?.swing ?? null
+    const activeRaw = activeRangeForPlaybook({
       playbookMode,
       instrument,
       or30: or30RangeRef.current,
@@ -5952,20 +6089,24 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       lunchRange: lunchRangeRef.current,
       morningAttempts,
     })
-    const overlays = entryEligibleOverlayRanges({
-      playbookMode,
-      instrument,
-      showOr30,
-      // IB H/L + ±10 follow the IB BRK/REJ toolbar toggle (remembered across refresh).
-      showIb: showIbBreakouts,
-      showUsRange,
-      showLunchRange,
-      or30: or30RangeRef.current,
-      ib: ibLevels ?? ibRangeRef.current,
-      usRange: usRangeRef.current,
-      lunchRange: lunchRangeRef.current,
-      morningAttempts,
-    })
+    const active = activeRaw ? applyIbLiquiditySwingToRange(activeRaw, swing) : null
+    const overlays = applyIbLiquiditySwingToRanges(
+      entryEligibleOverlayRanges({
+        playbookMode,
+        instrument,
+        showOr30,
+        // IB H/L + ±10 follow the IB BRK/REJ toolbar toggle (remembered across refresh).
+        showIb: showIbBreakouts,
+        showUsRange,
+        showLunchRange,
+        or30: or30RangeRef.current,
+        ib: ibLevels ?? ibRangeRef.current,
+        usRange: usRangeRef.current,
+        lunchRange: lunchRangeRef.current,
+        morningAttempts,
+      }),
+      swing
+    )
     const snapRanges = studyEntrySnapRanges({
       active,
       overlays,
@@ -6187,6 +6328,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     livePrice,
     focusTick,
     callBadge,
+    ibExtendBadge,
     resolvedUseCall,
   ])
 
@@ -7283,6 +7425,23 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           <span title={callHover}>
             <span className="text-zinc-400">
               Call {callBadge}
+            </span>
+          </span>
+          <span title={ibExtendHover}>
+            <span
+              className={
+                ibExtendBadge === 'Extend high' || ibExtendBadge === 'Extend low'
+                  ? 'text-amber-300 font-semibold'
+                  : ibExtendBadge === 'Balance'
+                    ? 'text-violet-300 font-semibold'
+                    : ibExtendBadge === 'Stand down'
+                      ? 'text-rose-300/80'
+                      : ibExtendBadge.startsWith('Waiting')
+                        ? 'text-yellow-600'
+                        : 'text-gray-600'
+              }
+            >
+              IB {ibExtendBadge}
             </span>
           </span>
           <span title="Blue IB high/low + BRK/REJ + ±10 — toggle with Press B (off on refresh).">

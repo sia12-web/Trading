@@ -20,6 +20,10 @@ import {
   type SessionName,
 } from '@/lib/chart/sessionVwap'
 import { computeRangeBreakRejectSignals } from '@/lib/chart/rangeBreakSignals'
+import {
+  findIbLiquiditySwing,
+  isIbContextBoxReasoning,
+} from '@/lib/trading/ibExtendAdvice'
 
 export type LevelSide = 'BUY' | 'SHORT'
 /** Overnight / regime lean used to pick the morning focus side */
@@ -117,17 +121,21 @@ export function buildDeskPlaybook(
     }))
     .sort((a, b) => b.score - a.score || b.conviction - a.conviction)
 
-  const primaryBuy = buys[0]
-    ? { ...stripScore(buys[0]), side: 'BUY' as const, rank: 'primary' as const }
+  const primaryBuyRaw = buys.find((b) => !isIbContextBoxReasoning(b.reasoning))
+  const primaryShortRaw = shorts.find((s) => !isIbContextBoxReasoning(s.reasoning))
+  const primaryBuy = primaryBuyRaw
+    ? { ...stripScore(primaryBuyRaw), side: 'BUY' as const, rank: 'primary' as const }
     : null
-  const primaryShort = shorts[0]
-    ? { ...stripScore(shorts[0]), side: 'SHORT' as const, rank: 'primary' as const }
+  const primaryShort = primaryShortRaw
+    ? { ...stripScore(primaryShortRaw), side: 'SHORT' as const, rank: 'primary' as const }
     : null
-  const watchBuy = buys[1]
-    ? { ...stripScore(buys[1]), side: 'BUY' as const, rank: 'watch' as const }
+  const watchBuyRaw = buys.find((b) => b !== primaryBuyRaw)
+  const watchShortRaw = shorts.find((s) => s !== primaryShortRaw)
+  const watchBuy = watchBuyRaw
+    ? { ...stripScore(watchBuyRaw), side: 'BUY' as const, rank: 'watch' as const }
     : null
-  const watchShort = shorts[1]
-    ? { ...stripScore(shorts[1]), side: 'SHORT' as const, rank: 'watch' as const }
+  const watchShort = watchShortRaw
+    ? { ...stripScore(watchShortRaw), side: 'SHORT' as const, rank: 'watch' as const }
     : null
 
   let focusSide: LevelSide | 'BOTH' = 'BOTH'
@@ -178,6 +186,8 @@ function scoreLevel(l: DeskLevel, bias: DeskBias, side: LevelSide): number {
   if (why.includes('london') || why.includes('asia')) score += 8
   if (l.source === 'ai') score += 4
   if (l.rank === 'primary') score += 2
+  if (isIbContextBoxReasoning(l.reasoning)) score -= 40
+  if (why.includes('liquidity swing')) score += 16
   return score
 }
 
@@ -1287,6 +1297,14 @@ export function resolveDeskLevels(
     raw = structure
   }
 
+  const lastBarUnix = candles.length ? (candles[candles.length - 1]!.time as number) : openUnix
+  const ibRange = computeInitialBalance(candles, openUnix, lastBarUnix)
+  for (const l of liquiditySwingDeskLevels(candles, ibRange)) {
+    if (!raw.some((m) => Math.abs(m.level - l.level) / Math.max(l.level, 1) < 0.0008)) {
+      raw.push(l)
+    }
+  }
+
   const unspent = dropPenetratedMorningLevels(raw, candles, openUnix)
   const normalized = normalizeLevelsByLivePrice(unspent.length > 0 ? unspent : raw, tipPx)
   const deduped = dedupeClusteredLevels(normalized)
@@ -1449,18 +1467,37 @@ export function initialBalanceLevelsFromCandles(
     {
       level: ib.high,
       type: 'resistance',
-      conviction: 8,
-      reasoning: `Initial Balance high (first ${ibMinutes}m) — afternoon watch for break/hold`,
+      conviction: 6,
+      reasoning: `Initial Balance high (first ${ibMinutes}m) — IB context box, not an entry magnet. First tag is not the entry.`,
       source: 'structure',
       rank: 'watch',
     },
     {
       level: ib.low,
       type: 'support',
-      conviction: 8,
-      reasoning: `Initial Balance low (first ${ibMinutes}m) — afternoon watch for break/hold`,
+      conviction: 6,
+      reasoning: `Initial Balance low (first ${ibMinutes}m) — IB context box, not an entry magnet. First tag is not the entry.`,
       source: 'structure',
       rank: 'watch',
+    },
+  ]
+}
+
+function liquiditySwingDeskLevels(
+  candles: DeskBar[],
+  ib: InitialBalanceRange | null
+): DeskLevel[] {
+  if (!ib) return []
+  const swing = findIbLiquiditySwing(candles, ib)
+  if (!swing) return []
+  return [
+    {
+      level: swing.price,
+      type: swing.kind === 'high' ? 'resistance' : 'support',
+      conviction: 9,
+      reasoning: `Liquidity swing ${swing.kind} at/beyond IB ${swing.kind} — test this swing. IB is the context box; first IB tag is not the entry.`,
+      source: 'structure',
+      rank: 'primary',
     },
   ]
 }
@@ -1515,6 +1552,8 @@ export function resolveAfternoonDeskLevels(
   const fromReview = mapAfternoonCandidates(afternoonCandidates)
   const ai = mapAiLevels(aiRows)
   const ib = initialBalanceLevelsFromCandles(candles, openUnix, 60, nowUnix)
+  const ibRange = computeInitialBalance(candles, openUnix, nowUnix, 60)
+  const liq = liquiditySwingDeskLevels(candles, ibRange)
   // Structure levels include: bait stop pools, AVWAP bands, round handles,
   // post-open rejection tails (morning + lunch wicks), opening drive range,
   // and multi-day polarity flips — all critical for afternoon context.
@@ -1526,9 +1565,10 @@ export function resolveAfternoonDeskLevels(
     merged.push(l)
   }
 
-  // Priority order: morning reaction flips/retests → AI levels → IB high/low → full structure
+  // Priority: morning reaction → AI → liquidity swing → IB box (watch) → structure
   for (const l of fromReview) pushUnique(l)
   for (const l of ai) pushUnique(l)
+  for (const l of liq) pushUnique(l)
   for (const l of ib) pushUnique(l)
   // Always include structure for afternoon — it contains post-open tails, opening
   // drive range, and polarity flips that are essential for afternoon continuation.
@@ -1546,8 +1586,9 @@ export function resolveAfternoonDeskLevels(
   //    EXCEPTION: IB levels are exempt — they ARE the intraday high/low and
   //    must always be present for afternoon break/hold analysis.
   const ibPrices = new Set(ib.map((l) => l.level))
-  const nonIb = merged.filter((l) => !ibPrices.has(l.level))
-  const ibKept = merged.filter((l) => ibPrices.has(l.level))
+  const keepPrices = new Set([...ibPrices, ...liq.map((l) => l.level)])
+  const nonIb = merged.filter((l) => !keepPrices.has(l.level))
+  const ibKept = merged.filter((l) => keepPrices.has(l.level))
   const unspentNonIb = dropPenetratedMorningLevels(nonIb, candles, openUnix)
   const raw = [...unspentNonIb, ...ibKept]
 

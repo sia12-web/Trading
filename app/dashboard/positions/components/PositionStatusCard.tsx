@@ -6,13 +6,17 @@
  */
 
 import Link from 'next/link'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePositionPriceSubscription } from '@/lib/hooks/usePositionPriceSubscription'
-import { successToast, errorToast } from '@/lib/utils/toastUtils'
+import { successToast, errorToast, infoToast } from '@/lib/utils/toastUtils'
 import type { PositionStatus } from '@/types/positionManagement'
 import { entrySourceLabel, entrySourceTone } from '@/lib/trading/entrySourceBadge'
 import { formatDeskMoney } from '@/lib/trading/currency'
 import { quoteBelongsToBook } from '@/lib/trading/deskExitGuard'
+import { scoreValueAcceptance, toEpochMs } from '@/lib/trading/valueAcceptance'
+import { claimDeskNoteOnce, deskNoteClaimKey } from '@/lib/trading/rangeEdgeAlerts'
+import type { DeskInstrument } from '@/lib/trading/sessionGate'
+import { ValueAcceptanceRead } from '@/app/dashboard/chart/components/ValueAcceptanceRead'
 
 interface PositionStatusCardProps {
   position: PositionStatus | null
@@ -64,6 +68,8 @@ export function PositionStatusCard({
   const onRefreshRef = useRef(onRefresh)
   const closedMsgRef = useRef(closedMsg)
   const positionIdRef = useRef(position?.id)
+  const valueAcceptedNotifiedRef = useRef(false)
+  const [clockMs, setClockMs] = useState(() => Date.now())
 
   useEffect(() => {
     onClosedRef.current = onClosed
@@ -93,6 +99,7 @@ export function PositionStatusCard({
     setExitDismissed(false)
     exitDismissedRef.current = false
     exitingRef.current = false
+    valueAcceptedNotifiedRef.current = false
     // Do NOT seed currentPrice to entry — after Move-to-BE, SL≈entry and
     // `entry <= stop` would instantly market-close a still-open book.
     setCurrentPrice(null)
@@ -266,6 +273,62 @@ export function PositionStatusCard({
       }
     })()
   }, [currentPrice, position, closedMsg, onClosed, onRefresh])
+
+  useEffect(() => {
+    setClockMs(Date.now())
+    const id = window.setInterval(() => setClockMs(Date.now()), 15_000)
+    return () => window.clearInterval(id)
+  }, [position?.id])
+
+  const quoteOk =
+    !!position &&
+    currentPrice != null &&
+    Number.isFinite(currentPrice) &&
+    currentPrice > 0 &&
+    quoteBelongsToBook({
+      instrument: position.instrument,
+      entry: position.entry_price,
+      quote: currentPrice,
+    })
+
+  const valueAcceptance = useMemo(() => {
+    if (!position || !quoteOk || currentPrice == null) return null
+    const filledAtMs = toEpochMs(position.entry_timestamp)
+    if (filledAtMs == null) return null
+    return scoreValueAcceptance({
+      side: position.entry_direction,
+      entry: position.entry_price,
+      stopLoss: position.stop_loss_price,
+      takeProfit: position.profit_target_price,
+      nowMs: clockMs,
+      filledAtMs,
+      lastPrice: currentPrice,
+    })
+  }, [position, quoteOk, currentPrice, clockMs])
+
+  useEffect(() => {
+    if (!position || !valueAcceptance || valueAcceptance.state !== 'looking_accepted') return
+    if (valueAcceptedNotifiedRef.current) return
+    valueAcceptedNotifiedRef.current = true
+    const inst = position.instrument as DeskInstrument
+    const title = 'Value at entry'
+    const body = valueAcceptance.message
+    const kind = `value_accepted_${position.id.slice(0, 8)}`
+    if (!claimDeskNoteOnce(kind, inst)) return
+    infoToast(`${title} — ${body}`, 9000)
+    void fetch('/api/notify/desk-alert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'value_accepted',
+        title,
+        body,
+        telegram: '',
+        instrument: inst,
+        dedupeKey: deskNoteClaimKey(kind, inst),
+      }),
+    }).catch(() => {})
+  }, [position, valueAcceptance])
 
   const closePosition = async (
     exit_reason: 'take_profit' | 'manual',
@@ -584,6 +647,10 @@ export function PositionStatusCard({
             </div>
           </div>
         </div>
+
+        {valueAcceptance && (
+          <ValueAcceptanceRead read={valueAcceptance} variant="bar" />
+        )}
 
         {/* Levels */}
         <div className="grid grid-cols-3 gap-2 text-xs">

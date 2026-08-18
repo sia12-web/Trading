@@ -5,8 +5,10 @@
  * Price path toward TP is separate from AI confidence.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { quoteBelongsToBook } from '@/lib/trading/deskExitGuard'
+import { scoreValueAcceptance, toEpochMs } from '@/lib/trading/valueAcceptance'
+import { ValueAcceptanceRead } from './ValueAcceptanceRead'
 
 type Direction = 'long' | 'short'
 
@@ -70,6 +72,13 @@ interface Props {
     exitReason: 'stop_hit' | 'take_profit' | 'manual'
     exitPrice: number
   }) => void
+  /** Toast-only: first time this book looks accepted at entry */
+  onValueAccepted?: (payload: {
+    positionId: string
+    instrument: string
+    message: string
+    confidence: number
+  }) => void
 }
 
 export function ManageDeskBar({
@@ -81,6 +90,7 @@ export function ManageDeskBar({
   atrAdviceLine = null,
   onBreakEvenAvailable,
   onBrokerExit,
+  onValueAccepted,
 }: Props) {
   const [ai, setAi] = useState<AiVerdict | null>(null)
   const [recommendation, setRecommendation] = useState<{
@@ -104,6 +114,9 @@ export function ManageDeskBar({
   const beDismissedRef = useRef(false)
   const onBreakEvenAvailableRef = useRef(onBreakEvenAvailable)
   const onBrokerExitRef = useRef(onBrokerExit)
+  const onValueAcceptedRef = useRef(onValueAccepted)
+  const valueAcceptedNotifiedRef = useRef(false)
+  const [clockMs, setClockMs] = useState(() => Date.now())
   const exitingRef = useRef(false)
   const aiPollInFlightRef = useRef(false)
   const exitDismissedRef = useRef(false)
@@ -120,6 +133,7 @@ export function ManageDeskBar({
     setBeDismissed(false)
     beNotifiedRef.current = false
     beDismissedRef.current = false
+    valueAcceptedNotifiedRef.current = false
     exitDismissedRef.current = false
     exitingRef.current = false
   }, [position.id])
@@ -131,7 +145,8 @@ export function ManageDeskBar({
   useEffect(() => {
     onBreakEvenAvailableRef.current = onBreakEvenAvailable
     onBrokerExitRef.current = onBrokerExit
-  }, [onBreakEvenAvailable, onBrokerExit])
+    onValueAcceptedRef.current = onValueAccepted
+  }, [onBreakEvenAvailable, onBrokerExit, onValueAccepted])
 
   useEffect(() => {
     priceRef.current = currentPrice
@@ -170,6 +185,58 @@ export function ManageDeskBar({
           return Math.max(0, Math.min(1, moved / span))
         })()
       : null
+  useEffect(() => {
+    setClockMs(Date.now())
+    const id = window.setInterval(() => setClockMs(Date.now()), 15_000)
+    return () => window.clearInterval(id)
+  }, [position.id])
+
+  const quoteOk =
+    currentPrice != null &&
+    Number.isFinite(currentPrice) &&
+    currentPrice > 0 &&
+    quoteBelongsToBook({
+      instrument: position.instrument,
+      entry: position.entryPrice,
+      quote: currentPrice,
+    })
+
+  const valueAcceptance = useMemo(() => {
+    if (!quoteOk || currentPrice == null) return null
+    const filledAtMs = toEpochMs(position.entryTimestamp)
+    if (filledAtMs == null) return null
+    return scoreValueAcceptance({
+      side: isLong ? 'LONG' : 'SHORT',
+      entry: position.entryPrice,
+      stopLoss: position.stopLoss,
+      takeProfit: position.profitTarget,
+      nowMs: clockMs,
+      filledAtMs,
+      lastPrice: currentPrice,
+    })
+  }, [
+    quoteOk,
+    currentPrice,
+    position.entryTimestamp,
+    position.entryPrice,
+    position.stopLoss,
+    position.profitTarget,
+    clockMs,
+    isLong,
+  ])
+
+  useEffect(() => {
+    if (!valueAcceptance || valueAcceptance.state !== 'looking_accepted') return
+    if (valueAcceptedNotifiedRef.current) return
+    valueAcceptedNotifiedRef.current = true
+    onValueAcceptedRef.current?.({
+      positionId: position.id,
+      instrument: position.instrument,
+      message: valueAcceptance.message,
+      confidence: valueAcceptance.confidence,
+    })
+  }, [valueAcceptance, position.id, position.instrument])
+
   const riskToSl =
     currentPrice != null
       ? (() => {
@@ -769,6 +836,8 @@ export function ManageDeskBar({
           )}
         </div>
       )}
+
+      {valueAcceptance && <ValueAcceptanceRead read={valueAcceptance} />}
 
       {ai ? (
         <div className="space-y-0.5 text-[10px]">

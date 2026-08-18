@@ -648,6 +648,49 @@ export default function ChartPage() {
     []
   )
 
+  const handleValueAccepted = useCallback(
+    (payload: {
+      positionId: string
+      instrument: string
+      message: string
+      confidence: number
+    }) => {
+      const inst = payload.instrument as DeskInstrument
+      const pos = managePos
+      const quote = livePriceRef.current
+      if (
+        quote != null &&
+        pos &&
+        pos.id === payload.positionId &&
+        !quoteBelongsToBook({
+          instrument: pos.instrument,
+          entry: pos.entryPrice,
+          quote,
+        })
+      ) {
+        return
+      }
+      const title = 'Value at entry'
+      const body = payload.message
+      const kind = `value_accepted_${payload.positionId.slice(0, 8)}`
+      if (!claimDeskNoteOnce(kind, inst)) return
+      infoToast(`${title} — ${body}`, 9000)
+      void fetch('/api/notify/desk-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'value_accepted',
+          title,
+          body,
+          telegram: '',
+          instrument: inst,
+          dedupeKey: deskNoteClaimKey(kind, inst),
+        }),
+      }).catch(() => {})
+    },
+    [managePos]
+  )
+
   const lastUnlockKeyRef = useRef<string | null>(null)
   const prevCanPlaceRef = useRef(false)
   const lastEdgeAlertAtRef = useRef(0)
@@ -2192,6 +2235,7 @@ export default function ChartPage() {
               onRefreshGate={refreshGate}
               onAiVerdict={setAiVerdict}
               onBreakEvenAvailable={handleBreakEvenAvailable}
+              onValueAccepted={handleValueAccepted}
               onBrokerExit={handleBrokerExit}
             />
           </div>
