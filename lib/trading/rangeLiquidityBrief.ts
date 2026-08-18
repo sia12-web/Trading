@@ -492,7 +492,7 @@ export function formatRangeLiquidityBriefForPrompt(
   if (brief.activeAtr) {
     lines.push(
       '',
-      'RANGE VOLATILITY (ATR — advise only; does NOT change ±10 H/50%/L entry gate; does NOT auto-move SL/TP):',
+      'RANGE VOLATILITY (ATR — advise only; does NOT change ±10 H/L entry gate; does NOT auto-move SL/TP):',
       formatRangeAtrAdviceLine(brief.activeAtr)
     )
   }
