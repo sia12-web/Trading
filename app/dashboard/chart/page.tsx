@@ -264,11 +264,16 @@ export default function ChartPage() {
   const [positionOverlay, setPositionOverlay] = useState<PositionOverlay | null>(null)
   const [managePos, setManagePos] = useState<ManagePosition | null>(null)
   const [pending, setPending] = useState<PendingLimitOrder | null>(null)
+  const [tvTicketClosed, setTvTicketClosed] = useState(false)
   const [tradeifyAccountName, setTradeifyAccountName] = useState<string | null>(null)
   const [riskProfile, setRiskProfile] = useState(getDeskRiskProfile)
   const lastTradeifyRiskRef = useRef(0)
   const [gate, setGate] = useState<SessionGateState | null>(null)
   gateRef.current = gate
+
+  useEffect(() => {
+    setTvTicketClosed(false)
+  }, [pending?.workingId, managePos?.id])
 
   // Clocked name owns the chart on refresh — preference DOW must not hide NASDAQ/MNQ.
   useEffect(() => {
@@ -2108,11 +2113,13 @@ export default function ChartPage() {
     isTradeifyGrowth50k(riskProfile) &&
     pending != null &&
     !managePos &&
-    pending.instrument !== 'NIKKEI'
+    pending.instrument !== 'NIKKEI' &&
+    !tvTicketClosed
   const showFilledTicket =
     isTradeifyGrowth50k(riskProfile) &&
     managePos != null &&
-    (managePos.instrument || instrument) !== 'NIKKEI'
+    (managePos.instrument || instrument) !== 'NIKKEI' &&
+    !tvTicketClosed
   const showManageBar = inManage && managePos != null
   const showDeskOverlay =
     showWorkingStrip ||
@@ -2194,6 +2201,7 @@ export default function ChartPage() {
                 bookId={pending.workingId}
                 accountName={tradeifyAccountName}
                 phase="working"
+                onClose={() => setTvTicketClosed(true)}
               />
             ) : null}
             {showFilledTicket && managePos ? (
@@ -2213,6 +2221,7 @@ export default function ChartPage() {
                 bookId={managePos.id}
                 accountName={tradeifyAccountName}
                 phase="filled"
+                onClose={() => setTvTicketClosed(true)}
               />
             ) : null}
 

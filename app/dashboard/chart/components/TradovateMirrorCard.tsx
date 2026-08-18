@@ -20,6 +20,8 @@ type Props = {
   bookId?: string | null
   accountName?: string | null
   phase: 'working' | 'filled'
+  /** Hide the copy overlay after the trader has pasted into TradingView. Does not cancel the book. */
+  onClose?: () => void
 }
 
 export function TradovateMirrorCard(props: Props) {
@@ -169,6 +171,15 @@ export function TradovateMirrorCard(props: Props) {
         >
           Open TradingView
         </a>
+        {props.onClose && (
+          <button
+            type="button"
+            onClick={props.onClose}
+            className="rounded border border-sky-500/50 bg-sky-500/15 px-2 py-1 text-[10px] font-bold uppercase text-sky-100 hover:bg-sky-500/25"
+          >
+            Copied — close
+          </button>
+        )}
         {!mirrored && (
           <button
             type="button"

@@ -3,7 +3,7 @@
  * Port of the Pine overlay for DOW / NASDAQ live charts only (not Nikkei).
  *
  * Distinct from desk lunch flatten (11:30 ET): this is the afternoon lunch
- * range used as PM session levels (high / low / 50% half-back).
+ * range used as PM session levels (high / low only — no 50% mid).
  */
 
 import { nyDateTimeToUnix } from '@/lib/utils/dateUtils'
@@ -119,7 +119,8 @@ export function computeNycLunchRange(
 }
 
 /**
- * H / L / mid line points. Levels lock after lunch; with `extendToUnix`
+ * H / L line points (50% mid is off by default — ranges are H/L only).
+ * Levels lock after lunch; with `extendToUnix`
  * (cash close / tip) lines continue into the PM session (Pine default).
  */
 export function nycLunchLineSeriesData(
@@ -131,7 +132,7 @@ export function nycLunchLineSeriesData(
   low: { time: number; value: number }[]
   mid: { time: number; value: number }[]
 } {
-  const showMid = opts?.showMid !== false
+  const showMid = opts?.showMid === true
   const start = range.fromTime
   const end = Math.max(
     start + 60,

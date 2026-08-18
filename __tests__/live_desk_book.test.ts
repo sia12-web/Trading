@@ -193,6 +193,8 @@ const ticketCard = readFileSync(
 )
 assert.ok(livePage.includes('<ManageDeskBar'), 'manage card stays on the live desk')
 assert.ok(livePage.includes('<TradovateMirrorCard'), 'TradingView ticket stays on the live desk')
+assert.ok(ticketCard.includes('Copied — close'), 'ticket can hide after copy without canceling the book')
+assert.ok(livePage.includes('onClose={() => setTvTicketClosed(true)}'), 'close only hides the copy overlay')
 assert.ok(
   livePage.includes('flex flex-col gap-2 items-start'),
   'manage + ticket stack instead of overlapping'

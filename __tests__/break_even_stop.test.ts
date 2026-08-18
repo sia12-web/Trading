@@ -4,9 +4,12 @@
  */
 import assert from 'node:assert/strict'
 import {
+  breakEvenShouldOffer,
   breakEvenStopPrice,
+  breakEvenTpProgressThreshold,
   livePriceConfirmsStopHit,
   stopSafeVersusMarket,
+  tradeTpProgress,
 } from '../lib/trading/breakEvenStop'
 
 {
@@ -75,6 +78,36 @@ import {
   assert.equal(payload.action_type, 'BREAKEVEN')
   assert.equal(payload.updated_stop_loss, 49999)
   assert.ok(payload.updated_stop_loss < entry)
+}
+
+{
+  assert.equal(breakEvenTpProgressThreshold('NASDAQ'), 0.5)
+  const shot = {
+    entry: 29593,
+    takeProfit: 29438,
+    livePrice: 29593,
+    isLong: false,
+  }
+  const zero = tradeTpProgress(shot)
+  assert.equal(zero.progress, 0, 'at fill →TP is 0%')
+  assert.equal(zero.inProfit, false)
+  assert.equal(
+    breakEvenShouldOffer({ instrument: 'NASDAQ', ...shot }),
+    false,
+    'must not offer BE at 0% TP'
+  )
+  const halfLive = 29593 - (29593 - 29438) * 0.5
+  assert.equal(
+    breakEvenShouldOffer({
+      instrument: 'NASDAQ',
+      entry: 29593,
+      takeProfit: 29438,
+      livePrice: halfLive,
+      isLong: false,
+    }),
+    true,
+    'BE only after 50% toward TP on NASDAQ'
+  )
 }
 
 console.log('break_even_stop: ok')

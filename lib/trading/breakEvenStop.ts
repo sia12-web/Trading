@@ -10,6 +10,44 @@ import { snapStopToTick } from '@/lib/trading/instrumentTicks'
 
 export type BreakEvenDirection = 'LONG' | 'SHORT' | 'long' | 'short'
 
+/** BE is offered only after this fraction of Entry→TP (must match the →TP bar). */
+export function breakEvenTpProgressThreshold(instrument: string): number {
+  if (instrument === 'NASDAQ') return 0.5
+  if (instrument === 'NIKKEI') return 0.35
+  return 0.25
+}
+
+export function tradeTpProgress(args: {
+  entry: number
+  takeProfit: number
+  livePrice: number
+  isLong: boolean
+}): { moved: number; distance: number; progress: number; inProfit: boolean } {
+  const entry = Number(args.entry)
+  const tp = Number(args.takeProfit)
+  const live = Number(args.livePrice)
+  const distance = args.isLong ? tp - entry : entry - tp
+  const moved = args.isLong ? live - entry : entry - live
+  const inProfit = Number.isFinite(moved) && moved > 0
+  const progress =
+    Number.isFinite(distance) && distance > 0
+      ? Math.max(0, Math.min(1, moved / distance))
+      : 0
+  return { moved, distance, progress, inProfit }
+}
+
+/** True only when live is in profit toward TP by the instrument threshold. */
+export function breakEvenShouldOffer(args: {
+  instrument: string
+  entry: number
+  takeProfit: number
+  livePrice: number
+  isLong: boolean
+}): boolean {
+  const { inProfit, progress } = tradeTpProgress(args)
+  return inProfit && progress >= breakEvenTpProgressThreshold(args.instrument)
+}
+
 export function breakEvenStopPrice(
   instrument: string,
   entryPrice: number,

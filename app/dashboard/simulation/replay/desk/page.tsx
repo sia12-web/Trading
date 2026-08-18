@@ -47,6 +47,7 @@ import {
   snapStopToTick,
   snapTargetToTick,
 } from '@/lib/trading/instrumentTicks'
+import { breakEvenShouldOffer } from '@/lib/trading/breakEvenStop'
 import {
   MAX_DAY_ATTEMPTS,
   MAX_IB_ATTEMPTS,
@@ -1202,10 +1203,9 @@ function SimulationDeskInner() {
       low: chart.addLineSeries({ ...lunchLineOpts, color: NYC_LUNCH_COLORS.low, title: 'LN L' }),
       mid: chart.addLineSeries({
         ...lunchLineOpts,
-        color: NYC_LUNCH_COLORS.mid,
-        lineWidth: 1 as const,
-        lineStyle: LineStyle.Dashed,
-        title: 'LN 50%',
+        color: NYC_LUNCH_COLORS.low,
+        lastValueVisible: false,
+        title: 'LN L',
       }),
     }
 
@@ -1609,7 +1609,7 @@ function SimulationDeskInner() {
             )
             lunchRangeRef.current = lunch
             if (showLunchRangeRef.current && lunch) {
-              const pts = nycLunchLineSeriesData(lunch, extendTo, { showMid: true })
+              const pts = nycLunchLineSeriesData(lunch, extendTo, { showMid: false })
               try {
                 lns.high.setData(shiftBand(axisLabelSeriesData(pts.high)))
                 lns.low.setData(shiftBand(axisLabelSeriesData(pts.low)))
@@ -3316,23 +3316,26 @@ function SimulationDeskInner() {
     setMsg(`Break-even confirmed — SL @ ${be.toLocaleString()}`)
   }, [instrument])
 
-  // Break-even available at +1R (same idea as live ManageDeskBar)
+  // Break-even only when live is in profit toward TP (same as live →TP bar)
   useEffect(() => {
     if (!position || lastPrice == null || position.breakEvenSet || breakEvenDismissed) {
       if (!position) setBreakEvenAvailable(false)
       return
     }
-    const r = Math.abs(position.entry - position.stopLoss)
-    if (!(r > 0)) return
-    const move =
-      position.direction === 'LONG'
-        ? lastPrice - position.entry
-        : position.entry - lastPrice
     const stillNeedsBe =
       position.direction === 'LONG'
         ? position.stopLoss < position.entry
         : position.stopLoss > position.entry
-    setBreakEvenAvailable(stillNeedsBe && move >= r)
+    setBreakEvenAvailable(
+      stillNeedsBe &&
+        breakEvenShouldOffer({
+          instrument,
+          entry: position.entry,
+          takeProfit: position.target,
+          livePrice: lastPrice,
+          isLong: position.direction === 'LONG',
+        })
+    )
   }, [position, lastPrice, breakEvenDismissed])
 
   const valueAcceptance = useMemo(() => {
@@ -4144,7 +4147,7 @@ function SimulationDeskInner() {
               title={
                 showLunchRange
                   ? `NYC Lunch range 12:00–13:30 ${TRADER_DISPLAY_LABEL} visible (Press N)`
-                  : 'Show NYC Lunch high / low / 50% (Press N)'
+                  : 'Show NYC Lunch high / low (Press N)'
               }
               onClick={() => setShowLunchRange((v) => !v)}
               className={`flex items-center gap-1 rounded border px-2 py-1 text-[10px] font-semibold uppercase ${

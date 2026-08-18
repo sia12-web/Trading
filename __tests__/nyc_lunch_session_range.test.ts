@@ -85,8 +85,11 @@ test('computeNycLunchRange: locks after 13:30 and extends', () => {
 
   const pts = nycLunchLineSeriesData(r!, etUnix(2026, 7, 15, 16, 0))
   assert(pts.high.length === 2, 'high segment')
-  assert(pts.mid[1]!.value === r!.mid, 'mid extends')
+  assert(pts.mid.length === 0, '50% mid is not painted by default')
   assert(pts.high[1]!.time === etUnix(2026, 7, 15, 16, 0), 'extends to cash close')
+
+  const withMid = nycLunchLineSeriesData(r!, etUnix(2026, 7, 15, 16, 0), { showMid: true })
+  assert(withMid.mid[1]!.value === r!.mid, 'opt-in mid still computes')
 
   const mk = nycLunchEndMarkers(r!)
   assert(mk.length === 1, 'one end marker')

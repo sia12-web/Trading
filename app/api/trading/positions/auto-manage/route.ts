@@ -14,7 +14,10 @@ import { getOandaPrice } from '@/lib/oanda/pricing'
 import { updateOandaTradeStopLoss, partialCloseOandaTrade } from '@/lib/oanda/orders'
 import {
   breakEvenStopPrice,
+  breakEvenShouldOffer,
+  breakEvenTpProgressThreshold,
   stopSafeVersusMarket,
+  tradeTpProgress,
 } from '@/lib/trading/breakEvenStop'
 import type { Instrument } from '@/types/trading'
 import type { Instrument as PriceInstrument } from '@/types/price-feed'
@@ -54,18 +57,27 @@ export async function POST(request: Request) {
     }
 
     const instrument = position.instrument as Instrument
-    let currentPrice = typeof body.current_price === 'number' ? body.current_price : 0
+    const clientPrice =
+      typeof body.current_price === 'number' && body.current_price > 0
+        ? body.current_price
+        : 0
+    let marketPrice = clientPrice
 
     try {
       const oanda = await getOandaPrice(instrument as PriceInstrument)
       if (oanda?.price && oanda.price > 0) {
-        currentPrice = oanda.price
+        marketPrice = oanda.price
       }
     } catch {
       /* fallback to client price */
     }
 
-    if (!currentPrice || currentPrice <= 0) {
+    // Progress must match the manage →TP bar (desk live). OANDA is only for
+    // stop-through-market safety / broker amends — a basis gap must not fake BE.
+    const progressPrice = clientPrice > 0 ? clientPrice : marketPrice
+    const currentPrice = marketPrice > 0 ? marketPrice : progressPrice
+
+    if (!progressPrice || progressPrice <= 0) {
       return NextResponse.json({ error: 'No valid current price' }, { status: 400 })
     }
 
@@ -97,19 +109,20 @@ export async function POST(request: Request) {
         /Breakeven|BREAKEVEN/i.test(d.notes)
     )
 
-    // Distance metrics
-    const totalTpDistance = isLong ? tp - entry : entry - tp
-    const currentMoved = isLong ? currentPrice - entry : entry - currentPrice
-    const tpProgress = totalTpDistance > 0 ? currentMoved / totalTpDistance : 0
+    // Distance metrics — same helper as the manage →TP % bar
+    const tpStats = tradeTpProgress({
+      entry,
+      takeProfit: tp,
+      livePrice: progressPrice,
+      isLong,
+    })
+    const currentMoved = tpStats.moved
+    const tpProgress = tpStats.progress
     const initialRisk = isLong ? entry - currentSl : currentSl - entry
     const rMultiple =
       initialRisk > 0 && Number.isFinite(currentMoved) ? currentMoved / initialRisk : 0
 
-    // 2-Year Quantitative Multi-Year Optimized Position Management Parameters:
-    // 1. DOW: BE at 25% TP (+0.50R), Trail at 30% TP (+0.60R), Trail Offset 30% risk
-    // 2. NASDAQ: BE at 50% TP (+1.00R), Trail at 60% TP (+1.20R), Trail Offset 50% risk
-    // 3. NIKKEI: BE at 35% TP (+0.70R), Trail at 45% TP (+0.90R), Trail Offset 40% risk
-    const beProgressThreshold = instrument === 'NASDAQ' ? 0.50 : instrument === 'NIKKEI' ? 0.35 : 0.25
+    const beProgressThreshold = breakEvenTpProgressThreshold(instrument)
     const trailProgressThreshold = instrument === 'NASDAQ' ? 0.60 : instrument === 'NIKKEI' ? 0.45 : 0.30
     const trailPctOffset = instrument === 'NASDAQ' ? 0.50 : instrument === 'NIKKEI' ? 0.40 : 0.30
     const autoExecute = body.auto_execute === true // Default is false: Require Trader Confirmation (CONFIRM/REJECT)
@@ -181,14 +194,19 @@ export async function POST(request: Request) {
       return true
     }
 
-    // 1. BREAKEVEN RULE — instrument TP-progress threshold OR +1R (whichever qualifies first)
-    const beByProgress = tpProgress >= beProgressThreshold
-    const beByR = rMultiple >= 1.0
-    if ((beByProgress || beByR) && !beRejected && !beConfirmed) {
+    // 1. BREAKEVEN — only when live is in profit toward TP (same as →TP bar)
+    const beReady = breakEvenShouldOffer({
+      instrument,
+      entry,
+      takeProfit: tp,
+      livePrice: progressPrice,
+      isLong,
+    })
+    if (beReady && !beRejected && !beConfirmed) {
       const isSlBelowEntry = isLong ? currentSl < entry : currentSl > entry
 
       if (isSlBelowEntry) {
-        // One tick past entry (never exact entry) — exact entry false-triggers client
+        // One tick past fill (never exact entry) — exact entry false-triggers client
         // auto-exit (`price <= stop` while price is still seeded at entry) and can
         // market-flatten a profitable OANDA book.
         const bePrice = breakEvenStopPrice(
@@ -196,9 +214,8 @@ export async function POST(request: Request) {
           entry,
           isLong ? 'LONG' : 'SHORT'
         )
-        const beReason = beByR
-          ? `+${rMultiple.toFixed(2)}R achieved — move Stop Loss to Breakeven ($${bePrice})?`
-          : `Target reached ${(beProgressThreshold * 100).toFixed(0)}% TP progress. Move Stop Loss to Breakeven ($${bePrice})?`
+        const pct = Math.round(tpProgress * 100)
+        const beReason = `→TP ${pct}% (need ${Math.round(beProgressThreshold * 100)}%). Lock SL one tick past fill ${entry.toLocaleString()} at ${bePrice.toLocaleString()}?`
         if (autoExecute || (confirmAction === 'CONFIRM' && actionType === 'BREAKEVEN')) {
           if (await applyStopLoss(bePrice, 'BREAKEVEN')) {
             updatedSlPrice = bePrice
@@ -227,7 +244,7 @@ export async function POST(request: Request) {
             action_type: 'BREAKEVEN',
             proposed_price: bePrice,
             reason: beReason,
-            confidence: beByR ? 90 : 85,
+            confidence: 85,
           }
         }
       }

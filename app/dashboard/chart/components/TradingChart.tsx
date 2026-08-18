@@ -1374,7 +1374,7 @@ export function TradingChart({
     }
     const tip = candlesRef.current[candlesRef.current.length - 1]?.time as number | undefined
     const pts = nycLunchLineSeriesData(lunch, tip ?? lunch.toTime, {
-      showMid: true,
+      showMid: false,
     })
     const tz = chartTzRef.current
     const savedSpacing = readDeskBarSpacing(chartRef.current)
@@ -1391,12 +1391,7 @@ export function TradingChart({
           tz
         ).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
       )
-      series.mid.setData(
-        mapTimesToChart(
-          axisLabelSeriesData(pts.mid).map((p) => ({ time: p.time, value: p.value })),
-          tz
-        ).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
-      )
+      series.mid.setData([])
       setLunchShaped(true)
       setLunchLocked(!!lunch.complete)
       keepDeskBarSpacing(chartRef.current, savedSpacing)
@@ -3050,8 +3045,9 @@ export function TradingChart({
       }),
       mid: chart.addLineSeries({
         ...lunchLineBase,
-        color: NYC_LUNCH_COLORS.mid,
-        title: 'Lunch 50%',
+        color: NYC_LUNCH_COLORS.low,
+        title: 'Lunch L',
+        lastValueVisible: false,
       }),
     }
 
@@ -7048,7 +7044,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             title={
               showLunchRange
                 ? `NYC Lunch range lines 12:00–13:30 ${TRADER_DISPLAY_LABEL} + LN BRK/REJ after 13:30 (Press N)`
-                : 'Show NYC Lunch high / low / 50% (Press N). This is the lunch RANGE, not playbook “Lunch break” prep.'
+                : 'Show NYC Lunch high / low (Press N). This is the lunch RANGE, not playbook “Lunch break” prep.'
             }
             onClick={() => setShowLunchRange((v) => !v)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
@@ -7705,7 +7701,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             <span className="text-gray-600">·</span>
             <span
               className="flex items-center gap-1.5 normal-case tracking-normal"
-              title={`NYC Lunch Session Range — 12:00–13:30 ${TRADER_DISPLAY_LABEL} high / low / 50% half-back (Dow & Nasdaq)`}
+              title={`NYC Lunch Session Range — 12:00–13:30 ${TRADER_DISPLAY_LABEL} high / low (Dow & Nasdaq)`}
             >
               <span
                 className="inline-block w-4 border-t-2"
@@ -7717,11 +7713,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 style={{ borderColor: NYC_LUNCH_COLORS.low }}
               />
               <span style={{ color: NYC_LUNCH_COLORS.low }}>L</span>
-              <span
-                className="inline-block w-4 border-t-2"
-                style={{ borderColor: NYC_LUNCH_COLORS.mid }}
-              />
-              <span style={{ color: NYC_LUNCH_COLORS.mid }}>50%</span>
               <span className="text-gray-600">12:00–13:30 {TRADER_DISPLAY_LABEL} → PM</span>
             </span>
           </>

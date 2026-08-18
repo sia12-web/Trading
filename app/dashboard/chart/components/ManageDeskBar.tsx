@@ -8,6 +8,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { quoteBelongsToBook } from '@/lib/trading/deskExitGuard'
 import { scoreValueAcceptance, toEpochMs } from '@/lib/trading/valueAcceptance'
+import {
+  breakEvenShouldOffer,
+  tradeTpProgress,
+} from '@/lib/trading/breakEvenStop'
 import { ValueAcceptanceRead } from './ValueAcceptanceRead'
 
 type Direction = 'long' | 'short'
@@ -174,17 +178,26 @@ export function ManageDeskBar({
   /** Geometric progress 0→1 from entry toward TP (not AI confidence). */
   const pathToTp =
     currentPrice != null
-      ? (() => {
-          const span = isLong
-            ? position.profitTarget - position.entryPrice
-            : position.entryPrice - position.profitTarget
-          if (!Number.isFinite(span) || Math.abs(span) < 1e-9) return null
-          const moved = isLong
-            ? currentPrice - position.entryPrice
-            : position.entryPrice - currentPrice
-          return Math.max(0, Math.min(1, moved / span))
-        })()
+      ? tradeTpProgress({
+          entry: position.entryPrice,
+          takeProfit: position.profitTarget,
+          livePrice: currentPrice,
+          isLong,
+        }).progress
       : null
+  const beAllowed =
+    currentPrice != null &&
+    breakEvenShouldOffer({
+      instrument: position.instrument,
+      entry: position.entryPrice,
+      takeProfit: position.profitTarget,
+      livePrice: currentPrice,
+      isLong,
+    })
+  const shownRecommendation =
+    recommendation?.action_type === 'BREAKEVEN' && !beAllowed
+      ? null
+      : recommendation
   useEffect(() => {
     setClockMs(Date.now())
     const id = window.setInterval(() => setClockMs(Date.now()), 15_000)
@@ -287,14 +300,26 @@ export function ManageDeskBar({
             manageJson.recommendation.action_type === 'BREAKEVEN' &&
             !beNotifiedRef.current
           ) {
-            beNotifiedRef.current = true
-            onBreakEvenAvailableRef.current?.({
-              positionId: position.id,
-              instrument: position.instrument,
-              proposedPrice:
-                manageJson.recommendation.proposed_price ?? position.entryPrice,
-              reason: manageJson.recommendation.reason,
-            })
+            const live = priceRef.current
+            const offerBe =
+              live != null &&
+              breakEvenShouldOffer({
+                instrument: position.instrument,
+                entry: position.entryPrice,
+                takeProfit: position.profitTarget,
+                livePrice: live,
+                isLong: position.direction === 'long',
+              })
+            if (offerBe) {
+              beNotifiedRef.current = true
+              onBreakEvenAvailableRef.current?.({
+                positionId: position.id,
+                instrument: position.instrument,
+                proposedPrice:
+                  manageJson.recommendation.proposed_price ?? position.entryPrice,
+                reason: manageJson.recommendation.reason,
+              })
+            }
           }
         } else if (!manageJson.recommendation) {
           setRecommendation(null)
@@ -753,17 +778,17 @@ export function ManageDeskBar({
       )}
 
       {/* ── Bracket recommendation (breakeven / trail / scale) — CONFIRM / REJECT ────── */}
-      {recommendation && (
+      {shownRecommendation && (
         <div className="rounded border border-amber-500/70 bg-amber-950/40 p-1.5 space-y-1">
           <p className="text-[9px] font-bold uppercase tracking-wide text-amber-300">
-            {recommendation.action_type === 'BREAKEVEN'
+            {shownRecommendation.action_type === 'BREAKEVEN'
               ? 'Break-even available'
-              : `AI bracket · ${recommendation.action_type}`}
+              : `AI bracket · ${shownRecommendation.action_type}`}
           </p>
           <p className="text-[10px] text-gray-200 leading-snug line-clamp-2">
-            {recommendation.action_type === 'BREAKEVEN'
-              ? `Confirm to lock SL at entry (${recommendation.proposed_price?.toLocaleString() ?? position.entryPrice.toLocaleString()}) — ${recommendation.reason}`
-              : recommendation.reason}
+            {shownRecommendation.action_type === 'BREAKEVEN'
+              ? `Confirm to lock SL one tick past fill (${position.entryPrice.toLocaleString()}) at ${shownRecommendation.proposed_price?.toLocaleString() ?? 'BE'} — ${shownRecommendation.reason}`
+              : shownRecommendation.reason}
           </p>
           <div className="flex items-center gap-1">
             <button
@@ -772,7 +797,7 @@ export function ManageDeskBar({
               onClick={() => void handleConfirmRecommendation()}
               className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[9px] font-bold uppercase tracking-wide transition"
             >
-              {busy === 'CONFIRM' ? '…' : recommendation.action_type === 'BREAKEVEN' ? 'Move to BE' : 'Confirm'}
+              {busy === 'CONFIRM' ? '…' : shownRecommendation.action_type === 'BREAKEVEN' ? 'Move to BE' : 'Confirm'}
             </button>
             <button
               type="button"
