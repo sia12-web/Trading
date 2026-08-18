@@ -9,6 +9,8 @@
 
 import {
   computeSessionHighlightSpans,
+  projectSessionHighlightRects,
+  SESSION_STYLES,
   nyDeskSessionAt,
   tokyoDeskSessionAt,
   sessionLegendLabel,
@@ -194,6 +196,70 @@ for (const instrument of ['DOW', 'NASDAQ'] as const) {
 
 assert(deskClockFor('DOW').timeZone === 'America/New_York', 'DOW TZ')
 assert(deskClockFor('NASDAQ').timeZone === 'America/New_York', 'NASDAQ TZ')
+
+// Richer fills — must stay readable on the light pane
+for (const name of ['Asia', 'London', 'New York'] as const) {
+  const fill = SESSION_STYLES[name].color
+  const col = SESSION_STYLES[name].column
+  const fillA = Number(fill.match(/([\d.]+)\)\s*$/)?.[1] ?? 0)
+  const colA = Number(col.match(/([\d.]+)\)\s*$/)?.[1] ?? 0)
+  assert(fillA >= 0.3, `${name} range fill too faint (${fill})`)
+  assert(colA >= 0.18, `${name} time column too faint (${col})`)
+}
+
+{
+  const start = et(2026, 8, 17, 18, 0)
+  const end = et(2026, 8, 18, 9, 30)
+  const { spans, candleTimes } = computeSessionHighlightSpans({
+    candles: makeBars(start, end),
+    asOfUnix: end,
+    instrument: 'NASDAQ',
+  })
+  const asia = spans.find((s) => s.name === 'Asia')
+  assert(asia, 'NASDAQ overnight must include an Asia span')
+  const { rects } = projectSessionHighlightRects({
+    spans,
+    candleTimes,
+    timeScale: {
+      timeToCoordinate: (t) => Number(t) - start,
+      height: () => 400,
+    },
+    priceToY: () => null,
+    priceScaleWidth: 70,
+    containerWidth: 900,
+    containerHeight: 400,
+  })
+  const asiaCol = rects.filter((r) => r.name === 'Asia' && r.top === 0 && r.height === 400)
+  assert(asiaCol.length >= 1, 'Asia time column must paint even when priceToY is null')
+  const nyOffscreen = projectSessionHighlightRects({
+    spans: [
+      {
+        name: 'New York',
+        startT: start,
+        endT: start + 3600,
+        high: 50000,
+        low: 49900,
+      },
+    ],
+    candleTimes: [start, start + 3600],
+    timeScale: {
+      timeToCoordinate: (t) => Number(t) - start,
+      height: () => 400,
+    },
+    priceToY: (price) => (price > 1000 ? -80 : 40),
+    priceScaleWidth: 70,
+    containerWidth: 900,
+    containerHeight: 400,
+  })
+  assert(
+    nyOffscreen.rects.some((r) => r.name === 'New York' && r.top === 0 && r.height === 400),
+    'Yesterday NY column stays visible when its high/low is off the price scale'
+  )
+  assert(
+    !nyOffscreen.rects.some((r) => r.name === 'New York' && r.top > 0),
+    'Off-scale NY must not draw a high→low box'
+  )
+}
 
 console.log(
   '✅ session_desk_instruments: dead zones after cash close; Nikkei NY = US RTH only'

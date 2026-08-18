@@ -6,24 +6,31 @@
 
 import type { UTCTimestamp } from 'lightweight-charts'
 
-/** Soft pastel fills for light chart panes (TradingView-like). */
+/**
+ * Session fills on the light chart pane.
+ * `column` = full-height time stripe (always visible, even if price left the range).
+ * `color` = high→low box when that session’s range is on screen.
+ */
 export const SESSION_STYLES = {
   Asia: {
-    color: 'rgba(147, 197, 253, 0.14)',
+    color: 'rgba(37, 99, 235, 0.36)',
+    column: 'rgba(37, 99, 235, 0.20)',
     zIndex: 1,
-    line: '#2563eb',
+    line: '#1d4ed8',
     short: 'Asia',
   },
   London: {
-    color: 'rgba(250, 204, 21, 0.13)',
+    color: 'rgba(217, 119, 6, 0.36)',
+    column: 'rgba(217, 119, 6, 0.20)',
     zIndex: 2,
-    line: '#ca8a04',
+    line: '#b45309',
     short: 'Lon',
   },
   'New York': {
-    color: 'rgba(74, 222, 128, 0.12)',
+    color: 'rgba(22, 163, 74, 0.36)',
+    column: 'rgba(22, 163, 74, 0.20)',
     zIndex: 3,
-    line: '#16a34a',
+    line: '#15803d',
     short: 'NY',
   },
 } as const
@@ -128,11 +135,15 @@ export interface SessionHighlightRect {
   color: string
   left: number
   width: number
-  /** Y of session high (price-bounded) */
+  /** Y of session high (price-bounded) or 0 for a full-height time column */
   top: number
-  /** Height from session high → low */
+  /** Height from session high → low, or pane height for a time column */
   height: number
   zIndex: number
+  borderColor?: string
+  borderLeftWidth?: number
+  borderTopWidth?: number
+  borderBottomWidth?: number
 }
 
 export const VWAP_COLORS = {
@@ -514,8 +525,9 @@ export function computeSessionHighlightSpans(args: {
 
 /**
  * Map cached spans → pixel rects.
- * Default: horizontal = full session hours (bar run), vertical = session high→low only
- * (never wallpaper above/below where price never traded).
+ * Always paints a full-height time column (so yesterday Asia / NY stay visible
+ * after price has left that range). Also paints a richer high→low box when
+ * that session’s range is on the current price scale.
  */
 export function projectSessionHighlightRects(args: {
   spans: SessionHighlightSpan[]
@@ -529,8 +541,8 @@ export function projectSessionHighlightRects(args: {
   containerWidth: number
   containerHeight: number
   /**
-   * false (default): box = session high→low × session hours.
-   * true: full-pane wallpaper (legacy — avoid).
+   * true: time columns only.
+   * false / omitted: time columns + on-screen high→low boxes (default).
    */
   fullHeight?: boolean
   /** @deprecated Ignored */
@@ -539,7 +551,7 @@ export function projectSessionHighlightRects(args: {
   const { spans, candleTimes, timeScale, priceToY } = args
   const chartH = Math.max(args.containerHeight, 0)
   const paneW = Math.max(args.containerWidth - args.priceScaleWidth, 0)
-  const useFullHeight = args.fullHeight === true
+  const columnsOnly = args.fullHeight === true
   if (spans.length === 0 || candleTimes.length === 0 || chartH < 2) {
     return { rects: [], paneHeight: chartH }
   }
@@ -563,38 +575,43 @@ export function projectSessionHighlightRects(args: {
     const width = right - left
     if (width < 1) continue
 
-    let top = 0
-    let height = chartH
+    const style = SESSION_STYLES[span.name]
+    rects.push({
+      name: span.name,
+      left,
+      width,
+      top: 0,
+      height: chartH,
+      color: style.column,
+      zIndex: style.zIndex,
+      borderColor: style.line,
+      borderLeftWidth: 3,
+    })
 
-    if (!useFullHeight) {
-      const yHigh = priceToY(span.high)
-      const yLow = priceToY(span.low)
-      if (
-        yHigh == null ||
-        yLow == null ||
-        !Number.isFinite(yHigh) ||
-        !Number.isFinite(yLow)
-      ) {
-        // Mid-pan priceToY is often null — skip this span (keepPreviousIfEmpty
-        // retains last good paint) instead of flashing full-pane wallpaper.
-        continue
-      }
-      const rawTop = Math.min(yHigh, yLow)
-      const rawBottom = Math.max(yHigh, yLow)
-      // Fully off-screen (zoomed away) — skip, do not stretch into wallpaper
-      if (rawBottom < 0 || rawTop > chartH) continue
+    if (columnsOnly) continue
 
-      top = Math.max(rawTop, 0)
-      const bottom = Math.min(rawBottom, chartH)
-      height = bottom - top
-      // Flat session — keep a thin stripe at that price, never full pane
-      if (height < 3) {
-        const mid = (top + bottom) / 2
-        top = Math.max(mid - 1.5, 0)
-        height = Math.min(3, chartH - top)
-      }
+    const yHigh = priceToY(span.high)
+    const yLow = priceToY(span.low)
+    if (
+      yHigh == null ||
+      yLow == null ||
+      !Number.isFinite(yHigh) ||
+      !Number.isFinite(yLow)
+    ) {
+      continue
     }
+    const rawTop = Math.min(yHigh, yLow)
+    const rawBottom = Math.max(yHigh, yLow)
+    if (rawBottom < 0 || rawTop > chartH) continue
 
+    let top = Math.max(rawTop, 0)
+    const bottom = Math.min(rawBottom, chartH)
+    let height = bottom - top
+    if (height < 3) {
+      const mid = (top + bottom) / 2
+      top = Math.max(mid - 1.5, 0)
+      height = Math.min(3, chartH - top)
+    }
     if (height < 2) continue
 
     rects.push({
@@ -603,8 +620,11 @@ export function projectSessionHighlightRects(args: {
       width,
       top,
       height,
-      color: SESSION_STYLES[span.name].color,
-      zIndex: SESSION_STYLES[span.name].zIndex,
+      color: style.color,
+      zIndex: style.zIndex + 10,
+      borderColor: style.line,
+      borderTopWidth: 2,
+      borderBottomWidth: 2,
     })
   }
 
@@ -681,14 +701,24 @@ export function paintSessionHighlightOverlay(
     d.style.position = 'absolute'
     d.style.left = `${s.left}px`
     d.style.width = `${Math.max(0, s.width)}px`
-    // Price-bounded: exact high→low pixels (not full pane)
     d.style.top = `${s.top}px`
     d.style.height = `${Math.max(0, s.height)}px`
     d.style.bottom = 'auto'
     d.style.right = 'auto'
     d.style.backgroundColor = s.color
     d.style.zIndex = String(s.zIndex)
-    d.title = `${s.name} session (high→low)`
+    const edge = s.borderColor ?? 'transparent'
+    d.style.borderLeft = s.borderLeftWidth
+      ? `${s.borderLeftWidth}px solid ${edge}`
+      : 'none'
+    d.style.borderTop = s.borderTopWidth
+      ? `${s.borderTopWidth}px solid ${edge}`
+      : 'none'
+    d.style.borderBottom = s.borderBottomWidth
+      ? `${s.borderBottomWidth}px solid ${edge}`
+      : 'none'
+    d.style.borderRight = 'none'
+    d.title = `${s.name} session`
   }
 }
 

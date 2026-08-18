@@ -3854,7 +3854,7 @@ export function TradingChart({
       priceScaleWidth: priceAxisW,
       containerWidth: containerRef.current.clientWidth,
       containerHeight: containerRef.current.clientHeight,
-      fullHeight: false, // high→low only — never wallpaper above/below price
+      fullHeight: false, // time columns + high→low box when the range is on screen
     })
     paintSessionHighlightOverlay(host, rects, { keepPreviousIfEmpty: true })
   }, [instrument])
@@ -7509,8 +7509,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           return (
             <span key={name} className="flex items-center gap-1.5">
               <span
-                className="inline-block h-2.5 w-3.5 rounded-[2px]"
-                style={{ backgroundColor: s.color.replace(/[\d.]+\)$/, '0.55)') }}
+                className="inline-block h-2.5 w-3.5 rounded-[2px] ring-1 ring-black/10"
+                style={{ backgroundColor: s.column }}
               />
               <span style={{ color: s.line }}>{sessionLegendLabel(name, instrument)}</span>
             </span>
