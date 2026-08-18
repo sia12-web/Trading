@@ -578,6 +578,9 @@ function SimulationDeskInner() {
       } else if (key === 'y') {
         e.preventDefault()
         setShowYesterdayProfile((prev) => !prev)
+      } else if (key === 'h') {
+        e.preventDefault()
+        setShowSessionBands((prev) => !prev)
       } else if (key === 'n') {
         e.preventDefault()
         if (instrument === 'DOW' || instrument === 'NASDAQ') {
@@ -667,6 +670,7 @@ function SimulationDeskInner() {
   const [showUsRange, setShowUsRange] = useState(false)
   const [showOr30, setShowOr30] = useState(false)
   const [showYesterdayProfile, setShowYesterdayProfile] = useState(false)
+  const [showSessionBands, setShowSessionBands] = useState(false)
   const [yesterdayBadge, setYesterdayBadge] = useState('Yday off')
   const [showOpeningActivity, setShowOpeningActivity] = useState(false)
   const [openingBadge, setOpeningBadge] = useState('WAIT')
@@ -1410,10 +1414,13 @@ function SimulationDeskInner() {
       priceScaleWidth: priceAxisW,
       containerWidth: containerRef.current.clientWidth,
       containerHeight: containerRef.current.clientHeight,
-      fullHeight: false, // time columns + high→low box when the range is on screen
+      sessionPaint: showSessionBands ? 'full' : 'range',
     })
-    paintSessionHighlightOverlay(host, rects, { keepPreviousIfEmpty: true })
-  }, [instrument, sess.tz])
+    paintSessionHighlightOverlay(host, rects, {
+      keepPreviousIfEmpty: true,
+      paintKey: showSessionBands ? 'full' : 'range',
+    })
+  }, [instrument, sess.tz, showSessionBands])
 
   /**
    * Keep the sim tip on the right edge.
@@ -2647,7 +2654,7 @@ function SimulationDeskInner() {
   useEffect(() => {
     if (!chartReady || !simNowRef.current) return
     applyChartDataRef.current(simNowRef.current, { force: true })
-  }, [chartReady, showIbBreakouts, showLunchRange, showUsRange, showOr30, showYesterdayProfile, showOpeningActivity, showMarketControl])
+  }, [chartReady, showIbBreakouts, showLunchRange, showUsRange, showOr30, showYesterdayProfile, showOpeningActivity, showMarketControl, showSessionBands])
 
   // Pending working limit + open position — on host series (survives candle setData).
   // Working limit / position lines stay on the host series.
@@ -3981,6 +3988,25 @@ function SimulationDeskInner() {
           <button
             type="button"
             title={
+              showSessionBands
+                ? 'Full session columns + range boxes on (Press H)'
+                : 'Show full Asia / London / NY columns and range boxes (Press H)'
+            }
+            onClick={() => setShowSessionBands((v) => !v)}
+            className={`flex items-center gap-1 rounded border px-2 py-1 text-[10px] font-semibold uppercase ${
+              showSessionBands
+                ? 'border-emerald-500/50 bg-emerald-600/30 text-emerald-100'
+                : 'border-white/15 text-gray-500 hover:border-emerald-500/40 hover:text-emerald-200'
+            }`}
+          >
+            <span
+              className={`inline-block h-1.5 w-1.5 rounded-full ${showSessionBands ? 'bg-emerald-400' : 'bg-gray-600'}`}
+            />
+            Sessions (H)
+          </button>
+          <button
+            type="button"
+            title={
               showOpeningActivity
                 ? 'Dalton opening type lines on — open + first 5m H/L. Click to hide lines (type still updates).'
                 : 'Show Dalton opening type: Drive / Test-Drive / Rejection-Reverse / Auction. Click for open + first-bar H/L.'
@@ -4218,7 +4244,7 @@ function SimulationDeskInner() {
               <span key={name} className="flex items-center gap-1.5">
                 <span
                   className="inline-block h-2.5 w-3.5 rounded-[2px] ring-1 ring-black/10"
-                  style={{ backgroundColor: s.column }}
+                  style={{ backgroundColor: showSessionBands ? s.column : s.color }}
                 />
                 <span style={{ color: s.line }}>{sessionLegendLabel(name, instrument)}</span>
               </span>

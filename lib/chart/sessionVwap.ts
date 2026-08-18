@@ -8,26 +8,29 @@ import type { UTCTimestamp } from 'lightweight-charts'
 
 /**
  * Session fills on the light chart pane.
- * `column` = full-height time stripe (always visible, even if price left the range).
- * `color` = high→low box when that session’s range is on screen.
+ * `color` = default high→low box (previous look, slightly richer).
+ * `colorFull` + `column` = Sessions button: wallpaper + saturated range box.
  */
 export const SESSION_STYLES = {
   Asia: {
-    color: 'rgba(37, 99, 235, 0.36)',
+    color: 'rgba(59, 130, 246, 0.22)',
+    colorFull: 'rgba(37, 99, 235, 0.38)',
     column: 'rgba(37, 99, 235, 0.20)',
     zIndex: 1,
     line: '#1d4ed8',
     short: 'Asia',
   },
   London: {
-    color: 'rgba(217, 119, 6, 0.36)',
+    color: 'rgba(245, 158, 11, 0.22)',
+    colorFull: 'rgba(217, 119, 6, 0.38)',
     column: 'rgba(217, 119, 6, 0.20)',
     zIndex: 2,
     line: '#b45309',
     short: 'Lon',
   },
   'New York': {
-    color: 'rgba(22, 163, 74, 0.36)',
+    color: 'rgba(34, 197, 94, 0.22)',
+    colorFull: 'rgba(22, 163, 74, 0.38)',
     column: 'rgba(22, 163, 74, 0.20)',
     zIndex: 3,
     line: '#15803d',
@@ -525,9 +528,8 @@ export function computeSessionHighlightSpans(args: {
 
 /**
  * Map cached spans → pixel rects.
- * Always paints a full-height time column (so yesterday Asia / NY stay visible
- * after price has left that range). Also paints a richer high→low box when
- * that session’s range is on the current price scale.
+ * `range` (default): previous high→low boxes only.
+ * `full`: screenshot mode — full-height time columns + saturated range boxes.
  */
 export function projectSessionHighlightRects(args: {
   spans: SessionHighlightSpan[]
@@ -540,18 +542,19 @@ export function projectSessionHighlightRects(args: {
   priceScaleWidth: number
   containerWidth: number
   containerHeight: number
-  /**
-   * true: time columns only.
-   * false / omitted: time columns + on-screen high→low boxes (default).
-   */
+  /** @deprecated Use sessionPaint. true → 'full' */
   fullHeight?: boolean
+  /** range = default boxes; full = columns + rich boxes (Sessions button) */
+  sessionPaint?: 'range' | 'full'
   /** @deprecated Ignored */
   visiblePriceRange?: { from: number; to: number } | null
 }): { rects: SessionHighlightRect[]; paneHeight: number } {
   const { spans, candleTimes, timeScale, priceToY } = args
   const chartH = Math.max(args.containerHeight, 0)
   const paneW = Math.max(args.containerWidth - args.priceScaleWidth, 0)
-  const columnsOnly = args.fullHeight === true
+  const paint: 'range' | 'full' =
+    args.sessionPaint ?? (args.fullHeight === true ? 'full' : 'range')
+  const showColumns = paint === 'full'
   if (spans.length === 0 || candleTimes.length === 0 || chartH < 2) {
     return { rects: [], paneHeight: chartH }
   }
@@ -565,7 +568,6 @@ export function projectSessionHighlightRects(args: {
 
     let x1 = timeToX(timeScale, span.startT, candleTimes)
     let x2 = timeToX(timeScale, span.endT, candleTimes)
-    // Mid-pan the scale can briefly return null for one edge — recover from the other.
     if ((x1 == null || !Number.isFinite(x1)) && x2 != null && Number.isFinite(x2)) x1 = x2 - 2
     if ((x2 == null || !Number.isFinite(x2)) && x1 != null && Number.isFinite(x1)) x2 = x1 + 2
     if (x1 == null || x2 == null || !Number.isFinite(x1) || !Number.isFinite(x2)) continue
@@ -576,19 +578,19 @@ export function projectSessionHighlightRects(args: {
     if (width < 1) continue
 
     const style = SESSION_STYLES[span.name]
-    rects.push({
-      name: span.name,
-      left,
-      width,
-      top: 0,
-      height: chartH,
-      color: style.column,
-      zIndex: style.zIndex,
-      borderColor: style.line,
-      borderLeftWidth: 3,
-    })
-
-    if (columnsOnly) continue
+    if (showColumns) {
+      rects.push({
+        name: span.name,
+        left,
+        width,
+        top: 0,
+        height: chartH,
+        color: style.column,
+        zIndex: style.zIndex,
+        borderColor: style.line,
+        borderLeftWidth: 3,
+      })
+    }
 
     const yHigh = priceToY(span.high)
     const yLow = priceToY(span.low)
@@ -620,11 +622,11 @@ export function projectSessionHighlightRects(args: {
       width,
       top,
       height,
-      color: style.color,
+      color: showColumns ? style.colorFull : style.color,
       zIndex: style.zIndex + 10,
       borderColor: style.line,
-      borderTopWidth: 2,
-      borderBottomWidth: 2,
+      borderTopWidth: showColumns ? 2 : 1,
+      borderBottomWidth: showColumns ? 2 : 1,
     })
   }
 
@@ -652,6 +654,7 @@ export function computeSessionHighlightRects(args: {
   instrument?: string | null
   /** true = full-pane wallpaper; default false = high→low only */
   fullHeight?: boolean
+  sessionPaint?: 'range' | 'full'
   visiblePriceRange?: { from: number; to: number } | null
 }): { rects: SessionHighlightRect[]; paneHeight: number } {
   const { spans, candleTimes } = computeSessionHighlightSpans({
@@ -667,6 +670,7 @@ export function computeSessionHighlightRects(args: {
     priceScaleWidth: args.priceScaleWidth,
     containerWidth: args.containerWidth,
     containerHeight: args.containerHeight,
+    sessionPaint: args.sessionPaint,
     fullHeight: args.fullHeight,
     visiblePriceRange: args.visiblePriceRange,
   })
@@ -676,13 +680,15 @@ export function computeSessionHighlightRects(args: {
 export function paintSessionHighlightOverlay(
   host: HTMLElement | null,
   rects: SessionHighlightRect[],
-  opts?: { keepPreviousIfEmpty?: boolean }
+  opts?: { keepPreviousIfEmpty?: boolean; paintKey?: string }
 ): void {
   if (!host) return
-  // Mid-pan projection can briefly return [] — keep last good paint instead of blanking.
-  if (rects.length === 0 && opts?.keepPreviousIfEmpty && host.childElementCount > 0) {
+  if (opts?.paintKey && host.dataset.paintKey !== opts.paintKey) {
+    host.dataset.paintKey = opts.paintKey
+  } else if (rects.length === 0 && opts?.keepPreviousIfEmpty && host.childElementCount > 0) {
     return
   }
+  if (opts?.paintKey) host.dataset.paintKey = opts.paintKey
   while (host.childElementCount < rects.length) {
     const d = document.createElement('div')
     d.className = 'pointer-events-none absolute'

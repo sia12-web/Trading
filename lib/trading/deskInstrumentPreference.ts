@@ -202,6 +202,7 @@ export type DeskOverlayToggles = {
   yday: boolean
   opening: boolean
   control: boolean
+  sessions: boolean
 }
 
 const OVERLAY_DEFAULTS: DeskOverlayToggles = {
@@ -213,6 +214,7 @@ const OVERLAY_DEFAULTS: DeskOverlayToggles = {
   yday: false,
   opening: false,
   control: false,
+  sessions: false,
 }
 
 const OVERLAY_KEY = 'tradepulse.chart.overlays'
@@ -232,6 +234,7 @@ export function loadDeskOverlayToggles(): DeskOverlayToggles {
       yday: !!parsed.yday,
       opening: !!parsed.opening,
       control: !!parsed.control,
+      sessions: !!parsed.sessions,
     }
   } catch {
     return { ...OVERLAY_DEFAULTS }

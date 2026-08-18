@@ -915,6 +915,7 @@ export function TradingChart({
   const [or30Locked, setOr30Locked] = useState(false)
   const [showOr30, setShowOr30] = useState(() => loadDeskOverlayToggles().or30)
   const [showYesterdayProfile, setShowYesterdayProfile] = useState(() => loadDeskOverlayToggles().yday)
+  const [showSessionBands, setShowSessionBands] = useState(() => loadDeskOverlayToggles().sessions)
   const ydayLinesRef = useRef<IPriceLine[]>([])
   const ydayPaintKeyRef = useRef('')
   const [yesterdayBadge, setYesterdayBadge] = useState('Yday off')
@@ -1008,6 +1009,7 @@ export function TradingChart({
       yday: showYesterdayProfile,
       opening: showOpeningActivity,
       control: showMarketControl,
+      sessions: showSessionBands,
     })
   }, [
     showLevels,
@@ -1018,6 +1020,7 @@ export function TradingChart({
     showYesterdayProfile,
     showOpeningActivity,
     showMarketControl,
+    showSessionBands,
   ])
   /** Floating morning playbook — closed by default on chart refresh; open via Playbook (P). */
   const [playbookOpen, setPlaybookOpen] = useState(false)
@@ -3902,9 +3905,12 @@ export function TradingChart({
       priceScaleWidth: priceAxisW,
       containerWidth: containerRef.current.clientWidth,
       containerHeight: containerRef.current.clientHeight,
-      fullHeight: false, // time columns + high→low box when the range is on screen
+      sessionPaint: showSessionBands ? 'full' : 'range',
     })
-    paintSessionHighlightOverlay(host, rects, { keepPreviousIfEmpty: true })
+    paintSessionHighlightOverlay(host, rects, {
+      keepPreviousIfEmpty: true,
+      paintKey: showSessionBands ? 'full' : 'range',
+    })
 
     const book = bookBandRef.current
     const bandHost = positionBandOverlayRef.current
@@ -3940,7 +3946,7 @@ export function TradingChart({
       pushBand(yEntry, yStop, 'rgba(220, 38, 38, 0.28)', '#b91c1c', 'Position SL zone')
       paintPositionBandOverlay(bandHost, bands, { keepPreviousIfEmpty: true })
     }
-  }, [instrument])
+  }, [instrument, showSessionBands])
 
   /** TradingView-style: re-enable auto price scale after manual zoom on the axis */
   const resetPriceScale = useCallback(() => {
@@ -5726,7 +5732,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     })
   }, [instrument, riskBox, getStrategyRiskBundle, onDeskAlert])
 
-  // ── Keyboard shortcuts: V (Voice), L (Levels), P (Playbook), D (Draw Zone), T (Highlight Time), O (Risk Box), F (Fullscreen), Esc
+  // ── Keyboard shortcuts: V (Voice), L (Levels), P (Playbook), D (Draw Zone), T (Highlight Time), H (Sessions), O (Risk Box), F (Fullscreen), Esc
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement
@@ -5751,6 +5757,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       } else if (key === 'y') {
         e.preventDefault()
         setShowYesterdayProfile((prev) => !prev)
+      } else if (key === 'h') {
+        e.preventDefault()
+        setShowSessionBands((prev) => !prev)
       } else if (key === 'n') {
         e.preventDefault()
         if (instrument === 'DOW' || instrument === 'NASDAQ') {
@@ -6907,6 +6916,26 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           <button
             type="button"
             title={
+              showSessionBands
+                ? 'Full session columns + range boxes on (Press H). Click for the quieter high→low boxes.'
+                : 'Show full Asia / London / NY columns and range boxes like the session map (Press H)'
+            }
+            onClick={() => setShowSessionBands((v) => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+              showSessionBands
+                ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-100'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-emerald-200 hover:border-emerald-500/40'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full inline-block ${showSessionBands ? 'bg-emerald-400' : 'bg-gray-600'}`} />
+            <span>Sessions (H)</span>
+          </button>
+        )}
+
+        {deskSessionLive && (
+          <button
+            type="button"
+            title={
               showOpeningActivity
                 ? 'Dalton opening type lines on — open + first 5m H/L. Click to hide lines (type still updates).'
                 : 'Show Dalton opening type: Drive / Test-Drive / Rejection-Reverse / Auction. Click for open + first-bar H/L.'
@@ -7597,7 +7626,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             <span key={name} className="flex items-center gap-1.5">
               <span
                 className="inline-block h-2.5 w-3.5 rounded-[2px] ring-1 ring-black/10"
-                style={{ backgroundColor: s.column }}
+                style={{ backgroundColor: showSessionBands ? s.column : s.color }}
               />
               <span style={{ color: s.line }}>{sessionLegendLabel(name, instrument)}</span>
             </span>

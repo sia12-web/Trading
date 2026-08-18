@@ -197,13 +197,16 @@ for (const instrument of ['DOW', 'NASDAQ'] as const) {
 assert(deskClockFor('DOW').timeZone === 'America/New_York', 'DOW TZ')
 assert(deskClockFor('NASDAQ').timeZone === 'America/New_York', 'NASDAQ TZ')
 
-// Richer fills — must stay readable on the light pane
+// Default high→low fill is a bit richer than the old 0.12–0.14, not the full map
 for (const name of ['Asia', 'London', 'New York'] as const) {
   const fill = SESSION_STYLES[name].color
+  const full = SESSION_STYLES[name].colorFull
   const col = SESSION_STYLES[name].column
   const fillA = Number(fill.match(/([\d.]+)\)\s*$/)?.[1] ?? 0)
+  const fullA = Number(full.match(/([\d.]+)\)\s*$/)?.[1] ?? 0)
   const colA = Number(col.match(/([\d.]+)\)\s*$/)?.[1] ?? 0)
-  assert(fillA >= 0.3, `${name} range fill too faint (${fill})`)
+  assert(fillA >= 0.2 && fillA < 0.3, `${name} default range fill (${fill})`)
+  assert(fullA >= 0.32, `${name} Sessions-button fill too faint (${full})`)
   assert(colA >= 0.18, `${name} time column too faint (${col})`)
 }
 
@@ -217,6 +220,23 @@ for (const name of ['Asia', 'London', 'New York'] as const) {
   })
   const asia = spans.find((s) => s.name === 'Asia')
   assert(asia, 'NASDAQ overnight must include an Asia span')
+  const rangeRects = projectSessionHighlightRects({
+    spans,
+    candleTimes,
+    timeScale: {
+      timeToCoordinate: (t) => Number(t) - start,
+      height: () => 400,
+    },
+    priceToY: () => null,
+    priceScaleWidth: 70,
+    containerWidth: 900,
+    containerHeight: 400,
+    sessionPaint: 'range',
+  })
+  assert(
+    rangeRects.rects.length === 0,
+    'Default range paint skips boxes when priceToY is null'
+  )
   const { rects } = projectSessionHighlightRects({
     spans,
     candleTimes,
@@ -228,9 +248,10 @@ for (const name of ['Asia', 'London', 'New York'] as const) {
     priceScaleWidth: 70,
     containerWidth: 900,
     containerHeight: 400,
+    sessionPaint: 'full',
   })
   const asiaCol = rects.filter((r) => r.name === 'Asia' && r.top === 0 && r.height === 400)
-  assert(asiaCol.length >= 1, 'Asia time column must paint even when priceToY is null')
+  assert(asiaCol.length >= 1, 'Sessions button: Asia column paints even when priceToY is null')
   const nyOffscreen = projectSessionHighlightRects({
     spans: [
       {
@@ -250,10 +271,11 @@ for (const name of ['Asia', 'London', 'New York'] as const) {
     priceScaleWidth: 70,
     containerWidth: 900,
     containerHeight: 400,
+    sessionPaint: 'full',
   })
   assert(
     nyOffscreen.rects.some((r) => r.name === 'New York' && r.top === 0 && r.height === 400),
-    'Yesterday NY column stays visible when its high/low is off the price scale'
+    'Sessions button: yesterday NY column stays visible off the price scale'
   )
   assert(
     !nyOffscreen.rects.some((r) => r.name === 'New York' && r.top > 0),
