@@ -13,7 +13,7 @@ import { formatDeskMoney, deskCurrencyLabel } from '@/lib/trading/currency'
 import { RANGE_EDGE_RISK_PERCENT } from '@/lib/trading/positionSizing'
 import { TRADEIFY_STARTING_BALANCE } from '@/lib/trading/tradeifyGrowth50k'
 
-type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | 'ALL'
+type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | 'RUSSELL' | 'ALL'
 type HistoryTab = 'live' | 'sim' | 'voice'
 
 interface JournalEntry {
@@ -338,7 +338,9 @@ function JournalPageInner() {
 
   useEffect(() => {
     if (!isSim && instrument === 'NIKKEI') setInstrument('ALL')
-    if (isSim && (instrument === 'GOLD' || instrument === 'CRUDE')) setInstrument('ALL')
+    if (isSim && (instrument === 'GOLD' || instrument === 'CRUDE' || instrument === 'RUSSELL')) {
+      setInstrument('ALL')
+    }
   }, [isSim, instrument])
 
   return (
@@ -400,7 +402,7 @@ function JournalPageInner() {
           </div>
           {(isSim
             ? (['ALL', 'DOW', 'NASDAQ', 'NIKKEI'] as Instrument[])
-            : (['ALL', 'NASDAQ', 'DOW', 'GOLD', 'CRUDE'] as Instrument[])
+            : (['ALL', 'NASDAQ', 'DOW', 'GOLD', 'CRUDE', 'RUSSELL'] as Instrument[])
           ).map((inst) => (
             <button
               key={inst}

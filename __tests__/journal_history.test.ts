@@ -65,6 +65,7 @@ assert.equal(emptyEquity.endingEquity, TRADEIFY_STARTING_BALANCE)
 assert.equal(emptyEquity.equityChange, 0)
 assert.equal(isLiveJournalInstrument('GOLD'), true, 'GOLD is a live journal book')
 assert.equal(isLiveJournalInstrument('CRUDE'), true, 'CRUDE is a live journal book')
+assert.equal(isLiveJournalInstrument('RUSSELL'), true, 'RUSSELL is a live journal book')
 assert.equal(isLiveJournalInstrument('EURUSD'), false, 'spot FX stays off the live tape')
 
 const dow = journalTicketEquity([
@@ -113,6 +114,9 @@ assert.ok(
   !/getOandaAccountSummary/.test(readFileSync('app/api/trading/journal/route.ts', 'utf8')),
   'journal API must not fetch OANDA equity'
 )
-assert.ok(/GOLD/.test(journalPage) && /CRUDE/.test(journalPage), 'live order history can filter GOLD and CRUDE')
+assert.ok(
+  /GOLD/.test(journalPage) && /CRUDE/.test(journalPage) && /RUSSELL/.test(journalPage),
+  'live order history can filter GOLD, CRUDE, and RUSSELL'
+)
 
 console.log('journal_history.test.ts: all assertions passed')

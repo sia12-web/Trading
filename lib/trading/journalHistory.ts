@@ -2,7 +2,7 @@
 
 import { TRADEIFY_STARTING_BALANCE } from '@/lib/trading/tradeifyGrowth50k'
 
-export const LIVE_JOURNAL_INSTRUMENTS = ['DOW', 'NASDAQ', 'NIKKEI', 'GOLD', 'CRUDE'] as const
+export const LIVE_JOURNAL_INSTRUMENTS = ['DOW', 'NASDAQ', 'NIKKEI', 'GOLD', 'CRUDE', 'RUSSELL'] as const
 export type LiveJournalInstrument = (typeof LIVE_JOURNAL_INSTRUMENTS)[number]
 
 const LIVE_JOURNAL_INSTRUMENT_SET = new Set<string>(LIVE_JOURNAL_INSTRUMENTS)

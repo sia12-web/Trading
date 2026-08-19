@@ -64,6 +64,7 @@ const snap: TradeifyLeoSnapshot = {
     NIKKEI: { fills: 1, pnl: -150 },
     GOLD: { fills: 0, pnl: 0 },
     CRUDE: { fills: 0, pnl: 0 },
+    RUSSELL: { fills: 0, pnl: 0 },
   },
 }
 

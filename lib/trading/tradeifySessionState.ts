@@ -1,6 +1,6 @@
 /**
  * Load Tradeify Growth $50k session snapshot from trades_journal.
- * Counts live journal fills (indexes + Tradovate GOLD/CRUDE) inside the 18:00 ET window.
+ * Counts live journal fills (indexes + Tradovate GOLD/CRUDE/RUSSELL) inside the 18:00 ET window.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -61,6 +61,7 @@ export function emptyInstrumentBreak(): Record<LiveJournalInstrument, TradeifyIn
     NIKKEI: { fills: 0, pnl: 0, risked: 0, stops: 0 },
     GOLD: { fills: 0, pnl: 0, risked: 0, stops: 0 },
     CRUDE: { fills: 0, pnl: 0, risked: 0, stops: 0 },
+    RUSSELL: { fills: 0, pnl: 0, risked: 0, stops: 0 },
   }
 }
 

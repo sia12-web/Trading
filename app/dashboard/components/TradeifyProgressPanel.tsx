@@ -47,6 +47,7 @@ const INSTRUMENT_LABEL: Record<LiveJournalInstrument, string> = {
   NIKKEI: 'Nikkei',
   GOLD: 'Micro Gold',
   CRUDE: 'Crude',
+  RUSSELL: 'E-mini Russell',
 }
 
 function money(n: number): string {
