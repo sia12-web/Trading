@@ -90,15 +90,15 @@ function tokyoBars(): Array<{
     candlesH1: nyBars(),
     tip: 52150,
     nowUnix: tipTime,
-    analysisMode: 'lunch_range',
+    analysisMode: 'ib',
   })
   assert(brief != null, 'DOW brief built')
   assert(brief!.or30 != null, 'DOW OR30 shaped')
-  assert(brief!.slot2 != null, 'DOW IB (slot 2) shaped')
-  assert(brief!.slot3 != null, 'DOW Lunch-range (slot 3) shaped')
-  assert(brief!.slot2Label === 'IB', 'DOW slot2 = IB')
-  assert(brief!.slot3Label === 'Lunch-range', 'DOW slot3 = Lunch-range')
-  assert(brief!.activeLabel === 'Lunch-range', 'active = Lunch-range')
+  assert(brief!.slot2 != null, 'DOW OR30 (slot 2) shaped')
+  assert(brief!.slot3 != null, 'DOW IB (slot 3) shaped')
+  assert(brief!.slot2Label === 'OR30', 'DOW slot2 = OR30')
+  assert(brief!.slot3Label === 'IB', 'DOW slot3 = IB')
+  assert(brief!.activeLabel === 'IB', 'active = IB')
   assert(brief!.active != null, 'active edges present')
   assert(
     brief!.pocVsActive === 'inside' ||
@@ -109,12 +109,12 @@ function tokyoBars(): Array<{
 
   const text = formatRangeLiquidityBriefForPrompt(brief!)
   assert(/RANGE LIQUIDITY MAP/i.test(text), 'map header')
-  assert(/Slot 1 — OR30/i.test(text), 'OR30 in prompt')
-  assert(/Slot 2 — IB/i.test(text), 'IB in prompt')
-  assert(/Slot 3 — Lunch-range/i.test(text), 'Lunch-range in prompt')
-  assert(/PRIMARY BAIT \(Lunch-range\)/i.test(text), 'primary bait')
+  assert(/Slot 1 — OR15/i.test(text), 'OR15 in prompt')
+  assert(/Slot 2 — OR30/i.test(text), 'OR30 in prompt')
+  assert(/Slot 3 — IB/i.test(text), 'IB in prompt')
+  assert(/PRIMARY BAIT \(IB\)/i.test(text), 'primary bait')
   assert(/retail BAIT/i.test(text), 'bait rule')
-  assert(/OR30 → IB → Lunch-range/.test(text), 'NY desk map')
+  assert(/Open range → OR30 → IB/.test(text), 'NY desk map')
   assert(/OPENING TYPE/.test(text), 'opening type always in brief')
   assert(/CONTROL \(Dalton — RF \+ dPOC\)/.test(text), 'control always in brief')
   assert(/CALL \(desk — bias \+ legal ±10\)/.test(text), 'CALL always in brief')
@@ -133,7 +133,7 @@ function tokyoBars(): Array<{
     candlesH1: nyBars(),
     tip: 52050,
     nowUnix: NY_OPEN + 4 * 3600,
-    analysisMode: 'lunch_range',
+    analysisMode: 'ib',
     candles5m: m5,
   })
   assert(withAtr != null, 'brief with 5m')
@@ -152,8 +152,8 @@ function tokyoBars(): Array<{
     analysisMode: 'morning',
   })
   assert(morning != null, 'morning brief')
-  assert(morning!.activeLabel === 'OR30', 'morning primary OR30')
-  assert(morning!.or30 != null, 'OR30 after 45m')
+  assert(morning!.activeLabel === 'OR15', 'morning primary OR15')
+  assert(morning!.or15 != null, 'OR15 after 45m')
 }
 
 {
@@ -165,8 +165,8 @@ function tokyoBars(): Array<{
     nowUnix: NY_OPEN + 50 * 60, // 10:20 ET
     analysisMode: 'ib',
   })
-  assert(ibWin != null && ibWin.slot2 != null, 'IB edges during IB prep')
-  assert(ibWin!.slot2!.complete === false, 'IB still forming at 10:20')
+  assert(ibWin != null && ibWin.slot3 != null, 'IB edges during IB prep')
+  assert(ibWin!.slot3!.complete === false, 'IB still forming at 10:20')
   assert(ibWin!.activeLabel === 'IB', 'active IB')
 }
 
@@ -190,7 +190,7 @@ function tokyoBars(): Array<{
   assert(brief!.slot3 != null, 'Tokyo IB shaped')
 
   const text = formatRangeLiquidityBriefForPrompt(brief!)
-  assert(/OR30 → US Range \(prior NYC\) → Tokyo IB/.test(text), 'Nikkei desk map')
+  assert(/Open range → US Range \(prior NYC\) → Tokyo IB/.test(text), 'Nikkei desk map')
   assert(/Slot 2 — US Range/i.test(text), 'US Range in prompt')
   assert(/Slot 3 — Tokyo IB/i.test(text), 'Tokyo IB in prompt')
   assert(/PRIMARY BAIT \(US Range\)/i.test(text), 'US Range primary')
@@ -223,9 +223,9 @@ function tokyoBars(): Array<{
   assert(/dPOC is not the fill/.test(src), 'Level Finder CALL dPOC is not the fill')
   assert(/does not pick entries/.test(src), 'Level Finder must not pick entries from RF')
   assert(/not volume POC/.test(src), 'Level Finder dPOC ≠ volume POC')
-  assert(/Slot 1 OR30/.test(src), 'OR30 slot in prompt')
+  assert(/Slot 1 Open range/.test(src), 'Open range slot in prompt')
   assert(/Slot 2 US Range/.test(src), 'US Range slot in prompt')
-  assert(/Slot 3 Lunch-range/.test(src), 'Lunch-range slot in prompt')
+  assert(/Slot 3 IB/.test(src) || /Slot 3 Tokyo IB/.test(src), 'IB slot in prompt')
   assert(/First tag of IB H\/L is NOT the entry/.test(src), 'first IB tag is not the entry')
   assert(/rangeLiquidityBriefText/.test(src), 'user prompt wires range brief')
 }

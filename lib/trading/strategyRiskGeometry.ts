@@ -29,7 +29,8 @@ import {
 } from '@/lib/trading/attemptLadder'
 import {
   deskMarketFor,
-  isOr30MorningEntryWindowOpen,
+  isOr15MorningEntryWindowOpen,
+  isOr30SlotEntryWindowOpen,
 } from '@/lib/trading/sessionGate'
 
 /** Whether a painted overlay label is the current playbook's tradeable range. */
@@ -39,10 +40,10 @@ function isActivePlaybookOverlayLabel(
   instrument: string
 ): boolean {
   const tokyo = instrument === 'NIKKEI'
-  if (mode === 'morning') return label === 'OR30'
+  if (mode === 'morning') return label === 'OR15' || label === 'Open range'
+  if (mode === 'or30') return label === 'OR30'
   if (mode === 'us_range') return label === 'US Range'
   if (mode === 'ib') return label === (tokyo ? 'Tokyo IB' : 'IB')
-  if (mode === 'lunch_range') return label === 'Lunch-range'
   return false
 }
 
@@ -196,13 +197,10 @@ export function strategyEntryRisk(args: {
 
 /** Pick which named range is the active bait for the current playbook mode.
  *  ±10 entries require the range to be fully shaped (locked):
- *    DOW/NASDAQ: OR30 after 30m · IB after first hour · Lunch after 13:30 ET
- *    NIKKEI:     OR30 after 30m · prior NYC US Range (already complete) · Tokyo IB after first hour
+ *    DOW/NASDAQ: OR15 after 15m · OR30 after 30m · IB after first hour
+ *    NIKKEI:     OR15 after 15m · prior NYC US Range (already complete) · Tokyo IB after first hour
  *
- *  OR30 sits inside the first-hour IB and is optional — never forced.
- *  When IB is shaped and morning had 0 fills, OR30 is finished and bait hands off to IB
- *  (Nikkei: morning playbook keeps locked OR30 ±10; US Range only after playbookMode is us_range,
- *  or as a preview while OR30 is still forming).
+ *  Open range sits inside OR30/IB and is optional — never forced.
  */
 /**
  * All four painted ranges, independently resolved to their shaped H/L
@@ -213,11 +211,14 @@ export function strategyEntryRisk(args: {
  */
 export function shapedPlaybookRanges(args: {
   instrument: string
+  or15?: { high: number; low: number; complete?: boolean } | null
   or30?: { high: number; low: number; complete?: boolean } | null
   ib?: { high: number; low: number; complete?: boolean } | null
   usRange?: { high: number; low: number; complete?: boolean } | null
+  /** @deprecated lunch-range playbook removed — ignored */
   lunchRange?: { high: number; low: number; complete?: boolean } | null
 }): {
+  or15: StrategyRangeEdges | null
   or30: StrategyRangeEdges | null
   ib: StrategyRangeEdges | null
   usRange: StrategyRangeEdges | null
@@ -235,62 +236,54 @@ export function shapedPlaybookRanges(args: {
   }
 
   return {
-    // IB from computeInitialBalance is only returned after the hour locks → always shaped.
     ib: pick(tokyo ? 'Tokyo IB' : 'IB', args.ib),
-    // Prior NYC session for Nikkei — only when that US cash day is complete.
     usRange: pick('US Range', args.usRange, { mustBeComplete: true }),
+    or15: pick('OR15', args.or15, { mustBeComplete: true }),
     or30: pick('OR30', args.or30, { mustBeComplete: true }),
-    lunchRange: pick('Lunch-range', args.lunchRange, { mustBeComplete: true }),
+    lunchRange: null,
   }
 }
 
 export function activeRangeForPlaybook(args: {
   playbookMode: string
   instrument: string
+  or15?: { high: number; low: number; complete?: boolean } | null
   or30?: { high: number; low: number; complete?: boolean } | null
   ib?: { high: number; low: number; complete?: boolean } | null
   usRange?: { high: number; low: number; complete?: boolean } | null
   lunchRange?: { high: number; low: number; complete?: boolean } | null
-  /** Filled morning/OR30 attempts today — 0 means OR30 was skipped. */
   morningAttempts?: number
 }): StrategyRangeEdges | null {
   const tokyo = args.instrument === 'NIKKEI'
   const mode = args.playbookMode
   const morningFills = Math.max(0, Math.floor(args.morningAttempts ?? 0))
-  const or30Skipped = morningFills === 0
+  const or15Skipped = morningFills === 0
 
   const {
+    or15: or15Shaped,
     or30: or30Shaped,
     ib: ibShaped,
     usRange: usShaped,
-    lunchRange: lunchShaped,
   } = shapedPlaybookRanges(args)
 
   if (mode === 'us_range') return usShaped
-  if (mode === 'lunch_range') return lunchShaped
+  if (mode === 'or30') return or30Shaped
   if (mode === 'ib') return ibShaped
   if (mode === 'lunch_break') {
-    // Prep for next slot — only shaped next/prior ranges (never a forming lunch/OR30).
     return tokyo
-      ? ibShaped ?? usShaped ?? or30Shaped
-      : lunchShaped ?? ibShaped ?? or30Shaped
+      ? ibShaped ?? usShaped ?? or15Shaped
+      : ibShaped ?? or30Shaped ?? or15Shaped
   }
 
-  // morning / done / default
-  // OR30 is optional. Once the overlapping first-hour IB is locked and OR30 was
-  // never traded, finish OR30 and hand off to IB (NY). Nikkei: while morning
-  // playbook owns the optional OR30 probe (locked), prefer OR30 ±10 — do not let
-  // prior NYC US Range steal the highlight. Preview US Range only while OR30 is
-  // still forming/absent; once playbookMode is us_range, US owns the bands.
   if (tokyo) {
-    if (or30Shaped) return or30Shaped
+    if (or15Shaped) return or15Shaped
     if (usShaped) return usShaped
     return null
   }
-  if (or30Skipped && ibShaped) {
-    return ibShaped
+  if (or15Skipped && or30Shaped) {
+    return or30Shaped
   }
-  return or30Shaped
+  return or15Shaped
 }
 
 /**
@@ -301,15 +294,17 @@ export function activeRangeForPlaybook(args: {
  * IB / Tokyo IB: pass `showIb: true` when IB H/L overlay is visible (same as BRK/REJ toggle).
  *
  * Every returned range uses the shared gate: ±10 of **H / L**
- * (DOW · NASDAQ · NIKKEI — OR30, IB/Tokyo IB, Lunch-range, US Range).
+ * (DOW · NASDAQ · NIKKEI — OR15, OR30, IB/Tokyo IB, US Range).
  * 50% mid is never a legal entry (see {@link rangeEdgeBands}).
  */
 export function visibleOverlayEntryRanges(args: {
   instrument: string
+  showOr15?: boolean
   showOr30?: boolean
   showIb?: boolean
   showUsRange?: boolean
   showLunchRange?: boolean
+  or15?: { high: number; low: number; complete?: boolean } | null
   or30?: { high: number; low: number; complete?: boolean } | null
   ib?: { high: number; low: number; complete?: boolean } | null
   usRange?: { high: number; low: number; complete?: boolean } | null
@@ -330,11 +325,10 @@ export function visibleOverlayEntryRanges(args: {
     out.push({ label, high: r.high, low: r.low })
   }
 
-  // OR30 / US / lunch require an explicit lock; IB is only present after the hour locks.
+  push('OR15', args.or15, args.showOr15, true)
   push('OR30', args.or30, args.showOr30, true)
   push('US Range', args.usRange, args.showUsRange && tokyo, true)
   push(tokyo ? 'Tokyo IB' : 'IB', args.ib, args.showIb, false)
-  push('Lunch-range', args.lunchRange, args.showLunchRange && !tokyo, true)
   return out
 }
 
@@ -344,9 +338,8 @@ export function visibleOverlayEntryRanges(args: {
  * matching study toggle is off.
  *
  * Entry ±10 paint requires the matching study toggle for every range:
- * - **OR30:** R toggle + morning playbook + OR30 entry window still open.
- * - **Lunch-range:** N toggle + shaped lunch, and either active playbook or
- *   open lunch bucket.
+ * - **OR15:** O toggle + morning playbook + Open-range entry window still open.
+ * - **OR30:** R toggle + OR30 playbook + OR30 entry window still open (NY).
  * - **IB / Tokyo IB:** B toggle — never auto-paints from the playbook clock.
  * - **US Range (Nikkei):** U toggle — never auto-paints from the playbook clock.
  *
@@ -362,10 +355,12 @@ export function entryEligibleOverlayRanges(args: {
   playbookMode: string
   instrument: string
   now?: Date
+  showOr15?: boolean
   showOr30?: boolean
   showIb?: boolean
   showUsRange?: boolean
   showLunchRange?: boolean
+  or15?: { high: number; low: number; complete?: boolean } | null
   or30?: { high: number; low: number; complete?: boolean } | null
   ib?: { high: number; low: number; complete?: boolean } | null
   usRange?: { high: number; low: number; complete?: boolean } | null
@@ -374,48 +369,44 @@ export function entryEligibleOverlayRanges(args: {
 }): StrategyRangeEdges[] {
   const mode = args.playbookMode
   const now = args.now ?? new Date()
-  const or30Open = isOr30MorningEntryWindowOpen(args.instrument, now)
+  const or15Open = isOr15MorningEntryWindowOpen(args.instrument, now)
+  const or30Open = isOr30SlotEntryWindowOpen(args.instrument, now)
   const toggled = visibleOverlayEntryRanges(args)
   const shaped = shapedPlaybookRanges(args)
   const market = deskMarketFor(args.instrument)
   const timeSec = deskClockSeconds(args.instrument, now)
 
   const isEntryClockEligible = (r: StrategyRangeEdges): boolean => {
-    if (r.label === 'OR30') {
-      return !!args.showOr30 && mode === 'morning' && or30Open
+    if (r.label === 'OR15' || r.label === 'Open range') {
+      return !!args.showOr15 && mode === 'morning' && or15Open
     }
-    // Every study is toggle-gated — playbook / bucket clock never auto-paints ±10.
+    if (r.label === 'OR30') {
+      return !!args.showOr30 && mode === 'or30' && or30Open
+    }
     if (r.label === 'US Range' && !args.showUsRange) {
       return false
     }
     if ((r.label === 'IB' || r.label === 'Tokyo IB') && !args.showIb) {
       return false
     }
-    if (r.label === 'Lunch-range' && !args.showLunchRange) {
-      return false
-    }
-    // Active playbook still highlights among toggled studies.
     if (isActivePlaybookOverlayLabel(mode, r.label, args.instrument)) {
       return true
     }
-    // Otherwise only while that range's own entry bucket is clock-open
-    // (leftover probes — never paint a future window like Tokyo IB before 10:00 lock).
     const bucket = bucketForRangeLabel(args.instrument, r.label)
     if (!bucket || bucket === 'morning' || bucket === 'other') return false
     return isBucketWindowOpen(market, bucket, timeSec)
   }
 
-  // Toggled studies ∩ clock. Shaped extras only when that study is ON.
   const byKey = new Map<string, StrategyRangeEdges>()
   const push = (r: StrategyRangeEdges | null | undefined) => {
     if (!r || !(r.high > r.low) || !isEntryClockEligible(r)) return
     byKey.set(`${r.label}:${r.high}:${r.low}`, r)
   }
   for (const r of toggled) push(r)
+  if (args.showOr15) push(shaped.or15)
   if (args.showOr30) push(shaped.or30)
   if (args.showIb) push(shaped.ib)
   if (args.showUsRange) push(shaped.usRange)
-  if (args.showLunchRange) push(shaped.lunchRange)
   return [...byKey.values()]
 }
 

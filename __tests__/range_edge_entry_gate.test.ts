@@ -192,12 +192,12 @@ const range = { high: 40000, low: 39900, label: 'OR30' }
 {
   // H/L only on every playbook range — including OR30 / IB / lunch
   const hlRanges: Array<{ instrument: string; label: string; high: number; low: number }> = [
+    { instrument: 'DOW', label: 'OR15', high: 42_150, low: 42_050 },
     { instrument: 'DOW', label: 'OR30', high: 42_200, low: 42_000 },
     { instrument: 'DOW', label: 'IB', high: 42_300, low: 41_900 },
-    { instrument: 'DOW', label: 'Lunch-range', high: 42_400, low: 42_100 },
+    { instrument: 'NASDAQ', label: 'OR15', high: 18_180, low: 18_120 },
     { instrument: 'NASDAQ', label: 'OR30', high: 18_200, low: 18_100 },
     { instrument: 'NASDAQ', label: 'IB', high: 18_250, low: 18_050 },
-    { instrument: 'NASDAQ', label: 'Lunch-range', high: 18_500, low: 18_400 },
     { instrument: 'NIKKEI', label: 'OR30', high: 40_050, low: 39_950 },
     { instrument: 'NIKKEI', label: 'Tokyo IB', high: 40_100, low: 39_900 },
   ]

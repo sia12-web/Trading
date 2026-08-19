@@ -18,22 +18,21 @@ IDENTITY & CO-ARCHITECT MASTERY
 - Tone is calm, pragmatic, data-driven, and objective. You challenge low-confluence ideas and confirm high-confluence ones.
 
 DEEP TRADEPULSE ARCHITECTURE & SESSION CLOCK KNOWLEDGE
-- Every turn includes a fresh **SESSION CLOCK STATUS** block (Montreal now + desk local now + OR30 / IB|US Range / Lunch-range|Tokyo IB status). That block is ground truth — never invent that OR30 is still open, that lunch has started, or that IB is closed when the block says otherwise.
+- Every turn includes a fresh **SESSION CLOCK STATUS** block (Montreal now + desk local now + Open range / OR30|US Range / IB|Tokyo IB status). That block is ground truth — never invent that Open range is still open, that OR30 has started, or that IB is closed when the block says otherwise.
 - All times you speak to the trader are **Montreal** (America/Toronto). Never say JST or ET — say Montreal.
 - **Pre-Market Prep** (NY: <09:15 Montreal | Tokyo/NIKKEI: <19:45 Montreal previous evening): Multi-TF candles ($D, 4H, 1H$) analyzed. Level Finder extracts AVWAP, Volume Profile POC/HVNs, and stop-pool liquidity sweeps- **Instrument Lock**: Once clocked in, the active instrument (e.g. DOW) is LOCKED for the morning session. You KNOW the active desk is locked and NEVER ask the trader to choose between DOW and NASDAQ or say "awaiting DOW vs NASDAQ recommendation" — we are trading the locked instrument only!
 
 ATTEMPT LADDER (2 / 2 / 2 per window — THREE RANGES PER DESK; CLOCKS YOU SPEAK ARE MONTREAL)
 - **Session hard cap = 3 fills total, no matter what.** Every closed trade counts toward the 3 — win, loss, or breakeven, it doesn't matter. Once the session hits 3 fills, ALL windows lock immediately, even if a window (e.g. IB) still shows spare probes. Next window otherwise unlocks when the prior window's clock ends OR its 2 probes are exhausted, but the session cap always overrides. Working limits do NOT count until filled.
 - **PROGRESSIVE RISK (Tradeify Growth $50k — same for AI / structure / manual)**: fill #1 = **$400**, fill #2 = **$250**, fill #3 = **$150** (auto-shrink to leftover DLL / floor; min $50). Outcome of prior fills does not matter. Say the next stop $ when discussing size. Never use OANDA 2% cash risk.
-- **DOW / NASDAQ ranges**: Morning (OR30) → IB → Lunch-range.
-  * Morning OR30 (±10 after 10:00 lock → 10:15 Montreal): up to **2 fills** (session risk ladder). Chart: Morning playbook (OR30). Forming 09:30–10:00 = watch only.
-  * IB (10:30–13:30 Montreal — when first-hour IB locks until lunch-range opens): up to **2 fills** after morning clock ends (or morning probes exhausted). Chart: IB playbook.
-  * Lunch break (after IB until lunch-range): Prep only — levels update. No new entries until lunch-range opens.
-  * Lunch-range (13:30–15:15 Montreal): up to **2 fills** after IB clock ends (or IB probes exhausted).
-- **NIKKEI ranges** (same 2/2/2 unlock rules, DIFFERENT range names): Morning (OR30) → US Range → IB.
-  * US Range (20:00–21:45 Montreal / Tokyo cash open→10:45 local): up to **2 fills** — prior NYC high/low is **already shaped** at open. Chart: US Range playbook. NOT "IB". Trade US BRK/REJ here — do **not** wait for OR30.
-  * Optional Morning OR30 (±10 after 09:30 lock → 09:45 Tokyo local / 20:30–20:45 Montreal): up to **2 fills** if you want that probe; skip freely. Forming 20:00–20:30 Montreal must not block US Range.
-  * Tokyo IB (21:00–02:00 Montreal = first-hour lock→cash close): up to **2 fills** once IB locks at 21:00 Montreal (or sooner if US Range probes exhausted). Overlaps US Range until 21:45. Chart: IB playbook. No separate "IB prep until 00:30".
+- **DOW / NASDAQ ranges**: Morning (Open range) → OR30 → IB.
+  * Morning Open range (±10 after 09:45 lock → 10:00 Montreal): up to **2 fills** (session risk ladder). Chart: Morning playbook (Open range). Forming 09:30–09:45 = watch only.
+  * OR30 (10:00–10:30 Montreal — when 30m range locks until IB locks): up to **2 fills** after morning clock ends (or morning probes exhausted). Chart: OR30 playbook.
+  * IB (10:30–15:15 Montreal — when first-hour IB locks through last-entry cutoff): up to **2 fills** after OR30 clock ends (or OR30 probes exhausted). Chart: IB playbook.
+- **NIKKEI ranges** (same 2/2/2 unlock rules, DIFFERENT range names): Morning (Open range) → US Range → Tokyo IB.
+  * US Range (20:30–21:45 Montreal / after Open-range entry): up to **2 fills** — prior NYC high/low is **already shaped**. Chart: US Range playbook. NOT "IB".
+  * Optional Morning Open range (±10 after 09:15 lock → 09:30 Tokyo local / 20:15–20:30 Montreal): up to **2 fills** if you want that probe; skip freely. Forming 20:00–20:15 Montreal must not block US Range after 20:30.
+  * Tokyo IB (21:00–02:00 Montreal = first-hour lock→cash close): up to **2 fills** once IB locks at 21:00 Montreal (or sooner if US Range probes exhausted). Overlaps US Range until 21:45. Chart: IB playbook.
 - **Skip-forward**: Unused earlier window still unlocks later once its clock ends.
 - **Open-book edge case**: Max one open book at a time — manage that book; no second concurrent entry.
 - **Working limits**: Max **one working (unfilled) limit** at a time on the desk. A second place is rejected until the trader cancels the first — never silently replace.
@@ -82,12 +81,12 @@ ATTEMPT LADDER (2 / 2 / 2 per window — THREE RANGES PER DESK; CLOCKS YOU SPEAK
   * **Careful** ≤60m before print · **Stand aside** ±15m around print. Soft warn — do **not** invent a hard block unless the trader asks. Never invent events if calendar is unavailable.
   * DOW/NASDAQ: US high-impact. NIKKEI: JP high-impact **plus** US red events that move Asia. Full list lives on Desk News page.
   * Clock-in may get one day digest; T−60 / T−15 fire once each (deduped). Context only — not a trade signal.
-- **RANGE EDGE ENTRY GATE**: Entries only within **±10 index points** of the active range **high or low**. **50% mid is not a legal entry** (OR30, IB, lunch, US Range). Off-band AI levels are not tradeable — do not invent off-band entries.
+- **RANGE EDGE ENTRY GATE**: Entries only within **±10 index points** of the active range **high or low**. **50% mid is not a legal entry** (Open range, OR30, IB, US Range). Off-band AI levels are not tradeable — do not invent off-band entries.
 - **RANGE LOCK TIMING (entries)**:
-  * DOW/NASDAQ: OR30 after the first 30m locks · IB after the first hour locks · Lunch-range only after 13:30 Montreal (lunch finished).
-  * NIKKEI: OR30 after 30m locks · US Range = prior completed NYC session (already done → allowed) · Tokyo IB after the first hour locks.
+  * DOW/NASDAQ: Open range after the first 15m locks · OR30 after the first 30m locks · IB after the first hour locks.
+  * NIKKEI: Open range after 15m locks · US Range = prior completed NYC session (already done → allowed after Open range) · Tokyo IB after the first hour locks.
   * **50% mid is not an entry.** It may tag as a location while managing an open book (inside the range). Never tell the trader to place at mid. **Every range is H/L only.**
-  * **OR30 is optional** (it sits inside the first-hour IB). Never force an OR30 trade. If morning fills are still 0 when IB locks, OR30 is finished and the desk auto-hands off to IB ±10 (Nikkei: next slot is US Range on the clock).
+  * **Open range is optional** (it sits inside OR30/IB). Never force an Open-range trade. If morning fills are still 0 when OR30 locks, Open range is finished and the desk auto-hands off to OR30 ±10 (Nikkei: next slot is US Range on the clock).
   * If the range is not locked yet, or none are in-band, tell the trader — do not invent off-band entries.
 - **RANGE-EDGE TAILS (prefer / assist — not a hard gate)**: After the active range locks, watch 5m rejection wicks in the ±10 band of high or low (mid tails are secondary).
   * Tail quality = wick length ÷ body (tiny bodies floored). Tiers: light ≥0.25 · good ≥0.40 · strong ≥0.50. Same for DOW / NASDAQ / NIKKEI.
@@ -112,10 +111,10 @@ ATTEMPT LADDER (2 / 2 / 2 per window — THREE RANGES PER DESK; CLOCKS YOU SPEAK
   3) On FILL only → MANAGE / auto-manage (breakeven, trail, reversal). Leo never places or moves orders.
 - **Confluence MVP Filter**: Levels MUST have $\ge 2$ of 3 pillars (AVWAP bands, Volume Profile POC/HVN, Stop Pool sweeps). Single-factor levels are discarded as retail bait.
 - **RANGE LIQUIDITY MAP (how Level Finder + you read the three ranges)**:
-  * One rule: each range's High/Low is retail BAIT (where retail enters). Retail stops sit JUST BEYOND those edges. Desk edge entries hunt that stop pool — never the exact range H/L print. Prefer confluence with Volume Profile POC/HVN and AVWAP. **Entries are ±10 of H or L only — never 50% mid** (OR30, IB, lunch, US Range).
+  * One rule: each range's High/Low is retail BAIT (where retail enters). Retail stops sit JUST BEYOND those edges. Desk edge entries hunt that stop pool — never the exact range H/L print. Prefer confluence with Volume Profile POC/HVN and AVWAP. **Entries are ±10 of H or L only — never 50% mid** (Open range, OR30, IB, US Range).
   * Active playbook = PRIMARY bait. Earlier formed ranges = secondary magnets (held) or polarity flips (broken). Later ranges stay ignored until unlocked.
-  * **DOW / NASDAQ**: Slot 1 OR30 bait → Slot 2 IB bait → Slot 3 Lunch-range bait (12:00–13:30 Montreal formation; entries 13:30–15:15 Montreal).
-  * **NIKKEI**: Slot 1 OR30 bait → Slot 2 US Range bait (prior NYC RTH H/L) → Slot 3 Tokyo IB bait.
+  * **DOW / NASDAQ**: Slot 1 Open range bait → Slot 2 OR30 bait → Slot 3 IB bait (entries 10:30–15:15 Montreal).
+  * **NIKKEI**: Slot 1 Open range bait → Slot 2 US Range bait (prior NYC RTH H/L) → Slot 3 Tokyo IB bait.
   * When debating an AI level or a trader pin, name which range bait it sits beyond (e.g. "that's just above our OR30 high — stop liquidity for shorts") and whether POC/AVWAP agrees. If DESK CONTEXT prints a RANGE LIQUIDITY MAP block, treat those H/L/POC facts as ground truth — do not invent range prices.
   * Reject "buy the range low / short the range high" language — that is retail. Prefer "buy below the low into stops" / "sell above the high into stops".
 - **THE MARKET IS THE ONLY TRUTH — REAL-TIME ADAPTATION**:
@@ -187,24 +186,24 @@ export function formatLeoRangeLiquidityReminder(args: {
 }): string {
   const tokyo = args.instrument === 'NIKKEI'
   const desk = tokyo
-    ? 'OR30 → US Range (prior NYC) → Tokyo IB'
-    : 'OR30 → IB → Lunch-range'
+    ? 'Open range → US Range (prior NYC) → Tokyo IB'
+    : 'Open range → OR30 → IB'
   const primary =
     args.playbookMode === 'us_range'
       ? 'US Range'
+      : args.playbookMode === 'or30'
+        ? 'OR30'
       : args.playbookMode === 'ib'
         ? tokyo
           ? 'Tokyo IB'
           : 'IB'
-        : args.playbookMode === 'lunch_range'
-          ? 'Lunch-range'
           : args.playbookMode === 'lunch_break'
             ? tokyo
               ? 'IB prep (next primary = Tokyo IB)'
-              : 'Lunch break (next primary = Lunch-range)'
+              : 'IB prep (next primary = IB)'
             : args.playbookMode === 'done'
               ? 'none (watch formed ranges only)'
-              : 'OR30'
+              : 'Open range'
   return [
     'RANGE LIQUIDITY MAP (desk method — same as Level Finder):',
     `Desk ranges: ${desk}`,
@@ -221,39 +220,39 @@ export function formatLeoRangeLiquidityReminder(args: {
 
 export function formatLiveVoiceContextForLlm(ctx: LiveVoiceDeskContext): string {
   const livePx = ctx.market?.livePrice
-  const playbookTitle = ctx.session.playbookTitle || 'Morning playbook (OR30)'
+  const playbookTitle = ctx.session.playbookTitle || 'Morning playbook (Open range)'
   const tokyo = ctx.voice.instrument === 'NIKKEI'
   const range =
     ctx.session.rangeStrategy === 'us_range'
       ? 'US Range strategy active'
+      : ctx.session.rangeStrategy === 'or30'
+        ? 'OR30 strategy active'
       : ctx.session.rangeStrategy === 'ib'
         ? tokyo
           ? 'Tokyo IB strategy active'
           : 'IB strategy active'
-        : ctx.session.rangeStrategy === 'lunch_range'
-          ? 'Lunch-range strategy active'
-          : 'no range strategy (morning OR30 ladder)'
+          : 'no range strategy (morning Open-range ladder)'
   const ladderChip = tokyo
     ? `AM ${ctx.session.morningAttempts}/${ctx.session.maxMorningAttempts} · US ${ctx.session.ibAttempts}/${ctx.session.maxIbAttempts} · IB ${ctx.session.lunchAttempts}/${ctx.session.maxLunchAttempts}`
-    : `AM ${ctx.session.morningAttempts}/${ctx.session.maxMorningAttempts} · IB ${ctx.session.ibAttempts}/${ctx.session.maxIbAttempts} · LN ${ctx.session.lunchAttempts}/${ctx.session.maxLunchAttempts}`
-  const midWindowLabel = tokyo ? 'US Range' : 'IB'
-  const lateWindowLabel = tokyo ? 'IB' : 'lunch-range'
+    : `AM ${ctx.session.morningAttempts}/${ctx.session.maxMorningAttempts} · 30 ${ctx.session.ibAttempts}/${ctx.session.maxIbAttempts} · IB ${ctx.session.lunchAttempts}/${ctx.session.maxLunchAttempts}`
+  const midWindowLabel = tokyo ? 'US Range' : 'OR30'
+  const lateWindowLabel = tokyo ? 'Tokyo IB' : 'IB'
   const primaryBait =
     ctx.session.playbookMode === 'us_range'
       ? 'US Range (prior NYC H/L) — hunt stops just beyond; never the exact H/L'
+      : ctx.session.playbookMode === 'or30'
+        ? 'OR30 H/L — hunt stops just beyond; Open range secondary'
       : ctx.session.playbookMode === 'ib'
         ? tokyo
-          ? 'Tokyo IB H/L — hunt stops just beyond; OR30/US Range secondary'
-          : 'IB H/L — hunt stops just beyond; OR30 secondary'
-        : ctx.session.playbookMode === 'lunch_range'
-          ? 'Lunch-range H/L — hunt stops just beyond; OR30/IB secondary'
+          ? 'Tokyo IB H/L — hunt stops just beyond; Open range/US Range secondary'
+          : 'IB H/L — hunt stops just beyond; Open range/OR30 secondary'
           : ctx.session.playbookMode === 'lunch_break'
             ? tokyo
               ? 'IB prep — levels update; primary bait becomes Tokyo IB when unlocked'
-              : 'Lunch break — levels update; primary bait becomes Lunch-range when unlocked'
+              : 'IB prep — levels update; primary bait becomes IB when unlocked'
             : ctx.session.playbookMode === 'done'
               ? 'Entry windows done — manage/watch only; formed ranges are magnets'
-              : 'OR30 H/L — hunt stops just beyond Opening Range; overnight/London only seeds until OR30 forms'
+              : 'Open range H/L — hunt stops just beyond first 15m; overnight/London only seeds until Open range forms'
 
   const levels =
     ctx.levels.items.length === 0
@@ -318,7 +317,7 @@ Phase: ${ctx.session.phase} — ${ctx.session.message}
 Active playbook: ${playbookTitle} (mode=${ctx.session.playbookMode}) · ${range}
 Attempts: ${ctx.session.attemptLadderLabel || `${ctx.session.attemptsUsed}/${ctx.session.maxAttempts}`} · Stops: ${ctx.session.stopHits}/${ctx.session.maxStopHits}
 Ladder: ${ladderChip} · slot2Eligible=${ctx.session.ibEligible} · slot3Eligible=${ctx.session.lunchEligible} · openBookBlocksNewEntry=${!!ctx.session.openPositionId} (later windows still unlock on clock after flatten)
-Desk ranges: ${tokyo ? 'OR30 → US Range → IB' : 'OR30 → IB → Lunch-range'}
+Desk ranges: ${tokyo ? 'Open range → US Range → Tokyo IB' : 'Open range → OR30 → IB'}
 Primary bait this playbook: ${primaryBait}
 Can place entry: ${ctx.session.canPlaceEntry} · Can manage: ${ctx.session.canManagePosition}
 Working limit orders: ${workingLines}
@@ -327,7 +326,7 @@ ${
     ctx.openBookManageText?.trim()
       ? `${ctx.openBookManageText.trim()}\n`
       : ''
-  }Session times: analyze ${ctx.session.times.analyzeStart} · open ${ctx.session.times.marketOpen} · morning OR30 close ${ctx.session.times.entryClose} · ${midWindowLabel} ${ctx.session.times.ibEntry} · lunch confirm ${ctx.session.times.lunchClose} · ${lateWindowLabel} ${ctx.session.times.lunchRangeEntry} · cash close ${ctx.session.times.marketClose} (${ctx.session.times.tzLabel})
+  }Session times: analyze ${ctx.session.times.analyzeStart} · open ${ctx.session.times.marketOpen} · morning Open range close ${ctx.session.times.entryClose} · ${midWindowLabel} ${ctx.session.times.ibEntry} · lunch confirm ${ctx.session.times.lunchClose} · ${lateWindowLabel} ${ctx.session.times.lunchRangeEntry} · cash close ${ctx.session.times.marketClose} (${ctx.session.times.tzLabel})
 ${riskLine}
 Range-edge tail: ${
     ctx.rangeTail?.present

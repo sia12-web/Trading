@@ -132,7 +132,7 @@ function entryDeniedMessage(gate: SessionGateState | null | undefined): string |
       return gate.message.trim()
     }
     if (gate.phase === 'FLAT') {
-      return 'Entry window closed — wait for IB or lunch-range unlock (if still eligible).'
+      return 'Entry window closed — wait for OR30 or IB unlock (if still eligible).'
     }
     if (gate.phase === 'DONE') {
       return 'Entry windows done for today — manage if open, no new entries.'
@@ -141,7 +141,7 @@ function entryDeniedMessage(gate: SessionGateState | null | undefined): string |
       return 'Cash closed — desk is offline until the next session.'
     }
     if (gate.phase === 'PREP' || gate.phase === 'RECOMMENDED') {
-      return 'Pre-open prep — ±10 entries after OR30 locks (open + 30m).'
+      return 'Pre-open prep — ±10 entries after Open range locks (open + 15m).'
     }
     return 'Entries not available right now.'
   }
@@ -306,6 +306,13 @@ export default function ChartPage() {
   const [regimeConfidence, setRegimeConfidence] = useState(70)
   const [gateTick, setGateTick] = useState(0)
   const [lastQuoteAt, setLastQuoteAt] = useState<number | null>(null)
+  const lastQuoteAtFlushRef = useRef(0)
+  const onQuoteTick = useCallback((ts: number) => {
+    const now = Date.now()
+    if (now - lastQuoteAtFlushRef.current < 1000) return
+    lastQuoteAtFlushRef.current = now
+    setLastQuoteAt(ts)
+  }, [])
   const [dataMode, setDataMode] = useState<'live' | 'synthetic'>('live')
   const [fillError, setFillError] = useState<string | null>(null)
   const [bracketAdjustStatus, setBracketAdjustStatus] = useState<
@@ -787,7 +794,7 @@ export default function ChartPage() {
       !!g.canPlaceEntry &&
       (g.rangeStrategy === 'ib' ||
         g.rangeStrategy === 'us_range' ||
-        g.rangeStrategy === 'lunch_range' ||
+        g.rangeStrategy === 'or30' ||
         (g.phase === 'ENTRY' && !g.rangeStrategy))
     prevCanPlaceRef.current = !!g.canPlaceEntry
 
@@ -811,11 +818,11 @@ export default function ChartPage() {
         const windowLabel =
           g.rangeStrategy === 'us_range'
             ? 'US Range'
-            : g.rangeStrategy === 'ib'
-              ? 'IB'
-              : g.rangeStrategy === 'lunch_range'
-                ? 'Lunch-range'
-                : 'Morning (OR30)'
+            : g.rangeStrategy === 'or30'
+              ? 'OR30'
+              : g.rangeStrategy === 'ib'
+                ? 'IB'
+                : 'Morning (Open range)'
         lastUnlockKeyRef.current = `${g.lockedInstrument}:${g.rangeStrategy ?? 'morning'}:${windowLabel}`
       }
       // Still allow regime fetch below — only Telegram rising-edges are suppressed.
@@ -824,11 +831,11 @@ export default function ChartPage() {
         const windowLabel =
           g.rangeStrategy === 'us_range'
             ? 'US Range'
-            : g.rangeStrategy === 'ib'
-              ? 'IB'
-              : g.rangeStrategy === 'lunch_range'
-                ? 'Lunch-range'
-                : 'Morning (OR30)'
+            : g.rangeStrategy === 'or30'
+              ? 'OR30'
+              : g.rangeStrategy === 'ib'
+                ? 'IB'
+                : 'Morning (Open range)'
         const key = `${g.lockedInstrument}:${g.rangeStrategy ?? 'morning'}:${windowLabel}`
         const claimKind = `entry_${g.rangeStrategy ?? 'morning'}`
         if (
@@ -1684,7 +1691,7 @@ export default function ChartPage() {
       gate.phase === 'FLAT' ||
       gate.rangeStrategy === 'ib' ||
       gate.rangeStrategy === 'us_range' ||
-      gate.rangeStrategy === 'lunch_range'
+      gate.rangeStrategy === 'or30'
     ) {
       if (!afternoonLevelsLoadedRef.current || gate.rangeStrategy) {
         afternoonLevelsLoadedRef.current = true
@@ -1711,7 +1718,7 @@ export default function ChartPage() {
     if (
       gate.rangeStrategy === 'ib' ||
       gate.rangeStrategy === 'us_range' ||
-      gate.rangeStrategy === 'lunch_range' ||
+      gate.rangeStrategy === 'or30' ||
       gate.phase === 'FLAT' ||
       gate.phase === 'DONE'
     ) {
@@ -2321,7 +2328,7 @@ export default function ChartPage() {
               onInstrumentChange={setInstrument}
               onInstrumentSync={syncInstrument}
               onPriceUpdate={onPriceUpdate}
-              onQuoteTick={setLastQuoteAt}
+              onQuoteTick={onQuoteTick}
               onDataModeChange={setDataMode}
               positionOverlay={
                 positionOverlay ??

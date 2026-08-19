@@ -300,7 +300,7 @@ test('lunch-range on NIKKEI is not a legal CALL range', () => {
       close: c.close - 3000,
     })),
     asOfUnix: tokyoOpen + 90 * 60,
-    playbookMode: 'lunch_range',
+    playbookMode: 'ib',
   })
   assert.equal(call.side, 'WAIT')
   assert.equal(call.rangeKey, null)
@@ -572,7 +572,7 @@ test('WAIT windows are excluded from B/C tally; strip has no B marks on WAIT', (
   })
   assert.ok(rows.length >= 1)
   assert.ok(
-    !rows.some((r) => r.playbookMode === 'lunch_range'),
+    !rows.some((r) => r.playbookMode === 'ib'),
     'lunch snap must not appear before 13:30'
   )
   const tally = tallyDeskCallScores(rows)

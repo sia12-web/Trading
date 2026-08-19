@@ -96,8 +96,8 @@ export async function runAutoLevelPrep(
   instrument: Instrument,
   opts: {
     force?: boolean
-    /** Explicit playbook refresh: morning | ib | lunch_range | afternoon */
-    mode?: 'morning' | 'ib' | 'us_range' | 'lunch_range' | 'afternoon'
+    /** Explicit playbook refresh: morning | or30 | ib | us_range | afternoon */
+    mode?: 'morning' | 'or30' | 'ib' | 'us_range' | 'afternoon'
   } = {}
 ): Promise<AutoLevelPrepResult> {
   try {
@@ -202,10 +202,10 @@ export async function runAutoLevelPrep(
     const agent = await getLevelFinderAgent()
 
     // Playbook mode: explicit query wins; else lunch refresh → afternoon when in PM window
-    const analysis_mode: 'morning' | 'ib' | 'us_range' | 'lunch_range' | 'afternoon' =
+    const analysis_mode: 'morning' | 'or30' | 'ib' | 'us_range' | 'afternoon' =
       opts.mode === 'ib' ||
       opts.mode === 'us_range' ||
-      opts.mode === 'lunch_range' ||
+      opts.mode === 'or30' ||
       opts.mode === 'afternoon' ||
       opts.mode === 'morning'
         ? opts.mode
@@ -215,7 +215,7 @@ export async function runAutoLevelPrep(
     const needsAfternoonBrief =
       analysis_mode === 'ib' ||
       analysis_mode === 'us_range' ||
-      analysis_mode === 'lunch_range' ||
+      analysis_mode === 'or30' ||
       analysis_mode === 'afternoon'
     const h1Bars = (h1?.candles ?? []).map((c) => ({
       time: c.time,

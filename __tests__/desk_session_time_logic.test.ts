@@ -58,7 +58,7 @@ assert(NY_SESSION.marketClose === '16:00:00', 'NY close 16:00')
 assert(TOKYO_SESSION.tz === 'Asia/Tokyo', 'Tokyo tz')
 assert(TOKYO_SESSION.analyzeStart === '08:45:00', 'Tokyo prep 8:45')
 assert(TOKYO_SESSION.marketOpen === '09:00:00', 'Tokyo open 9:00')
-assert(TOKYO_SESSION.entryClose === '09:45:00', 'Tokyo entry close 9:45')
+assert(TOKYO_SESSION.entryClose === '09:30:00', 'Tokyo entry close 9:30')
 assert(TOKYO_SESSION.lunchClose === '11:30:00', 'Tokyo lunch 11:30')
 assert(TOKYO_CASH_LUNCH_END === '12:30:00', 'TSE cash lunch ends 12:30 JST')
 // EDT: 11:30–12:30 JST → 22:30–23:30 Montreal
@@ -212,7 +212,7 @@ for (const inst of ['DOW', 'NASDAQ'] as const) {
   assert(gate.phase === 'ENTRY', `${inst} lunch-range phase ENTRY`)
   assert(gate.canPlaceEntry === false, `${inst} clocked-out blocks place`)
   assert(gate.canManagePosition === false, `${inst} no manage when flat`)
-  assert(!!gate.message?.includes('Lunch-range'), `${inst} lunch-range copy`)
+  assert(!!gate.message?.includes('IB playbook'), `${inst} IB copy`)
   // Flat + clocked-out clears rangeStrategy in finish(); re-clock restores unlock
   assert(gate.rangeStrategy === null, `${inst} rangeStrategy cleared while clocked out flat`)
   assert(gate.market === 'NY', `${inst} market NY`)
@@ -274,7 +274,7 @@ for (const inst of ['DOW', 'NASDAQ'] as const) {
   })
   assert(sim.phase === 'ENTRY', 'sim afternoon lunch-range ENTRY')
   assert(sim.canPlaceEntry === true, 'sim lunch-range can place')
-  assert(sim.rangeStrategy === 'lunch_range', 'lunch_range strategy')
+  assert(sim.rangeStrategy === 'ib', 'lunch_range strategy')
 }
 
 // Sim afternoon: morning fill does not kill lunch-range (Option B)
@@ -287,7 +287,7 @@ for (const inst of ['DOW', 'NASDAQ'] as const) {
     stopHits: 0,
   })
   assert(sim.canPlaceEntry === true, 'sim lunch-range still open after morning fill')
-  assert(sim.rangeStrategy === 'lunch_range', 'lunch_range strategy after morning fill')
+  assert(sim.rangeStrategy === 'ib', 'lunch_range strategy after morning fill')
 }
 
 // ── VWAP: 5 trading days prior, per-desk cash open ───────────────────────────

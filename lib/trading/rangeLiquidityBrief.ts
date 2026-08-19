@@ -2,15 +2,15 @@
  * Range liquidity brief — connects Level Finder (VP / retail stops) to the
  * desk’s three ranges. Pure facts from existing chart helpers; no new vendors.
  *
- *   DOW/NASDAQ: OR30 → IB → Lunch-range
- *   NIKKEI:     OR30 → US Range (prior NYC) → Tokyo IB
+ *   DOW/NASDAQ: Open range (OR15) → OR30 → IB
+ *   NIKKEI:     Open range (OR15) → US Range (prior NYC) → Tokyo IB
  *
  * Range H/L = retail bait. Desk entries = stop pools just beyond those edges,
  * with POC/HVN + AVWAP as confluence.
  */
 
+import { computeOr15Range } from '@/lib/chart/openingRange15'
 import { computeOr30Range } from '@/lib/chart/openingRange30'
-import { computeNycLunchRange } from '@/lib/chart/nycLunchSessionRange'
 import { computeNikkeiUsRangeBreakout } from '@/lib/chart/nikkeiUsRangeBreakout'
 import {
   computeAnchoredVwap,
@@ -72,10 +72,11 @@ export type RangeLiquidityBrief = {
   slot1Label: string
   slot2Label: string
   slot3Label: string
+  or15: RangeEdgeFacts | null
   or30: RangeEdgeFacts | null
-  /** NY: IB · Tokyo: US Range */
+  /** NY: OR30 · Tokyo: US Range */
   slot2: RangeEdgeFacts | null
-  /** NY: Lunch-range · Tokyo: Tokyo IB */
+  /** NY: IB · Tokyo: Tokyo IB */
   slot3: RangeEdgeFacts | null
   /** Primary bait for the active analysis mode */
   activeLabel: string | null
@@ -85,7 +86,7 @@ export type RangeLiquidityBrief = {
   pocVsActive: 'inside' | 'outside' | 'unknown'
   avwap: number | null
   tipVsAvwapPct: number | null
-  analysisMode: 'morning' | 'ib' | 'us_range' | 'lunch_range' | 'afternoon'
+  analysisMode: 'morning' | 'or30' | 'ib' | 'us_range' | 'afternoon'
   /** Active-range ATR(14) 5m — advise-only pad/trail (null if no 5m / no active range) */
   activeAtr: RangeAtrSnapshot | null
   /** Prior-cash TPO profile (YH/YL/VA/POC + open type + superimpose). */
@@ -108,9 +109,9 @@ function playbookFromAnalysis(
   tokyo: boolean
 ): DeskPlaybookMode {
   if (mode === 'us_range') return 'us_range'
+  if (mode === 'or30') return 'or30'
   if (mode === 'ib') return 'ib'
-  if (mode === 'lunch_range') return 'lunch_range'
-  if (mode === 'afternoon') return tokyo ? 'ib' : 'lunch_range'
+  if (mode === 'afternoon') return tokyo ? 'ib' : 'or30'
   return 'morning'
 }
 
@@ -186,13 +187,13 @@ function resolveActiveLabel(
   const tokyo = instrument === 'NIKKEI'
   switch (mode) {
     case 'morning':
+      return 'OR15'
+    case 'or30':
       return 'OR30'
     case 'us_range':
       return 'US Range'
     case 'ib':
       return tokyo ? 'Tokyo IB' : 'IB'
-    case 'lunch_range':
-      return 'Lunch-range'
     default:
       return null
   }
@@ -233,14 +234,25 @@ export function buildRangeLiquidityBrief(args: {
   const clock = deskClockFor(instrument)
   const openUnix = cashOpenUnixForYmd(ymd, clock)
 
-  const slot1Label = 'OR30'
-  const slot2Label = tokyo ? 'US Range' : 'IB'
-  const slot3Label = tokyo ? 'Tokyo IB' : 'Lunch-range'
+  const slot1Label = 'OR15'
+  const slot2Label = tokyo ? 'US Range' : 'OR30'
+  const slot3Label = tokyo ? 'Tokyo IB' : 'IB'
+
+  const or15Range = computeOr15Range(bars, openUnix, nowUnix)
+  const or15 = or15Range
+    ? edges(
+        slot1Label,
+        or15Range.high,
+        or15Range.low,
+        tip,
+        nowUnix >= or15Range.endUnix
+      )
+    : null
 
   const or30Range = computeOr30Range(bars, openUnix, nowUnix)
   const or30 = or30Range
     ? edges(
-        slot1Label,
+        'OR30',
         or30Range.high,
         or30Range.low,
         tip,
@@ -248,7 +260,7 @@ export function buildRangeLiquidityBrief(args: {
       )
     : null
 
-  // Slot 2: NY IB · Tokyo prior NYC US Range
+  // Slot 2: NY OR30 · Tokyo prior NYC US Range
   let slot2: RangeEdgeFacts | null = null
   if (tokyo) {
     const us = computeNikkeiUsRangeBreakout(
@@ -265,29 +277,16 @@ export function buildRangeLiquidityBrief(args: {
       slot2 = edges(slot2Label, us.high, us.low, tip, true)
     }
   } else {
-    slot2 = computeIbEdges(bars, openUnix, nowUnix, tip, slot2Label)
+    slot2 = or30
   }
 
-  // Slot 3: NY Lunch-range · Tokyo IB (first cash hour — traded in PM window)
-  let slot3: RangeEdgeFacts | null = null
-  if (tokyo) {
-    slot3 = computeIbEdges(bars, openUnix, nowUnix, tip, slot3Label)
-  } else {
-    const lunch = computeNycLunchRange(bars, ymd, nowUnix)
-    if (lunch) {
-      slot3 = edges(
-        slot3Label,
-        lunch.high,
-        lunch.low,
-        tip,
-        lunch.complete
-      )
-    }
-  }
+  // Slot 3: NY IB · Tokyo IB
+  const slot3 = computeIbEdges(bars, openUnix, nowUnix, tip, slot3Label)
 
   const activeLabel = resolveActiveLabel(instrument, analysisMode)
   let active: RangeEdgeFacts | null = null
-  if (activeLabel === 'OR30') active = or30
+  if (activeLabel === 'OR15') active = or15
+  else if (activeLabel === 'OR30') active = or30
   else if (activeLabel === slot2Label) active = slot2
   else if (activeLabel === slot3Label) active = slot3
 
@@ -404,7 +403,7 @@ export function buildRangeLiquidityBrief(args: {
     const swing = ibLocked ? findIbLiquiditySwing(swingSrc, ibLocked) : null
     ibSwingText = swing
       ? `Liquidity swing ${swing.kind} ${swing.price} (IB is the box; first tag is not the entry)`
-      : slot2?.complete
+      : slot3?.complete
         ? 'IB locked — no swing yet. First IB tag is liquidity building, not the entry.'
         : null
   }
@@ -416,6 +415,7 @@ export function buildRangeLiquidityBrief(args: {
     slot1Label,
     slot2Label,
     slot3Label,
+    or15,
     or30,
     slot2,
     slot3,
@@ -449,11 +449,11 @@ export function formatRangeLiquidityBriefForPrompt(
   brief: RangeLiquidityBrief
 ): string {
   const deskMap = brief.tokyo
-    ? 'OR30 → US Range (prior NYC) → Tokyo IB'
-    : 'OR30 → IB → Lunch-range'
+    ? 'Open range → US Range (prior NYC) → Tokyo IB'
+    : 'Open range → OR30 → IB'
 
   const lines: string[] = [
-    'RANGE LIQUIDITY MAP (facts from our chart tools — Yahoo H1, OR30, IB/US Range, lunch-range, AVWAP, POC):',
+    'RANGE LIQUIDITY MAP (facts from our chart tools — Yahoo H1, OR15, OR30, IB/US Range, AVWAP, POC):',
     `Instrument: ${brief.instrument} · tip ${brief.tip} · desk ranges: ${deskMap}`,
     `Analysis mode: ${brief.analysisMode} · primary bait: ${brief.activeLabel ?? 'none (watch all formed ranges)'}`,
     '',
@@ -461,7 +461,7 @@ export function formatRangeLiquidityBriefForPrompt(
     '',
   ]
 
-  if (brief.or30) lines.push(`Slot 1 — ${formatEdge(brief.or30)}`)
+  if (brief.or15) lines.push(`Slot 1 — ${formatEdge(brief.or15)}`)
   else lines.push(`Slot 1 — ${brief.slot1Label}: not shaped yet`)
 
   if (brief.slot2) lines.push(`Slot 2 — ${formatEdge(brief.slot2)}`)
@@ -521,8 +521,8 @@ export function formatRangeLiquidityBriefForPrompt(
 
   lines.push(
     '',
-    'Reasoning must name the range bait, e.g. "OR30 high 44280 bait — retail shorts stop above; sell liquidity ~44310 near POC".',
-    'When the primary range is formed, reject levels that only cite Asia/London with no tie to that range edge (unless prep before OR30 exists).'
+    'Reasoning must name the range bait, e.g. "Open range high 44280 bait — retail shorts stop above; sell liquidity ~44310 near POC".',
+    'When the primary range is formed, reject levels that only cite Asia/London with no tie to that range edge (unless prep before Open range exists).'
   )
 
   if (brief.yesterdayProfileText) {

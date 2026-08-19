@@ -8,7 +8,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { logger } from '@/lib/utils/logger'
 import { getFinnhubClient } from '@/lib/services/finnhubClient'
-import { getYahooQuote } from '@/lib/yahoo/quote'
+import { getYahooQuote, isYahooPrintLiveGrade } from '@/lib/yahoo/quote'
+import { getOandaPrice } from '@/lib/oanda/pricing'
+import {
+  applyCmeBasis,
+  getCmeBasis,
+  getLastKnownCmeBasis,
+  warmCmeBasis,
+} from '@/lib/trading/cmeBasis'
 import { getRegimeDetector } from '@/lib/trading/regimeDetector'
 import { getRecommendationEngine } from '@/lib/trading/recommendationEngine'
 import type { Instrument, MarketOpenResponse, OvernightOHLC } from '@/types/trading'
@@ -25,19 +32,42 @@ type DeskQuote = {
 }
 
 async function getIndexQuote(instrument: Instrument): Promise<DeskQuote | null> {
-  // Prefer Yahoo CME (MYM/MNQ) — same scale as Tradovate / live chart IB
+  // Yahoo CME (MYM/MNQ) for session OHLC — same scale as Tradovate / live chart IB.
+  // Current last prefers OANDA+basis: Yahoo's CME last is ~10 minutes delayed.
   try {
-    const y = await getYahooQuote(instrument as PriceInstrument)
+    const [y, oanda] = await Promise.all([
+      getYahooQuote(instrument as PriceInstrument),
+      getOandaPrice(instrument as PriceInstrument),
+    ])
+    void warmCmeBasis(instrument as PriceInstrument)
+    const basis =
+      getCmeBasis(instrument as PriceInstrument) ??
+      getLastKnownCmeBasis(instrument as PriceInstrument)
+    const liveCurrent =
+      oanda?.price && oanda.price > 0 && basis != null
+        ? applyCmeBasis(oanda.price, basis)
+        : y && isYahooPrintLiveGrade(y)
+          ? y.price
+          : null
     if (y && y.previous_close > 0) {
-      const open = y.open ?? y.price
-      const high = y.high ?? Math.max(open, y.price)
-      const low = y.low ?? Math.min(open, y.price)
+      const open = y.open ?? liveCurrent ?? y.price
+      const high = y.high ?? Math.max(open, liveCurrent ?? y.price)
+      const low = y.low ?? Math.min(open, liveCurrent ?? y.price)
       return {
         open,
         high,
         low,
         previousClose: y.previous_close,
-        current: y.price,
+        current: liveCurrent ?? y.price,
+      }
+    }
+    if (liveCurrent != null && liveCurrent > 0) {
+      return {
+        open: liveCurrent,
+        high: liveCurrent,
+        low: liveCurrent,
+        previousClose: liveCurrent,
+        current: liveCurrent,
       }
     }
   } catch {

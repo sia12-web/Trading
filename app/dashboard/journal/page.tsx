@@ -905,7 +905,7 @@ function JournalPageInner() {
         <p className="text-[11px] text-gray-600 leading-relaxed">
           {isSim
             ? 'Simulation tab reads paper closes from simulation_trades only — never mixes with live fills. Resetting a replay day clears that day’s paper history.'
-            : 'Live desk only. After the entry window, levels leave the chart; open books stay in MANAGE until stop, target, your confirmed AI exit, or lunch confirm. Cash close auto-liquidates lunch-range fills and any leftovers. Equity above is reconstructed from Tradeify ticket size and closed-trade P&L — not an OANDA margin feed.'}
+            : 'Live desk only. After the entry window, levels leave the chart; open books stay in MANAGE until stop, target, your confirmed AI exit, or lunch confirm. Cash close auto-liquidates leftovers. Equity above is reconstructed from Tradeify ticket size and closed-trade P&L — not an OANDA margin feed.'}
         </p>
       </div>
     </div>

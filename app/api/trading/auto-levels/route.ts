@@ -67,7 +67,7 @@ async function handleAutoLevels(request: NextRequest) {
     const mode =
       modeRaw === 'ib' ||
       modeRaw === 'us_range' ||
-      modeRaw === 'lunch_range' ||
+      modeRaw === 'or30' ||
       modeRaw === 'afternoon' ||
       modeRaw === 'morning'
         ? modeRaw

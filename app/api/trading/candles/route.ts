@@ -9,7 +9,15 @@ import { NextResponse } from 'next/server'
 import { getYahooCandles, getYahooCandlesRange } from '@/lib/yahoo/candles'
 import { getOandaCandles, getOandaCandlesRange } from '@/lib/oanda/candles'
 import { getOandaPrice } from '@/lib/oanda/pricing'
-import { getYahooQuote } from '@/lib/yahoo/quote'
+import { getDayPreviousClose } from '@/lib/yahoo/quote'
+import {
+  applyCmeBasis,
+  applyCmeBasisToCandles,
+  getCmeBasis,
+  getLastKnownCmeBasis,
+  warmCmeBasis,
+  CME_BASIS_REFRESH_MS,
+} from '@/lib/trading/cmeBasis'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import {
   clipAfternoonBars,
@@ -105,7 +113,13 @@ export async function GET(request: Request) {
         candles = yahoo.candles
         source = 'yahoo'
       } else if (oanda?.candles?.length) {
-        candles = oanda.candles
+        // CFD bars must share the live-tip (CME) scale or ±10 entries miss the range.
+        if (getCmeBasis(instrument) == null && getLastKnownCmeBasis(instrument) == null) {
+          await warmCmeBasis(instrument)
+        }
+        const basis =
+          getCmeBasis(instrument) ?? getLastKnownCmeBasis(instrument)
+        candles = applyCmeBasisToCandles(oanda.candles, basis)
         source = 'oanda'
       }
       // Live: afternoon included (lunch freeze off); sim still strips via clipAllAfternoonBars
@@ -141,27 +155,28 @@ export async function GET(request: Request) {
     } | null = null
     if (includeQuote) {
       try {
-        if (source === 'oanda') {
-          const o = await getOandaPrice(instrument)
-          if (o?.price && o.price > 0) {
-            const last = candles[candles.length - 1]!
-            quote = {
-              price: o.price,
-              change: last ? o.price - last.open : 0,
-              change_pct: 0,
-            }
+        // Live tip on CME scale (same path as /quote) so painted ±10 bands
+        // and the streaming last share one book. Delayed Yahoo last is not a tip.
+        const o = await getOandaPrice(instrument)
+        const basis =
+          getCmeBasis(instrument) ?? getLastKnownCmeBasis(instrument)
+        if (!endDate && (basis == null || getCmeBasis(instrument, CME_BASIS_REFRESH_MS) == null)) {
+          void warmCmeBasis(instrument)
+        }
+        if (!endDate && o?.price && o.price > 0) {
+          const price = applyCmeBasis(o.price, basis)
+          const previous_close = getDayPreviousClose(instrument) ?? price
+          const change = price - previous_close
+          quote = {
+            price,
+            change,
+            change_pct: previous_close ? (change / previous_close) * 100 : 0,
+            previous_close,
           }
         }
         if (!quote) {
-          const q = await getYahooQuote(instrument)
-          if (q) {
-            quote = {
-              price: q.price,
-              change: q.change,
-              change_pct: q.change_pct,
-              previous_close: q.previous_close,
-            }
-          }
+          const last = candles[candles.length - 1]!
+          quote = { price: last.close, change: 0, change_pct: 0 }
         }
       } catch {
         const last = candles[candles.length - 1]!

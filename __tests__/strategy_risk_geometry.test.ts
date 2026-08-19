@@ -125,8 +125,8 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       ib: { high: 110, low: 95 },
       morningAttempts: 0,
     }),
-    { label: 'IB', high: 110, low: 95 },
-    'OR30 skipped + IB shaped → auto handoff to IB (OR30 finished)'
+    { label: 'OR30', high: 100, low: 90 },
+    'Open range skipped + OR30 shaped → auto handoff to OR30'
   )
   assert.deepEqual(
     activeRangeForPlaybook({
@@ -136,9 +136,9 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       morningAttempts: 0,
     }),
     { label: 'OR30', high: 100, low: 90 },
-    'OR30 optional while IB not shaped yet'
+    'Open range skipped → OR30 while IB not the morning book'
   )
-  assert.deepEqual(
+  assert.equal(
     activeRangeForPlaybook({
       playbookMode: 'morning',
       instrument: 'DOW',
@@ -146,10 +146,10 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       ib: { high: 110, low: 95 },
       morningAttempts: 1,
     }),
-    { label: 'OR30', high: 100, low: 90 },
-    'morning fill keeps OR30 bait (do not steal to IB mid-manage framing)'
+    null,
+    'morning fill keeps Open-range bait (OR15 not passed → no steal to OR30/IB)'
   )
-  assert.deepEqual(
+  assert.equal(
     activeRangeForPlaybook({
       playbookMode: 'morning',
       instrument: 'DOW',
@@ -157,8 +157,8 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       ib: { high: 110, low: 95 },
       morningAttempts: 0,
     }),
-    { label: 'IB', high: 110, low: 95 },
-    'IB already shaped + OR30 skipped → hand off even if OR30 still marked forming'
+    null,
+    'OR30 still forming + Open range skipped → wait (do not jump to IB)'
   )
   // Forming OR30 with no other shaped bait → null (deny entries)
   assert.equal(
@@ -206,8 +206,8 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       or30: { high: 39_800, low: 39_600, complete: true },
       morningAttempts: 0,
     })?.label,
-    'OR30',
-    'Nikkei OR30 locked + morning playbook → OR30 ±10 (US must not steal)'
+    'US Range',
+    'Nikkei morning skip Open range → US Range (OR30 is not a Tokyo playbook slot)'
   )
   assert.equal(
     activeRangeForPlaybook({
@@ -217,8 +217,8 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       or30: { high: 39_800, low: 39_600, complete: true },
       morningAttempts: 1,
     })?.label,
-    'OR30',
-    'Nikkei actively probing OR30 → keep OR30 bait'
+    'US Range',
+    'Nikkei morning without OR15 still prefers US Range'
   )
   assert.equal(
     activeRangeForPlaybook({
@@ -271,20 +271,19 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
   )
   assert.equal(
     activeRangeForPlaybook({
-      playbookMode: 'lunch_range',
+      playbookMode: 'ib',
       instrument: 'NASDAQ',
-      lunchRange: { high: 18_500, low: 18_400, complete: true },
+      ib: { high: 18_500, low: 18_400, complete: true },
     })?.label,
-    'Lunch-range'
+    'IB'
   )
   assert.equal(
     activeRangeForPlaybook({
-      playbookMode: 'lunch_range',
+      playbookMode: 'ib',
       instrument: 'NASDAQ',
-      lunchRange: { high: 18_500, low: 18_400, complete: false },
-    }),
-    null,
-    'lunch must finish (13:30 ET) before ±10 lunch-range entries'
+      ib: { high: 18_500, low: 18_400 },
+    })?.label,
+    'IB'
   )
 
   const overlays = visibleOverlayEntryRanges({
@@ -339,7 +338,7 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       ib: { high: 18_250, low: 18_050 },
       lunchRange: { high: 18_500, low: 18_400, complete: true },
     }).map((o) => o.label),
-    ['OR30', 'IB', 'Lunch-range']
+    ['OR30', 'IB']
   )
   assert.deepEqual(
     visibleOverlayEntryRanges({
@@ -372,17 +371,21 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
 }
 
 {
-  // OR30 ±10 excluded after morning entryClose — Nikkei (09:45 JST) + NY (10:15 ET)
-  // 2026-07-28 weekday. Tokyo 10:00 JST = 01:00 UTC. NY 10:30 ET (EDT) = 14:30 UTC.
+  // Open range ±10: Nikkei (09:15–09:30 JST) + NY (09:45–10:00 ET)
+  const nikkeiAfterOr15 = new Date('2026-07-28T00:35:00.000Z') // 09:35 JST
+  const nikkeiDuringOr15 = new Date('2026-07-27T00:20:00.000Z') // 09:20 JST
+  const nyAfterOr15 = new Date('2026-07-28T14:05:00.000Z') // 10:05 ET
+  const nyDuringOr15 = new Date('2026-07-28T13:50:00.000Z') // 09:50 ET
+
+  assert.equal(isOr30MorningEntryWindowOpen('NIKKEI', nikkeiAfterOr15), false)
+  assert.equal(isOr30MorningEntryWindowOpen('NIKKEI', nikkeiDuringOr15), true)
+  assert.equal(isOr30MorningEntryWindowOpen('DOW', nyAfterOr15), false)
+  assert.equal(isOr30MorningEntryWindowOpen('NASDAQ', nyDuringOr15), true)
+
   const nikkeiAfterOr30 = new Date('2026-07-28T01:00:00.000Z') // 10:00 JST
   const nikkeiDuringOr30 = new Date('2026-07-27T00:35:00.000Z') // 09:35 JST
   const nyAfterOr30 = new Date('2026-07-28T14:30:00.000Z') // 10:30 ET
   const nyDuringOr30 = new Date('2026-07-28T14:05:00.000Z') // 10:05 ET
-
-  assert.equal(isOr30MorningEntryWindowOpen('NIKKEI', nikkeiAfterOr30), false)
-  assert.equal(isOr30MorningEntryWindowOpen('NIKKEI', nikkeiDuringOr30), true)
-  assert.equal(isOr30MorningEntryWindowOpen('DOW', nyAfterOr30), false)
-  assert.equal(isOr30MorningEntryWindowOpen('NASDAQ', nyDuringOr30), true)
 
   const shaped = {
     or30: { high: 40_050, low: 39_950, complete: true as const },
@@ -452,8 +455,8 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       morningAttempts: 0,
     })
       .map((o) => o.label)
-      .includes('OR30'),
-    'Nikkei during OR30 window: OR30 ±10 still eligible'
+      .includes('US Range'),
+    'Nikkei after Open range: US Range ±10 eligible (OR30 is not a Tokyo playbook slot)'
   )
 
   assert.ok(
@@ -494,7 +497,7 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
 
   assert.ok(
     entryEligibleOverlayRanges({
-      playbookMode: 'lunch_range',
+      playbookMode: 'ib',
       instrument: 'DOW',
       now: new Date('2026-07-28T18:00:00.000Z'), // 14:00 ET
       showOr30: true,
@@ -506,12 +509,12 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       morningAttempts: 2,
     })
       .map((o) => o.label)
-      .includes('Lunch-range'),
-    'NY lunch-range playbook paints lunch ±10; OR30 stay out'
+      .includes('IB'),
+    'NY IB playbook paints IB ±10; OR30 stay out'
   )
   assert.ok(
     !entryEligibleOverlayRanges({
-      playbookMode: 'lunch_range',
+      playbookMode: 'ib',
       instrument: 'DOW',
       now: new Date('2026-07-28T18:00:00.000Z'),
       showOr30: true,
@@ -591,7 +594,7 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
   )
   assert.deepEqual(
     entryEligibleOverlayRanges({
-      playbookMode: 'lunch_range',
+      playbookMode: 'ib',
       instrument: 'DOW',
       now: new Date('2026-07-28T18:00:00.000Z'),
       showOr30: false,
@@ -607,7 +610,7 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
   )
   assert.deepEqual(
     entryEligibleOverlayRanges({
-      playbookMode: 'morning',
+      playbookMode: 'or30',
       instrument: 'NASDAQ',
       now: nyDuringOr30,
       showOr30: false,
@@ -623,7 +626,7 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
   )
   assert.ok(
     entryEligibleOverlayRanges({
-      playbookMode: 'morning',
+      playbookMode: 'or30',
       instrument: 'NASDAQ',
       now: nyDuringOr30,
       showOr30: true,
@@ -636,7 +639,7 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
     })
       .map((o) => o.label)
       .includes('OR30'),
-    'OR30 R toggle ON paints ±10 during the morning window'
+    'OR30 R toggle ON paints ±10 during the OR30 window'
   )
 
   // Closed buckets: no ±10 invite. NY IB bucket stays open until lunch-range start (13:30).
@@ -684,13 +687,13 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
     })
       .map((o) => o.label)
       .includes('IB'),
-    'NY IB ±10 paints at 11:30 ET while IB bucket is open until lunch-range'
+    'NY IB ±10 paints at 11:30 ET while IB bucket is open'
   )
   assert.ok(
     !entryEligibleOverlayRanges({
-      playbookMode: 'lunch_range',
+      playbookMode: 'done',
       instrument: 'NASDAQ',
-      now: new Date('2026-07-28T18:00:00.000Z'), // 14:00 ET — lunch-range owns; IB closed
+      now: new Date('2026-07-28T19:20:00.000Z'), // 15:20 ET — IB entry closed
       showOr30: false,
       showIb: true,
       showLunchRange: true,
@@ -701,7 +704,7 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
     })
       .map((o) => o.label)
       .includes('IB'),
-    'NY IB ±10 off after lunch-range starts (IB ends at 13:30)'
+    'NY IB ±10 off after last-entry cutoff (15:15)'
   )
   assert.deepEqual(
     entryEligibleOverlayRanges({

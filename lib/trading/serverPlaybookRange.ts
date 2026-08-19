@@ -11,12 +11,9 @@
  */
 
 import { getOandaCandles } from '@/lib/oanda/candles'
+import { computeOr15Range } from '@/lib/chart/openingRange15'
 import { computeOr30Range } from '@/lib/chart/openingRange30'
 import { computeInitialBalance } from '@/lib/trading/deskLevels'
-import {
-  computeNycLunchRange,
-  isNycLunchInstrument,
-} from '@/lib/chart/nycLunchSessionRange'
 import { currentNikkeiUsRangeForChart } from '@/lib/chart/nikkeiUsRangeBreakout'
 import { activeRangeForPlaybook, shapedPlaybookRanges } from '@/lib/trading/strategyRiskGeometry'
 import {
@@ -70,6 +67,7 @@ export const SERVER_PLAYBOOK_CANDLE_DAYS = 5
 export type ServerPlaybookBundle = {
   active: StrategyRangeEdges | null
   shaped: {
+    or15: StrategyRangeEdges | null
     or30: StrategyRangeEdges | null
     ib: StrategyRangeEdges | null
     usRange: StrategyRangeEdges | null
@@ -122,11 +120,9 @@ export async function resolveServerPlaybookBundle(args: {
         ? tokyoDateTimeToUnix(todayLocal, oh!, om || 0)
         : nyDateTimeToUnix(todayLocal, oh!, om || 0)
 
+    const or15 = computeOr15Range(deskBars, openUnix, nowUnix)
     const or30 = computeOr30Range(deskBars, openUnix, nowUnix)
     const ib = computeInitialBalance(deskBars, openUnix, nowUnix, 60)
-    const lunch = isNycLunchInstrument(args.instrument)
-      ? computeNycLunchRange(deskBars, todayLocal, nowUnix)
-      : null
     const us =
       args.instrument === 'NIKKEI'
         ? currentNikkeiUsRangeForChart(deskBars, nowUnix)
@@ -151,10 +147,11 @@ export async function resolveServerPlaybookBundle(args: {
 
     const shapedRaw = shapedPlaybookRanges({
       instrument: args.instrument,
+      or15,
       or30,
       ib,
       usRange: us,
-      lunchRange: lunch,
+      lunchRange: null,
     })
     const swing = ib ? findIbLiquiditySwing(deskBars, ib) : null
     const shaped = {
@@ -167,10 +164,11 @@ export async function resolveServerPlaybookBundle(args: {
     const activeRaw = activeRangeForPlaybook({
       playbookMode,
       instrument: args.instrument,
+      or15,
       or30,
       ib,
       usRange: us,
-      lunchRange: lunch,
+      lunchRange: null,
       morningAttempts: ladder.morningAttempts,
     })
     const active = activeRaw
@@ -243,10 +241,10 @@ export function attributeServerPlaybookEntry(args: {
   now?: Date
 }): { range: StrategyRangeEdges | null; usedUsClientFallback: boolean } {
   const candidates = [
+    args.shaped.or15,
     args.shaped.or30,
     args.shaped.ib,
     args.shaped.usRange,
-    args.shaped.lunchRange,
   ].filter((r): r is StrategyRangeEdges => !!r)
 
   const preferLabel =
@@ -361,7 +359,7 @@ export async function assertServerRangeEdgeEntry(args: {
   }
 
   const { shaped, active, ladder } = bundle
-  const candidates = [shaped.or30, shaped.ib, shaped.usRange, shaped.lunchRange].filter(
+  const candidates = [shaped.or15, shaped.or30, shaped.ib, shaped.usRange].filter(
     (r): r is StrategyRangeEdges => !!r
   )
 

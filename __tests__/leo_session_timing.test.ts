@@ -28,88 +28,80 @@ const Y = 2026
 const M = 7
 const D = 15
 
-// ── NASDAQ / DOW mid-morning (11:00 ET): OR30 done, IB open, lunch not yet ──
+// ── NASDAQ / DOW 11:00 ET: Open range done, OR30 closed, IB open ──
 {
   const now = etDate(Y, M, D, 11, 0)
   for (const inst of ['NASDAQ', 'DOW'] as const) {
     const t = buildLeoSessionTiming({ instrument: inst, now })
-    assert(t.or30.status === 'finished', `${inst} 11:00 OR30 finished`)
-    assert(/OR30 entry is CLOSED/i.test(t.or30.sentence), `${inst} OR30 CLOSED sentence`)
-    assert(t.mid.label === 'IB', `${inst} mid label IB`)
-    assert(t.mid.status === 'open', `${inst} 11:00 IB open`)
-    assert(/IB is OPEN until lunch/i.test(t.mid.sentence), `${inst} IB open sentence`)
-    assert(t.late.label === 'Lunch-range', `${inst} late label lunch`)
-    assert(t.late.status === 'not_yet', `${inst} 11:00 lunch not yet`)
-    assert(
-      /Lunch-range not open until/i.test(t.late.sentence),
-      `${inst} lunch not-open sentence`
-    )
+    assert(t.or30.status === 'finished', `${inst} 11:00 Open range finished`)
+    assert(/Open range entry is CLOSED/i.test(t.or30.sentence), `${inst} Open range CLOSED sentence`)
+    assert(t.mid.label === 'OR30', `${inst} mid label OR30`)
+    assert(t.mid.status === 'closed', `${inst} 11:00 OR30 closed`)
+    assert(t.late.label === 'IB', `${inst} late label IB`)
+    assert(t.late.status === 'open', `${inst} 11:00 IB open`)
+    assert(/IB is OPEN/i.test(t.late.sentence), `${inst} IB open sentence`)
     assert(t.montrealTime.length >= 8, `${inst} montreal wall clock`)
     assert(t.deskLocalTime.startsWith('11:00'), `${inst} desk local 11:00`)
     const packed = formatLeoSessionTimingForPrompt(t)
     assert(packed.includes('SESSION CLOCK STATUS'), 'prompt header')
-    assert(packed.includes('OR30 status=finished'), `${inst} packed OR30 finished`)
-    assert(packed.includes('Lunch-range status=not_yet'), `${inst} packed lunch not_yet`)
+    assert(packed.includes('Open range status=finished'), `${inst} packed Open range finished`)
+    assert(packed.includes('IB status=open'), `${inst} packed IB open`)
   }
 }
 
-// ── After OR30 entry close, before IB (10:20 ET) ──
+// ── After Open range entry close, inside OR30 (10:20 ET) ──
 {
   const now = etDate(Y, M, D, 10, 20)
   const t = buildLeoSessionTiming({ instrument: 'NASDAQ', now })
-  assert(t.or30.status === 'finished', '10:20 OR30 finished')
-  assert(t.mid.status === 'not_yet', '10:20 IB not yet (locks 10:30)')
-  assert(t.late.status === 'not_yet', '10:20 lunch not yet')
+  assert(t.or30.status === 'finished', '10:20 Open range finished')
+  assert(t.mid.status === 'open', '10:20 OR30 open (locks 10:00, until 10:30)')
+  assert(t.late.status === 'not_yet', '10:20 IB not yet (locks 10:30)')
 }
 
 // ── OR30 locked window (10:05 ET) ──
 {
   const now = etDate(Y, M, D, 10, 5)
   const t = buildLeoSessionTiming({ instrument: 'NASDAQ', now })
-  assert(t.or30.status === 'locked', '10:05 OR30 locked')
-  assert(/OR30 is LOCKED/i.test(t.or30.sentence), 'OR30 locked sentence')
-  assert(t.mid.status === 'not_yet', '10:05 IB not yet')
-  assert(t.late.status === 'not_yet', '10:05 lunch not yet')
+  assert(t.or30.status === 'finished', '10:05 Open range finished')
+  assert(t.mid.status === 'open', '10:05 OR30 open')
+  assert(/OR30 is OPEN/i.test(t.mid.sentence), 'OR30 open sentence')
+  assert(t.late.status === 'not_yet', '10:05 IB not yet')
 }
 
-// ── OR30 forming (09:45 ET) ──
+// ── Open range locked (09:45 ET) ──
 {
   const now = etDate(Y, M, D, 9, 45)
   const t = buildLeoSessionTiming({ instrument: 'DOW', now })
-  assert(t.or30.status === 'forming', '09:45 OR30 forming')
-  assert(/FORMING/i.test(t.or30.sentence), 'forming sentence')
-  assert(t.mid.status === 'not_yet', '09:45 IB not yet')
-  assert(t.late.status === 'not_yet', '09:45 lunch not yet')
+  assert(t.or30.status === 'locked', '09:45 Open range locked')
+  assert(/LOCKED/i.test(t.or30.sentence), 'locked sentence')
+  assert(t.mid.status === 'not_yet', '09:45 OR30 not yet')
+  assert(t.late.status === 'not_yet', '09:45 IB not yet')
 }
 
-// ── After lunch opens (13:30 ET) ──
+// ── IB still open after lunch confirm (13:30 ET) ──
 {
   const now = etDate(Y, M, D, 13, 30)
   const t = buildLeoSessionTiming({ instrument: 'NASDAQ', now })
-  assert(t.or30.status === 'finished', '13:30 OR30 finished')
-  assert(t.mid.status === 'closed', '13:30 IB closed')
-  assert(t.late.status === 'open', '13:30 lunch open')
-  assert(/Lunch-range is OPEN/i.test(t.late.sentence), 'lunch open sentence')
+  assert(t.or30.status === 'finished', '13:30 Open range finished')
+  assert(t.mid.status === 'closed', '13:30 OR30 closed')
+  assert(t.late.status === 'open', '13:30 IB still open')
+  assert(/IB is OPEN/i.test(t.late.sentence), 'IB open sentence')
 }
 
-// ── Before lunch, IB still open (13:00 ET) ──
+// ── IB still open (13:00 ET) ──
 {
   const now = etDate(Y, M, D, 13, 0)
   const t = buildLeoSessionTiming({ instrument: 'DOW', now })
-  assert(t.or30.status === 'finished', '13:00 OR30 finished')
-  assert(t.mid.status === 'open', '13:00 IB still open')
-  assert(t.late.status === 'not_yet', '13:00 lunch not yet')
-  assert(
-    /Lunch-range not open until 13:30/i.test(t.late.sentence),
-    '13:00 lunch not until 13:30 Montreal'
-  )
+  assert(t.or30.status === 'finished', '13:00 Open range finished')
+  assert(t.mid.status === 'closed', '13:00 OR30 closed')
+  assert(t.late.status === 'open', '13:00 IB still open')
 }
 
 // ── NIKKEI: during optional OR30 (09:35 JST) — US Range clock open, Tokyo IB not yet ──
 {
   const now = jstDate(Y, M, D, 9, 35)
   const t = buildLeoSessionTiming({ instrument: 'NIKKEI', now })
-  assert(t.or30.status === 'locked', 'Nikkei 09:35 OR30 locked')
+  assert(t.or30.status === 'finished', 'Nikkei 09:35 Open range finished')
   assert(t.mid.label === 'US Range', 'Nikkei mid = US Range')
   assert(t.mid.status === 'open', 'Nikkei US Range open at 09:35')
   assert(t.late.label === 'Tokyo IB', 'Nikkei late = Tokyo IB')
@@ -120,8 +112,8 @@ const D = 15
 {
   const now = jstDate(Y, M, D, 9, 50)
   const t = buildLeoSessionTiming({ instrument: 'NIKKEI', now })
-  assert(t.or30.status === 'finished', 'Nikkei 09:50 OR30 finished')
-  assert(/OR30 entry is CLOSED/i.test(t.or30.sentence), 'Nikkei OR30 CLOSED')
+  assert(t.or30.status === 'finished', 'Nikkei 09:50 Open range finished')
+  assert(/Open range entry is CLOSED/i.test(t.or30.sentence), 'Nikkei Open range CLOSED')
   assert(t.mid.status === 'open', 'Nikkei US Range still open 09:50')
   assert(t.late.status === 'not_yet', 'Nikkei Tokyo IB not yet 09:50')
 }
@@ -234,10 +226,9 @@ const D = 15
 
   const packed = formatLiveVoiceContextForLlm(mock)
   assert(packed.includes('SESSION CLOCK STATUS'), 'LLM pack has clock status')
-  assert(packed.includes('OR30 status=finished'), 'LLM pack OR30 finished')
+  assert(packed.includes('Open range status=finished'), 'LLM pack Open range finished')
   assert(packed.includes('IB status=open'), 'LLM pack IB open')
-  assert(packed.includes('Lunch-range status=not_yet'), 'LLM pack lunch not_yet')
-  assert(packed.includes('OR30 entry is CLOSED'), 'LLM pack OR30 CLOSED sentence')
+  assert(packed.includes('Open range entry is CLOSED'), 'LLM pack Open range CLOSED sentence')
 }
 
 console.log('leo_session_timing: all passed')

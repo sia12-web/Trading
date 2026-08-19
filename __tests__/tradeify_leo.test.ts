@@ -164,19 +164,20 @@ const mock = {
 
 // ── Fresh clock + Tradeify block at 11:00 ET ─────────────────────────────────
 
-assert(timing.mid.label === 'IB', '11:00 mid is IB')
-assert(timing.mid.status === 'open', '11:00 IB open')
-assert(timing.late.status === 'not_yet', '11:00 lunch not yet')
+assert(timing.mid.label === 'OR30', '11:00 mid is OR30')
+assert(timing.mid.status === 'closed', '11:00 OR30 closed')
+assert(timing.late.label === 'IB', '11:00 late is IB')
+assert(timing.late.status === 'open', '11:00 IB open')
 assert(formatLeoSessionTimingForPrompt(timing).includes('IB status=open'), 'clock IB open')
 assert(
-  formatLeoSessionTimingForPrompt(timing).includes('Lunch-range status=not_yet'),
-  'clock lunch not yet'
+  formatLeoSessionTimingForPrompt(timing).includes('OR30 status=closed'),
+  'clock OR30 closed'
 )
 
 const packed = formatLiveVoiceContextForLlm(mock)
 assert(packed.includes('TRADEIFY GROWTH $50k'), 'Leo packed Tradeify header')
 assert(packed.includes('IB status=open'), 'Leo packed IB open')
-assert(packed.includes('Lunch-range status=not_yet'), 'Leo packed lunch not yet')
+assert(packed.includes('OR30 status=closed'), 'Leo packed OR30 closed')
 assert(packed.includes('$1,100') || packed.includes('$1100'), 'Leo leftover DLL')
 assert(packed.includes('16:59 Montreal'), 'Leo flatten 16:59 Montreal')
 assert(packed.includes(snap.asOfIso), 'Leo as-of ISO')

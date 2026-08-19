@@ -13,11 +13,12 @@ import { logger } from '@/lib/utils/logger'
 import { getOandaPrice } from '@/lib/oanda/pricing'
 import { updateOandaTradeStopLoss, partialCloseOandaTrade } from '@/lib/oanda/orders'
 import {
+  alignedTradeTpProgress,
   breakEvenStopPrice,
   breakEvenShouldOffer,
   breakEvenTpProgressThreshold,
   stopSafeVersusMarket,
-  tradeTpProgress,
+  trailShouldOffer,
 } from '@/lib/trading/breakEvenStop'
 import type { Instrument } from '@/types/trading'
 import type { Instrument as PriceInstrument } from '@/types/price-feed'
@@ -87,6 +88,21 @@ export async function POST(request: Request) {
     const isLong = position.entry_direction === 'LONG'
     const confidence = Number(position.regime_confidence || 75)
     const oandaTradeId = position.oanda_trade_id ? String(position.oanda_trade_id) : null
+    const brokerFill =
+      Number(position.broker_fill_price) > 0 ? Number(position.broker_fill_price) : null
+    const liveOanda = marketPrice > 0 ? marketPrice : null
+    const progressArgs = {
+      instrument,
+      entry,
+      takeProfit: tp,
+      livePrice: progressPrice,
+      isLong,
+      stopLoss: currentSl,
+      brokerFill,
+      liveOanda,
+      riskAmount: Number(position.risk_amount) || null,
+      positionSize: Math.abs(Number(position.position_size) || 0) || null,
+    }
 
     // Skip BE re-prompt if trader already rejected for this position
     const { data: priorDecisions } = await supabase
@@ -109,21 +125,16 @@ export async function POST(request: Request) {
         /Breakeven|BREAKEVEN/i.test(d.notes)
     )
 
-    // Distance metrics — same helper as the manage →TP % bar
-    const tpStats = tradeTpProgress({
-      entry,
-      takeProfit: tp,
-      livePrice: progressPrice,
-      isLong,
-    })
+    // Desk-scale progress (CME live vs ticket TP). Never mix in the OANDA fill.
+    const tpStats = alignedTradeTpProgress(progressArgs)
     const currentMoved = tpStats.moved
-    const tpProgress = tpStats.progress
+    const tpProgress = tpStats.inProfit ? tpStats.progress : 0
+    const inProfit = tpStats.aligned && tpStats.inProfit
     const initialRisk = isLong ? entry - currentSl : currentSl - entry
     const rMultiple =
       initialRisk > 0 && Number.isFinite(currentMoved) ? currentMoved / initialRisk : 0
 
     const beProgressThreshold = breakEvenTpProgressThreshold(instrument)
-    const trailProgressThreshold = instrument === 'NASDAQ' ? 0.60 : instrument === 'NIKKEI' ? 0.45 : 0.30
     const trailPctOffset = instrument === 'NASDAQ' ? 0.50 : instrument === 'NIKKEI' ? 0.40 : 0.30
     const autoExecute = body.auto_execute === true // Default is false: Require Trader Confirmation (CONFIRM/REJECT)
     const confirmAction = body.confirm_action // 'CONFIRM' | 'REJECT'
@@ -195,13 +206,7 @@ export async function POST(request: Request) {
     }
 
     // 1. BREAKEVEN — only when live is in profit toward TP (same as →TP bar)
-    const beReady = breakEvenShouldOffer({
-      instrument,
-      entry,
-      takeProfit: tp,
-      livePrice: progressPrice,
-      isLong,
-    })
+    const beReady = inProfit && breakEvenShouldOffer(progressArgs)
     if (beReady && !beRejected && !beConfirmed) {
       const isSlBelowEntry = isLong ? currentSl < entry : currentSl > entry
 
@@ -251,7 +256,7 @@ export async function POST(request: Request) {
     }
 
     // 2. DYNAMIC TRAILING STOP RULE (Instrument 2-Year Empirical Trail threshold reached)
-    if (tpProgress >= trailProgressThreshold && !recommendation) {
+    if (inProfit && trailShouldOffer(progressArgs) && !recommendation) {
       const trailOffset = currentMoved * trailPctOffset
       const calculatedTrail = isLong ? entry + trailOffset : entry - trailOffset
       const roundedTrail = Math.round(calculatedTrail * 10) / 10
@@ -290,7 +295,7 @@ export async function POST(request: Request) {
 
     // 3. PARTIAL SCALE-OUT RULE (Instrument 2-Year Empirical Scale-Out threshold reached)
     const alreadyScaledOut = Boolean(position.scaled_out)
-    if (tpProgress >= beProgressThreshold && confidence >= 70 && !alreadyScaledOut && !recommendation) {
+    if (inProfit && tpProgress >= beProgressThreshold && confidence >= 70 && !alreadyScaledOut && !recommendation) {
       const totalUnits = Math.abs(Number(position.position_size || 1))
       if (totalUnits > 1) {
         const unitsToClose = Math.max(1, Math.floor(totalUnits * 0.50))
@@ -328,6 +333,7 @@ export async function POST(request: Request) {
       position_id: position.id,
       instrument,
       current_price: currentPrice,
+      in_profit: inProfit,
       tp_progress: Math.round(tpProgress * 100) / 100,
       r_multiple: Math.round(rMultiple * 100) / 100,
       action_taken: actionTaken,

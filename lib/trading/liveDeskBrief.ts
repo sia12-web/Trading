@@ -91,6 +91,7 @@ export type ShapedRangeInput = {
 export type InstrumentBriefFacts = {
   instrument: DeskInstrument
   ladder?: AttemptLadder
+  or15?: ShapedRangeInput
   or30?: ShapedRangeInput
   ib?: ShapedRangeInput
   usRange?: ShapedRangeInput
@@ -149,69 +150,69 @@ function or30State(
   const s = sessionFor(instrument)
   const t = parseTimeToSeconds(timeInTz(now, s.tz))
   const open = parseTimeToSeconds(s.marketOpen)
-  const or30Lock = open + 30 * 60
+  const or15Lock = open + 15 * 60
   const entryClose = parseTimeToSeconds(s.entryClose)
   const used = ladder.morningAttempts
   const max = ladder.maxMorningAttempts
 
   if (t < open) {
     return {
-      label: 'OR30',
+      label: 'Open range',
       state: 'upcoming',
       probesUsed: used,
       probesMax: max,
       note: `Forms at cash open · locks ~${deskLocalHmsAsTraderDisplay(
-        s.marketOpen === '09:30:00' ? '10:00:00' : '09:30:00',
+        s.marketOpen === '09:30:00' ? '09:45:00' : '09:15:00',
         s.tz,
         now
       )} ${TRADER_DISPLAY_LABEL}`,
     }
   }
-  if (t < or30Lock) {
+  if (t < or15Lock) {
     return {
-      label: 'OR30',
+      label: 'Open range',
       state: 'forming',
       probesUsed: used,
       probesMax: max,
-      note: 'OR30 forming — do not enter until the first 30 minutes lock',
+      note: 'Open range forming — do not enter until the first 15 minutes lock',
     }
   }
   if (!ladder.morningEligible || used >= max) {
     return {
-      label: 'OR30',
+      label: 'Open range',
       state: 'dead',
       probesUsed: used,
       probesMax: max,
       note:
         used >= max
-          ? 'OR30 closed — probes used (2/2). Do not enter.'
-          : 'OR30 closed — morning bucket released. Do not enter.',
+          ? 'Open range closed — probes used (2/2). Do not enter.'
+          : 'Open range closed — morning bucket released. Do not enter.',
     }
   }
   if (!isOr30MorningEntryWindowOpen(instrument, now) || t > entryClose) {
     return {
-      label: 'OR30',
+      label: 'Open range',
       state: 'dead',
       probesUsed: used,
       probesMax: max,
-      note: 'OR30 closed — morning entry window over. Do not enter.',
+      note: 'Open range closed — morning entry window over. Do not enter.',
     }
   }
   if (!or30 || or30.complete !== true) {
     return {
-      label: 'OR30',
+      label: 'Open range',
       state: 'forming',
       probesUsed: used,
       probesMax: max,
-      note: 'OR30 not shaped yet — wait for lock',
+      note: 'Open range not shaped yet — wait for lock',
     }
   }
   return {
-    label: 'OR30',
+    label: 'Open range',
     state: 'open',
     probesUsed: used,
     probesMax: max,
-    note: `Open · ${used}/${max} probes · ±10 ${rangeEdgeBandLegend({ label: 'OR30', high: or30.high, low: or30.low })}`,
+    note: `Open · ${used}/${max} probes · ±10 ${rangeEdgeBandLegend({ label: 'OR15', high: or30.high, low: or30.low })}`,
   }
 }
 
@@ -403,7 +404,7 @@ export function buildInstrumentDeskCard(
   const playbookTitle = deskPlaybookTitle(playbookMode, instrument)
 
   const books: DeskBookLine[] = []
-  books.push(or30State(instrument, now, facts.or30 ?? null, ladder))
+  books.push(or30State(instrument, now, facts.or15 ?? null, ladder))
   if (tokyo) {
     books.push(
       midBookLine(instrument, now, ladder, facts.usRange ?? null, 'US Range')
@@ -412,9 +413,9 @@ export function buildInstrumentDeskCard(
       lateBookLine(instrument, now, ladder, facts.ib ?? null, 'Tokyo IB')
     )
   } else {
-    books.push(midBookLine(instrument, now, ladder, facts.ib ?? null, 'IB'))
+    books.push(midBookLine(instrument, now, ladder, facts.or30 ?? null, 'OR30'))
     books.push(
-      lateBookLine(instrument, now, ladder, facts.lunchRange ?? null, 'Lunch-range')
+      lateBookLine(instrument, now, ladder, facts.ib ?? null, 'IB')
     )
   }
 
@@ -435,14 +436,13 @@ export function buildInstrumentDeskCard(
   }
 
   let activeRange: RangeEdgeLevels | null = null
-  if (openBook === 'OR30') activeRange = shaped(facts.or30 ?? null, 'OR30')
+  if (openBook === 'Open range') activeRange = shaped(facts.or15 ?? null, 'OR15')
+  else if (openBook === 'OR30') activeRange = shaped(facts.or30 ?? null, 'OR30')
   else if (openBook === 'IB') activeRange = shaped(facts.ib ?? null, 'IB')
   else if (openBook === 'Tokyo IB')
     activeRange = shaped(facts.ib ?? null, 'Tokyo IB')
   else if (openBook === 'US Range')
     activeRange = shaped(facts.usRange ?? null, 'US Range')
-  else if (openBook === 'Lunch-range')
-    activeRange = shaped(facts.lunchRange ?? null, 'Lunch-range')
 
   const bandHint =
     tradeableNow && activeRange

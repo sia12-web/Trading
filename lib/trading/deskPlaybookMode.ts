@@ -1,7 +1,7 @@
 /**
  * Live desk playbook mode — three ranges per desk:
- *   DOW/NASDAQ: Morning (OR30) → IB → Lunch-break → Lunch-range
- *   NIKKEI:     Morning (OR30) → US Range → IB prep → IB
+ *   DOW/NASDAQ: Morning (Open range / OR15) → OR30 → IB
+ *   NIKKEI:     Morning (Open range / OR15) → US Range → IB prep → Tokyo IB
  */
 
 import {
@@ -25,10 +25,10 @@ import { parseTimeToSeconds } from '@/lib/utils/timeUtils'
 
 export type DeskPlaybookMode =
   | 'morning'
+  | 'or30'
   | 'ib'
   | 'us_range'
   | 'lunch_break'
-  | 'lunch_range'
   | 'done'
 
 function timeInTz(date: Date, timeZone: string): string {
@@ -92,8 +92,8 @@ export function resolveDeskPlaybookMode(args: {
         })
 
   if (range === 'us_range') return 'us_range'
+  if (range === 'or30') return 'or30'
   if (range === 'ib') return 'ib'
-  if (range === 'lunch_range') return 'lunch_range'
 
   const midStart = parseTimeToSeconds(ibStrategyStartHms(market))
   const midEnd = parseTimeToSeconds(ibStrategyEndHms(market))
@@ -102,7 +102,6 @@ export function resolveDeskPlaybookMode(args: {
   const close = parseTimeToSeconds(sess.marketClose)
 
   // Prep until slot-3 opens: after mid clock ends, or sooner if mid probes exhausted
-  // (NY IB end === lunch start, so the exhaustion path is the main prep gap).
   if (
     ladder.lunchEligible &&
     t < lateStart &&
@@ -112,8 +111,6 @@ export function resolveDeskPlaybookMode(args: {
     return 'lunch_break'
   }
 
-  // Slot-3 clock with no unlock (ineligible) → done. Never treat entry window as prep.
-  // Option B: earlier-window fills do NOT lock lunch / Tokyo IB.
   if (t >= lateStart && t < close) {
     if (
       ladder.revengeLocked ||
@@ -123,7 +120,6 @@ export function resolveDeskPlaybookMode(args: {
     ) {
       return 'done'
     }
-    // Eligible but resolveRangeStrategy returned null (should be rare) — prep framing
     return 'lunch_break'
   }
 
@@ -135,16 +131,16 @@ export function deskPlaybookTitle(mode: DeskPlaybookMode, instrument?: string): 
   switch (mode) {
     case 'us_range':
       return 'US Range playbook'
+    case 'or30':
+      return 'OR30 playbook'
     case 'ib':
-      return tokyo ? 'IB playbook' : 'IB playbook'
+      return tokyo ? 'Tokyo IB playbook' : 'IB playbook'
     case 'lunch_break':
-      return tokyo ? 'IB prep playbook' : 'Lunch break playbook'
-    case 'lunch_range':
-      return tokyo ? 'Tokyo IB playbook' : 'Lunch-range playbook'
+      return tokyo ? 'IB prep playbook' : 'IB prep playbook'
     case 'done':
       return 'Watch playbook'
     default:
-      return 'Morning playbook (OR30)'
+      return 'Morning playbook (Open range)'
   }
 }
 
@@ -156,12 +152,12 @@ export function deskPlaybookButtonLabel(
   switch (mode) {
     case 'us_range':
       return 'US Range'
+    case 'or30':
+      return 'OR30'
     case 'ib':
-      return 'IB playbook'
+      return tokyo ? 'Tokyo IB' : 'IB playbook'
     case 'lunch_break':
-      return tokyo ? 'IB prep' : 'Lunch break'
-    case 'lunch_range':
-      return tokyo ? 'Tokyo IB' : 'Lunch-range'
+      return tokyo ? 'IB prep' : 'IB prep'
     case 'done':
       return 'Watch'
     default:
@@ -177,14 +173,14 @@ export function isDeskEntryWindowActive(args: {
   const { playbookMode, rangeStrategy, canPlaceEntry } = args
   if (
     rangeStrategy === 'ib' ||
-    rangeStrategy === 'lunch_range' ||
+    rangeStrategy === 'or30' ||
     rangeStrategy === 'us_range'
   ) {
     return true
   }
   if (
     playbookMode === 'ib' ||
-    playbookMode === 'lunch_range' ||
+    playbookMode === 'or30' ||
     playbookMode === 'us_range'
   ) {
     return true
@@ -224,33 +220,31 @@ export function deskPlaybookHint(mode: DeskPlaybookMode, instrument?: string): s
   switch (mode) {
     case 'us_range':
       return 'Prior NYC session range — up to 2 probes (progressive risk; entries within ±10 pts of range high or low only). Unlocks after morning clock ends or morning probes are exhausted.'
+    case 'or30':
+      return '30-minute range — up to 2 probes (progressive risk; entries within ±10 pts of H / L). Opens when OR30 locks (10:00 Montreal) and stays open until IB locks (10:30 Montreal).'
     case 'ib':
       return tokyo
         ? 'Tokyo IB range — up to 2 probes (progressive risk; entries within ±10 pts of H / L). Unlocks when first-hour IB locks (21:00 Montreal), or sooner if US Range probes are exhausted — open through cash close (02:00 Montreal).'
-        : 'Initial Balance — up to 2 probes (progressive risk; entries within ±10 pts of H / L). Opens when IB locks (10:30 Montreal) and stays open until lunch-range starts (13:30 Montreal). Auto-takes over when IB locks if OR30 was skipped.'
+        : 'Initial Balance — up to 2 probes (progressive risk; entries within ±10 pts of H / L). Opens when IB locks (10:30 Montreal) and stays open until last-entry cutoff (15:15 Montreal). Auto-takes over when IB locks if OR30 was skipped.'
     case 'lunch_break':
       return tokyo
         ? 'Waiting for first-hour Tokyo IB lock (21:00 Montreal) — levels update. IB ±10 opens when the hour locks (or earlier if US Range probes were exhausted).'
-        : 'IB entry closed. Prep for lunch-range — levels update. Lunch opens on the clock (or earlier if IB probes were exhausted).'
-    case 'lunch_range':
-      return tokyo
-        ? 'Tokyo IB — up to 2 probes (progressive risk) while the PM entry window is open (entries within ±10 pts of H / L).'
-        : 'Lunch-range — up to 2 probes (progressive risk) while the PM entry window is open (entries within ±10 pts of range high or low).'
+        : 'OR30 entry closed. Prep for IB — levels update. IB opens on the clock (or earlier if OR30 probes were exhausted).'
     case 'done':
       return 'Entry windows done for today — manage if open (confirm lunch close or ride to cash close), no new entries.'
     default:
       return tokyo
-        ? 'Morning OR30 — optional (up to 2 probes, progressive risk, ±10 of H / L once locked). Skip freely → US Range then Tokyo IB (session cap 3 fills total).'
-        : 'Morning OR30 — optional (up to 2 probes, progressive risk, ±10 of H / L once locked). Skip freely; when IB locks with no morning fill, desk auto-moves to IB (OR30 finished).'
+        ? 'Morning Open range (first 15m) — optional (up to 2 probes, progressive risk, ±10 of H / L once locked). Skip freely → US Range then Tokyo IB (session cap 3 fills total).'
+        : 'Morning Open range (first 15m) — optional (up to 2 probes, progressive risk, ±10 of H / L once locked). Skip freely; when OR30 locks with no morning fill, desk auto-moves to OR30.'
   }
 }
 
 export function deskPlaybookUsesAfternoonLevels(mode: DeskPlaybookMode): boolean {
   return (
     mode === 'ib' ||
+    mode === 'or30' ||
     mode === 'us_range' ||
     mode === 'lunch_break' ||
-    mode === 'lunch_range' ||
     mode === 'done'
   )
 }
@@ -258,17 +252,16 @@ export function deskPlaybookUsesAfternoonLevels(mode: DeskPlaybookMode): boolean
 export function deskPlaybookAnalysisMode(
   mode: DeskPlaybookMode,
   instrument?: string
-): 'morning' | 'ib' | 'us_range' | 'lunch_range' | 'afternoon' {
+): 'morning' | 'or30' | 'ib' | 'us_range' | 'afternoon' {
   switch (mode) {
     case 'us_range':
       return 'us_range'
+    case 'or30':
+      return 'or30'
     case 'ib':
       return 'ib'
     case 'lunch_break':
-      // NY: prep for lunch-range · Tokyo: prep for IB
-      return instrument === 'NIKKEI' ? 'ib' : 'lunch_range'
-    case 'lunch_range':
-      return 'lunch_range'
+      return instrument === 'NIKKEI' ? 'ib' : 'or30'
     case 'done':
       return 'afternoon'
     default:

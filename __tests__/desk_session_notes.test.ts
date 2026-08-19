@@ -22,8 +22,9 @@ const dow = formatClockInNote({
 assert.match(dow.telegram, /CLOCK IN/)
 assert.match(dow.telegram, /Session START/)
 assert.match(dow.telegram, /Session END/)
+assert.match(dow.telegram, /Open range/)
 assert.match(dow.telegram, /OR30/)
-assert.match(dow.telegram, /Lunch-range/)
+assert.match(dow.telegram, /IB locks/)
 
 const nikkei = formatSessionScheduleBlock(
   'NIKKEI',

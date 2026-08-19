@@ -86,8 +86,8 @@ assert(MAX_STOP_HITS === 2, 'max stops must be 2')
     morningAttempts: 1,
     stopHits: 0,
   })
-  assert(waiting.canPlaceEntry === false, 'no IB entry before 10:30 lock')
-  assert(waiting.rangeStrategy !== 'ib', 'IB strategy not open at 10:20')
+  assert(waiting.canPlaceEntry === true, 'OR30 entry at 10:20 after morning probe')
+  assert(waiting.rangeStrategy === 'or30', 'OR30 strategy at 10:20')
 
   const afterIbLock = new Date('2026-07-14T14:35:00.000Z') // 10:35 ET
   const unlocked = resolveSimMorningGate({
@@ -103,8 +103,8 @@ assert(MAX_STOP_HITS === 2, 'max stops must be 2')
 }
 
 {
-  // OR30 forming — no morning entry yet
-  const forming = new Date('2026-07-14T13:45:00.000Z') // 09:45 ET
+  // Open range forming — no morning entry yet
+  const forming = new Date('2026-07-14T13:40:00.000Z') // 09:40 ET
   const gate = resolveSimMorningGate({
     now: forming,
     instrument: 'NASDAQ',
@@ -112,12 +112,12 @@ assert(MAX_STOP_HITS === 2, 'max stops must be 2')
     attemptsUsed: 0,
     stopHits: 0,
   })
-  assert(gate.canPlaceEntry === false, 'OR30 forming blocks morning entry')
-  assert(/OR30 forming/i.test(gate.message), gate.message)
+  assert(gate.canPlaceEntry === false, 'Open range forming blocks morning entry')
+  assert(/Open range forming/i.test(gate.message), gate.message)
 }
 
 {
-  const morning = new Date('2026-07-14T14:00:00.000Z') // 10:00 ET — OR30 lock
+  const morning = new Date('2026-07-14T13:50:00.000Z') // 09:50 ET — Open range lock
   const gate = resolveSimMorningGate({
     now: morning,
     instrument: 'NASDAQ',
@@ -126,7 +126,7 @@ assert(MAX_STOP_HITS === 2, 'max stops must be 2')
     stopHits: 0,
   })
   assert(gate.phase === 'ENTRY', `expected ENTRY fresh, got ${gate.phase}`)
-  assert(gate.canPlaceEntry === true, 'fresh morning can place after OR30 lock')
+  assert(gate.canPlaceEntry === true, 'fresh morning can place after Open range lock')
 }
 
 {
@@ -169,9 +169,9 @@ assert(MAX_STOP_HITS === 2, 'max stops must be 2')
     attemptsUsed: 0,
     stopHits: 0,
   })
-  assert(gate.phase === 'ENTRY', `Nikkei US Range ENTRY at 09:20, got ${gate.phase}`)
-  assert(gate.canPlaceEntry === true, 'Nikkei US Range unlock at open')
-  assert(gate.rangeStrategy === 'us_range', 'US range strategy at 09:20')
+  assert(gate.phase === 'ENTRY', `Nikkei Open range ENTRY at 09:20, got ${gate.phase}`)
+  assert(gate.canPlaceEntry === true, 'Nikkei Open range unlock after 15m lock')
+  assert(gate.rangeStrategy == null, 'Open range — no slot-2 strategy at 09:20')
 }
 
 {
@@ -203,7 +203,7 @@ assert(MAX_STOP_HITS === 2, 'max stops must be 2')
   })
   assert(gate.phase === 'ENTRY', `lunch-range ENTRY, got ${gate.phase}`)
   assert(gate.canPlaceEntry === true, 'lunch-range unlock')
-  assert(gate.rangeStrategy === 'lunch_range', 'lunch_range strategy')
+  assert(gate.rangeStrategy === 'ib', 'lunch_range strategy')
 }
 
 console.log('session_attempts: ok')

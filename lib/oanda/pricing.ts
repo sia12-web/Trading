@@ -11,7 +11,10 @@ import {
   oandaHeaders,
   toOandaInstrument,
 } from '@/lib/oanda/config'
-import { getLastStreamedPrice } from '@/lib/oanda/pricingStream'
+import {
+  getLastStreamedPrice,
+  recordOandaMidSample,
+} from '@/lib/oanda/pricingStream'
 
 export type OandaPriceQuote = {
   symbol: string
@@ -78,6 +81,11 @@ export async function getOandaPrice(
               source: 'oanda',
             }
             priceCache.set(instrument, { at: Date.now(), quote })
+            recordOandaMidSample(
+              instrument,
+              quote.price,
+              quote.timestamp > 0 ? quote.timestamp * 1000 : Date.now()
+            )
             return quote
           }
         }
@@ -104,6 +112,11 @@ export async function getOandaPrice(
       source: 'oanda',
     }
     priceCache.set(instrument, { at: Date.now(), quote })
+    recordOandaMidSample(
+      instrument,
+      quote.price,
+      quote.timestamp > 0 ? quote.timestamp * 1000 : Date.now()
+    )
     return quote
   } catch (e) {
     console.error(

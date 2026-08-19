@@ -2,7 +2,7 @@
 
 /**
  * Simulation replay desk (query-param driven).
- * Flow: pick day → cash open → full 2/2/2 session (OR30 → IB/US → Lunch-range) → cash close
+ * Flow: pick day → cash open → full 2/2/2 session (Open range → OR30/US → IB) → cash close
  */
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -191,6 +191,15 @@ import {
 } from '@/lib/trading/ibExtendAdvice'
 import { DeskCallModePrompt } from '@/app/dashboard/chart/components/DeskCallModePrompt'
 import {
+  OR15_COLORS,
+  computeOr15Range,
+  computeOr15Signals,
+  isOr15Instrument,
+  or15LineSeriesData,
+  or15WindowLabel,
+  type Or15Range,
+} from '@/lib/chart/openingRange15'
+import {
   OR30_COLORS,
   computeOr30Range,
   computeOr30Signals,
@@ -199,15 +208,6 @@ import {
   or30WindowLabel,
   type Or30Range,
 } from '@/lib/chart/openingRange30'
-import {
-  NYC_LUNCH_COLORS,
-  computeNycLunchRange,
-  computeNycLunchSignals,
-  isNycLunchInstrument,
-  nycLunchEndMarkers,
-  nycLunchLineSeriesData,
-  type NycLunchRange,
-} from '@/lib/chart/nycLunchSessionRange'
 import {
   NIKKEI_US_RANGE_COLORS,
   computeNikkeiUsRangeBreakout,
@@ -520,6 +520,24 @@ function SimulationDeskInner() {
   const riskBoxRef = useRef<DeskRiskBoxState | null>(null)
   riskBoxRef.current = riskBox
   const [overlayTick, setOverlayTick] = useState(0)
+  const overlayTickRafRef = useRef(0)
+  /** Pan/zoom fire per frame — coalesce to one overlay re-render per frame. */
+  const bumpOverlayTick = useCallback(() => {
+    if (overlayTickRafRef.current) return
+    overlayTickRafRef.current = requestAnimationFrame(() => {
+      overlayTickRafRef.current = 0
+      setOverlayTick((n) => n + 1)
+    })
+  }, [])
+  const bumpOverlayTickRef = useRef(bumpOverlayTick)
+  bumpOverlayTickRef.current = bumpOverlayTick
+  useEffect(
+    () => () => {
+      if (overlayTickRafRef.current) cancelAnimationFrame(overlayTickRafRef.current)
+      overlayTickRafRef.current = 0
+    },
+    []
+  )
   const openRiskBoxFromPriceRef = useRef<() => void>(() => {})
   const [msg, setMsg] = useState<string | null>(null)
   const [levelsOpen, setLevelsOpen] = useState(false)
@@ -584,8 +602,8 @@ function SimulationDeskInner() {
         setShowSessionBands((prev) => !prev)
       } else if (key === 'n') {
         e.preventDefault()
-        if (instrument === 'DOW' || instrument === 'NASDAQ') {
-          setShowLunchRange((prev) => !prev)
+        if (isOr15Instrument(instrument)) {
+          setShowOr15((prev) => !prev)
         }
       } else if (key === 'u') {
         e.preventDefault()
@@ -628,7 +646,7 @@ function SimulationDeskInner() {
             containerRef.current.clientHeight
           )
         }
-        requestAnimationFrame(() => setOverlayTick((n) => n + 1))
+        bumpOverlayTickRef.current()
       })
     }
 
@@ -663,11 +681,11 @@ function SimulationDeskInner() {
     low: ISeriesApi<'Line'>
   } | null>(null)
   const [ibShaped, setIbShaped] = useState(false)
-  const [lunchShaped, setLunchShaped] = useState(false)
+  const [or15Shaped, setOr15Shaped] = useState(false)
   const [usRangeShaped, setUsRangeShaped] = useState(false)
   /** Script overlays — same toggles as live (B / N / U / R). IB + US Range default OFF. */
   const [showIbBreakouts, setShowIbBreakouts] = useState(false)
-  const [showLunchRange, setShowLunchRange] = useState(false)
+  const [showOr15, setShowOr15] = useState(false)
   const [showUsRange, setShowUsRange] = useState(false)
   const [showOr30, setShowOr30] = useState(false)
   const [showYesterdayProfile, setShowYesterdayProfile] = useState(false)
@@ -704,7 +722,7 @@ function SimulationDeskInner() {
   }, [useCall])
   const [callScoreText, setCallScoreText] = useState('')
   const showIbBreakoutsRef = useRef(false)
-  const showLunchRangeRef = useRef(false)
+  const showOr15Ref = useRef(false)
   const showUsRangeRef = useRef(false)
   const showOr30Ref = useRef(false)
   const showYesterdayProfileRef = useRef(false)
@@ -728,13 +746,12 @@ function SimulationDeskInner() {
   } | null>(null)
   const or30RangeRef = useRef<Or30Range | null>(null)
   const ibRangeRef = useRef<InitialBalanceRange | null>(null)
-  const lunchRangeRef = useRef<NycLunchRange | null>(null)
+  const or15RangeRef = useRef<Or15Range | null>(null)
   /** Full session range — must keep `complete` so shapedPlaybookRanges unlocks US ±10. */
   const usRangeRef = useRef<NikkeiUsSessionRange | null>(null)
-  const lunchSeriesRef = useRef<{
+  const or15SeriesRef = useRef<{
     high: ISeriesApi<'Line'>
     low: ISeriesApi<'Line'>
-    mid: ISeriesApi<'Line'>
   } | null>(null)
   const usRangeSeriesRef = useRef<{
     high: ISeriesApi<'Line'>
@@ -750,8 +767,8 @@ function SimulationDeskInner() {
     showIbBreakoutsRef.current = showIbBreakouts
   }, [showIbBreakouts])
   useEffect(() => {
-    showLunchRangeRef.current = showLunchRange
-  }, [showLunchRange])
+    showOr15Ref.current = showOr15
+  }, [showOr15])
   useEffect(() => {
     showUsRangeRef.current = showUsRange
   }, [showUsRange])
@@ -1059,20 +1076,50 @@ function SimulationDeskInner() {
       height: containerRef.current.clientHeight,
     })
 
+    // Re-asked on every render pass; the slice/map pair below is pure GC churn
+    // when nothing about the window has changed.
+    let scaleCacheList: typeof visibleCandlesRef.current | null = null
+    let scaleCacheKey = ''
+    let scaleCacheBounds: { min: number; max: number } | null = null
+
     const candleAutoscale = () => {
       // Series logical indexes match the replay slice, not the multi-day fetch.
       // Using allCandles here flattened the current day against unrelated history.
       const list = visibleCandlesRef.current
       if (!list || list.length === 0) return null
       const range = chart.timeScale().getVisibleLogicalRange()
-      let visible = list
+      let fromIdx = 0
+      let toIdx = list.length - 1
       if (range && Number.isFinite(range.from) && Number.isFinite(range.to)) {
-        const fromIdx = Math.max(0, Math.floor(range.from))
-        const toIdx = Math.min(list.length - 1, Math.ceil(range.to))
-        if (fromIdx <= toIdx) {
-          visible = list.slice(fromIdx, toIdx + 1)
+        const a = Math.max(0, Math.floor(range.from))
+        const b = Math.min(list.length - 1, Math.ceil(range.to))
+        if (a <= b) {
+          fromIdx = a
+          toIdx = b
         }
       }
+
+      // Brackets move independently of the window, so never cache these.
+      const risk = riskBoxRef.current
+      const pending = pendingRef.current
+      const position = positionRef.current
+      const fitPrices = risk
+        ? [risk.entryPrice, risk.stopLoss, risk.profitTarget]
+        : pending
+          ? [pending.level, pending.stopLoss, pending.target]
+          : position
+            ? [position.entry, position.stopLoss, position.target]
+            : []
+
+      const edge = list[toIdx]
+      const cacheKey =
+        `${fromIdx}|${toIdx}|${list.length}|${instrumentRef.current}` +
+        `|${edge ? `${edge.time}:${edge.high}:${edge.low}` : ''}`
+      if (scaleCacheList === list && scaleCacheKey === cacheKey && scaleCacheBounds) {
+        return paddedCandlePriceRange(scaleCacheBounds.min, scaleCacheBounds.max, fitPrices)
+      }
+
+      const visible = list.slice(fromIdx, toIdx + 1)
       if (visible.length === 0 || !visible[0]) return null
       const session = sessionFocusHighLow(
         visible.map((c) => ({ time: c.time, high: c.high, low: c.low })),
@@ -1088,16 +1135,9 @@ function SimulationDeskInner() {
         }
       }
 
-      const risk = riskBoxRef.current
-      const pending = pendingRef.current
-      const position = positionRef.current
-      const fitPrices = risk
-        ? [risk.entryPrice, risk.stopLoss, risk.profitTarget]
-        : pending
-          ? [pending.level, pending.stopLoss, pending.target]
-          : position
-            ? [position.entry, position.stopLoss, position.target]
-            : []
+      scaleCacheList = list
+      scaleCacheKey = cacheKey
+      scaleCacheBounds = { min: minValue, max: maxValue }
       return paddedCandlePriceRange(minValue, maxValue, fitPrices)
     }
 
@@ -1187,8 +1227,8 @@ function SimulationDeskInner() {
       low: chart.addLineSeries({ ...or30LineOpts, title: 'OR30 L' }),
     }
 
-    const lunchLineOpts = {
-      color: NYC_LUNCH_COLORS.high,
+    const or15LineOpts = {
+      color: OR15_COLORS.high,
       lineWidth: 2 as const,
       lineStyle: LineStyle.Solid,
       priceLineVisible: false,
@@ -1198,15 +1238,9 @@ function SimulationDeskInner() {
       crosshairMarkerVisible: false,
       ...ignoreScale,
     }
-    const lunchSeries = {
-      high: chart.addLineSeries({ ...lunchLineOpts, color: NYC_LUNCH_COLORS.high, title: 'LN H' }),
-      low: chart.addLineSeries({ ...lunchLineOpts, color: NYC_LUNCH_COLORS.low, title: 'LN L' }),
-      mid: chart.addLineSeries({
-        ...lunchLineOpts,
-        color: NYC_LUNCH_COLORS.low,
-        lastValueVisible: false,
-        title: 'LN L',
-      }),
+    const or15Series = {
+      high: chart.addLineSeries({ ...or15LineOpts, title: 'OR15 H' }),
+      low: chart.addLineSeries({ ...or15LineOpts, title: 'OR15 L' }),
     }
 
     const usLineOpts = {
@@ -1234,12 +1268,12 @@ function SimulationDeskInner() {
     chartRef.current = chart
     seriesRef.current = series
     priceLineHostRef.current = priceLineHost
-    const bumpOverlay = () => setOverlayTick((n) => n + 1)
+    const bumpOverlay = () => bumpOverlayTickRef.current()
     chart.timeScale().subscribeVisibleLogicalRangeChange(bumpOverlay)
     vwapSeriesRef.current = vwapSeries
     ibSeriesRef.current = ibSeries
     or30SeriesRef.current = or30Series
-    lunchSeriesRef.current = lunchSeries
+    or15SeriesRef.current = or15Series
     usRangeSeriesRef.current = usRangeSeries
     setChartReady(true)
 
@@ -1249,9 +1283,7 @@ function SimulationDeskInner() {
           containerRef.current.clientWidth,
           containerRef.current.clientHeight
         )
-        requestAnimationFrame(() => {
-          requestAnimationFrame(bumpOverlay)
-        })
+        bumpOverlay()
       }
     })
     ro.observe(containerRef.current)
@@ -1275,17 +1307,17 @@ function SimulationDeskInner() {
       vwapSeriesRef.current = null
       ibSeriesRef.current = null
       or30SeriesRef.current = null
-      lunchSeriesRef.current = null
+      or15SeriesRef.current = null
       usRangeSeriesRef.current = null
       or30RangeRef.current = null
       ibRangeRef.current = null
-      lunchRangeRef.current = null
+      or15RangeRef.current = null
       usRangeRef.current = null
       avwapLastRef.current = null
       setIbShaped(false)
       setOr30Shaped(false)
       setOr30Locked(false)
-      setLunchShaped(false)
+      setOr15Shaped(false)
       setUsRangeShaped(false)
       levelLinesRef.current = []
       posLinesRef.current = []
@@ -1599,40 +1631,25 @@ function SimulationDeskInner() {
           }
         }
 
-        const lns = lunchSeriesRef.current
-        if (lns) {
-          if (isNycLunchInstrument(instrument) && replayDate) {
-            const lunch = computeNycLunchRange(
-              bars.map((c) => ({ time: c.time, high: c.high, low: c.low })),
-              replayDate,
-              Math.max(tip, simT)
-            )
-            lunchRangeRef.current = lunch
-            if (showLunchRangeRef.current && lunch) {
-              const pts = nycLunchLineSeriesData(lunch, extendTo, { showMid: false })
-              try {
-                lns.high.setData(shiftBand(axisLabelSeriesData(pts.high)))
-                lns.low.setData(shiftBand(axisLabelSeriesData(pts.low)))
-                lns.mid.setData(shiftBand(axisLabelSeriesData(pts.mid)))
-                setLunchShaped(true)
-              } catch {
-                lns.high.setData([])
-                lns.low.setData([])
-                lns.mid.setData([])
-                setLunchShaped(false)
-              }
-            } else {
-              lns.high.setData([])
-              lns.low.setData([])
-              lns.mid.setData([])
-              setLunchShaped(false)
+        const o15s = or15SeriesRef.current
+        if (o15s && openUnix) {
+          const or15 = computeOr15Range(bars, openUnix, simT)
+          or15RangeRef.current = or15
+          if (showOr15Ref.current && or15) {
+            const pts = or15LineSeriesData(or15, extendTo)
+            try {
+              o15s.high.setData(shiftBand(axisLabelSeriesData(pts.high.map((p) => ({ time: p.time, value: p.value })))))
+              o15s.low.setData(shiftBand(axisLabelSeriesData(pts.low.map((p) => ({ time: p.time, value: p.value })))))
+              setOr15Shaped(true)
+            } catch {
+              o15s.high.setData([])
+              o15s.low.setData([])
+              setOr15Shaped(false)
             }
           } else {
-            lunchRangeRef.current = null
-            lns.high.setData([])
-            lns.low.setData([])
-            lns.mid.setData([])
-            setLunchShaped(false)
+            o15s.high.setData([])
+            o15s.low.setData([])
+            setOr15Shaped(!!or15 && showOr15Ref.current)
           }
         }
 
@@ -1710,17 +1727,8 @@ function SimulationDeskInner() {
               })
             }
           }
-          if (showLunchRangeRef.current && lunchRangeRef.current) {
-            for (const m of nycLunchEndMarkers(lunchRangeRef.current)) {
-              markers.push({
-                time: m.time as UTCTimestamp,
-                position: m.position,
-                color: m.color,
-                shape: m.shape,
-                text: m.text,
-              })
-            }
-            for (const s of computeNycLunchSignals(bars, lunchRangeRef.current)) {
+          if (showOr15Ref.current && or15RangeRef.current) {
+            for (const s of computeOr15Signals(bars, or15RangeRef.current)) {
               markers.push({
                 time: s.time as UTCTimestamp,
                 position: s.position,
@@ -1959,10 +1967,10 @@ function SimulationDeskInner() {
         const preferredRaw = activeRangeForPlaybook({
           playbookMode,
           instrument,
+          or15: or15RangeRef.current,
           or30: or30RangeRef.current,
           ib: ibRangeRef.current,
           usRange: usRangeRef.current,
-          lunchRange: lunchRangeRef.current,
           morningAttempts: morningAttemptsRef.current,
         })
         const preferred = preferredRaw
@@ -2117,10 +2125,10 @@ function SimulationDeskInner() {
     const preferredRaw = activeRangeForPlaybook({
       playbookMode,
       instrument,
+      or15: or15RangeRef.current,
       or30: or30RangeRef.current,
       ib: ibRangeRef.current,
       usRange: usRangeRef.current,
-      lunchRange: lunchRangeRef.current,
       morningAttempts,
     })
     const preferred = preferredRaw
@@ -2131,14 +2139,14 @@ function SimulationDeskInner() {
         playbookMode,
         instrument,
         now: simNow,
+        showOr15: showOr15Ref.current,
         showOr30: showOr30Ref.current,
         showIb: showIbBreakoutsRef.current,
         showUsRange: showUsRangeRef.current,
-        showLunchRange: showLunchRangeRef.current,
+        or15: or15RangeRef.current,
         or30: or30RangeRef.current,
         ib: ibRangeRef.current,
         usRange: usRangeRef.current,
-        lunchRange: lunchRangeRef.current,
         morningAttempts,
       }),
       swing
@@ -2236,7 +2244,7 @@ function SimulationDeskInner() {
         if (snapRanges.length === 0) {
           return {
             deny:
-              'No locked playbook ±10 yet — wait for OR30 / IB / lunch-range / US Range to lock.',
+              'No locked playbook ±10 yet — wait for Open range / OR30 / IB / US Range to lock.',
           }
         }
         if (hit) {
@@ -2246,12 +2254,20 @@ function SimulationDeskInner() {
             edge: hit.edge,
           })
           if (!gated.ok) return { deny: gated.message }
+          if (hit.range.label === 'OR15' || hit.range.label === 'Open range') {
+            return {
+              deny:
+                instrument === 'NIKKEI'
+                  ? 'Open range morning ±10 window is closed — enter on the live US Range / Tokyo IB playbook when unlocked.'
+                  : 'Open range morning ±10 window is closed — enter on the live OR30 / IB playbook when unlocked.',
+            }
+          }
           if (hit.range.label === 'OR30') {
             return {
               deny:
                 instrument === 'NIKKEI'
-                  ? 'OR30 morning ±10 window is closed — enter on the live US Range / Tokyo IB playbook when unlocked.'
-                  : 'OR30 morning ±10 window is closed — enter on the live IB / lunch-range playbook when unlocked.',
+                  ? 'OR30 overlay ±10 window is closed — enter on the live US Range / Tokyo IB playbook when unlocked.'
+                  : 'OR30 ±10 window is closed — enter on the live IB playbook when unlocked.',
             }
           }
           const bucketOk = assertBucketEntryEligible({
@@ -2667,7 +2683,7 @@ function SimulationDeskInner() {
   useEffect(() => {
     if (!chartReady || !simNowRef.current) return
     applyChartDataRef.current(simNowRef.current, { force: true })
-  }, [chartReady, showIbBreakouts, showLunchRange, showUsRange, showOr30, showYesterdayProfile, showOpeningActivity, showMarketControl, showSessionBands])
+  }, [chartReady, showIbBreakouts, showOr15, showUsRange, showOr30, showYesterdayProfile, showOpeningActivity, showMarketControl, showSessionBands])
 
   // Pending working limit + open position — on host series (survives candle setData).
   // Working limit / position lines stay on the host series.
@@ -2863,7 +2879,7 @@ function SimulationDeskInner() {
     openUnix,
     showOr30,
     showIbBreakouts,
-    showLunchRange,
+    showOr15,
     showUsRange,
     useCall,
   ])
@@ -4141,25 +4157,25 @@ function SimulationDeskInner() {
           >
             {playbookButtonLabel} (P)
           </button>
-          {(instrument === 'DOW' || instrument === 'NASDAQ') && (
+          {(instrument === 'DOW' || instrument === 'NASDAQ' || instrument === 'NIKKEI') && (
             <button
               type="button"
               title={
-                showLunchRange
-                  ? `NYC Lunch range 12:00–13:30 ${TRADER_DISPLAY_LABEL} visible (Press N)`
-                  : 'Show NYC Lunch high / low (Press N)'
+                showOr15
+                  ? `Open range lines ${or15WindowLabel(instrument)} + O15 BRK/REJ after lock (Press N)`
+                  : `Show Open range high / low ${or15WindowLabel(instrument)} (Press N)`
               }
-              onClick={() => setShowLunchRange((v) => !v)}
+              onClick={() => setShowOr15((v) => !v)}
               className={`flex items-center gap-1 rounded border px-2 py-1 text-[10px] font-semibold uppercase ${
-                showLunchRange
-                  ? 'border-orange-500/50 bg-orange-600/30 text-orange-100'
-                  : 'border-white/15 text-gray-500 hover:border-orange-500/40 hover:text-orange-200'
+                showOr15
+                  ? 'border-amber-500/50 bg-amber-600/30 text-amber-100'
+                  : 'border-white/15 text-gray-500 hover:border-amber-500/40 hover:text-amber-200'
               }`}
             >
               <span
-                className={`inline-block h-1.5 w-1.5 rounded-full ${showLunchRange ? 'bg-orange-400' : 'bg-gray-600'}`}
+                className={`inline-block h-1.5 w-1.5 rounded-full ${showOr15 ? 'bg-amber-400' : 'bg-gray-600'}`}
               />
-              Lunch Range (N)
+              Open range (N)
             </button>
           )}
           {instrument === 'NIKKEI' && (
@@ -4367,18 +4383,18 @@ function SimulationDeskInner() {
               </span>
             </>
           )}
-          {lunchShaped && (
+          {or15Shaped && (
             <>
               <span className="text-gray-600">·</span>
               <span
                 className="flex items-center gap-1.5 normal-case tracking-normal"
-                title={`NYC Lunch Session Range 12:00–13:30 ${TRADER_DISPLAY_LABEL}`}
+                title={`Open range ${or15WindowLabel(instrument)}`}
               >
                 <span
                   className="inline-block w-4 border-t-2"
-                  style={{ borderColor: NYC_LUNCH_COLORS.high }}
+                  style={{ borderColor: OR15_COLORS.high }}
                 />
-                <span style={{ color: NYC_LUNCH_COLORS.high }}>Lunch H/L</span>
+                <span style={{ color: OR15_COLORS.high }}>OR15 H/L</span>
               </span>
             </>
           )}

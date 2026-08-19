@@ -137,10 +137,10 @@ export function LunchCloseCountdown({
         ? hasOpenPosition
           ? instrument === 'NIKKEI'
             ? 'Open book auto-liquidates at cash close (Tokyo IB + leftovers)'
-            : 'Open book auto-liquidates at cash close (lunch-range + leftovers)'
+            : 'Open book auto-liquidates at cash close (IB leftovers)'
           : instrument === 'NIKKEI'
             ? 'Afternoon — Tokyo IB entries 21:00–02:00 Montreal, then manage-only'
-            : 'Afternoon — lunch-range entries 13:30–15:15 Montreal, then manage-only'
+            : 'Afternoon — IB entries 10:30–15:15 Montreal, then manage-only'
         : hasOpenPosition
           ? 'Open book on this desk'
           : 'No open book — place limits on Live Trading'

@@ -9,8 +9,8 @@
  * $400→$250→$150. Does not unlock ±10.
  */
 
+import { computeOr15Range } from '@/lib/chart/openingRange15'
 import { computeOr30Range } from '@/lib/chart/openingRange30'
-import { computeNycLunchRange } from '@/lib/chart/nycLunchSessionRange'
 import { computeNikkeiUsRangeBreakout } from '@/lib/chart/nikkeiUsRangeBreakout'
 import {
   cashOpenUnixForYmd,
@@ -45,7 +45,7 @@ import {
 import type { DeskPlaybookMode } from '@/lib/trading/deskPlaybookMode'
 
 export type DeskCallSide = 'WAIT' | 'LONG' | 'SHORT'
-export type DeskCallRangeKey = 'OR30' | 'IB' | 'LN' | 'US'
+export type DeskCallRangeKey = 'OR15' | 'OR30' | 'IB' | 'US'
 
 export type DeskCallBar = OpeningBar & { volume?: number }
 
@@ -133,7 +133,7 @@ function asBars(candles: DeskCallBar[]): DeskBar[] {
 
 function speakRange(key: DeskCallRangeKey, tokyo: boolean): string {
   if (key === 'US') return 'US Range'
-  if (key === 'LN') return 'Lunch-range'
+  if (key === 'OR15') return 'Open range'
   if (key === 'IB') return tokyo ? 'Tokyo IB' : 'IB'
   return 'OR30'
 }
@@ -218,9 +218,14 @@ function resolveActiveRange(args: {
   sessionYmd: string
   openU: number
 }): { key: DeskCallRangeKey; high: number; low: number } | null {
-  const { instrument, asOfUnix, playbookMode, sessionYmd, openU } = args
+  const { instrument, asOfUnix, playbookMode, openU } = args
   const bars = asBars(args.candles).filter((c) => c.time <= asOfUnix)
   if (playbookMode === 'morning') {
+    const or15 = computeOr15Range(bars, openU, asOfUnix)
+    if (!or15?.complete || !(or15.high > or15.low)) return null
+    return { key: 'OR15', high: or15.high, low: or15.low }
+  }
+  if (playbookMode === 'or30') {
     const or30 = computeOr30Range(bars, openU, asOfUnix)
     if (!or30?.complete || !(or30.high > or30.low)) return null
     return { key: 'OR30', high: or30.high, low: or30.low }
@@ -237,12 +242,6 @@ function resolveActiveRange(args: {
     )
     if (!us || !(us.high > us.low)) return null
     return { key: 'US', high: us.high, low: us.low }
-  }
-  if (playbookMode === 'lunch_range') {
-    if (instrument === 'NIKKEI') return null
-    const lunch = computeNycLunchRange(bars, sessionYmd, asOfUnix)
-    if (!lunch?.complete || !(lunch.high > lunch.low)) return null
-    return { key: 'LN', high: lunch.high, low: lunch.low }
   }
   return null
 }
@@ -648,19 +647,12 @@ export function scoreDeskCallSession(args: {
   )
   const tokyo = instrument === 'NIKKEI'
   const snaps: Array<{ playbookMode: DeskPlaybookMode; asOfUnix: number }> = [
-    { playbookMode: 'morning', asOfUnix: openU + 30 * 60 },
+    { playbookMode: 'morning', asOfUnix: openU + 15 * 60 },
     tokyo
       ? { playbookMode: 'us_range', asOfUnix: openU + 30 * 60 }
-      : { playbookMode: 'ib', asOfUnix: openU + 60 * 60 },
+      : { playbookMode: 'or30', asOfUnix: openU + 30 * 60 },
+    { playbookMode: 'ib', asOfUnix: openU + 60 * 60 },
   ]
-  if (tokyo) {
-    snaps.push({ playbookMode: 'ib', asOfUnix: openU + 60 * 60 })
-  } else {
-    snaps.push({
-      playbookMode: 'lunch_range',
-      asOfUnix: zonedCivilToUnix(ymd, 13.5, clock.timeZone),
-    })
-  }
   const rows: DeskCallScoreRow[] = []
   for (const snap of snaps) {
     if (snap.asOfUnix > horizon) continue

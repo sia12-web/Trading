@@ -195,6 +195,7 @@ export function loadDeskViewport(
 
 export type DeskOverlayToggles = {
   levels: boolean
+  or15: boolean
   or30: boolean
   ib: boolean
   lunch: boolean
@@ -207,6 +208,7 @@ export type DeskOverlayToggles = {
 
 const OVERLAY_DEFAULTS: DeskOverlayToggles = {
   levels: false,
+  or15: false,
   or30: false,
   ib: false,
   lunch: false,
@@ -227,9 +229,10 @@ export function loadDeskOverlayToggles(): DeskOverlayToggles {
     const parsed = JSON.parse(raw) as Partial<DeskOverlayToggles>
     return {
       levels: !!parsed.levels,
+      or15: !!(parsed.or15 ?? parsed.lunch),
       or30: !!parsed.or30,
       ib: !!parsed.ib,
-      lunch: !!parsed.lunch,
+      lunch: false,
       us: !!parsed.us,
       yday: !!parsed.yday,
       opening: !!parsed.opening,

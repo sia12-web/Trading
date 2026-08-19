@@ -217,7 +217,7 @@ async function runMorningReview(request: NextRequest) {
       const { runAutoLevelPrep } = await import('@/lib/services/autoLevelPrep')
       await runAutoLevelPrep(instrument as Instrument, {
         force: true,
-        mode: 'lunch_range',
+        mode: 'ib',
       })
     } catch (err) {
       logger.warn('morning-review.afternoon_levels_failed', { err })
@@ -264,7 +264,7 @@ async function runMorningReview(request: NextRequest) {
           enabled: true,
           visible_on_live_chart: true,
           note:
-            'Levels refresh for Lunch break playbook (FLIP/RETEST + IB). If morning+IB still unused, lunch-range entry unlocks PM; otherwise watch/manage until cash close.',
+            'Levels refresh for IB playbook (FLIP/RETEST + IB). Open range → OR30 → IB; unused probes stay available until last-entry cutoff, then watch/manage until cash close.',
           candidates: afternoonCandidates,
         },
       },

@@ -9,8 +9,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { quoteBelongsToBook } from '@/lib/trading/deskExitGuard'
 import { scoreValueAcceptance, toEpochMs } from '@/lib/trading/valueAcceptance'
 import {
+  alignedTradeTpProgress,
   breakEvenShouldOffer,
-  tradeTpProgress,
 } from '@/lib/trading/breakEvenStop'
 import { ValueAcceptanceRead } from './ValueAcceptanceRead'
 
@@ -114,6 +114,8 @@ export function ManageDeskBar({
   const [msg, setMsg] = useState<string | null>(null)
   const [newsExpanded, setNewsExpanded] = useState(false)
   const [beDismissed, setBeDismissed] = useState(false)
+  const [serverInProfit, setServerInProfit] = useState<boolean | null>(null)
+  const [serverTpProgress, setServerTpProgress] = useState<number | null>(null)
   const beNotifiedRef = useRef(false)
   const beDismissedRef = useRef(false)
   const onBreakEvenAvailableRef = useRef(onBreakEvenAvailable)
@@ -135,6 +137,8 @@ export function ManageDeskBar({
     setNewsExpanded(false)
     setRecommendation(null)
     setBeDismissed(false)
+    setServerInProfit(null)
+    setServerTpProgress(null)
     beNotifiedRef.current = false
     beDismissedRef.current = false
     valueAcceptedNotifiedRef.current = false
@@ -175,29 +179,41 @@ export function ManageDeskBar({
   }, [])
 
   const isLong = position.direction === 'long'
-  /** Geometric progress 0→1 from entry toward TP (not AI confidence). */
+  const progressArgs = {
+    instrument: position.instrument,
+    entry: position.entryPrice,
+    takeProfit: position.profitTarget,
+    livePrice: currentPrice ?? 0,
+    isLong,
+    stopLoss: position.stopLoss,
+    riskAmount: position.riskAmount,
+    positionSize: position.positionSize,
+  }
+  const deskProgress =
+    currentPrice != null ? alignedTradeTpProgress(progressArgs) : null
+  const inProfitNow = serverInProfit === true
   const pathToTp =
-    currentPrice != null
-      ? tradeTpProgress({
-          entry: position.entryPrice,
-          takeProfit: position.profitTarget,
-          livePrice: currentPrice,
-          isLong,
-        }).progress
-      : null
+    serverInProfit === false
+      ? 0
+      : serverTpProgress != null
+        ? serverTpProgress
+        : deskProgress?.aligned
+          ? deskProgress.inProfit
+            ? deskProgress.progress
+            : 0
+          : null
   const beAllowed =
-    currentPrice != null &&
-    breakEvenShouldOffer({
-      instrument: position.instrument,
-      entry: position.entryPrice,
-      takeProfit: position.profitTarget,
-      livePrice: currentPrice,
-      isLong,
-    })
+    currentPrice != null && inProfitNow && breakEvenShouldOffer(progressArgs)
+  const profitAction =
+    recommendation?.action_type === 'BREAKEVEN' ||
+    recommendation?.action_type === 'TRAIL_STOP' ||
+    recommendation?.action_type === 'SCALE_OUT'
   const shownRecommendation =
-    recommendation?.action_type === 'BREAKEVEN' && !beAllowed
+    profitAction && !inProfitNow
       ? null
-      : recommendation
+      : recommendation?.action_type === 'BREAKEVEN' && !beAllowed
+        ? null
+        : recommendation
   useEffect(() => {
     setClockMs(Date.now())
     const id = window.setInterval(() => setClockMs(Date.now()), 15_000)
@@ -288,6 +304,16 @@ export function ManageDeskBar({
           } | null
           action_taken?: string
           updated_stop_loss?: number | null
+          in_profit?: boolean
+          tp_progress?: number
+        }
+        if (typeof manageJson.in_profit === 'boolean') {
+          setServerInProfit(manageJson.in_profit)
+        }
+        if (typeof manageJson.tp_progress === 'number') {
+          setServerTpProgress(
+            manageJson.in_profit === false ? 0 : manageJson.tp_progress
+          )
         }
         if (
           manageJson.action_taken === 'MOVED_TO_BREAKEVEN' ||
@@ -303,12 +329,16 @@ export function ManageDeskBar({
             const live = priceRef.current
             const offerBe =
               live != null &&
+              manageJson.in_profit !== false &&
               breakEvenShouldOffer({
                 instrument: position.instrument,
                 entry: position.entryPrice,
                 takeProfit: position.profitTarget,
                 livePrice: live,
                 isLong: position.direction === 'long',
+                stopLoss: position.stopLoss,
+                riskAmount: position.riskAmount,
+                positionSize: position.positionSize,
               })
             if (offerBe) {
               beNotifiedRef.current = true

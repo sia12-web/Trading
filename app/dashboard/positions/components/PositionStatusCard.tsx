@@ -13,6 +13,7 @@ import type { PositionStatus } from '@/types/positionManagement'
 import { entrySourceLabel, entrySourceTone } from '@/lib/trading/entrySourceBadge'
 import { formatDeskMoney } from '@/lib/trading/currency'
 import { quoteBelongsToBook } from '@/lib/trading/deskExitGuard'
+import { alignedTradeTpProgress } from '@/lib/trading/breakEvenStop'
 import { scoreValueAcceptance, toEpochMs } from '@/lib/trading/valueAcceptance'
 import { claimDeskNoteOnce, deskNoteClaimKey } from '@/lib/trading/rangeEdgeAlerts'
 import type { DeskInstrument } from '@/lib/trading/sessionGate'
@@ -517,24 +518,31 @@ export function PositionStatusCard({
 
   const isLong = position.entry_direction === 'LONG'
   const px = currentPrice ?? position.entry_price
-  const pnl =
-    (isLong ? px - position.entry_price : position.entry_price - px) * position.position_size
+  const desk = alignedTradeTpProgress({
+    entry: position.entry_price,
+    takeProfit: position.profit_target_price,
+    livePrice: px,
+    isLong,
+    stopLoss: position.stop_loss_price,
+    riskAmount: position.risk_amount,
+    positionSize: position.position_size,
+  })
+  const pnlPts = desk.aligned
+    ? desk.moved
+    : isLong
+      ? px - position.entry_price
+      : position.entry_price - px
+  const pnl = pnlPts * position.position_size
   const pnlRounded = Math.round(pnl * 100) / 100
   const vsRisk =
     position.risk_amount > 0
       ? Math.round((pnlRounded / position.risk_amount) * 10000) / 100
       : 0
 
-  const tpSpan = isLong
-    ? position.profit_target_price - position.entry_price
-    : position.entry_price - position.profit_target_price
+  const pathToTp = desk.aligned ? (desk.inProfit ? desk.progress : 0) : 0
   const slSpan = isLong
     ? position.entry_price - position.stop_loss_price
     : position.stop_loss_price - position.entry_price
-  const pathToTp =
-    Math.abs(tpSpan) > 1e-9
-      ? clamp01((isLong ? px - position.entry_price : position.entry_price - px) / tpSpan)
-      : 0
   const roomToSl =
     Math.abs(slSpan) > 1e-9
       ? clamp01((isLong ? px - position.stop_loss_price : position.stop_loss_price - px) / slSpan)

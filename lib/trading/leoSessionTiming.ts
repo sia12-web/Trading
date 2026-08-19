@@ -1,5 +1,5 @@
 /**
- * Fresh wall-clock + explicit OR30 / IB / lunch (or Nikkei US Range / Tokyo IB)
+ * Fresh wall-clock + explicit Open range / OR30 / IB (or Nikkei US Range / Tokyo IB)
  * status sentences for Leo. Built every Live Voice request — never cached.
  */
 
@@ -17,11 +17,11 @@ import {
   deskMarketFor,
   ibStrategyEndHms,
   ibStrategyStartHms,
-  isOr30MorningEntryWindowOpen,
+  isOr15MorningEntryWindowOpen,
   lunchRangeEntryEndHms,
   lunchRangeEntryStartHms,
-  or30LockHms,
-  or30LockSecFromOpen,
+  or15LockHms,
+  or15LockSecFromOpen,
   sessionFor,
   type DeskInstrument,
   type DeskMarket,
@@ -30,9 +30,9 @@ import { parseTimeToSeconds } from '@/lib/utils/timeUtils'
 import { resolveDeskPlaybookMode } from '@/lib/trading/deskPlaybookMode'
 
 export type LeoOr30Status = 'not_yet' | 'forming' | 'locked' | 'finished'
-/** NY IB · Tokyo US Range (slot 2) */
+/** NY OR30 · Tokyo US Range (slot 2) */
 export type LeoMidSlotStatus = 'not_yet' | 'open' | 'closed'
-/** NY lunch-range · Tokyo IB (slot 3) */
+/** NY IB · Tokyo IB (slot 3) */
 export type LeoLateSlotStatus = 'not_yet' | 'open' | 'closed'
 
 export type LeoSessionTiming = {
@@ -50,13 +50,13 @@ export type LeoSessionTiming = {
     sentence: string
   }
   mid: {
-    /** IB (NY) or US Range (Nikkei) */
+    /** OR30 (NY) or US Range (Nikkei) */
     label: string
     status: LeoMidSlotStatus
     sentence: string
   }
   late: {
-    /** Lunch-range (NY) or Tokyo IB (Nikkei) */
+    /** IB (NY) or Tokyo IB (Nikkei) */
     label: string
     status: LeoLateSlotStatus
     sentence: string
@@ -94,33 +94,32 @@ function resolveOr30(
   const t = parseTimeToSeconds(timeInTz(now, s.tz))
   const open = parseTimeToSeconds(s.marketOpen)
   const entryClose = parseTimeToSeconds(s.entryClose)
-  const lockSec = or30LockSecFromOpen(open)
-  const lockMtl = deskLocalHmsAsTraderDisplay(or30LockHms(market), s.tz, now)
+  const lockSec = or15LockSecFromOpen(open)
+  const lockMtl = deskLocalHmsAsTraderDisplay(or15LockHms(market), s.tz, now)
   const closeMtl = deskLocalHmsAsTraderDisplay(s.entryClose, s.tz, now)
 
   if (t < open) {
     return {
       status: 'not_yet',
-      sentence: `OR30 not started — forms at cash open; locks ~${lockMtl} ${TRADER_DISPLAY_LABEL}.`,
+      sentence: `Open range not started — forms at cash open; locks ~${lockMtl} ${TRADER_DISPLAY_LABEL}.`,
     }
   }
   if (t < lockSec) {
     return {
       status: 'forming',
-      sentence: `OR30 is FORMING — entry CLOSED until lock at ${lockMtl} ${TRADER_DISPLAY_LABEL}.`,
+      sentence: `Open range is FORMING — entry CLOSED until lock at ${lockMtl} ${TRADER_DISPLAY_LABEL}.`,
     }
   }
-  // Finished when morning entry window over, probes exhausted, or morning bucket released (IB handoff).
-  const windowOpen = isOr30MorningEntryWindowOpen(instrument, now)
+  const windowOpen = isOr15MorningEntryWindowOpen(instrument, now)
   if (!windowOpen || t > entryClose || !ladder.morningEligible) {
     return {
       status: 'finished',
-      sentence: `OR30 entry is CLOSED (finished) — morning ±10 ended at ${closeMtl} ${TRADER_DISPLAY_LABEL}; do not call OR30 open.`,
+      sentence: `Open range entry is CLOSED (finished) — morning ±10 ended at ${closeMtl} ${TRADER_DISPLAY_LABEL}; do not call Open range open.`,
     }
   }
   return {
     status: 'locked',
-    sentence: `OR30 is LOCKED — entry OPEN until ${closeMtl} ${TRADER_DISPLAY_LABEL} (±10 of H / L).`,
+    sentence: `Open range is LOCKED — entry OPEN until ${closeMtl} ${TRADER_DISPLAY_LABEL} (±10 of H / L).`,
   }
 }
 
@@ -130,7 +129,7 @@ function resolveMid(
   ladder: AttemptLadder
 ): { label: string; status: LeoMidSlotStatus; sentence: string } {
   const tokyo = instrument === 'NIKKEI'
-  const label = tokyo ? 'US Range' : 'IB'
+  const label = tokyo ? 'US Range' : 'OR30'
   const market = deskMarketFor(instrument)
   const s = sessionFor(instrument)
   const t = parseTimeToSeconds(timeInTz(now, s.tz))
@@ -140,17 +139,15 @@ function resolveMid(
   const end = parseTimeToSeconds(endHms)
   const startMtl = deskLocalHmsAsTraderDisplay(startHms, s.tz, now)
   const endMtl = deskLocalHmsAsTraderDisplay(endHms, s.tz, now)
-  const untilHint = tokyo
-    ? `open until ${endMtl} ${TRADER_DISPLAY_LABEL}`
-    : `open until lunch-range at ${endMtl} ${TRADER_DISPLAY_LABEL}`
+  const untilHint = `open until ${endMtl} ${TRADER_DISPLAY_LABEL}`
 
   if (t < start) {
     return {
       label,
       status: 'not_yet',
       sentence: tokyo
-        ? `US Range not open yet — opens at cash open (${startMtl} ${TRADER_DISPLAY_LABEL}).`
-        : `IB not open yet — opens when first-hour IB locks at ${startMtl} ${TRADER_DISPLAY_LABEL}.`,
+        ? `US Range not open yet — opens after Open range (${startMtl} ${TRADER_DISPLAY_LABEL}).`
+        : `OR30 not open yet — opens when the 30-minute range locks at ${startMtl} ${TRADER_DISPLAY_LABEL}.`,
     }
   }
   if (t >= end) {
@@ -159,10 +156,9 @@ function resolveMid(
       status: 'closed',
       sentence: tokyo
         ? `US Range entry is CLOSED (ended ${endMtl} ${TRADER_DISPLAY_LABEL}).`
-        : `IB entry is CLOSED — lunch-range owns the book from ${endMtl} ${TRADER_DISPLAY_LABEL}.`,
+        : `OR30 entry is CLOSED — IB owns the book from ${endMtl} ${TRADER_DISPLAY_LABEL}.`,
     }
   }
-  // Clock says mid window is open (NY IB 10:30–13:30 · Nikkei US Range 09:00–10:45).
   const ladderNote =
     !ladder.ibEligible
       ? ' Ladder probes not eligible yet — still treat the clock as open/closed correctly.'
@@ -172,7 +168,7 @@ function resolveMid(
     status: 'open',
     sentence: tokyo
       ? `US Range is OPEN (${untilHint}) — prior NYC H/L; ±10 H/L only (no mid).${ladderNote}`
-      : `IB is OPEN until lunch (${untilHint}) — ±10 of H / L.${ladderNote}`,
+      : `OR30 is OPEN until IB (${untilHint}) — ±10 of H / L.${ladderNote}`,
   }
 }
 
@@ -182,7 +178,7 @@ function resolveLate(
   ladder: AttemptLadder
 ): { label: string; status: LeoLateSlotStatus; sentence: string } {
   const tokyo = instrument === 'NIKKEI'
-  const label = tokyo ? 'Tokyo IB' : 'Lunch-range'
+  const label = tokyo ? 'Tokyo IB' : 'IB'
   const market = deskMarketFor(instrument)
   const s = sessionFor(instrument)
   const t = parseTimeToSeconds(timeInTz(now, s.tz))
@@ -199,7 +195,7 @@ function resolveLate(
       status: 'not_yet',
       sentence: tokyo
         ? `Tokyo IB not open yet — unlocks at first-hour lock ${startMtl} ${TRADER_DISPLAY_LABEL}.`
-        : `Lunch-range not open until ${startMtl} ${TRADER_DISPLAY_LABEL} — do not call lunch open.`,
+        : `IB not open until ${startMtl} ${TRADER_DISPLAY_LABEL} — do not call IB open.`,
     }
   }
   if (t >= end) {
@@ -208,7 +204,7 @@ function resolveLate(
       status: 'closed',
       sentence: tokyo
         ? `Tokyo IB entry is CLOSED (ended ${endMtl} ${TRADER_DISPLAY_LABEL}).`
-        : `Lunch-range entry is CLOSED (ended ${endMtl} ${TRADER_DISPLAY_LABEL}).`,
+        : `IB entry is CLOSED (ended ${endMtl} ${TRADER_DISPLAY_LABEL}).`,
     }
   }
   const ladderNote =
@@ -220,7 +216,7 @@ function resolveLate(
     status: 'open',
     sentence: tokyo
       ? `Tokyo IB is OPEN until cash close (${endMtl} ${TRADER_DISPLAY_LABEL}) — ±10 of H / L.${ladderNote}`
-      : `Lunch-range is OPEN until ${endMtl} ${TRADER_DISPLAY_LABEL} — ±10 of H / L.${ladderNote}`,
+      : `IB is OPEN until ${endMtl} ${TRADER_DISPLAY_LABEL} — ±10 of H / L.${ladderNote}`,
   }
 }
 
@@ -296,7 +292,7 @@ export function formatLeoSessionTimingForPrompt(timing: LeoSessionTiming): strin
     `As-of ISO: ${timing.asOfIso}`,
     `Montreal now: ${timing.montrealTime} ${timing.montrealLabel}`,
     `Desk local now: ${timing.deskLocalTime} (${timing.deskTzLabel} · ${timing.deskTz})`,
-    `OR30 status=${timing.or30.status} — ${timing.or30.sentence}`,
+    `Open range status=${timing.or30.status} — ${timing.or30.sentence}`,
     `${timing.mid.label} status=${timing.mid.status} — ${timing.mid.sentence}`,
     `${timing.late.label} status=${timing.late.status} — ${timing.late.sentence}`,
     ...timing.facts.slice(4),

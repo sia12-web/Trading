@@ -23,14 +23,14 @@ export interface AnalysisRequest {
   /** live = Opus (default); sim = cheap Haiku for replay practice */
   llm_tier?: 'live' | 'sim'
   /**
-   * morning = pre-open / Morning OR30 playbook.
-   * ib = Initial Balance playbook (NY slot 2; Tokyo slot 3).
+   * morning = pre-open / Morning Open-range (OR15) playbook.
+   * or30 = 30-minute range playbook (NY slot 2).
+   * ib = Initial Balance playbook (NY slot 3; Tokyo slot 3).
    * us_range = Prior NYC session range playbook (Nikkei slot 2 only).
-   * lunch_range = Lunch break / lunch-range playbook (NY slot 3).
    * afternoon = watch-only memory refresh after entry windows.
    */
-  analysis_mode?: 'morning' | 'ib' | 'us_range' | 'lunch_range' | 'afternoon'
-  /** Precomputed IB / morning / lunch-range facts — no new vendors */
+  analysis_mode?: 'morning' | 'or30' | 'ib' | 'us_range' | 'afternoon'
+  /** Precomputed IB / morning / OR15 facts — no new vendors */
   afternoonBriefText?: string
   /**
    * Printed OR30 / slot-2 / slot-3 H/L + POC-inside-range + AVWAP.

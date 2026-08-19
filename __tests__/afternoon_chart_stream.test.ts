@@ -94,7 +94,7 @@ assert(
   `afternoon phase: ${gate.phase}`
 )
 assert(
-  /lunch-range|Lunch-range|cash close|manage|Day /i.test(gate.message),
+  /IB playbook|cash close|manage|Day /i.test(gate.message),
   `gate: ${gate.message}`
 )
 
@@ -129,7 +129,7 @@ const stillLunch = resolveSessionGate({
   stopLossHitCount: 0,
 })
 assert(stillLunch.canPlaceEntry === true, '1 morning fill → lunch-range still open after clocks')
-assert(stillLunch.rangeStrategy === 'lunch_range', 'lunch-range after morning probe')
+assert(stillLunch.rangeStrategy === 'ib', 'lunch-range after morning probe')
 
 // Morning + IB skipped → lunch-range open
 const lunchOpen = resolveSessionGate({
@@ -142,7 +142,7 @@ const lunchOpen = resolveSessionGate({
   stopLossHitCount: 0,
 })
 assert(lunchOpen.canPlaceEntry === true, '0 fills → lunch-range open')
-assert(lunchOpen.rangeStrategy === 'lunch_range', 'lunch_range when skipped')
+assert(lunchOpen.rangeStrategy === 'ib', 'lunch_range when skipped')
 
 // IB probe → lunch still open after clocks (Option B)
 const afterIb = resolveSessionGate({
@@ -158,8 +158,8 @@ const afterIb = resolveSessionGate({
   }),
 })
 assert(afterIb.canPlaceEntry === true, 'IB probe → lunch still open after clocks')
-assert(afterIb.rangeStrategy === 'lunch_range', 'lunch strategy after IB probe')
-assert(/Lunch-range playbook unlocked/i.test(afterIb.message), `after IB msg: ${afterIb.message}`)
+assert(afterIb.rangeStrategy === 'ib', 'lunch strategy after IB probe')
+assert(/IB playbook unlocked/i.test(afterIb.message), `after IB msg: ${afterIb.message}`)
 
 // Never clocked in → afternoon chart locked until late clock-in (or cash close)
 for (const [inst, now] of [

@@ -23,6 +23,7 @@ export const DESK_CHART_THEME = {
     textColor: DESK_CHART_TEXT,
     fontFamily: 'Inter, JetBrains Mono, system-ui',
     fontSize: 12,
+    attributionLogo: false,
   },
   grid: {
     vertLines: { color: DESK_CHART_GRID, style: LineStyle.Solid },
@@ -72,6 +73,7 @@ export const DESK_CHART_THEME = {
   },
   handleScale: {
     axisPressedMouseMove: { time: true, price: true },
+    axisDoubleClickReset: { time: true, price: true },
     mouseWheel: true,
     pinch: true,
   },

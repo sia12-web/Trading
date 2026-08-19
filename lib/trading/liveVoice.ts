@@ -87,8 +87,8 @@ export function liveVoiceDevBypassEnabled(): boolean {
 
 /**
  * Pure window + clock-in gate for Live Voice.
- * Window: analyzeStart ≤ local time < lunch-range entry end
- * (covers morning + IB + lunch-break prep + lunch-range entry).
+ * Window: analyzeStart ≤ local time < last-entry cutoff (NY IB / Tokyo IB)
+ * (covers Open range + OR30/US Range + IB).
  */
 export function resolveLiveVoiceStatus(input: {
   now?: Date
@@ -151,7 +151,7 @@ export function resolveLiveVoiceStatus(input: {
       disableCode: before ? 'before_prep' : 'after_entry',
       reason: before
         ? `Live Voice opens at ${window.start} ${tzLabel} (prep)`
-        : `Live Voice closed after ${window.end} ${tzLabel} (lunch-range entry ended)`,
+        : `Live Voice closed after ${window.end} ${tzLabel} (IB entry ended)`,
     }
   }
 

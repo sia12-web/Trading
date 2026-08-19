@@ -108,7 +108,7 @@ const serverOr30 = { label: 'OR30', high: 63_281.3, low: 62_508.8 }
   const usHigh = us.high // 41000 — outside OR30 ±10
   const { range, usedUsClientFallback } = attributeServerPlaybookEntry({
     entry: usHigh,
-    shaped: { or30, ib: null, usRange: null, lunchRange: null },
+    shaped: { or15: null, or30, ib: null, usRange: null, lunchRange: null },
     active: or30,
     clientRange: us,
   })
@@ -121,7 +121,7 @@ const serverOr30 = { label: 'OR30', high: 63_281.3, low: 62_508.8 }
   const usMid = (us.high + us.low) / 2
   const midAttr = attributeServerPlaybookEntry({
     entry: usMid,
-    shaped: { or30, ib: null, usRange: null, lunchRange: null },
+    shaped: { or15: null, or30, ib: null, usRange: null, lunchRange: null },
     active: or30,
     clientRange: us,
   })
@@ -134,7 +134,7 @@ const serverOr30 = { label: 'OR30', high: 63_281.3, low: 62_508.8 }
   const us = { label: 'US Range', high: 41_000, low: 40_800 }
   const { range, usedUsClientFallback } = attributeServerPlaybookEntry({
     entry: 40_050,
-    shaped: { or30, ib: null, usRange: null, lunchRange: null },
+    shaped: { or15: null, or30, ib: null, usRange: null, lunchRange: null },
     active: or30,
     clientRange: us,
   })
@@ -148,7 +148,7 @@ const serverOr30 = { label: 'OR30', high: 63_281.3, low: 62_508.8 }
   const clientUs = { label: 'US Range', high: 41_000, low: 40_000 }
   const { range, usedUsClientFallback } = attributeServerPlaybookEntry({
     entry: serverUs.high,
-    shaped: { or30: null, ib: null, usRange: serverUs, lunchRange: null },
+    shaped: { or15: null, or30: null, ib: null, usRange: serverUs, lunchRange: null },
     active: serverUs,
     clientRange: clientUs,
   })
@@ -174,7 +174,7 @@ const serverOr30 = { label: 'OR30', high: 63_281.3, low: 62_508.8 }
 
   const { range: claimed } = attributeServerPlaybookEntry({
     entry: us.high,
-    shaped: { or30: null, ib: tokyoIb, usRange: us, lunchRange: null },
+    shaped: { or15: null, or30: null, ib: tokyoIb, usRange: us, lunchRange: null },
     active: us,
     clientRange: { high: us.high, low: us.low, label: 'US Range' },
     instrument: 'NIKKEI',
@@ -186,7 +186,7 @@ const serverOr30 = { label: 'OR30', high: 63_281.3, low: 62_508.8 }
   // Even with a wrong Tokyo IB client claim, live-open US bucket must win
   const { range: wrongClaim } = attributeServerPlaybookEntry({
     entry: us.high,
-    shaped: { or30: null, ib: tokyoIb, usRange: us, lunchRange: null },
+    shaped: { or15: null, or30: null, ib: tokyoIb, usRange: us, lunchRange: null },
     active: us,
     clientRange: { high: tokyoIb.high, low: tokyoIb.low, label: 'Tokyo IB' },
     instrument: 'NIKKEI',
@@ -202,7 +202,7 @@ const serverOr30 = { label: 'OR30', high: 63_281.3, low: 62_508.8 }
   // No client claim — active US Range playbook still wins over Tokyo IB mid
   const { range: activePref } = attributeServerPlaybookEntry({
     entry: us.high,
-    shaped: { or30: null, ib: tokyoIb, usRange: us, lunchRange: null },
+    shaped: { or15: null, or30: null, ib: tokyoIb, usRange: us, lunchRange: null },
     active: us,
     clientRange: null,
     instrument: 'NIKKEI',
@@ -214,7 +214,7 @@ const serverOr30 = { label: 'OR30', high: 63_281.3, low: 62_508.8 }
   // Explicit Tokyo IB-only price (not in US bands) still attributes to Tokyo IB
   const { range: ibOnly } = attributeServerPlaybookEntry({
     entry: tokyoIb.high,
-    shaped: { or30: null, ib: tokyoIb, usRange: us, lunchRange: null },
+    shaped: { or15: null, or30: null, ib: tokyoIb, usRange: us, lunchRange: null },
     active: us,
     clientRange: { high: tokyoIb.high, low: tokyoIb.low, label: 'Tokyo IB' },
     instrument: 'NIKKEI',
@@ -234,7 +234,7 @@ const serverOr30 = { label: 'OR30', high: 63_281.3, low: 62_508.8 }
   })
   const { range: overlapUs } = attributeServerPlaybookEntry({
     entry: us.high,
-    shaped: { or30: null, ib: tokyoIb, usRange: us, lunchRange: null },
+    shaped: { or15: null, or30: null, ib: tokyoIb, usRange: us, lunchRange: null },
     active: us,
     clientRange: { high: tokyoIb.high, low: tokyoIb.low, label: 'Tokyo IB' },
     instrument: 'NIKKEI',
@@ -256,7 +256,7 @@ const serverOr30 = { label: 'OR30', high: 63_281.3, low: 62_508.8 }
   const offBand = 39_750 // US mid — illegal; also outside IB bands
   const { range } = attributeServerPlaybookEntry({
     entry: offBand,
-    shaped: { or30: null, ib: tokyoIb, usRange: us, lunchRange: null },
+    shaped: { or15: null, or30: null, ib: tokyoIb, usRange: us, lunchRange: null },
     active: us,
     clientRange: { high: us.high, low: us.low, label: 'US Range' },
   })
@@ -264,7 +264,7 @@ const serverOr30 = { label: 'OR30', high: 63_281.3, low: 62_508.8 }
 
   const midGap = attributeServerPlaybookEntry({
     entry: 40_050, // between US high and IB mid
-    shaped: { or30: null, ib: tokyoIb, usRange: us, lunchRange: null },
+    shaped: { or15: null, or30: null, ib: tokyoIb, usRange: us, lunchRange: null },
     active: us,
     clientRange: null,
   })
@@ -275,7 +275,7 @@ const serverOr30 = { label: 'OR30', high: 63_281.3, low: 62_508.8 }
   const paintedOr = { label: 'OR30', high: 40_014, low: 39_902 }
   const paintedHit = attributeServerPlaybookEntry({
     entry: 40_014,
-    shaped: { or30: serverOr, ib: null, usRange: null, lunchRange: null },
+    shaped: { or15: null, or30: serverOr, ib: null, usRange: null, lunchRange: null },
     active: serverOr,
     clientRange: paintedOr,
   })

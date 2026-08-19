@@ -6,8 +6,6 @@
 import {
   NY_IB_STRATEGY_END,
   NY_IB_STRATEGY_START,
-  NY_LUNCH_RANGE_ENTRY_END,
-  NY_LUNCH_RANGE_ENTRY_START,
   TOKYO_LUNCH_RANGE_ENTRY_END,
   TOKYO_LUNCH_RANGE_ENTRY_START,
   TOKYO_US_RANGE_STRATEGY_END,
@@ -72,7 +70,7 @@ export function formatSessionScheduleBlock(
       `Schedule (${tz}) — NIKKEI`,
       `• Prep / clock-in from ${prep}`,
       `• Session START (cash open) ${open}`,
-      `• OR30 locks ~${deskLocalHmsAsTraderDisplay('09:30:00', s.tz, now)} — morning entry until ${morningEnd}`,
+      `• Open range locks ~${deskLocalHmsAsTraderDisplay('09:15:00', s.tz, now)} — morning entry until ${morningEnd}`,
       `• US Range window ${usWin} (prior NYC H/L — already shaped)`,
       `• Tokyo IB locks ~${deskLocalHmsAsTraderDisplay('10:00:00', s.tz, now)} (first hour) — entry ${ibWin}`,
       `• Lunch confirm ${lunchConfirm}`,
@@ -81,15 +79,15 @@ export function formatSessionScheduleBlock(
     ].join('\n')
   }
 
-  const ibWin = deskLocalRangeAsTraderDisplay(
-    NY_IB_STRATEGY_START,
-    NY_IB_STRATEGY_END,
+  const or30Win = deskLocalRangeAsTraderDisplay(
+    '10:00:00',
+    '10:30:00',
     s.tz,
     now
   )
-  const lunchWin = deskLocalRangeAsTraderDisplay(
-    NY_LUNCH_RANGE_ENTRY_START,
-    NY_LUNCH_RANGE_ENTRY_END,
+  const ibWin = deskLocalRangeAsTraderDisplay(
+    NY_IB_STRATEGY_START,
+    NY_IB_STRATEGY_END,
     s.tz,
     now
   )
@@ -97,12 +95,12 @@ export function formatSessionScheduleBlock(
     `Schedule (${tz}) — ${instrument}`,
     `• Prep / clock-in from ${prep}`,
     `• Session START (cash open) ${open}`,
-    `• OR30 locks ~${deskLocalHmsAsTraderDisplay('10:00:00', s.tz, now)} — morning entry until ${morningEnd}`,
-    `• IB locks ~${deskLocalHmsAsTraderDisplay('10:30:00', s.tz, now)} · entry ${ibWin} (open until lunch-range starts)`,
-    `• Lunch-range locks 13:30 · entry ${lunchWin}`,
+    `• Open range locks ~${deskLocalHmsAsTraderDisplay('09:45:00', s.tz, now)} — morning entry until ${morningEnd}`,
+    `• OR30 locks ~${deskLocalHmsAsTraderDisplay('10:00:00', s.tz, now)} · entry ${or30Win}`,
+    `• IB locks ~${deskLocalHmsAsTraderDisplay('10:30:00', s.tz, now)} · entry ${ibWin}`,
     `• Lunch confirm ${lunchConfirm} (morning books — IB stay open past confirm)`,
     `• Session END (cash close) ${close}`,
-    `• ${tradeifyScheduleRiskLine()} · SL beyond range · TP 1.5R (1:1.5) · ±10 of H / L after active range locks · OR30 optional`,
+    `• ${tradeifyScheduleRiskLine()} · SL beyond range · TP 1.5R (1:1.5) · ±10 of H / L after active range locks · Open range optional`,
   ].join('\n')
 }
 

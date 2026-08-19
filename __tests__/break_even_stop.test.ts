@@ -4,12 +4,14 @@
  */
 import assert from 'node:assert/strict'
 import {
+  alignedTradeTpProgress,
   breakEvenShouldOffer,
   breakEvenStopPrice,
   breakEvenTpProgressThreshold,
   livePriceConfirmsStopHit,
   stopSafeVersusMarket,
   tradeTpProgress,
+  trailShouldOffer,
 } from '../lib/trading/breakEvenStop'
 
 {
@@ -108,6 +110,71 @@ import {
     true,
     'BE only after 50% toward TP on NASDAQ'
   )
+}
+
+{
+  const mixed = {
+    instrument: 'DOW',
+    entry: 53300,
+    brokerFill: 53300,
+    stopLoss: 53310,
+    takeProfit: 53450,
+    livePrice: 53340,
+    liveOanda: 53290,
+    isLong: true,
+    riskAmount: 40,
+    positionSize: 1,
+  }
+  const losing = alignedTradeTpProgress(mixed)
+  assert.equal(losing.aligned, true, 'mixed CME/OANDA books still align')
+  assert.equal(losing.inProfit, false, 'CME live below desk entry is not profit')
+  assert.equal(
+    breakEvenShouldOffer(mixed),
+    false,
+    'must not offer BE while Tradovate book is losing'
+  )
+  assert.equal(
+    trailShouldOffer(mixed),
+    false,
+    'must not offer trail while Tradovate book is losing'
+  )
+}
+
+{
+  const mixedProfit = {
+    instrument: 'DOW',
+    entry: 53300,
+    brokerFill: 53300,
+    stopLoss: 53310,
+    takeProfit: 53450,
+    livePrice: 53410,
+    liveOanda: 53360,
+    isLong: true,
+    riskAmount: 40,
+    positionSize: 1,
+  }
+  const winning = alignedTradeTpProgress(mixedProfit)
+  assert.equal(winning.inProfit, true)
+  assert.ok(winning.progress >= 0.25, `desk progress ${winning.progress}`)
+  assert.equal(
+    breakEvenShouldOffer(mixedProfit),
+    true,
+    'BE after genuine desk-scale progress'
+  )
+}
+
+{
+  const recovered = alignedTradeTpProgress({
+    entry: 53300,
+    takeProfit: 53450,
+    livePrice: 53340,
+    isLong: true,
+    stopLoss: 53310,
+    riskAmount: 40,
+    positionSize: 1,
+  })
+  assert.equal(recovered.aligned, true, 'recover desk entry from SL + sized risk')
+  assert.equal(recovered.inProfit, false, 'recovered entry still above live')
 }
 
 console.log('break_even_stop: ok')

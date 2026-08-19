@@ -62,6 +62,9 @@ async function factsForInstrument(
     instrument,
     ladder,
     overnightNote,
+    or15: shaped.or15
+      ? { high: shaped.or15.high, low: shaped.or15.low, complete: true }
+      : null,
     or30: shaped.or30
       ? { high: shaped.or30.high, low: shaped.or30.low, complete: true }
       : null,

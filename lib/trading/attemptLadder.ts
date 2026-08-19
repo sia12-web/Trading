@@ -1,8 +1,8 @@
 /**
  * Live desk attempt ladder (per-window 2 / 2 / 2, session cap ≤ 3):
  *
- *   DOW / NASDAQ: Morning (OR30) → IB → Lunch-range
- *   NIKKEI:       Morning (OR30) → US Range (prior NYC) → IB
+ *   DOW / NASDAQ: Open range (OR15) → 30-min (OR30) → IB
+ *   NIKKEI:       Open range (OR15) → US Range (prior NYC) → Tokyo IB
  *
  * Each window: up to 2 fills (progressive session risk), BUT the session (day) total
  * is hard-capped at 3 trades regardless of profit/loss or which window still
@@ -11,16 +11,16 @@
  * (still subject to the session cap above).
  * Skip-forward: unused earlier window still unlocks later once its clock ends.
  *
- * Storage keeps morning / ib / lunch counters (slot 1 / 2 / 3).
- * On TOKYO, slot 2 = US Range fills, slot 3 = IB fills (labels differ).
+ * Storage keeps morning / ib / lunch_range counters (slot 1 / 2 / 3).
+ * The `lunch_range` column is slot 3 only — NY slot 3 is now IB, not lunch.
+ * On TOKYO, slot 2 = US Range fills, slot 3 = Tokyo IB fills.
  *
- * NY IB entry starts at 10:30 ET (when first-hour IB locks) and stays open
- * until lunch-range entry starts (13:30 ET) — not a tiny 15-minute slice.
- * Tokyo US Range opens at cash open 09:00 JST (prior NYC already shaped);
- * optional OR30 still owns 09:30–09:45 when morning probes remain.
- * Tokyo IB entries unlock at first-hour lock 10:00 JST (= 21:00 Montreal),
- * overlapping the tail of US Range (through 10:45 JST / 21:45 Montreal),
- * and run through cash close (15:00 JST / 02:00 Montreal).
+ * NY: OR15 forms 09:30–09:45, entries 09:45–10:00.
+ *     OR30 forms 09:30–10:00, entries 10:00–10:30.
+ *     IB forms 09:30–10:30, entries 10:30–15:15.
+ * Tokyo: OR15 forms 09:00–09:15, entries 09:15–09:30.
+ *        US Range from 09:30–10:45 (prior NYC already shaped).
+ *        Tokyo IB entries 10:00–15:00 (first-hour lock → cash close).
  */
 
 import { parseTimeToSeconds } from '@/lib/utils/timeUtils'
@@ -40,10 +40,10 @@ export type AttemptBucket = 'morning' | 'ib' | 'lunch_range' | 'other'
 
 /**
  * Live unlock strategy window.
- * NY: ib | lunch_range
+ * NY: or30 (slot 2) | ib (slot 3)
  * TOKYO: us_range (slot 2) | ib (slot 3)
  */
-export type RangeStrategy = 'ib' | 'lunch_range' | 'us_range' | null
+export type RangeStrategy = 'or30' | 'ib' | 'us_range' | null
 
 export type AttemptFill = {
   instrument?: string | null
@@ -77,19 +77,19 @@ const CLOCK = {
   NY: {
     tz: 'America/New_York',
     /**
-     * Slot 2 — IB from first-hour lock (10:30) until lunch-range opens (13:30).
-     * midEnd === lateStart so lunch never steals IB before lunch starts.
+     * Slot 2 — OR30 from 15m lock (10:00) until first-hour IB locks (10:30).
+     * midEnd === lateStart so IB never steals OR30 before IB starts.
      */
-    midStart: '10:30:00',
-    midEnd: '13:30:00',
-    /** Slot 3 — Lunch-range */
-    lateStart: '13:30:00',
+    midStart: '10:00:00',
+    midEnd: '10:30:00',
+    /** Slot 3 — IB from first-hour lock through last-entry cutoff */
+    lateStart: '10:30:00',
     lateEnd: '15:15:00',
   },
   TOKYO: {
     tz: 'Asia/Tokyo',
-    /** Slot 2 — US Range from cash open (prior NYC already shaped) */
-    midStart: '09:00:00',
+    /** Slot 2 — US Range after Open-range entry ends (prior NYC already shaped) */
+    midStart: '09:30:00',
     midEnd: '10:45:00',
     /**
      * Slot 3 — Tokyo IB entries from first-hour lock (10:00 JST = 21:00 Montreal)
@@ -100,8 +100,8 @@ const CLOCK = {
   },
 } as const
 
-/** Optional Nikkei OR30 probe window — owns the morning attempt bucket. */
-const TOKYO_OR30_MORNING = { start: '09:30:00', end: '09:45:00' } as const
+/** Nikkei Open-range probe window — owns the morning attempt bucket. */
+const TOKYO_OR15_MORNING = { start: '09:15:00', end: '09:30:00' } as const
 
 function marketFor(instrument: string | null | undefined): DeskMarket {
   return instrument === 'NIKKEI' ? 'TOKYO' : 'NY'
@@ -145,10 +145,10 @@ export function classifyAttemptBucket(
   const lateEnd = parseTimeToSeconds(c.lateEnd)
 
   if (market === 'TOKYO') {
-    const or30Start = parseTimeToSeconds(TOKYO_OR30_MORNING.start)
-    const or30End = parseTimeToSeconds(TOKYO_OR30_MORNING.end)
-    // Optional OR30 probes count as morning even though US Range window overlaps
-    if (t >= or30Start && t < or30End) return 'morning'
+    const or15Start = parseTimeToSeconds(TOKYO_OR15_MORNING.start)
+    const or15End = parseTimeToSeconds(TOKYO_OR15_MORNING.end)
+    // Open-range probes count as morning even though US Range may overlap later
+    if (t >= or15Start && t < or15End) return 'morning'
     if (t >= midStart && t < midEnd) return 'ib'
     if (t >= lateStart && t < lateEnd) return 'lunch_range'
     if (t < midStart) return 'morning'
@@ -180,7 +180,7 @@ export function isMorningWindowReleased(args: {
 }
 
 /** Mid slot released → late slot may take budget.
- *  NY: after IB clock ends (midEnd = lunch-range start) or mid probes exhausted.
+ *  NY: after OR30 clock ends (midEnd = IB start) or mid probes exhausted.
  *  Tokyo: after first-hour IB locks (lateStart = 10:00) or US probes exhausted —
  *  so Tokyo IB is tradable from 21:00 Montreal while US Range may still run to 21:45.
  */
@@ -266,7 +266,7 @@ export function buildAttemptLadder(
   for (const f of fills) {
     const inst = f.instrument || fallbackInstrument
     // Prefer the bucket recorded at fill time (price-attributed) — clock-only
-    // classification breaks once IB's window overlaps lunch-range.
+    // classification breaks once slot-2 / slot-3 windows overlap.
     const bucket: AttemptBucket =
       f.rangeBucket === 'morning' ||
       f.rangeBucket === 'ib' ||
@@ -358,12 +358,12 @@ export function resolveRangeStrategyFromLadder(args: {
   const t = args.timeSec
 
   if (args.market === 'TOKYO') {
-    const or30Start = parseTimeToSeconds(TOKYO_OR30_MORNING.start)
-    const or30End = parseTimeToSeconds(TOKYO_OR30_MORNING.end)
-    // Optional OR30 owns 09:30–09:45 when morning probes remain
+    const or15Start = parseTimeToSeconds(TOKYO_OR15_MORNING.start)
+    const or15End = parseTimeToSeconds(TOKYO_OR15_MORNING.end)
+    // Open range owns 09:15–09:30 when morning probes remain
     if (
-      t >= or30Start &&
-      t < or30End &&
+      t >= or15Start &&
+      t < or15End &&
       args.ladder.morningEligible
     ) {
       return null
@@ -373,8 +373,8 @@ export function resolveRangeStrategyFromLadder(args: {
     return null
   }
 
-  if (t >= midStart && t < midEnd && args.ladder.ibEligible) return 'ib'
-  if (t >= lateStart && t < lateEnd && args.ladder.lunchEligible) return 'lunch_range'
+  if (t >= midStart && t < midEnd && args.ladder.ibEligible) return 'or30'
+  if (t >= lateStart && t < lateEnd && args.ladder.lunchEligible) return 'ib'
   return null
 }
 
@@ -386,7 +386,7 @@ export function formatAttemptLadderShort(
   if (instrument === 'NIKKEI') {
     return `Session ${ladder.dayAttempts}/${ladder.maxDayAttempts} · AM ${ladder.morningAttempts}/${ladder.maxMorningAttempts} · US ${ladder.ibAttempts}/${ladder.maxIbAttempts} · IB ${ladder.lunchAttempts}/${ladder.maxLunchAttempts}`
   }
-  return `Session ${ladder.dayAttempts}/${ladder.maxDayAttempts} · AM ${ladder.morningAttempts}/${ladder.maxMorningAttempts} · IB ${ladder.ibAttempts}/${ladder.maxIbAttempts} · LN ${ladder.lunchAttempts}/${ladder.maxLunchAttempts}`
+  return `Session ${ladder.dayAttempts}/${ladder.maxDayAttempts} · AM ${ladder.morningAttempts}/${ladder.maxMorningAttempts} · 30 ${ladder.ibAttempts}/${ladder.maxIbAttempts} · IB ${ladder.lunchAttempts}/${ladder.maxLunchAttempts}`
 }
 
 export function attemptLadderLockReason(
@@ -403,18 +403,18 @@ export function attemptLadderLockReason(
     !ladder.lunchEligible
   ) {
     return tokyo
-      ? 'Morning (OR30) probes used (2/2) — wait for US Range / Tokyo IB window.'
-      : 'Morning (OR30) probes used (2/2) — wait for IB / lunch-range window.'
+      ? 'Morning (Open range) probes used (2/2) — wait for US Range / Tokyo IB window.'
+      : 'Morning (Open range) probes used (2/2) — wait for OR30 / IB window.'
   }
   if (ladder.ibAttempts >= ladder.maxIbAttempts && !ladder.lunchEligible) {
     return tokyo
       ? 'US Range probes used (2/2) — wait for Tokyo IB window.'
-      : 'IB probes used (2/2) — wait for lunch-range window.'
+      : 'OR30 probes used (2/2) — wait for IB window.'
   }
   if (ladder.lunchAttempts >= ladder.maxLunchAttempts) {
     return tokyo
       ? 'Tokyo IB probes used (2/2) — no new entries.'
-      : 'Lunch-range probes used (2/2) — no new entries.'
+      : 'IB probes used (2/2) — no new entries.'
   }
   return null
 }
@@ -442,11 +442,11 @@ export function bucketForRangeLabel(
 ): AttemptBucket | null {
   if (!label) return null
   const tokyo = instrument === 'NIKKEI'
-  if (label === 'OR30') return 'morning'
-  if (label === 'IB') return tokyo ? null : 'ib'
+  if (label === 'OR15' || label === 'Open range') return 'morning'
+  if (label === 'OR30') return tokyo ? null : 'ib'
+  if (label === 'IB') return tokyo ? null : 'lunch_range'
   if (label === 'Tokyo IB') return tokyo ? 'lunch_range' : null
   if (label === 'US Range') return tokyo ? 'ib' : null
-  if (label === 'Lunch-range') return tokyo ? null : 'lunch_range'
   return null
 }
 
@@ -456,17 +456,16 @@ export function bucketDisplayLabel(
   instrument?: string | null
 ): string {
   const tokyo = instrument === 'NIKKEI'
-  if (bucket === 'morning') return 'Morning (OR30)'
-  if (bucket === 'ib') return tokyo ? 'US Range' : 'IB'
-  if (bucket === 'lunch_range') return tokyo ? 'Tokyo IB' : 'Lunch-range'
+  if (bucket === 'morning') return 'Morning (Open range)'
+  if (bucket === 'ib') return tokyo ? 'US Range' : 'OR30'
+  if (bucket === 'lunch_range') return tokyo ? 'Tokyo IB' : 'IB'
   return 'range'
 }
 
 /**
  * Bucket's own entry-window bounds (desk-local seconds) — independent of the
- * single sequential picker. NY IB runs 10:30 → lunch-range start (13:30 ET)
- * so leftover IB probes stay clickable until lunch opens (not through LN).
- * Tokyo US Range stays 09:00–10:45; Tokyo IB opens at first-hour lock
+ * single sequential picker. NY OR30 runs 10:00 → IB lock (10:30 ET).
+ * Tokyo US Range stays 09:30–10:45; Tokyo IB opens at first-hour lock
  * (10:00–15:00) and may overlap US for the last 45 minutes.
  */
 export function bucketWindowSec(
@@ -477,7 +476,7 @@ export function bucketWindowSec(
   if (bucket === 'ib') {
     return {
       start: parseTimeToSeconds(c.midStart),
-      // NY: IB ends when lunch-range starts (midEnd === lateStart).
+      // NY: OR30 ends when IB starts (midEnd === lateStart).
       end: parseTimeToSeconds(c.midEnd),
     }
   }
@@ -487,9 +486,9 @@ export function bucketWindowSec(
       end: parseTimeToSeconds(c.lateEnd),
     }
   }
-  // Morning/OR30's own lock + entry-close window is a short slice inside the
+  // Morning/OR15's own lock + entry-close window is a short slice inside the
   // first hour (varies NY vs Tokyo) and is already enforced upstream by
-  // isOr30MorningEntryWindowOpen / the session-gate FLAT phase — do not
+  // isOr15MorningEntryWindowOpen / the session-gate FLAT phase — do not
   // duplicate/second-guess that narrower clock here.
   return null
 }
@@ -533,10 +532,10 @@ export function bucketWindowUnlockMessage(
   if (bucket === 'ib') {
     if (market === 'TOKYO') {
       const win = deskLocalRangeAsTraderDisplay(c.midStart, c.midEnd, c.tz, now)
-      return `${label} entries unlock ${win} (after Morning/OR30 ends or morning probes are exhausted).`
+      return `${label} entries unlock ${win} (after Morning/Open range ends or morning probes are exhausted).`
     }
     const win = deskLocalRangeAsTraderDisplay(c.midStart, c.midEnd, c.tz, now)
-    return `${label} entries unlock ${win} — open until lunch-range starts (after Morning/OR30 ends or morning probes are exhausted).`
+    return `${label} entries unlock ${win} — open until IB starts (after Morning/Open range ends or morning probes are exhausted).`
   }
   if (bucket === 'lunch_range') {
     if (market === 'TOKYO') {
@@ -544,7 +543,7 @@ export function bucketWindowUnlockMessage(
       return `${label} entries unlock ${win} (after first-hour IB locks, or sooner if US Range probes are exhausted).`
     }
     const win = deskLocalRangeAsTraderDisplay(c.lateStart, c.lateEnd, c.tz, now)
-    return `${label} entries unlock ${win} (after IB ends or IB probes are exhausted).`
+    return `${label} entries unlock ${win} (after OR30 ends or OR30 probes are exhausted).`
   }
   return `${label} entry window is not open right now (${TRADER_DISPLAY_LABEL}).`
 }

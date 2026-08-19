@@ -117,8 +117,8 @@ export type LiveVoiceDeskContext = {
     attemptLadderLabel: string
     openPositionId: string | null
     entryWindow: 1 | 2 | 3 | null
-    rangeStrategy: 'ib' | 'lunch_range' | 'us_range' | null
-    playbookMode: 'morning' | 'ib' | 'us_range' | 'lunch_break' | 'lunch_range' | 'done'
+    rangeStrategy: 'or30' | 'ib' | 'us_range' | null
+    playbookMode: 'morning' | 'or30' | 'ib' | 'us_range' | 'lunch_break' | 'done'
     playbookTitle: string
     tradeDate: string
     times: {

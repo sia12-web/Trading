@@ -17,12 +17,20 @@ import type { OandaPriceQuote } from '@/lib/oanda/pricing'
 
 export type PriceTickListener = (quote: OandaPriceQuote) => void
 
+type MidSample = { tMs: number; mid: number }
+
 type HubState = {
   listeners: Map<Instrument, Set<PriceTickListener>>
   abort: AbortController | null
   runId: number
   lastByInstrument: Map<Instrument, OandaPriceQuote & { receivedAt: number }>
+  midHistory: Map<Instrument, MidSample[]>
 }
+
+/** Keep enough mids to pair a 10-minute delayed CME print. */
+const MID_HISTORY_TTL_MS = 12 * 60_000
+/** Downsample so a 50ms tick burst does not fill RAM. */
+const MID_HISTORY_MIN_STEP_MS = 250
 
 const g = globalThis as typeof globalThis & {
   __oandaPricingHub?: HubState
@@ -35,9 +43,74 @@ function hub(): HubState {
       abort: null,
       runId: 0,
       lastByInstrument: new Map(),
+      midHistory: new Map(),
     }
   }
+  // HMR may revive an older hub shape
+  if (!g.__oandaPricingHub.midHistory) {
+    g.__oandaPricingHub.midHistory = new Map()
+  }
   return g.__oandaPricingHub
+}
+
+function pruneMidHistory(rows: MidSample[], nowMs: number): MidSample[] {
+  const floor = nowMs - MID_HISTORY_TTL_MS
+  let i = 0
+  while (i < rows.length && rows[i]!.tMs < floor) i++
+  return i > 0 ? rows.slice(i) : rows
+}
+
+/** Record a mid so a delayed Yahoo print can pair with the same-age OANDA book. */
+export function recordOandaMidSample(
+  instrument: Instrument,
+  mid: number,
+  tMs: number = Date.now()
+): void {
+  if (!(mid > 0) || !Number.isFinite(tMs)) return
+  const h = hub()
+  const prev = h.midHistory.get(instrument) ?? []
+  const last = prev[prev.length - 1]
+  if (last && tMs >= last.tMs && tMs - last.tMs < MID_HISTORY_MIN_STEP_MS) {
+    last.tMs = tMs
+    last.mid = mid
+    h.midHistory.set(instrument, pruneMidHistory(prev, Date.now()))
+    return
+  }
+  prev.push({ tMs, mid })
+  if (last && tMs < last.tMs) {
+    prev.sort((a, b) => a.tMs - b.tMs)
+  }
+  h.midHistory.set(instrument, pruneMidHistory(prev, Date.now()))
+}
+
+/**
+ * OANDA mid nearest to a unix-second timestamp, or null if nothing is inside
+ * maxDeltaMs. Used to pair delayed CME lasts with a contemporaneous CFD mid.
+ */
+export function getStreamedMidNear(
+  instrument: Instrument,
+  unixSec: number,
+  maxDeltaMs = 2_000
+): number | null {
+  if (!(unixSec > 0)) return null
+  const rows = hub().midHistory.get(instrument)
+  if (!rows || rows.length === 0) return null
+  const target = unixSec * 1000
+  let best: MidSample | null = null
+  let bestDelta = Infinity
+  for (const row of rows) {
+    const d = Math.abs(row.tMs - target)
+    if (d < bestDelta) {
+      bestDelta = d
+      best = row
+    }
+  }
+  if (!best || bestDelta > maxDeltaMs) return null
+  return best.mid
+}
+
+export function __resetOandaMidHistoryForTest(): void {
+  hub().midHistory = new Map()
 }
 
 function wantedSymbols(): string[] {
@@ -54,6 +127,7 @@ function wantedSymbols(): string[] {
 function emit(quote: OandaPriceQuote, instrument: Instrument) {
   const h = hub()
   h.lastByInstrument.set(instrument, { ...quote, receivedAt: Date.now() })
+  recordOandaMidSample(instrument, quote.price)
   const set = h.listeners.get(instrument)
   if (!set || set.size === 0) return
   for (const fn of set) {

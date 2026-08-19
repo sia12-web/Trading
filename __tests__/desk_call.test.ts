@@ -211,7 +211,7 @@ function auctionThenBuy(openU: number): DeskCallBar[] {
     asOfUnix: mondayOpen + 10 * 60,
     playbookMode: 'morning',
   })
-  assert.equal(early.side, 'WAIT', 'Drive locked but OR30 not complete')
+  assert.equal(early.side, 'WAIT', 'Drive locked but Open range not complete')
   assert.ok(early.playLine.includes('no locked playbook range'))
 }
 
@@ -223,17 +223,17 @@ function auctionThenBuy(openU: number): DeskCallBar[] {
     asOfUnix: mondayOpen + 30 * 60,
     playbookMode: 'morning',
   })
-  assert.equal(call.side, 'LONG', 'OR30 Drive up → LONG')
-  assert.equal(call.rangeKey, 'OR30')
-  assert.equal(deskCallBadgeText(call), 'OR30 LONG')
+  assert.equal(call.side, 'LONG', 'Open range Drive up → LONG')
+  assert.equal(call.rangeKey, 'OR15')
+  assert.equal(deskCallBadgeText(call), 'OR15 LONG')
   assert.equal(call.entryEdge, 'low')
   assert.equal(call.entryPrice, call.rangeLow)
   assert.equal(call.controlLabel, 'WAIT')
-  assert.ok(call.playLine.includes('below OR30 low'))
+  assert.ok(call.playLine.includes('below Open range low') || call.playLine.includes('below OR15 low'))
   assert.ok(call.playLine.includes('Ticket unchanged'))
   assert.ok(call.playLine.includes('off-band'))
   assert.ok(formatDeskCallForPrompt(call).includes('dPOC is not the fill'))
-  assert.ok(deskCallHoverText(call).includes('CALL OR30 LONG — ticket allowed'))
+  assert.ok(deskCallHoverText(call).includes('CALL OR15 LONG — ticket allowed'))
   assert.ok(deskCallHoverText(call).includes('OK     Open:'))
   assert.ok(deskCallHoverText(call).includes('Hunt:'))
   assert.equal(deskCallLineSpecs(call).length, 0)
@@ -343,37 +343,25 @@ function auctionThenBuy(openU: number): DeskCallBar[] {
 }
 
 {
-  const lunchStart = zonedCivilToUnix('2026-08-17', 12, NY_DESK_CLOCK.timeZone)
-  const lunchBars: DeskCallBar[] = []
-  for (let t = lunchStart; t < lunchStart + 90 * 60; t += 300) {
-    lunchBars.push({
-      time: t,
-      open: 42200,
-      high: 42240,
-      low: 42180,
-      close: 42210,
-      volume: 1,
-    })
-  }
-  const bars = [...driveUpSession(mondayOpen, 8, 'buy'), ...lunchBars]
+  const bars = driveUpSession(mondayOpen, 8, 'buy')
   const forming = computeDeskCall({
     instrument: 'DOW',
     candles: [...friday, ...bars],
-    asOfUnix: lunchStart + 30 * 60,
-    playbookMode: 'lunch_range',
+    asOfUnix: mondayOpen + 40 * 60,
+    playbookMode: 'ib',
   })
-  assert.equal(forming.side, 'WAIT', 'lunch not complete')
+  assert.equal(forming.side, 'WAIT', 'IB not complete before first hour')
 
   const locked = computeDeskCall({
     instrument: 'DOW',
     candles: [...friday, ...bars],
-    asOfUnix: lunchStart + 90 * 60,
-    playbookMode: 'lunch_range',
+    asOfUnix: mondayOpen + 70 * 60,
+    playbookMode: 'ib',
   })
-  assert.equal(locked.rangeKey, 'LN')
+  assert.equal(locked.rangeKey, 'IB')
   assert.equal(locked.side, 'LONG')
-  assert.equal(deskCallBadgeText(locked), 'LN LONG')
-  assert.ok(locked.playLine.includes('Lunch-range'))
+  assert.equal(deskCallBadgeText(locked), 'IB LONG')
+  assert.ok(locked.playLine.includes('IB'))
 }
 
 {

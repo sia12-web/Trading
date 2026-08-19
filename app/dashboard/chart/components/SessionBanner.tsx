@@ -63,7 +63,7 @@ export interface SessionGateState {
   dayLocked?: boolean
   attemptLadderLabel?: string
   /** Slot-2 / slot-3 unlock (NY: ib|lunch_range · Tokyo: us_range|ib) */
-  rangeStrategy?: 'ib' | 'lunch_range' | 'us_range' | null
+  rangeStrategy?: 'or30' | 'ib' | 'us_range' | null
   tradeifyDayLocked?: boolean
   tradeifyLockMessage?: string | null
   tradeifyRefuseReason?: string | null
@@ -88,12 +88,12 @@ function formatDeskClock(_market?: 'NY' | 'TOKYO' | null): { time: string; label
 
 function phaseLabel(
   phase: string,
-  rangeStrategy?: 'ib' | 'lunch_range' | 'us_range' | null,
+  rangeStrategy?: 'or30' | 'ib' | 'us_range' | null,
   instrument?: 'DOW' | 'NASDAQ' | 'NIKKEI' | null
 ): string {
   if (rangeStrategy === 'us_range') return 'US-RANGE'
-  if (rangeStrategy === 'ib') return instrument === 'NIKKEI' ? 'IB' : 'IB'
-  if (rangeStrategy === 'lunch_range') return 'LUNCH-RANGE'
+  if (rangeStrategy === 'or30') return 'OR30'
+  if (rangeStrategy === 'ib') return instrument === 'NIKKEI' ? 'TOKYO-IB' : 'IB'
   switch (phase) {
     case 'FLAT':
       return 'MORNING'
@@ -230,7 +230,8 @@ export function SessionBanner({
               : undefined,
         rangeStrategy:
           json.rangeStrategy === 'ib' ||
-          json.rangeStrategy === 'lunch_range' ||
+          json.rangeStrategy === 'or30' ||
+          json.rangeStrategy === 'ib' ||
           json.rangeStrategy === 'us_range'
             ? json.rangeStrategy
             : null,

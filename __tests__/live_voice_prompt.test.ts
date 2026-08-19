@@ -141,11 +141,11 @@ const mock = {
     times: {
       analyzeStart: '09:00',
       marketOpen: '09:30',
-      entryClose: '10:15',
+      entryClose: '10:00',
       lunchClose: '11:30',
       marketClose: '16:00',
-      ibEntry: '10:30–13:30',
-      lunchRangeEntry: '13:30–15:15',
+      ibEntry: '10:00–10:30',
+      lunchRangeEntry: '10:30–15:15',
       tz: 'America/Toronto',
       tzLabel: 'Montreal',
     },
@@ -161,23 +161,23 @@ const mock = {
       playbookMode: 'morning',
       or30: {
         status: 'forming',
-        sentence: 'OR30 is FORMING — entry CLOSED until lock at 10:00 Montreal.',
+        sentence: 'Open range is FORMING — entry CLOSED until lock at 09:45 Montreal.',
       },
       mid: {
-        label: 'IB',
+        label: 'OR30',
         status: 'not_yet',
-        sentence: 'IB not open yet — opens when first-hour IB locks at 10:30 Montreal.',
+        sentence: 'OR30 not open yet — opens when the 30-minute range locks at 10:00 Montreal.',
       },
       late: {
-        label: 'Lunch-range',
+        label: 'IB',
         status: 'not_yet',
-        sentence: 'Lunch-range not open until 13:30 Montreal — do not call lunch open.',
+        sentence: 'IB not open until 10:30 Montreal — do not call IB open.',
       },
       facts: [
         'Wall clock NOW: 09:20:00 Montreal · desk local 09:20:00 (NY desk clock).',
-        'OR30 is FORMING — entry CLOSED until lock at 10:00 Montreal.',
-        'IB not open yet — opens when first-hour IB locks at 10:30 Montreal.',
-        'Lunch-range not open until 13:30 Montreal — do not call lunch open.',
+        'Open range is FORMING — entry CLOSED until lock at 09:45 Montreal.',
+        'OR30 not open yet — opens when the 30-minute range locks at 10:00 Montreal.',
+        'IB not open until 10:30 Montreal — do not call IB open.',
         'Active playbook mode from clocks: morning.',
       ],
     },
@@ -244,7 +244,7 @@ assert(packed.includes('IB 10:30'), 'includes IB window')
 assert(packed.includes('AM 0/2'), 'includes attempt ladder')
 assert(packed.includes('RANGE LIQUIDITY MAP'), 'packed context has range liquidity map')
 assert(packed.includes('Primary bait'), 'packed context has primary bait')
-assert(packed.includes('OR30'), 'packed primary OR30 for morning')
+assert(packed.includes('Open range'), 'packed primary Open range for morning')
 assert(packed.includes('Initial SL/TP'), 'packed reminder has strategy SL/TP')
 assert(packed.includes('Opening type'), 'packed reminder has Dalton opening type')
 assert(packed.includes('Control (Dalton RF + dPOC)'), 'packed reminder has Dalton control')
@@ -260,10 +260,10 @@ assert(
 assert(packed.includes('Post-fill MANAGE'), 'packed reminder separates post-fill manage')
 assert(packed.includes('HOLD / PULLBACK / LEAVE / REVERSE'), 'packed reminder has open-book four-call')
 assert(LIVE_VOICE_SYSTEM_PROMPT.includes('SESSION CLOCK STATUS'), 'Leo knows SESSION CLOCK STATUS ground truth')
-assert(LIVE_VOICE_SYSTEM_PROMPT.includes('never invent that OR30 is still open'), 'Leo must not invent OR30 open')
+assert(LIVE_VOICE_SYSTEM_PROMPT.includes('never invent that Open range is still open'), 'Leo must not invent Open range open')
 assert(packed.includes('SESSION CLOCK STATUS'), 'packed context has SESSION CLOCK STATUS')
-assert(packed.includes('OR30 status=forming'), 'packed OR30 forming from mock timing')
-assert(packed.includes('Lunch-range not open until 13:30'), 'packed lunch not-yet sentence')
+assert(packed.includes('Open range status=forming'), 'packed Open range forming from mock timing')
+assert(packed.includes('IB not open until 10:30'), 'packed IB not-yet sentence')
 assert(!packed.includes('99999'), 'no invented price')
 assert(!packed.includes('TRADEIFY GROWTH $50k'), 'profile off stays silent')
 
@@ -303,7 +303,7 @@ assert(!packed.includes('TRADEIFY GROWTH $50k'), 'profile off stays silent')
   } as LiveVoiceDeskContext
   const p = formatLiveVoiceContextForLlm(nikkei)
   assert(p.includes('US Range'), 'Nikkei US Range in packed context')
-  assert(p.includes('OR30 → US Range'), 'Nikkei desk range chain')
+  assert(p.includes('Open range → US Range'), 'Nikkei desk range chain')
   assert(/Primary bait.*US Range/i.test(p), 'Nikkei primary bait US Range')
   assert(p.includes('US Range status=open'), 'Nikkei packed US Range status')
   assert(p.includes('Tokyo IB status=not_yet'), 'Nikkei packed Tokyo IB not_yet')

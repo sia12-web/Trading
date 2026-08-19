@@ -16,7 +16,16 @@
  * - Real Finnhub candles via /api/trading/candles (synthetic fallback)
  */
 
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import {
   createChart,
   LineStyle,
@@ -137,7 +146,6 @@ import {
   liveVisibleInstruments,
   sessionFor,
   deskMarketFor,
-  type DeskInstrument,
 } from '@/lib/trading/sessionGate'
 import {
   resolveDeskPlaybookMode,
@@ -197,14 +205,14 @@ import {
   type RangeAtrSnapshot,
 } from '@/lib/trading/rangeAtr'
 import {
-  NYC_LUNCH_COLORS,
-  computeNycLunchRange,
-  computeNycLunchSignals,
-  isNycLunchInstrument,
-  nycLunchEndMarkers,
-  nycLunchLineSeriesData,
-  type NycLunchRange,
-} from '@/lib/chart/nycLunchSessionRange'
+  OR15_COLORS,
+  computeOr15Range,
+  computeOr15Signals,
+  isOr15Instrument,
+  or15LineSeriesData,
+  or15WindowLabel,
+  type Or15Range,
+} from '@/lib/chart/openingRange15'
 import {
   NIKKEI_US_RANGE_COLORS,
   computeNikkeiUsRangeBreakout,
@@ -244,7 +252,18 @@ import {
   priceFromClientY,
   riskBoxDollarPreview,
 } from '@/lib/chart/chartPointerPrice'
-import { useStickySeriesLayout } from '@/app/dashboard/chart/components/useStickySeriesLayout'
+import {
+  OVERLAY_NODE_SELECTOR,
+  OV_BOX_PRICE,
+  OV_BOX_TIME,
+  OV_DY,
+  OV_PRICE,
+  OV_SPAN,
+  OVERLAY_HIDDEN_TRANSFORM,
+  overlayHide,
+  overlayNumbers,
+  overlayPlace,
+} from '@/lib/chart/overlayLayout'
 import { resolveTradeifyPlace } from '@/lib/trading/tradeifyGrowth50k'
 import {
   didPriceTouchAlert,
@@ -254,6 +273,13 @@ import {
   saveStoredPriceAlert,
   type StoredPriceAlert,
 } from '@/lib/trading/priceTouchAlert'
+
+/** Header ticker repaint cadence — the readout subtree only. */
+const PRICE_TICKER_MS = 50
+/** Cadence for the React state that feeds badges / proximity / alert effects. */
+const PRICE_STATE_MS = 200
+/** REST reconcile spacing while the SSE push stream is still delivering ticks. */
+const RECONCILE_HEALTHY_MS = 20_000
 
 function defaultManualStop(limit: number, direction: 'LONG' | 'SHORT'): number {
   const pct = 0.0035
@@ -477,6 +503,11 @@ type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI'
 /** Desk charts are 5m only — live and simulation share this. */
 const DESK_TIMEFRAME = '5m' as const
 const DESK_BAR_SECONDS = 300
+
+/** Keep re-placing overlays this long after the last pan/zoom/resize event. */
+const OVERLAY_SETTLE_MS = 320
+/** Plain useLayoutEffect warns during SSR; the chart pane is browser-only. */
+const useOverlayLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 
 interface OHLCV {
   time:   UTCTimestamp
@@ -710,6 +741,68 @@ function OHLCVTooltip({ data, color }: { data: TooltipData | null; color: string
   )
 }
 
+// ─── Live price ticker (isolated from the chart's own render) ─────────────────
+
+type LivePriceTick = { price: number; changePct: number }
+
+type LivePriceStore = {
+  tick: LivePriceTick | null
+  subs: Set<() => void>
+}
+
+/**
+ * Header readout only. Subscribing here keeps a ~20 Hz price print from
+ * re-rendering the whole chart component.
+ */
+const LivePriceTicker = memo(function LivePriceTicker({
+  subscribe,
+  getTick,
+  instrument,
+  barCountdown,
+}: {
+  subscribe: (onChange: () => void) => () => void
+  getTick: () => LivePriceTick | null
+  instrument: Instrument
+  barCountdown: string
+}) {
+  const tick = useSyncExternalStore(subscribe, getTick, getTick)
+  if (!tick || !tick.price) return null
+  const isUp = tick.changePct >= 0
+  return (
+    <div className="flex flex-col items-end leading-tight">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-gray-500" title={liveDeskIndexHint(instrument)}>
+          {INSTRUMENT_META[instrument].label}
+        </span>
+        <span
+          className="price-mono text-xl font-extrabold transition-colors duration-300"
+          style={{ color: INSTRUMENT_META[instrument].color }}
+          title={
+            liveDeskIndexHint(instrument) ||
+            'OANDA mid (bid+ask)/2 — compare TradingView to the same index (MNQ vs MYM are different markets)'
+          }
+        >
+          {tick.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </span>
+        <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
+          isUp ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'
+        }`}>
+          {isUp ? '▲' : '▼'} {Math.abs(tick.changePct).toFixed(2)}
+        </span>
+      </div>
+      {barCountdown && (
+        <div
+          className="flex items-center gap-1.5 font-mono text-xs font-bold text-emerald-400 mt-0.5"
+          title="Time remaining in current 5-minute candle"
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-emerald-300 font-extrabold tracking-widest">{barCountdown}</span>
+        </div>
+      )}
+    </div>
+  )
+})
+
 // ─── TradingChart props ───────────────────────────────────────────────────────
 
 interface PositionOverlay {
@@ -798,7 +891,7 @@ interface TradingChartProps {
   /** Morning session: allow placing limits from the chart */
   canPlaceOrder?: boolean
   /** Active attempt-ladder strategy from session gate */
-  rangeStrategy?: 'ib' | 'lunch_range' | 'us_range' | null
+  rangeStrategy?: 'or30' | 'ib' | 'us_range' | null
   attemptsUsed?: number
   stopHits?: number
   morningAttempts?: number
@@ -885,6 +978,7 @@ export function TradingChart({
   } | null>(null)
   const chartRef     = useRef<IChartApi | null>(null)
   const candleRef    = useRef<ISeriesApi<'Candlestick'> | null>(null)
+  const markerHashRef = useRef<string | null>(null)
   const vwapSeriesRef = useRef<{
     vwap: ISeriesApi<'Line'>
     upper1: ISeriesApi<'Line'>
@@ -905,16 +999,15 @@ export function TradingChart({
   const [ibLevels, setIbLevels] = useState<{ high: number; low: number } | null>(null)
   /** IB H/L + BRK/REJ markers + ±10 bands — remembered across refresh. */
   const [showIbBreakouts, setShowIbBreakouts] = useState(() => loadDeskOverlayToggles().ib)
-  /** NYC lunch 12:00–13:30 ET — DOW / NASDAQ only (Mind Over Markets range) */
-  const lunchSeriesRef = useRef<{
+  /** Open range (first 15m) H/L + volume BRK/REJ */
+  const or15SeriesRef = useRef<{
     high: ISeriesApi<'Line'>
     low: ISeriesApi<'Line'>
-    mid: ISeriesApi<'Line'>
   } | null>(null)
-  const lunchRangeRef = useRef<NycLunchRange | null>(null)
-  const [lunchShaped, setLunchShaped] = useState(false)
-  const [lunchLocked, setLunchLocked] = useState(false)
-  const [showLunchRange, setShowLunchRange] = useState(() => loadDeskOverlayToggles().lunch)
+  const or15RangeRef = useRef<Or15Range | null>(null)
+  const [or15Shaped, setOr15Shaped] = useState(false)
+  const [or15Locked, setOr15Locked] = useState(false)
+  const [showOr15, setShowOr15] = useState(() => loadDeskOverlayToggles().or15)
   /** US session range H/L + Asia BRK/REJ — NIKKEI only */
   const usRangeSeriesRef = useRef<{
     high: ISeriesApi<'Line'>
@@ -926,6 +1019,7 @@ export function TradingChart({
   const [showUsRange, setShowUsRange] = useState(() => loadDeskOverlayToggles().us)
   /** Stable paint hook for tip-stream refresh (avoids restarting SSE on marker deps). */
   const paintDeskMarkersRef = useRef<(bars?: OHLCV[]) => void>(() => {})
+  const syncDeskPlaybookRangesRef = useRef<(bars: OHLCV[]) => void>(() => {})
   const paintYesterdayProfileRef = useRef<() => void>(() => {})
   const paintOpeningActivityRef = useRef<() => void>(() => {})
   const paintMarketControlRef = useRef<() => void>(() => {})
@@ -989,6 +1083,9 @@ export function TradingChart({
   const priceLineHostSeededRef = useRef(false)
   /** ±10 allowed-entry band lines around active playbook H/L */
   const entryBandLinesRef = useRef<IPriceLine[]>([])
+  /** Signature of the painted ±10 tags — repaint only when the tags would differ */
+  const entryBandPaintKeyRef = useRef<string | null>(null)
+  const entryBandPaintHostRef = useRef<ISeriesApi<'Line'> | null>(null)
   const [entryBandsVisible, setEntryBandsVisible] = useState(false)
   const [entryBandLabel, setEntryBandLabel] = useState<string | null>(null)
   const [rangeAtrSnap, setRangeAtrSnap] = useState<RangeAtrSnapshot | null>(null)
@@ -1012,8 +1109,26 @@ export function TradingChart({
   const levelsRef = useRef<LevelLine[]>([])
   const [tooltip,     setTooltip]    = useState<TooltipData | null>(null)
   const [livePrice,   setLivePrice]  = useState<number | null>(null)
-  const [priceChange, setPriceChange] = useState<number>(0)
   const [barCountdown, setBarCountdown] = useState<string>('')
+  const priceTickStoreRef = useRef<LivePriceStore>({ tick: null, subs: new Set() })
+  const subscribePriceTick = useCallback((onChange: () => void) => {
+    const store = priceTickStoreRef.current
+    store.subs.add(onChange)
+    return () => {
+      store.subs.delete(onChange)
+    }
+  }, [])
+  const getPriceTick = useCallback(() => priceTickStoreRef.current.tick, [])
+  const publishPriceTick = useCallback((price: number | null, changePct: number) => {
+    const store = priceTickStoreRef.current
+    const next =
+      price != null && Number.isFinite(price) && price > 0 ? { price, changePct } : null
+    const prev = store.tick
+    if (prev == null && next == null) return
+    if (prev && next && prev.price === next.price && prev.changePct === next.changePct) return
+    store.tick = next
+    for (const onChange of store.subs) onChange()
+  }, [])
   useEffect(() => {
     const updateCountdown = () => {
       const nowSec = Math.floor(Date.now() / 1000)
@@ -1034,7 +1149,8 @@ export function TradingChart({
       levels: showLevels,
       or30: showOr30,
       ib: showIbBreakouts,
-      lunch: showLunchRange,
+      or15: showOr15,
+      lunch: false,
       us: showUsRange,
       yday: showYesterdayProfile,
       opening: showOpeningActivity,
@@ -1045,7 +1161,7 @@ export function TradingChart({
     showLevels,
     showOr30,
     showIbBreakouts,
-    showLunchRange,
+    showOr15,
     showUsRange,
     showYesterdayProfile,
     showOpeningActivity,
@@ -1118,19 +1234,8 @@ export function TradingChart({
       }
     }
 
-    if (showLunchRange && lunchRangeRef.current) {
-      for (const m of nycLunchEndMarkers(lunchRangeRef.current)) {
-        lunchCount += 1
-        markers.push({
-          time: m.time as UTCTimestamp,
-          position: m.position,
-          color: m.color,
-          shape: m.shape,
-          text: m.text,
-        })
-      }
-      if (deskBars.length > 0) {
-        for (const s of computeNycLunchSignals(deskBars, lunchRangeRef.current)) {
+    if (showOr15 && or15RangeRef.current && deskBars.length > 0) {
+      for (const s of computeOr15Signals(deskBars, or15RangeRef.current)) {
           lunchCount += 1
           markers.push({
             time: s.time as UTCTimestamp,
@@ -1139,7 +1244,6 @@ export function TradingChart({
             shape: s.shape,
             text: s.text,
           })
-        }
       }
     }
 
@@ -1180,14 +1284,14 @@ export function TradingChart({
       or30: or30RangeRef.current,
       ib: ibRangeRef.current,
       usRange: usRangeRef.current,
-      lunchRange: lunchRangeRef.current,
+      or15: or15RangeRef.current,
       morningAttempts,
     })
     let shapedForTails: ShapedRangeForTails | null = null
     if (strategyRangeForTails) {
       const or30 = or30RangeRef.current
       const ib = ibRangeRef.current
-      const lunch = lunchRangeRef.current
+      const lunch = or15RangeRef.current
       const us = usRangeRef.current
       if (
         showOr30 &&
@@ -1212,7 +1316,7 @@ export function TradingChart({
           lockedUnix: ib.endUnix,
         }
       } else if (
-        showLunchRange &&
+        showOr15 &&
         lunch?.complete &&
         lunch.high === strategyRangeForTails.high &&
         lunch.low === strategyRangeForTails.low
@@ -1220,7 +1324,7 @@ export function TradingChart({
         shapedForTails = {
           ...strategyRangeForTails,
           complete: true,
-          lockedUnix: lunch.lunchEndUnix,
+          lockedUnix: lunch.endUnix,
         }
       } else if (
         showUsRange &&
@@ -1276,13 +1380,20 @@ export function TradingChart({
         chartTzRef.current
       ).map((m) => ({ ...m, time: m.time as UTCTimestamp }))
       mapped.sort((a, b) => (a.time as number) - (b.time as number))
-      candleSeries.setMarkers(mapped)
+      // setMarkers forces a full series repaint — skip identical rebuilds
+      const hash = mapped
+        .map((m) => `${m.time}|${m.position}|${m.shape}|${m.color}|${m.text ?? ''}`)
+        .join('~')
+      if (hash !== markerHashRef.current) {
+        markerHashRef.current = hash
+        candleSeries.setMarkers(mapped)
+      }
     } catch {
       /* ignore */
     }
   }, [
     showIbBreakouts,
-    showLunchRange,
+    showOr15,
     showOr30,
     showUsRange,
     instrument,
@@ -1299,7 +1410,7 @@ export function TradingChart({
 
   useEffect(() => {
     paintDeskMarkers()
-  }, [showIbBreakouts, showLunchRange, showOr30, showUsRange, paintDeskMarkers])
+  }, [showIbBreakouts, showOr15, showOr30, showUsRange, paintDeskMarkers])
 
   /** Apply / clear IB first-hour H/L (blue). Off until user toggles IB BRK/REJ (B). */
   const paintIbLines = useCallback(() => {
@@ -1355,30 +1466,31 @@ export function TradingChart({
     }
   }, [showIbBreakouts, instrument])
 
-  /** Apply / clear lunch line series from cached range (toggle without recompute). */
-  const paintLunchLines = useCallback(() => {
-    const series = lunchSeriesRef.current
+  /** Apply / clear Open-range (first 15m) H/L from cached range. */
+  const paintOr15Lines = useCallback(() => {
+    const series = or15SeriesRef.current
     if (!series) return
-    const lunch = lunchRangeRef.current
-    if (!showLunchRange || !lunch || !isNycLunchInstrument(instrument)) {
+    const range = or15RangeRef.current
+    const allowed = isOr15Instrument(instrument)
+    setOr15Locked(!!(allowed && range?.complete))
+
+    if (!showOr15 || !range || !allowed) {
       try {
         series.high.setData([])
         series.low.setData([])
-        series.mid.setData([])
       } catch {
         /* ignore */
       }
-      setLunchShaped(false)
-      setLunchLocked(false)
+      setOr15Shaped(false)
       return
     }
-    const tip = candlesRef.current[candlesRef.current.length - 1]?.time as number | undefined
-    const pts = nycLunchLineSeriesData(lunch, tip ?? lunch.toTime, {
-      showMid: false,
-    })
-    const tz = chartTzRef.current
+    const tipUnix = candlesRef.current.length
+      ? (candlesRef.current[candlesRef.current.length - 1]!.time as number)
+      : Math.floor(Date.now() / 1000)
+    const pts = or15LineSeriesData(range, tipUnix)
     const savedSpacing = readDeskBarSpacing(chartRef.current)
     try {
+      const tz = chartTzRef.current
       series.high.setData(
         mapTimesToChart(
           axisLabelSeriesData(pts.high).map((p) => ({ time: p.time, value: p.value })),
@@ -1391,18 +1503,14 @@ export function TradingChart({
           tz
         ).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
       )
-      series.mid.setData([])
-      setLunchShaped(true)
-      setLunchLocked(!!lunch.complete)
+      setOr15Shaped(true)
       keepDeskBarSpacing(chartRef.current, savedSpacing)
     } catch {
       series.high.setData([])
       series.low.setData([])
-      series.mid.setData([])
-      setLunchShaped(false)
-      setLunchLocked(false)
+      setOr15Shaped(false)
     }
-  }, [showLunchRange, instrument])
+  }, [showOr15, instrument])
 
   /** Apply / clear Nikkei US-range H/L (IB-style: current session, 2 red lines). */
   const paintUsRangeLines = useCallback(() => {
@@ -1493,6 +1601,99 @@ export function TradingChart({
       setOr30Shaped(false)
     }
   }, [showOr30, instrument])
+
+  const syncDeskPlaybookRanges = useCallback((bars: OHLCV[]) => {
+    if (!bars.length) return
+    const inst = instrumentRef.current
+    const ohlcv = bars.map((c) => ({
+      time: c.time as number,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+      volume: c.volume,
+    }))
+    const tipUnix = ohlcv[ohlcv.length - 1]!.time
+    const nowUnix = Math.max(tipUnix, Math.floor(Date.now() / 1000))
+
+    if (ibSeriesRef.current) {
+      const sess = sessionFor(inst)
+      const tipDay = new Intl.DateTimeFormat('en-CA', {
+        timeZone: sess.tz,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date(tipUnix * 1000))
+      const [oh, om] = sess.marketOpen.split(':').map(Number)
+      const openUnix =
+        inst === 'NIKKEI'
+          ? tokyoDateTimeToUnix(tipDay, oh!, om || 0)
+          : nyDateTimeToUnix(tipDay, oh!, om || 0)
+      ibRangeRef.current = computeInitialBalance(ohlcv, openUnix, nowUnix)
+      paintIbLines()
+    }
+
+    if (or15SeriesRef.current) {
+      if (isOr15Instrument(inst)) {
+        const sess = sessionFor(inst)
+        const tipDay = new Intl.DateTimeFormat('en-CA', {
+          timeZone: sess.tz,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        }).format(new Date(tipUnix * 1000))
+        const [oh, om] = sess.marketOpen.split(':').map(Number)
+        const openUnix =
+          inst === 'NIKKEI'
+            ? tokyoDateTimeToUnix(tipDay, oh!, om || 0)
+            : nyDateTimeToUnix(tipDay, oh!, om || 0)
+        or15RangeRef.current = computeOr15Range(ohlcv, openUnix, nowUnix)
+      } else {
+        or15RangeRef.current = null
+      }
+      paintOr15Lines()
+    }
+
+    if (usRangeSeriesRef.current) {
+      usRangeRef.current = isNikkeiUsRangeInstrument(inst)
+        ? currentNikkeiUsRangeForChart(ohlcv, nowUnix)
+        : null
+      paintUsRangeLines()
+    }
+
+    if (or30SeriesRef.current) {
+      if (isOr30Instrument(inst)) {
+        const sess = sessionFor(inst)
+        const tipDay = new Intl.DateTimeFormat('en-CA', {
+          timeZone: sess.tz,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        }).format(new Date(tipUnix * 1000))
+        const [oh, om] = sess.marketOpen.split(':').map(Number)
+        const openUnix =
+          inst === 'NIKKEI'
+            ? tokyoDateTimeToUnix(tipDay, oh!, om || 0)
+            : nyDateTimeToUnix(tipDay, oh!, om || 0)
+        or30RangeRef.current = computeOr30Range(ohlcv, openUnix, nowUnix)
+      } else {
+        or30RangeRef.current = null
+      }
+      paintOr30Lines()
+    }
+  }, [paintIbLines, paintOr15Lines, paintUsRangeLines, paintOr30Lines])
+
+  useEffect(() => {
+    syncDeskPlaybookRangesRef.current = syncDeskPlaybookRanges
+  }, [syncDeskPlaybookRanges])
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const list = candlesRef.current
+      if (list.length) syncDeskPlaybookRangesRef.current(list)
+    }, 4000)
+    return () => window.clearInterval(id)
+  }, [])
 
   const paintYesterdayProfile = useCallback(() => {
     const host = priceLineHostRef.current
@@ -1804,8 +2005,8 @@ export function TradingChart({
   }, [paintIbLines])
 
   useEffect(() => {
-    paintLunchLines()
-  }, [paintLunchLines])
+    paintOr15Lines()
+  }, [paintOr15Lines])
 
   useEffect(() => {
     paintUsRangeLines()
@@ -1882,7 +2083,8 @@ export function TradingChart({
   useEffect(() => {
     playbookUserClosedRef.current = false
     setLivePrice(null)
-  }, [instrument])
+    publishPriceTick(null, 0)
+  }, [instrument, publishPriceTick])
   const [voiceOpen, setVoiceOpen] = useState(false)
   // Draw Zone tool — drag on chart to draw a rectangle zone for Leo
   const [drawZoneActive, setDrawZoneActive] = useState(false)
@@ -1936,7 +2138,6 @@ export function TradingChart({
     visible: boolean
   }>>([])
   const [highlightsListOpen, setHighlightsListOpen] = useState(false)
-  const [chartScrollTrigger, setChartScrollTrigger] = useState(0)
   const loadedInstrumentRef = useRef<string | null>(null)
 
   // Load saved highlights when instrument changes
@@ -2089,16 +2290,143 @@ export function TradingChart({
   // Voice stays closed on refresh / clock-in — user opens via toolbar (V).
   const showLevelsRef = useRef(false)
   const [chartReady,  setChartReady] = useState(false)
-  const stickyPrices = riskBox
-    ? [riskBox.entryPrice, riskBox.stopLoss, riskBox.profitTarget]
-    : editableOverlay
-      ? [editableOverlay.entryPrice, editableOverlay.stopLoss, editableOverlay.profitTarget]
-      : editablePending
-        ? [editablePending.price, editablePending.stopLoss, editablePending.profitTarget]
-        : priceAlert
-          ? [priceAlert.price]
-          : []
-  const stickyTick = useStickySeriesLayout(chartReady ? candleRef.current : null, stickyPrices)
+
+  /**
+   * Overlay pills / brackets / highlight boxes are placed imperatively so a pan
+   * frame never has to re-render this component. Every coordinate is read
+   * before any style is written, so one pass costs a single layout flush.
+   */
+  const applyOverlayLayout = useCallback(() => {
+    const host = chartFrameRef.current
+    const chart = chartRef.current
+    const series = candleRef.current
+    if (!host || !chart || !series) return
+    const nodes = host.querySelectorAll<HTMLElement>(OVERLAY_NODE_SELECTOR)
+    if (nodes.length === 0) return
+    const container = containerRef.current
+    const timeScale = chart.timeScale()
+
+    const placed: Array<{
+      el: HTMLElement
+      x: number
+      y: number
+      w?: number
+      h?: number
+    }> = []
+    const hidden: HTMLElement[] = []
+
+    nodes.forEach((el) => {
+      const dy = Number(el.getAttribute(OV_DY) ?? 0)
+
+      const priceAttr = el.getAttribute(OV_PRICE)
+      if (priceAttr != null) {
+        const y = overlayTopFromPrice(series, Number(priceAttr), host, container)
+        if (y == null) hidden.push(el)
+        else placed.push({ el, x: 0, y: y + dy })
+        return
+      }
+
+      const spanAttr = el.getAttribute(OV_SPAN)
+      if (spanAttr != null) {
+        let top = Infinity
+        let bottom = -Infinity
+        let ok = false
+        for (const price of overlayNumbers(spanAttr)) {
+          const y = overlayTopFromPrice(series, price, host, container)
+          if (y == null) {
+            ok = false
+            break
+          }
+          ok = true
+          top = Math.min(top, y)
+          bottom = Math.max(bottom, y)
+        }
+        if (!ok) hidden.push(el)
+        else placed.push({ el, x: 0, y: top + dy, h: bottom - top })
+        return
+      }
+
+      const boxPrices = overlayNumbers(el.getAttribute(OV_BOX_PRICE))
+      const boxTimes = overlayNumbers(el.getAttribute(OV_BOX_TIME))
+      const [priceHigh, priceLow] = boxPrices
+      const [timeFrom, timeTo] = boxTimes
+      if (priceHigh == null || priceLow == null || timeFrom == null || timeTo == null) {
+        hidden.push(el)
+        return
+      }
+      const topCoord = series.priceToCoordinate(priceHigh)
+      const bottomCoord = series.priceToCoordinate(priceLow)
+      const leftCoord = timeScale.timeToCoordinate(timeFrom as UTCTimestamp)
+      const rightCoord = timeScale.timeToCoordinate(timeTo as UTCTimestamp)
+      if (topCoord == null || bottomCoord == null || leftCoord == null || rightCoord == null) {
+        hidden.push(el)
+        return
+      }
+      placed.push({
+        el,
+        x: Math.min(leftCoord, rightCoord),
+        y: Math.min(topCoord, bottomCoord),
+        w: Math.abs(rightCoord - leftCoord),
+        h: Math.abs(bottomCoord - topCoord),
+      })
+    })
+
+    for (const el of hidden) overlayHide(el)
+    for (const p of placed) overlayPlace(p.el, p.x, p.y, p.w, p.h)
+  }, [])
+
+  const overlayRafRef = useRef(0)
+  const overlaySampleUntilRef = useRef(0)
+
+  /** Place now, then keep sampling each frame for a beat so kinetic scroll and
+   * autoscale animations stay glued to the candles without a perpetual loop. */
+  const pokeOverlayLayout = useCallback(() => {
+    applyOverlayLayout()
+    overlaySampleUntilRef.current = Date.now() + OVERLAY_SETTLE_MS
+    if (overlayRafRef.current) return
+    const loop = () => {
+      applyOverlayLayout()
+      if (Date.now() < overlaySampleUntilRef.current) {
+        overlayRafRef.current = requestAnimationFrame(loop)
+      } else {
+        overlayRafRef.current = 0
+      }
+    }
+    overlayRafRef.current = requestAnimationFrame(loop)
+  }, [applyOverlayLayout])
+
+  const pokeOverlayLayoutRef = useRef(pokeOverlayLayout)
+  pokeOverlayLayoutRef.current = pokeOverlayLayout
+
+  useOverlayLayoutEffect(() => {
+    applyOverlayLayout()
+  })
+
+  useEffect(() => {
+    const host = chartFrameRef.current
+    const poke = () => pokeOverlayLayoutRef.current()
+    // Price-axis drags rescale vertically without emitting a logical-range change.
+    const onPointerMove = (e: PointerEvent) => {
+      if (e.buttons !== 0) poke()
+    }
+    const listen = { passive: true } as const
+    host?.addEventListener('pointerdown', poke, listen)
+    host?.addEventListener('pointermove', onPointerMove, listen)
+    window.addEventListener('pointerup', poke, listen)
+    document.addEventListener('fullscreenchange', poke)
+    // Streaming candles can re-autoscale with no input event at all.
+    const idle = window.setInterval(() => applyOverlayLayout(), 150)
+    return () => {
+      host?.removeEventListener('pointerdown', poke)
+      host?.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', poke)
+      document.removeEventListener('fullscreenchange', poke)
+      window.clearInterval(idle)
+      if (overlayRafRef.current) cancelAnimationFrame(overlayRafRef.current)
+      overlayRafRef.current = 0
+    }
+  }, [applyOverlayLayout])
+
   const candlesRef = useRef<OHLCV[]>([])
   const instrumentRef = useRef<Instrument>(instrument)
   /** LIVE = real Yahoo data; SYNTHETIC = random fallback (never trade off this) */
@@ -2113,8 +2441,6 @@ export function TradingChart({
     [onDataModeChange]
   )
   const positionLinesRef = useRef<any[]>([])
-  /** Entry/SL/TP for working limit or open position — folded into candle autoscale only */
-  const overlayFitPricesRef = useRef<number[]>([])
   /** Hover preview of entry/SL/TP for the nearest visible AI/structure level */
   const hoverPreviewLinesRef = useRef<any[]>([])
   const hoverPreviewKeyRef = useRef<string | null>(null)
@@ -2164,7 +2490,7 @@ export function TradingChart({
       or30: or30RangeRef.current,
       ib: ibRangeRef.current,
       usRange: usRangeRef.current,
-      lunchRange: lunchRangeRef.current,
+      or15: or15RangeRef.current,
       morningAttempts,
     })
     if (strategyRange) {
@@ -2177,11 +2503,11 @@ export function TradingChart({
         showOr30,
         showIb: showIbBreakouts,
         showUsRange,
-        showLunchRange,
+        showOr15,
         or30: or30RangeRef.current,
         ib: ibLevels ?? ibRangeRef.current,
         usRange: usRangeRef.current,
-        lunchRange: lunchRangeRef.current,
+        or15: or15RangeRef.current,
         morningAttempts,
       }),
       swing
@@ -2205,7 +2531,7 @@ export function TradingChart({
       or30RangeRef.current,
       ibRangeRef.current,
       usRangeRef.current,
-      lunchRangeRef.current,
+      or15RangeRef.current,
     ]) {
       if (!r || !(r.high > r.low)) continue
       if (
@@ -2257,7 +2583,7 @@ export function TradingChart({
     showOr30,
     showIbBreakouts,
     showUsRange,
-    showLunchRange,
+    showOr15,
     ibLevels,
     attemptsUsed,
     positionOverlay,
@@ -2331,10 +2657,10 @@ export function TradingChart({
             kind: 'entry_band_deny',
             title: `${range.label || 'range'} entry closed`,
             body:
-              range.label === 'OR30'
+              range.label === 'OR15' || range.label === 'OR30'
                 ? instrument === 'NIKKEI'
-                  ? 'OR30 morning ±10 window is closed — enter on the live US Range / Tokyo IB playbook when unlocked.'
-                  : 'OR30 morning ±10 window is closed — enter on the live IB / lunch-range playbook when unlocked.'
+                  ? 'Open-range ±10 window is closed — enter on the live US Range / Tokyo IB playbook when unlocked.'
+                  : 'Open-range / OR30 ±10 window is closed — enter on the live next-range playbook when unlocked.'
                 : bucketCheck.ok
                   ? RANGE_EDGE_OFF_BAND_MESSAGE
                   : bucketCheck.message,
@@ -2399,14 +2725,14 @@ export function TradingChart({
           body =
             instrument === 'NIKKEI'
               ? 'No live ±10 entry bands — wait for US Range / Tokyo IB to unlock, or refresh after first-hour IB lock.'
-              : 'No live ±10 entry bands — wait for IB / lunch-range to unlock.'
+              : 'No live ±10 entry bands — wait for OR30 / IB to unlock.'
         } else if (hit) {
-          if (hit.range.label === 'OR30') {
-            title = 'OR30 entry closed'
+          if (hit.range.label === 'OR15' || hit.range.label === 'OR30') {
+            title = `${hit.range.label} entry closed`
             body =
               instrument === 'NIKKEI'
-                ? 'OR30 morning ±10 window is closed — enter on the live US Range / Tokyo IB playbook when unlocked.'
-                : 'OR30 morning ±10 window is closed — enter on the live IB / lunch-range playbook when unlocked.'
+                ? 'Open-range ±10 window is closed — enter on the live US Range / Tokyo IB playbook when unlocked.'
+                : 'Open-range / OR30 ±10 window is closed — enter on the live next-range playbook when unlocked.'
           } else {
             const bucketCheck = assertBucketEntryEligible({
               instrument,
@@ -2724,12 +3050,10 @@ export function TradingChart({
       const watchTag =
         playbookMode === 'us_range'
           ? 'US · '
-          : playbookMode === 'ib'
-            ? 'IB · '
-            : playbookMode === 'lunch_break' || playbookMode === 'lunch_range'
-              ? instrument === 'NIKKEI'
-                ? 'IB · '
-                : 'LN · '
+          : playbookMode === 'or30'
+            ? '30 · '
+            : playbookMode === 'ib' || playbookMode === 'lunch_break'
+              ? 'IB · '
               : ''
       byPrice.set(l.level, {
         price: l.level,
@@ -2757,7 +3081,7 @@ export function TradingChart({
       or30: or30RangeRef.current,
       ib: ibRangeRef.current,
       usRange: usRangeRef.current,
-      lunchRange: lunchRangeRef.current,
+      or15: or15RangeRef.current,
       morningAttempts,
     })
     const strategyRange = strategyRangeRaw
@@ -2903,6 +3227,12 @@ export function TradingChart({
     // ─── 1. Candlestick series on the main 'right' price scale ────────────────
     // Autoscale from VISIBLE candles on screen ONLY — distantly historical bars or orphan level lines
     // must never flatten candles to tiny micro-lines.
+    // lightweight-charts re-asks for this on every render pass; recomputing the
+    // visible-bar scan each time is the single biggest allocator during a pan.
+    let scaleCacheList: OHLCV[] | null = null
+    let scaleCacheKey = ''
+    let scaleCacheBounds: { min: number; max: number } | null = null
+
     const candleAutoscale = () => {
       const list = candlesRef.current
       if (!list.length) return null
@@ -2919,6 +3249,14 @@ export function TradingChart({
         }
       } catch {
         startIndex = Math.max(0, list.length - 60)
+      }
+
+      const edge = list[endIndex]
+      const cacheKey =
+        `${startIndex}|${endIndex}|${list.length}|${instrumentRef.current}` +
+        `|${edge ? `${edge.time}:${edge.high}:${edge.low}` : ''}`
+      if (scaleCacheList === list && scaleCacheKey === cacheKey && scaleCacheBounds) {
+        return paddedCandlePriceRange(scaleCacheBounds.min, scaleCacheBounds.max)
       }
 
       let min = Infinity
@@ -2939,18 +3277,9 @@ export function TradingChart({
         max = session.max
       }
 
-      const tip = lastCandleRef.current
-      if (tip) {
-        min = Math.min(min, tip.low, tip.close)
-        max = Math.max(max, tip.high, tip.close)
-      }
-      for (const p of overlayFitPricesRef.current) {
-        if (Number.isFinite(p) && p > 0) {
-          min = Math.min(min, p)
-          max = Math.max(max, p)
-        }
-      }
-
+      scaleCacheList = list
+      scaleCacheKey = cacheKey
+      scaleCacheBounds = { min, max }
       return paddedCandlePriceRange(min, max)
     }
 
@@ -3021,8 +3350,9 @@ export function TradingChart({
       low: chart.addLineSeries({ ...ibLineOpts, title: 'IB L' }),
     }
 
-    // NYC Lunch Session Range (12:00–13:30 ET) — Dow / Nasdaq only
-    const lunchLineBase = {
+    // Open range (first 15m) — amber H/L
+    const or15LineOpts = {
+      color: OR15_COLORS.high,
       lineWidth: 2 as const,
       lineStyle: LineStyle.Solid,
       priceLineVisible: false,
@@ -3033,22 +3363,8 @@ export function TradingChart({
       ...ignoreScale,
     }
     const lunchSeries = {
-      high: chart.addLineSeries({
-        ...lunchLineBase,
-        color: NYC_LUNCH_COLORS.high,
-        title: 'Lunch H',
-      }),
-      low: chart.addLineSeries({
-        ...lunchLineBase,
-        color: NYC_LUNCH_COLORS.low,
-        title: 'Lunch L',
-      }),
-      mid: chart.addLineSeries({
-        ...lunchLineBase,
-        color: NYC_LUNCH_COLORS.low,
-        title: 'Lunch L',
-        lastValueVisible: false,
-      }),
+      high: chart.addLineSeries({ ...or15LineOpts, title: 'OR15 H' }),
+      low: chart.addLineSeries({ ...or15LineOpts, title: 'OR15 L' }),
     }
 
     // Nikkei — US session range H/L (Asia breakout / rejection script)
@@ -3146,14 +3462,14 @@ export function TradingChart({
     priceLineHostRef.current = priceLineHost
     vwapSeriesRef.current = vwapSeries
     ibSeriesRef.current = ibSeries
-    lunchSeriesRef.current = lunchSeries
+    or15SeriesRef.current = lunchSeries
     usRangeSeriesRef.current = usRangeSeries
     or30SeriesRef.current = or30Series
     setChartReady(true)
 
-    // Sync React overlay coordinates on chart scroll/zoom
+    // Sync overlay coordinates on chart scroll/zoom — DOM writes only, no render
     const onScroll = () => {
-      setChartScrollTrigger((prev) => prev + 1)
+      pokeOverlayLayoutRef.current()
     }
     chart.timeScale().subscribeVisibleLogicalRangeChange(onScroll)
 
@@ -3171,13 +3487,11 @@ export function TradingChart({
           containerRef.current.clientWidth,
           containerRef.current.clientHeight
         )
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => setChartScrollTrigger((n) => n + 1))
-        })
+        pokeOverlayLayoutRef.current()
       }
     })
     ro.observe(containerRef.current)
-    const onWheelLayout = () => setChartScrollTrigger((n) => n + 1)
+    const onWheelLayout = () => pokeOverlayLayoutRef.current()
     containerRef.current.addEventListener('wheel', onWheelLayout, { passive: true })
 
     return () => {
@@ -3193,15 +3507,15 @@ export function TradingChart({
       priceLineHostSeededRef.current = false
       vwapSeriesRef.current = null
       ibSeriesRef.current = null
-      lunchSeriesRef.current = null
+      or15SeriesRef.current = null
       usRangeSeriesRef.current = null
       or30SeriesRef.current = null
       levelLinesRef.current = []
       positionLinesRef.current = []
       setIbShaped(false)
       setIbLevels(null)
-      setLunchShaped(false)
-      setLunchLocked(false)
+      setOr15Shaped(false)
+      setOr15Locked(false)
       setUsRangeShaped(false)
       setOr30Shaped(false)
       setOr30Locked(false)
@@ -3243,8 +3557,9 @@ export function TradingChart({
             json.source === 'yahoo' ? 'yahoo' : json.source === 'oanda' ? 'oanda' : 'empty'
           )
           const last = mapped[mapped.length - 1]
-          setLivePrice(json.quote?.price ?? last?.close ?? null)
-          setPriceChange(json.quote?.change_pct ?? 0)
+          const loadedPrice = json.quote?.price ?? last?.close ?? null
+          setLivePrice(loadedPrice)
+          publishPriceTick(loadedPrice, json.quote?.change_pct ?? 0)
           loadLevels(instrument, trimmed)
           return
         }
@@ -3259,6 +3574,7 @@ export function TradingChart({
         setDataMode('live')
         setCandleFeed('empty')
         setLivePrice(null)
+        publishPriceTick(null, 0)
         setLevels([])
         return
       }
@@ -3268,6 +3584,7 @@ export function TradingChart({
         setDataMode('live')
         setCandleFeed('empty')
         setLivePrice(null)
+        publishPriceTick(null, 0)
         setLevels([])
         return
       }
@@ -3276,8 +3593,9 @@ export function TradingChart({
       setCandles(generated)
       setDataMode('synthetic')
       setCandleFeed('empty')
-      setLivePrice(generated[generated.length - 1]?.close ?? null)
-      setPriceChange(0)
+      const generatedPrice = generated[generated.length - 1]?.close ?? null
+      setLivePrice(generatedPrice)
+      publishPriceTick(generatedPrice, 0)
       loadLevels(instrument, generated)
     }
 
@@ -3285,7 +3603,7 @@ export function TradingChart({
     return () => {
       cancelled = true
     }
-  }, [instrument, chartReady, loadLevels, levelsRefreshKey, lockedInstrument])
+  }, [instrument, chartReady, loadLevels, levelsRefreshKey, lockedInstrument, publishPriceTick])
 
   // Mid-morning: re-grade levels against candles every 2 minutes (rule engine only)
   useEffect(() => {
@@ -3317,7 +3635,7 @@ export function TradingChart({
     setCandles([])
     setLevels([])
     setLivePrice(null)
-    setPriceChange(0)
+    publishPriceTick(null, 0)
     clearHoverPreview()
 
     const host = priceLineHostRef.current
@@ -3374,19 +3692,18 @@ export function TradingChart({
     setIbShaped(false)
     setIbLevels(null)
     ibRangeRef.current = null
-    const lunchS = lunchSeriesRef.current
+    const lunchS = or15SeriesRef.current
     if (lunchS) {
       try {
         lunchS.high.setData([])
         lunchS.low.setData([])
-        lunchS.mid.setData([])
       } catch {
         /* ignore */
       }
     }
-    lunchRangeRef.current = null
-    setLunchShaped(false)
-    setLunchLocked(false)
+    or15RangeRef.current = null
+    setOr15Shaped(false)
+    setOr15Locked(false)
     const usR = usRangeSeriesRef.current
     if (usR) {
       try {
@@ -3468,7 +3785,7 @@ export function TradingChart({
     } catch {
       /* ignore */
     }
-  }, [instrument, clearHoverPreview])
+  }, [instrument, clearHoverPreview, publishPriceTick])
 
   useEffect(() => {
     instrumentRef.current = instrument
@@ -3631,151 +3948,13 @@ export function TradingChart({
         vs.lower3.setData([])
       }
 
-      // Initial Balance — first-hour H/L (lines only when IB toggle is on)
-      // Open day follows tip candle (same as OR30) so Nikkei overnight stays aligned.
-      const ibSeries = ibSeriesRef.current
-      if (ibSeries) {
-        const sess = sessionFor(instrument)
-        const tipUnix = ordered.length
-          ? (ordered[ordered.length - 1]!.time as number)
-          : Math.floor(Date.now() / 1000)
-        const nowUnix = Math.max(tipUnix, Math.floor(Date.now() / 1000))
-        const tipDay = new Intl.DateTimeFormat('en-CA', {
-          timeZone: sess.tz,
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-        }).format(new Date(tipUnix * 1000))
-        const [oh, om] = sess.marketOpen.split(':').map(Number)
-        const openUnix =
-          instrument === 'NIKKEI'
-            ? tokyoDateTimeToUnix(tipDay, oh!, om || 0)
-            : nyDateTimeToUnix(tipDay, oh!, om || 0)
-        const ib = computeInitialBalance(
-          ordered.map((c) => ({
-            time: c.time as number,
-            open: c.open,
-            high: c.high,
-            low: c.low,
-            close: c.close,
-            volume: c.volume,
-          })),
-          openUnix,
-          nowUnix
-        )
-        ibRangeRef.current = ib
-        paintIbLines()
-      }
+      syncDeskPlaybookRangesRef.current(ordered)
 
       paintYesterdayProfileRef.current()
       paintOpeningActivityRef.current()
       paintMarketControlRef.current()
       paintDeskCallRef.current()
       paintIbExtendRef.current()
-
-      // NYC Lunch Session Range — 12:00–13:30 ET, Dow & Nasdaq only
-      const lunchSeries = lunchSeriesRef.current
-      if (lunchSeries) {
-        if (isNycLunchInstrument(instrument)) {
-          const sess = sessionFor(instrument as DeskInstrument)
-          const todayLocal = new Intl.DateTimeFormat('en-CA', {
-            timeZone: sess.tz,
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-          }).format(new Date())
-          const [ch, cm] = sess.marketClose.split(':').map(Number)
-          const closeUnix = nyDateTimeToUnix(todayLocal, ch!, cm || 0)
-          const tipUnix = ordered.length
-            ? (ordered[ordered.length - 1]!.time as number)
-            : closeUnix
-          const nowUnix = Math.max(tipUnix, Math.floor(Date.now() / 1000))
-          const lunch = computeNycLunchRange(
-            ordered.map((c) => ({
-              time: c.time as number,
-              high: c.high,
-              low: c.low,
-            })),
-            todayLocal,
-            nowUnix
-          )
-          lunchRangeRef.current = lunch
-          paintLunchLines()
-        } else {
-          lunchRangeRef.current = null
-          paintLunchLines()
-        }
-      }
-
-      // Nikkei — current US session H/L only (IB-style 2 red lines, no BRK/REJ markers)
-      const usRangeSeries = usRangeSeriesRef.current
-      if (usRangeSeries) {
-        if (isNikkeiUsRangeInstrument(instrument)) {
-          const tipUnix = ordered.length
-            ? (ordered[ordered.length - 1]!.time as number)
-            : Math.floor(Date.now() / 1000)
-          // Wall clock wins when tip lags — matches OR30/lunch and keeps
-          // inNikkeiUsSignalSession aligned with the live Tokyo cash window.
-          const nowUnix = Math.max(tipUnix, Math.floor(Date.now() / 1000))
-          const usRange = currentNikkeiUsRangeForChart(
-            ordered.map((c) => ({
-              time: c.time as number,
-              open: c.open,
-              high: c.high,
-              low: c.low,
-              close: c.close,
-              volume: c.volume,
-            })),
-            nowUnix
-          )
-          usRangeRef.current = usRange
-          paintUsRangeLines()
-        } else {
-          usRangeRef.current = null
-          paintUsRangeLines()
-        }
-      }
-
-      // First 30m opening range — desk cash open (NY 09:30 / Tokyo 09:00)
-      const or30Series = or30SeriesRef.current
-      if (or30Series) {
-        if (isOr30Instrument(instrument)) {
-          const tipUnix = ordered.length
-            ? (ordered[ordered.length - 1]!.time as number)
-            : Math.floor(Date.now() / 1000)
-          const nowUnix = Math.max(tipUnix, Math.floor(Date.now() / 1000))
-          const sess = sessionFor(instrument)
-          const tipDay = new Intl.DateTimeFormat('en-CA', {
-            timeZone: sess.tz,
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-          }).format(new Date(tipUnix * 1000))
-          const [oh, om] = sess.marketOpen.split(':').map(Number)
-          const openUnix =
-            instrument === 'NIKKEI'
-              ? tokyoDateTimeToUnix(tipDay, oh!, om || 0)
-              : nyDateTimeToUnix(tipDay, oh!, om || 0)
-          const or30 = computeOr30Range(
-            ordered.map((c) => ({
-              time: c.time as number,
-              open: c.open,
-              high: c.high,
-              low: c.low,
-              close: c.close,
-              volume: c.volume,
-            })),
-            openUnix,
-            nowUnix
-          )
-          or30RangeRef.current = or30
-          setOr30Locked(!!or30?.complete)
-          paintOr30Lines()
-        } else {
-          or30RangeRef.current = null
-          paintOr30Lines()
-        }
-      }
 
       // One marker list for IB + Lunch (US Range / OR30 are lines-only)
       paintDeskMarkers(ordered)
@@ -4119,7 +4298,8 @@ export function TradingChart({
     if (!tipStreamActive) return
 
     const CANDLE_REFRESH_MS = 3_000
-    let lastUiPriceAt = 0
+    let lastTickPublishAt = 0
+    let lastPriceStateAt = 0
     let lastMarkerPaintAt = 0
     const fetchGen = ++candleFetchGenRef.current
     let sseHealthy = false
@@ -4163,12 +4343,16 @@ export function TradingChart({
       onPriceUpdate?.(price)
       if (!interactingRef.current) {
         const now = Date.now()
-        // Header label throttle only — candle tip updates every tick below
-        if (now - lastUiPriceAt >= 50) {
-          lastUiPriceAt = now
-          setLivePrice(price)
-          setPriceChange(changePct)
+        // Header readout repaints on its own subscription — candle tip updates every tick below
+        if (now - lastTickPublishAt >= PRICE_TICKER_MS) {
+          lastTickPublishAt = now
+          publishPriceTick(price, changePct)
           onQuoteTick?.(Math.floor(now / 1000))
+        }
+        // Badges / proximity / alert effects read state — they do not need 20 Hz
+        if (now - lastPriceStateAt >= PRICE_STATE_MS) {
+          lastPriceStateAt = now
+          setLivePrice(price)
         }
       }
 
@@ -4336,6 +4520,7 @@ export function TradingChart({
           // markers in sync (setCandles is skipped to avoid yanking the viewport).
           candlesRef.current = trimmed
           paintDeskMarkersRef.current(trimmed)
+          syncDeskPlaybookRangesRef.current(trimmed)
         }
         setDataMode('live')
         if (json.source === 'yahoo' || json.source === 'oanda') {
@@ -4397,9 +4582,14 @@ export function TradingChart({
       if (sseHealthy) return
       void pollQuote()
     }, 500)
-    // Safety reconcile even when SSE is healthy (drift / missed reconnect)
+    // Safety reconcile even when SSE is healthy (drift / missed reconnect) —
+    // stretched to 20s while push ticks arrive, still 4s once SSE goes quiet.
+    let lastReconcileAt = Date.now()
     const reconcile = setInterval(() => {
       if (!tipOpen()) return
+      const now = Date.now()
+      if (sseHealthy && now - lastReconcileAt < RECONCILE_HEALTHY_MS) return
+      lastReconcileAt = now
       void pollQuote()
     }, 4_000)
 
@@ -4425,6 +4615,7 @@ export function TradingChart({
     tipStreamActive,
     onQuoteTick,
     onPriceUpdate,
+    publishPriceTick,
   ])
 
   // ── Double-click chart to drop TradingView Risk Box at clicked price ───────
@@ -4536,8 +4727,8 @@ export function TradingChart({
         if (!or30Live) {
           denyBody =
             instrument === 'NIKKEI'
-              ? 'OR30 morning ±10 window is closed — enter on the live US Range / Tokyo IB playbook when unlocked.'
-              : 'OR30 morning ±10 window is closed — enter on the live IB / lunch-range playbook when unlocked.'
+              ? 'Open-range ±10 window is closed — enter on the live US Range / Tokyo IB playbook when unlocked.'
+              : 'Open-range / OR30 ±10 window is closed — enter on the live next-range playbook when unlocked.'
         }
       } else {
         const bucketCheck = assertBucketEntryEligible({
@@ -4961,6 +5152,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       },
       handleScale: {
         axisPressedMouseMove: {
+          time: !drawing,
+          price: !drawing,
+        },
+        axisDoubleClickReset: {
           time: !drawing,
           price: !drawing,
         },
@@ -5820,8 +6015,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         setShowSessionBands((prev) => !prev)
       } else if (key === 'n') {
         e.preventDefault()
-        if (instrument === 'DOW' || instrument === 'NASDAQ') {
-          setShowLunchRange((prev) => !prev)
+        if (isOr15Instrument(instrument)) {
+          setShowOr15((prev) => !prev)
         }
       } else if (key === 'u') {
         e.preventDefault()
@@ -5901,7 +6096,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             containerRef.current.clientHeight
           )
         }
-        requestAnimationFrame(() => setChartScrollTrigger((n) => n + 1))
+        pokeOverlayLayoutRef.current()
       })
     }
 
@@ -6054,19 +6249,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     })
     positionLinesRef.current = []
 
-    const refreshOverlayAutoscale = () => {
-      try {
-        chartRef.current?.priceScale('right').applyOptions({
-          autoScale: true,
-          scaleMargins: DESK_CHART_THEME.rightPriceScale.scaleMargins,
-        })
-      } catch {
-        /* ignore */
-      }
-    }
+    const savedSpacing = readDeskBarSpacing(chartRef.current)
 
     if (!host || !chartReady) {
-      overlayFitPricesRef.current = []
       return
     }
 
@@ -6076,10 +6261,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     const paint = (
       entries: Array<{ price: number; color: string; label: string; style: LineStyle; width: 1 | 2 | 3 | 4 }>
     ) => {
-      const prices: number[] = []
       for (const { price, color, label, style, width } of entries) {
         if (!Number.isFinite(price) || price <= 0) continue
-        prices.push(price)
         try {
           positionLinesRef.current.push(
             host.createPriceLine({
@@ -6093,17 +6276,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           )
         } catch { /* ignore */ }
       }
-      // Fold entry/SL/TP into candle autoscale (visible bars only) — never full history or distant overlays
-      overlayFitPricesRef.current = prices
-      if (prices.length >= 1) refreshOverlayAutoscale()
+      keepDeskBarSpacing(chartRef.current, savedSpacing)
     }
 
     if (positionOverlay || editableOverlay) {
       const ov = editableOverlay ?? positionOverlay
-      if (!ov) {
-        overlayFitPricesRef.current = []
-        return
-      }
+      if (!ov) return
       const v = (aiVerdict?.verdict || '').toLowerCase()
       const aiWantsTp = v === 'reversal' || v === 'take_profit' || v === 'pullback'
       const tpLabel =
@@ -6172,12 +6350,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       ])
       return
     }
-
-    overlayFitPricesRef.current = []
-    refreshOverlayAutoscale()
   }, [positionOverlay, editableOverlay, pendingLimit, editablePending, filledBook, workingBook, aiVerdict, chartReady, clearHoverPreview, onAdjustBrackets, onAdjustWorkingBrackets])
 
-  const isUp = priceChange >= 0
   /** Levels / playbook — strategy-aware titles (morning → IB → lunch break → lunch-range) */
   const tokyoDesk = instrument === 'NIKKEI'
   void focusTick
@@ -6201,7 +6375,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       or30: or30RangeRef.current,
       ib: ibRangeRef.current,
       usRange: usRangeRef.current,
-      lunchRange: lunchRangeRef.current,
+      or15: or15RangeRef.current,
       morningAttempts,
     })
     const strategyRange = strategyRangeRaw
@@ -6209,6 +6383,23 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       : null
     return rangeEdgeProximity(livePrice, strategyRange)
   }, [canPlaceOrder, livePrice, playbookMode, instrument, rangeStrategy, morningAttempts, ibExtendBadge])
+
+  /** Drop the ±10 tags only when the chart itself goes away. */
+  useEffect(() => {
+    return () => {
+      const h = priceLineHostRef.current
+      for (const line of entryBandLinesRef.current) {
+        try {
+          h?.removePriceLine(line)
+        } catch {
+          /* ignore */
+        }
+      }
+      entryBandLinesRef.current = []
+      entryBandPaintKeyRef.current = null
+      entryBandPaintHostRef.current = null
+    }
+  }, [])
 
   /** Paint ±10 zones for toggled shaped overlays (OR30 only while morning window open). */
   useEffect(() => {
@@ -6227,9 +6418,17 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       setEntryBandsVisible(false)
       setEntryBandLabel(null)
     }
+    const markPainted = (key: string) => {
+      entryBandPaintKeyRef.current = key
+      entryBandPaintHostRef.current = host
+    }
 
     if (!chartReady || !host) {
-      clearBands()
+      if (entryBandPaintKeyRef.current !== null) {
+        entryBandPaintKeyRef.current = null
+        entryBandPaintHostRef.current = null
+        clearBands()
+      }
       return
     }
 
@@ -6240,7 +6439,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       or30: or30RangeRef.current,
       ib: ibRangeRef.current,
       usRange: usRangeRef.current,
-      lunchRange: lunchRangeRef.current,
+      or15: or15RangeRef.current,
       morningAttempts,
     })
     const active = activeRaw ? applyIbLiquiditySwingToRange(activeRaw, swing) : null
@@ -6252,11 +6451,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         // IB H/L + ±10 follow the IB BRK/REJ toolbar toggle (remembered across refresh).
         showIb: showIbBreakouts,
         showUsRange,
-        showLunchRange,
+        showOr15,
         or30: or30RangeRef.current,
         ib: ibLevels ?? ibRangeRef.current,
         usRange: usRangeRef.current,
-        lunchRange: lunchRangeRef.current,
+        or15: or15RangeRef.current,
         morningAttempts,
       }),
       swing
@@ -6264,23 +6463,41 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     // Right-scale ±10 tags follow the study toggles (R / B / N / U) — not the
     // active playbook. Snap/place still uses studyEntrySnapRanges + active.
     const chart = chartRef.current
-    const savedSpacing = readDeskBarSpacing(chart)
     const call = deskCallRef.current
     const mode = useCallRef.current
-    if (overlays.length === 0 || mode == null) {
-      clearBands()
-      keepDeskBarSpacing(chart, savedSpacing)
-      return
-    }
     const allowed = ticketAllowedEdges({ useCall: mode, call })
-    if (allowed != null && allowed.length === 0) {
-      clearBands()
-      keepDeskBarSpacing(chart, savedSpacing)
-      return
-    }
     const setupEdges = mode === false ? deskCallSetupEdges(call) : []
 
+    // Every painted tag (price, title, color) and the legend are a pure function
+    // of these — identical key means the existing lines are already correct.
+    const paintKey = [
+      canPlaceOrder ? 'p1' : 'p0',
+      mode == null ? 'mn' : mode ? 'm1' : 'm0',
+      allowed == null ? '*' : allowed.join('+'),
+      setupEdges.join('+'),
+      active ? `${active.label ?? ''}|${active.high}|${active.low}` : '-',
+      overlays.map((o) => `${o.label ?? ''}|${o.high}|${o.low}`).join(';'),
+    ].join('~')
+    if (entryBandPaintHostRef.current === host && entryBandPaintKeyRef.current === paintKey) {
+      return
+    }
+
+    const savedSpacing = readDeskBarSpacing(chart)
+    if (overlays.length === 0 || mode == null) {
+      clearBands()
+      markPainted(paintKey)
+      keepDeskBarSpacing(chart, savedSpacing)
+      return
+    }
+    if (allowed != null && allowed.length === 0) {
+      clearBands()
+      markPainted(paintKey)
+      keepDeskBarSpacing(chart, savedSpacing)
+      return
+    }
+
     clearBands()
+    markPainted(paintKey)
 
     const palette: Record<
       string,
@@ -6310,11 +6527,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         highDim: 'rgba(248, 113, 113, 0.4)',
         lowDim: 'rgba(251, 146, 60, 0.4)',
       },
-      'Lunch-range': {
-        high: 'rgba(251, 146, 60, 0.95)',
-        low: 'rgba(252, 211, 77, 0.95)',
-        highDim: 'rgba(251, 146, 60, 0.4)',
-        lowDim: 'rgba(252, 211, 77, 0.4)',
+      OR15: {
+        high: 'rgba(245, 158, 11, 0.95)',
+        low: 'rgba(251, 191, 36, 0.95)',
+        highDim: 'rgba(245, 158, 11, 0.4)',
+        lowDim: 'rgba(251, 191, 36, 0.4)',
       },
     }
     const fallback = {
@@ -6436,18 +6653,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         : `±${RANGE_EDGE_BAND_POINTS} ${callTag} ${legendList} (shaped — entry window closed or inactive)`
     )
     keepDeskBarSpacing(chart, savedSpacing)
-
-    return () => {
-      const h = priceLineHostRef.current
-      for (const line of entryBandLinesRef.current) {
-        try {
-          h?.removePriceLine(line)
-        } catch {
-          /* ignore */
-        }
-      }
-      entryBandLinesRef.current = []
-    }
   }, [
     chartReady,
     canPlaceOrder,
@@ -6458,13 +6663,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     or30Locked,
     ibShaped,
     ibLevels,
-    lunchLocked,
+    or15Locked,
     usRangeShaped,
     showOr30,
     showIbBreakouts,
     showUsRange,
-    showLunchRange,
-    livePrice,
+    showOr15,
+    candles,
     focusTick,
     callBadge,
     ibExtendBadge,
@@ -6484,7 +6689,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       or30: or30RangeRef.current,
       ib: ibRangeRef.current,
       usRange: usRangeRef.current,
-      lunchRange: lunchRangeRef.current,
+      or15: or15RangeRef.current,
       morningAttempts,
     })
     if (!strategyRange || !(strategyRange.high > strategyRange.low)) {
@@ -6520,7 +6725,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     morningAttempts,
     or30Locked,
     ibShaped,
-    lunchLocked,
+    or15Locked,
     usRangeShaped,
     focusTick,
   ])
@@ -6587,7 +6792,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     const next = {
       or30: or30Locked,
       ib: ibShaped,
-      lunch: lunchLocked,
+      lunch: or15Locked,
       us: usRangeShaped && instrument === 'NIKKEI',
     }
 
@@ -6664,21 +6869,21 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       }
     }
     if (next.lunch && !prev.lunch) {
-      const r = lunchRangeRef.current
+      const r = or15RangeRef.current
       if (r && claimDeskNoteOnce('range_lunch', instrument)) {
         const atrSnap = buildRangeAtrSnapshot({
-          rangeLabel: 'Lunch-range',
+          rangeLabel: 'Open range',
           high: r.high,
           low: r.low,
           bars: candlesRef.current,
         })
         const note = formatRangeShapedNote({
           instrument,
-          rangeLabel: 'Lunch-range',
+          rangeLabel: 'Open range',
           high: r.high,
           low: r.low,
           atrLine: atrSnap ? formatRangeAtrAdviceLine(atrSnap) : null,
-          nextHint: 'Lunch-range entry window is open (±10 of locked H / L).',
+          nextHint: 'Open-range entry window is open (±10 of locked H / L).',
         })
         onDeskAlert({
           ...note,
@@ -6717,7 +6922,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
   }, [
     or30Locked,
     ibShaped,
-    lunchLocked,
+    or15Locked,
     usRangeShaped,
     instrument,
     onDeskAlert,
@@ -6764,15 +6969,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
   })()
 
   const renderSavedHighlightBoxes = () => {
-    const chart = chartRef.current
-    const series = candleRef.current
-    if (!chart || !series) return null
-    const timeScale = chart.timeScale()
-
-    // Reference chartScrollTrigger / stickyTick so zoom, resize, and fullscreen re-stick pills
-    void chartScrollTrigger
-    void stickyTick
-
     // Combine saved highlights and the currently active unsent drawnTime highlight
     const listToRender = [...savedHighlights]
     if (drawnTime) {
@@ -6800,27 +6996,14 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     return listToRender.map((hl, idx) => {
       if (!hl.visible) return null
 
-      // Convert times directly to coordinates
-      const leftCoord = timeScale.timeToCoordinate(
-        toChartTime(hl.startUnix, chartTzRef.current) as UTCTimestamp
-      )
-      const rightCoord = timeScale.timeToCoordinate(
-        toChartTime(hl.endUnix, chartTzRef.current) as UTCTimestamp
-      )
-      
+      const boxTime = `${toChartTime(hl.startUnix, chartTzRef.current)},${toChartTime(
+        hl.endUnix,
+        chartTzRef.current
+      )}`
+
       // Handle price boundaries: use exact priceHigh and priceLow drawn by user (do NOT extend vertically)
       const pHigh = hl.priceHigh || hl.rangeHigh || (candles.length > 0 ? Math.max(...candles.map(c => c.high)) : 100000)
       const pLow = hl.priceLow || hl.rangeLow || (candles.length > 0 ? Math.min(...candles.map(c => c.low)) : 0)
-
-      const topCoord = series.priceToCoordinate(pHigh)
-      const bottomCoord = series.priceToCoordinate(pLow)
-
-      if (leftCoord == null || rightCoord == null || topCoord == null || bottomCoord == null) return null
-
-      const left = Math.min(leftCoord, rightCoord)
-      const top = Math.min(topCoord, bottomCoord)
-      const width = Math.abs(rightCoord - leftCoord)
-      const height = Math.abs(bottomCoord - topCoord)
 
       const isUnsent = hl.id === 'unsent-drawn-time'
       const theme = getHighlightTheme(idx, isUnsent)
@@ -6828,12 +7011,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       return (
         <div
           key={hl.id}
+          data-ov-box-price={`${pHigh},${pLow}`}
+          data-ov-box-time={boxTime}
           className={`absolute border border-dashed rounded pointer-events-none z-20 flex flex-col justify-between p-1.5 ${theme.border} ${theme.bg}`}
           style={{
-            left: `${left}px`,
-            top: `${top}px`,
-            width: `${width}px`,
-            height: `${height}px`,
+            left: 0,
+            top: 0,
+            transform: OVERLAY_HIDDEN_TRANSFORM,
             transition: 'none',
           }}
         >
@@ -7037,26 +7221,26 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </span>
         )}
 
-        {/* NYC Lunch Range — Dow & Nasdaq only (Press N) — not the “Lunch break” playbook prep */}
-        {deskSessionLive && (instrument === 'DOW' || instrument === 'NASDAQ') && (
+        {/* Open range — all desk names (Press N) */}
+        {deskSessionLive && isOr15Instrument(instrument) && (
           <button
             type="button"
             title={
-              showLunchRange
-                ? `NYC Lunch range lines 12:00–13:30 ${TRADER_DISPLAY_LABEL} + LN BRK/REJ after 13:30 (Press N)`
-                : 'Show NYC Lunch high / low (Press N). This is the lunch RANGE, not playbook “Lunch break” prep.'
+              showOr15
+                ? `Open range lines ${or15WindowLabel(instrument)} + O15 BRK/REJ after lock (Press N)`
+                : 'Show Open range high / low (Press N). First 15 minutes of cash open.'
             }
-            onClick={() => setShowLunchRange((v) => !v)}
+            onClick={() => setShowOr15((v) => !v)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
-              showLunchRange
-                ? 'bg-orange-600/30 border-orange-500/50 text-orange-100'
-                : 'bg-transparent border-surface-600 text-gray-500 hover:text-orange-200 hover:border-orange-500/40'
+              showOr15
+                ? 'bg-amber-600/30 border-amber-500/50 text-amber-100'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-amber-200 hover:border-amber-500/40'
             }`}
           >
-            <span className={`w-2 h-2 rounded-full inline-block ${showLunchRange ? 'bg-orange-400' : 'bg-gray-600'}`} />
-            <span>Lunch Range (N)</span>
-            {lunchShaped && (
-              <span className="text-[10px] font-normal text-orange-200/80">
+            <span className={`w-2 h-2 rounded-full inline-block ${showOr15 ? 'bg-amber-400' : 'bg-gray-600'}`} />
+            <span>Open range (N)</span>
+            {or15Shaped && (
+              <span className="text-[10px] font-normal text-amber-200/80">
                 {rangeSignalSummary.lunch > 0 ? `${rangeSignalSummary.lunch}` : '0'}
               </span>
             )}
@@ -7180,7 +7364,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             title={
               tokyoDesk
                 ? 'Outside Tokyo entry windows — levels are watch-only until cash close'
-                : 'Outside entry windows (morning / IB / lunch-range) — levels are watch-only'
+                : 'Outside entry windows (morning / OR30 / IB) — levels are watch-only'
             }
           >
             Watch only
@@ -7455,42 +7639,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
         {/* Live price ticker */}
         <div className="ml-auto flex items-center gap-3">
-          {livePrice && (
-            <div className="flex flex-col items-end leading-tight">
-              <div className="flex items-center gap-2">
-                <span
-                  className="text-xs text-gray-500"
-                  title={liveDeskIndexHint(instrument)}
-                >
-                  {INSTRUMENT_META[instrument].label}
-                </span>
-                <span
-                  className="price-mono text-xl font-extrabold transition-colors duration-300"
-                  style={{ color: INSTRUMENT_META[instrument].color }}
-                  title={
-                    liveDeskIndexHint(instrument) ||
-                    'OANDA mid (bid+ask)/2 — compare TradingView to the same index (MNQ vs MYM are different markets)'
-                  }
-                >
-                  {livePrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-                <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
-                  isUp ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'
-                }`}>
-                  {isUp ? '▲' : '▼'} {Math.abs(priceChange).toFixed(2)}
-                </span>
-              </div>
-              {barCountdown && (
-                <div
-                  className="flex items-center gap-1.5 font-mono text-xs font-bold text-emerald-400 mt-0.5"
-                  title="Time remaining in current 5-minute candle"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span className="text-emerald-300 font-extrabold tracking-widest">{barCountdown}</span>
-                </div>
-              )}
-            </div>
-          )}
+          <LivePriceTicker
+            subscribe={subscribePriceTick}
+            getTick={getPriceTick}
+            instrument={instrument}
+            barCountdown={barCountdown}
+          />
           {/* Position overlay indicator */}
           {positionOverlay && (
             <span className={`text-xs px-2 py-0.5 rounded font-semibold border ${
@@ -7625,15 +7779,15 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               </span>
             )}
           </span>
-          {(instrument === 'DOW' || instrument === 'NASDAQ') && (
-            <span title={`NYC lunch 12:00–13:30 ${TRADER_DISPLAY_LABEL} — ±10 entries only after 13:30 lock`}>
-              <span className={lunchShaped ? 'text-orange-400' : 'text-gray-600'}>
-                Lunch {lunchShaped ? (lunchLocked ? 'locked' : 'forming') : `after 12:00 ${TRADER_DISPLAY_LABEL}`}
+          {isOr15Instrument(instrument) && (
+            <span title={`Open range ${or15WindowLabel(instrument)} — ±10 after 15m lock`}>
+              <span className={or15Shaped ? 'text-amber-400' : 'text-gray-600'}>
+                OR15 {or15Shaped ? (or15Locked ? 'locked' : 'forming') : 'forming'}
               </span>
-              {lunchShaped && (
+              {or15Shaped && (
                 <span className="text-gray-600">
                   {' '}
-                  · LN {showLunchRange ? rangeSignalSummary.lunch : 'off'}
+                  · O15 {showOr15 ? rangeSignalSummary.lunch : 'off'}
                 </span>
               )}
             </span>
@@ -7696,24 +7850,24 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             </span>
           </>
         )}
-        {lunchShaped && (
+        {or15Shaped && (
           <>
             <span className="text-gray-600">·</span>
             <span
               className="flex items-center gap-1.5 normal-case tracking-normal"
-              title={`NYC Lunch Session Range — 12:00–13:30 ${TRADER_DISPLAY_LABEL} high / low (Dow & Nasdaq)`}
+              title={`Open range — first 15 minutes (${or15WindowLabel(instrument)})`}
             >
               <span
                 className="inline-block w-4 border-t-2"
-                style={{ borderColor: NYC_LUNCH_COLORS.high }}
+                style={{ borderColor: OR15_COLORS.high }}
               />
-              <span style={{ color: NYC_LUNCH_COLORS.high }}>Lunch H</span>
+              <span style={{ color: OR15_COLORS.high }}>OR15 H</span>
               <span
                 className="inline-block w-4 border-t-2"
-                style={{ borderColor: NYC_LUNCH_COLORS.low }}
+                style={{ borderColor: OR15_COLORS.low }}
               />
-              <span style={{ color: NYC_LUNCH_COLORS.low }}>L</span>
-              <span className="text-gray-600">12:00–13:30 {TRADER_DISPLAY_LABEL} → PM</span>
+              <span style={{ color: OR15_COLORS.low }}>L</span>
+              <span className="text-gray-600">{or15WindowLabel(instrument)}</span>
             </span>
           </>
         )}
@@ -8010,13 +8164,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
         {/* TradingView Order Line Overlay Badges (Attached Directly to Price Lines on Chart) */}
         {riskBox && (() => {
-          const candleSeries = candleRef.current
-          const host = chartFrameRef.current
-          const chartEl = containerRef.current
-          const entryY = overlayTopFromPrice(candleSeries, riskBox.entryPrice, host, chartEl)
-          const tpY = overlayTopFromPrice(candleSeries, riskBox.profitTarget, host, chartEl)
-          const slY = overlayTopFromPrice(candleSeries, riskBox.stopLoss, host, chartEl)
-
           const place = resolveTradeifyPlace({
             fillsUsed: attemptsUsed,
             stopOutsToday: stopHits,
@@ -8031,234 +8178,217 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           const profitVal = dollars.size > 0 ? dollars.profitDollars.toFixed(0) : '—'
           const fillN = Math.min(attemptsUsed + 1, 3)
 
-          const minLineY = entryY != null && tpY != null && slY != null ? Math.min(entryY, tpY, slY) : null
-          const maxLineY = entryY != null && tpY != null && slY != null ? Math.max(entryY, tpY, slY) : null
-
           return (
             <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
               {/* Dashed Vertical Blue Connecting Line */}
-              {minLineY != null && maxLineY != null && (
-                <div
-                  className="absolute border-r-2 border-dashed border-blue-500/80 pointer-events-none"
-                  style={{
-                    left: 'calc(50% + 140px)',
-                    top: `${minLineY}px`,
-                    height: `${Math.abs(maxLineY - minLineY)}px`,
-                  }}
-                />
-              )}
+              <div
+                data-ov-span={`${riskBox.entryPrice},${riskBox.profitTarget},${riskBox.stopLoss}`}
+                className="absolute border-r-2 border-dashed border-blue-500/80 pointer-events-none"
+                style={{
+                  left: 'calc(50% + 140px)',
+                  top: 0,
+                  transform: OVERLAY_HIDDEN_TRANSFORM,
+                }}
+              />
 
               {/* Take Profit (TP) Line Pill Badge — Drag to adjust TP */}
-              {tpY != null && (
-                <div
-                  onMouseDown={onRiskLineMouseDown('TP')}
-                  className="absolute flex items-center gap-1.5 pointer-events-auto cursor-ns-resize group"
-                  style={{
-                    left: '42%',
-                    top: `${tpY - 13}px`,
-                  }}
-                  title="Drag Take Profit line up or down"
-                >
-                  <div className="flex items-center rounded border border-dashed border-emerald-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-emerald-300 shadow-md group-hover:border-emerald-300 transition">
-                    <span className="text-emerald-400">
-                      +{profitVal} · {riskBox.profitTarget.toLocaleString()}
-                    </span>
-                    <span className="text-emerald-600 mx-1.5">|</span>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); cancelRiskBox() }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                      className="text-gray-400 hover:text-emerald-200 transition font-bold"
-                      title="Remove TP"
-                    >✕</button>
-                  </div>
-                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
+              <div
+                data-ov-price={riskBox.profitTarget}
+                data-ov-dy={-13}
+                onMouseDown={onRiskLineMouseDown('TP')}
+                className="absolute flex items-center gap-1.5 pointer-events-auto cursor-ns-resize group"
+                style={{
+                  left: '42%',
+                  top: 0,
+                  transform: OVERLAY_HIDDEN_TRANSFORM,
+                }}
+                title="Drag Take Profit line up or down"
+              >
+                <div className="flex items-center rounded border border-dashed border-emerald-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-emerald-300 shadow-md group-hover:border-emerald-300 transition">
+                  <span className="text-emerald-400">
+                    +{profitVal} · {riskBox.profitTarget.toLocaleString()}
+                  </span>
+                  <span className="text-emerald-600 mx-1.5">|</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); cancelRiskBox() }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                    className="text-gray-400 hover:text-emerald-200 transition font-bold"
+                    title="Remove TP"
+                  >✕</button>
                 </div>
-              )}
+                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
+              </div>
 
               {/* Entry Line Pill Badge — drag between open ±10 band centers; TP/SL free */}
-              {entryY != null && (
-                <div
-                  onMouseDown={onRiskLineMouseDown('ENTRY')}
-                  className="absolute flex items-center gap-2 pointer-events-auto cursor-ns-resize group"
-                  style={{
-                    left: '32%',
-                    top: `${entryY - 14}px`,
+              <div
+                data-ov-price={riskBox.entryPrice}
+                data-ov-dy={-14}
+                onMouseDown={onRiskLineMouseDown('ENTRY')}
+                className="absolute flex items-center gap-2 pointer-events-auto cursor-ns-resize group"
+                style={{
+                  left: '32%',
+                  top: 0,
+                  transform: OVERLAY_HIDDEN_TRANSFORM,
+                }}
+                title="Drag Entry between painted ±10 band centers (H / L)"
+              >
+                {/* Explicit Buy / Sell Placement Button — ONLY BUTTON THAT PLACES ORDER */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    confirmRiskBoxOrder()
                   }}
-                  title="Drag Entry between painted ±10 band centers (H / L)"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className={`px-3 py-1 text-xs font-extrabold uppercase rounded-md shadow-md transition border ${
+                    riskBox.direction === 'LONG'
+                      ? 'bg-blue-600 border-blue-400 text-white hover:bg-blue-500 hover:scale-105'
+                      : 'bg-red-600 border-red-400 text-white hover:bg-red-500 hover:scale-105'
+                  }`}
+                  title={`Click to place ${riskBox.direction} Limit Order`}
                 >
-                  {/* Explicit Buy / Sell Placement Button — ONLY BUTTON THAT PLACES ORDER */}
+                  {riskBox.direction === 'LONG' ? 'BUY LIMIT' : 'SELL LIMIT'}
+                </button>
+
+                {/* Direction Switch Icon Toggle Button — Switch between LONG and SHORT */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    toggleRiskBoxDirection()
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className="w-7 h-7 flex items-center justify-center text-xs font-mono font-extrabold rounded-md shadow-md bg-[#161b22]/95 border border-gray-600 text-gray-200 hover:text-white hover:border-amber-400 hover:bg-surface-700 transition"
+                  title={`Click to switch to ${riskBox.direction === 'LONG' ? 'SHORT / SELL' : 'LONG / BUY'} mode`}
+                >
+                  ⇄
+                </button>
+
+                {/* Pill Badge with Non-Clickable Order Type Label */}
+                <div className="flex items-center rounded-md border border-blue-400 bg-white/95 px-3 py-1 text-xs font-mono font-bold text-gray-900 shadow-xl transition">
+                  <span className="font-sans uppercase font-extrabold tracking-wider text-[11px] select-none">
+                    Limit
+                  </span>
+                  <span className="text-gray-400 mx-1.5">|</span>
+                  <span className="text-[9px] font-sans uppercase tracking-wide text-sky-700">
+                    locked
+                  </span>
+                  <span className="text-gray-400 mx-1.5">|</span>
                   <button
                     type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      confirmRiskBoxOrder()
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    className={`px-3 py-1 text-xs font-extrabold uppercase rounded-md shadow-md transition border ${
-                      riskBox.direction === 'LONG'
-                        ? 'bg-blue-600 border-blue-400 text-white hover:bg-blue-500 hover:scale-105'
-                        : 'bg-red-600 border-red-400 text-white hover:bg-red-500 hover:scale-105'
-                    }`}
-                    title={`Click to place ${riskBox.direction} Limit Order`}
+                    onClick={(e) => { e.stopPropagation(); cancelRiskBox() }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                    className="text-gray-400 hover:text-red-500 transition font-bold"
+                    title="Close (Esc)"
                   >
-                    {riskBox.direction === 'LONG' ? 'BUY LIMIT' : 'SELL LIMIT'}
+                    ✕
                   </button>
-
-                  {/* Direction Switch Icon Toggle Button — Switch between LONG and SHORT */}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      toggleRiskBoxDirection()
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    className="w-7 h-7 flex items-center justify-center text-xs font-mono font-extrabold rounded-md shadow-md bg-[#161b22]/95 border border-gray-600 text-gray-200 hover:text-white hover:border-amber-400 hover:bg-surface-700 transition"
-                    title={`Click to switch to ${riskBox.direction === 'LONG' ? 'SHORT / SELL' : 'LONG / BUY'} mode`}
-                  >
-                    ⇄
-                  </button>
-
-                  {/* Pill Badge with Non-Clickable Order Type Label */}
-                  <div className="flex items-center rounded-md border border-blue-400 bg-white/95 px-3 py-1 text-xs font-mono font-bold text-gray-900 shadow-xl transition">
-                    <span className="font-sans uppercase font-extrabold tracking-wider text-[11px] select-none">
-                      Limit
-                    </span>
-                    <span className="text-gray-400 mx-1.5">|</span>
-                    <span className="text-[9px] font-sans uppercase tracking-wide text-sky-700">
-                      locked
-                    </span>
-                    <span className="text-gray-400 mx-1.5">|</span>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); cancelRiskBox() }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                      className="text-gray-400 hover:text-red-500 transition font-bold"
-                      title="Close (Esc)"
-                    >
-                      ✕
-                    </button>
-                  </div>
-
-                  <div className="w-3 h-3 rounded-full border-2 border-white shadow-md bg-blue-500" />
                 </div>
-              )}
+
+                <div className="w-3 h-3 rounded-full border-2 border-white shadow-md bg-blue-500" />
+              </div>
 
               {/* Stop Loss (SL) Line Pill Badge — Drag to adjust SL (progressive session risk) */}
-              {slY != null && (
-                <div
-                  onMouseDown={onRiskLineMouseDown('SL')}
-                  className="absolute flex items-center gap-1.5 pointer-events-auto cursor-ns-resize group"
-                  style={{
-                    left: '42%',
-                    top: `${slY - 13}px`,
-                  }}
-                  title={`Drag Stop Loss @ ${riskBox.stopLoss.toLocaleString()} — $${lossVal} risk (fill ${fillN}/3)`}
-                >
-                  <div className="flex items-center rounded border border-dashed border-amber-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-amber-300 shadow-md group-hover:border-amber-300 transition">
-                    <span className="text-amber-400">
-                      −{lossVal} · {riskBox.stopLoss.toLocaleString()} · {fillN}/3
-                    </span>
-                    <span className="text-amber-600 mx-1.5">|</span>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); cancelRiskBox() }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                      className="text-gray-400 hover:text-amber-200 transition font-bold"
-                      title="Remove SL"
-                    >✕</button>
-                  </div>
-                  <div className="w-2.5 h-2.5 rounded-full bg-amber-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
+              <div
+                data-ov-price={riskBox.stopLoss}
+                data-ov-dy={-13}
+                onMouseDown={onRiskLineMouseDown('SL')}
+                className="absolute flex items-center gap-1.5 pointer-events-auto cursor-ns-resize group"
+                style={{
+                  left: '42%',
+                  top: 0,
+                  transform: OVERLAY_HIDDEN_TRANSFORM,
+                }}
+                title={`Drag Stop Loss @ ${riskBox.stopLoss.toLocaleString()} — $${lossVal} risk (fill ${fillN}/3)`}
+              >
+                <div className="flex items-center rounded border border-dashed border-amber-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-amber-300 shadow-md group-hover:border-amber-300 transition">
+                  <span className="text-amber-400">
+                    −{lossVal} · {riskBox.stopLoss.toLocaleString()} · {fillN}/3
+                  </span>
+                  <span className="text-amber-600 mx-1.5">|</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); cancelRiskBox() }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                    className="text-gray-400 hover:text-amber-200 transition font-bold"
+                    title="Remove SL"
+                  >✕</button>
                 </div>
-              )}
+                <div className="w-2.5 h-2.5 rounded-full bg-amber-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
+              </div>
             </div>
           )
         })()}
 
         {/* Draggable price alert line + pill badge */}
         {priceAlert && !riskBox && (() => {
-          const candleSeries = candleRef.current
-          const alertY = overlayTopFromPrice(
-            candleSeries,
-            priceAlert.price,
-            chartFrameRef.current,
-            containerRef.current
-          )
           const armed = priceAlert.armed !== false
           const pending = armed && priceAlert.pendingAway === true
 
           return (
             <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
-              {alertY != null && (
+              <div
+                data-ov-price={priceAlert.price}
+                data-ov-dy={-14}
+                onMouseDown={armed ? onPriceAlertLineMouseDown : undefined}
+                className={`absolute flex items-center gap-2 pointer-events-auto group ${
+                  armed ? 'cursor-ns-resize' : 'cursor-default'
+                }`}
+                style={{
+                  left: '38%',
+                  top: 0,
+                  transform: OVERLAY_HIDDEN_TRANSFORM,
+                }}
+                title={
+                  !armed
+                    ? 'Alert fired — dismiss with ✕ or press A / Esc'
+                    : pending
+                      ? 'Waiting for price to leave, then re-touch fires Telegram'
+                      : 'Drag alert line — Telegram when price touches (soft signal, not an order)'
+                }
+              >
                 <div
-                  onMouseDown={armed ? onPriceAlertLineMouseDown : undefined}
-                  className={`absolute flex items-center gap-2 pointer-events-auto group ${
-                    armed ? 'cursor-ns-resize' : 'cursor-default'
-                  }`}
-                  style={{
-                    left: '38%',
-                    top: `${alertY - 14}px`,
-                  }}
-                  title={
+                  className={`flex items-center rounded-md border px-3 py-1 text-xs font-mono font-bold shadow-xl transition ${
                     !armed
-                      ? 'Alert fired — dismiss with ✕ or press A / Esc'
+                      ? 'border-violet-500/40 bg-violet-950/50 text-violet-300/70'
                       : pending
-                        ? 'Waiting for price to leave, then re-touch fires Telegram'
-                        : 'Drag alert line — Telegram when price touches (soft signal, not an order)'
-                  }
+                        ? 'border-violet-400/70 bg-violet-950/80 text-violet-200/90'
+                        : 'border-violet-400 bg-violet-950/95 text-violet-100 group-hover:border-violet-300'
+                  }`}
                 >
-                  <div
-                    className={`flex items-center rounded-md border px-3 py-1 text-xs font-mono font-bold shadow-xl transition ${
-                      !armed
-                        ? 'border-violet-500/40 bg-violet-950/50 text-violet-300/70'
-                        : pending
-                          ? 'border-violet-400/70 bg-violet-950/80 text-violet-200/90'
-                          : 'border-violet-400 bg-violet-950/95 text-violet-100 group-hover:border-violet-300'
-                    }`}
+                  <span className="font-sans uppercase font-extrabold tracking-wider text-[11px] select-none">
+                    {!armed ? 'Fired' : pending ? 'Arming' : 'Alert'}
+                  </span>
+                  <span className="text-violet-400 mx-1.5">@</span>
+                  <span>{priceAlert.price.toLocaleString()}</span>
+                  <span className="text-violet-500/60 mx-1.5">|</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      dismissPriceAlert()
+                    }}
+                    className="text-violet-400/80 hover:text-violet-200 transition font-bold"
+                    title="Dismiss alert"
                   >
-                    <span className="font-sans uppercase font-extrabold tracking-wider text-[11px] select-none">
-                      {!armed ? 'Fired' : pending ? 'Arming' : 'Alert'}
-                    </span>
-                    <span className="text-violet-400 mx-1.5">@</span>
-                    <span>{priceAlert.price.toLocaleString()}</span>
-                    <span className="text-violet-500/60 mx-1.5">|</span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        dismissPriceAlert()
-                      }}
-                      className="text-violet-400/80 hover:text-violet-200 transition font-bold"
-                      title="Dismiss alert"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  <div
-                    className={`w-3 h-3 rounded-full border-2 border-white shadow-md transition-transform ${
-                      !armed
-                        ? 'bg-violet-500/40'
-                        : pending
-                          ? 'bg-violet-400/70'
-                          : 'bg-violet-500 group-hover:scale-125'
-                    }`}
-                  />
+                    ✕
+                  </button>
                 </div>
-              )}
+                <div
+                  className={`w-3 h-3 rounded-full border-2 border-white shadow-md transition-transform ${
+                    !armed
+                      ? 'bg-violet-500/40'
+                      : pending
+                        ? 'bg-violet-400/70'
+                        : 'bg-violet-500 group-hover:scale-125'
+                  }`}
+                />
+              </div>
             </div>
           )
         })()}
 
         {/* Filled position — drag SL / TP to adjust brackets on OANDA + journal */}
         {editableOverlay && !riskBox && onAdjustBrackets && (() => {
-          const candleSeries = candleRef.current
-          const host = chartFrameRef.current
-          const chartEl = containerRef.current
-          const tpY = overlayTopFromPrice(
-            candleSeries,
-            editableOverlay.profitTarget,
-            host,
-            chartEl
-          )
-          const slY = overlayTopFromPrice(candleSeries, editableOverlay.stopLoss, host, chartEl)
           const saving = bracketAdjustStatus === 'saving'
           const units =
             editableOverlay.positionSize != null &&
@@ -8272,44 +8402,44 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           const profitCad = units > 0 ? (units * profitPts).toFixed(2) : null
           return (
             <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
-              {tpY != null && (
-                <div
-                  onMouseDown={saving ? undefined : onBracketLineMouseDown('TP')}
-                  className={`absolute flex items-center gap-1.5 pointer-events-auto group ${
-                    saving ? 'cursor-wait opacity-70' : 'cursor-ns-resize'
-                  }`}
-                  style={{ left: '48%', top: `${tpY - 13}px` }}
-                  title={`Drag Take Profit @ ${editableOverlay.profitTarget.toLocaleString()} — saves on release`}
-                >
-                  <div className="flex items-center rounded border border-dashed border-emerald-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-emerald-300 shadow-md">
-                    <span className="text-emerald-400">
-                      {profitCad != null
-                        ? `+${profitCad} CAD`
-                        : `TP ${editableOverlay.profitTarget.toLocaleString()}`}
-                    </span>
-                  </div>
-                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
+              <div
+                data-ov-price={editableOverlay.profitTarget}
+                data-ov-dy={-13}
+                onMouseDown={saving ? undefined : onBracketLineMouseDown('TP')}
+                className={`absolute flex items-center gap-1.5 pointer-events-auto group ${
+                  saving ? 'cursor-wait opacity-70' : 'cursor-ns-resize'
+                }`}
+                style={{ left: '48%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
+                title={`Drag Take Profit @ ${editableOverlay.profitTarget.toLocaleString()} — saves on release`}
+              >
+                <div className="flex items-center rounded border border-dashed border-emerald-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-emerald-300 shadow-md">
+                  <span className="text-emerald-400">
+                    {profitCad != null
+                      ? `+${profitCad} CAD`
+                      : `TP ${editableOverlay.profitTarget.toLocaleString()}`}
+                  </span>
                 </div>
-              )}
-              {slY != null && (
-                <div
-                  onMouseDown={saving ? undefined : onBracketLineMouseDown('SL')}
-                  className={`absolute flex items-center gap-1.5 pointer-events-auto group ${
-                    saving ? 'cursor-wait opacity-70' : 'cursor-ns-resize'
-                  }`}
-                  style={{ left: '48%', top: `${slY - 13}px` }}
-                  title={`Drag Stop Loss @ ${editableOverlay.stopLoss.toLocaleString()} — saves on release`}
-                >
-                  <div className="flex items-center rounded border border-dashed border-red-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-red-300 shadow-md">
-                    <span className="text-red-300">
-                      {lossCad != null
-                        ? `-${lossCad} CAD`
-                        : `SL ${editableOverlay.stopLoss.toLocaleString()}`}
-                    </span>
-                  </div>
-                  <div className="w-2.5 h-2.5 rounded-full bg-red-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
+                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
+              </div>
+              <div
+                data-ov-price={editableOverlay.stopLoss}
+                data-ov-dy={-13}
+                onMouseDown={saving ? undefined : onBracketLineMouseDown('SL')}
+                className={`absolute flex items-center gap-1.5 pointer-events-auto group ${
+                  saving ? 'cursor-wait opacity-70' : 'cursor-ns-resize'
+                }`}
+                style={{ left: '48%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
+                title={`Drag Stop Loss @ ${editableOverlay.stopLoss.toLocaleString()} — saves on release`}
+              >
+                <div className="flex items-center rounded border border-dashed border-red-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-red-300 shadow-md">
+                  <span className="text-red-300">
+                    {lossCad != null
+                      ? `-${lossCad} CAD`
+                      : `SL ${editableOverlay.stopLoss.toLocaleString()}`}
+                  </span>
                 </div>
-              )}
+                <div className="w-2.5 h-2.5 rounded-full bg-red-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
+              </div>
               {(bracketAdjustStatus === 'saving' ||
                 bracketAdjustStatus === 'error' ||
                 bracketAdjustError) && (
@@ -8331,49 +8461,39 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
         {/* Working limit — TP draggable; SL locked at place (sets size) */}
         {editablePending && !positionOverlay && !riskBox && onAdjustWorkingBrackets && (() => {
-          const candleSeries = candleRef.current
-          const host = chartFrameRef.current
-          const chartEl = containerRef.current
-          const tpY = overlayTopFromPrice(
-            candleSeries,
-            editablePending.profitTarget,
-            host,
-            chartEl
-          )
-          const slY = overlayTopFromPrice(candleSeries, editablePending.stopLoss, host, chartEl)
           const saving = workingBracketAdjustStatus === 'saving'
           return (
             <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
-              {tpY != null && (
-                <div
-                  onMouseDown={saving ? undefined : onWorkingTpMouseDown}
-                  className={`absolute flex items-center gap-1.5 pointer-events-auto group ${
-                    saving ? 'cursor-wait opacity-70' : 'cursor-ns-resize'
-                  }`}
-                  style={{ left: '48%', top: `${tpY - 13}px` }}
-                  title={`Drag Take Profit @ ${editablePending.profitTarget.toLocaleString()} — saves on release`}
-                >
-                  <div className="flex items-center rounded border border-dashed border-emerald-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-emerald-300 shadow-md">
-                    TP {editablePending.profitTarget.toLocaleString()}
-                  </div>
-                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
+              <div
+                data-ov-price={editablePending.profitTarget}
+                data-ov-dy={-13}
+                onMouseDown={saving ? undefined : onWorkingTpMouseDown}
+                className={`absolute flex items-center gap-1.5 pointer-events-auto group ${
+                  saving ? 'cursor-wait opacity-70' : 'cursor-ns-resize'
+                }`}
+                style={{ left: '48%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
+                title={`Drag Take Profit @ ${editablePending.profitTarget.toLocaleString()} — saves on release`}
+              >
+                <div className="flex items-center rounded border border-dashed border-emerald-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-emerald-300 shadow-md">
+                  TP {editablePending.profitTarget.toLocaleString()}
                 </div>
-              )}
-              {slY != null && (
-                <div
-                  className="absolute flex items-center gap-1.5 pointer-events-none opacity-90"
-                  style={{ left: '48%', top: `${slY - 13}px` }}
-                  title="SL locked — sized at place"
-                >
-                  <div className="flex items-center rounded border border-dotted border-red-500/60 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-red-300/90 shadow-md">
-                    SL {editablePending.stopLoss.toLocaleString()}
-                    <span className="ml-1.5 text-[9px] font-sans uppercase tracking-wide text-amber-300/90">
-                      locked
-                    </span>
-                  </div>
-                  <div className="w-2.5 h-2.5 rounded-full bg-red-400/50 border border-white/40 shadow-sm" />
+                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
+              </div>
+              <div
+                data-ov-price={editablePending.stopLoss}
+                data-ov-dy={-13}
+                className="absolute flex items-center gap-1.5 pointer-events-none opacity-90"
+                style={{ left: '48%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
+                title="SL locked — sized at place"
+              >
+                <div className="flex items-center rounded border border-dotted border-red-500/60 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-red-300/90 shadow-md">
+                  SL {editablePending.stopLoss.toLocaleString()}
+                  <span className="ml-1.5 text-[9px] font-sans uppercase tracking-wide text-amber-300/90">
+                    locked
+                  </span>
                 </div>
-              )}
+                <div className="w-2.5 h-2.5 rounded-full bg-red-400/50 border border-white/40 shadow-sm" />
+              </div>
               {(workingBracketAdjustStatus === 'saving' ||
                 workingBracketAdjustStatus === 'error' ||
                 workingBracketAdjustError) && (

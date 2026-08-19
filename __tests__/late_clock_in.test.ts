@@ -130,10 +130,9 @@ const or30Dead = buildInstrumentDeskCard(
   etDate(10, 20)
 )
 assert(
-  or30Dead.books.find((b) => b.label === 'OR30')?.state === 'dead',
-  'OR30 dead after morning entry close'
+  or30Dead.books.find((b) => b.label === 'OR30')?.state === 'open',
+  'OR30 still open at 10:20'
 )
-assert(/do not enter/i.test(or30Dead.books.find((b) => b.label === 'OR30')!.note), 'honesty copy')
 
 // Morning probes exhausted before IB unlock → IB is upcoming, not dead
 const ibUpcoming = buildInstrumentDeskCard(
@@ -154,7 +153,7 @@ assert(
   ibUpcoming.books.find((b) => b.label === 'IB')?.state === 'upcoming',
   `IB must be upcoming before 10:30, got ${ibUpcoming.books.find((b) => b.label === 'IB')?.state}`
 )
-assert(ibUpcoming.tradeableNow === false, 'not tradeable until IB unlocks')
+assert(ibUpcoming.tradeableNow === true, 'OR30 still tradeable at 10:05 after morning probes used')
 assert(/IB:/i.test(ibUpcoming.nextUnlock || ''), 'nextUnlock points at IB')
 
 const ranked = buildLiveDeskBrief(

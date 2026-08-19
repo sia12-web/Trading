@@ -51,14 +51,14 @@ assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
   assert(b === 'morning', `morning bucket got ${b}`)
   const ib = classifyAttemptBucket(
     'DOW',
-    new Date(Date.UTC(2026, 6, 15, 10 + 4, 30, 0))
+    new Date(Date.UTC(2026, 6, 15, 10 + 4, 15, 0))
   )
-  assert(ib === 'ib', `ib bucket got ${ib}`)
+  assert(ib === 'ib', `ib bucket (OR30) got ${ib}`)
   const ln = classifyAttemptBucket(
     'DOW',
-    new Date(Date.UTC(2026, 6, 15, 14 + 4, 0, 0))
+    new Date(Date.UTC(2026, 6, 15, 10 + 4, 30, 0))
   )
-  assert(ln === 'lunch_range', `ln bucket got ${ln}`)
+  assert(ln === 'lunch_range', `ln bucket (IB) got ${ln}`)
 }
 
 {
@@ -111,8 +111,8 @@ assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
     now: etDate(11, 30),
     instrument: 'DOW',
   })
-  assert(duringIb.ibEligible, '11:30 IB still eligible with 1/2 used')
-  assert(!duringIb.lunchEligible, '11:30 lunch must not steal IB before lunch starts')
+  assert(duringIb.lunchEligible, '11:30 IB (slot 3) eligible after OR30 clock')
+  assert(duringIb.ibEligible, 'OR30 probes still unused on the ladder')
 }
 
 {
@@ -226,10 +226,10 @@ assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
   const ladder = attemptLadderFromCounts({
     morningAttempts: 0,
     ibAttempts: 0,
-    now: new Date(Date.UTC(2026, 6, 30, 0, 22, 0)),
+    now: new Date(Date.UTC(2026, 6, 30, 0, 35, 0)),
     instrument: 'NIKKEI',
   })
-  const tokyoOpen = new Date(Date.UTC(2026, 6, 30, 0, 22, 0)) // 09:22 JST
+  const tokyoOpen = new Date(Date.UTC(2026, 6, 30, 0, 35, 0)) // 09:35 JST
   const check = assertBucketEntryEligible({
     instrument: 'NIKKEI',
     market: 'TOKYO',
