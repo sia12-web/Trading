@@ -52,6 +52,11 @@ import {
   type SessionHighlightSpan,
 } from '@/lib/chart/sessionVwap'
 import {
+  applyTickToFormingBar,
+  mergeHistoryWithLiveTip,
+  quoteUnixForBucket,
+} from '@/lib/chart/liveFormingBar'
+import {
   formatChartClock,
   formatChartDate,
   mapTimesToChart,
@@ -1355,15 +1360,23 @@ export function TradingChart({
       })
     }
     const qualityTail = latestQualityTail(tails, 'good')
-    setLatestTailStatus(
-      qualityTail
-        ? {
-            edge: qualityTail.edge,
-            tier: qualityTail.tier,
-            label: qualityTail.label,
-          }
-        : null
-    )
+    const nextTail = qualityTail
+      ? {
+          edge: qualityTail.edge,
+          tier: qualityTail.tier,
+          label: qualityTail.label,
+        }
+      : null
+    setLatestTailStatus((prev) => {
+      if (
+        prev?.edge === nextTail?.edge &&
+        prev?.tier === nextTail?.tier &&
+        prev?.label === nextTail?.label
+      ) {
+        return prev
+      }
+      return nextTail
+    })
 
     setRangeSignalSummary((prev) =>
       prev.ib === ibCount &&
@@ -2414,14 +2427,12 @@ export function TradingChart({
     host?.addEventListener('pointermove', onPointerMove, listen)
     window.addEventListener('pointerup', poke, listen)
     document.addEventListener('fullscreenchange', poke)
-    // Streaming candles can re-autoscale with no input event at all.
-    const idle = window.setInterval(() => applyOverlayLayout(), 150)
+    // Streaming candles poke overlay after a throttled tip paint — not a 150ms loop.
     return () => {
       host?.removeEventListener('pointerdown', poke)
       host?.removeEventListener('pointermove', onPointerMove)
       window.removeEventListener('pointerup', poke)
       document.removeEventListener('fullscreenchange', poke)
-      window.clearInterval(idle)
       if (overlayRafRef.current) cancelAnimationFrame(overlayRafRef.current)
       overlayRafRef.current = 0
     }
@@ -3609,7 +3620,7 @@ export function TradingChart({
   useEffect(() => {
     if (!chartReady) return
     void gradeLevels(instrument)
-    const id = setInterval(() => void gradeLevels(instrument), 15_000)
+    const id = setInterval(() => void gradeLevels(instrument), 120_000)
     return () => clearInterval(id)
   }, [chartReady, instrument, gradeLevels])
 
@@ -4297,10 +4308,11 @@ export function TradingChart({
     if (!chartReady || !streamArmed || dataMode === 'synthetic') return
     if (!tipStreamActive) return
 
-    const CANDLE_REFRESH_MS = 3_000
+    const CANDLE_REFRESH_MS = 15_000
     let lastTickPublishAt = 0
     let lastPriceStateAt = 0
     let lastMarkerPaintAt = 0
+    let tipPaintRaf = 0
     const fetchGen = ++candleFetchGenRef.current
     let sseHealthy = false
 
@@ -4308,19 +4320,59 @@ export function TradingChart({
     const tipOpen = () =>
       tipStreamActive && isChartStreamAllowed(instrument).open
 
-    const syncTipMarkers = (tipBar: OHLCV) => {
+    const toChartCandle = (bar: OHLCV) => ({
+      time: toChartTime(bar.time as number, chartTzRef.current) as UTCTimestamp,
+      open: bar.open,
+      high: bar.high,
+      low: bar.low,
+      close: bar.close,
+    })
+
+    const paintTipBar = (bar: OHLCV) => {
+      lastCandleRef.current = bar
+      if (tipPaintRaf) return
+      tipPaintRaf = requestAnimationFrame(() => {
+        tipPaintRaf = 0
+        const b = lastCandleRef.current
+        if (!b || !candleRef.current) return
+        try {
+          candleRef.current.update(toChartCandle(b))
+          if (!interactingRef.current) pokeOverlayLayoutRef.current()
+        } catch {
+          /* ignore */
+        }
+      })
+    }
+
+    const commitTipBar = (bar: OHLCV, fills: OHLCV[] = []) => {
       const bars = candlesRef.current
-      if (bars.length === 0) return
-      const last = bars[bars.length - 1]!
-      const next =
-        (last.time as number) === (tipBar.time as number)
-          ? [...bars.slice(0, -1), { ...last, ...tipBar, volume: last.volume || tipBar.volume }]
-          : [...bars, tipBar]
+      if (bars.length === 0) {
+        lastCandleRef.current = bar
+        return
+      }
+      let next = bars
+      for (const g of fills) {
+        try {
+          candleRef.current?.update(toChartCandle(g))
+        } catch {
+          /* ignore */
+        }
+        next = [...next, g]
+      }
+      const last = next[next.length - 1]!
+      next =
+        (last.time as number) === (bar.time as number)
+          ? [...next.slice(0, -1), { ...last, ...bar, volume: last.volume || bar.volume }]
+          : [...next, bar]
       candlesRef.current = next
-      const now = Date.now()
-      if (now - lastMarkerPaintAt < 1000) return
-      lastMarkerPaintAt = now
-      paintDeskMarkersRef.current(next)
+      paintTipBar(bar)
+      if (fills.length > 0) {
+        const now = Date.now()
+        if (now - lastMarkerPaintAt >= 1000) {
+          lastMarkerPaintAt = now
+          paintDeskMarkersRef.current(next)
+        }
+      }
     }
 
     const applyQuote = (
@@ -4362,52 +4414,37 @@ export function TradingChart({
       if (!last || !candleRef.current) return
 
       const tfSec = DESK_BAR_SECONDS
-      const lastT = last.time as number
-      if (quoteTs >= lastT + tfSec) {
-        const barTime = (lastT + tfSec) as UTCTimestamp
-        const bar: OHLCV = {
-          time: barTime,
-          open: price,
-          high: price,
-          low: price,
-          close: price,
-          volume: 0,
-        }
-        try {
-          candleRef.current.update({
-            time: toChartTime(bar.time as number, chartTzRef.current) as UTCTimestamp,
-            open: bar.open,
-            high: bar.high,
-            low: bar.low,
-            close: bar.close,
-          })
-          lastCandleRef.current = bar
-          syncTipMarkers(bar)
-        } catch {
-          /* ignore — do not advance ref on failed update */
-        }
-        return
+      const bucketTs = quoteUnixForBucket(quoteTs)
+      const stepped = applyTickToFormingBar(
+        {
+          time: last.time as number,
+          open: last.open,
+          high: last.high,
+          low: last.low,
+          close: last.close,
+          volume: last.volume,
+        },
+        price,
+        bucketTs,
+        tfSec
+      )
+      const fills: OHLCV[] = stepped.gapFills.map((g) => ({
+        time: g.time as UTCTimestamp,
+        open: g.open,
+        high: g.high,
+        low: g.low,
+        close: g.close,
+        volume: g.volume ?? 0,
+      }))
+      const bar: OHLCV = {
+        time: stepped.last.time as UTCTimestamp,
+        open: stepped.last.open,
+        high: stepped.last.high,
+        low: stepped.last.low,
+        close: stepped.last.close,
+        volume: stepped.last.volume ?? last.volume ?? 0,
       }
-
-      const updated: OHLCV = {
-        ...last,
-        high: Math.max(last.high, price),
-        low: Math.min(last.low, price),
-        close: price,
-      }
-      try {
-        candleRef.current.update({
-          time: toChartTime(updated.time as number, chartTzRef.current) as UTCTimestamp,
-          open: updated.open,
-          high: updated.high,
-          low: updated.low,
-          close: updated.close,
-        })
-        lastCandleRef.current = updated
-        syncTipMarkers(updated)
-      } catch {
-        /* ignore */
-      }
+      commitTipBar(bar, fills)
     }
 
     const pollQuote = async () => {
@@ -4462,49 +4499,56 @@ export function TradingChart({
         if (trimmed.length === 0) return
 
         const live = lastCandleRef.current
-        const last = trimmed[trimmed.length - 1]!
         const streamLive = tipOpen()
-        if (live && streamLive) {
-          const liveT = live.time as number
-          const lastT = last.time as number
-          if (liveT > lastT) {
-            trimmed.push(live)
-          } else if (liveT === lastT) {
-            // Prefer broker forming-bar mid when tick tip diverged (stale/spike-stuck).
-            // Otherwise keep the faster tick close for TradingView-like tip speed.
-            const tipDiv =
-              last.close > 0
-                ? Math.abs(live.close - last.close) / last.close
-                : 0
-            const close = tipDiv <= 0.012 ? live.close : last.close
-            trimmed[trimmed.length - 1] = {
-              ...last,
-              high: Math.max(last.high, live.high, live.close, close),
-              low: Math.min(last.low, live.low, live.close, close),
-              close,
-            }
-          }
-        }
+        const merged = mergeHistoryWithLiveTip(
+          trimmed.map((c) => ({
+            time: c.time as number,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume,
+          })),
+          live && streamLive
+            ? {
+                time: live.time as number,
+                open: live.open,
+                high: live.high,
+                low: live.low,
+                close: live.close,
+                volume: live.volume,
+              }
+            : null
+        )
+        const nextBars: OHLCV[] = merged.map((c) => ({
+          time: c.time as UTCTimestamp,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: c.volume ?? 0,
+        }))
+        if (nextBars.length === 0) return
 
         if (fetchGen !== candleFetchGenRef.current) return
 
         const prev = candlesRef.current
         const structureChanged =
-          prev.length !== trimmed.length ||
+          prev.length !== nextBars.length ||
           (prev.length > 0 &&
-            trimmed.length > 0 &&
-            (prev[0]!.time as number) !== (trimmed[0]!.time as number)) ||
+            nextBars.length > 0 &&
+            (prev[0]!.time as number) !== (nextBars[0]!.time as number)) ||
           (prev.length >= 2 &&
-            trimmed.length >= 2 &&
+            nextBars.length >= 2 &&
             (prev[prev.length - 2]!.time as number) !==
-              (trimmed[trimmed.length - 2]!.time as number))
+              (nextBars[nextBars.length - 2]!.time as number))
 
         // Never reset didFitRef here — new prints must not yank a panned viewport
-        lastCandleRef.current = trimmed[trimmed.length - 1]!
+        lastCandleRef.current = nextBars[nextBars.length - 1]!
         if (structureChanged) {
-          setCandles(trimmed)
+          setCandles(nextBars)
         } else {
-          const tip = trimmed[trimmed.length - 1]!
+          const tip = nextBars[nextBars.length - 1]!
           try {
             candleRef.current?.update({
               time: toChartTime(tip.time as number, chartTzRef.current) as UTCTimestamp,
@@ -4514,13 +4558,10 @@ export function TradingChart({
               close: tip.close,
             })
           } catch {
-            setCandles(trimmed)
+            setCandles(nextBars)
           }
-          // Tip OHLC can cross US/IB/OR H/L without a new bar — keep ref + BRK/REJ
-          // markers in sync (setCandles is skipped to avoid yanking the viewport).
-          candlesRef.current = trimmed
-          paintDeskMarkersRef.current(trimmed)
-          syncDeskPlaybookRangesRef.current(trimmed)
+          candlesRef.current = nextBars
+          syncDeskPlaybookRangesRef.current(nextBars)
         }
         setDataMode('live')
         if (json.source === 'yahoo' || json.source === 'oanda') {
@@ -4595,6 +4636,8 @@ export function TradingChart({
 
     return () => {
       candleFetchGenRef.current += 1
+      if (tipPaintRaf) cancelAnimationFrame(tipPaintRaf)
+      tipPaintRaf = 0
       clearInterval(reconcile)
       try {
         es?.close()

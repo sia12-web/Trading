@@ -77,5 +77,9 @@ assert.ok(
   'legend reports locked OR30 even when R is off'
 )
 assert.ok(sim.includes('setOr30Locked(!!or30?.complete)'), 'sim locks OR30 from bars, not R toggle')
+assert.ok(live.includes('const CANDLE_REFRESH_MS = 15_000'), 'history refetch is not a 3s CPU loop')
+assert.ok(live.includes('applyTickToFormingBar'), 'live ticks roll 5m bars without a fake open')
+assert.ok(live.includes('mergeHistoryWithLiveTip'), 'REST cannot repaint forming-bar color')
+assert.ok(!live.includes('applyOverlayLayout(), 150'), 'overlay layout is not a 150ms idle loop')
 
 console.log('chart_visual_quality.test.ts: all passed')
