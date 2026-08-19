@@ -5,15 +5,14 @@
 
 import { getOandaCandles } from '@/lib/oanda/candles'
 import {
+  computeOr15Range,
+} from '@/lib/chart/openingRange15'
+import {
   computeOr30Range,
 } from '@/lib/chart/openingRange30'
 import {
   computeInitialBalance,
 } from '@/lib/trading/deskLevels'
-import {
-  computeNycLunchRange,
-  isNycLunchInstrument,
-} from '@/lib/chart/nycLunchSessionRange'
 import {
   currentNikkeiUsRangeForChart,
 } from '@/lib/chart/nikkeiUsRangeBreakout'
@@ -106,12 +105,9 @@ export async function buildRangeEdgeTailBrief(args: {
         ? tokyoDateTimeToUnix(todayLocal, oh!, om || 0)
         : nyDateTimeToUnix(todayLocal, oh!, om || 0)
 
+    const or15 = computeOr15Range(deskBars, openUnix, nowUnix)
     const or30 = computeOr30Range(deskBars, openUnix, nowUnix)
     const ib = computeInitialBalance(deskBars, openUnix, nowUnix, 60)
-    const lunch =
-      isNycLunchInstrument(args.instrument)
-        ? computeNycLunchRange(deskBars, todayLocal, nowUnix)
-        : null
     const us =
       args.instrument === 'NIKKEI'
         ? currentNikkeiUsRangeForChart(deskBars, nowUnix)
@@ -133,16 +129,22 @@ export async function buildRangeEdgeTailBrief(args: {
     const strategyRange = activeRangeForPlaybook({
       playbookMode,
       instrument: args.instrument,
+      or15,
       or30,
       ib,
       usRange: us,
-      lunchRange: lunch,
       morningAttempts: ladder.morningAttempts,
     })
     if (!strategyRange) return emptyBrief()
 
     let shaped: ShapedRangeForTails | null = null
     if (
+      or15?.complete &&
+      or15.high === strategyRange.high &&
+      or15.low === strategyRange.low
+    ) {
+      shaped = { ...strategyRange, complete: true, lockedUnix: or15.endUnix }
+    } else if (
       or30?.complete &&
       or30.high === strategyRange.high &&
       or30.low === strategyRange.low
@@ -154,16 +156,6 @@ export async function buildRangeEdgeTailBrief(args: {
       ib.low === strategyRange.low
     ) {
       shaped = { ...strategyRange, complete: true, lockedUnix: ib.endUnix }
-    } else if (
-      lunch?.complete &&
-      lunch.high === strategyRange.high &&
-      lunch.low === strategyRange.low
-    ) {
-      shaped = {
-        ...strategyRange,
-        complete: true,
-        lockedUnix: lunch.lunchEndUnix,
-      }
     } else if (
       us?.complete &&
       us.high === strategyRange.high &&

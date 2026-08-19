@@ -1,10 +1,15 @@
 /**
  * Dalton Rotation Factor + developing time-POC (Mind Over Markets).
- * Control layer on existing cash clocks: period A = OR30, A+B = IB.
  *
- * Closed 30m cash periods only (aggregated from 5m). NY 09:30 ET /
- * Tokyo 09:00 JST. Advise-only — does not change 1:1.5, the dollar ladder,
- * ±10, Open type, or OR30 / IB / lunch windows.
+ * Letter size follows the playbook clock, from the same 5m desk series:
+ *   Open range (first 15m): 5m letters. 1m is wick noise; 3m needs a 1m feed
+ *     the desk does not paint. Two closed 5m bars → first score (~10m).
+ *   OR30 (15–60m): 5m + 10m; 15m joins once two 15m letters exist (30m).
+ *     Primary = longest ready TF. Opposite ONE-TF on a faster TF → TWO-TF.
+ *   After IB (60m+): classic 30m letters (A = OR30, B completes IB).
+ *
+ * NY 09:30 ET / Tokyo 09:00 JST. Advise-only — does not change 1:1.5, the
+ * dollar ladder, ±10, Open type, or Open range / OR30 / IB windows.
  */
 
 import {
@@ -34,6 +39,9 @@ export type ControlLabel =
 
 export type ControlDpocDir = 'up' | 'down' | 'stuck'
 
+/** Which playbook window the letter set belongs to. */
+export type ControlHorizon = 'or15' | 'or30' | 'ib'
+
 export type MarketControl = {
   instrument: string
   sourceSession: 'NY_RTH' | 'TOKYO_CASH'
@@ -47,6 +55,9 @@ export type MarketControl = {
   amRf: number | null
   amDpoc: number | null
   periodCount: number
+  /** Letter length used for the printed RF / dPOC (seconds). */
+  periodSec: number
+  horizon: ControlHorizon
   playLine: string
 }
 
@@ -58,7 +69,14 @@ export type ControlPeriod = {
   low: number
 }
 
+export const CONTROL_5M_SEC = 5 * 60
+export const CONTROL_10M_SEC = 10 * 60
+export const CONTROL_15M_SEC = 15 * 60
+/** Classic Dalton letter after IB. */
 export const CONTROL_PERIOD_SEC = 30 * 60
+export const CONTROL_OR15_SEC = 15 * 60
+export const CONTROL_OR30_SEC = 30 * 60
+export const CONTROL_IB_SEC = 60 * 60
 export const CONTROL_RF_TWO_TF_ABS = 1
 
 export const CONTROL_COLORS = {
@@ -104,20 +122,57 @@ export function rotationStep(
   }
 }
 
-function playLineFor(label: ControlLabel, tokyo: boolean): string {
+export function controlHorizonForElapsed(elapsedSec: number): ControlHorizon {
+  if (elapsedSec < CONTROL_OR15_SEC) return 'or15'
+  if (elapsedSec < CONTROL_IB_SEC) return 'or30'
+  return 'ib'
+}
+
+/**
+ * Letter sizes available at this session elapsed time.
+ * 1m skipped (noise). 3m skipped (desk candles are 5m). 10m beats 15m inside
+ * the 30m range (two 10m letters at 20m; two 15m letters only at 30m).
+ */
+export function controlPeriodSecsForElapsed(elapsedSec: number): number[] {
+  if (elapsedSec < CONTROL_OR15_SEC) return [CONTROL_5M_SEC]
+  if (elapsedSec < CONTROL_OR30_SEC) return [CONTROL_5M_SEC, CONTROL_10M_SEC]
+  if (elapsedSec < CONTROL_IB_SEC) {
+    return [CONTROL_5M_SEC, CONTROL_10M_SEC, CONTROL_15M_SEC]
+  }
+  return [CONTROL_PERIOD_SEC]
+}
+
+function letterPhrase(horizon: ControlHorizon, periodSec: number): string {
+  const mins = Math.max(1, Math.round(periodSec / 60))
+  if (horizon === 'or15') {
+    return `${mins}m letters (Open range — 1m skipped as noise; 3m is not on the 5m desk feed)`
+  }
+  if (horizon === 'or30') {
+    return `${mins}m primary (5m + 10m; 15m joins after two 15m closes)`
+  }
+  return `${mins}m letters (A = OR30, B completes IB)`
+}
+
+function playLineFor(
+  label: ControlLabel,
+  tokyo: boolean,
+  horizon: ControlHorizon,
+  periodSec: number
+): string {
   const nikkei = tokyo ? ' Nikkei control = Tokyo cash letters, not US Range.' : ''
   const ticket =
-    'CONTROL is advise-only — still hunt the active range stop pool, 1.5R, ladder. Does not unlock off-band. Does not change Open type or the OR30/IB/lunch window. Ticket stays $400→$250→$150.'
+    'CONTROL is advise-only — still hunt the active range stop pool, 1.5R, ladder. Does not unlock off-band. Does not change Open type or the Open range/OR30/IB window. Ticket stays $400→$250→$150.'
+  const letters = letterPhrase(horizon, periodSec)
   if (label === 'WAIT') {
-    return `CONTROL waiting — period B (IB) has not closed. Do not invent Rotation Factor or developing POC.${nikkei} ${ticket}`
+    return `CONTROL waiting — not enough closed ${letters} yet. Do not invent Rotation Factor or developing POC.${nikkei} ${ticket}`
   }
   if (label === 'ONE-TF BUY') {
-    return `CONTROL: ONE-TF BUY — RF positive and dPOC migrating up. Other timeframe buyers attempting and succeeding.${nikkei} ${ticket}`
+    return `CONTROL: ONE-TF BUY — RF positive and dPOC migrating up (${letters}). Other timeframe buyers attempting and succeeding.${nikkei} ${ticket}`
   }
   if (label === 'ONE-TF SELL') {
-    return `CONTROL: ONE-TF SELL — RF negative and dPOC migrating down. Other timeframe sellers attempting and succeeding.${nikkei} ${ticket}`
+    return `CONTROL: ONE-TF SELL — RF negative and dPOC migrating down (${letters}). Other timeframe sellers attempting and succeeding.${nikkei} ${ticket}`
   }
-  return `CONTROL: TWO-TF — attempting and succeeding disagree, or RF is near zero. Rotational / two-timeframe.${nikkei} ${ticket}`
+  return `CONTROL: TWO-TF — attempting and succeeding disagree, or RF is near zero (${letters}). Rotational / two-timeframe.${nikkei} ${ticket}`
 }
 
 function waiting(
@@ -126,6 +181,8 @@ function waiting(
 ): MarketControl {
   const tokyo = instrument === 'NIKKEI'
   const label: ControlLabel = extra?.label ?? 'WAIT'
+  const horizon = extra?.horizon ?? 'or15'
+  const periodSec = extra?.periodSec ?? CONTROL_5M_SEC
   return {
     instrument,
     sourceSession: tokyo ? 'TOKYO_CASH' : 'NY_RTH',
@@ -139,7 +196,9 @@ function waiting(
     amRf: extra?.amRf ?? null,
     amDpoc: extra?.amDpoc ?? null,
     periodCount: extra?.periodCount ?? 0,
-    playLine: extra?.playLine ?? playLineFor(label, tokyo),
+    periodSec,
+    horizon,
+    playLine: extra?.playLine ?? playLineFor(label, tokyo, horizon, periodSec),
   }
 }
 
@@ -147,7 +206,7 @@ function bucketPrice(price: number, tick: number): number {
   return Math.round(price / tick) * tick
 }
 
-/** Developing time-POC from closed 30m periods. Same tick as yesterday TPO. */
+/** Developing time-POC from closed letters. Same tick as yesterday TPO. */
 export function developingPoc(periods: ControlPeriod[]): number | null {
   if (periods.length < 1) return null
   let yh = -Infinity
@@ -232,8 +291,10 @@ export function closedControlPeriods(
   candles: ControlBar[],
   openU: number,
   closeU: number,
-  asOfUnix: number
+  asOfUnix: number,
+  periodSec: number = CONTROL_PERIOD_SEC
 ): ControlPeriod[] {
+  const step = periodSec > 0 ? periodSec : CONTROL_PERIOD_SEC
   const horizon = Math.min(asOfUnix, closeU)
   const map = new Map<number, ControlPeriod>()
   for (const c of candles) {
@@ -243,11 +304,10 @@ export function closedControlPeriods(
     if (c.high < c.low) continue
     if (c.time < openU - 30 || c.time >= closeU) continue
     // Yahoo/OANDA can stamp the 09:30/09:00 print a few seconds early.
-    const idx =
-      c.time < openU ? 0 : Math.floor((c.time - openU) / CONTROL_PERIOD_SEC)
+    const idx = c.time < openU ? 0 : Math.floor((c.time - openU) / step)
     if (idx < 0) continue
-    const start = openU + idx * CONTROL_PERIOD_SEC
-    const end = start + CONTROL_PERIOD_SEC
+    const start = openU + idx * step
+    const end = start + step
     if (end > horizon || end > closeU) continue
     const prev = map.get(idx)
     if (!prev) {
@@ -281,13 +341,23 @@ function coreAt(
   candles: ControlBar[],
   openU: number,
   closeU: number,
-  asOfUnix: number
+  asOfUnix: number,
+  periodSec: number,
+  horizon: ControlHorizon
 ): MarketControl {
   const tokyo = instrument === 'NIKKEI'
-  const periods = closedControlPeriods(candles, openU, closeU, asOfUnix)
+  const periods = closedControlPeriods(
+    candles,
+    openU,
+    closeU,
+    asOfUnix,
+    periodSec
+  )
   const base = waiting(instrument, {
     sessionDate,
     periodCount: periods.length,
+    periodSec,
+    horizon,
   })
   if (periods.length < 2) return base
 
@@ -304,8 +374,55 @@ function coreAt(
     dpoc,
     dpocDir,
     periodCount: periods.length,
-    playLine: playLineFor(label, tokyo),
+    periodSec,
+    horizon,
+    playLine: playLineFor(label, tokyo, horizon, periodSec),
   }
+}
+
+function combineLetterSets(
+  instrument: string,
+  sessionDate: string,
+  scored: MarketControl[],
+  horizon: ControlHorizon
+): MarketControl {
+  const ready = scored
+    .filter((c) => c.label !== 'WAIT' && c.rf != null)
+    .sort((a, b) => a.periodSec - b.periodSec)
+  if (ready.length < 1) {
+    const longest = scored[scored.length - 1]
+    return (
+      longest ??
+      waiting(instrument, { sessionDate, horizon, periodSec: CONTROL_5M_SEC })
+    )
+  }
+  const primary = ready[ready.length - 1]!
+  const buys = ready.some((c) => c.label === 'ONE-TF BUY')
+  const sells = ready.some((c) => c.label === 'ONE-TF SELL')
+  if (buys && sells) {
+    const tokyo = instrument === 'NIKKEI'
+    return {
+      ...primary,
+      label: 'TWO-TF',
+      playLine: playLineFor('TWO-TF', tokyo, horizon, primary.periodSec),
+    }
+  }
+  return primary
+}
+
+/**
+ * TWO-TF on opening 5m/10m/15m letters does not veto a Drive CALL.
+ * After IB, TWO-TF is a real Control read and CALL waits.
+ */
+export function controlGatesCall(control: MarketControl): boolean {
+  if (control.label === 'WAIT') return false
+  if (
+    control.label === 'TWO-TF' &&
+    (control.horizon === 'or15' || control.horizon === 'or30')
+  ) {
+    return false
+  }
+  return true
 }
 
 export function computeMarketControl(args: {
@@ -329,20 +446,43 @@ export function computeMarketControl(args: {
     return waiting(instrument, { sessionDate: ymd })
   }
 
-  const full = coreAt(
-    instrument,
-    ymd,
-    candles,
-    openU,
-    closeU,
-    args.asOfUnix
+  const elapsed = Math.max(0, args.asOfUnix - openU)
+  const horizon = controlHorizonForElapsed(elapsed)
+  const periodSecs = controlPeriodSecsForElapsed(elapsed)
+  const scored = periodSecs.map((periodSec) =>
+    coreAt(
+      instrument,
+      ymd,
+      candles,
+      openU,
+      closeU,
+      args.asOfUnix,
+      periodSec,
+      horizon
+    )
   )
+  const full = combineLetterSets(instrument, ymd, scored, horizon)
 
   if (tokyo) return full
 
   const lunchU = zonedCivilToUnix(ymd, NYC_LUNCH_HOUR, NY_DESK_CLOCK.timeZone)
   if (args.asOfUnix >= lunchU && lunchU > openU) {
-    const am = coreAt(instrument, ymd, candles, openU, closeU, lunchU)
+    const amElapsed = Math.max(0, lunchU - openU)
+    const amHorizon = controlHorizonForElapsed(amElapsed)
+    const amSecs = controlPeriodSecsForElapsed(amElapsed)
+    const amScored = amSecs.map((periodSec) =>
+      coreAt(
+        instrument,
+        ymd,
+        candles,
+        openU,
+        closeU,
+        lunchU,
+        periodSec,
+        amHorizon
+      )
+    )
+    const am = combineLetterSets(instrument, ymd, amScored, amHorizon)
     return { ...full, amRf: am.rf, amDpoc: am.dpoc }
   }
   return full
@@ -353,7 +493,7 @@ export function formatMarketControlForPrompt(p: MarketControl): string {
   const nikkei =
     p.instrument === 'NIKKEI' ? ' Nikkei control = Tokyo cash, not US Range.' : ''
   if (p.label === 'WAIT' || p.rf == null) {
-    return `CONTROL (Dalton — RF + dPOC): waiting (${src}${nikkei}). Do not invent Rotation Factor or developing POC until IB period B closes.`
+    return `CONTROL (Dalton — RF + dPOC): waiting (${src}${nikkei}). Do not invent Rotation Factor or developing POC until two ${letterPhrase(p.horizon, p.periodSec)} close.`
   }
   const dir =
     p.dpocDir === 'up'
@@ -364,14 +504,14 @@ export function formatMarketControlForPrompt(p: MarketControl): string {
   const rfSign = p.rf > 0 ? `+${p.rf}` : String(p.rf)
   const lines = [
     `CONTROL (Dalton — RF + dPOC):`,
-    `Source: ${src} session ${p.sessionDate ?? 'n/a'} 30m letters (A = OR30, B completes IB).${nikkei}`,
+    `Source: ${src} session ${p.sessionDate ?? 'n/a'} ${letterPhrase(p.horizon, p.periodSec)}.${nikkei}`,
     `RF ${rfSign} (top ${p.rfTop} bot ${p.rfBot}) · dPOC ${p.dpoc ?? 'n/a'} ${dir} · ${p.label}`,
   ]
   if (p.amRf != null) {
     lines.push(
       `CONTROL AM: RF ${p.amRf > 0 ? `+${p.amRf}` : String(p.amRf)} · dPOC ${
         p.amDpoc ?? 'n/a'
-      } frozen for the lunch box. Letters keep scoring; lunch H/L is still the playbook.`
+      } frozen at NY 12:00. Letters keep scoring; 11:30 confirm is not a lunch-range playbook.`
     )
   }
   lines.push(p.playLine)
@@ -401,6 +541,8 @@ export function marketControlPaintKey(
     p.dpocDir,
     p.amRf,
     p.amDpoc,
+    p.periodSec,
+    p.horizon,
   ].join('|')
 }
 

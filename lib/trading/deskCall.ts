@@ -32,6 +32,7 @@ import {
 } from '@/lib/trading/openingActivity'
 import {
   computeMarketControl,
+  controlGatesCall,
   marketControlBadgeText,
   type ControlBar,
   type MarketControl,
@@ -201,7 +202,7 @@ function sideFromOpenAndControl(args: {
   if (args.opening.failedDrive) return 'WAIT'
   const fromOpen = openBias(args.opening)
   const fromCtrl = controlBias(args.control)
-  const ctrlReady = args.control.label !== 'WAIT'
+  const ctrlReady = controlGatesCall(args.control)
   if (fromOpen !== 'WAIT') {
     if (!ctrlReady) return fromOpen
     return fromCtrl === fromOpen ? fromOpen : 'WAIT'
@@ -301,7 +302,7 @@ function buildCallHoverText(args: {
   const ctrlDetail = ctrlHoverDetail(args.control)
   const fromOpen = openBias(args.opening)
   const fromCtrl = controlBias(args.control)
-  const ctrlReady = args.control.label !== 'WAIT'
+  const ctrlReady = controlGatesCall(args.control)
   const localSide = sideFromOpenAndControl({
     opening: args.opening,
     control: args.control,
@@ -333,7 +334,9 @@ function buildCallHoverText(args: {
   if (!ctrlReady) {
     rows.push(
       fromOpen !== 'WAIT'
-        ? `OK     Ctrl: ${ctrlDetail} — not scored yet; Drive/Test-Drive can CALL alone`
+        ? args.control.label === 'TWO-TF'
+          ? `OK     Ctrl: ${ctrlDetail} — opening TWO-TF does not veto Drive`
+          : `OK     Ctrl: ${ctrlDetail} — not scored yet; Drive/Test-Drive can CALL alone`
         : `OK     Ctrl: ${ctrlDetail} — not scored yet; wait for ONE-TF or a Drive`
     )
   } else if (fromCtrl === 'WAIT') {

@@ -19,7 +19,6 @@ import {
   computeMarketControl,
   CONTROL_PERIOD_SEC,
   formatMarketControlForPrompt,
-  marketControlBadgeText,
   marketControlLineSpecs,
   marketControlPaintKey,
   resolveMarketControlAsOfUnix,
@@ -96,15 +95,14 @@ function rotateBars(openU = mondayOpen, n = 8): ControlBar[] {
 
 // ─── Clock boundaries ────────────────────────────────────────────────────────
 
-test('one second before B close is still WAIT', () => {
+test('one second before B close still uses opening TFs, not 30m IB letters', () => {
   const p = computeMarketControl({
     instrument: 'DOW',
     candles: buyStairs(mondayOpen, 2),
     asOfUnix: asOfPeriods(2) - 1,
   })
-  assert.equal(p.label, 'WAIT')
-  assert.equal(p.rf, null)
-  assert.equal(marketControlBadgeText(p), 'RF WAIT')
+  assert.equal(p.horizon, 'or30')
+  assert.notEqual(p.periodSec, CONTROL_PERIOD_SEC)
 })
 
 test('asOf exactly IB end (open + 60m) locks RF', () => {
@@ -114,6 +112,7 @@ test('asOf exactly IB end (open + 60m) locks RF', () => {
     asOfUnix: mondayOpen + 60 * 60,
   })
   assert.equal(p.periodCount, 2)
+  assert.equal(p.horizon, 'ib')
   assert.ok(p.rf != null)
   assert.notEqual(p.label, 'WAIT')
 })
@@ -123,7 +122,7 @@ test('WAIT prompt does not invent an RF number', () => {
     computeMarketControl({
       instrument: 'DOW',
       candles: buyStairs(),
-      asOfUnix: asOfPeriods(1),
+      asOfUnix: mondayOpen + 5 * 60 + 30,
     })
   )
   assert.ok(packed.includes('waiting'))
@@ -314,8 +313,9 @@ test('WAIT has no dPOC line', () => {
   const p = computeMarketControl({
     instrument: 'DOW',
     candles: buyStairs(),
-    asOfUnix: asOfPeriods(1),
+    asOfUnix: mondayOpen + 5 * 60 + 30,
   })
+  assert.equal(p.label, 'WAIT')
   assert.equal(marketControlLineSpecs(p).length, 0)
 })
 

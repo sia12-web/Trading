@@ -101,7 +101,7 @@ function barTouchesBand(
 function prefixLabel(label?: string | null): string {
   const t = String(label || '').trim()
   if (!t) return 'RANGE'
-  // Short chip: "Lunch-range" → "LN", "OR30" stays, "US Range" → "US"
+  if (/or15|open\s*range/i.test(t)) return 'O15'
   if (/or30/i.test(t)) return 'OR30'
   if (/lunch/i.test(t)) return 'LN'
   if (/us\s*range/i.test(t)) return 'US'

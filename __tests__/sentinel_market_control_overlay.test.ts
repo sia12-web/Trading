@@ -80,10 +80,10 @@ function sliceBetween(hay: string, start: string, end: string): string {
 
 // ─── Chip / legend contract ──────────────────────────────────────────────────
 
-test('live Ctrl chip sits immediately after Open, before Lunch', () => {
+test('live Ctrl chip sits immediately after Open, before Open range', () => {
   const openIdx = live.indexOf('<span>Open</span>')
   const ctrlIdx = live.indexOf('<span>Ctrl</span>')
-  const lunchIdx = live.indexOf('<span>Lunch Range (N)</span>')
+  const lunchIdx = live.indexOf('<span>Open range (N)</span>')
   assert.ok(openIdx > 0 && ctrlIdx > openIdx)
   assert.ok(lunchIdx > ctrlIdx)
 })
@@ -93,14 +93,20 @@ test('live + sim badge always renders (not gated on lines-on like Yday)', () => 
   assert.ok(sim.includes('{controlBadge}'))
   assert.ok(live.includes('{showYesterdayProfile && ('))
   assert.ok(!live.includes('{showMarketControl && (') || !live.includes('controlBadge'))
-  const ctrlBtn = sliceBetween(live, '<span>Ctrl</span>', 'Lunch Range (N)')
+  const ctrlBtn = sliceBetween(live, '<span>Ctrl</span>', 'Open range (N)')
   assert.ok(ctrlBtn.includes('{controlBadge}'))
   assert.ok(!ctrlBtn.includes('showMarketControl &&'))
 })
 
 test('dPOC line is off by default on live and sim', () => {
-  assert.ok(live.includes('const [showMarketControl, setShowMarketControl] = useState(false)'))
-  assert.ok(sim.includes('const [showMarketControl, setShowMarketControl] = useState(false)'))
+  assert.ok(
+    live.includes('loadDeskOverlayToggles().control') ||
+      live.includes('const [showMarketControl, setShowMarketControl] = useState(false)')
+  )
+  assert.ok(
+    sim.includes('loadDeskOverlayToggles().control') ||
+      sim.includes('const [showMarketControl, setShowMarketControl] = useState(false)')
+  )
 })
 
 test('live paints lines only when showMarketControl; sim uses controlVisible', () => {
@@ -185,7 +191,7 @@ test('WAIT has no dPOC line; paint key off is shared; on keys include instrument
   const wait = computeMarketControl({
     instrument: 'DOW',
     candles: buyStairs(2),
-    asOfUnix: mondayOpen + CONTROL_PERIOD_SEC,
+    asOfUnix: mondayOpen + 5 * 60 + 30,
   })
   const a = computeMarketControl({
     instrument: 'DOW',

@@ -230,6 +230,10 @@ import {
   deskPlaybookUsesAfternoonLevels,
   resolveDeskPlaybookMode,
 } from '@/lib/trading/deskPlaybookMode'
+import {
+  loadDeskOverlayToggles,
+  saveDeskOverlayToggles,
+} from '@/lib/trading/deskInstrumentPreference'
 import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
 
 type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI'
@@ -499,7 +503,7 @@ function SimulationDeskInner() {
   const [playing, setPlaying] = useState(false)
   const [pending, setPending] = useState<PendingOrder | null>(null)
   const [position, setPosition] = useState<PaperPosition | null>(null)
-  /** Day fill count (AM + IB/US + LN) — hard cap 3 */
+  /** Day fill count (AM + OR30/US + IB) — hard cap 3 */
   const [attemptsUsed, setAttemptsUsed] = useState(0)
   const [morningAttempts, setMorningAttempts] = useState(0)
   const [ibAttempts, setIbAttempts] = useState(0)
@@ -540,7 +544,9 @@ function SimulationDeskInner() {
   )
   const openRiskBoxFromPriceRef = useRef<() => void>(() => {})
   const [msg, setMsg] = useState<string | null>(null)
-  const [levelsOpen, setLevelsOpen] = useState(false)
+  const [levelsOpen, setLevelsOpen] = useState(
+    () => loadDeskOverlayToggles().levels
+  )
   const levelsOpenRef = useRef(false)
   const [playbookOpen, setPlaybookOpen] = useState(false)
   const adviseBookKeyRef = useRef('')
@@ -682,18 +688,29 @@ function SimulationDeskInner() {
   } | null>(null)
   const [ibShaped, setIbShaped] = useState(false)
   const [or15Shaped, setOr15Shaped] = useState(false)
+  const [or15Locked, setOr15Locked] = useState(false)
   const [usRangeShaped, setUsRangeShaped] = useState(false)
-  /** Script overlays — same toggles as live (B / N / U / R). IB + US Range default OFF. */
-  const [showIbBreakouts, setShowIbBreakouts] = useState(false)
-  const [showOr15, setShowOr15] = useState(false)
-  const [showUsRange, setShowUsRange] = useState(false)
-  const [showOr30, setShowOr30] = useState(false)
-  const [showYesterdayProfile, setShowYesterdayProfile] = useState(false)
-  const [showSessionBands, setShowSessionBands] = useState(false)
+  /** Script overlays — same toggles as live (B / N / U / R). */
+  const [showIbBreakouts, setShowIbBreakouts] = useState(
+    () => loadDeskOverlayToggles().ib
+  )
+  const [showOr15, setShowOr15] = useState(() => loadDeskOverlayToggles().or15)
+  const [showUsRange, setShowUsRange] = useState(() => loadDeskOverlayToggles().us)
+  const [showOr30, setShowOr30] = useState(() => loadDeskOverlayToggles().or30)
+  const [showYesterdayProfile, setShowYesterdayProfile] = useState(
+    () => loadDeskOverlayToggles().yday
+  )
+  const [showSessionBands, setShowSessionBands] = useState(
+    () => loadDeskOverlayToggles().sessions
+  )
   const [yesterdayBadge, setYesterdayBadge] = useState('Yday off')
-  const [showOpeningActivity, setShowOpeningActivity] = useState(false)
+  const [showOpeningActivity, setShowOpeningActivity] = useState(
+    () => loadDeskOverlayToggles().opening
+  )
   const [openingBadge, setOpeningBadge] = useState('WAIT')
-  const [showMarketControl, setShowMarketControl] = useState(false)
+  const [showMarketControl, setShowMarketControl] = useState(
+    () => loadDeskOverlayToggles().control
+  )
   const [controlBadge, setControlBadge] = useState('RF WAIT')
   const [callBadge, setCallBadge] = useState('WAIT')
   const [callHover, setCallHover] = useState(
@@ -784,6 +801,30 @@ function SimulationDeskInner() {
   useEffect(() => {
     showMarketControlRef.current = showMarketControl
   }, [showMarketControl])
+  useEffect(() => {
+    saveDeskOverlayToggles({
+      levels: levelsOpen,
+      or15: showOr15,
+      or30: showOr30,
+      ib: showIbBreakouts,
+      lunch: false,
+      us: showUsRange,
+      yday: showYesterdayProfile,
+      opening: showOpeningActivity,
+      control: showMarketControl,
+      sessions: showSessionBands,
+    })
+  }, [
+    levelsOpen,
+    showOr15,
+    showOr30,
+    showIbBreakouts,
+    showUsRange,
+    showYesterdayProfile,
+    showOpeningActivity,
+    showMarketControl,
+    showSessionBands,
+  ])
 
   const levelLinesRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]>([])
   const posLinesRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>[]>([])
@@ -1635,6 +1676,7 @@ function SimulationDeskInner() {
         if (o15s && openUnix) {
           const or15 = computeOr15Range(bars, openUnix, simT)
           or15RangeRef.current = or15
+          setOr15Locked(!!or15?.complete)
           if (showOr15Ref.current && or15) {
             const pts = or15LineSeriesData(or15, extendTo)
             try {
@@ -1684,7 +1726,7 @@ function SimulationDeskInner() {
           }
         }
 
-        // Script markers — IB / OR30 / Lunch / US Range (same as live)
+        // Script markers — IB / OR30 / Open range / US Range (same as live)
         const candleSeries = seriesRef.current
         if (candleSeries) {
           type Mk = {
@@ -2932,11 +2974,9 @@ function SimulationDeskInner() {
         bucket === 'ib'
           ? instrument === 'NIKKEI'
             ? 'US'
-            : 'IB'
+            : '30'
           : bucket === 'lunch_range'
-            ? instrument === 'NIKKEI'
-              ? 'IB'
-              : 'LN'
+            ? 'IB'
             : 'AM'
       setMsg(
         'FILLED ' +
@@ -3568,7 +3608,7 @@ function SimulationDeskInner() {
     gate?.canPlaceEntry === true &&
     tradeifyDayLock.allowed
   const midChip = instrument === 'NIKKEI' ? 'US' : 'IB'
-  const lateChip = instrument === 'NIKKEI' ? 'IB' : 'LN'
+  const lateChip = 'IB'
   const simPlaybookNow = simNow > 0 ? new Date(simNow * 1000) : new Date()
   const simPlaybookMode = resolveDeskPlaybookMode({
     instrument,
@@ -4394,7 +4434,9 @@ function SimulationDeskInner() {
                   className="inline-block w-4 border-t-2"
                   style={{ borderColor: OR15_COLORS.high }}
                 />
-                <span style={{ color: OR15_COLORS.high }}>OR15 H/L</span>
+                <span style={{ color: OR15_COLORS.high }}>
+                  OR15 {or15Locked ? 'locked' : 'H/L'}
+                </span>
               </span>
             </>
           )}

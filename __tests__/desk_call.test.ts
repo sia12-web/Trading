@@ -228,7 +228,12 @@ function auctionThenBuy(openU: number): DeskCallBar[] {
   assert.equal(deskCallBadgeText(call), 'OR15 LONG')
   assert.equal(call.entryEdge, 'low')
   assert.equal(call.entryPrice, call.rangeLow)
-  assert.equal(call.controlLabel, 'WAIT')
+  assert.ok(
+    call.controlLabel === 'WAIT' ||
+      call.controlLabel === 'TWO-TF' ||
+      call.controlLabel === 'ONE-TF BUY',
+    `Drive morning Control can score opening letters, got ${call.controlLabel}`
+  )
   assert.ok(call.playLine.includes('below Open range low') || call.playLine.includes('below OR15 low'))
   assert.ok(call.playLine.includes('Ticket unchanged'))
   assert.ok(call.playLine.includes('off-band'))
@@ -271,12 +276,13 @@ function auctionThenBuy(openU: number): DeskCallBar[] {
     playbookMode: 'morning',
   })
   assert.equal(call.openingType, 'OPEN_AUCTION')
-  assert.equal(call.controlLabel, 'WAIT')
+  assert.equal(call.controlLabel, 'ONE-TF BUY')
   assert.equal(
     call.side,
-    'WAIT',
-    'Auction before IB still WAIT — no Drive and Control not scored'
+    'LONG',
+    'Auction + opening ONE-TF BUY → CALL from Control during Open range'
   )
+  assert.equal(call.rangeKey, 'OR15')
 }
 
 {
@@ -651,6 +657,8 @@ function auctionThenBuy(openU: number): DeskCallBar[] {
       amRf: null,
       amDpoc: null,
       periodCount: 2,
+      periodSec: 1800,
+      horizon: 'ib',
       playLine: 'TWO-TF',
     },
   })

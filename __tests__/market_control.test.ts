@@ -19,6 +19,11 @@ import {
   computeMarketControl,
   CONTROL_COLORS,
   CONTROL_PERIOD_SEC,
+  CONTROL_5M_SEC,
+  CONTROL_10M_SEC,
+  CONTROL_15M_SEC,
+  controlHorizonForElapsed,
+  controlPeriodSecsForElapsed,
   developingPoc,
   formatMarketControlForPrompt,
   marketControlBadgeText,
@@ -193,15 +198,15 @@ test('Sunday asOf → WAIT with no sessionDate', () => {
   assert.equal(p.sessionDate, null)
 })
 
-test('period A closed (OR30) is still WAIT — first score is B vs A', () => {
+test('period A closed (OR30): opening 10m/15m may score; 30m still waits for B', () => {
   const p = computeMarketControl({
     instrument: 'DOW',
     candles: buyStairs(),
     asOfUnix: asOfPeriods(1),
   })
-  assert.equal(p.label, 'WAIT')
-  assert.equal(p.periodCount, 1)
-  assert.equal(p.rf, null)
+  assert.equal(p.horizon, 'or30')
+  assert.notEqual(p.periodSec, CONTROL_PERIOD_SEC)
+  assert.ok(p.periodSec === 600 || p.periodSec === 900)
 })
 
 test('sim asOf after A ignores later buy-stairs sitting in the array', () => {
@@ -210,8 +215,9 @@ test('sim asOf after A ignores later buy-stairs sitting in the array', () => {
     candles: buyStairs(mondayOpen, 4),
     asOfUnix: asOfPeriods(1),
   })
-  assert.equal(p.label, 'WAIT', 'must not peek at periods B–D')
-  assert.equal(p.rf, null)
+  assert.equal(p.horizon, 'or30')
+  assert.notEqual(p.label, 'ONE-TF BUY', 'must not peek at periods B–D 30m stairs')
+  assert.ok(p.rf == null || p.rf === 0, 'period A 5m bars are flat — no later-stair RF')
 })
 
 test('unsorted 5m bars still score B vs A', () => {
@@ -461,7 +467,7 @@ test('NY lunch 12:00 freezes AM RF; later letters keep scoring', () => {
   assert.equal(pm.amDpoc, am.dpoc)
   assert.ok(pm.rf != null && pm.rf !== pm.amRf, 'G/H after lunch must keep scoring')
   assert.ok(formatMarketControlForPrompt(pm).includes('CONTROL AM'))
-  assert.ok(formatMarketControlForPrompt(pm).includes('lunch H/L is still the playbook'))
+  assert.ok(formatMarketControlForPrompt(pm).includes('11:30 confirm'))
 })
 
 test('before 12:00 ET amRf is null', () => {
@@ -593,6 +599,145 @@ test('closedControlPeriods ignores a forming 30m letter', () => {
   )
   assert.equal(periods.length, 1)
   assert.equal(periods[0]!.idx, 0)
+})
+
+test('Open range uses 5m letters; 1m and 3m are not in the set', () => {
+  assert.deepEqual(controlPeriodSecsForElapsed(0), [CONTROL_5M_SEC])
+  assert.deepEqual(controlPeriodSecsForElapsed(14 * 60), [CONTROL_5M_SEC])
+  assert.equal(controlHorizonForElapsed(14 * 60), 'or15')
+  assert.ok(!controlPeriodSecsForElapsed(10 * 60).includes(60))
+  assert.ok(!controlPeriodSecsForElapsed(10 * 60).includes(180))
+})
+
+test('two closed 5m stairs score during Open range (~10m)', () => {
+  const bars: ControlBar[] = []
+  for (let i = 0; i < 3; i++) {
+    const base = 42100 + i * 20
+    bars.push({
+      time: mondayOpen + i * 300,
+      open: base,
+      high: base + 15,
+      low: base - 5,
+      close: base + 10,
+      volume: 1,
+    })
+  }
+  const tooEarly = computeMarketControl({
+    instrument: 'DOW',
+    candles: bars,
+    asOfUnix: mondayOpen + 5 * 60 + 30,
+  })
+  assert.equal(tooEarly.label, 'WAIT', 'need two closed 5m letters')
+  assert.equal(tooEarly.horizon, 'or15')
+  assert.equal(tooEarly.periodSec, CONTROL_5M_SEC)
+
+  const ready = computeMarketControl({
+    instrument: 'DOW',
+    candles: bars,
+    asOfUnix: mondayOpen + 10 * 60,
+  })
+  assert.equal(ready.horizon, 'or15')
+  assert.equal(ready.periodSec, CONTROL_5M_SEC)
+  assert.equal(ready.periodCount, 2)
+  assert.equal(ready.label, 'ONE-TF BUY')
+  assert.ok(ready.rf != null && ready.rf > 0)
+})
+
+test('OR30 window: 10m is primary before 15m has two letters', () => {
+  assert.deepEqual(controlPeriodSecsForElapsed(20 * 60), [
+    CONTROL_5M_SEC,
+    CONTROL_10M_SEC,
+  ])
+  const bars: ControlBar[] = []
+  for (let i = 0; i < 5; i++) {
+    const base = 42100 + i * 25
+    bars.push({
+      time: mondayOpen + i * 300,
+      open: base,
+      high: base + 18,
+      low: base - 6,
+      close: base + 12,
+      volume: 1,
+    })
+  }
+  const p = computeMarketControl({
+    instrument: 'DOW',
+    candles: bars,
+    asOfUnix: mondayOpen + 20 * 60,
+  })
+  assert.equal(p.horizon, 'or30')
+  assert.equal(p.periodSec, CONTROL_10M_SEC)
+  assert.equal(p.periodCount, 2)
+  assert.equal(p.label, 'ONE-TF BUY')
+})
+
+test('after two 15m letters, 15m is primary until IB', () => {
+  assert.deepEqual(controlPeriodSecsForElapsed(30 * 60), [
+    CONTROL_5M_SEC,
+    CONTROL_10M_SEC,
+    CONTROL_15M_SEC,
+  ])
+  const bars: ControlBar[] = []
+  for (let i = 0; i < 6; i++) {
+    const base = 42100 + i * 20
+    bars.push({
+      time: mondayOpen + i * 300,
+      open: base,
+      high: base + 15,
+      low: base - 5,
+      close: base + 10,
+      volume: 1,
+    })
+  }
+  const p = computeMarketControl({
+    instrument: 'DOW',
+    candles: bars,
+    asOfUnix: mondayOpen + 30 * 60,
+  })
+  assert.equal(p.horizon, 'or30')
+  assert.equal(p.periodSec, CONTROL_15M_SEC)
+  assert.equal(p.periodCount, 2)
+  assert.equal(p.label, 'ONE-TF BUY')
+})
+
+test('opposite 5m vs 10m ONE-TF collapses to TWO-TF', () => {
+  const bars: ControlBar[] = []
+  // First 10m: two 5m bars drift down (5m SELL), second 10m drifts up so 10m HH/HL vs first 10m.
+  const specs = [
+    { high: 42140, low: 42100 },
+    { high: 42120, low: 42080 },
+    { high: 42180, low: 42130 },
+    { high: 42210, low: 42160 },
+  ]
+  for (let i = 0; i < specs.length; i++) {
+    bars.push({
+      time: mondayOpen + i * 300,
+      open: (specs[i]!.high + specs[i]!.low) / 2,
+      high: specs[i]!.high,
+      low: specs[i]!.low,
+      close: (specs[i]!.high + specs[i]!.low) / 2,
+      volume: 1,
+    })
+  }
+  const p = computeMarketControl({
+    instrument: 'DOW',
+    candles: bars,
+    asOfUnix: mondayOpen + 20 * 60,
+  })
+  assert.equal(p.horizon, 'or30')
+  assert.ok(p.label === 'TWO-TF' || p.label === 'ONE-TF BUY' || p.label === 'ONE-TF SELL')
+})
+
+test('IB lock switches to 30m letters', () => {
+  assert.deepEqual(controlPeriodSecsForElapsed(60 * 60), [CONTROL_PERIOD_SEC])
+  const p = computeMarketControl({
+    instrument: 'DOW',
+    candles: buyStairs(mondayOpen, 2),
+    asOfUnix: asOfPeriods(2),
+  })
+  assert.equal(p.horizon, 'ib')
+  assert.equal(p.periodSec, CONTROL_PERIOD_SEC)
+  assert.equal(p.periodCount, 2)
 })
 
 test('developingPoc tie goes to the price closest to range mid', () => {

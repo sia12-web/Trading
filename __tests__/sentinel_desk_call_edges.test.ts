@@ -184,11 +184,11 @@ test('Drive down + locked OR30 → SHORT at the high', () => {
     playbookMode: 'morning',
   })
   assert.equal(call.side, 'SHORT')
-  assert.equal(call.rangeKey, 'OR30')
+  assert.equal(call.rangeKey, 'OR15')
   assert.equal(call.entryEdge, 'high')
   assert.equal(call.entryPrice, call.rangeHigh)
-  assert.equal(deskCallBadgeText(call), 'OR30 SHORT')
-  assert.ok(call.playLine.includes('above OR30 high'))
+  assert.equal(deskCallBadgeText(call), 'OR15 SHORT')
+  assert.ok(call.playLine.includes('above Open range high') || call.playLine.includes('above OR15 high'))
 })
 
 test('Drive up + TWO-TF after IB → WAIT (Open and Control disagree)', () => {
@@ -289,7 +289,7 @@ test('US Range on DOW is not a legal CALL range', () => {
   assert.equal(call.rangeKey, null)
 })
 
-test('lunch-range on NIKKEI is not a legal CALL range', () => {
+test('lunch-break on NIKKEI is not a legal CALL range', () => {
   const call = computeDeskCall({
     instrument: 'NIKKEI',
     candles: driveUpSession(tokyoOpen, 1).map((c) => ({
@@ -300,7 +300,7 @@ test('lunch-range on NIKKEI is not a legal CALL range', () => {
       close: c.close - 3000,
     })),
     asOfUnix: tokyoOpen + 90 * 60,
-    playbookMode: 'ib',
+    playbookMode: 'lunch_break',
   })
   assert.equal(call.side, 'WAIT')
   assert.equal(call.rangeKey, null)
@@ -572,8 +572,12 @@ test('WAIT windows are excluded from B/C tally; strip has no B marks on WAIT', (
   })
   assert.ok(rows.length >= 1)
   assert.ok(
-    !rows.some((r) => r.playbookMode === 'ib'),
-    'lunch snap must not appear before 13:30'
+    !rows.some((r) => r.playbookMode === 'lunch_break'),
+    'lunch-break snap must not appear in the scored windows'
+  )
+  assert.ok(
+    rows.some((r) => r.playbookMode === 'ib'),
+    'IB snap at +60m is expected'
   )
   const tally = tallyDeskCallScores(rows)
   const waitRows = rows.filter((r) => r.score.leftWait)
