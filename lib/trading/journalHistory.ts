@@ -2,6 +2,17 @@
 
 import { TRADEIFY_STARTING_BALANCE } from '@/lib/trading/tradeifyGrowth50k'
 
+export const LIVE_JOURNAL_INSTRUMENTS = ['DOW', 'NASDAQ', 'NIKKEI', 'GOLD', 'CRUDE'] as const
+export type LiveJournalInstrument = (typeof LIVE_JOURNAL_INSTRUMENTS)[number]
+
+const LIVE_JOURNAL_INSTRUMENT_SET = new Set<string>(LIVE_JOURNAL_INSTRUMENTS)
+
+export function isLiveJournalInstrument(
+  value: string | null | undefined
+): value is LiveJournalInstrument {
+  return LIVE_JOURNAL_INSTRUMENT_SET.has(String(value || '').toUpperCase())
+}
+
 export function isVisibleLiveJournalRow(row: {
   fill_status?: string | null
   exit_reason?: string | null

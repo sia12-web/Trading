@@ -13,7 +13,7 @@ import { formatDeskMoney, deskCurrencyLabel } from '@/lib/trading/currency'
 import { RANGE_EDGE_RISK_PERCENT } from '@/lib/trading/positionSizing'
 import { TRADEIFY_STARTING_BALANCE } from '@/lib/trading/tradeifyGrowth50k'
 
-type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'ALL'
+type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | 'ALL'
 type HistoryTab = 'live' | 'sim' | 'voice'
 
 interface JournalEntry {
@@ -338,6 +338,7 @@ function JournalPageInner() {
 
   useEffect(() => {
     if (!isSim && instrument === 'NIKKEI') setInstrument('ALL')
+    if (isSim && (instrument === 'GOLD' || instrument === 'CRUDE')) setInstrument('ALL')
   }, [isSim, instrument])
 
   return (
@@ -397,7 +398,10 @@ function JournalPageInner() {
               🎙️ Voice Chat Journal
             </button>
           </div>
-          {(['ALL', 'DOW', 'NASDAQ', ...(isSim ? (['NIKKEI'] as const) : [])] as Instrument[]).map((inst) => (
+          {(isSim
+            ? (['ALL', 'DOW', 'NASDAQ', 'NIKKEI'] as Instrument[])
+            : (['ALL', 'NASDAQ', 'DOW', 'GOLD', 'CRUDE'] as Instrument[])
+          ).map((inst) => (
             <button
               key={inst}
               type="button"
@@ -478,9 +482,9 @@ function JournalPageInner() {
                 </div>
               </div>
               <p className="mt-2 text-[11px] text-gray-600">
-                Equity is reconstructed from Tradeify ticket size and closed-trade P&amp;L. Working
-                limits and cancelled fills are not on this tape. Broker fills and journal P&amp;L
-                are in {deskCurrencyLabel()}.
+                Equity is reconstructed from Tradeify ticket size and closed-trade P&amp;L after
+                Tradovate fees. Working limits and cancelled fills are not on this tape. Broker
+                fills and journal P&amp;L are in {deskCurrencyLabel()}.
               </p>
             </div>
 

@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { LIVE_JOURNAL_INSTRUMENTS, type LiveJournalInstrument } from '@/lib/trading/journalHistory'
 import { hydrateDeskRiskProfileFromServer } from '@/lib/trading/tradeifyProfile'
 
 type InstrumentBreak = {
@@ -33,11 +34,19 @@ type Snapshot = {
   suggestedPaceHigh?: number
   flattenMontreal?: string
   accountName?: string | null
-  byInstrument?: Record<'DOW' | 'NASDAQ' | 'NIKKEI', InstrumentBreak>
+  byInstrument?: Record<LiveJournalInstrument, InstrumentBreak>
   allowed?: boolean
   refuseMessage?: string
   status?: 'can_trade' | 'day_locked' | 'must_flatten'
   error?: string
+}
+
+const INSTRUMENT_LABEL: Record<LiveJournalInstrument, string> = {
+  NASDAQ: 'Micro Nasdaq',
+  DOW: 'Micro Dow',
+  NIKKEI: 'Nikkei',
+  GOLD: 'Micro Gold',
+  CRUDE: 'Crude',
 }
 
 function money(n: number): string {
@@ -191,13 +200,14 @@ export function TradeifyProgressPanel({ compact = false }: { compact?: boolean }
 
           {!compact && snap.byInstrument && (
             <div className="mt-4 grid grid-cols-2 gap-2 text-[11px]">
-              {(['NASDAQ', 'DOW'] as const).map((inst) => {
+              {LIVE_JOURNAL_INSTRUMENTS.filter((inst) => {
                 const row = snap.byInstrument![inst]
+                return inst === 'NASDAQ' || inst === 'DOW' || (row && (row.fills > 0 || row.pnl !== 0))
+              }).map((inst) => {
+                const row = snap.byInstrument![inst] ?? { fills: 0, pnl: 0, risked: 0, stops: 0 }
                 return (
                   <div key={inst} className="rounded-lg border border-white/10 px-2 py-1.5">
-                    <p className="text-[10px] font-semibold text-gray-400">
-                      {inst === 'DOW' ? 'E-mini Dow' : 'E-mini Nasdaq'}
-                    </p>
+                    <p className="text-[10px] font-semibold text-gray-400">{INSTRUMENT_LABEL[inst]}</p>
                     <p className="text-white">
                       {row.fills} fill{row.fills === 1 ? '' : 's'} · {money(row.pnl)}
                     </p>

@@ -252,6 +252,8 @@ const dash = buildTradeifyDashboardPayload(
 assert(dash.dllUsed === 150, 'DLL used from −150 pnl')
 assert(dash.byInstrument.NIKKEI.fills === 1, 'Nikkei break')
 assert(dash.byInstrument.NASDAQ.fills === 1, 'Nasdaq break')
+assert(dash.byInstrument.GOLD.fills === 0, 'gold empty')
+assert(dash.byInstrument.CRUDE.fills === 0, 'crude empty')
 assert(dash.status === 'can_trade' || dash.status === 'day_locked', 'status set')
 assert(
   tradeifyDeskStatus(twoStops, nasdaqTue) === 'day_locked',
@@ -267,6 +269,31 @@ assert(emptyDash.allowed, 'empty Tradeify book can place')
 assert(emptyDash.stepDollars === 400, 'empty book first step $400')
 assert(emptyDash.riskDollars === 400, 'empty book risk $400 not 2%')
 assert(emptyDash.dllUsed === 0, 'empty book unused DLL')
+
+const goldFill = {
+  instrument: 'GOLD',
+  fill_status: 'filled',
+  entry_timestamp: nasdaqTue.toISOString(),
+  exit_reason: 'manual',
+  profit_loss: 36.68,
+  risk_amount: 39,
+}
+const crudeFill = {
+  instrument: 'CRUDE',
+  fill_status: 'filled',
+  entry_timestamp: nasdaqTue.toISOString(),
+  exit_reason: 'manual',
+  profit_loss: 7.68,
+  risk_amount: 10,
+}
+const offDesk = summarizeTradeifyFills([goldFill, crudeFill], nasdaqTue)
+assert(offDesk.fillsUsed === 2, 'Tradovate gold/crude count as fills')
+approxEqual(offDesk.dailyPnl ?? 0, 44.36, 0.01, 'gold+crude pnl')
+const offDash = buildTradeifyDashboardPayload({ ...offDesk, fills: [goldFill, crudeFill] }, nasdaqTue)
+assert(offDash.byInstrument.GOLD.fills === 1, 'gold break')
+assert(offDash.byInstrument.CRUDE.fills === 1, 'crude break')
+approxEqual(offDash.byInstrument.GOLD.pnl, 36.68, 0.01, 'gold pnl')
+approxEqual(offDash.dailyPnl, 44.36, 0.01, 'dashboard includes off-desk pnl')
 assert(emptyDash.status === 'can_trade', 'empty book can_trade')
 
 console.log('tradeify_growth_50k.test.ts: all passed')

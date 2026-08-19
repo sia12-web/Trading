@@ -4,6 +4,7 @@
  */
 
 import { deskLocalHmsAsTraderDisplay } from '@/lib/chart/traderDisplayTz'
+import type { LiveJournalInstrument } from '@/lib/trading/journalHistory'
 import {
   TRADEIFY_DLL_DOLLARS,
   TRADEIFY_FLATTEN_ET,
@@ -35,7 +36,7 @@ export type TradeifyLeoSnapshot = {
   refuseReason: TradeifyRefuseReason | string
   refuseMessage: string
   allowed: boolean
-  byInstrument?: Record<'DOW' | 'NASDAQ' | 'NIKKEI', InstrumentPnl>
+  byInstrument?: Record<LiveJournalInstrument, InstrumentPnl>
 }
 
 export function tradeifyFlattenMontreal(now: Date = new Date()): string {
@@ -60,10 +61,17 @@ function instrumentLine(
   by: TradeifyLeoSnapshot['byInstrument']
 ): string | null {
   if (!by) return null
-  const parts = (['NIKKEI', 'NASDAQ', 'DOW'] as const).map((k) => {
-    const row = by[k]
-    return `${k} ${row.fills} fills / ${money(row.pnl)}`
-  })
+  const order: LiveJournalInstrument[] = ['NIKKEI', 'NASDAQ', 'DOW', 'GOLD', 'CRUDE']
+  const parts = order
+    .filter((k) => {
+      const row = by[k]
+      if (!row) return k === 'NIKKEI' || k === 'NASDAQ' || k === 'DOW'
+      return k === 'NIKKEI' || k === 'NASDAQ' || k === 'DOW' || row.fills > 0 || row.pnl !== 0
+    })
+    .map((k) => {
+      const row = by[k] ?? { fills: 0, pnl: 0 }
+      return `${k} ${row.fills} fills / ${money(row.pnl)}`
+    })
   return `Shared already used: ${parts.join(' · ')}`
 }
 

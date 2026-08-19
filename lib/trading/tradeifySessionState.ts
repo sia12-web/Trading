@@ -1,9 +1,14 @@
 /**
  * Load Tradeify Growth $50k session snapshot from trades_journal.
- * Counts DOW + NASDAQ + NIKKEI fills inside the 18:00 ET session window.
+ * Counts live journal fills (indexes + Tradovate GOLD/CRUDE) inside the 18:00 ET window.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import {
+  LIVE_JOURNAL_INSTRUMENTS,
+  isLiveJournalInstrument,
+  type LiveJournalInstrument,
+} from '@/lib/trading/journalHistory'
 import {
   resolveTradeifyPlace,
   tradeifyDeskStatus,
@@ -49,21 +54,23 @@ export type TradeifyInstrumentBreak = {
   stops: number
 }
 
-export function emptyInstrumentBreak(): Record<'DOW' | 'NASDAQ' | 'NIKKEI', TradeifyInstrumentBreak> {
+export function emptyInstrumentBreak(): Record<LiveJournalInstrument, TradeifyInstrumentBreak> {
   return {
     DOW: { fills: 0, pnl: 0, risked: 0, stops: 0 },
     NASDAQ: { fills: 0, pnl: 0, risked: 0, stops: 0 },
     NIKKEI: { fills: 0, pnl: 0, risked: 0, stops: 0 },
+    GOLD: { fills: 0, pnl: 0, risked: 0, stops: 0 },
+    CRUDE: { fills: 0, pnl: 0, risked: 0, stops: 0 },
   }
 }
 
 export function instrumentBreakFromFills(
   fills: TradeifyFillRow[]
-): Record<'DOW' | 'NASDAQ' | 'NIKKEI', TradeifyInstrumentBreak> {
+): Record<LiveJournalInstrument, TradeifyInstrumentBreak> {
   const out = emptyInstrumentBreak()
   for (const r of fills) {
     const inst = String(r.instrument || '').toUpperCase()
-    if (inst !== 'DOW' && inst !== 'NASDAQ' && inst !== 'NIKKEI') continue
+    if (!isLiveJournalInstrument(inst)) continue
     out[inst].fills += 1
     const pnl = Number(r.profit_loss)
     if (Number.isFinite(pnl)) out[inst].pnl += pnl
@@ -71,7 +78,7 @@ export function instrumentBreakFromFills(
     if (Number.isFinite(risk)) out[inst].risked += risk
     if (r.exit_reason === 'stop_hit') out[inst].stops += 1
   }
-  for (const k of ['DOW', 'NASDAQ', 'NIKKEI'] as const) {
+  for (const k of LIVE_JOURNAL_INSTRUMENTS) {
     out[k].pnl = Math.round(out[k].pnl * 100) / 100
     out[k].risked = Math.round(out[k].risked * 100) / 100
   }
@@ -125,7 +132,7 @@ export async function loadTradeifySessionSnapshot(
       'instrument, fill_status, entry_timestamp, created_at, exit_timestamp, exit_reason, profit_loss, risk_amount, entry_direction'
     )
     .eq('user_id', userId)
-    .in('instrument', ['DOW', 'NASDAQ', 'NIKKEI'])
+    .in('instrument', [...LIVE_JOURNAL_INSTRUMENTS])
     .eq('fill_status', 'filled')
     .gte('entry_timestamp', lookback.toISOString())
 

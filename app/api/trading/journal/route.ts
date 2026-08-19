@@ -8,7 +8,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
-import { isVisibleLiveJournalRow, journalTicketEquity } from '@/lib/trading/journalHistory'
+import {
+  isLiveJournalInstrument,
+  isVisibleLiveJournalRow,
+  journalTicketEquity,
+} from '@/lib/trading/journalHistory'
 
 export const dynamic = 'force-dynamic'
 
@@ -41,8 +45,8 @@ export async function GET(request: NextRequest) {
       .order('entry_timestamp', { ascending: false })
       .limit(limit)
 
-    if (instrument && ['DOW', 'NASDAQ', 'NIKKEI'].includes(instrument)) {
-      query = query.eq('instrument', instrument)
+    if (instrument && isLiveJournalInstrument(instrument)) {
+      query = query.eq('instrument', instrument.toUpperCase())
     }
 
     const since = new Date()

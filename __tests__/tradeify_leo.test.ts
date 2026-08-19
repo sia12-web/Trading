@@ -62,6 +62,8 @@ const snap: TradeifyLeoSnapshot = {
     DOW: { fills: 0, pnl: 0 },
     NASDAQ: { fills: 0, pnl: 0 },
     NIKKEI: { fills: 1, pnl: -150 },
+    GOLD: { fills: 0, pnl: 0 },
+    CRUDE: { fills: 0, pnl: 0 },
   },
 }
 
