@@ -20,11 +20,17 @@ function assert(cond: unknown, msg: string) {
 assert(parseDeskInstrument('NASDAQ') === 'NASDAQ', 'NASDAQ')
 assert(parseDeskInstrument('nasdaq') === 'NASDAQ', 'case')
 assert(parseDeskInstrument('DOW') === 'DOW', 'DOW')
+assert(parseDeskInstrument('GOLD') === 'GOLD', 'GOLD')
+assert(parseDeskInstrument('CRUDE') === 'CRUDE', 'CRUDE')
 assert(parseDeskInstrument('NIKKEI') === null, 'live ignores stored NIKKEI')
 assert(parseDeskInstrument('SPX') === null, 'reject junk')
 assert(parseDeskInstrument(null) === null, 'null')
 assert(parseDeskInstrument('') === null, 'empty')
 
+assert(
+  resolveInitialDeskChartInstrument({ clockLock: 'GOLD', preference: 'DOW' }) === 'GOLD',
+  'clock lock GOLD beats remembered DOW'
+)
 assert(
   resolveInitialDeskChartInstrument({ clockLock: 'NASDAQ', preference: 'DOW' }) === 'NASDAQ',
   'clock lock beats remembered DOW tab'

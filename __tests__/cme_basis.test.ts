@@ -36,6 +36,26 @@ import {
 assert.equal(YAHOO_CME_SYMBOLS.DOW, 'MYM=F')
 assert.equal(YAHOO_CME_SYMBOLS.NASDAQ, 'MNQ=F')
 assert.equal(YAHOO_CME_SYMBOLS.NIKKEI, 'NKD=F')
+assert.equal(YAHOO_CME_SYMBOLS.GOLD, 'MGC=F', 'GOLD chart is CME Micro Gold')
+assert.equal(YAHOO_CME_SYMBOLS.CRUDE, 'CL=F', 'CRUDE chart is CME Crude Oil')
+assert.ok(CME_BASIS_MAX_ABS.GOLD >= 10 && CME_BASIS_MAX_ABS.GOLD <= 40)
+assert.ok(CME_BASIS_MAX_ABS.CRUDE >= 0.5 && CME_BASIS_MAX_ABS.CRUDE <= 5)
+
+{
+  const b = cmeBasisFromPair(4540.2, 4542.1, 'GOLD')
+  assert.ok(b != null, 'gold oz basis is valid')
+  assert.equal(Math.round(applyCmeBasis(4540.2, b) * 10) / 10, 4542.1)
+}
+{
+  const b = cmeBasisFromPair(86.5, 86.62, 'CRUDE')
+  assert.ok(b != null, 'crude basis is valid')
+  assert.equal(Math.round(applyCmeBasis(86.5, b) * 100) / 100, 86.62)
+}
+assert.equal(
+  cmeBasisFromPair(4500, 4600, 'GOLD'),
+  null,
+  '100 oz gap is not a gold basis (GLD-scale bleed)'
+)
 
 assert.ok(CME_BASIS_MAX_ABS.DOW <= 120)
 assert.ok(CME_BASIS_MAX_ABS.NASDAQ <= 140)

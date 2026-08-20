@@ -1,6 +1,7 @@
 /**
  * OANDA practice/live candle history for desk indices (near-24h).
- * Instruments: US30_USD (DOW), NAS100_USD (NASDAQ), JP225_USD (NIKKEI).
+ * Instruments: US30_USD (DOW), NAS100_USD (NASDAQ), JP225_USD (NIKKEI),
+ * XAU_USD (GOLD), WTICO_USD (CRUDE). CME Yahoo bars are preferred for history.
  */
 
 import type { Instrument } from '@/types/price-feed'

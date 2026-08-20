@@ -34,7 +34,7 @@ import {
   type DeskInstrumentPref,
 } from '@/lib/trading/deskInstrumentPreference'
 import { isAnyLiveFocusWindowActive, isAfternoonWatchWindow, sessionFor, deskMarketFor } from '@/lib/trading/sessionGate'
-import { LIVE_CLOCK_REFUSE, clockedNameOnlyMessage } from '@/lib/trading/liveDeskBook'
+import { LIVE_CLOCK_REFUSE, clockedNameOnlyMessage, isLiveClockInstrument } from '@/lib/trading/liveDeskBook'
 import { quoteBelongsToBook } from '@/lib/trading/deskExitGuard'
 import {
   TRADER_DISPLAY_LABEL,
@@ -208,7 +208,7 @@ import { MorningLunchFlatConfirm } from './components/MorningLunchFlatConfirm'
 type Instrument = DeskInstrumentPref
 
 function asLiveNy(i: string | null | undefined): Instrument {
-  return i === 'NASDAQ' ? 'NASDAQ' : 'DOW'
+  return isLiveClockInstrument(i) ? i : 'DOW'
 }
 
 interface PositionOverlay {
@@ -275,15 +275,22 @@ export default function ChartPage() {
     setTvTicketClosed(false)
   }, [pending?.workingId, managePos?.id])
 
-  // Clocked name owns the chart on refresh — preference DOW must not hide NASDAQ/MNQ.
+  // Persist clock preference; only snap chart to that book on rising-edge clock-in
+  // (free-switch among DOW/NASDAQ/GOLD/CRUDE after that).
+  const wasClockedRef = useRef(false)
   useEffect(() => {
     const locked = gate?.lockedInstrument
     if (!gate?.clockedIn || !locked) {
       if (gate && !gate.clockedIn) saveDeskClockLock(null)
+      wasClockedRef.current = false
       return
     }
-    saveDeskClockLock(asLiveNy(locked))
-    setInstrumentState(asLiveNy(locked))
+    const pref = asLiveNy(locked)
+    saveDeskClockLock(pref)
+    if (!wasClockedRef.current) {
+      setInstrumentState(pref)
+    }
+    wasClockedRef.current = true
   }, [gate?.clockedIn, gate?.lockedInstrument])
   const [orderLevel, setOrderLevel] = useState<number | null>(null)
   const [orderLevelType, setOrderLevelType] = useState<string | undefined>()

@@ -1,6 +1,6 @@
 /**
- * GET /api/trading/candles?instrument=DOW|NASDAQ|NIKKEI&timeframe=5m&days=5
- * CME futures first (MYM / MNQ / NKD) so IB matches Tradovate; OANDA CFD fallback.
+ * GET /api/trading/candles?instrument=DOW|NASDAQ|NIKKEI|GOLD|CRUDE&timeframe=5m&days=5
+ * CME futures first (MYM / MNQ / NKD / MGC / CL) so IB matches Tradovate; OANDA CFD fallback.
  * Live: full day continuum (morning + afternoon + overnight). Trading stays morning-only.
  * Sim/dated: full cash session continuum (entries still morning-gated in the UI).
  */
@@ -58,7 +58,7 @@ export async function GET(request: Request) {
 
     if (!isLiveDeskInstrument(instrument)) {
       return NextResponse.json(
-        { error: 'Desk chart supports DOW, NASDAQ, or NIKKEI' },
+        { error: 'Desk chart supports DOW, NASDAQ, GOLD, or CRUDE' },
         { status: 400 }
       )
     }
@@ -102,7 +102,7 @@ export async function GET(request: Request) {
       }
       // Keep afternoon bars on the replay day (and priors) — matches live continuum
     } else {
-      // Live desk: CME futures (MYM / MNQ / NKD) then OANDA CFD if Yahoo is dark
+      // Live desk: CME futures (MYM / MNQ / NKD / MGC / CL) then OANDA CFD if Yahoo is dark
       // Floor must cover AVWAP 5-trading-day-prior anchor (weekends truncate `days=5`)
       const fetchDays = Math.max(days, AVWAP_CANDLE_FETCH_CALENDAR_DAYS)
       const [yahoo, oanda] = await Promise.all([

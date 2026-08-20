@@ -2863,7 +2863,7 @@ export function TradingChart({
     if (allowedInstruments && allowedInstruments.length > 0) {
       return allowedInstruments.filter((i) => i !== 'NIKKEI')
     }
-    return ['DOW', 'NASDAQ']
+    return ['DOW', 'NASDAQ', 'GOLD', 'CRUDE']
   })
 
   useEffect(() => {
@@ -2901,11 +2901,17 @@ export function TradingChart({
   const setInstrument = useCallback((inst: Instrument) => {
     if (!visibleInstruments.includes(inst) || inst === 'NIKKEI') return
     setInstrumentState(inst)
-    if (!lockedInstrument || inst === lockedInstrument) {
-      if (inst === 'DOW' || inst === 'NASDAQ') setDeskInstrumentPreference(inst)
+    // Free-switch: remember any NY board tab (indexes + gold/crude).
+    if (
+      inst === 'DOW' ||
+      inst === 'NASDAQ' ||
+      inst === 'GOLD' ||
+      inst === 'CRUDE'
+    ) {
+      setDeskInstrumentPreference(inst)
     }
     onInstrumentChange?.(inst)
-  }, [onInstrumentChange, lockedInstrument, visibleInstruments])
+  }, [onInstrumentChange, visibleInstruments])
 
   useEffect(() => {
     setInstrumentState((prev) => {
@@ -3538,7 +3544,7 @@ export function TradingChart({
   // ── Load candle data when instrument changes (5m only) ───────────────────────
   useEffect(() => {
     if (!chartReady) return
-    if (lockedInstrument && instrument !== lockedInstrument) return
+    // Free-switch NY board: load CME bars for the viewed book even if clock preference differs.
     let cancelled = false
 
     const load = async () => {

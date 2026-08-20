@@ -1,13 +1,13 @@
 /**
- * Remember the live desk instrument across refresh (DOW / NASDAQ).
- * Clock-in lock owns the *view* while active. Preference is only for unclocked
- * browse — a remembered DOW tab must not hide a NASDAQ clock-in (MYM ~53k vs MNQ ~30k).
+ * Remember the live desk instrument across refresh (DOW / NASDAQ / GOLD / CRUDE).
+ * Clock-in lock is a preference only — free-switch among the four NY books.
  * Persisted NIKKEI is ignored (live desk is NYC only; Nikkei stays on Simulation).
  */
 
 import { DESK_BAR_SPACING } from '../chart/deskChartTheme'
+import { isLiveClockInstrument, type LiveClockInstrument } from './liveDeskBook'
 
-export type DeskInstrumentPref = 'DOW' | 'NASDAQ'
+export type DeskInstrumentPref = LiveClockInstrument
 
 const STORAGE_KEY = 'tradepulse.desk.instrument'
 
@@ -16,7 +16,7 @@ export function parseDeskInstrument(
 ): DeskInstrumentPref | null {
   if (!value) return null
   const u = value.trim().toUpperCase()
-  if (u === 'DOW' || u === 'NASDAQ') return u
+  if (isLiveClockInstrument(u)) return u
   return null
 }
 
@@ -42,7 +42,7 @@ export function saveDeskClockLock(instrument: DeskInstrumentPref | null): void {
 }
 
 /**
- * First chart name: clock-in lock beats a remembered DOW tab.
+ * First chart name: clock-in preference beats a remembered tab.
  * SSR has no sessionStorage — callers must hold candles until client boot.
  */
 export function resolveInitialDeskChartInstrument(args: {

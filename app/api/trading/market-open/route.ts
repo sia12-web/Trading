@@ -73,6 +73,10 @@ async function getIndexQuote(instrument: Instrument): Promise<DeskQuote | null> 
   } catch {
     /* fall through */
   }
+  // Never Finnhub ETF proxies for GOLD/CRUDE (GLD/USO) — wrong scale vs Tradovate MGC/CL.
+  if (instrument === 'GOLD' || instrument === 'CRUDE') {
+    return null
+  }
   try {
     const finnhub = getFinnhubClient()
     const q = await finnhub.getQuote(instrument)

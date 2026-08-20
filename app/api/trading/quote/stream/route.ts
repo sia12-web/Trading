@@ -1,6 +1,6 @@
 /**
  * GET /api/trading/quote/stream?instrument=DOW
- * Server-Sent Events — OANDA ticks shifted onto CME (Tradovate MYM / MNQ / NKD) scale.
+ * Server-Sent Events — OANDA ticks shifted onto CME (Tradovate MYM / MNQ / MGC / CL) scale.
  */
 
 import { getDayPreviousClose, refreshDayPreviousClose } from '@/lib/yahoo/quote'

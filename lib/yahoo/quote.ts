@@ -1,5 +1,5 @@
 /**
- * Yahoo last for CME micros (MYM / MNQ / NKD).
+ * Yahoo last for CME futures (MYM / MNQ / NKD / MGC / CL).
  * v7 quote is often 401; v8 chart meta is the working path.
  * CME prints are delayed ~10 minutes — never treat them as a live Tradovate last.
  */

@@ -1,6 +1,6 @@
 /**
  * GET /api/trading/quote?instrument=DOW
- * Live OANDA mid shifted by CME basis so the tip matches Tradovate MYM / MNQ / NKD.
+ * Live OANDA mid shifted by CME basis so the tip matches Tradovate MYM / MNQ / MGC / CL.
  * Delayed Yahoo futures lasts are never served as the live price.
  */
 
@@ -77,7 +77,7 @@ export async function GET(request: Request) {
 
     if (!isLiveDeskInstrument(instrument)) {
       return NextResponse.json(
-        { error: 'Desk quote supports DOW, NASDAQ, or NIKKEI' },
+        { error: 'Desk quote supports DOW, NASDAQ, GOLD, or CRUDE' },
         { status: 400 }
       )
     }
