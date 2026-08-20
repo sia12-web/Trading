@@ -32,9 +32,14 @@ import { DeskCallModePrompt } from './DeskCallModePrompt'
 export interface SessionGateState {
   phase: string
   message: string
-  lockedInstrument: 'DOW' | 'NASDAQ' | 'NIKKEI' | null
-  suggestedInstrument?: 'DOW' | 'NASDAQ' | 'NIKKEI' | null
-  allowedInstruments?: Array<'DOW' | 'NASDAQ' | 'NIKKEI'>
+  lockedInstrument: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | null
+  suggestedInstrument?: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | null
+  allowedInstruments?: Array<'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'>
+  /** 9:15 ranked board — soft priority across NY books */
+  rankedBoard?: Array<{
+    instrument: 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE'
+    confidence: number
+  }>
   canPlaceEntry: boolean
   canManagePosition: boolean
   canViewLiveChart: boolean
@@ -89,7 +94,7 @@ function formatDeskClock(_market?: 'NY' | 'TOKYO' | null): { time: string; label
 function phaseLabel(
   phase: string,
   rangeStrategy?: 'or30' | 'ib' | 'us_range' | null,
-  instrument?: 'DOW' | 'NASDAQ' | 'NIKKEI' | null
+  instrument?: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | null
 ): string {
   if (rangeStrategy === 'us_range') return 'US-RANGE'
   if (rangeStrategy === 'or30') return 'OR30'
@@ -123,7 +128,7 @@ export function SessionBanner({
   lastQuoteAt?: number | null
   dataMode?: 'live' | 'synthetic'
   /** Current chart tab — preferred clock-in commitment when in focus market */
-  viewingInstrument?: 'DOW' | 'NASDAQ' | 'NIKKEI' | null
+  viewingInstrument?: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | null
 }) {
   const [gate, setGate] = useState<SessionGateState | null>(null)
   const [gateError, setGateError] = useState<string | null>(null)
@@ -193,6 +198,7 @@ export function SessionBanner({
         lockedInstrument: json.lockedInstrument,
         suggestedInstrument:
           json.suggestedInstrument ?? json.suggested_instrument ?? null,
+        rankedBoard: Array.isArray(json.rankedBoard) ? json.rankedBoard : undefined,
         allowedInstruments: Array.isArray(json.allowedInstruments)
           ? json.allowedInstruments
           : undefined,
@@ -375,7 +381,7 @@ export function SessionBanner({
   }, [gate?.lockedInstrument, viewingInstrument, refreshKey])
 
   const handleClockInName = useCallback(
-    async (inst: 'DOW' | 'NASDAQ') => {
+    async (inst: 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE') => {
       if (clocking) return
       setClocking(true)
       setClockInError(null)
@@ -527,6 +533,18 @@ export function SessionBanner({
       <span className="font-semibold tracking-wide uppercase">
         {phaseLabel(gate.phase, gate.rangeStrategy, gate.lockedInstrument)}
       </span>
+      {gate.rankedBoard && gate.rankedBoard.length > 0 && (
+        <span
+          className="rounded bg-sky-500/15 px-2 py-0.5 text-[10px] text-sky-200 font-mono max-w-[28rem] truncate"
+          title="9:15 ranked board — soft priority. Shared 3 fills across all four."
+        >
+          Board:{' '}
+          {gate.rankedBoard
+            .slice(0, 4)
+            .map((r, i) => `${i + 1}.${r.instrument}${r.confidence ? `(${Math.round(r.confidence)})` : ''}`)
+            .join(' · ')}
+        </span>
+      )}
       <span
         className="text-gray-400 font-mono tabular-nums min-w-[5.5rem]"
         title="Montreal time (America/Toronto)"
@@ -548,8 +566,15 @@ export function SessionBanner({
           MANAGE OPEN
         </span>
       ) : gate.canClockIn && gate.market !== 'TOKYO' ? (
-        <span className="flex items-center gap-1.5">
-          {(['DOW', 'NASDAQ'] as const).map((inst) => (
+        <span className="flex flex-wrap items-center gap-1.5">
+          {(
+            (gate.rankedBoard?.length
+              ? gate.rankedBoard.map((r) => r.instrument)
+              : (['DOW', 'NASDAQ', 'GOLD', 'CRUDE'] as const)
+            ).filter((inst, i, arr) => arr.indexOf(inst) === i) as Array<
+              'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE'
+            >
+          ).map((inst) => (
             <button
               key={inst}
               type="button"
@@ -557,7 +582,7 @@ export function SessionBanner({
               disabled={clocking}
               className="rounded bg-amber-500/90 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-black hover:bg-amber-400 disabled:opacity-60"
             >
-              {clocking ? '…' : inst === 'DOW' ? 'DOW · MYM' : 'NASDAQ · MNQ'}
+              {clocking ? '…' : liveDeskContractLabel(inst)}
             </button>
           ))}
         </span>

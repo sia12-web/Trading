@@ -1,5 +1,5 @@
 /**
- * Live $50k book: NYC micros, one clock-in name, no live Nikkei.
+ * Live $50k book: NYC DOW/NASDAQ/GOLD/CRUDE, free switch, shared 3 fills.
  * Run: npx tsx __tests__/live_desk_book.test.ts
  */
 
@@ -30,42 +30,45 @@ function etDate(h: number, m: number) {
 
 assert.equal(isLiveClockInstrument('DOW'), true)
 assert.equal(isLiveClockInstrument('NASDAQ'), true)
+assert.equal(isLiveClockInstrument('GOLD'), true)
+assert.equal(isLiveClockInstrument('CRUDE'), true)
 assert.equal(isLiveClockInstrument('NIKKEI'), false)
-assert.equal(isNyGlanceChart('NASDAQ', 'DOW'), true)
+assert.equal(isNyGlanceChart('NASDAQ', 'DOW'), false)
 assert.equal(isNyGlanceChart('NASDAQ', 'NASDAQ'), false)
 
 assert.equal(liveDeskContractLabel('DOW'), 'DOW · MYM')
 assert.equal(liveDeskContractLabel('NASDAQ'), 'NASDAQ · MNQ')
+assert.equal(liveDeskContractLabel('GOLD'), 'GOLD · MGC')
+assert.equal(liveDeskContractLabel('CRUDE'), 'CRUDE · CL')
 assert.ok(liveDeskIndexHint('NASDAQ').includes('30k'))
 assert.ok(liveDeskIndexHint('DOW').includes('53k'))
-assert.ok(clockedNameOnlyMessage('NASDAQ').includes('MNQ'))
-assert.ok(clockedNameOnlyMessage('NASDAQ').includes('one name'))
+assert.ok(clockedNameOnlyMessage('NASDAQ').includes('shared 3'))
 
 assert.equal(
   resolveClockedChartInstrument({
     locked: 'NASDAQ',
     viewing: 'DOW',
-    visible: ['NASDAQ'],
+    visible: ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'],
   }),
-  'NASDAQ',
-  'clocked name is the only door'
+  'DOW',
+  'viewing wins on free-switch desk'
 )
 assert.equal(
   resolveClockedChartInstrument({
     locked: 'NASDAQ',
-    viewing: 'DOW',
-    visible: ['DOW', 'NASDAQ'],
+    viewing: null,
+    visible: ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'],
   }),
   'NASDAQ',
-  'lock wins even if a twin is still in the list'
+  'locked preference when no viewing'
 )
 assert.equal(
   resolveClockedChartInstrument({
     locked: null,
-    viewing: 'DOW',
-    visible: ['DOW', 'NASDAQ'],
+    viewing: 'GOLD',
+    visible: ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'],
   }),
-  'DOW'
+  'GOLD'
 )
 
 const noName = assertLiveClockIn({ market: 'NY', instrument: null })
@@ -82,13 +85,16 @@ const ok = assertLiveClockIn({ market: 'NY', instrument: 'NASDAQ' })
 assert.equal(ok.ok, true)
 if (ok.ok) assert.equal(ok.instrument, 'NASDAQ')
 
+const goldOk = assertLiveClockIn({ market: 'NY', instrument: 'GOLD' })
+assert.equal(goldOk.ok, true)
+
 const switchName = assertLiveClockIn({
   market: 'NY',
   instrument: 'DOW',
   existingInstrument: 'NASDAQ',
   alreadyClockedIn: true,
 })
-assert.equal(switchName.ok, false)
+assert.equal(switchName.ok, true, 'free switch between NY books')
 
 const now = etDate(10, 0)
 const vis = liveVisibleInstruments(now, {
@@ -96,38 +102,48 @@ const vis = liveVisibleInstruments(now, {
   clockedIn: true,
   attendedToday: true,
 })
-assert.deepEqual(vis, ['NASDAQ'], `one door ${vis}`)
-assert.ok(!vis.includes('DOW'))
+assert.deepEqual(vis, ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'], `full board ${vis}`)
+assert.ok(vis.includes('GOLD'))
 assert.ok(!vis.includes('NIKKEI'))
 
-const staleTwin = resolveSessionGate({
+const freeSwitch = resolveSessionGate({
   now,
   lockedInstrument: 'NASDAQ',
-  viewingInstrument: 'DOW',
+  viewingInstrument: 'GOLD',
   clockedIn: true,
   attendedToday: true,
   attemptsUsed: 0,
   stopLossHitCount: 0,
 })
-assert.equal(staleTwin.glanceOnly, false)
-assert.equal(staleTwin.lockedInstrument, 'NASDAQ')
-assert.deepEqual(staleTwin.allowedInstruments, ['NASDAQ'])
-assert.ok(!staleTwin.allowedInstruments.includes('DOW'))
+assert.equal(freeSwitch.glanceOnly, false)
+assert.equal(freeSwitch.lockedInstrument, 'NASDAQ')
+assert.deepEqual(freeSwitch.allowedInstruments, ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'])
+assert.ok(freeSwitch.allowedInstruments.includes('GOLD'))
 
-const denied = assertCanOpenPosition('DOW', staleTwin)
-assert.equal(denied.ok, false)
-if (!denied.ok) assert.ok(/NASDAQ|MNQ|one name/i.test(denied.message))
+const allowedGold = assertCanOpenPosition('GOLD', {
+  ...freeSwitch,
+  canPlaceEntry: true,
+  clockedIn: true,
+})
+assert.equal(allowedGold.ok, true)
 
-const nikkeiTicket = assertCanOpenPosition('NIKKEI', staleTwin)
+const nikkeiTicket = assertCanOpenPosition('NIKKEI', freeSwitch)
 assert.equal(nikkeiTicket.ok, false)
 if (!nikkeiTicket.ok) assert.equal(nikkeiTicket.message, LIVE_CLOCK_REFUSE)
 
-const skipTwinAi = shouldRunLiveAiForInstrument('DOW', now, {
+const twinAi = shouldRunLiveAiForInstrument('DOW', now, {
   lockedInstrument: 'NASDAQ',
   clockedIn: true,
   attendedToday: true,
 })
-assert.equal(skipTwinAi.ok, false)
+assert.equal(twinAi.ok, true, 'AI allowed on other NY books')
+
+const goldAi = shouldRunLiveAiForInstrument('GOLD', now, {
+  lockedInstrument: 'NASDAQ',
+  clockedIn: true,
+  attendedToday: true,
+})
+assert.equal(goldAi.ok, true)
 
 const skipNikkeiAi = shouldRunLiveAiForInstrument('NIKKEI', now, {
   lockedInstrument: 'NASDAQ',
@@ -142,7 +158,7 @@ const nikkeiLockIgnored = liveVisibleInstruments(etDate(10, 0), {
   attendedToday: true,
 })
 assert.ok(!nikkeiLockIgnored.includes('NIKKEI'))
-assert.deepEqual(nikkeiLockIgnored, ['DOW', 'NASDAQ'])
+assert.deepEqual(nikkeiLockIgnored, ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'])
 
 const tokyoHours = new Date(Date.UTC(2026, 6, 15, 0, 30, 0)) // 09:30 JST
 assert.ok(!liveVisibleInstruments(tokyoHours).includes('NIKKEI'))
@@ -156,7 +172,6 @@ const tokyoGate = resolveSessionGate({
 assert.equal(tokyoGate.market, 'NY')
 assert.ok(!tokyoGate.allowedInstruments.includes('NIKKEI'))
 
-// Tight stop: 1 NQ would match $400 exactly; live book must still print MNQ.
 const tight = buildTradovateMirrorTicket({
   instrument: 'NASDAQ',
   direction: 'LONG',
@@ -182,6 +197,17 @@ const tightDow = buildTradovateMirrorTicket({
 assert.ok(tightDow)
 assert.equal(tightDow!.symbol, 'MYM')
 assert.notEqual(tightDow!.symbol, 'YM')
+
+const goldTicket = buildTradovateMirrorTicket({
+  instrument: 'GOLD',
+  direction: 'LONG',
+  entry: 4500,
+  stop: 4490,
+  target: 4515,
+  riskDollars: 400,
+})
+assert.ok(goldTicket)
+assert.equal(goldTicket!.symbol, 'MGC')
 
 const livePage = readFileSync(
   join(__dirname, '../app/dashboard/chart/page.tsx'),

@@ -503,7 +503,7 @@ function makeDeskChartFormatters(_instrument: Instrument): DeskChartFmt {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI'
+type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
 
 /** Desk charts are 5m only — live and simulation share this. */
 const DESK_TIMEFRAME = '5m' as const
@@ -556,6 +556,8 @@ const INSTRUMENT_META: Record<Instrument, { label: string; symbol: string; color
   DOW:    { label: 'Micro Dow · MYM', symbol: 'MYM',  color: '#1d4ed8', basePrice: 39500 },
   NASDAQ: { label: 'Micro Nasdaq · MNQ', symbol: 'MNQ', color: '#0f766e', basePrice: 28500 },
   NIKKEI: { label: 'Nikkei USD', symbol: 'NKD', color: '#f472b6', basePrice: 38000 },
+  GOLD:   { label: 'Micro Gold · MGC', symbol: 'MGC', color: '#ca8a04', basePrice: 4500 },
+  CRUDE:  { label: 'Crude · CL', symbol: 'CL', color: '#78716c', basePrice: 85 },
 }
 
 function paintPositionBandOverlay(

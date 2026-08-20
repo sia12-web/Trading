@@ -7,7 +7,7 @@
 export const TRADOVATE_TRADER_URL = 'https://trader.tradovate.com'
 export const TRADINGVIEW_CHART_URL = 'https://www.tradingview.com/chart/'
 
-export type DeskIndex = 'DOW' | 'NASDAQ' | 'NIKKEI'
+export type DeskIndex = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
 
 export type TradovateContract = {
   symbol: string
@@ -22,7 +22,7 @@ export type TradovateContract = {
   maxMicros: number
 }
 
-/** Tradeify instrument list: minis ES/NQ/YM/RTY/NKD · micros MYM/MES/MNQ/M2K (no MNK). */
+/** Tradeify instrument list: minis ES/NQ/YM/RTY/NKD/GC/CL · micros MYM/MES/MNQ/M2K/MGC/MCL. */
 export const TRADOVATE_CONTRACTS: Record<DeskIndex, TradovateContract> = {
   DOW: {
     symbol: 'YM',
@@ -56,6 +56,28 @@ export const TRADOVATE_CONTRACTS: Record<DeskIndex, TradovateContract> = {
     tick: 5,
     maxMinis: 4,
     maxMicros: 0,
+  },
+  GOLD: {
+    symbol: 'GC',
+    microSymbol: 'MGC',
+    name: 'Gold',
+    microName: 'Micro Gold',
+    pointValue: 100,
+    microPointValue: 10,
+    tick: 0.1,
+    maxMinis: 4,
+    maxMicros: 40,
+  },
+  CRUDE: {
+    symbol: 'CL',
+    microSymbol: 'MCL',
+    name: 'Crude Oil',
+    microName: 'Micro Crude Oil',
+    pointValue: 1000,
+    microPointValue: 100,
+    tick: 0.01,
+    maxMinis: 4,
+    maxMicros: 40,
   },
 }
 

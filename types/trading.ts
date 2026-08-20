@@ -2,7 +2,7 @@
  * Trading types and interfaces for Day Trading Strategy Engine
  */
 
-export type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI'
+export type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
 export type Regime = 'bullish' | 'bearish' | 'choppy'
 export type EntryDirection = 'LONG' | 'SHORT'
 export type EntryWindow = 1 | 2 | 3

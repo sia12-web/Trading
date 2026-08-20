@@ -50,7 +50,7 @@ export async function GET(request: Request) {
     const focus = liveFocusMarket(now)
 
     const finnhub = getFinnhubClient()
-    const instruments: DeskNewsInstrument[] = ['DOW', 'NASDAQ', 'NIKKEI']
+    const instruments: DeskNewsInstrument[] = ['DOW', 'NASDAQ', 'NIKKEI', 'GOLD', 'CRUDE']
 
     const calendarRowsPromise = finnhub.getEconomicCalendar(
       ymd(now),
@@ -122,6 +122,8 @@ export async function GET(request: Request) {
       DOW: filterCardsForDesk(allCards, 'DOW', 10),
       NASDAQ: filterCardsForDesk(allCards, 'NASDAQ', 10),
       NIKKEI: filterCardsForDesk(allCards, 'NIKKEI', 10),
+      GOLD: filterCardsForDesk(allCards, 'GOLD', 10),
+      CRUDE: filterCardsForDesk(allCards, 'CRUDE', 10),
       ALL: filterCardsForDesk(allCards, 'ALL', 12, sessionOpts),
     }
 
@@ -187,7 +189,7 @@ export async function GET(request: Request) {
         ok: false,
         updatedAt: new Date().toISOString(),
         items: [],
-        byDesk: { DOW: [], NASDAQ: [], NIKKEI: [], ALL: [] },
+        byDesk: { DOW: [], NASDAQ: [], NIKKEI: [], GOLD: [], CRUDE: [], ALL: [] },
         calendar: [],
         error: 'News unavailable',
         disclaimer: 'Context only — not a trade signal.',

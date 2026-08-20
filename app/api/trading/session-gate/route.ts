@@ -60,13 +60,15 @@ export async function GET(request: Request) {
 
     /** Soft AI / regime pick — never collapses NY tabs by itself */
     let suggestedInstrument: DeskInstrument | null = null
+    /** Ranked 9:15 board across DOW / NASDAQ / GOLD / CRUDE */
+    let rankedBoard: Array<{ instrument: DeskInstrument; confidence: number }> = []
     /** Hard lock — attendance or open book (NY only). Never auto-lock Nikkei. */
     let lockedInstrument: DeskInstrument | null = null
 
     if (focusMarket === 'NY') {
       const { data: rec } = await supabase
         .from('market_recommendations')
-        .select('recommended_instrument')
+        .select('recommended_instrument, all_recommendations')
         .eq('date', nyRecDate)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -74,18 +76,43 @@ export async function GET(request: Request) {
 
       if (rec?.recommended_instrument && isNyDeskInstrument(rec.recommended_instrument)) {
         suggestedInstrument = rec.recommended_instrument
-      } else {
-        const { data: regimes } = await supabase
-          .from('regime_cache')
-          .select('instrument, recommendation_confidence')
-          .eq('date', nyRecDate)
-          .in('instrument', ['DOW', 'NASDAQ'])
-          .order('recommendation_confidence', { ascending: false })
-          .limit(1)
+      }
 
-        const top = regimes?.[0]
-        if (top?.instrument && isNyDeskInstrument(top.instrument)) {
-          suggestedInstrument = top.instrument
+      const { data: regimes } = await supabase
+        .from('regime_cache')
+        .select('instrument, recommendation_confidence')
+        .eq('date', nyRecDate)
+        .in('instrument', ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'])
+        .order('recommendation_confidence', { ascending: false })
+
+      rankedBoard = (regimes || [])
+        .filter((r) => isNyDeskInstrument(r.instrument))
+        .map((r) => ({
+          instrument: r.instrument as DeskInstrument,
+          confidence: Number(r.recommendation_confidence) || 0,
+        }))
+
+      if (!suggestedInstrument) {
+        const top = rankedBoard[0]
+        if (top?.instrument) suggestedInstrument = top.instrument
+      }
+
+      if (rankedBoard.length === 0 && rec?.all_recommendations) {
+        try {
+          const parsed = JSON.parse(String(rec.all_recommendations)) as Array<{
+            instrument?: string
+            confidence?: number
+          }>
+          if (Array.isArray(parsed)) {
+            rankedBoard = parsed
+              .filter((r) => isNyDeskInstrument(r.instrument || ''))
+              .map((r) => ({
+                instrument: r.instrument as DeskInstrument,
+                confidence: Number(r.confidence) || 0,
+              }))
+          }
+        } catch {
+          /* ignore */
         }
       }
     }
@@ -224,6 +251,7 @@ export async function GET(request: Request) {
       {
         success: true,
         ...liveGate,
+        rankedBoard,
         suggested_instrument: liveGate.suggestedInstrument,
         open_position_id: openPos?.id ?? null,
         open_instrument: openPos?.instrument ?? null,

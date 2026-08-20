@@ -1,36 +1,43 @@
 /**
- * Live $50k book: NYC only, one clock-in name, micros (MYM / MNQ).
- * Nikkei stays on Simulation. Oil/gold/beans are out.
+ * Live $50k book: NYC desk — DOW / NASDAQ / GOLD / CRUDE.
+ * Shared 3-fill session; switch freely among the four after clock-in.
+ * Nikkei stays on Simulation.
  */
 
-export const LIVE_CLOCK_INSTRUMENTS = ['DOW', 'NASDAQ'] as const
+export const LIVE_CLOCK_INSTRUMENTS = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'] as const
 export type LiveClockInstrument = (typeof LIVE_CLOCK_INSTRUMENTS)[number]
 
 export const LIVE_CLOCK_REFUSE =
-  'Live desk is NYC only (DOW / NASDAQ · MYM / MNQ). Nikkei is Simulation.'
+  'Live desk is NYC only (DOW / NASDAQ / GOLD / CRUDE). Nikkei is Simulation.'
 
 export function isLiveClockInstrument(
   instrument: string | null | undefined
 ): instrument is LiveClockInstrument {
-  return instrument === 'DOW' || instrument === 'NASDAQ'
-}
-
-/** True when the chart/API is on the unclocked NY twin — not a tradable view. */
-export function isNyGlanceChart(
-  locked: string | null | undefined,
-  viewing: string | null | undefined
-): boolean {
   return (
-    isLiveClockInstrument(locked) &&
-    isLiveClockInstrument(viewing) &&
-    locked !== viewing
+    instrument === 'DOW' ||
+    instrument === 'NASDAQ' ||
+    instrument === 'GOLD' ||
+    instrument === 'CRUDE'
   )
 }
 
-/** Live book labels — micros only. DOW≠NASDAQ (Dow ~53k vs Nasdaq-100 ~30k). */
+/**
+ * Free-switch desk: never treat another NY book as glance-only.
+ * Kept for call-site compatibility; always false.
+ */
+export function isNyGlanceChart(
+  _locked: string | null | undefined,
+  _viewing: string | null | undefined
+): boolean {
+  return false
+}
+
+/** Live book labels — micros / full CL. */
 export function liveDeskContractLabel(instrument: string | null | undefined): string {
   if (instrument === 'DOW') return 'DOW · MYM'
   if (instrument === 'NASDAQ') return 'NASDAQ · MNQ'
+  if (instrument === 'GOLD') return 'GOLD · MGC'
+  if (instrument === 'CRUDE') return 'CRUDE · CL'
   if (instrument === 'NIKKEI') return 'NIKKEI'
   return instrument?.trim() || '—'
 }
@@ -42,23 +49,30 @@ export function liveDeskIndexHint(instrument: string | null | undefined): string
   if (instrument === 'NASDAQ') {
     return 'Micro Nasdaq MNQ — Nasdaq-100 points (~30k). Match TradingView MNQ, not MYM/Dow (~53k).'
   }
+  if (instrument === 'GOLD') {
+    return 'Micro Gold MGC — match Tradovate MGC / TradingView MGC1!, not full GC.'
+  }
+  if (instrument === 'CRUDE') {
+    return 'Crude oil CL — match Tradovate CL / TradingView CL1!. Shared 3-fill desk with indexes + gold.'
+  }
   return ''
 }
 
 export function clockedNameOnlyMessage(locked: string | null | undefined): string {
-  return `Clocked ${liveDeskContractLabel(locked)} — one name today. Tickets stay on ${liveDeskContractLabel(locked)}.`
+  return `NY desk clocked in (${liveDeskContractLabel(locked) || 'board'}). Switch freely among DOW / NASDAQ / GOLD / CRUDE — shared 3 fills.`
 }
 
-/** Clocked name owns the chart. No twin tab / glance view while the lock is live. */
+/** Prefer viewing book; fall back to locked preference, then first visible. */
 export function resolveClockedChartInstrument(args: {
   locked: string | null | undefined
   viewing: string | null | undefined
   visible: readonly string[]
 }): string {
   const visible = args.visible.filter((v) => typeof v === 'string' && v.length > 0)
-  const locked = args.locked && visible.includes(args.locked) ? args.locked : null
   const viewing =
     args.viewing && visible.includes(args.viewing) ? args.viewing : null
+  if (viewing) return viewing
+  const locked = args.locked && visible.includes(args.locked) ? args.locked : null
   if (locked) return locked
   return viewing || visible[0] || 'DOW'
 }
@@ -78,19 +92,9 @@ export function assertLiveClockIn(args: {
   if (!isLiveClockInstrument(args.instrument)) {
     return {
       ok: false,
-      error: 'Clock in on DOW or NASDAQ (MYM / MNQ). Name is locked for the session.',
+      error: 'Clock in on DOW, NASDAQ, GOLD, or CRUDE. Shared 3 fills across the NY board.',
     }
   }
-  if (
-    args.alreadyClockedIn &&
-    args.existingInstrument &&
-    isLiveClockInstrument(args.existingInstrument) &&
-    args.existingInstrument !== args.instrument
-  ) {
-    return {
-      ok: false,
-      error: `Already clocked into ${args.existingInstrument} — name is locked for this session.`,
-    }
-  }
+  // Free switch: already clocked into another NY name is OK — preference updates.
   return { ok: true, instrument: args.instrument }
 }

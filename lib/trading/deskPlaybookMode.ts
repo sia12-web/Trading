@@ -270,5 +270,11 @@ export function deskPlaybookAnalysisMode(
 }
 
 export function isDeskInstrumentPref(i: string | null | undefined): i is DeskInstrument {
-  return i === 'DOW' || i === 'NASDAQ' || i === 'NIKKEI'
+  return (
+    i === 'DOW' ||
+    i === 'NASDAQ' ||
+    i === 'NIKKEI' ||
+    i === 'GOLD' ||
+    i === 'CRUDE'
+  )
 }

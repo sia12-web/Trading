@@ -430,7 +430,12 @@ How to use it (big-desk volume map):
     }
 
     const userId = sessionData.user_id as string
-    const instrument = sessionData.index_recommendation as 'DOW' | 'NASDAQ' | 'NIKKEI'
+    const instrument = sessionData.index_recommendation as
+      | 'DOW'
+      | 'NASDAQ'
+      | 'NIKKEI'
+      | 'GOLD'
+      | 'CRUDE'
     if (!instrument) {
       throw new Error('Session missing instrument')
     }
@@ -494,7 +499,7 @@ How to use it (big-desk volume map):
   }
 
   private buildSystemPrompt(
-    index: 'DOW' | 'NASDAQ' | 'NIKKEI',
+    index: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE',
     historicalContext?: HistoricalContext,
     analysisMode: 'morning' | 'or30' | 'ib' | 'us_range' | 'afternoon' = 'morning'
   ): string {

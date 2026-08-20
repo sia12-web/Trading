@@ -8,6 +8,8 @@ export const OANDA_INSTRUMENTS: Partial<Record<Instrument, string>> = {
   DOW: 'US30_USD',
   NASDAQ: 'NAS100_USD',
   NIKKEI: 'JP225_USD',
+  GOLD: 'XAU_USD',
+  CRUDE: 'WTICO_USD',
 }
 
 export function oandaBaseUrl(): string {
@@ -29,6 +31,8 @@ const OANDA_TO_DESK: Record<string, Instrument> = {
   US30_USD: 'DOW',
   NAS100_USD: 'NASDAQ',
   JP225_USD: 'NIKKEI',
+  XAU_USD: 'GOLD',
+  WTICO_USD: 'CRUDE',
 }
 
 export function fromOandaInstrument(symbol: string): Instrument | null {

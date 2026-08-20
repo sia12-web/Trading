@@ -18,7 +18,7 @@ export interface AnalysisRequest {
   candles_daily: Candle[]
   candles_h1: Candle[]
   symbol: string
-  index: 'DOW' | 'NASDAQ' | 'NIKKEI'
+  index: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
   current_price: number
   /** live = Opus (default); sim = cheap Haiku for replay practice */
   llm_tier?: 'live' | 'sim'
@@ -82,7 +82,7 @@ export interface LevelHistory {
   id: string
   user_id: string
   session_id: string
-  instrument: 'DOW' | 'NASDAQ' | 'NIKKEI'
+  instrument: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
   level: number
   type: 'support' | 'resistance' | 'vwap'
   conviction: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10
@@ -100,7 +100,7 @@ export interface LevelHistory {
 
 export interface ArchiveRequest {
   session_id: string
-  instrument: 'DOW' | 'NASDAQ' | 'NIKKEI'
+  instrument: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
   levels: Array<{
     level: number
     type: 'support' | 'resistance' | 'vwap'
@@ -120,7 +120,7 @@ export interface HistoryResponse {
   levels: LevelHistory[]
   total_count: number
   query_params: {
-    instrument: 'DOW' | 'NASDAQ' | 'NIKKEI'
+    instrument: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
     days: number
     limit: number
   }

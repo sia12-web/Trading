@@ -14,6 +14,8 @@ const INSTRUMENT_SYMBOLS: Record<Instrument, string> = {
   DOW: 'DIA',    // SPDR Dow Jones Industrial Average ETF
   NASDAQ: 'QQQ', // Invesco QQQ Trust (Nasdaq-100 proxy)
   NIKKEI: 'EWJ', // iShares MSCI Japan ETF (Nikkei proxy on free tier)
+  GOLD: 'GLD',   // SPDR Gold Shares
+  CRUDE: 'USO',  // United States Oil Fund
 }
 
 /** Symbols used only for display / docs (not Finnhub free-candle endpoints) */
@@ -21,6 +23,8 @@ export const INSTRUMENT_INDEX_SYMBOLS: Record<Instrument, string> = {
   DOW: '^DJI',
   NASDAQ: '^NDX',
   NIKKEI: '^N225',
+  GOLD: 'GC=F',
+  CRUDE: 'CL=F',
 }
 
 interface RateLimitState {

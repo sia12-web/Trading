@@ -2213,7 +2213,12 @@ export default function ChartPage() {
             ) : null}
             {showFilledTicket && managePos ? (
               <TradovateMirrorCard
-                instrument={(managePos.instrument || instrument) as 'DOW' | 'NASDAQ' | 'NIKKEI'}
+                instrument={(managePos.instrument || instrument) as
+                  | 'DOW'
+                  | 'NASDAQ'
+                  | 'NIKKEI'
+                  | 'GOLD'
+                  | 'CRUDE'}
                 direction={
                   String(managePos.direction).toUpperCase() === 'SHORT' ? 'SHORT' : 'LONG'
                 }
@@ -2561,7 +2566,7 @@ export default function ChartPage() {
                       <p className="mt-1 text-xs text-amber-200/90 font-medium leading-relaxed">
                         {recommendation?.message ??
                           (suggested
-                            ? `System pick: ${suggested}. Clock in on DOW or NASDAQ to unlock the live desk.`
+                            ? `System pick: ${suggested}. Clock into the NY desk (DOW / NASDAQ / GOLD / CRUDE) — shared 3 fills.`
                             : 'Level Finder has analyzed overnight structure, AVWAP, and market regime.')}
                       </p>
                     </div>

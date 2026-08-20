@@ -76,7 +76,7 @@ export const WORKING_SL_LOCKED_HINT = 'SL locked — sized at place'
 
 /** Map durable working row → chart pending overlay (client). */
 export function workingRowToPending(row: WorkingLimitRow): {
-  instrument: 'DOW' | 'NASDAQ' | 'NIKKEI'
+  instrument: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
   level: number
   direction: 'LONG' | 'SHORT'
   stopLoss: number
@@ -93,7 +93,7 @@ export function workingRowToPending(row: WorkingLimitRow): {
   entrySource: 'ai' | 'structure' | 'manual'
   workingId?: string
 } {
-  const instrument = row.instrument as 'DOW' | 'NASDAQ' | 'NIKKEI'
+  const instrument = row.instrument as 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
   const level = Number(row.entry_price)
   const direction =
     String(row.entry_direction || '').toUpperCase() === 'SHORT' ? 'SHORT' : 'LONG'

@@ -50,11 +50,12 @@ assert(LIVE_FOCUS_LEAD_MINUTES === 30, 'lead is 30 minutes')
 
 // ── Session market focus ─────────────────────────────────────────────────────
 
-test('NY morning: focus NY — DOW+NASDAQ visible, NIKKEI hidden', () => {
+test('NY morning: focus NY — four books visible, NIKKEI hidden', () => {
   const now = etDate(Y, M, D, 9, 45)
   assert(liveFocusMarket(now) === 'NY', 'focus NY')
   const vis = liveVisibleInstruments(now)
   assert(vis.includes('DOW') && vis.includes('NASDAQ'), 'US names')
+  assert(vis.includes('GOLD') && vis.includes('CRUDE'), 'commodities')
   assert(!vis.includes('NIKKEI'), 'no NIKKEI in NY session')
   assert(JSON.stringify(vis) === JSON.stringify(instrumentsForDeskMarket('NY')), 'market list')
 })
@@ -123,34 +124,43 @@ test('Tokyo afternoon: live still NY names, never NIKKEI', () => {
   assert(!liveVisibleInstruments(now).includes('NIKKEI'), 'no NIKKEI')
 })
 
-test('DOW locked: only DOW tab (no twin glance)', () => {
+test('DOW locked: full NY board still visible (free switch)', () => {
   const now = etDate(Y, M, D, 10, 0)
   const vis = liveVisibleInstruments(now, {
     lockedInstrument: 'DOW',
     clockedIn: false,
     attendedToday: false,
   })
-  assert(JSON.stringify(vis) === JSON.stringify(['DOW']), `got ${vis}`)
+  assert(
+    JSON.stringify(vis) === JSON.stringify(['DOW', 'NASDAQ', 'GOLD', 'CRUDE']),
+    `got ${vis}`
+  )
 })
 
-test('Clocked into DOW: only DOW tab', () => {
+test('Clocked into DOW: full NY board visible', () => {
   const now = etDate(Y, M, D, 10, 0)
   const vis = liveVisibleInstruments(now, {
     lockedInstrument: 'DOW',
     clockedIn: true,
     attendedToday: true,
   })
-  assert(JSON.stringify(vis) === JSON.stringify(['DOW']), `got ${vis}`)
+  assert(
+    JSON.stringify(vis) === JSON.stringify(['DOW', 'NASDAQ', 'GOLD', 'CRUDE']),
+    `got ${vis}`
+  )
 })
 
-test('Attended NASDAQ after lunch: only NASDAQ tab', () => {
+test('Attended NASDAQ after lunch: full NY board visible', () => {
   const now = etDate(Y, M, D, 14, 0)
   const vis = liveVisibleInstruments(now, {
     lockedInstrument: 'NASDAQ',
     clockedIn: false,
     attendedToday: true,
   })
-  assert(JSON.stringify(vis) === JSON.stringify(['NASDAQ']), `got ${vis}`)
+  assert(
+    JSON.stringify(vis) === JSON.stringify(['DOW', 'NASDAQ', 'GOLD', 'CRUDE']),
+    `got ${vis}`
+  )
 })
 
 test('Persisted NIKKEI lock ignored on live — NY names, not Tokyo', () => {
@@ -162,6 +172,7 @@ test('Persisted NIKKEI lock ignored on live — NY names, not Tokyo', () => {
   })
   assert(!vis.includes('NIKKEI'), `ignored NIKKEI lock got ${vis}`)
   assert(vis.includes('DOW') && vis.includes('NASDAQ'), 'falls back to NY names')
+  assert(vis.includes('GOLD') && vis.includes('CRUDE'), 'commodities on board')
 
   const gate = resolveSessionGate({
     now,
@@ -187,14 +198,24 @@ test('AI: skip NIKKEI during NY session', () => {
   assert(!r.ok, r.reason)
 })
 
-test('AI: skip NASDAQ when DOW locked', () => {
+test('AI: allow NASDAQ when DOW locked (free-switch board)', () => {
   const now = etDate(Y, M, D, 10, 0)
   const r = shouldRunLiveAiForInstrument('NASDAQ', now, {
     lockedInstrument: 'DOW',
     clockedIn: true,
     attendedToday: true,
   })
-  assert(!r.ok && /DOW/i.test(r.reason), r.reason)
+  assert(r.ok, r.reason)
+})
+
+test('AI: allow GOLD when DOW locked', () => {
+  const now = etDate(Y, M, D, 10, 0)
+  const r = shouldRunLiveAiForInstrument('GOLD', now, {
+    lockedInstrument: 'DOW',
+    clockedIn: true,
+    attendedToday: true,
+  })
+  assert(r.ok, r.reason)
 })
 
 test('AI: allow DOW when clocked into DOW', () => {
@@ -207,11 +228,12 @@ test('AI: allow DOW when clocked into DOW', () => {
   assert(r.ok, r.reason)
 })
 
-test('NY 09:00 dual browse: both DOW+NASDAQ, no hard lock, chart viewable', () => {
+test('NY 09:00 dual browse: four books, no hard lock, chart viewable', () => {
   const now = etDate(Y, M, D, 9, 0)
   assert(liveFocusMarket(now) === 'NY', 'focus NY at 9:00')
   const vis = liveVisibleInstruments(now)
-  assert(vis.includes('DOW') && vis.includes('NASDAQ'), 'both visible')
+  assert(vis.includes('DOW') && vis.includes('NASDAQ'), 'indexes visible')
+  assert(vis.includes('GOLD') && vis.includes('CRUDE'), 'commodities visible')
   const gate = resolveSessionGate({
     now,
     lockedInstrument: null,
@@ -251,7 +273,7 @@ test('NY 09:15: AI suggest soft — both tabs stay, clock-in open', () => {
   assert(/NASDAQ/i.test(gate.message), gate.message)
 })
 
-test('NY 09:20 clock-in is one name; tickets stay on committed name', () => {
+test('NY 09:20 clock-in keeps full board; tickets free-switch', () => {
   const now = etDate(Y, M, D, 9, 20)
   const gate = resolveSessionGate({
     now,
@@ -263,10 +285,11 @@ test('NY 09:20 clock-in is one name; tickets stay on committed name', () => {
     stopLossHitCount: 0,
     viewingInstrument: 'DOW',
   })
-  assert(gate.lockedInstrument === 'DOW', 'hard lock DOW')
+  assert(gate.lockedInstrument === 'DOW', 'hard lock DOW preference')
   assert(
-    JSON.stringify(gate.allowedInstruments) === JSON.stringify(['DOW']),
-    'one door'
+    JSON.stringify(gate.allowedInstruments) ===
+      JSON.stringify(['DOW', 'NASDAQ', 'GOLD', 'CRUDE']),
+    'full board'
   )
   assert(gate.canViewLiveChart === true, 'clocked chart on')
   assert(gate.glanceOnly === false, 'on clocked name')

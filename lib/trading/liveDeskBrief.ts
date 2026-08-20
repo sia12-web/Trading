@@ -524,7 +524,7 @@ function buildBullets(
 
   const live = cards.filter((c) => c.tradeableNow)
   if (live.length === 0) {
-    bullets.push('Nothing left to trade across DOW / NASDAQ — sit out.')
+    bullets.push('Nothing left to trade across DOW / NASDAQ / GOLD / CRUDE — sit out.')
   } else {
     bullets.push(
       `Still live: ${live.map((c) => `${c.instrument} ${c.openBook}`).join(', ')}.`
@@ -546,7 +546,7 @@ function buildSuggestion(
   const pool = scoped.length > 0 ? scoped : cards
   const best = pool.find((c) => c.tradeableNow && c.openBook)
   if (!best || !best.openBook) {
-    const desk = 'DOW / NASDAQ'
+    const desk = 'DOW / NASDAQ / GOLD / CRUDE'
     return {
       kind: 'sit_out',
       text: `Sit out — no eligible open books on ${desk} right now. Dead ranges stay closed; wait for the next unlock or next session.`,
@@ -563,7 +563,7 @@ function buildSuggestion(
 }
 
 /**
- * Rank DOW / NASDAQ for the late / live desk brief. Nikkei is Simulation-only.
+ * Rank DOW / NASDAQ / GOLD / CRUDE for the late / live desk brief. Nikkei is Simulation-only.
  */
 export function buildLiveDeskBrief(
   factsList: InstrumentBriefFacts[],
@@ -576,7 +576,7 @@ export function buildLiveDeskBrief(
     factsByInst.set(f.instrument, f)
   }
 
-  const instruments: DeskInstrument[] = ['DOW', 'NASDAQ']
+  const instruments: DeskInstrument[] = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE']
   const cards = instruments.map((instrument) =>
     buildInstrumentDeskCard(
       factsByInst.get(instrument) ?? { instrument },

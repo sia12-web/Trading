@@ -9,7 +9,7 @@ import type { LiveVoiceStatus } from '@/lib/trading/liveVoice'
 import { classifyLevelReaction } from '@/lib/trading/liveVoiceReactionCore'
 import { getDeskRiskProfile } from '@/lib/trading/tradeifyProfile'
 
-type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI'
+type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
 
 type StatusPayload = LiveVoiceStatus & {
   success?: boolean

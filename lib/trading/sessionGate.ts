@@ -43,7 +43,6 @@ import {
   LIVE_CLOCK_REFUSE,
   clockedNameOnlyMessage,
   isLiveClockInstrument,
-  isNyGlanceChart,
 } from '@/lib/trading/liveDeskBook'
 
 export {
@@ -71,14 +70,14 @@ export type RangeStrategy = 'or30' | 'ib' | 'us_range' | null
 /** @deprecated use RangeStrategy */
 export type NyRangeStrategy = RangeStrategy
 
-export type DeskInstrument = 'DOW' | 'NASDAQ' | 'NIKKEI'
+export type DeskInstrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
 export type DeskMarket = 'NY' | 'TOKYO'
 
 /** @deprecated use DeskInstrument — kept for older imports */
-export type NyInstrument = 'DOW' | 'NASDAQ'
+export type NyInstrument = 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE'
 
-export const NY_INSTRUMENTS: DeskInstrument[] = ['DOW', 'NASDAQ']
-export const DESK_INSTRUMENTS: DeskInstrument[] = ['DOW', 'NASDAQ', 'NIKKEI']
+export const NY_INSTRUMENTS: DeskInstrument[] = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE']
+export const DESK_INSTRUMENTS: DeskInstrument[] = ['DOW', 'NASDAQ', 'NIKKEI', 'GOLD', 'CRUDE']
 
 export interface MarketSessionTimes {
   tz: string
@@ -351,11 +350,17 @@ export function sessionFor(instrument: string | null | undefined): MarketSession
 }
 
 export function isDeskInstrument(i: string | null | undefined): i is DeskInstrument {
-  return i === 'DOW' || i === 'NASDAQ' || i === 'NIKKEI'
+  return (
+    i === 'DOW' ||
+    i === 'NASDAQ' ||
+    i === 'NIKKEI' ||
+    i === 'GOLD' ||
+    i === 'CRUDE'
+  )
 }
 
 function isNyInstrument(i: string | null | undefined): i is NyInstrument {
-  return i === 'DOW' || i === 'NASDAQ'
+  return i === 'DOW' || i === 'NASDAQ' || i === 'GOLD' || i === 'CRUDE'
 }
 
 function timeInTz(date: Date, timeZone: string): string {
@@ -725,23 +730,18 @@ export function isAnyLiveFocusWindowActive(now: Date = new Date()): boolean {
 
 /**
  * Instruments shown on the LIVE chart.
- * NEVER includes NIKKEI (Simulation keeps Nikkei). If clocked lock is DOW|NASDAQ,
- * only that name; otherwise NY names — including after NY close / overnight.
- * A persisted NIKKEI lock is ignored.
+ * NEVER includes NIKKEI (Simulation keeps Nikkei). NY board is always
+ * DOW + NASDAQ + GOLD + CRUDE — free switch after clock-in (shared 3 fills).
  * Simulation must not use this.
  */
 export function liveVisibleInstruments(
   _now: Date = new Date(),
-  opts?: {
+  _opts?: {
     lockedInstrument?: DeskInstrument | null
     clockedIn?: boolean
     attendedToday?: boolean
   }
 ): DeskInstrument[] {
-  const locked = isLiveClockInstrument(opts?.lockedInstrument)
-    ? opts!.lockedInstrument
-    : null
-  if (locked) return [locked]
   return [...NY_INSTRUMENTS]
 }
 
@@ -776,7 +776,8 @@ export function shouldRunLiveAiForInstrument(
     opts?.lockedInstrument && isDeskInstrument(opts.lockedInstrument)
       ? opts.lockedInstrument
       : null
-  if (locked && instrument !== locked) {
+  // Free-switch NY board: Level Finder may run on any visible NY book once clocked in.
+  if (locked && instrument !== locked && deskMarketFor(instrument) !== 'NY') {
     return {
       ok: false,
       reason: `Clocked into ${locked} — skip ${instrument}`,
@@ -825,12 +826,11 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   const viewingRaw = isLiveClockInstrument(input.viewingInstrument)
     ? input.viewingInstrument
     : locked
-  const viewingUnforced =
+  const viewing =
     focusLive && viewingRaw && deskMarketFor(viewingRaw) === 'NY'
       ? viewingRaw
       : locked ?? (focusLive ? NY_INSTRUMENTS[0]! : viewingRaw ?? 'DOW')
-  const viewing =
-    locked && isNyGlanceChart(locked, viewingUnforced) ? locked : viewingUnforced
+  // Free-switch: do not force chart onto locked name.
   const market = focusLive ? focusMarket : 'NY'
   const s = sessionFor(viewing ?? locked ?? 'DOW')
 
@@ -950,7 +950,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     }),
     entryWindow: entryWindow as 1 | 2 | 3 | null,
     market,
-    canFetchLiveBars: bars.open && !!locked && (!viewing || viewing === locked),
+    canFetchLiveBars: bars.open && !!locked && isLiveClockInstrument(viewing ?? locked),
     clockedIn,
     attendedToday,
     canClockIn,
@@ -958,9 +958,13 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     rangeStrategy,
   }
 
-  const onClockedName = viewing == null || viewing === locked
+  const onClockedName =
+    !viewing ||
+    !locked ||
+    viewing === locked ||
+    (isLiveClockInstrument(viewing) && isLiveClockInstrument(locked))
 
-  // Live streaming only while currently clocked in; attendedToday keeps afternoon chart until cash close
+  // Live streaming while clocked in on any NY board book
   const canView =
     (clockedIn || (attendedToday && afternoonWatch)) &&
     !!locked &&
@@ -1165,8 +1169,8 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
 
   if (!locked) {
     const pickHint = suggestedInstrument
-      ? `AI suggests ${suggestedInstrument}. Clock in on DOW or NASDAQ to commit today's desk.`
-      : 'Awaiting DOW vs NASDAQ recommendation…'
+      ? `AI suggests ${suggestedInstrument}. Clock into the NY desk — DOW / NASDAQ / GOLD / CRUDE share 3 fills.`
+      : 'Awaiting ranked board (DOW · NASDAQ · GOLD · CRUDE)…'
     return finish({
       ...base,
       rangeStrategy: null,
@@ -1178,7 +1182,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       message: nyDualBrowse
         ? t >= analyze
           ? pickHint
-          : `NY focus — browse DOW and NASDAQ. AI suggests which to trade at ${analyzeEt} ${TRADER_DISPLAY_LABEL}.`
+          : `NY focus — browse DOW, NASDAQ, GOLD, CRUDE. Ranked board at ${analyzeEt} ${TRADER_DISPLAY_LABEL}.`
         : pickHint,
     })
   }
@@ -1776,7 +1780,7 @@ export function assertCanOpenPosition(
     return { ok: false, status: 403, message: LIVE_CLOCK_REFUSE }
   }
   if (!isDeskInstrument(instrument)) {
-    return { ok: false, status: 400, message: 'Desk only allows DOW or NASDAQ' }
+    return { ok: false, status: 400, message: 'Desk only allows DOW, NASDAQ, GOLD, or CRUDE' }
   }
   if (gate.glanceOnly) {
     return {
@@ -1815,7 +1819,12 @@ export function assertCanOpenPosition(
     }
     return { ok: false, status: 403, message }
   }
-  if (gate.lockedInstrument && instrument !== gate.lockedInstrument) {
+  // Free-switch NY board: any live clock instrument may place while clocked in.
+  if (
+    gate.lockedInstrument &&
+    instrument !== gate.lockedInstrument &&
+    !(isLiveClockInstrument(instrument) && isLiveClockInstrument(gate.lockedInstrument))
+  ) {
     return {
       ok: false,
       status: 403,

@@ -21,7 +21,7 @@ import { getRecommendationEngine } from '@/lib/trading/recommendationEngine'
 import type { Instrument, MarketOpenResponse, OvernightOHLC } from '@/types/trading'
 import type { Instrument as PriceInstrument } from '@/types/price-feed'
 
-const INSTRUMENTS: Instrument[] = ['DOW', 'NASDAQ']
+const INSTRUMENTS: Instrument[] = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE']
 
 type DeskQuote = {
   open: number

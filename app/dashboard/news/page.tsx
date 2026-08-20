@@ -41,12 +41,16 @@ const EMPTY_BY_DESK: Record<DeskTab, DeskNewsCard[]> = {
   DOW: [],
   NASDAQ: [],
   NIKKEI: [],
+  GOLD: [],
+  CRUDE: [],
 }
 
 const TABS: { id: DeskTab; label: string }[] = [
   { id: 'ALL', label: 'All desks' },
   { id: 'DOW', label: 'DOW' },
   { id: 'NASDAQ', label: 'NASDAQ' },
+  { id: 'GOLD', label: 'GOLD' },
+  { id: 'CRUDE', label: 'CRUDE' },
 ]
 
 const WINDOWS: DeskNewsWindowHours[] = [2, 12, 24]

@@ -3,7 +3,7 @@
  * Context only — never a trade signal.
  */
 
-export type DeskNewsInstrument = 'DOW' | 'NASDAQ' | 'NIKKEI'
+export type DeskNewsInstrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
 export type DeskNewsTag = 'MACRO' | 'EARNINGS' | 'GEO' | 'FLOW' | 'OTHER'
 export type DeskNewsWindowHours = 2 | 12 | 24
 
@@ -61,6 +61,11 @@ const NIKKEI_KEYS =
   /\b(nikkei|japan|tokyo|boj|yen|usdjpy|softbank|toyota|sony|nintendo|japan.?equity|asia.?session)\b/i
 const KOREA_KEYS =
   /\b(korea|korean|seoul|krw|samsung|sk.?hynix|north korea|dprk|peninsula)\b/i
+
+const GOLD_KEYS =
+  /\b(gold|xau|bullion|mgc|gc1|gld|precious.?metal)\b/i
+const CRUDE_KEYS =
+  /\b(crude|wti|brent|oil\b|opec|cl1|uso|energy.?oil)\b/i
 
 const MACRO_KEYS =
   /\b(fed|fomc|cpi|inflation|jobs|payroll|nfp|gdp|rate.?cut|rate.?hike|treasury|yield|powell|boj|ecb|pce|unemployment)\b/i
@@ -125,6 +130,8 @@ export function instrumentsForHeadline(
   if (DOW_KEYS.test(text) || /\bDIA\b/.test(origin || '')) hit.add('DOW')
   if (NASDAQ_KEYS.test(text) || /\bQQQ\b/.test(origin || '')) hit.add('NASDAQ')
   if (NIKKEI_KEYS.test(text) || /\bEWJ\b/.test(origin || '')) hit.add('NIKKEI')
+  if (GOLD_KEYS.test(text) || /\bGLD\b/.test(origin || '')) hit.add('GOLD')
+  if (CRUDE_KEYS.test(text) || /\bUSO\b/.test(origin || '')) hit.add('CRUDE')
 
   // Korea / peninsula risk → US indices first (semis/risk), Asia if Japan session channel
   if (KOREA_KEYS.test(text)) {

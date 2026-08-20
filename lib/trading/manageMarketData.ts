@@ -45,7 +45,7 @@ async function volumesFromYahoo(
 }
 
 async function volumesFromYahooProxy(
-  instrument: 'DOW' | 'NASDAQ' | 'NIKKEI'
+  instrument: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
 ): Promise<{ volumes: number[]; source: string } | null> {
   const proxy = optionsProxySymbol(instrument)
   // Reuse Yahoo chart via temporary Instrument map — fetch chart URL directly
@@ -84,7 +84,7 @@ async function volumesFromOanda(
 
 /** Prefer real ETF volume (proxy), then index Yahoo, then OANDA tick volume. */
 export async function fetchManageRvol(
-  instrument: 'DOW' | 'NASDAQ' | 'NIKKEI'
+  instrument: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
 ): Promise<ManageRvolSnapshot> {
   try {
     const chain = [
@@ -116,7 +116,7 @@ type YahooOptionContract = {
 
 /** Nearest expiry put/call volume + OI on DIA / QQQ / EWJ. */
 export async function fetchManageOptionsFlow(
-  instrument: 'DOW' | 'NASDAQ' | 'NIKKEI'
+  instrument: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
 ): Promise<OptionsFlowSummary | null> {
   const proxy = optionsProxySymbol(instrument)
   try {
@@ -144,7 +144,7 @@ export async function fetchManageOptionsFlow(
 
 /** Range H/L + Opening / Control / CALL vs this open book. Optional — never blocks scoring. */
 export async function fetchManageStructure(args: {
-  instrument: 'DOW' | 'NASDAQ' | 'NIKKEI'
+  instrument: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
   tip: number
   direction: 'LONG' | 'SHORT'
   now?: Date

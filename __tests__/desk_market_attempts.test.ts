@@ -28,15 +28,17 @@ assert(riskPercentForEntrySource('fake_source') === SESSION_RISK_FIRST_PERCENT, 
 
 assert(deskMarketFor('NIKKEI') === 'TOKYO', 'NIKKEI → TOKYO')
 assert(deskMarketFor('DOW') === 'NY', 'DOW → NY')
-assert(deskMarketFor('NASDAQ') === 'NY', 'NASDAQ → NY')
+assert(deskMarketFor('GOLD') === 'NY', 'GOLD → NY')
+assert(deskMarketFor('CRUDE') === 'NY', 'CRUDE → NY')
 
 assert(
   JSON.stringify(instrumentsForDeskMarket('TOKYO')) === JSON.stringify(['NIKKEI']),
   'Tokyo book is NIKKEI only'
 )
 assert(
-  JSON.stringify(instrumentsForDeskMarket('NY')) === JSON.stringify(['DOW', 'NASDAQ']),
-  'NY book is DOW+NASDAQ'
+  JSON.stringify(instrumentsForDeskMarket('NY')) ===
+    JSON.stringify(['DOW', 'NASDAQ', 'GOLD', 'CRUDE']),
+  'NY book is DOW+NASDAQ+GOLD+CRUDE'
 )
 
 const allFills = [
