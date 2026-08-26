@@ -36,4 +36,35 @@ assert.strictEqual(wideRes.activeEdge, false)
 assert.strictEqual(wideRes.asiaRange, 150)
 console.log('   ✅ Wide Range (>=80 pts) Edge inactive check passed.')
 
+// 3. Telegram Alert & Journal Payload Test
+import { formatDowAsiaTelegramAlert, createDowAsiaJournalPayload } from '../lib/trading/dowAsiaRangeEdge'
+
+const tgAlert = formatDowAsiaTelegramAlert({
+    side: 'LONG',
+    asiaRange: 60,
+    entryPrice: 38050,
+    stopLossPrice: 38000,
+    takeProfitPrice: 38125,
+    riskDollars: 400,
+})
+assert.ok(tgAlert.includes('DOW ASIA BREAKOUT ENTRY'))
+assert.ok(tgAlert.includes('38,050'))
+assert.ok(tgAlert.includes('Tradeify $50K Risk: $400'))
+console.log('   ✅ Dow Asia Telegram alert formatting passed.')
+
+const journalPayload = createDowAsiaJournalPayload({
+    side: 'LONG',
+    asiaRange: 60,
+    entryPrice: 38050,
+    stopLossPrice: 38000,
+    takeProfitPrice: 38125,
+    riskDollars: 400,
+    sessionKey: '2026-08-26',
+})
+assert.strictEqual(journalPayload.instrument, 'DOW')
+assert.strictEqual(journalPayload.setup_name, 'DOW_ASIA_NARROW_RANGE_BREAKOUT')
+assert.strictEqual(journalPayload.risk_dollars, 400)
+assert.strictEqual(journalPayload.risk_reward_ratio, 1.5)
+console.log('   ✅ Dow Asia Trade Journaling payload passed.')
+
 console.log('\n🎉 ALL DOW ASIA RANGE EDGE TESTS PASSED SUCCESSFULLY!\n')

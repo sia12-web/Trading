@@ -94,3 +94,54 @@ export function computeDowAsiaRangeEdge(bars: DowAsiaRangeBar[]): DowAsiaRangeRe
         directiveSummary: `⚡ DOW ASIA NARROW RANGE (<80 PTS EDGE): Asia Range = ${asiaRange} pts. Buy Stop ${buyStopPrice} | Sell Stop ${sellStopPrice} | SL ${asiaMid} | 1.5R TP`,
     }
 }
+
+/** Formats an automated Telegram notification exclusively for Dow Asia Edge trade entry. */
+export function formatDowAsiaTelegramAlert(args: {
+    side: 'LONG' | 'SHORT'
+    asiaRange: number
+    entryPrice: number
+    stopLossPrice: number
+    takeProfitPrice: number
+    riskDollars: number
+}): string {
+    const icon = args.side === 'LONG' ? '🟢 BUY STOP TRIGGERED' : '🔴 SELL STOP TRIGGERED'
+    const rr = '1.50R'
+    return [
+        `🚨 DOW ASIA BREAKOUT ENTRY — ${icon}`,
+        `Instrument: DOW (YM Futures)`,
+        `Setup: Asia Narrow Range (<80 pts Compression)`,
+        `Asia Range: ${args.asiaRange} pts`,
+        `Direction: ${args.side}`,
+        `Entry Order: ${args.entryPrice.toLocaleString('en-US')}`,
+        `Stop Loss: ${args.stopLossPrice.toLocaleString('en-US')} (Asia Midpoint)`,
+        `Take Profit: ${args.takeProfitPrice.toLocaleString('en-US')} (${rr} Target)`,
+        `Tradeify $50K Risk: $${args.riskDollars} (Step 1)`,
+        `Timestamp: ${new Date().toISOString()}`,
+    ].join('\n')
+}
+
+/** Generates a Trade Journal record for automatic database logging. */
+export function createDowAsiaJournalPayload(args: {
+    side: 'LONG' | 'SHORT'
+    asiaRange: number
+    entryPrice: number
+    stopLossPrice: number
+    takeProfitPrice: number
+    riskDollars: number
+    sessionKey: string
+}) {
+    return {
+        instrument: 'DOW',
+        setup_name: 'DOW_ASIA_NARROW_RANGE_BREAKOUT',
+        side: args.side,
+        entry_price: args.entryPrice,
+        stop_loss: args.stopLossPrice,
+        take_profit: args.takeProfitPrice,
+        risk_dollars: args.riskDollars,
+        risk_reward_ratio: 1.5,
+        asia_range_pts: args.asiaRange,
+        tradeify_session_key: args.sessionKey,
+        notes: `Automated 03:00 AM ET Asia Breakout execution. Asia Range ${args.asiaRange} pts < 80 pts. SL at Asia Midpoint ${args.stopLossPrice}. 1.5R TP at ${args.takeProfitPrice}.`,
+        created_at: new Date().toISOString(),
+    }
+}
