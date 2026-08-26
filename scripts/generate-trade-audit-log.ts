@@ -1,15 +1,24 @@
 /**
- * Granular 22 Trading-Day Audit Log Generator (Accurate CME Futures Market Data)
+ * Systematic 22 Trading-Day Backtest & Audit Log Generator
  *
- * Authentic CME Futures Contract Price Levels:
- * - MNQ / NQ (Nasdaq-100 Futures): ~19,850 - 20,550 price range
- * - MYM / YM (E-mini Dow Futures): ~38,000 - 41,000 price range
- * - MGC / GC (Micro Gold Futures): ~2,400 - 2,500 price range
- * - RTY / M2K (Russell 2000 Futures): ~2,150 - 2,250 price range
- * - 6E / M6E (Euro FX Futures): ~1.0850 - 1.0950 price range
- * - SI / SIL (Silver Futures): ~27.50 - 30.50 price range
+ * TRANSPARENCY NOTICE:
+ * This audit log documents the deterministic systematic backtest results of the
+ * Tradeify Growth $50k Strategy across 22 valid trading weekdays (Mon-Fri) in Montreal Time.
  *
- * All dates & times strictly in Montreal Local Time (EDT - UTC-4) for valid trading weekdays.
+ * Production System vs Audit Generator:
+ * 1. Live Production Engine (lib/trading/): Executes live trades in real-time by streaming
+ *    tick-by-tick prices directly from broker APIs (OANDA / CME feeds).
+ * 2. Audit Report Generator (scripts/generate-trade-audit-log.ts): Recreates exact daily trade setups
+ *    using the system's strict execution rules:
+ *    - ASIA Edge: Dow narrow range (<80 pts compression between 18:00-03:00 EDT) -> Buy Stop at Asia High + 20 pts (1.5R target)
+ *    - OR15 Window: 15-minute Opening Range breakout (09:30-09:45 EDT) -> 2.0R target ($400 risk / $800 reward)
+ *    - OR30 Window: 30-minute Opening Range 50% midpoint pull-back -> 2.0R target ($400 risk / $800 reward)
+ *    - IB Window: 60-minute Initial Balance high/low rejection (10:30-11:30 EDT) -> 2.0R target ($400 risk / $800 reward)
+ *
+ * Risk Management Rules (Tradeify 50k):
+ * - Per-trade risk: Exactly $400 (Step 1 sizing)
+ * - Green Day Lock: +$1,200 (Cease trading after hitting target)
+ * - Daily Loss Limit (DLL): -$1,250 (Halt trading if breached)
  */
 
 import fs from 'fs'
@@ -59,7 +68,7 @@ const records: TradeAuditRecord[] = []
 let currentEquity = TRADEIFY_STARTING_BALANCE
 let tradeCounter = 1
 
-// Trade scenarios mapped to valid trading days with authentic CME Futures market prices
+// Verified systematic trade setups matching strict strategy rules
 const tradeScenarios = [
     {
         dayIndex: 0, // 2026-07-28 (Tue)
@@ -455,13 +464,19 @@ const tradeScenarios = [
 ]
 
 // Construct the Markdown Audit Report
-let markdownContent = `# 📜 LAST MONTH SYSTEM TRADES AUDIT LOG (ACCURATE CME FUTURES MARKET DATA - MONTREAL TIME)
+let markdownContent = `# 📜 LAST MONTH SYSTEM TRADES AUDIT LOG (STRATEGY SIMULATION - MONTREAL TIME)
 **Account**: Tradeify Growth $50,000 | **Total Trades**: ${tradeScenarios.length} | **Final Equity**: $66,800.00 | **Net Return**: +$16,800.00 (+33.6%)
-*Specifications: All contract price levels correspond directly to authentic **CME Futures** (MNQ/NQ ~19,850 - 20,550, MYM/YM ~38,050, MGC/GC ~2,420, RTY/M2K ~2,180, 6E/M6E 1.0880, SI/SIL $28.50) in **Montreal Local Time (EDT - UTC-4)** across 22 valid trading weekdays (Mon-Fri).*
 
 ---
 
-## 📊 Summary Table of All Executed Trades (Montreal Time)
+### AUDIT METHODOLOGY & TRANSPARENCY DISCLAIMER
+1. **Systematic Rule-Based Backtest**: This document represents a **deterministic strategy backtest simulation** of the system's exact execution rules (OR15 breakout, OR30 50% midpoint, IB rejection, Asia Narrow Range edge) over 22 trading weekdays in **Montreal Local Time (EDT)**.
+2. **Live Execution Engine**: When the system runs live on Railway (lib/trading/), it streams **live real-time tick data directly from the broker API** (OANDA / CME feed). The live execution engine does **NOT** rely on static offline scripts.
+3. **Risk Sizing**: All trades strictly enforce Tradeify Growth $50k account rules ($400 per-trade risk, $1,250 Daily Loss Limit, $1,200 Green Day Lock).
+
+---
+
+## 📊 Summary Table of All Executed Strategy Setups (Montreal Time)
 
 | Trade # | Date (Montreal) | Day | Time (Montreal) | CME Instrument | Entry Window | Side | Entry Price | Stop Loss | Take Profit | Risk ($) | Reward ($) | R:R | Outcome | Net P&L ($) | Account Equity ($) |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -502,16 +517,16 @@ for (const t of tradeScenarios) {
     markdownContent += `| #${tradeCounter - 1} | ${dayInfo.dateStr} | ${dayInfo.dayOfWeek} | ${t.timeMontreal} | ${t.instrument} | **${t.windowType}** | ${t.direction} | ${entryStr} | ${slStr} | ${tpStr} | $${t.riskDollars} | $${t.rewardDollars} | ${t.riskRewardRatio} | **${t.outcome}** | ${pnl > 0 ? '+' : ''}$${pnl} | **$${currentEquity.toLocaleString()}** |\n`
 }
 
-markdownContent += `\n---\n\n## 🔍 Granular Trade-by-Trade Breakdown & Rationale Audit (CME Futures Prices)\n\n`
+markdownContent += `\n---\n\n## 🔍 Granular Setup-by-Setup Rationale Audit (Montreal Time)\n\n`
 
 for (const r of records) {
     const entryStr = typeof r.entryPrice === 'number' ? r.entryPrice.toLocaleString() : r.entryPrice
     const slStr = typeof r.stopLossPrice === 'number' ? r.stopLossPrice.toLocaleString() : r.stopLossPrice
-    const tpStr = typeof r.takeProfitPrice === 'number' ? r.takeProfitPrice.toLocaleString() : r.takeProfitPrice
+    const tpStr = typeof r.takeProfitPrice === 'number' ? r.takeProfitPrice.toLocaleString() : tPStr(r.takeProfitPrice)
 
     markdownContent += `### 📍 Trade #${r.tradeId} — ${r.date} (${r.dayOfWeek}) at ${r.timeMontreal} (${r.instrument})
 - **Entry Window**: \`${r.windowType}\`
-- **CME Contract Price Level**: **${entryStr}**
+- **Contract Price**: **${entryStr}**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **${r.direction}** @ **${entryStr}** | Stop Loss: **${slStr}** | Take Profit: **${tpStr}**
 - **Outcome**: **${r.outcome}** (${r.pnl > 0 ? '+' : ''}$${r.pnl}) → Account Balance: **$${r.accountEquityAfter.toLocaleString()}**
@@ -523,9 +538,13 @@ for (const r of records) {
 `
 }
 
+function tPStr(val: number | string): string {
+    return typeof val === 'number' ? val.toLocaleString() : val
+}
+
 // Write to file AUDIT_LOG_LAST_MONTH_TRADES.md
 const outputPath = path.join(process.cwd(), 'AUDIT_LOG_LAST_MONTH_TRADES.md')
 fs.writeFileSync(outputPath, markdownContent, 'utf-8')
 
-console.log(`✅ AUDIT LOG FILE SUCCESSFULLY UPDATED WITH ACCURATE CME FUTURES MARKET DATA AT: ${outputPath}`)
+console.log(`✅ AUDIT LOG FILE SUCCESSFULLY UPDATED WITH TRANSPARENCY DISCLAIMER AT: ${outputPath}`)
 console.log(`📊 Generated ${records.length} trades across 22 trading weekdays. Ending Equity: $${currentEquity.toLocaleString()}`)

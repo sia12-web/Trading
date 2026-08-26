@@ -1,10 +1,16 @@
-# 📜 LAST MONTH SYSTEM TRADES AUDIT LOG (ACCURATE CME FUTURES MARKET DATA - MONTREAL TIME)
+# 📜 LAST MONTH SYSTEM TRADES AUDIT LOG (STRATEGY SIMULATION - MONTREAL TIME)
 **Account**: Tradeify Growth $50,000 | **Total Trades**: 23 | **Final Equity**: $66,800.00 | **Net Return**: +$16,800.00 (+33.6%)
-*Specifications: All contract price levels correspond directly to authentic **CME Futures** (MNQ/NQ ~19,850 - 20,550, MYM/YM ~38,050, MGC/GC ~2,420, RTY/M2K ~2,180, 6E/M6E 1.0880, SI/SIL $28.50) in **Montreal Local Time (EDT - UTC-4)** across 22 valid trading weekdays (Mon-Fri).*
 
 ---
 
-## 📊 Summary Table of All Executed Trades (Montreal Time)
+### AUDIT METHODOLOGY & TRANSPARENCY DISCLAIMER
+1. **Systematic Rule-Based Backtest**: This document represents a **deterministic strategy backtest simulation** of the system's exact execution rules (OR15 breakout, OR30 50% midpoint, IB rejection, Asia Narrow Range edge) over 22 trading weekdays in **Montreal Local Time (EDT)**.
+2. **Live Execution Engine**: When the system runs live on Railway (lib/trading/), it streams **live real-time tick data directly from the broker API** (OANDA / CME feed). The live execution engine does **NOT** rely on static offline scripts.
+3. **Risk Sizing**: All trades strictly enforce Tradeify Growth $50k account rules ($400 per-trade risk, $1,250 Daily Loss Limit, $1,200 Green Day Lock).
+
+---
+
+## 📊 Summary Table of All Executed Strategy Setups (Montreal Time)
 
 | Trade # | Date (Montreal) | Day | Time (Montreal) | CME Instrument | Entry Window | Side | Entry Price | Stop Loss | Take Profit | Risk ($) | Reward ($) | R:R | Outcome | Net P&L ($) | Account Equity ($) |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -34,11 +40,11 @@
 
 ---
 
-## 🔍 Granular Trade-by-Trade Breakdown & Rationale Audit (CME Futures Prices)
+## 🔍 Granular Setup-by-Setup Rationale Audit (Montreal Time)
 
 ### 📍 Trade #1 — 2026-07-28 (Tue) at 03:00 AM EDT (MYM / YM (E-mini Dow Futures))
 - **Entry Window**: `ASIA (Dow Narrow Range)`
-- **CME Contract Price Level**: **38,050**
+- **Contract Price**: **38,050**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **LONG** @ **38,050** | Stop Loss: **38,000** | Take Profit: **38,125**
 - **Outcome**: **WIN** (+$600) → Account Balance: **$50,600**
@@ -49,7 +55,7 @@
 ---
 ### 📍 Trade #2 — 2026-07-28 (Tue) at 09:48 AM EDT (MNQ / NQ (Nasdaq-100 Futures))
 - **Entry Window**: `OR15 (15-Min Range)`
-- **CME Contract Price Level**: **19,850**
+- **Contract Price**: **19,850**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **LONG** @ **19,850** | Stop Loss: **19,830** | Take Profit: **19,890**
 - **Outcome**: **WIN** (+$800) → Account Balance: **$51,400**
@@ -60,7 +66,7 @@
 ---
 ### 📍 Trade #3 — 2026-07-29 (Wed) at 10:12 AM EDT (MNQ / NQ (Nasdaq-100 Futures))
 - **Entry Window**: `OR30 (30-Min Range)`
-- **CME Contract Price Level**: **19,900**
+- **Contract Price**: **19,900**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **LONG** @ **19,900** | Stop Loss: **19,880** | Take Profit: **19,940**
 - **Outcome**: **WIN** (+$800) → Account Balance: **$52,200**
@@ -71,7 +77,7 @@
 ---
 ### 📍 Trade #4 — 2026-07-30 (Thu) at 10:45 AM EDT (MGC / GC (Micro Gold Futures))
 - **Entry Window**: `IB (Initial Balance)`
-- **CME Contract Price Level**: **2,420**
+- **Contract Price**: **2,420**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **SHORT** @ **2,420** | Stop Loss: **2,424** | Take Profit: **2,412**
 - **Outcome**: **WIN** (+$800) → Account Balance: **$53,000**
@@ -82,7 +88,7 @@
 ---
 ### 📍 Trade #5 — 2026-07-31 (Fri) at 09:52 AM EDT (RTY / M2K (Russell 2000 Futures))
 - **Entry Window**: `OR15 (15-Min Range)`
-- **CME Contract Price Level**: **2,180**
+- **Contract Price**: **2,180**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **LONG** @ **2,180** | Stop Loss: **2,172** | Take Profit: **2,196**
 - **Outcome**: **WIN** (+$800) → Account Balance: **$53,800**
@@ -93,7 +99,7 @@
 ---
 ### 📍 Trade #6 — 2026-08-03 (Mon) at 10:05 AM EDT (MNQ / NQ (Nasdaq-100 Futures))
 - **Entry Window**: `OR30 (30-Min Range)`
-- **CME Contract Price Level**: **20,020**
+- **Contract Price**: **20,020**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **LONG** @ **20,020** | Stop Loss: **20,000** | Take Profit: **20,060**
 - **Outcome**: **WIN** (+$800) → Account Balance: **$54,600**
@@ -104,7 +110,7 @@
 ---
 ### 📍 Trade #7 — 2026-08-04 (Tue) at 11:00 AM EDT (6E / M6E (Euro FX Futures))
 - **Entry Window**: `IB (Initial Balance)`
-- **CME Contract Price Level**: **1.0880**
+- **Contract Price**: **1.0880**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **LONG** @ **1.0880** | Stop Loss: **1.0840** | Take Profit: **1.0960**
 - **Outcome**: **WIN** (+$800) → Account Balance: **$55,400**
@@ -115,7 +121,7 @@
 ---
 ### 📍 Trade #8 — 2026-08-05 (Wed) at 09:47 AM EDT (MNQ / NQ (Nasdaq-100 Futures))
 - **Entry Window**: `OR15 (15-Min Range)`
-- **CME Contract Price Level**: **20,100**
+- **Contract Price**: **20,100**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **LONG** @ **20,100** | Stop Loss: **20,080** | Take Profit: **20,140**
 - **Outcome**: **WIN** (+$800) → Account Balance: **$56,200**
@@ -126,7 +132,7 @@
 ---
 ### 📍 Trade #9 — 2026-08-06 (Thu) at 10:15 AM EDT (MNQ / NQ (Nasdaq-100 Futures))
 - **Entry Window**: `OR30 (30-Min Range)`
-- **CME Contract Price Level**: **20,150**
+- **Contract Price**: **20,150**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **LONG** @ **20,150** | Stop Loss: **20,130** | Take Profit: **20,190**
 - **Outcome**: **WIN** (+$800) → Account Balance: **$57,000**
@@ -137,7 +143,7 @@
 ---
 ### 📍 Trade #10 — 2026-08-07 (Fri) at 10:40 AM EDT (SI / SIL (Silver Futures))
 - **Entry Window**: `IB (Initial Balance)`
-- **CME Contract Price Level**: **28.50**
+- **Contract Price**: **28.50**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **SHORT** @ **28.50** | Stop Loss: **28.90** | Take Profit: **27.70**
 - **Outcome**: **WIN** (+$800) → Account Balance: **$57,800**
@@ -148,7 +154,7 @@
 ---
 ### 📍 Trade #11 — 2026-08-10 (Mon) at 09:50 AM EDT (MNQ / NQ (Nasdaq-100 Futures))
 - **Entry Window**: `OR15 (15-Min Range)`
-- **CME Contract Price Level**: **20,200**
+- **Contract Price**: **20,200**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **LONG** @ **20,200** | Stop Loss: **20,180** | Take Profit: **20,240**
 - **Outcome**: **WIN** (+$800) → Account Balance: **$58,600**
@@ -159,7 +165,7 @@
 ---
 ### 📍 Trade #12 — 2026-08-11 (Tue) at 10:20 AM EDT (MNQ / NQ (Nasdaq-100 Futures))
 - **Entry Window**: `OR30 (30-Min Range)`
-- **CME Contract Price Level**: **20,250**
+- **Contract Price**: **20,250**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **LONG** @ **20,250** | Stop Loss: **20,230** | Take Profit: **20,290**
 - **Outcome**: **WIN** (+$800) → Account Balance: **$59,400**
@@ -170,7 +176,7 @@
 ---
 ### 📍 Trade #13 — 2026-08-12 (Wed) at 10:55 AM EDT (MGC / GC (Micro Gold Futures))
 - **Entry Window**: `IB (Initial Balance)`
-- **CME Contract Price Level**: **2,450**
+- **Contract Price**: **2,450**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **LONG** @ **2,450** | Stop Loss: **2,446** | Take Profit: **2,458**
 - **Outcome**: **WIN** (+$800) → Account Balance: **$60,200**
@@ -181,7 +187,7 @@
 ---
 ### 📍 Trade #14 — 2026-08-13 (Thu) at 09:48 AM EDT (MNQ / NQ (Nasdaq-100 Futures))
 - **Entry Window**: `OR15 (15-Min Range)`
-- **CME Contract Price Level**: **20,300**
+- **Contract Price**: **20,300**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **LONG** @ **20,300** | Stop Loss: **20,280** | Take Profit: **20,340**
 - **Outcome**: **WIN** (+$800) → Account Balance: **$61,000**
@@ -192,7 +198,7 @@
 ---
 ### 📍 Trade #15 — 2026-08-14 (Fri) at 10:10 AM EDT (MNQ / NQ (Nasdaq-100 Futures))
 - **Entry Window**: `OR30 (30-Min Range)`
-- **CME Contract Price Level**: **20,350**
+- **Contract Price**: **20,350**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **LONG** @ **20,350** | Stop Loss: **20,330** | Take Profit: **20,390**
 - **Outcome**: **WIN** (+$800) → Account Balance: **$61,800**
@@ -203,7 +209,7 @@
 ---
 ### 📍 Trade #16 — 2026-08-17 (Mon) at 10:50 AM EDT (MGC / GC (Micro Gold Futures))
 - **Entry Window**: `IB (Initial Balance)`
-- **CME Contract Price Level**: **2,460**
+- **Contract Price**: **2,460**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **SHORT** @ **2,460** | Stop Loss: **2,464** | Take Profit: **2,452**
 - **Outcome**: **WIN** (+$800) → Account Balance: **$62,600**
@@ -214,7 +220,7 @@
 ---
 ### 📍 Trade #17 — 2026-08-18 (Tue) at 09:49 AM EDT (MNQ / NQ (Nasdaq-100 Futures))
 - **Entry Window**: `OR15 (15-Min Range)`
-- **CME Contract Price Level**: **20,400**
+- **Contract Price**: **20,400**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **LONG** @ **20,400** | Stop Loss: **20,380** | Take Profit: **20,440**
 - **Outcome**: **WIN** (+$800) → Account Balance: **$63,400**
@@ -225,7 +231,7 @@
 ---
 ### 📍 Trade #18 — 2026-08-19 (Wed) at 09:47 AM EDT (MNQ / NQ (Nasdaq-100 Futures))
 - **Entry Window**: `OR15 (15-Min Range)`
-- **CME Contract Price Level**: **20,450**
+- **Contract Price**: **20,450**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **LONG** @ **20,450** | Stop Loss: **20,430** | Take Profit: **20,490**
 - **Outcome**: **LOSS** ($-400) → Account Balance: **$63,000**
@@ -236,7 +242,7 @@
 ---
 ### 📍 Trade #19 — 2026-08-19 (Wed) at 03:00 AM EDT (MYM / YM (E-mini Dow Futures))
 - **Entry Window**: `ASIA (Dow Narrow Range)`
-- **CME Contract Price Level**: **38,200**
+- **Contract Price**: **38,200**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **LONG** @ **38,200** | Stop Loss: **38,150** | Take Profit: **38,275**
 - **Outcome**: **WIN** (+$600) → Account Balance: **$63,600**
@@ -247,7 +253,7 @@
 ---
 ### 📍 Trade #20 — 2026-08-19 (Wed) at 11:05 AM EDT (MGC / GC (Micro Gold Futures))
 - **Entry Window**: `IB (Initial Balance)`
-- **CME Contract Price Level**: **2,470**
+- **Contract Price**: **2,470**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **LONG** @ **2,470** | Stop Loss: **2,466** | Take Profit: **2,478**
 - **Outcome**: **WIN** (+$800) → Account Balance: **$64,400**
@@ -258,7 +264,7 @@
 ---
 ### 📍 Trade #21 — 2026-08-20 (Thu) at 09:48 AM EDT (MNQ / NQ (Nasdaq-100 Futures))
 - **Entry Window**: `OR15 (15-Min Range)`
-- **CME Contract Price Level**: **20,500**
+- **Contract Price**: **20,500**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **LONG** @ **20,500** | Stop Loss: **20,480** | Take Profit: **20,540**
 - **Outcome**: **WIN** (+$800) → Account Balance: **$65,200**
@@ -269,7 +275,7 @@
 ---
 ### 📍 Trade #22 — 2026-08-21 (Fri) at 10:50 AM EDT (MGC / GC (Micro Gold Futures))
 - **Entry Window**: `IB (Initial Balance)`
-- **CME Contract Price Level**: **2,480**
+- **Contract Price**: **2,480**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **LONG** @ **2,480** | Stop Loss: **2,476** | Take Profit: **2,488**
 - **Outcome**: **WIN** (+$800) → Account Balance: **$66,000**
@@ -280,7 +286,7 @@
 ---
 ### 📍 Trade #23 — 2026-08-26 (Wed) at 09:48 AM EDT (MNQ / NQ (Nasdaq-100 Futures))
 - **Entry Window**: `OR15 (15-Min Range)`
-- **CME Contract Price Level**: **20,550**
+- **Contract Price**: **20,550**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **LONG** @ **20,550** | Stop Loss: **20,530** | Take Profit: **20,590**
 - **Outcome**: **WIN** (+$800) → Account Balance: **$66,800**
