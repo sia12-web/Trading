@@ -136,8 +136,7 @@ export function SessionBanner({
   const [clockNow, setClockNow] = useState<string | null>(null)
   const [clockLabel, setClockLabel] = useState('Montreal')
   const [mounted, setMounted] = useState(false)
-  const [clocking, setClocking] = useState(false)
-  const [clockInError, setClockInError] = useState<string | null>(null)
+
   const [callModeBusy, setCallModeBusy] = useState(false)
   const [callModeError, setCallModeError] = useState<string | null>(null)
   const prepFiredRef = useRef<string | null>(null)
@@ -465,39 +464,7 @@ export function SessionBanner({
     }
   }, [gate?.lockedInstrument, viewingInstrument, refreshKey])
 
-  const handleClockInName = useCallback(
-    async (inst: 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE') => {
-      if (clocking) return
-      setClocking(true)
-      setClockInError(null)
-      try {
-        const res = await fetch('/api/trading/clock-in', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            market: 'NY',
-            instrument: inst,
-          }),
-        })
-        const json = await res.json().catch(() => ({}))
-        if (!res.ok) {
-          const msg =
-            typeof json.error === 'string' && json.error
-              ? json.error
-              : `Clock-in failed (${res.status})`
-          setClockInError(msg)
-          return
-        }
-        setClockInError(null)
-        await refresh()
-      } catch {
-        setClockInError('Clock-in unreachable — check network or deploy')
-      } finally {
-        setClocking(false)
-      }
-    },
-    [clocking, refresh]
-  )
+
 
   const handleCallMode = useCallback(
     async (useCall: boolean) => {
@@ -642,43 +609,9 @@ export function SessionBanner({
             {liveDeskContractLabel(gate.lockedInstrument)}
           </span>
         )}
-        {gate.clockedIn ? (
-          <span className="rounded bg-emerald-500/25 px-2 py-0.5 text-emerald-200 font-semibold">
-            CLOCKED IN
-          </span>
-        ) : gate.phase === 'MANAGE' && gate.canManagePosition ? (
-          <span className="rounded bg-amber-500/25 px-2 py-0.5 text-amber-200 font-semibold">
-            MANAGE OPEN
-          </span>
-        ) : gate.canClockIn && gate.market !== 'TOKYO' ? (
-          <span className="flex flex-wrap items-center gap-1.5">
-            {(
-              (gate.rankedBoard?.length
-                ? gate.rankedBoard.map((r) => r.instrument)
-                : (['DOW', 'NASDAQ', 'GOLD', 'CRUDE'] as const)
-              ).filter((inst, i, arr) => arr.indexOf(inst) === i) as Array<
-                'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE'
-              >
-            ).map((inst) => (
-              <button
-                key={inst}
-                type="button"
-                onClick={() => void handleClockInName(inst)}
-                disabled={clocking}
-                className="rounded bg-amber-500/90 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-black hover:bg-amber-400 disabled:opacity-60"
-              >
-                {clocking ? '…' : liveDeskContractLabel(inst)}
-              </button>
-            ))}
-          </span>
-        ) : gate.attendedToday &&
-          !gate.canClockIn &&
-          // Afternoon watch only — hide once cash close clears the day lock / focus
-          !!gate.lockedInstrument ? (
-          <span className="rounded bg-gray-500/30 px-2 py-0.5 text-gray-300 font-semibold">
-            CLOCKED OUT
-          </span>
-        ) : null}
+        <span className="rounded bg-emerald-500/25 px-2 py-0.5 text-emerald-200 font-semibold text-xs border border-emerald-500/40">
+          ⚡ SYSTEM AUTOMATED (RUNS AT 9:30 AM RTH)
+        </span>
         {gate.clockedIn && (
           <span
             className="rounded bg-sky-500/25 px-2 py-0.5 text-sky-200 font-semibold text-xs border border-sky-500/40"
@@ -795,14 +728,7 @@ export function SessionBanner({
           <span>9:30 AM RTH</span>
           <span className="text-[9px]">⏱️</span>
         </button>
-        {clockInError && (
-          <span
-            className="rounded bg-red-500/25 px-2 py-0.5 text-red-200 font-semibold max-w-[20rem]"
-            title={clockInError}
-          >
-            {clockInError}
-          </span>
-        )}
+
         {gate.phase === 'ENTRY' && gate.clockedIn && (
           <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-emerald-300">
             {gate.entryWindow ? `Window ${gate.entryWindow}/3` : 'Entry window'}
