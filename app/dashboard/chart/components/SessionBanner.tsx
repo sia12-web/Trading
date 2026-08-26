@@ -679,27 +679,13 @@ export function SessionBanner({
             CLOCKED OUT
           </span>
         ) : null}
-        {gate.clockedIn && gate.useCall === true && (
-          <button
-            type="button"
-            disabled={callModeBusy}
-            onClick={() => void handleCallMode(false)}
-            className="rounded bg-zinc-500/25 px-2 py-0.5 text-zinc-200 font-semibold hover:bg-zinc-500/40 disabled:opacity-60"
-            title="CALL gate on. Click to use regular ±10 — CALL setup stays on the chip."
+        {gate.clockedIn && (
+          <span
+            className="rounded bg-sky-500/25 px-2 py-0.5 text-sky-200 font-semibold text-xs border border-sky-500/40"
+            title="SYSTEM CALL ACTIVE — Trades allowed ONLY when high-conviction system call triggers."
           >
-            CALL ON
-          </button>
-        )}
-        {gate.clockedIn && gate.useCall === false && (
-          <button
-            type="button"
-            disabled={callModeBusy}
-            onClick={() => void handleCallMode(true)}
-            className="rounded bg-sky-500/20 px-2 py-0.5 text-sky-200 font-semibold hover:bg-sky-500/30 disabled:opacity-60"
-            title="Regular ±10. CALL still shows the setup. Click to gate tickets on CALL."
-          >
-            Regular ±10
-          </button>
+            SYSTEM CALL ONLY
+          </span>
         )}
         {htfStatus && (
           <span

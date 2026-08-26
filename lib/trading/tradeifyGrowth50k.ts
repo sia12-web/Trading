@@ -298,7 +298,7 @@ export function resolveTradeifyPlace(input: TradeifyPlaceInput = {}): TradeifyPl
         peakEodBalance: input.peakEodBalance,
       }) -
         reserved) *
-        100
+      100
     ) / 100
   )
   const floorLevel = tradeifyFloorLevel(input.peakEodBalance)
@@ -333,7 +333,6 @@ export function resolveTradeifyPlace(input: TradeifyPlaceInput = {}): TradeifyPl
   if (tradeifyMustFlatten(now)) return deny('must_flatten')
   if (input.newsBlocked) return deny('news_lock')
   if (input.hedgeBlocked) return deny('hedge_conflict')
-  if (fillsUsed >= 3) return deny('session_full')
   if (stopOuts >= TRADEIFY_MAX_STOP_OUTS) return deny('day_locked_stops')
   if (greenLocked) return deny('day_locked_green')
   if (leftoverDll < TRADEIFY_MIN_RISK_DOLLARS) return deny('dll_exhausted')
