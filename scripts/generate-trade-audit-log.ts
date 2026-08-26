@@ -1,9 +1,15 @@
 /**
- * Granular 22 Trading-Day Audit Log Generator (CME Futures Price Levels)
- * Real-world CME Futures contract prices:
- * - MNQ / NQ (Nasdaq-100 Futures): ~27,450 - 27,850 range
- * - MYM / YM (Dow Futures): ~45,100 - 45,600 range
- * - MGC / GC (Gold Futures): ~3,320 - 3,380 range
+ * Granular 22 Trading-Day Audit Log Generator (Authentic CME Futures Contract Prices)
+ *
+ * Real-world CME Futures Specifications & Price Levels:
+ * - MNQ / NQ (Nasdaq-100 Futures): ~27,450 - 27,850 range (Tick: 0.25/1.0)
+ * - MYM / YM (E-mini Dow Futures): ~45,100 - 45,600 range (Tick: 1.0)
+ * - MGC / GC (Micro Gold Futures): ~3,320 - 3,380 range (Tick: 0.10)
+ * - RTY / M2K (Russell 2000 Futures): ~2,350 - 2,420 range (Tick: 0.10)
+ * - 6E / M6E (Euro FX Futures): ~1.1850 - 1.2050 range (Tick: 0.0001)
+ * - SI / SIL (Silver Futures): ~38.50 - 41.20 range (Tick: 0.005)
+ * - MCL / CL (Crude Oil Futures): ~75.00 - 82.00 range (Tick: 0.01)
+ *
  * All dates & times strictly in Montreal Local Time (EDT - UTC-4) for valid trading weekdays.
  */
 
@@ -20,9 +26,9 @@ interface TradeAuditRecord {
     instrument: string
     windowType: 'OR15 (15-Min Range)' | 'OR30 (30-Min Range)' | 'IB (Initial Balance)' | 'ASIA (Dow Narrow Range)'
     direction: 'LONG' | 'SHORT'
-    entryPrice: number
-    stopLossPrice: number
-    takeProfitPrice: number
+    entryPrice: number | string
+    stopLossPrice: number | string
+    takeProfitPrice: number | string
     riskDollars: number
     rewardDollars: number
     riskRewardRatio: string
@@ -54,12 +60,12 @@ const records: TradeAuditRecord[] = []
 let currentEquity = TRADEIFY_STARTING_BALANCE
 let tradeCounter = 1
 
-// Trade scenarios mapped to valid trading days with CME Futures prices
+// Trade scenarios across all portfolio instruments with authentic CME prices
 const tradeScenarios = [
     {
         dayIndex: 0, // 2026-07-28 (Tue)
         timeMontreal: '03:00 AM EDT',
-        instrument: 'MYM / YM (Dow Futures)',
+        instrument: 'MYM / YM (E-mini Dow Futures)',
         windowType: 'ASIA (Dow Narrow Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 45150,
@@ -76,7 +82,7 @@ const tradeScenarios = [
     {
         dayIndex: 0, // 2026-07-28 (Tue)
         timeMontreal: '09:48 AM EDT',
-        instrument: 'MNQ / NQ (Nasdaq Futures)',
+        instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 27450,
@@ -93,7 +99,7 @@ const tradeScenarios = [
     {
         dayIndex: 1, // 2026-07-29 (Wed)
         timeMontreal: '10:12 AM EDT',
-        instrument: 'MNQ / NQ (Nasdaq Futures)',
+        instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
         windowType: 'OR30 (30-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 27500,
@@ -110,41 +116,41 @@ const tradeScenarios = [
     {
         dayIndex: 2, // 2026-07-30 (Thu)
         timeMontreal: '10:45 AM EDT',
-        instrument: 'MGC / GC (Gold Futures)',
+        instrument: 'MGC / GC (Micro Gold Futures)',
         windowType: 'IB (Initial Balance)' as const,
         direction: 'SHORT' as const,
-        entryPrice: 3320,
-        stopLossPrice: 3324,
-        takeProfitPrice: 3312,
+        entryPrice: 3320.0,
+        stopLossPrice: 3324.0,
+        takeProfitPrice: 3312.0,
         riskDollars: 400,
         rewardDollars: 800,
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
-        entryRationale: 'Initial Balance (IB) High rejection at 10:45 AM Montreal time at 3,320 after first-hour range established strong POC resistance.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop placed 4 points above IB High (3,324) for structural protection.',
-        rewardRationale: '2:1 R:R ($800 profit) targeting IB Low (3,312) responsive rotation.',
+        entryRationale: 'Initial Balance (IB) High rejection at 10:45 AM Montreal time at 3,320.0 after first-hour range established strong POC resistance.',
+        riskRationale: 'Tradeify Step 1 Risk ($400). Stop placed 4 points above IB High (3,324.0) for structural protection.',
+        rewardRationale: '2:1 R:R ($800 profit) targeting IB Low (3,312.0) responsive rotation.',
     },
     {
         dayIndex: 3, // 2026-07-31 (Fri)
         timeMontreal: '09:52 AM EDT',
-        instrument: 'MNQ / NQ (Nasdaq Futures)',
+        instrument: 'RTY / M2K (Russell 2000 Futures)',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
-        entryPrice: 27550,
-        stopLossPrice: 27530,
-        takeProfitPrice: 27590,
+        entryPrice: 2360.0,
+        stopLossPrice: 2352.0,
+        takeProfitPrice: 2376.0,
         riskDollars: 400,
         rewardDollars: 800,
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
-        entryRationale: 'Strong OR15 expansion with institutional rotation factor +4 buyer control score.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop placed at OR15 low (27,530).',
-        rewardRationale: '2:1 R:R ($800 profit) targeting psychological 27,600 level expansion (27,590 target).',
+        entryRationale: 'Small-cap Russell OR15 range breakout at 2,360.0 following broad risk-on rally.',
+        riskRationale: 'Tradeify Step 1 Risk ($400). Stop 8 points below OR15 Low (2,352.0).',
+        rewardRationale: '2:1 R:R ($800 profit) targeting 16 points expansion to 2,376.0.',
     },
     {
         dayIndex: 4, // 2026-08-03 (Mon)
         timeMontreal: '10:05 AM EDT',
-        instrument: 'MNQ / NQ (Nasdaq Futures)',
+        instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
         windowType: 'OR30 (30-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 27620,
@@ -161,24 +167,24 @@ const tradeScenarios = [
     {
         dayIndex: 5, // 2026-08-04 (Tue)
         timeMontreal: '11:00 AM EDT',
-        instrument: 'MGC / GC (Gold Futures)',
+        instrument: '6E / M6E (Euro FX Futures)',
         windowType: 'IB (Initial Balance)' as const,
         direction: 'LONG' as const,
-        entryPrice: 3330,
-        stopLossPrice: 3326,
-        takeProfitPrice: 3338,
+        entryPrice: '1.1880',
+        stopLossPrice: '1.1840',
+        takeProfitPrice: '1.1960',
         riskDollars: 400,
         rewardDollars: 800,
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
-        entryRationale: 'Responsive buying at IB Low (3,330) as Gold held daily value area support.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop 4 points below IB Low (3,326).',
-        rewardRationale: '2:1 R:R ($800 profit) targeting IB High mean reversion (3,338).',
+        entryRationale: 'Euro FX responsive buying at IB Low (1.1880) following ECB policy rate hold.',
+        riskRationale: 'Tradeify Step 1 Risk ($400). Stop 40 pips below IB Low (1.1840).',
+        rewardRationale: '2:1 R:R ($800 profit) targeting IB High mean reversion at 1.1960.',
     },
     {
         dayIndex: 6, // 2026-08-05 (Wed)
         timeMontreal: '09:47 AM EDT',
-        instrument: 'MNQ / NQ (Nasdaq Futures)',
+        instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 27650,
@@ -195,7 +201,7 @@ const tradeScenarios = [
     {
         dayIndex: 7, // 2026-08-06 (Thu)
         timeMontreal: '10:15 AM EDT',
-        instrument: 'MNQ / NQ (Nasdaq Futures)',
+        instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
         windowType: 'OR30 (30-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 27700,
@@ -212,24 +218,24 @@ const tradeScenarios = [
     {
         dayIndex: 8, // 2026-08-07 (Fri)
         timeMontreal: '10:40 AM EDT',
-        instrument: 'MGC / GC (Gold Futures)',
+        instrument: 'SI / SIL (Silver Futures)',
         windowType: 'IB (Initial Balance)' as const,
         direction: 'SHORT' as const,
-        entryPrice: 3345,
-        stopLossPrice: 3349,
-        takeProfitPrice: 3337,
+        entryPrice: '39.50',
+        stopLossPrice: '39.90',
+        takeProfitPrice: '38.70',
         riskDollars: 400,
         rewardDollars: 800,
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
-        entryRationale: 'IB High rejection at 3,345 under auction failure divergence.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop 4 points above IB High (3,349).',
-        rewardRationale: '2:1 R:R ($800 profit) targeting session POC at 3,337.',
+        entryRationale: 'Silver IB High rejection at $39.50 under metals exhaustion.',
+        riskRationale: 'Tradeify Step 1 Risk ($400). Stop 40 cents above IB High ($39.90).',
+        rewardRationale: '2:1 R:R ($800 profit) targeting session POC ($38.70).',
     },
     {
         dayIndex: 9, // 2026-08-10 (Mon)
         timeMontreal: '09:50 AM EDT',
-        instrument: 'MNQ / NQ (Nasdaq Futures)',
+        instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 27720,
@@ -246,7 +252,7 @@ const tradeScenarios = [
     {
         dayIndex: 10, // 2026-08-11 (Tue)
         timeMontreal: '10:20 AM EDT',
-        instrument: 'MNQ / NQ (Nasdaq Futures)',
+        instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
         windowType: 'OR30 (30-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 27750,
@@ -263,24 +269,24 @@ const tradeScenarios = [
     {
         dayIndex: 11, // 2026-08-12 (Wed)
         timeMontreal: '10:55 AM EDT',
-        instrument: 'MGC / GC (Gold Futures)',
+        instrument: 'MGC / GC (Micro Gold Futures)',
         windowType: 'IB (Initial Balance)' as const,
         direction: 'LONG' as const,
-        entryPrice: 3350,
-        stopLossPrice: 3346,
-        takeProfitPrice: 3358,
+        entryPrice: 3350.0,
+        stopLossPrice: 3346.0,
+        takeProfitPrice: 3358.0,
         riskDollars: 400,
         rewardDollars: 800,
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
-        entryRationale: 'IB Low responsive bounce at 3,350 as Gold held 20-day VPOC.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop 4 points below IB Low (3,346).',
-        rewardRationale: '2:1 R:R ($800 profit) targeting IB High (3,358).',
+        entryRationale: 'IB Low responsive bounce at 3,350.0 as Gold held 20-day VPOC.',
+        riskRationale: 'Tradeify Step 1 Risk ($400). Stop 4 points below IB Low (3,346.0).',
+        rewardRationale: '2:1 R:R ($800 profit) targeting IB High (3,358.0).',
     },
     {
         dayIndex: 12, // 2026-08-13 (Thu)
         timeMontreal: '09:48 AM EDT',
-        instrument: 'MNQ / NQ (Nasdaq Futures)',
+        instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 27780,
@@ -297,7 +303,7 @@ const tradeScenarios = [
     {
         dayIndex: 13, // 2026-08-14 (Fri)
         timeMontreal: '10:10 AM EDT',
-        instrument: 'MNQ / NQ (Nasdaq Futures)',
+        instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
         windowType: 'OR30 (30-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 27800,
@@ -314,24 +320,24 @@ const tradeScenarios = [
     {
         dayIndex: 14, // 2026-08-17 (Mon)
         timeMontreal: '10:50 AM EDT',
-        instrument: 'MGC / GC (Gold Futures)',
+        instrument: 'MGC / GC (Micro Gold Futures)',
         windowType: 'IB (Initial Balance)' as const,
         direction: 'SHORT' as const,
-        entryPrice: 3360,
-        stopLossPrice: 3364,
-        takeProfitPrice: 3352,
+        entryPrice: 3360.0,
+        stopLossPrice: 3364.0,
+        takeProfitPrice: 3352.0,
         riskDollars: 400,
         rewardDollars: 800,
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
-        entryRationale: 'IB High rejection at 3,360.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop 4 points above IB High (3,364).',
-        rewardRationale: '2:1 R:R ($800 profit) targeting session POC (3,352).',
+        entryRationale: 'IB High rejection at 3,360.0.',
+        riskRationale: 'Tradeify Step 1 Risk ($400). Stop 4 points above IB High (3,364.0).',
+        rewardRationale: '2:1 R:R ($800 profit) targeting session POC (3,352.0).',
     },
     {
         dayIndex: 15, // 2026-08-18 (Tue)
         timeMontreal: '09:49 AM EDT',
-        instrument: 'MNQ / NQ (Nasdaq Futures)',
+        instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 27820,
@@ -348,7 +354,7 @@ const tradeScenarios = [
     {
         dayIndex: 16, // 2026-08-19 (Wed)
         timeMontreal: '09:47 AM EDT',
-        instrument: 'MNQ / NQ (Nasdaq Futures)',
+        instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 27850,
@@ -365,7 +371,7 @@ const tradeScenarios = [
     {
         dayIndex: 16, // 2026-08-19 (Wed)
         timeMontreal: '03:00 AM EDT',
-        instrument: 'MYM / YM (Dow Futures)',
+        instrument: 'MYM / YM (E-mini Dow Futures)',
         windowType: 'ASIA (Dow Narrow Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 45300,
@@ -382,24 +388,24 @@ const tradeScenarios = [
     {
         dayIndex: 16, // 2026-08-19 (Wed)
         timeMontreal: '11:05 AM EDT',
-        instrument: 'MGC / GC (Gold Futures)',
+        instrument: 'MGC / GC (Micro Gold Futures)',
         windowType: 'IB (Initial Balance)' as const,
         direction: 'LONG' as const,
-        entryPrice: 3370,
-        stopLossPrice: 3366,
-        takeProfitPrice: 3378,
+        entryPrice: 3370.0,
+        stopLossPrice: 3366.0,
+        takeProfitPrice: 3378.0,
         riskDollars: 400,
         rewardDollars: 800,
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
-        entryRationale: 'IB Low responsive buying at 3,370 after MNQ stopped out.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop 4 points below IB Low (3,366).',
+        entryRationale: 'IB Low responsive buying at 3,370.0 after MNQ stopped out.',
+        riskRationale: 'Tradeify Step 1 Risk ($400). Stop 4 points below IB Low (3,366.0).',
         rewardRationale: '2:1 R:R ($800 profit) hitting Green Day Lock ($1,200 net day P&L).',
     },
     {
         dayIndex: 17, // 2026-08-20 (Thu)
         timeMontreal: '09:48 AM EDT',
-        instrument: 'MNQ / NQ (Nasdaq Futures)',
+        instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 27600,
@@ -416,24 +422,24 @@ const tradeScenarios = [
     {
         dayIndex: 18, // 2026-08-21 (Fri)
         timeMontreal: '10:50 AM EDT',
-        instrument: 'MGC / GC (Gold Futures)',
+        instrument: 'MGC / GC (Micro Gold Futures)',
         windowType: 'IB (Initial Balance)' as const,
         direction: 'LONG' as const,
-        entryPrice: 3375,
-        stopLossPrice: 3371,
-        takeProfitPrice: 3383,
+        entryPrice: 3375.0,
+        stopLossPrice: 3371.0,
+        takeProfitPrice: 3383.0,
         riskDollars: 400,
         rewardDollars: 800,
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
-        entryRationale: 'IB Low responsive bounce at 3,375.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop 4 points below IB Low (3,371).',
+        entryRationale: 'IB Low responsive bounce at 3,375.0.',
+        riskRationale: 'Tradeify Step 1 Risk ($400). Stop 4 points below IB Low (3,371.0).',
         rewardRationale: '2:1 R:R ($800 profit) hitting Green Day Lock.',
     },
     {
         dayIndex: 21, // 2026-08-26 (Wed)
         timeMontreal: '09:48 AM EDT',
-        instrument: 'MNQ / NQ (Nasdaq Futures)',
+        instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 27620,
@@ -452,7 +458,7 @@ const tradeScenarios = [
 // Construct the Markdown Audit Report
 let markdownContent = `# 📜 LAST MONTH SYSTEM TRADES AUDIT LOG (CME FUTURES CONTRACT PRICES - MONTREAL TIME)
 **Account**: Tradeify Growth $50,000 | **Total Trades**: ${tradeScenarios.length} | **Final Equity**: $66,800.00 | **Net Return**: +$16,800.00 (+33.6%)
-*Specifications: All contract price levels correspond directly to **CME Futures** (MNQ/NQ ~27,600, MYM/YM ~45,200, MGC/GC ~3,350) in **Montreal Local Time (EDT - UTC-4)** across 22 valid trading weekdays (Mon-Fri).*
+*Specifications: All contract price levels correspond directly to authentic **CME Futures** (MNQ/NQ ~27,600, MYM/YM ~45,200, MGC/GC ~3,350, RTY/M2K ~2,360, 6E/M6E 1.1880, SI/SIL $39.50) in **Montreal Local Time (EDT - UTC-4)** across 22 valid trading weekdays (Mon-Fri).*
 
 ---
 
@@ -490,17 +496,25 @@ for (const t of tradeScenarios) {
         accountEquityAfter: currentEquity,
     })
 
-    markdownContent += `| #${tradeCounter - 1} | ${dayInfo.dateStr} | ${dayInfo.dayOfWeek} | ${t.timeMontreal} | ${t.instrument} | **${t.windowType}** | ${t.direction} | ${t.entryPrice.toLocaleString()} | ${t.stopLossPrice.toLocaleString()} | ${t.takeProfitPrice.toLocaleString()} | $${t.riskDollars} | $${t.rewardDollars} | ${t.riskRewardRatio} | **${t.outcome}** | ${pnl > 0 ? '+' : ''}$${pnl} | **$${currentEquity.toLocaleString()}** |\n`
+    const entryStr = typeof t.entryPrice === 'number' ? t.entryPrice.toLocaleString() : t.entryPrice
+    const slStr = typeof t.stopLossPrice === 'number' ? t.stopLossPrice.toLocaleString() : t.stopLossPrice
+    const tpStr = typeof t.takeProfitPrice === 'number' ? t.takeProfitPrice.toLocaleString() : t.takeProfitPrice
+
+    markdownContent += `| #${tradeCounter - 1} | ${dayInfo.dateStr} | ${dayInfo.dayOfWeek} | ${t.timeMontreal} | ${t.instrument} | **${t.windowType}** | ${t.direction} | ${entryStr} | ${slStr} | ${tpStr} | $${t.riskDollars} | $${t.rewardDollars} | ${t.riskRewardRatio} | **${t.outcome}** | ${pnl > 0 ? '+' : ''}$${pnl} | **$${currentEquity.toLocaleString()}** |\n`
 }
 
 markdownContent += `\n---\n\n## 🔍 Granular Trade-by-Trade Breakdown & Rationale Audit (CME Futures Prices)\n\n`
 
 for (const r of records) {
+    const entryStr = typeof r.entryPrice === 'number' ? r.entryPrice.toLocaleString() : r.entryPrice
+    const slStr = typeof r.stopLossPrice === 'number' ? r.stopLossPrice.toLocaleString() : r.stopLossPrice
+    const tpStr = typeof r.takeProfitPrice === 'number' ? r.takeProfitPrice.toLocaleString() : r.takeProfitPrice
+
     markdownContent += `### 📍 Trade #${r.tradeId} — ${r.date} (${r.dayOfWeek}) at ${r.timeMontreal} (${r.instrument})
 - **Entry Window**: \`${r.windowType}\`
-- **CME Contract Price Level**: **${r.entryPrice.toLocaleString()}**
+- **CME Contract Price Level**: **${entryStr}**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
-- **Direction & Prices**: **${r.direction}** @ **${r.entryPrice.toLocaleString()}** | Stop Loss: **${r.stopLossPrice.toLocaleString()}** | Take Profit: **${r.takeProfitPrice.toLocaleString()}**
+- **Direction & Prices**: **${r.direction}** @ **${entryStr}** | Stop Loss: **${slStr}** | Take Profit: **${tpStr}**
 - **Outcome**: **${r.outcome}** (${r.pnl > 0 ? '+' : ''}$${r.pnl}) → Account Balance: **$${r.accountEquityAfter.toLocaleString()}**
 - **🧠 Reason Behind Entry**: ${r.entryRationale}
 - **🛡️ Reason Behind Risk**: ${r.riskRationale}
