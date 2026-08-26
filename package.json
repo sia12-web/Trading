@@ -14,7 +14,8 @@
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "db:migrate": "node scripts/run-migrations.mjs",
-    "nikkei:ny-range": "npx tsx scripts/nikkei-last-ny-session-range.ts"
+    "nikkei:ny-range": "npx tsx scripts/nikkei-last-ny-session-range.ts",
+    "backtest:desk-month": "npx tsx scripts/backtest-desk-last-month.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",

@@ -20,6 +20,7 @@ A sophisticated day trading platform combining real-time market data, institutio
 - **[Usage & API Reference Manual](docs/USAGE_AND_API_REFERENCE.md)** — Complete REST API reference, environment setup, CLI scripts, Python backtests, and deployment
 - **[Paper Trading Mode](docs/PAPER_TRADING_MODE.md)** — Paper vs live trading execution flow and database rules
 - **[NY Session Quick Guide](docs/DAY_TRADER_SYSTEM_GUIDE.md)** — NY session desk clock and feature summary
+- **[Last-month desk backtest](docs/LAST_MONTH_DESK_BACKTEST.md)** — Replay of CALL ±10 / 1.5R on real 5-minute MYM and MNQ bars
 
 ## Project Structure
 

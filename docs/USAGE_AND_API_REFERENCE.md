@@ -223,6 +223,7 @@ npm run db:migrate
 - **`node scripts/run-migrations.mjs`**: Runs all unapplied `.sql` files in `supabase/migrations/` in chronological order against the target Supabase database.
 - **`node scripts/apply-missing-schema.mjs`**: Verifies and patches missing tables and RLS security policies.
 - **`node scripts/verify-oanda.mjs`**: Validates OANDA API key, account ID, and pricing stream connectivity.
+- **`npx tsx scripts/backtest-desk-last-month.ts`**: Replays the live NY desk (CALL ±10, 1.5R, Tradeify ladder) on Yahoo 5-minute MYM/MNQ bars and writes `docs/LAST_MONTH_DESK_BACKTEST.md`.
 
 ---
 

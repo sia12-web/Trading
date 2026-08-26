@@ -1,6 +1,6 @@
 /**
  * Dow (YM) Asia Narrow Range (<80 pts) Breakout Edge
- * 
+ *
  * Rules:
  * 1. Condition: YM Asia Session (20:00 ET [8 PM] -> 02:00 ET [2 AM]) High - Low Range < 80 points.
  * 2. Orders:
@@ -8,7 +8,16 @@
  *    - Sell Stop: Asia Low - 20 points
  * 3. Stop Loss: Midpoint of Asia Range ((Asia High + Asia Low) / 2)
  * 4. Take Profit: 1.50 * Risk Distance (1.5R)
+ *
+ * Callers must pass only the 20:00–02:00 ET bars (see selectDowAsiaSessionBars).
+ * The previous first-24-bars cap was 2 hours of 5m data — the window is 6 hours.
  */
+
+import { hourInTz, zonedCivilToUnix } from '@/lib/chart/sessionVwap'
+
+const ET = 'America/New_York'
+const ASIA_START_HOUR = 20
+const ASIA_END_HOUR = 2
 
 export type DowAsiaRangeBar = {
     time: number
@@ -33,15 +42,39 @@ export type DowAsiaRangeResult = {
     directiveSummary: string
 }
 
+function addCalendarDaysYmd(ymd: string, delta: number): string {
+    const [y, m, d] = ymd.split('-').map(Number)
+    const dt = new Date(Date.UTC(y!, m! - 1, d! + delta, 12, 0, 0))
+    return dt.toISOString().slice(0, 10)
+}
+
+/**
+ * Bars whose start time is inside 20:00 ET on the evening before `cashYmd`
+ * through 02:00 ET on `cashYmd` (exclusive of 02:00).
+ */
+export function selectDowAsiaSessionBars<T extends DowAsiaRangeBar>(
+    bars: T[],
+    cashYmd: string
+): T[] {
+    const prev = addCalendarDaysYmd(cashYmd, -1)
+    const start = zonedCivilToUnix(prev, ASIA_START_HOUR, ET)
+    const end = zonedCivilToUnix(cashYmd, ASIA_END_HOUR, ET)
+    return bars.filter((b) => {
+        if (!Number.isFinite(b.time) || b.time < start || b.time >= end) return false
+        const h = hourInTz(b.time, ET)
+        return h >= ASIA_START_HOUR || h < ASIA_END_HOUR
+    })
+}
+
 export function computeDowAsiaRangeEdge(bars: DowAsiaRangeBar[]): DowAsiaRangeResult | null {
     if (bars.length < 12) return null
 
     let asiaHigh = -Infinity
     let asiaLow = Infinity
 
-    // Scan bars in the 8:00 PM (20:00) to 2:00 AM (02:00) ET window (up to 24 x 15m bars / 360 x 1m bars)
-    for (let i = 0; i < Math.min(bars.length, 24); i++) {
+    for (let i = 0; i < bars.length; i++) {
         const b = bars[i]!
+        if (!Number.isFinite(b.high) || !Number.isFinite(b.low)) continue
         if (b.high > asiaHigh) asiaHigh = b.high
         if (b.low < asiaLow) asiaLow = b.low
     }

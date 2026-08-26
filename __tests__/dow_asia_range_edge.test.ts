@@ -1,5 +1,12 @@
 import assert from 'node:assert'
-import { computeDowAsiaRangeEdge, type DowAsiaRangeBar } from '../lib/trading/dowAsiaRangeEdge'
+import { zonedCivilToUnix } from '../lib/chart/sessionVwap'
+import {
+    computeDowAsiaRangeEdge,
+    createDowAsiaJournalPayload,
+    formatDowAsiaTelegramAlert,
+    selectDowAsiaSessionBars,
+    type DowAsiaRangeBar,
+} from '../lib/trading/dowAsiaRangeEdge'
 
 console.log('🧪 TESTING DOW ASIA NARROW RANGE (<80 PTS) EDGE MODULE...\n')
 
@@ -36,9 +43,23 @@ assert.strictEqual(wideRes.activeEdge, false)
 assert.strictEqual(wideRes.asiaRange, 150)
 console.log('   ✅ Wide Range (>=80 pts) Edge inactive check passed.')
 
-// 3. Telegram Alert & Journal Payload Test
-import { formatDowAsiaTelegramAlert, createDowAsiaJournalPayload } from '../lib/trading/dowAsiaRangeEdge'
+// 3. 20:00–02:00 ET window filter (not first-N bars)
+const asiaCash = '2026-08-19'
+const asiaStart = zonedCivilToUnix('2026-08-18', 20, 'America/New_York')
+const asiaFiltered = selectDowAsiaSessionBars(
+    [
+        { time: asiaStart - 600, open: 1, high: 1, low: 1, close: 1 },
+        { time: asiaStart, open: 2, high: 2, low: 2, close: 2 },
+        { time: zonedCivilToUnix('2026-08-19', 1.75, 'America/New_York'), open: 3, high: 3, low: 3, close: 3 },
+        { time: zonedCivilToUnix('2026-08-19', 2, 'America/New_York'), open: 4, high: 4, low: 4, close: 4 },
+    ],
+    asiaCash
+)
+assert.strictEqual(asiaFiltered.length, 2)
+assert.strictEqual(asiaFiltered[0]!.open, 2)
+console.log('   ✅ Asia 20:00–02:00 ET bar filter passed.')
 
+// 4. Telegram Alert & Journal Payload Test
 const tgAlert = formatDowAsiaTelegramAlert({
     side: 'LONG',
     asiaRange: 60,
