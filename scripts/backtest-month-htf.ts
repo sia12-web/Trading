@@ -134,11 +134,6 @@ for (let day = 1; day <= TOTAL_DAYS; day++) {
 
     totalAccountEquity += dayTotalPnl
     console.log(`   💰 Day ${day} Ending Account Equity: $${totalAccountEquity.toFixed(2)} (Day Net: $${dayTotalPnl.toFixed(2)})\n`)
-
-    if (totalAccountEquity >= TRADEIFY_STARTING_BALANCE + TRADEIFY_PROFIT_TARGET) {
-        console.log(`🎉 PROFIT TARGET REACHED ON DAY ${day}! ACCOUNT FUNDED AT $${totalAccountEquity.toFixed(2)}\n`)
-        break
-    }
 }
 
 // Summary statistics

@@ -7151,32 +7151,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           5m
         </span>
 
-        {/* Level toggle — only while this desk session has an active playbook */}
-        {deskSessionLive && deskLevelsActive && (
-          <button
-            type="button"
-            title={
-              showLevels
-                ? 'Hide AI/structure levels (Press L)'
-                : 'Show AI/structure levels (Press L)'
-            }
-            onClick={() => setShowLevels((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showLevels
-              ? 'bg-surface-600 border-surface-400 text-gray-200'
-              : 'bg-transparent border-surface-600 text-gray-600 hover:text-gray-400'
-              }`}
-          >
-            <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
-            {showLevels
-              ? 'Levels (L)'
-              : levels.some((l) => l.source === 'ai')
-                ? 'AI Levels (L)'
-                : 'Levels (L)'}
-            {levels.length > 0
-              ? ` (${levels.filter((l) => l.source === 'ai' || l.source === 'structure').length})`
-              : ''}
-          </button>
-        )}
+
 
         {/* IB H/L + BRK/REJ + ±10 (Press B) — remembered across refresh */}
         {deskSessionLive && (
