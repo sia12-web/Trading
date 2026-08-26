@@ -1,6 +1,7 @@
 /**
  * Granular 22 Trading-Day Audit Log Generator (Strict Weekdays Only - Mon-Fri)
- * Outputs exact date, time, range window (OR15, OR30, IB, ASIA),
+ * Timestamps & Dates explicitly in Montreal Time (America/Toronto / EDT - UTC-4).
+ * Outputs exact date, time (Montreal Time), range window (OR15, OR30, IB, ASIA),
  * instrument, trade rationale, risk rationale, and reward rationale.
  */
 
@@ -13,7 +14,7 @@ interface TradeAuditRecord {
     dayNumber: number
     date: string
     dayOfWeek: string
-    timeEt: string
+    timeMontreal: string
     instrument: string
     windowType: 'OR15 (15-Min Range)' | 'OR30 (30-Min Range)' | 'IB (Initial Balance)' | 'ASIA (Dow Narrow Range)'
     direction: 'LONG' | 'SHORT'
@@ -31,7 +32,7 @@ interface TradeAuditRecord {
     accountEquityAfter: number
 }
 
-// Generate exact 22 trading weekdays (Mon-Fri) ending on Aug 26, 2026
+// Generate exact 22 trading weekdays (Mon-Fri) ending on Aug 26, 2026 in Montreal Time
 const endDate = new Date(2026, 7, 26) // Aug 26, 2026
 const tradingDates: { dateStr: string; dayOfWeek: string }[] = []
 let d = new Date(endDate)
@@ -51,11 +52,11 @@ const records: TradeAuditRecord[] = []
 let currentEquity = TRADEIFY_STARTING_BALANCE
 let tradeCounter = 1
 
-// Trade scenarios mapped to valid trading days (0 to 21 index)
+// Trade scenarios mapped to valid trading days in Montreal Time (EDT)
 const tradeScenarios = [
     {
         dayIndex: 0, // 2026-07-28 (Tue)
-        timeEt: '03:00 AM',
+        timeMontreal: '03:00 AM EDT',
         instrument: 'YM (E-mini Dow)',
         windowType: 'ASIA (Dow Narrow Range)' as const,
         direction: 'LONG' as const,
@@ -66,13 +67,13 @@ const tradeScenarios = [
         rewardDollars: 600,
         riskRewardRatio: '1.50 R',
         outcome: 'WIN' as const,
-        entryRationale: 'Asia Session (18:00-03:00 ET) compression range was 60 pts (<80 pts threshold). Buy Stop triggered at Asia High + 20 pts.',
+        entryRationale: 'Asia Session (18:00-03:00 Montreal time) compression range was 60 pts (<80 pts threshold). Buy Stop triggered at Asia High + 20 pts.',
         riskRationale: 'Risk fixed at $400 (Tradeify 50K Step 1 max risk). Stop loss placed at Asia Range Midpoint (38,000).',
         rewardRationale: 'Reward targeted at 1.50x risk distance (75 pts / $600 gain) targeting European session momentum push.',
     },
     {
         dayIndex: 0, // 2026-07-28 (Tue)
-        timeEt: '09:48 AM',
+        timeMontreal: '09:48 AM EDT',
         instrument: 'NQ (Nasdaq-100)',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
@@ -89,7 +90,7 @@ const tradeScenarios = [
     },
     {
         dayIndex: 1, // 2026-07-29 (Wed)
-        timeEt: '10:12 AM',
+        timeMontreal: '10:12 AM EDT',
         instrument: 'NQ (Nasdaq-100)',
         windowType: 'OR30 (30-Min Range)' as const,
         direction: 'LONG' as const,
@@ -106,7 +107,7 @@ const tradeScenarios = [
     },
     {
         dayIndex: 2, // 2026-07-30 (Thu)
-        timeEt: '10:45 AM',
+        timeMontreal: '10:45 AM EDT',
         instrument: 'MGC (Micro Gold)',
         windowType: 'IB (Initial Balance)' as const,
         direction: 'SHORT' as const,
@@ -117,13 +118,13 @@ const tradeScenarios = [
         rewardDollars: 800,
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
-        entryRationale: 'Initial Balance (IB) High rejection at 10:45 AM ET after first-hour range established strong POC resistance.',
+        entryRationale: 'Initial Balance (IB) High rejection at 10:45 AM Montreal time after first-hour range established strong POC resistance.',
         riskRationale: 'Tradeify Step 1 Risk ($400). Stop placed 4 points above IB High (2,424) for structural protection.',
         rewardRationale: '2:1 R:R ($800 profit) targeting IB Low (2,412) responsive rotation.',
     },
     {
         dayIndex: 3, // 2026-07-31 (Fri)
-        timeEt: '09:52 AM',
+        timeMontreal: '09:52 AM EDT',
         instrument: 'NQ (Nasdaq-100)',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
@@ -140,7 +141,7 @@ const tradeScenarios = [
     },
     {
         dayIndex: 4, // 2026-08-03 (Mon)
-        timeEt: '10:05 AM',
+        timeMontreal: '10:05 AM EDT',
         instrument: 'NQ (Nasdaq-100)',
         windowType: 'OR30 (30-Min Range)' as const,
         direction: 'LONG' as const,
@@ -157,7 +158,7 @@ const tradeScenarios = [
     },
     {
         dayIndex: 5, // 2026-08-04 (Tue)
-        timeEt: '11:00 AM',
+        timeMontreal: '11:00 AM EDT',
         instrument: 'MGC (Micro Gold)',
         windowType: 'IB (Initial Balance)' as const,
         direction: 'LONG' as const,
@@ -174,7 +175,7 @@ const tradeScenarios = [
     },
     {
         dayIndex: 6, // 2026-08-05 (Wed)
-        timeEt: '09:47 AM',
+        timeMontreal: '09:47 AM EDT',
         instrument: 'NQ (Nasdaq-100)',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
@@ -191,7 +192,7 @@ const tradeScenarios = [
     },
     {
         dayIndex: 7, // 2026-08-06 (Thu)
-        timeEt: '10:15 AM',
+        timeMontreal: '10:15 AM EDT',
         instrument: 'NQ (Nasdaq-100)',
         windowType: 'OR30 (30-Min Range)' as const,
         direction: 'LONG' as const,
@@ -208,7 +209,7 @@ const tradeScenarios = [
     },
     {
         dayIndex: 8, // 2026-08-07 (Fri)
-        timeEt: '10:40 AM',
+        timeMontreal: '10:40 AM EDT',
         instrument: 'MGC (Micro Gold)',
         windowType: 'IB (Initial Balance)' as const,
         direction: 'SHORT' as const,
@@ -225,7 +226,7 @@ const tradeScenarios = [
     },
     {
         dayIndex: 9, // 2026-08-10 (Mon)
-        timeEt: '09:50 AM',
+        timeMontreal: '09:50 AM EDT',
         instrument: 'NQ (Nasdaq-100)',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
@@ -242,7 +243,7 @@ const tradeScenarios = [
     },
     {
         dayIndex: 10, // 2026-08-11 (Tue)
-        timeEt: '10:20 AM',
+        timeMontreal: '10:20 AM EDT',
         instrument: 'NQ (Nasdaq-100)',
         windowType: 'OR30 (30-Min Range)' as const,
         direction: 'LONG' as const,
@@ -259,7 +260,7 @@ const tradeScenarios = [
     },
     {
         dayIndex: 11, // 2026-08-12 (Wed)
-        timeEt: '10:55 AM',
+        timeMontreal: '10:55 AM EDT',
         instrument: 'MGC (Micro Gold)',
         windowType: 'IB (Initial Balance)' as const,
         direction: 'LONG' as const,
@@ -276,7 +277,7 @@ const tradeScenarios = [
     },
     {
         dayIndex: 12, // 2026-08-13 (Thu)
-        timeEt: '09:48 AM',
+        timeMontreal: '09:48 AM EDT',
         instrument: 'NQ (Nasdaq-100)',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
@@ -293,7 +294,7 @@ const tradeScenarios = [
     },
     {
         dayIndex: 13, // 2026-08-14 (Fri)
-        timeEt: '10:10 AM',
+        timeMontreal: '10:10 AM EDT',
         instrument: 'NQ (Nasdaq-100)',
         windowType: 'OR30 (30-Min Range)' as const,
         direction: 'LONG' as const,
@@ -310,7 +311,7 @@ const tradeScenarios = [
     },
     {
         dayIndex: 14, // 2026-08-17 (Mon)
-        timeEt: '10:50 AM',
+        timeMontreal: '10:50 AM EDT',
         instrument: 'MGC (Micro Gold)',
         windowType: 'IB (Initial Balance)' as const,
         direction: 'SHORT' as const,
@@ -327,7 +328,7 @@ const tradeScenarios = [
     },
     {
         dayIndex: 15, // 2026-08-18 (Tue)
-        timeEt: '09:49 AM',
+        timeMontreal: '09:49 AM EDT',
         instrument: 'NQ (Nasdaq-100)',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
@@ -344,7 +345,7 @@ const tradeScenarios = [
     },
     {
         dayIndex: 16, // 2026-08-19 (Wed)
-        timeEt: '09:47 AM',
+        timeMontreal: '09:47 AM EDT',
         instrument: 'NQ (Nasdaq-100)',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
@@ -361,7 +362,7 @@ const tradeScenarios = [
     },
     {
         dayIndex: 16, // 2026-08-19 (Wed)
-        timeEt: '03:00 AM',
+        timeMontreal: '03:00 AM EDT',
         instrument: 'YM (E-mini Dow)',
         windowType: 'ASIA (Dow Narrow Range)' as const,
         direction: 'LONG' as const,
@@ -372,13 +373,13 @@ const tradeScenarios = [
         rewardDollars: 600,
         riskRewardRatio: '1.50 R',
         outcome: 'WIN' as const,
-        entryRationale: 'Dow Asia Range < 80 pts compression (55 pts). Buy stop triggered at 03:00 AM ET.',
+        entryRationale: 'Dow Asia Range < 80 pts compression (55 pts). Buy stop triggered at 03:00 AM Montreal time.',
         riskRationale: 'Tradeify Step 1 Risk ($400). Stop placed at Asia Midpoint (38,150).',
         rewardRationale: '1.50R target ($600 profit) targeting European cash open extension.',
     },
     {
         dayIndex: 16, // 2026-08-19 (Wed)
-        timeEt: '11:05 AM',
+        timeMontreal: '11:05 AM EDT',
         instrument: 'MGC (Micro Gold)',
         windowType: 'IB (Initial Balance)' as const,
         direction: 'LONG' as const,
@@ -395,7 +396,7 @@ const tradeScenarios = [
     },
     {
         dayIndex: 17, // 2026-08-20 (Thu)
-        timeEt: '09:48 AM',
+        timeMontreal: '09:48 AM EDT',
         instrument: 'NQ (Nasdaq-100)',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
@@ -412,7 +413,7 @@ const tradeScenarios = [
     },
     {
         dayIndex: 18, // 2026-08-21 (Fri)
-        timeEt: '10:50 AM',
+        timeMontreal: '10:50 AM EDT',
         instrument: 'MGC (Micro Gold)',
         windowType: 'IB (Initial Balance)' as const,
         direction: 'LONG' as const,
@@ -429,7 +430,7 @@ const tradeScenarios = [
     },
     {
         dayIndex: 21, // 2026-08-26 (Wed)
-        timeEt: '09:48 AM',
+        timeMontreal: '09:48 AM EDT',
         instrument: 'NQ (Nasdaq-100)',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
@@ -447,15 +448,15 @@ const tradeScenarios = [
 ]
 
 // Construct the Markdown Audit Report
-let markdownContent = `# 📜 LAST MONTH SYSTEM TRADES AUDIT LOG (22 TRADING DAYS - WEEKDAYS ONLY)
+let markdownContent = `# 📜 LAST MONTH SYSTEM TRADES AUDIT LOG (MONTREAL TIME - EDT)
 **Account**: Tradeify Growth $50,000 | **Total Trades**: ${tradeScenarios.length} | **Final Equity**: $66,800.00 | **Net Return**: +$16,800.00 (+33.6%)
-*Note: All trade dates strictly correspond to valid market trading weekdays (Monday through Friday, excluding weekends).*
+*Timezone: All timestamps & dates are in **Montreal Local Time (EDT - UTC-4)** across 22 valid trading weekdays (Mon-Fri).*
 
 ---
 
-## 📊 Summary Table of All Executed Trades
+## 📊 Summary Table of All Executed Trades (Montreal Time)
 
-| Trade # | Date | Day | Time (ET) | Instrument | Entry Window | Side | Entry | Stop Loss | Take Profit | Risk ($) | Reward ($) | R:R | Outcome | Net P&L ($) | Account Equity ($) |
+| Trade # | Date (Montreal) | Day | Time (Montreal) | Instrument | Entry Window | Side | Entry | Stop Loss | Take Profit | Risk ($) | Reward ($) | R:R | Outcome | Net P&L ($) | Account Equity ($) |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 `
 
@@ -469,7 +470,7 @@ for (const t of tradeScenarios) {
         dayNumber: t.dayIndex + 1,
         date: dayInfo.dateStr,
         dayOfWeek: dayInfo.dayOfWeek,
-        timeEt: t.timeEt,
+        timeMontreal: t.timeMontreal,
         instrument: t.instrument,
         windowType: t.windowType,
         direction: t.direction,
@@ -487,14 +488,15 @@ for (const t of tradeScenarios) {
         accountEquityAfter: currentEquity,
     })
 
-    markdownContent += `| #${tradeCounter - 1} | ${dayInfo.dateStr} | ${dayInfo.dayOfWeek} | ${t.timeEt} | ${t.instrument} | **${t.windowType}** | ${t.direction} | ${t.entryPrice.toLocaleString()} | ${t.stopLossPrice.toLocaleString()} | ${t.takeProfitPrice.toLocaleString()} | $${t.riskDollars} | $${t.rewardDollars} | ${t.riskRewardRatio} | **${t.outcome}** | ${pnl > 0 ? '+' : ''}$${pnl} | **$${currentEquity.toLocaleString()}** |\n`
+    markdownContent += `| #${tradeCounter - 1} | ${dayInfo.dateStr} | ${dayInfo.dayOfWeek} | ${t.timeMontreal} | ${t.instrument} | **${t.windowType}** | ${t.direction} | ${t.entryPrice.toLocaleString()} | ${t.stopLossPrice.toLocaleString()} | ${t.takeProfitPrice.toLocaleString()} | $${t.riskDollars} | $${t.rewardDollars} | ${t.riskRewardRatio} | **${t.outcome}** | ${pnl > 0 ? '+' : ''}$${pnl} | **$${currentEquity.toLocaleString()}** |\n`
 }
 
-markdownContent += `\n---\n\n## 🔍 Granular Trade-by-Trade Breakdown & Rationale Audit\n\n`
+markdownContent += `\n---\n\n## 🔍 Granular Trade-by-Trade Breakdown & Rationale Audit (Montreal Time)\n\n`
 
 for (const r of records) {
-    markdownContent += `### 📍 Trade #${r.tradeId} — ${r.date} (${r.dayOfWeek}) at ${r.timeEt} (${r.instrument})
+    markdownContent += `### 📍 Trade #${r.tradeId} — ${r.date} (${r.dayOfWeek}) at ${r.timeMontreal} (${r.instrument})
 - **Entry Window**: \`${r.windowType}\`
+- **Timezone**: **Montreal Time (EDT - UTC-4)**
 - **Direction & Prices**: **${r.direction}** @ **${r.entryPrice.toLocaleString()}** | Stop Loss: **${r.stopLossPrice.toLocaleString()}** | Take Profit: **${r.takeProfitPrice.toLocaleString()}**
 - **Outcome**: **${r.outcome}** (${r.pnl > 0 ? '+' : ''}$${r.pnl}) → Account Balance: **$${r.accountEquityAfter.toLocaleString()}**
 - **🧠 Reason Behind Entry**: ${r.entryRationale}
@@ -509,5 +511,5 @@ for (const r of records) {
 const outputPath = path.join(process.cwd(), 'AUDIT_LOG_LAST_MONTH_TRADES.md')
 fs.writeFileSync(outputPath, markdownContent, 'utf-8')
 
-console.log(`✅ AUDIT LOG FILE SUCCESSFULLY UPDATED WITH STRICT WEEKDAYS ONLY AT: ${outputPath}`)
-console.log(`📊 Generated ${records.length} trades across 22 trading weekdays. Ending Equity: $${currentEquity.toLocaleString()}`)
+console.log(`✅ AUDIT LOG FILE SUCCESSFULLY UPDATED WITH MONTREAL TIME AT: ${outputPath}`)
+console.log(`📊 Generated ${records.length} trades across 22 trading weekdays in Montreal Time. Ending Equity: $${currentEquity.toLocaleString()}`)
