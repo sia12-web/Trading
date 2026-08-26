@@ -184,7 +184,7 @@ function setupFromMode(mode: string): BtSetup {
   return 'OR15'
 }
 
-function bandFor(side: 'LONG' | 'SHORT', center: number): { min: number; max: number } {
+function bandFor(_side: 'LONG' | 'SHORT', center: number): { min: number; max: number } {
   return { min: center - BAND, max: center + BAND }
 }
 
