@@ -36,6 +36,9 @@ const markets: MarketSimState[] = [
     { name: 'YM (E-mini Dow)', trendBias: 'BRACKETED_BALANCE', standAsideCount: 0, allowedCount: 0, winCount: 0, lossCount: 0, pnl: 0 },
     { name: 'MGC (Micro Gold)', trendBias: 'INITIATIVE_TREND', standAsideCount: 0, allowedCount: 0, winCount: 0, lossCount: 0, pnl: 0 },
     { name: 'CL (Crude Oil)', trendBias: 'BRACKETED_BALANCE', standAsideCount: 0, allowedCount: 0, winCount: 0, lossCount: 0, pnl: 0 },
+    { name: 'RTY (Russell 2000)', trendBias: 'INITIATIVE_TREND', standAsideCount: 0, allowedCount: 0, winCount: 0, lossCount: 0, pnl: 0 },
+    { name: '6E (Euro FX)', trendBias: 'BRACKETED_BALANCE', standAsideCount: 0, allowedCount: 0, winCount: 0, lossCount: 0, pnl: 0 },
+    { name: 'SI (Silver)', trendBias: 'INITIATIVE_TREND', standAsideCount: 0, allowedCount: 0, winCount: 0, lossCount: 0, pnl: 0 },
 ]
 
 // Simulate 22 trading days (1 month)
