@@ -193,10 +193,10 @@ export function formatLeoRangeLiquidityReminder(args: {
       ? 'US Range'
       : args.playbookMode === 'or30'
         ? 'OR30'
-      : args.playbookMode === 'ib'
-        ? tokyo
-          ? 'Tokyo IB'
-          : 'IB'
+        : args.playbookMode === 'ib'
+          ? tokyo
+            ? 'Tokyo IB'
+            : 'IB'
           : args.playbookMode === 'lunch_break'
             ? tokyo
               ? 'IB prep (next primary = Tokyo IB)'
@@ -227,10 +227,10 @@ export function formatLiveVoiceContextForLlm(ctx: LiveVoiceDeskContext): string 
       ? 'US Range strategy active'
       : ctx.session.rangeStrategy === 'or30'
         ? 'OR30 strategy active'
-      : ctx.session.rangeStrategy === 'ib'
-        ? tokyo
-          ? 'Tokyo IB strategy active'
-          : 'IB strategy active'
+        : ctx.session.rangeStrategy === 'ib'
+          ? tokyo
+            ? 'Tokyo IB strategy active'
+            : 'IB strategy active'
           : 'no range strategy (morning Open-range ladder)'
   const ladderChip = tokyo
     ? `AM ${ctx.session.morningAttempts}/${ctx.session.maxMorningAttempts} · US ${ctx.session.ibAttempts}/${ctx.session.maxIbAttempts} · IB ${ctx.session.lunchAttempts}/${ctx.session.maxLunchAttempts}`
@@ -242,10 +242,10 @@ export function formatLiveVoiceContextForLlm(ctx: LiveVoiceDeskContext): string 
       ? 'US Range (prior NYC H/L) — hunt stops just beyond; never the exact H/L'
       : ctx.session.playbookMode === 'or30'
         ? 'OR30 H/L — hunt stops just beyond; Open range secondary'
-      : ctx.session.playbookMode === 'ib'
-        ? tokyo
-          ? 'Tokyo IB H/L — hunt stops just beyond; Open range/US Range secondary'
-          : 'IB H/L — hunt stops just beyond; Open range/OR30 secondary'
+        : ctx.session.playbookMode === 'ib'
+          ? tokyo
+            ? 'Tokyo IB H/L — hunt stops just beyond; Open range/US Range secondary'
+            : 'IB H/L — hunt stops just beyond; Open range/OR30 secondary'
           : ctx.session.playbookMode === 'lunch_break'
             ? tokyo
               ? 'IB prep — levels update; primary bait becomes Tokyo IB when unlocked'
@@ -258,43 +258,42 @@ export function formatLiveVoiceContextForLlm(ctx: LiveVoiceDeskContext): string 
     ctx.levels.items.length === 0
       ? 'No AI levels loaded yet.'
       : ctx.levels.items
-          .map((l) => {
-            const dist = livePx != null ? l.price - livePx : null
-            const distStr = dist != null && livePx != null
-              ? ` (${dist >= 0 ? '+' : ''}${dist.toFixed(2)} pts from live price ${livePx.toLocaleString()})`
+        .map((l) => {
+          const dist = livePx != null ? l.price - livePx : null
+          const distStr = dist != null && livePx != null
+            ? ` (${dist >= 0 ? '+' : ''}${dist.toFixed(2)} pts from live price ${livePx.toLocaleString()})`
+            : ''
+          const tests = l.testedCount != null ? l.testedCount : null
+          const holds = l.successCount != null ? l.successCount : null
+          const holdRate =
+            tests != null && holds != null && tests > 0
+              ? ` holdRate=${Math.round((holds / tests) * 100)}%`
               : ''
-            const tests = l.testedCount != null ? l.testedCount : null
-            const holds = l.successCount != null ? l.successCount : null
-            const holdRate =
-              tests != null && holds != null && tests > 0
-                ? ` holdRate=${Math.round((holds / tests) * 100)}%`
+          const verdict =
+            l.marketVerdict != null
+              ? ` verdict=${l.marketVerdict}${tests != null ? ` tests=${tests}` : ''}${holds != null ? ` holds=${holds}` : ''}${holdRate}`
+              : tests != null
+                ? ` tests=${tests}${holds != null ? ` holds=${holds}` : ''}`
                 : ''
-            const verdict =
-              l.marketVerdict != null
-                ? ` verdict=${l.marketVerdict}${tests != null ? ` tests=${tests}` : ''}${holds != null ? ` holds=${holds}` : ''}${holdRate}`
-                : tests != null
-                  ? ` tests=${tests}${holds != null ? ` holds=${holds}` : ''}`
-                  : ''
-            return `- ${l.rank ?? 'level'} ${l.side} ${l.price}${distStr} [conviction ${l.conviction}/10${verdict}${l.reasoning ? `: ${l.reasoning.slice(0, 120)}` : ''}]`
-          })
-          .join('\n')
+          return `- ${l.rank ?? 'level'} ${l.side} ${l.price}${distStr} [conviction ${l.conviction}/10${verdict}${l.reasoning ? `: ${l.reasoning.slice(0, 120)}` : ''}]`
+        })
+        .join('\n')
 
   const ohlc = ctx.overnight.overnightOhlc
   const overnightLine = ctx.overnight.regime
-    ? `regime=${ctx.overnight.regime} conf=${ctx.overnight.regimeConfidence ?? 'n/a'} gap%=${
-        ctx.overnight.gapPercent ?? 'n/a'
-      } OHLC=${ohlc ? `${ohlc.open}/${ohlc.high}/${ohlc.low}/${ohlc.close}` : 'n/a'}`
+    ? `regime=${ctx.overnight.regime} conf=${ctx.overnight.regimeConfidence ?? 'n/a'} gap%=${ctx.overnight.gapPercent ?? 'n/a'
+    } OHLC=${ohlc ? `${ohlc.open}/${ohlc.high}/${ohlc.low}/${ohlc.close}` : 'n/a'}`
     : 'No regime_cache row for this instrument/date yet.'
 
   const workingLines =
     ctx.workingOrders.length === 0
       ? 'none pending'
       : ctx.workingOrders
-          .map(
-            (w) =>
-              `${w.direction} limit @ ${w.entryLevel} (SL: ${w.stopLoss}, TP: ${w.takeProfit ?? 'none'}, Origin: ${formatEntrySourceLabel(w.entrySource, playbookTitle)})`
-          )
-          .join('; ')
+        .map(
+          (w) =>
+            `${w.direction} limit @ ${w.entryLevel} (SL: ${w.stopLoss}, TP: ${w.takeProfit ?? 'none'}, Origin: ${formatEntrySourceLabel(w.entrySource, playbookTitle)})`
+        )
+        .join('; ')
 
   const activeLine = ctx.activePosition
     ? `${ctx.activePosition.direction} filled @ ${ctx.activePosition.fillPrice} (SL: ${ctx.activePosition.stopLoss}, TP: ${ctx.activePosition.takeProfit ?? 'none'}, Origin: ${formatEntrySourceLabel(ctx.activePosition.entrySource, playbookTitle)})`
@@ -322,40 +321,39 @@ Primary bait this playbook: ${primaryBait}
 Can place entry: ${ctx.session.canPlaceEntry} · Can manage: ${ctx.session.canManagePosition}
 Working limit orders: ${workingLines}
 Active filled position: ${activeLine}
-${
-    ctx.openBookManageText?.trim()
+${ctx.openBookManageText?.trim()
       ? `${ctx.openBookManageText.trim()}\n`
       : ''
-  }Session times: analyze ${ctx.session.times.analyzeStart} · open ${ctx.session.times.marketOpen} · morning Open range close ${ctx.session.times.entryClose} · ${midWindowLabel} ${ctx.session.times.ibEntry} · lunch confirm ${ctx.session.times.lunchClose} · ${lateWindowLabel} ${ctx.session.times.lunchRangeEntry} · cash close ${ctx.session.times.marketClose} (${ctx.session.times.tzLabel})
+    }Session times: analyze ${ctx.session.times.analyzeStart} · open ${ctx.session.times.marketOpen} · morning Open range close ${ctx.session.times.entryClose} · ${midWindowLabel} ${ctx.session.times.ibEntry} · lunch confirm ${ctx.session.times.lunchClose} · ${lateWindowLabel} ${ctx.session.times.lunchRangeEntry} · cash close ${ctx.session.times.marketClose} (${ctx.session.times.tzLabel})
 ${riskLine}
-Range-edge tail: ${
-    ctx.rangeTail?.present
+Range-edge tail: ${ctx.rangeTail?.present
       ? `${ctx.rangeTail.text ?? 'TAIL'} · edge=${ctx.rangeTail.edge} · tier=${ctx.rangeTail.tier} · ratio=${ctx.rangeTail.ratio} · ageSec=${ctx.rangeTail.ageSec} (other-TF footprint — prefer levels on this edge)`
       : 'none scored yet (do not invent tails)'
-  }
-AVWAP: ${ctx.avwap.bandNote}
+    }
+${ctx.htfContext?.leoPromptBlock
+      ? `${ctx.htfContext.leoPromptBlock}\n`
+      : 'Day TF Status: BALANCED (No active Day Timeframe excess tail scored yet)\n'
+    }AVWAP: ${ctx.avwap.bandNote}
 Overnight: ${overnightLine}
 ${ctx.overnight.newsSummary ? `News: ${ctx.overnight.newsSummary}` : ''}
-${
-  ctx.rangeLiquidityBriefText?.trim()
-    ? `${ctx.rangeLiquidityBriefText.trim()}\n`
-    : `${formatLeoRangeLiquidityReminder({
+${ctx.rangeLiquidityBriefText?.trim()
+      ? `${ctx.rangeLiquidityBriefText.trim()}\n`
+      : `${formatLeoRangeLiquidityReminder({
         instrument: ctx.voice.instrument,
         playbookMode: ctx.session.playbookMode,
       })}\n`
-}Playbook focus (${playbookTitle}): ${ctx.levels.focusSide} — ${ctx.levels.focusHint}
+    }Playbook focus (${playbookTitle}): ${ctx.levels.focusSide} — ${ctx.levels.focusHint}
 AI levels (${ctx.levels.count}, source=${ctx.levels.source}):
 ${levels}
-User pins this session: ${
-    ctx.userPins.length === 0
+User pins this session: ${ctx.userPins.length === 0
       ? 'none yet'
       : ctx.userPins
-          .map(
-            (p) =>
-              `${p.price}${p.side ? ` ${p.side}` : ''}${p.reason ? ` (${p.reason})` : ''}`
-          )
-          .join('; ')
-  }`
+        .map(
+          (p) =>
+            `${p.price}${p.side ? ` ${p.side}` : ''}${p.reason ? ` (${p.reason})` : ''}`
+        )
+        .join('; ')
+    }`
 }
 
 export function buildLiveVoiceUserMessage(transcript: string, ctx: LiveVoiceDeskContext): string {

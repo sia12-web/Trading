@@ -76,6 +76,7 @@ import {
   loadTradeifySessionSnapshot,
   toTradeifyLeoSnapshot,
 } from '@/lib/trading/tradeifySessionState'
+import { computeHTFContextState, type HTFContextState, type HTFBarInput } from '@/lib/trading/htfSpecialist'
 import { getYahooCandles } from '@/lib/yahoo/candles'
 import { getYahooQuote } from '@/lib/yahoo/quote'
 import { getOandaCandles } from '@/lib/oanda/candles'
@@ -160,6 +161,7 @@ export type LiveVoiceDeskContext = {
     wickPts: number | null
     bodyPts: number | null
   } | null
+  htfContext?: import('@/lib/trading/htfSpecialist').HTFContextState | null
   avwap: {
     openLabel: string
     lookbackTradingDays: number
@@ -340,14 +342,14 @@ export async function buildLiveVoiceDeskContext(
 
   const activePosition = openPos
     ? {
-        id: openPos.id as string,
-        instrument: openPos.instrument as string,
-        direction: openPos.direction as string,
-        fillPrice: Number(openPos.fill_price ?? openPos.entry_level ?? 0),
-        stopLoss: Number(openPos.stop_loss ?? 0),
-        takeProfit: openPos.take_profit != null ? Number(openPos.take_profit) : null,
-        entrySource: (openPos.entry_source as string) || 'manual_pin',
-      }
+      id: openPos.id as string,
+      instrument: openPos.instrument as string,
+      direction: openPos.direction as string,
+      fillPrice: Number(openPos.fill_price ?? openPos.entry_level ?? 0),
+      stopLoss: Number(openPos.stop_loss ?? 0),
+      takeProfit: openPos.take_profit != null ? Number(openPos.take_profit) : null,
+      entrySource: (openPos.entry_source as string) || 'manual_pin',
+    }
     : null
 
   const attendance = await getTodayAttendance(supabase, userId, market, now)
@@ -361,12 +363,12 @@ export async function buildLiveVoiceDeskContext(
     exitReason: (t.exit_reason as string) || null,
     rangeBucket:
       (t as { range_bucket?: string | null }).range_bucket as
-        | 'morning'
-        | 'ib'
-        | 'lunch_range'
-        | 'other'
-        | null
-        | undefined,
+      | 'morning'
+      | 'ib'
+      | 'lunch_range'
+      | 'other'
+      | null
+      | undefined,
   }))
   const voice = resolveLiveVoiceStatus({
     now,
@@ -402,55 +404,55 @@ export async function buildLiveVoiceDeskContext(
 
   const overnight = regimeRow
     ? {
-        ready: Number(regimeRow.recommendation_confidence ?? 0) >= 65,
-        regime: typeof regimeRow.regime === 'string' ? regimeRow.regime : null,
-        regimeConfidence:
-          regimeRow.regime_confidence != null
-            ? Number(regimeRow.regime_confidence)
-            : null,
-        recommendationConfidence:
-          regimeRow.recommendation_confidence != null
-            ? Number(regimeRow.recommendation_confidence)
-            : null,
-        gapPercent:
-          regimeRow.gap_percent != null ? Number(regimeRow.gap_percent) : null,
-        overnightOhlc: {
-          open:
-            regimeRow.overnight_open != null
-              ? Number(regimeRow.overnight_open)
-              : null,
-          high:
-            regimeRow.overnight_high != null
-              ? Number(regimeRow.overnight_high)
-              : null,
-          low:
-            regimeRow.overnight_low != null
-              ? Number(regimeRow.overnight_low)
-              : null,
-          close:
-            regimeRow.overnight_close != null
-              ? Number(regimeRow.overnight_close)
-              : null,
-        },
-        newsSummary: Array.isArray(regimeRow.news_headlines)
-          ? regimeRow.news_headlines
-              .slice(0, 3)
-              .map((h: { headline?: string }) => h?.headline)
-              .filter(Boolean)
-              .join(' | ') || null
+      ready: Number(regimeRow.recommendation_confidence ?? 0) >= 65,
+      regime: typeof regimeRow.regime === 'string' ? regimeRow.regime : null,
+      regimeConfidence:
+        regimeRow.regime_confidence != null
+          ? Number(regimeRow.regime_confidence)
           : null,
-        source: 'regime_cache' as const,
-      }
+      recommendationConfidence:
+        regimeRow.recommendation_confidence != null
+          ? Number(regimeRow.recommendation_confidence)
+          : null,
+      gapPercent:
+        regimeRow.gap_percent != null ? Number(regimeRow.gap_percent) : null,
+      overnightOhlc: {
+        open:
+          regimeRow.overnight_open != null
+            ? Number(regimeRow.overnight_open)
+            : null,
+        high:
+          regimeRow.overnight_high != null
+            ? Number(regimeRow.overnight_high)
+            : null,
+        low:
+          regimeRow.overnight_low != null
+            ? Number(regimeRow.overnight_low)
+            : null,
+        close:
+          regimeRow.overnight_close != null
+            ? Number(regimeRow.overnight_close)
+            : null,
+      },
+      newsSummary: Array.isArray(regimeRow.news_headlines)
+        ? regimeRow.news_headlines
+          .slice(0, 3)
+          .map((h: { headline?: string }) => h?.headline)
+          .filter(Boolean)
+          .join(' | ') || null
+        : null,
+      source: 'regime_cache' as const,
+    }
     : {
-        ready: false,
-        regime: null,
-        regimeConfidence: null,
-        recommendationConfidence: null,
-        gapPercent: null,
-        overnightOhlc: null,
-        newsSummary: null,
-        source: 'none' as const,
-      }
+      ready: false,
+      regime: null,
+      regimeConfidence: null,
+      recommendationConfidence: null,
+      gapPercent: null,
+      overnightOhlc: null,
+      newsSummary: null,
+      source: 'none' as const,
+    }
 
   // AI levels from level_history — query by instrument (fallback across desk history if needed)
   const cutoff = new Date(now)
@@ -551,6 +553,7 @@ export async function buildLiveVoiceDeskContext(
 
   let rangeLiquidityBriefText: string | null = null
   let openBookManageText: string | null = null
+  let m5Bars: HTFBarInput[] = []
   try {
     const analysisMode = deskPlaybookAnalysisMode(playbookMode, contextInstrument)
     const [h1, m5Yahoo, m5Oanda, quote] = await Promise.all([
@@ -568,7 +571,7 @@ export async function buildLiveVoiceDeskContext(
       close: c.close,
       volume: Math.max(1, c.volume || 0),
     }))
-    const m5Bars = (m5?.candles ?? []).map((c) => ({
+    m5Bars = (m5?.candles ?? []).map((c) => ({
       time: c.time,
       open: c.open,
       high: c.high,
@@ -607,7 +610,7 @@ export async function buildLiveVoiceDeskContext(
           livePrice: tip,
           stopLoss: activePosition.stopLoss,
           takeProfit: activePosition.takeProfit,
-          rvol: computeRvol(m5Bars.map((b) => b.volume)),
+          rvol: computeRvol(m5Bars.map((b) => b.volume || 0)),
           structure,
         })
       }
@@ -623,6 +626,19 @@ export async function buildLiveVoiceDeskContext(
       stopLoss: activePosition.stopLoss,
       takeProfit: activePosition.takeProfit,
     })
+  }
+
+  let htfContext: HTFContextState | null = null
+  try {
+    if (m5Bars.length > 0) {
+      htfContext = computeHTFContextState({
+        instrument: contextInstrument,
+        candles5m: m5Bars,
+        asOfUnix: Math.floor(now.getTime() / 1000),
+      })
+    }
+  } catch {
+    htfContext = null
   }
 
   let levelItems = playbook.levels.map(toContextLevel)
@@ -701,6 +717,7 @@ export async function buildLiveVoiceDeskContext(
     rangeLiquidityBriefText,
     openBookManageText,
     rangeTail,
+    htfContext,
     avwap: {
       openLabel: clock.openLabel,
       lookbackTradingDays: AVWAP_LOOKBACK_TRADING_DAYS,

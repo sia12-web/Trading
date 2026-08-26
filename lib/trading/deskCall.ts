@@ -377,12 +377,10 @@ function buildCallHoverText(args: {
     args.side === 'WAIT' || !args.range || args.entryPrice == null
       ? 'Hunt nothing new until Control is ONE-TF, or Drive/Test-Drive gives a morning side.'
       : args.side === 'LONG'
-        ? `Hunt: ±${CALL_BAND_POINTS} below ${speakRange(args.range.key, tokyo)} low ${args.entryPrice}${
-            args.midAllowed ? ' (mid is a pullback in the same CALL)' : ''
-          }`
-        : `Hunt: ±${CALL_BAND_POINTS} above ${speakRange(args.range.key, tokyo)} high ${args.entryPrice}${
-            args.midAllowed ? ' (mid is a pullback in the same CALL)' : ''
-          }`
+        ? `Hunt: ±${CALL_BAND_POINTS} below ${speakRange(args.range.key, tokyo)} low ${args.entryPrice}${args.midAllowed ? ' (mid is a pullback in the same CALL)' : ''
+        }`
+        : `Hunt: ±${CALL_BAND_POINTS} above ${speakRange(args.range.key, tokyo)} high ${args.entryPrice}${args.midAllowed ? ' (mid is a pullback in the same CALL)' : ''
+        }`
 
   return [
     header,
@@ -436,9 +434,8 @@ export function assertDeskCallEntry(args: {
   if (args.direction && args.direction !== side) {
     return {
       ok: false,
-      message: `CALL is ${side} — this ticket must be a ${
-        side === 'LONG' ? 'buy' : 'sell'
-      }.`,
+      message: `CALL is ${side} — this ticket must be a ${side === 'LONG' ? 'buy' : 'sell'
+        }.`,
     }
   }
   if (args.edge && !deskCallLegalEdges(args.call).includes(args.edge)) {
@@ -716,12 +713,22 @@ export function computeDeskCall(args: {
   peerSide?: DeskCallSide | null
   /** Same Control snapshot as the Ctrl chip — CALL must not recompute a second RF. */
   control?: MarketControl | null
+  htfStandAside?: { isStandAside: boolean; reason: string; directiveSummary: string } | null
 }): DeskCall {
   const instrument = String(args.instrument || '')
-  const bookLocked = args.bookLocked === true
+  let bookLocked = args.bookLocked === true
   if (!Number.isFinite(args.asOfUnix)) {
     return waiting(instrument, { bookLocked })
   }
+
+  // Stand-Aside Engine Override: Automatically disable regular calls & lock book if active
+  if (args.htfStandAside?.isStandAside) {
+    return waiting(instrument, {
+      bookLocked: true,
+      reason: `STAND ASIDE ACTIVE (${args.htfStandAside.reason}): Regular calls disabled by HTF Specialist. ${args.htfStandAside.directiveSummary}`,
+    })
+  }
+
   const raw = Array.isArray(args.candles) ? args.candles : []
   const candles = raw.filter(
     (c) =>

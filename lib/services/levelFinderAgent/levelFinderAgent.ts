@@ -73,9 +73,9 @@ class LevelFinderAgent {
     const prompt = this.buildAnalysisPrompt(request)
     const mode =
       request.analysis_mode === 'ib' ||
-      request.analysis_mode === 'us_range' ||
-      request.analysis_mode === 'or30' ||
-      request.analysis_mode === 'afternoon'
+        request.analysis_mode === 'us_range' ||
+        request.analysis_mode === 'or30' ||
+        request.analysis_mode === 'afternoon'
         ? request.analysis_mode
         : 'morning'
     const systemPrompt = this.buildSystemPrompt(
@@ -537,16 +537,16 @@ OR30 PLAYBOOK MODE (NY 30-minute range — slot 2):
 - PRIMARY BAIT this run: OR30 H/L. Prefer stop pools beyond OR30 extremes + POC/AVWAP. Open range is secondary only.
 - Use ONLY the DESK BRIEF + RANGE LIQUIDITY MAP + candle/AVWAP/volume-profile tables. Frame as OR30 playbook — not Open range, not IB.
 `
-        : analysisMode === 'ib'
-          ? tokyo
-            ? `
+          : analysisMode === 'ib'
+            ? tokyo
+              ? `
 IB PLAYBOOK MODE (Tokyo Initial Balance — slot 3):
 - Desk is live-trading Tokyo IB (${lateWindow} ${tzLabel}) — up to 2 probes (progressive risk) (entries within ±10 pts of Tokyo IB H / L). Earlier Open range/US Range fills do not lock this window.
 - PRIMARY BAIT this run: Tokyo IB H/L. Prefer stop pools beyond Tokyo IB extremes + POC/AVWAP. Open range/US Range are secondary only.
 - Build tradeable IB levels: IB high/low breakout and mean-reversion magnets, FLIP/RETEST from the brief, AVWAP/POC confluence.
 - Use ONLY the DESK BRIEF + RANGE LIQUIDITY MAP + candle tables. Frame as Tokyo IB playbook — not US Range, not morning Open range.
 `
-            : `
+              : `
 IB PLAYBOOK MODE (Initial Balance entry refresh — NY slot 3):
 - Desk is live-trading the IB window (${lateWindow} ${tzLabel}) — up to 2 probes (progressive risk) (entries within ±10 pts of IB H / L). Morning Open range / OR30 do not lock this window.
 - IB = context BOX, not the entry magnet once a swing exists. First tag of IB H/L is NOT the entry (label waiting / liquidity building).
@@ -555,7 +555,7 @@ IB PLAYBOOK MODE (Initial Balance entry refresh — NY slot 3):
 - PRIMARY levels: the liquidity swing. Means = session VWAP / yPOC / dPOC. Do NOT return first-tag IB break as a valid entry. Prefer stop pools beyond the swing + POC/AVWAP. Open range / OR30 are secondary only.
 - Use ONLY the DESK BRIEF + RANGE LIQUIDITY MAP + candle/AVWAP/volume-profile tables. Frame levels as IB playbook entries (not morning Open range, not OR30).
 `
-          : analysisMode === 'afternoon'
+            : analysisMode === 'afternoon'
               ? `
 AFTERNOON MODE (watch-only — this run is the post-entry memory refresh):
 - Entry windows for the day are DONE (or fills already used). You are building the AFTERNOON WATCH list for chart memory through cash close (${close} ${tzLabel}).
@@ -773,7 +773,7 @@ How to use it:
         request.analysis_mode === 'ib' ||
         request.analysis_mode === 'us_range' ||
         request.analysis_mode === 'or30') &&
-      request.afternoonBriefText
+        request.afternoonBriefText
         ? request.afternoonBriefText
         : ''
     const rangeLiquiditySection = request.rangeLiquidityBriefText?.trim()
@@ -781,6 +781,9 @@ How to use it:
       : ''
     const peerSection = request.peerTapeText?.trim()
       ? `\n${request.peerTapeText.trim()}\n`
+      : ''
+    const htfContextSection = request.htfContextText?.trim()
+      ? `\n${request.htfContextText.trim()}\n`
       : ''
 
     const clock = deskClockFor(request.index)
@@ -797,10 +800,10 @@ How to use it:
         ? 'Mode: US RANGE PLAYBOOK refresh — prior NYC session range levels for Nikkei slot 2 (after Open range; already shaped overnight).'
         : request.analysis_mode === 'or30'
           ? 'Mode: OR30 PLAYBOOK refresh — 30-minute range levels for the 10:00–10:30 Montreal entry window (slot 2).'
-        : request.analysis_mode === 'ib'
-          ? tokyo
-            ? 'Mode: TOKYO IB PLAYBOOK refresh — tradeable Initial Balance levels for the 10:00–15:00 local entry window (slot 3).'
-            : 'Mode: IB PLAYBOOK refresh — tradeable Initial Balance levels for the 10:30–15:15 Montreal entry window (slot 3).'
+          : request.analysis_mode === 'ib'
+            ? tokyo
+              ? 'Mode: TOKYO IB PLAYBOOK refresh — tradeable Initial Balance levels for the 10:00–15:00 local entry window (slot 3).'
+              : 'Mode: IB PLAYBOOK refresh — tradeable Initial Balance levels for the 10:30–15:15 Montreal entry window (slot 3).'
             : request.analysis_mode === 'afternoon'
               ? 'Mode: AFTERNOON WATCH refresh (entry windows done — levels for chart memory through cash close).'
               : 'Mode: Morning Open-range playbook / Level Finder.'
@@ -811,7 +814,7 @@ Current Price: ${request.current_price}
 Desk clock: ${clock.openLabel} open · morning Open range until ${entryUntil} ${tzLabel} · ${midLabel} mid window · lunch ${lunchAt} ${tzLabel} (confirm-close) · ${lateLabel} late window · cash close ${closeAt} ${tzLabel}
 ${modeLine}
 Methodology is identical for DOW, NASDAQ, and NIKKEI — only this clock and the three named ranges differ (${tokyo ? 'Open range → US Range → Tokyo IB' : 'Open range → OR30 → IB'}).
-${rangeLiquiditySection}${afternoonSection}${peerSection}
+${rangeLiquiditySection}${afternoonSection}${peerSection}${htfContextSection}
 HARD GEOMETRY (desk rejects violations):
 - resistance / SHORT levels MUST be ABOVE Current Price (offer side) — you cannot short a resistance below the market.
 - support / BUY levels MUST be BELOW Current Price (bid side) — you cannot buy a support above the market.
@@ -834,25 +837,24 @@ Work through this before choosing levels:
 5. Does that stop-pool zone also sit near a printed AVWAP band, POC/HVN, and/or a psychological round? Prefer levels with that confluence. Note if POC is inside vs outside the active range.
 6. For each level, mentally place: ENTRY (liquidity), STOP (just beyond the round/structure so the magnet is not your exact stop), TAKE PROFIT (next opposing round / session extreme / AVWAP). Mention rounds when they matter for SL or TP.
 7. If PEER TAPE is present: apply CONFIRM/DIVERGE to conviction only — do not change level prices to match the peer.
-${
-  request.analysis_mode === 'us_range'
-    ? `8. US Range playbook: cross-check every candidate against the RANGE LIQUIDITY MAP (US Range H/L) + DESK BRIEF. Prefer stop pools beyond prior NYC extremes for the live US Range attempt.
+${request.analysis_mode === 'us_range'
+        ? `8. US Range playbook: cross-check every candidate against the RANGE LIQUIDITY MAP (US Range H/L) + DESK BRIEF. Prefer stop pools beyond prior NYC extremes for the live US Range attempt.
 `
-    : request.analysis_mode === 'ib'
-      ? tokyo
-        ? `8. Tokyo IB playbook: cross-check every candidate against the RANGE LIQUIDITY MAP (Tokyo IB H/L) + DESK BRIEF. Prefer stop pools beyond IB extremes for the live IB attempt (slot 3).
+        : request.analysis_mode === 'ib'
+          ? tokyo
+            ? `8. Tokyo IB playbook: cross-check every candidate against the RANGE LIQUIDITY MAP (Tokyo IB H/L) + DESK BRIEF. Prefer stop pools beyond IB extremes for the live IB attempt (slot 3).
 `
-        : `8. IB playbook: IB H/L is the context box. First IB tag is NOT the entry. Cross-check every candidate against the RANGE LIQUIDITY MAP. Tradable = liquidity swing at/beyond IB; means = VWAP / yPOC / dPOC. Do not emit first-tag IB break as the entry.
+            : `8. IB playbook: IB H/L is the context box. First IB tag is NOT the entry. Cross-check every candidate against the RANGE LIQUIDITY MAP. Tradable = liquidity swing at/beyond IB; means = VWAP / yPOC / dPOC. Do not emit first-tag IB break as the entry.
 `
-    : request.analysis_mode === 'or30'
-      ? `8. OR30 playbook: cross-check every candidate against the RANGE LIQUIDITY MAP (OR30 H/L) + DESK BRIEF. Prefer stop pools beyond the 30-minute range extremes for the live OR30 attempt (slot 2).
+          : request.analysis_mode === 'or30'
+            ? `8. OR30 playbook: cross-check every candidate against the RANGE LIQUIDITY MAP (OR30 H/L) + DESK BRIEF. Prefer stop pools beyond the 30-minute range extremes for the live OR30 attempt (slot 2).
 `
-      : request.analysis_mode === 'afternoon'
-          ? `8. Afternoon: cross-check every candidate against the RANGE LIQUIDITY MAP + AFTERNOON DESK BRIEF (which ranges held vs broke, tip vs AVWAP/POC). Prefer those magnets.
+            : request.analysis_mode === 'afternoon'
+              ? `8. Afternoon: cross-check every candidate against the RANGE LIQUIDITY MAP + AFTERNOON DESK BRIEF (which ranges held vs broke, tip vs AVWAP/POC). Prefer those magnets.
 `
-          : `8. Morning Open range: prefer first-15m stop pools from the RANGE LIQUIDITY MAP for the morning attempt; overnight/London only seeds until Open range is formed.
+              : `8. Morning Open range: prefer first-15m stop pools from the RANGE LIQUIDITY MAP for the morning attempt; overnight/London only seeds until Open range is formed.
 `
-}
+      }
 Then identify 2-5 levels where INSTITUTIONS ENTER — i.e. retail stop-loss liquidity pools. Rules:
 - Do NOT return yesterday's / overnight / Asia / London exact high or low as the entry print — those are retail bait. Return the stop-pool JUST BEYOND them (and say which stops you target).
 - Round numbers are NOT banned — use them. Prefer entries that lean on a round when structure agrees; place stops just beyond the round; aim take-profits at the next clean round or HTF magnet.
