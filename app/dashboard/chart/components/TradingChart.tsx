@@ -1966,8 +1966,8 @@ export function TradingChart({
     const chip = advice.chip
     setIbExtendBadge((prev) => (prev === chip ? prev : chip))
     const hover = `${advice.message}${advice.entryAdvice != null && advice.stopAdvice != null
-        ? `\nPullback ~${advice.entryAdvice} · stop ~${advice.stopAdvice} (advise only — you place on TradingView).`
-        : ''
+      ? `\nPullback ~${advice.entryAdvice} · stop ~${advice.stopAdvice} (advise only — you place on TradingView).`
+      : ''
       }\nAdvice only. Does not place. CALL ON still gates tickets.`
     setIbExtendHover((prev) => (prev === hover ? prev : hover))
 
@@ -7127,8 +7127,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
   return (
     <div
       className={`flex flex-col gap-2 ${isFullscreen
-          ? 'fixed inset-0 z-[100] bg-[#0d1117] p-3 h-screen w-screen'
-          : 'h-full w-full'
+        ? 'fixed inset-0 z-[100] bg-[#0d1117] p-3 h-screen w-screen'
+        : 'h-full w-full'
         }`}
     >
       {/* ── Toolbar ─────────────────────────────────────────────────────────── */}
@@ -7162,8 +7162,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             }
             onClick={() => setShowLevels((v) => !v)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showLevels
-                ? 'bg-surface-600 border-surface-400 text-gray-200'
-                : 'bg-transparent border-surface-600 text-gray-600 hover:text-gray-400'
+              ? 'bg-surface-600 border-surface-400 text-gray-200'
+              : 'bg-transparent border-surface-600 text-gray-600 hover:text-gray-400'
               }`}
           >
             <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
@@ -7189,8 +7189,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             }
             onClick={() => setShowIbBreakouts((v) => !v)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showIbBreakouts
-                ? 'bg-blue-600/30 border-blue-500/50 text-blue-100'
-                : 'bg-transparent border-surface-600 text-gray-500 hover:text-blue-200 hover:border-blue-500/40'
+              ? 'bg-blue-600/30 border-blue-500/50 text-blue-100'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-blue-200 hover:border-blue-500/40'
               }`}
           >
             <span className={`w-2 h-2 rounded-full inline-block ${showIbBreakouts ? 'bg-blue-400' : 'bg-gray-600'}`} />
@@ -7213,8 +7213,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             }
             onClick={() => setShowYesterdayProfile((v) => !v)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showYesterdayProfile
-                ? 'bg-amber-600/30 border-amber-500/50 text-amber-100'
-                : 'bg-transparent border-surface-600 text-gray-500 hover:text-amber-200 hover:border-amber-500/40'
+              ? 'bg-amber-600/30 border-amber-500/50 text-amber-100'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-amber-200 hover:border-amber-500/40'
               }`}
           >
             <span className={`w-2 h-2 rounded-full inline-block ${showYesterdayProfile ? 'bg-amber-400' : 'bg-gray-600'}`} />
@@ -7235,8 +7235,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             }
             onClick={() => setShowSessionBands((v) => !v)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showSessionBands
-                ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-100'
-                : 'bg-transparent border-surface-600 text-gray-500 hover:text-emerald-200 hover:border-emerald-500/40'
+              ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-100'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-emerald-200 hover:border-emerald-500/40'
               }`}
           >
             <span className={`w-2 h-2 rounded-full inline-block ${showSessionBands ? 'bg-emerald-400' : 'bg-gray-600'}`} />
@@ -7254,8 +7254,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             }
             onClick={() => setShowOpeningActivity((v) => !v)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showOpeningActivity
-                ? 'bg-cyan-600/30 border-cyan-500/50 text-cyan-100'
-                : 'bg-transparent border-surface-600 text-gray-500 hover:text-cyan-200 hover:border-cyan-500/40'
+              ? 'bg-cyan-600/30 border-cyan-500/50 text-cyan-100'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-cyan-200 hover:border-cyan-500/40'
               }`}
           >
             <span className={`w-2 h-2 rounded-full inline-block ${showOpeningActivity ? 'bg-cyan-400' : 'bg-gray-600'}`} />
@@ -7274,8 +7274,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             }
             onClick={() => setShowMarketControl((v) => !v)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showMarketControl
-                ? 'bg-indigo-600/30 border-indigo-500/50 text-indigo-100'
-                : 'bg-transparent border-surface-600 text-gray-500 hover:text-indigo-200 hover:border-indigo-500/40'
+              ? 'bg-indigo-600/30 border-indigo-500/50 text-indigo-100'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-indigo-200 hover:border-indigo-500/40'
               }`}
           >
             <span className={`w-2 h-2 rounded-full inline-block ${showMarketControl ? 'bg-indigo-400' : 'bg-gray-600'}`} />
@@ -7315,8 +7315,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             }
             onClick={() => setShowOr15((v) => !v)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showOr15
-                ? 'bg-amber-600/30 border-amber-500/50 text-amber-100'
-                : 'bg-transparent border-surface-600 text-gray-500 hover:text-amber-200 hover:border-amber-500/40'
+              ? 'bg-amber-600/30 border-amber-500/50 text-amber-100'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-amber-200 hover:border-amber-500/40'
               }`}
           >
             <span className={`w-2 h-2 rounded-full inline-block ${showOr15 ? 'bg-amber-400' : 'bg-gray-600'}`} />
@@ -7340,8 +7340,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             }
             onClick={() => setShowUsRange((v) => !v)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showUsRange
-                ? 'bg-red-600/30 border-red-500/50 text-red-100'
-                : 'bg-transparent border-surface-600 text-gray-500 hover:text-red-200 hover:border-red-500/40'
+              ? 'bg-red-600/30 border-red-500/50 text-red-100'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-red-200 hover:border-red-500/40'
               }`}
           >
             <span className={`w-2 h-2 rounded-full inline-block ${showUsRange ? 'bg-red-500' : 'bg-gray-600'}`} />
@@ -7360,8 +7360,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             }
             onClick={() => setShowOr30((v) => !v)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showOr30
-                ? 'bg-teal-600/30 border-teal-500/50 text-teal-100'
-                : 'bg-transparent border-surface-600 text-gray-500 hover:text-teal-200 hover:border-teal-500/40'
+              ? 'bg-teal-600/30 border-teal-500/50 text-teal-100'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-teal-200 hover:border-teal-500/40'
               }`}
           >
             <span className={`w-2 h-2 rounded-full inline-block ${showOr30 ? 'bg-teal-400' : 'bg-gray-600'}`} />
@@ -7381,8 +7381,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         {ibProximity && (
           <span
             className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-extrabold uppercase tracking-wide animate-pulse shadow-sm ${ibProximity.level === 'HIGH'
-                ? 'border-amber-500/80 bg-amber-950/80 text-amber-200'
-                : 'border-purple-500/80 bg-purple-950/80 text-purple-200'
+              ? 'border-amber-500/80 bg-amber-950/80 text-amber-200'
+              : 'border-purple-500/80 bg-purple-950/80 text-purple-200'
               }`}
             title={`Price is testing Initial Balance ${ibProximity.level} (${ibProximity.price.toLocaleString()})`}
           >
@@ -7394,10 +7394,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         {edgeProximity && canPlaceOrder && (
           <span
             className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-extrabold uppercase tracking-wide animate-pulse shadow-sm ${edgeProximity.edge === 'high'
-                ? 'border-sky-500/80 bg-sky-950/80 text-sky-100'
-                : edgeProximity.edge === 'mid'
-                  ? 'border-violet-500/80 bg-violet-950/80 text-violet-100'
-                  : 'border-emerald-500/80 bg-emerald-950/80 text-emerald-100'
+              ? 'border-sky-500/80 bg-sky-950/80 text-sky-100'
+              : edgeProximity.edge === 'mid'
+                ? 'border-violet-500/80 bg-violet-950/80 text-violet-100'
+                : 'border-emerald-500/80 bg-emerald-950/80 text-emerald-100'
               }`}
             title={`Live price is within ±10 of ${edgeProximity.label} ${edgeProximity.edge === 'mid' ? '50% mid' : edgeProximity.edge} (${edgeProximity.center.toLocaleString()}). Limit allowed.`}
           >
@@ -7421,8 +7421,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             }
             onClick={togglePlaybook}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${playbookOpen
-                ? 'bg-surface-600 border-surface-400 text-gray-200'
-                : 'bg-transparent border-surface-600 text-gray-500 hover:text-gray-300'
+              ? 'bg-surface-600 border-surface-400 text-gray-200'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-gray-300'
               }`}
           >
             {playbookButtonLabel} (P)
@@ -7448,111 +7448,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             </span>
           )}
 
-        {/* Live Voice — toggle like playbook; panel when open */}
-        <button
-          type="button"
-          title={
-            voiceOpen
-              ? 'Hide Live Voice coach (Press V)'
-              : clockedIn
-                ? 'Show Live Voice — hold Mic to talk during morning entry (Press V)'
-                : 'Live Voice — clock in first, then talk during morning entry (Press V)'
-          }
-          onClick={() => setVoiceOpen((v) => !v)}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${voiceOpen
-              ? 'bg-violet-600/30 border-violet-500/50 text-violet-100'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-violet-200 hover:border-violet-500/40'
-            }`}
-        >
-          <span
-            className={`w-2 h-2 rounded-full inline-block ${voiceOpen ? 'bg-violet-400 animate-pulse' : 'bg-gray-600'
-              }`}
-          />
-          Voice (V)
-        </button>
 
-        {/* Draw Zone tool — next to voice */}
-        <button
-          type="button"
-          title={
-            drawZoneActive
-              ? 'Drag on chart to draw zone — or press D / Esc to cancel'
-              : drawnZone
-                ? 'Zone drawn — send or discard'
-                : 'Draw a BUY/SHORT zone on the chart for Leo (Press D)'
-          }
-          onClick={() => {
-            if (drawZoneActive) {
-              cancelDrawnZone()
-            } else {
-              setDrawZoneActive(true)
-              setDrawnZone(null)
-              clearDrawnZoneLines()
-            }
-          }}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${drawZoneActive
-              ? 'bg-amber-600/30 border-amber-500/50 text-amber-100 animate-pulse'
-              : drawnZone
-                ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-100'
-                : 'bg-transparent border-surface-600 text-gray-500 hover:text-amber-200 hover:border-amber-500/40'
-            }`}
-        >
-          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <rect x="2" y="4" width="12" height="8" rx="1" strokeLinecap="round" />
-            <line x1="2" y1="8" x2="14" y2="8" strokeDasharray="2 2" />
-          </svg>
-          {drawZoneActive ? 'Drag to draw…' : 'Draw Zone (D)'}
-        </button>
-
-        {/* Highlight Time Range tool */}
-        <button
-          type="button"
-          title={
-            drawTimeActive
-              ? 'Click 1st & 2nd points on chart to highlight — or press T / Esc to cancel'
-              : drawnTime
-                ? 'Time highlighted — send or discard'
-                : 'Highlight a specific time range to discuss with Leo (Press T)'
-          }
-          onClick={() => {
-            if (drawTimeActive) {
-              cancelDrawnTime()
-            } else {
-              setDrawTimeActive(true)
-              setDrawnTime(null)
-            }
-          }}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${drawTimeActive
-              ? 'bg-violet-600/30 border-violet-500/50 text-violet-100 animate-pulse'
-              : drawnTime
-                ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-100'
-                : 'bg-transparent border-surface-600 text-gray-500 hover:text-violet-200 hover:border-violet-500/40'
-            }`}
-        >
-          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <rect x="2" y="2" width="12" height="12" rx="1" strokeLinecap="round" />
-            <line x1="8" y1="2" x2="8" y2="14" strokeDasharray="2 2" />
-          </svg>
-          {drawTimeActive ? 'Click 1st & 2nd points…' : 'Highlight Time (T)'}
-        </button>
-
-        {/* Highlights Recall List Button */}
-        <button
-          type="button"
-          title="Open list of saved session highlights"
-          onClick={() => setHighlightsListOpen((prev) => !prev)}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${highlightsListOpen
-              ? 'bg-violet-600 border-violet-500 text-white shadow-lg'
-              : 'bg-violet-950/40 border-violet-500/40 text-violet-300 hover:text-white hover:border-violet-500 shadow-sm'
-            }`}
-        >
-          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <line x1="4" y1="4" x2="12" y2="4" strokeLinecap="round" />
-            <line x1="4" y1="8" x2="12" y2="8" strokeLinecap="round" />
-            <line x1="4" y1="12" x2="12" y2="12" strokeLinecap="round" />
-          </svg>
-          {`Previous Highlights (${savedHighlights.length})`}
-        </button>
 
         {/* Interactive TradingView Risk/Reward Limit Order Tool */}
         <button
@@ -7570,8 +7466,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             }
           }}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${riskBox
-              ? 'bg-sky-600/30 border-sky-500/50 text-sky-100 animate-pulse'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-sky-200 hover:border-sky-500/40'
+            ? 'bg-sky-600/30 border-sky-500/50 text-sky-100 animate-pulse'
+            : 'bg-transparent border-surface-600 text-gray-500 hover:text-sky-200 hover:border-sky-500/40'
             }`}
         >
           <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -7596,12 +7492,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           }
           onClick={togglePriceAlert}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${priceAlert
-              ? priceAlert.armed === false
-                ? 'bg-violet-950/40 border-violet-500/30 text-violet-300/70'
-                : priceAlert.pendingAway
-                  ? 'bg-violet-600/20 border-violet-500/40 text-violet-200/90'
-                  : 'bg-violet-600/30 border-violet-500/50 text-violet-100 animate-pulse'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-violet-200 hover:border-violet-500/40'
+            ? priceAlert.armed === false
+              ? 'bg-violet-950/40 border-violet-500/30 text-violet-300/70'
+              : priceAlert.pendingAway
+                ? 'bg-violet-600/20 border-violet-500/40 text-violet-200/90'
+                : 'bg-violet-600/30 border-violet-500/50 text-violet-100 animate-pulse'
+            : 'bg-transparent border-surface-600 text-gray-500 hover:text-violet-200 hover:border-violet-500/40'
             }`}
         >
           <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -7623,8 +7519,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             type="button"
             onClick={toggleRiskBoxDirection}
             className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-mono font-extrabold uppercase rounded-lg border transition shadow-sm ${riskBox.direction === 'LONG'
-                ? 'bg-red-950/80 border-red-500/70 text-red-300 hover:bg-red-900'
-                : 'bg-emerald-950/80 border-emerald-500/70 text-emerald-300 hover:bg-emerald-900'
+              ? 'bg-red-950/80 border-red-500/70 text-red-300 hover:bg-red-900'
+              : 'bg-emerald-950/80 border-emerald-500/70 text-emerald-300 hover:bg-emerald-900'
               }`}
             title={`Switch mode from ${riskBox.direction} to ${riskBox.direction === 'LONG' ? 'SHORT' : 'LONG'}`}
           >
@@ -7643,8 +7539,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           }
           onClick={toggleFullscreen}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${isFullscreen
-              ? 'bg-blue-600/30 border-blue-500/50 text-blue-100'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-blue-200 hover:border-blue-500/40'
+            ? 'bg-blue-600/30 border-blue-500/50 text-blue-100'
+            : 'bg-transparent border-surface-600 text-gray-500 hover:text-blue-200 hover:border-blue-500/40'
             }`}
         >
           <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -7667,8 +7563,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             <>
               <span
                 className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide ${isBroken
-                    ? 'border-amber-500/80 bg-amber-950/80 text-amber-200 animate-pulse font-bold'
-                    : 'border-sky-700/50 bg-sky-950/40 text-sky-200'
+                  ? 'border-amber-500/80 bg-amber-950/80 text-amber-200 animate-pulse font-bold'
+                  : 'border-sky-700/50 bg-sky-950/40 text-sky-200'
                   }`}
               >
                 {isBroken ? '⚠️ Level Invalidated (Structure Broke) · Working ' : 'Working '}
@@ -7683,8 +7579,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   type="button"
                   onClick={onCancelPending}
                   className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide shadow-sm transition ${isBroken
-                      ? 'border-red-500 bg-red-600 text-white hover:bg-red-500 animate-pulse'
-                      : 'border-sky-500/60 bg-sky-600/80 text-white hover:bg-sky-500'
+                    ? 'border-red-500 bg-red-600 text-white hover:bg-red-500 animate-pulse'
+                    : 'border-sky-500/60 bg-sky-600/80 text-white hover:bg-sky-500'
                     }`}
                 >
                   Cancel limit
@@ -7714,8 +7610,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           {/* Position overlay indicator */}
           {positionOverlay && (
             <span className={`text-xs px-2 py-0.5 rounded font-semibold border ${positionOverlay.direction === 'long'
-                ? 'text-green-400 border-green-800 bg-green-900/30'
-                : 'text-red-400 border-red-800 bg-red-900/30'
+              ? 'text-green-400 border-green-800 bg-green-900/30'
+              : 'text-red-400 border-red-800 bg-red-900/30'
               }`}>
               {positionOverlay.direction === 'long' ? '▲' : '▼'} POSITION
             </span>
@@ -8028,8 +7924,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                               )
                             }}
                             className={`px-1.5 py-0.5 text-[10px] font-bold rounded transition border ${hl.visible
-                                ? `${theme.pillBg} ${theme.pillBorder} ${theme.text}`
-                                : 'bg-transparent border-gray-605 text-gray-505 hover:border-gray-500'
+                              ? `${theme.pillBg} ${theme.pillBorder} ${theme.text}`
+                              : 'bg-transparent border-gray-605 text-gray-505 hover:border-gray-500'
                               }`}
                             title="Toggle visibility on chart"
                           >
@@ -8068,10 +7964,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             {aiVerdict ? (
               <div
                 className={`rounded-md border px-2 py-1 shadow-lg backdrop-blur-sm ${aiVerdict.verdict.toLowerCase() === 'reversal'
-                    ? 'border-violet-500/50 bg-violet-950/85 text-violet-100'
-                    : aiVerdict.verdict.toLowerCase() === 'pullback'
-                      ? 'border-amber-500/50 bg-amber-950/85 text-amber-100'
-                      : 'border-emerald-500/40 bg-emerald-950/85 text-emerald-100'
+                  ? 'border-violet-500/50 bg-violet-950/85 text-violet-100'
+                  : aiVerdict.verdict.toLowerCase() === 'pullback'
+                    ? 'border-amber-500/50 bg-amber-950/85 text-amber-100'
+                    : 'border-emerald-500/40 bg-emerald-950/85 text-emerald-100'
                   }`}
               >
                 <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider">
@@ -8153,8 +8049,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               <button
                 onClick={() => setDrawnZoneSide('BUY')}
                 className={`flex-1 rounded-lg py-1.5 text-xs font-bold uppercase tracking-wide transition border ${drawnZoneSide === 'BUY'
-                    ? 'bg-emerald-600/40 border-emerald-500/60 text-emerald-200 shadow-sm'
-                    : 'bg-transparent border-[#30363d] text-gray-500 hover:text-emerald-300 hover:border-emerald-500/40'
+                  ? 'bg-emerald-600/40 border-emerald-500/60 text-emerald-200 shadow-sm'
+                  : 'bg-transparent border-[#30363d] text-gray-500 hover:text-emerald-300 hover:border-emerald-500/40'
                   }`}
               >
                 BUY Zone
@@ -8162,8 +8058,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               <button
                 onClick={() => setDrawnZoneSide('SHORT')}
                 className={`flex-1 rounded-lg py-1.5 text-xs font-bold uppercase tracking-wide transition border ${drawnZoneSide === 'SHORT'
-                    ? 'bg-red-600/40 border-red-500/60 text-red-200 shadow-sm'
-                    : 'bg-transparent border-[#30363d] text-gray-500 hover:text-red-300 hover:border-red-500/40'
+                  ? 'bg-red-600/40 border-red-500/60 text-red-200 shadow-sm'
+                  : 'bg-transparent border-[#30363d] text-gray-500 hover:text-red-300 hover:border-red-500/40'
                   }`}
               >
                 SHORT Zone
@@ -8300,8 +8196,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   }}
                   onMouseDown={(e) => e.stopPropagation()}
                   className={`px-3 py-1 text-xs font-extrabold uppercase rounded-md shadow-md transition border ${riskBox.direction === 'LONG'
-                      ? 'bg-blue-600 border-blue-400 text-white hover:bg-blue-500 hover:scale-105'
-                      : 'bg-red-600 border-red-400 text-white hover:bg-red-500 hover:scale-105'
+                    ? 'bg-blue-600 border-blue-400 text-white hover:bg-blue-500 hover:scale-105'
+                    : 'bg-red-600 border-red-400 text-white hover:bg-red-500 hover:scale-105'
                     }`}
                   title={`Click to place ${riskBox.direction} Limit Order`}
                 >
@@ -8405,10 +8301,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               >
                 <div
                   className={`flex items-center rounded-md border px-3 py-1 text-xs font-mono font-bold shadow-xl transition ${!armed
-                      ? 'border-violet-500/40 bg-violet-950/50 text-violet-300/70'
-                      : pending
-                        ? 'border-violet-400/70 bg-violet-950/80 text-violet-200/90'
-                        : 'border-violet-400 bg-violet-950/95 text-violet-100 group-hover:border-violet-300'
+                    ? 'border-violet-500/40 bg-violet-950/50 text-violet-300/70'
+                    : pending
+                      ? 'border-violet-400/70 bg-violet-950/80 text-violet-200/90'
+                      : 'border-violet-400 bg-violet-950/95 text-violet-100 group-hover:border-violet-300'
                     }`}
                 >
                   <span className="font-sans uppercase font-extrabold tracking-wider text-[11px] select-none">
@@ -8431,10 +8327,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 </div>
                 <div
                   className={`w-3 h-3 rounded-full border-2 border-white shadow-md transition-transform ${!armed
-                      ? 'bg-violet-500/40'
-                      : pending
-                        ? 'bg-violet-400/70'
-                        : 'bg-violet-500 group-hover:scale-125'
+                    ? 'bg-violet-500/40'
+                    : pending
+                      ? 'bg-violet-400/70'
+                      : 'bg-violet-500 group-hover:scale-125'
                     }`}
                 />
               </div>
@@ -8752,8 +8648,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                         jumpToPriceRef?.current?.(l.price)
                       }}
                       className={`w-full rounded-xl border px-2.5 py-2.5 text-left text-[11px] transition-all hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 ${isRes
-                          ? 'border-red-800/80 bg-[#2a1518] text-red-200'
-                          : 'border-emerald-800/80 bg-[#12241c] text-emerald-200'
+                        ? 'border-red-800/80 bg-[#2a1518] text-red-200'
+                        : 'border-emerald-800/80 bg-[#12241c] text-emerald-200'
                         } ${isPrimary ? 'ring-1 ring-white/25' : 'opacity-90'}`}
                       title={`${why} · advise only (click to focus) — place on CALL ±10`}
                     >
@@ -8775,10 +8671,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                       {reaction && (
                         <div
                           className={`mt-1.5 text-[9px] font-semibold uppercase tracking-wide ${reaction.startsWith('held')
-                              ? 'text-emerald-400'
-                              : reaction.startsWith('broke')
-                                ? 'text-red-400'
-                                : 'text-amber-300'
+                            ? 'text-emerald-400'
+                            : reaction.startsWith('broke')
+                              ? 'text-red-400'
+                              : 'text-amber-300'
                             }`}
                         >
                           Market · {reaction}

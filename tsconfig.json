@@ -53,6 +53,13 @@
   "exclude": [
     "node_modules",
     ".next",
-    "dist"
+    "dist",
+    "scripts",
+    "__tests__",
+    "scratch",
+    "situations",
+    "market to stay out",
+    "corrective actions",
+    "directional perfomance"
   ]
 }
