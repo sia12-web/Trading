@@ -54,7 +54,6 @@ import {
 import {
   applyTickToFormingBar,
   mergeHistoryWithLiveTip,
-  closedHistoryOhlcChanged,
   quoteUnixForBucket,
 } from '@/lib/chart/liveFormingBar'
 import {
@@ -405,24 +404,24 @@ function getTradingSessionDate(unix: number, timeZone: string): Date {
   const d = new Date(unix * 1000)
   const fmtHour = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hour12: false })
   const hour = parseInt(fmtHour.format(d), 10)
-
+  
   // Overnight/Asia session starts at 18:00 (6 PM ET) on the previous calendar day
   const dateOffset = hour >= 18 ? 1 : 0
-
+  
   const fmtDate = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric' })
   const parts = fmtDate.formatToParts(d)
   const getVal = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find(p => p.type === type)?.value)
-
+  
   return new Date(getVal('year'), getVal('month') - 1, getVal('day') + dateOffset)
 }
 
 function getRelativeTradingDayLabel(unix: number, nowUnix: number, timeZone: string): string {
   const tDate = getTradingSessionDate(unix, timeZone)
   const nowDate = getTradingSessionDate(nowUnix, timeZone)
-
+  
   const diffMs = nowDate.getTime() - tDate.getTime()
   const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24))
-
+  
   if (diffDays <= 0) return 'Today'
   if (diffDays === 1) return 'Yesterday'
   return `${diffDays} trading days ago`
@@ -438,7 +437,7 @@ function describeTimeHighlightSpan(
 ): string {
   const startSess = deskSessionAt(startUnix, instrument) || 'Overnight'
   const endSess = deskSessionAt(endUnix, instrument) || 'Overnight'
-
+  
   const nowUnix = Date.now() / 1000
   const timeZone = TRADER_DISPLAY_TZ
 
@@ -516,17 +515,17 @@ const OVERLAY_SETTLE_MS = 320
 const useOverlayLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 
 interface OHLCV {
-  time: UTCTimestamp
-  open: number
-  high: number
-  low: number
-  close: number
+  time:   UTCTimestamp
+  open:   number
+  high:   number
+  low:    number
+  close:  number
   volume: number
 }
 
 interface LevelLine {
-  price: number
-  type: 'support' | 'resistance' | 'vwap' | string
+  price:  number
+  type:   'support' | 'resistance' | 'vwap' | string
   /** Playbook side — drives Limit Buy vs Limit Short on click */
   side?: 'BUY' | 'SHORT'
   status: string
@@ -541,11 +540,11 @@ interface LevelLine {
 }
 
 interface TooltipData {
-  time: string
-  open: number
-  high: number
-  low: number
-  close: number
+  time:   string
+  open:   number
+  high:   number
+  low:    number
+  close:  number
   volume: number
   change: number
   changePct: number
@@ -554,11 +553,11 @@ interface TooltipData {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const INSTRUMENT_META: Record<Instrument, { label: string; symbol: string; color: string; basePrice: number }> = {
-  DOW: { label: 'Micro Dow · MYM', symbol: 'MYM', color: '#1d4ed8', basePrice: 39500 },
+  DOW:    { label: 'Micro Dow · MYM', symbol: 'MYM',  color: '#1d4ed8', basePrice: 39500 },
   NASDAQ: { label: 'Micro Nasdaq · MNQ', symbol: 'MNQ', color: '#0f766e', basePrice: 28500 },
   NIKKEI: { label: 'Nikkei USD', symbol: 'NKD', color: '#f472b6', basePrice: 38000 },
-  GOLD: { label: 'Micro Gold · MGC', symbol: 'MGC', color: '#ca8a04', basePrice: 4500 },
-  CRUDE: { label: 'Crude · CL', symbol: 'CL', color: '#78716c', basePrice: 85 },
+  GOLD:   { label: 'Micro Gold · MGC', symbol: 'MGC', color: '#ca8a04', basePrice: 4500 },
+  CRUDE:  { label: 'Crude · CL', symbol: 'CL', color: '#78716c', basePrice: 85 },
 }
 
 function paintPositionBandOverlay(
@@ -595,21 +594,21 @@ function paintPositionBandOverlay(
 }
 
 const LEVEL_COLORS: Record<string, string> = {
-  support: '#22c55e',
+  support:    '#22c55e',
   resistance: '#ef4444',
-  vwap: '#f59e0b',
+  vwap:       '#f59e0b',
 }
 
 const STATUS_COLORS: Record<string, string> = {
   approaching: '#facc15',
-  touched: '#3b82f6',
-  contested: '#facc15',
-  broken: '#ef4444',
-  bounced: '#a855f7',
-  respected: '#22c55e',
-  rejected: '#f97316',
-  held: '#22c55e',
-  untested: '#6b7280',
+  touched:     '#3b82f6',
+  contested:   '#facc15',
+  broken:      '#ef4444',
+  bounced:     '#a855f7',
+  respected:   '#22c55e',
+  rejected:    '#f97316',
+  held:        '#22c55e',
+  untested:    '#6b7280',
 }
 
 /** Map rule-grader verdict → chart status (drives line color + panel badge). */
@@ -675,34 +674,21 @@ function toDeskCandles(candles: OHLCV[], instrument: Instrument = 'DOW'): OHLCV[
  * Yahoo (and merges) can return duplicates or slightly out-of-order bars.
  */
 function normalizeCandleTimes(candles: OHLCV[]): OHLCV[] {
-  if (!Array.isArray(candles) || candles.length === 0) return []
+  if (candles.length === 0) return candles
   const sorted = [...candles].sort(
     (a, b) => (a.time as number) - (b.time as number)
   )
   const out: OHLCV[] = []
   for (const c of sorted) {
-    if (!c) continue
-    const t = Number(c.time)
-    const o = Number(c.open)
-    const h = Number(c.high)
-    const l = Number(c.low)
-    const cl = Number(c.close)
-    if (!Number.isFinite(t) || !Number.isFinite(o) || !Number.isFinite(h) || !Number.isFinite(l) || !Number.isFinite(cl)) continue
-    const safeCandle: OHLCV = {
-      time: t as UTCTimestamp,
-      open: o,
-      high: Math.max(o, h, l, cl),
-      low: Math.min(o, h, l, cl),
-      close: cl,
-      volume: Number.isFinite(c.volume) ? Number(c.volume) : 0,
-    }
+    const t = c.time as number
+    if (!Number.isFinite(t)) continue
     const prev = out[out.length - 1]
     if (prev && (prev.time as number) === t) {
-      out[out.length - 1] = safeCandle // keep latest OHLC for duplicate timestamp
+      out[out.length - 1] = c // keep latest OHLC for duplicate timestamp
       continue
     }
     if (prev && t <= (prev.time as number)) continue
-    out.push(safeCandle)
+    out.push(c)
   }
   return out
 }
@@ -718,7 +704,7 @@ function generateCandles(basePrice: number, tfSeconds: number): OHLCV[] {
   // 5 days of bars, capped at 1500 so 1m doesn't explode
   const count = Math.min(Math.ceil(5 * 24 * 3600 / tfSeconds), 1500)
   const candles: OHLCV[] = []
-  const now = Math.floor(Date.now() / 1000)
+  const now   = Math.floor(Date.now() / 1000)
   const start = now - tfSeconds * count
 
   let price = basePrice
@@ -727,12 +713,12 @@ function generateCandles(basePrice: number, tfSeconds: number): OHLCV[] {
   for (let i = 0; i < count; i++) {
     const t = (start + i * tfSeconds) as UTCTimestamp
 
-    const open = price
-    const move = (Math.random() - 0.48) * volatility * 2
+    const open  = price
+    const move  = (Math.random() - 0.48) * volatility * 2
     const close = open + move
-    const wick = Math.random() * volatility
-    const high = Math.max(open, close) + wick
-    const low = Math.min(open, close) - wick * 0.7
+    const wick  = Math.random() * volatility
+    const high  = Math.max(open, close) + wick
+    const low   = Math.min(open, close) - wick * 0.7
     const volume = Math.floor(50000 + Math.random() * 200000)
 
     candles.push({ time: t, open, high, low, close, volume })
@@ -805,8 +791,9 @@ const LivePriceTicker = memo(function LivePriceTicker({
         >
           {tick.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </span>
-        <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${isUp ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'
-          }`}>
+        <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
+          isUp ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'
+        }`}>
           {isUp ? '▲' : '▼'} {Math.abs(tick.changePct).toFixed(2)}
         </span>
       </div>
@@ -826,10 +813,10 @@ const LivePriceTicker = memo(function LivePriceTicker({
 // ─── TradingChart props ───────────────────────────────────────────────────────
 
 interface PositionOverlay {
-  entryPrice: number
-  stopLoss: number
+  entryPrice:  number
+  stopLoss:    number
   profitTarget: number
-  direction: 'long' | 'short'
+  direction:   'long' | 'short'
   /** Contract/units size — used for $ P&L on SL/TP drag pills */
   positionSize?: number
   /** Session risk $ — sizes MYM/MNQ on the chart to match the TradingView ticket */
@@ -855,15 +842,15 @@ interface TradingChartProps {
   onInstrumentChange?: (i: Instrument) => void
   /** Gate/lock view sync — must not persist preference */
   onInstrumentSync?: (i: Instrument) => void
-  onPriceUpdate?: (price: number) => void   // called every tick
+  onPriceUpdate?:      (price: number) => void   // called every tick
   /** Fired with unix seconds whenever a live quote lands */
-  onQuoteTick?: (unixSec: number) => void
-  onDataModeChange?: (mode: 'live' | 'synthetic') => void
-  positionOverlay?: PositionOverlay | null     // filled position Entry/SL/TP
+  onQuoteTick?:        (unixSec: number) => void
+  onDataModeChange?:   (mode: 'live' | 'synthetic') => void
+  positionOverlay?:    PositionOverlay | null     // filled position Entry/SL/TP
   /** Working limit — not filled yet; does not enter MANAGE */
-  pendingLimit?: PendingLimitOverlay | null
+  pendingLimit?:       PendingLimitOverlay | null
   /** Cancel the working limit (chart toolbar + parent bar) */
-  onCancelPending?: () => void
+  onCancelPending?:    () => void
   /**
    * After fill: drag SL/TP on the chart → parent syncs OANDA + journal.
    * Entry stays fixed. Working limits: TP only (SL locked at place).
@@ -880,19 +867,19 @@ interface TradingChartProps {
   workingBracketAdjustStatus?: 'idle' | 'saving' | 'error' | null
   workingBracketAdjustError?: string | null
   /** AI manage verdict (hold / take profit / reversal) drawn on the chart */
-  aiVerdict?: ChartAiVerdict | null
-  jumpToPriceRef?: React.MutableRefObject<((price: number) => void) | null>
+  aiVerdict?:          ChartAiVerdict | null
+  jumpToPriceRef?:     React.MutableRefObject<((price: number) => void) | null>
   /** First paint name — clock lock / preference. Avoids a DOW candle flash. */
-  initialInstrument?: Instrument
+  initialInstrument?:  Instrument
   /** Lock tabs to day's recommended desk instrument */
-  lockedInstrument?: Instrument | null
+  lockedInstrument?:   Instrument | null
   /**
    * LIVE focus tabs only (session market ± clock-in lock).
    * Simulation must never pass this — leave undefined to show all three.
    */
   allowedInstruments?: Instrument[] | null
   /** When user clicks a level price (from panel or highlight) */
-  onLevelSelect?: (
+  onLevelSelect?:      (
     price: number,
     meta?: {
       type?: string
@@ -996,8 +983,8 @@ export function TradingChart({
     spans: SessionHighlightSpan[]
     candleTimes: number[]
   } | null>(null)
-  const chartRef = useRef<IChartApi | null>(null)
-  const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
+  const chartRef     = useRef<IChartApi | null>(null)
+  const candleRef    = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const markerHashRef = useRef<string | null>(null)
   const vwapSeriesRef = useRef<{
     vwap: ISeriesApi<'Line'>
@@ -1038,12 +1025,12 @@ export function TradingChart({
   /** Gates current-session US H/L lines (IB-style, no markers) */
   const [showUsRange, setShowUsRange] = useState(() => loadDeskOverlayToggles().us)
   /** Stable paint hook for tip-stream refresh (avoids restarting SSE on marker deps). */
-  const paintDeskMarkersRef = useRef<(bars?: OHLCV[]) => void>(() => { })
-  const syncDeskPlaybookRangesRef = useRef<(bars: OHLCV[]) => void>(() => { })
-  const paintYesterdayProfileRef = useRef<() => void>(() => { })
-  const paintOpeningActivityRef = useRef<() => void>(() => { })
-  const paintMarketControlRef = useRef<() => void>(() => { })
-  const paintDeskCallRef = useRef<() => void>(() => { })
+  const paintDeskMarkersRef = useRef<(bars?: OHLCV[]) => void>(() => {})
+  const syncDeskPlaybookRangesRef = useRef<(bars: OHLCV[]) => void>(() => {})
+  const paintYesterdayProfileRef = useRef<() => void>(() => {})
+  const paintOpeningActivityRef = useRef<() => void>(() => {})
+  const paintMarketControlRef = useRef<() => void>(() => {})
+  const paintDeskCallRef = useRef<() => void>(() => {})
   const deskCallRef = useRef<DeskCall | null>(null)
   const marketControlRef = useRef<MarketControl | null>(null)
   const resolvedUseCall: boolean | null = useCallProp === undefined ? true : useCallProp
@@ -1081,7 +1068,7 @@ export function TradingChart({
   )
   const ibExtendRef = useRef<IbExtendAdvice | null>(null)
   const ibLiqLinesRef = useRef<IPriceLine[]>([])
-  const paintIbExtendRef = useRef<() => void>(() => { })
+  const paintIbExtendRef = useRef<() => void>(() => {})
   /** Live count of BRK/REJ markers currently painted (for toolbar status). */
   const [rangeSignalSummary, setRangeSignalSummary] = useState<{
     ib: number
@@ -1120,15 +1107,15 @@ export function TradingChart({
   /** Arm live stream once we have bars — avoid restarting intervals on every new print */
   const [streamArmed, setStreamArmed] = useState(false)
 
-  const [instrument, setInstrumentState] = useState<Instrument>(
+  const [instrument,  setInstrumentState] = useState<Instrument>(
     () => initialInstrument ?? lockedInstrument ?? 'DOW'
   )
-  const [candles, setCandles] = useState<OHLCV[]>([])
-  const [levels, setLevels] = useState<LevelLine[]>([])
+  const [candles,     setCandles]    = useState<OHLCV[]>([])
+  const [levels,      setLevels]     = useState<LevelLine[]>([])
   const [noInBandLevelsMessage, setNoInBandLevelsMessage] = useState<string | null>(null)
   const levelsRef = useRef<LevelLine[]>([])
-  const [tooltip, setTooltip] = useState<TooltipData | null>(null)
-  const [livePrice, setLivePrice] = useState<number | null>(null)
+  const [tooltip,     setTooltip]    = useState<TooltipData | null>(null)
+  const [livePrice,   setLivePrice]  = useState<number | null>(null)
   const [barCountdown, setBarCountdown] = useState<string>('')
   const priceTickStoreRef = useRef<LivePriceStore>({ tick: null, subs: new Set() })
   const subscribePriceTick = useCallback((onChange: () => void) => {
@@ -1163,7 +1150,7 @@ export function TradingChart({
     return () => clearInterval(timer)
   }, [])
 
-  const [showLevels, setShowLevels] = useState(() => loadDeskOverlayToggles().levels)
+  const [showLevels,  setShowLevels] = useState(() => loadDeskOverlayToggles().levels)
   useEffect(() => {
     saveDeskOverlayToggles({
       levels: showLevels,
@@ -1256,14 +1243,14 @@ export function TradingChart({
 
     if (showOr15 && or15RangeRef.current && deskBars.length > 0) {
       for (const s of computeOr15Signals(deskBars, or15RangeRef.current)) {
-        lunchCount += 1
-        markers.push({
-          time: s.time as UTCTimestamp,
-          position: s.position,
-          color: s.color,
-          shape: s.shape,
-          text: s.text,
-        })
+          lunchCount += 1
+          markers.push({
+            time: s.time as UTCTimestamp,
+            position: s.position,
+            color: s.color,
+            shape: s.shape,
+            text: s.text,
+          })
       }
     }
 
@@ -1377,10 +1364,10 @@ export function TradingChart({
     const qualityTail = latestQualityTail(tails, 'good')
     const nextTail = qualityTail
       ? {
-        edge: qualityTail.edge,
-        tier: qualityTail.tier,
-        label: qualityTail.label,
-      }
+          edge: qualityTail.edge,
+          tier: qualityTail.tier,
+          label: qualityTail.label,
+        }
       : null
     setLatestTailStatus((prev) => {
       if (
@@ -1395,9 +1382,9 @@ export function TradingChart({
 
     setRangeSignalSummary((prev) =>
       prev.ib === ibCount &&
-        prev.or30 === or30Count &&
-        prev.lunch === lunchCount &&
-        prev.us === usCount
+      prev.or30 === or30Count &&
+      prev.lunch === lunchCount &&
+      prev.us === usCount
         ? prev
         : { ib: ibCount, or30: or30Count, lunch: lunchCount, us: usCount }
     )
@@ -1965,10 +1952,11 @@ export function TradingChart({
     ibExtendRef.current = advice
     const chip = advice.chip
     setIbExtendBadge((prev) => (prev === chip ? prev : chip))
-    const hover = `${advice.message}${advice.entryAdvice != null && advice.stopAdvice != null
-      ? `\nPullback ~${advice.entryAdvice} · stop ~${advice.stopAdvice} (advise only — you place on TradingView).`
-      : ''
-      }\nAdvice only. Does not place. CALL ON still gates tickets.`
+    const hover = `${advice.message}${
+      advice.entryAdvice != null && advice.stopAdvice != null
+        ? `\nPullback ~${advice.entryAdvice} · stop ~${advice.stopAdvice} (advise only — you place on TradingView).`
+        : ''
+    }\nAdvice only. Does not place. CALL ON still gates tickets.`
     setIbExtendHover((prev) => (prev === hover ? prev : hover))
 
     for (const line of ibLiqLinesRef.current) {
@@ -2277,10 +2265,10 @@ export function TradingChart({
     const ov = editableOverlay ?? positionOverlay
     bookBandRef.current = ov
       ? {
-        entry: filledBook?.entry ?? ov.entryPrice,
-        stop: filledBook?.stop ?? ov.stopLoss,
-        target: filledBook?.target ?? ov.profitTarget,
-      }
+          entry: filledBook?.entry ?? ov.entryPrice,
+          stop: filledBook?.stop ?? ov.stopLoss,
+          target: filledBook?.target ?? ov.profitTarget,
+        }
       : null
   }
 
@@ -2316,7 +2304,7 @@ export function TradingChart({
 
   // Voice stays closed on refresh / clock-in — user opens via toolbar (V).
   const showLevelsRef = useRef(false)
-  const [chartReady, setChartReady] = useState(false)
+  const [chartReady,  setChartReady] = useState(false)
 
   /**
    * Overlay pills / brackets / highlight boxes are placed imperatively so a pan
@@ -2957,11 +2945,11 @@ export function TradingChart({
         }
         const marker = candleRef.current.createPriceLine({
           price,
-          color: '#ffffff40',
-          lineWidth: 1,
-          lineStyle: LineStyle.Dashed,
+          color:            '#ffffff40',
+          lineWidth:        1,
+          lineStyle:        LineStyle.Dashed,
           axisLabelVisible: true,
-          title: '→ ' + price.toLocaleString('en-US', { minimumFractionDigits: 0 }),
+          title:            '→ ' + price.toLocaleString('en-US', { minimumFractionDigits: 0 }),
         })
         jumpMarkerRef.current = marker
         setTimeout(() => {
@@ -2970,9 +2958,9 @@ export function TradingChart({
               candleRef.current?.removePriceLine(marker)
               jumpMarkerRef.current = null
             }
-          } catch { }
+          } catch {}
         }, 3000)
-      } catch { }
+      } catch {}
     }
     return () => {
       jumpToPriceRef.current = null
@@ -3057,13 +3045,13 @@ export function TradingChart({
     // Morning: conviction rank. IB / lunch-break / lunch-range / watch: afternoon merge (+ IB H/L).
     const resolved = useAfternoonLevels
       ? resolveAfternoonDeskLevels(
-        aiRows,
-        afternoonCandidates,
-        barsForFallback,
-        openUnix,
-        sess.tz,
-        tip
-      )
+          aiRows,
+          afternoonCandidates,
+          barsForFallback,
+          openUnix,
+          sess.tz,
+          tip
+        )
       : resolveDeskLevels(aiRows, barsForFallback, openUnix, sess.tz, 'none')
 
     for (const l of resolved.levels) {
@@ -3240,7 +3228,7 @@ export function TradingChart({
 
     const chart = createChart(containerRef.current, {
       ...CHART_THEME,
-      width: containerRef.current.clientWidth,
+      width:  containerRef.current.clientWidth,
       height: containerRef.current.clientHeight,
       localization: {
         timeFormatter: (time: UTCTimestamp | string | number) =>
@@ -3315,14 +3303,14 @@ export function TradingChart({
     }
 
     const candleSeries = chart.addCandlestickSeries({
-      upColor: DESK_CANDLE_UP,
-      downColor: DESK_CANDLE_DOWN,
-      borderUpColor: DESK_CANDLE_UP,
+      upColor:         DESK_CANDLE_UP,
+      downColor:       DESK_CANDLE_DOWN,
+      borderUpColor:   DESK_CANDLE_UP,
       borderDownColor: DESK_CANDLE_DOWN,
-      wickUpColor: DESK_CANDLE_UP,
-      wickDownColor: DESK_CANDLE_DOWN,
-      borderVisible: true,
-      wickVisible: true,
+      wickUpColor:     DESK_CANDLE_UP,
+      wickDownColor:   DESK_CANDLE_DOWN,
+      borderVisible:   true,
+      wickVisible:     true,
       autoscaleInfoProvider: candleAutoscale,
     })
 
@@ -3488,7 +3476,7 @@ export function TradingChart({
       })
     })
 
-    chartRef.current = chart
+    chartRef.current  = chart
     candleRef.current = candleSeries
     priceLineHostRef.current = priceLineHost
     vwapSeriesRef.current = vwapSeries
@@ -3530,9 +3518,9 @@ export function TradingChart({
       containerRef.current?.removeEventListener('wheel', onWheelLayout)
       try {
         chart.timeScale().unsubscribeVisibleLogicalRangeChange(onScroll)
-      } catch { }
+      } catch {}
       chart.remove()
-      chartRef.current = null
+      chartRef.current  = null
       candleRef.current = null
       priceLineHostRef.current = null
       priceLineHostSeededRef.current = false
@@ -3574,11 +3562,11 @@ export function TradingChart({
         const json = await res.json()
         if (!cancelled && Array.isArray(json.candles) && json.candles.length > 0) {
           const mapped: OHLCV[] = json.candles.map((c: any) => ({
-            time: c.time as UTCTimestamp,
-            open: c.open,
-            high: c.high,
-            low: c.low,
-            close: c.close,
+            time:   c.time as UTCTimestamp,
+            open:   c.open,
+            high:   c.high,
+            low:    c.low,
+            close:  c.close,
             volume: c.volume ?? 0,
           }))
           const trimmed = normalizeCandleTimes(toDeskCandles(mapped, instrument))
@@ -3857,17 +3845,17 @@ export function TradingChart({
     const source = levelsRef.current
     const aligned = wantSide
       ? source.filter((level) => {
-        const isRes =
-          level.type === 'resistance' ||
-          String(level.type).toLowerCase().includes('resist')
-        const side: 'BUY' | 'SHORT' =
-          level.side === 'BUY' || level.side === 'SHORT'
-            ? level.side
-            : isRes
-              ? 'SHORT'
-              : 'BUY'
-        return side === wantSide
-      })
+          const isRes =
+            level.type === 'resistance' ||
+            String(level.type).toLowerCase().includes('resist')
+          const side: 'BUY' | 'SHORT' =
+            level.side === 'BUY' || level.side === 'SHORT'
+              ? level.side
+              : isRes
+                ? 'SHORT'
+                : 'BUY'
+          return side === wantSide
+        })
       : source
     const paintList = aligned.length > 0 ? aligned : source
     for (const level of paintList) {
@@ -4531,13 +4519,13 @@ export function TradingChart({
           })),
           live && streamLive
             ? {
-              time: live.time as number,
-              open: live.open,
-              high: live.high,
-              low: live.low,
-              close: live.close,
-              volume: live.volume,
-            }
+                time: live.time as number,
+                open: live.open,
+                high: live.high,
+                low: live.low,
+                close: live.close,
+                volume: live.volume,
+              }
             : null
         )
         const nextBars: OHLCV[] = merged.map((c) => ({
@@ -4553,7 +4541,6 @@ export function TradingChart({
         if (fetchGen !== candleFetchGenRef.current) return
 
         const prev = candlesRef.current
-        const tipOwned = !!(live && streamLive)
         const structureChanged =
           prev.length !== nextBars.length ||
           (prev.length > 0 &&
@@ -4562,31 +4549,11 @@ export function TradingChart({
           (prev.length >= 2 &&
             nextBars.length >= 2 &&
             (prev[prev.length - 2]!.time as number) !==
-            (nextBars[nextBars.length - 2]!.time as number))
-        const closedChanged = closedHistoryOhlcChanged(
-          prev.map((c) => ({
-            time: c.time as number,
-            open: c.open,
-            high: c.high,
-            low: c.low,
-            close: c.close,
-            volume: c.volume,
-          })),
-          nextBars.map((c) => ({
-            time: c.time as number,
-            open: c.open,
-            high: c.high,
-            low: c.low,
-            close: c.close,
-            volume: c.volume,
-          })),
-          tipOwned
-        )
+              (nextBars[nextBars.length - 2]!.time as number))
 
         // Never reset didFitRef here — new prints must not yank a panned viewport
         lastCandleRef.current = nextBars[nextBars.length - 1]!
-        // REST owns closed bars: replace gap-fill flats when Yahoo catches up
-        if (structureChanged || closedChanged) {
+        if (structureChanged) {
           setCandles(nextBars)
         } else {
           const tip = nextBars[nextBars.length - 1]!
@@ -4638,14 +4605,6 @@ export function TradingChart({
             price?: number
             change_pct?: number
             timestamp?: number
-            instrument?: string
-          }
-          // Hard reject ticks from another book (stale EventSource during tab switch)
-          if (
-            json.instrument &&
-            String(json.instrument).toUpperCase() !== instrument
-          ) {
-            return
           }
           if (typeof json.price !== 'number' || !(json.price > 0)) return
           sseHealthy = true
@@ -4930,12 +4889,13 @@ export function TradingChart({
         <div style="position:absolute;bottom:-5px;left:-5px;width:10px;height:10px;background:#3b82f6;border:1.5px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>
         <div style="position:absolute;bottom:-5px;left:50%;transform:translateX(-50%);width:10px;height:10px;background:#3b82f6;border:1.5px solid #fff;border-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>
         <div style="position:absolute;bottom:-5px;right:-5px;width:10px;height:10px;background:#3b82f6;border:1.5px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>
-        ${highPrice != null && lowPrice != null
-          ? `<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:4px 8px;height:100%;flex-direction:column;pointer-events:none">
+        ${
+          highPrice != null && lowPrice != null
+            ? `<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:4px 8px;height:100%;flex-direction:column;pointer-events:none">
                 <span style="font-family:monospace;font-size:10px;font-weight:700;color:#93c5fd;background:rgba(15,23,42,0.75);padding:1px 5px;border-radius:3px;border:1px solid rgba(59,130,246,0.3)">${highPrice.toLocaleString()}</span>
                 <span style="font-family:monospace;font-size:10px;font-weight:700;color:#93c5fd;background:rgba(15,23,42,0.75);padding:1px 5px;border-radius:3px;border:1px solid rgba(59,130,246,0.3)">${lowPrice.toLocaleString()}</span>
               </div>`
-          : ''
+            : ''
         }
       `
       overlay.innerHTML = handlesHtml
@@ -5062,10 +5022,10 @@ export function TradingChart({
     if (!drawnZone) return
     setDrawnZoneSending(true)
     const inst = (lockedInstrument ?? instrument) as Instrument
-
+    
     // Auto-open voice panel first so context loads
     if (!voiceOpen) setVoiceOpen(true)
-
+    
     const zoneName = `Zone ${drawnZoneCounter}`
     const mid = Math.round(((drawnZone.priceHigh + drawnZone.priceLow) / 2) * 100) / 100
 
@@ -5090,7 +5050,7 @@ export function TradingChart({
         const blob = new Blob([bytes], { type: json.mime || 'audio/mp3' })
         const url = URL.createObjectURL(blob)
         const audio = new Audio(url)
-        audio.play().catch(() => { })
+        audio.play().catch(() => {})
       }
       setDrawnZoneCounter((prev) => prev + 1)
     } catch { /* silent */ }
@@ -5111,10 +5071,10 @@ export function TradingChart({
     if (!drawnTime) return
     setDrawnTimeSending(true)
     const inst = (lockedInstrument ?? instrument) as Instrument
-
+    
     // Auto-open voice panel first so context loads
     if (!voiceOpen) setVoiceOpen(true)
-
+    
     const label = drawnTime.label || 'Highlight 1'
     const sessionSpanStr = describeTimeHighlightSpan(
       label,
@@ -5178,7 +5138,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         const blob = new Blob([bytes], { type: json.mime || 'audio/mp3' })
         const url = URL.createObjectURL(blob)
         const audio = new Audio(url)
-        audio.play().catch(() => { })
+        audio.play().catch(() => {})
       }
     } catch { /* silent */ }
 
@@ -5221,7 +5181,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     // Add extra padding bars to the left and right so it visualizes comfortably
     const span = hl.endUnix - hl.startUnix
     const padding = Math.max(span * 0.2, 3600) // minimum 1 hour padding
-
+    
     timeScale.setVisibleRange({
       from: toChartTime(hl.startUnix - padding, chartTzRef.current) as UTCTimestamp,
       to: toChartTime(hl.endUnix + padding, chartTzRef.current) as UTCTimestamp,
@@ -5297,13 +5257,14 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         <div style="position:absolute;bottom:-5px;left:-5px;width:10px;height:10px;background:#8b5cf6;border:1.5px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>
         <div style="position:absolute;bottom:-5px;left:50%;transform:translateX(-50%);width:10px;height:10px;background:#8b5cf6;border:1.5px solid #fff;border-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>
         <div style="position:absolute;bottom:-5px;right:-5px;width:10px;height:10px;background:#8b5cf6;border:1.5px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>
-        ${highPrice != null && lowPrice != null
-          ? `<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:4px 8px;height:100%;flex-direction:column;pointer-events:none">
+        ${
+          highPrice != null && lowPrice != null
+            ? `<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:4px 8px;height:100%;flex-direction:column;pointer-events:none">
                 <span style="font-family:monospace;font-size:10px;font-weight:700;color:#c4b5fd;background:rgba(15,23,42,0.85);padding:2px 6px;border-radius:3px;border:1px solid rgba(139,92,246,0.5)">${highPrice.toLocaleString()}</span>
                 ${hintText ? `<span style="font-size:9px;font-weight:600;color:#e9d5ff;background:rgba(126,34,206,0.8);padding:2px 6px;border-radius:4px;box-shadow:0 2px 4px rgba(0,0,0,0.3)">${hintText}</span>` : ''}
                 <span style="font-family:monospace;font-size:10px;font-weight:700;color:#c4b5fd;background:rgba(15,23,42,0.85);padding:2px 6px;border-radius:3px;border:1px solid rgba(139,92,246,0.5)">${lowPrice.toLocaleString()}</span>
               </div>`
-          : ''
+            : ''
         }
       `
       overlay.innerHTML = handlesHtml
@@ -5378,7 +5339,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               const minTime = Math.min(sTime, eTime)
               const maxTime = Math.max(sTime, eTime)
               const rangeBars = candles.filter((c) => Number(c.time) >= minTime && Number(c.time) <= maxTime)
-
+              
               const cOpen = rangeBars[0]?.open ?? pStart ?? highPrice
               const cClose = rangeBars[rangeBars.length - 1]?.close ?? pEnd ?? lowPrice
               const rHigh = rangeBars.length > 0 ? Math.max(...rangeBars.map((c) => c.high)) : highPrice
@@ -5571,14 +5532,14 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         setRiskBox((prev) =>
           prev
             ? {
-              ...prev,
-              profitTarget: snapTargetToTick(
-                instrument,
-                prev.entryPrice,
-                snappedRaw,
-                prev.direction
-              ),
-            }
+                ...prev,
+                profitTarget: snapTargetToTick(
+                  instrument,
+                  prev.entryPrice,
+                  snappedRaw,
+                  prev.direction
+                ),
+              }
             : null
         )
       } else if (draggingRiskLineRef.current === 'SL') {
@@ -5848,11 +5809,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       setPriceAlert((prev) =>
         prev
           ? {
-            ...prev,
-            price: snapped,
-            armed: true,
-            pendingAway: nearSpot || prev.pendingAway === true,
-          }
+              ...prev,
+              price: snapped,
+              armed: true,
+              pendingAway: nearSpot || prev.pendingAway === true,
+            }
           : null
       )
     }
@@ -6335,7 +6296,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     const host = priceLineHostRef.current
     clearHoverPreview()
     positionLinesRef.current.forEach(line => {
-      try { host?.removePriceLine(line) } catch { }
+      try { host?.removePriceLine(line) } catch {}
     })
     positionLinesRef.current = []
 
@@ -7126,10 +7087,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
   return (
     <div
-      className={`flex flex-col gap-2 ${isFullscreen
-        ? 'fixed inset-0 z-[100] bg-[#0d1117] p-3 h-screen w-screen'
-        : 'h-full w-full'
-        }`}
+      className={`flex flex-col gap-2 ${
+        isFullscreen
+          ? 'fixed inset-0 z-[100] bg-[#0d1117] p-3 h-screen w-screen'
+          : 'h-full w-full'
+      }`}
     >
       {/* ── Toolbar ─────────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
@@ -7151,7 +7113,33 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           5m
         </span>
 
-
+        {/* Level toggle — only while this desk session has an active playbook */}
+        {deskSessionLive && deskLevelsActive && (
+          <button
+            type="button"
+            title={
+              showLevels
+                ? 'Hide AI/structure levels (Press L)'
+                : 'Show AI/structure levels (Press L)'
+            }
+            onClick={() => setShowLevels((v) => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+              showLevels
+                ? 'bg-surface-600 border-surface-400 text-gray-200'
+                : 'bg-transparent border-surface-600 text-gray-600 hover:text-gray-400'
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
+            {showLevels
+              ? 'Levels (L)'
+              : levels.some((l) => l.source === 'ai')
+                ? 'AI Levels (L)'
+                : 'Levels (L)'}
+            {levels.length > 0
+              ? ` (${levels.filter((l) => l.source === 'ai' || l.source === 'structure').length})`
+              : ''}
+          </button>
+        )}
 
         {/* IB H/L + BRK/REJ + ±10 (Press B) — remembered across refresh */}
         {deskSessionLive && (
@@ -7163,10 +7151,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 : 'Show IB high/low, break/reject markers, and ±10 bands (Press B)'
             }
             onClick={() => setShowIbBreakouts((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showIbBreakouts
-              ? 'bg-blue-600/30 border-blue-500/50 text-blue-100'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-blue-200 hover:border-blue-500/40'
-              }`}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+              showIbBreakouts
+                ? 'bg-blue-600/30 border-blue-500/50 text-blue-100'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-blue-200 hover:border-blue-500/40'
+            }`}
           >
             <span className={`w-2 h-2 rounded-full inline-block ${showIbBreakouts ? 'bg-blue-400' : 'bg-gray-600'}`} />
             <span>IB BRK/REJ (B)</span>
@@ -7187,10 +7176,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 : 'Show yesterday cash profile: YH/YL/VAH/VAL/POC and open type (Press Y)'
             }
             onClick={() => setShowYesterdayProfile((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showYesterdayProfile
-              ? 'bg-amber-600/30 border-amber-500/50 text-amber-100'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-amber-200 hover:border-amber-500/40'
-              }`}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+              showYesterdayProfile
+                ? 'bg-amber-600/30 border-amber-500/50 text-amber-100'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-amber-200 hover:border-amber-500/40'
+            }`}
           >
             <span className={`w-2 h-2 rounded-full inline-block ${showYesterdayProfile ? 'bg-amber-400' : 'bg-gray-600'}`} />
             <span>Yday (Y)</span>
@@ -7209,10 +7199,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 : 'Show full Asia / London / NY columns and range boxes like the session map (Press H)'
             }
             onClick={() => setShowSessionBands((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showSessionBands
-              ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-100'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-emerald-200 hover:border-emerald-500/40'
-              }`}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+              showSessionBands
+                ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-100'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-emerald-200 hover:border-emerald-500/40'
+            }`}
           >
             <span className={`w-2 h-2 rounded-full inline-block ${showSessionBands ? 'bg-emerald-400' : 'bg-gray-600'}`} />
             <span>Sessions (H)</span>
@@ -7228,10 +7219,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 : 'Show Dalton opening type: Drive / Test-Drive / Rejection-Reverse / Auction. Click for open + first-bar H/L.'
             }
             onClick={() => setShowOpeningActivity((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showOpeningActivity
-              ? 'bg-cyan-600/30 border-cyan-500/50 text-cyan-100'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-cyan-200 hover:border-cyan-500/40'
-              }`}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+              showOpeningActivity
+                ? 'bg-cyan-600/30 border-cyan-500/50 text-cyan-100'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-cyan-200 hover:border-cyan-500/40'
+            }`}
           >
             <span className={`w-2 h-2 rounded-full inline-block ${showOpeningActivity ? 'bg-cyan-400' : 'bg-gray-600'}`} />
             <span>Open</span>
@@ -7248,10 +7240,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 : 'Show Dalton control: Rotation Factor + developing POC. ↑ / ↓ = ONE-TF BUY/SELL. 2TF is not a CALL. Click for the dPOC line (off on refresh).'
             }
             onClick={() => setShowMarketControl((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showMarketControl
-              ? 'bg-indigo-600/30 border-indigo-500/50 text-indigo-100'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-indigo-200 hover:border-indigo-500/40'
-              }`}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+              showMarketControl
+                ? 'bg-indigo-600/30 border-indigo-500/50 text-indigo-100'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-indigo-200 hover:border-indigo-500/40'
+            }`}
           >
             <span className={`w-2 h-2 rounded-full inline-block ${showMarketControl ? 'bg-indigo-400' : 'bg-gray-600'}`} />
             <span>Ctrl</span>
@@ -7289,10 +7282,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 : 'Show Open range high / low (Press N). First 15 minutes of cash open.'
             }
             onClick={() => setShowOr15((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showOr15
-              ? 'bg-amber-600/30 border-amber-500/50 text-amber-100'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-amber-200 hover:border-amber-500/40'
-              }`}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+              showOr15
+                ? 'bg-amber-600/30 border-amber-500/50 text-amber-100'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-amber-200 hover:border-amber-500/40'
+            }`}
           >
             <span className={`w-2 h-2 rounded-full inline-block ${showOr15 ? 'bg-amber-400' : 'bg-gray-600'}`} />
             <span>Open range (N)</span>
@@ -7314,10 +7308,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 : 'Show current US session H/L (Press U)'
             }
             onClick={() => setShowUsRange((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showUsRange
-              ? 'bg-red-600/30 border-red-500/50 text-red-100'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-red-200 hover:border-red-500/40'
-              }`}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+              showUsRange
+                ? 'bg-red-600/30 border-red-500/50 text-red-100'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-red-200 hover:border-red-500/40'
+            }`}
           >
             <span className={`w-2 h-2 rounded-full inline-block ${showUsRange ? 'bg-red-500' : 'bg-gray-600'}`} />
             <span>US Range (U)</span>
@@ -7334,10 +7329,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 : `OR30 is calculated from cash open even if you arrive late. Press R to show H/L + BRK/REJ — ${or30WindowLabel(instrument)}`
             }
             onClick={() => setShowOr30((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showOr30
-              ? 'bg-teal-600/30 border-teal-500/50 text-teal-100'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-teal-200 hover:border-teal-500/40'
-              }`}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+              showOr30
+                ? 'bg-teal-600/30 border-teal-500/50 text-teal-100'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-teal-200 hover:border-teal-500/40'
+            }`}
           >
             <span className={`w-2 h-2 rounded-full inline-block ${showOr30 ? 'bg-teal-400' : 'bg-gray-600'}`} />
             <span>OR30 BRK/REJ (R)</span>
@@ -7355,10 +7351,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         {/* IB Proximity Badge when price approaches IB High / IB Low */}
         {ibProximity && (
           <span
-            className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-extrabold uppercase tracking-wide animate-pulse shadow-sm ${ibProximity.level === 'HIGH'
-              ? 'border-amber-500/80 bg-amber-950/80 text-amber-200'
-              : 'border-purple-500/80 bg-purple-950/80 text-purple-200'
-              }`}
+            className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-extrabold uppercase tracking-wide animate-pulse shadow-sm ${
+              ibProximity.level === 'HIGH'
+                ? 'border-amber-500/80 bg-amber-950/80 text-amber-200'
+                : 'border-purple-500/80 bg-purple-950/80 text-purple-200'
+            }`}
             title={`Price is testing Initial Balance ${ibProximity.level} (${ibProximity.price.toLocaleString()})`}
           >
             ⚡ TESTING IB {ibProximity.level} ({ibProximity.price.toLocaleString()})
@@ -7368,12 +7365,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         {/* Active playbook ±10 band — entries unlocked (limit or market) */}
         {edgeProximity && canPlaceOrder && (
           <span
-            className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-extrabold uppercase tracking-wide animate-pulse shadow-sm ${edgeProximity.edge === 'high'
-              ? 'border-sky-500/80 bg-sky-950/80 text-sky-100'
-              : edgeProximity.edge === 'mid'
-                ? 'border-violet-500/80 bg-violet-950/80 text-violet-100'
-                : 'border-emerald-500/80 bg-emerald-950/80 text-emerald-100'
-              }`}
+            className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-extrabold uppercase tracking-wide animate-pulse shadow-sm ${
+              edgeProximity.edge === 'high'
+                ? 'border-sky-500/80 bg-sky-950/80 text-sky-100'
+                : edgeProximity.edge === 'mid'
+                  ? 'border-violet-500/80 bg-violet-950/80 text-violet-100'
+                  : 'border-emerald-500/80 bg-emerald-950/80 text-emerald-100'
+            }`}
             title={`Live price is within ±10 of ${edgeProximity.label} ${edgeProximity.edge === 'mid' ? '50% mid' : edgeProximity.edge} (${edgeProximity.center.toLocaleString()}). Limit allowed.`}
           >
             IN BAND · {edgeProximity.label}{' '}
@@ -7395,10 +7393,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   : `Show ${playbookButtonLabel} (Press P) — advise only; place on CALL ±10`
             }
             onClick={togglePlaybook}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${playbookOpen
-              ? 'bg-surface-600 border-surface-400 text-gray-200'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-gray-300'
-              }`}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+              playbookOpen
+                ? 'bg-surface-600 border-surface-400 text-gray-200'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-gray-300'
+            }`}
           >
             {playbookButtonLabel} (P)
           </button>
@@ -7411,19 +7410,128 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           !canPlaceOrder &&
           !positionOverlay &&
           !pendingLimit && (
-            <span
-              className="rounded-lg border border-surface-600 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500"
-              title={
-                tokyoDesk
-                  ? 'Outside Tokyo entry windows — levels are watch-only until cash close'
-                  : 'Outside entry windows (morning / OR30 / IB) — levels are watch-only'
-              }
-            >
-              Watch only
-            </span>
-          )}
+          <span
+            className="rounded-lg border border-surface-600 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500"
+            title={
+              tokyoDesk
+                ? 'Outside Tokyo entry windows — levels are watch-only until cash close'
+                : 'Outside entry windows (morning / OR30 / IB) — levels are watch-only'
+            }
+          >
+            Watch only
+          </span>
+        )}
 
+        {/* Live Voice — toggle like playbook; panel when open */}
+        <button
+          type="button"
+          title={
+            voiceOpen
+              ? 'Hide Live Voice coach (Press V)'
+              : clockedIn
+                ? 'Show Live Voice — hold Mic to talk during morning entry (Press V)'
+                : 'Live Voice — clock in first, then talk during morning entry (Press V)'
+          }
+          onClick={() => setVoiceOpen((v) => !v)}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+            voiceOpen
+              ? 'bg-violet-600/30 border-violet-500/50 text-violet-100'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-violet-200 hover:border-violet-500/40'
+          }`}
+        >
+          <span
+            className={`w-2 h-2 rounded-full inline-block ${
+              voiceOpen ? 'bg-violet-400 animate-pulse' : 'bg-gray-600'
+            }`}
+          />
+          Voice (V)
+        </button>
 
+        {/* Draw Zone tool — next to voice */}
+        <button
+          type="button"
+          title={
+            drawZoneActive
+              ? 'Drag on chart to draw zone — or press D / Esc to cancel'
+              : drawnZone
+                ? 'Zone drawn — send or discard'
+                : 'Draw a BUY/SHORT zone on the chart for Leo (Press D)'
+          }
+          onClick={() => {
+            if (drawZoneActive) {
+              cancelDrawnZone()
+            } else {
+              setDrawZoneActive(true)
+              setDrawnZone(null)
+              clearDrawnZoneLines()
+            }
+          }}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+            drawZoneActive
+              ? 'bg-amber-600/30 border-amber-500/50 text-amber-100 animate-pulse'
+              : drawnZone
+                ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-100'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-amber-200 hover:border-amber-500/40'
+          }`}
+        >
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <rect x="2" y="4" width="12" height="8" rx="1" strokeLinecap="round" />
+            <line x1="2" y1="8" x2="14" y2="8" strokeDasharray="2 2" />
+          </svg>
+          {drawZoneActive ? 'Drag to draw…' : 'Draw Zone (D)'}
+        </button>
+
+        {/* Highlight Time Range tool */}
+        <button
+          type="button"
+          title={
+            drawTimeActive
+              ? 'Click 1st & 2nd points on chart to highlight — or press T / Esc to cancel'
+              : drawnTime
+                ? 'Time highlighted — send or discard'
+                : 'Highlight a specific time range to discuss with Leo (Press T)'
+          }
+          onClick={() => {
+            if (drawTimeActive) {
+              cancelDrawnTime()
+            } else {
+              setDrawTimeActive(true)
+              setDrawnTime(null)
+            }
+          }}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+            drawTimeActive
+              ? 'bg-violet-600/30 border-violet-500/50 text-violet-100 animate-pulse'
+              : drawnTime
+                ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-100'
+                : 'bg-transparent border-surface-600 text-gray-500 hover:text-violet-200 hover:border-violet-500/40'
+          }`}
+        >
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <rect x="2" y="2" width="12" height="12" rx="1" strokeLinecap="round" />
+            <line x1="8" y1="2" x2="8" y2="14" strokeDasharray="2 2" />
+          </svg>
+          {drawTimeActive ? 'Click 1st & 2nd points…' : 'Highlight Time (T)'}
+        </button>
+
+        {/* Highlights Recall List Button */}
+        <button
+          type="button"
+          title="Open list of saved session highlights"
+          onClick={() => setHighlightsListOpen((prev) => !prev)}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+            highlightsListOpen
+              ? 'bg-violet-600 border-violet-500 text-white shadow-lg'
+              : 'bg-violet-950/40 border-violet-500/40 text-violet-300 hover:text-white hover:border-violet-500 shadow-sm'
+          }`}
+        >
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <line x1="4" y1="4" x2="12" y2="4" strokeLinecap="round" />
+            <line x1="4" y1="8" x2="12" y2="8" strokeLinecap="round" />
+            <line x1="4" y1="12" x2="12" y2="12" strokeLinecap="round" />
+          </svg>
+          {`Previous Highlights (${savedHighlights.length})`}
+        </button>
 
         {/* Interactive TradingView Risk/Reward Limit Order Tool */}
         <button
@@ -7440,10 +7548,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               openRiskBox()
             }
           }}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${riskBox
-            ? 'bg-sky-600/30 border-sky-500/50 text-sky-100 animate-pulse'
-            : 'bg-transparent border-surface-600 text-gray-500 hover:text-sky-200 hover:border-sky-500/40'
-            }`}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+            riskBox
+              ? 'bg-sky-600/30 border-sky-500/50 text-sky-100 animate-pulse'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-sky-200 hover:border-sky-500/40'
+          }`}
         >
           <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
             <rect x="2" y="2" width="12" height="6" rx="1" className="fill-emerald-500/30 stroke-emerald-400" />
@@ -7466,14 +7575,15 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               : 'Place draggable price alert (Press A)'
           }
           onClick={togglePriceAlert}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${priceAlert
-            ? priceAlert.armed === false
-              ? 'bg-violet-950/40 border-violet-500/30 text-violet-300/70'
-              : priceAlert.pendingAway
-                ? 'bg-violet-600/20 border-violet-500/40 text-violet-200/90'
-                : 'bg-violet-600/30 border-violet-500/50 text-violet-100 animate-pulse'
-            : 'bg-transparent border-surface-600 text-gray-500 hover:text-violet-200 hover:border-violet-500/40'
-            }`}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+            priceAlert
+              ? priceAlert.armed === false
+                ? 'bg-violet-950/40 border-violet-500/30 text-violet-300/70'
+                : priceAlert.pendingAway
+                  ? 'bg-violet-600/20 border-violet-500/40 text-violet-200/90'
+                  : 'bg-violet-600/30 border-violet-500/50 text-violet-100 animate-pulse'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-violet-200 hover:border-violet-500/40'
+          }`}
         >
           <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
             <path strokeLinecap="round" strokeLinejoin="round" d="M8 2v2M8 12v2M3.5 8H2M14 8h-1.5M4.2 4.2l1 1M10.8 10.8l1 1M4.2 11.8l1-1M10.8 5.2l1-1" />
@@ -7493,10 +7603,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           <button
             type="button"
             onClick={toggleRiskBoxDirection}
-            className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-mono font-extrabold uppercase rounded-lg border transition shadow-sm ${riskBox.direction === 'LONG'
-              ? 'bg-red-950/80 border-red-500/70 text-red-300 hover:bg-red-900'
-              : 'bg-emerald-950/80 border-emerald-500/70 text-emerald-300 hover:bg-emerald-900'
-              }`}
+            className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-mono font-extrabold uppercase rounded-lg border transition shadow-sm ${
+              riskBox.direction === 'LONG'
+                ? 'bg-red-950/80 border-red-500/70 text-red-300 hover:bg-red-900'
+                : 'bg-emerald-950/80 border-emerald-500/70 text-emerald-300 hover:bg-emerald-900'
+            }`}
             title={`Switch mode from ${riskBox.direction} to ${riskBox.direction === 'LONG' ? 'SHORT' : 'LONG'}`}
           >
             <span>⇄</span>
@@ -7513,10 +7624,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               : 'Enter Fullscreen mode (Press F)'
           }
           onClick={toggleFullscreen}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${isFullscreen
-            ? 'bg-blue-600/30 border-blue-500/50 text-blue-100'
-            : 'bg-transparent border-surface-600 text-gray-500 hover:text-blue-200 hover:border-blue-500/40'
-            }`}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${
+            isFullscreen
+              ? 'bg-blue-600/30 border-blue-500/50 text-blue-100'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-blue-200 hover:border-blue-500/40'
+          }`}
         >
           <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
             {isFullscreen ? (
@@ -7537,10 +7649,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           return (
             <>
               <span
-                className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide ${isBroken
-                  ? 'border-amber-500/80 bg-amber-950/80 text-amber-200 animate-pulse font-bold'
-                  : 'border-sky-700/50 bg-sky-950/40 text-sky-200'
-                  }`}
+                className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide ${
+                  isBroken
+                    ? 'border-amber-500/80 bg-amber-950/80 text-amber-200 animate-pulse font-bold'
+                    : 'border-sky-700/50 bg-sky-950/40 text-sky-200'
+                }`}
               >
                 {isBroken ? '⚠️ Level Invalidated (Structure Broke) · Working ' : 'Working '}
                 {pendingLimit.direction} · E{' '}
@@ -7553,10 +7666,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 <button
                   type="button"
                   onClick={onCancelPending}
-                  className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide shadow-sm transition ${isBroken
-                    ? 'border-red-500 bg-red-600 text-white hover:bg-red-500 animate-pulse'
-                    : 'border-sky-500/60 bg-sky-600/80 text-white hover:bg-sky-500'
-                    }`}
+                  className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide shadow-sm transition ${
+                    isBroken
+                      ? 'border-red-500 bg-red-600 text-white hover:bg-red-500 animate-pulse'
+                      : 'border-sky-500/60 bg-sky-600/80 text-white hover:bg-sky-500'
+                  }`}
                 >
                   Cancel limit
                 </button>
@@ -7584,10 +7698,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           />
           {/* Position overlay indicator */}
           {positionOverlay && (
-            <span className={`text-xs px-2 py-0.5 rounded font-semibold border ${positionOverlay.direction === 'long'
-              ? 'text-green-400 border-green-800 bg-green-900/30'
-              : 'text-red-400 border-red-800 bg-red-900/30'
-              }`}>
+            <span className={`text-xs px-2 py-0.5 rounded font-semibold border ${
+              positionOverlay.direction === 'long'
+                ? 'text-green-400 border-green-800 bg-green-900/30'
+                : 'text-red-400 border-red-800 bg-red-900/30'
+            }`}>
               {positionOverlay.direction === 'long' ? '▲' : '▼'} POSITION
             </span>
           )}
@@ -7599,8 +7714,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           )}
           {dataMode === 'live' ? (
             <span
-              className={`flex items-center gap-1 text-xs ${candleFeed === 'yahoo' ? 'text-emerald-400' : 'text-amber-400'
-                }`}
+              className={`flex items-center gap-1 text-xs ${
+                candleFeed === 'yahoo' ? 'text-emerald-400' : 'text-amber-400'
+              }`}
               title={
                 candleFeed === 'yahoo'
                   ? 'CME futures (MYM / MNQ / NKD) — IB matches Tradovate, not OANDA US30/NAS100 cash'
@@ -7608,8 +7724,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               }
             >
               <span
-                className={`w-1.5 h-1.5 rounded-full animate-pulse ${candleFeed === 'yahoo' ? 'bg-emerald-400' : 'bg-amber-400'
-                  }`}
+                className={`w-1.5 h-1.5 rounded-full animate-pulse ${
+                  candleFeed === 'yahoo' ? 'bg-emerald-400' : 'bg-amber-400'
+                }`}
               />
               {candleFeed === 'yahoo' ? 'LIVE · CME' : 'LIVE · OANDA'}
             </span>
@@ -7898,10 +8015,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                                 )
                               )
                             }}
-                            className={`px-1.5 py-0.5 text-[10px] font-bold rounded transition border ${hl.visible
-                              ? `${theme.pillBg} ${theme.pillBorder} ${theme.text}`
-                              : 'bg-transparent border-gray-605 text-gray-505 hover:border-gray-500'
-                              }`}
+                            className={`px-1.5 py-0.5 text-[10px] font-bold rounded transition border ${
+                              hl.visible
+                                ? `${theme.pillBg} ${theme.pillBorder} ${theme.text}`
+                                : 'bg-transparent border-gray-605 text-gray-505 hover:border-gray-500'
+                            }`}
                             title="Toggle visibility on chart"
                           >
                             {hl.visible ? 'Hide' : 'Show'}
@@ -7938,12 +8056,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           <div className="pointer-events-none absolute left-3 top-3 z-20 max-w-[min(360px,70%)]">
             {aiVerdict ? (
               <div
-                className={`rounded-md border px-2 py-1 shadow-lg backdrop-blur-sm ${aiVerdict.verdict.toLowerCase() === 'reversal'
-                  ? 'border-violet-500/50 bg-violet-950/85 text-violet-100'
-                  : aiVerdict.verdict.toLowerCase() === 'pullback'
-                    ? 'border-amber-500/50 bg-amber-950/85 text-amber-100'
-                    : 'border-emerald-500/40 bg-emerald-950/85 text-emerald-100'
-                  }`}
+                className={`rounded-md border px-2 py-1 shadow-lg backdrop-blur-sm ${
+                  aiVerdict.verdict.toLowerCase() === 'reversal'
+                    ? 'border-violet-500/50 bg-violet-950/85 text-violet-100'
+                    : aiVerdict.verdict.toLowerCase() === 'pullback'
+                      ? 'border-amber-500/50 bg-amber-950/85 text-amber-100'
+                      : 'border-emerald-500/40 bg-emerald-950/85 text-emerald-100'
+                }`}
               >
                 <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider">
                   <span>
@@ -8023,19 +8142,21 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             <div className="flex gap-1.5">
               <button
                 onClick={() => setDrawnZoneSide('BUY')}
-                className={`flex-1 rounded-lg py-1.5 text-xs font-bold uppercase tracking-wide transition border ${drawnZoneSide === 'BUY'
-                  ? 'bg-emerald-600/40 border-emerald-500/60 text-emerald-200 shadow-sm'
-                  : 'bg-transparent border-[#30363d] text-gray-500 hover:text-emerald-300 hover:border-emerald-500/40'
-                  }`}
+                className={`flex-1 rounded-lg py-1.5 text-xs font-bold uppercase tracking-wide transition border ${
+                  drawnZoneSide === 'BUY'
+                    ? 'bg-emerald-600/40 border-emerald-500/60 text-emerald-200 shadow-sm'
+                    : 'bg-transparent border-[#30363d] text-gray-500 hover:text-emerald-300 hover:border-emerald-500/40'
+                }`}
               >
                 BUY Zone
               </button>
               <button
                 onClick={() => setDrawnZoneSide('SHORT')}
-                className={`flex-1 rounded-lg py-1.5 text-xs font-bold uppercase tracking-wide transition border ${drawnZoneSide === 'SHORT'
-                  ? 'bg-red-600/40 border-red-500/60 text-red-200 shadow-sm'
-                  : 'bg-transparent border-[#30363d] text-gray-500 hover:text-red-300 hover:border-red-500/40'
-                  }`}
+                className={`flex-1 rounded-lg py-1.5 text-xs font-bold uppercase tracking-wide transition border ${
+                  drawnZoneSide === 'SHORT'
+                    ? 'bg-red-600/40 border-red-500/60 text-red-200 shadow-sm'
+                    : 'bg-transparent border-[#30363d] text-gray-500 hover:text-red-300 hover:border-red-500/40'
+                }`}
               >
                 SHORT Zone
               </button>
@@ -8141,7 +8262,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   <span className="text-emerald-600 mx-1.5">|</span>
                   <button
                     onClick={(e) => { e.stopPropagation(); cancelRiskBox() }}
-                    onMouseDown={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
                     className="text-gray-400 hover:text-emerald-200 transition font-bold"
                     title="Remove TP"
                   >✕</button>
@@ -8170,10 +8291,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     confirmRiskBoxOrder()
                   }}
                   onMouseDown={(e) => e.stopPropagation()}
-                  className={`px-3 py-1 text-xs font-extrabold uppercase rounded-md shadow-md transition border ${riskBox.direction === 'LONG'
-                    ? 'bg-blue-600 border-blue-400 text-white hover:bg-blue-500 hover:scale-105'
-                    : 'bg-red-600 border-red-400 text-white hover:bg-red-500 hover:scale-105'
-                    }`}
+                  className={`px-3 py-1 text-xs font-extrabold uppercase rounded-md shadow-md transition border ${
+                    riskBox.direction === 'LONG'
+                      ? 'bg-blue-600 border-blue-400 text-white hover:bg-blue-500 hover:scale-105'
+                      : 'bg-red-600 border-red-400 text-white hover:bg-red-500 hover:scale-105'
+                  }`}
                   title={`Click to place ${riskBox.direction} Limit Order`}
                 >
                   {riskBox.direction === 'LONG' ? 'BUY LIMIT' : 'SELL LIMIT'}
@@ -8206,7 +8328,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); cancelRiskBox() }}
-                    onMouseDown={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
                     className="text-gray-400 hover:text-red-500 transition font-bold"
                     title="Close (Esc)"
                   >
@@ -8237,7 +8359,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   <span className="text-amber-600 mx-1.5">|</span>
                   <button
                     onClick={(e) => { e.stopPropagation(); cancelRiskBox() }}
-                    onMouseDown={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
                     className="text-gray-400 hover:text-amber-200 transition font-bold"
                     title="Remove SL"
                   >✕</button>
@@ -8259,8 +8381,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 data-ov-price={priceAlert.price}
                 data-ov-dy={-14}
                 onMouseDown={armed ? onPriceAlertLineMouseDown : undefined}
-                className={`absolute flex items-center gap-2 pointer-events-auto group ${armed ? 'cursor-ns-resize' : 'cursor-default'
-                  }`}
+                className={`absolute flex items-center gap-2 pointer-events-auto group ${
+                  armed ? 'cursor-ns-resize' : 'cursor-default'
+                }`}
                 style={{
                   left: '38%',
                   top: 0,
@@ -8275,12 +8398,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 }
               >
                 <div
-                  className={`flex items-center rounded-md border px-3 py-1 text-xs font-mono font-bold shadow-xl transition ${!armed
-                    ? 'border-violet-500/40 bg-violet-950/50 text-violet-300/70'
-                    : pending
-                      ? 'border-violet-400/70 bg-violet-950/80 text-violet-200/90'
-                      : 'border-violet-400 bg-violet-950/95 text-violet-100 group-hover:border-violet-300'
-                    }`}
+                  className={`flex items-center rounded-md border px-3 py-1 text-xs font-mono font-bold shadow-xl transition ${
+                    !armed
+                      ? 'border-violet-500/40 bg-violet-950/50 text-violet-300/70'
+                      : pending
+                        ? 'border-violet-400/70 bg-violet-950/80 text-violet-200/90'
+                        : 'border-violet-400 bg-violet-950/95 text-violet-100 group-hover:border-violet-300'
+                  }`}
                 >
                   <span className="font-sans uppercase font-extrabold tracking-wider text-[11px] select-none">
                     {!armed ? 'Fired' : pending ? 'Arming' : 'Alert'}
@@ -8301,12 +8425,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   </button>
                 </div>
                 <div
-                  className={`w-3 h-3 rounded-full border-2 border-white shadow-md transition-transform ${!armed
-                    ? 'bg-violet-500/40'
-                    : pending
-                      ? 'bg-violet-400/70'
-                      : 'bg-violet-500 group-hover:scale-125'
-                    }`}
+                  className={`w-3 h-3 rounded-full border-2 border-white shadow-md transition-transform ${
+                    !armed
+                      ? 'bg-violet-500/40'
+                      : pending
+                        ? 'bg-violet-400/70'
+                        : 'bg-violet-500 group-hover:scale-125'
+                  }`}
                 />
               </div>
             </div>
@@ -8318,8 +8443,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           const saving = bracketAdjustStatus === 'saving'
           const units =
             editableOverlay.positionSize != null &&
-              Number.isFinite(editableOverlay.positionSize) &&
-              editableOverlay.positionSize > 0
+            Number.isFinite(editableOverlay.positionSize) &&
+            editableOverlay.positionSize > 0
               ? editableOverlay.positionSize
               : 0
           const lossPts = Math.abs(editableOverlay.entryPrice - editableOverlay.stopLoss)
@@ -8332,8 +8457,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 data-ov-price={editableOverlay.profitTarget}
                 data-ov-dy={-13}
                 onMouseDown={saving ? undefined : onBracketLineMouseDown('TP')}
-                className={`absolute flex items-center gap-1.5 pointer-events-auto group ${saving ? 'cursor-wait opacity-70' : 'cursor-ns-resize'
-                  }`}
+                className={`absolute flex items-center gap-1.5 pointer-events-auto group ${
+                  saving ? 'cursor-wait opacity-70' : 'cursor-ns-resize'
+                }`}
                 style={{ left: '48%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
                 title={`Drag Take Profit @ ${editableOverlay.profitTarget.toLocaleString()} — saves on release`}
               >
@@ -8350,8 +8476,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 data-ov-price={editableOverlay.stopLoss}
                 data-ov-dy={-13}
                 onMouseDown={saving ? undefined : onBracketLineMouseDown('SL')}
-                className={`absolute flex items-center gap-1.5 pointer-events-auto group ${saving ? 'cursor-wait opacity-70' : 'cursor-ns-resize'
-                  }`}
+                className={`absolute flex items-center gap-1.5 pointer-events-auto group ${
+                  saving ? 'cursor-wait opacity-70' : 'cursor-ns-resize'
+                }`}
                 style={{ left: '48%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
                 title={`Drag Stop Loss @ ${editableOverlay.stopLoss.toLocaleString()} — saves on release`}
               >
@@ -8367,18 +8494,18 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               {(bracketAdjustStatus === 'saving' ||
                 bracketAdjustStatus === 'error' ||
                 bracketAdjustError) && (
-                  <div className="absolute left-3 bottom-3 pointer-events-none rounded-md border border-white/15 bg-black/80 px-2.5 py-1.5 text-[10px] font-semibold">
-                    {bracketAdjustStatus === 'saving' && (
-                      <span className="text-amber-200">Saving SL/TP…</span>
+                <div className="absolute left-3 bottom-3 pointer-events-none rounded-md border border-white/15 bg-black/80 px-2.5 py-1.5 text-[10px] font-semibold">
+                  {bracketAdjustStatus === 'saving' && (
+                    <span className="text-amber-200">Saving SL/TP…</span>
+                  )}
+                  {(bracketAdjustStatus === 'error' || bracketAdjustError) &&
+                    bracketAdjustStatus !== 'saving' && (
+                      <span className="text-red-300">
+                        {bracketAdjustError || 'Could not update brackets'}
+                      </span>
                     )}
-                    {(bracketAdjustStatus === 'error' || bracketAdjustError) &&
-                      bracketAdjustStatus !== 'saving' && (
-                        <span className="text-red-300">
-                          {bracketAdjustError || 'Could not update brackets'}
-                        </span>
-                      )}
-                  </div>
-                )}
+                </div>
+              )}
             </div>
           )
         })()}
@@ -8392,8 +8519,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 data-ov-price={editablePending.profitTarget}
                 data-ov-dy={-13}
                 onMouseDown={saving ? undefined : onWorkingTpMouseDown}
-                className={`absolute flex items-center gap-1.5 pointer-events-auto group ${saving ? 'cursor-wait opacity-70' : 'cursor-ns-resize'
-                  }`}
+                className={`absolute flex items-center gap-1.5 pointer-events-auto group ${
+                  saving ? 'cursor-wait opacity-70' : 'cursor-ns-resize'
+                }`}
                 style={{ left: '48%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
                 title={`Drag Take Profit @ ${editablePending.profitTarget.toLocaleString()} — saves on release`}
               >
@@ -8420,18 +8548,18 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               {(workingBracketAdjustStatus === 'saving' ||
                 workingBracketAdjustStatus === 'error' ||
                 workingBracketAdjustError) && (
-                  <div className="absolute left-3 bottom-3 pointer-events-none rounded-md border border-white/15 bg-black/80 px-2.5 py-1.5 text-[10px] font-semibold">
-                    {workingBracketAdjustStatus === 'saving' && (
-                      <span className="text-amber-200">Saving TP…</span>
+                <div className="absolute left-3 bottom-3 pointer-events-none rounded-md border border-white/15 bg-black/80 px-2.5 py-1.5 text-[10px] font-semibold">
+                  {workingBracketAdjustStatus === 'saving' && (
+                    <span className="text-amber-200">Saving TP…</span>
+                  )}
+                  {(workingBracketAdjustStatus === 'error' || workingBracketAdjustError) &&
+                    workingBracketAdjustStatus !== 'saving' && (
+                      <span className="text-red-300">
+                        {workingBracketAdjustError || 'Could not update take profit'}
+                      </span>
                     )}
-                    {(workingBracketAdjustStatus === 'error' || workingBracketAdjustError) &&
-                      workingBracketAdjustStatus !== 'saving' && (
-                        <span className="text-red-300">
-                          {workingBracketAdjustError || 'Could not update take profit'}
-                        </span>
-                      )}
-                  </div>
-                )}
+                </div>
+              )}
             </div>
           )
         })()}
@@ -8451,7 +8579,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               </div>
 
               <p className="text-xs text-gray-400 leading-relaxed">
-                Because this manual limit was placed without a Live Voice discussion with Leo, please record your entry and SL/TP rationale for your daily performance journal:
+                  Because this manual limit was placed without a Live Voice discussion with Leo, please record your entry and SL/TP rationale for your daily performance journal:
               </p>
 
               <div className="space-y-3">
@@ -8622,10 +8750,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                         e.stopPropagation()
                         jumpToPriceRef?.current?.(l.price)
                       }}
-                      className={`w-full rounded-xl border px-2.5 py-2.5 text-left text-[11px] transition-all hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 ${isRes
-                        ? 'border-red-800/80 bg-[#2a1518] text-red-200'
-                        : 'border-emerald-800/80 bg-[#12241c] text-emerald-200'
-                        } ${isPrimary ? 'ring-1 ring-white/25' : 'opacity-90'}`}
+                      className={`w-full rounded-xl border px-2.5 py-2.5 text-left text-[11px] transition-all hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 ${
+                        isRes
+                          ? 'border-red-800/80 bg-[#2a1518] text-red-200'
+                          : 'border-emerald-800/80 bg-[#12241c] text-emerald-200'
+                      } ${isPrimary ? 'ring-1 ring-white/25' : 'opacity-90'}`}
                       title={`${why} · advise only (click to focus) — place on CALL ±10`}
                     >
                       <div className="flex items-center justify-between gap-1">
@@ -8645,12 +8774,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                       </p>
                       {reaction && (
                         <div
-                          className={`mt-1.5 text-[9px] font-semibold uppercase tracking-wide ${reaction.startsWith('held')
-                            ? 'text-emerald-400'
-                            : reaction.startsWith('broke')
-                              ? 'text-red-400'
-                              : 'text-amber-300'
-                            }`}
+                          className={`mt-1.5 text-[9px] font-semibold uppercase tracking-wide ${
+                            reaction.startsWith('held')
+                              ? 'text-emerald-400'
+                              : reaction.startsWith('broke')
+                                ? 'text-red-400'
+                                : 'text-amber-300'
+                          }`}
                         >
                           Market · {reaction}
                         </div>

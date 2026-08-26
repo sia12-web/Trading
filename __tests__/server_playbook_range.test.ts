@@ -89,7 +89,7 @@ const serverOr30 = { label: 'OR30', high: 63_281.3, low: 62_508.8 }
     clientRange: us,
   })
   assert.equal(ok.ok, true, 'US Range high accepted via client when server null')
-  if (!ok.ok) assert.fail('US Range high rejected')
+  if (!ok.ok) assert.fail(ok.message)
 
   const mid = (us.high + us.low) / 2
   const midRejected = gateEntryAgainstAuthoritativeRange({

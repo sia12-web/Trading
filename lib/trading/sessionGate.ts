@@ -865,23 +865,23 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     input.attemptLadder ??
     (input.attemptFills
       ? buildAttemptLadder(
-        input.attemptFills,
-        lockedRaw ?? viewingRaw ?? 'DOW',
-        now
-      )
+          input.attemptFills,
+          lockedRaw ?? viewingRaw ?? 'DOW',
+          now
+        )
       : attemptLadderFromTotals({
-        attemptsUsed: input.attemptsUsed ?? 0,
-        stopHits: input.stopLossHitCount ?? 0,
-        now,
-        instrument: lockedRaw ?? viewingRaw ?? 'DOW',
-      }))
+          attemptsUsed: input.attemptsUsed ?? 0,
+          stopHits: input.stopLossHitCount ?? 0,
+          now,
+          instrument: lockedRaw ?? viewingRaw ?? 'DOW',
+        }))
   // Re-apply Option B clock unlock against `now` (pre-built ladders may omit clock)
   const otherAttempts = Math.max(
     0,
     ladderRaw.dayAttempts -
-    ladderRaw.morningAttempts -
-    ladderRaw.ibAttempts -
-    ladderRaw.lunchAttempts
+      ladderRaw.morningAttempts -
+      ladderRaw.ibAttempts -
+      ladderRaw.lunchAttempts
   )
   const ladder: AttemptLadder = attemptLadderFromCounts({
     morningAttempts: ladderRaw.morningAttempts,
@@ -899,12 +899,15 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   })
   const dayDone =
     !!input.dayDone || !!input.marketDisabled || ladder.dayLocked
-  // System is fully automated at 9:30 AM — clockedIn is automatically true during session window
+  const clockedIn = !!input.clockedIn
+  const attendedToday = !!input.attendedToday || clockedIn
+  /** First clock-in: prep through cash close (late join after open = remaining probes only). */
+  const inFirstClockWindow = isWeekdayInTz(now, s.tz) && t >= analyze && t < close
+  /** Re-clock after early out: until cash close if already attended today. */
   const inDeskWindow = isWeekdayInTz(now, s.tz) && t >= analyze && t < close
-  const clockedIn = isWeekdayInTz(now, s.tz) && t >= open - LIVE_FOCUS_LEAD_MINUTES * 60 && t < close
-  const attendedToday = true
-  /** Re-clock not needed as system runs automatically */
-  const canClockIn = false
+  // First commit or re-enter: anytime during cash session (analyze → close).
+  const canClockIn =
+    !clockedIn && (!!input.attendedToday ? inDeskWindow : inFirstClockWindow)
 
   const bars = isLiveBarsAllowed(viewing ?? locked, now)
   const wm = getWindowManager()
@@ -975,87 +978,87 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     if (clockedIn) {
       out = { ...r, clockedIn, attendedToday, canClockIn, glanceOnly: false }
     } else {
-      // Never clocked in during morning desk → lock trading + chart
-      const needClock =
-        inDeskWindow &&
-        !attendedToday &&
-        (r.phase === 'PREP' ||
-          r.phase === 'RECOMMENDED' ||
-          r.phase === 'ENTRY' ||
-          r.phase === 'FLAT' ||
-          r.phase === 'MANAGE')
-      const missedLate =
-        needClock && isWeekdayInTz(now, s.tz) && t >= open && t < close
-      // Attended earlier today (lunch/manual clock-out)
-      if (attendedToday) {
-        const openBook = r.phase === 'MANAGE' || hasOpen
-        // Never offer “Today I trade” after Session 3/3 — day is locked
-        const canReClock = inDeskWindow && !openBook && !r.dayLocked
-        out = {
-          ...r,
-          clockedIn: false,
-          attendedToday: true,
-          canClockIn: canReClock,
-          glanceOnly: false,
-          canPlaceEntry: false,
-          // Open book must stay manageable even after lunch/manual clock-out
-          canManagePosition: openBook ? true : false,
-          rangeStrategy: openBook ? r.rangeStrategy : null,
-          canFetchLiveBars: openBook
-            ? !!(r.canFetchLiveBars || bars.open || afternoonWatch || afterCashClose)
-            : false,
-          canViewLiveChart: openBook
-            ? !!locked && onClockedName
-            : !!locked && (afternoonWatch || r.canViewLiveChart),
-          message: openBook
-            ? r.message || 'Position open. Manage only — no new entries.'
-            : r.dayLocked
-              ? `Session ${r.attemptsUsed ?? ladder.dayAttempts}/${r.maxAttempts ?? MAX_DAY_ATTEMPTS} — day locked. No re-clock / new entries.`
-              : canReClock
-                ? r.message?.trim()
-                  ? r.message
-                  : 'Clocked out — re-clock in with “Today I trade” to resume the live desk.'
-                : r.message,
-        }
-      } else {
-        // Never attended: allow NY dual browse pre-open; otherwise lock until clock-in / next day
-        const skippedAfternoon = afternoonWatch && !attendedToday
-        if (nyDualBrowse) {
-          out = {
-            ...r,
-            clockedIn: false,
-            attendedToday: false,
-            canClockIn,
-            glanceOnly: false,
-            canViewLiveChart: true,
-            canFetchLiveBars: false,
-            canPlaceEntry: false,
-            canManagePosition: false,
-            rangeStrategy: null,
-            message: r.message,
-          }
-        } else {
-          out = {
-            ...r,
-            clockedIn: false,
-            attendedToday: false,
-            canClockIn,
-            glanceOnly: false,
-            canViewLiveChart: false,
-            canFetchLiveBars: false,
-            canPlaceEntry: false,
-            canManagePosition: false,
-            rangeStrategy: null,
-            message: canClockIn && missedLate
-              ? 'Late clock-in still open — remaining probes only (dead OR30/IB books stay closed). Open Live Trading for the desk brief, then clock in.'
-              : skippedAfternoon
-                ? 'No clock-in today — live chart locked. Use Simulation, or wait for the next desk prep window.'
-                : needClock
-                  ? 'Live chart is closed — clock in (“Today I trade”) to unlock, or try Simulation.'
-                  : r.message,
-          }
-        }
+    // Never clocked in during morning desk → lock trading + chart
+    const needClock =
+      inDeskWindow &&
+      !attendedToday &&
+      (r.phase === 'PREP' ||
+        r.phase === 'RECOMMENDED' ||
+        r.phase === 'ENTRY' ||
+        r.phase === 'FLAT' ||
+        r.phase === 'MANAGE')
+    const missedLate =
+      needClock && isWeekdayInTz(now, s.tz) && t >= open && t < close
+    // Attended earlier today (lunch/manual clock-out)
+    if (attendedToday) {
+      const openBook = r.phase === 'MANAGE' || hasOpen
+      // Never offer “Today I trade” after Session 3/3 — day is locked
+      const canReClock = inDeskWindow && !openBook && !r.dayLocked
+      out = {
+        ...r,
+        clockedIn: false,
+        attendedToday: true,
+        canClockIn: canReClock,
+        glanceOnly: false,
+        canPlaceEntry: false,
+        // Open book must stay manageable even after lunch/manual clock-out
+        canManagePosition: openBook ? true : false,
+        rangeStrategy: openBook ? r.rangeStrategy : null,
+        canFetchLiveBars: openBook
+          ? !!(r.canFetchLiveBars || bars.open || afternoonWatch || afterCashClose)
+          : false,
+        canViewLiveChart: openBook
+          ? !!locked && onClockedName
+          : !!locked && (afternoonWatch || r.canViewLiveChart),
+        message: openBook
+          ? r.message || 'Position open. Manage only — no new entries.'
+          : r.dayLocked
+            ? `Session ${r.attemptsUsed ?? ladder.dayAttempts}/${r.maxAttempts ?? MAX_DAY_ATTEMPTS} — day locked. No re-clock / new entries.`
+            : canReClock
+              ? r.message?.trim()
+                ? r.message
+                : 'Clocked out — re-clock in with “Today I trade” to resume the live desk.'
+              : r.message,
       }
+    } else {
+    // Never attended: allow NY dual browse pre-open; otherwise lock until clock-in / next day
+    const skippedAfternoon = afternoonWatch && !attendedToday
+    if (nyDualBrowse) {
+      out = {
+        ...r,
+        clockedIn: false,
+        attendedToday: false,
+        canClockIn,
+        glanceOnly: false,
+        canViewLiveChart: true,
+        canFetchLiveBars: false,
+        canPlaceEntry: false,
+        canManagePosition: false,
+        rangeStrategy: null,
+        message: r.message,
+      }
+    } else {
+    out = {
+      ...r,
+      clockedIn: false,
+      attendedToday: false,
+      canClockIn,
+      glanceOnly: false,
+      canViewLiveChart: false,
+      canFetchLiveBars: false,
+      canPlaceEntry: false,
+      canManagePosition: false,
+      rangeStrategy: null,
+      message: canClockIn && missedLate
+        ? 'Late clock-in still open — remaining probes only (dead OR30/IB books stay closed). Open Live Trading for the desk brief, then clock in.'
+        : skippedAfternoon
+          ? 'No clock-in today — live chart locked. Use Simulation, or wait for the next desk prep window.'
+          : needClock
+            ? 'Live chart is closed — clock in (“Today I trade”) to unlock, or try Simulation.'
+            : r.message,
+    }
+    }
+    }
     }
     return applyLiveBookGate(out)
   }
@@ -1512,7 +1515,7 @@ export function resolveSimMorningGate(input: {
     t >= open && t <= entryClose
       ? 1
       : rangeStrategy === 'us_range' ||
-        (market === 'NY' && rangeStrategy === 'or30')
+          (market === 'NY' && rangeStrategy === 'or30')
         ? 2
         : rangeStrategy === 'ib'
           ? 3
@@ -1596,12 +1599,12 @@ export function resolveSimMorningGate(input: {
         canManagePosition: false,
         message: ladder.morningEligible
           ? 'Morning (Open range) playbook ' +
-          deskLocalRangeAsTraderDisplay(or15Hms, s.entryClose, s.tz, input.now) +
-          ' — ' +
-          ladderHint +
-          '. Open range locked — click a level (until ' +
-          entryUntil +
-          ').'
+            deskLocalRangeAsTraderDisplay(or15Hms, s.entryClose, s.tz, input.now) +
+            ' — ' +
+            ladderHint +
+            '. Open range locked — click a level (until ' +
+            entryUntil +
+            ').'
           : 'Morning attempts full. ' + ladderHint,
       }
     }
@@ -1636,21 +1639,21 @@ export function resolveSimMorningGate(input: {
         message:
           market === 'TOKYO'
             ? midLabel +
-            ' playbook unlocked — up to 2 probes (progressive risk) ' +
-            ibRange +
-            '. ' +
-            ladderHint +
-            '. After ' +
-            ibUntil +
-            ' → ' +
-            prepAfterMid +
-            '.'
+              ' playbook unlocked — up to 2 probes (progressive risk) ' +
+              ibRange +
+              '. ' +
+              ladderHint +
+              '. After ' +
+              ibUntil +
+              ' → ' +
+              prepAfterMid +
+              '.'
             : midLabel +
-            ' playbook unlocked — up to 2 probes (progressive risk) ' +
-            ibRange +
-            ' (open until IB locks). ' +
-            ladderHint +
-            '.',
+              ' playbook unlocked — up to 2 probes (progressive risk) ' +
+              ibRange +
+              ' (open until IB locks). ' +
+              ladderHint +
+              '.',
       }
     }
 
@@ -1680,33 +1683,33 @@ export function resolveSimMorningGate(input: {
       canManagePosition: false,
       message: waitingMid
         ? 'Morning entry closed (' +
-        entryUntil +
-        '). ' +
-        midLabel +
-        ' playbook ' +
-        ibRange +
-        ' (up to 2 probes). ' +
-        ladderHint
+          entryUntil +
+          '). ' +
+          midLabel +
+          ' playbook ' +
+          ibRange +
+          ' (up to 2 probes). ' +
+          ladderHint
         : midEnded
           ? midLabel +
-          ' entry closed (' +
-          ibUntil +
-          '). ' +
-          prepAfterMid +
-          ' — ' +
-          lateLabel +
-          ' unlocks ' +
-          lunchRangeLabel +
-          '. ' +
-          ladderHint
+            ' entry closed (' +
+            ibUntil +
+            '). ' +
+            prepAfterMid +
+            ' — ' +
+            lateLabel +
+            ' unlocks ' +
+            lunchRangeLabel +
+            '. ' +
+            ladderHint
           : 'Morning entry closed (' +
-          entryUntil +
-          '). Next is ' +
-          midLabel +
-          ' ' +
-          ibRange +
-          '. ' +
-          ladderHint,
+            entryUntil +
+            '). Next is ' +
+            midLabel +
+            ' ' +
+            ibRange +
+            '. ' +
+            ladderHint,
     }
   }
 
@@ -1748,24 +1751,24 @@ export function resolveSimMorningGate(input: {
       ? 'Session attempt cap reached. Chart continues until cash close. ' + ladderHint
       : waitingLunchRange
         ? prepAfterMid +
-        ' — ' +
-        lateLabel +
-        ' unlocks ' +
-        lunchRangeLabel +
-        '. ' +
-        ladderHint
+          ' — ' +
+          lateLabel +
+          ' unlocks ' +
+          lunchRangeLabel +
+          '. ' +
+          ladderHint
         : lunchRangeEnded || !ladder.lunchEligible
           ? lateLabel +
-          ' entry closed. Manage-only until cash close (' +
-          cashCloseEt +
-          '). ' +
-          ladderHint
+            ' entry closed. Manage-only until cash close (' +
+            cashCloseEt +
+            '). ' +
+            ladderHint
           : 'Afternoon watch — ' +
-          lateLabel +
-          ' ' +
-          lunchRangeLabel +
-          ' if still eligible. ' +
-          ladderHint,
+            lateLabel +
+            ' ' +
+            lunchRangeLabel +
+            ' if still eligible. ' +
+            ladderHint,
   }
 }
 

@@ -42,10 +42,6 @@ export interface AnalysisRequest {
    * NIKKEI has no twin.
    */
   peerTapeText?: string
-  /**
-   * Layer 1 Day Timeframe Specialist Context (Excess Tails & Poor Highs/Lows).
-   */
-  htfContextText?: string
 }
 
 export interface LevelIdentification {

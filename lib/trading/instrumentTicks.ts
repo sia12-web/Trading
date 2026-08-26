@@ -3,17 +3,7 @@
  * Indices trade in whole points on this desk (OANDA displayPrecision usually 1).
  */
 
-export type DeskTickInstrument =
-  | 'DOW'
-  | 'NASDAQ'
-  | 'NIKKEI'
-  | 'GOLD'
-  | 'CRUDE'
-  | 'COPPER'
-  | 'NATGAS'
-  | 'RUSSELL'
-  | 'EURO'
-  | 'SILVER'
+export type DeskTickInstrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
 
 const TICK_BY_INSTRUMENT: Record<DeskTickInstrument, number> = {
   DOW: 1,
@@ -21,11 +11,6 @@ const TICK_BY_INSTRUMENT: Record<DeskTickInstrument, number> = {
   NIKKEI: 1,
   GOLD: 0.1,
   CRUDE: 0.01,
-  COPPER: 0.001,
-  NATGAS: 0.001,
-  RUSSELL: 0.1,
-  EURO: 0.0001,
-  SILVER: 0.005,
 }
 
 export function instrumentTick(instrument: string): number {
@@ -34,14 +19,9 @@ export function instrumentTick(instrument: string): number {
     instrument === 'NASDAQ' ||
     instrument === 'NIKKEI' ||
     instrument === 'GOLD' ||
-    instrument === 'CRUDE' ||
-    instrument === 'COPPER' ||
-    instrument === 'NATGAS' ||
-    instrument === 'RUSSELL' ||
-    instrument === 'EURO' ||
-    instrument === 'SILVER'
+    instrument === 'CRUDE'
   ) {
-    return TICK_BY_INSTRUMENT[instrument as DeskTickInstrument]
+    return TICK_BY_INSTRUMENT[instrument]
   }
   return 1
 }

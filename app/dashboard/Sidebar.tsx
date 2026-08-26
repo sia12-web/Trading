@@ -82,7 +82,32 @@ const LIVE_ITEMS: NavItem[] = [
   },
 ]
 
-
+const PRACTICE_ITEMS: NavItem[] = [
+  {
+    href: '/dashboard/simulation',
+    label: 'Simulation',
+    hint: 'Paper replay desk',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-4 h-4">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+  },
+  {
+    href: '/dashboard/journal?tab=sim',
+    label: 'Sim History',
+    hint: 'Paper fills & P&L',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-4 h-4">
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+        />
+      </svg>
+    ),
+  },
+]
 
 const TOOL_ITEMS: NavItem[] = [
   {
@@ -130,10 +155,11 @@ function NavLink({
   return (
     <Link
       href={item.href}
-      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${active
-        ? 'bg-brand-600/20 text-brand-300 border border-brand-700/30'
-        : 'text-gray-500 hover:text-gray-200 hover:bg-surface-700 border border-transparent'
-        }`}
+      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+        active
+          ? 'bg-brand-600/20 text-brand-300 border border-brand-700/30'
+          : 'text-gray-500 hover:text-gray-200 hover:bg-surface-700 border border-transparent'
+      }`}
     >
       <span className={active ? 'text-brand-400' : 'text-gray-600'}>{item.icon}</span>
       <span className="min-w-0 flex-1">
@@ -226,6 +252,13 @@ function SidebarNav() {
         pathname={pathname}
         search={search}
         liveDeskOpen={liveDeskOpen}
+      />
+      <NavSection
+        title="Practice"
+        items={PRACTICE_ITEMS}
+        pathname={pathname}
+        search={search}
+        liveDeskOpen={true}
       />
       <NavSection
         title="Tools"
