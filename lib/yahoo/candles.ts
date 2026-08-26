@@ -1,6 +1,6 @@
 /**
  * Yahoo Finance chart candles (no API key).
- * Live desk uses CME micros (MYM / MNQ / NKD) so IB matches Tradovate, not OANDA CFDs.
+ * Live desk uses CME futures (MYM / MNQ / NKD / MGC / CL) so IB matches Tradovate, not OANDA CFDs.
  */
 
 import type { Instrument } from '@/types/price-feed'
@@ -133,8 +133,22 @@ export async function getYahooCandles(
   const range =
     fetchDays <= 1 ? '1d' : fetchDays <= 5 ? '5d' : fetchDays <= 30 ? '1mo' : '3mo'
 
-  let candles = await fetchYahooChart(symbol, interval, `range=${range}`)
-  if (!candles) return null
+  // Intraday CME futures: explicit period1/period2 returns denser 5m history than
+  // coarse range=1mo (Yahoo often truncates *=F intraday under range=).
+  const nowSec = Math.floor(Date.now() / 1000)
+  const period1 = nowSec - Math.max(fetchDays, 5) * 24 * 3600
+  let candles =
+    interval === '1d'
+      ? await fetchYahooChart(symbol, interval, `range=${range}`)
+      : await fetchYahooChart(
+          symbol,
+          interval,
+          `period1=${period1}&period2=${nowSec}`
+        )
+  if (!candles?.length) {
+    candles = await fetchYahooChart(symbol, interval, `range=${range}`)
+  }
+  if (!candles?.length) return null
   if (resolution === '240') candles = aggregateTo4H(candles)
   return { candles, symbol }
 }

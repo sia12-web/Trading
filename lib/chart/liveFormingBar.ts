@@ -128,3 +128,31 @@ export function mergeHistoryWithLiveTip<T extends FormingBar>(
   out[out.length - 1] = next
   return out
 }
+
+/**
+ * True when REST closed bars (everything except the forming tip) changed OHLC
+ * vs what the chart is holding — e.g. Yahoo replaced gap-fill flats.
+ */
+export function closedHistoryOhlcChanged<T extends FormingBar>(
+  prev: readonly T[],
+  next: readonly T[],
+  tipOwned: boolean
+): boolean {
+  if (prev.length !== next.length) return true
+  if (prev.length === 0) return false
+  const tipSkip = tipOwned && prev.length > 0 && next.length > 0
+  const end = tipSkip ? prev.length - 1 : prev.length
+  const start = Math.max(0, end - 12)
+  for (let i = start; i < end; i++) {
+    const a = prev[i]!
+    const b = next[i]!
+    if (a.time !== b.time) return true
+    if (a.open !== b.open || a.high !== b.high || a.low !== b.low || a.close !== b.close) {
+      return true
+    }
+  }
+  if (!tipSkip) return false
+  const aTip = prev[prev.length - 1]!
+  const bTip = next[next.length - 1]!
+  return aTip.time !== bTip.time
+}

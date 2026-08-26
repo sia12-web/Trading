@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict'
 import {
   applyTickToFormingBar,
+  closedHistoryOhlcChanged,
   deskBarOpenUnix,
   mergeHistoryWithLiveTip,
   quoteUnixForBucket,
@@ -81,6 +82,45 @@ const t0 = 1_700_000_000 - (1_700_000_000 % 300)
 {
   assert.equal(quoteUnixForBucket(t0, t0 + 3), t0)
   assert.equal(quoteUnixForBucket(t0, t0 + 200), t0 + 200)
+}
+
+{
+  const closed = (o: number, c: number) => ({
+    time: t0,
+    open: o,
+    high: Math.max(o, c),
+    low: Math.min(o, c),
+    close: c,
+  })
+  const tip = {
+    time: t0 + 300,
+    open: 100,
+    high: 101,
+    low: 99,
+    close: 100.5,
+  }
+  const prev = [closed(100, 100), tip]
+  const flatGap = [closed(100, 100), tip]
+  assert.equal(
+    closedHistoryOhlcChanged(prev, flatGap, true),
+    false,
+    'identical closed OHLC is quiet'
+  )
+  const yahooFixed = [closed(100, 101.2), tip]
+  assert.equal(
+    closedHistoryOhlcChanged(prev, yahooFixed, true),
+    true,
+    'Yahoo replacing a flat gap-fill must refresh chart'
+  )
+  const tipOnlyDrift = [
+    closed(100, 100),
+    { ...tip, close: 99.1, high: 101, low: 99.1 },
+  ]
+  assert.equal(
+    closedHistoryOhlcChanged(prev, tipOnlyDrift, true),
+    false,
+    'forming tip drift alone must not force setCandles'
+  )
 }
 
 console.log('live_forming_bar: all passed')

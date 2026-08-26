@@ -102,25 +102,25 @@ export async function GET(request: Request) {
       }
       // Keep afternoon bars on the replay day (and priors) — matches live continuum
     } else {
-      // Live desk: CME futures (MYM / MNQ / NKD / MGC / CL) then OANDA CFD if Yahoo is dark
-      // Floor must cover AVWAP 5-trading-day-prior anchor (weekends truncate `days=5`)
+      // Live desk: CME futures (MYM / MNQ / NKD / MGC / CL) first.
+      // Floor must cover AVWAP 5-trading-day-prior anchor (weekends truncate `days=5`).
+      // OANDA CFD history is last-resort only — session geometry differs from Tradovate.
       const fetchDays = Math.max(days, AVWAP_CANDLE_FETCH_CALENDAR_DAYS)
-      const [yahoo, oanda] = await Promise.all([
-        getYahooCandles(instrument, resolution, fetchDays),
-        getOandaCandles(instrument, resolution, fetchDays),
-      ])
+      const yahoo = await getYahooCandles(instrument, resolution, fetchDays)
       if (yahoo?.candles?.length) {
         candles = yahoo.candles
         source = 'yahoo'
-      } else if (oanda?.candles?.length) {
-        // CFD bars must share the live-tip (CME) scale or ±10 entries miss the range.
-        if (getCmeBasis(instrument) == null && getLastKnownCmeBasis(instrument) == null) {
-          await warmCmeBasis(instrument)
+      } else {
+        const oanda = await getOandaCandles(instrument, resolution, fetchDays)
+        if (oanda?.candles?.length) {
+          if (getCmeBasis(instrument) == null && getLastKnownCmeBasis(instrument) == null) {
+            await warmCmeBasis(instrument)
+          }
+          const basis =
+            getCmeBasis(instrument) ?? getLastKnownCmeBasis(instrument)
+          candles = applyCmeBasisToCandles(oanda.candles, basis)
+          source = 'oanda'
         }
-        const basis =
-          getCmeBasis(instrument) ?? getLastKnownCmeBasis(instrument)
-        candles = applyCmeBasisToCandles(oanda.candles, basis)
-        source = 'oanda'
       }
       // Live: afternoon included (lunch freeze off); sim still strips via clipAllAfternoonBars
       if (candles?.length) {

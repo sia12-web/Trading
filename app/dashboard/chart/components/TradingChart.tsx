@@ -54,6 +54,7 @@ import {
 import {
   applyTickToFormingBar,
   mergeHistoryWithLiveTip,
+  closedHistoryOhlcChanged,
   quoteUnixForBucket,
 } from '@/lib/chart/liveFormingBar'
 import {
@@ -4541,6 +4542,7 @@ export function TradingChart({
         if (fetchGen !== candleFetchGenRef.current) return
 
         const prev = candlesRef.current
+        const tipOwned = !!(live && streamLive)
         const structureChanged =
           prev.length !== nextBars.length ||
           (prev.length > 0 &&
@@ -4550,10 +4552,30 @@ export function TradingChart({
             nextBars.length >= 2 &&
             (prev[prev.length - 2]!.time as number) !==
               (nextBars[nextBars.length - 2]!.time as number))
+        const closedChanged = closedHistoryOhlcChanged(
+          prev.map((c) => ({
+            time: c.time as number,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume,
+          })),
+          nextBars.map((c) => ({
+            time: c.time as number,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume,
+          })),
+          tipOwned
+        )
 
         // Never reset didFitRef here — new prints must not yank a panned viewport
         lastCandleRef.current = nextBars[nextBars.length - 1]!
-        if (structureChanged) {
+        // REST owns closed bars: replace gap-fill flats when Yahoo catches up
+        if (structureChanged || closedChanged) {
           setCandles(nextBars)
         } else {
           const tip = nextBars[nextBars.length - 1]!
@@ -4605,6 +4627,14 @@ export function TradingChart({
             price?: number
             change_pct?: number
             timestamp?: number
+            instrument?: string
+          }
+          // Hard reject ticks from another book (stale EventSource during tab switch)
+          if (
+            json.instrument &&
+            String(json.instrument).toUpperCase() !== instrument
+          ) {
+            return
           }
           if (typeof json.price !== 'number' || !(json.price > 0)) return
           sseHealthy = true
