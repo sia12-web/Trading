@@ -340,7 +340,7 @@ test('prod-style query-string cron secret is ignored when NODE_ENV=production', 
   const prevSecret = process.env.CRON_SECRET
   const prevEnv = process.env.NODE_ENV
   process.env.CRON_SECRET = 'sentinel-test-secret-not-for-prod'
-  process.env.NODE_ENV = 'production'
+  Object.defineProperty(process.env, 'NODE_ENV', { value: 'production', configurable: true, writable: true })
   try {
     const req = new Request(
       'http://localhost/api/trading/positions/cleanup-session?cron_secret=sentinel-test-secret-not-for-prod'
@@ -349,7 +349,7 @@ test('prod-style query-string cron secret is ignored when NODE_ENV=production', 
   } finally {
     if (prevSecret === undefined) delete process.env.CRON_SECRET
     else process.env.CRON_SECRET = prevSecret
-    process.env.NODE_ENV = prevEnv
+    Object.defineProperty(process.env, 'NODE_ENV', { value: prevEnv, configurable: true, writable: true })
   }
 })
 

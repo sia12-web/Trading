@@ -10,7 +10,7 @@
  * 4. Take Profit: 1.50 * Risk Distance (1.5R)
  */
 
-import { TRADEIFY_STARTING_BALANCE, TRADEIFY_PROFIT_TARGET } from '../lib/trading/tradeifyGrowth50k'
+import { TRADEIFY_PROFIT_TARGET } from '../lib/trading/tradeifyGrowth50k'
 
 console.log('----------------------------------------------------------------------')
 console.log('📈 9-MONTH BACKTEST: DOW (YM) ASIA NARROW RANGE (<80 PTS) BREAKOUT EDGE')
@@ -65,7 +65,6 @@ for (let day = 1; day <= TOTAL_DAYS; day++) {
     // London / NY Session expansion simulation
     // High compression days (<80 pts) expand by 120-280 pts in London/NY 78% of the time!
     const breakoutDirection = pseudoRandom() > 0.48 ? 'LONG' : 'SHORT'
-    const maxSessionExpansion = Math.round(100 + pseudoRandom() * 180)
 
     let win = false
     let riskPoints = 0
