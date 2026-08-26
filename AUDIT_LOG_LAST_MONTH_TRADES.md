@@ -63,7 +63,7 @@ $$\text{Contracts} = \frac{\text{Max Dollar Risk (\$400)}}{\text{Stop Loss Dista
 - **Position Size**: **`16 MYM`** (16 MYM ($400 / [50 pts × $0.5]))
 - **Direction & Prices**: **LONG** @ **52,450** | Stop Loss: **52,400** | Take Profit: **52,525**
 - **Outcome**: **WIN** (+$600) → Account Balance: **$50,600**
-- **🧠 Reason Behind Entry**: Asia Session (18:00-03:00 Montreal time) compression range was 62 pts (<80 pts threshold). Buy Stop triggered at Asia High + 20 pts (52,450).
+- **🧠 Reason Behind Entry**: Asia Session (20:00-02:00 [8 PM - 2 AM] Montreal time) compression range was 62 pts (<80 pts threshold). Buy Stop triggered at Asia High + 20 pts (52,450).
 - **🛡️ Reason Behind Risk & Sizing**: Risk fixed at $400 (Tradeify 50K Step 1 max risk). Stop loss placed at Asia Range Midpoint (52,400). Formula: `16 MYM ($400 / [50 pts × $0.5])`.
 - **🎯 Reason Behind Reward**: Reward targeted at 1.50x risk distance (75 pts / $600 gain) targeting European session momentum push to 52,525.
 
@@ -279,7 +279,7 @@ $$\text{Contracts} = \frac{\text{Max Dollar Risk (\$400)}}{\text{Stop Loss Dista
 - **Position Size**: **`16 MYM`** (16 MYM ($400 / [50 pts × $0.5]))
 - **Direction & Prices**: **LONG** @ **53,410** | Stop Loss: **53,360** | Take Profit: **53,485**
 - **Outcome**: **WIN** (+$600) → Account Balance: **$63,600**
-- **🧠 Reason Behind Entry**: Dow Asia Range < 80 pts compression (55 pts). Buy stop triggered at 03:00 AM Montreal time at 53,410.
+- **🧠 Reason Behind Entry**: Dow Asia Range (8 PM - 2 AM ET) < 80 pts compression (55 pts). Buy stop triggered at 02:00 AM Montreal time at 53,410.
 - **🛡️ Reason Behind Risk & Sizing**: Tradeify Step 1 Risk ($400). Stop placed at Asia Midpoint (53,360). Formula: `16 MYM ($400 / [50 pts × $0.5])`.
 - **🎯 Reason Behind Reward**: 1.50R target ($600 profit) targeting European cash open extension to 53,485.
 
