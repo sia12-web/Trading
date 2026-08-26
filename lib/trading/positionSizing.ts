@@ -414,11 +414,11 @@ export function previewPositionSizing(
   // with the default disaster stop keep the classic 1% day-trade target
   const rawTarget = customStopValid
     ? takeProfitFromStopR({
-        entry: entryPrice,
-        stop: stop_loss_price,
-        direction,
-        rMultiple: DEFAULT_TAKE_PROFIT_R,
-      })
+      entry: entryPrice,
+      stop: stop_loss_price,
+      direction,
+      rMultiple: DEFAULT_TAKE_PROFIT_R,
+    })
     : direction === 'LONG'
       ? entryPrice * 1.01
       : entryPrice * 0.99
@@ -479,5 +479,51 @@ export function previewPositionSizingFromRiskAmount(
       rawTarget,
       direction
     ),
+  }
+}
+
+export const FUTURES_POINT_VALUES: Record<string, number> = {
+  MNQ: 2.0, // Micro Nasdaq-100 ($2 per point)
+  NASDAQ: 2.0,
+  MYM: 0.5, // Micro E-mini Dow ($0.50 per point)
+  DOW: 0.5,
+  MGC: 10.0, // Micro Gold ($10 per point)
+  GOLD: 10.0,
+  M2K: 5.0, // Micro Russell 2000 ($5 per point)
+  RTY: 5.0,
+  RUSSELL: 5.0,
+  M6E: 125000, // Micro Euro FX ($1.25 per 0.0001 pip -> $125,000 per 1.0)
+  EURO: 125000,
+  SIL: 1000.0, // Micro Silver ($1,000 per $1.00 move)
+  SI: 1000.0,
+  SILVER: 1000.0,
+}
+
+export function calculateFuturesContractSize(
+  instrument: string,
+  entryPrice: number,
+  stopLossPrice: number,
+  riskDollars: number = 400
+): { contracts: number; pointValue: number; stopDistancePts: number; riskDollars: number } {
+  const symbolKey = String(instrument).toUpperCase()
+  let pointVal = 2.0 // default MNQ
+  for (const [key, val] of Object.entries(FUTURES_POINT_VALUES)) {
+    if (symbolKey.includes(key)) {
+      pointVal = val
+      break
+    }
+  }
+  const stopDistancePts = Math.abs(entryPrice - stopLossPrice)
+  if (stopDistancePts <= 0) {
+    return { contracts: 1, pointValue: pointVal, stopDistancePts: 0, riskDollars }
+  }
+  const riskPerContract = stopDistancePts * pointVal
+  const rawContracts = riskDollars / riskPerContract
+  const contracts = Math.max(1, Math.round(rawContracts))
+  return {
+    contracts,
+    pointValue: pointVal,
+    stopDistancePts,
+    riskDollars,
   }
 }

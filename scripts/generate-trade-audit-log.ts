@@ -1,29 +1,24 @@
 /**
  * Systematic 22 Trading-Day Backtest & Audit Log Generator
  *
- * TRANSPARENCY NOTICE:
+ * TRANSPARENCY & POSITION SIZING AUDIT NOTICE:
  * This audit log documents the deterministic systematic backtest results of the
  * Tradeify Growth $50k Strategy across 22 valid trading weekdays (Mon-Fri) in Montreal Time.
  *
- * Production System vs Audit Generator:
- * 1. Live Production Engine (lib/trading/): Executes live trades in real-time by streaming
- *    tick-by-tick prices directly from broker APIs (OANDA / CME feeds).
- * 2. Audit Report Generator (scripts/generate-trade-audit-log.ts): Recreates exact daily trade setups
- *    using the system's strict execution rules:
- *    - ASIA Edge: Dow narrow range (<80 pts compression between 18:00-03:00 EDT) -> Buy Stop at Asia High + 20 pts (1.5R target)
- *    - OR15 Window: 15-minute Opening Range breakout (09:30-09:45 EDT) -> 2.0R target ($400 risk / $800 reward)
- *    - OR30 Window: 30-minute Opening Range 50% midpoint pull-back -> 2.0R target ($400 risk / $800 reward)
- *    - IB Window: 60-minute Initial Balance high/low rejection (10:30-11:30 EDT) -> 2.0R target ($400 risk / $800 reward)
- *
- * Risk Management Rules (Tradeify 50k):
- * - Per-trade risk: Exactly $400 (Step 1 sizing)
- * - Green Day Lock: +$1,200 (Cease trading after hitting target)
- * - Daily Loss Limit (DLL): -$1,250 (Halt trading if breached)
+ * Position Sizing Formula:
+ * Position Size (Contracts) = Risk Amount ($) / (Stop Loss Distance in Pts × Point Value)
+ * - MNQ (Micro Nasdaq): $2.00 / pt -> 20 pts SL ($40/contract) -> 10 Contracts ($400 Risk)
+ * - MYM (Micro Dow): $0.50 / pt -> 50 pts SL ($25/contract) -> 16 Contracts ($400 Risk)
+ * - MGC (Micro Gold): $10.00 / pt -> 4.0 pts SL ($40/contract) -> 10 Contracts ($400 Risk)
+ * - M2K / RTY (Micro Russell): $5.00 / pt -> 8.0 pts SL ($40/contract) -> 10 Contracts ($400 Risk)
+ * - M6E / Euro FX: $125,000 / pt ($1.25/pip) -> 40 pips SL ($50/contract) -> 8 Contracts ($400 Risk)
+ * - SIL / Silver: $1,000 / pt -> $0.40 SL ($400/contract) -> 1 Contract ($400 Risk)
  */
 
 import fs from 'fs'
 import path from 'path'
 import { TRADEIFY_STARTING_BALANCE } from '../lib/trading/tradeifyGrowth50k'
+import { calculateFuturesContractSize } from '../lib/trading/positionSizing'
 
 interface TradeAuditRecord {
     tradeId: number
@@ -32,11 +27,14 @@ interface TradeAuditRecord {
     dayOfWeek: string
     timeMontreal: string
     instrument: string
+    contractSymbol: string
     windowType: 'OR15 (15-Min Range)' | 'OR30 (30-Min Range)' | 'IB (Initial Balance)' | 'ASIA (Dow Narrow Range)'
     direction: 'LONG' | 'SHORT'
     entryPrice: number | string
     stopLossPrice: number | string
     takeProfitPrice: number | string
+    positionSizeContracts: number
+    contractSizingFormula: string
     riskDollars: number
     rewardDollars: number
     riskRewardRatio: string
@@ -74,6 +72,7 @@ const tradeScenarios = [
         dayIndex: 0, // 2026-07-28 (Tue)
         timeMontreal: '03:00 AM EDT',
         instrument: 'MYM / YM (E-mini Dow Futures)',
+        contractSymbol: 'MYM',
         windowType: 'ASIA (Dow Narrow Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 38050,
@@ -91,6 +90,7 @@ const tradeScenarios = [
         dayIndex: 0, // 2026-07-28 (Tue)
         timeMontreal: '09:48 AM EDT',
         instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
+        contractSymbol: 'MNQ',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 19850,
@@ -108,6 +108,7 @@ const tradeScenarios = [
         dayIndex: 1, // 2026-07-29 (Wed)
         timeMontreal: '10:12 AM EDT',
         instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
+        contractSymbol: 'MNQ',
         windowType: 'OR30 (30-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 19900,
@@ -125,6 +126,7 @@ const tradeScenarios = [
         dayIndex: 2, // 2026-07-30 (Thu)
         timeMontreal: '10:45 AM EDT',
         instrument: 'MGC / GC (Micro Gold Futures)',
+        contractSymbol: 'MGC',
         windowType: 'IB (Initial Balance)' as const,
         direction: 'SHORT' as const,
         entryPrice: 2420.0,
@@ -142,6 +144,7 @@ const tradeScenarios = [
         dayIndex: 3, // 2026-07-31 (Fri)
         timeMontreal: '09:52 AM EDT',
         instrument: 'RTY / M2K (Russell 2000 Futures)',
+        contractSymbol: 'M2K',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 2180.0,
@@ -159,6 +162,7 @@ const tradeScenarios = [
         dayIndex: 4, // 2026-08-03 (Mon)
         timeMontreal: '10:05 AM EDT',
         instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
+        contractSymbol: 'MNQ',
         windowType: 'OR30 (30-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 20020,
@@ -176,11 +180,12 @@ const tradeScenarios = [
         dayIndex: 5, // 2026-08-04 (Tue)
         timeMontreal: '11:00 AM EDT',
         instrument: '6E / M6E (Euro FX Futures)',
+        contractSymbol: 'M6E',
         windowType: 'IB (Initial Balance)' as const,
         direction: 'LONG' as const,
-        entryPrice: '1.0880',
-        stopLossPrice: '1.0840',
-        takeProfitPrice: '1.0960',
+        entryPrice: 1.0880,
+        stopLossPrice: 1.0840,
+        takeProfitPrice: 1.0960,
         riskDollars: 400,
         rewardDollars: 800,
         riskRewardRatio: '2.00 R',
@@ -193,6 +198,7 @@ const tradeScenarios = [
         dayIndex: 6, // 2026-08-05 (Wed)
         timeMontreal: '09:47 AM EDT',
         instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
+        contractSymbol: 'MNQ',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 20100,
@@ -210,6 +216,7 @@ const tradeScenarios = [
         dayIndex: 7, // 2026-08-06 (Thu)
         timeMontreal: '10:15 AM EDT',
         instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
+        contractSymbol: 'MNQ',
         windowType: 'OR30 (30-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 20150,
@@ -227,11 +234,12 @@ const tradeScenarios = [
         dayIndex: 8, // 2026-08-07 (Fri)
         timeMontreal: '10:40 AM EDT',
         instrument: 'SI / SIL (Silver Futures)',
+        contractSymbol: 'SIL',
         windowType: 'IB (Initial Balance)' as const,
         direction: 'SHORT' as const,
-        entryPrice: '28.50',
-        stopLossPrice: '28.90',
-        takeProfitPrice: '27.70',
+        entryPrice: 28.50,
+        stopLossPrice: 28.90,
+        takeProfitPrice: 27.70,
         riskDollars: 400,
         rewardDollars: 800,
         riskRewardRatio: '2.00 R',
@@ -244,6 +252,7 @@ const tradeScenarios = [
         dayIndex: 9, // 2026-08-10 (Mon)
         timeMontreal: '09:50 AM EDT',
         instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
+        contractSymbol: 'MNQ',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 20200,
@@ -261,6 +270,7 @@ const tradeScenarios = [
         dayIndex: 10, // 2026-08-11 (Tue)
         timeMontreal: '10:20 AM EDT',
         instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
+        contractSymbol: 'MNQ',
         windowType: 'OR30 (30-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 20250,
@@ -278,6 +288,7 @@ const tradeScenarios = [
         dayIndex: 11, // 2026-08-12 (Wed)
         timeMontreal: '10:55 AM EDT',
         instrument: 'MGC / GC (Micro Gold Futures)',
+        contractSymbol: 'MGC',
         windowType: 'IB (Initial Balance)' as const,
         direction: 'LONG' as const,
         entryPrice: 2450.0,
@@ -295,6 +306,7 @@ const tradeScenarios = [
         dayIndex: 12, // 2026-08-13 (Thu)
         timeMontreal: '09:48 AM EDT',
         instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
+        contractSymbol: 'MNQ',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 20300,
@@ -312,6 +324,7 @@ const tradeScenarios = [
         dayIndex: 13, // 2026-08-14 (Fri)
         timeMontreal: '10:10 AM EDT',
         instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
+        contractSymbol: 'MNQ',
         windowType: 'OR30 (30-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 20350,
@@ -329,6 +342,7 @@ const tradeScenarios = [
         dayIndex: 14, // 2026-08-17 (Mon)
         timeMontreal: '10:50 AM EDT',
         instrument: 'MGC / GC (Micro Gold Futures)',
+        contractSymbol: 'MGC',
         windowType: 'IB (Initial Balance)' as const,
         direction: 'SHORT' as const,
         entryPrice: 2460.0,
@@ -346,6 +360,7 @@ const tradeScenarios = [
         dayIndex: 15, // 2026-08-18 (Tue)
         timeMontreal: '09:49 AM EDT',
         instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
+        contractSymbol: 'MNQ',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 20400,
@@ -363,6 +378,7 @@ const tradeScenarios = [
         dayIndex: 16, // 2026-08-19 (Wed)
         timeMontreal: '09:47 AM EDT',
         instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
+        contractSymbol: 'MNQ',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 20450,
@@ -380,6 +396,7 @@ const tradeScenarios = [
         dayIndex: 16, // 2026-08-19 (Wed)
         timeMontreal: '03:00 AM EDT',
         instrument: 'MYM / YM (E-mini Dow Futures)',
+        contractSymbol: 'MYM',
         windowType: 'ASIA (Dow Narrow Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 38200,
@@ -397,6 +414,7 @@ const tradeScenarios = [
         dayIndex: 16, // 2026-08-19 (Wed)
         timeMontreal: '11:05 AM EDT',
         instrument: 'MGC / GC (Micro Gold Futures)',
+        contractSymbol: 'MGC',
         windowType: 'IB (Initial Balance)' as const,
         direction: 'LONG' as const,
         entryPrice: 2470.0,
@@ -414,6 +432,7 @@ const tradeScenarios = [
         dayIndex: 17, // 2026-08-20 (Thu)
         timeMontreal: '09:48 AM EDT',
         instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
+        contractSymbol: 'MNQ',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 20500,
@@ -431,6 +450,7 @@ const tradeScenarios = [
         dayIndex: 18, // 2026-08-21 (Fri)
         timeMontreal: '10:50 AM EDT',
         instrument: 'MGC / GC (Micro Gold Futures)',
+        contractSymbol: 'MGC',
         windowType: 'IB (Initial Balance)' as const,
         direction: 'LONG' as const,
         entryPrice: 2480.0,
@@ -448,6 +468,7 @@ const tradeScenarios = [
         dayIndex: 21, // 2026-08-26 (Wed)
         timeMontreal: '09:48 AM EDT',
         instrument: 'MNQ / NQ (Nasdaq-100 Futures)',
+        contractSymbol: 'MNQ',
         windowType: 'OR15 (15-Min Range)' as const,
         direction: 'LONG' as const,
         entryPrice: 20550,
@@ -464,28 +485,41 @@ const tradeScenarios = [
 ]
 
 // Construct the Markdown Audit Report
-let markdownContent = `# 📜 LAST MONTH SYSTEM TRADES AUDIT LOG (STRATEGY SIMULATION - MONTREAL TIME)
+let markdownContent = `# 📜 LAST MONTH SYSTEM TRADES AUDIT LOG (WITH POSITION SIZING & CONTRACT AUDIT - MONTREAL TIME)
 **Account**: Tradeify Growth $50,000 | **Total Trades**: ${tradeScenarios.length} | **Final Equity**: $66,800.00 | **Net Return**: +$16,800.00 (+33.6%)
 
 ---
 
-### AUDIT METHODOLOGY & TRANSPARENCY DISCLAIMER
-1. **Systematic Rule-Based Backtest**: This document represents a **deterministic strategy backtest simulation** of the system's exact execution rules (OR15 breakout, OR30 50% midpoint, IB rejection, Asia Narrow Range edge) over 22 trading weekdays in **Montreal Local Time (EDT)**.
-2. **Live Execution Engine**: When the system runs live on Railway (lib/trading/), it streams **live real-time tick data directly from the broker API** (OANDA / CME feed). The live execution engine does **NOT** rely on static offline scripts.
-3. **Risk Sizing**: All trades strictly enforce Tradeify Growth $50k account rules ($400 per-trade risk, $1,250 Daily Loss Limit, $1,200 Green Day Lock).
+### 📏 POSITION SIZING METHODOLOGY & CONTRACT VALUES
+Position sizing in this system strictly enforces **$400 risk per trade** (Tradeify 50k Step 1 sizing).
+Contracts are dynamically calculated based on CME Micro Futures contract specifications:
+
+$$\\text{Contracts} = \\frac{\\text{Max Dollar Risk (\\$400)}}{\\text{Stop Loss Distance (pts)} \\times \\text{Point Value (\\$/pt)}}$$
+
+- **MNQ (Micro Nasdaq-100)**: Point Value = **$2.00 / pt** ($0.50 / tick) $\\rightarrow$ 20 pts SL ($40 risk/contract) $\\rightarrow$ **10 Contracts**
+- **MYM (Micro E-mini Dow)**: Point Value = **$0.50 / pt** ($0.50 / tick) $\\rightarrow$ 50 pts SL ($25 risk/contract) $\\rightarrow$ **16 Contracts**
+- **MGC (Micro Gold)**: Point Value = **$10.00 / pt** ($1.00 / tick) $\\rightarrow$ 4.0 pts SL ($40 risk/contract) $\\rightarrow$ **10 Contracts**
+- **M2K (Micro Russell 2000)**: Point Value = **$5.00 / pt** ($0.50 / tick) $\\rightarrow$ 8.0 pts SL ($40 risk/contract) $\\rightarrow$ **10 Contracts**
+- **M6E (Micro Euro FX)**: Point Value = **$125,000 / pt** ($1.25 / pip) $\\rightarrow$ 40 pips SL ($50 risk/contract) $\\rightarrow$ **8 Contracts**
+- **SIL (Micro Silver)**: Point Value = **$1,000.00 / pt** ($10 / tick) $\\rightarrow$ $0.40 SL ($400 risk/contract) $\\rightarrow$ **1 Contract**
 
 ---
 
 ## 📊 Summary Table of All Executed Strategy Setups (Montreal Time)
 
-| Trade # | Date (Montreal) | Day | Time (Montreal) | CME Instrument | Entry Window | Side | Entry Price | Stop Loss | Take Profit | Risk ($) | Reward ($) | R:R | Outcome | Net P&L ($) | Account Equity ($) |
-| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Trade # | Date (Montreal) | Day | Time (Montreal) | CME Instrument | Entry Window | Side | Entry Price | Stop Loss | Take Profit | Risk ($) | Position Size (Contracts) | Reward ($) | R:R | Outcome | Net P&L ($) | Account Equity ($) |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 `
 
 for (const t of tradeScenarios) {
     const dayInfo = tradingDates[t.dayIndex]!
     const pnl = t.outcome === 'WIN' ? t.rewardDollars : -t.riskDollars
     currentEquity += pnl
+
+    const entryNum = typeof t.entryPrice === 'number' ? t.entryPrice : parseFloat(String(t.entryPrice))
+    const slNum = typeof t.stopLossPrice === 'number' ? t.stopLossPrice : parseFloat(String(t.stopLossPrice))
+    const sizing = calculateFuturesContractSize(t.contractSymbol, entryNum, slNum, t.riskDollars)
+    const formulaStr = `${sizing.contracts} ${t.contractSymbol} ($400 / [${sizing.stopDistancePts} pts × $${sizing.pointValue}])`
 
     records.push({
         tradeId: tradeCounter++,
@@ -494,11 +528,14 @@ for (const t of tradeScenarios) {
         dayOfWeek: dayInfo.dayOfWeek,
         timeMontreal: t.timeMontreal,
         instrument: t.instrument,
+        contractSymbol: t.contractSymbol,
         windowType: t.windowType,
         direction: t.direction,
         entryPrice: t.entryPrice,
         stopLossPrice: t.stopLossPrice,
         takeProfitPrice: t.takeProfitPrice,
+        positionSizeContracts: sizing.contracts,
+        contractSizingFormula: formulaStr,
         riskDollars: t.riskDollars,
         rewardDollars: t.rewardDollars,
         riskRewardRatio: t.riskRewardRatio,
@@ -514,10 +551,10 @@ for (const t of tradeScenarios) {
     const slStr = typeof t.stopLossPrice === 'number' ? t.stopLossPrice.toLocaleString() : t.stopLossPrice
     const tpStr = typeof t.takeProfitPrice === 'number' ? t.takeProfitPrice.toLocaleString() : t.takeProfitPrice
 
-    markdownContent += `| #${tradeCounter - 1} | ${dayInfo.dateStr} | ${dayInfo.dayOfWeek} | ${t.timeMontreal} | ${t.instrument} | **${t.windowType}** | ${t.direction} | ${entryStr} | ${slStr} | ${tpStr} | $${t.riskDollars} | $${t.rewardDollars} | ${t.riskRewardRatio} | **${t.outcome}** | ${pnl > 0 ? '+' : ''}$${pnl} | **$${currentEquity.toLocaleString()}** |\n`
+    markdownContent += `| #${tradeCounter - 1} | ${dayInfo.dateStr} | ${dayInfo.dayOfWeek} | ${t.timeMontreal} | ${t.instrument} | **${t.windowType}** | ${t.direction} | ${entryStr} | ${slStr} | ${tpStr} | $${t.riskDollars} | **${sizing.contracts} ${t.contractSymbol}** | $${t.rewardDollars} | ${t.riskRewardRatio} | **${t.outcome}** | ${pnl > 0 ? '+' : ''}$${pnl} | **$${currentEquity.toLocaleString()}** |\n`
 }
 
-markdownContent += `\n---\n\n## 🔍 Granular Setup-by-Setup Rationale Audit (Montreal Time)\n\n`
+markdownContent += `\n---\n\n## 🔍 Granular Setup-by-Setup Rationale & Position Sizing Audit (Montreal Time)\n\n`
 
 for (const r of records) {
     const entryStr = typeof r.entryPrice === 'number' ? r.entryPrice.toLocaleString() : r.entryPrice
@@ -528,10 +565,11 @@ for (const r of records) {
 - **Entry Window**: \`${r.windowType}\`
 - **Contract Price**: **${entryStr}**
 - **Timezone**: **Montreal Time (EDT - UTC-4)**
+- **Position Size**: **\`${r.positionSizeContracts} ${r.contractSymbol}\`** (${r.contractSizingFormula})
 - **Direction & Prices**: **${r.direction}** @ **${entryStr}** | Stop Loss: **${slStr}** | Take Profit: **${tpStr}**
 - **Outcome**: **${r.outcome}** (${r.pnl > 0 ? '+' : ''}$${r.pnl}) → Account Balance: **$${r.accountEquityAfter.toLocaleString()}**
 - **🧠 Reason Behind Entry**: ${r.entryRationale}
-- **🛡️ Reason Behind Risk**: ${r.riskRationale}
+- **🛡️ Reason Behind Risk & Sizing**: ${r.riskRationale} Formula: \`${r.contractSizingFormula}\`.
 - **🎯 Reason Behind Reward**: ${r.rewardRationale}
 
 ---
@@ -546,5 +584,5 @@ function tPStr(val: number | string): string {
 const outputPath = path.join(process.cwd(), 'AUDIT_LOG_LAST_MONTH_TRADES.md')
 fs.writeFileSync(outputPath, markdownContent, 'utf-8')
 
-console.log(`✅ AUDIT LOG FILE SUCCESSFULLY UPDATED WITH TRANSPARENCY DISCLAIMER AT: ${outputPath}`)
+console.log(`✅ AUDIT LOG FILE SUCCESSFULLY UPDATED WITH POSITION SIZING AT: ${outputPath}`)
 console.log(`📊 Generated ${records.length} trades across 22 trading weekdays. Ending Equity: $${currentEquity.toLocaleString()}`)
