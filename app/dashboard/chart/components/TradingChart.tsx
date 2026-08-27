@@ -122,6 +122,11 @@ import {
 } from '@/lib/trading/deskCall'
 import { deskCallModeHoverPrefix } from '@/lib/trading/deskCallMode'
 import { SYSTEMATIC_LIVE_DESK } from '@/lib/trading/systematicDesk'
+import {
+  computeSessionExit,
+  parseFillUnix,
+  type SessionExitRead,
+} from '@/lib/trading/sessionExit'
 import { persistQuietDeskPerfLtar } from '@/lib/trading/ltarStore'
 import { deskSitLineSpecs } from '@/lib/trading/deskSituation'
 import { longTermRegionLineSpecs } from '@/lib/trading/longTermBracket'
@@ -837,6 +842,8 @@ interface PositionOverlay {
   positionSize?: number
   /** Session risk $ — sizes MYM/MNQ on the chart to match the TradingView ticket */
   riskDollars?: number
+  /** ISO or unix fill time — session STAY/EXIT clock */
+  entryTimestamp?: string | number | null
 }
 
 interface PendingLimitOverlay {
@@ -965,6 +972,14 @@ interface TradingChartProps {
     regionBadge?: string
     regionPlayLine?: string
   }) => void
+  /** Open-book STAY/EXIT (advise only; never auto-flatten) */
+  onSessionExit?: (
+    read: {
+      word: 'STAY' | 'EXIT'
+      line: string
+      hover: string
+    } | null
+  ) => void
 }
 
 // ─── Main TradingChart component ──────────────────────────────────────────────
@@ -1006,6 +1021,7 @@ export function TradingChart({
   onDeskAlert,
   onRangeAtr,
   onDeskPerf,
+  onSessionExit,
 }: TradingChartProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartFrameRef = useRef<HTMLDivElement>(null)
@@ -1132,6 +1148,9 @@ export function TradingChart({
   const quietLtarKeyRef = useRef('')
   const onDeskPerfRef = useRef(onDeskPerf)
   onDeskPerfRef.current = onDeskPerf
+  const onSessionExitRef = useRef(onSessionExit)
+  onSessionExitRef.current = onSessionExit
+  const sessionExitKeyRef = useRef('')
   const [ibExtendBadge, setIbExtendBadge] = useState('—')
   const [ibExtendHover, setIbExtendHover] = useState(
     'IB extend vs revert — advice only after IB locks. First tag is not the entry.'
@@ -2285,6 +2304,55 @@ export function TradingChart({
   useEffect(() => {
     paintDeskCall()
   }, [paintDeskCall])
+
+  useEffect(() => {
+    if (!SYSTEMATIC_LIVE_DESK) return
+    const publish = () => {
+      if (!positionOverlay) {
+        if (sessionExitKeyRef.current !== '') {
+          sessionExitKeyRef.current = ''
+          onSessionExitRef.current?.(null)
+        }
+        return
+      }
+      const fillUnix = parseFillUnix(positionOverlay.entryTimestamp)
+      const list = candlesRef.current
+      const live =
+        livePrice != null && Number.isFinite(livePrice) && livePrice > 0
+          ? livePrice
+          : list.at(-1)?.close ?? positionOverlay.entryPrice
+      const read: SessionExitRead = computeSessionExit({
+        direction: positionOverlay.direction,
+        entry: positionOverlay.entryPrice,
+        stop: positionOverlay.stopLoss,
+        fillUnix,
+        nowUnix: Math.floor(Date.now() / 1000),
+        bars: list.map((c) => ({
+          time: c.time as number,
+          close: c.close,
+        })),
+        livePrice: live,
+        or30Locked,
+        perfLeave: deskCallRef.current?.perfLeave === true,
+      })
+      const key = `${read.word}|${read.line}`
+      if (key === sessionExitKeyRef.current) return
+      sessionExitKeyRef.current = key
+      onSessionExitRef.current?.({
+        word: read.word,
+        line: read.line,
+        hover: read.hover,
+      })
+    }
+    publish()
+    const id = window.setInterval(publish, 15_000)
+    return () => window.clearInterval(id)
+  }, [
+    positionOverlay,
+    livePrice,
+    or30Locked,
+    instrument,
+  ])
 
   useEffect(() => {
     paintIbExtendRef.current = paintIbExtend

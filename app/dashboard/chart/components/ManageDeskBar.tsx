@@ -91,6 +91,12 @@ interface Props {
   sitHold?: boolean
   sitBadge?: string | null
   sitPlayLine?: string | null
+  /** Open-book STAY/EXIT — advise only, never auto-flatten */
+  sessionExit?: {
+    word: 'STAY' | 'EXIT'
+    line: string
+    hover: string
+  } | null
 }
 
 export function ManageDeskBar({
@@ -109,6 +115,7 @@ export function ManageDeskBar({
   sitHold = false,
   sitBadge = null,
   sitPlayLine = null,
+  sessionExit = null,
 }: Props) {
   const [ai, setAi] = useState<AiVerdict | null>(null)
   const [recommendation, setRecommendation] = useState<{
@@ -912,7 +919,14 @@ export function ManageDeskBar({
 
       {SYSTEMATIC_LIVE_DESK ? (
         <div className="space-y-0.5 text-[10px]">
-          {perfLeave ? (
+          {sessionExit?.word === 'EXIT' ? (
+            <p
+              className="font-bold uppercase tracking-wide text-rose-300"
+              title={sessionExit.hover}
+            >
+              {sessionExit.line} — banner only, not auto-flatten
+            </p>
+          ) : perfLeave ? (
             <p className="font-bold uppercase tracking-wide text-rose-300" title={leaveLine ?? undefined}>
               LEAVE · Perf {perfBadge || 'WEAK'} — banner only, not auto-flatten
             </p>
@@ -920,12 +934,16 @@ export function ManageDeskBar({
             <p className="text-emerald-300" title={sitPlayLine ?? undefined}>
               HOLD · {sitBadge || 'GAP · hold'} — gap holding, not auto-flatten
             </p>
+          ) : sessionExit ? (
+            <p className="text-emerald-300/90" title={sessionExit.hover}>
+              {sessionExit.line} — ticket stays 1.5R
+            </p>
           ) : (
             <p className="text-gray-400" title={leaveLine ?? undefined}>
               Perf {perfBadge || 'WAIT'} · ticket stays 1.5R
             </p>
           )}
-          {leaveLine && (
+          {leaveLine && sessionExit?.word !== 'EXIT' && (
             <p className="text-[9px] text-gray-500 leading-snug line-clamp-2">{leaveLine}</p>
           )}
         </div>

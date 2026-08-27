@@ -254,3 +254,29 @@ Advise only. **Never a CALL WAIT gate.** One `Sit` chip. No overnight hold. No l
 - [ ] No 94% / no HTF situation chip
 - [ ] Ticket stays 1.5R
 
+### Slice 12: Session STAY/EXIT (open book) — BUILD
+**Dependencies:** Slice 8 (manage LEAVE), Slice 10 (sit HOLD). Scout 2026-08-27 Rounds 1–3.
+**Type:** AFK
+
+**Testable outcome:** Filled NY/Asia book shows one manage-bar word **STAY** or **EXIT**. Trader confirms. Stop / 1.5R / cash-close flatten unchanged. No new chip. Out stays entry-only.
+
+**Rules:**
+- Clock starts at fill. Arm = 30m in the trade **and** (OR30 locked **or** Asia book). IB fills arm at 30m.
+- R vs stop distance (not points / not $). Closed 5m bars + live tip for “now.”
+- Expanding green (new MFE, R > 0) → always STAY.
+- Stalled EXIT: armed, no new MFE for 15m, current R ≤ +0.3R.
+- Red EXIT: armed, minutes red > green, red now.
+- NY lunch 11:30: EXIT if R < +0.5R (or ≥ +0.5R but MFE not expanding). Asia: no lunch wall; flatten wall = Asia 10:25 Montreal; last 20m same.
+- Last 20m to flatten: EXIT unless R ≥ +0.8R.
+- Current R ≤ −0.7R: clock suppressed (stop owns). Perf LEAVE can still EXIT.
+- Sticky EXIT until flatten/SL/TP; one un-stick on a new MFE after EXIT.
+- Clock wins vs Drive after arm. Sit HOLD cannot override EXIT. Working limit: no line.
+- Advise only — never auto-flatten.
+
+**Acceptance criteria:**
+- [ ] Manage bar: `STAY · …` / `EXIT · stalled|red|lunch|last 20m|Perf`
+- [ ] Sit HOLD hidden when EXIT
+- [ ] No auto-flatten, no Telegram, no new chart paint, no day-lock
+- [ ] Ticket stays 1.5R, ±10, $400→$250→$150
+- [ ] Unit tests: arm, stall, red clock, lunch, last 20m, stop-owns, expanding, sticky unstick, Asia walls
+

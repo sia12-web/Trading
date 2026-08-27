@@ -219,6 +219,7 @@ interface PositionOverlay {
   direction: 'long' | 'short'
   positionSize?: number
   riskDollars?: number
+  entryTimestamp?: string | number | null
 }
 
 export default function ChartPage() {
@@ -396,6 +397,11 @@ export default function ChartPage() {
     sitBadge?: string
     sitHold?: boolean
     sitPlayLine?: string
+  } | null>(null)
+  const [sessionExit, setSessionExit] = useState<{
+    word: 'STAY' | 'EXIT'
+    line: string
+    hover: string
   } | null>(null)
   const [rangeAtrAdvice, setRangeAtrAdvice] = useState<string | null>(null)
   const [recommendation, setRecommendation] = useState<{
@@ -1147,6 +1153,7 @@ export default function ChartPage() {
         profitTarget: order.profit_target_price,
         direction: dir,
         positionSize: order.position_size,
+        entryTimestamp: new Date().toISOString(),
       }
       confirmedOverlayRef.current = overlay
       setPositionOverlay(overlay)
@@ -1191,6 +1198,7 @@ export default function ChartPage() {
           profitTarget: nextTp,
           direction: pos.direction,
           positionSize: pos.positionSize,
+          entryTimestamp: pos.entryTimestamp ?? null,
         }
         confirmedOverlayRef.current = nextOverlay
         setPositionOverlay(nextOverlay)
@@ -1976,6 +1984,7 @@ export default function ChartPage() {
                     profitTarget: manage.profitTarget,
                     direction: manage.direction,
                     positionSize: manage.positionSize,
+                    entryTimestamp: manage.entryTimestamp ?? null,
                   }
                   confirmedOverlayRef.current = overlay
                   setPositionOverlay(overlay)
@@ -2037,6 +2046,7 @@ export default function ChartPage() {
           profitTarget: manage.profitTarget,
           direction: manage.direction,
           positionSize: manage.positionSize,
+          entryTimestamp: manage.entryTimestamp ?? null,
         }
         confirmedOverlayRef.current = overlay
         setPositionOverlay(overlay)
@@ -2276,6 +2286,7 @@ export default function ChartPage() {
                 sitHold={deskPerf?.sitHold === true}
                 sitBadge={deskPerf?.sitBadge ?? null}
                 sitPlayLine={deskPerf?.sitPlayLine ?? null}
+                sessionExit={sessionExit}
               />
             ) : null}
 
@@ -2418,20 +2429,28 @@ export default function ChartPage() {
               onQuoteTick={onQuoteTick}
               onDataModeChange={setDataMode}
               positionOverlay={
-                positionOverlay ??
-                (managePos
+                positionOverlay
                   ? {
-                      entryPrice: managePos.entryPrice,
-                      stopLoss: managePos.stopLoss,
-                      profitTarget: managePos.profitTarget,
-                      direction: managePos.direction,
-                      positionSize: managePos.positionSize,
-                      riskDollars:
-                        (managePos.riskAmount ?? 0) > 0
-                          ? managePos.riskAmount
-                          : lastTradeifyRiskRef.current,
+                      ...positionOverlay,
+                      entryTimestamp:
+                        positionOverlay.entryTimestamp ??
+                        managePos?.entryTimestamp ??
+                        null,
                     }
-                  : null)
+                  : managePos
+                    ? {
+                        entryPrice: managePos.entryPrice,
+                        stopLoss: managePos.stopLoss,
+                        profitTarget: managePos.profitTarget,
+                        direction: managePos.direction,
+                        positionSize: managePos.positionSize,
+                        riskDollars:
+                          (managePos.riskAmount ?? 0) > 0
+                            ? managePos.riskAmount
+                            : lastTradeifyRiskRef.current,
+                        entryTimestamp: managePos.entryTimestamp ?? null,
+                      }
+                    : null
               }
               pendingLimit={
                 pending && !managePos
@@ -2484,6 +2503,7 @@ export default function ChartPage() {
               onDeskAlert={handleDeskAlert}
               onRangeAtr={handleRangeAtr}
               onDeskPerf={setDeskPerf}
+              onSessionExit={setSessionExit}
               rangeStrategy={gate?.rangeStrategy ?? null}
               attemptsUsed={gate?.attemptsUsed ?? 0}
               stopHits={gate?.stopHits ?? 0}
