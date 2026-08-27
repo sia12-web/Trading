@@ -1,0 +1,181 @@
+//@version=6
+indicator("Mind Over Markets: IB + NYC Lunch — Breakout vs Mean Reversion", overlay=true, max_labels_count=500, max_lines_count=500)
+
+// =============================================================================
+// Combines:
+//   1) Initial Balance (cash open → +60m) H/L + BRK / REJ
+//   2) NYC Lunch Range (12:00–13:30 ET) H/L / 50% + PM BRK / REJ
+//
+// BRK  = close clears the extreme  → initiative / breakout attempt
+// REJ  = wick beyond, close back inside → mean-reversion / fade attempt
+//
+// These label what the bar DID — they do not predict continuation.
+// Use RVOL filter to reduce weak breaks.
+// =============================================================================
+
+// --- Session / clock ---
+time_zone     = input.string("America/New_York", "Timezone", options=["America/New_York", "UTC", "Europe/London", "Asia/Tokyo"], group="Session Setup")
+cash_open_sess = input.session("0930-1030:1234567", "IB Window (cash open → +60m)", group="Session Setup")
+lunch_sess    = input.session("1200-1330:1234567", "NYC Lunch Window", group="Session Setup")
+rth_sess      = input.session("0930-1600:1234567", "RTH (for PM lunch signals)", group="Session Setup")
+
+// --- Feature toggles ---
+show_ib       = input.bool(true, "Show Initial Balance", group="Features")
+show_ib_sig   = input.bool(true, "Show IB BRK / REJ markers", group="Features")
+show_lunch    = input.bool(true, "Show NYC Lunch Range", group="Features")
+show_lunch_sig = input.bool(true, "Show Lunch BRK / REJ (PM only)", group="Features")
+show_mid      = input.bool(true, "Show Lunch 50% Midpoint", group="Features")
+extend_ib     = input.bool(true, "Extend IB lines to RTH close", group="Features")
+extend_lunch  = input.bool(true, "Extend Lunch lines into PM", group="Features")
+show_bg       = input.bool(true, "Shade IB / Lunch session BG", group="Features")
+
+// --- Volume filter (applies to BRK only; REJ is structure) ---
+use_vol       = input.bool(true, "Require RVOL for BRK signals", group="Volume Filter")
+vol_thresh    = input.float(1.2, "Breakout RVOL multiplier", minval=0.5, step=0.1, group="Volume Filter")
+vol_len       = input.int(20, "RVOL lookback", minval=1, group="Volume Filter")
+
+// --- Colors ---
+col_ib_h      = input.color(color.new(color.blue, 0), "IB High", group="Colors")
+col_ib_l      = input.color(color.new(color.blue, 0), "IB Low", group="Colors")
+col_lunch_h   = input.color(color.new(color.red, 10), "Lunch High", group="Colors")
+col_lunch_l   = input.color(color.new(color.green, 10), "Lunch Low", group="Colors")
+col_lunch_m   = input.color(color.new(color.gray, 30), "Lunch 50%", group="Colors")
+col_ib_bg     = input.color(color.new(color.blue, 92), "IB window BG", group="Colors")
+col_lunch_bg  = input.color(color.new(color.orange, 92), "Lunch window BG", group="Colors")
+
+// =============================================================================
+// Helpers
+// =============================================================================
+in_ib_win     = not na(time(timeframe.period, cash_open_sess, time_zone))
+in_lunch_win  = not na(time(timeframe.period, lunch_sess, time_zone))
+in_rth        = not na(time(timeframe.period, rth_sess, time_zone))
+
+is_ib_start    = in_ib_win and not in_ib_win[1]
+is_ib_end      = not in_ib_win and in_ib_win[1]
+is_lunch_start = in_lunch_win and not in_lunch_win[1]
+is_lunch_end   = not in_lunch_win and in_lunch_win[1]
+
+is_new_day = ta.change(time("D", time_zone)) != 0
+
+avg_vol = ta.sma(volume, vol_len)
+rvol_ok = use_vol ? (volume > avg_vol * vol_thresh) : true
+
+// =============================================================================
+// 1) INITIAL BALANCE — lock H/L over first hour, then signal after IB ends
+// =============================================================================
+var float ib_h = na
+var float ib_l = na
+var bool  ib_locked = false
+
+if is_new_day
+    ib_h := na
+    ib_l := na
+    ib_locked := false
+
+if is_ib_start
+    ib_h := high
+    ib_l := low
+    ib_locked := false
+else if in_ib_win
+    ib_h := math.max(high, nz(ib_h, high))
+    ib_l := math.min(low, nz(ib_l, low))
+
+if is_ib_end
+    ib_locked := true
+
+// After IB shaped: BRK = close clears extreme; REJ = wick beyond, close inside
+can_ib_signal = show_ib and show_ib_sig and ib_locked and not na(ib_h) and not na(ib_l) and in_rth and not in_ib_win
+
+ib_cross_up = can_ib_signal and ta.crossover(close, ib_h)
+ib_cross_dn = can_ib_signal and ta.crossunder(close, ib_l)
+ib_brk_long = ib_cross_up and rvol_ok
+ib_brk_short = ib_cross_dn and rvol_ok
+ib_rej_h = can_ib_signal and high > ib_h and close < ib_h and not ib_cross_up
+ib_rej_l = can_ib_signal and low < ib_l and close > ib_l and not ib_cross_dn
+
+// =============================================================================
+// 2) NYC LUNCH RANGE — track 12:00–13:30, signal only in PM (after 13:30)
+// =============================================================================
+var float lunch_h = na
+var float lunch_l = na
+var float lunch_m = na
+var bool  lunch_locked = false
+
+if is_new_day
+    lunch_h := na
+    lunch_l := na
+    lunch_m := na
+    lunch_locked := false
+
+if is_lunch_start
+    lunch_h := high
+    lunch_l := low
+    lunch_locked := false
+else if in_lunch_win
+    lunch_h := math.max(high, nz(lunch_h, high))
+    lunch_l := math.min(low, nz(lunch_l, low))
+
+if not na(lunch_h) and not na(lunch_l)
+    lunch_m := (lunch_h + lunch_l) / 2.0
+
+if is_lunch_end
+    lunch_locked := true
+
+// PM only: after lunch, still in RTH
+in_pm = lunch_locked and in_rth and not in_lunch_win
+can_lunch_signal = show_lunch and show_lunch_sig and in_pm and not na(lunch_h) and not na(lunch_l)
+
+ln_cross_up = can_lunch_signal and ta.crossover(close, lunch_h)
+ln_cross_dn = can_lunch_signal and ta.crossunder(close, lunch_l)
+ln_brk_long = ln_cross_up and rvol_ok
+ln_brk_short = ln_cross_dn and rvol_ok
+ln_rej_h = can_lunch_signal and high > lunch_h and close < lunch_h and not ln_cross_up
+ln_rej_l = can_lunch_signal and low < lunch_l and close > lunch_l and not ln_cross_dn
+
+// =============================================================================
+// Visuals — ranges
+// =============================================================================
+plot_ib = show_ib and not na(ib_h) and (in_ib_win or (extend_ib and ib_locked and in_rth))
+plot_ln = show_lunch and not na(lunch_h) and (in_lunch_win or (extend_lunch and lunch_locked and in_rth))
+
+plot(plot_ib ? ib_h : na, "IB High", color=col_ib_h, linewidth=2, style=plot.style_linebr)
+plot(plot_ib ? ib_l : na, "IB Low", color=col_ib_l, linewidth=2, style=plot.style_linebr)
+
+plot(plot_ln ? lunch_h : na, "Lunch High", color=col_lunch_h, linewidth=2, style=plot.style_linebr)
+plot(plot_ln ? lunch_l : na, "Lunch Low", color=col_lunch_l, linewidth=2, style=plot.style_linebr)
+plot(plot_ln and show_mid ? lunch_m : na, "Lunch 50%", color=col_lunch_m, linewidth=2, style=plot.style_linebr)
+
+bgcolor(show_bg and in_ib_win ? col_ib_bg : na, title="IB BG")
+bgcolor(show_bg and in_lunch_win ? col_lunch_bg : na, title="Lunch BG")
+
+// End-of-lunch vertical cue
+if show_lunch and is_lunch_end
+    line.new(bar_index, low - (high - low) * 2, bar_index, high + (high - low) * 2, xloc=xloc.bar_index, extend=extend.both, color=color.new(color.purple, 20), style=line.style_dashed, width=2)
+    label.new(bar_index, high, "1:30 PM\nPM OPEN", color=color.purple, textcolor=color.white, style=label.style_label_down, size=size.small)
+
+// =============================================================================
+// Markers — Breakout (initiative) vs Rejection (mean reversion)
+// =============================================================================
+// IB
+plotshape(ib_brk_long, title="IB BRK Long", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.small, text="IB BRK")
+plotshape(ib_brk_short, title="IB BRK Short", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.small, text="IB BRK")
+plotshape(ib_rej_h, title="IB REJ High (fade)", style=shape.arrowdown, location=location.abovebar, color=color.orange, size=size.small, text="IB REJ")
+plotshape(ib_rej_l, title="IB REJ Low (fade)", style=shape.arrowup, location=location.belowbar, color=color.purple, size=size.small, text="IB REJ")
+
+// Lunch PM
+plotshape(ln_brk_long, title="Lunch BRK Long", style=shape.triangleup, location=location.belowbar, color=color.new(color.lime, 0), size=size.small, text="LN BRK")
+plotshape(ln_brk_short, title="Lunch BRK Short", style=shape.triangledown, location=location.abovebar, color=color.new(color.maroon, 0), size=size.small, text="LN BRK")
+plotshape(ln_rej_h, title="Lunch REJ High (fade)", style=shape.arrowdown, location=location.abovebar, color=color.orange, size=size.small, text="LN REJ")
+plotshape(ln_rej_l, title="Lunch REJ Low (fade)", style=shape.arrowup, location=location.belowbar, color=color.fuchsia, size=size.small, text="LN REJ")
+
+// =============================================================================
+// Alerts
+// =============================================================================
+alertcondition(ib_brk_long, "IB High Breakout", "{{ticker}} IB BRK long @ {{close}}")
+alertcondition(ib_brk_short, "IB Low Breakout", "{{ticker}} IB BRK short @ {{close}}")
+alertcondition(ib_rej_h, "IB High Rejection", "{{ticker}} IB REJ high @ {{high}}")
+alertcondition(ib_rej_l, "IB Low Rejection", "{{ticker}} IB REJ low @ {{low}}")
+alertcondition(ln_brk_long, "Lunch High Breakout", "{{ticker}} Lunch BRK long @ {{close}}")
+alertcondition(ln_brk_short, "Lunch Low Breakout", "{{ticker}} Lunch BRK short @ {{close}}")
+alertcondition(ln_rej_h, "Lunch High Rejection", "{{ticker}} Lunch REJ high @ {{high}}")
+alertcondition(ln_rej_l, "Lunch Low Rejection", "{{ticker}} Lunch REJ low @ {{low}}")
