@@ -7941,7 +7941,45 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           5m
         </span>
 
+        {isAuctionInstrument(instrument) && (
+          <button
+            type="button"
+            title={
+              showAuction
+                ? 'Auction overlay on — sequential 15M/30M/IB absorb-breakout ranges, BUY/SELL, HUD. Click to hide.'
+                : 'Show auction: sequential morning absorb-breakout (15M → 30M → IB), range H/L, half-back, signals, HUD'
+            }
+            onClick={() => setShowAuction((v) => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showAuction
+              ? 'bg-orange-600/30 border-orange-500/50 text-orange-100'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-orange-200 hover:border-orange-500/40'
+              }`}
+          >
+            <span className={`w-2 h-2 rounded-full inline-block ${showAuction ? 'bg-orange-400' : 'bg-gray-600'}`} />
+            <span>Auction</span>
+            <span className="text-[10px] font-normal text-orange-200/80">{auctionBadge}</span>
+          </button>
+        )}
 
+        {isDowVolumeBarInstrument(instrument) && (
+          <button
+            type="button"
+            title={
+              showDow15mFail
+                ? 'Dow 15M fail overlay on — volume-bar FAIL (wait 5, 1.5R). Click to hide.'
+                : 'Show auction volume-bar — Dow 15M fail (09:45–10:00 arm, opposite-side break)'
+            }
+            onClick={() => setShowDow15mFail((v) => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showDow15mFail
+              ? 'bg-cyan-600/30 border-cyan-500/50 text-cyan-100'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-cyan-200 hover:border-cyan-500/40'
+              }`}
+          >
+            <span className={`w-2 h-2 rounded-full inline-block ${showDow15mFail ? 'bg-cyan-400' : 'bg-gray-600'}`} />
+            <span>15M fail</span>
+            <span className="text-[10px] font-normal text-cyan-200/80">{dow15mFailBadge}</span>
+          </button>
+        )}
 
         {/* IB H/L + BRK/REJ + ±10 (Press B) — remembered across refresh */}
         {deskSessionLive && (
@@ -8207,46 +8245,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 {rangeSignalSummary.or30 > 0 ? `${rangeSignalSummary.or30}` : '0'}
               </span>
             )}
-          </button>
-        )}
-
-        {deskSessionLive && isAuctionInstrument(instrument) && (
-          <button
-            type="button"
-            title={
-              showAuction
-                ? 'Auction overlay on — sequential 15M/30M/IB absorb-breakout ranges, BUY/SELL, HUD. Click to hide.'
-                : 'Show auction: sequential morning absorb-breakout (15M → 30M → IB), range H/L, half-back, signals, HUD'
-            }
-            onClick={() => setShowAuction((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showAuction
-              ? 'bg-orange-600/30 border-orange-500/50 text-orange-100'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-orange-200 hover:border-orange-500/40'
-              }`}
-          >
-            <span className={`w-2 h-2 rounded-full inline-block ${showAuction ? 'bg-orange-400' : 'bg-gray-600'}`} />
-            <span>Auction</span>
-            <span className="text-[10px] font-normal text-orange-200/80">{auctionBadge}</span>
-          </button>
-        )}
-
-        {deskSessionLive && isDowVolumeBarInstrument(instrument) && (
-          <button
-            type="button"
-            title={
-              showDow15mFail
-                ? 'Dow 15M fail overlay on — volume-bar FAIL (wait 5, 1.5R). Click to hide.'
-                : 'Show auction volume-bar — Dow 15M fail (09:45–10:00 arm, opposite-side break)'
-            }
-            onClick={() => setShowDow15mFail((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showDow15mFail
-              ? 'bg-cyan-600/30 border-cyan-500/50 text-cyan-100'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-cyan-200 hover:border-cyan-500/40'
-              }`}
-          >
-            <span className={`w-2 h-2 rounded-full inline-block ${showDow15mFail ? 'bg-cyan-400' : 'bg-gray-600'}`} />
-            <span>15M fail</span>
-            <span className="text-[10px] font-normal text-cyan-200/80">{dow15mFailBadge}</span>
           </button>
         )}
 
