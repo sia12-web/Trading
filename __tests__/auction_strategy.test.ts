@@ -8,6 +8,11 @@ import { cashOpenUnixForYmd, NY_DESK_CLOCK } from '../lib/chart/sessionVwap'
 import {
   runAuctionBacktest,
   summarizeAuctionTrades,
+  computeAuctionOverlay,
+  auctionOverlayBadgeText,
+  auctionOverlayLineSpecs,
+  isAuctionInstrument,
+  AUCTION_INSTRUMENTS,
   type AuctionBar,
 } from '../lib/trading/auctionStrategy'
 
@@ -143,6 +148,45 @@ assert.ok(
 const zero = summarizeAuctionTrades([])
 assert.equal(zero.winRate, null)
 assert.equal(zero.trades, 0)
+
+assert.deepEqual([...AUCTION_INSTRUMENTS], ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'])
+assert.equal(isAuctionInstrument('DOW'), true)
+assert.equal(isAuctionInstrument('NASDAQ'), true)
+assert.equal(isAuctionInstrument('GOLD'), true)
+assert.equal(isAuctionInstrument('CRUDE'), true)
+assert.equal(isAuctionInstrument('NIKKEI'), false)
+
+const ibOverlay = computeAuctionOverlay({
+  instrument: 'NASDAQ',
+  candles: [...friday, ...mondayIb],
+})
+assert.ok(ibOverlay, 'overlay for NASDAQ')
+assert.equal(ibOverlay!.hud.engine, 'Sequential Absorption Breakouts')
+assert.equal(ibOverlay!.hud.rangeTag, 'EXPIRED')
+assert.equal(ibOverlay!.showRange, true, 'IB range stays visible after 11:30 for review')
+assert.ok(ibOverlay!.rangeHigh != null && ibOverlay!.rangeLow != null)
+assert.ok((ibOverlay!.signals?.length ?? 0) >= 1, 'overlay surfaces absorb BUY/SELL')
+assert.equal(ibOverlay!.signals[0]!.side, 'LONG')
+const specs = auctionOverlayLineSpecs(ibOverlay!)
+assert.ok(specs.some((s) => s.title.includes('H')))
+assert.ok(specs.some((s) => s.title.includes('Half-Back')))
+assert.ok(specs.some((s) => s.title.includes('ABSORB BUY')))
+assert.equal(auctionOverlayBadgeText(ibOverlay, true), 'EXPIRED')
+assert.equal(auctionOverlayBadgeText(ibOverlay, false), 'off')
+
+const midIb = computeAuctionOverlay({
+  instrument: 'GOLD',
+  candles: [...friday, ...mondayIb.slice(0, 14)],
+})
+assert.ok(midIb)
+assert.equal(midIb!.hud.rangeTag, 'IB')
+assert.equal(midIb!.hud.canTradeWindow, true)
+assert.ok(midIb!.hud.windowLabel.includes('10:30'))
+
+assert.equal(
+  computeAuctionOverlay({ instrument: 'NIKKEI', candles: mondayIb }),
+  null
+)
 
 console.log('auction_strategy.test.ts: ok', {
   ib: ibFills[0]!.rangeFocus,

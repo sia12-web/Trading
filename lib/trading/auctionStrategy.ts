@@ -12,6 +12,10 @@ import { FUTURES_POINT_VALUES } from '@/lib/trading/positionSizing'
 export const AUCTION_INSTRUMENTS = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'] as const
 export type AuctionInstrument = (typeof AUCTION_INSTRUMENTS)[number]
 
+export function isAuctionInstrument(value: string): value is AuctionInstrument {
+  return (AUCTION_INSTRUMENTS as readonly string[]).includes(value)
+}
+
 export type AuctionRangeFocus = '15M' | '30M' | 'IB'
 export type AuctionOpenType =
   | 'GAP UP (Imbalance)'
@@ -577,4 +581,373 @@ export function runAuctionBacktest(args: {
       ),
     },
   }
+}
+
+/** Pine overlay colors — range orange, half-back gray, absorb buy/sell. */
+export const AUCTION_COLORS = {
+  range: '#f97316',
+  mid: '#9ca3af',
+  buy: '#22c55e',
+  sell: '#b91c1c',
+  entry: '#9ca3af',
+  tp: '#22c55e',
+  sl: '#ef4444',
+} as const
+
+export type AuctionRangeTag = AuctionRangeFocus | 'WAIT' | 'EXPIRED' | 'FORMING'
+
+export type AuctionHud = {
+  openType: AuctionOpenType
+  rangeTag: AuctionRangeTag
+  windowLabel: string
+  canTradeWindow: boolean
+  isLunch: boolean
+  bias: 'Bullish (VWAP/EMA)' | 'Bearish (VWAP/EMA)' | 'Neutral/Chop'
+  dailySignals: number
+  maxDaily: number
+  riskDollars: number
+  engine: string
+}
+
+export type AuctionOverlaySignal = {
+  time: number
+  side: 'LONG' | 'SHORT'
+  entry: number
+  stop: number
+  target: number
+  rangeFocus: AuctionRangeFocus
+  contracts: number
+}
+
+export type AuctionOverlay = {
+  instrument: AuctionInstrument
+  hud: AuctionHud
+  rangeHigh: number | null
+  rangeLow: number | null
+  rangeMid: number | null
+  showRange: boolean
+  showMidpoint: boolean
+  signals: AuctionOverlaySignal[]
+  lastSignal: AuctionOverlaySignal | null
+}
+
+export type AuctionLineSpec = {
+  price: number
+  title: string
+  color: string
+  dashed?: boolean
+  width: 1 | 2
+}
+
+function auctionWindowLabel(
+  tag: AuctionRangeTag,
+  nyMins: number,
+  isLunch: boolean
+): string {
+  if (isLunch) return 'HIBERNATING (LUNCH)'
+  if (tag === '15M') return '09:45 - 10:00 EST (15M Execution)'
+  if (tag === '30M') return '10:00 - 10:30 EST (30M Execution)'
+  if (tag === 'IB') return '10:30 - 11:30 EST (IB Execution)'
+  if (nyMins >= 690) return 'Expired (Passed Morning Windows)'
+  return 'Forming...'
+}
+
+function biasLabel(isUp: boolean, isDown: boolean): AuctionHud['bias'] {
+  if (isUp) return 'Bullish (VWAP/EMA)'
+  if (isDown) return 'Bearish (VWAP/EMA)'
+  return 'Neutral/Chop'
+}
+
+/**
+ * Live/sim as-of: during the walk, include bars through wall/last tip so the
+ * HUD matches the Pine `barstate.islast` dashboard.
+ */
+export function resolveAuctionAsOfUnix(
+  lastBarUnix: number | null | undefined,
+  wallUnix: number
+): number {
+  const last =
+    lastBarUnix != null && Number.isFinite(lastBarUnix) && lastBarUnix > 0
+      ? lastBarUnix
+      : wallUnix
+  return Math.max(last, wallUnix)
+}
+
+/**
+ * Chart overlay for the TradingView "auction" indicator: sequential range
+ * H/L + half-back, absorb BUY/SELL markers, last-signal SL/TP, HUD.
+ */
+export function computeAuctionOverlay(args: {
+  instrument: string
+  candles: AuctionBar[]
+  asOfUnix?: number
+}): AuctionOverlay | null {
+  if (!isAuctionInstrument(args.instrument)) return null
+  const instrument = args.instrument
+  const asOf = args.asOfUnix ?? Number.POSITIVE_INFINITY
+  const sliced = (args.candles || []).filter(
+    (c) =>
+      c &&
+      Number.isFinite(c.time) &&
+      c.time <= asOf &&
+      Number.isFinite(c.open) &&
+      Number.isFinite(c.high) &&
+      Number.isFinite(c.low) &&
+      Number.isFinite(c.close)
+  )
+  const ran = runAuctionBacktest({
+    instrument,
+    candles: sliced,
+    params: { rangeMode: 'sequential', allowShort: true, maxDaily: MAX_DAILY_SIGNALS },
+  })
+
+  const tagged = sliced
+    .slice()
+    .sort((a, b) => a.time - b.time)
+    .map((c) => ({ ...c, ...nyCivil(c.time) }))
+
+  const emaAlpha = 2 / (EMA_LEN + 1)
+  let yHigh: number | null = null
+  let yLow: number | null = null
+  let yClose: number | null = null
+  let curDay = ''
+  let dayHigh = NaN
+  let dayLow = NaN
+  let dayClose = NaN
+  let wasRth = false
+  let openType: AuctionOpenType = 'Analyzing...'
+  let r15h: number | null = null
+  let r15l: number | null = null
+  let r30h: number | null = null
+  let r30l: number | null = null
+  let r60h: number | null = null
+  let r60l: number | null = null
+  let ema: number | null = null
+  let vwapNum = 0
+  let vwapDen = 0
+
+  let activeH: number | null = null
+  let activeL: number | null = null
+  let canTradeWindow = false
+  let rangeTag: AuctionRangeTag = 'WAIT'
+  let nyMins = 0
+  let isLunch = false
+  let isUp = false
+  let isDown = false
+
+  for (let i = 0; i < tagged.length; i++) {
+    const bar = tagged[i]!
+    const isNewDay = bar.ymd !== curDay
+    if (isNewDay) {
+      if (curDay) {
+        yHigh = dayHigh
+        yLow = dayLow
+        yClose = dayClose
+      }
+      curDay = bar.ymd
+      dayHigh = bar.high
+      dayLow = bar.low
+      dayClose = bar.close
+      r15h = r15l = r30h = r30l = r60h = r60l = null
+      wasRth = false
+      vwapNum = 0
+      vwapDen = 0
+    } else {
+      dayHigh = Math.max(dayHigh, bar.high)
+      dayLow = Math.min(dayLow, bar.low)
+      dayClose = bar.close
+    }
+
+    nyMins = bar.mins
+    const isRth = nyMins >= 570 && nyMins < 960
+    isLunch = isRth && nyMins >= 720 && nyMins < 810
+    const in15Build = nyMins >= 570 && nyMins < 585
+    const in30Build = nyMins >= 570 && nyMins < 600
+    const in1hBuild = nyMins >= 570 && nyMins < 630
+    const in15Exec = nyMins >= 585 && nyMins < 600
+    const in30Exec = nyMins >= 600 && nyMins < 630
+    const in1hExec = nyMins >= 630 && nyMins < 690
+
+    if (isRth && !wasRth && yHigh != null && yLow != null && yClose != null) {
+      openType = classifyOpen(bar.open, yHigh, yLow, yClose).openType
+    }
+    wasRth = isRth
+
+    if (in15Build) {
+      r15h = r15h == null ? bar.high : Math.max(r15h, bar.high)
+      r15l = r15l == null ? bar.low : Math.min(r15l, bar.low)
+    }
+    if (in30Build) {
+      r30h = r30h == null ? bar.high : Math.max(r30h, bar.high)
+      r30l = r30l == null ? bar.low : Math.min(r30l, bar.low)
+    }
+    if (in1hBuild) {
+      r60h = r60h == null ? bar.high : Math.max(r60h, bar.high)
+      r60l = r60l == null ? bar.low : Math.min(r60l, bar.low)
+    }
+
+    activeH = null
+    activeL = null
+    canTradeWindow = false
+    rangeTag = nyMins >= 690 ? 'EXPIRED' : nyMins >= 570 ? 'FORMING' : 'WAIT'
+    if (in15Exec) {
+      activeH = r15h
+      activeL = r15l
+      canTradeWindow = r15h != null
+      rangeTag = '15M'
+    } else if (in30Exec) {
+      activeH = r30h
+      activeL = r30l
+      canTradeWindow = r30h != null
+      rangeTag = '30M'
+    } else if (in1hExec) {
+      activeH = r60h
+      activeL = r60l
+      canTradeWindow = r60h != null
+      rangeTag = 'IB'
+    } else if (nyMins >= 690 && r60h != null && r60l != null) {
+      // Afternoon review — Pine hides the plot; keep IB so the button still shows structure.
+      activeH = r60h
+      activeL = r60l
+    }
+
+    const typical = (bar.high + bar.low + bar.close) / 3
+    const vol = Math.max(bar.volume || 0, 1e-9)
+    vwapNum += typical * vol
+    vwapDen += vol
+    const vwap = vwapDen > 0 ? vwapNum / vwapDen : bar.close
+    ema = ema == null ? bar.close : emaAlpha * bar.close + (1 - emaAlpha) * ema
+    isUp = bar.close > vwap && bar.close > ema
+    isDown = bar.close < vwap && bar.close < ema
+  }
+
+  const lastYmd = tagged.length ? tagged[tagged.length - 1]!.ymd : ''
+  const signals: AuctionOverlaySignal[] = ran.trades
+    .filter((t) => t.date === lastYmd)
+    .map((t) => ({
+      time: t.fillUnix,
+      side: t.side,
+      entry: t.entry,
+      stop: t.stop,
+      target: t.target,
+      rangeFocus: t.rangeFocus,
+      contracts: t.contracts,
+    }))
+  const lastSignal = signals.length ? signals[signals.length - 1]! : null
+  const showRange = activeH != null && activeL != null
+  const mid =
+    showRange && activeH != null && activeL != null ? (activeH + activeL) / 2 : null
+
+  return {
+    instrument,
+    hud: {
+      openType,
+      rangeTag,
+      windowLabel: auctionWindowLabel(rangeTag, nyMins, isLunch),
+      canTradeWindow,
+      isLunch,
+      bias: biasLabel(isUp, isDown),
+      dailySignals: signals.length,
+      maxDaily: MAX_DAILY_SIGNALS,
+      riskDollars: ACCOUNT_SIZE * (RISK_PCT / 100),
+      engine: 'Sequential Absorption Breakouts',
+    },
+    rangeHigh: showRange ? activeH : null,
+    rangeLow: showRange ? activeL : null,
+    rangeMid: mid,
+    showRange,
+    showMidpoint: showRange && mid != null,
+    signals,
+    lastSignal,
+  }
+}
+
+export function auctionOverlayBadgeText(
+  overlay: AuctionOverlay | null,
+  visible: boolean
+): string {
+  if (!visible) return 'off'
+  if (!overlay) return '—'
+  if (overlay.hud.isLunch) return 'LUNCH'
+  return overlay.hud.rangeTag
+}
+
+export function auctionOverlayPaintKey(
+  visible: boolean,
+  overlay: AuctionOverlay | null
+): string {
+  if (!visible) return 'off'
+  if (!overlay) return 'empty'
+  const sig = overlay.lastSignal
+  return [
+    overlay.instrument,
+    overlay.hud.rangeTag,
+    overlay.hud.canTradeWindow ? '1' : '0',
+    overlay.showRange ? overlay.rangeHigh : '',
+    overlay.showRange ? overlay.rangeLow : '',
+    overlay.showMidpoint ? overlay.rangeMid : '',
+    sig ? `${sig.side}|${sig.time}|${sig.entry}|${sig.stop}|${sig.target}` : '',
+    overlay.signals.length,
+  ].join('|')
+}
+
+export function auctionOverlayLineSpecs(overlay: AuctionOverlay): AuctionLineSpec[] {
+  const specs: AuctionLineSpec[] = []
+  const tag =
+    overlay.hud.rangeTag === '15M' ||
+    overlay.hud.rangeTag === '30M' ||
+    overlay.hud.rangeTag === 'IB'
+      ? overlay.hud.rangeTag
+      : overlay.hud.rangeTag === 'EXPIRED'
+        ? 'IB'
+        : overlay.hud.rangeTag
+  if (overlay.showRange && overlay.rangeHigh != null) {
+    specs.push({
+      price: overlay.rangeHigh,
+      title: `${tag} H`,
+      color: AUCTION_COLORS.range,
+      width: 2,
+    })
+  }
+  if (overlay.showRange && overlay.rangeLow != null) {
+    specs.push({
+      price: overlay.rangeLow,
+      title: `${tag} L`,
+      color: AUCTION_COLORS.range,
+      width: 2,
+    })
+  }
+  if (overlay.showMidpoint && overlay.rangeMid != null) {
+    specs.push({
+      price: overlay.rangeMid,
+      title: 'Half-Back',
+      color: AUCTION_COLORS.mid,
+      dashed: true,
+      width: 1,
+    })
+  }
+  const sig = overlay.lastSignal
+  if (sig) {
+    const side = sig.side === 'LONG' ? 'BUY' : 'SELL'
+    specs.push({
+      price: sig.entry,
+      title: `[${sig.rangeFocus}] ABSORB ${side}`,
+      color: AUCTION_COLORS.entry,
+      dashed: true,
+      width: 1,
+    })
+    specs.push({
+      price: sig.target,
+      title: '1.5R TP',
+      color: AUCTION_COLORS.tp,
+      width: 2,
+    })
+    specs.push({
+      price: sig.stop,
+      title: `SL · Qty ${sig.contracts}`,
+      color: AUCTION_COLORS.sl,
+      width: 2,
+    })
+  }
+  return specs
 }

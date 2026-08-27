@@ -139,6 +139,27 @@ import {
   evaluateAuctionLiveSignal,
 } from '@/lib/trading/auctionLiveSignal'
 import {
+  AUCTION_COLORS,
+  auctionOverlayBadgeText,
+  auctionOverlayLineSpecs,
+  auctionOverlayPaintKey,
+  computeAuctionOverlay,
+  isAuctionInstrument,
+  resolveAuctionAsOfUnix,
+  type AuctionHud,
+  type AuctionOverlaySignal,
+} from '@/lib/trading/auctionStrategy'
+import {
+  DOW_15M_FAIL_COLORS,
+  computeDow15mFailOverlay,
+  dow15mFailBadgeText,
+  dow15mFailLineSpecs,
+  dow15mFailPaintKey,
+  isDowVolumeBarInstrument,
+  type Dow15mFailHud,
+  type Dow15mFailSignal,
+} from '@/lib/trading/auctionVolumeBreak'
+import {
   applyIbLiquiditySwingToRange,
   applyIbLiquiditySwingToRanges,
   computeIbExtendAdvice,
@@ -150,6 +171,8 @@ import { quoteBelongsToBook } from '@/lib/trading/deskExitGuard'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
 import { LiveVoicePanel } from '@/app/dashboard/chart/components/LiveVoicePanel'
+import { AuctionHudPanel } from '@/app/dashboard/chart/components/AuctionHudPanel'
+import { Dow15mFailHudPanel } from '@/app/dashboard/chart/components/Dow15mFailHudPanel'
 import {
   DESK_BAR_SPACING,
   DESK_CANDLE_DOWN,
@@ -1118,6 +1141,22 @@ export function TradingChart({
   const [showMarketControl, setShowMarketControl] = useState(() =>
     SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().control
   )
+  const [showAuction, setShowAuction] = useState(() => loadDeskOverlayToggles().auction)
+  const auctionLinesRef = useRef<IPriceLine[]>([])
+  const auctionPaintKeyRef = useRef('')
+  const auctionSignalsRef = useRef<AuctionOverlaySignal[]>([])
+  const paintAuctionOverlayRef = useRef<() => void>(() => { })
+  const [auctionBadge, setAuctionBadge] = useState('off')
+  const [auctionHud, setAuctionHud] = useState<AuctionHud | null>(null)
+  const [showDow15mFail, setShowDow15mFail] = useState(
+    () => loadDeskOverlayToggles().dow15mFail
+  )
+  const dow15mFailLinesRef = useRef<IPriceLine[]>([])
+  const dow15mFailPaintKeyRef = useRef('')
+  const dow15mFailSignalsRef = useRef<Dow15mFailSignal[]>([])
+  const paintDow15mFailOverlayRef = useRef<() => void>(() => { })
+  const [dow15mFailBadge, setDow15mFailBadge] = useState('off')
+  const [dow15mFailHud, setDow15mFailHud] = useState<Dow15mFailHud | null>(null)
   const controlLinesRef = useRef<IPriceLine[]>([])
   const controlPaintKeyRef = useRef('')
   const [controlBadge, setControlBadge] = useState('RF WAIT')
@@ -1254,6 +1293,8 @@ export function TradingChart({
       opening: showOpeningActivity,
       control: showMarketControl,
       sessions: showSessionBands,
+      auction: showAuction,
+      dow15mFail: showDow15mFail,
     })
   }, [
     showLevels,
@@ -1265,6 +1306,8 @@ export function TradingChart({
     showOpeningActivity,
     showMarketControl,
     showSessionBands,
+    showAuction,
+    showDow15mFail,
   ])
   /** Floating morning playbook — closed by default on chart refresh; open via Playbook (P). */
   const [playbookOpen, setPlaybookOpen] = useState(false)
@@ -1362,6 +1405,30 @@ export function TradingChart({
             text: s.text,
           })
         }
+      }
+    }
+
+    if (showAuction && isAuctionInstrument(instrument)) {
+      for (const s of auctionSignalsRef.current) {
+        markers.push({
+          time: s.time as UTCTimestamp,
+          position: s.side === 'LONG' ? 'belowBar' : 'aboveBar',
+          color: s.side === 'LONG' ? AUCTION_COLORS.buy : AUCTION_COLORS.sell,
+          shape: s.side === 'LONG' ? 'arrowUp' : 'arrowDown',
+          text: s.side === 'LONG' ? 'BUY' : 'SELL',
+        })
+      }
+    }
+
+    if (showDow15mFail && isDowVolumeBarInstrument(instrument)) {
+      for (const s of dow15mFailSignalsRef.current) {
+        markers.push({
+          time: s.time as UTCTimestamp,
+          position: s.side === 'LONG' ? 'belowBar' : 'aboveBar',
+          color: s.side === 'LONG' ? DOW_15M_FAIL_COLORS.buy : DOW_15M_FAIL_COLORS.sell,
+          shape: s.side === 'LONG' ? 'arrowUp' : 'arrowDown',
+          text: s.side === 'LONG' ? 'BUY' : 'SELL',
+        })
       }
     }
 
@@ -1502,6 +1569,8 @@ export function TradingChart({
     showOr15,
     showOr30,
     showUsRange,
+    showAuction,
+    showDow15mFail,
     instrument,
     rangeStrategy,
     morningAttempts,
@@ -1516,7 +1585,7 @@ export function TradingChart({
 
   useEffect(() => {
     paintDeskMarkers()
-  }, [showIbBreakouts, showOr15, showOr30, showUsRange, paintDeskMarkers])
+  }, [showIbBreakouts, showOr15, showOr30, showUsRange, showAuction, showDow15mFail, paintDeskMarkers])
 
   /** Apply / clear IB first-hour H/L (blue). Off until user toggles IB BRK/REJ (B). */
   const paintIbLines = useCallback(() => {
@@ -1913,6 +1982,154 @@ export function TradingChart({
     }
   }, [showOpeningActivity, instrument])
 
+  const paintAuctionOverlay = useCallback(() => {
+    const host = priceLineHostRef.current
+    const list = candlesRef.current
+    const lastBar = list.length ? (list[list.length - 1]!.time as number) : null
+    const asOfUnix = resolveAuctionAsOfUnix(lastBar, Math.floor(Date.now() / 1000))
+    const overlay = isAuctionInstrument(instrument)
+      ? computeAuctionOverlay({
+          instrument,
+          candles: list.map((c) => ({
+            time: c.time as number,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume,
+          })),
+          asOfUnix,
+        })
+      : null
+    const visible = showAuction && !!overlay
+    const badge = auctionOverlayBadgeText(overlay, showAuction)
+    setAuctionBadge((prev) => (prev === badge ? prev : badge))
+    const hud = visible && overlay ? overlay.hud : null
+    setAuctionHud((prev) => {
+      if (!hud && !prev) return prev
+      if (!hud) return null
+      if (
+        prev &&
+        prev.rangeTag === hud.rangeTag &&
+        prev.windowLabel === hud.windowLabel &&
+        prev.openType === hud.openType &&
+        prev.bias === hud.bias &&
+        prev.dailySignals === hud.dailySignals &&
+        prev.canTradeWindow === hud.canTradeWindow &&
+        prev.isLunch === hud.isLunch
+      ) {
+        return prev
+      }
+      return hud
+    })
+    auctionSignalsRef.current = visible && overlay ? overlay.signals : []
+    const key = auctionOverlayPaintKey(visible, overlay)
+    if (key === auctionPaintKeyRef.current) return
+    auctionPaintKeyRef.current = key
+    for (const line of auctionLinesRef.current) {
+      try {
+        host?.removePriceLine(line)
+      } catch {
+        /* ignore */
+      }
+    }
+    auctionLinesRef.current = []
+    if (!visible || !overlay || !host) {
+      paintDeskMarkersRef.current()
+      return
+    }
+    for (const spec of auctionOverlayLineSpecs(overlay)) {
+      try {
+        auctionLinesRef.current.push(
+          host.createPriceLine({
+            price: spec.price,
+            color: spec.color,
+            title: spec.title,
+            lineWidth: spec.width,
+            lineStyle: spec.dashed ? LineStyle.Dashed : LineStyle.Solid,
+            axisLabelVisible: true,
+          })
+        )
+      } catch {
+        /* ignore */
+      }
+    }
+    paintDeskMarkersRef.current()
+  }, [showAuction, instrument])
+
+  const paintDow15mFailOverlay = useCallback(() => {
+    const host = priceLineHostRef.current
+    const list = candlesRef.current
+    const lastBar = list.length ? (list[list.length - 1]!.time as number) : null
+    const asOfUnix = resolveAuctionAsOfUnix(lastBar, Math.floor(Date.now() / 1000))
+    const overlay = isDowVolumeBarInstrument(instrument)
+      ? computeDow15mFailOverlay({
+          instrument,
+          candles: list.map((c) => ({
+            time: c.time as number,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume,
+          })),
+          asOfUnix,
+        })
+      : null
+    const visible = showDow15mFail && !!overlay
+    const badge = dow15mFailBadgeText(overlay, showDow15mFail)
+    setDow15mFailBadge((prev) => (prev === badge ? prev : badge))
+    const hud = visible && overlay ? overlay.hud : null
+    setDow15mFailHud((prev) => {
+      if (!hud && !prev) return prev
+      if (!hud) return null
+      if (
+        prev &&
+        prev.rangeStatus === hud.rangeStatus &&
+        prev.setupText === hud.setupText &&
+        prev.dailySignals === hud.dailySignals &&
+        prev.rangeArm === hud.rangeArm &&
+        prev.setupOn === hud.setupOn
+      ) {
+        return prev
+      }
+      return hud
+    })
+    dow15mFailSignalsRef.current = visible && overlay ? overlay.signals : []
+    const key = dow15mFailPaintKey(visible, overlay)
+    if (key === dow15mFailPaintKeyRef.current) return
+    dow15mFailPaintKeyRef.current = key
+    for (const line of dow15mFailLinesRef.current) {
+      try {
+        host?.removePriceLine(line)
+      } catch {
+        /* ignore */
+      }
+    }
+    dow15mFailLinesRef.current = []
+    if (!visible || !overlay || !host) {
+      paintDeskMarkersRef.current()
+      return
+    }
+    for (const spec of dow15mFailLineSpecs(overlay)) {
+      try {
+        dow15mFailLinesRef.current.push(
+          host.createPriceLine({
+            price: spec.price,
+            color: spec.color,
+            title: spec.title,
+            lineWidth: spec.width,
+            lineStyle: spec.dashed ? LineStyle.Dashed : LineStyle.Solid,
+            axisLabelVisible: true,
+          })
+        )
+      } catch {
+        /* ignore */
+      }
+    }
+    paintDeskMarkersRef.current()
+  }, [showDow15mFail, instrument])
+
   const paintMarketControl = useCallback(() => {
     const host = priceLineHostRef.current
     const list = candlesRef.current
@@ -2288,6 +2505,22 @@ export function TradingChart({
   useEffect(() => {
     paintOpeningActivity()
   }, [paintOpeningActivity])
+
+  useEffect(() => {
+    paintAuctionOverlayRef.current = paintAuctionOverlay
+  }, [paintAuctionOverlay])
+
+  useEffect(() => {
+    paintAuctionOverlay()
+  }, [paintAuctionOverlay])
+
+  useEffect(() => {
+    paintDow15mFailOverlayRef.current = paintDow15mFailOverlay
+  }, [paintDow15mFailOverlay])
+
+  useEffect(() => {
+    paintDow15mFailOverlay()
+  }, [paintDow15mFailOverlay])
 
   useEffect(() => {
     paintMarketControlRef.current = paintMarketControl
@@ -4079,6 +4312,32 @@ export function TradingChart({
       controlLinesRef.current = []
       controlPaintKeyRef.current = ''
     }
+    {
+      const host = priceLineHostRef.current
+      for (const line of auctionLinesRef.current) {
+        try {
+          host?.removePriceLine(line)
+        } catch {
+          /* ignore */
+        }
+      }
+      auctionLinesRef.current = []
+      auctionPaintKeyRef.current = ''
+      auctionSignalsRef.current = []
+    }
+    {
+      const host = priceLineHostRef.current
+      for (const line of dow15mFailLinesRef.current) {
+        try {
+          host?.removePriceLine(line)
+        } catch {
+          /* ignore */
+        }
+      }
+      dow15mFailLinesRef.current = []
+      dow15mFailPaintKeyRef.current = ''
+      dow15mFailSignalsRef.current = []
+    }
     setCallBadge('WAIT')
     setCallHover(
       'CALL WAIT — no ticket\n\nTicket stays 1.5R. No Leo. No Level Finder fills.'
@@ -4300,6 +4559,8 @@ export function TradingChart({
 
       paintYesterdayProfileRef.current()
       paintOpeningActivityRef.current()
+      paintAuctionOverlayRef.current()
+      paintDow15mFailOverlayRef.current()
       paintMarketControlRef.current()
       paintDeskCallRef.current()
       paintIbExtendRef.current()
@@ -7949,6 +8210,46 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </button>
         )}
 
+        {deskSessionLive && isAuctionInstrument(instrument) && (
+          <button
+            type="button"
+            title={
+              showAuction
+                ? 'Auction overlay on — sequential 15M/30M/IB absorb-breakout ranges, BUY/SELL, HUD. Click to hide.'
+                : 'Show auction: sequential morning absorb-breakout (15M → 30M → IB), range H/L, half-back, signals, HUD'
+            }
+            onClick={() => setShowAuction((v) => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showAuction
+              ? 'bg-orange-600/30 border-orange-500/50 text-orange-100'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-orange-200 hover:border-orange-500/40'
+              }`}
+          >
+            <span className={`w-2 h-2 rounded-full inline-block ${showAuction ? 'bg-orange-400' : 'bg-gray-600'}`} />
+            <span>Auction</span>
+            <span className="text-[10px] font-normal text-orange-200/80">{auctionBadge}</span>
+          </button>
+        )}
+
+        {deskSessionLive && isDowVolumeBarInstrument(instrument) && (
+          <button
+            type="button"
+            title={
+              showDow15mFail
+                ? 'Dow 15M fail overlay on — volume-bar FAIL (wait 5, 1.5R). Click to hide.'
+                : 'Show auction volume-bar — Dow 15M fail (09:45–10:00 arm, opposite-side break)'
+            }
+            onClick={() => setShowDow15mFail((v) => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showDow15mFail
+              ? 'bg-cyan-600/30 border-cyan-500/50 text-cyan-100'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-cyan-200 hover:border-cyan-500/40'
+              }`}
+          >
+            <span className={`w-2 h-2 rounded-full inline-block ${showDow15mFail ? 'bg-cyan-400' : 'bg-gray-600'}`} />
+            <span>15M fail</span>
+            <span className="text-[10px] font-normal text-cyan-200/80">{dow15mFailBadge}</span>
+          </button>
+        )}
+
         {/* IB Proximity Badge when price approaches IB High / IB Low */}
         {ibProximity && (
           <span
@@ -8361,6 +8662,20 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               </span>
             )}
           </span>
+          {isAuctionInstrument(instrument) && (
+            <span title="Sequential 15M → 30M → IB absorb-breakout overlay — toggle Auction.">
+              <span className={showAuction ? 'text-orange-400' : 'text-gray-600'}>
+                Auction {auctionBadge}
+              </span>
+            </span>
+          )}
+          {isDowVolumeBarInstrument(instrument) && (
+            <span title="Dow 15-minute volume-bar FAIL — toggle 15M fail.">
+              <span className={showDow15mFail ? 'text-cyan-400' : 'text-gray-600'}>
+                15M fail {dow15mFailBadge}
+              </span>
+            </span>
+          )}
           {isOr15Instrument(instrument) && (
             <span title={`Open range ${or15WindowLabel(instrument)} — ±10 after 15m lock`}>
               <span className={or15Shaped ? 'text-amber-400' : 'text-gray-600'}>
@@ -8499,6 +8814,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           ref={positionBandOverlayRef}
           className="pointer-events-none absolute inset-0 z-[2]"
         />
+
+        {showAuction && auctionHud && isAuctionInstrument(instrument) && (
+          <AuctionHudPanel hud={auctionHud} />
+        )}
+        {showDow15mFail && dow15mFailHud && isDowVolumeBarInstrument(instrument) && (
+          <Dow15mFailHudPanel hud={dow15mFailHud} />
+        )}
 
         {/* Render Saved 2D Time Highlights */}
         {!SYSTEMATIC_LIVE_DESK && renderSavedHighlightBoxes()}

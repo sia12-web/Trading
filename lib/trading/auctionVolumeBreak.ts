@@ -423,3 +423,310 @@ export function runVolumeBreakBacktest(args: {
     expiredSetups,
   }
 }
+
+/** Live / chart overlay: Dow 15-minute range, FAIL only, wait 5, 1.5R. */
+export const DOW_15M_FAIL_PARAMS: VolumeBreakParams = {
+  waitBars: 5,
+  rr: 1.5,
+  slBufferTicks: 5,
+  rvolMult: 1.2,
+  minRangeMult: 1.0,
+  maxDaily: 3,
+  onlyKind: 'FAIL',
+  onlyRange: '15M',
+}
+
+export function isDowVolumeBarInstrument(value: string): value is 'DOW' {
+  return value === 'DOW'
+}
+
+export const DOW_15M_FAIL_COLORS = {
+  range: '#f97316',
+  setup: '#22d3ee',
+  buy: '#22c55e',
+  sell: '#ef4444',
+  entry: '#9ca3af',
+  tp: '#22c55e',
+  sl: '#ef4444',
+} as const
+
+export type Dow15mFailHud = {
+  marketOk: boolean
+  timeframeOk: boolean
+  rangeStatus: string
+  rangeArm: boolean
+  setupText: string
+  setupOn: boolean
+  mode: string
+  dailySignals: number
+  maxDaily: number
+  riskDollars: number
+}
+
+export type Dow15mFailSignal = {
+  time: number
+  side: 'LONG' | 'SHORT'
+  kind: VolumeBreakKind
+  entry: number
+  stop: number
+  target: number
+  contracts: number
+}
+
+export type Dow15mFailOverlay = {
+  hud: Dow15mFailHud
+  rangeHigh: number | null
+  rangeLow: number | null
+  showRange: boolean
+  setupHigh: number | null
+  setupLow: number | null
+  showSetup: boolean
+  signals: Dow15mFailSignal[]
+  lastSignal: Dow15mFailSignal | null
+}
+
+export type Dow15mFailLineSpec = {
+  price: number
+  title: string
+  color: string
+  dashed?: boolean
+  width: 1 | 2
+}
+
+/**
+ * Chart overlay for the TradingView "auction volume-bar — Dow 15M fail" script.
+ * DOW only. 15-minute range, FAIL (opposite-side break), CONTINUE off.
+ */
+export function computeDow15mFailOverlay(args: {
+  instrument: string
+  candles: AuctionBar[]
+  asOfUnix?: number
+}): Dow15mFailOverlay | null {
+  if (!isDowVolumeBarInstrument(args.instrument)) return null
+  const asOf = args.asOfUnix ?? Number.POSITIVE_INFINITY
+  const sliced = (args.candles || []).filter(
+    (c) =>
+      c &&
+      Number.isFinite(c.time) &&
+      c.time <= asOf &&
+      Number.isFinite(c.open) &&
+      Number.isFinite(c.high) &&
+      Number.isFinite(c.low) &&
+      Number.isFinite(c.close)
+  )
+  const params = DOW_15M_FAIL_PARAMS
+  const ran = runVolumeBreakBacktest({
+    instrument: 'DOW',
+    candles: sliced,
+    params,
+  })
+
+  const tagged = sliced
+    .slice()
+    .sort((a, b) => a.time - b.time)
+    .map((c) => ({ ...c, ...nyCivil(c.time) }))
+
+  let curDay = ''
+  let r15h: number | null = null
+  let r15l: number | null = null
+  let setupH: number | null = null
+  let setupL: number | null = null
+  let setupBar = -1
+  let setupGreen = false
+  let setupOn = false
+  let nyMins = 0
+  let in15mArm = false
+  const volumes: number[] = []
+  const ranges: number[] = []
+  const fillTimes = new Set(ran.trades.map((t) => t.fillUnix))
+
+  for (let i = 0; i < tagged.length; i++) {
+    const bar = tagged[i]!
+    if (bar.ymd !== curDay) {
+      curDay = bar.ymd
+      r15h = r15l = null
+      setupOn = false
+      setupH = setupL = null
+      setupBar = -1
+    }
+    nyMins = bar.mins
+    const in15Build = nyMins >= 570 && nyMins < 585
+    in15mArm = nyMins >= 585 && nyMins < 600
+    if (in15Build) {
+      r15h = r15h == null ? bar.high : Math.max(r15h, bar.high)
+      r15l = r15l == null ? bar.low : Math.min(r15l, bar.low)
+    }
+
+    volumes.push(bar.volume || 0)
+    ranges.push(bar.high - bar.low)
+    const volSma = sma(volumes, 20)
+    const rngSma = sma(ranges, 20)
+    const rvol = volSma != null && volSma > 0 ? (bar.volume || 0) / volSma : 1
+    const isBig =
+      rngSma != null && rngSma > 0 ? bar.high - bar.low >= rngSma * params.minRangeMult : false
+    const isHighVol = rvol >= params.rvolMult
+    const isGreen = bar.close > bar.open
+    const isRed = bar.close < bar.open
+    const touchesH = r15h != null && bar.low <= r15h && bar.high >= r15h
+    const touchesL = r15l != null && bar.low <= r15l && bar.high >= r15l
+
+    const age = setupOn ? i - setupBar : 0
+    if (setupOn && age > params.waitBars) {
+      setupOn = false
+      setupH = setupL = null
+    }
+    if (setupOn && fillTimes.has(bar.time)) {
+      setupOn = false
+      setupH = setupL = null
+    }
+    if (in15mArm && !setupOn && isHighVol && isBig) {
+      if (isGreen && touchesH) {
+        setupH = bar.high
+        setupL = bar.low
+        setupBar = i
+        setupGreen = true
+        setupOn = true
+      } else if (isRed && touchesL) {
+        setupH = bar.high
+        setupL = bar.low
+        setupBar = i
+        setupGreen = false
+        setupOn = true
+      }
+    }
+  }
+
+  const lastYmd = tagged.length ? tagged[tagged.length - 1]!.ymd : ''
+  const signals: Dow15mFailSignal[] = ran.trades
+    .filter((t) => t.date === lastYmd)
+    .map((t) => ({
+      time: t.fillUnix,
+      side: t.side,
+      kind: t.kind,
+      entry: t.entry,
+      stop: t.stop,
+      target: t.target,
+      contracts: t.contracts,
+    }))
+  const lastSignal = signals.length ? signals[signals.length - 1]! : null
+  const showRange = r15h != null && r15l != null && nyMins >= 585 && nyMins < 690
+  const age = setupOn ? tagged.length - 1 - setupBar : 0
+  let rangeStatus = 'Building 09:30–09:45'
+  if (r15h != null) rangeStatus = in15mArm ? 'ARM 09:45–10:00' : 'Locked'
+  const setupText = setupOn
+    ? `${setupGreen ? 'GREEN @ high' : 'RED @ low'}  age ${age}/${params.waitBars}`
+    : 'None'
+
+  return {
+    hud: {
+      marketOk: true,
+      timeframeOk: true,
+      rangeStatus,
+      rangeArm: in15mArm,
+      setupText,
+      setupOn,
+      mode: 'FAIL',
+      dailySignals: signals.length,
+      maxDaily: params.maxDaily,
+      riskDollars: ACCOUNT_SIZE * (RISK_PCT / 100),
+    },
+    rangeHigh: showRange ? r15h : null,
+    rangeLow: showRange ? r15l : null,
+    showRange,
+    setupHigh: setupOn ? setupH : null,
+    setupLow: setupOn ? setupL : null,
+    showSetup: setupOn && setupH != null && setupL != null,
+    signals,
+    lastSignal,
+  }
+}
+
+export function dow15mFailBadgeText(
+  overlay: Dow15mFailOverlay | null,
+  visible: boolean
+): string {
+  if (!visible) return 'off'
+  if (!overlay) return '—'
+  if (overlay.hud.setupOn) return 'ARMED'
+  if (overlay.hud.rangeArm) return 'ARM'
+  return overlay.showRange ? '15M' : overlay.hud.rangeStatus.startsWith('Building') ? 'build' : 'locked'
+}
+
+export function dow15mFailPaintKey(
+  visible: boolean,
+  overlay: Dow15mFailOverlay | null
+): string {
+  if (!visible) return 'off'
+  if (!overlay) return 'empty'
+  const sig = overlay.lastSignal
+  return [
+    overlay.showRange ? overlay.rangeHigh : '',
+    overlay.showRange ? overlay.rangeLow : '',
+    overlay.showSetup ? overlay.setupHigh : '',
+    overlay.showSetup ? overlay.setupLow : '',
+    overlay.hud.setupText,
+    overlay.hud.rangeStatus,
+    sig ? `${sig.side}|${sig.kind}|${sig.time}|${sig.entry}` : '',
+    overlay.signals.length,
+  ].join('|')
+}
+
+export function dow15mFailLineSpecs(overlay: Dow15mFailOverlay): Dow15mFailLineSpec[] {
+  const specs: Dow15mFailLineSpec[] = []
+  if (overlay.showRange && overlay.rangeHigh != null) {
+    specs.push({
+      price: overlay.rangeHigh,
+      title: '15M H',
+      color: DOW_15M_FAIL_COLORS.range,
+      width: 2,
+    })
+  }
+  if (overlay.showRange && overlay.rangeLow != null) {
+    specs.push({
+      price: overlay.rangeLow,
+      title: '15M L',
+      color: DOW_15M_FAIL_COLORS.range,
+      width: 2,
+    })
+  }
+  if (overlay.showSetup && overlay.setupHigh != null) {
+    specs.push({
+      price: overlay.setupHigh,
+      title: 'Vol bar H',
+      color: DOW_15M_FAIL_COLORS.setup,
+      width: 1,
+    })
+  }
+  if (overlay.showSetup && overlay.setupLow != null) {
+    specs.push({
+      price: overlay.setupLow,
+      title: 'Vol bar L',
+      color: DOW_15M_FAIL_COLORS.setup,
+      width: 1,
+    })
+  }
+  const sig = overlay.lastSignal
+  if (sig) {
+    const txt = sig.kind === 'FAIL' ? (sig.side === 'LONG' ? 'FAIL BUY' : 'FAIL SELL') : sig.side
+    specs.push({
+      price: sig.entry,
+      title: `[15M] ${txt}`,
+      color: DOW_15M_FAIL_COLORS.entry,
+      dashed: true,
+      width: 1,
+    })
+    specs.push({
+      price: sig.target,
+      title: '1.5R TP',
+      color: DOW_15M_FAIL_COLORS.tp,
+      width: 2,
+    })
+    specs.push({
+      price: sig.stop,
+      title: `SL · Qty ${sig.contracts}`,
+      color: DOW_15M_FAIL_COLORS.sl,
+      width: 2,
+    })
+  }
+  return specs
+}

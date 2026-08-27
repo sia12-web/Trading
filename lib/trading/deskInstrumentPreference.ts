@@ -204,6 +204,8 @@ export type DeskOverlayToggles = {
   opening: boolean
   control: boolean
   sessions: boolean
+  auction: boolean
+  dow15mFail: boolean
 }
 
 const OVERLAY_DEFAULTS: DeskOverlayToggles = {
@@ -217,6 +219,8 @@ const OVERLAY_DEFAULTS: DeskOverlayToggles = {
   opening: false,
   control: false,
   sessions: false,
+  auction: false,
+  dow15mFail: false,
 }
 
 const OVERLAY_KEY = 'tradepulse.chart.overlays'
@@ -238,6 +242,8 @@ export function loadDeskOverlayToggles(): DeskOverlayToggles {
       opening: !!parsed.opening,
       control: !!parsed.control,
       sessions: !!parsed.sessions,
+      auction: !!parsed.auction,
+      dow15mFail: !!parsed.dow15mFail,
     }
   } catch {
     return { ...OVERLAY_DEFAULTS }

@@ -5,7 +5,13 @@
 
 import assert from 'node:assert/strict'
 import { cashOpenUnixForYmd, NY_DESK_CLOCK } from '../lib/chart/sessionVwap'
-import { runVolumeBreakBacktest, type AuctionBar } from '../lib/trading/auctionVolumeBreak'
+import {
+  runVolumeBreakBacktest,
+  computeDow15mFailOverlay,
+  isDowVolumeBarInstrument,
+  DOW_15M_FAIL_PARAMS,
+  type AuctionBar,
+} from '../lib/trading/auctionVolumeBreak'
 
 function rthBars(
   ymd: string,
@@ -117,6 +123,26 @@ assert.ok(
   onlyFailOnFail.trades.filter((t) => t.date === '2026-08-17').length >= 1,
   'FAIL-only 15M still takes the failed-break short'
 )
+
+assert.equal(isDowVolumeBarInstrument('DOW'), true)
+assert.equal(isDowVolumeBarInstrument('NASDAQ'), false)
+assert.equal(
+  computeDow15mFailOverlay({ instrument: 'NASDAQ', candles: [...friday, ...failMonday] }),
+  null
+)
+const failOv = computeDow15mFailOverlay({
+  instrument: 'DOW',
+  candles: [...friday, ...failMonday],
+})
+assert.ok(failOv)
+assert.equal(failOv!.hud.mode, 'FAIL')
+assert.equal(failOv!.hud.marketOk, true)
+assert.ok(failOv!.signals.length >= 1, 'DOW 15M fail overlay shows the short')
+assert.equal(failOv!.signals[0]!.side, 'SHORT')
+assert.equal(failOv!.signals[0]!.kind, 'FAIL')
+assert.equal(DOW_15M_FAIL_PARAMS.onlyKind, 'FAIL')
+assert.equal(DOW_15M_FAIL_PARAMS.onlyRange, '15M')
+assert.equal(DOW_15M_FAIL_PARAMS.rr, 1.5)
 
 console.log('auction_volume_break.test.ts: ok', {
   cont: fills[0]!.kind,
