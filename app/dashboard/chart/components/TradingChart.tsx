@@ -55,6 +55,7 @@ import {
 } from '@/lib/chart/sessionVwap'
 import {
   applyTickToFormingBar,
+  dropImplausibleDeskBars,
   mergeHistoryWithLiveTip,
   closedHistoryOhlcChanged,
   quoteUnixForBucket,
@@ -660,7 +661,9 @@ function toDeskCandles(candles: OHLCV[], instrument: Instrument = 'DOW'): OHLCV[
     deskClockFor(instrument)
   )
   if (trimmed.length === 0) return candles
-  return trimmed.map((c) => ({
+  const sane = dropImplausibleDeskBars(trimmed, instrument)
+  const rows = sane.length > 0 ? sane : trimmed
+  return rows.map((c) => ({
     time: c.time as UTCTimestamp,
     open: c.open,
     high: c.high,
@@ -6662,10 +6665,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     }
 
     const asiaLive =
-      asiaOco &&
-      (asiaOco.event === 'place_both' ||
-        asiaOco.event === 'cancel_unfilled' ||
-        asiaOco.event === 'flatten')
+      asiaOco && asiaOco.qualified && asiaOco.event === 'place_both'
     if (asiaLive && asiaOco) {
       const frac = asiaOco.instrument === 'GOLD' ? 1 : 0
       const fmtA = (n: number) =>
@@ -8128,6 +8128,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             </span>
           )}
           {asiaOco &&
+            asiaOco.qualified &&
             asiaOco.event === 'place_both' &&
             !positionOverlay && (
               <span

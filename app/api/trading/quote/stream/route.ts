@@ -150,7 +150,11 @@ export async function GET(request: Request) {
        */
       const flushPending = () => {
         if (pendingSent || !pending) return
-        if (basis == null && Date.now() - openedAt < UNSHIFTED_AFTER_MS) return
+        if (basis == null) {
+          // Never paint unshifted XAU onto MGC — that prints a fake dump candle.
+          if (instrument === 'GOLD' || instrument === 'CRUDE') return
+          if (Date.now() - openedAt < UNSHIFTED_AFTER_MS) return
+        }
         flush(pending)
       }
 

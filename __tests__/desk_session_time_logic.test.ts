@@ -110,7 +110,7 @@ function expectPhase(
 // ── DOW + NASDAQ share ET clock ──────────────────────────────────────────────
 for (const inst of ['DOW', 'NASDAQ'] as const) {
   // Tip only from focus −30m (09:00 ET) — not midnight / early morning
-  // Asia GOLD/DOW streams 01:50–03:40 Montreal only; 08:00 is still frozen.
+  // Asia GOLD/DOW streams 02:00–03:40 Montreal; 08:00 is still frozen.
   expectPhase(inst, etDate(Y, M, D, 8, 0), { lunchFreeze: false, trade: false, chart: false, deskHours: false }, `${inst} 08:00 pre-focus`)
   expectPhase(inst, etDate(Y, M, D, 9, 0), { lunchFreeze: false, trade: false, chart: true, deskHours: false }, `${inst} 09:00 focus start`)
   expectPhase(inst, etDate(Y, M, D, 9, 20), { lunchFreeze: false, trade: false, chart: true, deskHours: true }, `${inst} 09:20 prep`)
@@ -125,6 +125,7 @@ for (const inst of ['DOW', 'NASDAQ'] as const) {
   expectPhase(inst, etDate(Y, M, D, 20, 0), { lunchFreeze: false, trade: false, chart: false, deskHours: false }, `${inst} 20:00 overnight freeze`)
 }
 
+expectPhase('GOLD', etDate(Y, M, D, 1, 50), { lunchFreeze: false, trade: false, chart: false, deskHours: false }, 'GOLD 01:50 still building — no orders yet')
 expectPhase('DOW', etDate(Y, M, D, 2, 10), { lunchFreeze: false, trade: false, chart: true, deskHours: false }, 'DOW 02:10 Asia place window')
 expectPhase('GOLD', etDate(Y, M, D, 2, 10), { lunchFreeze: false, trade: false, chart: true, deskHours: false }, 'GOLD 02:10 Asia place window')
 expectPhase('NASDAQ', etDate(Y, M, D, 2, 10), { lunchFreeze: false, trade: false, chart: false, deskHours: false }, 'NASDAQ 02:10 still frozen')

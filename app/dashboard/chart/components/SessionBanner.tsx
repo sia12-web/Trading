@@ -124,6 +124,7 @@ export function SessionBanner({
   lastQuoteAt = null,
   dataMode = 'live',
   viewingInstrument = null,
+  asiaOrderLive = false,
 }: {
   onGate?: (g: SessionGateState) => void
   refreshKey?: number
@@ -132,6 +133,8 @@ export function SessionBanner({
   dataMode?: 'live' | 'synthetic'
   /** Current chart tab — preferred clock-in commitment when in focus market */
   viewingInstrument?: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | null
+  /** Qualified Asia OCO after 02:00 lock — hide the badge unless the recipe fires */
+  asiaOrderLive?: boolean
 }) {
   const [gate, setGate] = useState<SessionGateState | null>(null)
   const [gateError, setGateError] = useState<string | null>(null)
@@ -574,10 +577,10 @@ export function SessionBanner({
         <span className="rounded bg-emerald-500/25 px-2 py-0.5 text-emerald-200 font-semibold text-xs border border-emerald-500/40">
           ⚡ SYSTEM AUTOMATED (RUNS AT 9:30 AM RTH)
         </span>
-        {gate.asiaDeskActive && (
+        {asiaOrderLive && (
           <span
             className="rounded bg-lime-500/25 px-2 py-0.5 text-lime-200 font-semibold text-xs border border-lime-500/40"
-            title="Overnight Asia range book — GOLD MGC <60/10 and DOW MYM <80/20. Place both stops on Tradovate. Chart is live."
+            title="Overnight Asia range qualified — place both stop orders on Tradovate after 02:00 Montreal. Flatten 10:25."
           >
             ASIA DESK · BOTH STOPS
           </span>

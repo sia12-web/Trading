@@ -24,6 +24,7 @@ import {
   isLiveDeskInstrument,
   sessionFor,
 } from '@/lib/trading/sessionGate'
+import { dropImplausibleDeskBars } from '@/lib/chart/liveFormingBar'
 import { AVWAP_CANDLE_FETCH_CALENDAR_DAYS } from '@/lib/chart/sessionVwap'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import type { Instrument } from '@/types/price-feed'
@@ -130,6 +131,9 @@ export async function GET(request: Request) {
 
     if (candles && asOf != null && Number.isFinite(asOf)) {
       candles = candles.filter((c) => c.time <= asOf)
+    }
+    if (candles?.length) {
+      candles = dropImplausibleDeskBars(candles, instrument)
     }
 
     if (!candles || candles.length === 0) {

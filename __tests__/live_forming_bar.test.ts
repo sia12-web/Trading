@@ -8,6 +8,7 @@ import {
   applyTickToFormingBar,
   closedHistoryOhlcChanged,
   deskBarOpenUnix,
+  dropImplausibleDeskBars,
   mergeHistoryWithLiveTip,
   quoteUnixForBucket,
   LIVE_MAX_GAP_FILLS,
@@ -121,6 +122,33 @@ const t0 = 1_700_000_000 - (1_700_000_000 % 300)
     false,
     'forming tip drift alone must not force setCandles'
   )
+}
+
+{
+  const history = [
+    { time: t0, open: 4650, high: 4652, low: 4648, close: 4650, volume: 1 },
+  ]
+  const fakeDump = {
+    time: t0,
+    open: 3400,
+    high: 4650,
+    low: 3400,
+    close: 3400,
+    volume: 0,
+  }
+  const merged = mergeHistoryWithLiveTip(history, fakeDump)
+  assert.equal(merged[0]!.close, 4650, 'off-scale XAU tip must not paint a fake gold dump')
+}
+
+{
+  const bars = [
+    { time: t0, open: 4650, high: 4652, low: 4648, close: 4650 },
+    { time: t0 + 300, open: 4650, high: 4650, low: 3400, close: 3400 },
+    { time: t0 + 600, open: 3400, high: 3402, low: 3398, close: 3401 },
+  ]
+  const sane = dropImplausibleDeskBars(bars, 'GOLD')
+  assert.equal(sane.length, 1, 'drop the glitch 5m gold dump')
+  assert.equal(sane[0]!.close, 4650)
 }
 
 console.log('live_forming_bar: all passed')

@@ -197,7 +197,7 @@ function NavSection({
             item={item}
             active={active}
             locked={isLiveChart && !liveDeskOpen}
-            lockedHint="No session now — NY from 09:00 Montreal, or Asia GOLD/DOW 01:50–11:30"
+            lockedHint="No session now — NY from 09:00 Montreal, or Asia GOLD/DOW 02:00–10:25"
           />
         )
       })}

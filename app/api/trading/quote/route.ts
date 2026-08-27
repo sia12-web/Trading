@@ -130,6 +130,12 @@ export async function GET(request: Request) {
     const shift = basis ?? getLastKnownCmeBasis(instrument)
 
     if (oanda?.price && oanda.price > 0) {
+      if (shift == null && (instrument === 'GOLD' || instrument === 'CRUDE')) {
+        return NextResponse.json(
+          { error: 'Waiting for CME basis', instrument, price: null },
+          { status: 200, headers }
+        )
+      }
       const price = applyCmeBasis(oanda.price, shift)
       const previous_close = getDayPreviousClose(instrument) ?? price
       const change = price - previous_close

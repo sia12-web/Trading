@@ -15,6 +15,7 @@ import {
   evaluateAsiaDeskOverlay,
   formatAsiaDeskTelegram,
   isAsiaDeskChartWindow,
+  isAsiaLiveOrderOverlay,
   parseAsiaWebhookBody,
   overlayFromWebhook,
 } from '../lib/trading/asiaDesk'
@@ -58,6 +59,10 @@ assert.equal(lock.sellStop, 4644.6)
 
 const atLock = new Date(zonedCivilToUnix('2026-08-27', 2 + 10 / 60, ASIA_TZ) * 1000)
 assert.equal(isAsiaDeskChartWindow(atLock), true)
+const beforeLock = new Date(zonedCivilToUnix('2026-08-27', 1 + 50 / 60, ASIA_TZ) * 1000)
+assert.equal(isAsiaDeskChartWindow(beforeLock), false, 'no chart before 02:00 lock')
+const atFlat = new Date(zonedCivilToUnix('2026-08-27', 10 + 25 / 60, ASIA_TZ) * 1000)
+assert.equal(isAsiaDeskChartWindow(atFlat), false, 'chart closes at 10:25 flatten')
 
 const overlay = evaluateAsiaDeskOverlay({
   instrument: 'GOLD',
@@ -67,6 +72,9 @@ const overlay = evaluateAsiaDeskOverlay({
 assert.ok(overlay)
 assert.equal(overlay.event, 'place_both')
 assert.equal(overlay.contract, 'MGC')
+assert.equal(isAsiaLiveOrderOverlay(overlay, atLock), true)
+assert.equal(isAsiaLiveOrderOverlay(overlay, beforeLock), false)
+assert.equal(isAsiaLiveOrderOverlay({ ...overlay, qualified: false }, atLock), false)
 const text = formatAsiaDeskTelegram(overlay)
 assert.ok(text && text.includes('PLACE OCO STOPS'))
 assert.ok(text.includes('4707.7'))

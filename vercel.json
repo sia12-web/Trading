@@ -62,11 +62,7 @@
     },
     {
       "path": "/api/trading/asia-scan",
-      "schedule": "30 15 * * 1-5"
-    },
-    {
-      "path": "/api/trading/asia-scan",
-      "schedule": "30 16 * * 1-5"
+      "schedule": "25 14 * * 1-5"
     }
   ]
 }

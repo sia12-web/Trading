@@ -1,5 +1,5 @@
 /**
- * Railway has no vercel.json crons. Poll Asia lock / 03:30 cancel / 11:30 flatten
+ * Railway has no vercel.json crons. Poll Asia lock / 03:30 cancel / 10:25 flatten
  * so Telegram fires even if Trade Pulse is closed.
  */
 

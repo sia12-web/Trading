@@ -1,14 +1,14 @@
 /**
  * Bar-by-bar port of the TradingView "Asia Range Signals (Dow / Gold)" indicator.
  * Montreal clock. Asia box 20:00–02:00 (lock bar excluded). Both stop orders
- * from 02:00 until 03:30. SL = Asia mid. TP = 1.5R. Flatten 11:30.
+ * from 02:00 until 03:30. SL = Asia mid. TP = 1.5R. Flatten 10:25.
  */
 
 export const ASIA_TZ = 'America/Toronto'
 export const ASIA_OPEN_MINS = 20 * 60
 export const ASIA_LOCK_MINS = 2 * 60
 export const ASIA_FILL_CUTOFF_MINS = 3 * 60 + 30
-export const ASIA_FLAT_MINS = 11 * 60 + 30
+export const ASIA_FLAT_MINS = 10 * 60 + 25
 export const ASIA_LOCK_WINDOW_END_MINS = 8 * 60
 export const ASIA_ACCOUNT = 50_000
 export const ASIA_RISK_PCT = 1

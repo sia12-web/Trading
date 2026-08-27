@@ -2,12 +2,12 @@
 // Gold Asia range — M5. Montreal clocks. Manual orders on Tradovate.
 // Backtest (OANDA XAU, 27 Aug 2025–27 Aug 2026): trade only if Asia range < 60.
 // Buffer 10 pts past high/low (20 pts does not fill by 03:30). SL = Asia mid. TP 1.5R.
-// Cancel unfilled 03:30. Flatten 11:30.
+// Cancel unfilled 03:30. Flatten 10:25.
 //
 // Trade Pulse (Railway) scans the same recipe at 02:00 and Telegrams + draws both
 // working stops on the live chart. Optional TV webhook:
 //   https://YOUR_HOST/api/trading/asia-signal?hook=ASIA_WEBHOOK_SECRET
-// Alert message can stay as-is (server parses PLACE / SKIP / 03:30 / 11:30).
+// Alert message can stay as-is (server parses PLACE / SKIP / 03:30 / 10:25).
 indicator("Asia Range Signals — Gold", "AsiaSIG-GOLD", overlay=true, max_labels_count=200, max_lines_count=200, max_boxes_count=100)
 
 TZ = "America/Toronto"
@@ -32,7 +32,7 @@ inAsia = mins >= 20 * 60 or mins < 2 * 60
 asiaOpen = mins >= 20 * 60 and prevMins < 20 * 60
 crossedLock = mins >= 2 * 60 and mins < 8 * 60 and (na(prevMins) or prevMins < 2 * 60 or prevMins >= 20 * 60)
 fillCutoff = mins >= 3 * 60 + 30 and prevMins < 3 * 60 + 30
-flatTime = mins >= 11 * 60 + 30 and prevMins < 11 * 60 + 30
+flatTime = mins >= 10 * 60 + 25 and prevMins < 10 * 60 + 25
 
 var float asiaHigh = na
 var float asiaLow = na
@@ -118,7 +118,7 @@ if crossedLock
         bx := box.new(bar_index, lockedHigh, bar_index + 80, lockedLow, bgcolor=color.new(#26a69a, 85), border_color=#26a69a)
         label.new(bar_index, buyStop, "LONG BUY STOP\n" + str.tostring(buyStop, format.mintick) + "\n" + str.tostring(qty) + " cts\nSL " + str.tostring(lockedMid, format.mintick) + "\nTP " + str.tostring(longTp, format.mintick), xloc=xloc.bar_index, style=label.style_label_down, color=color.new(#00c853, 0), textcolor=color.white, size=size.normal)
         label.new(bar_index, sellStop, "SHORT SELL STOP\n" + str.tostring(sellStop, format.mintick) + "\n" + str.tostring(qty) + " cts\nSL " + str.tostring(lockedMid, format.mintick) + "\nTP " + str.tostring(shortTp, format.mintick), xloc=xloc.bar_index, style=label.style_label_up, color=color.new(#d50000, 0), textcolor=color.white, size=size.normal)
-        alert("GOLD ASIA — PLACE OCO STOPS\n" + contract + " x " + str.tostring(qty) + "\nRisk $" + str.tostring(riskCash, "#") + " (1% of " + str.tostring(account, "#") + ")\n\nLONG buy-stop " + str.tostring(buyStop, format.mintick) + "\n  SL " + str.tostring(lockedMid, format.mintick) + "  TP " + str.tostring(longTp, format.mintick) + "\n\nSHORT sell-stop " + str.tostring(sellStop, format.mintick) + "\n  SL " + str.tostring(lockedMid, format.mintick) + "  TP " + str.tostring(shortTp, format.mintick) + "\n\nRange " + str.tostring(rng, "#.##") + "  need < 60  Cancel unfilled 03:30  Flatten 11:30 Montreal", alert.freq_once_per_bar_close)
+        alert("GOLD ASIA — PLACE OCO STOPS\n" + contract + " x " + str.tostring(qty) + "\nRisk $" + str.tostring(riskCash, "#") + " (1% of " + str.tostring(account, "#") + ")\n\nLONG buy-stop " + str.tostring(buyStop, format.mintick) + "\n  SL " + str.tostring(lockedMid, format.mintick) + "  TP " + str.tostring(longTp, format.mintick) + "\n\nSHORT sell-stop " + str.tostring(sellStop, format.mintick) + "\n  SL " + str.tostring(lockedMid, format.mintick) + "  TP " + str.tostring(shortTp, format.mintick) + "\n\nRange " + str.tostring(rng, "#.##") + "  need < 60  Cancel unfilled 03:30  Flatten 10:25 Montreal", alert.freq_once_per_bar_close)
     else
         qualified := false
         live := false
@@ -133,8 +133,8 @@ if live and fillCutoff
 
 if flatTime
     live := false
-    status := "11:30 — flatten if still in the trade"
-    alert("11:30 Montreal — flatten open Gold Asia trade.", alert.freq_once_per_bar_close)
+    status := "10:25 — flatten if still in the trade"
+    alert("10:25 Montreal — flatten open Gold Asia trade.", alert.freq_once_per_bar_close)
 
 plot(inAsia ? asiaHigh : na, "Asia high (building)", color=#26a69a, linewidth=2, style=plot.style_linebr)
 plot(inAsia ? asiaLow : na, "Asia low (building)", color=#ef5350, linewidth=2, style=plot.style_linebr)

@@ -36,12 +36,12 @@ export default function DashboardHomePage() {
         setNextHint('NY focus is open — Live Trading unlocked.')
       } else if (live) {
         setNextHint(
-          'ASIA desk is open — GOLD (MGC) and DOW (MYM) overnight range. Live Trading unlocked until 11:30 Montreal.'
+          'ASIA desk is open — GOLD (MGC) and DOW (MYM) overnight range. Live Trading unlocked until 10:25 Montreal. Orders only after 02:00 if the range qualifies.'
         )
       } else {
         const unlockAt = focusUnlockMontreal(now)
         setNextHint(
-          `No live session. Live Trading unlocks 01:50 Montreal for Asia GOLD/DOW, or 30 minutes before NY open (${unlockAt}).`
+          `No live session. Live Trading unlocks 02:00 Montreal for Asia GOLD/DOW (only if the range qualifies), or 30 minutes before NY open (${unlockAt}).`
         )
       }
     }

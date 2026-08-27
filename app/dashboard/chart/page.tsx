@@ -34,7 +34,7 @@ import {
   type DeskInstrumentPref,
 } from '@/lib/trading/deskInstrumentPreference'
 import { isAfternoonWatchWindow, sessionFor, deskMarketFor, isLiveTradingPageOpen } from '@/lib/trading/sessionGate'
-import type { AsiaDeskOverlay } from '@/lib/trading/asiaDesk'
+import { isAsiaLiveOrderOverlay, type AsiaDeskOverlay } from '@/lib/trading/asiaDesk'
 import { LIVE_CLOCK_REFUSE, clockedNameOnlyMessage, isLiveClockInstrument } from '@/lib/trading/liveDeskBook'
 import { quoteBelongsToBook } from '@/lib/trading/deskExitGuard'
 import {
@@ -332,17 +332,8 @@ export default function ChartPage() {
     if (instrument === 'GOLD' || instrument === 'DOW') return
     const gold = asiaOverlays.GOLD
     const dow = asiaOverlays.DOW
-    const pick =
-      gold?.event === 'place_both'
-        ? 'GOLD'
-        : dow?.event === 'place_both'
-          ? 'DOW'
-          : gold
-            ? 'GOLD'
-            : dow
-              ? 'DOW'
-              : 'GOLD'
-    setInstrument(pick)
+    if (isAsiaLiveOrderOverlay(gold)) setInstrument('GOLD')
+    else if (isAsiaLiveOrderOverlay(dow)) setInstrument('DOW')
   }, [gate?.asiaDeskActive, gate?.clockedIn, asiaOverlays, instrument, setInstrument])
   const [orderLevel, setOrderLevel] = useState<number | null>(null)
   const [orderLevelType, setOrderLevelType] = useState<string | undefined>()
@@ -2232,6 +2223,10 @@ export default function ChartPage() {
           lastQuoteAt={lastQuoteAt}
           dataMode={dataMode}
           viewingInstrument={instrument}
+          asiaOrderLive={
+            isAsiaLiveOrderOverlay(asiaOverlays.GOLD) ||
+            isAsiaLiveOrderOverlay(asiaOverlays.DOW)
+          }
           onRefreshReady={(fn) => {
             bannerRefreshRef.current = fn
           }}
@@ -2451,7 +2446,9 @@ export default function ChartPage() {
               }
               asiaOco={
                 instrument === 'GOLD' || instrument === 'DOW'
-                  ? asiaOverlays[instrument] ?? null
+                  ? isAsiaLiveOrderOverlay(asiaOverlays[instrument] ?? null)
+                    ? asiaOverlays[instrument] ?? null
+                    : null
                   : null
               }
               onCancelPending={() => {

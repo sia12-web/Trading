@@ -33,11 +33,11 @@ export const ASIA_DESK_RECIPES: Record<
   GOLD: { maxRange: 60, buffer: 10, contract: 'MGC' },
 }
 
-/** Chart page unlock: 01:50–11:30 Montreal weekdays (place + flatten reminder). */
-export const ASIA_CHART_START_MINS = 1 * 60 + 50
+/** Chart page unlock: 02:00–10:25 Montreal weekdays (place after lock, flatten 10:25). */
+export const ASIA_CHART_START_MINS = ASIA_LOCK_MINS
 export const ASIA_CHART_END_MINS = ASIA_FLAT_MINS
 
-/** Live tip: 01:50–03:40 only — don’t print through the 08:00 NY pre-focus freeze. */
+/** Live tip: 02:00–03:40 only — don’t print through the 08:00 NY pre-focus freeze. */
 export const ASIA_STREAM_END_MINS = ASIA_FILL_CUTOFF_MINS + 10
 
 export type AsiaDeskEvent =
@@ -94,25 +94,25 @@ export function asiaMontrealMins(now: Date = new Date()): { ymd: string; mins: n
   return montrealCivil(Math.floor(now.getTime() / 1000))
 }
 
-/** GOLD / DOW live chart page 01:50–11:30 Montreal weekdays. */
+/** GOLD / DOW live chart page 02:00–10:25 Montreal weekdays. */
 export function isAsiaDeskChartWindow(now: Date = new Date()): boolean {
   if (!isAsiaMontrealWeekday(now)) return false
   const { mins } = asiaMontrealMins(now)
   return mins >= ASIA_CHART_START_MINS && mins < ASIA_CHART_END_MINS
 }
 
-/** GOLD / DOW live tip during the place-both window only. */
+/** GOLD / DOW live tip during the place window only (02:00–03:40). */
 export function isAsiaDeskStreamWindow(now: Date = new Date()): boolean {
   if (!isAsiaMontrealWeekday(now)) return false
   const { mins } = asiaMontrealMins(now)
   return mins >= ASIA_CHART_START_MINS && mins < ASIA_STREAM_END_MINS
 }
 
-/** Railway scan + place Telegram: 01:55–03:40 Montreal weekdays. */
+/** Railway scan + place Telegram: 02:00–03:40 Montreal weekdays. */
 export function isAsiaDeskScanWindow(now: Date = new Date()): boolean {
   if (!isAsiaMontrealWeekday(now)) return false
   const { mins } = asiaMontrealMins(now)
-  return mins >= 1 * 60 + 55 && mins < ASIA_FILL_CUTOFF_MINS + 10
+  return mins >= ASIA_LOCK_MINS && mins < ASIA_FILL_CUTOFF_MINS + 10
 }
 
 export function isAsiaDeskFlattenWindow(now: Date = new Date()): boolean {
@@ -202,6 +202,17 @@ export function evaluateAsiaDeskOverlay(args: {
   })
 }
 
+/** Chart / badge: only after 02:00 lock, only when the range recipe qualifies. */
+export function isAsiaLiveOrderOverlay(
+  overlay: AsiaDeskOverlay | null | undefined,
+  now: Date = new Date()
+): overlay is AsiaDeskOverlay {
+  if (!overlay || !overlay.qualified || overlay.event !== 'place_both') return false
+  const { ymd, mins } = asiaMontrealMins(now)
+  if (overlay.lockDate !== ymd) return false
+  return mins >= ASIA_LOCK_MINS && mins < ASIA_FILL_CUTOFF_MINS
+}
+
 function fmtPx(instrument: AsiaInstrument, n: number): string {
   if (!Number.isFinite(n)) return '—'
   return instrument === 'GOLD' ? n.toFixed(1) : String(Math.round(n))
@@ -227,7 +238,7 @@ export function formatAsiaDeskTelegram(overlay: AsiaDeskOverlay): string | null 
       `  SL ${px(overlay.asiaMid)}  TP ${px(overlay.shortTp)}`,
       '',
       `Range ${overlay.asiaRange.toFixed(2)}  need < ${overlay.maxRange}  buffer ${overlay.buffer}`,
-      `Cancel unfilled 03:30  Flatten 11:30 Montreal`,
+      `Cancel unfilled 03:30  Flatten 10:25 Montreal`,
       `Trade Pulse chart unlocked — both stops drawn on ${overlay.instrument}.`,
     ].join('\n')
   }
@@ -238,7 +249,7 @@ export function formatAsiaDeskTelegram(overlay: AsiaDeskOverlay): string | null 
     return `03:30 Montreal — cancel unfilled ${overlay.instrument === 'GOLD' ? 'Gold' : 'Dow'} Asia stops. Keep SL/TP if already filled.`
   }
   if (overlay.event === 'flatten') {
-    return `11:30 Montreal — flatten open ${overlay.instrument === 'GOLD' ? 'Gold' : 'Dow'} Asia trade.`
+    return `10:25 Montreal — flatten open ${overlay.instrument === 'GOLD' ? 'Gold' : 'Dow'} Asia trade.`
   }
   return null
 }
@@ -279,12 +290,12 @@ export function parseAsiaWebhookBody(raw: string): AsiaWebhookPayload | null {
     : upper.includes('DOW')
       ? 'DOW'
       : null
-  if (!instrument && !/03:30|11:30/.test(upper)) return null
+  if (!instrument && !/03:30|10:25|11:30/.test(upper)) return null
   let event: AsiaDeskEvent = 'idle'
   if (/PLACE/.test(upper)) event = 'place_both'
   else if (/SKIP/.test(upper)) event = 'skip'
   else if (/03:30/.test(upper)) event = 'cancel_unfilled'
-  else if (/11:30/.test(upper)) event = 'flatten'
+  else if (/10:25|11:30/.test(upper)) event = 'flatten'
   if (event === 'idle') return null
   return { v: 1, kind: 'asia', instrument: instrument ?? undefined, event, text }
 }

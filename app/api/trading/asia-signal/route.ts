@@ -11,9 +11,11 @@ import { assertCronAuthorized, getOrCreateUser, resolveDeskUser } from '@/lib/ut
 import {
   formatAsiaDeskTelegram,
   asiaTelegramKey,
+  isAsiaLiveOrderOverlay,
   overlayFromWebhook,
   parseAsiaWebhookBody,
   type AsiaDeskOverlay,
+  type AsiaInstrument,
 } from '@/lib/trading/asiaDesk'
 import {
   claimAsiaTelegramKey,
@@ -47,10 +49,16 @@ export async function GET(request: Request) {
     const row = await loadAsiaDeskBook(supabase, user.id)
     const url = new URL(request.url)
     const inst = url.searchParams.get('instrument')
-    const one = overlayForInstrument(row, inst)
+    const live: Partial<Record<AsiaInstrument, AsiaDeskOverlay>> = {}
+    for (const [key, overlay] of Object.entries(row.overlays || {})) {
+      if (isAsiaLiveOrderOverlay(overlay)) {
+        live[key as AsiaInstrument] = overlay
+      }
+    }
+    const one = overlayForInstrument({ ...row, overlays: live }, inst)
     return NextResponse.json({
       success: true,
-      overlays: row.overlays || {},
+      overlays: live,
       overlay: one,
     })
   } catch (err) {

@@ -469,7 +469,7 @@ export interface SessionGateResult {
   revengeLocked: boolean
   dayLocked: boolean
   attemptLadderLabel: string
-  /** GOLD/DOW Asia overnight book (01:50–11:30 Montreal) — chart unlocked, CALL desk stays off */
+  /** GOLD/DOW Asia overnight book (02:00–10:25 Montreal) — chart unlocked, CALL desk stays off */
   asiaDeskActive?: boolean
 }
 
@@ -1109,7 +1109,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       canPlaceEntry: false,
       canManagePosition: false,
       message: asia
-        ? 'ASIA desk — GOLD (MGC <60 / buffer 10) and DOW (MYM <80 / buffer 20). Place both stop orders. Cancel unfilled 03:30 · flatten 11:30 Montreal.'
+        ? 'ASIA desk — GOLD (MGC <60 / buffer 10) and DOW (MYM <80 / buffer 20). Place both stop orders after 02:00 Montreal. Cancel unfilled 03:30 · flatten 10:25.'
         : t < analyze && weekday
           ? `Pre-session. NY tip + dual browse from ${deskLocalHmsAsTraderDisplay('09:00:00', s.tz, now)} ${TRADER_DISPLAY_LABEL}; AI pick + clock-in at ${analyzeEt} ${TRADER_DISPLAY_LABEL}.`
           : `Weekend — desk closed. ${nextDesk} Or use Simulation.`,
