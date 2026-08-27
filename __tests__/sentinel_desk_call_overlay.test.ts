@@ -90,6 +90,27 @@ test('live desk is always CALL ON; Call chip is still not a toggle', () => {
   const sitChip = sliceBetween(live, 'title={sitHover}', '{sitBadge}')
   assert.ok(!sitChip.includes('onClick'))
   assert.ok(live.includes('SYSTEMATIC_LIVE_DESK'))
+  assert.ok(
+    live.includes('SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().yday'),
+    'Yday on for systematic desk'
+  )
+  assert.ok(
+    live.includes('SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().opening'),
+    'Open lines on for systematic desk'
+  )
+  assert.ok(
+    live.includes('SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().control'),
+    'Ctrl dPOC on for systematic desk'
+  )
+  assert.ok(
+    live.includes('SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().or30'),
+    'OR30 on for systematic desk'
+  )
+  assert.ok(
+    live.includes('SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().ib'),
+    'IB on for systematic desk'
+  )
+  assert.ok(live.includes('setDeskSessionLive(isLiveTradingPageOpen(now))'))
   assert.ok(live.includes('Perf {perfBadge}'))
   assert.ok(banner.includes('SYSTEMATIC_LIVE_DESK'))
   assert.ok(banner.includes('!SYSTEMATIC_LIVE_DESK && htfPerf'))

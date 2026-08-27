@@ -1,0 +1,168 @@
+//@version=5
+// Dow Asia range — M5. Montreal clocks. Manual orders on Tradovate.
+// Backtest (OANDA US30, 27 Aug 2025–27 Aug 2026): trade only if Asia range < 80.
+// Buffer 20 pts past high/low. SL = Asia mid. TP 1.5R. Cancel unfilled 03:30. Flatten 11:30.
+//
+// Trade Pulse (Railway) scans the same recipe at 02:00 and Telegrams + draws both
+// working stops on the live chart. Optional TV webhook:
+//   https://YOUR_HOST/api/trading/asia-signal?hook=ASIA_WEBHOOK_SECRET
+indicator("Asia Range Signals — Dow", "AsiaSIG-DOW", overlay=true, max_labels_count=200, max_lines_count=200, max_boxes_count=100)
+
+TZ = "America/Toronto"
+buffer = 20.0
+maxRange = 80.0
+tpR = input.float(1.5, "Take profit (R)", step=0.1, group="Setup")
+
+account = input.float(50000.0, "Account ($)", step=1000, group="Risk")
+riskPct = input.float(1.0, "Risk %", step=0.1, group="Risk")
+contract = input.string("MYM (Micro Dow $0.50/pt)", "Contract", options=[
+     "YM (Dow $5/pt)",
+     "MYM (Micro Dow $0.50/pt)"], group="Risk")
+
+pxPerPt = contract == "YM (Dow $5/pt)" ? 5.0 : 0.5
+
+h = hour(time, TZ)
+mi = minute(time, TZ)
+mins = h * 60 + mi
+prevMins = hour(time[1], TZ) * 60 + minute(time[1], TZ)
+
+inAsia = mins >= 20 * 60 or mins < 2 * 60
+asiaOpen = mins >= 20 * 60 and prevMins < 20 * 60
+crossedLock = mins >= 2 * 60 and mins < 8 * 60 and (na(prevMins) or prevMins < 2 * 60 or prevMins >= 20 * 60)
+fillCutoff = mins >= 3 * 60 + 30 and prevMins < 3 * 60 + 30
+flatTime = mins >= 11 * 60 + 30 and prevMins < 11 * 60 + 30
+
+var float asiaHigh = na
+var float asiaLow = na
+var float lockedHigh = na
+var float lockedLow = na
+var float lockedMid = na
+var float buyStop = na
+var float sellStop = na
+var float longTp = na
+var float shortTp = na
+var float riskPts = na
+var int qty = 0
+var bool live = false
+var bool qualified = false
+var string status = "Load M5 · waiting for Asia 20:00 Montreal"
+var line lnH = na
+var line lnL = na
+var line lnM = na
+var line lnBuy = na
+var line lnSell = na
+var line lnLtp = na
+var line lnStp = na
+var box bx = na
+
+riskCash = account * riskPct / 100.0
+
+f_qty(float dist) =>
+    u = dist * pxPerPt
+    u <= 0 ? 0 : int(math.floor(riskCash / u))
+
+f_killLines() =>
+    if not na(lnH)
+        line.delete(lnH)
+    if not na(lnL)
+        line.delete(lnL)
+    if not na(lnM)
+        line.delete(lnM)
+    if not na(lnBuy)
+        line.delete(lnBuy)
+    if not na(lnSell)
+        line.delete(lnSell)
+    if not na(lnLtp)
+        line.delete(lnLtp)
+    if not na(lnStp)
+        line.delete(lnStp)
+    if not na(bx)
+        box.delete(bx)
+
+if asiaOpen
+    asiaHigh := high
+    asiaLow := low
+    live := false
+    qualified := false
+    status := "Building Asia box (20:00–02:00)"
+else if inAsia
+    asiaHigh := math.max(nz(asiaHigh, high), high)
+    asiaLow := math.min(nz(asiaLow, low), low)
+    status := "Building Asia  H " + str.tostring(asiaHigh, format.mintick) + "  L " + str.tostring(asiaLow, format.mintick)
+
+if crossedLock
+    lockedHigh := asiaHigh
+    lockedLow := asiaLow
+    lockedMid := (nz(lockedHigh) + nz(lockedLow)) / 2.0
+    rng = nz(lockedHigh) - nz(lockedLow)
+    buyStop := lockedHigh + buffer
+    sellStop := lockedLow - buffer
+    riskPts := math.abs(buyStop - lockedMid)
+    longTp := buyStop + tpR * riskPts
+    shortTp := sellStop - tpR * riskPts
+    qty := f_qty(riskPts)
+    f_killLines()
+    if rng > 0 and rng < maxRange
+        qualified := true
+        live := true
+        status := "PLACE BOTH STOP ORDERS"
+        lnH := line.new(bar_index, lockedHigh, bar_index + 80, lockedHigh, color=#26a69a, width=1)
+        lnL := line.new(bar_index, lockedLow, bar_index + 80, lockedLow, color=#ef5350, width=1)
+        lnM := line.new(bar_index, lockedMid, bar_index + 80, lockedMid, color=#ffeb3b, width=2)
+        lnBuy := line.new(bar_index, buyStop, bar_index + 80, buyStop, color=#00e676, width=2)
+        lnSell := line.new(bar_index, sellStop, bar_index + 80, sellStop, color=#ff1744, width=2)
+        lnLtp := line.new(bar_index, longTp, bar_index + 80, longTp, color=color.new(#69f0ae, 0), width=1, style=line.style_dashed)
+        lnStp := line.new(bar_index, shortTp, bar_index + 80, shortTp, color=color.new(#ff8a80, 0), width=1, style=line.style_dashed)
+        bx := box.new(bar_index, lockedHigh, bar_index + 80, lockedLow, bgcolor=color.new(#26a69a, 85), border_color=#26a69a)
+        label.new(bar_index, buyStop, "LONG BUY STOP\n" + str.tostring(buyStop, format.mintick) + "\n" + str.tostring(qty) + " cts\nSL " + str.tostring(lockedMid, format.mintick) + "\nTP " + str.tostring(longTp, format.mintick), xloc=xloc.bar_index, style=label.style_label_down, color=color.new(#00c853, 0), textcolor=color.white, size=size.normal)
+        label.new(bar_index, sellStop, "SHORT SELL STOP\n" + str.tostring(sellStop, format.mintick) + "\n" + str.tostring(qty) + " cts\nSL " + str.tostring(lockedMid, format.mintick) + "\nTP " + str.tostring(shortTp, format.mintick), xloc=xloc.bar_index, style=label.style_label_up, color=color.new(#d50000, 0), textcolor=color.white, size=size.normal)
+        alert("DOW ASIA — PLACE OCO STOPS\n" + contract + " x " + str.tostring(qty) + "\nRisk $" + str.tostring(riskCash, "#") + " (1% of " + str.tostring(account, "#") + ")\n\nLONG buy-stop " + str.tostring(buyStop, format.mintick) + "\n  SL " + str.tostring(lockedMid, format.mintick) + "  TP " + str.tostring(longTp, format.mintick) + "\n\nSHORT sell-stop " + str.tostring(sellStop, format.mintick) + "\n  SL " + str.tostring(lockedMid, format.mintick) + "  TP " + str.tostring(shortTp, format.mintick) + "\n\nRange " + str.tostring(rng, "#.##") + "  need < 80  Cancel unfilled 03:30  Flatten 11:30 Montreal", alert.freq_once_per_bar_close)
+    else
+        qualified := false
+        live := false
+        status := "NO TRADE — Asia range " + str.tostring(rng, "#.##")
+        label.new(bar_index, nz(high, close), "NO TRADE\nrange " + str.tostring(rng, "#.##") + " (need < 80)", style=label.style_label_down, color=color.gray, textcolor=color.white, size=size.normal)
+        alert("DOW ASIA SKIP range " + str.tostring(rng, "#.##") + " (need < 80)", alert.freq_once_per_bar_close)
+
+if live and fillCutoff
+    live := false
+    status := "03:30 — cancel unfilled stops"
+    alert("03:30 Montreal — cancel unfilled Dow Asia stops. Keep SL/TP if already filled.", alert.freq_once_per_bar_close)
+
+if flatTime
+    live := false
+    status := "11:30 — flatten if still in the trade"
+    alert("11:30 Montreal — flatten open Dow Asia trade.", alert.freq_once_per_bar_close)
+
+plot(inAsia ? asiaHigh : na, "Asia high (building)", color=#26a69a, linewidth=2, style=plot.style_linebr)
+plot(inAsia ? asiaLow : na, "Asia low (building)", color=#ef5350, linewidth=2, style=plot.style_linebr)
+plot(not na(lockedMid) ? lockedMid : na, "SL mid", color=color.new(#ffeb3b, 0), linewidth=1, style=plot.style_linebr)
+bgcolor(inAsia ? color.new(#26a69a, 92) : na, title="Asia session")
+
+var table tb = table.new(position.top_right, 2, 12, bgcolor=color.new(#0d0d0d, 5), border_width=1, border_color=color.new(color.white, 60))
+if barstate.islast
+    rngNow = asiaHigh - asiaLow
+    table.cell(tb, 0, 0, "Montreal now", text_color=color.gray)
+    table.cell(tb, 1, 0, str.format("{0,number,00}:{1,number,00}", hour(timenow, TZ), minute(timenow, TZ)), text_color=color.white)
+    table.cell(tb, 0, 1, "Status", text_color=color.gray)
+    table.cell(tb, 1, 1, status, text_color=live ? color.lime : color.white)
+    table.cell(tb, 0, 2, "Chart", text_color=color.gray)
+    table.cell(tb, 1, 2, timeframe.period == "5" ? "M5 OK" : "SWITCH TO 5 MINUTES", text_color=timeframe.period == "5" ? color.lime : color.orange)
+    table.cell(tb, 0, 3, "Asia H / L (live)", text_color=color.gray)
+    table.cell(tb, 1, 3, na(asiaHigh) ? "no overnight data" : str.tostring(asiaHigh, format.mintick) + " / " + str.tostring(asiaLow, format.mintick), text_color=color.white)
+    table.cell(tb, 0, 4, "Asia range  need <80", text_color=color.gray)
+    table.cell(tb, 1, 4, na(rngNow) ? "—" : str.tostring(rngNow, "#.##"), text_color=nz(rngNow) < maxRange ? color.lime : color.red)
+    table.cell(tb, 0, 5, "LONG  high+20", text_color=color.gray)
+    table.cell(tb, 1, 5, na(buyStop) ? "waiting for 02:00 lock" : str.tostring(buyStop, format.mintick), text_color=color.lime)
+    table.cell(tb, 0, 6, "SHORT  low−20", text_color=color.gray)
+    table.cell(tb, 1, 6, na(sellStop) ? "waiting for 02:00 lock" : str.tostring(sellStop, format.mintick), text_color=color.red)
+    table.cell(tb, 0, 7, "STOP LOSS", text_color=color.gray)
+    table.cell(tb, 1, 7, na(lockedMid) ? "—" : str.tostring(lockedMid, format.mintick), text_color=color.yellow)
+    table.cell(tb, 0, 8, "LONG TP / SHORT TP", text_color=color.gray)
+    table.cell(tb, 1, 8, na(longTp) ? "—" : str.tostring(longTp, format.mintick) + " / " + str.tostring(shortTp, format.mintick), text_color=color.white)
+    table.cell(tb, 0, 9, "Contracts ≤1%", text_color=color.gray)
+    table.cell(tb, 1, 9, str.tostring(qty) + "  " + contract, text_color=qty < 1 ? color.orange : color.white)
+    table.cell(tb, 0, 10, "Risk $", text_color=color.gray)
+    table.cell(tb, 1, 10, str.tostring(riskCash, "#"), text_color=color.white)
+    table.cell(tb, 0, 11, "Symbol", text_color=color.gray)
+    table.cell(tb, 1, 11, "DOW  " + syminfo.ticker, text_color=color.white)

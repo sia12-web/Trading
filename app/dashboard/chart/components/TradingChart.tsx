@@ -162,7 +162,7 @@ import {
   isLiveTipStreamAllowed,
   isLevelPaintAllowed,
   isAfternoonWatchWindow,
-  isAnyLiveFocusWindowActive,
+  isLiveTradingPageOpen,
   liveVisibleInstruments,
   sessionFor,
   deskMarketFor,
@@ -1035,7 +1035,9 @@ export function TradingChart({
   /** Mirrored IB H/L for ±10 band effect deps (refs alone do not re-render). */
   const [ibLevels, setIbLevels] = useState<{ high: number; low: number } | null>(null)
   /** IB H/L + BRK/REJ markers + ±10 bands — remembered across refresh. */
-  const [showIbBreakouts, setShowIbBreakouts] = useState(() => loadDeskOverlayToggles().ib)
+  const [showIbBreakouts, setShowIbBreakouts] = useState(() =>
+    SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().ib
+  )
   /** Open range (first 15m) H/L + volume BRK/REJ */
   const or15SeriesRef = useRef<{
     high: ISeriesApi<'Line'>
@@ -1044,7 +1046,9 @@ export function TradingChart({
   const or15RangeRef = useRef<Or15Range | null>(null)
   const [or15Shaped, setOr15Shaped] = useState(false)
   const [or15Locked, setOr15Locked] = useState(false)
-  const [showOr15, setShowOr15] = useState(() => loadDeskOverlayToggles().or15)
+  const [showOr15, setShowOr15] = useState(() =>
+    SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().or15
+  )
   /** US session range H/L + Asia BRK/REJ — NIKKEI only */
   const usRangeSeriesRef = useRef<{
     high: ISeriesApi<'Line'>
@@ -1074,17 +1078,27 @@ export function TradingChart({
   const or30RangeRef = useRef<Or30Range | null>(null)
   const [or30Shaped, setOr30Shaped] = useState(false)
   const [or30Locked, setOr30Locked] = useState(false)
-  const [showOr30, setShowOr30] = useState(() => loadDeskOverlayToggles().or30)
-  const [showYesterdayProfile, setShowYesterdayProfile] = useState(() => loadDeskOverlayToggles().yday)
-  const [showSessionBands, setShowSessionBands] = useState(() => loadDeskOverlayToggles().sessions)
+  const [showOr30, setShowOr30] = useState(() =>
+    SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().or30
+  )
+  const [showYesterdayProfile, setShowYesterdayProfile] = useState(() =>
+    SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().yday
+  )
+  const [showSessionBands, setShowSessionBands] = useState(() =>
+    SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().sessions
+  )
   const ydayLinesRef = useRef<IPriceLine[]>([])
   const ydayPaintKeyRef = useRef('')
   const [yesterdayBadge, setYesterdayBadge] = useState('Yday off')
-  const [showOpeningActivity, setShowOpeningActivity] = useState(() => loadDeskOverlayToggles().opening)
+  const [showOpeningActivity, setShowOpeningActivity] = useState(() =>
+    SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().opening
+  )
   const openingLinesRef = useRef<IPriceLine[]>([])
   const openingPaintKeyRef = useRef('')
   const [openingBadge, setOpeningBadge] = useState('WAIT')
-  const [showMarketControl, setShowMarketControl] = useState(() => loadDeskOverlayToggles().control)
+  const [showMarketControl, setShowMarketControl] = useState(() =>
+    SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().control
+  )
   const controlLinesRef = useRef<IPriceLine[]>([])
   const controlPaintKeyRef = useRef('')
   const [controlBadge, setControlBadge] = useState('RF WAIT')
@@ -3091,7 +3105,7 @@ export function TradingChart({
   useEffect(() => {
     const now = new Date()
     setClockReady(true)
-    setDeskSessionLive(isAnyLiveFocusWindowActive(now))
+    setDeskSessionLive(isLiveTradingPageOpen(now))
     const live = liveVisibleInstruments(now, {
       lockedInstrument,
       clockedIn: deskAttended,
@@ -7692,7 +7706,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             title={
               showMarketControl
                 ? 'Dalton control dPOC line on. Click to hide the line (RF type still updates). ↑ / ↓ = ONE-TF. 2TF = RF without matching dPOC.'
-                : 'Show Dalton control: Rotation Factor + developing POC. ↑ / ↓ = ONE-TF BUY/SELL. 2TF is not a CALL. Click for the dPOC line (off on refresh).'
+                : 'Show Dalton control: Rotation Factor + developing POC. ↑ / ↓ = ONE-TF BUY/SELL. 2TF is not a CALL. Click for the dPOC line.'
             }
             onClick={() => setShowMarketControl((v) => !v)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showMarketControl
@@ -8181,17 +8195,17 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               {formatRangeAtrChip(rangeAtrSnap)}
             </span>
           )}
-          <span title="Gold yesterday YH/YL/VA/POC + Dalton open type — toggle with Press Y (off on refresh).">
+          <span title="Gold yesterday YH/YL/VA/POC + Dalton open type — toggle with Press Y.">
             <span className={showYesterdayProfile ? 'text-amber-500' : 'text-gray-600'}>
               {yesterdayBadge}
             </span>
           </span>
-          <span title="Cyan Dalton opening type — first cash 5m. Click Open chip for open + first-bar H/L (off on refresh).">
+          <span title="Cyan Dalton opening type — first cash 5m. Click Open chip for open + first-bar H/L.">
             <span className={showOpeningActivity ? 'text-cyan-400' : 'text-gray-600'}>
               Open {openingBadge}
             </span>
           </span>
-          <span title="Indigo Dalton control — RF + developing POC. Click Ctrl chip for the dPOC line (off on refresh).">
+          <span title="Indigo Dalton control — RF + developing POC. Click Ctrl chip for the dPOC line.">
             <span className={showMarketControl ? 'text-indigo-400' : 'text-gray-600'}>
               Ctrl {controlBadge}
             </span>
@@ -8256,7 +8270,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               IB {ibExtendBadge}
             </span>
           </span>
-          <span title="Blue IB high/low + BRK/REJ + ±10 — toggle with Press B (off on refresh).">
+          <span title="Blue IB high/low + BRK/REJ + ±10 — toggle with Press B.">
             <span className={ibShaped ? 'text-blue-500' : 'text-gray-600'}>
               IB H/L {ibShaped ? 'on' : showIbBreakouts ? 'waiting' : 'off'}
             </span>
