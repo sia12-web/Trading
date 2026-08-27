@@ -138,3 +138,65 @@ export function generateDailyLTARRecord(
     ltarCache.set(key, record)
     return record
 }
+
+/**
+ * Quiet cash-close recap from live Perf (no Leo, no worksheet).
+ * One row per instrument/day. Does not auto-flatten or change 1.5R.
+ */
+export function persistQuietDeskPerfLtar(args: {
+    instrument: string
+    date: string
+    attempted: 'HIGHER' | 'LOWER' | 'NEUTRAL'
+    grade: string
+    volumeRel: 'HIGHER' | 'LOWER' | 'UNCHANGED' | null
+    placement: string | null
+    vaWidth: 'WIDER' | 'AVERAGE' | 'NARROWER' | null
+    playLine: string
+}): LTARActivityRecord {
+    const key = `${args.date}_${args.instrument}`
+    if (ltarCache.has(key)) return ltarCache.get(key)!
+
+    const vol = args.volumeRel ?? 'UNCHANGED'
+    const grade = (args.grade === 'WAIT' ? 'BALANCING' : args.grade.replace(/ /g, '_')) as HTFDirectionalPerformanceGrade
+    const placement = ((): HTFValueAreaPlacement => {
+        const p = args.placement
+        if (p === 'HIGHER' || p === 'LOWER' || p === 'INSIDE' || p === 'OUTSIDE' || p === 'UNCHANGED') {
+            return p
+        }
+        if (p === 'OL_HIGH') return 'OVERLAPPING_HIGH'
+        if (p === 'OL_LOW') return 'OVERLAPPING_LOW'
+        return 'UNCHANGED'
+    })()
+    const record: LTARActivityRecord = {
+        date: args.date,
+        market: args.instrument,
+        attemptedDirection: {
+            rotationFactorScore: args.attempted === 'NEUTRAL' ? 0 : args.attempted === 'HIGHER' ? 2 : -2,
+            rotationFactorDir:
+                args.attempted === 'HIGHER' ? 'BUYER' : args.attempted === 'LOWER' ? 'SELLER' : 'NEUTRAL',
+            rangeExtension: 'Quiet desk recap',
+            tails: { buyerTail: false, sellerTail: false },
+            buyingSellingComposite:
+                args.attempted === 'HIGHER' ? 'BUYING' : args.attempted === 'LOWER' ? 'SELLING' : 'BALANCING',
+            overallAttemptedDirection: args.attempted,
+            comments: args.playLine,
+        },
+        directionalPerformance: {
+            dailyVolume: 0,
+            dailyVolumeVsAvg: vol,
+            auctionAverageVolume: 0,
+            auctionAvgVsAvg: vol,
+            valueAreaPlacement: placement,
+            valueAreaWidth: args.vaWidth ?? 'AVERAGE',
+            performanceGrade: grade,
+            comments: args.playLine,
+        },
+        expectedResults: {
+            longerTermDirective: 'Ticket stays 1.5R. LEAVE is banner-only.',
+            shorterTermDirective: 'No Leo. No Level Finder fills.',
+            summary: `Perf ${args.grade.replace(/_/g, ' ')} · ${args.playLine}`,
+        },
+    }
+    ltarCache.set(key, record)
+    return record
+}

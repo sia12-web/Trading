@@ -18,6 +18,7 @@ import { scoreValueAcceptance, toEpochMs } from '@/lib/trading/valueAcceptance'
 import { claimDeskNoteOnce, deskNoteClaimKey } from '@/lib/trading/rangeEdgeAlerts'
 import type { DeskInstrument } from '@/lib/trading/sessionGate'
 import { ValueAcceptanceRead } from '@/app/dashboard/chart/components/ValueAcceptanceRead'
+import { SYSTEMATIC_LIVE_DESK } from '@/lib/trading/systematicDesk'
 
 interface PositionStatusCardProps {
   position: PositionStatus | null
@@ -166,30 +167,32 @@ export function PositionStatusCard({
       }).catch(() => {})
 
       // 2. Run AI Exit Check
-      const res = await fetch('/api/trading/positions/ai-exit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          position_id: positionId,
-          current_price: priceRef.current ?? undefined,
-        }),
-      })
-      if (!res.ok) return
-      const json = await res.json()
-      setAi({
-        verdict: json.verdict,
-        confidence: json.confidence,
-        reason: json.reason,
-        closed: false,
-      })
-      if (json.requires_confirmation && !exitDismissedRef.current) {
-        setExitPrompt({
-          reason: json.reason || 'AI recommends exiting on reversal',
-          confidence: json.confidence ?? 0,
+      if (!SYSTEMATIC_LIVE_DESK) {
+        const res = await fetch('/api/trading/positions/ai-exit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            position_id: positionId,
+            current_price: priceRef.current ?? undefined,
+          }),
         })
-      } else if (!json.requires_confirmation) {
-        setExitPrompt(null)
-        setExitDismissed(false)
+        if (!res.ok) return
+        const json = await res.json()
+        setAi({
+          verdict: json.verdict,
+          confidence: json.confidence,
+          reason: json.reason,
+          closed: false,
+        })
+        if (json.requires_confirmation && !exitDismissedRef.current) {
+          setExitPrompt({
+            reason: json.reason || 'AI recommends exiting on reversal',
+            confidence: json.confidence ?? 0,
+          })
+        } else if (!json.requires_confirmation) {
+          setExitPrompt(null)
+          setExitDismissed(false)
+        }
       }
     } catch {
       /* keep last */
@@ -697,7 +700,7 @@ export function PositionStatusCard({
         </div>
 
         {/* AI exit — requires explicit trader CONFIRM (never auto-closes) */}
-        {exitPrompt && (
+        {!SYSTEMATIC_LIVE_DESK && exitPrompt && (
           <div className="rounded-lg border border-red-500/70 bg-red-950/40 px-3 py-3 flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
               <span className="text-[10px] font-extrabold uppercase tracking-wider text-red-300">
@@ -726,7 +729,7 @@ export function PositionStatusCard({
           </div>
         )}
 
-        {/* AI verdict */}
+        {!SYSTEMATIC_LIVE_DESK && (
         <div className={`rounded-lg border px-3 py-3 ${verdictStyle}`}>
           <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-wider">
             <span>AI manage</span>
@@ -763,6 +766,7 @@ export function PositionStatusCard({
             <p className="mt-1.5 text-[12px] leading-snug opacity-90">{ai.reason}</p>
           )}
         </div>
+        )}
 
         {/* Actions */}
         <div className="flex flex-wrap gap-2">

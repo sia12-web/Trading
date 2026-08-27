@@ -3,11 +3,10 @@
 /**
  * Chart Page — live desk: morning trading; afternoon chart continues (read-only).
  * Flow: place WORKING limit → wait for fill → then MANAGE (morning only).
- * NY:  DOW/NASDAQ  9:30–11:30 ET trade / chart through 16:00
- * Nikkei stays on Simulation — not a live desk.
+ * NY:  DOW/NASDAQ/GOLD/CRUDE  9:30–11:30 ET trade / chart through 16:00
+ * Simulation and Nikkei are not on the live desk.
  */
 
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { TradingChart } from './components/TradingChart'
@@ -22,6 +21,7 @@ import type {
   StrategyRangeEdges,
   StrategyRiskMagnets,
 } from '@/lib/trading/strategyRiskGeometry'
+import { isAuctionTicketPayload } from '@/lib/trading/auctionLiveSignal'
 import {
   ManageDeskBar,
   type AiVerdict,
@@ -33,7 +33,8 @@ import {
   setDeskInstrumentPreference,
   type DeskInstrumentPref,
 } from '@/lib/trading/deskInstrumentPreference'
-import { isAnyLiveFocusWindowActive, isAfternoonWatchWindow, sessionFor, deskMarketFor } from '@/lib/trading/sessionGate'
+import { isAfternoonWatchWindow, sessionFor, deskMarketFor, isLiveTradingPageOpen } from '@/lib/trading/sessionGate'
+import type { AsiaDeskOverlay } from '@/lib/trading/asiaDesk'
 import { LIVE_CLOCK_REFUSE, clockedNameOnlyMessage, isLiveClockInstrument } from '@/lib/trading/liveDeskBook'
 import { quoteBelongsToBook } from '@/lib/trading/deskExitGuard'
 import {
@@ -249,10 +250,10 @@ export default function ChartPage() {
     setChartBooted(true)
   }, [])
 
-  // Outside focus (−30m→close): send home — Live Trading is locked
+  // Outside NY focus and Asia overnight book: send home
   useEffect(() => {
     const check = () => {
-      if (!isAnyLiveFocusWindowActive()) {
+      if (!isLiveTradingPageOpen()) {
         router.replace('/dashboard')
       }
     }
@@ -264,6 +265,9 @@ export default function ChartPage() {
   const [positionOverlay, setPositionOverlay] = useState<PositionOverlay | null>(null)
   const [managePos, setManagePos] = useState<ManagePosition | null>(null)
   const [pending, setPending] = useState<PendingLimitOrder | null>(null)
+  const [asiaOverlays, setAsiaOverlays] = useState<
+    Partial<Record<'DOW' | 'GOLD', AsiaDeskOverlay>>
+  >({})
   const [tvTicketClosed, setTvTicketClosed] = useState(false)
   const [tradeifyAccountName, setTradeifyAccountName] = useState<string | null>(null)
   const [riskProfile, setRiskProfile] = useState(getDeskRiskProfile)
@@ -292,6 +296,54 @@ export default function ChartPage() {
     }
     wasClockedRef.current = true
   }, [gate?.clockedIn, gate?.lockedInstrument])
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const res = await fetch('/api/trading/asia-signal', { cache: 'no-store' })
+        const json = await res.json()
+        if (!cancelled && json?.overlays) {
+          setAsiaOverlays(json.overlays)
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    const scan = () => {
+      if (!gate?.asiaDeskActive) return
+      void fetch('/api/trading/asia-scan', { method: 'POST' })
+        .then(() => load())
+        .catch(() => {})
+    }
+    void load()
+    if (gate?.asiaDeskActive) scan()
+    const poll = window.setInterval(() => void load(), 15_000)
+    const scanId = window.setInterval(scan, 60_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(poll)
+      window.clearInterval(scanId)
+    }
+  }, [gate?.asiaDeskActive])
+
+  useEffect(() => {
+    if (!gate?.asiaDeskActive || gate.clockedIn) return
+    if (instrument === 'GOLD' || instrument === 'DOW') return
+    const gold = asiaOverlays.GOLD
+    const dow = asiaOverlays.DOW
+    const pick =
+      gold?.event === 'place_both'
+        ? 'GOLD'
+        : dow?.event === 'place_both'
+          ? 'DOW'
+          : gold
+            ? 'GOLD'
+            : dow
+              ? 'DOW'
+              : 'GOLD'
+    setInstrument(pick)
+  }, [gate?.asiaDeskActive, gate?.clockedIn, asiaOverlays, instrument, setInstrument])
   const [orderLevel, setOrderLevel] = useState<number | null>(null)
   const [orderLevelType, setOrderLevelType] = useState<string | undefined>()
   const [orderLevelSide, setOrderLevelSide] = useState<'BUY' | 'SHORT' | undefined>()
@@ -344,6 +396,16 @@ export default function ChartPage() {
   const [levelsRefreshKey, setLevelsRefreshKey] = useState(0)
   const afternoonLevelsLoadedRef = useRef(false)
   const [aiVerdict, setAiVerdict] = useState<AiVerdict | null>(null)
+  const [deskPerf, setDeskPerf] = useState<{
+    grade: string
+    badgeText: string
+    leaveBook: boolean
+    playLine: string
+    vetoCall: boolean
+    sitBadge?: string
+    sitHold?: boolean
+    sitPlayLine?: string
+  } | null>(null)
   const [rangeAtrAdvice, setRangeAtrAdvice] = useState<string | null>(null)
   const [recommendation, setRecommendation] = useState<{
     instrument: Instrument
@@ -809,7 +871,7 @@ export default function ChartPage() {
     const inst = (g.lockedInstrument && g.lockedInstrument !== 'NIKKEI'
       ? g.lockedInstrument
       : null) as DeskInstrument | null
-    const fetchLive = !!g.clockedIn && !!g.canFetchLiveBars
+    const fetchLive = (!!g.clockedIn && !!g.canFetchLiveBars) || !!g.asiaDeskActive
     const pastClose =
       !!inst &&
       (g.phase === 'CLOSED' ||
@@ -1391,6 +1453,7 @@ export default function ChartPage() {
             entry_reason:
               pend.entryReason ||
               `${pend.direction} working limit filled at liquidity level ${pend.level.toLocaleString()} (${pend.levelType || 'desk level'})`,
+            auction_ticket: pend.auctionTicket === true,
             range_high: pend.strategyRange?.high,
             range_low: pend.strategyRange?.low,
             range_label: pend.strategyRange?.label,
@@ -1480,6 +1543,7 @@ export default function ChartPage() {
           regime_confidence: order.regimeConfidence,
           entry_reason: order.entryReason,
           entry_source: order.entrySource,
+          auction_ticket: order.auctionTicket === true,
           range_high: order.strategyRange?.high,
           range_low: order.strategyRange?.low,
           range_label: order.strategyRange?.label,
@@ -1573,32 +1637,42 @@ export default function ChartPage() {
         return
       }
       const range = order.strategyRange ?? orderStrategyRange
-      let level = order.level
-      let edge = assertRangeEdgeEntry({
-        entry: level,
-        range,
-      })
-      if (!edge.ok && range) {
-        const snapped = snapEntryToNearestOpenBandCenter({
-          entry: level,
-          candidates: [range],
+      const auctionTicket =
+        order.auctionTicket === true ||
+        isAuctionTicketPayload({
+          auction_ticket: order.auctionTicket,
+          entry_reason: order.entryReason,
+          levelType: order.levelType,
         })
-        if (snapped) {
-          level = snapped.price
-          edge = assertRangeEdgeEntry({ entry: level, range: snapped.hit.range })
+      let level = order.level
+      if (!auctionTicket) {
+        let edge = assertRangeEdgeEntry({
+          entry: level,
+          range,
+        })
+        if (!edge.ok && range) {
+          const snapped = snapEntryToNearestOpenBandCenter({
+            entry: level,
+            candidates: [range],
+          })
+          if (snapped) {
+            level = snapped.price
+            edge = assertRangeEdgeEntry({ entry: level, range: snapped.hit.range })
+          }
         }
-      }
-      if (!edge.ok) {
-        setFillError(edge.message)
-        setOrderStatus('rejected')
-        setOrderLevel(null)
-        setOrderLevelType(undefined)
-        return
+        if (!edge.ok) {
+          setFillError(edge.message)
+          setOrderStatus('rejected')
+          setOrderLevel(null)
+          setOrderLevelType(undefined)
+          return
+        }
       }
       // Attach range onto order for API if missing
       const orderWithRange: PendingLimitOrder = {
         ...order,
         level,
+        auctionTicket,
         strategyRange: range ?? null,
       }
       placingOrderRef.current = true
@@ -2087,6 +2161,7 @@ export default function ChartPage() {
     gate != null &&
     !clockedIn &&
     !gate.canViewLiveChart &&
+    !gate.asiaDeskActive &&
     (!!gate.canClockIn ||
       (!attendedToday &&
         (gate.phase === 'PREP' ||
@@ -2116,8 +2191,7 @@ export default function ChartPage() {
     gate.market === 'NY'
   const inManage = gate?.phase === 'MANAGE' || !!managePos
   const inEntry = gate?.phase === 'ENTRY' && !!gate?.canPlaceEntry
-  const callModeChosen = gate?.useCall === true || gate?.useCall === false
-  const canTrade = inEntry && !pending && !managePos && clockedIn && callModeChosen
+  const canTrade = inEntry && !pending && !managePos && clockedIn
   const inWorking = !!pending && !managePos
   const showWorkingStrip =
     (inWorking && pending != null) ||
@@ -2201,6 +2275,12 @@ export default function ChartPage() {
                 onBreakEvenAvailable={handleBreakEvenAvailable}
                 onValueAccepted={handleValueAccepted}
                 onBrokerExit={handleBrokerExit}
+                perfLeave={deskPerf?.leaveBook === true}
+                perfBadge={deskPerf?.badgeText ?? null}
+                leaveLine={deskPerf?.playLine ?? null}
+                sitHold={deskPerf?.sitHold === true}
+                sitBadge={deskPerf?.sitBadge ?? null}
+                sitPlayLine={deskPerf?.sitPlayLine ?? null}
               />
             ) : null}
 
@@ -2369,6 +2449,11 @@ export default function ChartPage() {
                     }
                   : null
               }
+              asiaOco={
+                instrument === 'GOLD' || instrument === 'DOW'
+                  ? asiaOverlays[instrument] ?? null
+                  : null
+              }
               onCancelPending={() => {
                 const inst = (pending?.instrument || locked || instrument) as Instrument
                 orderGenRef.current += 1
@@ -2401,6 +2486,7 @@ export default function ChartPage() {
               canPlaceOrder={canTrade && dataMode === 'live'}
               onDeskAlert={handleDeskAlert}
               onRangeAtr={handleRangeAtr}
+              onDeskPerf={setDeskPerf}
               rangeStrategy={gate?.rangeStrategy ?? null}
               attemptsUsed={gate?.attemptsUsed ?? 0}
               stopHits={gate?.stopHits ?? 0}
@@ -2410,7 +2496,7 @@ export default function ChartPage() {
               deskLevelsActive={deskLevelsActive}
               deskAttended={deskAttended}
               clockedIn={clockedIn}
-              useCall={clockedIn ? (gate?.useCall ?? null) : true}
+              useCall={true}
               levelsRefreshKey={levelsRefreshKey}
             />
           )}
@@ -2546,8 +2632,7 @@ export default function ChartPage() {
                   <>
                     <p className="text-lg font-bold text-white tracking-tight">Session closed</p>
                     <p className="text-xs text-gray-400 leading-relaxed">
-                      Cash close passed with no clock-in — live desk stays locked. Use Simulation,
-                      or wait for the next prep window.
+                      Cash close passed with no clock-in — live desk stays locked. Wait for the next prep window.
                     </p>
                   </>
                 ) : (
@@ -2574,7 +2659,7 @@ export default function ChartPage() {
                         {recommendation?.message ??
                           (suggested
                             ? `System pick: ${suggested}. Clock into the NY desk (DOW / NASDAQ / GOLD / CRUDE) — shared 3 fills.`
-                            : 'Level Finder has analyzed overnight structure, AVWAP, and market regime.')}
+                            : 'Overnight structure is on the chart. Clock into DOW / NASDAQ / GOLD / CRUDE — shared 3 fills.')}
                       </p>
                     </div>
 
@@ -2624,16 +2709,6 @@ export default function ChartPage() {
                     )}
                   </>
                 )}
-
-                <div className="pt-3 border-t border-surface-700 flex items-center justify-between text-xs">
-                  <span className="text-gray-400 text-[11px]">Prefer paper trading?</span>
-                  <Link
-                    href="/dashboard/simulation"
-                    className="rounded-lg border border-violet-500/50 bg-violet-500/20 px-3 py-1 text-[11px] font-semibold text-violet-100 hover:bg-violet-500/30"
-                  >
-                    Try simulation
-                  </Link>
-                </div>
               </div>
             </div>
           )}

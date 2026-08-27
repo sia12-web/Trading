@@ -44,6 +44,11 @@ import {
   clockedNameOnlyMessage,
   isLiveClockInstrument,
 } from '@/lib/trading/liveDeskBook'
+import {
+  isAsiaDeskChartWindow,
+  isAsiaDeskInstrument,
+  isAsiaDeskStreamWindow,
+} from '@/lib/trading/asiaDesk'
 
 export {
   MAX_DAY_ATTEMPTS,
@@ -464,6 +469,8 @@ export interface SessionGateResult {
   revengeLocked: boolean
   dayLocked: boolean
   attemptLadderLabel: string
+  /** GOLD/DOW Asia overnight book (01:50–11:30 Montreal) — chart unlocked, CALL desk stays off */
+  asiaDeskActive?: boolean
 }
 
 function dateKeyInTz(date: Date, timeZone: string): string {
@@ -538,6 +545,9 @@ export function isChartStreamAllowed(
   const s = sessionFor(instrument)
   if (!isWeekdayInTz(now, s.tz)) {
     return { open: false, reason: `Weekend — ${deskMarketFor(instrument)} session closed` }
+  }
+  if (isAsiaDeskInstrument(instrument) && isAsiaDeskStreamWindow(now)) {
+    return { open: true, reason: 'Asia desk — GOLD/DOW overnight range' }
   }
   if (!isLiveFocusWindowActive(instrument, now)) {
     const t = parseTimeToSeconds(timeInTz(now, s.tz))
@@ -726,6 +736,11 @@ export function liveFocusMarket(_now: Date = new Date()): DeskMarket {
  */
 export function isAnyLiveFocusWindowActive(now: Date = new Date()): boolean {
   return isLiveFocusWindowActive('DOW', now)
+}
+
+/** Live Trading page: NY cash-day focus OR Asia GOLD/DOW overnight book. */
+export function isLiveTradingPageOpen(now: Date = new Date()): boolean {
+  return isAnyLiveFocusWindowActive(now) || isAsiaDeskChartWindow(now)
 }
 
 /**
@@ -969,7 +984,10 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     onClockedName
 
   const finish = (
-    r: Omit<SessionGateResult, 'clockedIn' | 'canClockIn' | 'attendedToday' | 'glanceOnly'>
+    r: Omit<
+      SessionGateResult,
+      'clockedIn' | 'canClockIn' | 'attendedToday' | 'glanceOnly' | 'asiaDeskActive'
+    >
   ): SessionGateResult => {
     let out: SessionGateResult
     if (clockedIn) {
@@ -1057,6 +1075,17 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
         }
       }
     }
+    const asiaDeskActive = isAsiaDeskChartWindow(now)
+    if (asiaDeskActive) {
+      out = {
+        ...out,
+        asiaDeskActive: true,
+        canViewLiveChart: true,
+        canFetchLiveBars: true,
+      }
+    } else {
+      out = { ...out, asiaDeskActive: false }
+    }
     return applyLiveBookGate(out)
   }
 
@@ -1070,16 +1099,18 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   // Pre-session / weekend / after cash close
   // NY dual browse opens at cash open − 30m (before analyzeStart / clock-in).
   if (!weekday || (t < analyze && !nyDualBrowse)) {
+    const asia = isAsiaDeskChartWindow(now)
     return finish({
       ...base,
       rangeStrategy: null,
       phase: 'CLOSED',
-      canViewLiveChart: false,
-      canFetchLiveBars: false,
+      canViewLiveChart: asia,
+      canFetchLiveBars: asia,
       canPlaceEntry: false,
       canManagePosition: false,
-      message:
-        t < analyze && weekday
+      message: asia
+        ? 'ASIA desk — GOLD (MGC <60 / buffer 10) and DOW (MYM <80 / buffer 20). Place both stop orders. Cancel unfilled 03:30 · flatten 11:30 Montreal.'
+        : t < analyze && weekday
           ? `Pre-session. NY tip + dual browse from ${deskLocalHmsAsTraderDisplay('09:00:00', s.tz, now)} ${TRADER_DISPLAY_LABEL}; AI pick + clock-in at ${analyzeEt} ${TRADER_DISPLAY_LABEL}.`
           : `Weekend — desk closed. ${nextDesk} Or use Simulation.`,
     })

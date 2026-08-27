@@ -1,8 +1,10 @@
 /**
  * Desk toasts vs Telegram.
- * Explicit empty `telegram` = on-screen only (CALL WAIT / off-band deny).
- * Do not fall back to title+body — that spammed Telegram on every band click.
+ * Live product: Telegram on CALL-legal setup (`call_setup`) and auction
+ * entrance (`auction_setup`). Range lock, clock, news, BE stay on-screen.
  */
+
+import { isNyTelegramKind } from '@/lib/trading/nyDeskStrategy'
 
 export function formatDeskAlertToast(title: string, body: string): string {
   const t = String(title || '').trim()
@@ -13,28 +15,14 @@ export function formatDeskAlertToast(title: string, body: string): string {
   return `${t} — ${b}`
 }
 
-/** Null = do not send Telegram. Sends ONLY high-conviction trade entry signals. */
+/** Null = do not send Telegram. Allowlist: CALL-legal setup only. */
 export function deskAlertTelegramText(alert: {
   kind?: string
   telegram?: string | null
   title?: string
   body?: string
 }): string | null {
-  const kind = String(alert.kind || '').toLowerCase()
-  const title = String(alert.title || '').toLowerCase()
-  const body = String(alert.body || '').toLowerCase()
-
-  // Suppress price touch and band proximity alerts (toast-only on screen)
-  if (
-    kind.includes('price_touch') ||
-    kind.includes('range_edge') ||
-    title.includes('price alert') ||
-    title.includes('band') ||
-    body.includes('hit your chart alert')
-  ) {
-    return null
-  }
-
+  if (!isNyTelegramKind(alert.kind)) return null
   if (typeof alert.telegram === 'string') {
     const trimmed = alert.telegram.trim()
     return trimmed || null

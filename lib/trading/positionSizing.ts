@@ -482,13 +482,15 @@ export function previewPositionSizingFromRiskAmount(
   }
 }
 
-export const FUTURES_POINT_VALUES: Record<string, number> = {
+export const FUTURES_POINT_VALUES = {
   MNQ: 2.0, // Micro Nasdaq-100 ($2 per point)
   NASDAQ: 2.0,
   MYM: 0.5, // Micro E-mini Dow ($0.50 per point)
   DOW: 0.5,
   MGC: 10.0, // Micro Gold ($10 per point)
   GOLD: 10.0,
+  MCL: 100.0, // Micro WTI ($100 per $1.00)
+  CRUDE: 100.0,
   M2K: 5.0, // Micro Russell 2000 ($5 per point)
   RTY: 5.0,
   RUSSELL: 5.0,

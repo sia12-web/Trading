@@ -31,6 +31,7 @@ import { isOandaConfigured, shouldExecuteOandaOrders } from '@/lib/oanda/config'
 import { getOandaAccountSummary } from '@/lib/oanda/orders'
 import { placeOandaMarketOrder, closeOandaTrade } from '@/lib/oanda/orders'
 import { assertServerRangeEdgeEntry } from '@/lib/trading/serverPlaybookRange'
+import { isAuctionTicketPayload } from '@/lib/trading/auctionLiveSignal'
 import { assertProtectiveStop } from '@/lib/trading/stopLossGuard'
 import { assertWorkingStopLocked } from '@/lib/trading/workingBracketUpdate'
 import type { PositionOpenResponse } from '@/types/trading'
@@ -292,56 +293,60 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
 
     const deskEntrySource = normalizeEntrySource(body.entry_source)
 
-    const edgeCheck = await assertServerRangeEdgeEntry({
-      instrument: body.instrument,
-      entry: body.entry_price,
-      clientRange:
-        body.range_high != null && body.range_low != null
-          ? {
-              high: Number(body.range_high),
-              low: Number(body.range_low),
-              label: body.range_label ?? null,
-            }
-          : null,
-      rangeStrategy: gate.rangeStrategy,
-      morningAttempts: gate.morningAttempts,
-      ibAttempts: gate.ibAttempts,
-      lunchAttempts: gate.lunchAttempts,
-      direction: body.entry_direction,
-      useCall: attendanceCallMode(attendance?.morning_journal),
-    })
-    if (!edgeCheck.ok) {
-      logEntryDenied({
-        route: 'open',
-        reason: 'range_edge',
+    let attributedRangeLabel: string | null = body.range_label ?? null
+    if (!isAuctionTicketPayload(body)) {
+      const edgeCheck = await assertServerRangeEdgeEntry({
         instrument: body.instrument,
-        message: edgeCheck.message,
-        status: 400,
-        phase: gate.phase,
-        ladder: gate.attemptLadderLabel,
-        rangeStrategy: gate.rangeStrategy,
         entry: body.entry_price,
+        clientRange:
+          body.range_high != null && body.range_low != null
+            ? {
+                high: Number(body.range_high),
+                low: Number(body.range_low),
+                label: body.range_label ?? null,
+              }
+            : null,
+        rangeStrategy: gate.rangeStrategy,
+        morningAttempts: gate.morningAttempts,
+        ibAttempts: gate.ibAttempts,
+        lunchAttempts: gate.lunchAttempts,
         direction: body.entry_direction,
-        rangeHigh: body.range_high != null ? Number(body.range_high) : null,
-        rangeLow: body.range_low != null ? Number(body.range_low) : null,
-        rangeLabel: body.range_label ?? null,
-        entrySource: body.entry_source ?? null,
+        useCall: attendanceCallMode(attendance?.morning_journal),
       })
-      return NextResponse.json(
-        {
-          success: false,
-          position_id: '',
+      if (!edgeCheck.ok) {
+        logEntryDenied({
+          route: 'open',
+          reason: 'range_edge',
           instrument: body.instrument,
-          entry_price: body.entry_price,
-          stop_loss_price: 0,
-          position_size: 0,
-          risk_amount: 0,
-          entry_direction: body.entry_direction,
-          entry_window: body.entry_window,
           message: edgeCheck.message,
-        },
-        { status: 400 }
-      )
+          status: 400,
+          phase: gate.phase,
+          ladder: gate.attemptLadderLabel,
+          rangeStrategy: gate.rangeStrategy,
+          entry: body.entry_price,
+          direction: body.entry_direction,
+          rangeHigh: body.range_high != null ? Number(body.range_high) : null,
+          rangeLow: body.range_low != null ? Number(body.range_low) : null,
+          rangeLabel: body.range_label ?? null,
+          entrySource: body.entry_source ?? null,
+        })
+        return NextResponse.json(
+          {
+            success: false,
+            position_id: '',
+            instrument: body.instrument,
+            entry_price: body.entry_price,
+            stop_loss_price: 0,
+            position_size: 0,
+            risk_amount: 0,
+            entry_direction: body.entry_direction,
+            entry_window: body.entry_window,
+            message: edgeCheck.message,
+          },
+          { status: 400 }
+        )
+      }
+      attributedRangeLabel = edgeCheck.range.label ?? null
     }
 
     // Skip ultra-tight deep extreme check when entry is from chart level click
@@ -868,7 +873,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
 
     // Attempt-ladder bucket attributed by the authoritative ±10 check above
     // (price-based, server-verified) — never the client's claimed label.
-    const rangeBucket = bucketForRangeLabel(body.instrument, edgeCheck.range.label)
+    const rangeBucket = bucketForRangeLabel(body.instrument, attributedRangeLabel)
 
     const tradePosition = {
       user_id: user.id,

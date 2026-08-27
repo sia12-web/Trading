@@ -38,12 +38,23 @@ import {
   type MarketControl,
 } from '@/lib/trading/marketControl'
 import { CALL_MODE_UNSET_MESSAGE } from '@/lib/trading/deskCallMode'
+import type { DeskPlaybookMode } from '@/lib/trading/deskPlaybookMode'
 import {
   computeYesterdayProfile,
   type YesterdayBar,
   type YesterdayOpenType,
 } from '@/lib/trading/yesterdayProfile'
-import type { DeskPlaybookMode } from '@/lib/trading/deskPlaybookMode'
+import { SYSTEMATIC_LIVE_DESK } from '@/lib/trading/systematicDesk'
+import {
+  computeDeskPerf,
+  type DeskPerf,
+} from '@/lib/trading/directionalPerformance'
+import {
+  computeDeskSituation,
+  type SitKind,
+} from '@/lib/trading/deskSituation'
+import { computeLongTermRegion } from '@/lib/trading/longTermBracket'
+import { computeDeskStayOut, type StayOutKind } from '@/lib/trading/deskStayOut'
 
 export type DeskCallSide = 'WAIT' | 'LONG' | 'SHORT'
 export type DeskCallRangeKey = 'OR15' | 'OR30' | 'IB' | 'US'
@@ -66,6 +77,29 @@ export type DeskCall = {
   controlLabel: MarketControl['label']
   /** Hover checklist — every WAIT / CALL decision, same on live and sim. */
   hoverText: string
+  perfGrade?: DeskPerf['grade']
+  perfVeto?: boolean
+  perfLeave?: boolean
+  perfBadge?: string
+  perfPlayLine?: string
+  perfPlacement?: DeskPerf['placement']
+  perfVolumeRel?: DeskPerf['volumeRel']
+  perfVaWidth?: DeskPerf['vaWidth']
+  sitKind?: SitKind
+  sitBadge?: string
+  sitPlayLine?: string
+  spikeHigh?: number | null
+  spikeLow?: number | null
+  sitHold?: boolean
+  regionBadge?: string
+  regionPlayLine?: string
+  regionVeto?: boolean
+  regionHigh?: number | null
+  regionLow?: number | null
+  stayOutKind?: StayOutKind
+  stayOutBadge?: string
+  stayOutPlayLine?: string
+  stayOutVeto?: boolean
 }
 
 export type DeskCallWindowScore = {
@@ -161,6 +195,29 @@ function waiting(
     playLine: locked ? `${reason} ${BOOK_LOCKED} ${TICKET}` : `${reason} ${TICKET}`,
     openingType: extra?.openingType ?? 'WAITING',
     controlLabel: extra?.controlLabel ?? 'WAIT',
+    perfGrade: extra?.perfGrade,
+    perfVeto: extra?.perfVeto,
+    perfLeave: extra?.perfLeave,
+    perfBadge: extra?.perfBadge,
+    perfPlayLine: extra?.perfPlayLine,
+    perfPlacement: extra?.perfPlacement,
+    perfVolumeRel: extra?.perfVolumeRel,
+    perfVaWidth: extra?.perfVaWidth,
+    sitKind: extra?.sitKind,
+    sitBadge: extra?.sitBadge,
+    sitPlayLine: extra?.sitPlayLine,
+    spikeHigh: extra?.spikeHigh,
+    spikeLow: extra?.spikeLow,
+    sitHold: extra?.sitHold,
+    regionBadge: extra?.regionBadge,
+    regionPlayLine: extra?.regionPlayLine,
+    regionVeto: extra?.regionVeto,
+    regionHigh: extra?.regionHigh,
+    regionLow: extra?.regionLow,
+    stayOutKind: extra?.stayOutKind,
+    stayOutBadge: extra?.stayOutBadge,
+    stayOutPlayLine: extra?.stayOutPlayLine,
+    stayOutVeto: extra?.stayOutVeto,
     hoverText:
       extra?.hoverText ??
       [
@@ -169,7 +226,7 @@ function waiting(
         reason,
         locked ? BOOK_LOCKED : null,
         '',
-        'Leo and Level Finder advise only. No line.',
+        'Ticket stays 1.5R. No Leo. No Level Finder fills.',
       ]
         .filter((line) => line != null)
         .join('\n'),
@@ -296,6 +353,17 @@ function buildCallHoverText(args: {
   peerSide?: DeskCallSide | null
   midAllowed: boolean
   entryPrice: number | null
+  perfVeto?: boolean
+  perfBadge?: string
+  perfPlayLine?: string
+  sitBadge?: string
+  sitPlayLine?: string
+  regionVeto?: boolean
+  regionBadge?: string
+  regionPlayLine?: string
+  stayOutVeto?: boolean
+  stayOutBadge?: string
+  stayOutPlayLine?: string
 }): string {
   const tokyo = args.instrument === 'NIKKEI'
   const openBadge = openingActivityBadgeText(args.opening)
@@ -369,27 +437,63 @@ function buildCallHoverText(args: {
       : 'OK     Book open'
   )
 
+  if (args.stayOutVeto) {
+    rows.push(
+      `BLOCK  Out: ${args.stayOutBadge ?? 'OUT'} — ${args.stayOutPlayLine ?? 'no new ticket.'}`
+    )
+  } else if (args.stayOutBadge && args.stayOutBadge !== '—') {
+    rows.push(`OK     Out: ${args.stayOutBadge}`)
+  }
+
+  if (args.perfVeto) {
+    rows.push(
+      `BLOCK  Perf: ${args.perfBadge ?? 'WEAK'} — facilitation failed after OR30 VA. CALL WAIT.`
+    )
+  } else if (args.perfBadge) {
+    rows.push(`OK     Perf: ${args.perfBadge} — filter-first. Ticket stays 1.5R.`)
+  }
+
+  if (args.regionVeto) {
+    rows.push(
+      `BLOCK  Region: ${args.regionBadge ?? 'BRACKET · mid'} — first legal hunt already used. Do not add.`
+    )
+  } else if (args.regionBadge && args.regionBadge !== 'WAIT') {
+    rows.push(
+      `OK     Region: ${args.regionBadge} — advise only. Does not pick CALL side. Ticket stays 1.5R.`
+    )
+  }
+
+  if (args.sitBadge && args.sitBadge !== 'NONE') {
+    rows.push(
+      `OK     Sit: ${args.sitBadge} — advise only. Does not gate CALL. Ticket stays 1.5R.`
+    )
+  }
+
   const header =
     args.side === 'WAIT' || !args.range
       ? 'CALL WAIT — no ticket'
       : `CALL ${args.range.key} ${args.side} — ticket allowed`
   const hunt =
-    args.side === 'WAIT' || !args.range || args.entryPrice == null
-      ? 'Hunt nothing new until Control is ONE-TF, or Drive/Test-Drive gives a morning side.'
-      : args.side === 'LONG'
-        ? `Hunt: ±${CALL_BAND_POINTS} below ${speakRange(args.range.key, tokyo)} low ${args.entryPrice}${args.midAllowed ? ' (mid is a pullback in the same CALL)' : ''
-        }`
-        : `Hunt: ±${CALL_BAND_POINTS} above ${speakRange(args.range.key, tokyo)} high ${args.entryPrice}${args.midAllowed ? ' (mid is a pullback in the same CALL)' : ''
-        }`
+    args.stayOutVeto
+      ? 'Hunt nothing new — stay-out day on this name.'
+      : args.side === 'WAIT' || !args.range || args.entryPrice == null
+        ? 'Hunt nothing new until Control is ONE-TF, or Drive/Test-Drive gives a morning side.'
+        : args.side === 'LONG'
+          ? `Hunt: ±${CALL_BAND_POINTS} below ${speakRange(args.range.key, tokyo)} low ${args.entryPrice}${args.midAllowed ? ' (mid is a pullback in the same CALL)' : ''
+          }`
+          : `Hunt: ±${CALL_BAND_POINTS} above ${speakRange(args.range.key, tokyo)} high ${args.entryPrice}${args.midAllowed ? ' (mid is a pullback in the same CALL)' : ''
+          }`
 
   return [
     header,
     '',
     ...rows,
     '',
-    hunt,
+    args.perfVeto && args.perfPlayLine
+      ? args.perfPlayLine
+      : hunt,
     tokyo ? 'Nikkei Open/Control = Tokyo cash, not US Range TPO.' : null,
-    'Leo and Level Finder advise only. No line.',
+    'Ticket stays 1.5R. No Leo. No Level Finder fills.',
   ]
     .filter((line) => line != null)
     .join('\n')
@@ -456,9 +560,8 @@ export function assertDeskCallEntry(args: {
 }
 
 /**
- * Ticket gate after the clock-in CALL / regular choice.
- * `useCall: true` — same as {@link assertDeskCallEntry}.
- * `useCall: false` — any playbook ±10; CALL is still the setup read.
+ * Ticket gate. Live desk always passes `useCall: true` (CALL-legal ±10).
+ * `useCall: false` remains only for Simulation until Slice 5.
  * `useCall: null` — not answered; no tickets.
  */
 export function assertDeskTicketEntry(args: {
@@ -483,9 +586,10 @@ export function assertDeskTicketEntry(args: {
 }
 
 /**
- * Painted / drag-legal ±10 edges for the current CALL mode.
- * `null` = all playbook edges (US Range still drops mid via rangeEdgeBands).
- * Empty = none (WAIT, or CALL/regular not chosen).
+ * Painted / drag-legal ±10 edges.
+ * Live desk always uses CALL-legal edges (`useCall: true`).
+ * `null` return = all playbook edges (sim Regular only).
+ * Empty = none (WAIT).
  */
 export function ticketAllowedEdges(args: {
   useCall: boolean | null
@@ -497,7 +601,7 @@ export function ticketAllowedEdges(args: {
   return deskCallLegalEdges(args.call)
 }
 
-/** CALL setup edges to highlight even when tickets are regular ±10. */
+/** CALL setup edges to paint on the active range. */
 export function deskCallSetupEdges(call: DeskCall | null): ReadonlyArray<DeskCallEdge> {
   if (!call) return []
   return deskCallLegalEdges(call)
@@ -713,7 +817,10 @@ export function computeDeskCall(args: {
   peerSide?: DeskCallSide | null
   /** Same Control snapshot as the Ctrl chip — CALL must not recompute a second RF. */
   control?: MarketControl | null
+  attemptsUsed?: number
   htfStandAside?: { isStandAside: boolean; reason: string; directiveSummary: string } | null
+  /** Live default on. Backtest A/B sets false for the baseline book. */
+  stayOutEnabled?: boolean
 }): DeskCall {
   const instrument = String(args.instrument || '')
   let bookLocked = args.bookLocked === true
@@ -721,8 +828,8 @@ export function computeDeskCall(args: {
     return waiting(instrument, { bookLocked })
   }
 
-  // Stand-Aside Engine Override: Automatically disable regular calls & lock book if active
-  if (args.htfStandAside?.isStandAside) {
+  // HTF stand-aside is not the live NY strategy.
+  if (!SYSTEMATIC_LIVE_DESK && args.htfStandAside?.isStandAside) {
     return waiting(instrument, {
       bookLocked: true,
       reason: `STAND ASIDE ACTIVE (${args.htfStandAside.reason}): Regular calls disabled by HTF Specialist. ${args.htfStandAside.directiveSummary}`,
@@ -762,12 +869,68 @@ export function computeDeskCall(args: {
     candles: candles as YesterdayBar[],
     asOfUnix: args.asOfUnix,
   })
+  const sit = computeDeskSituation({
+    instrument,
+    candles,
+    asOfUnix: args.asOfUnix,
+  })
+  const sitPack = {
+    sitKind: sit.kind,
+    sitBadge: sit.badgeText,
+    sitPlayLine: sit.playLine,
+    spikeHigh: sit.spikeHigh,
+    spikeLow: sit.spikeLow,
+    sitHold: sit.gapHold,
+  }
+  const region = computeLongTermRegion({
+    instrument,
+    candles,
+    asOfUnix: args.asOfUnix,
+    playbookMode: args.playbookMode,
+    attemptsUsed: args.attemptsUsed,
+  })
+  const regionPack = {
+    regionBadge: region.badgeText,
+    regionPlayLine: region.playLine,
+    regionVeto: region.firstLegalOnly,
+    regionHigh: region.high,
+    regionLow: region.low,
+  }
+  const stayOutEnabled = args.stayOutEnabled !== false
+  const stay = stayOutEnabled
+    ? computeDeskStayOut({
+        instrument,
+        candles,
+        asOfUnix: args.asOfUnix,
+        playbookMode: args.playbookMode,
+        openingType: opening.type,
+        controlLabel: control.label,
+        ydayOpenType: yday?.openType,
+        ydayVah: yday?.vah ?? null,
+        ydayVal: yday?.val ?? null,
+      })
+    : {
+        kind: 'NONE' as const,
+        vetoCall: false,
+        badgeText: '—',
+        playLine:
+          'OUT — not a stay-out day. CALL hunts legal ±10. Ticket stays 1.5R.',
+      }
+  const stayPack = {
+    stayOutKind: stay.kind,
+    stayOutBadge: stay.badgeText,
+    stayOutPlayLine: stay.playLine,
+    stayOutVeto: stay.vetoCall,
+  }
 
   const baseWait = {
     sessionDate: ymd,
     bookLocked,
     openingType: opening.type,
     controlLabel: control.label,
+    ...sitPack,
+    ...regionPack,
+    ...stayPack,
   }
 
   const range = resolveActiveRange({
@@ -794,15 +957,37 @@ export function computeDeskCall(args: {
         peerSide: args.peerSide,
         midAllowed: false,
         entryPrice: null,
+        sitBadge: sit.badgeText,
+        sitPlayLine: sit.playLine,
+        regionVeto: region.firstLegalOnly,
+        regionBadge: region.badgeText,
+        regionPlayLine: region.playLine,
+        stayOutVeto: stay.vetoCall,
+        stayOutBadge: stay.badgeText,
+        stayOutPlayLine: stay.playLine,
       }),
     })
   }
 
-  const side = decideSide({
+  const side0 = decideSide({
     opening,
     control,
     peerSide: args.peerSide,
   })
+  const perf = computeDeskPerf({
+    instrument,
+    candles,
+    asOfUnix: args.asOfUnix,
+    playbookMode: args.playbookMode,
+    attemptsUsed: args.attemptsUsed,
+    control,
+    yesterday: yday,
+  })
+  const side: DeskCallSide =
+    (stay.vetoCall || perf.vetoCall || region.firstLegalOnly) &&
+    side0 !== 'WAIT'
+      ? 'WAIT'
+      : side0
   const midAllowed = rangeAllowsMidEdge({
     high: range.high,
     low: range.low,
@@ -816,6 +1001,24 @@ export function computeDeskCall(args: {
       rangeHigh: px(range.high),
       rangeLow: px(range.low),
       midAllowed,
+      reason: stay.vetoCall
+        ? stay.playLine
+        : perf.vetoCall
+          ? perf.playLine
+          : region.firstLegalOnly
+            ? region.playLine
+            : undefined,
+      perfGrade: perf.grade,
+      perfVeto: perf.vetoCall,
+      perfLeave: perf.leaveBook,
+      perfBadge: perf.badgeText,
+      perfPlayLine: perf.playLine,
+      perfPlacement: perf.placement,
+      perfVolumeRel: perf.volumeRel,
+      perfVaWidth: perf.vaWidth,
+      ...sitPack,
+      ...regionPack,
+      ...stayPack,
       hoverText: buildCallHoverText({
         instrument,
         side: 'WAIT',
@@ -827,6 +1030,17 @@ export function computeDeskCall(args: {
         peerSide: args.peerSide,
         midAllowed,
         entryPrice: null,
+        perfVeto: perf.vetoCall,
+        perfBadge: perf.badgeText,
+        perfPlayLine: perf.playLine,
+        sitBadge: sit.badgeText,
+        sitPlayLine: sit.playLine,
+        regionVeto: region.firstLegalOnly,
+        regionBadge: region.badgeText,
+        regionPlayLine: region.playLine,
+        stayOutVeto: stay.vetoCall,
+        stayOutBadge: stay.badgeText,
+        stayOutPlayLine: stay.playLine,
       }),
     })
   }
@@ -848,6 +1062,17 @@ export function computeDeskCall(args: {
     openingType: opening.type,
     controlLabel: control.label,
     hoverText: '',
+    perfGrade: perf.grade,
+    perfVeto: false,
+    perfLeave: perf.leaveBook,
+    perfBadge: perf.badgeText,
+    perfPlayLine: perf.playLine,
+    perfPlacement: perf.placement,
+    perfVolumeRel: perf.volumeRel,
+    perfVaWidth: perf.vaWidth,
+    ...sitPack,
+    ...regionPack,
+    ...stayPack,
   }
   call.playLine = playLineForCall(call)
   call.hoverText = buildCallHoverText({
@@ -861,6 +1086,17 @@ export function computeDeskCall(args: {
     peerSide: args.peerSide,
     midAllowed,
     entryPrice,
+    perfVeto: false,
+    perfBadge: perf.badgeText,
+    perfPlayLine: perf.playLine,
+    sitBadge: sit.badgeText,
+    sitPlayLine: sit.playLine,
+    regionVeto: false,
+    regionBadge: region.badgeText,
+    regionPlayLine: region.playLine,
+    stayOutVeto: false,
+    stayOutBadge: stay.badgeText,
+    stayOutPlayLine: stay.playLine,
   })
   return call
 }

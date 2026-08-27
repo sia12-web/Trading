@@ -1,6 +1,6 @@
 /**
  * POST /api/trading/call-mode
- * After clock-in: persist CALL (true) or regular playbook ±10 (false).
+ * Live desk is always CALL ON. Regular ±10 is refused.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -10,6 +10,7 @@ import {
   activeClockMarkets,
   setAttendanceUseCall,
 } from '@/lib/trading/deskAttendance'
+import { LIVE_CALL_REGULAR_REFUSED } from '@/lib/trading/deskCallMode'
 import {
   deskMarketFor,
   isDeskInstrument,
@@ -32,8 +33,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid body' }, { status: 400 })
   }
 
-  if (typeof body.useCall !== 'boolean') {
-    return NextResponse.json({ error: 'useCall must be true or false' }, { status: 400 })
+  if (body.useCall !== true) {
+    return NextResponse.json({ error: LIVE_CALL_REGULAR_REFUSED }, { status: 400 })
   }
 
   const instrument = isDeskInstrument(String(body.instrument || ''))
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const result = await setAttendanceUseCall(supabase, user.id, {
     market,
-    useCall: body.useCall,
+    useCall: true,
   })
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 403 })
@@ -64,7 +65,7 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    useCall: body.useCall,
+    useCall: true,
     attendance_id: result.row.id,
   })
 }

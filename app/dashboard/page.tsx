@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import {
   isAnyLiveFocusWindowActive,
+  isLiveTradingPageOpen,
   NY_SESSION,
 } from '@/lib/trading/sessionGate'
 import {
@@ -29,14 +30,18 @@ export default function DashboardHomePage() {
   useEffect(() => {
     const tick = () => {
       const now = new Date()
-      const live = isAnyLiveFocusWindowActive(now)
+      const live = isLiveTradingPageOpen(now)
       setFocusLive(live)
-      if (live) {
+      if (isAnyLiveFocusWindowActive(now)) {
         setNextHint('NY focus is open — Live Trading unlocked.')
+      } else if (live) {
+        setNextHint(
+          'ASIA desk is open — GOLD (MGC) and DOW (MYM) overnight range. Live Trading unlocked until 11:30 Montreal.'
+        )
       } else {
         const unlockAt = focusUnlockMontreal(now)
         setNextHint(
-          `No live session. Live Trading unlocks 30 minutes before NY open (${unlockAt}).`
+          `No live session. Live Trading unlocks 01:50 Montreal for Asia GOLD/DOW, or 30 minutes before NY open (${unlockAt}).`
         )
       }
     }
@@ -66,12 +71,6 @@ export default function DashboardHomePage() {
             Live Trading locked
           </span>
         )}
-        <Link
-          href="/dashboard/simulation"
-          className="rounded-lg border border-violet-500/40 bg-violet-500/15 px-4 py-2.5 text-sm font-semibold text-violet-200 hover:bg-violet-500/25"
-        >
-          Simulation →
-        </Link>
         <Link
           href="/dashboard/positions"
           className="rounded-lg border border-surface-600 px-4 py-2.5 text-sm font-semibold text-gray-300 hover:border-surface-500 hover:text-white"

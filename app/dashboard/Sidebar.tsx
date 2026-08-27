@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { Suspense, useEffect, useState } from 'react'
-import { isAnyLiveFocusWindowActive } from '@/lib/trading/sessionGate'
+import { isLiveTradingPageOpen } from '@/lib/trading/sessionGate'
 
 type NavItem = {
   href: string
@@ -41,7 +41,7 @@ const LIVE_ITEMS: NavItem[] = [
   {
     href: '/dashboard/journal',
     label: 'Order History',
-    hint: 'Live & sim fills',
+    hint: 'Live fills',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-4 h-4">
         <path
@@ -55,7 +55,7 @@ const LIVE_ITEMS: NavItem[] = [
   {
     href: '/dashboard/news',
     label: 'Desk News',
-    hint: 'YM · NQ · NKD',
+    hint: 'YM · NQ · GC · CL',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-4 h-4">
         <path
@@ -197,7 +197,7 @@ function NavSection({
             item={item}
             active={active}
             locked={isLiveChart && !liveDeskOpen}
-            lockedHint="No session now — unlocks 30 min before NY or Tokyo open"
+            lockedHint="No session now — NY from 09:00 Montreal, or Asia GOLD/DOW 01:50–11:30"
           />
         )
       })}
@@ -212,7 +212,7 @@ function SidebarNav() {
   const [liveDeskOpen, setLiveDeskOpen] = useState(false)
 
   useEffect(() => {
-    const tick = () => setLiveDeskOpen(isAnyLiveFocusWindowActive())
+    const tick = () => setLiveDeskOpen(isLiveTradingPageOpen())
     tick()
     const id = window.setInterval(tick, 15_000)
     return () => window.clearInterval(id)
@@ -273,7 +273,7 @@ export function Sidebar() {
           <span className="text-xs text-gray-500">Desk ready</span>
         </div>
         <p className="text-[10px] text-gray-600 leading-snug">
-          Order History has Live + Simulation tabs.
+          Order History is live fills only.
         </p>
         <LogoutButton />
       </div>

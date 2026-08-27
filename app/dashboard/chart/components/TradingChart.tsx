@@ -44,6 +44,8 @@ import {
   paintSessionHighlightOverlay,
   deskClockFor,
   deskSessionAt,
+  isWeekdayYmd,
+  zonedCivilToUnix,
   lastNTradingSessions as trimDeskCandles,
   sessionLegendLabel,
   sessionLegendOrder,
@@ -118,6 +120,18 @@ import {
   type DeskCall,
 } from '@/lib/trading/deskCall'
 import { deskCallModeHoverPrefix } from '@/lib/trading/deskCallMode'
+import { SYSTEMATIC_LIVE_DESK } from '@/lib/trading/systematicDesk'
+import { persistQuietDeskPerfLtar } from '@/lib/trading/ltarStore'
+import { deskSitLineSpecs } from '@/lib/trading/deskSituation'
+import { longTermRegionLineSpecs } from '@/lib/trading/longTermBracket'
+import {
+  formatCallSetupTelegram,
+  isNyCallSetup,
+} from '@/lib/trading/nyDeskStrategy'
+import {
+  AUCTION_TELEGRAM_KIND,
+  evaluateAuctionLiveSignal,
+} from '@/lib/trading/auctionLiveSignal'
 import {
   applyIbLiquiditySwingToRange,
   applyIbLiquiditySwingToRanges,
@@ -153,6 +167,7 @@ import {
   sessionFor,
   deskMarketFor,
 } from '@/lib/trading/sessionGate'
+import type { AsiaDeskOverlay } from '@/lib/trading/asiaDesk'
 import {
   resolveDeskPlaybookMode,
   deskPlaybookAnalysisMode,
@@ -172,6 +187,7 @@ import {
   activeRangeForPlaybook,
   entryEligibleOverlayRanges,
   studyEntrySnapRanges,
+  strategyEntryRisk,
   type StrategyRangeEdges,
   type StrategyRiskMagnets,
 } from '@/lib/trading/strategyRiskGeometry'
@@ -195,14 +211,11 @@ import {
   type ShapedRangeForTails,
 } from '@/lib/chart/rangeEdgeTails'
 import {
-  formatRangeEdgeAlertMessage,
   formatRangeShapedNote,
   claimDeskNoteOnce,
-  claimDeskNoteCooldown,
   deskNoteClaimKey,
   hasDeskNoteClaim,
   rangeEdgeProximity,
-  shouldFireRangeEdgeAlert,
 } from '@/lib/trading/rangeEdgeAlerts'
 import {
   buildRangeAtrSnapshot,
@@ -286,19 +299,6 @@ const PRICE_TICKER_MS = 50
 const PRICE_STATE_MS = 200
 /** REST reconcile spacing while the SSE push stream is still delivering ticks. */
 const RECONCILE_HEALTHY_MS = 20_000
-
-function defaultManualStop(limit: number, direction: 'LONG' | 'SHORT'): number {
-  const pct = 0.0035
-  return direction === 'LONG' ? limit * (1 - pct) : limit * (1 + pct)
-}
-
-function defaultManualTarget(
-  entry: number,
-  stop: number,
-  direction: 'LONG' | 'SHORT'
-): number {
-  return takeProfitFromStopR({ entry, stop, direction })
-}
 
 /** Candle width before range overlays / last-value tags relayout the pane. */
 function readDeskBarSpacing(chart: { timeScale: () => { options: () => { barSpacing: number } } } | null): number {
@@ -862,6 +862,8 @@ interface TradingChartProps {
   positionOverlay?: PositionOverlay | null     // filled position Entry/SL/TP
   /** Working limit — not filled yet; does not enter MANAGE */
   pendingLimit?: PendingLimitOverlay | null
+  /** Asia overnight dual working stops (GOLD/DOW) — visible on Trade Pulse */
+  asiaOco?: AsiaDeskOverlay | null
   /** Cancel the working limit (chart toolbar + parent bar) */
   onCancelPending?: () => void
   /**
@@ -930,8 +932,8 @@ interface TradingChartProps {
   /** Currently clocked in — enables Live Voice panel entry */
   clockedIn?: boolean
   /**
-   * Clock-in CALL choice. `true` / omitted = CALL ticket gate.
-   * `false` = regular playbook ±10. `null` = not answered (no tickets).
+   * Live desk always passes `true` (CALL-legal ±10).
+   * `false` / `null` remain for Simulation until Slice 5.
    */
   useCall?: boolean | null
   /** Bump to force a levels reload after SL/TP (system memory updated) */
@@ -947,6 +949,19 @@ interface TradingChartProps {
   }) => void
   /** Active playbook range ATR snapshot (advise-only pad/trail) */
   onRangeAtr?: (snap: RangeAtrSnapshot | null) => void
+  /** Perf chip + open-book LEAVE (advise only; never auto-flatten) */
+  onDeskPerf?: (p: {
+    grade: string
+    badgeText: string
+    leaveBook: boolean
+    playLine: string
+    vetoCall: boolean
+    sitBadge?: string
+    sitHold?: boolean
+    sitPlayLine?: string
+    regionBadge?: string
+    regionPlayLine?: string
+  }) => void
 }
 
 // ─── Main TradingChart component ──────────────────────────────────────────────
@@ -959,6 +974,7 @@ export function TradingChart({
   onDataModeChange,
   positionOverlay,
   pendingLimit = null,
+  asiaOco = null,
   onCancelPending,
   onAdjustBrackets,
   onAdjustWorkingBrackets,
@@ -986,6 +1002,7 @@ export function TradingChart({
   levelsRefreshKey = 0,
   onDeskAlert,
   onRangeAtr,
+  onDeskPerf,
 }: TradingChartProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartFrameRef = useRef<HTMLDivElement>(null)
@@ -1073,8 +1090,31 @@ export function TradingChart({
   const [controlBadge, setControlBadge] = useState('RF WAIT')
   const [callBadge, setCallBadge] = useState('WAIT')
   const [callHover, setCallHover] = useState(
-    'CALL WAIT — no ticket\n\nLeo and Level Finder advise only. No line.'
+    'CALL WAIT — no ticket\n\nTicket stays 1.5R. No Leo. No Level Finder fills.'
   )
+  const [perfBadge, setPerfBadge] = useState('WAIT')
+  const [perfHover, setPerfHover] = useState(
+    'PERF WAIT — not enough letters for a developing value area. Drive may still CALL. Ticket stays 1.5R.'
+  )
+  const [sitBadge, setSitBadge] = useState('NONE')
+  const [sitHover, setSitHover] = useState(
+    'SIT NONE — no special situation. CALL side unchanged. Ticket stays 1.5R.'
+  )
+  const [regionBadge, setRegionBadge] = useState('WAIT')
+  const [regionHover, setRegionHover] = useState(
+    'REGION WAIT — not enough completed cash days for a 5-day TPO body. CALL unchanged. Ticket stays 1.5R.'
+  )
+  const [stayOutBadge, setStayOutBadge] = useState('—')
+  const [stayOutHover, setStayOutHover] = useState(
+    'OUT — not a stay-out day. CALL hunts legal ±10. Ticket stays 1.5R.'
+  )
+  const spikeLinesRef = useRef<IPriceLine[]>([])
+  const spikePaintKeyRef = useRef('')
+  const regionLinesRef = useRef<IPriceLine[]>([])
+  const regionPaintKeyRef = useRef('')
+  const quietLtarKeyRef = useRef('')
+  const onDeskPerfRef = useRef(onDeskPerf)
+  onDeskPerfRef.current = onDeskPerf
   const [ibExtendBadge, setIbExtendBadge] = useState('—')
   const [ibExtendHover, setIbExtendHover] = useState(
     'IB extend vs revert — advice only after IB locks. First tag is not the entry.'
@@ -1163,7 +1203,9 @@ export function TradingChart({
     return () => clearInterval(timer)
   }, [])
 
-  const [showLevels, setShowLevels] = useState(() => loadDeskOverlayToggles().levels)
+  const [showLevels, setShowLevels] = useState(() =>
+    SYSTEMATIC_LIVE_DESK ? false : loadDeskOverlayToggles().levels
+  )
   useEffect(() => {
     saveDeskOverlayToggles({
       levels: showLevels,
@@ -1918,6 +1960,7 @@ export function TradingChart({
       })),
       asOfUnix,
       playbookMode,
+      attemptsUsed,
       bookLocked:
         attemptsUsed >= 3 || !!positionOverlay || !!pendingLimit,
       control: marketControlRef.current,
@@ -1926,7 +1969,158 @@ export function TradingChart({
     setCallBadge((prev) => (prev === badge ? prev : badge))
     const hover = `${deskCallModeHoverPrefix(useCallRef.current)}${deskCallHoverText(call)}`
     setCallHover((prev) => (prev === hover ? prev : hover))
+    const nextPerf = call.perfBadge ?? 'WAIT'
+    setPerfBadge((prev) => (prev === nextPerf ? prev : nextPerf))
+    const nextPerfHover =
+      call.perfPlayLine ??
+      'PERF WAIT — not enough letters for a developing value area. Drive may still CALL. Ticket stays 1.5R.'
+    setPerfHover((prev) => (prev === nextPerfHover ? prev : nextPerfHover))
+    const nextSit = call.sitBadge ?? 'NONE'
+    setSitBadge((prev) => (prev === nextSit ? prev : nextSit))
+    const nextSitHover =
+      call.sitPlayLine ??
+      'SIT NONE — no special situation. CALL side unchanged. Ticket stays 1.5R.'
+    setSitHover((prev) => (prev === nextSitHover ? prev : nextSitHover))
+    const nextRegion = call.regionBadge ?? 'WAIT'
+    setRegionBadge((prev) => (prev === nextRegion ? prev : nextRegion))
+    const nextRegionHover =
+      call.regionPlayLine ??
+      'REGION WAIT — not enough completed cash days for a 5-day TPO body. CALL unchanged. Ticket stays 1.5R.'
+    setRegionHover((prev) => (prev === nextRegionHover ? prev : nextRegionHover))
+    const nextOut = call.stayOutBadge ?? '—'
+    setStayOutBadge((prev) => (prev === nextOut ? prev : nextOut))
+    const nextOutHover =
+      call.stayOutPlayLine ??
+      'OUT — not a stay-out day. CALL hunts legal ±10. Ticket stays 1.5R.'
+    setStayOutHover((prev) => (prev === nextOutHover ? prev : nextOutHover))
     deskCallRef.current = call
+    onDeskPerfRef.current?.({
+      grade: call.perfGrade ?? 'WAIT',
+      badgeText: nextPerf,
+      leaveBook: call.perfLeave === true,
+      playLine: nextPerfHover,
+      vetoCall: call.perfVeto === true,
+      sitBadge: nextSit,
+      sitHold: call.sitHold === true,
+      sitPlayLine: nextSitHover,
+      regionBadge: nextRegion,
+      regionPlayLine: nextRegionHover,
+    })
+    const clock = deskClockFor(instrument)
+    const ymd = new Intl.DateTimeFormat('en-CA', {
+      timeZone: clock.timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date(asOfUnix * 1000))
+    if (isWeekdayYmd(ymd, clock.timeZone)) {
+      const closeU = zonedCivilToUnix(ymd, clock.overnightStartHour, clock.timeZone)
+      if (asOfUnix >= closeU) {
+        const key = `${ymd}_${instrument}`
+        if (quietLtarKeyRef.current !== key) {
+          quietLtarKeyRef.current = key
+          persistQuietDeskPerfLtar({
+            instrument,
+            date: ymd,
+            attempted:
+              call.controlLabel === 'ONE-TF BUY'
+                ? 'HIGHER'
+                : call.controlLabel === 'ONE-TF SELL'
+                  ? 'LOWER'
+                  : 'NEUTRAL',
+            grade: call.perfGrade ?? 'WAIT',
+            volumeRel: call.perfVolumeRel ?? null,
+            placement: call.perfPlacement ?? null,
+            vaWidth: call.perfVaWidth ?? null,
+            playLine: [nextPerfHover, nextSitHover, nextRegionHover]
+              .filter(Boolean)
+              .join(' '),
+          })
+        }
+      }
+    }
+    const host = priceLineHostRef.current
+    const spikeKey = `${instrument}_${call.spikeHigh ?? ''}_${call.spikeLow ?? ''}_${nextSit}`
+    if (spikeKey !== spikePaintKeyRef.current) {
+      spikePaintKeyRef.current = spikeKey
+      for (const line of spikeLinesRef.current) {
+        try {
+          host?.removePriceLine(line)
+        } catch {
+          /* ignore */
+        }
+      }
+      spikeLinesRef.current = []
+      if (host) {
+        for (const spec of deskSitLineSpecs({
+          kind: call.sitKind ?? 'NONE',
+          badgeText: nextSit,
+          playLine: nextSitHover,
+          spikeHigh: call.spikeHigh ?? null,
+          spikeLow: call.spikeLow ?? null,
+          gapHold: call.sitHold === true,
+          gapDead: false,
+          spikeReject: false,
+        })) {
+          try {
+            spikeLinesRef.current.push(
+              host.createPriceLine({
+                price: spec.price,
+                color: spec.color,
+                title: spec.title,
+                lineWidth: 1,
+                lineStyle: LineStyle.Dashed,
+                axisLabelVisible: true,
+              })
+            )
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    }
+    const regionKey = `${instrument}_${call.regionHigh ?? ''}_${call.regionLow ?? ''}_${nextRegion}`
+    if (regionKey !== regionPaintKeyRef.current) {
+      regionPaintKeyRef.current = regionKey
+      for (const line of regionLinesRef.current) {
+        try {
+          host?.removePriceLine(line)
+        } catch {
+          /* ignore */
+        }
+      }
+      regionLinesRef.current = []
+      if (host) {
+        for (const spec of longTermRegionLineSpecs({
+          instrument,
+          ready: call.regionHigh != null && call.regionLow != null,
+          mode: 'BRACKET',
+          location: 'mid',
+          acceptance: 'INSIDE',
+          high: call.regionHigh ?? null,
+          low: call.regionLow ?? null,
+          days: 5,
+          firstLegalOnly: call.regionVeto === true,
+          badgeText: nextRegion,
+          playLine: nextRegionHover,
+        })) {
+          try {
+            regionLinesRef.current.push(
+              host.createPriceLine({
+                price: spec.price,
+                color: spec.color,
+                title: spec.title,
+                lineWidth: 1,
+                lineStyle: LineStyle.Dashed,
+                axisLabelVisible: true,
+              })
+            )
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    }
   }, [
     instrument,
     rangeStrategy,
@@ -2583,6 +2777,7 @@ export function TradingChart({
       })),
       asOfUnix: resolveDeskCallAsOfUnix(instrument, lastBar, nowUnix),
       playbookMode,
+      attemptsUsed,
       bookLocked:
         attemptsUsed >= 3 || !!positionOverlay || !!pendingLimit,
       control: marketControlRef.current,
@@ -2635,7 +2830,7 @@ export function TradingChart({
         }
       }
     ) => {
-      const { strategyRange, snapRanges, ladder, call } = getStrategyRiskBundle()
+      const { strategyRange, snapRanges, ladder, call, strategyMagnets } = getStrategyRiskBundle()
       const wait = assertDeskTicketEntry({
         useCall: useCallRef.current,
         call,
@@ -2711,13 +2906,18 @@ export function TradingChart({
         }
         const entry = snapDeskPrice(instrument, center)
         const dir = gated.side
-        const sl = defaultManualStop(entry, dir)
+        const strat = strategyEntryRisk({
+          entry,
+          direction: dir,
+          activeRange: range,
+          magnets: strategyMagnets,
+        })
         setRiskBox({
           direction: dir,
           orderType: 'LIMIT',
           entryPrice: entry,
-          stopLoss: sl,
-          profitTarget: snapDeskPrice(instrument, defaultManualTarget(entry, sl, dir)),
+          stopLoss: snapDeskPrice(instrument, strat.stop),
+          profitTarget: snapDeskPrice(instrument, strat.target),
           preferRangeLabel: range.label ?? strategyRange?.label ?? null,
         })
         setRiskBoxActive(true)
@@ -2798,13 +2998,18 @@ export function TradingChart({
       }
       const entry = snapDeskPrice(instrument, snapped.price)
       const dir = gated.side
-      const sl = defaultManualStop(entry, dir)
+      const strat = strategyEntryRisk({
+        entry,
+        direction: dir,
+        activeRange: snapped.hit.range,
+        magnets: strategyMagnets,
+      })
       setRiskBox({
         direction: dir,
         orderType: 'LIMIT',
         entryPrice: entry,
-        stopLoss: sl,
-        profitTarget: snapDeskPrice(instrument, defaultManualTarget(entry, sl, dir)),
+        stopLoss: snapDeskPrice(instrument, strat.stop),
+        profitTarget: snapDeskPrice(instrument, strat.target),
         preferRangeLabel: snapped.hit.range.label ?? strategyRange?.label ?? null,
       })
       setRiskBoxActive(true)
@@ -2985,6 +3190,13 @@ export function TradingChart({
   const loadLevels = useCallback(async (inst: Instrument, freshCandles?: OHLCV[]) => {
     // No attendance / wrong desk / outside that instrument's level window → clear (never keep NY paint on NIKKEI)
     if (!deskLevelsActive || !isLevelPaintAllowed(new Date(), inst).open) {
+      if (instrumentRef.current === inst) {
+        setLevels([])
+        setPlaybookOpen(false)
+      }
+      return
+    }
+    if (SYSTEMATIC_LIVE_DESK) {
       if (instrumentRef.current === inst) {
         setLevels([])
         setPlaybookOpen(false)
@@ -3784,8 +3996,28 @@ export function TradingChart({
     }
     setCallBadge('WAIT')
     setCallHover(
-      'CALL WAIT — no ticket\n\nLeo and Level Finder advise only. No line.'
+      'CALL WAIT — no ticket\n\nTicket stays 1.5R. No Leo. No Level Finder fills.'
     )
+    setPerfBadge('WAIT')
+    setPerfHover(
+      'PERF WAIT — not enough letters for a developing value area. Drive may still CALL. Ticket stays 1.5R.'
+    )
+    setSitBadge('NONE')
+    setSitHover(
+      'SIT NONE — no special situation. CALL side unchanged. Ticket stays 1.5R.'
+    )
+    {
+      const host = priceLineHostRef.current
+      for (const line of spikeLinesRef.current) {
+        try {
+          host?.removePriceLine(line)
+        } catch {
+          /* ignore */
+        }
+      }
+      spikeLinesRef.current = []
+      spikePaintKeyRef.current = ''
+    }
     deskCallRef.current = null
     const or30S = or30SeriesRef.current
     if (or30S) {
@@ -6089,9 +6321,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         e.preventDefault()
         toggleFullscreen()
       } else if (key === 'v') {
+        if (SYSTEMATIC_LIVE_DESK) return
         e.preventDefault()
         setVoiceOpen((prev) => !prev)
       } else if (key === 'l') {
+        if (SYSTEMATIC_LIVE_DESK) return
         e.preventDefault()
         setShowLevels((prev) => !prev)
       } else if (key === 'b') {
@@ -6110,7 +6344,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         }
       } else if (key === 'u') {
         e.preventDefault()
-        if (instrument === 'NIKKEI') {
+        if (!SYSTEMATIC_LIVE_DESK && instrument === 'NIKKEI') {
           setShowUsRange((prev) => !prev)
         }
       } else if (key === 'r') {
@@ -6119,9 +6353,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           setShowOr30((prev) => !prev)
         }
       } else if (key === 'p') {
+        if (SYSTEMATIC_LIVE_DESK) return
         e.preventDefault()
         togglePlaybook()
       } else if (key === 'd') {
+        if (SYSTEMATIC_LIVE_DESK) return
         e.preventDefault()
         setDrawZoneActive((prev) => {
           if (prev) {
@@ -6134,6 +6370,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           }
         })
       } else if (key === 't') {
+        if (SYSTEMATIC_LIVE_DESK) return
         e.preventDefault()
         setDrawTimeActive((prev) => {
           if (prev) {
@@ -6410,6 +6647,68 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       return
     }
 
+    const asiaLive =
+      asiaOco &&
+      (asiaOco.event === 'place_both' ||
+        asiaOco.event === 'cancel_unfilled' ||
+        asiaOco.event === 'flatten')
+    if (asiaLive && asiaOco) {
+      const frac = asiaOco.instrument === 'GOLD' ? 1 : 0
+      const fmtA = (n: number) =>
+        n.toLocaleString('en-US', { maximumFractionDigits: frac })
+      paint([
+        {
+          price: asiaOco.asiaHigh,
+          color: '#26a69a',
+          label: `ASIA H ${fmtA(asiaOco.asiaHigh)}`,
+          style: LineStyle.Dotted,
+          width: 1,
+        },
+        {
+          price: asiaOco.asiaLow,
+          color: '#ef5350',
+          label: `ASIA L ${fmtA(asiaOco.asiaLow)}`,
+          style: LineStyle.Dotted,
+          width: 1,
+        },
+        {
+          price: asiaOco.buyStop,
+          color: '#00e676',
+          label: `BUY STOP ${fmtA(asiaOco.buyStop)} · ${asiaOco.contract} x ${asiaOco.contracts}`,
+          style: LineStyle.Solid,
+          width: 3,
+        },
+        {
+          price: asiaOco.sellStop,
+          color: '#ff1744',
+          label: `SELL STOP ${fmtA(asiaOco.sellStop)} · ${asiaOco.contract} x ${asiaOco.contracts}`,
+          style: LineStyle.Solid,
+          width: 3,
+        },
+        {
+          price: asiaOco.asiaMid,
+          color: '#ffeb3b',
+          label: `SL MID ${fmtA(asiaOco.asiaMid)}`,
+          style: LineStyle.Solid,
+          width: 2,
+        },
+        {
+          price: asiaOco.longTp,
+          color: '#69f0ae',
+          label: `LONG TP ${fmtA(asiaOco.longTp)}`,
+          style: LineStyle.Dotted,
+          width: 2,
+        },
+        {
+          price: asiaOco.shortTp,
+          color: '#ff8a80',
+          label: `SHORT TP ${fmtA(asiaOco.shortTp)}`,
+          style: LineStyle.Dotted,
+          width: 2,
+        },
+      ])
+    }
+
     if (pendingLimit) {
       const pend = editablePending ?? pendingLimit
       const dir = pend.direction.toUpperCase()
@@ -6440,7 +6739,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       ])
       return
     }
-  }, [positionOverlay, editableOverlay, pendingLimit, editablePending, filledBook, workingBook, aiVerdict, chartReady, clearHoverPreview, onAdjustBrackets, onAdjustWorkingBrackets])
+  }, [positionOverlay, editableOverlay, pendingLimit, editablePending, filledBook, workingBook, aiVerdict, chartReady, clearHoverPreview, onAdjustBrackets, onAdjustWorkingBrackets, asiaOco])
 
   /** Levels / playbook — strategy-aware titles (morning → IB → lunch break → lunch-range) */
   const tokyoDesk = instrument === 'NIKKEI'
@@ -6820,53 +7119,201 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     focusTick,
   ])
 
-  const wasInEdgeBandRef = useRef(false)
-  const edgeAlertPrimedRef = useRef(false)
-  const edgeAlertInstrumentRef = useRef(instrument)
+  const wasCallSetupRef = useRef(false)
+  const setupAlertPrimedRef = useRef(false)
+  const setupAlertInstrumentRef = useRef(instrument)
   useEffect(() => {
-    const nowIn = !!edgeProximity
-    if (edgeAlertInstrumentRef.current !== instrument) {
-      edgeAlertInstrumentRef.current = instrument
-      edgeAlertPrimedRef.current = false
-      wasInEdgeBandRef.current = false
+    const call = deskCallRef.current
+    const nowSetup = isNyCallSetup({
+      side: call?.side,
+      edge: edgeProximity?.edge,
+      bookLocked: call?.bookLocked,
+    })
+    if (setupAlertInstrumentRef.current !== instrument) {
+      setupAlertInstrumentRef.current = instrument
+      setupAlertPrimedRef.current = false
+      wasCallSetupRef.current = false
     }
-    // Remount/refresh: wait for a live price, then seed band membership so
-    // already-in-band after load ≠ rising edge (bare chart still computes ranges).
-    if (!edgeAlertPrimedRef.current) {
+    if (!setupAlertPrimedRef.current) {
       if (livePrice == null) return
-      edgeAlertPrimedRef.current = true
-      wasInEdgeBandRef.current = nowIn
-      return
+      setupAlertPrimedRef.current = true
+      wasCallSetupRef.current = nowSetup
     }
+
     if (
-      shouldFireRangeEdgeAlert(wasInEdgeBandRef.current, nowIn) &&
-      edgeProximity &&
+      nowSetup &&
+      call &&
+      call.side !== 'WAIT' &&
+      call.rangeKey &&
+      call.entryPrice != null &&
+      call.entryEdge &&
       livePrice != null &&
       onDeskAlert &&
       isDeskInstrument(instrument) &&
-      claimDeskNoteCooldown(
-        `range_edge_${edgeProximity.label}_${edgeProximity.edge}`,
-        instrument,
-        90_000
-      )
+      claimDeskNoteOnce(`call_setup_${call.side}_${call.rangeKey}`, instrument)
     ) {
-      const msg = formatRangeEdgeAlertMessage({
+      const telegram = formatCallSetupTelegram({
         instrument,
-        proximity: edgeProximity,
+        side: call.side,
+        rangeKey: call.rangeKey,
+        entryPrice: call.entryPrice,
+        edge: call.entryEdge,
         livePrice,
-        mode: 'either',
       })
       onDeskAlert({
-        ...msg,
+        kind: 'call_setup',
+        title: `SETUP ${instrument} · CALL ${call.side}`,
+        body: `${call.rangeKey} legal ±10 ${call.entryEdge.toUpperCase()} @ ${call.entryPrice.toLocaleString()}`,
+        telegram,
         instrument,
         dedupeKey: deskNoteClaimKey(
-          `range_edge_${edgeProximity.label}_${edgeProximity.edge}`,
+          `call_setup_${call.side}_${call.rangeKey}`,
           instrument
         ),
       })
     }
-    wasInEdgeBandRef.current = nowIn
-  }, [edgeProximity, livePrice, instrument, onDeskAlert])
+
+    if (
+      SYSTEMATIC_LIVE_DESK &&
+      nowSetup &&
+      canPlaceOrder &&
+      !positionOverlay &&
+      !pendingLimit &&
+      !riskBox &&
+      onLevelSelect &&
+      call &&
+      call.side !== 'WAIT' &&
+      call.entryPrice != null &&
+      call.entryEdge &&
+      isDeskInstrument(instrument) &&
+      claimDeskNoteOnce(
+        `auto_place_${call.side}_${call.rangeKey}_${attemptsUsed}`,
+        instrument
+      )
+    ) {
+      const { strategyRange, strategyMagnets } = getStrategyRiskBundleRef.current()
+      const entry = snapDeskPrice(instrument, call.entryPrice)
+      const gated = assertDeskTicketEntry({
+        useCall: true,
+        call,
+        edge: call.entryEdge,
+        direction: call.side,
+      })
+      if (gated.ok) {
+        const strat = strategyEntryRisk({
+          entry,
+          direction: gated.side,
+          activeRange: strategyRange,
+          magnets: strategyMagnets,
+        })
+        onLevelSelect(entry, {
+          source: 'structure',
+          type: 'structure',
+          orderType: 'LIMIT',
+          side: gated.side === 'LONG' ? 'BUY' : 'SHORT',
+          preferredDirection: gated.side,
+          reasoning: `SYSTEM CALL ${gated.side} ${call.rangeKey} legal ±10. Ticket: SL beyond range, TP 1.5R.`,
+          stopLoss: snapDeskPrice(instrument, strat.stop),
+          profitTarget: snapDeskPrice(instrument, strat.target),
+          strategyRange,
+          strategyMagnets,
+        })
+      }
+    }
+
+    wasCallSetupRef.current = nowSetup
+  }, [
+    edgeProximity,
+    livePrice,
+    instrument,
+    onDeskAlert,
+    onLevelSelect,
+    canPlaceOrder,
+    positionOverlay,
+    pendingLimit,
+    riskBox,
+    attemptsUsed,
+  ])
+
+  const lastAuctionEvalRef = useRef('')
+  const auctionSigRef = useRef<ReturnType<typeof evaluateAuctionLiveSignal>>(null)
+  useEffect(() => {
+    if (!SYSTEMATIC_LIVE_DESK) return
+    if (!isDeskInstrument(instrument) || instrument === 'NASDAQ') return
+    const nowUnix = Math.floor(Date.now() / 1000)
+    const bars = candlesRef.current
+    let lastClosed: (typeof bars)[number] | null = null
+    for (const c of bars) {
+      if (Number(c.time) + 300 <= nowUnix) lastClosed = c
+    }
+    if (!lastClosed) return
+    const lastClosedTime = Number(lastClosed.time)
+    const evalKey = `${instrument}:${lastClosedTime}:${lastClosed.close}:${lastClosed.volume}`
+    if (lastAuctionEvalRef.current !== evalKey) {
+      lastAuctionEvalRef.current = evalKey
+      auctionSigRef.current = evaluateAuctionLiveSignal({
+        instrument,
+        candles: bars.map((c) => ({
+          time: Number(c.time),
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: c.volume,
+        })),
+        nowUnix,
+      })
+    }
+    const sig = auctionSigRef.current
+    if (!sig) return
+
+    const setupClaim = `auction_setup_${sig.side}_${sig.fillUnix}`
+    if (onDeskAlert && claimDeskNoteOnce(setupClaim, instrument)) {
+      onDeskAlert({
+        kind: AUCTION_TELEGRAM_KIND,
+        title: `SETUP ${instrument} · AUCTION ${sig.side}`,
+        body: sig.note,
+        telegram: sig.telegram,
+        instrument,
+        dedupeKey: deskNoteClaimKey(setupClaim, instrument),
+      })
+    }
+
+    if (
+      canPlaceOrder &&
+      !positionOverlay &&
+      !pendingLimit &&
+      !riskBox &&
+      onLevelSelect &&
+      claimDeskNoteOnce(`auto_place_auction_${sig.side}_${sig.fillUnix}`, instrument)
+    ) {
+      onLevelSelect(snapDeskPrice(instrument, sig.entry), {
+        source: 'structure',
+        type: 'auction',
+        orderType: 'LIMIT',
+        side: sig.side === 'LONG' ? 'BUY' : 'SHORT',
+        preferredDirection: sig.side,
+        reasoning: sig.note,
+        stopLoss: snapDeskPrice(instrument, sig.stop),
+        profitTarget: snapDeskPrice(instrument, sig.target),
+        strategyRange: {
+          label: sig.rangeLabel,
+          high: sig.entry,
+          low: sig.entry,
+        },
+      })
+    }
+  }, [
+    candles,
+    livePrice,
+    instrument,
+    onDeskAlert,
+    onLevelSelect,
+    canPlaceOrder,
+    positionOverlay,
+    pendingLimit,
+    riskBox,
+  ])
 
   /** Rising edge: OR30 / IB / lunch / US Range fully shaped → structured Telegram note. */
   const prevRangeLocksRef = useRef({
@@ -7279,6 +7726,74 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </span>
         )}
 
+        {deskSessionLive && (
+          <span
+            title={perfHover}
+            className="group relative flex cursor-help items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border rounded-lg bg-transparent border-zinc-500/40 text-zinc-400"
+          >
+            <span className="w-2 h-2 rounded-full inline-block bg-zinc-500" />
+            <span>Perf</span>
+            <span className="text-[10px] font-normal text-zinc-400/80">{perfBadge}</span>
+            <span
+              role="tooltip"
+              className="pointer-events-none invisible absolute left-0 top-full z-50 mt-1 w-[22rem] whitespace-pre-wrap rounded-lg border border-zinc-500/40 bg-[#0d1117] px-2.5 py-2 text-left text-[10px] font-normal normal-case leading-snug tracking-normal text-zinc-200 shadow-xl group-hover:visible"
+            >
+              {perfHover}
+            </span>
+          </span>
+        )}
+
+        {deskSessionLive && (
+          <span
+            title={regionHover}
+            className="group relative flex cursor-help items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border rounded-lg bg-transparent border-zinc-500/40 text-zinc-400"
+          >
+            <span className="w-2 h-2 rounded-full inline-block bg-zinc-500" />
+            <span>Region</span>
+            <span className="text-[10px] font-normal text-zinc-400/80">{regionBadge}</span>
+            <span
+              role="tooltip"
+              className="pointer-events-none invisible absolute left-0 top-full z-50 mt-1 w-[22rem] whitespace-pre-wrap rounded-lg border border-zinc-500/40 bg-[#0d1117] px-2.5 py-2 text-left text-[10px] font-normal normal-case leading-snug tracking-normal text-zinc-200 shadow-xl group-hover:visible"
+            >
+              {regionHover}
+            </span>
+          </span>
+        )}
+
+        {deskSessionLive && (
+          <span
+            title={stayOutHover}
+            className="group relative flex cursor-help items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border rounded-lg bg-transparent border-zinc-500/40 text-zinc-400"
+          >
+            <span className="w-2 h-2 rounded-full inline-block bg-zinc-500" />
+            <span>Out</span>
+            <span className="text-[10px] font-normal text-zinc-400/80">{stayOutBadge}</span>
+            <span
+              role="tooltip"
+              className="pointer-events-none invisible absolute left-0 top-full z-50 mt-1 w-[22rem] whitespace-pre-wrap rounded-lg border border-zinc-500/40 bg-[#0d1117] px-2.5 py-2 text-left text-[10px] font-normal normal-case leading-snug tracking-normal text-zinc-200 shadow-xl group-hover:visible"
+            >
+              {stayOutHover}
+            </span>
+          </span>
+        )}
+
+        {deskSessionLive && (
+          <span
+            title={sitHover}
+            className="group relative flex cursor-help items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border rounded-lg bg-transparent border-zinc-500/40 text-zinc-400"
+          >
+            <span className="w-2 h-2 rounded-full inline-block bg-zinc-500" />
+            <span>Sit</span>
+            <span className="text-[10px] font-normal text-zinc-400/80">{sitBadge}</span>
+            <span
+              role="tooltip"
+              className="pointer-events-none invisible absolute left-0 top-full z-50 mt-1 w-[22rem] whitespace-pre-wrap rounded-lg border border-zinc-500/40 bg-[#0d1117] px-2.5 py-2 text-left text-[10px] font-normal normal-case leading-snug tracking-normal text-zinc-200 shadow-xl group-hover:visible"
+            >
+              {sitHover}
+            </span>
+          </span>
+        )}
+
         {/* Open range — all desk names (Press N) */}
         {deskSessionLive && isOr15Instrument(instrument) && (
           <button
@@ -7305,7 +7820,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         )}
 
         {/* Nikkei US Range H/L toggle (Press U) — IB-style lines only */}
-        {deskSessionLive && instrument === 'NIKKEI' && (
+        {deskSessionLive && !SYSTEMATIC_LIVE_DESK && instrument === 'NIKKEI' && (
           <button
             type="button"
             title={
@@ -7382,7 +7897,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </span>
         )}
 
-        {deskSessionLive && deskLevelsActive && (
+        {deskSessionLive && !SYSTEMATIC_LIVE_DESK && deskLevelsActive && (
           <button
             type="button"
             title={
@@ -7406,6 +7921,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
 
         {deskSessionLive &&
+          !SYSTEMATIC_LIVE_DESK &&
           deskLevelsActive &&
           afternoonWatch &&
           !canPlaceOrder &&
@@ -7597,6 +8113,17 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               {workingBook?.sizeNote ? ` · ${workingBook.sizeNote}` : ''}
             </span>
           )}
+          {asiaOco &&
+            asiaOco.event === 'place_both' &&
+            !positionOverlay && (
+              <span
+                className="text-xs px-2 py-0.5 rounded font-semibold border text-lime-200 border-lime-700 bg-lime-950/50"
+                title="Locked Asia recipe — place both stop orders on Tradovate. Lines are the live Trade Pulse working book."
+              >
+                ASIA OCO · BUY {asiaOco.buyStop.toLocaleString('en-US', { maximumFractionDigits: asiaOco.instrument === 'GOLD' ? 1 : 0 })} / SELL{' '}
+                {asiaOco.sellStop.toLocaleString('en-US', { maximumFractionDigits: asiaOco.instrument === 'GOLD' ? 1 : 0 })} · {asiaOco.contract} x {asiaOco.contracts}
+              </span>
+            )}
           {dataMode === 'live' ? (
             <span
               className={`flex items-center gap-1 text-xs ${candleFeed === 'yahoo' ? 'text-emerald-400' : 'text-amber-400'
@@ -7674,6 +8201,44 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               Call {callBadge}
             </span>
           </span>
+          <span title={perfHover}>
+            <span
+              className={
+                perfBadge === 'WAIT'
+                  ? 'text-gray-500'
+                  : perfBadge.startsWith('VERY STRONG') || perfBadge.startsWith('STRONG')
+                    ? 'text-emerald-400'
+                    : perfBadge.startsWith('SLOWING')
+                      ? 'text-amber-300'
+                      : perfBadge.startsWith('BALANCING')
+                        ? 'text-violet-300'
+                        : 'text-rose-300'
+              }
+            >
+              Perf {perfBadge}
+            </span>
+          </span>
+          <span title={regionHover}>
+            <span className="text-zinc-400">
+              Region {regionBadge}
+            </span>
+          </span>
+          <span title={stayOutHover}>
+            <span
+              className={
+                stayOutBadge.startsWith('OUT')
+                  ? 'text-zinc-300 font-semibold'
+                  : 'text-zinc-500'
+              }
+            >
+              Out {stayOutBadge}
+            </span>
+          </span>
+          <span title={sitHover}>
+            <span className="text-zinc-400">
+              Sit {sitBadge}
+            </span>
+          </span>
           <span title={ibExtendHover}>
             <span
               className={
@@ -7726,7 +8291,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               )}
             </span>
           )}
-          {instrument === 'NIKKEI' && (
+          {instrument === 'NIKKEI' && !SYSTEMATIC_LIVE_DESK && (
             <span title="Prior NYC session H/L on Tokyo cash">
               <span className={usRangeShaped ? 'text-red-400' : 'text-gray-600'}>
                 US H/L {usRangeShaped ? 'on' : 'Tokyo cash only'}
@@ -7853,10 +8418,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         />
 
         {/* Render Saved 2D Time Highlights */}
-        {renderSavedHighlightBoxes()}
+        {!SYSTEMATIC_LIVE_DESK && renderSavedHighlightBoxes()}
 
         {/* Saved Highlights List glassmorphism popup panel */}
-        {highlightsListOpen && (
+        {!SYSTEMATIC_LIVE_DESK && highlightsListOpen && (
           <div className="absolute top-3 right-3 z-30 w-80 rounded-xl border border-violet-500/50 bg-[#161b22]/95 shadow-2xl backdrop-blur-md p-4 space-y-3">
             <div className="flex items-center justify-between border-b border-violet-500/20 pb-2">
               <span className="text-xs font-bold uppercase tracking-wider text-violet-300 flex items-center gap-1.5">
@@ -7934,7 +8499,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             )}
           </div>
         )}
-        {positionOverlay && (
+        {positionOverlay && !SYSTEMATIC_LIVE_DESK && (
           <div className="pointer-events-none absolute left-3 top-3 z-20 max-w-[min(360px,70%)]">
             {aiVerdict ? (
               <div
@@ -7980,7 +8545,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         </button>
 
         {/* Live Voice coach — floating panel (self-contained card; toggle via Voice button) */}
-        {voiceOpen && (
+        {!SYSTEMATIC_LIVE_DESK && voiceOpen && (
           <div className="absolute bottom-20 left-3 z-30 max-w-[min(340px,calc(100vw-1.5rem))]">
             <LiveVoicePanel
               instrument={(lockedInstrument ?? instrument) as Instrument}
@@ -7993,7 +8558,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         )}
 
         {/* Drawn Zone confirmation popup — appears after drawing two points */}
-        {drawnZone && (
+        {!SYSTEMATIC_LIVE_DESK && drawnZone && (
           <div className="absolute bottom-20 right-3 z-40 w-64 rounded-xl border border-violet-500/40 bg-[#161b22]/95 shadow-2xl backdrop-blur-md p-3 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-violet-300 flex items-center gap-1.5">
@@ -8051,7 +8616,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         )}
 
         {/* Drawn Time confirmation popup */}
-        {drawnTime && (
+        {!SYSTEMATIC_LIVE_DESK && drawnTime && (
           <div className="absolute bottom-20 right-72 z-40 w-72 rounded-xl border border-violet-500/50 bg-[#161b22]/95 shadow-2xl backdrop-blur-md p-3.5 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-violet-300 flex items-center gap-1.5">
@@ -8571,7 +9136,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         )}
 
         {/* Playbook — hidden until Playbook (P); cards still refresh in the background */}
-        {deskLevelsActive && playbookOpen && (
+        {!SYSTEMATIC_LIVE_DESK && deskLevelsActive && playbookOpen && (
           <DraggableDeskWidget
             storageKey="desk-playbook-live"
             defaultPos={{ x: 24, y: 88 }}

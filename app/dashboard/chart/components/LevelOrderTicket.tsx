@@ -77,6 +77,8 @@ export interface PendingLimitOrder {
   workingId?: string
   /** Active playbook range for ±10 entry gate (API + fill) */
   strategyRange?: StrategyRangeEdges | null
+  /** Auction entrance — skip CALL ±10; still 3-fill + Tradeify. */
+  auctionTicket?: boolean
 }
 
 /** Filled position handed to MANAGE. */
@@ -542,20 +544,23 @@ export function LevelOrderTicket({
     }
     const range = strategyRange
     let limit = snappedLimit
-    let edge = assertRangeEdgeEntry({ entry: limit, range })
-    if (!edge.ok && range) {
-      const snapped = snapEntryToNearestOpenBandCenter({
-        entry: limit,
-        candidates: [range],
-      })
-      if (snapped) {
-        limit = snapped.price
-        edge = assertRangeEdgeEntry({ entry: limit, range: snapped.hit.range })
+    const isAuction = levelType === 'auction'
+    if (!isAuction) {
+      let edge = assertRangeEdgeEntry({ entry: limit, range })
+      if (!edge.ok && range) {
+        const snapped = snapEntryToNearestOpenBandCenter({
+          entry: limit,
+          candidates: [range],
+        })
+        if (snapped) {
+          limit = snapped.price
+          edge = assertRangeEdgeEntry({ entry: limit, range: snapped.hit.range })
+        }
       }
-    }
-    if (!edge.ok) {
-      failSubmit(edge.message)
-      return false
+      if (!edge.ok) {
+        failSubmit(edge.message)
+        return false
+      }
     }
     if (!preview) {
       failSubmit(
@@ -617,6 +622,7 @@ export function LevelOrderTicket({
       level: limit,
       levelType: isManual ? 'manual' : levelType,
       entrySource,
+      auctionTicket: isAuction,
       entryReason:
         entryReason ||
         (isManual

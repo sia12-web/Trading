@@ -25,6 +25,7 @@ export type ManageBookStructure = {
   openingAgainst: boolean
   controlAgainst: boolean
   callAgainst: boolean
+  perfLeave: boolean
   factors: string[]
 }
 
@@ -44,6 +45,7 @@ export function structureVsOpenBook(args: {
   failedDrive?: boolean
   controlLabel?: ControlLabel | null
   callSide?: DeskCallSide | null
+  perfLeave?: boolean
 }): ManageBookStructure {
   const long = isLongDir(args.direction)
   const tip = Number(args.tip)
@@ -106,6 +108,11 @@ export function structureVsOpenBook(args: {
     factors.push(`CALL ${args.callSide}`)
   }
 
+  const perfLeave = args.perfLeave === true
+  if (perfLeave) {
+    factors.push('LEAVE — Perf WEAK/UNCLEAR (banner only, no auto-flatten)')
+  }
+
   return {
     rangeState,
     rangeLabel: label,
@@ -115,6 +122,7 @@ export function structureVsOpenBook(args: {
     openingAgainst,
     controlAgainst,
     callAgainst,
+    perfLeave,
     factors,
   }
 }
@@ -178,6 +186,7 @@ export function structureFromRangeBrief(args: {
     } | null
     control: { label: ControlLabel } | null
     call: { side: DeskCallSide } | null
+    perfLeave?: boolean
   }
 }): ManageBookStructure {
   return structureVsOpenBook({
@@ -191,5 +200,6 @@ export function structureFromRangeBrief(args: {
     failedDrive: args.brief.opening?.failedDrive === true,
     controlLabel: args.brief.control?.label ?? null,
     callSide: args.brief.call?.side ?? null,
+    perfLeave: args.brief.perfLeave === true,
   })
 }

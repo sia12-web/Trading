@@ -331,8 +331,8 @@ export async function assertServerRangeEdgeEntry(args: {
   now?: Date
   direction?: 'LONG' | 'SHORT'
   /**
-   * Clock-in CALL choice. `true` / omitted = CALL must agree.
-   * `false` = regular playbook ±10. `null` = not answered.
+   * Live desk is always CALL ON. `false` is ignored (still CALL-gated).
+   * `null` still means not clocked / not answered.
    */
   useCall?: boolean | null
 }): Promise<{ ok: true; range: RangeEdgeLevels } | { ok: false; message: string }> {
@@ -436,22 +436,21 @@ export async function assertServerRangeEdgeEntry(args: {
     return { ok: false, message: bucketCheck.message }
   }
 
-  if (args.useCall !== false) {
-    const nowUnix = Math.floor((args.now ?? new Date()).getTime() / 1000)
-    const call = computeDeskCall({
-      instrument: args.instrument,
-      candles: bundle.deskBars,
-      asOfUnix: nowUnix,
-      playbookMode: bundle.playbookMode,
-    })
-    const callGate = assertDeskCallEntry({
-      call,
-      edge: rangeEdgeKindAt(args.entry, attributed),
-      direction: args.direction ?? null,
-    })
-    if (!callGate.ok) {
-      return { ok: false, message: callGate.message }
-    }
+  const nowUnix = Math.floor((args.now ?? new Date()).getTime() / 1000)
+  const call = computeDeskCall({
+    instrument: args.instrument,
+    candles: bundle.deskBars,
+    asOfUnix: nowUnix,
+    playbookMode: bundle.playbookMode,
+    attemptsUsed: ladder.dayAttempts,
+  })
+  const callGate = assertDeskCallEntry({
+    call,
+    edge: rangeEdgeKindAt(args.entry, attributed),
+    direction: args.direction ?? null,
+  })
+  if (!callGate.ok) {
+    return { ok: false, message: callGate.message }
   }
 
   return { ok: true, range: attributed }

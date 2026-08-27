@@ -27,7 +27,7 @@ import {
   type DeskRiskProfile,
 } from '@/lib/trading/tradeifyProfile'
 import { formatTradeifyBannerChip } from '@/lib/trading/tradeifyGrowth50k'
-import { DeskCallModePrompt } from './DeskCallModePrompt'
+import { SYSTEMATIC_LIVE_DESK } from '@/lib/trading/systematicDesk'
 import { LTARModal } from './LTARModal'
 
 export interface SessionGateState {
@@ -49,7 +49,9 @@ export interface SessionGateState {
   attendedToday?: boolean
   canClockIn?: boolean
   glanceOnly?: boolean
-  /** Clock-in CALL choice: true = CALL gate, false = regular ±10, null = not answered */
+  /** GOLD/DOW Asia overnight book — chart unlocked outside NY cash */
+  asiaDeskActive?: boolean
+  /** Live desk is always CALL ON when clocked in. */
   useCall?: boolean | null
   market?: 'NY' | 'TOKYO'
   timeEst: string
@@ -137,8 +139,6 @@ export function SessionBanner({
   const [clockLabel, setClockLabel] = useState('Montreal')
   const [mounted, setMounted] = useState(false)
 
-  const [callModeBusy, setCallModeBusy] = useState(false)
-  const [callModeError, setCallModeError] = useState<string | null>(null)
   const prepFiredRef = useRef<string | null>(null)
   const [newsHazard, setNewsHazard] = useState<DeskNewsHazard | null>(null)
   const [newsUnavailable, setNewsUnavailable] = useState(false)
@@ -244,8 +244,8 @@ export function SessionBanner({
         attendedToday: !!json.attendedToday,
         canClockIn: !!json.canClockIn,
         glanceOnly: !!json.glanceOnly,
-        useCall:
-          json.useCall === true ? true : json.useCall === false ? false : null,
+        asiaDeskActive: !!json.asiaDeskActive,
+        useCall: json.clockedIn ? true : null,
         market: json.market,
         timeEst: json.timeEst,
         entryWindow: json.entryWindow,
@@ -356,6 +356,7 @@ export function SessionBanner({
           }
         }
       }
+      if (!SYSTEMATIC_LIVE_DESK) {
       // Fetch Day Timeframe (Layer 1) Specialist state
       const targetInst = viewingInstrument || next.lockedInstrument || 'DOW'
       fetch(`/api/trading/htf-context?instrument=${encodeURIComponent(targetInst)}`)
@@ -407,6 +408,7 @@ export function SessionBanner({
           }
         })
         .catch(() => { })
+      }
     } catch {
       setGateError('Session gate unreachable — check deploy / network')
     }
@@ -465,46 +467,6 @@ export function SessionBanner({
   }, [gate?.lockedInstrument, viewingInstrument, refreshKey])
 
 
-
-  const handleCallMode = useCallback(
-    async (useCall: boolean) => {
-      if (callModeBusy) return
-      setCallModeBusy(true)
-      setCallModeError(null)
-      try {
-        const res = await fetch('/api/trading/call-mode', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            useCall,
-            market: gate?.market,
-            instrument: viewingInstrument || gate?.lockedInstrument,
-          }),
-        })
-        const json = await res.json().catch(() => ({}))
-        if (!res.ok) {
-          setCallModeError(
-            typeof json.error === 'string' && json.error
-              ? json.error
-              : `CALL choice failed (${res.status})`
-          )
-          return
-        }
-        await refresh()
-      } catch {
-        setCallModeError('Could not save CALL choice — check network')
-      } finally {
-        setCallModeBusy(false)
-      }
-    },
-    [
-      callModeBusy,
-      gate?.market,
-      gate?.lockedInstrument,
-      viewingInstrument,
-      refresh,
-    ]
-  )
 
   useEffect(() => {
     setMounted(true)
@@ -612,6 +574,14 @@ export function SessionBanner({
         <span className="rounded bg-emerald-500/25 px-2 py-0.5 text-emerald-200 font-semibold text-xs border border-emerald-500/40">
           ⚡ SYSTEM AUTOMATED (RUNS AT 9:30 AM RTH)
         </span>
+        {gate.asiaDeskActive && (
+          <span
+            className="rounded bg-lime-500/25 px-2 py-0.5 text-lime-200 font-semibold text-xs border border-lime-500/40"
+            title="Overnight Asia range book — GOLD MGC <60/10 and DOW MYM <80/20. Place both stops on Tradovate. Chart is live."
+          >
+            ASIA DESK · BOTH STOPS
+          </span>
+        )}
         {gate.clockedIn && (
           <span
             className="rounded bg-sky-500/25 px-2 py-0.5 text-sky-200 font-semibold text-xs border border-sky-500/40"
@@ -620,7 +590,7 @@ export function SessionBanner({
             SYSTEM CALL ONLY
           </span>
         )}
-        {htfStatus && (
+        {!SYSTEMATIC_LIVE_DESK && htfStatus && (
           <span
             className={`rounded px-2 py-0.5 font-semibold text-[10px] uppercase tracking-wide border ${htfStatus === 'BUYING_EXCESS'
               ? 'bg-emerald-500/25 text-emerald-200 border-emerald-500/40'
@@ -643,7 +613,7 @@ export function SessionBanner({
             Day TF: {htfStatus.replace(/_/g, ' ')}
           </span>
         )}
-        {htfPerf && (
+        {!SYSTEMATIC_LIVE_DESK && htfPerf && (
           <span
             className={`rounded px-2 py-0.5 font-semibold text-[10px] uppercase tracking-wide border ${htfPerf.grade === 'VERY_STRONG'
               ? 'bg-emerald-500/30 text-emerald-200 border-emerald-400/50'
@@ -660,7 +630,7 @@ export function SessionBanner({
             Perf: {htfPerf.grade.replace(/_/g, ' ')} ({htfPerf.targetMultiplier}x Target)
           </span>
         )}
-        {htfBracket && (
+        {!SYSTEMATIC_LIVE_DESK && htfBracket && (
           <span
             className={`rounded px-2 py-0.5 font-semibold text-[10px] uppercase tracking-wide border ${htfBracket.tradeLocationGrade === 'RESPONSIVE_LONG'
               ? 'bg-emerald-500/30 text-emerald-200 border-emerald-400/50'
@@ -675,7 +645,7 @@ export function SessionBanner({
             Bracket: {htfBracket.tradeLocationGrade.replace(/_/g, ' ')}
           </span>
         )}
-        {htfCorr && htfCorr.type !== 'NONE' && (
+        {!SYSTEMATIC_LIVE_DESK && htfCorr && htfCorr.type !== 'NONE' && (
           <span
             className={`rounded px-2 py-0.5 font-semibold text-[10px] uppercase tracking-wide border ${htfCorr.type === 'DISGUISED_BULLISH_CORRECTION'
               ? 'bg-emerald-500/35 text-emerald-100 border-emerald-400/60 animate-pulse font-bold'
@@ -688,7 +658,7 @@ export function SessionBanner({
             Corr: {htfCorr.type.replace(/_/g, ' ')}
           </span>
         )}
-        {htfSituation && htfSituation.activeSituation !== 'NONE' && (
+        {!SYSTEMATIC_LIVE_DESK && htfSituation && htfSituation.activeSituation !== 'NONE' && (
           <span
             className={`rounded px-2 py-0.5 font-semibold text-[10px] uppercase tracking-wide border ${htfSituation.activeSituation.includes('BULL') || htfSituation.activeSituation.includes('BUYING')
               ? 'bg-emerald-500/35 text-emerald-100 border-emerald-400/60 font-bold'
@@ -701,7 +671,7 @@ export function SessionBanner({
             Situation: {htfSituation.activeSituation.replace(/_/g, ' ')} ({htfSituation.continuationProbabilityPct}%)
           </span>
         )}
-        {htfStandAside && htfStandAside.isStandAside && (
+        {!SYSTEMATIC_LIVE_DESK && htfStandAside && htfStandAside.isStandAside && (
           <span
             className="rounded px-2 py-0.5 font-bold text-[10px] uppercase tracking-wide border bg-rose-500/40 text-rose-100 border-rose-400 animate-pulse flex items-center gap-1"
             title={`Market Stand-Aside Warning: ${htfStandAside.reason} | ${htfStandAside.directiveSummary}`}
@@ -710,6 +680,7 @@ export function SessionBanner({
             <span>{htfStandAside.reason.replace(/_/g, ' ')}</span>
           </span>
         )}
+        {!SYSTEMATIC_LIVE_DESK && (
         <button
           type="button"
           onClick={() => setIsLtarOpen(true)}
@@ -719,6 +690,8 @@ export function SessionBanner({
           <span>LTAR</span>
           <span className="text-[9px]">📋</span>
         </button>
+        )}
+        {!SYSTEMATIC_LIVE_DESK && (
         <button
           type="button"
           onClick={() => setIsActivityRecordOpen(true)}
@@ -728,6 +701,7 @@ export function SessionBanner({
           <span>9:30 AM RTH</span>
           <span className="text-[9px]">⏱️</span>
         </button>
+        )}
 
         {gate.phase === 'ENTRY' && gate.clockedIn && (
           <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-emerald-300">
@@ -763,7 +737,7 @@ export function SessionBanner({
             title="Tradeify $50k · $400 → $250 → $150 · SL beyond range · TP 1.5R (1:1.5). Session max 3 fills. Up to 2 per window. Flatten 16:59 ET. Working limits do not count until filled."
           >
             {gate.attemptLadderLabel ||
-              `Session ${gate.attemptsUsed ?? 0}/${gate.maxAttempts ?? MAX_DAY_ATTEMPTS} · AM ${gate.morningAttempts ?? 0}/${gate.maxMorningAttempts ?? 2} · IB ${gate.ibAttempts ?? 0}/${gate.maxIbAttempts ?? 2} · LN ${gate.lunchAttempts ?? 0}/${gate.maxLunchAttempts ?? 2}`}
+              `Session ${gate.attemptsUsed ?? 0}/${gate.maxAttempts ?? MAX_DAY_ATTEMPTS} · AM ${gate.morningAttempts ?? 0}/${gate.maxMorningAttempts ?? 2} · 30 ${gate.ibAttempts ?? 0}/${gate.maxIbAttempts ?? 2} · IB ${gate.lunchAttempts ?? 0}/${gate.maxLunchAttempts ?? 2}`}
             {(gate.stopHits ?? 0) > 0
               ? ` · Stops ${gate.stopHits}/${gate.maxStopHits ?? 2}`
               : ''}
@@ -824,13 +798,6 @@ export function SessionBanner({
                 : `OANDA ${quoteAgeSec}s`}
         </span>
 
-        <Link
-          href="/dashboard/simulation"
-          className="text-[10px] uppercase tracking-wider text-violet-300 hover:text-violet-100"
-        >
-          Simulation
-        </Link>
-
         <button
           type="button"
           onClick={refresh}
@@ -839,12 +806,6 @@ export function SessionBanner({
           Refresh
         </button>
       </div>
-      <DeskCallModePrompt
-        open={!!gate.clockedIn && gate.useCall == null}
-        busy={callModeBusy}
-        error={callModeError}
-        onChoose={handleCallMode}
-      />
       <LTARModal
         isOpen={isLtarOpen}
         onClose={() => setIsLtarOpen(false)}

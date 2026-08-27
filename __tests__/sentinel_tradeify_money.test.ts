@@ -390,9 +390,12 @@ test('risk-profile: GET/POST require desk user', () => {
 test('Railway flatten watch is wired on boot', () => {
   const boot = src('instrumentation.ts')
   assert.ok(boot.includes('startTradeifyFlattenWatch'))
+  assert.ok(boot.includes('startAsiaDeskWatch'))
   const watch = src('lib/trading/tradeifyFlattenWatch.ts')
   assert.ok(watch.includes('cleanupDeskSession'))
   assert.ok(watch.includes('tradeifyMustFlatten'))
+  const asia = src('lib/trading/asiaDeskWatch.ts')
+  assert.ok(asia.includes('runAsiaDeskScanForDeskUser'))
 })
 
 test('chart initial risk-box TP uses 1.5R helper not 1.0105', () => {

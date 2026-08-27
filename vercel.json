@@ -55,6 +55,18 @@
     {
       "path": "/api/trading/late-desk-brief?market=TOKYO",
       "schedule": "0 1 * * 1-5"
+    },
+    {
+      "path": "/api/trading/asia-scan",
+      "schedule": "*/5 6-8 * * 1-5"
+    },
+    {
+      "path": "/api/trading/asia-scan",
+      "schedule": "30 15 * * 1-5"
+    },
+    {
+      "path": "/api/trading/asia-scan",
+      "schedule": "30 16 * * 1-5"
     }
   ]
 }

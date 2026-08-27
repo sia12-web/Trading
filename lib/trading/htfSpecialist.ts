@@ -108,6 +108,7 @@ export type HTFDirectionalPerformanceGrade =
     | 'BALANCING'
     | 'SLOWING'
     | 'WEAK'
+    | 'UNCLEAR'
     | 'FAILING_DIVERGENCE'
 
 export type HTFDynamicRiskReward = {
@@ -1512,7 +1513,9 @@ export function computeHTFContextState(args: {
     // Directional Performance & LTAR Calculation (Pages 157–177)
     const { placement: vaPlacement, vaHigh, vaLow, vaWidth } = computeValueAreaPlacement(candles5m)
     const attemptedDir = rotationFactor.trend === 'OTF_BUYER_CONTROL' ? 'UP' : rotationFactor.trend === 'OTF_SELLER_CONTROL' ? 'DOWN' : 'BALANCED'
-    const volumeRel: 'HIGHER' | 'LOWER' | 'UNCHANGED' = 'HIGHER' // Relative volume against median
+    // Live desk Perf is directionalPerformance.ts — do not hardcode HIGHER here
+    // to stretch ticket R. This HTF grade is recap-only.
+    const volumeRel: 'HIGHER' | 'LOWER' | 'UNCHANGED' = 'UNCHANGED'
     const perfGrade = evaluateDirectionalPerformanceMatrix(attemptedDir, volumeRel, vaPlacement)
     const dynamicRR = computeDynamicRiskReward(perfGrade, attemptedDir, candles5m, vaHigh, vaLow)
 

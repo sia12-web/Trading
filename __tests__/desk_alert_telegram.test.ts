@@ -1,5 +1,5 @@
 /**
- * Desk toast vs Telegram — empty telegram is on-screen only.
+ * Desk toast vs Telegram — CALL setup only.
  * Run: npx tsx __tests__/desk_alert_telegram.test.ts
  */
 
@@ -17,7 +17,7 @@ assert(
     'CALL WAIT',
     'CALL WAIT — hunt nothing new. Open and Control don’t agree yet, or there is no legal ±10.'
   ) ===
-  'CALL WAIT — hunt nothing new. Open and Control don’t agree yet, or there is no legal ±10.',
+    'CALL WAIT — hunt nothing new. Open and Control don’t agree yet, or there is no legal ±10.',
   'toast does not duplicate CALL WAIT'
 )
 assert(
@@ -36,11 +36,29 @@ assert(
 )
 assert(
   deskAlertTelegramText({
+    kind: 'auction_setup',
+    title: 'SETUP DOW · AUCTION SHORT',
+    body: '15M volume-bar FAIL',
+    telegram: 'SETUP DOW · AUCTION SHORT',
+  }) === 'SETUP DOW · AUCTION SHORT',
+  'auction setup sends telegram'
+)
+assert(
+  deskAlertTelegramText({
+    kind: 'call_setup',
+    title: 'SETUP DOW · CALL LONG',
+    body: 'OR30 legal ±10 LOW',
+    telegram: 'SETUP DOW · CALL LONG',
+  }) === 'SETUP DOW · CALL LONG',
+  'CALL setup sends telegram'
+)
+assert(
+  deskAlertTelegramText({
     title: 'CLOCK IN',
     body: 'DOW locked',
     telegram: 'CLOCK IN\nDOW locked',
-  }) === 'CLOCK IN\nDOW locked',
-  'explicit telegram still sends'
+  }) === null,
+  'clock-in is toast-only'
 )
 assert(
   deskAlertTelegramText({
@@ -57,6 +75,13 @@ assert(
     body: 'Price in band',
   }) === null,
   'band proximity alert is suppressed from telegram'
+)
+assert(
+  deskAlertTelegramText({
+    kind: 'range_shaped',
+    telegram: 'OR30 LOCKED',
+  }) === null,
+  'range lock is toast-only'
 )
 
 console.log('desk_alert_telegram.test.ts: all assertions passed')

@@ -13,6 +13,7 @@ import {
   breakEvenShouldOffer,
 } from '@/lib/trading/breakEvenStop'
 import { ValueAcceptanceRead } from './ValueAcceptanceRead'
+import { SYSTEMATIC_LIVE_DESK } from '@/lib/trading/systematicDesk'
 
 type Direction = 'long' | 'short'
 
@@ -83,6 +84,13 @@ interface Props {
     message: string
     confidence: number
   }) => void
+  /** Perf LEAVE — banner only, never auto-flatten */
+  perfLeave?: boolean
+  perfBadge?: string | null
+  leaveLine?: string | null
+  sitHold?: boolean
+  sitBadge?: string | null
+  sitPlayLine?: string | null
 }
 
 export function ManageDeskBar({
@@ -95,6 +103,12 @@ export function ManageDeskBar({
   onBreakEvenAvailable,
   onBrokerExit,
   onValueAccepted,
+  perfLeave = false,
+  perfBadge = null,
+  leaveLine = null,
+  sitHold = false,
+  sitBadge = null,
+  sitPlayLine = null,
 }: Props) {
   const [ai, setAi] = useState<AiVerdict | null>(null)
   const [recommendation, setRecommendation] = useState<{
@@ -357,37 +371,39 @@ export function ManageDeskBar({
       }
 
       // 2. Run AI Reversal & News / RVOL Exit Check
-      const res = await fetch('/api/trading/positions/ai-exit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          position_id: position.id,
-          current_price: priceRef.current ?? undefined,
-        }),
-      })
-      if (!res.ok) return
-      const json = await res.json()
-      setAi({
-        verdict: json.verdict,
-        confidence: json.confidence,
-        reason: json.reason,
-        news_score: json.news_score,
-        headlines: json.headlines,
-        move_pct: json.move_pct,
-        rvol: json.rvol,
-        rvol_source: json.rvol_source,
-        factors: json.factors,
-        options: json.options ?? null,
-        closed: false,
-      })
-      if (json.requires_confirmation && !exitDismissedRef.current) {
-        setExitPrompt({
-          reason: json.reason || 'AI recommends exiting on reversal',
-          confidence: json.confidence ?? 0,
+      if (!SYSTEMATIC_LIVE_DESK) {
+        const res = await fetch('/api/trading/positions/ai-exit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            position_id: position.id,
+            current_price: priceRef.current ?? undefined,
+          }),
         })
-      } else if (!json.requires_confirmation) {
-        setExitPrompt(null)
-        setExitDismissed(false)
+        if (!res.ok) return
+        const json = await res.json()
+        setAi({
+          verdict: json.verdict,
+          confidence: json.confidence,
+          reason: json.reason,
+          news_score: json.news_score,
+          headlines: json.headlines,
+          move_pct: json.move_pct,
+          rvol: json.rvol,
+          rvol_source: json.rvol_source,
+          factors: json.factors,
+          options: json.options ?? null,
+          closed: false,
+        })
+        if (json.requires_confirmation && !exitDismissedRef.current) {
+          setExitPrompt({
+            reason: json.reason || 'AI recommends exiting on reversal',
+            confidence: json.confidence ?? 0,
+          })
+        } else if (!json.requires_confirmation) {
+          setExitPrompt(null)
+          setExitDismissed(false)
+        }
       }
     } catch {
       /* keep last */
@@ -778,7 +794,7 @@ export function ManageDeskBar({
         </p>
       )}
       {/* ── AI exit requires explicit trader CONFIRM (never auto-closes) ────── */}
-      {exitPrompt && (
+      {!SYSTEMATIC_LIVE_DESK && exitPrompt && (
         <div className="rounded border border-red-500/70 bg-red-950/40 p-1.5 space-y-1">
           <p className="text-[9px] font-bold uppercase tracking-wide text-red-300">
             AI exit · {exitPrompt.confidence}%
@@ -894,7 +910,26 @@ export function ManageDeskBar({
 
       {valueAcceptance && <ValueAcceptanceRead read={valueAcceptance} />}
 
-      {ai ? (
+      {SYSTEMATIC_LIVE_DESK ? (
+        <div className="space-y-0.5 text-[10px]">
+          {perfLeave ? (
+            <p className="font-bold uppercase tracking-wide text-rose-300" title={leaveLine ?? undefined}>
+              LEAVE · Perf {perfBadge || 'WEAK'} — banner only, not auto-flatten
+            </p>
+          ) : sitHold ? (
+            <p className="text-emerald-300" title={sitPlayLine ?? undefined}>
+              HOLD · {sitBadge || 'GAP · hold'} — gap holding, not auto-flatten
+            </p>
+          ) : (
+            <p className="text-gray-400" title={leaveLine ?? undefined}>
+              Perf {perfBadge || 'WAIT'} · ticket stays 1.5R
+            </p>
+          )}
+          {leaveLine && (
+            <p className="text-[9px] text-gray-500 leading-snug line-clamp-2">{leaveLine}</p>
+          )}
+        </div>
+      ) : ai ? (
         <div className="space-y-0.5 text-[10px]">
           <div className="flex items-baseline gap-x-1.5 min-w-0">
             <span className={`font-semibold uppercase shrink-0 ${verdictColor}`}>
@@ -998,15 +1033,17 @@ export function ManageDeskBar({
         >
           {busy === 'TAKE_PROFIT' ? '…' : 'TAKE PROFIT'}
         </button>
-        <button
-          type="button"
-          disabled={!!busy}
-          onClick={() => pollAi()}
-          className="px-2 py-1 rounded text-[10px] font-semibold border border-[#30363d] text-gray-500 hover:text-white"
-          title="Re-run AI check now"
-        >
-          ↻ AI
-        </button>
+        {!SYSTEMATIC_LIVE_DESK && (
+          <button
+            type="button"
+            disabled={!!busy}
+            onClick={() => pollAi()}
+            className="px-2 py-1 rounded text-[10px] font-semibold border border-[#30363d] text-gray-500 hover:text-white"
+            title="Re-run AI check now"
+          >
+            ↻ AI
+          </button>
+        )}
       </div>
       {msg && <p className="text-[9px] text-gray-400 truncate">{msg}</p>}
     </div>

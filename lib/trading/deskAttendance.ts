@@ -23,7 +23,9 @@ import {
 } from '@/lib/chart/traderDisplayTz'
 import {
   DESK_CALL_MODE_JOURNAL_KEY,
-  attendanceCallMode,
+  LIVE_CALL_REGULAR_REFUSED,
+  LIVE_DESK_USE_CALL,
+  parseDeskCallMode,
 } from '@/lib/trading/deskCallMode'
 import { assertLiveClockIn, LIVE_CLOCK_REFUSE } from '@/lib/trading/liveDeskBook'
 
@@ -342,6 +344,7 @@ export async function clockIn(
       status: 'clocked_in',
       clock_in_at: new Date().toISOString(),
       late_join: lateJoin,
+      morning_journal: { [DESK_CALL_MODE_JOURNAL_KEY]: LIVE_DESK_USE_CALL },
     })
     .select('*')
     .single()
@@ -476,28 +479,32 @@ export async function autoLunchClockOut(
   return closed
 }
 
-export { attendanceCallMode }
+export { attendanceCallMode } from '@/lib/trading/deskCallMode'
 
 /**
- * Persist the post clock-in CALL / regular choice on today's attendance.
- * First answer is required; later switches are allowed (ticket gate only).
+ * Persist CALL ON on today's attendance. Regular ±10 is refused.
  */
 export async function setAttendanceUseCall(
   supabase: SupabaseClient,
   userId: string,
   args: { market: DeskMarket; useCall: boolean }
 ): Promise<{ ok: true; row: DeskAttendanceRow } | { ok: false; error: string }> {
+  if (args.useCall !== true) {
+    return { ok: false, error: LIVE_CALL_REGULAR_REFUSED }
+  }
   const existing = await getTodayAttendance(supabase, userId, args.market)
   if (!existing || existing.status !== 'clocked_in') {
     return { ok: false, error: 'Clock in first' }
   }
-  const current = attendanceCallMode(existing.morning_journal)
-  if (current === args.useCall) {
+  const stored = parseDeskCallMode(
+    existing.morning_journal?.[DESK_CALL_MODE_JOURNAL_KEY]
+  )
+  if (stored === true) {
     return { ok: true, row: existing }
   }
   const journal = {
     ...existing.morning_journal,
-    [DESK_CALL_MODE_JOURNAL_KEY]: args.useCall,
+    [DESK_CALL_MODE_JOURNAL_KEY]: LIVE_DESK_USE_CALL,
   }
   const { data, error } = await supabase
     .from('desk_attendance')

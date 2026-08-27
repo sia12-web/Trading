@@ -35,6 +35,7 @@ import { resolveMoneyRiskProfile } from '@/lib/trading/tradeifyProfileStore'
 import { resolveServerTradeifyPlace } from '@/lib/trading/tradeifySessionState'
 import { TRADEIFY_STARTING_BALANCE } from '@/lib/trading/tradeifyGrowth50k'
 import { assertServerRangeEdgeEntry } from '@/lib/trading/serverPlaybookRange'
+import { isAuctionTicketPayload } from '@/lib/trading/auctionLiveSignal'
 import { logEntryDenied, logWorkingPlaced } from '@/lib/utils/deskAuditLog'
 import { formatWorkingLimitAlreadyMessage } from '@/lib/trading/workingLimitGate'
 import { assertProtectiveStop } from '@/lib/trading/stopLossGuard'
@@ -310,42 +311,44 @@ export async function POST(request: Request) {
     const regimeConf = Number(body.regime_confidence ?? body.regimeConfidence) || 70
     const entrySource = normalizeEntrySource(body.entry_source)
 
-    const edgeCheck = await assertServerRangeEdgeEntry({
-      instrument,
-      entry: level,
-      clientRange:
-        body.range_high != null && body.range_low != null
-          ? {
-              high: Number(body.range_high),
-              low: Number(body.range_low),
-              label: body.range_label ?? null,
-            }
-          : null,
-      rangeStrategy: gate.rangeStrategy,
-      morningAttempts: gate.morningAttempts,
-      ibAttempts: gate.ibAttempts,
-      lunchAttempts: gate.lunchAttempts,
-      direction,
-      useCall: attendanceCallMode(attendance?.morning_journal),
-    })
-    if (!edgeCheck.ok) {
-      logEntryDenied({
-        route: 'working',
-        reason: 'range_edge',
+    if (!isAuctionTicketPayload(body)) {
+      const edgeCheck = await assertServerRangeEdgeEntry({
         instrument,
-        message: edgeCheck.message,
-        status: 400,
-        phase: gate.phase,
-        ladder: gate.attemptLadderLabel,
-        rangeStrategy: gate.rangeStrategy,
         entry: level,
+        clientRange:
+          body.range_high != null && body.range_low != null
+            ? {
+                high: Number(body.range_high),
+                low: Number(body.range_low),
+                label: body.range_label ?? null,
+              }
+            : null,
+        rangeStrategy: gate.rangeStrategy,
+        morningAttempts: gate.morningAttempts,
+        ibAttempts: gate.ibAttempts,
+        lunchAttempts: gate.lunchAttempts,
         direction,
-        rangeHigh: body.range_high != null ? Number(body.range_high) : null,
-        rangeLow: body.range_low != null ? Number(body.range_low) : null,
-        rangeLabel: body.range_label ?? null,
-        entrySource: body.entry_source ?? null,
+        useCall: attendanceCallMode(attendance?.morning_journal),
       })
-      return NextResponse.json({ error: edgeCheck.message }, { status: 400 })
+      if (!edgeCheck.ok) {
+        logEntryDenied({
+          route: 'working',
+          reason: 'range_edge',
+          instrument,
+          message: edgeCheck.message,
+          status: 400,
+          phase: gate.phase,
+          ladder: gate.attemptLadderLabel,
+          rangeStrategy: gate.rangeStrategy,
+          entry: level,
+          direction,
+          rangeHigh: body.range_high != null ? Number(body.range_high) : null,
+          rangeLow: body.range_low != null ? Number(body.range_low) : null,
+          rangeLabel: body.range_label ?? null,
+          entrySource: body.entry_source ?? null,
+        })
+        return NextResponse.json({ error: edgeCheck.message }, { status: 400 })
+      }
     }
 
     if (!Number.isFinite(stop) || stop <= 0) {

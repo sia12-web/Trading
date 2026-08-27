@@ -22,7 +22,6 @@ import {
   getTodayAttendance,
   autoLunchClockOut,
   tradeDateForInstrument,
-  attendanceCallMode,
 } from '@/lib/trading/deskAttendance'
 import { noteSessionGateTransition } from '@/lib/utils/deskAuditLog'
 import { loadTradeifySessionSnapshot } from '@/lib/trading/tradeifySessionState'
@@ -259,7 +258,7 @@ export async function GET(request: Request) {
         server_now_et: gate.timeEst,
         attendance_id: attendance?.id ?? null,
         attendance_status: attendance?.status ?? null,
-        useCall: clockedIn ? attendanceCallMode(attendance?.morning_journal) : null,
+        useCall: clockedIn ? true : null,
         attempts_used: gate.attemptsUsed,
         max_attempts: gate.maxAttempts,
         stop_hits: gate.stopHits,

@@ -1,17 +1,20 @@
 /**
- * After clock-in the trader chooses CALL or regular playbook ±10.
- * Stored on desk_attendance.morning_journal.use_call (live) or sessionStorage (sim).
- *
- * true  — CALL must agree (side + legal edge). Ticket gate on.
- * false — regular playbook ±10. CALL still computes the setup (advise).
- * null  — not answered yet; no tickets.
- * Switch anytime after the first choice.
+ * Live NY desk is always CALL ON (Slice 1).
+ * Tickets only when CALL agrees (side + legal ±10).
+ * Stored `use_call: false` on attendance is ignored.
+ * Sim still stores a CALL/regular choice in sessionStorage until Slice 5.
  */
 
 export const DESK_CALL_MODE_JOURNAL_KEY = 'use_call'
 
+/** Live tickets are always CALL-gated. */
+export const LIVE_DESK_USE_CALL = true as const
+
 export const CALL_MODE_UNSET_MESSAGE =
-  'Choose CALL or regular after clock-in before placing.'
+  'Clock in before placing. Live desk is always CALL ON.'
+
+export const LIVE_CALL_REGULAR_REFUSED =
+  'Desk is always CALL ON — tickets only on CALL-legal ±10.'
 
 export function parseDeskCallMode(value: unknown): boolean | null {
   if (value === true || value === 'true' || value === 1 || value === '1') return true
@@ -19,16 +22,16 @@ export function parseDeskCallMode(value: unknown): boolean | null {
   return null
 }
 
+/** Live attendance is always CALL ON. Journal false/null does not open Regular ±10. */
 export function attendanceCallMode(
-  journal: Record<string, unknown> | null | undefined
-): boolean | null {
-  if (!journal) return null
-  return parseDeskCallMode(journal[DESK_CALL_MODE_JOURNAL_KEY])
+  _journal?: Record<string, unknown> | null
+): true {
+  return LIVE_DESK_USE_CALL
 }
 
 export function deskCallModeHoverPrefix(useCall: boolean | null): string {
   if (useCall == null) {
-    return 'Choose CALL or regular after clock-in before placing.\n\n'
+    return 'Clock in before placing. Live desk is always CALL ON.\n\n'
   }
   if (!useCall) {
     return 'CALL setup is still live (advise). Tickets use any painted playbook ±10 — CALL does not block.\n\n'

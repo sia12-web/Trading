@@ -13,6 +13,8 @@ import { formatDeskMoney, deskCurrencyLabel } from '@/lib/trading/currency'
 import { RANGE_EDGE_RISK_PERCENT } from '@/lib/trading/positionSizing'
 import { TRADEIFY_STARTING_BALANCE } from '@/lib/trading/tradeifyGrowth50k'
 
+import { SYSTEMATIC_LIVE_DESK } from '@/lib/trading/systematicDesk'
+
 type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | 'RUSSELL' | 'ALL'
 type HistoryTab = 'live' | 'sim' | 'voice'
 
@@ -208,7 +210,13 @@ function JournalPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const rawTab = searchParams.get('tab')
-  const tab: HistoryTab = rawTab === 'sim' ? 'sim' : rawTab === 'voice' ? 'voice' : 'live'
+  const tab: HistoryTab = SYSTEMATIC_LIVE_DESK
+    ? 'live'
+    : rawTab === 'sim'
+      ? 'sim'
+      : rawTab === 'voice'
+        ? 'voice'
+        : 'live'
 
   const [instrument, setInstrument] = useState<Instrument>('ALL')
   const [days, setDays] = useState(30)
@@ -357,9 +365,7 @@ function JournalPageInner() {
             </p>
             <h1 className="mt-1 text-2xl font-semibold text-white">Order history</h1>
             <p className="mt-1 text-sm text-gray-500 max-w-xl">
-              {isSim
-                ? 'Paper fills from simulation mornings — entry, SL/TP, exit reason, and P&L by replay day.'
-                : 'Closed and open live fills by day and market — entries, SL/TP, level reasons, AI exits, and equity.'}
+              Closed and open live fills by day and market — entries, SL/TP, and equity.
             </p>
           </div>
           <Link
@@ -381,6 +387,8 @@ function JournalPageInner() {
             >
               Live Trades
             </button>
+            {!SYSTEMATIC_LIVE_DESK && (
+              <>
             <button
               type="button"
               onClick={() => setTab('sim')}
@@ -399,6 +407,8 @@ function JournalPageInner() {
             >
               🎙️ Voice Chat Journal
             </button>
+              </>
+            )}
           </div>
           {(isSim
             ? (['ALL', 'DOW', 'NASDAQ', 'NIKKEI'] as Instrument[])

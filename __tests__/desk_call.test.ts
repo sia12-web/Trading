@@ -35,8 +35,10 @@ import {
 } from '../lib/trading/deskCall'
 import {
   CALL_MODE_UNSET_MESSAGE,
+  attendanceCallMode,
   parseDeskCallMode,
   deskCallModeHoverPrefix,
+  LIVE_DESK_USE_CALL,
 } from '../lib/trading/deskCallMode'
 import { CONTROL_PERIOD_SEC } from '../lib/trading/marketControl'
 import { OPENING_BAR_SEC } from '../lib/trading/openingActivity'
@@ -264,7 +266,7 @@ function auctionThenBuy(openU: number): DeskCallBar[] {
   assert.ok(hover.includes('does not gate CALL'))
   assert.ok(hover.includes('OK     Ctrl:'))
   assert.ok(hover.includes('CALL from Control'))
-  assert.ok(hover.includes('Leo and Level Finder advise only. No line.'))
+  assert.ok(hover.includes('No Leo. No Level Finder fills.'))
 }
 
 {
@@ -607,6 +609,9 @@ function auctionThenBuy(openU: number): DeskCallBar[] {
   assert.equal(parseDeskCallMode(undefined), null)
   assert.equal(parseDeskCallMode(true), true)
   assert.equal(parseDeskCallMode(false), false)
+  assert.equal(attendanceCallMode(null), LIVE_DESK_USE_CALL)
+  assert.equal(attendanceCallMode({ use_call: false }), true)
+  assert.equal(attendanceCallMode({ use_call: true }), true)
   const unset = assertDeskTicketEntry({ useCall: null, call: wait })
   assert.equal(unset.ok, false)
   if (!unset.ok) assert.equal(unset.message, CALL_MODE_UNSET_MESSAGE)
@@ -635,6 +640,7 @@ function auctionThenBuy(openU: number): DeskCallBar[] {
   assert.ok(ticketAllowedEdges({ useCall: true, call: long })?.includes('low'))
   assert.ok(deskCallSetupEdges(long).includes('low'))
   assert.ok(!deskCallSetupEdges(wait).length)
+  assert.ok(deskCallModeHoverPrefix(true).includes('CALL must agree'))
   assert.ok(deskCallModeHoverPrefix(false).includes('setup is still live'))
 }
 
@@ -670,6 +676,45 @@ function auctionThenBuy(openU: number): DeskCallBar[] {
   assert.ok(twoTfHover.includes('dPOC stuck'))
   assert.ok(!twoTfHover.includes('RF +2 ↑'), '↑ is ONE-TF only')
   assert.ok(!twoTfHover.includes('RF 0 ROT'))
+}
+
+{
+  const fridayHigh = rthBars('2026-08-14', NY_DESK_CLOCK, () => ({
+    open: 45000,
+    high: 45100,
+    low: 44900,
+    close: 45050,
+  }))
+  const bars = driveUpSession(mondayOpen, 2, 'buy')
+  const call = computeDeskCall({
+    instrument: 'DOW',
+    candles: [...fridayHigh, ...bars],
+    asOfUnix: mondayOpen + 60 * 60,
+    playbookMode: 'ib',
+  })
+  assert.equal(call.side, 'WAIT', 'WEAK after OR30 VA vetoes CALL')
+  assert.equal(call.perfVeto, true)
+  assert.ok(call.perfGrade === 'WEAK' || call.perfGrade === 'UNCLEAR')
+}
+
+{
+  const fridayHigh = rthBars('2026-08-14', NY_DESK_CLOCK, () => ({
+    open: 45000,
+    high: 45100,
+    low: 44900,
+    close: 45050,
+  }))
+  const bars = auctionThenBuy(mondayOpen).filter(
+    (c) => c.time < mondayOpen + 30 * 60
+  )
+  const call = computeDeskCall({
+    instrument: 'DOW',
+    candles: [...fridayHigh, ...bars],
+    asOfUnix: mondayOpen + 30 * 60,
+    playbookMode: 'morning',
+  })
+  assert.equal(call.side, 'LONG', 'Open-range Drive still CALL before OR30 VA veto')
+  assert.equal(call.perfVeto, false)
 }
 
 console.log('desk_call: all passed')

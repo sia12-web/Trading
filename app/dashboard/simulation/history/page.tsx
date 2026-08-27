@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 
-/** Sim history now lives under Order History → Simulation tab. */
+/** Simulation is not on the live product. */
 export default function SimHistoryRedirectPage() {
-  redirect('/dashboard/journal?tab=sim')
+  redirect('/dashboard/journal')
 }

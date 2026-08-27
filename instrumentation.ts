@@ -42,6 +42,8 @@ export async function register() {
   if (isRailway && process.env.NODE_ENV === 'production' && !isBuild) {
     const { startTradeifyFlattenWatch } = await import('./lib/trading/tradeifyFlattenWatch')
     startTradeifyFlattenWatch()
+    const { startAsiaDeskWatch } = await import('./lib/trading/asiaDeskWatch')
+    startAsiaDeskWatch()
   }
 
   // Catch escapes that would otherwise only show as a crash with no context

@@ -51,21 +51,50 @@ test('live and sim compute CALL with the same helper', () => {
   assert.ok(sim.includes('resolveDeskCallAsOfUnix'))
 })
 
-test('clock-in asks CALL or regular; Call chip is still not a toggle', () => {
+test('live desk is always CALL ON; Call chip is still not a toggle', () => {
   const banner = src('app/dashboard/chart/components/SessionBanner.tsx')
-  assert.ok(banner.includes('DeskCallModePrompt'))
-  assert.ok(banner.includes('/api/trading/call-mode'))
-  assert.ok(src('app/api/trading/session-gate/route.ts').includes('useCall:'))
-  assert.ok(src('app/api/trading/call-mode/route.ts').includes('setAttendanceUseCall'))
-  assert.ok(!src('lib/trading/deskAttendance.ts').includes('CALL / regular is locked'))
-  assert.ok(banner.includes('onClick={() => void handleCallMode(false)}'))
-  assert.ok(banner.includes('onClick={() => void handleCallMode(true)}'))
+  assert.ok(!banner.includes('DeskCallModePrompt'))
+  assert.ok(!banner.includes('/api/trading/call-mode'))
+  assert.ok(!banner.includes('handleCallMode'))
+  assert.ok(src('app/api/trading/session-gate/route.ts').includes('useCall: clockedIn ? true : null'))
+  assert.ok(src('app/api/trading/call-mode/route.ts').includes('LIVE_CALL_REGULAR_REFUSED'))
+  assert.ok(src('app/dashboard/chart/page.tsx').includes('useCall={true}'))
+  assert.ok(!src('app/dashboard/chart/page.tsx').includes('callModeChosen'))
+  assert.ok(src('lib/trading/deskAttendance.ts').includes('LIVE_CALL_REGULAR_REFUSED'))
   assert.ok(sim.includes('writeSimCallMode(instrument, replayDate, false)'))
   assert.ok(sim.includes('writeSimCallMode(instrument, replayDate, true)'))
   assert.ok(
     live.indexOf('<span>Ctrl</span>') < live.indexOf('<span>Call</span>'),
     'Call after Ctrl on live'
   )
+  assert.ok(
+    live.indexOf('<span>Call</span>') < live.indexOf('<span>Perf</span>'),
+    'Perf after Call on live'
+  )
+  assert.ok(
+    live.indexOf('<span>Perf</span>') < live.indexOf('<span>Region</span>'),
+    'Region after Perf on live'
+  )
+  assert.ok(
+    live.indexOf('<span>Region</span>') < live.indexOf('<span>Sit</span>'),
+    'Sit after Region on live'
+  )
+  assert.ok(live.includes('Sit {sitBadge}'))
+  assert.ok(live.includes('Region {regionBadge}'))
+  assert.ok(live.includes('kind: \'call_setup\''))
+  assert.ok(live.includes('isNyCallSetup'))
+  assert.ok(live.includes('evaluateAuctionLiveSignal'))
+  assert.ok(live.includes('AUCTION_TELEGRAM_KIND'))
+  assert.ok(live.includes('deskSitLineSpecs'))
+  assert.ok(src('lib/trading/deskSituation.ts').includes("'Sp H'"))
+  const sitChip = sliceBetween(live, 'title={sitHover}', '{sitBadge}')
+  assert.ok(!sitChip.includes('onClick'))
+  assert.ok(live.includes('SYSTEMATIC_LIVE_DESK'))
+  assert.ok(live.includes('Perf {perfBadge}'))
+  assert.ok(banner.includes('SYSTEMATIC_LIVE_DESK'))
+  assert.ok(banner.includes('!SYSTEMATIC_LIVE_DESK && htfPerf'))
+  assert.ok(banner.includes('!SYSTEMATIC_LIVE_DESK && htfBracket'))
+  assert.ok(!src('app/dashboard/chart/components/SessionBanner.tsx').includes('href="/dashboard/simulation"'))
   assert.ok(
     sim.indexOf('Dalton control dPOC line on') <
       sim.indexOf('title={callHover}'),
@@ -174,12 +203,10 @@ test('Call chip is a span, not innerHTML', () => {
 
 test('sim CALL governs entries when opted in — no AI, no toggle-to-trade', () => {
   assert.ok(!sim.includes('LiveVoicePanel'))
-  assert.ok(sim.includes('assertDeskCallEntry'))
   assert.ok(sim.includes('assertDeskTicketEntry'))
   assert.ok(sim.includes('DeskCallModePrompt'))
   assert.ok(sim.includes('studyEntrySnapRanges'))
   assert.ok(sim.includes('entryEligibleOverlayRanges'))
-  assert.ok(sim.includes('deskCallLegalEdges'))
   assert.ok(sim.includes('ticketAllowedEdges'))
   assert.ok(!sim.includes('Turn on OR30'))
   assert.ok(!sim.includes('turn on a range to trade'))
@@ -187,10 +214,10 @@ test('sim CALL governs entries when opted in — no AI, no toggle-to-trade', () 
 })
 
 test('live CALL governs entries when opted in; Level Finder cards advise only', () => {
-  assert.ok(live.includes('assertDeskCallEntry'))
   assert.ok(live.includes('assertDeskTicketEntry'))
-  assert.ok(live.includes('deskCallLegalEdges'))
   assert.ok(live.includes('ticketAllowedEdges'))
+  assert.ok(src('lib/trading/deskCall.ts').includes('export function assertDeskCallEntry'))
+  assert.ok(src('lib/trading/deskCall.ts').includes('export function deskCallLegalEdges'))
   assert.ok(live.includes('control: marketControlRef.current'))
   assert.ok(sim.includes('control: marketControlRef.current'))
   assert.ok(src('lib/trading/marketControl.ts').includes('RF ${rf} 2TF'))
@@ -208,7 +235,7 @@ test('live CALL governs entries when opted in; Level Finder cards advise only', 
     src('lib/trading/serverPlaybookRange.ts').includes('assertDeskCallEntry')
   )
   assert.ok(
-    src('lib/trading/serverPlaybookRange.ts').includes('useCall !== false')
+    !src('lib/trading/serverPlaybookRange.ts').includes('useCall !== false')
   )
   assert.ok(
     src('app/api/trading/positions/working/route.ts').includes('direction,')
@@ -239,13 +266,15 @@ test('ticket freeze still holds', () => {
 
 test('playbook and BUY/SHORT levels stay hidden until P / L on live and sim', () => {
   assert.ok(live.includes('const [playbookOpen, setPlaybookOpen] = useState(false)'))
-  assert.ok(live.includes('const [showLevels,  setShowLevels] = useState(false)'))
+  assert.ok(
+    live.includes('SYSTEMATIC_LIVE_DESK ? false : loadDeskOverlayToggles().levels')
+  )
   assert.ok(!live.includes('setPlaybookOpen(true)'))
   assert.ok(
     live.includes('Playbook / level cards stay closed until the trader hits Playbook (P)')
   )
   assert.ok(sim.includes('const [playbookOpen, setPlaybookOpen] = useState(false)'))
-  assert.ok(sim.includes('const [levelsOpen, setLevelsOpen] = useState(false)'))
+  assert.ok(sim.includes('const [levelsOpen, setLevelsOpen] = useState('))
   assert.ok(!sim.includes('setLevelsOpen(true)'))
   const simKeys = sliceBetween(sim, 'const handleKeyDown', "window.addEventListener('keydown'")
   assert.ok(simKeys.includes("key === 'l'"))

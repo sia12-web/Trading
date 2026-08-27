@@ -18,6 +18,7 @@ import {
   clipAfternoonBars,
   resolveSessionGate,
   resolveSimMorningGate,
+  isLiveTradingPageOpen,
 } from '../lib/trading/sessionGate'
 import {
   AVWAP_LOOKBACK_TRADING_DAYS,
@@ -109,6 +110,7 @@ function expectPhase(
 // ── DOW + NASDAQ share ET clock ──────────────────────────────────────────────
 for (const inst of ['DOW', 'NASDAQ'] as const) {
   // Tip only from focus −30m (09:00 ET) — not midnight / early morning
+  // Asia GOLD/DOW streams 01:50–03:40 Montreal only; 08:00 is still frozen.
   expectPhase(inst, etDate(Y, M, D, 8, 0), { lunchFreeze: false, trade: false, chart: false, deskHours: false }, `${inst} 08:00 pre-focus`)
   expectPhase(inst, etDate(Y, M, D, 9, 0), { lunchFreeze: false, trade: false, chart: true, deskHours: false }, `${inst} 09:00 focus start`)
   expectPhase(inst, etDate(Y, M, D, 9, 20), { lunchFreeze: false, trade: false, chart: true, deskHours: true }, `${inst} 09:20 prep`)
@@ -121,6 +123,23 @@ for (const inst of ['DOW', 'NASDAQ'] as const) {
   expectPhase(inst, etDate(Y, M, D, 15, 59), { lunchFreeze: false, trade: false, chart: true, deskHours: false }, `${inst} 15:59 before close`)
   expectPhase(inst, etDate(Y, M, D, 16, 0), { lunchFreeze: false, trade: false, chart: false, deskHours: false }, `${inst} 16:00 cash close freeze`)
   expectPhase(inst, etDate(Y, M, D, 20, 0), { lunchFreeze: false, trade: false, chart: false, deskHours: false }, `${inst} 20:00 overnight freeze`)
+}
+
+expectPhase('DOW', etDate(Y, M, D, 2, 10), { lunchFreeze: false, trade: false, chart: true, deskHours: false }, 'DOW 02:10 Asia place window')
+expectPhase('GOLD', etDate(Y, M, D, 2, 10), { lunchFreeze: false, trade: false, chart: true, deskHours: false }, 'GOLD 02:10 Asia place window')
+expectPhase('NASDAQ', etDate(Y, M, D, 2, 10), { lunchFreeze: false, trade: false, chart: false, deskHours: false }, 'NASDAQ 02:10 still frozen')
+assert(isLiveTradingPageOpen(etDate(Y, M, D, 2, 10)), 'Live Trading page open at 02:10')
+assert(!isLiveTradingPageOpen(etDate(Y, M, D, 20, 0)), 'Live Trading page closed at 20:00')
+{
+  const asiaGate = resolveSessionGate({
+    now: etDate(Y, M, D, 2, 10),
+    viewingInstrument: 'GOLD',
+    clockedIn: false,
+    attendedToday: false,
+  })
+  assert(asiaGate.asiaDeskActive === true, 'asiaDeskActive at 02:10')
+  assert(asiaGate.canViewLiveChart === true, 'GOLD chart viewable at 02:10')
+  assert(/ASIA desk/i.test(asiaGate.message), asiaGate.message)
 }
 
 // Next NY session morning — chart live again
