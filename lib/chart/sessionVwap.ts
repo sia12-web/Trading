@@ -894,6 +894,89 @@ export function nthTradingDayBefore(ymd: string, n: number, timeZone: string): s
   return cur
 }
 
+/**
+ * Computes Good Friday date for a given year using Meeus/Jones/Butcher Easter algorithm.
+ */
+function getGoodFridayYmd(y: number): string {
+  const a = y % 19
+  const b = Math.floor(y / 100)
+  const c = y % 100
+  const dVal = Math.floor(b / 4)
+  const e = b % 4
+  const f = Math.floor((b + 8) / 25)
+  const g = Math.floor((b - f + 1) / 3)
+  const h = (19 * a + b - dVal - g + 15) % 30
+  const i = Math.floor(c / 4)
+  const k = c % 4
+  const l = (32 + 2 * e + 2 * i - h - k) % 7
+  const mVal = Math.floor((a + 11 * h + 22 * l) / 451)
+  const month = Math.floor((h + l - 7 * mVal + 114) / 31)
+  const day = ((h + l - 7 * mVal + 114) % 31) + 1
+
+  const easterUtc = Date.UTC(y, month - 1, day, 12, 0, 0)
+  const gfDate = new Date(easterUtc - 2 * 86400 * 1000)
+  const mStr = String(gfDate.getUTCMonth() + 1).padStart(2, '0')
+  const dStr = String(gfDate.getUTCDate()).padStart(2, '0')
+  return `${y}-${mStr}-${dStr}`
+}
+
+/**
+ * Detect official US Stock & Futures Market Holidays (America/New_York).
+ * Skips low-participation/zero-RTH volume holiday sessions (Labor Day, Memorial Day, MLK, Thanksgiving, Christmas, etc.)
+ * so short-term reference points anchor to the prior full active trading day.
+ */
+export function isUsMarketHoliday(ymd: string): boolean {
+  const [yStr, mStr, dStr] = ymd.split('-')
+  const y = parseInt(yStr ?? '0', 10)
+  const m = parseInt(mStr ?? '0', 10)
+  const d = parseInt(dStr ?? '0', 10)
+  if (!y || !m || !d) return false
+
+  // Day of week in UTC noon (0 = Sun, 1 = Mon, ..., 4 = Thu, 5 = Fri, 6 = Sat)
+  const dt = new Date(Date.UTC(y, m - 1, d, 12, 0, 0))
+  const dow = dt.getUTCDay()
+
+  // 1. New Year's Day (Jan 1)
+  if (m === 1 && d === 1) return true
+  if (m === 12 && d === 31 && dow === 5) return true // Observed Friday Dec 31 if Jan 1 is Sat
+  if (m === 1 && d === 2 && dow === 1) return true // Observed Monday Jan 2 if Jan 1 is Sun
+
+  // 2. Martin Luther King Jr. Day (3rd Monday in Jan)
+  if (m === 1 && dow === 1 && d >= 15 && d <= 21) return true
+
+  // 3. Washington's Birthday / Presidents' Day (3rd Monday in Feb)
+  if (m === 2 && dow === 1 && d >= 15 && d <= 21) return true
+
+  // 4. Good Friday
+  if (ymd === getGoodFridayYmd(y)) return true
+
+  // 5. Memorial Day (Last Monday in May)
+  if (m === 5 && dow === 1 && d >= 25) return true
+
+  // 6. Juneteenth (June 19)
+  if (m === 6 && d === 19) return true
+  if (m === 6 && d === 18 && dow === 5) return true
+  if (m === 6 && d === 20 && dow === 1) return true
+
+  // 7. Independence Day (July 4)
+  if (m === 7 && d === 4) return true
+  if (m === 7 && d === 3 && dow === 5) return true
+  if (m === 7 && d === 5 && dow === 1) return true
+
+  // 8. Labor Day (1st Monday in Sept)
+  if (m === 9 && dow === 1 && d <= 7) return true
+
+  // 9. Thanksgiving Day (4th Thursday in Nov)
+  if (m === 11 && dow === 4 && d >= 22 && d <= 28) return true
+
+  // 10. Christmas Day (Dec 25)
+  if (m === 12 && d === 25) return true
+  if (m === 12 && d === 24 && dow === 5) return true
+  if (m === 12 && d === 26 && dow === 1) return true
+
+  return false
+}
+
 function sessionTradingDayYmd(unix: number, clock: DeskClock): string {
   let day = dayKeyInTz(unix, clock.timeZone)
   // Weekend tip → last weekday (Friday for Sat/Sun)

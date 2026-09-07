@@ -34,6 +34,7 @@
 import {
   cashOpenUnixForYmd,
   deskClockFor,
+  isUsMarketHoliday,
   isWeekdayYmd,
   nthTradingDayBefore,
   NY_DESK_CLOCK,
@@ -576,15 +577,58 @@ export function computeYesterdayNycSession(
     day: '2-digit',
   }).format(new Date(tipTime * 1000))
 
-  const priorYmd = nthTradingDayBefore(todayYmd, 1, clock.timeZone)
-  const openUnix = cashOpenUnixForYmd(priorYmd, clock)
-  const closeUnix = zonedCivilToUnix(priorYmd, 16, clock.timeZone)
+  let priorYmd = ''
+  let rthBars: ContextBar[] = []
 
-  const rthBars = bars.filter(
-    (b) => b.time >= openUnix && b.time < closeUnix && Number.isFinite(b.high) && Number.isFinite(b.low)
-  )
+  // Loop back up to 10 days to find the last full active (non-holiday) NYC cash session
+  for (let daysBack = 1; daysBack <= 10; daysBack++) {
+    const candidateYmd = nthTradingDayBefore(todayYmd, daysBack, clock.timeZone)
+
+    // Skip official US stock & futures exchange holidays (e.g. Labor Day, Memorial Day, MLK, etc.)
+    if (isUsMarketHoliday(candidateYmd)) {
+      continue
+    }
+
+    const openUnix = cashOpenUnixForYmd(candidateYmd, clock)
+    const closeUnix = zonedCivilToUnix(candidateYmd, 16, clock.timeZone)
+
+    const candidateBars = bars.filter(
+      (b) => b.time >= openUnix && b.time < closeUnix && Number.isFinite(b.high) && Number.isFinite(b.low)
+    )
+
+    // Skip truncated / early-close / low-participation sessions (< 15 5-min bars)
+    if (candidateBars.length < 15) {
+      continue
+    }
+
+    let volSum = 0
+    for (const b of candidateBars) {
+      volSum += Math.max(0, b.volume > 0 ? b.volume : 1)
+    }
+
+    if (volSum < 50) {
+      continue
+    }
+
+    priorYmd = candidateYmd
+    rthBars = candidateBars
+    break
+  }
+
+  // Fallback to simple prior trading day if history is sparse (e.g. synthetic test data)
+  if (!priorYmd || rthBars.length < 5) {
+    priorYmd = nthTradingDayBefore(todayYmd, 1, clock.timeZone)
+    const fallbackOpen = cashOpenUnixForYmd(priorYmd, clock)
+    const fallbackClose = zonedCivilToUnix(priorYmd, 16, clock.timeZone)
+    rthBars = bars.filter(
+      (b) => b.time >= fallbackOpen && b.time < fallbackClose && Number.isFinite(b.high) && Number.isFinite(b.low)
+    )
+  }
 
   if (rthBars.length < 5) return null
+
+  const openUnix = cashOpenUnixForYmd(priorYmd, clock)
+  const closeUnix = zonedCivilToUnix(priorYmd, 16, clock.timeZone)
 
   let yh = -Infinity
   let yl = Infinity

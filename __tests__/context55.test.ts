@@ -160,6 +160,32 @@ describe('Context 5-5 Module Tests', () => {
     assert.ok(yday.val <= yday.poc)
   })
 
+  it('skips US Exchange Holidays (e.g. Labor Day Sept 7) and anchors to the prior active trading day (Sept 4)', () => {
+    // 2026-09-08 (Tuesday EDT). 2026-09-07 is Labor Day (US Holiday).
+    // The prior active trading day must be Friday 2026-09-04.
+    const friOpenUnix = Math.floor(new Date('2026-09-04T13:30:00Z').getTime() / 1000)
+    const friCloseUnix = Math.floor(new Date('2026-09-04T20:00:00Z').getTime() / 1000)
+    const tueNowUnix = Math.floor(new Date('2026-09-08T14:00:00Z').getTime() / 1000)
+
+    const bars: ContextBar[] = []
+    // Friday bars (Active trading day)
+    for (let t = friOpenUnix; t <= friCloseUnix; t += 300) {
+      bars.push({
+        time: t,
+        open: 44100,
+        high: 44250,
+        low: 43900,
+        close: 44150,
+        volume: 500,
+      })
+    }
+
+    const yday = computeYesterdayNycSession(bars, tueNowUnix, NY_DESK_CLOCK)
+    assert.ok(yday !== null)
+    // Must anchor to Friday 2026-09-04, skipping Labor Day 2026-09-07
+    assert.equal(yday.sessionDate, '2026-09-04')
+  })
+
   it('computes Overnight Inventory and Asia & London FRVP', () => {
     const friOpenUnix = Math.floor(new Date('2026-09-04T13:30:00Z').getTime() / 1000)
     const friCloseUnix = Math.floor(new Date('2026-09-04T20:00:00Z').getTime() / 1000)
