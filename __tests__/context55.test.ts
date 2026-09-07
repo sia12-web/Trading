@@ -7,6 +7,7 @@ import {
   computeYesterdayNycSession,
   computeOvernightInventoryAndSessions,
   classifyMarketDayType,
+  detectMultiTimeframeOpportunities,
   get5DayAnchorUnix,
   get5MonthAnchorUnix,
   type ContextBar,
@@ -205,8 +206,91 @@ describe('Context 5-5 Module Tests', () => {
     assert.ok(inv.asia !== null)
     assert.ok(inv.london !== null)
     assert.ok(inv.overnight !== null)
+    assert.ok(yday.bins && yday.bins.length > 0)
+    assert.ok(inv.overnight.bins && inv.overnight.bins.length > 0)
     assert.equal(inv.pctLong, 100)
     assert.equal(inv.bias, '100%_NET_LONG')
     assert.ok(inv.summaryBadge.includes('100% Long'))
+  })
+
+  it('detects multi-timeframe money opportunities and confluences', () => {
+    const opps = detectMultiTimeframeOpportunities({
+      currentPrice: 44005,
+      avwap5m: {
+        anchorDate: '2026-04-01',
+        anchorUnix: 1775000000,
+        vwap: 43500,
+        sigma1Upper: 44000,
+        sigma1Lower: 43000,
+        sigma2Upper: 44500,
+        sigma2Lower: 42500,
+      },
+      frvp5d: {
+        startUnix: 1788000000,
+        endUnix: 1788876000,
+        high: 44300,
+        low: 43700,
+        poc: 44000,
+        vah: 44200,
+        val: 43850,
+        totalVolume: 50000,
+        bins: [],
+        bucketSize: 5,
+        hvn: [],
+        lvn: [],
+      },
+      yesterday: {
+        sessionDate: '2026-09-04',
+        yh: 44250,
+        yl: 43900,
+        close: 43950,
+        poc: 44000,
+        vah: 44150,
+        val: 43920,
+        volume: 20000,
+        openUnix: 1788700000,
+        closeUnix: 1788730000,
+        bins: [],
+      },
+      overnight: {
+        asia: null,
+        london: null,
+        overnight: {
+          name: 'Overnight',
+          startUnix: 1788740000,
+          endUnix: 1788800000,
+          high: 44100,
+          low: 43980,
+          poc: 44010,
+          vah: 44060,
+          val: 43990,
+          totalVolume: 8000,
+          bins: [],
+        },
+        totalVolume: 8000,
+        volumeAboveClose: 8000,
+        volumeBelowClose: 0,
+        pctLong: 100,
+        pctShort: 0,
+        bias: '100%_NET_LONG',
+        biasLabel: '100% Long',
+        rangeRelation: 'IN_RANGE',
+        rangeLabel: 'In-Range',
+        summaryBadge: '100% Long',
+        description: 'Overnight 100% long test',
+      },
+    })
+
+    assert.ok(opps.length >= 3)
+    // Should detect ON-POC test (44005 vs 44010)
+    assert.ok(opps.some((o) => o.id === 'st-on-poc'))
+    // Should detect Y-POC test (44005 vs 44000)
+    assert.ok(opps.some((o) => o.id === 'st-y-poc'))
+    // Should detect 5D-POC test (44005 vs 44000)
+    assert.ok(opps.some((o) => o.id === 'it-5d-poc'))
+    // Should detect Confluence between Y-POC and 5D-POC
+    assert.ok(opps.some((o) => o.id === 'conf-ypoc-5dpoc'))
+    // Should detect Overnight Inventory Rebalance opportunity
+    assert.ok(opps.some((o) => o.id === 'inv-rebalance'))
   })
 })

@@ -70,12 +70,14 @@ import {
   computeYesterdayNycSession,
   computeOvernightInventoryAndSessions,
   classifyMarketDayType,
+  detectMultiTimeframeOpportunities,
   type FixedRangeVolumeProfile5D,
   type DayTypeEvaluation,
   type AnchoredVwapBenchmark5M,
   type YesterdayNycSession,
   type OvernightInventoryEvaluation,
   type ContextBar,
+  type MultiTimeframeOpportunity,
 } from '@/lib/chart/context55'
 import {
   formatChartClock,
@@ -2089,14 +2091,13 @@ export function TradingChart({
     avwap5mLinesRef.current = []
   }, [])
 
-  // ─── 5-Day FRVP Volume Profile Histogram (Canvas) ───────────────────────────
+  // ─── Multi-Timeframe Money Fixed Range Volume Profiles (Canvas) ─────────────
   const paintFrvpHistogram = useCallback(() => {
     const canvas = frvpHistogramCanvasRef.current
     const chart = chartRef.current
     const series = candleRef.current
     const list = candlesRef.current
-    const profile = frvp5d
-    if (!canvas || !chart || !series || !containerRef.current || !profile || !profile.bins || profile.bins.length === 0) {
+    if (!canvas || !chart || !series || !containerRef.current || list.length === 0) {
       if (canvas) {
         const ctx = canvas.getContext('2d')
         ctx?.clearRect(0, 0, canvas.width, canvas.height)
@@ -2126,56 +2127,299 @@ export function TradingChart({
 
     const tz = chartTzRef.current
     const candleTimes = list.map((c) => toChartTime(c.time as number, tz))
-    const anchorChartT = toChartTime(profile.startUnix, tz)
-    const rawXAnchor = timeToX(chart.timeScale(), anchorChartT, candleTimes)
-    const xAnchor = rawXAnchor != null && Number.isFinite(rawXAnchor)
-      ? Math.max(0, Math.min(paneW, rawXAnchor))
-      : 0
 
-    const maxBinVol = Math.max(...profile.bins.map((b) => b.volume), 1)
-    const maxHistW = Math.min(260, Math.max(80, (paneW - xAnchor) * 0.45))
-    const halfBucket = (profile.bucketSize || 1) * 0.5
-
-    // Draw horizontal volume bars: Cyan (#06b6d4) for buy, Magenta (#ec4899) for sell
-    for (const bin of profile.bins) {
-      const yTop = series.priceToCoordinate(bin.price + halfBucket)
-      const yBottom = series.priceToCoordinate(bin.price - halfBucket)
-      if (yTop == null || yBottom == null) continue
-
-      const barY = Math.min(yTop, yBottom)
-      const barH = Math.max(1.5, Math.abs(yBottom - yTop) - 0.5)
-      if (barY + barH < 0 || barY > paneH) continue
-
-      const totalBarW = (bin.volume / maxBinVol) * maxHistW
-      if (totalBarW < 1) continue
-
-      const buyVol = bin.buyVolume ?? (bin.volume * 0.5)
-      const buyRatio = bin.volume > 0 ? Math.max(0, Math.min(1, buyVol / bin.volume)) : 0.5
-      const buyW = totalBarW * buyRatio
-      const sellW = totalBarW - buyW
-
-      // Buy volume (cyan)
-      ctx.fillStyle = bin.inValueArea ? 'rgba(6, 182, 212, 0.78)' : 'rgba(6, 182, 212, 0.40)'
-      ctx.fillRect(xAnchor, barY, buyW, barH)
-
-      // Sell volume (magenta / pink)
-      ctx.fillStyle = bin.inValueArea ? 'rgba(236, 72, 153, 0.78)' : 'rgba(236, 72, 153, 0.40)'
-      ctx.fillRect(xAnchor + buyW, barY, sellW, barH)
+    const drawLevelBadge = (
+      text: string,
+      x: number,
+      y: number,
+      color: string,
+      bgColor = 'rgba(15, 23, 42, 0.85)'
+    ) => {
+      ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+      const textW = ctx.measureText(text).width
+      ctx.fillStyle = bgColor
+      ctx.fillRect(x, y - 9, textW + 6, 12)
+      ctx.fillStyle = color
+      ctx.fillText(text, x + 3, y)
     }
 
-    // High-contrast Point of Control (POC) solid black line across the chart
-    const yPoc = series.priceToCoordinate(profile.poc)
-    if (yPoc != null && Number.isFinite(yPoc) && yPoc >= 0 && yPoc <= paneH) {
-      ctx.strokeStyle = '#0f172a'
-      ctx.lineWidth = 2
-      ctx.beginPath()
-      ctx.moveTo(xAnchor, Math.round(yPoc) + 0.5)
-      ctx.lineTo(paneW, Math.round(yPoc) + 0.5)
-      ctx.stroke()
+    // 1. Long-Term Money (LT): 5-Month Anchored VWAP
+    if (avwap5mBenchmark) {
+      const yAvwap = series.priceToCoordinate(avwap5mBenchmark.vwap)
+      if (yAvwap != null && Number.isFinite(yAvwap) && yAvwap >= 0 && yAvwap <= paneH) {
+        ctx.strokeStyle = '#7c3aed'
+        ctx.setLineDash([6, 3])
+        ctx.lineWidth = 1.5
+        ctx.beginPath()
+        ctx.moveTo(0, Math.round(yAvwap) + 0.5)
+        ctx.lineTo(paneW, Math.round(yAvwap) + 0.5)
+        ctx.stroke()
+        ctx.setLineDash([])
+        drawLevelBadge(`LT: 5M AVWAP ${avwap5mBenchmark.vwap.toFixed(2)}`, 12, Math.round(yAvwap) - 3, '#ddd6fe', 'rgba(76, 29, 149, 0.85)')
+      }
+    }
+
+    // 2. Intermediate-Term Money (IT): 5-Day Fixed Range Volume Profile
+    if (frvp5d && frvp5d.bins && frvp5d.bins.length > 0) {
+      const anchorChartT = toChartTime(frvp5d.startUnix, tz)
+      const rawXAnchor = timeToX(chart.timeScale(), anchorChartT, candleTimes)
+      if (rawXAnchor != null && Number.isFinite(rawXAnchor)) {
+        const xAnchor = rawXAnchor // NON-STICKY: stays at actual start time and scrolls off naturally
+        const maxHistW = 160
+        const halfBucket = (frvp5d.bucketSize || 1) * 0.5
+        const maxBinVol = Math.max(...frvp5d.bins.map((b) => b.volume), 1)
+
+        // Draw volume bars if within visible screen bounds
+        if (xAnchor + maxHistW >= 0 && xAnchor <= paneW) {
+          for (const bin of frvp5d.bins) {
+            const yTop = series.priceToCoordinate(bin.price + halfBucket)
+            const yBottom = series.priceToCoordinate(bin.price - halfBucket)
+            if (yTop == null || yBottom == null) continue
+
+            const barY = Math.min(yTop, yBottom)
+            const barH = Math.max(1.5, Math.abs(yBottom - yTop) - 0.5)
+            if (barY + barH < 0 || barY > paneH) continue
+
+            const totalBarW = (bin.volume / maxBinVol) * maxHistW
+            if (totalBarW < 1) continue
+
+            const buyVol = bin.buyVolume ?? (bin.volume * 0.5)
+            const buyRatio = bin.volume > 0 ? Math.max(0, Math.min(1, buyVol / bin.volume)) : 0.5
+            const buyW = totalBarW * buyRatio
+            const sellW = totalBarW - buyW
+
+            // Buy volume (cyan)
+            ctx.fillStyle = bin.inValueArea ? 'rgba(6, 182, 212, 0.75)' : 'rgba(6, 182, 212, 0.35)'
+            ctx.fillRect(xAnchor, barY, buyW, barH)
+
+            // Sell volume (magenta)
+            ctx.fillStyle = bin.inValueArea ? 'rgba(236, 72, 153, 0.75)' : 'rgba(236, 72, 153, 0.35)'
+            ctx.fillRect(xAnchor + buyW, barY, sellW, barH)
+          }
+        }
+
+        // IT: 5D POC Line
+        const yPoc = series.priceToCoordinate(frvp5d.poc)
+        if (yPoc != null && Number.isFinite(yPoc) && yPoc >= 0 && yPoc <= paneH && xAnchor <= paneW) {
+          const lineStart = Math.max(0, xAnchor)
+          ctx.strokeStyle = '#334155'
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          ctx.moveTo(lineStart, Math.round(yPoc) + 0.5)
+          ctx.lineTo(paneW, Math.round(yPoc) + 0.5)
+          ctx.stroke()
+          drawLevelBadge(`IT: 5D POC ${frvp5d.poc.toFixed(2)}`, lineStart + 6, Math.round(yPoc) - 3, '#f1f5f9', 'rgba(15, 23, 42, 0.85)')
+        }
+
+        // IT: 5D VAH / VAL Lines
+        const yVah = series.priceToCoordinate(frvp5d.vah)
+        if (yVah != null && Number.isFinite(yVah) && yVah >= 0 && yVah <= paneH && xAnchor <= paneW) {
+          const lineStart = Math.max(0, xAnchor)
+          ctx.strokeStyle = 'rgba(2, 132, 199, 0.65)'
+          ctx.setLineDash([4, 4])
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.moveTo(lineStart, Math.round(yVah) + 0.5)
+          ctx.lineTo(paneW, Math.round(yVah) + 0.5)
+          ctx.stroke()
+          ctx.setLineDash([])
+          drawLevelBadge(`IT: 5D VAH ${frvp5d.vah.toFixed(2)}`, lineStart + 6, Math.round(yVah) - 3, '#38bdf8', 'rgba(15, 23, 42, 0.75)')
+        }
+
+        const yVal = series.priceToCoordinate(frvp5d.val)
+        if (yVal != null && Number.isFinite(yVal) && yVal >= 0 && yVal <= paneH && xAnchor <= paneW) {
+          const lineStart = Math.max(0, xAnchor)
+          ctx.strokeStyle = 'rgba(2, 132, 199, 0.65)'
+          ctx.setLineDash([4, 4])
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.moveTo(lineStart, Math.round(yVal) + 0.5)
+          ctx.lineTo(paneW, Math.round(yVal) + 0.5)
+          ctx.stroke()
+          ctx.setLineDash([])
+          drawLevelBadge(`IT: 5D VAL ${frvp5d.val.toFixed(2)}`, lineStart + 6, Math.round(yVal) + 11, '#38bdf8', 'rgba(15, 23, 42, 0.75)')
+        }
+      }
+    }
+
+    // 3. Short-Term Money (ST): Yesterday Fixed Range Profile
+    if (showYesterdayNyc && yesterdayNyc && yesterdayNyc.bins && yesterdayNyc.bins.length > 0) {
+      const yAnchorChartT = toChartTime(yesterdayNyc.openUnix, tz)
+      const rawXYAnchor = timeToX(chart.timeScale(), yAnchorChartT, candleTimes)
+      const rawXYEnd = timeToX(chart.timeScale(), toChartTime(yesterdayNyc.closeUnix, tz), candleTimes)
+      if (rawXYAnchor != null && Number.isFinite(rawXYAnchor)) {
+        const yAnchor = rawXYAnchor
+        const yEnd = rawXYEnd ?? (yAnchor + 140)
+        const histWYday = Math.min(130, Math.max(40, (yEnd - yAnchor) * 0.75))
+        const halfBucket = (yesterdayNyc.bucketSize || 1) * 0.5
+        const maxBinVolYday = Math.max(...yesterdayNyc.bins.map((b) => b.volume), 1)
+
+        // Draw volume bars for yesterday
+        if (yAnchor + histWYday >= 0 && yAnchor <= paneW) {
+          for (const bin of yesterdayNyc.bins) {
+            const yTop = series.priceToCoordinate(bin.price + halfBucket)
+            const yBottom = series.priceToCoordinate(bin.price - halfBucket)
+            if (yTop == null || yBottom == null) continue
+
+            const barY = Math.min(yTop, yBottom)
+            const barH = Math.max(1.5, Math.abs(yBottom - yTop) - 0.5)
+            if (barY + barH < 0 || barY > paneH) continue
+
+            const totalBarW = (bin.volume / maxBinVolYday) * histWYday
+            if (totalBarW < 1) continue
+
+            const buyVol = bin.buyVolume ?? (bin.volume * 0.5)
+            const buyRatio = bin.volume > 0 ? Math.max(0, Math.min(1, buyVol / bin.volume)) : 0.5
+            const buyW = totalBarW * buyRatio
+            const sellW = totalBarW - buyW
+
+            // Buy volume: warm amber
+            ctx.fillStyle = bin.inValueArea ? 'rgba(245, 158, 11, 0.78)' : 'rgba(245, 158, 11, 0.38)'
+            ctx.fillRect(yAnchor, barY, buyW, barH)
+
+            // Sell volume: warm coral/rose
+            ctx.fillStyle = bin.inValueArea ? 'rgba(244, 63, 94, 0.78)' : 'rgba(244, 63, 94, 0.38)'
+            ctx.fillRect(yAnchor + buyW, barY, sellW, barH)
+          }
+        }
+
+        // ST: Y-POC Line
+        const yPocYday = series.priceToCoordinate(yesterdayNyc.poc)
+        if (yPocYday != null && Number.isFinite(yPocYday) && yPocYday >= 0 && yPocYday <= paneH && yAnchor <= paneW) {
+          const lineStart = Math.max(0, yAnchor)
+          ctx.strokeStyle = '#d97706'
+          ctx.setLineDash([5, 3])
+          ctx.lineWidth = 1.5
+          ctx.beginPath()
+          ctx.moveTo(lineStart, Math.round(yPocYday) + 0.5)
+          ctx.lineTo(paneW, Math.round(yPocYday) + 0.5)
+          ctx.stroke()
+          ctx.setLineDash([])
+          drawLevelBadge(`ST: Y-POC ${yesterdayNyc.poc.toFixed(2)}`, lineStart + 6, Math.round(yPocYday) - 3, '#fde68a', 'rgba(120, 53, 15, 0.85)')
+        }
+
+        // ST: Y-VAH / VAL Lines
+        const yVahYday = series.priceToCoordinate(yesterdayNyc.vah)
+        if (yVahYday != null && Number.isFinite(yVahYday) && yVahYday >= 0 && yVahYday <= paneH && yAnchor <= paneW) {
+          const lineStart = Math.max(0, yAnchor)
+          ctx.strokeStyle = 'rgba(217, 119, 6, 0.65)'
+          ctx.setLineDash([3, 3])
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.moveTo(lineStart, Math.round(yVahYday) + 0.5)
+          ctx.lineTo(paneW, Math.round(yVahYday) + 0.5)
+          ctx.stroke()
+          ctx.setLineDash([])
+          drawLevelBadge(`ST: Y-VAH ${yesterdayNyc.vah.toFixed(2)}`, lineStart + 6, Math.round(yVahYday) - 3, '#fbbf24', 'rgba(120, 53, 15, 0.75)')
+        }
+
+        const yValYday = series.priceToCoordinate(yesterdayNyc.val)
+        if (yValYday != null && Number.isFinite(yValYday) && yValYday >= 0 && yValYday <= paneH && yAnchor <= paneW) {
+          const lineStart = Math.max(0, yAnchor)
+          ctx.strokeStyle = 'rgba(217, 119, 6, 0.65)'
+          ctx.setLineDash([3, 3])
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.moveTo(lineStart, Math.round(yValYday) + 0.5)
+          ctx.lineTo(paneW, Math.round(yValYday) + 0.5)
+          ctx.stroke()
+          ctx.setLineDash([])
+          drawLevelBadge(`ST: Y-VAL ${yesterdayNyc.val.toFixed(2)}`, lineStart + 6, Math.round(yValYday) + 11, '#fbbf24', 'rgba(120, 53, 15, 0.75)')
+        }
+      }
+    }
+
+    // 4. Short-Term Money (ST): Overnight Fixed Range Profile
+    const on = overnightInventory?.overnight
+    if (showInventorySessions && on && on.bins && on.bins.length > 0) {
+      const onBins = on.bins
+      const onAnchorChartT = toChartTime(on.startUnix, tz)
+      const rawXOnAnchor = timeToX(chart.timeScale(), onAnchorChartT, candleTimes)
+      const rawXOnEnd = timeToX(chart.timeScale(), toChartTime(on.endUnix, tz), candleTimes)
+      if (rawXOnAnchor != null && Number.isFinite(rawXOnAnchor)) {
+        const onAnchor = rawXOnAnchor
+        const onEnd = rawXOnEnd ?? (onAnchor + 140)
+        const histWOn = Math.min(130, Math.max(40, (onEnd - onAnchor) * 0.75))
+        const halfBucket = (on.bucketSize || 1) * 0.5
+        const maxBinVolOn = Math.max(...onBins.map((b) => b.volume), 1)
+
+        // Draw volume bars for overnight
+        if (onAnchor + histWOn >= 0 && onAnchor <= paneW) {
+          for (const bin of onBins) {
+            const yTop = series.priceToCoordinate(bin.price + halfBucket)
+            const yBottom = series.priceToCoordinate(bin.price - halfBucket)
+            if (yTop == null || yBottom == null) continue
+
+            const barY = Math.min(yTop, yBottom)
+            const barH = Math.max(1.5, Math.abs(yBottom - yTop) - 0.5)
+            if (barY + barH < 0 || barY > paneH) continue
+
+            const totalBarW = (bin.volume / maxBinVolOn) * histWOn
+            if (totalBarW < 1) continue
+
+            const buyVol = bin.buyVolume ?? (bin.volume * 0.5)
+            const buyRatio = bin.volume > 0 ? Math.max(0, Math.min(1, buyVol / bin.volume)) : 0.5
+            const buyW = totalBarW * buyRatio
+            const sellW = totalBarW - buyW
+
+            // Buy volume: sky-blue
+            ctx.fillStyle = bin.inValueArea ? 'rgba(14, 165, 233, 0.78)' : 'rgba(14, 165, 233, 0.38)'
+            ctx.fillRect(onAnchor, barY, buyW, barH)
+
+            // Sell volume: violet
+            ctx.fillStyle = bin.inValueArea ? 'rgba(139, 92, 246, 0.78)' : 'rgba(139, 92, 246, 0.38)'
+            ctx.fillRect(onAnchor + buyW, barY, sellW, barH)
+          }
+        }
+
+        // ST: ON-POC Line
+        const yPocOn = series.priceToCoordinate(on.poc)
+        if (yPocOn != null && Number.isFinite(yPocOn) && yPocOn >= 0 && yPocOn <= paneH && onAnchor <= paneW) {
+          const lineStart = Math.max(0, onAnchor)
+          ctx.strokeStyle = '#0284c7'
+          ctx.setLineDash([4, 2])
+          ctx.lineWidth = 1.5
+          ctx.beginPath()
+          ctx.moveTo(lineStart, Math.round(yPocOn) + 0.5)
+          ctx.lineTo(paneW, Math.round(yPocOn) + 0.5)
+          ctx.stroke()
+          ctx.setLineDash([])
+          drawLevelBadge(`ST: ON-POC ${on.poc.toFixed(2)} (${overnightInventory.biasLabel})`, lineStart + 6, Math.round(yPocOn) - 3, '#bae6fd', 'rgba(12, 74, 110, 0.85)')
+        }
+
+        // ST: ON-VAH / VAL Lines
+        const yVahOn = series.priceToCoordinate(on.vah)
+        if (yVahOn != null && Number.isFinite(yVahOn) && yVahOn >= 0 && yVahOn <= paneH && onAnchor <= paneW) {
+          const lineStart = Math.max(0, onAnchor)
+          ctx.strokeStyle = 'rgba(2, 132, 199, 0.65)'
+          ctx.setLineDash([3, 3])
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.moveTo(lineStart, Math.round(yVahOn) + 0.5)
+          ctx.lineTo(paneW, Math.round(yVahOn) + 0.5)
+          ctx.stroke()
+          ctx.setLineDash([])
+          drawLevelBadge(`ST: ON-VAH ${on.vah.toFixed(2)}`, lineStart + 6, Math.round(yVahOn) - 3, '#7dd3fc', 'rgba(12, 74, 110, 0.75)')
+        }
+
+        const yValOn = series.priceToCoordinate(on.val)
+        if (yValOn != null && Number.isFinite(yValOn) && yValOn >= 0 && yValOn <= paneH && onAnchor <= paneW) {
+          const lineStart = Math.max(0, onAnchor)
+          ctx.strokeStyle = 'rgba(2, 132, 199, 0.65)'
+          ctx.setLineDash([3, 3])
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.moveTo(lineStart, Math.round(yValOn) + 0.5)
+          ctx.lineTo(paneW, Math.round(yValOn) + 0.5)
+          ctx.stroke()
+          ctx.setLineDash([])
+          drawLevelBadge(`ST: ON-VAL ${on.val.toFixed(2)}`, lineStart + 6, Math.round(yValOn) + 11, '#7dd3fc', 'rgba(12, 74, 110, 0.75)')
+        }
+      }
     }
 
     ctx.restore()
-  }, [frvp5d])
+  }, [frvp5d, yesterdayNyc, overnightInventory, avwap5mBenchmark, showYesterdayNyc, showInventorySessions])
 
   // ─── 5-Day Excesses & Rounded Numbers (Canvas) ──────────────────────────────
   const paintExcessesAndRounded = useCallback(() => {
@@ -2592,6 +2836,19 @@ export function TradingChart({
       controlLabel: controlBadge,
     })
   }, [candles, instrument, yesterdayNyc, ydayProfile, overnightInventory, controlBadge])
+
+  const opportunities: MultiTimeframeOpportunity[] = useMemo(() => {
+    const list = candles || []
+    if (!list.length) return []
+    const livePrice = list[list.length - 1]!.close
+    return detectMultiTimeframeOpportunities({
+      currentPrice: livePrice,
+      avwap5m: avwap5mBenchmark,
+      frvp5d,
+      yesterday: yesterdayNyc,
+      overnight: overnightInventory,
+    })
+  }, [candles, avwap5mBenchmark, frvp5d, yesterdayNyc, overnightInventory])
 
   const paintAuctionOverlay = useCallback(() => {
     const host = priceLineHostRef.current
@@ -8112,47 +8369,64 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         <OHLCVTooltip data={tooltip} color={meta.color} />
       </div>
 
-      {/* Context 5-5 Status Summary */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-[11px] text-gray-400">
-        <span className="font-semibold text-amber-400">Context 5-5</span>
-        {frvp5d && (
-          <>
-            <span>
-              <span className="text-gray-500">5D POC: </span>
-              <span className="font-mono text-amber-300 font-bold">{frvp5d.poc.toLocaleString()}</span>
-            </span>
-            <span>
-              <span className="text-gray-500">5D Range: </span>
-              <span className="font-mono text-emerald-300">{frvp5d.low.toLocaleString()}</span>
-              <span className="text-gray-600"> – </span>
-              <span className="font-mono text-emerald-300">{frvp5d.high.toLocaleString()}</span>
-            </span>
-            <span>
-              <span className="text-gray-500">5D VAH/VAL: </span>
-              <span className="font-mono text-sky-300 font-semibold">{frvp5d.vah.toLocaleString()} / {frvp5d.val.toLocaleString()}</span>
-            </span>
-          </>
-        )}
+      {/* Context 5-5 Multi-Timeframe Money Status Summary */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-1 py-0.5 text-[11px] text-gray-400">
+        <span className="font-bold uppercase tracking-wider text-amber-400">AMT Money Tiers:</span>
+
+        {/* Long-Term Money (LT): 5-Month Anchored VWAP */}
         {avwap5mBenchmark && (
-          <span>
-            <span className="text-gray-500">5M AVWAP: </span>
-            <span className="font-mono text-yellow-300 font-bold">{avwap5mBenchmark.vwap.toLocaleString()}</span>
-            <span className="text-gray-600 text-[10px]"> (±1σ: {avwap5mBenchmark.sigma1Lower.toLocaleString()}/{avwap5mBenchmark.sigma1Upper.toLocaleString()})</span>
+          <span className="inline-flex items-center gap-1 rounded bg-purple-950/40 border border-purple-500/30 px-1.5 py-0.5" title="Long-Term Money: 5-Month Anchored VWAP (Macro Institutional Liquidity)">
+            <span className="text-purple-300 font-bold">LT</span>
+            <span className="text-gray-400">5M-AVWAP:</span>
+            <span className="font-mono text-purple-200 font-bold">{avwap5mBenchmark.vwap.toLocaleString()}</span>
           </span>
         )}
-        {yesterdayNyc && (
-          <span>
-            <span className="text-gray-500">Yday: </span>
-            <span className="font-mono text-emerald-300 font-semibold">POC {yesterdayNyc.poc.toLocaleString()}</span>
-            <span className="text-gray-600 text-[10px]"> [{yesterdayNyc.yl.toLocaleString()} – {yesterdayNyc.yh.toLocaleString()}]</span>
+
+        {/* Intermediate-Term Money (IT): 5-Day Fixed Range Volume Profile */}
+        {frvp5d && (
+          <span className="inline-flex items-center gap-1 rounded bg-slate-900 border border-slate-700 px-1.5 py-0.5" title="Intermediate-Term Money: 5-Day Fixed Range Volume Profile (Weekly Balance)">
+            <span className="text-cyan-400 font-bold">IT</span>
+            <span className="text-gray-400">5D-POC:</span>
+            <span className="font-mono text-amber-300 font-bold">{frvp5d.poc.toLocaleString()}</span>
+            <span className="text-gray-500 text-[10px] ml-0.5">[VA: {frvp5d.val.toLocaleString()} – {frvp5d.vah.toLocaleString()}]</span>
           </span>
         )}
-        {overnightInventory && (
-          <span>
-            <span className="text-gray-500">Inv: </span>
-            <span className="text-sky-300 font-semibold">{overnightInventory.summaryBadge.replace('Inv: ', '')}</span>
+
+        {/* Short-Term Money (ST): Yesterday NYC Session + Overnight Inventory */}
+        {(yesterdayNyc || overnightInventory) && (
+          <span className="inline-flex items-center gap-1.5 rounded bg-amber-950/30 border border-amber-500/30 px-1.5 py-0.5" title="Short-Term Money: Yesterday NYC Session & Overnight Inventory">
+            <span className="text-amber-400 font-bold">ST</span>
+            {yesterdayNyc && (
+              <>
+                <span className="text-gray-400">Y-POC:</span>
+                <span className="font-mono text-amber-200 font-semibold">{yesterdayNyc.poc.toLocaleString()}</span>
+              </>
+            )}
+            {overnightInventory?.overnight && (
+              <>
+                <span className="text-gray-500">|</span>
+                <span className="text-gray-400">ON-POC:</span>
+                <span className="font-mono text-sky-300 font-semibold">{overnightInventory.overnight.poc.toLocaleString()}</span>
+                <span className="text-[10px] text-sky-200/90 font-medium">({overnightInventory.biasLabel})</span>
+              </>
+            )}
           </span>
         )}
+
+        {/* Real-time Opportunity / Reaction Radar */}
+        {opportunities.length > 0 && (
+          <span
+            className="inline-flex items-center gap-1.5 rounded bg-emerald-950/60 border border-emerald-500/60 px-2 py-0.5 text-emerald-200 font-semibold animate-pulse shadow-sm"
+            title={`Active Opportunity (${opportunities[0]!.tier}):\n${opportunities[0]!.description}`}
+          >
+            <span>🎯</span>
+            <span className="uppercase tracking-wider text-[10px] font-bold text-emerald-400">OPPORTUNITY:</span>
+            <span>{opportunities[0]!.label}</span>
+          </span>
+        )}
+
+        {/* Session Structural Evaluators */}
+        <span className="text-gray-600 text-[10px]">|</span>
         <span>
           <span className="text-gray-500">Day Type: </span>
           <span className="text-purple-300 font-semibold">{dayTypeEval.badgeText}</span>

@@ -109,6 +109,8 @@ export interface YesterdayNycSession {
   volume: number
   openUnix: number
   closeUnix: number
+  bins?: VolumeProfileBin[]
+  bucketSize?: number
 }
 
 export interface SessionVolumeProfile {
@@ -121,6 +123,20 @@ export interface SessionVolumeProfile {
   vah: number
   val: number
   totalVolume: number
+  bins?: VolumeProfileBin[]
+  bucketSize?: number
+}
+
+export interface MultiTimeframeOpportunity {
+  id: string
+  tier: 'LT' | 'IT' | 'ST' | 'CONFLUENCE'
+  type: 'TEST' | 'CONFLUENCE' | 'INVENTORY_REBALANCE' | 'BREAKOUT'
+  label: string
+  targetLevel: number
+  distancePts: number
+  distancePct: number
+  urgency: 'HIGH' | 'MEDIUM' | 'INFO'
+  description: string
 }
 
 export type OvernightInventoryBias =
@@ -582,13 +598,23 @@ export function computeYesterdayNycSession(
   // Compute Volume Profile for Yesterday
   const mid = (yh + yl) / 2
   const size = bucketWidth(mid)
-  const volumeByBucket = new Map<number, number>()
+  type BucketAccumulator = { volume: number; buyVolume: number; sellVolume: number }
+  const volumeByBucket = new Map<number, BucketAccumulator>()
 
   for (const b of rthBars) {
     const vol = Math.max(0, b.volume > 0 ? b.volume : 1)
+    const isUp = b.close >= b.open
+    const buyVol = isUp ? vol : 0
+    const sellVol = isUp ? 0 : vol
+
     if (b.high - b.low < size * 0.5) {
       const k = roundToBucket((b.high + b.low + b.close) / 3, size)
-      volumeByBucket.set(k, (volumeByBucket.get(k) ?? 0) + vol)
+      const prev = volumeByBucket.get(k) ?? { volume: 0, buyVolume: 0, sellVolume: 0 }
+      volumeByBucket.set(k, {
+        volume: prev.volume + vol,
+        buyVolume: prev.buyVolume + buyVol,
+        sellVolume: prev.sellVolume + sellVol,
+      })
       continue
     }
     const start = roundToBucket(b.low, size)
@@ -599,13 +625,25 @@ export function computeYesterdayNycSession(
     }
     const uniq = Array.from(new Set(keys))
     const share = vol / uniq.length
+    const buyShare = buyVol / uniq.length
+    const sellShare = sellVol / uniq.length
     for (const k of uniq) {
-      volumeByBucket.set(k, (volumeByBucket.get(k) ?? 0) + share)
+      const prev = volumeByBucket.get(k) ?? { volume: 0, buyVolume: 0, sellVolume: 0 }
+      volumeByBucket.set(k, {
+        volume: prev.volume + share,
+        buyVolume: prev.buyVolume + buyShare,
+        sellVolume: prev.sellVolume + sellShare,
+      })
     }
   }
 
   const sortedBuckets = Array.from(volumeByBucket.entries())
-    .map(([price, vol]) => ({ price, volume: vol }))
+    .map(([price, d]) => ({
+      price,
+      volume: d.volume,
+      buyVolume: d.buyVolume,
+      sellVolume: d.sellVolume,
+    }))
     .sort((a, b) => a.price - b.price)
 
   let pocIdx = 0
@@ -652,6 +690,15 @@ export function computeYesterdayNycSession(
     }
   }
 
+  const bins: VolumeProfileBin[] = sortedBuckets.map((b, idx) => ({
+    price: b.price,
+    volume: b.volume,
+    buyVolume: b.buyVolume,
+    sellVolume: b.sellVolume,
+    inValueArea: vaSet.has(idx),
+    isPoc: idx === pocIdx,
+  }))
+
   return {
     sessionDate: priorYmd,
     yh: Number(yh.toFixed(2)),
@@ -663,6 +710,8 @@ export function computeYesterdayNycSession(
     volume,
     openUnix,
     closeUnix,
+    bins,
+    bucketSize: size,
   }
 }
 
@@ -695,13 +744,23 @@ export function computeSessionVolumeProfile(
 
   const mid = (high + low) / 2
   const size = bucketWidth(mid)
-  const volumeByBucket = new Map<number, number>()
+  type BucketAccumulator = { volume: number; buyVolume: number; sellVolume: number }
+  const volumeByBucket = new Map<number, BucketAccumulator>()
 
   for (const b of sessionBars) {
     const vol = Math.max(0, b.volume > 0 ? b.volume : 1)
+    const isUp = b.close >= b.open
+    const buyVol = isUp ? vol : 0
+    const sellVol = isUp ? 0 : vol
+
     if (b.high - b.low < size * 0.5) {
       const k = roundToBucket((b.high + b.low + b.close) / 3, size)
-      volumeByBucket.set(k, (volumeByBucket.get(k) ?? 0) + vol)
+      const prev = volumeByBucket.get(k) ?? { volume: 0, buyVolume: 0, sellVolume: 0 }
+      volumeByBucket.set(k, {
+        volume: prev.volume + vol,
+        buyVolume: prev.buyVolume + buyVol,
+        sellVolume: prev.sellVolume + sellVol,
+      })
       continue
     }
     const start = roundToBucket(b.low, size)
@@ -712,13 +771,25 @@ export function computeSessionVolumeProfile(
     }
     const uniq = Array.from(new Set(keys))
     const share = vol / uniq.length
+    const buyShare = buyVol / uniq.length
+    const sellShare = sellVol / uniq.length
     for (const k of uniq) {
-      volumeByBucket.set(k, (volumeByBucket.get(k) ?? 0) + share)
+      const prev = volumeByBucket.get(k) ?? { volume: 0, buyVolume: 0, sellVolume: 0 }
+      volumeByBucket.set(k, {
+        volume: prev.volume + share,
+        buyVolume: prev.buyVolume + buyShare,
+        sellVolume: prev.sellVolume + sellShare,
+      })
     }
   }
 
   const sortedBuckets = Array.from(volumeByBucket.entries())
-    .map(([price, vol]) => ({ price, volume: vol }))
+    .map(([price, d]) => ({
+      price,
+      volume: d.volume,
+      buyVolume: d.buyVolume,
+      sellVolume: d.sellVolume,
+    }))
     .sort((a, b) => a.price - b.price)
 
   let pocIdx = 0
@@ -765,6 +836,15 @@ export function computeSessionVolumeProfile(
     }
   }
 
+  const bins: VolumeProfileBin[] = sortedBuckets.map((b, idx) => ({
+    price: b.price,
+    volume: b.volume,
+    buyVolume: b.buyVolume,
+    sellVolume: b.sellVolume,
+    inValueArea: vaSet.has(idx),
+    isPoc: idx === pocIdx,
+  }))
+
   return {
     name,
     startUnix,
@@ -775,6 +855,8 @@ export function computeSessionVolumeProfile(
     vah: Number(vah.toFixed(2)),
     val: Number(val.toFixed(2)),
     totalVolume,
+    bins,
+    bucketSize: size,
   }
 }
 
@@ -1046,4 +1128,190 @@ export function classifyMarketDayType(args: {
     title: 'Day Type Waiting',
     description: 'Establishing initial session range; day structure forming.',
   }
+}
+
+/**
+ * Detect Multi-Timeframe Money Opportunities and Confluences.
+ *
+ * Tiers:
+ * 1. Long-Term Money (LT): 5-Month Anchored VWAP (Macro institutional benchmark).
+ * 2. Intermediate-Term Money (IT): 5-Day Fixed Range Volume Profile (Weekly balance).
+ * 3. Short-Term Money (ST): Yesterday Fixed Range & Overnight Inventory Fixed Range.
+ */
+export function detectMultiTimeframeOpportunities(params: {
+  currentPrice: number
+  avwap5m?: AnchoredVwapBenchmark5M | null
+  frvp5d?: FixedRangeVolumeProfile5D | null
+  yesterday?: YesterdayNycSession | null
+  overnight?: OvernightInventoryEvaluation | null
+}): MultiTimeframeOpportunity[] {
+  const { currentPrice, avwap5m, frvp5d, yesterday, overnight } = params
+  if (!Number.isFinite(currentPrice) || currentPrice <= 0) return []
+
+  const opportunities: MultiTimeframeOpportunity[] = []
+  const PROXIMITY_PCT = 0.0025 // within 0.25% considered in reaction zone
+  const CONFLUENCE_PCT = 0.002 // within 0.2% considered confluent
+
+  // 1. Check Short-Term Money (ST): Overnight POC & Yesterday POC
+  if (overnight?.overnight?.poc) {
+    const onPoc = overnight.overnight.poc
+    const distPts = Math.abs(currentPrice - onPoc)
+    const distPct = distPts / onPoc
+    if (distPct <= PROXIMITY_PCT) {
+      opportunities.push({
+        id: 'st-on-poc',
+        tier: 'ST',
+        type: 'TEST',
+        label: `ST: ON-POC Test (${onPoc.toFixed(2)})`,
+        targetLevel: onPoc,
+        distancePts: Number(distPts.toFixed(2)),
+        distancePct: Number(distPct.toFixed(4)),
+        urgency: distPct <= 0.001 ? 'HIGH' : 'MEDIUM',
+        description: `Price testing Overnight Point of Control. Key day-trader acceptance/rejection zone (${overnight.biasLabel}).`,
+      })
+    }
+  }
+
+  if (yesterday?.poc) {
+    const yPoc = yesterday.poc
+    const distPts = Math.abs(currentPrice - yPoc)
+    const distPct = distPts / yPoc
+    if (distPct <= PROXIMITY_PCT) {
+      opportunities.push({
+        id: 'st-y-poc',
+        tier: 'ST',
+        type: 'TEST',
+        label: `ST: Y-POC Test (${yPoc.toFixed(2)})`,
+        targetLevel: yPoc,
+        distancePts: Number(distPts.toFixed(2)),
+        distancePct: Number(distPct.toFixed(4)),
+        urgency: distPct <= 0.001 ? 'HIGH' : 'MEDIUM',
+        description: `Price testing Yesterday Point of Control. Prior day fair value benchmark.`,
+      })
+    }
+  }
+
+  // 2. Check Intermediate-Term Money (IT): 5D POC, VAH, VAL
+  if (frvp5d?.poc) {
+    const poc5d = frvp5d.poc
+    const distPts = Math.abs(currentPrice - poc5d)
+    const distPct = distPts / poc5d
+    if (distPct <= PROXIMITY_PCT) {
+      opportunities.push({
+        id: 'it-5d-poc',
+        tier: 'IT',
+        type: 'TEST',
+        label: `IT: 5D POC Test (${poc5d.toFixed(2)})`,
+        targetLevel: poc5d,
+        distancePts: Number(distPts.toFixed(2)),
+        distancePct: Number(distPct.toFixed(4)),
+        urgency: distPct <= 0.001 ? 'HIGH' : 'MEDIUM',
+        description: `Price testing 5-Day Weekly Point of Control. Major intermediate-term balance pivot.`,
+      })
+    }
+  }
+
+  if (frvp5d?.vah) {
+    const vah5d = frvp5d.vah
+    const distPts = Math.abs(currentPrice - vah5d)
+    const distPct = distPts / vah5d
+    if (distPct <= PROXIMITY_PCT) {
+      opportunities.push({
+        id: 'it-5d-vah',
+        tier: 'IT',
+        type: 'TEST',
+        label: `IT: 5D VAH Test (${vah5d.toFixed(2)})`,
+        targetLevel: vah5d,
+        distancePts: Number(distPts.toFixed(2)),
+        distancePct: Number(distPct.toFixed(4)),
+        urgency: 'MEDIUM',
+        description: `Price testing 5-Day Value Area High. Weekly balance breakout/acceptance threshold.`,
+      })
+    }
+  }
+
+  if (frvp5d?.val) {
+    const val5d = frvp5d.val
+    const distPts = Math.abs(currentPrice - val5d)
+    const distPct = distPts / val5d
+    if (distPct <= PROXIMITY_PCT) {
+      opportunities.push({
+        id: 'it-5d-val',
+        tier: 'IT',
+        type: 'TEST',
+        label: `IT: 5D VAL Test (${val5d.toFixed(2)})`,
+        targetLevel: val5d,
+        distancePts: Number(distPts.toFixed(2)),
+        distancePct: Number(distPct.toFixed(4)),
+        urgency: 'MEDIUM',
+        description: `Price testing 5-Day Value Area Low. Weekly balance discount buyer responsive zone.`,
+      })
+    }
+  }
+
+  // 3. Check Long-Term Money (LT): 5M AVWAP
+  if (avwap5m?.vwap) {
+    const vwap5m = avwap5m.vwap
+    const distPts = Math.abs(currentPrice - vwap5m)
+    const distPct = distPts / vwap5m
+    if (distPct <= PROXIMITY_PCT) {
+      opportunities.push({
+        id: 'lt-5m-avwap',
+        tier: 'LT',
+        type: 'TEST',
+        label: `LT: 5M AVWAP Test (${vwap5m.toFixed(2)})`,
+        targetLevel: vwap5m,
+        distancePts: Number(distPts.toFixed(2)),
+        distancePct: Number(distPct.toFixed(4)),
+        urgency: 'HIGH',
+        description: `Price testing 5-Month Anchored VWAP. Major institutional macro liquidity zone.`,
+      })
+    }
+  }
+
+  // 4. Confluences: alignment between ST and IT/LT levels
+  if (yesterday?.poc && frvp5d?.val && Math.abs(yesterday.poc - frvp5d.val) / yesterday.poc <= CONFLUENCE_PCT) {
+    opportunities.push({
+      id: 'conf-ypoc-5dval',
+      tier: 'CONFLUENCE',
+      type: 'CONFLUENCE',
+      label: `CONFLUENCE: ST Y-POC & IT 5D-VAL (${yesterday.poc.toFixed(2)})`,
+      targetLevel: yesterday.poc,
+      distancePts: Number(Math.abs(currentPrice - yesterday.poc).toFixed(2)),
+      distancePct: Number((Math.abs(currentPrice - yesterday.poc) / yesterday.poc).toFixed(4)),
+      urgency: 'HIGH',
+      description: `Short-Term Y-POC aligns with Intermediate-Term 5D VAL. Strong support/reversal confluence.`,
+    })
+  }
+
+  if (yesterday?.poc && frvp5d?.poc && Math.abs(yesterday.poc - frvp5d.poc) / yesterday.poc <= CONFLUENCE_PCT) {
+    opportunities.push({
+      id: 'conf-ypoc-5dpoc',
+      tier: 'CONFLUENCE',
+      type: 'CONFLUENCE',
+      label: `CONFLUENCE: ST Y-POC & IT 5D-POC (${yesterday.poc.toFixed(2)})`,
+      targetLevel: yesterday.poc,
+      distancePts: Number(Math.abs(currentPrice - yesterday.poc).toFixed(2)),
+      distancePct: Number((Math.abs(currentPrice - yesterday.poc) / yesterday.poc).toFixed(4)),
+      urgency: 'HIGH',
+      description: `Short-Term Y-POC aligns with 5-Day weekly POC. Super-composite volume magnet.`,
+    })
+  }
+
+  // 5. Overnight Inventory Extreme Rebalancing
+  if (overnight && (overnight.bias === '100%_NET_LONG' || overnight.bias === '100%_NET_SHORT')) {
+    opportunities.push({
+      id: 'inv-rebalance',
+      tier: 'ST',
+      type: 'INVENTORY_REBALANCE',
+      label: `OPPORTUNITY: ${overnight.biasLabel} Inventory Rebalance`,
+      targetLevel: yesterday?.close ?? currentPrice,
+      distancePts: yesterday?.close ? Number(Math.abs(currentPrice - yesterday.close).toFixed(2)) : 0,
+      distancePct: yesterday?.close ? Number((Math.abs(currentPrice - yesterday.close) / yesterday.close).toFixed(4)) : 0,
+      urgency: 'HIGH',
+      description: `Overnight inventory is ${overnight.biasLabel}. High statistical probability of early liquidation towards Yesterday Close.`,
+    })
+  }
+
+  return opportunities
 }
