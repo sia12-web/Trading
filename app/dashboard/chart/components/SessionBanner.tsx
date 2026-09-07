@@ -574,9 +574,6 @@ export function SessionBanner({
             {liveDeskContractLabel(gate.lockedInstrument)}
           </span>
         )}
-        <span className="rounded bg-emerald-500/25 px-2 py-0.5 text-emerald-200 font-semibold text-xs border border-emerald-500/40">
-          ⚡ SYSTEM AUTOMATED (RUNS AT 9:30 AM RTH)
-        </span>
         {asiaOrderLive && (
           <span
             className="rounded bg-lime-500/25 px-2 py-0.5 text-lime-200 font-semibold text-xs border border-lime-500/40"
@@ -605,7 +602,7 @@ export function SessionBanner({
               }`}
             title={htfSummary || 'Day Timeframe Specialist — Market Profile Context & Structure'}
           >
-            Day TF: {htfStatus.replace(/_/g, ' ')}
+            Day TF: {String(htfStatus).replace(/_/g, ' ')}
           </span>
         )}
         {!SYSTEMATIC_LIVE_DESK && htfPerf && (
@@ -622,7 +619,7 @@ export function SessionBanner({
               }`}
             title={`Directional Performance: ${htfPerf.grade} | Target ${htfPerf.targetMultiplier}x (${htfPerf.expectedRR}) | ${htfPerf.holdingDirective}`}
           >
-            Perf: {htfPerf.grade.replace(/_/g, ' ')} ({htfPerf.targetMultiplier}x Target)
+            Perf: {String(htfPerf.grade || '').replace(/_/g, ' ')} ({htfPerf.targetMultiplier}x Target)
           </span>
         )}
         {!SYSTEMATIC_LIVE_DESK && htfBracket && (
@@ -637,7 +634,7 @@ export function SessionBanner({
               }`}
             title={`Long-Term Bracket: ${htfBracket.bracketMode} | ${htfBracket.directiveSummary}`}
           >
-            Bracket: {htfBracket.tradeLocationGrade.replace(/_/g, ' ')}
+            Bracket: {String(htfBracket.tradeLocationGrade || '').replace(/_/g, ' ')}
           </span>
         )}
         {!SYSTEMATIC_LIVE_DESK && htfCorr && htfCorr.type !== 'NONE' && (
@@ -650,20 +647,20 @@ export function SessionBanner({
               }`}
             title={`Corrective Action: ${htfCorr.type} | ${htfCorr.directiveSummary}`}
           >
-            Corr: {htfCorr.type.replace(/_/g, ' ')}
+            Corr: {String(htfCorr.type || '').replace(/_/g, ' ')}
           </span>
         )}
         {!SYSTEMATIC_LIVE_DESK && htfSituation && htfSituation.activeSituation !== 'NONE' && (
           <span
-            className={`rounded px-2 py-0.5 font-semibold text-[10px] uppercase tracking-wide border ${htfSituation.activeSituation.includes('BULL') || htfSituation.activeSituation.includes('BUYING')
+            className={`rounded px-2 py-0.5 font-semibold text-[10px] uppercase tracking-wide border ${String(htfSituation.activeSituation || '').includes('BULL') || String(htfSituation.activeSituation || '').includes('BUYING')
               ? 'bg-emerald-500/35 text-emerald-100 border-emerald-400/60 font-bold'
-              : htfSituation.activeSituation.includes('BEAR') || htfSituation.activeSituation.includes('SELLING')
+              : String(htfSituation.activeSituation || '').includes('BEAR') || String(htfSituation.activeSituation || '').includes('SELLING')
                 ? 'bg-rose-500/35 text-rose-100 border-rose-400/60 font-bold'
                 : 'bg-purple-500/25 text-purple-200 border-purple-500/40'
               }`}
             title={`Special Situation: ${htfSituation.activeSituation} (${htfSituation.continuationProbabilityPct}% Odds) | ${htfSituation.directiveSummary}`}
           >
-            Situation: {htfSituation.activeSituation.replace(/_/g, ' ')} ({htfSituation.continuationProbabilityPct}%)
+            Situation: {String(htfSituation.activeSituation || '').replace(/_/g, ' ')} ({htfSituation.continuationProbabilityPct}%)
           </span>
         )}
         {!SYSTEMATIC_LIVE_DESK && htfStandAside && htfStandAside.isStandAside && (
@@ -672,7 +669,7 @@ export function SessionBanner({
             title={`Market Stand-Aside Warning: ${htfStandAside.reason} | ${htfStandAside.directiveSummary}`}
           >
             <span>🛑 Stand Aside:</span>
-            <span>{htfStandAside.reason.replace(/_/g, ' ')}</span>
+            <span>{String(htfStandAside.reason || '').replace(/_/g, ' ')}</span>
           </span>
         )}
         {!SYSTEMATIC_LIVE_DESK && (
@@ -762,7 +759,7 @@ export function SessionBanner({
               : newsHazard.level === 'careful'
                 ? '⚠ '
                 : '📰 '}
-            {newsHazard.chip}
+            {newsHazard.chip || ''}
           </Link>
         ) : null}
         <span className="flex-1 min-w-[12rem]">{phaseHint(gate.phase, gate.message)}</span>

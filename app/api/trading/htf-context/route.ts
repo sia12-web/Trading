@@ -74,5 +74,31 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
         ok: true,
         htfState,
+        state: htfState,
     })
 }
+
+export async function GET(request: NextRequest) {
+    const user = await getOrCreateUser(request)
+    if (!user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const { searchParams } = new URL(request.url)
+    const rawInstrument = searchParams.get('instrument') || 'DOW'
+    const instrument: DeskInstrument = isDeskInstrument(rawInstrument)
+        ? (rawInstrument as DeskInstrument)
+        : 'DOW'
+
+    const htfState = computeHTFContextState({
+        instrument,
+        candles5m: [],
+        asOfUnix: Math.floor(Date.now() / 1000),
+    })
+
+    return NextResponse.json({
+        ok: true,
+        state: htfState,
+        htfState,
+    })
+}
+

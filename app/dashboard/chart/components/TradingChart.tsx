@@ -154,7 +154,15 @@ type Dow15mFailSignal = any
 
 const applyIbLiquiditySwingToRange = (r?: any, ..._args: any[]) => r
 const applyIbLiquiditySwingToRanges = (r?: any, ..._args: any[]) => r
-const computeIbExtendAdvice = (..._args: any[]): any => null
+const computeIbExtendAdvice = (..._args: any[]): any => ({
+  chip: '—',
+  message: '',
+  entryAdvice: null,
+  stopAdvice: null,
+  swing: null,
+  regime: null,
+  ibComplete: false,
+})
 const findIbLiquiditySwing = (..._args: any[]): any => null
 const ibExtendAlertKind = (..._args: any[]) => ''
 type IbExtendAdvice = any
@@ -163,9 +171,9 @@ import { quoteBelongsToBook } from '@/lib/trading/deskExitGuard'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
 
-const LiveVoicePanel: React.FC<any> = () => null
-const AuctionHudPanel: React.FC<any> = () => null
-const Dow15mFailHudPanel: React.FC<any> = () => null
+const LiveVoicePanel = (_props: any): any => null
+const AuctionHudPanel = (_props: any): any => null
+const Dow15mFailHudPanel = (_props: any): any => null
 import {
   DESK_BAR_SPACING,
   DESK_CANDLE_DOWN,
@@ -2407,9 +2415,13 @@ export function TradingChart({
       lastPrice: last?.close ?? null,
     })
     ibExtendRef.current = advice
-    const chip = advice.chip
+    if (!advice) {
+      setIbExtendBadge('—')
+      return
+    }
+    const chip = advice.chip || '—'
     setIbExtendBadge((prev) => (prev === chip ? prev : chip))
-    const hover = `${advice.message}${advice.entryAdvice != null && advice.stopAdvice != null
+    const hover = `${advice.message || ''}${advice.entryAdvice != null && advice.stopAdvice != null
       ? `\nPullback ~${advice.entryAdvice} · stop ~${advice.stopAdvice} (advise only — you place on TradingView).`
       : ''
       }\nAdvice only. Does not place. CALL ON still gates tickets.`
