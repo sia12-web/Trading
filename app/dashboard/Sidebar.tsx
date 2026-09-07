@@ -2,8 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { Suspense, useEffect, useState } from 'react'
-import { isLiveTradingPageOpen } from '@/lib/trading/sessionGate'
+import { Suspense, useState } from 'react'
 
 type NavItem = {
   href: string
@@ -158,13 +157,11 @@ function NavSection({
   items,
   pathname,
   search,
-  liveDeskOpen,
 }: {
   title: string
   items: NavItem[]
   pathname: string
   search: string
-  liveDeskOpen: boolean
 }) {
   return (
     <div className="space-y-0.5">
@@ -176,14 +173,11 @@ function NavSection({
           .filter((i) => pathMatches(pathname, search, i.href))
           .sort((a, b) => b.href.length - a.href.length)
         const active = matches[0]?.href === item.href
-        const isLiveChart = item.href === '/dashboard/chart'
         return (
           <NavLink
             key={item.href}
             item={item}
             active={active}
-            locked={isLiveChart && !liveDeskOpen}
-            lockedHint="No session now — NY from 09:00 Montreal, or Asia GOLD/DOW 02:00–10:25"
           />
         )
       })}
@@ -195,14 +189,6 @@ function SidebarNav() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const search = searchParams.toString()
-  const [liveDeskOpen, setLiveDeskOpen] = useState(false)
-
-  useEffect(() => {
-    const tick = () => setLiveDeskOpen(isLiveTradingPageOpen())
-    tick()
-    const id = window.setInterval(tick, 15_000)
-    return () => window.clearInterval(id)
-  }, [])
 
   return (
     <>
@@ -211,14 +197,12 @@ function SidebarNav() {
         items={LIVE_ITEMS}
         pathname={pathname}
         search={search}
-        liveDeskOpen={liveDeskOpen}
       />
       <NavSection
         title="Tools"
         items={TOOL_ITEMS}
         pathname={pathname}
         search={search}
-        liveDeskOpen={true}
       />
     </>
   )

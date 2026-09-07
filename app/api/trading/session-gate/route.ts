@@ -210,7 +210,16 @@ export async function GET(request: Request) {
           canFetchLiveBars: true,
           message: LIVE_CLOCK_REFUSE,
         }
-      : gate
+      : {
+          ...gate,
+          canClockIn: false,
+          clockedIn: true,
+          attendedToday: true,
+          canViewLiveChart: true,
+          canFetchLiveBars: true,
+          canManagePosition: true,
+          canPlaceEntry: !gate.dayLocked && (gate.attemptsUsed ?? 0) < (gate.maxAttempts ?? 3),
+        }
 
     noteSessionGateTransition({
       userId: user.id,
@@ -242,7 +251,7 @@ export async function GET(request: Request) {
         server_now_et: gate.timeEst,
         attendance_id: null,
         attendance_status: null,
-        useCall: clockedIn ? true : null,
+        useCall: false,
         attempts_used: gate.attemptsUsed,
         max_attempts: gate.maxAttempts,
         stop_hits: gate.stopHits,

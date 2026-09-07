@@ -581,40 +581,14 @@ export function isChartStreamAllowed(
 
 /**
  * Tip updates:
- *   −30m → cash open: on (watch while deciding to clock in)
- *   after cash open: only if clocked in / attended (late miss = tip off, no AI)
- *   afternoon: same attendance rule
+ *   Always active during chart streaming without clocking in or session gate restriction.
  */
 export function isLiveTipStreamAllowed(
   instrument: string | null | undefined,
   now: Date = new Date(),
-  opts?: { clockedIn?: boolean; attendedToday?: boolean }
+  _opts?: { clockedIn?: boolean; attendedToday?: boolean }
 ): { open: boolean; reason: string } {
-  const stream = isChartStreamAllowed(instrument, now)
-  if (!stream.open) return stream
-  if (opts && opts.attendedToday === false && !opts.clockedIn) {
-    if (isAfternoonWatchWindow(now, instrument)) {
-      return {
-        open: false,
-        reason: 'Afternoon tip frozen — no morning attendance (save feed cost)',
-      }
-    }
-    if (isDeskInstrument(instrument)) {
-      const s = sessionFor(instrument)
-      const t = parseTimeToSeconds(timeInTz(now, s.tz))
-      const open = parseTimeToSeconds(s.marketOpen)
-      if (t >= open) {
-        return {
-          open: false,
-          reason: 'Not clocked in — tip locked until clock-in (late join still available during cash session)',
-        }
-      }
-    }
-  }
-  if (isAfternoonWatchWindow(now, instrument)) {
-    return { open: true, reason: 'Afternoon tip stream' }
-  }
-  return { open: true, reason: 'Session tip stream' }
+  return isChartStreamAllowed(instrument, now)
 }
 
 /**
@@ -741,9 +715,9 @@ export function isAnyLiveFocusWindowActive(now: Date = new Date()): boolean {
   return isLiveFocusWindowActive('DOW', now)
 }
 
-/** Live Trading page: NY cash-day focus OR Asia GOLD/DOW overnight book. */
-export function isLiveTradingPageOpen(now: Date = new Date()): boolean {
-  return isAnyLiveFocusWindowActive(now) || isAsiaDeskChartWindow(now)
+/** Live Trading page: always open without clocking in/out or session restrictions. */
+export function isLiveTradingPageOpen(_now: Date = new Date()): boolean {
+  return true
 }
 
 /**
@@ -1062,8 +1036,8 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
             attendedToday: false,
             canClockIn,
             glanceOnly: false,
-            canViewLiveChart: false,
-            canFetchLiveBars: false,
+            canViewLiveChart: true,
+            canFetchLiveBars: true,
             canPlaceEntry: false,
             canManagePosition: false,
             rangeStrategy: null,
@@ -1406,8 +1380,8 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     ...base,
     rangeStrategy: null,
     phase: 'CLOSED',
-    canViewLiveChart: false,
-    canFetchLiveBars: false,
+    canViewLiveChart: true,
+    canFetchLiveBars: true,
     canPlaceEntry: false,
     canManagePosition: false,
     message: `Cash closed. ${nextDesk}`,

@@ -7,7 +7,7 @@
  * Simulation and Nikkei are not on the live desk.
  */
 
-import { useRouter } from 'next/navigation'
+
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { TradingChart } from './components/TradingChart'
 import { SessionBanner, type SessionGateState } from './components/SessionBanner'
@@ -32,7 +32,7 @@ import {
   setDeskInstrumentPreference,
   type DeskInstrumentPref,
 } from '@/lib/trading/deskInstrumentPreference'
-import { isAfternoonWatchWindow, sessionFor, deskMarketFor, isLiveTradingPageOpen } from '@/lib/trading/sessionGate'
+import { isAfternoonWatchWindow, sessionFor, deskMarketFor } from '@/lib/trading/sessionGate'
 import { isAsiaLiveOrderOverlay, type AsiaDeskOverlay } from '@/lib/trading/asiaDesk'
 import { isLiveClockInstrument } from '@/lib/trading/liveDeskBook'
 import { quoteBelongsToBook } from '@/lib/trading/deskExitGuard'
@@ -93,32 +93,13 @@ import {
   tradeifyMustFlatten,
 } from '@/lib/trading/tradeifyGrowth50k'
 
-/** Why new entries are blocked — shown on market place attempts. */
 function entryDeniedMessage(gate: SessionGateState | null | undefined): string | null {
-  if (!gate) return 'Session gate loading — try again in a moment.'
+  if (!gate) return null
   if (gate.phase === 'MANAGE' || gate.open_position_id) {
     return 'Position open — manage only, no new entries.'
   }
-  if (!gate.canPlaceEntry) {
-    if (gate.dayLocked || (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? SESSION_MAX_ATTEMPTS)) {
-      return 'Session attempt cap reached — trading switched off. No new entries.'
-    }
-    if (gate.message && gate.message.trim()) {
-      return gate.message.trim()
-    }
-    if (gate.phase === 'FLAT') {
-      return 'Entry window closed.'
-    }
-    if (gate.phase === 'DONE') {
-      return 'Entry windows done for today — manage if open, no new entries.'
-    }
-    if (gate.phase === 'CLOSED') {
-      return 'Cash closed — desk is offline until the next session.'
-    }
-    if (gate.phase === 'PREP' || gate.phase === 'RECOMMENDED') {
-      return 'Pre-open prep — entries open with cash session.'
-    }
-    return 'Entries not available right now.'
+  if (gate.dayLocked || (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? SESSION_MAX_ATTEMPTS)) {
+    return 'Session attempt cap reached — trading switched off. No new entries.'
   }
   return null
 }
@@ -197,7 +178,6 @@ interface PositionOverlay {
 }
 
 export default function ChartPage() {
-  const router = useRouter()
   // SSR/hydration always starts DOW — restore preference after mount (see effect below)
   const [instrument, setInstrumentState] = useState<Instrument>('DOW')
   const [chartBooted, setChartBooted] = useState(false)
@@ -225,17 +205,7 @@ export default function ChartPage() {
     setChartBooted(true)
   }, [])
 
-  // Outside NY focus and Asia overnight book: send home
-  useEffect(() => {
-    const check = () => {
-      if (!isLiveTradingPageOpen()) {
-        router.replace('/dashboard')
-      }
-    }
-    check()
-    const id = window.setInterval(check, 15_000)
-    return () => window.clearInterval(id)
-  }, [router])
+
   const [livePrice, setLivePrice] = useState<number | null>(null)
   const [positionOverlay, setPositionOverlay] = useState<PositionOverlay | null>(null)
   const [managePos, setManagePos] = useState<ManagePosition | null>(null)

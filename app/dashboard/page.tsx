@@ -8,7 +8,6 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import {
   isAnyLiveFocusWindowActive,
-  isLiveTradingPageOpen,
   NY_SESSION,
 } from '@/lib/trading/sessionGate'
 import {
@@ -24,24 +23,17 @@ function focusUnlockMontreal(now: Date): string {
 }
 
 export default function DashboardHomePage() {
-  const [focusLive, setFocusLive] = useState(false)
-  const [nextHint, setNextHint] = useState('')
+  const [nextHint, setNextHint] = useState('Live Trading desk is open — direct execution without clock-in constraints.')
 
   useEffect(() => {
     const tick = () => {
       const now = new Date()
-      const live = isLiveTradingPageOpen(now)
-      setFocusLive(live)
       if (isAnyLiveFocusWindowActive(now)) {
-        setNextHint('NY focus is open — Live Trading unlocked.')
-      } else if (live) {
-        setNextHint(
-          'ASIA desk is open — GOLD (MGC) and DOW (MYM) overnight range. Live Trading unlocked until 10:25 Montreal. Orders only after 02:00 if the range qualifies.'
-        )
+        setNextHint('NY session is active — Live Trading desk open.')
       } else {
         const unlockAt = focusUnlockMontreal(now)
         setNextHint(
-          `No live session. Live Trading unlocks 02:00 Montreal for Asia GOLD/DOW (only if the range qualifies), or 30 minutes before NY open (${unlockAt}).`
+          `Live Trading desk is open (NY regular session starts at ${unlockAt}).`
         )
       }
     }
@@ -56,21 +48,12 @@ export default function DashboardHomePage() {
       <p className="mt-2 text-sm text-gray-400 leading-relaxed">{nextHint}</p>
 
       <div className="mt-8 flex flex-wrap gap-3">
-        {focusLive ? (
-          <Link
-            href="/dashboard/chart"
-            className="rounded-lg bg-brand-600/90 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-500"
-          >
-            Open Live Trading →
-          </Link>
-        ) : (
-          <span
-            className="rounded-lg border border-surface-600 bg-surface-800/80 px-4 py-2.5 text-sm font-semibold text-gray-500"
-            title="Unlocks 30 minutes before NY cash open (Montreal)"
-          >
-            Live Trading locked
-          </span>
-        )}
+        <Link
+          href="/dashboard/chart"
+          className="rounded-lg bg-brand-600/90 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-500"
+        >
+          Open Live Trading →
+        </Link>
         <Link
           href="/dashboard/positions"
           className="rounded-lg border border-surface-600 px-4 py-2.5 text-sm font-semibold text-gray-300 hover:border-surface-500 hover:text-white"

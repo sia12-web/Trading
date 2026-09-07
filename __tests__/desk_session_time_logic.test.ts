@@ -130,7 +130,7 @@ expectPhase('DOW', etDate(Y, M, D, 2, 10), { lunchFreeze: false, trade: false, c
 expectPhase('GOLD', etDate(Y, M, D, 2, 10), { lunchFreeze: false, trade: false, chart: true, deskHours: false }, 'GOLD 02:10 Asia place window')
 expectPhase('NASDAQ', etDate(Y, M, D, 2, 10), { lunchFreeze: false, trade: false, chart: false, deskHours: false }, 'NASDAQ 02:10 still frozen')
 assert(isLiveTradingPageOpen(etDate(Y, M, D, 2, 10)), 'Live Trading page open at 02:10')
-assert(!isLiveTradingPageOpen(etDate(Y, M, D, 20, 0)), 'Live Trading page closed at 20:00')
+assert(isLiveTradingPageOpen(etDate(Y, M, D, 20, 0)), 'Live Trading page always open')
 {
   const asiaGate = resolveSessionGate({
     now: etDate(Y, M, D, 2, 10),
