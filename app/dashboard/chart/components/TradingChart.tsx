@@ -69,14 +69,12 @@ import {
   computeYesterdayNycSession,
   computeOvernightInventoryAndSessions,
   classifyMarketDayType,
-  detectMultiTimeframeOpportunities,
   type FixedRangeVolumeProfile5D,
   type DayTypeEvaluation,
   type AnchoredVwapBenchmark5M,
   type YesterdayNycSession,
   type OvernightInventoryEvaluation,
   type ContextBar,
-  type MultiTimeframeOpportunity,
 } from '@/lib/chart/context55'
 import {
   formatChartClock,
@@ -2123,21 +2121,6 @@ export function TradingChart({
     const tz = chartTzRef.current
     const candleTimes = list.map((c) => toChartTime(c.time as number, tz))
 
-    const drawLevelBadge = (
-      text: string,
-      x: number,
-      y: number,
-      color: string,
-      bgColor = 'rgba(15, 23, 42, 0.85)'
-    ) => {
-      ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-      const textW = ctx.measureText(text).width
-      ctx.fillStyle = bgColor
-      ctx.fillRect(x, y - 9, textW + 6, 12)
-      ctx.fillStyle = color
-      ctx.fillText(text, x + 3, y)
-    }
-
     // 1. Long-Term Money (LT): 5-Month Anchored VWAP
     if (avwap5mBenchmark) {
       const yAvwap = series.priceToCoordinate(avwap5mBenchmark.vwap)
@@ -2150,7 +2133,6 @@ export function TradingChart({
         ctx.lineTo(paneW, Math.round(yAvwap) + 0.5)
         ctx.stroke()
         ctx.setLineDash([])
-        drawLevelBadge(`LT: 5M AVWAP ${avwap5mBenchmark.vwap.toFixed(2)}`, 12, Math.round(yAvwap) - 3, '#ddd6fe', 'rgba(76, 29, 149, 0.85)')
       }
     }
 
@@ -2203,7 +2185,6 @@ export function TradingChart({
           ctx.moveTo(lineStart, Math.round(yPoc) + 0.5)
           ctx.lineTo(paneW, Math.round(yPoc) + 0.5)
           ctx.stroke()
-          drawLevelBadge(`IT: 5D POC ${frvp5d.poc.toFixed(2)}`, lineStart + 6, Math.round(yPoc) - 3, '#f1f5f9', 'rgba(15, 23, 42, 0.85)')
         }
 
         // IT: 5D VAH / VAL Lines
@@ -2218,7 +2199,6 @@ export function TradingChart({
           ctx.lineTo(paneW, Math.round(yVah) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
-          drawLevelBadge(`IT: 5D VAH ${frvp5d.vah.toFixed(2)}`, lineStart + 6, Math.round(yVah) - 3, '#38bdf8', 'rgba(15, 23, 42, 0.75)')
         }
 
         const yVal = series.priceToCoordinate(frvp5d.val)
@@ -2232,7 +2212,6 @@ export function TradingChart({
           ctx.lineTo(paneW, Math.round(yVal) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
-          drawLevelBadge(`IT: 5D VAL ${frvp5d.val.toFixed(2)}`, lineStart + 6, Math.round(yVal) + 11, '#38bdf8', 'rgba(15, 23, 42, 0.75)')
         }
       }
     }
@@ -2290,7 +2269,6 @@ export function TradingChart({
           ctx.lineTo(paneW, Math.round(yPocYday) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
-          drawLevelBadge(`ST: Y-POC ${yesterdayNyc.poc.toFixed(2)}`, lineStart + 6, Math.round(yPocYday) - 3, '#fde68a', 'rgba(120, 53, 15, 0.85)')
         }
 
         // ST: Y-VAH / VAL Lines
@@ -2305,7 +2283,6 @@ export function TradingChart({
           ctx.lineTo(paneW, Math.round(yVahYday) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
-          drawLevelBadge(`ST: Y-VAH ${yesterdayNyc.vah.toFixed(2)}`, lineStart + 6, Math.round(yVahYday) - 3, '#fbbf24', 'rgba(120, 53, 15, 0.75)')
         }
 
         const yValYday = series.priceToCoordinate(yesterdayNyc.val)
@@ -2319,7 +2296,6 @@ export function TradingChart({
           ctx.lineTo(paneW, Math.round(yValYday) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
-          drawLevelBadge(`ST: Y-VAL ${yesterdayNyc.val.toFixed(2)}`, lineStart + 6, Math.round(yValYday) + 11, '#fbbf24', 'rgba(120, 53, 15, 0.75)')
         }
       }
     }
@@ -2379,7 +2355,6 @@ export function TradingChart({
           ctx.lineTo(paneW, Math.round(yPocOn) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
-          drawLevelBadge(`ST: ON-POC ${on.poc.toFixed(2)} (${overnightInventory.biasLabel})`, lineStart + 6, Math.round(yPocOn) - 3, '#bae6fd', 'rgba(12, 74, 110, 0.85)')
         }
 
         // ST: ON-VAH / VAL Lines
@@ -2394,7 +2369,6 @@ export function TradingChart({
           ctx.lineTo(paneW, Math.round(yVahOn) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
-          drawLevelBadge(`ST: ON-VAH ${on.vah.toFixed(2)}`, lineStart + 6, Math.round(yVahOn) - 3, '#7dd3fc', 'rgba(12, 74, 110, 0.75)')
         }
 
         const yValOn = series.priceToCoordinate(on.val)
@@ -2408,7 +2382,6 @@ export function TradingChart({
           ctx.lineTo(paneW, Math.round(yValOn) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
-          drawLevelBadge(`ST: ON-VAL ${on.val.toFixed(2)}`, lineStart + 6, Math.round(yValOn) + 11, '#7dd3fc', 'rgba(12, 74, 110, 0.75)')
         }
       }
     }
@@ -2931,19 +2904,6 @@ export function TradingChart({
     })
   }, [candles, instrument, yesterdayNyc, ydayProfile, overnightInventory, controlBadge])
 
-  const opportunities: MultiTimeframeOpportunity[] = useMemo(() => {
-    const list = candles || []
-    if (!list.length) return []
-    const livePrice = list[list.length - 1]!.close
-    return detectMultiTimeframeOpportunities({
-      currentPrice: livePrice,
-      avwap5m: avwap5mBenchmark,
-      frvp5d,
-      yesterday: yesterdayNyc,
-      overnight: overnightInventory,
-    })
-  }, [candles, avwap5mBenchmark, frvp5d, yesterdayNyc, overnightInventory])
-
   const emotionalNewsMoves: EmotionalNewsMove[] = useMemo(() => {
     const list = candles || []
     if (!list.length) return []
@@ -2961,10 +2921,6 @@ export function TradingChart({
       frvp5d?.startUnix
     )
   }, [candles, newsEvents, instrument, frvp5d?.startUnix])
-
-  const latestNewsMove: EmotionalNewsMove | null = useMemo(() => {
-    return emotionalNewsMoves.length > 0 ? emotionalNewsMoves[emotionalNewsMoves.length - 1]! : null
-  }, [emotionalNewsMoves])
 
   const paintAuctionOverlay = useCallback(() => {
     const host = priceLineHostRef.current
@@ -8240,25 +8196,28 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         <OHLCVTooltip data={tooltip} color={meta.color} />
       </div>
 
-      {/* Context 5-5 Multi-Timeframe Money Status Summary */}
+      {/* Multi-Timeframe Money & Structural Status Summary */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-1 py-0.5 text-[11px] text-gray-400">
-        <span className="font-bold uppercase tracking-wider text-amber-400">AMT Money Tiers:</span>
-
-        {/* Long-Term Money (LT): 5-Month Anchored VWAP */}
+        {/* Long-Term Money: 5-Month Anchored VWAP */}
         {avwap5mBenchmark && (
-          <span className="inline-flex items-center gap-1 rounded bg-purple-950/40 border border-purple-500/30 px-1.5 py-0.5" title="Long-Term Money: 5-Month Anchored VWAP (Macro Institutional Liquidity)">
-            <span className="text-purple-300 font-bold">LT</span>
-            <span className="text-gray-400">5M-AVWAP:</span>
+          <span className="inline-flex items-center gap-1.5 rounded bg-purple-950/40 border border-purple-500/30 px-2 py-0.5" title="Long-Term Money: 5-Month Anchored VWAP">
+            <span className="text-purple-300 font-bold">Long Term Money:</span>
             <span className="font-mono text-purple-200 font-bold">{avwap5mBenchmark.vwap.toLocaleString()}</span>
           </span>
         )}
 
+        {/* Intermediate Money: 5-Day Fixed Range Volume Profile */}
+        {frvp5d && (
+          <span className="inline-flex items-center gap-1.5 rounded bg-slate-900 border border-slate-700 px-2 py-0.5" title="Intermediate Money: 5-Day Volume Profile POC">
+            <span className="text-cyan-400 font-bold">Intermediate Money:</span>
+            <span className="font-mono text-amber-300 font-bold">{frvp5d.poc.toLocaleString()}</span>
+          </span>
+        )}
 
-
-        {/* Short-Term Money (ST): Yesterday NYC Session + Overnight Inventory */}
+        {/* Short-Term Money: Yesterday NYC Session + Overnight Inventory */}
         {(yesterdayNyc || overnightInventory) && (
-          <span className="inline-flex items-center gap-1.5 rounded bg-amber-950/30 border border-amber-500/30 px-1.5 py-0.5" title="Short-Term Money: Yesterday NYC Session & Overnight Inventory">
-            <span className="text-amber-400 font-bold">ST</span>
+          <span className="inline-flex items-center gap-1.5 rounded bg-amber-950/30 border border-amber-500/30 px-2 py-0.5" title="Short-Term Money: Yesterday NYC Session & Overnight Inventory">
+            <span className="text-amber-400 font-bold">Short Term Money:</span>
             {yesterdayNyc && (
               <>
                 <span className="text-gray-400">Y-POC:</span>
@@ -8270,25 +8229,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 <span className="text-gray-500">|</span>
                 <span className="text-gray-400">ON-POC:</span>
                 <span className="font-mono text-sky-300 font-semibold">{overnightInventory.overnight.poc.toLocaleString()}</span>
-                <span className="text-[10px] text-sky-200/90 font-medium">({overnightInventory.biasLabel})</span>
               </>
             )}
           </span>
         )}
 
-        {/* Real-time Opportunity / Reaction Radar */}
-        {opportunities.length > 0 && (
-          <span
-            className="inline-flex items-center gap-1.5 rounded bg-emerald-950/60 border border-emerald-500/60 px-2 py-0.5 text-emerald-200 font-semibold animate-pulse shadow-sm"
-            title={`Active Opportunity (${opportunities[0]!.tier}):\n${opportunities[0]!.description}`}
-          >
-            <span>🎯</span>
-            <span className="uppercase tracking-wider text-[10px] font-bold text-emerald-400">OPPORTUNITY:</span>
-            <span>{opportunities[0]!.label}</span>
-          </span>
-        )}
-
-        {/* Session Structural Evaluators */}
+        {/* Structural Evaluators: Day Type & Opening */}
         <span className="text-gray-600 text-[10px]">|</span>
         <span>
           <span className="text-gray-500">Day Type: </span>
@@ -8298,29 +8244,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           <span className="text-gray-500">Opening: </span>
           <span className="text-cyan-300 font-semibold">{openingBadge}</span>
         </span>
-        <span>
-          <span className="text-gray-500">Control: </span>
-          <span className="text-indigo-300 font-semibold">{controlBadge}</span>
-        </span>
-
-        {/* Active Emotional News Move */}
-        {latestNewsMove && (
-          <>
-            <span className="text-gray-600 text-[10px]">|</span>
-            <span
-              className="inline-flex items-center gap-1.5 rounded bg-purple-950/40 border border-purple-500/40 px-2 py-0.5"
-              title={`Emotional News Move: ${latestNewsMove.eventName}\n• News High: ${latestNewsMove.newsHigh.toLocaleString()}\n• News Low: ${latestNewsMove.newsLow.toLocaleString()}\n• Base: ${latestNewsMove.basePrice.toLocaleString()}\n• Range: ${latestNewsMove.moveRange.toFixed(1)} pts (${latestNewsMove.direction})\n• Status: ${latestNewsMove.status}`}
-            >
-              <span className="text-amber-400 font-bold">⚡ NEWS:</span>
-              <span className="text-purple-200 font-medium truncate max-w-[120px]">{latestNewsMove.eventName}</span>
-              <span className="text-rose-400 font-mono font-semibold">H:{latestNewsMove.newsHigh.toLocaleString()}</span>
-              <span className="text-emerald-400 font-mono font-semibold">L:{latestNewsMove.newsLow.toLocaleString()}</span>
-              <span className="text-[10px] text-amber-300 font-mono">
-                ({latestNewsMove.direction === 'WHIPSAW' ? '±Whip' : latestNewsMove.direction === 'BULLISH_DRIVE' ? '▲Up' : '▼Down'} {latestNewsMove.moveRange.toFixed(1)})
-              </span>
-            </span>
-          </>
-        )}
       </div>
       <div
         ref={chartFrameRef}
