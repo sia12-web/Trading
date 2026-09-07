@@ -1146,7 +1146,7 @@ export function TradingChart({
   const ydayLinesRef = useRef<IPriceLine[]>([])
   const ydayPaintKeyRef = useRef('')
   const [, setYesterdayBadge] = useState('Yday off')
-  const [showOpeningActivity, setShowOpeningActivity] = useState(() =>
+  const [showOpeningActivity] = useState(() =>
     SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().opening
   )
   const openingLinesRef = useRef<IPriceLine[]>([])
@@ -1159,15 +1159,15 @@ export function TradingChart({
   const avwap5mLinesRef = useRef<IPriceLine[]>([])
   const paint5mAvwapBenchmarkRef = useRef<() => void>(() => { })
   const [yesterdayNyc, setYesterdayNyc] = useState<YesterdayNycSession | null>(null)
-  const [showYesterdayNyc, setShowYesterdayNyc] = useState(true)
+  const [showYesterdayNyc] = useState(true)
   const yesterdayNycLinesRef = useRef<IPriceLine[]>([])
   const paintYesterdayNycRef = useRef<() => void>(() => { })
   const [overnightInventory, setOvernightInventory] = useState<OvernightInventoryEvaluation | null>(null)
-  const [showInventorySessions, setShowInventorySessions] = useState(true)
+  const [showInventorySessions] = useState(true)
   const inventoryLinesRef = useRef<IPriceLine[]>([])
   const paintInventorySessionsRef = useRef<() => void>(() => { })
   const [ydayProfile, setYdayProfile] = useState<{ vah?: number; val?: number; poc?: number } | null>(null)
-  const [showMarketControl, setShowMarketControl] = useState(() =>
+  const [showMarketControl] = useState(() =>
     SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().control
   )
   const [showAuction] = useState(() => loadDeskOverlayToggles().auction)
@@ -8197,198 +8197,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           5m
         </span>
 
-        {/* Context 5-5 Pill: 5-Day FRVP + 5-Month AVWAP */}
-        <span
-          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border rounded-lg bg-amber-500/10 border-amber-500/30 text-amber-300"
-          title={
-            frvp5d
-              ? `Context Oriented 5-5 System:\n• 5-Day FRVP (NYC Session Anchor: ${new Date(frvp5d.startUnix * 1000).toLocaleString()}):\n  POC: ${frvp5d.poc.toLocaleString()} (Volume: ${Math.round(frvp5d.totalVolume).toLocaleString()})\n  VAH: ${frvp5d.vah.toLocaleString()}\n  VAL: ${frvp5d.val.toLocaleString()}\n• 5-Month Anchored VWAP (±1σ, ±2σ)`
-              : 'Context Oriented 5-5: 5D FRVP (NYC Open Anchor) + 5M Anchored VWAP'
-          }
-        >
-          <span className="w-2 h-2 rounded-full inline-block bg-amber-400" />
-          <span>Context 5-5</span>
-          {frvp5d && (
-            <span className="text-[10px] font-mono text-amber-200/90 font-normal">
-              POC {frvp5d.poc.toLocaleString()}
-            </span>
-          )}
-        </span>
 
-        {/* CTRL button: toggles Dalton market control & dPOC line */}
-        <button
-          type="button"
-          title={
-            showMarketControl
-              ? 'Dalton control dPOC line on. Click to hide the line (RF type still updates).'
-              : 'Show Dalton control: Rotation Factor + developing POC line.'
-          }
-          onClick={() => setShowMarketControl((v) => !v)}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showMarketControl
-            ? 'bg-indigo-600/30 border-indigo-500/50 text-indigo-100'
-            : 'bg-transparent border-surface-600 text-gray-500 hover:text-indigo-200 hover:border-indigo-500/40'
-            }`}
-        >
-          <span className={`w-2 h-2 rounded-full inline-block ${showMarketControl ? 'bg-indigo-400' : 'bg-gray-600'}`} />
-          <span>CTRL</span>
-          <span className="text-[10px] font-normal text-indigo-200/80">{controlBadge}</span>
-        </button>
-
-        {/* Open button: says the type of opening & toggles opening lines */}
-        <button
-          type="button"
-          title={
-            showOpeningActivity
-              ? 'Dalton opening type lines on — open + first 5m H/L. Click to hide lines (type still updates).'
-              : 'Show Dalton opening type: Open-Drive / Open-Test-Drive / Rejection-Reverse / Open-Auction.'
-          }
-          onClick={() => setShowOpeningActivity((v) => !v)}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showOpeningActivity
-            ? 'bg-cyan-600/30 border-cyan-500/50 text-cyan-100'
-            : 'bg-transparent border-surface-600 text-gray-500 hover:text-cyan-200 hover:border-cyan-500/40'
-            }`}
-        >
-          <span className={`w-2 h-2 rounded-full inline-block ${showOpeningActivity ? 'bg-cyan-400' : 'bg-gray-600'}`} />
-          <span>Open</span>
-          <span className="text-[10px] font-normal text-cyan-200/80">{openingBadge}</span>
-        </button>
-
-        {/* Out button: says the type of the day */}
-        <span
-          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border rounded-lg bg-transparent border-zinc-500/40 text-zinc-300"
-        >
-          <span className="w-2 h-2 rounded-full inline-block bg-purple-400" />
-          <span>Out</span>
-          <span className="text-[10px] font-normal text-purple-200/90">{dayTypeEval.badgeText}</span>
-        </span>
-
-        {/* Yday button: toggles Yesterday NYC Session lines (H, L, Close, POC) */}
-        <button
-          type="button"
-          title={
-            yesterdayNyc
-              ? `Yesterday NYC Session (${yesterdayNyc.sessionDate}):\n• POC: ${yesterdayNyc.poc.toLocaleString()}\n• High: ${yesterdayNyc.yh.toLocaleString()}\n• Low: ${yesterdayNyc.yl.toLocaleString()}\n• Close: ${yesterdayNyc.close.toLocaleString()}\n• VAH/VAL: ${yesterdayNyc.vah.toLocaleString()} / ${yesterdayNyc.val.toLocaleString()}`
-              : 'Yesterday NYC Session: Y-High, Y-Low, Y-Close, Y-POC'
-          }
-          onClick={() => setShowYesterdayNyc((v) => !v)}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showYesterdayNyc
-            ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-100'
-            : 'bg-transparent border-surface-600 text-gray-500 hover:text-emerald-200 hover:border-emerald-500/40'
-            }`}
-        >
-          <span className={`w-2 h-2 rounded-full inline-block ${showYesterdayNyc ? 'bg-emerald-400' : 'bg-gray-600'}`} />
-          <span>Yday</span>
-          {yesterdayNyc && (
-            <span className="text-[10px] font-mono text-emerald-200/80 font-normal">
-              POC {yesterdayNyc.poc.toLocaleString()}
-            </span>
-          )}
-        </button>
-
-        {/* Inv button: Overnight Inventory and Asia/London FRVP */}
-        <div className="group relative">
-          <button
-            type="button"
-            title={
-              overnightInventory
-                ? `Overnight Inventory (${overnightInventory.biasLabel} · ${overnightInventory.rangeLabel}):\n${overnightInventory.description}\n\n• Asia FRVP: POC ${overnightInventory.asia?.poc.toLocaleString()} [${overnightInventory.asia?.low.toLocaleString()} – ${overnightInventory.asia?.high.toLocaleString()}]\n• London FRVP: POC ${overnightInventory.london?.poc.toLocaleString()} [${overnightInventory.london?.low.toLocaleString()} – ${overnightInventory.london?.high.toLocaleString()}]`
-                : 'Overnight Inventory & Asia / London Fixed Range Volume Profile'
-            }
-            onClick={() => setShowInventorySessions((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showInventorySessions
-              ? 'bg-sky-600/30 border-sky-500/50 text-sky-100'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-sky-200 hover:border-sky-500/40'
-              }`}
-          >
-            <span className={`w-2 h-2 rounded-full inline-block ${showInventorySessions ? 'bg-sky-400' : 'bg-gray-600'}`} />
-            <span>Inv</span>
-            <span className="text-[10px] font-normal text-sky-200/80">
-              {overnightInventory ? overnightInventory.summaryBadge.replace('Inv: ', '') : 'WAIT'}
-            </span>
-          </button>
-          {overnightInventory && (
-            <span
-              role="tooltip"
-              className="pointer-events-none invisible absolute left-0 top-full z-50 mt-1 w-[22rem] whitespace-pre-wrap rounded-lg border border-sky-500/40 bg-[#0d1117] px-2.5 py-2 text-left text-[10px] font-normal normal-case leading-snug tracking-normal text-zinc-200 shadow-xl group-hover:visible"
-            >
-              <div className="font-bold text-sky-300 mb-1">Overnight Inventory: {overnightInventory.biasLabel} · {overnightInventory.rangeLabel}</div>
-              <div className="text-zinc-300 mb-2">{overnightInventory.description}</div>
-              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-zinc-800 text-[10px]">
-                <div>
-                  <div className="font-semibold text-sky-400">Asia FRVP</div>
-                  <div>POC: <span className="font-mono text-white">{overnightInventory.asia?.poc.toLocaleString()}</span></div>
-                  <div>Range: [{overnightInventory.asia?.low.toLocaleString()} – {overnightInventory.asia?.high.toLocaleString()}]</div>
-                  <div>Vol: {Math.round(overnightInventory.asia?.totalVolume ?? 0).toLocaleString()}</div>
-                </div>
-                <div>
-                  <div className="font-semibold text-purple-400">London FRVP</div>
-                  <div>POC: <span className="font-mono text-white">{overnightInventory.london?.poc.toLocaleString()}</span></div>
-                  <div>Range: [{overnightInventory.london?.low.toLocaleString()} – {overnightInventory.london?.high.toLocaleString()}]</div>
-                  <div>Vol: {Math.round(overnightInventory.london?.totalVolume ?? 0).toLocaleString()}</div>
-                </div>
-              </div>
-            </span>
-          )}
-        </div>
-
-        {/* Draggable price alert — Telegram on touch (A key); arms after price leaves */}
-        <button
-          type="button"
-          title={
-            priceAlert
-              ? priceAlert.armed === false
-                ? 'Price alert fired — dismiss (A / Esc)'
-                : priceAlert.pendingAway
-                  ? 'Waiting for price to leave alert, then re-touch fires (drag / Esc)'
-                  : 'Price alert armed — drag line or Esc to dismiss (A)'
-              : 'Place draggable price alert (Press A)'
-          }
-          onClick={togglePriceAlert}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${priceAlert
-            ? priceAlert.armed === false
-              ? 'bg-violet-950/40 border-violet-500/30 text-violet-300/70'
-              : priceAlert.pendingAway
-                ? 'bg-violet-600/20 border-violet-500/40 text-violet-200/90'
-                : 'bg-violet-600/30 border-violet-500/50 text-violet-100 animate-pulse'
-            : 'bg-transparent border-surface-600 text-gray-500 hover:text-violet-200 hover:border-violet-500/40'
-            }`}
-        >
-          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M8 2v2M8 12v2M3.5 8H2M14 8h-1.5M4.2 4.2l1 1M10.8 10.8l1 1M4.2 11.8l1-1M10.8 5.2l1-1" />
-            <circle cx="8" cy="8" r="2.5" className="fill-violet-500/40 stroke-violet-400" />
-          </svg>
-          {priceAlert
-            ? priceAlert.armed === false
-              ? 'Alert Fired'
-              : priceAlert.pendingAway
-                ? 'Alert Arming…'
-                : 'Price Alert Active'
-            : 'Price Alert (A)'}
-        </button>
-
-        {/* Fullscreen mode button (Press F / Esc) */}
-        <button
-          type="button"
-          title={
-            isFullscreen
-              ? 'Exit Fullscreen mode (Esc / F)'
-              : 'Enter Fullscreen mode (Press F)'
-          }
-          onClick={toggleFullscreen}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${isFullscreen
-            ? 'bg-blue-600/30 border-blue-500/50 text-blue-100'
-            : 'bg-transparent border-surface-600 text-gray-500 hover:text-blue-200 hover:border-blue-500/40'
-            }`}
-        >
-          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
-            {isFullscreen ? (
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5.5 2v3.5H2M10.5 2v3.5H14M5.5 14v-3.5H2M10.5 14v-3.5H14" />
-            ) : (
-              <path strokeLinecap="round" strokeLinejoin="round" d="M2 5.5V2h3.5M14 5.5V2h-3.5M2 10.5V14h3.5M14 10.5V14h-3.5" />
-            )}
-          </svg>
-          {isFullscreen ? 'Exit Full (Esc)' : 'Fullscreen (F)'}
-        </button>
 
         {/* Live price ticker */}
         <div className="ml-auto flex items-center gap-3">
@@ -8444,15 +8253,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </span>
         )}
 
-        {/* Intermediate-Term Money (IT): 5-Day Fixed Range Volume Profile */}
-        {frvp5d && (
-          <span className="inline-flex items-center gap-1 rounded bg-slate-900 border border-slate-700 px-1.5 py-0.5" title="Intermediate-Term Money: 5-Day Fixed Range Volume Profile (Weekly Balance)">
-            <span className="text-cyan-400 font-bold">IT</span>
-            <span className="text-gray-400">5D-POC:</span>
-            <span className="font-mono text-amber-300 font-bold">{frvp5d.poc.toLocaleString()}</span>
-            <span className="text-gray-500 text-[10px] ml-0.5">[VA: {frvp5d.val.toLocaleString()} – {frvp5d.vah.toLocaleString()}]</span>
-          </span>
-        )}
+
 
         {/* Short-Term Money (ST): Yesterday NYC Session + Overnight Inventory */}
         {(yesterdayNyc || overnightInventory) && (
