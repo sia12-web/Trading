@@ -135,7 +135,9 @@ export function sessionLegendOrder(_instrument?: string | null): SessionName[] {
 
 export interface SessionHighlightRect {
   name: SessionName
+  displayName?: string
   color: string
+  lineColor?: string
   left: number
   width: number
   /** Y of session high (price-bounded) or 0 for a full-height time column */
@@ -143,6 +145,10 @@ export interface SessionHighlightRect {
   /** Height from session high → low, or pane height for a time column */
   height: number
   zIndex: number
+  range?: number
+  avg?: number
+  yAvg?: number | null
+  isColumn?: boolean
   borderColor?: string
   borderLeftWidth?: number
   borderTopWidth?: number
@@ -419,6 +425,7 @@ export function sessionRangeLinePoints(range: SessionRange): {
 /** Precomputed session column in unix time — cheap to re-project on pan/zoom. */
 export type SessionHighlightSpan = {
   name: SessionName
+  displayName?: string
   /** First bar open in session */
   startT: number
   /** Right edge = last bar open + bar duration (covers full last candle) */
@@ -427,6 +434,8 @@ export type SessionHighlightSpan = {
   high: number
   /** Exact wick low of bars in this session */
   low: number
+  range?: number
+  avg?: number
 }
 
 const DESK_BAR_SECONDS = 300
@@ -471,12 +480,18 @@ export function computeSessionHighlightSpans(args: {
 
   const flush = () => {
     if (runName == null || !(runHigh >= runLow) || runEnd <= runStart) return
+    const range = Number((runHigh - runLow).toFixed(2))
+    const avg = Number(((runHigh + runLow) / 2).toFixed(2))
+    const displayName = sessionLegendLabel(runName, args.instrument)
     spans.push({
       name: runName,
+      displayName,
       startT: runStart,
       endT: runEnd,
       high: runHigh,
       low: runLow,
+      range,
+      avg,
     })
   }
 
@@ -578,20 +593,26 @@ export function projectSessionHighlightRects(args: {
     if (width < 1) continue
 
     const style = SESSION_STYLES[span.name]
+    const labelName = span.displayName ?? (span.name === 'Asia' ? 'Tokyo' : span.name)
     if (showColumns) {
       rects.push({
         name: span.name,
+        displayName: labelName,
         left,
         width,
         top: 0,
         height: chartH,
         color: style.column,
+        lineColor: style.line,
         zIndex: style.zIndex,
+        isColumn: true,
       })
     }
 
     const yHigh = priceToY(span.high)
     const yLow = priceToY(span.low)
+    const spanAvg = span.avg ?? (span.high + span.low) / 2
+    const yAvg = priceToY(spanAvg)
     if (
       yHigh == null ||
       yLow == null ||
@@ -616,12 +637,18 @@ export function projectSessionHighlightRects(args: {
 
     rects.push({
       name: span.name,
+      displayName: labelName,
       left,
       width,
       top,
       height,
       color: showColumns ? style.colorFull : style.color,
+      lineColor: style.line,
       zIndex: style.zIndex + 10,
+      range: span.range ?? Number((span.high - span.low).toFixed(2)),
+      avg: Number(spanAvg.toFixed(2)),
+      yAvg: yAvg != null && Number.isFinite(yAvg) ? yAvg : top + height / 2,
+      isColumn: false,
     })
   }
 
@@ -708,18 +735,38 @@ export function paintSessionHighlightOverlay(
     d.style.right = 'auto'
     d.style.backgroundColor = s.color
     d.style.zIndex = String(s.zIndex)
-    const edge = s.borderColor ?? 'transparent'
-    d.style.borderLeft = s.borderLeftWidth
-      ? `${s.borderLeftWidth}px solid ${edge}`
-      : 'none'
-    d.style.borderTop = s.borderTopWidth
-      ? `${s.borderTopWidth}px solid ${edge}`
-      : 'none'
-    d.style.borderBottom = s.borderBottomWidth
-      ? `${s.borderBottomWidth}px solid ${edge}`
-      : 'none'
+    d.title = `${s.displayName ?? s.name} session`
+
+    if (s.isColumn) {
+      d.style.border = 'none'
+      d.innerHTML = ''
+      continue
+    }
+
+    const lineColor = s.lineColor ?? s.borderColor ?? '#3b82f6'
+    d.style.borderLeft = 'none'
     d.style.borderRight = 'none'
-    d.title = `${s.name} session`
+    d.style.borderTop = `1px dashed ${lineColor}`
+    d.style.borderBottom = `1px dashed ${lineColor}`
+
+    // Inner dotted midline and bottom label metadata (Range / Avg / Session) matching TradingView
+    const midY =
+      s.yAvg != null && Number.isFinite(s.yAvg)
+        ? Math.max(0, Math.min(s.height, s.yAvg - s.top))
+        : s.height / 2
+    const rangeStr = s.range != null ? s.range.toFixed(2) : ''
+    const avgStr = s.avg != null ? s.avg.toFixed(2) : ''
+    const sessName = s.displayName ?? (s.name === 'Asia' ? 'Tokyo' : s.name)
+
+    const labelTop = s.height + 4
+    d.innerHTML = `
+      <div style="position:absolute;left:0;right:0;top:${midY}px;border-top:1px dotted ${lineColor};pointer-events:none;"></div>
+      <div style="position:absolute;left:6px;top:${labelTop}px;font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;font-size:11px;font-weight:500;line-height:1.32;color:${lineColor};pointer-events:none;white-space:nowrap;">
+        ${rangeStr ? `<div>Range: ${rangeStr}</div>` : ''}
+        ${avgStr ? `<div>Avg: ${avgStr}</div>` : ''}
+        <div style="font-weight:600;">${sessName}</div>
+      </div>
+    `
   }
 }
 

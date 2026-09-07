@@ -54,6 +54,8 @@ export interface ContextBar {
 export interface VolumeProfileBin {
   price: number
   volume: number
+  buyVolume: number
+  sellVolume: number
   inValueArea: boolean
   isPoc: boolean
 }
@@ -67,6 +69,8 @@ export interface FixedRangeVolumeProfile5D {
   vah: number
   val: number
   totalVolume: number
+  totalBuyVolume?: number
+  totalSellVolume?: number
   bins: VolumeProfileBin[]
   bucketSize: number
   hvn: number[]
@@ -258,13 +262,28 @@ export function compute5DayFixedRangeVolumeProfile(
 
   const mid = (maxPrice + minPrice) / 2
   const size = bucketWidth(mid)
-  const volumeByBucket = new Map<number, number>()
+  type BucketAccumulator = { volume: number; buyVolume: number; sellVolume: number }
+  const volumeByBucket = new Map<number, BucketAccumulator>()
+
+  let totalBuyVolume = 0
+  let totalSellVolume = 0
 
   for (const b of scopedBars) {
     const vol = Math.max(0, b.volume > 0 ? b.volume : 1)
+    const isUp = b.close >= b.open
+    const buyVol = isUp ? vol : 0
+    const sellVol = isUp ? 0 : vol
+    totalBuyVolume += buyVol
+    totalSellVolume += sellVol
+
     if (b.high - b.low < size * 0.5) {
       const k = roundToBucket((b.high + b.low + b.close) / 3, size)
-      volumeByBucket.set(k, (volumeByBucket.get(k) ?? 0) + vol)
+      const prev = volumeByBucket.get(k) ?? { volume: 0, buyVolume: 0, sellVolume: 0 }
+      volumeByBucket.set(k, {
+        volume: prev.volume + vol,
+        buyVolume: prev.buyVolume + buyVol,
+        sellVolume: prev.sellVolume + sellVol,
+      })
       continue
     }
 
@@ -276,15 +295,27 @@ export function compute5DayFixedRangeVolumeProfile(
     }
     const uniq = Array.from(new Set(keys))
     const share = vol / uniq.length
+    const buyShare = buyVol / uniq.length
+    const sellShare = sellVol / uniq.length
     for (const k of uniq) {
-      volumeByBucket.set(k, (volumeByBucket.get(k) ?? 0) + share)
+      const prev = volumeByBucket.get(k) ?? { volume: 0, buyVolume: 0, sellVolume: 0 }
+      volumeByBucket.set(k, {
+        volume: prev.volume + share,
+        buyVolume: prev.buyVolume + buyShare,
+        sellVolume: prev.sellVolume + sellShare,
+      })
     }
   }
 
   if (volumeByBucket.size === 0) return null
 
   const sortedBuckets = Array.from(volumeByBucket.entries())
-    .map(([price, volume]) => ({ price, volume }))
+    .map(([price, data]) => ({
+      price,
+      volume: data.volume,
+      buyVolume: data.buyVolume,
+      sellVolume: data.sellVolume,
+    }))
     .sort((a, b) => a.price - b.price)
 
   // Find POC (highest volume bucket)
@@ -338,6 +369,8 @@ export function compute5DayFixedRangeVolumeProfile(
     bins.push({
       price: Number(item.price.toFixed(2)),
       volume: item.volume,
+      buyVolume: Number(item.buyVolume.toFixed(2)),
+      sellVolume: Number(item.sellVolume.toFixed(2)),
       inValueArea: inVA,
       isPoc: i === pocIdx,
     })
@@ -369,6 +402,8 @@ export function compute5DayFixedRangeVolumeProfile(
     vah: Number(vahPrice.toFixed(2)),
     val: Number(valPrice.toFixed(2)),
     totalVolume,
+    totalBuyVolume: Number(totalBuyVolume.toFixed(2)),
+    totalSellVolume: Number(totalSellVolume.toFixed(2)),
     bins,
     bucketSize: size,
     hvn: hvn.slice(0, 5),

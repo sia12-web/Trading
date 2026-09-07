@@ -41,6 +41,7 @@ import {
   computeSessionHighlightSpans,
   projectSessionHighlightRects,
   paintSessionHighlightOverlay,
+  timeToX,
   deskClockFor,
   deskSessionAt,
   isWeekdayYmd,
@@ -48,6 +49,12 @@ import {
   lastNTradingSessions as trimDeskCandles,
   type SessionHighlightSpan,
 } from '@/lib/chart/sessionVwap'
+import { parseCalendarEventMs } from '@/lib/trading/deskNewsHazard'
+import type { DeskCalendarEvent } from '@/lib/trading/deskNews'
+import {
+  detect5DayExcesses,
+  getRoundedNumbers,
+} from '@/lib/chart/excesses'
 import {
   applyTickToFormingBar,
   dropImplausibleDeskBars,
@@ -1049,8 +1056,18 @@ export function TradingChart({
   const chartFrameRef = useRef<HTMLDivElement>(null)
   const sessionOverlayRef = useRef<HTMLDivElement>(null)
   const positionBandOverlayRef = useRef<HTMLDivElement>(null)
-  const inChartLabelsOverlayRef = useRef<HTMLDivElement>(null)
-  const paintInChartLabelsRef = useRef<() => void>(() => {})
+  const frvpHistogramCanvasRef = useRef<HTMLCanvasElement>(null)
+  const excessesCanvasRef = useRef<HTMLCanvasElement>(null)
+  const newsMarkersOverlayRef = useRef<HTMLDivElement>(null)
+  const [newsEvents, setNewsEvents] = useState<DeskCalendarEvent[]>([])
+  const [activeNewsTooltip, setActiveNewsTooltip] = useState<{
+    event: DeskCalendarEvent
+    x: number
+    y: number
+  } | null>(null)
+  const paintFrvpHistogramRef = useRef<() => void>(() => {})
+  const paintExcessesAndRoundedRef = useRef<() => void>(() => {})
+  const paintNewsMarkersRef = useRef<() => void>(() => {})
   const sessionSpansRef = useRef<{
     key: string
     spans: SessionHighlightSpan[]
@@ -2021,53 +2038,6 @@ export function TradingChart({
       }
     }
     frvpLinesRef.current = []
-    if (!profile || !host) return
-    try {
-      frvpLinesRef.current.push(
-        host.createPriceLine({
-          price: profile.poc,
-          color: '#f59e0b',
-          title: '5D POC',
-          lineWidth: 2,
-          lineStyle: LineStyle.Solid,
-          axisLabelVisible: false,
-        }),
-        host.createPriceLine({
-          price: profile.high,
-          color: '#10b981',
-          title: '5D High',
-          lineWidth: 1,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: false,
-        }),
-        host.createPriceLine({
-          price: profile.low,
-          color: '#ef4444',
-          title: '5D Low',
-          lineWidth: 1,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: false,
-        }),
-        host.createPriceLine({
-          price: profile.vah,
-          color: '#38bdf8',
-          title: '5D VAH',
-          lineWidth: 1,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: false,
-        }),
-        host.createPriceLine({
-          price: profile.val,
-          color: '#38bdf8',
-          title: '5D VAL',
-          lineWidth: 1,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: false,
-        })
-      )
-    } catch {
-      /* ignore */
-    }
   }, [instrument])
 
   const paintYesterdayNyc = useCallback(() => {
@@ -2105,47 +2075,7 @@ export function TradingChart({
       }
     }
     yesterdayNycLinesRef.current = []
-
-    if (!showYesterdayNyc || !yday || !host) return
-    try {
-      yesterdayNycLinesRef.current.push(
-        host.createPriceLine({
-          price: yday.poc,
-          color: '#f59e0b',
-          title: 'Y-POC',
-          lineWidth: 2,
-          lineStyle: LineStyle.Solid,
-          axisLabelVisible: false,
-        }),
-        host.createPriceLine({
-          price: yday.yh,
-          color: '#10b981',
-          title: 'Y-High',
-          lineWidth: 1,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: false,
-        }),
-        host.createPriceLine({
-          price: yday.yl,
-          color: '#ef4444',
-          title: 'Y-Low',
-          lineWidth: 1,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: false,
-        }),
-        host.createPriceLine({
-          price: yday.close,
-          color: '#94a3b8',
-          title: 'Y-Close',
-          lineWidth: 1,
-          lineStyle: LineStyle.Dotted,
-          axisLabelVisible: false,
-        })
-      )
-    } catch {
-      /* ignore */
-    }
-  }, [showYesterdayNyc])
+  }, [])
 
   const paintInventorySessions = useCallback(() => {
     const host = priceLineHostRef.current
@@ -2157,37 +2087,7 @@ export function TradingChart({
       }
     }
     inventoryLinesRef.current = []
-    if (!showInventorySessions || !overnightInventory || !host) return
-
-    try {
-      if (overnightInventory.asia) {
-        inventoryLinesRef.current.push(
-          host.createPriceLine({
-            price: overnightInventory.asia.poc,
-            color: '#38bdf8',
-            title: 'Asia POC',
-            lineWidth: 1,
-            lineStyle: LineStyle.Dotted,
-            axisLabelVisible: false,
-          })
-        )
-      }
-      if (overnightInventory.london) {
-        inventoryLinesRef.current.push(
-          host.createPriceLine({
-            price: overnightInventory.london.poc,
-            color: '#c084fc',
-            title: 'London POC',
-            lineWidth: 1,
-            lineStyle: LineStyle.Dotted,
-            axisLabelVisible: false,
-          })
-        )
-      }
-    } catch {
-      /* ignore */
-    }
-  }, [showInventorySessions, overnightInventory])
+  }, [])
 
   const paint5mAvwapBenchmark = useCallback(() => {
     const host = priceLineHostRef.current
@@ -2199,216 +2099,355 @@ export function TradingChart({
       }
     }
     avwap5mLinesRef.current = []
-    if (!avwap5mBenchmark || !host) return
+  }, [])
 
-    try {
-      avwap5mLinesRef.current.push(
-        host.createPriceLine({
-          price: avwap5mBenchmark.vwap,
-          color: '#b8a04a',
-          title: '5M AVWAP',
-          lineWidth: 2,
-          lineStyle: LineStyle.Solid,
-          axisLabelVisible: false,
-        }),
-        host.createPriceLine({
-          price: avwap5mBenchmark.sigma1Upper,
-          color: 'rgba(61, 143, 122, 0.85)',
-          title: '5M +1σ',
-          lineWidth: 1,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: false,
-        }),
-        host.createPriceLine({
-          price: avwap5mBenchmark.sigma1Lower,
-          color: 'rgba(61, 143, 122, 0.85)',
-          title: '5M -1σ',
-          lineWidth: 1,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: false,
-        }),
-        host.createPriceLine({
-          price: avwap5mBenchmark.sigma2Upper,
-          color: 'rgba(61, 143, 122, 0.5)',
-          title: '5M +2σ',
-          lineWidth: 1,
-          lineStyle: LineStyle.Dotted,
-          axisLabelVisible: false,
-        }),
-        host.createPriceLine({
-          price: avwap5mBenchmark.sigma2Lower,
-          color: 'rgba(61, 143, 122, 0.5)',
-          title: '5M -2σ',
-          lineWidth: 1,
-          lineStyle: LineStyle.Dotted,
-          axisLabelVisible: false,
-        })
-      )
-    } catch {
-      /* ignore */
-    }
-  }, [avwap5mBenchmark])
-
-  const paintInChartLabels = useCallback(() => {
-    const host = inChartLabelsOverlayRef.current
+  // ─── 5-Day FRVP Volume Profile Histogram (Canvas) ───────────────────────────
+  const paintFrvpHistogram = useCallback(() => {
+    const canvas = frvpHistogramCanvasRef.current
+    const chart = chartRef.current
     const series = candleRef.current
-    const container = containerRef.current
-    if (!host || !series || !container) return
-
-    const chartH = container.clientHeight
-    const chartW = container.clientWidth
-    if (chartH < 50 || chartW < 50) {
-      while (host.firstChild) host.removeChild(host.firstChild)
+    const list = candlesRef.current
+    const profile = frvp5d
+    if (!canvas || !chart || !series || !containerRef.current || !profile || !profile.bins || profile.bins.length === 0) {
+      if (canvas) {
+        const ctx = canvas.getContext('2d')
+        ctx?.clearRect(0, 0, canvas.width, canvas.height)
+      }
       return
     }
 
-    const labels: Array<{ price: number; title: string; color: string; borderColor?: string }> = []
+    const paneW = containerRef.current.clientWidth
+    const paneH = containerRef.current.clientHeight
+    if (paneW < 10 || paneH < 10) return
 
-    // 1. Context 5-5 FRVP levels
-    if (frvp5d) {
-      labels.push(
-        { price: frvp5d.poc, title: '5D POC', color: '#f59e0b', borderColor: '#f59e0b' },
-        { price: frvp5d.high, title: '5D High', color: '#10b981', borderColor: '#10b981' },
-        { price: frvp5d.low, title: '5D Low', color: '#ef4444', borderColor: '#ef4444' },
-        { price: frvp5d.vah, title: '5D VAH', color: '#38bdf8', borderColor: '#38bdf8' },
-        { price: frvp5d.val, title: '5D VAL', color: '#38bdf8', borderColor: '#38bdf8' }
-      )
+    const dpr = window.devicePixelRatio || 1
+    const targetW = Math.round(paneW * dpr)
+    const targetH = Math.round(paneH * dpr)
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW
+      canvas.height = targetH
+      canvas.style.width = `${paneW}px`
+      canvas.style.height = `${paneH}px`
     }
 
-    // 2. 5M AVWAP Benchmark levels
-    if (avwap5mBenchmark) {
-      labels.push(
-        { price: avwap5mBenchmark.vwap, title: '5M AVWAP', color: '#b8a04a', borderColor: '#b8a04a' },
-        { price: avwap5mBenchmark.sigma1Upper, title: '5M +1σ', color: '#34d399', borderColor: 'rgba(52, 211, 153, 0.7)' },
-        { price: avwap5mBenchmark.sigma1Lower, title: '5M -1σ', color: '#34d399', borderColor: 'rgba(52, 211, 153, 0.7)' },
-        { price: avwap5mBenchmark.sigma2Upper, title: '5M +2σ', color: '#6ee7b7', borderColor: 'rgba(110, 231, 183, 0.5)' },
-        { price: avwap5mBenchmark.sigma2Lower, title: '5M -2σ', color: '#6ee7b7', borderColor: 'rgba(110, 231, 183, 0.5)' }
-      )
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.save()
+    ctx.scale(dpr, dpr)
+    ctx.clearRect(0, 0, paneW, paneH)
+
+    const tz = chartTzRef.current
+    const candleTimes = list.map((c) => toChartTime(c.time as number, tz))
+    const anchorChartT = toChartTime(profile.startUnix, tz)
+    const rawXAnchor = timeToX(chart.timeScale(), anchorChartT, candleTimes)
+    const xAnchor = rawXAnchor != null && Number.isFinite(rawXAnchor)
+      ? Math.max(0, Math.min(paneW, rawXAnchor))
+      : 0
+
+    const maxBinVol = Math.max(...profile.bins.map((b) => b.volume), 1)
+    const maxHistW = Math.min(260, Math.max(80, (paneW - xAnchor) * 0.45))
+    const halfBucket = (profile.bucketSize || 1) * 0.5
+
+    // Draw horizontal volume bars: Cyan (#06b6d4) for buy, Magenta (#ec4899) for sell
+    for (const bin of profile.bins) {
+      const yTop = series.priceToCoordinate(bin.price + halfBucket)
+      const yBottom = series.priceToCoordinate(bin.price - halfBucket)
+      if (yTop == null || yBottom == null) continue
+
+      const barY = Math.min(yTop, yBottom)
+      const barH = Math.max(1.5, Math.abs(yBottom - yTop) - 0.5)
+      if (barY + barH < 0 || barY > paneH) continue
+
+      const totalBarW = (bin.volume / maxBinVol) * maxHistW
+      if (totalBarW < 1) continue
+
+      const buyVol = bin.buyVolume ?? (bin.volume * 0.5)
+      const buyRatio = bin.volume > 0 ? Math.max(0, Math.min(1, buyVol / bin.volume)) : 0.5
+      const buyW = totalBarW * buyRatio
+      const sellW = totalBarW - buyW
+
+      // Buy volume (cyan)
+      ctx.fillStyle = bin.inValueArea ? 'rgba(6, 182, 212, 0.78)' : 'rgba(6, 182, 212, 0.40)'
+      ctx.fillRect(xAnchor, barY, buyW, barH)
+
+      // Sell volume (magenta / pink)
+      ctx.fillStyle = bin.inValueArea ? 'rgba(236, 72, 153, 0.78)' : 'rgba(236, 72, 153, 0.40)'
+      ctx.fillRect(xAnchor + buyW, barY, sellW, barH)
     }
 
-    // 3. Yesterday NYC Session levels
-    if (showYesterdayNyc && yesterdayNyc) {
-      labels.push(
-        { price: yesterdayNyc.poc, title: 'Y-POC', color: '#f59e0b', borderColor: '#f59e0b' },
-        { price: yesterdayNyc.yh, title: 'Y-High', color: '#10b981', borderColor: '#10b981' },
-        { price: yesterdayNyc.yl, title: 'Y-Low', color: '#ef4444', borderColor: '#ef4444' },
-        { price: yesterdayNyc.close, title: 'Y-Close', color: '#94a3b8', borderColor: '#94a3b8' }
-      )
+    // High-contrast Point of Control (POC) solid black line across the chart
+    const yPoc = series.priceToCoordinate(profile.poc)
+    if (yPoc != null && Number.isFinite(yPoc) && yPoc >= 0 && yPoc <= paneH) {
+      ctx.strokeStyle = '#0f172a'
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.moveTo(xAnchor, Math.round(yPoc) + 0.5)
+      ctx.lineTo(paneW, Math.round(yPoc) + 0.5)
+      ctx.stroke()
     }
 
-    // 4. Overnight Sessions levels
-    if (showInventorySessions && overnightInventory) {
-      if (overnightInventory.asia) {
-        labels.push({ price: overnightInventory.asia.poc, title: 'Asia POC', color: '#38bdf8', borderColor: '#38bdf8' })
+    ctx.restore()
+  }, [frvp5d])
+
+  // ─── 5-Day Excesses & Rounded Numbers (Canvas) ──────────────────────────────
+  const paintExcessesAndRounded = useCallback(() => {
+    const canvas = excessesCanvasRef.current
+    const chart = chartRef.current
+    const series = candleRef.current
+    const list = candlesRef.current
+    if (!canvas || !chart || !series || !containerRef.current || list.length === 0) {
+      if (canvas) {
+        const ctx = canvas.getContext('2d')
+        ctx?.clearRect(0, 0, canvas.width, canvas.height)
       }
-      if (overnightInventory.london) {
-        labels.push({ price: overnightInventory.london.poc, title: 'London POC', color: '#c084fc', borderColor: '#c084fc' })
+      return
+    }
+
+    const paneW = containerRef.current.clientWidth
+    const paneH = containerRef.current.clientHeight
+    if (paneW < 10 || paneH < 10) return
+
+    const dpr = window.devicePixelRatio || 1
+    const targetW = Math.round(paneW * dpr)
+    const targetH = Math.round(paneH * dpr)
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW
+      canvas.height = targetH
+      canvas.style.width = `${paneW}px`
+      canvas.style.height = `${paneH}px`
+    }
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.save()
+    ctx.scale(dpr, dpr)
+    ctx.clearRect(0, 0, paneW, paneH)
+
+    const tz = chartTzRef.current
+    const candleTimes = list.map((c) => toChartTime(c.time as number, tz))
+
+    // 1. Draw Rounded Numbers (faint dotted reference lines)
+    let minP = Infinity
+    let maxP = -Infinity
+    for (const b of list) {
+      if (b.low < minP) minP = b.low
+      if (b.high > maxP) maxP = b.high
+    }
+    if (Number.isFinite(minP) && Number.isFinite(maxP) && maxP > minP) {
+      const rounded = getRoundedNumbers(minP, maxP, instrument)
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.18)'
+      ctx.setLineDash([2, 4])
+      ctx.lineWidth = 1
+      ctx.font = '10px ui-monospace, SFMono-Regular, monospace'
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.35)'
+
+      for (const r of rounded) {
+        const y = series.priceToCoordinate(r)
+        if (y != null && Number.isFinite(y) && y >= 4 && y <= paneH - 4) {
+          ctx.beginPath()
+          ctx.moveTo(0, Math.round(y) + 0.5)
+          ctx.lineTo(paneW, Math.round(y) + 0.5)
+          ctx.stroke()
+        }
+      }
+      ctx.setLineDash([])
+    }
+
+    // 2. Draw 5-Day Excesses (buying and selling rejection shapes)
+    const excesses = detect5DayExcesses(
+      list.map((c) => ({
+        time: c.time as number,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      })),
+      instrument,
+      frvp5d?.startUnix
+    )
+
+    for (const ex of excesses) {
+      const chartT = toChartTime(ex.time, tz)
+      const x = timeToX(chart.timeScale(), chartT, candleTimes)
+      const y = series.priceToCoordinate(ex.price)
+      if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y)) continue
+      if (x < -20 || x > paneW + 20 || y < 0 || y > paneH) continue
+
+      const volStr =
+        ex.volume >= 1000
+          ? `${(ex.volume / 1000).toFixed(1)}k`
+          : String(Math.round(ex.volume))
+
+      if (ex.type === 'SELLING_EXCESS') {
+        // Downward red/rose triangle above high wick
+        ctx.fillStyle = '#f43f5e'
+        ctx.beginPath()
+        ctx.moveTo(x - 5, y - 11)
+        ctx.lineTo(x + 5, y - 11)
+        ctx.lineTo(x, y - 4)
+        ctx.closePath()
+        ctx.fill()
+
+        // Dotted horizontal shelf extending to the right
+        const shelfW = Math.min(90, paneW - x)
+        if (shelfW > 10) {
+          ctx.strokeStyle = ex.isRetested ? 'rgba(244, 63, 94, 0.35)' : 'rgba(244, 63, 94, 0.75)'
+          ctx.setLineDash([3, 3])
+          ctx.beginPath()
+          ctx.moveTo(x, Math.round(y) + 0.5)
+          ctx.lineTo(x + shelfW, Math.round(y) + 0.5)
+          ctx.stroke()
+          ctx.setLineDash([])
+        }
+
+        // Volume metric at excess
+        ctx.font = '9px ui-monospace, SFMono-Regular, monospace'
+        ctx.fillStyle = '#f43f5e'
+        ctx.fillText(volStr, x + 6, y - 4)
+      } else if (ex.type === 'BUYING_EXCESS') {
+        // Upward emerald/cyan triangle below low wick
+        ctx.fillStyle = '#10b981'
+        ctx.beginPath()
+        ctx.moveTo(x - 5, y + 11)
+        ctx.lineTo(x + 5, y + 11)
+        ctx.lineTo(x, y + 4)
+        ctx.closePath()
+        ctx.fill()
+
+        // Dotted horizontal shelf extending to the right
+        const shelfW = Math.min(90, paneW - x)
+        if (shelfW > 10) {
+          ctx.strokeStyle = ex.isRetested ? 'rgba(16, 185, 129, 0.35)' : 'rgba(16, 185, 129, 0.75)'
+          ctx.setLineDash([3, 3])
+          ctx.beginPath()
+          ctx.moveTo(x, Math.round(y) + 0.5)
+          ctx.lineTo(x + shelfW, Math.round(y) + 0.5)
+          ctx.stroke()
+          ctx.setLineDash([])
+        }
+
+        // Volume metric at excess
+        ctx.font = '9px ui-monospace, SFMono-Regular, monospace'
+        ctx.fillStyle = '#10b981'
+        ctx.fillText(volStr, x + 6, y + 10)
       }
     }
 
-    // 5. Market Control
-    if (showMarketControl && marketControlRef.current) {
-      for (const spec of marketControlLineSpecs(marketControlRef.current)) {
-        labels.push({ price: spec.price, title: spec.title, color: spec.color, borderColor: spec.color })
+    ctx.restore()
+  }, [instrument, frvp5d])
+
+  // ─── Economic News Markers on Time Axis ─────────────────────────────────────
+  const paintNewsMarkers = useCallback(() => {
+    const host = newsMarkersOverlayRef.current
+    const chart = chartRef.current
+    const list = candlesRef.current
+    if (!host || !chart || !containerRef.current || list.length === 0 || newsEvents.length === 0) {
+      if (host) host.innerHTML = ''
+      return
+    }
+
+    const paneW = containerRef.current.clientWidth
+    const tz = chartTzRef.current
+    const candleTimes = list.map((c) => toChartTime(c.time as number, tz))
+    const nowMs = Date.now()
+
+    const visibleItems: Array<{ event: DeskCalendarEvent; x: number }> = []
+
+    for (const e of newsEvents) {
+      const ms = parseCalendarEventMs(e.time, nowMs)
+      if (!ms || !Number.isFinite(ms)) continue
+      const sec = Math.floor(ms / 1000)
+      const chartT = toChartTime(sec, tz)
+      const x = timeToX(chart.timeScale(), chartT, candleTimes)
+      if (x != null && Number.isFinite(x) && x >= 12 && x <= paneW - 14) {
+        visibleItems.push({ event: e, x: Math.round(x) })
       }
     }
 
-    // 6. Yesterday Profile (if active)
-    if (showYesterdayProfile && ydayProfile) {
-      if (ydayProfile.poc != null) {
-        labels.push({ price: ydayProfile.poc, title: 'POC', color: '#f59e0b', borderColor: '#f59e0b' })
-      }
-      if (ydayProfile.vah != null) {
-        labels.push({ price: ydayProfile.vah, title: 'VAH', color: '#38bdf8', borderColor: '#38bdf8' })
-      }
-      if (ydayProfile.val != null) {
-        labels.push({ price: ydayProfile.val, title: 'VAL', color: '#38bdf8', borderColor: '#38bdf8' })
-      }
-    }
-
-    const positioned: Array<{ price: number; title: string; color: string; borderColor?: string; y: number }> = []
-    for (const item of labels) {
-      if (!Number.isFinite(item.price) || item.price <= 0) continue
-      const y = series.priceToCoordinate(item.price)
-      if (y != null && Number.isFinite(y) && y >= 10 && y <= chartH - 14) {
-        positioned.push({ ...item, y })
-      }
-    }
-
-    positioned.sort((a, b) => a.y - b.y)
-
-    while (host.childElementCount < positioned.length) {
+    while (host.childElementCount < visibleItems.length) {
       const el = document.createElement('div')
-      el.className = 'pointer-events-auto absolute select-none'
-      el.style.position = 'absolute'
-      el.style.cursor = 'default'
+      el.className = 'pointer-events-auto absolute cursor-pointer select-none'
       host.appendChild(el)
     }
-    while (host.childElementCount > positioned.length) {
+    while (host.childElementCount > visibleItems.length) {
       host.removeChild(host.lastElementChild!)
     }
 
-    let prevY = -999
-    let colIdx = 0
-    const colOffsets = [14, 132, 250, 368]
-
-    for (let i = 0; i < positioned.length; i++) {
-      const p = positioned[i]!
+    for (let i = 0; i < visibleItems.length; i++) {
+      const item = visibleItems[i]!
       const el = host.children[i] as HTMLElement
-
-      if (Math.abs(p.y - prevY) < 18) {
-        colIdx = (colIdx + 1) % colOffsets.length
-      } else {
-        colIdx = 0
+      el.style.position = 'absolute'
+      el.style.left = `${item.x - 11}px`
+      el.style.bottom = '3px'
+      el.style.zIndex = '25'
+      el.onclick = (ev) => {
+        ev.stopPropagation()
+        const rect = el.getBoundingClientRect()
+        const frameRect = chartFrameRef.current?.getBoundingClientRect()
+        const px = frameRect ? rect.left - frameRect.left + 11 : item.x
+        const py = frameRect ? rect.top - frameRect.top - 10 : 300
+        setActiveNewsTooltip((prev) => (prev?.event.id === item.event.id ? null : { event: item.event, x: px, y: py }))
       }
-      prevY = p.y
+      el.onmouseenter = () => {
+        const rect = el.getBoundingClientRect()
+        const frameRect = chartFrameRef.current?.getBoundingClientRect()
+        const px = frameRect ? rect.left - frameRect.left + 11 : item.x
+        const py = frameRect ? rect.top - frameRect.top - 10 : 300
+        setActiveNewsTooltip({ event: item.event, x: px, y: py })
+      }
 
-      const leftPx = colOffsets[colIdx] ?? 14
-      const topPx = Math.round(p.y - 10)
-
-      el.style.left = `${leftPx}px`
-      el.style.top = `${topPx}px`
-      el.style.zIndex = '10'
-
-      const fmtPrice =
-        instrument === 'GOLD'
-          ? p.price.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
-          : p.price.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+      const isHigh = item.event.impact?.toLowerCase().includes('high')
+      const bg = isHigh ? '#7c3aed' : '#6d28d9'
 
       el.innerHTML = `
-        <span style="
-          display: inline-flex;
+        <div style="
+          width: 22px;
+          height: 22px;
+          border-radius: 50%;
+          background: ${bg};
+          border: 1.5px solid rgba(255, 255, 255, 0.9);
+          box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+          display: flex;
           align-items: center;
-          gap: 5px;
-          padding: 1px 7px;
-          font-size: 10px;
-          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-          font-weight: 600;
-          border-radius: 4px;
-          background: rgba(15, 23, 42, 0.88);
-          backdrop-filter: blur(4px);
-          color: ${p.color};
-          border: 1px solid ${p.borderColor ?? p.color + '80'};
-          box-shadow: 0 1px 4px rgba(0,0,0,0.35);
-          white-space: nowrap;
-        " title="${p.title}: ${fmtPrice}">
-          <span>${p.title}</span>
-          <span style="opacity: 0.85; font-weight: 500; font-size: 9.5px; color: #f1f5f9;">${fmtPrice}</span>
-        </span>
+          justify-content: center;
+          color: #ffffff;
+          font-size: 11px;
+          line-height: 1;
+        " title="${item.event.event} (${item.event.country}) - ${item.event.impact}">
+          ⚡
+        </div>
       `
     }
-  }, [
-    frvp5d,
-    avwap5mBenchmark,
-    showYesterdayNyc,
-    yesterdayNyc,
-    showInventorySessions,
-    overnightInventory,
-    showMarketControl,
-    showYesterdayProfile,
-    ydayProfile,
-    instrument,
-  ])
+  }, [newsEvents])
+
+  // Poll high/medium impact calendar news events for the bottom time axis markers
+  useEffect(() => {
+    let cancelled = false
+    const loadNews = async () => {
+      try {
+        const res = await fetch(
+          `/api/trading/desk-news?window=120&desk=${encodeURIComponent(instrument)}&session=0&calendarOnly=1&_=${Date.now()}`,
+          { cache: 'no-store' }
+        )
+        const json = (await res.json().catch(() => null)) as {
+          ok?: boolean
+          calendar?: DeskCalendarEvent[]
+        } | null
+        if (!cancelled && json?.ok && Array.isArray(json.calendar)) {
+          setNewsEvents(json.calendar)
+        }
+      } catch {
+        // quiet
+      }
+    }
+    loadNews()
+    const timer = setInterval(loadNews, 60_000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [instrument])
 
   const dayTypeEval: DayTypeEvaluation = useMemo(() => {
     const list = candles || []
@@ -4368,16 +4407,16 @@ export function TradingChart({
     const vwapSeries = {
       upper3: chart.addLineSeries({ ...bandOpts, title: '+3σ' }),
       upper2: chart.addLineSeries({ ...bandOpts, title: '+2σ' }),
-      upper1: chart.addLineSeries({ ...bandOpts, title: '+1σ' }),
+      upper1: chart.addLineSeries({ ...bandOpts, color: '#3b82f6', lineWidth: 2, title: '+1σ' }),
       vwap: chart.addLineSeries({
-        color: VWAP_COLORS.vwap,
+        color: '#10b981',
         lineWidth: 2,
         priceLineVisible: false,
         lastValueVisible: false,
-        title: 'AVWAP',
+        title: '5M AVWAP',
         ...ignoreScale,
       }),
-      lower1: chart.addLineSeries({ ...bandOpts, title: '-1σ' }),
+      lower1: chart.addLineSeries({ ...bandOpts, color: '#b8a04a', lineWidth: 2, title: '-1σ' }),
       lower2: chart.addLineSeries({ ...bandOpts, title: '-2σ' }),
       lower3: chart.addLineSeries({ ...bandOpts, title: '-3σ' }),
     }
@@ -4906,11 +4945,9 @@ export function TradingChart({
     }
     paintSessionHighlightOverlay(sessionOverlayRef.current, [])
     paintPositionBandOverlay(positionBandOverlayRef.current, [])
-    if (inChartLabelsOverlayRef.current) {
-      while (inChartLabelsOverlayRef.current.firstChild) {
-        inChartLabelsOverlayRef.current.removeChild(inChartLabelsOverlayRef.current.firstChild)
-      }
-    }
+    paintFrvpHistogramRef.current()
+    paintExcessesAndRoundedRef.current()
+    paintNewsMarkersRef.current()
 
     // Fresh autoscaling for the next instrument's price universe
     try {
@@ -5224,7 +5261,9 @@ export function TradingChart({
     if (!chart || !series || !containerRef.current || list.length === 0) {
       paintSessionHighlightOverlay(host, [])
       paintPositionBandOverlay(positionBandOverlayRef.current, [])
-      paintInChartLabelsRef.current()
+      paintFrvpHistogramRef.current()
+      paintExcessesAndRoundedRef.current()
+      paintNewsMarkersRef.current()
       return
     }
 
@@ -5308,13 +5347,21 @@ export function TradingChart({
       pushBand(yEntry, yStop, 'rgba(220, 38, 38, 0.28)', '#b91c1c', 'Position SL zone')
       paintPositionBandOverlay(bandHost, bands, { keepPreviousIfEmpty: true })
     }
-    paintInChartLabelsRef.current()
+    paintFrvpHistogramRef.current()
+    paintExcessesAndRoundedRef.current()
+    paintNewsMarkersRef.current()
   }, [instrument, showSessionBands])
 
   useEffect(() => {
-    paintInChartLabelsRef.current = paintInChartLabels
-    requestAnimationFrame(() => paintInChartLabels())
-  }, [paintInChartLabels])
+    paintFrvpHistogramRef.current = paintFrvpHistogram
+    paintExcessesAndRoundedRef.current = paintExcessesAndRounded
+    paintNewsMarkersRef.current = paintNewsMarkers
+    requestAnimationFrame(() => {
+      paintFrvpHistogram()
+      paintExcessesAndRounded()
+      paintNewsMarkers()
+    })
+  }, [paintFrvpHistogram, paintExcessesAndRounded, paintNewsMarkers])
 
   /** TradingView-style: re-enable auto price scale after manual zoom on the axis */
   const resetPriceScale = useCallback(() => {
@@ -8025,14 +8072,64 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           className="pointer-events-none absolute inset-0 z-[1]"
           style={{ opacity: 1, transition: 'none', willChange: 'opacity' }}
         />
-        <div
-          ref={positionBandOverlayRef}
+        <canvas
+          ref={frvpHistogramCanvasRef}
           className="pointer-events-none absolute inset-0 z-[2]"
         />
-        <div
-          ref={inChartLabelsOverlayRef}
+        <canvas
+          ref={excessesCanvasRef}
           className="pointer-events-none absolute inset-0 z-[3]"
         />
+        <div
+          ref={positionBandOverlayRef}
+          className="pointer-events-none absolute inset-0 z-[4]"
+        />
+        <div
+          ref={newsMarkersOverlayRef}
+          className="pointer-events-auto absolute inset-0 z-[5] overflow-hidden"
+        />
+
+        {activeNewsTooltip && (
+          <div
+            className="absolute z-40 w-72 rounded-xl border border-violet-500/40 bg-slate-900/95 p-3.5 shadow-2xl backdrop-blur-md text-slate-100"
+            style={{
+              left: Math.max(12, Math.min((chartFrameRef.current?.clientWidth ?? 600) - 296, activeNewsTooltip.x - 140)),
+              bottom: 34,
+            }}
+          >
+            <div className="flex items-start justify-between gap-2 border-b border-slate-700/60 pb-2">
+              <div className="flex items-center gap-1.5 font-semibold text-xs text-violet-300">
+                <span>⚡</span>
+                <span className="truncate">{activeNewsTooltip.event.country} Release</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveNewsTooltip(null)}
+                className="text-slate-400 hover:text-white text-xs font-bold px-1"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="mt-2 space-y-1 text-xs">
+              <div className="font-bold text-sm text-white">{activeNewsTooltip.event.event}</div>
+              <div className="flex items-center gap-2 pt-1">
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                  activeNewsTooltip.event.impact?.toLowerCase().includes('high')
+                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                }`}>
+                  {activeNewsTooltip.event.impact || 'MEDIUM'} IMPACT
+                </span>
+                <span className="text-[11px] text-slate-400">{activeNewsTooltip.event.time}</span>
+              </div>
+              {activeNewsTooltip.event.deskNote && (
+                <p className="mt-1.5 text-[11px] text-slate-300 leading-relaxed border-t border-slate-800 pt-1.5">
+                  {activeNewsTooltip.event.deskNote}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
 
         {showAuction && auctionHud && isAuctionInstrument(instrument) && (
           <AuctionHudPanel hud={auctionHud} />
