@@ -209,7 +209,13 @@ export function get5DayAnchorUnix(
     day: '2-digit',
   }).format(dt)
 
-  const startYmd = nthTradingDayBefore(ymd, 4, clock.timeZone)
+  const todayCashOpen = cashOpenUnixForYmd(ymd, clock)
+  // Prior to 9:30 cash open (e.g. at 9:15 AM), today's cash session hasn't started yet.
+  // The 5-day anchor starts from 5 completed trading days prior to 9:29 AM.
+  // Once 9:30 AM arrives, today becomes active and rolls the 5 trading days window forward.
+  const isBeforeOpen = asOfUnix < todayCashOpen
+  const effectiveYmd = isBeforeOpen ? nthTradingDayBefore(ymd, 1, clock.timeZone) : ymd
+  const startYmd = nthTradingDayBefore(effectiveYmd, 4, clock.timeZone)
   return cashOpenUnixForYmd(startYmd, clock)
 }
 

@@ -15,7 +15,7 @@ export const SESSION_STYLES = {
   Asia: {
     color: 'rgba(59, 130, 246, 0.09)',
     colorFull: 'rgba(59, 130, 246, 0.15)',
-    column: 'rgba(59, 130, 246, 0.07)',
+    column: 'rgba(59, 130, 246, 0.08)',
     zIndex: 1,
     line: '#3b82f6',
     short: 'Asia',
@@ -23,7 +23,7 @@ export const SESSION_STYLES = {
   London: {
     color: 'rgba(245, 158, 11, 0.09)',
     colorFull: 'rgba(245, 158, 11, 0.15)',
-    column: 'rgba(245, 158, 11, 0.07)',
+    column: 'rgba(245, 158, 11, 0.08)',
     zIndex: 2,
     line: '#f59e0b',
     short: 'Lon',
@@ -31,7 +31,7 @@ export const SESSION_STYLES = {
   'New York': {
     color: 'rgba(34, 197, 94, 0.09)',
     colorFull: 'rgba(34, 197, 94, 0.15)',
-    column: 'rgba(34, 197, 94, 0.07)',
+    column: 'rgba(34, 197, 94, 0.08)',
     zIndex: 3,
     line: '#22c55e',
     short: 'NY',
@@ -549,17 +549,18 @@ export function projectSessionHighlightRects(args: {
   containerHeight: number
   /** @deprecated Use sessionPaint. true → 'full' */
   fullHeight?: boolean
-  /** range = default boxes; full = columns + rich boxes (Sessions button) */
-  sessionPaint?: 'range' | 'full'
+  /** range = default boxes; full = columns + rich boxes; columns = pure time columns only */
+  sessionPaint?: 'range' | 'full' | 'columns'
   /** @deprecated Ignored */
   visiblePriceRange?: { from: number; to: number } | null
-}): { rects: SessionHighlightRect[]; paneHeight: number } {
+} ): { rects: SessionHighlightRect[]; paneHeight: number } {
   const { spans, candleTimes, timeScale, priceToY } = args
   const chartH = Math.max(args.containerHeight, 0)
   const paneW = Math.max(args.containerWidth - args.priceScaleWidth, 0)
-  const paint: 'range' | 'full' =
+  const paint: 'range' | 'full' | 'columns' =
     args.sessionPaint ?? (args.fullHeight === true ? 'full' : 'range')
-  const showColumns = paint === 'full'
+  const showColumns = paint === 'full' || paint === 'columns'
+  const showRanges = paint !== 'columns'
   if (spans.length === 0 || candleTimes.length === 0 || chartH < 2) {
     return { rects: [], paneHeight: chartH }
   }
@@ -598,6 +599,8 @@ export function projectSessionHighlightRects(args: {
         isColumn: true,
       })
     }
+
+    if (!showRanges) continue
 
     const yHigh = priceToY(span.high)
     const yLow = priceToY(span.low)
@@ -728,15 +731,24 @@ export function paintSessionHighlightOverlay(
     d.style.zIndex = String(s.zIndex)
     d.title = `${s.displayName ?? s.name} session`
 
+    const lineColor = s.lineColor ?? s.borderColor ?? '#3b82f6'
+
     if (s.isColumn) {
-      d.style.border = 'none'
-      d.innerHTML = ''
+      d.style.borderLeft = `1.5px dashed ${lineColor}`
+      d.style.borderRight = `1.5px dashed ${lineColor}55`
+      d.style.borderTop = 'none'
+      d.style.borderBottom = 'none'
+      const sessName = s.displayName ?? s.name
+      d.innerHTML = `
+        <div style="position:absolute;left:6px;top:6px;font-family:ui-monospace,SFMono-Regular,monospace;font-size:10px;font-weight:700;color:${lineColor};text-transform:uppercase;letter-spacing:0.06em;background:rgba(15,23,42,0.85);padding:1.5px 6px;border-radius:4px;border:1px solid ${lineColor}44;pointer-events:none;white-space:nowrap;">
+          ${sessName}
+        </div>
+      `
       continue
     }
 
-    const lineColor = s.lineColor ?? s.borderColor ?? '#3b82f6'
-    d.style.borderLeft = 'none'
-    d.style.borderRight = 'none'
+    d.style.borderLeft = `1px dashed ${lineColor}40`
+    d.style.borderRight = `1px dashed ${lineColor}40`
     if (s.isCurrent) {
       // Active/in-progress session — solid borders for clear visual distinction
       d.style.borderTop = `2px solid ${lineColor}`

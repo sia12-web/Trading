@@ -55,7 +55,6 @@ import {
   detectSpikes,
   detectDistributionReferences,
   detectEmotionalNewsMoves,
-  getRoundedNumbers,
   type EmotionalNewsMove,
 } from '@/lib/chart/excesses'
 import {
@@ -104,20 +103,17 @@ import {
   computeYesterdayProfile,
   resolveYesterdayAsOfUnix,
   yesterdayProfileBadgeText,
-  yesterdayProfileLineSpecs,
   yesterdayProfilePaintKey,
 } from '@/lib/trading/yesterdayProfile'
 import {
   computeOpeningActivity,
   openingActivityBadgeText,
-  openingActivityLineSpecs,
   openingActivityPaintKey,
   resolveOpeningAsOfUnix,
 } from '@/lib/trading/openingActivity'
 import {
   computeMarketControl,
   marketControlBadgeText,
-  marketControlLineSpecs,
   marketControlPaintKey,
   resolveMarketControlAsOfUnix,
   type MarketControl,
@@ -139,15 +135,12 @@ import {
   type SessionExitRead,
 } from '@/lib/trading/sessionExit'
 import { persistQuietDeskPerfLtar } from '@/lib/trading/ltarStore'
-import { deskSitLineSpecs } from '@/lib/trading/deskSituation'
-import { longTermRegionLineSpecs } from '@/lib/trading/longTermBracket'
 import {
   formatCallSetupTelegram,
   isNyCallSetup,
 } from '@/lib/trading/nyDeskStrategy'
 const AUCTION_COLORS: any = { high: '#3b82f6', low: '#ef4444', mid: '#eab308', buy: '#3b82f6', sell: '#ef4444' }
 const auctionOverlayBadgeText = (..._args: any[]) => ''
-const auctionOverlayLineSpecs = (..._args: any[]): any[] => []
 const auctionOverlayPaintKey = (..._args: any[]) => ''
 const computeAuctionOverlay = (..._args: any[]): any => null
 const isAuctionInstrument = (..._args: any[]) => false
@@ -158,7 +151,6 @@ type AuctionOverlaySignal = any
 const DOW_15M_FAIL_COLORS: any = { high: '#3b82f6', low: '#ef4444', mid: '#eab308', buy: '#3b82f6', sell: '#ef4444' }
 const computeDow15mFailOverlay = (..._args: any[]): any => null
 const dow15mFailBadgeText = (..._args: any[]) => ''
-const dow15mFailLineSpecs = (..._args: any[]): any[] => []
 const dow15mFailPaintKey = (..._args: any[]) => ''
 const isDowVolumeBarInstrument = (..._args: any[]) => false
 type Dow15mFailHud = any
@@ -628,23 +620,6 @@ function paintPositionBandOverlay(
   }
 }
 
-const LEVEL_COLORS: Record<string, string> = {
-  support: '#22c55e',
-  resistance: '#ef4444',
-  vwap: '#f59e0b',
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  approaching: '#facc15',
-  touched: '#3b82f6',
-  contested: '#facc15',
-  broken: '#ef4444',
-  bounced: '#a855f7',
-  respected: '#22c55e',
-  rejected: '#f97316',
-  held: '#22c55e',
-  untested: '#6b7280',
-}
 
 /** Map rule-grader verdict → chart status (drives line color + panel badge). */
 function reactionStatus(
@@ -1923,27 +1898,6 @@ export function TradingChart({
       }
     }
     ydayLinesRef.current = []
-    if (!showYesterdayProfile || !profile || !host) return
-    for (const spec of yesterdayProfileLineSpecs(profile)) {
-      try {
-        ydayLinesRef.current.push(
-          host.createPriceLine({
-            price: spec.price,
-            color: spec.color,
-            title: spec.title,
-            lineWidth: spec.title === 'POC' ? 2 : 1,
-            lineStyle: spec.dotted
-              ? LineStyle.Dotted
-              : spec.dashed
-                ? LineStyle.Dashed
-                : LineStyle.Solid,
-            axisLabelVisible: false,
-          })
-        )
-      } catch {
-        /* ignore */
-      }
-    }
   }, [showYesterdayProfile, instrument])
 
   const paintOpeningActivity = useCallback(() => {
@@ -1980,23 +1934,6 @@ export function TradingChart({
       }
     }
     openingLinesRef.current = []
-    if (!showOpeningActivity || !host) return
-    for (const spec of openingActivityLineSpecs(activity)) {
-      try {
-        openingLinesRef.current.push(
-          host.createPriceLine({
-            price: spec.price,
-            color: spec.color,
-            title: spec.title,
-            lineWidth: spec.title === 'Open' ? 2 : 1,
-            lineStyle: spec.dashed ? LineStyle.Dashed : LineStyle.Solid,
-            axisLabelVisible: false,
-          })
-        )
-      } catch {
-        /* ignore */
-      }
-    }
   }, [showOpeningActivity, instrument])
 
   const paintFrvp5d = useCallback(() => {
@@ -2123,22 +2060,7 @@ export function TradingChart({
     const tz = chartTzRef.current
     const candleTimes = list.map((c) => toChartTime(c.time as number, tz))
 
-    // 1. Long-Term Money (LT): 5-Month Anchored VWAP
-    if (avwap5mBenchmark) {
-      const yAvwap = series.priceToCoordinate(avwap5mBenchmark.vwap)
-      if (yAvwap != null && Number.isFinite(yAvwap) && yAvwap >= 0 && yAvwap <= paneH) {
-        ctx.strokeStyle = '#7c3aed'
-        ctx.setLineDash([6, 3])
-        ctx.lineWidth = 1.5
-        ctx.beginPath()
-        ctx.moveTo(0, Math.round(yAvwap) + 0.5)
-        ctx.lineTo(paneW, Math.round(yAvwap) + 0.5)
-        ctx.stroke()
-        ctx.setLineDash([])
-      }
-    }
-
-    // 2. Intermediate-Term Money (IT): 5-Day Fixed Range Volume Profile
+    // 1. Intermediate-Term Money: 5-Day Fixed Range Volume Profile
     if (frvp5d && frvp5d.bins && frvp5d.bins.length > 0) {
       const anchorChartT = toChartTime(frvp5d.startUnix, tz)
       const rawXAnchor = timeToX(chart.timeScale(), anchorChartT, candleTimes)
@@ -2177,48 +2099,25 @@ export function TradingChart({
           }
         }
 
-        // IT: 5D POC Line
+        // IT: 5D POC Line — ONLY line that extends across the screen to the right (paneW)
         const yPoc = series.priceToCoordinate(frvp5d.poc)
         if (yPoc != null && Number.isFinite(yPoc) && yPoc >= 0 && yPoc <= paneH && xAnchor <= paneW) {
           const lineStart = Math.max(0, xAnchor)
-          ctx.strokeStyle = '#334155'
+          ctx.strokeStyle = '#38bdf8'
           ctx.lineWidth = 2
           ctx.beginPath()
           ctx.moveTo(lineStart, Math.round(yPoc) + 0.5)
           ctx.lineTo(paneW, Math.round(yPoc) + 0.5)
           ctx.stroke()
-        }
 
-        // IT: 5D VAH / VAL Lines
-        const yVah = series.priceToCoordinate(frvp5d.vah)
-        if (yVah != null && Number.isFinite(yVah) && yVah >= 0 && yVah <= paneH && xAnchor <= paneW) {
-          const lineStart = Math.max(0, xAnchor)
-          ctx.strokeStyle = 'rgba(2, 132, 199, 0.65)'
-          ctx.setLineDash([4, 4])
-          ctx.lineWidth = 1
-          ctx.beginPath()
-          ctx.moveTo(lineStart, Math.round(yVah) + 0.5)
-          ctx.lineTo(paneW, Math.round(yVah) + 0.5)
-          ctx.stroke()
-          ctx.setLineDash([])
-        }
-
-        const yVal = series.priceToCoordinate(frvp5d.val)
-        if (yVal != null && Number.isFinite(yVal) && yVal >= 0 && yVal <= paneH && xAnchor <= paneW) {
-          const lineStart = Math.max(0, xAnchor)
-          ctx.strokeStyle = 'rgba(2, 132, 199, 0.65)'
-          ctx.setLineDash([4, 4])
-          ctx.lineWidth = 1
-          ctx.beginPath()
-          ctx.moveTo(lineStart, Math.round(yVal) + 0.5)
-          ctx.lineTo(paneW, Math.round(yVal) + 0.5)
-          ctx.stroke()
-          ctx.setLineDash([])
+          ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
+          ctx.fillStyle = '#38bdf8'
+          ctx.fillText(`5D POC ${frvp5d.poc.toLocaleString()}`, lineStart + 6, yPoc - 4)
         }
       }
     }
 
-    // 3. Short-Term Money (ST): Yesterday Fixed Range Profile
+    // 2. Short-Term Money: Yesterday Fixed Range Profile
     if (showYesterdayNyc && yesterdayNyc && yesterdayNyc.bins && yesterdayNyc.bins.length > 0) {
       const yAnchorChartT = toChartTime(yesterdayNyc.openUnix, tz)
       const rawXYAnchor = timeToX(chart.timeScale(), yAnchorChartT, candleTimes)
@@ -2259,118 +2158,26 @@ export function TradingChart({
           }
         }
 
-        // ST: Yesterday High (Y-High) Line + Volume
-        const yHighYday = series.priceToCoordinate(yesterdayNyc.yh)
-        if (yHighYday != null && Number.isFinite(yHighYday) && yHighYday >= 0 && yHighYday <= paneH && yAnchor <= paneW) {
-          const lineStart = Math.max(0, yAnchor)
-          ctx.strokeStyle = '#f43f5e'
-          ctx.setLineDash([5, 3])
-          ctx.lineWidth = 1.3
-          ctx.beginPath()
-          ctx.moveTo(lineStart, Math.round(yHighYday) + 0.5)
-          ctx.lineTo(paneW, Math.round(yHighYday) + 0.5)
-          ctx.stroke()
-          ctx.setLineDash([])
-
-          const volStr = yesterdayNyc.volume >= 1000 ? `${(yesterdayNyc.volume / 1000).toFixed(0)}k vol` : `${yesterdayNyc.volume} vol`
-          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillStyle = '#f43f5e'
-          ctx.fillText(`Y-High ${yesterdayNyc.yh.toFixed(2)} (${volStr})`, lineStart + 6, yHighYday - 3)
-        }
-
-        // ST: Yesterday Low (Y-Low) Line
-        const yLowYday = series.priceToCoordinate(yesterdayNyc.yl)
-        if (yLowYday != null && Number.isFinite(yLowYday) && yLowYday >= 0 && yLowYday <= paneH && yAnchor <= paneW) {
-          const lineStart = Math.max(0, yAnchor)
-          ctx.strokeStyle = '#10b981'
-          ctx.setLineDash([5, 3])
-          ctx.lineWidth = 1.3
-          ctx.beginPath()
-          ctx.moveTo(lineStart, Math.round(yLowYday) + 0.5)
-          ctx.lineTo(paneW, Math.round(yLowYday) + 0.5)
-          ctx.stroke()
-          ctx.setLineDash([])
-
-          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillStyle = '#10b981'
-          ctx.fillText(`Y-Low ${yesterdayNyc.yl.toFixed(2)}`, lineStart + 6, yLowYday + 10)
-        }
-
-        // ST: Yesterday Halfback / 50% Midpoint Line
-        const yMidVal = Number(((yesterdayNyc.yh + yesterdayNyc.yl) / 2).toFixed(2))
-        const yMidYday = series.priceToCoordinate(yMidVal)
-        if (yMidYday != null && Number.isFinite(yMidYday) && yMidYday >= 0 && yMidYday <= paneH && yAnchor <= paneW) {
-          const lineStart = Math.max(0, yAnchor)
-          ctx.strokeStyle = 'rgba(251, 191, 36, 0.75)'
-          ctx.setLineDash([3, 3])
-          ctx.lineWidth = 1
-          ctx.beginPath()
-          ctx.moveTo(lineStart, Math.round(yMidYday) + 0.5)
-          ctx.lineTo(paneW, Math.round(yMidYday) + 0.5)
-          ctx.stroke()
-          ctx.setLineDash([])
-
-          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillStyle = '#fbbf24'
-          ctx.fillText(`Y-Mid 50% ${yMidVal.toFixed(2)}`, lineStart + 6, yMidYday - 3)
-        }
-
-        // ST: Y-POC Line
+        // ST: Y-POC Line — stays inside yesterday's session, does not extend past yesterday
         const yPocYday = series.priceToCoordinate(yesterdayNyc.poc)
         if (yPocYday != null && Number.isFinite(yPocYday) && yPocYday >= 0 && yPocYday <= paneH && yAnchor <= paneW) {
           const lineStart = Math.max(0, yAnchor)
+          const lineEnd = Math.min(paneW, Math.max(lineStart, yEnd))
           ctx.strokeStyle = '#d97706'
-          ctx.setLineDash([5, 3])
-          ctx.lineWidth = 1.5
+          ctx.lineWidth = 2
           ctx.beginPath()
           ctx.moveTo(lineStart, Math.round(yPocYday) + 0.5)
-          ctx.lineTo(paneW, Math.round(yPocYday) + 0.5)
+          ctx.lineTo(lineEnd, Math.round(yPocYday) + 0.5)
           ctx.stroke()
-          ctx.setLineDash([])
 
-          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+          ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
           ctx.fillStyle = '#d97706'
-          ctx.fillText(`Y-POC ${yesterdayNyc.poc.toFixed(2)}`, lineStart + 6, yPocYday - 3)
-        }
-
-        // ST: Y-VAH / VAL Lines
-        const yVahYday = series.priceToCoordinate(yesterdayNyc.vah)
-        if (yVahYday != null && Number.isFinite(yVahYday) && yVahYday >= 0 && yVahYday <= paneH && yAnchor <= paneW) {
-          const lineStart = Math.max(0, yAnchor)
-          ctx.strokeStyle = 'rgba(217, 119, 6, 0.65)'
-          ctx.setLineDash([3, 3])
-          ctx.lineWidth = 1
-          ctx.beginPath()
-          ctx.moveTo(lineStart, Math.round(yVahYday) + 0.5)
-          ctx.lineTo(paneW, Math.round(yVahYday) + 0.5)
-          ctx.stroke()
-          ctx.setLineDash([])
-
-          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillStyle = 'rgba(217, 119, 6, 0.85)'
-          ctx.fillText(`Y-VAH ${yesterdayNyc.vah.toFixed(2)}`, lineStart + 6, yVahYday - 3)
-        }
-
-        const yValYday = series.priceToCoordinate(yesterdayNyc.val)
-        if (yValYday != null && Number.isFinite(yValYday) && yValYday >= 0 && yValYday <= paneH && yAnchor <= paneW) {
-          const lineStart = Math.max(0, yAnchor)
-          ctx.strokeStyle = 'rgba(217, 119, 6, 0.65)'
-          ctx.setLineDash([3, 3])
-          ctx.lineWidth = 1
-          ctx.beginPath()
-          ctx.moveTo(lineStart, Math.round(yValYday) + 0.5)
-          ctx.lineTo(paneW, Math.round(yValYday) + 0.5)
-          ctx.stroke()
-          ctx.setLineDash([])
-
-          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillStyle = 'rgba(217, 119, 6, 0.85)'
-          ctx.fillText(`Y-VAL ${yesterdayNyc.val.toFixed(2)}`, lineStart + 6, yValYday + 10)
+          ctx.fillText(`Y-POC ${yesterdayNyc.poc.toLocaleString()}`, lineStart + 6, yPocYday - 4)
         }
       }
     }
 
-    // 4. Short-Term Money (ST): Overnight Fixed Range Profile
+    // 3. Short-Term Money: Overnight Fixed Range Profile
     const on = overnightInventory?.overnight
     if (showInventorySessions && on && on.bins && on.bins.length > 0) {
       const onBins = on.bins
@@ -2413,45 +2220,21 @@ export function TradingChart({
           }
         }
 
-        // ST: ON-POC Line
+        // ST: ON-POC Line — extends till the last minute before NYC opens (9:29 AM)
         const yPocOn = series.priceToCoordinate(on.poc)
         if (yPocOn != null && Number.isFinite(yPocOn) && yPocOn >= 0 && yPocOn <= paneH && onAnchor <= paneW) {
           const lineStart = Math.max(0, onAnchor)
+          const lineEnd = Math.min(paneW, Math.max(lineStart, onEnd))
           ctx.strokeStyle = '#0284c7'
-          ctx.setLineDash([4, 2])
-          ctx.lineWidth = 1.5
+          ctx.lineWidth = 2
           ctx.beginPath()
           ctx.moveTo(lineStart, Math.round(yPocOn) + 0.5)
-          ctx.lineTo(paneW, Math.round(yPocOn) + 0.5)
+          ctx.lineTo(lineEnd, Math.round(yPocOn) + 0.5)
           ctx.stroke()
-          ctx.setLineDash([])
-        }
 
-        // ST: ON-VAH / VAL Lines
-        const yVahOn = series.priceToCoordinate(on.vah)
-        if (yVahOn != null && Number.isFinite(yVahOn) && yVahOn >= 0 && yVahOn <= paneH && onAnchor <= paneW) {
-          const lineStart = Math.max(0, onAnchor)
-          ctx.strokeStyle = 'rgba(2, 132, 199, 0.65)'
-          ctx.setLineDash([3, 3])
-          ctx.lineWidth = 1
-          ctx.beginPath()
-          ctx.moveTo(lineStart, Math.round(yVahOn) + 0.5)
-          ctx.lineTo(paneW, Math.round(yVahOn) + 0.5)
-          ctx.stroke()
-          ctx.setLineDash([])
-        }
-
-        const yValOn = series.priceToCoordinate(on.val)
-        if (yValOn != null && Number.isFinite(yValOn) && yValOn >= 0 && yValOn <= paneH && onAnchor <= paneW) {
-          const lineStart = Math.max(0, onAnchor)
-          ctx.strokeStyle = 'rgba(2, 132, 199, 0.65)'
-          ctx.setLineDash([3, 3])
-          ctx.lineWidth = 1
-          ctx.beginPath()
-          ctx.moveTo(lineStart, Math.round(yValOn) + 0.5)
-          ctx.lineTo(paneW, Math.round(yValOn) + 0.5)
-          ctx.stroke()
-          ctx.setLineDash([])
+          ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
+          ctx.fillStyle = '#0284c7'
+          ctx.fillText(`ON-POC ${on.poc.toLocaleString()}`, lineStart + 6, yPocOn - 4)
         }
       }
     }
@@ -2495,33 +2278,6 @@ export function TradingChart({
 
     const tz = chartTzRef.current
     const candleTimes = list.map((c) => toChartTime(c.time as number, tz))
-
-    // 1. Draw Rounded Numbers (faint dotted reference lines)
-    let minP = Infinity
-    let maxP = -Infinity
-    for (const b of list) {
-      if (b.low < minP) minP = b.low
-      if (b.high > maxP) maxP = b.high
-    }
-    if (Number.isFinite(minP) && Number.isFinite(maxP) && maxP > minP) {
-      const rounded = getRoundedNumbers(minP, maxP, instrument)
-      ctx.strokeStyle = 'rgba(148, 163, 184, 0.18)'
-      ctx.setLineDash([2, 4])
-      ctx.lineWidth = 1
-      ctx.font = '10px ui-monospace, SFMono-Regular, monospace'
-      ctx.fillStyle = 'rgba(148, 163, 184, 0.35)'
-
-      for (const r of rounded) {
-        const y = series.priceToCoordinate(r)
-        if (y != null && Number.isFinite(y) && y >= 4 && y <= paneH - 4) {
-          ctx.beginPath()
-          ctx.moveTo(0, Math.round(y) + 0.5)
-          ctx.lineTo(paneW, Math.round(y) + 0.5)
-          ctx.stroke()
-        }
-      }
-      ctx.setLineDash([])
-    }
 
     // Anchor strictly at Yesterday (covers Yesterday Asia/London/NYC and Today only — no prior confusing days)
     const yesterdayStartUnix = yesterdayNyc
@@ -3056,26 +2812,6 @@ export function TradingChart({
       }
     }
     auctionLinesRef.current = []
-    if (!visible || !overlay || !host) {
-      paintDeskMarkersRef.current()
-      return
-    }
-    for (const spec of auctionOverlayLineSpecs(overlay)) {
-      try {
-        auctionLinesRef.current.push(
-          host.createPriceLine({
-            price: spec.price,
-            color: spec.color,
-            title: spec.title,
-            lineWidth: spec.width,
-            lineStyle: spec.dashed ? LineStyle.Dashed : LineStyle.Solid,
-            axisLabelVisible: false,
-          })
-        )
-      } catch {
-        /* ignore */
-      }
-    }
     paintDeskMarkersRef.current()
   }, [showAuction, instrument])
 
@@ -3129,26 +2865,6 @@ export function TradingChart({
       }
     }
     dow15mFailLinesRef.current = []
-    if (!visible || !overlay || !host) {
-      paintDeskMarkersRef.current()
-      return
-    }
-    for (const spec of dow15mFailLineSpecs(overlay)) {
-      try {
-        dow15mFailLinesRef.current.push(
-          host.createPriceLine({
-            price: spec.price,
-            color: spec.color,
-            title: spec.title,
-            lineWidth: spec.width,
-            lineStyle: spec.dashed ? LineStyle.Dashed : LineStyle.Solid,
-            axisLabelVisible: false,
-          })
-        )
-      } catch {
-        /* ignore */
-      }
-    }
     paintDeskMarkersRef.current()
   }, [showDow15mFail, instrument])
 
@@ -3187,23 +2903,6 @@ export function TradingChart({
       }
     }
     controlLinesRef.current = []
-    if (!showMarketControl || !host) return
-    for (const spec of marketControlLineSpecs(control)) {
-      try {
-        controlLinesRef.current.push(
-          host.createPriceLine({
-            price: spec.price,
-            color: spec.color,
-            title: spec.title,
-            lineWidth: 2,
-            lineStyle: LineStyle.Solid,
-            axisLabelVisible: false,
-          })
-        )
-      } catch {
-        /* ignore */
-      }
-    }
   }, [showMarketControl, instrument])
 
   const paintDeskCall = useCallback(() => {
@@ -3326,33 +3025,6 @@ export function TradingChart({
         }
       }
       spikeLinesRef.current = []
-      if (host) {
-        for (const spec of deskSitLineSpecs({
-          kind: call.sitKind ?? 'NONE',
-          badgeText: nextSit,
-          playLine: nextSitHover,
-          spikeHigh: call.spikeHigh ?? null,
-          spikeLow: call.spikeLow ?? null,
-          gapHold: call.sitHold === true,
-          gapDead: false,
-          spikeReject: false,
-        })) {
-          try {
-            spikeLinesRef.current.push(
-              host.createPriceLine({
-                price: spec.price,
-                color: spec.color,
-                title: spec.title,
-                lineWidth: 1,
-                lineStyle: LineStyle.Dashed,
-                axisLabelVisible: false,
-              })
-            )
-          } catch {
-            /* ignore */
-          }
-        }
-      }
     }
     const regionKey = `${instrument}_${call.regionHigh ?? ''}_${call.regionLow ?? ''}_${nextRegion}`
     if (regionKey !== regionPaintKeyRef.current) {
@@ -3365,36 +3037,6 @@ export function TradingChart({
         }
       }
       regionLinesRef.current = []
-      if (host) {
-        for (const spec of longTermRegionLineSpecs({
-          instrument,
-          ready: call.regionHigh != null && call.regionLow != null,
-          mode: 'BRACKET',
-          location: 'mid',
-          acceptance: 'INSIDE',
-          high: call.regionHigh ?? null,
-          low: call.regionLow ?? null,
-          days: 5,
-          firstLegalOnly: call.regionVeto === true,
-          badgeText: nextRegion,
-          playLine: nextRegionHover,
-        })) {
-          try {
-            regionLinesRef.current.push(
-              host.createPriceLine({
-                price: spec.price,
-                color: spec.color,
-                title: spec.title,
-                lineWidth: 1,
-                lineStyle: LineStyle.Dashed,
-                axisLabelVisible: false,
-              })
-            )
-          } catch {
-            /* ignore */
-          }
-        }
-      }
     }
   }, [
     instrument,
@@ -3452,22 +3094,6 @@ export function TradingChart({
       }
     }
     ibLiqLinesRef.current = []
-    if (host && advice.swing) {
-      try {
-        ibLiqLinesRef.current.push(
-          host.createPriceLine({
-            price: advice.swing.price,
-            color: '#eab308',
-            title: advice.swing.kind === 'high' ? 'Liq H' : 'Liq L',
-            lineWidth: 2,
-            lineStyle: LineStyle.Dashed,
-            axisLabelVisible: false,
-          })
-        )
-      } catch {
-        /* ignore */
-      }
-    }
 
     const alertKind = advice.regime ? ibExtendAlertKind(advice.regime) : null
     if (
@@ -5487,6 +5113,9 @@ export function TradingChart({
 
   useEffect(() => {
     candlesRef.current = candles
+    requestAnimationFrame(() => {
+      refreshSessionHighlightsRef.current?.()
+    })
   }, [candles])
 
   useEffect(() => {
@@ -5510,63 +5139,6 @@ export function TradingChart({
       }
     })
     levelLinesRef.current = []
-
-    if (!showLevelsRef.current) return
-
-    const tip = lastCandleRef.current?.close
-    const call = deskCallRef.current
-    const wantSide: 'BUY' | 'SHORT' | null =
-      call?.side === 'SHORT' ? 'SHORT' : call?.side === 'LONG' ? 'BUY' : null
-    const source = levelsRef.current
-    const aligned = wantSide
-      ? source.filter((level) => {
-        const isRes =
-          level.type === 'resistance' ||
-          String(level.type).toLowerCase().includes('resist')
-        const side: 'BUY' | 'SHORT' =
-          level.side === 'BUY' || level.side === 'SHORT'
-            ? level.side
-            : isRes
-              ? 'SHORT'
-              : 'BUY'
-        return side === wantSide
-      })
-      : source
-    const paintList = aligned.length > 0 ? aligned : source
-    for (const level of paintList) {
-      // Skip wrong-scale leftovers (e.g. Nikkei ~65k while DOW prints ~52k)
-      if (
-        tip != null &&
-        tip > 0 &&
-        Math.abs(level.price - tip) / tip > 0.08
-      ) {
-        continue
-      }
-      const isAi = level.source === 'ai'
-      const isRes =
-        level.type === 'resistance' || String(level.type).toLowerCase().includes('resist')
-      const isPrimary = (level.label || '').includes('PRIMARY')
-      const baseColor =
-        STATUS_COLORS[level.status] ??
-        LEVEL_COLORS[level.type] ??
-        (isAi ? (isRes ? '#f87171' : '#34d399') : isRes ? '#f87171' : '#34d399')
-      try {
-        levelLinesRef.current.push(
-          host.createPriceLine({
-            price: level.price,
-            color: baseColor,
-            lineWidth: isPrimary ? 3 : 2,
-            lineStyle: isPrimary ? LineStyle.Solid : isAi ? LineStyle.Solid : LineStyle.Dashed,
-            axisLabelVisible: false,
-            title: level.label
-              ? `${level.label} ${level.price.toLocaleString()}`
-              : `${isRes ? 'SHORT' : 'BUY'} ${level.price.toLocaleString()}`,
-          })
-        )
-      } catch {
-        /* ignore */
-      }
-    }
   }, [])
 
   // ── Push candle data to chart ─────────────────────────────────────────────────
@@ -5756,6 +5328,7 @@ export function TradingChart({
             restored ?? deskVisibleLogicalRange(ordered.length, width)
           )
           didFitRef.current = true
+          refreshSessionHighlightsRef.current?.()
         } catch {
           /* ignore */
         }
@@ -5766,11 +5339,15 @@ export function TradingChart({
         try {
           ts.setVisibleLogicalRange(savedRange)
           keepDeskBarSpacing(chartRef.current, savedSpacing)
+          refreshSessionHighlightsRef.current?.()
         } catch {
           /* ignore */
         }
       })
     }
+    requestAnimationFrame(() => {
+      refreshSessionHighlightsRef.current?.()
+    })
   }, [candles, instrument, paintLevelLines]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Session color boxes (cached spans + imperative paint = smooth pan)
@@ -5827,7 +5404,7 @@ export function TradingChart({
       priceScaleWidth: priceAxisW,
       containerWidth: containerRef.current.clientWidth,
       containerHeight: containerRef.current.clientHeight,
-      sessionPaint: 'full',
+      sessionPaint: 'columns',
     })
     paintSessionHighlightOverlay(host, rects)
 
@@ -8316,51 +7893,15 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         </div>
       </div>
 
-      {/* ── Compact Money Tiers & OHLCV Tooltip Row ─────────────────────────── */}
+      {/* ── Compact Evaluators & OHLCV Tooltip Row ─────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-x-2.5 gap-y-1 px-1 py-0.5 text-[10.5px] text-gray-400 min-h-[22px]">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-          {/* Long-Term Money: 5-Month Anchored VWAP */}
-          {avwap5mBenchmark && (
-            <span className="inline-flex items-center gap-1 rounded bg-purple-950/40 border border-purple-500/30 px-1.5 py-0.5" title="Long-Term Money: 5-Month Anchored VWAP">
-              <span className="text-purple-300 font-bold">Long Term:</span>
-              <span className="font-mono text-purple-200 font-bold">{avwap5mBenchmark.vwap.toLocaleString()}</span>
-            </span>
-          )}
-
-          {/* Intermediate Money: 5-Day Fixed Range Volume Profile */}
-          {frvp5d && (
-            <span className="inline-flex items-center gap-1 rounded bg-slate-900 border border-slate-700 px-1.5 py-0.5" title="Intermediate Money: 5-Day Volume Profile POC">
-              <span className="text-cyan-400 font-bold">Intermediate:</span>
-              <span className="font-mono text-amber-300 font-bold">{frvp5d.poc.toLocaleString()}</span>
-            </span>
-          )}
-
-          {/* Short-Term Money: Yesterday NYC Session + Overnight Inventory */}
-          {(yesterdayNyc || overnightInventory) && (
-            <span className="inline-flex items-center gap-1.5 rounded bg-amber-950/30 border border-amber-500/30 px-1.5 py-0.5" title="Short-Term Money: Yesterday NYC Session & Overnight Inventory">
-              <span className="text-amber-400 font-bold">Short Term:</span>
-              {yesterdayNyc && (
-                <>
-                  <span className="text-gray-400">Y-POC:</span>
-                  <span className="font-mono text-amber-200 font-semibold">{yesterdayNyc.poc.toLocaleString()}</span>
-                </>
-              )}
-              {overnightInventory?.overnight && (
-                <>
-                  <span className="text-gray-500">|</span>
-                  <span className="text-gray-400">ON-POC:</span>
-                  <span className="font-mono text-sky-300 font-semibold">{overnightInventory.overnight.poc.toLocaleString()}</span>
-                </>
-              )}
-            </span>
-          )}
-
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
           {/* Structural Evaluators: Day Type & Opening */}
-          <span className="text-gray-600 text-[10px]">|</span>
           <span>
             <span className="text-gray-500">Day: </span>
             <span className="text-purple-300 font-semibold">{dayTypeEval.badgeText}</span>
           </span>
+          <span className="text-gray-600 text-[10px]">|</span>
           <span>
             <span className="text-gray-500">Open: </span>
             <span className="text-cyan-300 font-semibold">{openingBadge}</span>
