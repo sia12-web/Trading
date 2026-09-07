@@ -38,6 +38,8 @@ import {
 } from 'lightweight-charts'
 import {
   AVWAP_CANDLE_FETCH_CALENDAR_DAYS,
+  computeSessionHighlightSpans,
+  projectSessionHighlightRects,
   paintSessionHighlightOverlay,
   timeToX,
   deskClockFor,
@@ -5697,14 +5699,57 @@ export function TradingChart({
     const series = candleRef.current
     const list = candlesRef.current
     const host = sessionOverlayRef.current
-    paintSessionHighlightOverlay(host, [])
     if (!chart || !series || !containerRef.current || list.length === 0) {
+      paintSessionHighlightOverlay(host, [])
       paintPositionBandOverlay(positionBandOverlayRef.current, [])
       paintFrvpHistogramRef.current()
       paintExcessesAndRoundedRef.current()
       paintNewsMarkersRef.current()
       return
     }
+
+    const tz = chartTzRef.current
+    const tip = (list[list.length - 1]?.time as number) || 0
+    const cacheKey = `${instrument}:${tip}:${list.length}:${tz}`
+    let cached = sessionSpansRef.current
+    if (!cached || cached.key !== cacheKey) {
+      const built = computeSessionHighlightSpans({
+        candles: list.map((c) => ({
+          time: c.time as number,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: c.volume,
+        })),
+        instrument,
+      })
+      cached = { key: cacheKey, spans: built.spans, candleTimes: built.candleTimes }
+      sessionSpansRef.current = cached
+    }
+
+    let priceAxisW = 70
+    try {
+      priceAxisW = chart.priceScale('right').width() || priceAxisW
+    } catch {
+      /* defaults */
+    }
+
+    const { rects } = projectSessionHighlightRects({
+      spans: cached.spans.map((s: any) => ({
+        ...s,
+        startT: toChartTime(s.startT, tz),
+        endT: toChartTime(s.endT, tz),
+      })),
+      candleTimes: cached.candleTimes.map((t: number) => toChartTime(t, tz)),
+      timeScale: chart.timeScale(),
+      priceToY: (price) => series.priceToCoordinate(price),
+      priceScaleWidth: priceAxisW,
+      containerWidth: containerRef.current.clientWidth,
+      containerHeight: containerRef.current.clientHeight,
+      sessionPaint: 'full',
+    })
+    paintSessionHighlightOverlay(host, rects)
 
     const book = bookBandRef.current
     const bandHost = positionBandOverlayRef.current
@@ -5743,7 +5788,7 @@ export function TradingChart({
     paintFrvpHistogramRef.current()
     paintExcessesAndRoundedRef.current()
     paintNewsMarkersRef.current()
-  }, [])
+  }, [instrument])
 
   useEffect(() => {
     paintFrvpHistogramRef.current = paintFrvpHistogram
@@ -8128,13 +8173,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
   return (
     <div
-      className={`flex flex-col gap-2 ${isFullscreen
-        ? 'fixed inset-0 z-[100] bg-[#0d1117] p-3 h-screen w-screen'
+      className={`flex flex-col gap-1 ${isFullscreen
+        ? 'fixed inset-0 z-[100] bg-[#0d1117] p-2 h-screen w-screen'
         : 'h-full w-full'
         }`}
     >
       {/* ── Toolbar ─────────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-1.5 pb-0.5">
         {/* Instrument tabs — LIVE focus hides off-session desks */}
         <div className="tab-bar">
           {visibleInstruments.map((inst) => (
@@ -8191,59 +8236,61 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         </div>
       </div>
 
-      {/* ── OHLCV tooltip bar ─────────────────────────────────────────────────── */}
-      <div className="h-5">
-        <OHLCVTooltip data={tooltip} color={meta.color} />
-      </div>
+      {/* ── Compact Money Tiers & OHLCV Tooltip Row ─────────────────────────── */}
+      <div className="flex flex-wrap items-center justify-between gap-x-2.5 gap-y-1 px-1 py-0.5 text-[10.5px] text-gray-400 min-h-[22px]">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          {/* Long-Term Money: 5-Month Anchored VWAP */}
+          {avwap5mBenchmark && (
+            <span className="inline-flex items-center gap-1 rounded bg-purple-950/40 border border-purple-500/30 px-1.5 py-0.5" title="Long-Term Money: 5-Month Anchored VWAP">
+              <span className="text-purple-300 font-bold">Long Term:</span>
+              <span className="font-mono text-purple-200 font-bold">{avwap5mBenchmark.vwap.toLocaleString()}</span>
+            </span>
+          )}
 
-      {/* Multi-Timeframe Money & Structural Status Summary */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-1 py-0.5 text-[11px] text-gray-400">
-        {/* Long-Term Money: 5-Month Anchored VWAP */}
-        {avwap5mBenchmark && (
-          <span className="inline-flex items-center gap-1.5 rounded bg-purple-950/40 border border-purple-500/30 px-2 py-0.5" title="Long-Term Money: 5-Month Anchored VWAP">
-            <span className="text-purple-300 font-bold">Long Term Money:</span>
-            <span className="font-mono text-purple-200 font-bold">{avwap5mBenchmark.vwap.toLocaleString()}</span>
+          {/* Intermediate Money: 5-Day Fixed Range Volume Profile */}
+          {frvp5d && (
+            <span className="inline-flex items-center gap-1 rounded bg-slate-900 border border-slate-700 px-1.5 py-0.5" title="Intermediate Money: 5-Day Volume Profile POC">
+              <span className="text-cyan-400 font-bold">Intermediate:</span>
+              <span className="font-mono text-amber-300 font-bold">{frvp5d.poc.toLocaleString()}</span>
+            </span>
+          )}
+
+          {/* Short-Term Money: Yesterday NYC Session + Overnight Inventory */}
+          {(yesterdayNyc || overnightInventory) && (
+            <span className="inline-flex items-center gap-1.5 rounded bg-amber-950/30 border border-amber-500/30 px-1.5 py-0.5" title="Short-Term Money: Yesterday NYC Session & Overnight Inventory">
+              <span className="text-amber-400 font-bold">Short Term:</span>
+              {yesterdayNyc && (
+                <>
+                  <span className="text-gray-400">Y-POC:</span>
+                  <span className="font-mono text-amber-200 font-semibold">{yesterdayNyc.poc.toLocaleString()}</span>
+                </>
+              )}
+              {overnightInventory?.overnight && (
+                <>
+                  <span className="text-gray-500">|</span>
+                  <span className="text-gray-400">ON-POC:</span>
+                  <span className="font-mono text-sky-300 font-semibold">{overnightInventory.overnight.poc.toLocaleString()}</span>
+                </>
+              )}
+            </span>
+          )}
+
+          {/* Structural Evaluators: Day Type & Opening */}
+          <span className="text-gray-600 text-[10px]">|</span>
+          <span>
+            <span className="text-gray-500">Day: </span>
+            <span className="text-purple-300 font-semibold">{dayTypeEval.badgeText}</span>
           </span>
-        )}
-
-        {/* Intermediate Money: 5-Day Fixed Range Volume Profile */}
-        {frvp5d && (
-          <span className="inline-flex items-center gap-1.5 rounded bg-slate-900 border border-slate-700 px-2 py-0.5" title="Intermediate Money: 5-Day Volume Profile POC">
-            <span className="text-cyan-400 font-bold">Intermediate Money:</span>
-            <span className="font-mono text-amber-300 font-bold">{frvp5d.poc.toLocaleString()}</span>
+          <span>
+            <span className="text-gray-500">Open: </span>
+            <span className="text-cyan-300 font-semibold">{openingBadge}</span>
           </span>
-        )}
+        </div>
 
-        {/* Short-Term Money: Yesterday NYC Session + Overnight Inventory */}
-        {(yesterdayNyc || overnightInventory) && (
-          <span className="inline-flex items-center gap-1.5 rounded bg-amber-950/30 border border-amber-500/30 px-2 py-0.5" title="Short-Term Money: Yesterday NYC Session & Overnight Inventory">
-            <span className="text-amber-400 font-bold">Short Term Money:</span>
-            {yesterdayNyc && (
-              <>
-                <span className="text-gray-400">Y-POC:</span>
-                <span className="font-mono text-amber-200 font-semibold">{yesterdayNyc.poc.toLocaleString()}</span>
-              </>
-            )}
-            {overnightInventory?.overnight && (
-              <>
-                <span className="text-gray-500">|</span>
-                <span className="text-gray-400">ON-POC:</span>
-                <span className="font-mono text-sky-300 font-semibold">{overnightInventory.overnight.poc.toLocaleString()}</span>
-              </>
-            )}
-          </span>
-        )}
-
-        {/* Structural Evaluators: Day Type & Opening */}
-        <span className="text-gray-600 text-[10px]">|</span>
-        <span>
-          <span className="text-gray-500">Day Type: </span>
-          <span className="text-purple-300 font-semibold">{dayTypeEval.badgeText}</span>
-        </span>
-        <span>
-          <span className="text-gray-500">Opening: </span>
-          <span className="text-cyan-300 font-semibold">{openingBadge}</span>
-        </span>
+        {/* OHLCV Hover Tooltip inline on the right */}
+        <div className="ml-auto flex-shrink-0">
+          <OHLCVTooltip data={tooltip} color={meta.color} />
+        </div>
       </div>
       <div
         ref={chartFrameRef}
