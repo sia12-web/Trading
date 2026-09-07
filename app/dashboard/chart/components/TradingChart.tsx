@@ -2259,6 +2259,62 @@ export function TradingChart({
           }
         }
 
+        // ST: Yesterday High (Y-High) Line + Volume
+        const yHighYday = series.priceToCoordinate(yesterdayNyc.yh)
+        if (yHighYday != null && Number.isFinite(yHighYday) && yHighYday >= 0 && yHighYday <= paneH && yAnchor <= paneW) {
+          const lineStart = Math.max(0, yAnchor)
+          ctx.strokeStyle = '#f43f5e'
+          ctx.setLineDash([5, 3])
+          ctx.lineWidth = 1.3
+          ctx.beginPath()
+          ctx.moveTo(lineStart, Math.round(yHighYday) + 0.5)
+          ctx.lineTo(paneW, Math.round(yHighYday) + 0.5)
+          ctx.stroke()
+          ctx.setLineDash([])
+
+          const volStr = yesterdayNyc.volume >= 1000 ? `${(yesterdayNyc.volume / 1000).toFixed(0)}k vol` : `${yesterdayNyc.volume} vol`
+          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+          ctx.fillStyle = '#f43f5e'
+          ctx.fillText(`Y-High ${yesterdayNyc.yh.toFixed(2)} (${volStr})`, lineStart + 6, yHighYday - 3)
+        }
+
+        // ST: Yesterday Low (Y-Low) Line
+        const yLowYday = series.priceToCoordinate(yesterdayNyc.yl)
+        if (yLowYday != null && Number.isFinite(yLowYday) && yLowYday >= 0 && yLowYday <= paneH && yAnchor <= paneW) {
+          const lineStart = Math.max(0, yAnchor)
+          ctx.strokeStyle = '#10b981'
+          ctx.setLineDash([5, 3])
+          ctx.lineWidth = 1.3
+          ctx.beginPath()
+          ctx.moveTo(lineStart, Math.round(yLowYday) + 0.5)
+          ctx.lineTo(paneW, Math.round(yLowYday) + 0.5)
+          ctx.stroke()
+          ctx.setLineDash([])
+
+          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+          ctx.fillStyle = '#10b981'
+          ctx.fillText(`Y-Low ${yesterdayNyc.yl.toFixed(2)}`, lineStart + 6, yLowYday + 10)
+        }
+
+        // ST: Yesterday Halfback / 50% Midpoint Line
+        const yMidVal = Number(((yesterdayNyc.yh + yesterdayNyc.yl) / 2).toFixed(2))
+        const yMidYday = series.priceToCoordinate(yMidVal)
+        if (yMidYday != null && Number.isFinite(yMidYday) && yMidYday >= 0 && yMidYday <= paneH && yAnchor <= paneW) {
+          const lineStart = Math.max(0, yAnchor)
+          ctx.strokeStyle = 'rgba(251, 191, 36, 0.75)'
+          ctx.setLineDash([3, 3])
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.moveTo(lineStart, Math.round(yMidYday) + 0.5)
+          ctx.lineTo(paneW, Math.round(yMidYday) + 0.5)
+          ctx.stroke()
+          ctx.setLineDash([])
+
+          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+          ctx.fillStyle = '#fbbf24'
+          ctx.fillText(`Y-Mid 50% ${yMidVal.toFixed(2)}`, lineStart + 6, yMidYday - 3)
+        }
+
         // ST: Y-POC Line
         const yPocYday = series.priceToCoordinate(yesterdayNyc.poc)
         if (yPocYday != null && Number.isFinite(yPocYday) && yPocYday >= 0 && yPocYday <= paneH && yAnchor <= paneW) {
@@ -2271,6 +2327,10 @@ export function TradingChart({
           ctx.lineTo(paneW, Math.round(yPocYday) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
+
+          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+          ctx.fillStyle = '#d97706'
+          ctx.fillText(`Y-POC ${yesterdayNyc.poc.toFixed(2)}`, lineStart + 6, yPocYday - 3)
         }
 
         // ST: Y-VAH / VAL Lines
@@ -2285,6 +2345,10 @@ export function TradingChart({
           ctx.lineTo(paneW, Math.round(yVahYday) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
+
+          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+          ctx.fillStyle = 'rgba(217, 119, 6, 0.85)'
+          ctx.fillText(`Y-VAH ${yesterdayNyc.vah.toFixed(2)}`, lineStart + 6, yVahYday - 3)
         }
 
         const yValYday = series.priceToCoordinate(yesterdayNyc.val)
@@ -2298,6 +2362,10 @@ export function TradingChart({
           ctx.lineTo(paneW, Math.round(yValYday) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
+
+          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+          ctx.fillStyle = 'rgba(217, 119, 6, 0.85)'
+          ctx.fillText(`Y-VAL ${yesterdayNyc.val.toFixed(2)}`, lineStart + 6, yValYday + 10)
         }
       }
     }
@@ -2455,7 +2523,12 @@ export function TradingChart({
       ctx.setLineDash([])
     }
 
-    // 2. Draw Session Extremes (True Highest & Lowest of each session)
+    // Anchor strictly at Yesterday (covers Yesterday Asia/London/NYC and Today only — no prior confusing days)
+    const yesterdayStartUnix = yesterdayNyc
+      ? yesterdayNyc.openUnix - 16 * 3600
+      : (list.length > 0 ? (list[list.length - 1]!.time as number) - 86400 * 2 : undefined)
+
+    // 2. Draw Session Extremes (True Highest & Lowest for Yesterday & Today only)
     const sessionExtremes = detect5DaySessionExtremes(
       list.map((c) => ({
         time: c.time as number,
@@ -2466,7 +2539,7 @@ export function TradingChart({
         volume: c.volume,
       })),
       instrument,
-      frvp5d?.startUnix
+      yesterdayStartUnix
     )
 
     for (const ex of sessionExtremes) {
@@ -2550,7 +2623,7 @@ export function TradingChart({
       }
     }
 
-    // 3. Draw Late-Session Spikes (Spike High & Spike Base)
+    // 3. Draw Late-Session Spikes (Spike High & Spike Base for Yesterday & Today only)
     const spikes = detectSpikes(
       list.map((c) => ({
         time: c.time as number,
@@ -2561,7 +2634,7 @@ export function TradingChart({
         volume: c.volume,
       })),
       instrument,
-      frvp5d?.startUnix
+      yesterdayStartUnix
     )
 
     for (const sp of spikes) {
@@ -2604,7 +2677,7 @@ export function TradingChart({
       ctx.setLineDash([])
     }
 
-    // 4. Draw Dalton Distribution Reference Points (Trend 50% / Double Distribution Separation)
+    // 4. Draw Dalton Distribution Reference Points (for Yesterday & Today only)
     const distRefs = detectDistributionReferences(
       list.map((c) => ({
         time: c.time as number,
@@ -2615,7 +2688,7 @@ export function TradingChart({
         volume: c.volume,
       })),
       instrument,
-      frvp5d?.startUnix
+      yesterdayStartUnix
     )
 
     for (const ref of distRefs) {
@@ -2665,7 +2738,7 @@ export function TradingChart({
       }
     }
 
-    // 5. Draw Emotional News Moves (Sudden High/Low spikes upon news announcements)
+    // 5. Draw Emotional News Moves (Actual high impact news only where market actually reacted)
     const newsMoves = detectEmotionalNewsMoves(
       list.map((c) => ({
         time: c.time as number,
@@ -2677,7 +2750,9 @@ export function TradingChart({
       })),
       newsEvents,
       instrument,
-      frvp5d?.startUnix
+      yesterdayStartUnix,
+      undefined,
+      false // strictly disable fake news markers on generic candle spikes
     )
 
     for (const move of newsMoves) {
@@ -2909,6 +2984,9 @@ export function TradingChart({
   const emotionalNewsMoves: EmotionalNewsMove[] = useMemo(() => {
     const list = candles || []
     if (!list.length) return []
+    const yesterdayStartUnix = yesterdayNyc
+      ? yesterdayNyc.openUnix - 16 * 3600
+      : ((list[list.length - 1]!.time as number) - 86400 * 2)
     return detectEmotionalNewsMoves(
       list.map((c) => ({
         time: c.time as number,
@@ -2920,9 +2998,11 @@ export function TradingChart({
       })),
       newsEvents,
       instrument,
-      frvp5d?.startUnix
+      yesterdayStartUnix,
+      undefined,
+      false
     )
-  }, [candles, newsEvents, instrument, frvp5d?.startUnix])
+  }, [candles, newsEvents, instrument, yesterdayNyc?.openUnix])
 
   const paintAuctionOverlay = useCallback(() => {
     const host = priceLineHostRef.current

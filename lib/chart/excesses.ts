@@ -534,7 +534,8 @@ export function detectEmotionalNewsMoves(
   calendarEvents: CalendarEventParam[] = [],
   _instrument: string = 'DOW',
   anchorUnix?: number,
-  nowMs: number = Date.now()
+  nowMs: number = Date.now(),
+  allowUnscheduledSpikes: boolean = false
 ): EmotionalNewsMove[] {
   if (!bars || bars.length < 5) return []
 
@@ -544,8 +545,13 @@ export function detectEmotionalNewsMoves(
   const moves: EmotionalNewsMove[] = []
   const processedIndices = new Set<number>()
 
-  // 1. Process explicit economic calendar events
+  // 1. Process explicit economic calendar events that really impact the market
   for (const e of calendarEvents) {
+    const impactRaw = (e.impact || '').toLowerCase()
+    const isExplicitHigh = impactRaw.includes('high')
+    const isKnownMacroDriver = /cpi|fomc|fed\b|nfp|non-farm|payroll|powell|rate decision|gdp|ppi|unemployment|retail sales|pce\b|ism\b/i.test(e.event)
+    if (!isExplicitHigh && !isKnownMacroDriver) continue
+
     const eventUnix = parseCalendarTimeUnix(e.time, nowMs)
     if (!eventUnix) continue
 
@@ -564,10 +570,6 @@ export function detectEmotionalNewsMoves(
     const reactionBars = scoped.slice(eventIdx, reactionEndIdx + 1)
     if (reactionBars.length === 0) continue
 
-    for (let i = eventIdx; i <= reactionEndIdx; i++) {
-      processedIndices.add(i)
-    }
-
     const basePrice = eventIdx > 0 ? scoped[eventIdx - 1]!.close : scoped[eventIdx]!.open
     let nHigh = -Infinity
     let nLow = Infinity
@@ -579,6 +581,29 @@ export function detectEmotionalNewsMoves(
     }
     const moveRange = Number((nHigh - nLow).toFixed(2))
     if (moveRange <= 0) continue
+
+    // Verify that the market ACTUALLY reacted to this news announcement
+    const lookback = Math.min(10, eventIdx)
+    let preRangeSum = 0
+    let preVolSum = 0
+    if (lookback > 0) {
+      for (let j = eventIdx - lookback; j < eventIdx; j++) {
+        preRangeSum += scoped[j]!.high - scoped[j]!.low
+        preVolSum += Math.max(0, scoped[j]!.volume > 0 ? scoped[j]!.volume : 1)
+      }
+    }
+    const avgPreRange = lookback > 0 ? preRangeSum / lookback : 1
+    const avgPreVol = lookback > 0 ? preVolSum / lookback : 1
+    const reactionExpansion = avgPreRange > 0 ? moveRange / avgPreRange : 1
+    const volumeExpansion = avgPreVol > 0 ? (nVol / reactionBars.length) / avgPreVol : 1
+    if (reactionExpansion < 1.25 && volumeExpansion < 1.25) {
+      // Market did not meaningfully react to this news event — skip
+      continue
+    }
+
+    for (let i = eventIdx; i <= reactionEndIdx; i++) {
+      processedIndices.add(i)
+    }
 
     const lastReactionClose = reactionBars[reactionBars.length - 1]!.close
     const upSpread = nHigh - basePrice
@@ -621,8 +646,7 @@ export function detectEmotionalNewsMoves(
       }
     }
 
-    const impactRaw = (e.impact || '').toLowerCase()
-    const impact: 'High' | 'Medium' | 'Low' = impactRaw.includes('high') ? 'High' : impactRaw.includes('med') ? 'Medium' : 'Low'
+    const impact: 'High' | 'Medium' | 'Low' = isExplicitHigh ? 'High' : 'Medium'
 
     moves.push({
       id: `news-move-${eventUnix}-${e.event.replace(/\s+/g, '-').toLowerCase()}`,
@@ -645,8 +669,8 @@ export function detectEmotionalNewsMoves(
     })
   }
 
-  // 2. Detect Unscheduled Sudden Volatility Spikes (>2.5x ATR)
-  if (scoped.length >= 6) {
+  // 2. Unscheduled Volatility Spikes (only if explicitly enabled; disabled by default to avoid classifying regular spikes as news)
+  if (allowUnscheduledSpikes && scoped.length >= 6) {
     const minLookback = 5
     for (let i = minLookback; i < scoped.length; i++) {
       if (processedIndices.has(i)) continue

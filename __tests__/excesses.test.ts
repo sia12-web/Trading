@@ -197,7 +197,12 @@ describe('Auction Market Theory - Session Extremes, Spikes & Distribution Refere
       volume: 600,
     })
 
-    const moves = detectEmotionalNewsMoves(bars, [], 'DOW')
+    // By default, generic spikes are NOT treated as news
+    const defaultMoves = detectEmotionalNewsMoves(bars, [], 'DOW')
+    assert.equal(defaultMoves.length, 0)
+
+    // When explicitly enabled, unscheduled volatility spikes are captured
+    const moves = detectEmotionalNewsMoves(bars, [], 'DOW', undefined, undefined, true)
     assert.equal(moves.length, 1)
     assert.equal(moves[0]!.eventName, 'Breaking News Volatility Spike')
     assert.equal(moves[0]!.newsHigh, 44120)
