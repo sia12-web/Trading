@@ -52,7 +52,9 @@ import {
 import { parseCalendarEventMs } from '@/lib/trading/deskNewsHazard'
 import type { DeskCalendarEvent } from '@/lib/trading/deskNews'
 import {
-  detect5DayExcesses,
+  detect5DaySessionExtremes,
+  detectSpikes,
+  detectDistributionReferences,
   getRoundedNumbers,
 } from '@/lib/chart/excesses'
 import {
@@ -2239,8 +2241,8 @@ export function TradingChart({
       ctx.setLineDash([])
     }
 
-    // 2. Draw 5-Day Excesses (buying and selling rejection shapes)
-    const excesses = detect5DayExcesses(
+    // 2. Draw Session Extremes (True Highest & Lowest of each session)
+    const sessionExtremes = detect5DaySessionExtremes(
       list.map((c) => ({
         time: c.time as number,
         open: c.open,
@@ -2253,20 +2255,26 @@ export function TradingChart({
       frvp5d?.startUnix
     )
 
-    for (const ex of excesses) {
+    for (const ex of sessionExtremes) {
       const chartT = toChartTime(ex.time, tz)
       const x = timeToX(chart.timeScale(), chartT, candleTimes)
       const y = series.priceToCoordinate(ex.price)
       if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y)) continue
-      if (x < -20 || x > paneW + 20 || y < 0 || y > paneH) continue
+      if (x < -40 || x > paneW + 40 || y < 0 || y > paneH) continue
 
       const volStr =
         ex.volume >= 1000
           ? `${(ex.volume / 1000).toFixed(1)}k`
           : String(Math.round(ex.volume))
+      const retestStr = ex.isRetested
+        ? ex.retestVolumeRatio
+          ? ` [Retest ${ex.retestVolumeRatio}x]`
+          : ' [Retest]'
+        : ''
+      const labelText = `${ex.label} (${volStr})${retestStr}`
 
-      if (ex.type === 'SELLING_EXCESS') {
-        // Downward red/rose triangle above high wick
+      if (ex.type === 'HIGH') {
+        // Downward rose triangle above high wick
         ctx.fillStyle = '#f43f5e'
         ctx.beginPath()
         ctx.moveTo(x - 5, y - 11)
@@ -2275,10 +2283,10 @@ export function TradingChart({
         ctx.closePath()
         ctx.fill()
 
-        // Dotted horizontal shelf extending to the right
-        const shelfW = Math.min(90, paneW - x)
+        // Horizontal shelf extending to the right
+        const shelfW = Math.min(130, paneW - x)
         if (shelfW > 10) {
-          ctx.strokeStyle = ex.isRetested ? 'rgba(244, 63, 94, 0.35)' : 'rgba(244, 63, 94, 0.75)'
+          ctx.strokeStyle = ex.isRetested ? 'rgba(244, 63, 94, 0.4)' : 'rgba(244, 63, 94, 0.85)'
           ctx.setLineDash([3, 3])
           ctx.beginPath()
           ctx.moveTo(x, Math.round(y) + 0.5)
@@ -2287,12 +2295,12 @@ export function TradingChart({
           ctx.setLineDash([])
         }
 
-        // Volume metric at excess
-        ctx.font = '9px ui-monospace, SFMono-Regular, monospace'
+        // Label at session high
+        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
         ctx.fillStyle = '#f43f5e'
-        ctx.fillText(volStr, x + 6, y - 4)
-      } else if (ex.type === 'BUYING_EXCESS') {
-        // Upward emerald/cyan triangle below low wick
+        ctx.fillText(labelText, x + 6, y - 4)
+      } else if (ex.type === 'LOW') {
+        // Upward emerald triangle below low wick
         ctx.fillStyle = '#10b981'
         ctx.beginPath()
         ctx.moveTo(x - 5, y + 11)
@@ -2301,10 +2309,10 @@ export function TradingChart({
         ctx.closePath()
         ctx.fill()
 
-        // Dotted horizontal shelf extending to the right
-        const shelfW = Math.min(90, paneW - x)
+        // Horizontal shelf extending to the right
+        const shelfW = Math.min(130, paneW - x)
         if (shelfW > 10) {
-          ctx.strokeStyle = ex.isRetested ? 'rgba(16, 185, 129, 0.35)' : 'rgba(16, 185, 129, 0.75)'
+          ctx.strokeStyle = ex.isRetested ? 'rgba(16, 185, 129, 0.4)' : 'rgba(16, 185, 129, 0.85)'
           ctx.setLineDash([3, 3])
           ctx.beginPath()
           ctx.moveTo(x, Math.round(y) + 0.5)
@@ -2313,10 +2321,114 @@ export function TradingChart({
           ctx.setLineDash([])
         }
 
-        // Volume metric at excess
-        ctx.font = '9px ui-monospace, SFMono-Regular, monospace'
+        // Label at session low
+        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
         ctx.fillStyle = '#10b981'
-        ctx.fillText(volStr, x + 6, y + 10)
+        ctx.fillText(labelText, x + 6, y + 12)
+      }
+    }
+
+    // 3. Draw Late-Session Spikes (Spike High & Spike Base)
+    const spikes = detectSpikes(
+      list.map((c) => ({
+        time: c.time as number,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      })),
+      instrument,
+      frvp5d?.startUnix
+    )
+
+    for (const sp of spikes) {
+      const chartT = toChartTime(sp.startTime, tz)
+      const xStart = timeToX(chart.timeScale(), chartT, candleTimes)
+      if (xStart == null || !Number.isFinite(xStart)) continue
+      const shelfW = Math.min(160, paneW - xStart)
+      if (shelfW <= 10) continue
+
+      const yH = series.priceToCoordinate(sp.spikeHigh)
+      const yL = series.priceToCoordinate(sp.spikeLow)
+      const yBase = series.priceToCoordinate(sp.spikeBase)
+
+      ctx.setLineDash([4, 3])
+      ctx.lineWidth = 1
+      ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+
+      // Draw Spike Peak (High or Low)
+      const peakY = sp.direction === 'UP' ? yH : yL
+      if (peakY != null && Number.isFinite(peakY) && peakY >= 0 && peakY <= paneH) {
+        ctx.strokeStyle = 'rgba(192, 132, 252, 0.85)' // Purple
+        ctx.beginPath()
+        ctx.moveTo(xStart, Math.round(peakY) + 0.5)
+        ctx.lineTo(xStart + shelfW, Math.round(peakY) + 0.5)
+        ctx.stroke()
+        ctx.fillStyle = '#c084fc'
+        ctx.fillText(`Spike ${sp.direction === 'UP' ? 'H' : 'L'} ${sp.direction === 'UP' ? sp.spikeHigh.toFixed(2) : sp.spikeLow.toFixed(2)}`, xStart + 4, peakY - 3)
+      }
+
+      // Draw Spike Base (acceptance reference)
+      if (yBase != null && Number.isFinite(yBase) && yBase >= 0 && yBase <= paneH) {
+        ctx.strokeStyle = 'rgba(236, 72, 153, 0.85)' // Pink/magenta
+        ctx.beginPath()
+        ctx.moveTo(xStart, Math.round(yBase) + 0.5)
+        ctx.lineTo(xStart + shelfW, Math.round(yBase) + 0.5)
+        ctx.stroke()
+        ctx.fillStyle = '#ec4899'
+        ctx.fillText(`Spike Base ${sp.spikeBase.toFixed(2)}`, xStart + 4, yBase + 10)
+      }
+      ctx.setLineDash([])
+    }
+
+    // 4. Draw Dalton Distribution Reference Points (Trend 50% / Double Distribution Separation)
+    const distRefs = detectDistributionReferences(
+      list.map((c) => ({
+        time: c.time as number,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      })),
+      instrument,
+      frvp5d?.startUnix
+    )
+
+    for (const ref of distRefs) {
+      if (ref.dayType === 'DOUBLE_DISTRIBUTION' && ref.separationLevel != null) {
+        const ySep = series.priceToCoordinate(ref.separationLevel)
+        if (ySep != null && Number.isFinite(ySep) && ySep >= 0 && ySep <= paneH) {
+          ctx.strokeStyle = 'rgba(251, 191, 36, 0.8)' // Amber/Gold
+          ctx.setLineDash([4, 4])
+          ctx.lineWidth = 1.2
+          ctx.beginPath()
+          ctx.moveTo(0, Math.round(ySep) + 0.5)
+          ctx.lineTo(paneW, Math.round(ySep) + 0.5)
+          ctx.stroke()
+          ctx.setLineDash([])
+
+          ctx.fillStyle = '#fbbf24'
+          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+          ctx.fillText(`DD Sep: ${ref.separationLevel.toFixed(2)}`, 12, ySep - 3)
+        }
+      } else if ((ref.dayType === 'TREND_BULL' || ref.dayType === 'TREND_BEAR') && ref.trendMidpoint != null) {
+        const yMid = series.priceToCoordinate(ref.trendMidpoint)
+        if (yMid != null && Number.isFinite(yMid) && yMid >= 0 && yMid <= paneH) {
+          ctx.strokeStyle = 'rgba(56, 189, 248, 0.8)' // Sky Blue
+          ctx.setLineDash([5, 3])
+          ctx.lineWidth = 1.2
+          ctx.beginPath()
+          ctx.moveTo(0, Math.round(yMid) + 0.5)
+          ctx.lineTo(paneW, Math.round(yMid) + 0.5)
+          ctx.stroke()
+          ctx.setLineDash([])
+
+          ctx.fillStyle = '#38bdf8'
+          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+          ctx.fillText(`Trend 50%: ${ref.trendMidpoint.toFixed(2)}`, 12, yMid - 3)
+        }
       }
     }
 

@@ -79,6 +79,30 @@ export function deskSessionAt(
   return nyDeskSessionAt(unix)
 }
 
+/**
+ * Return session name and unique instance key (e.g. 2026-09-07_New York).
+ * Ensures sessions on different days or across gaps never merge or duplicate.
+ */
+export function sessionInstanceKeyAt(
+  unix: number,
+  _instrument?: string | null
+): { name: SessionName; key: string } | null {
+  const sess = nyDeskSessionAt(unix)
+  if (!sess) return null
+  const ymd = dayFormatter('America/New_York').format(new Date(unix * 1000))
+  const h = hourInTz(unix, 'America/New_York')
+  let sessionDate = ymd
+  // Asia session starts at 18:00 on day D and ends at 03:00 on day D+1.
+  // 00:00–03:00 belongs to the Asia session that started the previous evening.
+  if (sess === 'Asia' && h < 3) {
+    sessionDate = dayFormatter('America/New_York').format(new Date((unix - 86400) * 1000))
+  }
+  return {
+    name: sess,
+    key: `${sessionDate}_${sess}`,
+  }
+}
+
 export const SESSION_RANGE_ORDER: SessionName[] = ['Asia', 'London', 'New York']
 
 /** Display name for a session — returns the session name (no overrides). */
@@ -432,9 +456,9 @@ export function computeSessionHighlightSpans(args: {
   if (bars.length === 0) return { spans: [], candleTimes: [] }
 
   const candleTimes = bars.map((c) => c.time)
-  const sessionAt = (t: number) => deskSessionAt(t, args.instrument)
   const spans: SessionHighlightSpan[] = []
   let runName: SessionName | null = null
+  let runKey: string | null = null
   let runStart = 0
   let runEnd = 0
   let runHigh = -Infinity
@@ -458,33 +482,32 @@ export function computeSessionHighlightSpans(args: {
   }
 
   for (const c of bars) {
-    const name = sessionAt(c.time)
+    const info = sessionInstanceKeyAt(c.time, args.instrument)
     // Dead zone (post cash close) — leave uncolored; do not stretch previous session
-    if (name == null) {
+    if (info == null) {
       flush()
       runName = null
+      runKey = null
       runHigh = -Infinity
       runLow = Infinity
       continue
     }
+
     const barEnd = Math.min(c.time + barSec, now + barSec)
-    if (runName === null) {
-      runName = name
-      runStart = c.time
-      runEnd = barEnd
-      runHigh = c.high
-      runLow = c.low
-      continue
-    }
-    if (name !== runName) {
+    // Flush on time gap (>45m) or day/session change so weekends and holidays never merge
+    const hasGap = runEnd > 0 && (c.time - runEnd > 45 * 60)
+
+    if (runName === null || runKey !== info.key || hasGap) {
       flush()
-      runName = name
+      runName = info.name
+      runKey = info.key
       runStart = c.time
       runEnd = barEnd
       runHigh = c.high
       runLow = c.low
       continue
     }
+
     runEnd = Math.max(runEnd, barEnd)
     if (c.high > runHigh) runHigh = c.high
     if (c.low < runLow) runLow = c.low
