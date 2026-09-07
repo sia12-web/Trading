@@ -471,3 +471,253 @@ export function detect5DayExcesses(
     label: ex.label,
   }))
 }
+
+export interface EmotionalNewsMove {
+  id: string
+  eventName: string
+  impact: 'High' | 'Medium' | 'Low'
+  country?: string
+  newsTime: number
+  reactionStartTime: number
+  reactionEndTime: number
+  newsHigh: number
+  newsLow: number
+  basePrice: number
+  moveRange: number
+  volume: number
+  direction: 'WHIPSAW' | 'BULLISH_DRIVE' | 'BEARISH_DRIVE'
+  description: string
+  status: 'WITHIN_RANGE' | 'REJECTED_HIGH' | 'REJECTED_LOW' | 'BROKEN_ABOVE' | 'BROKEN_BELOW'
+  isRetested: boolean
+  retestTime?: number
+}
+
+export interface CalendarEventParam {
+  id?: string
+  time: string | number
+  event: string
+  impact?: string
+  country?: string
+}
+
+function parseCalendarTimeUnix(time: string | number | null | undefined, _nowMs: number): number | null {
+  if (time == null) return null
+  if (typeof time === 'number') {
+    return time > 1e11 ? Math.floor(time / 1000) : time
+  }
+  const str = String(time).trim()
+  if (!str) return null
+  if (/^\d{10,13}$/.test(str)) {
+    const n = Number(str)
+    return n > 1e11 ? Math.floor(n / 1000) : n
+  }
+  const m = str.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/)
+  if (m) {
+    const iso = `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6] || '00'}Z`
+    const ms = Date.parse(iso)
+    if (Number.isFinite(ms)) return Math.floor(ms / 1000)
+  }
+  return null
+}
+
+/**
+ * Detect Emotional News Moves (sudden high & low spikes upon economic news announcements).
+ * Captures:
+ * 1. News Reaction High & News Reaction Low
+ * 2. Pre-news base price
+ * 3. Direction / Whipsaw classification
+ * 4. Post-news acceptance vs rejection
+ * 5. Unscheduled breaking news volatility spikes (>2.5x ATR)
+ */
+export function detectEmotionalNewsMoves(
+  bars: ExcessBar[],
+  calendarEvents: CalendarEventParam[] = [],
+  _instrument: string = 'DOW',
+  anchorUnix?: number,
+  nowMs: number = Date.now()
+): EmotionalNewsMove[] {
+  if (!bars || bars.length < 5) return []
+
+  const scoped = anchorUnix != null ? bars.filter((b) => b.time >= anchorUnix) : bars
+  if (scoped.length < 5) return []
+
+  const moves: EmotionalNewsMove[] = []
+  const processedIndices = new Set<number>()
+
+  // 1. Process explicit economic calendar events
+  for (const e of calendarEvents) {
+    const eventUnix = parseCalendarTimeUnix(e.time, nowMs)
+    if (!eventUnix) continue
+
+    let eventIdx = -1
+    let minDiff = Infinity
+    for (let i = 0; i < scoped.length; i++) {
+      const diff = Math.abs(scoped[i]!.time - eventUnix)
+      if (diff <= 300 && diff < minDiff) {
+        minDiff = diff
+        eventIdx = i
+      }
+    }
+    if (eventIdx === -1) continue
+
+    const reactionEndIdx = Math.min(scoped.length - 1, eventIdx + 2)
+    const reactionBars = scoped.slice(eventIdx, reactionEndIdx + 1)
+    if (reactionBars.length === 0) continue
+
+    for (let i = eventIdx; i <= reactionEndIdx; i++) {
+      processedIndices.add(i)
+    }
+
+    const basePrice = eventIdx > 0 ? scoped[eventIdx - 1]!.close : scoped[eventIdx]!.open
+    let nHigh = -Infinity
+    let nLow = Infinity
+    let nVol = 0
+    for (const b of reactionBars) {
+      if (b.high > nHigh) nHigh = b.high
+      if (b.low < nLow) nLow = b.low
+      nVol += Math.max(0, b.volume > 0 ? b.volume : 1)
+    }
+    const moveRange = Number((nHigh - nLow).toFixed(2))
+    if (moveRange <= 0) continue
+
+    const lastReactionClose = reactionBars[reactionBars.length - 1]!.close
+    const upSpread = nHigh - basePrice
+    const downSpread = basePrice - nLow
+    let direction: 'WHIPSAW' | 'BULLISH_DRIVE' | 'BEARISH_DRIVE' = 'WHIPSAW'
+    let description = ''
+
+    if (upSpread >= 0.35 * moveRange && downSpread >= 0.35 * moveRange) {
+      direction = 'WHIPSAW'
+      description = `Two-way whipsaw: both High (${nHigh}) and Low (${nLow}) swept by ${moveRange.toFixed(1)} pts`
+    } else if (lastReactionClose >= basePrice + 0.25 * moveRange) {
+      direction = 'BULLISH_DRIVE'
+      description = `Bullish news drive: impulsive surge +${(lastReactionClose - basePrice).toFixed(1)} pts to high ${nHigh}`
+    } else if (lastReactionClose <= basePrice - 0.25 * moveRange) {
+      direction = 'BEARISH_DRIVE'
+      description = `Bearish news flush: impulsive selloff -${(basePrice - lastReactionClose).toFixed(1)} pts to low ${nLow}`
+    } else {
+      direction = 'WHIPSAW'
+      description = `Emotional news whipsaw: range expanded ${moveRange.toFixed(1)} pts`
+    }
+
+    let status: EmotionalNewsMove['status'] = 'WITHIN_RANGE'
+    let isRetested = false
+    let retestTime: number | undefined
+
+    const subsequentBars = scoped.slice(reactionEndIdx + 1)
+    for (const b of subsequentBars) {
+      if (b.close > nHigh) {
+        status = 'BROKEN_ABOVE'
+      } else if (b.close < nLow) {
+        status = 'BROKEN_BELOW'
+      } else if (b.high >= nHigh - 0.15 * moveRange && b.close < nHigh - 0.25 * moveRange) {
+        status = 'REJECTED_HIGH'
+        isRetested = true
+        retestTime = b.time
+      } else if (b.low <= nLow + 0.15 * moveRange && b.close > nLow + 0.25 * moveRange) {
+        status = 'REJECTED_LOW'
+        isRetested = true
+        retestTime = b.time
+      }
+    }
+
+    const impactRaw = (e.impact || '').toLowerCase()
+    const impact: 'High' | 'Medium' | 'Low' = impactRaw.includes('high') ? 'High' : impactRaw.includes('med') ? 'Medium' : 'Low'
+
+    moves.push({
+      id: `news-move-${eventUnix}-${e.event.replace(/\s+/g, '-').toLowerCase()}`,
+      eventName: e.event,
+      impact,
+      country: e.country,
+      newsTime: eventUnix,
+      reactionStartTime: scoped[eventIdx]!.time,
+      reactionEndTime: scoped[reactionEndIdx]!.time,
+      newsHigh: Number(nHigh.toFixed(2)),
+      newsLow: Number(nLow.toFixed(2)),
+      basePrice: Number(basePrice.toFixed(2)),
+      moveRange,
+      volume: nVol,
+      direction,
+      description,
+      status,
+      isRetested,
+      retestTime,
+    })
+  }
+
+  // 2. Detect Unscheduled Sudden Volatility Spikes (>2.5x ATR)
+  if (scoped.length >= 6) {
+    const minLookback = 5
+    for (let i = minLookback; i < scoped.length; i++) {
+      if (processedIndices.has(i)) continue
+
+      const lookback = Math.min(10, i)
+      let sumRange = 0
+      let sumVol = 0
+      for (let j = i - lookback; j < i; j++) {
+        sumRange += scoped[j]!.high - scoped[j]!.low
+        sumVol += Math.max(0, scoped[j]!.volume > 0 ? scoped[j]!.volume : 1)
+      }
+      const avgRange = sumRange / lookback
+      const avgVol = sumVol / lookback
+
+      const curBar = scoped[i]!
+      const curRange = curBar.high - curBar.low
+      const curVol = Math.max(0, curBar.volume > 0 ? curBar.volume : 1)
+
+      if (avgRange > 0 && curRange >= 2.5 * avgRange && curVol >= 1.8 * avgVol) {
+        const basePrice = curBar.open
+        const upSpread = curBar.high - basePrice
+        const downSpread = basePrice - curBar.low
+        const isWhipsaw = upSpread >= 0.35 * curRange && downSpread >= 0.35 * curRange
+        const direction: 'WHIPSAW' | 'BULLISH_DRIVE' | 'BEARISH_DRIVE' = isWhipsaw
+          ? 'WHIPSAW'
+          : curBar.close >= basePrice
+            ? 'BULLISH_DRIVE'
+            : 'BEARISH_DRIVE'
+
+        let status: EmotionalNewsMove['status'] = 'WITHIN_RANGE'
+        let isRetested = false
+        let retestTime: number | undefined
+        for (let k = i + 1; k < scoped.length; k++) {
+          const b = scoped[k]!
+          if (b.close > curBar.high) status = 'BROKEN_ABOVE'
+          else if (b.close < curBar.low) status = 'BROKEN_BELOW'
+          else if (b.high >= curBar.high - 0.15 * curRange && b.close < curBar.high - 0.25 * curRange) {
+            status = 'REJECTED_HIGH'
+            isRetested = true
+            retestTime = b.time
+          } else if (b.low <= curBar.low + 0.15 * curRange && b.close > curBar.low + 0.25 * curRange) {
+            status = 'REJECTED_LOW'
+            isRetested = true
+            retestTime = b.time
+          }
+        }
+
+        moves.push({
+          id: `news-spike-${curBar.time}`,
+          eventName: 'Breaking News Volatility Spike',
+          impact: 'High',
+          newsTime: curBar.time,
+          reactionStartTime: curBar.time,
+          reactionEndTime: curBar.time,
+          newsHigh: Number(curBar.high.toFixed(2)),
+          newsLow: Number(curBar.low.toFixed(2)),
+          basePrice: Number(basePrice.toFixed(2)),
+          moveRange: Number(curRange.toFixed(2)),
+          volume: curVol,
+          direction,
+          description: `Sudden volatility impulse: ${curRange.toFixed(1)} pts (${(curRange / avgRange).toFixed(1)}x ATR)`,
+          status,
+          isRetested,
+          retestTime,
+        })
+
+        processedIndices.add(i)
+        processedIndices.add(i + 1)
+      }
+    }
+  }
+
+  return moves
+}

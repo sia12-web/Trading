@@ -52,7 +52,9 @@ import {
   detect5DaySessionExtremes,
   detectSpikes,
   detectDistributionReferences,
+  detectEmotionalNewsMoves,
   getRoundedNumbers,
+  type EmotionalNewsMove,
 } from '@/lib/chart/excesses'
 import {
   applyTickToFormingBar,
@@ -2688,8 +2690,107 @@ export function TradingChart({
       }
     }
 
+    // 5. Draw Emotional News Moves (Sudden High/Low spikes upon news announcements)
+    const newsMoves = detectEmotionalNewsMoves(
+      list.map((c) => ({
+        time: c.time as number,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      })),
+      newsEvents,
+      instrument,
+      frvp5d?.startUnix
+    )
+
+    for (const move of newsMoves) {
+      const xStart = timeToX(chart.timeScale(), toChartTime(move.reactionStartTime, tz), candleTimes)
+      if (xStart == null || !Number.isFinite(xStart) || xStart > paneW + 30) continue
+
+      const xEnd = timeToX(chart.timeScale(), toChartTime(move.reactionEndTime, tz), candleTimes) ?? xStart
+      const shelfRight = Math.min(paneW, Math.max(xStart + 120, xStart + 240))
+      if (shelfRight < -20) continue
+
+      const yH = series.priceToCoordinate(move.newsHigh)
+      const yL = series.priceToCoordinate(move.newsLow)
+      const yBase = series.priceToCoordinate(move.basePrice)
+
+      // Draw subtle reaction corridor
+      if (yH != null && yL != null && Number.isFinite(yH) && Number.isFinite(yL)) {
+        const topY = Math.min(yH, yL)
+        const botY = Math.max(yH, yL)
+        const corridorW = Math.max(14, (xEnd - xStart) + 12)
+        ctx.fillStyle = 'rgba(168, 85, 247, 0.08)'
+        ctx.fillRect(xStart - 6, topY, corridorW, Math.max(4, botY - topY))
+        ctx.strokeStyle = 'rgba(168, 85, 247, 0.35)'
+        ctx.lineWidth = 1
+        ctx.setLineDash([2, 3])
+        ctx.strokeRect(xStart - 6, topY, corridorW, Math.max(4, botY - topY))
+        ctx.setLineDash([])
+      }
+
+      // News High Shelf (Rose)
+      if (yH != null && Number.isFinite(yH) && yH >= 0 && yH <= paneH) {
+        ctx.strokeStyle = '#f43f5e'
+        ctx.lineWidth = 1.3
+        ctx.setLineDash([4, 3])
+        ctx.beginPath()
+        ctx.moveTo(xStart, Math.round(yH) + 0.5)
+        ctx.lineTo(shelfRight, Math.round(yH) + 0.5)
+        ctx.stroke()
+        ctx.setLineDash([])
+
+        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+        ctx.fillStyle = '#f43f5e'
+        ctx.fillText(`⚡ News H ${move.newsHigh.toFixed(2)}`, xStart + 4, yH - 3)
+      }
+
+      // News Low Shelf (Emerald)
+      if (yL != null && Number.isFinite(yL) && yL >= 0 && yL <= paneH) {
+        ctx.strokeStyle = '#10b981'
+        ctx.lineWidth = 1.3
+        ctx.setLineDash([4, 3])
+        ctx.beginPath()
+        ctx.moveTo(xStart, Math.round(yL) + 0.5)
+        ctx.lineTo(shelfRight, Math.round(yL) + 0.5)
+        ctx.stroke()
+        ctx.setLineDash([])
+
+        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+        ctx.fillStyle = '#10b981'
+        ctx.fillText(`⚡ News L ${move.newsLow.toFixed(2)}`, xStart + 4, yL + 10)
+      }
+
+      // Pre-News Base Line
+      if (yBase != null && Number.isFinite(yBase) && yBase >= 0 && yBase <= paneH) {
+        ctx.strokeStyle = 'rgba(192, 132, 252, 0.5)'
+        ctx.lineWidth = 1
+        ctx.setLineDash([2, 2])
+        ctx.beginPath()
+        ctx.moveTo(xStart, Math.round(yBase) + 0.5)
+        ctx.lineTo(xStart + 90, Math.round(yBase) + 0.5)
+        ctx.stroke()
+        ctx.setLineDash([])
+
+        ctx.font = '8px ui-monospace, SFMono-Regular, monospace'
+        ctx.fillStyle = '#c084fc'
+        ctx.fillText(`Base ${move.basePrice.toFixed(2)}`, xStart + 4, yBase - 2)
+      }
+
+      // Emotional Move tag
+      const tagY = yH != null ? yH - 12 : 30
+      if (tagY >= 10 && tagY <= paneH) {
+        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+        ctx.fillStyle = '#e879f9'
+        const dirLabel = move.direction === 'WHIPSAW' ? '±Whip' : move.direction === 'BULLISH_DRIVE' ? '▲Drive' : '▼Flush'
+        ctx.fillText(`⚡ ${move.eventName} (${dirLabel} ${move.moveRange.toFixed(1)}pts)`, xStart + 4, tagY)
+      }
+    }
+
     ctx.restore()
-  }, [instrument, frvp5d])
+  }, [instrument, frvp5d, newsEvents])
 
   // ─── Economic News Markers on Time Axis ─────────────────────────────────────
   const paintNewsMarkers = useCallback(() => {
@@ -2842,6 +2943,28 @@ export function TradingChart({
       overnight: overnightInventory,
     })
   }, [candles, avwap5mBenchmark, frvp5d, yesterdayNyc, overnightInventory])
+
+  const emotionalNewsMoves: EmotionalNewsMove[] = useMemo(() => {
+    const list = candles || []
+    if (!list.length) return []
+    return detectEmotionalNewsMoves(
+      list.map((c) => ({
+        time: c.time as number,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      })),
+      newsEvents,
+      instrument,
+      frvp5d?.startUnix
+    )
+  }, [candles, newsEvents, instrument, frvp5d?.startUnix])
+
+  const latestNewsMove: EmotionalNewsMove | null = useMemo(() => {
+    return emotionalNewsMoves.length > 0 ? emotionalNewsMoves[emotionalNewsMoves.length - 1]! : null
+  }, [emotionalNewsMoves])
 
   const paintAuctionOverlay = useCallback(() => {
     const host = priceLineHostRef.current
@@ -8378,6 +8501,25 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           <span className="text-gray-500">Control: </span>
           <span className="text-indigo-300 font-semibold">{controlBadge}</span>
         </span>
+
+        {/* Active Emotional News Move */}
+        {latestNewsMove && (
+          <>
+            <span className="text-gray-600 text-[10px]">|</span>
+            <span
+              className="inline-flex items-center gap-1.5 rounded bg-purple-950/40 border border-purple-500/40 px-2 py-0.5"
+              title={`Emotional News Move: ${latestNewsMove.eventName}\n• News High: ${latestNewsMove.newsHigh.toLocaleString()}\n• News Low: ${latestNewsMove.newsLow.toLocaleString()}\n• Base: ${latestNewsMove.basePrice.toLocaleString()}\n• Range: ${latestNewsMove.moveRange.toFixed(1)} pts (${latestNewsMove.direction})\n• Status: ${latestNewsMove.status}`}
+            >
+              <span className="text-amber-400 font-bold">⚡ NEWS:</span>
+              <span className="text-purple-200 font-medium truncate max-w-[120px]">{latestNewsMove.eventName}</span>
+              <span className="text-rose-400 font-mono font-semibold">H:{latestNewsMove.newsHigh.toLocaleString()}</span>
+              <span className="text-emerald-400 font-mono font-semibold">L:{latestNewsMove.newsLow.toLocaleString()}</span>
+              <span className="text-[10px] text-amber-300 font-mono">
+                ({latestNewsMove.direction === 'WHIPSAW' ? '±Whip' : latestNewsMove.direction === 'BULLISH_DRIVE' ? '▲Up' : '▼Down'} {latestNewsMove.moveRange.toFixed(1)})
+              </span>
+            </span>
+          </>
+        )}
       </div>
       <div
         ref={chartFrameRef}
@@ -8445,6 +8587,40 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   {activeNewsTooltip.event.deskNote}
                 </p>
               )}
+              {(() => {
+                const matchedMove = emotionalNewsMoves.find(
+                  (m) =>
+                    Math.abs(m.newsTime - (parseCalendarEventMs(activeNewsTooltip.event.time) ?? 0) / 1000) <= 600 ||
+                    m.eventName.toLowerCase().includes(activeNewsTooltip.event.event.toLowerCase().slice(0, 8))
+                )
+                if (!matchedMove) return null
+                return (
+                  <div className="mt-2.5 rounded-lg border border-purple-500/30 bg-purple-950/40 p-2 text-[11px] space-y-1">
+                    <div className="flex items-center justify-between font-bold text-purple-200">
+                      <span>⚡ EMOTIONAL MOVE</span>
+                      <span className="text-amber-300 font-mono">
+                        {matchedMove.direction === 'WHIPSAW'
+                          ? '± Whipsaw'
+                          : matchedMove.direction === 'BULLISH_DRIVE'
+                          ? '▲ Bullish Drive'
+                          : '▼ Bearish Flush'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1 text-[10px] font-mono pt-0.5">
+                      <div><span className="text-rose-400 font-semibold">News H:</span> {matchedMove.newsHigh.toLocaleString()}</div>
+                      <div><span className="text-emerald-400 font-semibold">News L:</span> {matchedMove.newsLow.toLocaleString()}</div>
+                      <div><span className="text-violet-300">Base:</span> {matchedMove.basePrice.toLocaleString()}</div>
+                      <div><span className="text-amber-300">Range:</span> {matchedMove.moveRange.toFixed(1)} pts</div>
+                    </div>
+                    <div className="text-[10px] text-purple-200/90 pt-0.5 border-t border-purple-800/40">
+                      {matchedMove.description}
+                    </div>
+                    <div className="text-[9px] text-gray-400">
+                      Reaction: <span className="font-semibold text-slate-200">{matchedMove.status.replace(/_/g, ' ')}</span>
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           </div>
         )}

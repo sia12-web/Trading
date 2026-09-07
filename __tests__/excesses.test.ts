@@ -4,6 +4,7 @@ import {
   detect5DaySessionExtremes,
   detectSpikes,
   detectDistributionReferences,
+  detectEmotionalNewsMoves,
   getRoundedNumbers,
   type ExcessBar,
 } from '../lib/chart/excesses'
@@ -108,5 +109,100 @@ describe('Auction Market Theory - Session Extremes, Spikes & Distribution Refere
     assert.equal(ref.dayType, 'DOUBLE_DISTRIBUTION')
     assert.ok(ref.separationLevel != null)
     assert.ok(ref.separationLevel > 44100 && ref.separationLevel < 44250)
+  })
+
+  it('detects two-way emotional whipsaw upon news announcement', () => {
+    const baseTime = 1788876000 // e.g. 08:30 release
+    const bars: ExcessBar[] = [
+      { time: baseTime - 600, open: 44000, high: 44020, low: 43990, close: 44010, volume: 500 },
+      { time: baseTime - 300, open: 44010, high: 44025, low: 44000, close: 44015, volume: 550 },
+      // News release candle at baseTime: huge range sweeping high & low
+      { time: baseTime, open: 44015, high: 44180, low: 43880, close: 44020, volume: 8500 },
+      { time: baseTime + 300, open: 44020, high: 44060, low: 43980, close: 44030, volume: 3200 },
+      { time: baseTime + 600, open: 44030, high: 44070, low: 44010, close: 44050, volume: 1800 },
+      { time: baseTime + 900, open: 44050, high: 44080, low: 44040, close: 44070, volume: 1200 },
+    ]
+
+    const events = [
+      { time: baseTime, event: 'Core CPI m/m', impact: 'High', country: 'US' }
+    ]
+
+    const moves = detectEmotionalNewsMoves(bars, events, 'DOW')
+    assert.equal(moves.length, 1)
+    const m = moves[0]!
+    assert.equal(m.eventName, 'Core CPI m/m')
+    assert.equal(m.newsHigh, 44180)
+    assert.equal(m.newsLow, 43880)
+    assert.equal(m.basePrice, 44015)
+    assert.equal(m.moveRange, 300)
+    assert.equal(m.direction, 'WHIPSAW')
+    assert.ok(m.description.includes('Two-way whipsaw'))
+  })
+
+  it('detects bullish news drive and subsequent retest/rejection of news high', () => {
+    const baseTime = 1788876000
+    const bars: ExcessBar[] = [
+      { time: baseTime - 300, open: 44000, high: 44020, low: 43990, close: 44010, volume: 500 },
+      // News announcement: violent unidirectional drive up
+      { time: baseTime, open: 44010, high: 44250, low: 44005, close: 44240, volume: 6500 },
+      { time: baseTime + 300, open: 44240, high: 44260, low: 44210, close: 44250, volume: 4000 },
+      { time: baseTime + 600, open: 44250, high: 44270, low: 44220, close: 44240, volume: 2200 },
+      // Retest bar testing news high (44270) and rejecting back down
+      { time: baseTime + 900, open: 44240, high: 44268, low: 44150, close: 44170, volume: 2500 },
+    ]
+
+    const events = [
+      { time: baseTime, event: 'Non-Farm Payrolls', impact: 'High', country: 'US' }
+    ]
+
+    const moves = detectEmotionalNewsMoves(bars, events, 'DOW')
+    assert.equal(moves.length, 1)
+    const m = moves[0]!
+    assert.equal(m.eventName, 'Non-Farm Payrolls')
+    assert.equal(m.newsHigh, 44270)
+    assert.equal(m.direction, 'BULLISH_DRIVE')
+    assert.equal(m.isRetested, true)
+    assert.equal(m.status, 'REJECTED_HIGH')
+  })
+
+  it('detects unscheduled breaking news volatility spikes without advance calendar event', () => {
+    const baseTime = 1788876000
+    const bars: ExcessBar[] = []
+    // 10 quiet baseline bars (range ~30 pts)
+    for (let i = 0; i < 10; i++) {
+      bars.push({
+        time: baseTime + i * 300,
+        open: 44000,
+        high: 44015,
+        low: 43985,
+        close: 44005,
+        volume: 400,
+      })
+    }
+    // Sudden headline spike bar (range 180 pts, 6x baseline, volume 4500)
+    bars.push({
+      time: baseTime + 10 * 300,
+      open: 44005,
+      high: 44120,
+      low: 43940,
+      close: 44010,
+      volume: 4500,
+    })
+    bars.push({
+      time: baseTime + 11 * 300,
+      open: 44010,
+      high: 44020,
+      low: 43990,
+      close: 44005,
+      volume: 600,
+    })
+
+    const moves = detectEmotionalNewsMoves(bars, [], 'DOW')
+    assert.equal(moves.length, 1)
+    assert.equal(moves[0]!.eventName, 'Breaking News Volatility Spike')
+    assert.equal(moves[0]!.newsHigh, 44120)
+    assert.equal(moves[0]!.newsLow, 43940)
+    assert.equal(moves[0]!.moveRange, 180)
+    assert.equal(moves[0]!.direction, 'WHIPSAW')
   })
 })
