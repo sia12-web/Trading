@@ -33,6 +33,8 @@ export interface SessionExtreme {
   retestTime?: number
   retestVolume?: number
   retestVolumeRatio?: number
+  sessionStartTime?: number
+  sessionEndTime?: number
 }
 
 export interface SpikeReference {
@@ -52,6 +54,8 @@ export interface DistributionReference {
   sessionDate: string
   dayType: 'TREND_BULL' | 'TREND_BEAR' | 'DOUBLE_DISTRIBUTION'
   label: string
+  startTime?: number
+  endTime?: number
   upperPoc?: number
   lowerPoc?: number
   /** Separating single-print level for Double Distribution (key pivot) */
@@ -201,6 +205,8 @@ export function detect5DaySessionExtremes(
 
     const peakVol = Math.max(0, peakBar.volume > 0 ? peakBar.volume : 1)
     const troughVol = Math.max(0, troughBar.volume > 0 ? troughBar.volume : 1)
+    const sessStart = group.bars[0]!.time
+    const sessEnd = group.bars[group.bars.length - 1]!.time
 
     extremes.push({
       id: `${key}-high`,
@@ -214,6 +220,8 @@ export function detect5DaySessionExtremes(
       isRetested: peakRetested,
       retestVolume: peakRetestVol,
       retestVolumeRatio: peakRetestVol && peakVol > 0 ? Number((peakRetestVol / peakVol).toFixed(2)) : undefined,
+      sessionStartTime: sessStart,
+      sessionEndTime: sessEnd,
     })
 
     extremes.push({
@@ -228,6 +236,8 @@ export function detect5DaySessionExtremes(
       isRetested: troughRetested,
       retestVolume: troughRetestVol,
       retestVolumeRatio: troughRetestVol && troughVol > 0 ? Number((troughRetestVol / troughVol).toFixed(2)) : undefined,
+      sessionStartTime: sessStart,
+      sessionEndTime: sessEnd,
     })
   }
 
@@ -388,6 +398,9 @@ export function detectDistributionReferences(
     const isDoubleDistUp = l2 > (h1 + l1) / 2 && h2 > h1 + dayRange * 0.25
     const isDoubleDistDown = h2 < (h1 + l1) / 2 && l2 < l1 - dayRange * 0.25
 
+    const sessStart = nyBars[0]!.time
+    const sessEnd = nyBars[nyBars.length - 1]!.time
+
     if (isDoubleDistUp || isDoubleDistDown) {
       const poc1 = Number(((h1 + l1) / 2).toFixed(2))
       const poc2 = Number(((h2 + l2) / 2).toFixed(2))
@@ -398,6 +411,8 @@ export function detectDistributionReferences(
         sessionDate: date,
         dayType: 'DOUBLE_DISTRIBUTION',
         label: `DD Sep ${separation.toFixed(2)}`,
+        startTime: sessStart,
+        endTime: sessEnd,
         upperPoc: Math.max(poc1, poc2),
         lowerPoc: Math.min(poc1, poc2),
         separationLevel: separation,
@@ -417,6 +432,8 @@ export function detectDistributionReferences(
         sessionDate: date,
         dayType: isTrendBull ? 'TREND_BULL' : 'TREND_BEAR',
         label: isTrendBull ? `Trend H ${dayHigh.toFixed(2)}` : `Trend L ${dayLow.toFixed(2)}`,
+        startTime: sessStart,
+        endTime: sessEnd,
         trendExtreme: isTrendBull ? Number(dayHigh.toFixed(2)) : Number(dayLow.toFixed(2)),
         trendMidpoint: midpoint,
         trendOpen: Number(openPrice.toFixed(2)),

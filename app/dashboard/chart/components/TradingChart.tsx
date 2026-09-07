@@ -2283,14 +2283,18 @@ export function TradingChart({
         ctx.closePath()
         ctx.fill()
 
-        // Horizontal shelf extending to the right
-        const shelfW = Math.min(130, paneW - x)
-        if (shelfW > 10) {
+        // Horizontal shelf extending to the end of the session
+        const xEnd = ex.sessionEndTime != null
+          ? (timeToX(chart.timeScale(), toChartTime(ex.sessionEndTime, tz), candleTimes) ?? (x + 130))
+          : (x + 130)
+        const shelfRight = Math.min(paneW, Math.max(x + 50, xEnd))
+
+        if (shelfRight > x + 6) {
           ctx.strokeStyle = ex.isRetested ? 'rgba(244, 63, 94, 0.4)' : 'rgba(244, 63, 94, 0.85)'
           ctx.setLineDash([3, 3])
           ctx.beginPath()
           ctx.moveTo(x, Math.round(y) + 0.5)
-          ctx.lineTo(x + shelfW, Math.round(y) + 0.5)
+          ctx.lineTo(shelfRight, Math.round(y) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
         }
@@ -2309,14 +2313,18 @@ export function TradingChart({
         ctx.closePath()
         ctx.fill()
 
-        // Horizontal shelf extending to the right
-        const shelfW = Math.min(130, paneW - x)
-        if (shelfW > 10) {
+        // Horizontal shelf extending to the end of the session
+        const xEnd = ex.sessionEndTime != null
+          ? (timeToX(chart.timeScale(), toChartTime(ex.sessionEndTime, tz), candleTimes) ?? (x + 130))
+          : (x + 130)
+        const shelfRight = Math.min(paneW, Math.max(x + 50, xEnd))
+
+        if (shelfRight > x + 6) {
           ctx.strokeStyle = ex.isRetested ? 'rgba(16, 185, 129, 0.4)' : 'rgba(16, 185, 129, 0.85)'
           ctx.setLineDash([3, 3])
           ctx.beginPath()
           ctx.moveTo(x, Math.round(y) + 0.5)
-          ctx.lineTo(x + shelfW, Math.round(y) + 0.5)
+          ctx.lineTo(shelfRight, Math.round(y) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
         }
@@ -2397,6 +2405,17 @@ export function TradingChart({
     )
 
     for (const ref of distRefs) {
+      const xStart = ref.startTime != null
+        ? (timeToX(chart.timeScale(), toChartTime(ref.startTime, tz), candleTimes) ?? 0)
+        : 0
+      const xEnd = ref.endTime != null
+        ? (timeToX(chart.timeScale(), toChartTime(ref.endTime, tz), candleTimes) ?? paneW)
+        : paneW
+
+      if (xEnd < -20 || xStart > paneW + 20) continue
+      const lineLeft = Math.max(0, xStart)
+      const lineRight = Math.min(paneW, Math.max(xStart + 60, xEnd))
+
       if (ref.dayType === 'DOUBLE_DISTRIBUTION' && ref.separationLevel != null) {
         const ySep = series.priceToCoordinate(ref.separationLevel)
         if (ySep != null && Number.isFinite(ySep) && ySep >= 0 && ySep <= paneH) {
@@ -2404,14 +2423,14 @@ export function TradingChart({
           ctx.setLineDash([4, 4])
           ctx.lineWidth = 1.2
           ctx.beginPath()
-          ctx.moveTo(0, Math.round(ySep) + 0.5)
-          ctx.lineTo(paneW, Math.round(ySep) + 0.5)
+          ctx.moveTo(lineLeft, Math.round(ySep) + 0.5)
+          ctx.lineTo(lineRight, Math.round(ySep) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
 
           ctx.fillStyle = '#fbbf24'
           ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillText(`DD Sep: ${ref.separationLevel.toFixed(2)}`, 12, ySep - 3)
+          ctx.fillText(`DD Sep: ${ref.separationLevel.toFixed(2)}`, Math.max(12, lineLeft + 6), ySep - 3)
         }
       } else if ((ref.dayType === 'TREND_BULL' || ref.dayType === 'TREND_BEAR') && ref.trendMidpoint != null) {
         const yMid = series.priceToCoordinate(ref.trendMidpoint)
@@ -2420,14 +2439,14 @@ export function TradingChart({
           ctx.setLineDash([5, 3])
           ctx.lineWidth = 1.2
           ctx.beginPath()
-          ctx.moveTo(0, Math.round(yMid) + 0.5)
-          ctx.lineTo(paneW, Math.round(yMid) + 0.5)
+          ctx.moveTo(lineLeft, Math.round(yMid) + 0.5)
+          ctx.lineTo(lineRight, Math.round(yMid) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
 
           ctx.fillStyle = '#38bdf8'
           ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillText(`Trend 50%: ${ref.trendMidpoint.toFixed(2)}`, 12, yMid - 3)
+          ctx.fillText(`Trend 50%: ${ref.trendMidpoint.toFixed(2)}`, Math.max(12, lineLeft + 6), yMid - 3)
         }
       }
     }
