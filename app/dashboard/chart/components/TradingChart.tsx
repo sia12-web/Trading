@@ -1049,6 +1049,8 @@ export function TradingChart({
   const chartFrameRef = useRef<HTMLDivElement>(null)
   const sessionOverlayRef = useRef<HTMLDivElement>(null)
   const positionBandOverlayRef = useRef<HTMLDivElement>(null)
+  const inChartLabelsOverlayRef = useRef<HTMLDivElement>(null)
+  const paintInChartLabelsRef = useRef<() => void>(() => {})
   const sessionSpansRef = useRef<{
     key: string
     spans: SessionHighlightSpan[]
@@ -1933,7 +1935,7 @@ export function TradingChart({
               : spec.dashed
                 ? LineStyle.Dashed
                 : LineStyle.Solid,
-            axisLabelVisible: true,
+            axisLabelVisible: false,
           })
         )
       } catch {
@@ -1986,7 +1988,7 @@ export function TradingChart({
             title: spec.title,
             lineWidth: spec.title === 'Open' ? 2 : 1,
             lineStyle: spec.dashed ? LineStyle.Dashed : LineStyle.Solid,
-            axisLabelVisible: true,
+            axisLabelVisible: false,
           })
         )
       } catch {
@@ -2028,7 +2030,7 @@ export function TradingChart({
           title: '5D POC',
           lineWidth: 2,
           lineStyle: LineStyle.Solid,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
         }),
         host.createPriceLine({
           price: profile.high,
@@ -2036,7 +2038,7 @@ export function TradingChart({
           title: '5D High',
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
         }),
         host.createPriceLine({
           price: profile.low,
@@ -2044,7 +2046,7 @@ export function TradingChart({
           title: '5D Low',
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
         }),
         host.createPriceLine({
           price: profile.vah,
@@ -2052,7 +2054,7 @@ export function TradingChart({
           title: '5D VAH',
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
         }),
         host.createPriceLine({
           price: profile.val,
@@ -2060,7 +2062,7 @@ export function TradingChart({
           title: '5D VAL',
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
         })
       )
     } catch {
@@ -2113,7 +2115,7 @@ export function TradingChart({
           title: 'Y-POC',
           lineWidth: 2,
           lineStyle: LineStyle.Solid,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
         }),
         host.createPriceLine({
           price: yday.yh,
@@ -2121,7 +2123,7 @@ export function TradingChart({
           title: 'Y-High',
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
         }),
         host.createPriceLine({
           price: yday.yl,
@@ -2129,7 +2131,7 @@ export function TradingChart({
           title: 'Y-Low',
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
         }),
         host.createPriceLine({
           price: yday.close,
@@ -2137,7 +2139,7 @@ export function TradingChart({
           title: 'Y-Close',
           lineWidth: 1,
           lineStyle: LineStyle.Dotted,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
         })
       )
     } catch {
@@ -2166,7 +2168,7 @@ export function TradingChart({
             title: 'Asia POC',
             lineWidth: 1,
             lineStyle: LineStyle.Dotted,
-            axisLabelVisible: true,
+            axisLabelVisible: false,
           })
         )
       }
@@ -2178,7 +2180,7 @@ export function TradingChart({
             title: 'London POC',
             lineWidth: 1,
             lineStyle: LineStyle.Dotted,
-            axisLabelVisible: true,
+            axisLabelVisible: false,
           })
         )
       }
@@ -2207,7 +2209,7 @@ export function TradingChart({
           title: '5M AVWAP',
           lineWidth: 2,
           lineStyle: LineStyle.Solid,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
         }),
         host.createPriceLine({
           price: avwap5mBenchmark.sigma1Upper,
@@ -2215,7 +2217,7 @@ export function TradingChart({
           title: '5M +1σ',
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
         }),
         host.createPriceLine({
           price: avwap5mBenchmark.sigma1Lower,
@@ -2223,7 +2225,7 @@ export function TradingChart({
           title: '5M -1σ',
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
         }),
         host.createPriceLine({
           price: avwap5mBenchmark.sigma2Upper,
@@ -2231,7 +2233,7 @@ export function TradingChart({
           title: '5M +2σ',
           lineWidth: 1,
           lineStyle: LineStyle.Dotted,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
         }),
         host.createPriceLine({
           price: avwap5mBenchmark.sigma2Lower,
@@ -2239,13 +2241,174 @@ export function TradingChart({
           title: '5M -2σ',
           lineWidth: 1,
           lineStyle: LineStyle.Dotted,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
         })
       )
     } catch {
       /* ignore */
     }
   }, [avwap5mBenchmark])
+
+  const paintInChartLabels = useCallback(() => {
+    const host = inChartLabelsOverlayRef.current
+    const series = candleRef.current
+    const container = containerRef.current
+    if (!host || !series || !container) return
+
+    const chartH = container.clientHeight
+    const chartW = container.clientWidth
+    if (chartH < 50 || chartW < 50) {
+      while (host.firstChild) host.removeChild(host.firstChild)
+      return
+    }
+
+    const labels: Array<{ price: number; title: string; color: string; borderColor?: string }> = []
+
+    // 1. Context 5-5 FRVP levels
+    if (frvp5d) {
+      labels.push(
+        { price: frvp5d.poc, title: '5D POC', color: '#f59e0b', borderColor: '#f59e0b' },
+        { price: frvp5d.high, title: '5D High', color: '#10b981', borderColor: '#10b981' },
+        { price: frvp5d.low, title: '5D Low', color: '#ef4444', borderColor: '#ef4444' },
+        { price: frvp5d.vah, title: '5D VAH', color: '#38bdf8', borderColor: '#38bdf8' },
+        { price: frvp5d.val, title: '5D VAL', color: '#38bdf8', borderColor: '#38bdf8' }
+      )
+    }
+
+    // 2. 5M AVWAP Benchmark levels
+    if (avwap5mBenchmark) {
+      labels.push(
+        { price: avwap5mBenchmark.vwap, title: '5M AVWAP', color: '#b8a04a', borderColor: '#b8a04a' },
+        { price: avwap5mBenchmark.sigma1Upper, title: '5M +1σ', color: '#34d399', borderColor: 'rgba(52, 211, 153, 0.7)' },
+        { price: avwap5mBenchmark.sigma1Lower, title: '5M -1σ', color: '#34d399', borderColor: 'rgba(52, 211, 153, 0.7)' },
+        { price: avwap5mBenchmark.sigma2Upper, title: '5M +2σ', color: '#6ee7b7', borderColor: 'rgba(110, 231, 183, 0.5)' },
+        { price: avwap5mBenchmark.sigma2Lower, title: '5M -2σ', color: '#6ee7b7', borderColor: 'rgba(110, 231, 183, 0.5)' }
+      )
+    }
+
+    // 3. Yesterday NYC Session levels
+    if (showYesterdayNyc && yesterdayNyc) {
+      labels.push(
+        { price: yesterdayNyc.poc, title: 'Y-POC', color: '#f59e0b', borderColor: '#f59e0b' },
+        { price: yesterdayNyc.yh, title: 'Y-High', color: '#10b981', borderColor: '#10b981' },
+        { price: yesterdayNyc.yl, title: 'Y-Low', color: '#ef4444', borderColor: '#ef4444' },
+        { price: yesterdayNyc.close, title: 'Y-Close', color: '#94a3b8', borderColor: '#94a3b8' }
+      )
+    }
+
+    // 4. Overnight Sessions levels
+    if (showInventorySessions && overnightInventory) {
+      if (overnightInventory.asia) {
+        labels.push({ price: overnightInventory.asia.poc, title: 'Asia POC', color: '#38bdf8', borderColor: '#38bdf8' })
+      }
+      if (overnightInventory.london) {
+        labels.push({ price: overnightInventory.london.poc, title: 'London POC', color: '#c084fc', borderColor: '#c084fc' })
+      }
+    }
+
+    // 5. Market Control
+    if (showMarketControl && marketControlRef.current) {
+      for (const spec of marketControlLineSpecs(marketControlRef.current)) {
+        labels.push({ price: spec.price, title: spec.title, color: spec.color, borderColor: spec.color })
+      }
+    }
+
+    // 6. Yesterday Profile (if active)
+    if (showYesterdayProfile && ydayProfile) {
+      if (ydayProfile.poc != null) {
+        labels.push({ price: ydayProfile.poc, title: 'POC', color: '#f59e0b', borderColor: '#f59e0b' })
+      }
+      if (ydayProfile.vah != null) {
+        labels.push({ price: ydayProfile.vah, title: 'VAH', color: '#38bdf8', borderColor: '#38bdf8' })
+      }
+      if (ydayProfile.val != null) {
+        labels.push({ price: ydayProfile.val, title: 'VAL', color: '#38bdf8', borderColor: '#38bdf8' })
+      }
+    }
+
+    const positioned: Array<{ price: number; title: string; color: string; borderColor?: string; y: number }> = []
+    for (const item of labels) {
+      if (!Number.isFinite(item.price) || item.price <= 0) continue
+      const y = series.priceToCoordinate(item.price)
+      if (y != null && Number.isFinite(y) && y >= 10 && y <= chartH - 14) {
+        positioned.push({ ...item, y })
+      }
+    }
+
+    positioned.sort((a, b) => a.y - b.y)
+
+    while (host.childElementCount < positioned.length) {
+      const el = document.createElement('div')
+      el.className = 'pointer-events-auto absolute select-none'
+      el.style.position = 'absolute'
+      el.style.cursor = 'default'
+      host.appendChild(el)
+    }
+    while (host.childElementCount > positioned.length) {
+      host.removeChild(host.lastElementChild!)
+    }
+
+    let prevY = -999
+    let colIdx = 0
+    const colOffsets = [14, 132, 250, 368]
+
+    for (let i = 0; i < positioned.length; i++) {
+      const p = positioned[i]!
+      const el = host.children[i] as HTMLElement
+
+      if (Math.abs(p.y - prevY) < 18) {
+        colIdx = (colIdx + 1) % colOffsets.length
+      } else {
+        colIdx = 0
+      }
+      prevY = p.y
+
+      const leftPx = colOffsets[colIdx] ?? 14
+      const topPx = Math.round(p.y - 10)
+
+      el.style.left = `${leftPx}px`
+      el.style.top = `${topPx}px`
+      el.style.zIndex = '10'
+
+      const fmtPrice =
+        instrument === 'GOLD'
+          ? p.price.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+          : p.price.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+
+      el.innerHTML = `
+        <span style="
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          padding: 1px 7px;
+          font-size: 10px;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+          font-weight: 600;
+          border-radius: 4px;
+          background: rgba(15, 23, 42, 0.88);
+          backdrop-filter: blur(4px);
+          color: ${p.color};
+          border: 1px solid ${p.borderColor ?? p.color + '80'};
+          box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+          white-space: nowrap;
+        " title="${p.title}: ${fmtPrice}">
+          <span>${p.title}</span>
+          <span style="opacity: 0.85; font-weight: 500; font-size: 9.5px; color: #f1f5f9;">${fmtPrice}</span>
+        </span>
+      `
+    }
+  }, [
+    frvp5d,
+    avwap5mBenchmark,
+    showYesterdayNyc,
+    yesterdayNyc,
+    showInventorySessions,
+    overnightInventory,
+    showMarketControl,
+    showYesterdayProfile,
+    ydayProfile,
+    instrument,
+  ])
 
   const dayTypeEval: DayTypeEvaluation = useMemo(() => {
     const list = candles || []
@@ -2339,7 +2502,7 @@ export function TradingChart({
             title: spec.title,
             lineWidth: spec.width,
             lineStyle: spec.dashed ? LineStyle.Dashed : LineStyle.Solid,
-            axisLabelVisible: true,
+            axisLabelVisible: false,
           })
         )
       } catch {
@@ -2412,7 +2575,7 @@ export function TradingChart({
             title: spec.title,
             lineWidth: spec.width,
             lineStyle: spec.dashed ? LineStyle.Dashed : LineStyle.Solid,
-            axisLabelVisible: true,
+            axisLabelVisible: false,
           })
         )
       } catch {
@@ -2467,7 +2630,7 @@ export function TradingChart({
             title: spec.title,
             lineWidth: 2,
             lineStyle: LineStyle.Solid,
-            axisLabelVisible: true,
+            axisLabelVisible: false,
           })
         )
       } catch {
@@ -2615,7 +2778,7 @@ export function TradingChart({
                 title: spec.title,
                 lineWidth: 1,
                 lineStyle: LineStyle.Dashed,
-                axisLabelVisible: true,
+                axisLabelVisible: false,
               })
             )
           } catch {
@@ -2657,7 +2820,7 @@ export function TradingChart({
                 title: spec.title,
                 lineWidth: 1,
                 lineStyle: LineStyle.Dashed,
-                axisLabelVisible: true,
+                axisLabelVisible: false,
               })
             )
           } catch {
@@ -2731,7 +2894,7 @@ export function TradingChart({
             title: advice.swing.kind === 'high' ? 'Liq H' : 'Liq L',
             lineWidth: 2,
             lineStyle: LineStyle.Dashed,
-            axisLabelVisible: true,
+            axisLabelVisible: false,
           })
         )
       } catch {
@@ -4743,6 +4906,11 @@ export function TradingChart({
     }
     paintSessionHighlightOverlay(sessionOverlayRef.current, [])
     paintPositionBandOverlay(positionBandOverlayRef.current, [])
+    if (inChartLabelsOverlayRef.current) {
+      while (inChartLabelsOverlayRef.current.firstChild) {
+        inChartLabelsOverlayRef.current.removeChild(inChartLabelsOverlayRef.current.firstChild)
+      }
+    }
 
     // Fresh autoscaling for the next instrument's price universe
     try {
@@ -4831,7 +4999,7 @@ export function TradingChart({
             color: baseColor,
             lineWidth: isPrimary ? 3 : 2,
             lineStyle: isPrimary ? LineStyle.Solid : isAi ? LineStyle.Solid : LineStyle.Dashed,
-            axisLabelVisible: true,
+            axisLabelVisible: false,
             title: level.label
               ? `${level.label} ${level.price.toLocaleString()}`
               : `${isRes ? 'SHORT' : 'BUY'} ${level.price.toLocaleString()}`,
@@ -5056,6 +5224,7 @@ export function TradingChart({
     if (!chart || !series || !containerRef.current || list.length === 0) {
       paintSessionHighlightOverlay(host, [])
       paintPositionBandOverlay(positionBandOverlayRef.current, [])
+      paintInChartLabelsRef.current()
       return
     }
 
@@ -5139,7 +5308,13 @@ export function TradingChart({
       pushBand(yEntry, yStop, 'rgba(220, 38, 38, 0.28)', '#b91c1c', 'Position SL zone')
       paintPositionBandOverlay(bandHost, bands, { keepPreviousIfEmpty: true })
     }
+    paintInChartLabelsRef.current()
   }, [instrument, showSessionBands])
+
+  useEffect(() => {
+    paintInChartLabelsRef.current = paintInChartLabels
+    requestAnimationFrame(() => paintInChartLabels())
+  }, [paintInChartLabels])
 
   /** TradingView-style: re-enable auto price scale after manual zoom on the axis */
   const resetPriceScale = useCallback(() => {
@@ -7853,6 +8028,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         <div
           ref={positionBandOverlayRef}
           className="pointer-events-none absolute inset-0 z-[2]"
+        />
+        <div
+          ref={inChartLabelsOverlayRef}
+          className="pointer-events-none absolute inset-0 z-[3]"
         />
 
         {showAuction && auctionHud && isAuctionInstrument(instrument) && (

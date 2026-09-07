@@ -13,27 +13,27 @@ import type { UTCTimestamp } from 'lightweight-charts'
  */
 export const SESSION_STYLES = {
   Asia: {
-    color: 'rgba(59, 130, 246, 0.22)',
-    colorFull: 'rgba(37, 99, 235, 0.38)',
-    column: 'rgba(37, 99, 235, 0.20)',
+    color: 'rgba(59, 130, 246, 0.08)',
+    colorFull: 'rgba(59, 130, 246, 0.12)',
+    column: 'rgba(59, 130, 246, 0.05)',
     zIndex: 1,
-    line: '#1d4ed8',
+    line: '#3b82f6',
     short: 'Asia',
   },
   London: {
-    color: 'rgba(245, 158, 11, 0.22)',
-    colorFull: 'rgba(217, 119, 6, 0.38)',
-    column: 'rgba(217, 119, 6, 0.20)',
+    color: 'rgba(245, 158, 11, 0.08)',
+    colorFull: 'rgba(245, 158, 11, 0.12)',
+    column: 'rgba(245, 158, 11, 0.05)',
     zIndex: 2,
-    line: '#b45309',
+    line: '#f59e0b',
     short: 'Lon',
   },
   'New York': {
-    color: 'rgba(34, 197, 94, 0.22)',
-    colorFull: 'rgba(22, 163, 74, 0.38)',
-    column: 'rgba(22, 163, 74, 0.20)',
+    color: 'rgba(34, 197, 94, 0.08)',
+    colorFull: 'rgba(34, 197, 94, 0.12)',
+    column: 'rgba(34, 197, 94, 0.05)',
     zIndex: 3,
-    line: '#15803d',
+    line: '#22c55e',
     short: 'NY',
   },
 } as const
@@ -587,8 +587,6 @@ export function projectSessionHighlightRects(args: {
         height: chartH,
         color: style.column,
         zIndex: style.zIndex,
-        borderColor: style.line,
-        borderLeftWidth: 3,
       })
     }
 

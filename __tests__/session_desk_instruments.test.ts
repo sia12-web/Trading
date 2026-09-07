@@ -197,7 +197,7 @@ for (const instrument of ['DOW', 'NASDAQ'] as const) {
 assert(deskClockFor('DOW').timeZone === 'America/New_York', 'DOW TZ')
 assert(deskClockFor('NASDAQ').timeZone === 'America/New_York', 'NASDAQ TZ')
 
-// Default high→low fill is a bit richer than the old 0.12–0.14, not the full map
+// Lighter, soft session fills
 for (const name of ['Asia', 'London', 'New York'] as const) {
   const fill = SESSION_STYLES[name].color
   const full = SESSION_STYLES[name].colorFull
@@ -205,9 +205,9 @@ for (const name of ['Asia', 'London', 'New York'] as const) {
   const fillA = Number(fill.match(/([\d.]+)\)\s*$/)?.[1] ?? 0)
   const fullA = Number(full.match(/([\d.]+)\)\s*$/)?.[1] ?? 0)
   const colA = Number(col.match(/([\d.]+)\)\s*$/)?.[1] ?? 0)
-  assert(fillA >= 0.2 && fillA < 0.3, `${name} default range fill (${fill})`)
-  assert(fullA >= 0.32, `${name} Sessions-button fill too faint (${full})`)
-  assert(colA >= 0.18, `${name} time column too faint (${col})`)
+  assert(fillA >= 0.05 && fillA <= 0.15, `${name} default range fill (${fill})`)
+  assert(fullA >= 0.10 && fullA <= 0.20, `${name} Sessions-button fill (${full})`)
+  assert(colA >= 0.03 && colA <= 0.10, `${name} time column (${col})`)
 }
 
 {
