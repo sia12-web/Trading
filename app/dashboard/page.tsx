@@ -23,17 +23,17 @@ function focusUnlockMontreal(now: Date): string {
 }
 
 export default function DashboardHomePage() {
-  const [nextHint, setNextHint] = useState('Live Trading desk is open — direct execution without clock-in constraints.')
+  const [nextHint, setNextHint] = useState('Chart desk is open — direct execution without clock-in constraints.')
 
   useEffect(() => {
     const tick = () => {
       const now = new Date()
       if (isAnyLiveFocusWindowActive(now)) {
-        setNextHint('NY session is active — Live Trading desk open.')
+        setNextHint('NY session is active — Chart desk open.')
       } else {
         const unlockAt = focusUnlockMontreal(now)
         setNextHint(
-          `Live Trading desk is open (NY regular session starts at ${unlockAt}).`
+          `Chart desk is open (NY regular session starts at ${unlockAt}).`
         )
       }
     }
@@ -52,7 +52,7 @@ export default function DashboardHomePage() {
           href="/dashboard/chart"
           className="rounded-lg bg-brand-600/90 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-500"
         >
-          Open Live Trading →
+          Open Chart →
         </Link>
         <Link
           href="/dashboard/positions"

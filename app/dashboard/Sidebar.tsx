@@ -14,7 +14,7 @@ type NavItem = {
 const LIVE_ITEMS: NavItem[] = [
   {
     href: '/dashboard/chart',
-    label: 'Live Trading',
+    label: 'Chart',
     hint: 'Trading desk',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-4 h-4">
