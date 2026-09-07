@@ -33,15 +33,11 @@ import {
   DESK_RISK_PROFILE_EVENT,
 } from '@/lib/trading/tradeifyProfile'
 import {
-  TRADEIFY_DLL_DOLLARS,
   TRADEIFY_STARTING_BALANCE,
-  formatTradeifyRiskChip,
   resolveTradeifyPlace,
-  tradeifyDeskStatus,
   tradeifyFlattenOverridesKeepOpen,
   tradeifyMustFlatten,
 } from '@/lib/trading/tradeifyGrowth50k'
-import { tradeifyFlattenMontreal } from '@/lib/trading/tradeifyLeoBlock'
 import {
   snapDeskPrice,
   snapStopToTick,
@@ -90,7 +86,6 @@ import {
   simLunchFlatKeepOpenKey,
 } from '@/lib/trading/morningLunchConfirm'
 import {
-  SESSION_STYLES,
   VWAP_COLORS,
   computeAnchoredVwap,
   computeSessionHighlightSpans,
@@ -98,8 +93,6 @@ import {
   paintSessionHighlightOverlay,
   deskClockFor,
   lastNTradingSessions,
-  sessionLegendLabel,
-  sessionLegendOrder,
   type SessionHighlightSpan,
 } from '@/lib/chart/sessionVwap'
 import {
@@ -699,10 +692,10 @@ function SimulationDeskInner() {
     high: ISeriesApi<'Line'>
     low: ISeriesApi<'Line'>
   } | null>(null)
-  const [ibShaped, setIbShaped] = useState(false)
-  const [or15Shaped, setOr15Shaped] = useState(false)
-  const [or15Locked, setOr15Locked] = useState(false)
-  const [usRangeShaped, setUsRangeShaped] = useState(false)
+  const [, setIbShaped] = useState(false)
+  const [, setOr15Shaped] = useState(false)
+  const [, setOr15Locked] = useState(false)
+  const [, setUsRangeShaped] = useState(false)
   /** Script overlays — same toggles as live (B / N / U / R). */
   const [showIbBreakouts, setShowIbBreakouts] = useState(
     () => loadDeskOverlayToggles().ib
@@ -758,7 +751,7 @@ function SimulationDeskInner() {
     const hover = `${deskCallModeHoverPrefix(useCall)}${deskCallHoverText(call)}`
     setCallHover(hover)
   }, [useCall])
-  const [callScoreText, setCallScoreText] = useState('')
+  const [, setCallScoreText] = useState('')
   const showIbBreakoutsRef = useRef(false)
   const showOr15Ref = useRef(false)
   const showUsRangeRef = useRef(false)
@@ -804,7 +797,7 @@ function SimulationDeskInner() {
   const avwapLastRef = useRef<number | null>(null)
   const instrumentRef = useRef(instrument)
   instrumentRef.current = instrument
-  const [or30Shaped, setOr30Shaped] = useState(false)
+  const [, setOr30Shaped] = useState(false)
   const [or30Locked, setOr30Locked] = useState(false)
 
   useEffect(() => {
@@ -3770,10 +3763,6 @@ function SimulationDeskInner() {
     stopOutsToday: stopHits,
     dailyPnl: paperDayPnl,
   })
-  const tradeifyStatus = tradeifyDeskStatus(
-    tradeifyDayLock,
-    tradeifyNow ?? new Date()
-  )
   const canEnter =
     !position &&
     !pending &&
@@ -4511,180 +4500,6 @@ function SimulationDeskInner() {
           </button>
         </div>
 
-        <div
-          className={`pointer-events-none mt-1.5 flex max-w-4xl flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-2.5 py-1.5 text-[10px] backdrop-blur ${
-            tradeifyStatus === 'must_flatten'
-              ? 'border-red-500/40 bg-red-950/80 text-red-100'
-              : tradeifyStatus === 'day_locked'
-                ? 'border-amber-500/40 bg-amber-950/80 text-amber-100'
-                : 'border-amber-500/25 bg-[#161b22]/90 text-amber-100'
-          }`}
-        >
-          <span className="font-bold uppercase tracking-wide">Tradeify $50k</span>
-          <span className="text-white">
-            {formatTradeifyRiskChip(attemptsUsed)}
-          </span>
-          <span>
-            Fills {attemptsUsed}/3 · stops {stopHits}/2
-          </span>
-          <span className={paperDayPnl >= 0 ? 'text-emerald-300' : 'text-red-300'}>
-            Day {paperDayPnl >= 0 ? '+' : '−'}$
-            {Math.abs(Math.round(paperDayPnl)).toLocaleString()}
-          </span>
-          <span>
-            DLL ${Math.round(tradeifyDayLock.leftoverDll)} / ${TRADEIFY_DLL_DOLLARS}
-          </span>
-          <span>Floor ${Math.round(tradeifyDayLock.floorRoom)}</span>
-          <span>Flatten {tradeifyFlattenMontreal(tradeifyNow ?? new Date())}</span>
-          {tradeifyStatus !== 'can_trade' && (
-            <span className="font-semibold uppercase">
-              {tradeifyStatus === 'must_flatten' ? 'Flatten now' : 'Day locked'}
-            </span>
-          )}
-        </div>
-
-        {/* Session + AVWAP legend */}
-        <div className="pointer-events-none mt-1.5 flex flex-wrap items-center gap-3 px-1 text-[10px] uppercase tracking-wider text-gray-500">
-          <span>Sessions</span>
-          {sessionLegendOrder(instrument).map((name) => {
-            const s = SESSION_STYLES[name]
-            return (
-              <span key={name} className="flex items-center gap-1.5">
-                <span
-                  className="inline-block h-2.5 w-3.5 rounded-[2px] ring-1 ring-black/10"
-                  style={{ backgroundColor: showSessionBands ? s.column : s.color }}
-                />
-                <span style={{ color: s.line }}>{sessionLegendLabel(name, instrument)}</span>
-              </span>
-            )
-          })}
-          <span className="text-gray-600">·</span>
-          <span className="flex items-center gap-1.5 normal-case tracking-normal">
-            <span
-              className="inline-block w-4 border-t-2"
-              style={{ borderColor: VWAP_COLORS.vwap }}
-            />
-            <span style={{ color: VWAP_COLORS.vwap }}>AVWAP</span>
-            <span className="text-gray-600">
-              {deskClockFor(instrument).openLabel} · 5 trading days prior · ±1/2/3σ
-            </span>
-          </span>
-          <span className="text-gray-600">·</span>
-          <span
-            className="flex items-center gap-1.5 normal-case tracking-normal"
-            title="Dalton opening type — first cash 5m. Click Open chip for open + first-bar H/L."
-          >
-            <span className="inline-block w-4 border-t-2 border-cyan-400" />
-            <span className={showOpeningActivity ? 'text-cyan-400' : 'text-gray-500'}>
-              Open {openingBadge}
-            </span>
-          </span>
-          <span className="text-gray-600">·</span>
-          <span
-            className="flex items-center gap-1.5 normal-case tracking-normal"
-            title="Dalton control — RF + developing POC. Click Ctrl chip for the dPOC line."
-          >
-            <span className="inline-block w-4 border-t-2 border-indigo-400" />
-            <span className={showMarketControl ? 'text-indigo-400' : 'text-gray-500'}>
-              Ctrl {controlBadge}
-            </span>
-          </span>
-          <span className="text-gray-600">·</span>
-          <span
-            className="flex items-center gap-1.5 normal-case tracking-normal"
-            title={callHover}
-          >
-            <span
-              className="inline-block w-4 border-t-2"
-              style={{ borderColor: CALL_COLORS.badge }}
-            />
-            <span className="text-zinc-400">Call {callBadge}</span>
-          </span>
-          <span className="text-gray-600">·</span>
-          <span
-            className="flex items-center gap-1.5 normal-case tracking-normal"
-            title={ibExtendHover}
-          >
-            <span className="inline-block w-4 border-t-2 border-amber-400" />
-            <span className="text-amber-300/90">IB {ibExtendBadge}</span>
-          </span>
-          {callScoreText ? (
-            <>
-              <span className="text-gray-600">·</span>
-              <span
-                className="normal-case tracking-normal text-zinc-400"
-                title="Per-window CALL score for this clip + running tally this browser session"
-              >
-                {callScoreText}
-              </span>
-            </>
-          ) : null}
-          {(or30Shaped || or30Locked) && (
-            <>
-              <span className="text-gray-600">·</span>
-              <span
-                className="flex items-center gap-1.5 normal-case tracking-normal"
-                title={`Opening Range 30 — ${or30WindowLabel(instrument)}. Calculated even if you skip/miss the window. Press R to show lines.`}
-              >
-                <span
-                  className="inline-block w-4 border-t-2"
-                  style={{ borderColor: OR30_COLORS.high }}
-                />
-                <span style={{ color: OR30_COLORS.high }}>
-                  OR30 {or30Locked ? 'locked' : 'H/L'}
-                </span>
-                <span className="text-gray-600">
-                  {or30Shaped ? 'morning bait' : 'calculated · R off'}
-                </span>
-              </span>
-            </>
-          )}
-          {ibShaped && (
-            <>
-              <span className="text-gray-600">·</span>
-              <span
-                className="flex items-center gap-1.5 normal-case tracking-normal"
-                title="Initial Balance — first-hour high/low, extended to cash close"
-              >
-                <span className="inline-block w-4 border-t-2 border-blue-500" />
-                <span className="text-blue-500">IB H/L</span>
-                <span className="text-gray-600">to session end</span>
-              </span>
-            </>
-          )}
-          {or15Shaped && (
-            <>
-              <span className="text-gray-600">·</span>
-              <span
-                className="flex items-center gap-1.5 normal-case tracking-normal"
-                title={`Open range ${or15WindowLabel(instrument)}`}
-              >
-                <span
-                  className="inline-block w-4 border-t-2"
-                  style={{ borderColor: OR15_COLORS.high }}
-                />
-                <span style={{ color: OR15_COLORS.high }}>
-                  OR15 {or15Locked ? 'locked' : 'H/L'}
-                </span>
-              </span>
-            </>
-          )}
-          {usRangeShaped && (
-            <>
-              <span className="text-gray-600">·</span>
-              <span
-                className="flex items-center gap-1.5 normal-case tracking-normal"
-                title="Prior US session high/low for Nikkei"
-              >
-                <span
-                  className="inline-block w-4 border-t-2"
-                  style={{ borderColor: NIKKEI_US_RANGE_COLORS.high }}
-                />
-                <span style={{ color: NIKKEI_US_RANGE_COLORS.high }}>US H/L</span>
-              </span>
-            </>
-          )}
-        </div>
 
         {msg && (
           <div className="pointer-events-auto mt-1.5 max-w-xl rounded-lg border border-amber-800/40 bg-amber-950/80 px-3 py-1.5 text-[11px] text-amber-100 backdrop-blur">

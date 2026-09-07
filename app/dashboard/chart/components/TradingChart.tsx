@@ -46,10 +46,6 @@ import {
   isWeekdayYmd,
   zonedCivilToUnix,
   lastNTradingSessions as trimDeskCandles,
-  sessionLegendLabel,
-  sessionLegendOrder,
-  SESSION_STYLES as SESSION_RANGE_STYLES,
-  VWAP_COLORS as SHARED_VWAP_COLORS,
   type SessionHighlightSpan,
 } from '@/lib/chart/sessionVwap'
 import {
@@ -62,9 +58,15 @@ import {
 import {
   compute5DayFixedRangeVolumeProfile,
   compute5MonthAnchoredVwap,
+  computeYesterdayNycSession,
+  computeOvernightInventoryAndSessions,
   classifyMarketDayType,
   type FixedRangeVolumeProfile5D,
   type DayTypeEvaluation,
+  type AnchoredVwapBenchmark5M,
+  type YesterdayNycSession,
+  type OvernightInventoryEvaluation,
+  type ContextBar,
 } from '@/lib/chart/context55'
 import {
   formatChartClock,
@@ -77,10 +79,6 @@ import {
   TRADER_DISPLAY_TZ,
   deskLocalHmsAsTraderDisplay,
 } from '@/lib/chart/traderDisplayTz'
-import {
-  previewLevelOrderPrices,
-  resolveChartLimitPick,
-} from '@/lib/trading/chartLevelPick'
 import { takeProfitFromStopR } from '@/lib/trading/positionSizing'
 import {
   aiLevelsUrl,
@@ -1017,7 +1015,7 @@ export function TradingChart({
   positionOverlay,
   pendingLimit = null,
   asiaOco = null,
-  onCancelPending,
+  onCancelPending: _onCancelPending = () => {},
   onAdjustBrackets,
   onAdjustWorkingBrackets,
   bracketAdjustStatus = null,
@@ -1142,6 +1140,17 @@ export function TradingChart({
   const [frvp5d, setFrvp5d] = useState<FixedRangeVolumeProfile5D | null>(null)
   const frvpLinesRef = useRef<IPriceLine[]>([])
   const paintFrvp5dRef = useRef<() => void>(() => { })
+  const [avwap5mBenchmark, setAvwap5mBenchmark] = useState<AnchoredVwapBenchmark5M | null>(null)
+  const avwap5mLinesRef = useRef<IPriceLine[]>([])
+  const paint5mAvwapBenchmarkRef = useRef<() => void>(() => { })
+  const [yesterdayNyc, setYesterdayNyc] = useState<YesterdayNycSession | null>(null)
+  const [showYesterdayNyc, setShowYesterdayNyc] = useState(true)
+  const yesterdayNycLinesRef = useRef<IPriceLine[]>([])
+  const paintYesterdayNycRef = useRef<() => void>(() => { })
+  const [overnightInventory, setOvernightInventory] = useState<OvernightInventoryEvaluation | null>(null)
+  const [showInventorySessions, setShowInventorySessions] = useState(true)
+  const inventoryLinesRef = useRef<IPriceLine[]>([])
+  const paintInventorySessionsRef = useRef<() => void>(() => { })
   const [ydayProfile, setYdayProfile] = useState<{ vah?: number; val?: number; poc?: number } | null>(null)
   const [showMarketControl, setShowMarketControl] = useState(() =>
     SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().control
@@ -2022,6 +2031,22 @@ export function TradingChart({
           axisLabelVisible: true,
         }),
         host.createPriceLine({
+          price: profile.high,
+          color: '#10b981',
+          title: '5D High',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+        }),
+        host.createPriceLine({
+          price: profile.low,
+          color: '#ef4444',
+          title: '5D Low',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+        }),
+        host.createPriceLine({
           price: profile.vah,
           color: '#38bdf8',
           title: '5D VAH',
@@ -2043,6 +2068,185 @@ export function TradingChart({
     }
   }, [instrument])
 
+  const paintYesterdayNyc = useCallback(() => {
+    const host = priceLineHostRef.current
+    const list = candlesRef.current
+    if (!list || list.length === 0) return
+    const bars: ContextBar[] = list.map((c) => ({
+      time: c.time as number,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+      volume: c.volume,
+    }))
+    const lastBarTime = bars[bars.length - 1]?.time
+    const yday = computeYesterdayNycSession(bars, lastBarTime)
+    setYesterdayNyc(yday)
+
+    if (yday) {
+      const inv = computeOvernightInventoryAndSessions({
+        bars,
+        yesterday: yday,
+        asOfUnix: lastBarTime,
+      })
+      setOvernightInventory(inv)
+    } else {
+      setOvernightInventory(null)
+    }
+
+    for (const line of yesterdayNycLinesRef.current) {
+      try {
+        host?.removePriceLine(line)
+      } catch {
+        /* ignore */
+      }
+    }
+    yesterdayNycLinesRef.current = []
+
+    if (!showYesterdayNyc || !yday || !host) return
+    try {
+      yesterdayNycLinesRef.current.push(
+        host.createPriceLine({
+          price: yday.poc,
+          color: '#f59e0b',
+          title: 'Y-POC',
+          lineWidth: 2,
+          lineStyle: LineStyle.Solid,
+          axisLabelVisible: true,
+        }),
+        host.createPriceLine({
+          price: yday.yh,
+          color: '#10b981',
+          title: 'Y-High',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+        }),
+        host.createPriceLine({
+          price: yday.yl,
+          color: '#ef4444',
+          title: 'Y-Low',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+        }),
+        host.createPriceLine({
+          price: yday.close,
+          color: '#94a3b8',
+          title: 'Y-Close',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          axisLabelVisible: true,
+        })
+      )
+    } catch {
+      /* ignore */
+    }
+  }, [showYesterdayNyc])
+
+  const paintInventorySessions = useCallback(() => {
+    const host = priceLineHostRef.current
+    for (const line of inventoryLinesRef.current) {
+      try {
+        host?.removePriceLine(line)
+      } catch {
+        /* ignore */
+      }
+    }
+    inventoryLinesRef.current = []
+    if (!showInventorySessions || !overnightInventory || !host) return
+
+    try {
+      if (overnightInventory.asia) {
+        inventoryLinesRef.current.push(
+          host.createPriceLine({
+            price: overnightInventory.asia.poc,
+            color: '#38bdf8',
+            title: 'Asia POC',
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            axisLabelVisible: true,
+          })
+        )
+      }
+      if (overnightInventory.london) {
+        inventoryLinesRef.current.push(
+          host.createPriceLine({
+            price: overnightInventory.london.poc,
+            color: '#c084fc',
+            title: 'London POC',
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            axisLabelVisible: true,
+          })
+        )
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [showInventorySessions, overnightInventory])
+
+  const paint5mAvwapBenchmark = useCallback(() => {
+    const host = priceLineHostRef.current
+    for (const line of avwap5mLinesRef.current) {
+      try {
+        host?.removePriceLine(line)
+      } catch {
+        /* ignore */
+      }
+    }
+    avwap5mLinesRef.current = []
+    if (!avwap5mBenchmark || !host) return
+
+    try {
+      avwap5mLinesRef.current.push(
+        host.createPriceLine({
+          price: avwap5mBenchmark.vwap,
+          color: '#b8a04a',
+          title: '5M AVWAP',
+          lineWidth: 2,
+          lineStyle: LineStyle.Solid,
+          axisLabelVisible: true,
+        }),
+        host.createPriceLine({
+          price: avwap5mBenchmark.sigma1Upper,
+          color: 'rgba(61, 143, 122, 0.85)',
+          title: '5M +1σ',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+        }),
+        host.createPriceLine({
+          price: avwap5mBenchmark.sigma1Lower,
+          color: 'rgba(61, 143, 122, 0.85)',
+          title: '5M -1σ',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+        }),
+        host.createPriceLine({
+          price: avwap5mBenchmark.sigma2Upper,
+          color: 'rgba(61, 143, 122, 0.5)',
+          title: '5M +2σ',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          axisLabelVisible: true,
+        }),
+        host.createPriceLine({
+          price: avwap5mBenchmark.sigma2Lower,
+          color: 'rgba(61, 143, 122, 0.5)',
+          title: '5M -2σ',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          axisLabelVisible: true,
+        })
+      )
+    } catch {
+      /* ignore */
+    }
+  }, [avwap5mBenchmark])
+
   const dayTypeEval: DayTypeEvaluation = useMemo(() => {
     const list = candles || []
     if (!list.length) {
@@ -2063,11 +2267,12 @@ export function TradingChart({
         volume: c.volume,
       })),
       instrument,
-      ydayVah: ydayProfile?.vah,
-      ydayVal: ydayProfile?.val,
+      ydayVah: yesterdayNyc?.vah ?? ydayProfile?.vah,
+      ydayVal: yesterdayNyc?.val ?? ydayProfile?.val,
+      overnightInventory,
       controlLabel: controlBadge,
     })
-  }, [candles, instrument, ydayProfile, controlBadge])
+  }, [candles, instrument, yesterdayNyc, ydayProfile, overnightInventory, controlBadge])
 
   const paintAuctionOverlay = useCallback(() => {
     const host = priceLineHostRef.current
@@ -2636,6 +2841,50 @@ export function TradingChart({
   useEffect(() => {
     paintFrvp5d()
   }, [paintFrvp5d])
+
+  useEffect(() => {
+    paintYesterdayNycRef.current = paintYesterdayNyc
+  }, [paintYesterdayNyc])
+
+  useEffect(() => {
+    paintYesterdayNyc()
+  }, [paintYesterdayNyc])
+
+  useEffect(() => {
+    paintInventorySessionsRef.current = paintInventorySessions
+  }, [paintInventorySessions])
+
+  useEffect(() => {
+    paintInventorySessions()
+  }, [paintInventorySessions])
+
+  useEffect(() => {
+    paint5mAvwapBenchmarkRef.current = paint5mAvwapBenchmark
+  }, [paint5mAvwapBenchmark])
+
+  useEffect(() => {
+    paint5mAvwapBenchmark()
+  }, [paint5mAvwapBenchmark])
+
+  useEffect(() => {
+    let cancelled = false
+    async function load5mAvwap() {
+      try {
+        const res = await fetch(`/api/trading/context-55?instrument=${instrument}`)
+        if (!res.ok) return
+        const data = await res.json()
+        if (!cancelled && data.ok && data.avwap5m) {
+          setAvwap5mBenchmark(data.avwap5m)
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    void load5mAvwap()
+    return () => {
+      cancelled = true
+    }
+  }, [instrument])
 
   useEffect(() => {
     if (!SYSTEMATIC_LIVE_DESK) return
@@ -4381,6 +4630,39 @@ export function TradingChart({
     }
     {
       const host = priceLineHostRef.current
+      for (const line of yesterdayNycLinesRef.current) {
+        try {
+          host?.removePriceLine(line)
+        } catch {
+          /* ignore */
+        }
+      }
+      yesterdayNycLinesRef.current = []
+    }
+    {
+      const host = priceLineHostRef.current
+      for (const line of inventoryLinesRef.current) {
+        try {
+          host?.removePriceLine(line)
+        } catch {
+          /* ignore */
+        }
+      }
+      inventoryLinesRef.current = []
+    }
+    {
+      const host = priceLineHostRef.current
+      for (const line of avwap5mLinesRef.current) {
+        try {
+          host?.removePriceLine(line)
+        } catch {
+          /* ignore */
+        }
+      }
+      avwap5mLinesRef.current = []
+    }
+    {
+      const host = priceLineHostRef.current
       for (const line of controlLinesRef.current) {
         try {
           host?.removePriceLine(line)
@@ -4635,18 +4917,15 @@ export function TradingChart({
       }
 
       syncDeskPlaybookRangesRef.current(ordered)
-
       paintYesterdayProfileRef.current()
       paintOpeningActivityRef.current()
       paintFrvp5dRef.current()
+      paintYesterdayNycRef.current()
+      paintInventorySessionsRef.current()
+      paint5mAvwapBenchmarkRef.current()
       paintAuctionOverlayRef.current()
       paintDow15mFailOverlayRef.current()
       paintMarketControlRef.current()
-      paintDeskCallRef.current()
-      paintIbExtendRef.current()
-
-      // One marker list for IB + Lunch (US Range / OR30 are lines-only)
-      paintDeskMarkers(ordered)
       const host = priceLineHostRef.current
       if (host && !priceLineHostSeededRef.current && ordered.length > 0) {
         const a = ordered[0]!
@@ -6639,133 +6918,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
   // ── Hover visible AI/structure level → preview entry / SL / TP ─
   // Morning: place preview. Afternoon: same geometry, watch-only (canPlaceOrder false).
   useEffect(() => {
-    const container = containerRef.current
-    const host = priceLineHostRef.current
-    if (
-      !container ||
-      !candleRef.current ||
-      !host ||
-      !chartReady ||
-      positionOverlay ||
-      pendingLimit ||
-      !showLevels
-    ) {
-      clearHoverPreview()
-      return
-    }
-
-    const fmt = (n: number) =>
-      n.toLocaleString('en-US', { maximumFractionDigits: 0 })
-
-    const onMove = (e: MouseEvent) => {
-      if (!candleRef.current || !priceLineHostRef.current) return
-      const raw = priceFromClientY(container, candleRef.current, e.clientY)
-      if (raw == null) {
-        clearHoverPreview()
-        return
-      }
-
-      const { strategyRange, strategyMagnets } = getStrategyRiskBundle()
-      const pick = resolveChartLimitPick({
-        rawPrice: Number(raw),
-        levels: levelsRef.current.map((l) => ({
-          price: l.price,
-          type: l.type,
-          side: l.side,
-          label: l.label,
-          source: l.source,
-          reasoning: l.reasoning,
-        })),
-        levelsVisible: true,
-        activeRange: strategyRange,
-      })
-      if (pick.source === 'manual' || !pick.matched) {
-        clearHoverPreview()
-        return
-      }
-
-      const preview = previewLevelOrderPrices({
-        level: pick.matched,
-        instrument,
-        activeRange: strategyRange,
-        magnets: strategyMagnets,
-      })
-      if (!preview) {
-        clearHoverPreview()
-        return
-      }
-
-      const key = `${preview.direction}:${preview.entry}:${preview.stop}:${preview.target}`
-      if (hoverPreviewKeyRef.current === key) return
-      clearHoverPreview()
-      hoverPreviewKeyRef.current = key
-      const h = priceLineHostRef.current
-      if (!h) return
-
-      // Color alone = side (blue buy / rose short) — no written HOVER LONG/SHORT
-      const entryColor =
-        preview.direction === 'SHORT'
-          ? 'rgba(251, 113, 133, 0.9)'
-          : 'rgba(56, 189, 248, 0.85)'
-
-      const specs = [
-        {
-          price: preview.entry,
-          color: entryColor,
-          title: fmt(preview.entry),
-          style: LineStyle.Dashed,
-        },
-        {
-          price: preview.stop,
-          color: 'rgba(239, 68, 68, 0.75)',
-          title: `SL ${fmt(preview.stop)}`,
-          style: LineStyle.Dotted,
-        },
-        {
-          price: preview.target,
-          color: 'rgba(34, 197, 94, 0.75)',
-          title: `TP ${fmt(preview.target)}`,
-          style: LineStyle.Dotted,
-        },
-      ] as const
-
-      for (const s of specs) {
-        try {
-          hoverPreviewLinesRef.current.push(
-            h.createPriceLine({
-              price: s.price,
-              color: s.color,
-              lineStyle: s.style,
-              lineWidth: 1,
-              axisLabelVisible: true,
-              title: s.title,
-            })
-          )
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-
-    const onLeave = () => clearHoverPreview()
-
-    container.addEventListener('mousemove', onMove)
-    container.addEventListener('mouseleave', onLeave)
-    return () => {
-      container.removeEventListener('mousemove', onMove)
-      container.removeEventListener('mouseleave', onLeave)
-      clearHoverPreview()
-    }
-  }, [
-    canPlaceOrder,
-    chartReady,
-    positionOverlay,
-    pendingLimit,
-    showLevels,
-    instrument,
-    clearHoverPreview,
-    getStrategyRiskBundle,
-  ])
+    clearHoverPreview()
+  }, [clearHoverPreview])
 
   // ── Position / working-limit overlay lines (host series — survives candle setData)
   // Independent of Hide levels — AI/structure lines toggle separately.
@@ -7462,6 +7616,75 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </span>
         </span>
 
+        {/* Yday button: toggles Yesterday NYC Session lines (H, L, Close, POC) */}
+        <button
+          type="button"
+          title={
+            yesterdayNyc
+              ? `Yesterday NYC Session (${yesterdayNyc.sessionDate}):\n• POC: ${yesterdayNyc.poc.toLocaleString()}\n• High: ${yesterdayNyc.yh.toLocaleString()}\n• Low: ${yesterdayNyc.yl.toLocaleString()}\n• Close: ${yesterdayNyc.close.toLocaleString()}\n• VAH/VAL: ${yesterdayNyc.vah.toLocaleString()} / ${yesterdayNyc.val.toLocaleString()}`
+              : 'Yesterday NYC Session: Y-High, Y-Low, Y-Close, Y-POC'
+          }
+          onClick={() => setShowYesterdayNyc((v) => !v)}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showYesterdayNyc
+            ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-100'
+            : 'bg-transparent border-surface-600 text-gray-500 hover:text-emerald-200 hover:border-emerald-500/40'
+            }`}
+        >
+          <span className={`w-2 h-2 rounded-full inline-block ${showYesterdayNyc ? 'bg-emerald-400' : 'bg-gray-600'}`} />
+          <span>Yday</span>
+          {yesterdayNyc && (
+            <span className="text-[10px] font-mono text-emerald-200/80 font-normal">
+              POC {yesterdayNyc.poc.toLocaleString()}
+            </span>
+          )}
+        </button>
+
+        {/* Inv button: Overnight Inventory and Asia/London FRVP */}
+        <div className="group relative">
+          <button
+            type="button"
+            title={
+              overnightInventory
+                ? `Overnight Inventory (${overnightInventory.biasLabel} · ${overnightInventory.rangeLabel}):\n${overnightInventory.description}\n\n• Asia FRVP: POC ${overnightInventory.asia?.poc.toLocaleString()} [${overnightInventory.asia?.low.toLocaleString()} – ${overnightInventory.asia?.high.toLocaleString()}]\n• London FRVP: POC ${overnightInventory.london?.poc.toLocaleString()} [${overnightInventory.london?.low.toLocaleString()} – ${overnightInventory.london?.high.toLocaleString()}]`
+                : 'Overnight Inventory & Asia / London Fixed Range Volume Profile'
+            }
+            onClick={() => setShowInventorySessions((v) => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showInventorySessions
+              ? 'bg-sky-600/30 border-sky-500/50 text-sky-100'
+              : 'bg-transparent border-surface-600 text-gray-500 hover:text-sky-200 hover:border-sky-500/40'
+              }`}
+          >
+            <span className={`w-2 h-2 rounded-full inline-block ${showInventorySessions ? 'bg-sky-400' : 'bg-gray-600'}`} />
+            <span>Inv</span>
+            <span className="text-[10px] font-normal text-sky-200/80">
+              {overnightInventory ? overnightInventory.summaryBadge.replace('Inv: ', '') : 'WAIT'}
+            </span>
+          </button>
+          {overnightInventory && (
+            <span
+              role="tooltip"
+              className="pointer-events-none invisible absolute left-0 top-full z-50 mt-1 w-[22rem] whitespace-pre-wrap rounded-lg border border-sky-500/40 bg-[#0d1117] px-2.5 py-2 text-left text-[10px] font-normal normal-case leading-snug tracking-normal text-zinc-200 shadow-xl group-hover:visible"
+            >
+              <div className="font-bold text-sky-300 mb-1">Overnight Inventory: {overnightInventory.biasLabel} · {overnightInventory.rangeLabel}</div>
+              <div className="text-zinc-300 mb-2">{overnightInventory.description}</div>
+              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-zinc-800 text-[10px]">
+                <div>
+                  <div className="font-semibold text-sky-400">Asia FRVP</div>
+                  <div>POC: <span className="font-mono text-white">{overnightInventory.asia?.poc.toLocaleString()}</span></div>
+                  <div>Range: [{overnightInventory.asia?.low.toLocaleString()} – {overnightInventory.asia?.high.toLocaleString()}]</div>
+                  <div>Vol: {Math.round(overnightInventory.asia?.totalVolume ?? 0).toLocaleString()}</div>
+                </div>
+                <div>
+                  <div className="font-semibold text-purple-400">London FRVP</div>
+                  <div>POC: <span className="font-mono text-white">{overnightInventory.london?.poc.toLocaleString()}</span></div>
+                  <div>Range: [{overnightInventory.london?.low.toLocaleString()} – {overnightInventory.london?.high.toLocaleString()}]</div>
+                  <div>Vol: {Math.round(overnightInventory.london?.totalVolume ?? 0).toLocaleString()}</div>
+                </div>
+              </div>
+            </span>
+          )}
+        </div>
+
         {/* Draggable price alert — Telegram on touch (A key); arms after price leaves */}
         <button
           type="button"
@@ -7521,52 +7744,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           {isFullscreen ? 'Exit Full (Esc)' : 'Fullscreen (F)'}
         </button>
 
-        {pendingLimit && !positionOverlay && (() => {
-          const isBroken = levels.some(
-            (l: LevelLine) =>
-              Math.abs(l.price - pendingLimit.price) < l.price * 0.002 &&
-              (l.marketVerdict === 'broken' || l.marketOutcome === 'broke')
-          )
-          return (
-            <>
-              <span
-                className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide ${isBroken
-                  ? 'border-amber-500/80 bg-amber-950/80 text-amber-200 animate-pulse font-bold'
-                  : 'border-sky-700/50 bg-sky-950/40 text-sky-200'
-                  }`}
-              >
-                {isBroken ? '⚠️ Level Invalidated (Structure Broke) · Working ' : 'Working '}
-                {pendingLimit.direction} · E{' '}
-                {(workingBook?.entry ?? pendingLimit.price).toLocaleString()} · SL{' '}
-                {(workingBook?.stop ?? pendingLimit.stopLoss).toLocaleString()} · TP{' '}
-                {(workingBook?.target ?? pendingLimit.profitTarget).toLocaleString()}
-                {workingBook?.sizeNote ? ` · ${workingBook.sizeNote}` : ''}
-              </span>
-              {onCancelPending && (
-                <button
-                  type="button"
-                  onClick={onCancelPending}
-                  className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide shadow-sm transition ${isBroken
-                    ? 'border-red-500 bg-red-600 text-white hover:bg-red-500 animate-pulse'
-                    : 'border-sky-500/60 bg-sky-600/80 text-white hover:bg-sky-500'
-                    }`}
-                >
-                  Cancel limit
-                </button>
-              )}
-            </>
-          )
-        })()}
-
-        {positionOverlay && (
-          <span className="rounded-lg border border-blue-700/50 bg-blue-950/40 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-blue-200">
-            In trade · E {(filledBook?.entry ?? positionOverlay.entryPrice).toLocaleString()} · SL{' '}
-            {(filledBook?.stop ?? positionOverlay.stopLoss).toLocaleString()} · TP{' '}
-            {(filledBook?.target ?? positionOverlay.profitTarget).toLocaleString()}
-            {filledBook?.sizeNote ? ` · ${filledBook.sizeNote}` : ''}
-          </span>
-        )}
-
         {/* Live price ticker */}
         <div className="ml-auto flex items-center gap-3">
           <LivePriceTicker
@@ -7575,33 +7752,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             instrument={instrument}
             barCountdown={barCountdown}
           />
-          {/* Position overlay indicator */}
-          {positionOverlay && (
-            <span className={`text-xs px-2 py-0.5 rounded font-semibold border ${positionOverlay.direction === 'long'
-              ? 'text-green-400 border-green-800 bg-green-900/30'
-              : 'text-red-400 border-red-800 bg-red-900/30'
-              }`}>
-              {positionOverlay.direction === 'long' ? '▲' : '▼'} POSITION
-            </span>
-          )}
-          {pendingLimit && !positionOverlay && (
-            <span className="text-xs px-2 py-0.5 rounded font-semibold border text-sky-300 border-sky-800 bg-sky-900/30">
-              WORKING {pendingLimit.direction.toUpperCase()}
-              {workingBook?.sizeNote ? ` · ${workingBook.sizeNote}` : ''}
-            </span>
-          )}
-          {asiaOco &&
-            asiaOco.qualified &&
-            asiaOco.event === 'place_both' &&
-            !positionOverlay && (
-              <span
-                className="text-xs px-2 py-0.5 rounded font-semibold border text-lime-200 border-lime-700 bg-lime-950/50"
-                title="Locked Asia recipe — place both stop orders on Tradovate. Lines are the live Trade Pulse working book."
-              >
-                ASIA OCO · BUY {asiaOco.buyStop.toLocaleString('en-US', { maximumFractionDigits: asiaOco.instrument === 'GOLD' ? 1 : 0 })} / SELL{' '}
-                {asiaOco.sellStop.toLocaleString('en-US', { maximumFractionDigits: asiaOco.instrument === 'GOLD' ? 1 : 0 })} · {asiaOco.contract} x {asiaOco.contracts}
-              </span>
-            )}
           {dataMode === 'live' ? (
             <span
               className={`flex items-center gap-1 text-xs ${candleFeed === 'yahoo' ? 'text-emerald-400' : 'text-amber-400'
@@ -7636,69 +7786,58 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       </div>
 
       {/* Context 5-5 Status Summary */}
-      {frvp5d && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-[11px] text-gray-400">
-          <span className="font-semibold text-amber-400">Context 5-5 (NYC Anchor)</span>
-          <span>
-            <span className="text-gray-500">5D POC: </span>
-            <span className="font-mono text-amber-300 font-bold">{frvp5d.poc.toLocaleString()}</span>
-          </span>
-          <span>
-            <span className="text-gray-500">5D VAH: </span>
-            <span className="font-mono text-sky-300 font-semibold">{frvp5d.vah.toLocaleString()}</span>
-          </span>
-          <span>
-            <span className="text-gray-500">5D VAL: </span>
-            <span className="font-mono text-sky-300 font-semibold">{frvp5d.val.toLocaleString()}</span>
-          </span>
-          <span>
-            <span className="text-gray-500">Day Type: </span>
-            <span className="text-purple-300 font-semibold">{dayTypeEval.badgeText}</span>
-          </span>
-          <span>
-            <span className="text-gray-500">Opening: </span>
-            <span className="text-cyan-300 font-semibold">{openingBadge}</span>
-          </span>
-          <span>
-            <span className="text-gray-500">Control: </span>
-            <span className="text-indigo-300 font-semibold">{controlBadge}</span>
-          </span>
-        </div>
-      )}
-
-
-      {/* ── Chart container ──────────────────────────────────────────────────────── */}
-      {/* ── Context 5-5 & Chart Legend ────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 px-1 text-[10px] uppercase tracking-wider text-gray-500">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-[11px] text-gray-400">
         <span className="font-semibold text-amber-400">Context 5-5</span>
-        <span className="flex items-center gap-1.5 normal-case tracking-normal">
-          <span className="inline-block w-3.5 border-t-2 border-amber-500" />
-          <span className="text-amber-400 font-semibold">5D POC</span>
-        </span>
-        <span className="flex items-center gap-1.5 normal-case tracking-normal">
-          <span className="inline-block w-3.5 border-t border-dashed border-sky-400" />
-          <span className="text-sky-300">5D VAH / VAL (70%)</span>
-        </span>
-        <span className="text-gray-600">·</span>
-        <span className="flex items-center gap-1.5 normal-case tracking-normal">
-          <span className="inline-block w-3.5 border-t-2" style={{ borderColor: SHARED_VWAP_COLORS.vwap }} />
-          <span style={{ color: SHARED_VWAP_COLORS.vwap }}>5M AVWAP</span>
-          <span className="text-gray-600">±1σ, ±2σ</span>
-        </span>
-        <span className="text-gray-600">·</span>
-        <span>Sessions</span>
-        {sessionLegendOrder(instrument).map((name) => {
-          const s = SESSION_RANGE_STYLES[name]
-          return (
-            <span key={name} className="flex items-center gap-1.5">
-              <span
-                className="inline-block h-2.5 w-3.5 rounded-[2px] ring-1 ring-black/10"
-                style={{ backgroundColor: showSessionBands ? s.column : s.color }}
-              />
-              <span style={{ color: s.line }}>{sessionLegendLabel(name, instrument)}</span>
+        {frvp5d && (
+          <>
+            <span>
+              <span className="text-gray-500">5D POC: </span>
+              <span className="font-mono text-amber-300 font-bold">{frvp5d.poc.toLocaleString()}</span>
             </span>
-          )
-        })}
+            <span>
+              <span className="text-gray-500">5D Range: </span>
+              <span className="font-mono text-emerald-300">{frvp5d.low.toLocaleString()}</span>
+              <span className="text-gray-600"> – </span>
+              <span className="font-mono text-emerald-300">{frvp5d.high.toLocaleString()}</span>
+            </span>
+            <span>
+              <span className="text-gray-500">5D VAH/VAL: </span>
+              <span className="font-mono text-sky-300 font-semibold">{frvp5d.vah.toLocaleString()} / {frvp5d.val.toLocaleString()}</span>
+            </span>
+          </>
+        )}
+        {avwap5mBenchmark && (
+          <span>
+            <span className="text-gray-500">5M AVWAP: </span>
+            <span className="font-mono text-yellow-300 font-bold">{avwap5mBenchmark.vwap.toLocaleString()}</span>
+            <span className="text-gray-600 text-[10px]"> (±1σ: {avwap5mBenchmark.sigma1Lower.toLocaleString()}/{avwap5mBenchmark.sigma1Upper.toLocaleString()})</span>
+          </span>
+        )}
+        {yesterdayNyc && (
+          <span>
+            <span className="text-gray-500">Yday: </span>
+            <span className="font-mono text-emerald-300 font-semibold">POC {yesterdayNyc.poc.toLocaleString()}</span>
+            <span className="text-gray-600 text-[10px]"> [{yesterdayNyc.yl.toLocaleString()} – {yesterdayNyc.yh.toLocaleString()}]</span>
+          </span>
+        )}
+        {overnightInventory && (
+          <span>
+            <span className="text-gray-500">Inv: </span>
+            <span className="text-sky-300 font-semibold">{overnightInventory.summaryBadge.replace('Inv: ', '')}</span>
+          </span>
+        )}
+        <span>
+          <span className="text-gray-500">Day Type: </span>
+          <span className="text-purple-300 font-semibold">{dayTypeEval.badgeText}</span>
+        </span>
+        <span>
+          <span className="text-gray-500">Opening: </span>
+          <span className="text-cyan-300 font-semibold">{openingBadge}</span>
+        </span>
+        <span>
+          <span className="text-gray-500">Control: </span>
+          <span className="text-indigo-300 font-semibold">{controlBadge}</span>
+        </span>
       </div>
       <div
         ref={chartFrameRef}

@@ -3,6 +3,9 @@ import assert from 'node:assert'
 import {
   compute5DayFixedRangeVolumeProfile,
   compute5MonthAnchoredVwap,
+  compute5MonthAnchoredVwapFromDailyBars,
+  computeYesterdayNycSession,
+  computeOvernightInventoryAndSessions,
   classifyMarketDayType,
   get5DayAnchorUnix,
   get5MonthAnchorUnix,
@@ -98,5 +101,112 @@ describe('Context 5-5 Module Tests', () => {
     })
     assert.equal(res.type, 'TREND_BULL')
     assert.equal(res.badgeText, 'Trend Day (Bull)')
+  })
+
+  it('computes 5-Month Anchored VWAP benchmark from 6mo daily bars', () => {
+    const now = Math.floor(new Date('2026-09-07T14:00:00Z').getTime() / 1000)
+    const dailyBars: ContextBar[] = []
+    // 180 calendar days (~6 months)
+    for (let i = 180; i >= 0; i--) {
+      const t = now - i * 86400
+      dailyBars.push({
+        time: t,
+        open: 40000 + (180 - i) * 30,
+        high: 40100 + (180 - i) * 30,
+        low: 39950 + (180 - i) * 30,
+        close: 40050 + (180 - i) * 30,
+        volume: 50000,
+      })
+    }
+
+    const benchmark = compute5MonthAnchoredVwapFromDailyBars(dailyBars, now, NY_DESK_CLOCK)
+    assert.ok(benchmark !== null)
+    assert.ok(benchmark.vwap > 40000)
+    assert.ok(benchmark.sigma1Upper > benchmark.vwap)
+    assert.ok(benchmark.sigma1Lower < benchmark.vwap)
+    assert.ok(benchmark.sigma2Upper > benchmark.sigma1Upper)
+    assert.ok(benchmark.sigma2Lower < benchmark.sigma1Lower)
+    assert.ok(benchmark.barCount >= 50)
+  })
+
+  it('computes Yesterday NYC Session accurately', () => {
+    // 2026-09-04 is Friday (EDT, UTC-4). Cash open 09:30 EDT = 13:30 UTC. Cash close 16:00 EDT = 20:00 UTC.
+    // 2026-09-07 is Monday.
+    const friOpenUnix = Math.floor(new Date('2026-09-04T13:30:00Z').getTime() / 1000)
+    const friCloseUnix = Math.floor(new Date('2026-09-04T20:00:00Z').getTime() / 1000)
+    const monNowUnix = Math.floor(new Date('2026-09-07T14:00:00Z').getTime() / 1000)
+
+    const bars: ContextBar[] = []
+    for (let t = friOpenUnix; t <= friCloseUnix; t += 300) {
+      bars.push({
+        time: t,
+        open: 44100,
+        high: 44250,
+        low: 43900,
+        close: 44150,
+        volume: t === friOpenUnix + 300 * 10 ? 10000 : 500,
+      })
+    }
+
+    const yday = computeYesterdayNycSession(bars, monNowUnix, NY_DESK_CLOCK)
+    assert.ok(yday !== null)
+    assert.equal(yday.sessionDate, '2026-09-04')
+    assert.equal(yday.yh, 44250)
+    assert.equal(yday.yl, 43900)
+    assert.equal(yday.close, 44150)
+    assert.ok(yday.poc >= 43800 && yday.poc <= 44300)
+    assert.ok(yday.vah >= yday.poc)
+    assert.ok(yday.val <= yday.poc)
+  })
+
+  it('computes Overnight Inventory and Asia & London FRVP', () => {
+    const friOpenUnix = Math.floor(new Date('2026-09-04T13:30:00Z').getTime() / 1000)
+    const friCloseUnix = Math.floor(new Date('2026-09-04T20:00:00Z').getTime() / 1000)
+    const monNowUnix = Math.floor(new Date('2026-09-07T14:00:00Z').getTime() / 1000)
+
+    const bars: ContextBar[] = []
+    // Friday bars
+    for (let t = friOpenUnix; t <= friCloseUnix; t += 300) {
+      bars.push({
+        time: t,
+        open: 44000,
+        high: 44100,
+        low: 43900,
+        close: 44000,
+        volume: 1000,
+      })
+    }
+
+    const yday = computeYesterdayNycSession(bars, monNowUnix, NY_DESK_CLOCK)!
+    assert.ok(yday !== null)
+
+    // Add overnight bars for Asia (18:00 - 03:00) and London (03:00 - 09:30)
+    // All trades happen ABOVE Friday close (44000), making inventory 100% Long
+    const sunGlobexOpen = Math.floor(new Date('2026-09-06T22:00:00Z').getTime() / 1000) // 18:00 EDT Sun
+    for (let t = sunGlobexOpen; t < monNowUnix; t += 300) {
+      bars.push({
+        time: t,
+        open: 44050,
+        high: 44150,
+        low: 44020,
+        close: 44080,
+        volume: 500,
+      })
+    }
+
+    const inv = computeOvernightInventoryAndSessions({
+      bars,
+      yesterday: yday,
+      asOfUnix: monNowUnix,
+      clock: NY_DESK_CLOCK,
+    })
+
+    assert.ok(inv !== null)
+    assert.ok(inv.asia !== null)
+    assert.ok(inv.london !== null)
+    assert.ok(inv.overnight !== null)
+    assert.equal(inv.pctLong, 100)
+    assert.equal(inv.bias, '100%_NET_LONG')
+    assert.ok(inv.summaryBadge.includes('100% Long'))
   })
 })

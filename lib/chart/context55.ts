@@ -1,15 +1,26 @@
 /**
  * Context Oriented 5-5 System
  *
- * 1. 5-Day Fixed Range Volume Profile (FRVP):
+ * 1. 5-Day Fixed Range Volume Profile (FRVP) - Short Term Money:
  *    Anchored exactly 5 trading days ago at NYC cash open (09:30 America/New_York)
- *    through current live bar. Computes POC, 70% Value Area (VAH / VAL), and histogram.
+ *    through current live bar. Computes POC, 70% Value Area (VAH / VAL), 5D High, 5D Low,
+ *    and High/Low Volume Nodes (HVN / LVN).
  *
- * 2. 5-Month Anchored VWAP (AVWAP):
+ * 2. 5-Month Anchored VWAP (AVWAP) - Long Term Money:
  *    Anchored 5 calendar months ago at cash open.
- *    Computes continuous AVWAP line + ±1σ and ±2σ standard deviation bands.
+ *    Computes true 5-month AVWAP + ±1σ and ±2σ standard deviation volatility bands.
+ *    Provides persistent reference levels to detect long-term institutional money response.
  *
- * 3. Market Day Type Classifier (for "Out" Button):
+ * 3. Yesterday NYC Cash Session (Prior Day RTH 09:30–16:00 ET):
+ *    Computes Yesterday High (Y-High), Yesterday Low (Y-Low), Yesterday Close (Y-Close),
+ *    and Yesterday Point of Control (Y-POC).
+ *
+ * 4. Overnight Inventory & Sessions (Asia & London FRVPs):
+ *    Computes Fixed Range Volume Profile for Asia (18:00–03:00 ET) and London (03:00–09:30 ET).
+ *    Evaluates overnight inventory position (% Long vs % Short relative to Y-Close)
+ *    and range relationship (In-Range, Outside-Range, Gap Up, Gap Down).
+ *
+ * 5. Market Day Type Classifier (for "Out" Button):
  *    Classifies session into Dalton day types:
  *    - Non-Trend Day (NTREND)
  *    - Non-Conviction Day (NCONV)
@@ -26,6 +37,7 @@ import {
   isWeekdayYmd,
   nthTradingDayBefore,
   NY_DESK_CLOCK,
+  zonedCivilToUnix,
   type DeskClock,
 } from '@/lib/chart/sessionVwap'
 import type { UTCTimestamp } from 'lightweight-charts'
@@ -49,12 +61,16 @@ export interface VolumeProfileBin {
 export interface FixedRangeVolumeProfile5D {
   startUnix: number
   endUnix: number
+  high: number
+  low: number
   poc: number
   vah: number
   val: number
   totalVolume: number
   bins: VolumeProfileBin[]
   bucketSize: number
+  hvn: number[]
+  lvn: number[]
 }
 
 export interface AnchoredVwapBands5M {
@@ -65,6 +81,68 @@ export interface AnchoredVwapBands5M {
   upper2: { time: UTCTimestamp; value: number }[]
   lower2: { time: UTCTimestamp; value: number }[]
   lastVwap: number | null
+}
+
+export interface AnchoredVwapBenchmark5M {
+  anchorDate: string
+  anchorUnix: number
+  vwap: number
+  sigma1Upper: number
+  sigma1Lower: number
+  sigma2Upper: number
+  sigma2Lower: number
+  barCount?: number
+}
+
+export interface YesterdayNycSession {
+  sessionDate: string
+  yh: number
+  yl: number
+  close: number
+  poc: number
+  vah: number
+  val: number
+  volume: number
+  openUnix: number
+  closeUnix: number
+}
+
+export interface SessionVolumeProfile {
+  name: 'Asia' | 'London' | 'Overnight'
+  startUnix: number
+  endUnix: number
+  high: number
+  low: number
+  poc: number
+  vah: number
+  val: number
+  totalVolume: number
+}
+
+export type OvernightInventoryBias =
+  | '100%_NET_LONG'
+  | 'NET_LONG_SKEWED'
+  | 'BALANCED'
+  | 'NET_SHORT_SKEWED'
+  | '100%_NET_SHORT'
+
+export type RangeRelation = 'IN_RANGE' | 'OUTSIDE_RANGE' | 'GAP_UP' | 'GAP_DOWN'
+
+export interface OvernightInventoryEvaluation {
+  asia: SessionVolumeProfile | null
+  london: SessionVolumeProfile | null
+  overnight: SessionVolumeProfile | null
+  totalVolume: number
+  volumeAboveClose: number
+  volumeBelowClose: number
+  pctLong: number
+  pctShort: number
+  bias: OvernightInventoryBias
+  biasLabel: string
+  rangeRelation: RangeRelation
+  rangeLabel: string
+  summaryBadge: string
+  description: string
 }
 
 export type MarketDayType =
@@ -86,7 +164,6 @@ export interface DayTypeEvaluation {
 
 function bucketWidth(mid: number): number {
   if (!Number.isFinite(mid) || mid <= 0) return 1
-  // ~0.015% of price, rounded to readable increments
   const raw = mid * 0.00015
   if (raw >= 10) return Math.round(raw / 5) * 5
   if (raw >= 1) return Math.max(1, Math.round(raw))
@@ -112,7 +189,6 @@ export function get5DayAnchorUnix(
     day: '2-digit',
   }).format(dt)
 
-  // 5 trading sessions ago (Day -4, Day -3, Day -2, Day -1, Day 0 = 5 sessions)
   const startYmd = nthTradingDayBefore(ymd, 4, clock.timeZone)
   return cashOpenUnixForYmd(startYmd, clock)
 }
@@ -125,7 +201,6 @@ export function get5MonthAnchorUnix(
   clock: DeskClock = NY_DESK_CLOCK
 ): number {
   const dt = new Date(asOfUnix * 1000)
-  // Step back 5 calendar months
   dt.setUTCMonth(dt.getUTCMonth() - 5)
 
   let ymd = new Intl.DateTimeFormat('en-CA', {
@@ -135,7 +210,6 @@ export function get5MonthAnchorUnix(
     day: '2-digit',
   }).format(dt)
 
-  // Ensure anchor falls on a weekday trading day
   while (!isWeekdayYmd(ymd, clock.timeZone)) {
     const [y, m, d] = ymd.split('-').map(Number)
     const next = new Date(Date.UTC(y!, m! - 1, d! + 1, 12, 0, 0))
@@ -159,7 +233,6 @@ export function compute5DayFixedRangeVolumeProfile(
   const tipTime = asOfUnix ?? bars[bars.length - 1]!.time
   const anchorUnix = get5DayAnchorUnix(tipTime, clock)
 
-  // Filter bars from anchor forward up to tipTime
   const scopedBars = bars.filter(
     (b) =>
       b.time >= anchorUnix &&
@@ -270,21 +343,99 @@ export function compute5DayFixedRangeVolumeProfile(
     })
   }
 
+  // Detect High Volume Nodes (HVNs) and Low Volume Nodes (LVNs)
+  const avgVol = totalVolume / Math.max(1, sortedBuckets.length)
+  const hvn: number[] = []
+  const lvn: number[] = []
+
+  for (let i = 1; i < sortedBuckets.length - 1; i++) {
+    const prev = sortedBuckets[i - 1]!.volume
+    const cur = sortedBuckets[i]!.volume
+    const next = sortedBuckets[i + 1]!.volume
+
+    if (cur > prev && cur > next && cur >= avgVol * 1.25) {
+      hvn.push(Number(sortedBuckets[i]!.price.toFixed(2)))
+    } else if (cur < prev && cur < next && cur <= avgVol * 0.6) {
+      lvn.push(Number(sortedBuckets[i]!.price.toFixed(2)))
+    }
+  }
+
   return {
     startUnix: anchorUnix,
     endUnix: tipTime,
+    high: Number(maxPrice.toFixed(2)),
+    low: Number(minPrice.toFixed(2)),
     poc: pocPrice,
     vah: Number(vahPrice.toFixed(2)),
     val: Number(valPrice.toFixed(2)),
     totalVolume,
     bins,
     bucketSize: size,
+    hvn: hvn.slice(0, 5),
+    lvn: lvn.slice(0, 5),
   }
 }
 
 /**
- * Compute 5-Month Anchored VWAP with ±1σ and ±2σ standard deviation bands.
- * Supports optional baseline cumulative sums for lookbacks exceeding candle window.
+ * Compute true 5-Month Anchored VWAP + ±1σ, ±2σ bands from daily OHLCV bars.
+ */
+export function compute5MonthAnchoredVwapFromDailyBars(
+  dailyBars: ContextBar[],
+  asOfUnix?: number,
+  clock: DeskClock = NY_DESK_CLOCK
+): AnchoredVwapBenchmark5M | null {
+  if (!dailyBars || dailyBars.length === 0) return null
+
+  const tipTime = asOfUnix ?? dailyBars[dailyBars.length - 1]!.time
+  const anchorUnix = get5MonthAnchorUnix(tipTime, clock)
+
+  const anchorYmd = new Intl.DateTimeFormat('en-CA', {
+    timeZone: clock.timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(anchorUnix * 1000))
+
+  let sumPV = 0
+  let sumP2V = 0
+  let sumV = 0
+  let barCount = 0
+
+  const sorted = [...dailyBars].sort((a, b) => a.time - b.time)
+
+  for (const b of sorted) {
+    if (b.time < anchorUnix - 86400) continue
+    if (b.time > tipTime) continue
+
+    const price = (b.high + b.low + b.close) / 3
+    const vol = b.volume > 0 ? b.volume : 1
+
+    sumPV += price * vol
+    sumP2V += price * price * vol
+    sumV += vol
+    barCount++
+  }
+
+  if (sumV <= 0) return null
+
+  const vwap = sumPV / sumV
+  const variance = Math.max(0, sumP2V / sumV - vwap * vwap)
+  const std = Math.sqrt(variance)
+
+  return {
+    anchorDate: anchorYmd,
+    anchorUnix,
+    vwap: Number(vwap.toFixed(2)),
+    sigma1Upper: Number((vwap + std).toFixed(2)),
+    sigma1Lower: Number((vwap - std).toFixed(2)),
+    sigma2Upper: Number((vwap + 2 * std).toFixed(2)),
+    sigma2Lower: Number((vwap - 2 * std).toFixed(2)),
+    barCount,
+  }
+}
+
+/**
+ * Compute 5-Month Anchored VWAP with ±1σ and ±2σ standard deviation bands incrementally.
  */
 export function compute5MonthAnchoredVwap(args: {
   bars: ContextBar[]
@@ -351,6 +502,374 @@ export function compute5MonthAnchoredVwap(args: {
 }
 
 /**
+ * Compute Yesterday NYC Cash Session (Prior Day RTH 09:30–16:00 ET).
+ */
+export function computeYesterdayNycSession(
+  bars: ContextBar[],
+  asOfUnix?: number,
+  clock: DeskClock = NY_DESK_CLOCK
+): YesterdayNycSession | null {
+  if (!bars || bars.length === 0) return null
+
+  const tipTime = asOfUnix ?? bars[bars.length - 1]!.time
+  const todayYmd = new Intl.DateTimeFormat('en-CA', {
+    timeZone: clock.timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(tipTime * 1000))
+
+  const priorYmd = nthTradingDayBefore(todayYmd, 1, clock.timeZone)
+  const openUnix = cashOpenUnixForYmd(priorYmd, clock)
+  const closeUnix = zonedCivilToUnix(priorYmd, 16, clock.timeZone)
+
+  const rthBars = bars.filter(
+    (b) => b.time >= openUnix && b.time < closeUnix && Number.isFinite(b.high) && Number.isFinite(b.low)
+  )
+
+  if (rthBars.length < 5) return null
+
+  let yh = -Infinity
+  let yl = Infinity
+  let volume = 0
+
+  for (const b of rthBars) {
+    if (b.high > yh) yh = b.high
+    if (b.low < yl) yl = b.low
+    volume += Math.max(0, b.volume > 0 ? b.volume : 1)
+  }
+
+  if (!(yh > yl)) return null
+
+  const closeBar = rthBars[rthBars.length - 1]!
+  const close = closeBar.close
+
+  // Compute Volume Profile for Yesterday
+  const mid = (yh + yl) / 2
+  const size = bucketWidth(mid)
+  const volumeByBucket = new Map<number, number>()
+
+  for (const b of rthBars) {
+    const vol = Math.max(0, b.volume > 0 ? b.volume : 1)
+    if (b.high - b.low < size * 0.5) {
+      const k = roundToBucket((b.high + b.low + b.close) / 3, size)
+      volumeByBucket.set(k, (volumeByBucket.get(k) ?? 0) + vol)
+      continue
+    }
+    const start = roundToBucket(b.low, size)
+    const end = roundToBucket(b.high, size)
+    const keys: number[] = []
+    for (let p = start; p <= end + size * 0.25; p += size) {
+      keys.push(roundToBucket(p, size))
+    }
+    const uniq = Array.from(new Set(keys))
+    const share = vol / uniq.length
+    for (const k of uniq) {
+      volumeByBucket.set(k, (volumeByBucket.get(k) ?? 0) + share)
+    }
+  }
+
+  const sortedBuckets = Array.from(volumeByBucket.entries())
+    .map(([price, vol]) => ({ price, volume: vol }))
+    .sort((a, b) => a.price - b.price)
+
+  let pocIdx = 0
+  for (let i = 1; i < sortedBuckets.length; i++) {
+    if (sortedBuckets[i]!.volume > sortedBuckets[pocIdx]!.volume) {
+      pocIdx = i
+    }
+  }
+  const poc = Number(sortedBuckets[pocIdx]!.price.toFixed(2))
+
+  const targetVaVolume = volume * 0.7
+  let currentVaVolume = sortedBuckets[pocIdx]!.volume
+  let upIdx = pocIdx + 1
+  let downIdx = pocIdx - 1
+  const vaSet = new Set<number>([pocIdx])
+
+  while (currentVaVolume < targetVaVolume && (upIdx < sortedBuckets.length || downIdx >= 0)) {
+    const upVol = upIdx < sortedBuckets.length ? sortedBuckets[upIdx]!.volume : 0
+    const downVol = downIdx >= 0 ? sortedBuckets[downIdx]!.volume : 0
+    if (upVol >= downVol && upIdx < sortedBuckets.length) {
+      currentVaVolume += upVol
+      vaSet.add(upIdx)
+      upIdx++
+    } else if (downIdx >= 0) {
+      currentVaVolume += downVol
+      vaSet.add(downIdx)
+      downIdx--
+    } else if (upIdx < sortedBuckets.length) {
+      currentVaVolume += upVol
+      vaSet.add(upIdx)
+      upIdx++
+    } else {
+      break
+    }
+  }
+
+  let valPrice = poc
+  let vahPrice = poc
+  for (let i = 0; i < sortedBuckets.length; i++) {
+    if (vaSet.has(i)) {
+      const p = sortedBuckets[i]!.price
+      if (p < valPrice) valPrice = p
+      if (p > vahPrice) vahPrice = p
+    }
+  }
+
+  return {
+    sessionDate: priorYmd,
+    yh: Number(yh.toFixed(2)),
+    yl: Number(yl.toFixed(2)),
+    close: Number(close.toFixed(2)),
+    poc,
+    vah: Number(vahPrice.toFixed(2)),
+    val: Number(valPrice.toFixed(2)),
+    volume,
+    openUnix,
+    closeUnix,
+  }
+}
+
+/**
+ * Compute Session Volume Profile for arbitrary time window.
+ */
+export function computeSessionVolumeProfile(
+  bars: ContextBar[],
+  startUnix: number,
+  endUnix: number,
+  name: 'Asia' | 'London' | 'Overnight'
+): SessionVolumeProfile | null {
+  const sessionBars = bars.filter(
+    (b) => b.time >= startUnix && b.time < endUnix && Number.isFinite(b.high) && Number.isFinite(b.low)
+  )
+
+  if (sessionBars.length < 3) return null
+
+  let high = -Infinity
+  let low = Infinity
+  let totalVolume = 0
+
+  for (const b of sessionBars) {
+    if (b.high > high) high = b.high
+    if (b.low < low) low = b.low
+    totalVolume += Math.max(0, b.volume > 0 ? b.volume : 1)
+  }
+
+  if (!(high > low)) return null
+
+  const mid = (high + low) / 2
+  const size = bucketWidth(mid)
+  const volumeByBucket = new Map<number, number>()
+
+  for (const b of sessionBars) {
+    const vol = Math.max(0, b.volume > 0 ? b.volume : 1)
+    if (b.high - b.low < size * 0.5) {
+      const k = roundToBucket((b.high + b.low + b.close) / 3, size)
+      volumeByBucket.set(k, (volumeByBucket.get(k) ?? 0) + vol)
+      continue
+    }
+    const start = roundToBucket(b.low, size)
+    const end = roundToBucket(b.high, size)
+    const keys: number[] = []
+    for (let p = start; p <= end + size * 0.25; p += size) {
+      keys.push(roundToBucket(p, size))
+    }
+    const uniq = Array.from(new Set(keys))
+    const share = vol / uniq.length
+    for (const k of uniq) {
+      volumeByBucket.set(k, (volumeByBucket.get(k) ?? 0) + share)
+    }
+  }
+
+  const sortedBuckets = Array.from(volumeByBucket.entries())
+    .map(([price, vol]) => ({ price, volume: vol }))
+    .sort((a, b) => a.price - b.price)
+
+  let pocIdx = 0
+  for (let i = 1; i < sortedBuckets.length; i++) {
+    if (sortedBuckets[i]!.volume > sortedBuckets[pocIdx]!.volume) {
+      pocIdx = i
+    }
+  }
+  const poc = Number(sortedBuckets[pocIdx]!.price.toFixed(2))
+
+  const targetVaVolume = totalVolume * 0.7
+  let currentVaVolume = sortedBuckets[pocIdx]!.volume
+  let upIdx = pocIdx + 1
+  let downIdx = pocIdx - 1
+  const vaSet = new Set<number>([pocIdx])
+
+  while (currentVaVolume < targetVaVolume && (upIdx < sortedBuckets.length || downIdx >= 0)) {
+    const upVol = upIdx < sortedBuckets.length ? sortedBuckets[upIdx]!.volume : 0
+    const downVol = downIdx >= 0 ? sortedBuckets[downIdx]!.volume : 0
+    if (upVol >= downVol && upIdx < sortedBuckets.length) {
+      currentVaVolume += upVol
+      vaSet.add(upIdx)
+      upIdx++
+    } else if (downIdx >= 0) {
+      currentVaVolume += downVol
+      vaSet.add(downIdx)
+      downIdx--
+    } else if (upIdx < sortedBuckets.length) {
+      currentVaVolume += upVol
+      vaSet.add(upIdx)
+      upIdx++
+    } else {
+      break
+    }
+  }
+
+  let val = poc
+  let vah = poc
+  for (let i = 0; i < sortedBuckets.length; i++) {
+    if (vaSet.has(i)) {
+      const p = sortedBuckets[i]!.price
+      if (p < val) val = p
+      if (p > vah) vah = p
+    }
+  }
+
+  return {
+    name,
+    startUnix,
+    endUnix,
+    high: Number(high.toFixed(2)),
+    low: Number(low.toFixed(2)),
+    poc,
+    vah: Number(vah.toFixed(2)),
+    val: Number(val.toFixed(2)),
+    totalVolume,
+  }
+}
+
+/**
+ * Compute Overnight Inventory and Asia & London Fixed Range Volume Profiles.
+ */
+export function computeOvernightInventoryAndSessions(args: {
+  bars: ContextBar[]
+  yesterday: YesterdayNycSession | null
+  asOfUnix?: number
+  clock?: DeskClock
+}): OvernightInventoryEvaluation | null {
+  const { bars, yesterday, clock = NY_DESK_CLOCK } = args
+  if (!bars || bars.length === 0 || !yesterday) return null
+
+  const tipTime = args.asOfUnix ?? bars[bars.length - 1]!.time
+  const todayYmd = new Intl.DateTimeFormat('en-CA', {
+    timeZone: clock.timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(tipTime * 1000))
+
+  const todayOpenUnix = cashOpenUnixForYmd(todayYmd, clock)
+
+  const priorYmd = yesterday.sessionDate
+  const asiaStartUnix = zonedCivilToUnix(priorYmd, 18, clock.timeZone)
+  const asiaEndUnix = zonedCivilToUnix(todayYmd, 3, clock.timeZone)
+
+  const londonStartUnix = asiaEndUnix
+  const londonEndUnix = todayOpenUnix
+
+  const overnightStartUnix = asiaStartUnix
+  const overnightEndUnix = todayOpenUnix
+
+  const asia = computeSessionVolumeProfile(bars, asiaStartUnix, asiaEndUnix, 'Asia')
+  const london = computeSessionVolumeProfile(bars, londonStartUnix, londonEndUnix, 'London')
+  const overnight = computeSessionVolumeProfile(bars, overnightStartUnix, overnightEndUnix, 'Overnight')
+
+  // Calculate volume distribution relative to Yesterday Close
+  const overnightBars = bars.filter((b) => b.time >= overnightStartUnix && b.time < overnightEndUnix)
+  let volAbove = 0
+  let volBelow = 0
+  let totalVol = 0
+
+  for (const b of overnightBars) {
+    const vol = Math.max(0, b.volume > 0 ? b.volume : 1)
+    totalVol += vol
+    if (b.close > yesterday.close) {
+      volAbove += vol
+    } else if (b.close < yesterday.close) {
+      volBelow += vol
+    } else {
+      volAbove += vol * 0.5
+      volBelow += vol * 0.5
+    }
+  }
+
+  const effectiveTotal = Math.max(1, totalVol)
+  const pctLong = Math.round((volAbove / effectiveTotal) * 100)
+  const pctShort = Math.round((volBelow / effectiveTotal) * 100)
+
+  let bias: OvernightInventoryBias = 'BALANCED'
+  let biasLabel = 'Balanced'
+
+  if (pctLong >= 95) {
+    bias = '100%_NET_LONG'
+    biasLabel = '100% Long'
+  } else if (pctLong >= 70) {
+    bias = 'NET_LONG_SKEWED'
+    biasLabel = `${pctLong}% Long Skew`
+  } else if (pctShort >= 95) {
+    bias = '100%_NET_SHORT'
+    biasLabel = '100% Short'
+  } else if (pctShort >= 70) {
+    bias = 'NET_SHORT_SKEWED'
+    biasLabel = `${pctShort}% Short Skew`
+  }
+
+  // Determine Range Relationship
+  const todayBars = bars.filter((b) => b.time >= todayOpenUnix && b.time <= tipTime)
+  const onHigh = overnight?.high ?? (overnightBars.length ? Math.max(...overnightBars.map((b) => b.high)) : yesterday.yh)
+  const onLow = overnight?.low ?? (overnightBars.length ? Math.min(...overnightBars.map((b) => b.low)) : yesterday.yl)
+
+  let rangeRelation: RangeRelation = 'IN_RANGE'
+  let rangeLabel = 'In-Range'
+
+  if (todayBars.length > 0 && todayBars[0]!.open > yesterday.yh) {
+    rangeRelation = 'GAP_UP'
+    rangeLabel = 'Gap Up'
+  } else if (todayBars.length > 0 && todayBars[0]!.open < yesterday.yl) {
+    rangeRelation = 'GAP_DOWN'
+    rangeLabel = 'Gap Down'
+  } else if (onHigh > yesterday.yh || onLow < yesterday.yl) {
+    rangeRelation = 'OUTSIDE_RANGE'
+    rangeLabel = 'Outside Range'
+  }
+
+  const summaryBadge = `Inv: ${biasLabel} · ${rangeLabel}`
+
+  let description = ''
+  if (bias === '100%_NET_LONG') {
+    description = `Overnight inventory is 100% net long entering NYC open. If the cash market fails to immediately extend above Y-High, watch for rapid inventory correction (long liquidation) returning toward yesterday close (${yesterday.close}) and Y-POC (${yesterday.poc}).`
+  } else if (bias === '100%_NET_SHORT') {
+    description = `Overnight inventory is 100% net short entering NYC open. If the cash market fails to sustain below Y-Low, watch for sharp short-covering squeeze toward yesterday close (${yesterday.close}) and Y-POC (${yesterday.poc}).`
+  } else if (rangeRelation === 'IN_RANGE') {
+    description = `Overnight auction was contained completely within yesterday's range [${yesterday.yl} – ${yesterday.yh}]. Symmetrical two-way auction expected unless catalyst initiates directional conviction.`
+  } else {
+    description = `Overnight inventory (${biasLabel}) tested outside yesterday's boundaries. Monitor opening acceptance vs rejection at prior extremes.`
+  }
+
+  return {
+    asia,
+    london,
+    overnight,
+    totalVolume: totalVol,
+    volumeAboveClose: volAbove,
+    volumeBelowClose: volBelow,
+    pctLong,
+    pctShort,
+    bias,
+    biasLabel,
+    rangeRelation,
+    rangeLabel,
+    summaryBadge,
+    description,
+  }
+}
+
+/**
  * Classify Market Day Type (Dalton Market Profile framework) for the "Out" button.
  */
 export function classifyMarketDayType(args: {
@@ -360,16 +879,18 @@ export function classifyMarketDayType(args: {
   controlLabel?: string | null
   ydayVah?: number | null
   ydayVal?: number | null
+  overnightInventory?: OvernightInventoryEvaluation | null
   instrument?: string
   asOfUnix?: number
 }): DayTypeEvaluation {
-  const { todayBars } = args
+  const { todayBars, overnightInventory } = args
   if (!todayBars || todayBars.length < 3) {
+    const invNote = overnightInventory ? ` (${overnightInventory.summaryBadge})` : ''
     return {
       type: 'WAITING',
-      badgeText: 'Day Type Waiting',
+      badgeText: `Day Type Waiting${invNote}`,
       title: 'Day Type Waiting',
-      description: 'Insufficient bars to establish day structure (minimum 15m required).',
+      description: `Establishing initial session range; day structure forming.${overnightInventory ? ` ${overnightInventory.description}` : ''}`,
     }
   }
 
@@ -439,7 +960,7 @@ export function classifyMarketDayType(args: {
   }
 
   // 4. Initial range checks for Normal vs Normal Variation vs Neutral
-  const firstHourBars = todayBars.slice(0, 12) // first 60m of 5m bars
+  const firstHourBars = todayBars.slice(0, 12)
   if (firstHourBars.length >= 8) {
     let ibHigh = -Infinity
     let ibLow = Infinity
