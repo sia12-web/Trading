@@ -2314,7 +2314,7 @@ export function TradingChart({
           ? ` [Retest ${ex.retestVolumeRatio}x]`
           : ' [Retest]'
         : ''
-      const labelText = `${ex.label} (${volStr})${retestStr}`
+      const labelText = `(${volStr})${retestStr}`
 
       if (ex.type === 'HIGH') {
         // Downward rose triangle above high wick
@@ -2342,7 +2342,7 @@ export function TradingChart({
           ctx.setLineDash([])
         }
 
-        // Label at session high
+        // Volume & Retest label at session high (no high/low sentence)
         ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
         ctx.fillStyle = '#f43f5e'
         ctx.fillText(labelText, x + 6, y - 4)
@@ -2372,7 +2372,7 @@ export function TradingChart({
           ctx.setLineDash([])
         }
 
-        // Label at session low
+        // Volume & Retest label at session low (no high/low sentence)
         ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
         ctx.fillStyle = '#10b981'
         ctx.fillText(labelText, x + 6, y + 12)
@@ -2406,7 +2406,6 @@ export function TradingChart({
 
       ctx.setLineDash([4, 3])
       ctx.lineWidth = 1
-      ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
 
       // Draw Spike Peak (High or Low)
       const peakY = sp.direction === 'UP' ? yH : yL
@@ -2416,8 +2415,6 @@ export function TradingChart({
         ctx.moveTo(xStart, Math.round(peakY) + 0.5)
         ctx.lineTo(xStart + shelfW, Math.round(peakY) + 0.5)
         ctx.stroke()
-        ctx.fillStyle = '#c084fc'
-        ctx.fillText(`Spike ${sp.direction === 'UP' ? 'H' : 'L'} ${sp.direction === 'UP' ? sp.spikeHigh.toFixed(2) : sp.spikeLow.toFixed(2)}`, xStart + 4, peakY - 3)
       }
 
       // Draw Spike Base (acceptance reference)
@@ -2427,8 +2424,6 @@ export function TradingChart({
         ctx.moveTo(xStart, Math.round(yBase) + 0.5)
         ctx.lineTo(xStart + shelfW, Math.round(yBase) + 0.5)
         ctx.stroke()
-        ctx.fillStyle = '#ec4899'
-        ctx.fillText(`Spike Base ${sp.spikeBase.toFixed(2)}`, xStart + 4, yBase + 10)
       }
       ctx.setLineDash([])
     }
@@ -2470,10 +2465,6 @@ export function TradingChart({
           ctx.lineTo(lineRight, Math.round(ySep) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
-
-          ctx.fillStyle = '#fbbf24'
-          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillText(`DD Sep: ${ref.separationLevel.toFixed(2)}`, Math.max(12, lineLeft + 6), ySep - 3)
         }
       } else if ((ref.dayType === 'TREND_BULL' || ref.dayType === 'TREND_BEAR') && ref.trendMidpoint != null) {
         const yMid = series.priceToCoordinate(ref.trendMidpoint)
@@ -2486,10 +2477,6 @@ export function TradingChart({
           ctx.lineTo(lineRight, Math.round(yMid) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
-
-          ctx.fillStyle = '#38bdf8'
-          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillText(`Trend 50%: ${ref.trendMidpoint.toFixed(2)}`, Math.max(12, lineLeft + 6), yMid - 3)
         }
       }
     }
@@ -2547,10 +2534,6 @@ export function TradingChart({
         ctx.lineTo(shelfRight, Math.round(yH) + 0.5)
         ctx.stroke()
         ctx.setLineDash([])
-
-        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-        ctx.fillStyle = '#f43f5e'
-        ctx.fillText(`⚡ News H ${move.newsHigh.toFixed(2)}`, xStart + 4, yH - 3)
       }
 
       // News Low Shelf (Emerald)
@@ -2563,10 +2546,6 @@ export function TradingChart({
         ctx.lineTo(shelfRight, Math.round(yL) + 0.5)
         ctx.stroke()
         ctx.setLineDash([])
-
-        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-        ctx.fillStyle = '#10b981'
-        ctx.fillText(`⚡ News L ${move.newsLow.toFixed(2)}`, xStart + 4, yL + 10)
       }
 
       // Pre-News Base Line
@@ -2579,10 +2558,6 @@ export function TradingChart({
         ctx.lineTo(xStart + 90, Math.round(yBase) + 0.5)
         ctx.stroke()
         ctx.setLineDash([])
-
-        ctx.font = '8px ui-monospace, SFMono-Regular, monospace'
-        ctx.fillStyle = '#c084fc'
-        ctx.fillText(`Base ${move.basePrice.toFixed(2)}`, xStart + 4, yBase - 2)
       }
 
       // Emotional Move tag
