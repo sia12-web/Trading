@@ -156,7 +156,7 @@ export function decodeDeskViewport(
   }
   const last = Math.max(barCount - 1, 0)
   const span = Math.min(Math.max(saved.span, 20), Math.max(barCount + 6, 20))
-  const from = Math.max(0, Math.min(last, last - saved.fromEnd))
+  const from = Math.min(last, last - saved.fromEnd)
   return { from, to: from + span }
 }
 

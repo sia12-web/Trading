@@ -1114,6 +1114,7 @@ export function TradingChart({
   const showUsRange = false
   const usRangeShaped = false
   const setUsRangeShaped = useCallback((_v: boolean) => {}, [])
+  const refreshSessionHighlightsRef = useRef<() => void>(() => {})
   /** Stable paint hook for tip-stream refresh (avoids restarting SSE on marker deps). */
   const paintDeskMarkersRef = useRef<(bars?: OHLCV[]) => void>(() => { })
   const syncDeskPlaybookRangesRef = useRef<(bars: OHLCV[]) => void>(() => { })
@@ -3336,6 +3337,9 @@ export function TradingChart({
       }
       setIsFullscreen(false)
     }
+    requestAnimationFrame(() => {
+      refreshSessionHighlightsRef.current()
+    })
   }, [isFullscreen])
 
   // Voice stays closed on refresh / clock-in — user opens via toolbar (V).
@@ -4550,6 +4554,7 @@ export function TradingChart({
           containerRef.current.clientHeight
         )
         pokeOverlayLayoutRef.current()
+        refreshSessionHighlights()
       }
     })
     ro.observe(containerRef.current)
@@ -5362,6 +5367,7 @@ export function TradingChart({
   }, [refreshSessionHighlights])
 
   useEffect(() => {
+    refreshSessionHighlightsRef.current = refreshSessionHighlights
     requestAnimationFrame(() => refreshSessionHighlights())
   }, [positionOverlay, editableOverlay, filledBook, refreshSessionHighlights])
 
@@ -5399,7 +5405,7 @@ export function TradingChart({
             /* ignore */
           }
         }
-      }, 180)
+      }, 16)
     }
 
     const beginInteract = () => {
@@ -8054,7 +8060,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         />
         <div
           ref={newsMarkersOverlayRef}
-          className="pointer-events-auto absolute inset-0 z-[5] overflow-hidden"
+          className="pointer-events-none absolute inset-0 z-[5] overflow-hidden"
         />
 
         {activeNewsTooltip && (
