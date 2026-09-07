@@ -38,8 +38,6 @@ import {
 } from 'lightweight-charts'
 import {
   AVWAP_CANDLE_FETCH_CALENDAR_DAYS,
-  computeSessionHighlightSpans,
-  projectSessionHighlightRects,
   paintSessionHighlightOverlay,
   timeToX,
   deskClockFor,
@@ -47,7 +45,6 @@ import {
   isWeekdayYmd,
   zonedCivilToUnix,
   lastNTradingSessions as trimDeskCandles,
-  type SessionHighlightSpan,
 } from '@/lib/chart/sessionVwap'
 import { parseCalendarEventMs } from '@/lib/trading/deskNewsHazard'
 import type { DeskCalendarEvent } from '@/lib/trading/deskNews'
@@ -1068,11 +1065,7 @@ export function TradingChart({
   const paintFrvpHistogramRef = useRef<() => void>(() => {})
   const paintExcessesAndRoundedRef = useRef<() => void>(() => {})
   const paintNewsMarkersRef = useRef<() => void>(() => {})
-  const sessionSpansRef = useRef<{
-    key: string
-    spans: SessionHighlightSpan[]
-    candleTimes: number[]
-  } | null>(null)
+  const sessionSpansRef = useRef<any | null>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const markerHashRef = useRef<string | null>(null)
@@ -4771,37 +4764,37 @@ export function TradingChart({
       ...ignoreScale,
     }
     const vwapSeries = {
-      upper3: chart.addLineSeries({ ...bandOpts, title: '+3σ' }),
-      upper2: chart.addLineSeries({ ...bandOpts, title: '+2σ' }),
-      upper1: chart.addLineSeries({ ...bandOpts, color: '#3b82f6', lineWidth: 2, title: '+1σ' }),
+      upper3: chart.addLineSeries({ ...bandOpts, title: '' }),
+      upper2: chart.addLineSeries({ ...bandOpts, title: '' }),
+      upper1: chart.addLineSeries({ ...bandOpts, color: '#3b82f6', lineWidth: 2, title: '' }),
       vwap: chart.addLineSeries({
         color: '#10b981',
         lineWidth: 2,
         priceLineVisible: false,
         lastValueVisible: false,
-        title: '5M AVWAP',
+        title: '',
         ...ignoreScale,
       }),
-      lower1: chart.addLineSeries({ ...bandOpts, color: '#b8a04a', lineWidth: 2, title: '-1σ' }),
-      lower2: chart.addLineSeries({ ...bandOpts, title: '-2σ' }),
-      lower3: chart.addLineSeries({ ...bandOpts, title: '-3σ' }),
+      lower1: chart.addLineSeries({ ...bandOpts, color: '#b8a04a', lineWidth: 2, title: '' }),
+      lower2: chart.addLineSeries({ ...bandOpts, title: '' }),
+      lower3: chart.addLineSeries({ ...bandOpts, title: '' }),
     }
 
-    // Initial Balance — right-scale H/L labels only (no spanning line)
+    // Initial Balance — right-scale H/L labels hidden
     const ibLineOpts = {
       color: '#3b82f6',
       lineWidth: 2 as const,
       lineStyle: LineStyle.Solid,
       priceLineVisible: false,
-      lastValueVisible: true,
+      lastValueVisible: false,
       lineVisible: false,
       pointMarkersVisible: false,
       crosshairMarkerVisible: false,
       ...ignoreScale,
     }
     const ibSeries = {
-      high: chart.addLineSeries({ ...ibLineOpts, title: 'IB H' }),
-      low: chart.addLineSeries({ ...ibLineOpts, title: 'IB L' }),
+      high: chart.addLineSeries({ ...ibLineOpts, title: '' }),
+      low: chart.addLineSeries({ ...ibLineOpts, title: '' }),
     }
 
     // Open range (first 15m) — amber H/L
@@ -5625,60 +5618,14 @@ export function TradingChart({
     const series = candleRef.current
     const list = candlesRef.current
     const host = sessionOverlayRef.current
+    paintSessionHighlightOverlay(host, [])
     if (!chart || !series || !containerRef.current || list.length === 0) {
-      paintSessionHighlightOverlay(host, [])
       paintPositionBandOverlay(positionBandOverlayRef.current, [])
       paintFrvpHistogramRef.current()
       paintExcessesAndRoundedRef.current()
       paintNewsMarkersRef.current()
       return
     }
-
-    const tip = (list[list.length - 1]?.time as number) || 0
-    const cacheKey = `${instrument}:${tip}:${list.length}`
-    let cached = sessionSpansRef.current
-    if (!cached || cached.key !== cacheKey) {
-      const built = computeSessionHighlightSpans({
-        candles: list.map((c) => ({
-          time: c.time as number,
-          open: c.open,
-          high: c.high,
-          low: c.low,
-          close: c.close,
-          volume: c.volume,
-        })),
-        instrument,
-      })
-      cached = { key: cacheKey, spans: built.spans, candleTimes: built.candleTimes }
-      sessionSpansRef.current = cached
-    }
-
-    let priceAxisW = 70
-    try {
-      priceAxisW = chart.priceScale('right').width() || priceAxisW
-    } catch {
-      /* defaults */
-    }
-
-    const tz = chartTzRef.current
-    const { rects } = projectSessionHighlightRects({
-      spans: cached.spans.map((s) => ({
-        ...s,
-        startT: toChartTime(s.startT, tz),
-        endT: toChartTime(s.endT, tz),
-      })),
-      candleTimes: cached.candleTimes.map((t) => toChartTime(t, tz)),
-      timeScale: chart.timeScale(),
-      priceToY: (price) => series.priceToCoordinate(price),
-      priceScaleWidth: priceAxisW,
-      containerWidth: containerRef.current.clientWidth,
-      containerHeight: containerRef.current.clientHeight,
-      sessionPaint: showSessionBands ? 'full' : 'range',
-    })
-    paintSessionHighlightOverlay(host, rects, {
-      keepPreviousIfEmpty: true,
-      paintKey: showSessionBands ? 'full' : 'range',
-    })
 
     const book = bookBandRef.current
     const bandHost = positionBandOverlayRef.current
@@ -5717,7 +5664,7 @@ export function TradingChart({
     paintFrvpHistogramRef.current()
     paintExcessesAndRoundedRef.current()
     paintNewsMarkersRef.current()
-  }, [instrument, showSessionBands])
+  }, [])
 
   useEffect(() => {
     paintFrvpHistogramRef.current = paintFrvpHistogram
@@ -8185,19 +8132,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
         {/* Out button: says the type of the day */}
         <span
-          title={`${dayTypeEval.title}: ${dayTypeEval.description}`}
-          className="group relative flex cursor-help items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border rounded-lg bg-transparent border-zinc-500/40 text-zinc-300"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border rounded-lg bg-transparent border-zinc-500/40 text-zinc-300"
         >
           <span className="w-2 h-2 rounded-full inline-block bg-purple-400" />
           <span>Out</span>
           <span className="text-[10px] font-normal text-purple-200/90">{dayTypeEval.badgeText}</span>
-          <span
-            role="tooltip"
-            className="pointer-events-none invisible absolute left-0 top-full z-50 mt-1 w-[20rem] whitespace-pre-wrap rounded-lg border border-zinc-500/40 bg-[#0d1117] px-2.5 py-2 text-left text-[10px] font-normal normal-case leading-snug tracking-normal text-zinc-200 shadow-xl group-hover:visible"
-          >
-            <div className="font-bold text-white mb-1">{dayTypeEval.title}</div>
-            <div>{dayTypeEval.description}</div>
-          </span>
         </span>
 
         {/* Yday button: toggles Yesterday NYC Session lines (H, L, Close, POC) */}
@@ -8442,7 +8381,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       </div>
       <div
         ref={chartFrameRef}
-        className="flex-1 relative rounded-xl border border-gray-300 overflow-hidden bg-[#fafafa]"
+        className="flex-1 relative rounded-xl border border-zinc-800 overflow-hidden bg-[#0e1117]"
         style={{ minHeight: 400 }}
       >
         <div ref={containerRef} className="absolute inset-0 z-0" />
