@@ -84,7 +84,6 @@ import {
 import {
   TRADER_DISPLAY_LABEL,
   TRADER_DISPLAY_TZ,
-  deskLocalHmsAsTraderDisplay,
 } from '@/lib/chart/traderDisplayTz'
 import { takeProfitFromStopR } from '@/lib/trading/positionSizing'
 import {
@@ -178,7 +177,7 @@ const ibExtendAlertKind = (..._args: any[]) => ''
 type IbExtendAdvice = any
 
 import { quoteBelongsToBook } from '@/lib/trading/deskExitGuard'
-import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
+import { nyDateTimeToUnix } from '@/lib/utils/dateUtils'
 import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWidget'
 
 const LiveVoicePanel = (_props: any): any => null
@@ -272,12 +271,10 @@ const isOr15Instrument = (..._args: any[]) => false
 const or15LineSeriesData = (..._args: any[]): RangeSeriesPts => ({ high: [], low: [] })
 type Or15Range = any
 
-const NIKKEI_US_RANGE_COLORS: any = { high: '#3b82f6', low: '#ef4444', mid: '#eab308', buy: '#3b82f6', sell: '#ef4444' }
+const NIKKEI_US_RANGE_COLORS: any = { high: '#3b82f6', low: '#ef4444' }
 const computeNikkeiUsRangeBreakout = (..._args: any[]): any => null
-const currentNikkeiUsRangeForChart = (..._args: any[]): any => null
 const isNikkeiUsRangeInstrument = (..._args: any[]) => false
-const nikkeiUsRangeLineSeriesData = (..._args: any[]): RangeSeriesPts => ({ high: [], low: [] })
-type NikkeiUsSessionRange = any
+const nikkeiUsRangeLineSeriesData = (..._args: any[]): any => ({ high: [], low: [] })
 
 const OR30_COLORS: any = { high: '#3b82f6', low: '#ef4444', mid: '#eab308', buy: '#3b82f6', sell: '#ef4444' }
 const computeOr30Range = (..._args: any[]): any => null
@@ -539,7 +536,7 @@ function makeDeskChartFormatters(_instrument: Instrument): DeskChartFmt {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
+type Instrument = 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE'
 
 /** Desk charts are 5m only — live and simulation share this. */
 const DESK_TIMEFRAME = '5m' as const
@@ -591,7 +588,6 @@ interface TooltipData {
 const INSTRUMENT_META: Record<Instrument, { label: string; symbol: string; color: string; basePrice: number }> = {
   DOW: { label: 'Micro Dow · MYM', symbol: 'MYM', color: '#1d4ed8', basePrice: 39500 },
   NASDAQ: { label: 'Micro Nasdaq · MNQ', symbol: 'MNQ', color: '#0f766e', basePrice: 28500 },
-  NIKKEI: { label: 'Nikkei USD', symbol: 'NKD', color: '#f472b6', basePrice: 38000 },
   GOLD: { label: 'Micro Gold · MGC', symbol: 'MGC', color: '#ca8a04', basePrice: 4500 },
   CRUDE: { label: 'Crude · CL', symbol: 'CL', color: '#78716c', basePrice: 85 },
 }
@@ -1114,10 +1110,10 @@ export function TradingChart({
     high: ISeriesApi<'Line'>
     low: ISeriesApi<'Line'>
   } | null>(null)
-  const usRangeRef = useRef<NikkeiUsSessionRange | null>(null)
-  const [usRangeShaped, setUsRangeShaped] = useState(false)
-  /** Gates current-session US H/L lines (IB-style, no markers) */
-  const [showUsRange, setShowUsRange] = useState(() => loadDeskOverlayToggles().us)
+  const usRangeRef = useRef<any | null>(null)
+  const showUsRange = false
+  const usRangeShaped = false
+  const setUsRangeShaped = useCallback((_v: boolean) => {}, [])
   /** Stable paint hook for tip-stream refresh (avoids restarting SSE on marker deps). */
   const paintDeskMarkersRef = useRef<(bars?: OHLCV[]) => void>(() => { })
   const syncDeskPlaybookRangesRef = useRef<(bars: OHLCV[]) => void>(() => { })
@@ -1742,15 +1738,15 @@ export function TradingChart({
       const tz = chartTzRef.current
       series.high.setData(
         mapTimesToChart(
-          axisLabelSeriesData(pts.high).map((p) => ({ time: p.time, value: p.value })),
+          axisLabelSeriesData(pts.high).map((p: any) => ({ time: p.time, value: p.value })),
           tz
-        ).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
+        ).map((p: any) => ({ time: p.time as UTCTimestamp, value: p.value }))
       )
       series.low.setData(
         mapTimesToChart(
-          axisLabelSeriesData(pts.low).map((p) => ({ time: p.time, value: p.value })),
+          axisLabelSeriesData(pts.low).map((p: any) => ({ time: p.time, value: p.value })),
           tz
-        ).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
+        ).map((p: any) => ({ time: p.time as UTCTimestamp, value: p.value }))
       )
       setUsRangeShaped(pts.high.length > 0)
       keepDeskBarSpacing(chartRef.current, savedSpacing)
@@ -1831,10 +1827,7 @@ export function TradingChart({
         day: '2-digit',
       }).format(new Date(tipUnix * 1000))
       const [oh, om] = sess.marketOpen.split(':').map(Number)
-      const openUnix =
-        inst === 'NIKKEI'
-          ? tokyoDateTimeToUnix(tipDay, oh!, om || 0)
-          : nyDateTimeToUnix(tipDay, oh!, om || 0)
+      const openUnix = nyDateTimeToUnix(tipDay, oh!, om || 0)
       ibRangeRef.current = computeInitialBalance(ohlcv, openUnix, nowUnix)
       paintIbLines()
     }
@@ -1849,10 +1842,7 @@ export function TradingChart({
           day: '2-digit',
         }).format(new Date(tipUnix * 1000))
         const [oh, om] = sess.marketOpen.split(':').map(Number)
-        const openUnix =
-          inst === 'NIKKEI'
-            ? tokyoDateTimeToUnix(tipDay, oh!, om || 0)
-            : nyDateTimeToUnix(tipDay, oh!, om || 0)
+        const openUnix = nyDateTimeToUnix(tipDay, oh!, om || 0)
         or15RangeRef.current = computeOr15Range(ohlcv, openUnix, nowUnix)
       } else {
         or15RangeRef.current = null
@@ -1861,9 +1851,7 @@ export function TradingChart({
     }
 
     if (usRangeSeriesRef.current) {
-      usRangeRef.current = isNikkeiUsRangeInstrument(inst)
-        ? currentNikkeiUsRangeForChart(ohlcv, nowUnix)
-        : null
+      usRangeRef.current = null
       paintUsRangeLines()
     }
 
@@ -1877,10 +1865,7 @@ export function TradingChart({
           day: '2-digit',
         }).format(new Date(tipUnix * 1000))
         const [oh, om] = sess.marketOpen.split(':').map(Number)
-        const openUnix =
-          inst === 'NIKKEI'
-            ? tokyoDateTimeToUnix(tipDay, oh!, om || 0)
-            : nyDateTimeToUnix(tipDay, oh!, om || 0)
+        const openUnix = nyDateTimeToUnix(tipDay, oh!, om || 0)
         or30RangeRef.current = computeOr30Range(ohlcv, openUnix, nowUnix)
       } else {
         or30RangeRef.current = null
@@ -3723,9 +3708,7 @@ export function TradingChart({
             title: `${range.label || 'range'} entry closed`,
             body:
               range.label === 'OR15' || range.label === 'OR30'
-                ? instrument === 'NIKKEI'
-                  ? 'Open-range ±10 window is closed — enter on the live US Range / Tokyo IB playbook when unlocked.'
-                  : 'Open-range / OR30 ±10 window is closed — enter on the live next-range playbook when unlocked.'
+                ? 'Open-range / OR30 ±10 window is closed — enter on the live next-range playbook when unlocked.'
                 : bucketCheck.ok
                   ? RANGE_EDGE_OFF_BAND_MESSAGE
                   : bucketCheck.message,
@@ -3792,17 +3775,11 @@ export function TradingChart({
         let title = 'Off-band entry'
         if (snapRanges.length === 0) {
           title = 'No entry bands'
-          body =
-            instrument === 'NIKKEI'
-              ? 'No live ±10 entry bands — wait for US Range / Tokyo IB to unlock, or refresh after first-hour IB lock.'
-              : 'No live ±10 entry bands — wait for OR30 / IB to unlock.'
+          body = 'No live ±10 entry bands — wait for OR30 / IB to unlock.'
         } else if (hit) {
           if (hit.range.label === 'OR15' || hit.range.label === 'OR30') {
             title = `${hit.range.label} entry closed`
-            body =
-              instrument === 'NIKKEI'
-                ? 'Open-range ±10 window is closed — enter on the live US Range / Tokyo IB playbook when unlocked.'
-                : 'Open-range / OR30 ±10 window is closed — enter on the live next-range playbook when unlocked.'
+            body = 'Open-range / OR30 ±10 window is closed — enter on the live next-range playbook when unlocked.'
           } else {
             const bucketCheck = assertBucketEntryEligible({
               instrument,
@@ -3923,7 +3900,7 @@ export function TradingChart({
   const [, setDeskSessionLive] = useState(false)
   const [visibleInstruments, setVisibleInstruments] = useState<Instrument[]>(() => {
     if (allowedInstruments && allowedInstruments.length > 0) {
-      return allowedInstruments.filter((i) => i !== 'NIKKEI')
+      return allowedInstruments as Instrument[]
     }
     return ['DOW', 'NASDAQ', 'GOLD', 'CRUDE']
   })
@@ -3943,7 +3920,7 @@ export function TradingChart({
       attendedToday: deskAttended,
     }).filter((i) => i !== 'NIKKEI') as Instrument[]
     if (allowedInstruments && allowedInstruments.length > 0) {
-      const fromGate = allowedInstruments.filter((i) => live.includes(i) && i !== 'NIKKEI')
+      const fromGate = allowedInstruments.filter((i) => live.includes(i as Instrument)) as Instrument[]
       setVisibleInstruments(fromGate.length > 0 ? fromGate : live)
       return
     }
@@ -3961,7 +3938,7 @@ export function TradingChart({
   }, [instrument, deskAttended, focusTick, clockReady])
 
   const setInstrument = useCallback((inst: Instrument) => {
-    if (!visibleInstruments.includes(inst) || inst === 'NIKKEI') return
+    if (!visibleInstruments.includes(inst)) return
     setInstrumentState(inst)
     // Free-switch: remember any NY board tab (indexes + gold/crude).
     if (
@@ -4097,10 +4074,7 @@ export function TradingChart({
       day: '2-digit',
     }).format(new Date())
     const [oh, om] = sess.marketOpen.split(':').map(Number)
-    const openUnix =
-      inst === 'NIKKEI'
-        ? tokyoDateTimeToUnix(todayLocal, oh!, om || 0)
-        : nyDateTimeToUnix(todayLocal, oh!, om || 0)
+    const openUnix = nyDateTimeToUnix(todayLocal, oh!, om || 0)
     const barsForFallback = (freshCandles ?? candlesRef.current).map((c) => ({
       ...c,
       time: c.time as number,
@@ -7056,9 +7030,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         }
       } else if (key === 'u') {
         e.preventDefault()
-        if (instrument === 'NIKKEI') {
-          setShowUsRange((prev) => !prev)
-        }
       } else if (key === 'r') {
         e.preventDefault()
         if (isOr30Instrument(instrument)) {
@@ -7499,7 +7470,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       or30: or30Locked,
       ib: ibShaped,
       lunch: or15Locked,
-      us: usRangeShaped && instrument === 'NIKKEI',
+      us: false,
     }
 
     // Instrument tab change or first mount: seed from durable claims + current locks.
@@ -7549,7 +7520,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     if (next.ib && !prev.ib) {
       const r = ibRangeRef.current
       if (r && claimDeskNoteOnce('range_ib', instrument)) {
-        const label = instrument === 'NIKKEI' ? 'Tokyo IB' : 'IB'
+        const label = 'IB'
         const atrSnap = buildRangeAtrSnapshot({
           rangeLabel: label,
           high: r.high,
@@ -7562,10 +7533,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           high: r.high,
           low: r.low,
           atrLine: atrSnap ? formatRangeAtrAdviceLine(atrSnap) : null,
-          nextHint:
-            instrument === 'NIKKEI'
-              ? `Tokyo IB shaped — ±10 entries are open now (${deskLocalHmsAsTraderDisplay('10:00:00', 'Asia/Tokyo')}–${deskLocalHmsAsTraderDisplay('15:00:00', 'Asia/Tokyo')} ${TRADER_DISPLAY_LABEL}). US Range may still run until ${deskLocalHmsAsTraderDisplay('10:45:00', 'Asia/Tokyo')} ${TRADER_DISPLAY_LABEL}.`
-              : 'IB entry window is open (±10 of locked H / L).',
+          nextHint: 'IB entry window is open (±10 of locked H / L).',
         })
         onDeskAlert({
           ...note,

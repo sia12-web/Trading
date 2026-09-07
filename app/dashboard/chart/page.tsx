@@ -781,9 +781,7 @@ export default function ChartPage() {
     prevCanPlaceRef.current = !!g.canPlaceEntry
 
     // Session START = cash open (live bars unlock). Session END = cash close wall-clock.
-    const inst = (g.lockedInstrument && g.lockedInstrument !== 'NIKKEI'
-      ? g.lockedInstrument
-      : null) as DeskInstrument | null
+    const inst = (g.lockedInstrument || null) as DeskInstrument | null
     const fetchLive = (!!g.clockedIn && !!g.canFetchLiveBars) || !!g.asiaDeskActive
     const pastClose =
       !!inst &&
@@ -917,7 +915,6 @@ export default function ChartPage() {
     const inst = (gate?.lockedInstrument || instrument) as
       | 'DOW'
       | 'NASDAQ'
-      | 'NIKKEI'
       | null
     if (!gate?.clockedIn || !inst) return
 
@@ -1914,7 +1911,6 @@ export default function ChartPage() {
   const showFilledTicket =
     isTradeifyGrowth50k(riskProfile) &&
     managePos != null &&
-    (managePos.instrument || instrument) !== 'NIKKEI' &&
     !tvTicketClosed
   const showManageBar = inManage && managePos != null
   const showDeskOverlay =
@@ -2010,7 +2006,6 @@ export default function ChartPage() {
                 instrument={(managePos.instrument || instrument) as
                   | 'DOW'
                   | 'NASDAQ'
-                  | 'NIKKEI'
                   | 'GOLD'
                   | 'CRUDE'}
                 direction={
@@ -2186,7 +2181,7 @@ export default function ChartPage() {
               jumpToPriceRef={jumpToPriceRef}
               // Hard-lock tabs only after clock-in / open book (AI suggest stays soft)
               lockedInstrument={locked}
-              allowedInstruments={gate?.allowedInstruments ?? undefined}
+              allowedInstruments={(gate?.allowedInstruments as any) ?? undefined}
               onLevelSelect={handleLevelSelect}
               canPlaceOrder={canTrade && dataMode === 'live'}
               onDeskAlert={handleDeskAlert}

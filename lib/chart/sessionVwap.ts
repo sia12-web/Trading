@@ -53,26 +53,13 @@ export const SESSION_WINDOWS = {
 } as const
 
 /**
- * Nikkei morning desk — Asia/Tokyo cash, then London until US open,
- * New York = US RTH only (America/New_York 09:30–16:00).
- * After US cash close until Tokyo 09:00 is uncolored (Nikkei may still print —
- * must NOT stay painted as New York).
- * After Tokyo cash close (15:00) → 17:00 JST is also uncolored.
- */
-export const TOKYO_SESSION_WINDOWS = {
-  Asia: { tz: 'Asia/Tokyo', start: 9, end: 15 }, // Tokyo cash 09:00 → 15:00
-  London: { tz: 'Asia/Tokyo', start: 17, end: 22.5 }, // after post-cash gap → US open (end approx; classifier uses ET)
-  /** Documented for legends — actual NY band is SESSION_WINDOWS['New York'] via ET */
-  'New York': { tz: 'America/New_York', start: 9.5, end: 16 },
-} as const
-
-/**
  * Classify a bar into Asia / London / NY, or null when between sessions
  * (post–cash-close dead zone — no paint).
+ * All supported instruments (DOW, NASDAQ, GOLD, CRUDE) use America/New_York.
  */
 export function nyDeskSessionAt(unix: number): SessionName | null {
   const h = hourInTz(unix, 'America/New_York')
-  // Post–NY cash close before Asia: uncolored
+  // Post–NY cash close before Asia: uncolored dead zone (16:00–18:00)
   if (h >= SESSION_WINDOWS['New York'].end && h < SESSION_WINDOWS.Asia.start) {
     return null
   }
@@ -81,54 +68,25 @@ export function nyDeskSessionAt(unix: number): SessionName | null {
   return 'New York'
 }
 
-/**
- * Nikkei: Tokyo cash = Asia; US RTH only = New York (DST-safe via ET);
- * after US cash close until Tokyo open = uncolored; 15:00–17:00 JST = uncolored.
- */
-export function tokyoDeskSessionAt(unix: number): SessionName | null {
-  const hJst = hourInTz(unix, 'Asia/Tokyo')
-  const hEt = hourInTz(unix, 'America/New_York')
-  const asiaStart = TOKYO_SESSION_WINDOWS.Asia.start
-  const asiaEnd = TOKYO_SESSION_WINDOWS.Asia.end
-  const londonStart = TOKYO_SESSION_WINDOWS.London.start
-  const nyStart = SESSION_WINDOWS['New York'].start
-  const nyEnd = SESSION_WINDOWS['New York'].end
+/** @deprecated Kept for test-file compat — all live instruments use nyDeskSessionAt. */
+export const tokyoDeskSessionAt = nyDeskSessionAt
 
-  // Tokyo cash session
-  if (hJst >= asiaStart && hJst < asiaEnd) return 'Asia'
-
-  // Post–Tokyo cash close before evening band
-  if (hJst >= asiaEnd && hJst < londonStart) return null
-
-  // US regular hours only — never extend NY paint past US cash close
-  if (hEt >= nyStart && hEt < nyEnd) return 'New York'
-
-  // After US cash close until next Tokyo cash open (Nikkei may still trade)
-  if (hEt >= nyEnd && hJst < asiaStart) return null
-
-  // Evening after Tokyo gap until US cash open
-  if (hJst >= londonStart) return 'London'
-
-  return null
-}
-
-/** Per-instrument session paint clock — null = no session band (dead zone). */
+/** Per-instrument session paint clock — always NY desk. */
 export function deskSessionAt(
   unix: number,
-  instrument?: string | null
+  _instrument?: string | null
 ): SessionName | null {
-  return instrument === 'NIKKEI' ? tokyoDeskSessionAt(unix) : nyDeskSessionAt(unix)
+  return nyDeskSessionAt(unix)
 }
 
 export const SESSION_RANGE_ORDER: SessionName[] = ['Asia', 'London', 'New York']
 
-/** Shared legend — Asia / London / New York for every desk instrument. */
-export function sessionLegendLabel(name: SessionName, instrument?: string | null): string {
-  if (instrument === 'NIKKEI' && name === 'Asia') return 'Tokyo'
+/** Display name for a session — returns the session name (no overrides). */
+export function sessionLegendLabel(name: SessionName, _instrument?: string | null): string {
   return name
 }
 
-/** Legend swatch order — identical for DOW, NASDAQ, and NIKKEI. */
+/** Legend swatch order — Asia / London / New York. */
 export function sessionLegendOrder(_instrument?: string | null): SessionName[] {
   return SESSION_RANGE_ORDER
 }
@@ -149,6 +107,8 @@ export interface SessionHighlightRect {
   avg?: number
   yAvg?: number | null
   isColumn?: boolean
+  /** True for the last (currently active/in-progress) session — rendered with bolder borders. */
+  isCurrent?: boolean
   borderColor?: string
   borderLeftWidth?: number
   borderTopWidth?: number
@@ -436,6 +396,8 @@ export type SessionHighlightSpan = {
   low: number
   range?: number
   avg?: number
+  /** True for the last (currently active/in-progress) span — gets a bolder visual. */
+  isCurrent?: boolean
 }
 
 const DESK_BAR_SECONDS = 300
@@ -538,6 +500,11 @@ export function computeSessionHighlightSpans(args: {
     }
   }
 
+  // Mark the last (rightmost, currently active) span so it renders bolder
+  if (spans.length > 0) {
+    spans[spans.length - 1]!.isCurrent = true
+  }
+
   return { spans, candleTimes }
 }
 
@@ -593,7 +560,7 @@ export function projectSessionHighlightRects(args: {
     if (width < 1) continue
 
     const style = SESSION_STYLES[span.name]
-    const labelName = span.displayName ?? (span.name === 'Asia' ? 'Tokyo' : span.name)
+    const labelName = span.displayName ?? span.name
     if (showColumns) {
       rects.push({
         name: span.name,
@@ -649,6 +616,7 @@ export function projectSessionHighlightRects(args: {
       avg: Number(spanAvg.toFixed(2)),
       yAvg: yAvg != null && Number.isFinite(yAvg) ? yAvg : top + height / 2,
       isColumn: false,
+      isCurrent: span.isCurrent === true,
     })
   }
 
@@ -746,8 +714,15 @@ export function paintSessionHighlightOverlay(
     const lineColor = s.lineColor ?? s.borderColor ?? '#3b82f6'
     d.style.borderLeft = 'none'
     d.style.borderRight = 'none'
-    d.style.borderTop = `1px dashed ${lineColor}`
-    d.style.borderBottom = `1px dashed ${lineColor}`
+    if (s.isCurrent) {
+      // Active/in-progress session — solid borders for clear visual distinction
+      d.style.borderTop = `2px solid ${lineColor}`
+      d.style.borderBottom = `2px solid ${lineColor}`
+    } else {
+      // Historical sessions — dashed borders
+      d.style.borderTop = `1px dashed ${lineColor}`
+      d.style.borderBottom = `1px dashed ${lineColor}`
+    }
 
     // Inner dotted midline and bottom label metadata (Range / Avg / Session) matching TradingView
     const midY =
@@ -756,7 +731,7 @@ export function paintSessionHighlightOverlay(
         : s.height / 2
     const rangeStr = s.range != null ? s.range.toFixed(2) : ''
     const avgStr = s.avg != null ? s.avg.toFixed(2) : ''
-    const sessName = s.displayName ?? (s.name === 'Asia' ? 'Tokyo' : s.name)
+    const sessName = s.displayName ?? s.name
 
     const labelTop = s.height + 4
     d.innerHTML = `
@@ -787,15 +762,17 @@ export const NY_DESK_CLOCK: DeskClock = {
   openLabel: 'NY 9:30',
 }
 
+/** @deprecated — kept for test-file compat only. All live instruments use NY_DESK_CLOCK. */
 export const TOKYO_DESK_CLOCK: DeskClock = {
-  timeZone: 'Asia/Tokyo',
-  cashOpenHour: 9, // Nikkei / TSE cash open — not NY 9:30
-  overnightStartHour: 15, // TSE cash close
-  openLabel: 'Nikkei cash open',
+  timeZone: 'America/New_York',
+  cashOpenHour: 9.5,
+  overnightStartHour: 16,
+  openLabel: 'NY 9:30',
 }
 
-export function deskClockFor(instrument: string | null | undefined): DeskClock {
-  return instrument === 'NIKKEI' ? TOKYO_DESK_CLOCK : NY_DESK_CLOCK
+/** Returns the NY desk clock for all supported instruments (DOW, NASDAQ, GOLD, CRUDE). */
+export function deskClockFor(_instrument?: string | null): DeskClock {
+  return NY_DESK_CLOCK
 }
 
 /** How many trading days before the tip session AVWAP is anchored (cash open). */
