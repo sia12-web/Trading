@@ -92,7 +92,7 @@ export async function POST(request: Request) {
     const dir = String(position.entry_direction || '').toUpperCase() as 'LONG' | 'SHORT'
     const movePct = dir === 'LONG' ? ((px - entry) / entry) * 100 : ((entry - px) / entry) * 100
 
-    const deskInstrument = instrument as 'DOW' | 'NASDAQ' | 'NIKKEI'
+    const deskInstrument = instrument as 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
     const bookDir = dir === 'SHORT' ? 'SHORT' : 'LONG'
     const [rvolSnap, optionsFlow, structure] = await Promise.all([
       fetchManageRvol(deskInstrument),

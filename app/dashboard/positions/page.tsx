@@ -37,7 +37,7 @@ import {
   deskLocalHmsAsTraderDisplay,
 } from '@/lib/chart/traderDisplayTz'
 
-const INSTRUMENTS: Instrument[] = ['DOW', 'NASDAQ']
+const INSTRUMENTS: Instrument[] = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE']
 
 function mapWorkingRow(row: WorkingLimitRow & { id?: string }): WorkingLimitStatus {
   const p = workingRowToPending(row)
@@ -289,7 +289,7 @@ export default function PositionsPage() {
               href="/dashboard/chart"
               className="rounded-lg border border-[#30363d] px-3 py-1.5 text-xs font-semibold text-gray-300 hover:bg-[#161b22]"
             >
-              Live Trading
+              Chart
             </Link>
             <Link
               href="/dashboard/journal"

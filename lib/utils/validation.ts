@@ -7,7 +7,7 @@ import type { Instrument } from '@/types/price-feed'
 
 // Type guards for runtime validation
 export function isInstrument(value: unknown): value is Instrument {
-  return typeof value === 'string' && ['DOW', 'NASDAQ', 'NIKKEI'].includes(value)
+  return typeof value === 'string' && ['DOW', 'NASDAQ', 'NIKKEI', 'GOLD', 'CRUDE'].includes(value)
 }
 
 export function isValidNumber(value: unknown): value is number {

@@ -75,7 +75,7 @@ export async function GET(request: Request): Promise<NextResponse<PositionStatus
     }
 
     // Validate instrument
-    const validInstruments: Instrument[] = ['DOW', 'NASDAQ', 'NIKKEI']
+    const validInstruments: Instrument[] = ['DOW', 'NASDAQ', 'NIKKEI', 'GOLD', 'CRUDE']
     if (!validInstruments.includes(instrumentParam as Instrument)) {
       logger.error('GET /api/trading/positions/management-status: Invalid instrument', {
         instrument: instrumentParam,

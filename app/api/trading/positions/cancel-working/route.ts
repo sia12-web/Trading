@@ -48,7 +48,7 @@ export async function POST(request: Request) {
       const dates = Array.from(
         new Set([getESTDateString(), tradeDateForInstrument('NIKKEI')])
       )
-      q = q.in('instrument', ['DOW', 'NASDAQ', 'NIKKEI']).in('trade_date', dates)
+      q = q.in('instrument', ['DOW', 'NASDAQ', 'NIKKEI', 'GOLD', 'CRUDE']).in('trade_date', dates)
     }
 
     const { data, error } = await q.select('id')
