@@ -147,6 +147,8 @@ const isAuctionInstrument = (..._args: any[]) => false
 const resolveAuctionAsOfUnix = (..._args: any[]) => 0
 type AuctionHud = any
 type AuctionOverlaySignal = any
+import { LeoAssistantPanel } from './LeoAssistantPanel'
+import type { LeoChatContext, LeoDataPoint } from '@/lib/ai/leoAssistant'
 
 const DOW_15M_FAIL_COLORS: any = { high: '#3b82f6', low: '#ef4444', mid: '#eab308', buy: '#3b82f6', sell: '#ef4444' }
 const computeDow15mFailOverlay = (..._args: any[]): any => null
@@ -2734,6 +2736,81 @@ export function TradingChart({
       false
     )
   }, [candles, newsEvents, instrument, yesterdayNyc?.openUnix])
+
+  // ── Leo AI Desk Assistant Live State & Telemetry Context ──────────────────
+  const [leoPanelOpen, setLeoPanelOpen] = useState(false)
+  const [leoExternalPoints, setLeoExternalPoints] = useState<LeoDataPoint[]>([])
+
+  const leoContext: LeoChatContext = useMemo(() => {
+    const list = candles || []
+    const lastBar = list.length ? list[list.length - 1] : null
+    const curPrice = livePrice ?? lastBar?.close ?? null
+    const nowEtStr = new Date().toLocaleTimeString('en-US', {
+      timeZone: 'America/New_York',
+      hour: '2-digit',
+      minute: '2-digit',
+    }) + ' ET'
+
+    return {
+      instrument,
+      currentPrice: curPrice,
+      currentTimeEt: nowEtStr,
+      dayType: dayTypeEval?.badgeText ?? null,
+      openingType: openingBadge ?? null,
+      longTermMoney: avwap5mBenchmark
+        ? {
+            avwap5m: avwap5mBenchmark.vwap,
+            sigma1Upper: avwap5mBenchmark.sigma1Upper,
+            sigma1Lower: avwap5mBenchmark.sigma1Lower,
+            sigma2Upper: avwap5mBenchmark.sigma2Upper,
+            sigma2Lower: avwap5mBenchmark.sigma2Lower,
+            distancePts:
+              curPrice != null ? Number((curPrice - avwap5mBenchmark.vwap).toFixed(1)) : null,
+          }
+        : null,
+      intermediateMoney: frvp5d
+        ? {
+            poc5d: frvp5d.poc,
+            vah5d: frvp5d.vah,
+            val5d: frvp5d.val,
+            high5d: frvp5d.high,
+            low5d: frvp5d.low,
+            distancePts: curPrice != null ? Number((curPrice - frvp5d.poc).toFixed(1)) : null,
+          }
+        : null,
+      shortTermMoney: yesterdayNyc
+        ? {
+            sessionDate: yesterdayNyc.sessionDate,
+            ypoc: yesterdayNyc.poc,
+            yhigh: yesterdayNyc.yh,
+            ylow: yesterdayNyc.yl,
+            yvah: yesterdayNyc.vah,
+            yval: yesterdayNyc.val,
+            onpoc: overnightInventory?.overnight?.poc ?? null,
+            onhigh: overnightInventory?.overnight?.high ?? null,
+            onlow: overnightInventory?.overnight?.low ?? null,
+            overnightBias: overnightInventory?.biasLabel ?? null,
+            distanceYpocPts:
+              curPrice != null ? Number((curPrice - yesterdayNyc.poc).toFixed(1)) : null,
+            distanceOnpocPts:
+              curPrice != null && overnightInventory?.overnight?.poc != null
+                ? Number((curPrice - overnightInventory.overnight.poc).toFixed(1))
+                : null,
+          }
+        : null,
+      activeExcesses: [],
+    }
+  }, [
+    instrument,
+    livePrice,
+    candles,
+    dayTypeEval,
+    openingBadge,
+    avwap5mBenchmark,
+    frvp5d,
+    yesterdayNyc,
+    overnightInventory,
+  ])
 
   const paintAuctionOverlay = useCallback(() => {
     const host = priceLineHostRef.current
@@ -7871,16 +7948,64 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       {/* ── Compact Evaluators & OHLCV Tooltip Row ─────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-x-2.5 gap-y-1 px-1 py-0.5 text-[10.5px] text-gray-400 min-h-[22px]">
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
-          {/* Structural Evaluators: Day Type & Opening */}
-          <span>
+          {/* Structural Evaluators: Day Type & Opening (Clickable to send to Leo AI) */}
+          <button
+            type="button"
+            onClick={() => {
+              setLeoExternalPoints([
+                {
+                  id: 'ctx-day-type',
+                  label: 'Day Type',
+                  value: dayTypeEval.badgeText,
+                  tier: 'CONTEXT',
+                  category: 'DAY_TYPE',
+                  description: 'Current Dalton Day Type',
+                },
+              ])
+              setLeoPanelOpen(true)
+            }}
+            className="hover:opacity-80 transition flex items-center gap-1 cursor-pointer select-none"
+            title="Click to send Day Type to Leo AI"
+          >
             <span className="text-gray-500">Day: </span>
-            <span className="text-purple-300 font-semibold">{dayTypeEval.badgeText}</span>
-          </span>
+            <span className="text-purple-300 font-semibold underline decoration-dotted decoration-purple-400/50 underline-offset-2">
+              {dayTypeEval.badgeText}
+            </span>
+          </button>
           <span className="text-gray-600 text-[10px]">|</span>
-          <span>
+          <button
+            type="button"
+            onClick={() => {
+              setLeoExternalPoints([
+                {
+                  id: 'ctx-open-type',
+                  label: 'Open Type',
+                  value: openingBadge,
+                  tier: 'CONTEXT',
+                  category: 'OPEN',
+                  description: 'Opening Activity Structure',
+                },
+              ])
+              setLeoPanelOpen(true)
+            }}
+            className="hover:opacity-80 transition flex items-center gap-1 cursor-pointer select-none"
+            title="Click to send Open Type to Leo AI"
+          >
             <span className="text-gray-500">Open: </span>
-            <span className="text-cyan-300 font-semibold">{openingBadge}</span>
-          </span>
+            <span className="text-cyan-300 font-semibold underline decoration-dotted decoration-cyan-400/50 underline-offset-2">
+              {openingBadge}
+            </span>
+          </button>
+          <span className="text-gray-600 text-[10px]">|</span>
+          {/* Quick Ask Leo Button */}
+          <button
+            type="button"
+            onClick={() => setLeoPanelOpen(!leoPanelOpen)}
+            className="px-2 py-0.5 rounded-full bg-purple-950/70 border border-purple-500/50 text-[10px] font-mono font-bold text-purple-200 hover:bg-purple-900/90 hover:border-purple-400 transition-all flex items-center gap-1 shadow-sm active:scale-95"
+            title="Open Leo AI Desk Assistant (Voice & Chat)"
+          >
+            <span>🎙️ Leo AI</span>
+          </button>
         </div>
 
         {/* OHLCV Hover Tooltip inline on the right */}
@@ -8676,6 +8801,15 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             </div>
           </DraggableDeskWidget>
         )}
+
+        {/* ── Leo AI Desk Assistant (Voice & Interactive Clickable Telemetry) ── */}
+        <LeoAssistantPanel
+          context={leoContext}
+          isOpen={leoPanelOpen}
+          onToggleOpen={() => setLeoPanelOpen(!leoPanelOpen)}
+          externalAttachedPoints={leoExternalPoints}
+          onClearExternalAttachedPoints={() => setLeoExternalPoints([])}
+        />
       </div>
     </div>
   )
