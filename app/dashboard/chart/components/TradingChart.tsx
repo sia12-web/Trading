@@ -38,7 +38,6 @@ import {
 } from 'lightweight-charts'
 import {
   AVWAP_CANDLE_FETCH_CALENDAR_DAYS,
-  computeAnchoredVwap,
   computeSessionHighlightSpans,
   projectSessionHighlightRects,
   paintSessionHighlightOverlay,
@@ -60,6 +59,13 @@ import {
   closedHistoryOhlcChanged,
   quoteUnixForBucket,
 } from '@/lib/chart/liveFormingBar'
+import {
+  compute5DayFixedRangeVolumeProfile,
+  compute5MonthAnchoredVwap,
+  classifyMarketDayType,
+  type FixedRangeVolumeProfile5D,
+  type DayTypeEvaluation,
+} from '@/lib/chart/context55'
 import {
   formatChartClock,
   formatChartDate,
@@ -116,7 +122,6 @@ import {
   resolveDeskCallAsOfUnix,
   assertDeskTicketEntry,
   ticketAllowedEdges,
-  deskCallSetupEdges,
   type DeskCall,
 } from '@/lib/trading/deskCall'
 import { deskCallModeHoverPrefix } from '@/lib/trading/deskCallMode'
@@ -203,7 +208,6 @@ import {
   deskPlaybookAnalysisMode,
   deskPlaybookHint,
   deskPlaybookUsesAfternoonLevels,
-  deskPlaybookToolbarLabel,
   deskPlaybookPanelTitle,
   isDeskEntryWindowActive,
   isDeskWatchOnlyPlaybook,
@@ -226,11 +230,7 @@ const clampPriceToRangeEdgeEnvelope = (px: number, ..._args: any[]) => px
 const filterLevelsInRangeEdgeBand = (levels: any[], ..._args: any[]) => levels
 const attributePlaybookBandEntry = (..._args: any[]): any => null
 const NO_IN_BAND_LEVELS_MESSAGE = ''
-const RANGE_EDGE_BAND_POINTS = 10
 const RANGE_EDGE_OFF_BAND_MESSAGE = 'Entry restricted'
-const rangeEdgeBandLegend = (..._args: any[]) => ''
-const rangeEdgeBands = (..._args: any[]): any[] => []
-const filterRangeEdgeBands = (b: any[], ..._args: any[]): any[] => b
 
 const computeRangeEdgeTails = (..._args: any[]): any[] => []
 const latestQualityTail = (..._args: any[]): any => null
@@ -258,7 +258,6 @@ export type RangeAtrSnapshot = {
 } | null
 const buildRangeAtrSnapshot = (..._args: any[]): RangeAtrSnapshot => null
 const formatRangeAtrAdviceLine = (..._args: any[]): string | null => null
-const formatRangeAtrChip = (..._args: any[]) => ''
 
 type RangeSeriesPts = { high: { time: number; value: number }[]; low: { time: number; value: number }[] }
 const OR15_COLORS: any = { high: '#3b82f6', low: '#ef4444', mid: '#eab308', buy: '#3b82f6', sell: '#ef4444' }
@@ -266,7 +265,6 @@ const computeOr15Range = (..._args: any[]): any => null
 const computeOr15Signals = (..._args: any[]): any[] => []
 const isOr15Instrument = (..._args: any[]) => false
 const or15LineSeriesData = (..._args: any[]): RangeSeriesPts => ({ high: [], low: [] })
-const or15WindowLabel = (..._args: any[]) => ''
 type Or15Range = any
 
 const NIKKEI_US_RANGE_COLORS: any = { high: '#3b82f6', low: '#ef4444', mid: '#eab308', buy: '#3b82f6', sell: '#ef4444' }
@@ -281,7 +279,6 @@ const computeOr30Range = (..._args: any[]): any => null
 const computeOr30Signals = (..._args: any[]): any[] => []
 const isOr30Instrument = (..._args: any[]) => false
 const or30LineSeriesData = (..._args: any[]): RangeSeriesPts => ({ high: [], low: [] })
-const or30WindowLabel = (..._args: any[]) => ''
 type Or30Range = any
 import {
   setDeskInstrumentPreference,
@@ -300,7 +297,6 @@ import {
 import { snapDeskPrice, snapStopToTick, snapTargetToTick } from '@/lib/trading/instrumentTicks'
 import { deskBookLines } from '@/lib/trading/tradovateMirror'
 import {
-  clickIsOnPriceScale,
   overlayTopFromPrice,
   priceFromClientY,
   riskBoxDollarPreview,
@@ -1082,7 +1078,7 @@ export function TradingChart({
   /** Mirrored IB H/L for ±10 band effect deps (refs alone do not re-render). */
   const [ibLevels, setIbLevels] = useState<{ high: number; low: number } | null>(null)
   /** IB H/L + BRK/REJ markers + ±10 bands — remembered across refresh. */
-  const [showIbBreakouts, setShowIbBreakouts] = useState(() =>
+  const [showIbBreakouts] = useState(() =>
     SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().ib
   )
   /** Open range (first 15m) H/L + volume BRK/REJ */
@@ -1091,7 +1087,7 @@ export function TradingChart({
     low: ISeriesApi<'Line'>
   } | null>(null)
   const or15RangeRef = useRef<Or15Range | null>(null)
-  const [or15Shaped, setOr15Shaped] = useState(false)
+  const [, setOr15Shaped] = useState(false)
   const [or15Locked, setOr15Locked] = useState(false)
   const [showOr15, setShowOr15] = useState(() =>
     SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().or15
@@ -1123,7 +1119,7 @@ export function TradingChart({
     low: ISeriesApi<'Line'>
   } | null>(null)
   const or30RangeRef = useRef<Or30Range | null>(null)
-  const [or30Shaped, setOr30Shaped] = useState(false)
+  const [, setOr30Shaped] = useState(false)
   const [or30Locked, setOr30Locked] = useState(false)
   const [showOr30, setShowOr30] = useState(() =>
     SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().or30
@@ -1136,53 +1132,57 @@ export function TradingChart({
   )
   const ydayLinesRef = useRef<IPriceLine[]>([])
   const ydayPaintKeyRef = useRef('')
-  const [yesterdayBadge, setYesterdayBadge] = useState('Yday off')
+  const [, setYesterdayBadge] = useState('Yday off')
   const [showOpeningActivity, setShowOpeningActivity] = useState(() =>
     SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().opening
   )
   const openingLinesRef = useRef<IPriceLine[]>([])
   const openingPaintKeyRef = useRef('')
   const [openingBadge, setOpeningBadge] = useState('WAIT')
+  const [frvp5d, setFrvp5d] = useState<FixedRangeVolumeProfile5D | null>(null)
+  const frvpLinesRef = useRef<IPriceLine[]>([])
+  const paintFrvp5dRef = useRef<() => void>(() => { })
+  const [ydayProfile, setYdayProfile] = useState<{ vah?: number; val?: number; poc?: number } | null>(null)
   const [showMarketControl, setShowMarketControl] = useState(() =>
     SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().control
   )
-  const [showAuction, setShowAuction] = useState(() => loadDeskOverlayToggles().auction)
+  const [showAuction] = useState(() => loadDeskOverlayToggles().auction)
   const auctionLinesRef = useRef<IPriceLine[]>([])
   const auctionPaintKeyRef = useRef('')
   const auctionSignalsRef = useRef<AuctionOverlaySignal[]>([])
   const paintAuctionOverlayRef = useRef<() => void>(() => { })
-  const [auctionBadge, setAuctionBadge] = useState('off')
+  const [, setAuctionBadge] = useState('off')
   const [auctionHud, setAuctionHud] = useState<AuctionHud | null>(null)
-  const [showDow15mFail, setShowDow15mFail] = useState(
+  const [showDow15mFail] = useState(
     () => loadDeskOverlayToggles().dow15mFail
   )
   const dow15mFailLinesRef = useRef<IPriceLine[]>([])
   const dow15mFailPaintKeyRef = useRef('')
   const dow15mFailSignalsRef = useRef<Dow15mFailSignal[]>([])
   const paintDow15mFailOverlayRef = useRef<() => void>(() => { })
-  const [dow15mFailBadge, setDow15mFailBadge] = useState('off')
+  const [, setDow15mFailBadge] = useState('off')
   const [dow15mFailHud, setDow15mFailHud] = useState<Dow15mFailHud | null>(null)
   const controlLinesRef = useRef<IPriceLine[]>([])
   const controlPaintKeyRef = useRef('')
   const [controlBadge, setControlBadge] = useState('RF WAIT')
   const [callBadge, setCallBadge] = useState('WAIT')
-  const [callHover, setCallHover] = useState(
+  const [, setCallHover] = useState(
     'CALL WAIT — no ticket\n\nTicket stays 1.5R. No Leo. No Level Finder fills.'
   )
-  const [perfBadge, setPerfBadge] = useState('WAIT')
-  const [perfHover, setPerfHover] = useState(
+  const [, setPerfBadge] = useState('WAIT')
+  const [, setPerfHover] = useState(
     'PERF WAIT — not enough letters for a developing value area. Drive may still CALL. Ticket stays 1.5R.'
   )
-  const [sitBadge, setSitBadge] = useState('NONE')
-  const [sitHover, setSitHover] = useState(
+  const [, setSitBadge] = useState('NONE')
+  const [, setSitHover] = useState(
     'SIT NONE — no special situation. CALL side unchanged. Ticket stays 1.5R.'
   )
-  const [regionBadge, setRegionBadge] = useState('WAIT')
-  const [regionHover, setRegionHover] = useState(
+  const [, setRegionBadge] = useState('WAIT')
+  const [, setRegionHover] = useState(
     'REGION WAIT — not enough completed cash days for a 5-day TPO body. CALL unchanged. Ticket stays 1.5R.'
   )
-  const [stayOutBadge, setStayOutBadge] = useState('—')
-  const [stayOutHover, setStayOutHover] = useState(
+  const [, setStayOutBadge] = useState('—')
+  const [, setStayOutHover] = useState(
     'OUT — not a stay-out day. CALL hunts legal ±10. Ticket stays 1.5R.'
   )
   const spikeLinesRef = useRef<IPriceLine[]>([])
@@ -1196,20 +1196,20 @@ export function TradingChart({
   onSessionExitRef.current = onSessionExit
   const sessionExitKeyRef = useRef('')
   const [ibExtendBadge, setIbExtendBadge] = useState('—')
-  const [ibExtendHover, setIbExtendHover] = useState(
+  const [, setIbExtendHover] = useState(
     'IB extend vs revert — advice only after IB locks. First tag is not the entry.'
   )
   const ibExtendRef = useRef<IbExtendAdvice | null>(null)
   const ibLiqLinesRef = useRef<IPriceLine[]>([])
   const paintIbExtendRef = useRef<() => void>(() => { })
   /** Live count of BRK/REJ markers currently painted (for toolbar status). */
-  const [rangeSignalSummary, setRangeSignalSummary] = useState<{
+  const [, setRangeSignalSummary] = useState<{
     ib: number
     or30: number
     lunch: number
     us: number
   }>({ ib: 0, or30: 0, lunch: 0, us: 0 })
-  const [latestTailStatus, setLatestTailStatus] = useState<{
+  const [, setLatestTailStatus] = useState<{
     edge: 'high' | 'low'
     tier: 'light' | 'good' | 'strong'
     label: string
@@ -1226,9 +1226,7 @@ export function TradingChart({
   /** Signature of the painted ±10 tags — repaint only when the tags would differ */
   const entryBandPaintKeyRef = useRef<string | null>(null)
   const entryBandPaintHostRef = useRef<ISeriesApi<'Line'> | null>(null)
-  const [entryBandsVisible, setEntryBandsVisible] = useState(false)
-  const [entryBandLabel, setEntryBandLabel] = useState<string | null>(null)
-  const [rangeAtrSnap, setRangeAtrSnap] = useState<RangeAtrSnapshot | null>(null)
+  const [, setRangeAtrSnap] = useState<RangeAtrSnapshot | null>(null)
   const tickIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const candleRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const lastCandleRef = useRef<OHLCV | null>(null)
@@ -1900,6 +1898,7 @@ export function TradingChart({
       ? yesterdayProfileBadgeText(profile)
       : 'Yday off'
     setYesterdayBadge((prev) => (prev === badge ? prev : badge))
+    setYdayProfile(profile ? { vah: profile.vah, val: profile.val, poc: profile.poc } : null)
     const key = yesterdayProfilePaintKey(showYesterdayProfile, profile)
     if (key === ydayPaintKeyRef.current) return
     ydayPaintKeyRef.current = key
@@ -1986,6 +1985,89 @@ export function TradingChart({
       }
     }
   }, [showOpeningActivity, instrument])
+
+  const paintFrvp5d = useCallback(() => {
+    const host = priceLineHostRef.current
+    const list = candlesRef.current
+    if (!list || list.length === 0) return
+    const profile = compute5DayFixedRangeVolumeProfile(
+      list.map((c) => ({
+        time: c.time as number,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      })),
+      instrument
+    )
+    setFrvp5d(profile)
+    for (const line of frvpLinesRef.current) {
+      try {
+        host?.removePriceLine(line)
+      } catch {
+        /* ignore */
+      }
+    }
+    frvpLinesRef.current = []
+    if (!profile || !host) return
+    try {
+      frvpLinesRef.current.push(
+        host.createPriceLine({
+          price: profile.poc,
+          color: '#f59e0b',
+          title: '5D POC',
+          lineWidth: 2,
+          lineStyle: LineStyle.Solid,
+          axisLabelVisible: true,
+        }),
+        host.createPriceLine({
+          price: profile.vah,
+          color: '#38bdf8',
+          title: '5D VAH',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+        }),
+        host.createPriceLine({
+          price: profile.val,
+          color: '#38bdf8',
+          title: '5D VAL',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+        })
+      )
+    } catch {
+      /* ignore */
+    }
+  }, [instrument])
+
+  const dayTypeEval: DayTypeEvaluation = useMemo(() => {
+    const list = candles || []
+    if (!list.length) {
+      return {
+        type: 'WAITING',
+        badgeText: 'WAIT',
+        title: 'Evaluating Auction',
+        description: 'Waiting for cash session bars to evaluate day structure.',
+      }
+    }
+    return classifyMarketDayType({
+      todayBars: list.map((c) => ({
+        time: c.time as number,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      })),
+      instrument,
+      ydayVah: ydayProfile?.vah,
+      ydayVal: ydayProfile?.val,
+      controlLabel: controlBadge,
+    })
+  }, [candles, instrument, ydayProfile, controlBadge])
 
   const paintAuctionOverlay = useCallback(() => {
     const host = priceLineHostRef.current
@@ -2548,6 +2630,14 @@ export function TradingChart({
   }, [paintDeskCall])
 
   useEffect(() => {
+    paintFrvp5dRef.current = paintFrvp5d
+  }, [paintFrvp5d])
+
+  useEffect(() => {
+    paintFrvp5d()
+  }, [paintFrvp5d])
+
+  useEffect(() => {
     if (!SYSTEMATIC_LIVE_DESK) return
     const publish = () => {
       if (!positionOverlay) {
@@ -2604,20 +2694,7 @@ export function TradingChart({
     paintIbExtend()
   }, [paintIbExtend])
 
-  const ibProximity = useMemo(() => {
-    if (!showIbBreakouts || !ibShaped || !ibRangeRef.current || !livePrice) return null
-    const ib = ibRangeRef.current
-    const range = ib.high - ib.low
-    const buffer = Math.max(range * 0.05, ib.high * 0.0015)
 
-    if (Math.abs(livePrice - ib.high) <= buffer) {
-      return { level: 'HIGH', price: ib.high }
-    }
-    if (Math.abs(livePrice - ib.low) <= buffer) {
-      return { level: 'LOW', price: ib.low }
-    }
-    return null
-  }, [showIbBreakouts, ibShaped, livePrice])
   const playbookUserClosedRef = useRef(false)
 
   const togglePlaybook = useCallback(() => {
@@ -2805,17 +2882,7 @@ export function TradingChart({
       : null
   }
 
-  const [rationaleModal, setRationaleModal] = useState<{
-    open: boolean
-    entryPrice: number
-    stopLoss: number
-    profitTarget: number
-    direction: 'LONG' | 'SHORT'
-    orderType?: 'LIMIT'
-    suggestedReason: string
-  } | null>(null)
-  const [userRationale, setUserRationale] = useState('')
-  const [userSlTpRationale, setUserSlTpRationale] = useState('')
+
 
   // Fullscreen mode (F key / Esc / button)
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -3402,7 +3469,7 @@ export function TradingChart({
   // Clock-gated UI must NOT run during the hydrate render (Railway TZ ≠ browser → React #418).
   const [focusTick, setFocusTick] = useState(0)
   const [clockReady, setClockReady] = useState(false)
-  const [deskSessionLive, setDeskSessionLive] = useState(false)
+  const [, setDeskSessionLive] = useState(false)
   const [visibleInstruments, setVisibleInstruments] = useState<Instrument[]>(() => {
     if (allowedInstruments && allowedInstruments.length > 0) {
       return allowedInstruments.filter((i) => i !== 'NIKKEI')
@@ -4303,6 +4370,17 @@ export function TradingChart({
     }
     {
       const host = priceLineHostRef.current
+      for (const line of frvpLinesRef.current) {
+        try {
+          host?.removePriceLine(line)
+        } catch {
+          /* ignore */
+        }
+      }
+      frvpLinesRef.current = []
+    }
+    {
+      const host = priceLineHostRef.current
       for (const line of controlLinesRef.current) {
         try {
           host?.removePriceLine(line)
@@ -4513,9 +4591,9 @@ export function TradingChart({
     try {
       candleRef.current.setData(candleData)
 
-      // Same AVWAP pipeline for every index — cash open from desk clock
-      const bands = computeAnchoredVwap(
-        ordered.map((c) => ({
+      // Context 5-5: 5-Month Anchored VWAP with standard deviation bands
+      const bands = compute5MonthAnchoredVwap({
+        bars: ordered.map((c) => ({
           time: c.time as number,
           open: c.open,
           high: c.high,
@@ -4523,8 +4601,8 @@ export function TradingChart({
           close: c.close,
           volume: c.volume,
         })),
-        deskClockFor(instrument)
-      )
+        instrument,
+      })
       if (bands?.vwap?.length) {
         const last = bands.vwap[bands.vwap.length - 1]
         avwapLastRef.current =
@@ -4544,8 +4622,8 @@ export function TradingChart({
         vs.lower1.setData(shift(bands.lower1))
         vs.upper2.setData(shift(bands.upper2))
         vs.lower2.setData(shift(bands.lower2))
-        vs.upper3.setData(shift(bands.upper3))
-        vs.lower3.setData(shift(bands.lower3))
+        vs.upper3.setData([])
+        vs.lower3.setData([])
       } else if (vs) {
         vs.vwap.setData([])
         vs.upper1.setData([])
@@ -4560,6 +4638,7 @@ export function TradingChart({
 
       paintYesterdayProfileRef.current()
       paintOpeningActivityRef.current()
+      paintFrvp5dRef.current()
       paintAuctionOverlayRef.current()
       paintDow15mFailOverlayRef.current()
       paintMarketControlRef.current()
@@ -5289,182 +5368,7 @@ export function TradingChart({
     publishPriceTick,
   ])
 
-  // ── Double-click chart to drop TradingView Risk Box at clicked price ───────
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container || !candleRef.current || !chartReady) return
-    if (positionOverlay || pendingLimit) return
-
-    const placeAtClientY = (clientY: number) => {
-      if (!candleRef.current) return
-      const price = priceFromClientY(container, candleRef.current, clientY)
-      if (price == null) return
-      openRiskBox(price)
-    }
-
-    const onDblClick = (e: MouseEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-      placeAtClientY(e.clientY)
-    }
-
-    container.addEventListener('dblclick', onDblClick, true)
-    const canvases = Array.from(container.querySelectorAll('canvas'))
-    for (const c of canvases) {
-      c.addEventListener('dblclick', onDblClick, true)
-    }
-    return () => {
-      container.removeEventListener('dblclick', onDblClick, true)
-      for (const c of canvases) {
-        c.removeEventListener('dblclick', onDblClick, true)
-      }
-    }
-  }, [chartReady, positionOverlay, pendingLimit, openRiskBox])
-
-  // ── Click painted ±10 entry band → open limit ticket at that edge ─────────
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container || !candleRef.current || !chartReady) return
-    if (positionOverlay || pendingLimit) return
-    if (drawZoneActive || drawTimeActive || riskBox) return
-
-    let down: { x: number; y: number } | null = null
-
-    const onDown = (e: MouseEvent) => {
-      if (e.button !== 0) return
-      down = { x: e.clientX, y: e.clientY }
-    }
-
-    const onUp = (e: MouseEvent) => {
-      if (!down || e.button !== 0 || !candleRef.current) {
-        down = null
-        return
-      }
-      const dx = Math.abs(e.clientX - down.x)
-      const dy = Math.abs(e.clientY - down.y)
-      down = null
-      // Ignore pans / drags
-      if (dx > 6 || dy > 6) return
-
-      const price = priceFromClientY(container, candleRef.current, e.clientY)
-      if (price == null) return
-
-      const { strategyRange, snapRanges, ladder } = getStrategyRiskBundle()
-      const liveOk = (range: { label: string; high: number; low: number }) => {
-        if (range.label === 'OR30') {
-          return (
-            !!strategyRange &&
-            strategyRange.label === range.label &&
-            strategyRange.high === range.high &&
-            strategyRange.low === range.low
-          )
-        }
-        return assertBucketEntryEligible({
-          instrument,
-          market: deskMarketFor(instrument),
-          timeSec: deskClockSeconds(instrument),
-          ladder,
-          rangeLabel: range.label,
-        }).ok
-      }
-      const snapArgs = {
-        entry: price,
-        candidates: snapRanges,
-        preferLabel: strategyRange?.label ?? null,
-        liveOk,
-      }
-      let hit = attributePlaybookBandEntry(snapArgs)
-      if (!hit) {
-        // Right-scale H/L tags sit on the price axis — Y can miss the ±10
-        // band by a few points. Snap that click onto the nearest live H/L.
-        if (clickIsOnPriceScale(container, e.clientX)) {
-          const nearest = snapEntryToNearestOpenBandCenter(snapArgs)
-          hit = nearest?.hit ?? null
-        }
-      }
-      if (!hit) return
-
-      const label = hit.range.label || 'range'
-      // OR30 has no independent afternoon bucket — it only trades inside its
-      // own locked morning window, gated upstream (chart hides it once that
-      // window closes; treat any hit here as preview-only).
-      let denyBody: string | null = null
-      if (label === 'OR30') {
-        const or30Live =
-          !!strategyRange &&
-          strategyRange.label === hit.range.label &&
-          strategyRange.high === hit.range.high &&
-          strategyRange.low === hit.range.low
-        if (!or30Live) {
-          denyBody =
-            instrument === 'NIKKEI'
-              ? 'Open-range ±10 window is closed — enter on the live US Range / Tokyo IB playbook when unlocked.'
-              : 'Open-range / OR30 ±10 window is closed — enter on the live next-range playbook when unlocked.'
-        }
-      } else {
-        const bucketCheck = assertBucketEntryEligible({
-          instrument,
-          market: deskMarketFor(instrument),
-          timeSec: deskClockSeconds(instrument),
-          ladder,
-          rangeLabel: hit.range.label,
-        })
-        if (!bucketCheck.ok) denyBody = bucketCheck.message
-      }
-
-      if (denyBody) {
-        onDeskAlert?.({
-          kind: 'entry_band_deny',
-          title: `${label} entry closed`,
-          body: denyBody,
-          telegram: '',
-          instrument,
-        })
-        return
-      }
-
-      e.preventDefault()
-      e.stopPropagation()
-      openRiskBox(hit.center, {
-        lockHit: {
-          center: hit.center,
-          edge: hit.edge,
-          range: hit.range,
-        },
-      })
-    }
-
-    container.addEventListener('mousedown', onDown, true)
-    container.addEventListener('mouseup', onUp, true)
-    const canvases = Array.from(container.querySelectorAll('canvas'))
-    for (const c of canvases) {
-      c.addEventListener('mousedown', onDown, true)
-      c.addEventListener('mouseup', onUp, true)
-    }
-    return () => {
-      container.removeEventListener('mousedown', onDown, true)
-      container.removeEventListener('mouseup', onUp, true)
-      for (const c of canvases) {
-        c.removeEventListener('mousedown', onDown, true)
-        c.removeEventListener('mouseup', onUp, true)
-      }
-    }
-  }, [
-    chartReady,
-    positionOverlay,
-    pendingLimit,
-    drawZoneActive,
-    drawTimeActive,
-    riskBox,
-    getStrategyRiskBundle,
-    openRiskBox,
-    onDeskAlert,
-    instrument,
-    morningAttempts,
-    ibAttempts,
-    lunchAttempts,
-    stopHits,
-  ])
+  // Context 5-5: Interactive limit order tool and entry band highlights removed.
 
   // ── Draw Zone tool — drag to draw a rectangle price zone ────────────────────
   useEffect(() => {
@@ -6638,9 +6542,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       } else if (key === 'l') {
         e.preventDefault()
         setShowLevels((prev) => !prev)
-      } else if (key === 'b') {
-        e.preventDefault()
-        setShowIbBreakouts((prev) => !prev)
       } else if (key === 'y') {
         e.preventDefault()
         setShowYesterdayProfile((prev) => !prev)
@@ -6688,13 +6589,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             return true
           }
         })
-      } else if (key === 'o') {
-        e.preventDefault()
-        if (riskBoxActive && riskBox) {
-          cancelRiskBox()
-        } else {
-          openRiskBox()
-        }
       } else if (key === 'a') {
         e.preventDefault()
         togglePriceAlert()
@@ -7046,7 +6940,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
   }, [positionOverlay, editableOverlay, pendingLimit, editablePending, filledBook, workingBook, aiVerdict, chartReady, clearHoverPreview, onAdjustBrackets, onAdjustWorkingBrackets, asiaOco])
 
   /** Levels / playbook — strategy-aware titles (morning → IB → lunch break → lunch-range) */
-  const tokyoDesk = instrument === 'NIKKEI'
   void focusTick
   const playbookMode = resolveDeskPlaybookMode({
     instrument,
@@ -7096,278 +6989,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
   /** Paint ±10 zones for toggled shaped overlays (OR30 only while morning window open). */
   useEffect(() => {
-    const host = priceLineHostRef.current
-    const clearBands = () => {
-      if (host) {
-        for (const line of entryBandLinesRef.current) {
-          try {
-            host.removePriceLine(line)
-          } catch {
-            /* ignore */
-          }
-        }
-      }
-      entryBandLinesRef.current = []
-      setEntryBandsVisible(false)
-      setEntryBandLabel(null)
-    }
-    const markPainted = (key: string) => {
-      entryBandPaintKeyRef.current = key
-      entryBandPaintHostRef.current = host
-    }
-
-    if (!chartReady || !host) {
-      if (entryBandPaintKeyRef.current !== null) {
-        entryBandPaintKeyRef.current = null
-        entryBandPaintHostRef.current = null
-        clearBands()
-      }
-      return
-    }
-
-    const swing = ibExtendRef.current?.swing ?? null
-    const activeRaw = activeRangeForPlaybook({
-      playbookMode,
-      instrument,
-      or30: or30RangeRef.current,
-      ib: ibRangeRef.current,
-      usRange: usRangeRef.current,
-      or15: or15RangeRef.current,
-      morningAttempts,
-    })
-    const active = activeRaw ? applyIbLiquiditySwingToRange(activeRaw, swing) : null
-    const overlays = applyIbLiquiditySwingToRanges(
-      entryEligibleOverlayRanges({
-        playbookMode,
-        instrument,
-        showOr30,
-        // IB H/L + ±10 follow the IB BRK/REJ toolbar toggle (remembered across refresh).
-        showIb: showIbBreakouts,
-        showUsRange,
-        showOr15,
-        or30: or30RangeRef.current,
-        ib: ibLevels ?? ibRangeRef.current,
-        usRange: usRangeRef.current,
-        or15: or15RangeRef.current,
-        morningAttempts,
-      }),
-      swing
-    )
-    // Right-scale ±10 tags follow the study toggles (R / B / N / U) — not the
-    // active playbook. Snap/place still uses studyEntrySnapRanges + active.
-    const chart = chartRef.current
-    const call = deskCallRef.current
-    const mode = useCallRef.current
-    const allowed = ticketAllowedEdges({ useCall: mode, call })
-    const setupEdges = mode === false ? deskCallSetupEdges(call) : []
-
-    // Every painted tag (price, title, color) and the legend are a pure function
-    // of these — identical key means the existing lines are already correct.
-    const paintKey = [
-      canPlaceOrder ? 'p1' : 'p0',
-      mode == null ? 'mn' : mode ? 'm1' : 'm0',
-      allowed == null ? '*' : allowed.join('+'),
-      setupEdges.join('+'),
-      active ? `${active.label ?? ''}|${active.high}|${active.low}` : '-',
-      overlays.map((o: any) => `${o.label ?? ''}|${o.high}|${o.low}`).join(';'),
-    ].join('~')
-    if (entryBandPaintHostRef.current === host && entryBandPaintKeyRef.current === paintKey) {
-      return
-    }
-
-    const savedSpacing = readDeskBarSpacing(chart)
-    if (overlays.length === 0 || mode == null) {
-      clearBands()
-      markPainted(paintKey)
-      keepDeskBarSpacing(chart, savedSpacing)
-      return
-    }
-    if (allowed != null && allowed.length === 0) {
-      clearBands()
-      markPainted(paintKey)
-      keepDeskBarSpacing(chart, savedSpacing)
-      return
-    }
-
-    clearBands()
-    markPainted(paintKey)
-
-    const palette: Record<
-      string,
-      { high: string; low: string; highDim: string; lowDim: string }
-    > = {
-      OR30: {
-        high: 'rgba(45, 212, 191, 0.95)',
-        low: 'rgba(52, 211, 153, 0.95)',
-        highDim: 'rgba(45, 212, 191, 0.4)',
-        lowDim: 'rgba(52, 211, 153, 0.4)',
-      },
-      IB: {
-        high: 'rgba(56, 189, 248, 0.95)',
-        low: 'rgba(96, 165, 250, 0.95)',
-        highDim: 'rgba(56, 189, 248, 0.4)',
-        lowDim: 'rgba(96, 165, 250, 0.4)',
-      },
-      'Tokyo IB': {
-        high: 'rgba(56, 189, 248, 0.95)',
-        low: 'rgba(96, 165, 250, 0.95)',
-        highDim: 'rgba(56, 189, 248, 0.4)',
-        lowDim: 'rgba(96, 165, 250, 0.4)',
-      },
-      'US Range': {
-        high: 'rgba(248, 113, 113, 0.95)',
-        low: 'rgba(251, 146, 60, 0.95)',
-        highDim: 'rgba(248, 113, 113, 0.4)',
-        lowDim: 'rgba(251, 146, 60, 0.4)',
-      },
-      OR15: {
-        high: 'rgba(245, 158, 11, 0.95)',
-        low: 'rgba(251, 191, 36, 0.95)',
-        highDim: 'rgba(245, 158, 11, 0.4)',
-        lowDim: 'rgba(251, 191, 36, 0.4)',
-      },
-    }
-    const fallback = {
-      high: 'rgba(56, 189, 248, 0.95)',
-      low: 'rgba(52, 211, 153, 0.95)',
-      highDim: 'rgba(56, 189, 248, 0.4)',
-      lowDim: 'rgba(52, 211, 153, 0.4)',
-    }
-
-    let anyLive = false
-    for (const strategyRange of overlays) {
-      const bands = filterRangeEdgeBands(rangeEdgeBands(strategyRange), allowed)
-      if (bands.length === 0) continue
-      const label = strategyRange.label || 'range'
-      const entryLive =
-        !!canPlaceOrder &&
-        !!active &&
-        active.label === label &&
-        active.high === strategyRange.high &&
-        active.low === strategyRange.low
-      if (entryLive) anyLive = true
-      const colors = palette[label] ?? fallback
-      const setupHigh = setupEdges.includes('high')
-      const setupLow = setupEdges.includes('low')
-      const setupMid = setupEdges.includes('mid')
-      const highColor =
-        mode === false
-          ? setupEdges.length === 0
-            ? entryLive
-              ? colors.high
-              : colors.highDim
-            : setupHigh
-              ? colors.high
-              : colors.highDim
-          : entryLive
-            ? colors.high
-            : colors.highDim
-      const lowColor =
-        mode === false
-          ? setupEdges.length === 0
-            ? entryLive
-              ? colors.low
-              : colors.lowDim
-            : setupLow
-              ? colors.low
-              : colors.lowDim
-          : entryLive
-            ? colors.low
-            : colors.lowDim
-      const midColor =
-        mode === false
-          ? setupEdges.length === 0
-            ? entryLive
-              ? 'rgba(168, 85, 247, 0.95)'
-              : 'rgba(168, 85, 247, 0.4)'
-            : setupMid
-              ? 'rgba(168, 85, 247, 0.95)'
-              : 'rgba(168, 85, 247, 0.4)'
-          : entryLive
-            ? 'rgba(168, 85, 247, 0.95)'
-            : 'rgba(168, 85, 247, 0.4)'
-      const highBand = bands.find((b) => b.edge === 'high')
-      const midBand = bands.find((b) => b.edge === 'mid')
-      const lowBand = bands.find((b) => b.edge === 'low')
-      const specs: Array<{ price: number; color: string; title: string }> = []
-      if (highBand) {
-        specs.push({
-          price: strategyRange.high,
-          color: highColor,
-          title: `${label} H`,
-        })
-      }
-      if (midBand) {
-        specs.push({
-          price: (strategyRange.high + strategyRange.low) / 2,
-          color: midColor,
-          title: `${label} 50%`,
-        })
-      }
-      if (lowBand) {
-        specs.push({
-          price: strategyRange.low,
-          color: lowColor,
-          title: `${label} L`,
-        })
-      }
-      for (const s of specs) {
-        try {
-          entryBandLinesRef.current.push(
-            host.createPriceLine({
-              price: s.price,
-              // Transparent stroke — only the right-scale tag should show (IB included).
-              color: 'rgba(0,0,0,0)',
-              axisLabelColor: s.color,
-              axisLabelTextColor: '#f8fafc',
-              lineWidth: 1,
-              lineStyle: LineStyle.SparseDotted,
-              axisLabelVisible: true,
-              lineVisible: false,
-              title: s.title,
-            })
-          )
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-
-    setEntryBandsVisible(entryBandLinesRef.current.length > 0)
-    const legendParts = overlays.map((o: any) => {
-      const name = o.label || 'range'
-      return `${name} ${rangeEdgeBandLegend(o)}`
-    })
-    const legendList = legendParts.join(' · ')
-    const callTag = mode === false ? 'setup' : 'CALL'
-    setEntryBandLabel(
-      anyLive
-        ? `±${RANGE_EDGE_BAND_POINTS} ${callTag} ${legendList} entry zones`
-        : `±${RANGE_EDGE_BAND_POINTS} ${callTag} ${legendList} (shaped — entry window closed or inactive)`
-    )
-    keepDeskBarSpacing(chart, savedSpacing)
-  }, [
-    chartReady,
-    canPlaceOrder,
-    playbookMode,
-    instrument,
-    rangeStrategy,
-    morningAttempts,
-    or30Locked,
-    ibShaped,
-    ibLevels,
-    or15Locked,
-    usRangeShaped,
-    showOr30,
-    showIbBreakouts,
-    showUsRange,
-    showOr15,
-    candles,
-    focusTick,
-    callBadge,
-    ibExtendBadge,
-    resolvedUseCall,
-  ])
+    // Context 5-5: Order entry band highlights removed
+  }, [])
 
   // Active playbook range ATR chip (advise-only; refresh with focusTick / range shape)
   const onRangeAtrRef = useRef(onRangeAtr)
@@ -7648,9 +7271,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     !canPlaceOrder &&
     !inEntryWindow &&
     isDeskWatchOnlyPlaybook(playbookMode)
-  const playbookButtonLabel = deskPlaybookToolbarLabel(playbookMode, {
-    watchOnly: afternoonWatch,
-  })
+
   const playbookPanelTitle = deskPlaybookPanelTitle(playbookMode, instrument, {
     watchOnly: afternoonWatch,
   })
@@ -7768,394 +7389,78 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           5m
         </span>
 
-        {isAuctionInstrument(instrument) && (
-          <button
-            type="button"
-            title={
-              showAuction
-                ? 'Auction overlay on — sequential 15M/30M/IB absorb-breakout ranges, BUY/SELL, HUD. Click to hide.'
-                : 'Show auction: sequential morning absorb-breakout (15M → 30M → IB), range H/L, half-back, signals, HUD'
-            }
-            onClick={() => setShowAuction((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showAuction
-              ? 'bg-orange-600/30 border-orange-500/50 text-orange-100'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-orange-200 hover:border-orange-500/40'
-              }`}
-          >
-            <span className={`w-2 h-2 rounded-full inline-block ${showAuction ? 'bg-orange-400' : 'bg-gray-600'}`} />
-            <span>Auction</span>
-            <span className="text-[10px] font-normal text-orange-200/80">{auctionBadge}</span>
-          </button>
-        )}
-
-        {isDowVolumeBarInstrument(instrument) && (
-          <button
-            type="button"
-            title={
-              showDow15mFail
-                ? 'Dow 15M fail overlay on — volume-bar FAIL (wait 5, 1.5R). Click to hide.'
-                : 'Show auction volume-bar — Dow 15M fail (09:45–10:00 arm, opposite-side break)'
-            }
-            onClick={() => setShowDow15mFail((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showDow15mFail
-              ? 'bg-cyan-600/30 border-cyan-500/50 text-cyan-100'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-cyan-200 hover:border-cyan-500/40'
-              }`}
-          >
-            <span className={`w-2 h-2 rounded-full inline-block ${showDow15mFail ? 'bg-cyan-400' : 'bg-gray-600'}`} />
-            <span>15M fail</span>
-            <span className="text-[10px] font-normal text-cyan-200/80">{dow15mFailBadge}</span>
-          </button>
-        )}
-
-        {/* IB H/L + BRK/REJ + ±10 (Press B) — remembered across refresh */}
-        {deskSessionLive && (
-          <button
-            type="button"
-            title={
-              showIbBreakouts
-                ? 'IB H/L + BRK/REJ markers + ±10 bands on. BRK needs close beyond H/L + RVOL when volume exists; REJ = wick reject (Press B).'
-                : 'Show IB high/low, break/reject markers, and ±10 bands (Press B)'
-            }
-            onClick={() => setShowIbBreakouts((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showIbBreakouts
-              ? 'bg-blue-600/30 border-blue-500/50 text-blue-100'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-blue-200 hover:border-blue-500/40'
-              }`}
-          >
-            <span className={`w-2 h-2 rounded-full inline-block ${showIbBreakouts ? 'bg-blue-400' : 'bg-gray-600'}`} />
-            <span>IB BRK/REJ (B)</span>
-            {ibShaped && (
-              <span className="text-[10px] font-normal text-blue-300/80">
-                {rangeSignalSummary.ib > 0 ? `${rangeSignalSummary.ib}` : '0'}
-              </span>
-            )}
-          </button>
-        )}
-
-        {deskSessionLive && (
-          <button
-            type="button"
-            title={
-              showYesterdayProfile
-                ? 'Yesterday YH/YL/VA/POC + day type + superimposed range on (Press Y)'
-                : 'Show yesterday cash profile: YH/YL/VAH/VAL/POC and open type (Press Y)'
-            }
-            onClick={() => setShowYesterdayProfile((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showYesterdayProfile
-              ? 'bg-amber-600/30 border-amber-500/50 text-amber-100'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-amber-200 hover:border-amber-500/40'
-              }`}
-          >
-            <span className={`w-2 h-2 rounded-full inline-block ${showYesterdayProfile ? 'bg-amber-400' : 'bg-gray-600'}`} />
-            <span>Yday (Y)</span>
-            {showYesterdayProfile && (
-              <span className="text-[10px] font-normal text-amber-200/80">{yesterdayBadge}</span>
-            )}
-          </button>
-        )}
-
-        {deskSessionLive && (
-          <button
-            type="button"
-            title={
-              showSessionBands
-                ? 'Full session columns + range boxes on (Press H). Click for the quieter high→low boxes.'
-                : 'Show full Asia / London / NY columns and range boxes like the session map (Press H)'
-            }
-            onClick={() => setShowSessionBands((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showSessionBands
-              ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-100'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-emerald-200 hover:border-emerald-500/40'
-              }`}
-          >
-            <span className={`w-2 h-2 rounded-full inline-block ${showSessionBands ? 'bg-emerald-400' : 'bg-gray-600'}`} />
-            <span>Sessions (H)</span>
-          </button>
-        )}
-
-        {deskSessionLive && (
-          <button
-            type="button"
-            title={
-              showOpeningActivity
-                ? 'Dalton opening type lines on — open + first 5m H/L. Click to hide lines (type still updates).'
-                : 'Show Dalton opening type: Drive / Test-Drive / Rejection-Reverse / Auction. Click for open + first-bar H/L.'
-            }
-            onClick={() => setShowOpeningActivity((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showOpeningActivity
-              ? 'bg-cyan-600/30 border-cyan-500/50 text-cyan-100'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-cyan-200 hover:border-cyan-500/40'
-              }`}
-          >
-            <span className={`w-2 h-2 rounded-full inline-block ${showOpeningActivity ? 'bg-cyan-400' : 'bg-gray-600'}`} />
-            <span>Open</span>
-            <span className="text-[10px] font-normal text-cyan-200/80">{openingBadge}</span>
-          </button>
-        )}
-
-        {deskSessionLive && (
-          <button
-            type="button"
-            title={
-              showMarketControl
-                ? 'Dalton control dPOC line on. Click to hide the line (RF type still updates). ↑ / ↓ = ONE-TF. 2TF = RF without matching dPOC.'
-                : 'Show Dalton control: Rotation Factor + developing POC. ↑ / ↓ = ONE-TF BUY/SELL. 2TF is not a CALL. Click for the dPOC line.'
-            }
-            onClick={() => setShowMarketControl((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showMarketControl
-              ? 'bg-indigo-600/30 border-indigo-500/50 text-indigo-100'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-indigo-200 hover:border-indigo-500/40'
-              }`}
-          >
-            <span className={`w-2 h-2 rounded-full inline-block ${showMarketControl ? 'bg-indigo-400' : 'bg-gray-600'}`} />
-            <span>Ctrl</span>
-            <span className="text-[10px] font-normal text-indigo-200/80">{controlBadge}</span>
-          </button>
-        )}
-
-        {deskSessionLive && (
-          <span
-            title={perfHover}
-            className="group relative flex cursor-help items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border rounded-lg bg-transparent border-zinc-500/40 text-zinc-400"
-          >
-            <span className="w-2 h-2 rounded-full inline-block bg-zinc-500" />
-            <span>Perf</span>
-            <span className="text-[10px] font-normal text-zinc-400/80">{perfBadge}</span>
-            <span
-              role="tooltip"
-              className="pointer-events-none invisible absolute left-0 top-full z-50 mt-1 w-[22rem] whitespace-pre-wrap rounded-lg border border-zinc-500/40 bg-[#0d1117] px-2.5 py-2 text-left text-[10px] font-normal normal-case leading-snug tracking-normal text-zinc-200 shadow-xl group-hover:visible"
-            >
-              {perfHover}
-            </span>
-          </span>
-        )}
-
-        {deskSessionLive && (
-          <span
-            title={regionHover}
-            className="group relative flex cursor-help items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border rounded-lg bg-transparent border-zinc-500/40 text-zinc-400"
-          >
-            <span className="w-2 h-2 rounded-full inline-block bg-zinc-500" />
-            <span>Region</span>
-            <span className="text-[10px] font-normal text-zinc-400/80">{regionBadge}</span>
-            <span
-              role="tooltip"
-              className="pointer-events-none invisible absolute left-0 top-full z-50 mt-1 w-[22rem] whitespace-pre-wrap rounded-lg border border-zinc-500/40 bg-[#0d1117] px-2.5 py-2 text-left text-[10px] font-normal normal-case leading-snug tracking-normal text-zinc-200 shadow-xl group-hover:visible"
-            >
-              {regionHover}
-            </span>
-          </span>
-        )}
-
-        {deskSessionLive && (
-          <span
-            title={stayOutHover}
-            className="group relative flex cursor-help items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border rounded-lg bg-transparent border-zinc-500/40 text-zinc-400"
-          >
-            <span className="w-2 h-2 rounded-full inline-block bg-zinc-500" />
-            <span>Out</span>
-            <span className="text-[10px] font-normal text-zinc-400/80">{stayOutBadge}</span>
-            <span
-              role="tooltip"
-              className="pointer-events-none invisible absolute left-0 top-full z-50 mt-1 w-[22rem] whitespace-pre-wrap rounded-lg border border-zinc-500/40 bg-[#0d1117] px-2.5 py-2 text-left text-[10px] font-normal normal-case leading-snug tracking-normal text-zinc-200 shadow-xl group-hover:visible"
-            >
-              {stayOutHover}
-            </span>
-          </span>
-        )}
-
-        {deskSessionLive && (
-          <span
-            title={sitHover}
-            className="group relative flex cursor-help items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border rounded-lg bg-transparent border-zinc-500/40 text-zinc-400"
-          >
-            <span className="w-2 h-2 rounded-full inline-block bg-zinc-500" />
-            <span>Sit</span>
-            <span className="text-[10px] font-normal text-zinc-400/80">{sitBadge}</span>
-            <span
-              role="tooltip"
-              className="pointer-events-none invisible absolute left-0 top-full z-50 mt-1 w-[22rem] whitespace-pre-wrap rounded-lg border border-zinc-500/40 bg-[#0d1117] px-2.5 py-2 text-left text-[10px] font-normal normal-case leading-snug tracking-normal text-zinc-200 shadow-xl group-hover:visible"
-            >
-              {sitHover}
-            </span>
-          </span>
-        )}
-
-        {/* Open range — all desk names (Press N) */}
-        {deskSessionLive && isOr15Instrument(instrument) && (
-          <button
-            type="button"
-            title={
-              showOr15
-                ? `Open range lines ${or15WindowLabel(instrument)} + O15 BRK/REJ after lock (Press N)`
-                : 'Show Open range high / low (Press N). First 15 minutes of cash open.'
-            }
-            onClick={() => setShowOr15((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showOr15
-              ? 'bg-amber-600/30 border-amber-500/50 text-amber-100'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-amber-200 hover:border-amber-500/40'
-              }`}
-          >
-            <span className={`w-2 h-2 rounded-full inline-block ${showOr15 ? 'bg-amber-400' : 'bg-gray-600'}`} />
-            <span>Open range (N)</span>
-            {or15Shaped && (
-              <span className="text-[10px] font-normal text-amber-200/80">
-                {rangeSignalSummary.lunch > 0 ? `${rangeSignalSummary.lunch}` : '0'}
-              </span>
-            )}
-          </button>
-        )}
-
-        {/* Nikkei US Range H/L toggle (Press U) — IB-style lines only */}
-        {deskSessionLive && !SYSTEMATIC_LIVE_DESK && instrument === 'NIKKEI' && (
-          <button
-            type="button"
-            title={
-              showUsRange
-                ? 'US H/L lines visible (Press U)'
-                : 'Show current US session H/L (Press U)'
-            }
-            onClick={() => setShowUsRange((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showUsRange
-              ? 'bg-red-600/30 border-red-500/50 text-red-100'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-red-200 hover:border-red-500/40'
-              }`}
-          >
-            <span className={`w-2 h-2 rounded-full inline-block ${showUsRange ? 'bg-red-500' : 'bg-gray-600'}`} />
-            <span>US Range (U)</span>
-          </button>
-        )}
-
-        {/* Opening range 30m (Press R) — lines + OR BRK/REJ markers */}
-        {deskSessionLive && isOr30Instrument(instrument) && (
-          <button
-            type="button"
-            title={
-              showOr30
-                ? `OR30 H/L + OR BRK/REJ — ${or30WindowLabel(instrument)} (Press R). Range is calculated even if you missed the window. BRK = close beyond H/L (RVOL when volume exists). REJ = wick reject.`
-                : `OR30 is calculated from cash open even if you arrive late. Press R to show H/L + BRK/REJ — ${or30WindowLabel(instrument)}`
-            }
-            onClick={() => setShowOr30((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showOr30
-              ? 'bg-teal-600/30 border-teal-500/50 text-teal-100'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-teal-200 hover:border-teal-500/40'
-              }`}
-          >
-            <span className={`w-2 h-2 rounded-full inline-block ${showOr30 ? 'bg-teal-400' : 'bg-gray-600'}`} />
-            <span>OR30 BRK/REJ (R)</span>
-            {or30Locked && !showOr30 && (
-              <span className="text-[10px] font-normal text-teal-200/80">locked</span>
-            )}
-            {or30Shaped && (
-              <span className="text-[10px] font-normal text-teal-200/80">
-                {rangeSignalSummary.or30 > 0 ? `${rangeSignalSummary.or30}` : '0'}
-              </span>
-            )}
-          </button>
-        )}
-
-        {/* IB Proximity Badge when price approaches IB High / IB Low */}
-        {ibProximity && (
-          <span
-            className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-extrabold uppercase tracking-wide animate-pulse shadow-sm ${ibProximity.level === 'HIGH'
-              ? 'border-amber-500/80 bg-amber-950/80 text-amber-200'
-              : 'border-purple-500/80 bg-purple-950/80 text-purple-200'
-              }`}
-            title={`Price is testing Initial Balance ${ibProximity.level} (${ibProximity.price.toLocaleString()})`}
-          >
-            ⚡ TESTING IB {ibProximity.level} ({ibProximity.price.toLocaleString()})
-          </span>
-        )}
-
-        {/* Active playbook ±10 band — entries unlocked (limit or market) */}
-        {edgeProximity && canPlaceOrder && (
-          <span
-            className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-extrabold uppercase tracking-wide animate-pulse shadow-sm ${edgeProximity.edge === 'high'
-              ? 'border-sky-500/80 bg-sky-950/80 text-sky-100'
-              : edgeProximity.edge === 'mid'
-                ? 'border-violet-500/80 bg-violet-950/80 text-violet-100'
-                : 'border-emerald-500/80 bg-emerald-950/80 text-emerald-100'
-              }`}
-            title={`Live price is within ±10 of ${edgeProximity.label} ${edgeProximity.edge === 'mid' ? '50% mid' : edgeProximity.edge} (${edgeProximity.center.toLocaleString()}). Limit allowed.`}
-          >
-            IN BAND · {edgeProximity.label}{' '}
-            {edgeProximity.edge === 'mid' ? '50%' : edgeProximity.edge.toUpperCase()} (
-            {edgeProximity.center.toLocaleString()})
-          </span>
-        )}
-
-        {deskSessionLive && !SYSTEMATIC_LIVE_DESK && deskLevelsActive && (
-          <button
-            type="button"
-            title={
-              playbookOpen
-                ? `Hide ${playbookButtonLabel} (Press P) — advise only`
-                : afternoonWatch
-                  ? tokyoDesk
-                    ? 'Show Tokyo watch playbook (Press P) — advise only'
-                    : 'Show afternoon watch playbook (Press P) — advise only'
-                  : `Show ${playbookButtonLabel} (Press P) — advise only; place on CALL ±10`
-            }
-            onClick={togglePlaybook}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${playbookOpen
-              ? 'bg-surface-600 border-surface-400 text-gray-200'
-              : 'bg-transparent border-surface-600 text-gray-500 hover:text-gray-300'
-              }`}
-          >
-            {playbookButtonLabel} (P)
-          </button>
-        )}
-
-
-        {deskSessionLive &&
-          !SYSTEMATIC_LIVE_DESK &&
-          deskLevelsActive &&
-          afternoonWatch &&
-          !canPlaceOrder &&
-          !positionOverlay &&
-          !pendingLimit && (
-            <span
-              className="rounded-lg border border-surface-600 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500"
-              title={
-                tokyoDesk
-                  ? 'Outside Tokyo entry windows — levels are watch-only until cash close'
-                  : 'Outside entry windows (morning / OR30 / IB) — levels are watch-only'
-              }
-            >
-              Watch only
+        {/* Context 5-5 Pill: 5-Day FRVP + 5-Month AVWAP */}
+        <span
+          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border rounded-lg bg-amber-500/10 border-amber-500/30 text-amber-300"
+          title={
+            frvp5d
+              ? `Context Oriented 5-5 System:\n• 5-Day FRVP (NYC Session Anchor: ${new Date(frvp5d.startUnix * 1000).toLocaleString()}):\n  POC: ${frvp5d.poc.toLocaleString()} (Volume: ${Math.round(frvp5d.totalVolume).toLocaleString()})\n  VAH: ${frvp5d.vah.toLocaleString()}\n  VAL: ${frvp5d.val.toLocaleString()}\n• 5-Month Anchored VWAP (±1σ, ±2σ)`
+              : 'Context Oriented 5-5: 5D FRVP (NYC Open Anchor) + 5M Anchored VWAP'
+          }
+        >
+          <span className="w-2 h-2 rounded-full inline-block bg-amber-400" />
+          <span>Context 5-5</span>
+          {frvp5d && (
+            <span className="text-[10px] font-mono text-amber-200/90 font-normal">
+              POC {frvp5d.poc.toLocaleString()}
             </span>
           )}
+        </span>
 
-
-
-        {/* Interactive TradingView Risk/Reward Limit Order Tool */}
+        {/* CTRL button: toggles Dalton market control & dPOC line */}
         <button
           type="button"
           title={
-            riskBox
-              ? 'Limit Order active — place order or Esc to close'
-              : 'Interactive Limit Order Tool (Press O)'
+            showMarketControl
+              ? 'Dalton control dPOC line on. Click to hide the line (RF type still updates).'
+              : 'Show Dalton control: Rotation Factor + developing POC line.'
           }
-          onClick={() => {
-            if (riskBoxActive && riskBox) {
-              cancelRiskBox()
-            } else {
-              openRiskBox()
-            }
-          }}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${riskBox
-            ? 'bg-sky-600/30 border-sky-500/50 text-sky-100 animate-pulse'
-            : 'bg-transparent border-surface-600 text-gray-500 hover:text-sky-200 hover:border-sky-500/40'
+          onClick={() => setShowMarketControl((v) => !v)}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showMarketControl
+            ? 'bg-indigo-600/30 border-indigo-500/50 text-indigo-100'
+            : 'bg-transparent border-surface-600 text-gray-500 hover:text-indigo-200 hover:border-indigo-500/40'
             }`}
         >
-          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <rect x="2" y="2" width="12" height="6" rx="1" className="fill-emerald-500/30 stroke-emerald-400" />
-            <rect x="2" y="8" width="12" height="6" rx="1" className="fill-red-500/30 stroke-red-400" />
-            <line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" strokeWidth="2" />
-          </svg>
-          {riskBox ? 'Limit Order Active' : 'Limit Order (O)'}
+          <span className={`w-2 h-2 rounded-full inline-block ${showMarketControl ? 'bg-indigo-400' : 'bg-gray-600'}`} />
+          <span>CTRL</span>
+          <span className="text-[10px] font-normal text-indigo-200/80">{controlBadge}</span>
         </button>
+
+        {/* Open button: says the type of opening & toggles opening lines */}
+        <button
+          type="button"
+          title={
+            showOpeningActivity
+              ? 'Dalton opening type lines on — open + first 5m H/L. Click to hide lines (type still updates).'
+              : 'Show Dalton opening type: Open-Drive / Open-Test-Drive / Rejection-Reverse / Open-Auction.'
+          }
+          onClick={() => setShowOpeningActivity((v) => !v)}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all border rounded-lg ${showOpeningActivity
+            ? 'bg-cyan-600/30 border-cyan-500/50 text-cyan-100'
+            : 'bg-transparent border-surface-600 text-gray-500 hover:text-cyan-200 hover:border-cyan-500/40'
+            }`}
+        >
+          <span className={`w-2 h-2 rounded-full inline-block ${showOpeningActivity ? 'bg-cyan-400' : 'bg-gray-600'}`} />
+          <span>Open</span>
+          <span className="text-[10px] font-normal text-cyan-200/80">{openingBadge}</span>
+        </button>
+
+        {/* Out button: says the type of the day */}
+        <span
+          title={`${dayTypeEval.title}: ${dayTypeEval.description}`}
+          className="group relative flex cursor-help items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border rounded-lg bg-transparent border-zinc-500/40 text-zinc-300"
+        >
+          <span className="w-2 h-2 rounded-full inline-block bg-purple-400" />
+          <span>Out</span>
+          <span className="text-[10px] font-normal text-purple-200/90">{dayTypeEval.badgeText}</span>
+          <span
+            role="tooltip"
+            className="pointer-events-none invisible absolute left-0 top-full z-50 mt-1 w-[20rem] whitespace-pre-wrap rounded-lg border border-zinc-500/40 bg-[#0d1117] px-2.5 py-2 text-left text-[10px] font-normal normal-case leading-snug tracking-normal text-zinc-200 shadow-xl group-hover:visible"
+          >
+            <div className="font-bold text-white mb-1">{dayTypeEval.title}</div>
+            <div>{dayTypeEval.description}</div>
+          </span>
+        </span>
 
         {/* Draggable price alert — Telegram on touch (A key); arms after price leaves */}
         <button
@@ -8191,22 +7496,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 : 'Price Alert Active'
             : 'Price Alert (A)'}
         </button>
-
-        {/* Toolbar Direction Switcher — regular ±10 only; CALL locks side */}
-        {riskBox && resolvedUseCall === false && (
-          <button
-            type="button"
-            onClick={toggleRiskBoxDirection}
-            className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-mono font-extrabold uppercase rounded-lg border transition shadow-sm ${riskBox.direction === 'LONG'
-              ? 'bg-red-950/80 border-red-500/70 text-red-300 hover:bg-red-900'
-              : 'bg-emerald-950/80 border-emerald-500/70 text-emerald-300 hover:bg-emerald-900'
-              }`}
-            title={`Switch mode from ${riskBox.direction} to ${riskBox.direction === 'LONG' ? 'SHORT' : 'LONG'}`}
-          >
-            <span>⇄</span>
-            <span>{riskBox.direction === 'LONG' ? 'SWITCH TO SHORT' : 'SWITCH TO LONG'}</span>
-          </button>
-        )}
 
         {/* Fullscreen mode button (Press F / Esc) */}
         <button
@@ -8346,178 +7635,57 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         <OHLCVTooltip data={tooltip} color={meta.color} />
       </div>
 
-      {/* Range overlay status — lines vs BRK/REJ (no separate volume pane) */}
-      {deskSessionLive && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[10px] text-gray-500">
-          <span className="uppercase tracking-wider text-gray-600">Ranges</span>
-          {entryBandsVisible && entryBandLabel && (
-            <span
-              className={
-                canPlaceOrder
-                  ? 'text-sky-300 font-semibold'
-                  : 'text-sky-300/50'
-              }
-              title="Cyan = high ±10 · Emerald = low ±10. Enter only inside these bands when the entry window is open."
-            >
-              {entryBandLabel}
-            </span>
-          )}
-          {rangeAtrSnap && (
-            <span
-              className="text-violet-300/90 font-medium tabular-nums"
-              title={formatRangeAtrAdviceLine(rangeAtrSnap) ?? undefined}
-            >
-              {formatRangeAtrChip(rangeAtrSnap)}
-            </span>
-          )}
-          <span title="Gold yesterday YH/YL/VA/POC + Dalton open type — toggle with Press Y.">
-            <span className={showYesterdayProfile ? 'text-amber-500' : 'text-gray-600'}>
-              {yesterdayBadge}
-            </span>
+      {/* Context 5-5 Status Summary */}
+      {frvp5d && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-[11px] text-gray-400">
+          <span className="font-semibold text-amber-400">Context 5-5 (NYC Anchor)</span>
+          <span>
+            <span className="text-gray-500">5D POC: </span>
+            <span className="font-mono text-amber-300 font-bold">{frvp5d.poc.toLocaleString()}</span>
           </span>
-          <span title="Cyan Dalton opening type — first cash 5m. Click Open chip for open + first-bar H/L.">
-            <span className={showOpeningActivity ? 'text-cyan-400' : 'text-gray-600'}>
-              Open {openingBadge}
-            </span>
+          <span>
+            <span className="text-gray-500">5D VAH: </span>
+            <span className="font-mono text-sky-300 font-semibold">{frvp5d.vah.toLocaleString()}</span>
           </span>
-          <span title="Indigo Dalton control — RF + developing POC. Click Ctrl chip for the dPOC line.">
-            <span className={showMarketControl ? 'text-indigo-400' : 'text-gray-600'}>
-              Ctrl {controlBadge}
-            </span>
+          <span>
+            <span className="text-gray-500">5D VAL: </span>
+            <span className="font-mono text-sky-300 font-semibold">{frvp5d.val.toLocaleString()}</span>
           </span>
-          <span title={callHover}>
-            <span className="text-zinc-400">
-              Call {callBadge}
-            </span>
+          <span>
+            <span className="text-gray-500">Day Type: </span>
+            <span className="text-purple-300 font-semibold">{dayTypeEval.badgeText}</span>
           </span>
-          <span title={perfHover}>
-            <span
-              className={
-                perfBadge === 'WAIT'
-                  ? 'text-gray-500'
-                  : perfBadge.startsWith('VERY STRONG') || perfBadge.startsWith('STRONG')
-                    ? 'text-emerald-400'
-                    : perfBadge.startsWith('SLOWING')
-                      ? 'text-amber-300'
-                      : perfBadge.startsWith('BALANCING')
-                        ? 'text-violet-300'
-                        : 'text-rose-300'
-              }
-            >
-              Perf {perfBadge}
-            </span>
+          <span>
+            <span className="text-gray-500">Opening: </span>
+            <span className="text-cyan-300 font-semibold">{openingBadge}</span>
           </span>
-          <span title={regionHover}>
-            <span className="text-zinc-400">
-              Region {regionBadge}
-            </span>
-          </span>
-          <span title={stayOutHover}>
-            <span
-              className={
-                stayOutBadge.startsWith('OUT')
-                  ? 'text-zinc-300 font-semibold'
-                  : 'text-zinc-500'
-              }
-            >
-              Out {stayOutBadge}
-            </span>
-          </span>
-          <span title={sitHover}>
-            <span className="text-zinc-400">
-              Sit {sitBadge}
-            </span>
-          </span>
-          <span title={ibExtendHover}>
-            <span
-              className={
-                ibExtendBadge === 'Extend high' || ibExtendBadge === 'Extend low'
-                  ? 'text-amber-300 font-semibold'
-                  : ibExtendBadge === 'Balance'
-                    ? 'text-violet-300 font-semibold'
-                    : ibExtendBadge === 'Stand down'
-                      ? 'text-rose-300/80'
-                      : ibExtendBadge.startsWith('Waiting')
-                        ? 'text-yellow-600'
-                        : 'text-gray-600'
-              }
-            >
-              IB {ibExtendBadge}
-            </span>
-          </span>
-          <span title="Blue IB high/low + BRK/REJ + ±10 — toggle with Press B.">
-            <span className={ibShaped ? 'text-blue-500' : 'text-gray-600'}>
-              IB H/L {ibShaped ? 'on' : showIbBreakouts ? 'waiting' : 'off'}
-            </span>
-            {ibShaped && (
-              <span className="text-gray-600">
-                {' '}
-                · ±10 on · BRK/REJ {rangeSignalSummary.ib}
-              </span>
-            )}
-          </span>
-          <span title="First 30m range is always calculated (even if you skip/miss the window). Press R to show H/L. Morning ±10 stays closed after OR30 clock — late desk uses IB / US Range.">
-            <span className={or30Locked || or30Shaped ? 'text-teal-500' : 'text-gray-600'}>
-              OR30 {or30Locked ? 'locked' : or30Shaped ? 'forming' : showOr30 ? 'waiting' : 'off'}
-            </span>
-            {or30Shaped && (
-              <span className="text-gray-600">
-                {' '}
-                · BRK/REJ {showOr30 ? rangeSignalSummary.or30 : 'off'}
-              </span>
-            )}
-          </span>
-          {isAuctionInstrument(instrument) && (
-            <span title="Sequential 15M → 30M → IB absorb-breakout overlay — toggle Auction.">
-              <span className={showAuction ? 'text-orange-400' : 'text-gray-600'}>
-                Auction {auctionBadge}
-              </span>
-            </span>
-          )}
-          {isDowVolumeBarInstrument(instrument) && (
-            <span title="Dow 15-minute volume-bar FAIL — toggle 15M fail.">
-              <span className={showDow15mFail ? 'text-cyan-400' : 'text-gray-600'}>
-                15M fail {dow15mFailBadge}
-              </span>
-            </span>
-          )}
-          {isOr15Instrument(instrument) && (
-            <span title={`Open range ${or15WindowLabel(instrument)} — ±10 after 15m lock`}>
-              <span className={or15Shaped ? 'text-amber-400' : 'text-gray-600'}>
-                OR15 {or15Shaped ? (or15Locked ? 'locked' : 'forming') : 'forming'}
-              </span>
-              {or15Shaped && (
-                <span className="text-gray-600">
-                  {' '}
-                  · O15 {showOr15 ? rangeSignalSummary.lunch : 'off'}
-                </span>
-              )}
-            </span>
-          )}
-          {instrument === 'NIKKEI' && !SYSTEMATIC_LIVE_DESK && (
-            <span title="Prior NYC session H/L on Tokyo cash">
-              <span className={usRangeShaped ? 'text-red-400' : 'text-gray-600'}>
-                US H/L {usRangeShaped ? 'on' : 'Tokyo cash only'}
-              </span>
-            </span>
-          )}
-          {latestTailStatus && (
-            <span
-              className="text-amber-400 normal-case tracking-normal"
-              title="Rejection wick at the ±10 band after the active range locked — other-timeframe footprint"
-            >
-              TAIL {latestTailStatus.edge === 'high' ? 'H' : 'L'} ·{' '}
-              {latestTailStatus.tier} · {latestTailStatus.label}
-            </span>
-          )}
-          <span className="text-gray-600 normal-case tracking-normal">
-            ±10 entries only after the active range locks · tails prefer good/strong wicks (≥0.4× body) · BRK needs close beyond H/L
+          <span>
+            <span className="text-gray-500">Control: </span>
+            <span className="text-indigo-300 font-semibold">{controlBadge}</span>
           </span>
         </div>
       )}
 
+
       {/* ── Chart container ──────────────────────────────────────────────────────── */}
+      {/* ── Context 5-5 & Chart Legend ────────────────────────────────────────── */}
       <div className="flex items-center gap-3 px-1 text-[10px] uppercase tracking-wider text-gray-500">
+        <span className="font-semibold text-amber-400">Context 5-5</span>
+        <span className="flex items-center gap-1.5 normal-case tracking-normal">
+          <span className="inline-block w-3.5 border-t-2 border-amber-500" />
+          <span className="text-amber-400 font-semibold">5D POC</span>
+        </span>
+        <span className="flex items-center gap-1.5 normal-case tracking-normal">
+          <span className="inline-block w-3.5 border-t border-dashed border-sky-400" />
+          <span className="text-sky-300">5D VAH / VAL (70%)</span>
+        </span>
+        <span className="text-gray-600">·</span>
+        <span className="flex items-center gap-1.5 normal-case tracking-normal">
+          <span className="inline-block w-3.5 border-t-2" style={{ borderColor: SHARED_VWAP_COLORS.vwap }} />
+          <span style={{ color: SHARED_VWAP_COLORS.vwap }}>5M AVWAP</span>
+          <span className="text-gray-600">±1σ, ±2σ</span>
+        </span>
+        <span className="text-gray-600">·</span>
         <span>Sessions</span>
         {sessionLegendOrder(instrument).map((name) => {
           const s = SESSION_RANGE_STYLES[name]
@@ -8531,78 +7699,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             </span>
           )
         })}
-        <span className="text-gray-600">·</span>
-        <span className="flex items-center gap-1.5 normal-case tracking-normal">
-          <span className="inline-block w-4 border-t-2" style={{ borderColor: SHARED_VWAP_COLORS.vwap }} />
-          <span style={{ color: SHARED_VWAP_COLORS.vwap }}>AVWAP</span>
-          <span className="text-gray-600">
-            {deskClockFor(instrument).openLabel} · 5 trading days prior · ±1/2/3σ
-          </span>
-        </span>
-        {ibShaped && (
-          <>
-            <span className="text-gray-600">·</span>
-            <span
-              className="flex items-center gap-1.5 normal-case tracking-normal"
-              title="Initial Balance — first-hour high/low, extended to cash close"
-            >
-              <span className="inline-block w-4 border-t-2 border-blue-500" />
-              <span className="text-blue-500">IB H/L</span>
-              <span className="text-gray-600">to session end</span>
-            </span>
-          </>
-        )}
-        {or15Shaped && (
-          <>
-            <span className="text-gray-600">·</span>
-            <span
-              className="flex items-center gap-1.5 normal-case tracking-normal"
-              title={`Open range — first 15 minutes (${or15WindowLabel(instrument)})`}
-            >
-              <span
-                className="inline-block w-4 border-t-2"
-                style={{ borderColor: OR15_COLORS.high }}
-              />
-              <span style={{ color: OR15_COLORS.high }}>OR15 H</span>
-              <span
-                className="inline-block w-4 border-t-2"
-                style={{ borderColor: OR15_COLORS.low }}
-              />
-              <span style={{ color: OR15_COLORS.low }}>L</span>
-              <span className="text-gray-600">{or15WindowLabel(instrument)}</span>
-            </span>
-          </>
-        )}
-        {usRangeShaped && (
-          <>
-            <span className="text-gray-600">·</span>
-            <span
-              className="flex items-center gap-1.5 normal-case tracking-normal"
-              title="Last NYC session high/low — drawn only on current Tokyo cash (09:00→tip)"
-            >
-              <span
-                className="inline-block w-4 border-t-2"
-                style={{ borderColor: NIKKEI_US_RANGE_COLORS.high }}
-              />
-              <span style={{ color: NIKKEI_US_RANGE_COLORS.high }}>US H/L</span>
-            </span>
-          </>
-        )}
-        {or30Shaped && (
-          <>
-            <span className="text-gray-600">·</span>
-            <span
-              className="flex items-center gap-1.5 normal-case tracking-normal"
-              title={`Opening range — first 30 minutes (${or30WindowLabel(instrument)})`}
-            >
-              <span
-                className="inline-block w-4 border-t-2"
-                style={{ borderColor: OR30_COLORS.high }}
-              />
-              <span style={{ color: OR30_COLORS.high }}>OR30 H/L</span>
-            </span>
-          </>
-        )}
       </div>
       <div
         ref={chartFrameRef}
@@ -9211,139 +8307,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           )
         })()}
 
-        {/* Confirm / journal before placing working limit */}
-        {rationaleModal?.open && (
-          <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
-            <div className="w-full max-w-md rounded-2xl border border-sky-500/40 bg-[#161b22] p-5 shadow-2xl space-y-4 animate-fade-in">
-              <div className="flex items-center justify-between border-b border-[#30363d] pb-3">
-                <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                  <span className="text-sky-400">📝</span> Manual Trade Journal Rationale
-                </h4>
-                <button
-                  onClick={() => setRationaleModal(null)}
-                  className="text-gray-400 hover:text-white transition text-sm"
-                >✕</button>
-              </div>
 
-              <p className="text-xs text-gray-400 leading-relaxed">
-                Because this manual limit was placed without a Live Voice discussion with Leo, please record your entry and SL/TP rationale for your daily performance journal:
-              </p>
-
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-[11px] font-semibold text-gray-300 mb-1">
-                    Why did you choose this entry level ({rationaleModal.entryPrice.toLocaleString()})?
-                  </label>
-                  <input
-                    type="text"
-                    value={userRationale}
-                    onChange={(e) => setUserRationale(e.target.value)}
-                    placeholder="e.g. Key support re-test, liquidity sweep rejection"
-                    className="w-full rounded-lg border border-[#30363d] bg-black/60 px-3 py-2 text-xs text-white placeholder-gray-600 focus:border-sky-500 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold text-gray-300 mb-1">
-                    Why did you set this SL ({rationaleModal.stopLoss.toLocaleString()}) & TP ({rationaleModal.profitTarget.toLocaleString()})?
-                  </label>
-                  <input
-                    type="text"
-                    value={userSlTpRationale}
-                    onChange={(e) => setUserSlTpRationale(e.target.value)}
-                    placeholder="e.g. SL beyond market structure, TP at AVWAP band"
-                    className="w-full rounded-lg border border-[#30363d] bg-black/60 px-3 py-2 text-xs text-white placeholder-gray-600 focus:border-sky-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setRationaleModal(null)}
-                  className="flex-1 rounded-lg border border-[#30363d] bg-transparent py-2 text-xs font-semibold text-gray-400 hover:bg-[#21262d] hover:text-white transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const fullReason = `Manual ${rationaleModal.direction} entry: ${userRationale || 'Technical structure'} | SL/TP rationale: ${userSlTpRationale || 'Geometry bounds'}`
-                    const { strategyMagnets, snapRanges, strategyRange, ladder, call } =
-                      getStrategyRiskBundle()
-                    const snapped = snapEntryToNearestOpenBandCenter({
-                      entry: rationaleModal.entryPrice,
-                      candidates: snapRanges,
-                      preferLabel:
-                        riskBox?.preferRangeLabel ?? strategyRange?.label ?? null,
-                      liveOk: (range: any) => {
-                        if (range.label === 'OR30') {
-                          return (
-                            !!strategyRange &&
-                            strategyRange.label === range.label &&
-                            strategyRange.high === range.high &&
-                            strategyRange.low === range.low
-                          )
-                        }
-                        return assertBucketEntryEligible({
-                          instrument,
-                          market: deskMarketFor(instrument),
-                          timeSec: deskClockSeconds(instrument),
-                          ladder,
-                          rangeLabel: range.label,
-                        }).ok
-                      },
-                    })
-                    if (!snapped) {
-                      onDeskAlert?.({
-                        kind: 'entry_band_deny',
-                        title: 'Off-band entry',
-                        body: RANGE_EDGE_OFF_BAND_MESSAGE,
-                        telegram: '',
-                        instrument,
-                      })
-                      return
-                    }
-                    const hit = snapped.hit
-                    const gated = assertDeskTicketEntry({
-                      useCall: useCallRef.current,
-                      call,
-                      edge: hit.edge,
-                      direction: rationaleModal.direction,
-                    })
-                    if (!gated.ok) {
-                      onDeskAlert?.({
-                        kind: 'entry_band_deny',
-                        title: 'CALL blocks this ticket',
-                        body: gated.message,
-                        telegram: '',
-                        instrument,
-                      })
-                      return
-                    }
-                    onLevelSelect?.(snapDeskPrice(instrument, snapped.price), {
-                      source: 'manual',
-                      type: 'manual',
-                      orderType: 'LIMIT',
-                      side: rationaleModal.direction === 'LONG' ? 'BUY' : 'SHORT',
-                      preferredDirection: rationaleModal.direction,
-                      reasoning: fullReason,
-                      stopLoss: rationaleModal.stopLoss,
-                      profitTarget: rationaleModal.profitTarget,
-                      strategyRange: hit.range,
-                      strategyMagnets,
-                    })
-                    setRationaleModal(null)
-                    cancelRiskBox()
-                  }}
-                  className="flex-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white py-2 text-xs font-bold uppercase tracking-wider transition shadow-md"
-                >
-                  Confirm & Place Limit
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Playbook — hidden until Playbook (P); cards still refresh in the background */}
         {!SYSTEMATIC_LIVE_DESK && deskLevelsActive && playbookOpen && (

@@ -12,7 +12,6 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { TradingChart } from './components/TradingChart'
 import { SessionBanner, type SessionGateState } from './components/SessionBanner'
 import {
-  LevelOrderTicket,
   type FilledOrder,
   type PendingLimitOrder,
   limitWouldFill,
@@ -280,25 +279,23 @@ export default function ChartPage() {
     if (isAsiaLiveOrderOverlay(gold)) setInstrument('GOLD')
     else if (isAsiaLiveOrderOverlay(dow)) setInstrument('DOW')
   }, [gate?.asiaDeskActive, gate?.clockedIn, asiaOverlays, instrument, setInstrument])
-  const [orderLevel, setOrderLevel] = useState<number | null>(null)
-  const [orderLevelType, setOrderLevelType] = useState<string | undefined>()
-  const [orderLevelSide, setOrderLevelSide] = useState<'BUY' | 'SHORT' | undefined>()
-  const [orderPreferredDirection, setOrderPreferredDirection] = useState<
+  const [_orderLevel, setOrderLevel] = useState<number | null>(null)
+  const [_orderLevelType, setOrderLevelType] = useState<string | undefined>()
+  const [_orderLevelSide, setOrderLevelSide] = useState<'BUY' | 'SHORT' | undefined>()
+  const [_orderPreferredDirection, setOrderPreferredDirection] = useState<
     'LONG' | 'SHORT' | undefined
   >()
-  const [orderLevelReason, setOrderLevelReason] = useState<string | undefined>()
-  const [orderEntrySource, setOrderEntrySource] = useState<'ai' | 'structure' | 'manual'>('ai')
+  const [_orderLevelReason, setOrderLevelReason] = useState<string | undefined>()
+  const [_orderEntrySource, setOrderEntrySource] = useState<'ai' | 'structure' | 'manual'>('ai')
   const [orderStrategyRange, setOrderStrategyRange] =
     useState<StrategyRangeEdges | null>(null)
-  const [orderStrategyMagnets, setOrderStrategyMagnets] =
+  const [_orderStrategyMagnets, setOrderStrategyMagnets] =
     useState<StrategyRiskMagnets | null>(null)
-  /** Manual/journal-rationale flows already collected SL/TP up front — skip the
-   *  redundant second "Place manual limit" confirm and auto-submit instead. */
-  const [orderPresetStopLoss, setOrderPresetStopLoss] = useState<number | null>(null)
-  const [orderPresetProfitTarget, setOrderPresetProfitTarget] = useState<number | null>(null)
-  const [orderAutoConfirm, setOrderAutoConfirm] = useState(false)
-  const [regime, setRegime] = useState<'bullish' | 'bearish' | 'choppy'>('bullish')
-  const [regimeConfidence, setRegimeConfidence] = useState(70)
+  const [_orderPresetStopLoss, setOrderPresetStopLoss] = useState<number | null>(null)
+  const [_orderPresetProfitTarget, setOrderPresetProfitTarget] = useState<number | null>(null)
+  const [_orderAutoConfirm, setOrderAutoConfirm] = useState(false)
+  const [_regime, setRegime] = useState<'bullish' | 'bearish' | 'choppy'>('bullish')
+  const [_regimeConfidence, setRegimeConfidence] = useState(70)
   const [gateTick, setGateTick] = useState(0)
   const [lastQuoteAt, setLastQuoteAt] = useState<number | null>(null)
   const lastQuoteAtFlushRef = useRef(0)
@@ -2210,62 +2207,6 @@ export default function ChartPage() {
             />
           )}
         </div>
-
-        {orderLevel != null &&
-          orderLevelType !== 'market' &&
-          !pending &&
-          !managePos && (
-          <LevelOrderTicket
-            key={`live-${orderLevel}-${orderEntrySource}-${orderPreferredDirection ?? orderLevelSide ?? orderLevelType ?? 'x'}`}
-            instrument={(clockedIn && locked ? locked : instrument) as Instrument}
-            levelPrice={orderLevel}
-            levelType={orderLevelType}
-            levelSide={orderLevelSide}
-            preferredDirection={orderPreferredDirection}
-            entryReason={orderLevelReason}
-            entrySource={orderEntrySource}
-            strategyRange={orderStrategyRange}
-            strategyMagnets={orderStrategyMagnets}
-            atrAdviceLine={rangeAtrAdvice}
-            regime={regime}
-            regimeConfidence={regimeConfidence}
-            canPlace={canTrade && dataMode === 'live'}
-            entryWindow={gate?.entryWindow ?? 1}
-            presetStopLoss={orderPresetStopLoss}
-            presetProfitTarget={orderPresetProfitTarget}
-            autoConfirm={orderAutoConfirm}
-            sessionFillsUsed={gate?.attemptsUsed ?? 0}
-            onClose={() => {
-              setOrderLevel(null)
-              setOrderLevelType(undefined)
-              setOrderLevelSide(undefined)
-              setOrderPreferredDirection(undefined)
-              setOrderLevelReason(undefined)
-              setOrderEntrySource('ai')
-              setOrderStrategyRange(null)
-              setOrderStrategyMagnets(null)
-              setOrderPresetStopLoss(null)
-              setOrderPresetProfitTarget(null)
-              setOrderAutoConfirm(false)
-            }}
-            onAutoConfirmError={(msg) => {
-              setFillError(msg)
-              setOrderStatus('rejected')
-              setOrderLevel(null)
-              setOrderLevelType(undefined)
-              setOrderLevelSide(undefined)
-              setOrderPreferredDirection(undefined)
-              setOrderLevelReason(undefined)
-              setOrderEntrySource('ai')
-              setOrderStrategyRange(null)
-              setOrderStrategyMagnets(null)
-              setOrderPresetStopLoss(null)
-              setOrderPresetProfitTarget(null)
-              setOrderAutoConfirm(false)
-            }}
-            onPlaced={handlePlaced}
-          />
-        )}
       </div>
     </div>
   )

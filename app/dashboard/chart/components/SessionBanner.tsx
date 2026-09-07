@@ -26,9 +26,7 @@ import {
   DESK_RISK_PROFILE_EVENT,
   type DeskRiskProfile,
 } from '@/lib/trading/tradeifyProfile'
-import { formatTradeifyBannerChip } from '@/lib/trading/tradeifyGrowth50k'
 import { SYSTEMATIC_LIVE_DESK } from '@/lib/trading/systematicDesk'
-import { LTARModal } from './LTARModal'
 
 export interface SessionGateState {
   phase: string
@@ -112,17 +110,13 @@ function phaseLabel(
   }
 }
 
-/** Banner copy comes from sessionGate — keep one source of truth (no phase overrides). */
-function phaseHint(_phase: string, message: string): string {
-  return message
-}
 
 export function SessionBanner({
   onGate,
   refreshKey = 0,
   onRefreshReady,
-  lastQuoteAt = null,
-  dataMode = 'live',
+  lastQuoteAt: _lastQuoteAt = null,
+  dataMode: _dataMode = 'live',
   viewingInstrument = null,
   asiaOrderLive = false,
 }: {
@@ -148,7 +142,6 @@ export function SessionBanner({
   const [riskProfile, setRiskProfile] = useState<DeskRiskProfile>('tradeify_growth_50k')
   const [htfStatus, setHtfStatus] = useState<string | null>(null)
   const [htfSummary, setHtfSummary] = useState<string | null>(null)
-  const [isLtarOpen, setIsLtarOpen] = useState(false)
   const [htfPerf, setHtfPerf] = useState<{
     grade: string
     targetMultiplier: number
@@ -179,7 +172,6 @@ export function SessionBanner({
     directiveSummary: string
     newsSentimentRating?: string
   } | null>(null)
-  const [isActivityRecordOpen, setIsActivityRecordOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -523,26 +515,7 @@ export function SessionBanner({
             ? 'border-sky-700/40 bg-sky-950/50 text-sky-100'
             : 'border-[#30363d] bg-[#161b22]/90 text-gray-300'
 
-  const quoteAgeSec =
-    lastQuoteAt != null && mounted
-      ? Math.max(0, Math.floor(Date.now() / 1000) - lastQuoteAt)
-      : null
-  const feedOk = dataMode === 'live' && quoteAgeSec != null && quoteAgeSec < 10
-  const tradeifyChip = isTradeifyGrowth50k(riskProfile)
-    ? formatTradeifyBannerChip({
-      leftoverDll: gate.tradeifyLeftoverDll ?? 1250,
-      floorRoom: gate.tradeifyFloorRoom ?? 2000,
-      status:
-        gate.tradeifyStatus ??
-        (gate.tradeifyMustFlatten
-          ? 'must_flatten'
-          : gate.tradeifyDayLocked
-            ? 'day_locked'
-            : 'can_trade'),
-      refuseReason: gate.tradeifyRefuseReason,
-      flattenMontreal: gate.tradeifyFlattenMontreal,
-    })
-    : null
+
 
   return (
     <>
@@ -672,69 +645,6 @@ export function SessionBanner({
             <span>{String(htfStandAside.reason || '').replace(/_/g, ' ')}</span>
           </span>
         )}
-        {!SYSTEMATIC_LIVE_DESK && (
-        <button
-          type="button"
-          onClick={() => setIsLtarOpen(true)}
-          className="rounded border border-amber-500/40 bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-300 hover:bg-amber-500/30 transition flex items-center gap-1"
-          title="Open Daily 9:30 AM Long-Term Activity Record (Figure 4.65)"
-        >
-          <span>LTAR</span>
-          <span className="text-[9px]">📋</span>
-        </button>
-        )}
-        {!SYSTEMATIC_LIVE_DESK && (
-        <button
-          type="button"
-          onClick={() => setIsActivityRecordOpen(true)}
-          className="rounded border border-cyan-500/40 bg-cyan-500/20 px-2 py-0.5 text-[10px] font-bold text-cyan-300 hover:bg-cyan-500/30 transition flex items-center gap-1"
-          title="Open Daily 9:30 AM RTH Opening Briefing & Activity Record"
-        >
-          <span>9:30 AM RTH</span>
-          <span className="text-[9px]">⏱️</span>
-        </button>
-        )}
-
-        {gate.phase === 'ENTRY' && gate.clockedIn && (
-          <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-emerald-300">
-            {gate.entryWindow ? `Window ${gate.entryWindow}/3` : 'Entry window'}
-          </span>
-        )}
-        <span
-          className="rounded bg-amber-500/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-black"
-          title="Tradeify Growth $50k — $400 / $250 / $150 stops, shared daily budget."
-        >
-          Tradeify $50k
-        </span>
-        {tradeifyChip && (
-          <span
-            className={`rounded px-2 py-0.5 text-[10px] font-semibold max-w-[22rem] truncate ${tradeifyChip.tone === 'flatten'
-              ? 'bg-red-500/40 text-red-50'
-              : tradeifyChip.tone === 'lock'
-                ? 'bg-red-500/30 text-red-100'
-                : 'bg-amber-500/20 text-amber-100'
-              }`}
-            title={gate.tradeifyLockMessage || tradeifyChip.title}
-          >
-            {tradeifyChip.label}
-          </span>
-        )}
-        {gate.clockedIn && (
-          <span
-            className={`rounded px-2 py-0.5 font-semibold tabular-nums ${gate.dayLocked ||
-              (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? MAX_DAY_ATTEMPTS)
-              ? 'bg-red-500/25 text-red-200'
-              : 'bg-sky-500/20 text-sky-200'
-              }`}
-            title="Tradeify $50k · $400 → $250 → $150 · SL beyond range · TP 1.5R (1:1.5). Session max 3 fills. Up to 2 per window. Flatten 16:59 ET. Working limits do not count until filled."
-          >
-            {gate.attemptLadderLabel ||
-              `Session ${gate.attemptsUsed ?? 0}/${gate.maxAttempts ?? MAX_DAY_ATTEMPTS} · AM ${gate.morningAttempts ?? 0}/${gate.maxMorningAttempts ?? 2} · 30 ${gate.ibAttempts ?? 0}/${gate.maxIbAttempts ?? 2} · IB ${gate.lunchAttempts ?? 0}/${gate.maxLunchAttempts ?? 2}`}
-            {(gate.stopHits ?? 0) > 0
-              ? ` · Stops ${gate.stopHits}/${gate.maxStopHits ?? 2}`
-              : ''}
-          </span>
-        )}
         {newsUnavailable ? (
           <Link
             href="/dashboard/news"
@@ -762,123 +672,15 @@ export function SessionBanner({
             {newsHazard.chip || ''}
           </Link>
         ) : null}
-        <span className="flex-1 min-w-[12rem]">{phaseHint(gate.phase, gate.message)}</span>
-
-        <span
-          className={`flex items-center gap-1.5 font-mono text-[10px] ${dataMode === 'synthetic'
-            ? 'text-amber-400'
-            : feedOk
-              ? 'text-emerald-400'
-              : 'text-gray-500'
-            }`}
-          title="Desk tip = OANDA mid (same broker as orders). Not CMC Markets / Yahoo cash."
-        >
-          <span
-            className={`w-1.5 h-1.5 rounded-full ${dataMode === 'synthetic'
-              ? 'bg-amber-400'
-              : feedOk
-                ? 'bg-emerald-400 animate-pulse'
-                : 'bg-gray-600'
-              }`}
-          />
-          {dataMode === 'synthetic'
-            ? 'SYNTHETIC'
-            : quoteAgeSec == null
-              ? 'OANDA…'
-              : quoteAgeSec < 3
-                ? 'OANDA LIVE'
-                : `OANDA ${quoteAgeSec}s`}
-        </span>
 
         <button
           type="button"
           onClick={refresh}
-          className="text-[10px] uppercase tracking-wider text-gray-500 hover:text-white"
+          className="ml-auto text-[10px] uppercase tracking-wider text-gray-500 hover:text-white"
         >
           Refresh
         </button>
       </div>
-      <LTARModal
-        isOpen={isLtarOpen}
-        onClose={() => setIsLtarOpen(false)}
-        instrument={viewingInstrument || gate?.lockedInstrument || 'DOW'}
-      />
-      {isActivityRecordOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="relative w-full max-w-2xl rounded-xl border border-cyan-500/40 bg-zinc-950 p-6 text-zinc-100 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">⏱️</span>
-                <h3 className="font-bold text-lg text-cyan-400">9:30 AM RTH Session Briefing & Activity Record</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsActivityRecordOpen(false)}
-                className="rounded px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-white"
-              >
-                ✕ Close
-              </button>
-            </div>
-            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2 text-xs font-mono">
-              <div className="p-3 rounded border border-cyan-500/30 bg-cyan-950/30 space-y-1">
-                <div className="font-bold text-cyan-300">DAILY 9:30 AM EST AUTOMATED DIRECTIVE BRIEFING</div>
-                <div className="text-zinc-400">Recorded for session open everyday at 9:30 AM EST</div>
-              </div>
-
-              <div className="space-y-2">
-                {htfStandAside && htfStandAside.isStandAside && (
-                  <div className="p-2.5 rounded bg-rose-950/50 border border-rose-500/60 text-rose-200 space-y-1">
-                    <div className="font-bold text-rose-300 flex items-center gap-1.5 text-xs">
-                      <span>🛑</span>
-                      <span>MARKET STAND-ASIDE WARNING: {htfStandAside.reason}</span>
-                    </div>
-                    <p className="text-zinc-200">{htfStandAside.directiveSummary}</p>
-                    {htfStandAside.newsSentimentRating && (
-                      <p className="text-amber-300 font-semibold">
-                        News Sentiment Rating: {htfStandAside.newsSentimentRating}
-                      </p>
-                    )}
-                  </div>
-                )}
-                <div className="p-2 rounded bg-zinc-900 border border-zinc-800">
-                  <span className="text-zinc-400">Special Situation: </span>
-                  <span className="font-bold text-cyan-300">
-                    {htfSituation ? `${htfSituation.activeSituation} (${htfSituation.continuationProbabilityPct}% Odds)` : 'None active'}
-                  </span>
-                  <p className="mt-1 text-zinc-300">{htfSituation?.directiveSummary || 'Standard Market Profile rotation.'}</p>
-                </div>
-
-                <div className="p-2 rounded bg-zinc-900 border border-zinc-800">
-                  <span className="text-zinc-400">Long-Term Bracket: </span>
-                  <span className="font-bold text-indigo-300">{htfBracket?.bracketMode || 'BALANCED'}</span>
-                  <p className="mt-1 text-zinc-300">{htfBracket?.directiveSummary || 'No bracket expansion.'}</p>
-                </div>
-
-                <div className="p-2 rounded bg-zinc-900 border border-zinc-800">
-                  <span className="text-zinc-400">Corrective Action: </span>
-                  <span className="font-bold text-emerald-300">{htfCorr?.type || 'NONE'}</span>
-                  <p className="mt-1 text-zinc-300">{htfCorr?.directiveSummary || 'No disguised correction.'}</p>
-                </div>
-
-                <div className="p-2 rounded bg-zinc-900 border border-zinc-800">
-                  <span className="text-zinc-400">Directional Performance: </span>
-                  <span className="font-bold text-amber-300">{htfPerf?.grade || 'BALANCING'}</span>
-                  <p className="mt-1 text-zinc-300">Target Multiplier: {htfPerf?.targetMultiplier}x ({htfPerf?.expectedRR})</p>
-                </div>
-              </div>
-            </div>
-            <div className="flex justify-end pt-2 border-t border-zinc-800">
-              <button
-                type="button"
-                onClick={() => setIsActivityRecordOpen(false)}
-                className="rounded bg-cyan-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-cyan-500"
-              >
-                Acknowledge 9:30 AM Record
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   )
 }
