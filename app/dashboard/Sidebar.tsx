@@ -88,30 +88,10 @@ const TOOL_ITEMS: NavItem[] = []
 function NavLink({
   item,
   active,
-  locked,
-  lockedHint,
 }: {
   item: NavItem
   active: boolean
-  locked?: boolean
-  lockedHint?: string
 }) {
-  if (locked) {
-    return (
-      <div
-        className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium border border-transparent text-gray-600 opacity-70 cursor-not-allowed"
-        title={lockedHint}
-      >
-        <span className="text-gray-700">{item.icon}</span>
-        <span className="min-w-0 flex-1">
-          <span className="block leading-tight">{item.label}</span>
-          <span className="block text-[10px] font-normal text-gray-600 leading-tight mt-0.5">
-            {lockedHint || 'Locked'}
-          </span>
-        </span>
-      </div>
-    )
-  }
   return (
     <Link
       href={item.href}
