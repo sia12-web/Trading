@@ -19,11 +19,10 @@ import {
   deskSessionAt,
   type SessionName,
 } from '@/lib/chart/sessionVwap'
-import { computeRangeBreakRejectSignals } from '@/lib/chart/rangeBreakSignals'
-import {
-  findIbLiquiditySwing,
-  isIbContextBoxReasoning,
-} from '@/lib/trading/ibExtendAdvice'
+
+function isIbContextBoxReasoning(_r?: string): boolean {
+  return false
+}
 
 export type LevelSide = 'BUY' | 'SHORT'
 /** Overnight / regime lean used to pick the morning focus side */
@@ -1418,49 +1417,11 @@ export interface IbSignalMarker {
  * BRK requires shared RVOL (1.2× / 20); REJ is price-only. Once per side.
  */
 export function computeIbSignals(
-  candles: DeskBar[],
-  ib: InitialBalanceRange | null,
-  opts?: { useVol?: boolean; volThresh?: number; volLen?: number }
+  _candles: DeskBar[],
+  _ib: InitialBalanceRange | null,
+  _opts?: { useVol?: boolean; volThresh?: number; volLen?: number }
 ): IbSignalMarker[] {
-  if (!ib || !candles || candles.length < 2) return []
-
-  const raw = computeRangeBreakRejectSignals(candles, ib, {
-    labelPrefix: 'IB',
-    colors: {
-      brkLong: '#22c55e',
-      brkShort: '#ef4444',
-      rejHigh: '#f97316',
-      rejLow: '#a855f7',
-    },
-    signalAfterUnix: ib.endUnix,
-    useVol: opts?.useVol,
-    volThresh: opts?.volThresh,
-    volLen: opts?.volLen,
-    oncePerSide: true,
-  })
-
-  return raw.map((s) => ({
-    time: s.time,
-    type:
-      s.type === 'BRK_LONG'
-        ? ('INITIATIVE_LONG' as const)
-        : s.type === 'BRK_SHORT'
-          ? ('INITIATIVE_SHORT' as const)
-          : s.type === 'REJ_HIGH'
-            ? ('REJECT_HIGH' as const)
-            : ('REJECT_LOW' as const),
-    price: s.price,
-    text: s.type.startsWith('BRK')
-      ? s.type === 'BRK_LONG'
-        ? 'IB BRK ▲'
-        : 'IB BRK ▼'
-      : s.type === 'REJ_HIGH'
-        ? 'IB REJ ▼'
-        : 'IB REJ ▲',
-    color: s.color,
-    position: s.position,
-    shape: s.shape,
-  }))
+  return []
 }
 
 /** First-hour Initial Balance (cash open → +60m) as watch levels for afternoon. */
@@ -1493,22 +1454,10 @@ export function initialBalanceLevelsFromCandles(
 }
 
 function liquiditySwingDeskLevels(
-  candles: DeskBar[],
-  ib: InitialBalanceRange | null
+  _candles: DeskBar[],
+  _ib: InitialBalanceRange | null
 ): DeskLevel[] {
-  if (!ib) return []
-  const swing = findIbLiquiditySwing(candles, ib)
-  if (!swing) return []
-  return [
-    {
-      level: swing.price,
-      type: swing.kind === 'high' ? 'resistance' : 'support',
-      conviction: 9,
-      reasoning: `Liquidity swing ${swing.kind} at/beyond IB ${swing.kind} — test this swing. IB is the context box; first IB tag is not the entry.`,
-      source: 'structure',
-      rank: 'primary',
-    },
-  ]
+  return []
 }
 
 /** Map morning-review afternoon_levels (FLIP / RETEST) onto DeskLevel rows. */

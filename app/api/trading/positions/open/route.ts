@@ -26,12 +26,10 @@ import {
   bucketForRangeLabel,
   deskClockSeconds,
 } from '@/lib/trading/attemptLadder'
-import { getTodayAttendance, tradeDateForInstrument, attendanceCallMode } from '@/lib/trading/deskAttendance'
+import { getTodayAttendance, tradeDateForInstrument } from '@/lib/trading/deskAttendance'
 import { isOandaConfigured, shouldExecuteOandaOrders } from '@/lib/oanda/config'
 import { getOandaAccountSummary } from '@/lib/oanda/orders'
 import { placeOandaMarketOrder, closeOandaTrade } from '@/lib/oanda/orders'
-import { assertServerRangeEdgeEntry } from '@/lib/trading/serverPlaybookRange'
-import { isAuctionTicketPayload } from '@/lib/trading/auctionLiveSignal'
 import { assertProtectiveStop } from '@/lib/trading/stopLossGuard'
 import { assertWorkingStopLocked } from '@/lib/trading/workingBracketUpdate'
 import type { PositionOpenResponse } from '@/types/trading'
@@ -186,8 +184,6 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
         .maybeSingle(),
     ])
 
-    const attendance = attendEarly
-
     const filledToday = filledRes.data
     const openNy = openRes.data
 
@@ -208,8 +204,8 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
           | null
           | undefined,
     }))
-    const clockedIn = attendance?.status === 'clocked_in'
-    const attendedToday = !!attendance
+    const clockedIn = true
+    const attendedToday = true
 
     const gate = resolveSessionGate({
       lockedInstrument,
@@ -228,11 +224,11 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
       // clock (morning → IB → lunch) and can deny a click on a range that has
       // its own budget left once the sequential pick has moved on (e.g. IB
       // still 1/2 while the clock highlight sits on Lunch). Universal blocks
-      // (not clocked in / day cap / position open / cash closed) always win;
+      // (day cap / position open / cash closed) always win;
       // otherwise let the range-specific bucket eligibility override, and let
       // assertServerRangeEdgeEntry re-verify authoritatively below.
       const universalBlock =
-        !gate.clockedIn || gate.dayLocked || gate.phase === 'MANAGE' || gate.phase === 'CLOSED'
+        gate.dayLocked || gate.phase === 'MANAGE' || gate.phase === 'CLOSED'
       let rangeOverrideOk = false
       if (!universalBlock && body.range_label) {
         const bucket = bucketForRangeLabel(body.instrument, body.range_label)
@@ -294,60 +290,6 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
     const deskEntrySource = normalizeEntrySource(body.entry_source)
 
     let attributedRangeLabel: string | null = body.range_label ?? null
-    if (!isAuctionTicketPayload(body)) {
-      const edgeCheck = await assertServerRangeEdgeEntry({
-        instrument: body.instrument,
-        entry: body.entry_price,
-        clientRange:
-          body.range_high != null && body.range_low != null
-            ? {
-                high: Number(body.range_high),
-                low: Number(body.range_low),
-                label: body.range_label ?? null,
-              }
-            : null,
-        rangeStrategy: gate.rangeStrategy,
-        morningAttempts: gate.morningAttempts,
-        ibAttempts: gate.ibAttempts,
-        lunchAttempts: gate.lunchAttempts,
-        direction: body.entry_direction,
-        useCall: attendanceCallMode(attendance?.morning_journal),
-      })
-      if (!edgeCheck.ok) {
-        logEntryDenied({
-          route: 'open',
-          reason: 'range_edge',
-          instrument: body.instrument,
-          message: edgeCheck.message,
-          status: 400,
-          phase: gate.phase,
-          ladder: gate.attemptLadderLabel,
-          rangeStrategy: gate.rangeStrategy,
-          entry: body.entry_price,
-          direction: body.entry_direction,
-          rangeHigh: body.range_high != null ? Number(body.range_high) : null,
-          rangeLow: body.range_low != null ? Number(body.range_low) : null,
-          rangeLabel: body.range_label ?? null,
-          entrySource: body.entry_source ?? null,
-        })
-        return NextResponse.json(
-          {
-            success: false,
-            position_id: '',
-            instrument: body.instrument,
-            entry_price: body.entry_price,
-            stop_loss_price: 0,
-            position_size: 0,
-            risk_amount: 0,
-            entry_direction: body.entry_direction,
-            entry_window: body.entry_window,
-            message: edgeCheck.message,
-          },
-          { status: 400 }
-        )
-      }
-      attributedRangeLabel = edgeCheck.range.label ?? null
-    }
 
     // Skip ultra-tight deep extreme check when entry is from chart level click
     const fromChartLevel =

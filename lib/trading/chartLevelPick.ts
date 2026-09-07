@@ -20,7 +20,6 @@ import {
   type StrategyRangeEdges,
   type StrategyRiskMagnets,
 } from '@/lib/trading/strategyRiskGeometry'
-import { filterLevelsInRangeEdgeBand } from '@/lib/trading/rangeEdgeEntryGate'
 
 /** Same band as live/sim click snap (~0.25%). */
 export const CHART_LEVEL_SNAP_PCT = 0.0025
@@ -101,9 +100,7 @@ export function resolveChartLimitPick(args: {
       Number.isFinite(l.price) &&
       l.price > 0
   )
-  if (args.activeRange) {
-    tradeLevels = filterLevelsInRangeEdgeBand(tradeLevels, args.activeRange)
-  }
+
 
   let best = raw
   let matched: ChartPickLevel | null = null

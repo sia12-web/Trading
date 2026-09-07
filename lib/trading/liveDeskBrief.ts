@@ -26,10 +26,17 @@ import {
   type DeskInstrument,
   type DeskMarket,
 } from '@/lib/trading/sessionGate'
-import {
-  rangeEdgeBandLegend,
-  type RangeEdgeLevels,
-} from '@/lib/trading/rangeEdgeEntryGate'
+export type RangeEdgeLevels = {
+  label?: string | null
+  high?: number | null
+  low?: number | null
+  mid?: number | null
+}
+
+export function rangeEdgeBandLegend(edges?: RangeEdgeLevels | null): string {
+  if (!edges || edges.high == null || edges.low == null) return ''
+  return `H ${edges.high} · L ${edges.low}`
+}
 import {
   TRADER_DISPLAY_LABEL,
   deskLocalHmsAsTraderDisplay,

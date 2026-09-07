@@ -14,13 +14,6 @@ import type {
   DeskNewsTag,
   DeskNewsWindowHours,
 } from '@/lib/trading/deskNews'
-import type {
-  NewsImpactBrief,
-  Top5NewsDigest,
-} from '@/lib/trading/newsImpactBrief'
-
-const BRIEF_DISCLAIMER =
-  'Context only — not an entry signal. Do not trade from this brief alone.'
 
 type DeskTab = DeskNewsInstrument | 'ALL'
 
@@ -63,12 +56,6 @@ const TAG_STYLE: Record<DeskNewsTag, string> = {
   OTHER: 'bg-white/10 text-gray-300 border-white/15',
 }
 
-const BIAS_STYLE: Record<string, string> = {
-  bullish: 'text-emerald-300',
-  bearish: 'text-red-300',
-  mixed: 'text-amber-200',
-  noise: 'text-gray-400',
-}
 
 function formatAge(unix: number, nowMs: number): string {
   const sec = Math.max(0, Math.floor(nowMs / 1000) - unix)
@@ -96,18 +83,6 @@ function isAbortError(err: unknown): boolean {
   )
 }
 
-function cardToPayload(card: DeskNewsCard) {
-  return {
-    id: card.id,
-    headline: card.headline,
-    source: card.source,
-    datetime: card.datetime,
-    tag: card.tag,
-    instruments: card.instruments,
-    summary: card.summary,
-    deskNote: card.deskNote,
-  }
-}
 
 export default function DeskNewsPage() {
   const [tab, setTab] = useState<DeskTab>('DOW')
@@ -117,14 +92,6 @@ export default function DeskNewsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [nowMs, setNowMs] = useState(() => Date.now())
-  const [briefs, setBriefs] = useState<Record<string, NewsImpactBrief>>({})
-  const [openBriefIds, setOpenBriefIds] = useState<Record<string, boolean>>({})
-  const [briefLoadingId, setBriefLoadingId] = useState<string | null>(null)
-  const [briefErrors, setBriefErrors] = useState<Record<string, string>>({})
-  const [digest, setDigest] = useState<Top5NewsDigest | null>(null)
-  const [digestOpen, setDigestOpen] = useState(false)
-  const [digestLoading, setDigestLoading] = useState(false)
-  const [digestError, setDigestError] = useState<string | null>(null)
   const reqSeq = useRef(0)
 
   const load = useCallback(
@@ -162,8 +129,6 @@ export default function DeskNewsPage() {
   useEffect(() => {
     const ac = new AbortController()
     setLoading(true)
-    setDigestOpen(false)
-    setDigestError(null)
     void load(ac.signal)
     const id = window.setInterval(() => {
       if (!ac.signal.aborted) void load(ac.signal)
@@ -193,91 +158,6 @@ export default function DeskNewsPage() {
   const updatedLabel = data?.updatedAt
     ? formatAge(Math.floor(new Date(data.updatedAt).getTime() / 1000), nowMs)
     : null
-
-  const explainOne = useCallback(
-    async (card: DeskNewsCard) => {
-      if (openBriefIds[card.id]) {
-        setOpenBriefIds((prev) => ({ ...prev, [card.id]: false }))
-        return
-      }
-      if (briefs[card.id]) {
-        setOpenBriefIds((prev) => ({ ...prev, [card.id]: true }))
-        return
-      }
-      setBriefLoadingId(card.id)
-      setBriefErrors((prev) => {
-        const next = { ...prev }
-        delete next[card.id]
-        return next
-      })
-      try {
-        const res = await fetch('/api/trading/news/brief', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            mode: 'one',
-            tab,
-            headline: cardToPayload(card),
-          }),
-        })
-        const json = await res.json()
-        if (!res.ok || !json?.ok || !json.brief) {
-          setBriefErrors((prev) => ({
-            ...prev,
-            [card.id]: json?.error || 'Brief unavailable',
-          }))
-          return
-        }
-        setBriefs((prev) => ({ ...prev, [card.id]: json.brief as NewsImpactBrief }))
-        setOpenBriefIds((prev) => ({ ...prev, [card.id]: true }))
-      } catch {
-        setBriefErrors((prev) => ({
-          ...prev,
-          [card.id]: 'Brief unavailable',
-        }))
-      } finally {
-        setBriefLoadingId((cur) => (cur === card.id ? null : cur))
-      }
-    },
-    [briefs, openBriefIds, tab]
-  )
-
-  const briefTop5 = useCallback(async () => {
-    if (digestOpen) {
-      setDigestOpen(false)
-      return
-    }
-    if (digest && digest.tab === tab) {
-      setDigestOpen(true)
-      return
-    }
-    const top = items.slice(0, 5)
-    if (top.length === 0) return
-    setDigestLoading(true)
-    setDigestError(null)
-    try {
-      const res = await fetch('/api/trading/news/brief', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mode: 'top5',
-          tab,
-          headlines: top.map(cardToPayload),
-        }),
-      })
-      const json = await res.json()
-      if (!res.ok || !json?.ok || !json.digest) {
-        setDigestError(json?.error || 'Brief unavailable')
-        return
-      }
-      setDigest(json.digest as Top5NewsDigest)
-      setDigestOpen(true)
-    } catch {
-      setDigestError('Brief unavailable')
-    } finally {
-      setDigestLoading(false)
-    }
-  }, [digest, digestOpen, items, tab])
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 space-y-6">
@@ -376,54 +256,9 @@ export default function DeskNewsPage() {
             Headlines · {tab}
           </h2>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={digestLoading || items.length === 0}
-              onClick={() => void briefTop5()}
-              className="rounded border border-violet-500/40 bg-violet-600/20 px-2 py-1 text-[10px] font-semibold text-violet-100 hover:bg-violet-600/30 disabled:opacity-40"
-            >
-              {digestLoading
-                ? 'Briefing…'
-                : digestOpen
-                  ? 'Hide top 5'
-                  : 'Brief top 5'}
-            </button>
             <span className="text-[10px] text-gray-600">{data?.disclaimer}</span>
           </div>
         </div>
-
-        {digestError && (
-          <p className="rounded-lg border border-amber-800/40 bg-amber-950/30 px-3 py-2 text-xs text-amber-100">
-            {digestError}
-          </p>
-        )}
-        {digestOpen && digest && (
-          <div className="rounded-xl border border-violet-500/30 bg-violet-950/25 px-3.5 py-3 space-y-2">
-            <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-violet-200">
-              Session news bias · Haiku
-              {digest.cached ? ' · cached' : ''}
-            </div>
-            <p className="text-sm text-violet-50 leading-relaxed">{digest.sessionBias}</p>
-            <ul className="space-y-1.5">
-              {digest.ranked.map((r) => (
-                <li key={r.headlineId} className="text-[11px] text-gray-300">
-                  <span className={`font-semibold uppercase ${BIAS_STYLE[r.bias] || ''}`}>
-                    {r.bias}
-                  </span>
-                  <span className="text-gray-500"> · </span>
-                  {r.oneLiner}
-                </li>
-              ))}
-            </ul>
-            {digest.koreaNote && (
-              <p className="text-[11px] text-sky-200/90 border-t border-white/10 pt-2">
-                <span className="font-semibold text-sky-100">Korea→US: </span>
-                {digest.koreaNote}
-              </p>
-            )}
-            <p className="text-[10px] text-gray-500">{digest.disclaimer}</p>
-          </div>
-        )}
 
         {loading && !data && (
           <p className="text-sm text-gray-500 animate-pulse py-8 text-center">
@@ -447,19 +282,9 @@ export default function DeskNewsPage() {
               key={card.id}
               card={card}
               nowMs={nowMs}
-              brief={openBriefIds[card.id] ? briefs[card.id] || null : null}
-              briefError={briefErrors[card.id] || null}
-              loading={briefLoadingId === card.id}
-              open={!!openBriefIds[card.id]}
-              onExplain={() => void explainOne(card)}
             />
           ))}
         </div>
-
-        <p className="pt-2 text-[10px] text-gray-600 leading-relaxed">
-          {BRIEF_DISCLAIMER} Haiku briefs are optional context for bias —
-          never an entry signal.
-        </p>
       </section>
     </div>
   )
@@ -468,19 +293,9 @@ export default function DeskNewsPage() {
 function NewsCard({
   card,
   nowMs,
-  brief,
-  briefError,
-  loading,
-  open,
-  onExplain,
 }: {
   card: DeskNewsCard
   nowMs: number
-  brief: NewsImpactBrief | null
-  briefError: string | null
-  loading: boolean
-  open: boolean
-  onExplain: () => void
 }) {
   return (
     <article className="rounded-xl border border-white/10 bg-surface-800/70 px-3.5 py-3 hover:border-white/20 transition">
@@ -513,61 +328,7 @@ function NewsCard({
         <h3 className="mt-1.5 text-sm font-semibold text-white leading-snug">{card.headline}</h3>
       )}
       <p className="mt-1 text-[11px] text-gray-400 leading-relaxed">{card.deskNote}</p>
-
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={onExplain}
-          disabled={loading}
-          className="rounded border border-violet-500/35 bg-violet-600/15 px-2 py-0.5 text-[10px] font-semibold text-violet-100 hover:bg-violet-600/25 disabled:opacity-50"
-        >
-          {loading ? 'Haiku…' : open ? 'Hide brief' : 'Explain impact'}
-        </button>
-      </div>
-
-      {briefError && (
-        <p className="mt-2 text-[11px] text-amber-200/90">{briefError}</p>
-      )}
-      {brief && <BriefPanel brief={brief} />}
     </article>
-  )
-}
-
-function BriefPanel({ brief }: { brief: NewsImpactBrief }) {
-  return (
-    <div className="mt-2 rounded-lg border border-violet-500/25 bg-black/30 px-3 py-2.5 space-y-2">
-      <div className="flex flex-wrap items-center gap-2 text-[10px] text-violet-200/80">
-        <span className="font-bold uppercase tracking-wide">Haiku impact</span>
-        <span className="text-gray-500">· {brief.horizon.replace('_', ' ')}</span>
-        {brief.cached && <span className="text-gray-600">· cached</span>}
-      </div>
-      <p className="text-[12px] text-gray-100 leading-relaxed">{brief.plainEnglish}</p>
-      <div className="flex flex-wrap gap-2">
-        {brief.deskImpacts.map((d) => (
-          <span
-            key={d.desk}
-            className="rounded border border-white/10 bg-white/5 px-2 py-1 text-[10px]"
-            title={d.note}
-          >
-            <span className="font-semibold text-gray-200">{d.desk}</span>{' '}
-            <span className={`uppercase font-bold ${BIAS_STYLE[d.bias] || ''}`}>
-              {d.bias}
-            </span>
-          </span>
-        ))}
-      </div>
-      <p className="text-[11px] text-gray-400">
-        <span className="text-gray-500">Why: </span>
-        {brief.why}
-      </p>
-      {brief.koreaTransmission && (
-        <p className="text-[11px] text-sky-200/90">
-          <span className="font-semibold text-sky-100">Korea→US: </span>
-          {brief.koreaTransmission}
-        </p>
-      )}
-      <p className="text-[10px] text-gray-600">{brief.disclaimer}</p>
-    </div>
   )
 }
 

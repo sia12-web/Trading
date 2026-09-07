@@ -11,7 +11,26 @@
  * Deterministic CALL Gate (Layer 3), and Leo Voice Co-Pilot (Layer 4).
  */
 
-import { candleWickMetrics } from '@/lib/chart/rangeEdgeTails'
+export function candleWickMetrics(bar: { open: number; high: number; low: number; close: number }) {
+  const range = Math.max(0.0001, bar.high - bar.low)
+  const body = Math.abs(bar.close - bar.open)
+  const topWick = bar.high - Math.max(bar.open, bar.close)
+  const bottomWick = Math.min(bar.open, bar.close) - bar.low
+  return {
+    range,
+    body,
+    bodyPts: body,
+    topWick,
+    bottomWick,
+    upperWickPts: topWick,
+    lowerWickPts: bottomWick,
+    upperRatio: topWick / range,
+    lowerRatio: bottomWick / range,
+    topWickPct: (topWick / range) * 100,
+    bottomWickPct: (bottomWick / range) * 100,
+    bodyPct: (body / range) * 100,
+  }
+}
 
 export type HTFExcessType = 'BUYING_EXCESS' | 'SELLING_EXCESS' | 'NEUTRAL'
 export type HTFTier = 'LOCAL_INTRADAY' | 'HTF_CONFLUENCE'

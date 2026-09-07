@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
-import type { HistoryResponse, LevelHistory } from '@/lib/services/levelFinderAgent/types'
+import type { HistoryResponse, LevelHistory } from '@/types/levels'
 
 /**
  * Validates query parameters

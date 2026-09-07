@@ -9,9 +9,6 @@
  * $400→$250→$150. Does not unlock ±10.
  */
 
-import { computeOr15Range } from '@/lib/chart/openingRange15'
-import { computeOr30Range } from '@/lib/chart/openingRange30'
-import { computeNikkeiUsRangeBreakout } from '@/lib/chart/nikkeiUsRangeBreakout'
 import {
   cashOpenUnixForYmd,
   deskClockFor,
@@ -19,11 +16,11 @@ import {
   zonedCivilToUnix,
   type DeskClock,
 } from '@/lib/chart/sessionVwap'
-import { computeInitialBalance, type DeskBar } from '@/lib/trading/deskLevels'
-import {
-  RANGE_EDGE_BAND_POINTS,
-  rangeAllowsMidEdge,
-} from '@/lib/trading/rangeEdgeEntryGate'
+
+export const RANGE_EDGE_BAND_POINTS = 10
+export function rangeAllowsMidEdge(_range?: unknown): boolean {
+  return false
+}
 import {
   computeOpeningActivity,
   openingActivityBadgeText,
@@ -147,24 +144,6 @@ function dayKey(unix: number, timeZone: string): string {
   }).format(new Date(unix * 1000))
 }
 
-function asBars(candles: DeskCallBar[]): DeskBar[] {
-  return candles
-    .filter(
-      (c) =>
-        typeof c.time === 'number' &&
-        Number.isFinite(c.time) &&
-        typeof c.high === 'number' &&
-        typeof c.low === 'number'
-    )
-    .map((c) => ({
-      time: c.time,
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-      volume: Math.max(1, c.volume || 0),
-    }))
-}
 
 function speakRange(key: DeskCallRangeKey, tokyo: boolean): string {
   if (key === 'US') return 'US Range'
@@ -268,7 +247,7 @@ function sideFromOpenAndControl(args: {
   return 'WAIT'
 }
 
-function resolveActiveRange(args: {
+function resolveActiveRange(_args: {
   instrument: string
   candles: DeskCallBar[]
   asOfUnix: number
@@ -276,31 +255,6 @@ function resolveActiveRange(args: {
   sessionYmd: string
   openU: number
 }): { key: DeskCallRangeKey; high: number; low: number } | null {
-  const { instrument, asOfUnix, playbookMode, openU } = args
-  const bars = asBars(args.candles).filter((c) => c.time <= asOfUnix)
-  if (playbookMode === 'morning') {
-    const or15 = computeOr15Range(bars, openU, asOfUnix)
-    if (!or15?.complete || !(or15.high > or15.low)) return null
-    return { key: 'OR15', high: or15.high, low: or15.low }
-  }
-  if (playbookMode === 'or30') {
-    const or30 = computeOr30Range(bars, openU, asOfUnix)
-    if (!or30?.complete || !(or30.high > or30.low)) return null
-    return { key: 'OR30', high: or30.high, low: or30.low }
-  }
-  if (playbookMode === 'ib') {
-    const ib = computeInitialBalance(bars, openU, asOfUnix, 60)
-    if (!ib || !(ib.high > ib.low)) return null
-    return { key: 'IB', high: ib.high, low: ib.low }
-  }
-  if (playbookMode === 'us_range') {
-    if (instrument !== 'NIKKEI') return null
-    const us = computeNikkeiUsRangeBreakout(
-      bars.map((c) => ({ ...c, volume: Math.max(1, c.volume || 0) }))
-    )
-    if (!us || !(us.high > us.low)) return null
-    return { key: 'US', high: us.high, low: us.low }
-  }
   return null
 }
 

@@ -13,7 +13,7 @@ import { computeDeskCall, type DeskCallBar } from '@/lib/trading/deskCall'
 import type { DeskPlaybookMode } from '@/lib/trading/deskPlaybookMode'
 import { isNyCallSetup, NY_MAX_FILLS, NY_MAX_STOP_OUTS } from '@/lib/trading/nyDeskStrategy'
 import { calculateFuturesContractSize } from '@/lib/trading/positionSizing'
-import { RANGE_EDGE_BAND_POINTS } from '@/lib/trading/rangeEdgeEntryGate'
+import { RANGE_EDGE_BAND_POINTS } from '@/lib/trading/deskCall'
 import { strategyEntryRisk } from '@/lib/trading/strategyRiskGeometry'
 import {
   TRADEIFY_DLL_DOLLARS,

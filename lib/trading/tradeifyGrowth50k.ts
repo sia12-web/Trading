@@ -21,6 +21,7 @@ export const TRADEIFY_FUNDED_LOCK_BALANCE = 52_100
 export const TRADEIFY_RISK_FIRST_DOLLARS = 400
 export const TRADEIFY_RISK_SECOND_DOLLARS = 250
 export const TRADEIFY_RISK_THIRD_DOLLARS = 150
+export const TRADEIFY_MAX_DAILY_FILLS = 3
 
 /** Refuse rather than place a token-size stop. */
 export const TRADEIFY_MIN_RISK_DOLLARS = 50
@@ -333,6 +334,7 @@ export function resolveTradeifyPlace(input: TradeifyPlaceInput = {}): TradeifyPl
   if (tradeifyMustFlatten(now)) return deny('must_flatten')
   if (input.newsBlocked) return deny('news_lock')
   if (input.hedgeBlocked) return deny('hedge_conflict')
+  if (fillsUsed >= TRADEIFY_MAX_DAILY_FILLS) return deny('session_full')
   if (stopOuts >= TRADEIFY_MAX_STOP_OUTS) return deny('day_locked_stops')
   if (greenLocked) return deny('day_locked_green')
   if (leftoverDll < TRADEIFY_MIN_RISK_DOLLARS) return deny('dll_exhausted')

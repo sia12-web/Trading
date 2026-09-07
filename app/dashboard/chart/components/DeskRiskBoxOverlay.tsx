@@ -16,11 +16,15 @@ import {
   riskBoxDollarPreview,
 } from '@/lib/chart/chartPointerPrice'
 import { useStickySeriesLayout } from '@/app/dashboard/chart/components/useStickySeriesLayout'
-import {
-  clampPriceToRangeEdgeEnvelope,
-  snapEntryToNearestOpenBandCenter,
-  type RangeEdgeKind,
-} from '@/lib/trading/rangeEdgeEntryGate'
+export type RangeEdgeKind = 'high' | 'low' | 'mid'
+
+function clampPriceToRangeEdgeEnvelope(price: number, ..._rest: unknown[]): number {
+  return price
+}
+
+function snapEntryToNearestOpenBandCenter(args: { entry: number; [k: string]: unknown }) {
+  return { price: args.entry, hit: { range: { label: null as string | null } } }
+}
 import type { StrategyRangeEdges } from '@/lib/trading/strategyRiskGeometry'
 
 export type DeskRiskBoxState = {

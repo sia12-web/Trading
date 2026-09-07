@@ -61,4 +61,7 @@ bots/output/
 
 __pycache__/
 *.pyc
+tmp-*.json
+scratch/
+
 

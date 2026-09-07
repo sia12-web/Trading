@@ -41,7 +41,6 @@ import {
 } from '@/lib/trading/attemptLadder'
 import {
   LIVE_CLOCK_REFUSE,
-  clockedNameOnlyMessage,
   isLiveClockInstrument,
 } from '@/lib/trading/liveDeskBook'
 import {
@@ -593,25 +592,29 @@ export function isLiveTipStreamAllowed(
 ): { open: boolean; reason: string } {
   const stream = isChartStreamAllowed(instrument, now)
   if (!stream.open) return stream
-  const attended = !!(opts?.clockedIn || opts?.attendedToday)
-  if (isAfternoonWatchWindow(now, instrument)) {
-    if (attended) return { open: true, reason: 'Afternoon tip (attended desk)' }
-    return {
-      open: false,
-      reason: 'Afternoon tip frozen — no morning attendance (save feed cost)',
+  if (opts && opts.attendedToday === false && !opts.clockedIn) {
+    if (isAfternoonWatchWindow(now, instrument)) {
+      return {
+        open: false,
+        reason: 'Afternoon tip frozen — no morning attendance (save feed cost)',
+      }
+    }
+    if (isDeskInstrument(instrument)) {
+      const s = sessionFor(instrument)
+      const t = parseTimeToSeconds(timeInTz(now, s.tz))
+      const open = parseTimeToSeconds(s.marketOpen)
+      if (t >= open) {
+        return {
+          open: false,
+          reason: 'Not clocked in — tip locked until clock-in (late join still available during cash session)',
+        }
+      }
     }
   }
-  // Morning focus: before cash open tip is free; after open require attendance
-  if (!isDeskInstrument(instrument)) return stream
-  const s = sessionFor(instrument)
-  const t = parseTimeToSeconds(timeInTz(now, s.tz))
-  const open = parseTimeToSeconds(s.marketOpen)
-  if (t < open) return { open: true, reason: 'Pre-open focus tip' }
-  if (attended) return { open: true, reason: 'Session tip (clocked in)' }
-  return {
-    open: false,
-    reason: 'Not clocked in — tip locked until clock-in (late join still available during cash session)',
+  if (isAfternoonWatchWindow(now, instrument)) {
+    return { open: true, reason: 'Afternoon tip stream' }
   }
+  return { open: true, reason: 'Session tip stream' }
 }
 
 /**
@@ -914,10 +917,10 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   })
   const dayDone =
     !!input.dayDone || !!input.marketDisabled || ladder.dayLocked
-  // System is fully automated at 9:30 AM — clockedIn is automatically true during session window
+  // System runs automatically — clockedIn defaults to true unless explicitly overridden
   const inDeskWindow = isWeekdayInTz(now, s.tz) && t >= analyze && t < close
-  const clockedIn = isWeekdayInTz(now, s.tz) && t >= open - LIVE_FOCUS_LEAD_MINUTES * 60 && t < close
-  const attendedToday = true
+  const clockedIn = input.clockedIn !== undefined ? !!input.clockedIn : true
+  const attendedToday = input.attendedToday !== undefined ? !!input.attendedToday : true
   /** Re-clock not needed as system runs automatically */
   const canClockIn = false
 
@@ -1168,7 +1171,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       ...base,
       rangeStrategy: null,
       phase: 'CLOSED',
-      canViewLiveChart: false,
+      canViewLiveChart: true,
       canFetchLiveBars: false,
       canPlaceEntry: false,
       canManagePosition: false,
@@ -1183,8 +1186,8 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       ...base,
       rangeStrategy: null,
       phase: afternoonWatch ? 'DONE' : 'DONE',
-      canViewLiveChart: canView || (afternoonWatch && !!locked && attendedToday),
-      canFetchLiveBars: clockedIn && bars.open && !!locked,
+      canViewLiveChart: true,
+      canFetchLiveBars: false,
       canPlaceEntry: false,
       canManagePosition: false,
       message:
@@ -1197,21 +1200,17 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
 
   if (!locked) {
     const pickHint = suggestedInstrument
-      ? `AI suggests ${suggestedInstrument}. Clock into the NY desk — DOW / NASDAQ / GOLD / CRUDE share 3 fills.`
-      : 'Awaiting ranked board (DOW · NASDAQ · GOLD · CRUDE)…'
+      ? `System pick: ${suggestedInstrument}. Direct trading on DOW / NASDAQ / GOLD / CRUDE.`
+      : 'Monitoring markets (DOW · NASDAQ · GOLD · CRUDE)…'
     return finish({
       ...base,
       rangeStrategy: null,
-      phase: t >= analyze && t < open ? 'RECOMMENDED' : 'PREP',
-      canViewLiveChart: nyDualBrowse,
-      canFetchLiveBars: false,
-      canPlaceEntry: false,
-      canManagePosition: false,
-      message: nyDualBrowse
-        ? t >= analyze
-          ? pickHint
-          : `NY focus — browse DOW, NASDAQ, GOLD, CRUDE. Ranked board at ${analyzeEt} ${TRADER_DISPLAY_LABEL}.`
-        : pickHint,
+      phase: t >= analyze && t < open ? 'RECOMMENDED' : t >= open ? 'ENTRY' : 'PREP',
+      canViewLiveChart: true,
+      canFetchLiveBars: true,
+      canPlaceEntry: t >= open && !dayDone,
+      canManagePosition: true,
+      message: pickHint,
     })
   }
 
@@ -1222,13 +1221,11 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       ...base,
       rangeStrategy: null,
       phase: 'RECOMMENDED',
-      canViewLiveChart: clockedIn,
+      canViewLiveChart: true,
       canFetchLiveBars: false,
       canPlaceEntry: false,
       canManagePosition: false,
-      message: clockedIn
-        ? `Clocked in on ${locked}. Pre-open prep — ±10 after Open range locks ${deskLocalRangeAsTraderDisplay(or15LockHms(market), s.entryClose, s.tz, now)}.`
-        : `Trade ${locked} today. Clock in to unlock the live desk (${deskLocalRangeAsTraderDisplay(s.marketOpen, s.lunchClose, s.tz, now)}).`,
+      message: `Pre-open prep (${deskLocalRangeAsTraderDisplay(s.marketOpen, s.lunchClose, s.tz, now)}).`,
     })
   }
 
@@ -1810,34 +1807,16 @@ export function assertCanOpenPosition(
   if (!isDeskInstrument(instrument)) {
     return { ok: false, status: 400, message: 'Desk only allows DOW, NASDAQ, GOLD, or CRUDE' }
   }
-  if (gate.glanceOnly) {
-    return {
-      ok: false,
-      status: 403,
-      message:
-        gate.lockedInstrument && instrument !== gate.lockedInstrument
-          ? clockedNameOnlyMessage(gate.lockedInstrument)
-          : gate.message || LIVE_CLOCK_REFUSE,
-    }
-  }
   if (!gate.canPlaceEntry) {
     let message: string
-    if (!gate.clockedIn) {
-      message = gate.canClockIn
-        ? 'Clocked out — click “Today I trade” to resume entries.'
-        : 'Clocked out — no new entries. Manage only if you have an open book.'
-    } else if (gate.dayLocked) {
+    if (gate.dayLocked) {
       message = 'Session attempt cap reached — trading switched off. No new entries.'
     } else if (gate.phase === 'MANAGE') {
       message = 'Position open — manage only, no new entries.'
     } else if (gate.message && gate.message.trim()) {
-      // OR30 forming / wait for US Range clock / mid ended — use precise desk copy
       message = gate.message.trim()
     } else if (gate.phase === 'FLAT') {
-      message =
-        gate.market === 'TOKYO'
-          ? 'Entry window closed — wait for US Range or Tokyo IB unlock (if still eligible).'
-          : 'Entry window closed — wait for OR30 or IB unlock (if still eligible).'
+      message = 'Entry window closed.'
     } else if (gate.phase === 'DONE') {
       message = 'Entry windows done for today — manage if open, no new entries.'
     } else if (gate.phase === 'CLOSED') {
@@ -1846,18 +1825,6 @@ export function assertCanOpenPosition(
       message = `Cannot place entry in phase ${gate.phase}`
     }
     return { ok: false, status: 403, message }
-  }
-  // Free-switch NY board: any live clock instrument may place while clocked in.
-  if (
-    gate.lockedInstrument &&
-    instrument !== gate.lockedInstrument &&
-    !(isLiveClockInstrument(instrument) && isLiveClockInstrument(gate.lockedInstrument))
-  ) {
-    return {
-      ok: false,
-      status: 403,
-      message: clockedNameOnlyMessage(gate.lockedInstrument),
-    }
   }
   return { ok: true }
 }

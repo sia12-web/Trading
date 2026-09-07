@@ -1,7 +1,7 @@
 {
   "name": "trading-platform",
   "version": "0.1.0",
-  "description": "Day trading platform with AI-powered analysis",
+  "description": "Deterministic institutional day trading execution desk",
   "private": true,
   "engines": {
     "node": ">=22"
@@ -17,7 +17,6 @@
     "nikkei:ny-range": "npx tsx scripts/nikkei-last-ny-session-range.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.24.0",
     "@supabase/ssr": "^0.0.10",
     "@supabase/supabase-js": "^2.39.0",
     "autoprefixer": "^10.5.2",

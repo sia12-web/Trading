@@ -212,16 +212,6 @@ async function runMorningReview(request: NextRequest) {
 
     await saveMorningJournal(supabase, attendance.id, morningJournal, afternoonCandidates)
 
-    // Refresh AI levels for lunch-break / lunch-range playbook (clocked-in days only)
-    try {
-      const { runAutoLevelPrep } = await import('@/lib/services/autoLevelPrep')
-      await runAutoLevelPrep(instrument as Instrument, {
-        force: true,
-        mode: 'ib',
-      })
-    } catch (err) {
-      logger.warn('morning-review.afternoon_levels_failed', { err })
-    }
 
     const sessionLabel =
       market === 'TOKYO'

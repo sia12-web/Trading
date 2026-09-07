@@ -30,9 +30,6 @@ export function checkEnv(): EnvCheckResult {
     for (const key of REQUIRED_PROD) {
       if (!process.env[key]?.trim()) missing.push(key)
     }
-    if (!process.env.ANTHROPIC_API_KEY?.trim() && !process.env.GEMINI_API_KEY?.trim()) {
-      missing.push('ANTHROPIC_API_KEY or GEMINI_API_KEY')
-    }
     if (process.env.DESK_MODE !== 'single' && process.env.ALLOW_DEV_AUTH === 'true') {
       warnings.push('ALLOW_DEV_AUTH=true in production weakens auth — prefer DESK_MODE=single or Supabase login')
     }

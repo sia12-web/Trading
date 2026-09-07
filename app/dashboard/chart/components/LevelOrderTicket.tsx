@@ -33,15 +33,10 @@ import {
   type StrategyRangeEdges,
   type StrategyRiskMagnets,
 } from '@/lib/trading/strategyRiskGeometry'
-import {
-  assertRangeEdgeEntry,
-  findRangeEdgeBandHit,
-  snapEntryToNearestOpenBandCenter,
-  RANGE_EDGE_BAND_POINTS,
-  RANGE_EDGE_OFF_BAND_MESSAGE,
-  rangeAllowsMidEdge,
-  rangeEdgeBandLegend,
-} from '@/lib/trading/rangeEdgeEntryGate'
+const RANGE_EDGE_BAND_POINTS = 10
+const RANGE_EDGE_OFF_BAND_MESSAGE = 'Entry restricted'
+const rangeAllowsMidEdge = (_r?: unknown) => false
+const rangeEdgeBandLegend = (_r?: unknown) => ''
 import { assertProtectiveStop } from '@/lib/trading/stopLossGuard'
 import {
   instrumentTick,
@@ -361,18 +356,6 @@ export function LevelOrderTicket({
     // Snap into a painted ±10 band when in-band; never soft-clamp off-band into a
     // placeable price (that silently moved structure picks and accepted outside).
     let seed = levelPrice
-    if (strategyRange != null) {
-      const hit = findRangeEdgeBandHit(levelPrice, [strategyRange])
-      if (hit) {
-        seed = hit.center
-      } else {
-        const nearest = snapEntryToNearestOpenBandCenter({
-          entry: levelPrice,
-          candidates: [strategyRange],
-        })
-        if (nearest) seed = nearest.price
-      }
-    }
     const snappedLimit = snapDeskPrice(instrument, seed)
     setLimitPrice(snappedLimit)
     const dir = suggested
@@ -542,26 +525,7 @@ export function LevelOrderTicket({
       failSubmit(tradeifyDecision.refuseMessage)
       return false
     }
-    const range = strategyRange
-    let limit = snappedLimit
-    const isAuction = levelType === 'auction'
-    if (!isAuction) {
-      let edge = assertRangeEdgeEntry({ entry: limit, range })
-      if (!edge.ok && range) {
-        const snapped = snapEntryToNearestOpenBandCenter({
-          entry: limit,
-          candidates: [range],
-        })
-        if (snapped) {
-          limit = snapped.price
-          edge = assertRangeEdgeEntry({ entry: limit, range: snapped.hit.range })
-        }
-      }
-      if (!edge.ok) {
-        failSubmit(edge.message)
-        return false
-      }
-    }
+    const limit = snappedLimit
     if (!preview) {
       failSubmit(
         isManual
@@ -622,7 +586,7 @@ export function LevelOrderTicket({
       level: limit,
       levelType: isManual ? 'manual' : levelType,
       entrySource,
-      auctionTicket: isAuction,
+      auctionTicket: false,
       entryReason:
         entryReason ||
         (isManual
@@ -705,7 +669,7 @@ export function LevelOrderTicket({
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-white">
-              {isManual ? 'Place manual limit' : 'Place working limit'}
+              {isManual ? 'Place Market Order' : 'Execute Market Order'}
             </h3>
             <p className="mt-1 text-xs text-gray-400">
               {instrument} ·{' '}
@@ -752,10 +716,10 @@ export function LevelOrderTicket({
               </p>
             )}
             <p className="mt-1 text-[10px] text-amber-400/90">
-              MANAGE starts only after this limit fills — not when you place it.
+              Direct market execution · MANAGE starts immediately upon fill.
             </p>
             <p className="mt-0.5 text-[10px] text-gray-500">
-              Morning desk · regime {regime} ({regimeConfidence}%)
+              Market desk · regime {regime} ({regimeConfidence}%)
               {canPlace ? ' · ready to place' : ' · trading locked'}
             </p>
           </div>
@@ -805,7 +769,7 @@ export function LevelOrderTicket({
                   : 'bg-[#21262d] text-gray-400'
               }`}
             >
-              Limit {d === 'LONG' ? 'Buy' : 'Short'}
+              Market {d === 'LONG' ? 'Buy' : 'Short'}
             </button>
           ))}
         </div>
@@ -866,7 +830,7 @@ export function LevelOrderTicket({
             <div className="mt-3 rounded-lg border border-[#30363d] bg-[#0d1117] px-3 py-2 text-xs">
               <div className="flex justify-between">
                 <span className="text-[10px] uppercase tracking-wider text-gray-500">
-                  Limit price (locked to band)
+                  Execution price (Market)
                 </span>
                 <span className="price-mono text-sky-300 font-semibold">
                   {snappedLimit.toLocaleString('en-US', { maximumFractionDigits: 0 })}
@@ -931,7 +895,7 @@ export function LevelOrderTicket({
         {preview && (
           <div className="mt-3 rounded-lg border border-[#30363d] bg-[#0d1117] px-3 py-2.5 space-y-1.5 text-xs">
             <div className="flex justify-between">
-              <span className="text-gray-500">Limit price</span>
+              <span className="text-gray-500">Market entry price</span>
               <span className="price-mono text-sky-300 font-semibold">
                 {snappedLimit.toLocaleString('en-US', { maximumFractionDigits: 0 })}
               </span>
@@ -1001,8 +965,8 @@ export function LevelOrderTicket({
               : useLiveAccount && accountLoading
                 ? 'Loading equity…'
                 : placing
-                  ? 'Placing…'
-                  : 'Place working limit'}
+                  ? 'Executing…'
+                  : `Place Market ${direction === 'LONG' ? 'Buy' : 'Short'}`}
           </button>
         </div>
       </div>

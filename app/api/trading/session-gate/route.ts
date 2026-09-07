@@ -19,7 +19,6 @@ import {
   type DeskInstrument,
 } from '@/lib/trading/sessionGate'
 import {
-  getTodayAttendance,
   autoLunchClockOut,
   tradeDateForInstrument,
 } from '@/lib/trading/deskAttendance'
@@ -171,23 +170,8 @@ export async function GET(request: Request) {
 
     await autoLunchClockOut(supabase, user.id)
 
-    const attendance = await getTodayAttendance(supabase, user.id, focusMarket, now)
-    const clockedIn = attendance?.status === 'clocked_in'
-    const attendedToday = !!attendance
-
-    const attendanceFocus =
-      (attendance?.traded_instrument &&
-      isNyDeskInstrument(attendance.traded_instrument)
-        ? attendance.traded_instrument
-        : null) ||
-      (attendance?.instrument && isNyDeskInstrument(attendance.instrument)
-        ? attendance.instrument
-        : null)
-
-    // Hard lock only from clock-in / open book (not AI suggest or viewing tab)
-    if (attendanceFocus && marketInstruments.includes(attendanceFocus)) {
-      lockedInstrument = attendanceFocus
-    }
+    const clockedIn = true
+    const attendedToday = true
 
     const focusLive = isAnyLiveFocusWindowActive(now)
     const viewingForGate =
@@ -256,8 +240,8 @@ export async function GET(request: Request) {
         open_instrument: openPos?.instrument ?? null,
         trade_date: tradeDate,
         server_now_et: gate.timeEst,
-        attendance_id: attendance?.id ?? null,
-        attendance_status: attendance?.status ?? null,
+        attendance_id: null,
+        attendance_status: null,
         useCall: clockedIn ? true : null,
         attempts_used: gate.attemptsUsed,
         max_attempts: gate.maxAttempts,

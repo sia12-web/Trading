@@ -9,8 +9,8 @@ import {
   type InstrumentBriefFacts,
   type LiveDeskBrief,
 } from '@/lib/trading/liveDeskBrief'
-import { resolveServerPlaybookBundle } from '@/lib/trading/serverPlaybookRange'
 import type { DeskInstrument, DeskMarket } from '@/lib/trading/sessionGate'
+
 import { getESTDateString } from '@/lib/utils/timeUtils'
 import { logger } from '@/lib/utils/logger'
 
@@ -48,40 +48,10 @@ async function overnightNoteFor(
 
 async function factsForInstrument(
   instrument: DeskInstrument,
-  now: Date
+  _now: Date
 ): Promise<InstrumentBriefFacts> {
-  const bundle = await resolveServerPlaybookBundle({ instrument, now })
   const overnightNote = await overnightNoteFor(instrument)
-
-  if (!bundle) {
-    return { instrument, overnightNote }
-  }
-
-  const { shaped, ladder } = bundle
-  return {
-    instrument,
-    ladder,
-    overnightNote,
-    or15: shaped.or15
-      ? { high: shaped.or15.high, low: shaped.or15.low, complete: true }
-      : null,
-    or30: shaped.or30
-      ? { high: shaped.or30.high, low: shaped.or30.low, complete: true }
-      : null,
-    ib: shaped.ib
-      ? { high: shaped.ib.high, low: shaped.ib.low, complete: true }
-      : null,
-    usRange: shaped.usRange
-      ? { high: shaped.usRange.high, low: shaped.usRange.low, complete: true }
-      : null,
-    lunchRange: shaped.lunchRange
-      ? {
-          high: shaped.lunchRange.high,
-          low: shaped.lunchRange.low,
-          complete: true,
-        }
-      : null,
-  }
+  return { instrument, overnightNote }
 }
 
 /** Build ranked live desk brief for NY names. */

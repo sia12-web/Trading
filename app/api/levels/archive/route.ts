@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import type { ArchiveRequest, ArchiveResponse } from '@/lib/services/levelFinderAgent/types'
+import type { ArchiveRequest, ArchiveResponse } from '@/types/levels'
 
 const DUPLICATE_THRESHOLD_PIPS = 50
 

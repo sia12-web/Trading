@@ -24,8 +24,6 @@ export async function register() {
     hasFinnhub: Boolean(process.env.FINNHUB_API_KEY),
     hasOanda: Boolean(process.env.OANDA_API_KEY),
     oandaEnv: process.env.OANDA_ENVIRONMENT || null,
-    oandaExecute: false,
-    hasAnthropic: Boolean(process.env.ANTHROPIC_API_KEY),
     hasSupabaseService: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
     hasCronSecret: Boolean(process.env.CRON_SECRET),
     hasTelegram: Boolean(

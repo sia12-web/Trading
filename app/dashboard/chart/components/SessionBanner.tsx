@@ -248,7 +248,7 @@ export function SessionBanner({
         canClockIn: !!json.canClockIn,
         glanceOnly: !!json.glanceOnly,
         asiaDeskActive: !!json.asiaDeskActive,
-        useCall: json.clockedIn ? true : null,
+        useCall: false,
         market: json.market,
         timeEst: json.timeEst,
         entryWindow: json.entryWindow,
@@ -583,14 +583,6 @@ export function SessionBanner({
             title="Overnight Asia range qualified — place both stop orders on Tradovate after 02:00 Montreal. Flatten 10:25."
           >
             ASIA DESK · BOTH STOPS
-          </span>
-        )}
-        {gate.clockedIn && (
-          <span
-            className="rounded bg-sky-500/25 px-2 py-0.5 text-sky-200 font-semibold text-xs border border-sky-500/40"
-            title="SYSTEM CALL ACTIVE — Trades allowed ONLY when high-conviction system call triggers."
-          >
-            SYSTEM CALL ONLY
           </span>
         )}
         {!SYSTEMATIC_LIVE_DESK && htfStatus && (

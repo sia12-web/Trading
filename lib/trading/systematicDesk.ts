@@ -4,7 +4,7 @@
  * Highlight Time / Simulation / Nikkei.
  */
 
-export const SYSTEMATIC_LIVE_DESK = true
+export const SYSTEMATIC_LIVE_DESK = false
 
 export const LIVE_DESK_NAMES = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'] as const
 export type LiveDeskName = (typeof LIVE_DESK_NAMES)[number]

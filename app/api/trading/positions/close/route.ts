@@ -12,7 +12,6 @@ import { getESTDateString } from '@/lib/utils/timeUtils'
 import { shouldExecuteOandaOrders } from '@/lib/oanda/config'
 import { closeOandaTrade } from '@/lib/oanda/orders'
 import { getOandaPrice } from '@/lib/oanda/pricing'
-import { interpretAiExitClaim } from '@/lib/trading/aiExitClaim'
 import { livePriceConfirmsStopHit } from '@/lib/trading/breakEvenStop'
 import { deskFuturesCashPnl, quoteBelongsToBook } from '@/lib/trading/deskExitGuard'
 import type { ClosePositionRequest, ClosePositionResponse, TradePosition } from '@/types/trading'
@@ -410,9 +409,7 @@ export async function POST(request: Request): Promise<NextResponse<ClosePosition
       claimed = retry.data
     }
 
-    const claim = interpretAiExitClaim({ data: claimed, error: updateError })
-
-    if (claim.kind === 'error') {
+    if (updateError) {
       logger.error('POST /api/trading/positions/close: Update failed', { error: updateError })
       return NextResponse.json(
         {
@@ -431,7 +428,7 @@ export async function POST(request: Request): Promise<NextResponse<ClosePosition
       )
     }
 
-    if (claim.kind === 'already_closed') {
+    if (!claimed) {
       logger.info('POST /api/trading/positions/close: already closed (idempotent)', {
         position_id: body.position_id,
       })

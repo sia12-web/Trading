@@ -11,7 +11,8 @@ import {
   zonedCivilToUnix,
   type DeskClock,
 } from '@/lib/chart/sessionVwap'
-import { INDEX_RVOL_FLOOR } from '@/lib/chart/rangeBreakSignals'
+
+export const INDEX_RVOL_FLOOR = 1.2
 import {
   closedControlPeriods,
   computeMarketControl,

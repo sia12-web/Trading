@@ -9,7 +9,7 @@
  */
 
 import type { DeskCallSide } from '@/lib/trading/deskCall'
-import type { RangeEdgeKind } from '@/lib/trading/rangeEdgeEntryGate'
+export type RangeEdgeKind = 'high' | 'low' | 'mid'
 
 export const NY_DESK_STRATEGY_ID = 'ny_call_legal_band_v1' as const
 
@@ -17,15 +17,14 @@ export const NY_TICKET_R = 1.5
 export const NY_RISK_LADDER_DOLLARS = [400, 250, 150] as const
 export const NY_MAX_FILLS = 3
 export const NY_MAX_STOP_OUTS = 2
-export const NY_WINDOWS = ['morning', 'or30', 'ib'] as const
+export const NY_WINDOWS = ['morning', 'session'] as const
 
-/** Telegram kinds that leave the phone — CALL ±10 and auction entrance. */
+/** Telegram kinds that leave the phone — CALL ±10. */
 export const NY_TELEGRAM_KIND = 'call_setup' as const
-export const AUCTION_TELEGRAM_KIND = 'auction_setup' as const
 
 export function isNyTelegramKind(kind: string | null | undefined): boolean {
   const k = String(kind || '').toLowerCase()
-  return k === NY_TELEGRAM_KIND || k === AUCTION_TELEGRAM_KIND
+  return k === NY_TELEGRAM_KIND
 }
 
 /** True when CALL is hunting and price is on the legal edge (not mid, not the opposite). */

@@ -15,11 +15,14 @@ import {
   structureFromRangeBrief,
   type ManageBookStructure,
 } from '@/lib/trading/manageOpenBook'
-import { buildRangeLiquidityBrief } from '@/lib/trading/rangeLiquidityBrief'
 import {
   deskPlaybookAnalysisMode,
   resolveDeskPlaybookMode,
 } from '@/lib/trading/deskPlaybookMode'
+
+function buildRangeLiquidityBrief(_args?: unknown): null {
+  return null
+}
 
 export type ManageRvolSnapshot = {
   rvol: number | null

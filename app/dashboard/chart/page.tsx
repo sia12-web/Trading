@@ -21,7 +21,6 @@ import type {
   StrategyRangeEdges,
   StrategyRiskMagnets,
 } from '@/lib/trading/strategyRiskGeometry'
-import { isAuctionTicketPayload } from '@/lib/trading/auctionLiveSignal'
 import {
   ManageDeskBar,
   type AiVerdict,
@@ -35,7 +34,7 @@ import {
 } from '@/lib/trading/deskInstrumentPreference'
 import { isAfternoonWatchWindow, sessionFor, deskMarketFor, isLiveTradingPageOpen } from '@/lib/trading/sessionGate'
 import { isAsiaLiveOrderOverlay, type AsiaDeskOverlay } from '@/lib/trading/asiaDesk'
-import { LIVE_CLOCK_REFUSE, clockedNameOnlyMessage, isLiveClockInstrument } from '@/lib/trading/liveDeskBook'
+import { isLiveClockInstrument } from '@/lib/trading/liveDeskBook'
 import { quoteBelongsToBook } from '@/lib/trading/deskExitGuard'
 import {
   TRADER_DISPLAY_LABEL,
@@ -49,7 +48,6 @@ import {
   liveLunchFlatKeepOpenKey,
   markLunchFlatKeepOpen,
 } from '@/lib/trading/morningLunchConfirm'
-import { assertRangeEdgeEntry, snapEntryToNearestOpenBandCenter } from '@/lib/trading/rangeEdgeEntryGate'
 import {
   assertBucketEntryEligible,
   attemptLadderFromCounts,
@@ -71,7 +69,7 @@ import {
   formatSessionEndNote,
   claimDeskNoteOnce,
   deskNoteClaimKey,
-} from '@/lib/trading/rangeEdgeAlerts'
+} from '@/lib/notify/deskSessionNotes'
 import {
   buildDeskNewsHazards,
   formatDayNewsDigest,
@@ -82,8 +80,6 @@ import {
   deskAlertTelegramText,
   formatDeskAlertToast,
 } from '@/lib/notify/deskAlertTelegram'
-import { LiveDeskBriefPanel } from './components/LiveDeskBriefPanel'
-import type { LiveDeskBrief } from '@/lib/trading/liveDeskBrief'
 import type { DeskInstrument } from '@/lib/trading/sessionGate'
 import {
   DESK_RISK_PROFILE_EVENT,
@@ -97,43 +93,21 @@ import {
   tradeifyMustFlatten,
 } from '@/lib/trading/tradeifyGrowth50k'
 
-/** Why new entries are blocked — shown on market/limit place attempts. */
+/** Why new entries are blocked — shown on market place attempts. */
 function entryDeniedMessage(gate: SessionGateState | null | undefined): string | null {
   if (!gate) return 'Session gate loading — try again in a moment.'
   if (gate.phase === 'MANAGE' || gate.open_position_id) {
     return 'Position open — manage only, no new entries.'
   }
-  if (!gate.clockedIn) {
-    if (gate.canClockIn) {
-      return 'Clocked out — click “Today I trade” to resume entries.'
-    }
-    if (gate.dayLocked || (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? SESSION_MAX_ATTEMPTS)) {
-      return 'Session attempt cap reached — trading switched off. No new entries.'
-    }
-    if (gate.phase === 'CLOSED') {
-      return 'Cash closed — desk is offline until the next session.'
-    }
-    return 'Clocked out — no new entries. Manage only if you have an open book.'
-  }
-  if (gate.glanceOnly) {
-    return (
-      gate.message?.trim() ||
-      (gate.lockedInstrument
-        ? clockedNameOnlyMessage(gate.lockedInstrument)
-        : LIVE_CLOCK_REFUSE)
-    )
-  }
   if (!gate.canPlaceEntry) {
     if (gate.dayLocked || (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? SESSION_MAX_ATTEMPTS)) {
       return 'Session attempt cap reached — trading switched off. No new entries.'
     }
-    // Prefer the live gate copy (OR30 forming / wait for US Range clock / etc.)
-    // over a blunt FLAT fallback — US Range H/L can be painted before its entry window.
     if (gate.message && gate.message.trim()) {
       return gate.message.trim()
     }
     if (gate.phase === 'FLAT') {
-      return 'Entry window closed — wait for OR30 or IB unlock (if still eligible).'
+      return 'Entry window closed.'
     }
     if (gate.phase === 'DONE') {
       return 'Entry windows done for today — manage if open, no new entries.'
@@ -142,7 +116,7 @@ function entryDeniedMessage(gate: SessionGateState | null | undefined): string |
       return 'Cash closed — desk is offline until the next session.'
     }
     if (gate.phase === 'PREP' || gate.phase === 'RECOMMENDED') {
-      return 'Pre-open prep — ±10 entries after Open range locks (open + 15m).'
+      return 'Pre-open prep — entries open with cash session.'
     }
     return 'Entries not available right now.'
   }
@@ -163,7 +137,7 @@ function rangeAwareEntryDeniedMessage(
 ): string | null {
   const denied = entryDeniedMessage(gate)
   if (!denied) return null
-  if (!gate || !gate.clockedIn || gate.dayLocked || gate.phase === 'MANAGE' || gate.phase === 'CLOSED') {
+  if (!gate || gate.dayLocked || gate.phase === 'MANAGE' || gate.phase === 'CLOSED') {
     return denied
   }
   if ((gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? SESSION_MAX_ATTEMPTS)) {
@@ -404,16 +378,13 @@ export default function ChartPage() {
     hover: string
   } | null>(null)
   const [rangeAtrAdvice, setRangeAtrAdvice] = useState<string | null>(null)
-  const [recommendation, setRecommendation] = useState<{
+  const [, setRecommendation] = useState<{
     instrument: Instrument
     regime: string
     regime_confidence: number
     recommendation_confidence: number
     message: string
   } | null>(null)
-  const [liveBrief, setLiveBrief] = useState<LiveDeskBrief | null>(null)
-  const [liveBriefLoading, setLiveBriefLoading] = useState(false)
-  const [liveBriefError, setLiveBriefError] = useState<string | null>(null)
 
   const jumpToPriceRef = useRef<((price: number) => void) | null>(null)
   const bannerRefreshRef = useRef<(() => void) | null>(null)
@@ -538,29 +509,7 @@ export default function ChartPage() {
         meta?.type === 'market'
       let workingPrice = price
       if (isManualFlow) {
-        const range = meta?.strategyRange ?? null
-        let edge = assertRangeEdgeEntry({
-          entry: workingPrice,
-          range,
-        })
-        if (!edge.ok && range) {
-          const snapped = snapEntryToNearestOpenBandCenter({
-            entry: workingPrice,
-            candidates: [range],
-          })
-          if (snapped) {
-            workingPrice = snapped.price
-            edge = assertRangeEdgeEntry({
-              entry: workingPrice,
-              range: snapped.hit.range,
-            })
-          }
-        }
-        if (!edge.ok) {
-          setFillError(edge.message)
-          setOrderStatus('rejected')
-          return
-        }
+        // Unconstrained manual/market limit entry
       }
 
       const side =
@@ -995,54 +944,6 @@ export default function ChartPage() {
         regimeFetchedRef.current = false
       })
   }, [])
-
-  // Late / live desk brief — refresh while locked (stale mitigation via asOf + poll)
-  useEffect(() => {
-    const late =
-      !!gate &&
-      !gate.clockedIn &&
-      !!gate.canClockIn &&
-      !gate.attendedToday &&
-      (gate.phase === 'ENTRY' ||
-        gate.phase === 'FLAT' ||
-        gate.phase === 'MANAGE' ||
-        gate.phase === 'DONE')
-    if (!late) {
-      return
-    }
-    let cancelled = false
-    const focus = 'NY'
-    const load = (isRefresh: boolean) => {
-      if (!isRefresh) setLiveBriefLoading(true)
-      setLiveBriefError(null)
-      fetch(`/api/trading/live-desk-brief?focus=${focus}`)
-        .then((r) => r.json())
-        .then((j) => {
-          if (cancelled) return
-          if (j?.brief) setLiveBrief(j.brief as LiveDeskBrief)
-          else setLiveBriefError(j?.error || 'Brief unavailable')
-        })
-        .catch(() => {
-          if (cancelled) return
-          setLiveBriefError('Brief failed to load')
-        })
-        .finally(() => {
-          if (!cancelled) setLiveBriefLoading(false)
-        })
-    }
-    load(false)
-    const id = window.setInterval(() => load(true), 60_000)
-    return () => {
-      cancelled = true
-      window.clearInterval(id)
-    }
-  }, [
-    gate?.clockedIn,
-    gate?.canClockIn,
-    gate?.attendedToday,
-    gate?.phase,
-    gate?.market,
-  ])
 
   // Finnhub high-impact calendar → soft Leo/Telegram warns (clock-in digest + T−60 / T−15)
   useEffect(() => {
@@ -1521,81 +1422,6 @@ export default function ChartPage() {
     [enterManage, cancelWorkingLimit]
   )
 
-  const persistWorking = useCallback(async (order: PendingLimitOrder) => {
-    const gen = orderGenRef.current
-    try {
-      const res = await fetch('/api/trading/positions/working', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          instrument: order.instrument,
-          level: order.level,
-          direction: order.direction,
-          entry_direction: order.direction,
-          stop_loss_price: order.stopLoss,
-          profit_target_price: order.profitTarget,
-          position_size: order.positionSize,
-          risk_amount: order.riskAmount,
-          account_size: order.accountSize,
-          entry_window: order.entryWindow,
-          regime: order.regime,
-          regime_confidence: order.regimeConfidence,
-          entry_reason: order.entryReason,
-          entry_source: order.entrySource,
-          auction_ticket: order.auctionTicket === true,
-          range_high: order.strategyRange?.high,
-          range_low: order.strategyRange?.low,
-          range_label: order.strategyRange?.label,
-          risk_profile: order.riskProfile ?? 'oanda_cash',
-        }),
-      })
-      if (gen !== orderGenRef.current) return
-      if (res.ok) {
-        const j = (await res.json().catch(() => ({}))) as { working_id?: string }
-        if (j.working_id && pendingRef.current) {
-          const withId = { ...pendingRef.current, workingId: j.working_id }
-          pendingRef.current = withId
-          setPending(withId)
-        }
-        return
-      }
-      if (!res.ok) {
-        const j = (await res.json().catch(() => ({}))) as {
-          error?: string
-          working?: WorkingLimitRow
-          existing_instrument?: string
-          existing_level?: number
-          existing_direction?: string
-        }
-        if (res.status === 409 && j.working) {
-          applyWorkingFromServer(j.working, { notifyBlocked: true })
-          return
-        }
-        if (res.status === 409 && j.existing_instrument && j.existing_level != null) {
-          applyWorkingFromServer(
-            {
-              instrument: j.existing_instrument,
-              entry_price: Number(j.existing_level),
-              entry_direction: j.existing_direction || 'LONG',
-            },
-            { notifyBlocked: true }
-          )
-          return
-        }
-        setOrderStatus('rejected')
-        setFillError(j.error || 'Working limit rejected by server')
-        pendingRef.current = null
-        setPending(null)
-      }
-    } catch {
-      if (gen !== orderGenRef.current) return
-      setOrderStatus('rejected')
-      setFillError('Working limit failed to persist — cleared')
-      pendingRef.current = null
-      setPending(null)
-    }
-  }, [applyWorkingFromServer])
-
   const expireWorkingLimits = useCallback(
     async (opts?: { forceExpireWorking?: boolean; forceCashClose?: boolean }) => {
       try {
@@ -1636,42 +1462,11 @@ export default function ChartPage() {
         return
       }
       const range = order.strategyRange ?? orderStrategyRange
-      const auctionTicket =
-        order.auctionTicket === true ||
-        isAuctionTicketPayload({
-          auction_ticket: order.auctionTicket,
-          entry_reason: order.entryReason,
-          levelType: order.levelType,
-        })
-      let level = order.level
-      if (!auctionTicket) {
-        let edge = assertRangeEdgeEntry({
-          entry: level,
-          range,
-        })
-        if (!edge.ok && range) {
-          const snapped = snapEntryToNearestOpenBandCenter({
-            entry: level,
-            candidates: [range],
-          })
-          if (snapped) {
-            level = snapped.price
-            edge = assertRangeEdgeEntry({ entry: level, range: snapped.hit.range })
-          }
-        }
-        if (!edge.ok) {
-          setFillError(edge.message)
-          setOrderStatus('rejected')
-          setOrderLevel(null)
-          setOrderLevelType(undefined)
-          return
-        }
-      }
+      const level = order.level
       // Attach range onto order for API if missing
       const orderWithRange: PendingLimitOrder = {
         ...order,
         level,
-        auctionTicket,
         strategyRange: range ?? null,
       }
       placingOrderRef.current = true
@@ -1690,27 +1485,15 @@ export default function ChartPage() {
       setFillError(null)
 
       const px = livePriceRef.current
-      // Limit-only desk: if price already through the limit, fill immediately; else work it
-      if (
-        px != null &&
-        limitWouldFill(orderWithRange.direction, orderWithRange.level, px)
-      ) {
-        pendingRef.current = orderWithRange
-        setPending(orderWithRange)
-        void fillPending(orderWithRange, orderWithRange.level).finally(() => {
-          placingOrderRef.current = false
-        })
-        return
-      }
-
-      // Optimistic WORKING — paint lines before network
+      // Direct market execution — execute immediately at current price
+      const execPrice = px ?? orderWithRange.level
       pendingRef.current = orderWithRange
       setPending(orderWithRange)
-      setOrderStatus('working')
-      placingOrderRef.current = false
-      void persistWorking(orderWithRange)
+      void fillPending(orderWithRange, execPrice).finally(() => {
+        placingOrderRef.current = false
+      })
     },
-    [fillPending, persistWorking, managePos, gate, orderStrategyRange]
+    [fillPending, managePos, gate, orderStrategyRange]
   )
   handlePlacedRef.current = handlePlaced
 
@@ -2151,59 +1934,16 @@ export default function ChartPage() {
     }
   }, [livePrice, managePos, handleBrokerExit])
 
-  const locked = gate?.lockedInstrument ?? null
-  const suggested =
-    gate?.suggestedInstrument ?? recommendation?.instrument ?? null
-  const clockedIn = !!gate?.clockedIn
-  const attendedToday = !!gate?.attendedToday
-  // Never clocked in today → lock for the cash session AFTER open (or missed).
-  // Pre-open NY dual browse (canViewLiveChart) keeps the chart visible with both tabs.
-  const chartLocked =
-    gate != null &&
-    !clockedIn &&
-    !gate.canViewLiveChart &&
-    !gate.asiaDeskActive &&
-    (!!gate.canClockIn ||
-      (!attendedToday &&
-        (gate.phase === 'PREP' ||
-          gate.phase === 'RECOMMENDED' ||
-          gate.phase === 'ENTRY' ||
-          gate.phase === 'FLAT' ||
-          gate.phase === 'MANAGE' ||
-          gate.phase === 'DONE')))
-  /** Late join after cash open — show ranked brief + clock-in (not “session skipped”). */
-  const lateJoinLocked =
-    chartLocked &&
-    !!gate?.canClockIn &&
-    !attendedToday &&
-    (gate.phase === 'ENTRY' ||
-      gate.phase === 'FLAT' ||
-      gate.phase === 'MANAGE' ||
-      gate.phase === 'DONE')
-  const missedSessionLocked =
-    chartLocked &&
-    !attendedToday &&
-    !gate?.canClockIn &&
-    (gate?.phase === 'DONE' || gate?.phase === 'FLAT')
-  const showPreOpenClockIn =
-    !clockedIn &&
-    !!gate?.canViewLiveChart &&
-    !!gate?.canClockIn &&
-    gate.market === 'NY'
+  const locked = null
+  const clockedIn = true
+  const attendedToday = true
   const inManage = gate?.phase === 'MANAGE' || !!managePos
   const inEntry = gate?.phase === 'ENTRY' && !!gate?.canPlaceEntry
-  const canTrade = inEntry && !pending && !managePos && clockedIn
-  const inWorking = !!pending && !managePos
+  const canTrade = inEntry && !pending && !managePos
   const showWorkingStrip =
-    (inWorking && pending != null) ||
     orderStatus === 'rejected' ||
     orderStatus === 'placing'
-  const showWorkingTicket =
-    isTradeifyGrowth50k(riskProfile) &&
-    pending != null &&
-    !managePos &&
-    pending.instrument !== 'NIKKEI' &&
-    !tvTicketClosed
+  const showWorkingTicket = false
   const showFilledTicket =
     isTradeifyGrowth50k(riskProfile) &&
     managePos != null &&
@@ -2212,16 +1952,10 @@ export default function ChartPage() {
   const showManageBar = inManage && managePos != null
   const showDeskOverlay =
     showWorkingStrip ||
-    showWorkingTicket ||
     showFilledTicket ||
     showManageBar ||
     !!fillError
-  // Playbook/levels only for the desk you clocked into — not on browse tabs after close
-  const deskLevelsActive =
-    !!gate &&
-    gate.phase !== 'CLOSED' &&
-    (clockedIn || attendedToday) &&
-    (!gate.allowedInstruments || gate.allowedInstruments.includes(instrument))
+  const deskLevelsActive = !!gate && gate.phase !== 'CLOSED'
   const deskAttended = clockedIn || attendedToday
 
   return (
@@ -2360,18 +2094,6 @@ export default function ChartPage() {
                     </span>
                   </>
                 )}
-                {pending && livePrice != null && orderStatus === 'working' && (
-                  <span className="text-gray-400">
-                    last {livePrice.toLocaleString()} ·{' '}
-                    {pending.direction === 'LONG'
-                      ? livePrice > pending.level
-                        ? 'waiting for price ≤ limit'
-                        : 'at/through limit…'
-                      : livePrice < pending.level
-                        ? 'waiting for price ≥ limit'
-                        : 'at/through limit…'}
-                  </span>
-                )}
                 {pending && (
                   <button
                     type="button"
@@ -2420,7 +2142,7 @@ export default function ChartPage() {
         )}
 
         <div className="relative flex-1 w-full h-full min-h-0">
-          {!chartLocked && chartBooted && (
+          {chartBooted && (
             <TradingChart
               initialInstrument={instrument}
               onInstrumentChange={setInstrument}
@@ -2513,221 +2235,9 @@ export default function ChartPage() {
               deskLevelsActive={deskLevelsActive}
               deskAttended={deskAttended}
               clockedIn={clockedIn}
-              useCall={true}
+              useCall={false}
               levelsRefreshKey={levelsRefreshKey}
             />
-          )}
-
-          {showPreOpenClockIn && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-4 z-40 flex justify-center px-4">
-              <div className="pointer-events-auto max-w-lg w-full rounded-2xl border border-amber-500/40 bg-[#161b22]/95 px-4 py-3 shadow-2xl backdrop-blur-md space-y-2">
-                <p className="text-center text-[11px] font-extrabold uppercase tracking-wider text-amber-300">
-                  {suggested
-                    ? `AI suggests ${suggested} — clock in to commit`
-                    : 'Browse DOW & NASDAQ — clock in when ready'}
-                </p>
-                <div className="flex items-center justify-center gap-2">
-                  {(['DOW', 'NASDAQ'] as Instrument[]).map((inst) => {
-                    const isRec = suggested === inst
-                    return (
-                      <button
-                        key={inst}
-                        type="button"
-                        onClick={async () => {
-                          saveDeskClockLock(inst)
-                          await fetch('/api/trading/clock-in', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              market: 'NY',
-                              instrument: inst,
-                            }),
-                          })
-                          setInstrument(inst)
-                          bannerRefreshRef.current?.()
-                          setGateTick((t) => t + 1)
-                        }}
-                        className={`flex-1 py-2.5 px-3 rounded-lg text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 border ${
-                          isRec
-                            ? 'bg-amber-500 text-black border-amber-400 shadow-lg shadow-amber-500/20 hover:bg-amber-400'
-                            : 'bg-surface-700 text-gray-200 border-surface-600 hover:bg-surface-600 hover:text-white'
-                        }`}
-                      >
-                        {isRec && <span>★ AI TOP PICK:</span>}
-                        <span>{inst === 'DOW' ? 'DOW · MYM' : 'NASDAQ · MNQ'}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {chartLocked && (
-            <div className="absolute inset-0 z-30 flex items-center justify-center rounded-xl border border-surface-600 bg-[#0d1117]/95 backdrop-blur-md p-6">
-              <div
-                className={`w-full px-6 py-5 text-center bg-[#161b22]/95 border border-amber-500/30 rounded-2xl shadow-2xl space-y-4 ${
-                  lateJoinLocked ? 'max-w-lg' : 'max-w-md'
-                }`}
-              >
-                {lateJoinLocked ? (
-                  <>
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[11px] font-extrabold uppercase tracking-wider">
-                      Late clock-in open
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-extrabold text-white tracking-tight">
-                        Live Desk Brief
-                      </h3>
-                      <p className="mt-1 text-xs text-gray-400 leading-relaxed">
-                        Cash open passed — you can still join for remaining probes. Dead OR30/IB
-                        books stay closed. Telegram does not clock you in.
-                      </p>
-                    </div>
-                    <LiveDeskBriefPanel
-                      brief={liveBrief}
-                      loading={liveBriefLoading}
-                      error={liveBriefError}
-                    />
-                    {gate?.canClockIn && (
-                      <div className="pt-2 flex flex-col gap-2">
-                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                          Clock in late — select desk:
-                        </span>
-                        <div className="flex items-center justify-center gap-2">
-                          {(['DOW', 'NASDAQ'] as Instrument[]).map((inst) => {
-                            const top =
-                              liveBrief?.suggestion.kind === 'trade' &&
-                              liveBrief.suggestion.instrument === inst
-                            return (
-                              <button
-                                key={inst}
-                                type="button"
-                                onClick={async () => {
-                                  const market = 'NY'
-                                  try {
-                                    saveDeskClockLock(inst)
-                                    const res = await fetch('/api/trading/clock-in', {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({
-                                        market,
-                                        instrument: inst,
-                                      }),
-                                    })
-                                    const j = await res.json().catch(() => ({}))
-                                    if (!res.ok) {
-                                      warningToast(
-                                        (j as { error?: string }).error ||
-                                          'Clock-in failed — try again'
-                                      )
-                                      return
-                                    }
-                                    setInstrument(inst)
-                                    bannerRefreshRef.current?.()
-                                    setGateTick((t) => t + 1)
-                                  } catch {
-                                    warningToast('Clock-in failed — network error')
-                                  }
-                                }}
-                                className={`flex-1 py-2.5 px-3 rounded-lg text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 border ${
-                                  top
-                                    ? 'bg-amber-500 text-black border-amber-400 shadow-lg shadow-amber-500/20 hover:bg-amber-400'
-                                    : 'bg-surface-700 text-gray-200 border-surface-600 hover:bg-surface-600 hover:text-white'
-                                }`}
-                              >
-                                {top && <span>★ BRIEF:</span>}
-                                <span>{inst === 'DOW' ? 'DOW · MYM' : 'NASDAQ · MNQ'}</span>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </>
-                ) : missedSessionLocked ? (
-                  <>
-                    <p className="text-lg font-bold text-white tracking-tight">Session closed</p>
-                    <p className="text-xs text-gray-400 leading-relaxed">
-                      Cash close passed with no clock-in — live desk stays locked. Wait for the next prep window.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[11px] font-extrabold uppercase tracking-wider">
-                      <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-                      PRE-MARKET PREP PHASE
-                    </div>
-
-                    <div>
-                      <h3 className="text-lg font-extrabold text-white tracking-tight">
-                        {suggested || recommendation ? (
-                          <>
-                            AI Recommendation:{' '}
-                            <span className="text-amber-400">
-                              {suggested ?? recommendation?.instrument}
-                            </span>
-                          </>
-                        ) : (
-                          'Pre-Market Session Analysis'
-                        )}
-                      </h3>
-                      <p className="mt-1 text-xs text-amber-200/90 font-medium leading-relaxed">
-                        {recommendation?.message ??
-                          (suggested
-                            ? `System pick: ${suggested}. Clock into the NY desk (DOW / NASDAQ / GOLD / CRUDE) — shared 3 fills.`
-                            : 'Overnight structure is on the chart. Clock into DOW / NASDAQ / GOLD / CRUDE — shared 3 fills.')}
-                      </p>
-                    </div>
-
-                    {gate?.canClockIn && (
-                      <div className="pt-2 flex flex-col gap-2">
-                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                          Select Desk & Clock In for Today:
-                        </span>
-                        <div className="flex items-center justify-center gap-2">
-                          {(['DOW', 'NASDAQ'] as Instrument[]).map((inst) => {
-                            const isRec = (suggested ?? recommendation?.instrument ?? 'DOW') === inst
-                            return (
-                              <button
-                                key={inst}
-                                type="button"
-                                onClick={async () => {
-                                  const market = 'NY'
-                                  saveDeskClockLock(inst)
-                                  await fetch('/api/trading/clock-in', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                      market,
-                                      instrument: inst,
-                                    }),
-                                  })
-                                  setInstrument(inst)
-                                  bannerRefreshRef.current?.()
-                                  setGateTick((t) => t + 1)
-                                }}
-                                className={`flex-1 py-2.5 px-3 rounded-lg text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 border ${
-                                  isRec
-                                    ? 'bg-amber-500 text-black border-amber-400 shadow-lg shadow-amber-500/20 hover:bg-amber-400 scale-[1.02]'
-                                    : 'bg-surface-700 text-gray-200 border-surface-600 hover:bg-surface-600 hover:text-white'
-                                }`}
-                              >
-                                {isRec && <span>★ AI TOP PICK:</span>}
-                                <span>{inst === 'DOW' ? 'DOW · MYM' : 'NASDAQ · MNQ'}</span>
-                                {isRec && recommendation?.recommendation_confidence && (
-                                  <span className="text-[10px] opacity-80">({recommendation.recommendation_confidence}%)</span>
-                                )}
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
           )}
         </div>
 
