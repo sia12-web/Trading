@@ -490,15 +490,16 @@ export function LeoAssistantPanel({
         <button
           type="button"
           onClick={togglePanel}
-          className="group absolute bottom-3 right-3 z-40 flex items-center gap-2.5 px-3.5 py-2 rounded-full backdrop-blur-md bg-neutral-950/80 border border-purple-500/40 text-neutral-200 shadow-xl transition-all duration-200 hover:border-purple-400 hover:bg-neutral-900/90 hover:scale-105 active:scale-95"
-          title="Open Leo AI Desk Assistant"
+          className="group absolute bottom-12 right-3 z-30 flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md bg-neutral-950/85 border border-purple-500/40 text-neutral-200 shadow-xl transition-all duration-200 hover:border-purple-400 hover:bg-neutral-900/90 hover:scale-105 active:scale-95 select-none"
+          title="Open Leo AI Desk Assistant (Click to enable chart reference points)"
         >
-          <span className="relative flex h-3 w-3">
+          <span className="relative flex h-2.5 w-2.5">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-purple-500" />
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-purple-500" />
           </span>
-          <span className="font-mono text-xs font-semibold tracking-wide text-purple-200">
-            🎙️ Leo AI
+          <span className="font-mono text-xs font-semibold tracking-wide text-purple-200 flex items-center gap-1">
+            <span>🎙️</span>
+            <span>Leo AI</span>
           </span>
           {activePos && (
             <span
@@ -513,12 +514,12 @@ export function LeoAssistantPanel({
             </span>
           )}
           {context.shortTermMoney?.ypoc != null && (
-            <span className="hidden sm:inline font-mono text-[10px] text-neutral-400 border-l border-neutral-700 pl-2">
+            <span className="hidden sm:inline font-mono text-[10px] text-neutral-400 border-l border-neutral-700 pl-1.5">
               Y-POC {context.shortTermMoney.ypoc}
             </span>
           )}
-          <span className="text-[10px] text-purple-400 font-bold bg-purple-950/60 border border-purple-800/60 rounded px-1.5 py-0.5">
-            Claude 3.7
+          <span className="text-[9px] text-purple-300 font-bold bg-purple-950/60 border border-purple-800/60 rounded px-1.5 py-0.5">
+            Claude
           </span>
         </button>
       )}

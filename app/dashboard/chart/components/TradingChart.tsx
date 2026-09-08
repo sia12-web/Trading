@@ -2977,7 +2977,9 @@ export function TradingChart({
   ])
 
   // Direct chart canvas click handler for session extreme arrows and labels
+  // ONLY active when user has first opened Leo
   const handleChartFrameClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!leoPanelOpen) return
     const frame = chartFrameRef.current
     if (!frame) return
     const rect = frame.getBoundingClientRect()
@@ -3017,13 +3019,16 @@ export function TradingChart({
           }`,
         },
       ])
-      setLeoPanelOpen(true)
     }
-  }, [])
+  }, [leoPanelOpen])
 
   const handleChartFrameMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const frame = chartFrameRef.current
     if (!frame) return
+    if (!leoPanelOpen) {
+      if (frame.style.cursor === 'pointer') frame.style.cursor = ''
+      return
+    }
     const rect = frame.getBoundingClientRect()
     const mouseX = e.clientX - rect.left
     const mouseY = e.clientY - rect.top
@@ -3040,7 +3045,7 @@ export function TradingChart({
     })
 
     frame.style.cursor = hit ? 'pointer' : ''
-  }, [])
+  }, [leoPanelOpen])
 
   const paintAuctionOverlay = useCallback(() => {
     const host = priceLineHostRef.current
@@ -8183,10 +8188,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       {/* ── Compact Evaluators & OHLCV Tooltip Row ─────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-x-2.5 gap-y-1 px-1 py-0.5 text-[10.5px] text-gray-400 min-h-[22px]">
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
-          {/* Structural Evaluators: Day Type & Opening (Clickable to send to Leo AI) */}
+          {/* Structural Evaluators: Day Type & Opening (Clickable to send to Leo AI when Leo is open) */}
           <button
             type="button"
             onClick={() => {
+              if (!leoPanelOpen) return
               setLeoExternalPoints([
                 {
                   id: 'ctx-day-type',
@@ -8197,13 +8203,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   description: 'Current Dalton Day Type',
                 },
               ])
-              setLeoPanelOpen(true)
             }}
-            className="hover:opacity-80 transition flex items-center gap-1 cursor-pointer select-none"
-            title="Click to send Day Type to Leo AI"
+            className={`${leoPanelOpen ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'} transition flex items-center gap-1 select-none`}
+            title={leoPanelOpen ? 'Click to send Day Type to Leo AI' : 'Current Dalton Day Type'}
           >
             <span className="text-gray-500">Day: </span>
-            <span className="text-purple-300 font-semibold underline decoration-dotted decoration-purple-400/50 underline-offset-2">
+            <span className={`text-purple-300 font-semibold ${leoPanelOpen ? 'underline decoration-dotted decoration-purple-400/50 underline-offset-2' : ''}`}>
               {dayTypeEval.badgeText}
             </span>
           </button>
@@ -8211,6 +8216,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           <button
             type="button"
             onClick={() => {
+              if (!leoPanelOpen) return
               setLeoExternalPoints([
                 {
                   id: 'ctx-open-type',
@@ -8221,25 +8227,14 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   description: 'Opening Activity Structure',
                 },
               ])
-              setLeoPanelOpen(true)
             }}
-            className="hover:opacity-80 transition flex items-center gap-1 cursor-pointer select-none"
-            title="Click to send Open Type to Leo AI"
+            className={`${leoPanelOpen ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'} transition flex items-center gap-1 select-none`}
+            title={leoPanelOpen ? 'Click to send Open Type to Leo AI' : 'Opening Activity Structure'}
           >
             <span className="text-gray-500">Open: </span>
-            <span className="text-cyan-300 font-semibold underline decoration-dotted decoration-cyan-400/50 underline-offset-2">
+            <span className={`text-cyan-300 font-semibold ${leoPanelOpen ? 'underline decoration-dotted decoration-cyan-400/50 underline-offset-2' : ''}`}>
               {openingBadge}
             </span>
-          </button>
-          <span className="text-gray-600 text-[10px]">|</span>
-          {/* Quick Ask Leo Button */}
-          <button
-            type="button"
-            onClick={() => setLeoPanelOpen(!leoPanelOpen)}
-            className="px-2 py-0.5 rounded-full bg-purple-950/70 border border-purple-500/50 text-[10px] font-mono font-bold text-purple-200 hover:bg-purple-900/90 hover:border-purple-400 transition-all flex items-center gap-1 shadow-sm active:scale-95"
-            title="Open Leo AI Desk Assistant (Voice & Chat)"
-          >
-            <span>🎙️ Leo AI</span>
           </button>
         </div>
 
@@ -8482,7 +8477,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         <button
           type="button"
           onClick={resetPriceScale}
-          className="absolute bottom-8 right-16 z-20 rounded-md border border-surface-500/80 bg-surface-800/95 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-300 shadow-lg backdrop-blur transition hover:border-brand-500/50 hover:text-white"
+          className="absolute bottom-2.5 right-14 z-20 rounded-md border border-surface-500/80 bg-surface-800/95 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-300 shadow-lg backdrop-blur transition hover:border-brand-500/50 hover:text-white select-none"
           title="Reset price scale (and fit time) — same as TradingView double-click on price axis"
         >
           Reset scale
