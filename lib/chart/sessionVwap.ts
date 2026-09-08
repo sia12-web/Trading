@@ -795,6 +795,12 @@ export function paintSessionHighlightOverlay(
     d.style.borderTop = 'none'
     d.style.borderBottom = 'none'
 
+    // If the session box has scrolled mostly off-screen to the left (small visible width), don't stack labels on the margin
+    if (s.width < 45 || s.left + s.width < 40) {
+      d.innerHTML = ''
+      continue
+    }
+
     // Clean label metadata (Range / Avg / Session) without dashed lines covering the high/low
     const rangeStr =
       s.range != null

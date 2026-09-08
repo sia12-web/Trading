@@ -153,19 +153,34 @@ export async function GET(request: Request) {
         for (let i = 0; i <= totalSteps; i++) {
           const barTime = activeInfo.startUnix + i * 300
           if (barTime > currentBucket) break
-          const progress = totalSteps > 0 ? i / totalSteps : 1
-          const targetC = startPrice + (endPrice - startPrice) * progress
-          const o = prevC
-          const c = i === totalSteps ? endPrice : targetC
-          let h = Math.max(o, c)
-          let l = Math.min(o, c)
+          const p = totalSteps > 0 ? i / totalSteps : 1
 
-          if (i === Math.floor(totalSteps / 3) && sessionLow < l) {
-            l = sessionLow
+          // Macro path: dip to test session low in first 20%, rise to session high by 80%, settle near live price
+          let baseline: number
+          if (p <= 0.2) {
+            const f = p / 0.2
+            baseline = startPrice + (sessionLow - startPrice) * f
+          } else if (p <= 0.8) {
+            const f = (p - 0.2) / 0.6
+            baseline = sessionLow + (sessionHigh - sessionLow) * f
+          } else {
+            const f = (p - 0.8) / 0.2
+            baseline = sessionHigh + (endPrice - sessionHigh) * f
           }
-          if (i === Math.floor((totalSteps * 2) / 3) && sessionHigh > h) {
-            h = sessionHigh
-          }
+
+          // Deterministic intra-bar wave variation (stable across reloads)
+          const rangeSpread = Math.abs(sessionHigh - sessionLow) || 50
+          const noise = Math.sin(barTime * 0.013) * (rangeSpread * 0.06)
+          let c = i === totalSteps ? endPrice : (i === 0 ? startPrice : baseline + noise)
+          c = Math.max(sessionLow, Math.min(sessionHigh, c))
+
+          const o = prevC
+          const bodyHigh = Math.max(o, c)
+          const bodyLow = Math.min(o, c)
+          const wickH = Math.abs(Math.cos(barTime * 0.017)) * (rangeSpread * 0.03)
+          const wickL = Math.abs(Math.sin(barTime * 0.019)) * (rangeSpread * 0.03)
+          const h = Math.min(sessionHigh, bodyHigh + wickH)
+          const l = Math.max(sessionLow, bodyLow - wickL)
 
           synthBars.push({
             time: barTime,
