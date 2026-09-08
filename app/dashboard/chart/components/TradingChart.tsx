@@ -1122,7 +1122,6 @@ export function TradingChart({
 
   // ── Confluence Strategy Signals State (Previous Days Entries, Stops & TP) ──
   const [showConfluenceSignals, setShowConfluenceSignals] = useState(false)
-  const [confluenceMinimized, setConfluenceMinimized] = useState(false)
   const [historicalSignals, setHistoricalSignals] = useState<any[]>([])
   const [selectedSignalId, setSelectedSignalId] = useState<number | null>(null)
   const [signalsLoading, setSignalsLoading] = useState(false)
@@ -1362,10 +1361,7 @@ export function TradingChart({
     }
   }, [showConfluenceSignals, instrument])
 
-  // ── Draw LOCAL price-level segments (Entry, SL, TP1, TP2) near the signal candle ─────
-  // We use short LineSeries (2 points, ±3 h window) instead of createPriceLine so that
-  // the lines only appear when the user scrolls to that candle — they do NOT extend
-  // across the whole chart to the right edge.
+  // ── Draw LOCAL price-level segments (Entry, SL, TP1, TP2) on chart for historical signals ─────
   useEffect(() => {
     const chart = chartRef.current
     // Remove any previously drawn segment series
@@ -1375,53 +1371,62 @@ export function TradingChart({
     confluenceLinesRef.current = []
 
     if (!chart) return
-    if (!showConfluenceSignals || selectedSignalId == null) return
-    const sig = historicalSignals.find((s) => s.id === selectedSignalId)
-    if (!sig) return
+    if (!showConfluenceSignals || historicalSignals.length === 0) return
 
     try {
       const tz = chartTzRef.current
-      const t0 = toChartTime(sig.time, tz)   // entry candle
-      const padSec = 3600 * 3                 // ±3 h window
+      const newSeries: any[] = []
 
-      // Helper: create a 2-point horizontal segment series
-      const makeSeg = (price: number, color: string, lineWidth: 2 | 3, lineStyle: 0 | 1 | 2 | 3, title: string) => {
-        const s = chart.addLineSeries({
-          color,
-          lineWidth,
-          lineStyle,
-          priceLineVisible: false,
-          lastValueVisible: true,
-          title,
-          crosshairMarkerVisible: false,
-          autoscaleInfoProvider: () => null,
-        })
-        s.setData([
-          { time: (t0 - padSec) as any, value: price },
-          { time: (t0 + padSec) as any, value: price },
-        ])
-        return s
+      // If a specific signal is selected, target it; otherwise draw for all signals in lookback
+      const targetSignals = selectedSignalId != null
+        ? historicalSignals.filter((s) => s.id === selectedSignalId)
+        : historicalSignals
+
+      for (const sig of targetSignals) {
+        const t0 = toChartTime(sig.time, tz)   // entry candle
+        const padSec = 3600 * 3                 // ±3 h window
+        const isSelected = selectedSignalId === sig.id || targetSignals.length === 1
+
+        const makeSeg = (price: number, color: string, lineWidth: 2 | 3, lineStyle: 0 | 1 | 2 | 3, title: string) => {
+          const s = chart.addLineSeries({
+            color,
+            lineWidth: isSelected ? 3 : lineWidth,
+            lineStyle,
+            priceLineVisible: false,
+            lastValueVisible: true,
+            title,
+            crosshairMarkerVisible: false,
+            autoscaleInfoProvider: () => null,
+          })
+          s.setData([
+            { time: (t0 - padSec) as any, value: price },
+            { time: (t0 + padSec) as any, value: price },
+          ])
+          return s
+        }
+
+        const isBuy = sig.direction === 'BUY'
+        const sEntry = makeSeg(
+          sig.entryPrice, isBuy ? '#00f0ff' : '#ff0055', 2, 0,
+          `⚡ ENTRY ${sig.direction} @ ${sig.entryPrice.toLocaleString()}`
+        )
+        const sSl = makeSeg(
+          sig.stopLoss, '#ff3355', 2, 2,
+          `SL @ ${sig.stopLoss.toLocaleString()} (-${sig.riskPoints?.toFixed(1) ?? ''} pts)`
+        )
+        const sTp1 = makeSeg(
+          sig.tp1, '#00ff88', 2, 2,
+          `TP1 70% @ ${sig.tp1.toLocaleString()}`
+        )
+        const sTp2 = makeSeg(
+          sig.tp2, '#a3e635', 2, 3,
+          `TP2 30% @ ${sig.tp2.toLocaleString()}`
+        )
+
+        newSeries.push(sEntry, sSl, sTp1, sTp2)
       }
 
-      const sEntry = makeSeg(
-        sig.entryPrice, '#06b6d4', 2, 0,
-        `◆ ENTRY ${sig.direction} @ ${sig.entryPrice.toLocaleString()}`
-      )
-      const sSl = makeSeg(
-        sig.stopLoss, '#f43f5e', 2, 2,
-        `SL @ ${sig.stopLoss.toLocaleString()} (-${sig.riskPoints?.toFixed(1) ?? ''} pts)`
-      )
-      const sTp1 = makeSeg(
-        sig.tp1, '#10b981', 2, 2,
-        `TP1 70% @ ${sig.tp1.toLocaleString()}`
-      )
-      const sTp2 = makeSeg(
-        sig.tp2, '#84cc16', 2, 3,
-        `TP2 30% @ ${sig.tp2.toLocaleString()}`
-      )
-
-      confluenceLinesRef.current = [sEntry, sSl, sTp1, sTp2]
-      // No auto-pan — chart stays at current position; scroll left to see the segments
+      confluenceLinesRef.current = newSeries
     } catch (e) {
       console.error('Error drawing signal segments:', e)
     }
@@ -1744,9 +1749,9 @@ export function TradingChart({
         markers.push({
           time: sig.time as UTCTimestamp,
           position: isBuy ? 'belowBar' : 'aboveBar',
-          color: isBuy ? '#22c55e' : '#ef4444',
+          color: isBuy ? '#00f0ff' : '#ff0055',
           shape: isBuy ? 'arrowUp' : 'arrowDown',
-          text: `${isBuy ? '▲ BUY' : '▼ SELL'} @ ${sig.entryPrice}`,
+          text: `⚡ ${isBuy ? 'BUY' : 'SELL'} @ ${sig.entryPrice} (SL ${sig.stopLoss} | TP ${sig.tp1})`,
         })
       }
     }
@@ -2645,22 +2650,35 @@ export function TradingChart({
       }
     }
 
-    // 3. Render Trendlines
+    // Helper: given two points, compute where the infinite line exits the canvas rect (extended past latest bar)
+    const extendedLine = (ax: number, ay: number, bx: number, by: number): [number, number, number, number] => {
+      if (ax === bx) return [ax, -2000, bx, paneH + 2000]
+      const slope = (by - ay) / (bx - ax)
+      const minX = -2000
+      const maxX = Math.max(paneW + 4000, Math.max(ax, bx) + 4000)
+      const yAtLeft  = ay + slope * (minX - ax)
+      const yAtRight = ay + slope * (maxX - ax)
+      return [minX, yAtLeft, maxX, yAtRight]
+    }
+
     for (const tl of trendlines) {
       const x1 = timeToX(chart.timeScale(), toChartTime(tl.p1.time, tz), candleTimes)
       const x2 = timeToX(chart.timeScale(), toChartTime(tl.p2.time, tz), candleTimes)
       const y1 = series.priceToCoordinate(tl.p1.price)
       const y2 = series.priceToCoordinate(tl.p2.price)
       if (x1 != null && x2 != null && y1 != null && y2 != null) {
+        const [ex1, ey1, ex2, ey2] = extendedLine(x1, y1, x2, y2)
+
+        // Extended line
         ctx.strokeStyle = tl.color || '#38bdf8'
         ctx.lineWidth = 2
         ctx.setLineDash([])
         ctx.beginPath()
-        ctx.moveTo(x1, y1)
-        ctx.lineTo(x2, y2)
+        ctx.moveTo(ex1, ey1)
+        ctx.lineTo(ex2, ey2)
         ctx.stroke()
 
-        // P1 handle dot
+        // P1 handle dot (user's first click)
         ctx.fillStyle = '#38bdf8'
         ctx.beginPath()
         ctx.arc(x1, y1, 4, 0, 2 * Math.PI)
@@ -2669,7 +2687,7 @@ export function TradingChart({
         ctx.lineWidth = 1.5
         ctx.stroke()
 
-        // P2 handle dot
+        // P2 handle dot (user's second click)
         ctx.fillStyle = '#38bdf8'
         ctx.beginPath()
         ctx.arc(x2, y2, 4, 0, 2 * Math.PI)
@@ -2709,12 +2727,13 @@ export function TradingChart({
 
       if (x1 != null && x2 != null && y1 != null && y2 != null) {
         if (activeDrawingTool === 'TRENDLINE') {
+          const [dex1, dey1, dex2, dey2] = extendedLine(x1, y1, x2, y2)
           ctx.strokeStyle = '#38bdf8'
           ctx.lineWidth = 2
           ctx.setLineDash([4, 4])
           ctx.beginPath()
-          ctx.moveTo(x1, y1)
-          ctx.lineTo(x2, y2)
+          ctx.moveTo(dex1, dey1)
+          ctx.lineTo(dex2, dey2)
           ctx.stroke()
           ctx.setLineDash([])
 
@@ -9098,8 +9117,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </button>
         </div>
 
-        {/* ── Confluence Strategy Signals Button (Previous Days Entries, Stops & TPs) ── */}
-        <div className="flex items-center rounded bg-surface-900/80 p-0.5 border border-surface-700/60 text-xs">
+        {/* ── Confluence Strategy Signals Button & Inline Quick-Jump Controls ── */}
+        <div className="flex items-center gap-1 rounded bg-surface-900/80 p-0.5 border border-surface-700/60 text-xs">
           <button
             type="button"
             onClick={() => setShowConfluenceSignals((prev) => !prev)}
@@ -9108,7 +9127,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 ? 'bg-amber-500/25 text-amber-300 border border-amber-500/50 shadow-sm'
                 : 'text-gray-400 hover:text-amber-300 hover:bg-surface-800'
             }`}
-            title="Show Previous Days Confluence Strategy Entries, Stops & Take Profits"
+            title="Toggle Confluence Strategy Entries, Stops & Take Profits directly on chart"
           >
             <span>⚡</span>
             <span>Signals</span>
@@ -9121,6 +9140,52 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               <span className="inline-block h-2 w-2 animate-spin rounded-full border border-amber-300 border-t-transparent" />
             )}
           </button>
+
+          {showConfluenceSignals && historicalSignals.length > 0 && (
+            <div className="flex items-center gap-1 border-l border-surface-700/60 pl-1.5 font-mono text-[11px]">
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedSignalId == null) {
+                    setSelectedSignalId(historicalSignals[0].id)
+                  } else {
+                    const idx = historicalSignals.findIndex((s) => s.id === selectedSignalId)
+                    const nextIdx = idx <= 0 ? historicalSignals.length - 1 : idx - 1
+                    setSelectedSignalId(historicalSignals[nextIdx].id)
+                  }
+                }}
+                className="px-1.5 py-0.5 rounded text-gray-400 hover:text-amber-300 hover:bg-surface-800 transition"
+                title="Focus previous signal setup"
+              >
+                ◄
+              </button>
+              <span
+                onClick={() => setSelectedSignalId(null)}
+                className="cursor-pointer text-amber-300 text-[10px] font-bold px-1 hover:underline"
+                title="Click to view ALL signals on chart"
+              >
+                {selectedSignalId != null
+                  ? `${historicalSignals.findIndex((s) => s.id === selectedSignalId) + 1}/${historicalSignals.length}`
+                  : `ALL (${historicalSignals.length})`}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedSignalId == null) {
+                    setSelectedSignalId(historicalSignals[0].id)
+                  } else {
+                    const idx = historicalSignals.findIndex((s) => s.id === selectedSignalId)
+                    const nextIdx = idx >= historicalSignals.length - 1 ? 0 : idx + 1
+                    setSelectedSignalId(historicalSignals[nextIdx].id)
+                  }
+                }}
+                className="px-1.5 py-0.5 rounded text-gray-400 hover:text-amber-300 hover:bg-surface-800 transition"
+                title="Focus next signal setup"
+              >
+                ►
+              </button>
+            </div>
+          )}
         </div>
 
 
@@ -10439,195 +10504,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </DraggableDeskWidget>
         )}
 
-        {/* ── Confluence Strategy Historical Signals — compact, collapsible ── */}
-        {showConfluenceSignals && (
-          <div
-            className="absolute z-40 select-none"
-            style={{ top: 110, left: 24 }}
-          >
-            {/* Panel shell — fixed narrow width, no DraggableDeskWidget to avoid bulk */}
-            <div className="w-[420px] rounded-xl border border-amber-500/30 bg-[#0d1117]/97 shadow-2xl shadow-black/60 backdrop-blur-sm overflow-hidden">
-
-              {/* ─── Title bar ─────────────────────────────────────── */}
-              <div className="flex items-center gap-2 px-2.5 py-1.5 bg-amber-950/40 border-b border-amber-500/25 cursor-default">
-                <span className="text-amber-400 text-[11px]">⚡</span>
-                <span className="font-mono text-[11px] font-bold text-amber-200 tracking-wide flex-1">
-                  Signals · {instrument}
-                  {!confluenceMinimized && historicalSignals.length > 0 && (
-                    <span className="ml-1.5 text-[10px] text-gray-400 font-normal">
-                      {historicalSignals.filter((s) => s.result === 'WIN_FULL' || s.result === 'WIN_PARTIAL').length}W /
-                      {' '}{historicalSignals.filter((s) => s.result === 'LOSS').length}L ·&nbsp;
-                      {historicalSignals.reduce((a, s) => a + (s.rMultiple || 0), 0).toFixed(1)}R
-                    </span>
-                  )}
-                </span>
-                {signalsLoading && (
-                  <span className="inline-block h-2.5 w-2.5 animate-spin rounded-full border border-amber-300 border-t-transparent" />
-                )}
-                {/* Minimize / Expand */}
-                <button
-                  type="button"
-                  onClick={() => setConfluenceMinimized((p) => !p)}
-                  className="flex items-center justify-center w-5 h-5 rounded text-gray-400 hover:text-amber-300 hover:bg-amber-500/15 transition text-[11px] font-bold"
-                  title={confluenceMinimized ? 'Expand panel' : 'Minimize panel'}
-                >
-                  {confluenceMinimized ? '▲' : '▼'}
-                </button>
-                {/* Close (hides signals entirely) */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowConfluenceSignals(false)
-                    setSelectedSignalId(null)
-                  }}
-                  className="flex items-center justify-center w-5 h-5 rounded text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition text-[11px] font-bold"
-                  title="Close signals panel"
-                >
-                  ✕
-                </button>
-              </div>
-
-              {/* ─── Body (hidden when minimized) ──────────────────── */}
-              {!confluenceMinimized && (
-                <div>
-                  {/* Loading */}
-                  {signalsLoading && (
-                    <div className="flex items-center gap-2 px-3 py-3 text-[11px] text-gray-400 font-mono">
-                      <span className="inline-block h-3 w-3 animate-spin rounded-full border border-amber-300 border-t-transparent" />
-                      Scanning NYC session (14 days)…
-                    </div>
-                  )}
-
-                  {/* Empty */}
-                  {!signalsLoading && historicalSignals.length === 0 && (
-                    <div className="px-3 py-3 text-[11px] text-gray-500 font-mono">
-                      No setups in lookback window.
-                    </div>
-                  )}
-
-                  {/* Column headers */}
-                  {!signalsLoading && historicalSignals.length > 0 && (
-                    <div className="flex items-center gap-0 px-2 pt-1.5 pb-0.5 text-[9px] font-bold uppercase tracking-wider text-gray-500 border-b border-surface-700/40 font-mono">
-                      <span className="w-[38px]">Dir</span>
-                      <span className="flex-1">Date / Time ET</span>
-                      <span className="w-[68px] text-right">Entry</span>
-                      <span className="w-[60px] text-right">SL</span>
-                      <span className="w-[60px] text-right">TP1</span>
-                      <span className="w-[56px] text-right pr-1">R</span>
-                    </div>
-                  )}
-
-                  {/* Scrollable trade rows */}
-                  {!signalsLoading && historicalSignals.length > 0 && (
-                    <div className="overflow-y-auto max-h-[260px] divide-y divide-surface-800/50">
-                      {historicalSignals.map((sig) => {
-                        const isSelected = selectedSignalId === sig.id
-                        const isBuy = sig.direction === 'BUY'
-                        const isWin = sig.result === 'WIN_FULL' || sig.result === 'WIN_PARTIAL'
-                        const isLoss = sig.result === 'LOSS'
-                        const isOpen = sig.result === 'OPEN'
-
-                        return (
-                          <div
-                            key={sig.id}
-                            onClick={() => setSelectedSignalId(isSelected ? null : sig.id)}
-                            title={`${sig.locationReason ?? ''} · ${sig.triggerReason ?? ''} — click to plot on chart`}
-                            className={`flex items-center gap-0 px-2 py-[5px] cursor-pointer font-mono text-[11px] transition-colors ${
-                              isSelected
-                                ? 'bg-amber-950/50 border-l-2 border-amber-400'
-                                : 'hover:bg-surface-800/60 border-l-2 border-transparent'
-                            }`}
-                          >
-                            {/* Direction badge */}
-                            <span
-                              className={`w-[36px] shrink-0 text-[10px] font-extrabold ${
-                                isBuy ? 'text-emerald-400' : 'text-rose-400'
-                              }`}
-                            >
-                              {isBuy ? '▲ B' : '▼ S'}
-                            </span>
-
-                            {/* Date / time */}
-                            <span className="flex-1 text-gray-300 truncate">
-                              {sig.date}&nbsp;<span className="text-gray-500">{sig.timeEt}</span>
-                            </span>
-
-                            {/* Entry */}
-                            <span className="w-[68px] text-right text-cyan-300 font-semibold">
-                              {sig.entryPrice?.toLocaleString()}
-                            </span>
-
-                            {/* Stop */}
-                            <span className="w-[60px] text-right text-rose-400">
-                              {sig.stopLoss?.toLocaleString()}
-                            </span>
-
-                            {/* TP1 */}
-                            <span className="w-[60px] text-right text-emerald-400">
-                              {sig.tp1?.toLocaleString()}
-                            </span>
-
-                            {/* R outcome pill */}
-                            <span
-                              className={`w-[54px] text-right pr-1 text-[10px] font-bold ${
-                                isWin
-                                  ? 'text-lime-400'
-                                  : isLoss
-                                  ? 'text-rose-500'
-                                  : isOpen
-                                  ? 'text-blue-400'
-                                  : 'text-gray-500'
-                              }`}
-                            >
-                              {isOpen
-                                ? 'open'
-                                : sig.rMultiple != null
-                                ? `${sig.rMultiple > 0 ? '+' : ''}${sig.rMultiple}R`
-                                : '—'}
-                            </span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-
-                  {/* Selected signal detail strip */}
-                  {selectedSignalId != null && (() => {
-                    const sig = historicalSignals.find((s) => s.id === selectedSignalId)
-                    if (!sig) return null
-                    const isBuy = sig.direction === 'BUY'
-                    return (
-                      <div className={`border-t border-amber-500/30 bg-amber-950/20 px-2.5 py-2 text-[10px] font-mono`}>
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <span className={`font-extrabold text-[11px] ${isBuy ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {sig.direction} · {sig.date} {sig.timeEt}
-                          </span>
-                          <span className="text-gray-400">
-                            Entry <span className="text-cyan-300 font-bold">{sig.entryPrice?.toLocaleString()}</span>
-                            {'  '}SL <span className="text-rose-400 font-bold">{sig.stopLoss?.toLocaleString()}</span>
-                            {'  '}TP1 <span className="text-emerald-400 font-bold">{sig.tp1?.toLocaleString()}</span>
-                            {'  '}TP2 <span className="text-lime-400 font-bold">{sig.tp2?.toLocaleString()}</span>
-                          </span>
-                        </div>
-                        {sig.locationReason && (
-                          <div className="mt-1 text-gray-400 truncate">
-                            <span className="text-gray-600">LOC</span> {sig.locationReason}
-                          </div>
-                        )}
-                        {sig.triggerReason && (
-                          <div className="text-gray-400 truncate">
-                            <span className="text-gray-600">TRIG</span> {sig.triggerReason}
-                          </div>
-                        )}
-                        <div className="mt-1 text-amber-400 text-[9px]">● Entry / SL / TP1 / TP2 plotted on chart — click row again to clear</div>
-                      </div>
-                    )
-                  })()}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        {/* ── Confluence Strategy Signals — rendered directly on chart candles ── */}
 
         {/* User Drawing Toast Notification */}
         {drawingToast && (
