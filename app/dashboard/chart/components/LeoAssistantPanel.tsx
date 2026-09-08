@@ -720,16 +720,110 @@ export function LeoAssistantPanel({
             </div>
           )}
 
+          {/* ── User Drawn Tools Quick-Attach Strip ── */}
+          {context.userDrawings &&
+            (context.userDrawings.trendlines.length > 0 ||
+              context.userDrawings.ranges.length > 0 ||
+              context.userDrawings.frvps.length > 0) && (
+              <div className="px-3 py-1.5 border-b border-neutral-800/60 bg-neutral-950/60 flex flex-wrap items-center gap-1.5">
+                <span className="text-[9px] text-cyan-400 font-mono font-semibold flex items-center gap-1">
+                  <span>🎨</span> Drawn:
+                </span>
+                {context.userDrawings.trendlines.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => {
+                      if (attachedPoints.some((p) => p.id === `user-tl-${t.id}`)) return
+                      setAttachedPoints((prev) => [
+                        ...prev,
+                        {
+                          id: `user-tl-${t.id}`,
+                          label: t.label || 'Trendline',
+                          value: `${t.startPrice.toLocaleString()} → ${t.endPrice.toLocaleString()}`,
+                          tier: 'DRAWING',
+                          category: 'TRENDLINE',
+                          description: `${t.slopeDirection} trendline (${t.slopePtsPer5mBar} pts/5m). Price is ${t.priceRelation}.`,
+                        },
+                      ])
+                    }}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-950/60 hover:bg-sky-900/80 border border-sky-600/50 text-[9.5px] font-mono text-sky-200 transition shadow-sm"
+                    title="Click to attach this trendline to your message"
+                  >
+                    <span>📐</span> {t.label || 'Trendline'}
+                  </button>
+                ))}
+                {context.userDrawings.ranges.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => {
+                      if (attachedPoints.some((p) => p.id === `user-range-${r.id}`)) return
+                      setAttachedPoints((prev) => [
+                        ...prev,
+                        {
+                          id: `user-range-${r.id}`,
+                          label: r.label || 'Range Box',
+                          value: `${r.priceLow.toLocaleString()} – ${r.priceHigh.toLocaleString()}`,
+                          tier: 'DRAWING',
+                          category: 'RANGE',
+                          description: `${r.heightPts} pts span (${r.durationMin}m). Price is ${r.priceRelation} range.`,
+                        },
+                      ])
+                    }}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-950/60 hover:bg-purple-900/80 border border-purple-600/50 text-[9.5px] font-mono text-purple-200 transition shadow-sm"
+                    title="Click to attach this range box to your message"
+                  >
+                    <span>⬛</span> {r.label || 'Range'} ({r.heightPts}p)
+                  </button>
+                ))}
+                {context.userDrawings.frvps.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => {
+                      if (attachedPoints.some((p) => p.id === `user-frvp-${f.id}`)) return
+                      setAttachedPoints((prev) => [
+                        ...prev,
+                        {
+                          id: `user-frvp-${f.id}`,
+                          label: f.label || 'Manual FRVP',
+                          value: `POC ${f.poc.toLocaleString()}`,
+                          tier: 'DRAWING',
+                          category: 'FRVP',
+                          volume: f.totalVolume,
+                          description: `Manual FRVP: POC ${f.poc} | VAH ${f.vah} | VAL ${f.val}. Price is ${f.priceRelation.replace('_', ' ')}.`,
+                        },
+                      ])
+                    }}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-950/60 hover:bg-amber-900/80 border border-amber-600/50 text-[9.5px] font-mono text-amber-200 transition shadow-sm"
+                    title="Click to attach this manual FRVP to your message"
+                  >
+                    <span>📊</span> FRVP (POC {f.poc.toLocaleString()})
+                  </button>
+                ))}
+              </div>
+            )}
+
           {/* ── Clean Clicked Chart Reference Pill (Direct from Canvas Arrows) ── */}
           {attachedPoints.length > 0 && (
             <div className="px-3 py-1.5 border-b border-neutral-800/70 bg-neutral-900/70 flex flex-wrap items-center gap-1">
-              <span className="text-[9px] text-neutral-400 font-mono">Clicked Arrow/Ref:</span>
+              <span className="text-[9px] text-neutral-400 font-mono">Attached:</span>
               {attachedPoints.map((pt) => (
                 <span
                   key={pt.id}
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-purple-950/90 border border-purple-500/70 text-[10px] font-mono text-purple-200 shadow-sm"
                 >
-                  <span className="font-bold">📍 {pt.label}:</span>
+                  <span className="font-bold">
+                    {pt.category === 'TRENDLINE'
+                      ? '📐'
+                      : pt.category === 'RANGE'
+                        ? '⬛'
+                        : pt.category === 'FRVP'
+                          ? '📊'
+                          : '📍'}{' '}
+                    {pt.label}:
+                  </span>
                   <span className="text-amber-300 font-semibold">{pt.value}</span>
                   {pt.volume && <span className="text-neutral-400">({pt.volume})</span>}
                   {pt.retestRatio != null && (
@@ -795,7 +889,14 @@ export function LeoAssistantPanel({
                             key={pt.id}
                             className="px-1.5 py-0.2 rounded bg-purple-950/80 border border-purple-600/60 text-[9px] font-mono text-purple-300"
                           >
-                            📍 {pt.label}: {pt.value} {pt.volume ? `(${pt.volume})` : ''}{' '}
+                            {pt.category === 'TRENDLINE'
+                              ? '📐'
+                              : pt.category === 'RANGE'
+                                ? '⬛'
+                                : pt.category === 'FRVP'
+                                  ? '📊'
+                                  : '📍'}{' '}
+                            {pt.label}: {pt.value} {pt.volume ? `(${pt.volume})` : ''}{' '}
                             {pt.retestRatio != null ? `[${pt.retestRatio}x]` : ''}
                           </span>
                         ))}

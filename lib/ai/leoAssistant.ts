@@ -14,14 +14,69 @@ export interface LeoDataPoint {
   id: string
   label: string
   value: number | string
-  tier: 'LT' | 'IT' | 'ST' | 'CONTEXT'
-  category: 'VWAP' | 'POC' | 'EXTREME' | 'VALUE_AREA' | 'EXCESS' | 'DAY_TYPE' | 'OPEN'
+  tier: 'LT' | 'IT' | 'ST' | 'CONTEXT' | 'DRAWING'
+  category:
+    | 'VWAP'
+    | 'POC'
+    | 'EXTREME'
+    | 'VALUE_AREA'
+    | 'EXCESS'
+    | 'DAY_TYPE'
+    | 'OPEN'
+    | 'TRENDLINE'
+    | 'RANGE'
+    | 'FRVP'
   description?: string
   session?: 'Asia' | 'London' | 'New York' | string
   volume?: number | string
   retestRatio?: number
   isRetested?: boolean
   testCount?: number
+}
+
+export interface LeoUserDrawingsContext {
+  trendlines: Array<{
+    id: string
+    label?: string
+    startPrice: number
+    endPrice: number
+    startTimeEt: string
+    endTimeEt: string
+    slopePtsPerMin: number
+    slopePtsPer5mBar: number
+    slopeDirection: 'ASCENDING' | 'DESCENDING' | 'FLAT'
+    projectedPrice: number
+    distancePts: number | null
+    priceRelation: 'ABOVE' | 'BELOW' | 'TESTING'
+  }>
+  ranges: Array<{
+    id: string
+    label?: string
+    priceHigh: number
+    priceLow: number
+    midPrice: number
+    heightPts: number
+    startTimeEt: string
+    endTimeEt: string
+    durationMin: number
+    positionPct: number
+    priceRelation: 'INSIDE' | 'ABOVE' | 'BELOW'
+  }>
+  frvps: Array<{
+    id: string
+    label?: string
+    startTimeEt: string
+    endTimeEt: string
+    poc: number
+    vah: number
+    val: number
+    high: number
+    low: number
+    totalVolume: number
+    buyRatioPct: number
+    distancePocPts: number | null
+    priceRelation: 'AT_POC' | 'INSIDE_VALUE' | 'ABOVE_VAH' | 'BELOW_VAL'
+  }>
 }
 
 export interface LeoSessionDetails {
@@ -97,6 +152,7 @@ export interface LeoChatContext {
     retestRatio?: number
     isRetested?: boolean
   }>
+  userDrawings?: LeoUserDrawingsContext
   selectedDataPoints?: LeoDataPoint[]
 }
 
@@ -373,6 +429,41 @@ export function extractChartDataPoints(ctx: LeoChatContext): LeoDataPoint[] {
     })
   }
 
+  // 6. User-Drawn Chart Tools & Manual References
+  if (ctx.userDrawings) {
+    for (const t of ctx.userDrawings.trendlines) {
+      points.push({
+        id: `user-tl-${t.id}`,
+        label: t.label || 'Trendline',
+        value: `${t.startPrice.toLocaleString()} → ${t.endPrice.toLocaleString()}`,
+        tier: 'DRAWING',
+        category: 'TRENDLINE',
+        description: `Manual Trendline [${t.slopeDirection}]: ${t.startTimeEt} to ${t.endTimeEt} (${t.slopePtsPer5mBar >= 0 ? '+' : ''}${t.slopePtsPer5mBar} pts/5m). Price is ${t.priceRelation} (${t.distancePts != null ? `${t.distancePts} pts` : ''}).`,
+      })
+    }
+    for (const r of ctx.userDrawings.ranges) {
+      points.push({
+        id: `user-range-${r.id}`,
+        label: r.label || 'Range Box',
+        value: `${r.priceLow.toLocaleString()} – ${r.priceHigh.toLocaleString()}`,
+        tier: 'DRAWING',
+        category: 'RANGE',
+        description: `Manual Range: ${r.heightPts} pts span (${r.startTimeEt} to ${r.endTimeEt}, ${r.durationMin}m). Price is ${r.priceRelation} range (${r.positionPct}%).`,
+      })
+    }
+    for (const f of ctx.userDrawings.frvps) {
+      points.push({
+        id: `user-frvp-${f.id}`,
+        label: f.label || 'Manual FRVP',
+        value: `POC ${f.poc.toLocaleString()}`,
+        tier: 'DRAWING',
+        category: 'FRVP',
+        volume: f.totalVolume,
+        description: `Manual FRVP: POC ${f.poc.toLocaleString()} | VAH ${f.vah.toLocaleString()} | VAL ${f.val.toLocaleString()} (${f.startTimeEt}–${f.endTimeEt}). Volume: ${f.totalVolume.toLocaleString()} (${f.buyRatioPct}% buy). Price is ${f.priceRelation.replace('_', ' ')}.`,
+      })
+    }
+  }
+
   return points
 }
 
@@ -533,12 +624,51 @@ ${
     : 'No active excess tails currently detected on chart.'
 }
 
+[USER-DRAWN CHART TOOLS & MANUAL REFERENCES]:
+${
+  ctx.userDrawings &&
+  (ctx.userDrawings.trendlines.length > 0 ||
+    ctx.userDrawings.ranges.length > 0 ||
+    ctx.userDrawings.frvps.length > 0)
+    ? [
+        ...(ctx.userDrawings.trendlines.length > 0
+          ? [
+              'MANUAL TRENDLINES:',
+              ...ctx.userDrawings.trendlines.map(
+                (t) =>
+                  `- ${t.label || 'Trendline'}: Start ${t.startPrice} (${t.startTimeEt}) → End ${t.endPrice} (${t.endTimeEt}) [${t.slopeDirection}, ${t.slopePtsPer5mBar >= 0 ? '+' : ''}${t.slopePtsPer5mBar} pts/5m]. Projected level: ${t.projectedPrice}. Current price is ${t.priceRelation} (${t.distancePts != null ? `${t.distancePts} pts` : ''}).`
+              ),
+            ]
+          : []),
+        ...(ctx.userDrawings.ranges.length > 0
+          ? [
+              'MANUAL RECTANGLE / BALANCE RANGES:',
+              ...ctx.userDrawings.ranges.map(
+                (r) =>
+                  `- ${r.label || 'Range Box'}: High ${r.priceHigh} | Low ${r.priceLow} | Mid ${r.midPrice} (Height: ${r.heightPts} pts, Duration: ${r.durationMin}m, ${r.startTimeEt} to ${r.endTimeEt}). Current price is ${r.priceRelation} range (${r.positionPct}% position).`
+              ),
+            ]
+          : []),
+        ...(ctx.userDrawings.frvps.length > 0
+          ? [
+              'MANUAL FIXED RANGE VOLUME PROFILES (FRVP):',
+              ...ctx.userDrawings.frvps.map(
+                (f) =>
+                  `- ${f.label || 'Manual FRVP'}: Range ${f.startTimeEt} to ${f.endTimeEt} | POC: ${f.poc} | VAH: ${f.vah} | VAL: ${f.val} | Range: ${f.low} - ${f.high} | Volume: ${f.totalVolume.toLocaleString()} (${f.buyRatioPct}% buy). Status: ${f.priceRelation.replace('_', ' ')} (Distance to POC: ${f.distancePocPts != null ? `${f.distancePocPts} pts` : 'N/A'}).`
+              ),
+            ]
+          : []),
+      ].join('\n')
+    : 'No manual drawings currently on chart.'
+}
+
 [DATA REFERENCE POINT CLICKED / ATTACHED FROM CHART]:
 ${selectedSummary}
 
 COMMUNICATION GUIDELINES:
 - Address the trader concisely and authoritatively as Leo.
 - Always quote exact prices from the chart telemetry above.
+- User Drawings & Manual References: When the trader discusses their drawn trendline, range box, or manual FRVP, quote their exact prices and evaluate market structure using Dalton Auction Theory (acceptance vs rejection of Value, volume facilitation, rotation vs initiative breakout).
 - If the trader speaks an execution or alert command, confirm the exact parameters (minutes, prices, targets) and emit the required <execute> tag.
 - Keep prose concise and fast to read — institutional traders value high signal-to-noise ratio over lengthy essays.
 `

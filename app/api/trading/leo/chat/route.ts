@@ -196,7 +196,74 @@ function buildDeskFallbackResponse(
     return `Understood. Telegram alert armed for **${targetRef}** (${targetPrice.toLocaleString()}) during ${session}.\n\nWhen price tests this reference zone with confirmed high volume and execution confidence, I will dispatch an instant alert to your Telegram.\n\n<execute>\n{\n  "action": "ARM_TELEGRAM_ALERT",\n  "targetReference": "${targetRef}",\n  "targetPrice": ${targetPrice},\n  "requireHighVolume": true,\n  "requireConfidence": true,\n  "session": "${session}"\n}\n</execute>`
   }
 
-  // 4. General auction assessment
+  // 4. User Drawings: Trendline analysis
+  if (/trendline|trend\s+line/i.test(lower)) {
+    const tl = ctx.userDrawings?.trendlines?.[0]
+    if (tl) {
+      return `### Leo Trendline Assessment (${ctx.instrument} @ ${curPrice})
+
+I've got eyes on your manual **${tl.label || 'Trendline'}**:
+- **Trajectory:** From **${tl.startPrice.toLocaleString()}** (${tl.startTimeEt}) to **${tl.endPrice.toLocaleString()}** (${tl.endTimeEt})
+- **Slope & Angle:** ${tl.slopeDirection} at ${tl.slopePtsPer5mBar >= 0 ? '+' : ''}${tl.slopePtsPer5mBar.toFixed(1)} pts / 5m candle (${tl.slopePtsPerMin >= 0 ? '+' : ''}${tl.slopePtsPerMin.toFixed(2)} pts/min)
+- **Current Dynamic Level:** Projected at **${tl.projectedPrice.toLocaleString()}**
+- **Price Action:** Market is currently **${tl.priceRelation}** the trendline${tl.distancePts != null ? ` (${Math.abs(tl.distancePts).toFixed(1)} pts distance)` : ''}.
+
+**Desk Playbook Read:**
+${tl.priceRelation === 'TESTING'
+  ? `Price is actively testing the trendline. Watch candle close and volume: a rejection wick here confirms responsive support/defense, while heavy 5m bar penetration signals trend breakdown.`
+  : tl.priceRelation === 'ABOVE'
+    ? `Price is accepted above the trendline. As long as market holds above ${tl.projectedPrice.toLocaleString()}, buyer facilitation remains intact.`
+    : `Price is trading below the line. Look for responsive re-acceptance above ${tl.projectedPrice.toLocaleString()} before trusting long momentum.`}`
+    }
+  }
+
+  // 5. User Drawings: Range / Box analysis
+  if (/range|box|rectangle|square|consolidation/i.test(lower)) {
+    const r = ctx.userDrawings?.ranges?.[0]
+    if (r) {
+      return `### Leo Range / Bracket Assessment (${ctx.instrument} @ ${curPrice})
+
+Tracking your drawn **${r.label || 'Range Box'}**:
+- **Boundary Extremes:** High **${r.priceHigh.toLocaleString()}** | Low **${r.priceLow.toLocaleString()}**
+- **Bracket Dimensions:** **${r.heightPts.toFixed(1)} pts** span across **${r.durationMin} minutes** (${r.startTimeEt} – ${r.endTimeEt})
+- **Equilibrium (Midpoint):** **${r.midPrice.toLocaleString()}**
+- **Location Status:** Market is **${r.priceRelation}** the range (${r.positionPct}% of bracket).
+
+**Dalton Auction Theory Read:**
+${r.priceRelation === 'INSIDE'
+  ? `We are in a balanced, two-sided rotational market. Responsive buyers defend near **${r.priceLow.toLocaleString()}** and responsive sellers cap near **${r.priceHigh.toLocaleString()}**. Do not chase moves inside the mid-band (${r.midPrice.toLocaleString()}) — trade only edges or wait for confirmed breakout.`
+  : r.priceRelation === 'ABOVE'
+    ? `Initiative expansion above the range high (**${r.priceHigh.toLocaleString()}**). If the market tests ${r.priceHigh.toLocaleString()} from above with low volume and holds, old resistance becomes new institutional support.`
+    : `Initiative breakdown below the range low (**${r.priceLow.toLocaleString()}**). Sellers facilitating price lower. Watch for test of ${r.priceLow.toLocaleString()} as overhead ceiling.`}`
+    }
+  }
+
+  // 6. User Drawings: Manual FRVP analysis
+  if (/frvp|volume\s+profile|manual\s+profile|poc/i.test(lower)) {
+    const f = ctx.userDrawings?.frvps?.[0]
+    if (f) {
+      const buyPct = f.buyRatioPct.toFixed(1)
+      return `### Leo Manual FRVP Assessment (${ctx.instrument} @ ${curPrice})
+
+Analyzing your manual **Fixed Range Volume Profile** (${f.startTimeEt} – ${f.endTimeEt}):
+- **Point of Control (POC):** **${f.poc.toLocaleString()}** (Highest traded volume node)
+- **Value Area (70%):** VAH **${f.vah.toLocaleString()}** | VAL **${f.val.toLocaleString()}**
+- **Auction Extremes:** High **${f.high.toLocaleString()}** | Low **${f.low.toLocaleString()}**
+- **Profile Volume:** **${f.totalVolume.toLocaleString()}** contracts (${buyPct}% buy-side delta)
+- **Current Relationship:** Market is **${f.priceRelation.replace('_', ' ')}**${f.distancePocPts != null ? ` (${Math.abs(f.distancePocPts).toFixed(1)} pts from manual POC)` : ''}.
+
+**Auction Liquidity Read:**
+${f.priceRelation === 'AT_POC'
+  ? `Price is revolving directly at high-volume equilibrium (**${f.poc.toLocaleString()}**). High two-way trade facilitation. Expect consolidation or rotational chop until initiative volume picks a direction.`
+  : f.priceRelation === 'ABOVE_VAH'
+    ? `Price is accepted above Value Area High (**${f.vah.toLocaleString()}**). Initiative buyers are in control and rejecting lower value. Extension target remains active.`
+    : f.priceRelation === 'BELOW_VAL'
+      ? `Price is rejected below Value Area Low (**${f.val.toLocaleString()}**). Initiative sellers are probing lower prices looking for responsive buyers.`
+      : `Price is trading inside the 70% Value Area (${f.val.toLocaleString()} – ${f.vah.toLocaleString()}). Expect rotational pull back toward POC **${f.poc.toLocaleString()}**.`}`
+    }
+  }
+
+  // 7. General auction assessment
   const yval = ctx.shortTermMoney?.yval != null ? ctx.shortTermMoney.yval.toFixed(2) : 'Y-VAL'
   const ypoc = ctx.shortTermMoney?.ypoc != null ? ctx.shortTermMoney.ypoc.toFixed(2) : 'Y-POC'
   const poc5d = ctx.intermediateMoney?.poc5d != null ? ctx.intermediateMoney.poc5d.toFixed(2) : '5D POC'
