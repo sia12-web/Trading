@@ -2,11 +2,26 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import {
-  extractChartDataPoints,
+  parseLeoDirectives,
   type LeoChatContext,
   type LeoDataPoint,
   type LeoMessage,
+  type LeoExecutionDirective,
 } from '@/lib/ai/leoAssistant'
+
+export interface ArmedDeskRule {
+  id: string
+  type: 'STAGNATION_TIMEOUT' | 'TELEGRAM_ALERT'
+  description: string
+  maxMinutes?: number
+  targetPrice?: number
+  targetReference?: string
+  session?: string
+  requireHighVolume?: boolean
+  requireConfidence?: boolean
+  createdAt: number
+  status: 'ARMED' | 'TRIGGERED' | 'SATISFIED' | 'CANCELLED'
+}
 
 interface LeoAssistantPanelProps {
   context: LeoChatContext
@@ -15,6 +30,7 @@ interface LeoAssistantPanelProps {
   onSelectDataPoint?: (point: LeoDataPoint) => void
   externalAttachedPoints?: LeoDataPoint[]
   onClearExternalAttachedPoints?: () => void
+  onClosePosition?: (reason: string) => Promise<boolean | void>
 }
 
 export function LeoAssistantPanel({
@@ -23,6 +39,7 @@ export function LeoAssistantPanel({
   onToggleOpen,
   externalAttachedPoints,
   onClearExternalAttachedPoints,
+  onClosePosition,
 }: LeoAssistantPanelProps) {
   const [internalIsOpen, setInternalIsOpen] = useState(false)
   const isPanelOpen = controlledIsOpen !== undefined ? controlledIsOpen : internalIsOpen
@@ -39,7 +56,7 @@ export function LeoAssistantPanel({
     {
       id: 'welcome',
       role: 'assistant',
-      content: `**Leo Online.** Institutional desk assistant calibrated to ${context.instrument}.\n\nMonitoring **Long-Term Money** (5M VWAP), **Intermediate Money** (5D POC), and **Short-Term Money** (Y-POC & ON-POC).\n\nClick any chart data point below or speak hands-free via mic.`,
+      content: `**Leo Online.** Institutional desk assistant calibrated to ${context.instrument}.\n\nMonitoring **Time & Sessions**, **Multi-Timeframe Money**, and **Auction Tails**.\n\nClick any arrow or reference directly on the chart, or speak hands-free via mic.`,
       timestamp: Date.now(),
     },
   ])
@@ -47,6 +64,7 @@ export function LeoAssistantPanel({
   const [inputPrompt, setInputPrompt] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [attachedPoints, setAttachedPoints] = useState<LeoDataPoint[]>([])
+  const [armedRules, setArmedRules] = useState<ArmedDeskRule[]>([])
 
   // Voice state (Web Speech Recognition)
   const [isListening, setIsListening] = useState(false)
@@ -56,7 +74,7 @@ export function LeoAssistantPanel({
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // Sync external attached data points (e.g. clicked on chart canvas)
+  // Sync external attached data points (clicked directly on chart arrows / canvas)
   useEffect(() => {
     if (externalAttachedPoints && externalAttachedPoints.length > 0) {
       setAttachedPoints((prev) => {
@@ -76,9 +94,6 @@ export function LeoAssistantPanel({
       onClearExternalAttachedPoints?.()
     }
   }, [externalAttachedPoints, isPanelOpen, onClearExternalAttachedPoints])
-
-  // Extract all currently active chart data points
-  const activeDataPoints = extractChartDataPoints(context)
 
   // Scroll to bottom on new message
   useEffect(() => {
@@ -136,31 +151,213 @@ export function LeoAssistantPanel({
   }
 
   // Toggle attached data point
-  const handleToggleDataPoint = (point: LeoDataPoint) => {
-    setAttachedPoints((prev) => {
-      const exists = prev.some((p) => p.id === point.id)
-      if (exists) {
-        return prev.filter((p) => p.id !== point.id)
-      } else {
-        return [...prev, point]
-      }
-    })
+  const handleRemoveDataPoint = (pointId: string) => {
+    setAttachedPoints((prev) => prev.filter((p) => p.id !== pointId))
   }
 
   // Speak text aloud using Web Speech Synthesis
   const speakText = (text: string) => {
     if (!ttsEnabled || typeof window === 'undefined' || !window.speechSynthesis) return
     window.speechSynthesis.cancel()
-    // Clean markdown asterisks and hashtags for smooth speech
+    // Clean markdown, brackets, and execute tags for smooth speech
     const clean = text
+      .replace(/<execute>[\s\S]*?<\/execute>/gi, '')
       .replace(/[*#`_>-]/g, ' ')
       .replace(/\[.*?\]/g, ' ')
-      .slice(0, 300)
+      .slice(0, 280)
     const utterance = new SpeechSynthesisUtterance(clean)
     utterance.rate = 1.05
     utterance.pitch = 1.0
     window.speechSynthesis.speak(utterance)
   }
+
+  // Execute immediate position close
+  const executeClosePosition = async (reason: string) => {
+    try {
+      if (onClosePosition) {
+        await onClosePosition(reason)
+      } else if (context.activePosition) {
+        await fetch('/api/trading/positions/close', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            position_id: context.activePosition.positionId,
+            instrument: context.activePosition.instrument,
+            exit_price: context.currentPrice ?? context.activePosition.entryPrice,
+            exit_reason: 'manual',
+            exit_notes: reason,
+          }),
+        })
+      }
+      // Send telegram update
+      await fetch('/api/trading/leo/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'POSITION_CLOSE',
+          instrument: context.instrument,
+          price: context.currentPrice ?? 0,
+          pnlPoints: context.activePosition?.unrealizedPnlPoints,
+          message: reason,
+        }),
+      }).catch(() => null)
+    } catch (err) {
+      console.error('[Leo] Close failed:', err)
+    }
+  }
+
+  // Dispatch a Telegram alert
+  const dispatchTelegramAlert = async (rule: ArmedDeskRule) => {
+    try {
+      const curPrice = context.currentPrice ?? rule.targetPrice ?? 0
+      const attached = attachedPoints.find((p) => p.label === rule.targetReference)
+      const res = await fetch('/api/trading/leo/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'TELEGRAM_ALERT',
+          instrument: context.instrument,
+          session: rule.session ?? context.sessionDetails?.sessionName ?? 'Active Session',
+          referencePoint: rule.targetReference,
+          price: curPrice,
+          volume: (attached?.volume as string) ?? 'High Volume Confirmation',
+          retestRatio: attached?.retestRatio,
+          confidence: 'High ★★★★☆',
+          message: `Price tested ${rule.targetReference} with high volume & execution confidence.`,
+        }),
+      })
+      if (res.ok) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `tg-${Date.now()}`,
+            role: 'assistant',
+            content: `📱 **[TELEGRAM DISPATCHED]:** Alert sent for **${rule.targetReference}** at **${curPrice.toFixed(2)}** in ${rule.session ?? 'Session'}.`,
+            timestamp: Date.now(),
+          },
+        ])
+        speakText(`Telegram alert dispatched for ${rule.targetReference}`)
+      }
+    } catch (e) {
+      console.error('[Leo] Telegram notify failed:', e)
+    }
+  }
+
+  // Apply parsed directives
+  const applyDirectives = (directives: LeoExecutionDirective[]) => {
+    for (const d of directives) {
+      if (d.action === 'CLOSE_POSITION') {
+        executeClosePosition(d.reason)
+        speakText(`Position close executed: ${d.reason}`)
+      } else if (d.action === 'ARM_STAGNATION_RULE') {
+        const newRule: ArmedDeskRule = {
+          id: `stag-${Date.now()}`,
+          type: 'STAGNATION_TIMEOUT',
+          description: d.description ?? `Close if not in profit after ${d.maxMinutes}m`,
+          maxMinutes: d.maxMinutes,
+          createdAt: Date.now(),
+          status: 'ARMED',
+        }
+        setArmedRules((prev) => [...prev.filter((r) => r.type !== 'STAGNATION_TIMEOUT'), newRule])
+      } else if (d.action === 'ARM_TELEGRAM_ALERT') {
+        const newRule: ArmedDeskRule = {
+          id: `tg-${Date.now()}`,
+          type: 'TELEGRAM_ALERT',
+          description: `Telegram alert when price tests ${d.targetReference} (${d.targetPrice.toLocaleString()})`,
+          targetPrice: d.targetPrice,
+          targetReference: d.targetReference,
+          session: d.session,
+          requireHighVolume: d.requireHighVolume,
+          requireConfidence: d.requireConfidence,
+          createdAt: Date.now(),
+          status: 'ARMED',
+        }
+        setArmedRules((prev) => [...prev, newRule])
+      } else if (d.action === 'CANCEL_RULES') {
+        setArmedRules([])
+        speakText('All rules cancelled.')
+      }
+    }
+  }
+
+  // ─── Real-time 1-Second Desk Rule Evaluation Loop ────────────────────────
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const pos = context.activePosition
+      const curPrice = context.currentPrice
+
+      setArmedRules((prevRules) => {
+        let changed = false
+        const nextRules = prevRules.map((rule) => {
+          if (rule.status !== 'ARMED') return rule
+
+          // 1. Stagnation Timeout Rule
+          if (rule.type === 'STAGNATION_TIMEOUT') {
+            if (!pos) {
+              // Position closed externally
+              changed = true
+              return { ...rule, status: 'SATISFIED' as const }
+            }
+
+            const entryTime = new Date(pos.entryTimestamp).getTime()
+            const elapsedMinutes = (Date.now() - entryTime) / 60000
+            const maxM = rule.maxMinutes ?? 5
+
+            if (elapsedMinutes >= maxM) {
+              if (pos.unrealizedPnlPoints <= 0) {
+                // EXECUTED! Stagnation timeout triggered
+                changed = true
+                const reason = `Stagnation timeout reached after ${maxM} minutes without positive profit`
+                executeClosePosition(reason)
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    id: `exec-${Date.now()}`,
+                    role: 'assistant',
+                    content: `🛑 **[LEO EXECUTED - STAGNATION EXIT]**\n\nPosition on ${pos.instrument} was open for ${elapsedMinutes.toFixed(1)}m without moving into profit (P&L: ${pos.unrealizedPnlPoints.toFixed(1)} pts).\n\n**Action**: Executed immediate market close. Position flattened.`,
+                    timestamp: Date.now(),
+                  },
+                ])
+                speakText(`Stagnation timeout reached after ${maxM} minutes. Position closed.`)
+                return { ...rule, status: 'TRIGGERED' as const }
+              } else {
+                // Moved into profit! Rule satisfied
+                changed = true
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    id: `sat-${Date.now()}`,
+                    role: 'assistant',
+                    content: `✅ **[LEO STAGNATION RULE SATISFIED]**\n\nTrade is positive (+${pos.unrealizedPnlPoints.toFixed(1)} pts) after ${maxM} minutes. Holding trade per playbook.`,
+                    timestamp: Date.now(),
+                  },
+                ])
+                speakText('Trade moved into profit. Stagnation rule cleared.')
+                return { ...rule, status: 'SATISFIED' as const }
+              }
+            }
+          }
+
+          // 2. Telegram Alert Rule
+          if (rule.type === 'TELEGRAM_ALERT' && curPrice != null && rule.targetPrice != null) {
+            const dist = Math.abs(curPrice - rule.targetPrice)
+            if (dist <= 5) {
+              // Target price reached!
+              changed = true
+              dispatchTelegramAlert(rule)
+              return { ...rule, status: 'TRIGGERED' as const }
+            }
+          }
+
+          return rule
+        })
+
+        return changed ? nextRules : prevRules
+      })
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [context.activePosition, context.currentPrice, context.instrument])
 
   // Send message to Leo via streaming API
   const handleSendMessage = async (textToSend?: string) => {
@@ -201,7 +398,14 @@ export function LeoAssistantPanel({
             role: m.role,
             content:
               m.attachedPoints && m.attachedPoints.length > 0
-                ? `${m.content}\n\n[Attached Data Points: ${m.attachedPoints.map((p) => `${p.label}=${p.value}`).join(', ')}]`
+                ? `${m.content}\n\n[Attached Data Points: ${m.attachedPoints
+                    .map(
+                      (p) =>
+                        `${p.label}=${p.value}${p.session ? ` (${p.session})` : ''}${
+                          p.volume ? ` vol=${p.volume}` : ''
+                        }${p.retestRatio ? ` retest=${p.retestRatio}x` : ''}`
+                    )
+                    .join(', ')}]`
                 : m.content,
           })),
           chartContext: {
@@ -252,6 +456,12 @@ export function LeoAssistantPanel({
         }
       }
 
+      // Parse and execute directives (<execute>)
+      const directives = parseLeoDirectives(accumulated)
+      if (directives.length > 0) {
+        applyDirectives(directives)
+      }
+
       // Voice readout if enabled
       speakText(accumulated)
     } catch (err: any) {
@@ -260,7 +470,7 @@ export function LeoAssistantPanel({
           msg.id === assistantId
             ? {
                 ...msg,
-                content: `⚠️ **Leo Desk Error:** Unable to stream response (${err?.message ?? 'Network error'}). Retrying with desk heuristic...`,
+                content: `⚠️ **Leo Desk Error:** Unable to stream response (${err?.message ?? 'Network error'}).`,
               }
             : msg
         )
@@ -271,10 +481,7 @@ export function LeoAssistantPanel({
     }
   }
 
-  // Quick action templates
-  const handleQuickPrompt = (template: string) => {
-    handleSendMessage(template)
-  }
+  const activePos = context.activePosition
 
   return (
     <>
@@ -293,14 +500,21 @@ export function LeoAssistantPanel({
           <span className="font-mono text-xs font-semibold tracking-wide text-purple-200">
             🎙️ Leo AI
           </span>
+          {activePos && (
+            <span
+              className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                activePos.isInProfit
+                  ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700'
+                  : 'bg-rose-950/80 text-rose-300 border border-rose-700'
+              }`}
+            >
+              {activePos.direction} {activePos.unrealizedPnlPoints >= 0 ? '+' : ''}
+              {activePos.unrealizedPnlPoints.toFixed(1)}pt
+            </span>
+          )}
           {context.shortTermMoney?.ypoc != null && (
             <span className="hidden sm:inline font-mono text-[10px] text-neutral-400 border-l border-neutral-700 pl-2">
               Y-POC {context.shortTermMoney.ypoc}
-            </span>
-          )}
-          {context.intermediateMoney?.poc5d != null && (
-            <span className="hidden md:inline font-mono text-[10px] text-sky-400">
-              5D {context.intermediateMoney.poc5d}
             </span>
           )}
           <span className="text-[10px] text-purple-400 font-bold bg-purple-950/60 border border-purple-800/60 rounded px-1.5 py-0.5">
@@ -359,109 +573,164 @@ export function LeoAssistantPanel({
             </div>
           </div>
 
-          {/* Live Context Quick Bar */}
-          <div className="px-3 py-1.5 bg-neutral-900/40 border-b border-neutral-800/60 flex items-center justify-between text-[10px] font-mono text-neutral-300">
+          {/* Time, Session & Market Telemetry Bar */}
+          <div className="px-3 py-1.5 bg-neutral-900/50 border-b border-neutral-800/60 flex items-center justify-between text-[10px] font-mono text-neutral-300">
             <span className="flex items-center gap-1">
-              <span className="text-neutral-500">Day:</span>
-              <span className="text-amber-300 font-semibold">{context.dayType ?? 'Forming'}</span>
+              <span className="text-neutral-500">Session:</span>
+              <span className="text-amber-300 font-semibold">
+                {context.sessionDetails?.sessionName ?? context.dayType ?? 'Active'}
+              </span>
             </span>
             <span className="flex items-center gap-1">
-              <span className="text-neutral-500">Open:</span>
-              <span className="text-sky-300 font-semibold">{context.openingType ?? 'Open Auction'}</span>
+              <span className="text-sky-300 font-semibold">
+                {context.sessionDetails?.sessionElapsedMinutes != null
+                  ? `${context.sessionDetails.sessionElapsedMinutes}m in`
+                  : context.openingType ?? 'Open Auction'}
+              </span>
             </span>
-            {context.shortTermMoney?.overnightBias && (
-              <span className="text-purple-300 font-semibold truncate max-w-[110px]">
-                {context.shortTermMoney.overnightBias.replace(/_/g, ' ')}
+            {context.sessionDetails?.barCountdown && (
+              <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                {context.sessionDetails.barCountdown}
               </span>
             )}
           </div>
 
-          {/* Interactive Clickable Data Points Tray */}
-          <div className="px-3 py-2 border-b border-neutral-800/70 bg-neutral-950/50">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-mono font-medium">
-                Clickable Chart Reference Points
-              </span>
-              <span className="text-[9px] text-purple-400 font-mono">
-                {attachedPoints.length > 0 ? `${attachedPoints.length} attached` : 'Click to attach'}
-              </span>
-            </div>
-
-            <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
-              {activeDataPoints.map((point) => {
-                const isSelected = attachedPoints.some((p) => p.id === point.id)
-                const tierColor =
-                  point.tier === 'LT'
-                    ? 'border-yellow-500/50 bg-yellow-950/40 text-yellow-300'
-                    : point.tier === 'IT'
-                      ? 'border-sky-500/50 bg-sky-950/40 text-sky-300'
-                      : point.tier === 'ST'
-                        ? 'border-amber-500/50 bg-amber-950/40 text-amber-300'
-                        : 'border-purple-500/50 bg-purple-950/40 text-purple-300'
-
-                const selectedColor = isSelected
-                  ? 'ring-2 ring-purple-400 ring-offset-1 ring-offset-neutral-950 font-bold'
-                  : 'opacity-85 hover:opacity-100 hover:scale-105'
-
-                return (
-                  <button
-                    key={point.id}
-                    type="button"
-                    onClick={() => handleToggleDataPoint(point)}
-                    className={`px-2 py-0.5 rounded text-[10px] font-mono border transition-all flex items-center gap-1 ${tierColor} ${selectedColor}`}
-                    title={point.description ?? `${point.label}: ${point.value}`}
+          {/* ── Active Position Management Card (When In Trade) ── */}
+          {activePos && (
+            <div className="px-3 py-2 border-b border-neutral-800/80 bg-neutral-900/80">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold font-mono ${
+                      activePos.direction === 'LONG'
+                        ? 'bg-emerald-950 text-emerald-400 border border-emerald-700'
+                        : 'bg-rose-950 text-rose-400 border border-rose-700'
+                    }`}
                   >
-                    <span>{point.label}</span>
-                    <span className="font-semibold">{point.value}</span>
-                    {isSelected && <span className="text-[8px] text-purple-300">✓</span>}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
+                    {activePos.direction} {activePos.positionSize}x
+                  </span>
+                  <span className="text-xs font-mono font-bold text-white">
+                    @{activePos.entryPrice.toFixed(2)}
+                  </span>
+                </div>
+                <div
+                  className={`text-xs font-mono font-extrabold ${
+                    activePos.isInProfit ? 'text-emerald-400' : 'text-rose-400'
+                  }`}
+                >
+                  {activePos.unrealizedPnlPoints >= 0 ? '+' : ''}
+                  {activePos.unrealizedPnlPoints.toFixed(1)} pts
+                  {activePos.unrealizedPnlCad != null && (
+                    <span className="text-[10px] ml-1 opacity-80">
+                      ({activePos.unrealizedPnlCad >= 0 ? '+' : ''}
+                      {activePos.unrealizedPnlCad.toFixed(2)}$)
+                    </span>
+                  )}
+                </div>
+              </div>
 
-          {/* Quick Strategy Suggestion Chips */}
-          <div className="px-3 py-1.5 border-b border-neutral-800/60 bg-neutral-900/30 flex items-center gap-1.5 overflow-x-auto whitespace-nowrap text-[10px] font-mono">
-            <span className="text-neutral-500 text-[9px]">Quick:</span>
-            <button
-              type="button"
-              onClick={() =>
-                handleQuickPrompt(
-                  `Leo wait we get to below yesterday value (${context.shortTermMoney?.yval ?? 'Y-VAL'}) and once we see an excessive tail we see it as intermediate money, also we have the 5M VWAP line (${context.longTermMoney?.avwap5m ?? 'VWAP'}), so it might bring long term money and we can have a trend. Once we see that excess wait price tests it and once we get a candle stick in 5 minutes that shows bullish we get it and put stop loss below the tail.`
-                )
-              }
-              className="px-2 py-0.5 rounded bg-purple-950/60 border border-purple-700/60 text-purple-200 hover:bg-purple-900/80 transition-colors"
-            >
-              🎯 Y-VAL Reversal Plan
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                handleQuickPrompt(
-                  `Leo what is the delta and confluence between 5D POC (${context.intermediateMoney?.poc5d ?? '5D'}) and Y-POC (${context.shortTermMoney?.ypoc ?? 'Y-POC'})? What does it imply for today's auction?`
-                )
-              }
-              className="px-2 py-0.5 rounded bg-sky-950/60 border border-sky-700/60 text-sky-200 hover:bg-sky-900/80 transition-colors"
-            >
-              ⚖️ 5D vs Y-POC Delta
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                handleQuickPrompt(
-                  `Leo examine the overnight inventory bias (${context.shortTermMoney?.overnightBias ?? 'Inventory'}). If we open out of range, is an inventory rebalance likely?`
-                )
-              }
-              className="px-2 py-0.5 rounded bg-amber-950/60 border border-amber-700/60 text-amber-200 hover:bg-amber-900/80 transition-colors"
-            >
-              🔄 Inventory Rebalance
-            </button>
-          </div>
+              <div className="flex items-center justify-between text-[10px] font-mono text-neutral-400 mt-1">
+                <span>⏱️ {activePos.durationMinutes.toFixed(1)}m in trade</span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleSendMessage(
+                        'Leo if we are in this position and we have not moved to profit after 5 minutes, close the position.'
+                      )
+                    }
+                    className="px-1.5 py-0.5 rounded bg-amber-950/70 border border-amber-700/60 text-amber-300 hover:bg-amber-900/90 text-[9px]"
+                    title="Arm 5-minute stagnation exit rule"
+                  >
+                    ⏳ Arm 5m Timeout
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => executeClosePosition('Trader button click: Close position')}
+                    className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-[9px] shadow"
+                  >
+                    ⚡ Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Armed Desk Rules Tray (Stagnation & Telegram Rules) ── */}
+          {armedRules.filter((r) => r.status === 'ARMED').length > 0 && (
+            <div className="px-3 py-1.5 border-b border-purple-900/60 bg-purple-950/40 space-y-1">
+              {armedRules
+                .filter((r) => r.status === 'ARMED')
+                .map((rule) => (
+                  <div
+                    key={rule.id}
+                    className="flex items-center justify-between text-[10px] font-mono text-purple-200"
+                  >
+                    <span className="flex items-center gap-1.5 truncate max-w-[290px]">
+                      <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                      <span className="truncate">{rule.description}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setArmedRules((prev) =>
+                          prev.map((r) =>
+                            r.id === rule.id ? { ...r, status: 'CANCELLED' as const } : r
+                          )
+                        )
+                      }
+                      className="text-[9px] text-neutral-400 hover:text-rose-400 font-bold ml-1 underline"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ))}
+            </div>
+          )}
+
+          {/* ── Clean Clicked Chart Reference Pill (Direct from Canvas Arrows) ── */}
+          {attachedPoints.length > 0 && (
+            <div className="px-3 py-1.5 border-b border-neutral-800/70 bg-neutral-900/70 flex flex-wrap items-center gap-1">
+              <span className="text-[9px] text-neutral-400 font-mono">Clicked Arrow/Ref:</span>
+              {attachedPoints.map((pt) => (
+                <span
+                  key={pt.id}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-purple-950/90 border border-purple-500/70 text-[10px] font-mono text-purple-200 shadow-sm"
+                >
+                  <span className="font-bold">📍 {pt.label}:</span>
+                  <span className="text-amber-300 font-semibold">{pt.value}</span>
+                  {pt.volume && <span className="text-neutral-400">({pt.volume})</span>}
+                  {pt.retestRatio != null && (
+                    <span className="text-sky-300 font-semibold">[{pt.retestRatio}x]</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveDataPoint(pt.id)}
+                    className="hover:text-rose-400 font-bold ml-1 text-xs"
+                    title="Remove attached point"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              <button
+                type="button"
+                onClick={() => setAttachedPoints([])}
+                className="text-[8px] text-neutral-500 hover:text-neutral-300 underline ml-1"
+              >
+                Clear
+              </button>
+            </div>
+          )}
 
           {/* Conversation History */}
           <div className="flex-1 p-3 overflow-y-auto space-y-3 font-sans text-xs min-h-[160px]">
             {messages.map((msg) => {
               const isUser = msg.role === 'user'
+              // Strip <execute> block from regular visual chat text
+              const displayContent = (msg.content || '').replace(/<execute>[\s\S]*?<\/execute>/gi, '').trim()
+
               return (
                 <div
                   key={msg.id}
@@ -495,7 +764,8 @@ export function LeoAssistantPanel({
                             key={pt.id}
                             className="px-1.5 py-0.2 rounded bg-purple-950/80 border border-purple-600/60 text-[9px] font-mono text-purple-300"
                           >
-                            📍 {pt.label}: {pt.value}
+                            📍 {pt.label}: {pt.value} {pt.volume ? `(${pt.volume})` : ''}{' '}
+                            {pt.retestRatio != null ? `[${pt.retestRatio}x]` : ''}
                           </span>
                         ))}
                       </div>
@@ -503,7 +773,7 @@ export function LeoAssistantPanel({
 
                     {/* Message Body */}
                     <div className="whitespace-pre-wrap select-text selection:bg-purple-500/30">
-                      {msg.content || (
+                      {displayContent || (
                         <span className="inline-flex items-center gap-1 text-purple-400 animate-pulse font-mono text-[11px]">
                           Leo thinking...
                         </span>
@@ -535,34 +805,6 @@ export function LeoAssistantPanel({
 
           {/* Input & Voice Controls Bar */}
           <div className="p-2.5 border-t border-neutral-800/80 bg-neutral-900/70">
-            {attachedPoints.length > 0 && (
-              <div className="flex items-center gap-1 mb-2 flex-wrap">
-                <span className="text-[9px] text-neutral-400 font-mono">Attached:</span>
-                {attachedPoints.map((pt) => (
-                  <span
-                    key={pt.id}
-                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-950/80 border border-purple-600/70 text-[9px] font-mono text-purple-300"
-                  >
-                    {pt.label}: {pt.value}
-                    <button
-                      type="button"
-                      onClick={() => handleToggleDataPoint(pt)}
-                      className="hover:text-red-400 font-bold ml-0.5"
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setAttachedPoints([])}
-                  className="text-[8px] text-neutral-500 hover:text-neutral-300 underline ml-1"
-                >
-                  Clear all
-                </button>
-              </div>
-            )}
-
             <form
               onSubmit={(e) => {
                 e.preventDefault()
@@ -602,7 +844,7 @@ export function LeoAssistantPanel({
                 placeholder={
                   isListening
                     ? 'Listening to speech...'
-                    : 'Ask Leo or state strategy condition...'
+                    : 'Speak to Leo or ask question...'
                 }
                 disabled={isStreaming}
                 className="flex-1 px-3 py-2 rounded-xl bg-neutral-950 border border-neutral-800 text-xs text-neutral-200 placeholder:text-neutral-500 focus:outline-none focus:border-purple-500 transition-colors font-sans"

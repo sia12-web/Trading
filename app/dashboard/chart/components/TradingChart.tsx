@@ -56,6 +56,7 @@ import {
   detectDistributionReferences,
   detectEmotionalNewsMoves,
   type EmotionalNewsMove,
+  type SessionExtreme,
 } from '@/lib/chart/excesses'
 import {
   applyTickToFormingBar,
@@ -148,7 +149,8 @@ const resolveAuctionAsOfUnix = (..._args: any[]) => 0
 type AuctionHud = any
 type AuctionOverlaySignal = any
 import { LeoAssistantPanel } from './LeoAssistantPanel'
-import type { LeoChatContext, LeoDataPoint } from '@/lib/ai/leoAssistant'
+import type { LeoChatContext, LeoDataPoint, LeoActivePosition } from '@/lib/ai/leoAssistant'
+import { isUsMarketHoliday } from '@/lib/chart/sessionVwap'
 
 const DOW_15M_FAIL_COLORS: any = { high: '#3b82f6', low: '#ef4444', mid: '#eab308', buy: '#3b82f6', sell: '#ef4444' }
 const computeDow15mFailOverlay = (..._args: any[]): any => null
@@ -839,6 +841,7 @@ const LivePriceTicker = memo(function LivePriceTicker({
 // ─── TradingChart props ───────────────────────────────────────────────────────
 
 interface PositionOverlay {
+  positionId?: string
   entryPrice: number
   stopLoss: number
   profitTarget: number
@@ -985,6 +988,27 @@ interface TradingChartProps {
       hover: string
     } | null
   ) => void
+  /** Close position execution callback from Leo or desk */
+  onClosePosition?: (reason: string) => Promise<boolean | void>
+}
+
+export interface RenderedSessionExtremeHit {
+  extreme: SessionExtreme
+  x: number
+  y: number
+  session: 'Asia' | 'London' | 'New York'
+  price: number
+  type: 'HIGH' | 'LOW'
+  volume: number
+  volStr: string
+  isRetested: boolean
+  retestVolumeRatio?: number
+  bounds: {
+    minX: number
+    maxX: number
+    minY: number
+    maxY: number
+  }
 }
 
 // ─── Main TradingChart component ──────────────────────────────────────────────
@@ -1027,9 +1051,11 @@ export function TradingChart({
   onRangeAtr,
   onDeskPerf,
   onSessionExit,
+  onClosePosition,
 }: TradingChartProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartFrameRef = useRef<HTMLDivElement>(null)
+  const renderedSessionExtremesRef = useRef<RenderedSessionExtremeHit[]>([])
   const sessionOverlayRef = useRef<HTMLDivElement>(null)
   const positionBandOverlayRef = useRef<HTMLDivElement>(null)
   const frvpHistogramCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -2300,6 +2326,7 @@ export function TradingChart({
       yesterdayStartUnix
     )
 
+    renderedSessionExtremesRef.current = []
     for (const ex of sessionExtremes) {
       const chartT = toChartTime(ex.time, tz)
       const x = timeToX(chart.timeScale(), chartT, candleTimes)
@@ -2317,6 +2344,25 @@ export function TradingChart({
           : ' [Retest]'
         : ''
       const labelText = `(${volStr})${retestStr}`
+
+      renderedSessionExtremesRef.current.push({
+        extreme: ex,
+        x,
+        y,
+        session: ex.session,
+        price: ex.price,
+        type: ex.type,
+        volume: ex.volume,
+        volStr,
+        isRetested: ex.isRetested,
+        retestVolumeRatio: ex.retestVolumeRatio,
+        bounds: {
+          minX: x - 15,
+          maxX: x + 115,
+          minY: ex.type === 'HIGH' ? y - 18 : y - 4,
+          maxY: ex.type === 'HIGH' ? y + 4 : y + 20,
+        },
+      })
 
       if (ex.type === 'HIGH') {
         // Downward rose triangle above high wick
@@ -2745,11 +2791,108 @@ export function TradingChart({
     const list = candles || []
     const lastBar = list.length ? list[list.length - 1] : null
     const curPrice = livePrice ?? lastBar?.close ?? null
-    const nowEtStr = new Date().toLocaleTimeString('en-US', {
+    const now = new Date()
+    const nowEtStr =
+      now.toLocaleTimeString('en-US', {
+        timeZone: 'America/New_York',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      }) + ' ET'
+
+    // NY Session calculation
+    const nyDateStr = now.toLocaleDateString('en-US', {
       timeZone: 'America/New_York',
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    })
+    const nyTimeParts = now.toLocaleTimeString('en-US', {
+      timeZone: 'America/New_York',
+      hour12: false,
       hour: '2-digit',
       minute: '2-digit',
-    }) + ' ET'
+    }).split(':').map(Number)
+    const nyDec = (nyTimeParts[0] || 0) + (nyTimeParts[1] || 0) / 60
+
+    let sessionName = 'Pre-market / Overnight'
+    let sessionPhase = 'Overnight Flow'
+    let sessionElapsedMinutes = 0
+    let nextCheckpoint = '09:30 ET NYC Cash Open'
+
+    if (nyDec >= 9.5 && nyDec < 16) {
+      sessionName = 'NYC Cash Session (RTH)'
+      sessionElapsedMinutes = Math.floor((nyDec - 9.5) * 60)
+      if (nyDec < 10.5) {
+        sessionPhase = 'Initial Balance (IB)'
+        nextCheckpoint = `${Math.floor((10.5 - nyDec) * 60)}m to IB Close (10:30 ET)`
+      } else if (nyDec < 12) {
+        sessionPhase = 'Morning Trend / Extension'
+        nextCheckpoint = `${Math.floor((12 - nyDec) * 60)}m to NY Lunch (12:00 ET)`
+      } else if (nyDec < 13.5) {
+        sessionPhase = 'NY Lunch Window (Chop Caution)'
+        nextCheckpoint = `${Math.floor((13.5 - nyDec) * 60)}m to Afternoon Session (13:30 ET)`
+      } else if (nyDec < 15.5) {
+        sessionPhase = 'Afternoon Trend / Rebalance'
+        nextCheckpoint = `${Math.floor((15.5 - nyDec) * 60)}m to Cash Close MOC (16:00 ET)`
+      } else {
+        sessionPhase = 'Market On Close (MOC)'
+        nextCheckpoint = `${Math.floor((16 - nyDec) * 60)}m to Cash Settlement`
+      }
+    } else if (nyDec >= 18 || nyDec < 2) {
+      sessionName = 'Asia Session'
+      sessionPhase = 'Tokyo / Hong Kong Cash Open'
+      sessionElapsedMinutes = nyDec >= 18 ? Math.floor((nyDec - 18) * 60) : Math.floor((nyDec + 6) * 60)
+      nextCheckpoint = '03:00 ET London Open'
+    } else if (nyDec >= 3 && nyDec < 9.5) {
+      sessionName = 'London Session'
+      sessionPhase = 'European Cash Session'
+      sessionElapsedMinutes = Math.floor((nyDec - 3) * 60)
+      nextCheckpoint = `${Math.floor((9.5 - nyDec) * 60)}m to NYC Cash Open (09:30 ET)`
+    } else if (nyDec >= 16 && nyDec < 18) {
+      sessionName = 'Post-Close Settlement'
+      sessionPhase = 'Futures Maintenance'
+      nextCheckpoint = '18:00 ET Globex / Asia Open'
+    }
+
+    const ymdToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const isHoliday = isUsMarketHoliday(ymdToday)
+
+    // Active position telemetry
+    let activePos: LeoActivePosition | null = null
+    if (positionOverlay) {
+      const entryTimeMs = positionOverlay.entryTimestamp
+        ? new Date(positionOverlay.entryTimestamp).getTime()
+        : Date.now()
+      const durationMin = Math.max(0, (Date.now() - entryTimeMs) / 60000)
+      const dir = (positionOverlay.direction || 'long').toUpperCase() as 'LONG' | 'SHORT'
+      const entryPx = positionOverlay.entryPrice
+      const pnlPts =
+        curPrice != null
+          ? dir === 'LONG'
+            ? curPrice - entryPx
+            : entryPx - curPrice
+          : 0
+      const size = positionOverlay.positionSize ?? 1
+      const multiplier = instrument === 'NASDAQ' ? 2 : instrument === 'DOW' ? 5 : 1
+      const pnlCad = pnlPts * size * multiplier
+
+      activePos = {
+        positionId: positionOverlay.positionId ?? 'active-pos',
+        instrument,
+        direction: dir,
+        entryPrice: entryPx,
+        positionSize: size,
+        stopLoss: positionOverlay.stopLoss ?? 0,
+        profitTarget: positionOverlay.profitTarget ?? 0,
+        entryTimestamp: positionOverlay.entryTimestamp ?? entryTimeMs,
+        durationMinutes: durationMin,
+        unrealizedPnlPoints: Number(pnlPts.toFixed(1)),
+        unrealizedPnlCad: Number(pnlCad.toFixed(2)),
+        isInProfit: pnlPts > 0,
+      }
+    }
 
     return {
       instrument,
@@ -2757,6 +2900,18 @@ export function TradingChart({
       currentTimeEt: nowEtStr,
       dayType: dayTypeEval?.badgeText ?? null,
       openingType: openingBadge ?? null,
+      sessionDetails: {
+        sessionName,
+        sessionPhase,
+        sessionElapsedMinutes,
+        timeToNextCheckpoint: nextCheckpoint,
+        candleTimeframe: '5m',
+        barCountdown: barCountdown || undefined,
+        calendarDate: nyDateStr,
+        isHoliday,
+        holidayName: isHoliday ? 'US Exchange Holiday' : undefined,
+      },
+      activePosition: activePos,
       longTermMoney: avwap5mBenchmark
         ? {
             avwap5m: avwap5mBenchmark.vwap,
@@ -2798,7 +2953,14 @@ export function TradingChart({
                 : null,
           }
         : null,
-      activeExcesses: [],
+      activeExcesses: (renderedSessionExtremesRef.current || []).map((r) => ({
+        type: r.type === 'HIGH' ? 'SELLING_EXCESS' : 'BUYING_EXCESS',
+        price: r.price,
+        session: r.session,
+        volumeStr: r.volStr,
+        retestRatio: r.retestVolumeRatio,
+        isRetested: r.isRetested,
+      })),
     }
   }, [
     instrument,
@@ -2810,7 +2972,75 @@ export function TradingChart({
     frvp5d,
     yesterdayNyc,
     overnightInventory,
+    positionOverlay,
+    barCountdown,
   ])
+
+  // Direct chart canvas click handler for session extreme arrows and labels
+  const handleChartFrameClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const frame = chartFrameRef.current
+    if (!frame) return
+    const rect = frame.getBoundingClientRect()
+    const clickX = e.clientX - rect.left
+    const clickY = e.clientY - rect.top
+
+    // Check if clicked within any session extreme hit-box
+    const hit = renderedSessionExtremesRef.current.find((item) => {
+      const distToApex = Math.hypot(clickX - item.x, clickY - item.y)
+      if (distToApex <= 20) return true
+      return (
+        clickX >= item.bounds.minX &&
+        clickX <= item.bounds.maxX &&
+        clickY >= item.bounds.minY &&
+        clickY <= item.bounds.maxY
+      )
+    })
+
+    if (hit) {
+      const ex = hit.extreme
+      const label = `${hit.session} ${hit.type === 'HIGH' ? 'High' : 'Low'}`
+      setLeoExternalPoints([
+        {
+          id: `arrow-${ex.id || ex.time}-${ex.price}`,
+          label,
+          value: hit.price,
+          tier: 'IT',
+          category: 'EXCESS',
+          session: hit.session,
+          volume: hit.volStr,
+          retestRatio: hit.retestVolumeRatio,
+          isRetested: hit.isRetested,
+          description: `${hit.session} ${hit.type === 'HIGH' ? 'High' : 'Low'} at ${hit.price} (${hit.volStr}) ${
+            hit.isRetested
+              ? `[Retested with ${hit.retestVolumeRatio ?? 1}x volume]`
+              : '[Fresh / Untested]'
+          }`,
+        },
+      ])
+      setLeoPanelOpen(true)
+    }
+  }, [])
+
+  const handleChartFrameMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const frame = chartFrameRef.current
+    if (!frame) return
+    const rect = frame.getBoundingClientRect()
+    const mouseX = e.clientX - rect.left
+    const mouseY = e.clientY - rect.top
+
+    const hit = renderedSessionExtremesRef.current.some((item) => {
+      const dist = Math.hypot(mouseX - item.x, mouseY - item.y)
+      if (dist <= 20) return true
+      return (
+        mouseX >= item.bounds.minX &&
+        mouseX <= item.bounds.maxX &&
+        mouseY >= item.bounds.minY &&
+        mouseY <= item.bounds.maxY
+      )
+    })
+
+    frame.style.cursor = hit ? 'pointer' : ''
+  }, [])
 
   const paintAuctionOverlay = useCallback(() => {
     const host = priceLineHostRef.current
@@ -8015,6 +8245,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       </div>
       <div
         ref={chartFrameRef}
+        onClick={handleChartFrameClick}
+        onMouseMove={handleChartFrameMouseMove}
         className="flex-1 relative rounded-xl border border-zinc-800 overflow-hidden bg-[#0e1117]"
         style={{ minHeight: 400 }}
       >
@@ -8809,6 +9041,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           onToggleOpen={() => setLeoPanelOpen(!leoPanelOpen)}
           externalAttachedPoints={leoExternalPoints}
           onClearExternalAttachedPoints={() => setLeoExternalPoints([])}
+          onClosePosition={onClosePosition}
         />
       </div>
     </div>

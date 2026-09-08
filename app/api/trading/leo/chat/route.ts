@@ -110,31 +110,57 @@ export async function POST(req: NextRequest) {
 }
 
 /**
- * Deterministic institutional trade planner fallback when external API is unreachable.
+ * Deterministic institutional trade planner & execution fallback when external API is unreachable.
  */
 function buildDeskFallbackResponse(
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
   ctx: LeoChatContext
 ): string {
   const lastMsg = messages[messages.length - 1]?.content ?? ''
+  const lower = lastMsg.toLowerCase()
   const curPrice = ctx.currentPrice != null ? ctx.currentPrice.toFixed(2) : 'active price'
+  const sessionName = ctx.sessionDetails?.sessionName ?? 'Active Session'
+
+  // 1. Immediate close command
+  if (/close\s+(the\s+)?position|flatten|exit\s+now|close\s+now/i.test(lower)) {
+    return `Roger that. Executing immediate market close on ${ctx.instrument} at ${curPrice}. Flattening desk position.\n\n<execute>\n{\n  "action": "CLOSE_POSITION",\n  "reason": "Trader voice command: Close position"\n}\n</execute>`
+  }
+
+  // 2. Stagnation rule command: "if we are in a position and we have not moved to profit after X minutes close"
+  if (/not\s+moved\s+to\s+(the\s+)?profit|stagnat|close\s+.*after\s+\d+\s*min/i.test(lower)) {
+    const matchMin = lower.match(/(\d+)\s*(?:minutes?|mins?|m\b)/)
+    const minutes = matchMin ? parseInt(matchMin[1]!, 10) : 5
+    const pos = ctx.activePosition
+
+    return `Understood. Stagnation rule armed: If our ${pos ? `${pos.direction} position on ${pos.instrument} (entry: ${pos.entryPrice.toFixed(2)})` : `${ctx.instrument} position`} does not move into positive profit within ${minutes} minutes, I will automatically execute a market close to protect capital from dead auction chop.\n\n<execute>\n{\n  "action": "ARM_STAGNATION_RULE",\n  "maxMinutes": ${minutes},\n  "requireProfitPoints": 1,\n  "description": "Close position if not in profit after ${minutes} minutes"\n}\n</execute>`
+  }
+
+  // 3. Telegram alert command: "send me a telegram message" or "telegram"
+  if (/telegram|notify\s+me|send\s+me\s+a\s+message/i.test(lower)) {
+    const attached = ctx.selectedDataPoints?.[0]
+    const targetRef = attached?.label ?? (ctx.intermediateMoney?.poc5d ? '5D POC' : 'Target Reference')
+    const targetPrice =
+      typeof attached?.value === 'number'
+        ? attached.value
+        : ctx.intermediateMoney?.poc5d ?? (ctx.currentPrice ?? 29500)
+
+    const sessionMatch = lower.match(/\b(asia|london|new york|nyc)\b/i)
+    const session = sessionMatch ? sessionMatch[1]!.toUpperCase() : ctx.sessionDetails?.sessionName ?? 'Current Session'
+
+    return `Understood. Telegram alert armed for **${targetRef}** (${targetPrice.toLocaleString()}) during ${session}.\n\nWhen price tests this reference zone with confirmed high volume and execution confidence, I will dispatch an instant alert to your Telegram.\n\n<execute>\n{\n  "action": "ARM_TELEGRAM_ALERT",\n  "targetReference": "${targetRef}",\n  "targetPrice": ${targetPrice},\n  "requireHighVolume": true,\n  "requireConfidence": true,\n  "session": "${session}"\n}\n</execute>`
+  }
+
+  // 4. General auction assessment
   const yval = ctx.shortTermMoney?.yval != null ? ctx.shortTermMoney.yval.toFixed(2) : 'Y-VAL'
   const ypoc = ctx.shortTermMoney?.ypoc != null ? ctx.shortTermMoney.ypoc.toFixed(2) : 'Y-POC'
   const poc5d = ctx.intermediateMoney?.poc5d != null ? ctx.intermediateMoney.poc5d.toFixed(2) : '5D POC'
   const vwap5m = ctx.longTermMoney?.avwap5m != null ? ctx.longTermMoney.avwap5m.toFixed(2) : '5M VWAP'
 
-  return `### Leo Trade Assessment (${ctx.instrument} @ ${curPrice})
+  return `### Leo Trade Assessment (${ctx.instrument} @ ${curPrice} · ${sessionName})
 
-**Plan Summary for "${lastMsg.slice(0, 80)}..."**:
-- **Condition 1 (Short-Term Location):** Price trading relative to ${yval} (Yesterday Value Area Low).
-- **Condition 2 (Intermediate Excess):** Awaiting 5m rejection tail showing responsive intermediate buyers.
-- **Condition 3 (Long-Term Flow):** 5-Month Anchored VWAP is at **${vwap5m}**. Retest must hold above macro support.
-- **Execution Trigger:** Wait for a 5-minute bullish reversal candle confirming the rejection shelf.
-- **Stop Loss:** Strict invalidation 2 ticks below the lowest wick of the excess tail.
-- **Targets:**
-  1. Target 1 (Short-Term): **${ypoc}** (Yesterday POC)
-  2. Target 2 (Intermediate Magnet): **${poc5d}** (5D POC extended line)
-  3. Target 3 (Macro Trend): **${vwap5m}** (5M AVWAP)
-
-*Standing by for trigger confirmation.*`
+**Reviewing Auction Context**:
+- **Location:** Trading relative to ${yval} (Yesterday Value Area Low), ${ypoc} (Yesterday POC) & ${poc5d} (5D POC extended).
+- **Intermediate Flow:** Tracking 5-Day POC magnet and excessive rejection wicks.
+- **Long-Term Benchmark:** 5-Month Anchored VWAP is at **${vwap5m}**.
+- **Desk Telemetry:** Standing by to monitor session references, execute stagnation timeout exits, or dispatch Telegram alerts.`
 }

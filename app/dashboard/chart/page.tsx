@@ -167,6 +167,7 @@ function asLiveNy(i: string | null | undefined): Instrument {
 }
 
 interface PositionOverlay {
+  positionId?: string
   entryPrice: number
   stopLoss: number
   profitTarget: number
@@ -2112,10 +2113,40 @@ export default function ChartPage() {
               onPriceUpdate={onPriceUpdate}
               onQuoteTick={onQuoteTick}
               onDataModeChange={setDataMode}
+              onClosePosition={async (reason: string) => {
+                if (!managePos) return
+                try {
+                  const px = livePriceRef.current ?? managePos.entryPrice
+                  const res = await fetch('/api/trading/positions/close', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      position_id: managePos.id,
+                      instrument: managePos.instrument,
+                      exit_price: px,
+                      exit_reason: 'manual',
+                      exit_notes: reason,
+                    }),
+                  })
+                  if (res.ok) {
+                    setManagePos(null)
+                    setPositionOverlay(null)
+                    confirmedOverlayRef.current = null
+                    setAiVerdict(null)
+                    refreshGate()
+                    void refreshLevelsAfterExit('manual')
+                    return true
+                  }
+                } catch (e) {
+                  console.error('onClosePosition failed:', e)
+                }
+                return false
+              }}
               positionOverlay={
                 positionOverlay
                   ? {
                       ...positionOverlay,
+                      positionId: positionOverlay.positionId ?? managePos?.id,
                       entryTimestamp:
                         positionOverlay.entryTimestamp ??
                         managePos?.entryTimestamp ??
@@ -2123,6 +2154,7 @@ export default function ChartPage() {
                     }
                   : managePos
                     ? {
+                        positionId: managePos.id,
                         entryPrice: managePos.entryPrice,
                         stopLoss: managePos.stopLoss,
                         profitTarget: managePos.profitTarget,

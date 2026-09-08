@@ -7,6 +7,7 @@
  * 3. Short-Term Money (Yesterday NYC Session FRVP & Prior Overnight FRVP)
  * 4. Dalton Day Types & Opening Activity
  * 5. Excessive Tails, Volume Retests & Risk Execution
+ * 6. Real-Time Execution Rules (Stagnation Timeout & Telegram Alerts)
  */
 
 export interface LeoDataPoint {
@@ -16,6 +17,38 @@ export interface LeoDataPoint {
   tier: 'LT' | 'IT' | 'ST' | 'CONTEXT'
   category: 'VWAP' | 'POC' | 'EXTREME' | 'VALUE_AREA' | 'EXCESS' | 'DAY_TYPE' | 'OPEN'
   description?: string
+  session?: 'Asia' | 'London' | 'New York' | string
+  volume?: number | string
+  retestRatio?: number
+  isRetested?: boolean
+  testCount?: number
+}
+
+export interface LeoSessionDetails {
+  sessionName: string
+  sessionPhase: string
+  sessionElapsedMinutes: number
+  timeToNextCheckpoint?: string
+  candleTimeframe?: string
+  barCountdown?: string
+  calendarDate?: string
+  isHoliday?: boolean
+  holidayName?: string
+}
+
+export interface LeoActivePosition {
+  positionId: string
+  instrument: string
+  direction: 'LONG' | 'SHORT'
+  entryPrice: number
+  positionSize: number
+  stopLoss: number
+  profitTarget: number
+  entryTimestamp: string | number
+  durationMinutes: number
+  unrealizedPnlPoints: number
+  unrealizedPnlCad: number
+  isInProfit: boolean
 }
 
 export interface LeoChatContext {
@@ -24,6 +57,8 @@ export interface LeoChatContext {
   currentTimeEt: string
   dayType: string | null
   openingType: string | null
+  sessionDetails?: LeoSessionDetails | null
+  activePosition?: LeoActivePosition | null
   longTermMoney: {
     avwap5m: number | null
     sigma1Upper: number | null
@@ -57,8 +92,10 @@ export interface LeoChatContext {
   activeExcesses: Array<{
     type: string
     price: number
+    session?: string
     volumeStr?: string
     retestRatio?: number
+    isRetested?: boolean
   }>
   selectedDataPoints?: LeoDataPoint[]
 }
@@ -69,6 +106,79 @@ export interface LeoMessage {
   content: string
   timestamp: number
   attachedPoints?: LeoDataPoint[]
+  directives?: LeoExecutionDirective[]
+}
+
+export type LeoExecutionDirective =
+  | {
+      action: 'CLOSE_POSITION'
+      reason: string
+      instrument?: string
+    }
+  | {
+      action: 'ARM_STAGNATION_RULE'
+      maxMinutes: number
+      requireProfitPoints?: number
+      instrument?: string
+      description?: string
+    }
+  | {
+      action: 'ARM_TELEGRAM_ALERT'
+      targetReference: string
+      targetPrice: number
+      requireHighVolume?: boolean
+      requireConfidence?: boolean
+      session?: string
+      customMessage?: string
+    }
+  | {
+      action: 'CANCEL_RULES'
+      ruleType?: string
+    }
+
+/**
+ * Parses execution directives (<execute>{...}</execute>) emitted by Leo.
+ */
+export function parseLeoDirectives(text: string): LeoExecutionDirective[] {
+  const directives: LeoExecutionDirective[] = []
+  if (!text) return directives
+
+  // 1. Search for <execute>...</execute> tags
+  const executeRegex = /<execute>([\s\S]*?)<\/execute>/gi
+  let match: RegExpExecArray | null
+  while ((match = executeRegex.exec(text)) !== null) {
+    const raw = match[1]?.trim()
+    if (!raw) continue
+    try {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) {
+          if (item?.action) directives.push(item)
+        }
+      } else if (parsed?.action) {
+        directives.push(parsed)
+      }
+    } catch {
+      // Ignore unparseable block
+    }
+  }
+
+  // 2. Also fallback regex for plain JSON blocks if <execute> tag was omitted
+  if (directives.length === 0) {
+    const jsonBlockRegex = /```json\s*(\{[\s\S]*?"action"[\s\S]*?\})\s*```/gi
+    while ((match = jsonBlockRegex.exec(text)) !== null) {
+      const raw = match[1]?.trim()
+      if (!raw) continue
+      try {
+        const parsed = JSON.parse(raw)
+        if (parsed?.action) directives.push(parsed)
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  return directives
 }
 
 /**
@@ -248,13 +358,18 @@ export function extractChartDataPoints(ctx: LeoChatContext): LeoDataPoint[] {
   // 5. Active Excess Tails
   for (let i = 0; i < ctx.activeExcesses.length; i++) {
     const ex = ctx.activeExcesses[i]!
+    const sessionPrefix = ex.session ? `${ex.session} ` : ''
     points.push({
       id: `ex-${i}-${ex.price}`,
-      label: `Excess ${ex.type === 'BUYING_EXCESS' ? 'Buy' : 'Sell'}`,
+      label: `${sessionPrefix}Excess ${ex.type === 'BUYING_EXCESS' || ex.type === 'LOW' ? 'Low' : 'High'}`,
       value: ex.price,
       tier: 'IT',
       category: 'EXCESS',
-      description: `${ex.type} tail at ${ex.price} ${ex.volumeStr ? `(${ex.volumeStr})` : ''} ${ex.retestRatio ? `[Retest ${ex.retestRatio.toFixed(2)}x]` : ''}`,
+      session: ex.session,
+      volume: ex.volumeStr,
+      retestRatio: ex.retestRatio,
+      isRetested: ex.isRetested,
+      description: `${sessionPrefix}${ex.type} tail at ${ex.price} ${ex.volumeStr ? `(${ex.volumeStr})` : ''} ${ex.retestRatio ? `[Retest ${ex.retestRatio.toFixed(2)}x]` : ''}`,
     })
   }
 
@@ -262,7 +377,7 @@ export function extractChartDataPoints(ctx: LeoChatContext): LeoDataPoint[] {
 }
 
 /**
- * Builds the comprehensive Leo system prompt infused with live chart telemetry and Dalton Auction Theory.
+ * Builds the comprehensive Leo system prompt infused with live chart telemetry, time, session, positions, and Dalton Auction Theory.
  */
 export function buildLeoSystemPrompt(ctx: LeoChatContext): string {
   const currentPriceStr = ctx.currentPrice != null ? ctx.currentPrice.toFixed(2) : 'Awaiting quote'
@@ -270,12 +385,41 @@ export function buildLeoSystemPrompt(ctx: LeoChatContext): string {
   let selectedSummary = 'None attached.'
   if (ctx.selectedDataPoints && ctx.selectedDataPoints.length > 0) {
     selectedSummary = ctx.selectedDataPoints
-      .map((p) => `- [${p.tier}] ${p.label}: ${p.value} (${p.description ?? ''})`)
+      .map((p) => {
+        const extra = [
+          p.session ? `Session: ${p.session}` : '',
+          p.volume ? `Volume: ${p.volume}` : '',
+          p.retestRatio != null ? `Retest Ratio: ${p.retestRatio}x` : p.isRetested ? 'Retested' : '',
+        ]
+          .filter(Boolean)
+          .join(' | ')
+        return `- [${p.tier}] ${p.label}: ${p.value} ${extra ? `(${extra})` : ''} ${p.description ? `— ${p.description}` : ''}`
+      })
       .join('\n')
   }
 
+  const sessionDetails = ctx.sessionDetails
+  const sessionSummary = sessionDetails
+    ? `- Active Session: ${sessionDetails.sessionName} (Phase: ${sessionDetails.sessionPhase})
+- Session Elapsed Time: ${sessionDetails.sessionElapsedMinutes} minutes into session
+- Next Key Checkpoint: ${sessionDetails.timeToNextCheckpoint ?? 'Standard session rhythm'}
+- Chart Timeframe: ${sessionDetails.candleTimeframe ?? '5m'} (${sessionDetails.barCountdown ?? 'Active forming candle'})
+- Trading Calendar Date: ${sessionDetails.calendarDate ?? 'Active trading date'} ${sessionDetails.isHoliday ? `[US HOLIDAY: ${sessionDetails.holidayName ?? 'Exchange Holiday'}]` : ''}`
+    : `- Wall Clock (New York): ${ctx.currentTimeEt}`
+
+  const pos = ctx.activePosition
+  const positionSummary = pos
+    ? `STATE: OPEN POSITION ACTIVE
+- Direction: ${pos.direction} on ${pos.instrument}
+- Entry Price: ${pos.entryPrice.toFixed(2)} (Current Price: ${currentPriceStr})
+- Position Size: ${pos.positionSize} contracts
+- Duration in Trade: ${pos.durationMinutes.toFixed(1)} minutes
+- Stop Loss: ${pos.stopLoss > 0 ? pos.stopLoss.toFixed(2) : 'None set'} | Profit Target: ${pos.profitTarget > 0 ? pos.profitTarget.toFixed(2) : 'None set'}
+- Unrealized P&L: ${pos.unrealizedPnlPoints >= 0 ? '+' : ''}${pos.unrealizedPnlPoints.toFixed(1)} points (${pos.unrealizedPnlCad >= 0 ? '+' : ''}${pos.unrealizedPnlCad.toFixed(2)} CAD) — Status: ${pos.isInProfit ? '🟢 IN PROFIT' : '🔴 NOT IN PROFIT / UNPROFITABLE'}`
+    : 'STATE: FLAT (No open position currently on the desk).'
+
   return `You are Leo, an elite, disciplined, razor-sharp institutional day trading execution desk assistant.
-You specialize in Dalton Auction Market Theory, Multi-Timeframe Money mechanics, Volume Profiling, and strict asymmetric risk execution.
+You specialize in Dalton Auction Market Theory, Multi-Timeframe Money mechanics, Volume Profiling, strict asymmetric risk execution, and direct desk trade management.
 
 THE TRADER'S SYSTEM ARCHITECTURE:
 1. LONG-TERM MONEY (5-Month Anchored VWAP):
@@ -300,18 +444,56 @@ THE TRADER'S SYSTEM ARCHITECTURE:
 5. AUCTION BEHAVIORS & TRADING RULES:
    - Excessive Tails: Rejection tails extending outside value indicate intermediate responsive money defending extremes.
    - Shelf Retests: Volume ratio < 1.0x indicates lack of opposite participation (confirmed rejection/retest). Volume ratio > 1.2x warns of absorption and potential breakout.
-   - Trade Execution Formulation: When the trader tells you a spoken strategy plan (e.g. "wait till we get below yesterday value, look for an excess tail for intermediate money, vwap for long-term money trend, wait for 5m bullish candle retest, buy with stop below tail"), you MUST:
-     a) Confirm the exact levels from current live data.
-     b) Identify the execution trigger (e.g. 5m candle confirmation, low-volume retest shelf).
-     c) Calculate the exact Stop Loss placement (e.g. 1-2 ticks below the rejection tail low).
-     d) Identify realistic Profit Targets (e.g. Y-POC, 5D POC, 5M VWAP).
-     e) State the Risk-to-Reward ratio and risk warnings.
+   - Chart Reference Point Clicking: The trader clicks directly on the chart markers/arrows (e.g. Asia High, London Low, NY extremes) to attach them. When attached, you know the exact price, session, volume, and retest ratio.
+
+6. CO-PILOT EXECUTION DIRECTIVES (<execute> tags):
+You are the trader's execution partner on the desk. When the trader gives you direct instructions, you must respond authoritatively AND append an <execute> block at the end of your message:
+- Stagnation Exit Rule: If the trader says "Leo if we are in a position and we have not moved to profit after X minutes close the position":
+  Confirm the rule clearly (quoting the duration, entry price, and condition) and output:
+  <execute>
+  {
+    "action": "ARM_STAGNATION_RULE",
+    "maxMinutes": 5,
+    "requireProfitPoints": 1,
+    "description": "Close position if not in profit after 5 minutes"
+  }
+  </execute>
+- Immediate Close: If the trader says "Leo close the position", "flatten", or "exit now":
+  Confirm the execution and output:
+  <execute>
+  {
+    "action": "CLOSE_POSITION",
+    "reason": "Trader direct voice command"
+  }
+  </execute>
+- Telegram Alert Rule: If the trader says "Leo if we get to this data reference [e.g. in Asia session, 5D POC, London High] and we see high volume and confidence, send me a telegram message":
+  Confirm the level, session, and criteria, and output:
+  <execute>
+  {
+    "action": "ARM_TELEGRAM_ALERT",
+    "targetReference": "Target Reference Name",
+    "targetPrice": 29140.0,
+    "requireHighVolume": true,
+    "requireConfidence": true,
+    "session": "Asia"
+  }
+  </execute>
+- Disarm / Cancel: If the trader says "cancel all rules" or "disarm":
+  <execute>
+  {
+    "action": "CANCEL_RULES"
+  }
+  </execute>
 
 CURRENT LIVE CHART TELEMETRY (${ctx.instrument}):
 - Live Price: ${currentPriceStr}
 - Time (America/New_York): ${ctx.currentTimeEt}
+${sessionSummary}
 - Dalton Day Type: ${ctx.dayType ?? 'Forming / Waiting'}
 - Opening Type: ${ctx.openingType ?? 'Evaluating'}
+
+[CURRENT DESK POSITION]:
+${positionSummary}
 
 [LONG-TERM MONEY]:
 ${
@@ -344,21 +526,20 @@ ${
     : 'No Short-Term session data available.'
 }
 
-[ACTIVE EXCESSES & RETESTS]:
+[ACTIVE EXCESSES & SESSION EXTREMES]:
 ${
   ctx.activeExcesses.length > 0
-    ? ctx.activeExcesses.map((e) => `- ${e.type} @ ${e.price} ${e.volumeStr ? `vol: ${e.volumeStr}` : ''} ${e.retestRatio ? `retest: ${e.retestRatio.toFixed(2)}x` : ''}`).join('\n')
+    ? ctx.activeExcesses.map((e) => `- ${e.session ? `[${e.session}] ` : ''}${e.type} @ ${e.price} ${e.volumeStr ? `(vol: ${e.volumeStr})` : ''} ${e.retestRatio ? `[retest: ${e.retestRatio.toFixed(2)}x]` : ''}`).join('\n')
     : 'No active excess tails currently detected on chart.'
 }
 
-[SPECIFIC DATA POINTS ATTACHED / CLICKED BY TRADER]:
+[DATA REFERENCE POINT CLICKED / ATTACHED FROM CHART]:
 ${selectedSummary}
 
 COMMUNICATION GUIDELINES:
 - Address the trader concisely and authoritatively as Leo.
-- Use clear bulleted action steps when formulating setups or plans.
 - Always quote exact prices from the chart telemetry above.
-- If the trader says "Leo wait until...", treat it as an active trade condition check, summarize the condition rules clearly, confirm the required triggers, and provide the exact invalidation level.
+- If the trader speaks an execution or alert command, confirm the exact parameters (minutes, prices, targets) and emit the required <execute> tag.
 - Keep prose concise and fast to read — institutional traders value high signal-to-noise ratio over lengthy essays.
 `
 }
