@@ -127,7 +127,9 @@ export async function GET(request: Request) {
       }
 
       const basis = await warmCmeBasis(instrument)
-      const shift = basis ?? getLastKnownCmeBasis(instrument)
+      const staticBasis =
+        instrument === 'DOW' ? 60.5 : instrument === 'NASDAQ' ? 36.5 : instrument === 'GOLD' ? 48.0 : 0
+      const shift = basis ?? getLastKnownCmeBasis(instrument) ?? staticBasis
       if (oanda?.price && oanda.price > 0 && shift != null) {
         const price = applyCmeBasis(oanda.price, shift)
         const previous_close = getDayPreviousClose(instrument) ?? price

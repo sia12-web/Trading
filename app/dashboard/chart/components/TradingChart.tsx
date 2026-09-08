@@ -5949,8 +5949,9 @@ export function TradingChart({
         next = [...next, g]
       }
       const last = next[next.length - 1]!
+      const isNewBar = (last.time as number) !== (bar.time as number)
       next =
-        (last.time as number) === (bar.time as number)
+        !isNewBar
           ? [...next.slice(0, -1), { ...last, ...bar, volume: last.volume || bar.volume }]
           : [...next, bar]
       candlesRef.current = next
@@ -5962,7 +5963,9 @@ export function TradingChart({
           paintDeskMarkersRef.current(next)
         }
       }
-      refreshSessionHighlightsRef.current?.()
+      if (isNewBar || fills.length > 0) {
+        refreshSessionHighlightsRef.current?.()
+      }
     }
 
     const applyQuote = (
@@ -5972,12 +5975,12 @@ export function TradingChart({
       streamLive: boolean
     ) => {
       // Guard only true bad ticks / wrong-scale bleed (e.g. leftover tip).
-      // 0.35% was too tight for index opens/gaps and froze the tip vs TradingView.
+      // 4% matches LIVE_MAX_TIP_JUMP_PCT to avoid freezing on real volatility
       const tip = lastCandleRef.current
       if (
         tip &&
         tip.close > 0 &&
-        Math.abs(price - tip.close) / tip.close > 0.015
+        Math.abs(price - tip.close) / tip.close > 0.04
       ) {
         return
       }

@@ -194,7 +194,12 @@ export function closedHistoryOhlcChanged<T extends FormingBar>(
     const a = prev[i]!
     const b = next[i]!
     if (a.time !== b.time) return true
-    if (a.open !== b.open || a.high !== b.high || a.low !== b.low || a.close !== b.close) {
+    if (
+      Math.abs(a.open - b.open) > 0.1 ||
+      Math.abs(a.high - b.high) > 0.1 ||
+      Math.abs(a.low - b.low) > 0.1 ||
+      Math.abs(a.close - b.close) > 0.1
+    ) {
       return true
     }
   }

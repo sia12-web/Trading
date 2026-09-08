@@ -10,9 +10,11 @@ import {
   subscribeOandaPriceStream,
 } from '@/lib/oanda/pricingStream'
 import { isOandaConfigured } from '@/lib/oanda/config'
+import { getOandaPrice } from '@/lib/oanda/pricing'
 import {
   applyCmeBasis,
   getCmeBasis,
+  getLastKnownCmeBasis,
   warmCmeBasis,
   CME_BASIS_REFRESH_MS,
 } from '@/lib/trading/cmeBasis'
@@ -99,14 +101,15 @@ export async function GET(request: Request) {
   const stream = new ReadableStream({
     start(controller) {
       // A basis from a live stream, an earlier connection or a REST poll is
-      // reusable immediately — only a genuinely cold process waits on Yahoo.
-      let basis: number | null = getCmeBasis(instrument)
+      // reusable immediately — fallback basis ensures immediate scaling.
+      const staticBasis =
+        instrument === 'DOW' ? 60.5 : instrument === 'NASDAQ' ? 36.5 : instrument === 'GOLD' ? 48.0 : 0
+      let basis: number | null = getCmeBasis(instrument) ?? getLastKnownCmeBasis(instrument) ?? staticBasis
       let pending: ReturnType<typeof getLastStreamedPrice> = getLastStreamedPrice(
         instrument,
         60_000
       )
       let pendingSent = false
-      let lastOandaTickAt = 0
       const openedAt = Date.now()
 
       const send = (obj: unknown) => {
@@ -138,14 +141,10 @@ export async function GET(request: Request) {
       /**
        * Ticks are withheld until a basis exists: an unshifted OANDA mid is tens
        * of points off Tradovate and nothing downstream can tell the two apart.
-       * Only the newest tick is held, so clearing the gate never replays a
-       * backlog. Past UNSHIFTED_AFTER_MS both feeds have definitively failed —
-       * emit the raw mid flagged as 'oanda' rather than leave the tip dead.
        */
       const flushPending = () => {
         if (pendingSent || !pending) return
         if (basis == null) {
-          // Never paint unshifted XAU onto MGC — that prints a fake dump candle.
           if (instrument === 'GOLD' || instrument === 'CRUDE') return
           if (Date.now() - openedAt < UNSHIFTED_AFTER_MS) return
         }
@@ -162,8 +161,6 @@ export async function GET(request: Request) {
 
       const pollCme = async () => {
         if (closed) return
-        // If OANDA is actively pushing ticks, skip CME poll
-        if (Date.now() - lastOandaTickAt < 2500) return
         try {
           const yq = await getYahooQuote(instrument)
           if (closed || !yq?.price) return
@@ -204,11 +201,19 @@ export async function GET(request: Request) {
         // Subscribing replays the hub's last tick, so a warm basis means the first
         // frame leaves here synchronously.
         unsubscribe = subscribeOandaPriceStream(instrument, (quote) => {
-          lastOandaTickAt = Date.now()
           pending = quote
           pendingSent = false
           flushPending()
         })
+
+        // Seed initial live quote immediately without waiting for first stream tick or delayed Yahoo
+        if (!pending) {
+          void getOandaPrice(instrument).then((op) => {
+            if (closed || !op || pendingSent) return
+            pending = op
+            flushPending()
+          })
+        }
 
         if (getCmeBasis(instrument, CME_BASIS_REFRESH_MS) == null) {
           void warmCmeBasis(instrument).then((next) => {
@@ -219,12 +224,11 @@ export async function GET(request: Request) {
         }
 
         basisTimer = setInterval(refreshBasis, CME_BASIS_REFRESH_MS)
+      } else {
+        // Fallback only when OANDA broker is completely unconfigured
+        void pollCme()
+        cmePoller = setInterval(pollCme, 1500)
       }
-
-      // Initial quote from CME to immediately establish live price
-      void pollCme()
-      // Poller runs every 1500ms when OANDA is quiet / unavailable / unauthorized
-      cmePoller = setInterval(pollCme, 1500)
 
       // Keep proxies / browsers from treating the connection as idle
       heartbeat = setInterval(() => {

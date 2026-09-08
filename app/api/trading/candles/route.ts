@@ -126,15 +126,10 @@ export async function GET(request: Request) {
         source = 'oanda'
       }
 
-      // 2. Fetch Databento official CME exchange candles if configured
-      if (isDatabentoConfigured()) {
+      // 2. Fallback to Databento if OANDA was unavailable or empty
+      if ((!candles || candles.length === 0) && isDatabentoConfigured()) {
         const databento = await getDatabentoCandles(instrument, resolution, fetchDays)
-        if (databento?.candles?.length && candles?.length) {
-          const dbLastTime = databento.candles[databento.candles.length - 1]!.time
-          const liveTail = candles.filter((c) => c.time > dbLastTime)
-          candles = [...databento.candles, ...liveTail]
-          source = 'databento'
-        } else if (databento?.candles?.length) {
+        if (databento?.candles?.length) {
           candles = databento.candles
           source = 'databento'
         }
