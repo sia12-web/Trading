@@ -151,6 +151,15 @@ type AuctionHud = any
 type AuctionOverlaySignal = any
 import { LeoAssistantPanel } from './LeoAssistantPanel'
 import type { LeoChatContext, LeoDataPoint, LeoActivePosition } from '@/lib/ai/leoAssistant'
+import {
+  type UserTrendline,
+  type UserRangeBox,
+  type UserManualFRVP,
+  computeCustomFixedRangeVolumeProfile,
+  computeTrendlineMetrics,
+  computeRangeMetrics,
+  formatEtTime,
+} from '@/lib/trading/userDrawings'
 import { isUsMarketHoliday } from '@/lib/chart/sessionVwap'
 
 const DOW_15M_FAIL_COLORS: any = { high: '#3b82f6', low: '#ef4444', mid: '#eab308', buy: '#3b82f6', sell: '#ef4444' }
@@ -1072,6 +1081,7 @@ export function TradingChart({
   const positionBandOverlayRef = useRef<HTMLDivElement>(null)
   const frvpHistogramCanvasRef = useRef<HTMLCanvasElement>(null)
   const excessesCanvasRef = useRef<HTMLCanvasElement>(null)
+  const userDrawingsCanvasRef = useRef<HTMLCanvasElement>(null)
   const newsMarkersOverlayRef = useRef<HTMLDivElement>(null)
   const [newsEvents, setNewsEvents] = useState<DeskCalendarEvent[]>([])
   const [activeNewsTooltip, setActiveNewsTooltip] = useState<{
@@ -1082,6 +1092,36 @@ export function TradingChart({
   const paintFrvpHistogramRef = useRef<() => void>(() => {})
   const paintExcessesAndRoundedRef = useRef<() => void>(() => {})
   const paintNewsMarkersRef = useRef<() => void>(() => {})
+  const paintUserDrawingsRef = useRef<() => void>(() => {})
+
+  // ── User Interactive Drawing Tools (Trendline, Range, Manual FRVP) ────────
+  type DrawingToolType = 'NONE' | 'TRENDLINE' | 'RANGE' | 'FRVP'
+  const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingToolType>('NONE')
+  const [trendlines, setTrendlines] = useState<UserTrendline[]>([])
+  const [rangeBoxes, setRangeBoxes] = useState<UserRangeBox[]>([])
+  const [manualFrvps, setManualFrvps] = useState<UserManualFRVP[]>([])
+  const [drawingDraft, setDrawingDraft] = useState<{
+    time: number
+    price: number
+    x?: number
+    y?: number
+  } | null>(null)
+  const draftMousePosRef = useRef<{ time: number; price: number; x: number; y: number } | null>(null)
+  const [drawingsPanelOpen, setDrawingsPanelOpen] = useState(false)
+  const [drawingToast, setDrawingToast] = useState<{
+    type: 'TRENDLINE' | 'RANGE' | 'FRVP'
+    id: string
+    label: string
+    summary: string
+  } | null>(null)
+
+  useEffect(() => {
+    if (!drawingToast) return
+    const t = setTimeout(() => {
+      setDrawingToast(null)
+    }, 8000)
+    return () => clearTimeout(t)
+  }, [drawingToast])
   const sessionSpansRef = useRef<any | null>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -2284,6 +2324,334 @@ export function TradingChart({
     ctx.restore()
   }, [frvp5d, yesterdayNyc, overnightInventory, avwap5mBenchmark, showYesterdayNyc, showInventorySessions])
 
+  // ─── User Interactive Drawings (Canvas) ─────────────────────────────────────
+  const paintUserDrawings = useCallback(() => {
+    const canvas = userDrawingsCanvasRef.current
+    const chart = chartRef.current
+    const series = candleRef.current
+    const list = candlesRef.current
+    if (!canvas || !chart || !series || !containerRef.current || list.length === 0) {
+      if (canvas) {
+        const ctx = canvas.getContext('2d')
+        ctx?.clearRect(0, 0, canvas.width, canvas.height)
+      }
+      return
+    }
+
+    const paneW = containerRef.current.clientWidth
+    const paneH = containerRef.current.clientHeight
+    if (paneW < 10 || paneH < 10) return
+
+    const dpr = window.devicePixelRatio || 1
+    const targetW = Math.round(paneW * dpr)
+    const targetH = Math.round(paneH * dpr)
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW
+      canvas.height = targetH
+      canvas.style.width = `${paneW}px`
+      canvas.style.height = `${paneH}px`
+    }
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.save()
+    ctx.scale(dpr, dpr)
+    ctx.clearRect(0, 0, paneW, paneH)
+
+    const tz = chartTzRef.current
+    const candleTimes = list.map((c) => toChartTime(c.time as number, tz))
+
+    // 1. Render Manual FRVPs
+    for (const f of manualFrvps) {
+      const anchorChartT = toChartTime(f.timeStart, tz)
+      const endChartT = toChartTime(f.timeEnd, tz)
+      const rawXAnchor = timeToX(chart.timeScale(), anchorChartT, candleTimes)
+      const rawXEnd = timeToX(chart.timeScale(), endChartT, candleTimes)
+      if (rawXAnchor != null && Number.isFinite(rawXAnchor)) {
+        const startX = Math.min(rawXAnchor, rawXEnd ?? rawXAnchor)
+        const endX = Math.max(rawXAnchor, rawXEnd ?? (rawXAnchor + 120))
+        const spanW = Math.max(50, endX - startX)
+        const maxHistW = Math.min(spanW * 0.85, 180)
+        const halfBucket = (f.bucketSize || 1) * 0.5
+        const maxBinVol = Math.max(...f.bins.map((b) => b.volume), 1)
+
+        // Draw volume bars
+        if (startX + maxHistW >= 0 && startX <= paneW) {
+          for (const bin of f.bins) {
+            const yTop = series.priceToCoordinate(bin.price + halfBucket)
+            const yBottom = series.priceToCoordinate(bin.price - halfBucket)
+            if (yTop == null || yBottom == null) continue
+
+            const barY = Math.min(yTop, yBottom)
+            const barH = Math.max(1.5, Math.abs(yBottom - yTop) - 0.5)
+            if (barY + barH < 0 || barY > paneH) continue
+
+            const totalBarW = (bin.volume / maxBinVol) * maxHistW
+            if (totalBarW < 1) continue
+
+            const buyVol = bin.buyVolume ?? (bin.volume * 0.5)
+            const buyRatio = bin.volume > 0 ? Math.max(0, Math.min(1, buyVol / bin.volume)) : 0.5
+            const buyW = totalBarW * buyRatio
+            const sellW = totalBarW - buyW
+
+            // Buy volume
+            ctx.fillStyle = bin.inValueArea ? 'rgba(245, 158, 11, 0.85)' : 'rgba(245, 158, 11, 0.35)'
+            ctx.fillRect(startX, barY, buyW, barH)
+
+            // Sell volume
+            ctx.fillStyle = bin.inValueArea ? 'rgba(244, 63, 94, 0.85)' : 'rgba(244, 63, 94, 0.35)'
+            ctx.fillRect(startX + buyW, barY, sellW, barH)
+          }
+        }
+
+        // POC line across profile span
+        const yPoc = series.priceToCoordinate(f.poc)
+        if (yPoc != null && Number.isFinite(yPoc) && yPoc >= 0 && yPoc <= paneH) {
+          ctx.strokeStyle = '#f59e0b'
+          ctx.lineWidth = 2
+          ctx.setLineDash([])
+          ctx.beginPath()
+          ctx.moveTo(startX, Math.round(yPoc) + 0.5)
+          ctx.lineTo(endX, Math.round(yPoc) + 0.5)
+          ctx.stroke()
+
+          ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
+          ctx.fillStyle = '#f59e0b'
+          ctx.fillText(`Manual POC ${f.poc.toLocaleString()}`, startX + 4, yPoc - 4)
+        }
+
+        // VAH line
+        const yVah = series.priceToCoordinate(f.vah)
+        if (yVah != null && Number.isFinite(yVah) && yVah >= 0 && yVah <= paneH) {
+          ctx.strokeStyle = '#10b981'
+          ctx.lineWidth = 1.5
+          ctx.setLineDash([3, 3])
+          ctx.beginPath()
+          ctx.moveTo(startX, Math.round(yVah) + 0.5)
+          ctx.lineTo(endX, Math.round(yVah) + 0.5)
+          ctx.stroke()
+          ctx.setLineDash([])
+          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+          ctx.fillStyle = '#10b981'
+          ctx.fillText(`VAH ${f.vah.toLocaleString()}`, startX + 4, yVah - 3)
+        }
+
+        // VAL line
+        const yVal = series.priceToCoordinate(f.val)
+        if (yVal != null && Number.isFinite(yVal) && yVal >= 0 && yVal <= paneH) {
+          ctx.strokeStyle = '#ef4444'
+          ctx.lineWidth = 1.5
+          ctx.setLineDash([3, 3])
+          ctx.beginPath()
+          ctx.moveTo(startX, Math.round(yVal) + 0.5)
+          ctx.lineTo(endX, Math.round(yVal) + 0.5)
+          ctx.stroke()
+          ctx.setLineDash([])
+          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+          ctx.fillStyle = '#ef4444'
+          ctx.fillText(`VAL ${f.val.toLocaleString()}`, startX + 4, yVal + 11)
+        }
+
+        // Profile boundary box and header badge
+        const yTopExt = series.priceToCoordinate(f.high)
+        const yBotExt = series.priceToCoordinate(f.low)
+        if (yTopExt != null && yBotExt != null) {
+          const bY = Math.min(yTopExt, yBotExt)
+          const bH = Math.abs(yBotExt - yTopExt)
+          ctx.strokeStyle = 'rgba(245, 158, 11, 0.4)'
+          ctx.lineWidth = 1
+          ctx.strokeRect(startX, bY, spanW, bH)
+
+          // Header
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
+          ctx.fillRect(startX, Math.max(0, bY - 18), 170, 16)
+          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+          ctx.fillStyle = '#fcd34d'
+          ctx.fillText(`📊 ${f.label || 'Manual FRVP'} (${f.totalVolume.toLocaleString()})`, startX + 4, Math.max(12, bY - 6))
+        }
+      }
+    }
+
+    // 2. Render Range Boxes
+    for (const r of rangeBoxes) {
+      const x1 = timeToX(chart.timeScale(), toChartTime(r.p1.time, tz), candleTimes)
+      const x2 = timeToX(chart.timeScale(), toChartTime(r.p2.time, tz), candleTimes)
+      const y1 = series.priceToCoordinate(r.p1.price)
+      const y2 = series.priceToCoordinate(r.p2.price)
+      if (x1 != null && x2 != null && y1 != null && y2 != null) {
+        const minX = Math.min(x1, x2)
+        const maxX = Math.max(x1, x2)
+        const topY = Math.min(y1, y2)
+        const botY = Math.max(y1, y2)
+        const boxW = Math.max(4, maxX - minX)
+        const boxH = Math.max(4, botY - topY)
+
+        // Shaded fill
+        ctx.fillStyle = 'rgba(168, 85, 247, 0.16)'
+        ctx.fillRect(minX, topY, boxW, boxH)
+
+        // Border
+        ctx.strokeStyle = 'rgba(168, 85, 247, 0.85)'
+        ctx.lineWidth = 1.5
+        ctx.setLineDash([4, 4])
+        ctx.strokeRect(minX, topY, boxW, boxH)
+        ctx.setLineDash([])
+
+        const highP = Math.max(r.p1.price, r.p2.price)
+        const lowP = Math.min(r.p1.price, r.p2.price)
+        const spanPts = Math.round(highP - lowP)
+
+        // Top line High badge
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
+        ctx.fillRect(minX, Math.max(0, topY - 14), 115, 14)
+        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+        ctx.fillStyle = '#c084fc'
+        ctx.fillText(`Range High: ${highP.toLocaleString()}`, minX + 4, Math.max(10, topY - 3))
+
+        // Bottom line Low badge
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
+        ctx.fillRect(minX, botY, 115, 14)
+        ctx.fillStyle = '#c084fc'
+        ctx.fillText(`Range Low: ${lowP.toLocaleString()}`, minX + 4, botY + 11)
+
+        // Center span pill
+        const midY = (topY + botY) / 2
+        ctx.fillStyle = 'rgba(88, 28, 135, 0.9)'
+        ctx.fillRect(minX + 4, midY - 8, 95, 16)
+        ctx.fillStyle = '#f3e8ff'
+        ctx.fillText(`⬛ ${spanPts} pts (${r.label || 'Range'})`, minX + 6, midY + 4)
+      }
+    }
+
+    // 3. Render Trendlines
+    for (const tl of trendlines) {
+      const x1 = timeToX(chart.timeScale(), toChartTime(tl.p1.time, tz), candleTimes)
+      const x2 = timeToX(chart.timeScale(), toChartTime(tl.p2.time, tz), candleTimes)
+      const y1 = series.priceToCoordinate(tl.p1.price)
+      const y2 = series.priceToCoordinate(tl.p2.price)
+      if (x1 != null && x2 != null && y1 != null && y2 != null) {
+        ctx.strokeStyle = tl.color || '#38bdf8'
+        ctx.lineWidth = 2
+        ctx.setLineDash([])
+        ctx.beginPath()
+        ctx.moveTo(x1, y1)
+        ctx.lineTo(x2, y2)
+        ctx.stroke()
+
+        // P1 handle dot
+        ctx.fillStyle = '#38bdf8'
+        ctx.beginPath()
+        ctx.arc(x1, y1, 4, 0, 2 * Math.PI)
+        ctx.fill()
+        ctx.strokeStyle = '#ffffff'
+        ctx.lineWidth = 1.5
+        ctx.stroke()
+
+        // P2 handle dot
+        ctx.fillStyle = '#38bdf8'
+        ctx.beginPath()
+        ctx.arc(x2, y2, 4, 0, 2 * Math.PI)
+        ctx.fill()
+        ctx.strokeStyle = '#ffffff'
+        ctx.lineWidth = 1.5
+        ctx.stroke()
+
+        // Midpoint badge
+        const mx = (x1 + x2) / 2
+        const my = (y1 + y2) / 2
+        const pDiff = tl.p2.price - tl.p1.price
+        const dir = pDiff > 0 ? '↗' : pDiff < 0 ? '↘' : '→'
+        const labelText = `📐 ${tl.label || 'Trendline'} ${dir} (${pDiff >= 0 ? '+' : ''}${pDiff.toFixed(1)} pts)`
+
+        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+        const textW = ctx.measureText(labelText).width
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
+        ctx.fillRect(mx - textW / 2 - 4, my - 16, textW + 8, 15)
+        ctx.strokeStyle = '#38bdf8'
+        ctx.lineWidth = 1
+        ctx.strokeRect(mx - textW / 2 - 4, my - 16, textW + 8, 15)
+
+        ctx.fillStyle = '#7dd3fc'
+        ctx.fillText(labelText, mx - textW / 2, my - 5)
+      }
+    }
+
+    // 4. In-progress Drawing Draft Preview
+    if (drawingDraft && draftMousePosRef.current) {
+      const p1 = drawingDraft
+      const p2 = draftMousePosRef.current
+      const x1 = timeToX(chart.timeScale(), toChartTime(p1.time, tz), candleTimes) ?? p1.x
+      const x2 = timeToX(chart.timeScale(), toChartTime(p2.time, tz), candleTimes) ?? p2.x
+      const y1 = series.priceToCoordinate(p1.price) ?? p1.y
+      const y2 = series.priceToCoordinate(p2.price) ?? p2.y
+
+      if (x1 != null && x2 != null && y1 != null && y2 != null) {
+        if (activeDrawingTool === 'TRENDLINE') {
+          ctx.strokeStyle = '#38bdf8'
+          ctx.lineWidth = 2
+          ctx.setLineDash([4, 4])
+          ctx.beginPath()
+          ctx.moveTo(x1, y1)
+          ctx.lineTo(x2, y2)
+          ctx.stroke()
+          ctx.setLineDash([])
+
+          ctx.fillStyle = '#38bdf8'
+          ctx.beginPath()
+          ctx.arc(x1, y1, 4, 0, 2 * Math.PI)
+          ctx.fill()
+          ctx.beginPath()
+          ctx.arc(x2, y2, 4, 0, 2 * Math.PI)
+          ctx.fill()
+
+          ctx.font = 'bold 10px ui-monospace, SFMono-Regular, monospace'
+          ctx.fillStyle = '#bae6fd'
+          ctx.fillText(`P1: ${p1.price.toLocaleString()}`, x1 + 8, y1 - 4)
+          ctx.fillText(`P2: ${p2.price.toLocaleString()} (Click to finish)`, x2 + 8, y2 - 4)
+        } else if (activeDrawingTool === 'RANGE') {
+          const minX = Math.min(x1, x2)
+          const maxX = Math.max(x1, x2)
+          const topY = Math.min(y1, y2)
+          const botY = Math.max(y1, y2)
+          const boxW = Math.max(4, maxX - minX)
+          const boxH = Math.max(4, botY - topY)
+
+          ctx.fillStyle = 'rgba(168, 85, 247, 0.2)'
+          ctx.fillRect(minX, topY, boxW, boxH)
+          ctx.strokeStyle = '#c084fc'
+          ctx.lineWidth = 2
+          ctx.setLineDash([4, 4])
+          ctx.strokeRect(minX, topY, boxW, boxH)
+          ctx.setLineDash([])
+
+          const highP = Math.max(p1.price, p2.price)
+          const lowP = Math.min(p1.price, p2.price)
+          ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
+          ctx.fillStyle = '#f3e8ff'
+          ctx.fillText(`Range High: ${highP.toLocaleString()} (${Math.round(highP - lowP)} pts)`, minX + 6, topY - 4)
+          ctx.fillText(`Range Low: ${lowP.toLocaleString()} (Click to lock)`, minX + 6, botY + 12)
+        } else if (activeDrawingTool === 'FRVP') {
+          const minX = Math.min(x1, x2)
+          const maxX = Math.max(x1, x2)
+          ctx.fillStyle = 'rgba(245, 158, 11, 0.15)'
+          ctx.fillRect(minX, 0, Math.max(4, maxX - minX), paneH)
+          ctx.strokeStyle = '#f59e0b'
+          ctx.lineWidth = 1.5
+          ctx.setLineDash([4, 4])
+          ctx.strokeRect(minX, 0, Math.max(4, maxX - minX), paneH)
+          ctx.setLineDash([])
+
+          ctx.font = 'bold 10px ui-monospace, SFMono-Regular, monospace'
+          ctx.fillStyle = '#fef3c7'
+          ctx.fillText(`FRVP Start: ${formatEtTime(Math.min(p1.time, p2.time))}`, minX + 6, 24)
+          ctx.fillText(`FRVP End: ${formatEtTime(Math.max(p1.time, p2.time))} (Click to compute)`, maxX + 6, 40)
+        }
+      }
+    }
+
+    ctx.restore()
+  }, [trendlines, rangeBoxes, manualFrvps, drawingDraft, activeDrawingTool])
+
   // ─── 5-Day Excesses & Rounded Numbers (Canvas) ──────────────────────────────
   const paintExcessesAndRounded = useCallback(() => {
     const canvas = excessesCanvasRef.current
@@ -2975,6 +3343,74 @@ export function TradingChart({
         retestRatio: r.retestVolumeRatio,
         isRetested: r.isRetested,
       })),
+      userDrawings: {
+        trendlines: trendlines.map((t) => {
+          const m = computeTrendlineMetrics(t.p1, t.p2, curPrice, Math.floor(Date.now() / 1000))
+          return {
+            id: t.id,
+            label: t.label,
+            startPrice: t.p1.price,
+            endPrice: t.p2.price,
+            startTimeEt: formatEtTime(t.p1.time),
+            endTimeEt: formatEtTime(t.p2.time),
+            slopePtsPerMin: m.slopePtsPerMin,
+            slopePtsPer5mBar: m.slopePtsPer5mBar,
+            slopeDirection: m.direction,
+            projectedPrice: m.projectedPrice,
+            distancePts: m.distancePts,
+            priceRelation: m.priceRelation,
+          }
+        }),
+        ranges: rangeBoxes.map((r) => {
+          const m = computeRangeMetrics(r.p1, r.p2, curPrice)
+          return {
+            id: r.id,
+            label: r.label,
+            priceHigh: m.priceHigh,
+            priceLow: m.priceLow,
+            midPrice: m.midPrice,
+            heightPts: m.heightPts,
+            startTimeEt: formatEtTime(m.timeStart),
+            endTimeEt: formatEtTime(m.timeEnd),
+            durationMin: m.durationMin,
+            positionPct: m.positionPct,
+            priceRelation: m.priceRelation,
+          }
+        }),
+        frvps: manualFrvps.map((f) => {
+          let priceRel: 'AT_POC' | 'INSIDE_VALUE' | 'ABOVE_VAH' | 'BELOW_VAL' = 'INSIDE_VALUE'
+          let distPoc: number | null = null
+          if (curPrice != null) {
+            distPoc = Number((curPrice - f.poc).toFixed(2))
+            if (Math.abs(distPoc) <= 3) {
+              priceRel = 'AT_POC'
+            } else if (curPrice > f.vah) {
+              priceRel = 'ABOVE_VAH'
+            } else if (curPrice < f.val) {
+              priceRel = 'BELOW_VAL'
+            } else {
+              priceRel = 'INSIDE_VALUE'
+            }
+          }
+          const totalV = f.totalVolume || 1
+          const buyPct = Math.round(((f.buyVolume || 0) / totalV) * 100)
+          return {
+            id: f.id,
+            label: f.label,
+            startTimeEt: formatEtTime(f.timeStart),
+            endTimeEt: formatEtTime(f.timeEnd),
+            poc: f.poc,
+            vah: f.vah,
+            val: f.val,
+            high: f.high,
+            low: f.low,
+            totalVolume: f.totalVolume,
+            buyRatioPct: buyPct,
+            distancePocPts: distPoc,
+            priceRelation: priceRel,
+          }
+        }),
+      },
     }
   }, [
     instrument,
@@ -2988,6 +3424,9 @@ export function TradingChart({
     overnightInventory,
     positionOverlay,
     barCountdown,
+    trendlines,
+    rangeBoxes,
+    manualFrvps,
   ])
 
   // Direct chart canvas click handler for session extreme arrows and labels
@@ -3060,6 +3499,91 @@ export function TradingChart({
 
     frame.style.cursor = hit ? 'pointer' : ''
   }, [leoPanelOpen])
+
+  // ── Ask Leo about a user-drawn tool (Trendline, Range, FRVP) ───────────────
+  const handleAskLeoAboutDrawing = useCallback(
+    (type: 'TRENDLINE' | 'RANGE' | 'FRVP', id: string) => {
+      const curPrice =
+        livePrice ??
+        lastCandleRef.current?.close ??
+        candlesRef.current[candlesRef.current.length - 1]?.close ??
+        0
+      const curTime = Math.floor(Date.now() / 1000)
+
+      if (type === 'TRENDLINE') {
+        const tl = trendlines.find((t) => t.id === id)
+        if (!tl) return
+        const m = computeTrendlineMetrics(tl.p1, tl.p2, curPrice, curTime)
+        setLeoExternalPoints([
+          {
+            id: tl.id,
+            label: tl.label || 'Trendline',
+            value: `${m.direction} (${m.slopePtsPer5mBar >= 0 ? '+' : ''}${m.slopePtsPer5mBar} pts/5m)`,
+            tier: 'DRAWING',
+            category: 'TRENDLINE',
+            description: `User Trendline: From ${tl.p1.price.toLocaleString()} (${formatEtTime(tl.p1.time)}) to ${tl.p2.price.toLocaleString()} (${formatEtTime(tl.p2.time)}). Projected: ${m.projectedPrice.toLocaleString()}. Price is ${m.priceRelation} (${m.distancePts != null ? `${m.distancePts} pts` : 'N/A'}).`,
+          },
+        ])
+        setLeoPanelOpen(true)
+      } else if (type === 'RANGE') {
+        const rb = rangeBoxes.find((r) => r.id === id)
+        if (!rb) return
+        const m = computeRangeMetrics(rb.p1, rb.p2, curPrice)
+        setLeoExternalPoints([
+          {
+            id: rb.id,
+            label: rb.label || 'Range Box',
+            value: `${m.heightPts} pts (${m.priceHigh.toLocaleString()} – ${m.priceLow.toLocaleString()})`,
+            tier: 'DRAWING',
+            category: 'RANGE',
+            description: `User Range Box: High ${m.priceHigh.toLocaleString()}, Low ${m.priceLow.toLocaleString()}, Mid ${m.midPrice.toLocaleString()}. Position: ${m.priceRelation} (${m.positionPct}%). Height: ${m.heightPts} pts. Duration: ${m.durationMin}m.`,
+          },
+        ])
+        setLeoPanelOpen(true)
+      } else if (type === 'FRVP') {
+        const fp = manualFrvps.find((f) => f.id === id)
+        if (!fp) return
+        const buyDeltaPct = Math.round((fp.buyVolume / (fp.totalVolume || 1)) * 100)
+        setLeoExternalPoints([
+          {
+            id: fp.id,
+            label: fp.label || 'Manual FRVP',
+            value: `POC ${fp.poc.toLocaleString()} | VAH ${fp.vah.toLocaleString()} | VAL ${fp.val.toLocaleString()}`,
+            tier: 'DRAWING',
+            category: 'FRVP',
+            volume: fp.totalVolume.toLocaleString(),
+            description: `Manual Fixed Range Volume Profile: POC ${fp.poc.toLocaleString()}, VAH ${fp.vah.toLocaleString()}, VAL ${fp.val.toLocaleString()}. Total Vol: ${fp.totalVolume.toLocaleString()}, Buy Delta: ${buyDeltaPct}%. Range: ${formatEtTime(fp.timeStart)} to ${formatEtTime(fp.timeEnd)}.`,
+          },
+        ])
+        setLeoPanelOpen(true)
+      }
+    },
+    [trendlines, rangeBoxes, manualFrvps, livePrice]
+  )
+
+  const handleDeleteTrendline = useCallback((id: string) => {
+    setTrendlines((prev) => prev.filter((t) => t.id !== id))
+    requestAnimationFrame(() => paintUserDrawingsRef.current())
+  }, [])
+
+  const handleDeleteRangeBox = useCallback((id: string) => {
+    setRangeBoxes((prev) => prev.filter((r) => r.id !== id))
+    requestAnimationFrame(() => paintUserDrawingsRef.current())
+  }, [])
+
+  const handleDeleteManualFrvp = useCallback((id: string) => {
+    setManualFrvps((prev) => prev.filter((f) => f.id !== id))
+    requestAnimationFrame(() => paintUserDrawingsRef.current())
+  }, [])
+
+  const handleClearAllDrawings = useCallback(() => {
+    setTrendlines([])
+    setRangeBoxes([])
+    setManualFrvps([])
+    setDrawingDraft(null)
+    draftMousePosRef.current = null
+    requestAnimationFrame(() => paintUserDrawingsRef.current())
+  }, [])
 
   const paintAuctionOverlay = useCallback(() => {
     const host = priceLineHostRef.current
@@ -5404,6 +5928,7 @@ export function TradingChart({
     paintFrvpHistogramRef.current()
     paintExcessesAndRoundedRef.current()
     paintNewsMarkersRef.current()
+    paintUserDrawingsRef.current()
 
     // Fresh autoscaling for the next instrument's price universe
     try {
@@ -5671,6 +6196,7 @@ export function TradingChart({
       paintFrvpHistogramRef.current()
       paintExcessesAndRoundedRef.current()
       paintNewsMarkersRef.current()
+      paintUserDrawingsRef.current()
       return
     }
 
@@ -5720,55 +6246,45 @@ export function TradingChart({
     })
     paintSessionHighlightOverlay(host, rects)
 
-    const book = bookBandRef.current
+    // Position TP / SL band overlay
     const bandHost = positionBandOverlayRef.current
-    if (!book) {
-      paintPositionBandOverlay(bandHost, [])
-    } else {
-      const chartH = containerRef.current.clientHeight
-      const yEntry = series.priceToCoordinate(book.entry)
-      const yStop = series.priceToCoordinate(book.stop)
-      const yTp = series.priceToCoordinate(book.target)
-      const bands: Array<{
-        top: number
-        height: number
-        color: string
-        border: string
-        title: string
-      }> = []
-      const pushBand = (
-        a: number | null,
-        b: number | null,
-        color: string,
-        border: string,
-        title: string
-      ) => {
-        if (a == null || b == null || !Number.isFinite(a) || !Number.isFinite(b)) return
-        const top = Math.max(Math.min(a, b), 0)
-        const bottom = Math.min(Math.max(a, b), chartH)
+    if (bandHost) {
+      const bands: Array<{ top: number; height: number; color: string; border: string; title: string }> = []
+      const pushBand = (p1: number | null, p2: number | null, color: string, border: string, title: string) => {
+        if (p1 == null || p2 == null) return
+        const top = Math.min(p1, p2)
+        const bottom = Math.max(p1, p2)
         const height = bottom - top
         if (height < 2) return
         bands.push({ top, height, color, border, title })
       }
-      pushBand(yEntry, yTp, 'rgba(22, 163, 74, 0.28)', '#15803d', 'Position TP zone')
-      pushBand(yEntry, yStop, 'rgba(220, 38, 38, 0.28)', '#b91c1c', 'Position SL zone')
+      if (positionOverlay) {
+        const yEntry = series.priceToCoordinate(positionOverlay.entryPrice)
+        const yTp = positionOverlay.profitTarget ? series.priceToCoordinate(positionOverlay.profitTarget) : null
+        const yStop = positionOverlay.stopLoss ? series.priceToCoordinate(positionOverlay.stopLoss) : null
+        pushBand(yEntry, yTp, 'rgba(22, 163, 74, 0.28)', '#15803d', 'Position TP zone')
+        pushBand(yEntry, yStop, 'rgba(220, 38, 38, 0.28)', '#b91c1c', 'Position SL zone')
+      }
       paintPositionBandOverlay(bandHost, bands, { keepPreviousIfEmpty: true })
     }
     paintFrvpHistogramRef.current()
     paintExcessesAndRoundedRef.current()
     paintNewsMarkersRef.current()
+    paintUserDrawingsRef.current()
   }, [instrument])
 
   useEffect(() => {
     paintFrvpHistogramRef.current = paintFrvpHistogram
     paintExcessesAndRoundedRef.current = paintExcessesAndRounded
     paintNewsMarkersRef.current = paintNewsMarkers
+    paintUserDrawingsRef.current = paintUserDrawings
     requestAnimationFrame(() => {
       paintFrvpHistogram()
       paintExcessesAndRounded()
       paintNewsMarkers()
+      paintUserDrawings()
     })
-  }, [paintFrvpHistogram, paintExcessesAndRounded, paintNewsMarkers])
+  }, [paintFrvpHistogram, paintExcessesAndRounded, paintNewsMarkers, paintUserDrawings])
 
   /** TradingView-style: re-enable auto price scale after manual zoom on the axis */
   const resetPriceScale = useCallback(() => {
@@ -6633,7 +7149,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
   useEffect(() => {
     const chart = chartRef.current
     if (!chart) return
-    const drawing = drawTimeActive || drawZoneActive
+    const drawing = drawTimeActive || drawZoneActive || activeDrawingTool !== 'NONE'
 
     chart.applyOptions({
       handleScroll: {
@@ -6655,7 +7171,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         pinch: !drawing,
       }
     })
-  }, [drawTimeActive, drawZoneActive])
+  }, [drawTimeActive, drawZoneActive, activeDrawingTool])
 
   // ── Highlight Time Range tool — 2-Click (Click Start → Move → Click End) ────
   useEffect(() => {
@@ -6873,6 +7389,165 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       if (overlay) overlay.style.display = 'none'
     }
   }, [drawTimeActive, chartReady, candles, drawnTimeCounter])
+
+  // ── User Drawing Tools Interaction Effect (Trendline, Range, Manual FRVP) ──
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || !candleRef.current || !chartReady || activeDrawingTool === 'NONE') return
+    container.style.cursor = 'crosshair'
+
+    const priceAtY = (clientY: number): number | null => {
+      if (!candleRef.current) return null
+      const price = priceFromClientY(container, candleRef.current, clientY)
+      if (price == null) return null
+      return Math.round(price * 100) / 100
+    }
+
+    const timeAtX = (clientX: number): number | null => {
+      const chart = chartRef.current
+      if (!chart || !container) return null
+      const rect = container.getBoundingClientRect()
+      const x = clientX - rect.left
+      const timeScale = chart.timeScale()
+      const logical = timeScale.coordinateToLogical(x)
+      const list = candlesRef.current
+      if (logical != null && list.length > 0) {
+        const idx = Math.max(0, Math.min(list.length - 1, Math.round(logical)))
+        return Number(list[idx]?.time) || null
+      }
+      return null
+    }
+
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return // left click only
+      const price = priceAtY(e.clientY)
+      const time = timeAtX(e.clientX)
+      if (price == null || time == null) return
+      const rect = container.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+
+      e.preventDefault()
+      e.stopPropagation()
+
+      if (!drawingDraft) {
+        // First click: save anchor draft
+        setDrawingDraft({ time, price, x, y })
+      } else {
+        // Second click: finish drawing
+        const p1 = drawingDraft
+        const p2 = { time, price, x, y }
+
+        if (activeDrawingTool === 'TRENDLINE') {
+          const newTl: UserTrendline = {
+            id: `tl-${Date.now()}`,
+            type: 'TRENDLINE',
+            p1: { time: p1.time, price: p1.price },
+            p2: { time: p2.time, price: p2.price },
+            color: '#38bdf8',
+            label: `Trendline ${trendlines.length + 1}`,
+          }
+          setTrendlines((prev) => [...prev, newTl])
+          setDrawingToast({
+            type: 'TRENDLINE',
+            id: newTl.id,
+            label: newTl.label || 'Trendline',
+            summary: `From ${newTl.p1.price.toLocaleString()} to ${newTl.p2.price.toLocaleString()} (${newTl.p2.price >= newTl.p1.price ? '+' : ''}${(newTl.p2.price - newTl.p1.price).toFixed(1)} pts)`,
+          })
+        } else if (activeDrawingTool === 'RANGE') {
+          const newRange: UserRangeBox = {
+            id: `range-${Date.now()}`,
+            type: 'RANGE',
+            p1: { time: p1.time, price: p1.price },
+            p2: { time: p2.time, price: p2.price },
+            color: '#a855f7',
+            label: `Range ${rangeBoxes.length + 1}`,
+          }
+          setRangeBoxes((prev) => [...prev, newRange])
+          const highP = Math.max(p1.price, p2.price)
+          const lowP = Math.min(p1.price, p2.price)
+          setDrawingToast({
+            type: 'RANGE',
+            id: newRange.id,
+            label: newRange.label || 'Range Box',
+            summary: `High ${highP.toLocaleString()} – Low ${lowP.toLocaleString()} (${Math.round(highP - lowP)} pts)`,
+          })
+        } else if (activeDrawingTool === 'FRVP') {
+          const computed = computeCustomFixedRangeVolumeProfile(
+            candlesRef.current.map((c) => ({
+              time: Number(c.time),
+              open: c.open,
+              high: c.high,
+              low: c.low,
+              close: c.close,
+              volume: c.volume,
+            })),
+            p1.time,
+            p2.time
+          )
+          if (computed) {
+            setManualFrvps((prev) => [...prev, computed])
+            setDrawingToast({
+              type: 'FRVP',
+              id: computed.id,
+              label: computed.label || 'Manual FRVP',
+              summary: `POC: ${computed.poc.toLocaleString()} | VAH: ${computed.vah.toLocaleString()} | VAL: ${computed.val.toLocaleString()}`,
+            })
+          }
+        }
+
+        setDrawingDraft(null)
+        draftMousePosRef.current = null
+        setActiveDrawingTool('NONE')
+      }
+    }
+
+    const onMouseMove = (e: MouseEvent) => {
+      const price = priceAtY(e.clientY)
+      const time = timeAtX(e.clientX)
+      if (price == null || time == null) return
+      const rect = container.getBoundingClientRect()
+      draftMousePosRef.current = {
+        time,
+        price,
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+      }
+      if (drawingDraft) {
+        paintUserDrawings()
+      }
+    }
+
+    const onContextMenu = (e: MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setDrawingDraft(null)
+      draftMousePosRef.current = null
+      setActiveDrawingTool('NONE')
+      container.style.cursor = ''
+    }
+
+    container.addEventListener('mousedown', onMouseDown, true)
+    container.addEventListener('mousemove', onMouseMove, true)
+    container.addEventListener('contextmenu', onContextMenu, true)
+    const canvases = Array.from(container.querySelectorAll('canvas'))
+    for (const c of canvases) {
+      c.addEventListener('mousedown', onMouseDown, true)
+      c.addEventListener('mousemove', onMouseMove, true)
+      c.addEventListener('contextmenu', onContextMenu, true)
+    }
+    return () => {
+      container.removeEventListener('mousedown', onMouseDown, true)
+      container.removeEventListener('mousemove', onMouseMove, true)
+      container.removeEventListener('contextmenu', onContextMenu, true)
+      for (const c of canvases) {
+        c.removeEventListener('mousedown', onMouseDown, true)
+        c.removeEventListener('mousemove', onMouseMove, true)
+        c.removeEventListener('contextmenu', onContextMenu, true)
+      }
+      container.style.cursor = ''
+    }
+  }, [activeDrawingTool, drawingDraft, trendlines.length, rangeBoxes.length, manualFrvps.length, paintUserDrawings])
 
   // Clear risk box chart lines
   const clearRiskBoxLines = useCallback(() => {
@@ -7481,18 +8156,18 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       } else if (key === 'p') {
         e.preventDefault()
         togglePlaybook()
+      } else if (key === 'w') {
+        e.preventDefault()
+        setActiveDrawingTool((prev) => (prev === 'TRENDLINE' ? 'NONE' : 'TRENDLINE'))
+        setDrawingDraft(null)
       } else if (key === 'd') {
         e.preventDefault()
-        setDrawZoneActive((prev) => {
-          if (prev) {
-            cancelDrawnZone()
-            return false
-          } else {
-            setDrawnZone(null)
-            clearDrawnZoneLines()
-            return true
-          }
-        })
+        setActiveDrawingTool((prev) => (prev === 'RANGE' ? 'NONE' : 'RANGE'))
+        setDrawingDraft(null)
+      } else if (key === 'v') {
+        e.preventDefault()
+        setActiveDrawingTool((prev) => (prev === 'FRVP' ? 'NONE' : 'FRVP'))
+        setDrawingDraft(null)
       } else if (key === 't') {
         e.preventDefault()
         setDrawTimeActive((prev) => {
@@ -7508,7 +8183,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         e.preventDefault()
         togglePriceAlert()
       } else if (key === 'escape') {
-        if (riskBoxActive || riskBox) {
+        if (activeDrawingTool !== 'NONE' || drawingDraft) {
+          e.preventDefault()
+          setActiveDrawingTool('NONE')
+          setDrawingDraft(null)
+          draftMousePosRef.current = null
+        } else if (riskBoxActive || riskBox) {
           e.preventDefault()
           cancelRiskBox()
         } else if (priceAlert) {
@@ -7549,7 +8229,27 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       window.removeEventListener('keydown', handleKeyDown)
       document.removeEventListener('fullscreenchange', onFsChange)
     }
-  }, [isFullscreen, drawZoneActive, drawnZone, drawTimeActive, drawnTime, toggleFullscreen, cancelDrawnZone, clearDrawnZoneLines, cancelDrawnTime, instrument, riskBoxActive, riskBox, cancelRiskBox, openRiskBox, priceAlert, dismissPriceAlert, togglePriceAlert])
+  }, [
+    isFullscreen,
+    activeDrawingTool,
+    drawingDraft,
+    drawZoneActive,
+    drawnZone,
+    drawTimeActive,
+    drawnTime,
+    toggleFullscreen,
+    cancelDrawnZone,
+    clearDrawnZoneLines,
+    cancelDrawnTime,
+    instrument,
+    riskBoxActive,
+    riskBox,
+    cancelRiskBox,
+    openRiskBox,
+    priceAlert,
+    dismissPriceAlert,
+    togglePriceAlert,
+  ])
 
   // ── Hover visible AI/structure level → preview entry / SL / TP ─
   // Morning: place preview. Afternoon: same geometry, watch-only (canPlaceOrder false).
@@ -8197,6 +8897,81 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           ))}
         </div>
 
+        {/* User Interactive Drawing Tools (Trendline, Range Box, Manual FRVP) */}
+        <div className="flex items-center gap-1 rounded bg-surface-900/80 p-0.5 border border-surface-700/60 text-xs">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveDrawingTool((prev) => (prev === 'TRENDLINE' ? 'NONE' : 'TRENDLINE'))
+              setDrawingDraft(null)
+            }}
+            className={`flex items-center gap-1 px-2 py-1 rounded font-semibold transition-all ${
+              activeDrawingTool === 'TRENDLINE'
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/50 shadow-sm'
+                : 'text-gray-400 hover:text-sky-300 hover:bg-surface-800'
+            }`}
+            title="Draw Trendline (Hotkey: W) — Click 2 points on chart"
+          >
+            <span>📐</span>
+            <span>Trend (W)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveDrawingTool((prev) => (prev === 'RANGE' ? 'NONE' : 'RANGE'))
+              setDrawingDraft(null)
+            }}
+            className={`flex items-center gap-1 px-2 py-1 rounded font-semibold transition-all ${
+              activeDrawingTool === 'RANGE'
+                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/50 shadow-sm'
+                : 'text-gray-400 hover:text-purple-300 hover:bg-surface-800'
+            }`}
+            title="Draw Range / Box (Hotkey: D) — Click 2 points on chart"
+          >
+            <span>⬛</span>
+            <span>Range (D)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveDrawingTool((prev) => (prev === 'FRVP' ? 'NONE' : 'FRVP'))
+              setDrawingDraft(null)
+            }}
+            className={`flex items-center gap-1 px-2 py-1 rounded font-semibold transition-all ${
+              activeDrawingTool === 'FRVP'
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 shadow-sm'
+                : 'text-gray-400 hover:text-amber-300 hover:bg-surface-800'
+            }`}
+            title="Draw Fixed Range Volume Profile (Hotkey: V) — Click 2 points on chart"
+          >
+            <span>📊</span>
+            <span>FRVP (V)</span>
+          </button>
+
+          <div className="h-3.5 w-px bg-surface-700/60 mx-0.5" />
+
+          <button
+            type="button"
+            onClick={() => setDrawingsPanelOpen((prev) => !prev)}
+            className={`relative flex items-center gap-1 px-2 py-1 rounded font-medium transition-all ${
+              drawingsPanelOpen || trendlines.length + rangeBoxes.length + manualFrvps.length > 0
+                ? 'text-cyan-300 hover:bg-surface-800'
+                : 'text-gray-500 hover:text-gray-300 hover:bg-surface-800'
+            }`}
+            title="Manage Drawn Tools"
+          >
+            <span>🎨</span>
+            <span>Tools</span>
+            {trendlines.length + rangeBoxes.length + manualFrvps.length > 0 && (
+              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-cyan-600/80 px-1 text-[10px] font-bold text-white">
+                {trendlines.length + rangeBoxes.length + manualFrvps.length}
+              </span>
+            )}
+          </button>
+        </div>
+
 
 
         {/* Live price ticker */}
@@ -8322,6 +9097,279 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           ref={newsMarkersOverlayRef}
           className="pointer-events-none absolute inset-0 z-[5] overflow-hidden"
         />
+        <canvas
+          ref={userDrawingsCanvasRef}
+          className="pointer-events-none absolute inset-0 z-[6]"
+        />
+
+        {/* In-Progress Drawing Guide Banner */}
+        {activeDrawingTool !== 'NONE' && (
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 rounded-full bg-slate-900/90 border border-cyan-500/50 px-3.5 py-1.5 shadow-xl backdrop-blur-md text-xs text-slate-200">
+            <span className="inline-block w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+            <span className="font-semibold text-cyan-300">
+              {activeDrawingTool === 'TRENDLINE' && 'Drawing Trendline (2 clicks)'}
+              {activeDrawingTool === 'RANGE' && 'Drawing Range Box (2 clicks)'}
+              {activeDrawingTool === 'FRVP' && 'Drawing Fixed Range Volume Profile (2 clicks)'}
+            </span>
+            <span className="text-slate-400 text-[11px]">
+              {drawingDraft ? 'Click 2nd point to finish' : 'Click 1st point to start'} · Esc to cancel
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveDrawingTool('NONE')
+                setDrawingDraft(null)
+                draftMousePosRef.current = null
+              }}
+              className="ml-1 text-slate-400 hover:text-white font-bold"
+              title="Cancel drawing"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* Drawings Manager Panel */}
+        {drawingsPanelOpen && (
+          <div className="absolute top-3 left-3 z-40 w-80 max-h-[420px] flex flex-col rounded-xl border border-slate-700/80 bg-slate-900/95 shadow-2xl backdrop-blur-md text-slate-100 overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-700/80 px-3 py-2 bg-slate-800/60">
+              <div className="flex items-center gap-1.5 font-bold text-xs text-cyan-300">
+                <span>🎨</span>
+                <span>User Tools & Drawings</span>
+                <span className="text-[11px] text-slate-400 font-normal">
+                  ({trendlines.length + rangeBoxes.length + manualFrvps.length})
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {trendlines.length + rangeBoxes.length + manualFrvps.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearAllDrawings}
+                    className="text-[11px] text-rose-400 hover:text-rose-300 font-semibold px-1 py-0.5 rounded hover:bg-rose-500/10 transition"
+                    title="Delete all drawn tools"
+                  >
+                    Clear All
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setDrawingsPanelOpen(false)}
+                  className="text-slate-400 hover:text-white text-xs font-bold px-1"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-2 space-y-2 text-xs divide-y divide-slate-800/60">
+              {trendlines.length === 0 && rangeBoxes.length === 0 && manualFrvps.length === 0 && (
+                <div className="py-6 text-center text-slate-500 space-y-1">
+                  <div className="text-2xl">📐 ⬛ 📊</div>
+                  <div className="font-semibold text-slate-400">No active drawings</div>
+                  <div className="text-[11px] text-slate-500">
+                    Press <span className="text-sky-300 font-mono">W</span> for Trendline,{' '}
+                    <span className="text-purple-300 font-mono">D</span> for Range, or{' '}
+                    <span className="text-amber-300 font-mono">V</span> for FRVP.
+                  </div>
+                </div>
+              )}
+
+              {/* Trendlines */}
+              {trendlines.length > 0 && (
+                <div className="pt-1.5 first:pt-0">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-sky-400 mb-1 px-1">
+                    Trendlines ({trendlines.length})
+                  </div>
+                  <div className="space-y-1">
+                    {trendlines.map((tl) => (
+                      <div
+                        key={tl.id}
+                        className="group flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-800/40 hover:bg-slate-800/80 border border-slate-700/40 transition"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1 font-semibold text-sky-300 truncate">
+                            <span>📐</span>
+                            <span className="truncate">{tl.label || 'Trendline'}</span>
+                          </div>
+                          <div className="text-[10px] text-slate-400 truncate">
+                            {tl.p1.price.toLocaleString()} → {tl.p2.price.toLocaleString()}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleAskLeoAboutDrawing('TRENDLINE', tl.id)}
+                            className="px-2 py-0.5 rounded bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 font-medium text-[11px] border border-sky-500/30 transition"
+                            title="Send to Leo AI"
+                          >
+                            Ask Leo
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTrendline(tl.id)}
+                            className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                            title="Delete trendline"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Range Boxes */}
+              {rangeBoxes.length > 0 && (
+                <div className="pt-1.5 first:pt-0">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-purple-400 mb-1 px-1">
+                    Range Boxes ({rangeBoxes.length})
+                  </div>
+                  <div className="space-y-1">
+                    {rangeBoxes.map((rb) => {
+                      const hi = Math.max(rb.p1.price, rb.p2.price)
+                      const lo = Math.min(rb.p1.price, rb.p2.price)
+                      const pts = Math.round(hi - lo)
+                      return (
+                        <div
+                          key={rb.id}
+                          className="group flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-800/40 hover:bg-slate-800/80 border border-slate-700/40 transition"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1 font-semibold text-purple-300 truncate">
+                              <span>⬛</span>
+                              <span className="truncate">{rb.label || 'Range Box'}</span>
+                              <span className="text-[10px] text-purple-400 font-mono">({pts} pts)</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                              High {hi.toLocaleString()} · Low {lo.toLocaleString()}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleAskLeoAboutDrawing('RANGE', rb.id)}
+                              className="px-2 py-0.5 rounded bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-medium text-[11px] border border-purple-500/30 transition"
+                              title="Send to Leo AI"
+                            >
+                              Ask Leo
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteRangeBox(rb.id)}
+                              className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                              title="Delete range"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Manual FRVP */}
+              {manualFrvps.length > 0 && (
+                <div className="pt-1.5 first:pt-0">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400 mb-1 px-1">
+                    Manual FRVPs ({manualFrvps.length})
+                  </div>
+                  <div className="space-y-1">
+                    {manualFrvps.map((fp) => (
+                      <div
+                        key={fp.id}
+                        className="group flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-800/40 hover:bg-slate-800/80 border border-slate-700/40 transition"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1 font-semibold text-amber-300 truncate">
+                            <span>📊</span>
+                            <span className="truncate">{fp.label || 'Manual FRVP'}</span>
+                          </div>
+                          <div className="text-[10px] text-amber-400/90 truncate font-mono">
+                            POC {fp.poc.toLocaleString()} · VAH {fp.vah.toLocaleString()} · VAL {fp.val.toLocaleString()}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleAskLeoAboutDrawing('FRVP', fp.id)}
+                            className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-medium text-[11px] border border-amber-500/30 transition"
+                            title="Send to Leo AI"
+                          >
+                            Ask Leo
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteManualFrvp(fp.id)}
+                            className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                            title="Delete FRVP"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-slate-800/80 px-3 py-1.5 bg-slate-900/60 text-[10px] text-slate-400 flex items-center justify-between">
+              <span>Hotkeys: W (Trend) · D (Range) · V (FRVP)</span>
+              <span>Esc cancels</span>
+            </div>
+          </div>
+        )}
+
+        {/* Drawing Completed Notification Toast */}
+        {drawingToast && (
+          <div className="absolute bottom-10 left-4 z-40 max-w-sm rounded-xl border border-cyan-500/40 bg-slate-900/95 p-3 shadow-2xl backdrop-blur-md text-slate-100 flex items-start gap-3 animate-in fade-in slide-in-from-bottom-2 duration-200">
+            <div className="text-xl shrink-0 mt-0.5">
+              {drawingToast.type === 'TRENDLINE' && '📐'}
+              {drawingToast.type === 'RANGE' && '⬛'}
+              {drawingToast.type === 'FRVP' && '📊'}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-xs text-cyan-300 truncate">
+                  {drawingToast.label} Placed
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setDrawingToast(null)}
+                  className="text-slate-400 hover:text-white text-xs font-bold px-1"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="text-[11px] text-slate-300 mt-0.5 line-clamp-2">
+                {drawingToast.summary}
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleAskLeoAboutDrawing(drawingToast.type, drawingToast.id)
+                    setDrawingToast(null)
+                  }}
+                  className="px-2.5 py-1 rounded bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-200 font-semibold text-xs border border-cyan-500/40 transition flex items-center gap-1.5 shadow-sm"
+                >
+                  <span>🤖</span>
+                  <span>Ask Leo to Analyze</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDrawingsPanelOpen(true)}
+                  className="px-2 py-1 rounded text-slate-400 hover:text-slate-200 text-xs transition"
+                >
+                  View Tools
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {activeNewsTooltip && (
           <div
@@ -9082,6 +10130,22 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 })}
             </div>
           </DraggableDeskWidget>
+        )}
+
+        {/* User Drawing Toast Notification */}
+        {drawingToast && (
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2 rounded-xl bg-neutral-900/95 border border-purple-500/50 shadow-2xl backdrop-blur text-xs font-mono text-white animate-in fade-in zoom-in duration-150">
+            <span className="text-purple-400 font-bold">
+              {drawingToast.type === 'TRENDLINE' ? '📐 TRENDLINE' : drawingToast.type === 'RANGE' ? '⬛ RANGE BOX' : '📊 MANUAL FRVP'}:
+            </span>
+            <span className="text-neutral-200">{drawingToast.summary}</span>
+            <button
+              onClick={() => setDrawingToast(null)}
+              className="ml-2 text-neutral-400 hover:text-white"
+            >
+              ✕
+            </button>
+          </div>
         )}
 
         {/* ── Leo AI Desk Assistant (Voice & Interactive Clickable Telemetry) ── */}

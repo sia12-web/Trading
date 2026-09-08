@@ -14,7 +14,9 @@
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "db:migrate": "node scripts/run-migrations.mjs",
-    "nikkei:ny-range": "npx tsx scripts/nikkei-last-ny-session-range.ts"
+    "nikkei:ny-range": "npx tsx scripts/nikkei-last-ny-session-range.ts",
+    "scanner": "npx tsx --env-file=.env.local scripts/live-confluence-scanner.ts",
+    "backtest": "npx tsx --env-file=.env.local scripts/backtest-confluence-divergence.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.0.10",

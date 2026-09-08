@@ -459,7 +459,7 @@ export function extractChartDataPoints(ctx: LeoChatContext): LeoDataPoint[] {
         tier: 'DRAWING',
         category: 'FRVP',
         volume: f.totalVolume,
-        description: `Manual FRVP: POC ${f.poc.toLocaleString()} | VAH ${f.vah.toLocaleString()} | VAL ${f.val.toLocaleString()} (${f.startTimeEt}–${f.endTimeEt}). Volume: ${f.totalVolume.toLocaleString()} (${f.buyRatioPct}% buy). Price is ${f.priceRelation.replace('_', ' ')}.`,
+        description: `Manual FRVP: POC ${f.poc.toLocaleString()} | VAH ${f.vah.toLocaleString()} | VAL ${f.val.toLocaleString()} (${f.startTimeEt}–${f.endTimeEt}). Volume: ${f.totalVolume.toLocaleString()} (${f.buyRatioPct ?? 50}% buy). Price is ${(f.priceRelation || 'INSIDE_VALUE').replace('_', ' ')}.`,
       })
     }
   }
@@ -654,7 +654,7 @@ ${
               'MANUAL FIXED RANGE VOLUME PROFILES (FRVP):',
               ...ctx.userDrawings.frvps.map(
                 (f) =>
-                  `- ${f.label || 'Manual FRVP'}: Range ${f.startTimeEt} to ${f.endTimeEt} | POC: ${f.poc} | VAH: ${f.vah} | VAL: ${f.val} | Range: ${f.low} - ${f.high} | Volume: ${f.totalVolume.toLocaleString()} (${f.buyRatioPct}% buy). Status: ${f.priceRelation.replace('_', ' ')} (Distance to POC: ${f.distancePocPts != null ? `${f.distancePocPts} pts` : 'N/A'}).`
+                  `- ${f.label || 'Manual FRVP'}: Range ${f.startTimeEt} to ${f.endTimeEt} | POC: ${f.poc} | VAH: ${f.vah} | VAL: ${f.val} | Range: ${f.low} - ${f.high} | Volume: ${f.totalVolume.toLocaleString()} (${f.buyRatioPct ?? 50}% buy). Status: ${(f.priceRelation || 'INSIDE_VALUE').replace('_', ' ')} (Distance to POC: ${f.distancePocPts != null ? `${f.distancePocPts} pts` : 'N/A'}).`
               ),
             ]
           : []),

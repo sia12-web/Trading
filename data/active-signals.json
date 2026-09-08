@@ -1,0 +1,40 @@
+[
+  {
+    "time": 1788884400,
+    "instrument": "CRUDE",
+    "direction": "BUY",
+    "entryPrice": 92.32499999999999,
+    "stopLoss": 92.07,
+    "tp1": 92.75,
+    "tp2": 93,
+    "riskPoints": 0.25499999999999545,
+    "rMultipleTp1": 1.67,
+    "rMultipleTp2": 2.65,
+    "locationReason": "Yesterday VAL Support",
+    "triggerReason": "Bullish Stoch Divergence (%K: 19.5 vs prior 11.2)",
+    "stochK": 19.51,
+    "stochD": 13.68,
+    "currentPrice": 92.32499999999999,
+    "detectedAtEt": "12:20:00",
+    "detectedAtUnix": 1788884524
+  },
+  {
+    "time": 1788884400,
+    "instrument": "DOW",
+    "direction": "BUY",
+    "entryPrice": 52849,
+    "stopLoss": 52806,
+    "tp1": 53105,
+    "tp2": 53150,
+    "riskPoints": 43,
+    "rMultipleTp1": 5.95,
+    "rMultipleTp2": 7,
+    "locationReason": "VWAP -1σ Lower Band Support",
+    "triggerReason": "Bullish Stoch Divergence (%K: 14.9 vs prior 9.6)",
+    "stochK": 14.86,
+    "stochD": 13.93,
+    "currentPrice": 52849,
+    "detectedAtEt": "12:20:00",
+    "detectedAtUnix": 1788884523
+  }
+]
