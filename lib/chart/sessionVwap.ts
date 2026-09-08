@@ -646,7 +646,7 @@ export function projectSessionHighlightRects(args: {
       width,
       top,
       height,
-      color: showColumns ? style.colorFull : style.color,
+      color: span.isCurrent ? style.colorFull : style.color,
       lineColor: style.line,
       zIndex: style.zIndex + 10,
       range: span.range ?? Number((span.high - span.low).toFixed(2)),
@@ -755,14 +755,10 @@ export function paintSessionHighlightOverlay(
 
     d.style.borderLeft = 'none'
     d.style.borderRight = 'none'
-    d.style.borderTop = `1.5px dashed ${lineColor}`
-    d.style.borderBottom = `1.5px dashed ${lineColor}`
+    d.style.borderTop = 'none'
+    d.style.borderBottom = 'none'
 
-    // Inner dashed midline and bottom label metadata (Range / Avg / Session) matching TradingView
-    const midY =
-      s.yAvg != null && Number.isFinite(s.yAvg)
-        ? Math.max(0, Math.min(s.height, s.yAvg - s.top))
-        : s.height / 2
+    // Clean label metadata (Range / Avg / Session) without dashed lines covering the high/low
     const rangeStr =
       s.range != null
         ? Number.isInteger(s.range)
@@ -779,8 +775,7 @@ export function paintSessionHighlightOverlay(
 
     const labelTop = s.height + 6
     d.innerHTML = `
-      <div style="position:absolute;left:0;right:0;top:${midY}px;border-top:1.5px dashed ${lineColor};pointer-events:none;"></div>
-      <div style="position:absolute;left:8px;top:${labelTop}px;font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;font-size:11px;font-weight:500;line-height:1.35;color:${lineColor};pointer-events:none;white-space:nowrap;">
+      <div style="position:absolute;left:8px;top:${labelTop}px;font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;font-size:11px;font-weight:500;line-height:1.35;color:${lineColor};pointer-events:none;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,0.4);">
         ${rangeStr ? `<div>Range: ${rangeStr}</div>` : ''}
         ${avgStr ? `<div>Avg: ${avgStr}</div>` : ''}
         <div style="font-weight:600;">${sessName}</div>

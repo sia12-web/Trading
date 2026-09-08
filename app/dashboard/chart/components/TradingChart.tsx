@@ -5689,7 +5689,7 @@ export function TradingChart({
       priceScaleWidth: priceAxisW,
       containerWidth: containerRef.current.clientWidth,
       containerHeight: containerRef.current.clientHeight,
-      sessionPaint: 'full',
+      sessionPaint: 'range',
     })
     paintSessionHighlightOverlay(host, rects)
 

@@ -1525,11 +1525,11 @@ function SimulationDeskInner() {
       priceScaleWidth: priceAxisW,
       containerWidth: containerRef.current.clientWidth,
       containerHeight: containerRef.current.clientHeight,
-      sessionPaint: showSessionBands ? 'full' : 'range',
+      sessionPaint: 'range',
     })
     paintSessionHighlightOverlay(host, rects, {
       keepPreviousIfEmpty: true,
-      paintKey: showSessionBands ? 'full' : 'range',
+      paintKey: 'range',
     })
   }, [instrument, sess.tz, showSessionBands])
 

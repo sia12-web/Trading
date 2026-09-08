@@ -121,4 +121,28 @@ assert(lonCol.left < nyCol.left, 'London opens before New York')
 assert(lonCol.left + lonCol.width > nyCol.left, 'London column extends into New York column (overlap)')
 assert(lonBox.left + lonBox.width > nyBox.left, 'London range box extends into New York range box (overlap)')
 
+console.log('--- Testing Range-Only Mode (No Out-of-Range Column Colors) ---')
+const { rects: rangeOnlyRects } = projectSessionHighlightRects({
+  spans,
+  candleTimes,
+  timeScale: {
+    timeToCoordinate: (t) => ((Number(t) - startT) / (endT - startT)) * 800,
+    height: () => 600,
+  },
+  priceToY: (price) => 300 - (price - 100) * 10,
+  priceScaleWidth: 70,
+  containerWidth: 1000,
+  containerHeight: 600,
+  sessionPaint: 'range',
+})
+
+const columns = rangeOnlyRects.filter((r) => r.isColumn)
+assert(columns.length === 0, 'No column rects outside price range in range mode')
+const rangeBoxes = rangeOnlyRects.filter((r) => !r.isColumn)
+assert(rangeBoxes.length === 2, 'Exactly 2 session price-bounded range boxes rendered')
+for (const box of rangeBoxes) {
+  assert(box.top > 0, 'Range box is bounded within session price range, not extending to top of chart')
+  assert(box.height < 600, 'Range box height is bounded within session price range, not chart pane height')
+}
+
 console.log('✅ All session overlap and TradingView visual tests passed!')
