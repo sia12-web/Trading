@@ -33,6 +33,18 @@ interface LeoAssistantPanelProps {
   onClosePosition?: (reason: string) => Promise<boolean | void>
 }
 
+// Persistent in-memory session cache per instrument so switching charts retains each market's conversation
+const leoHistoryByInstrument: Record<string, LeoMessage[]> = {}
+
+function getWelcomeMessage(instrument: string): LeoMessage {
+  return {
+    id: `welcome-${instrument}`,
+    role: 'assistant',
+    content: `**Leo Online.** Institutional desk assistant calibrated to ${instrument}.\n\nMonitoring **Time & Sessions**, **Multi-Timeframe Money**, and **Auction Tails**.\n\nClick any arrow or reference directly on the chart, or speak hands-free via mic.`,
+    timestamp: Date.now(),
+  }
+}
+
 export function LeoAssistantPanel({
   context,
   isOpen: controlledIsOpen,
@@ -52,14 +64,32 @@ export function LeoAssistantPanel({
     }
   }
 
-  const [messages, setMessages] = useState<LeoMessage[]>([
-    {
-      id: 'welcome',
-      role: 'assistant',
-      content: `**Leo Online.** Institutional desk assistant calibrated to ${context.instrument}.\n\nMonitoring **Time & Sessions**, **Multi-Timeframe Money**, and **Auction Tails**.\n\nClick any arrow or reference directly on the chart, or speak hands-free via mic.`,
-      timestamp: Date.now(),
-    },
-  ])
+  const [messages, setMessagesState] = useState<LeoMessage[]>(() => {
+    return leoHistoryByInstrument[context.instrument]?.length
+      ? leoHistoryByInstrument[context.instrument]!
+      : [getWelcomeMessage(context.instrument)]
+  })
+
+  // Synchronize when the user switches tabs to a different instrument
+  useEffect(() => {
+    const existing = leoHistoryByInstrument[context.instrument]
+    if (existing && existing.length > 0) {
+      setMessagesState(existing)
+    } else {
+      const welcome = [getWelcomeMessage(context.instrument)]
+      leoHistoryByInstrument[context.instrument] = welcome
+      setMessagesState(welcome)
+    }
+    setAttachedPoints([])
+  }, [context.instrument])
+
+  const setMessages = (updater: LeoMessage[] | ((prev: LeoMessage[]) => LeoMessage[])) => {
+    setMessagesState((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater
+      leoHistoryByInstrument[context.instrument] = next
+      return next
+    })
+  }
 
   const [inputPrompt, setInputPrompt] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
@@ -519,7 +549,7 @@ export function LeoAssistantPanel({
             </span>
           )}
           <span className="text-[9px] text-purple-300 font-bold bg-purple-950/60 border border-purple-800/60 rounded px-1.5 py-0.5">
-            Claude
+            AI Live
           </span>
         </button>
       )}
@@ -537,7 +567,7 @@ export function LeoAssistantPanel({
                     LEO DESK ASSISTANT
                   </span>
                   <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-950/80 border border-purple-700/60 text-purple-300 font-mono">
-                    Claude 3.7
+                    AI Live
                   </span>
                 </div>
                 <div className="text-[10px] text-neutral-400 font-mono">

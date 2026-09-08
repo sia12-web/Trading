@@ -9042,6 +9042,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
         {/* ── Leo AI Desk Assistant (Voice & Interactive Clickable Telemetry) ── */}
         <LeoAssistantPanel
+          key={leoContext.instrument}
           context={leoContext}
           isOpen={leoPanelOpen}
           onToggleOpen={() => setLeoPanelOpen(!leoPanelOpen)}
