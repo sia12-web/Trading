@@ -38,6 +38,7 @@ const RES_MAP: Record<string, string> = {
   '1m': '1',
   '5m': '5',
   '15m': '15',
+  '30m': '30',
   '1H': '60',
   '4H': '240',
 }
@@ -105,8 +106,11 @@ export async function GET(request: Request) {
       // Keep afternoon bars on the replay day (and priors) — matches live continuum
     } else {
       // Live desk: OANDA real-time 24/7 feed + Databento CME Globex MDP 3.0.
-      // Floor must cover AVWAP 5-trading-day-prior anchor.
-      const fetchDays = Math.max(days, AVWAP_CANDLE_FETCH_CALENDAR_DAYS)
+      // Floor must cover AVWAP 5-trading-day-prior anchor; 1m is capped to 3d for responsive payload.
+      const fetchDays =
+        timeframe === '1m'
+          ? Math.min(days, 3)
+          : Math.max(days, AVWAP_CANDLE_FETCH_CALENDAR_DAYS)
 
       // 1. Fetch OANDA 24/7 continuous candles adjusted by CME basis
       const oanda = await getOandaCandles(instrument, resolution, fetchDays)
@@ -154,7 +158,7 @@ export async function GET(request: Request) {
       candles = candles.filter((c) => c.time <= asOf)
     }
     if (candles?.length) {
-      candles = dropImplausibleDeskBars(candles, instrument)
+      candles = dropImplausibleDeskBars(candles, instrument, timeframe)
     }
 
     if (!candles || candles.length === 0) {

@@ -11,6 +11,7 @@ const GRANULARITY: Record<string, string> = {
   '1': 'M1',
   '5': 'M5',
   '15': 'M15',
+  '30': 'M30',
   '60': 'H1',
   '240': 'H4',
 }

@@ -538,9 +538,16 @@ function makeDeskChartFormatters(_instrument: Instrument): DeskChartFmt {
 
 type Instrument = 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE'
 
-/** Desk charts are 5m only — live and simulation share this. */
-const DESK_TIMEFRAME = '5m' as const
-const DESK_BAR_SECONDS = 300
+export type DeskTimeframe = '1m' | '5m' | '30m'
+export const DESK_TIMEFRAMES: DeskTimeframe[] = ['1m', '5m', '30m']
+
+export function barSecondsForTimeframe(tf: DeskTimeframe): number {
+  return tf === '1m' ? 60 : tf === '30m' ? 1800 : 300
+}
+
+/** Desk charts default to 5m — 1m and 30m available on demand. */
+export const DESK_TIMEFRAME = '5m' as const
+export const DESK_BAR_SECONDS = 300
 
 /** Keep re-placing overlays this long after the last pan/zoom/resize event. */
 const OVERLAY_SETTLE_MS = 320
@@ -660,7 +667,11 @@ function reactionLabel(l: LevelLine): string | null {
 const CHART_THEME = DESK_CHART_THEME
 
 /** Desk window: from cash open of 5 trading days prior to tip through now. */
-function toDeskCandles(candles: OHLCV[], instrument: Instrument = 'DOW'): OHLCV[] {
+function toDeskCandles(
+  candles: OHLCV[],
+  instrument: Instrument = 'DOW',
+  timeframe: DeskTimeframe = '5m'
+): OHLCV[] {
   const trimmed = trimDeskCandles(
     candles.map((c) => ({
       time: c.time as number,
@@ -674,7 +685,7 @@ function toDeskCandles(candles: OHLCV[], instrument: Instrument = 'DOW'): OHLCV[
     deskClockFor(instrument)
   )
   if (trimmed.length === 0) return candles
-  const sane = dropImplausibleDeskBars(trimmed, instrument)
+  const sane = dropImplausibleDeskBars(trimmed, instrument, timeframe)
   const rows = sane.length > 0 ? sane : trimmed
   return rows.map((c) => ({
     time: c.time as UTCTimestamp,
@@ -1275,6 +1286,8 @@ export function TradingChart({
   const levelsRef = useRef<LevelLine[]>([])
   const [tooltip, setTooltip] = useState<TooltipData | null>(null)
   const [livePrice, setLivePrice] = useState<number | null>(null)
+  const [timeframe, setTimeframe] = useState<DeskTimeframe>('5m')
+  const barSeconds = barSecondsForTimeframe(timeframe)
   const [barCountdown, setBarCountdown] = useState<string>('')
   const priceTickStoreRef = useRef<LivePriceStore>({ tick: null, subs: new Set() })
   const subscribePriceTick = useCallback((onChange: () => void) => {
@@ -1298,7 +1311,7 @@ export function TradingChart({
   useEffect(() => {
     const updateCountdown = () => {
       const nowSec = Math.floor(Date.now() / 1000)
-      const barSec = DESK_BAR_SECONDS
+      const barSec = barSeconds
       const rem = barSec - (nowSec % barSec)
       const mins = Math.floor(rem / 60)
       const secs = rem % 60
@@ -1307,7 +1320,7 @@ export function TradingChart({
     updateCountdown()
     const timer = setInterval(updateCountdown, 1000)
     return () => clearInterval(timer)
-  }, [])
+  }, [barSeconds])
 
   const [showLevels, setShowLevels] = useState(() =>
     SYSTEMATIC_LIVE_DESK ? false : loadDeskOverlayToggles().levels
@@ -5048,7 +5061,7 @@ export function TradingChart({
     }
   }, []) // initialize once only
 
-  // ── Load candle data when instrument changes (5m only) ───────────────────────
+  // ── Load candle data when instrument or timeframe changes ───────────────────────
   useEffect(() => {
     if (!chartReady) return
     // Free-switch NY board: load CME bars for the viewed book even if clock preference differs.
@@ -5056,15 +5069,15 @@ export function TradingChart({
 
     const load = async () => {
       const meta = INSTRUMENT_META[instrument]
-      const tfSec = DESK_BAR_SECONDS
+      const tfSec = barSeconds
       const tradeLive = isLiveBarsAllowed(instrument)
 
       // Full continuum including afternoon — clipAfternoonBars is a no-op while freeze is off
       try {
-        // Must cover cash open of 5 trading days prior (weekends truncate a plain 5d fetch)
-        const days = AVWAP_CANDLE_FETCH_CALENDAR_DAYS
+        // Must cover cash open of 5 trading days prior (weekends truncate a plain 5d fetch; 1m is 3d)
+        const days = timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
         const res = await fetch(
-          `/api/trading/candles?instrument=${instrument}&timeframe=${DESK_TIMEFRAME}&days=${days}`
+          `/api/trading/candles?instrument=${instrument}&timeframe=${timeframe}&days=${days}`
         )
         const json = await res.json()
         if (!cancelled && Array.isArray(json.candles) && json.candles.length > 0) {
@@ -5076,7 +5089,7 @@ export function TradingChart({
             close: c.close,
             volume: c.volume ?? 0,
           }))
-          const trimmed = normalizeCandleTimes(toDeskCandles(mapped, instrument))
+          const trimmed = normalizeCandleTimes(toDeskCandles(mapped, instrument, timeframe))
           setCandles(trimmed)
           setDataMode('live')
           setCandleFeed(
@@ -5125,7 +5138,7 @@ export function TradingChart({
     return () => {
       cancelled = true
     }
-  }, [instrument, chartReady, loadLevels, levelsRefreshKey, lockedInstrument, publishPriceTick])
+  }, [instrument, chartReady, loadLevels, levelsRefreshKey, lockedInstrument, publishPriceTick, timeframe])
 
   // Mid-morning: re-grade levels against candles every 2 minutes (rule engine only)
   useEffect(() => {
@@ -5990,7 +6003,7 @@ export function TradingChart({
       const last = lastCandleRef.current
       if (!last || !candleRef.current) return
 
-      const tfSec = DESK_BAR_SECONDS
+      const tfSec = barSeconds
       const bucketTs = quoteUnixForBucket(quoteTs)
       const stepped = applyTickToFormingBar(
         {
@@ -6052,9 +6065,9 @@ export function TradingChart({
 
     const refreshCandles = async () => {
       try {
-        const days = AVWAP_CANDLE_FETCH_CALENDAR_DAYS
+        const days = timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
         const res = await fetch(
-          `/api/trading/candles?instrument=${instrument}&timeframe=${DESK_TIMEFRAME}&days=${days}&quote=0&_=${Date.now()}`,
+          `/api/trading/candles?instrument=${instrument}&timeframe=${timeframe}&days=${days}&quote=0&_=${Date.now()}`,
           { cache: 'no-store' }
         )
         if (!res.ok) return
@@ -6071,7 +6084,7 @@ export function TradingChart({
           close: c.close,
           volume: c.volume ?? 0,
         }))
-        const trimmed = normalizeCandleTimes(toDeskCandles(mapped, instrument))
+        const trimmed = normalizeCandleTimes(toDeskCandles(mapped, instrument, timeframe))
         if (trimmed.length === 0) return
 
         const live = lastCandleRef.current
@@ -6260,6 +6273,8 @@ export function TradingChart({
   }, [
     chartReady,
     instrument,
+    timeframe,
+    barSeconds,
     streamArmed,
     dataMode,
     tipStreamActive,
@@ -8154,9 +8169,30 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           ))}
         </div>
 
-        <span className="rounded-lg border border-surface-600 px-2.5 py-1.5 text-xs font-semibold text-gray-400">
-          5m
-        </span>
+        {/* Timeframe selector */}
+        <div className="flex items-center rounded-lg border border-surface-700 bg-surface-900/80 p-0.5">
+          {(['1m', '5m', '30m'] as const).map((tf) => (
+            <button
+              key={tf}
+              type="button"
+              onClick={() => {
+                if (timeframe === tf) return
+                didFitRef.current = false
+                lastCandleRef.current = null
+                setCandles([])
+                candlesRef.current = []
+                setTimeframe(tf)
+              }}
+              className={`rounded px-2.5 py-1 text-xs font-semibold transition-all ${
+                timeframe === tf
+                  ? 'bg-blue-600 text-white shadow-sm font-bold'
+                  : 'text-gray-400 hover:text-gray-200 hover:bg-surface-800'
+              }`}
+            >
+              {tf}
+            </button>
+          ))}
+        </div>
 
 
 

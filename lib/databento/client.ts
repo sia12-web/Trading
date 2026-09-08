@@ -225,7 +225,18 @@ async function processDatabentoResponse(
 
   m1Candles.sort((a, b) => a.time - b.time)
 
-  const resSec = resolution === '1' ? 60 : resolution === '15' ? 900 : resolution === '60' ? 3600 : resolution === '240' ? 14400 : 300
+  const resSec =
+    resolution === '1'
+      ? 60
+      : resolution === '15'
+      ? 900
+      : resolution === '30'
+      ? 1800
+      : resolution === '60'
+      ? 3600
+      : resolution === '240'
+      ? 14400
+      : 300
   const candles = aggregateCandles(m1Candles, resSec)
 
   candleCache.set(cacheKey, { at: Date.now(), candles })

@@ -125,17 +125,21 @@ export function isPlausibleDeskTick(
 /** Strip Yahoo/OANDA glitch bars (e.g. a session candle stuffed into 5m gold). */
 export function dropImplausibleDeskBars<T extends FormingBar>(
   bars: T[],
-  instrument?: string | null
+  instrument?: string | null,
+  timeframe?: string | null
 ): T[] {
   if (bars.length === 0) return bars
-  const maxRange = instrument ? DESK_MAX_5M_RANGE[instrument] : undefined
+  const baseRange = instrument ? DESK_MAX_5M_RANGE[instrument] : undefined
+  const mult = timeframe === '30m' ? 3 : timeframe === '15m' ? 1.8 : 1
+  const maxRange = baseRange != null ? baseRange * mult : undefined
   const out: T[] = []
   for (const bar of bars) {
     if (!(bar.close > 0) || !(bar.open > 0)) continue
     const range = bar.high - bar.low
     if (maxRange != null && range > maxRange) continue
     const prev = out[out.length - 1]
-    if (prev && !isPlausibleDeskTick(prev.close, bar.close, 0.04)) continue
+    const maxJump = timeframe === '30m' ? 0.08 : 0.04
+    if (prev && !isPlausibleDeskTick(prev.close, bar.close, maxJump)) continue
     out.push(bar)
   }
   return out.length > 0 ? out : bars

@@ -10,6 +10,7 @@ const INTERVAL_MAP: Record<string, string> = {
   '1': '1m',
   '5': '5m',
   '15': '15m',
+  '30': '30m',
   '60': '60m',
   '240': '60m', // fetch 60m then aggregate to 4H
   D: '1d',
