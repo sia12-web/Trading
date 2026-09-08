@@ -1120,12 +1120,6 @@ export function TradingChart({
   const railDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null)
   const railContainerRef = useRef<HTMLDivElement | null>(null)
 
-  // ── Confluence Strategy Signals State (Previous Days Entries, Stops & TP) ──
-  const [showConfluenceSignals, setShowConfluenceSignals] = useState(false)
-  const [historicalSignals, setHistoricalSignals] = useState<any[]>([])
-  const [selectedSignalId, setSelectedSignalId] = useState<number | null>(null)
-  const [signalsLoading, setSignalsLoading] = useState(false)
-  const confluenceLinesRef = useRef<any[]>([])
 
   useEffect(() => {
     if (!drawingToast) return
@@ -1334,103 +1328,7 @@ export function TradingChart({
     () => initialInstrument ?? lockedInstrument ?? 'DOW'
   )
 
-  // ── Fetch Confluence Strategy Historical Signals (Previous Days) ────────
-  useEffect(() => {
-    if (!showConfluenceSignals) return
-    let active = true
-    setSignalsLoading(true)
-    fetch(`/api/trading/signals/history?instrument=${instrument}&days=14`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (!active) return
-        if (data.success && Array.isArray(data.trades)) {
-          setHistoricalSignals(data.trades)
-          if (data.trades.length > 0) {
-            setSelectedSignalId((prev) => prev ?? data.trades[0].id)
-          }
-        }
-      })
-      .catch((err) => {
-        console.error('Failed to load confluence signals:', err)
-      })
-      .finally(() => {
-        if (active) setSignalsLoading(false)
-      })
-    return () => {
-      active = false
-    }
-  }, [showConfluenceSignals, instrument])
 
-  // ── Draw LOCAL price-level segments (Entry, SL, TP1, TP2) on chart for historical signals ─────
-  useEffect(() => {
-    const chart = chartRef.current
-    // Remove any previously drawn segment series
-    for (const s of confluenceLinesRef.current) {
-      try { chart?.removeSeries(s) } catch {}
-    }
-    confluenceLinesRef.current = []
-
-    if (!chart) return
-    if (!showConfluenceSignals || historicalSignals.length === 0) return
-
-    try {
-      const tz = chartTzRef.current
-      const newSeries: any[] = []
-
-      // If a specific signal is selected, target it; otherwise draw for all signals in lookback
-      const targetSignals = selectedSignalId != null
-        ? historicalSignals.filter((s) => s.id === selectedSignalId)
-        : historicalSignals
-
-      for (const sig of targetSignals) {
-        const t0 = toChartTime(sig.time, tz)   // entry candle
-        const padSec = 3600 * 3                 // ±3 h window
-        const isSelected = selectedSignalId === sig.id || targetSignals.length === 1
-
-        const makeSeg = (price: number, color: string, lineWidth: 2 | 3, lineStyle: 0 | 1 | 2 | 3, title: string) => {
-          const s = chart.addLineSeries({
-            color,
-            lineWidth: isSelected ? 3 : lineWidth,
-            lineStyle,
-            priceLineVisible: false,
-            lastValueVisible: true,
-            title,
-            crosshairMarkerVisible: false,
-            autoscaleInfoProvider: () => null,
-          })
-          s.setData([
-            { time: (t0 - padSec) as any, value: price },
-            { time: (t0 + padSec) as any, value: price },
-          ])
-          return s
-        }
-
-        const isBuy = sig.direction === 'BUY'
-        const sEntry = makeSeg(
-          sig.entryPrice, isBuy ? '#00f0ff' : '#ff0055', 2, 0,
-          `⚡ ENTRY ${sig.direction} @ ${sig.entryPrice.toLocaleString()}`
-        )
-        const sSl = makeSeg(
-          sig.stopLoss, '#ff3355', 2, 2,
-          `SL @ ${sig.stopLoss.toLocaleString()} (-${sig.riskPoints?.toFixed(1) ?? ''} pts)`
-        )
-        const sTp1 = makeSeg(
-          sig.tp1, '#00ff88', 2, 2,
-          `TP1 70% @ ${sig.tp1.toLocaleString()}`
-        )
-        const sTp2 = makeSeg(
-          sig.tp2, '#a3e635', 2, 3,
-          `TP2 30% @ ${sig.tp2.toLocaleString()}`
-        )
-
-        newSeries.push(sEntry, sSl, sTp1, sTp2)
-      }
-
-      confluenceLinesRef.current = newSeries
-    } catch (e) {
-      console.error('Error drawing signal segments:', e)
-    }
-  }, [selectedSignalId, showConfluenceSignals, historicalSignals])
   const [candles, setCandles] = useState<OHLCV[]>([])
   const [levels, setLevels] = useState<LevelLine[]>([])
   const [noInBandLevelsMessage, setNoInBandLevelsMessage] = useState<string | null>(null)
@@ -1742,20 +1640,6 @@ export function TradingChart({
         : { ib: ibCount, or30: or30Count, lunch: lunchCount, us: usCount }
     )
 
-    // Confluence Divergence Strategy Markers (Previous Days Entries & Current Day)
-    if (showConfluenceSignals && historicalSignals.length > 0) {
-      for (const sig of historicalSignals) {
-        const isBuy = sig.direction === 'BUY'
-        markers.push({
-          time: sig.time as UTCTimestamp,
-          position: isBuy ? 'belowBar' : 'aboveBar',
-          color: isBuy ? '#00f0ff' : '#ff0055',
-          shape: isBuy ? 'arrowUp' : 'arrowDown',
-          text: `⚡ ${isBuy ? 'BUY' : 'SELL'} @ ${sig.entryPrice} (SL ${sig.stopLoss} | TP ${sig.tp1})`,
-        })
-      }
-    }
-
     try {
       const mapped = mapTimesToChart(
         markers.map((m) => ({ ...m, time: m.time as number })),
@@ -1780,8 +1664,6 @@ export function TradingChart({
     showUsRange,
     showAuction,
     showDow15mFail,
-    showConfluenceSignals,
-    historicalSignals.length,
     instrument,
     rangeStrategy,
     morningAttempts,
@@ -1796,7 +1678,7 @@ export function TradingChart({
 
   useEffect(() => {
     paintDeskMarkers()
-  }, [showIbBreakouts, showOr15, showOr30, showUsRange, showAuction, showDow15mFail, showConfluenceSignals, historicalSignals.length, paintDeskMarkers])
+  }, [showIbBreakouts, showOr15, showOr30, showUsRange, showAuction, showDow15mFail, paintDeskMarkers])
 
   /** Apply / clear IB first-hour H/L (blue). Off until user toggles IB BRK/REJ (B). */
   const paintIbLines = useCallback(() => {
@@ -9117,76 +8999,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </button>
         </div>
 
-        {/* ── Confluence Strategy Signals Button & Inline Quick-Jump Controls ── */}
-        <div className="flex items-center gap-1 rounded bg-surface-900/80 p-0.5 border border-surface-700/60 text-xs">
-          <button
-            type="button"
-            onClick={() => setShowConfluenceSignals((prev) => !prev)}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded font-semibold transition-all ${
-              showConfluenceSignals
-                ? 'bg-amber-500/25 text-amber-300 border border-amber-500/50 shadow-sm'
-                : 'text-gray-400 hover:text-amber-300 hover:bg-surface-800'
-            }`}
-            title="Toggle Confluence Strategy Entries, Stops & Take Profits directly on chart"
-          >
-            <span>⚡</span>
-            <span>Signals</span>
-            {historicalSignals.length > 0 && (
-              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500/90 px-1 text-[10px] font-bold text-black">
-                {historicalSignals.length}
-              </span>
-            )}
-            {signalsLoading && (
-              <span className="inline-block h-2 w-2 animate-spin rounded-full border border-amber-300 border-t-transparent" />
-            )}
-          </button>
 
-          {showConfluenceSignals && historicalSignals.length > 0 && (
-            <div className="flex items-center gap-1 border-l border-surface-700/60 pl-1.5 font-mono text-[11px]">
-              <button
-                type="button"
-                onClick={() => {
-                  if (selectedSignalId == null) {
-                    setSelectedSignalId(historicalSignals[0].id)
-                  } else {
-                    const idx = historicalSignals.findIndex((s) => s.id === selectedSignalId)
-                    const nextIdx = idx <= 0 ? historicalSignals.length - 1 : idx - 1
-                    setSelectedSignalId(historicalSignals[nextIdx].id)
-                  }
-                }}
-                className="px-1.5 py-0.5 rounded text-gray-400 hover:text-amber-300 hover:bg-surface-800 transition"
-                title="Focus previous signal setup"
-              >
-                ◄
-              </button>
-              <span
-                onClick={() => setSelectedSignalId(null)}
-                className="cursor-pointer text-amber-300 text-[10px] font-bold px-1 hover:underline"
-                title="Click to view ALL signals on chart"
-              >
-                {selectedSignalId != null
-                  ? `${historicalSignals.findIndex((s) => s.id === selectedSignalId) + 1}/${historicalSignals.length}`
-                  : `ALL (${historicalSignals.length})`}
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  if (selectedSignalId == null) {
-                    setSelectedSignalId(historicalSignals[0].id)
-                  } else {
-                    const idx = historicalSignals.findIndex((s) => s.id === selectedSignalId)
-                    const nextIdx = idx >= historicalSignals.length - 1 ? 0 : idx + 1
-                    setSelectedSignalId(historicalSignals[nextIdx].id)
-                  }
-                }}
-                className="px-1.5 py-0.5 rounded text-gray-400 hover:text-amber-300 hover:bg-surface-800 transition"
-                title="Focus next signal setup"
-              >
-                ►
-              </button>
-            </div>
-          )}
-        </div>
 
 
 
