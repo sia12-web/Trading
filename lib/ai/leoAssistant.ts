@@ -618,3 +618,76 @@ export async function streamClaudeResponse(args: {
 
   return fullText
 }
+
+export async function streamOpenAIResponse(args: {
+  apiKey: string
+  model?: string
+  systemPrompt: string
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>
+  onChunk: (chunk: string) => void
+}): Promise<string> {
+  const { apiKey, model = 'gpt-4o', systemPrompt, messages, onChunk } = args
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      stream: true,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        ...messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+        })),
+      ],
+    }),
+  })
+
+  if (!res.ok) {
+    const errText = await res.text()
+    throw new Error(`OpenAI API error (${res.status}): ${errText}`)
+  }
+
+  const reader = res.body?.getReader()
+  if (!reader) {
+    throw new Error('OpenAI API returned empty response body')
+  }
+
+  const decoder = new TextDecoder()
+  let fullText = ''
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed || !trimmed.startsWith('data: ')) continue
+      const dataStr = trimmed.slice(6)
+      if (dataStr === '[DONE]') continue
+
+      try {
+        const parsed = JSON.parse(dataStr)
+        const chunk = parsed.choices?.[0]?.delta?.content
+        if (chunk) {
+          fullText += chunk
+          onChunk(chunk)
+        }
+      } catch {
+        // Ignore unparseable line
+      }
+    }
+  }
+
+  return fullText
+}
+

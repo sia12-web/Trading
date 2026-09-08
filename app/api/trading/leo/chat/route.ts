@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import {
   buildLeoSystemPrompt,
   streamClaudeResponse,
+  streamOpenAIResponse,
   type LeoChatContext,
 } from '@/lib/ai/leoAssistant'
 
@@ -26,7 +27,8 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY
+    const anthropicKey = process.env.ANTHROPIC_API_KEY
+    const openaiKey = process.env.OPENAI_API_KEY
     const selectedModel =
       model ||
       process.env.LLM_PROPOSER_MODEL ||
@@ -34,8 +36,8 @@ export async function POST(req: NextRequest) {
 
     const systemPrompt = buildLeoSystemPrompt(chartContext)
 
-    // If no Anthropic key configured, provide a live desk heuristic response
-    if (!apiKey) {
+    // If neither key is configured, provide heuristic response
+    if (!anthropicKey && !openaiKey) {
       const fallbackResponse = buildDeskFallbackResponse(messages, chartContext)
       return new Response(
         `data: ${JSON.stringify({ text: fallbackResponse })}\n\ndata: [DONE]\n\n`,
@@ -49,28 +51,16 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Stream Claude SSE response
+    // Stream SSE response
     const encoder = new TextEncoder()
     const stream = new ReadableStream({
       async start(controller) {
-        try {
-          await streamClaudeResponse({
-            apiKey,
-            model: selectedModel,
-            systemPrompt,
-            messages,
-            onChunk: (chunk) => {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: chunk })}\n\n`))
-            },
-          })
-          controller.enqueue(encoder.encode('data: [DONE]\n\n'))
-          controller.close()
-        } catch (err: any) {
-          // If primary model fails, try fallback model claude-3-5-sonnet-20241022
+        // 1. Try Anthropic Claude if key present
+        if (anthropicKey) {
           try {
             await streamClaudeResponse({
-              apiKey,
-              model: 'claude-3-5-sonnet-20241022',
+              apiKey: anthropicKey,
+              model: selectedModel,
               systemPrompt,
               messages,
               onChunk: (chunk) => {
@@ -79,18 +69,74 @@ export async function POST(req: NextRequest) {
             })
             controller.enqueue(encoder.encode('data: [DONE]\n\n'))
             controller.close()
-          } catch (secondErr: any) {
-            const fallback = buildDeskFallbackResponse(messages, chartContext)
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({
-                  text: `*(Live API stream reconnecting - Desk Offline Heuristic)*\n\n${fallback}`,
-                })}\n\ndata: [DONE]\n\n`
-              )
-            )
-            controller.close()
+            return
+          } catch {
+            // Secondary Claude model attempt
+            try {
+              await streamClaudeResponse({
+                apiKey: anthropicKey,
+                model: 'claude-3-5-sonnet-20241022',
+                systemPrompt,
+                messages,
+                onChunk: (chunk) => {
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: chunk })}\n\n`))
+                },
+              })
+              controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+              controller.close()
+              return
+            } catch {
+              // Fall through to OpenAI if available
+            }
           }
         }
+
+        // 2. Try OpenAI (GPT-4o) if available
+        if (openaiKey) {
+          try {
+            await streamOpenAIResponse({
+              apiKey: openaiKey,
+              model: 'gpt-4o',
+              systemPrompt,
+              messages,
+              onChunk: (chunk) => {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: chunk })}\n\n`))
+              },
+            })
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+            controller.close()
+            return
+          } catch (openaiErr: any) {
+            // Secondary OpenAI attempt with gpt-4o-mini
+            try {
+              await streamOpenAIResponse({
+                apiKey: openaiKey,
+                model: 'gpt-4o-mini',
+                systemPrompt,
+                messages,
+                onChunk: (chunk) => {
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: chunk })}\n\n`))
+                },
+              })
+              controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+              controller.close()
+              return
+            } catch {
+              // Fall through to offline heuristic
+            }
+          }
+        }
+
+        // 3. Last-resort fallback
+        const fallback = buildDeskFallbackResponse(messages, chartContext)
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({
+              text: `*(Live API stream reconnecting - Desk Offline Heuristic)*\n\n${fallback}`,
+            })}\n\ndata: [DONE]\n\n`
+          )
+        )
+        controller.close()
       },
     })
 
