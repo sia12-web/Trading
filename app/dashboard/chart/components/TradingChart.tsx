@@ -160,6 +160,7 @@ import {
   computeRangeMetrics,
   formatEtTime,
 } from '@/lib/trading/userDrawings'
+import { detectCandlestickPatterns } from '@/lib/trading/candlestickPatterns'
 import { isUsMarketHoliday } from '@/lib/chart/sessionVwap'
 
 const DOW_15M_FAIL_COLORS: any = { high: '#3b82f6', low: '#ef4444', mid: '#eab308', buy: '#3b82f6', sell: '#ef4444' }
@@ -1119,6 +1120,7 @@ export function TradingChart({
   const [railPos, setRailPos] = useState<{ x: number; y: number }>({ x: 10, y: 10 })
   const railDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null)
   const railContainerRef = useRef<HTMLDivElement | null>(null)
+  const [showCandlestickPatterns, setShowCandlestickPatterns] = useState(false)
 
 
   useEffect(() => {
@@ -2672,8 +2674,83 @@ export function TradingChart({
       }
     }
 
+    // 5. Candlestick Pattern Markers
+    if (showCandlestickPatterns && list.length > 0) {
+      const candleBars = list.map((c) => ({
+        time: c.time as number,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      }))
+
+      const totalBars = candleBars.length
+      const startIdx = Math.max(0, totalBars - 120)
+
+      for (let i = startIdx; i < totalBars; i++) {
+        const bar = candleBars[i]!
+        const chartT = toChartTime(bar.time, tz)
+        const x = timeToX(chart.timeScale(), chartT, candleTimes)
+        const yHigh = series.priceToCoordinate(bar.high)
+        const yLow = series.priceToCoordinate(bar.low)
+
+        if (x == null || !Number.isFinite(x) || x < -30 || x > paneW + 30) continue
+
+        const patterns = detectCandlestickPatterns(candleBars, i)
+
+        const badges: Array<{ text: string; bg: string; fg: string; pos: 'ABOVE' | 'BELOW' | 'MID' }> = []
+
+        if (patterns.bullEng) badges.push({ text: '▲ Bull Engulfing', bg: 'rgba(16, 185, 129, 0.92)', fg: '#ffffff', pos: 'BELOW' })
+        if (patterns.bearEng) badges.push({ text: '▼ Bear Engulfing', bg: 'rgba(239, 68, 68, 0.92)', fg: '#ffffff', pos: 'ABOVE' })
+        if (patterns.hammer) badges.push({ text: '▲ Hammer', bg: 'rgba(56, 189, 248, 0.92)', fg: '#0f172a', pos: 'BELOW' })
+        if (patterns.invHammer) badges.push({ text: '▲ Inv Hammer', bg: 'rgba(20, 184, 166, 0.92)', fg: '#ffffff', pos: 'BELOW' })
+        if (patterns.shootingStar) badges.push({ text: '▼ Shooting Star', bg: 'rgba(245, 158, 11, 0.92)', fg: '#0f172a', pos: 'ABOVE' })
+        if (patterns.hangingMan) badges.push({ text: '▼ Hanging Man', bg: 'rgba(249, 115, 22, 0.92)', fg: '#ffffff', pos: 'ABOVE' })
+        if (patterns.morningStar) badges.push({ text: '▲ Morning Star', bg: 'rgba(34, 197, 94, 0.92)', fg: '#ffffff', pos: 'BELOW' })
+        if (patterns.eveningStar) badges.push({ text: '▼ Evening Star', bg: 'rgba(225, 29, 72, 0.92)', fg: '#ffffff', pos: 'ABOVE' })
+        if (patterns.bullHarami) badges.push({ text: '▲ Bull Harami', bg: 'rgba(16, 185, 129, 0.85)', fg: '#ffffff', pos: 'BELOW' })
+        if (patterns.bearHarami) badges.push({ text: '▼ Bear Harami', bg: 'rgba(239, 68, 68, 0.85)', fg: '#ffffff', pos: 'ABOVE' })
+        if (patterns.bullKick) badges.push({ text: '▲ Bull Kicker', bg: 'rgba(16, 185, 129, 0.92)', fg: '#ffffff', pos: 'BELOW' })
+        if (patterns.bearKick) badges.push({ text: '▼ Bear Kicker', bg: 'rgba(239, 68, 68, 0.92)', fg: '#ffffff', pos: 'ABOVE' })
+        if (patterns.doji && badges.length === 0) badges.push({ text: '• Doji', bg: 'rgba(168, 85, 247, 0.85)', fg: '#ffffff', pos: 'MID' })
+
+        ctx.font = 'bold 8.5px ui-monospace, SFMono-Regular, monospace'
+
+        let aboveOffset = 14
+        let belowOffset = 14
+
+        for (const b of badges) {
+          const textW = ctx.measureText(b.text).width
+          const padX = 3
+          const badgeW = textW + padX * 2
+          const badgeH = 12
+
+          const badgeX = x - badgeW / 2
+          let badgeY = 0
+
+          if (b.pos === 'ABOVE' && yHigh != null) {
+            badgeY = yHigh - aboveOffset
+            aboveOffset += 14
+          } else if (b.pos === 'BELOW' && yLow != null) {
+            badgeY = yLow + belowOffset
+            belowOffset += 14
+          } else if (yHigh != null && yLow != null) {
+            badgeY = (yHigh + yLow) / 2 - badgeH / 2
+          } else continue
+
+          if (badgeY < 0 || badgeY > paneH) continue
+
+          ctx.fillStyle = b.bg
+          ctx.fillRect(badgeX, badgeY, badgeW, badgeH)
+          ctx.fillStyle = b.fg
+          ctx.fillText(b.text, badgeX + padX, badgeY + 9)
+        }
+      }
+    }
+
     ctx.restore()
-  }, [trendlines, rangeBoxes, manualFrvps, drawingDraft, activeDrawingTool])
+  }, [trendlines, rangeBoxes, manualFrvps, drawingDraft, activeDrawingTool, showCandlestickPatterns])
 
   // ─── 5-Day Excesses & Rounded Numbers (Canvas) ──────────────────────────────
   const paintExcessesAndRounded = useCallback(() => {
@@ -3434,6 +3511,45 @@ export function TradingChart({
           }
         }),
       },
+      candlestickPatterns: showCandlestickPatterns && candles.length > 0 ? {
+        activePatterns: (() => {
+          const bars = candles.map((c) => ({
+            time: c.time as number,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume,
+          }))
+          const active: Array<{
+            pattern: string
+            type: 'BULLISH' | 'BEARISH' | 'NEUTRAL'
+            candleTimeEt: string
+            candlePrice: number
+            barIndex: number
+          }> = []
+          const startIdx = Math.max(0, bars.length - 60)
+          for (let i = startIdx; i < bars.length; i++) {
+            const res = detectCandlestickPatterns(bars, i)
+            const bar = bars[i]!
+            const timeEt = formatEtTime(bar.time)
+            if (res.bullEng) active.push({ pattern: 'Bullish Engulfing', type: 'BULLISH', candleTimeEt: timeEt, candlePrice: bar.close, barIndex: i })
+            if (res.bearEng) active.push({ pattern: 'Bearish Engulfing', type: 'BEARISH', candleTimeEt: timeEt, candlePrice: bar.close, barIndex: i })
+            if (res.hammer) active.push({ pattern: 'Hammer', type: 'BULLISH', candleTimeEt: timeEt, candlePrice: bar.close, barIndex: i })
+            if (res.invHammer) active.push({ pattern: 'Inverted Hammer', type: 'BULLISH', candleTimeEt: timeEt, candlePrice: bar.close, barIndex: i })
+            if (res.shootingStar) active.push({ pattern: 'Shooting Star', type: 'BEARISH', candleTimeEt: timeEt, candlePrice: bar.close, barIndex: i })
+            if (res.hangingMan) active.push({ pattern: 'Hanging Man', type: 'BEARISH', candleTimeEt: timeEt, candlePrice: bar.close, barIndex: i })
+            if (res.morningStar) active.push({ pattern: 'Morning Star', type: 'BULLISH', candleTimeEt: timeEt, candlePrice: bar.close, barIndex: i })
+            if (res.eveningStar) active.push({ pattern: 'Evening Star', type: 'BEARISH', candleTimeEt: timeEt, candlePrice: bar.close, barIndex: i })
+            if (res.bullHarami) active.push({ pattern: 'Bullish Harami', type: 'BULLISH', candleTimeEt: timeEt, candlePrice: bar.close, barIndex: i })
+            if (res.bearHarami) active.push({ pattern: 'Bearish Harami', type: 'BEARISH', candleTimeEt: timeEt, candlePrice: bar.close, barIndex: i })
+            if (res.bullKick) active.push({ pattern: 'Bullish Kicker', type: 'BULLISH', candleTimeEt: timeEt, candlePrice: bar.close, barIndex: i })
+            if (res.bearKick) active.push({ pattern: 'Bearish Kicker', type: 'BEARISH', candleTimeEt: timeEt, candlePrice: bar.close, barIndex: i })
+            if (res.doji && active.every(a => a.barIndex !== i)) active.push({ pattern: 'Doji', type: 'NEUTRAL', candleTimeEt: timeEt, candlePrice: bar.close, barIndex: i })
+          }
+          return active
+        })()
+      } : undefined,
     }
   }, [
     instrument,
@@ -3450,6 +3566,7 @@ export function TradingChart({
     trendlines,
     rangeBoxes,
     manualFrvps,
+    showCandlestickPatterns,
   ])
 
   // Direct chart canvas click handler for session extreme arrows and labels
@@ -9239,6 +9356,23 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               <span>📊</span>
               <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-amber-200 shadow-xl border border-slate-800 group-hover:block z-50">
                 Manual FRVP (V)
+              </span>
+            </button>
+
+            {/* Candlestick Patterns Toggle */}
+            <button
+              type="button"
+              onClick={() => setShowCandlestickPatterns((prev) => !prev)}
+              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
+                showCandlestickPatterns
+                  ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-emerald-300'
+              }`}
+              title="Toggle Candlestick Pattern Markers"
+            >
+              <span>🕯️</span>
+              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-emerald-200 shadow-xl border border-slate-800 group-hover:block z-50">
+                Candlestick Patterns ({showCandlestickPatterns ? 'ON' : 'OFF'})
               </span>
             </button>
 

@@ -26,6 +26,7 @@ export interface LeoDataPoint {
     | 'TRENDLINE'
     | 'RANGE'
     | 'FRVP'
+    | 'PATTERN'
   description?: string
   session?: 'Asia' | 'London' | 'New York' | string
   volume?: number | string
@@ -106,6 +107,16 @@ export interface LeoActivePosition {
   isInProfit: boolean
 }
 
+export interface LeoCandlestickPatternsContext {
+  activePatterns: Array<{
+    pattern: string
+    type: 'BULLISH' | 'BEARISH' | 'NEUTRAL'
+    candleTimeEt: string
+    candlePrice: number
+    barIndex: number
+  }>
+}
+
 export interface LeoChatContext {
   instrument: string
   currentPrice: number | null
@@ -153,6 +164,7 @@ export interface LeoChatContext {
     isRetested?: boolean
   }>
   userDrawings?: LeoUserDrawingsContext
+  candlestickPatterns?: LeoCandlestickPatternsContext
   selectedDataPoints?: LeoDataPoint[]
 }
 
@@ -464,6 +476,20 @@ export function extractChartDataPoints(ctx: LeoChatContext): LeoDataPoint[] {
     }
   }
 
+  // 7. Active Candlestick Pattern Markers
+  if (ctx.candlestickPatterns && ctx.candlestickPatterns.activePatterns.length > 0) {
+    for (const p of ctx.candlestickPatterns.activePatterns) {
+      points.push({
+        id: `pattern-${p.barIndex}-${p.pattern}`,
+        label: `${p.pattern}`,
+        value: `${p.candlePrice.toLocaleString()} (${p.candleTimeEt})`,
+        tier: 'DRAWING',
+        category: 'PATTERN',
+        description: `Candlestick Pattern Marker: ${p.pattern} [${p.type}] detected at ${p.candleTimeEt} (Price: ${p.candlePrice.toLocaleString()})`,
+      })
+    }
+  }
+
   return points
 }
 
@@ -675,6 +701,18 @@ ${
           : []),
       ].join('\n')
     : 'No manual drawings currently on chart.'
+}
+
+[CANDLESTICK PATTERNS DETECTED ON CHART]:
+${
+  ctx.candlestickPatterns && ctx.candlestickPatterns.activePatterns.length > 0
+    ? ctx.candlestickPatterns.activePatterns
+        .map(
+          (p) =>
+            `- Bar #${p.barIndex} (${p.candleTimeEt} @ ${p.candlePrice}): Detected ${p.pattern} [${p.type}]`
+        )
+        .join('\n')
+    : 'No candlestick patterns currently enabled/detected on visible bars.'
 }
 
 [DATA REFERENCE POINT CLICKED / ATTACHED FROM CHART]:
