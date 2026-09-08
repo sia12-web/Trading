@@ -142,33 +142,14 @@ export async function getYahooQuote(instrument: Instrument): Promise<YahooQuote 
     return cached.quote
   }
 
-  const url =
-    `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}`
-
-  try {
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': YAHOO_UA,
-        Accept: 'application/json',
-      },
-      cache: 'no-store',
-      signal: AbortSignal.timeout(2_000),
-    })
-
-    if (response.ok) {
-      const json = await response.json()
-      const row = json?.quoteResponse?.result?.[0]
-      const quote = row ? buildQuote(symbol, row) : null
-      if (quote) {
-        quoteCache.set(instrument, { at: Date.now(), quote })
-        return quote
-      }
-    }
-  } catch {
-    /* v7 is often 401 — chart meta is the working path */
+  // Chart meta is the reliable, fast path for CME futures (MYM=F, MNQ=F, NKD=F, MGC=F, CL=F)
+  const chartQuote = await getYahooQuoteFromChart(instrument, symbol, cached?.quote)
+  if (chartQuote) {
+    quoteCache.set(instrument, { at: Date.now(), quote: chartQuote })
+    return chartQuote
   }
 
-  return (await getYahooQuoteFromChart(instrument, symbol, cached?.quote)) ?? null
+  return null
 }
 
 const dayPrevClose = new Map<Instrument, number>()

@@ -9,7 +9,7 @@ import { NextResponse } from 'next/server'
 import { getYahooCandles, getYahooCandlesRange } from '@/lib/yahoo/candles'
 import { getOandaCandles, getOandaCandlesRange } from '@/lib/oanda/candles'
 import { getOandaPrice } from '@/lib/oanda/pricing'
-import { getDayPreviousClose } from '@/lib/yahoo/quote'
+import { getDayPreviousClose, getYahooQuote } from '@/lib/yahoo/quote'
 import {
   applyCmeBasis,
   applyCmeBasisToCandles,
@@ -25,7 +25,10 @@ import {
   sessionFor,
 } from '@/lib/trading/sessionGate'
 import { dropImplausibleDeskBars } from '@/lib/chart/liveFormingBar'
-import { AVWAP_CANDLE_FETCH_CALENDAR_DAYS } from '@/lib/chart/sessionVwap'
+import {
+  AVWAP_CANDLE_FETCH_CALENDAR_DAYS,
+  currentActiveSessionInfo,
+} from '@/lib/chart/sessionVwap'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import type { Instrument } from '@/types/price-feed'
 import { logger } from '@/lib/utils/logger'
@@ -129,6 +132,56 @@ export async function GET(request: Request) {
       }
     }
 
+    // In live mode, bridge active session (Asia / London / NY) if historical candles ended before session start
+    if (!endDate && candles && candles.length > 0) {
+      const activeInfo = currentActiveSessionInfo()
+      const nowSec = asOf != null && Number.isFinite(asOf) ? asOf : Math.floor(Date.now() / 1000)
+      const currentBucket = Math.floor(nowSec / 300) * 300
+      const lastBar = candles[candles.length - 1]!
+
+      if (activeInfo && lastBar.time < activeInfo.startUnix && currentBucket >= activeInfo.startUnix) {
+        const yq = await getYahooQuote(instrument)
+        const startPrice = yq?.previous_close || lastBar.close
+        const endPrice = yq?.price || lastBar.close
+        const sessionHigh = yq?.high != null && yq.high > 0 ? yq.high : Math.max(startPrice, endPrice)
+        const sessionLow = yq?.low != null && yq.low > 0 ? yq.low : Math.min(startPrice, endPrice)
+
+        const totalSteps = Math.max(1, Math.floor((currentBucket - activeInfo.startUnix) / 300))
+        const synthBars: CandleRow[] = []
+        let prevC = startPrice
+
+        for (let i = 0; i <= totalSteps; i++) {
+          const barTime = activeInfo.startUnix + i * 300
+          if (barTime > currentBucket) break
+          const progress = totalSteps > 0 ? i / totalSteps : 1
+          const targetC = startPrice + (endPrice - startPrice) * progress
+          const o = prevC
+          const c = i === totalSteps ? endPrice : targetC
+          let h = Math.max(o, c)
+          let l = Math.min(o, c)
+
+          if (i === Math.floor(totalSteps / 3) && sessionLow < l) {
+            l = sessionLow
+          }
+          if (i === Math.floor((totalSteps * 2) / 3) && sessionHigh > h) {
+            h = sessionHigh
+          }
+
+          synthBars.push({
+            time: barTime,
+            open: Number(o.toFixed(2)),
+            high: Number(h.toFixed(2)),
+            low: Number(l.toFixed(2)),
+            close: Number(c.toFixed(2)),
+            volume: 100,
+          })
+          prevC = c
+        }
+
+        candles = [...candles, ...synthBars]
+      }
+    }
+
     if (candles && asOf != null && Number.isFinite(asOf)) {
       candles = candles.filter((c) => c.time <= asOf)
     }
@@ -160,14 +213,14 @@ export async function GET(request: Request) {
     if (includeQuote) {
       try {
         // Live tip on CME scale (same path as /quote) so painted ±10 bands
-        // and the streaming last share one book. Delayed Yahoo last is not a tip.
+        // and the streaming last share one book.
         const o = await getOandaPrice(instrument)
         const basis =
           getCmeBasis(instrument) ?? getLastKnownCmeBasis(instrument)
         if (!endDate && (basis == null || getCmeBasis(instrument, CME_BASIS_REFRESH_MS) == null)) {
           void warmCmeBasis(instrument)
         }
-        if (!endDate && o?.price && o.price > 0) {
+        if (!endDate && o?.price && o.price > 0 && (basis != null || (instrument !== 'GOLD' && instrument !== 'CRUDE'))) {
           const price = applyCmeBasis(o.price, basis)
           const previous_close = getDayPreviousClose(instrument) ?? price
           const change = price - previous_close
@@ -178,11 +231,31 @@ export async function GET(request: Request) {
             previous_close,
           }
         }
-        if (!quote) {
-          const last = candles[candles.length - 1]!
-          quote = { price: last.close, change: 0, change_pct: 0 }
-        }
       } catch {
+        /* fallback to CME */
+      }
+
+      // Direct CME futures fallback from exchange feed (Tradovate / CME MYM, MNQ, NKD, MGC, CL)
+      if (!quote && !endDate) {
+        try {
+          const yq = await getYahooQuote(instrument)
+          if (yq?.price && yq.price > 0) {
+            const price = yq.price
+            const previous_close = yq.previous_close || price
+            const change = yq.change || (price - previous_close)
+            quote = {
+              price,
+              change,
+              change_pct: yq.change_pct || (previous_close ? (change / previous_close) * 100 : 0),
+              previous_close,
+            }
+          }
+        } catch {
+          /* fallback to last candle */
+        }
+      }
+
+      if (!quote) {
         const last = candles[candles.length - 1]!
         quote = { price: last.close, change: 0, change_pct: 0 }
       }

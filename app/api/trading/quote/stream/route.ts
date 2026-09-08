@@ -3,7 +3,8 @@
  * Server-Sent Events — OANDA ticks shifted onto CME (Tradovate MYM / MNQ / MGC / CL) scale.
  */
 
-import { getDayPreviousClose, refreshDayPreviousClose } from '@/lib/yahoo/quote'
+import { getDayPreviousClose, refreshDayPreviousClose, getYahooQuote } from '@/lib/yahoo/quote'
+import { activeDeskSessionsAt } from '@/lib/chart/sessionVwap'
 import {
   getLastStreamedPrice,
   subscribeOandaPriceStream,
@@ -75,21 +76,12 @@ export async function GET(request: Request) {
   }
 
   const streamGate = isChartStreamAllowed(instrument)
-  if (!streamGate.open) {
+  const active = activeDeskSessionsAt(Math.floor(Date.now() / 1000))
+  if (!streamGate.open && active.length === 0) {
     return new Response(
       JSON.stringify({ error: streamGate.reason, stream: false, frozen: true }),
       {
         status: 403,
-        headers: { 'Content-Type': 'application/json' },
-      }
-    )
-  }
-
-  if (!isOandaConfigured()) {
-    return new Response(
-      JSON.stringify({ error: 'OANDA not configured', stream: false }),
-      {
-        status: 503,
         headers: { 'Content-Type': 'application/json' },
       }
     )
@@ -101,6 +93,7 @@ export async function GET(request: Request) {
   let unsubscribe: (() => void) | null = null
   let heartbeat: ReturnType<typeof setInterval> | null = null
   let basisTimer: ReturnType<typeof setInterval> | null = null
+  let cmePoller: ReturnType<typeof setInterval> | null = null
   let closed = false
 
   const stream = new ReadableStream({
@@ -113,6 +106,7 @@ export async function GET(request: Request) {
         60_000
       )
       let pendingSent = false
+      let lastOandaTickAt = 0
       const openedAt = Date.now()
 
       const send = (obj: unknown) => {
@@ -166,6 +160,28 @@ export async function GET(request: Request) {
         })
       }
 
+      const pollCme = async () => {
+        if (closed) return
+        // If OANDA is actively pushing ticks, skip CME poll
+        if (Date.now() - lastOandaTickAt < 2500) return
+        try {
+          const yq = await getYahooQuote(instrument)
+          if (closed || !yq?.price) return
+          send(
+            payloadFor(
+              instrument,
+              yq.price,
+              yq.price,
+              yq.price,
+              yq.timestamp || Math.floor(Date.now() / 1000),
+              'cme'
+            )
+          )
+        } catch {
+          /* ignore */
+        }
+      }
+
       const cleanup = () => {
         if (closed) return
         closed = true
@@ -173,6 +189,8 @@ export async function GET(request: Request) {
         heartbeat = null
         if (basisTimer) clearInterval(basisTimer)
         basisTimer = null
+        if (cmePoller) clearInterval(cmePoller)
+        cmePoller = null
         unsubscribe?.()
         unsubscribe = null
         try {
@@ -182,23 +200,31 @@ export async function GET(request: Request) {
         }
       }
 
-      // Subscribing replays the hub's last tick, so a warm basis means the first
-      // frame leaves here synchronously.
-      unsubscribe = subscribeOandaPriceStream(instrument, (quote) => {
-        pending = quote
-        pendingSent = false
-        flushPending()
-      })
-
-      if (getCmeBasis(instrument, CME_BASIS_REFRESH_MS) == null) {
-        void warmCmeBasis(instrument).then((next) => {
-          if (closed) return
-          if (next != null) basis = next
+      if (isOandaConfigured()) {
+        // Subscribing replays the hub's last tick, so a warm basis means the first
+        // frame leaves here synchronously.
+        unsubscribe = subscribeOandaPriceStream(instrument, (quote) => {
+          lastOandaTickAt = Date.now()
+          pending = quote
+          pendingSent = false
           flushPending()
         })
+
+        if (getCmeBasis(instrument, CME_BASIS_REFRESH_MS) == null) {
+          void warmCmeBasis(instrument).then((next) => {
+            if (closed) return
+            if (next != null) basis = next
+            flushPending()
+          })
+        }
+
+        basisTimer = setInterval(refreshBasis, CME_BASIS_REFRESH_MS)
       }
 
-      basisTimer = setInterval(refreshBasis, CME_BASIS_REFRESH_MS)
+      // Initial quote from CME to immediately establish live price
+      void pollCme()
+      // Poller runs every 1500ms when OANDA is quiet / unavailable / unauthorized
+      cmePoller = setInterval(pollCme, 1500)
 
       // Keep proxies / browsers from treating the connection as idle
       heartbeat = setInterval(() => {
@@ -216,6 +242,7 @@ export async function GET(request: Request) {
       closed = true
       if (heartbeat) clearInterval(heartbeat)
       if (basisTimer) clearInterval(basisTimer)
+      if (cmePoller) clearInterval(cmePoller)
       unsubscribe?.()
     },
   })

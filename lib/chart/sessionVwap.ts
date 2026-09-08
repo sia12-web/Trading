@@ -135,6 +135,43 @@ export function sessionInstanceKeyFor(
   return `${sessionDate}_${name}`
 }
 
+/**
+ * Current active session and its scheduled start unix timestamp.
+ * E.g., at 22:00 ET, returns { name: 'Asia', startUnix: <18:00 ET unix> }.
+ */
+export function currentActiveSessionInfo(now: Date = new Date()): {
+  name: SessionName
+  startUnix: number
+  scheduledEndUnix: number
+} | null {
+  const nowUnix = Math.floor(now.getTime() / 1000)
+  const active = activeDeskSessionsAt(nowUnix)
+  if (active.length === 0) return null
+
+  const name: SessionName = active.includes('Asia')
+    ? 'Asia'
+    : active.includes('London')
+    ? 'London'
+    : active[0]!
+
+  const w = SESSION_WINDOWS[name]
+  const h = hourInTz(nowUnix, w.tz)
+  const ymd = dayFormatter(w.tz).format(now)
+
+  let startYmd = ymd
+  if (name === 'Asia' && h < 3) {
+    startYmd = dayFormatter(w.tz).format(new Date((nowUnix - 86400) * 1000))
+  }
+  const startUnix = zonedCivilToUnix(startYmd, w.start, w.tz)
+  const endYmd =
+    name === 'Asia' && h >= 18
+      ? dayFormatter(w.tz).format(new Date((nowUnix + 86400) * 1000))
+      : ymd
+  const scheduledEndUnix = zonedCivilToUnix(endYmd, w.end, w.tz)
+
+  return { name, startUnix, scheduledEndUnix }
+}
+
 export const SESSION_RANGE_ORDER: SessionName[] = ['Asia', 'London', 'New York']
 
 /** Display name for a session — displays Asia as 'Tokyo' matching TradingView. */

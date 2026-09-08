@@ -38,6 +38,7 @@ import {
 } from 'lightweight-charts'
 import {
   AVWAP_CANDLE_FETCH_CALENDAR_DAYS,
+  activeDeskSessionsAt,
   computeSessionHighlightSpans,
   projectSessionHighlightRects,
   paintSessionHighlightOverlay,
@@ -5884,9 +5885,11 @@ export function TradingChart({
     const fetchGen = ++candleFetchGenRef.current
     let sseHealthy = false
 
-    /** Live quote stream active during cash/focus hours */
+    /** Live quote stream active during cash/focus hours and active sessions (Asia, London, NY) */
     const tipOpen = () =>
-      tipStreamActive && isChartStreamAllowed(instrument).open
+      tipStreamActive &&
+      (isChartStreamAllowed(instrument).open ||
+        activeDeskSessionsAt(Math.floor(Date.now() / 1000)).length > 0)
 
     const toChartCandle = (bar: OHLCV) => ({
       time: toChartTime(bar.time as number, chartTzRef.current) as UTCTimestamp,

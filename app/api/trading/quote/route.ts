@@ -5,7 +5,8 @@
  */
 
 import { NextResponse } from 'next/server'
-import { getDayPreviousClose } from '@/lib/yahoo/quote'
+import { getDayPreviousClose, getYahooQuote } from '@/lib/yahoo/quote'
+import { activeDeskSessionsAt } from '@/lib/chart/sessionVwap'
 import { getOandaPrice } from '@/lib/oanda/pricing'
 import {
   applyCmeBasis,
@@ -86,72 +87,90 @@ export async function GET(request: Request) {
       'Cache-Control': 'no-store, no-cache, must-revalidate',
     }
 
-    // Focus window only (open − 30m → cash close) — no overnight/pre-focus OANDA burn
+    // Focus window OR active desk session (Asia, London, NY) — live CME futures quotes
     const stream = isChartStreamAllowed(instrument)
-    if (!stream.open) {
+    const active = activeDeskSessionsAt(Math.floor(Date.now() / 1000))
+    if (!stream.open && active.length === 0) {
       return NextResponse.json(
         { error: stream.reason, instrument, price: null, frozen: true },
         { status: 200, headers }
       )
     }
 
-    const oanda = await getOandaPrice(instrument)
+    // 1. Try OANDA with CME basis if available and configured
+    try {
+      const oanda = await getOandaPrice(instrument)
+      const cachedBasis = getCmeBasis(instrument)
+      if (oanda?.price && oanda.price > 0 && cachedBasis != null) {
+        if (getCmeBasis(instrument, CME_BASIS_REFRESH_MS) == null) {
+          void warmCmeBasis(instrument)
+        }
+        const price = applyCmeBasis(oanda.price, cachedBasis)
+        const previous_close = getDayPreviousClose(instrument) ?? price
+        const change = price - previous_close
+        const change_pct = previous_close ? (change / previous_close) * 100 : 0
 
-    // Warm hub + recent basis: shift the live mid and answer without a Yahoo hop.
-    const cachedBasis = getCmeBasis(instrument)
-    if (oanda?.price && oanda.price > 0 && cachedBasis != null) {
-      if (getCmeBasis(instrument, CME_BASIS_REFRESH_MS) == null) {
-        void warmCmeBasis(instrument)
+        return NextResponse.json(
+          {
+            instrument,
+            source: 'cme',
+            price,
+            bid: oanda.bid ? applyCmeBasis(oanda.bid, cachedBasis) : undefined,
+            ask: oanda.ask ? applyCmeBasis(oanda.ask, cachedBasis) : undefined,
+            change,
+            change_pct,
+            previous_close,
+            timestamp: oanda.timestamp,
+          },
+          { headers }
+        )
       }
-      const price = applyCmeBasis(oanda.price, cachedBasis)
-      const previous_close = getDayPreviousClose(instrument) ?? price
-      const change = price - previous_close
-      const change_pct = previous_close ? (change / previous_close) * 100 : 0
 
+      const basis = await warmCmeBasis(instrument)
+      const shift = basis ?? getLastKnownCmeBasis(instrument)
+      if (oanda?.price && oanda.price > 0 && shift != null) {
+        const price = applyCmeBasis(oanda.price, shift)
+        const previous_close = getDayPreviousClose(instrument) ?? price
+        const change = price - previous_close
+        const change_pct = previous_close ? (change / previous_close) * 100 : 0
+
+        return NextResponse.json(
+          {
+            instrument,
+            source: 'cme',
+            price,
+            bid: oanda.bid ? applyCmeBasis(oanda.bid, shift) : undefined,
+            ask: oanda.ask ? applyCmeBasis(oanda.ask, shift) : undefined,
+            change,
+            change_pct,
+            previous_close,
+            timestamp: oanda.timestamp,
+          },
+          { headers }
+        )
+      }
+    } catch {
+      /* fallback to direct CME */
+    }
+
+    // 2. Direct CME futures quote from exchange feed (MYM, MNQ, NKD, MGC, CL)
+    const yq = await getYahooQuote(instrument)
+    if (yq?.price && yq.price > 0) {
+      const price = yq.price
+      const previous_close = yq.previous_close || price
+      const change = yq.change || (price - previous_close)
+      const change_pct = yq.change_pct || (previous_close ? (change / previous_close) * 100 : 0)
       return NextResponse.json(
         {
           instrument,
           source: 'cme',
           price,
-          bid: oanda.bid ? applyCmeBasis(oanda.bid, cachedBasis) : undefined,
-          ask: oanda.ask ? applyCmeBasis(oanda.ask, cachedBasis) : undefined,
+          bid: price,
+          ask: price,
           change,
           change_pct,
           previous_close,
-          timestamp: oanda.timestamp,
-        },
-        { headers }
-      )
-    }
-
-    // Cold basis — pair delayed CME last with a same-age OANDA mid, never
-    // display the 10-minute-old futures print as the live tip.
-    const basis = await warmCmeBasis(instrument)
-    const shift = basis ?? getLastKnownCmeBasis(instrument)
-
-    if (oanda?.price && oanda.price > 0) {
-      if (shift == null && (instrument === 'GOLD' || instrument === 'CRUDE')) {
-        return NextResponse.json(
-          { error: 'Waiting for CME basis', instrument, price: null },
-          { status: 200, headers }
-        )
-      }
-      const price = applyCmeBasis(oanda.price, shift)
-      const previous_close = getDayPreviousClose(instrument) ?? price
-      const change = price - previous_close
-      const change_pct = previous_close ? (change / previous_close) * 100 : 0
-
-      return NextResponse.json(
-        {
-          instrument,
-          source: shift != null ? 'cme' : 'oanda',
-          price,
-          bid: oanda.bid ? applyCmeBasis(oanda.bid, shift) : undefined,
-          ask: oanda.ask ? applyCmeBasis(oanda.ask, shift) : undefined,
-          change,
-          change_pct,
-          previous_close,
-          timestamp: oanda.timestamp,
+          timestamp: yq.timestamp || Math.floor(Date.now() / 1000),
         },
         { headers }
       )
