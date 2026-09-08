@@ -1,19 +1,15 @@
-import { createBrowserClient } from '@supabase/ssr'
-import { assertSupabasePublicEnv } from '@/lib/supabase/env'
+import { createMockSupabaseClient } from '@/lib/supabase/mockClient'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 /**
- * Create Supabase client for client-side use (browser components)
- * Singleton pattern ensures only one instance
+ * Browser-side client: returns zero-network local mock client.
  */
-let supabaseClient: ReturnType<typeof createBrowserClient> | null = null
+let mockInstance: SupabaseClient<any, 'public', any> | null = null
 
-export function createClient() {
-  if (supabaseClient) {
-    return supabaseClient
+export function createClient(): SupabaseClient<any, 'public', any> {
+  if (!mockInstance) {
+    mockInstance = createMockSupabaseClient()
   }
-
-  const { url, anonKey } = assertSupabasePublicEnv()
-  supabaseClient = createBrowserClient(url, anonKey)
-
-  return supabaseClient
+  return mockInstance
 }
+

@@ -1,0 +1,5644 @@
+{
+  "NASDAQ": [
+    {
+      "time": 1773007200,
+      "open": 24500.0,
+      "high": 24500.0,
+      "low": 24167.0,
+      "close": 24214.5,
+      "volume": 171524,
+      "contract": "MNQH6"
+    },
+    {
+      "time": 1773014400,
+      "open": 24215.25,
+      "high": 25055.0,
+      "low": 23999.0,
+      "close": 24881.75,
+      "volume": 2557038,
+      "contract": "MNQH6"
+    },
+    {
+      "time": 1773100800,
+      "open": 24881.5,
+      "high": 25217.75,
+      "low": 24832.5,
+      "close": 25015.75,
+      "volume": 2301467,
+      "contract": "MNQH6"
+    },
+    {
+      "time": 1773187200,
+      "open": 25016.5,
+      "high": 25180.0,
+      "low": 24732.5,
+      "close": 24788.0,
+      "volume": 1993652,
+      "contract": "MNQH6"
+    },
+    {
+      "time": 1773273600,
+      "open": 24787.75,
+      "high": 24929.0,
+      "low": 24517.0,
+      "close": 24528.75,
+      "volume": 2141402,
+      "contract": "MNQH6"
+    },
+    {
+      "time": 1773360000,
+      "open": 24529.0,
+      "high": 24805.0,
+      "low": 24333.75,
+      "close": 24335.25,
+      "volume": 2270104,
+      "contract": "MNQH6"
+    },
+    {
+      "time": 1773612000,
+      "open": 24287.75,
+      "high": 24495.75,
+      "low": 24270.0,
+      "close": 24440.5,
+      "volume": 86168,
+      "contract": "MNQH6"
+    },
+    {
+      "time": 1773619200,
+      "open": 24650.25,
+      "high": 25032.75,
+      "low": 24646.25,
+      "close": 24880.5,
+      "volume": 970873,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1773705600,
+      "open": 24880.75,
+      "high": 25114.5,
+      "low": 24729.0,
+      "close": 25004.75,
+      "volume": 1332334,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1773792000,
+      "open": 25004.25,
+      "high": 25210.75,
+      "low": 24560.5,
+      "close": 24616.75,
+      "volume": 1674662,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1773878400,
+      "open": 24617.5,
+      "high": 24725.25,
+      "low": 24324.25,
+      "close": 24620.0,
+      "volume": 2299758,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1773964800,
+      "open": 24620.25,
+      "high": 24660.75,
+      "low": 23970.75,
+      "close": 24217.0,
+      "volume": 1982402,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1774216800,
+      "open": 23914.0,
+      "high": 24095.75,
+      "low": 23888.0,
+      "close": 24006.0,
+      "volume": 126387,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1774224000,
+      "open": 24006.75,
+      "high": 24763.5,
+      "low": 23772.75,
+      "close": 24456.25,
+      "volume": 2287322,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1774310400,
+      "open": 24454.75,
+      "high": 24547.75,
+      "low": 24134.75,
+      "close": 24413.0,
+      "volume": 2225757,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1774396800,
+      "open": 24414.0,
+      "high": 24540.0,
+      "low": 24283.75,
+      "close": 24322.5,
+      "volume": 1980670,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1774483200,
+      "open": 24323.0,
+      "high": 24421.25,
+      "low": 23762.0,
+      "close": 23876.75,
+      "volume": 2159610,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1774569600,
+      "open": 23877.0,
+      "high": 23975.75,
+      "low": 23231.0,
+      "close": 23255.0,
+      "volume": 1871134,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1774821600,
+      "open": 23191.5,
+      "high": 23242.0,
+      "low": 23108.75,
+      "close": 23128.0,
+      "volume": 118231,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1774828800,
+      "open": 23127.5,
+      "high": 23580.0,
+      "low": 23021.0,
+      "close": 23044.75,
+      "volume": 1988724,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1774915200,
+      "open": 23045.25,
+      "high": 24045.75,
+      "low": 22960.5,
+      "close": 24037.0,
+      "volume": 2524691,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1775001600,
+      "open": 24036.25,
+      "high": 24349.0,
+      "low": 23956.0,
+      "close": 24183.25,
+      "volume": 1956817,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1775088000,
+      "open": 24183.75,
+      "high": 24267.75,
+      "low": 23666.5,
+      "close": 24212.75,
+      "volume": 2268948,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1775174400,
+      "open": 24214.0,
+      "high": 24255.5,
+      "low": 24105.75,
+      "close": 24132.25,
+      "volume": 191608,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1775426400,
+      "open": 24093.25,
+      "high": 24100.0,
+      "low": 23981.0,
+      "close": 24092.0,
+      "volume": 105225,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1775433600,
+      "open": 24091.25,
+      "high": 24453.0,
+      "low": 24087.25,
+      "close": 24300.25,
+      "volume": 1701627,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1775520000,
+      "open": 24299.25,
+      "high": 25086.75,
+      "low": 23941.5,
+      "close": 25050.75,
+      "volume": 2660504,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1775606400,
+      "open": 25050.25,
+      "high": 25257.25,
+      "low": 24926.5,
+      "close": 25026.0,
+      "volume": 2079182,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1775692800,
+      "open": 25026.5,
+      "high": 25273.25,
+      "low": 24953.0,
+      "close": 25224.0,
+      "volume": 1750298,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1775779200,
+      "open": 25224.5,
+      "high": 25393.5,
+      "low": 25203.25,
+      "close": 25333.0,
+      "volume": 1480987,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1776031200,
+      "open": 25004.25,
+      "high": 25020.0,
+      "low": 24914.5,
+      "close": 24984.0,
+      "volume": 126338,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1776038400,
+      "open": 24983.75,
+      "high": 25618.75,
+      "low": 24949.25,
+      "close": 25585.5,
+      "volume": 1659769,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1776124800,
+      "open": 25585.25,
+      "high": 26037.75,
+      "low": 25559.5,
+      "close": 26018.5,
+      "volume": 1499771,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1776211200,
+      "open": 26018.25,
+      "high": 26415.5,
+      "low": 25934.5,
+      "close": 26407.0,
+      "volume": 1599968,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1776297600,
+      "open": 26407.25,
+      "high": 26562.75,
+      "low": 26275.75,
+      "close": 26479.75,
+      "volume": 1873465,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1776384000,
+      "open": 26479.75,
+      "high": 26883.0,
+      "low": 26443.25,
+      "close": 26842.0,
+      "volume": 1870941,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1776636000,
+      "open": 26603.25,
+      "high": 26682.25,
+      "low": 26534.75,
+      "close": 26658.0,
+      "volume": 96059,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1776643200,
+      "open": 26658.25,
+      "high": 26826.0,
+      "low": 26569.0,
+      "close": 26797.0,
+      "volume": 1638087,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1776729600,
+      "open": 26797.25,
+      "high": 26902.0,
+      "low": 26551.75,
+      "close": 26773.75,
+      "volume": 2112110,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1776816000,
+      "open": 26774.0,
+      "high": 27138.0,
+      "low": 26768.5,
+      "close": 27096.25,
+      "volume": 1607086,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1776902400,
+      "open": 27095.5,
+      "high": 27156.0,
+      "low": 26680.0,
+      "close": 27080.75,
+      "volume": 2317350,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1776988800,
+      "open": 27081.0,
+      "high": 27462.75,
+      "low": 27015.25,
+      "close": 27440.75,
+      "volume": 1832275,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1777240800,
+      "open": 27404.0,
+      "high": 27420.75,
+      "low": 27343.75,
+      "close": 27384.75,
+      "volume": 64389,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1777248000,
+      "open": 27384.75,
+      "high": 27542.0,
+      "low": 27298.0,
+      "close": 27489.5,
+      "volume": 1585287,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1777334400,
+      "open": 27490.0,
+      "high": 27512.5,
+      "low": 27006.25,
+      "close": 27246.25,
+      "volume": 2031100,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1777420800,
+      "open": 27246.75,
+      "high": 27556.75,
+      "low": 27089.0,
+      "close": 27551.25,
+      "volume": 1854271,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1777507200,
+      "open": 27552.0,
+      "high": 27648.0,
+      "low": 27163.0,
+      "close": 27593.75,
+      "volume": 2248209,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1777593600,
+      "open": 27594.25,
+      "high": 27917.5,
+      "low": 27535.0,
+      "close": 27782.75,
+      "volume": 1652289,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1777845600,
+      "open": 27888.0,
+      "high": 27926.25,
+      "low": 27814.75,
+      "close": 27823.75,
+      "volume": 72877,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1777852800,
+      "open": 27823.75,
+      "high": 27966.5,
+      "low": 27614.25,
+      "close": 27746.0,
+      "volume": 1979072,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1777939200,
+      "open": 27746.75,
+      "high": 28464.0,
+      "low": 27740.25,
+      "close": 28370.0,
+      "volume": 1516586,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1778025600,
+      "open": 28369.5,
+      "high": 28800.0,
+      "low": 28248.25,
+      "close": 28670.5,
+      "volume": 1932433,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1778112000,
+      "open": 28670.0,
+      "high": 28945.0,
+      "low": 28542.0,
+      "close": 28679.5,
+      "volume": 2330691,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1778198400,
+      "open": 28679.75,
+      "high": 29383.25,
+      "low": 28679.75,
+      "close": 29335.5,
+      "volume": 1681881,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1778450400,
+      "open": 29294.5,
+      "high": 29347.25,
+      "low": 29222.25,
+      "close": 29304.25,
+      "volume": 89006,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1778457600,
+      "open": 29304.25,
+      "high": 29480.5,
+      "low": 29247.0,
+      "close": 29428.0,
+      "volume": 1899847,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1778544000,
+      "open": 29428.0,
+      "high": 29428.75,
+      "low": 28741.25,
+      "close": 29082.0,
+      "volume": 2367565,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1778630400,
+      "open": 29082.0,
+      "high": 29648.75,
+      "low": 29056.25,
+      "close": 29632.25,
+      "volume": 2072449,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1778716800,
+      "open": 29631.75,
+      "high": 29783.75,
+      "low": 29448.25,
+      "close": 29687.75,
+      "volume": 2204569,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1778803200,
+      "open": 29687.5,
+      "high": 29727.5,
+      "low": 29089.5,
+      "close": 29172.75,
+      "volume": 2788140,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1779055200,
+      "open": 29135.25,
+      "high": 29283.75,
+      "low": 29011.25,
+      "close": 29117.25,
+      "volume": 165557,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1779062400,
+      "open": 29118.0,
+      "high": 29419.75,
+      "low": 28814.25,
+      "close": 29135.0,
+      "volume": 2685813,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1779148800,
+      "open": 29134.75,
+      "high": 29190.0,
+      "low": 28663.0,
+      "close": 28950.5,
+      "volume": 2717620,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1779235200,
+      "open": 28949.5,
+      "high": 29397.0,
+      "low": 28796.0,
+      "close": 29192.25,
+      "volume": 2457447,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1779321600,
+      "open": 29190.5,
+      "high": 29579.25,
+      "low": 29127.25,
+      "close": 29550.5,
+      "volume": 2499873,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1779408000,
+      "open": 29550.5,
+      "high": 29747.75,
+      "low": 29437.5,
+      "close": 29520.0,
+      "volume": 1950207,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1779660000,
+      "open": 29675.75,
+      "high": 29882.5,
+      "low": 29672.0,
+      "close": 29844.0,
+      "volume": 82392,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1779667200,
+      "open": 29842.5,
+      "high": 29995.0,
+      "low": 29826.5,
+      "close": 29878.5,
+      "volume": 592635,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1779753600,
+      "open": 29879.25,
+      "high": 30119.0,
+      "low": 29743.0,
+      "close": 30099.25,
+      "volume": 2046227,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1779840000,
+      "open": 30099.5,
+      "high": 30380.0,
+      "low": 29876.0,
+      "close": 29979.75,
+      "volume": 2425794,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1779926400,
+      "open": 29978.75,
+      "high": 30364.75,
+      "low": 29763.25,
+      "close": 30301.25,
+      "volume": 2119003,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1780012800,
+      "open": 30301.0,
+      "high": 30535.75,
+      "low": 30216.25,
+      "close": 30386.75,
+      "volume": 2257718,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1780264800,
+      "open": 30416.5,
+      "high": 30486.0,
+      "low": 30360.5,
+      "close": 30477.5,
+      "volume": 77993,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1780272000,
+      "open": 30477.75,
+      "high": 30692.0,
+      "low": 30291.0,
+      "close": 30469.25,
+      "volume": 2171086,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1780358400,
+      "open": 30469.5,
+      "high": 30763.5,
+      "low": 30317.75,
+      "close": 30707.25,
+      "volume": 2083368,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1780444800,
+      "open": 30707.5,
+      "high": 30807.75,
+      "low": 30367.75,
+      "close": 30394.75,
+      "volume": 2628771,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1780531200,
+      "open": 30393.25,
+      "high": 30603.25,
+      "low": 30152.25,
+      "close": 30264.25,
+      "volume": 2730524,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1780617600,
+      "open": 30264.5,
+      "high": 30264.5,
+      "low": 28778.5,
+      "close": 28828.25,
+      "volume": 3744768,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1780869600,
+      "open": 28843.5,
+      "high": 29103.75,
+      "low": 28821.0,
+      "close": 29085.5,
+      "volume": 191608,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1780876800,
+      "open": 29085.25,
+      "high": 29743.0,
+      "low": 28972.5,
+      "close": 29424.5,
+      "volume": 3020685,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1780963200,
+      "open": 29424.5,
+      "high": 29847.0,
+      "low": 28227.25,
+      "close": 29065.0,
+      "volume": 4332102,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1781049600,
+      "open": 29065.25,
+      "high": 29251.0,
+      "low": 28264.25,
+      "close": 28364.25,
+      "volume": 3742154,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1781136000,
+      "open": 28365.0,
+      "high": 29593.0,
+      "low": 28335.0,
+      "close": 29578.0,
+      "volume": 3553735,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1781222400,
+      "open": 29577.75,
+      "high": 29759.25,
+      "low": 29231.25,
+      "close": 29677.0,
+      "volume": 2437317,
+      "contract": "MNQM6"
+    },
+    {
+      "time": 1781474400,
+      "open": 30100.0,
+      "high": 30395.25,
+      "low": 30100.0,
+      "close": 30350.25,
+      "volume": 120734,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1781481600,
+      "open": 30350.0,
+      "high": 30918.5,
+      "low": 30339.0,
+      "close": 30835.25,
+      "volume": 1663980,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1781568000,
+      "open": 30834.5,
+      "high": 30975.5,
+      "low": 30273.75,
+      "close": 30329.5,
+      "volume": 2773470,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1781654400,
+      "open": 30330.0,
+      "high": 30584.25,
+      "low": 29922.0,
+      "close": 30313.5,
+      "volume": 3117376,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1781740800,
+      "open": 30313.5,
+      "high": 30783.25,
+      "low": 30284.0,
+      "close": 30691.25,
+      "volume": 2558273,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1781827200,
+      "open": 30691.0,
+      "high": 30705.0,
+      "low": 30388.0,
+      "close": 30651.0,
+      "volume": 792681,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1782079200,
+      "open": 30580.75,
+      "high": 30616.75,
+      "low": 30336.75,
+      "close": 30354.0,
+      "volume": 164727,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1782086400,
+      "open": 30353.75,
+      "high": 30967.75,
+      "low": 30347.75,
+      "close": 30575.5,
+      "volume": 2745356,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1782172800,
+      "open": 30574.75,
+      "high": 30635.0,
+      "low": 29577.25,
+      "close": 29747.5,
+      "volume": 3599295,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1782259200,
+      "open": 29746.75,
+      "high": 30169.0,
+      "low": 29263.0,
+      "close": 30096.25,
+      "volume": 3593548,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1782345600,
+      "open": 30096.25,
+      "high": 30264.25,
+      "low": 29296.5,
+      "close": 29706.0,
+      "volume": 3746062,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1782432000,
+      "open": 29706.0,
+      "high": 29774.0,
+      "low": 29160.0,
+      "close": 29290.0,
+      "volume": 3154642,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1782684000,
+      "open": 29280.5,
+      "high": 29684.75,
+      "low": 29280.0,
+      "close": 29619.25,
+      "volume": 160342,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1782691200,
+      "open": 29620.0,
+      "high": 30069.0,
+      "low": 29274.0,
+      "close": 30039.75,
+      "volume": 3083339,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1782777600,
+      "open": 30039.75,
+      "high": 30600.0,
+      "low": 29935.25,
+      "close": 30533.0,
+      "volume": 2397205,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1782864000,
+      "open": 30533.0,
+      "high": 30555.75,
+      "low": 30009.25,
+      "close": 30045.5,
+      "volume": 2802504,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1782950400,
+      "open": 30045.5,
+      "high": 30319.75,
+      "low": 29328.5,
+      "close": 29600.75,
+      "volume": 3968825,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1783036800,
+      "open": 29600.25,
+      "high": 29956.0,
+      "low": 29522.5,
+      "close": 29903.75,
+      "volume": 640890,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1783288800,
+      "open": 29936.75,
+      "high": 30010.0,
+      "low": 29860.5,
+      "close": 29985.0,
+      "volume": 114712,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1783296000,
+      "open": 29985.25,
+      "high": 30094.0,
+      "low": 29683.25,
+      "close": 29852.25,
+      "volume": 2519384,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1783382400,
+      "open": 29851.5,
+      "high": 29916.75,
+      "low": 29209.75,
+      "close": 29300.5,
+      "volume": 3242628,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1783468800,
+      "open": 29301.0,
+      "high": 29558.0,
+      "low": 28910.25,
+      "close": 29492.0,
+      "volume": 3385511,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1783555200,
+      "open": 29492.0,
+      "high": 29993.25,
+      "low": 29396.0,
+      "close": 29932.75,
+      "volume": 2583958,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1783641600,
+      "open": 29932.25,
+      "high": 30076.75,
+      "low": 29677.5,
+      "close": 30069.0,
+      "volume": 2328614,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1783893600,
+      "open": 29956.75,
+      "high": 29979.75,
+      "low": 29843.75,
+      "close": 29893.75,
+      "volume": 115087,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1783900800,
+      "open": 29892.25,
+      "high": 30042.5,
+      "low": 29327.5,
+      "close": 29421.25,
+      "volume": 2886471,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1783987200,
+      "open": 29422.0,
+      "high": 29922.0,
+      "low": 29303.25,
+      "close": 29888.75,
+      "volume": 2713592,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1784073600,
+      "open": 29888.25,
+      "high": 30062.5,
+      "low": 29396.75,
+      "close": 29690.5,
+      "volume": 2861011,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1784160000,
+      "open": 29690.75,
+      "high": 29796.5,
+      "low": 29060.5,
+      "close": 29096.5,
+      "volume": 2812593,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1784246400,
+      "open": 29096.25,
+      "high": 29124.0,
+      "low": 28408.25,
+      "close": 28768.75,
+      "volume": 3290572,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1784498400,
+      "open": 28747.5,
+      "high": 28877.0,
+      "low": 28706.75,
+      "close": 28869.5,
+      "volume": 149447,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1784505600,
+      "open": 28869.25,
+      "high": 29192.5,
+      "low": 28700.0,
+      "close": 28779.75,
+      "volume": 2739023,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1784592000,
+      "open": 28778.25,
+      "high": 29363.5,
+      "low": 28706.5,
+      "close": 29298.0,
+      "volume": 2319196,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1784678400,
+      "open": 29298.25,
+      "high": 29342.5,
+      "low": 28961.25,
+      "close": 29142.75,
+      "volume": 2367448,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1784764800,
+      "open": 29143.0,
+      "high": 29283.0,
+      "low": 28432.5,
+      "close": 28679.25,
+      "volume": 3092225,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1784851200,
+      "open": 28681.0,
+      "high": 28725.0,
+      "low": 28212.5,
+      "close": 28306.75,
+      "volume": 2994398,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1785103200,
+      "open": 28501.5,
+      "high": 28733.5,
+      "low": 28501.5,
+      "close": 28728.25,
+      "volume": 124451,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1785110400,
+      "open": 28729.0,
+      "high": 28763.75,
+      "low": 27938.5,
+      "close": 28163.25,
+      "volume": 3113482,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1785196800,
+      "open": 28164.5,
+      "high": 28195.0,
+      "low": 27603.25,
+      "close": 28102.75,
+      "volume": 2922950,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1785283200,
+      "open": 28102.75,
+      "high": 28177.25,
+      "low": 27200.0,
+      "close": 27522.25,
+      "volume": 3375734,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1785369600,
+      "open": 27522.5,
+      "high": 28445.75,
+      "low": 27337.0,
+      "close": 28423.5,
+      "volume": 2954613,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1785456000,
+      "open": 28422.0,
+      "high": 28725.75,
+      "low": 28079.75,
+      "close": 28284.0,
+      "volume": 2719419,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1785708000,
+      "open": 28567.5,
+      "high": 28642.0,
+      "low": 28541.5,
+      "close": 28613.5,
+      "volume": 117583,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1785715200,
+      "open": 28611.75,
+      "high": 28972.25,
+      "low": 28313.0,
+      "close": 28971.5,
+      "volume": 2324266,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1785801600,
+      "open": 28971.25,
+      "high": 29956.5,
+      "low": 28831.5,
+      "close": 29835.5,
+      "volume": 2645576,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1785888000,
+      "open": 29835.25,
+      "high": 30073.25,
+      "low": 29530.75,
+      "close": 29583.75,
+      "volume": 2680171,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1785974400,
+      "open": 29584.25,
+      "high": 29686.25,
+      "low": 29241.0,
+      "close": 29595.25,
+      "volume": 2831477,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1786060800,
+      "open": 29594.5,
+      "high": 29867.25,
+      "low": 29455.0,
+      "close": 29841.0,
+      "volume": 2378036,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1786312800,
+      "open": 29851.5,
+      "high": 29897.0,
+      "low": 29805.0,
+      "close": 29829.75,
+      "volume": 92150,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1786320000,
+      "open": 29829.25,
+      "high": 29985.0,
+      "low": 29677.75,
+      "close": 29703.5,
+      "volume": 2186265,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1786406400,
+      "open": 29703.0,
+      "high": 29887.0,
+      "low": 29533.5,
+      "close": 29662.5,
+      "volume": 2226246,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1786492800,
+      "open": 29662.0,
+      "high": 30001.5,
+      "low": 29625.0,
+      "close": 29805.25,
+      "volume": 2017196,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1786579200,
+      "open": 29805.0,
+      "high": 30273.25,
+      "low": 29796.5,
+      "close": 30203.25,
+      "volume": 1947701,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1786665600,
+      "open": 30203.25,
+      "high": 30287.25,
+      "low": 30025.0,
+      "close": 30154.75,
+      "volume": 1884259,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1786917600,
+      "open": 30168.5,
+      "high": 30228.0,
+      "low": 30166.25,
+      "close": 30215.0,
+      "volume": 53046,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1786924800,
+      "open": 30215.5,
+      "high": 30339.75,
+      "low": 30053.25,
+      "close": 30095.0,
+      "volume": 1934826,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1787011200,
+      "open": 30094.25,
+      "high": 30124.25,
+      "low": 29514.0,
+      "close": 29528.25,
+      "volume": 2539357,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1787097600,
+      "open": 29527.5,
+      "high": 29759.0,
+      "low": 29375.75,
+      "close": 29629.75,
+      "volume": 2737916,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1787184000,
+      "open": 29629.5,
+      "high": 29686.75,
+      "low": 29202.5,
+      "close": 29294.0,
+      "volume": 2634185,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1787270400,
+      "open": 29293.75,
+      "high": 29539.75,
+      "low": 29220.25,
+      "close": 29370.0,
+      "volume": 2007936,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1787522400,
+      "open": 29392.25,
+      "high": 29480.5,
+      "low": 29302.25,
+      "close": 29467.25,
+      "volume": 95153,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1787529600,
+      "open": 29467.5,
+      "high": 29472.75,
+      "low": 28947.75,
+      "close": 29095.5,
+      "volume": 2402570,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1787616000,
+      "open": 29095.75,
+      "high": 29420.0,
+      "low": 29016.75,
+      "close": 29210.25,
+      "volume": 2163608,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1787702400,
+      "open": 29210.5,
+      "high": 29653.75,
+      "low": 29095.5,
+      "close": 29647.5,
+      "volume": 2495992,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1787788800,
+      "open": 29647.0,
+      "high": 29707.5,
+      "low": 29402.25,
+      "close": 29602.0,
+      "volume": 2639930,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1787875200,
+      "open": 29601.75,
+      "high": 29811.75,
+      "low": 29437.0,
+      "close": 29509.5,
+      "volume": 2569726,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1788127200,
+      "open": 29535.0,
+      "high": 29543.5,
+      "low": 29288.75,
+      "close": 29289.25,
+      "volume": 156739,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1788134400,
+      "open": 29290.0,
+      "high": 29538.75,
+      "low": 29273.5,
+      "close": 29500.75,
+      "volume": 2231814,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1788220800,
+      "open": 29501.25,
+      "high": 29571.0,
+      "low": 29001.75,
+      "close": 29134.25,
+      "volume": 2552492,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1788307200,
+      "open": 29134.75,
+      "high": 29218.25,
+      "low": 28927.25,
+      "close": 29201.0,
+      "volume": 2183925,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1788393600,
+      "open": 29201.0,
+      "high": 29585.0,
+      "low": 29075.0,
+      "close": 29504.5,
+      "volume": 2316978,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1788480000,
+      "open": 29503.75,
+      "high": 29720.0,
+      "low": 29468.25,
+      "close": 29524.75,
+      "volume": 1923873,
+      "contract": "MNQU6"
+    },
+    {
+      "time": 1788732000,
+      "open": 29534.5,
+      "high": 29595.25,
+      "low": 29530.25,
+      "close": 29558.0,
+      "volume": 47347,
+      "contract": "MNQU6"
+    }
+  ],
+  "DOW": [
+    {
+      "time": 1773007200,
+      "open": 47242.0,
+      "high": 47242.0,
+      "low": 46402.0,
+      "close": 46658.0,
+      "volume": 9510,
+      "contract": "MYMH6"
+    },
+    {
+      "time": 1773014400,
+      "open": 46656.0,
+      "high": 47922.0,
+      "low": 46333.0,
+      "close": 47578.0,
+      "volume": 275358,
+      "contract": "MYMH6"
+    },
+    {
+      "time": 1773100800,
+      "open": 47575.0,
+      "high": 48265.0,
+      "low": 47475.0,
+      "close": 47784.0,
+      "volume": 239281,
+      "contract": "MYMH6"
+    },
+    {
+      "time": 1773187200,
+      "open": 47787.0,
+      "high": 47970.0,
+      "low": 46949.0,
+      "close": 47060.0,
+      "volume": 198784,
+      "contract": "MYMH6"
+    },
+    {
+      "time": 1773273600,
+      "open": 47063.0,
+      "high": 47258.0,
+      "low": 46703.0,
+      "close": 46773.0,
+      "volume": 206213,
+      "contract": "MYMH6"
+    },
+    {
+      "time": 1773360000,
+      "open": 46770.0,
+      "high": 47161.0,
+      "low": 46459.0,
+      "close": 46513.0,
+      "volume": 174523,
+      "contract": "MYMH6"
+    },
+    {
+      "time": 1773612000,
+      "open": 46719.0,
+      "high": 47058.0,
+      "low": 46651.0,
+      "close": 46976.0,
+      "volume": 2944,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1773619200,
+      "open": 46969.0,
+      "high": 47522.0,
+      "low": 46903.0,
+      "close": 47259.0,
+      "volume": 110786,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1773705600,
+      "open": 47262.0,
+      "high": 47766.0,
+      "low": 47008.0,
+      "close": 47283.0,
+      "volume": 122963,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1773792000,
+      "open": 47281.0,
+      "high": 47638.0,
+      "low": 46374.0,
+      "close": 46475.0,
+      "volume": 163721,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1773878400,
+      "open": 46477.0,
+      "high": 46626.0,
+      "low": 46035.0,
+      "close": 46439.0,
+      "volume": 250129,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1773964800,
+      "open": 46438.0,
+      "high": 46545.0,
+      "low": 45662.0,
+      "close": 46104.0,
+      "volume": 201447,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1774216800,
+      "open": 45619.0,
+      "high": 45965.0,
+      "low": 45508.0,
+      "close": 45829.0,
+      "volume": 6454,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1774224000,
+      "open": 45833.0,
+      "high": 47205.0,
+      "low": 45453.0,
+      "close": 46578.0,
+      "volume": 295375,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1774310400,
+      "open": 46576.0,
+      "high": 46907.0,
+      "low": 46022.0,
+      "close": 46734.0,
+      "volume": 242583,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1774396800,
+      "open": 46735.0,
+      "high": 47037.0,
+      "low": 46479.0,
+      "close": 46645.0,
+      "volume": 202813,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1774483200,
+      "open": 46648.0,
+      "high": 46841.0,
+      "low": 46172.0,
+      "close": 46442.0,
+      "volume": 204760,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1774569600,
+      "open": 46443.0,
+      "high": 46503.0,
+      "low": 45271.0,
+      "close": 45308.0,
+      "volume": 193851,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1774821600,
+      "open": 45249.0,
+      "high": 45257.0,
+      "low": 45051.0,
+      "close": 45111.0,
+      "volume": 7968,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1774828800,
+      "open": 45120.0,
+      "high": 45916.0,
+      "low": 45065.0,
+      "close": 45403.0,
+      "volume": 186803,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1774915200,
+      "open": 45395.0,
+      "high": 46660.0,
+      "low": 45285.0,
+      "close": 46638.0,
+      "volume": 253795,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1775001600,
+      "open": 46638.0,
+      "high": 47080.0,
+      "low": 46583.0,
+      "close": 46801.0,
+      "volume": 192487,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1775088000,
+      "open": 46803.0,
+      "high": 46986.0,
+      "low": 46076.0,
+      "close": 46742.0,
+      "volume": 226384,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1775174400,
+      "open": 46744.0,
+      "high": 46900.0,
+      "low": 46584.0,
+      "close": 46636.0,
+      "volume": 14799,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1775426400,
+      "open": 46576.0,
+      "high": 46576.0,
+      "low": 46363.0,
+      "close": 46476.0,
+      "volume": 5671,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1775433600,
+      "open": 46478.0,
+      "high": 47052.0,
+      "low": 46467.0,
+      "close": 46927.0,
+      "volume": 142805,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1775520000,
+      "open": 46924.0,
+      "high": 47819.0,
+      "low": 46424.0,
+      "close": 47736.0,
+      "volume": 235352,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1775606400,
+      "open": 47741.0,
+      "high": 48261.0,
+      "low": 47641.0,
+      "close": 48091.0,
+      "volume": 198445,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1775692800,
+      "open": 48093.0,
+      "high": 48555.0,
+      "low": 47900.0,
+      "close": 48376.0,
+      "volume": 132101,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1775779200,
+      "open": 48376.0,
+      "high": 48519.0,
+      "low": 48072.0,
+      "close": 48180.0,
+      "volume": 105430,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1776031200,
+      "open": 47900.0,
+      "high": 47900.0,
+      "low": 47534.0,
+      "close": 47634.0,
+      "volume": 7355,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1776038400,
+      "open": 47635.0,
+      "high": 48462.0,
+      "low": 47598.0,
+      "close": 48423.0,
+      "volume": 145880,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1776124800,
+      "open": 48421.0,
+      "high": 48808.0,
+      "low": 48344.0,
+      "close": 48758.0,
+      "volume": 128998,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1776211200,
+      "open": 48754.0,
+      "high": 48910.0,
+      "low": 48482.0,
+      "close": 48735.0,
+      "volume": 136161,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1776297600,
+      "open": 48737.0,
+      "high": 48871.0,
+      "low": 48529.0,
+      "close": 48851.0,
+      "volume": 123057,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1776384000,
+      "open": 48851.0,
+      "high": 49924.0,
+      "low": 48818.0,
+      "close": 49665.0,
+      "volume": 175636,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1776636000,
+      "open": 49348.0,
+      "high": 49348.0,
+      "low": 49087.0,
+      "close": 49173.0,
+      "volume": 7194,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1776643200,
+      "open": 49172.0,
+      "high": 49741.0,
+      "low": 49140.0,
+      "close": 49707.0,
+      "volume": 118289,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1776729600,
+      "open": 49710.0,
+      "high": 50045.0,
+      "low": 49229.0,
+      "close": 49539.0,
+      "volume": 185065,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1776816000,
+      "open": 49543.0,
+      "high": 49809.0,
+      "low": 49417.0,
+      "close": 49493.0,
+      "volume": 132692,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1776902400,
+      "open": 49490.0,
+      "high": 49703.0,
+      "low": 49037.0,
+      "close": 49464.0,
+      "volume": 192198,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1776988800,
+      "open": 49465.0,
+      "high": 49599.0,
+      "low": 49239.0,
+      "close": 49423.0,
+      "volume": 135184,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1777240800,
+      "open": 49389.0,
+      "high": 49390.0,
+      "low": 49229.0,
+      "close": 49280.0,
+      "volume": 3195,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1777248000,
+      "open": 49284.0,
+      "high": 49524.0,
+      "low": 49189.0,
+      "close": 49399.0,
+      "volume": 103256,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1777334400,
+      "open": 49398.0,
+      "high": 49550.0,
+      "low": 49230.0,
+      "close": 49380.0,
+      "volume": 121256,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1777420800,
+      "open": 49383.0,
+      "high": 49419.0,
+      "low": 48781.0,
+      "close": 48851.0,
+      "volume": 132322,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1777507200,
+      "open": 48856.0,
+      "high": 49944.0,
+      "low": 48607.0,
+      "close": 49902.0,
+      "volume": 167691,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1777593600,
+      "open": 49911.0,
+      "high": 50137.0,
+      "low": 49563.0,
+      "close": 49593.0,
+      "volume": 127673,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1777845600,
+      "open": 49701.0,
+      "high": 49801.0,
+      "low": 49675.0,
+      "close": 49698.0,
+      "volume": 3372,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1777852800,
+      "open": 49698.0,
+      "high": 49705.0,
+      "low": 49020.0,
+      "close": 49092.0,
+      "volume": 167378,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1777939200,
+      "open": 49097.0,
+      "high": 49554.0,
+      "low": 49060.0,
+      "close": 49494.0,
+      "volume": 117537,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1778025600,
+      "open": 49495.0,
+      "high": 50134.0,
+      "low": 49460.0,
+      "close": 49996.0,
+      "volume": 146613,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1778112000,
+      "open": 49994.0,
+      "high": 50238.0,
+      "low": 49583.0,
+      "close": 49718.0,
+      "volume": 164821,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1778198400,
+      "open": 49720.0,
+      "high": 49958.0,
+      "low": 49585.0,
+      "close": 49747.0,
+      "volume": 132516,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1778450400,
+      "open": 49684.0,
+      "high": 49684.0,
+      "low": 49472.0,
+      "close": 49557.0,
+      "volume": 4716,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1778457600,
+      "open": 49556.0,
+      "high": 49870.0,
+      "low": 49477.0,
+      "close": 49807.0,
+      "volume": 123022,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1778544000,
+      "open": 49805.0,
+      "high": 49924.0,
+      "low": 49396.0,
+      "close": 49815.0,
+      "volume": 156106,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1778630400,
+      "open": 49815.0,
+      "high": 49925.0,
+      "low": 49535.0,
+      "close": 49903.0,
+      "volume": 126137,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1778716800,
+      "open": 49900.0,
+      "high": 50292.0,
+      "low": 49872.0,
+      "close": 50113.0,
+      "volume": 156842,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1778803200,
+      "open": 50112.0,
+      "high": 50117.0,
+      "low": 49435.0,
+      "close": 49486.0,
+      "volume": 161280,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1779055200,
+      "open": 49488.0,
+      "high": 49554.0,
+      "low": 49373.0,
+      "close": 49449.0,
+      "volume": 4996,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1779062400,
+      "open": 49447.0,
+      "high": 49846.0,
+      "low": 49152.0,
+      "close": 49762.0,
+      "volume": 198408,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1779148800,
+      "open": 49759.0,
+      "high": 49844.0,
+      "low": 49325.0,
+      "close": 49487.0,
+      "volume": 168303,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1779235200,
+      "open": 49485.0,
+      "high": 50159.0,
+      "low": 49294.0,
+      "close": 49982.0,
+      "volume": 185416,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1779321600,
+      "open": 49983.0,
+      "high": 50475.0,
+      "low": 49773.0,
+      "close": 50454.0,
+      "volume": 192534,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1779408000,
+      "open": 50457.0,
+      "high": 50917.0,
+      "low": 50435.0,
+      "close": 50621.0,
+      "volume": 141694,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1779660000,
+      "open": 50761.0,
+      "high": 50961.0,
+      "low": 50761.0,
+      "close": 50908.0,
+      "volume": 4641,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1779667200,
+      "open": 50912.0,
+      "high": 51211.0,
+      "low": 50903.0,
+      "close": 51017.0,
+      "volume": 29050,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1779753600,
+      "open": 51022.0,
+      "high": 51028.0,
+      "low": 50420.0,
+      "close": 50594.0,
+      "volume": 114225,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1779840000,
+      "open": 50592.0,
+      "high": 50895.0,
+      "low": 50507.0,
+      "close": 50720.0,
+      "volume": 136186,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1779926400,
+      "open": 50719.0,
+      "high": 50856.0,
+      "low": 50386.0,
+      "close": 50735.0,
+      "volume": 121282,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1780012800,
+      "open": 50735.0,
+      "high": 51141.0,
+      "low": 50701.0,
+      "close": 51053.0,
+      "volume": 118511,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1780264800,
+      "open": 51121.0,
+      "high": 51124.0,
+      "low": 50995.0,
+      "close": 51108.0,
+      "volume": 2712,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1780272000,
+      "open": 51112.0,
+      "high": 51385.0,
+      "low": 50824.0,
+      "close": 50986.0,
+      "volume": 143757,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1780358400,
+      "open": 50991.0,
+      "high": 51443.0,
+      "low": 50842.0,
+      "close": 51400.0,
+      "volume": 123173,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1780444800,
+      "open": 51401.0,
+      "high": 51414.0,
+      "low": 50733.0,
+      "close": 50813.0,
+      "volume": 118920,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1780531200,
+      "open": 50812.0,
+      "high": 51752.0,
+      "low": 50752.0,
+      "close": 51636.0,
+      "volume": 146438,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1780617600,
+      "open": 51634.0,
+      "high": 51845.0,
+      "low": 50736.0,
+      "close": 50810.0,
+      "volume": 168355,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1780869600,
+      "open": 50807.0,
+      "high": 50910.0,
+      "low": 50623.0,
+      "close": 50857.0,
+      "volume": 9911,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1780876800,
+      "open": 50856.0,
+      "high": 51332.0,
+      "low": 50673.0,
+      "close": 50801.0,
+      "volume": 144443,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1780963200,
+      "open": 50797.0,
+      "high": 51316.0,
+      "low": 50262.0,
+      "close": 50808.0,
+      "volume": 215204,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1781049600,
+      "open": 50809.0,
+      "high": 50908.0,
+      "low": 49756.0,
+      "close": 49835.0,
+      "volume": 203474,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1781136000,
+      "open": 49837.0,
+      "high": 51018.0,
+      "low": 49825.0,
+      "close": 50959.0,
+      "volume": 186739,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1781222400,
+      "open": 50958.0,
+      "high": 51444.0,
+      "low": 50772.0,
+      "close": 51236.0,
+      "volume": 130098,
+      "contract": "MYMM6"
+    },
+    {
+      "time": 1781474400,
+      "open": 51743.0,
+      "high": 51968.0,
+      "low": 51721.0,
+      "close": 51942.0,
+      "volume": 3901,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1781481600,
+      "open": 51944.0,
+      "high": 52381.0,
+      "low": 51921.0,
+      "close": 52111.0,
+      "volume": 91840,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1781568000,
+      "open": 52107.0,
+      "high": 52639.0,
+      "low": 52093.0,
+      "close": 52514.0,
+      "volume": 108511,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1781654400,
+      "open": 52519.0,
+      "high": 52739.0,
+      "low": 51839.0,
+      "close": 52175.0,
+      "volume": 156467,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1781740800,
+      "open": 52177.0,
+      "high": 52379.0,
+      "low": 51965.0,
+      "close": 52006.0,
+      "volume": 126812,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1781827200,
+      "open": 52004.0,
+      "high": 52005.0,
+      "low": 51791.0,
+      "close": 51892.0,
+      "volume": 28034,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1782079200,
+      "open": 51890.0,
+      "high": 51890.0,
+      "low": 51710.0,
+      "close": 51761.0,
+      "volume": 6598,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1782086400,
+      "open": 51762.0,
+      "high": 52306.0,
+      "low": 51743.0,
+      "close": 52152.0,
+      "volume": 113921,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1782172800,
+      "open": 52150.0,
+      "high": 52282.0,
+      "low": 51692.0,
+      "close": 52090.0,
+      "volume": 150090,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1782259200,
+      "open": 52089.0,
+      "high": 52675.0,
+      "low": 51934.0,
+      "close": 52331.0,
+      "volume": 166958,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1782345600,
+      "open": 52330.0,
+      "high": 53093.0,
+      "low": 52218.0,
+      "close": 52390.0,
+      "volume": 201010,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1782432000,
+      "open": 52392.0,
+      "high": 52543.0,
+      "low": 52008.0,
+      "close": 52160.0,
+      "volume": 173008,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1782684000,
+      "open": 52189.0,
+      "high": 52452.0,
+      "low": 52164.0,
+      "close": 52402.0,
+      "volume": 4402,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1782691200,
+      "open": 52401.0,
+      "high": 52696.0,
+      "low": 52256.0,
+      "close": 52516.0,
+      "volume": 129838,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1782777600,
+      "open": 52517.0,
+      "high": 52764.0,
+      "low": 52383.0,
+      "close": 52576.0,
+      "volume": 112706,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1782864000,
+      "open": 52574.0,
+      "high": 53111.0,
+      "low": 52381.0,
+      "close": 52606.0,
+      "volume": 143176,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1782950400,
+      "open": 52607.0,
+      "high": 53228.0,
+      "low": 52550.0,
+      "close": 53218.0,
+      "volume": 164118,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1783036800,
+      "open": 53218.0,
+      "high": 53400.0,
+      "low": 53072.0,
+      "close": 53161.0,
+      "volume": 32561,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1783288800,
+      "open": 53185.0,
+      "high": 53261.0,
+      "low": 53138.0,
+      "close": 53257.0,
+      "volume": 2954,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1783296000,
+      "open": 53259.0,
+      "high": 53441.0,
+      "low": 52962.0,
+      "close": 53365.0,
+      "volume": 111512,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1783382400,
+      "open": 53363.0,
+      "high": 53659.0,
+      "low": 53079.0,
+      "close": 53137.0,
+      "volume": 143245,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1783468800,
+      "open": 53135.0,
+      "high": 53209.0,
+      "low": 52343.0,
+      "close": 52597.0,
+      "volume": 153936,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1783555200,
+      "open": 52595.0,
+      "high": 52866.0,
+      "low": 52502.0,
+      "close": 52748.0,
+      "volume": 115232,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1783641600,
+      "open": 52749.0,
+      "high": 52992.0,
+      "low": 52501.0,
+      "close": 52961.0,
+      "volume": 117364,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1783893600,
+      "open": 52848.0,
+      "high": 52873.0,
+      "low": 52751.0,
+      "close": 52806.0,
+      "volume": 4064,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1783900800,
+      "open": 52806.0,
+      "high": 53114.0,
+      "low": 52602.0,
+      "close": 52693.0,
+      "volume": 125314,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1783987200,
+      "open": 52695.0,
+      "high": 52981.0,
+      "low": 52255.0,
+      "close": 52864.0,
+      "volume": 164720,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1784073600,
+      "open": 52864.0,
+      "high": 53087.0,
+      "low": 52679.0,
+      "close": 52910.0,
+      "volume": 137176,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1784160000,
+      "open": 52907.0,
+      "high": 53108.0,
+      "low": 52610.0,
+      "close": 52689.0,
+      "volume": 148272,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1784246400,
+      "open": 52696.0,
+      "high": 52834.0,
+      "low": 52171.0,
+      "close": 52374.0,
+      "volume": 152959,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1784498400,
+      "open": 52299.0,
+      "high": 52366.0,
+      "low": 52242.0,
+      "close": 52353.0,
+      "volume": 3687,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1784505600,
+      "open": 52357.0,
+      "high": 52635.0,
+      "low": 51998.0,
+      "close": 52096.0,
+      "volume": 131121,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1784592000,
+      "open": 52093.0,
+      "high": 52591.0,
+      "low": 52035.0,
+      "close": 52427.0,
+      "volume": 113779,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1784678400,
+      "open": 52423.0,
+      "high": 52721.0,
+      "low": 52262.0,
+      "close": 52425.0,
+      "volume": 119509,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1784764800,
+      "open": 52426.0,
+      "high": 52513.0,
+      "low": 51731.0,
+      "close": 51883.0,
+      "volume": 139443,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1784851200,
+      "open": 51887.0,
+      "high": 52316.0,
+      "low": 51874.0,
+      "close": 52093.0,
+      "volume": 127556,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1785103200,
+      "open": 52294.0,
+      "high": 52470.0,
+      "low": 52283.0,
+      "close": 52451.0,
+      "volume": 4379,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1785110400,
+      "open": 52451.0,
+      "high": 52791.0,
+      "low": 52173.0,
+      "close": 52401.0,
+      "volume": 135720,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1785196800,
+      "open": 52405.0,
+      "high": 53106.0,
+      "low": 52289.0,
+      "close": 52968.0,
+      "volume": 147983,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1785283200,
+      "open": 52969.0,
+      "high": 53035.0,
+      "low": 51630.0,
+      "close": 51918.0,
+      "volume": 185816,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1785369600,
+      "open": 51918.0,
+      "high": 52502.0,
+      "low": 51734.0,
+      "close": 52481.0,
+      "volume": 120247,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1785456000,
+      "open": 52481.0,
+      "high": 52772.0,
+      "low": 52122.0,
+      "close": 52521.0,
+      "volume": 131816,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1785708000,
+      "open": 52740.0,
+      "high": 52877.0,
+      "low": 52740.0,
+      "close": 52813.0,
+      "volume": 3602,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1785715200,
+      "open": 52813.0,
+      "high": 53439.0,
+      "low": 52778.0,
+      "close": 53404.0,
+      "volume": 123780,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1785801600,
+      "open": 53407.0,
+      "high": 54422.0,
+      "low": 53301.0,
+      "close": 54349.0,
+      "volume": 153299,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1785888000,
+      "open": 54351.0,
+      "high": 54885.0,
+      "low": 54345.0,
+      "close": 54583.0,
+      "volume": 119200,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1785974400,
+      "open": 54584.0,
+      "high": 54678.0,
+      "low": 53954.0,
+      "close": 53998.0,
+      "volume": 112716,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1786060800,
+      "open": 54000.0,
+      "high": 54203.0,
+      "low": 53882.0,
+      "close": 54133.0,
+      "volume": 95156,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1786312800,
+      "open": 54112.0,
+      "high": 54125.0,
+      "low": 54003.0,
+      "close": 54003.0,
+      "volume": 2191,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1786320000,
+      "open": 54006.0,
+      "high": 54171.0,
+      "low": 53950.0,
+      "close": 54023.0,
+      "volume": 81463,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1786406400,
+      "open": 54024.0,
+      "high": 54336.0,
+      "low": 53854.0,
+      "close": 53902.0,
+      "volume": 88759,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1786492800,
+      "open": 53898.0,
+      "high": 54087.0,
+      "low": 53832.0,
+      "close": 53875.0,
+      "volume": 83462,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1786579200,
+      "open": 53878.0,
+      "high": 54162.0,
+      "low": 53712.0,
+      "close": 53954.0,
+      "volume": 103314,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1786665600,
+      "open": 53954.0,
+      "high": 54000.0,
+      "low": 53745.0,
+      "close": 53779.0,
+      "volume": 71526,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1786917600,
+      "open": 53785.0,
+      "high": 53833.0,
+      "low": 53782.0,
+      "close": 53816.0,
+      "volume": 1399,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1786924800,
+      "open": 53816.0,
+      "high": 53828.0,
+      "low": 53465.0,
+      "close": 53534.0,
+      "volume": 90702,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1787011200,
+      "open": 53533.0,
+      "high": 53588.0,
+      "low": 53311.0,
+      "close": 53400.0,
+      "volume": 100486,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1787097600,
+      "open": 53401.0,
+      "high": 53781.0,
+      "low": 53337.0,
+      "close": 53564.0,
+      "volume": 116373,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1787184000,
+      "open": 53560.0,
+      "high": 53590.0,
+      "low": 52812.0,
+      "close": 52873.0,
+      "volume": 108766,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1787270400,
+      "open": 52872.0,
+      "high": 53417.0,
+      "low": 52837.0,
+      "close": 53329.0,
+      "volume": 99283,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1787522400,
+      "open": 53336.0,
+      "high": 53389.0,
+      "low": 53291.0,
+      "close": 53389.0,
+      "volume": 2264,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1787529600,
+      "open": 53389.0,
+      "high": 53569.0,
+      "low": 53209.0,
+      "close": 53490.0,
+      "volume": 101176,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1787616000,
+      "open": 53492.0,
+      "high": 53797.0,
+      "low": 53423.0,
+      "close": 53609.0,
+      "volume": 87236,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1787702400,
+      "open": 53608.0,
+      "high": 53814.0,
+      "low": 53435.0,
+      "close": 53763.0,
+      "volume": 91337,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1787788800,
+      "open": 53762.0,
+      "high": 53775.0,
+      "low": 53368.0,
+      "close": 53581.0,
+      "volume": 97319,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1787875200,
+      "open": 53580.0,
+      "high": 53860.0,
+      "low": 53512.0,
+      "close": 53591.0,
+      "volume": 93594,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1788127200,
+      "open": 53658.0,
+      "high": 53677.0,
+      "low": 53424.0,
+      "close": 53436.0,
+      "volume": 3377,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1788134400,
+      "open": 53432.0,
+      "high": 53550.0,
+      "low": 53147.0,
+      "close": 53287.0,
+      "volume": 81854,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1788220800,
+      "open": 53288.0,
+      "high": 53343.0,
+      "low": 52746.0,
+      "close": 52837.0,
+      "volume": 106332,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1788307200,
+      "open": 52838.0,
+      "high": 53283.0,
+      "low": 52720.0,
+      "close": 53150.0,
+      "volume": 106116,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1788393600,
+      "open": 53149.0,
+      "high": 53826.0,
+      "low": 53112.0,
+      "close": 53744.0,
+      "volume": 115367,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1788480000,
+      "open": 53742.0,
+      "high": 53773.0,
+      "low": 53236.0,
+      "close": 53277.0,
+      "volume": 89839,
+      "contract": "MYMU6"
+    },
+    {
+      "time": 1788732000,
+      "open": 53257.0,
+      "high": 53326.0,
+      "low": 53251.0,
+      "close": 53317.0,
+      "volume": 1472,
+      "contract": "MYMU6"
+    }
+  ],
+  "GOLD": [
+    {
+      "time": 1773007200,
+      "open": 5186.2,
+      "high": 5209.6,
+      "low": 5050.1,
+      "close": 5083.9,
+      "volume": 71139,
+      "contract": "MGCJ6"
+    },
+    {
+      "time": 1773014400,
+      "open": 5083.4,
+      "high": 5166.0,
+      "low": 5020.8,
+      "close": 5149.1,
+      "volume": 401601,
+      "contract": "MGCJ6"
+    },
+    {
+      "time": 1773100800,
+      "open": 5149.2,
+      "high": 5248.7,
+      "low": 5133.6,
+      "close": 5204.5,
+      "volume": 344087,
+      "contract": "MGCJ6"
+    },
+    {
+      "time": 1773187200,
+      "open": 5204.5,
+      "high": 5231.2,
+      "low": 5135.6,
+      "close": 5140.7,
+      "volume": 300501,
+      "contract": "MGCJ6"
+    },
+    {
+      "time": 1773273600,
+      "open": 5140.3,
+      "high": 5197.9,
+      "low": 5058.1,
+      "close": 5101.2,
+      "volume": 336514,
+      "contract": "MGCJ6"
+    },
+    {
+      "time": 1773360000,
+      "open": 5101.0,
+      "high": 5132.4,
+      "low": 5014.3,
+      "close": 5023.0,
+      "volume": 321393,
+      "contract": "MGCJ6"
+    },
+    {
+      "time": 1773612000,
+      "open": 5010.0,
+      "high": 5035.2,
+      "low": 4970.4,
+      "close": 5000.8,
+      "volume": 45897,
+      "contract": "MGCJ6"
+    },
+    {
+      "time": 1773619200,
+      "open": 5001.1,
+      "high": 5044.5,
+      "low": 4973.5,
+      "close": 5017.9,
+      "volume": 405199,
+      "contract": "MGCJ6"
+    },
+    {
+      "time": 1773705600,
+      "open": 5017.9,
+      "high": 5049.4,
+      "low": 4977.3,
+      "close": 5006.8,
+      "volume": 299151,
+      "contract": "MGCJ6"
+    },
+    {
+      "time": 1773792000,
+      "open": 5006.8,
+      "high": 5021.3,
+      "low": 4805.6,
+      "close": 4839.3,
+      "volume": 508116,
+      "contract": "MGCJ6"
+    },
+    {
+      "time": 1773878400,
+      "open": 4839.3,
+      "high": 4868.5,
+      "low": 4504.4,
+      "close": 4645.9,
+      "volume": 766879,
+      "contract": "MGCJ6"
+    },
+    {
+      "time": 1773964800,
+      "open": 4645.3,
+      "high": 4738.2,
+      "low": 4478.0,
+      "close": 4490.4,
+      "volume": 609534,
+      "contract": "MGCJ6"
+    },
+    {
+      "time": 1774216800,
+      "open": 4462.6,
+      "high": 4537.1,
+      "low": 4435.4,
+      "close": 4466.5,
+      "volume": 59749,
+      "contract": "MGCJ6"
+    },
+    {
+      "time": 1774224000,
+      "open": 4466.6,
+      "high": 4516.0,
+      "low": 4100.0,
+      "close": 4443.1,
+      "volume": 1068207,
+      "contract": "MGCJ6"
+    },
+    {
+      "time": 1774310400,
+      "open": 4442.6,
+      "high": 4555.0,
+      "low": 4306.0,
+      "close": 4549.7,
+      "volume": 665403,
+      "contract": "MGCJ6"
+    },
+    {
+      "time": 1774396800,
+      "open": 4549.8,
+      "high": 4601.6,
+      "low": 4484.4,
+      "close": 4495.4,
+      "volume": 503572,
+      "contract": "MGCJ6"
+    },
+    {
+      "time": 1774483200,
+      "open": 4495.4,
+      "high": 4541.6,
+      "low": 4348.4,
+      "close": 4400.2,
+      "volume": 509296,
+      "contract": "MGCJ6"
+    },
+    {
+      "time": 1774569600,
+      "open": 4431.9,
+      "high": 4585.6,
+      "low": 4401.8,
+      "close": 4522.5,
+      "volume": 369283,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1774821600,
+      "open": 4517.8,
+      "high": 4539.6,
+      "low": 4470.5,
+      "close": 4476.8,
+      "volume": 42676,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1774828800,
+      "open": 4477.3,
+      "high": 4610.8,
+      "low": 4445.4,
+      "close": 4542.1,
+      "volume": 424271,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1774915200,
+      "open": 4541.6,
+      "high": 4728.8,
+      "low": 4510.0,
+      "close": 4724.1,
+      "volume": 477606,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1775001600,
+      "open": 4724.0,
+      "high": 4825.7,
+      "low": 4693.2,
+      "close": 4809.3,
+      "volume": 420409,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1775088000,
+      "open": 4808.9,
+      "high": 4824.4,
+      "low": 4580.3,
+      "close": 4702.7,
+      "volume": 531465,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1775426400,
+      "open": 4675.8,
+      "high": 4692.2,
+      "low": 4630.6,
+      "close": 4636.1,
+      "volume": 37327,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1775433600,
+      "open": 4637.2,
+      "high": 4733.3,
+      "low": 4625.6,
+      "close": 4685.7,
+      "volume": 304414,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1775520000,
+      "open": 4685.7,
+      "high": 4863.6,
+      "low": 4631.6,
+      "close": 4860.8,
+      "volume": 453018,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1775606400,
+      "open": 4860.8,
+      "high": 4887.3,
+      "low": 4720.0,
+      "close": 4738.9,
+      "volume": 436796,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1775692800,
+      "open": 4738.9,
+      "high": 4825.8,
+      "low": 4717.8,
+      "close": 4787.0,
+      "volume": 378695,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1775779200,
+      "open": 4787.1,
+      "high": 4819.8,
+      "low": 4753.2,
+      "close": 4771.0,
+      "volume": 292506,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1776031200,
+      "open": 4711.8,
+      "high": 4714.8,
+      "low": 4625.1,
+      "close": 4693.6,
+      "volume": 39682,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1776038400,
+      "open": 4693.9,
+      "high": 4789.9,
+      "low": 4686.4,
+      "close": 4781.5,
+      "volume": 330660,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1776124800,
+      "open": 4781.6,
+      "high": 4875.0,
+      "low": 4773.1,
+      "close": 4861.7,
+      "volume": 334712,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1776211200,
+      "open": 4861.7,
+      "high": 4895.6,
+      "low": 4808.6,
+      "close": 4845.4,
+      "volume": 321835,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1776297600,
+      "open": 4845.1,
+      "high": 4861.2,
+      "low": 4792.5,
+      "close": 4812.3,
+      "volume": 302472,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1776384000,
+      "open": 4812.2,
+      "high": 4914.0,
+      "low": 4787.5,
+      "close": 4848.1,
+      "volume": 352094,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1776636000,
+      "open": 4812.5,
+      "high": 4815.1,
+      "low": 4756.2,
+      "close": 4774.7,
+      "volume": 40045,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1776643200,
+      "open": 4774.9,
+      "high": 4854.3,
+      "low": 4763.7,
+      "close": 4842.6,
+      "volume": 303735,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1776729600,
+      "open": 4843.0,
+      "high": 4851.3,
+      "low": 4686.4,
+      "close": 4755.9,
+      "volume": 423537,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1776816000,
+      "open": 4756.3,
+      "high": 4790.9,
+      "low": 4740.6,
+      "close": 4744.8,
+      "volume": 257382,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1776902400,
+      "open": 4745.1,
+      "high": 4771.4,
+      "low": 4680.3,
+      "close": 4710.8,
+      "volume": 412505,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1776988800,
+      "open": 4711.0,
+      "high": 4757.5,
+      "low": 4672.0,
+      "close": 4724.7,
+      "volume": 305165,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1777240800,
+      "open": 4717.8,
+      "high": 4721.8,
+      "low": 4689.2,
+      "close": 4694.6,
+      "volume": 19390,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1777248000,
+      "open": 4694.9,
+      "high": 4745.8,
+      "low": 4681.6,
+      "close": 4706.7,
+      "volume": 272563,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1777334400,
+      "open": 4707.1,
+      "high": 4716.4,
+      "low": 4567.5,
+      "close": 4609.6,
+      "volume": 397075,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1777420800,
+      "open": 4609.9,
+      "high": 4624.4,
+      "low": 4522.2,
+      "close": 4573.8,
+      "volume": 400590,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1777507200,
+      "open": 4574.1,
+      "high": 4659.1,
+      "low": 4552.1,
+      "close": 4638.8,
+      "volume": 321758,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1777593600,
+      "open": 4639.1,
+      "high": 4672.8,
+      "low": 4570.3,
+      "close": 4626.2,
+      "volume": 272328,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1777845600,
+      "open": 4642.9,
+      "high": 4653.0,
+      "low": 4622.4,
+      "close": 4625.3,
+      "volume": 17700,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1777852800,
+      "open": 4624.8,
+      "high": 4629.9,
+      "low": 4510.2,
+      "close": 4527.9,
+      "volume": 320501,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1777939200,
+      "open": 4528.5,
+      "high": 4606.3,
+      "low": 4522.6,
+      "close": 4604.1,
+      "volume": 278717,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1778025600,
+      "open": 4604.1,
+      "high": 4734.6,
+      "low": 4598.3,
+      "close": 4708.0,
+      "volume": 332398,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1778112000,
+      "open": 4708.1,
+      "high": 4775.3,
+      "low": 4673.6,
+      "close": 4713.1,
+      "volume": 376199,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1778198400,
+      "open": 4713.0,
+      "high": 4760.1,
+      "low": 4702.7,
+      "close": 4723.2,
+      "volume": 261762,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1778450400,
+      "open": 4701.3,
+      "high": 4709.6,
+      "low": 4677.7,
+      "close": 4700.1,
+      "volume": 18370,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1778457600,
+      "open": 4700.0,
+      "high": 4780.2,
+      "low": 4655.5,
+      "close": 4777.1,
+      "volume": 312074,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1778544000,
+      "open": 4776.9,
+      "high": 4783.5,
+      "low": 4645.3,
+      "close": 4724.9,
+      "volume": 318046,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1778630400,
+      "open": 4724.5,
+      "high": 4735.4,
+      "low": 4676.1,
+      "close": 4703.2,
+      "volume": 256897,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1778716800,
+      "open": 4703.2,
+      "high": 4725.8,
+      "low": 4649.3,
+      "close": 4656.3,
+      "volume": 291896,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1778803200,
+      "open": 4656.5,
+      "high": 4662.7,
+      "low": 4514.0,
+      "close": 4543.4,
+      "volume": 400593,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1779055200,
+      "open": 4548.7,
+      "high": 4559.0,
+      "low": 4523.0,
+      "close": 4540.7,
+      "volume": 22676,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1779062400,
+      "open": 4540.7,
+      "high": 4593.1,
+      "low": 4482.7,
+      "close": 4585.4,
+      "volume": 319102,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1779148800,
+      "open": 4585.5,
+      "high": 4593.0,
+      "low": 4467.2,
+      "close": 4492.1,
+      "volume": 309836,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1779235200,
+      "open": 4492.2,
+      "high": 4557.5,
+      "low": 4454.9,
+      "close": 4548.0,
+      "volume": 313744,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1779321600,
+      "open": 4548.1,
+      "high": 4572.5,
+      "low": 4488.5,
+      "close": 4536.1,
+      "volume": 294390,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1779408000,
+      "open": 4536.4,
+      "high": 4542.2,
+      "low": 4490.0,
+      "close": 4511.0,
+      "volume": 227620,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1779660000,
+      "open": 4530.2,
+      "high": 4582.7,
+      "low": 4525.5,
+      "close": 4569.1,
+      "volume": 30148,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1779667200,
+      "open": 4569.0,
+      "high": 4583.2,
+      "low": 4551.3,
+      "close": 4561.4,
+      "volume": 142191,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1779753600,
+      "open": 4561.7,
+      "high": 4562.1,
+      "low": 4480.1,
+      "close": 4519.7,
+      "volume": 248384,
+      "contract": "MGCM6"
+    },
+    {
+      "time": 1779840000,
+      "open": 4552.2,
+      "high": 4558.9,
+      "low": 4430.9,
+      "close": 4477.5,
+      "volume": 283893,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1779926400,
+      "open": 4477.8,
+      "high": 4547.4,
+      "low": 4395.8,
+      "close": 4525.6,
+      "volume": 352521,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1780012800,
+      "open": 4525.9,
+      "high": 4627.3,
+      "low": 4521.7,
+      "close": 4569.7,
+      "volume": 277208,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1780264800,
+      "open": 4574.5,
+      "high": 4584.6,
+      "low": 4548.1,
+      "close": 4570.3,
+      "volume": 18500,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1780272000,
+      "open": 4570.4,
+      "high": 4577.4,
+      "low": 4477.0,
+      "close": 4514.4,
+      "volume": 264445,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1780358400,
+      "open": 4514.4,
+      "high": 4572.0,
+      "low": 4490.4,
+      "close": 4502.8,
+      "volume": 252841,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1780444800,
+      "open": 4503.0,
+      "high": 4525.0,
+      "low": 4450.1,
+      "close": 4484.0,
+      "volume": 249930,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1780531200,
+      "open": 4483.9,
+      "high": 4543.6,
+      "low": 4469.6,
+      "close": 4488.7,
+      "volume": 256298,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1780617600,
+      "open": 4488.4,
+      "high": 4502.9,
+      "low": 4336.5,
+      "close": 4354.2,
+      "volume": 337934,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1780869600,
+      "open": 4354.0,
+      "high": 4370.8,
+      "low": 4333.5,
+      "close": 4367.5,
+      "volume": 28561,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1780876800,
+      "open": 4367.1,
+      "high": 4377.3,
+      "low": 4292.6,
+      "close": 4341.1,
+      "volume": 298691,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1780963200,
+      "open": 4340.9,
+      "high": 4388.8,
+      "low": 4232.1,
+      "close": 4244.8,
+      "volume": 314554,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1781049600,
+      "open": 4245.2,
+      "high": 4251.2,
+      "low": 4046.0,
+      "close": 4069.5,
+      "volume": 470046,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1781136000,
+      "open": 4069.8,
+      "high": 4267.7,
+      "low": 4057.9,
+      "close": 4240.8,
+      "volume": 466297,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1781222400,
+      "open": 4240.2,
+      "high": 4256.7,
+      "low": 4190.7,
+      "close": 4240.3,
+      "volume": 301688,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1781474400,
+      "open": 4287.4,
+      "high": 4329.4,
+      "low": 4283.1,
+      "close": 4314.4,
+      "volume": 31938,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1781481600,
+      "open": 4314.1,
+      "high": 4391.7,
+      "low": 4306.2,
+      "close": 4336.9,
+      "volume": 268303,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1781568000,
+      "open": 4336.9,
+      "high": 4376.5,
+      "low": 4327.7,
+      "close": 4350.6,
+      "volume": 224592,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1781654400,
+      "open": 4350.9,
+      "high": 4403.1,
+      "low": 4237.6,
+      "close": 4297.2,
+      "volume": 410760,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1781740800,
+      "open": 4297.3,
+      "high": 4350.3,
+      "low": 4205.1,
+      "close": 4207.0,
+      "volume": 338922,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1781827200,
+      "open": 4206.9,
+      "high": 4216.8,
+      "low": 4139.2,
+      "close": 4173.2,
+      "volume": 210094,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1782079200,
+      "open": 4165.2,
+      "high": 4181.7,
+      "low": 4150.0,
+      "close": 4157.1,
+      "volume": 22833,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1782086400,
+      "open": 4157.3,
+      "high": 4238.4,
+      "low": 4156.6,
+      "close": 4205.4,
+      "volume": 266253,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1782172800,
+      "open": 4205.0,
+      "high": 4216.2,
+      "low": 4098.0,
+      "close": 4116.6,
+      "volume": 316023,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1782259200,
+      "open": 4116.8,
+      "high": 4129.8,
+      "low": 3975.8,
+      "close": 4028.0,
+      "volume": 450455,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1782345600,
+      "open": 4027.8,
+      "high": 4060.0,
+      "low": 3976.5,
+      "close": 4029.7,
+      "volume": 368933,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1782432000,
+      "open": 4029.7,
+      "high": 4111.8,
+      "low": 3998.1,
+      "close": 4103.7,
+      "volume": 287801,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1782684000,
+      "open": 4102.6,
+      "high": 4102.9,
+      "low": 4065.7,
+      "close": 4076.9,
+      "volume": 28576,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1782691200,
+      "open": 4076.7,
+      "high": 4091.1,
+      "low": 4012.5,
+      "close": 4028.8,
+      "volume": 254659,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1782777600,
+      "open": 4028.6,
+      "high": 4078.3,
+      "low": 3955.3,
+      "close": 4018.7,
+      "volume": 339973,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1782864000,
+      "open": 4018.8,
+      "high": 4130.8,
+      "low": 3973.1,
+      "close": 4047.3,
+      "volume": 347822,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1782950400,
+      "open": 4047.1,
+      "high": 4157.4,
+      "low": 4042.9,
+      "close": 4139.3,
+      "volume": 320547,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1783036800,
+      "open": 4139.2,
+      "high": 4208.5,
+      "low": 4136.0,
+      "close": 4186.9,
+      "volume": 169968,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1783288800,
+      "open": 4187.6,
+      "high": 4214.3,
+      "low": 4184.3,
+      "close": 4195.0,
+      "volume": 25211,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1783296000,
+      "open": 4195.6,
+      "high": 4215.9,
+      "low": 4140.5,
+      "close": 4168.5,
+      "volume": 237578,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1783382400,
+      "open": 4168.4,
+      "high": 4192.6,
+      "low": 4102.4,
+      "close": 4108.7,
+      "volume": 273849,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1783468800,
+      "open": 4108.8,
+      "high": 4146.4,
+      "low": 4032.3,
+      "close": 4086.0,
+      "volume": 341517,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1783555200,
+      "open": 4086.3,
+      "high": 4148.8,
+      "low": 4063.3,
+      "close": 4132.8,
+      "volume": 239662,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1783641600,
+      "open": 4132.7,
+      "high": 4144.8,
+      "low": 4081.3,
+      "close": 4128.6,
+      "volume": 210690,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1783893600,
+      "open": 4107.0,
+      "high": 4111.6,
+      "low": 4075.5,
+      "close": 4092.8,
+      "volume": 26277,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1783900800,
+      "open": 4093.0,
+      "high": 4099.7,
+      "low": 3992.9,
+      "close": 4008.0,
+      "volume": 296815,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1783987200,
+      "open": 4008.5,
+      "high": 4112.6,
+      "low": 3990.1,
+      "close": 4059.0,
+      "volume": 272282,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1784073600,
+      "open": 4059.0,
+      "high": 4089.0,
+      "low": 4023.2,
+      "close": 4063.6,
+      "volume": 252396,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1784160000,
+      "open": 4063.6,
+      "high": 4067.4,
+      "low": 3973.7,
+      "close": 3989.4,
+      "volume": 276965,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1784246400,
+      "open": 3989.5,
+      "high": 4029.0,
+      "low": 3962.9,
+      "close": 4023.1,
+      "volume": 266071,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1784498400,
+      "open": 4006.4,
+      "high": 4011.6,
+      "low": 3993.0,
+      "close": 3999.7,
+      "volume": 14936,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1784505600,
+      "open": 3999.6,
+      "high": 4046.1,
+      "low": 3986.6,
+      "close": 4014.3,
+      "volume": 198388,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1784592000,
+      "open": 4014.5,
+      "high": 4092.2,
+      "low": 4008.1,
+      "close": 4085.1,
+      "volume": 238190,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1784678400,
+      "open": 4085.3,
+      "high": 4171.3,
+      "low": 4073.6,
+      "close": 4136.3,
+      "volume": 274999,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1784764800,
+      "open": 4136.3,
+      "high": 4144.0,
+      "low": 4042.3,
+      "close": 4049.3,
+      "volume": 242602,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1784851200,
+      "open": 4049.6,
+      "high": 4085.2,
+      "low": 4023.4,
+      "close": 4055.4,
+      "volume": 201881,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1785103200,
+      "open": 4095.0,
+      "high": 4111.9,
+      "low": 4086.1,
+      "close": 4096.9,
+      "volume": 17518,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1785110400,
+      "open": 4097.0,
+      "high": 4119.5,
+      "low": 4067.0,
+      "close": 4074.6,
+      "volume": 206896,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1785196800,
+      "open": 4074.5,
+      "high": 4075.6,
+      "low": 4011.1,
+      "close": 4024.3,
+      "volume": 190182,
+      "contract": "MGCQ6"
+    },
+    {
+      "time": 1785283200,
+      "open": 4084.6,
+      "high": 4176.6,
+      "low": 4053.8,
+      "close": 4142.2,
+      "volume": 251863,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1785369600,
+      "open": 4142.5,
+      "high": 4180.2,
+      "low": 4084.6,
+      "close": 4164.3,
+      "volume": 265960,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1785456000,
+      "open": 4164.7,
+      "high": 4165.6,
+      "low": 4076.5,
+      "close": 4098.9,
+      "volume": 184624,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1785708000,
+      "open": 4134.2,
+      "high": 4142.0,
+      "low": 4119.0,
+      "close": 4130.6,
+      "volume": 14199,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1785715200,
+      "open": 4130.6,
+      "high": 4134.7,
+      "low": 4074.0,
+      "close": 4109.4,
+      "volume": 159251,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1785801600,
+      "open": 4109.3,
+      "high": 4163.8,
+      "low": 4097.9,
+      "close": 4128.5,
+      "volume": 205717,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1785888000,
+      "open": 4128.5,
+      "high": 4341.0,
+      "low": 4126.4,
+      "close": 4337.8,
+      "volume": 334062,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1785974400,
+      "open": 4337.4,
+      "high": 4363.8,
+      "low": 4280.8,
+      "close": 4310.9,
+      "volume": 278640,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1786060800,
+      "open": 4310.7,
+      "high": 4432.4,
+      "low": 4287.2,
+      "close": 4401.5,
+      "volume": 301615,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1786312800,
+      "open": 4400.0,
+      "high": 4411.5,
+      "low": 4390.0,
+      "close": 4391.8,
+      "volume": 14117,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1786320000,
+      "open": 4391.6,
+      "high": 4463.0,
+      "low": 4373.7,
+      "close": 4462.2,
+      "volume": 237967,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1786406400,
+      "open": 4462.1,
+      "high": 4495.1,
+      "low": 4415.8,
+      "close": 4430.5,
+      "volume": 288519,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1786492800,
+      "open": 4430.6,
+      "high": 4502.4,
+      "low": 4425.6,
+      "close": 4473.2,
+      "volume": 291072,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1786579200,
+      "open": 4473.2,
+      "high": 4509.2,
+      "low": 4400.0,
+      "close": 4411.5,
+      "volume": 289773,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1786665600,
+      "open": 4411.6,
+      "high": 4454.6,
+      "low": 4365.2,
+      "close": 4432.3,
+      "volume": 236564,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1786917600,
+      "open": 4439.3,
+      "high": 4453.4,
+      "low": 4422.3,
+      "close": 4425.5,
+      "volume": 19247,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1786924800,
+      "open": 4425.8,
+      "high": 4486.6,
+      "low": 4423.4,
+      "close": 4482.0,
+      "volume": 264744,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1787011200,
+      "open": 4482.1,
+      "high": 4493.6,
+      "low": 4379.4,
+      "close": 4385.8,
+      "volume": 269915,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1787097600,
+      "open": 4385.9,
+      "high": 4584.0,
+      "low": 4376.5,
+      "close": 4569.3,
+      "volume": 340107,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1787184000,
+      "open": 4569.1,
+      "high": 4597.3,
+      "low": 4506.1,
+      "close": 4582.4,
+      "volume": 311739,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1787270400,
+      "open": 4582.3,
+      "high": 4690.2,
+      "low": 4565.2,
+      "close": 4662.2,
+      "volume": 306357,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1787522400,
+      "open": 4672.5,
+      "high": 4683.7,
+      "low": 4661.3,
+      "close": 4681.3,
+      "volume": 23607,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1787529600,
+      "open": 4681.6,
+      "high": 4740.2,
+      "low": 4651.6,
+      "close": 4737.3,
+      "volume": 369208,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1787616000,
+      "open": 4737.3,
+      "high": 4755.0,
+      "low": 4658.7,
+      "close": 4712.0,
+      "volume": 342551,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1787702400,
+      "open": 4712.1,
+      "high": 4728.0,
+      "low": 4637.9,
+      "close": 4677.5,
+      "volume": 328446,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1787788800,
+      "open": 4677.8,
+      "high": 4697.7,
+      "low": 4616.4,
+      "close": 4647.7,
+      "volume": 284277,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1787875200,
+      "open": 4647.7,
+      "high": 4686.1,
+      "low": 4494.9,
+      "close": 4503.9,
+      "volume": 442088,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1788127200,
+      "open": 4483.5,
+      "high": 4516.3,
+      "low": 4470.1,
+      "close": 4507.5,
+      "volume": 32506,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1788134400,
+      "open": 4507.5,
+      "high": 4521.5,
+      "low": 4445.5,
+      "close": 4501.1,
+      "volume": 290389,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1788220800,
+      "open": 4501.2,
+      "high": 4510.8,
+      "low": 4365.0,
+      "close": 4370.5,
+      "volume": 371033,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1788307200,
+      "open": 4370.7,
+      "high": 4444.5,
+      "low": 4329.3,
+      "close": 4431.2,
+      "volume": 328685,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1788393600,
+      "open": 4431.1,
+      "high": 4558.6,
+      "low": 4427.6,
+      "close": 4527.1,
+      "volume": 359214,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1788480000,
+      "open": 4527.1,
+      "high": 4537.9,
+      "low": 4411.4,
+      "close": 4477.0,
+      "volume": 327893,
+      "contract": "MGCZ6"
+    },
+    {
+      "time": 1788732000,
+      "open": 4466.7,
+      "high": 4481.5,
+      "low": 4462.1,
+      "close": 4470.0,
+      "volume": 12020,
+      "contract": "MGCZ6"
+    }
+  ],
+  "CRUDE": [
+    {
+      "time": 1773007200,
+      "open": 94.99,
+      "high": 111.37,
+      "low": 94.99,
+      "close": 108.04,
+      "volume": 142505,
+      "contract": "MCLJ6"
+    },
+    {
+      "time": 1773014400,
+      "open": 108.06,
+      "high": 119.49,
+      "low": 81.16,
+      "close": 88.63,
+      "volume": 1753770,
+      "contract": "MCLJ6"
+    },
+    {
+      "time": 1773100800,
+      "open": 88.64,
+      "high": 91.48,
+      "low": 76.74,
+      "close": 85.66,
+      "volume": 1045322,
+      "contract": "MCLJ6"
+    },
+    {
+      "time": 1773187200,
+      "open": 85.68,
+      "high": 94.4,
+      "low": 81.77,
+      "close": 92.47,
+      "volume": 781244,
+      "contract": "MCLJ6"
+    },
+    {
+      "time": 1773273600,
+      "open": 92.45,
+      "high": 98.07,
+      "low": 89.88,
+      "close": 96.56,
+      "volume": 787531,
+      "contract": "MCLJ6"
+    },
+    {
+      "time": 1773360000,
+      "open": 96.58,
+      "high": 99.46,
+      "low": 92.02,
+      "close": 99.25,
+      "volume": 591799,
+      "contract": "MCLJ6"
+    },
+    {
+      "time": 1773612000,
+      "open": 100.92,
+      "high": 103.0,
+      "low": 98.39,
+      "close": 98.77,
+      "volume": 74515,
+      "contract": "MCLJ6"
+    },
+    {
+      "time": 1773619200,
+      "open": 98.79,
+      "high": 101.03,
+      "low": 92.94,
+      "close": 94.94,
+      "volume": 577234,
+      "contract": "MCLJ6"
+    },
+    {
+      "time": 1773705600,
+      "open": 94.92,
+      "high": 98.45,
+      "low": 93.8,
+      "close": 95.98,
+      "volume": 280531,
+      "contract": "MCLJ6"
+    },
+    {
+      "time": 1773792000,
+      "open": 95.29,
+      "high": 99.77,
+      "low": 91.45,
+      "close": 98.32,
+      "volume": 450933,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1773878400,
+      "open": 98.31,
+      "high": 100.49,
+      "low": 92.11,
+      "close": 93.95,
+      "volume": 691723,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1773964800,
+      "open": 93.97,
+      "high": 98.77,
+      "low": 92.45,
+      "close": 98.25,
+      "volume": 397636,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1774216800,
+      "open": 100.51,
+      "high": 101.81,
+      "low": 96.71,
+      "close": 98.61,
+      "volume": 47992,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1774224000,
+      "open": 98.59,
+      "high": 101.67,
+      "low": 84.36,
+      "close": 89.44,
+      "volume": 688137,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1774310400,
+      "open": 89.43,
+      "high": 93.36,
+      "low": 86.33,
+      "close": 88.87,
+      "volume": 434767,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1774396800,
+      "open": 88.89,
+      "high": 91.71,
+      "low": 86.46,
+      "close": 91.07,
+      "volume": 373125,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1774483200,
+      "open": 91.07,
+      "high": 95.47,
+      "low": 89.52,
+      "close": 93.25,
+      "volume": 326530,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1774569600,
+      "open": 93.25,
+      "high": 101.38,
+      "low": 92.09,
+      "close": 101.38,
+      "volume": 332276,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1774821600,
+      "open": 102.5,
+      "high": 104.0,
+      "low": 101.16,
+      "close": 102.8,
+      "volume": 43145,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1774828800,
+      "open": 102.81,
+      "high": 106.88,
+      "low": 99.25,
+      "close": 106.19,
+      "volume": 394807,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1774915200,
+      "open": 106.19,
+      "high": 106.55,
+      "low": 99.63,
+      "close": 101.61,
+      "volume": 529799,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1775001600,
+      "open": 101.63,
+      "high": 103.33,
+      "low": 96.49,
+      "close": 98.89,
+      "volume": 443197,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1775088000,
+      "open": 98.9,
+      "high": 113.99,
+      "low": 97.5,
+      "close": 112.08,
+      "volume": 705050,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1775426400,
+      "open": 112.85,
+      "high": 115.49,
+      "low": 112.6,
+      "close": 114.25,
+      "volume": 43947,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1775433600,
+      "open": 114.29,
+      "high": 114.33,
+      "low": 108.87,
+      "close": 113.82,
+      "volume": 424609,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1775520000,
+      "open": 113.82,
+      "high": 117.66,
+      "low": 91.03,
+      "close": 96.45,
+      "volume": 770056,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1775606400,
+      "open": 96.46,
+      "high": 98.33,
+      "low": 91.83,
+      "close": 97.11,
+      "volume": 596467,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1775692800,
+      "open": 97.12,
+      "high": 102.69,
+      "low": 95.25,
+      "close": 98.62,
+      "volume": 488711,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1775779200,
+      "open": 98.63,
+      "high": 100.42,
+      "low": 95.5,
+      "close": 95.58,
+      "volume": 303961,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1776031200,
+      "open": 101.99,
+      "high": 105.73,
+      "low": 101.8,
+      "close": 104.72,
+      "volume": 52333,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1776038400,
+      "open": 104.72,
+      "high": 105.18,
+      "low": 96.05,
+      "close": 96.58,
+      "volume": 344549,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1776124800,
+      "open": 96.56,
+      "high": 97.96,
+      "low": 86.9,
+      "close": 90.28,
+      "volume": 310042,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1776211200,
+      "open": 90.33,
+      "high": 93.3,
+      "low": 89.95,
+      "close": 90.98,
+      "volume": 229905,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1776297600,
+      "open": 90.91,
+      "high": 95.43,
+      "low": 90.51,
+      "close": 93.28,
+      "volume": 161574,
+      "contract": "MCLK6"
+    },
+    {
+      "time": 1776384000,
+      "open": 90.03,
+      "high": 90.35,
+      "low": 78.97,
+      "close": 83.99,
+      "volume": 313407,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1776636000,
+      "open": 87.54,
+      "high": 89.69,
+      "low": 87.24,
+      "close": 88.63,
+      "volume": 39080,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1776643200,
+      "open": 88.62,
+      "high": 88.84,
+      "low": 85.43,
+      "close": 86.21,
+      "volume": 271552,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1776729600,
+      "open": 86.19,
+      "high": 92.23,
+      "low": 85.67,
+      "close": 90.52,
+      "volume": 335932,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1776816000,
+      "open": 90.48,
+      "high": 93.73,
+      "low": 87.61,
+      "close": 92.73,
+      "volume": 290311,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1776902400,
+      "open": 92.73,
+      "high": 98.4,
+      "low": 92.16,
+      "close": 96.81,
+      "volume": 327207,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1776988800,
+      "open": 96.79,
+      "high": 97.84,
+      "low": 92.69,
+      "close": 94.9,
+      "volume": 275679,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1777240800,
+      "open": 95.71,
+      "high": 96.69,
+      "low": 95.35,
+      "close": 96.12,
+      "volume": 13015,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1777248000,
+      "open": 96.13,
+      "high": 97.66,
+      "low": 94.58,
+      "close": 96.67,
+      "volume": 191965,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1777334400,
+      "open": 96.66,
+      "high": 101.85,
+      "low": 96.25,
+      "close": 99.43,
+      "volume": 237865,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1777420800,
+      "open": 99.42,
+      "high": 109.63,
+      "low": 98.41,
+      "close": 107.95,
+      "volume": 287742,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1777507200,
+      "open": 107.99,
+      "high": 110.92,
+      "low": 103.32,
+      "close": 105.63,
+      "volume": 360840,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1777593600,
+      "open": 105.65,
+      "high": 106.67,
+      "low": 99.3,
+      "close": 102.5,
+      "volume": 290722,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1777845600,
+      "open": 99.79,
+      "high": 101.77,
+      "low": 98.7,
+      "close": 101.72,
+      "volume": 23358,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1777852800,
+      "open": 101.71,
+      "high": 107.45,
+      "low": 100.14,
+      "close": 104.99,
+      "volume": 363307,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1777939200,
+      "open": 104.99,
+      "high": 105.35,
+      "low": 99.05,
+      "close": 99.78,
+      "volume": 236030,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1778025600,
+      "open": 99.79,
+      "high": 101.4,
+      "low": 88.67,
+      "close": 95.9,
+      "volume": 422198,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1778112000,
+      "open": 95.92,
+      "high": 98.7,
+      "low": 89.86,
+      "close": 96.96,
+      "volume": 388839,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1778198400,
+      "open": 96.96,
+      "high": 97.34,
+      "low": 93.78,
+      "close": 94.72,
+      "volume": 224361,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1778450400,
+      "open": 98.07,
+      "high": 99.0,
+      "low": 97.57,
+      "close": 98.87,
+      "volume": 15100,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1778457600,
+      "open": 98.87,
+      "high": 100.4,
+      "low": 96.13,
+      "close": 98.09,
+      "volume": 215831,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1778544000,
+      "open": 98.1,
+      "high": 102.72,
+      "low": 98.1,
+      "close": 102.06,
+      "volume": 156878,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1778630400,
+      "open": 102.06,
+      "high": 103.68,
+      "low": 100.55,
+      "close": 101.04,
+      "volume": 141203,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1778716800,
+      "open": 101.05,
+      "high": 102.36,
+      "low": 99.38,
+      "close": 101.91,
+      "volume": 142491,
+      "contract": "MCLM6"
+    },
+    {
+      "time": 1778803200,
+      "open": 97.74,
+      "high": 101.58,
+      "low": 97.44,
+      "close": 101.24,
+      "volume": 97197,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1779055200,
+      "open": 101.78,
+      "high": 103.04,
+      "low": 101.57,
+      "close": 102.46,
+      "volume": 10594,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1779062400,
+      "open": 102.45,
+      "high": 105.2,
+      "low": 98.59,
+      "close": 102.31,
+      "volume": 259745,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1779148800,
+      "open": 102.31,
+      "high": 104.89,
+      "low": 102.22,
+      "close": 103.92,
+      "volume": 155838,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1779235200,
+      "open": 103.95,
+      "high": 104.46,
+      "low": 96.83,
+      "close": 98.89,
+      "volume": 270259,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1779321600,
+      "open": 98.89,
+      "high": 102.64,
+      "low": 95.76,
+      "close": 97.77,
+      "volume": 297515,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1779408000,
+      "open": 97.74,
+      "high": 99.43,
+      "low": 94.69,
+      "close": 97.0,
+      "volume": 206213,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1779660000,
+      "open": 94.0,
+      "high": 94.01,
+      "low": 91.17,
+      "close": 92.12,
+      "volume": 22812,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1779667200,
+      "open": 92.12,
+      "high": 92.69,
+      "low": 89.42,
+      "close": 90.93,
+      "volume": 154009,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1779753600,
+      "open": 90.94,
+      "high": 94.69,
+      "low": 90.91,
+      "close": 93.3,
+      "volume": 172144,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1779840000,
+      "open": 93.32,
+      "high": 93.43,
+      "low": 87.76,
+      "close": 90.2,
+      "volume": 220713,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1779926400,
+      "open": 90.2,
+      "high": 92.55,
+      "low": 87.0,
+      "close": 88.53,
+      "volume": 202566,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1780012800,
+      "open": 88.5,
+      "high": 89.04,
+      "low": 86.34,
+      "close": 87.8,
+      "volume": 210894,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1780264800,
+      "open": 88.48,
+      "high": 90.06,
+      "low": 88.45,
+      "close": 89.43,
+      "volume": 12488,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1780272000,
+      "open": 89.43,
+      "high": 94.79,
+      "low": 89.03,
+      "close": 91.92,
+      "volume": 267212,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1780358400,
+      "open": 91.92,
+      "high": 96.07,
+      "low": 90.11,
+      "close": 94.59,
+      "volume": 176775,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1780444800,
+      "open": 94.59,
+      "high": 97.0,
+      "low": 94.18,
+      "close": 95.39,
+      "volume": 167944,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1780531200,
+      "open": 95.41,
+      "high": 95.76,
+      "low": 91.9,
+      "close": 92.97,
+      "volume": 147996,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1780617600,
+      "open": 92.97,
+      "high": 93.73,
+      "low": 89.65,
+      "close": 90.28,
+      "volume": 144748,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1780869600,
+      "open": 92.97,
+      "high": 93.93,
+      "low": 92.36,
+      "close": 92.76,
+      "volume": 15378,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1780876800,
+      "open": 92.76,
+      "high": 95.48,
+      "low": 90.4,
+      "close": 91.39,
+      "volume": 182617,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1780963200,
+      "open": 91.38,
+      "high": 91.47,
+      "low": 85.95,
+      "close": 89.18,
+      "volume": 180473,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1781049600,
+      "open": 89.17,
+      "high": 93.65,
+      "low": 87.4,
+      "close": 92.52,
+      "volume": 199564,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1781136000,
+      "open": 92.49,
+      "high": 92.76,
+      "low": 85.1,
+      "close": 86.08,
+      "volume": 212178,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1781222400,
+      "open": 86.05,
+      "high": 87.26,
+      "low": 83.16,
+      "close": 84.33,
+      "volume": 147924,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1781474400,
+      "open": 81.77,
+      "high": 82.5,
+      "low": 80.21,
+      "close": 81.01,
+      "volume": 17962,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1781481600,
+      "open": 81.0,
+      "high": 81.62,
+      "low": 79.69,
+      "close": 81.51,
+      "volume": 100002,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1781568000,
+      "open": 81.51,
+      "high": 81.52,
+      "low": 75.5,
+      "close": 76.59,
+      "volume": 103229,
+      "contract": "MCLN6"
+    },
+    {
+      "time": 1781654400,
+      "open": 75.86,
+      "high": 79.05,
+      "low": 74.1,
+      "close": 75.33,
+      "volume": 115360,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1781740800,
+      "open": 75.31,
+      "high": 76.06,
+      "low": 72.84,
+      "close": 75.41,
+      "volume": 138058,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1781827200,
+      "open": 75.42,
+      "high": 76.78,
+      "low": 74.95,
+      "close": 76.52,
+      "volume": 87136,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1782079200,
+      "open": 78.0,
+      "high": 78.5,
+      "low": 77.2,
+      "close": 77.68,
+      "volume": 15612,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1782086400,
+      "open": 77.68,
+      "high": 77.85,
+      "low": 73.22,
+      "close": 74.18,
+      "volume": 115963,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1782172800,
+      "open": 74.18,
+      "high": 74.31,
+      "low": 72.46,
+      "close": 72.7,
+      "volume": 85258,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1782259200,
+      "open": 72.71,
+      "high": 73.18,
+      "low": 69.55,
+      "close": 70.01,
+      "volume": 92723,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1782345600,
+      "open": 70.0,
+      "high": 72.5,
+      "low": 68.87,
+      "close": 71.55,
+      "volume": 90172,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1782432000,
+      "open": 71.53,
+      "high": 71.85,
+      "low": 68.55,
+      "close": 70.26,
+      "volume": 96677,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1782684000,
+      "open": 70.62,
+      "high": 71.09,
+      "low": 69.65,
+      "close": 69.75,
+      "volume": 9979,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1782691200,
+      "open": 69.76,
+      "high": 71.17,
+      "low": 69.32,
+      "close": 70.15,
+      "volume": 77208,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1782777600,
+      "open": 70.15,
+      "high": 71.6,
+      "low": 69.2,
+      "close": 70.12,
+      "volume": 83865,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1782864000,
+      "open": 70.12,
+      "high": 70.2,
+      "low": 67.9,
+      "close": 68.0,
+      "volume": 70511,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1782950400,
+      "open": 68.0,
+      "high": 68.81,
+      "low": 67.05,
+      "close": 68.4,
+      "volume": 65371,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1783036800,
+      "open": 68.38,
+      "high": 69.26,
+      "low": 68.08,
+      "close": 68.78,
+      "volume": 38304,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1783288800,
+      "open": 68.73,
+      "high": 68.82,
+      "low": 68.22,
+      "close": 68.25,
+      "volume": 2605,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1783296000,
+      "open": 68.25,
+      "high": 69.2,
+      "low": 67.81,
+      "close": 68.74,
+      "volume": 59561,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1783382400,
+      "open": 68.75,
+      "high": 72.66,
+      "low": 68.62,
+      "close": 72.41,
+      "volume": 108298,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1783468800,
+      "open": 72.41,
+      "high": 76.08,
+      "low": 71.75,
+      "close": 74.47,
+      "volume": 212318,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1783555200,
+      "open": 74.45,
+      "high": 74.68,
+      "low": 71.1,
+      "close": 71.91,
+      "volume": 124535,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1783641600,
+      "open": 71.93,
+      "high": 73.2,
+      "low": 70.77,
+      "close": 71.51,
+      "volume": 95762,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1783893600,
+      "open": 73.37,
+      "high": 74.19,
+      "low": 73.17,
+      "close": 73.78,
+      "volume": 13414,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1783900800,
+      "open": 73.77,
+      "high": 79.61,
+      "low": 72.61,
+      "close": 78.96,
+      "volume": 179434,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1783987200,
+      "open": 78.96,
+      "high": 81.28,
+      "low": 77.81,
+      "close": 79.86,
+      "volume": 204118,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1784073600,
+      "open": 79.85,
+      "high": 80.94,
+      "low": 78.18,
+      "close": 80.16,
+      "volume": 145001,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1784160000,
+      "open": 80.17,
+      "high": 80.87,
+      "low": 78.56,
+      "close": 79.67,
+      "volume": 94738,
+      "contract": "MCLQ6"
+    },
+    {
+      "time": 1784246400,
+      "open": 79.01,
+      "high": 82.08,
+      "low": 77.93,
+      "close": 81.79,
+      "volume": 102450,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1784498400,
+      "open": 82.9,
+      "high": 84.62,
+      "low": 82.7,
+      "close": 83.87,
+      "volume": 15704,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1784505600,
+      "open": 83.84,
+      "high": 84.2,
+      "low": 79.55,
+      "close": 82.48,
+      "volume": 175123,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1784592000,
+      "open": 82.47,
+      "high": 85.03,
+      "low": 81.39,
+      "close": 84.79,
+      "volume": 149583,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1784678400,
+      "open": 84.78,
+      "high": 88.61,
+      "low": 84.45,
+      "close": 87.81,
+      "volume": 187909,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1784764800,
+      "open": 87.8,
+      "high": 93.5,
+      "low": 87.36,
+      "close": 92.28,
+      "volume": 247274,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1784851200,
+      "open": 92.3,
+      "high": 92.83,
+      "low": 87.69,
+      "close": 90.44,
+      "volume": 211311,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1785103200,
+      "open": 86.25,
+      "high": 86.43,
+      "low": 83.1,
+      "close": 84.61,
+      "volume": 26237,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1785110400,
+      "open": 84.61,
+      "high": 85.7,
+      "low": 81.5,
+      "close": 82.04,
+      "volume": 174494,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1785196800,
+      "open": 82.04,
+      "high": 83.32,
+      "low": 77.78,
+      "close": 81.88,
+      "volume": 226711,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1785283200,
+      "open": 81.88,
+      "high": 85.58,
+      "low": 81.5,
+      "close": 84.21,
+      "volume": 190024,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1785369600,
+      "open": 84.21,
+      "high": 85.95,
+      "low": 82.92,
+      "close": 84.07,
+      "volume": 176368,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1785456000,
+      "open": 84.07,
+      "high": 86.91,
+      "low": 81.08,
+      "close": 86.85,
+      "volume": 174660,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1785708000,
+      "open": 80.07,
+      "high": 81.33,
+      "low": 78.5,
+      "close": 80.72,
+      "volume": 27416,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1785715200,
+      "open": 80.71,
+      "high": 81.01,
+      "low": 78.44,
+      "close": 80.26,
+      "volume": 168355,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1785801600,
+      "open": 80.23,
+      "high": 82.35,
+      "low": 75.06,
+      "close": 75.24,
+      "volume": 233547,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1785888000,
+      "open": 75.22,
+      "high": 76.7,
+      "low": 74.22,
+      "close": 74.88,
+      "volume": 166869,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1785974400,
+      "open": 74.88,
+      "high": 78.53,
+      "low": 74.58,
+      "close": 77.97,
+      "volume": 145548,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1786060800,
+      "open": 77.97,
+      "high": 78.77,
+      "low": 76.51,
+      "close": 77.09,
+      "volume": 127367,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1786312800,
+      "open": 78.34,
+      "high": 79.42,
+      "low": 78.25,
+      "close": 78.78,
+      "volume": 10694,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1786320000,
+      "open": 78.77,
+      "high": 82.39,
+      "low": 77.78,
+      "close": 82.11,
+      "volume": 135299,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1786406400,
+      "open": 82.12,
+      "high": 84.64,
+      "low": 81.27,
+      "close": 83.43,
+      "volume": 152180,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1786492800,
+      "open": 83.43,
+      "high": 84.35,
+      "low": 82.35,
+      "close": 82.66,
+      "volume": 120149,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1786579200,
+      "open": 82.65,
+      "high": 83.31,
+      "low": 80.09,
+      "close": 81.35,
+      "volume": 135207,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1786665600,
+      "open": 81.32,
+      "high": 82.98,
+      "low": 80.7,
+      "close": 82.41,
+      "volume": 111962,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1786917600,
+      "open": 82.46,
+      "high": 82.74,
+      "low": 82.25,
+      "close": 82.33,
+      "volume": 4670,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1786924800,
+      "open": 82.32,
+      "high": 85.37,
+      "low": 81.5,
+      "close": 84.9,
+      "volume": 101478,
+      "contract": "MCLU6"
+    },
+    {
+      "time": 1787011200,
+      "open": 84.08,
+      "high": 85.13,
+      "low": 83.77,
+      "close": 84.52,
+      "volume": 95677,
+      "contract": "MCLV6"
+    },
+    {
+      "time": 1787097600,
+      "open": 84.51,
+      "high": 85.83,
+      "low": 83.44,
+      "close": 84.3,
+      "volume": 137092,
+      "contract": "MCLV6"
+    },
+    {
+      "time": 1787184000,
+      "open": 84.31,
+      "high": 87.69,
+      "low": 84.22,
+      "close": 86.2,
+      "volume": 119698,
+      "contract": "MCLV6"
+    },
+    {
+      "time": 1787270400,
+      "open": 86.21,
+      "high": 87.51,
+      "low": 85.8,
+      "close": 86.65,
+      "volume": 115861,
+      "contract": "MCLV6"
+    },
+    {
+      "time": 1787522400,
+      "open": 86.54,
+      "high": 86.59,
+      "low": 85.96,
+      "close": 86.02,
+      "volume": 5475,
+      "contract": "MCLV6"
+    },
+    {
+      "time": 1787529600,
+      "open": 86.01,
+      "high": 86.24,
+      "low": 84.37,
+      "close": 85.19,
+      "volume": 113383,
+      "contract": "MCLV6"
+    },
+    {
+      "time": 1787616000,
+      "open": 85.19,
+      "high": 85.84,
+      "low": 80.23,
+      "close": 80.98,
+      "volume": 144127,
+      "contract": "MCLV6"
+    },
+    {
+      "time": 1787702400,
+      "open": 80.98,
+      "high": 83.3,
+      "low": 79.62,
+      "close": 81.81,
+      "volume": 114964,
+      "contract": "MCLV6"
+    },
+    {
+      "time": 1787788800,
+      "open": 81.81,
+      "high": 84.25,
+      "low": 80.65,
+      "close": 83.49,
+      "volume": 116221,
+      "contract": "MCLV6"
+    },
+    {
+      "time": 1787875200,
+      "open": 83.49,
+      "high": 83.71,
+      "low": 82.23,
+      "close": 83.43,
+      "volume": 94434,
+      "contract": "MCLV6"
+    },
+    {
+      "time": 1788127200,
+      "open": 84.6,
+      "high": 85.7,
+      "low": 84.34,
+      "close": 84.74,
+      "volume": 12926,
+      "contract": "MCLV6"
+    },
+    {
+      "time": 1788134400,
+      "open": 84.73,
+      "high": 86.78,
+      "low": 84.12,
+      "close": 86.4,
+      "volume": 121281,
+      "contract": "MCLV6"
+    },
+    {
+      "time": 1788220800,
+      "open": 86.42,
+      "high": 91.02,
+      "low": 86.23,
+      "close": 90.78,
+      "volume": 171822,
+      "contract": "MCLV6"
+    },
+    {
+      "time": 1788307200,
+      "open": 90.76,
+      "high": 92.3,
+      "low": 88.95,
+      "close": 90.57,
+      "volume": 148527,
+      "contract": "MCLV6"
+    },
+    {
+      "time": 1788393600,
+      "open": 90.58,
+      "high": 93.15,
+      "low": 89.57,
+      "close": 91.85,
+      "volume": 159219,
+      "contract": "MCLV6"
+    },
+    {
+      "time": 1788480000,
+      "open": 91.84,
+      "high": 92.16,
+      "low": 88.73,
+      "close": 91.24,
+      "volume": 136494,
+      "contract": "MCLV6"
+    },
+    {
+      "time": 1788732000,
+      "open": 92.25,
+      "high": 92.94,
+      "low": 91.71,
+      "close": 92.08,
+      "volume": 8422,
+      "contract": "MCLV6"
+    }
+  ]
+}

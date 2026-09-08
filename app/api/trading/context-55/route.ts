@@ -1,14 +1,13 @@
 /**
  * GET /api/trading/context-55?instrument=DOW|NASDAQ|GOLD|CRUDE
- * Sourcing 5-Month Anchored VWAP reference benchmark from daily bars.
+ * Sourcing 5-Month Anchored VWAP reference benchmark from genuine CME Globex daily bars.
  */
 
 import { NextResponse } from 'next/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
-import { YAHOO_CME_SYMBOLS } from '@/lib/yahoo/symbols'
+import { getCmeDailyBars } from '@/lib/databento/cmeHistorical'
 import {
   compute5MonthAnchoredVwapFromDailyBars,
-  type ContextBar,
   type AnchoredVwapBenchmark5M,
 } from '@/lib/chart/context55'
 import type { Instrument } from '@/types/price-feed'
@@ -45,60 +44,17 @@ export async function GET(request: Request) {
         instrument,
         avwap5m: cached.benchmark,
         cached: true,
+        source: 'cme_globex',
       })
     }
 
-    const symbol = YAHOO_CME_SYMBOLS[instrument] || 'MYM=F'
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
-      symbol
-    )}?interval=1d&range=6mo`
+    const dailyBars = getCmeDailyBars(instrument)
 
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; TradePulse/1.0)',
-        Accept: 'application/json',
-      },
-      cache: 'no-store',
-    })
-
-    if (!res.ok) {
+    if (!dailyBars || dailyBars.length === 0) {
       return NextResponse.json(
-        { error: `Failed to fetch daily candles for ${instrument}` },
-        { status: 502 }
-      )
-    }
-
-    const json = await res.json()
-    const result = json?.chart?.result?.[0]
-    const timestamps: number[] = result?.timestamp || []
-    const quote = result?.indicators?.quote?.[0]
-
-    if (!timestamps.length || !quote) {
-      return NextResponse.json(
-        { error: `No historical bars returned for ${instrument}` },
+        { error: `No CME historical daily bars returned for ${instrument}` },
         { status: 404 }
       )
-    }
-
-    const dailyBars: ContextBar[] = []
-    for (let i = 0; i < timestamps.length; i++) {
-      const open = quote.open?.[i]
-      const high = quote.high?.[i]
-      const low = quote.low?.[i]
-      const close = quote.close?.[i]
-      const volume = quote.volume?.[i] ?? 0
-      const time = timestamps[i]!
-
-      if (
-        typeof open === 'number' &&
-        typeof high === 'number' &&
-        typeof low === 'number' &&
-        typeof close === 'number' &&
-        Number.isFinite(high) &&
-        Number.isFinite(low)
-      ) {
-        dailyBars.push({ time, open, high, low, close, volume })
-      }
     }
 
     const benchmark = compute5MonthAnchoredVwapFromDailyBars(dailyBars)
@@ -116,6 +72,7 @@ export async function GET(request: Request) {
       instrument,
       avwap5m: benchmark,
       cached: false,
+      source: 'cme_globex',
     })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)

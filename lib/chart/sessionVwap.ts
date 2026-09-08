@@ -844,12 +844,11 @@ export const NY_DESK_CLOCK: DeskClock = {
   openLabel: 'NY 9:30',
 }
 
-/** @deprecated — kept for test-file compat only. All live instruments use NY_DESK_CLOCK. */
 export const TOKYO_DESK_CLOCK: DeskClock = {
-  timeZone: 'America/New_York',
-  cashOpenHour: 9.5,
-  overnightStartHour: 16,
-  openLabel: 'NY 9:30',
+  timeZone: 'Asia/Tokyo',
+  cashOpenHour: 9.0,
+  overnightStartHour: 15,
+  openLabel: 'Tokyo 9:00',
 }
 
 /** Returns the desk clock for instruments (DOW, NASDAQ, GOLD, CRUDE use NY, NIKKEI uses Tokyo). */

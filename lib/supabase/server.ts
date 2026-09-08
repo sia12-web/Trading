@@ -1,31 +1,10 @@
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
-import { assertSupabasePublicEnv } from '@/lib/supabase/env'
+import { createMockSupabaseClient } from '@/lib/supabase/mockClient'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 /**
- * Create Supabase client for server-side use (API routes, server components)
- * Handles auth state via cookies
+ * Server-side client: returns zero-network local mock client.
  */
-export async function createClient() {
-  const cookieStore = await cookies()
-  const { url, anonKey } = assertSupabasePublicEnv()
-
-  return createServerClient(url, anonKey, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll()
-      },
-      setAll(cookiesToSet: Array<{ name: string; value: string; options?: any }>) {
-        try {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          )
-        } catch {
-          // The `setAll` method was called from a Server Component
-          // This can be ignored if you have middleware refreshing
-          // user sessions
-        }
-      },
-    },
-  })
+export async function createClient(): Promise<SupabaseClient<any, 'public', any>> {
+  return createMockSupabaseClient()
 }
+

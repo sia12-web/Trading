@@ -61,6 +61,11 @@ bots/output/
 
 __pycache__/
 *.pyc
+# CME zip & extraction artifacts
+GLBX-*.zip
+condition.json
+manifest.json
+metadata.json
 tmp-*.json
 scratch/
 

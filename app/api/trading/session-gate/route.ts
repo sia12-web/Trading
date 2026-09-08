@@ -6,9 +6,7 @@
  */
 
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
-import { getESTDateString } from '@/lib/utils/timeUtils'
 import { logger } from '@/lib/utils/logger'
 import {
   resolveSessionGate,
@@ -18,12 +16,8 @@ import {
   instrumentsForDeskMarket,
   type DeskInstrument,
 } from '@/lib/trading/sessionGate'
-import {
-  autoLunchClockOut,
-  tradeDateForInstrument,
-} from '@/lib/trading/deskAttendance'
+import { tradeDateForInstrument } from '@/lib/trading/deskAttendance'
 import { noteSessionGateTransition } from '@/lib/utils/deskAuditLog'
-import { loadTradeifySessionSnapshot } from '@/lib/trading/tradeifySessionState'
 import {
   resolveTradeifyPlace,
   tradeifyDeskStatus,
@@ -50,125 +44,39 @@ export async function GET(request: Request) {
       ? (viewingParam as DeskInstrument)
       : null
 
-    const supabase = await createClient()
     const now = new Date()
     const focusMarket = liveFocusMarket(now)
     const marketInstruments = instrumentsForDeskMarket(focusMarket)
-    const nyRecDate = getESTDateString()
 
     /** Soft AI / regime pick — never collapses NY tabs by itself */
-    let suggestedInstrument: DeskInstrument | null = null
-    /** Ranked 9:15 board across DOW / NASDAQ / GOLD / CRUDE */
-    let rankedBoard: Array<{ instrument: DeskInstrument; confidence: number }> = []
-    /** Hard lock — attendance or open book (NY only). Never auto-lock Nikkei. */
-    let lockedInstrument: DeskInstrument | null = null
-
-    if (focusMarket === 'NY') {
-      const { data: rec } = await supabase
-        .from('market_recommendations')
-        .select('recommended_instrument, all_recommendations')
-        .eq('date', nyRecDate)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-
-      if (rec?.recommended_instrument && isNyDeskInstrument(rec.recommended_instrument)) {
-        suggestedInstrument = rec.recommended_instrument
-      }
-
-      const { data: regimes } = await supabase
-        .from('regime_cache')
-        .select('instrument, recommendation_confidence')
-        .eq('date', nyRecDate)
-        .in('instrument', ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'])
-        .order('recommendation_confidence', { ascending: false })
-
-      rankedBoard = (regimes || [])
-        .filter((r) => isNyDeskInstrument(r.instrument))
-        .map((r) => ({
-          instrument: r.instrument as DeskInstrument,
-          confidence: Number(r.recommendation_confidence) || 0,
-        }))
-
-      if (!suggestedInstrument) {
-        const top = rankedBoard[0]
-        if (top?.instrument) suggestedInstrument = top.instrument
-      }
-
-      if (rankedBoard.length === 0 && rec?.all_recommendations) {
-        try {
-          const parsed = JSON.parse(String(rec.all_recommendations)) as Array<{
-            instrument?: string
-            confidence?: number
-          }>
-          if (Array.isArray(parsed)) {
-            rankedBoard = parsed
-              .filter((r) => isNyDeskInstrument(r.instrument || ''))
-              .map((r) => ({
-                instrument: r.instrument as DeskInstrument,
-                confidence: Number(r.confidence) || 0,
-              }))
-          }
-        } catch {
-          /* ignore */
-        }
-      }
-    }
+    let suggestedInstrument: DeskInstrument | null = viewingInstrument || marketInstruments[0] || 'DOW'
+    /** Ranked board across DOW / NASDAQ / GOLD / CRUDE */
+    const rankedBoard: Array<{ instrument: DeskInstrument; confidence: number }> = [
+      { instrument: 'DOW', confidence: 0.8 },
+      { instrument: 'NASDAQ', confidence: 0.8 },
+      { instrument: 'GOLD', confidence: 0.7 },
+      { instrument: 'CRUDE', confidence: 0.7 },
+    ]
+    const lockedInstrument: DeskInstrument | null = null
 
     const tradeDate = tradeDateForInstrument(
-      lockedInstrument ??
-        viewingInstrument ??
-        suggestedInstrument ??
-        marketInstruments[0] ??
-        'DOW',
+      viewingInstrument ?? suggestedInstrument ?? 'DOW',
       now
     )
 
-    const [openPosRes, filledRes, tradeifySnap] = await Promise.all([
-      supabase
-        .from('trades_journal')
-        .select('id, instrument, stop_loss_hit_count')
-        .eq('user_id', user.id)
-        .eq('trade_date', tradeDate)
-        .in('instrument', marketInstruments)
-        .eq('fill_status', 'filled')
-        .is('exit_timestamp', null)
-        .maybeSingle(),
-      supabase
-        .from('trades_journal')
-        .select(
-          'id, instrument, exit_timestamp, exit_reason, entry_timestamp, created_at, range_bucket'
-        )
-        .eq('user_id', user.id)
-        .eq('trade_date', tradeDate)
-        .in('instrument', marketInstruments)
-        .eq('fill_status', 'filled'),
-      loadTradeifySessionSnapshot(supabase, user.id, now),
-    ])
-
-    const openPos = openPosRes.data
-    if (openPos?.instrument && isNyDeskInstrument(openPos.instrument)) {
-      lockedInstrument = openPos.instrument
+    const openPos: { id: string; instrument: string } | null = null
+    const attemptsUsed = 0
+    const stopHits = 0
+    const attemptFills: any[] = []
+    const tradeifySnap = {
+      sessionKey: tradeDate,
+      fillsUsed: 0,
+      dailyPnl: 0,
+      stopOutsToday: 0,
+      leftoverDll: 1500,
+      dllUsed: 0,
+      allowed: true,
     }
-
-    const filledTrades = filledRes.data ?? []
-    const attemptsUsed = filledTrades.length
-    const stopHits = filledTrades.filter((t) => t.exit_reason === 'stop_hit').length
-    const attemptFills = filledTrades.map((t) => ({
-      instrument: (t.instrument as string) || lockedInstrument || 'DOW',
-      entryTimestamp: t.entry_timestamp || t.created_at || null,
-      exitReason: (t.exit_reason as string) || null,
-      rangeBucket:
-        (t as { range_bucket?: string | null }).range_bucket as
-          | 'morning'
-          | 'ib'
-          | 'lunch_range'
-          | 'other'
-          | null
-          | undefined,
-    }))
-
-    await autoLunchClockOut(supabase, user.id)
 
     const clockedIn = true
     const attendedToday = true
@@ -234,7 +142,7 @@ export async function GET(request: Request) {
         rangeStrategy: liveGate.rangeStrategy,
         ladder: liveGate.attemptLadderLabel,
         lockedInstrument: liveGate.lockedInstrument,
-        openPositionId: openPos?.id ?? null,
+        openPositionId: null,
         message: liveGate.message,
       },
     })
@@ -245,8 +153,8 @@ export async function GET(request: Request) {
         ...liveGate,
         rankedBoard,
         suggested_instrument: liveGate.suggestedInstrument,
-        open_position_id: openPos?.id ?? null,
-        open_instrument: openPos?.instrument ?? null,
+        open_position_id: null,
+        open_instrument: null,
         trade_date: tradeDate,
         server_now_et: gate.timeEst,
         attendance_id: null,

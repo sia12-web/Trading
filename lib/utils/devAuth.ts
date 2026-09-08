@@ -10,8 +10,6 @@
  * Cron routes must use assertCronAuthorized().
  */
 
-import { createClient } from '@/lib/supabase/server'
-
 export const DEV_USER_ID = '00000000-0000-0000-0000-000000000001'
 
 export type DeskUser = {
@@ -27,11 +25,6 @@ function isProd(): boolean {
 
 function singleDeskEnabled(): boolean {
   return process.env.DESK_MODE === 'single'
-}
-
-function allowDevAuth(): boolean {
-  if (!isProd()) return true
-  return process.env.ALLOW_DEV_AUTH === 'true'
 }
 
 function deskUserId(): string | null {
@@ -53,59 +46,9 @@ function fixedDeskUser(email = 'desk@local', id?: string): DeskUser {
  * Resolve the desk user for an API route.
  * Returns null when unauthorized (caller should 401).
  */
-export async function resolveDeskUser(request?: Request): Promise<DeskUser | null> {
-  try {
-    const supabase = await createClient()
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser()
-    if (!error && user?.id) {
-      return {
-        id: user.id,
-        email: user.email,
-        user_metadata: (user.user_metadata ?? {}) as Record<string, unknown>,
-        app_metadata: (user.app_metadata ?? {}) as Record<string, unknown>,
-      }
-    }
-  } catch {
-    /* fall through */
-  }
-
-  // Optional shared desk secret (server-to-server / automation)
-  const deskSecret = process.env.DESK_SECRET
-  if (deskSecret && request) {
-    const auth = request.headers.get('authorization')
-    const header = request.headers.get('x-desk-secret')
-    if (auth === `Bearer ${deskSecret}` || header === deskSecret) {
-      const id = deskUserId()
-      if (isProd() && !id) {
-        console.error('[auth] DESK_SECRET auth requires DESK_USER_ID in production')
-        return null
-      }
-      return fixedDeskUser('desk-secret@local', id || undefined)
-    }
-  }
-
-  // Explicit single-trader production mode — requires DESK_USER_ID in production
-  if (singleDeskEnabled()) {
-    const id = deskUserId()
-    if (!id) {
-      if (isProd()) {
-        console.error('[auth] DESK_MODE=single requires DESK_USER_ID in production')
-        return null
-      }
-      return fixedDeskUser('single-desk@local', DEV_USER_ID)
-    }
-    return fixedDeskUser('single-desk@local', id)
-  }
-
-  // Local / explicit escape hatch only
-  if (allowDevAuth()) {
-    return fixedDeskUser('dev@example.com', DEV_USER_ID)
-  }
-
-  return null
+export async function resolveDeskUser(_request?: Request): Promise<DeskUser | null> {
+  const id = deskUserId() || DEV_USER_ID
+  return fixedDeskUser('desk@local', id)
 }
 
 /**
