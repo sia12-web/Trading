@@ -1099,9 +1099,45 @@ export function TradingChart({
   // ── User Interactive Drawing Tools (Trendline, Range, Manual FRVP) ────────
   type DrawingToolType = 'NONE' | 'TRENDLINE' | 'RANGE' | 'FRVP'
   const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingToolType>('NONE')
-  const [trendlines, setTrendlines] = useState<UserTrendline[]>([])
-  const [rangeBoxes, setRangeBoxes] = useState<UserRangeBox[]>([])
-  const [manualFrvps, setManualFrvps] = useState<UserManualFRVP[]>([])
+  const [trendlines, setTrendlines] = useState<UserTrendline[]>(() => {
+    if (typeof window === 'undefined') return []
+    try {
+      const saved = localStorage.getItem('trading_desk_trendlines_v1')
+      return saved ? JSON.parse(saved) : []
+    } catch {
+      return []
+    }
+  })
+  const [rangeBoxes, setRangeBoxes] = useState<UserRangeBox[]>(() => {
+    if (typeof window === 'undefined') return []
+    try {
+      const saved = localStorage.getItem('trading_desk_ranges_v1')
+      return saved ? JSON.parse(saved) : []
+    } catch {
+      return []
+    }
+  })
+  const [manualFrvps, setManualFrvps] = useState<UserManualFRVP[]>(() => {
+    if (typeof window === 'undefined') return []
+    try {
+      const saved = localStorage.getItem('trading_desk_frvps_v1')
+      return saved ? JSON.parse(saved) : []
+    } catch {
+      return []
+    }
+  })
+
+  // Auto-save drawings to localStorage on change
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      localStorage.setItem('trading_desk_trendlines_v1', JSON.stringify(trendlines))
+      localStorage.setItem('trading_desk_ranges_v1', JSON.stringify(rangeBoxes))
+      localStorage.setItem('trading_desk_frvps_v1', JSON.stringify(manualFrvps))
+    } catch (e) {
+      console.warn('Failed to save user drawings to localStorage:', e)
+    }
+  }, [trendlines, rangeBoxes, manualFrvps])
   const [drawingDraft, setDrawingDraft] = useState<{
     time: number
     price: number
@@ -1328,6 +1364,19 @@ export function TradingChart({
 
   const [instrument, setInstrumentState] = useState<Instrument>(
     () => initialInstrument ?? lockedInstrument ?? 'DOW'
+  )
+
+  const activeTrendlines = useMemo(
+    () => trendlines.filter((t) => !t.instrument || t.instrument === instrument),
+    [trendlines, instrument]
+  )
+  const activeRangeBoxes = useMemo(
+    () => rangeBoxes.filter((r) => !r.instrument || r.instrument === instrument),
+    [rangeBoxes, instrument]
+  )
+  const activeManualFrvps = useMemo(
+    () => manualFrvps.filter((f) => !f.instrument || f.instrument === instrument),
+    [manualFrvps, instrument]
   )
 
 
@@ -2373,7 +2422,7 @@ export function TradingChart({
     const candleTimes = list.map((c) => toChartTime(c.time as number, tz))
 
     // 1. Render Manual FRVPs
-    for (const f of manualFrvps) {
+    for (const f of activeManualFrvps) {
       const anchorChartT = toChartTime(f.timeStart, tz)
       const endChartT = toChartTime(f.timeEnd, tz)
       const rawXAnchor = timeToX(chart.timeScale(), anchorChartT, candleTimes)
@@ -2484,7 +2533,7 @@ export function TradingChart({
     }
 
     // 2. Render Range Boxes
-    for (const r of rangeBoxes) {
+    for (const r of activeRangeBoxes) {
       const x1 = timeToX(chart.timeScale(), toChartTime(r.p1.time, tz), candleTimes)
       const x2 = timeToX(chart.timeScale(), toChartTime(r.p2.time, tz), candleTimes)
       const y1 = series.priceToCoordinate(r.p1.price)
@@ -2545,7 +2594,7 @@ export function TradingChart({
       return [minX, yAtLeft, maxX, yAtRight]
     }
 
-    for (const tl of trendlines) {
+    for (const tl of activeTrendlines) {
       const x1 = timeToX(chart.timeScale(), toChartTime(tl.p1.time, tz), candleTimes)
       const x2 = timeToX(chart.timeScale(), toChartTime(tl.p2.time, tz), candleTimes)
       const y1 = series.priceToCoordinate(tl.p1.price)
@@ -2750,7 +2799,7 @@ export function TradingChart({
     }
 
     ctx.restore()
-  }, [trendlines, rangeBoxes, manualFrvps, drawingDraft, activeDrawingTool, showCandlestickPatterns])
+  }, [activeTrendlines, activeRangeBoxes, activeManualFrvps, drawingDraft, activeDrawingTool, showCandlestickPatterns])
 
   // ─── 5-Day Excesses & Rounded Numbers (Canvas) ──────────────────────────────
   const paintExcessesAndRounded = useCallback(() => {
@@ -3444,7 +3493,7 @@ export function TradingChart({
         isRetested: r.isRetested,
       })),
       userDrawings: {
-        trendlines: trendlines.map((t) => {
+        trendlines: activeTrendlines.map((t) => {
           const m = computeTrendlineMetrics(t.p1, t.p2, curPrice, Math.floor(Date.now() / 1000))
           return {
             id: t.id,
@@ -3461,7 +3510,7 @@ export function TradingChart({
             priceRelation: m.priceRelation,
           }
         }),
-        ranges: rangeBoxes.map((r) => {
+        ranges: activeRangeBoxes.map((r) => {
           const m = computeRangeMetrics(r.p1, r.p2, curPrice)
           return {
             id: r.id,
@@ -3477,7 +3526,7 @@ export function TradingChart({
             priceRelation: m.priceRelation,
           }
         }),
-        frvps: manualFrvps.map((f) => {
+        frvps: activeManualFrvps.map((f) => {
           let priceRel: 'AT_POC' | 'INSIDE_VALUE' | 'ABOVE_VAH' | 'BELOW_VAL' = 'INSIDE_VALUE'
           let distPoc: number | null = null
           if (curPrice != null) {
@@ -3563,9 +3612,9 @@ export function TradingChart({
     overnightInventory,
     positionOverlay,
     barCountdown,
-    trendlines,
-    rangeBoxes,
-    manualFrvps,
+    activeTrendlines,
+    activeRangeBoxes,
+    activeManualFrvps,
     showCandlestickPatterns,
   ])
 
@@ -7585,7 +7634,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             p1: { time: p1.time, price: p1.price },
             p2: { time: p2.time, price: p2.price },
             color: '#38bdf8',
-            label: `Trendline ${trendlines.length + 1}`,
+            label: `Trendline ${activeTrendlines.length + 1}`,
+            instrument,
           }
           setTrendlines((prev) => [...prev, newTl])
           setDrawingToast({
@@ -7601,7 +7651,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             p1: { time: p1.time, price: p1.price },
             p2: { time: p2.time, price: p2.price },
             color: '#a855f7',
-            label: `Range ${rangeBoxes.length + 1}`,
+            label: `Range ${activeRangeBoxes.length + 1}`,
+            instrument,
           }
           setRangeBoxes((prev) => [...prev, newRange])
           const highP = Math.max(p1.price, p2.price)
@@ -7626,6 +7677,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             p2.time
           )
           if (computed) {
+            computed.instrument = instrument
             setManualFrvps((prev) => [...prev, computed])
             setDrawingToast({
               type: 'FRVP',
@@ -9384,25 +9436,25 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               type="button"
               onClick={() => setDrawingsPanelOpen((prev) => !prev)}
               className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
-                drawingsPanelOpen || trendlines.length + rangeBoxes.length + manualFrvps.length > 0
+                drawingsPanelOpen || activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length > 0
                   ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
                   : 'text-slate-400 hover:bg-slate-800 hover:text-cyan-300'
               }`}
               title="Manage Drawings"
             >
               <span>🎨</span>
-              {trendlines.length + rangeBoxes.length + manualFrvps.length > 0 && (
+              {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length > 0 && (
                 <span className="absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-cyan-500 px-0.5 text-[9px] font-bold text-slate-950 shadow">
-                  {trendlines.length + rangeBoxes.length + manualFrvps.length}
+                  {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length}
                 </span>
               )}
               <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-cyan-200 shadow-xl border border-slate-800 group-hover:block z-50">
-                Manage Tools ({trendlines.length + rangeBoxes.length + manualFrvps.length})
+                Manage Tools ({activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length})
               </span>
             </button>
 
             {/* Quick Clear — only when drawings exist */}
-            {trendlines.length + rangeBoxes.length + manualFrvps.length > 0 && (
+            {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length > 0 && (
               <button
                 type="button"
                 onClick={handleClearAllDrawings}
@@ -9454,18 +9506,18 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             <div className="flex items-center justify-between border-b border-slate-700/80 px-3 py-2 bg-slate-800/60">
               <div className="flex items-center gap-1.5 font-bold text-xs text-cyan-300">
                 <span>🎨</span>
-                <span>User Tools & Drawings</span>
+                <span>User Tools & Drawings ({instrument})</span>
                 <span className="text-[11px] text-slate-400 font-normal">
-                  ({trendlines.length + rangeBoxes.length + manualFrvps.length})
+                  ({activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length})
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                {trendlines.length + rangeBoxes.length + manualFrvps.length > 0 && (
+                {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length > 0 && (
                   <button
                     type="button"
                     onClick={handleClearAllDrawings}
                     className="text-[11px] text-rose-400 hover:text-rose-300 font-semibold px-1 py-0.5 rounded hover:bg-rose-500/10 transition"
-                    title="Delete all drawn tools"
+                    title="Delete all drawn tools for this instrument"
                   >
                     Clear All
                   </button>
@@ -9481,10 +9533,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             </div>
 
             <div className="flex-1 overflow-y-auto p-2 space-y-2 text-xs divide-y divide-slate-800/60">
-              {trendlines.length === 0 && rangeBoxes.length === 0 && manualFrvps.length === 0 && (
+              {activeTrendlines.length === 0 && activeRangeBoxes.length === 0 && activeManualFrvps.length === 0 && (
                 <div className="py-6 text-center text-slate-500 space-y-1">
                   <div className="text-2xl">📐 ⬛ 📊</div>
-                  <div className="font-semibold text-slate-400">No active drawings</div>
+                  <div className="font-semibold text-slate-400">No active drawings on {instrument}</div>
                   <div className="text-[11px] text-slate-500">
                     Press <span className="text-sky-300 font-mono">W</span> for Trendline,{' '}
                     <span className="text-purple-300 font-mono">D</span> for Range, or{' '}
@@ -9494,13 +9546,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               )}
 
               {/* Trendlines */}
-              {trendlines.length > 0 && (
+              {activeTrendlines.length > 0 && (
                 <div className="pt-1.5 first:pt-0">
                   <div className="text-[10px] font-bold uppercase tracking-wider text-sky-400 mb-1 px-1">
-                    Trendlines ({trendlines.length})
+                    Trendlines ({activeTrendlines.length})
                   </div>
                   <div className="space-y-1">
-                    {trendlines.map((tl) => (
+                    {activeTrendlines.map((tl) => (
                       <div
                         key={tl.id}
                         className="group flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-800/40 hover:bg-slate-800/80 border border-slate-700/40 transition"
@@ -9539,13 +9591,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               )}
 
               {/* Range Boxes */}
-              {rangeBoxes.length > 0 && (
+              {activeRangeBoxes.length > 0 && (
                 <div className="pt-1.5 first:pt-0">
                   <div className="text-[10px] font-bold uppercase tracking-wider text-purple-400 mb-1 px-1">
-                    Range Boxes ({rangeBoxes.length})
+                    Range Boxes ({activeRangeBoxes.length})
                   </div>
                   <div className="space-y-1">
-                    {rangeBoxes.map((rb) => {
+                    {activeRangeBoxes.map((rb) => {
                       const hi = Math.max(rb.p1.price, rb.p2.price)
                       const lo = Math.min(rb.p1.price, rb.p2.price)
                       const pts = Math.round(hi - lo)
@@ -9590,13 +9642,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               )}
 
               {/* Manual FRVP */}
-              {manualFrvps.length > 0 && (
+              {activeManualFrvps.length > 0 && (
                 <div className="pt-1.5 first:pt-0">
                   <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400 mb-1 px-1">
-                    Manual FRVPs ({manualFrvps.length})
+                    Manual FRVPs ({activeManualFrvps.length})
                   </div>
                   <div className="space-y-1">
-                    {manualFrvps.map((fp) => (
+                    {activeManualFrvps.map((fp) => (
                       <div
                         key={fp.id}
                         className="group flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-800/40 hover:bg-slate-800/80 border border-slate-700/40 transition"

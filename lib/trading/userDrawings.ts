@@ -1,4 +1,4 @@
-﻿import type { ContextBar, VolumeProfileBin } from '@/lib/chart/context55'
+import type { ContextBar, VolumeProfileBin } from '@/lib/chart/context55'
 
 export interface UserTrendline {
   id: string
@@ -7,6 +7,7 @@ export interface UserTrendline {
   p2: { time: number; price: number }
   color?: string
   label?: string
+  instrument?: string
 }
 
 export interface UserRangeBox {
@@ -16,6 +17,7 @@ export interface UserRangeBox {
   p2: { time: number; price: number }
   color?: string
   label?: string
+  instrument?: string
 }
 
 export interface UserManualFRVP {
@@ -35,6 +37,7 @@ export interface UserManualFRVP {
   bins: VolumeProfileBin[]
   label?: string
   color?: string
+  instrument?: string
 }
 
 export interface UserDrawingsState {
