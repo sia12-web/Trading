@@ -4834,6 +4834,7 @@ export function TradingChart({
       lineWidth: 1 as const,
       priceLineVisible: false,
       lastValueVisible: false,
+      pointMarkersVisible: false,
       crosshairMarkerVisible: false,
       ...ignoreScale,
     }
@@ -4846,6 +4847,8 @@ export function TradingChart({
         lineWidth: 2,
         priceLineVisible: false,
         lastValueVisible: false,
+        pointMarkersVisible: false,
+        crosshairMarkerVisible: false,
         title: '',
         ...ignoreScale,
       }),

@@ -1244,6 +1244,7 @@ function SimulationDeskInner() {
       lineWidth: 1 as const,
       priceLineVisible: false,
       lastValueVisible: false,
+      pointMarkersVisible: false,
       crosshairMarkerVisible: false,
       ...ignoreScale,
     }
@@ -1256,6 +1257,8 @@ function SimulationDeskInner() {
         lineWidth: 2,
         priceLineVisible: false,
         lastValueVisible: false,
+        pointMarkersVisible: false,
+        crosshairMarkerVisible: false,
         title: 'AVWAP',
         ...ignoreScale,
       }),

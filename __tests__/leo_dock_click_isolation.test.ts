@@ -58,4 +58,24 @@ describe('Leo Dock & Reference Point Click Isolation Tests', () => {
     const gap = leoDockBottom - resetScaleTopEdgeFromBottom
     assert.ok(gap >= 10, `Gap between Reset scale and Leo dock button must be at least 10px (actual: ${gap}px)`)
   })
+
+  it('verifies that VWAP and bands series have crosshairMarkerVisible disabled', async () => {
+    const fs = await import('node:fs/promises')
+    const chartSrc = await fs.readFile('app/dashboard/chart/components/TradingChart.tsx', 'utf8')
+    const replaySrc = await fs.readFile('app/dashboard/simulation/replay/desk/page.tsx', 'utf8')
+
+    // In TradingChart.tsx
+    assert.ok(
+      chartSrc.includes('vwap: chart.addLineSeries({\n        color: \'#10b981\',\n        lineWidth: 2,\n        priceLineVisible: false,\n        lastValueVisible: false,\n        pointMarkersVisible: false,\n        crosshairMarkerVisible: false,') ||
+      chartSrc.includes('crosshairMarkerVisible: false') && chartSrc.includes('pointMarkersVisible: false'),
+      'TradingChart must disable crosshairMarkerVisible on VWAP series'
+    )
+
+    // In replay page.tsx
+    assert.ok(
+      replaySrc.includes('vwap: chart.addLineSeries({\n        color: VWAP_COLORS.vwap,\n        lineWidth: 2,\n        priceLineVisible: false,\n        lastValueVisible: false,\n        pointMarkersVisible: false,\n        crosshairMarkerVisible: false,') ||
+      replaySrc.includes('crosshairMarkerVisible: false') && replaySrc.includes('pointMarkersVisible: false'),
+      'Replay desk page must disable crosshairMarkerVisible on VWAP series'
+    )
+  })
 })
