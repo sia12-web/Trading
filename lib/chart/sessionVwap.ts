@@ -13,28 +13,28 @@ import type { UTCTimestamp } from 'lightweight-charts'
  */
 export const SESSION_STYLES = {
   Asia: {
-    color: 'rgba(59, 130, 246, 0.09)',
-    colorFull: 'rgba(59, 130, 246, 0.15)',
-    column: 'rgba(59, 130, 246, 0.08)',
+    color: 'rgba(41, 98, 255, 0.12)',
+    colorFull: 'rgba(41, 98, 255, 0.18)',
+    column: 'rgba(41, 98, 255, 0.07)',
     zIndex: 1,
-    line: '#3b82f6',
-    short: 'Asia',
+    line: '#2962FF',
+    short: 'Tokyo',
   },
   London: {
-    color: 'rgba(245, 158, 11, 0.09)',
-    colorFull: 'rgba(245, 158, 11, 0.15)',
-    column: 'rgba(245, 158, 11, 0.08)',
+    color: 'rgba(255, 152, 0, 0.12)',
+    colorFull: 'rgba(255, 152, 0, 0.18)',
+    column: 'rgba(255, 152, 0, 0.07)',
     zIndex: 2,
-    line: '#f59e0b',
-    short: 'Lon',
+    line: '#FF9800',
+    short: 'London',
   },
   'New York': {
-    color: 'rgba(34, 197, 94, 0.09)',
-    colorFull: 'rgba(34, 197, 94, 0.15)',
-    column: 'rgba(34, 197, 94, 0.08)',
+    color: 'rgba(8, 153, 129, 0.12)',
+    colorFull: 'rgba(8, 153, 129, 0.18)',
+    column: 'rgba(8, 153, 129, 0.07)',
     zIndex: 3,
-    line: '#22c55e',
-    short: 'NY',
+    line: '#089981',
+    short: 'New York',
   },
 } as const
 
@@ -42,13 +42,14 @@ export type SessionName = keyof typeof SESSION_STYLES
 
 /**
  * Desk session windows in America/New_York.
+ * London (03:00 → 11:30) and New York (09:30 → 16:00) overlap between 09:30 and 11:30.
  * New York ends at cash close (16:00). Asia starts at 18:00 ET.
  * 16:00–18:00 is intentionally uncolored (not Asia) so post-RTH bars
  * are not mistaken for the Asian session.
  */
 export const SESSION_WINDOWS = {
   Asia: { tz: 'America/New_York', start: 18, end: 3 }, // 18:00 → 03:00 (crosses midnight)
-  London: { tz: 'America/New_York', start: 3, end: 9.5 }, // 03:00 → 09:30
+  London: { tz: 'America/New_York', start: 3, end: 11.5 }, // 03:00 → 11:30 (LSE cash close)
   'New York': { tz: 'America/New_York', start: 9.5, end: 16 }, // 09:30 → 16:00
 } as const
 
@@ -64,8 +65,31 @@ export function nyDeskSessionAt(unix: number): SessionName | null {
     return null
   }
   if (h >= SESSION_WINDOWS.Asia.start || h < SESSION_WINDOWS.Asia.end) return 'Asia'
-  if (h < SESSION_WINDOWS.London.end) return 'London'
+  if (h < SESSION_WINDOWS['New York'].start) return 'London'
   return 'New York'
+}
+
+/**
+ * All active desk sessions at unix time.
+ * Supports concurrent active sessions (e.g. London + NY overlap from 09:30 to 11:30).
+ */
+export function activeDeskSessionsAt(unix: number): SessionName[] {
+  const h = hourInTz(unix, 'America/New_York')
+  // Post–NY cash close dead zone (16:00–18:00)
+  if (h >= SESSION_WINDOWS['New York'].end && h < SESSION_WINDOWS.Asia.start) {
+    return []
+  }
+  const active: SessionName[] = []
+  if (h >= SESSION_WINDOWS.Asia.start || h < SESSION_WINDOWS.Asia.end) {
+    active.push('Asia')
+  }
+  if (h >= SESSION_WINDOWS.London.start && h < SESSION_WINDOWS.London.end) {
+    active.push('London')
+  }
+  if (h >= SESSION_WINDOWS['New York'].start && h < SESSION_WINDOWS['New York'].end) {
+    active.push('New York')
+  }
+  return active
 }
 
 /** @deprecated Kept for test-file compat — all live instruments use nyDeskSessionAt. */
@@ -89,24 +113,33 @@ export function sessionInstanceKeyAt(
 ): { name: SessionName; key: string } | null {
   const sess = nyDeskSessionAt(unix)
   if (!sess) return null
+  return {
+    name: sess,
+    key: sessionInstanceKeyFor(unix, sess),
+  }
+}
+
+/** Unique key for any specific session instance on a date. */
+export function sessionInstanceKeyFor(
+  unix: number,
+  name: SessionName
+): string {
   const ymd = dayFormatter('America/New_York').format(new Date(unix * 1000))
   const h = hourInTz(unix, 'America/New_York')
   let sessionDate = ymd
   // Asia session starts at 18:00 on day D and ends at 03:00 on day D+1.
   // 00:00–03:00 belongs to the Asia session that started the previous evening.
-  if (sess === 'Asia' && h < 3) {
+  if (name === 'Asia' && h < 3) {
     sessionDate = dayFormatter('America/New_York').format(new Date((unix - 86400) * 1000))
   }
-  return {
-    name: sess,
-    key: `${sessionDate}_${sess}`,
-  }
+  return `${sessionDate}_${name}`
 }
 
 export const SESSION_RANGE_ORDER: SessionName[] = ['Asia', 'London', 'New York']
 
-/** Display name for a session — returns the session name (no overrides). */
-export function sessionLegendLabel(name: SessionName, _instrument?: string | null): string {
+/** Display name for a session — displays Asia as 'Tokyo' matching TradingView. */
+export function sessionLegendLabel(name: SessionName | string, _instrument?: string | null): string {
+  if (name === 'Asia') return 'Tokyo'
   return name
 }
 
@@ -456,72 +489,46 @@ export function computeSessionHighlightSpans(args: {
   if (bars.length === 0) return { spans: [], candleTimes: [] }
 
   const candleTimes = bars.map((c) => c.time)
-  const spans: SessionHighlightSpan[] = []
-  let runName: SessionName | null = null
-  let runKey: string | null = null
-  let runStart = 0
-  let runEnd = 0
-  let runHigh = -Infinity
-  let runLow = Infinity
-
-  const flush = () => {
-    if (runName == null || !(runHigh >= runLow) || runEnd <= runStart) return
-    const range = Number((runHigh - runLow).toFixed(2))
-    const avg = Number(((runHigh + runLow) / 2).toFixed(2))
-    const displayName = sessionLegendLabel(runName, args.instrument)
-    spans.push({
-      name: runName,
-      displayName,
-      startT: runStart,
-      endT: runEnd,
-      high: runHigh,
-      low: runLow,
-      range,
-      avg,
-    })
-  }
+  const spanMap = new Map<string, SessionHighlightSpan>()
 
   for (const c of bars) {
-    const info = sessionInstanceKeyAt(c.time, args.instrument)
-    // Dead zone (post cash close) — leave uncolored; do not stretch previous session
-    if (info == null) {
-      flush()
-      runName = null
-      runKey = null
-      runHigh = -Infinity
-      runLow = Infinity
-      continue
-    }
-
+    const activeSessions = activeDeskSessionsAt(c.time)
     const barEnd = Math.min(c.time + barSec, now + barSec)
-    // Flush on time gap (>45m) or day/session change so weekends and holidays never merge
-    const hasGap = runEnd > 0 && (c.time - runEnd > 45 * 60)
 
-    if (runName === null || runKey !== info.key || hasGap) {
-      flush()
-      runName = info.name
-      runKey = info.key
-      runStart = c.time
-      runEnd = barEnd
-      runHigh = c.high
-      runLow = c.low
-      continue
-    }
-
-    runEnd = Math.max(runEnd, barEnd)
-    if (c.high > runHigh) runHigh = c.high
-    if (c.low < runLow) runLow = c.low
-  }
-  flush()
-
-  // Seal only tiny abutting gaps (≤ one bar) — never paint across dead zones
-  for (let i = 0; i < spans.length - 1; i++) {
-    const cur = spans[i]!
-    const next = spans[i + 1]!
-    if (next.startT > cur.endT && next.startT - cur.endT <= barSec) {
-      cur.endT = next.startT
+    for (const name of activeSessions) {
+      const key = sessionInstanceKeyFor(c.time, name)
+      const existing = spanMap.get(key)
+      if (!existing) {
+        spanMap.set(key, {
+          name,
+          displayName: sessionLegendLabel(name, args.instrument),
+          startT: c.time,
+          endT: barEnd,
+          high: c.high,
+          low: c.low,
+        })
+      } else {
+        existing.endT = Math.max(existing.endT, barEnd)
+        if (c.high > existing.high) existing.high = c.high
+        if (c.low < existing.low) existing.low = c.low
+      }
     }
   }
+
+  const spans: SessionHighlightSpan[] = []
+  for (const span of spanMap.values()) {
+    if (span.high >= span.low && span.endT > span.startT) {
+      span.range = Number((span.high - span.low).toFixed(2))
+      span.avg = Number(((span.high + span.low) / 2).toFixed(2))
+      spans.push(span)
+    }
+  }
+
+  // Sort by startT ascending, then by zIndex
+  spans.sort((a, b) => {
+    if (a.startT !== b.startT) return a.startT - b.startT
+    return (SESSION_STYLES[a.name]?.zIndex ?? 0) - (SESSION_STYLES[b.name]?.zIndex ?? 0)
+  })
 
   // Mark the last (rightmost, currently active) span so it renders bolder
   if (spans.length > 0) {
@@ -731,47 +738,45 @@ export function paintSessionHighlightOverlay(
     d.style.zIndex = String(s.zIndex)
     d.title = `${s.displayName ?? s.name} session`
 
-    const lineColor = s.lineColor ?? s.borderColor ?? '#3b82f6'
+    const lineColor = s.lineColor ?? s.borderColor ?? '#2962FF'
 
     if (s.isColumn) {
-      d.style.borderLeft = `1.5px dashed ${lineColor}`
-      d.style.borderRight = `1.5px dashed ${lineColor}55`
+      d.style.borderLeft = 'none'
+      d.style.borderRight = 'none'
       d.style.borderTop = 'none'
       d.style.borderBottom = 'none'
-      const sessName = s.displayName ?? s.name
-      d.innerHTML = `
-        <div style="position:absolute;left:6px;top:6px;font-family:ui-monospace,SFMono-Regular,monospace;font-size:10px;font-weight:700;color:${lineColor};text-transform:uppercase;letter-spacing:0.06em;background:rgba(15,23,42,0.85);padding:1.5px 6px;border-radius:4px;border:1px solid ${lineColor}44;pointer-events:none;white-space:nowrap;">
-          ${sessName}
-        </div>
-      `
+      d.innerHTML = ''
       continue
     }
 
-    d.style.borderLeft = `1px dashed ${lineColor}40`
-    d.style.borderRight = `1px dashed ${lineColor}40`
-    if (s.isCurrent) {
-      // Active/in-progress session — solid borders for clear visual distinction
-      d.style.borderTop = `2px solid ${lineColor}`
-      d.style.borderBottom = `2px solid ${lineColor}`
-    } else {
-      // Historical sessions — dashed borders
-      d.style.borderTop = `1px dashed ${lineColor}`
-      d.style.borderBottom = `1px dashed ${lineColor}`
-    }
+    d.style.borderLeft = 'none'
+    d.style.borderRight = 'none'
+    d.style.borderTop = `1.5px dashed ${lineColor}`
+    d.style.borderBottom = `1.5px dashed ${lineColor}`
 
-    // Inner dotted midline and bottom label metadata (Range / Avg / Session) matching TradingView
+    // Inner dashed midline and bottom label metadata (Range / Avg / Session) matching TradingView
     const midY =
       s.yAvg != null && Number.isFinite(s.yAvg)
         ? Math.max(0, Math.min(s.height, s.yAvg - s.top))
         : s.height / 2
-    const rangeStr = s.range != null ? s.range.toFixed(2) : ''
-    const avgStr = s.avg != null ? s.avg.toFixed(2) : ''
-    const sessName = s.displayName ?? s.name
+    const rangeStr =
+      s.range != null
+        ? Number.isInteger(s.range)
+          ? s.range.toString()
+          : s.range.toFixed(2)
+        : ''
+    const avgStr =
+      s.avg != null
+        ? Number.isInteger(s.avg)
+          ? s.avg.toString()
+          : s.avg.toFixed(2)
+        : ''
+    const sessName = s.displayName ?? (s.name === 'Asia' ? 'Tokyo' : s.name)
 
-    const labelTop = s.height + 4
+    const labelTop = s.height + 6
     d.innerHTML = `
-      <div style="position:absolute;left:0;right:0;top:${midY}px;border-top:1px dotted ${lineColor};pointer-events:none;"></div>
-      <div style="position:absolute;left:6px;top:${labelTop}px;font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;font-size:11px;font-weight:500;line-height:1.32;color:${lineColor};pointer-events:none;white-space:nowrap;">
+      <div style="position:absolute;left:0;right:0;top:${midY}px;border-top:1.5px dashed ${lineColor};pointer-events:none;"></div>
+      <div style="position:absolute;left:8px;top:${labelTop}px;font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;font-size:11px;font-weight:500;line-height:1.35;color:${lineColor};pointer-events:none;white-space:nowrap;">
         ${rangeStr ? `<div>Range: ${rangeStr}</div>` : ''}
         ${avgStr ? `<div>Avg: ${avgStr}</div>` : ''}
         <div style="font-weight:600;">${sessName}</div>
@@ -805,8 +810,16 @@ export const TOKYO_DESK_CLOCK: DeskClock = {
   openLabel: 'NY 9:30',
 }
 
-/** Returns the NY desk clock for all supported instruments (DOW, NASDAQ, GOLD, CRUDE). */
-export function deskClockFor(_instrument?: string | null): DeskClock {
+/** Returns the desk clock for instruments (DOW, NASDAQ, GOLD, CRUDE use NY, NIKKEI uses Tokyo). */
+export function deskClockFor(instrument?: string | null): DeskClock {
+  if (instrument === 'NIKKEI') {
+    return {
+      timeZone: 'Asia/Tokyo',
+      cashOpenHour: 9.0,
+      overnightStartHour: 15,
+      openLabel: 'Tokyo 9:00',
+    }
+  }
   return NY_DESK_CLOCK
 }
 
