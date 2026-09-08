@@ -102,7 +102,18 @@ export async function getOandaCandlesRange(
   if (!symbol) return null
 
   const granularity = GRANULARITY[resolution] || 'M5'
-  const chunkSec = granularity === 'M1' ? 1 * 86400 : 3 * 86400
+  const chunkSec =
+    granularity === 'M1'
+      ? 2 * 86400
+      : granularity === 'M5'
+      ? 10 * 86400
+      : granularity === 'M15'
+      ? 25 * 86400
+      : granularity === 'M30'
+      ? 45 * 86400
+      : granularity === 'H1'
+      ? 90 * 86400
+      : 10 * 86400
 
   const ranges: Array<{ from: number; to: number }> = []
   let cursor = Math.floor(period1)
@@ -113,9 +124,18 @@ export async function getOandaCandlesRange(
     cursor = chunkEnd
   }
 
-  const parts = await Promise.all(
-    ranges.map((r) => fetchChunk(symbol, granularity, r.from, r.to))
-  )
+  const parts: OandaCandle[][] = []
+  const concurrency = 4
+  for (let i = 0; i < ranges.length; i += concurrency) {
+    const batch = ranges.slice(i, i + concurrency)
+    const batchRes = await Promise.all(
+      batch.map((r) => fetchChunk(symbol, granularity, r.from, r.to))
+    )
+    parts.push(...batchRes)
+    if (i + concurrency < ranges.length) {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+  }
   const candles = parts.flat()
 
   candles.sort((a, b) => a.time - b.time)

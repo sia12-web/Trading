@@ -98,13 +98,40 @@ async function runBacktestForInstrument(
   const candles = applyCmeBasisToCandles(res.candles, basis)
   console.log(`Loaded ${candles.length} 5m candles on CME scale (basis: ${basis})`)
 
-  // Group candles by trading day (calendar date in ET)
-  const daysMap = new Map<string, Candle[]>()
-  for (const c of candles) {
-    const dStr = new Date(c.time * 1000).toISOString().slice(0, 10)
-    const list = daysMap.get(dStr) ?? []
+  // Format dates and times in America/New_York (NYC Cash Session)
+  const fmtDate = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  const fmtTime = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+  })
+
+  interface NycCandle extends Candle {
+    etDate: string
+    etMins: number
+  }
+
+  const nyCandles: NycCandle[] = candles.map((c) => {
+    const d = new Date(c.time * 1000)
+    const etDate = fmtDate.format(d)
+    const timeStr = fmtTime.format(d)
+    const [h, m] = timeStr.split(':').map(Number)
+    const etMins = (h || 0) * 60 + (m || 0)
+    return { ...c, etDate, etMins }
+  })
+
+  // Group candles by NYC trading day
+  const daysMap = new Map<string, NycCandle[]>()
+  for (const c of nyCandles) {
+    const list = daysMap.get(c.etDate) ?? []
     list.push(c)
-    daysMap.set(dStr, list)
+    daysMap.set(c.etDate, list)
   }
 
   const dayKeys = Array.from(daysMap.keys()).sort()
@@ -119,7 +146,9 @@ async function runBacktestForInstrument(
     const priorBars = daysMap.get(priorDayKey)!
     const currentBars = daysMap.get(currentDayKey)!
 
-    if (priorBars.length < 12 || currentBars.length < 12) continue
+    // Filter for NYC Regular Trading Hours: 9:30 AM (570) to 4:00 PM (960)
+    const rthBars = currentBars.filter((b) => b.etMins >= 570 && b.etMins <= 960)
+    if (priorBars.length < 12 || rthBars.length < 6) continue
 
     // Compute Yesterday's Profile
     const ydayProfile = computeYesterdayProfile({
@@ -148,11 +177,12 @@ async function runBacktestForInstrument(
       currentSl: number
     } | null = null
 
-    // Walk through current day bars (simulate session progress)
+    // Walk through NYC Regular Trading Hours (RTH) bars
+    // Anchored Session VWAP begins at 9:30 AM ET open
     const sessionBars: Candle[] = []
 
-    for (let i = 0; i < currentBars.length; i++) {
-      const bar = currentBars[i]!
+    for (let i = 0; i < rthBars.length; i++) {
+      const bar = rthBars[i]!
       sessionBars.push(bar)
 
       // Manage active position if open
@@ -248,8 +278,8 @@ async function runBacktestForInstrument(
         }
       }
 
-      // If no active trade and daily attempt limit (max 3) not reached
-      if (!activePosition && dailyAttempts < 3 && sessionBars.length >= 14) {
+      // If no active trade, within NYC session entry window (up to 3:45 PM ET / 945 mins), and daily attempt limit < 3
+      if (!activePosition && dailyAttempts < 3 && sessionBars.length >= 14 && bar.etMins <= 945) {
         const vwap = calculateSessionVwap(sessionBars)
         const stochPoints = calculateStochastic(sessionBars, 14, 3, 3)
 
@@ -304,9 +334,9 @@ async function runBacktestForInstrument(
       }
     }
 
-    // End-of-day flatten if trade still open
+    // 4:00 PM ET Cash Session Close: Flatten any active position
     if (activePosition) {
-      const lastBar = currentBars[currentBars.length - 1]!
+      const lastBar = rthBars[rthBars.length - 1]!
       const { trade, tp1Hit } = activePosition
       trade.exitTime = lastBar.time
       trade.exitPrice = lastBar.close
@@ -377,8 +407,9 @@ async function runBacktestForInstrument(
 }
 
 async function main() {
+  const lookbackDays = process.argv[2] ? parseInt(process.argv[2], 10) : 365
   console.log(`====================================================================`)
-  console.log(`🚀 MULTI-MARKET BACKTEST: CONFLUENCE DIVERGENCE STRATEGY`)
+  console.log(`🚀 MULTI-MARKET BACKTEST: CONFLUENCE DIVERGENCE STRATEGY (${lookbackDays} DAYS / 1 YEAR)`)
   console.log(`====================================================================`)
 
   const instruments: Instrument[] = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE']
@@ -392,7 +423,7 @@ async function main() {
   let grandTotalR = 0
 
   for (const inst of instruments) {
-    const res = await runBacktestForInstrument(inst, 30)
+    const res = await runBacktestForInstrument(inst, lookbackDays)
     allResults[inst] = res
     if (res.metrics) {
       grandTotalTrades += res.metrics.totalTrades
@@ -408,7 +439,7 @@ async function main() {
   const grandProfitFactor = grandTotalGrossLoss > 0 ? grandTotalGrossProfit / grandTotalGrossLoss : 99.0
 
   console.log(`\n====================================================================`)
-  console.log(`🏆 PORTFOLIO SUMMARY (DOW + NASDAQ + GOLD)`)
+  console.log(`🏆 PORTFOLIO SUMMARY: DOW + NASDAQ + GOLD + CRUDE (${lookbackDays} DAYS)`)
   console.log(`====================================================================`)
   console.log(`Total Portfolio Trades: ${grandTotalTrades}`)
   console.log(`Portfolio Win Rate:     ${grandWinRate.toFixed(1)}%`)
@@ -417,14 +448,15 @@ async function main() {
   console.log(`Portfolio Total R:      +${grandTotalR.toFixed(1)}R`)
 
   // Write Markdown Report
-  let md = `# Historical Strategy Backtest Results
+  let md = `# Historical Strategy Backtest Results (1-Year / ${lookbackDays} Days Lookback)
 
 ## Confluence Divergence Strategy
 **Methodology:** Market Profile Value Area (Yesterday VAH/VAL/POC) + Session VWAP $\\pm1\\sigma$ + John Kurisko Stochastic (14,3,3) Divergence.
+**Lookback Horizon:** ${lookbackDays} Days (Full 1-Year Multi-Market Simulation)
 
 ---
 
-### Portfolio Performance Summary (DOW, NASDAQ, GOLD)
+### Portfolio Performance Summary (DOW, NASDAQ, GOLD, CRUDE)
 
 | Metric | Portfolio Value |
 | :--- | :--- |
