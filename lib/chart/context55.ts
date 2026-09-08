@@ -210,6 +210,14 @@ export function get5DayAnchorUnix(
     day: '2-digit',
   }).format(dt)
 
+  // If currently on a weekend (Saturday or Sunday), cash open has not occurred.
+  // The last completed trading day is Friday.
+  if (!isWeekdayYmd(ymd, clock.timeZone)) {
+    const lastTradingDay = nthTradingDayBefore(ymd, 1, clock.timeZone)
+    const startYmd = nthTradingDayBefore(lastTradingDay, 4, clock.timeZone)
+    return cashOpenUnixForYmd(startYmd, clock)
+  }
+
   const todayCashOpen = cashOpenUnixForYmd(ymd, clock)
   // Prior to 9:30 cash open (e.g. at 9:15 AM), today's cash session hasn't started yet.
   // The 5-day anchor starts from 5 completed trading days prior to 9:29 AM.
@@ -932,8 +940,11 @@ export function computeOvernightInventoryAndSessions(args: {
 
   const todayOpenUnix = cashOpenUnixForYmd(todayYmd, clock)
 
-  const priorYmd = yesterday.sessionDate
-  const asiaStartUnix = zonedCivilToUnix(priorYmd, 18, clock.timeZone)
+  // Overnight Asia session begins at 18:00 on the calendar evening preceding today (e.g. Sunday 18:00 for Monday).
+  const [y, m, d] = todayYmd.split('-').map(Number)
+  const prevCalDate = new Date(Date.UTC(y!, m! - 1, d! - 1, 12, 0, 0))
+  const prevCalYmd = prevCalDate.toISOString().slice(0, 10)
+  const asiaStartUnix = zonedCivilToUnix(prevCalYmd, 18, clock.timeZone)
   const asiaEndUnix = zonedCivilToUnix(todayYmd, 3, clock.timeZone)
 
   const londonStartUnix = asiaEndUnix

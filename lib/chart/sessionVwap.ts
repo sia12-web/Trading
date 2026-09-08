@@ -348,12 +348,10 @@ export function computeLatestSessionRanges(
   candles: SessionBar[],
   asOfUnix?: number
 ): SessionRange[] {
-  const now =
-    asOfUnix != null && Number.isFinite(asOfUnix)
-      ? asOfUnix
-      : Math.floor(Date.now() / 1000)
+  const hasAsOf = asOfUnix != null && Number.isFinite(asOfUnix)
+  const now = hasAsOf ? (asOfUnix as number) : Infinity
 
-  const bars = candles.filter((c) => c.time <= now)
+  const bars = candles.filter((c) => (hasAsOf ? c.time <= now : true))
   if (bars.length === 0) return []
 
   const firstBarT = bars[0]!.time
@@ -384,8 +382,8 @@ export function computeLatestSessionRanges(
       const scheduledStart = sessionEdgeUnix(dayUnix, w.start, w.tz)
       const scheduledEnd = sessionEdgeUnix(dayUnix, w.end, w.tz)
 
-      // Only draw range after the session has fully finished
-      if (now < scheduledEnd) continue
+      // Only draw range after the session has fully finished (if asOf provided)
+      if (hasAsOf && now < scheduledEnd) continue
       if (scheduledEnd <= firstBarT || scheduledStart >= lastBarT) continue
 
       const inSession: SessionBar[] = []
@@ -478,13 +476,11 @@ export function computeSessionHighlightSpans(args: {
   if (candles.length === 0) return { spans: [], candleTimes: [] }
 
   const barSec = args.barSeconds && args.barSeconds > 0 ? args.barSeconds : DESK_BAR_SECONDS
-  const now =
-    args.asOfUnix != null && Number.isFinite(args.asOfUnix)
-      ? args.asOfUnix
-      : Math.floor(Date.now() / 1000)
+  const hasAsOf = args.asOfUnix != null && Number.isFinite(args.asOfUnix)
+  const asOf = hasAsOf ? (args.asOfUnix as number) : Infinity
 
   const bars = candles
-    .filter((c) => c.time <= now && Number.isFinite(c.high) && Number.isFinite(c.low) && c.high >= c.low)
+    .filter((c) => (hasAsOf ? c.time <= asOf : true) && Number.isFinite(c.high) && Number.isFinite(c.low) && c.high >= c.low)
     .sort((a, b) => a.time - b.time)
   if (bars.length === 0) return { spans: [], candleTimes: [] }
 
@@ -493,7 +489,7 @@ export function computeSessionHighlightSpans(args: {
 
   for (const c of bars) {
     const activeSessions = activeDeskSessionsAt(c.time)
-    const barEnd = Math.min(c.time + barSec, now + barSec)
+    const barEnd = c.time + barSec
 
     for (const name of activeSessions) {
       const key = sessionInstanceKeyFor(c.time, name)
@@ -530,8 +526,16 @@ export function computeSessionHighlightSpans(args: {
     return (SESSION_STYLES[a.name]?.zIndex ?? 0) - (SESSION_STYLES[b.name]?.zIndex ?? 0)
   })
 
-  // Mark the last (rightmost, currently active) span so it renders bolder
-  if (spans.length > 0) {
+  // Mark currently active span(s) (including overlaps like London + NY) so they render bolder
+  const lastBarTime = bars[bars.length - 1]!.time
+  let matchedActive = false
+  for (const span of spans) {
+    if (lastBarTime >= span.startT && lastBarTime < span.endT) {
+      span.isCurrent = true
+      matchedActive = true
+    }
+  }
+  if (!matchedActive && spans.length > 0) {
     spans[spans.length - 1]!.isCurrent = true
   }
 

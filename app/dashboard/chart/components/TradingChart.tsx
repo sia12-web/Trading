@@ -5648,8 +5648,11 @@ export function TradingChart({
     }
 
     const tz = chartTzRef.current
-    const tip = (list[list.length - 1]?.time as number) || 0
-    const cacheKey = `${instrument}:${tip}:${list.length}:${tz}`
+    const lastBar = list[list.length - 1]
+    const tip = (lastBar?.time as number) || 0
+    const tipH = lastBar?.high != null ? Number(lastBar.high.toFixed(2)) : 0
+    const tipL = lastBar?.low != null ? Number(lastBar.low.toFixed(2)) : 0
+    const cacheKey = `${instrument}:${tip}:${tipH}:${tipL}:${list.length}:${tz}`
     let cached = sessionSpansRef.current
     if (!cached || cached.key !== cacheKey) {
       const built = computeSessionHighlightSpans({
@@ -5930,6 +5933,7 @@ export function TradingChart({
           paintDeskMarkersRef.current(next)
         }
       }
+      refreshSessionHighlightsRef.current?.()
     }
 
     const applyQuote = (
@@ -6140,6 +6144,7 @@ export function TradingChart({
           }
           candlesRef.current = nextBars
           syncDeskPlaybookRangesRef.current(nextBars)
+          refreshSessionHighlightsRef.current?.()
         }
         setDataMode('live')
         if (json.source === 'yahoo' || json.source === 'oanda') {
