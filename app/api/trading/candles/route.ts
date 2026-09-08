@@ -117,7 +117,7 @@ export async function GET(request: Request) {
         const basis =
           getCmeBasis(instrument) ??
           getLastKnownCmeBasis(instrument) ??
-          (instrument === 'DOW' ? 60.5 : instrument === 'NASDAQ' ? 36.5 : 0)
+          (instrument === 'DOW' ? 60.5 : instrument === 'NASDAQ' ? 36.5 : instrument === 'GOLD' ? 48.0 : 0)
         candles = applyCmeBasisToCandles(oanda.candles, basis)
         source = 'oanda'
       }

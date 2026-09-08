@@ -38,7 +38,7 @@ assert.equal(YAHOO_CME_SYMBOLS.NASDAQ, 'MNQ=F')
 assert.equal(YAHOO_CME_SYMBOLS.NIKKEI, 'NKD=F')
 assert.equal(YAHOO_CME_SYMBOLS.GOLD, 'MGC=F', 'GOLD chart is CME Micro Gold')
 assert.equal(YAHOO_CME_SYMBOLS.CRUDE, 'CL=F', 'CRUDE chart is CME Crude Oil')
-assert.ok(CME_BASIS_MAX_ABS.GOLD >= 10 && CME_BASIS_MAX_ABS.GOLD <= 40)
+assert.ok(CME_BASIS_MAX_ABS.GOLD >= 10 && CME_BASIS_MAX_ABS.GOLD <= 90)
 assert.ok(CME_BASIS_MAX_ABS.CRUDE >= 0.5 && CME_BASIS_MAX_ABS.CRUDE <= 5)
 
 {

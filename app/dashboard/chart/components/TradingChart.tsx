@@ -5080,7 +5080,11 @@ export function TradingChart({
           setCandles(trimmed)
           setDataMode('live')
           setCandleFeed(
-            json.source === 'yahoo' ? 'yahoo' : json.source === 'oanda' ? 'oanda' : 'empty'
+            json.source === 'yahoo' || json.source === 'databento'
+              ? 'yahoo'
+              : json.source === 'oanda'
+              ? 'oanda'
+              : 'empty'
           )
           const last = mapped[mapped.length - 1]
           const loadedPrice = json.quote?.price ?? last?.close ?? null
@@ -5151,6 +5155,7 @@ export function TradingChart({
     sessionSpansRef.current = null
     setStreamArmed(false)
     setCandles([])
+    candlesRef.current = []
     setLevels([])
     setLivePrice(null)
     publishPriceTick(null, 0)
@@ -6158,8 +6163,8 @@ export function TradingChart({
           refreshSessionHighlightsRef.current?.()
         }
         setDataMode('live')
-        if (json.source === 'yahoo' || json.source === 'oanda') {
-          setCandleFeed(json.source)
+        if (json.source === 'yahoo' || json.source === 'oanda' || json.source === 'databento') {
+          setCandleFeed(json.source === 'databento' ? 'yahoo' : json.source)
         }
       } catch {
         /* ignore */
