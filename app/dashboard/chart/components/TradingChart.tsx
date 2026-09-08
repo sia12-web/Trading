@@ -1421,13 +1421,7 @@ export function TradingChart({
       )
 
       confluenceLinesRef.current = [sEntry, sSl, sTp1, sTp2]
-
-      // Pan chart to center on the entry candle
-      const padView = 3600 * 4
-      chart.timeScale().setVisibleRange({
-        from: (t0 - padView) as any,
-        to:   (t0 + padView) as any,
-      })
+      // No auto-pan — chart stays at current position; scroll left to see the segments
     } catch (e) {
       console.error('Error drawing signal segments:', e)
     }
