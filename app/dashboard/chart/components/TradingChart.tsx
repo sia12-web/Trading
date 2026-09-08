@@ -1362,72 +1362,74 @@ export function TradingChart({
     }
   }, [showConfluenceSignals, instrument])
 
-  // ── Draw Price Lines (Entry, SL, TP1, TP2) on Selected Signal ─────────
+  // ── Draw LOCAL price-level segments (Entry, SL, TP1, TP2) near the signal candle ─────
+  // We use short LineSeries (2 points, ±3 h window) instead of createPriceLine so that
+  // the lines only appear when the user scrolls to that candle — they do NOT extend
+  // across the whole chart to the right edge.
   useEffect(() => {
-    const host = candleRef.current
-    if (!host) return
-    for (const line of confluenceLinesRef.current) {
-      try {
-        host.removePriceLine(line)
-      } catch {}
+    const chart = chartRef.current
+    // Remove any previously drawn segment series
+    for (const s of confluenceLinesRef.current) {
+      try { chart?.removeSeries(s) } catch {}
     }
     confluenceLinesRef.current = []
 
+    if (!chart) return
     if (!showConfluenceSignals || selectedSignalId == null) return
     const sig = historicalSignals.find((s) => s.id === selectedSignalId)
     if (!sig) return
 
     try {
-      const lineEntry = host.createPriceLine({
-        price: sig.entryPrice,
-        color: '#06b6d4',
-        lineWidth: 2,
-        lineStyle: 0,
-        axisLabelVisible: true,
-        title: `◆ ENTRY ${sig.direction} @ ${sig.entryPrice.toLocaleString()}`,
-      })
+      const tz = chartTzRef.current
+      const t0 = toChartTime(sig.time, tz)   // entry candle
+      const padSec = 3600 * 3                 // ±3 h window
 
-      const lineSl = host.createPriceLine({
-        price: sig.stopLoss,
-        color: '#f43f5e',
-        lineWidth: 2,
-        lineStyle: 2,
-        axisLabelVisible: true,
-        title: `▁ SL @ ${sig.stopLoss.toLocaleString()} (-${sig.riskPoints?.toFixed(1) ?? ''} pts)`,
-      })
-
-      const lineTp1 = host.createPriceLine({
-        price: sig.tp1,
-        color: '#10b981',
-        lineWidth: 2,
-        lineStyle: 2,
-        axisLabelVisible: true,
-        title: `▔ TP1 (70%) @ ${sig.tp1.toLocaleString()} (+${sig.rMultipleTp1 ?? 1.5}R)`,
-      })
-
-      const lineTp2 = host.createPriceLine({
-        price: sig.tp2,
-        color: '#84cc16',
-        lineWidth: 2,
-        lineStyle: 3,
-        axisLabelVisible: true,
-        title: `▔ TP2 (30%) @ ${sig.tp2.toLocaleString()} (+${sig.rMultipleTp2 ?? 2.5}R)`,
-      })
-
-      confluenceLinesRef.current = [lineEntry, lineSl, lineTp1, lineTp2]
-
-      const chart = chartRef.current
-      if (chart && sig.time) {
-        const tz = chartTzRef.current
-        const chartT = toChartTime(sig.time, tz)
-        const padSec = 3600 * 4
-        chart.timeScale().setVisibleRange({
-          from: (chartT - padSec) as any,
-          to: (chartT + padSec) as any,
+      // Helper: create a 2-point horizontal segment series
+      const makeSeg = (price: number, color: string, lineWidth: 2 | 3, lineStyle: 0 | 1 | 2 | 3, title: string) => {
+        const s = chart.addLineSeries({
+          color,
+          lineWidth,
+          lineStyle,
+          priceLineVisible: false,
+          lastValueVisible: true,
+          title,
+          crosshairMarkerVisible: false,
+          autoscaleInfoProvider: () => null,
         })
+        s.setData([
+          { time: (t0 - padSec) as any, value: price },
+          { time: (t0 + padSec) as any, value: price },
+        ])
+        return s
       }
+
+      const sEntry = makeSeg(
+        sig.entryPrice, '#06b6d4', 2, 0,
+        `◆ ENTRY ${sig.direction} @ ${sig.entryPrice.toLocaleString()}`
+      )
+      const sSl = makeSeg(
+        sig.stopLoss, '#f43f5e', 2, 2,
+        `SL @ ${sig.stopLoss.toLocaleString()} (-${sig.riskPoints?.toFixed(1) ?? ''} pts)`
+      )
+      const sTp1 = makeSeg(
+        sig.tp1, '#10b981', 2, 2,
+        `TP1 70% @ ${sig.tp1.toLocaleString()}`
+      )
+      const sTp2 = makeSeg(
+        sig.tp2, '#84cc16', 2, 3,
+        `TP2 30% @ ${sig.tp2.toLocaleString()}`
+      )
+
+      confluenceLinesRef.current = [sEntry, sSl, sTp1, sTp2]
+
+      // Pan chart to center on the entry candle
+      const padView = 3600 * 4
+      chart.timeScale().setVisibleRange({
+        from: (t0 - padView) as any,
+        to:   (t0 + padView) as any,
+      })
     } catch (e) {
-      console.error('Error drawing signal price lines:', e)
+      console.error('Error drawing signal segments:', e)
     }
   }, [selectedSignalId, showConfluenceSignals, historicalSignals])
   const [candles, setCandles] = useState<OHLCV[]>([])
