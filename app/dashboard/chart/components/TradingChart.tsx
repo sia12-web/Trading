@@ -1076,6 +1076,7 @@ export function TradingChart({
 }: TradingChartProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartFrameRef = useRef<HTMLDivElement>(null)
+  const outerWrapperRef = useRef<HTMLDivElement>(null)
   const renderedSessionExtremesRef = useRef<RenderedSessionExtremeHit[]>([])
   const sessionOverlayRef = useRef<HTMLDivElement>(null)
   const positionBandOverlayRef = useRef<HTMLDivElement>(null)
@@ -1114,9 +1115,14 @@ export function TradingChart({
     label: string
     summary: string
   } | null>(null)
+  // Draggable tool rail position (px from top-left of chart container)
+  const [railPos, setRailPos] = useState<{ x: number; y: number }>({ x: 10, y: 10 })
+  const railDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null)
+  const railContainerRef = useRef<HTMLDivElement | null>(null)
 
   // ── Confluence Strategy Signals State (Previous Days Entries, Stops & TP) ──
   const [showConfluenceSignals, setShowConfluenceSignals] = useState(false)
+  const [confluenceMinimized, setConfluenceMinimized] = useState(false)
   const [historicalSignals, setHistoricalSignals] = useState<any[]>([])
   const [selectedSignalId, setSelectedSignalId] = useState<number | null>(null)
   const [signalsLoading, setSignalsLoading] = useState(false)
@@ -4439,7 +4445,7 @@ export function TradingChart({
 
   const toggleFullscreen = useCallback(() => {
     if (!isFullscreen) {
-      const elem = containerRef.current?.parentElement || document.documentElement
+      const elem = outerWrapperRef.current || containerRef.current?.parentElement || document.documentElement
       if (elem.requestFullscreen) {
         elem.requestFullscreen().catch(() => null)
       }
@@ -8971,6 +8977,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
   return (
     <div
+      ref={outerWrapperRef}
       className={`flex flex-col gap-1 ${isFullscreen
         ? 'fixed inset-0 z-[100] bg-[#0d1117] p-2 h-screen w-screen'
         : 'h-full w-full'
@@ -9250,109 +9257,160 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           className="pointer-events-none absolute inset-0 z-[6]"
         />
 
-        {/* ── TradingView-style Left-Docked Floating Drawing Tool Rail ── */}
+        {/* ── Draggable Floating Drawing Tool Rail (horizontal) ── */}
         <div
-          className="absolute left-2.5 top-12 z-30 flex flex-col items-center gap-1 rounded-xl border border-slate-700/80 bg-slate-900/90 p-1 shadow-2xl backdrop-blur-md select-none"
+          ref={railContainerRef}
+          style={{ left: railPos.x, top: railPos.y }}
+          className="absolute z-30 flex flex-row items-center rounded-xl border border-slate-700/80 bg-slate-900/90 shadow-2xl backdrop-blur-md select-none"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Trendline (W) */}
-          <button
-            type="button"
-            onClick={() => {
-              setActiveDrawingTool((prev) => (prev === 'TRENDLINE' ? 'NONE' : 'TRENDLINE'))
-              setDrawingDraft(null)
+          {/* Drag Handle — left side, hold to move */}
+          <div
+            className="flex h-full cursor-grab items-center justify-center rounded-l-xl px-1.5 active:cursor-grabbing hover:bg-slate-800/60 transition-colors"
+            title="Hold to move toolbar"
+            onMouseDown={(e) => {
+              e.preventDefault()
+              railDragRef.current = {
+                startX: e.clientX,
+                startY: e.clientY,
+                origX: railPos.x,
+                origY: railPos.y,
+              }
+              const onMove = (ev: MouseEvent) => {
+                if (!railDragRef.current || !railContainerRef.current) return
+                const frame = chartFrameRef.current
+                const rail = railContainerRef.current
+                const dx = ev.clientX - railDragRef.current.startX
+                const dy = ev.clientY - railDragRef.current.startY
+                const maxX = frame ? Math.max(0, frame.clientWidth - rail.offsetWidth - 4) : 9999
+                const maxY = frame ? Math.max(0, frame.clientHeight - rail.offsetHeight - 4) : 9999
+                setRailPos({
+                  x: Math.min(maxX, Math.max(0, railDragRef.current.origX + dx)),
+                  y: Math.min(maxY, Math.max(0, railDragRef.current.origY + dy)),
+                })
+              }
+              const onUp = () => {
+                railDragRef.current = null
+                window.removeEventListener('mousemove', onMove)
+                window.removeEventListener('mouseup', onUp)
+              }
+              window.addEventListener('mousemove', onMove)
+              window.addEventListener('mouseup', onUp)
             }}
-            className={`group relative flex h-8 w-8 items-center justify-center rounded-lg text-sm transition-all ${
-              activeDrawingTool === 'TRENDLINE'
-                ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/30'
-                : 'text-slate-400 hover:bg-slate-800 hover:text-sky-300'
-            }`}
-            title="Draw Trendline (Hotkey: W)"
           >
-            <span>📐</span>
-            <span className="pointer-events-none absolute left-full ml-2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-sky-200 shadow-xl border border-slate-800 group-hover:block z-50">
-              Trendline (W)
-            </span>
-          </button>
+            {/* Dotted grip — 2 rows × 3 cols for horizontal bar */}
+            <svg width="6" height="14" viewBox="0 0 6 14" fill="none" className="opacity-40">
+              <circle cx="3" cy="2"  r="1.5" fill="currentColor" className="text-slate-300"/>
+              <circle cx="3" cy="7"  r="1.5" fill="currentColor" className="text-slate-300"/>
+              <circle cx="3" cy="12" r="1.5" fill="currentColor" className="text-slate-300"/>
+            </svg>
+          </div>
 
-          {/* Range Box (D) */}
-          <button
-            type="button"
-            onClick={() => {
-              setActiveDrawingTool((prev) => (prev === 'RANGE' ? 'NONE' : 'RANGE'))
-              setDrawingDraft(null)
-            }}
-            className={`group relative flex h-8 w-8 items-center justify-center rounded-lg text-sm transition-all ${
-              activeDrawingTool === 'RANGE'
-                ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
-                : 'text-slate-400 hover:bg-slate-800 hover:text-purple-300'
-            }`}
-            title="Draw Range / Box (Hotkey: D)"
-          >
-            <span>⬛</span>
-            <span className="pointer-events-none absolute left-full ml-2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-purple-200 shadow-xl border border-slate-800 group-hover:block z-50">
-              Range / Box (D)
-            </span>
-          </button>
-
-          {/* Manual FRVP (V) */}
-          <button
-            type="button"
-            onClick={() => {
-              setActiveDrawingTool((prev) => (prev === 'FRVP' ? 'NONE' : 'FRVP'))
-              setDrawingDraft(null)
-            }}
-            className={`group relative flex h-8 w-8 items-center justify-center rounded-lg text-sm transition-all ${
-              activeDrawingTool === 'FRVP'
-                ? 'bg-amber-600 text-white shadow-lg shadow-amber-600/30'
-                : 'text-slate-400 hover:bg-slate-800 hover:text-amber-300'
-            }`}
-            title="Draw Fixed Range Volume Profile (Hotkey: V)"
-          >
-            <span>📊</span>
-            <span className="pointer-events-none absolute left-full ml-2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-amber-200 shadow-xl border border-slate-800 group-hover:block z-50">
-              Manual FRVP (V)
-            </span>
-          </button>
-
-          <div className="h-px w-5 bg-slate-700/80 my-0.5" />
-
-          {/* Manage Drawings (Tools) */}
-          <button
-            type="button"
-            onClick={() => setDrawingsPanelOpen((prev) => !prev)}
-            className={`group relative flex h-8 w-8 items-center justify-center rounded-lg text-sm transition-all ${
-              drawingsPanelOpen || trendlines.length + rangeBoxes.length + manualFrvps.length > 0
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
-                : 'text-slate-400 hover:bg-slate-800 hover:text-cyan-300'
-            }`}
-            title="Manage Drawings"
-          >
-            <span>🎨</span>
-            {trendlines.length + rangeBoxes.length + manualFrvps.length > 0 && (
-              <span className="absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-cyan-500 px-0.5 text-[9px] font-bold text-slate-950 shadow">
-                {trendlines.length + rangeBoxes.length + manualFrvps.length}
-              </span>
-            )}
-            <span className="pointer-events-none absolute left-full ml-2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-cyan-200 shadow-xl border border-slate-800 group-hover:block z-50">
-              Manage Tools ({trendlines.length + rangeBoxes.length + manualFrvps.length})
-            </span>
-          </button>
-
-          {/* Quick Clear button if any drawings exist */}
-          {trendlines.length + rangeBoxes.length + manualFrvps.length > 0 && (
+          {/* Tool buttons — horizontal row */}
+          <div className="flex flex-row items-center gap-1 py-1 pr-1.5">
+            {/* Trendline (W) */}
             <button
               type="button"
-              onClick={handleClearAllDrawings}
-              className="group relative flex h-7 w-7 items-center justify-center rounded-lg text-xs text-slate-500 hover:bg-rose-500/20 hover:text-rose-300 transition-all"
-              title="Clear All Drawings"
+              onClick={() => {
+                setActiveDrawingTool((prev) => (prev === 'TRENDLINE' ? 'NONE' : 'TRENDLINE'))
+                setDrawingDraft(null)
+              }}
+              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
+                activeDrawingTool === 'TRENDLINE'
+                  ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/30'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-sky-300'
+              }`}
+              title="Draw Trendline (Hotkey: W)"
             >
-              <span>🗑️</span>
-              <span className="pointer-events-none absolute left-full ml-2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-rose-200 shadow-xl border border-slate-800 group-hover:block z-50">
-                Clear All Drawings
+              <span>📐</span>
+              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-sky-200 shadow-xl border border-slate-800 group-hover:block z-50">
+                Trendline (W)
               </span>
             </button>
-          )}
+
+            {/* Range Box (D) */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveDrawingTool((prev) => (prev === 'RANGE' ? 'NONE' : 'RANGE'))
+                setDrawingDraft(null)
+              }}
+              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
+                activeDrawingTool === 'RANGE'
+                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-purple-300'
+              }`}
+              title="Draw Range / Box (Hotkey: D)"
+            >
+              <span>⬛</span>
+              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-purple-200 shadow-xl border border-slate-800 group-hover:block z-50">
+                Range / Box (D)
+              </span>
+            </button>
+
+            {/* Manual FRVP (V) */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveDrawingTool((prev) => (prev === 'FRVP' ? 'NONE' : 'FRVP'))
+                setDrawingDraft(null)
+              }}
+              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
+                activeDrawingTool === 'FRVP'
+                  ? 'bg-amber-600 text-white shadow-lg shadow-amber-600/30'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-amber-300'
+              }`}
+              title="Draw Fixed Range Volume Profile (Hotkey: V)"
+            >
+              <span>📊</span>
+              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-amber-200 shadow-xl border border-slate-800 group-hover:block z-50">
+                Manual FRVP (V)
+              </span>
+            </button>
+
+            {/* ── Vertical Separator ── */}
+            <div className="w-px h-6 bg-slate-700/80 mx-0.5" />
+
+            {/* Manage Drawings */}
+            <button
+              type="button"
+              onClick={() => setDrawingsPanelOpen((prev) => !prev)}
+              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
+                drawingsPanelOpen || trendlines.length + rangeBoxes.length + manualFrvps.length > 0
+                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-cyan-300'
+              }`}
+              title="Manage Drawings"
+            >
+              <span>🎨</span>
+              {trendlines.length + rangeBoxes.length + manualFrvps.length > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-cyan-500 px-0.5 text-[9px] font-bold text-slate-950 shadow">
+                  {trendlines.length + rangeBoxes.length + manualFrvps.length}
+                </span>
+              )}
+              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-cyan-200 shadow-xl border border-slate-800 group-hover:block z-50">
+                Manage Tools ({trendlines.length + rangeBoxes.length + manualFrvps.length})
+              </span>
+            </button>
+
+            {/* Quick Clear — only when drawings exist */}
+            {trendlines.length + rangeBoxes.length + manualFrvps.length > 0 && (
+              <button
+                type="button"
+                onClick={handleClearAllDrawings}
+                className="group relative flex h-9 w-9 items-center justify-center rounded-lg text-sm text-slate-500 hover:bg-rose-500/20 hover:text-rose-300 transition-all"
+                title="Clear All Drawings"
+              >
+                <span>🗑️</span>
+                <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-rose-200 shadow-xl border border-slate-800 group-hover:block z-50">
+                  Clear All
+                </span>
+              </button>
+            )}
+
+            {/* ── Future-tools expansion zone ── */}
+            <div className="w-2 h-full" aria-hidden="true" />
+          </div>
         </div>
 
         {/* In-Progress Drawing Guide Banner */}
@@ -10385,184 +10443,194 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </DraggableDeskWidget>
         )}
 
-        {/* ── Confluence Strategy Historical Signals & Trade Replay Widget ── */}
+        {/* ── Confluence Strategy Historical Signals — compact, collapsible ── */}
         {showConfluenceSignals && (
-          <DraggableDeskWidget
-            storageKey="desk-confluence-signals"
-            defaultPos={{ x: 24, y: 110 }}
-            title={`⚡ Confluence Signals: ${instrument} (${historicalSignals.length})`}
-            onClose={() => {
-              setShowConfluenceSignals(false)
-              setSelectedSignalId(null)
-            }}
+          <div
+            className="absolute z-40 select-none"
+            style={{ top: 110, left: 24 }}
           >
-            <div className="flex flex-col w-[350px] max-h-[520px] text-xs">
-              {/* Header stats summary bar */}
-              <div className="grid grid-cols-3 gap-1.5 p-2 bg-black/40 border-b border-surface-700/60 text-center font-mono">
-                <div className="bg-surface-800/60 rounded p-1">
-                  <div className="text-[10px] text-gray-400">Setups</div>
-                  <div className="text-xs font-bold text-amber-300">{historicalSignals.length}</div>
-                </div>
-                <div className="bg-surface-800/60 rounded p-1">
-                  <div className="text-[10px] text-gray-400">Win Rate</div>
-                  <div className="text-xs font-bold text-emerald-400">
-                    {historicalSignals.length > 0
-                      ? `${Math.round(
-                          (historicalSignals.filter((s) => s.result === 'WIN_FULL' || s.result === 'WIN_PARTIAL').length /
-                            historicalSignals.length) *
-                            100
-                        )}%`
-                      : '—'}
-                  </div>
-                </div>
-                <div className="bg-surface-800/60 rounded p-1">
-                  <div className="text-[10px] text-gray-400">Total R</div>
-                  <div className="text-xs font-bold text-sky-300">
-                    {historicalSignals.length > 0
-                      ? `+${historicalSignals.reduce((acc, s) => acc + (s.rMultiple || 0), 0).toFixed(1)}R`
-                      : '—'}
-                  </div>
-                </div>
+            {/* Panel shell — fixed narrow width, no DraggableDeskWidget to avoid bulk */}
+            <div className="w-[420px] rounded-xl border border-amber-500/30 bg-[#0d1117]/97 shadow-2xl shadow-black/60 backdrop-blur-sm overflow-hidden">
+
+              {/* ─── Title bar ─────────────────────────────────────── */}
+              <div className="flex items-center gap-2 px-2.5 py-1.5 bg-amber-950/40 border-b border-amber-500/25 cursor-default">
+                <span className="text-amber-400 text-[11px]">⚡</span>
+                <span className="font-mono text-[11px] font-bold text-amber-200 tracking-wide flex-1">
+                  Signals · {instrument}
+                  {!confluenceMinimized && historicalSignals.length > 0 && (
+                    <span className="ml-1.5 text-[10px] text-gray-400 font-normal">
+                      {historicalSignals.filter((s) => s.result === 'WIN_FULL' || s.result === 'WIN_PARTIAL').length}W /
+                      {' '}{historicalSignals.filter((s) => s.result === 'LOSS').length}L ·&nbsp;
+                      {historicalSignals.reduce((a, s) => a + (s.rMultiple || 0), 0).toFixed(1)}R
+                    </span>
+                  )}
+                </span>
+                {signalsLoading && (
+                  <span className="inline-block h-2.5 w-2.5 animate-spin rounded-full border border-amber-300 border-t-transparent" />
+                )}
+                {/* Minimize / Expand */}
+                <button
+                  type="button"
+                  onClick={() => setConfluenceMinimized((p) => !p)}
+                  className="flex items-center justify-center w-5 h-5 rounded text-gray-400 hover:text-amber-300 hover:bg-amber-500/15 transition text-[11px] font-bold"
+                  title={confluenceMinimized ? 'Expand panel' : 'Minimize panel'}
+                >
+                  {confluenceMinimized ? '▲' : '▼'}
+                </button>
+                {/* Close (hides signals entirely) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowConfluenceSignals(false)
+                    setSelectedSignalId(null)
+                  }}
+                  className="flex items-center justify-center w-5 h-5 rounded text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition text-[11px] font-bold"
+                  title="Close signals panel"
+                >
+                  ✕
+                </button>
               </div>
 
-              {/* Status or loading message */}
-              {signalsLoading && (
-                <div className="flex items-center justify-center gap-2 py-6 text-gray-400 font-mono text-xs">
-                  <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border border-amber-300 border-t-transparent" />
-                  <span>Scanning NYC session candles...</span>
-                </div>
-              )}
+              {/* ─── Body (hidden when minimized) ──────────────────── */}
+              {!confluenceMinimized && (
+                <div>
+                  {/* Loading */}
+                  {signalsLoading && (
+                    <div className="flex items-center gap-2 px-3 py-3 text-[11px] text-gray-400 font-mono">
+                      <span className="inline-block h-3 w-3 animate-spin rounded-full border border-amber-300 border-t-transparent" />
+                      Scanning NYC session (14 days)…
+                    </div>
+                  )}
 
-              {!signalsLoading && historicalSignals.length === 0 && (
-                <div className="p-4 text-center text-gray-400 text-xs">
-                  No confluence setups triggered in the selected lookback window.
-                </div>
-              )}
+                  {/* Empty */}
+                  {!signalsLoading && historicalSignals.length === 0 && (
+                    <div className="px-3 py-3 text-[11px] text-gray-500 font-mono">
+                      No setups in lookback window.
+                    </div>
+                  )}
 
-              {/* Signals list */}
-              {!signalsLoading && historicalSignals.length > 0 && (
-                <div className="overflow-y-auto max-h-[420px] p-2 space-y-2 scrollbar-thin">
-                  <div className="text-[10px] text-gray-400 px-1 font-mono">
-                    Click any trade setup to plot Entry, Stop Loss & Take Profits on the chart:
-                  </div>
+                  {/* Column headers */}
+                  {!signalsLoading && historicalSignals.length > 0 && (
+                    <div className="flex items-center gap-0 px-2 pt-1.5 pb-0.5 text-[9px] font-bold uppercase tracking-wider text-gray-500 border-b border-surface-700/40 font-mono">
+                      <span className="w-[38px]">Dir</span>
+                      <span className="flex-1">Date / Time ET</span>
+                      <span className="w-[68px] text-right">Entry</span>
+                      <span className="w-[60px] text-right">SL</span>
+                      <span className="w-[60px] text-right">TP1</span>
+                      <span className="w-[56px] text-right pr-1">R</span>
+                    </div>
+                  )}
 
-                  {historicalSignals.map((sig) => {
-                    const isSelected = selectedSignalId === sig.id
-                    const isBuy = sig.direction === 'BUY'
-                    const isFullWin = sig.result === 'WIN_FULL'
-                    const isPartialWin = sig.result === 'WIN_PARTIAL'
-                    const isLoss = sig.result === 'LOSS'
+                  {/* Scrollable trade rows */}
+                  {!signalsLoading && historicalSignals.length > 0 && (
+                    <div className="overflow-y-auto max-h-[260px] divide-y divide-surface-800/50">
+                      {historicalSignals.map((sig) => {
+                        const isSelected = selectedSignalId === sig.id
+                        const isBuy = sig.direction === 'BUY'
+                        const isWin = sig.result === 'WIN_FULL' || sig.result === 'WIN_PARTIAL'
+                        const isLoss = sig.result === 'LOSS'
+                        const isOpen = sig.result === 'OPEN'
 
-                    return (
-                      <div
-                        key={sig.id}
-                        onClick={() => setSelectedSignalId(isSelected ? null : sig.id)}
-                        className={`cursor-pointer rounded-lg border p-2.5 transition-all text-left ${
-                          isSelected
-                            ? 'border-amber-400 bg-amber-950/30 shadow-md shadow-amber-950/40 ring-1 ring-amber-400/50'
-                            : 'border-surface-700/80 bg-surface-900/90 hover:border-surface-500 hover:bg-surface-800/80'
-                        }`}
-                      >
-                        {/* Top line: Date / Time + Direction + Outcome */}
-                        <div className="flex items-center justify-between gap-1.5 mb-1.5">
-                          <div className="flex items-center gap-1.5">
+                        return (
+                          <div
+                            key={sig.id}
+                            onClick={() => setSelectedSignalId(isSelected ? null : sig.id)}
+                            title={`${sig.locationReason ?? ''} · ${sig.triggerReason ?? ''} — click to plot on chart`}
+                            className={`flex items-center gap-0 px-2 py-[5px] cursor-pointer font-mono text-[11px] transition-colors ${
+                              isSelected
+                                ? 'bg-amber-950/50 border-l-2 border-amber-400'
+                                : 'hover:bg-surface-800/60 border-l-2 border-transparent'
+                            }`}
+                          >
+                            {/* Direction badge */}
                             <span
-                              className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wide ${
-                                isBuy
-                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                                  : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
+                              className={`w-[36px] shrink-0 text-[10px] font-extrabold ${
+                                isBuy ? 'text-emerald-400' : 'text-rose-400'
                               }`}
                             >
-                              {sig.direction}
+                              {isBuy ? '▲ B' : '▼ S'}
                             </span>
-                            <span className="font-mono text-[11px] font-semibold text-gray-300">
-                              {sig.date} {sig.timeEt}
+
+                            {/* Date / time */}
+                            <span className="flex-1 text-gray-300 truncate">
+                              {sig.date}&nbsp;<span className="text-gray-500">{sig.timeEt}</span>
                             </span>
-                          </div>
 
-                          <div className="flex items-center gap-1 font-mono text-[10px]">
-                            {isFullWin && (
-                              <span className="px-1.5 py-0.5 rounded font-bold bg-lime-950/90 border border-lime-500/50 text-lime-400">
-                                FULL WIN (+{sig.rMultiple ?? 2.5}R)
-                              </span>
-                            )}
-                            {isPartialWin && (
-                              <span className="px-1.5 py-0.5 rounded font-bold bg-emerald-950/90 border border-emerald-500/50 text-emerald-400">
-                                TP1 HIT (+{sig.rMultiple ?? 1.5}R)
-                              </span>
-                            )}
-                            {isLoss && (
-                              <span className="px-1.5 py-0.5 rounded font-bold bg-rose-950/90 border border-rose-500/50 text-rose-400">
-                                STOPPED ({sig.rMultiple ?? -1.0}R)
-                              </span>
-                            )}
-                            {sig.result === 'OPEN' && (
-                              <span className="px-1.5 py-0.5 rounded font-bold bg-blue-950/90 border border-blue-500/50 text-blue-400">
-                                IN PLAY
-                              </span>
-                            )}
-                          </div>
-                        </div>
+                            {/* Entry */}
+                            <span className="w-[68px] text-right text-cyan-300 font-semibold">
+                              {sig.entryPrice?.toLocaleString()}
+                            </span>
 
-                        {/* Price Details Grid */}
-                        <div className="grid grid-cols-2 gap-1.5 bg-black/40 rounded p-1.5 font-mono text-[11px] mb-1.5">
-                          <div>
-                            <span className="text-gray-500 text-[10px] block">ENTRY</span>
-                            <span className="text-cyan-300 font-bold">{sig.entryPrice.toLocaleString()}</span>
-                          </div>
-                          <div>
-                            <span className="text-gray-500 text-[10px] block">STOP LOSS</span>
-                            <span className="text-rose-400 font-bold">
-                              {sig.stopLoss.toLocaleString()}
-                              <span className="text-[10px] text-gray-400 font-normal ml-1">
-                                (-{sig.riskPoints?.toFixed(1)})
-                              </span>
+                            {/* Stop */}
+                            <span className="w-[60px] text-right text-rose-400">
+                              {sig.stopLoss?.toLocaleString()}
+                            </span>
+
+                            {/* TP1 */}
+                            <span className="w-[60px] text-right text-emerald-400">
+                              {sig.tp1?.toLocaleString()}
+                            </span>
+
+                            {/* R outcome pill */}
+                            <span
+                              className={`w-[54px] text-right pr-1 text-[10px] font-bold ${
+                                isWin
+                                  ? 'text-lime-400'
+                                  : isLoss
+                                  ? 'text-rose-500'
+                                  : isOpen
+                                  ? 'text-blue-400'
+                                  : 'text-gray-500'
+                              }`}
+                            >
+                              {isOpen
+                                ? 'open'
+                                : sig.rMultiple != null
+                                ? `${sig.rMultiple > 0 ? '+' : ''}${sig.rMultiple}R`
+                                : '—'}
                             </span>
                           </div>
-                          <div>
-                            <span className="text-gray-500 text-[10px] block">TP1 (70% scale)</span>
-                            <span className="text-emerald-400 font-bold">{sig.tp1.toLocaleString()}</span>
-                          </div>
-                          <div>
-                            <span className="text-gray-500 text-[10px] block">TP2 (30% runner)</span>
-                            <span className="text-lime-400 font-bold">{sig.tp2.toLocaleString()}</span>
-                          </div>
-                        </div>
+                        )
+                      })}
+                    </div>
+                  )}
 
-                        {/* Confluence details */}
-                        <div className="text-[10px] text-gray-400 font-sans space-y-0.5">
-                          {sig.locationReason && (
-                            <div className="flex items-start gap-1">
-                              <span className="text-gray-500 font-mono">LOC:</span>
-                              <span className="text-gray-300">{sig.locationReason}</span>
-                            </div>
-                          )}
-                          {sig.triggerReason && (
-                            <div className="flex items-start gap-1">
-                              <span className="text-gray-500 font-mono">TRIG:</span>
-                              <span className="text-gray-300">{sig.triggerReason}</span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Chart plot indicator */}
-                        <div className="mt-2 flex items-center justify-between border-t border-surface-700/40 pt-1 text-[10px]">
-                          <span className={isSelected ? 'text-amber-300 font-semibold' : 'text-gray-500'}>
-                            {isSelected ? '● Plotting Lines on Chart' : '○ Click to focus on chart'}
+                  {/* Selected signal detail strip */}
+                  {selectedSignalId != null && (() => {
+                    const sig = historicalSignals.find((s) => s.id === selectedSignalId)
+                    if (!sig) return null
+                    const isBuy = sig.direction === 'BUY'
+                    return (
+                      <div className={`border-t border-amber-500/30 bg-amber-950/20 px-2.5 py-2 text-[10px] font-mono`}>
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className={`font-extrabold text-[11px] ${isBuy ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {sig.direction} · {sig.date} {sig.timeEt}
                           </span>
-                          {isSelected && (
-                            <span className="text-[10px] text-amber-400 font-mono">
-                              [Entry / SL / TP1 / TP2 active]
-                            </span>
-                          )}
+                          <span className="text-gray-400">
+                            Entry <span className="text-cyan-300 font-bold">{sig.entryPrice?.toLocaleString()}</span>
+                            {'  '}SL <span className="text-rose-400 font-bold">{sig.stopLoss?.toLocaleString()}</span>
+                            {'  '}TP1 <span className="text-emerald-400 font-bold">{sig.tp1?.toLocaleString()}</span>
+                            {'  '}TP2 <span className="text-lime-400 font-bold">{sig.tp2?.toLocaleString()}</span>
+                          </span>
                         </div>
+                        {sig.locationReason && (
+                          <div className="mt-1 text-gray-400 truncate">
+                            <span className="text-gray-600">LOC</span> {sig.locationReason}
+                          </div>
+                        )}
+                        {sig.triggerReason && (
+                          <div className="text-gray-400 truncate">
+                            <span className="text-gray-600">TRIG</span> {sig.triggerReason}
+                          </div>
+                        )}
+                        <div className="mt-1 text-amber-400 text-[9px]">● Entry / SL / TP1 / TP2 plotted on chart — click row again to clear</div>
                       </div>
                     )
-                  })}
+                  })()}
                 </div>
               )}
             </div>
-          </DraggableDeskWidget>
+          </div>
         )}
 
         {/* User Drawing Toast Notification */}
