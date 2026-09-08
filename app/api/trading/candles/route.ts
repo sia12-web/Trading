@@ -25,12 +25,10 @@ import {
   sessionFor,
 } from '@/lib/trading/sessionGate'
 import { dropImplausibleDeskBars } from '@/lib/chart/liveFormingBar'
-import {
-  AVWAP_CANDLE_FETCH_CALENDAR_DAYS,
-  currentActiveSessionInfo,
-} from '@/lib/chart/sessionVwap'
+import { AVWAP_CANDLE_FETCH_CALENDAR_DAYS } from '@/lib/chart/sessionVwap'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import type { Instrument } from '@/types/price-feed'
+import { getDatabentoCandles, isDatabentoConfigured } from '@/lib/databento/client'
 import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
@@ -81,7 +79,7 @@ export async function GET(request: Request) {
       volume: number
     }
     let candles: CandleRow[] | null = null
-    let source: 'oanda' | 'yahoo' | 'empty' = 'empty'
+    let source: 'databento' | 'oanda' | 'yahoo' | 'empty' = 'empty'
 
     if (endDate && /^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
       // Sim / dated: full cash session (open → close) so afternoon chart keeps printing.
@@ -106,69 +104,49 @@ export async function GET(request: Request) {
       }
       // Keep afternoon bars on the replay day (and priors) — matches live continuum
     } else {
-      // Live desk: CME futures (MYM / MNQ / NKD / MGC / CL) first.
-      // Floor must cover AVWAP 5-trading-day-prior anchor (weekends truncate `days=5`).
-      // OANDA CFD history is last-resort only — session geometry differs from Tradovate.
+      // Live desk: OANDA real-time 24/7 feed + Databento CME Globex MDP 3.0.
+      // Floor must cover AVWAP 5-trading-day-prior anchor.
       const fetchDays = Math.max(days, AVWAP_CANDLE_FETCH_CALENDAR_DAYS)
-      const yahoo = await getYahooCandles(instrument, resolution, fetchDays)
-      if (yahoo?.candles?.length) {
-        candles = yahoo.candles
-        source = 'yahoo'
-      } else {
-        const oanda = await getOandaCandles(instrument, resolution, fetchDays)
-        if (oanda?.candles?.length) {
-          if (getCmeBasis(instrument) == null && getLastKnownCmeBasis(instrument) == null) {
-            await warmCmeBasis(instrument)
-          }
-          const basis =
-            getCmeBasis(instrument) ?? getLastKnownCmeBasis(instrument)
-          candles = applyCmeBasisToCandles(oanda.candles, basis)
-          source = 'oanda'
+
+      // 1. Fetch OANDA 24/7 continuous candles adjusted by CME basis
+      const oanda = await getOandaCandles(instrument, resolution, fetchDays)
+      if (oanda?.candles?.length) {
+        if (getCmeBasis(instrument) == null && getLastKnownCmeBasis(instrument) == null) {
+          await warmCmeBasis(instrument)
+        }
+        const basis =
+          getCmeBasis(instrument) ??
+          getLastKnownCmeBasis(instrument) ??
+          (instrument === 'DOW' ? 60.5 : instrument === 'NASDAQ' ? 36.5 : 0)
+        candles = applyCmeBasisToCandles(oanda.candles, basis)
+        source = 'oanda'
+      }
+
+      // 2. Fetch Databento official CME exchange candles if configured
+      if (isDatabentoConfigured()) {
+        const databento = await getDatabentoCandles(instrument, resolution, fetchDays)
+        if (databento?.candles?.length && candles?.length) {
+          const dbLastTime = databento.candles[databento.candles.length - 1]!.time
+          const liveTail = candles.filter((c) => c.time > dbLastTime)
+          candles = [...databento.candles, ...liveTail]
+          source = 'databento'
+        } else if (databento?.candles?.length) {
+          candles = databento.candles
+          source = 'databento'
         }
       }
-      // Live: afternoon included (lunch freeze off); sim still strips via clipAllAfternoonBars
+
+      // Fallback to Yahoo if both Databento and OANDA were unavailable
+      if (!candles || candles.length === 0) {
+        const yahoo = await getYahooCandles(instrument, resolution, fetchDays)
+        if (yahoo?.candles?.length) {
+          candles = yahoo.candles
+          source = 'yahoo'
+        }
+      }
+
       if (candles?.length) {
         candles = clipAfternoonBars(candles, instrument)
-      }
-    }
-
-    // In live mode, bridge active session (Asia / London / NY) if historical candles ended before session start
-    if (!endDate && candles && candles.length > 0) {
-      const activeInfo = currentActiveSessionInfo()
-      const nowSec = asOf != null && Number.isFinite(asOf) ? asOf : Math.floor(Date.now() / 1000)
-      const currentBucket = Math.floor(nowSec / 300) * 300
-      const lastBar = candles[candles.length - 1]!
-
-      if (activeInfo && lastBar.time < activeInfo.startUnix && currentBucket >= activeInfo.startUnix) {
-        const yq = await getYahooQuote(instrument)
-        const startPrice = yq?.previous_close || lastBar.close
-        const endPrice = yq?.price || lastBar.close
-        const sessionHigh = yq?.high != null && yq.high > 0 ? yq.high : Math.max(startPrice, endPrice)
-        const sessionLow = yq?.low != null && yq.low > 0 ? yq.low : Math.min(startPrice, endPrice)
-
-        const sessionBars: CandleRow[] = []
-        // 1. Session open anchor bar
-        sessionBars.push({
-          time: activeInfo.startUnix,
-          open: Number(startPrice.toFixed(2)),
-          high: Number(startPrice.toFixed(2)),
-          low: Number(startPrice.toFixed(2)),
-          close: Number(startPrice.toFixed(2)),
-          volume: 100,
-        })
-        // 2. Live forming bar at current bucket (if past session open)
-        if (currentBucket > activeInfo.startUnix) {
-          sessionBars.push({
-            time: currentBucket,
-            open: Number(startPrice.toFixed(2)),
-            high: Number(sessionHigh.toFixed(2)),
-            low: Number(sessionLow.toFixed(2)),
-            close: Number(endPrice.toFixed(2)),
-            volume: 100,
-          })
-        }
-
-        candles = [...candles, ...sessionBars]
       }
     }
 
