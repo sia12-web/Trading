@@ -167,6 +167,8 @@ import {
   computeCvdCandleBars,
   computeFootprintBars,
   aggregateFootprintTicks,
+  findNakedPocs,
+  findActiveUnfinishedAuctions,
   summarizeFootprintForLeo,
   type OrderFlowSummary,
   type FootprintBar,
@@ -6895,6 +6897,77 @@ export function TradingChart({
 
     const barBodyW = Math.min(130, Math.max(48, barSpacing * 0.88))
 
+    // ── 0. Institutional Forward Projections: Untested Naked POCs & Unfinished Auctions ──
+    const nakedPocs = findNakedPocs(fpBars)
+    for (const poc of nakedPocs) {
+      const yPoc = series.priceToCoordinate(poc.price)
+      if (yPoc != null && Number.isFinite(yPoc) && yPoc >= 0 && yPoc <= paneH) {
+        const startX = timeScale.timeToCoordinate(toChartTime(poc.time, tz) as UTCTimestamp)
+        const lineStart = Math.max(0, startX ?? 0)
+        ctx.save()
+        ctx.strokeStyle = '#f59e0b'
+        ctx.lineWidth = 1.5
+        ctx.setLineDash([5, 4])
+        ctx.beginPath()
+        ctx.moveTo(lineStart, Math.round(yPoc) + 0.5)
+        ctx.lineTo(paneW, Math.round(yPoc) + 0.5)
+        ctx.stroke()
+        ctx.setLineDash([])
+
+        // Right-aligned VPOC Badge
+        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+        const tagText = `VPOC ${poc.price.toFixed(2)}`
+        const textW = ctx.measureText(tagText).width
+        const badgeX = Math.max(lineStart + 10, paneW - textW - 75)
+        ctx.fillStyle = 'rgba(245, 158, 11, 0.25)'
+        ctx.fillRect(badgeX - 3, Math.round(yPoc) - 8, textW + 6, 15)
+        ctx.strokeStyle = '#f59e0b'
+        ctx.lineWidth = 1
+        ctx.strokeRect(badgeX - 3, Math.round(yPoc) - 8, textW + 6, 15)
+        ctx.fillStyle = '#fbbf24'
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(tagText, badgeX, Math.round(yPoc))
+        ctx.restore()
+      }
+    }
+
+    const unfinishedAuctions = findActiveUnfinishedAuctions(fpBars)
+    for (const ua of unfinishedAuctions) {
+      const yUa = series.priceToCoordinate(ua.price)
+      if (yUa != null && Number.isFinite(yUa) && yUa >= 0 && yUa <= paneH) {
+        const startX = timeScale.timeToCoordinate(toChartTime(ua.time, tz) as UTCTimestamp)
+        const lineStart = Math.max(0, startX ?? 0)
+        const isHigh = ua.type === 'HIGH'
+        const color = isHigh ? '#38bdf8' : '#fb7185'
+        ctx.save()
+        ctx.strokeStyle = color
+        ctx.lineWidth = 1.2
+        ctx.setLineDash([2, 3])
+        ctx.beginPath()
+        ctx.moveTo(lineStart, Math.round(yUa) + 0.5)
+        ctx.lineTo(paneW, Math.round(yUa) + 0.5)
+        ctx.stroke()
+        ctx.setLineDash([])
+
+        // Right-aligned UA Badge
+        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+        const tagText = `UA: ${isHigh ? 'High' : 'Low'} ${ua.price.toFixed(2)}`
+        const textW = ctx.measureText(tagText).width
+        const badgeX = Math.max(lineStart + 10, paneW - textW - 75)
+        ctx.fillStyle = isHigh ? 'rgba(56, 189, 248, 0.22)' : 'rgba(251, 113, 133, 0.22)'
+        ctx.fillRect(badgeX - 3, Math.round(yUa) - 8, textW + 6, 15)
+        ctx.strokeStyle = color
+        ctx.lineWidth = 1
+        ctx.strokeRect(badgeX - 3, Math.round(yUa) - 8, textW + 6, 15)
+        ctx.fillStyle = color
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(tagText, badgeX, Math.round(yUa))
+        ctx.restore()
+      }
+    }
+
     for (let i = startIdx; i <= endIdx; i++) {
       const bar = fpBars[i]
       if (!bar) continue
@@ -6914,9 +6987,49 @@ export function TradingChart({
       const bodyBot = Math.max(yOpen, yClose)
       const bodyH = Math.max(2, bodyBot - bodyTop)
       const bodyLeft = x - barBodyW / 2
-
-      // ── 1. Bar Header (Above High: Total Bar Volume in Blue, Net Bar Delta in Green/Red) ──
       const topY = Math.min(yHigh, yLow)
+      const botY = Math.max(yHigh, yLow)
+
+      // ── Trapped Traders Indicators ──
+      if (bar.trappedTraders === 'TRAPPED_BUYERS') {
+        const badgeY = topY - 34
+        if (badgeY > 12) {
+          ctx.save()
+          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+          const badgeText = '🔻 TRAPPED BUYERS'
+          const bW = ctx.measureText(badgeText).width + 10
+          ctx.fillStyle = 'rgba(239, 68, 68, 0.92)'
+          ctx.fillRect(x - bW / 2, badgeY - 7, bW, 15)
+          ctx.strokeStyle = '#fca5a5'
+          ctx.lineWidth = 1
+          ctx.strokeRect(x - bW / 2, badgeY - 7, bW, 15)
+          ctx.fillStyle = '#ffffff'
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillText(badgeText, x, badgeY)
+          ctx.restore()
+        }
+      } else if (bar.trappedTraders === 'TRAPPED_SELLERS') {
+        const badgeY = botY + 16
+        if (badgeY < paneH - 12) {
+          ctx.save()
+          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+          const badgeText = '🔺 TRAPPED SELLERS'
+          const bW = ctx.measureText(badgeText).width + 10
+          ctx.fillStyle = 'rgba(16, 185, 129, 0.92)'
+          ctx.fillRect(x - bW / 2, badgeY - 7, bW, 15)
+          ctx.strokeStyle = '#6ee7b7'
+          ctx.lineWidth = 1
+          ctx.strokeRect(x - bW / 2, badgeY - 7, bW, 15)
+          ctx.fillStyle = '#ffffff'
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillText(badgeText, x, badgeY)
+          ctx.restore()
+        }
+      }
+
+      // ── 1. Bar Header (Above High: Total Bar Volume in Blue, Net Bar Delta + % in Green/Red) ──
       if (topY > 30) {
         ctx.textAlign = 'center'
         ctx.textBaseline = 'bottom'
@@ -6926,9 +7039,10 @@ export function TradingChart({
         ctx.fillStyle = '#60a5fa'
         ctx.fillText(bar.totalVolume.toLocaleString(), x, topY - 14)
 
-        // Net bar delta (e.g. +1701 or -2256)
+        // Net bar delta with percentage (e.g. +1,701 (+12.4%))
         ctx.fillStyle = bar.netDelta >= 0 ? '#34d399' : '#f43f5e'
-        ctx.fillText(`${bar.netDelta >= 0 ? '+' : ''}${bar.netDelta.toLocaleString()}`, x, topY - 2)
+        const deltaText = `${bar.netDelta >= 0 ? '+' : ''}${bar.netDelta.toLocaleString()} (${bar.deltaPct > 0 ? '+' : ''}${bar.deltaPct}%)`
+        ctx.fillText(deltaText, x, topY - 2)
       }
 
       // ── 2. Candle Body Outline & Wicks ──────────────────────────────────────────

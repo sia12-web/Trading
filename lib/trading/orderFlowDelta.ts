@@ -60,10 +60,26 @@ export interface FootprintBar {
   candlePocPrice: number
   totalVolume: number
   netDelta: number
+  deltaPct: number
+  trappedTraders: 'TRAPPED_BUYERS' | 'TRAPPED_SELLERS' | 'NONE'
   ticks: FootprintTick[]
   stackedBuyImbalances: StackedImbalance[]
   stackedSellImbalances: StackedImbalance[]
   unfinishedAuction: { highZeroBid: boolean; lowZeroAsk: boolean }
+}
+
+export interface NakedPoc {
+  price: number
+  time: number
+  tested: boolean
+  totalVolume: number
+}
+
+export interface UnfinishedAuctionLevel {
+  type: 'HIGH' | 'LOW'
+  price: number
+  time: number
+  tested: boolean
 }
 
 export interface AggregatedFootprintRow {
@@ -384,6 +400,21 @@ export function computeFootprintBars(
       lowZeroAsk: bottomTick ? bottomTick.askVol === 0 : false,
     }
 
+    const deltaPct = vol > 0 ? Number(((delta / vol) * 100).toFixed(1)) : 0
+    let trappedTraders: 'TRAPPED_BUYERS' | 'TRAPPED_SELLERS' | 'NONE' = 'NONE'
+
+    const prevBar = footprintBars[footprintBars.length - 1]
+    if (prevBar) {
+      // Trapped Buyers: Bar pushed to/above prevBar high with negative delta & closed red
+      if (bar.high >= prevBar.high && delta < -Math.abs(vol * 0.04) && bar.close < bar.open) {
+        trappedTraders = 'TRAPPED_BUYERS'
+      }
+      // Trapped Sellers: Bar pushed to/below prevBar low with positive delta & closed green
+      else if (bar.low <= prevBar.low && delta > Math.abs(vol * 0.04) && bar.close > bar.open) {
+        trappedTraders = 'TRAPPED_SELLERS'
+      }
+    }
+
     footprintBars.push({
       time: bar.time,
       open: bar.open,
@@ -393,6 +424,8 @@ export function computeFootprintBars(
       candlePocPrice,
       totalVolume: vol,
       netDelta: delta,
+      deltaPct,
+      trappedTraders,
       ticks,
       stackedBuyImbalances,
       stackedSellImbalances,
@@ -469,6 +502,89 @@ export function aggregateFootprintTicks(
 }
 
 /**
+ * Detects Naked (Virgin) POCs from recent footprint bars that have not been
+ * re-tested by subsequent price action, acting as key liquidity targets.
+ */
+export function findNakedPocs(bars: FootprintBar[]): NakedPoc[] {
+  if (!bars || bars.length < 2) return []
+  const result: NakedPoc[] = []
+
+  for (let i = 0; i < bars.length - 1; i++) {
+    const b = bars[i]!
+    const poc = b.candlePocPrice
+    let tested = false
+
+    for (let j = i + 1; j < bars.length; j++) {
+      const next = bars[j]!
+      if (next.low <= poc && next.high >= poc) {
+        tested = true
+        break
+      }
+    }
+
+    if (!tested) {
+      result.push({
+        price: poc,
+        time: b.time,
+        tested: false,
+        totalVolume: b.totalVolume,
+      })
+    }
+  }
+
+  return result
+}
+
+/**
+ * Finds active Unfinished Auction levels (poor highs/lows) that have not been completed.
+ */
+export function findActiveUnfinishedAuctions(bars: FootprintBar[]): UnfinishedAuctionLevel[] {
+  if (!bars || bars.length === 0) return []
+  const result: UnfinishedAuctionLevel[] = []
+
+  for (let i = 0; i < bars.length; i++) {
+    const b = bars[i]!
+    if (b.unfinishedAuction.highZeroBid) {
+      let tested = false
+      for (let j = i + 1; j < bars.length; j++) {
+        if (bars[j]!.high >= b.high) {
+          tested = true
+          break
+        }
+      }
+      if (!tested) {
+        result.push({
+          type: 'HIGH',
+          price: b.high,
+          time: b.time,
+          tested: false,
+        })
+      }
+    }
+
+    if (b.unfinishedAuction.lowZeroAsk) {
+      let tested = false
+      for (let j = i + 1; j < bars.length; j++) {
+        if (bars[j]!.low <= b.low) {
+          tested = true
+          break
+        }
+      }
+      if (!tested) {
+        result.push({
+          type: 'LOW',
+          price: b.low,
+          time: b.time,
+          tested: false,
+        })
+      }
+    }
+  }
+
+  return result
+}
+
+/**
  * Summarizes recent footprint bars & stacked imbalances into structured,
  * actionable algorithmic text for Leo AI assistant.
  */
@@ -491,10 +607,36 @@ export function summarizeFootprintForLeo(
     activeSellStacked.push(...b.stackedSellImbalances)
   }
 
+  const nakedPocs = findNakedPocs(recentBars)
+  const unfinishedAuctions = findActiveUnfinishedAuctions(recentBars)
+
   let lines: string[] = []
   lines.push(`- Recent Footprint Bars Analyzed: Last 10 1m candles`)
   if (lastBar) {
-    lines.push(`- Active Bar Candle POC: ${lastBar.candlePocPrice.toFixed(2)} (Highest Vol Level: ${lastBar.totalVolume.toLocaleString()} contracts)`)
+    lines.push(`- Active Bar Candle POC: ${lastBar.candlePocPrice.toFixed(2)} (Highest Vol Level: ${lastBar.totalVolume.toLocaleString()} contracts, Delta: ${lastBar.netDelta >= 0 ? '+' : ''}${lastBar.netDelta} / ${lastBar.deltaPct}%)`)
+  }
+
+  // Trapped Traders Alert
+  const recentTrapped = recentBars.filter((b) => b.trappedTraders !== 'NONE')
+  if (recentTrapped.length > 0) {
+    const latestTrapped = recentTrapped[recentTrapped.length - 1]!
+    if (latestTrapped.trappedTraders === 'TRAPPED_BUYERS') {
+      lines.push(`- ⚠️ TRAPPED BUYERS: High of ${latestTrapped.high.toFixed(2)} met with aggressive limit absorption (Negative Delta ${latestTrapped.netDelta} Δ). High likelihood of downside rejection.`)
+    } else if (latestTrapped.trappedTraders === 'TRAPPED_SELLERS') {
+      lines.push(`- ⚠️ TRAPPED SELLERS: Low of ${latestTrapped.low.toFixed(2)} met with aggressive limit absorption (Positive Delta +${latestTrapped.netDelta} Δ). High likelihood of upside bounce.`)
+    }
+  }
+
+  // Naked POCs
+  if (nakedPocs.length > 0) {
+    const pocList = nakedPocs.map((p) => p.price.toFixed(2)).join(', ')
+    lines.push(`- 🎯 UNTESTED NAKED POCs (Liquidity Magnets): ${pocList}`)
+  }
+
+  // Unfinished Auctions
+  if (unfinishedAuctions.length > 0) {
+    const uaList = unfinishedAuctions.map((ua) => `${ua.type === 'HIGH' ? 'High' : 'Low'} @ ${ua.price.toFixed(2)}`).join(', ')
+    lines.push(`- ⚡ UNFINISHED AUCTION TARGETS: ${uaList} (Expected to complete in subsequent rotations)`)
   }
 
   if (activeBuyStacked.length > 0) {
