@@ -100,22 +100,20 @@ export function context55ScalePrices(args: {
   const add = (p?: number | null) => {
     if (p != null && Number.isFinite(p) && p > 0) nearby.push(p)
   }
+  // VWAP center only. ±σ last-values / extras flatten 5m candles.
   add(args.vwap)
-  add(args.vwapUpper1)
-  add(args.vwapLower1)
   return { always: [], nearby }
 }
 
 /**
- * Keep FRVP POCs on the pane. Pull in 5M VWAP / VA only when they sit near
- * the session so a 5-month mean or σ (~thousands of NASDAQ points) cannot
- * flatten candles.
+ * Keep FRVP POCs on the pane. Pull in 5M VWAP only when it sits within
+ * ~2× the session span so ±σ / a distant 5-month mean cannot flatten candles.
  */
 export function overlayPricesForVisibleScale(
   sessionMin: number,
   sessionMax: number,
   overlay: { always?: number[]; nearby?: number[] } | number[],
-  maxSessionMultiples = 4
+  maxSessionMultiples = 2
 ): number[] {
   const always = Array.isArray(overlay) ? overlay : overlay.always ?? []
   const nearby = Array.isArray(overlay) ? [] : overlay.nearby ?? []

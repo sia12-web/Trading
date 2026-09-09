@@ -62,6 +62,7 @@ assert.ok(live.includes("title: '-3σ'"), '−3σ is a persistent line series')
   assert.ok(i > 0 && j > i, 'VWAP series are created on the live chart')
   const vwapCreate = live.slice(i, j)
   assert.ok(vwapCreate.includes('...ignoreScale'), 'VWAP series do not flatten session candles')
+  assert.ok(vwapCreate.includes('lastValueVisible: false'), 'σ / VWAP labels must not pull the Y-axis')
 }
 assert.ok(live.includes('avwapFetchDoneRef'), '5-month dailies load before the first VWAP paint')
 assert.ok(live.includes('paintAnchoredVwapSigmaFill'), 'Background #1 fills between ±1σ')

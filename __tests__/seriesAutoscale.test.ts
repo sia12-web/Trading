@@ -30,16 +30,16 @@ import { VWAP_COLORS } from '../lib/chart/sessionVwap'
   })
   assert.deepEqual(extras.always, [])
   assert.ok(extras.nearby.includes(29020))
-  assert.ok(extras.nearby.includes(30219))
+  assert.ok(!extras.nearby.includes(30219), '±1σ does not join the candle scale')
   const session = paddedCandlePriceRange(
     29480,
     29620,
     overlayPricesForVisibleScale(29480, 29620, extras)
   )
   assert.ok(session)
-  assert.ok(session.priceRange.minValue > 27724, '5M −1σ does not flatten NASDAQ candles')
+  assert.ok(session.priceRange.minValue > 29020, 'far 5M VWAP does not flatten NASDAQ candles')
   assert.ok(session.priceRange.maxValue < 30316, '5M +1σ does not flatten NASDAQ candles')
-  assert.ok(session.priceRange.maxValue - session.priceRange.minValue < 900, 'pane stays on the session')
+  assert.ok(session.priceRange.maxValue - session.priceRange.minValue < 250, 'pane stays on the session')
 }
 
 {

@@ -4438,8 +4438,6 @@ export function TradingChart({
   useEffect(() => {
     scaleOverlayPricesRef.current = context55ScalePrices({
       vwap: currentVwap?.vwap ?? avwap5mBenchmark?.vwap,
-      vwapUpper1: currentVwap?.upper1,
-      vwapLower1: currentVwap?.lower1,
     })
     try {
       chartRef.current?.priceScale('right').applyOptions({ autoScale: true })
@@ -5767,11 +5765,11 @@ export function TradingChart({
     })
 
     // Anchored VWAP — TradingView colors. Session autoscale keeps candles
-    // readable; 5-month ±σ must not own the Y-axis or bars go flat.
+    // readable. ±σ last-value labels expand the Y-axis to ±3σ and flatten bars.
     const bandOpts = {
       lineWidth: 1 as const,
       priceLineVisible: false,
-      lastValueVisible: true,
+      lastValueVisible: false,
       pointMarkersVisible: false,
       crosshairMarkerVisible: false,
       ...ignoreScale,
@@ -5784,7 +5782,7 @@ export function TradingChart({
         color: VWAP_COLORS.vwap,
         lineWidth: 2,
         priceLineVisible: false,
-        lastValueVisible: true,
+        lastValueVisible: false,
         pointMarkersVisible: false,
         crosshairMarkerVisible: false,
         title: 'VWAP',
