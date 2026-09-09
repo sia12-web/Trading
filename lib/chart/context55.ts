@@ -97,6 +97,11 @@ export interface AnchoredVwapBenchmark5M {
   sigma2Upper: number
   sigma2Lower: number
   barCount?: number
+  /** Running sums so 5m bars after `lastBarUnix` can continue the true 5M AVWAP. */
+  lastBarUnix?: number
+  sumPV?: number
+  sumV?: number
+  sumP2V?: number
 }
 
 export interface YesterdayNycSession {
@@ -488,6 +493,8 @@ export function compute5MonthAnchoredVwapFromDailyBars(
   const variance = Math.max(0, sumP2V / sumV - vwap * vwap)
   const std = Math.sqrt(variance)
 
+  const lastIncluded = sorted.filter((b) => b.time >= anchorUnix - 86400 && b.time <= tipTime).pop()
+
   return {
     anchorDate: anchorYmd,
     anchorUnix,
@@ -497,6 +504,10 @@ export function compute5MonthAnchoredVwapFromDailyBars(
     sigma2Upper: Number((vwap + 2 * std).toFixed(2)),
     sigma2Lower: Number((vwap - 2 * std).toFixed(2)),
     barCount,
+    lastBarUnix: lastIncluded?.time,
+    sumPV,
+    sumV,
+    sumP2V,
   }
 }
 
@@ -532,7 +543,11 @@ export function compute5MonthAnchoredVwap(args: {
   const lower2: { time: UTCTimestamp; value: number }[] = []
 
   for (const c of bars) {
-    if (c.time < anchorUnix && !baseline) continue
+    if (baseline != null) {
+      if (baseline.startUnix != null && c.time <= baseline.startUnix) continue
+    } else if (c.time < anchorUnix) {
+      continue
+    }
 
     const price = (c.high + c.low + c.close) / 3
     const vol = c.volume > 0 ? c.volume : 1
@@ -954,8 +969,9 @@ export function computeOvernightInventoryAndSessions(args: {
   const londonStartUnix = asiaEndUnix
   const londonEndUnix = todayOpenUnix
 
-  // Yesterday's inventory is removed; profile starts drawing once London opens (03:00 ET)
-  if (tipTime < londonStartUnix) {
+  // Overnight FRVP starts at Asia open (18:00 ET) so Tokyo hours still show
+  // inventory / ON-POC. London FRVP is added once 03:00 ET prints exist.
+  if (tipTime < asiaStartUnix) {
     return null
   }
 
@@ -963,8 +979,11 @@ export function computeOvernightInventoryAndSessions(args: {
   // Dynamic profile: from Asia Open (18:00 ET) up to current time (e.g. 08:30 ET), updating until 09:30 ET cash open
   const overnightEndUnix = Math.min(todayOpenUnix, tipTime)
 
-  const asia = computeSessionVolumeProfile(bars, asiaStartUnix, asiaEndUnix, 'Asia')
-  const london = computeSessionVolumeProfile(bars, londonStartUnix, Math.min(londonEndUnix, tipTime), 'London')
+  const asia = computeSessionVolumeProfile(bars, asiaStartUnix, Math.min(asiaEndUnix, tipTime), 'Asia')
+  const london =
+    tipTime >= londonStartUnix
+      ? computeSessionVolumeProfile(bars, londonStartUnix, Math.min(londonEndUnix, tipTime), 'London')
+      : null
   const overnight = computeSessionVolumeProfile(bars, overnightStartUnix, overnightEndUnix, 'Overnight')
 
   // Calculate volume distribution relative to Yesterday Close

@@ -151,4 +151,16 @@ const t0 = 1_700_000_000 - (1_700_000_000 % 300)
   assert.equal(sane[0]!.close, 4650)
 }
 
+{
+  const fridayClose = t0
+  const sundayReopen = t0 + 12 * 3600
+  const bars = [
+    { time: fridayClose, open: 29500, high: 29520, low: 29480, close: 29500 },
+    { time: sundayReopen, open: 27800, high: 27900, low: 27700, close: 27850 },
+  ]
+  const sane = dropImplausibleDeskBars(bars, 'NASDAQ')
+  assert.equal(sane.length, 2, 'keep genuine reopen after a session/weekend gap')
+  assert.equal(sane[1]!.close, 27850)
+}
+
 console.log('live_forming_bar: all passed')

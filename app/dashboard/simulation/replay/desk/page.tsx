@@ -108,8 +108,7 @@ import {
 } from '@/lib/chart/traderDisplayTz'
 import {
   DESK_BAR_SPACING,
-  DESK_CANDLE_DOWN,
-  DESK_CANDLE_UP,
+  DESK_CANDLE_SERIES_COLORS,
   DESK_CHART_THEME,
 } from '@/lib/chart/deskChartTheme'
 import { lockToCandleAutoscale, paddedCandlePriceRange, sessionFocusHighLow } from '@/lib/chart/seriesAutoscale'
@@ -1213,12 +1212,7 @@ function SimulationDeskInner() {
     }
 
     const series = chart.addCandlestickSeries({
-      upColor: DESK_CANDLE_UP,
-      downColor: DESK_CANDLE_DOWN,
-      borderUpColor: DESK_CANDLE_UP,
-      borderDownColor: DESK_CANDLE_DOWN,
-      wickUpColor: DESK_CANDLE_UP,
-      wickDownColor: DESK_CANDLE_DOWN,
+      ...DESK_CANDLE_SERIES_COLORS,
       borderVisible: true,
       wickVisible: true,
       autoscaleInfoProvider: candleAutoscale,

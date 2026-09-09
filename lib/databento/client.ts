@@ -23,6 +23,45 @@ export interface DatabentoCandle {
   volume: number
 }
 
+/**
+ * Databento JSON may send prices as 1e-9 fixed-point integers OR already-decimal
+ * floats / numeric strings (pretty_px). Gold ~4500 and Dow ~53000 must not be
+ * divided by 1e9 (that collapses them to 0.00 and the chart falls back / gaps).
+ */
+export function parseDatabentoPx(raw: unknown): number {
+  const n = typeof raw === 'string' ? Number(raw.replace(/,/g, '')) : Number(raw)
+  if (!Number.isFinite(n) || n === 0) return NaN
+  if (Math.abs(n) >= 1e6) return n / 1e9
+  return n
+}
+
+/** hd.ts_event is usually nanoseconds; some encodings already use ms or seconds. */
+export function parseDatabentoTs(raw: unknown): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n <= 0) return NaN
+  if (n > 1e16) return Math.floor(n / 1e9)
+  if (n > 1e14) return Math.floor(n / 1e9)
+  if (n > 1e12) return Math.floor(n / 1e3)
+  return Math.floor(n)
+}
+
+/** Union two OHLCV series by bar time. `primary` wins on overlap (live API over archive). */
+export function mergeCandleSeries(
+  primary: DatabentoCandle[],
+  fallback: DatabentoCandle[]
+): DatabentoCandle[] {
+  if (primary.length === 0) return fallback.slice()
+  if (fallback.length === 0) return primary.slice()
+  const byTime = new Map<number, DatabentoCandle>()
+  for (const c of fallback) {
+    if (c.time > 0 && c.close > 0) byTime.set(c.time, c)
+  }
+  for (const c of primary) {
+    if (c.time > 0 && c.close > 0) byTime.set(c.time, c)
+  }
+  return Array.from(byTime.values()).sort((a, b) => a.time - b.time)
+}
+
 // In-memory cache to avoid re-fetching historical ranges
 interface CacheEntry {
   at: number
@@ -115,10 +154,29 @@ export async function getDatabentoCandles(
     return { candles: cached.candles, symbol }
   }
 
+  const nowSec = Math.floor(Date.now() / 1000)
+  const lookbackSec = Math.max(days, 5) * 24 * 3600
+  const archiveStart = nowSec - lookbackSec
+  const archive5m = getCme5mRange(instrument, archiveStart, nowSec)
+  const resSec = resolutionSeconds(resolution)
+  const archiveCandles: DatabentoCandle[] = aggregateCandles(
+    archive5m.map((b) => ({
+      time: b.time,
+      open: b.open,
+      high: b.high,
+      low: b.low,
+      close: b.close,
+      volume: b.volume,
+    })),
+    resSec
+  )
+
+  let apiCandles: DatabentoCandle[] = []
+
   if (apiKey) {
     const maxEnd = await getAvailableDatasetEnd(apiKey)
-    const endSec = maxEnd ? Math.floor(new Date(maxEnd).getTime() / 1000) : Math.floor(Date.now() / 1000) - 300
-    const startSec = endSec - Math.max(days, 5) * 24 * 3600
+    const endSec = maxEnd ? Math.floor(new Date(maxEnd).getTime() / 1000) : nowSec - 60
+    const startSec = Math.min(archiveStart, endSec - lookbackSec)
 
     const startDateStr = new Date(startSec * 1000).toISOString().slice(0, 19)
     const endDateStr = new Date(endSec * 1000).toISOString().slice(0, 19)
@@ -144,13 +202,13 @@ export async function getDatabentoCandles(
             Accept: 'application/json',
           },
           cache: 'no-store',
-          signal: AbortSignal.timeout(15_000),
+          signal: AbortSignal.timeout(20_000),
         }
       )
 
       if (response.ok) {
-        const res = await processDatabentoResponse(response, symbol, resolution, cacheKey)
-        if (res?.candles?.length) return res
+        const res = await processDatabentoResponse(response, symbol, resolution)
+        if (res?.candles?.length) apiCandles = res.candles
       } else {
         const errText = await response.text()
         console.warn(`[Databento] HTTP ${response.status} for ${symbol}: ${errText.slice(0, 150)}`)
@@ -160,19 +218,8 @@ export async function getDatabentoCandles(
     }
   }
 
-  // Fallback to extracted CME 6-month historical 5m bars
-  const nowSec = Math.floor(Date.now() / 1000)
-  const startSec = nowSec - Math.max(days, 5) * 24 * 3600
-  const cme5m = getCme5mRange(instrument, startSec, nowSec)
-  if (cme5m.length > 0) {
-    const candles: DatabentoCandle[] = cme5m.map((b) => ({
-      time: b.time,
-      open: b.open,
-      high: b.high,
-      low: b.low,
-      close: b.close,
-      volume: b.volume,
-    }))
+  const candles = mergeCandleSeries(apiCandles, archiveCandles)
+  if (candles.length > 0) {
     candleCache.set(cacheKey, { at: Date.now(), candles })
     return { candles, symbol }
   }
@@ -180,11 +227,24 @@ export async function getDatabentoCandles(
   return null
 }
 
+function resolutionSeconds(resolution: string): number {
+  return resolution === '1'
+    ? 60
+    : resolution === '15'
+    ? 900
+    : resolution === '30'
+    ? 1800
+    : resolution === '60'
+    ? 3600
+    : resolution === '240'
+    ? 14400
+    : 300
+}
+
 async function processDatabentoResponse(
   response: Response,
   symbol: string,
-  resolution: string,
-  cacheKey: string
+  resolution: string
 ): Promise<{ candles: DatabentoCandle[]; symbol: string } | null> {
   const text = await response.text()
   if (!text || text.trim().length === 0) return null
@@ -196,14 +256,16 @@ async function processDatabentoResponse(
     try {
       const row = JSON.parse(line)
       if (!row.hd?.ts_event || row.close == null) continue
-      const time = Math.floor(Number(row.hd.ts_event) / 1e9)
-      const open = Number(row.open) / 1e9
-      const high = Number(row.high) / 1e9
-      const low = Number(row.low) / 1e9
-      const close = Number(row.close) / 1e9
+      const time = parseDatabentoTs(row.hd.ts_event)
+      const open = parseDatabentoPx(row.open)
+      const high = parseDatabentoPx(row.high)
+      const low = parseDatabentoPx(row.low)
+      const close = parseDatabentoPx(row.close)
       const volume = Number(row.volume) || 0
 
       if (
+        Number.isFinite(time) &&
+        time > 0 &&
         Number.isFinite(open) &&
         Number.isFinite(high) &&
         Number.isFinite(low) &&
@@ -228,20 +290,6 @@ async function processDatabentoResponse(
 
   m1Candles.sort((a, b) => a.time - b.time)
 
-  const resSec =
-    resolution === '1'
-      ? 60
-      : resolution === '15'
-      ? 900
-      : resolution === '30'
-      ? 1800
-      : resolution === '60'
-      ? 3600
-      : resolution === '240'
-      ? 14400
-      : 300
-  const candles = aggregateCandles(m1Candles, resSec)
-
-  candleCache.set(cacheKey, { at: Date.now(), candles })
+  const candles = aggregateCandles(m1Candles, resolutionSeconds(resolution))
   return { candles, symbol }
 }

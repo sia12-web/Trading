@@ -30,6 +30,8 @@ export const DESK_MAX_5M_RANGE: Record<string, number> = {
   GOLD: 80,
   CRUDE: 4,
 }
+/** Weekend / daily Globex halt — do not treat the reopen print as a glitch bar. */
+export const DESK_SESSION_GAP_SEC = 3 * 3600
 
 export function deskBarOpenUnix(
   unix: number,
@@ -139,7 +141,9 @@ export function dropImplausibleDeskBars<T extends FormingBar>(
     if (maxRange != null && range > maxRange) continue
     const prev = out[out.length - 1]
     const maxJump = timeframe === '30m' ? 0.08 : 0.04
-    if (prev && !isPlausibleDeskTick(prev.close, bar.close, maxJump)) continue
+    const sessionGap =
+      prev != null && bar.time - prev.time >= DESK_SESSION_GAP_SEC
+    if (prev && !sessionGap && !isPlausibleDeskTick(prev.close, bar.close, maxJump)) continue
     out.push(bar)
   }
   return out.length > 0 ? out : bars

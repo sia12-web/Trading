@@ -51,6 +51,18 @@ assert.ok(!sim.includes('autoscaleInfoProvider: undefined'), 'sim host cannot re
 assert.ok(sim.includes('const extendTo = Math.max(tip, simT)'), 'sim adds no future close point')
 
 const live = src('app/dashboard/chart/components/TradingChart.tsx')
+assert.ok(live.includes('DESK_CANDLE_SERIES_COLORS'), 'live uses shared green/red on every market')
+assert.ok(!live.includes('upColor: meta.color'), 'live does not paint GOLD/DOW accent as up-candles')
+assert.ok(live.includes("title: '5M VWAP'"), 'live reprints 5-month VWAP from CME daily bars')
+assert.ok(sim.includes('DESK_CANDLE_SERIES_COLORS'), 'sim uses the same green/red candles')
+const candlesApi = src('app/api/trading/candles/route.ts')
+assert.ok(
+  candlesApi.includes("source !== 'databento'"),
+  'Databento CME book is not mixed with OANDA CFD mids'
+)
+const databentoClient = src('lib/databento/client.ts')
+assert.ok(databentoClient.includes('mergeCandleSeries'), 'live Databento fills archive holes')
+assert.ok(databentoClient.includes('parseDatabentoPx'), 'Databento prices handle decimal and 1e-9')
 assert.ok(live.includes('sessionFocusHighLow'), 'live Y-axis follows current session')
 assert.ok(!live.includes('fitContent()'), 'live Reset scale does not zoom to full history')
 assert.ok(live.includes('deskVisibleLogicalRange(ordered.length, width)'), 'live bar count follows pane width')

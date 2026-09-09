@@ -185,23 +185,25 @@ export async function GET(request: Request) {
     } | null = null
     if (includeQuote) {
       try {
-        // Live tip on CME scale (same path as /quote) so painted ±10 bands
-        // and the streaming last share one book.
-        const o = await getOandaPrice(instrument)
-        const basis =
-          getCmeBasis(instrument) ?? getLastKnownCmeBasis(instrument)
-        if (!endDate && (basis == null || getCmeBasis(instrument, CME_BASIS_REFRESH_MS) == null)) {
-          void warmCmeBasis(instrument)
-        }
-        if (!endDate && o?.price && o.price > 0 && (basis != null || (instrument !== 'GOLD' && instrument !== 'CRUDE'))) {
-          const price = applyCmeBasis(o.price, basis)
-          const previous_close = getDayPreviousClose(instrument) ?? price
-          const change = price - previous_close
-          quote = {
-            price,
-            change,
-            change_pct: previous_close ? (change / previous_close) * 100 : 0,
-            previous_close,
+        // Databento / CME archive owns the candle book. Do not mix OANDA CFD
+        // mids onto those bars — that is the overnight "gap" vs Globex.
+        if (source !== 'databento') {
+          const o = await getOandaPrice(instrument)
+          const basis =
+            getCmeBasis(instrument) ?? getLastKnownCmeBasis(instrument)
+          if (!endDate && (basis == null || getCmeBasis(instrument, CME_BASIS_REFRESH_MS) == null)) {
+            void warmCmeBasis(instrument)
+          }
+          if (!endDate && o?.price && o.price > 0 && (basis != null || (instrument !== 'GOLD' && instrument !== 'CRUDE'))) {
+            const price = applyCmeBasis(o.price, basis)
+            const previous_close = getDayPreviousClose(instrument) ?? price
+            const change = price - previous_close
+            quote = {
+              price,
+              change,
+              change_pct: previous_close ? (change / previous_close) * 100 : 0,
+              previous_close,
+            }
           }
         }
       } catch {

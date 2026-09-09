@@ -128,6 +128,8 @@ describe('Context 5-5 Module Tests', () => {
     assert.ok(benchmark.sigma2Upper > benchmark.sigma1Upper)
     assert.ok(benchmark.sigma2Lower < benchmark.sigma1Lower)
     assert.ok(benchmark.barCount >= 50)
+    assert.ok((benchmark.sumV ?? 0) > 0)
+    assert.ok((benchmark.lastBarUnix ?? 0) > 0)
   })
 
   it('computes Yesterday NYC Session accurately', () => {
@@ -237,6 +239,49 @@ describe('Context 5-5 Module Tests', () => {
     assert.equal(inv.pctLong, 100)
     assert.equal(inv.bias, '100%_NET_LONG')
     assert.ok(inv.summaryBadge.includes('100% Long'))
+  })
+
+  it('prints overnight inventory FRVP during Tokyo hours before London opens', () => {
+    const friOpenUnix = Math.floor(new Date('2026-09-04T13:30:00Z').getTime() / 1000)
+    const friCloseUnix = Math.floor(new Date('2026-09-04T20:00:00Z').getTime() / 1000)
+    const sunGlobexOpen = Math.floor(new Date('2026-09-06T22:00:00Z').getTime() / 1000)
+    const tokyoTip = Math.floor(new Date('2026-09-07T05:00:00Z').getTime() / 1000) // 01:00 EDT Monday
+
+    const bars: ContextBar[] = []
+    for (let t = friOpenUnix; t <= friCloseUnix; t += 300) {
+      bars.push({
+        time: t,
+        open: 44000,
+        high: 44100,
+        low: 43900,
+        close: 44000,
+        volume: 1000,
+      })
+    }
+    for (let t = sunGlobexOpen; t <= tokyoTip; t += 300) {
+      bars.push({
+        time: t,
+        open: 44050,
+        high: 44150,
+        low: 44020,
+        close: 44080,
+        volume: 500,
+      })
+    }
+
+    const yday = computeYesterdayNycSession(bars, tokyoTip, NY_DESK_CLOCK)
+    assert.ok(yday !== null)
+    const inv = computeOvernightInventoryAndSessions({
+      bars,
+      yesterday: yday,
+      asOfUnix: tokyoTip,
+      clock: NY_DESK_CLOCK,
+    })
+    assert.ok(inv !== null, 'inventory FRVP must exist when waking up in Tokyo')
+    assert.ok(inv.asia !== null)
+    assert.equal(inv.london, null, 'London FRVP waits for 03:00 ET')
+    assert.ok(inv.overnight !== null)
+    assert.ok(inv.overnight.bins && inv.overnight.bins.length > 0)
   })
 
   it('detects multi-timeframe money opportunities and confluences', () => {
