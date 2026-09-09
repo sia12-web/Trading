@@ -61,8 +61,10 @@ assert.ok(!live.includes("title: '5M +1σ'"), '5M ±1σ must not be price-line a
 assert.ok(!live.includes("title: '5M -2σ'"), '5M −2σ must not be price-line axis labels')
 assert.ok(live.includes('stickyLeftX(0)'), '5-day FRVP is sticky on the visible pane')
 assert.ok(!live.includes('NON-STICKY'), '5-day FRVP no longer scrolls off the default 90-bar view')
-assert.ok(live.includes('scaleOverlayPricesRef'), 'Y-axis folds nearby Context 5-5 levels onto the session')
-assert.ok(live.includes("title: '5D POC'"), '5D POC stays as a durable price line')
+assert.ok(live.includes('scaleOverlayPricesRef'), 'Y-axis stays on the session, not overlay extras')
+assert.ok(!live.includes("title: '5D POC'"), '5D POC is canvas, not a scale-stretching price line')
+assert.ok(!live.includes("title: '5D VAH'"), '5D VAH is not a price-line axis tag')
+assert.ok(!live.includes("title: 'Y-High'"), 'Y-High is not a price-line axis tag')
 assert.ok(sim.includes('DESK_CANDLE_SERIES_COLORS'), 'sim uses the same green/red candles')
 const candlesApi = src('app/api/trading/candles/route.ts')
 assert.ok(

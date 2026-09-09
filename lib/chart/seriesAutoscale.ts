@@ -80,13 +80,11 @@ export function paddedCandlePriceRange(
 }
 
 /**
- * Context 5-5 levels that may join the candle Y-axis.
- *
- * Never put 5-month ±σ on this list: NASDAQ 5M σ is ~1,300 pts, so ±2σ
- * (~5,000 pt span) flattens session candles into a hairline. VWAP itself is
- * nearby-only so a drifted 5-month mean cannot yank the scale either.
+ * Context 5-5 overlays paint on canvas. They must not join the candle Y-axis:
+ * 5M VWAP / 5D VAH / POC can sit hundreds-to-thousands of points off the
+ * live session and flatten candles into a hairline.
  */
-export function context55ScalePrices(args: {
+export function context55ScalePrices(_args: {
   vwap?: number | null
   poc5d?: number | null
   vah5d?: number | null
@@ -96,18 +94,7 @@ export function context55ScalePrices(args: {
   yLow?: number | null
   onPoc?: number | null
 }): { always: number[]; nearby: number[] } {
-  const take = (price: number | null | undefined): number[] =>
-    typeof price === 'number' && Number.isFinite(price) && price > 0 ? [price] : []
-  return {
-    always: [...take(args.poc5d), ...take(args.yPoc), ...take(args.onPoc)],
-    nearby: [
-      ...take(args.vwap),
-      ...take(args.vah5d),
-      ...take(args.val5d),
-      ...take(args.yHigh),
-      ...take(args.yLow),
-    ],
-  }
+  return { always: [], nearby: [] }
 }
 
 /**

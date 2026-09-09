@@ -1,6 +1,6 @@
 /**
- * Session autoscale must fold nearby FRVP POCs onto the Y-axis without
- * stretching to 5-month ±σ (that flattens NASDAQ candles into a hairline).
+ * Session autoscale must follow candles only — Context 5-5 VWAP / FRVP
+ * overlays cannot stretch NASDAQ/DOW into a hairline.
  * Run: npx tsx __tests__/seriesAutoscale.test.ts
  */
 
@@ -20,37 +20,41 @@ import {
   const extras = context55ScalePrices({
     vwap: 29020,
     poc5d: 29400,
+    vah5d: 30316,
+    yPoc: 29500,
   })
-  assert.equal(extras.always.includes(29020), false, '5M VWAP is nearby-only, not always')
-  assert.deepEqual(extras.nearby, [29020])
+  assert.deepEqual(extras, { always: [], nearby: [] })
   const session = paddedCandlePriceRange(
     29480,
     29620,
     overlayPricesForVisibleScale(29480, 29620, extras)
   )
   assert.ok(session)
-  assert.ok(session.priceRange.minValue < 29020, 'Y-axis includes nearby 5M VWAP')
-  assert.ok(session.priceRange.maxValue > 29400, 'Y-axis includes 5D POC')
+  assert.ok(session.priceRange.minValue > 29020, '5M VWAP does not stretch NASDAQ')
+  assert.ok(session.priceRange.maxValue - session.priceRange.minValue < 250, 'pane is the session ± pad')
   assert.ok(session.priceRange.minValue > 27724, '5M −1σ does not flatten NASDAQ candles')
   assert.ok(session.priceRange.maxValue < 30316, '5M +1σ does not flatten NASDAQ candles')
-  assert.ok(
-    session.priceRange.maxValue - session.priceRange.minValue < 1200,
-    'session pane stays on the order of the session, not ±2σ'
-  )
 }
 
 {
   const extras = context55ScalePrices({
-    vwap: 25000,
-    poc5d: 29400,
+    vwap: 51470,
+    poc5d: 53760,
+    vah5d: 53816,
+    val5d: 52896,
+    yPoc: 52872,
+    yHigh: 53072,
+    yLow: 52758,
+    onPoc: 52816,
   })
   const session = paddedCandlePriceRange(
-    29480,
-    29620,
-    overlayPricesForVisibleScale(29480, 29620, extras)
+    52380,
+    52600,
+    overlayPricesForVisibleScale(52380, 52600, extras)
   )
   assert.ok(session)
-  assert.ok(session.priceRange.minValue > 28000, 'a drifted 5M VWAP must not stretch the session')
+  assert.ok(session.priceRange.minValue > 52000, 'DOW 5M VWAP must not pull the floor to 51,470')
+  assert.ok(session.priceRange.maxValue < 53000, 'DOW 5D VAH/POC must not pull the ceiling to 53,816')
 }
 
 {

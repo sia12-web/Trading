@@ -2200,17 +2200,10 @@ export function TradingChart({
       instrument
     )
     setFrvp5d(profile)
-    frvpLinesRef.current = replacePriceLines(
-      host,
-      frvpLinesRef.current,
-      profile
-        ? [
-            { price: profile.poc, color: '#38bdf8', title: '5D POC', width: 2 },
-            { price: profile.vah, color: '#22d3ee', title: '5D VAH', width: 1, dashed: true },
-            { price: profile.val, color: '#22d3ee', title: '5D VAL', width: 1, dashed: true },
-          ]
-        : []
-    )
+    // Canvas already paints the 5-day histogram + POC. Price-line tags for
+    // 5D VAH/POC (often hundreds of points off the session) stretch the
+    // Y-axis the same way 5M ±σ did.
+    frvpLinesRef.current = replacePriceLines(host, frvpLinesRef.current, [])
   }, [instrument])
 
   const paintYesterdayNyc = useCallback(() => {
@@ -2238,24 +2231,8 @@ export function TradingChart({
       : null
     setOvernightInventory(inv)
 
-    yesterdayNycLinesRef.current = replacePriceLines(
-      host,
-      yesterdayNycLinesRef.current,
-      yday
-        ? [
-            { price: yday.poc, color: '#d97706', title: 'Y-POC', width: 2 },
-            { price: yday.yh, color: '#f59e0b', title: 'Y-High', width: 1, dashed: true },
-            { price: yday.yl, color: '#f59e0b', title: 'Y-Low', width: 1, dashed: true },
-          ]
-        : []
-    )
-    inventoryLinesRef.current = replacePriceLines(
-      host,
-      inventoryLinesRef.current,
-      inv?.overnight
-        ? [{ price: inv.overnight.poc, color: '#0284c7', title: 'ON-POC', width: 2 }]
-        : []
-    )
+    yesterdayNycLinesRef.current = replacePriceLines(host, yesterdayNycLinesRef.current, [])
+    inventoryLinesRef.current = replacePriceLines(host, inventoryLinesRef.current, [])
   }, [instrument])
 
   const paintInventorySessions = useCallback(() => {
