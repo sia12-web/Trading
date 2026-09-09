@@ -182,7 +182,8 @@ export function mergeHistoryWithLiveTip<T extends FormingBar>(
 
 /**
  * True when REST closed bars (everything except the forming tip) changed OHLC
- * vs what the chart is holding — e.g. Yahoo replaced gap-fill flats.
+ * vs what the chart is holding — e.g. Yahoo replaced gap-fill flats, or a
+ * Databento reprint filled missing 5m slots deeper than the last dozen bars.
  */
 export function closedHistoryOhlcChanged<T extends FormingBar>(
   prev: readonly T[],
@@ -193,7 +194,8 @@ export function closedHistoryOhlcChanged<T extends FormingBar>(
   if (prev.length === 0) return false
   const tipSkip = tipOwned && prev.length > 0 && next.length > 0
   const end = tipSkip ? prev.length - 1 : prev.length
-  const start = Math.max(0, end - 12)
+  // Compare enough of the tip window that a mid-session gap fill is not ignored.
+  const start = Math.max(0, end - 96)
   for (let i = start; i < end; i++) {
     const a = prev[i]!
     const b = next[i]!

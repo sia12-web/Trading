@@ -297,11 +297,12 @@ export function computeFootprintBars(
       const tickBuyRatio = Math.max(0.05, Math.min(0.95, closePos + (price > mid ? 0.15 : -0.15)))
 
       const askVol = Math.round(tickVol * tickBuyRatio)
-      const bidVol = Math.max(1, tickVol - askVol)
-      const tickDelta = askVol - bidVol
-
-      const isBuyImbalance = askVol >= bidVol * 3.0 && askVol >= 5
-      const isSellImbalance = bidVol >= askVol * 3.0 && bidVol >= 5
+      let bidVol = Math.max(0, tickVol - askVol)
+      let adjAsk = askVol
+      // Sierra poor high / poor low: zero opposing volume at the extreme tick
+      if (i === numTicks - 1 && askVol >= bidVol * 2) bidVol = 0
+      if (i === 0 && bidVol >= askVol * 2) adjAsk = 0
+      const tickDelta = adjAsk - bidVol
 
       if (tickVol > maxTickVol) {
         maxTickVol = tickVol
@@ -311,13 +312,15 @@ export function computeFootprintBars(
       ticks.push({
         price,
         bidVol,
-        askVol,
-        totalVol: tickVol,
+        askVol: adjAsk,
+        totalVol: bidVol + adjAsk,
         delta: tickDelta,
-        isBuyImbalance,
-        isSellImbalance,
+        isBuyImbalance: false,
+        isSellImbalance: false,
       })
     }
+
+    markDiagonalImbalances(ticks, 3)
 
     const stackedBuyImbalances: StackedImbalance[] = []
     const stackedSellImbalances: StackedImbalance[] = []
@@ -434,6 +437,19 @@ export function computeFootprintBars(
   }
 
   return footprintBars
+}
+
+/** Sierra / Tradovate: ask at P vs bid at P−1 tick (300% default). */
+export function markDiagonalImbalances(ticks: FootprintTick[], ratio = 3): void {
+  if (ticks.length === 0) return
+  const sorted = [...ticks].sort((a, b) => a.price - b.price)
+  for (let i = 0; i < sorted.length; i++) {
+    const cur = sorted[i]!
+    const below = i > 0 ? sorted[i - 1]! : null
+    const above = i < sorted.length - 1 ? sorted[i + 1]! : null
+    cur.isBuyImbalance = below != null && cur.askVol >= below.bidVol * ratio && cur.askVol >= 5
+    cur.isSellImbalance = above != null && cur.bidVol >= above.askVol * ratio && cur.bidVol >= 5
+  }
 }
 
 /**

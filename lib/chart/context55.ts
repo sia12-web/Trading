@@ -596,11 +596,29 @@ export function compute5MonthAnchoredVwap(args: {
   }
 }
 
+function ymdInZone(unix: number, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(unix * 1000))
+}
+
+function typicalHlc(b: Pick<ContextBar, 'high' | 'low' | 'close'>): number {
+  return (b.high + b.low + b.close) / 3
+}
+
 /**
- * True 5-month anchored VWAP path through the visible 5m window.
- * Daily bars carry the running sums from the 5-month cash-open anchor up to
- * the first 5m bar; each 5m bar then updates VWAP and ±σ so the overlay is a
- * moving line, not a flat level.
+ * True 5-month anchored VWAP path (TradingView Anchored VWAP).
+ *
+ * Builds the running volume-weighted mean from the 5-month NYC cash-open anchor:
+ * 1) one point per completed daily (so zoom-out shows the real slope),
+ * 2) then each loaded 5m bar updates that day’s intraday contribution.
+ *
+ * ±1/±2/±3σ are the true cumulative volume-weighted stdev at each point —
+ * not a recent-5m remapping (that made parallel flat ruler lines).
+ * Session candles stay readable because VWAP series use ignoreScale.
  */
 export function compute5MonthAnchoredVwapPath(args: {
   dailyBars?: ContextBar[] | null
@@ -616,37 +634,105 @@ export function compute5MonthAnchoredVwapPath(args: {
   const anchorUnix = get5MonthAnchorUnix(tipTime, clock)
   const windowStart = bars[0]!.time
 
-  let sumPV = 0
-  let sumV = 0
-  let sumP2V = 0
+  type Snap = { time: number; sumPV: number; sumV: number; sumP2V: number }
+  const snaps: Snap[] = []
+  let dPV = 0
+  let dV = 0
+  let dP2V = 0
   if (dailyBars && dailyBars.length > 0) {
-    for (const b of dailyBars) {
+    const sorted = [...dailyBars].sort((a, b) => a.time - b.time)
+    for (const b of sorted) {
       if (b.time < anchorUnix - 86400) continue
-      if (b.time >= windowStart) continue
-      const price = (b.high + b.low + b.close) / 3
+      if (b.time > tipTime) continue
+      const price = typicalHlc(b)
       const vol = b.volume > 0 ? b.volume : 1
-      sumPV += price * vol
-      sumP2V += price * price * vol
-      sumV += vol
+      dPV += price * vol
+      dP2V += price * price * vol
+      dV += vol
+      snaps.push({ time: b.time, sumPV: dPV, sumV: dV, sumP2V: dP2V })
     }
   }
 
-  const path = compute5MonthAnchoredVwap({
-    bars,
-    instrument,
-    baseline:
-      sumV > 0
-        ? { sumPV, sumV, sumP2V, startUnix: windowStart - 1 }
-        : { sumPV: 0, sumV: 0, sumP2V: 0, startUnix: anchorUnix - 1 },
-    asOfUnix: tipTime,
-  })
-  if (!path) return null
-  // 5-month daily variance is thousands of NASDAQ/DOW points. Using it as ±σ
-  // on a 5m session pane flattens candles. Keep the 5-month VWAP *center* and
-  // size the bands from recent 5m volatility so they stay around price.
-  const windowSigma = typicalPriceStdev(recentBarsForSigma(bars))
-  if (!(windowSigma > 0)) return path
-  return applySigmaBands(path, windowSigma)
+  const vwap: { time: UTCTimestamp; value: number }[] = []
+  const upper1: { time: UTCTimestamp; value: number }[] = []
+  const lower1: { time: UTCTimestamp; value: number }[] = []
+  const upper2: { time: UTCTimestamp; value: number }[] = []
+  const lower2: { time: UTCTimestamp; value: number }[] = []
+  const upper3: { time: UTCTimestamp; value: number }[] = []
+  const lower3: { time: UTCTimestamp; value: number }[] = []
+
+  const pushPoint = (time: number, sumPV: number, sumV: number, sumP2V: number) => {
+    if (!(sumV > 0)) return
+    const v = sumPV / sumV
+    const variance = Math.max(0, sumP2V / sumV - v * v)
+    const std = Math.sqrt(variance)
+    const t = time as UTCTimestamp
+    vwap.push({ time: t, value: Number(v.toFixed(2)) })
+    upper1.push({ time: t, value: Number((v + std).toFixed(2)) })
+    lower1.push({ time: t, value: Number((v - std).toFixed(2)) })
+    upper2.push({ time: t, value: Number((v + 2 * std).toFixed(2)) })
+    lower2.push({ time: t, value: Number((v - 2 * std).toFixed(2)) })
+    upper3.push({ time: t, value: Number((v + 3 * std).toFixed(2)) })
+    lower3.push({ time: t, value: Number((v - 3 * std).toFixed(2)) })
+  }
+
+  // Daily spine before the loaded 5m window — the 5-month slope, not a flat stamp.
+  for (const s of snaps) {
+    if (s.time >= windowStart) break
+    if (s.time < anchorUnix - 86400) continue
+    pushPoint(s.time, s.sumPV, s.sumV, s.sumP2V)
+  }
+
+  let curYmd = ''
+  let basePV = 0
+  let baseV = 0
+  let baseP2V = 0
+  let intraPV = 0
+  let intraV = 0
+  let intraP2V = 0
+
+  for (const c of bars) {
+    if (c.time < anchorUnix) continue
+    if (c.time > tipTime) break
+    const ymd = ymdInZone(c.time, clock.timeZone)
+    if (ymd !== curYmd) {
+      curYmd = ymd
+      intraPV = 0
+      intraV = 0
+      intraP2V = 0
+      const open = cashOpenUnixForYmd(ymd, clock)
+      basePV = 0
+      baseV = 0
+      baseP2V = 0
+      for (const s of snaps) {
+        if (s.time < open) {
+          basePV = s.sumPV
+          baseV = s.sumV
+          baseP2V = s.sumP2V
+        }
+      }
+    }
+    const price = typicalHlc(c)
+    const vol = c.volume > 0 ? c.volume : 1
+    intraPV += price * vol
+    intraP2V += price * price * vol
+    intraV += vol
+    pushPoint(c.time, basePV + intraPV, baseV + intraV, baseP2V + intraP2V)
+  }
+
+  if (vwap.length === 0) return null
+
+  return {
+    anchorUnix,
+    vwap,
+    upper1,
+    lower1,
+    upper2,
+    lower2,
+    upper3,
+    lower3,
+    lastVwap: vwap[vwap.length - 1]?.value ?? null,
+  }
 }
 
 /** Last ~36h of 5m bars (or last 80 prints) — session-sized σ, not a 12-day range. */

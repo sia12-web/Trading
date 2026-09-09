@@ -67,6 +67,7 @@ import {
   closedHistoryOhlcChanged,
   quoteUnixForBucket,
 } from '@/lib/chart/liveFormingBar'
+import { needsCandleReprint, countNearTipGaps } from '@/lib/chart/candleGaps'
 import {
   compute5DayFixedRangeVolumeProfile,
   computeYesterdayNycSession,
@@ -167,13 +168,17 @@ import {
   computeOrderFlowCvd,
   computeCvdCandleBars,
   computeFootprintBars,
-  aggregateFootprintTicks,
-  findNakedPocs,
-  findActiveUnfinishedAuctions,
   summarizeFootprintForLeo,
   type OrderFlowSummary,
   type FootprintBar,
 } from '@/lib/trading/orderFlowDelta'
+import {
+  FOOTPRINT_BAR_SPACING,
+  FOOTPRINT_RECENT_BARS,
+  deskFootprintTickSize,
+  paintSierraNumberBars,
+  recentFootprintSlice,
+} from '@/lib/chart/footprintPaint'
 
 const DOW_15M_FAIL_COLORS: any = { high: '#3b82f6', low: '#ef4444', mid: '#eab308', buy: '#3b82f6', sell: '#ef4444' }
 const computeDow15mFailOverlay = (..._args: any[]): any => null
@@ -1347,6 +1352,7 @@ export function TradingChart({
   const footprintCanvasRef = useRef<HTMLCanvasElement>(null)
   const paintFootprintRef = useRef<() => void>(() => { })
   const savedFootprintRangeRef = useRef<{ from: number; to: number } | null>(null)
+  const candleReprintAtRef = useRef(0)
   const cvdContainerRef = useRef<HTMLDivElement>(null)
   const cvdChartRef = useRef<IChartApi | null>(null)
   const cvdCandleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -5778,7 +5784,7 @@ export function TradingChart({
       upper1: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band1, title: '+1σ' }),
       vwap: chart.addLineSeries({
         color: VWAP_COLORS.vwap,
-        lineWidth: 2,
+        lineWidth: 3,
         priceLineVisible: false,
         lastValueVisible: false,
         pointMarkersVisible: false,
@@ -6678,9 +6684,8 @@ export function TradingChart({
         }
       }
 
-      // Compute and cache Footprint bars for chart overlay and Leo AI telemetry
-      // Limit to latest 35 bars so page load is INSTANT and does not freeze main thread
-      const recentForFootprint = ordered.slice(-35)
+      // Compute Sierra/Tradovate number bars for the latest live prints only
+      const recentForFootprint = recentFootprintSlice(ordered, FOOTPRINT_RECENT_BARS)
       const fpBars = computeFootprintBars(
         recentForFootprint.map((c) => ({
           time: c.time as number,
@@ -6690,7 +6695,7 @@ export function TradingChart({
           close: c.close,
           volume: c.volume,
         })),
-        instrument === 'NASDAQ' ? 0.25 : instrument === 'DOW' ? 1.0 : 0.25
+        deskFootprintTickSize(instrument)
       )
       footprintBarsRef.current = fpBars
 
@@ -6982,320 +6987,33 @@ export function TradingChart({
 
     const tz = chartTzRef.current
     const timeScale = chart.timeScale()
-    const range = timeScale.getVisibleLogicalRange()
-    if (!range) {
-      ctx.restore()
-      return
-    }
-
-    const startIdx = Math.max(0, Math.floor(range.from))
-    const endIdx = Math.min(fpBars.length - 1, Math.ceil(range.to))
-
-    let barSpacing = 85
+    let barSpacing = FOOTPRINT_BAR_SPACING
     try {
-      if (fpBars.length >= 2) {
-        const x1 = timeScale.timeToCoordinate(toChartTime(fpBars[0]?.time || 0, tz) as UTCTimestamp)
-        const x2 = timeScale.timeToCoordinate(toChartTime(fpBars[1]?.time || 0, tz) as UTCTimestamp)
-        if (x1 != null && x2 != null && Math.abs(x2 - x1) > 2) {
-          barSpacing = Math.abs(x2 - x1)
-        }
-      }
-    } catch {}
-
-    const barBodyW = Math.min(130, Math.max(48, barSpacing * 0.88))
-
-    // ── 0. Institutional Forward Projections: Untested Naked POCs & Unfinished Auctions ──
-    const nakedPocs = findNakedPocs(fpBars)
-    for (const poc of nakedPocs) {
-      const yPoc = series.priceToCoordinate(poc.price)
-      if (yPoc != null && Number.isFinite(yPoc) && yPoc >= 0 && yPoc <= paneH) {
-        const startX = timeScale.timeToCoordinate(toChartTime(poc.time, tz) as UTCTimestamp)
-        const lineStart = Math.max(0, startX ?? 0)
-        ctx.save()
-        ctx.strokeStyle = '#f59e0b'
-        ctx.lineWidth = 1.5
-        ctx.setLineDash([5, 4])
-        ctx.beginPath()
-        ctx.moveTo(lineStart, Math.round(yPoc) + 0.5)
-        ctx.lineTo(paneW, Math.round(yPoc) + 0.5)
-        ctx.stroke()
-        ctx.setLineDash([])
-
-        // Right-aligned VPOC Badge
-        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-        const tagText = `VPOC ${poc.price.toFixed(2)}`
-        const textW = ctx.measureText(tagText).width
-        const badgeX = Math.max(lineStart + 10, paneW - textW - 75)
-        ctx.fillStyle = 'rgba(245, 158, 11, 0.25)'
-        ctx.fillRect(badgeX - 3, Math.round(yPoc) - 8, textW + 6, 15)
-        ctx.strokeStyle = '#f59e0b'
-        ctx.lineWidth = 1
-        ctx.strokeRect(badgeX - 3, Math.round(yPoc) - 8, textW + 6, 15)
-        ctx.fillStyle = '#fbbf24'
-        ctx.textAlign = 'left'
-        ctx.textBaseline = 'middle'
-        ctx.fillText(tagText, badgeX, Math.round(yPoc))
-        ctx.restore()
+      const opts = timeScale.options()
+      if (opts.barSpacing && opts.barSpacing > 2) barSpacing = opts.barSpacing
+    } catch {
+      /* default */
+    }
+    if (fpBars.length >= 2) {
+      const x1 = timeScale.timeToCoordinate(toChartTime(fpBars[0]!.time, tz) as UTCTimestamp)
+      const x2 = timeScale.timeToCoordinate(toChartTime(fpBars[1]!.time, tz) as UTCTimestamp)
+      if (x1 != null && x2 != null && Math.abs(x2 - x1) > 4) {
+        barSpacing = Math.abs(x2 - x1)
       }
     }
 
-    const unfinishedAuctions = findActiveUnfinishedAuctions(fpBars)
-    for (const ua of unfinishedAuctions) {
-      const yUa = series.priceToCoordinate(ua.price)
-      if (yUa != null && Number.isFinite(yUa) && yUa >= 0 && yUa <= paneH) {
-        const startX = timeScale.timeToCoordinate(toChartTime(ua.time, tz) as UTCTimestamp)
-        const lineStart = Math.max(0, startX ?? 0)
-        const isHigh = ua.type === 'HIGH'
-        const color = isHigh ? '#38bdf8' : '#fb7185'
-        ctx.save()
-        ctx.strokeStyle = color
-        ctx.lineWidth = 1.2
-        ctx.setLineDash([2, 3])
-        ctx.beginPath()
-        ctx.moveTo(lineStart, Math.round(yUa) + 0.5)
-        ctx.lineTo(paneW, Math.round(yUa) + 0.5)
-        ctx.stroke()
-        ctx.setLineDash([])
-
-        // Right-aligned UA Badge
-        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-        const tagText = `UA: ${isHigh ? 'High' : 'Low'} ${ua.price.toFixed(2)}`
-        const textW = ctx.measureText(tagText).width
-        const badgeX = Math.max(lineStart + 10, paneW - textW - 75)
-        ctx.fillStyle = isHigh ? 'rgba(56, 189, 248, 0.22)' : 'rgba(251, 113, 133, 0.22)'
-        ctx.fillRect(badgeX - 3, Math.round(yUa) - 8, textW + 6, 15)
-        ctx.strokeStyle = color
-        ctx.lineWidth = 1
-        ctx.strokeRect(badgeX - 3, Math.round(yUa) - 8, textW + 6, 15)
-        ctx.fillStyle = color
-        ctx.textAlign = 'left'
-        ctx.textBaseline = 'middle'
-        ctx.fillText(tagText, badgeX, Math.round(yUa))
-        ctx.restore()
-      }
-    }
-
-    for (let i = startIdx; i <= endIdx; i++) {
-      const bar = fpBars[i]
-      if (!bar) continue
-
-      const x = timeScale.timeToCoordinate(toChartTime(bar.time, tz) as UTCTimestamp)
-      if (x == null || x < -barBodyW || x > paneW + barBodyW) continue
-
-      const yHigh = series.priceToCoordinate(bar.high)
-      const yLow = series.priceToCoordinate(bar.low)
-      const yOpen = series.priceToCoordinate(bar.open)
-      const yClose = series.priceToCoordinate(bar.close)
-      if (yHigh == null || yLow == null || yOpen == null || yClose == null) continue
-
-      const isBullish = bar.close >= bar.open
-      const candleColor = isBullish ? '#10b981' : '#f43f5e'
-      const bodyTop = Math.min(yOpen, yClose)
-      const bodyBot = Math.max(yOpen, yClose)
-      const bodyH = Math.max(2, bodyBot - bodyTop)
-      const bodyLeft = x - barBodyW / 2
-      const topY = Math.min(yHigh, yLow)
-      const botY = Math.max(yHigh, yLow)
-
-      // ── Trapped Traders Indicators ──
-      if (bar.trappedTraders === 'TRAPPED_BUYERS') {
-        const badgeY = topY - 34
-        if (badgeY > 12) {
-          ctx.save()
-          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-          const badgeText = '🔻 TRAPPED BUYERS'
-          const bW = ctx.measureText(badgeText).width + 10
-          ctx.fillStyle = 'rgba(239, 68, 68, 0.92)'
-          ctx.fillRect(x - bW / 2, badgeY - 7, bW, 15)
-          ctx.strokeStyle = '#fca5a5'
-          ctx.lineWidth = 1
-          ctx.strokeRect(x - bW / 2, badgeY - 7, bW, 15)
-          ctx.fillStyle = '#ffffff'
-          ctx.textAlign = 'center'
-          ctx.textBaseline = 'middle'
-          ctx.fillText(badgeText, x, badgeY)
-          ctx.restore()
-        }
-      } else if (bar.trappedTraders === 'TRAPPED_SELLERS') {
-        const badgeY = botY + 16
-        if (badgeY < paneH - 12) {
-          ctx.save()
-          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-          const badgeText = '🔺 TRAPPED SELLERS'
-          const bW = ctx.measureText(badgeText).width + 10
-          ctx.fillStyle = 'rgba(16, 185, 129, 0.92)'
-          ctx.fillRect(x - bW / 2, badgeY - 7, bW, 15)
-          ctx.strokeStyle = '#6ee7b7'
-          ctx.lineWidth = 1
-          ctx.strokeRect(x - bW / 2, badgeY - 7, bW, 15)
-          ctx.fillStyle = '#ffffff'
-          ctx.textAlign = 'center'
-          ctx.textBaseline = 'middle'
-          ctx.fillText(badgeText, x, badgeY)
-          ctx.restore()
-        }
-      }
-
-      // ── 1. Bar Header (Above High: Total Bar Volume in Blue, Net Bar Delta + % in Green/Red) ──
-      if (topY > 30) {
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'bottom'
-
-        // Total volume (e.g. 38171)
-        ctx.font = 'bold 11px monospace'
-        ctx.fillStyle = '#60a5fa'
-        ctx.fillText(bar.totalVolume.toLocaleString(), x, topY - 14)
-
-        // Net bar delta with percentage (e.g. +1,701 (+12.4%))
-        ctx.fillStyle = bar.netDelta >= 0 ? '#34d399' : '#f43f5e'
-        const deltaText = `${bar.netDelta >= 0 ? '+' : ''}${bar.netDelta.toLocaleString()} (${bar.deltaPct > 0 ? '+' : ''}${bar.deltaPct}%)`
-        ctx.fillText(deltaText, x, topY - 2)
-      }
-
-      // ── 2. Candle Body Outline & Wicks ──────────────────────────────────────────
-      // Upper wick
-      ctx.strokeStyle = candleColor
-      ctx.lineWidth = 1
-      ctx.beginPath()
-      ctx.moveTo(x, yHigh)
-      ctx.lineTo(x, bodyTop)
-      ctx.stroke()
-
-      // Lower wick
-      ctx.beginPath()
-      ctx.moveTo(x, bodyBot)
-      ctx.lineTo(x, yLow)
-      ctx.stroke()
-
-      // Candle body box (subtle background fill + crisp outline)
-      ctx.fillStyle = isBullish ? 'rgba(16, 185, 129, 0.05)' : 'rgba(244, 63, 94, 0.05)'
-      ctx.fillRect(bodyLeft, bodyTop, barBodyW, bodyH)
-
-      ctx.strokeStyle = candleColor
-      ctx.lineWidth = 1.5
-      ctx.strokeRect(bodyLeft, bodyTop, barBodyW, bodyH)
-
-      // ── 3. Stacked Imbalances Vertical Indicators ───────────────────────────────
-      for (const buyZone of bar.stackedBuyImbalances) {
-        const y1 = series.priceToCoordinate(buyZone.endPrice + 0.125)
-        const y2 = series.priceToCoordinate(buyZone.startPrice - 0.125)
-        if (y1 != null && y2 != null) {
-          const top = Math.min(y1, y2)
-          const h = Math.max(4, Math.abs(y2 - y1))
-          ctx.fillStyle = 'rgba(16, 185, 129, 0.22)'
-          ctx.fillRect(bodyLeft, top, barBodyW, h)
-          ctx.fillStyle = '#10b981'
-          ctx.fillRect(bodyLeft + barBodyW - 3, top, 3, h)
-        }
-      }
-
-      for (const sellZone of bar.stackedSellImbalances) {
-        const y1 = series.priceToCoordinate(sellZone.endPrice + 0.125)
-        const y2 = series.priceToCoordinate(sellZone.startPrice - 0.125)
-        if (y1 != null && y2 != null) {
-          const top = Math.min(y1, y2)
-          const h = Math.max(4, Math.abs(y2 - y1))
-          ctx.fillStyle = 'rgba(244, 63, 94, 0.22)'
-          ctx.fillRect(bodyLeft, top, barBodyW, h)
-          ctx.fillStyle = '#f43f5e'
-          ctx.fillRect(bodyLeft, top, 3, h)
-        }
-      }
-
-      // ── 4. Price Rows: Level 2 Bid x Ask, Delta, Mini Histogram, POC Box ────────
-      if (bar.ticks.length > 0) {
-        const candlePixelH = Math.max(10, Math.abs(yLow - yHigh))
-        const maxBuckets = Math.max(1, Math.floor(candlePixelH / 13))
-        const rows = aggregateFootprintTicks(bar.ticks, maxBuckets)
-
-        let maxDeltaInBar = 1
-        let maxVolInBar = 1
-        let pocRowIdx = 0
-
-        for (let rIdx = 0; rIdx < rows.length; rIdx++) {
-          const r = rows[rIdx]!
-          if (Math.abs(r.delta) > maxDeltaInBar) maxDeltaInBar = Math.abs(r.delta)
-          if (r.totalVol > maxVolInBar) {
-            maxVolInBar = r.totalVol
-            pocRowIdx = rIdx
-          }
-        }
-
-        ctx.textBaseline = 'middle'
-
-        for (let rIdx = 0; rIdx < rows.length; rIdx++) {
-          const r = rows[rIdx]!
-          const yTopR = series.priceToCoordinate(r.highPrice)
-          const yBotR = series.priceToCoordinate(r.lowPrice)
-          if (yTopR == null || yBotR == null) continue
-
-          const rowY = (yTopR + yBotR) / 2
-          const rowH = Math.max(11, Math.abs(yBotR - yTopR))
-          if (rowY < -20 || rowY > paneH + 20) continue
-
-          const isPoc = rIdx === pocRowIdx
-
-          // Heatmap shading based on delta intensity
-          if (Math.abs(r.delta) > 0) {
-            const intensity = Math.min(1, Math.abs(r.delta) / maxDeltaInBar)
-            ctx.fillStyle = r.delta > 0
-              ? `rgba(16, 185, 129, ${0.05 + intensity * 0.22})`
-              : `rgba(244, 63, 94, ${0.05 + intensity * 0.22})`
-            ctx.fillRect(bodyLeft + 1, rowY - rowH / 2, barBodyW - 2, rowH)
-          }
-
-          // Candle POC Highlight (Crisp high-contrast white box outline)
-          if (isPoc) {
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.09)'
-            ctx.fillRect(bodyLeft + 1, rowY - rowH / 2, barBodyW - 2, rowH)
-            ctx.strokeStyle = '#ffffff'
-            ctx.lineWidth = 1.5
-            ctx.strokeRect(bodyLeft + 1, rowY - rowH / 2, barBodyW - 2, rowH)
-          }
-
-          // Mini horizontal histogram bar on right side for delta
-          if (barBodyW >= 68 && Math.abs(r.delta) > 0) {
-            const maxHistW = Math.min(32, barBodyW * 0.24)
-            const histW = Math.max(2, (Math.abs(r.delta) / maxDeltaInBar) * maxHistW)
-            const histX = bodyLeft + barBodyW - histW - 2
-            ctx.fillStyle = r.delta > 0 ? '#10b981' : '#f43f5e'
-            ctx.fillRect(histX, rowY - Math.min(rowH - 2, 8) / 2, histW, Math.min(rowH - 2, 8))
-          }
-
-          // Text Columns: Bid x Ask and Delta
-          if (barBodyW >= 55) {
-            ctx.font = 'bold 9px monospace'
-
-            // Bid Volume
-            ctx.textAlign = 'right'
-            ctx.fillStyle = r.isSellImbalance ? '#f43f5e' : '#cbd5e1'
-            const bidX = bodyLeft + barBodyW * 0.28
-            ctx.fillText(`${r.bidVol}`, bidX, rowY)
-
-            // Separator "x"
-            ctx.textAlign = 'center'
-            ctx.fillStyle = '#64748b'
-            const sepX = bodyLeft + barBodyW * 0.35
-            ctx.fillText('x', sepX, rowY)
-
-            // Ask Volume
-            ctx.textAlign = 'left'
-            ctx.fillStyle = r.isBuyImbalance ? '#34d399' : '#cbd5e1'
-            const askX = bodyLeft + barBodyW * 0.42
-            ctx.fillText(`${r.askVol}`, askX, rowY)
-
-            // Delta Value (right of ask)
-            ctx.textAlign = 'right'
-            ctx.fillStyle = r.delta > 0 ? '#34d399' : r.delta < 0 ? '#f43f5e' : '#94a3b8'
-            const deltaX = bodyLeft + barBodyW * 0.76
-            ctx.fillText(`${r.delta}`, deltaX, rowY)
-          }
-        }
-      }
-    }
+    paintSierraNumberBars(ctx, {
+      bars: fpBars,
+      paneW,
+      paneH,
+      timeToX: (t) => timeScale.timeToCoordinate(toChartTime(t, tz) as UTCTimestamp),
+      priceToY: (p) => series.priceToCoordinate(p),
+      barSpacing,
+    })
 
     ctx.restore()
   }, [showFootprint])
+
 
   // ── Auto-Zoom & Transparent Candlestick Styling when Footprint is Enabled ──
   useEffect(() => {
@@ -7304,22 +7022,21 @@ export function TradingChart({
     if (!chart || !series) return
 
     if (showFootprint) {
-      // 1. Save current view range so we can restore on exit
       const currentRange = chart.timeScale().getVisibleLogicalRange()
       if (currentRange) {
         savedFootprintRangeRef.current = { from: currentRange.from, to: currentRange.to }
       }
-
-      // 2. Zoom to the latest action bars (last 8-10 candles) so each bar is wide and spacious
       const totalBars = candlesRef.current.length
       if (totalBars > 0) {
+        chart.timeScale().applyOptions({
+          barSpacing: FOOTPRINT_BAR_SPACING,
+          rightOffset: 3,
+        })
         chart.timeScale().setVisibleLogicalRange({
-          from: Math.max(0, totalBars - 9),
-          to: totalBars + 1,
+          from: Math.max(0, totalBars - FOOTPRINT_RECENT_BARS),
+          to: totalBars + 0.4,
         })
       }
-
-      // 3. Set candlestick bodies to subtle transparent outline so the footprint canvas pops
       series.applyOptions({
         upColor: 'rgba(34, 197, 94, 0.04)',
         downColor: 'rgba(239, 68, 68, 0.04)',
@@ -7329,12 +7046,15 @@ export function TradingChart({
         wickDownColor: 'rgba(239, 68, 68, 0.35)',
       })
     } else {
-      // Restore the same green/red paint on every market (never instrument accent)
       series.applyOptions({
         ...DESK_CANDLE_SERIES_COLORS,
       })
-
-      // Restore previous zoom if available
+      const list = candlesRef.current
+      const width = containerRef.current?.clientWidth ?? 900
+      chart.timeScale().applyOptions({
+        barSpacing: deskBarSpacing(width, list.length),
+        rightOffset: DESK_CHART_THEME.timeScale.rightOffset,
+      })
       if (savedFootprintRangeRef.current) {
         chart.timeScale().setVisibleLogicalRange(savedFootprintRangeRef.current)
       }
@@ -7663,8 +7383,21 @@ export function TradingChart({
     const refreshCandles = async () => {
       try {
         const days = timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
+        const held = candlesRef.current
+        const localGap =
+          held.length > 2 &&
+          needsCandleReprint({
+            bars: held.map((c) => ({ time: c.time as number })),
+            nearTipLookback: 64,
+            maxNearTipGaps: 1,
+            maxTipLagSlots: 2,
+          })
+        const now = Date.now()
+        const canReprint = now - candleReprintAtRef.current > 45_000
+        const reprint = localGap && canReprint
+        if (reprint) candleReprintAtRef.current = now
         const res = await fetch(
-          `/api/trading/candles?instrument=${instrument}&timeframe=${timeframe}&days=${days}&quote=0&_=${Date.now()}`,
+          `/api/trading/candles?instrument=${instrument}&timeframe=${timeframe}&days=${days}&quote=0${reprint ? '&reprint=1' : ''}&_=${Date.now()}`,
           { cache: 'no-store' }
         )
         if (!res.ok) return
@@ -7748,12 +7481,15 @@ export function TradingChart({
           })),
           tipOwned
         )
+        const gapsFilled =
+          countNearTipGaps(prev.map((c) => ({ time: c.time as number }))) >
+          countNearTipGaps(nextBars.map((c) => ({ time: c.time as number })))
 
         // Never reset didFitRef here — new prints must not yank a panned viewport
         lastCandleRef.current = nextBars[nextBars.length - 1]!
-        // REST owns closed bars: replace gap-fill flats when Yahoo catches up.
+        // REST owns closed bars: replace gap-fill flats when Yahoo/Databento reprints.
         // Once market is closed (!streamLive), always push candles to finalize closing bars & AVWAP.
-        if (structureChanged || closedChanged || !streamLive) {
+        if (structureChanged || closedChanged || gapsFilled || reprint || !streamLive) {
           setCandles(nextBars)
         } else {
           const tip = nextBars[nextBars.length - 1]!
@@ -10225,7 +9961,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     ? 'bg-amber-500/25 text-amber-200 border border-amber-400/60 shadow-sm font-semibold'
                     : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
                 }`}
-                title="Click to toggle Enhanced Level 2 Footprint Order Flow (Bid x Ask Ladders, Delta & POC)"
+                title="Sierra / Tradovate number bars on the latest live prints (bid x ask)"
               >
                 <span className="text-[11px]">👣</span>
                 <span className="text-gray-400 font-semibold">Footprint:</span>

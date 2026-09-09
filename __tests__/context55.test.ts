@@ -5,7 +5,6 @@ import {
   compute5MonthAnchoredVwap,
   compute5MonthAnchoredVwapFromDailyBars,
   compute5MonthAnchoredVwapPath,
-  typicalPriceStdev,
   computeYesterdayNycSession,
   computeOvernightInventoryAndSessions,
   classifyMarketDayType,
@@ -172,23 +171,72 @@ describe('Context 5-5 Module Tests', () => {
       asOfUnix: now,
     })
     assert.ok(path !== null)
-    assert.equal(path.vwap.length, bars.length)
-    assert.equal(path.upper1.length, bars.length)
+    assert.ok(path.vwap.length >= bars.length, 'daily spine + 5m path is at least the 5m window')
+    assert.equal(path.upper1.length, path.vwap.length)
     const first = path.vwap[0]!.value
     const last = path.vwap[path.vwap.length - 1]!.value
     assert.ok(last > first, 'running 5M VWAP rises with the 5m trend')
     const unique = new Set(path.vwap.map((p) => p.value))
     assert.ok(unique.size > 5, 'VWAP is not a single flat level')
-    assert.ok(path.upper3.length === bars.length)
-    assert.ok(path.lower3.length === bars.length)
+    assert.ok(path.upper3.length === path.vwap.length)
+    assert.ok(path.lower3.length === path.vwap.length)
     const u1 = path.upper1[path.upper1.length - 1]!.value
     const v = path.vwap[path.vwap.length - 1]!.value
     const u3 = path.upper3[path.upper3.length - 1]!.value
     const sigma = u1 - v
     assert.ok(Math.abs(u3 - (v + 3 * sigma)) < 0.05, '±3σ is three standard deviations (HLC/3)')
-    const windowSigma = typicalPriceStdev(bars)
-    // Synthetic path is only 40 bars / ~3h, so recentBarsForSigma === bars
-    assert.ok(Math.abs(sigma - windowSigma) < 0.05, 'overlay σ is recent 5m volatility, not 5-month daily variance')
+    assert.ok(sigma > 0, 'cumulative volume-weighted σ stays on the 5-month path')
+  })
+
+  it('5M AVWAP center follows completed dailies through the 5m window (not one frozen level)', () => {
+    const now = Math.floor(new Date('2026-09-07T14:00:00Z').getTime() / 1000)
+    const dailyBars: ContextBar[] = []
+    for (let i = 160; i >= 0; i--) {
+      const t = now - i * 86400
+      const px = 38000 + (160 - i) * 40
+      dailyBars.push({
+        time: t,
+        open: px,
+        high: px + 80,
+        low: px - 80,
+        close: px + 20,
+        volume: 80000,
+      })
+    }
+    const bars: ContextBar[] = []
+    for (let d = 10; d >= 1; d--) {
+      const day = now - d * 86400
+      for (let i = 0; i < 8; i++) {
+        bars.push({
+          time: day + 13 * 3600 + i * 300,
+          open: 43000,
+          high: 43040,
+          low: 42960,
+          close: 43020,
+          volume: 2000,
+        })
+      }
+    }
+    const path = compute5MonthAnchoredVwapPath({
+      dailyBars,
+      bars,
+      instrument: 'DOW',
+      asOfUnix: now,
+    })
+    assert.ok(path !== null)
+    const first = path.vwap[0]!.value
+    const last = path.vwap[path.vwap.length - 1]!.value
+    assert.ok(last > first + 50, '5M VWAP path rises as later dailies print')
+    assert.ok(new Set(path.vwap.map((p) => p.value)).size > 8, 'center is a path, not a straight level')
+    assert.equal(path.upper3.length, path.vwap.length)
+    assert.equal(path.lower3.length, path.vwap.length)
+    const mid = path.vwap[path.vwap.length - 1]!.value
+    const u1 = path.upper1[path.upper1.length - 1]!.value
+    const u2 = path.upper2[path.upper2.length - 1]!.value
+    const u3 = path.upper3[path.upper3.length - 1]!.value
+    const l1 = path.lower1[path.lower1.length - 1]!.value
+    assert.ok(u3 > u2 && u2 > u1 && u1 > mid, 'three bands above the VWAP center')
+    assert.ok(l1 < mid && path.lower3[path.lower3.length - 1]!.value < path.lower2[path.lower2.length - 1]!.value)
   })
 
   it('computes Yesterday NYC Session accurately', () => {

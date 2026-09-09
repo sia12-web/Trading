@@ -24,7 +24,12 @@ Computed in `lib/chart/context55.ts`, painted in `TradingChart` + `lib/chart/con
 1. **5-day FRVP** — volume profile from the cash open five trading days ago through the live tip. Thin histogram at the **range open**. **POC line runs from that open to the range end** (not just the histogram width).
 2. **Yesterday NYC FRVP** — prior completed RTH 09:30–16:00. After 16:00 today, that is **today’s closed session**. Histogram at yesterday’s cash open; **Y-POC spans 09:30–16:00**.
 3. **Overnight inventory FRVP** — 18:00 ET before the next cash open, updating until 09:30. Histogram at 18:00; **ON-POC spans 18:00 → now (or 09:30)**.
-4. **5-month anchored VWAP** — typical price `(H+L+C)/3`. Blue VWAP center is the 5-month running mean; ±1/±2/±3σ (green / olive / teal, fill between ±1σ) are sized from **recent 5m volatility** (~last 36 hours). Session candles own the Y-axis — VWAP / ±σ do not join autoscale or last-value labels, so a 5-month mean hundreds of points away cannot flatten 5m bars. The HUD still prints the VWAP level.
+4. **5-month anchored VWAP** — typical price `(H+L+C)/3`, anchored at NYC cash open five calendar months ago. Daily spine + live 5m updates form a **sloping path** (not one frozen level). **Three bands above and three below** (±1/±2/±3σ) use the true cumulative volume-weighted stdev. Session candles own the Y-axis (`ignoreScale`) so wide 5-month σ cannot flatten 5m bars. HUD prints the live VWAP level.
+5. **Footprint** — click Footprint to show Sierra/Tradovate **number bars** on the **latest ~12 live 5m prints** only (bid left / ask right, 300% diagonal imbalance, bar POC). No historical tape dump.
+
+## Candle gaps (smart reprint)
+
+Databento hist is delayed; Yahoo CME stitches holes. If 5m slots are still missing near the tip (or the tip lags wall clock), `/api/trading/candles` **bypasses the 60s Databento cache and reprints** Databento + Yahoo. The live chart also requests `?reprint=1` when it sees local gaps (45s cooldown). No new feed architecture — same CME book, smarter fill. Weekend / Globex halt holes are intentional and are not reprinted as flat bars.
 
 POC lines are canvas (not Lightweight Charts price lines) so they cannot stretch the scale.
 
