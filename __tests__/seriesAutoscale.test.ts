@@ -14,7 +14,9 @@ import {
   profileIntersectsPane,
   compactProfileWidth,
   CONTEXT55_FRVP_5D_W,
+  paintAnchoredVwapSigmaFill,
 } from '../lib/chart/context55Paint'
+import { VWAP_COLORS } from '../lib/chart/sessionVwap'
 
 {
   const extras = context55ScalePrices({
@@ -66,6 +68,47 @@ import {
   assert.ok(compactProfileWidth(800, 56) <= 56)
   assert.ok(compactProfileWidth(120, 56) < 30, 'zoomed-out session does not stretch the histogram')
   assert.equal(compactProfileWidth(null, 56), 56)
+}
+
+{
+  let fillStyle = ''
+  let filled = false
+  const ctx = {
+    save() {},
+    restore() {},
+    beginPath() {},
+    rect() {},
+    clip() {},
+    moveTo() {},
+    lineTo() {},
+    closePath() {},
+    fill() {
+      filled = true
+    },
+    set fillStyle(value: string) {
+      fillStyle = value
+    },
+    get fillStyle() {
+      return fillStyle
+    },
+  } as unknown as CanvasRenderingContext2D
+  paintAnchoredVwapSigmaFill(ctx, {
+    upper: [
+      { time: 1, value: 100 },
+      { time: 2, value: 110 },
+    ],
+    lower: [
+      { time: 1, value: 80 },
+      { time: 2, value: 90 },
+    ],
+    paneW: 400,
+    paneH: 300,
+    timeToX: (t) => t * 10,
+    priceToY: (p) => 200 - p,
+    fill: VWAP_COLORS.fill1,
+  })
+  assert.equal(filled, true)
+  assert.equal(fillStyle, VWAP_COLORS.fill1)
 }
 
 console.log('seriesAutoscale.test.ts: all passed')

@@ -48,6 +48,7 @@ import {
   isWeekdayYmd,
   zonedCivilToUnix,
   lastNTradingSessions as trimDeskCandles,
+  VWAP_COLORS,
 } from '@/lib/chart/sessionVwap'
 import { parseCalendarEventMs } from '@/lib/trading/deskNewsHazard'
 import type { DeskCalendarEvent } from '@/lib/trading/deskNews'
@@ -222,6 +223,7 @@ import {
   CONTEXT55_FRVP_YDAY_W,
   paintLevelLine,
   paintVolumeProfileBins,
+  paintAnchoredVwapSigmaFill,
   profileIntersectsPane,
   compactProfileWidth,
 } from '@/lib/chart/context55Paint'
@@ -764,11 +766,6 @@ function normalizeCandleTimes(candles: OHLCV[]): OHLCV[] {
   }
   return out
 }
-
-const VWAP_COLORS = {
-  vwap: '#b8a04a',
-  band: '#3d8f7a',
-} as const
 
 function replacePriceLines(
   host: ISeriesApi<'Line'> | null,
@@ -2289,8 +2286,8 @@ export function TradingChart({
           vs.lower1.setData(shift(path.lower1))
           vs.upper2.setData(shift(path.upper2))
           vs.lower2.setData(shift(path.lower2))
-          vs.upper3.setData([])
-          vs.lower3.setData([])
+          vs.upper3.setData(shift(path.upper3 ?? []))
+          vs.lower3.setData(shift(path.lower3 ?? []))
         }
       } else {
         avwapLastRef.current = null
@@ -2349,6 +2346,25 @@ export function TradingChart({
 
     const priceToY = (price: number) => series.priceToCoordinate(price)
     const xAt = (unix: number) => timeToX(chart.timeScale(), toChartTime(unix, tz), candleTimes)
+
+    const avwapPath = latestVwapBandsRef.current
+    if (avwapPath?.upper1?.length && avwapPath?.lower1?.length) {
+      paintAnchoredVwapSigmaFill(ctx, {
+        upper: avwapPath.upper1.map((p: { time: number; value: number }) => ({
+          time: toChartTime(p.time as number, tz) as number,
+          value: p.value,
+        })),
+        lower: avwapPath.lower1.map((p: { time: number; value: number }) => ({
+          time: toChartTime(p.time as number, tz) as number,
+          value: p.value,
+        })),
+        paneW,
+        paneH,
+        timeToX: (t) => timeToX(chart.timeScale(), t, candleTimes),
+        priceToY,
+        fill: VWAP_COLORS.fill1,
+      })
+    }
 
     // Compact histogram at the range open — scrolls with time, not glued left
     // and not stretched across the session. Pan left to the range start to see it.
@@ -5696,33 +5712,32 @@ export function TradingChart({
       ...ignoreScale,
     })
 
-    // Anchored VWAP + ±1/±2/±3σ bands (from NY 9:30 of 5 trading days ago)
+    // Anchored VWAP — TradingView Style: blue VWAP, green/olive/teal ±1/±2/±3σ
     const bandOpts = {
-      color: VWAP_COLORS.band,
       lineWidth: 1 as const,
       priceLineVisible: false,
-      lastValueVisible: false,
+      lastValueVisible: true,
       pointMarkersVisible: false,
       crosshairMarkerVisible: false,
       ...ignoreScale,
     }
     const vwapSeries = {
-      upper3: chart.addLineSeries({ ...bandOpts, title: '' }),
-      upper2: chart.addLineSeries({ ...bandOpts, title: '' }),
-      upper1: chart.addLineSeries({ ...bandOpts, color: '#3b82f6', lineWidth: 2, title: '' }),
+      upper3: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band3, title: '+3σ' }),
+      upper2: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band2, title: '+2σ' }),
+      upper1: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band1, title: '+1σ' }),
       vwap: chart.addLineSeries({
-        color: '#10b981',
+        color: VWAP_COLORS.vwap,
         lineWidth: 2,
         priceLineVisible: false,
-        lastValueVisible: false,
+        lastValueVisible: true,
         pointMarkersVisible: false,
         crosshairMarkerVisible: false,
-        title: '5M VWAP',
+        title: 'VWAP',
         ...ignoreScale,
       }),
-      lower1: chart.addLineSeries({ ...bandOpts, color: '#b8a04a', lineWidth: 2, title: '' }),
-      lower2: chart.addLineSeries({ ...bandOpts, title: '' }),
-      lower3: chart.addLineSeries({ ...bandOpts, title: '' }),
+      lower1: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band1, title: '-1σ' }),
+      lower2: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band2, title: '-2σ' }),
+      lower3: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band3, title: '-3σ' }),
     }
 
     // Initial Balance — right-scale H/L labels hidden
@@ -10089,10 +10104,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               })()}
               {/* VWAP HUD Label */}
               <div
-                className="transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                className="transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-500/30"
                 title={`5-Month Anchored VWAP${currentVwap ? ` · Level: ${currentVwap.vwap.toLocaleString()}` : ''}`}
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
                 <span className="text-gray-400 font-semibold">VWAP:</span>
                 <span className="font-mono font-bold">
                   {currentVwap ? currentVwap.vwap.toLocaleString() : '—'}

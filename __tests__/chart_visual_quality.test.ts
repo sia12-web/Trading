@@ -18,6 +18,7 @@ import {
   DESK_CANDLE_UP,
   DESK_CHART_THEME,
 } from '../lib/chart/deskChartTheme'
+import { VWAP_COLORS } from '../lib/chart/sessionVwap'
 
 const root = process.cwd()
 const src = (file: string) => fs.readFileSync(path.join(root, file), 'utf8')
@@ -53,7 +54,17 @@ assert.ok(sim.includes('const extendTo = Math.max(tip, simT)'), 'sim adds no fut
 const live = src('app/dashboard/chart/components/TradingChart.tsx')
 assert.ok(live.includes('DESK_CANDLE_SERIES_COLORS'), 'live uses shared green/red on every market')
 assert.ok(!live.includes('upColor: meta.color'), 'live does not paint GOLD/DOW accent as up-candles')
-assert.ok(live.includes("title: '5M VWAP'"), 'live reprints 5-month VWAP from CME daily bars')
+assert.equal(VWAP_COLORS.vwap, '#2962FF')
+assert.equal(VWAP_COLORS.band1, '#4CAF50')
+assert.equal(VWAP_COLORS.band2, '#827717')
+assert.equal(VWAP_COLORS.band3, '#00695C')
+assert.ok(live.includes("title: 'VWAP'"), 'live reprints 5-month VWAP from CME daily bars')
+assert.ok(live.includes('VWAP_COLORS.vwap'), 'VWAP uses the TradingView blue')
+assert.ok(live.includes('VWAP_COLORS.band3'), '±3σ bands are painted')
+assert.ok(live.includes('paintAnchoredVwapSigmaFill'), 'Background #1 fills between ±1σ')
+assert.ok(live.includes('lastValueVisible: true'), 'VWAP price labels stay on')
+assert.ok(sim.includes('VWAP_COLORS.band3'), 'sim paints ±3σ in the same teal')
+assert.ok(sim.includes("title: 'VWAP'"), 'sim VWAP title matches live')
 assert.ok(live.includes('compute5MonthAnchoredVwapPath'), '5M VWAP is a running path, not a flat level')
 assert.ok(!live.includes('seriesOf(avwap5mBenchmark.vwap)'), 'live does not stamp one daily VWAP on every 5m bar')
 assert.ok(!live.includes("title: '5M +2σ'"), '5M ±σ must not be price-line axis labels')

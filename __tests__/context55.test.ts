@@ -128,6 +128,10 @@ describe('Context 5-5 Module Tests', () => {
     assert.ok(benchmark.sigma1Lower < benchmark.vwap)
     assert.ok(benchmark.sigma2Upper > benchmark.sigma1Upper)
     assert.ok(benchmark.sigma2Lower < benchmark.sigma1Lower)
+    assert.ok((benchmark.sigma3Upper ?? 0) > benchmark.sigma2Upper)
+    assert.ok((benchmark.sigma3Lower ?? 0) < benchmark.sigma2Lower)
+    const sigma = benchmark.sigma1Upper - benchmark.vwap
+    assert.ok(Math.abs((benchmark.sigma3Upper ?? 0) - (benchmark.vwap + 3 * sigma)) < 0.05)
     assert.ok(benchmark.barCount >= 50)
     assert.ok((benchmark.sumV ?? 0) > 0)
     assert.ok((benchmark.lastBarUnix ?? 0) > 0)
@@ -174,8 +178,13 @@ describe('Context 5-5 Module Tests', () => {
     assert.ok(last > first, 'running 5M VWAP rises with the 5m trend')
     const unique = new Set(path.vwap.map((p) => p.value))
     assert.ok(unique.size > 5, 'VWAP is not a single flat level')
-    assert.ok(path.upper1[0]!.value >= path.vwap[0]!.value)
-    assert.ok(path.lower1[0]!.value <= path.vwap[0]!.value)
+    assert.ok(path.upper3.length === bars.length)
+    assert.ok(path.lower3.length === bars.length)
+    const u1 = path.upper1[path.upper1.length - 1]!.value
+    const v = path.vwap[path.vwap.length - 1]!.value
+    const u3 = path.upper3[path.upper3.length - 1]!.value
+    const sigma = u1 - v
+    assert.ok(Math.abs(u3 - (v + 3 * sigma)) < 0.05, '±3σ is three standard deviations (HLC/3)')
   })
 
   it('computes Yesterday NYC Session accurately', () => {

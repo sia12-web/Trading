@@ -112,3 +112,47 @@ export function paintLevelLine(
   )
   ctx.restore()
 }
+
+/** TradingView Background #1 — fill between ±1σ. Off-pane σ still tints the visible slice. */
+export function paintAnchoredVwapSigmaFill(
+  ctx: CanvasRenderingContext2D,
+  args: {
+    upper: { time: number; value: number }[]
+    lower: { time: number; value: number }[]
+    paneW: number
+    paneH: number
+    timeToX: (time: number) => number | null
+    priceToY: (price: number) => number | null
+    fill: string
+  }
+): void {
+  const { upper, lower, paneW, paneH, timeToX, priceToY, fill } = args
+  if (upper.length < 2 || lower.length < 2) return
+  const top: Array<{ x: number; y: number }> = []
+  const bot: Array<{ x: number; y: number }> = []
+  for (const p of upper) {
+    const x = timeToX(p.time)
+    const y = priceToY(p.value)
+    if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y)) continue
+    top.push({ x, y })
+  }
+  for (const p of lower) {
+    const x = timeToX(p.time)
+    const y = priceToY(p.value)
+    if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y)) continue
+    bot.push({ x, y })
+  }
+  if (top.length < 2 || bot.length < 2) return
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(0, 0, paneW, paneH)
+  ctx.clip()
+  ctx.beginPath()
+  ctx.moveTo(top[0]!.x, top[0]!.y)
+  for (let i = 1; i < top.length; i++) ctx.lineTo(top[i]!.x, top[i]!.y)
+  for (let i = bot.length - 1; i >= 0; i--) ctx.lineTo(bot[i]!.x, bot[i]!.y)
+  ctx.closePath()
+  ctx.fillStyle = fill
+  ctx.fill()
+  ctx.restore()
+}

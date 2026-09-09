@@ -1234,31 +1234,30 @@ function SimulationDeskInner() {
     })
 
     const bandOpts = {
-      color: VWAP_COLORS.band,
       lineWidth: 1 as const,
       priceLineVisible: false,
-      lastValueVisible: false,
+      lastValueVisible: true,
       pointMarkersVisible: false,
       crosshairMarkerVisible: false,
       ...ignoreScale,
     }
     const vwapSeries = {
-      upper3: chart.addLineSeries({ ...bandOpts, title: '+3σ' }),
-      upper2: chart.addLineSeries({ ...bandOpts, title: '+2σ' }),
-      upper1: chart.addLineSeries({ ...bandOpts, title: '+1σ' }),
+      upper3: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band3, title: '+3σ' }),
+      upper2: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band2, title: '+2σ' }),
+      upper1: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band1, title: '+1σ' }),
       vwap: chart.addLineSeries({
         color: VWAP_COLORS.vwap,
         lineWidth: 2,
         priceLineVisible: false,
-        lastValueVisible: false,
+        lastValueVisible: true,
         pointMarkersVisible: false,
         crosshairMarkerVisible: false,
-        title: 'AVWAP',
+        title: 'VWAP',
         ...ignoreScale,
       }),
-      lower1: chart.addLineSeries({ ...bandOpts, title: '-1σ' }),
-      lower2: chart.addLineSeries({ ...bandOpts, title: '-2σ' }),
-      lower3: chart.addLineSeries({ ...bandOpts, title: '-3σ' }),
+      lower1: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band1, title: '-1σ' }),
+      lower2: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band2, title: '-2σ' }),
+      lower3: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band3, title: '-3σ' }),
     }
 
     // Initial Balance — right-scale H/L labels only (no spanning line)

@@ -209,9 +209,15 @@ export interface SessionHighlightRect {
   borderBottomWidth?: number
 }
 
+/** TradingView Anchored VWAP Style tab: blue VWAP, green/olive/teal σ bands. */
 export const VWAP_COLORS = {
-  vwap: '#b8a04a',
-  band: 'rgba(61, 143, 122, 0.48)',
+  vwap: '#2962FF',
+  band1: '#4CAF50',
+  band2: '#827717',
+  band3: '#00695C',
+  fill1: 'rgba(76, 175, 80, 0.12)',
+  /** @deprecated use band1–band3 */
+  band: '#4CAF50',
 } as const
 
 export interface SessionBar {
