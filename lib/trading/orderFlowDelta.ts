@@ -24,6 +24,14 @@ export interface BarDelta {
   buyRatio: number
 }
 
+export interface CvdCandleBar {
+  time: number
+  open: number
+  high: number
+  low: number
+  close: number
+}
+
 export interface OrderFlowSummary {
   sessionCvd: number
   latestBarDelta: number
@@ -147,4 +155,47 @@ export function computeOrderFlowCvd(
     description,
     bars: barDeltas,
   }
+}
+
+/**
+ * Computes candlestick bars for the Cumulative Volume Delta (CVD) sub-pane chart.
+ * Each bar represents the Open, High, Low, and Close CVD during that 1-minute period.
+ */
+export function computeCvdCandleBars(
+  bars: OrderFlowBar[],
+  sessionStartUnix?: number
+): CvdCandleBar[] {
+  if (!bars || bars.length === 0) return []
+
+  const startIdx = sessionStartUnix
+    ? Math.max(0, bars.findIndex((b) => b.time >= sessionStartUnix))
+    : 0
+
+  const activeBars = bars.slice(startIdx)
+  if (activeBars.length === 0) return []
+
+  let runningCvd = 0
+  const result: CvdCandleBar[] = []
+
+  for (const bar of activeBars) {
+    const { buyVolume, sellVolume, delta } = estimateBarDelta(bar)
+    const openCvd = runningCvd
+    const closeCvd = runningCvd + delta
+
+    // Intrabar delta estimate
+    const highCvd = Math.max(openCvd, closeCvd, openCvd + Math.round(buyVolume * 0.75))
+    const lowCvd = Math.min(openCvd, closeCvd, openCvd - Math.round(sellVolume * 0.75))
+
+    runningCvd = closeCvd
+
+    result.push({
+      time: bar.time,
+      open: openCvd,
+      high: highCvd,
+      low: lowCvd,
+      close: closeCvd,
+    })
+  }
+
+  return result
 }

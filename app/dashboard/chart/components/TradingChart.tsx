@@ -162,7 +162,11 @@ import {
 } from '@/lib/trading/userDrawings'
 import { detectCandlestickPatterns } from '@/lib/trading/candlestickPatterns'
 import { isUsMarketHoliday } from '@/lib/chart/sessionVwap'
-import { computeOrderFlowCvd, type OrderFlowSummary } from '@/lib/trading/orderFlowDelta'
+import {
+  computeOrderFlowCvd,
+  computeCvdCandleBars,
+  type OrderFlowSummary,
+} from '@/lib/trading/orderFlowDelta'
 
 const DOW_15M_FAIL_COLORS: any = { high: '#3b82f6', low: '#ef4444', mid: '#eab308', buy: '#3b82f6', sell: '#ef4444' }
 const computeDow15mFailOverlay = (..._args: any[]): any => null
@@ -1262,6 +1266,12 @@ export function TradingChart({
   const [currentVwap, setCurrentVwap] = useState<{ vwap: number; upper1: number; lower1: number } | null>(null)
   const latestVwapBandsRef = useRef<any>(null)
   const [cvdPanelOpen, setCvdPanelOpen] = useState(false)
+  const [showCvdSubPane, setShowCvdSubPane] = useState(true)
+  const cvdContainerRef = useRef<HTMLDivElement>(null)
+  const cvdChartRef = useRef<IChartApi | null>(null)
+  const cvdCandleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
+  const cvdSessionOverlayRef = useRef<HTMLDivElement>(null)
+  const [currentCvdLegend, setCurrentCvdLegend] = useState<{ open: number; high: number; low: number; close: number } | null>(null)
   const [yesterdayNyc, setYesterdayNyc] = useState<YesterdayNycSession | null>(null)
   const [showYesterdayNyc] = useState(true)
   const yesterdayNycLinesRef = useRef<IPriceLine[]>([])
@@ -5812,6 +5822,139 @@ export function TradingChart({
     }
   }, []) // initialize once only
 
+  // ── Initialize CVD Sub-Chart Pane ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!showCvdSubPane || !cvdContainerRef.current) return
+
+    const cvdContainer = cvdContainerRef.current
+    const cvdChart = createChart(cvdContainer, {
+      ...CHART_THEME,
+      width: cvdContainer.clientWidth,
+      height: cvdContainer.clientHeight,
+      layout: {
+        background: { color: '#0b0e14' },
+        textColor: '#94a3b8',
+      },
+      grid: {
+        vertLines: { color: 'rgba(255, 255, 255, 0.03)' },
+        horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+      },
+      timeScale: {
+        ...CHART_THEME.timeScale,
+        visible: true,
+        timeVisible: true,
+        secondsVisible: false,
+        borderVisible: true,
+        borderColor: '#1e293b',
+      },
+      rightPriceScale: {
+        borderVisible: true,
+        borderColor: '#1e293b',
+        autoScale: true,
+        scaleMargins: {
+          top: 0.15,
+          bottom: 0.15,
+        },
+      },
+    })
+    cvdChartRef.current = cvdChart
+
+    const cvdSeries = cvdChart.addCandlestickSeries({
+      upColor: '#10b981',
+      downColor: '#f43f5e',
+      borderUpColor: '#10b981',
+      borderDownColor: '#f43f5e',
+      wickUpColor: '#34d399',
+      wickDownColor: '#fb7185',
+      priceFormat: {
+        type: 'volume',
+        precision: 0,
+      },
+    })
+    cvdCandleSeriesRef.current = cvdSeries
+
+    try {
+      cvdSeries.createPriceLine({
+        price: 0,
+        color: 'rgba(148, 163, 184, 0.45)',
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: '0 Δ',
+      })
+    } catch {}
+
+    let isSyncing = false
+    const syncMainToCvd = (range: any) => {
+      if (isSyncing || !range) return
+      isSyncing = true
+      try {
+        cvdChart.timeScale().setVisibleLogicalRange(range)
+      } catch {}
+      isSyncing = false
+    }
+
+    const syncCvdToMain = (range: any) => {
+      if (isSyncing || !range || !chartRef.current) return
+      isSyncing = true
+      try {
+        chartRef.current.timeScale().setVisibleLogicalRange(range)
+      } catch {}
+      isSyncing = false
+    }
+
+    const mainTimeScale = chartRef.current?.timeScale()
+    mainTimeScale?.subscribeVisibleLogicalRangeChange(syncMainToCvd)
+    cvdChart.timeScale().subscribeVisibleLogicalRangeChange(syncCvdToMain)
+
+    const initialRange = mainTimeScale?.getVisibleLogicalRange()
+    if (initialRange) {
+      try {
+        cvdChart.timeScale().setVisibleLogicalRange(initialRange)
+      } catch {}
+    }
+
+    const onCrosshairMove = (param: any) => {
+      if (!param || !param.time || !param.seriesPrices) return
+      const priceData = param.seriesPrices.get(cvdSeries)
+      if (priceData && typeof priceData === 'object') {
+        setCurrentCvdLegend({
+          open: Math.round((priceData as any).open ?? 0),
+          high: Math.round((priceData as any).high ?? 0),
+          low: Math.round((priceData as any).low ?? 0),
+          close: Math.round((priceData as any).close ?? 0),
+        })
+      }
+    }
+    cvdChart.subscribeCrosshairMove(onCrosshairMove)
+
+    const ro = new ResizeObserver(() => {
+      if (cvdContainerRef.current && cvdChartRef.current) {
+        cvdChartRef.current.resize(
+          cvdContainerRef.current.clientWidth,
+          cvdContainerRef.current.clientHeight
+        )
+      }
+    })
+    ro.observe(cvdContainer)
+
+    return () => {
+      ro.disconnect()
+      try {
+        mainTimeScale?.unsubscribeVisibleLogicalRangeChange(syncMainToCvd)
+      } catch {}
+      try {
+        cvdChart.timeScale().unsubscribeVisibleLogicalRangeChange(syncCvdToMain)
+      } catch {}
+      try {
+        cvdChart.unsubscribeCrosshairMove(onCrosshairMove)
+      } catch {}
+      cvdChart.remove()
+      cvdChartRef.current = null
+      cvdCandleSeriesRef.current = null
+    }
+  }, [showCvdSubPane])
+
   // ── Load candle data when instrument or timeframe changes ───────────────────────
   useEffect(() => {
     if (!chartReady) return
@@ -6286,6 +6429,49 @@ export function TradingChart({
         vs.lower3.setData([])
       }
 
+      // Update CVD Candlesticks in Sub-Chart Pane
+      if (cvdCandleSeriesRef.current) {
+        const cvdBars = computeCvdCandleBars(
+          ordered.map((c) => ({
+            time: c.time as number,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume,
+          }))
+        )
+        const tz = chartTzRef.current
+        const shiftedCvd = mapTimesToChart(
+          cvdBars.map((b) => ({
+            time: b.time,
+            open: b.open,
+            high: b.high,
+            low: b.low,
+            close: b.close,
+          })),
+          tz
+        ).map((b) => ({
+          time: b.time as UTCTimestamp,
+          open: (b as any).open,
+          high: (b as any).high,
+          low: (b as any).low,
+          close: (b as any).close,
+        }))
+        cvdCandleSeriesRef.current.setData(shiftedCvd)
+        if (shiftedCvd.length > 0) {
+          const lastCvd = shiftedCvd[shiftedCvd.length - 1]
+          if (lastCvd) {
+            setCurrentCvdLegend({
+              open: Math.round(lastCvd.open),
+              high: Math.round(lastCvd.high),
+              low: Math.round(lastCvd.low),
+              close: Math.round(lastCvd.close),
+            })
+          }
+        }
+      }
+
       syncDeskPlaybookRangesRef.current(ordered)
       paintYesterdayProfileRef.current()
       paintOpeningActivityRef.current()
@@ -6484,6 +6670,29 @@ export function TradingChart({
       sessionPaint: 'range',
     })
     paintSessionHighlightOverlay(host, rects)
+
+    if (cvdSessionOverlayRef.current && cvdChartRef.current && cvdCandleSeriesRef.current && cvdContainerRef.current) {
+      let cvdPriceAxisW = 70
+      try {
+        cvdPriceAxisW = cvdChartRef.current.priceScale('right').width() || cvdPriceAxisW
+      } catch {}
+      const cvdSeries = cvdCandleSeriesRef.current
+      const { rects: cvdRects } = projectSessionHighlightRects({
+        spans: cached.spans.map((s: any) => ({
+          ...s,
+          startT: toChartTime(s.startT, tz),
+          endT: toChartTime(s.endT, tz),
+        })),
+        candleTimes: cached.candleTimes.map((t: number) => toChartTime(t, tz)),
+        timeScale: cvdChartRef.current.timeScale(),
+        priceToY: (price) => cvdSeries.priceToCoordinate(price),
+        priceScaleWidth: cvdPriceAxisW,
+        containerWidth: cvdContainerRef.current.clientWidth,
+        containerHeight: cvdContainerRef.current.clientHeight,
+        sessionPaint: 'range',
+      })
+      paintSessionHighlightOverlay(cvdSessionOverlayRef.current, cvdRects)
+    }
 
     // Position TP / SL band overlay
     const bandHost = positionBandOverlayRef.current
@@ -9330,9 +9539,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           {/* Interactive CVD Order Flow Button */}
           <button
             type="button"
-            onClick={() => setCvdPanelOpen((prev) => !prev)}
+            onClick={() => {
+              setShowCvdSubPane((prev) => !prev)
+              setCvdPanelOpen((prev) => !prev)
+            }}
             className={`transition flex items-center gap-1.5 select-none px-1.5 py-0.5 rounded cursor-pointer ${
-              cvdPanelOpen
+              showCvdSubPane || cvdPanelOpen
                 ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/60 shadow-sm'
                 : sessionOrderFlow?.trend === 'BUYER_DOMINANT'
                 ? 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 border border-emerald-500/30'
@@ -9340,7 +9552,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 ? 'bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 border border-rose-500/30'
                 : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
             }`}
-            title="Click to toggle Order Flow & Cumulative Volume Delta (CVD) Inspector"
+            title="Click to toggle CVD Sub-Chart Pane & Order Flow Inspector"
           >
             <span className="text-[11px]">📊</span>
             <span className="text-gray-400 font-semibold">CVD:</span>
@@ -9371,35 +9583,66 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         ref={chartFrameRef}
         onClick={handleChartFrameClick}
         onMouseMove={handleChartFrameMouseMove}
-        className="flex-1 relative rounded-xl border border-zinc-800 overflow-hidden bg-[#0e1117]"
-        style={{ minHeight: 400 }}
+        className="flex-1 relative rounded-xl border border-zinc-800 overflow-hidden bg-[#0e1117] flex flex-col"
+        style={{ minHeight: 520 }}
       >
-        <div ref={containerRef} className="absolute inset-0 z-0" />
-        <div
-          ref={sessionOverlayRef}
-          className="pointer-events-none absolute inset-0 z-[1]"
-          style={{ opacity: 1, transition: 'none', willChange: 'opacity' }}
-        />
-        <canvas
-          ref={frvpHistogramCanvasRef}
-          className="pointer-events-none absolute inset-0 z-[2]"
-        />
-        <canvas
-          ref={excessesCanvasRef}
-          className="pointer-events-none absolute inset-0 z-[3]"
-        />
-        <div
-          ref={positionBandOverlayRef}
-          className="pointer-events-none absolute inset-0 z-[4]"
-        />
-        <div
-          ref={newsMarkersOverlayRef}
-          className="pointer-events-none absolute inset-0 z-[5] overflow-hidden"
-        />
-        <canvas
-          ref={userDrawingsCanvasRef}
-          className="pointer-events-none absolute inset-0 z-[6]"
-        />
+        {/* Main Price Chart Section */}
+        <div className="relative flex-1 w-full min-h-[300px]">
+          <div ref={containerRef} className="absolute inset-0 z-0" />
+          <div
+            ref={sessionOverlayRef}
+            className="pointer-events-none absolute inset-0 z-[1]"
+            style={{ opacity: 1, transition: 'none', willChange: 'opacity' }}
+          />
+          <canvas
+            ref={frvpHistogramCanvasRef}
+            className="pointer-events-none absolute inset-0 z-[2]"
+          />
+          <canvas
+            ref={excessesCanvasRef}
+            className="pointer-events-none absolute inset-0 z-[3]"
+          />
+          <div
+            ref={positionBandOverlayRef}
+            className="pointer-events-none absolute inset-0 z-[4]"
+          />
+          <div
+            ref={newsMarkersOverlayRef}
+            className="pointer-events-none absolute inset-0 z-[5] overflow-hidden"
+          />
+          <canvas
+            ref={userDrawingsCanvasRef}
+            className="pointer-events-none absolute inset-0 z-[6]"
+          />
+        </div>
+
+        {/* Synchronized CVD Sub-Chart Pane */}
+        {showCvdSubPane && (
+          <div className="relative w-full h-[185px] border-t border-zinc-800 bg-[#0b0e14] flex flex-col flex-shrink-0">
+            {/* CVD Sub-Pane Header Legend */}
+            <div className="absolute top-2 left-3 z-10 flex items-center gap-2 text-[10.5px] font-mono text-zinc-400 bg-zinc-950/85 px-2 py-0.5 rounded border border-zinc-800/80 pointer-events-none select-none shadow-sm">
+              <span className="font-bold text-cyan-400">CVD:</span>
+              {currentCvdLegend ? (
+                <>
+                  <span className="text-zinc-400">O: <strong className="text-zinc-200">{currentCvdLegend.open.toLocaleString()}</strong></span>
+                  <span className="text-zinc-400">H: <strong className="text-emerald-400">{currentCvdLegend.high.toLocaleString()}</strong></span>
+                  <span className="text-zinc-400">L: <strong className="text-rose-400">{currentCvdLegend.low.toLocaleString()}</strong></span>
+                  <span className="text-zinc-400">C: <strong className={currentCvdLegend.close >= currentCvdLegend.open ? 'text-emerald-400' : 'text-rose-400'}>{currentCvdLegend.close.toLocaleString()}</strong></span>
+                </>
+              ) : (
+                <span className="text-zinc-500">Loading order flow delta...</span>
+              )}
+            </div>
+
+            {/* CVD Lightweight Chart Container */}
+            <div ref={cvdContainerRef} className="absolute inset-0 z-0" />
+            <div
+              ref={cvdSessionOverlayRef}
+              className="pointer-events-none absolute inset-0 z-[1]"
+              style={{ opacity: 1, transition: 'none', willChange: 'opacity' }}
+            />
+          </div>
+        )}
 
         {/* ── Draggable Floating Drawing Tool Rail (horizontal) ── */}
         <div
@@ -9533,13 +9776,16 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             {/* CVD Order Flow Toggle */}
             <button
               type="button"
-              onClick={() => setCvdPanelOpen((prev) => !prev)}
+              onClick={() => {
+                setShowCvdSubPane((prev) => !prev)
+                setCvdPanelOpen((prev) => !prev)
+              }}
               className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
-                cvdPanelOpen
+                showCvdSubPane || cvdPanelOpen
                   ? 'bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/30 font-bold'
                   : 'text-slate-400 hover:bg-slate-800 hover:text-cyan-300'
               }`}
-              title="Toggle Cumulative Volume Delta (CVD) Inspector"
+              title="Toggle Cumulative Volume Delta (CVD) Sub-Chart & Inspector"
             >
               <span>📊</span>
               {sessionOrderFlow?.divergence !== 'NONE' && (
