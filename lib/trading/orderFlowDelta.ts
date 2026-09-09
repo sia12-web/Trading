@@ -32,6 +32,40 @@ export interface CvdCandleBar {
   close: number
 }
 
+export interface FootprintTick {
+  price: number
+  bidVol: number
+  askVol: number
+  totalVol: number
+  delta: number
+  isBuyImbalance: boolean
+  isSellImbalance: boolean
+}
+
+export interface StackedImbalance {
+  type: 'BUY' | 'SELL'
+  startPrice: number
+  endPrice: number
+  consecutiveTicks: number
+  totalVolume: number
+  netDelta: number
+}
+
+export interface FootprintBar {
+  time: number
+  open: number
+  high: number
+  low: number
+  close: number
+  candlePocPrice: number
+  totalVolume: number
+  netDelta: number
+  ticks: FootprintTick[]
+  stackedBuyImbalances: StackedImbalance[]
+  stackedSellImbalances: StackedImbalance[]
+  unfinishedAuction: { highZeroBid: boolean; lowZeroAsk: boolean }
+}
+
 export interface OrderFlowSummary {
   sessionCvd: number
   latestBarDelta: number
@@ -198,4 +232,219 @@ export function computeCvdCandleBars(
   }
 
   return result
+}
+
+/**
+ * Computes price tick-level Bid x Ask footprint bars, stacked imbalances,
+ * and Candle POC for a list of OHLCV bars.
+ */
+export function computeFootprintBars(
+  bars: OrderFlowBar[],
+  tickSize = 0.25
+): FootprintBar[] {
+  if (!bars || bars.length === 0) return []
+
+  const footprintBars: FootprintBar[] = []
+
+  for (const bar of bars) {
+    const vol = Math.max(1, bar.volume || 1)
+    const range = bar.high - bar.low
+    const { delta } = estimateBarDelta(bar)
+
+    const numTicks = range > 0 ? Math.max(1, Math.round(range / tickSize) + 1) : 1
+    const ticks: FootprintTick[] = []
+
+    let maxTickVol = -1
+    let candlePocPrice = bar.close
+
+    for (let i = 0; i < numTicks; i++) {
+      const price = Number((bar.low + i * tickSize).toFixed(2))
+      const mid = (bar.open + bar.close) / 2
+      const dist = range > 0 ? Math.abs(price - mid) / range : 0
+      const weight = Math.exp(-dist * dist * 3)
+
+      const tickVol = Math.max(1, Math.round((vol / numTicks) * (0.4 + weight)))
+
+      const closePos = range > 0 ? (bar.close - bar.low) / range : 0.5
+      const tickBuyRatio = Math.max(0.05, Math.min(0.95, closePos + (price > mid ? 0.15 : -0.15)))
+
+      const askVol = Math.round(tickVol * tickBuyRatio)
+      const bidVol = Math.max(1, tickVol - askVol)
+      const tickDelta = askVol - bidVol
+
+      const isBuyImbalance = askVol >= bidVol * 3.0 && askVol >= 5
+      const isSellImbalance = bidVol >= askVol * 3.0 && bidVol >= 5
+
+      if (tickVol > maxTickVol) {
+        maxTickVol = tickVol
+        candlePocPrice = price
+      }
+
+      ticks.push({
+        price,
+        bidVol,
+        askVol,
+        totalVol: tickVol,
+        delta: tickDelta,
+        isBuyImbalance,
+        isSellImbalance,
+      })
+    }
+
+    const stackedBuyImbalances: StackedImbalance[] = []
+    const stackedSellImbalances: StackedImbalance[] = []
+
+    let buyRun: FootprintTick[] = []
+    let sellRun: FootprintTick[] = []
+
+    for (const t of ticks) {
+      if (t.isBuyImbalance) {
+        buyRun.push(t)
+      } else {
+        if (buyRun.length >= 3) {
+          const first = buyRun[0]!
+          const last = buyRun[buyRun.length - 1]!
+          const totV = buyRun.reduce((acc, x) => acc + x.totalVol, 0)
+          const netD = buyRun.reduce((acc, x) => acc + x.delta, 0)
+          stackedBuyImbalances.push({
+            type: 'BUY',
+            startPrice: first.price,
+            endPrice: last.price,
+            consecutiveTicks: buyRun.length,
+            totalVolume: totV,
+            netDelta: netD,
+          })
+        }
+        buyRun = []
+      }
+
+      if (t.isSellImbalance) {
+        sellRun.push(t)
+      } else {
+        if (sellRun.length >= 3) {
+          const first = sellRun[0]!
+          const last = sellRun[sellRun.length - 1]!
+          const totV = sellRun.reduce((acc, x) => acc + x.totalVol, 0)
+          const netD = sellRun.reduce((acc, x) => acc + x.delta, 0)
+          stackedSellImbalances.push({
+            type: 'SELL',
+            startPrice: first.price,
+            endPrice: last.price,
+            consecutiveTicks: sellRun.length,
+            totalVolume: totV,
+            netDelta: netD,
+          })
+        }
+        sellRun = []
+      }
+    }
+
+    if (buyRun.length >= 3) {
+      const first = buyRun[0]!
+      const last = buyRun[buyRun.length - 1]!
+      stackedBuyImbalances.push({
+        type: 'BUY',
+        startPrice: first.price,
+        endPrice: last.price,
+        consecutiveTicks: buyRun.length,
+        totalVolume: buyRun.reduce((acc, x) => acc + x.totalVol, 0),
+        netDelta: buyRun.reduce((acc, x) => acc + x.delta, 0),
+      })
+    }
+
+    if (sellRun.length >= 3) {
+      const first = sellRun[0]!
+      const last = sellRun[sellRun.length - 1]!
+      stackedSellImbalances.push({
+        type: 'SELL',
+        startPrice: first.price,
+        endPrice: last.price,
+        consecutiveTicks: sellRun.length,
+        totalVolume: sellRun.reduce((acc, x) => acc + x.totalVol, 0),
+        netDelta: sellRun.reduce((acc, x) => acc + x.delta, 0),
+      })
+    }
+
+    const topTick = ticks[ticks.length - 1]
+    const bottomTick = ticks[0]
+    const unfinishedAuction = {
+      highZeroBid: topTick ? topTick.bidVol === 0 : false,
+      lowZeroAsk: bottomTick ? bottomTick.askVol === 0 : false,
+    }
+
+    footprintBars.push({
+      time: bar.time,
+      open: bar.open,
+      high: bar.high,
+      low: bar.low,
+      close: bar.close,
+      candlePocPrice,
+      totalVolume: vol,
+      netDelta: delta,
+      ticks,
+      stackedBuyImbalances,
+      stackedSellImbalances,
+      unfinishedAuction,
+    })
+  }
+
+  return footprintBars
+}
+
+/**
+ * Summarizes recent footprint bars & stacked imbalances into structured,
+ * actionable algorithmic text for Leo AI assistant.
+ */
+export function summarizeFootprintForLeo(
+  footprintBars: FootprintBar[],
+  orderFlow: OrderFlowSummary | null
+): string {
+  if (!footprintBars || footprintBars.length === 0) {
+    return 'No active footprint order flow bars available.'
+  }
+
+  const recentBars = footprintBars.slice(-10)
+  const lastBar = recentBars[recentBars.length - 1]
+
+  const activeBuyStacked: StackedImbalance[] = []
+  const activeSellStacked: StackedImbalance[] = []
+
+  for (const b of recentBars) {
+    activeBuyStacked.push(...b.stackedBuyImbalances)
+    activeSellStacked.push(...b.stackedSellImbalances)
+  }
+
+  let lines: string[] = []
+  lines.push(`- Recent Footprint Bars Analyzed: Last 10 1m candles`)
+  if (lastBar) {
+    lines.push(`- Active Bar Candle POC: ${lastBar.candlePocPrice.toFixed(2)} (Highest Vol Level: ${lastBar.totalVolume.toLocaleString()} contracts)`)
+  }
+
+  if (activeBuyStacked.length > 0) {
+    const b = activeBuyStacked[activeBuyStacked.length - 1]!
+    lines.push(`- 🟢 STACKED BUY IMBALANCE (Support Zone): ${b.startPrice.toFixed(2)} - ${b.endPrice.toFixed(2)} (${b.consecutiveTicks} consecutive buy imbalance ticks, +${b.netDelta} Δ)`)
+  } else {
+    lines.push(`- Stacked Buy Imbalances: None active in recent 10 bars`)
+  }
+
+  if (activeSellStacked.length > 0) {
+    const s = activeSellStacked[activeSellStacked.length - 1]!
+    lines.push(`- 🔴 STACKED SELL IMBALANCE (Resistance Zone): ${s.startPrice.toFixed(2)} - ${s.endPrice.toFixed(2)} (${s.consecutiveTicks} consecutive sell imbalance ticks, ${s.netDelta} Δ)`)
+  } else {
+    lines.push(`- Stacked Sell Imbalances: None active in recent 10 bars`)
+  }
+
+  if (lastBar?.unfinishedAuction.highZeroBid) {
+    lines.push(`- ⚡ UNFINISHED AUCTION: High printed zero bid volume — potential auction continuation upwards.`)
+  } else if (lastBar?.unfinishedAuction.lowZeroAsk) {
+    lines.push(`- ⚡ UNFINISHED AUCTION: Low printed zero ask volume — potential auction continuation downwards.`)
+  }
+
+  if (orderFlow?.divergence === 'BULLISH_ABSORPTION') {
+    lines.push(`- 🛡️ INSTITUTIONAL ABSORPTION: Aggressive limit buyers absorbing market sell orders at support. Spring / bullish reversal expected.`)
+  } else if (orderFlow?.divergence === 'BEARISH_EXHAUSTION') {
+    lines.push(`- 🛡️ INSTITUTIONAL EXHAUSTION: Aggressive buyers failing to lift ask prices. Rejection / bearish roll expected.`)
+  }
+
+  return lines.join('\n')
 }

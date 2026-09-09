@@ -6,7 +6,11 @@ import {
   extractChartDataPoints,
   type LeoChatContext,
 } from '../lib/ai/leoAssistant'
-import { computeOrderFlowCvd } from '../lib/trading/orderFlowDelta'
+import {
+  computeOrderFlowCvd,
+  computeFootprintBars,
+  summarizeFootprintForLeo,
+} from '../lib/trading/orderFlowDelta'
 
 describe('Leo Execution Directives & Parsing', () => {
   it('parses CLOSE_POSITION directive from <execute> block', () => {
@@ -206,6 +210,14 @@ describe('Leo Time, Session & Position Telemetry in System Prompt', () => {
     assert.ok(flow)
     assert.ok(typeof flow.sessionCvd === 'number')
 
+    const fpBars = computeFootprintBars(bars, 0.25)
+    assert.equal(fpBars.length, bars.length)
+    assert.ok(fpBars[0]?.candlePocPrice)
+    assert.ok(fpBars[0]?.ticks.length! > 0)
+
+    const fpSummary = summarizeFootprintForLeo(fpBars, flow)
+    assert.match(fpSummary, /Active Bar Candle POC:/)
+
     const ctx: LeoChatContext = {
       instrument: 'GOLD',
       currentPrice: 4391.0,
@@ -225,13 +237,15 @@ describe('Leo Time, Session & Position Telemetry in System Prompt', () => {
         trend: flow.trend,
         divergence: flow.divergence,
         description: flow.description,
+        footprintSummary: fpSummary,
       },
     }
 
     const prompt = buildLeoSystemPrompt(ctx)
-    assert.match(prompt, /ORDER FLOW & CUMULATIVE VOLUME DELTA \(CVD\)/)
+    assert.match(prompt, /ORDER FLOW & FOOTPRINT TELEMETRY \(CVD\)/)
     assert.match(prompt, /Session CVD:/)
-    assert.match(prompt, /Institutional Aggression Bias:/)
+    assert.match(prompt, /INSTITUTIONAL FOOTPRINT LADDER & STACKED IMBALANCES/)
+    assert.match(prompt, /Active Bar Candle POC:/)
   })
 })
 

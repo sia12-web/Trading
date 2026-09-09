@@ -165,7 +165,10 @@ import { isUsMarketHoliday } from '@/lib/chart/sessionVwap'
 import {
   computeOrderFlowCvd,
   computeCvdCandleBars,
+  computeFootprintBars,
+  summarizeFootprintForLeo,
   type OrderFlowSummary,
+  type FootprintBar,
 } from '@/lib/trading/orderFlowDelta'
 
 const DOW_15M_FAIL_COLORS: any = { high: '#3b82f6', low: '#ef4444', mid: '#eab308', buy: '#3b82f6', sell: '#ef4444' }
@@ -1267,6 +1270,10 @@ export function TradingChart({
   const latestVwapBandsRef = useRef<any>(null)
   const [cvdPanelOpen, setCvdPanelOpen] = useState(false)
   const [showCvdSubPane, setShowCvdSubPane] = useState(true)
+  const [showFootprint, setShowFootprint] = useState(true)
+  const footprintBarsRef = useRef<FootprintBar[]>([])
+  const footprintCanvasRef = useRef<HTMLCanvasElement>(null)
+  const paintFootprintRef = useRef<() => void>(() => { })
   const cvdContainerRef = useRef<HTMLDivElement>(null)
   const cvdChartRef = useRef<IChartApi | null>(null)
   const cvdCandleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -3460,6 +3467,7 @@ export function TradingChart({
     let orderFlowContext: LeoChatContext['orderFlow'] = null
     const flow = sessionOrderFlow
     if (flow) {
+      const footprintSummary = summarizeFootprintForLeo(footprintBarsRef.current, flow)
       orderFlowContext = {
         sessionCvd: flow.sessionCvd,
         latestBarDelta: flow.latestBarDelta,
@@ -3469,6 +3477,7 @@ export function TradingChart({
         trend: flow.trend,
         divergence: flow.divergence,
         description: flow.description,
+        footprintSummary,
       }
     }
 
@@ -6472,6 +6481,20 @@ export function TradingChart({
         }
       }
 
+      // Compute and cache Footprint bars for chart overlay and Leo AI telemetry
+      const fpBars = computeFootprintBars(
+        ordered.map((c) => ({
+          time: c.time as number,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: c.volume,
+        })),
+        instrument === 'NASDAQ' ? 0.25 : instrument === 'DOW' ? 1.0 : 0.25
+      )
+      footprintBarsRef.current = fpBars
+
       syncDeskPlaybookRangesRef.current(ordered)
       paintYesterdayProfileRef.current()
       paintOpeningActivityRef.current()
@@ -6719,20 +6742,159 @@ export function TradingChart({
     paintExcessesAndRoundedRef.current()
     paintNewsMarkersRef.current()
     paintUserDrawingsRef.current()
+    paintFootprintRef.current()
   }, [instrument])
+
+  // ── Canvas Footprint Overlay (Bid x Ask ladders + Stacked Imbalances + Candle POC) ─────────
+  const paintFootprint = useCallback(() => {
+    const canvas = footprintCanvasRef.current
+    const chart = chartRef.current
+    const series = candleRef.current
+    const container = containerRef.current
+    const fpBars = footprintBarsRef.current
+
+    if (!canvas || !chart || !series || !container || fpBars.length === 0 || !showFootprint) {
+      if (canvas) {
+        const ctx = canvas.getContext('2d')
+        ctx?.clearRect(0, 0, canvas.width, canvas.height)
+      }
+      return
+    }
+
+    const paneW = container.clientWidth
+    const paneH = container.clientHeight
+    if (paneW < 10 || paneH < 10) return
+
+    const dpr = window.devicePixelRatio || 1
+    const targetW = Math.round(paneW * dpr)
+    const targetH = Math.round(paneH * dpr)
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW
+      canvas.height = targetH
+      canvas.style.width = `${paneW}px`
+      canvas.style.height = `${paneH}px`
+    }
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.save()
+    ctx.scale(dpr, dpr)
+    ctx.clearRect(0, 0, paneW, paneH)
+
+    const tz = chartTzRef.current
+    const timeScale = chart.timeScale()
+    const range = timeScale.getVisibleLogicalRange()
+    if (!range) {
+      ctx.restore()
+      return
+    }
+
+    const startIdx = Math.max(0, Math.floor(range.from))
+    const endIdx = Math.min(fpBars.length - 1, Math.ceil(range.to))
+
+    let barSpacing = 10
+    try {
+      const x1 = timeScale.timeToCoordinate(toChartTime(fpBars[0]?.time || 0, tz) as UTCTimestamp)
+      const x2 = timeScale.timeToCoordinate(toChartTime(fpBars[1]?.time || 0, tz) as UTCTimestamp)
+      if (x1 != null && x2 != null && Math.abs(x2 - x1) > 2) {
+        barSpacing = Math.abs(x2 - x1)
+      }
+    } catch {}
+
+    const isZoomedIn = barSpacing >= 24
+
+    for (let i = startIdx; i <= endIdx; i++) {
+      const bar = fpBars[i]
+      if (!bar) continue
+
+      const x = timeScale.timeToCoordinate(toChartTime(bar.time, tz) as UTCTimestamp)
+      if (x == null || x < -50 || x > paneW + 50) continue
+
+      const yHigh = series.priceToCoordinate(bar.high)
+      const yLow = series.priceToCoordinate(bar.low)
+      if (yHigh == null || yLow == null) continue
+
+      // 1. Stacked Buy Imbalances Highlight (Emerald box)
+      for (const buyZone of bar.stackedBuyImbalances) {
+        const yStart = series.priceToCoordinate(buyZone.endPrice + 0.125)
+        const yEnd = series.priceToCoordinate(buyZone.startPrice - 0.125)
+        if (yStart != null && yEnd != null) {
+          const top = Math.min(yStart, yEnd)
+          const h = Math.max(4, Math.abs(yEnd - yStart))
+          const w = Math.max(16, barSpacing * 0.8)
+          ctx.fillStyle = 'rgba(16, 185, 129, 0.22)'
+          ctx.strokeStyle = '#10b981'
+          ctx.lineWidth = 1
+          ctx.fillRect(x - w / 2, top, w, h)
+          ctx.strokeRect(x - w / 2, top, w, h)
+        }
+      }
+
+      // 2. Stacked Sell Imbalances Highlight (Rose box)
+      for (const sellZone of bar.stackedSellImbalances) {
+        const yStart = series.priceToCoordinate(sellZone.endPrice + 0.125)
+        const yEnd = series.priceToCoordinate(sellZone.startPrice - 0.125)
+        if (yStart != null && yEnd != null) {
+          const top = Math.min(yStart, yEnd)
+          const h = Math.max(4, Math.abs(yEnd - yStart))
+          const w = Math.max(16, barSpacing * 0.8)
+          ctx.fillStyle = 'rgba(244, 63, 94, 0.22)'
+          ctx.strokeStyle = '#f43f5e'
+          ctx.lineWidth = 1
+          ctx.fillRect(x - w / 2, top, w, h)
+          ctx.strokeRect(x - w / 2, top, w, h)
+        }
+      }
+
+      // 3. Candle POC Highlight Box (Amber outline)
+      const yPoc = series.priceToCoordinate(bar.candlePocPrice)
+      if (yPoc != null && yPoc >= 0 && yPoc <= paneH) {
+        const w = Math.max(12, barSpacing * 0.75)
+        ctx.strokeStyle = '#f59e0b'
+        ctx.lineWidth = 1.5
+        ctx.strokeRect(x - w / 2, yPoc - 2, w, 5)
+      }
+
+      // 4. Zoomed-In Footprint Bid x Ask Text Numbers (e.g. 12x45)
+      if (isZoomedIn && bar.ticks.length > 0) {
+        ctx.font = '9px monospace'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+
+        for (const t of bar.ticks) {
+          const yT = series.priceToCoordinate(t.price)
+          if (yT == null || yT < 0 || yT > paneH) continue
+
+          const text = `${t.bidVol}x${t.askVol}`
+          if (t.isBuyImbalance) {
+            ctx.fillStyle = '#34d399'
+          } else if (t.isSellImbalance) {
+            ctx.fillStyle = '#fb7185'
+          } else {
+            ctx.fillStyle = '#94a3b8'
+          }
+          ctx.fillText(text, x, yT)
+        }
+      }
+    }
+
+    ctx.restore()
+  }, [showFootprint])
 
   useEffect(() => {
     paintFrvpHistogramRef.current = paintFrvpHistogram
     paintExcessesAndRoundedRef.current = paintExcessesAndRounded
     paintNewsMarkersRef.current = paintNewsMarkers
     paintUserDrawingsRef.current = paintUserDrawings
+    paintFootprintRef.current = paintFootprint
     requestAnimationFrame(() => {
       paintFrvpHistogram()
       paintExcessesAndRounded()
       paintNewsMarkers()
       paintUserDrawings()
+      paintFootprint()
     })
-  }, [paintFrvpHistogram, paintExcessesAndRounded, paintNewsMarkers, paintUserDrawings])
+  }, [paintFrvpHistogram, paintExcessesAndRounded, paintNewsMarkers, paintUserDrawings, paintFootprint])
 
   /** TradingView-style: re-enable auto price scale after manual zoom on the axis */
   const resetPriceScale = useCallback(() => {
@@ -9614,6 +9776,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             ref={userDrawingsCanvasRef}
             className="pointer-events-none absolute inset-0 z-[6]"
           />
+          <canvas
+            ref={footprintCanvasRef}
+            className="pointer-events-none absolute inset-0 z-[7]"
+          />
         </div>
 
         {/* Synchronized CVD Sub-Chart Pane */}
@@ -9772,6 +9938,23 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               </span>
             </button>
 
+
+            {/* Footprint Order Flow Toggle */}
+            <button
+              type="button"
+              onClick={() => setShowFootprint((prev) => !prev)}
+              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
+                showFootprint
+                  ? 'bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/30 font-bold'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-amber-300'
+              }`}
+              title="Toggle Interactive Footprint Order Flow (Bid x Ask & Stacked Imbalances)"
+            >
+              <span>👣</span>
+              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-amber-200 shadow-xl border border-slate-800 group-hover:block z-50">
+                Footprint Order Flow ({showFootprint ? 'ON' : 'OFF'})
+              </span>
+            </button>
 
             {/* CVD Order Flow Toggle */}
             <button
