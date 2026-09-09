@@ -744,7 +744,7 @@ export function computeSessionHighlightRects(args: {
 export function paintSessionHighlightOverlay(
   host: HTMLElement | null,
   rects: SessionHighlightRect[],
-  opts?: { keepPreviousIfEmpty?: boolean; paintKey?: string }
+  opts?: { keepPreviousIfEmpty?: boolean; paintKey?: string; hideLabels?: boolean }
 ): void {
   if (!host) return
   if (opts?.paintKey && host.dataset.paintKey !== opts.paintKey) {
@@ -779,9 +779,7 @@ export function paintSessionHighlightOverlay(
     d.style.zIndex = String(s.zIndex)
     d.title = `${s.displayName ?? s.name} session`
 
-    const lineColor = s.lineColor ?? s.borderColor ?? '#2962FF'
-
-    if (s.isColumn) {
+    if (s.isColumn || opts?.hideLabels) {
       d.style.borderLeft = 'none'
       d.style.borderRight = 'none'
       d.style.borderTop = 'none'
@@ -789,6 +787,8 @@ export function paintSessionHighlightOverlay(
       d.innerHTML = ''
       continue
     }
+
+    const lineColor = s.lineColor ?? s.borderColor ?? '#2962FF'
 
     d.style.borderLeft = 'none'
     d.style.borderRight = 'none'

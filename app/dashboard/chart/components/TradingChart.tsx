@@ -6714,7 +6714,7 @@ export function TradingChart({
         containerHeight: cvdContainerRef.current.clientHeight,
         sessionPaint: 'range',
       })
-      paintSessionHighlightOverlay(cvdSessionOverlayRef.current, cvdRects)
+      paintSessionHighlightOverlay(cvdSessionOverlayRef.current, cvdRects, { hideLabels: true })
     }
 
     // Position TP / SL band overlay
@@ -9786,17 +9786,17 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         {showCvdSubPane && (
           <div className="relative w-full h-[185px] border-t border-zinc-800 bg-[#0b0e14] flex flex-col flex-shrink-0">
             {/* CVD Sub-Pane Header Legend */}
-            <div className="absolute top-2 left-3 z-10 flex items-center gap-2 text-[10.5px] font-mono text-zinc-400 bg-zinc-950/85 px-2 py-0.5 rounded border border-zinc-800/80 pointer-events-none select-none shadow-sm">
-              <span className="font-bold text-cyan-400">CVD:</span>
+            <div className="absolute top-2 left-3 z-10 flex items-center gap-2 text-xs font-mono font-semibold bg-zinc-950/85 px-2.5 py-1 rounded border border-zinc-800/80 pointer-events-none select-none shadow-sm">
+              <span className="font-bold text-zinc-300">CVD</span>
               {currentCvdLegend ? (
-                <>
-                  <span className="text-zinc-400">O: <strong className="text-zinc-200">{currentCvdLegend.open.toLocaleString()}</strong></span>
-                  <span className="text-zinc-400">H: <strong className="text-emerald-400">{currentCvdLegend.high.toLocaleString()}</strong></span>
-                  <span className="text-zinc-400">L: <strong className="text-rose-400">{currentCvdLegend.low.toLocaleString()}</strong></span>
-                  <span className="text-zinc-400">C: <strong className={currentCvdLegend.close >= currentCvdLegend.open ? 'text-emerald-400' : 'text-rose-400'}>{currentCvdLegend.close.toLocaleString()}</strong></span>
-                </>
+                <span className={currentCvdLegend.close >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                  {currentCvdLegend.close >= 0 ? '+' : ''}
+                  {Math.abs(currentCvdLegend.close) >= 1000
+                    ? `${(currentCvdLegend.close / 1000).toFixed(2)}K`
+                    : currentCvdLegend.close.toLocaleString()}
+                </span>
               ) : (
-                <span className="text-zinc-500">Loading order flow delta...</span>
+                <span className="text-zinc-500">—</span>
               )}
             </div>
 
