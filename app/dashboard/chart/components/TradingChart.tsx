@@ -4867,6 +4867,7 @@ export function TradingChart({
 
   const candlesRef = useRef<OHLCV[]>([])
   const instrumentRef = useRef<Instrument>(instrument)
+  const timeframeRef = useRef(timeframe)
   /** LIVE = real Yahoo data; SYNTHETIC = random fallback (never trade off this) */
   const [dataMode, setDataModeState] = useState<'live' | 'synthetic'>('live')
   /** Candle history feed — yahoo means PA may diverge from OANDA/TV mid */
@@ -6641,6 +6642,10 @@ export function TradingChart({
   }, [instrument])
 
   useEffect(() => {
+    timeframeRef.current = timeframe
+  }, [timeframe])
+
+  useEffect(() => {
     candlesRef.current = candles
     requestAnimationFrame(() => {
       refreshSessionHighlightsRef.current?.()
@@ -6881,7 +6886,12 @@ export function TradingChart({
             autoScale: true,
             scaleMargins: DESK_CHART_THEME.rightPriceScale.scaleMargins,
           })
-          const restored = loadDeskViewport(instrument, ordered.length, width)
+          const restored = loadDeskViewport(
+            instrument,
+            ordered.length,
+            width,
+            timeframe
+          )
           ts.setVisibleLogicalRange(
             restored ?? deskVisibleLogicalRange(ordered.length, width)
           )
@@ -6906,7 +6916,7 @@ export function TradingChart({
     requestAnimationFrame(() => {
       refreshSessionHighlightsRef.current?.()
     })
-  }, [candles, instrument, paintLevelLines]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [candles, instrument, timeframe, paintLevelLines]) // eslint-disable-line react-hooks/exhaustive-deps
 
 
   // ── Session color boxes (cached spans + imperative paint = smooth pan)
@@ -7170,7 +7180,12 @@ export function TradingChart({
         rightOffset: DESK_CHART_THEME.timeScale.rightOffset,
       })
       ts.setVisibleLogicalRange(deskVisibleLogicalRange(list.length, width))
-      saveDeskViewport(instrumentRef.current, deskVisibleLogicalRange(list.length, width), list.length)
+      saveDeskViewport(
+        instrumentRef.current,
+        deskVisibleLogicalRange(list.length, width),
+        list.length,
+        timeframeRef.current
+      )
     } catch {
       /* ignore */
     }
@@ -7210,7 +7225,12 @@ export function TradingChart({
             const range = chartRef.current.timeScale().getVisibleLogicalRange()
             const list = candlesRef.current
             if (range && list.length > 1) {
-              saveDeskViewport(instrumentRef.current, range, list.length)
+              saveDeskViewport(
+                instrumentRef.current,
+                range,
+                list.length,
+                timeframeRef.current
+              )
             }
           } catch {
             /* ignore */

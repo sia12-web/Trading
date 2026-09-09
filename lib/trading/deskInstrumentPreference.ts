@@ -154,24 +154,32 @@ export function decodeDeskViewport(
   if (!Number.isFinite(saved.fromEnd) || !Number.isFinite(saved.span) || saved.span < 8) {
     return fallback
   }
+  // A viewport saved on another timeframe (e.g. 5m with 2k bars → 30m with 300)
+  // would place `from` far left of index 0 and paint an empty hole. Reset to tip.
+  if (saved.fromEnd > barCount + 20) {
+    return fallback
+  }
   const last = Math.max(barCount - 1, 0)
   const span = Math.min(Math.max(saved.span, 20), Math.max(barCount + 6, 20))
-  const from = Math.min(last, last - saved.fromEnd)
+  const from = Math.max(-2, Math.min(last, last - saved.fromEnd))
   return { from, to: from + span }
 }
 
-const VIEW_KEY = (instrument: string) => `tradepulse.chart.view.${instrument}`
+/** Per instrument + timeframe so 5m scroll never opens a hole on 30m. */
+const VIEW_KEY = (instrument: string, timeframe = '5m') =>
+  `tradepulse.chart.view.${instrument}.${timeframe}`
 
 export function saveDeskViewport(
   instrument: string,
   range: { from: number; to: number },
-  barCount: number
+  barCount: number,
+  timeframe = '5m'
 ): void {
   if (typeof window === 'undefined' || barCount < 2) return
   const encoded = encodeDeskViewport(range, barCount)
   if (!encoded) return
   try {
-    sessionStorage.setItem(VIEW_KEY(instrument), JSON.stringify(encoded))
+    sessionStorage.setItem(VIEW_KEY(instrument, timeframe), JSON.stringify(encoded))
   } catch {
     /* private mode */
   }
@@ -180,11 +188,12 @@ export function saveDeskViewport(
 export function loadDeskViewport(
   instrument: string,
   barCount: number,
-  containerWidth = 1160
+  containerWidth = 1160,
+  timeframe = '5m'
 ): { from: number; to: number } | null {
   if (typeof window === 'undefined') return null
   try {
-    const raw = sessionStorage.getItem(VIEW_KEY(instrument))
+    const raw = sessionStorage.getItem(VIEW_KEY(instrument, timeframe))
     if (!raw) return null
     const parsed = JSON.parse(raw) as SavedDeskViewport
     return decodeDeskViewport(parsed, barCount, containerWidth)

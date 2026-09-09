@@ -108,7 +108,12 @@ assert.ok(candlesApi.includes('invalidateDatabentoCandleCache'), 'gap reprint by
 assert.ok(candlesApi.includes('Promise.all'), 'Databento and Yahoo stitch load in parallel')
 assert.ok(!live.includes('fitContent()'), 'live Reset scale does not zoom to full history')
 assert.ok(live.includes('deskVisibleLogicalRange(ordered.length, width)'), 'live bar count follows pane width')
-assert.ok(live.includes('loadDeskViewport(instrument, ordered.length, width)'), 'refresh restores pan/zoom')
+assert.ok(live.includes('loadDeskViewport'), 'refresh restores pan/zoom')
+assert.ok(live.includes('timeframeRef.current'), 'viewport save is TF-scoped')
+assert.ok(
+  /loadDeskViewport\(\s*instrument,\s*ordered\.length,\s*width,\s*timeframe\s*\)/.test(live),
+  'viewport restore passes timeframe'
+)
 assert.ok(live.includes('resolveClockedChartInstrument'), 'clocked name wins over remembered DOW tab')
 assert.ok(live.includes('ibLineSeriesData(ib, tipUnix)'), 'live IB ends at latest bar')
 assert.ok(live.includes('axisLabelSeriesData'), 'live range H/L is right-scale only')
