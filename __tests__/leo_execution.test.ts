@@ -6,6 +6,7 @@ import {
   extractChartDataPoints,
   type LeoChatContext,
 } from '../lib/ai/leoAssistant'
+import { computeOrderFlowCvd } from '../lib/trading/orderFlowDelta'
 
 describe('Leo Execution Directives & Parsing', () => {
   it('parses CLOSE_POSITION directive from <execute> block', () => {
@@ -192,4 +193,45 @@ describe('Leo Time, Session & Position Telemetry in System Prompt', () => {
     assert.equal(excessPt.retestRatio, 0.69)
     assert.equal(excessPt.isRetested, true)
   })
+
+  it('computes and injects order flow CVD & institutional absorption telemetry into Leo prompt', () => {
+    const bars = [
+      { time: 1000, open: 4390, high: 4395, low: 4389, close: 4394, volume: 100 },
+      { time: 1060, open: 4394, high: 4396, low: 4392, close: 4395, volume: 150 },
+      { time: 1120, open: 4395, high: 4398, low: 4394, close: 4397, volume: 200 },
+      { time: 1180, open: 4397, high: 4397, low: 4391, close: 4392, volume: 80 },
+      { time: 1240, open: 4392, high: 4394, low: 4390, close: 4391, volume: 90 },
+    ]
+    const flow = computeOrderFlowCvd(bars)
+    assert.ok(flow)
+    assert.ok(typeof flow.sessionCvd === 'number')
+
+    const ctx: LeoChatContext = {
+      instrument: 'GOLD',
+      currentPrice: 4391.0,
+      currentTimeEt: '10:15:00 ET',
+      dayType: 'Trend Day',
+      openingType: 'Open Drive',
+      longTermMoney: null,
+      intermediateMoney: null,
+      shortTermMoney: null,
+      activeExcesses: [],
+      orderFlow: {
+        sessionCvd: flow.sessionCvd,
+        latestBarDelta: flow.latestBarDelta,
+        latestBuyVolume: flow.latestBuyVolume,
+        latestSellVolume: flow.latestSellVolume,
+        latestBuyRatio: flow.latestBuyRatio,
+        trend: flow.trend,
+        divergence: flow.divergence,
+        description: flow.description,
+      },
+    }
+
+    const prompt = buildLeoSystemPrompt(ctx)
+    assert.match(prompt, /ORDER FLOW & CUMULATIVE VOLUME DELTA \(CVD\)/)
+    assert.match(prompt, /Session CVD:/)
+    assert.match(prompt, /Institutional Aggression Bias:/)
+  })
 })
+

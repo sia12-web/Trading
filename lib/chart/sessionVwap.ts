@@ -1095,10 +1095,10 @@ export function lastNTradingSessions(
     sorted.sort()
     const tipIdx = sorted.lastIndexOf(sessionDay)
     const idx = tipIdx >= 0 ? tipIdx : sorted.length - 1
-    // n trading days prior to tip → sorted[idx - n]
-    startDay = sorted[Math.max(0, idx - n)]!
+    // n trading days total → idx - (n - 1)
+    startDay = sorted[Math.max(0, idx - Math.max(1, n - 1))]!
   } else {
-    startDay = nthTradingDayBefore(sessionDay, n, clock.timeZone)
+    startDay = nthTradingDayBefore(sessionDay, Math.max(0, n - 1), clock.timeZone)
   }
 
   const cutoff = cashOpenUnixForYmd(startDay, clock)

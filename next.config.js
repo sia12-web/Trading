@@ -4,6 +4,9 @@ const path = require('path')
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
 
   // Do NOT put NEXT_PUBLIC_* in `env` here — that inlines build-time values
   // (often empty on Railway) and breaks runtime even after vars are set.

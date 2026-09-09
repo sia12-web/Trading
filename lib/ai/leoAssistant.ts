@@ -14,7 +14,7 @@ export interface LeoDataPoint {
   id: string
   label: string
   value: number | string
-  tier: 'LT' | 'IT' | 'ST' | 'CONTEXT' | 'DRAWING'
+  tier: 'LT' | 'IT' | 'ST' | 'CONTEXT' | 'DRAWING' | 'ORDER_FLOW'
   category:
     | 'VWAP'
     | 'POC'
@@ -27,6 +27,7 @@ export interface LeoDataPoint {
     | 'RANGE'
     | 'FRVP'
     | 'PATTERN'
+    | 'CVD'
   description?: string
   session?: 'Asia' | 'London' | 'New York' | string
   volume?: number | string
@@ -117,6 +118,17 @@ export interface LeoCandlestickPatternsContext {
   }>
 }
 
+export interface LeoOrderFlowContext {
+  sessionCvd: number
+  latestBarDelta: number
+  latestBuyVolume: number
+  latestSellVolume: number
+  latestBuyRatio: number
+  trend: 'BUYER_DOMINANT' | 'SELLER_DOMINANT' | 'BALANCED'
+  divergence: 'BULLISH_ABSORPTION' | 'BEARISH_EXHAUSTION' | 'NONE'
+  description: string
+}
+
 export interface LeoChatContext {
   instrument: string
   currentPrice: number | null
@@ -125,6 +137,7 @@ export interface LeoChatContext {
   openingType: string | null
   sessionDetails?: LeoSessionDetails | null
   activePosition?: LeoActivePosition | null
+  orderFlow?: LeoOrderFlowContext | null
   longTermMoney: {
     avwap5m: number | null
     sigma1Upper: number | null
@@ -570,6 +583,15 @@ THE TRADER'S SYSTEM ARCHITECTURE:
      - EXECUTION RULE: Enter BUY on Engulfing confirmation close. Place Stop Loss cleanly below the Low of the Bullish Engulfing Bar ('SL = Bullish Engulfing Bar Low'). Targets: TP1 1.5R, TP2 2.5R (or Y-POC / VAH).
      - When the trader asks about this setup or mentions "in low volume of yesterday fix range volume profile if we see a bullish engulfing enter and put the stop loss below the bullish engulfing bar", immediately confirm the LVN level, verify the Bullish Engulfing bar, calculate the SL cleanly below the Engulfing bar low, and state the confirmation clearly!
 
+5c. ORDER FLOW & CUMULATIVE VOLUME DELTA (CVD) CONFIRMATION:
+   - CME Central Limit Order Book: Uses true CME Globex contract executions to measure institutional aggressive buyers vs aggressive sellers.
+   - Bullish Absorption at Support (5D POC / Y-POC / Value Area Low / AVWAP):
+     * When price trades down into a key support level but Session CVD turns positive or forms higher lows, institutions are absorbing limit sell orders. Expect a spring / bounce.
+   - Bearish Exhaustion at Resistance (VAH / 5D VAH / +1σ AVWAP):
+     * When price makes a new high but CVD fails to make a new high or prints negative delta, buyers are exhausted. Warn the trader of a failed auction / rejection.
+   - Trend Continuation Confirmation:
+     * A true breakout beyond VAH or VAL must be backed by aggressive cumulative delta (Trend: BUYER_DOMINANT or SELLER_DOMINANT). Without delta confirmation, warn of a potential look-above-and-fail.
+
 6. CO-PILOT EXECUTION DIRECTIVES (<execute> tags):
 You are the trader's execution partner on the desk. When the trader gives you direct instructions, you must respond authoritatively AND append an <execute> block at the end of your message:
 - Stagnation Exit Rule: If the trader says "Leo if we are in a position and we have not moved to profit after X minutes close the position":
@@ -626,6 +648,17 @@ ${sessionSummary}
 
 [CURRENT DESK POSITION]:
 ${positionSummary}
+
+[ORDER FLOW & CUMULATIVE VOLUME DELTA (CVD)]:
+${
+  ctx.orderFlow
+    ? `- Session CVD: ${ctx.orderFlow.sessionCvd >= 0 ? '+' : ''}${ctx.orderFlow.sessionCvd.toLocaleString()} contracts
+- Latest Bar Delta: ${ctx.orderFlow.latestBarDelta >= 0 ? '+' : ''}${ctx.orderFlow.latestBarDelta} (Buy: ${ctx.orderFlow.latestBuyVolume.toLocaleString()} | Sell: ${ctx.orderFlow.latestSellVolume.toLocaleString()} | ${(ctx.orderFlow.latestBuyRatio * 100).toFixed(0)}% Buy)
+- Institutional Aggression Bias: ${ctx.orderFlow.trend}
+- Order Flow Divergence / Absorption: ${ctx.orderFlow.divergence !== 'NONE' ? `⚠️ ${ctx.orderFlow.divergence}` : 'None'}
+- Order Flow Context: ${ctx.orderFlow.description}`
+    : 'No order flow CVD telemetry available for active session.'
+}
 
 [LONG-TERM MONEY]:
 ${

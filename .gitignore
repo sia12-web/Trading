@@ -68,5 +68,6 @@ manifest.json
 metadata.json
 tmp-*.json
 scratch/
+data/cme_sessions/
 
 

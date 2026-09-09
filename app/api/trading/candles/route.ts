@@ -112,30 +112,36 @@ export async function GET(request: Request) {
           ? Math.min(days, 3)
           : Math.max(days, AVWAP_CANDLE_FETCH_CALENDAR_DAYS)
 
-      // 1. Fetch OANDA 24/7 continuous candles adjusted by CME basis
-      const oanda = await getOandaCandles(instrument, resolution, fetchDays)
-      if (oanda?.candles?.length) {
-        if (getCmeBasis(instrument) == null && getLastKnownCmeBasis(instrument) == null) {
-          await warmCmeBasis(instrument)
-        }
-        const basis =
-          getCmeBasis(instrument) ??
-          getLastKnownCmeBasis(instrument) ??
-          (instrument === 'DOW' ? 60.5 : instrument === 'NASDAQ' ? 36.5 : instrument === 'GOLD' ? 48.0 : 0)
-        candles = applyCmeBasisToCandles(oanda.candles, basis)
-        source = 'oanda'
-      }
-
-      // 2. Fallback to Databento if OANDA was unavailable or empty
-      if ((!candles || candles.length === 0) && isDatabentoConfigured()) {
-        const databento = await getDatabentoCandles(instrument, resolution, fetchDays)
-        if (databento?.candles?.length) {
-          candles = databento.candles
-          source = 'databento'
+      // 1. Prioritize official CME Globex MDP 3.0 candles via Databento when configured
+      if (isDatabentoConfigured()) {
+        try {
+          const databento = await getDatabentoCandles(instrument, resolution, fetchDays)
+          if (databento?.candles?.length) {
+            candles = databento.candles
+            source = 'databento'
+          }
+        } catch (err) {
+          logger.warn(`[Candles] Databento fetch failed for ${instrument}, falling back to OANDA`, err)
         }
       }
 
-      // Fallback to Yahoo if both Databento and OANDA were unavailable
+      // 2. Fallback to OANDA 24/7 continuous candles adjusted by CME basis
+      if (!candles || candles.length === 0) {
+        const oanda = await getOandaCandles(instrument, resolution, fetchDays)
+        if (oanda?.candles?.length) {
+          if (getCmeBasis(instrument) == null && getLastKnownCmeBasis(instrument) == null) {
+            await warmCmeBasis(instrument)
+          }
+          const basis =
+            getCmeBasis(instrument) ??
+            getLastKnownCmeBasis(instrument) ??
+            (instrument === 'DOW' ? 60.5 : instrument === 'NASDAQ' ? 36.5 : instrument === 'GOLD' ? 48.0 : 0)
+          candles = applyCmeBasisToCandles(oanda.candles, basis)
+          source = 'oanda'
+        }
+      }
+
+      // 3. Fallback to Yahoo if both Databento and OANDA were unavailable
       if (!candles || candles.length === 0) {
         const yahoo = await getYahooCandles(instrument, resolution, fetchDays)
         if (yahoo?.candles?.length) {

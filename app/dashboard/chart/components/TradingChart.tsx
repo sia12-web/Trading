@@ -47,6 +47,7 @@ import {
   deskSessionAt,
   isWeekdayYmd,
   zonedCivilToUnix,
+  computeAnchoredVwap,
   lastNTradingSessions as trimDeskCandles,
 } from '@/lib/chart/sessionVwap'
 import { parseCalendarEventMs } from '@/lib/trading/deskNewsHazard'
@@ -68,7 +69,6 @@ import {
 } from '@/lib/chart/liveFormingBar'
 import {
   compute5DayFixedRangeVolumeProfile,
-  compute5MonthAnchoredVwap,
   computeYesterdayNycSession,
   computeOvernightInventoryAndSessions,
   classifyMarketDayType,
@@ -162,6 +162,7 @@ import {
 } from '@/lib/trading/userDrawings'
 import { detectCandlestickPatterns } from '@/lib/trading/candlestickPatterns'
 import { isUsMarketHoliday } from '@/lib/chart/sessionVwap'
+import { computeOrderFlowCvd, type OrderFlowSummary } from '@/lib/trading/orderFlowDelta'
 
 const DOW_15M_FAIL_COLORS: any = { high: '#3b82f6', low: '#ef4444', mid: '#eab308', buy: '#3b82f6', sell: '#ef4444' }
 const computeDow15mFailOverlay = (..._args: any[]): any => null
@@ -1258,6 +1259,10 @@ export function TradingChart({
   const [avwap5mBenchmark, setAvwap5mBenchmark] = useState<AnchoredVwapBenchmark5M | null>(null)
   const avwap5mLinesRef = useRef<IPriceLine[]>([])
   const paint5mAvwapBenchmarkRef = useRef<() => void>(() => { })
+  const [showVwap, setShowVwap] = useState(true)
+  const [currentVwap, setCurrentVwap] = useState<{ vwap: number; upper1: number; lower1: number } | null>(null)
+  const latestVwapBandsRef = useRef<any>(null)
+  const [cvdPanelOpen, setCvdPanelOpen] = useState(false)
   const [yesterdayNyc, setYesterdayNyc] = useState<YesterdayNycSession | null>(null)
   const [showYesterdayNyc] = useState(true)
   const yesterdayNycLinesRef = useRef<IPriceLine[]>([])
@@ -1381,6 +1386,23 @@ export function TradingChart({
 
 
   const [candles, setCandles] = useState<OHLCV[]>([])
+  const sessionOrderFlow = useMemo<OrderFlowSummary | null>(() => {
+    if (!candles || candles.length === 0) return null
+    const now = new Date()
+    const nowYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const sessStart = nyDateTimeToUnix(nowYmd, 9, 30)
+    return computeOrderFlowCvd(
+      candles.map((c) => ({
+        time: c.time as number,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      })),
+      sessStart
+    )
+  }, [candles])
   const [levels, setLevels] = useState<LevelLine[]>([])
   const [noInBandLevelsMessage, setNoInBandLevelsMessage] = useState<string | null>(null)
   const levelsRef = useRef<LevelLine[]>([])
@@ -3425,6 +3447,22 @@ export function TradingChart({
       }
     }
 
+    // Order Flow & CVD Telemetry for active session
+    let orderFlowContext: LeoChatContext['orderFlow'] = null
+    const flow = sessionOrderFlow
+    if (flow) {
+      orderFlowContext = {
+        sessionCvd: flow.sessionCvd,
+        latestBarDelta: flow.latestBarDelta,
+        latestBuyVolume: flow.latestBuyVolume,
+        latestSellVolume: flow.latestSellVolume,
+        latestBuyRatio: flow.latestBuyRatio,
+        trend: flow.trend,
+        divergence: flow.divergence,
+        description: flow.description,
+      }
+    }
+
     return {
       instrument,
       currentPrice: curPrice,
@@ -3443,6 +3481,7 @@ export function TradingChart({
         holidayName: isHoliday ? 'US Exchange Holiday' : undefined,
       },
       activePosition: activePos,
+      orderFlow: orderFlowContext,
       longTermMoney: avwap5mBenchmark
         ? {
             avwap5m: avwap5mBenchmark.vwap,
@@ -6194,9 +6233,9 @@ export function TradingChart({
     try {
       candleRef.current.setData(candleData)
 
-      // Context 5-5: 5-Month Anchored VWAP with standard deviation bands
-      const bands = compute5MonthAnchoredVwap({
-        bars: ordered.map((c) => ({
+      // 5-Day Anchored VWAP (anchored at cash open of 5 trading days ago, matching 5D FRVP anchor)
+      const bands = computeAnchoredVwap(
+        ordered.map((c) => ({
           time: c.time as number,
           open: c.open,
           high: c.high,
@@ -6204,17 +6243,28 @@ export function TradingChart({
           close: c.close,
           volume: c.volume,
         })),
-        instrument,
-      })
+        deskClockFor(instrument)
+      )
+      latestVwapBandsRef.current = bands
       if (bands?.vwap?.length) {
         const last = bands.vwap[bands.vwap.length - 1]
         avwapLastRef.current =
           last && last.value > 0 ? last.value : null
+        const lastU = bands.upper1?.[bands.upper1.length - 1]
+        const lastL = bands.lower1?.[bands.lower1.length - 1]
+        if (last && last.value > 0) {
+          setCurrentVwap({
+            vwap: Number(last.value.toFixed(2)),
+            upper1: lastU ? Number(lastU.value.toFixed(2)) : 0,
+            lower1: lastL ? Number(lastL.value.toFixed(2)) : 0,
+          })
+        }
       } else {
         avwapLastRef.current = null
+        setCurrentVwap(null)
       }
       const vs = vwapSeriesRef.current
-      if (vs && bands) {
+      if (vs && bands && showVwap) {
         const shift = <T extends { time: number | UTCTimestamp; value: number }>(rows: T[]) =>
           mapTimesToChart(
             rows.map((r) => ({ time: r.time as number, value: r.value })),
@@ -6372,6 +6422,36 @@ export function TradingChart({
       refreshSessionHighlightsRef.current?.()
     })
   }, [candles, instrument, paintLevelLines]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync VWAP line visibility when toggled by user
+  useEffect(() => {
+    const vs = vwapSeriesRef.current
+    const bands = latestVwapBandsRef.current
+    if (!vs) return
+    if (showVwap && bands) {
+      const tz = chartTzRef.current
+      const shift = <T extends { time: number | UTCTimestamp; value: number }>(rows: T[]) =>
+        mapTimesToChart(
+          rows.map((r) => ({ time: r.time as number, value: r.value })),
+          tz
+        ).map((r) => ({ time: r.time as UTCTimestamp, value: r.value }))
+      vs.vwap.setData(shift(bands.vwap))
+      vs.upper1.setData(shift(bands.upper1))
+      vs.lower1.setData(shift(bands.lower1))
+      vs.upper2.setData(shift(bands.upper2))
+      vs.lower2.setData(shift(bands.lower2))
+      vs.upper3.setData([])
+      vs.lower3.setData([])
+    } else {
+      vs.vwap.setData([])
+      vs.upper1.setData([])
+      vs.lower1.setData([])
+      vs.upper2.setData([])
+      vs.lower2.setData([])
+      vs.upper3.setData([])
+      vs.lower3.setData([])
+    }
+  }, [showVwap])
 
   // ── Session color boxes (cached spans + imperative paint = smooth pan)
   const refreshSessionHighlights = useCallback(() => {
@@ -9259,6 +9339,65 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               {openingBadge}
             </span>
           </button>
+          <span className="text-gray-600 text-[10px]">|</span>
+          {/* Interactive VWAP Button */}
+          <button
+            type="button"
+            onClick={() => setShowVwap((prev) => !prev)}
+            className={`transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded cursor-pointer ${
+              showVwap
+                ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25'
+                : 'bg-zinc-800/60 text-zinc-500 border border-zinc-700/40 hover:bg-zinc-800 line-through'
+            }`}
+            title={`Anchored VWAP (${showVwap ? 'Visible — Click to hide' : 'Hidden — Click to show'})${
+              currentVwap ? ` · Level: ${currentVwap.vwap.toLocaleString()}` : ''
+            }`}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${showVwap ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
+            <span className="text-gray-400 font-semibold">VWAP:</span>
+            <span className="font-mono font-bold">
+              {currentVwap ? currentVwap.vwap.toLocaleString() : '—'}
+            </span>
+            {currentVwap && livePrice && showVwap && (
+              <span className={`text-[9.5px] font-mono ${livePrice >= currentVwap.vwap ? 'text-emerald-400' : 'text-rose-400'}`}>
+                ({livePrice >= currentVwap.vwap ? '+' : ''}{(livePrice - currentVwap.vwap).toFixed(1)})
+              </span>
+            )}
+          </button>
+          <span className="text-gray-600 text-[10px]">|</span>
+          {/* Interactive CVD Order Flow Button */}
+          <button
+            type="button"
+            onClick={() => setCvdPanelOpen((prev) => !prev)}
+            className={`transition flex items-center gap-1.5 select-none px-1.5 py-0.5 rounded cursor-pointer ${
+              cvdPanelOpen
+                ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/60 shadow-sm'
+                : sessionOrderFlow?.trend === 'BUYER_DOMINANT'
+                ? 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 border border-emerald-500/30'
+                : sessionOrderFlow?.trend === 'SELLER_DOMINANT'
+                ? 'bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 border border-rose-500/30'
+                : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
+            }`}
+            title="Click to toggle Order Flow & Cumulative Volume Delta (CVD) Inspector"
+          >
+            <span className="text-[11px]">📊</span>
+            <span className="text-gray-400 font-semibold">CVD:</span>
+            <span className="font-mono font-bold">
+              {sessionOrderFlow
+                ? `${sessionOrderFlow.sessionCvd >= 0 ? '+' : ''}${sessionOrderFlow.sessionCvd.toLocaleString()} Δ`
+                : '—'}
+            </span>
+            {sessionOrderFlow?.divergence !== 'NONE' && (
+              <span className="relative flex h-2 w-2">
+                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                  sessionOrderFlow?.divergence === 'BULLISH_ABSORPTION' ? 'bg-emerald-400' : 'bg-rose-400'
+                }`} />
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                  sessionOrderFlow?.divergence === 'BULLISH_ABSORPTION' ? 'bg-emerald-500' : 'bg-rose-500'
+                }`} />
+              </span>
+            )}
+          </button>
         </div>
 
         {/* OHLCV Hover Tooltip inline on the right */}
@@ -9425,6 +9564,50 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               <span>🕯️</span>
               <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-emerald-200 shadow-xl border border-slate-800 group-hover:block z-50">
                 Candlestick Patterns ({showCandlestickPatterns ? 'ON' : 'OFF'})
+              </span>
+            </button>
+
+            {/* VWAP Toggle */}
+            <button
+              type="button"
+              onClick={() => setShowVwap((prev) => !prev)}
+              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-xs font-bold transition-all ${
+                showVwap
+                  ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-emerald-300'
+              }`}
+              title="Toggle VWAP & Standard Deviation Bands"
+            >
+              <span>VW</span>
+              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-emerald-200 shadow-xl border border-slate-800 group-hover:block z-50">
+                VWAP Bands ({showVwap ? 'ON' : 'OFF'})
+              </span>
+            </button>
+
+            {/* CVD Order Flow Toggle */}
+            <button
+              type="button"
+              onClick={() => setCvdPanelOpen((prev) => !prev)}
+              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
+                cvdPanelOpen
+                  ? 'bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/30 font-bold'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-cyan-300'
+              }`}
+              title="Toggle Cumulative Volume Delta (CVD) Inspector"
+            >
+              <span>📊</span>
+              {sessionOrderFlow?.divergence !== 'NONE' && (
+                <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                    sessionOrderFlow?.divergence === 'BULLISH_ABSORPTION' ? 'bg-emerald-400' : 'bg-rose-400'
+                  }`} />
+                  <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
+                    sessionOrderFlow?.divergence === 'BULLISH_ABSORPTION' ? 'bg-emerald-500' : 'bg-rose-500'
+                  }`} />
+                </span>
+              )}
+              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-cyan-200 shadow-xl border border-slate-800 group-hover:block z-50">
+                Order Flow & CVD Inspector
               </span>
             </button>
 
@@ -10499,6 +10682,185 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     </button>
                   )
                 })}
+            </div>
+          </DraggableDeskWidget>
+        )}
+
+        {/* ── Interactive Order Flow & CVD Inspector Panel ── */}
+        {cvdPanelOpen && (
+          <DraggableDeskWidget
+            storageKey={`cvd-order-flow-${instrument}`}
+            defaultPos={{ x: 28, y: 110 }}
+            widthClassName="w-[min(23rem,calc(100vw-2rem))]"
+            maxHeightClassName="max-h-[min(65vh,520px)]"
+            title={
+              <div className="flex items-center gap-1.5 font-bold text-xs text-cyan-300">
+                <span>📊</span>
+                <span>CVD & Order Flow ({instrument})</span>
+              </div>
+            }
+            subtitle="CME Globex · NYC Cash Anchor (09:30 ET)"
+            onClose={() => setCvdPanelOpen(false)}
+          >
+            <div className="space-y-2.5 p-3 text-xs text-slate-200">
+              {/* Top Stats: Session CVD & Latest Bar Delta */}
+              <div className="grid grid-cols-2 gap-2">
+                {/* Session CVD Card */}
+                <div className="rounded-xl border border-slate-700/80 bg-slate-800/60 p-2.5 shadow-sm">
+                  <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                    Session CVD
+                  </div>
+                  <div
+                    className={`mt-1 font-mono text-xl font-extrabold tracking-tight ${
+                      (sessionOrderFlow?.sessionCvd ?? 0) >= 0
+                        ? 'text-emerald-400'
+                        : 'text-rose-400'
+                    }`}
+                  >
+                    {sessionOrderFlow
+                      ? `${sessionOrderFlow.sessionCvd >= 0 ? '+' : ''}${sessionOrderFlow.sessionCvd.toLocaleString()}`
+                      : '0'}
+                    <span className="text-xs font-normal text-slate-400 ml-1">Δ</span>
+                  </div>
+                  <div className="mt-1 flex items-center gap-1 text-[9.5px]">
+                    <span
+                      className={`inline-block w-1.5 h-1.5 rounded-full ${
+                        sessionOrderFlow?.trend === 'BUYER_DOMINANT'
+                          ? 'bg-emerald-400'
+                          : sessionOrderFlow?.trend === 'SELLER_DOMINANT'
+                          ? 'bg-rose-400'
+                          : 'bg-slate-400'
+                      }`}
+                    />
+                    <span
+                      className={`font-semibold uppercase ${
+                        sessionOrderFlow?.trend === 'BUYER_DOMINANT'
+                          ? 'text-emerald-300'
+                          : sessionOrderFlow?.trend === 'SELLER_DOMINANT'
+                          ? 'text-rose-300'
+                          : 'text-slate-400'
+                      }`}
+                    >
+                      {sessionOrderFlow?.trend ? sessionOrderFlow.trend.replace('_', ' ') : 'BALANCED'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Latest 1m Bar Delta Card */}
+                <div className="rounded-xl border border-slate-700/80 bg-slate-800/60 p-2.5 shadow-sm">
+                  <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                    Latest Bar Delta
+                  </div>
+                  <div
+                    className={`mt-1 font-mono text-xl font-extrabold tracking-tight ${
+                      (sessionOrderFlow?.latestBarDelta ?? 0) >= 0
+                        ? 'text-emerald-400'
+                        : 'text-rose-400'
+                    }`}
+                  >
+                    {sessionOrderFlow
+                      ? `${sessionOrderFlow.latestBarDelta >= 0 ? '+' : ''}${sessionOrderFlow.latestBarDelta.toLocaleString()}`
+                      : '0'}
+                    <span className="text-xs font-normal text-slate-400 ml-1">Δ</span>
+                  </div>
+                  <div className="mt-1 text-[9.5px] text-slate-400 font-mono">
+                    Buy: {sessionOrderFlow?.latestBuyVolume.toLocaleString() ?? 0} · Sell: {sessionOrderFlow?.latestSellVolume.toLocaleString() ?? 0}
+                  </div>
+                </div>
+              </div>
+
+              {/* Buy vs Sell Volume Breakdown Bar */}
+              <div className="rounded-xl border border-slate-700/80 bg-slate-800/40 p-2.5 space-y-1.5">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="font-semibold text-emerald-400">
+                    Buyers {sessionOrderFlow ? Math.round(sessionOrderFlow.latestBuyRatio * 100) : 50}%
+                  </span>
+                  <span className="text-slate-400 font-medium">Aggressive Pressure</span>
+                  <span className="font-semibold text-rose-400">
+                    Sellers {sessionOrderFlow ? 100 - Math.round(sessionOrderFlow.latestBuyRatio * 100) : 50}%
+                  </span>
+                </div>
+                <div className="h-2 w-full rounded-full bg-slate-900 overflow-hidden flex">
+                  <div
+                    className="h-full bg-emerald-500 transition-all duration-300"
+                    style={{
+                      width: `${sessionOrderFlow ? Math.round(sessionOrderFlow.latestBuyRatio * 100) : 50}%`,
+                    }}
+                  />
+                  <div
+                    className="h-full bg-rose-500 transition-all duration-300"
+                    style={{
+                      width: `${sessionOrderFlow ? 100 - Math.round(sessionOrderFlow.latestBuyRatio * 100) : 50}%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Auction Order Flow Signal / Divergence Card */}
+              <div
+                className={`rounded-xl border p-2.5 text-[11px] leading-relaxed transition-all ${
+                  sessionOrderFlow?.divergence === 'BULLISH_ABSORPTION'
+                    ? 'border-emerald-500/50 bg-emerald-950/30 text-emerald-200'
+                    : sessionOrderFlow?.divergence === 'BEARISH_EXHAUSTION'
+                    ? 'border-rose-500/50 bg-rose-950/30 text-rose-200'
+                    : 'border-slate-700/60 bg-slate-800/30 text-slate-300'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 font-bold text-xs">
+                  {sessionOrderFlow?.divergence === 'BULLISH_ABSORPTION' && (
+                    <>
+                      <span className="flex h-2 w-2 relative">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                      </span>
+                      <span className="text-emerald-300">Bullish Institutional Absorption</span>
+                    </>
+                  )}
+                  {sessionOrderFlow?.divergence === 'BEARISH_EXHAUSTION' && (
+                    <>
+                      <span className="flex h-2 w-2 relative">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500" />
+                      </span>
+                      <span className="text-rose-300">Bearish Exhaustion Detected</span>
+                    </>
+                  )}
+                  {(!sessionOrderFlow || sessionOrderFlow.divergence === 'NONE') && (
+                    <>
+                      <span className="text-slate-400">⚖️</span>
+                      <span className="text-slate-300">Auction Flow Balanced</span>
+                    </>
+                  )}
+                </div>
+                <p className="mt-1 text-[10.5px] opacity-90">
+                  {sessionOrderFlow?.description ??
+                    'CVD order flow tracks aggressive market orders vs passive resting limit liquidity.'}
+                </p>
+              </div>
+
+              {/* Interactive Ask Leo Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (sessionOrderFlow) {
+                    setLeoExternalPoints([
+                      {
+                        id: `cvd-inspect-${Date.now()}`,
+                        label: `CVD ${sessionOrderFlow.sessionCvd >= 0 ? '+' : ''}${sessionOrderFlow.sessionCvd} Δ`,
+                        value: sessionOrderFlow.sessionCvd,
+                        tier: 'ORDER_FLOW',
+                        category: 'CVD',
+                        description: `Session CVD: ${sessionOrderFlow.sessionCvd} contracts (${sessionOrderFlow.trend}). Buy ratio: ${Math.round(sessionOrderFlow.latestBuyRatio * 100)}%. Divergence: ${sessionOrderFlow.divergence}. ${sessionOrderFlow.description}`,
+                      },
+                    ])
+                  }
+                  setLeoPanelOpen(true)
+                }}
+                className="w-full rounded-xl bg-cyan-600/30 hover:bg-cyan-600/50 border border-cyan-500/40 py-2 px-3 text-cyan-200 font-semibold text-xs flex items-center justify-center gap-2 shadow-sm transition cursor-pointer"
+              >
+                <span>🤖</span>
+                <span>Ask Leo to Analyze Order Flow Confirmation</span>
+              </button>
             </div>
           </DraggableDeskWidget>
         )}

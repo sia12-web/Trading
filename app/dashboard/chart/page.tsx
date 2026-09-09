@@ -80,17 +80,7 @@ import {
   formatDeskAlertToast,
 } from '@/lib/notify/deskAlertTelegram'
 import type { DeskInstrument } from '@/lib/trading/sessionGate'
-import {
-  DESK_RISK_PROFILE_EVENT,
-  getDeskRiskProfile,
-  hydrateDeskRiskProfileFromServer,
-  isTradeifyGrowth50k,
-} from '@/lib/trading/tradeifyProfile'
-import { TradovateMirrorCard } from './components/TradovateMirrorCard'
-import {
-  tradeifyFlattenOverridesKeepOpen,
-  tradeifyMustFlatten,
-} from '@/lib/trading/tradeifyGrowth50k'
+
 
 function entryDeniedMessage(gate: SessionGateState | null | undefined): string | null {
   if (!gate) return null
@@ -213,16 +203,9 @@ export default function ChartPage() {
   const [asiaOverlays, setAsiaOverlays] = useState<
     Partial<Record<'DOW' | 'GOLD', AsiaDeskOverlay>>
   >({})
-  const [tvTicketClosed, setTvTicketClosed] = useState(false)
-  const [tradeifyAccountName, setTradeifyAccountName] = useState<string | null>(null)
-  const [riskProfile, setRiskProfile] = useState(getDeskRiskProfile)
-  const lastTradeifyRiskRef = useRef(0)
+  const lastRiskDollarsRef = useRef(0)
   const [gate, setGate] = useState<SessionGateState | null>(null)
   gateRef.current = gate
-
-  useEffect(() => {
-    setTvTicketClosed(false)
-  }, [pending?.workingId, managePos?.id])
 
   // Persist clock preference; only snap chart to that book on rising-edge clock-in
   // (free-switch among DOW/NASDAQ/GOLD/CRUDE after that).
@@ -372,44 +355,13 @@ export default function ChartPage() {
     pendingRef.current = pending
   }, [pending])
   useEffect(() => {
-    let cancelled = false
-    const sync = () => setRiskProfile(getDeskRiskProfile())
-    void hydrateDeskRiskProfileFromServer().then((profile) => {
-      if (!cancelled) setRiskProfile(profile)
-    })
-    window.addEventListener(DESK_RISK_PROFILE_EVENT, sync)
-    return () => {
-      cancelled = true
-      window.removeEventListener(DESK_RISK_PROFILE_EVENT, sync)
-    }
-  }, [])
-  useEffect(() => {
     if (pending?.riskAmount && pending.riskAmount > 0) {
-      lastTradeifyRiskRef.current = pending.riskAmount
+      lastRiskDollarsRef.current = pending.riskAmount
     } else if (managePos?.riskAmount && managePos.riskAmount > 0) {
-      lastTradeifyRiskRef.current = managePos.riskAmount
+      lastRiskDollarsRef.current = managePos.riskAmount
     }
   }, [pending?.riskAmount, managePos?.riskAmount])
-  useEffect(() => {
-    if (!isTradeifyGrowth50k(riskProfile)) {
-      setTradeifyAccountName(null)
-      return
-    }
-    let cancelled = false
-    void fetch('/api/trading/tradeify-snapshot', { cache: 'no-store' })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json) => {
-        if (cancelled) return
-        const name = typeof json?.accountName === 'string' ? json.accountName.trim() : ''
-        setTradeifyAccountName(name || null)
-      })
-      .catch(() => {
-        if (!cancelled) setTradeifyAccountName(null)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [riskProfile])
+
   useEffect(() => {
     livePriceRef.current = livePrice
   }, [livePrice])
@@ -856,7 +808,6 @@ export default function ChartPage() {
       ) {
         const msg = formatSessionStartNote({
           instrument: inst,
-          tradeify: isTradeifyGrowth50k(getDeskRiskProfile()),
         })
         infoToast(msg.title, 6000)
         void fetch('/api/notify/desk-alert', {
@@ -1570,12 +1521,6 @@ export default function ChartPage() {
       setLunchFlatPrompt(false)
       return
     }
-    const tradeifyOn = isTradeifyGrowth50k(getDeskRiskProfile())
-    if (tradeifyOn && tradeifyFlattenOverridesKeepOpen()) {
-      setLunchFlatPrompt(false)
-      void expireWorkingLimits({ forceExpireWorking: true, forceCashClose: true })
-      return
-    }
     if (hasLunchFlatKeepOpen(liveLunchFlatKeepOpenKey(managePos.id))) {
       setLunchFlatPrompt(false)
       return
@@ -1583,16 +1528,11 @@ export default function ChartPage() {
     setLunchFlatPrompt(true)
   }, [managePos, gateTick, expireWorkingLimits])
 
-  // Cash close + Tradeify 16:59 flatten (beats keep-open / Nikkei 02:00 hold)
+  // Cash close flatten
   useEffect(() => {
     if (!managePos) return
     const inst = managePos.instrument as Instrument
     const tick = () => {
-      const tradeifyOn = isTradeifyGrowth50k(getDeskRiskProfile())
-      if (tradeifyOn && tradeifyMustFlatten()) {
-        void expireWorkingLimits({ forceExpireWorking: true, forceCashClose: true })
-        return
-      }
       if (isPastCashCloseNow(inst)) {
         void expireWorkingLimits({ forceExpireWorking: true, forceCashClose: true })
       }
@@ -1908,15 +1848,9 @@ export default function ChartPage() {
   const showWorkingStrip =
     orderStatus === 'rejected' ||
     orderStatus === 'placing'
-  const showWorkingTicket = false
-  const showFilledTicket =
-    isTradeifyGrowth50k(riskProfile) &&
-    managePos != null &&
-    !tvTicketClosed
   const showManageBar = inManage && managePos != null
   const showDeskOverlay =
     showWorkingStrip ||
-    showFilledTicket ||
     showManageBar ||
     !!fillError
   const deskLevelsActive = !!gate && gate.phase !== 'CLOSED'
@@ -1985,45 +1919,6 @@ export default function ChartPage() {
                 sitBadge={deskPerf?.sitBadge ?? null}
                 sitPlayLine={deskPerf?.sitPlayLine ?? null}
                 sessionExit={sessionExit}
-              />
-            ) : null}
-
-            {showWorkingTicket && pending ? (
-              <TradovateMirrorCard
-                instrument={pending.instrument}
-                direction={pending.direction}
-                entry={pending.level}
-                stop={pending.stopLoss}
-                target={pending.profitTarget}
-                riskDollars={pending.riskAmount}
-                bookId={pending.workingId}
-                accountName={tradeifyAccountName}
-                phase="working"
-                onClose={() => setTvTicketClosed(true)}
-              />
-            ) : null}
-            {showFilledTicket && managePos ? (
-              <TradovateMirrorCard
-                instrument={(managePos.instrument || instrument) as
-                  | 'DOW'
-                  | 'NASDAQ'
-                  | 'GOLD'
-                  | 'CRUDE'}
-                direction={
-                  String(managePos.direction).toUpperCase() === 'SHORT' ? 'SHORT' : 'LONG'
-                }
-                entry={managePos.entryPrice}
-                stop={managePos.stopLoss}
-                target={managePos.profitTarget}
-                riskDollars={
-                  (managePos.riskAmount ?? 0) > 0
-                    ? managePos.riskAmount
-                    : lastTradeifyRiskRef.current
-                }
-                bookId={managePos.id}
-                accountName={tradeifyAccountName}
-                phase="filled"
-                onClose={() => setTvTicketClosed(true)}
               />
             ) : null}
 
@@ -2163,7 +2058,7 @@ export default function ChartPage() {
                         riskDollars:
                           (managePos.riskAmount ?? 0) > 0
                             ? managePos.riskAmount
-                            : lastTradeifyRiskRef.current,
+                            : lastRiskDollarsRef.current,
                         entryTimestamp: managePos.entryTimestamp ?? null,
                       }
                     : null

@@ -151,6 +151,9 @@ export async function getDatabentoCandles(
       if (response.ok) {
         const res = await processDatabentoResponse(response, symbol, resolution, cacheKey)
         if (res?.candles?.length) return res
+      } else {
+        const errText = await response.text()
+        console.warn(`[Databento] HTTP ${response.status} for ${symbol}: ${errText.slice(0, 150)}`)
       }
     } catch (err) {
       console.error(`[Databento] Fetch failed for ${symbol}:`, err)

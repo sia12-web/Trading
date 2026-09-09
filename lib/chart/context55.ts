@@ -588,9 +588,13 @@ export function computeYesterdayNycSession(
   let priorYmd = ''
   let rthBars: ContextBar[] = []
 
+  const todayCloseUnix = zonedCivilToUnix(todayYmd, 16, clock.timeZone)
+  // Once NYC cash session ends (16:00 ET), today's closed session becomes the completed prior session
+  const startDaysBack = tipTime >= todayCloseUnix ? 0 : 1
+
   // Loop back up to 10 days to find the last full active (non-holiday) NYC cash session
-  for (let daysBack = 1; daysBack <= 10; daysBack++) {
-    const candidateYmd = nthTradingDayBefore(todayYmd, daysBack, clock.timeZone)
+  for (let daysBack = startDaysBack; daysBack <= 10; daysBack++) {
+    const candidateYmd = daysBack === 0 ? todayYmd : nthTradingDayBefore(todayYmd, daysBack, clock.timeZone)
 
     // Skip official US stock & futures exchange holidays (e.g. Labor Day, Memorial Day, MLK, etc.)
     if (isUsMarketHoliday(candidateYmd)) {
@@ -950,11 +954,17 @@ export function computeOvernightInventoryAndSessions(args: {
   const londonStartUnix = asiaEndUnix
   const londonEndUnix = todayOpenUnix
 
+  // Yesterday's inventory is removed; profile starts drawing once London opens (03:00 ET)
+  if (tipTime < londonStartUnix) {
+    return null
+  }
+
   const overnightStartUnix = asiaStartUnix
-  const overnightEndUnix = todayOpenUnix
+  // Dynamic profile: from Asia Open (18:00 ET) up to current time (e.g. 08:30 ET), updating until 09:30 ET cash open
+  const overnightEndUnix = Math.min(todayOpenUnix, tipTime)
 
   const asia = computeSessionVolumeProfile(bars, asiaStartUnix, asiaEndUnix, 'Asia')
-  const london = computeSessionVolumeProfile(bars, londonStartUnix, londonEndUnix, 'London')
+  const london = computeSessionVolumeProfile(bars, londonStartUnix, Math.min(londonEndUnix, tipTime), 'London')
   const overnight = computeSessionVolumeProfile(bars, overnightStartUnix, overnightEndUnix, 'Overnight')
 
   // Calculate volume distribution relative to Yesterday Close
