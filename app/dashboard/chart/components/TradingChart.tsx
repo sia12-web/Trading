@@ -166,6 +166,7 @@ import {
   computeOrderFlowCvd,
   computeCvdCandleBars,
   computeFootprintBars,
+  aggregateFootprintTicks,
   summarizeFootprintForLeo,
   type OrderFlowSummary,
   type FootprintBar,
@@ -1275,6 +1276,7 @@ export function TradingChart({
   const footprintBarsRef = useRef<FootprintBar[]>([])
   const footprintCanvasRef = useRef<HTMLCanvasElement>(null)
   const paintFootprintRef = useRef<() => void>(() => { })
+  const savedFootprintRangeRef = useRef<{ from: number; to: number } | null>(null)
   const cvdContainerRef = useRef<HTMLDivElement>(null)
   const cvdChartRef = useRef<IChartApi | null>(null)
   const cvdCandleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -6779,7 +6781,7 @@ export function TradingChart({
     paintFootprintRef.current()
   }, [instrument])
 
-  // ── Canvas Footprint Overlay (Bid x Ask ladders + Stacked Imbalances + Candle POC) ─────────
+  // ── Canvas Footprint Overlay (Level 2 Bid x Ask ladders + Stacked Imbalances + Candle POC + Histograms) ──
   const paintFootprint = useCallback(() => {
     const canvas = footprintCanvasRef.current
     const chart = chartRef.current
@@ -6826,94 +6828,252 @@ export function TradingChart({
     const startIdx = Math.max(0, Math.floor(range.from))
     const endIdx = Math.min(fpBars.length - 1, Math.ceil(range.to))
 
-    let barSpacing = 10
+    let barSpacing = 85
     try {
-      const x1 = timeScale.timeToCoordinate(toChartTime(fpBars[0]?.time || 0, tz) as UTCTimestamp)
-      const x2 = timeScale.timeToCoordinate(toChartTime(fpBars[1]?.time || 0, tz) as UTCTimestamp)
-      if (x1 != null && x2 != null && Math.abs(x2 - x1) > 2) {
-        barSpacing = Math.abs(x2 - x1)
+      if (fpBars.length >= 2) {
+        const x1 = timeScale.timeToCoordinate(toChartTime(fpBars[0]?.time || 0, tz) as UTCTimestamp)
+        const x2 = timeScale.timeToCoordinate(toChartTime(fpBars[1]?.time || 0, tz) as UTCTimestamp)
+        if (x1 != null && x2 != null && Math.abs(x2 - x1) > 2) {
+          barSpacing = Math.abs(x2 - x1)
+        }
       }
     } catch {}
 
-    const isZoomedIn = barSpacing >= 24
+    const barBodyW = Math.min(130, Math.max(48, barSpacing * 0.88))
 
     for (let i = startIdx; i <= endIdx; i++) {
       const bar = fpBars[i]
       if (!bar) continue
 
       const x = timeScale.timeToCoordinate(toChartTime(bar.time, tz) as UTCTimestamp)
-      if (x == null || x < -50 || x > paneW + 50) continue
+      if (x == null || x < -barBodyW || x > paneW + barBodyW) continue
 
       const yHigh = series.priceToCoordinate(bar.high)
       const yLow = series.priceToCoordinate(bar.low)
-      if (yHigh == null || yLow == null) continue
+      const yOpen = series.priceToCoordinate(bar.open)
+      const yClose = series.priceToCoordinate(bar.close)
+      if (yHigh == null || yLow == null || yOpen == null || yClose == null) continue
 
-      // 1. Stacked Buy Imbalances Highlight (Emerald box)
-      for (const buyZone of bar.stackedBuyImbalances) {
-        const yStart = series.priceToCoordinate(buyZone.endPrice + 0.125)
-        const yEnd = series.priceToCoordinate(buyZone.startPrice - 0.125)
-        if (yStart != null && yEnd != null) {
-          const top = Math.min(yStart, yEnd)
-          const h = Math.max(4, Math.abs(yEnd - yStart))
-          const w = Math.max(16, barSpacing * 0.8)
-          ctx.fillStyle = 'rgba(16, 185, 129, 0.22)'
-          ctx.strokeStyle = '#10b981'
-          ctx.lineWidth = 1
-          ctx.fillRect(x - w / 2, top, w, h)
-          ctx.strokeRect(x - w / 2, top, w, h)
-        }
-      }
+      const isBullish = bar.close >= bar.open
+      const candleColor = isBullish ? '#10b981' : '#f43f5e'
+      const bodyTop = Math.min(yOpen, yClose)
+      const bodyBot = Math.max(yOpen, yClose)
+      const bodyH = Math.max(2, bodyBot - bodyTop)
+      const bodyLeft = x - barBodyW / 2
 
-      // 2. Stacked Sell Imbalances Highlight (Rose box)
-      for (const sellZone of bar.stackedSellImbalances) {
-        const yStart = series.priceToCoordinate(sellZone.endPrice + 0.125)
-        const yEnd = series.priceToCoordinate(sellZone.startPrice - 0.125)
-        if (yStart != null && yEnd != null) {
-          const top = Math.min(yStart, yEnd)
-          const h = Math.max(4, Math.abs(yEnd - yStart))
-          const w = Math.max(16, barSpacing * 0.8)
-          ctx.fillStyle = 'rgba(244, 63, 94, 0.22)'
-          ctx.strokeStyle = '#f43f5e'
-          ctx.lineWidth = 1
-          ctx.fillRect(x - w / 2, top, w, h)
-          ctx.strokeRect(x - w / 2, top, w, h)
-        }
-      }
-
-      // 3. Candle POC Highlight Box (Amber outline)
-      const yPoc = series.priceToCoordinate(bar.candlePocPrice)
-      if (yPoc != null && yPoc >= 0 && yPoc <= paneH) {
-        const w = Math.max(12, barSpacing * 0.75)
-        ctx.strokeStyle = '#f59e0b'
-        ctx.lineWidth = 1.5
-        ctx.strokeRect(x - w / 2, yPoc - 2, w, 5)
-      }
-
-      // 4. Zoomed-In Footprint Bid x Ask Text Numbers (e.g. 12x45)
-      if (isZoomedIn && bar.ticks.length > 0) {
-        ctx.font = '9px monospace'
+      // ── 1. Bar Header (Above High: Total Bar Volume in Blue, Net Bar Delta in Green/Red) ──
+      const topY = Math.min(yHigh, yLow)
+      if (topY > 30) {
         ctx.textAlign = 'center'
+        ctx.textBaseline = 'bottom'
+
+        // Total volume (e.g. 38171)
+        ctx.font = 'bold 11px monospace'
+        ctx.fillStyle = '#60a5fa'
+        ctx.fillText(bar.totalVolume.toLocaleString(), x, topY - 14)
+
+        // Net bar delta (e.g. +1701 or -2256)
+        ctx.fillStyle = bar.netDelta >= 0 ? '#34d399' : '#f43f5e'
+        ctx.fillText(`${bar.netDelta >= 0 ? '+' : ''}${bar.netDelta.toLocaleString()}`, x, topY - 2)
+      }
+
+      // ── 2. Candle Body Outline & Wicks ──────────────────────────────────────────
+      // Upper wick
+      ctx.strokeStyle = candleColor
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(x, yHigh)
+      ctx.lineTo(x, bodyTop)
+      ctx.stroke()
+
+      // Lower wick
+      ctx.beginPath()
+      ctx.moveTo(x, bodyBot)
+      ctx.lineTo(x, yLow)
+      ctx.stroke()
+
+      // Candle body box (subtle background fill + crisp outline)
+      ctx.fillStyle = isBullish ? 'rgba(16, 185, 129, 0.05)' : 'rgba(244, 63, 94, 0.05)'
+      ctx.fillRect(bodyLeft, bodyTop, barBodyW, bodyH)
+
+      ctx.strokeStyle = candleColor
+      ctx.lineWidth = 1.5
+      ctx.strokeRect(bodyLeft, bodyTop, barBodyW, bodyH)
+
+      // ── 3. Stacked Imbalances Vertical Indicators ───────────────────────────────
+      for (const buyZone of bar.stackedBuyImbalances) {
+        const y1 = series.priceToCoordinate(buyZone.endPrice + 0.125)
+        const y2 = series.priceToCoordinate(buyZone.startPrice - 0.125)
+        if (y1 != null && y2 != null) {
+          const top = Math.min(y1, y2)
+          const h = Math.max(4, Math.abs(y2 - y1))
+          ctx.fillStyle = 'rgba(16, 185, 129, 0.22)'
+          ctx.fillRect(bodyLeft, top, barBodyW, h)
+          ctx.fillStyle = '#10b981'
+          ctx.fillRect(bodyLeft + barBodyW - 3, top, 3, h)
+        }
+      }
+
+      for (const sellZone of bar.stackedSellImbalances) {
+        const y1 = series.priceToCoordinate(sellZone.endPrice + 0.125)
+        const y2 = series.priceToCoordinate(sellZone.startPrice - 0.125)
+        if (y1 != null && y2 != null) {
+          const top = Math.min(y1, y2)
+          const h = Math.max(4, Math.abs(y2 - y1))
+          ctx.fillStyle = 'rgba(244, 63, 94, 0.22)'
+          ctx.fillRect(bodyLeft, top, barBodyW, h)
+          ctx.fillStyle = '#f43f5e'
+          ctx.fillRect(bodyLeft, top, 3, h)
+        }
+      }
+
+      // ── 4. Price Rows: Level 2 Bid x Ask, Delta, Mini Histogram, POC Box ────────
+      if (bar.ticks.length > 0) {
+        const candlePixelH = Math.max(10, Math.abs(yLow - yHigh))
+        const maxBuckets = Math.max(1, Math.floor(candlePixelH / 13))
+        const rows = aggregateFootprintTicks(bar.ticks, maxBuckets)
+
+        let maxDeltaInBar = 1
+        let maxVolInBar = 1
+        let pocRowIdx = 0
+
+        for (let rIdx = 0; rIdx < rows.length; rIdx++) {
+          const r = rows[rIdx]!
+          if (Math.abs(r.delta) > maxDeltaInBar) maxDeltaInBar = Math.abs(r.delta)
+          if (r.totalVol > maxVolInBar) {
+            maxVolInBar = r.totalVol
+            pocRowIdx = rIdx
+          }
+        }
+
         ctx.textBaseline = 'middle'
 
-        for (const t of bar.ticks) {
-          const yT = series.priceToCoordinate(t.price)
-          if (yT == null || yT < 0 || yT > paneH) continue
+        for (let rIdx = 0; rIdx < rows.length; rIdx++) {
+          const r = rows[rIdx]!
+          const yTopR = series.priceToCoordinate(r.highPrice)
+          const yBotR = series.priceToCoordinate(r.lowPrice)
+          if (yTopR == null || yBotR == null) continue
 
-          const text = `${t.bidVol}x${t.askVol}`
-          if (t.isBuyImbalance) {
-            ctx.fillStyle = '#34d399'
-          } else if (t.isSellImbalance) {
-            ctx.fillStyle = '#fb7185'
-          } else {
-            ctx.fillStyle = '#94a3b8'
+          const rowY = (yTopR + yBotR) / 2
+          const rowH = Math.max(11, Math.abs(yBotR - yTopR))
+          if (rowY < -20 || rowY > paneH + 20) continue
+
+          const isPoc = rIdx === pocRowIdx
+
+          // Heatmap shading based on delta intensity
+          if (Math.abs(r.delta) > 0) {
+            const intensity = Math.min(1, Math.abs(r.delta) / maxDeltaInBar)
+            ctx.fillStyle = r.delta > 0
+              ? `rgba(16, 185, 129, ${0.05 + intensity * 0.22})`
+              : `rgba(244, 63, 94, ${0.05 + intensity * 0.22})`
+            ctx.fillRect(bodyLeft + 1, rowY - rowH / 2, barBodyW - 2, rowH)
           }
-          ctx.fillText(text, x, yT)
+
+          // Candle POC Highlight (Crisp high-contrast white box outline)
+          if (isPoc) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.09)'
+            ctx.fillRect(bodyLeft + 1, rowY - rowH / 2, barBodyW - 2, rowH)
+            ctx.strokeStyle = '#ffffff'
+            ctx.lineWidth = 1.5
+            ctx.strokeRect(bodyLeft + 1, rowY - rowH / 2, barBodyW - 2, rowH)
+          }
+
+          // Mini horizontal histogram bar on right side for delta
+          if (barBodyW >= 68 && Math.abs(r.delta) > 0) {
+            const maxHistW = Math.min(32, barBodyW * 0.24)
+            const histW = Math.max(2, (Math.abs(r.delta) / maxDeltaInBar) * maxHistW)
+            const histX = bodyLeft + barBodyW - histW - 2
+            ctx.fillStyle = r.delta > 0 ? '#10b981' : '#f43f5e'
+            ctx.fillRect(histX, rowY - Math.min(rowH - 2, 8) / 2, histW, Math.min(rowH - 2, 8))
+          }
+
+          // Text Columns: Bid x Ask and Delta
+          if (barBodyW >= 55) {
+            ctx.font = 'bold 9px monospace'
+
+            // Bid Volume
+            ctx.textAlign = 'right'
+            ctx.fillStyle = r.isSellImbalance ? '#f43f5e' : '#cbd5e1'
+            const bidX = bodyLeft + barBodyW * 0.28
+            ctx.fillText(`${r.bidVol}`, bidX, rowY)
+
+            // Separator "x"
+            ctx.textAlign = 'center'
+            ctx.fillStyle = '#64748b'
+            const sepX = bodyLeft + barBodyW * 0.35
+            ctx.fillText('x', sepX, rowY)
+
+            // Ask Volume
+            ctx.textAlign = 'left'
+            ctx.fillStyle = r.isBuyImbalance ? '#34d399' : '#cbd5e1'
+            const askX = bodyLeft + barBodyW * 0.42
+            ctx.fillText(`${r.askVol}`, askX, rowY)
+
+            // Delta Value (right of ask)
+            ctx.textAlign = 'right'
+            ctx.fillStyle = r.delta > 0 ? '#34d399' : r.delta < 0 ? '#f43f5e' : '#94a3b8'
+            const deltaX = bodyLeft + barBodyW * 0.76
+            ctx.fillText(`${r.delta}`, deltaX, rowY)
+          }
         }
       }
     }
 
     ctx.restore()
   }, [showFootprint])
+
+  // ── Auto-Zoom & Transparent Candlestick Styling when Footprint is Enabled ──
+  useEffect(() => {
+    const chart = chartRef.current
+    const series = candleRef.current
+    if (!chart || !series) return
+
+    if (showFootprint) {
+      // 1. Save current view range so we can restore on exit
+      const currentRange = chart.timeScale().getVisibleLogicalRange()
+      if (currentRange) {
+        savedFootprintRangeRef.current = { from: currentRange.from, to: currentRange.to }
+      }
+
+      // 2. Zoom to the latest action bars (last 8-10 candles) so each bar is wide and spacious
+      const totalBars = candlesRef.current.length
+      if (totalBars > 0) {
+        chart.timeScale().setVisibleLogicalRange({
+          from: Math.max(0, totalBars - 9),
+          to: totalBars + 1,
+        })
+      }
+
+      // 3. Set candlestick bodies to subtle transparent outline so the footprint canvas pops
+      series.applyOptions({
+        upColor: 'rgba(34, 197, 94, 0.04)',
+        downColor: 'rgba(239, 68, 68, 0.04)',
+        borderUpColor: 'rgba(34, 197, 94, 0.22)',
+        borderDownColor: 'rgba(239, 68, 68, 0.22)',
+        wickUpColor: 'rgba(34, 197, 94, 0.35)',
+        wickDownColor: 'rgba(239, 68, 68, 0.35)',
+      })
+    } else {
+      // Restore normal solid candlesticks
+      series.applyOptions({
+        upColor: meta.color || '#22c55e',
+        downColor: '#ef4444',
+        borderUpColor: meta.color || '#22c55e',
+        borderDownColor: '#ef4444',
+        wickUpColor: meta.color || '#22c55e',
+        wickDownColor: '#ef4444',
+      })
+
+      // Restore previous zoom if available
+      if (savedFootprintRangeRef.current) {
+        chart.timeScale().setVisibleLogicalRange(savedFootprintRangeRef.current)
+      }
+    }
+
+    requestAnimationFrame(() => {
+      paintFootprintRef.current()
+    })
+  }, [showFootprint, meta.color])
 
   useEffect(() => {
     paintFrvpHistogramRef.current = paintFrvpHistogram
@@ -9766,6 +9926,24 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     }`} />
                   </span>
                 )}
+              </button>
+              <span className="text-gray-600 text-[10px]">|</span>
+              {/* Interactive Level 2 Footprint Order Flow Button */}
+              <button
+                type="button"
+                onClick={() => setShowFootprint((prev) => !prev)}
+                className={`transition flex items-center gap-1.5 select-none px-1.5 py-0.5 rounded cursor-pointer ${
+                  showFootprint
+                    ? 'bg-amber-500/25 text-amber-200 border border-amber-400/60 shadow-sm font-semibold'
+                    : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
+                }`}
+                title="Click to toggle Enhanced Level 2 Footprint Order Flow (Bid x Ask Ladders, Delta & POC)"
+              >
+                <span className="text-[11px]">👣</span>
+                <span className="text-gray-400 font-semibold">Footprint:</span>
+                <span className={`font-mono font-bold ${showFootprint ? 'text-amber-300' : 'text-zinc-400'}`}>
+                  {showFootprint ? 'ON' : 'OFF'}
+                </span>
               </button>
             </div>
 

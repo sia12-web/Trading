@@ -66,6 +66,18 @@ export interface FootprintBar {
   unfinishedAuction: { highZeroBid: boolean; lowZeroAsk: boolean }
 }
 
+export interface AggregatedFootprintRow {
+  lowPrice: number
+  highPrice: number
+  midPrice: number
+  bidVol: number
+  askVol: number
+  totalVol: number
+  delta: number
+  isBuyImbalance: boolean
+  isSellImbalance: boolean
+}
+
 export interface OrderFlowSummary {
   sessionCvd: number
   latestBarDelta: number
@@ -389,6 +401,71 @@ export function computeFootprintBars(
   }
 
   return footprintBars
+}
+
+/**
+ * Dynamically aggregates high-resolution footprint ticks into readable rows
+ * based on the visible vertical pixel height, preventing overlapping text.
+ */
+export function aggregateFootprintTicks(
+  ticks: FootprintTick[],
+  maxBuckets: number
+): AggregatedFootprintRow[] {
+  if (!ticks || ticks.length === 0) return []
+  if (ticks.length <= maxBuckets || maxBuckets <= 1) {
+    return ticks.map((t) => ({
+      lowPrice: t.price,
+      highPrice: t.price,
+      midPrice: t.price,
+      bidVol: t.bidVol,
+      askVol: t.askVol,
+      totalVol: t.totalVol,
+      delta: t.delta,
+      isBuyImbalance: t.isBuyImbalance,
+      isSellImbalance: t.isSellImbalance,
+    }))
+  }
+
+  const sorted = [...ticks].sort((a, b) => a.price - b.price)
+  const bucketSize = Math.ceil(sorted.length / maxBuckets)
+  const rows: AggregatedFootprintRow[] = []
+
+  for (let i = 0; i < sorted.length; i += bucketSize) {
+    const slice = sorted.slice(i, i + bucketSize)
+    if (slice.length === 0) continue
+
+    const lowPrice = slice[0]!.price
+    const highPrice = slice[slice.length - 1]!.price
+    const midPrice = Number(((lowPrice + highPrice) / 2).toFixed(2))
+
+    let bidVol = 0
+    let askVol = 0
+    let totalVol = 0
+
+    for (const s of slice) {
+      bidVol += s.bidVol
+      askVol += s.askVol
+      totalVol += s.totalVol
+    }
+
+    const delta = askVol - bidVol
+    const isBuyImbalance = askVol >= bidVol * 3.0 && askVol >= 5
+    const isSellImbalance = bidVol >= askVol * 3.0 && bidVol >= 5
+
+    rows.push({
+      lowPrice,
+      highPrice,
+      midPrice,
+      bidVol,
+      askVol,
+      totalVol,
+      delta,
+      isBuyImbalance,
+      isSellImbalance,
+    })
+  }
+
+  return rows
 }
 
 /**
