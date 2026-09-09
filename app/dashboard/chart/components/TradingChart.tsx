@@ -223,6 +223,7 @@ import {
   paintLevelLine,
   paintVolumeProfileBins,
   profileIntersectsPane,
+  compactProfileWidth,
 } from '@/lib/chart/context55Paint'
 import {
   isDeskInstrument,
@@ -2353,6 +2354,7 @@ export function TradingChart({
     // and not stretched across the session. Pan left to the range start to see it.
     const paintAnchoredProfile = (args: {
       startUnix: number
+      endUnix?: number
       maxW: number
       bins: NonNullable<typeof frvp5d>['bins']
       bucketSize: number
@@ -2365,12 +2367,16 @@ export function TradingChart({
       pocLabel: string
     }) => {
       const x = xAt(args.startUnix)
-      if (!profileIntersectsPane(x, args.maxW, paneW)) return
+      const xEnd = args.endUnix != null ? xAt(args.endUnix) : null
+      const rangePx =
+        x != null && xEnd != null && Number.isFinite(xEnd) ? Math.abs(xEnd - x) : null
+      const histW = compactProfileWidth(rangePx, args.maxW)
+      if (!profileIntersectsPane(x, histW, paneW)) return
       paintVolumeProfileBins(ctx, {
         bins: args.bins,
         bucketSize: args.bucketSize,
         x,
-        maxW: args.maxW,
+        maxW: histW,
         paneH,
         priceToY,
         buyFillVa: args.buyFillVa,
@@ -2386,7 +2392,7 @@ export function TradingChart({
         args.pocColor,
         args.pocLabel,
         x,
-        x + args.maxW
+        x + histW
       )
     }
 
@@ -2394,6 +2400,7 @@ export function TradingChart({
     if (frvp5d && frvp5d.bins && frvp5d.bins.length > 0) {
       paintAnchoredProfile({
         startUnix: frvp5d.startUnix,
+        endUnix: frvp5d.endUnix,
         maxW: CONTEXT55_FRVP_5D_W,
         bins: frvp5d.bins,
         bucketSize: frvp5d.bucketSize || 1,
@@ -2411,6 +2418,7 @@ export function TradingChart({
     if (showYesterdayNyc && yesterdayNyc && yesterdayNyc.bins && yesterdayNyc.bins.length > 0) {
       paintAnchoredProfile({
         startUnix: yesterdayNyc.openUnix,
+        endUnix: yesterdayNyc.closeUnix,
         maxW: CONTEXT55_FRVP_YDAY_W,
         bins: yesterdayNyc.bins,
         bucketSize: yesterdayNyc.bucketSize || 1,
@@ -2429,6 +2437,7 @@ export function TradingChart({
     if (showInventorySessions && on && on.bins && on.bins.length > 0) {
       paintAnchoredProfile({
         startUnix: on.startUnix,
+        endUnix: on.endUnix,
         maxW: CONTEXT55_FRVP_ON_W,
         bins: on.bins,
         bucketSize: on.bucketSize || 1,
@@ -2492,7 +2501,7 @@ export function TradingChart({
         const startX = Math.min(rawXAnchor, rawXEnd ?? rawXAnchor)
         const endX = Math.max(rawXAnchor, rawXEnd ?? (rawXAnchor + 120))
         const spanW = Math.max(50, endX - startX)
-        const maxHistW = Math.min(spanW * 0.85, 180)
+        const maxHistW = compactProfileWidth(spanW, CONTEXT55_FRVP_5D_W)
         const halfBucket = (f.bucketSize || 1) * 0.5
         const maxBinVol = Math.max(...f.bins.map((b) => b.volume), 1)
 
@@ -2533,7 +2542,7 @@ export function TradingChart({
           ctx.setLineDash([])
           ctx.beginPath()
           ctx.moveTo(startX, Math.round(yPoc) + 0.5)
-          ctx.lineTo(endX, Math.round(yPoc) + 0.5)
+          ctx.lineTo(startX + maxHistW, Math.round(yPoc) + 0.5)
           ctx.stroke()
 
           ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
@@ -2549,7 +2558,7 @@ export function TradingChart({
           ctx.setLineDash([3, 3])
           ctx.beginPath()
           ctx.moveTo(startX, Math.round(yVah) + 0.5)
-          ctx.lineTo(endX, Math.round(yVah) + 0.5)
+          ctx.lineTo(startX + maxHistW, Math.round(yVah) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
           ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
@@ -2565,7 +2574,7 @@ export function TradingChart({
           ctx.setLineDash([3, 3])
           ctx.beginPath()
           ctx.moveTo(startX, Math.round(yVal) + 0.5)
-          ctx.lineTo(endX, Math.round(yVal) + 0.5)
+          ctx.lineTo(startX + maxHistW, Math.round(yVal) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
           ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'

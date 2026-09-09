@@ -62,6 +62,7 @@ assert.ok(!live.includes("title: '5M -2σ'"), '5M −2σ must not be price-line 
 assert.ok(live.includes('paintAnchoredProfile'), 'FRVP histograms sit at each range open')
 assert.ok(live.includes('frvp5d.startUnix'), '5-day FRVP is anchored at the 5-day range start')
 assert.ok(live.includes('yesterdayNyc.openUnix'), 'yesterday FRVP is anchored at yesterday cash open')
+assert.ok(live.includes('compactProfileWidth'), 'FRVP width stays a thin column at the range open')
 assert.ok(live.includes('profileIntersectsPane'), 'off-screen FRVP waits until you scroll to the range')
 assert.ok(!live.includes('stickyLeftX'), 'FRVP is not glued to the visible left edge')
 assert.ok(live.includes('scaleOverlayPricesRef'), 'Y-axis stays on the session, not overlay extras')

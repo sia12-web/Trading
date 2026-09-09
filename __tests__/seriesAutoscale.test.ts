@@ -12,6 +12,7 @@ import {
 } from '../lib/chart/seriesAutoscale'
 import {
   profileIntersectsPane,
+  compactProfileWidth,
   CONTEXT55_FRVP_5D_W,
 } from '../lib/chart/context55Paint'
 
@@ -62,6 +63,9 @@ import {
   assert.equal(profileIntersectsPane(2000, CONTEXT55_FRVP_5D_W, 900), false, 'off-screen right does not stick')
   assert.equal(profileIntersectsPane(120, CONTEXT55_FRVP_5D_W, 900), true, 'on-pane range start paints')
   assert.equal(profileIntersectsPane(null, CONTEXT55_FRVP_5D_W, 900), false)
+  assert.ok(compactProfileWidth(800, 56) <= 56)
+  assert.ok(compactProfileWidth(120, 56) < 30, 'zoomed-out session does not stretch the histogram')
+  assert.equal(compactProfileWidth(null, 56), 56)
 }
 
 console.log('seriesAutoscale.test.ts: all passed')

@@ -7,9 +7,9 @@
 
 import type { VolumeProfileBin } from './context55'
 
-export const CONTEXT55_FRVP_5D_W = 92
-export const CONTEXT55_FRVP_YDAY_W = 68
-export const CONTEXT55_FRVP_ON_W = 68
+export const CONTEXT55_FRVP_5D_W = 56
+export const CONTEXT55_FRVP_YDAY_W = 44
+export const CONTEXT55_FRVP_ON_W = 44
 
 /** True when any part of a compact histogram at `x` is on the pane. */
 export function profileIntersectsPane(
@@ -18,6 +18,19 @@ export function profileIntersectsPane(
   paneW: number
 ): x is number {
   return typeof x === 'number' && Number.isFinite(x) && x + histW > 0 && x < paneW
+}
+
+/**
+ * Histogram width at the range open. Never stretch across the session —
+ * keep a thin TradingView-style column, shrinking further when zoomed out.
+ */
+export function compactProfileWidth(
+  rangePx: number | null | undefined,
+  cap: number
+): number {
+  const floor = Math.min(28, cap)
+  if (rangePx == null || !Number.isFinite(rangePx) || rangePx <= 0) return cap
+  return Math.max(floor, Math.min(cap, rangePx * 0.12))
 }
 
 export function paintVolumeProfileBins(
