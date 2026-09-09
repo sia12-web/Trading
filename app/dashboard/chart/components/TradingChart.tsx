@@ -4437,14 +4437,9 @@ export function TradingChart({
 
   useEffect(() => {
     scaleOverlayPricesRef.current = context55ScalePrices({
-      vwap: avwap5mBenchmark?.vwap,
-      poc5d: frvp5d?.poc,
-      vah5d: frvp5d?.vah,
-      val5d: frvp5d?.val,
-      yPoc: yesterdayNyc?.poc,
-      yHigh: yesterdayNyc?.yh,
-      yLow: yesterdayNyc?.yl,
-      onPoc: overnightInventory?.overnight?.poc,
+      vwap: currentVwap?.vwap ?? avwap5mBenchmark?.vwap,
+      vwapUpper1: currentVwap?.upper1,
+      vwapLower1: currentVwap?.lower1,
     })
     try {
       chartRef.current?.priceScale('right').applyOptions({ autoScale: true })
@@ -4452,7 +4447,7 @@ export function TradingChart({
       /* chart not ready */
     }
     requestAnimationFrame(() => paintFrvpHistogramRef.current())
-  }, [avwap5mBenchmark, frvp5d, yesterdayNyc, overnightInventory])
+  }, [avwap5mBenchmark, currentVwap])
 
   useEffect(() => {
     if (!SYSTEMATIC_LIVE_DESK) return
@@ -5771,16 +5766,15 @@ export function TradingChart({
       ...ignoreScale,
     })
 
-    // Anchored VWAP — TradingView Style: blue VWAP, green/olive/teal ±1/±2/±3σ.
-    // Join the right price scale so ±σ stay on-pane after 5-month dailies load
-    // (session-only autoscale previously clipped the bands off the chart).
+    // Anchored VWAP — TradingView colors. Session autoscale keeps candles
+    // readable; 5-month ±σ must not own the Y-axis or bars go flat.
     const bandOpts = {
       lineWidth: 1 as const,
       priceLineVisible: false,
       lastValueVisible: true,
       pointMarkersVisible: false,
       crosshairMarkerVisible: false,
-      priceScaleId: 'right' as const,
+      ...ignoreScale,
     }
     const vwapSeries = {
       upper3: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band3, title: '+3σ' }),
@@ -5794,7 +5788,7 @@ export function TradingChart({
         pointMarkersVisible: false,
         crosshairMarkerVisible: false,
         title: 'VWAP',
-        priceScaleId: 'right',
+        ...ignoreScale,
       }),
       lower1: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band1, title: '-1σ' }),
       lower2: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band2, title: '-2σ' }),

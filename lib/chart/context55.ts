@@ -631,7 +631,7 @@ export function compute5MonthAnchoredVwapPath(args: {
     }
   }
 
-  return compute5MonthAnchoredVwap({
+  const path = compute5MonthAnchoredVwap({
     bars,
     instrument,
     baseline:
@@ -640,6 +640,56 @@ export function compute5MonthAnchoredVwapPath(args: {
         : { sumPV: 0, sumV: 0, sumP2V: 0, startUnix: anchorUnix - 1 },
     asOfUnix: tipTime,
   })
+  if (!path) return null
+  // 5-month daily variance is thousands of NASDAQ/DOW points. Using it as ±σ
+  // on a 5m session pane flattens candles. Keep the 5-month VWAP *center* and
+  // size the bands from recent 5m volatility so they stay around price.
+  const windowSigma = typicalPriceStdev(recentBarsForSigma(bars))
+  if (!(windowSigma > 0)) return path
+  return applySigmaBands(path, windowSigma)
+}
+
+/** Last ~36h of 5m bars (or last 80 prints) — session-sized σ, not a 12-day range. */
+export function recentBarsForSigma(bars: ContextBar[]): ContextBar[] {
+  if (bars.length === 0) return bars
+  const tip = bars[bars.length - 1]!.time
+  const cutoff = tip - 36 * 3600
+  const recent = bars.filter((b) => b.time >= cutoff)
+  return recent.length >= 20 ? recent : bars.slice(-80)
+}
+
+/** Population stdev of typical price (H+L+C)/3. */
+export function typicalPriceStdev(bars: ContextBar[]): number {
+  const prices: number[] = []
+  for (const b of bars) {
+    const p = (b.high + b.low + b.close) / 3
+    if (Number.isFinite(p) && p > 0) prices.push(p)
+  }
+  if (prices.length < 2) return 0
+  const mean = prices.reduce((s, p) => s + p, 0) / prices.length
+  let ss = 0
+  for (const p of prices) ss += (p - mean) * (p - mean)
+  return Math.sqrt(ss / prices.length)
+}
+
+export function applySigmaBands(
+  path: AnchoredVwapBands5M,
+  sigma: number
+): AnchoredVwapBands5M {
+  const band = (k: number) =>
+    path.vwap.map((p) => ({
+      time: p.time,
+      value: Number((p.value + k * sigma).toFixed(2)),
+    }))
+  return {
+    ...path,
+    upper1: band(1),
+    lower1: band(-1),
+    upper2: band(2),
+    lower2: band(-2),
+    upper3: band(3),
+    lower3: band(-3),
+  }
 }
 
 /**

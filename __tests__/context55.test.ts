@@ -5,6 +5,7 @@ import {
   compute5MonthAnchoredVwap,
   compute5MonthAnchoredVwapFromDailyBars,
   compute5MonthAnchoredVwapPath,
+  typicalPriceStdev,
   computeYesterdayNycSession,
   computeOvernightInventoryAndSessions,
   classifyMarketDayType,
@@ -185,6 +186,9 @@ describe('Context 5-5 Module Tests', () => {
     const u3 = path.upper3[path.upper3.length - 1]!.value
     const sigma = u1 - v
     assert.ok(Math.abs(u3 - (v + 3 * sigma)) < 0.05, '±3σ is three standard deviations (HLC/3)')
+    const windowSigma = typicalPriceStdev(bars)
+    // Synthetic path is only 40 bars / ~3h, so recentBarsForSigma === bars
+    assert.ok(Math.abs(sigma - windowSigma) < 0.05, 'overlay σ is recent 5m volatility, not 5-month daily variance')
   })
 
   it('computes Yesterday NYC Session accurately', () => {

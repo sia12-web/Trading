@@ -84,8 +84,10 @@ export function paddedCandlePriceRange(
  * 5M VWAP / 5D VAH / POC can sit hundreds-to-thousands of points off the
  * live session and flatten candles into a hairline.
  */
-export function context55ScalePrices(_args: {
+export function context55ScalePrices(args: {
   vwap?: number | null
+  vwapUpper1?: number | null
+  vwapLower1?: number | null
   poc5d?: number | null
   vah5d?: number | null
   val5d?: number | null
@@ -94,7 +96,14 @@ export function context55ScalePrices(_args: {
   yLow?: number | null
   onPoc?: number | null
 }): { always: number[]; nearby: number[] } {
-  return { always: [], nearby: [] }
+  const nearby: number[] = []
+  const add = (p?: number | null) => {
+    if (p != null && Number.isFinite(p) && p > 0) nearby.push(p)
+  }
+  add(args.vwap)
+  add(args.vwapUpper1)
+  add(args.vwapLower1)
+  return { always: [], nearby }
 }
 
 /**
