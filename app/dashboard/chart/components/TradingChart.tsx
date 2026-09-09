@@ -2263,33 +2263,12 @@ export function TradingChart({
   }, [])
 
   const paint5mAvwapBenchmark = useCallback(() => {
+    // Never attach 5M VWAP / ±σ as price lines. Lightweight Charts still
+    // autoscales to price-line prices (and alignLabels pads around the titles),
+    // so ±2σ at ~26k–31k on NASDAQ flattens session candles and hides FRVP.
+    // The running series path + HUD carry the VWAP; σ bands ignore the scale.
     const host = priceLineHostRef.current
-    const path = latestVwapBandsRef.current
-    const last = path?.vwap?.[path.vwap.length - 1]
-    const u1 = path?.upper1?.[path.upper1.length - 1]
-    const l1 = path?.lower1?.[path.lower1.length - 1]
-    const u2 = path?.upper2?.[path.upper2.length - 1]
-    const l2 = path?.lower2?.[path.lower2.length - 1]
-    const b = avwap5mBenchmarkRef.current
-    const specs =
-      last && last.value > 0
-        ? [
-            { price: last.value, color: '#10b981', title: '5M VWAP', width: 2 as const, lineVisible: false },
-            { price: u1?.value ?? 0, color: '#3b82f6', title: '5M +1σ', width: 1 as const, lineVisible: false },
-            { price: l1?.value ?? 0, color: '#b8a04a', title: '5M -1σ', width: 1 as const, lineVisible: false },
-            { price: u2?.value ?? 0, color: VWAP_COLORS.band, title: '5M +2σ', width: 1 as const, dashed: true, lineVisible: false },
-            { price: l2?.value ?? 0, color: VWAP_COLORS.band, title: '5M -2σ', width: 1 as const, dashed: true, lineVisible: false },
-          ]
-        : b && b.vwap > 0
-          ? [
-              { price: b.vwap, color: '#10b981', title: '5M VWAP', width: 2 as const, lineVisible: false },
-              { price: b.sigma1Upper, color: '#3b82f6', title: '5M +1σ', width: 1 as const, lineVisible: false },
-              { price: b.sigma1Lower, color: '#b8a04a', title: '5M -1σ', width: 1 as const, lineVisible: false },
-              { price: b.sigma2Upper, color: VWAP_COLORS.band, title: '5M +2σ', width: 1 as const, dashed: true, lineVisible: false },
-              { price: b.sigma2Lower, color: VWAP_COLORS.band, title: '5M -2σ', width: 1 as const, dashed: true, lineVisible: false },
-            ]
-          : []
-    avwap5mLinesRef.current = replacePriceLines(host, avwap5mLinesRef.current, specs)
+    avwap5mLinesRef.current = replacePriceLines(host, avwap5mLinesRef.current, [])
   }, [])
 
   const paintDynamic5mAvwap = useCallback(
@@ -4414,8 +4393,6 @@ export function TradingChart({
   useEffect(() => {
     scaleOverlayPricesRef.current = context55ScalePrices({
       vwap: avwap5mBenchmark?.vwap,
-      sigma1Upper: avwap5mBenchmark?.sigma1Upper,
-      sigma1Lower: avwap5mBenchmark?.sigma1Lower,
       poc5d: frvp5d?.poc,
       vah5d: frvp5d?.vah,
       val5d: frvp5d?.val,
@@ -5751,18 +5728,18 @@ export function TradingChart({
     const vwapSeries = {
       upper3: chart.addLineSeries({ ...bandOpts, title: '' }),
       upper2: chart.addLineSeries({ ...bandOpts, title: '' }),
-      upper1: chart.addLineSeries({ ...bandOpts, color: '#3b82f6', lineWidth: 2, title: '', lastValueVisible: true }),
+      upper1: chart.addLineSeries({ ...bandOpts, color: '#3b82f6', lineWidth: 2, title: '' }),
       vwap: chart.addLineSeries({
         color: '#10b981',
         lineWidth: 2,
         priceLineVisible: false,
-        lastValueVisible: true,
+        lastValueVisible: false,
         pointMarkersVisible: false,
         crosshairMarkerVisible: false,
         title: '5M VWAP',
         ...ignoreScale,
       }),
-      lower1: chart.addLineSeries({ ...bandOpts, color: '#b8a04a', lineWidth: 2, title: '', lastValueVisible: true }),
+      lower1: chart.addLineSeries({ ...bandOpts, color: '#b8a04a', lineWidth: 2, title: '' }),
       lower2: chart.addLineSeries({ ...bandOpts, title: '' }),
       lower3: chart.addLineSeries({ ...bandOpts, title: '' }),
     }

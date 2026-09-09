@@ -1,5 +1,6 @@
 /**
- * Session autoscale must fold Context 5-5 VWAP / FRVP levels onto the Y-axis.
+ * Session autoscale must fold nearby FRVP POCs onto the Y-axis without
+ * stretching to 5-month ±σ (that flattens NASDAQ candles into a hairline).
  * Run: npx tsx __tests__/seriesAutoscale.test.ts
  */
 
@@ -18,8 +19,29 @@ import {
 {
   const extras = context55ScalePrices({
     vwap: 29020,
-    sigma1Upper: 30316,
-    sigma1Lower: 27724,
+    poc5d: 29400,
+  })
+  assert.equal(extras.always.includes(29020), false, '5M VWAP is nearby-only, not always')
+  assert.deepEqual(extras.nearby, [29020])
+  const session = paddedCandlePriceRange(
+    29480,
+    29620,
+    overlayPricesForVisibleScale(29480, 29620, extras)
+  )
+  assert.ok(session)
+  assert.ok(session.priceRange.minValue < 29020, 'Y-axis includes nearby 5M VWAP')
+  assert.ok(session.priceRange.maxValue > 29400, 'Y-axis includes 5D POC')
+  assert.ok(session.priceRange.minValue > 27724, '5M −1σ does not flatten NASDAQ candles')
+  assert.ok(session.priceRange.maxValue < 30316, '5M +1σ does not flatten NASDAQ candles')
+  assert.ok(
+    session.priceRange.maxValue - session.priceRange.minValue < 1200,
+    'session pane stays on the order of the session, not ±2σ'
+  )
+}
+
+{
+  const extras = context55ScalePrices({
+    vwap: 25000,
     poc5d: 29400,
   })
   const session = paddedCandlePriceRange(
@@ -28,10 +50,7 @@ import {
     overlayPricesForVisibleScale(29480, 29620, extras)
   )
   assert.ok(session)
-  assert.ok(session.priceRange.minValue < 29020, 'Y-axis includes 5M VWAP')
-  assert.ok(session.priceRange.maxValue > 29400, 'Y-axis includes 5D POC')
-  assert.ok(session.priceRange.minValue > 27724, '5M −1σ does not flatten NASDAQ candles')
-  assert.ok(session.priceRange.maxValue < 30316, '5M +1σ does not flatten NASDAQ candles')
+  assert.ok(session.priceRange.minValue > 28000, 'a drifted 5M VWAP must not stretch the session')
 }
 
 {

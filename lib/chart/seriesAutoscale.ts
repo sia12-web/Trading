@@ -79,11 +79,15 @@ export function paddedCandlePriceRange(
   }
 }
 
-/** Context 5-5 levels that must stay on the visible Y-axis (VWAP ±1σ + FRVP POCs). */
+/**
+ * Context 5-5 levels that may join the candle Y-axis.
+ *
+ * Never put 5-month ±σ on this list: NASDAQ 5M σ is ~1,300 pts, so ±2σ
+ * (~5,000 pt span) flattens session candles into a hairline. VWAP itself is
+ * nearby-only so a drifted 5-month mean cannot yank the scale either.
+ */
 export function context55ScalePrices(args: {
   vwap?: number | null
-  sigma1Upper?: number | null
-  sigma1Lower?: number | null
   poc5d?: number | null
   vah5d?: number | null
   val5d?: number | null
@@ -95,15 +99,9 @@ export function context55ScalePrices(args: {
   const take = (price: number | null | undefined): number[] =>
     typeof price === 'number' && Number.isFinite(price) && price > 0 ? [price] : []
   return {
-    always: [
-      ...take(args.vwap),
-      ...take(args.poc5d),
-      ...take(args.yPoc),
-      ...take(args.onPoc),
-    ],
+    always: [...take(args.poc5d), ...take(args.yPoc), ...take(args.onPoc)],
     nearby: [
-      ...take(args.sigma1Upper),
-      ...take(args.sigma1Lower),
+      ...take(args.vwap),
       ...take(args.vah5d),
       ...take(args.val5d),
       ...take(args.yHigh),
@@ -113,8 +111,9 @@ export function context55ScalePrices(args: {
 }
 
 /**
- * Keep 5M VWAP + POCs on the pane. Pull in ±1σ / VA only when they sit near
- * the session so a 5-month σ (~thousands of NASDAQ points) cannot flatten candles.
+ * Keep FRVP POCs on the pane. Pull in 5M VWAP / VA only when they sit near
+ * the session so a 5-month mean or σ (~thousands of NASDAQ points) cannot
+ * flatten candles.
  */
 export function overlayPricesForVisibleScale(
   sessionMin: number,
