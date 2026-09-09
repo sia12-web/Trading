@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict'
 import {
   context55ScalePrices,
+  overlayPricesForVisibleScale,
   paddedCandlePriceRange,
 } from '../lib/chart/seriesAutoscale'
 import {
@@ -17,14 +18,20 @@ import {
 {
   const extras = context55ScalePrices({
     vwap: 29020,
-    sigma1Upper: 29200,
-    sigma1Lower: 28840,
+    sigma1Upper: 30316,
+    sigma1Lower: 27724,
     poc5d: 29400,
   })
-  const session = paddedCandlePriceRange(29480, 29620, extras)
+  const session = paddedCandlePriceRange(
+    29480,
+    29620,
+    overlayPricesForVisibleScale(29480, 29620, extras)
+  )
   assert.ok(session)
-  assert.ok(session.priceRange.minValue < 28840, 'Y-axis includes 5M −1σ')
+  assert.ok(session.priceRange.minValue < 29020, 'Y-axis includes 5M VWAP')
   assert.ok(session.priceRange.maxValue > 29400, 'Y-axis includes 5D POC')
+  assert.ok(session.priceRange.minValue > 27724, '5M −1σ does not flatten NASDAQ candles')
+  assert.ok(session.priceRange.maxValue < 30316, '5M +1σ does not flatten NASDAQ candles')
 }
 
 {

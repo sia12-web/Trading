@@ -91,23 +91,49 @@ export function context55ScalePrices(args: {
   yHigh?: number | null
   yLow?: number | null
   onPoc?: number | null
-}): number[] {
+}): { always: number[]; nearby: number[] } {
+  const take = (price: number | null | undefined): number[] =>
+    typeof price === 'number' && Number.isFinite(price) && price > 0 ? [price] : []
+  return {
+    always: [
+      ...take(args.vwap),
+      ...take(args.poc5d),
+      ...take(args.yPoc),
+      ...take(args.onPoc),
+    ],
+    nearby: [
+      ...take(args.sigma1Upper),
+      ...take(args.sigma1Lower),
+      ...take(args.vah5d),
+      ...take(args.val5d),
+      ...take(args.yHigh),
+      ...take(args.yLow),
+    ],
+  }
+}
+
+/**
+ * Keep 5M VWAP + POCs on the pane. Pull in ±1σ / VA only when they sit near
+ * the session so a 5-month σ (~thousands of NASDAQ points) cannot flatten candles.
+ */
+export function overlayPricesForVisibleScale(
+  sessionMin: number,
+  sessionMax: number,
+  overlay: { always?: number[]; nearby?: number[] } | number[],
+  maxSessionMultiples = 4
+): number[] {
+  const always = Array.isArray(overlay) ? overlay : overlay.always ?? []
+  const nearby = Array.isArray(overlay) ? [] : overlay.nearby ?? []
+  const span = Math.max(sessionMax - sessionMin, Math.abs(sessionMax) * 0.0008)
+  const lo = sessionMin - span * maxSessionMultiples
+  const hi = sessionMax + span * maxSessionMultiples
   const out: number[] = []
-  for (const price of [
-    args.vwap,
-    args.sigma1Upper,
-    args.sigma1Lower,
-    args.poc5d,
-    args.vah5d,
-    args.val5d,
-    args.yPoc,
-    args.yHigh,
-    args.yLow,
-    args.onPoc,
-  ]) {
-    if (typeof price === 'number' && Number.isFinite(price) && price > 0) {
-      out.push(price)
-    }
+  const add = (p: number) => {
+    if (Number.isFinite(p) && p > 0 && !out.includes(p)) out.push(p)
+  }
+  for (const p of always) add(p)
+  for (const p of nearby) {
+    if (p >= lo && p <= hi) add(p)
   }
   return out
 }

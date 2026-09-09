@@ -211,6 +211,7 @@ import {
 import {
   context55ScalePrices,
   lockToCandleAutoscale,
+  overlayPricesForVisibleScale,
   paddedCandlePriceRange,
   sessionFocusHighLow,
 } from '@/lib/chart/seriesAutoscale'
@@ -1317,7 +1318,10 @@ export function TradingChart({
   const paintFrvp5dRef = useRef<() => void>(() => { })
   const [avwap5mBenchmark, setAvwap5mBenchmark] = useState<AnchoredVwapBenchmark5M | null>(null)
   const avwap5mBenchmarkRef = useRef<AnchoredVwapBenchmark5M | null>(null)
-  const scaleOverlayPricesRef = useRef<number[]>([])
+  const scaleOverlayPricesRef = useRef<{ always: number[]; nearby: number[] }>({
+    always: [],
+    nearby: [],
+  })
   const avwap5mLinesRef = useRef<IPriceLine[]>([])
   const paint5mAvwapBenchmarkRef = useRef<() => void>(() => { })
   const [currentVwap, setCurrentVwap] = useState<{ vwap: number; upper1: number; lower1: number } | null>(null)
@@ -5617,7 +5621,11 @@ export function TradingChart({
         return paddedCandlePriceRange(
           scaleCacheBounds.min,
           scaleCacheBounds.max,
-          scaleOverlayPricesRef.current
+          overlayPricesForVisibleScale(
+            scaleCacheBounds.min,
+            scaleCacheBounds.max,
+            scaleOverlayPricesRef.current
+          )
         )
       }
 
@@ -5642,7 +5650,11 @@ export function TradingChart({
       scaleCacheList = list
       scaleCacheKey = cacheKey
       scaleCacheBounds = { min, max }
-      return paddedCandlePriceRange(min, max, scaleOverlayPricesRef.current)
+      return paddedCandlePriceRange(
+        min,
+        max,
+        overlayPricesForVisibleScale(min, max, scaleOverlayPricesRef.current)
+      )
     }
 
     const candleSeries = chart.addCandlestickSeries({
