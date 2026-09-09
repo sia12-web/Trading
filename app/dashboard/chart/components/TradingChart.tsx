@@ -1270,6 +1270,7 @@ export function TradingChart({
   const latestVwapBandsRef = useRef<any>(null)
   const [cvdPanelOpen, setCvdPanelOpen] = useState(false)
   const [showCvdSubPane, setShowCvdSubPane] = useState(false)
+  const [cvdSubPaneHeight, setCvdSubPaneHeight] = useState(185)
   const [showFootprint, setShowFootprint] = useState(false)
   const footprintBarsRef = useRef<FootprintBar[]>([])
   const footprintCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -5964,6 +5965,39 @@ export function TradingChart({
     }
   }, [showCvdSubPane])
 
+  // ── Draggable Resizer Handle for CVD Sub-Pane (TradingView Style) ────────────
+  const handleCvdResizerMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    const startY = e.clientY
+    const startHeight = cvdSubPaneHeight
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const deltaY = startY - moveEvent.clientY
+      const newHeight = Math.max(90, Math.min(550, startHeight + deltaY))
+      setCvdSubPaneHeight(newHeight)
+
+      requestAnimationFrame(() => {
+        if (chartRef.current && containerRef.current) {
+          chartRef.current.resize(containerRef.current.clientWidth, containerRef.current.clientHeight)
+        }
+        if (cvdChartRef.current && cvdContainerRef.current) {
+          cvdChartRef.current.resize(cvdContainerRef.current.clientWidth, cvdContainerRef.current.clientHeight)
+        }
+        refreshSessionHighlightsRef.current?.()
+      })
+    }
+
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+  }, [cvdSubPaneHeight])
+
   // ── Load candle data when instrument or timeframe changes ───────────────────────
   useEffect(() => {
     if (!chartReady) return
@@ -9782,9 +9816,21 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           />
         </div>
 
-        {/* Synchronized CVD Sub-Chart Pane */}
+        {/* Synchronized CVD Sub-Chart Pane with TradingView Draggable Resizer */}
         {showCvdSubPane && (
-          <div className="relative w-full h-[185px] border-t border-zinc-800 bg-[#0b0e14] flex flex-col flex-shrink-0">
+          <div
+            className="relative w-full border-t border-zinc-800 bg-[#0b0e14] flex flex-col flex-shrink-0"
+            style={{ height: cvdSubPaneHeight }}
+          >
+            {/* Draggable Resizer Splitter Bar (TradingView Style) */}
+            <div
+              onMouseDown={handleCvdResizerMouseDown}
+              className="absolute -top-1.5 left-0 right-0 h-3 z-30 cursor-ns-resize flex items-center justify-center group hover:bg-cyan-500/20 transition-colors select-none"
+              title="Drag up or down to resize CVD sub-pane"
+            >
+              <div className="w-16 h-1 rounded-full bg-zinc-700/80 group-hover:bg-cyan-400 group-active:bg-cyan-300 shadow-sm transition-colors" />
+            </div>
+
             {/* CVD Sub-Pane Header Legend */}
             <div className="absolute top-2 left-3 z-10 flex items-center gap-2 text-xs font-mono font-semibold bg-zinc-950/85 px-2.5 py-1 rounded border border-zinc-800/80 pointer-events-none select-none shadow-sm">
               <span className="font-bold text-zinc-300">CVD</span>
