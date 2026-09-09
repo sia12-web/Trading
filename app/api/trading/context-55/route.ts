@@ -19,6 +19,8 @@ export const revalidate = 0
 
 interface CacheEntry {
   benchmark: AnchoredVwapBenchmark5M
+  dailyBars: ContextBar[]
+  source: 'cme_globex' | 'yahoo_cme'
   timestamp: number
 }
 
@@ -45,8 +47,9 @@ export async function GET(request: Request) {
         ok: true,
         instrument,
         avwap5m: cached.benchmark,
+        dailyBars: cached.dailyBars,
         cached: true,
-        source: 'cme_globex',
+        source: cached.source,
       })
     }
 
@@ -80,12 +83,29 @@ export async function GET(request: Request) {
       )
     }
 
-    cache.set(instrument, { benchmark, timestamp: now })
+    const slimDaily: ContextBar[] = dailyBars
+      .filter((b) => b.time >= (benchmark.anchorUnix ?? 0) - 86400)
+      .map((b) => ({
+        time: b.time,
+        open: b.open,
+        high: b.high,
+        low: b.low,
+        close: b.close,
+        volume: b.volume,
+      }))
+
+    cache.set(instrument, {
+      benchmark,
+      dailyBars: slimDaily,
+      source,
+      timestamp: now,
+    })
 
     return NextResponse.json({
       ok: true,
       instrument,
       avwap5m: benchmark,
+      dailyBars: slimDaily,
       cached: false,
       source,
     })

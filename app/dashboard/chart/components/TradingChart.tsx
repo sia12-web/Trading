@@ -70,6 +70,7 @@ import {
   compute5DayFixedRangeVolumeProfile,
   computeYesterdayNycSession,
   computeOvernightInventoryAndSessions,
+  compute5MonthAnchoredVwapPath,
   classifyMarketDayType,
   type FixedRangeVolumeProfile5D,
   type DayTypeEvaluation,
@@ -778,6 +779,7 @@ function replacePriceLines(
     title: string
     width?: 1 | 2
     dashed?: boolean
+    lineVisible?: boolean
   }>
 ): IPriceLine[] {
   for (const line of existing) {
@@ -795,12 +797,13 @@ function replacePriceLines(
       next.push(
         host.createPriceLine({
           price: s.price,
-          color: s.color,
+          color: s.lineVisible === false ? 'rgba(0,0,0,0)' : s.color,
           lineWidth: s.width ?? 1,
           lineStyle: s.dashed ? LineStyle.Dashed : LineStyle.Solid,
           axisLabelVisible: true,
           axisLabelColor: s.color,
           title: s.title,
+          lineVisible: s.lineVisible ?? true,
         })
       )
     } catch {
@@ -1318,12 +1321,16 @@ export function TradingChart({
   const paintFrvp5dRef = useRef<() => void>(() => { })
   const [avwap5mBenchmark, setAvwap5mBenchmark] = useState<AnchoredVwapBenchmark5M | null>(null)
   const avwap5mBenchmarkRef = useRef<AnchoredVwapBenchmark5M | null>(null)
+  const avwap5mDailyBarsRef = useRef<ContextBar[]>([])
   const scaleOverlayPricesRef = useRef<{ always: number[]; nearby: number[] }>({
     always: [],
     nearby: [],
   })
   const avwap5mLinesRef = useRef<IPriceLine[]>([])
   const paint5mAvwapBenchmarkRef = useRef<() => void>(() => { })
+  const paintDynamic5mAvwapRef = useRef<
+    (ordered: Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }>) => void
+  >(() => { })
   const [currentVwap, setCurrentVwap] = useState<{ vwap: number; upper1: number; lower1: number } | null>(null)
   const latestVwapBandsRef = useRef<any>(null)
   const [cvdPanelOpen, setCvdPanelOpen] = useState(false)
@@ -2257,21 +2264,95 @@ export function TradingChart({
 
   const paint5mAvwapBenchmark = useCallback(() => {
     const host = priceLineHostRef.current
+    const path = latestVwapBandsRef.current
+    const last = path?.vwap?.[path.vwap.length - 1]
+    const u1 = path?.upper1?.[path.upper1.length - 1]
+    const l1 = path?.lower1?.[path.lower1.length - 1]
+    const u2 = path?.upper2?.[path.upper2.length - 1]
+    const l2 = path?.lower2?.[path.lower2.length - 1]
     const b = avwap5mBenchmarkRef.current
-    avwap5mLinesRef.current = replacePriceLines(
-      host,
-      avwap5mLinesRef.current,
-      b && b.vwap > 0
+    const specs =
+      last && last.value > 0
         ? [
-            { price: b.vwap, color: '#10b981', title: '5M VWAP', width: 2 },
-            { price: b.sigma1Upper, color: '#3b82f6', title: '5M +1σ', width: 1 },
-            { price: b.sigma1Lower, color: '#b8a04a', title: '5M -1σ', width: 1 },
-            { price: b.sigma2Upper, color: VWAP_COLORS.band, title: '5M +2σ', width: 1, dashed: true },
-            { price: b.sigma2Lower, color: VWAP_COLORS.band, title: '5M -2σ', width: 1, dashed: true },
+            { price: last.value, color: '#10b981', title: '5M VWAP', width: 2 as const, lineVisible: false },
+            { price: u1?.value ?? 0, color: '#3b82f6', title: '5M +1σ', width: 1 as const, lineVisible: false },
+            { price: l1?.value ?? 0, color: '#b8a04a', title: '5M -1σ', width: 1 as const, lineVisible: false },
+            { price: u2?.value ?? 0, color: VWAP_COLORS.band, title: '5M +2σ', width: 1 as const, dashed: true, lineVisible: false },
+            { price: l2?.value ?? 0, color: VWAP_COLORS.band, title: '5M -2σ', width: 1 as const, dashed: true, lineVisible: false },
           ]
-        : []
-    )
+        : b && b.vwap > 0
+          ? [
+              { price: b.vwap, color: '#10b981', title: '5M VWAP', width: 2 as const, lineVisible: false },
+              { price: b.sigma1Upper, color: '#3b82f6', title: '5M +1σ', width: 1 as const, lineVisible: false },
+              { price: b.sigma1Lower, color: '#b8a04a', title: '5M -1σ', width: 1 as const, lineVisible: false },
+              { price: b.sigma2Upper, color: VWAP_COLORS.band, title: '5M +2σ', width: 1 as const, dashed: true, lineVisible: false },
+              { price: b.sigma2Lower, color: VWAP_COLORS.band, title: '5M -2σ', width: 1 as const, dashed: true, lineVisible: false },
+            ]
+          : []
+    avwap5mLinesRef.current = replacePriceLines(host, avwap5mLinesRef.current, specs)
   }, [])
+
+  const paintDynamic5mAvwap = useCallback(
+    (ordered: Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }>) => {
+      const vs = vwapSeriesRef.current
+      const tz = chartTzRef.current
+      const bars: ContextBar[] = ordered.map((c) => ({
+        time: c.time as number,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      }))
+      const path = compute5MonthAnchoredVwapPath({
+        dailyBars: avwap5mDailyBarsRef.current,
+        bars,
+        instrument,
+      })
+      latestVwapBandsRef.current = path
+      if (path?.vwap?.length) {
+        const last = path.vwap[path.vwap.length - 1]!
+        const lastU = path.upper1[path.upper1.length - 1]
+        const lastL = path.lower1[path.lower1.length - 1]
+        avwapLastRef.current = last.value > 0 ? last.value : null
+        if (last.value > 0) {
+          setCurrentVwap({
+            vwap: last.value,
+            upper1: lastU ? lastU.value : 0,
+            lower1: lastL ? lastL.value : 0,
+          })
+        }
+        if (vs) {
+          const shift = (rows: { time: number; value: number }[]) =>
+            mapTimesToChart(
+              rows.map((r) => ({ time: r.time as number, value: r.value })),
+              tz
+            ).map((r) => ({ time: r.time as UTCTimestamp, value: r.value }))
+          vs.vwap.setData(shift(path.vwap))
+          vs.upper1.setData(shift(path.upper1))
+          vs.lower1.setData(shift(path.lower1))
+          vs.upper2.setData(shift(path.upper2))
+          vs.lower2.setData(shift(path.lower2))
+          vs.upper3.setData([])
+          vs.lower3.setData([])
+        }
+      } else {
+        avwapLastRef.current = null
+        setCurrentVwap(null)
+        if (vs) {
+          vs.vwap.setData([])
+          vs.upper1.setData([])
+          vs.lower1.setData([])
+          vs.upper2.setData([])
+          vs.lower2.setData([])
+          vs.upper3.setData([])
+          vs.lower3.setData([])
+        }
+      }
+      paint5mAvwapBenchmark()
+    },
+    [instrument, paint5mAvwapBenchmark]
+  )
 
   // ─── Multi-Timeframe Money Fixed Range Volume Profiles (Canvas) ─────────────
   const paintFrvpHistogram = useCallback(() => {
@@ -2311,17 +2392,6 @@ export function TradingChart({
     const candleTimes = list.map((c) => toChartTime(c.time as number, tz))
 
     const priceToY = (price: number) => series.priceToCoordinate(price)
-
-    // 5M AVWAP ±σ — full-width so bands stay visible even when the 5-day
-    // session scale would have pushed them off the pane.
-    const bench = avwap5mBenchmark
-    if (bench && bench.vwap > 0) {
-      paintLevelLine(ctx, priceToY(bench.sigma2Upper), paneW, paneH, VWAP_COLORS.band, '5M +2σ', 0, paneW, true, 'right')
-      paintLevelLine(ctx, priceToY(bench.sigma1Upper), paneW, paneH, '#3b82f6', '5M +1σ', 0, paneW, false, 'right')
-      paintLevelLine(ctx, priceToY(bench.vwap), paneW, paneH, '#10b981', '5M VWAP', 0, paneW, false, 'right')
-      paintLevelLine(ctx, priceToY(bench.sigma1Lower), paneW, paneH, '#b8a04a', '5M -1σ', 0, paneW, false, 'right')
-      paintLevelLine(ctx, priceToY(bench.sigma2Lower), paneW, paneH, VWAP_COLORS.band, '5M -2σ', 0, paneW, true, 'right')
-    }
 
     // 1. Intermediate-Term Money: 5-Day FRVP — sticky left of the visible pane
     if (frvp5d && frvp5d.bins && frvp5d.bins.length > 0) {
@@ -2422,7 +2492,7 @@ export function TradingChart({
     }
 
     ctx.restore()
-  }, [frvp5d, yesterdayNyc, overnightInventory, avwap5mBenchmark, showYesterdayNyc, showInventorySessions])
+  }, [frvp5d, yesterdayNyc, overnightInventory, showYesterdayNyc, showInventorySessions])
 
   // ─── User Interactive Drawings (Canvas) ─────────────────────────────────────
   const paintUserDrawings = useCallback(() => {
@@ -4292,6 +4362,10 @@ export function TradingChart({
   }, [paint5mAvwapBenchmark])
 
   useEffect(() => {
+    paintDynamic5mAvwapRef.current = paintDynamic5mAvwap
+  }, [paintDynamic5mAvwap])
+
+  useEffect(() => {
     paint5mAvwapBenchmark()
   }, [paint5mAvwapBenchmark])
 
@@ -4304,6 +4378,7 @@ export function TradingChart({
         const data = await res.json()
         if (!cancelled && data.ok && data.avwap5m) {
           avwap5mBenchmarkRef.current = data.avwap5m
+          avwap5mDailyBarsRef.current = Array.isArray(data.dailyBars) ? data.dailyBars : []
           setAvwap5mBenchmark(data.avwap5m)
         }
       } catch {
@@ -4318,36 +4393,23 @@ export function TradingChart({
 
   useEffect(() => {
     avwap5mBenchmarkRef.current = avwap5mBenchmark
-    if (!avwap5mBenchmark || candlesRef.current.length === 0) {
+    const ordered = candlesRef.current
+    if (!ordered.length) {
       paint5mAvwapBenchmark()
       return
     }
-    const vs = vwapSeriesRef.current
-    const tz = chartTzRef.current
-    const ordered = candlesRef.current
-    avwapLastRef.current = avwap5mBenchmark.vwap
-    setCurrentVwap({
-      vwap: avwap5mBenchmark.vwap,
-      upper1: avwap5mBenchmark.sigma1Upper,
-      lower1: avwap5mBenchmark.sigma1Lower,
-    })
-    if (vs) {
-      const seriesOf = (value: number) =>
-        ordered.map((c) => ({
-          time: toChartTime(c.time as number, tz) as UTCTimestamp,
-          value,
-        }))
-      vs.vwap.setData(seriesOf(avwap5mBenchmark.vwap))
-      vs.upper1.setData(seriesOf(avwap5mBenchmark.sigma1Upper))
-      vs.lower1.setData(seriesOf(avwap5mBenchmark.sigma1Lower))
-      vs.upper2.setData(seriesOf(avwap5mBenchmark.sigma2Upper))
-      vs.lower2.setData(seriesOf(avwap5mBenchmark.sigma2Lower))
-      vs.upper3.setData([])
-      vs.lower3.setData([])
-    }
-    paint5mAvwapBenchmark()
+    paintDynamic5mAvwap(
+      ordered.map((c) => ({
+        time: c.time as number,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      }))
+    )
     requestAnimationFrame(() => paintFrvpHistogramRef.current())
-  }, [avwap5mBenchmark, paint5mAvwapBenchmark])
+  }, [avwap5mBenchmark, paint5mAvwapBenchmark, paintDynamic5mAvwap])
 
   useEffect(() => {
     scaleOverlayPricesRef.current = context55ScalePrices({
@@ -5689,7 +5751,7 @@ export function TradingChart({
     const vwapSeries = {
       upper3: chart.addLineSeries({ ...bandOpts, title: '' }),
       upper2: chart.addLineSeries({ ...bandOpts, title: '' }),
-      upper1: chart.addLineSeries({ ...bandOpts, color: '#3b82f6', lineWidth: 2, title: '' }),
+      upper1: chart.addLineSeries({ ...bandOpts, color: '#3b82f6', lineWidth: 2, title: '', lastValueVisible: true }),
       vwap: chart.addLineSeries({
         color: '#10b981',
         lineWidth: 2,
@@ -5700,7 +5762,7 @@ export function TradingChart({
         title: '5M VWAP',
         ...ignoreScale,
       }),
-      lower1: chart.addLineSeries({ ...bandOpts, color: '#b8a04a', lineWidth: 2, title: '' }),
+      lower1: chart.addLineSeries({ ...bandOpts, color: '#b8a04a', lineWidth: 2, title: '', lastValueVisible: true }),
       lower2: chart.addLineSeries({ ...bandOpts, title: '' }),
       lower3: chart.addLineSeries({ ...bandOpts, title: '' }),
     }
@@ -6216,6 +6278,7 @@ export function TradingChart({
     lastCandleRef.current = null
     sessionSpansRef.current = null
     avwap5mBenchmarkRef.current = null
+    avwap5mDailyBarsRef.current = []
     setAvwap5mBenchmark(null)
     setStreamArmed(false)
     setCandles([])
@@ -6533,53 +6596,17 @@ export function TradingChart({
     try {
       candleRef.current.setData(candleData)
 
-      // True 5-Month AVWAP from CME daily bars — never a 5-day fake labeled 5M
-      const bench = avwap5mBenchmarkRef.current
-      const vs = vwapSeriesRef.current
-      if (bench && bench.vwap > 0) {
-        avwapLastRef.current = bench.vwap
-        setCurrentVwap({
-          vwap: bench.vwap,
-          upper1: bench.sigma1Upper,
-          lower1: bench.sigma1Lower,
-        })
-        latestVwapBandsRef.current = {
-          anchorUnix: bench.anchorUnix,
-          lastVwap: bench.vwap,
-          vwap: [],
-          upper1: [],
-          lower1: [],
-          upper2: [],
-          lower2: [],
-        }
-        if (vs) {
-          const seriesOf = (value: number) =>
-            ordered.map((c) => ({
-              time: toChartTime(c.time as number, tz) as UTCTimestamp,
-              value,
-            }))
-          vs.vwap.setData(seriesOf(bench.vwap))
-          vs.upper1.setData(seriesOf(bench.sigma1Upper))
-          vs.lower1.setData(seriesOf(bench.sigma1Lower))
-          vs.upper2.setData(seriesOf(bench.sigma2Upper))
-          vs.lower2.setData(seriesOf(bench.sigma2Lower))
-          vs.upper3.setData([])
-          vs.lower3.setData([])
-        }
-      } else {
-        avwapLastRef.current = null
-        setCurrentVwap(null)
-        latestVwapBandsRef.current = null
-        if (vs) {
-          vs.vwap.setData([])
-          vs.upper1.setData([])
-          vs.lower1.setData([])
-          vs.upper2.setData([])
-          vs.lower2.setData([])
-          vs.upper3.setData([])
-          vs.lower3.setData([])
-        }
-      }
+      // 5-month AVWAP path: daily sums to the first 5m bar, then running ±σ on each 5m print
+      paintDynamic5mAvwapRef.current(
+        ordered.map((c) => ({
+          time: c.time as number,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: c.volume,
+        }))
+      )
 
       // Update & Cache CVD Candlesticks for Sub-Chart Pane
       const cvdBars = computeCvdCandleBars(

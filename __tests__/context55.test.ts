@@ -4,6 +4,7 @@ import {
   compute5DayFixedRangeVolumeProfile,
   compute5MonthAnchoredVwap,
   compute5MonthAnchoredVwapFromDailyBars,
+  compute5MonthAnchoredVwapPath,
   computeYesterdayNycSession,
   computeOvernightInventoryAndSessions,
   classifyMarketDayType,
@@ -130,6 +131,51 @@ describe('Context 5-5 Module Tests', () => {
     assert.ok(benchmark.barCount >= 50)
     assert.ok((benchmark.sumV ?? 0) > 0)
     assert.ok((benchmark.lastBarUnix ?? 0) > 0)
+  })
+
+  it('walks 5-month AVWAP as a moving path through 5m bars, not a flat line', () => {
+    const now = Math.floor(new Date('2026-09-07T14:00:00Z').getTime() / 1000)
+    const dailyBars: ContextBar[] = []
+    for (let i = 160; i >= 8; i--) {
+      const t = now - i * 86400
+      dailyBars.push({
+        time: t,
+        open: 40000,
+        high: 40100,
+        low: 39900,
+        close: 40050,
+        volume: 80000,
+      })
+    }
+    const bars: ContextBar[] = []
+    const start = now - 6 * 86400
+    for (let i = 0; i < 40; i++) {
+      const px = 41000 + i * 40
+      bars.push({
+        time: start + i * 300,
+        open: px,
+        high: px + 20,
+        low: px - 20,
+        close: px + 10,
+        volume: 5000,
+      })
+    }
+    const path = compute5MonthAnchoredVwapPath({
+      dailyBars,
+      bars,
+      instrument: 'DOW',
+      asOfUnix: now,
+    })
+    assert.ok(path !== null)
+    assert.equal(path.vwap.length, bars.length)
+    assert.equal(path.upper1.length, bars.length)
+    const first = path.vwap[0]!.value
+    const last = path.vwap[path.vwap.length - 1]!.value
+    assert.ok(last > first, 'running 5M VWAP rises with the 5m trend')
+    const unique = new Set(path.vwap.map((p) => p.value))
+    assert.ok(unique.size > 5, 'VWAP is not a single flat level')
+    assert.ok(path.upper1[0]!.value >= path.vwap[0]!.value)
+    assert.ok(path.lower1[0]!.value <= path.vwap[0]!.value)
   })
 
   it('computes Yesterday NYC Session accurately', () => {

@@ -583,6 +583,52 @@ export function compute5MonthAnchoredVwap(args: {
 }
 
 /**
+ * True 5-month anchored VWAP path through the visible 5m window.
+ * Daily bars carry the running sums from the 5-month cash-open anchor up to
+ * the first 5m bar; each 5m bar then updates VWAP and ±σ so the overlay is a
+ * moving line, not a flat level.
+ */
+export function compute5MonthAnchoredVwapPath(args: {
+  dailyBars?: ContextBar[] | null
+  bars: ContextBar[]
+  instrument?: string
+  asOfUnix?: number
+}): AnchoredVwapBands5M | null {
+  const { bars, instrument = 'DOW', dailyBars } = args
+  if (!bars || bars.length === 0) return null
+
+  const clock = deskClockFor(instrument)
+  const tipTime = args.asOfUnix ?? bars[bars.length - 1]!.time
+  const anchorUnix = get5MonthAnchorUnix(tipTime, clock)
+  const windowStart = bars[0]!.time
+
+  let sumPV = 0
+  let sumV = 0
+  let sumP2V = 0
+  if (dailyBars && dailyBars.length > 0) {
+    for (const b of dailyBars) {
+      if (b.time < anchorUnix - 86400) continue
+      if (b.time >= windowStart) continue
+      const price = (b.high + b.low + b.close) / 3
+      const vol = b.volume > 0 ? b.volume : 1
+      sumPV += price * vol
+      sumP2V += price * price * vol
+      sumV += vol
+    }
+  }
+
+  return compute5MonthAnchoredVwap({
+    bars,
+    instrument,
+    baseline:
+      sumV > 0
+        ? { sumPV, sumV, sumP2V, startUnix: windowStart - 1 }
+        : { sumPV: 0, sumV: 0, sumP2V: 0, startUnix: anchorUnix - 1 },
+    asOfUnix: tipTime,
+  })
+}
+
+/**
  * Compute Yesterday NYC Cash Session (Prior Day RTH 09:30–16:00 ET).
  */
 export function computeYesterdayNycSession(
