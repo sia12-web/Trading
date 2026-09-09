@@ -47,7 +47,6 @@ import {
   deskSessionAt,
   isWeekdayYmd,
   zonedCivilToUnix,
-  computeAnchoredVwap,
   lastNTradingSessions as trimDeskCandles,
 } from '@/lib/chart/sessionVwap'
 import { parseCalendarEventMs } from '@/lib/trading/deskNewsHazard'
@@ -69,6 +68,7 @@ import {
 } from '@/lib/chart/liveFormingBar'
 import {
   compute5DayFixedRangeVolumeProfile,
+  compute5MonthAnchoredVwap,
   computeYesterdayNycSession,
   computeOvernightInventoryAndSessions,
   classifyMarketDayType,
@@ -1259,7 +1259,6 @@ export function TradingChart({
   const [avwap5mBenchmark, setAvwap5mBenchmark] = useState<AnchoredVwapBenchmark5M | null>(null)
   const avwap5mLinesRef = useRef<IPriceLine[]>([])
   const paint5mAvwapBenchmarkRef = useRef<() => void>(() => { })
-  const [showVwap, setShowVwap] = useState(true)
   const [currentVwap, setCurrentVwap] = useState<{ vwap: number; upper1: number; lower1: number } | null>(null)
   const latestVwapBandsRef = useRef<any>(null)
   const [cvdPanelOpen, setCvdPanelOpen] = useState(false)
@@ -6233,9 +6232,9 @@ export function TradingChart({
     try {
       candleRef.current.setData(candleData)
 
-      // 5-Day Anchored VWAP (anchored at cash open of 5 trading days ago, matching 5D FRVP anchor)
-      const bands = computeAnchoredVwap(
-        ordered.map((c) => ({
+      // 5-Month Anchored VWAP with standard deviation bands (always on, updated for the last 5 months)
+      const bands = compute5MonthAnchoredVwap({
+        bars: ordered.map((c) => ({
           time: c.time as number,
           open: c.open,
           high: c.high,
@@ -6243,8 +6242,8 @@ export function TradingChart({
           close: c.close,
           volume: c.volume,
         })),
-        deskClockFor(instrument)
-      )
+        instrument,
+      })
       latestVwapBandsRef.current = bands
       if (bands?.vwap?.length) {
         const last = bands.vwap[bands.vwap.length - 1]
@@ -6264,7 +6263,7 @@ export function TradingChart({
         setCurrentVwap(null)
       }
       const vs = vwapSeriesRef.current
-      if (vs && bands && showVwap) {
+      if (vs && bands) {
         const shift = <T extends { time: number | UTCTimestamp; value: number }>(rows: T[]) =>
           mapTimesToChart(
             rows.map((r) => ({ time: r.time as number, value: r.value })),
@@ -6423,35 +6422,6 @@ export function TradingChart({
     })
   }, [candles, instrument, paintLevelLines]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sync VWAP line visibility when toggled by user
-  useEffect(() => {
-    const vs = vwapSeriesRef.current
-    const bands = latestVwapBandsRef.current
-    if (!vs) return
-    if (showVwap && bands) {
-      const tz = chartTzRef.current
-      const shift = <T extends { time: number | UTCTimestamp; value: number }>(rows: T[]) =>
-        mapTimesToChart(
-          rows.map((r) => ({ time: r.time as number, value: r.value })),
-          tz
-        ).map((r) => ({ time: r.time as UTCTimestamp, value: r.value }))
-      vs.vwap.setData(shift(bands.vwap))
-      vs.upper1.setData(shift(bands.upper1))
-      vs.lower1.setData(shift(bands.lower1))
-      vs.upper2.setData(shift(bands.upper2))
-      vs.lower2.setData(shift(bands.lower2))
-      vs.upper3.setData([])
-      vs.lower3.setData([])
-    } else {
-      vs.vwap.setData([])
-      vs.upper1.setData([])
-      vs.lower1.setData([])
-      vs.upper2.setData([])
-      vs.lower2.setData([])
-      vs.upper3.setData([])
-      vs.lower3.setData([])
-    }
-  }, [showVwap])
 
   // ── Session color boxes (cached spans + imperative paint = smooth pan)
   const refreshSessionHighlights = useCallback(() => {
@@ -9340,30 +9310,22 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             </span>
           </button>
           <span className="text-gray-600 text-[10px]">|</span>
-          {/* Interactive VWAP Button */}
-          <button
-            type="button"
-            onClick={() => setShowVwap((prev) => !prev)}
-            className={`transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded cursor-pointer ${
-              showVwap
-                ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25'
-                : 'bg-zinc-800/60 text-zinc-500 border border-zinc-700/40 hover:bg-zinc-800 line-through'
-            }`}
-            title={`Anchored VWAP (${showVwap ? 'Visible — Click to hide' : 'Hidden — Click to show'})${
-              currentVwap ? ` · Level: ${currentVwap.vwap.toLocaleString()}` : ''
-            }`}
+          {/* VWAP HUD Label */}
+          <div
+            className="transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+            title={`5-Month Anchored VWAP${currentVwap ? ` · Level: ${currentVwap.vwap.toLocaleString()}` : ''}`}
           >
-            <span className={`w-1.5 h-1.5 rounded-full ${showVwap ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
             <span className="text-gray-400 font-semibold">VWAP:</span>
             <span className="font-mono font-bold">
               {currentVwap ? currentVwap.vwap.toLocaleString() : '—'}
             </span>
-            {currentVwap && livePrice && showVwap && (
+            {currentVwap && livePrice && (
               <span className={`text-[9.5px] font-mono ${livePrice >= currentVwap.vwap ? 'text-emerald-400' : 'text-rose-400'}`}>
                 ({livePrice >= currentVwap.vwap ? '+' : ''}{(livePrice - currentVwap.vwap).toFixed(1)})
               </span>
             )}
-          </button>
+          </div>
           <span className="text-gray-600 text-[10px]">|</span>
           {/* Interactive CVD Order Flow Button */}
           <button
@@ -9567,22 +9529,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               </span>
             </button>
 
-            {/* VWAP Toggle */}
-            <button
-              type="button"
-              onClick={() => setShowVwap((prev) => !prev)}
-              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-xs font-bold transition-all ${
-                showVwap
-                  ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
-                  : 'text-slate-400 hover:bg-slate-800 hover:text-emerald-300'
-              }`}
-              title="Toggle VWAP & Standard Deviation Bands"
-            >
-              <span>VW</span>
-              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-emerald-200 shadow-xl border border-slate-800 group-hover:block z-50">
-                VWAP Bands ({showVwap ? 'ON' : 'OFF'})
-              </span>
-            </button>
 
             {/* CVD Order Flow Toggle */}
             <button
