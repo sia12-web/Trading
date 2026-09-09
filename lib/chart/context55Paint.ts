@@ -33,6 +33,26 @@ export function compactProfileWidth(
   return Math.max(floor, Math.min(cap, rangePx * 0.12))
 }
 
+/**
+ * POC line spans the profiled range (open → close), not just the thin histogram.
+ * Returns null when the entire range is off-pane.
+ */
+export function rangePocLineX(
+  startX: number | null | undefined,
+  endX: number | null | undefined,
+  paneW: number
+): { x0: number; x1: number } | null {
+  const a = typeof startX === 'number' && Number.isFinite(startX) ? startX : null
+  const b = typeof endX === 'number' && Number.isFinite(endX) ? endX : null
+  if (a == null && b == null) return null
+  const x0 = a ?? 0
+  const x1 = b ?? paneW
+  const lo = Math.min(x0, x1)
+  const hi = Math.max(x0, x1)
+  if (hi <= 0 || lo >= paneW) return null
+  return { x0, x1 }
+}
+
 export function paintVolumeProfileBins(
   ctx: CanvasRenderingContext2D,
   args: {

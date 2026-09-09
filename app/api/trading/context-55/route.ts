@@ -6,25 +6,22 @@
 import { NextResponse } from 'next/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { getCmeDailyBars } from '@/lib/databento/cmeHistorical'
+import { mergeCandleSeries, type DatabentoCandle } from '@/lib/databento/client'
 import { getYahooCandlesRange } from '@/lib/yahoo/candles'
 import {
   compute5MonthAnchoredVwapFromDailyBars,
-  type AnchoredVwapBenchmark5M,
   type ContextBar,
 } from '@/lib/chart/context55'
+import {
+  invalidateContext55Cache,
+  readContext55Cache,
+  writeContext55Cache,
+} from '@/lib/chart/context55Cache'
 import type { Instrument } from '@/types/price-feed'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-interface CacheEntry {
-  benchmark: AnchoredVwapBenchmark5M
-  dailyBars: ContextBar[]
-  source: 'cme_globex' | 'yahoo_cme'
-  timestamp: number
-}
-
-const cache = new Map<string, CacheEntry>()
 const CACHE_TTL_MS = 60 * 60 * 1000 // 1 hour
 
 export async function GET(request: Request) {
@@ -40,9 +37,12 @@ export async function GET(request: Request) {
     const validInstruments: Instrument[] = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'NIKKEI']
     const instrument = validInstruments.includes(rawInstrument) ? rawInstrument : 'DOW'
 
-    const cached = cache.get(instrument)
+    const refresh = searchParams.get('refresh') === '1' || searchParams.get('refresh') === 'true'
+    if (refresh) invalidateContext55Cache(instrument)
+
+    const cached = readContext55Cache(instrument)
     const now = Date.now()
-    if (cached && now - cached.timestamp < CACHE_TTL_MS) {
+    if (!refresh && cached && now - cached.timestamp < CACHE_TTL_MS) {
       return NextResponse.json({
         ok: true,
         instrument,
@@ -55,8 +55,7 @@ export async function GET(request: Request) {
 
     let dailyBars = getCmeDailyBars(instrument)
     let source: 'cme_globex' | 'yahoo_cme' = 'cme_globex'
-
-    if (!dailyBars || dailyBars.length === 0) {
+    try {
       const nowSec = Math.floor(Date.now() / 1000)
       const yahoo = await getYahooCandlesRange(
         instrument,
@@ -64,8 +63,15 @@ export async function GET(request: Request) {
         nowSec - 160 * 24 * 3600,
         nowSec
       )
-      dailyBars = (yahoo?.candles ?? []) as ContextBar[]
-      source = 'yahoo_cme'
+      if (yahoo?.candles?.length) {
+        dailyBars = mergeCandleSeries(
+          (dailyBars || []) as DatabentoCandle[],
+          yahoo.candles as DatabentoCandle[]
+        ) as ContextBar[]
+        if (!getCmeDailyBars(instrument)?.length) source = 'yahoo_cme'
+      }
+    } catch {
+      /* archive-only fallback */
     }
 
     if (!dailyBars || dailyBars.length === 0) {
@@ -94,7 +100,7 @@ export async function GET(request: Request) {
         volume: b.volume,
       }))
 
-    cache.set(instrument, {
+    writeContext55Cache(instrument, {
       benchmark,
       dailyBars: slimDaily,
       source,

@@ -429,35 +429,22 @@ test('5000 leftover globex bars do not hang', () => {
 
 // ─── Live / sim / Leo wiring (no new API) ────────────────────────────────────
 
-test('live and sim both call the same opening helper', () => {
+test('live calls the opening helper; simulation desk is removed', () => {
   const live = src('app/dashboard/chart/components/TradingChart.tsx')
-  const sim = src('app/dashboard/simulation/replay/desk/page.tsx')
+  const simGone = src('app/dashboard/simulation/replay/desk/page.tsx')
   assert.ok(live.includes('computeOpeningActivity'))
   assert.ok(live.includes('resolveOpeningAsOfUnix'))
-  assert.ok(sim.includes('computeOpeningActivity'))
-  assert.ok(sim.includes('resolveOpeningAsOfUnix'))
-  assert.ok(sim.includes('simT, simT'), 'sim passes replay time twice')
+  assert.ok(simGone.includes("redirect('/dashboard/chart')"))
 })
 
-test('Leo + Level Finder + range brief print OPENING TYPE and keep ±10', () => {
-  const leo = src('lib/trading/liveVoicePrompt.ts')
-  const lf = src('lib/services/levelFinderAgent/levelFinderAgent.ts')
-  const brief = src('lib/trading/rangeLiquidityBrief.ts')
-  assert.ok(leo.includes('OPENING TYPE'))
-  assert.ok(leo.includes('Never unlocks off-band'))
-  assert.ok(lf.includes('OPENING TYPE'))
-  assert.ok(lf.includes('Never unlocks ±10'))
-  assert.ok(brief.includes('computeOpeningActivity'))
-  assert.ok(brief.includes('formatOpeningActivityForPrompt'))
-  assert.ok(!src('lib/trading/openingActivity.ts').includes('from('))
-  assert.ok(!src('lib/trading/openingActivity.ts').includes('supabase'))
-})
-
-test('no new API route for opening type', () => {
+test('opening engine stays off-band locked and has no new API', () => {
+  const open = src('lib/trading/openingActivity.ts')
+  assert.ok(open.includes('computeOpeningActivity'))
+  assert.ok(open.includes('formatOpeningActivityForPrompt'))
+  assert.ok(!open.includes('from('))
+  assert.ok(!open.includes('supabase'))
   const live = src('app/dashboard/chart/components/TradingChart.tsx')
-  const sim = src('app/dashboard/simulation/replay/desk/page.tsx')
   assert.ok(!live.includes('/api/trading/opening'))
-  assert.ok(!sim.includes('/api/trading/opening'))
 })
 
 // ─── Report ──────────────────────────────────────────────────────────────────

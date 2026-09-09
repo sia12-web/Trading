@@ -32,10 +32,12 @@
  */
 
 import {
+  addCalendarDaysYmd,
   cashOpenUnixForYmd,
   deskClockFor,
   isUsMarketHoliday,
   isWeekdayYmd,
+  nextTradingYmd,
   nthTradingDayBefore,
   NY_DESK_CLOCK,
   zonedCivilToUnix,
@@ -1016,26 +1018,37 @@ export function computeOvernightInventoryAndSessions(args: {
   }).format(new Date(tipTime * 1000))
 
   const todayOpenUnix = cashOpenUnixForYmd(todayYmd, clock)
+  const todayCloseUnix = zonedCivilToUnix(todayYmd, 16, clock.timeZone)
 
-  // Overnight Asia session begins at 18:00 on the calendar evening preceding today (e.g. Sunday 18:00 for Monday).
-  const [y, m, d] = todayYmd.split('-').map(Number)
-  const prevCalDate = new Date(Date.UTC(y!, m! - 1, d! - 1, 12, 0, 0))
-  const prevCalYmd = prevCalDate.toISOString().slice(0, 10)
-  const asiaStartUnix = zonedCivilToUnix(prevCalYmd, 18, clock.timeZone)
-  const asiaEndUnix = zonedCivilToUnix(todayYmd, 3, clock.timeZone)
+  // Overnight Asia session begins at 18:00 on the calendar evening preceding the
+  // cash session this inventory belongs to (Sunday 18:00 for Monday open).
+  // After NYC 16:00, today is yesterday — start a new profile at 18:00 for the
+  // next cash open and keep it updating until 09:30.
+  let inventoryOpenYmd = todayYmd
+  if (
+    tipTime >= todayCloseUnix ||
+    !isWeekdayYmd(todayYmd, clock.timeZone) ||
+    isUsMarketHoliday(todayYmd)
+  ) {
+    inventoryOpenYmd = nextTradingYmd(todayYmd, clock.timeZone)
+  }
+
+  const inventoryOpenUnix = cashOpenUnixForYmd(inventoryOpenYmd, clock)
+  const eveYmd = addCalendarDaysYmd(inventoryOpenYmd, -1)
+  const asiaStartUnix = zonedCivilToUnix(eveYmd, 18, clock.timeZone)
+  const asiaEndUnix = zonedCivilToUnix(inventoryOpenYmd, 3, clock.timeZone)
 
   const londonStartUnix = asiaEndUnix
-  const londonEndUnix = todayOpenUnix
+  const londonEndUnix = inventoryOpenUnix
 
-  // Overnight FRVP starts at Asia open (18:00 ET) so Tokyo hours still show
-  // inventory / ON-POC. London FRVP is added once 03:00 ET prints exist.
+  // 16:00–18:00 ET is a dead zone (and Friday close → Sunday 18:00 Globex).
   if (tipTime < asiaStartUnix) {
     return null
   }
 
   const overnightStartUnix = asiaStartUnix
-  // Dynamic profile: from Asia Open (18:00 ET) up to current time (e.g. 08:30 ET), updating until 09:30 ET cash open
-  const overnightEndUnix = Math.min(todayOpenUnix, tipTime)
+  // Dynamic profile: from Asia Open (18:00 ET) up to now, frozen at 09:30 cash open
+  const overnightEndUnix = Math.min(inventoryOpenUnix, tipTime)
 
   const asia = computeSessionVolumeProfile(bars, asiaStartUnix, Math.min(asiaEndUnix, tipTime), 'Asia')
   const london =

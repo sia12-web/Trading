@@ -7,10 +7,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname()
   const isFullBleedDesk =
     pathname === '/dashboard/chart' ||
-    pathname?.startsWith('/dashboard/chart/') ||
-    pathname?.startsWith('/dashboard/simulation/replay/')
+    pathname?.startsWith('/dashboard/chart/')
 
-  // Chart / sim replay desk: full-bleed, no left nav
+  // Chart: full-bleed, no left nav
   if (isFullBleedDesk) {
     return (
       <div className="h-screen max-h-screen bg-surface-900 overflow-hidden">

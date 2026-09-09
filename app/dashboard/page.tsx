@@ -33,7 +33,7 @@ export default function DashboardHomePage() {
       } else {
         const unlockAt = focusUnlockMontreal(now)
         setNextHint(
-          `Chart desk is open (NY regular session starts at ${unlockAt}).`
+          `NYC cash is closed. Desk cooled after 16:00 ET (5d bars reprinted, 5M VWAP + yesterday FRVP). Overnight inventory updates until 09:30. Charts resume ${unlockAt}.`
         )
       }
     }

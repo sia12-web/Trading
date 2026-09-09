@@ -15,6 +15,7 @@ import {
   compactProfileWidth,
   CONTEXT55_FRVP_5D_W,
   paintAnchoredVwapSigmaFill,
+  rangePocLineX,
 } from '../lib/chart/context55Paint'
 import { VWAP_COLORS } from '../lib/chart/sessionVwap'
 
@@ -68,6 +69,13 @@ import { VWAP_COLORS } from '../lib/chart/sessionVwap'
   assert.ok(compactProfileWidth(800, 56) <= 56)
   assert.ok(compactProfileWidth(120, 56) < 30, 'zoomed-out session does not stretch the histogram')
   assert.equal(compactProfileWidth(null, 56), 56)
+}
+
+{
+  assert.deepEqual(rangePocLineX(100, 500, 800), { x0: 100, x1: 500 })
+  assert.ok(rangePocLineX(-40, 900, 800), 'POC still draws when the range start is off-screen left')
+  assert.equal(rangePocLineX(-400, -200, 800), null)
+  assert.ok(rangePocLineX(100, null, 800))
 }
 
 {

@@ -154,13 +154,9 @@ test('engine does not add a route or Supabase', () => {
   assert.ok(engine.includes('computeYesterdayProfile'))
 })
 
-test('Slice 3 wires Leo + range brief; Level Finder does not import computeDeskCall', () => {
+test('live chart wires desk call; simulation desk is removed', () => {
   assert.ok(src('app/dashboard/chart/components/TradingChart.tsx').includes('computeDeskCall'))
-  assert.ok(src('app/dashboard/simulation/replay/desk/page.tsx').includes('computeDeskCall'))
-  assert.ok(src('lib/trading/liveVoicePrompt.ts').includes('CALL (desk — bias + legal ±10)'))
-  assert.ok(src('lib/trading/rangeLiquidityBrief.ts').includes('computeDeskCall'))
-  assert.ok(src('lib/services/levelFinderAgent/levelFinderAgent.ts').includes('CALL (desk — bias + legal ±10)'))
-  assert.ok(!src('lib/services/levelFinderAgent/levelFinderAgent.ts').includes('computeDeskCall'))
+  assert.ok(src('app/dashboard/simulation/replay/desk/page.tsx').includes("redirect('/dashboard/chart')"))
 })
 
 test('scoreboard latches B — a later bar that spans both edges does not wipe', () => {

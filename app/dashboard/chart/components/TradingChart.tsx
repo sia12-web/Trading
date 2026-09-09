@@ -226,6 +226,7 @@ import {
   paintAnchoredVwapSigmaFill,
   profileIntersectsPane,
   compactProfileWidth,
+  rangePocLineX,
 } from '@/lib/chart/context55Paint'
 import {
   isDeskInstrument,
@@ -239,6 +240,12 @@ import {
   sessionFor,
   deskMarketFor,
 } from '@/lib/trading/sessionGate'
+import {
+  deskPhaseAt,
+  isCloseReprintWindow,
+  isOvernightInventoryWindow,
+  nyYmd,
+} from '@/lib/trading/deskClockPhase'
 import type { AsiaDeskOverlay } from '@/lib/trading/asiaDesk'
 import {
   resolveDeskPlaybookMode,
@@ -2216,14 +2223,17 @@ export function TradingChart({
       volume: c.volume,
     }))
     const lastBarTime = bars[bars.length - 1]?.time
-    const yday = computeYesterdayNycSession(bars, lastBarTime)
+    // After 16:00 the last 5m bar is still 15:55. Wall clock is what makes
+    // today → yesterday and starts the next overnight inventory window.
+    const asOfUnix = Math.max(lastBarTime ?? 0, Math.floor(Date.now() / 1000))
+    const yday = computeYesterdayNycSession(bars, asOfUnix)
     setYesterdayNyc(yday)
 
     const inv = yday
       ? computeOvernightInventoryAndSessions({
           bars,
           yesterday: yday,
-          asOfUnix: lastBarTime,
+          asOfUnix,
         })
       : null
     setOvernightInventory(inv)
@@ -2387,29 +2397,33 @@ export function TradingChart({
       const rangePx =
         x != null && xEnd != null && Number.isFinite(xEnd) ? Math.abs(xEnd - x) : null
       const histW = compactProfileWidth(rangePx, args.maxW)
-      if (!profileIntersectsPane(x, histW, paneW)) return
-      paintVolumeProfileBins(ctx, {
-        bins: args.bins,
-        bucketSize: args.bucketSize,
-        x,
-        maxW: histW,
-        paneH,
-        priceToY,
-        buyFillVa: args.buyFillVa,
-        buyFill: args.buyFill,
-        sellFillVa: args.sellFillVa,
-        sellFill: args.sellFill,
-      })
-      paintLevelLine(
-        ctx,
-        priceToY(args.poc),
-        paneW,
-        paneH,
-        args.pocColor,
-        args.pocLabel,
-        x,
-        x + histW
-      )
+      if (profileIntersectsPane(x, histW, paneW)) {
+        paintVolumeProfileBins(ctx, {
+          bins: args.bins,
+          bucketSize: args.bucketSize,
+          x,
+          maxW: histW,
+          paneH,
+          priceToY,
+          buyFillVa: args.buyFillVa,
+          buyFill: args.buyFill,
+          sellFillVa: args.sellFillVa,
+          sellFill: args.sellFill,
+        })
+      }
+      const pocSpan = rangePocLineX(x, xEnd, paneW)
+      if (pocSpan) {
+        paintLevelLine(
+          ctx,
+          priceToY(args.poc),
+          paneW,
+          paneH,
+          args.pocColor,
+          args.pocLabel,
+          pocSpan.x0,
+          pocSpan.x1
+        )
+      }
     }
 
     // 1. Intermediate-Term Money: 5-Day FRVP at the 5-day window open
@@ -4349,7 +4363,12 @@ export function TradingChart({
     let cancelled = false
     async function load5mAvwap() {
       try {
-        const res = await fetch(`/api/trading/context-55?instrument=${instrument}`)
+        const phase = deskPhaseAt()
+        const refresh =
+          phase === 'COOLDOWN' || phase === 'PREP' || phase === 'OVERNIGHT'
+            ? '&refresh=1'
+            : ''
+        const res = await fetch(`/api/trading/context-55?instrument=${instrument}${refresh}`)
         if (!res.ok) return
         const data = await res.json()
         if (!cancelled && data.ok && data.avwap5m) {
@@ -5245,6 +5264,17 @@ export function TradingChart({
     const id = window.setInterval(() => setFocusTick((n) => n + 1), 30_000)
     return () => window.clearInterval(id)
   }, [])
+
+  const closeReprintKeyRef = useRef('')
+  useEffect(() => {
+    if (!isCloseReprintWindow()) return
+    const key = nyYmd()
+    if (closeReprintKeyRef.current === key) return
+    closeReprintKeyRef.current = key
+    void fetch('/api/trading/desk-cooldown', { method: 'POST', credentials: 'same-origin' })
+  }, [focusTick])
+
+  const deskPhase = deskPhaseAt()
 
   useEffect(() => {
     const now = new Date()
@@ -7433,7 +7463,11 @@ export function TradingChart({
     if (!chartReady || !streamArmed || dataMode === 'synthetic') return
 
     const CANDLE_REFRESH_MS = 15_000
-    const candleIntervalMs = tipStreamActive ? CANDLE_REFRESH_MS : 30_000
+    const candleIntervalMs = isOvernightInventoryWindow() || isCloseReprintWindow()
+      ? 60_000
+      : tipStreamActive
+        ? CANDLE_REFRESH_MS
+        : 120_000
     let lastTickPublishAt = 0
     let lastPriceStateAt = 0
     let lastMarkerPaintAt = 0
@@ -10118,8 +10152,18 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   </span>
                 )}
               </div>
+              {(deskPhase === 'COOLDOWN' || deskPhase === 'OVERNIGHT' || deskPhase === 'PREP') && (
+                <div
+                  className="transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-slate-500/15 text-slate-300 border border-slate-500/30"
+                  title="NYC cash is closed until 09:30. Last 5 days are reprinted, 5M VWAP and yesterday FRVP are frozen. Overnight inventory FRVP keeps updating until 09:30 ET."
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                  <span className="font-semibold">
+                    {deskPhase === 'COOLDOWN' ? 'Desk cooled · reprinting 5d' : 'ON inventory updating → 09:30'}
+                  </span>
+                </div>
+              )}
               <span className="text-gray-600 text-[10px]">|</span>
-              {/* Interactive CVD Sub-Chart Pane Button */}
               <button
                 type="button"
                 onClick={() => {

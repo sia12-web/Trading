@@ -244,12 +244,14 @@ describe('Context 5-5 Module Tests', () => {
   })
 
   it('computes Overnight Inventory and Asia & London FRVP', () => {
+    // Tuesday 10:00 ET after Labor Day — inventory belongs to Tuesday 09:30,
+    // starting Monday 18:00 (Sunday 18:00 was not a Monday cash open).
     const friOpenUnix = Math.floor(new Date('2026-09-04T13:30:00Z').getTime() / 1000)
     const friCloseUnix = Math.floor(new Date('2026-09-04T20:00:00Z').getTime() / 1000)
-    const monNowUnix = Math.floor(new Date('2026-09-07T14:00:00Z').getTime() / 1000)
+    const tueNowUnix = Math.floor(new Date('2026-09-08T14:00:00Z').getTime() / 1000)
 
     const bars: ContextBar[] = []
-    // Friday bars
+    // Friday bars (prior RTH — Labor Day skipped)
     for (let t = friOpenUnix; t <= friCloseUnix; t += 300) {
       bars.push({
         time: t,
@@ -261,13 +263,12 @@ describe('Context 5-5 Module Tests', () => {
       })
     }
 
-    const yday = computeYesterdayNycSession(bars, monNowUnix, NY_DESK_CLOCK)!
+    const yday = computeYesterdayNycSession(bars, tueNowUnix, NY_DESK_CLOCK)!
     assert.ok(yday !== null)
 
-    // Add overnight bars for Asia (18:00 - 03:00) and London (03:00 - 09:30)
-    // All trades happen ABOVE Friday close (44000), making inventory 100% Long
-    const sunGlobexOpen = Math.floor(new Date('2026-09-06T22:00:00Z').getTime() / 1000) // 18:00 EDT Sun
-    for (let t = sunGlobexOpen; t < monNowUnix; t += 300) {
+    // Monday 18:00 ET → Tuesday cash open. All prints above Friday close → 100% Long
+    const inventoryOpen = Math.floor(new Date('2026-09-07T22:00:00Z').getTime() / 1000)
+    for (let t = inventoryOpen; t < tueNowUnix; t += 300) {
       bars.push({
         time: t,
         open: 44050,
@@ -281,7 +282,7 @@ describe('Context 5-5 Module Tests', () => {
     const inv = computeOvernightInventoryAndSessions({
       bars,
       yesterday: yday,
-      asOfUnix: monNowUnix,
+      asOfUnix: tueNowUnix,
       clock: NY_DESK_CLOCK,
     })
 
@@ -299,8 +300,8 @@ describe('Context 5-5 Module Tests', () => {
   it('prints overnight inventory FRVP during Tokyo hours before London opens', () => {
     const friOpenUnix = Math.floor(new Date('2026-09-04T13:30:00Z').getTime() / 1000)
     const friCloseUnix = Math.floor(new Date('2026-09-04T20:00:00Z').getTime() / 1000)
-    const sunGlobexOpen = Math.floor(new Date('2026-09-06T22:00:00Z').getTime() / 1000)
-    const tokyoTip = Math.floor(new Date('2026-09-07T05:00:00Z').getTime() / 1000) // 01:00 EDT Monday
+    const inventoryOpen = Math.floor(new Date('2026-09-07T22:00:00Z').getTime() / 1000) // Mon 18:00 ET
+    const tokyoTip = Math.floor(new Date('2026-09-08T05:00:00Z').getTime() / 1000) // 01:00 EDT Tuesday
 
     const bars: ContextBar[] = []
     for (let t = friOpenUnix; t <= friCloseUnix; t += 300) {
@@ -313,7 +314,7 @@ describe('Context 5-5 Module Tests', () => {
         volume: 1000,
       })
     }
-    for (let t = sunGlobexOpen; t <= tokyoTip; t += 300) {
+    for (let t = inventoryOpen; t <= tokyoTip; t += 300) {
       bars.push({
         time: t,
         open: 44050,
@@ -337,6 +338,70 @@ describe('Context 5-5 Module Tests', () => {
     assert.equal(inv.london, null, 'London FRVP waits for 03:00 ET')
     assert.ok(inv.overnight !== null)
     assert.ok(inv.overnight.bins && inv.overnight.bins.length > 0)
+  })
+
+  it('starts a new overnight inventory FRVP after NYC 16:00 until next 09:30', () => {
+    const monOpen = Math.floor(new Date('2026-09-09T13:30:00Z').getTime() / 1000)
+    const monClose = Math.floor(new Date('2026-09-09T20:00:00Z').getTime() / 1000)
+    const monAsia = Math.floor(new Date('2026-09-09T22:00:00Z').getTime() / 1000)
+    const monEve = Math.floor(new Date('2026-09-10T02:00:00Z').getTime() / 1000) // 22:00 EDT Wednesday
+
+    const bars: ContextBar[] = []
+    for (let t = monOpen; t < monClose; t += 300) {
+      bars.push({
+        time: t,
+        open: 44000,
+        high: 44100,
+        low: 43900,
+        close: 44020,
+        volume: 800,
+      })
+    }
+    for (let t = monAsia; t <= monEve; t += 300) {
+      bars.push({
+        time: t,
+        open: 44040,
+        high: 44120,
+        low: 44010,
+        close: 44080,
+        volume: 400,
+      })
+    }
+
+    const yday = computeYesterdayNycSession(bars, monEve, NY_DESK_CLOCK)
+    assert.ok(yday !== null, 'today RTH becomes yesterday after 16:00')
+    assert.equal(yday.sessionDate, '2026-09-09')
+    const inv = computeOvernightInventoryAndSessions({
+      bars,
+      yesterday: yday,
+      asOfUnix: monEve,
+      clock: NY_DESK_CLOCK,
+    })
+    assert.ok(inv !== null, 'new overnight FRVP after cash close')
+    assert.ok(inv.overnight !== null)
+    assert.ok(inv.overnight.startUnix >= monAsia - 60)
+    assert.ok(inv.overnight.endUnix > monAsia)
+    assert.ok(inv.overnight.endUnix <= monEve + 60)
+  })
+
+  it('promotes today’s RTH to yesterday at 16:00 even if the last 5m bar is 15:55', () => {
+    const open = Math.floor(new Date('2026-09-09T13:30:00Z').getTime() / 1000)
+    const lastBar = Math.floor(new Date('2026-09-09T19:55:00Z').getTime() / 1000)
+    const asOf = Math.floor(new Date('2026-09-09T20:05:00Z').getTime() / 1000)
+    const bars: ContextBar[] = []
+    for (let t = open; t <= lastBar; t += 300) {
+      bars.push({
+        time: t,
+        open: 44000,
+        high: 44100,
+        low: 43900,
+        close: 44020,
+        volume: 800,
+      })
+    }
+    const yday = computeYesterdayNycSession(bars, asOf, NY_DESK_CLOCK)
+    assert.ok(yday !== null)
+    assert.equal(yday.sessionDate, '2026-09-09')
   })
 
   it('detects multi-timeframe money opportunities and confluences', () => {

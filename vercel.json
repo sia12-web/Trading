@@ -49,6 +49,18 @@
       "schedule": "5 6 * * 1-5"
     },
     {
+      "path": "/api/trading/desk-cooldown",
+      "schedule": "10 20 * * 1-5"
+    },
+    {
+      "path": "/api/trading/desk-cooldown",
+      "schedule": "*/5 22-23 * * 0-4"
+    },
+    {
+      "path": "/api/trading/desk-cooldown",
+      "schedule": "*/5 0-13 * * 1-5"
+    },
+    {
       "path": "/api/trading/late-desk-brief?market=NY",
       "schedule": "0 14 * * 1-5"
     },

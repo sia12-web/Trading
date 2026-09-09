@@ -1,8 +1,7 @@
 'use client'
 
 /**
- * Order history — Live (`trades_journal`) and Simulation (`simulation_trades`).
- * Prefer ?tab=live (default) or ?tab=sim.
+ * Order history — live fills (`trades_journal`).
  */
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
@@ -16,7 +15,7 @@ import { TRADEIFY_STARTING_BALANCE } from '@/lib/trading/tradeifyGrowth50k'
 import { SYSTEMATIC_LIVE_DESK } from '@/lib/trading/systematicDesk'
 
 type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | 'RUSSELL' | 'ALL'
-type HistoryTab = 'live' | 'sim' | 'voice'
+type HistoryTab = 'live' | 'voice'
 
 interface JournalEntry {
   id: string
@@ -153,70 +152,11 @@ function formatDayLabel(date: string): string {
   }
 }
 
-function mapSimEntry(raw: Record<string, unknown>): JournalEntry {
-  const fill = (raw.fill || {}) as Record<string, unknown>
-  const risk = (raw.risk || {}) as Record<string, unknown>
-  const exit = (raw.exit || {}) as Record<string, unknown>
-  const pnl = (raw.pnl || {}) as Record<string, unknown>
-  const fillUnix = Number(fill.time_unix) || 0
-  const exitUnix = Number(exit.time_unix) || 0
-  const reason = String(exit.reason_code || 'manual')
-  return {
-    id: String(raw.id),
-    instrument: String(raw.instrument),
-    market: raw.market === 'TOKYO' ? 'TOKYO' : 'NY',
-    trade_date: String(raw.replay_date),
-    entry_window: 1,
-    direction: String(raw.direction),
-    status: 'closed',
-    fill: {
-      time: fillUnix > 0 ? new Date(fillUnix * 1000).toISOString() : String(raw.created_at || ''),
-      price: Number(fill.price) || 0,
-      level: fill.level != null ? Number(fill.level) : null,
-      reason: String(fill.reason || 'Sim level limit fill'),
-      source: fill.source != null ? String(fill.source) : null,
-    },
-    risk: {
-      stop_loss: Number(risk.stop_loss) || 0,
-      take_profit: risk.take_profit != null ? Number(risk.take_profit) : null,
-      position_size: Number(risk.position_size) || 0,
-      risk_amount: Number(risk.risk_amount) || 0,
-      account_size: Number(risk.account_size) || 100000,
-    },
-    exit: {
-      time: exitUnix > 0 ? new Date(exitUnix * 1000).toISOString() : '',
-      price: exit.price != null ? Number(exit.price) : null,
-      reason_code: reason,
-      notes: '',
-      tp_hit: reason === 'take_profit',
-    },
-    stops: {
-      hit_count: reason === 'stop_hit' ? 1 : 0,
-      hit_at:
-        reason === 'stop_hit' && exitUnix > 0
-          ? new Date(exitUnix * 1000).toISOString()
-          : null,
-    },
-    pnl: {
-      dollars: pnl.dollars != null ? Number(pnl.dollars) : null,
-      percent: pnl.percent != null ? Number(pnl.percent) : null,
-    },
-    regime: { type: 'sim', confidence: null },
-    decisions: [],
-  }
-}
-
 function JournalPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const rawTab = searchParams.get('tab')
-  const tab: HistoryTab = SYSTEMATIC_LIVE_DESK
-    ? 'live'
-    : rawTab === 'sim'
-      ? 'sim'
-      : rawTab === 'voice'
-        ? 'voice'
-        : 'live'
+  const tab: HistoryTab = rawTab === 'voice' ? 'voice' : 'live'
 
   const [instrument, setInstrument] = useState<Instrument>('ALL')
   const [days, setDays] = useState(30)
@@ -269,26 +209,19 @@ function JournalPageInner() {
 
       const q = new URLSearchParams({
         days: String(days),
-        limit: tab === 'sim' ? '80' : '120',
+        limit: '120',
       })
       if (instrument !== 'ALL') q.set('instrument', instrument)
-      const url =
-        tab === 'sim' ? `/api/trading/sim-journal?${q}` : `/api/trading/journal?${q}`
-      const res = await fetch(url)
+      const res = await fetch(`/api/trading/journal?${q}`)
       const json = await res.json()
-      if (!res.ok || (tab === 'live' && !json.success)) {
+      if (!res.ok || !json.success) {
         setError(json.error || json.detail || 'Failed to load order history')
         setEntries([])
         setSummary(null)
         return
       }
-      if (tab === 'sim') {
-        setEntries((json.entries || []).map((e: Record<string, unknown>) => mapSimEntry(e)))
-        setSummary(json.summary || null)
-      } else {
-        setSummary(json.summary)
-        setEntries(json.entries || [])
-      }
+      setSummary(json.summary)
+      setEntries(json.entries || [])
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load order history')
       setEntries([])
@@ -342,26 +275,17 @@ function JournalPageInner() {
   const equityChange = summary?.equity_change ?? summary?.total_pnl ?? 0
   const madeMoney = equityChange > 0
   const lostMoney = equityChange < 0
-  const isSim = tab === 'sim'
-
   useEffect(() => {
-    if (!isSim && instrument === 'NIKKEI') setInstrument('ALL')
-    if (isSim && (instrument === 'GOLD' || instrument === 'CRUDE' || instrument === 'RUSSELL')) {
-      setInstrument('ALL')
-    }
-  }, [isSim, instrument])
+    if (instrument === 'NIKKEI') setInstrument('ALL')
+  }, [instrument])
 
   return (
     <div className="min-h-screen bg-[#0d1117] text-gray-200">
       <div className="mx-auto max-w-5xl px-4 py-8 space-y-6">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p
-              className={`text-[10px] uppercase tracking-[0.2em] ${
-                isSim ? 'text-violet-400/90' : 'text-amber-500/90'
-              }`}
-            >
-              {isSim ? 'Practice paper' : 'Live trading'}
+            <p className="text-[10px] uppercase tracking-[0.2em] text-amber-500/90">
+              Live trading
             </p>
             <h1 className="mt-1 text-2xl font-semibold text-white">Order history</h1>
             <p className="mt-1 text-sm text-gray-500 max-w-xl">
@@ -369,10 +293,10 @@ function JournalPageInner() {
             </p>
           </div>
           <Link
-            href={isSim ? '/dashboard/simulation' : '/dashboard/chart'}
+            href="/dashboard/chart"
             className="rounded-lg border border-[#30363d] px-3 py-1.5 text-xs font-semibold text-gray-300 hover:bg-[#161b22]"
           >
-            {isSim ? '← Simulation' : '← Live Trading'}
+            ← Live Trading
           </Link>
         </header>
 
@@ -388,16 +312,6 @@ function JournalPageInner() {
               Live Trades
             </button>
             {!SYSTEMATIC_LIVE_DESK && (
-              <>
-            <button
-              type="button"
-              onClick={() => setTab('sim')}
-              className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
-                tab === 'sim' ? 'bg-violet-600/30 text-violet-200' : 'text-gray-500 hover:text-gray-300'
-              }`}
-            >
-              Simulation Fills
-            </button>
             <button
               type="button"
               onClick={() => setTab('voice')}
@@ -407,22 +321,16 @@ function JournalPageInner() {
             >
               🎙️ Voice Chat Journal
             </button>
-              </>
             )}
           </div>
-          {(isSim
-            ? (['ALL', 'DOW', 'NASDAQ', 'NIKKEI'] as Instrument[])
-            : (['ALL', 'NASDAQ', 'DOW', 'GOLD', 'CRUDE', 'RUSSELL'] as Instrument[])
-          ).map((inst) => (
+          {(['ALL', 'NASDAQ', 'DOW', 'GOLD', 'CRUDE', 'RUSSELL'] as Instrument[]).map((inst) => (
             <button
               key={inst}
               type="button"
               onClick={() => setInstrument(inst)}
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
                 instrument === inst
-                  ? isSim
-                    ? 'bg-violet-600/30 text-violet-200 border border-violet-700/40'
-                    : 'bg-brand-600/30 text-brand-200 border border-brand-700/40'
+                  ? 'bg-brand-600/30 text-brand-200 border border-brand-700/40'
                   : 'bg-[#161b22] text-gray-500 border border-[#30363d]'
               }`}
             >
@@ -606,20 +514,10 @@ function JournalPageInner() {
 
         {tab !== 'voice' && !loading && !error && entries.length === 0 && (
           <div className="rounded-xl border border-dashed border-[#30363d] px-6 py-12 text-center text-sm text-gray-500">
-            {isSim ? (
-              <>
-                No paper closes yet. Open{' '}
-                <Link href="/dashboard/simulation" className="text-violet-400 hover:underline">
-                  Simulation
-                </Link>
-                , fill a level, then hit SL/TP or CLOSE — orders land under the Simulation tab.
-              </>
-            ) : (
-              <>
-                No live orders yet. Clock in, place a limit on Live Trading — fills land here with
-                entry and exit reasons.
-              </>
-            )}
+            <>
+              No live orders yet. Clock in, place a limit on Live Trading — fills land here with
+              entry and exit reasons.
+            </>
           </div>
         )}
 
@@ -634,7 +532,7 @@ function JournalPageInner() {
               <section key={date} className="space-y-3">
                 <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-[#30363d] pb-2">
                   <h2 className="text-sm font-semibold text-white tracking-tight">
-                    {isSim ? `Replay day · ${formatDayLabel(date)}` : formatDayLabel(date)}
+                    {formatDayLabel(date)}
                   </h2>
                   <span
                     className={`text-xs font-semibold price-mono ${
@@ -915,9 +813,10 @@ function JournalPageInner() {
         )}
 
         <p className="text-[11px] text-gray-600 leading-relaxed">
-          {isSim
-            ? 'Simulation tab reads paper closes from simulation_trades only — never mixes with live fills. Resetting a replay day clears that day’s paper history.'
-            : 'Live desk only. After the entry window, levels leave the chart; open books stay in MANAGE until stop, target, your confirmed AI exit, or lunch confirm. Cash close auto-liquidates leftovers. Equity above is reconstructed from Tradeify ticket size and closed-trade P&L — not an OANDA margin feed.'}
+          Live desk only. After the entry window, levels leave the chart; open books stay in MANAGE
+          until stop, target, your confirmed AI exit, or lunch confirm. Cash close auto-liquidates
+          leftovers. Equity above is reconstructed from Tradeify ticket size and closed-trade P&amp;L
+          — not an OANDA margin feed.
         </p>
       </div>
     </div>

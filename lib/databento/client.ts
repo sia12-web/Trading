@@ -140,17 +140,29 @@ export function aggregateCandles(
  * Fetch CME Globex 1m candles from Databento and aggregate to desk resolution.
  * Falls back to extracted 6-month CME archive if offline or unconfigured.
  */
+export function invalidateDatabentoCandleCache(instrument?: string): void {
+  if (!instrument) {
+    candleCache.clear()
+    cachedDatasetEnd = null
+    return
+  }
+  for (const key of candleCache.keys()) {
+    if (key.startsWith(`${instrument}:`)) candleCache.delete(key)
+  }
+}
+
 export async function getDatabentoCandles(
   instrument: Instrument,
   resolution: string = '5',
-  days: number = 5
+  days: number = 5,
+  opts?: { bypassCache?: boolean }
 ): Promise<{ candles: DatabentoCandle[]; symbol: string } | null> {
   const apiKey = process.env.DATABENTO_API_KEY?.trim()
   const symbol = DATABENTO_SYMBOLS[instrument] || 'MYM.c.0'
 
   const cacheKey = `${instrument}:${resolution}:${days}`
   const cached = candleCache.get(cacheKey)
-  if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
+  if (!opts?.bypassCache && cached && Date.now() - cached.at < CACHE_TTL_MS) {
     return { candles: cached.candles, symbol }
   }
 
