@@ -1326,6 +1326,8 @@ export function TradingChart({
   const [avwap5mBenchmark, setAvwap5mBenchmark] = useState<AnchoredVwapBenchmark5M | null>(null)
   const avwap5mBenchmarkRef = useRef<AnchoredVwapBenchmark5M | null>(null)
   const avwap5mDailyBarsRef = useRef<ContextBar[]>([])
+  /** Wait for /context-55 so we never flash a 12-day σ then hide 5-month bands. */
+  const avwapFetchDoneRef = useRef(false)
   const scaleOverlayPricesRef = useRef<{ always: number[]; nearby: number[] }>({
     always: [],
     nearby: [],
@@ -2259,6 +2261,11 @@ export function TradingChart({
     (ordered: Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }>) => {
       const vs = vwapSeriesRef.current
       const tz = chartTzRef.current
+      // First paint after a market click uses only ~12d of 5m bars (tight σ).
+      // A second later 5-month dailies load, σ jumps off the session scale, and
+      // lockToCandleAutoscale hid the bands. Wait for the daily fetch so the
+      // TradingView path (blue VWAP + ±1/±2/±3σ) is the one that stays.
+      if (!avwapFetchDoneRef.current) return
       const bars: ContextBar[] = ordered.map((c) => ({
         time: c.time as number,
         open: c.open,
@@ -4361,7 +4368,22 @@ export function TradingChart({
 
   useEffect(() => {
     let cancelled = false
+    avwapFetchDoneRef.current = false
     async function load5mAvwap() {
+      const paintFromCandles = () => {
+        const ordered = candlesRef.current
+        if (!ordered.length) return
+        paintDynamic5mAvwapRef.current(
+          ordered.map((c) => ({
+            time: c.time as number,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume,
+          }))
+        )
+      }
       try {
         const phase = deskPhaseAt()
         const refresh =
@@ -4369,15 +4391,22 @@ export function TradingChart({
             ? '&refresh=1'
             : ''
         const res = await fetch(`/api/trading/context-55?instrument=${instrument}${refresh}`)
-        if (!res.ok) return
-        const data = await res.json()
-        if (!cancelled && data.ok && data.avwap5m) {
+        const data = res.ok ? await res.json() : null
+        if (cancelled) return
+        if (data?.ok && data.avwap5m) {
           avwap5mBenchmarkRef.current = data.avwap5m
           avwap5mDailyBarsRef.current = Array.isArray(data.dailyBars) ? data.dailyBars : []
+          avwapFetchDoneRef.current = true
           setAvwap5mBenchmark(data.avwap5m)
+        } else {
+          avwapFetchDoneRef.current = true
+          paintFromCandles()
         }
       } catch {
-        /* ignore */
+        if (!cancelled) {
+          avwapFetchDoneRef.current = true
+          paintFromCandles()
+        }
       }
     }
     void load5mAvwap()
@@ -5742,14 +5771,16 @@ export function TradingChart({
       ...ignoreScale,
     })
 
-    // Anchored VWAP — TradingView Style: blue VWAP, green/olive/teal ±1/±2/±3σ
+    // Anchored VWAP — TradingView Style: blue VWAP, green/olive/teal ±1/±2/±3σ.
+    // Join the right price scale so ±σ stay on-pane after 5-month dailies load
+    // (session-only autoscale previously clipped the bands off the chart).
     const bandOpts = {
       lineWidth: 1 as const,
       priceLineVisible: false,
       lastValueVisible: true,
       pointMarkersVisible: false,
       crosshairMarkerVisible: false,
-      ...ignoreScale,
+      priceScaleId: 'right' as const,
     }
     const vwapSeries = {
       upper3: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band3, title: '+3σ' }),
@@ -5763,7 +5794,7 @@ export function TradingChart({
         pointMarkersVisible: false,
         crosshairMarkerVisible: false,
         title: 'VWAP',
-        ...ignoreScale,
+        priceScaleId: 'right',
       }),
       lower1: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band1, title: '-1σ' }),
       lower2: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band2, title: '-2σ' }),
@@ -6282,6 +6313,7 @@ export function TradingChart({
     sessionSpansRef.current = null
     avwap5mBenchmarkRef.current = null
     avwap5mDailyBarsRef.current = []
+    avwapFetchDoneRef.current = false
     setAvwap5mBenchmark(null)
     setStreamArmed(false)
     setCandles([])
