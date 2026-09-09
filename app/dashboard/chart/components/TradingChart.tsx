@@ -9504,277 +9504,279 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         : 'h-full w-full'
         }`}
     >
-      {/* ── Toolbar ─────────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-1.5 pb-0.5">
-        {/* Instrument tabs — LIVE focus hides off-session desks */}
-        <div className="tab-bar">
-          {visibleInstruments.map((inst) => (
-            <button
-              key={inst}
-              onClick={() => setInstrument(inst)}
-              className={`tab ${instrument === inst ? 'tab-active' : ''}`}
-              style={instrument === inst ? { backgroundColor: INSTRUMENT_META[inst].color + '33', color: INSTRUMENT_META[inst].color } : {}}
-            >
-              {liveDeskContractLabel(inst)}
-            </button>
-          ))}
-        </div>
+      {/* ── Toolbar & Sub-header HUD (Hidden in Fullscreen Mode) ────────────────── */}
+      {!isFullscreen && (
+        <>
+          {/* ── Toolbar ─────────────────────────────────────────────────────────── */}
+          <div className="flex flex-wrap items-center gap-1.5 pb-0.5">
+            {/* Instrument tabs — LIVE focus hides off-session desks */}
+            <div className="tab-bar">
+              {visibleInstruments.map((inst) => (
+                <button
+                  key={inst}
+                  onClick={() => setInstrument(inst)}
+                  className={`tab ${instrument === inst ? 'tab-active' : ''}`}
+                  style={instrument === inst ? { backgroundColor: INSTRUMENT_META[inst].color + '33', color: INSTRUMENT_META[inst].color } : {}}
+                >
+                  {liveDeskContractLabel(inst)}
+                </button>
+              ))}
+            </div>
 
-        {/* Timeframe selector */}
-        <div className="flex items-center rounded-lg border border-surface-700 bg-surface-900/80 p-0.5">
-          {(['1m', '5m', '30m'] as const).map((tf) => (
-            <button
-              key={tf}
-              type="button"
-              onClick={() => {
-                if (timeframe === tf) return
-                didFitRef.current = false
-                lastCandleRef.current = null
-                setCandles([])
-                candlesRef.current = []
-                setTimeframe(tf)
-              }}
-              className={`rounded px-2.5 py-1 text-xs font-semibold transition-all ${
-                timeframe === tf
-                  ? 'bg-blue-600 text-white shadow-sm font-bold'
-                  : 'text-gray-400 hover:text-gray-200 hover:bg-surface-800'
-              }`}
-            >
-              {tf}
-            </button>
-          ))}
-        </div>
-
-        {/* User Interactive Drawing Tools (Trendline, Range Box, Manual FRVP) */}
-        <div className="flex items-center gap-1 rounded-lg bg-surface-900/90 px-1.5 py-0.5 border border-cyan-500/40 shadow-sm text-xs">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 pl-0.5 pr-1 select-none">
-            Draw:
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              setActiveDrawingTool((prev) => (prev === 'TRENDLINE' ? 'NONE' : 'TRENDLINE'))
-              setDrawingDraft(null)
-            }}
-            className={`flex items-center gap-1 px-2 py-1 rounded font-semibold transition-all ${
-              activeDrawingTool === 'TRENDLINE'
-                ? 'bg-sky-500/30 text-sky-200 border border-sky-400 shadow-sm'
-                : 'text-gray-300 hover:text-sky-300 hover:bg-surface-800'
-            }`}
-            title="Draw Trendline (Hotkey: W) — Click 2 points on chart"
-          >
-            <span>📐</span>
-            <span>Trend (W)</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setActiveDrawingTool((prev) => (prev === 'RANGE' ? 'NONE' : 'RANGE'))
-              setDrawingDraft(null)
-            }}
-            className={`flex items-center gap-1 px-2 py-1 rounded font-semibold transition-all ${
-              activeDrawingTool === 'RANGE'
-                ? 'bg-purple-500/30 text-purple-200 border border-purple-400 shadow-sm'
-                : 'text-gray-300 hover:text-purple-300 hover:bg-surface-800'
-            }`}
-            title="Draw Range / Box (Hotkey: D) — Click 2 points on chart"
-          >
-            <span>⬛</span>
-            <span>Range (D)</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setActiveDrawingTool((prev) => (prev === 'FRVP' ? 'NONE' : 'FRVP'))
-              setDrawingDraft(null)
-            }}
-            className={`flex items-center gap-1 px-2 py-1 rounded font-semibold transition-all ${
-              activeDrawingTool === 'FRVP'
-                ? 'bg-amber-500/30 text-amber-200 border border-amber-400 shadow-sm'
-                : 'text-gray-300 hover:text-amber-300 hover:bg-surface-800'
-            }`}
-            title="Draw Fixed Range Volume Profile (Hotkey: V) — Click 2 points on chart"
-          >
-            <span>📊</span>
-            <span>FRVP (V)</span>
-          </button>
-
-          <div className="h-3.5 w-px bg-surface-700 mx-0.5" />
-
-          <button
-            type="button"
-            onClick={() => setDrawingsPanelOpen((prev) => !prev)}
-            className={`relative flex items-center gap-1 px-2 py-1 rounded font-medium transition-all ${
-              drawingsPanelOpen || trendlines.length + rangeBoxes.length + manualFrvps.length > 0
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
-                : 'text-gray-400 hover:text-cyan-300 hover:bg-surface-800'
-            }`}
-            title="Manage Drawn Tools"
-          >
-            <span>🎨</span>
-            <span>Tools</span>
-            {trendlines.length + rangeBoxes.length + manualFrvps.length > 0 && (
-              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-cyan-500 px-1 text-[10px] font-bold text-slate-950">
-                {trendlines.length + rangeBoxes.length + manualFrvps.length}
-              </span>
-            )}
-          </button>
-        </div>
-
-
-
-
-
-        {/* Live price ticker */}
-        <div className="ml-auto flex items-center gap-3">
-          <LivePriceTicker
-            subscribe={subscribePriceTick}
-            getTick={getPriceTick}
-            instrument={instrument}
-            barCountdown={barCountdown}
-          />
-          {dataMode === 'live' ? (
-            <span
-              className={`flex items-center gap-1 text-xs ${candleFeed === 'yahoo' ? 'text-emerald-400' : 'text-amber-400'
-                }`}
-              title={
-                candleFeed === 'yahoo'
-                  ? 'CME futures (MYM / MNQ / NKD) — IB matches Tradovate, not OANDA US30/NAS100 cash'
-                  : 'OANDA CFD fallback — IB will not match Tradovate. Refresh if this stays on.'
-              }
-            >
-              <span
-                className={`w-1.5 h-1.5 rounded-full animate-pulse ${candleFeed === 'yahoo' ? 'bg-emerald-400' : 'bg-amber-400'
+            {/* Timeframe selector */}
+            <div className="flex items-center rounded-lg border border-surface-700 bg-surface-900/80 p-0.5">
+              {(['1m', '5m', '30m'] as const).map((tf) => (
+                <button
+                  key={tf}
+                  type="button"
+                  onClick={() => {
+                    if (timeframe === tf) return
+                    didFitRef.current = false
+                    lastCandleRef.current = null
+                    setCandles([])
+                    candlesRef.current = []
+                    setTimeframe(tf)
+                  }}
+                  className={`rounded px-2.5 py-1 text-xs font-semibold transition-all ${
+                    timeframe === tf
+                      ? 'bg-blue-600 text-white shadow-sm font-bold'
+                      : 'text-gray-400 hover:text-gray-200 hover:bg-surface-800'
                   }`}
+                >
+                  {tf}
+                </button>
+              ))}
+            </div>
+
+            {/* User Interactive Drawing Tools (Trendline, Range Box, Manual FRVP) */}
+            <div className="flex items-center gap-1 rounded-lg bg-surface-900/90 px-1.5 py-0.5 border border-cyan-500/40 shadow-sm text-xs">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 pl-0.5 pr-1 select-none">
+                Draw:
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveDrawingTool((prev) => (prev === 'TRENDLINE' ? 'NONE' : 'TRENDLINE'))
+                  setDrawingDraft(null)
+                }}
+                className={`flex items-center gap-1 px-2 py-1 rounded font-semibold transition-all ${
+                  activeDrawingTool === 'TRENDLINE'
+                    ? 'bg-sky-500/30 text-sky-200 border border-sky-400 shadow-sm'
+                    : 'text-gray-300 hover:text-sky-300 hover:bg-surface-800'
+                }`}
+                title="Draw Trendline (Hotkey: W) — Click 2 points on chart"
+              >
+                <span>📐</span>
+                <span>Trend (W)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveDrawingTool((prev) => (prev === 'RANGE' ? 'NONE' : 'RANGE'))
+                  setDrawingDraft(null)
+                }}
+                className={`flex items-center gap-1 px-2 py-1 rounded font-semibold transition-all ${
+                  activeDrawingTool === 'RANGE'
+                    ? 'bg-purple-500/30 text-purple-200 border border-purple-400 shadow-sm'
+                    : 'text-gray-300 hover:text-purple-300 hover:bg-surface-800'
+                }`}
+                title="Draw Range / Box (Hotkey: D) — Click 2 points on chart"
+              >
+                <span>⬛</span>
+                <span>Range (D)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveDrawingTool((prev) => (prev === 'FRVP' ? 'NONE' : 'FRVP'))
+                  setDrawingDraft(null)
+                }}
+                className={`flex items-center gap-1 px-2 py-1 rounded font-semibold transition-all ${
+                  activeDrawingTool === 'FRVP'
+                    ? 'bg-amber-500/30 text-amber-200 border border-amber-400 shadow-sm'
+                    : 'text-gray-300 hover:text-amber-300 hover:bg-surface-800'
+                }`}
+                title="Draw Fixed Range Volume Profile (Hotkey: V) — Click 2 points on chart"
+              >
+                <span>📊</span>
+                <span>FRVP (V)</span>
+              </button>
+
+              <div className="h-3.5 w-px bg-surface-700 mx-0.5" />
+
+              <button
+                type="button"
+                onClick={() => setDrawingsPanelOpen((prev) => !prev)}
+                className={`relative flex items-center gap-1 px-2 py-1 rounded font-medium transition-all ${
+                  drawingsPanelOpen || trendlines.length + rangeBoxes.length + manualFrvps.length > 0
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                    : 'text-gray-400 hover:text-cyan-300 hover:bg-surface-800'
+                }`}
+                title="Manage Drawn Tools"
+              >
+                <span>🎨</span>
+                <span>Tools</span>
+                {trendlines.length + rangeBoxes.length + manualFrvps.length > 0 && (
+                  <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-cyan-500 px-1 text-[10px] font-bold text-slate-950">
+                    {trendlines.length + rangeBoxes.length + manualFrvps.length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Live price ticker */}
+            <div className="ml-auto flex items-center gap-3">
+              <LivePriceTicker
+                subscribe={subscribePriceTick}
+                getTick={getPriceTick}
+                instrument={instrument}
+                barCountdown={barCountdown}
               />
-              {candleFeed === 'yahoo' ? 'LIVE · CME' : 'LIVE · OANDA'}
-            </span>
-          ) : (
-            <span
-              className="flex items-center gap-1 text-xs text-amber-400"
-              title="Candle API failed — showing demo prices. Do not trade off this chart."
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-              SYNTHETIC
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* ── Compact Evaluators & OHLCV Tooltip Row ─────────────────────────── */}
-      <div className="flex flex-wrap items-center justify-between gap-x-2.5 gap-y-1 px-1 py-0.5 text-[10.5px] text-gray-400 min-h-[22px]">
-        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
-          {/* Structural Evaluators: Day Type & Opening (Clickable to send to Leo AI when Leo is open) */}
-          <button
-            type="button"
-            onClick={() => {
-              if (!leoPanelOpen) return
-              setLeoExternalPoints([
-                {
-                  id: 'ctx-day-type',
-                  label: 'Day Type',
-                  value: dayTypeEval.badgeText,
-                  tier: 'CONTEXT',
-                  category: 'DAY_TYPE',
-                  description: 'Current Dalton Day Type',
-                },
-              ])
-            }}
-            className={`${leoPanelOpen ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'} transition flex items-center gap-1 select-none`}
-            title={leoPanelOpen ? 'Click to send Day Type to Leo AI' : 'Current Dalton Day Type'}
-          >
-            <span className="text-gray-500">Day: </span>
-            <span className={`text-purple-300 font-semibold ${leoPanelOpen ? 'underline decoration-dotted decoration-purple-400/50 underline-offset-2' : ''}`}>
-              {dayTypeEval.badgeText}
-            </span>
-          </button>
-          <span className="text-gray-600 text-[10px]">|</span>
-          <button
-            type="button"
-            onClick={() => {
-              if (!leoPanelOpen) return
-              setLeoExternalPoints([
-                {
-                  id: 'ctx-open-type',
-                  label: 'Open Type',
-                  value: openingBadge,
-                  tier: 'CONTEXT',
-                  category: 'OPEN',
-                  description: 'Opening Activity Structure',
-                },
-              ])
-            }}
-            className={`${leoPanelOpen ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'} transition flex items-center gap-1 select-none`}
-            title={leoPanelOpen ? 'Click to send Open Type to Leo AI' : 'Opening Activity Structure'}
-          >
-            <span className="text-gray-500">Open: </span>
-            <span className={`text-cyan-300 font-semibold ${leoPanelOpen ? 'underline decoration-dotted decoration-cyan-400/50 underline-offset-2' : ''}`}>
-              {openingBadge}
-            </span>
-          </button>
-          <span className="text-gray-600 text-[10px]">|</span>
-          {/* VWAP HUD Label */}
-          <div
-            className="transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
-            title={`5-Month Anchored VWAP${currentVwap ? ` · Level: ${currentVwap.vwap.toLocaleString()}` : ''}`}
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            <span className="text-gray-400 font-semibold">VWAP:</span>
-            <span className="font-mono font-bold">
-              {currentVwap ? currentVwap.vwap.toLocaleString() : '—'}
-            </span>
-            {currentVwap && livePrice && (
-              <span className={`text-[9.5px] font-mono ${livePrice >= currentVwap.vwap ? 'text-emerald-400' : 'text-rose-400'}`}>
-                ({livePrice >= currentVwap.vwap ? '+' : ''}{(livePrice - currentVwap.vwap).toFixed(1)})
-              </span>
-            )}
+              {dataMode === 'live' ? (
+                <span
+                  className={`flex items-center gap-1 text-xs ${candleFeed === 'yahoo' ? 'text-emerald-400' : 'text-amber-400'
+                    }`}
+                  title={
+                    candleFeed === 'yahoo'
+                      ? 'CME futures (MYM / MNQ / NKD) — IB matches Tradovate, not OANDA US30/NAS100 cash'
+                      : 'OANDA CFD fallback — IB will not match Tradovate. Refresh if this stays on.'
+                  }
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full animate-pulse ${candleFeed === 'yahoo' ? 'bg-emerald-400' : 'bg-amber-400'
+                      }`}
+                  />
+                  {candleFeed === 'yahoo' ? 'LIVE · CME' : 'LIVE · OANDA'}
+                </span>
+              ) : (
+                <span
+                  className="flex items-center gap-1 text-xs text-amber-400"
+                  title="Candle API failed — showing demo prices. Do not trade off this chart."
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                  SYNTHETIC
+                </span>
+              )}
+            </div>
           </div>
-          <span className="text-gray-600 text-[10px]">|</span>
-          {/* Interactive CVD Order Flow Button */}
-          <button
-            type="button"
-            onClick={() => {
-              setShowCvdSubPane((prev) => !prev)
-              setCvdPanelOpen((prev) => !prev)
-            }}
-            className={`transition flex items-center gap-1.5 select-none px-1.5 py-0.5 rounded cursor-pointer ${
-              showCvdSubPane || cvdPanelOpen
-                ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/60 shadow-sm'
-                : sessionOrderFlow?.trend === 'BUYER_DOMINANT'
-                ? 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 border border-emerald-500/30'
-                : sessionOrderFlow?.trend === 'SELLER_DOMINANT'
-                ? 'bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 border border-rose-500/30'
-                : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
-            }`}
-            title="Click to toggle CVD Sub-Chart Pane & Order Flow Inspector"
-          >
-            <span className="text-[11px]">📊</span>
-            <span className="text-gray-400 font-semibold">CVD:</span>
-            <span className="font-mono font-bold">
-              {sessionOrderFlow
-                ? `${sessionOrderFlow.sessionCvd >= 0 ? '+' : ''}${sessionOrderFlow.sessionCvd.toLocaleString()} Δ`
-                : '—'}
-            </span>
-            {sessionOrderFlow?.divergence !== 'NONE' && (
-              <span className="relative flex h-2 w-2">
-                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                  sessionOrderFlow?.divergence === 'BULLISH_ABSORPTION' ? 'bg-emerald-400' : 'bg-rose-400'
-                }`} />
-                <span className={`relative inline-flex rounded-full h-2 w-2 ${
-                  sessionOrderFlow?.divergence === 'BULLISH_ABSORPTION' ? 'bg-emerald-500' : 'bg-rose-500'
-                }`} />
-              </span>
-            )}
-          </button>
-        </div>
 
-        {/* OHLCV Hover Tooltip inline on the right */}
-        <div className="ml-auto flex-shrink-0">
-          <OHLCVTooltip data={tooltip} color={meta.color} />
-        </div>
-      </div>
+          {/* ── Compact Evaluators & OHLCV Tooltip Row ─────────────────────────── */}
+          <div className="flex flex-wrap items-center justify-between gap-x-2.5 gap-y-1 px-1 py-0.5 text-[10.5px] text-gray-400 min-h-[22px]">
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+              {/* Structural Evaluators: Day Type & Opening */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!leoPanelOpen) return
+                  setLeoExternalPoints([
+                    {
+                      id: 'ctx-day-type',
+                      label: 'Day Type',
+                      value: dayTypeEval.badgeText,
+                      tier: 'CONTEXT',
+                      category: 'DAY_TYPE',
+                      description: 'Current Dalton Day Type',
+                    },
+                  ])
+                }}
+                className={`${leoPanelOpen ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'} transition flex items-center gap-1 select-none`}
+                title={leoPanelOpen ? 'Click to send Day Type to Leo AI' : 'Current Dalton Day Type'}
+              >
+                <span className="text-gray-500">Day: </span>
+                <span className={`text-purple-300 font-semibold ${leoPanelOpen ? 'underline decoration-dotted decoration-purple-400/50 underline-offset-2' : ''}`}>
+                  {dayTypeEval.badgeText}
+                </span>
+              </button>
+              <span className="text-gray-600 text-[10px]">|</span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!leoPanelOpen) return
+                  setLeoExternalPoints([
+                    {
+                      id: 'ctx-open-type',
+                      label: 'Open Type',
+                      value: openingBadge,
+                      tier: 'CONTEXT',
+                      category: 'OPEN',
+                      description: 'Opening Activity Structure',
+                    },
+                  ])
+                }}
+                className={`${leoPanelOpen ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'} transition flex items-center gap-1 select-none`}
+                title={leoPanelOpen ? 'Click to send Open Type to Leo AI' : 'Opening Activity Structure'}
+              >
+                <span className="text-gray-500">Open: </span>
+                <span className={`text-cyan-300 font-semibold ${leoPanelOpen ? 'underline decoration-dotted decoration-cyan-400/50 underline-offset-2' : ''}`}>
+                  {openingBadge}
+                </span>
+              </button>
+              <span className="text-gray-600 text-[10px]">|</span>
+              {/* VWAP HUD Label */}
+              <div
+                className="transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                title={`5-Month Anchored VWAP${currentVwap ? ` · Level: ${currentVwap.vwap.toLocaleString()}` : ''}`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span className="text-gray-400 font-semibold">VWAP:</span>
+                <span className="font-mono font-bold">
+                  {currentVwap ? currentVwap.vwap.toLocaleString() : '—'}
+                </span>
+                {currentVwap && livePrice && (
+                  <span className={`text-[9.5px] font-mono ${livePrice >= currentVwap.vwap ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    ({livePrice >= currentVwap.vwap ? '+' : ''}{(livePrice - currentVwap.vwap).toFixed(1)})
+                  </span>
+                )}
+              </div>
+              <span className="text-gray-600 text-[10px]">|</span>
+              {/* Interactive CVD Order Flow Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCvdSubPane((prev) => !prev)
+                  setCvdPanelOpen((prev) => !prev)
+                }}
+                className={`transition flex items-center gap-1.5 select-none px-1.5 py-0.5 rounded cursor-pointer ${
+                  showCvdSubPane || cvdPanelOpen
+                    ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/60 shadow-sm'
+                    : sessionOrderFlow?.trend === 'BUYER_DOMINANT'
+                    ? 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 border border-emerald-500/30'
+                    : sessionOrderFlow?.trend === 'SELLER_DOMINANT'
+                    ? 'bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 border border-rose-500/30'
+                    : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
+                }`}
+                title="Click to toggle CVD Sub-Chart Pane & Order Flow Inspector"
+              >
+                <span className="text-[11px]">📊</span>
+                <span className="text-gray-400 font-semibold">CVD:</span>
+                <span className="font-mono font-bold">
+                  {sessionOrderFlow
+                    ? `${sessionOrderFlow.sessionCvd >= 0 ? '+' : ''}${sessionOrderFlow.sessionCvd.toLocaleString()} Δ`
+                    : '—'}
+                </span>
+                {sessionOrderFlow?.divergence !== 'NONE' && (
+                  <span className="relative flex h-2 w-2">
+                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                      sessionOrderFlow?.divergence === 'BULLISH_ABSORPTION' ? 'bg-emerald-400' : 'bg-rose-400'
+                    }`} />
+                    <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                      sessionOrderFlow?.divergence === 'BULLISH_ABSORPTION' ? 'bg-emerald-500' : 'bg-rose-500'
+                    }`} />
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* OHLCV Hover Tooltip inline on the right */}
+            <div className="ml-auto flex-shrink-0">
+              <OHLCVTooltip data={tooltip} color={meta.color} />
+            </div>
+          </div>
+        </>
+      )}
+
       <div
         ref={chartFrameRef}
         onClick={handleChartFrameClick}
@@ -9782,6 +9784,19 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         className="flex-1 relative rounded-xl border border-zinc-800 overflow-hidden bg-[#0e1117] flex flex-col"
         style={{ minHeight: 520 }}
       >
+        {/* Floating Exit Fullscreen Button */}
+        {isFullscreen && (
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            className="absolute top-3 right-3 z-40 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900/90 text-zinc-300 hover:text-white hover:bg-zinc-800 border border-zinc-700/80 shadow-xl backdrop-blur-md text-xs font-semibold transition-all select-none"
+            title="Exit Fullscreen Mode (Hotkey: F or Esc)"
+          >
+            <span>⤢</span>
+            <span>Exit Fullscreen</span>
+            <span className="text-[10px] text-zinc-400 font-mono bg-zinc-800 px-1.5 py-0.5 rounded border border-zinc-700">Esc</span>
+          </button>
+        )}
         {/* Main Price Chart Section */}
         <div className="relative flex-1 w-full min-h-[300px]">
           <div ref={containerRef} className="absolute inset-0 z-0" />
