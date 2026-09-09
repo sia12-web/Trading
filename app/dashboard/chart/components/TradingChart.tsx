@@ -4436,9 +4436,7 @@ export function TradingChart({
   }, [avwap5mBenchmark, paint5mAvwapBenchmark, paintDynamic5mAvwap])
 
   useEffect(() => {
-    scaleOverlayPricesRef.current = context55ScalePrices({
-      vwap: currentVwap?.vwap ?? avwap5mBenchmark?.vwap,
-    })
+    scaleOverlayPricesRef.current = context55ScalePrices({})
     try {
       chartRef.current?.priceScale('right').applyOptions({ autoScale: true })
     } catch {

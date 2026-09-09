@@ -29,8 +29,7 @@ import { VWAP_COLORS } from '../lib/chart/sessionVwap'
     yPoc: 29500,
   })
   assert.deepEqual(extras.always, [])
-  assert.ok(extras.nearby.includes(29020))
-  assert.ok(!extras.nearby.includes(30219), '±1σ does not join the candle scale')
+  assert.deepEqual(extras.nearby, [])
   const session = paddedCandlePriceRange(
     29480,
     29620,

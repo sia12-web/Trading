@@ -26,7 +26,7 @@ export type SessionScaleBar = {
 
 const MIN_FOCUS_BARS = 6
 /** If the live session is only a sliver of the window (5-day zoom-out), fit all visible bars. */
-const SESSION_FOCUS_SHARE = 0.35
+const SESSION_FOCUS_SHARE = 0.25
 
 /** High/low of the session on the last bar; falls back to all visible bars when zoomed out. */
 export function sessionFocusHighLow(
@@ -84,7 +84,7 @@ export function paddedCandlePriceRange(
  * 5M VWAP / 5D VAH / POC can sit hundreds-to-thousands of points off the
  * live session and flatten candles into a hairline.
  */
-export function context55ScalePrices(args: {
+export function context55ScalePrices(_args: {
   vwap?: number | null
   vwapUpper1?: number | null
   vwapLower1?: number | null
@@ -96,18 +96,15 @@ export function context55ScalePrices(args: {
   yLow?: number | null
   onPoc?: number | null
 }): { always: number[]; nearby: number[] } {
-  const nearby: number[] = []
-  const add = (p?: number | null) => {
-    if (p != null && Number.isFinite(p) && p > 0) nearby.push(p)
-  }
-  // VWAP center only. ±σ last-values / extras flatten 5m candles.
-  add(args.vwap)
-  return { always: [], nearby }
+  // Nothing from Context 5-5 joins the candle Y-axis. Nearby VWAP / ±σ
+  // (even window-sized) sit hundreds of NASDAQ points off the live session
+  // and flatten 5m bars. The series still draw; HUD prints the VWAP level.
+  return { always: [], nearby: [] }
 }
 
 /**
- * Keep FRVP POCs on the pane. Pull in 5M VWAP only when it sits within
- * ~2× the session span so ±σ / a distant 5-month mean cannot flatten candles.
+ * Nearby extras may join the session window; far prices are dropped so a
+ * 5-month mean cannot flatten candles. Context 5-5 currently passes none.
  */
 export function overlayPricesForVisibleScale(
   sessionMin: number,

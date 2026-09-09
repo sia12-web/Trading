@@ -46,6 +46,13 @@ assert.ok(focus.min >= 30080, `NY session low ${focus.min}`)
 assert.ok(focus.max <= 30150, `NY session high ${focus.max}`)
 assert.ok(focus.min > 29200, 'overnight Asia must not pull NY to the top')
 
+const nyThin = barsAt('2026-08-14', 10, 30150, 30080, 12)
+const londonHeavy = [...barsAt('2026-08-14', 4, 29600, 29350, 30), ...nyThin]
+const nyStillWins = sessionFocusHighLow(londonHeavy, 'NASDAQ')
+assert.ok(nyStillWins)
+assert.ok(nyStillWins.min >= 30080, 'NY still owns the Y-axis when it is ~29% of the window')
+assert.ok(nyStillWins.max <= 30150)
+
 const week = [...barsAt('2026-08-10', 20, 29200, 29100, 200), ...ny]
 const wide = sessionFocusHighLow(week, 'NASDAQ')
 assert.ok(wide)
