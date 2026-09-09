@@ -6,9 +6,11 @@
 import { NextResponse } from 'next/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { getCmeDailyBars } from '@/lib/databento/cmeHistorical'
+import { getYahooCandlesRange } from '@/lib/yahoo/candles'
 import {
   compute5MonthAnchoredVwapFromDailyBars,
   type AnchoredVwapBenchmark5M,
+  type ContextBar,
 } from '@/lib/chart/context55'
 import type { Instrument } from '@/types/price-feed'
 
@@ -48,7 +50,20 @@ export async function GET(request: Request) {
       })
     }
 
-    const dailyBars = getCmeDailyBars(instrument)
+    let dailyBars = getCmeDailyBars(instrument)
+    let source: 'cme_globex' | 'yahoo_cme' = 'cme_globex'
+
+    if (!dailyBars || dailyBars.length === 0) {
+      const nowSec = Math.floor(Date.now() / 1000)
+      const yahoo = await getYahooCandlesRange(
+        instrument,
+        'D',
+        nowSec - 160 * 24 * 3600,
+        nowSec
+      )
+      dailyBars = (yahoo?.candles ?? []) as ContextBar[]
+      source = 'yahoo_cme'
+    }
 
     if (!dailyBars || dailyBars.length === 0) {
       return NextResponse.json(
@@ -72,7 +87,7 @@ export async function GET(request: Request) {
       instrument,
       avwap5m: benchmark,
       cached: false,
-      source: 'cme_globex',
+      source,
     })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)

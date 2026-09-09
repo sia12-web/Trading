@@ -28,7 +28,7 @@ import { dropImplausibleDeskBars } from '@/lib/chart/liveFormingBar'
 import { AVWAP_CANDLE_FETCH_CALENDAR_DAYS } from '@/lib/chart/sessionVwap'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import type { Instrument } from '@/types/price-feed'
-import { getDatabentoCandles, isDatabentoConfigured } from '@/lib/databento/client'
+import { getDatabentoCandles, isDatabentoConfigured, mergeCandleSeries, aggregateCandles } from '@/lib/databento/client'
 import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
@@ -119,6 +119,26 @@ export async function GET(request: Request) {
           if (databento?.candles?.length) {
             candles = databento.candles
             source = 'databento'
+            // hist.databento.com is delayed; Yahoo CME 5m fills holes + the live tail
+            // so yesterday RTH / overnight FRVP still have bars to compute from.
+            try {
+              const yahoo = await getYahooCandles(instrument, resolution, fetchDays)
+              if (yahoo?.candles?.length) {
+                const barSec =
+                  resolution === '1'
+                    ? 60
+                    : resolution === '15'
+                      ? 900
+                      : resolution === '30'
+                        ? 1800
+                        : resolution === '60'
+                          ? 3600
+                          : 300
+                candles = mergeCandleSeries(candles, aggregateCandles(yahoo.candles, barSec))
+              }
+            } catch (stitchErr) {
+              logger.warn(`[Candles] Yahoo live-tail stitch failed for ${instrument}`, stitchErr)
+            }
           }
         } catch (err) {
           logger.warn(`[Candles] Databento fetch failed for ${instrument}, falling back to OANDA`, err)

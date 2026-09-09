@@ -78,3 +78,36 @@ export function paddedCandlePriceRange(
     },
   }
 }
+
+/** Context 5-5 levels that must stay on the visible Y-axis (VWAP ±1σ + FRVP POCs). */
+export function context55ScalePrices(args: {
+  vwap?: number | null
+  sigma1Upper?: number | null
+  sigma1Lower?: number | null
+  poc5d?: number | null
+  vah5d?: number | null
+  val5d?: number | null
+  yPoc?: number | null
+  yHigh?: number | null
+  yLow?: number | null
+  onPoc?: number | null
+}): number[] {
+  const out: number[] = []
+  for (const price of [
+    args.vwap,
+    args.sigma1Upper,
+    args.sigma1Lower,
+    args.poc5d,
+    args.vah5d,
+    args.val5d,
+    args.yPoc,
+    args.yHigh,
+    args.yLow,
+    args.onPoc,
+  ]) {
+    if (typeof price === 'number' && Number.isFinite(price) && price > 0) {
+      out.push(price)
+    }
+  }
+  return out
+}

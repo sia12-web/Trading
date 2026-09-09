@@ -54,11 +54,19 @@ const live = src('app/dashboard/chart/components/TradingChart.tsx')
 assert.ok(live.includes('DESK_CANDLE_SERIES_COLORS'), 'live uses shared green/red on every market')
 assert.ok(!live.includes('upColor: meta.color'), 'live does not paint GOLD/DOW accent as up-candles')
 assert.ok(live.includes("title: '5M VWAP'"), 'live reprints 5-month VWAP from CME daily bars')
+assert.ok(live.includes('stickyLeftX(0)'), '5-day FRVP is sticky on the visible pane')
+assert.ok(!live.includes('NON-STICKY'), '5-day FRVP no longer scrolls off the default 90-bar view')
+assert.ok(live.includes('scaleOverlayPricesRef'), 'Y-axis includes 5M VWAP and FRVP POCs')
+assert.ok(live.includes("title: '5D POC'"), '5D POC stays as a durable price line')
 assert.ok(sim.includes('DESK_CANDLE_SERIES_COLORS'), 'sim uses the same green/red candles')
 const candlesApi = src('app/api/trading/candles/route.ts')
 assert.ok(
   candlesApi.includes("source !== 'databento'"),
   'Databento CME book is not mixed with OANDA CFD mids'
+)
+assert.ok(
+  candlesApi.includes('Yahoo live-tail stitch'),
+  'Databento hist delay is filled with Yahoo CME 5m so FRVP has yesterday bars'
 )
 const databentoClient = src('lib/databento/client.ts')
 assert.ok(databentoClient.includes('mergeCandleSeries'), 'live Databento fills archive holes')
