@@ -9993,55 +9993,65 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           {/* ── Compact Evaluators & OHLCV Tooltip Row ─────────────────────────── */}
           <div className="flex flex-wrap items-center justify-between gap-x-2.5 gap-y-1 px-1 py-0.5 text-[10.5px] text-gray-400 min-h-[22px]">
             <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
-              {/* Structural Evaluators: Day Type & Opening */}
-              <button
-                type="button"
-                onClick={() => {
-                  if (!leoPanelOpen) return
-                  setLeoExternalPoints([
-                    {
-                      id: 'ctx-day-type',
-                      label: 'Day Type',
-                      value: dayTypeEval.badgeText,
-                      tier: 'CONTEXT',
-                      category: 'DAY_TYPE',
-                      description: 'Current Dalton Day Type',
-                    },
-                  ])
-                }}
-                className={`${leoPanelOpen ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'} transition flex items-center gap-1 select-none`}
-                title={leoPanelOpen ? 'Click to send Day Type to Leo AI' : 'Current Dalton Day Type'}
-              >
-                <span className="text-gray-500">Day: </span>
-                <span className={`text-purple-300 font-semibold ${leoPanelOpen ? 'underline decoration-dotted decoration-purple-400/50 underline-offset-2' : ''}`}>
-                  {dayTypeEval.badgeText}
-                </span>
-              </button>
-              <span className="text-gray-600 text-[10px]">|</span>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!leoPanelOpen) return
-                  setLeoExternalPoints([
-                    {
-                      id: 'ctx-open-type',
-                      label: 'Open Type',
-                      value: openingBadge,
-                      tier: 'CONTEXT',
-                      category: 'OPEN',
-                      description: 'Opening Activity Structure',
-                    },
-                  ])
-                }}
-                className={`${leoPanelOpen ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'} transition flex items-center gap-1 select-none`}
-                title={leoPanelOpen ? 'Click to send Open Type to Leo AI' : 'Opening Activity Structure'}
-              >
-                <span className="text-gray-500">Open: </span>
-                <span className={`text-cyan-300 font-semibold ${leoPanelOpen ? 'underline decoration-dotted decoration-cyan-400/50 underline-offset-2' : ''}`}>
-                  {openingBadge}
-                </span>
-              </button>
-              <span className="text-gray-600 text-[10px]">|</span>
+              {/* Structural Evaluators: Day Type & Opening — only visible after NYC cash open (09:30 ET) */}
+              {(() => {
+                const nowNy = new Date().toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' }).split(':').map(Number)
+                const nyDec = (nowNy[0] ?? 0) + (nowNy[1] ?? 0) / 60
+                const isNycOpen = nyDec >= 9.5 && nyDec < 16
+                if (!isNycOpen) return null
+                return (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!leoPanelOpen) return
+                        setLeoExternalPoints([
+                          {
+                            id: 'ctx-day-type',
+                            label: 'Day Type',
+                            value: dayTypeEval.badgeText,
+                            tier: 'CONTEXT',
+                            category: 'DAY_TYPE',
+                            description: 'Current Dalton Day Type',
+                          },
+                        ])
+                      }}
+                      className={`${leoPanelOpen ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'} transition flex items-center gap-1 select-none`}
+                      title={leoPanelOpen ? 'Click to send Day Type to Leo AI' : 'Current Dalton Day Type'}
+                    >
+                      <span className="text-gray-500">Day: </span>
+                      <span className={`text-purple-300 font-semibold ${leoPanelOpen ? 'underline decoration-dotted decoration-purple-400/50 underline-offset-2' : ''}`}>
+                        {dayTypeEval.badgeText}
+                      </span>
+                    </button>
+                    <span className="text-gray-600 text-[10px]">|</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!leoPanelOpen) return
+                        setLeoExternalPoints([
+                          {
+                            id: 'ctx-open-type',
+                            label: 'Open Type',
+                            value: openingBadge,
+                            tier: 'CONTEXT',
+                            category: 'OPEN',
+                            description: 'Opening Activity Structure',
+                          },
+                        ])
+                      }}
+                      className={`${leoPanelOpen ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'} transition flex items-center gap-1 select-none`}
+                      title={leoPanelOpen ? 'Click to send Open Type to Leo AI' : 'Opening Activity Structure'}
+                    >
+                      <span className="text-gray-500">Open: </span>
+                      <span className={`text-cyan-300 font-semibold ${leoPanelOpen ? 'underline decoration-dotted decoration-cyan-400/50 underline-offset-2' : ''}`}>
+                        {openingBadge}
+                      </span>
+                    </button>
+                    <span className="text-gray-600 text-[10px]">|</span>
+                  </>
+                )
+              })()}
               {/* VWAP HUD Label */}
               <div
                 className="transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
@@ -10356,6 +10366,25 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               </span>
             </button>
 
+            {/* CVD Sub-Chart Toggle */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowCvdSubPane((prev) => !prev)
+                setCvdPanelOpen((prev) => !prev)
+              }}
+              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
+                showCvdSubPane || cvdPanelOpen
+                  ? 'bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/30 font-bold'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-cyan-300'
+              }`}
+              title="Toggle CVD Sub-Chart Pane"
+            >
+              <span>📊</span>
+              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-cyan-200 shadow-xl border border-slate-800 group-hover:block z-50">
+                CVD Sub-Chart ({showCvdSubPane || cvdPanelOpen ? 'ON' : 'OFF'})
+              </span>
+            </button>
 
             {/* ── Vertical Separator ── */}
             <div className="w-px h-6 bg-slate-700/80 mx-0.5" />
