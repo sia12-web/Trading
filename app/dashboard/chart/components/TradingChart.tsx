@@ -1269,8 +1269,8 @@ export function TradingChart({
   const [currentVwap, setCurrentVwap] = useState<{ vwap: number; upper1: number; lower1: number } | null>(null)
   const latestVwapBandsRef = useRef<any>(null)
   const [cvdPanelOpen, setCvdPanelOpen] = useState(false)
-  const [showCvdSubPane, setShowCvdSubPane] = useState(true)
-  const [showFootprint, setShowFootprint] = useState(true)
+  const [showCvdSubPane, setShowCvdSubPane] = useState(false)
+  const [showFootprint, setShowFootprint] = useState(false)
   const footprintBarsRef = useRef<FootprintBar[]>([])
   const footprintCanvasRef = useRef<HTMLCanvasElement>(null)
   const paintFootprintRef = useRef<() => void>(() => { })
@@ -1388,15 +1388,15 @@ export function TradingChart({
   )
 
   const activeTrendlines = useMemo(
-    () => trendlines.filter((t) => !t.instrument || t.instrument === instrument),
+    () => trendlines.filter((t) => t.instrument === instrument),
     [trendlines, instrument]
   )
   const activeRangeBoxes = useMemo(
-    () => rangeBoxes.filter((r) => !r.instrument || r.instrument === instrument),
+    () => rangeBoxes.filter((r) => r.instrument === instrument),
     [rangeBoxes, instrument]
   )
   const activeManualFrvps = useMemo(
-    () => manualFrvps.filter((f) => !f.instrument || f.instrument === instrument),
+    () => manualFrvps.filter((f) => f.instrument === instrument),
     [manualFrvps, instrument]
   )
 
@@ -9915,7 +9915,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               }`}
               title="Draw Fixed Range Volume Profile (Hotkey: V)"
             >
-              <span>📊</span>
+              <span>📈</span>
               <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-amber-200 shadow-xl border border-slate-800 group-hover:block z-50">
                 Manual FRVP (V)
               </span>
@@ -9938,7 +9938,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               </span>
             </button>
 
-
             {/* Footprint Order Flow Toggle */}
             <button
               type="button"
@@ -9956,35 +9955,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               </span>
             </button>
 
-            {/* CVD Order Flow Toggle */}
-            <button
-              type="button"
-              onClick={() => {
-                setShowCvdSubPane((prev) => !prev)
-                setCvdPanelOpen((prev) => !prev)
-              }}
-              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
-                showCvdSubPane || cvdPanelOpen
-                  ? 'bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/30 font-bold'
-                  : 'text-slate-400 hover:bg-slate-800 hover:text-cyan-300'
-              }`}
-              title="Toggle Cumulative Volume Delta (CVD) Sub-Chart & Inspector"
-            >
-              <span>📊</span>
-              {sessionOrderFlow?.divergence !== 'NONE' && (
-                <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                    sessionOrderFlow?.divergence === 'BULLISH_ABSORPTION' ? 'bg-emerald-400' : 'bg-rose-400'
-                  }`} />
-                  <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
-                    sessionOrderFlow?.divergence === 'BULLISH_ABSORPTION' ? 'bg-emerald-500' : 'bg-rose-500'
-                  }`} />
-                </span>
-              )}
-              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-cyan-200 shadow-xl border border-slate-800 group-hover:block z-50">
-                Order Flow & CVD Inspector
-              </span>
-            </button>
 
             {/* ── Vertical Separator ── */}
             <div className="w-px h-6 bg-slate-700/80 mx-0.5" />
