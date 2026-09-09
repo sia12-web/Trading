@@ -1280,6 +1280,7 @@ export function TradingChart({
   const cvdContainerRef = useRef<HTMLDivElement>(null)
   const cvdChartRef = useRef<IChartApi | null>(null)
   const cvdCandleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
+  const cachedCvdBarsRef = useRef<any[]>([])
   const cvdSessionOverlayRef = useRef<HTMLDivElement>(null)
   const [currentCvdLegend, setCurrentCvdLegend] = useState<{ open: number; high: number; low: number; close: number } | null>(null)
   const [yesterdayNyc, setYesterdayNyc] = useState<YesterdayNycSession | null>(null)
@@ -5834,138 +5835,187 @@ export function TradingChart({
     }
   }, []) // initialize once only
 
-  // ── Initialize CVD Sub-Chart Pane ──────────────────────────────────────────────
+  // ── Initialize CVD Sub-Chart Pane (Created once, instantly toggled via CSS) ──────────
   useEffect(() => {
-    if (!showCvdSubPane || !cvdContainerRef.current) return
+    if (!cvdContainerRef.current) return
 
     const cvdContainer = cvdContainerRef.current
-    const cvdChart = createChart(cvdContainer, {
-      ...CHART_THEME,
-      width: cvdContainer.clientWidth,
-      height: cvdContainer.clientHeight,
-      layout: {
-        background: { color: '#0b0e14' },
-        textColor: '#94a3b8',
-      },
-      grid: {
-        vertLines: { color: 'rgba(255, 255, 255, 0.03)' },
-        horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
-      },
-      timeScale: {
-        ...CHART_THEME.timeScale,
-        visible: true,
-        timeVisible: true,
-        secondsVisible: false,
-        borderVisible: true,
-        borderColor: '#1e293b',
-      },
-      rightPriceScale: {
-        borderVisible: true,
-        borderColor: '#1e293b',
-        autoScale: true,
-        scaleMargins: {
-          top: 0.15,
-          bottom: 0.15,
+    if (!cvdChartRef.current) {
+      const cvdChart = createChart(cvdContainer, {
+        ...CHART_THEME,
+        width: cvdContainer.clientWidth || 800,
+        height: cvdSubPaneHeight,
+        layout: {
+          background: { color: '#0b0e14' },
+          textColor: '#94a3b8',
         },
-      },
-    })
-    cvdChartRef.current = cvdChart
-
-    const cvdSeries = cvdChart.addCandlestickSeries({
-      upColor: '#10b981',
-      downColor: '#f43f5e',
-      borderUpColor: '#10b981',
-      borderDownColor: '#f43f5e',
-      wickUpColor: '#34d399',
-      wickDownColor: '#fb7185',
-      priceFormat: {
-        type: 'volume',
-        precision: 0,
-      },
-    })
-    cvdCandleSeriesRef.current = cvdSeries
-
-    try {
-      cvdSeries.createPriceLine({
-        price: 0,
-        color: 'rgba(148, 163, 184, 0.45)',
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: '0 Δ',
+        grid: {
+          vertLines: { color: 'rgba(255, 255, 255, 0.03)' },
+          horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+        },
+        timeScale: {
+          ...CHART_THEME.timeScale,
+          visible: true,
+          timeVisible: true,
+          secondsVisible: false,
+          borderVisible: true,
+          borderColor: '#1e293b',
+        },
+        rightPriceScale: {
+          borderVisible: true,
+          borderColor: '#1e293b',
+          autoScale: true,
+          scaleMargins: {
+            top: 0.15,
+            bottom: 0.15,
+          },
+        },
       })
-    } catch {}
+      cvdChartRef.current = cvdChart
 
-    let isSyncing = false
-    const syncMainToCvd = (range: any) => {
-      if (isSyncing || !range) return
-      isSyncing = true
+      const cvdSeries = cvdChart.addCandlestickSeries({
+        upColor: '#10b981',
+        downColor: '#f43f5e',
+        borderUpColor: '#10b981',
+        borderDownColor: '#f43f5e',
+        wickUpColor: '#34d399',
+        wickDownColor: '#fb7185',
+        priceFormat: {
+          type: 'volume',
+          precision: 0,
+        },
+      })
+      cvdCandleSeriesRef.current = cvdSeries
+
       try {
-        cvdChart.timeScale().setVisibleLogicalRange(range)
+        cvdSeries.createPriceLine({
+          price: 0,
+          color: 'rgba(148, 163, 184, 0.45)',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: '0 Δ',
+        })
       } catch {}
-      isSyncing = false
+
+      let isSyncing = false
+      const syncMainToCvd = (range: any) => {
+        if (isSyncing || !range) return
+        isSyncing = true
+        try {
+          cvdChart.timeScale().setVisibleLogicalRange(range)
+        } catch {}
+        isSyncing = false
+      }
+
+      const syncCvdToMain = (range: any) => {
+        if (isSyncing || !range || !chartRef.current) return
+        isSyncing = true
+        try {
+          chartRef.current.timeScale().setVisibleLogicalRange(range)
+        } catch {}
+        isSyncing = false
+      }
+
+      const mainTimeScale = chartRef.current?.timeScale()
+      mainTimeScale?.subscribeVisibleLogicalRangeChange(syncMainToCvd)
+      cvdChart.timeScale().subscribeVisibleLogicalRangeChange(syncCvdToMain)
+
+      const initialRange = mainTimeScale?.getVisibleLogicalRange()
+      if (initialRange) {
+        try {
+          cvdChart.timeScale().setVisibleLogicalRange(initialRange)
+        } catch {}
+      }
+
+      const onCrosshairMove = (param: any) => {
+        if (!param || !param.time || !param.seriesPrices) return
+        const priceData = param.seriesPrices.get(cvdSeries)
+        if (priceData && typeof priceData === 'object') {
+          setCurrentCvdLegend({
+            open: Math.round((priceData as any).open ?? 0),
+            high: Math.round((priceData as any).high ?? 0),
+            low: Math.round((priceData as any).low ?? 0),
+            close: Math.round((priceData as any).close ?? 0),
+          })
+        }
+      }
+      cvdChart.subscribeCrosshairMove(onCrosshairMove)
+
+      const ro = new ResizeObserver(() => {
+        if (cvdContainerRef.current && cvdChartRef.current && showCvdSubPane) {
+          cvdChartRef.current.resize(
+            cvdContainerRef.current.clientWidth,
+            cvdContainerRef.current.clientHeight
+          )
+        }
+      })
+      ro.observe(cvdContainer)
     }
 
-    const syncCvdToMain = (range: any) => {
-      if (isSyncing || !range || !chartRef.current) return
-      isSyncing = true
-      try {
-        chartRef.current.timeScale().setVisibleLogicalRange(range)
-      } catch {}
-      isSyncing = false
+    // Set data immediately if cached or from candles
+    let barsToSet = cachedCvdBarsRef.current
+    if (barsToSet.length === 0 && candlesRef.current.length > 0) {
+      const cvdBars = computeCvdCandleBars(
+        candlesRef.current.map((c) => ({
+          time: c.time as number,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: c.volume,
+        }))
+      )
+      const tz = chartTzRef.current
+      barsToSet = mapTimesToChart(
+        cvdBars.map((b) => ({
+          time: b.time,
+          open: b.open,
+          high: b.high,
+          low: b.low,
+          close: b.close,
+        })),
+        tz
+      ).map((b) => ({
+        time: b.time as UTCTimestamp,
+        open: (b as any).open,
+        high: (b as any).high,
+        low: (b as any).low,
+        close: (b as any).close,
+      }))
+      cachedCvdBarsRef.current = barsToSet
     }
 
-    const mainTimeScale = chartRef.current?.timeScale()
-    mainTimeScale?.subscribeVisibleLogicalRangeChange(syncMainToCvd)
-    cvdChart.timeScale().subscribeVisibleLogicalRangeChange(syncCvdToMain)
-
-    const initialRange = mainTimeScale?.getVisibleLogicalRange()
-    if (initialRange) {
-      try {
-        cvdChart.timeScale().setVisibleLogicalRange(initialRange)
-      } catch {}
-    }
-
-    const onCrosshairMove = (param: any) => {
-      if (!param || !param.time || !param.seriesPrices) return
-      const priceData = param.seriesPrices.get(cvdSeries)
-      if (priceData && typeof priceData === 'object') {
+    if (barsToSet.length > 0 && cvdCandleSeriesRef.current) {
+      cvdCandleSeriesRef.current.setData(barsToSet)
+      const lastCvd = barsToSet[barsToSet.length - 1]
+      if (lastCvd) {
         setCurrentCvdLegend({
-          open: Math.round((priceData as any).open ?? 0),
-          high: Math.round((priceData as any).high ?? 0),
-          low: Math.round((priceData as any).low ?? 0),
-          close: Math.round((priceData as any).close ?? 0),
+          open: Math.round(lastCvd.open),
+          high: Math.round(lastCvd.high),
+          low: Math.round(lastCvd.low),
+          close: Math.round(lastCvd.close),
         })
       }
     }
-    cvdChart.subscribeCrosshairMove(onCrosshairMove)
 
-    const ro = new ResizeObserver(() => {
-      if (cvdContainerRef.current && cvdChartRef.current) {
-        cvdChartRef.current.resize(
-          cvdContainerRef.current.clientWidth,
-          cvdContainerRef.current.clientHeight
-        )
-      }
-    })
-    ro.observe(cvdContainer)
-
-    return () => {
-      ro.disconnect()
-      try {
-        mainTimeScale?.unsubscribeVisibleLogicalRangeChange(syncMainToCvd)
-      } catch {}
-      try {
-        cvdChart.timeScale().unsubscribeVisibleLogicalRangeChange(syncCvdToMain)
-      } catch {}
-      try {
-        cvdChart.unsubscribeCrosshairMove(onCrosshairMove)
-      } catch {}
-      cvdChart.remove()
-      cvdChartRef.current = null
-      cvdCandleSeriesRef.current = null
+    if (showCvdSubPane && cvdChartRef.current && cvdContainerRef.current) {
+      requestAnimationFrame(() => {
+        if (cvdChartRef.current && cvdContainerRef.current) {
+          cvdChartRef.current.resize(
+            cvdContainerRef.current.clientWidth,
+            cvdSubPaneHeight
+          )
+          const mainRange = chartRef.current?.timeScale().getVisibleLogicalRange()
+          if (mainRange) {
+            try {
+              cvdChartRef.current.timeScale().setVisibleLogicalRange(mainRange)
+            } catch {}
+          }
+        }
+      })
     }
-  }, [showCvdSubPane])
+  }, [showCvdSubPane, cvdSubPaneHeight])
 
   // ── Draggable Resizer Handle for CVD Sub-Pane (TradingView Style) ────────────
   const handleCvdResizerMouseDown = useCallback((e: React.MouseEvent) => {
@@ -6474,35 +6524,37 @@ export function TradingChart({
         vs.lower3.setData([])
       }
 
-      // Update CVD Candlesticks in Sub-Chart Pane
-      if (cvdCandleSeriesRef.current) {
-        const cvdBars = computeCvdCandleBars(
-          ordered.map((c) => ({
-            time: c.time as number,
-            open: c.open,
-            high: c.high,
-            low: c.low,
-            close: c.close,
-            volume: c.volume,
-          }))
-        )
-        const tz = chartTzRef.current
-        const shiftedCvd = mapTimesToChart(
-          cvdBars.map((b) => ({
-            time: b.time,
-            open: b.open,
-            high: b.high,
-            low: b.low,
-            close: b.close,
-          })),
-          tz
-        ).map((b) => ({
-          time: b.time as UTCTimestamp,
-          open: (b as any).open,
-          high: (b as any).high,
-          low: (b as any).low,
-          close: (b as any).close,
+      // Update & Cache CVD Candlesticks for Sub-Chart Pane
+      const cvdBars = computeCvdCandleBars(
+        ordered.map((c) => ({
+          time: c.time as number,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: c.volume,
         }))
+      )
+      const tz = chartTzRef.current
+      const shiftedCvd = mapTimesToChart(
+        cvdBars.map((b) => ({
+          time: b.time,
+          open: b.open,
+          high: b.high,
+          low: b.low,
+          close: b.close,
+        })),
+        tz
+      ).map((b) => ({
+        time: b.time as UTCTimestamp,
+        open: (b as any).open,
+        high: (b as any).high,
+        low: (b as any).low,
+        close: (b as any).close,
+      }))
+      cachedCvdBarsRef.current = shiftedCvd
+
+      if (cvdCandleSeriesRef.current) {
         cvdCandleSeriesRef.current.setData(shiftedCvd)
         if (shiftedCvd.length > 0) {
           const lastCvd = shiftedCvd[shiftedCvd.length - 1]
@@ -6518,8 +6570,10 @@ export function TradingChart({
       }
 
       // Compute and cache Footprint bars for chart overlay and Leo AI telemetry
+      // Limit to latest 35 bars so page load is INSTANT and does not freeze main thread
+      const recentForFootprint = ordered.slice(-35)
       const fpBars = computeFootprintBars(
-        ordered.map((c) => ({
+        recentForFootprint.map((c) => ({
           time: c.time as number,
           open: c.open,
           high: c.high,
@@ -9891,7 +9945,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 )}
               </div>
               <span className="text-gray-600 text-[10px]">|</span>
-              {/* Interactive CVD Order Flow Button */}
+              {/* Interactive CVD Sub-Chart Pane Button */}
               <button
                 type="button"
                 onClick={() => {
@@ -9900,21 +9954,15 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 }}
                 className={`transition flex items-center gap-1.5 select-none px-1.5 py-0.5 rounded cursor-pointer ${
                   showCvdSubPane || cvdPanelOpen
-                    ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/60 shadow-sm'
-                    : sessionOrderFlow?.trend === 'BUYER_DOMINANT'
-                    ? 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 border border-emerald-500/30'
-                    : sessionOrderFlow?.trend === 'SELLER_DOMINANT'
-                    ? 'bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 border border-rose-500/30'
+                    ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/60 shadow-sm font-semibold'
                     : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
                 }`}
-                title="Click to toggle CVD Sub-Chart Pane & Order Flow Inspector"
+                title="Click to toggle CVD Sub-Chart Pane"
               >
                 <span className="text-[11px]">📊</span>
                 <span className="text-gray-400 font-semibold">CVD:</span>
-                <span className="font-mono font-bold">
-                  {sessionOrderFlow
-                    ? `${sessionOrderFlow.sessionCvd >= 0 ? '+' : ''}${sessionOrderFlow.sessionCvd.toLocaleString()} Δ`
-                    : '—'}
+                <span className={`font-mono font-bold ${showCvdSubPane || cvdPanelOpen ? 'text-cyan-300' : 'text-zinc-400'}`}>
+                  {showCvdSubPane || cvdPanelOpen ? 'ON' : 'OFF'}
                 </span>
                 {sessionOrderFlow?.divergence !== 'NONE' && (
                   <span className="relative flex h-2 w-2">
@@ -10010,44 +10058,44 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         </div>
 
         {/* Synchronized CVD Sub-Chart Pane with TradingView Draggable Resizer */}
-        {showCvdSubPane && (
+        <div
+          className={`relative w-full border-t border-zinc-800 bg-[#0b0e14] flex flex-col flex-shrink-0 ${
+            showCvdSubPane ? '' : 'hidden'
+          }`}
+          style={{ height: showCvdSubPane ? cvdSubPaneHeight : 0 }}
+        >
+          {/* Draggable Resizer Splitter Bar (TradingView Style) */}
           <div
-            className="relative w-full border-t border-zinc-800 bg-[#0b0e14] flex flex-col flex-shrink-0"
-            style={{ height: cvdSubPaneHeight }}
+            onMouseDown={handleCvdResizerMouseDown}
+            className="absolute -top-1.5 left-0 right-0 h-3 z-30 cursor-ns-resize flex items-center justify-center group hover:bg-cyan-500/20 transition-colors select-none"
+            title="Drag up or down to resize CVD sub-pane"
           >
-            {/* Draggable Resizer Splitter Bar (TradingView Style) */}
-            <div
-              onMouseDown={handleCvdResizerMouseDown}
-              className="absolute -top-1.5 left-0 right-0 h-3 z-30 cursor-ns-resize flex items-center justify-center group hover:bg-cyan-500/20 transition-colors select-none"
-              title="Drag up or down to resize CVD sub-pane"
-            >
-              <div className="w-16 h-1 rounded-full bg-zinc-700/80 group-hover:bg-cyan-400 group-active:bg-cyan-300 shadow-sm transition-colors" />
-            </div>
-
-            {/* CVD Sub-Pane Header Legend */}
-            <div className="absolute top-2 left-3 z-10 flex items-center gap-2 text-xs font-mono font-semibold bg-zinc-950/85 px-2.5 py-1 rounded border border-zinc-800/80 pointer-events-none select-none shadow-sm">
-              <span className="font-bold text-zinc-300">CVD</span>
-              {currentCvdLegend ? (
-                <span className={currentCvdLegend.close >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                  {currentCvdLegend.close >= 0 ? '+' : ''}
-                  {Math.abs(currentCvdLegend.close) >= 1000
-                    ? `${(currentCvdLegend.close / 1000).toFixed(2)}K`
-                    : currentCvdLegend.close.toLocaleString()}
-                </span>
-              ) : (
-                <span className="text-zinc-500">—</span>
-              )}
-            </div>
-
-            {/* CVD Lightweight Chart Container */}
-            <div ref={cvdContainerRef} className="absolute inset-0 z-0" />
-            <div
-              ref={cvdSessionOverlayRef}
-              className="pointer-events-none absolute inset-0 z-[1]"
-              style={{ opacity: 1, transition: 'none', willChange: 'opacity' }}
-            />
+            <div className="w-16 h-1 rounded-full bg-zinc-700/80 group-hover:bg-cyan-400 group-active:bg-cyan-300 shadow-sm transition-colors" />
           </div>
-        )}
+
+          {/* CVD Sub-Pane Header Legend */}
+          <div className="absolute top-2 left-3 z-10 flex items-center gap-2 text-xs font-mono font-semibold bg-zinc-950/85 px-2.5 py-1 rounded border border-zinc-800/80 pointer-events-none select-none shadow-sm">
+            <span className="font-bold text-zinc-300">CVD</span>
+            {currentCvdLegend ? (
+              <span className={currentCvdLegend.close >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                {currentCvdLegend.close >= 0 ? '+' : ''}
+                {Math.abs(currentCvdLegend.close) >= 1000
+                  ? `${(currentCvdLegend.close / 1000).toFixed(2)}K`
+                  : currentCvdLegend.close.toLocaleString()}
+              </span>
+            ) : (
+              <span className="text-zinc-500">—</span>
+            )}
+          </div>
+
+          {/* CVD Lightweight Chart Container */}
+          <div ref={cvdContainerRef} className="absolute inset-0 z-0" />
+          <div
+            ref={cvdSessionOverlayRef}
+            className="pointer-events-none absolute inset-0 z-[1]"
+            style={{ opacity: 1, transition: 'none', willChange: 'opacity' }}
+          />
+        </div>
 
         {/* ── Draggable Floating Drawing Tool Rail (horizontal) ── */}
         <div
