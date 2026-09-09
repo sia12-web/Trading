@@ -9,6 +9,7 @@ import {
   countNearTipGaps,
   tipLagSlots,
   needsCandleReprint,
+  bookMatchesBarSec,
 } from '../lib/chart/candleGaps'
 import { DESK_SESSION_GAP_SEC } from '../lib/chart/liveFormingBar'
 
@@ -54,6 +55,48 @@ import { DESK_SESSION_GAP_SEC } from '../lib/chart/liveFormingBar'
     }),
     true
   )
+}
+
+{
+  // 30m bars must not look like five missing 5m slots
+  const t0 = 1_700_000_000
+  const bars30 = [
+    { time: t0 },
+    { time: t0 + 1800 },
+    { time: t0 + 3600 },
+  ]
+  assert.deepEqual(findMissingBarTimes(bars30, 1800), [])
+  assert.equal(
+    needsCandleReprint({
+      bars: bars30,
+      barSec: 1800,
+      nearTipLookback: 10,
+      wallUnix: t0 + 3600 + 60,
+    }),
+    false,
+    '30m spacing is not a gap when barSec=1800'
+  )
+  assert.equal(
+    needsCandleReprint({
+      bars: bars30,
+      barSec: 300,
+      nearTipLookback: 10,
+      wallUnix: t0 + 3600 + 60,
+    }),
+    true,
+    'wrong barSec false-triggers reprint — client must pass TF seconds'
+  )
+}
+
+{
+  const t0 = 1_700_000_000
+  const bars5 = Array.from({ length: 20 }, (_, i) => ({ time: t0 + i * 300 }))
+  assert.equal(bookMatchesBarSec(bars5, 300), true)
+  assert.equal(bookMatchesBarSec(bars5, 60), false, '5m book must not match 1m barSec')
+  assert.equal(bookMatchesBarSec(bars5, 1800), false, '5m book must not match 30m barSec')
+  const bars1 = Array.from({ length: 20 }, (_, i) => ({ time: t0 + i * 60 }))
+  assert.equal(bookMatchesBarSec(bars1, 60), true)
+  assert.equal(bookMatchesBarSec(bars1, 300), false)
 }
 
 console.log('candle_gaps.test.ts: all passed')

@@ -138,18 +138,17 @@ export async function GET(request: Request) {
 
           const loadDatabentoBook = async (bypassCache: boolean) => {
             if (bypassCache) invalidateDatabentoCandleCache(instrument)
-            const databento = await getDatabentoCandles(instrument, resolution, fetchDays, {
-              bypassCache,
-            })
+            const [databento, yahoo] = await Promise.all([
+              getDatabentoCandles(instrument, resolution, fetchDays, { bypassCache }),
+              getYahooCandles(instrument, resolution, fetchDays).catch((stitchErr) => {
+                logger.warn(`[Candles] Yahoo live-tail stitch failed for ${instrument}`, stitchErr)
+                return null
+              }),
+            ])
             if (!databento?.candles?.length) return null
             let book = databento.candles
-            try {
-              const yahoo = await getYahooCandles(instrument, resolution, fetchDays)
-              if (yahoo?.candles?.length) {
-                book = mergeCandleSeries(book, aggregateCandles(yahoo.candles, barSec))
-              }
-            } catch (stitchErr) {
-              logger.warn(`[Candles] Yahoo live-tail stitch failed for ${instrument}`, stitchErr)
+            if (yahoo?.candles?.length) {
+              book = mergeCandleSeries(book, aggregateCandles(yahoo.candles, barSec))
             }
             return book
           }

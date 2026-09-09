@@ -16,8 +16,15 @@ export type FormingBar = {
 }
 
 export const DESK_LIVE_BAR_SEC = 300
-/** Fill at most 3 missing 5m slots (~15m) from last close. */
+/** Fill at most ~15 minutes of missing slots from last close (scales with bar size). */
+export const LIVE_MAX_GAP_FILL_SEC = 15 * 60
+/** @deprecated Prefer LIVE_MAX_GAP_FILL_SEC — kept for 5m (= 3 slots). */
 export const LIVE_MAX_GAP_FILLS = 3
+
+export function maxLiveGapFills(barSec: number = DESK_LIVE_BAR_SEC): number {
+  if (!(barSec > 0)) return LIVE_MAX_GAP_FILLS
+  return Math.max(LIVE_MAX_GAP_FILLS, Math.ceil(LIVE_MAX_GAP_FILL_SEC / barSec))
+}
 /** If the packet stamp is older than this, bucket from wall clock. */
 export const LIVE_STALE_QUOTE_SEC = 120
 /** Reject a live tip that would paint a fake dump/spike vs the CME history close. */
@@ -77,7 +84,7 @@ export function applyTickToFormingBar(
   }
 
   const skipped = Math.round((bucket - lastT) / barSec) - 1
-  if (skipped > LIVE_MAX_GAP_FILLS) {
+  if (skipped > maxLiveGapFills(barSec)) {
     const bar: FormingBar = {
       time: bucket,
       open: price,

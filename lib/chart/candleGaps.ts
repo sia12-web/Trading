@@ -40,6 +40,29 @@ export function countNearTipGaps(
   return findMissingBarTimes(tip, barSec).length
 }
 
+/**
+ * True when the held book's typical spacing matches `barSec`.
+ * After a timeframe switch the prior TF may still be on screen — do not gap-detect
+ * 5m bars with a 1m barSec (invents holes) or 1m with 30m (misses real holes).
+ */
+export function bookMatchesBarSec(
+  bars: TimedBar[],
+  barSec: number,
+  sample = 12
+): boolean {
+  if (!(barSec > 0) || bars.length < 2) return false
+  const tip = bars.slice(-Math.max(2, sample))
+  const diffs: number[] = []
+  for (let i = 1; i < tip.length; i++) {
+    const dt = tip[i]!.time - tip[i - 1]!.time
+    if (dt > 0 && dt < DESK_SESSION_GAP_SEC) diffs.push(dt)
+  }
+  if (diffs.length === 0) return false
+  diffs.sort((a, b) => a - b)
+  const median = diffs[Math.floor(diffs.length / 2)]!
+  return median >= barSec * 0.75 && median <= barSec * 1.5
+}
+
 /** True when wall clock is ahead of the last closed bar by more than one slot. */
 export function tipLagSlots(
   lastBarUnix: number,

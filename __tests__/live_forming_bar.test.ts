@@ -12,6 +12,7 @@ import {
   mergeHistoryWithLiveTip,
   quoteUnixForBucket,
   LIVE_MAX_GAP_FILLS,
+  maxLiveGapFills,
 } from '../lib/chart/liveFormingBar'
 
 const t0 = 1_700_000_000 - (1_700_000_000 % 300)
@@ -60,6 +61,15 @@ const t0 = 1_700_000_000 - (1_700_000_000 % 300)
   )
   assert.equal(far.gapFills.length, 0, 'do not invent overnight flats')
   assert.equal(far.last.open, 90)
+}
+
+{
+  assert.equal(maxLiveGapFills(300), 3)
+  assert.equal(maxLiveGapFills(60), 15, '1m fills ~15 minutes of hist lag')
+  const last = { time: t0, open: 100, high: 101, low: 99, close: 100 }
+  const oneMin = applyTickToFormingBar(last, 101, t0 + 10 * 60 + 5, 60)
+  assert.equal(oneMin.gapFills.length, 9, '1m tip bridges Databento lag without a hole')
+  assert.equal(oneMin.last.time, t0 + 600)
 }
 
 {

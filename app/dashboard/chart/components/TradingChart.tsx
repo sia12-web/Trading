@@ -67,7 +67,11 @@ import {
   closedHistoryOhlcChanged,
   quoteUnixForBucket,
 } from '@/lib/chart/liveFormingBar'
-import { needsCandleReprint, countNearTipGaps } from '@/lib/chart/candleGaps'
+import {
+  needsCandleReprint,
+  countNearTipGaps,
+  bookMatchesBarSec,
+} from '@/lib/chart/candleGaps'
 import {
   compute5DayFixedRangeVolumeProfile,
   computeYesterdayNycSession,
@@ -1353,6 +1357,10 @@ export function TradingChart({
   const paintFootprintRef = useRef<() => void>(() => { })
   const savedFootprintRangeRef = useRef<{ from: number; to: number } | null>(null)
   const candleReprintAtRef = useRef(0)
+  /** Last good book per instrument+timeframe — paint instantly on tab switch. */
+  const marketBookCacheRef = useRef<Map<string, OHLCV[]>>(new Map())
+  /** Skip one gap-reprint after TF change (wrong barSec would invent holes). */
+  const skipGapReprintOnceRef = useRef(false)
   const cvdContainerRef = useRef<HTMLDivElement>(null)
   const cvdChartRef = useRef<IChartApi | null>(null)
   const cvdCandleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -6231,8 +6239,60 @@ export function TradingChart({
             volume: c.volume ?? 0,
           }))
           const trimmed = normalizeCandleTimes(toDeskCandles(mapped, instrument, timeframe))
+          marketBookCacheRef.current.set(`${instrument}:${timeframe}`, trimmed)
           setCandles(trimmed)
           setDataMode('live')
+          // Warm the other board tabs in the background so switches feel instant.
+          for (const other of visibleInstruments) {
+            if (other === instrument) continue
+            const key = `${other}:${timeframe}`
+            if (marketBookCacheRef.current.has(key)) continue
+            void fetch(
+              `/api/trading/candles?instrument=${other}&timeframe=${timeframe}&days=${days}&quote=0`,
+              { cache: 'no-store' }
+            )
+              .then((r) => (r.ok ? r.json() : null))
+              .then((warm) => {
+                if (!warm || !Array.isArray(warm.candles) || !warm.candles.length) return
+                const mappedWarm: OHLCV[] = warm.candles.map((c: any) => ({
+                  time: c.time as UTCTimestamp,
+                  open: c.open,
+                  high: c.high,
+                  low: c.low,
+                  close: c.close,
+                  volume: c.volume ?? 0,
+                }))
+                const book = normalizeCandleTimes(toDeskCandles(mappedWarm, other, timeframe))
+                if (book.length) marketBookCacheRef.current.set(key, book)
+              })
+              .catch(() => {})
+          }
+          // Warm sibling timeframes for this market (TF switch without inventing gaps).
+          for (const tf of ['1m', '5m', '30m'] as const) {
+            if (tf === timeframe) continue
+            const key = `${instrument}:${tf}`
+            if (marketBookCacheRef.current.has(key)) continue
+            const tfDays = tf === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
+            void fetch(
+              `/api/trading/candles?instrument=${instrument}&timeframe=${tf}&days=${tfDays}&quote=0`,
+              { cache: 'no-store' }
+            )
+              .then((r) => (r.ok ? r.json() : null))
+              .then((warm) => {
+                if (!warm || !Array.isArray(warm.candles) || !warm.candles.length) return
+                const mappedWarm: OHLCV[] = warm.candles.map((c: any) => ({
+                  time: c.time as UTCTimestamp,
+                  open: c.open,
+                  high: c.high,
+                  low: c.low,
+                  close: c.close,
+                  volume: c.volume ?? 0,
+                }))
+                const book = normalizeCandleTimes(toDeskCandles(mappedWarm, instrument, tf))
+                if (book.length) marketBookCacheRef.current.set(key, book)
+              })
+              .catch(() => {})
+          }
           setCandleFeed(
             json.source === 'yahoo' || json.source === 'databento'
               ? 'yahoo'
@@ -6312,11 +6372,22 @@ export function TradingChart({
     avwapFetchDoneRef.current = false
     setAvwap5mBenchmark(null)
     setStreamArmed(false)
-    setCandles([])
-    candlesRef.current = []
+    // Instant paint from cache when available — never blank the pane on tab switch.
+    const cached = marketBookCacheRef.current.get(`${instrument}:${timeframe}`)
+    if (cached && cached.length > 0) {
+      setCandles(cached)
+      candlesRef.current = cached
+      const tip = cached[cached.length - 1]!
+      lastCandleRef.current = tip
+      setLivePrice(tip.close)
+      publishPriceTick(tip.close, 0)
+    } else {
+      setCandles([])
+      candlesRef.current = []
+      setLivePrice(null)
+      publishPriceTick(null, 0)
+    }
     setLevels([])
-    setLivePrice(null)
-    publishPriceTick(null, 0)
     clearHoverPreview()
 
     const host = priceLineHostRef.current
@@ -6343,7 +6414,9 @@ export function TradingChart({
     }
 
     try {
-      candleRef.current?.setData([])
+      if (!(cached && cached.length > 0)) {
+        candleRef.current?.setData([])
+      }
       candleRef.current?.applyOptions({ ...DESK_CANDLE_SERIES_COLORS })
     } catch {
       /* ignore */
@@ -7384,10 +7457,19 @@ export function TradingChart({
       try {
         const days = timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
         const held = candlesRef.current
+        const skipReprint = skipGapReprintOnceRef.current
+        if (skipReprint) skipGapReprintOnceRef.current = false
+        const heldTimes = held.map((c) => ({ time: c.time as number }))
+        // After TF switch the prior book may still be painted — never invent gaps
+        // by measuring 5m spacing with a 1m/30m barSec.
+        const tfBookReady = bookMatchesBarSec(heldTimes, barSeconds)
         const localGap =
+          !skipReprint &&
+          tfBookReady &&
           held.length > 2 &&
           needsCandleReprint({
-            bars: held.map((c) => ({ time: c.time as number })),
+            bars: heldTimes,
+            barSec: barSeconds,
             nearTipLookback: 64,
             maxNearTipGaps: 1,
             maxTipLagSlots: 2,
@@ -7482,8 +7564,9 @@ export function TradingChart({
           tipOwned
         )
         const gapsFilled =
-          countNearTipGaps(prev.map((c) => ({ time: c.time as number }))) >
-          countNearTipGaps(nextBars.map((c) => ({ time: c.time as number })))
+          countNearTipGaps(prev.map((c) => ({ time: c.time as number })), 64, barSeconds) >
+          countNearTipGaps(nextBars.map((c) => ({ time: c.time as number })), 64, barSeconds)
+        marketBookCacheRef.current.set(`${instrument}:${timeframe}`, nextBars)
 
         // Never reset didFitRef here — new prints must not yank a panned viewport
         lastCandleRef.current = nextBars[nextBars.length - 1]!
@@ -9685,6 +9768,32 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 <button
                   key={inst}
                   onClick={() => setInstrument(inst)}
+                  onMouseEnter={() => {
+                    const key = `${inst}:${timeframe}`
+                    if (marketBookCacheRef.current.has(key)) return
+                    const days = timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
+                    void fetch(
+                      `/api/trading/candles?instrument=${inst}&timeframe=${timeframe}&days=${days}&quote=0`,
+                      { cache: 'no-store' }
+                    )
+                      .then((r) => (r.ok ? r.json() : null))
+                      .then((json) => {
+                        if (!json || !Array.isArray(json.candles) || json.candles.length === 0) return
+                        const mapped: OHLCV[] = json.candles.map((c: any) => ({
+                          time: c.time as UTCTimestamp,
+                          open: c.open,
+                          high: c.high,
+                          low: c.low,
+                          close: c.close,
+                          volume: c.volume ?? 0,
+                        }))
+                        const trimmed = normalizeCandleTimes(
+                          toDeskCandles(mapped, inst, timeframe)
+                        )
+                        if (trimmed.length) marketBookCacheRef.current.set(key, trimmed)
+                      })
+                      .catch(() => {})
+                  }}
                   className={`tab ${instrument === inst ? 'tab-active' : ''}`}
                   style={instrument === inst ? { backgroundColor: INSTRUMENT_META[inst].color + '33', color: INSTRUMENT_META[inst].color } : {}}
                 >
@@ -9703,8 +9812,20 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     if (timeframe === tf) return
                     didFitRef.current = false
                     lastCandleRef.current = null
-                    setCandles([])
-                    candlesRef.current = []
+                    skipGapReprintOnceRef.current = true
+                    // Instant paint from cache when this TF was loaded before.
+                    // Otherwise keep the prior TF on screen until the new book
+                    // arrives — clearing here paints a hole and false-triggers
+                    // gap reprint against the wrong barSec.
+                    const cachedTf = marketBookCacheRef.current.get(`${instrument}:${tf}`)
+                    if (cachedTf && cachedTf.length > 0) {
+                      setCandles(cachedTf)
+                      candlesRef.current = cachedTf
+                      const tip = cachedTf[cachedTf.length - 1]!
+                      lastCandleRef.current = tip
+                      setLivePrice(tip.close)
+                      publishPriceTick(tip.close, 0)
+                    }
                     setTimeframe(tf)
                   }}
                   className={`rounded px-2.5 py-1 text-xs font-semibold transition-all ${
