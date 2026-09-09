@@ -1,43 +1,23 @@
 /**
- * Context 5-5 overlay geometry — sticky FRVP histograms + on-pane level lines.
- * 5-day FRVP is computed from the last 5 sessions but must paint on the
- * *visible* pane (default zoom is ~90 bars, so the 5-day anchor is off-screen).
+ * Context 5-5 overlay geometry — compact FRVP histograms at each range start.
+ * Profiles scroll with the time axis (TradingView-style). Zoom/pan left to
+ * the 5-day / yesterday / overnight open to see them; they are not glued to
+ * the visible left edge or stretched across the session.
  */
 
 import type { VolumeProfileBin } from './context55'
 
-export const CONTEXT55_FRVP_LEFT = 6
 export const CONTEXT55_FRVP_5D_W = 92
 export const CONTEXT55_FRVP_YDAY_W = 68
 export const CONTEXT55_FRVP_ON_W = 68
-export const CONTEXT55_FRVP_GAP = 4
 
-const SLOT_WIDTHS = [
-  CONTEXT55_FRVP_5D_W,
-  CONTEXT55_FRVP_YDAY_W,
-  CONTEXT55_FRVP_ON_W,
-] as const
-
-/** Left-edge X for sticky profile slot 0=5D, 1=yesterday, 2=overnight. */
-export function stickyLeftX(slot: 0 | 1 | 2): number {
-  let x = CONTEXT55_FRVP_LEFT
-  for (let i = 0; i < slot; i++) x += SLOT_WIDTHS[i]! + CONTEXT55_FRVP_GAP
-  return x
-}
-
-/**
- * Use the session's time-axis X when that session is on screen; otherwise park
- * the histogram in a sticky left slot so the profile never disappears.
- */
-export function profileXOnPaneOrSticky(
-  timeX: number | null | undefined,
-  paneW: number,
+/** True when any part of a compact histogram at `x` is on the pane. */
+export function profileIntersectsPane(
+  x: number | null | undefined,
   histW: number,
-  stickyX: number
-): number {
-  if (timeX == null || !Number.isFinite(timeX)) return stickyX
-  if (timeX + histW < 0 || timeX > paneW) return stickyX
-  return timeX
+  paneW: number
+): x is number {
+  return typeof x === 'number' && Number.isFinite(x) && x + histW > 0 && x < paneW
 }
 
 export function paintVolumeProfileBins(

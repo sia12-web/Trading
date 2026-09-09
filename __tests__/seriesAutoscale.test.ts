@@ -11,8 +11,7 @@ import {
   paddedCandlePriceRange,
 } from '../lib/chart/seriesAutoscale'
 import {
-  profileXOnPaneOrSticky,
-  stickyLeftX,
+  profileIntersectsPane,
   CONTEXT55_FRVP_5D_W,
 } from '../lib/chart/context55Paint'
 
@@ -58,12 +57,11 @@ import {
 }
 
 {
-  assert.equal(stickyLeftX(0), 6)
-  assert.ok(stickyLeftX(1) > stickyLeftX(0) + CONTEXT55_FRVP_5D_W)
-  assert.equal(profileXOnPaneOrSticky(-400, 900, 160, 6), 6, 'off-screen left parks sticky')
-  assert.equal(profileXOnPaneOrSticky(2000, 900, 160, 6), 6, 'off-screen right parks sticky')
-  assert.equal(profileXOnPaneOrSticky(120, 900, 160, 6), 120, 'on-pane keeps session X')
-  assert.equal(profileXOnPaneOrSticky(null, 900, 160, 6), 6)
+  assert.equal(profileIntersectsPane(-40, CONTEXT55_FRVP_5D_W, 900), true, 'partially off-screen left still paints')
+  assert.equal(profileIntersectsPane(-400, CONTEXT55_FRVP_5D_W, 900), false, 'fully off-screen left does not stick')
+  assert.equal(profileIntersectsPane(2000, CONTEXT55_FRVP_5D_W, 900), false, 'off-screen right does not stick')
+  assert.equal(profileIntersectsPane(120, CONTEXT55_FRVP_5D_W, 900), true, 'on-pane range start paints')
+  assert.equal(profileIntersectsPane(null, CONTEXT55_FRVP_5D_W, 900), false)
 }
 
 console.log('seriesAutoscale.test.ts: all passed')

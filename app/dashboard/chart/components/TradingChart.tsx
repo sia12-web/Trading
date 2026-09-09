@@ -222,8 +222,7 @@ import {
   CONTEXT55_FRVP_YDAY_W,
   paintLevelLine,
   paintVolumeProfileBins,
-  profileXOnPaneOrSticky,
-  stickyLeftX,
+  profileIntersectsPane,
 } from '@/lib/chart/context55Paint'
 import {
   isDeskInstrument,
@@ -2348,103 +2347,99 @@ export function TradingChart({
     const candleTimes = list.map((c) => toChartTime(c.time as number, tz))
 
     const priceToY = (price: number) => series.priceToCoordinate(price)
+    const xAt = (unix: number) => timeToX(chart.timeScale(), toChartTime(unix, tz), candleTimes)
 
-    // 1. Intermediate-Term Money: 5-Day FRVP — sticky left of the visible pane
-    if (frvp5d && frvp5d.bins && frvp5d.bins.length > 0) {
-      const xAnchor = stickyLeftX(0)
+    // Compact histogram at the range open — scrolls with time, not glued left
+    // and not stretched across the session. Pan left to the range start to see it.
+    const paintAnchoredProfile = (args: {
+      startUnix: number
+      maxW: number
+      bins: NonNullable<typeof frvp5d>['bins']
+      bucketSize: number
+      buyFillVa: string
+      buyFill: string
+      sellFillVa: string
+      sellFill: string
+      poc: number
+      pocColor: string
+      pocLabel: string
+    }) => {
+      const x = xAt(args.startUnix)
+      if (!profileIntersectsPane(x, args.maxW, paneW)) return
       paintVolumeProfileBins(ctx, {
-        bins: frvp5d.bins,
-        bucketSize: frvp5d.bucketSize || 1,
-        x: xAnchor,
-        maxW: CONTEXT55_FRVP_5D_W,
+        bins: args.bins,
+        bucketSize: args.bucketSize,
+        x,
+        maxW: args.maxW,
         paneH,
         priceToY,
+        buyFillVa: args.buyFillVa,
+        buyFill: args.buyFill,
+        sellFillVa: args.sellFillVa,
+        sellFill: args.sellFill,
+      })
+      paintLevelLine(
+        ctx,
+        priceToY(args.poc),
+        paneW,
+        paneH,
+        args.pocColor,
+        args.pocLabel,
+        x,
+        x + args.maxW
+      )
+    }
+
+    // 1. Intermediate-Term Money: 5-Day FRVP at the 5-day window open
+    if (frvp5d && frvp5d.bins && frvp5d.bins.length > 0) {
+      paintAnchoredProfile({
+        startUnix: frvp5d.startUnix,
+        maxW: CONTEXT55_FRVP_5D_W,
+        bins: frvp5d.bins,
+        bucketSize: frvp5d.bucketSize || 1,
         buyFillVa: 'rgba(6, 182, 212, 0.75)',
         buyFill: 'rgba(6, 182, 212, 0.35)',
         sellFillVa: 'rgba(236, 72, 153, 0.75)',
         sellFill: 'rgba(236, 72, 153, 0.35)',
+        poc: frvp5d.poc,
+        pocColor: '#38bdf8',
+        pocLabel: `5D POC ${frvp5d.poc.toLocaleString()}`,
       })
-      paintLevelLine(
-        ctx,
-        priceToY(frvp5d.poc),
-        paneW,
-        paneH,
-        '#38bdf8',
-        `5D POC ${frvp5d.poc.toLocaleString()}`,
-        xAnchor,
-        paneW
-      )
     }
 
-    // 2. Short-Term Money: Yesterday NYC FRVP — session X if on-pane, else sticky
+    // 2. Short-Term Money: Yesterday NYC FRVP at yesterday's cash open
     if (showYesterdayNyc && yesterdayNyc && yesterdayNyc.bins && yesterdayNyc.bins.length > 0) {
-      const yAnchorChartT = toChartTime(yesterdayNyc.openUnix, tz)
-      const rawXYAnchor = timeToX(chart.timeScale(), yAnchorChartT, candleTimes)
-      const rawXYEnd = timeToX(chart.timeScale(), toChartTime(yesterdayNyc.closeUnix, tz), candleTimes)
-      const stickyX = stickyLeftX(1)
-      const yAnchor = profileXOnPaneOrSticky(rawXYAnchor, paneW, CONTEXT55_FRVP_YDAY_W, stickyX)
-      const histWYday =
-        yAnchor === stickyX
-          ? CONTEXT55_FRVP_YDAY_W
-          : Math.min(130, Math.max(CONTEXT55_FRVP_YDAY_W, ((rawXYEnd ?? yAnchor + 140) - yAnchor) * 0.75))
-      paintVolumeProfileBins(ctx, {
+      paintAnchoredProfile({
+        startUnix: yesterdayNyc.openUnix,
+        maxW: CONTEXT55_FRVP_YDAY_W,
         bins: yesterdayNyc.bins,
         bucketSize: yesterdayNyc.bucketSize || 1,
-        x: yAnchor,
-        maxW: histWYday,
-        paneH,
-        priceToY,
         buyFillVa: 'rgba(245, 158, 11, 0.78)',
         buyFill: 'rgba(245, 158, 11, 0.38)',
         sellFillVa: 'rgba(244, 63, 94, 0.78)',
         sellFill: 'rgba(244, 63, 94, 0.38)',
+        poc: yesterdayNyc.poc,
+        pocColor: '#d97706',
+        pocLabel: `Y-POC ${yesterdayNyc.poc.toLocaleString()}`,
       })
-      paintLevelLine(
-        ctx,
-        priceToY(yesterdayNyc.poc),
-        paneW,
-        paneH,
-        '#d97706',
-        `Y-POC ${yesterdayNyc.poc.toLocaleString()}`,
-        yAnchor,
-        paneW
-      )
     }
 
-    // 3. Short-Term Money: Overnight FRVP — session X if on-pane, else sticky
+    // 3. Short-Term Money: Overnight FRVP at Asia 18:00 ET inventory open
     const on = overnightInventory?.overnight
     if (showInventorySessions && on && on.bins && on.bins.length > 0) {
-      const onAnchorChartT = toChartTime(on.startUnix, tz)
-      const rawXOnAnchor = timeToX(chart.timeScale(), onAnchorChartT, candleTimes)
-      const rawXOnEnd = timeToX(chart.timeScale(), toChartTime(on.endUnix, tz), candleTimes)
-      const stickyX = stickyLeftX(2)
-      const onAnchor = profileXOnPaneOrSticky(rawXOnAnchor, paneW, CONTEXT55_FRVP_ON_W, stickyX)
-      const histWOn =
-        onAnchor === stickyX
-          ? CONTEXT55_FRVP_ON_W
-          : Math.min(130, Math.max(CONTEXT55_FRVP_ON_W, ((rawXOnEnd ?? onAnchor + 140) - onAnchor) * 0.75))
-      paintVolumeProfileBins(ctx, {
+      paintAnchoredProfile({
+        startUnix: on.startUnix,
+        maxW: CONTEXT55_FRVP_ON_W,
         bins: on.bins,
         bucketSize: on.bucketSize || 1,
-        x: onAnchor,
-        maxW: histWOn,
-        paneH,
-        priceToY,
         buyFillVa: 'rgba(14, 165, 233, 0.78)',
         buyFill: 'rgba(14, 165, 233, 0.38)',
         sellFillVa: 'rgba(139, 92, 246, 0.78)',
         sellFill: 'rgba(139, 92, 246, 0.38)',
+        poc: on.poc,
+        pocColor: '#0284c7',
+        pocLabel: `ON-POC ${on.poc.toLocaleString()}`,
       })
-      paintLevelLine(
-        ctx,
-        priceToY(on.poc),
-        paneW,
-        paneH,
-        '#0284c7',
-        `ON-POC ${on.poc.toLocaleString()}`,
-        onAnchor,
-        paneW
-      )
     }
 
     ctx.restore()
