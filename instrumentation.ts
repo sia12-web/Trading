@@ -42,6 +42,8 @@ export async function register() {
     startTradeifyFlattenWatch()
     const { startAsiaDeskWatch } = await import('./lib/trading/asiaDeskWatch')
     startAsiaDeskWatch()
+    const { startDeskCooldownWatch } = await import('./lib/trading/deskCooldownWatch')
+    startDeskCooldownWatch()
   }
 
   // Catch escapes that would otherwise only show as a crash with no context

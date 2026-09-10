@@ -12,6 +12,7 @@ import {
   mergeHistoryWithLiveTip,
   quoteUnixForBucket,
   LIVE_MAX_GAP_FILLS,
+  maxLiveGapFills,
 } from '../lib/chart/liveFormingBar'
 
 const t0 = 1_700_000_000 - (1_700_000_000 % 300)
@@ -60,6 +61,15 @@ const t0 = 1_700_000_000 - (1_700_000_000 % 300)
   )
   assert.equal(far.gapFills.length, 0, 'do not invent overnight flats')
   assert.equal(far.last.open, 90)
+}
+
+{
+  assert.equal(maxLiveGapFills(300), 3)
+  assert.equal(maxLiveGapFills(60), 15, '1m fills ~15 minutes of hist lag')
+  const last = { time: t0, open: 100, high: 101, low: 99, close: 100 }
+  const oneMin = applyTickToFormingBar(last, 101, t0 + 10 * 60 + 5, 60)
+  assert.equal(oneMin.gapFills.length, 9, '1m tip bridges Databento lag without a hole')
+  assert.equal(oneMin.last.time, t0 + 600)
 }
 
 {
@@ -149,6 +159,18 @@ const t0 = 1_700_000_000 - (1_700_000_000 % 300)
   const sane = dropImplausibleDeskBars(bars, 'GOLD')
   assert.equal(sane.length, 1, 'drop the glitch 5m gold dump')
   assert.equal(sane[0]!.close, 4650)
+}
+
+{
+  const fridayClose = t0
+  const sundayReopen = t0 + 12 * 3600
+  const bars = [
+    { time: fridayClose, open: 29500, high: 29520, low: 29480, close: 29500 },
+    { time: sundayReopen, open: 27800, high: 27900, low: 27700, close: 27850 },
+  ]
+  const sane = dropImplausibleDeskBars(bars, 'NASDAQ')
+  assert.equal(sane.length, 2, 'keep genuine reopen after a session/weekend gap')
+  assert.equal(sane[1]!.close, 27850)
 }
 
 console.log('live_forming_bar: all passed')

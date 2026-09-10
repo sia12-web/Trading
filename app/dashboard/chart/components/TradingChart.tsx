@@ -48,6 +48,7 @@ import {
   isWeekdayYmd,
   zonedCivilToUnix,
   lastNTradingSessions as trimDeskCandles,
+  VWAP_COLORS,
 } from '@/lib/chart/sessionVwap'
 import { parseCalendarEventMs } from '@/lib/trading/deskNewsHazard'
 import type { DeskCalendarEvent } from '@/lib/trading/deskNews'
@@ -67,10 +68,18 @@ import {
   quoteUnixForBucket,
 } from '@/lib/chart/liveFormingBar'
 import {
+  needsCandleReprint,
+  countNearTipGaps,
+  bookMatchesBarSec,
+} from '@/lib/chart/candleGaps'
+import {
   compute5DayFixedRangeVolumeProfile,
-  compute5MonthAnchoredVwap,
   computeYesterdayNycSession,
   computeOvernightInventoryAndSessions,
+  compute5MonthAnchoredVwapPath,
+  applySigmaBands,
+  recentBarsForSigma,
+  typicalPriceStdev,
   classifyMarketDayType,
   type FixedRangeVolumeProfile5D,
   type DayTypeEvaluation,
@@ -151,6 +160,7 @@ type AuctionHud = any
 type AuctionOverlaySignal = any
 import { LeoAssistantPanel } from './LeoAssistantPanel'
 import type { LeoChatContext, LeoDataPoint, LeoActivePosition } from '@/lib/ai/leoAssistant'
+import { isPaperSimMarket, paperPointValueUsd } from '@/lib/trading/paperSimDesk'
 import {
   type UserTrendline,
   type UserRangeBox,
@@ -166,13 +176,17 @@ import {
   computeOrderFlowCvd,
   computeCvdCandleBars,
   computeFootprintBars,
-  aggregateFootprintTicks,
-  findNakedPocs,
-  findActiveUnfinishedAuctions,
   summarizeFootprintForLeo,
   type OrderFlowSummary,
   type FootprintBar,
 } from '@/lib/trading/orderFlowDelta'
+import {
+  FOOTPRINT_BAR_SPACING,
+  FOOTPRINT_RECENT_BARS,
+  deskFootprintTickSize,
+  paintSierraNumberBars,
+  recentFootprintSlice,
+} from '@/lib/chart/footprintPaint'
 
 const DOW_15M_FAIL_COLORS: any = { high: '#3b82f6', low: '#ef4444', mid: '#eab308', buy: '#3b82f6', sell: '#ef4444' }
 const computeDow15mFailOverlay = (..._args: any[]): any => null
@@ -204,17 +218,29 @@ import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWid
 const LiveVoicePanel = (_props: any): any => null
 const AuctionHudPanel = (_props: any): any => null
 const Dow15mFailHudPanel = (_props: any): any => null
-import {
+import { DESK_MIN_BAR_SPACING,
   DESK_BAR_SPACING,
-  DESK_CANDLE_DOWN,
-  DESK_CANDLE_UP,
+  DESK_CANDLE_SERIES_COLORS,
   DESK_CHART_THEME,
 } from '@/lib/chart/deskChartTheme'
 import {
+  context55ScalePrices,
   lockToCandleAutoscale,
+  overlayPricesForVisibleScale,
   paddedCandlePriceRange,
   sessionFocusHighLow,
 } from '@/lib/chart/seriesAutoscale'
+import {
+  CONTEXT55_FRVP_5D_W,
+  CONTEXT55_FRVP_ON_W,
+  CONTEXT55_FRVP_YDAY_W,
+  paintLevelLine,
+  paintVolumeProfileBins,
+  paintAnchoredVwapSigmaFill,
+  profileIntersectsPane,
+  compactProfileWidth,
+  rangePocLineX,
+} from '@/lib/chart/context55Paint'
 import {
   isDeskInstrument,
   isLiveBarsAllowed,
@@ -227,6 +253,12 @@ import {
   sessionFor,
   deskMarketFor,
 } from '@/lib/trading/sessionGate'
+import { deskCvdSessionStartUnix,
+  deskPhaseAt,
+  isCloseReprintWindow,
+  isOvernightInventoryWindow,
+  nyYmd,
+} from '@/lib/trading/deskClockPhase'
 import type { AsiaDeskOverlay } from '@/lib/trading/asiaDesk'
 import {
   resolveDeskPlaybookMode,
@@ -755,10 +787,48 @@ function normalizeCandleTimes(candles: OHLCV[]): OHLCV[] {
   return out
 }
 
-const VWAP_COLORS = {
-  vwap: '#b8a04a',
-  band: '#3d8f7a',
-} as const
+function replacePriceLines(
+  host: ISeriesApi<'Line'> | null,
+  existing: IPriceLine[],
+  specs: Array<{
+    price: number
+    color: string
+    title: string
+    width?: 1 | 2
+    dashed?: boolean
+    lineVisible?: boolean
+  }>
+): IPriceLine[] {
+  for (const line of existing) {
+    try {
+      host?.removePriceLine(line)
+    } catch {
+      /* ignore */
+    }
+  }
+  const next: IPriceLine[] = []
+  if (!host) return next
+  for (const s of specs) {
+    if (!(s.price > 0) || !Number.isFinite(s.price)) continue
+    try {
+      next.push(
+        host.createPriceLine({
+          price: s.price,
+          color: s.lineVisible === false ? 'rgba(0,0,0,0)' : s.color,
+          lineWidth: s.width ?? 1,
+          lineStyle: s.dashed ? LineStyle.Dashed : LineStyle.Solid,
+          axisLabelVisible: true,
+          axisLabelColor: s.color,
+          title: s.title,
+          lineVisible: s.lineVisible ?? true,
+        })
+      )
+    } catch {
+      /* ignore */
+    }
+  }
+  return next
+}
 
 // ─── Generate realistic synthetic OHLCV candles (last 5 trading days) ────────
 
@@ -1023,6 +1093,13 @@ interface TradingChartProps {
   ) => void
   /** Close position execution callback from Leo or desk */
   onClosePosition?: (reason: string) => Promise<boolean | void>
+  /** Leo PLACE_* / SET_* / CANCEL_WORKING — parent owns paper vs live routing */
+  onLeoOrder?: (
+    directive: import('@/lib/ai/leoAssistant').LeoExecutionDirective
+  ) => Promise<boolean | void> | boolean | void
+  /** $1,500 paper desk — Leo + ticket size off this market’s sim wallet */
+  paperMode?: boolean
+  paperEquity?: number
 }
 
 export interface RenderedSessionExtremeHit {
@@ -1085,8 +1162,11 @@ export function TradingChart({
   onDeskPerf,
   onSessionExit,
   onClosePosition,
+  onLeoOrder,
+  paperMode = false,
+  paperEquity = 1500,
 }: TradingChartProps = {}) {
-  const containerRef = useRef<HTMLDivElement>(null)
+    const containerRef = useRef<HTMLDivElement>(null)
   const chartFrameRef = useRef<HTMLDivElement>(null)
   const outerWrapperRef = useRef<HTMLDivElement>(null)
   const renderedSessionExtremesRef = useRef<RenderedSessionExtremeHit[]>([])
@@ -1267,8 +1347,19 @@ export function TradingChart({
   const frvpLinesRef = useRef<IPriceLine[]>([])
   const paintFrvp5dRef = useRef<() => void>(() => { })
   const [avwap5mBenchmark, setAvwap5mBenchmark] = useState<AnchoredVwapBenchmark5M | null>(null)
+  const avwap5mBenchmarkRef = useRef<AnchoredVwapBenchmark5M | null>(null)
+  const avwap5mDailyBarsRef = useRef<ContextBar[]>([])
+  /** Wait for /context-55 so we never flash a 12-day σ then hide 5-month bands. */
+  const avwapFetchDoneRef = useRef(false)
+  const scaleOverlayPricesRef = useRef<{ always: number[]; nearby: number[] }>({
+    always: [],
+    nearby: [],
+  })
   const avwap5mLinesRef = useRef<IPriceLine[]>([])
   const paint5mAvwapBenchmarkRef = useRef<() => void>(() => { })
+  const paintDynamic5mAvwapRef = useRef<
+    (ordered: Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }>) => void
+  >(() => { })
   const [currentVwap, setCurrentVwap] = useState<{ vwap: number; upper1: number; lower1: number } | null>(null)
   const latestVwapBandsRef = useRef<any>(null)
   const [cvdPanelOpen, setCvdPanelOpen] = useState(false)
@@ -1279,6 +1370,11 @@ export function TradingChart({
   const footprintCanvasRef = useRef<HTMLCanvasElement>(null)
   const paintFootprintRef = useRef<() => void>(() => { })
   const savedFootprintRangeRef = useRef<{ from: number; to: number } | null>(null)
+  const candleReprintAtRef = useRef(0)
+  /** Last good book per instrument+timeframe — paint instantly on tab switch. */
+  const marketBookCacheRef = useRef<Map<string, OHLCV[]>>(new Map())
+  /** Skip one gap-reprint after TF change (wrong barSec would invent holes). */
+  const skipGapReprintOnceRef = useRef(false)
   const cvdContainerRef = useRef<HTMLDivElement>(null)
   const cvdChartRef = useRef<IChartApi | null>(null)
   const cvdCandleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -1410,9 +1506,7 @@ export function TradingChart({
   const [candles, setCandles] = useState<OHLCV[]>([])
   const sessionOrderFlow = useMemo<OrderFlowSummary | null>(() => {
     if (!candles || candles.length === 0) return null
-    const now = new Date()
-    const nowYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-    const sessStart = nyDateTimeToUnix(nowYmd, 9, 30)
+    const sessStart = deskCvdSessionStartUnix()
     return computeOrderFlowCvd(
       candles.map((c) => ({
         time: c.time as number,
@@ -2138,14 +2232,10 @@ export function TradingChart({
       instrument
     )
     setFrvp5d(profile)
-    for (const line of frvpLinesRef.current) {
-      try {
-        host?.removePriceLine(line)
-      } catch {
-        /* ignore */
-      }
-    }
-    frvpLinesRef.current = []
+    // Canvas already paints the 5-day histogram + POC. Price-line tags for
+    // 5D VAH/POC (often hundreds of points off the session) stretch the
+    // Y-axis the same way 5M ±σ did.
+    frvpLinesRef.current = replacePriceLines(host, frvpLinesRef.current, [])
   }, [instrument])
 
   const paintYesterdayNyc = useCallback(() => {
@@ -2161,53 +2251,109 @@ export function TradingChart({
       volume: c.volume,
     }))
     const lastBarTime = bars[bars.length - 1]?.time
-    const yday = computeYesterdayNycSession(bars, lastBarTime)
+    // After 16:00 the last 5m bar is still 15:55. Wall clock is what makes
+    // today → yesterday and starts the next overnight inventory window.
+    const asOfUnix = Math.max(lastBarTime ?? 0, Math.floor(Date.now() / 1000))
+    const yday = computeYesterdayNycSession(bars, asOfUnix)
     setYesterdayNyc(yday)
 
-    if (yday) {
-      const inv = computeOvernightInventoryAndSessions({
-        bars,
-        yesterday: yday,
-        asOfUnix: lastBarTime,
-      })
-      setOvernightInventory(inv)
-    } else {
-      setOvernightInventory(null)
-    }
+    const inv = yday
+      ? computeOvernightInventoryAndSessions({
+          bars,
+          yesterday: yday,
+          asOfUnix,
+        })
+      : null
+    setOvernightInventory(inv)
 
-    for (const line of yesterdayNycLinesRef.current) {
-      try {
-        host?.removePriceLine(line)
-      } catch {
-        /* ignore */
-      }
-    }
-    yesterdayNycLinesRef.current = []
-  }, [])
+    yesterdayNycLinesRef.current = replacePriceLines(host, yesterdayNycLinesRef.current, [])
+    inventoryLinesRef.current = replacePriceLines(host, inventoryLinesRef.current, [])
+  }, [instrument])
 
   const paintInventorySessions = useCallback(() => {
-    const host = priceLineHostRef.current
-    for (const line of inventoryLinesRef.current) {
-      try {
-        host?.removePriceLine(line)
-      } catch {
-        /* ignore */
-      }
-    }
-    inventoryLinesRef.current = []
+    // ON-POC lines are painted in paintYesterdayNyc from the same snapshot.
   }, [])
 
   const paint5mAvwapBenchmark = useCallback(() => {
+    // Never attach 5M VWAP / ±σ as price lines. Lightweight Charts still
+    // autoscales to price-line prices (and alignLabels pads around the titles),
+    // so ±2σ at ~26k–31k on NASDAQ flattens session candles and hides FRVP.
+    // The running series path + HUD carry the VWAP; σ bands ignore the scale.
     const host = priceLineHostRef.current
-    for (const line of avwap5mLinesRef.current) {
-      try {
-        host?.removePriceLine(line)
-      } catch {
-        /* ignore */
-      }
-    }
-    avwap5mLinesRef.current = []
+    avwap5mLinesRef.current = replacePriceLines(host, avwap5mLinesRef.current, [])
   }, [])
+
+  const paintDynamic5mAvwap = useCallback(
+    (ordered: Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }>) => {
+      const vs = vwapSeriesRef.current
+      const tz = chartTzRef.current
+      // First paint after a market click uses only ~12d of 5m bars (tight σ).
+      // A second later 5-month dailies load, σ jumps off the session scale, and
+      // lockToCandleAutoscale hid the bands. Wait for the daily fetch so the
+      // TradingView path (blue VWAP + ±1/±2/±3σ) is the one that stays.
+      if (!avwapFetchDoneRef.current) return
+      const bars: ContextBar[] = ordered.map((c) => ({
+        time: c.time as number,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      }))
+      const pathRaw = compute5MonthAnchoredVwapPath({
+        dailyBars: avwap5mDailyBarsRef.current,
+        bars,
+        instrument,
+      })
+      // Keep true 5M VWAP center; redraw σ from recent session bars so bands stay near price
+      // (5M cumulative σ is ~1000 MNQ pts and paints a green wash / far ±1σ tags).
+      const path = pathRaw
+        ? applySigmaBands(pathRaw, typicalPriceStdev(recentBarsForSigma(bars)) || 0)
+        : null
+      latestVwapBandsRef.current = path
+      if (path?.vwap?.length) {
+        const last = path.vwap[path.vwap.length - 1]!
+        const lastU = path.upper1[path.upper1.length - 1]
+        const lastL = path.lower1[path.lower1.length - 1]
+        avwapLastRef.current = last.value > 0 ? last.value : null
+        if (last.value > 0) {
+          setCurrentVwap({
+            vwap: last.value,
+            upper1: lastU ? lastU.value : 0,
+            lower1: lastL ? lastL.value : 0,
+          })
+        }
+        if (vs) {
+          const shift = (rows: { time: number; value: number }[]) =>
+            mapTimesToChart(
+              rows.map((r) => ({ time: r.time as number, value: r.value })),
+              tz
+            ).map((r) => ({ time: r.time as UTCTimestamp, value: r.value }))
+          vs.vwap.setData(shift(path.vwap))
+          vs.upper1.setData(shift(path.upper1))
+          vs.lower1.setData(shift(path.lower1))
+          vs.upper2.setData(shift(path.upper2))
+          vs.lower2.setData(shift(path.lower2))
+          vs.upper3.setData(shift(path.upper3 ?? []))
+          vs.lower3.setData(shift(path.lower3 ?? []))
+        }
+      } else {
+        avwapLastRef.current = null
+        setCurrentVwap(null)
+        if (vs) {
+          vs.vwap.setData([])
+          vs.upper1.setData([])
+          vs.lower1.setData([])
+          vs.upper2.setData([])
+          vs.lower2.setData([])
+          vs.upper3.setData([])
+          vs.lower3.setData([])
+        }
+      }
+      paint5mAvwapBenchmark()
+    },
+    [instrument, paint5mAvwapBenchmark]
+  )
 
   // ─── Multi-Timeframe Money Fixed Range Volume Profiles (Canvas) ─────────────
   const paintFrvpHistogram = useCallback(() => {
@@ -2246,187 +2392,135 @@ export function TradingChart({
     const tz = chartTzRef.current
     const candleTimes = list.map((c) => toChartTime(c.time as number, tz))
 
-    // 1. Intermediate-Term Money: 5-Day Fixed Range Volume Profile
+    const priceToY = (price: number) => series.priceToCoordinate(price)
+    const xAt = (unix: number) => timeToX(chart.timeScale(), toChartTime(unix, tz), candleTimes)
+
+    const avwapPath = latestVwapBandsRef.current
+    if (avwapPath?.upper1?.length && avwapPath?.lower1?.length) {
+      paintAnchoredVwapSigmaFill(ctx, {
+        upper: avwapPath.upper1.map((p: { time: number; value: number }) => ({
+          time: toChartTime(p.time as number, tz) as number,
+          value: p.value,
+        })),
+        lower: avwapPath.lower1.map((p: { time: number; value: number }) => ({
+          time: toChartTime(p.time as number, tz) as number,
+          value: p.value,
+        })),
+        paneW,
+        paneH,
+        timeToX: (t) => timeToX(chart.timeScale(), t, candleTimes),
+        priceToY,
+        fill: VWAP_COLORS.fill1,
+      })
+    }
+
+    // Compact histogram at the range open — scrolls with time, not glued left
+    // and not stretched across the session. Pan left to the range start to see it.
+    const paintAnchoredProfile = (args: {
+      startUnix: number
+      endUnix?: number
+      maxW: number
+      bins: NonNullable<typeof frvp5d>['bins']
+      bucketSize: number
+      buyFillVa: string
+      buyFill: string
+      sellFillVa: string
+      sellFill: string
+      poc: number
+      pocColor: string
+      pocLabel: string
+    }) => {
+      const x = xAt(args.startUnix)
+      const xEnd = args.endUnix != null ? xAt(args.endUnix) : null
+      const rangePx =
+        x != null && xEnd != null && Number.isFinite(xEnd) ? Math.abs(xEnd - x) : null
+      const histW = compactProfileWidth(rangePx, args.maxW)
+      if (profileIntersectsPane(x, histW, paneW)) {
+        paintVolumeProfileBins(ctx, {
+          bins: args.bins,
+          bucketSize: args.bucketSize,
+          x,
+          maxW: histW,
+          paneH,
+          priceToY,
+          buyFillVa: args.buyFillVa,
+          buyFill: args.buyFill,
+          sellFillVa: args.sellFillVa,
+          sellFill: args.sellFill,
+        })
+      }
+      const pocSpan = rangePocLineX(x, xEnd, paneW)
+      if (pocSpan) {
+        paintLevelLine(
+          ctx,
+          priceToY(args.poc),
+          paneW,
+          paneH,
+          args.pocColor,
+          args.pocLabel,
+          pocSpan.x0,
+          pocSpan.x1
+        )
+      }
+    }
+
+    // 1. Intermediate-Term Money: 5-Day FRVP at the 5-day window open
     if (frvp5d && frvp5d.bins && frvp5d.bins.length > 0) {
-      const anchorChartT = toChartTime(frvp5d.startUnix, tz)
-      const rawXAnchor = timeToX(chart.timeScale(), anchorChartT, candleTimes)
-      if (rawXAnchor != null && Number.isFinite(rawXAnchor)) {
-        const xAnchor = rawXAnchor // NON-STICKY: stays at actual start time and scrolls off naturally
-        const maxHistW = 160
-        const halfBucket = (frvp5d.bucketSize || 1) * 0.5
-        const maxBinVol = Math.max(...frvp5d.bins.map((b) => b.volume), 1)
-
-        // Draw volume bars if within visible screen bounds
-        if (xAnchor + maxHistW >= 0 && xAnchor <= paneW) {
-          for (const bin of frvp5d.bins) {
-            const yTop = series.priceToCoordinate(bin.price + halfBucket)
-            const yBottom = series.priceToCoordinate(bin.price - halfBucket)
-            if (yTop == null || yBottom == null) continue
-
-            const barY = Math.min(yTop, yBottom)
-            const barH = Math.max(1.5, Math.abs(yBottom - yTop) - 0.5)
-            if (barY + barH < 0 || barY > paneH) continue
-
-            const totalBarW = (bin.volume / maxBinVol) * maxHistW
-            if (totalBarW < 1) continue
-
-            const buyVol = bin.buyVolume ?? (bin.volume * 0.5)
-            const buyRatio = bin.volume > 0 ? Math.max(0, Math.min(1, buyVol / bin.volume)) : 0.5
-            const buyW = totalBarW * buyRatio
-            const sellW = totalBarW - buyW
-
-            // Buy volume (cyan)
-            ctx.fillStyle = bin.inValueArea ? 'rgba(6, 182, 212, 0.75)' : 'rgba(6, 182, 212, 0.35)'
-            ctx.fillRect(xAnchor, barY, buyW, barH)
-
-            // Sell volume (magenta)
-            ctx.fillStyle = bin.inValueArea ? 'rgba(236, 72, 153, 0.75)' : 'rgba(236, 72, 153, 0.35)'
-            ctx.fillRect(xAnchor + buyW, barY, sellW, barH)
-          }
-        }
-
-        // IT: 5D POC Line — ONLY line that extends across the screen to the right (paneW)
-        const yPoc = series.priceToCoordinate(frvp5d.poc)
-        if (yPoc != null && Number.isFinite(yPoc) && yPoc >= 0 && yPoc <= paneH && xAnchor <= paneW) {
-          const lineStart = Math.max(0, xAnchor)
-          ctx.strokeStyle = '#38bdf8'
-          ctx.lineWidth = 2
-          ctx.beginPath()
-          ctx.moveTo(lineStart, Math.round(yPoc) + 0.5)
-          ctx.lineTo(paneW, Math.round(yPoc) + 0.5)
-          ctx.stroke()
-
-          ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillStyle = '#38bdf8'
-          ctx.fillText(`5D POC ${frvp5d.poc.toLocaleString()}`, lineStart + 6, yPoc - 4)
-        }
-      }
+      paintAnchoredProfile({
+        startUnix: frvp5d.startUnix,
+        endUnix: frvp5d.endUnix,
+        maxW: CONTEXT55_FRVP_5D_W,
+        bins: frvp5d.bins,
+        bucketSize: frvp5d.bucketSize || 1,
+        buyFillVa: 'rgba(6, 182, 212, 0.75)',
+        buyFill: 'rgba(6, 182, 212, 0.35)',
+        sellFillVa: 'rgba(236, 72, 153, 0.75)',
+        sellFill: 'rgba(236, 72, 153, 0.35)',
+        poc: frvp5d.poc,
+        pocColor: '#38bdf8',
+        pocLabel: `5D POC ${frvp5d.poc.toLocaleString()}`,
+      })
     }
 
-    // 2. Short-Term Money: Yesterday Fixed Range Profile
+    // 2. Short-Term Money: Yesterday NYC FRVP at yesterday's cash open
     if (showYesterdayNyc && yesterdayNyc && yesterdayNyc.bins && yesterdayNyc.bins.length > 0) {
-      const yAnchorChartT = toChartTime(yesterdayNyc.openUnix, tz)
-      const rawXYAnchor = timeToX(chart.timeScale(), yAnchorChartT, candleTimes)
-      const rawXYEnd = timeToX(chart.timeScale(), toChartTime(yesterdayNyc.closeUnix, tz), candleTimes)
-      if (rawXYAnchor != null && Number.isFinite(rawXYAnchor)) {
-        const yAnchor = rawXYAnchor
-        const yEnd = rawXYEnd ?? (yAnchor + 140)
-        const histWYday = Math.min(130, Math.max(40, (yEnd - yAnchor) * 0.75))
-        const halfBucket = (yesterdayNyc.bucketSize || 1) * 0.5
-        const maxBinVolYday = Math.max(...yesterdayNyc.bins.map((b) => b.volume), 1)
-
-        // Draw volume bars for yesterday
-        if (yAnchor + histWYday >= 0 && yAnchor <= paneW) {
-          for (const bin of yesterdayNyc.bins) {
-            const yTop = series.priceToCoordinate(bin.price + halfBucket)
-            const yBottom = series.priceToCoordinate(bin.price - halfBucket)
-            if (yTop == null || yBottom == null) continue
-
-            const barY = Math.min(yTop, yBottom)
-            const barH = Math.max(1.5, Math.abs(yBottom - yTop) - 0.5)
-            if (barY + barH < 0 || barY > paneH) continue
-
-            const totalBarW = (bin.volume / maxBinVolYday) * histWYday
-            if (totalBarW < 1) continue
-
-            const buyVol = bin.buyVolume ?? (bin.volume * 0.5)
-            const buyRatio = bin.volume > 0 ? Math.max(0, Math.min(1, buyVol / bin.volume)) : 0.5
-            const buyW = totalBarW * buyRatio
-            const sellW = totalBarW - buyW
-
-            // Buy volume: warm amber
-            ctx.fillStyle = bin.inValueArea ? 'rgba(245, 158, 11, 0.78)' : 'rgba(245, 158, 11, 0.38)'
-            ctx.fillRect(yAnchor, barY, buyW, barH)
-
-            // Sell volume: warm coral/rose
-            ctx.fillStyle = bin.inValueArea ? 'rgba(244, 63, 94, 0.78)' : 'rgba(244, 63, 94, 0.38)'
-            ctx.fillRect(yAnchor + buyW, barY, sellW, barH)
-          }
-        }
-
-        // ST: Y-POC Line — stays inside yesterday's session, does not extend past yesterday
-        const yPocYday = series.priceToCoordinate(yesterdayNyc.poc)
-        if (yPocYday != null && Number.isFinite(yPocYday) && yPocYday >= 0 && yPocYday <= paneH && yAnchor <= paneW) {
-          const lineStart = Math.max(0, yAnchor)
-          const lineEnd = Math.min(paneW, Math.max(lineStart, yEnd))
-          ctx.strokeStyle = '#d97706'
-          ctx.lineWidth = 2
-          ctx.beginPath()
-          ctx.moveTo(lineStart, Math.round(yPocYday) + 0.5)
-          ctx.lineTo(lineEnd, Math.round(yPocYday) + 0.5)
-          ctx.stroke()
-
-          ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillStyle = '#d97706'
-          ctx.fillText(`Y-POC ${yesterdayNyc.poc.toLocaleString()}`, lineStart + 6, yPocYday - 4)
-        }
-      }
+      paintAnchoredProfile({
+        startUnix: yesterdayNyc.openUnix,
+        endUnix: yesterdayNyc.closeUnix,
+        maxW: CONTEXT55_FRVP_YDAY_W,
+        bins: yesterdayNyc.bins,
+        bucketSize: yesterdayNyc.bucketSize || 1,
+        buyFillVa: 'rgba(245, 158, 11, 0.78)',
+        buyFill: 'rgba(245, 158, 11, 0.38)',
+        sellFillVa: 'rgba(244, 63, 94, 0.78)',
+        sellFill: 'rgba(244, 63, 94, 0.38)',
+        poc: yesterdayNyc.poc,
+        pocColor: '#d97706',
+        pocLabel: `Y-POC ${yesterdayNyc.poc.toLocaleString()}`,
+      })
     }
 
-    // 3. Short-Term Money: Overnight Fixed Range Profile
+    // 3. Short-Term Money: Overnight FRVP at Asia 18:00 ET inventory open
     const on = overnightInventory?.overnight
     if (showInventorySessions && on && on.bins && on.bins.length > 0) {
-      const onBins = on.bins
-      const onAnchorChartT = toChartTime(on.startUnix, tz)
-      const rawXOnAnchor = timeToX(chart.timeScale(), onAnchorChartT, candleTimes)
-      const rawXOnEnd = timeToX(chart.timeScale(), toChartTime(on.endUnix, tz), candleTimes)
-      if (rawXOnAnchor != null && Number.isFinite(rawXOnAnchor)) {
-        const onAnchor = rawXOnAnchor
-        const onEnd = rawXOnEnd ?? (onAnchor + 140)
-        const histWOn = Math.min(130, Math.max(40, (onEnd - onAnchor) * 0.75))
-        const halfBucket = (on.bucketSize || 1) * 0.5
-        const maxBinVolOn = Math.max(...onBins.map((b) => b.volume), 1)
-
-        // Draw volume bars for overnight
-        if (onAnchor + histWOn >= 0 && onAnchor <= paneW) {
-          for (const bin of onBins) {
-            const yTop = series.priceToCoordinate(bin.price + halfBucket)
-            const yBottom = series.priceToCoordinate(bin.price - halfBucket)
-            if (yTop == null || yBottom == null) continue
-
-            const barY = Math.min(yTop, yBottom)
-            const barH = Math.max(1.5, Math.abs(yBottom - yTop) - 0.5)
-            if (barY + barH < 0 || barY > paneH) continue
-
-            const totalBarW = (bin.volume / maxBinVolOn) * histWOn
-            if (totalBarW < 1) continue
-
-            const buyVol = bin.buyVolume ?? (bin.volume * 0.5)
-            const buyRatio = bin.volume > 0 ? Math.max(0, Math.min(1, buyVol / bin.volume)) : 0.5
-            const buyW = totalBarW * buyRatio
-            const sellW = totalBarW - buyW
-
-            // Buy volume: sky-blue
-            ctx.fillStyle = bin.inValueArea ? 'rgba(14, 165, 233, 0.78)' : 'rgba(14, 165, 233, 0.38)'
-            ctx.fillRect(onAnchor, barY, buyW, barH)
-
-            // Sell volume: violet
-            ctx.fillStyle = bin.inValueArea ? 'rgba(139, 92, 246, 0.78)' : 'rgba(139, 92, 246, 0.38)'
-            ctx.fillRect(onAnchor + buyW, barY, sellW, barH)
-          }
-        }
-
-        // ST: ON-POC Line — extends till the last minute before NYC opens (9:29 AM)
-        const yPocOn = series.priceToCoordinate(on.poc)
-        if (yPocOn != null && Number.isFinite(yPocOn) && yPocOn >= 0 && yPocOn <= paneH && onAnchor <= paneW) {
-          const lineStart = Math.max(0, onAnchor)
-          const lineEnd = Math.min(paneW, Math.max(lineStart, onEnd))
-          ctx.strokeStyle = '#0284c7'
-          ctx.lineWidth = 2
-          ctx.beginPath()
-          ctx.moveTo(lineStart, Math.round(yPocOn) + 0.5)
-          ctx.lineTo(lineEnd, Math.round(yPocOn) + 0.5)
-          ctx.stroke()
-
-          ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillStyle = '#0284c7'
-          ctx.fillText(`ON-POC ${on.poc.toLocaleString()}`, lineStart + 6, yPocOn - 4)
-        }
-      }
+      paintAnchoredProfile({
+        startUnix: on.startUnix,
+        endUnix: on.endUnix,
+        maxW: CONTEXT55_FRVP_ON_W,
+        bins: on.bins,
+        bucketSize: on.bucketSize || 1,
+        buyFillVa: 'rgba(14, 165, 233, 0.78)',
+        buyFill: 'rgba(14, 165, 233, 0.38)',
+        sellFillVa: 'rgba(139, 92, 246, 0.78)',
+        sellFill: 'rgba(139, 92, 246, 0.38)',
+        poc: on.poc,
+        pocColor: '#0284c7',
+        pocLabel: `ON-POC ${on.poc.toLocaleString()}`,
+      })
     }
 
     ctx.restore()
-  }, [frvp5d, yesterdayNyc, overnightInventory, avwap5mBenchmark, showYesterdayNyc, showInventorySessions])
+  }, [frvp5d, yesterdayNyc, overnightInventory, showYesterdayNyc, showInventorySessions])
 
   // ─── User Interactive Drawings (Canvas) ─────────────────────────────────────
   const paintUserDrawings = useCallback(() => {
@@ -2475,7 +2569,7 @@ export function TradingChart({
         const startX = Math.min(rawXAnchor, rawXEnd ?? rawXAnchor)
         const endX = Math.max(rawXAnchor, rawXEnd ?? (rawXAnchor + 120))
         const spanW = Math.max(50, endX - startX)
-        const maxHistW = Math.min(spanW * 0.85, 180)
+        const maxHistW = compactProfileWidth(spanW, CONTEXT55_FRVP_5D_W)
         const halfBucket = (f.bucketSize || 1) * 0.5
         const maxBinVol = Math.max(...f.bins.map((b) => b.volume), 1)
 
@@ -2516,7 +2610,7 @@ export function TradingChart({
           ctx.setLineDash([])
           ctx.beginPath()
           ctx.moveTo(startX, Math.round(yPoc) + 0.5)
-          ctx.lineTo(endX, Math.round(yPoc) + 0.5)
+          ctx.lineTo(startX + maxHistW, Math.round(yPoc) + 0.5)
           ctx.stroke()
 
           ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
@@ -2532,7 +2626,7 @@ export function TradingChart({
           ctx.setLineDash([3, 3])
           ctx.beginPath()
           ctx.moveTo(startX, Math.round(yVah) + 0.5)
-          ctx.lineTo(endX, Math.round(yVah) + 0.5)
+          ctx.lineTo(startX + maxHistW, Math.round(yVah) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
           ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
@@ -2548,7 +2642,7 @@ export function TradingChart({
           ctx.setLineDash([3, 3])
           ctx.beginPath()
           ctx.moveTo(startX, Math.round(yVal) + 0.5)
-          ctx.lineTo(endX, Math.round(yVal) + 0.5)
+          ctx.lineTo(startX + maxHistW, Math.round(yVal) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
           ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
@@ -3450,7 +3544,15 @@ export function TradingChart({
             : entryPx - curPrice
           : 0
       const size = positionOverlay.positionSize ?? 1
-      const multiplier = instrument === 'NASDAQ' ? 2 : instrument === 'DOW' ? 5 : 1
+      const multiplier = paperMode
+        ? isPaperSimMarket(instrument)
+          ? paperPointValueUsd(instrument)
+          : 1
+        : instrument === 'NASDAQ'
+          ? 2
+          : instrument === 'DOW'
+            ? 5
+            : 1
       const pnlCad = pnlPts * size * multiplier
 
       activePos = {
@@ -3505,6 +3607,8 @@ export function TradingChart({
         holidayName: isHoliday ? 'US Exchange Holiday' : undefined,
       },
       activePosition: activePos,
+      paperMode,
+      paperEquity,
       orderFlow: orderFlowContext,
       longTermMoney: avwap5mBenchmark
         ? {
@@ -3674,6 +3778,8 @@ export function TradingChart({
     yesterdayNyc,
     overnightInventory,
     positionOverlay,
+    paperMode,
+    paperEquity,
     barCountdown,
     activeTrendlines,
     activeRangeBoxes,
@@ -4296,21 +4402,54 @@ export function TradingChart({
   }, [paint5mAvwapBenchmark])
 
   useEffect(() => {
+    paintDynamic5mAvwapRef.current = paintDynamic5mAvwap
+  }, [paintDynamic5mAvwap])
+
+  useEffect(() => {
     paint5mAvwapBenchmark()
   }, [paint5mAvwapBenchmark])
 
   useEffect(() => {
     let cancelled = false
+    avwapFetchDoneRef.current = false
     async function load5mAvwap() {
+      const paintFromCandles = () => {
+        const ordered = candlesRef.current
+        if (!ordered.length) return
+        paintDynamic5mAvwapRef.current(
+          ordered.map((c) => ({
+            time: c.time as number,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume,
+          }))
+        )
+      }
       try {
-        const res = await fetch(`/api/trading/context-55?instrument=${instrument}`)
-        if (!res.ok) return
-        const data = await res.json()
-        if (!cancelled && data.ok && data.avwap5m) {
+        const phase = deskPhaseAt()
+        const refresh =
+          phase === 'COOLDOWN' || phase === 'PREP' || phase === 'OVERNIGHT'
+            ? '&refresh=1'
+            : ''
+        const res = await fetch(`/api/trading/context-55?instrument=${instrument}${refresh}`)
+        const data = res.ok ? await res.json() : null
+        if (cancelled) return
+        if (data?.ok && data.avwap5m) {
+          avwap5mBenchmarkRef.current = data.avwap5m
+          avwap5mDailyBarsRef.current = Array.isArray(data.dailyBars) ? data.dailyBars : []
+          avwapFetchDoneRef.current = true
           setAvwap5mBenchmark(data.avwap5m)
+        } else {
+          avwapFetchDoneRef.current = true
+          paintFromCandles()
         }
       } catch {
-        /* ignore */
+        if (!cancelled) {
+          avwapFetchDoneRef.current = true
+          paintFromCandles()
+        }
       }
     }
     void load5mAvwap()
@@ -4318,6 +4457,36 @@ export function TradingChart({
       cancelled = true
     }
   }, [instrument])
+
+  useEffect(() => {
+    avwap5mBenchmarkRef.current = avwap5mBenchmark
+    const ordered = candlesRef.current
+    if (!ordered.length) {
+      paint5mAvwapBenchmark()
+      return
+    }
+    paintDynamic5mAvwap(
+      ordered.map((c) => ({
+        time: c.time as number,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      }))
+    )
+    requestAnimationFrame(() => paintFrvpHistogramRef.current())
+  }, [avwap5mBenchmark, paint5mAvwapBenchmark, paintDynamic5mAvwap])
+
+  useEffect(() => {
+    scaleOverlayPricesRef.current = context55ScalePrices({})
+    try {
+      chartRef.current?.priceScale('right').applyOptions({ autoScale: true })
+    } catch {
+      /* chart not ready */
+    }
+    requestAnimationFrame(() => paintFrvpHistogramRef.current())
+  }, [avwap5mBenchmark, currentVwap])
 
   useEffect(() => {
     if (!SYSTEMATIC_LIVE_DESK) return
@@ -4727,6 +4896,7 @@ export function TradingChart({
 
   const candlesRef = useRef<OHLCV[]>([])
   const instrumentRef = useRef<Instrument>(instrument)
+  const timeframeRef = useRef(timeframe)
   /** LIVE = real Yahoo data; SYNTHETIC = random fallback (never trade off this) */
   const [dataMode, setDataModeState] = useState<'live' | 'synthetic'>('live')
   /** Candle history feed — yahoo means PA may diverge from OANDA/TV mid */
@@ -5159,6 +5329,17 @@ export function TradingChart({
     return () => window.clearInterval(id)
   }, [])
 
+  const closeReprintKeyRef = useRef('')
+  useEffect(() => {
+    if (!isCloseReprintWindow()) return
+    const key = nyYmd()
+    if (closeReprintKeyRef.current === key) return
+    closeReprintKeyRef.current = key
+    void fetch('/api/trading/desk-cooldown', { method: 'POST', credentials: 'same-origin' })
+  }, [focusTick])
+
+  const deskPhase = deskPhaseAt()
+
   useEffect(() => {
     const now = new Date()
     setClockReady(true)
@@ -5567,7 +5748,15 @@ export function TradingChart({
         `${startIndex}|${endIndex}|${list.length}|${instrumentRef.current}` +
         `|${edge ? `${edge.time}:${edge.high}:${edge.low}` : ''}`
       if (scaleCacheList === list && scaleCacheKey === cacheKey && scaleCacheBounds) {
-        return paddedCandlePriceRange(scaleCacheBounds.min, scaleCacheBounds.max)
+        return paddedCandlePriceRange(
+          scaleCacheBounds.min,
+          scaleCacheBounds.max,
+          overlayPricesForVisibleScale(
+            scaleCacheBounds.min,
+            scaleCacheBounds.max,
+            scaleOverlayPricesRef.current
+          )
+        )
       }
 
       let min = Infinity
@@ -5591,16 +5780,15 @@ export function TradingChart({
       scaleCacheList = list
       scaleCacheKey = cacheKey
       scaleCacheBounds = { min, max }
-      return paddedCandlePriceRange(min, max)
+      return paddedCandlePriceRange(
+        min,
+        max,
+        overlayPricesForVisibleScale(min, max, scaleOverlayPricesRef.current)
+      )
     }
 
     const candleSeries = chart.addCandlestickSeries({
-      upColor: DESK_CANDLE_UP,
-      downColor: DESK_CANDLE_DOWN,
-      borderUpColor: DESK_CANDLE_UP,
-      borderDownColor: DESK_CANDLE_DOWN,
-      wickUpColor: DESK_CANDLE_UP,
-      wickDownColor: DESK_CANDLE_DOWN,
+      ...DESK_CANDLE_SERIES_COLORS,
       borderVisible: true,
       wickVisible: true,
       autoscaleInfoProvider: candleAutoscale,
@@ -5618,9 +5806,9 @@ export function TradingChart({
       ...ignoreScale,
     })
 
-    // Anchored VWAP + ±1/±2/±3σ bands (from NY 9:30 of 5 trading days ago)
+    // Anchored VWAP — TradingView colors. Session autoscale keeps candles
+    // readable. ±σ last-value labels expand the Y-axis to ±3σ and flatten bars.
     const bandOpts = {
-      color: VWAP_COLORS.band,
       lineWidth: 1 as const,
       priceLineVisible: false,
       lastValueVisible: false,
@@ -5629,22 +5817,22 @@ export function TradingChart({
       ...ignoreScale,
     }
     const vwapSeries = {
-      upper3: chart.addLineSeries({ ...bandOpts, title: '' }),
-      upper2: chart.addLineSeries({ ...bandOpts, title: '' }),
-      upper1: chart.addLineSeries({ ...bandOpts, color: '#3b82f6', lineWidth: 2, title: '' }),
+      upper3: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band3, title: '+3σ' }),
+      upper2: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band2, title: '+2σ' }),
+      upper1: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band1, title: '+1σ' }),
       vwap: chart.addLineSeries({
-        color: '#10b981',
-        lineWidth: 2,
+        color: VWAP_COLORS.vwap,
+        lineWidth: 3,
         priceLineVisible: false,
         lastValueVisible: false,
         pointMarkersVisible: false,
         crosshairMarkerVisible: false,
-        title: '',
+        title: 'VWAP',
         ...ignoreScale,
       }),
-      lower1: chart.addLineSeries({ ...bandOpts, color: '#b8a04a', lineWidth: 2, title: '' }),
-      lower2: chart.addLineSeries({ ...bandOpts, title: '' }),
-      lower3: chart.addLineSeries({ ...bandOpts, title: '' }),
+      lower1: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band1, title: '-1σ' }),
+      lower2: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band2, title: '-2σ' }),
+      lower3: chart.addLineSeries({ ...bandOpts, color: VWAP_COLORS.band3, title: '-3σ' }),
     }
 
     // Initial Balance — right-scale H/L labels hidden
@@ -5912,6 +6100,8 @@ export function TradingChart({
 
       const syncCvdToMain = (range: any) => {
         if (isSyncing || !range || !chartRef.current) return
+        // Don't fight an in-progress main-pane pan (setVisibleLogicalRange rewrites barSpacing).
+        if (interactingRef.current) return
         isSyncing = true
         try {
           chartRef.current.timeScale().setVisibleLogicalRange(range)
@@ -5966,7 +6156,8 @@ export function TradingChart({
           low: c.low,
           close: c.close,
           volume: c.volume,
-        }))
+        })),
+        deskCvdSessionStartUnix()
       )
       const tz = chartTzRef.current
       barsToSet = mapTimesToChart(
@@ -6081,8 +6272,60 @@ export function TradingChart({
             volume: c.volume ?? 0,
           }))
           const trimmed = normalizeCandleTimes(toDeskCandles(mapped, instrument, timeframe))
+          marketBookCacheRef.current.set(`${instrument}:${timeframe}`, trimmed)
           setCandles(trimmed)
           setDataMode('live')
+          // Warm the other board tabs in the background so switches feel instant.
+          for (const other of visibleInstruments) {
+            if (other === instrument) continue
+            const key = `${other}:${timeframe}`
+            if (marketBookCacheRef.current.has(key)) continue
+            void fetch(
+              `/api/trading/candles?instrument=${other}&timeframe=${timeframe}&days=${days}&quote=0`,
+              { cache: 'no-store' }
+            )
+              .then((r) => (r.ok ? r.json() : null))
+              .then((warm) => {
+                if (!warm || !Array.isArray(warm.candles) || !warm.candles.length) return
+                const mappedWarm: OHLCV[] = warm.candles.map((c: any) => ({
+                  time: c.time as UTCTimestamp,
+                  open: c.open,
+                  high: c.high,
+                  low: c.low,
+                  close: c.close,
+                  volume: c.volume ?? 0,
+                }))
+                const book = normalizeCandleTimes(toDeskCandles(mappedWarm, other, timeframe))
+                if (book.length) marketBookCacheRef.current.set(key, book)
+              })
+              .catch(() => {})
+          }
+          // Warm sibling timeframes for this market (TF switch without inventing gaps).
+          for (const tf of ['1m', '5m', '30m'] as const) {
+            if (tf === timeframe) continue
+            const key = `${instrument}:${tf}`
+            if (marketBookCacheRef.current.has(key)) continue
+            const tfDays = tf === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
+            void fetch(
+              `/api/trading/candles?instrument=${instrument}&timeframe=${tf}&days=${tfDays}&quote=0`,
+              { cache: 'no-store' }
+            )
+              .then((r) => (r.ok ? r.json() : null))
+              .then((warm) => {
+                if (!warm || !Array.isArray(warm.candles) || !warm.candles.length) return
+                const mappedWarm: OHLCV[] = warm.candles.map((c: any) => ({
+                  time: c.time as UTCTimestamp,
+                  open: c.open,
+                  high: c.high,
+                  low: c.low,
+                  close: c.close,
+                  volume: c.volume ?? 0,
+                }))
+                const book = normalizeCandleTimes(toDeskCandles(mappedWarm, instrument, tf))
+                if (book.length) marketBookCacheRef.current.set(key, book)
+              })
+              .catch(() => {})
+          }
           setCandleFeed(
             json.source === 'yahoo' || json.source === 'databento'
               ? 'yahoo'
@@ -6157,12 +6400,27 @@ export function TradingChart({
     priceLineHostSeededRef.current = false
     lastCandleRef.current = null
     sessionSpansRef.current = null
+    avwap5mBenchmarkRef.current = null
+    avwap5mDailyBarsRef.current = []
+    avwapFetchDoneRef.current = false
+    setAvwap5mBenchmark(null)
     setStreamArmed(false)
-    setCandles([])
-    candlesRef.current = []
+    // Instant paint from cache when available — never blank the pane on tab switch.
+    const cached = marketBookCacheRef.current.get(`${instrument}:${timeframe}`)
+    if (cached && cached.length > 0) {
+      setCandles(cached)
+      candlesRef.current = cached
+      const tip = cached[cached.length - 1]!
+      lastCandleRef.current = tip
+      setLivePrice(tip.close)
+      publishPriceTick(tip.close, 0)
+    } else {
+      setCandles([])
+      candlesRef.current = []
+      setLivePrice(null)
+      publishPriceTick(null, 0)
+    }
     setLevels([])
-    setLivePrice(null)
-    publishPriceTick(null, 0)
     clearHoverPreview()
 
     const host = priceLineHostRef.current
@@ -6189,7 +6447,10 @@ export function TradingChart({
     }
 
     try {
-      candleRef.current?.setData([])
+      if (!(cached && cached.length > 0)) {
+        candleRef.current?.setData([])
+      }
+      candleRef.current?.applyOptions({ ...DESK_CANDLE_SERIES_COLORS })
     } catch {
       /* ignore */
     }
@@ -6413,6 +6674,10 @@ export function TradingChart({
   }, [instrument])
 
   useEffect(() => {
+    timeframeRef.current = timeframe
+  }, [timeframe])
+
+  useEffect(() => {
     candlesRef.current = candles
     requestAnimationFrame(() => {
       refreshSessionHighlightsRef.current?.()
@@ -6472,59 +6737,17 @@ export function TradingChart({
     try {
       candleRef.current.setData(candleData)
 
-      // 5-Month Anchored VWAP with standard deviation bands (always on, updated for the last 5 months)
-      const bands = compute5MonthAnchoredVwap({
-        bars: ordered.map((c) => ({
+      // 5-month AVWAP path: daily sums to the first 5m bar, then running ±σ on each 5m print
+      paintDynamic5mAvwapRef.current(
+        ordered.map((c) => ({
           time: c.time as number,
           open: c.open,
           high: c.high,
           low: c.low,
           close: c.close,
           volume: c.volume,
-        })),
-        instrument,
-      })
-      latestVwapBandsRef.current = bands
-      if (bands?.vwap?.length) {
-        const last = bands.vwap[bands.vwap.length - 1]
-        avwapLastRef.current =
-          last && last.value > 0 ? last.value : null
-        const lastU = bands.upper1?.[bands.upper1.length - 1]
-        const lastL = bands.lower1?.[bands.lower1.length - 1]
-        if (last && last.value > 0) {
-          setCurrentVwap({
-            vwap: Number(last.value.toFixed(2)),
-            upper1: lastU ? Number(lastU.value.toFixed(2)) : 0,
-            lower1: lastL ? Number(lastL.value.toFixed(2)) : 0,
-          })
-        }
-      } else {
-        avwapLastRef.current = null
-        setCurrentVwap(null)
-      }
-      const vs = vwapSeriesRef.current
-      if (vs && bands) {
-        const shift = <T extends { time: number | UTCTimestamp; value: number }>(rows: T[]) =>
-          mapTimesToChart(
-            rows.map((r) => ({ time: r.time as number, value: r.value })),
-            tz
-          ).map((r) => ({ time: r.time as UTCTimestamp, value: r.value }))
-        vs.vwap.setData(shift(bands.vwap))
-        vs.upper1.setData(shift(bands.upper1))
-        vs.lower1.setData(shift(bands.lower1))
-        vs.upper2.setData(shift(bands.upper2))
-        vs.lower2.setData(shift(bands.lower2))
-        vs.upper3.setData([])
-        vs.lower3.setData([])
-      } else if (vs) {
-        vs.vwap.setData([])
-        vs.upper1.setData([])
-        vs.lower1.setData([])
-        vs.upper2.setData([])
-        vs.lower2.setData([])
-        vs.upper3.setData([])
-        vs.lower3.setData([])
-      }
+        }))
+      )
 
       // Update & Cache CVD Candlesticks for Sub-Chart Pane
       const cvdBars = computeCvdCandleBars(
@@ -6535,7 +6758,8 @@ export function TradingChart({
           low: c.low,
           close: c.close,
           volume: c.volume,
-        }))
+        })),
+        deskCvdSessionStartUnix()
       )
       const tz = chartTzRef.current
       const shiftedCvd = mapTimesToChart(
@@ -6571,9 +6795,8 @@ export function TradingChart({
         }
       }
 
-      // Compute and cache Footprint bars for chart overlay and Leo AI telemetry
-      // Limit to latest 35 bars so page load is INSTANT and does not freeze main thread
-      const recentForFootprint = ordered.slice(-35)
+      // Compute Sierra/Tradovate number bars for the latest live prints only
+      const recentForFootprint = recentFootprintSlice(ordered, FOOTPRINT_RECENT_BARS)
       const fpBars = computeFootprintBars(
         recentForFootprint.map((c) => ({
           time: c.time as number,
@@ -6583,7 +6806,7 @@ export function TradingChart({
           close: c.close,
           volume: c.volume,
         })),
-        instrument === 'NASDAQ' ? 0.25 : instrument === 'DOW' ? 1.0 : 0.25
+        deskFootprintTickSize(instrument)
       )
       footprintBarsRef.current = fpBars
 
@@ -6696,7 +6919,12 @@ export function TradingChart({
             autoScale: true,
             scaleMargins: DESK_CHART_THEME.rightPriceScale.scaleMargins,
           })
-          const restored = loadDeskViewport(instrument, ordered.length, width)
+          const restored = loadDeskViewport(
+            instrument,
+            ordered.length,
+            width,
+            timeframe
+          )
           ts.setVisibleLogicalRange(
             restored ?? deskVisibleLogicalRange(ordered.length, width)
           )
@@ -6707,9 +6935,11 @@ export function TradingChart({
         }
       })
     } else if (savedRange) {
-      // New prints / range unlock must not shrink candles (last-value tags widen the axis)
+      // New prints / range unlock must not shrink candles (last-value tags widen the axis).
+      // Never yank range/spacing mid-pan — setVisibleLogicalRange rewrites barSpacing and feels like zoom jitter.
       requestAnimationFrame(() => {
         try {
+          if (interactingRef.current) return
           ts.setVisibleLogicalRange(savedRange)
           keepDeskBarSpacing(chartRef.current, savedSpacing)
           refreshSessionHighlightsRef.current?.()
@@ -6721,7 +6951,7 @@ export function TradingChart({
     requestAnimationFrame(() => {
       refreshSessionHighlightsRef.current?.()
     })
-  }, [candles, instrument, paintLevelLines]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [candles, instrument, timeframe, paintLevelLines]) // eslint-disable-line react-hooks/exhaustive-deps
 
 
   // ── Session color boxes (cached spans + imperative paint = smooth pan)
@@ -6875,320 +7105,33 @@ export function TradingChart({
 
     const tz = chartTzRef.current
     const timeScale = chart.timeScale()
-    const range = timeScale.getVisibleLogicalRange()
-    if (!range) {
-      ctx.restore()
-      return
-    }
-
-    const startIdx = Math.max(0, Math.floor(range.from))
-    const endIdx = Math.min(fpBars.length - 1, Math.ceil(range.to))
-
-    let barSpacing = 85
+    let barSpacing = FOOTPRINT_BAR_SPACING
     try {
-      if (fpBars.length >= 2) {
-        const x1 = timeScale.timeToCoordinate(toChartTime(fpBars[0]?.time || 0, tz) as UTCTimestamp)
-        const x2 = timeScale.timeToCoordinate(toChartTime(fpBars[1]?.time || 0, tz) as UTCTimestamp)
-        if (x1 != null && x2 != null && Math.abs(x2 - x1) > 2) {
-          barSpacing = Math.abs(x2 - x1)
-        }
-      }
-    } catch {}
-
-    const barBodyW = Math.min(130, Math.max(48, barSpacing * 0.88))
-
-    // ── 0. Institutional Forward Projections: Untested Naked POCs & Unfinished Auctions ──
-    const nakedPocs = findNakedPocs(fpBars)
-    for (const poc of nakedPocs) {
-      const yPoc = series.priceToCoordinate(poc.price)
-      if (yPoc != null && Number.isFinite(yPoc) && yPoc >= 0 && yPoc <= paneH) {
-        const startX = timeScale.timeToCoordinate(toChartTime(poc.time, tz) as UTCTimestamp)
-        const lineStart = Math.max(0, startX ?? 0)
-        ctx.save()
-        ctx.strokeStyle = '#f59e0b'
-        ctx.lineWidth = 1.5
-        ctx.setLineDash([5, 4])
-        ctx.beginPath()
-        ctx.moveTo(lineStart, Math.round(yPoc) + 0.5)
-        ctx.lineTo(paneW, Math.round(yPoc) + 0.5)
-        ctx.stroke()
-        ctx.setLineDash([])
-
-        // Right-aligned VPOC Badge
-        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-        const tagText = `VPOC ${poc.price.toFixed(2)}`
-        const textW = ctx.measureText(tagText).width
-        const badgeX = Math.max(lineStart + 10, paneW - textW - 75)
-        ctx.fillStyle = 'rgba(245, 158, 11, 0.25)'
-        ctx.fillRect(badgeX - 3, Math.round(yPoc) - 8, textW + 6, 15)
-        ctx.strokeStyle = '#f59e0b'
-        ctx.lineWidth = 1
-        ctx.strokeRect(badgeX - 3, Math.round(yPoc) - 8, textW + 6, 15)
-        ctx.fillStyle = '#fbbf24'
-        ctx.textAlign = 'left'
-        ctx.textBaseline = 'middle'
-        ctx.fillText(tagText, badgeX, Math.round(yPoc))
-        ctx.restore()
+      const opts = timeScale.options()
+      if (opts.barSpacing && opts.barSpacing > 2) barSpacing = opts.barSpacing
+    } catch {
+      /* default */
+    }
+    if (fpBars.length >= 2) {
+      const x1 = timeScale.timeToCoordinate(toChartTime(fpBars[0]!.time, tz) as UTCTimestamp)
+      const x2 = timeScale.timeToCoordinate(toChartTime(fpBars[1]!.time, tz) as UTCTimestamp)
+      if (x1 != null && x2 != null && Math.abs(x2 - x1) > 4) {
+        barSpacing = Math.abs(x2 - x1)
       }
     }
 
-    const unfinishedAuctions = findActiveUnfinishedAuctions(fpBars)
-    for (const ua of unfinishedAuctions) {
-      const yUa = series.priceToCoordinate(ua.price)
-      if (yUa != null && Number.isFinite(yUa) && yUa >= 0 && yUa <= paneH) {
-        const startX = timeScale.timeToCoordinate(toChartTime(ua.time, tz) as UTCTimestamp)
-        const lineStart = Math.max(0, startX ?? 0)
-        const isHigh = ua.type === 'HIGH'
-        const color = isHigh ? '#38bdf8' : '#fb7185'
-        ctx.save()
-        ctx.strokeStyle = color
-        ctx.lineWidth = 1.2
-        ctx.setLineDash([2, 3])
-        ctx.beginPath()
-        ctx.moveTo(lineStart, Math.round(yUa) + 0.5)
-        ctx.lineTo(paneW, Math.round(yUa) + 0.5)
-        ctx.stroke()
-        ctx.setLineDash([])
-
-        // Right-aligned UA Badge
-        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-        const tagText = `UA: ${isHigh ? 'High' : 'Low'} ${ua.price.toFixed(2)}`
-        const textW = ctx.measureText(tagText).width
-        const badgeX = Math.max(lineStart + 10, paneW - textW - 75)
-        ctx.fillStyle = isHigh ? 'rgba(56, 189, 248, 0.22)' : 'rgba(251, 113, 133, 0.22)'
-        ctx.fillRect(badgeX - 3, Math.round(yUa) - 8, textW + 6, 15)
-        ctx.strokeStyle = color
-        ctx.lineWidth = 1
-        ctx.strokeRect(badgeX - 3, Math.round(yUa) - 8, textW + 6, 15)
-        ctx.fillStyle = color
-        ctx.textAlign = 'left'
-        ctx.textBaseline = 'middle'
-        ctx.fillText(tagText, badgeX, Math.round(yUa))
-        ctx.restore()
-      }
-    }
-
-    for (let i = startIdx; i <= endIdx; i++) {
-      const bar = fpBars[i]
-      if (!bar) continue
-
-      const x = timeScale.timeToCoordinate(toChartTime(bar.time, tz) as UTCTimestamp)
-      if (x == null || x < -barBodyW || x > paneW + barBodyW) continue
-
-      const yHigh = series.priceToCoordinate(bar.high)
-      const yLow = series.priceToCoordinate(bar.low)
-      const yOpen = series.priceToCoordinate(bar.open)
-      const yClose = series.priceToCoordinate(bar.close)
-      if (yHigh == null || yLow == null || yOpen == null || yClose == null) continue
-
-      const isBullish = bar.close >= bar.open
-      const candleColor = isBullish ? '#10b981' : '#f43f5e'
-      const bodyTop = Math.min(yOpen, yClose)
-      const bodyBot = Math.max(yOpen, yClose)
-      const bodyH = Math.max(2, bodyBot - bodyTop)
-      const bodyLeft = x - barBodyW / 2
-      const topY = Math.min(yHigh, yLow)
-      const botY = Math.max(yHigh, yLow)
-
-      // ── Trapped Traders Indicators ──
-      if (bar.trappedTraders === 'TRAPPED_BUYERS') {
-        const badgeY = topY - 34
-        if (badgeY > 12) {
-          ctx.save()
-          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-          const badgeText = '🔻 TRAPPED BUYERS'
-          const bW = ctx.measureText(badgeText).width + 10
-          ctx.fillStyle = 'rgba(239, 68, 68, 0.92)'
-          ctx.fillRect(x - bW / 2, badgeY - 7, bW, 15)
-          ctx.strokeStyle = '#fca5a5'
-          ctx.lineWidth = 1
-          ctx.strokeRect(x - bW / 2, badgeY - 7, bW, 15)
-          ctx.fillStyle = '#ffffff'
-          ctx.textAlign = 'center'
-          ctx.textBaseline = 'middle'
-          ctx.fillText(badgeText, x, badgeY)
-          ctx.restore()
-        }
-      } else if (bar.trappedTraders === 'TRAPPED_SELLERS') {
-        const badgeY = botY + 16
-        if (badgeY < paneH - 12) {
-          ctx.save()
-          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-          const badgeText = '🔺 TRAPPED SELLERS'
-          const bW = ctx.measureText(badgeText).width + 10
-          ctx.fillStyle = 'rgba(16, 185, 129, 0.92)'
-          ctx.fillRect(x - bW / 2, badgeY - 7, bW, 15)
-          ctx.strokeStyle = '#6ee7b7'
-          ctx.lineWidth = 1
-          ctx.strokeRect(x - bW / 2, badgeY - 7, bW, 15)
-          ctx.fillStyle = '#ffffff'
-          ctx.textAlign = 'center'
-          ctx.textBaseline = 'middle'
-          ctx.fillText(badgeText, x, badgeY)
-          ctx.restore()
-        }
-      }
-
-      // ── 1. Bar Header (Above High: Total Bar Volume in Blue, Net Bar Delta + % in Green/Red) ──
-      if (topY > 30) {
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'bottom'
-
-        // Total volume (e.g. 38171)
-        ctx.font = 'bold 11px monospace'
-        ctx.fillStyle = '#60a5fa'
-        ctx.fillText(bar.totalVolume.toLocaleString(), x, topY - 14)
-
-        // Net bar delta with percentage (e.g. +1,701 (+12.4%))
-        ctx.fillStyle = bar.netDelta >= 0 ? '#34d399' : '#f43f5e'
-        const deltaText = `${bar.netDelta >= 0 ? '+' : ''}${bar.netDelta.toLocaleString()} (${bar.deltaPct > 0 ? '+' : ''}${bar.deltaPct}%)`
-        ctx.fillText(deltaText, x, topY - 2)
-      }
-
-      // ── 2. Candle Body Outline & Wicks ──────────────────────────────────────────
-      // Upper wick
-      ctx.strokeStyle = candleColor
-      ctx.lineWidth = 1
-      ctx.beginPath()
-      ctx.moveTo(x, yHigh)
-      ctx.lineTo(x, bodyTop)
-      ctx.stroke()
-
-      // Lower wick
-      ctx.beginPath()
-      ctx.moveTo(x, bodyBot)
-      ctx.lineTo(x, yLow)
-      ctx.stroke()
-
-      // Candle body box (subtle background fill + crisp outline)
-      ctx.fillStyle = isBullish ? 'rgba(16, 185, 129, 0.05)' : 'rgba(244, 63, 94, 0.05)'
-      ctx.fillRect(bodyLeft, bodyTop, barBodyW, bodyH)
-
-      ctx.strokeStyle = candleColor
-      ctx.lineWidth = 1.5
-      ctx.strokeRect(bodyLeft, bodyTop, barBodyW, bodyH)
-
-      // ── 3. Stacked Imbalances Vertical Indicators ───────────────────────────────
-      for (const buyZone of bar.stackedBuyImbalances) {
-        const y1 = series.priceToCoordinate(buyZone.endPrice + 0.125)
-        const y2 = series.priceToCoordinate(buyZone.startPrice - 0.125)
-        if (y1 != null && y2 != null) {
-          const top = Math.min(y1, y2)
-          const h = Math.max(4, Math.abs(y2 - y1))
-          ctx.fillStyle = 'rgba(16, 185, 129, 0.22)'
-          ctx.fillRect(bodyLeft, top, barBodyW, h)
-          ctx.fillStyle = '#10b981'
-          ctx.fillRect(bodyLeft + barBodyW - 3, top, 3, h)
-        }
-      }
-
-      for (const sellZone of bar.stackedSellImbalances) {
-        const y1 = series.priceToCoordinate(sellZone.endPrice + 0.125)
-        const y2 = series.priceToCoordinate(sellZone.startPrice - 0.125)
-        if (y1 != null && y2 != null) {
-          const top = Math.min(y1, y2)
-          const h = Math.max(4, Math.abs(y2 - y1))
-          ctx.fillStyle = 'rgba(244, 63, 94, 0.22)'
-          ctx.fillRect(bodyLeft, top, barBodyW, h)
-          ctx.fillStyle = '#f43f5e'
-          ctx.fillRect(bodyLeft, top, 3, h)
-        }
-      }
-
-      // ── 4. Price Rows: Level 2 Bid x Ask, Delta, Mini Histogram, POC Box ────────
-      if (bar.ticks.length > 0) {
-        const candlePixelH = Math.max(10, Math.abs(yLow - yHigh))
-        const maxBuckets = Math.max(1, Math.floor(candlePixelH / 13))
-        const rows = aggregateFootprintTicks(bar.ticks, maxBuckets)
-
-        let maxDeltaInBar = 1
-        let maxVolInBar = 1
-        let pocRowIdx = 0
-
-        for (let rIdx = 0; rIdx < rows.length; rIdx++) {
-          const r = rows[rIdx]!
-          if (Math.abs(r.delta) > maxDeltaInBar) maxDeltaInBar = Math.abs(r.delta)
-          if (r.totalVol > maxVolInBar) {
-            maxVolInBar = r.totalVol
-            pocRowIdx = rIdx
-          }
-        }
-
-        ctx.textBaseline = 'middle'
-
-        for (let rIdx = 0; rIdx < rows.length; rIdx++) {
-          const r = rows[rIdx]!
-          const yTopR = series.priceToCoordinate(r.highPrice)
-          const yBotR = series.priceToCoordinate(r.lowPrice)
-          if (yTopR == null || yBotR == null) continue
-
-          const rowY = (yTopR + yBotR) / 2
-          const rowH = Math.max(11, Math.abs(yBotR - yTopR))
-          if (rowY < -20 || rowY > paneH + 20) continue
-
-          const isPoc = rIdx === pocRowIdx
-
-          // Heatmap shading based on delta intensity
-          if (Math.abs(r.delta) > 0) {
-            const intensity = Math.min(1, Math.abs(r.delta) / maxDeltaInBar)
-            ctx.fillStyle = r.delta > 0
-              ? `rgba(16, 185, 129, ${0.05 + intensity * 0.22})`
-              : `rgba(244, 63, 94, ${0.05 + intensity * 0.22})`
-            ctx.fillRect(bodyLeft + 1, rowY - rowH / 2, barBodyW - 2, rowH)
-          }
-
-          // Candle POC Highlight (Crisp high-contrast white box outline)
-          if (isPoc) {
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.09)'
-            ctx.fillRect(bodyLeft + 1, rowY - rowH / 2, barBodyW - 2, rowH)
-            ctx.strokeStyle = '#ffffff'
-            ctx.lineWidth = 1.5
-            ctx.strokeRect(bodyLeft + 1, rowY - rowH / 2, barBodyW - 2, rowH)
-          }
-
-          // Mini horizontal histogram bar on right side for delta
-          if (barBodyW >= 68 && Math.abs(r.delta) > 0) {
-            const maxHistW = Math.min(32, barBodyW * 0.24)
-            const histW = Math.max(2, (Math.abs(r.delta) / maxDeltaInBar) * maxHistW)
-            const histX = bodyLeft + barBodyW - histW - 2
-            ctx.fillStyle = r.delta > 0 ? '#10b981' : '#f43f5e'
-            ctx.fillRect(histX, rowY - Math.min(rowH - 2, 8) / 2, histW, Math.min(rowH - 2, 8))
-          }
-
-          // Text Columns: Bid x Ask and Delta
-          if (barBodyW >= 55) {
-            ctx.font = 'bold 9px monospace'
-
-            // Bid Volume
-            ctx.textAlign = 'right'
-            ctx.fillStyle = r.isSellImbalance ? '#f43f5e' : '#cbd5e1'
-            const bidX = bodyLeft + barBodyW * 0.28
-            ctx.fillText(`${r.bidVol}`, bidX, rowY)
-
-            // Separator "x"
-            ctx.textAlign = 'center'
-            ctx.fillStyle = '#64748b'
-            const sepX = bodyLeft + barBodyW * 0.35
-            ctx.fillText('x', sepX, rowY)
-
-            // Ask Volume
-            ctx.textAlign = 'left'
-            ctx.fillStyle = r.isBuyImbalance ? '#34d399' : '#cbd5e1'
-            const askX = bodyLeft + barBodyW * 0.42
-            ctx.fillText(`${r.askVol}`, askX, rowY)
-
-            // Delta Value (right of ask)
-            ctx.textAlign = 'right'
-            ctx.fillStyle = r.delta > 0 ? '#34d399' : r.delta < 0 ? '#f43f5e' : '#94a3b8'
-            const deltaX = bodyLeft + barBodyW * 0.76
-            ctx.fillText(`${r.delta}`, deltaX, rowY)
-          }
-        }
-      }
-    }
+    paintSierraNumberBars(ctx, {
+      bars: fpBars,
+      paneW,
+      paneH,
+      timeToX: (t) => timeScale.timeToCoordinate(toChartTime(t, tz) as UTCTimestamp),
+      priceToY: (p) => series.priceToCoordinate(p),
+      barSpacing,
+    })
 
     ctx.restore()
   }, [showFootprint])
+
 
   // ── Auto-Zoom & Transparent Candlestick Styling when Footprint is Enabled ──
   useEffect(() => {
@@ -7197,22 +7140,21 @@ export function TradingChart({
     if (!chart || !series) return
 
     if (showFootprint) {
-      // 1. Save current view range so we can restore on exit
       const currentRange = chart.timeScale().getVisibleLogicalRange()
       if (currentRange) {
         savedFootprintRangeRef.current = { from: currentRange.from, to: currentRange.to }
       }
-
-      // 2. Zoom to the latest action bars (last 8-10 candles) so each bar is wide and spacious
       const totalBars = candlesRef.current.length
       if (totalBars > 0) {
+        chart.timeScale().applyOptions({
+          barSpacing: FOOTPRINT_BAR_SPACING,
+          rightOffset: 3,
+        })
         chart.timeScale().setVisibleLogicalRange({
-          from: Math.max(0, totalBars - 9),
-          to: totalBars + 1,
+          from: Math.max(0, totalBars - FOOTPRINT_RECENT_BARS),
+          to: totalBars + 0.4,
         })
       }
-
-      // 3. Set candlestick bodies to subtle transparent outline so the footprint canvas pops
       series.applyOptions({
         upColor: 'rgba(34, 197, 94, 0.04)',
         downColor: 'rgba(239, 68, 68, 0.04)',
@@ -7222,17 +7164,15 @@ export function TradingChart({
         wickDownColor: 'rgba(239, 68, 68, 0.35)',
       })
     } else {
-      // Restore normal solid candlesticks
       series.applyOptions({
-        upColor: meta.color || '#22c55e',
-        downColor: '#ef4444',
-        borderUpColor: meta.color || '#22c55e',
-        borderDownColor: '#ef4444',
-        wickUpColor: meta.color || '#22c55e',
-        wickDownColor: '#ef4444',
+        ...DESK_CANDLE_SERIES_COLORS,
       })
-
-      // Restore previous zoom if available
+      const list = candlesRef.current
+      const width = containerRef.current?.clientWidth ?? 900
+      chart.timeScale().applyOptions({
+        barSpacing: deskBarSpacing(width, list.length),
+        rightOffset: DESK_CHART_THEME.timeScale.rightOffset,
+      })
       if (savedFootprintRangeRef.current) {
         chart.timeScale().setVisibleLogicalRange(savedFootprintRangeRef.current)
       }
@@ -7241,7 +7181,7 @@ export function TradingChart({
     requestAnimationFrame(() => {
       paintFootprintRef.current()
     })
-  }, [showFootprint, meta.color])
+  }, [showFootprint])
 
   useEffect(() => {
     paintFrvpHistogramRef.current = paintFrvpHistogram
@@ -7275,7 +7215,12 @@ export function TradingChart({
         rightOffset: DESK_CHART_THEME.timeScale.rightOffset,
       })
       ts.setVisibleLogicalRange(deskVisibleLogicalRange(list.length, width))
-      saveDeskViewport(instrumentRef.current, deskVisibleLogicalRange(list.length, width), list.length)
+      saveDeskViewport(
+        instrumentRef.current,
+        deskVisibleLogicalRange(list.length, width),
+        list.length,
+        timeframeRef.current
+      )
     } catch {
       /* ignore */
     }
@@ -7315,7 +7260,12 @@ export function TradingChart({
             const range = chartRef.current.timeScale().getVisibleLogicalRange()
             const list = candlesRef.current
             if (range && list.length > 1) {
-              saveDeskViewport(instrumentRef.current, range, list.length)
+              saveDeskViewport(
+                instrumentRef.current,
+                range,
+                list.length,
+                timeframeRef.current
+              )
             }
           } catch {
             /* ignore */
@@ -7348,10 +7298,32 @@ export function TradingChart({
     const ts = chartRef.current.timeScale()
     ts.subscribeVisibleLogicalRangeChange(onRangeChange)
     el?.addEventListener('pointerdown', beginInteract)
+
+    // Ctrl/Meta + wheel zooms candle width; plain wheel only pans (handleScale.mouseWheel=false)
+    const onWheelZoom = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      const chart = chartRef.current
+      if (!chart) return
+      e.preventDefault()
+      interactingRef.current = true
+      try {
+        const ts = chart.timeScale()
+        const current = readDeskBarSpacing(chart)
+        const direction = e.deltaY > 0 ? -1 : 1
+        const next = Math.min(48, Math.max(DESK_MIN_BAR_SPACING, current * (direction > 0 ? 1.12 : 1 / 1.12)))
+        ts.applyOptions({ barSpacing: next })
+      } catch {
+        /* ignore */
+      }
+      scheduleSettle()
+    }
+    el?.addEventListener('wheel', onWheelZoom, { passive: false })
+
     // window: drag can end outside the chart (pointerleave used to false-settle mid-pan)
     window.addEventListener('pointerup', endInteract)
     window.addEventListener('pointercancel', endInteract)
     return () => {
+      el?.removeEventListener('wheel', onWheelZoom)
       window.clearTimeout(t1)
       window.clearTimeout(settleTimer)
       if (rafPending) cancelAnimationFrame(rafPending)
@@ -7383,7 +7355,11 @@ export function TradingChart({
     if (!chartReady || !streamArmed || dataMode === 'synthetic') return
 
     const CANDLE_REFRESH_MS = 15_000
-    const candleIntervalMs = tipStreamActive ? CANDLE_REFRESH_MS : 30_000
+    const candleIntervalMs = isOvernightInventoryWindow() || isCloseReprintWindow()
+      ? 60_000
+      : tipStreamActive
+        ? CANDLE_REFRESH_MS
+        : 120_000
     let lastTickPublishAt = 0
     let lastPriceStateAt = 0
     let lastMarkerPaintAt = 0
@@ -7557,8 +7533,30 @@ export function TradingChart({
     const refreshCandles = async () => {
       try {
         const days = timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
+        const held = candlesRef.current
+        const skipReprint = skipGapReprintOnceRef.current
+        if (skipReprint) skipGapReprintOnceRef.current = false
+        const heldTimes = held.map((c) => ({ time: c.time as number }))
+        // After TF switch the prior book may still be painted — never invent gaps
+        // by measuring 5m spacing with a 1m/30m barSec.
+        const tfBookReady = bookMatchesBarSec(heldTimes, barSeconds)
+        const localGap =
+          !skipReprint &&
+          tfBookReady &&
+          held.length > 2 &&
+          needsCandleReprint({
+            bars: heldTimes,
+            barSec: barSeconds,
+            nearTipLookback: 64,
+            maxNearTipGaps: 1,
+            maxTipLagSlots: 2,
+          })
+        const now = Date.now()
+        const canReprint = now - candleReprintAtRef.current > 45_000
+        const reprint = localGap && canReprint
+        if (reprint) candleReprintAtRef.current = now
         const res = await fetch(
-          `/api/trading/candles?instrument=${instrument}&timeframe=${timeframe}&days=${days}&quote=0&_=${Date.now()}`,
+          `/api/trading/candles?instrument=${instrument}&timeframe=${timeframe}&days=${days}&quote=0${reprint ? '&reprint=1' : ''}&_=${Date.now()}`,
           { cache: 'no-store' }
         )
         if (!res.ok) return
@@ -7642,12 +7640,16 @@ export function TradingChart({
           })),
           tipOwned
         )
+        const gapsFilled =
+          countNearTipGaps(prev.map((c) => ({ time: c.time as number })), 64, barSeconds) >
+          countNearTipGaps(nextBars.map((c) => ({ time: c.time as number })), 64, barSeconds)
+        marketBookCacheRef.current.set(`${instrument}:${timeframe}`, nextBars)
 
         // Never reset didFitRef here — new prints must not yank a panned viewport
         lastCandleRef.current = nextBars[nextBars.length - 1]!
-        // REST owns closed bars: replace gap-fill flats when Yahoo catches up.
+        // REST owns closed bars: replace gap-fill flats when Yahoo/Databento reprints.
         // Once market is closed (!streamLive), always push candles to finalize closing bars & AVWAP.
-        if (structureChanged || closedChanged || !streamLive) {
+        if (structureChanged || closedChanged || gapsFilled || reprint || !streamLive) {
           setCandles(nextBars)
         } else {
           const tip = nextBars[nextBars.length - 1]!
@@ -9843,6 +9845,32 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 <button
                   key={inst}
                   onClick={() => setInstrument(inst)}
+                  onMouseEnter={() => {
+                    const key = `${inst}:${timeframe}`
+                    if (marketBookCacheRef.current.has(key)) return
+                    const days = timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
+                    void fetch(
+                      `/api/trading/candles?instrument=${inst}&timeframe=${timeframe}&days=${days}&quote=0`,
+                      { cache: 'no-store' }
+                    )
+                      .then((r) => (r.ok ? r.json() : null))
+                      .then((json) => {
+                        if (!json || !Array.isArray(json.candles) || json.candles.length === 0) return
+                        const mapped: OHLCV[] = json.candles.map((c: any) => ({
+                          time: c.time as UTCTimestamp,
+                          open: c.open,
+                          high: c.high,
+                          low: c.low,
+                          close: c.close,
+                          volume: c.volume ?? 0,
+                        }))
+                        const trimmed = normalizeCandleTimes(
+                          toDeskCandles(mapped, inst, timeframe)
+                        )
+                        if (trimmed.length) marketBookCacheRef.current.set(key, trimmed)
+                      })
+                      .catch(() => {})
+                  }}
                   className={`tab ${instrument === inst ? 'tab-active' : ''}`}
                   style={instrument === inst ? { backgroundColor: INSTRUMENT_META[inst].color + '33', color: INSTRUMENT_META[inst].color } : {}}
                 >
@@ -9861,8 +9889,20 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     if (timeframe === tf) return
                     didFitRef.current = false
                     lastCandleRef.current = null
-                    setCandles([])
-                    candlesRef.current = []
+                    skipGapReprintOnceRef.current = true
+                    // Instant paint from cache when this TF was loaded before.
+                    // Otherwise keep the prior TF on screen until the new book
+                    // arrives — clearing here paints a hole and false-triggers
+                    // gap reprint against the wrong barSec.
+                    const cachedTf = marketBookCacheRef.current.get(`${instrument}:${tf}`)
+                    if (cachedTf && cachedTf.length > 0) {
+                      setCandles(cachedTf)
+                      candlesRef.current = cachedTf
+                      const tip = cachedTf[cachedTf.length - 1]!
+                      lastCandleRef.current = tip
+                      setLivePrice(tip.close)
+                      publishPriceTick(tip.close, 0)
+                    }
                     setTimeframe(tf)
                   }}
                   className={`rounded px-2.5 py-1 text-xs font-semibold transition-all ${
@@ -10054,10 +10094,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               })()}
               {/* VWAP HUD Label */}
               <div
-                className="transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                className="transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-500/30"
                 title={`5-Month Anchored VWAP${currentVwap ? ` · Level: ${currentVwap.vwap.toLocaleString()}` : ''}`}
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
                 <span className="text-gray-400 font-semibold">VWAP:</span>
                 <span className="font-mono font-bold">
                   {currentVwap ? currentVwap.vwap.toLocaleString() : '—'}
@@ -10068,8 +10108,18 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   </span>
                 )}
               </div>
+              {(deskPhase === 'COOLDOWN' || deskPhase === 'OVERNIGHT' || deskPhase === 'PREP') && (
+                <div
+                  className="transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-slate-500/15 text-slate-300 border border-slate-500/30"
+                  title="NYC cash is closed until 09:30. Last 5 days are reprinted, 5M VWAP and yesterday FRVP are frozen. Overnight inventory FRVP keeps updating until 09:30 ET."
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                  <span className="font-semibold">
+                    {deskPhase === 'COOLDOWN' ? 'Desk cooled · reprinting 5d' : 'ON inventory updating → 09:30'}
+                  </span>
+                </div>
+              )}
               <span className="text-gray-600 text-[10px]">|</span>
-              {/* Interactive CVD Sub-Chart Pane Button */}
               <button
                 type="button"
                 onClick={() => {
@@ -10109,7 +10159,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     ? 'bg-amber-500/25 text-amber-200 border border-amber-400/60 shadow-sm font-semibold'
                     : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
                 }`}
-                title="Click to toggle Enhanced Level 2 Footprint Order Flow (Bid x Ask Ladders, Delta & POC)"
+                title="Sierra / Tradovate number bars on the latest live prints (bid x ask)"
               >
                 <span className="text-[11px]">👣</span>
                 <span className="text-gray-400 font-semibold">Footprint:</span>
@@ -10157,7 +10207,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           />
           <canvas
             ref={frvpHistogramCanvasRef}
-            className="pointer-events-none absolute inset-0 z-[2]"
+            className="pointer-events-none absolute inset-0 z-[8]"
           />
           <canvas
             ref={excessesCanvasRef}
@@ -11660,13 +11710,15 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
         {/* ── Leo AI Desk Assistant (Voice & Interactive Clickable Telemetry) ── */}
         <LeoAssistantPanel
-          key={leoContext.instrument}
+          key={`${leoContext.instrument}:${paperMode ? 'paper' : 'live'}`}
           context={leoContext}
           isOpen={leoPanelOpen}
           onToggleOpen={() => setLeoPanelOpen(!leoPanelOpen)}
           externalAttachedPoints={leoExternalPoints}
           onClearExternalAttachedPoints={() => setLeoExternalPoints([])}
           onClosePosition={onClosePosition}
+          onLeoOrder={onLeoOrder}
+          paperMode={paperMode}
         />
       </div>
     </div>

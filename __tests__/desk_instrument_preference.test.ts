@@ -75,4 +75,13 @@ assert(
   assert(3100 - 1 - later.from === encoded!.fromEnd, 'stays tip-relative after new bars')
 }
 
+{
+  // 5m deep-scroll viewport must not open a hole on a shorter 30m book
+  const deep = encodeDeskViewport({ from: 100, to: 200 }, 3000)
+  assert(!!deep && deep.fromEnd > 500, 'deep fromEnd')
+  const on30m = decodeDeskViewport(deep!, 311)
+  const tip = deskVisibleLogicalRange(311)
+  assert(on30m.from === tip.from && on30m.to === tip.to, 'cross-TF viewport falls back to tip')
+}
+
 console.log('desk_instrument_preference.test.ts: all passed')

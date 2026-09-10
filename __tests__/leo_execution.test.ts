@@ -47,10 +47,127 @@ describe('Leo Execution Directives & Parsing', () => {
     }
   })
 
-  it('returns empty array when no valid execution directive present', () => {
-    const responseText = `Just regular chat commentary about the 5M VWAP and yesterday POC.`
-    const directives = parseLeoDirectives(responseText)
-    assert.equal(directives.length, 0)
+  it('parses PLACE_MARKET and PLACE_LIMIT directives', () => {
+    const market = `Go long here with stop under ON-POC.\n\n<execute>\n{\n  "action": "PLACE_MARKET",\n  "side": "LONG",\n  "stop": 29100,\n  "target": 29250,\n  "reason": "Trader asked market long"\n}\n</execute>`
+    const d1 = parseLeoDirectives(market)
+    assert.equal(d1[0]?.action, 'PLACE_MARKET')
+    if (d1[0]?.action === 'PLACE_MARKET') {
+      assert.equal(d1[0].side, 'LONG')
+      assert.equal(d1[0].stop, 29100)
+      assert.equal(d1[0].target, 29250)
+    }
+    const limit = `<execute>{"action":"PLACE_LIMIT","side":"SHORT","limit":29500,"stop":29540,"target":29380,"reason":"Sell limit"}</execute>`
+    const d2 = parseLeoDirectives(limit)
+    assert.equal(d2[0]?.action, 'PLACE_LIMIT')
+  })
+
+  it('system prompt names this market Leo and PLACE_MARKET', () => {
+    const prompt = buildLeoSystemPrompt({
+      instrument: 'GOLD',
+      currentPrice: 2650,
+      currentTimeEt: '10:00:00 ET',
+      dayType: null,
+      openingType: null,
+      longTermMoney: null,
+      intermediateMoney: null,
+      shortTermMoney: null,
+      activeExcesses: [],
+    })
+    assert.match(prompt, /this market's Leo/)
+    assert.match(prompt, /PLACE_MARKET/)
+    assert.match(prompt, /PLACE_LIMIT/)
+  })
+})
+
+describe('Paper $1500 sim desk', () => {
+  it('opens and closes a paper long on DOW', async () => {
+    const {
+      resetPaperLedger,
+      openPaperMarket,
+      closePaperPosition,
+    } = await import('../lib/trading/paperSimDesk')
+    resetPaperLedger('DOW')
+    const opened = openPaperMarket({
+      market: 'DOW',
+      side: 'LONG',
+      entry: 42000,
+      stop: 41950,
+      target: 42100,
+      reason: 'test',
+    })
+    assert.equal(opened.ok, true)
+    if (!opened.ok) return
+    assert.ok(opened.ledger.position)
+    const closed = closePaperPosition('DOW', 42050, 'test')
+    assert.equal(closed.ok, true)
+    if (!closed.ok) return
+    assert.equal(closed.ledger.position, null)
+    assert.ok(closed.pnlUsd > 0)
+  })
+
+  it('rejects inverted paper brackets', async () => {
+    const { resetPaperLedger, openPaperMarket, assertPaperBrackets } =
+      await import('../lib/trading/paperSimDesk')
+    resetPaperLedger('NASDAQ')
+    assert.ok(assertPaperBrackets({ side: 'LONG', entry: 100, stop: 110, target: 120 }))
+    const bad = openPaperMarket({
+      market: 'NASDAQ',
+      side: 'LONG',
+      entry: 21000,
+      stop: 21050,
+      target: 20900,
+      reason: 'inverted',
+    })
+    assert.equal(bad.ok, false)
+  })
+
+  it('advances working fill and stop with events', async () => {
+    const {
+      resetPaperLedger,
+      placePaperWorking,
+      advancePaperDesk,
+    } = await import('../lib/trading/paperSimDesk')
+    resetPaperLedger('GOLD')
+    const placed = placePaperWorking({
+      market: 'GOLD',
+      side: 'LONG',
+      orderType: 'LIMIT',
+      trigger: 2650,
+      stop: 2640,
+      target: 2670,
+      reason: 'test limit',
+    })
+    assert.equal(placed.ok, true)
+    if (!placed.ok) return
+    assert.ok(placed.ledger.working)
+    const fill = advancePaperDesk('GOLD', 2649)
+    assert.equal(fill.kind, 'working_fill')
+    if (fill.kind !== 'working_fill') return
+    assert.equal(fill.entry, 2650)
+    const stop = advancePaperDesk('GOLD', 2640)
+    assert.equal(stop.kind, 'stop_hit')
+    if (stop.kind !== 'stop_hit') return
+    assert.ok(stop.pnlUsd < 0)
+    assert.equal(stop.ledger.position, null)
+  })
+
+  it('prompt announces paper desk mode', async () => {
+    const { buildLeoSystemPrompt } = await import('../lib/ai/leoAssistant')
+    const prompt = buildLeoSystemPrompt({
+      instrument: 'CRUDE',
+      currentPrice: 78,
+      currentTimeEt: '10:00:00 ET',
+      dayType: null,
+      openingType: null,
+      longTermMoney: null,
+      intermediateMoney: null,
+      shortTermMoney: null,
+      activeExcesses: [],
+      paperMode: true,
+      paperEquity: 1500,
+    })
+    assert.match(prompt, /PAPER SIMULATION/)
+    assert.match(prompt, /1,?500/)
   })
 })
 

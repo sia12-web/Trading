@@ -209,9 +209,15 @@ export interface SessionHighlightRect {
   borderBottomWidth?: number
 }
 
+/** TradingView Anchored VWAP Style tab: blue VWAP, green/olive/teal σ bands. */
 export const VWAP_COLORS = {
-  vwap: '#b8a04a',
-  band: 'rgba(61, 143, 122, 0.48)',
+  vwap: '#2962FF',
+  band1: '#4CAF50',
+  band2: '#827717',
+  band3: '#00695C',
+  fill1: 'rgba(76, 175, 80, 0.05)',
+  /** @deprecated use band1–band3 */
+  band: '#4CAF50',
 } as const
 
 export interface SessionBar {
@@ -879,7 +885,7 @@ function dayKeyInTz(unix: number, timeZone: string): string {
   return dayFormatter(timeZone).format(new Date(unix * 1000))
 }
 
-function addCalendarDaysYmd(ymd: string, delta: number): string {
+export function addCalendarDaysYmd(ymd: string, delta: number): string {
   const [y, m, d] = ymd.split('-').map(Number)
   const dt = new Date(Date.UTC(y!, m! - 1, d! + delta, 12, 0, 0))
   return dt.toISOString().slice(0, 10)
@@ -1029,6 +1035,16 @@ export function isUsMarketHoliday(ymd: string): boolean {
   if (m === 12 && d === 26 && dow === 1) return true
 
   return false
+}
+
+/** Next weekday that is not a US market holiday. */
+export function nextTradingYmd(ymd: string, timeZone: string): string {
+  let cur = addCalendarDaysYmd(ymd, 1)
+  let guard = 0
+  while (guard++ < 14 && (!isWeekdayYmd(cur, timeZone) || isUsMarketHoliday(cur))) {
+    cur = addCalendarDaysYmd(cur, 1)
+  }
+  return cur
 }
 
 function sessionTradingDayYmd(unix: number, clock: DeskClock): string {

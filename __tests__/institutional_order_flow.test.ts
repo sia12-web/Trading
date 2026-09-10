@@ -5,8 +5,15 @@ import {
   findNakedPocs,
   findActiveUnfinishedAuctions,
   summarizeFootprintForLeo,
+  markDiagonalImbalances,
   type FootprintBar,
 } from '../lib/trading/orderFlowDelta'
+import {
+  deskFootprintTickSize,
+  recentFootprintSlice,
+  FOOTPRINT_RECENT_BARS,
+  paintSierraNumberBars,
+} from '../lib/chart/footprintPaint'
 
 test('findNakedPocs detects untested candle POCs and clears tested ones', () => {
   const bars: FootprintBar[] = [
@@ -168,3 +175,60 @@ test('summarizeFootprintForLeo includes Trapped Traders, Naked POCs, and Unfinis
   assert.ok(summary.includes('108.00'), 'Summary should include naked POC price')
   assert.ok(summary.includes('UNFINISHED AUCTION TARGETS'), 'Summary should list unfinished auction targets')
 })
+
+test('Sierra diagonal imbalance compares ask at P to bid at P-1 tick', () => {
+  const ticks = [
+    { price: 100, bidVol: 10, askVol: 10, totalVol: 20, delta: 0, isBuyImbalance: false, isSellImbalance: false },
+    { price: 101, bidVol: 8, askVol: 40, totalVol: 48, delta: 32, isBuyImbalance: false, isSellImbalance: false },
+    { price: 102, bidVol: 50, askVol: 5, totalVol: 55, delta: -45, isBuyImbalance: false, isSellImbalance: false },
+  ]
+  markDiagonalImbalances(ticks, 3)
+  assert.equal(ticks[1]!.isBuyImbalance, true, 'ask 40 vs bid 10 below is 4x buy imbalance')
+  assert.equal(ticks[2]!.isSellImbalance, false)
+  assert.equal(ticks[1]!.isSellImbalance, false)
+})
+
+test('recent footprint is only the live tail', () => {
+  assert.equal(FOOTPRINT_RECENT_BARS, 12)
+  const bars = Array.from({ length: 40 }, (_, i) => i)
+  assert.deepEqual(recentFootprintSlice(bars), bars.slice(-12))
+  assert.equal(deskFootprintTickSize('NASDAQ'), 0.25)
+  assert.equal(deskFootprintTickSize('DOW'), 1)
+  assert.equal(deskFootprintTickSize('GOLD'), 0.1)
+  assert.equal(deskFootprintTickSize('CRUDE'), 0.01)
+})
+
+test('Sierra number bars paint bid x ask cells', () => {
+  let filled = 0
+  const ctx = {
+    save() {},
+    restore() {},
+    beginPath() {},
+    fillRect() {
+      filled += 1
+    },
+    strokeRect() {},
+    fillText() {},
+    measureText: () => ({ width: 20 }),
+    set fillStyle(_v: string) {},
+    set strokeStyle(_v: string) {},
+    set lineWidth(_v: number) {},
+    set font(_v: string) {},
+    set textAlign(_v: string) {},
+    set textBaseline(_v: string) {},
+  } as unknown as CanvasRenderingContext2D
+  const bars = computeFootprintBars(
+    [{ time: 1, open: 100, high: 101, low: 99.5, close: 100.5, volume: 800 }],
+    0.25
+  )
+  paintSierraNumberBars(ctx, {
+    bars,
+    paneW: 400,
+    paneH: 300,
+    timeToX: () => 200,
+    priceToY: (p) => 200 - (p - 99) * 40,
+    barSpacing: 32,
+  })
+  assert.ok(filled > 0, 'number bars draw cells')
+})
+

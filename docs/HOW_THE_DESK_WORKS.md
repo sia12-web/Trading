@@ -1,0 +1,60 @@
+# How the live desk works
+
+This is the operating manual for the **TradePulse NYC futures desk**. Live charts only (DOW · NASDAQ · GOLD · CRUDE). There is no simulation product.
+
+## Daily clock (America/New_York)
+
+| Time | Phase | What happens |
+|---|---|---|
+| **09:00–09:30** | Prep | Charts are back. Overnight inventory FRVP **keeps updating** until cash open. |
+| **09:30–16:00** | Live | Cash session. Overnight inventory **freezes** at the 09:30 profile. 5-day FRVP, 5-month VWAP, and yesterday FRVP paint on the live 5m chart. |
+| **16:00** | Cool down | NYC cash is done. **Today becomes yesterday.** The desk reprints the last **5 trading days** of 5m bars (Databento + Yahoo stitch) to fill latency/gap holes, then recomputes **5-month anchored VWAP**, then **yesterday FRVP** from the session that just closed. Live tick stream stops. |
+| **16:00–18:00** | Dead zone | No Asia overnight yet. Reprint settles. |
+| **18:00 → next 09:30** | Overnight inventory | Globex overnight FRVP (ON-POC) **keeps updating** even if you never open the chart. Friday 16:00 → Sunday 18:00 is quiet (Globex closed). Sunday 18:00 starts Monday’s inventory. |
+| **Until 09:00 next session** | Charts away | You do not need the chart. At 09:00 prep the book is already reprinted. |
+
+At **16:00 ET** the last 5m candle is still 15:55. The desk uses **wall-clock time**, not that bar’s timestamp, so today is already yesterday for FRVP.
+
+Server path: `lib/trading/deskCooldownWatch.ts` (Railway boot) + `GET/POST /api/trading/desk-cooldown` (cron + chart POST at 16:00). The live chart also recomputes yesterday / overnight from the 5m book using wall clock, so opening at 09:00 already shows the reprinted session.
+
+## Context 5-5 overlays
+
+Computed in `lib/chart/context55.ts`, painted in `TradingChart` + `lib/chart/context55Paint.ts`.
+
+1. **5-day FRVP** — volume profile from the cash open five trading days ago through the live tip. Thin histogram at the **range open**. **POC line runs from that open to the range end** (not just the histogram width).
+2. **Yesterday NYC FRVP** — prior completed RTH 09:30–16:00. After 16:00 today, that is **today’s closed session**. Histogram at yesterday’s cash open; **Y-POC spans 09:30–16:00**.
+3. **Overnight inventory FRVP** — 18:00 ET before the next cash open, updating until 09:30. Histogram at 18:00; **ON-POC spans 18:00 → now (or 09:30)**.
+4. **5-month anchored VWAP** — typical price `(H+L+C)/3`, anchored at NYC cash open five calendar months ago. Daily spine + live 5m updates form a **sloping path** (not one frozen level). **Three bands above and three below** (±1/±2/±3σ) use the true cumulative volume-weighted stdev. Session candles own the Y-axis (`ignoreScale`) so wide 5-month σ cannot flatten 5m bars. HUD prints the live VWAP level.
+5. **Footprint** — click Footprint to show Sierra/Tradovate **number bars** on the **latest ~12 live 5m prints** only (bid left / ask right, 300% diagonal imbalance, bar POC). No historical tape dump.
+
+## Candle gaps (smart reprint)
+
+Databento hist is delayed; Yahoo CME stitches holes. If 5m slots are still missing near the tip (or the tip lags wall clock), `/api/trading/candles` **bypasses the 60s Databento cache and reprints** Databento + Yahoo (Databento + Yahoo load in parallel). The live chart also requests `?reprint=1` when it sees local gaps (45s cooldown), using the **active timeframe’s bar size** so 30m never looks like five missing 5m slots. Timeframe switches skip reprint until the held book’s spacing matches the new TF (and paint from cache when that TF was loaded before). Viewport restore is **per instrument + timeframe** so a deep 5m scroll cannot open an empty hole on 30m. Market tabs paint from an in-memory book cache and prefetch on hover / after first load. Weekend / Globex halt holes are intentional and are not reprinted as flat bars.
+
+POC lines are canvas (not Lightweight Charts price lines) so they cannot stretch the scale.
+
+## Market data
+
+- Live book: **Databento CME Globex MDP 3.0** historical OHLCV (MYM / MNQ / MGC / CL) via `https://hist.databento.com` with **HTTP Basic** (`DATABENTO_API_KEY` as username, empty password — key must start with `db-`). There is **no Databento webhook**. Portal: Dataset = **CME Globex MDP 3.0 (`GLBX.MDP3`)**. Receive-location meters (Aurora IL / AWS Chicago / etc.) only monitor Databento’s path to their PoP — they do **not** change our Railway chart feed.
+- Live tip: **Databento Live Raw** (TCP to `glbx-mdp3.lsg.databento.com:13000` + CRAM challenge-response) streams `trades` for continuous MYM/MNQ/MGC/CL and fans into `/api/trading/quote/stream`. Standard plan Live is what unlocks this. If Live is quiet, tip falls back to **OANDA + CME basis**, then Yahoo. Hist is still delayed → **Yahoo CME 5m stitch** still fills candle holes.
+- 5-month VWAP daily series: CME archive + Yahoo daily merge on the 16:00 reprint so today’s completed session is included.
+
+## Paper $1,500 + Leo (per market)
+
+- Toggle **PAPER** on the chart header. Each of DOW / NASDAQ / GOLD / CRUDE has its **own** $1,500 paper wallet and its **own** Leo chat.
+- Ask Leo about the setup; when you tell him to go long/short, place a limit/stop, move brackets, or flatten, he emits `<execute>` and the desk places on **that market’s paper book**.
+- Live Tradeify / working-limit path is unchanged; Leo **entries** are paper-first so you can rehearse without touching the funded book.
+
+## What was removed
+
+- Full simulation / replay charts (`/dashboard/simulation` redirects to the live chart). Paper $1,500 on the live chart replaces that for Leo practice.
+- Stale docs that described OANDA-only, Nikkei live, and Live Voice as the product.
+
+## Key files
+
+- Chart: `app/dashboard/chart/components/TradingChart.tsx`
+- Session + AVWAP colors: `lib/chart/sessionVwap.ts`
+- Overlays: `lib/chart/context55.ts`, `lib/chart/context55Paint.ts`
+- Close reprint: `lib/trading/deskReprint.ts`, `lib/trading/deskClockPhase.ts`
+- Candles API: `app/api/trading/candles/route.ts`
+- 5M VWAP API: `app/api/trading/context-55/route.ts`

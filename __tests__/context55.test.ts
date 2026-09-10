@@ -4,6 +4,7 @@ import {
   compute5DayFixedRangeVolumeProfile,
   compute5MonthAnchoredVwap,
   compute5MonthAnchoredVwapFromDailyBars,
+  compute5MonthAnchoredVwapPath,
   computeYesterdayNycSession,
   computeOvernightInventoryAndSessions,
   classifyMarketDayType,
@@ -127,7 +128,115 @@ describe('Context 5-5 Module Tests', () => {
     assert.ok(benchmark.sigma1Lower < benchmark.vwap)
     assert.ok(benchmark.sigma2Upper > benchmark.sigma1Upper)
     assert.ok(benchmark.sigma2Lower < benchmark.sigma1Lower)
+    assert.ok((benchmark.sigma3Upper ?? 0) > benchmark.sigma2Upper)
+    assert.ok((benchmark.sigma3Lower ?? 0) < benchmark.sigma2Lower)
+    const sigma = benchmark.sigma1Upper - benchmark.vwap
+    assert.ok(Math.abs((benchmark.sigma3Upper ?? 0) - (benchmark.vwap + 3 * sigma)) < 0.05)
     assert.ok(benchmark.barCount >= 50)
+    assert.ok((benchmark.sumV ?? 0) > 0)
+    assert.ok((benchmark.lastBarUnix ?? 0) > 0)
+  })
+
+  it('walks 5-month AVWAP as a moving path through 5m bars, not a flat line', () => {
+    const now = Math.floor(new Date('2026-09-07T14:00:00Z').getTime() / 1000)
+    const dailyBars: ContextBar[] = []
+    for (let i = 160; i >= 8; i--) {
+      const t = now - i * 86400
+      dailyBars.push({
+        time: t,
+        open: 40000,
+        high: 40100,
+        low: 39900,
+        close: 40050,
+        volume: 80000,
+      })
+    }
+    const bars: ContextBar[] = []
+    const start = now - 6 * 86400
+    for (let i = 0; i < 40; i++) {
+      const px = 41000 + i * 40
+      bars.push({
+        time: start + i * 300,
+        open: px,
+        high: px + 20,
+        low: px - 20,
+        close: px + 10,
+        volume: 5000,
+      })
+    }
+    const path = compute5MonthAnchoredVwapPath({
+      dailyBars,
+      bars,
+      instrument: 'DOW',
+      asOfUnix: now,
+    })
+    assert.ok(path !== null)
+    assert.ok(path.vwap.length >= bars.length, 'daily spine + 5m path is at least the 5m window')
+    assert.equal(path.upper1.length, path.vwap.length)
+    const first = path.vwap[0]!.value
+    const last = path.vwap[path.vwap.length - 1]!.value
+    assert.ok(last > first, 'running 5M VWAP rises with the 5m trend')
+    const unique = new Set(path.vwap.map((p) => p.value))
+    assert.ok(unique.size > 5, 'VWAP is not a single flat level')
+    assert.ok(path.upper3.length === path.vwap.length)
+    assert.ok(path.lower3.length === path.vwap.length)
+    const u1 = path.upper1[path.upper1.length - 1]!.value
+    const v = path.vwap[path.vwap.length - 1]!.value
+    const u3 = path.upper3[path.upper3.length - 1]!.value
+    const sigma = u1 - v
+    assert.ok(Math.abs(u3 - (v + 3 * sigma)) < 0.05, '±3σ is three standard deviations (HLC/3)')
+    assert.ok(sigma > 0, 'cumulative volume-weighted σ stays on the 5-month path')
+  })
+
+  it('5M AVWAP center follows completed dailies through the 5m window (not one frozen level)', () => {
+    const now = Math.floor(new Date('2026-09-07T14:00:00Z').getTime() / 1000)
+    const dailyBars: ContextBar[] = []
+    for (let i = 160; i >= 0; i--) {
+      const t = now - i * 86400
+      const px = 38000 + (160 - i) * 40
+      dailyBars.push({
+        time: t,
+        open: px,
+        high: px + 80,
+        low: px - 80,
+        close: px + 20,
+        volume: 80000,
+      })
+    }
+    const bars: ContextBar[] = []
+    for (let d = 10; d >= 1; d--) {
+      const day = now - d * 86400
+      for (let i = 0; i < 8; i++) {
+        bars.push({
+          time: day + 13 * 3600 + i * 300,
+          open: 43000,
+          high: 43040,
+          low: 42960,
+          close: 43020,
+          volume: 2000,
+        })
+      }
+    }
+    const path = compute5MonthAnchoredVwapPath({
+      dailyBars,
+      bars,
+      instrument: 'DOW',
+      asOfUnix: now,
+    })
+    assert.ok(path !== null)
+    const first = path.vwap[0]!.value
+    const last = path.vwap[path.vwap.length - 1]!.value
+    assert.ok(last > first + 50, '5M VWAP path rises as later dailies print')
+    assert.ok(new Set(path.vwap.map((p) => p.value)).size > 8, 'center is a path, not a straight level')
+    assert.equal(path.upper3.length, path.vwap.length)
+    assert.equal(path.lower3.length, path.vwap.length)
+    const mid = path.vwap[path.vwap.length - 1]!.value
+    const u1 = path.upper1[path.upper1.length - 1]!.value
+    const u2 = path.upper2[path.upper2.length - 1]!.value
+    const u3 = path.upper3[path.upper3.length - 1]!.value
+    const l1 = path.lower1[path.lower1.length - 1]!.value
+    assert.ok(u3 > u2 && u2 > u1 && u1 > mid, 'three bands above the VWAP center')
+    assert.ok(l1 < mid && path.lower3[path.lower3.length - 1]!.value < path.lower2[path.lower2.length - 1]!.value)
   })
 
   it('computes Yesterday NYC Session accurately', () => {
@@ -187,12 +296,14 @@ describe('Context 5-5 Module Tests', () => {
   })
 
   it('computes Overnight Inventory and Asia & London FRVP', () => {
+    // Tuesday 10:00 ET after Labor Day — inventory belongs to Tuesday 09:30,
+    // starting Monday 18:00 (Sunday 18:00 was not a Monday cash open).
     const friOpenUnix = Math.floor(new Date('2026-09-04T13:30:00Z').getTime() / 1000)
     const friCloseUnix = Math.floor(new Date('2026-09-04T20:00:00Z').getTime() / 1000)
-    const monNowUnix = Math.floor(new Date('2026-09-07T14:00:00Z').getTime() / 1000)
+    const tueNowUnix = Math.floor(new Date('2026-09-08T14:00:00Z').getTime() / 1000)
 
     const bars: ContextBar[] = []
-    // Friday bars
+    // Friday bars (prior RTH — Labor Day skipped)
     for (let t = friOpenUnix; t <= friCloseUnix; t += 300) {
       bars.push({
         time: t,
@@ -204,13 +315,12 @@ describe('Context 5-5 Module Tests', () => {
       })
     }
 
-    const yday = computeYesterdayNycSession(bars, monNowUnix, NY_DESK_CLOCK)!
+    const yday = computeYesterdayNycSession(bars, tueNowUnix, NY_DESK_CLOCK)!
     assert.ok(yday !== null)
 
-    // Add overnight bars for Asia (18:00 - 03:00) and London (03:00 - 09:30)
-    // All trades happen ABOVE Friday close (44000), making inventory 100% Long
-    const sunGlobexOpen = Math.floor(new Date('2026-09-06T22:00:00Z').getTime() / 1000) // 18:00 EDT Sun
-    for (let t = sunGlobexOpen; t < monNowUnix; t += 300) {
+    // Monday 18:00 ET → Tuesday cash open. All prints above Friday close → 100% Long
+    const inventoryOpen = Math.floor(new Date('2026-09-07T22:00:00Z').getTime() / 1000)
+    for (let t = inventoryOpen; t < tueNowUnix; t += 300) {
       bars.push({
         time: t,
         open: 44050,
@@ -224,7 +334,7 @@ describe('Context 5-5 Module Tests', () => {
     const inv = computeOvernightInventoryAndSessions({
       bars,
       yesterday: yday,
-      asOfUnix: monNowUnix,
+      asOfUnix: tueNowUnix,
       clock: NY_DESK_CLOCK,
     })
 
@@ -237,6 +347,113 @@ describe('Context 5-5 Module Tests', () => {
     assert.equal(inv.pctLong, 100)
     assert.equal(inv.bias, '100%_NET_LONG')
     assert.ok(inv.summaryBadge.includes('100% Long'))
+  })
+
+  it('prints overnight inventory FRVP during Tokyo hours before London opens', () => {
+    const friOpenUnix = Math.floor(new Date('2026-09-04T13:30:00Z').getTime() / 1000)
+    const friCloseUnix = Math.floor(new Date('2026-09-04T20:00:00Z').getTime() / 1000)
+    const inventoryOpen = Math.floor(new Date('2026-09-07T22:00:00Z').getTime() / 1000) // Mon 18:00 ET
+    const tokyoTip = Math.floor(new Date('2026-09-08T05:00:00Z').getTime() / 1000) // 01:00 EDT Tuesday
+
+    const bars: ContextBar[] = []
+    for (let t = friOpenUnix; t <= friCloseUnix; t += 300) {
+      bars.push({
+        time: t,
+        open: 44000,
+        high: 44100,
+        low: 43900,
+        close: 44000,
+        volume: 1000,
+      })
+    }
+    for (let t = inventoryOpen; t <= tokyoTip; t += 300) {
+      bars.push({
+        time: t,
+        open: 44050,
+        high: 44150,
+        low: 44020,
+        close: 44080,
+        volume: 500,
+      })
+    }
+
+    const yday = computeYesterdayNycSession(bars, tokyoTip, NY_DESK_CLOCK)
+    assert.ok(yday !== null)
+    const inv = computeOvernightInventoryAndSessions({
+      bars,
+      yesterday: yday,
+      asOfUnix: tokyoTip,
+      clock: NY_DESK_CLOCK,
+    })
+    assert.ok(inv !== null, 'inventory FRVP must exist when waking up in Tokyo')
+    assert.ok(inv.asia !== null)
+    assert.equal(inv.london, null, 'London FRVP waits for 03:00 ET')
+    assert.ok(inv.overnight !== null)
+    assert.ok(inv.overnight.bins && inv.overnight.bins.length > 0)
+  })
+
+  it('starts a new overnight inventory FRVP after NYC 16:00 until next 09:30', () => {
+    const monOpen = Math.floor(new Date('2026-09-09T13:30:00Z').getTime() / 1000)
+    const monClose = Math.floor(new Date('2026-09-09T20:00:00Z').getTime() / 1000)
+    const monAsia = Math.floor(new Date('2026-09-09T22:00:00Z').getTime() / 1000)
+    const monEve = Math.floor(new Date('2026-09-10T02:00:00Z').getTime() / 1000) // 22:00 EDT Wednesday
+
+    const bars: ContextBar[] = []
+    for (let t = monOpen; t < monClose; t += 300) {
+      bars.push({
+        time: t,
+        open: 44000,
+        high: 44100,
+        low: 43900,
+        close: 44020,
+        volume: 800,
+      })
+    }
+    for (let t = monAsia; t <= monEve; t += 300) {
+      bars.push({
+        time: t,
+        open: 44040,
+        high: 44120,
+        low: 44010,
+        close: 44080,
+        volume: 400,
+      })
+    }
+
+    const yday = computeYesterdayNycSession(bars, monEve, NY_DESK_CLOCK)
+    assert.ok(yday !== null, 'today RTH becomes yesterday after 16:00')
+    assert.equal(yday.sessionDate, '2026-09-09')
+    const inv = computeOvernightInventoryAndSessions({
+      bars,
+      yesterday: yday,
+      asOfUnix: monEve,
+      clock: NY_DESK_CLOCK,
+    })
+    assert.ok(inv !== null, 'new overnight FRVP after cash close')
+    assert.ok(inv.overnight !== null)
+    assert.ok(inv.overnight.startUnix >= monAsia - 60)
+    assert.ok(inv.overnight.endUnix > monAsia)
+    assert.ok(inv.overnight.endUnix <= monEve + 60)
+  })
+
+  it('promotes today’s RTH to yesterday at 16:00 even if the last 5m bar is 15:55', () => {
+    const open = Math.floor(new Date('2026-09-09T13:30:00Z').getTime() / 1000)
+    const lastBar = Math.floor(new Date('2026-09-09T19:55:00Z').getTime() / 1000)
+    const asOf = Math.floor(new Date('2026-09-09T20:05:00Z').getTime() / 1000)
+    const bars: ContextBar[] = []
+    for (let t = open; t <= lastBar; t += 300) {
+      bars.push({
+        time: t,
+        open: 44000,
+        high: 44100,
+        low: 43900,
+        close: 44020,
+        volume: 800,
+      })
+    }
+    const yday = computeYesterdayNycSession(bars, asOf, NY_DESK_CLOCK)
+    assert.ok(yday !== null)
+    assert.equal(yday.sessionDate, '2026-09-09')
   })
 
   it('detects multi-timeframe money opportunities and confluences', () => {

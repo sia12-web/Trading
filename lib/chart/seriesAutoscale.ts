@@ -26,7 +26,7 @@ export type SessionScaleBar = {
 
 const MIN_FOCUS_BARS = 6
 /** If the live session is only a sliver of the window (5-day zoom-out), fit all visible bars. */
-const SESSION_FOCUS_SHARE = 0.35
+const SESSION_FOCUS_SHARE = 0.25
 
 /** High/low of the session on the last bar; falls back to all visible bars when zoomed out. */
 export function sessionFocusHighLow(
@@ -77,4 +77,53 @@ export function paddedCandlePriceRange(
       maxValue: max + pad,
     },
   }
+}
+
+/**
+ * Context 5-5 overlays paint on canvas. They must not join the candle Y-axis:
+ * 5M VWAP / 5D VAH / POC can sit hundreds-to-thousands of points off the
+ * live session and flatten candles into a hairline.
+ */
+export function context55ScalePrices(_args: {
+  vwap?: number | null
+  vwapUpper1?: number | null
+  vwapLower1?: number | null
+  poc5d?: number | null
+  vah5d?: number | null
+  val5d?: number | null
+  yPoc?: number | null
+  yHigh?: number | null
+  yLow?: number | null
+  onPoc?: number | null
+}): { always: number[]; nearby: number[] } {
+  // Nothing from Context 5-5 joins the candle Y-axis. Nearby VWAP / ±σ
+  // (even window-sized) sit hundreds of NASDAQ points off the live session
+  // and flatten 5m bars. The series still draw; HUD prints the VWAP level.
+  return { always: [], nearby: [] }
+}
+
+/**
+ * Nearby extras may join the session window; far prices are dropped so a
+ * 5-month mean cannot flatten candles. Context 5-5 currently passes none.
+ */
+export function overlayPricesForVisibleScale(
+  sessionMin: number,
+  sessionMax: number,
+  overlay: { always?: number[]; nearby?: number[] } | number[],
+  maxSessionMultiples = 2
+): number[] {
+  const always = Array.isArray(overlay) ? overlay : overlay.always ?? []
+  const nearby = Array.isArray(overlay) ? [] : overlay.nearby ?? []
+  const span = Math.max(sessionMax - sessionMin, Math.abs(sessionMax) * 0.0008)
+  const lo = sessionMin - span * maxSessionMultiples
+  const hi = sessionMax + span * maxSessionMultiples
+  const out: number[] = []
+  const add = (p: number) => {
+    if (Number.isFinite(p) && p > 0 && !out.includes(p)) out.push(p)
+  }
+  for (const p of always) add(p)
+  for (const p of nearby) {
+    if (p >= lo && p <= hi) add(p)
+  }
+  return out
 }

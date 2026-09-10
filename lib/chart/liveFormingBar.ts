@@ -16,8 +16,15 @@ export type FormingBar = {
 }
 
 export const DESK_LIVE_BAR_SEC = 300
-/** Fill at most 3 missing 5m slots (~15m) from last close. */
+/** Fill at most ~15 minutes of missing slots from last close (scales with bar size). */
+export const LIVE_MAX_GAP_FILL_SEC = 15 * 60
+/** @deprecated Prefer LIVE_MAX_GAP_FILL_SEC — kept for 5m (= 3 slots). */
 export const LIVE_MAX_GAP_FILLS = 3
+
+export function maxLiveGapFills(barSec: number = DESK_LIVE_BAR_SEC): number {
+  if (!(barSec > 0)) return LIVE_MAX_GAP_FILLS
+  return Math.max(LIVE_MAX_GAP_FILLS, Math.ceil(LIVE_MAX_GAP_FILL_SEC / barSec))
+}
 /** If the packet stamp is older than this, bucket from wall clock. */
 export const LIVE_STALE_QUOTE_SEC = 120
 /** Reject a live tip that would paint a fake dump/spike vs the CME history close. */
@@ -30,6 +37,8 @@ export const DESK_MAX_5M_RANGE: Record<string, number> = {
   GOLD: 80,
   CRUDE: 4,
 }
+/** Weekend / daily Globex halt — do not treat the reopen print as a glitch bar. */
+export const DESK_SESSION_GAP_SEC = 3 * 3600
 
 export function deskBarOpenUnix(
   unix: number,
@@ -75,7 +84,7 @@ export function applyTickToFormingBar(
   }
 
   const skipped = Math.round((bucket - lastT) / barSec) - 1
-  if (skipped > LIVE_MAX_GAP_FILLS) {
+  if (skipped > maxLiveGapFills(barSec)) {
     const bar: FormingBar = {
       time: bucket,
       open: price,
@@ -139,7 +148,9 @@ export function dropImplausibleDeskBars<T extends FormingBar>(
     if (maxRange != null && range > maxRange) continue
     const prev = out[out.length - 1]
     const maxJump = timeframe === '30m' ? 0.08 : 0.04
-    if (prev && !isPlausibleDeskTick(prev.close, bar.close, maxJump)) continue
+    const sessionGap =
+      prev != null && bar.time - prev.time >= DESK_SESSION_GAP_SEC
+    if (prev && !sessionGap && !isPlausibleDeskTick(prev.close, bar.close, maxJump)) continue
     out.push(bar)
   }
   return out.length > 0 ? out : bars
@@ -178,7 +189,8 @@ export function mergeHistoryWithLiveTip<T extends FormingBar>(
 
 /**
  * True when REST closed bars (everything except the forming tip) changed OHLC
- * vs what the chart is holding — e.g. Yahoo replaced gap-fill flats.
+ * vs what the chart is holding — e.g. Yahoo replaced gap-fill flats, or a
+ * Databento reprint filled missing 5m slots deeper than the last dozen bars.
  */
 export function closedHistoryOhlcChanged<T extends FormingBar>(
   prev: readonly T[],
@@ -189,7 +201,8 @@ export function closedHistoryOhlcChanged<T extends FormingBar>(
   if (prev.length === 0) return false
   const tipSkip = tipOwned && prev.length > 0 && next.length > 0
   const end = tipSkip ? prev.length - 1 : prev.length
-  const start = Math.max(0, end - 12)
+  // Compare enough of the tip window that a mid-session gap fill is not ignored.
+  const start = Math.max(0, end - 96)
   for (let i = start; i < end; i++) {
     const a = prev[i]!
     const b = next[i]!

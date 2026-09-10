@@ -69,7 +69,8 @@ function buyStairs(n = 2): ControlBar[] {
 }
 
 const live = src('app/dashboard/chart/components/TradingChart.tsx')
-const sim = src('app/dashboard/simulation/replay/desk/page.tsx')
+const simGone = src('app/dashboard/simulation/replay/desk/page.tsx')
+assert.ok(simGone.includes("redirect('/dashboard/chart')"))
 
 function sliceBetween(hay: string, start: string, end: string): string {
   const i = hay.indexOf(start)
@@ -78,41 +79,16 @@ function sliceBetween(hay: string, start: string, end: string): string {
   return hay.slice(i, j)
 }
 
-// ─── Chip / legend contract ──────────────────────────────────────────────────
+// ─── Live chart contract (simulation desk removed) ───────────────────────────
 
-test('live Ctrl chip sits immediately after Open, before Open range', () => {
-  const openIdx = live.indexOf('<span>Open</span>')
-  const ctrlIdx = live.indexOf('<span>Ctrl</span>')
-  const lunchIdx = live.indexOf('<span>Open range (N)</span>')
-  assert.ok(openIdx > 0 && ctrlIdx > openIdx)
-  assert.ok(lunchIdx > ctrlIdx)
+test('live computes Dalton control; simulation desk is removed', () => {
+  assert.ok(live.includes('computeMarketControl'))
+  assert.ok(live.includes('marketControlBadgeText'))
+  assert.ok(live.includes('setControlBadge'))
 })
 
-test('live + sim badge always renders (not gated on lines-on like Yday)', () => {
-  assert.ok(live.includes('{controlBadge}'))
-  assert.ok(sim.includes('{controlBadge}'))
-  assert.ok(live.includes('{showYesterdayProfile && ('))
-  assert.ok(!live.includes('{showMarketControl && (') || !live.includes('controlBadge'))
-  const ctrlBtn = sliceBetween(live, '<span>Ctrl</span>', 'Open range (N)')
-  assert.ok(ctrlBtn.includes('{controlBadge}'))
-  assert.ok(!ctrlBtn.includes('showMarketControl &&'))
-})
-
-test('dPOC line is off by default on live and sim', () => {
-  assert.ok(
-    live.includes('loadDeskOverlayToggles().control') ||
-      live.includes('const [showMarketControl, setShowMarketControl] = useState(false)')
-  )
-  assert.ok(
-    sim.includes('loadDeskOverlayToggles().control') ||
-      sim.includes('const [showMarketControl, setShowMarketControl] = useState(false)')
-  )
-})
-
-test('live paints lines only when showMarketControl; sim uses controlVisible', () => {
-  assert.ok(live.includes('if (!showMarketControl || !host) return'))
-  assert.ok(sim.includes('if (controlVisible && host)'))
-  assert.ok(sim.includes('showMarketControlRef.current'))
+test('dPOC line is off by default on live unless systematic desk', () => {
+  assert.ok(live.includes('loadDeskOverlayToggles().control'))
 })
 
 test('live clears control lines + paint key on instrument change', () => {
@@ -125,49 +101,12 @@ test('badge updates before paint-key early return (lines off still refresh type)
   const badgeAt = livePaint.indexOf('setControlBadge')
   const keyAt = livePaint.indexOf('if (key === controlPaintKeyRef.current) return')
   assert.ok(badgeAt >= 0 && keyAt > badgeAt)
-  const simPaint = sliceBetween(sim, 'const control = computeMarketControl', 'if (force || lastAppliedBarIdxRef')
-  const simBadge = simPaint.indexOf('setControlBadge')
-  const simKey = simPaint.indexOf('if (controlKey !== controlPaintKeyRef.current)')
-  assert.ok(simBadge >= 0 && simKey > simBadge)
-})
-
-test('sim asOf is replay time twice — not Date.now', () => {
-  const call = sliceBetween(
-    sim,
-    'resolveMarketControlAsOfUnix(',
-    'marketControlBadgeText'
-  )
-  assert.ok(call.includes('simT, simT'))
-  assert.ok(!call.includes('Date.now'))
 })
 
 test('no new keyboard for Ctrl (Press C / key c must not toggle control)', () => {
   assert.ok(!live.includes('Press C'))
-  assert.ok(!sim.includes('Press C'))
   const liveKeys = sliceBetween(live, 'const handleKeyDown', "window.addEventListener('keydown'")
-  const simKeys = sliceBetween(sim, 'const handleKeyDown', "window.addEventListener('keydown'")
   assert.ok(!liveKeys.includes('setShowMarketControl'))
-  assert.ok(!simKeys.includes('setShowMarketControl'))
-})
-
-test('Ctrl chip is indigo, not Open cyan / Y amber / lunch orange', () => {
-  const liveCtrl = sliceBetween(
-    live,
-    'Dalton control dPOC line on',
-    '</button>'
-  )
-  assert.ok(liveCtrl.includes('indigo-400'))
-  assert.ok(liveCtrl.includes('bg-indigo-600/30'))
-  assert.ok(!liveCtrl.includes('bg-cyan-600/30'))
-  assert.ok(!liveCtrl.includes('bg-amber-600/30'))
-  assert.ok(!liveCtrl.includes('bg-orange-600/30'))
-  const simCtrl = sliceBetween(
-    sim,
-    'Dalton control dPOC line on',
-    '</button>'
-  )
-  assert.ok(simCtrl.includes('indigo-400'))
-  assert.ok(simCtrl.includes('indigo-600/30'))
 })
 
 test('overlay uses helper line title dPOC and indigo #818cf8', () => {
@@ -181,10 +120,6 @@ test('overlay uses helper line title dPOC and indigo #818cf8', () => {
   assert.equal(specs[0]!.title, 'dPOC')
   assert.equal(specs[0]!.color, '#818cf8')
   assert.equal(CONTROL_COLORS.dpoc, '#818cf8')
-  assert.ok(live.includes('title: spec.title'))
-  assert.ok(sim.includes('title: spec.title'))
-  assert.ok(!live.includes("title: 'POC'"))
-  assert.ok(!sim.includes("title: 'OR H'"))
 })
 
 test('WAIT has no dPOC line; paint key off is shared; on keys include instrument', () => {
@@ -213,17 +148,11 @@ test('WAIT has no dPOC line; paint key off is shared; on keys include instrument
   assert.notEqual(marketControlPaintKey(true, a), marketControlPaintKey(true, b))
 })
 
-test('Leo + Level Finder consume CONTROL; still no new API', () => {
+test('Leo prompt copy lives on the control engine; still no new API', () => {
   assert.ok(live.includes('computeMarketControl'))
-  assert.ok(sim.includes('computeMarketControl'))
-  assert.ok(src('lib/trading/liveVoicePrompt.ts').includes('CONTROL (Dalton — RF + dPOC)'))
-  assert.ok(src('lib/trading/rangeLiquidityBrief.ts').includes('computeMarketControl'))
-  assert.ok(src('lib/services/levelFinderAgent/levelFinderAgent.ts').includes('CONTROL (Dalton — RF + dPOC)'))
-  assert.ok(!src('lib/services/levelFinderAgent/levelFinderAgent.ts').includes('computeMarketControl'))
+  assert.ok(src('lib/trading/marketControl.ts').includes('CONTROL (Dalton — RF + dPOC)'))
   assert.ok(!live.includes('/api/trading/control'))
-  assert.ok(!sim.includes('/api/trading/control'))
   assert.ok(!src('lib/trading/marketControl.ts').includes("from '@/lib/supabase"))
-  assert.ok(!sim.includes('LiveVoicePanel'))
 })
 
 test('overlay does not auto-move the ticket or unlock ±10', () => {
@@ -242,8 +171,7 @@ test('overlay does not auto-move the ticket or unlock ±10', () => {
 
 test('Open overlay still present (regression)', () => {
   assert.ok(live.includes('computeOpeningActivity'))
-  assert.ok(sim.includes('resolveOpeningAsOfUnix(instrument, simT, simT)'))
-  assert.ok(live.includes('<span>Open</span>'))
+  assert.ok(live.includes('paintOpeningActivity'))
 })
 
 if (failed.length) {

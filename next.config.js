@@ -53,9 +53,14 @@ const nextConfig = {
   async redirects() {
     return [
       {
-        source: '/index.html',
-        destination: '/',
-        permanent: true,
+        source: '/dashboard/simulation',
+        destination: '/dashboard/chart',
+        permanent: false,
+      },
+      {
+        source: '/dashboard/simulation/:path*',
+        destination: '/dashboard/chart',
+        permanent: false,
       },
     ]
   },

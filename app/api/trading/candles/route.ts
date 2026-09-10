@@ -25,10 +25,17 @@ import {
   sessionFor,
 } from '@/lib/trading/sessionGate'
 import { dropImplausibleDeskBars } from '@/lib/chart/liveFormingBar'
+import { needsCandleReprint, countNearTipGaps } from '@/lib/chart/candleGaps'
 import { AVWAP_CANDLE_FETCH_CALENDAR_DAYS } from '@/lib/chart/sessionVwap'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import type { Instrument } from '@/types/price-feed'
-import { getDatabentoCandles, isDatabentoConfigured } from '@/lib/databento/client'
+import {
+  getDatabentoCandles,
+  isDatabentoConfigured,
+  mergeCandleSeries,
+  aggregateCandles,
+  invalidateDatabentoCandleCache,
+} from '@/lib/databento/client'
 import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
@@ -70,6 +77,8 @@ export async function GET(request: Request) {
     const sess = sessionFor(instrument)
     const toUnix = instrument === 'NIKKEI' ? tokyoDateTimeToUnix : nyDateTimeToUnix
     const includeQuote = searchParams.get('quote') !== '0'
+    const forceReprint =
+      searchParams.get('reprint') === '1' || searchParams.get('reprint') === 'true'
 
     type CandleRow = {
       time: number
@@ -112,12 +121,57 @@ export async function GET(request: Request) {
           ? Math.min(days, 3)
           : Math.max(days, AVWAP_CANDLE_FETCH_CALENDAR_DAYS)
 
-      // 1. Prioritize official CME Globex MDP 3.0 candles via Databento when configured
+      // 1. CME Globex via Databento. hist is delayed → Yahoo stitch for holes + tip.
+      // If slots are still missing near the tip, bypass the 60s cache and reprint.
       if (isDatabentoConfigured()) {
         try {
-          const databento = await getDatabentoCandles(instrument, resolution, fetchDays)
-          if (databento?.candles?.length) {
-            candles = databento.candles
+          const barSec =
+            resolution === '1'
+              ? 60
+              : resolution === '15'
+                ? 900
+                : resolution === '30'
+                  ? 1800
+                  : resolution === '60'
+                    ? 3600
+                    : 300
+
+          const loadDatabentoBook = async (bypassCache: boolean) => {
+            if (bypassCache) invalidateDatabentoCandleCache(instrument)
+            const [databento, yahoo] = await Promise.all([
+              getDatabentoCandles(instrument, resolution, fetchDays, { bypassCache }),
+              getYahooCandles(instrument, resolution, fetchDays).catch((stitchErr) => {
+                logger.warn(`[Candles] Yahoo live-tail stitch failed for ${instrument}`, stitchErr)
+                return null
+              }),
+            ])
+            if (!databento?.candles?.length) return null
+            let book = databento.candles
+            if (yahoo?.candles?.length) {
+              book = mergeCandleSeries(book, aggregateCandles(yahoo.candles, barSec))
+            }
+            return book
+          }
+
+          let book = await loadDatabentoBook(forceReprint)
+          if (book?.length) {
+            const shouldReprint =
+              forceReprint ||
+              needsCandleReprint({
+                bars: book,
+                barSec,
+                nearTipLookback: 64,
+                maxNearTipGaps: 1,
+                maxTipLagSlots: 2,
+              })
+            if (shouldReprint && !forceReprint) {
+              logger.info(
+                `[Candles] gap reprint ${instrument}: nearTipGaps=${countNearTipGaps(book, 64, barSec)}`
+              )
+              const reprinted = await loadDatabentoBook(true)
+              if (reprinted?.length) book = reprinted
+            }
+            candles = book
             source = 'databento'
           }
         } catch (err) {
@@ -185,23 +239,25 @@ export async function GET(request: Request) {
     } | null = null
     if (includeQuote) {
       try {
-        // Live tip on CME scale (same path as /quote) so painted ±10 bands
-        // and the streaming last share one book.
-        const o = await getOandaPrice(instrument)
-        const basis =
-          getCmeBasis(instrument) ?? getLastKnownCmeBasis(instrument)
-        if (!endDate && (basis == null || getCmeBasis(instrument, CME_BASIS_REFRESH_MS) == null)) {
-          void warmCmeBasis(instrument)
-        }
-        if (!endDate && o?.price && o.price > 0 && (basis != null || (instrument !== 'GOLD' && instrument !== 'CRUDE'))) {
-          const price = applyCmeBasis(o.price, basis)
-          const previous_close = getDayPreviousClose(instrument) ?? price
-          const change = price - previous_close
-          quote = {
-            price,
-            change,
-            change_pct: previous_close ? (change / previous_close) * 100 : 0,
-            previous_close,
+        // Databento / CME archive owns the candle book. Do not mix OANDA CFD
+        // mids onto those bars — that is the overnight "gap" vs Globex.
+        if (source !== 'databento') {
+          const o = await getOandaPrice(instrument)
+          const basis =
+            getCmeBasis(instrument) ?? getLastKnownCmeBasis(instrument)
+          if (!endDate && (basis == null || getCmeBasis(instrument, CME_BASIS_REFRESH_MS) == null)) {
+            void warmCmeBasis(instrument)
+          }
+          if (!endDate && o?.price && o.price > 0 && (basis != null || (instrument !== 'GOLD' && instrument !== 'CRUDE'))) {
+            const price = applyCmeBasis(o.price, basis)
+            const previous_close = getDayPreviousClose(instrument) ?? price
+            const change = price - previous_close
+            quote = {
+              price,
+              change,
+              change_pct: previous_close ? (change / previous_close) * 100 : 0,
+              previous_close,
+            }
           }
         }
       } catch {

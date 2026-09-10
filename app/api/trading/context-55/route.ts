@@ -6,21 +6,22 @@
 import { NextResponse } from 'next/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { getCmeDailyBars } from '@/lib/databento/cmeHistorical'
+import { mergeCandleSeries, type DatabentoCandle } from '@/lib/databento/client'
+import { getYahooCandlesRange } from '@/lib/yahoo/candles'
 import {
   compute5MonthAnchoredVwapFromDailyBars,
-  type AnchoredVwapBenchmark5M,
+  type ContextBar,
 } from '@/lib/chart/context55'
+import {
+  invalidateContext55Cache,
+  readContext55Cache,
+  writeContext55Cache,
+} from '@/lib/chart/context55Cache'
 import type { Instrument } from '@/types/price-feed'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-interface CacheEntry {
-  benchmark: AnchoredVwapBenchmark5M
-  timestamp: number
-}
-
-const cache = new Map<string, CacheEntry>()
 const CACHE_TTL_MS = 60 * 60 * 1000 // 1 hour
 
 export async function GET(request: Request) {
@@ -36,19 +37,42 @@ export async function GET(request: Request) {
     const validInstruments: Instrument[] = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'NIKKEI']
     const instrument = validInstruments.includes(rawInstrument) ? rawInstrument : 'DOW'
 
-    const cached = cache.get(instrument)
+    const refresh = searchParams.get('refresh') === '1' || searchParams.get('refresh') === 'true'
+    if (refresh) invalidateContext55Cache(instrument)
+
+    const cached = readContext55Cache(instrument)
     const now = Date.now()
-    if (cached && now - cached.timestamp < CACHE_TTL_MS) {
+    if (!refresh && cached && now - cached.timestamp < CACHE_TTL_MS) {
       return NextResponse.json({
         ok: true,
         instrument,
         avwap5m: cached.benchmark,
+        dailyBars: cached.dailyBars,
         cached: true,
-        source: 'cme_globex',
+        source: cached.source,
       })
     }
 
-    const dailyBars = getCmeDailyBars(instrument)
+    let dailyBars = getCmeDailyBars(instrument)
+    let source: 'cme_globex' | 'yahoo_cme' = 'cme_globex'
+    try {
+      const nowSec = Math.floor(Date.now() / 1000)
+      const yahoo = await getYahooCandlesRange(
+        instrument,
+        'D',
+        nowSec - 160 * 24 * 3600,
+        nowSec
+      )
+      if (yahoo?.candles?.length) {
+        dailyBars = mergeCandleSeries(
+          (dailyBars || []) as DatabentoCandle[],
+          yahoo.candles as DatabentoCandle[]
+        ) as ContextBar[]
+        if (!getCmeDailyBars(instrument)?.length) source = 'yahoo_cme'
+      }
+    } catch {
+      /* archive-only fallback */
+    }
 
     if (!dailyBars || dailyBars.length === 0) {
       return NextResponse.json(
@@ -65,14 +89,31 @@ export async function GET(request: Request) {
       )
     }
 
-    cache.set(instrument, { benchmark, timestamp: now })
+    const slimDaily: ContextBar[] = dailyBars
+      .filter((b) => b.time >= (benchmark.anchorUnix ?? 0) - 86400)
+      .map((b) => ({
+        time: b.time,
+        open: b.open,
+        high: b.high,
+        low: b.low,
+        close: b.close,
+        volume: b.volume,
+      }))
+
+    writeContext55Cache(instrument, {
+      benchmark,
+      dailyBars: slimDaily,
+      source,
+      timestamp: now,
+    })
 
     return NextResponse.json({
       ok: true,
       instrument,
       avwap5m: benchmark,
+      dailyBars: slimDaily,
       cached: false,
-      source: 'cme_globex',
+      source,
     })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)

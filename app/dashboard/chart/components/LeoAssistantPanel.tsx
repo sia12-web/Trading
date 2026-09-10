@@ -8,6 +8,13 @@ import {
   type LeoMessage,
   type LeoExecutionDirective,
 } from '@/lib/ai/leoAssistant'
+import {
+  clearLeoChatHistory,
+  leoChatHistoryKey,
+  loadAllLeoChatHistory,
+  loadLeoChatHistory,
+  saveLeoChatHistory,
+} from '@/lib/ai/leoChatHistory'
 
 export interface ArmedDeskRule {
   id: string
@@ -31,16 +38,22 @@ interface LeoAssistantPanelProps {
   externalAttachedPoints?: LeoDataPoint[]
   onClearExternalAttachedPoints?: () => void
   onClosePosition?: (reason: string) => Promise<boolean | void>
+  /** Place / amend / cancel orders when Leo emits PLACE_* / SET_* / CANCEL_WORKING */
+  onLeoOrder?: (directive: LeoExecutionDirective) => Promise<boolean | void> | boolean | void
+  /** When true, Leo knows this is the $1500 paper desk for this market */
+  paperMode?: boolean
 }
 
-// Persistent in-memory session cache per instrument so switching charts retains each market's conversation
-const leoHistoryByInstrument: Record<string, LeoMessage[]> = {}
+// In-memory cache hydrated from localStorage so refresh / leaving the desk keeps each market's thread
+const leoHistoryByInstrument: Record<string, LeoMessage[]> = loadAllLeoChatHistory()
 
-function getWelcomeMessage(instrument: string): LeoMessage {
+function getWelcomeMessage(instrument: string, paperMode: boolean): LeoMessage {
   return {
     id: `welcome-${instrument}`,
     role: 'assistant',
-    content: `**Leo Online.** Institutional desk assistant calibrated to ${instrument}.\n\nMonitoring **Time & Sessions**, **Multi-Timeframe Money**, and **Auction Tails**.\n\nClick any arrow or reference directly on the chart, or speak hands-free via mic.`,
+    content: paperMode
+      ? `**Leo · ${instrument} paper desk ($1,500).** I only trade this market’s sim book.\n\nAsk me about levels, then tell me to **go long/short**, **limit**, **stop**, or **flatten** — I will place the order on this chart’s $1,500 paper account.\n\nClick chart arrows to attach levels, or use the mic.`
+      : `**Leo · ${instrument} live desk.** I only manage this market’s book.\n\nAsk about the auction, then tell me to **place / move / cancel / flatten** when you want execution.\n\nClick chart arrows to attach levels, or use the mic.`,
     timestamp: Date.now(),
   }
 }
@@ -52,6 +65,8 @@ export function LeoAssistantPanel({
   externalAttachedPoints,
   onClearExternalAttachedPoints,
   onClosePosition,
+  onLeoOrder,
+  paperMode = false,
 }: LeoAssistantPanelProps) {
   const [internalIsOpen, setInternalIsOpen] = useState(false)
   const isPanelOpen = controlledIsOpen !== undefined ? controlledIsOpen : internalIsOpen
@@ -65,30 +80,52 @@ export function LeoAssistantPanel({
   }
 
   const [messages, setMessagesState] = useState<LeoMessage[]>(() => {
-    return leoHistoryByInstrument[context.instrument]?.length
-      ? leoHistoryByInstrument[context.instrument]!
-      : [getWelcomeMessage(context.instrument)]
+    const key = leoChatHistoryKey(context.instrument, paperMode)
+    const cached = leoHistoryByInstrument[key]
+    if (cached && cached.length > 0) return cached
+    const stored = loadLeoChatHistory(context.instrument, paperMode)
+    if (stored && stored.length > 0) {
+      leoHistoryByInstrument[key] = stored
+      return stored
+    }
+    return [getWelcomeMessage(context.instrument, paperMode)]
   })
 
-  // Synchronize when the user switches tabs to a different instrument
+  // Synchronize when the user switches tabs / paper↔live — restore disk+memory history
   useEffect(() => {
-    const existing = leoHistoryByInstrument[context.instrument]
+    const key = leoChatHistoryKey(context.instrument, paperMode)
+    const existing =
+      leoHistoryByInstrument[key] ?? loadLeoChatHistory(context.instrument, paperMode)
     if (existing && existing.length > 0) {
+      leoHistoryByInstrument[key] = existing
       setMessagesState(existing)
     } else {
-      const welcome = [getWelcomeMessage(context.instrument)]
-      leoHistoryByInstrument[context.instrument] = welcome
+      const welcome = [getWelcomeMessage(context.instrument, paperMode)]
+      leoHistoryByInstrument[key] = welcome
+      saveLeoChatHistory(context.instrument, paperMode, welcome)
       setMessagesState(welcome)
     }
     setAttachedPoints([])
-  }, [context.instrument])
+  }, [context.instrument, paperMode])
 
   const setMessages = (updater: LeoMessage[] | ((prev: LeoMessage[]) => LeoMessage[])) => {
     setMessagesState((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater
-      leoHistoryByInstrument[context.instrument] = next
+      const key = leoChatHistoryKey(context.instrument, paperMode)
+      leoHistoryByInstrument[key] = next
+      saveLeoChatHistory(context.instrument, paperMode, next)
       return next
     })
+  }
+
+  const clearConversation = () => {
+    const welcome = [getWelcomeMessage(context.instrument, paperMode)]
+    const key = leoChatHistoryKey(context.instrument, paperMode)
+    leoHistoryByInstrument[key] = welcome
+    clearLeoChatHistory(context.instrument, paperMode)
+    saveLeoChatHistory(context.instrument, paperMode, welcome)
+    setMessagesState(welcome)
+    setAttachedPoints([])
   }
 
   const [inputPrompt, setInputPrompt] = useState('')
@@ -277,8 +314,44 @@ export function LeoAssistantPanel({
   const applyDirectives = (directives: LeoExecutionDirective[]) => {
     for (const d of directives) {
       if (d.action === 'CLOSE_POSITION') {
-        executeClosePosition(d.reason)
-        speakText(`Position close executed: ${d.reason}`)
+        void Promise.resolve(onClosePosition?.(d.reason)).then((ok) => {
+          if (ok === false) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `leo-close-fail-${Date.now()}`,
+                role: 'assistant',
+                content: `⚠️ Could not close ${context.instrument}${paperMode ? ' paper' : ''} — no open position or no last price.`,
+                timestamp: Date.now(),
+              },
+            ])
+            return
+          }
+          speakText(`Position close executed: ${d.reason}`)
+        })
+      } else if (
+        d.action === 'PLACE_MARKET' ||
+        d.action === 'PLACE_LIMIT' ||
+        d.action === 'PLACE_STOP' ||
+        d.action === 'SET_STOP' ||
+        d.action === 'SET_TARGET' ||
+        d.action === 'CANCEL_WORKING'
+      ) {
+        void Promise.resolve(onLeoOrder?.(d)).then((ok) => {
+          if (ok === false) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `leo-order-fail-${Date.now()}`,
+                role: 'assistant',
+                content: `⚠️ Could not execute **${d.action}** on ${context.instrument}${paperMode ? ' paper' : ''}. Check stop/target and that the book is free.`,
+                timestamp: Date.now(),
+              },
+            ])
+            return
+          }
+          speakText(`${d.action.replace(/_/g, ' ').toLowerCase()} sent`)
+        })
       } else if (d.action === 'ARM_STAGNATION_RULE') {
         const newRule: ArmedDeskRule = {
           id: `stag-${Date.now()}`,
@@ -303,6 +376,16 @@ export function LeoAssistantPanel({
           status: 'ARMED',
         }
         setArmedRules((prev) => [...prev, newRule])
+      } else if (d.action === 'ARM_LVN_BULL_ENG_RULE') {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `lvn-arm-${Date.now()}`,
+            role: 'assistant',
+            content: `📌 **Rule armed (watch):** ${d.description ?? 'LVN + bullish engulfing entry'}. Tell me **"Leo go"** when the engulfing prints and I will PLACE_MARKET / PLACE_LIMIT with SL under the engulfing low.`,
+            timestamp: Date.now(),
+          },
+        ])
       } else if (d.action === 'CANCEL_RULES') {
         setArmedRules([])
         speakText('All rules cancelled.')
@@ -567,7 +650,7 @@ export function LeoAssistantPanel({
                     LEO DESK ASSISTANT
                   </span>
                   <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-950/80 border border-purple-700/60 text-purple-300 font-mono">
-                    AI Live
+                    {paperMode ? 'Paper $1500' : 'AI Live'}
                   </span>
                 </div>
                 <div className="text-[10px] text-neutral-400 font-mono">
@@ -578,6 +661,14 @@ export function LeoAssistantPanel({
             </div>
 
             <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={clearConversation}
+                className="px-1.5 py-1 rounded-lg border border-neutral-700/80 text-[10px] font-mono text-neutral-400 hover:text-neutral-200 hover:border-neutral-500 transition-colors"
+                title="Clear this market's Leo thread (saved history)"
+              >
+                Clear
+              </button>
               {/* TTS Voice Toggle */}
               <button
                 type="button"

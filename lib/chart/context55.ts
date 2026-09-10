@@ -32,10 +32,12 @@
  */
 
 import {
+  addCalendarDaysYmd,
   cashOpenUnixForYmd,
   deskClockFor,
   isUsMarketHoliday,
   isWeekdayYmd,
+  nextTradingYmd,
   nthTradingDayBefore,
   NY_DESK_CLOCK,
   zonedCivilToUnix,
@@ -85,6 +87,8 @@ export interface AnchoredVwapBands5M {
   lower1: { time: UTCTimestamp; value: number }[]
   upper2: { time: UTCTimestamp; value: number }[]
   lower2: { time: UTCTimestamp; value: number }[]
+  upper3: { time: UTCTimestamp; value: number }[]
+  lower3: { time: UTCTimestamp; value: number }[]
   lastVwap: number | null
 }
 
@@ -96,7 +100,14 @@ export interface AnchoredVwapBenchmark5M {
   sigma1Lower: number
   sigma2Upper: number
   sigma2Lower: number
+  sigma3Upper?: number
+  sigma3Lower?: number
   barCount?: number
+  /** Running sums so 5m bars after `lastBarUnix` can continue the true 5M AVWAP. */
+  lastBarUnix?: number
+  sumPV?: number
+  sumV?: number
+  sumP2V?: number
 }
 
 export interface YesterdayNycSession {
@@ -235,15 +246,23 @@ export function get5MonthAnchorUnix(
   asOfUnix: number,
   clock: DeskClock = NY_DESK_CLOCK
 ): number {
-  const dt = new Date(asOfUnix * 1000)
-  dt.setUTCMonth(dt.getUTCMonth() - 5)
-
-  let ymd = new Intl.DateTimeFormat('en-CA', {
+  // Subtract 5 calendar months on the desk timezone civil date (not UTC month math).
+  const tipYmd = new Intl.DateTimeFormat('en-CA', {
     timeZone: clock.timeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(dt)
+  }).format(new Date(asOfUnix * 1000))
+  const [y0, m0, d0] = tipYmd.split('-').map(Number)
+  let year = y0!
+  let month = m0! - 5
+  while (month <= 0) {
+    month += 12
+    year -= 1
+  }
+  const dim = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  const day = Math.min(d0!, dim)
+  let ymd = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 
   while (!isWeekdayYmd(ymd, clock.timeZone)) {
     const [y, m, d] = ymd.split('-').map(Number)
@@ -488,6 +507,8 @@ export function compute5MonthAnchoredVwapFromDailyBars(
   const variance = Math.max(0, sumP2V / sumV - vwap * vwap)
   const std = Math.sqrt(variance)
 
+  const lastIncluded = sorted.filter((b) => b.time >= anchorUnix - 86400 && b.time <= tipTime).pop()
+
   return {
     anchorDate: anchorYmd,
     anchorUnix,
@@ -496,12 +517,18 @@ export function compute5MonthAnchoredVwapFromDailyBars(
     sigma1Lower: Number((vwap - std).toFixed(2)),
     sigma2Upper: Number((vwap + 2 * std).toFixed(2)),
     sigma2Lower: Number((vwap - 2 * std).toFixed(2)),
+    sigma3Upper: Number((vwap + 3 * std).toFixed(2)),
+    sigma3Lower: Number((vwap - 3 * std).toFixed(2)),
     barCount,
+    lastBarUnix: lastIncluded?.time,
+    sumPV,
+    sumV,
+    sumP2V,
   }
 }
 
 /**
- * Compute 5-Month Anchored VWAP with ±1σ and ±2σ standard deviation bands incrementally.
+ * Compute 5-Month Anchored VWAP with ±1σ / ±2σ / ±3σ (HLC/3, stdev) incrementally.
  */
 export function compute5MonthAnchoredVwap(args: {
   bars: ContextBar[]
@@ -530,9 +557,15 @@ export function compute5MonthAnchoredVwap(args: {
   const lower1: { time: UTCTimestamp; value: number }[] = []
   const upper2: { time: UTCTimestamp; value: number }[] = []
   const lower2: { time: UTCTimestamp; value: number }[] = []
+  const upper3: { time: UTCTimestamp; value: number }[] = []
+  const lower3: { time: UTCTimestamp; value: number }[] = []
 
   for (const c of bars) {
-    if (c.time < anchorUnix && !baseline) continue
+    if (baseline != null) {
+      if (baseline.startUnix != null && c.time <= baseline.startUnix) continue
+    } else if (c.time < anchorUnix) {
+      continue
+    }
 
     const price = (c.high + c.low + c.close) / 3
     const vol = c.volume > 0 ? c.volume : 1
@@ -552,6 +585,8 @@ export function compute5MonthAnchoredVwap(args: {
     lower1.push({ time: t, value: Number((v - std).toFixed(2)) })
     upper2.push({ time: t, value: Number((v + 2 * std).toFixed(2)) })
     lower2.push({ time: t, value: Number((v - 2 * std).toFixed(2)) })
+    upper3.push({ time: t, value: Number((v + 3 * std).toFixed(2)) })
+    lower3.push({ time: t, value: Number((v - 3 * std).toFixed(2)) })
   }
 
   if (vwap.length === 0) return null
@@ -563,7 +598,193 @@ export function compute5MonthAnchoredVwap(args: {
     lower1,
     upper2,
     lower2,
+    upper3,
+    lower3,
     lastVwap: vwap[vwap.length - 1]?.value ?? null,
+  }
+}
+
+function ymdInZone(unix: number, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(unix * 1000))
+}
+
+function typicalHlc(b: Pick<ContextBar, 'high' | 'low' | 'close'>): number {
+  return (b.high + b.low + b.close) / 3
+}
+
+/**
+ * True 5-month anchored VWAP path (TradingView Anchored VWAP).
+ *
+ * Builds the running volume-weighted mean from the 5-month NYC cash-open anchor:
+ * 1) one point per completed daily (so zoom-out shows the real slope),
+ * 2) then each loaded 5m bar updates that day’s intraday contribution.
+ *
+ * ±1/±2/±3σ are the true cumulative volume-weighted stdev at each point —
+ * not a recent-5m remapping (that made parallel flat ruler lines).
+ * Session candles stay readable because VWAP series use ignoreScale.
+ */
+export function compute5MonthAnchoredVwapPath(args: {
+  dailyBars?: ContextBar[] | null
+  bars: ContextBar[]
+  instrument?: string
+  asOfUnix?: number
+}): AnchoredVwapBands5M | null {
+  const { bars, instrument = 'DOW', dailyBars } = args
+  if (!bars || bars.length === 0) return null
+
+  const clock = deskClockFor(instrument)
+  const tipTime = args.asOfUnix ?? bars[bars.length - 1]!.time
+  const anchorUnix = get5MonthAnchorUnix(tipTime, clock)
+  const windowStart = bars[0]!.time
+
+  type Snap = { time: number; sumPV: number; sumV: number; sumP2V: number }
+  const snaps: Snap[] = []
+  let dPV = 0
+  let dV = 0
+  let dP2V = 0
+  if (dailyBars && dailyBars.length > 0) {
+    const sorted = [...dailyBars].sort((a, b) => a.time - b.time)
+    for (const b of sorted) {
+      if (b.time < anchorUnix - 86400) continue
+      if (b.time > tipTime) continue
+      const price = typicalHlc(b)
+      const vol = b.volume
+      if (!(vol > 0) || !(price > 0)) continue
+      dPV += price * vol
+      dP2V += price * price * vol
+      dV += vol
+      snaps.push({ time: b.time, sumPV: dPV, sumV: dV, sumP2V: dP2V })
+    }
+  }
+
+  const vwap: { time: UTCTimestamp; value: number }[] = []
+  const upper1: { time: UTCTimestamp; value: number }[] = []
+  const lower1: { time: UTCTimestamp; value: number }[] = []
+  const upper2: { time: UTCTimestamp; value: number }[] = []
+  const lower2: { time: UTCTimestamp; value: number }[] = []
+  const upper3: { time: UTCTimestamp; value: number }[] = []
+  const lower3: { time: UTCTimestamp; value: number }[] = []
+
+  const pushPoint = (time: number, sumPV: number, sumV: number, sumP2V: number) => {
+    if (!(sumV > 0)) return
+    const v = sumPV / sumV
+    const variance = Math.max(0, sumP2V / sumV - v * v)
+    const std = Math.sqrt(variance)
+    const t = time as UTCTimestamp
+    vwap.push({ time: t, value: Number(v.toFixed(2)) })
+    upper1.push({ time: t, value: Number((v + std).toFixed(2)) })
+    lower1.push({ time: t, value: Number((v - std).toFixed(2)) })
+    upper2.push({ time: t, value: Number((v + 2 * std).toFixed(2)) })
+    lower2.push({ time: t, value: Number((v - 2 * std).toFixed(2)) })
+    upper3.push({ time: t, value: Number((v + 3 * std).toFixed(2)) })
+    lower3.push({ time: t, value: Number((v - 3 * std).toFixed(2)) })
+  }
+
+  // Daily spine before the loaded 5m window — the 5-month slope, not a flat stamp.
+  for (const s of snaps) {
+    if (s.time >= windowStart) break
+    if (s.time < anchorUnix - 86400) continue
+    pushPoint(s.time, s.sumPV, s.sumV, s.sumP2V)
+  }
+
+  let curYmd = ''
+  let basePV = 0
+  let baseV = 0
+  let baseP2V = 0
+  let intraPV = 0
+  let intraV = 0
+  let intraP2V = 0
+
+  for (const c of bars) {
+    if (c.time < anchorUnix) continue
+    if (c.time > tipTime) break
+    const ymd = ymdInZone(c.time, clock.timeZone)
+    if (ymd !== curYmd) {
+      curYmd = ymd
+      intraPV = 0
+      intraV = 0
+      intraP2V = 0
+      const open = cashOpenUnixForYmd(ymd, clock)
+      basePV = 0
+      baseV = 0
+      baseP2V = 0
+      for (const s of snaps) {
+        if (s.time < open) {
+          basePV = s.sumPV
+          baseV = s.sumV
+          baseP2V = s.sumP2V
+        }
+      }
+    }
+    const price = typicalHlc(c)
+    const vol = c.volume
+    if (!(vol > 0) || !(price > 0)) continue
+    intraPV += price * vol
+    intraP2V += price * price * vol
+    intraV += vol
+    pushPoint(c.time, basePV + intraPV, baseV + intraV, baseP2V + intraP2V)
+  }
+
+  if (vwap.length === 0) return null
+
+  return {
+    anchorUnix,
+    vwap,
+    upper1,
+    lower1,
+    upper2,
+    lower2,
+    upper3,
+    lower3,
+    lastVwap: vwap[vwap.length - 1]?.value ?? null,
+  }
+}
+
+/** Last ~36h of 5m bars (or last 80 prints) — session-sized σ, not a 12-day range. */
+export function recentBarsForSigma(bars: ContextBar[]): ContextBar[] {
+  if (bars.length === 0) return bars
+  const tip = bars[bars.length - 1]!.time
+  const cutoff = tip - 36 * 3600
+  const recent = bars.filter((b) => b.time >= cutoff)
+  return recent.length >= 20 ? recent : bars.slice(-80)
+}
+
+/** Population stdev of typical price (H+L+C)/3. */
+export function typicalPriceStdev(bars: ContextBar[]): number {
+  const prices: number[] = []
+  for (const b of bars) {
+    const p = (b.high + b.low + b.close) / 3
+    if (Number.isFinite(p) && p > 0) prices.push(p)
+  }
+  if (prices.length < 2) return 0
+  const mean = prices.reduce((s, p) => s + p, 0) / prices.length
+  let ss = 0
+  for (const p of prices) ss += (p - mean) * (p - mean)
+  return Math.sqrt(ss / prices.length)
+}
+
+export function applySigmaBands(
+  path: AnchoredVwapBands5M,
+  sigma: number
+): AnchoredVwapBands5M {
+  const band = (k: number) =>
+    path.vwap.map((p) => ({
+      time: p.time,
+      value: Number((p.value + k * sigma).toFixed(2)),
+    }))
+  return {
+    ...path,
+    upper1: band(1),
+    lower1: band(-1),
+    upper2: band(2),
+    lower2: band(-2),
+    upper3: band(3),
+    lower3: band(-3),
   }
 }
 
@@ -943,28 +1164,43 @@ export function computeOvernightInventoryAndSessions(args: {
   }).format(new Date(tipTime * 1000))
 
   const todayOpenUnix = cashOpenUnixForYmd(todayYmd, clock)
+  const todayCloseUnix = zonedCivilToUnix(todayYmd, 16, clock.timeZone)
 
-  // Overnight Asia session begins at 18:00 on the calendar evening preceding today (e.g. Sunday 18:00 for Monday).
-  const [y, m, d] = todayYmd.split('-').map(Number)
-  const prevCalDate = new Date(Date.UTC(y!, m! - 1, d! - 1, 12, 0, 0))
-  const prevCalYmd = prevCalDate.toISOString().slice(0, 10)
-  const asiaStartUnix = zonedCivilToUnix(prevCalYmd, 18, clock.timeZone)
-  const asiaEndUnix = zonedCivilToUnix(todayYmd, 3, clock.timeZone)
+  // Overnight Asia session begins at 18:00 on the calendar evening preceding the
+  // cash session this inventory belongs to (Sunday 18:00 for Monday open).
+  // After NYC 16:00, today is yesterday — start a new profile at 18:00 for the
+  // next cash open and keep it updating until 09:30.
+  let inventoryOpenYmd = todayYmd
+  if (
+    tipTime >= todayCloseUnix ||
+    !isWeekdayYmd(todayYmd, clock.timeZone) ||
+    isUsMarketHoliday(todayYmd)
+  ) {
+    inventoryOpenYmd = nextTradingYmd(todayYmd, clock.timeZone)
+  }
+
+  const inventoryOpenUnix = cashOpenUnixForYmd(inventoryOpenYmd, clock)
+  const eveYmd = addCalendarDaysYmd(inventoryOpenYmd, -1)
+  const asiaStartUnix = zonedCivilToUnix(eveYmd, 18, clock.timeZone)
+  const asiaEndUnix = zonedCivilToUnix(inventoryOpenYmd, 3, clock.timeZone)
 
   const londonStartUnix = asiaEndUnix
-  const londonEndUnix = todayOpenUnix
+  const londonEndUnix = inventoryOpenUnix
 
-  // Yesterday's inventory is removed; profile starts drawing once London opens (03:00 ET)
-  if (tipTime < londonStartUnix) {
+  // 16:00–18:00 ET is a dead zone (and Friday close → Sunday 18:00 Globex).
+  if (tipTime < asiaStartUnix) {
     return null
   }
 
   const overnightStartUnix = asiaStartUnix
-  // Dynamic profile: from Asia Open (18:00 ET) up to current time (e.g. 08:30 ET), updating until 09:30 ET cash open
-  const overnightEndUnix = Math.min(todayOpenUnix, tipTime)
+  // Dynamic profile: from Asia Open (18:00 ET) up to now, frozen at 09:30 cash open
+  const overnightEndUnix = Math.min(inventoryOpenUnix, tipTime)
 
-  const asia = computeSessionVolumeProfile(bars, asiaStartUnix, asiaEndUnix, 'Asia')
-  const london = computeSessionVolumeProfile(bars, londonStartUnix, Math.min(londonEndUnix, tipTime), 'London')
+  const asia = computeSessionVolumeProfile(bars, asiaStartUnix, Math.min(asiaEndUnix, tipTime), 'Asia')
+  const london =
+    tipTime >= londonStartUnix
+      ? computeSessionVolumeProfile(bars, londonStartUnix, Math.min(londonEndUnix, tipTime), 'London')
+      : null
   const overnight = computeSessionVolumeProfile(bars, overnightStartUnix, overnightEndUnix, 'Overnight')
 
   // Calculate volume distribution relative to Yesterday Close
