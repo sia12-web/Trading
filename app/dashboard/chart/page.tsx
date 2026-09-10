@@ -149,11 +149,31 @@ function workingLimitCancelledMessage(gate: SessionGateState): string {
   return 'Working limit cancelled — cash session closed.'
 }
 import { MorningLunchFlatConfirm } from './components/MorningLunchFlatConfirm'
+import type { LeoExecutionDirective } from '@/lib/ai/leoAssistant'
+import {
+  PAPER_SIM_STARTING_BALANCE,
+  cancelPaperWorking,
+  closePaperPosition,
+  isPaperSimMarket,
+  loadPaperLedger,
+  markPaperPosition,
+  openPaperMarket,
+  placePaperWorking,
+  resetPaperLedger,
+  tryFillPaperWorking,
+  updatePaperBrackets,
+  type PaperSimLedger,
+  type PaperSimMarket,
+} from '@/lib/trading/paperSimDesk'
 
 type Instrument = DeskInstrumentPref
 
 function asLiveNy(i: string | null | undefined): Instrument {
   return isLiveClockInstrument(i) ? i : 'DOW'
+}
+
+function asPaperMarket(i: string): PaperSimMarket {
+  return isPaperSimMarket(i) ? i : 'DOW'
 }
 
 interface PositionOverlay {
@@ -197,6 +217,24 @@ export default function ChartPage() {
 
 
   const [livePrice, setLivePrice] = useState<number | null>(null)
+  /** $1,500 paper desk — Leo places here; separate wallet per market */
+  const [paperMode, setPaperMode] = useState(false)
+  const [paperLedger, setPaperLedger] = useState<PaperSimLedger>(() =>
+    loadPaperLedger('DOW')
+  )
+
+  useEffect(() => {
+    setPaperLedger(loadPaperLedger(asPaperMarket(instrument)))
+  }, [instrument])
+
+  useEffect(() => {
+    if (!paperMode || livePrice == null) return
+    const m = asPaperMarket(instrument)
+    let next = tryFillPaperWorking(m, livePrice)
+    next = markPaperPosition(m, livePrice)
+    setPaperLedger(next)
+  }, [paperMode, livePrice, instrument])
+
   const [positionOverlay, setPositionOverlay] = useState<PositionOverlay | null>(null)
   const [managePos, setManagePos] = useState<ManagePosition | null>(null)
   const [pending, setPending] = useState<PendingLimitOrder | null>(null)
@@ -1111,6 +1149,119 @@ export default function ChartPage() {
     [managePos]
   )
 
+  const handleLeoOrder = useCallback(
+    async (d: LeoExecutionDirective): Promise<boolean> => {
+      const m = asPaperMarket(instrument)
+      const px = livePriceRef.current
+      if (!paperMode) {
+        if (d.action === 'PLACE_MARKET' || d.action === 'PLACE_LIMIT' || d.action === 'PLACE_STOP') {
+          warningToast('Switch to Paper $1,500 for Leo to place entries. Live close still works.')
+          return false
+        }
+        if (d.action === 'SET_STOP' || d.action === 'SET_TARGET') {
+          if (!managePos) return false
+          await adjustBrackets({
+            stopLoss: d.action === 'SET_STOP' ? d.stop : managePos.stopLoss,
+            profitTarget: d.action === 'SET_TARGET' ? d.target : managePos.profitTarget,
+          })
+          return true
+        }
+        if (d.action === 'CANCEL_WORKING') {
+          const inst = (pending?.instrument || instrument) as Instrument
+          pendingRef.current = null
+          setPending(null)
+          setOrderStatus('idle')
+          void fetch('/api/trading/positions/cancel-working', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ instrument: inst }),
+          }).catch(() => {})
+          return true
+        }
+        return false
+      }
+
+      if (d.action === 'PLACE_MARKET') {
+        if (!(px != null && d.stop > 0 && d.target > 0)) return false
+        const r = openPaperMarket({
+          market: m,
+          side: d.side,
+          entry: px,
+          stop: d.stop,
+          target: d.target,
+          reason: d.reason,
+          riskPct: d.riskPct,
+        })
+        if (!r.ok) {
+          warningToast(r.error)
+          return false
+        }
+        setPaperLedger(r.ledger)
+        successToast(`Paper ${d.side} @ ${px.toFixed(2)} (${m})`)
+        return true
+      }
+      if (d.action === 'PLACE_LIMIT') {
+        if (!(d.limit > 0 && d.stop > 0 && d.target > 0)) return false
+        const r = placePaperWorking({
+          market: m,
+          side: d.side,
+          orderType: 'LIMIT',
+          trigger: d.limit,
+          stop: d.stop,
+          target: d.target,
+          reason: d.reason,
+          riskPct: d.riskPct,
+        })
+        if (!r.ok) {
+          warningToast(r.error)
+          return false
+        }
+        setPaperLedger(r.ledger)
+        successToast(`Paper limit ${d.side} @ ${d.limit.toFixed(2)}`)
+        return true
+      }
+      if (d.action === 'PLACE_STOP') {
+        if (!(d.stopEntry > 0 && d.stop > 0 && d.target > 0)) return false
+        const r = placePaperWorking({
+          market: m,
+          side: d.side,
+          orderType: 'STOP',
+          trigger: d.stopEntry,
+          stop: d.stop,
+          target: d.target,
+          reason: d.reason,
+          riskPct: d.riskPct,
+        })
+        if (!r.ok) {
+          warningToast(r.error)
+          return false
+        }
+        setPaperLedger(r.ledger)
+        successToast(`Paper stop-entry ${d.side} @ ${d.stopEntry.toFixed(2)}`)
+        return true
+      }
+      if (d.action === 'SET_STOP' || d.action === 'SET_TARGET') {
+        const r = updatePaperBrackets(m, {
+          stop: d.action === 'SET_STOP' ? d.stop : undefined,
+          target: d.action === 'SET_TARGET' ? d.target : undefined,
+        })
+        if (!r.ok) {
+          warningToast(r.error)
+          return false
+        }
+        setPaperLedger(r.ledger)
+        return true
+      }
+      if (d.action === 'CANCEL_WORKING') {
+        setPaperLedger(cancelPaperWorking(m))
+        return true
+      }
+      return false
+    },
+    [paperMode, instrument, managePos, pending, adjustBrackets]
+  )
+
+
   const adjustWorkingBrackets = useCallback(
     async (update: { profitTarget?: number }) => {
       const pend = pendingRef.current
@@ -1858,21 +2009,51 @@ export default function ChartPage() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden relative flex-col bg-[#0d1117]">
-      <div className="px-2 pt-1 pb-0.5 shrink-0 z-20">
-        <SessionBanner
-          onGate={handleGate}
-          refreshKey={gateTick}
-          lastQuoteAt={lastQuoteAt}
-          dataMode={dataMode}
-          viewingInstrument={instrument}
-          asiaOrderLive={
-            isAsiaLiveOrderOverlay(asiaOverlays.GOLD) ||
-            isAsiaLiveOrderOverlay(asiaOverlays.DOW)
-          }
-          onRefreshReady={(fn) => {
-            bannerRefreshRef.current = fn
-          }}
-        />
+      <div className="px-2 pt-1 pb-0.5 shrink-0 z-20 flex items-start gap-2">
+        <div className="flex-1 min-w-0">
+          <SessionBanner
+            onGate={handleGate}
+            refreshKey={gateTick}
+            lastQuoteAt={lastQuoteAt}
+            dataMode={dataMode}
+            viewingInstrument={instrument}
+            asiaOrderLive={
+              isAsiaLiveOrderOverlay(asiaOverlays.GOLD) ||
+              isAsiaLiveOrderOverlay(asiaOverlays.DOW)
+            }
+            onRefreshReady={(fn) => {
+              bannerRefreshRef.current = fn
+            }}
+          />
+        </div>
+        <div className="shrink-0 flex flex-col items-end gap-1 pt-0.5">
+          <button
+            type="button"
+            onClick={() => setPaperMode((v) => !v)}
+            className={`rounded-md px-2.5 py-1 text-[11px] font-bold border ${
+              paperMode
+                ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                : 'bg-surface-900 border-surface-600 text-gray-400 hover:text-gray-200'
+            }`}
+            title="Leo places on a $1,500 paper wallet per market (DOW/NASDAQ/GOLD/CRUDE)"
+          >
+            {paperMode
+              ? `PAPER $${Math.round(paperLedger.equity)} · ${instrument}`
+              : 'LIVE DESK'}
+          </button>
+          {paperMode ? (
+            <button
+              type="button"
+              className="text-[10px] text-amber-500/80 hover:text-amber-300 underline"
+              onClick={() => {
+                setPaperLedger(resetPaperLedger(asPaperMarket(instrument)))
+                successToast(`Reset ${instrument} paper to $${PAPER_SIM_STARTING_BALANCE}`)
+              }}
+            >
+              Reset ${PAPER_SIM_STARTING_BALANCE}
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div className="flex-1 w-full h-full min-h-0 min-w-0 relative p-1 flex flex-col gap-1">
@@ -2009,6 +2190,21 @@ export default function ChartPage() {
               onQuoteTick={onQuoteTick}
               onDataModeChange={setDataMode}
               onClosePosition={async (reason: string) => {
+                if (paperMode) {
+                  const m = asPaperMarket(instrument)
+                  const px = livePriceRef.current
+                  if (px == null) return false
+                  const r = closePaperPosition(m, px, reason)
+                  if (!r.ok) {
+                    warningToast(r.error)
+                    return false
+                  }
+                  setPaperLedger(r.ledger)
+                  successToast(
+                    `Paper flat ${r.pnlUsd >= 0 ? '+' : ''}${r.pnlUsd.toFixed(2)} → $${r.ledger.equity.toFixed(0)}`
+                  )
+                  return true
+                }
                 if (!managePos) return
                 try {
                   const px = livePriceRef.current ?? managePos.entryPrice
@@ -2037,8 +2233,22 @@ export default function ChartPage() {
                 }
                 return false
               }}
+              onLeoOrder={handleLeoOrder}
+              paperMode={paperMode}
+              paperEquity={paperLedger.equity}
               positionOverlay={
-                positionOverlay
+                paperMode && paperLedger.position
+                  ? {
+                      positionId: paperLedger.position.id,
+                      entryPrice: paperLedger.position.entry,
+                      stopLoss: paperLedger.position.stop,
+                      profitTarget: paperLedger.position.target,
+                      direction: paperLedger.position.side === 'LONG' ? 'long' : 'short',
+                      positionSize: paperLedger.position.qty,
+                      riskDollars: paperLedger.position.riskUsd,
+                      entryTimestamp: paperLedger.position.openedAt,
+                    }
+                  : positionOverlay
                   ? {
                       ...positionOverlay,
                       positionId: positionOverlay.positionId ?? managePos?.id,

@@ -191,10 +191,59 @@ export interface LeoMessage {
   directives?: LeoExecutionDirective[]
 }
 
+export type LeoOrderSide = 'LONG' | 'SHORT'
+
+/** Orders Leo may emit when the trader explicitly asks him to execute. */
 export type LeoExecutionDirective =
   | {
       action: 'CLOSE_POSITION'
       reason: string
+      instrument?: string
+    }
+  | {
+      action: 'PLACE_MARKET'
+      side: LeoOrderSide
+      stop: number
+      target: number
+      reason: string
+      instrument?: string
+      riskPct?: number
+    }
+  | {
+      action: 'PLACE_LIMIT'
+      side: LeoOrderSide
+      limit: number
+      stop: number
+      target: number
+      reason: string
+      instrument?: string
+      riskPct?: number
+    }
+  | {
+      action: 'PLACE_STOP'
+      side: LeoOrderSide
+      stopEntry: number
+      stop: number
+      target: number
+      reason: string
+      instrument?: string
+      riskPct?: number
+    }
+  | {
+      action: 'SET_STOP'
+      stop: number
+      reason?: string
+      instrument?: string
+    }
+  | {
+      action: 'SET_TARGET'
+      target: number
+      reason?: string
+      instrument?: string
+    }
+  | {
+      action: 'CANCEL_WORKING'
+      reason?: string
       instrument?: string
     }
   | {
@@ -212,6 +261,11 @@ export type LeoExecutionDirective =
       requireConfidence?: boolean
       session?: string
       customMessage?: string
+    }
+  | {
+      action: 'ARM_LVN_BULL_ENG_RULE'
+      description?: string
+      instrument?: string
     }
   | {
       action: 'CANCEL_RULES'
@@ -594,9 +648,53 @@ THE TRADER'S SYSTEM ARCHITECTURE:
      * A true breakout beyond VAH or VAL must be backed by aggressive cumulative delta (Trend: BUYER_DOMINANT or SELLER_DOMINANT). Without delta confirmation, warn of a potential look-above-and-fail.
 
 6. CO-PILOT EXECUTION DIRECTIVES (<execute> tags):
-You are the trader's execution partner on the desk. When the trader gives you direct instructions, you must respond authoritatively AND append an <execute> block at the end of your message:
-- Stagnation Exit Rule: If the trader says "Leo if we are in a position and we have not moved to profit after X minutes close the position":
-  Confirm the rule clearly (quoting the duration, entry price, and condition) and output:
+You are **this market's Leo** (instrument = ${ctx.instrument}). Each NYC board (DOW / NASDAQ / GOLD / CRUDE) has its own Leo session — never mix books.
+You are the trader's full execution partner **only when asked**. Discuss setups freely; emit <execute> **only** when the trader clearly tells you to place, arm, cancel, or flatten.
+When executing, respond with the full instruction (side, entry type, price, stop, target, why) AND append one <execute> JSON block:
+
+- MARKET entry ("Leo go long/short here", "market buy/sell"):
+  <execute>
+  {
+    "action": "PLACE_MARKET",
+    "side": "LONG",
+    "stop": 0,
+    "target": 0,
+    "reason": "Trader asked market long at live price with stop/target stated"
+  }
+  </execute>
+  Fill stop/target with the exact levels you confirmed (never leave 0).
+
+- LIMIT entry ("Leo put a buy limit at X", "sell limit at Y"):
+  <execute>
+  {
+    "action": "PLACE_LIMIT",
+    "side": "LONG",
+    "limit": 0,
+    "stop": 0,
+    "target": 0,
+    "reason": "Trader asked buy limit at level"
+  }
+  </execute>
+
+- STOP entry ("Leo buy stop above X", "sell stop below Y"):
+  <execute>
+  {
+    "action": "PLACE_STOP",
+    "side": "LONG",
+    "stopEntry": 0,
+    "stop": 0,
+    "target": 0,
+    "reason": "Trader asked buy stop entry"
+  }
+  </execute>
+
+- Move stop / target on the open trade:
+  <execute>{ "action": "SET_STOP", "stop": 0, "reason": "Trail under swing" }</execute>
+  <execute>{ "action": "SET_TARGET", "target": 0, "reason": "Scale at VAH" }</execute>
+
+- Cancel working limit/stop: <execute>{ "action": "CANCEL_WORKING", "reason": "Trader cancelled" }</execute>
+
+- Stagnation Exit Rule ("if not in profit after X minutes close"):
   <execute>
   {
     "action": "ARM_STAGNATION_RULE",

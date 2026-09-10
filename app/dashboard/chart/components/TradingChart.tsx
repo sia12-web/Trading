@@ -1089,6 +1089,13 @@ interface TradingChartProps {
   ) => void
   /** Close position execution callback from Leo or desk */
   onClosePosition?: (reason: string) => Promise<boolean | void>
+  /** Leo PLACE_* / SET_* / CANCEL_WORKING — parent owns paper vs live routing */
+  onLeoOrder?: (
+    directive: import('@/lib/ai/leoAssistant').LeoExecutionDirective
+  ) => Promise<boolean | void> | boolean | void
+  /** $1,500 paper desk — Leo + ticket size off this market’s sim wallet */
+  paperMode?: boolean
+  paperEquity?: number
 }
 
 export interface RenderedSessionExtremeHit {
@@ -1151,7 +1158,11 @@ export function TradingChart({
   onDeskPerf,
   onSessionExit,
   onClosePosition,
+  onLeoOrder,
+  paperMode = false,
+  paperEquity = 1500,
 }: TradingChartProps = {}) {
+  void paperEquity
   const containerRef = useRef<HTMLDivElement>(null)
   const chartFrameRef = useRef<HTMLDivElement>(null)
   const outerWrapperRef = useRef<HTMLDivElement>(null)
@@ -11653,13 +11664,15 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
         {/* ── Leo AI Desk Assistant (Voice & Interactive Clickable Telemetry) ── */}
         <LeoAssistantPanel
-          key={leoContext.instrument}
+          key={`${leoContext.instrument}:${paperMode ? 'paper' : 'live'}`}
           context={leoContext}
           isOpen={leoPanelOpen}
           onToggleOpen={() => setLeoPanelOpen(!leoPanelOpen)}
           externalAttachedPoints={leoExternalPoints}
           onClearExternalAttachedPoints={() => setLeoExternalPoints([])}
           onClosePosition={onClosePosition}
+          onLeoOrder={onLeoOrder}
+          paperMode={paperMode}
         />
       </div>
     </div>

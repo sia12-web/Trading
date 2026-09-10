@@ -31,16 +31,22 @@ interface LeoAssistantPanelProps {
   externalAttachedPoints?: LeoDataPoint[]
   onClearExternalAttachedPoints?: () => void
   onClosePosition?: (reason: string) => Promise<boolean | void>
+  /** Place / amend / cancel orders when Leo emits PLACE_* / SET_* / CANCEL_WORKING */
+  onLeoOrder?: (directive: LeoExecutionDirective) => Promise<boolean | void> | boolean | void
+  /** When true, Leo knows this is the $1500 paper desk for this market */
+  paperMode?: boolean
 }
 
 // Persistent in-memory session cache per instrument so switching charts retains each market's conversation
 const leoHistoryByInstrument: Record<string, LeoMessage[]> = {}
 
-function getWelcomeMessage(instrument: string): LeoMessage {
+function getWelcomeMessage(instrument: string, paperMode: boolean): LeoMessage {
   return {
     id: `welcome-${instrument}`,
     role: 'assistant',
-    content: `**Leo Online.** Institutional desk assistant calibrated to ${instrument}.\n\nMonitoring **Time & Sessions**, **Multi-Timeframe Money**, and **Auction Tails**.\n\nClick any arrow or reference directly on the chart, or speak hands-free via mic.`,
+    content: paperMode
+      ? `**Leo · ${instrument} paper desk ($1,500).** I only trade this market’s sim book.\n\nAsk me about levels, then tell me to **go long/short**, **limit**, **stop**, or **flatten** — I will place the order on this chart’s $1,500 paper account.\n\nClick chart arrows to attach levels, or use the mic.`
+      : `**Leo · ${instrument} live desk.** I only manage this market’s book.\n\nAsk about the auction, then tell me to **place / move / cancel / flatten** when you want execution.\n\nClick chart arrows to attach levels, or use the mic.`,
     timestamp: Date.now(),
   }
 }
@@ -52,6 +58,8 @@ export function LeoAssistantPanel({
   externalAttachedPoints,
   onClearExternalAttachedPoints,
   onClosePosition,
+  onLeoOrder,
+  paperMode = false,
 }: LeoAssistantPanelProps) {
   const [internalIsOpen, setInternalIsOpen] = useState(false)
   const isPanelOpen = controlledIsOpen !== undefined ? controlledIsOpen : internalIsOpen
@@ -67,7 +75,7 @@ export function LeoAssistantPanel({
   const [messages, setMessagesState] = useState<LeoMessage[]>(() => {
     return leoHistoryByInstrument[context.instrument]?.length
       ? leoHistoryByInstrument[context.instrument]!
-      : [getWelcomeMessage(context.instrument)]
+      : [getWelcomeMessage(context.instrument, paperMode)]
   })
 
   // Synchronize when the user switches tabs to a different instrument
@@ -76,12 +84,12 @@ export function LeoAssistantPanel({
     if (existing && existing.length > 0) {
       setMessagesState(existing)
     } else {
-      const welcome = [getWelcomeMessage(context.instrument)]
+      const welcome = [getWelcomeMessage(context.instrument, paperMode)]
       leoHistoryByInstrument[context.instrument] = welcome
       setMessagesState(welcome)
     }
     setAttachedPoints([])
-  }, [context.instrument])
+  }, [context.instrument, paperMode])
 
   const setMessages = (updater: LeoMessage[] | ((prev: LeoMessage[]) => LeoMessage[])) => {
     setMessagesState((prev) => {
@@ -277,8 +285,31 @@ export function LeoAssistantPanel({
   const applyDirectives = (directives: LeoExecutionDirective[]) => {
     for (const d of directives) {
       if (d.action === 'CLOSE_POSITION') {
-        executeClosePosition(d.reason)
+        void onClosePosition?.(d.reason)
         speakText(`Position close executed: ${d.reason}`)
+      } else if (
+        d.action === 'PLACE_MARKET' ||
+        d.action === 'PLACE_LIMIT' ||
+        d.action === 'PLACE_STOP' ||
+        d.action === 'SET_STOP' ||
+        d.action === 'SET_TARGET' ||
+        d.action === 'CANCEL_WORKING'
+      ) {
+        void Promise.resolve(onLeoOrder?.(d)).then((ok) => {
+          if (ok === false) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `leo-order-fail-${Date.now()}`,
+                role: 'assistant',
+                content: `⚠️ Could not execute **${d.action}** on ${context.instrument}${paperMode ? ' paper' : ''}. Check stop/target and that the book is free.`,
+                timestamp: Date.now(),
+              },
+            ])
+            return
+          }
+          speakText(`${d.action.replace(/_/g, ' ').toLowerCase()} sent`)
+        })
       } else if (d.action === 'ARM_STAGNATION_RULE') {
         const newRule: ArmedDeskRule = {
           id: `stag-${Date.now()}`,
@@ -303,6 +334,16 @@ export function LeoAssistantPanel({
           status: 'ARMED',
         }
         setArmedRules((prev) => [...prev, newRule])
+      } else if (d.action === 'ARM_LVN_BULL_ENG_RULE') {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `lvn-arm-${Date.now()}`,
+            role: 'assistant',
+            content: `📌 **Rule armed (watch):** ${d.description ?? 'LVN + bullish engulfing entry'}. Tell me **"Leo go"** when the engulfing prints and I will PLACE_MARKET / PLACE_LIMIT with SL under the engulfing low.`,
+            timestamp: Date.now(),
+          },
+        ])
       } else if (d.action === 'CANCEL_RULES') {
         setArmedRules([])
         speakText('All rules cancelled.')

@@ -35,14 +35,20 @@ POC lines are canvas (not Lightweight Charts price lines) so they cannot stretch
 
 ## Market data
 
-- Live book: **Databento CME Globex** (MYM / MNQ / MGC / CL), not OANDA CFDs mixed onto those candles.
-- Databento hist is delayed → **Yahoo CME 5m stitch** fills holes and the live tail (needed for yesterday RTH and overnight FRVP).
+- Live book: **Databento CME Globex MDP 3.0** hist OHLCV (MYM / MNQ / MGC / CL). In the Databento portal keep **Dataset = CME Globex MDP 3.0**. The latency indicator’s receive location (Aurora IL / AWS Chicago / etc.) only monitors Databento’s path to their PoP — it does **not** change our Railway chart feed. Aurora is fine for that meter.
+- Databento **hist is delayed** → **Yahoo CME 5m stitch** still fills holes and the live tip (needed for yesterday RTH and overnight FRVP). Paying for Databento does **not** remove Yahoo until we wire **Databento Live** (websocket) for the tip. Live mid tip today remains OANDA + CME basis.
 - 5-month VWAP daily series: CME archive + Yahoo daily merge on the 16:00 reprint so today’s completed session is included.
+
+## Paper $1,500 + Leo (per market)
+
+- Toggle **PAPER** on the chart header. Each of DOW / NASDAQ / GOLD / CRUDE has its **own** $1,500 paper wallet and its **own** Leo chat.
+- Ask Leo about the setup; when you tell him to go long/short, place a limit/stop, move brackets, or flatten, he emits `<execute>` and the desk places on **that market’s paper book**.
+- Live Tradeify / working-limit path is unchanged; Leo **entries** are paper-first so you can rehearse without touching the funded book.
 
 ## What was removed
 
-- Simulation / replay charts (`/dashboard/simulation` redirects to the live chart).
-- Stale docs that described OANDA-only, Nikkei live, paper sim, and Live Voice as the product.
+- Full simulation / replay charts (`/dashboard/simulation` redirects to the live chart). Paper $1,500 on the live chart replaces that for Leo practice.
+- Stale docs that described OANDA-only, Nikkei live, and Live Voice as the product.
 
 ## Key files
 
