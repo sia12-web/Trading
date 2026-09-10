@@ -1,6 +1,6 @@
 /**
  * GET /api/trading/quote/stream?instrument=DOW
- * Server-Sent Events — OANDA ticks shifted onto CME (Tradovate MYM / MNQ / MGC / CL) scale.
+ * Server-Sent Events — prefer Databento Live CME trades (TCP+CRAM); else OANDA+basis; else Yahoo.
  */
 
 import { getDayPreviousClose, refreshDayPreviousClose, getYahooQuote } from '@/lib/yahoo/quote'
@@ -18,6 +18,11 @@ import {
   warmCmeBasis,
   CME_BASIS_REFRESH_MS,
 } from '@/lib/trading/cmeBasis'
+import { isDatabentoConfigured } from '@/lib/databento/client'
+import {
+  getLastDatabentoLivePrice,
+  subscribeDatabentoLive,
+} from '@/lib/databento/liveHub'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import {
   isChartStreamAllowed,
@@ -33,6 +38,8 @@ export const maxDuration = 800
 
 /** Both Yahoo paths time out well inside this, so reaching it means a real outage. */
 const UNSHIFTED_AFTER_MS = 10_000
+/** Prefer Databento Live prints while this fresh; then OANDA+basis may fill gaps. */
+const DATABENTO_TIP_FRESH_MS = 4_000
 
 function payloadFor(
   instrument: Instrument,
@@ -40,7 +47,7 @@ function payloadFor(
   bid: number,
   ask: number,
   timestamp: number,
-  source: 'cme' | 'oanda' = 'oanda'
+  source: 'cme' | 'oanda' | 'databento' = 'oanda'
 ) {
   const previous_close = getDayPreviousClose(instrument) ?? price
   const change = price - previous_close
@@ -92,11 +99,13 @@ export async function GET(request: Request) {
   refreshDayPreviousClose(instrument)
 
   const encoder = new TextEncoder()
+  let unsubscribeDb: (() => void) | null = null
   let unsubscribe: (() => void) | null = null
   let heartbeat: ReturnType<typeof setInterval> | null = null
   let basisTimer: ReturnType<typeof setInterval> | null = null
   let cmePoller: ReturnType<typeof setInterval> | null = null
   let closed = false
+  let lastDatabentoAt = 0
 
   const stream = new ReadableStream({
     start(controller) {
@@ -141,9 +150,11 @@ export async function GET(request: Request) {
       /**
        * Ticks are withheld until a basis exists: an unshifted OANDA mid is tens
        * of points off Tradovate and nothing downstream can tell the two apart.
+       * Also withheld while Databento Live is fresh (native CME tip wins).
        */
       const flushPending = () => {
         if (pendingSent || !pending) return
+        if (Date.now() - lastDatabentoAt < DATABENTO_TIP_FRESH_MS) return
         if (basis == null) {
           if (instrument === 'GOLD' || instrument === 'CRUDE') return
           if (Date.now() - openedAt < UNSHIFTED_AFTER_MS) return
@@ -161,6 +172,7 @@ export async function GET(request: Request) {
 
       const pollCme = async () => {
         if (closed) return
+        if (Date.now() - lastDatabentoAt < DATABENTO_TIP_FRESH_MS) return
         try {
           const yq = await getYahooQuote(instrument)
           if (closed || !yq?.price) return
@@ -188,6 +200,8 @@ export async function GET(request: Request) {
         basisTimer = null
         if (cmePoller) clearInterval(cmePoller)
         cmePoller = null
+        unsubscribeDb?.()
+        unsubscribeDb = null
         unsubscribe?.()
         unsubscribe = null
         try {
@@ -197,9 +211,33 @@ export async function GET(request: Request) {
         }
       }
 
+      // Primary: Databento Live Raw trades (Standard plan Live entitlement — TCP+CRAM)
+      if (isDatabentoConfigured()) {
+        const seed = getLastDatabentoLivePrice(instrument, 30_000)
+        if (seed) {
+          lastDatabentoAt = Date.now()
+          send(
+            payloadFor(
+              instrument,
+              seed.price,
+              seed.bid,
+              seed.ask,
+              seed.timestamp,
+              'databento'
+            )
+          )
+        }
+        unsubscribeDb = subscribeDatabentoLive(instrument, (q) => {
+          lastDatabentoAt = Date.now()
+          send(
+            payloadFor(instrument, q.price, q.bid, q.ask, q.timestamp, 'databento')
+          )
+        })
+      }
+
       if (isOandaConfigured()) {
         // Subscribing replays the hub's last tick, so a warm basis means the first
-        // frame leaves here synchronously.
+        // frame leaves here synchronously — skipped while Databento Live is fresh.
         unsubscribe = subscribeOandaPriceStream(instrument, (quote) => {
           pending = quote
           pendingSent = false
@@ -207,9 +245,10 @@ export async function GET(request: Request) {
         })
 
         // Seed initial live quote immediately without waiting for first stream tick or delayed Yahoo
-        if (!pending) {
+        if (!pending && Date.now() - lastDatabentoAt >= DATABENTO_TIP_FRESH_MS) {
           void getOandaPrice(instrument).then((op) => {
             if (closed || !op || pendingSent) return
+            if (Date.now() - lastDatabentoAt < DATABENTO_TIP_FRESH_MS) return
             pending = op
             flushPending()
           })
@@ -224,10 +263,13 @@ export async function GET(request: Request) {
         }
 
         basisTimer = setInterval(refreshBasis, CME_BASIS_REFRESH_MS)
-      } else {
-        // Fallback only when OANDA broker is completely unconfigured
+      } else if (!isDatabentoConfigured()) {
+        // Fallback only when neither Databento Live nor OANDA is available
         void pollCme()
         cmePoller = setInterval(pollCme, 1500)
+      } else {
+        // Databento only — Yahoo poll if Live goes quiet (weekend / gap)
+        cmePoller = setInterval(pollCme, 5_000)
       }
 
       // Keep proxies / browsers from treating the connection as idle
@@ -247,6 +289,7 @@ export async function GET(request: Request) {
       if (heartbeat) clearInterval(heartbeat)
       if (basisTimer) clearInterval(basisTimer)
       if (cmePoller) clearInterval(cmePoller)
+      unsubscribeDb?.()
       unsubscribe?.()
     },
   })

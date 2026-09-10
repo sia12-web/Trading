@@ -1,7 +1,6 @@
 /**
  * GET /api/trading/quote?instrument=DOW
- * Live OANDA mid shifted by CME basis so the tip matches Tradovate MYM / MNQ / MGC / CL.
- * Delayed Yahoo futures lasts are never served as the live price.
+ * Prefer Databento Live CME last trade; else OANDA mid + CME basis; else delayed Yahoo.
  */
 
 import { NextResponse } from 'next/server'
@@ -15,6 +14,8 @@ import {
   warmCmeBasis,
   CME_BASIS_REFRESH_MS,
 } from '@/lib/trading/cmeBasis'
+import { isDatabentoConfigured } from '@/lib/databento/client'
+import { getLastDatabentoLivePrice } from '@/lib/databento/liveHub'
 import { getOrCreateUser, type DeskUser } from '@/lib/utils/devAuth'
 import {
   isChartStreamAllowed,
@@ -97,7 +98,31 @@ export async function GET(request: Request) {
       )
     }
 
-    // 1. Try OANDA with CME basis if available and configured
+    // 1. Databento Live Raw last trade (Standard Live entitlement — TCP+CRAM, not a webhook)
+    if (isDatabentoConfigured()) {
+      const live = getLastDatabentoLivePrice(instrument, 8_000)
+      if (live?.price && live.price > 0) {
+        const previous_close = getDayPreviousClose(instrument) ?? live.price
+        const change = live.price - previous_close
+        const change_pct = previous_close ? (change / previous_close) * 100 : 0
+        return NextResponse.json(
+          {
+            instrument,
+            source: 'databento',
+            price: live.price,
+            bid: live.bid,
+            ask: live.ask,
+            change,
+            change_pct,
+            previous_close,
+            timestamp: live.timestamp,
+          },
+          { headers }
+        )
+      }
+    }
+
+    // 2. Try OANDA with CME basis if available and configured
     try {
       const oanda = await getOandaPrice(instrument)
       const cachedBasis = getCmeBasis(instrument)
@@ -155,7 +180,7 @@ export async function GET(request: Request) {
       /* fallback to direct CME */
     }
 
-    // 2. Direct CME futures quote from exchange feed (MYM, MNQ, NKD, MGC, CL)
+    // 3. Direct CME futures quote from exchange feed (MYM, MNQ, NKD, MGC, CL)
     const yq = await getYahooQuote(instrument)
     if (yq?.price && yq.price > 0) {
       const price = yq.price

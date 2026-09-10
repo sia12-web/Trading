@@ -6,11 +6,11 @@
  *   Host: https://hist.databento.com
  *   Docs: https://databento.com/docs/api-reference-historical/basics/authentication
  *
- * Live Raw API (not used here) is a TCP gateway with CRAM challenge-response —
- * there is no Databento "webhook". Live docs:
- *   https://databento.com/docs/api-reference-live/basics/authentication
+ * Live tip: TCP gateway + CRAM via lib/databento/liveHub.ts (not a webhook).
+ * Live docs: https://databento.com/docs/api-reference-live/basics/authentication
  *
  * Portal: Dataset = CME Globex MDP 3.0 (GLBX.MDP3). API key is 32 chars, `db-…`.
+ * Standard plan includes Live with no license fees — tip prefers Live trades.
  */
 
 import type { Instrument } from '@/types/price-feed'

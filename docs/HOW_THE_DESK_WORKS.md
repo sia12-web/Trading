@@ -36,7 +36,7 @@ POC lines are canvas (not Lightweight Charts price lines) so they cannot stretch
 ## Market data
 
 - Live book: **Databento CME Globex MDP 3.0** historical OHLCV (MYM / MNQ / MGC / CL) via `https://hist.databento.com` with **HTTP Basic** (`DATABENTO_API_KEY` as username, empty password — key must start with `db-`). There is **no Databento webhook**. Portal: Dataset = **CME Globex MDP 3.0 (`GLBX.MDP3`)**. Receive-location meters (Aurora IL / AWS Chicago / etc.) only monitor Databento’s path to their PoP — they do **not** change our Railway chart feed.
-- Databento Live Raw API (TCP + CRAM challenge-response, not HTTP Basic / not a webhook) is **not wired yet**. Hist is delayed → **Yahoo CME 5m stitch** still fills holes and the live tip (needed for yesterday RTH and overnight FRVP). Paying for Databento does **not** remove Yahoo until Live is connected. Live mid tip today remains OANDA + CME basis.
+- Live tip: **Databento Live Raw** (TCP to `glbx-mdp3.lsg.databento.com:13000` + CRAM challenge-response) streams `trades` for continuous MYM/MNQ/MGC/CL and fans into `/api/trading/quote/stream`. Standard plan Live is what unlocks this. If Live is quiet, tip falls back to **OANDA + CME basis**, then Yahoo. Hist is still delayed → **Yahoo CME 5m stitch** still fills candle holes.
 - 5-month VWAP daily series: CME archive + Yahoo daily merge on the 16:00 reprint so today’s completed session is included.
 
 ## Paper $1,500 + Leo (per market)
