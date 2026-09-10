@@ -8,6 +8,13 @@ import {
   type LeoMessage,
   type LeoExecutionDirective,
 } from '@/lib/ai/leoAssistant'
+import {
+  clearLeoChatHistory,
+  leoChatHistoryKey,
+  loadAllLeoChatHistory,
+  loadLeoChatHistory,
+  saveLeoChatHistory,
+} from '@/lib/ai/leoChatHistory'
 
 export interface ArmedDeskRule {
   id: string
@@ -37,8 +44,8 @@ interface LeoAssistantPanelProps {
   paperMode?: boolean
 }
 
-// Persistent in-memory session cache per instrument so switching charts retains each market's conversation
-const leoHistoryByInstrument: Record<string, LeoMessage[]> = {}
+// In-memory cache hydrated from localStorage so refresh / leaving the desk keeps each market's thread
+const leoHistoryByInstrument: Record<string, LeoMessage[]> = loadAllLeoChatHistory()
 
 function getWelcomeMessage(instrument: string, paperMode: boolean): LeoMessage {
   return {
@@ -73,19 +80,29 @@ export function LeoAssistantPanel({
   }
 
   const [messages, setMessagesState] = useState<LeoMessage[]>(() => {
-    return leoHistoryByInstrument[`${context.instrument}:${paperMode ? 'paper' : 'live'}`]?.length
-      ? leoHistoryByInstrument[`${context.instrument}:${paperMode ? 'paper' : 'live'}`]!
-      : [getWelcomeMessage(context.instrument, paperMode)]
+    const key = leoChatHistoryKey(context.instrument, paperMode)
+    const cached = leoHistoryByInstrument[key]
+    if (cached && cached.length > 0) return cached
+    const stored = loadLeoChatHistory(context.instrument, paperMode)
+    if (stored && stored.length > 0) {
+      leoHistoryByInstrument[key] = stored
+      return stored
+    }
+    return [getWelcomeMessage(context.instrument, paperMode)]
   })
 
-  // Synchronize when the user switches tabs to a different instrument
+  // Synchronize when the user switches tabs / paper↔live — restore disk+memory history
   useEffect(() => {
-    const existing = leoHistoryByInstrument[`${context.instrument}:${paperMode ? 'paper' : 'live'}`]
+    const key = leoChatHistoryKey(context.instrument, paperMode)
+    const existing =
+      leoHistoryByInstrument[key] ?? loadLeoChatHistory(context.instrument, paperMode)
     if (existing && existing.length > 0) {
+      leoHistoryByInstrument[key] = existing
       setMessagesState(existing)
     } else {
       const welcome = [getWelcomeMessage(context.instrument, paperMode)]
-      leoHistoryByInstrument[`${context.instrument}:${paperMode ? 'paper' : 'live'}`] = welcome
+      leoHistoryByInstrument[key] = welcome
+      saveLeoChatHistory(context.instrument, paperMode, welcome)
       setMessagesState(welcome)
     }
     setAttachedPoints([])
@@ -94,9 +111,21 @@ export function LeoAssistantPanel({
   const setMessages = (updater: LeoMessage[] | ((prev: LeoMessage[]) => LeoMessage[])) => {
     setMessagesState((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater
-      leoHistoryByInstrument[`${context.instrument}:${paperMode ? 'paper' : 'live'}`] = next
+      const key = leoChatHistoryKey(context.instrument, paperMode)
+      leoHistoryByInstrument[key] = next
+      saveLeoChatHistory(context.instrument, paperMode, next)
       return next
     })
+  }
+
+  const clearConversation = () => {
+    const welcome = [getWelcomeMessage(context.instrument, paperMode)]
+    const key = leoChatHistoryKey(context.instrument, paperMode)
+    leoHistoryByInstrument[key] = welcome
+    clearLeoChatHistory(context.instrument, paperMode)
+    saveLeoChatHistory(context.instrument, paperMode, welcome)
+    setMessagesState(welcome)
+    setAttachedPoints([])
   }
 
   const [inputPrompt, setInputPrompt] = useState('')
@@ -621,7 +650,7 @@ export function LeoAssistantPanel({
                     LEO DESK ASSISTANT
                   </span>
                   <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-950/80 border border-purple-700/60 text-purple-300 font-mono">
-                    AI Live
+                    {paperMode ? 'Paper $1500' : 'AI Live'}
                   </span>
                 </div>
                 <div className="text-[10px] text-neutral-400 font-mono">
@@ -632,6 +661,14 @@ export function LeoAssistantPanel({
             </div>
 
             <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={clearConversation}
+                className="px-1.5 py-1 rounded-lg border border-neutral-700/80 text-[10px] font-mono text-neutral-400 hover:text-neutral-200 hover:border-neutral-500 transition-colors"
+                title="Clear this market's Leo thread (saved history)"
+              >
+                Clear
+              </button>
               {/* TTS Voice Toggle */}
               <button
                 type="button"

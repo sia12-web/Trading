@@ -215,7 +215,7 @@ export const VWAP_COLORS = {
   band1: '#4CAF50',
   band2: '#827717',
   band3: '#00695C',
-  fill1: 'rgba(76, 175, 80, 0.12)',
+  fill1: 'rgba(76, 175, 80, 0.05)',
   /** @deprecated use band1–band3 */
   band: '#4CAF50',
 } as const

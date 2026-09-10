@@ -134,9 +134,12 @@ export function computeOrderFlowCvd(
 ): OrderFlowSummary | null {
   if (!bars || bars.length === 0) return null
 
-  const startIdx = sessionStartUnix
-    ? Math.max(0, bars.findIndex((b) => b.time >= sessionStartUnix))
-    : 0
+  let startIdx = 0
+  if (sessionStartUnix != null) {
+    const idx = bars.findIndex((b) => b.time >= sessionStartUnix)
+    // findIndex === -1 used to mean "use all bars" — that made CVD a multi-day pile that ignores the dump.
+    startIdx = idx >= 0 ? idx : bars.length
+  }
 
   const activeBars = bars.slice(startIdx)
   if (activeBars.length === 0) return null
@@ -229,9 +232,12 @@ export function computeCvdCandleBars(
 ): CvdCandleBar[] {
   if (!bars || bars.length === 0) return []
 
-  const startIdx = sessionStartUnix
-    ? Math.max(0, bars.findIndex((b) => b.time >= sessionStartUnix))
-    : 0
+  let startIdx = 0
+  if (sessionStartUnix != null) {
+    const idx = bars.findIndex((b) => b.time >= sessionStartUnix)
+    // findIndex === -1 used to mean "use all bars" — that made CVD a multi-day pile that ignores the dump.
+    startIdx = idx >= 0 ? idx : bars.length
+  }
 
   const activeBars = bars.slice(startIdx)
   if (activeBars.length === 0) return []

@@ -108,3 +108,16 @@ export function deskPhaseAt(now: Date = new Date()): DeskPhase {
   if (isOvernightInventoryWindow(now)) return 'OVERNIGHT'
   return 'WEEKEND'
 }
+
+/**
+ * Globex day start (18:00 ET). CVD pane + Leo order-flow use this so the
+ * cumulative resets with the futures session instead of spanning many days.
+ */
+export function deskCvdSessionStartUnix(now: Date = new Date()): number {
+  const ymd = nyYmd(now)
+  const unix = nyUnixNow(now)
+  const todayGlobex = zonedCivilToUnix(ymd, 18, TZ)
+  if (unix >= todayGlobex) return todayGlobex
+  const prev = addCalendarDaysYmd(ymd, -1)
+  return zonedCivilToUnix(prev, 18, TZ)
+}

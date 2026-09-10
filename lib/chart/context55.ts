@@ -246,15 +246,23 @@ export function get5MonthAnchorUnix(
   asOfUnix: number,
   clock: DeskClock = NY_DESK_CLOCK
 ): number {
-  const dt = new Date(asOfUnix * 1000)
-  dt.setUTCMonth(dt.getUTCMonth() - 5)
-
-  let ymd = new Intl.DateTimeFormat('en-CA', {
+  // Subtract 5 calendar months on the desk timezone civil date (not UTC month math).
+  const tipYmd = new Intl.DateTimeFormat('en-CA', {
     timeZone: clock.timeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(dt)
+  }).format(new Date(asOfUnix * 1000))
+  const [y0, m0, d0] = tipYmd.split('-').map(Number)
+  let year = y0!
+  let month = m0! - 5
+  while (month <= 0) {
+    month += 12
+    year -= 1
+  }
+  const dim = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  const day = Math.min(d0!, dim)
+  let ymd = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 
   while (!isWeekdayYmd(ymd, clock.timeZone)) {
     const [y, m, d] = ymd.split('-').map(Number)
@@ -645,7 +653,8 @@ export function compute5MonthAnchoredVwapPath(args: {
       if (b.time < anchorUnix - 86400) continue
       if (b.time > tipTime) continue
       const price = typicalHlc(b)
-      const vol = b.volume > 0 ? b.volume : 1
+      const vol = b.volume
+      if (!(vol > 0) || !(price > 0)) continue
       dPV += price * vol
       dP2V += price * price * vol
       dV += vol
@@ -713,7 +722,8 @@ export function compute5MonthAnchoredVwapPath(args: {
       }
     }
     const price = typicalHlc(c)
-    const vol = c.volume > 0 ? c.volume : 1
+    const vol = c.volume
+    if (!(vol > 0) || !(price > 0)) continue
     intraPV += price * vol
     intraP2V += price * price * vol
     intraV += vol

@@ -133,7 +133,10 @@ export function paintLevelLine(
   ctx.restore()
 }
 
-/** TradingView Background #1 — fill between ±1σ. Off-pane σ still tints the visible slice. */
+/**
+ * TradingView Background #1 — fill between ±1σ.
+ * Skip when 5M σ spans most of the pane (otherwise off-pane bands paint a green wash over candles).
+ */
 export function paintAnchoredVwapSigmaFill(
   ctx: CanvasRenderingContext2D,
   args: {
@@ -150,19 +153,25 @@ export function paintAnchoredVwapSigmaFill(
   if (upper.length < 2 || lower.length < 2) return
   const top: Array<{ x: number; y: number }> = []
   const bot: Array<{ x: number; y: number }> = []
-  for (const p of upper) {
-    const x = timeToX(p.time)
-    const y = priceToY(p.value)
-    if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y)) continue
-    top.push({ x, y })
+  const n = Math.min(upper.length, lower.length)
+  let spanSum = 0
+  let spanN = 0
+  for (let i = 0; i < n; i++) {
+    const u = upper[i]!
+    const l = lower[i]!
+    const x = timeToX(u.time)
+    const yU = priceToY(u.value)
+    const yL = priceToY(l.value)
+    if (x == null || yU == null || yL == null) continue
+    if (!Number.isFinite(x) || !Number.isFinite(yU) || !Number.isFinite(yL)) continue
+    top.push({ x, y: yU })
+    bot.push({ x, y: yL })
+    spanSum += Math.abs(yL - yU)
+    spanN++
   }
-  for (const p of lower) {
-    const x = timeToX(p.time)
-    const y = priceToY(p.value)
-    if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y)) continue
-    bot.push({ x, y })
-  }
-  if (top.length < 2 || bot.length < 2) return
+  if (top.length < 2 || bot.length < 2 || spanN === 0) return
+  // 5-month cumulative σ is often wider than the visible session — do not wash the pane.
+  if (spanSum / spanN >= paneH * 0.75) return
   ctx.save()
   ctx.beginPath()
   ctx.rect(0, 0, paneW, paneH)

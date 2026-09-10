@@ -50,6 +50,7 @@ assert.ok(live.includes('DESK_CANDLE_SERIES_COLORS'), 'live uses shared green/re
 assert.ok(!live.includes('upColor: meta.color'), 'live does not paint GOLD/DOW accent as up-candles')
 assert.equal(VWAP_COLORS.vwap, '#2962FF')
 assert.equal(VWAP_COLORS.band1, '#4CAF50')
+assert.ok(VWAP_COLORS.fill1.includes('0.05'), 'σ fill stays subtle')
 assert.equal(VWAP_COLORS.band2, '#827717')
 assert.equal(VWAP_COLORS.band3, '#00695C')
 assert.ok(live.includes("title: 'VWAP'"), 'live reprints 5-month VWAP from CME daily bars')
@@ -122,6 +123,10 @@ assert.ok(live.includes("color: 'rgba(0,0,0,0)'"), 'live range ±10 stroke is in
 assert.ok(live.includes('axisLabelColor: s.color'), 'live range ±10 keeps the right-scale tag')
 assert.ok(!live.includes('entryLive ? 3 : 1'), 'live IB ±10 is not a thick spanning line')
 assert.ok(live.includes('keepDeskBarSpacing'), 'range unlock does not shrink candle width')
+assert.ok(live.includes('if (interactingRef.current) return'), 'candle refresh does not yank viewport mid-pan')
+assert.equal(DESK_CHART_THEME.handleScale.mouseWheel, false, 'plain wheel pans; Ctrl+wheel / pinch zoom')
+assert.equal(DESK_CHART_THEME.kineticScroll.mouse, false, 'no mouse kinetic rubber-band while panning history')
+assert.ok(live.includes('Ctrl/Meta + wheel'), 'Ctrl+wheel still zooms candle width')
 assert.ok(live.includes("title: 'OR15 H'"), 'live range tags are one H/L/mid label')
 assert.ok(!live.includes('Math.max(tipUnix, closeUnix)'), 'live IB adds no future close point')
 assert.ok(
@@ -138,3 +143,7 @@ assert.ok(live.includes('mergeHistoryWithLiveTip'), 'REST cannot repaint forming
 assert.ok(!live.includes('applyOverlayLayout(), 150'), 'overlay layout is not a 150ms idle loop')
 
 console.log('chart_visual_quality.test.ts: all passed')
+
+assert.ok(src('lib/chart/context55Paint.ts').includes('paneH * 0.75'), 'σ fill skips when bands span the pane')
+assert.ok(src('app/dashboard/chart/components/TradingChart.tsx').includes('deskCvdSessionStartUnix'), 'CVD is Globex-session scoped')
+assert.ok(src('app/dashboard/chart/components/TradingChart.tsx').includes('applySigmaBands'), 'σ bands use session-sized stdev')

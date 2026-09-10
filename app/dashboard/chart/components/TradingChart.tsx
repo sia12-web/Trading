@@ -77,6 +77,9 @@ import {
   computeYesterdayNycSession,
   computeOvernightInventoryAndSessions,
   compute5MonthAnchoredVwapPath,
+  applySigmaBands,
+  recentBarsForSigma,
+  typicalPriceStdev,
   classifyMarketDayType,
   type FixedRangeVolumeProfile5D,
   type DayTypeEvaluation,
@@ -215,7 +218,7 @@ import { DraggableDeskWidget } from '@/app/dashboard/components/DraggableDeskWid
 const LiveVoicePanel = (_props: any): any => null
 const AuctionHudPanel = (_props: any): any => null
 const Dow15mFailHudPanel = (_props: any): any => null
-import {
+import { DESK_MIN_BAR_SPACING,
   DESK_BAR_SPACING,
   DESK_CANDLE_SERIES_COLORS,
   DESK_CHART_THEME,
@@ -250,7 +253,7 @@ import {
   sessionFor,
   deskMarketFor,
 } from '@/lib/trading/sessionGate'
-import {
+import { deskCvdSessionStartUnix,
   deskPhaseAt,
   isCloseReprintWindow,
   isOvernightInventoryWindow,
@@ -1503,9 +1506,7 @@ export function TradingChart({
   const [candles, setCandles] = useState<OHLCV[]>([])
   const sessionOrderFlow = useMemo<OrderFlowSummary | null>(() => {
     if (!candles || candles.length === 0) return null
-    const now = new Date()
-    const nowYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-    const sessStart = nyDateTimeToUnix(nowYmd, 9, 30)
+    const sessStart = deskCvdSessionStartUnix()
     return computeOrderFlowCvd(
       candles.map((c) => ({
         time: c.time as number,
@@ -2299,11 +2300,16 @@ export function TradingChart({
         close: c.close,
         volume: c.volume,
       }))
-      const path = compute5MonthAnchoredVwapPath({
+      const pathRaw = compute5MonthAnchoredVwapPath({
         dailyBars: avwap5mDailyBarsRef.current,
         bars,
         instrument,
       })
+      // Keep true 5M VWAP center; redraw σ from recent session bars so bands stay near price
+      // (5M cumulative σ is ~1000 MNQ pts and paints a green wash / far ±1σ tags).
+      const path = pathRaw
+        ? applySigmaBands(pathRaw, typicalPriceStdev(recentBarsForSigma(bars)) || 0)
+        : null
       latestVwapBandsRef.current = path
       if (path?.vwap?.length) {
         const last = path.vwap[path.vwap.length - 1]!
@@ -6094,6 +6100,8 @@ export function TradingChart({
 
       const syncCvdToMain = (range: any) => {
         if (isSyncing || !range || !chartRef.current) return
+        // Don't fight an in-progress main-pane pan (setVisibleLogicalRange rewrites barSpacing).
+        if (interactingRef.current) return
         isSyncing = true
         try {
           chartRef.current.timeScale().setVisibleLogicalRange(range)
@@ -6148,7 +6156,8 @@ export function TradingChart({
           low: c.low,
           close: c.close,
           volume: c.volume,
-        }))
+        })),
+        deskCvdSessionStartUnix()
       )
       const tz = chartTzRef.current
       barsToSet = mapTimesToChart(
@@ -6749,7 +6758,8 @@ export function TradingChart({
           low: c.low,
           close: c.close,
           volume: c.volume,
-        }))
+        })),
+        deskCvdSessionStartUnix()
       )
       const tz = chartTzRef.current
       const shiftedCvd = mapTimesToChart(
@@ -6925,9 +6935,11 @@ export function TradingChart({
         }
       })
     } else if (savedRange) {
-      // New prints / range unlock must not shrink candles (last-value tags widen the axis)
+      // New prints / range unlock must not shrink candles (last-value tags widen the axis).
+      // Never yank range/spacing mid-pan — setVisibleLogicalRange rewrites barSpacing and feels like zoom jitter.
       requestAnimationFrame(() => {
         try {
+          if (interactingRef.current) return
           ts.setVisibleLogicalRange(savedRange)
           keepDeskBarSpacing(chartRef.current, savedSpacing)
           refreshSessionHighlightsRef.current?.()
@@ -7286,10 +7298,32 @@ export function TradingChart({
     const ts = chartRef.current.timeScale()
     ts.subscribeVisibleLogicalRangeChange(onRangeChange)
     el?.addEventListener('pointerdown', beginInteract)
+
+    // Ctrl/Meta + wheel zooms candle width; plain wheel only pans (handleScale.mouseWheel=false)
+    const onWheelZoom = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      const chart = chartRef.current
+      if (!chart) return
+      e.preventDefault()
+      interactingRef.current = true
+      try {
+        const ts = chart.timeScale()
+        const current = readDeskBarSpacing(chart)
+        const direction = e.deltaY > 0 ? -1 : 1
+        const next = Math.min(48, Math.max(DESK_MIN_BAR_SPACING, current * (direction > 0 ? 1.12 : 1 / 1.12)))
+        ts.applyOptions({ barSpacing: next })
+      } catch {
+        /* ignore */
+      }
+      scheduleSettle()
+    }
+    el?.addEventListener('wheel', onWheelZoom, { passive: false })
+
     // window: drag can end outside the chart (pointerleave used to false-settle mid-pan)
     window.addEventListener('pointerup', endInteract)
     window.addEventListener('pointercancel', endInteract)
     return () => {
+      el?.removeEventListener('wheel', onWheelZoom)
       window.clearTimeout(t1)
       window.clearTimeout(settleTimer)
       if (rafPending) cancelAnimationFrame(rafPending)

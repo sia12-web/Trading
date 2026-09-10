@@ -84,11 +84,12 @@ export const DESK_CHART_THEME = {
   handleScale: {
     axisPressedMouseMove: { time: true, price: true },
     axisDoubleClickReset: { time: true, price: true },
-    mouseWheel: true,
+    // Wheel/trackpad pans only — pinch or axis-drag still zooms (avoids zoom jitter while scrolling history)
+    mouseWheel: false,
     pinch: true,
   },
   kineticScroll: {
-    mouse: true,
+    mouse: false,
     touch: true,
   },
 } as const
