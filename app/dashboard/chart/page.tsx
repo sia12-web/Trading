@@ -152,15 +152,14 @@ import { MorningLunchFlatConfirm } from './components/MorningLunchFlatConfirm'
 import type { LeoExecutionDirective } from '@/lib/ai/leoAssistant'
 import {
   PAPER_SIM_STARTING_BALANCE,
+  advancePaperDesk,
   cancelPaperWorking,
   closePaperPosition,
   isPaperSimMarket,
   loadPaperLedger,
-  markPaperPosition,
   openPaperMarket,
   placePaperWorking,
   resetPaperLedger,
-  tryFillPaperWorking,
   updatePaperBrackets,
   type PaperSimLedger,
   type PaperSimMarket,
@@ -230,9 +229,21 @@ export default function ChartPage() {
   useEffect(() => {
     if (!paperMode || livePrice == null) return
     const m = asPaperMarket(instrument)
-    let next = tryFillPaperWorking(m, livePrice)
-    next = markPaperPosition(m, livePrice)
-    setPaperLedger(next)
+    const ev = advancePaperDesk(m, livePrice)
+    setPaperLedger(ev.ledger)
+    if (ev.kind === 'working_fill') {
+      successToast(`Paper ${ev.side} filled @ ${ev.entry.toFixed(2)}`)
+    } else if (ev.kind === 'stop_hit') {
+      warningToast(
+        `Paper stop @ ${ev.exit.toFixed(2)} · ${ev.pnlUsd >= 0 ? '+' : ''}${ev.pnlUsd.toFixed(2)} → $${ev.ledger.equity.toFixed(0)}`,
+        9000
+      )
+    } else if (ev.kind === 'take_profit') {
+      successToast(
+        `Paper target @ ${ev.exit.toFixed(2)} · ${ev.pnlUsd >= 0 ? '+' : ''}${ev.pnlUsd.toFixed(2)} → $${ev.ledger.equity.toFixed(0)}`,
+        9000
+      )
+    }
   }, [paperMode, livePrice, instrument])
 
   const [positionOverlay, setPositionOverlay] = useState<PositionOverlay | null>(null)
@@ -1211,13 +1222,18 @@ export default function ChartPage() {
           target: d.target,
           reason: d.reason,
           riskPct: d.riskPct,
+          lastPrice: px ?? undefined,
         })
         if (!r.ok) {
           warningToast(r.error)
           return false
         }
         setPaperLedger(r.ledger)
-        successToast(`Paper limit ${d.side} @ ${d.limit.toFixed(2)}`)
+        successToast(
+          r.ledger.position
+            ? `Paper limit filled ${d.side} @ ${d.limit.toFixed(2)}`
+            : `Paper limit ${d.side} @ ${d.limit.toFixed(2)}`
+        )
         return true
       }
       if (d.action === 'PLACE_STOP') {
@@ -1231,13 +1247,18 @@ export default function ChartPage() {
           target: d.target,
           reason: d.reason,
           riskPct: d.riskPct,
+          lastPrice: px ?? undefined,
         })
         if (!r.ok) {
           warningToast(r.error)
           return false
         }
         setPaperLedger(r.ledger)
-        successToast(`Paper stop-entry ${d.side} @ ${d.stopEntry.toFixed(2)}`)
+        successToast(
+          r.ledger.position
+            ? `Paper stop filled ${d.side} @ ${d.stopEntry.toFixed(2)}`
+            : `Paper stop-entry ${d.side} @ ${d.stopEntry.toFixed(2)}`
+        )
         return true
       }
       if (d.action === 'SET_STOP' || d.action === 'SET_TARGET') {
@@ -1997,13 +2018,18 @@ export default function ChartPage() {
   const inEntry = gate?.phase === 'ENTRY' && !!gate?.canPlaceEntry
   const canTrade = inEntry && !pending && !managePos
   const showWorkingStrip =
-    orderStatus === 'rejected' ||
-    orderStatus === 'placing'
-  const showManageBar = inManage && managePos != null
+    !paperMode &&
+    (orderStatus === 'rejected' || orderStatus === 'placing')
+  const showManageBar = !paperMode && inManage && managePos != null
+  const showPaperWorkingStrip =
+    paperMode && !!paperLedger.working && !paperLedger.position
+  const showPaperManageHint = paperMode && !!paperLedger.position
   const showDeskOverlay =
     showWorkingStrip ||
     showManageBar ||
-    !!fillError
+    showPaperWorkingStrip ||
+    showPaperManageHint ||
+    (!paperMode && !!fillError)
   const deskLevelsActive = !!gate && gate.phase !== 'CLOSED'
   const deskAttended = clockedIn || attendedToday
 
@@ -2103,6 +2129,68 @@ export default function ChartPage() {
               />
             ) : null}
 
+            
+            {showPaperManageHint && paperLedger.position ? (
+              <div className="flex items-center gap-3 rounded-lg border border-amber-700/50 bg-amber-950/90 px-3 py-1.5 text-xs text-amber-100 shadow-xl backdrop-blur-md">
+                <span className="font-semibold uppercase tracking-wide">Paper</span>
+                <span className="font-mono">
+                  {paperLedger.position.side} {paperLedger.position.qty} @{' '}
+                  {paperLedger.position.entry.toLocaleString()}
+                </span>
+                <span className="opacity-80">
+                  SL {paperLedger.position.stop.toLocaleString()} · TP{' '}
+                  {paperLedger.position.target.toLocaleString()}
+                </span>
+                <button
+                  type="button"
+                  className="ml-auto rounded border border-amber-600/50 px-2 py-1 text-[10px] font-semibold uppercase text-amber-200 hover:bg-amber-900/50"
+                  onClick={() => {
+                    const px = livePriceRef.current
+                    if (px == null) {
+                      warningToast('No last price to flatten paper')
+                      return
+                    }
+                    const r = closePaperPosition(asPaperMarket(instrument), px, 'manual')
+                    if (!r.ok) {
+                      warningToast(r.error)
+                      return
+                    }
+                    setPaperLedger(r.ledger)
+                    successToast(
+                      `Paper flat ${r.pnlUsd >= 0 ? '+' : ''}${r.pnlUsd.toFixed(2)} → $${r.ledger.equity.toFixed(0)}`
+                    )
+                  }}
+                >
+                  Flatten
+                </button>
+              </div>
+            ) : null}
+
+            {showPaperWorkingStrip && paperLedger.working ? (
+              <div className="flex items-center gap-3 rounded-lg border border-amber-700/50 bg-amber-950/90 px-3 py-1.5 text-xs text-amber-100 shadow-xl backdrop-blur-md">
+                <span className="font-semibold uppercase tracking-wide">
+                  Paper {paperLedger.working.orderType}
+                </span>
+                <span className="font-mono">
+                  {paperLedger.working.side} @ {paperLedger.working.trigger.toLocaleString()}
+                </span>
+                <span className="opacity-80">
+                  SL {paperLedger.working.stop.toLocaleString()} · TP{' '}
+                  {paperLedger.working.target.toLocaleString()}
+                </span>
+                <button
+                  type="button"
+                  className="ml-auto rounded border border-amber-600/50 px-2 py-1 text-[10px] font-semibold uppercase text-amber-200 hover:bg-amber-900/50"
+                  onClick={() => {
+                    setPaperLedger(cancelPaperWorking(asPaperMarket(instrument)))
+                    successToast('Paper working cancelled')
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : null}
+
             {showWorkingStrip ? (
               <div
                 className={`flex items-center gap-3 rounded-lg border px-3 py-1.5 text-xs shadow-xl backdrop-blur-md ${
@@ -2161,7 +2249,7 @@ export default function ChartPage() {
           </div>
         ) : null}
 
-        {managePos && (
+        {managePos && !paperMode && (
           <MorningLunchFlatConfirm
             open={lunchFlatPrompt}
             instrument={managePos.instrument}
@@ -2237,17 +2325,19 @@ export default function ChartPage() {
               paperMode={paperMode}
               paperEquity={paperLedger.equity}
               positionOverlay={
-                paperMode && paperLedger.position
-                  ? {
-                      positionId: paperLedger.position.id,
-                      entryPrice: paperLedger.position.entry,
-                      stopLoss: paperLedger.position.stop,
-                      profitTarget: paperLedger.position.target,
-                      direction: paperLedger.position.side === 'LONG' ? 'long' : 'short',
-                      positionSize: paperLedger.position.qty,
-                      riskDollars: paperLedger.position.riskUsd,
-                      entryTimestamp: paperLedger.position.openedAt,
-                    }
+                paperMode
+                  ? paperLedger.position
+                    ? {
+                        positionId: paperLedger.position.id,
+                        entryPrice: paperLedger.position.entry,
+                        stopLoss: paperLedger.position.stop,
+                        profitTarget: paperLedger.position.target,
+                        direction: paperLedger.position.side === 'LONG' ? 'long' : 'short',
+                        positionSize: paperLedger.position.qty,
+                        riskDollars: paperLedger.position.riskUsd,
+                        entryTimestamp: paperLedger.position.openedAt,
+                      }
+                    : null
                   : positionOverlay
                   ? {
                       ...positionOverlay,
@@ -2274,15 +2364,25 @@ export default function ChartPage() {
                     : null
               }
               pendingLimit={
-                pending && !managePos
-                  ? {
-                      price: pending.level,
-                      direction: pending.direction === 'LONG' ? 'long' : 'short',
-                      stopLoss: pending.stopLoss,
-                      profitTarget: pending.profitTarget,
-                      riskDollars: pending.riskAmount,
-                    }
-                  : null
+                paperMode
+                  ? paperLedger.working && !paperLedger.position
+                    ? {
+                        price: paperLedger.working.trigger,
+                        direction: paperLedger.working.side === 'LONG' ? 'long' : 'short',
+                        stopLoss: paperLedger.working.stop,
+                        profitTarget: paperLedger.working.target,
+                        riskDollars: paperLedger.working.riskUsd,
+                      }
+                    : null
+                  : pending && !managePos
+                    ? {
+                        price: pending.level,
+                        direction: pending.direction === 'LONG' ? 'long' : 'short',
+                        stopLoss: pending.stopLoss,
+                        profitTarget: pending.profitTarget,
+                        riskDollars: pending.riskAmount,
+                      }
+                    : null
               }
               asiaOco={
                 instrument === 'GOLD' || instrument === 'DOW'
@@ -2292,6 +2392,11 @@ export default function ChartPage() {
                   : null
               }
               onCancelPending={() => {
+                if (paperMode) {
+                  setPaperLedger(cancelPaperWorking(asPaperMarket(instrument)))
+                  successToast('Paper working cancelled')
+                  return
+                }
                 const inst = (pending?.instrument || locked || instrument) as Instrument
                 orderGenRef.current += 1
                 pendingRef.current = null
@@ -2300,21 +2405,49 @@ export default function ChartPage() {
                 setOrderStatus('idle')
                 void cancelWorkingLimit(inst)
               }}
-              onAdjustBrackets={managePos ? adjustBrackets : undefined}
-              onAdjustWorkingBrackets={
-                pending && orderStatus === 'working' && pending.workingId
-                  ? adjustWorkingBrackets
-                  : undefined
+              onAdjustBrackets={
+                paperMode
+                  ? paperLedger.position
+                    ? async (update) => {
+                        const r = updatePaperBrackets(asPaperMarket(instrument), {
+                          stop: update.stopLoss,
+                          target: update.profitTarget,
+                        })
+                        if (!r.ok) {
+                          warningToast(r.error)
+                          return
+                        }
+                        setPaperLedger(r.ledger)
+                      }
+                    : undefined
+                  : managePos
+                    ? adjustBrackets
+                    : undefined
               }
-              bracketAdjustStatus={managePos ? bracketAdjustStatus : null}
-              bracketAdjustError={managePos ? bracketAdjustError : null}
+              onAdjustWorkingBrackets={
+                paperMode
+                  ? undefined
+                  : pending && orderStatus === 'working' && pending.workingId
+                    ? adjustWorkingBrackets
+                    : undefined
+              }
+              bracketAdjustStatus={paperMode ? null : managePos ? bracketAdjustStatus : null}
+              bracketAdjustError={paperMode ? null : managePos ? bracketAdjustError : null}
               workingBracketAdjustStatus={
-                pending && orderStatus === 'working' ? workingBracketAdjustStatus : null
+                paperMode
+                  ? null
+                  : pending && orderStatus === 'working'
+                    ? workingBracketAdjustStatus
+                    : null
               }
               workingBracketAdjustError={
-                pending && orderStatus === 'working' ? workingBracketAdjustError : null
+                paperMode
+                  ? null
+                  : pending && orderStatus === 'working'
+                    ? workingBracketAdjustError
+                    : null
               }
-              aiVerdict={managePos ? aiVerdict : null}
+              aiVerdict={paperMode ? null : managePos ? aiVerdict : null}
               jumpToPriceRef={jumpToPriceRef}
               // Hard-lock tabs only after clock-in / open book (AI suggest stays soft)
               lockedInstrument={locked}

@@ -157,6 +157,7 @@ type AuctionHud = any
 type AuctionOverlaySignal = any
 import { LeoAssistantPanel } from './LeoAssistantPanel'
 import type { LeoChatContext, LeoDataPoint, LeoActivePosition } from '@/lib/ai/leoAssistant'
+import { isPaperSimMarket, paperPointValueUsd } from '@/lib/trading/paperSimDesk'
 import {
   type UserTrendline,
   type UserRangeBox,
@@ -1162,8 +1163,7 @@ export function TradingChart({
   paperMode = false,
   paperEquity = 1500,
 }: TradingChartProps = {}) {
-  void paperEquity
-  const containerRef = useRef<HTMLDivElement>(null)
+    const containerRef = useRef<HTMLDivElement>(null)
   const chartFrameRef = useRef<HTMLDivElement>(null)
   const outerWrapperRef = useRef<HTMLDivElement>(null)
   const renderedSessionExtremesRef = useRef<RenderedSessionExtremeHit[]>([])
@@ -3538,7 +3538,15 @@ export function TradingChart({
             : entryPx - curPrice
           : 0
       const size = positionOverlay.positionSize ?? 1
-      const multiplier = instrument === 'NASDAQ' ? 2 : instrument === 'DOW' ? 5 : 1
+      const multiplier = paperMode
+        ? isPaperSimMarket(instrument)
+          ? paperPointValueUsd(instrument)
+          : 1
+        : instrument === 'NASDAQ'
+          ? 2
+          : instrument === 'DOW'
+            ? 5
+            : 1
       const pnlCad = pnlPts * size * multiplier
 
       activePos = {
@@ -3593,6 +3601,8 @@ export function TradingChart({
         holidayName: isHoliday ? 'US Exchange Holiday' : undefined,
       },
       activePosition: activePos,
+      paperMode,
+      paperEquity,
       orderFlow: orderFlowContext,
       longTermMoney: avwap5mBenchmark
         ? {
@@ -3762,6 +3772,8 @@ export function TradingChart({
     yesterdayNyc,
     overnightInventory,
     positionOverlay,
+    paperMode,
+    paperEquity,
     barCountdown,
     activeTrendlines,
     activeRangeBoxes,

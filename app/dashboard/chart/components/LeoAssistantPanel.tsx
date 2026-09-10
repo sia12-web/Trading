@@ -73,19 +73,19 @@ export function LeoAssistantPanel({
   }
 
   const [messages, setMessagesState] = useState<LeoMessage[]>(() => {
-    return leoHistoryByInstrument[context.instrument]?.length
-      ? leoHistoryByInstrument[context.instrument]!
+    return leoHistoryByInstrument[`${context.instrument}:${paperMode ? 'paper' : 'live'}`]?.length
+      ? leoHistoryByInstrument[`${context.instrument}:${paperMode ? 'paper' : 'live'}`]!
       : [getWelcomeMessage(context.instrument, paperMode)]
   })
 
   // Synchronize when the user switches tabs to a different instrument
   useEffect(() => {
-    const existing = leoHistoryByInstrument[context.instrument]
+    const existing = leoHistoryByInstrument[`${context.instrument}:${paperMode ? 'paper' : 'live'}`]
     if (existing && existing.length > 0) {
       setMessagesState(existing)
     } else {
       const welcome = [getWelcomeMessage(context.instrument, paperMode)]
-      leoHistoryByInstrument[context.instrument] = welcome
+      leoHistoryByInstrument[`${context.instrument}:${paperMode ? 'paper' : 'live'}`] = welcome
       setMessagesState(welcome)
     }
     setAttachedPoints([])
@@ -94,7 +94,7 @@ export function LeoAssistantPanel({
   const setMessages = (updater: LeoMessage[] | ((prev: LeoMessage[]) => LeoMessage[])) => {
     setMessagesState((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater
-      leoHistoryByInstrument[context.instrument] = next
+      leoHistoryByInstrument[`${context.instrument}:${paperMode ? 'paper' : 'live'}`] = next
       return next
     })
   }
@@ -285,8 +285,21 @@ export function LeoAssistantPanel({
   const applyDirectives = (directives: LeoExecutionDirective[]) => {
     for (const d of directives) {
       if (d.action === 'CLOSE_POSITION') {
-        void onClosePosition?.(d.reason)
-        speakText(`Position close executed: ${d.reason}`)
+        void Promise.resolve(onClosePosition?.(d.reason)).then((ok) => {
+          if (ok === false) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `leo-close-fail-${Date.now()}`,
+                role: 'assistant',
+                content: `⚠️ Could not close ${context.instrument}${paperMode ? ' paper' : ''} — no open position or no last price.`,
+                timestamp: Date.now(),
+              },
+            ])
+            return
+          }
+          speakText(`Position close executed: ${d.reason}`)
+        })
       } else if (
         d.action === 'PLACE_MARKET' ||
         d.action === 'PLACE_LIMIT' ||

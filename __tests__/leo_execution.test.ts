@@ -104,6 +104,71 @@ describe('Paper $1500 sim desk', () => {
     assert.equal(closed.ledger.position, null)
     assert.ok(closed.pnlUsd > 0)
   })
+
+  it('rejects inverted paper brackets', async () => {
+    const { resetPaperLedger, openPaperMarket, assertPaperBrackets } =
+      await import('../lib/trading/paperSimDesk')
+    resetPaperLedger('NASDAQ')
+    assert.ok(assertPaperBrackets({ side: 'LONG', entry: 100, stop: 110, target: 120 }))
+    const bad = openPaperMarket({
+      market: 'NASDAQ',
+      side: 'LONG',
+      entry: 21000,
+      stop: 21050,
+      target: 20900,
+      reason: 'inverted',
+    })
+    assert.equal(bad.ok, false)
+  })
+
+  it('advances working fill and stop with events', async () => {
+    const {
+      resetPaperLedger,
+      placePaperWorking,
+      advancePaperDesk,
+    } = await import('../lib/trading/paperSimDesk')
+    resetPaperLedger('GOLD')
+    const placed = placePaperWorking({
+      market: 'GOLD',
+      side: 'LONG',
+      orderType: 'LIMIT',
+      trigger: 2650,
+      stop: 2640,
+      target: 2670,
+      reason: 'test limit',
+    })
+    assert.equal(placed.ok, true)
+    if (!placed.ok) return
+    assert.ok(placed.ledger.working)
+    const fill = advancePaperDesk('GOLD', 2649)
+    assert.equal(fill.kind, 'working_fill')
+    if (fill.kind !== 'working_fill') return
+    assert.equal(fill.entry, 2650)
+    const stop = advancePaperDesk('GOLD', 2640)
+    assert.equal(stop.kind, 'stop_hit')
+    if (stop.kind !== 'stop_hit') return
+    assert.ok(stop.pnlUsd < 0)
+    assert.equal(stop.ledger.position, null)
+  })
+
+  it('prompt announces paper desk mode', async () => {
+    const { buildLeoSystemPrompt } = await import('../lib/ai/leoAssistant')
+    const prompt = buildLeoSystemPrompt({
+      instrument: 'CRUDE',
+      currentPrice: 78,
+      currentTimeEt: '10:00:00 ET',
+      dayType: null,
+      openingType: null,
+      longTermMoney: null,
+      intermediateMoney: null,
+      shortTermMoney: null,
+      activeExcesses: [],
+      paperMode: true,
+      paperEquity: 1500,
+    })
+    assert.match(prompt, /PAPER SIMULATION/)
+    assert.match(prompt, /1,?500/)
+  })
 })
 
 describe('Leo Time, Session & Position Telemetry in System Prompt', () => {

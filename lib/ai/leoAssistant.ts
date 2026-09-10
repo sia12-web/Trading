@@ -138,6 +138,8 @@ export interface LeoChatContext {
   openingType: string | null
   sessionDetails?: LeoSessionDetails | null
   activePosition?: LeoActivePosition | null
+  paperMode?: boolean
+  paperEquity?: number
   orderFlow?: LeoOrderFlowContext | null
   longTermMoney: {
     avwap5m: number | null
@@ -603,8 +605,14 @@ export function buildLeoSystemPrompt(ctx: LeoChatContext): string {
 - Unrealized P&L: ${pos.unrealizedPnlPoints >= 0 ? '+' : ''}${pos.unrealizedPnlPoints.toFixed(1)} points (${pos.unrealizedPnlCad >= 0 ? '+' : ''}${pos.unrealizedPnlCad.toFixed(2)} CAD) — Status: ${pos.isInProfit ? '🟢 IN PROFIT' : '🔴 NOT IN PROFIT / UNPROFITABLE'}`
     : 'STATE: FLAT (No open position currently on the desk).'
 
+  const deskModeLine = ctx.paperMode
+    ? `DESK MODE: PAPER SIMULATION for ${ctx.instrument} — starting wallet $1,500; current equity $${(ctx.paperEquity ?? 1500).toFixed(0)}. PLACE_* fills the paper book only. Never claim a live fill.`
+    : `DESK MODE: LIVE — PLACE_* entries require the trader to switch to Paper $1,500; you may still SET_STOP / SET_TARGET / CANCEL_WORKING / CLOSE_POSITION on the live book when asked.`
+
   return `You are Leo, an elite, disciplined, razor-sharp institutional day trading execution desk assistant.
 You specialize in Dalton Auction Market Theory, Multi-Timeframe Money mechanics, Volume Profiling, strict asymmetric risk execution, and direct desk trade management.
+
+${deskModeLine}
 
 THE TRADER'S SYSTEM ARCHITECTURE:
 1. LONG-TERM MONEY (5-Month Anchored VWAP):

@@ -148,6 +148,26 @@ export function sizePaperContracts(args: {
   return { qty, riskUsd: qty * stopPts * pv }
 }
 
+/** Reject inverted brackets that would instantly stop out. */
+export function assertPaperBrackets(args: {
+  side: PaperSimSide
+  entry: number
+  stop: number
+  target: number
+}): string | null {
+  if (!(args.entry > 0 && args.stop > 0 && args.target > 0)) {
+    return 'Need entry, stop, and target prices'
+  }
+  if (args.side === 'LONG') {
+    if (!(args.stop < args.entry)) return 'LONG stop must be below entry'
+    if (!(args.target > args.entry)) return 'LONG target must be above entry'
+  } else {
+    if (!(args.stop > args.entry)) return 'SHORT stop must be above entry'
+    if (!(args.target < args.entry)) return 'SHORT target must be below entry'
+  }
+  return null
+}
+
 export function openPaperMarket(args: {
   market: PaperSimMarket
   side: PaperSimSide
@@ -158,8 +178,16 @@ export function openPaperMarket(args: {
   riskPct?: number
 }): { ok: true; ledger: PaperSimLedger } | { ok: false; error: string } {
   const ledger = loadPaperLedger(args.market)
+  if (ledger.equity < 5) return { ok: false, error: `${args.market} paper equity too low — reset the wallet` }
   if (ledger.position) return { ok: false, error: `${args.market} paper already in a trade` }
   if (ledger.working) return { ok: false, error: `${args.market} paper already has a working order` }
+  const bad = assertPaperBrackets({
+    side: args.side,
+    entry: args.entry,
+    stop: args.stop,
+    target: args.target,
+  })
+  if (bad) return { ok: false, error: bad }
   const { qty, riskUsd } = sizePaperContracts({
     market: args.market,
     equity: ledger.equity,
@@ -193,10 +221,20 @@ export function placePaperWorking(args: {
   target: number
   reason: string
   riskPct?: number
+  /** If already through the trigger, fill immediately at trigger. */
+  lastPrice?: number
 }): { ok: true; ledger: PaperSimLedger } | { ok: false; error: string } {
   const ledger = loadPaperLedger(args.market)
+  if (ledger.equity < 5) return { ok: false, error: `${args.market} paper equity too low — reset the wallet` }
   if (ledger.position) return { ok: false, error: `${args.market} paper already in a trade` }
   if (ledger.working) return { ok: false, error: `${args.market} paper already has a working order` }
+  const bad = assertPaperBrackets({
+    side: args.side,
+    entry: args.trigger,
+    stop: args.stop,
+    target: args.target,
+  })
+  if (bad) return { ok: false, error: bad }
   const { qty, riskUsd } = sizePaperContracts({
     market: args.market,
     equity: ledger.equity,
@@ -219,6 +257,10 @@ export function placePaperWorking(args: {
   }
   const next: PaperSimLedger = { ...ledger, working }
   savePaperLedger(next)
+  // Marketable working → fill immediately at trigger (same as resting fill price).
+  if (args.lastPrice != null && Number.isFinite(args.lastPrice) && args.lastPrice > 0) {
+    return { ok: true, ledger: tryFillPaperWorking(args.market, args.lastPrice) }
+  }
   return { ok: true, ledger: next }
 }
 
@@ -274,6 +316,13 @@ export function updatePaperBrackets(
     stop: patch.stop ?? ledger.position.stop,
     target: patch.target ?? ledger.position.target,
   }
+  const bad = assertPaperBrackets({
+    side: position.side,
+    entry: position.entry,
+    stop: position.stop,
+    target: position.target,
+  })
+  if (bad) return { ok: false, error: bad }
   const next = { ...ledger, position }
   savePaperLedger(next)
   return { ok: true, ledger: next }
@@ -301,25 +350,60 @@ export function closePaperPosition(
   return { ok: true, ledger: next, pnlUsd }
 }
 
-/** Stop / target hits while a paper position is open. */
-export function markPaperPosition(
+export type PaperMarkEvent =
+  | { kind: 'none'; ledger: PaperSimLedger }
+  | { kind: 'working_fill'; ledger: PaperSimLedger; side: PaperSimSide; entry: number }
+  | {
+      kind: 'stop_hit' | 'take_profit'
+      ledger: PaperSimLedger
+      pnlUsd: number
+      exit: number
+    }
+
+/** Advance working fill + stop/target; report what happened for UI toasts. */
+export function advancePaperDesk(
   market: PaperSimMarket,
   lastPrice: number
-): PaperSimLedger {
-  const ledger = loadPaperLedger(market)
-  const pos = ledger.position
-  if (!pos) return ledger
+): PaperMarkEvent {
+  const before = loadPaperLedger(market)
+  const hadWorking = !!before.working
+  const afterWorking = tryFillPaperWorking(market, lastPrice)
+  if (hadWorking && afterWorking.position && !before.position) {
+    return {
+      kind: 'working_fill',
+      ledger: afterWorking,
+      side: afterWorking.position.side,
+      entry: afterWorking.position.entry,
+    }
+  }
+  const pos = afterWorking.position
+  if (!pos) return { kind: 'none', ledger: afterWorking }
   const stopHit =
     pos.side === 'LONG' ? lastPrice <= pos.stop : lastPrice >= pos.stop
   const tgtHit =
     pos.side === 'LONG' ? lastPrice >= pos.target : lastPrice <= pos.target
   if (stopHit) {
     const r = closePaperPosition(market, pos.stop, 'stop_hit')
-    return r.ok ? r.ledger : ledger
+    if (!r.ok) return { kind: 'none', ledger: afterWorking }
+    return { kind: 'stop_hit', ledger: r.ledger, pnlUsd: r.pnlUsd, exit: pos.stop }
   }
   if (tgtHit) {
     const r = closePaperPosition(market, pos.target, 'take_profit')
-    return r.ok ? r.ledger : ledger
+    if (!r.ok) return { kind: 'none', ledger: afterWorking }
+    return {
+      kind: 'take_profit',
+      ledger: r.ledger,
+      pnlUsd: r.pnlUsd,
+      exit: pos.target,
+    }
   }
-  return ledger
+  return { kind: 'none', ledger: afterWorking }
+}
+
+/** Stop / target hits while a paper position is open. */
+export function markPaperPosition(
+  market: PaperSimMarket,
+  lastPrice: number
+): PaperSimLedger {
+  return advancePaperDesk(market, lastPrice).ledger
 }
