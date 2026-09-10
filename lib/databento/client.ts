@@ -1,10 +1,26 @@
 /**
- * Databento CME Globex MDP 3.0 client.
- * Official CME exchange 1-minute OHLCV candles, aggregated to 5m / desk resolutions.
+ * Databento CME Globex MDP 3.0 client (Historical HTTP API).
+ *
+ * Auth (hist): HTTP Basic with API key as username and empty password
+ *   Authorization: Basic base64(`${DATABENTO_API_KEY}:`)
+ *   Host: https://hist.databento.com
+ *   Docs: https://databento.com/docs/api-reference-historical/basics/authentication
+ *
+ * Live Raw API (not used here) is a TCP gateway with CRAM challenge-response —
+ * there is no Databento "webhook". Live docs:
+ *   https://databento.com/docs/api-reference-live/basics/authentication
+ *
+ * Portal: Dataset = CME Globex MDP 3.0 (GLBX.MDP3). API key is 32 chars, `db-…`.
  */
 
 import type { Instrument } from '@/types/price-feed'
 import { getCme5mRange } from '@/lib/databento/cmeHistorical'
+
+/** Historical HTTP Basic header — key as username, blank password (never Live CRAM). */
+export function databentoHistoricalAuthHeader(apiKey: string): string {
+  const key = apiKey.trim()
+  return `Basic ${Buffer.from(`${key}:`).toString('base64')}`
+}
 
 export const DATABENTO_SYMBOLS: Record<Instrument, string> = {
   DOW: 'MYM.c.0',
@@ -84,9 +100,8 @@ export async function getAvailableDatasetEnd(apiKey: string): Promise<string | n
     return cachedDatasetEnd.end
   }
   try {
-    const auth = Buffer.from(`${apiKey}:`).toString('base64')
     const res = await fetch('https://hist.databento.com/v0/metadata.get_dataset_range?dataset=GLBX.MDP3', {
-      headers: { Authorization: `Basic ${auth}` },
+      headers: { Authorization: databentoHistoricalAuthHeader(apiKey) },
       cache: 'no-store',
       signal: AbortSignal.timeout(5_000),
     })
@@ -203,14 +218,12 @@ export async function getDatabentoCandles(
       end: endDateStr,
     })
 
-    const auth = Buffer.from(`${apiKey}:`).toString('base64')
-
     try {
       const response = await fetch(
         `https://hist.databento.com/v0/timeseries.get_range?${params.toString()}`,
         {
           headers: {
-            Authorization: `Basic ${auth}`,
+            Authorization: databentoHistoricalAuthHeader(apiKey),
             Accept: 'application/json',
           },
           cache: 'no-store',

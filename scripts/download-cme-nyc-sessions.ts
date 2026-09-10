@@ -12,7 +12,7 @@
 
 import fs from 'fs'
 import path from 'path'
-import { DATABENTO_SYMBOLS } from '../lib/databento/client'
+import { DATABENTO_SYMBOLS, databentoHistoricalAuthHeader } from '../lib/databento/client'
 import type { Instrument } from '@/types/price-feed'
 
 const INSTRUMENTS: Instrument[] = ['GOLD', 'NASDAQ', 'DOW', 'CRUDE']
@@ -29,7 +29,7 @@ async function fetchDatabentoRange(
   endIso: string,
   schema: 'ohlcv-1m' | 'ohlcv-1s' = 'ohlcv-1m'
 ) {
-  const auth = Buffer.from(`${apiKey}:`).toString('base64')
+  // Historical HTTP Basic (key as username, empty password) — not Live CRAM / not a webhook.
   const params = new URLSearchParams({
     dataset: 'GLBX.MDP3',
     symbols: symbol,
@@ -42,7 +42,7 @@ async function fetchDatabentoRange(
 
   const url = `https://hist.databento.com/v0/timeseries.get_range?${params.toString()}`
   const res = await fetch(url, {
-    headers: { Authorization: `Basic ${auth}` },
+    headers: { Authorization: databentoHistoricalAuthHeader(apiKey) },
   })
 
   if (!res.ok) {

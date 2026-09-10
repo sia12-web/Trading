@@ -5,10 +5,23 @@
 
 import assert from 'node:assert/strict'
 import {
+  databentoHistoricalAuthHeader,
   mergeCandleSeries,
   parseDatabentoPx,
   parseDatabentoTs,
 } from '../lib/databento/client'
+
+{
+  // Historical auth: Basic base64("db-key:") — empty password (Databento hist docs).
+  // Live Raw uses TCP CRAM instead; there is no Databento webhook.
+  const header = databentoHistoricalAuthHeader('db-testkey')
+  assert.equal(header, `Basic ${Buffer.from('db-testkey:').toString('base64')}`)
+  assert.equal(
+    databentoHistoricalAuthHeader('  db-trim  '),
+    `Basic ${Buffer.from('db-trim:').toString('base64')}`,
+    'trims whitespace around key'
+  )
+}
 
 {
   assert.equal(parseDatabentoPx(4470.5), 4470.5, 'already-decimal gold')
