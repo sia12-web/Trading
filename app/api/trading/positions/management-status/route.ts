@@ -12,6 +12,8 @@ import { tradeDateForInstrument } from '@/lib/trading/deskAttendance'
 import type { PositionStatusResponse, PositionStatus } from '@/types/positionManagement'
 import type { Instrument } from '@/types/trading'
 
+export const dynamic = 'force-dynamic'
+
 const LUNCH_CLOSE_TIME = '11:30:00'
 
 function calculateProfitTarget(
