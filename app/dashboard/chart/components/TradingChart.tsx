@@ -4729,8 +4729,8 @@ export function TradingChart({
   const instrumentRef = useRef<Instrument>(instrument)
   /** LIVE = real Yahoo data; SYNTHETIC = random fallback (never trade off this) */
   const [dataMode, setDataModeState] = useState<'live' | 'synthetic'>('live')
-  /** Candle history feed — yahoo means PA may diverge from OANDA/TV mid */
-  const [candleFeed, setCandleFeed] = useState<'oanda' | 'yahoo' | 'empty'>('oanda')
+  /** Candle history feed — databento = official CME Globex MDP 3.0 exchange feed */
+  const [candleFeed, setCandleFeed] = useState<'databento' | 'oanda' | 'yahoo' | 'empty'>('databento')
   const setDataMode = useCallback(
     (mode: 'live' | 'synthetic') => {
       setDataModeState(mode)
@@ -6084,7 +6084,9 @@ export function TradingChart({
           setCandles(trimmed)
           setDataMode('live')
           setCandleFeed(
-            json.source === 'yahoo' || json.source === 'databento'
+            json.source === 'databento'
+              ? 'databento'
+              : json.source === 'yahoo'
               ? 'yahoo'
               : json.source === 'oanda'
               ? 'oanda'
@@ -7668,7 +7670,7 @@ export function TradingChart({
         }
         setDataMode('live')
         if (json.source === 'yahoo' || json.source === 'oanda' || json.source === 'databento') {
-          setCandleFeed(json.source === 'databento' ? 'yahoo' : json.source)
+          setCandleFeed(json.source)
         }
       } catch {
         /* ignore */
@@ -9964,25 +9966,40 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               />
               {dataMode === 'live' ? (
                 <span
-                  className={`flex items-center gap-1 text-xs ${candleFeed === 'yahoo' ? 'text-emerald-400' : 'text-amber-400'
-                    }`}
+                  className={`flex items-center gap-1 text-xs font-semibold ${
+                    candleFeed === 'databento' || candleFeed === 'yahoo'
+                      ? 'text-emerald-400'
+                      : 'text-amber-400'
+                  }`}
                   title={
-                    candleFeed === 'yahoo'
-                      ? 'Live real-time streaming active'
-                      : 'Synthetic pricing fallback active'
+                    candleFeed === 'databento'
+                      ? 'Official CME Globex MDP 3.0 Real-Time Exchange Feed (Databento API Active)'
+                      : candleFeed === 'yahoo'
+                      ? 'Live CME futures real-time feed active'
+                      : 'OANDA CFD fallback feed active'
                   }
                 >
                   <span className="relative flex h-2 w-2">
                     <span
-                      className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${candleFeed === 'yahoo' ? 'bg-emerald-400' : 'bg-amber-400'
-                        }`}
+                      className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                        candleFeed === 'databento' || candleFeed === 'yahoo'
+                          ? 'bg-emerald-400'
+                          : 'bg-amber-400'
+                      }`}
                     />
                     <span
-                      className={`relative inline-flex rounded-full h-2 w-2 ${candleFeed === 'yahoo' ? 'bg-emerald-500' : 'bg-amber-500'
-                        }`}
+                      className={`relative inline-flex rounded-full h-2 w-2 ${
+                        candleFeed === 'databento' || candleFeed === 'yahoo'
+                          ? 'bg-emerald-500'
+                          : 'bg-amber-500'
+                      }`}
                     />
                   </span>
-                  LIVE
+                  {candleFeed === 'databento'
+                    ? 'LIVE · DATABENTO'
+                    : candleFeed === 'yahoo'
+                    ? 'LIVE · CME'
+                    : 'LIVE · OANDA'}
                 </span>
               ) : (
                 <span

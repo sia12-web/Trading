@@ -154,6 +154,41 @@ export async function getDatabentoCandles(
       } else {
         const errText = await response.text()
         console.warn(`[Databento] HTTP ${response.status} for ${symbol}: ${errText.slice(0, 150)}`)
+
+        // If requested range extends past dataset end, parse authorized max timestamp and retry query
+        const match = errText.match(/and\s+([0-9T:\-\.]+Z)/)
+        if (match && match[1]) {
+          const validEndIso = match[1].slice(0, 19)
+          const validEndSec = Math.floor(new Date(validEndIso).getTime() / 1000)
+          const validStartSec = validEndSec - Math.max(days, 5) * 24 * 3600
+          const validStartIso = new Date(validStartSec * 1000).toISOString().slice(0, 19)
+
+          const retryParams = new URLSearchParams({
+            dataset: 'GLBX.MDP3',
+            symbols: symbol,
+            schema: 'ohlcv-1m',
+            encoding: 'json',
+            stype_in: 'continuous',
+            start: validStartIso,
+            end: validEndIso,
+          })
+
+          const retryRes = await fetch(
+            `https://hist.databento.com/v0/timeseries.get_range?${retryParams.toString()}`,
+            {
+              headers: {
+                Authorization: `Basic ${auth}`,
+                Accept: 'application/json',
+              },
+              cache: 'no-store',
+              signal: AbortSignal.timeout(15_000),
+            }
+          )
+          if (retryRes.ok) {
+            const res = await processDatabentoResponse(retryRes, symbol, resolution, cacheKey)
+            if (res?.candles?.length) return res
+          }
+        }
       }
     } catch (err) {
       console.error(`[Databento] Fetch failed for ${symbol}:`, err)
