@@ -11,7 +11,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { entrySourceLabel, entrySourceTone } from '@/lib/trading/entrySourceBadge'
 import { formatDeskMoney, deskCurrencyLabel } from '@/lib/trading/currency'
 import { RANGE_EDGE_RISK_PERCENT } from '@/lib/trading/positionSizing'
-import { TRADEIFY_STARTING_BALANCE } from '@/lib/trading/tradeifyGrowth50k'
+import type { TopstepXChallengeState } from '@/lib/trading/topstepXChallenge'
 
 import { SYSTEMATIC_LIVE_DESK } from '@/lib/trading/systematicDesk'
 
@@ -20,6 +20,8 @@ type HistoryTab = 'live' | 'sim' | 'voice'
 
 interface JournalEntry {
   id: string
+  ticket_id?: string
+  contract?: string
   instrument: string
   market?: 'NY' | 'TOKYO'
   trade_date: string
@@ -50,7 +52,13 @@ interface JournalEntry {
     tp_hit?: boolean
   } | null
   stops: { hit_count: number; hit_at: string | null }
-  pnl: { dollars: number | null; percent: number | null }
+  pnl: {
+    dollars: number | null
+    gross_dollars?: number | null
+    fees?: number | null
+    percent: number | null
+  }
+  duration?: string
   regime: { type: string | null; confidence: number | null }
   decisions: Array<{
     type: string | null
@@ -225,6 +233,28 @@ function JournalPageInner() {
   const [summary, setSummary] = useState<Summary | null>(null)
   const [entries, setEntries] = useState<JournalEntry[]>([])
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [topstepxChallenge, setTopstepxChallenge] = useState<TopstepXChallengeState | null>(null)
+  const [copiedTicket, setCopiedTicket] = useState<string | null>(null)
+
+  const formatCopyCommand = (e: JournalEntry): string => {
+    const side = e.direction === 'LONG' ? 'BUY' : 'SELL'
+    const qty = e.risk?.position_size || 1
+    const contract =
+      e.contract ||
+      (e.instrument === 'NASDAQ'
+        ? 'MNQU26'
+        : e.instrument === 'DOW'
+          ? 'MYMU26'
+          : e.instrument === 'GOLD'
+            ? 'MGCZ26'
+            : e.instrument === 'CRUDE'
+              ? 'MCLV26'
+              : e.instrument)
+    const entry = e.fill?.price != null ? e.fill.price.toFixed(2) : 'MKT'
+    const sl = e.risk?.stop_loss ? ` | SL: ${e.risk.stop_loss.toFixed(2)}` : ''
+    const tp = e.risk?.take_profit ? ` | TP: ${e.risk.take_profit.toFixed(2)}` : ''
+    return `${side} ${qty} ${contract} @ ${entry}${sl}${tp}`
+  }
 
   const [voiceSessions, setVoiceSessions] = useState<
     Array<{
@@ -280,19 +310,23 @@ function JournalPageInner() {
         setError(json.error || json.detail || 'Failed to load order history')
         setEntries([])
         setSummary(null)
+        setTopstepxChallenge(null)
         return
       }
       if (tab === 'sim') {
         setEntries((json.entries || []).map((e: Record<string, unknown>) => mapSimEntry(e)))
         setSummary(json.summary || null)
+        setTopstepxChallenge(null)
       } else {
         setSummary(json.summary)
         setEntries(json.entries || [])
+        setTopstepxChallenge(json.topstepx_challenge || null)
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load order history')
       setEntries([])
       setSummary(null)
+      setTopstepxChallenge(null)
     } finally {
       setLoading(false)
     }
@@ -430,6 +464,129 @@ function JournalPageInner() {
           </button>
         </div>
 
+        {/* TopstepX $1,500 Challenge Engine HUD */}
+        {tab === 'live' && topstepxChallenge && (
+          <div className="rounded-xl border border-sky-900/50 bg-[#161b22] p-4 sm:p-5 space-y-4 shadow-lg">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#30363d] pb-3">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-3 w-3 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)] animate-pulse" />
+                <div>
+                  <h2 className="text-sm font-bold tracking-tight text-white flex flex-wrap items-center gap-2">
+                    {topstepxChallenge.challengeName}
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-600/40 text-emerald-300">
+                      Target +${topstepxChallenge.profitTarget.toLocaleString()} (Keep $1,500)
+                    </span>
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-red-950/60 border border-red-600/40 text-red-300">
+                      Floor -${Math.abs(topstepxChallenge.maxLossFloor).toLocaleString()} Limit
+                    </span>
+                  </h2>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Live order history &amp; copy-trade engine for TopstepX / Tradovate.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`text-xs font-bold px-2.5 py-1 rounded border ${
+                    topstepxChallenge.status === 'ACTIVE_WARNING'
+                      ? 'bg-amber-950/40 text-amber-300 border-amber-700/60'
+                      : topstepxChallenge.status === 'PASSED'
+                        ? 'bg-emerald-950/40 text-emerald-300 border-emerald-700/60'
+                        : topstepxChallenge.status === 'BREACHED'
+                          ? 'bg-red-950/40 text-red-300 border-red-700/60'
+                          : 'bg-sky-950/40 text-sky-300 border-sky-700/60'
+                  }`}
+                >
+                  {topstepxChallenge.status === 'ACTIVE_WARNING' ? '⚠️ ACTIVE (CAUTION)' : topstepxChallenge.status}
+                </span>
+              </div>
+            </div>
+
+            {/* Critical Caution Alert if remaining cushion is small */}
+            {topstepxChallenge.remainingRoomToBreach < 300 && (
+              <div className="rounded-lg border border-amber-600/40 bg-amber-950/30 px-3.5 py-2.5 text-xs text-amber-200 flex items-start gap-2.5">
+                <span className="text-base leading-none">⚠️</span>
+                <div>
+                  <span className="font-semibold text-amber-100">TopstepX Risk Caution: </span>
+                  {topstepxChallenge.riskRecommendation}
+                </div>
+              </div>
+            )}
+
+            {/* Metrics Row */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="rounded-lg border border-[#30363d] bg-[#0d1117]/80 p-3">
+                <div className="text-[10px] uppercase font-semibold text-gray-500">Current Net P&amp;L</div>
+                <div
+                  className={`mt-1 text-xl font-bold price-mono ${
+                    topstepxChallenge.totalNetPnl >= 0 ? 'text-emerald-400' : 'text-red-400'
+                  }`}
+                >
+                  {fmtMoney(topstepxChallenge.totalNetPnl, true)}
+                </div>
+                <div className="text-[10px] text-gray-500 mt-0.5">
+                  Gross: {fmtMoney(topstepxChallenge.totalGrossPnl, true)} · Fees: -{fmtMoney(topstepxChallenge.totalFees)}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-[#30363d] bg-[#0d1117]/80 p-3">
+                <div className="text-[10px] uppercase font-semibold text-gray-500">Cushion to -$500 Floor</div>
+                <div
+                  className={`mt-1 text-xl font-bold price-mono ${
+                    topstepxChallenge.remainingRoomToBreach > 350
+                      ? 'text-emerald-400'
+                      : topstepxChallenge.remainingRoomToBreach > 200
+                        ? 'text-amber-400'
+                        : 'text-red-400'
+                  }`}
+                >
+                  ${topstepxChallenge.remainingRoomToBreach.toFixed(2)}
+                </div>
+                <div className="text-[10px] text-gray-500 mt-0.5">
+                  {topstepxChallenge.breachCushionPercent}% buffer remaining
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-[#30363d] bg-[#0d1117]/80 p-3">
+                <div className="text-[10px] uppercase font-semibold text-gray-500">Distance to +$1,500 Target</div>
+                <div className="mt-1 text-xl font-bold price-mono text-emerald-400">
+                  ${topstepxChallenge.distanceToTarget.toFixed(2)}
+                </div>
+                <div className="text-[10px] text-gray-500 mt-0.5">
+                  Target: +$1,500.00
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-[#30363d] bg-[#0d1117]/80 p-3">
+                <div className="text-[10px] uppercase font-semibold text-gray-500">Win Rate / Fills</div>
+                <div className="mt-1 text-xl font-bold price-mono text-white">
+                  {topstepxChallenge.winRate}%
+                </div>
+                <div className="text-[10px] text-gray-500 mt-0.5">
+                  {topstepxChallenge.winningTrades}W · {topstepxChallenge.losingTrades}L · {topstepxChallenge.totalTrades} Fills
+                </div>
+              </div>
+            </div>
+
+            {/* Pacing & Copy Trading Helper */}
+            <div className="flex flex-wrap items-center justify-between gap-3 text-xs bg-[#0d1117] rounded-lg border border-[#30363d] px-3.5 py-2.5">
+              <div className="flex items-center gap-2 text-gray-400">
+                <span className="font-semibold text-gray-300">Copy-Trade Rules:</span>
+                <span>MNQ $2/pt (SL max 20–25 pts)</span>
+                <span>·</span>
+                <span>MGC $10/pt (SL max 4–5 pts)</span>
+                <span>·</span>
+                <span>MYM $0.50/pt (SL max 80–100 pts)</span>
+                <span>·</span>
+                <span>MCL $100/pt (SL max 0.40–0.50)</span>
+              </div>
+              <div className="text-gray-400 text-[11px]">
+                Recommended Max Risk: <span className="text-amber-300 font-semibold">$40–$50/trade</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {summary && (
           <div className="space-y-3">
             {/* Equity / margin tracker */}
@@ -453,7 +610,7 @@ function JournalPageInner() {
                     Starting ({summary.days}d window)
                   </div>
                   <div className="price-mono text-lg text-white">
-                    {fmtMoney(summary.starting_account ?? TRADEIFY_STARTING_BALANCE)}
+                    {fmtMoney(summary.starting_account ?? 50_000)}
                   </div>
                 </div>
                 <div className="text-gray-600 text-xl pb-0.5">→</div>
@@ -669,6 +826,16 @@ function JournalPageInner() {
                               >
                                 {e.direction === 'LONG' ? '▲ LONG' : '▼ SHORT'}
                               </span>
+                              {e.ticket_id && (
+                                <span className="font-mono text-[10px] text-sky-400 font-semibold bg-sky-950/60 border border-sky-800/60 rounded px-1.5 py-0.5">
+                                  #{e.ticket_id}
+                                </span>
+                              )}
+                              {e.contract && (
+                                <span className="font-mono text-[10px] text-amber-300 font-bold bg-amber-950/60 border border-amber-800/60 rounded px-1.5 py-0.5">
+                                  {e.contract}
+                                </span>
+                              )}
                               {e.fill.source && (
                                 <span
                                   className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${entrySourceTone(e.fill.source)}`}
@@ -686,6 +853,11 @@ function JournalPageInner() {
                               <span className="text-[10px] text-gray-600">
                                 {fmtTime(e.fill.time, marketFor(e))}
                               </span>
+                              {e.duration && (
+                                <span className="text-[10px] text-gray-400 font-mono">
+                                  ⏱ {e.duration}
+                                </span>
+                              )}
                               <span className="text-xs text-gray-500">
                                 SL{' '}
                                 <span className="price-mono text-red-400/90">
@@ -701,6 +873,22 @@ function JournalPageInner() {
                               >
                                 {e.status === 'open' ? 'OPEN' : badge.label}
                               </span>
+                              <button
+                                type="button"
+                                onClick={(evt) => {
+                                  evt.stopPropagation()
+                                  const cmd = formatCopyCommand(e)
+                                  if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                                    void navigator.clipboard.writeText(cmd)
+                                    setCopiedTicket(e.id)
+                                    setTimeout(() => setCopiedTicket(null), 2000)
+                                  }
+                                }}
+                                className="rounded border border-[#30363d] bg-[#0d1117] px-2 py-0.5 text-[10px] font-semibold text-gray-300 hover:text-white hover:border-gray-500 transition-colors"
+                                title="Copy order format for TopstepX / Tradovate"
+                              >
+                                {copiedTicket === e.id ? '✓ Copied!' : '📋 Copy TopstepX'}
+                              </button>
                               {pnl != null && (
                                 <span
                                   className={`ml-auto text-sm font-bold price-mono ${
@@ -717,6 +905,49 @@ function JournalPageInner() {
 
                             {open && (
                               <div className="border-t border-[#30363d] px-4 py-4 space-y-4 text-sm">
+                                {/* TopstepX P&L and Fees Breakdown */}
+                                {e.pnl.gross_dollars != null && e.pnl.fees != null && (
+                                  <div className="flex flex-wrap gap-4 text-xs rounded-lg border border-[#30363d] bg-[#0d1117] px-3 py-2">
+                                    <span className="text-gray-500">
+                                      Gross P&amp;L:{' '}
+                                      <span
+                                        className={`price-mono font-semibold ${
+                                          e.pnl.gross_dollars >= 0 ? 'text-emerald-400' : 'text-red-400'
+                                        }`}
+                                      >
+                                        {fmtMoney(e.pnl.gross_dollars, true)}
+                                      </span>
+                                    </span>
+                                    <span className="text-gray-500">
+                                      Fees &amp; Comm:{' '}
+                                      <span className="price-mono text-red-400/80">
+                                        -{fmtMoney(e.pnl.fees)}
+                                      </span>
+                                    </span>
+                                    <span className="text-gray-500">
+                                      Net P&amp;L:{' '}
+                                      <span
+                                        className={`price-mono font-bold ${
+                                          e.pnl.dollars != null && e.pnl.dollars >= 0
+                                            ? 'text-emerald-400'
+                                            : 'text-red-400'
+                                        }`}
+                                      >
+                                        {fmtMoney(e.pnl.dollars, true)}
+                                      </span>
+                                    </span>
+                                    {e.contract && (
+                                      <span className="text-gray-500">
+                                        Contract: <span className="font-mono text-white">{e.contract}</span>
+                                      </span>
+                                    )}
+                                    {e.ticket_id && (
+                                      <span className="text-gray-500">
+                                        Ticket: <span className="font-mono text-sky-300">#{e.ticket_id}</span>
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
                                 {/* Equity delta for this order */}
                                 {e.equity && (
                                   <div className="flex flex-wrap gap-4 text-xs rounded-lg border border-[#30363d] bg-[#0d1117] px-3 py-2">

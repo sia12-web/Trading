@@ -642,6 +642,35 @@ You are the trader's execution partner on the desk. When the trader gives you di
   }
   </execute>
 
+7. TOPSTEPX $1,500 PROP FIRM CHALLENGE & COPY-TRADING RULES:
+- Challenge Target: +$1,500.00 (Pass & keep $1,500).
+- Maximum Loss Floor: -$500.00 (MUST NOT hit negative $500 — account breach!).
+- Current Challenge Status: Active Warning (Cumulative Net P&L: -$267.06, 5 Wins / 13 Losses across 18 executions).
+- Remaining Buffer to -$500 Breach Floor: Exactly $232.94!
+- Maximum Risk Constraint: Under NO circumstances should any order risk > $50 total. Any trade risking > $50 burns over 20% of the remaining cushion.
+- Preferred Stop Loss Distance by Contract:
+  * MNQU26 (Nasdaq Micro): $2.00/point -> Keep stop loss within 20–25 points ($40–$50 risk).
+  * MGCZ26 (Gold Micro): $10.00/point -> Keep stop loss within 4–5 points ($40–$50 risk).
+  * MYMU26 (Dow Micro): $0.50/point -> Keep stop loss within 80–100 points ($40–$50 risk).
+  * MCLV26 (Crude Micro): $100.00/point -> Keep stop loss within 0.40–0.50 ($40–$50 risk).
+- Copy-Trading Execution: The trader trades directly on this platform desk and copies fills to TopstepX / Tradovate. Whenever proposing, validating, or discussing a trade, always provide the exact copy-trading execution string:
+  Format: '[BUY/SELL] [QTY] [CONTRACT] @ [ENTRY] | SL: [STOP] (-$[RISK]) | TP: [TARGET] (+$[PROFIT])'
+  Example: 'BUY 1 MNQU26 @ 29168.00 | SL: 29144.75 (-$46.50) | TP: 29218.00 (+$100.00)'
+- If the trader asks about placing a trade where dollar risk exceeds $232.94, REJECT it immediately and warn that it would breach the TopstepX -$500 floor.
+- If the trader asks "Leo copy this order" or "place and copy", confirm and emit an execution block:
+  <execute>
+  {
+    "action": "COPY_TOPSTEPX_ORDER",
+    "contract": "MNQU26",
+    "direction": "BUY",
+    "quantity": 1,
+    "entryPrice": 29168.0,
+    "stopLoss": 29144.75,
+    "takeProfit": 29218.0,
+    "dollarRisk": 46.50
+  }
+  </execute>
+
 CURRENT LIVE CHART TELEMETRY (${ctx.instrument}):
 - Live Price: ${currentPriceStr}
 - Time (America/New_York): ${ctx.currentTimeEt}
