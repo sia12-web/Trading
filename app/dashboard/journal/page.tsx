@@ -461,7 +461,7 @@ function JournalPageInner() {
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="text-[10px] uppercase tracking-wider text-gray-500">
-                  Desk equity (Tradeify journal)
+                  Desk equity
                 </div>
               </div>
               <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
@@ -494,9 +494,7 @@ function JournalPageInner() {
                 </div>
               </div>
               <p className="mt-2 text-[11px] text-gray-600">
-                Equity is reconstructed from Tradeify ticket size and closed-trade P&amp;L after
-                Tradovate fees. Working limits and cancelled fills are not on this tape. Broker
-                fills and journal P&amp;L are in {deskCurrencyLabel()}.
+                Equity is reconstructed from ticket size and closed-trade P&amp;L. Working limits and cancelled fills are not on this tape. Broker fills and journal P&amp;L are in {deskCurrencyLabel()}.
               </p>
             </div>
 
@@ -917,7 +915,7 @@ function JournalPageInner() {
         <p className="text-[11px] text-gray-600 leading-relaxed">
           {isSim
             ? 'Simulation tab reads paper closes from simulation_trades only — never mixes with live fills. Resetting a replay day clears that day’s paper history.'
-            : 'Live desk only. After the entry window, levels leave the chart; open books stay in MANAGE until stop, target, your confirmed AI exit, or lunch confirm. Cash close auto-liquidates leftovers. Equity above is reconstructed from Tradeify ticket size and closed-trade P&L — not an OANDA margin feed.'}
+            : 'Live desk only. After the entry window, levels leave the chart; open books stay in MANAGE until stop, target, your confirmed AI exit, or lunch confirm. Cash close auto-liquidates leftovers. Equity above is reconstructed from ticket size and closed-trade P&L.'}
         </p>
       </div>
     </div>

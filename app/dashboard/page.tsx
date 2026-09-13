@@ -14,7 +14,6 @@ import {
   TRADER_DISPLAY_LABEL,
   deskLocalHmsAsTraderDisplay,
 } from '@/lib/chart/traderDisplayTz'
-import { TradeifyProgressPanel } from './components/TradeifyProgressPanel'
 import { TeamTapeCard } from './components/TeamTapeCard'
 
 /** Focus unlock = cash open − 30m, shown in Montreal. Live desk is NY only. */
@@ -61,12 +60,6 @@ export default function DashboardHomePage() {
           Positions
         </Link>
         <Link
-          href="/dashboard/tradeify"
-          className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-sm font-semibold text-amber-100 hover:bg-amber-500/20"
-        >
-          Tradeify $50k
-        </Link>
-        <Link
           href="/dashboard/journal"
           className="rounded-lg border border-surface-600 px-4 py-2.5 text-sm font-semibold text-gray-300 hover:border-surface-500 hover:text-white"
         >
@@ -87,7 +80,6 @@ export default function DashboardHomePage() {
       </div>
 
       <div className="mt-10 space-y-6">
-        <TradeifyProgressPanel compact />
         <TeamTapeCard compact />
       </div>
 
