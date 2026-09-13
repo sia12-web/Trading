@@ -180,6 +180,8 @@ export interface LeoChatContext {
   userDrawings?: LeoUserDrawingsContext
   candlestickPatterns?: LeoCandlestickPatternsContext
   selectedDataPoints?: LeoDataPoint[]
+  dataPoints?: LeoDataPoint[]
+  trappedTraders?: string
 }
 
 export interface LeoMessage {
