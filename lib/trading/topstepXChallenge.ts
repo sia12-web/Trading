@@ -35,6 +35,104 @@ export const TOPSTEPX_RULES = {
   recommendedMaxRiskPerTrade: 50, // $50 max risk allows 4-5 attempts within remaining room
 } as const
 
+export interface TopstepXOcoBracket {
+  name: string
+  ratio: '1:1' | '1:2' | '1:3' | '1:5'
+  stopLossDollars: number
+  takeProfitDollars: number
+}
+
+/**
+ * TopstepX Auto OCO Bracket Presets ($50 Fixed Risk Base)
+ */
+export const TOPSTEPX_OCO_BRACKETS: Record<'1:1' | '1:2' | '1:3' | '1:5', TopstepXOcoBracket> = {
+  '1:1': { name: '1:1 (50-50)', ratio: '1:1', stopLossDollars: 50, takeProfitDollars: 50 },
+  '1:2': { name: '(1:2) (50-100)', ratio: '1:2', stopLossDollars: 50, takeProfitDollars: 100 },
+  '1:3': { name: '(1:3) (50-150)', ratio: '1:3', stopLossDollars: 50, takeProfitDollars: 150 },
+  '1:5': { name: '(1:5) (50-250)', ratio: '1:5', stopLossDollars: 50, takeProfitDollars: 250 },
+}
+
+/**
+ * Normalizes user spoken or typed bracket strings (e.g. "1 to 2", "1:2", "50-100", "1 to 3", "1:3").
+ */
+export function normalizeBracketRatio(raw?: string | null): '1:1' | '1:2' | '1:3' | '1:5' | null {
+  if (!raw) return null
+  const s = raw.toLowerCase().trim()
+  if (/1[:\s\-_to]+1|50[-_\s]*50/.test(s)) return '1:1'
+  if (/1[:\s\-_to]+2|50[-_\s]*100/.test(s)) return '1:2'
+  if (/1[:\s\-_to]+3|50[-_\s]*150/.test(s)) return '1:3'
+  if (/1[:\s\-_to]+5|50[-_\s]*250/.test(s)) return '1:5'
+  return null
+}
+
+/**
+ * Point values per CME contract point
+ */
+export const INSTRUMENT_POINT_VALUES: Record<string, number> = {
+  NASDAQ: 2.0,
+  MNQ: 2.0,
+  NQ: 2.0,
+  DOW: 0.5,
+  MYM: 0.5,
+  YM: 0.5,
+  GOLD: 10.0,
+  MGC: 10.0,
+  GC: 10.0,
+  CRUDE: 100.0,
+  MCL: 100.0,
+  CL: 100.0,
+  RUSSELL: 5.0,
+  M2K: 5.0,
+  RTY: 5.0,
+}
+
+/**
+ * Calculates exact Stop Loss and Take Profit prices for a specified TopstepX OCO bracket ratio.
+ */
+export function calculateBracketPrices(args: {
+  instrument: string
+  direction: 'LONG' | 'SHORT'
+  entryPrice: number
+  bracketRatio: '1:1' | '1:2' | '1:3' | '1:5'
+  quantity?: number
+}): {
+  stopLossPrice: number
+  takeProfitPrice: number
+  dollarRisk: number
+  dollarReward: number
+  stopLossPts: number
+  takeProfitPts: number
+  bracketName: string
+} {
+  const { instrument, direction, entryPrice, bracketRatio, quantity = 1 } = args
+  const bracket = TOPSTEPX_OCO_BRACKETS[bracketRatio] || TOPSTEPX_OCO_BRACKETS['1:2']
+  const norm = instrument.toUpperCase()
+  const pv = INSTRUMENT_POINT_VALUES[norm] || 2.0
+
+  const slPts = Math.round((bracket.stopLossDollars / (pv * quantity)) * 100) / 100
+  const tpPts = Math.round((bracket.takeProfitDollars / (pv * quantity)) * 100) / 100
+
+  const stopLossPrice =
+    direction === 'LONG'
+      ? Math.round((entryPrice - slPts) * 100) / 100
+      : Math.round((entryPrice + slPts) * 100) / 100
+
+  const takeProfitPrice =
+    direction === 'LONG'
+      ? Math.round((entryPrice + tpPts) * 100) / 100
+      : Math.round((entryPrice - tpPts) * 100) / 100
+
+  return {
+    stopLossPrice,
+    takeProfitPrice,
+    dollarRisk: bracket.stopLossDollars,
+    dollarReward: bracket.takeProfitDollars,
+    stopLossPts: slPts,
+    takeProfitPts: tpPts,
+    bracketName: bracket.name,
+  }
+}
+
 /**
  * The 18 verified TopstepX executed orders provided by the trader.
  */

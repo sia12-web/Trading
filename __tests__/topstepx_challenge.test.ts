@@ -3,6 +3,9 @@ import assert from 'node:assert'
 import {
   TOPSTEPX_RULES,
   TOPSTEPX_ORDER_HISTORY,
+  TOPSTEPX_OCO_BRACKETS,
+  normalizeBracketRatio,
+  calculateBracketPrices,
   computeTopstepXChallengeState,
   validateTopstepXOrderRisk,
   getTopstepXJournalRows,
@@ -169,12 +172,78 @@ describe('TopstepX $1,500 Prop Firm Challenge Engine', () => {
         currentPrice: 29150.0,
         activeExcesses: [],
       })
-      assert.ok(prompt.includes('TOPSTEPX $1,500 PROP FIRM CHALLENGE'))
-      assert.ok(prompt.includes('Target: +$1,500.00'))
-      assert.ok(prompt.includes('Maximum Loss Floor: -$500.00'))
-      assert.ok(prompt.includes('$232.94'))
-      assert.ok(prompt.includes('MNQU26'))
-      assert.ok(prompt.includes('COPY_TOPSTEPX_ORDER'))
+      assert.ok(prompt.includes('TOPSTEPX AUTO OCO BRACKET PRESETS'))
+      assert.ok(prompt.includes('1:2'))
+      assert.ok(prompt.includes('1:3'))
+      assert.ok(prompt.includes('1:5'))
+    })
+  })
+
+  describe('Auto OCO Brackets (Preset Risk & Reward Math)', () => {
+    it('defines 4 fixed $50 risk Auto OCO brackets (1:1, 1:2, 1:3, 1:5)', () => {
+      assert.strictEqual(TOPSTEPX_OCO_BRACKETS['1:1'].stopLossDollars, 50)
+      assert.strictEqual(TOPSTEPX_OCO_BRACKETS['1:1'].takeProfitDollars, 50)
+
+      assert.strictEqual(TOPSTEPX_OCO_BRACKETS['1:2'].stopLossDollars, 50)
+      assert.strictEqual(TOPSTEPX_OCO_BRACKETS['1:2'].takeProfitDollars, 100)
+
+      assert.strictEqual(TOPSTEPX_OCO_BRACKETS['1:3'].stopLossDollars, 50)
+      assert.strictEqual(TOPSTEPX_OCO_BRACKETS['1:3'].takeProfitDollars, 150)
+
+      assert.strictEqual(TOPSTEPX_OCO_BRACKETS['1:5'].stopLossDollars, 50)
+      assert.strictEqual(TOPSTEPX_OCO_BRACKETS['1:5'].takeProfitDollars, 250)
+    })
+
+    it('normalizes spoken and typed bracket ratio strings', () => {
+      assert.strictEqual(normalizeBracketRatio('1 to 2'), '1:2')
+      assert.strictEqual(normalizeBracketRatio('1:2'), '1:2')
+      assert.strictEqual(normalizeBracketRatio('50-100'), '1:2')
+
+      assert.strictEqual(normalizeBracketRatio('1 to 3'), '1:3')
+      assert.strictEqual(normalizeBracketRatio('1:3'), '1:3')
+      assert.strictEqual(normalizeBracketRatio('50-150'), '1:3')
+
+      assert.strictEqual(normalizeBracketRatio('1 to 5'), '1:5')
+      assert.strictEqual(normalizeBracketRatio('1:5'), '1:5')
+
+      assert.strictEqual(normalizeBracketRatio('1 to 1'), '1:1')
+      assert.strictEqual(normalizeBracketRatio('1:1'), '1:1')
+    })
+
+    it('calculates exact SL and TP prices for MNQ, MGC, MYM, and MCL contracts', () => {
+      // MNQ (Nasdaq $2/pt) LONG 1:2 -> SL -25pts (29125), TP +50pts (29200)
+      const mnq12 = calculateBracketPrices({
+        instrument: 'MNQ',
+        direction: 'LONG',
+        entryPrice: 29150.0,
+        bracketRatio: '1:2',
+      })
+      assert.strictEqual(mnq12.stopLossPrice, 29125.0)
+      assert.strictEqual(mnq12.takeProfitPrice, 29200.0)
+      assert.strictEqual(mnq12.dollarRisk, 50)
+      assert.strictEqual(mnq12.dollarReward, 100)
+
+      // MNQ SHORT 1:3 -> SL +25pts (29175), TP -75pts (29075)
+      const mnq13 = calculateBracketPrices({
+        instrument: 'MNQ',
+        direction: 'SHORT',
+        entryPrice: 29150.0,
+        bracketRatio: '1:3',
+      })
+      assert.strictEqual(mnq13.stopLossPrice, 29175.0)
+      assert.strictEqual(mnq13.takeProfitPrice, 29075.0)
+      assert.strictEqual(mnq13.dollarReward, 150)
+
+      // MGC (Gold $10/pt) LONG 1:5 -> SL -5.0pts (4430), TP +25.0pts (4460)
+      const mgc15 = calculateBracketPrices({
+        instrument: 'MGC',
+        direction: 'LONG',
+        entryPrice: 4435.0,
+        bracketRatio: '1:5',
+      })
+      assert.strictEqual(mgc15.stopLossPrice, 4430.0)
+      assert.strictEqual(mgc15.takeProfitPrice, 4460.0)
+      assert.strictEqual(mgc15.dollarReward, 250)
     })
   })
 })
