@@ -185,9 +185,9 @@ export default function DeskNewsPage() {
           </button>
           <Link
             href="/dashboard/chart"
-            className="rounded border border-brand-500/40 bg-brand-600/20 px-2 py-1 text-brand-200 hover:bg-brand-600/30"
+            className="rounded border border-sky-600/40 bg-sky-950/40 px-2 py-1 text-sky-200 hover:bg-sky-900/50 hover:text-white transition-colors"
           >
-            Live chart →
+            TradePulse — Level Intelligence →
           </Link>
         </div>
       </div>

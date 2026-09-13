@@ -673,13 +673,21 @@ export function SessionBanner({
           </Link>
         ) : null}
 
-        <button
-          type="button"
-          onClick={refresh}
-          className="ml-auto text-[10px] uppercase tracking-wider text-gray-500 hover:text-white"
-        >
-          Refresh
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={refresh}
+            className="text-[10px] uppercase tracking-wider text-gray-500 hover:text-white"
+          >
+            Refresh
+          </button>
+          <Link
+            href="/dashboard/chart"
+            className="rounded border border-sky-600/40 bg-sky-950/40 px-2 py-0.5 text-[10px] font-semibold text-sky-200 hover:bg-sky-900/50 hover:text-white transition-colors"
+          >
+            TradePulse — Level Intelligence →
+          </Link>
+        </div>
       </div>
     </>
   )
