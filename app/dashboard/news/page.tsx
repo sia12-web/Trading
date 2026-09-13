@@ -84,6 +84,8 @@ function isAbortError(err: unknown): boolean {
 }
 
 
+import { DeskNewsAiAssistant } from './components/DeskNewsAiAssistant'
+
 export default function DeskNewsPage() {
   const [tab, setTab] = useState<DeskTab>('DOW')
   const [windowHours, setWindowHours] = useState<DeskNewsWindowHours>(12)
@@ -233,6 +235,9 @@ export default function DeskNewsPage() {
           {sessionFilter ? 'Session filter on' : 'Show all'}
         </button>
       </div>
+
+      {/* Desk News & Market Reaction AI Assistant */}
+      <DeskNewsAiAssistant tab={tab} />
 
       {calendar.length > 0 && (
         <section className="rounded-xl border border-amber-500/25 bg-amber-950/20 p-4">
