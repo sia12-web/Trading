@@ -62,14 +62,14 @@ assert(
   ]
   const full: SessionBar[] = fullDays.map((d) => bar(d, 10, 100))
   const fullScoped = lastNTradingSessions(full, 5, NY_DESK_CLOCK, tipOpen)
-  const priorOpen = cashOpenUnixForYmd('2026-07-10', NY_DESK_CLOCK)
-  assert(fullScoped[0]!.time >= priorOpen, 'full feed reaches 5th prior cash open')
+  const priorOpen = cashOpenUnixForYmd('2026-07-13', NY_DESK_CLOCK)
+  assert(fullScoped[0]!.time >= priorOpen, 'full feed reaches 5th session cash open (Jul 13)')
   assert(
     fullScoped.some((c) => {
       const t = c.time
-      return t >= priorOpen && t < cashOpenUnixForYmd('2026-07-13', NY_DESK_CLOCK)
+      return t >= priorOpen && t < cashOpenUnixForYmd('2026-07-14', NY_DESK_CLOCK)
     }),
-    '5th prior RTH day (Jul 10) is included in the scoped window'
+    '5th session day (Jul 13) is included in the scoped window'
   )
 }
 

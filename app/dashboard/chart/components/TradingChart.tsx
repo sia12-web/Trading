@@ -47,6 +47,7 @@ import {
   deskSessionAt,
   isWeekdayYmd,
   zonedCivilToUnix,
+  computeAnchoredVwap,
   lastNTradingSessions as trimDeskCandles,
 } from '@/lib/chart/sessionVwap'
 import { parseCalendarEventMs } from '@/lib/trading/deskNewsHazard'
@@ -68,7 +69,6 @@ import {
 } from '@/lib/chart/liveFormingBar'
 import {
   compute5DayFixedRangeVolumeProfile,
-  compute5MonthAnchoredVwap,
   computeYesterdayNycSession,
   computeOvernightInventoryAndSessions,
   classifyMarketDayType,
@@ -749,6 +749,28 @@ function normalizeCandleTimes(candles: OHLCV[]): OHLCV[] {
   return out
 }
 
+/**
+ * Ensures any data array passed to lightweight-charts has strictly ascending unique timestamps.
+ * Prevents runtime errors and blank charts from out-of-order or duplicate bars.
+ */
+function sanitizeChartPoints<T extends { time: number | UTCTimestamp; value: number }>(rows: T[]): T[] {
+  if (!Array.isArray(rows) || rows.length === 0) return []
+  const sorted = [...rows].sort((a, b) => (a.time as number) - (b.time as number))
+  const out: T[] = []
+  for (const item of sorted) {
+    const t = Math.floor(Number(item.time))
+    if (!Number.isFinite(t) || !Number.isFinite(item.value)) continue
+    const prev = out[out.length - 1]
+    if (prev && (prev.time as number) === t) {
+      out[out.length - 1] = { ...item, time: t as UTCTimestamp }
+      continue
+    }
+    if (prev && t <= (prev.time as number)) continue
+    out.push({ ...item, time: t as UTCTimestamp })
+  }
+  return out
+}
+
 const VWAP_COLORS = {
   vwap: '#b8a04a',
   band: '#3d8f7a',
@@ -1259,10 +1281,11 @@ export function TradingChart({
   const [openingBadge, setOpeningBadge] = useState('WAIT')
   const [frvp5d, setFrvp5d] = useState<FixedRangeVolumeProfile5D | null>(null)
   const frvpLinesRef = useRef<IPriceLine[]>([])
-  const paintFrvp5dRef = useRef<() => void>(() => { })
+  const paintFrvp5dRef = useRef<(overrideBars?: OHLCV[]) => void>(() => { })
   const [avwap5mBenchmark, setAvwap5mBenchmark] = useState<AnchoredVwapBenchmark5M | null>(null)
   const avwap5mLinesRef = useRef<IPriceLine[]>([])
   const paint5mAvwapBenchmarkRef = useRef<() => void>(() => { })
+  const [showVwap, setShowVwap] = useState(true)
   const [currentVwap, setCurrentVwap] = useState<{ vwap: number; upper1: number; lower1: number } | null>(null)
   const latestVwapBandsRef = useRef<any>(null)
   const [cvdPanelOpen, setCvdPanelOpen] = useState(false)
@@ -1277,7 +1300,7 @@ export function TradingChart({
   const [yesterdayNyc, setYesterdayNyc] = useState<YesterdayNycSession | null>(null)
   const [showYesterdayNyc] = useState(true)
   const yesterdayNycLinesRef = useRef<IPriceLine[]>([])
-  const paintYesterdayNycRef = useRef<() => void>(() => { })
+  const paintYesterdayNycRef = useRef<(overrideBars?: OHLCV[]) => void>(() => { })
   const [overnightInventory, setOvernightInventory] = useState<OvernightInventoryEvaluation | null>(null)
   const [showInventorySessions] = useState(true)
   const inventoryLinesRef = useRef<IPriceLine[]>([])
@@ -2111,9 +2134,9 @@ export function TradingChart({
     openingLinesRef.current = []
   }, [showOpeningActivity, instrument])
 
-  const paintFrvp5d = useCallback(() => {
+  const paintFrvp5d = useCallback((overrideBars?: OHLCV[]) => {
     const host = priceLineHostRef.current
-    const list = candlesRef.current
+    const list = overrideBars || candlesRef.current
     if (!list || list.length === 0) return
     const profile = compute5DayFixedRangeVolumeProfile(
       list.map((c) => ({
@@ -2137,9 +2160,9 @@ export function TradingChart({
     frvpLinesRef.current = []
   }, [instrument])
 
-  const paintYesterdayNyc = useCallback(() => {
+  const paintYesterdayNyc = useCallback((overrideBars?: OHLCV[]) => {
     const host = priceLineHostRef.current
-    const list = candlesRef.current
+    const list = overrideBars || candlesRef.current
     if (!list || list.length === 0) return
     const bars: ContextBar[] = list.map((c) => ({
       time: c.time as number,
@@ -2239,56 +2262,54 @@ export function TradingChart({
     if (frvp5d && frvp5d.bins && frvp5d.bins.length > 0) {
       const anchorChartT = toChartTime(frvp5d.startUnix, tz)
       const rawXAnchor = timeToX(chart.timeScale(), anchorChartT, candleTimes)
-      if (rawXAnchor != null && Number.isFinite(rawXAnchor)) {
-        const xAnchor = rawXAnchor // NON-STICKY: stays at actual start time and scrolls off naturally
-        const maxHistW = 160
-        const halfBucket = (frvp5d.bucketSize || 1) * 0.5
-        const maxBinVol = Math.max(...frvp5d.bins.map((b) => b.volume), 1)
+      const xAnchor = rawXAnchor != null && Number.isFinite(rawXAnchor) ? rawXAnchor : 0
+      const maxHistW = 160
+      const halfBucket = (frvp5d.bucketSize || 1) * 0.5
+      const maxBinVol = Math.max(...frvp5d.bins.map((b) => b.volume), 1)
 
-        // Draw volume bars if within visible screen bounds
-        if (xAnchor + maxHistW >= 0 && xAnchor <= paneW) {
-          for (const bin of frvp5d.bins) {
-            const yTop = series.priceToCoordinate(bin.price + halfBucket)
-            const yBottom = series.priceToCoordinate(bin.price - halfBucket)
-            if (yTop == null || yBottom == null) continue
+      // Draw volume bars if within visible screen bounds
+      if (xAnchor + maxHistW >= 0 && xAnchor <= paneW && rawXAnchor != null) {
+        for (const bin of frvp5d.bins) {
+          const yTop = series.priceToCoordinate(bin.price + halfBucket)
+          const yBottom = series.priceToCoordinate(bin.price - halfBucket)
+          if (yTop == null || yBottom == null) continue
 
-            const barY = Math.min(yTop, yBottom)
-            const barH = Math.max(1.5, Math.abs(yBottom - yTop) - 0.5)
-            if (barY + barH < 0 || barY > paneH) continue
+          const barY = Math.min(yTop, yBottom)
+          const barH = Math.max(1.5, Math.abs(yBottom - yTop) - 0.5)
+          if (barY + barH < 0 || barY > paneH) continue
 
-            const totalBarW = (bin.volume / maxBinVol) * maxHistW
-            if (totalBarW < 1) continue
+          const totalBarW = (bin.volume / maxBinVol) * maxHistW
+          if (totalBarW < 1) continue
 
-            const buyVol = bin.buyVolume ?? (bin.volume * 0.5)
-            const buyRatio = bin.volume > 0 ? Math.max(0, Math.min(1, buyVol / bin.volume)) : 0.5
-            const buyW = totalBarW * buyRatio
-            const sellW = totalBarW - buyW
+          const buyVol = bin.buyVolume ?? (bin.volume * 0.5)
+          const buyRatio = bin.volume > 0 ? Math.max(0, Math.min(1, buyVol / bin.volume)) : 0.5
+          const buyW = totalBarW * buyRatio
+          const sellW = totalBarW - buyW
 
-            // Buy volume (cyan)
-            ctx.fillStyle = bin.inValueArea ? 'rgba(6, 182, 212, 0.75)' : 'rgba(6, 182, 212, 0.35)'
-            ctx.fillRect(xAnchor, barY, buyW, barH)
+          // Buy volume (cyan)
+          ctx.fillStyle = bin.inValueArea ? 'rgba(6, 182, 212, 0.75)' : 'rgba(6, 182, 212, 0.35)'
+          ctx.fillRect(Math.max(0, xAnchor), barY, buyW, barH)
 
-            // Sell volume (magenta)
-            ctx.fillStyle = bin.inValueArea ? 'rgba(236, 72, 153, 0.75)' : 'rgba(236, 72, 153, 0.35)'
-            ctx.fillRect(xAnchor + buyW, barY, sellW, barH)
-          }
+          // Sell volume (magenta)
+          ctx.fillStyle = bin.inValueArea ? 'rgba(236, 72, 153, 0.75)' : 'rgba(236, 72, 153, 0.35)'
+          ctx.fillRect(Math.max(0, xAnchor) + buyW, barY, sellW, barH)
         }
+      }
 
-        // IT: 5D POC Line — ONLY line that extends across the screen to the right (paneW)
-        const yPoc = series.priceToCoordinate(frvp5d.poc)
-        if (yPoc != null && Number.isFinite(yPoc) && yPoc >= 0 && yPoc <= paneH && xAnchor <= paneW) {
-          const lineStart = Math.max(0, xAnchor)
-          ctx.strokeStyle = '#38bdf8'
-          ctx.lineWidth = 2
-          ctx.beginPath()
-          ctx.moveTo(lineStart, Math.round(yPoc) + 0.5)
-          ctx.lineTo(paneW, Math.round(yPoc) + 0.5)
-          ctx.stroke()
+      // IT: 5D POC Line — ONLY line that extends across the screen to the right (paneW)
+      const yPoc = series.priceToCoordinate(frvp5d.poc)
+      if (yPoc != null && Number.isFinite(yPoc) && yPoc >= 0 && yPoc <= paneH) {
+        const lineStart = Math.max(0, xAnchor)
+        ctx.strokeStyle = '#38bdf8'
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        ctx.moveTo(lineStart, Math.round(yPoc) + 0.5)
+        ctx.lineTo(paneW, Math.round(yPoc) + 0.5)
+        ctx.stroke()
 
-          ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillStyle = '#38bdf8'
-          ctx.fillText(`5D POC ${frvp5d.poc.toLocaleString()}`, lineStart + 6, yPoc - 4)
-        }
+        ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
+        ctx.fillStyle = '#38bdf8'
+        ctx.fillText(`5D POC ${frvp5d.poc.toLocaleString()}`, lineStart + 6, yPoc - 4)
       }
     }
 
@@ -2416,6 +2437,14 @@ export function TradingChart({
 
     ctx.restore()
   }, [frvp5d, yesterdayNyc, overnightInventory, avwap5mBenchmark, showYesterdayNyc, showInventorySessions])
+
+  useEffect(() => {
+    paintFrvpHistogramRef.current = paintFrvpHistogram
+  }, [paintFrvpHistogram])
+
+  useEffect(() => {
+    paintFrvpHistogram()
+  }, [paintFrvpHistogram])
 
   // ─── User Interactive Drawings (Canvas) ─────────────────────────────────────
   const paintUserDrawings = useCallback(() => {
@@ -2834,6 +2863,14 @@ export function TradingChart({
     ctx.restore()
   }, [activeTrendlines, activeRangeBoxes, activeManualFrvps, drawingDraft, activeDrawingTool, showCandlestickPatterns])
 
+  useEffect(() => {
+    paintUserDrawingsRef.current = paintUserDrawings
+  }, [paintUserDrawings])
+
+  useEffect(() => {
+    paintUserDrawings()
+  }, [paintUserDrawings])
+
   // ─── 5-Day Excesses & Rounded Numbers (Canvas) ──────────────────────────────
   const paintExcessesAndRounded = useCallback(() => {
     const canvas = excessesCanvasRef.current
@@ -3185,6 +3222,14 @@ export function TradingChart({
     ctx.restore()
   }, [instrument, frvp5d, newsEvents])
 
+  useEffect(() => {
+    paintExcessesAndRoundedRef.current = paintExcessesAndRounded
+  }, [paintExcessesAndRounded])
+
+  useEffect(() => {
+    paintExcessesAndRounded()
+  }, [paintExcessesAndRounded])
+
   // ─── Economic News Markers on Time Axis ─────────────────────────────────────
   const paintNewsMarkers = useCallback(() => {
     const host = newsMarkersOverlayRef.current
@@ -3268,6 +3313,14 @@ export function TradingChart({
       `
     }
   }, [newsEvents])
+
+  useEffect(() => {
+    paintNewsMarkersRef.current = paintNewsMarkers
+  }, [paintNewsMarkers])
+
+  useEffect(() => {
+    paintNewsMarkers()
+  }, [paintNewsMarkers])
 
   // Poll high/medium impact calendar news events for the bottom time axis markers
   useEffect(() => {
@@ -4669,10 +4722,18 @@ export function TradingChart({
    * autoscale animations stay glued to the candles without a perpetual loop. */
   const pokeOverlayLayout = useCallback(() => {
     applyOverlayLayout()
+    paintFrvpHistogramRef.current?.()
+    paintExcessesAndRoundedRef.current?.()
+    paintUserDrawingsRef.current?.()
+    paintNewsMarkersRef.current?.()
     overlaySampleUntilRef.current = Date.now() + OVERLAY_SETTLE_MS
     if (overlayRafRef.current) return
     const loop = () => {
       applyOverlayLayout()
+      paintFrvpHistogramRef.current?.()
+      paintExcessesAndRoundedRef.current?.()
+      paintUserDrawingsRef.current?.()
+      paintNewsMarkersRef.current?.()
       if (Date.now() < overlaySampleUntilRef.current) {
         overlayRafRef.current = requestAnimationFrame(loop)
       } else {
@@ -4714,6 +4775,26 @@ export function TradingChart({
 
   const candlesRef = useRef<OHLCV[]>([])
   const instrumentRef = useRef<Instrument>(instrument)
+
+  // Update candlestick series colors to match instrument brand color
+  useEffect(() => {
+    if (!candleRef.current) return
+    const meta = INSTRUMENT_META[instrument]
+    const upColor = meta?.color || '#089981'
+    const downColor = '#f23645'
+    try {
+      candleRef.current.applyOptions({
+        upColor,
+        downColor,
+        borderUpColor: upColor,
+        borderDownColor: downColor,
+        wickUpColor: upColor,
+        wickDownColor: downColor,
+      })
+    } catch {
+      /* ignore */
+    }
+  }, [instrument])
   /** LIVE = real Yahoo data; SYNTHETIC = random fallback (never trade off this) */
   const [dataMode, setDataModeState] = useState<'live' | 'synthetic'>('live')
   /** Candle history feed — databento = official CME Globex MDP 3.0 exchange feed */
@@ -5581,12 +5662,14 @@ export function TradingChart({
       return paddedCandlePriceRange(min, max)
     }
 
+    const initialMeta = INSTRUMENT_META[instrumentRef.current] || INSTRUMENT_META.DOW
+    const initialUp = initialMeta.color || DESK_CANDLE_UP
     const candleSeries = chart.addCandlestickSeries({
-      upColor: DESK_CANDLE_UP,
+      upColor: initialUp,
       downColor: DESK_CANDLE_DOWN,
-      borderUpColor: DESK_CANDLE_UP,
+      borderUpColor: initialUp,
       borderDownColor: DESK_CANDLE_DOWN,
-      wickUpColor: DESK_CANDLE_UP,
+      wickUpColor: initialUp,
       wickDownColor: DESK_CANDLE_DOWN,
       borderVisible: true,
       wickVisible: true,
@@ -5771,6 +5854,10 @@ export function TradingChart({
     // Sync overlay coordinates on chart scroll/zoom — DOM writes only, no render
     const onScroll = () => {
       pokeOverlayLayoutRef.current()
+      paintFrvpHistogramRef.current?.()
+      paintExcessesAndRoundedRef.current?.()
+      paintUserDrawingsRef.current?.()
+      paintNewsMarkersRef.current?.()
     }
     chart.timeScale().subscribeVisibleLogicalRangeChange(onScroll)
 
@@ -5789,6 +5876,10 @@ export function TradingChart({
           containerRef.current.clientHeight
         )
         pokeOverlayLayoutRef.current()
+        paintFrvpHistogramRef.current?.()
+        paintExcessesAndRoundedRef.current?.()
+        paintUserDrawingsRef.current?.()
+        paintNewsMarkersRef.current?.()
         refreshSessionHighlights()
       }
     })
@@ -6437,13 +6528,23 @@ export function TradingChart({
 
     const ordered = normalizeCandleTimes(candles)
     const tz = chartTzRef.current
-    const candleData: CandlestickData[] = ordered.map((c) => ({
-      time: toChartTime(c.time as number, tz) as UTCTimestamp,
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-    }))
+    const seenTimes = new Set<number>()
+    const candleData: CandlestickData[] = []
+    for (const c of ordered) {
+      const t = toChartTime(c.time as number, tz) as UTCTimestamp
+      const tNum = Number(t)
+      if (!seenTimes.has(tNum)) {
+        seenTimes.add(tNum)
+        candleData.push({
+          time: t,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+        })
+      }
+    }
+    candleData.sort((a, b) => Number(a.time) - Number(b.time))
 
     const ts = chartRef.current.timeScale()
     let savedRange: { from: number; to: number } | null = null
@@ -6460,62 +6561,72 @@ export function TradingChart({
 
     try {
       candleRef.current.setData(candleData)
+    } catch {
+      /* ignore candle data error */
+    }
 
-      // 5-Month Anchored VWAP with standard deviation bands (always on, updated for the last 5 months)
-      const bands = compute5MonthAnchoredVwap({
-        bars: ordered.map((c) => ({
-          time: c.time as number,
-          open: c.open,
-          high: c.high,
-          low: c.low,
-          close: c.close,
-          volume: c.volume,
-        })),
-        instrument,
-      })
-      latestVwapBandsRef.current = bands
-      if (bands?.vwap?.length) {
-        const last = bands.vwap[bands.vwap.length - 1]
-        avwapLastRef.current =
-          last && last.value > 0 ? last.value : null
-        const lastU = bands.upper1?.[bands.upper1.length - 1]
-        const lastL = bands.lower1?.[bands.lower1.length - 1]
-        if (last && last.value > 0) {
-          setCurrentVwap({
-            vwap: Number(last.value.toFixed(2)),
-            upper1: lastU ? Number(lastU.value.toFixed(2)) : 0,
-            lower1: lastL ? Number(lastL.value.toFixed(2)) : 0,
-          })
-        }
-      } else {
-        avwapLastRef.current = null
-        setCurrentVwap(null)
+    // Dynamic 5D Anchored VWAP from cash open (09:30 ET) with standard deviation bands
+    const clock = deskClockFor(instrument)
+    const bands = computeAnchoredVwap(
+      ordered.map((c) => ({
+        time: c.time as number,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      })),
+      clock
+    )
+    latestVwapBandsRef.current = bands
+    if (bands?.vwap?.length) {
+      const last = bands.vwap[bands.vwap.length - 1]
+      avwapLastRef.current =
+        last && last.value > 0 ? last.value : null
+      const lastU = bands.upper1?.[bands.upper1.length - 1]
+      const lastL = bands.lower1?.[bands.lower1.length - 1]
+      if (last && last.value > 0) {
+        setCurrentVwap({
+          vwap: Number(last.value.toFixed(2)),
+          upper1: lastU ? Number(lastU.value.toFixed(2)) : 0,
+          lower1: lastL ? Number(lastL.value.toFixed(2)) : 0,
+        })
       }
-      const vs = vwapSeriesRef.current
-      if (vs && bands) {
+    } else {
+      avwapLastRef.current = null
+      setCurrentVwap(null)
+    }
+
+    const vs = vwapSeriesRef.current
+    if (vs) {
+      if (showVwap && bands) {
         const shift = <T extends { time: number | UTCTimestamp; value: number }>(rows: T[]) =>
-          mapTimesToChart(
-            rows.map((r) => ({ time: r.time as number, value: r.value })),
-            tz
-          ).map((r) => ({ time: r.time as UTCTimestamp, value: r.value }))
-        vs.vwap.setData(shift(bands.vwap))
-        vs.upper1.setData(shift(bands.upper1))
-        vs.lower1.setData(shift(bands.lower1))
-        vs.upper2.setData(shift(bands.upper2))
-        vs.lower2.setData(shift(bands.lower2))
-        vs.upper3.setData([])
-        vs.lower3.setData([])
-      } else if (vs) {
-        vs.vwap.setData([])
-        vs.upper1.setData([])
-        vs.lower1.setData([])
-        vs.upper2.setData([])
-        vs.lower2.setData([])
-        vs.upper3.setData([])
-        vs.lower3.setData([])
+          sanitizeChartPoints(
+            mapTimesToChart(
+              rows.map((r) => ({ time: r.time as number, value: r.value })),
+              tz
+            ).map((r) => ({ time: r.time as UTCTimestamp, value: r.value }))
+          )
+        try { vs.vwap.setData(shift(bands.vwap)) } catch {}
+        try { vs.upper1.setData(shift(bands.upper1)) } catch {}
+        try { vs.lower1.setData(shift(bands.lower1)) } catch {}
+        try { vs.upper2.setData(shift(bands.upper2)) } catch {}
+        try { vs.lower2.setData(shift(bands.lower2)) } catch {}
+        try { vs.upper3.setData(shift(bands.upper3)) } catch {}
+        try { vs.lower3.setData(shift(bands.lower3)) } catch {}
+      } else {
+        try { vs.vwap.setData([]) } catch {}
+        try { vs.upper1.setData([]) } catch {}
+        try { vs.lower1.setData([]) } catch {}
+        try { vs.upper2.setData([]) } catch {}
+        try { vs.lower2.setData([]) } catch {}
+        try { vs.upper3.setData([]) } catch {}
+        try { vs.lower3.setData([]) } catch {}
       }
+    }
 
-      // Update & Cache CVD Candlesticks for Sub-Chart Pane
+    // Update & Cache CVD Candlesticks for Sub-Chart Pane
+    try {
       const cvdBars = computeCvdCandleBars(
         ordered.map((c) => ({
           time: c.time as number,
@@ -6526,23 +6637,23 @@ export function TradingChart({
           volume: c.volume,
         }))
       )
-      const tz = chartTzRef.current
-      const shiftedCvd = mapTimesToChart(
-        cvdBars.map((b) => ({
-          time: b.time,
-          open: b.open,
-          high: b.high,
-          low: b.low,
-          close: b.close,
-        })),
-        tz
-      ).map((b) => ({
-        time: b.time as UTCTimestamp,
-        open: (b as any).open,
-        high: (b as any).high,
-        low: (b as any).low,
-        close: (b as any).close,
-      }))
+      const seenCvdTimes = new Set<number>()
+      const shiftedCvd: CandlestickData[] = []
+      for (const b of cvdBars) {
+        const t = toChartTime(b.time, tz) as UTCTimestamp
+        const tNum = Number(t)
+        if (!seenCvdTimes.has(tNum)) {
+          seenCvdTimes.add(tNum)
+          shiftedCvd.push({
+            time: t,
+            open: b.open,
+            high: b.high,
+            low: b.low,
+            close: b.close,
+          })
+        }
+      }
+      shiftedCvd.sort((a, b) => Number(a.time) - Number(b.time))
       cachedCvdBarsRef.current = shiftedCvd
 
       if (cvdCandleSeriesRef.current) {
@@ -6559,21 +6670,28 @@ export function TradingChart({
           }
         }
       }
+    } catch {}
 
-      syncDeskPlaybookRangesRef.current(ordered)
-      paintYesterdayProfileRef.current()
-      paintOpeningActivityRef.current()
-      paintFrvp5dRef.current()
-      paintYesterdayNycRef.current()
-      paintInventorySessionsRef.current()
-      paint5mAvwapBenchmarkRef.current()
-      paintAuctionOverlayRef.current()
-      paintDow15mFailOverlayRef.current()
-      paintMarketControlRef.current()
-      const host = priceLineHostRef.current
-      if (host && !priceLineHostSeededRef.current && ordered.length > 0) {
-        const a = ordered[0]!
-        const b = ordered[ordered.length - 1]!
+    try { syncDeskPlaybookRangesRef.current(ordered) } catch {}
+    try { paintYesterdayProfileRef.current() } catch {}
+    try { paintOpeningActivityRef.current() } catch {}
+    try { paintFrvp5dRef.current(ordered) } catch {}
+    try { paintYesterdayNycRef.current(ordered) } catch {}
+    try { paintInventorySessionsRef.current() } catch {}
+    try { paint5mAvwapBenchmarkRef.current() } catch {}
+    try { paintAuctionOverlayRef.current() } catch {}
+    try { paintDow15mFailOverlayRef.current() } catch {}
+    try { paintMarketControlRef.current() } catch {}
+    try { paintFrvpHistogramRef.current?.() } catch {}
+    try { paintExcessesAndRoundedRef.current?.() } catch {}
+    try { paintNewsMarkersRef.current?.() } catch {}
+    try { paintUserDrawingsRef.current?.() } catch {}
+
+    const host = priceLineHostRef.current
+    if (host && !priceLineHostSeededRef.current && ordered.length > 0) {
+      const a = ordered[0]!
+      const b = ordered[ordered.length - 1]!
+      try {
         if (ordered.length === 1 || a.time === b.time) {
           host.setData([
             {
@@ -6594,10 +6712,7 @@ export function TradingChart({
           ])
         }
         priceLineHostSeededRef.current = true
-      }
-    } catch {
-      // Bad series data must not blank the whole effect mid-way
-      return
+      } catch {}
     }
 
     // Keep a fresher live tip than the server snapshot when quotes advanced it
@@ -6695,6 +6810,40 @@ export function TradingChart({
       refreshSessionHighlightsRef.current?.()
     })
   }, [candles, instrument, paintLevelLines]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Toggle VWAP series data when showVwap changes
+  useEffect(() => {
+    const vs = vwapSeriesRef.current
+    if (!vs) return
+    if (!showVwap) {
+      try { vs.vwap.setData([]) } catch {}
+      try { vs.upper1.setData([]) } catch {}
+      try { vs.lower1.setData([]) } catch {}
+      try { vs.upper2.setData([]) } catch {}
+      try { vs.lower2.setData([]) } catch {}
+      try { vs.upper3.setData([]) } catch {}
+      try { vs.lower3.setData([]) } catch {}
+      return
+    }
+    const bands = latestVwapBandsRef.current
+    if (bands && bands.vwap) {
+      const tz = chartTzRef.current
+      const shift = <T extends { time: number | UTCTimestamp; value: number }>(rows: T[]) =>
+        sanitizeChartPoints(
+          mapTimesToChart(
+            rows.map((r) => ({ time: r.time as number, value: r.value })),
+            tz
+          ).map((r) => ({ time: r.time as UTCTimestamp, value: r.value }))
+        )
+      try { if (bands.vwap) vs.vwap.setData(shift(bands.vwap)) } catch {}
+      try { if (bands.upper1) vs.upper1.setData(shift(bands.upper1)) } catch {}
+      try { if (bands.lower1) vs.lower1.setData(shift(bands.lower1)) } catch {}
+      try { if (bands.upper2) vs.upper2.setData(shift(bands.upper2)) } catch {}
+      try { if (bands.lower2) vs.lower2.setData(shift(bands.lower2)) } catch {}
+      try { if (bands.upper3) vs.upper3.setData(shift(bands.upper3)) } catch {}
+      try { if (bands.lower3) vs.lower3.setData(shift(bands.lower3)) } catch {}
+    }
+  }, [showVwap])
 
 
   // ── Session color boxes (cached spans + imperative paint = smooth pan)
@@ -9637,17 +9786,23 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   </>
                 )
               })()}
-              {/* VWAP HUD Label */}
-              <div
-                className="transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
-                title={`5-Month Anchored VWAP${currentVwap ? ` · Level: ${currentVwap.vwap.toLocaleString()}${livePrice ? ` · Price Distance: ${(livePrice - currentVwap.vwap).toFixed(1)}pts` : ''}` : ''}`}
+              {/* VWAP HUD Toggle Button */}
+              <button
+                type="button"
+                onClick={() => setShowVwap((v) => !v)}
+                className={`transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded cursor-pointer ${
+                  showVwap
+                    ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold'
+                    : 'bg-zinc-800/60 text-zinc-400 hover:bg-zinc-800 border border-zinc-700/40 opacity-70'
+                }`}
+                title={`Anchored VWAP (Click to toggle)${currentVwap ? ` · Level: ${currentVwap.vwap.toLocaleString()}${livePrice ? ` · Distance: ${(livePrice - currentVwap.vwap).toFixed(1)}pts` : ''}` : ''}`}
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span className={`w-1.5 h-1.5 rounded-full ${showVwap ? 'bg-emerald-400' : 'bg-zinc-500'}`} />
                 <span className="text-gray-400 font-semibold">VWAP:</span>
                 <span className="font-mono font-bold">
-                  {currentVwap ? currentVwap.vwap.toLocaleString() : '—'}
+                  {showVwap && currentVwap ? currentVwap.vwap.toLocaleString() : showVwap ? 'ON' : 'OFF'}
                 </span>
-              </div>
+              </button>
               <span className="text-gray-600 text-[10px]">|</span>
               {/* Interactive CVD Sub-Chart Pane Button */}
               <button
@@ -9924,6 +10079,23 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               <span>📊</span>
               <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-cyan-200 shadow-xl border border-slate-800 group-hover:block z-50">
                 CVD Sub-Chart ({showCvdSubPane || cvdPanelOpen ? 'ON' : 'OFF'})
+              </span>
+            </button>
+
+            {/* Anchored VWAP Toggle */}
+            <button
+              type="button"
+              onClick={() => setShowVwap((prev) => !prev)}
+              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-xs font-bold font-mono transition-all ${
+                showVwap
+                  ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-emerald-300'
+              }`}
+              title="Toggle 5D Anchored VWAP & Bands"
+            >
+              <span>VW</span>
+              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-emerald-200 shadow-xl border border-slate-800 group-hover:block z-50">
+                Anchored VWAP ({showVwap ? 'ON' : 'OFF'})
               </span>
             </button>
 
