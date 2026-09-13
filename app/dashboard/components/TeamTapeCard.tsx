@@ -238,11 +238,7 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
             <p className="mt-1 text-xs leading-relaxed text-gray-300">{advice.detail}</p>
           ) : null}
           <p className="mt-1 text-[11px] text-gray-400">
-            {advice.fillsUsed}/3 used · {advice.fillsLeft} left
-            {advice.mustFlatten
-              ? ' · session over, next size is fill 1/3 · $400'
-              : ` · next $${advice.riskDollars || 400}`}
-            {advice.clockedIn ? '' : ' · not clocked in'}
+            {advice.clockedIn ? 'Desk Active' : 'Not clocked in'}
           </p>
         </div>
       ) : null}

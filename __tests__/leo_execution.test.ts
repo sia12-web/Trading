@@ -237,15 +237,12 @@ describe('Leo Time, Session & Position Telemetry in System Prompt', () => {
         trend: flow.trend,
         divergence: flow.divergence,
         description: flow.description,
-        footprintSummary: fpSummary,
       },
     }
 
     const prompt = buildLeoSystemPrompt(ctx)
-    assert.match(prompt, /ORDER FLOW & FOOTPRINT TELEMETRY \(CVD\)/)
+    assert.match(prompt, /ORDER FLOW TELEMETRY \(CVD\)/)
     assert.match(prompt, /Session CVD:/)
-    assert.match(prompt, /INSTITUTIONAL FOOTPRINT LADDER & STACKED IMBALANCES/)
-    assert.match(prompt, /Active Bar Candle POC:/)
   })
 })
 

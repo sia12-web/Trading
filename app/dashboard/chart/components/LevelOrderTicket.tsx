@@ -653,10 +653,10 @@ export function LevelOrderTicket({
   const sourceBadge = tradeifyOn
     ? `${entrySource === 'manual' ? 'Manual' : entrySource === 'structure' ? 'Structure' : 'AI'} · ${formatTradeifyRiskChip(tradeifyFills)}`
     : entrySource === 'manual'
-      ? `Manual · ${riskPct}% risk (fill ${Math.min(sessionFillsUsed + 1, 3)}/3)`
+      ? `Manual · ${riskPct}% risk`
       : entrySource === 'structure'
-        ? `Structure · ${riskPct}% risk (fill ${Math.min(sessionFillsUsed + 1, 3)}/3)`
-        : `AI level · ${riskPct}% risk (fill ${Math.min(sessionFillsUsed + 1, 3)}/3)`
+        ? `Structure · ${riskPct}% risk`
+        : `AI level · ${riskPct}% risk`
 
   return (
     <div

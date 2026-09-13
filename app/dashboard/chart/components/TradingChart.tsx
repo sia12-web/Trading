@@ -169,7 +169,6 @@ import {
   aggregateFootprintTicks,
   findNakedPocs,
   findActiveUnfinishedAuctions,
-  summarizeFootprintForLeo,
   type OrderFlowSummary,
   type FootprintBar,
 } from '@/lib/trading/orderFlowDelta'
@@ -3473,7 +3472,6 @@ export function TradingChart({
     let orderFlowContext: LeoChatContext['orderFlow'] = null
     const flow = sessionOrderFlow
     if (flow) {
-      const footprintSummary = summarizeFootprintForLeo(footprintBarsRef.current, flow)
       orderFlowContext = {
         sessionCvd: flow.sessionCvd,
         latestBarDelta: flow.latestBarDelta,
@@ -3483,7 +3481,6 @@ export function TradingChart({
         trend: flow.trend,
         divergence: flow.divergence,
         description: flow.description,
-        footprintSummary,
       }
     }
 
@@ -10116,24 +10113,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     }`} />
                   </span>
                 )}
-              </button>
-              <span className="text-gray-600 text-[10px]">|</span>
-              {/* Interactive Level 2 Footprint Order Flow Button */}
-              <button
-                type="button"
-                onClick={() => setShowFootprint((prev) => !prev)}
-                className={`transition flex items-center gap-1.5 select-none px-1.5 py-0.5 rounded cursor-pointer ${
-                  showFootprint
-                    ? 'bg-amber-500/25 text-amber-200 border border-amber-400/60 shadow-sm font-semibold'
-                    : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
-                }`}
-                title="Click to toggle Enhanced Level 2 Footprint Order Flow (Bid x Ask Ladders, Delta & POC)"
-              >
-                <span className="text-[11px]">👣</span>
-                <span className="text-gray-400 font-semibold">Footprint:</span>
-                <span className={`font-mono font-bold ${showFootprint ? 'text-amber-300' : 'text-zinc-400'}`}>
-                  {showFootprint ? 'ON' : 'OFF'}
-                </span>
               </button>
             </div>
 

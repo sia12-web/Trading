@@ -105,16 +105,6 @@ export function resolvePersonalPlace(args: {
   const fills = args.fillsUsed ?? 0
   const risk = args.riskDollars ?? DEFAULT_RISK_PER_TRADE_DOLLARS
 
-  if (fills >= PERSONAL_MAX_DAILY_FILLS) {
-    return {
-      allowed: false,
-      fillsUsed: fills,
-      riskDollars: 0,
-      refuseReason: 'session_full',
-      refuseMessage: `Session limit reached (${fills}/${PERSONAL_MAX_DAILY_FILLS} fills used).`,
-    }
-  }
-
   return {
     allowed: true,
     fillsUsed: fills,

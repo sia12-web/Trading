@@ -127,7 +127,6 @@ export interface LeoOrderFlowContext {
   trend: 'BUYER_DOMINANT' | 'SELLER_DOMINANT' | 'BALANCED'
   divergence: 'BULLISH_ABSORPTION' | 'BEARISH_EXHAUSTION' | 'NONE'
   description: string
-  footprintSummary?: string
 }
 
 export interface LeoChatContext {
@@ -681,15 +680,14 @@ ${sessionSummary}
 [CURRENT DESK POSITION]:
 ${positionSummary}
 
-[ORDER FLOW & FOOTPRINT TELEMETRY (CVD)]:
+[ORDER FLOW TELEMETRY (CVD)]:
 ${
   ctx.orderFlow
     ? `- Session CVD: ${ctx.orderFlow.sessionCvd >= 0 ? '+' : ''}${ctx.orderFlow.sessionCvd.toLocaleString()} contracts
 - Latest Bar Delta: ${ctx.orderFlow.latestBarDelta >= 0 ? '+' : ''}${ctx.orderFlow.latestBarDelta} (Buy: ${ctx.orderFlow.latestBuyVolume.toLocaleString()} | Sell: ${ctx.orderFlow.latestSellVolume.toLocaleString()} | ${(ctx.orderFlow.latestBuyRatio * 100).toFixed(0)}% Buy)
 - Institutional Aggression Bias: ${ctx.orderFlow.trend}
 - Order Flow Divergence / Absorption: ${ctx.orderFlow.divergence !== 'NONE' ? `⚠️ ${ctx.orderFlow.divergence}` : 'None'}
-- Order Flow Context: ${ctx.orderFlow.description}
-${ctx.orderFlow.footprintSummary ? `[INSTITUTIONAL FOOTPRINT LADDER & STACKED IMBALANCES]:\n${ctx.orderFlow.footprintSummary}` : ''}`
+- Order Flow Context: ${ctx.orderFlow.description}`
     : 'No order flow CVD telemetry available for active session.'
 }
 
