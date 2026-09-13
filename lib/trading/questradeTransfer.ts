@@ -64,7 +64,7 @@ export function questradeCopyRisk(advice: TeamCopyAdvice): QuestradeCopyRisk {
       riskDollars: TRADEIFY_RISK_FIRST_DOLLARS,
       canSize: false,
       sessionReset: true,
-      label: 'Session over · next is fill 1/3 · $400',
+      label: 'Session over · next risk $400',
     }
   }
   if (advice.fillsLeft <= 0) {
@@ -75,7 +75,7 @@ export function questradeCopyRisk(advice: TeamCopyAdvice): QuestradeCopyRisk {
       riskDollars: TRADEIFY_RISK_FIRST_DOLLARS,
       canSize: false,
       sessionReset: false,
-      label: '3/3 used · no Tradeify size until 18:00 ET',
+      label: 'Risk cap reached · no size until 18:00 ET',
     }
   }
   const step = tradeifyRiskStepDollars(advice.fillsUsed)
@@ -87,7 +87,7 @@ export function questradeCopyRisk(advice: TeamCopyAdvice): QuestradeCopyRisk {
     riskDollars: risk,
     canSize: true,
     sessionReset: advice.fillsUsed === 0,
-    label: `Fill ${advice.nextFillNumber}/3 · $${risk}`,
+    label: `Risk · $${risk}`,
   }
 }
 

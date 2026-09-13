@@ -526,7 +526,7 @@ export function SessionBanner({
         {gate.rankedBoard && gate.rankedBoard.length > 0 && (
           <span
             className="rounded bg-sky-500/15 px-2 py-0.5 text-[10px] text-sky-200 font-mono max-w-[28rem] truncate"
-            title="9:15 ranked board — soft priority. Shared 3 fills across all four."
+            title="9:15 ranked board — soft priority across all four."
           >
             Board:{' '}
             {gate.rankedBoard
@@ -682,7 +682,7 @@ export function SessionBanner({
             Refresh
           </button>
           <Link
-            href="/dashboard/chart"
+            href="/dashboard"
             className="rounded border border-sky-600/40 bg-sky-950/40 px-2 py-0.5 text-[10px] font-semibold text-sky-200 hover:bg-sky-900/50 hover:text-white transition-colors"
           >
             TradePulse — Level Intelligence →

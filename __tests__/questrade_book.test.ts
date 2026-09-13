@@ -181,7 +181,7 @@ assert.match(noIndex.note, /No index last/)
 assert.equal(transfer.fillNumber, 1)
 assert.equal(transfer.tradeifyRiskDollars, 400)
 assert.equal(transfer.canSize, true)
-assert.match(transfer.riskLabel, /Fill 1\/3/)
+assert.match(transfer.riskLabel, /Risk · \$400/)
 
 const secondAdvice = teamCopyAdviceFromInput({
   now: midday,
@@ -225,7 +225,7 @@ assert.equal(flattenXfer.sessionReset, true)
 assert.equal(flattenXfer.fillNumber, 1)
 assert.equal(flattenXfer.tradeifyRiskDollars, 400)
 assert.equal(flattenXfer.canSize, false)
-assert.match(flattenXfer.riskLabel, /fill 1\/3/)
+assert.match(flattenXfer.riskLabel, /next risk/)
 
 const fullAdvice = teamCopyAdviceFromInput({
   now: midday,

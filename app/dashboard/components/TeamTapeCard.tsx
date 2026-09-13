@@ -195,7 +195,6 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
           <h2 className="text-sm font-semibold text-sky-100">Team tape</h2>
           <p className="mt-0.5 text-xs text-gray-400">
             NYC stocks and options — see only. Click size, SL, or TP to copy that number.
-            Their fill is not your 3/3.
           </p>
         </div>
         {compact ? (

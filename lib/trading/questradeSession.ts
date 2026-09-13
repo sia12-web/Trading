@@ -66,6 +66,34 @@ export async function getQuestradeApiCreds(
     return { ok: false, error: 'QUESTRADE_ACCOUNT_NUMBER is not set' }
   }
 
+  // 1. If watcher database is configured, load live token directly
+  if (process.env.QUESTRADE_WATCHER_DATABASE_URL?.trim()) {
+    try {
+      const { fetchLiveWatcherSession, syncQuestradeSessionFromWatcher } = await import(
+        '@/lib/trading/questradeWatcherSync'
+      )
+      const watcherSession = await fetchLiveWatcherSession()
+      if (watcherSession) {
+        if (watcherSession.tokenExpiryMs - Date.now() > 30_000) {
+          // Fire background sync to Supabase (best-effort, non-blocking)
+          void syncQuestradeSessionFromWatcher(supabase).catch(() => {})
+          return {
+            ok: true,
+            account,
+            accessToken: watcherSession.accessToken,
+            apiServer: watcherSession.apiServer,
+          }
+        }
+        return {
+          ok: false,
+          error: `Questrade token in watcher database is expired. Watcher is rotating.`,
+        }
+      }
+    } catch {
+      // Fallback to Supabase stored session
+    }
+  }
+
   let stored = await loadStored(supabase)
   if (!accessStillGood(stored?.token_expiry) || !stored?.access_token || !stored?.api_server) {
     const { syncQuestradeSessionFromWatcher } = await import(

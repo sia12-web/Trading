@@ -95,12 +95,12 @@ export function buildTeamCopyAdvice(args: {
       mustFlatten: true,
       headline: 'Do not copy. Flatten now.',
       detail:
-        'Growth cannot hold overnight. Close Tradovate and cancel working orders (16:59 ET / 12:59 holiday).',
+        'Cannot hold overnight. Close positions and cancel working orders (16:59 ET / 12:59 holiday).',
       target1_5R: null,
     }
   }
   if (!args.place.allowed || fillsLeft <= 0) {
-    const why = args.place.refuseMessage || 'Session 3/3 or day locked.'
+    const why = args.place.refuseMessage || 'Day locked or risk limit reached.'
     return {
       canCopy: false,
       fillsUsed,
@@ -109,7 +109,7 @@ export function buildTeamCopyAdvice(args: {
       riskDollars,
       clockedIn: args.clockedIn,
       mustFlatten: false,
-      headline: 'Do not copy — no Tradeify fill left.',
+      headline: 'Do not copy — risk limit reached.',
       detail: `${why} Team stock fills do not count until you place.`,
       target1_5R: null,
     }
@@ -123,8 +123,8 @@ export function buildTeamCopyAdvice(args: {
       riskDollars,
       clockedIn: false,
       mustFlatten: false,
-      headline: `Clock in first — ${fillsLeft} fill${fillsLeft === 1 ? '' : 's'} left.`,
-      detail: `If you copy after clock-in this would be fill ${nextFillNumber}/3 at $${riskDollars}. One NYC index only (DOW or NASDAQ), same side. Do not copy their share count.`,
+      headline: 'Clock in first.',
+      detail: `Clock in on the desk before copying trades. One NYC index only (DOW or NASDAQ), same side. Do not copy their share count.`,
       target1_5R: null,
     }
   }
@@ -136,8 +136,8 @@ export function buildTeamCopyAdvice(args: {
     riskDollars,
     clockedIn: true,
     mustFlatten: false,
-    headline: `You may copy — this would be fill ${nextFillNumber}/3.`,
-    detail: `Then ${fillsLeft - 1} left. Size $${riskDollars} on DOW or NASDAQ (one only, same side). Close at 1.5R or flatten 16:59 ET. Their share count is not your size.`,
+    headline: 'You may copy.',
+    detail: `Size $${riskDollars} on DOW or NASDAQ (one only, same side). Close at 1.5R or flatten 16:59 ET. Their share count is not your size.`,
     target1_5R: null,
   }
 }

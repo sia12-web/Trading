@@ -65,7 +65,7 @@ assert.equal(first.fillsUsed, 0)
 assert.equal(first.fillsLeft, 3)
 assert.equal(first.nextFillNumber, 1)
 assert.equal(first.riskDollars, 400)
-assert.match(first.headline, /fill 1\/3/)
+assert.match(first.headline, /You may copy/)
 
 const afterNikkei = teamCopyAdviceFromInput({
   now: midday,
