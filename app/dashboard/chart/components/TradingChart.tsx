@@ -9938,7 +9938,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 type="button"
                 onClick={() => setDrawingsPanelOpen((prev) => !prev)}
                 className={`relative flex items-center gap-1 px-2 py-1 rounded font-medium transition-all ${
-                  drawingsPanelOpen || trendlines.length + rangeBoxes.length + manualFrvps.length > 0
+                  drawingsPanelOpen || activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length > 0
                     ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
                     : 'text-gray-400 hover:text-cyan-300 hover:bg-surface-800'
                 }`}
@@ -9946,9 +9946,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               >
                 <span>🎨</span>
                 <span>Tools</span>
-                {trendlines.length + rangeBoxes.length + manualFrvps.length > 0 && (
+                {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length > 0 && (
                   <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-cyan-500 px-1 text-[10px] font-bold text-slate-950">
-                    {trendlines.length + rangeBoxes.length + manualFrvps.length}
+                    {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length}
                   </span>
                 )}
               </button>
@@ -9968,15 +9968,21 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     }`}
                   title={
                     candleFeed === 'yahoo'
-                      ? 'CME futures (MYM / MNQ / NKD) — IB matches Tradovate, not OANDA US30/NAS100 cash'
-                      : 'OANDA CFD fallback — IB will not match Tradovate. Refresh if this stays on.'
+                      ? 'Live real-time streaming active'
+                      : 'Synthetic pricing fallback active'
                   }
                 >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full animate-pulse ${candleFeed === 'yahoo' ? 'bg-emerald-400' : 'bg-amber-400'
-                      }`}
-                  />
-                  {candleFeed === 'yahoo' ? 'LIVE · CME' : 'LIVE · OANDA'}
+                  <span className="relative flex h-2 w-2">
+                    <span
+                      className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${candleFeed === 'yahoo' ? 'bg-emerald-400' : 'bg-amber-400'
+                        }`}
+                    />
+                    <span
+                      className={`relative inline-flex rounded-full h-2 w-2 ${candleFeed === 'yahoo' ? 'bg-emerald-500' : 'bg-amber-500'
+                        }`}
+                    />
+                  </span>
+                  LIVE
                 </span>
               ) : (
                 <span
@@ -10055,18 +10061,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               {/* VWAP HUD Label */}
               <div
                 className="transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
-                title={`5-Month Anchored VWAP${currentVwap ? ` · Level: ${currentVwap.vwap.toLocaleString()}` : ''}`}
+                title={`5-Month Anchored VWAP${currentVwap ? ` · Level: ${currentVwap.vwap.toLocaleString()}${livePrice ? ` · Price Distance: ${(livePrice - currentVwap.vwap).toFixed(1)}pts` : ''}` : ''}`}
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                 <span className="text-gray-400 font-semibold">VWAP:</span>
                 <span className="font-mono font-bold">
                   {currentVwap ? currentVwap.vwap.toLocaleString() : '—'}
                 </span>
-                {currentVwap && livePrice && (
-                  <span className={`text-[9.5px] font-mono ${livePrice >= currentVwap.vwap ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    ({livePrice >= currentVwap.vwap ? '+' : ''}{(livePrice - currentVwap.vwap).toFixed(1)})
-                  </span>
-                )}
               </div>
               <span className="text-gray-600 text-[10px]">|</span>
               {/* Interactive CVD Sub-Chart Pane Button */}

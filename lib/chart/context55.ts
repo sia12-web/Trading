@@ -531,14 +531,19 @@ export function compute5MonthAnchoredVwap(args: {
   const upper2: { time: UTCTimestamp; value: number }[] = []
   const lower2: { time: UTCTimestamp; value: number }[] = []
 
+  // For intraday bar series without a historical baseline, apply alpha = 0.997
+  // so VWAP curves dynamically with price action instead of dampening into a flat line.
+  const alpha = bars.length > 200 && !baseline ? 0.997 : 1.0
+
   for (const c of bars) {
     if (c.time < anchorUnix && !baseline) continue
 
     const price = (c.high + c.low + c.close) / 3
     const vol = c.volume > 0 ? c.volume : 1
-    sumPV += price * vol
-    sumP2V += price * price * vol
-    sumV += vol
+
+    sumPV = sumPV * alpha + price * vol
+    sumP2V = sumP2V * alpha + price * price * vol
+    sumV = sumV * alpha + vol
 
     if (sumV <= 0) continue
 
