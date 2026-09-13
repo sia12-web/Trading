@@ -117,11 +117,6 @@ function pathMatches(pathname: string, search: string, href: string): boolean {
   const [hrefPath, hrefQuery = ''] = href.split('?')
   if (pathname !== hrefPath && !pathname.startsWith(`${hrefPath}/`)) return false
   if (!hrefQuery) {
-    // Bare /dashboard/journal should not match when tab=sim is active
-    if (hrefPath === '/dashboard/journal') {
-      const tab = new URLSearchParams(search).get('tab')
-      return tab !== 'sim'
-    }
     return pathname === hrefPath || pathname.startsWith(`${hrefPath}/`)
   }
   const want = new URLSearchParams(hrefQuery)

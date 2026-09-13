@@ -356,12 +356,8 @@ function JournalPageInner() {
       <div className="mx-auto max-w-5xl px-4 py-8 space-y-6">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p
-              className={`text-[10px] uppercase tracking-[0.2em] ${
-                isSim ? 'text-violet-400/90' : 'text-amber-500/90'
-              }`}
-            >
-              {isSim ? 'Practice paper' : 'Live trading'}
+            <p className="text-[10px] uppercase tracking-[0.2em] text-amber-500/90">
+              Live trading
             </p>
             <h1 className="mt-1 text-2xl font-semibold text-white">Order history</h1>
             <p className="mt-1 text-sm text-gray-500 max-w-xl">
@@ -369,10 +365,10 @@ function JournalPageInner() {
             </p>
           </div>
           <Link
-            href={isSim ? '/dashboard/simulation' : '/dashboard/chart'}
+            href="/dashboard/chart"
             className="rounded-lg border border-[#30363d] px-3 py-1.5 text-xs font-semibold text-gray-300 hover:bg-[#161b22]"
           >
-            {isSim ? '← Simulation' : '← Live Trading'}
+            ← Live Trading
           </Link>
         </header>
 
@@ -387,17 +383,6 @@ function JournalPageInner() {
             >
               Live Trades
             </button>
-            {!SYSTEMATIC_LIVE_DESK && (
-              <>
-            <button
-              type="button"
-              onClick={() => setTab('sim')}
-              className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
-                tab === 'sim' ? 'bg-violet-600/30 text-violet-200' : 'text-gray-500 hover:text-gray-300'
-              }`}
-            >
-              Simulation Fills
-            </button>
             <button
               type="button"
               onClick={() => setTab('voice')}
@@ -407,8 +392,6 @@ function JournalPageInner() {
             >
               🎙️ Voice Chat Journal
             </button>
-              </>
-            )}
           </div>
           {(isSim
             ? (['ALL', 'DOW', 'NASDAQ', 'NIKKEI'] as Instrument[])
@@ -604,20 +587,8 @@ function JournalPageInner() {
 
         {tab !== 'voice' && !loading && !error && entries.length === 0 && (
           <div className="rounded-xl border border-dashed border-[#30363d] px-6 py-12 text-center text-sm text-gray-500">
-            {isSim ? (
-              <>
-                No paper closes yet. Open{' '}
-                <Link href="/dashboard/simulation" className="text-violet-400 hover:underline">
-                  Simulation
-                </Link>
-                , fill a level, then hit SL/TP or CLOSE — orders land under the Simulation tab.
-              </>
-            ) : (
-              <>
-                No live orders yet. Clock in, place a limit on Live Trading — fills land here with
-                entry and exit reasons.
-              </>
-            )}
+            No live orders yet. Clock in, place a limit on Live Trading — fills land here with
+            entry and exit reasons.
           </div>
         )}
 
@@ -913,9 +884,7 @@ function JournalPageInner() {
         )}
 
         <p className="text-[11px] text-gray-600 leading-relaxed">
-          {isSim
-            ? 'Simulation tab reads paper closes from simulation_trades only — never mixes with live fills. Resetting a replay day clears that day’s paper history.'
-            : 'Live desk only. After the entry window, levels leave the chart; open books stay in MANAGE until stop, target, your confirmed AI exit, or lunch confirm. Cash close auto-liquidates leftovers. Equity above is reconstructed from ticket size and closed-trade P&L.'}
+          Live desk only. After the entry window, levels leave the chart; open books stay in MANAGE until stop, target, your confirmed AI exit, or lunch confirm. Cash close auto-liquidates leftovers. Equity above is reconstructed from ticket size and closed-trade P&amp;L.
         </p>
       </div>
     </div>
