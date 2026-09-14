@@ -24,6 +24,9 @@ export interface ArmedDeskRule {
   direction?: 'LONG' | 'SHORT'
   targetReference?: string
   targetPrice?: number
+  drawingId?: string
+  drawingType?: 'TRENDLINE' | 'RANGE' | 'FRVP'
+  lastEvaluatedBarTime?: number
   pattern?:
     | 'BULLISH_ENGULFING'
     | 'BEARISH_ENGULFING'
@@ -140,6 +143,22 @@ export function LeoAssistantPanel({
       setMessagesState(welcome)
     }
     setAttachedPoints([])
+
+    // Sync saved armed rules for this instrument from localStorage
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem(`leo_armed_rules_${context.instrument}`)
+        if (saved) {
+          const parsed = JSON.parse(saved)
+          if (Array.isArray(parsed)) {
+            // Keep rules from last 12 hours
+            setArmedRulesState(parsed.filter((r: any) => Date.now() - (r.createdAt || 0) < 12 * 3600 * 1000))
+          }
+        } else {
+          setArmedRulesState([])
+        }
+      } catch {}
+    }
   }, [context.instrument])
 
   const setMessages = (updater: LeoMessage[] | ((prev: LeoMessage[]) => LeoMessage[])) => {
@@ -153,7 +172,31 @@ export function LeoAssistantPanel({
   const [inputPrompt, setInputPrompt] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [attachedPoints, setAttachedPoints] = useState<LeoDataPoint[]>([])
-  const [armedRules, setArmedRules] = useState<ArmedDeskRule[]>([])
+  const [armedRules, setArmedRulesState] = useState<ArmedDeskRule[]>(() => {
+    if (typeof window === 'undefined') return []
+    try {
+      const saved = localStorage.getItem(`leo_armed_rules_${context.instrument}`)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (Array.isArray(parsed)) {
+          return parsed.filter((r: any) => Date.now() - (r.createdAt || 0) < 12 * 3600 * 1000)
+        }
+      }
+    } catch {}
+    return []
+  })
+
+  const setArmedRules = (updater: ArmedDeskRule[] | ((prev: ArmedDeskRule[]) => ArmedDeskRule[])) => {
+    setArmedRulesState((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(`leo_armed_rules_${context.instrument}`, JSON.stringify(next))
+        } catch {}
+      }
+      return next
+    })
+  }
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Auto-resize textarea to fit multiline input dynamically up to max 130px
@@ -564,6 +607,42 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
     }
   }
 
+  // Proximity tolerances, touch threshold, and risk multiplier per instrument
+  const getInstrumentTolerances = (
+    inst: string
+  ): { proximity: number; touch: number; multiplier: number } => {
+    switch (inst) {
+      case 'DOW':
+        return { proximity: 45.0, touch: 8.0, multiplier: 0.5 }
+      case 'GOLD':
+        return { proximity: 1.5, touch: 0.3, multiplier: 10.0 }
+      case 'CRUDE':
+        return { proximity: 0.25, touch: 0.05, multiplier: 100.0 }
+      case 'NIKKEI':
+        return { proximity: 50.0, touch: 10.0, multiplier: 1.0 }
+      case 'NASDAQ':
+      default:
+        return { proximity: 15.0, touch: 3.0, multiplier: 2.0 }
+    }
+  }
+
+  // Check if current time is inside Globex maintenance window (17:00–18:00 ET) where spreads blowout
+  const isGlobexMaintenanceWindow = (): boolean => {
+    try {
+      const nyTime = new Date().toLocaleTimeString('en-US', {
+        timeZone: 'America/New_York',
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+      const [hh, mm] = nyTime.split(':').map(Number)
+      const nyDec = (hh || 0) + (mm || 0) / 60
+      return nyDec >= 17.0 && nyDec < 18.0
+    } catch {
+      return false
+    }
+  }
+
   // Apply parsed directives
   const applyDirectives = (directives: LeoExecutionDirective[]) => {
     for (const d of directives) {
@@ -639,29 +718,56 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
 
         let targetPx = d.targetPrice && d.targetPrice > 0 ? d.targetPrice : undefined
         let targetRef = d.targetReference || 'Target Level'
+        let drawingId: string | undefined
+        let drawingType: 'TRENDLINE' | 'RANGE' | 'FRVP' | undefined
 
-        if (!targetPx && attachedPoints.length > 0) {
+        if (attachedPoints.length > 0) {
           const pt = attachedPoints[0]!
-          const num = typeof pt.value === 'number' ? pt.value : parseFloat(String(pt.value).replace(/[^0-9.]/g, ''))
-          if (Number.isFinite(num) && num > 0) {
+          const num =
+            typeof pt.value === 'number'
+              ? pt.value
+              : parseFloat(String(pt.value).replace(/[^0-9.]/g, ''))
+          if (Number.isFinite(num) && num > 0 && !targetPx) {
             targetPx = num
             targetRef = pt.label || targetRef
           }
+          if (pt.id.startsWith('user-tl-')) {
+            drawingId = pt.id.replace('user-tl-', '')
+            drawingType = 'TRENDLINE'
+          } else if (pt.id.startsWith('user-range-')) {
+            drawingId = pt.id.replace('user-range-', '')
+            drawingType = 'RANGE'
+          } else if (pt.id.startsWith('user-frvp-')) {
+            drawingId = pt.id.replace('user-frvp-', '')
+            drawingType = 'FRVP'
+          }
         }
 
-        if (!targetPx && context.userDrawings) {
+        if (!drawingId && context.userDrawings) {
           if (context.userDrawings.frvps.length > 0) {
             const f = context.userDrawings.frvps[0]!
-            targetPx = f.val
-            targetRef = `Manual FRVP (${f.label || 'LVN'})`
+            drawingId = f.id
+            drawingType = 'FRVP'
+            if (!targetPx) {
+              targetPx = f.val
+              targetRef = `Manual FRVP (${f.label || 'LVN'})`
+            }
           } else if (context.userDrawings.trendlines.length > 0) {
             const t = context.userDrawings.trendlines[0]!
-            targetPx = t.projectedPrice
-            targetRef = `${t.label || 'Trendline'} Support`
+            drawingId = t.id
+            drawingType = 'TRENDLINE'
+            if (!targetPx) {
+              targetPx = t.projectedPrice
+              targetRef = `${t.label || 'Trendline'} Support`
+            }
           } else if (context.userDrawings.ranges.length > 0) {
             const r = context.userDrawings.ranges[0]!
-            targetPx = dir === 'LONG' ? r.priceLow : r.priceHigh
-            targetRef = `${r.label || 'Range'} Boundary`
+            drawingId = r.id
+            drawingType = 'RANGE'
+            if (!targetPx) {
+              targetPx = dir === 'LONG' ? r.priceLow : r.priceHigh
+              targetRef = `${r.label || 'Range'} Boundary`
+            }
           }
         }
 
@@ -669,7 +775,10 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
           targetPx = context.shortTermMoney?.yval ?? context.currentPrice ?? 28908.75
         }
 
-        const userSaid = d.userPrompt || inputPromptRef.current || `Monitor ${targetRef} and enter ${dir} on pattern confirmation`
+        const userSaid =
+          d.userPrompt ||
+          inputPromptRef.current ||
+          `Monitor ${targetRef} and enter ${dir} on pattern confirmation`
         const pat = d.pattern || (dir === 'LONG' ? 'BULLISH_ENGULFING' : 'BEARISH_ENGULFING')
         const slMode = d.stopLossMode || (dir === 'LONG' ? 'BELOW_CANDLE_LOW' : 'ABOVE_CANDLE_HIGH')
         const tpMode = d.takeProfitMode || '1:2'
@@ -678,12 +787,16 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
         const newRule: ArmedDeskRule = {
           id: `rule-${Date.now()}`,
           type: 'CONDITIONAL_ENTRY',
-          description: d.description || `${dir} 1 ${inst} on ${pat.replace(/_/g, ' ')} at ${targetRef} (${targetPx.toLocaleString()})`,
+          description:
+            d.description ||
+            `${dir} 1 ${inst} on ${pat.replace(/_/g, ' ')} at ${targetRef} (${targetPx.toLocaleString()})`,
           userPrompt: userSaid,
           instrument: inst,
           direction: dir,
           targetReference: targetRef,
           targetPrice: targetPx,
+          drawingId,
+          drawingType,
           pattern: pat,
           stopLossMode: slMode,
           stopLoss: d.stopLoss,
@@ -696,7 +809,10 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
 
         setArmedRules((prev) => [...prev, newRule])
         playTradingViewChime()
-        warningToast(`🎯 Strategy Armed: ${dir} on ${pat.replace(/_/g, ' ')} @ ${targetPx.toLocaleString()}`, 8000)
+        warningToast(
+          `🎯 Strategy Armed: ${dir} on ${pat.replace(/_/g, ' ')} @ ${targetPx.toLocaleString()}`,
+          8000
+        )
         speakText(`Strategy rule armed for ${dir} ${inst}. Monitoring ${pat.replace(/_/g, ' ')}.`)
       } else if (d.action === 'ARM_STAGNATION_RULE') {
         const newRule: ArmedDeskRule = {
@@ -847,10 +963,37 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
           }
 
           // 3. Conditional Strategy Entry Rule (Candlestick Pattern at Key Drawing / Level)
-          if (rule.type === 'CONDITIONAL_ENTRY' && curPrice != null && rule.targetPrice != null) {
-            const dist = Math.abs(curPrice - rule.targetPrice)
-            // Check proximity to target drawing/level (within 15 points)
-            if (dist <= 15) {
+          if (rule.type === 'CONDITIONAL_ENTRY' && curPrice != null) {
+            // Guard: Globex 17:00–18:00 ET maintenance pause
+            if (isGlobexMaintenanceWindow()) return rule
+
+            const dir = (rule.direction || 'LONG').toUpperCase() as 'LONG' | 'SHORT'
+
+            // Guard: Opposing Position / Hedging Conflict Protection
+            if (pos && pos.direction !== dir) {
+              changed = true
+              warningToast(
+                `⚠️ [LEO DESK CONFLICT]: Cannot execute ${dir} on ${rule.instrument}. Opposing ${pos.direction} position active. Disarmed rule for capital safety.`,
+                9000
+              )
+              speakText(`Rule cancelled: Opposing position active on ${rule.instrument}.`)
+              return { ...rule, status: 'CANCELLED' as const }
+            }
+
+            // Dynamic Trendline Re-Projection Over Time
+            let currentTargetPx = rule.targetPrice ?? curPrice
+            if (rule.drawingType === 'TRENDLINE' && rule.drawingId && context.userDrawings) {
+              const activeTl = context.userDrawings.trendlines.find((t) => t.id === rule.drawingId)
+              if (activeTl && Number.isFinite(activeTl.projectedPrice) && activeTl.projectedPrice > 0) {
+                currentTargetPx = activeTl.projectedPrice
+              }
+            }
+
+            // Instrument-calibrated proximity & touch tolerances
+            const tolerances = getInstrumentTolerances(rule.instrument || context.instrument)
+            const dist = Math.abs(curPrice - currentTargetPx)
+
+            if (dist <= tolerances.proximity) {
               const bars: Candle[] =
                 candlesRef.current && candlesRef.current.length > 0
                   ? candlesRef.current.map((c: any) => ({
@@ -864,48 +1007,112 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                   : []
 
               let patternFired = false
-              const lastBar = bars.length > 0 ? bars[bars.length - 1]! : null
+              let signalBar: Candle | null = null
 
               if (bars.length >= 2) {
-                const pRes = detectCandlestickPatterns(bars, bars.length - 1)
-                if (rule.pattern === 'BULLISH_ENGULFING' && pRes.bullEng) patternFired = true
-                else if (rule.pattern === 'BEARISH_ENGULFING' && pRes.bearEng) patternFired = true
-                else if (rule.pattern === 'HAMMER' && pRes.hammer) patternFired = true
-                else if (rule.pattern === 'INVERTED_HAMMER' && pRes.invHammer) patternFired = true
-                else if (rule.pattern === 'SHOOTING_STAR' && pRes.shootingStar) patternFired = true
-                else if (
-                  rule.pattern === 'REJECTION_TAIL' &&
-                  (rule.direction === 'LONG' ? pRes.buyingExcess : pRes.sellingExcess)
-                )
-                  patternFired = true
-                else if (rule.pattern === 'LEVEL_TOUCH' && dist <= 3) patternFired = true
-              } else if (dist <= 2) {
-                // If candle history is short, trigger on precise level touch
+                const lastIdx = bars.length - 1
+                const lastBar = bars[lastIdx]!
+                const prevBar = bars[lastIdx - 1]!
+
+                const lastTimeMs = lastBar.time > 1e11 ? lastBar.time : lastBar.time * 1000
+                const prevTimeMs = prevBar.time > 1e11 ? prevBar.time : prevBar.time * 1000
+
+                // Historical Bar Guard: MUST have formed at or after rule creation
+                const isFresh =
+                  lastTimeMs >= rule.createdAt - 60000 || prevTimeMs >= rule.createdAt - 60000
+
+                if (isFresh && rule.lastEvaluatedBarTime !== lastBar.time) {
+                  if (rule.pattern === 'LEVEL_TOUCH') {
+                    if (dist <= tolerances.touch) {
+                      patternFired = true
+                      signalBar = lastBar
+                    }
+                  } else {
+                    const pResCurr = detectCandlestickPatterns(bars, lastIdx)
+                    const pResPrev = detectCandlestickPatterns(bars, lastIdx - 1)
+
+                    const testPat = (res: any) => {
+                      if (rule.pattern === 'BULLISH_ENGULFING' && res.bullEng) return true
+                      if (rule.pattern === 'BEARISH_ENGULFING' && res.bearEng) return true
+                      if (rule.pattern === 'HAMMER' && res.hammer) return true
+                      if (rule.pattern === 'INVERTED_HAMMER' && res.invHammer) return true
+                      if (rule.pattern === 'SHOOTING_STAR' && res.shootingStar) return true
+                      if (
+                        rule.pattern === 'REJECTION_TAIL' &&
+                        (dir === 'LONG' ? res.buyingExcess : res.sellingExcess)
+                      )
+                        return true
+                      return false
+                    }
+
+                    if (testPat(pResCurr)) {
+                      patternFired = true
+                      signalBar = lastBar
+                    } else if (testPat(pResPrev)) {
+                      patternFired = true
+                      signalBar = prevBar
+                    }
+                  }
+                }
+              } else if (dist <= tolerances.touch) {
                 patternFired = true
+                signalBar = bars.length > 0 ? bars[0]! : null
               }
 
               if (patternFired) {
                 changed = true
                 const entryPx = curPrice
-                const dir = rule.direction || 'LONG'
                 const { slDist } = getInstrumentDefaultDistances(
                   rule.instrument || context.instrument
                 )
+                const tickCushion =
+                  rule.instrument === 'GOLD' ? 0.3 : rule.instrument === 'CRUDE' ? 0.05 : 2.0
 
                 let sl = rule.stopLoss
                 if (!sl) {
-                  if (rule.stopLossMode === 'BELOW_CANDLE_LOW' && lastBar) {
-                    sl = Number((lastBar.low - 2.0).toFixed(2))
-                  } else if (rule.stopLossMode === 'ABOVE_CANDLE_HIGH' && lastBar) {
-                    sl = Number((lastBar.high + 2.0).toFixed(2))
+                  if (rule.stopLossMode === 'BELOW_CANDLE_LOW' && signalBar) {
+                    sl = Number((signalBar.low - tickCushion).toFixed(2))
+                  } else if (rule.stopLossMode === 'ABOVE_CANDLE_HIGH' && signalBar) {
+                    sl = Number((signalBar.high + tickCushion).toFixed(2))
                   } else if (rule.stopLossMode === 'DOLLARS_50') {
-                    sl = Number((dir === 'LONG' ? entryPx - 25 : entryPx + 25).toFixed(2))
+                    const pts50 = Number(
+                      (50.0 / (tolerances.multiplier * (rule.size || 1))).toFixed(2)
+                    )
+                    sl = Number((dir === 'LONG' ? entryPx - pts50 : entryPx + pts50).toFixed(2))
                   } else {
                     sl = Number((dir === 'LONG' ? entryPx - slDist : entryPx + slDist).toFixed(2))
                   }
                 }
 
-                const riskPts = Math.max(1, Math.abs(entryPx - sl))
+                // 1. Bracket Inversion Protection
+                if (dir === 'LONG' && sl >= entryPx) {
+                  sl = Number((entryPx - slDist).toFixed(2))
+                } else if (dir === 'SHORT' && sl <= entryPx) {
+                  sl = Number((entryPx + slDist).toFixed(2))
+                }
+
+                // 2. Max Dollar Risk Clamp ($50–$65 TopstepX cushion guard)
+                const rawRiskPts = Math.abs(entryPx - sl)
+                const rawDollarRisk = rawRiskPts * tolerances.multiplier * (rule.size || 1)
+                const MAX_RISK_DOLLARS = 65.0
+
+                if (rawDollarRisk > MAX_RISK_DOLLARS) {
+                  const clampedRiskPts = Number(
+                    (MAX_RISK_DOLLARS / (tolerances.multiplier * (rule.size || 1))).toFixed(2)
+                  )
+                  sl = Number(
+                    (dir === 'LONG' ? entryPx - clampedRiskPts : entryPx + clampedRiskPts).toFixed(
+                      2
+                    )
+                  )
+                }
+
+                const finalRiskPts = Math.max(
+                  rule.instrument === 'CRUDE' ? 0.05 : rule.instrument === 'GOLD' ? 0.2 : 1.0,
+                  Math.abs(entryPx - sl)
+                )
+
+                // 3. Take Profit Calculation & Inversion Guard
                 let tp = rule.takeProfit
                 if (!tp) {
                   let mult = 2.0
@@ -914,8 +1121,17 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                   else if (rule.takeProfitMode === '1:3') mult = 3.0
                   else if (rule.takeProfitMode === '1:5') mult = 5.0
                   tp = Number(
-                    (dir === 'LONG' ? entryPx + riskPts * mult : entryPx - riskPts * mult).toFixed(2)
+                    (dir === 'LONG'
+                      ? entryPx + finalRiskPts * mult
+                      : entryPx - finalRiskPts * mult
+                    ).toFixed(2)
                   )
+                }
+
+                if (dir === 'LONG' && tp <= entryPx) {
+                  tp = Number((entryPx + finalRiskPts * 2.0).toFixed(2))
+                } else if (dir === 'SHORT' && tp >= entryPx) {
+                  tp = Number((entryPx - finalRiskPts * 2.0).toFixed(2))
                 }
 
                 // ACTUALLY PLACE THE ORDER ON THE DESK!
@@ -926,7 +1142,7 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                   stopLoss: sl,
                   profitTarget: tp,
                   size: rule.size || 1,
-                  reason: `Strategy Rule Triggered: ${rule.pattern?.replace(/_/g, ' ')} confirmed at ${rule.targetReference} (${rule.targetPrice.toLocaleString()}). Saved instruction: "${rule.userPrompt}"`,
+                  reason: `Strategy Rule Triggered: ${rule.pattern?.replace(/_/g, ' ')} confirmed at ${rule.targetReference} (${currentTargetPx.toLocaleString()}). Saved instruction: "${rule.userPrompt}"`,
                 })
 
                 playTradingViewChime()
@@ -934,10 +1150,14 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                   `⚡ [LEO AUTO-ORDER EXECUTED]: ${dir} ${rule.instrument} @ ${entryPx.toFixed(2)} | SL: ${sl.toFixed(2)} | TP: ${tp.toFixed(2)}`,
                   10000
                 )
-                speakText(`Conditional entry triggered! Order placed for ${dir} ${rule.instrument}.`)
+                speakText(
+                  `Conditional entry triggered! Order placed for ${dir} ${rule.instrument}.`
+                )
 
                 return {
                   ...rule,
+                  targetPrice: currentTargetPx,
+                  lastEvaluatedBarTime: signalBar?.time,
                   status: 'EXECUTED' as const,
                   executedAt: Date.now(),
                   executedPrice: entryPx,
