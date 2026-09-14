@@ -22,10 +22,9 @@ import {
   formatLiveDeskBriefText,
 } from '@/lib/trading/liveDeskBrief'
 import { formatLateDeskBriefNote } from '@/lib/notify/deskSessionNotes'
-import { sendTelegramMessage, telegramConfigured } from '@/lib/notify/telegram'
+import { telegramConfigured } from '@/lib/notify/telegram'
 import {
   claimServerDeskNoteOnce,
-  releaseServerDeskNoteClaim,
 } from '@/lib/notify/deskNoteServerClaim'
 import type { DeskMarket } from '@/lib/trading/sessionGate'
 import { logger } from '@/lib/utils/logger'
@@ -137,28 +136,11 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    const sent = await sendTelegramMessage(note.telegram)
-    if (!sent.ok) {
-      releaseServerDeskNoteClaim(dedupeKey)
-      logger.warn('late_desk_brief.telegram_failed', { error: sent.error, market })
-      return NextResponse.json(
-        { ok: false, error: sent.error || 'Telegram send failed', market },
-        { status: 502 }
-      )
-    }
-
-    logger.info('late_desk_brief.sent', {
-      userId: user.id,
-      market,
-      suggestion: brief.suggestion.kind,
-    })
-
     return NextResponse.json({
       ok: true,
-      sent: true,
+      skipped: true,
+      reason: 'Telegram notifications disabled — website only',
       market,
-      asOf: brief.asOfDisplay,
-      suggestion: brief.suggestion,
     })
   } catch (error) {
     logger.error('late_desk_brief.failed', { err: error })

@@ -183,17 +183,7 @@ function buildDeskFallbackResponse(
 
   // 3. Telegram alert command: "send me a telegram message" or "telegram"
   if (/telegram|notify\s+me|send\s+me\s+a\s+message/i.test(lower)) {
-    const attached = ctx.selectedDataPoints?.[0]
-    const targetRef = attached?.label ?? (ctx.intermediateMoney?.poc5d ? '5D POC' : 'Target Reference')
-    const targetPrice =
-      typeof attached?.value === 'number'
-        ? attached.value
-        : ctx.intermediateMoney?.poc5d ?? (ctx.currentPrice ?? 29500)
-
-    const sessionMatch = lower.match(/\b(asia|london|new york|nyc)\b/i)
-    const session = sessionMatch ? sessionMatch[1]!.toUpperCase() : ctx.sessionDetails?.sessionName ?? 'Current Session'
-
-    return `Understood. Telegram alert armed for **${targetRef}** (${targetPrice.toLocaleString()}) during ${session}.\n\nWhen price tests this reference zone with confirmed high volume and execution confidence, I will dispatch an instant alert to your Telegram.\n\n<execute>\n{\n  "action": "ARM_TELEGRAM_ALERT",\n  "targetReference": "${targetRef}",\n  "targetPrice": ${targetPrice},\n  "requireHighVolume": true,\n  "requireConfidence": true,\n  "session": "${session}"\n}\n</execute>`
+    return `External Telegram notifications are currently disabled desk-wide. All live alerts, auction updates, and risk monitors are streamed directly to the website dashboard and chart in real time.`
   }
 
   // 4. User Drawings: Trendline analysis
@@ -275,5 +265,5 @@ ${f.priceRelation === 'AT_POC'
 - **Location:** Trading relative to ${yval} (Yesterday Value Area Low), ${ypoc} (Yesterday POC) & ${poc5d} (5D POC extended).
 - **Intermediate Flow:** Tracking 5-Day POC magnet and excessive rejection wicks.
 - **Long-Term Benchmark:** 5-Month Anchored VWAP is at **${vwap5m}**.
-- **Desk Telemetry:** Standing by to monitor session references, execute stagnation timeout exits, or dispatch Telegram alerts.`
+- **Desk Telemetry:** Standing by to monitor session references, execute stagnation timeout exits, and track auction levels on your desk.`
 }

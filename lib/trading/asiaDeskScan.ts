@@ -11,18 +11,14 @@ import {
 } from '@/lib/trading/cmeBasis'
 import {
   ASIA_DESK_INSTRUMENTS,
-  asiaTelegramKey,
   evaluateAsiaDeskOverlay,
-  formatAsiaDeskTelegram,
   type AsiaDeskOverlay,
   type AsiaInstrument,
 } from '@/lib/trading/asiaDesk'
 import {
-  claimAsiaTelegramKey,
   loadAsiaDeskBook,
   upsertAsiaOverlay,
 } from '@/lib/trading/asiaDeskStore'
-import { sendTelegramMessage } from '@/lib/notify/telegram'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { logger } from '@/lib/utils/logger'
@@ -63,27 +59,6 @@ export async function runAsiaDeskScan(args: {
       if (!overlay) continue
       overlays[instrument] = overlay
       await upsertAsiaOverlay(args.supabase, args.userId, overlay)
-      if (!args.notify) continue
-      const text = formatAsiaDeskTelegram(overlay)
-      if (!text) continue
-      const key = asiaTelegramKey(overlay)
-      const stored = await loadAsiaDeskBook(args.supabase, args.userId)
-      if ((stored.telegramKeys || []).includes(key)) {
-        telegram.push({ instrument, event: overlay.event, sent: false, skipped: 'deduped' })
-        continue
-      }
-      const sent = await sendTelegramMessage(text)
-      if (sent.ok && !sent.skipped) {
-        await claimAsiaTelegramKey(args.supabase, args.userId, key)
-        telegram.push({ instrument, event: overlay.event, sent: true })
-      } else {
-        telegram.push({
-          instrument,
-          event: overlay.event,
-          sent: false,
-          skipped: sent.ok ? sent.reason : sent.error,
-        })
-      }
     } catch (err) {
       logger.warn('asia_desk.scan_instrument_failed', { instrument, err })
     }

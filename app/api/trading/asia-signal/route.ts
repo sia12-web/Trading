@@ -9,8 +9,6 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { assertCronAuthorized, getOrCreateUser, resolveDeskUser } from '@/lib/utils/devAuth'
 import {
-  formatAsiaDeskTelegram,
-  asiaTelegramKey,
   isAsiaLiveOrderOverlay,
   overlayFromWebhook,
   parseAsiaWebhookBody,
@@ -18,12 +16,10 @@ import {
   type AsiaInstrument,
 } from '@/lib/trading/asiaDesk'
 import {
-  claimAsiaTelegramKey,
   loadAsiaDeskBook,
   overlayForInstrument,
   upsertAsiaOverlay,
 } from '@/lib/trading/asiaDeskStore'
-import { sendTelegramMessage } from '@/lib/notify/telegram'
 import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
@@ -103,32 +99,12 @@ export async function POST(request: Request) {
     }
 
     await upsertAsiaOverlay(supabase, deskUser.id, overlay)
-    const text = formatAsiaDeskTelegram(overlay)
-    let telegram: { sent: boolean; skipped?: string } = { sent: false }
-    if (text) {
-      const rowAfter = await loadAsiaDeskBook(supabase, deskUser.id)
-      const key = asiaTelegramKey(overlay)
-      if ((rowAfter.telegramKeys || []).includes(key)) {
-        telegram = { sent: false, skipped: 'deduped' }
-      } else {
-        const sent = await sendTelegramMessage(text)
-        if (sent.ok && !sent.skipped) {
-          await claimAsiaTelegramKey(supabase, deskUser.id, key)
-          telegram = { sent: true }
-        } else {
-          telegram = {
-            sent: false,
-            skipped: sent.ok ? sent.reason : sent.error,
-          }
-        }
-      }
-    }
 
     const overlays: Partial<Record<string, AsiaDeskOverlay>> = {
       ...(row.overlays || {}),
       [overlay.instrument]: overlay,
     }
-    return NextResponse.json({ success: true, overlay, overlays, telegram })
+    return NextResponse.json({ success: true, overlay, overlays })
   } catch (err) {
     logger.error('asia_signal.post_failed', { err })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

@@ -14,11 +14,9 @@ import {
 import { resolveTradeifyPlace } from '@/lib/trading/tradeifyGrowth50k'
 import {
   buildTeamCopyAdvice,
-  formatTeamTelegram,
   parseTeamTapeIngest,
   withSignalTarget,
 } from '@/lib/trading/teamTape'
-import { sendTelegramMessage } from '@/lib/notify/telegram'
 import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
@@ -105,12 +103,6 @@ export async function POST(request: Request) {
   )
 
   const isNew = !existing
-  if (isNew && (signal.status === 'filled' || signal.status === 'working')) {
-    const sent = await sendTelegramMessage(formatTeamTelegram({ signal, advice }))
-    if (!sent.ok) {
-      logger.warn('team_tape.telegram_failed', { error: sent.error })
-    }
-  }
 
   return NextResponse.json({
     ok: true,
