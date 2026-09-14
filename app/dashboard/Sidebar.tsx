@@ -83,8 +83,6 @@ const LIVE_ITEMS: NavItem[] = [
 
 
 
-const TOOL_ITEMS: NavItem[] = []
-
 function NavLink({
   item,
   active,
@@ -138,6 +136,8 @@ function NavSection({
   pathname: string
   search: string
 }) {
+  if (!items.length) return null
+
   return (
     <div className="space-y-0.5">
       <p className="px-3 pt-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-600">
@@ -166,20 +166,12 @@ function SidebarNav() {
   const search = searchParams.toString()
 
   return (
-    <>
-      <NavSection
-        title="Live desk"
-        items={LIVE_ITEMS}
-        pathname={pathname}
-        search={search}
-      />
-      <NavSection
-        title="Tools"
-        items={TOOL_ITEMS}
-        pathname={pathname}
-        search={search}
-      />
-    </>
+    <NavSection
+      title="Live desk"
+      items={LIVE_ITEMS}
+      pathname={pathname}
+      search={search}
+    />
   )
 }
 
