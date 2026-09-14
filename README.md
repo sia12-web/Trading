@@ -1,306 +1,175 @@
-# Trading Platform - Day Trading with AI Analysis
+# TradePulse — Institutional Day & Swing Trading Workstation
 
-A sophisticated day trading platform combining real-time market data, institutional-grade technical analysis, and Claude AI for intelligent level identification and trade decision-making.
+[![Next.js](https://img.shields.io/badge/Next.js-14.2-black?style=flat-square&logo=next.js)](https://nextjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.4-blue?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
+[![Lightweight Charts](https://img.shields.io/badge/Lightweight_Charts-v4-emerald?style=flat-square)](https://tradingview.github.io/lightweight-charts/)
+[![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=flat-square&logo=supabase)](https://supabase.com/)
+[![Web Audio API](https://img.shields.io/badge/Web_Audio_API-Dual_Tone_Chimes-orange?style=flat-square)](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
 
-## Features
+> **TradePulse** is a high-performance, real-time trading platform designed for institutional index futures (DOW, NASDAQ, GOLD, CRUDE, NIKKEI) and equity swing traders. It pairs institutional auction market theory (Steidlmayer/Dalton), 5-month anchored VWAP bands, multi-tiered CME market data pipelines, live broker portfolio synchronization (Questrade), prop firm challenge tracking (TopstepX), and an intelligent AI copilot (Leo) with persistent memory zones and procedural audio synthesis.
 
-- **Real-time Price Feeds**: OANDA WebSocket integration for live DOW/NASDAQ/NIKKEI data
-- **News Sentiment Analysis**: Finnhub API with keyword-based sentiment classification
-- **AI-Powered Level Finder**: Claude API identifies key support/resistance levels
-- **Paper Trading Mode**: Safe simulation environment before live trading
-- **Session-Based Trading**: Structured 9:00-9:45 AM trading windows with pre-market prep
-- **Forced Discipline**: One position at a time, stop-loss/take-profit exits only
+---
 
-## Documentation
+## 📚 Authoritative Documentation Suite
 
-- **[System Architecture Guide](docs/ARCHITECTURE.md)** — High-level architecture, module flow, database schema, LLM orchestration, and market data feeds
-- **[Operational System Guide](docs/SYSTEM_GUIDE.md)** — Complete day trading desk lifecycle, level confluence engine, live voice assistant, and simulation replay
-- **[Trading Psychology & AI Level Finder Tools](docs/TRADING_PSYCHOLOGY_AND_AI_TOOLS.md)** — Live chart UI, AI level tools (AVWAP, Volume Profile POC/HVN, Stop pools), and trader consistency framework
-- **[Unreleased Live Voice AI Feature Specification](docs/UNRELEASED_LIVE_VOICE_FEATURE.md)** — Detailed specification, architecture, API contracts, local bypass testing (`LIVE_VOICE_DEV_BYPASS`), and deployment steps for the unreleased Live Voice Assistant
-- **[Usage & API Reference Manual](docs/USAGE_AND_API_REFERENCE.md)** — Complete REST API reference, environment setup, CLI scripts, Python backtests, and deployment
-- **[Paper Trading Mode](docs/PAPER_TRADING_MODE.md)** — Paper vs live trading execution flow and database rules
-- **[NY Session Quick Guide](docs/DAY_TRADER_SYSTEM_GUIDE.md)** — NY session desk clock and feature summary
+The complete technical and operational documentation is organized under the [`docs/`](docs/) directory:
 
-## Project Structure
+| Document | Description |
+| :--- | :--- |
+| **[System Architecture Guide](docs/ARCHITECTURE.md)** | Core system topology, client-server boundaries, event-driven data flows, and state management. |
+| **[Market Data Pipelines & CME Basis](docs/MARKET_DATA_AND_FEEDS.md)** | Multi-tier feeds (CME Globex MDP 3.0 via Databento, OANDA 24/7 CFDs, Yahoo Finance Daily), dynamic CME basis calculation, and time shifting (`toChartTime`). |
+| **[Trading Desk Operations & Risk Guard](docs/TRADING_DESK_AND_OPERATIONS.md)** | Multi-session framework (Asia, London, NY Cash, Afternoon), attendance clock-in, DLL circuit breakers, attempt ladder, and zero-telemetry policy. |
+| **[Chart Engine & Technical Indicators](docs/CHART_AND_INDICATORS.md)** | Lightweight Charts v4, institutional candle styling, 5-Month Anchored VWAP + bands, 5-Day FRVP with candle-bounded POC, Dalton auction overlays, daily tested swing extremes, and CVD sub-pane. |
+| **[Leo AI Assistant & Web Audio Alerts](docs/LEO_AI_AND_AUDIO_ALERTS.md)** | Leo multi-tier AI copilot, persistent Long-Term Memory (LTM) zones, real-time proximity scanner, and procedural dual-tone chime synthesizer. |
+| **[Broker & Prop Firm Integrations](docs/BROKER_AND_PROP_INTEGRATIONS.md)** | Questrade live OAuth portfolio sync, intelligent delayed TP/SL bracket pairing, and TopstepX $1,500 challenge sync ($183.64 / 66 trades ledger). |
+| **[REST API Reference & Data Contracts](docs/API_REFERENCE.md)** | Exhaustive reference for all API endpoints (`/api/trading/*`, `/api/levels/*`, `/api/health`), schemas, and Server-Sent Events (SSE). |
+
+---
+
+## ⚡ Key Platform Capabilities
+
+### 1. Multi-Tiered CME Market Data & Dynamic Basis Alignment
+- **Primary Feed**: CME Globex MDP 3.0 raw futures data via Databento (`GLBX.MDP3`).
+- **Continuous 24/7 Fallback**: OANDA v20 continuous CFDs adjusted in real time by the **dynamic CME basis offset** ($\text{Price}_{\text{CME Futures}} - \text{Price}_{\text{OANDA Spot}}$), ensuring tick-level accuracy against Tradovate, NinjaTrader, and TopstepX.
+- **Macro Daily History**: High-speed consolidation of 2 years of daily macro candles from Yahoo Finance in under 50ms.
+- **Forming Bar Engine**: Imperative in-memory candle updates via Server-Sent Events (`/api/trading/quote/stream`) with zero UI lag.
+
+### 2. Institutional Financial Charting (Lightweight Charts v4)
+- **Institutional Styling**: Standard TradingView green (`#089981`) and red (`#f23645`) candles desk-wide.
+- **5-Month Anchored VWAP**: Macro institutional benchmark with `±1σ`, `±2σ`, and `±3σ` volatility bands on Daily (`1D`) and dynamic session VWAP + 5M benchmark line on intraday charts (`1m`, `5m`, `30m`).
+- **5-Day Fixed Range Volume Profile (FRVP)**: Calculates Point of Control (POC), Value Area High (VAH), and Value Area Low (VAL), with the POC line terminating precisely at the current candle.
+- **Dalton Auction Theory Overlays**: Initial Balance (IB 60m), Opening Ranges (OR15, OR30), Late-Session Spikes, and Distribution references.
+- **Daily & Intraday Tested Extremes**: Structural swing highs/lows with traded volume badges (`(142.5k)`), retest confirmation (`[Retest 0.82x]`), and bounded horizontal shelves.
+- **Cumulative Volume Delta (CVD)**: Interactive candlestick sub-pane displaying buy/sell volume imbalances and order absorption divergences.
+
+### 3. Leo AI Copilot & Web Audio API Alert Engine
+- **Context-Aware Assistance**: Continuous situational awareness across live chart price action, Higher Timeframe daily structure, and open broker positions.
+- **Persistent Long-Term Memory (LTM)**: 1-click conversion of chart Range Boxes into persistent memory zones with trader notes and audible alarms.
+- **Procedural Two-Tone Chime Synthesis**: Zero-latency TradingView-style alert chime synthesized in real time via the Web Audio API (880 Hz fundamental $\rightarrow$ 1318.51 Hz harmonic shimmer) without external audio files.
+
+### 4. Questrade Broker & TopstepX Prop Firm Integration
+- **Questrade Live Sync**: Real-time portfolio book, cash balance, open multi-day swing equities (SPY, GOOG, SLV, COPX).
+- **Intelligent Delayed TP/SL Bracket Pairing**: Proprietary algorithm pairing delayed limit targets and stop orders with open positions based on price relationship sanity (Long TP > Entry > SL) and recency scoring, completely isolating unexecuted entry limits.
+- **TopstepX $1,500 Challenge**: Zero-base prop equity engine tracking official challenge `1.5KCHCR-LABS004-V2-675081-67067724`, Max Loss Limit floor (-$500.00), live cushion ($683.64), win rate (56.06%), and the verified 66-trade ledger.
+
+### 5. Strict Desk Risk Controls & Zero-Telemetry Privacy
+- **Risk Limits**: Fixed $400 dollar risk per setup, Daily Loss Limit (DLL) circuit breakers, 3-attempt daily ladder, and +$700 Green Day lock.
+- **Zero Telemetry**: All Telegram notifications are permanently disabled desk-wide. Telemetry, order execution, and trading signals remain 100% private on the local platform.
+
+---
+
+## 🛠️ Project Structure
 
 ```
 ├── app/
-│   ├── api/                    # API routes
-│   │   ├── sessions/           # Trading session endpoints
-│   │   ├── positions/          # Position management
-│   │   ├── agents/             # AI agent endpoints
-│   │   ├── settings/           # User settings
-│   │   └── ...
-│   ├── page.tsx               # Home page
-│   └── layout.tsx             # Root layout
+│   ├── api/                     # Next.js Server-Side API Route Handlers
+│   │   ├── auth/                # Session Authentication & Logout
+│   │   ├── health/              # Diagnostic System Probe
+│   │   ├── levels/              # Support/Resistance Level Archive
+│   │   ├── notify/              # Desk Notifications Dispatcher
+│   │   └── trading/             # Core Trading & Market Data Endpoints
+│   │       ├── candles/         # Multi-TF Historical Candles (Databento/OANDA/Yahoo)
+│   │       ├── quote/stream/    # Server-Sent Events (SSE) Live Price Stream
+│   │       ├── context-55/      # 5M AVWAP Baseline, YDay NYC, ON Inventory
+│   │       ├── questrade/book/  # Questrade Live Broker Book & Paired Brackets
+│   │       ├── journal/         # TopstepX Prop Firm Ledger & Equity Sync
+│   │       ├── team-tape/       # Live Multi-Day Swing Positions
+│   │       ├── leo/             # Leo AI Chat, Long-Term Memories & Alerts
+│   │       └── ...
+│   ├── dashboard/               # Next.js App Router Client Pages
+│   │   ├── chart/               # Fullscreen Institutional Trading Chart & CVD
+│   │   ├── journal/             # TopstepX Prop Challenge Ledger & Equity Curve
+│   │   ├── positions/           # Live Execution Dashboard & Bracket Controls
+│   │   ├── swing/               # Questrade Swing Portfolio & Team Tape
+│   │   └── page.tsx             # Dashboard Home & Notifications Center
+│   ├── layout.tsx               # Root Application Shell
+│   └── page.tsx                 # Landing / Redirect Entrypoint
 ├── lib/
-│   ├── services/              # Business logic services
-│   │   ├── priceService.ts    # OANDA price feed
-│   │   ├── newsService.ts     # Finnhub news feed
-│   │   ├── levelFinderAgent.ts # Claude AI analysis
-│   │   └── positionExecutor.ts # Position execution
-│   ├── supabase/              # Supabase clients
-│   │   ├── server.ts          # Server-side client
-│   │   └── client.ts          # Client-side client
-│   └── utils/                 # Helper functions
-├── types/
-│   └── database.ts            # TypeScript types for database
-├── supabase/
-│   ├── migrations/            # Database migrations
-│   └── rls/                   # RLS policy definitions
-├── docs/                      # Documentation
-├── .env.example               # Example environment variables
-├── .env.local                 # Local environment (DO NOT COMMIT)
-├── tsconfig.json              # TypeScript configuration
-├── next.config.js             # Next.js configuration
-└── package.json               # Dependencies
+│   ├── ai/                      # Leo AI Assistant & Prompt Engines
+│   ├── chart/                   # Charting Engines, AVWAP, Canvas Overlays, Sound
+│   │   ├── chartTime.ts         # Montreal Wall Clock toChartTime Converter
+│   │   ├── deskChartTheme.ts    # Lightweight Charts Institutional Theme
+│   │   ├── excesses.ts          # Daily & Intraday Tested Extremes & Retests
+│   │   ├── sessionVwap.ts       # Anchored VWAP & Standard Deviation Bands
+│   │   ├── soundEffects.ts      # Web Audio API Dual-Tone Chime Synthesizer
+│   │   └── volumeProfile.ts     # 5-Day FRVP & Dalton Auction Profiler
+│   ├── databento/               # CME Globex MDP 3.0 Feed Client
+│   ├── oanda/                   # OANDA v20 REST & CFD Pricing Service
+│   ├── questrade/               # Questrade OAuth & Live Account Service
+│   ├── supabase/                # Supabase Database & Mock Client
+│   ├── trading/                 # Trading Operations, CME Basis, Bracket Pairing
+│   │   ├── cmeBasis.ts          # Spot-Futures Basis Calculation Engine
+│   │   ├── deskInstrumentPreference.ts # Viewport Storage per Timeframe
+│   │   ├── journalHistory.ts    # Prop Firm Challenge & Equity Calculation
+│   │   ├── leoLongTermMemory.ts # Persistent Memory Zones & Proximity Engine
+│   │   ├── questradeOrders.ts   # Intelligent Delayed TP/SL Bracket Pairing
+│   │   ├── sessionGate.ts       # Multi-Session Desk Trading Windows
+│   │   └── teamTape.ts          # Multi-Day Position Persistence
+│   └── utils/                   # Shared Formatters, Date Utils, Logger
+├── docs/                        # Authoritative System Documentation Suite
+├── supabase/                    # PostgreSQL Migrations & RLS Policies
+├── types/                       # TypeScript Data Contracts & Interfaces
+├── .env.example                 # Environment Variable Template
+├── package.json                 # Dependencies & Build Scripts
+└── tsconfig.json                # TypeScript Strict Configuration
 ```
 
-## Setup Instructions
+---
+
+## 🚀 Quickstart & Setup
 
 ### 1. Prerequisites
+- **Node.js**: `v18.17.0` or higher
+- **Package Manager**: `npm` (v9+)
+- **Accounts / Keys** (Optional / Fallbacks available):
+  - Databento API Key (CME Globex live data)
+  - OANDA Account ID & Token (CFD pricing)
+  - Questrade API Refresh Token (Live broker sync)
+  - Supabase Project URL & Anon Key (Database persistence)
+  - Anthropic API Key (Leo AI assistant)
 
-- Node.js 18+
-- npm or yarn
-- OANDA account (demo or live)
-- Supabase project
-- Claude API key
-
-### 2. Environment Setup
-
-Copy `.env.example` to `.env.local` and fill in your credentials:
+### 2. Environment Configuration
+Copy `.env.example` to `.env.local` and populate your configuration:
 
 ```bash
 cp .env.example .env.local
 ```
 
-Required environment variables:
+Key environment variables:
+```env
+# Database & Auth
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# Market Data
+DATABENTO_API_KEY=your-databento-key
+OANDA_API_KEY=your-oanda-api-key
+OANDA_ACCOUNT_ID=your-oanda-account-id
+OANDA_ENVIRONMENT=practice # or 'live'
+
+# Broker Integrations
+QUESTRADE_REFRESH_TOKEN=your-questrade-token
+
+# AI Assistant
+ANTHROPIC_API_KEY=your-claude-api-key
 ```
-OANDA_API_KEY=your_key
-OANDA_ACCOUNT_ID=your_account_id
-OANDA_ENVIRONMENT=practice  # or 'live'
 
-NEXT_PUBLIC_SUPABASE_URL=your_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-
-ANTHROPIC_API_KEY=your_claude_api_key
-```
-
-### 3. Install Dependencies
+### 3. Installation & Verification
+Install dependencies and run the automated type-checking suite:
 
 ```bash
+# Install dependencies
 npm install
-# or
-yarn install
-```
 
-### 4. Database Setup
+# Run TypeScript type check
+npm run type-check
 
-Run migrations to set up database schema:
+# Run Next.js production build
+npm run build
 
-```bash
-npm run migrate
-```
-
-Or apply migrations directly via Supabase dashboard.
-
-### 5. Run Development Server
-
-```bash
+# Start development server
 npm run dev
 ```
 
-Visit `http://localhost:3000` to access the application.
-
-## Architecture
-
-### Vertical Slice Implementation
-
-The project is built in vertical slices, each implementing a complete feature end-to-end:
-
-- **Slice 1**: Database Schema + Core API
-- **Slice 2**: OANDA Real-time Price Feed
-- **Slice 3**: Finnhub News Feed Service
-- **Slice 4**: Claude AI - Level Finder Agent
-- **Slice 5**: Claude AI - Pre-Market Planner
-- **Slice 6**: Claude AI - HTF Specialist
-- **Slice 7+**: UI Components, Dashboard, Position Management
-
-### Key Services
-
-#### Price Feed Service (lib/services/priceService.ts)
-- Real-time WebSocket connection to OANDA
-- Tick-to-candle aggregation (M5, H1, H4)
-- RVOL calculation with 20-period rolling average
-- Pub/Sub pattern for subscribers
-
-#### News Feed Service (lib/services/newsService.ts)
-- 60-second polling interval from Finnhub API
-- Keyword-based sentiment classification
-- Relevance mapping (DOW, NASDAQ, NIKKEI, MACRO)
-- In-memory cache (max 100 articles)
-
-#### Level Finder Agent (lib/services/levelFinderAgent.ts)
-- Claude API integration for price action analysis
-- Support/resistance/VWAP identification
-- Conviction scoring (1-10)
-- Deduplication (50-pip threshold)
-
-#### Position Executor (lib/services/positionExecutor.ts)
-- Paper trading mode (simulated execution)
-- Live mode guard (prevents real execution until OANDA integrated)
-- Audit trail via monitoring_events table
-
-## Database Schema
-
-### Core Tables
-
-- **sessions**: Daily trading sessions with index recommendations
-- **identified_levels**: Support/resistance levels identified by AI
-- **positions**: Opened/closed trading positions
-- **monitoring_events**: Trade execution events and alerts
-- **price_data**: OHLC candles for analysis
-- **news_events**: News with sentiment classification
-- **profiles**: User configuration including trading mode preference
-
-All tables include:
-- UUID primary keys
-- Timestamps (created_at, updated_at)
-- Row Level Security (RLS) policies
-- Foreign key constraints with CASCADE deletes
-
-## Trading Workflow
-
-### Morning Preparation (7:00-9:00 AM)
-
-1. User creates session with index recommendation (DOW or NASDAQ)
-2. Agent 1 (Level Finder) analyzes 4H/Daily/H1 candles
-3. Identifies 2-5 key support/resistance levels
-4. Agent 4 (Pre-Market Planner) prepares entry strategy
-5. Levels stored in database, ready for trading window
-
-### Trading Window (9:00-9:45 AM)
-
-1. Monitoring service watches for price at identified levels
-2. Agent 6 (HTF Specialist) validates setup with higher timeframes
-3. User approves entry, position created with stop loss/take profit
-4. Monitoring continues until position reaches SL or TP
-5. Position auto-closes when target hit
-
-### After Trading
-
-1. Position closed with P&L recorded
-2. Execution audit trail in monitoring_events
-3. Results tracked for trading log and analytics
-
-## Paper vs Live Trading
-
-**Paper Trading Mode** (Default - Safe):
-- Positions simulated without real money
-- All entry/exit logic validated
-- Perfect for learning and testing
-- Recommended for first 2+ weeks
-
-**Live Trading Mode**:
-- Real OANDA orders placed
-- Real money at risk
-- Requires explicit mode switch
-- Audit trail tracks all live positions
-
-Switch modes via:
-```bash
-PATCH /api/settings/trading-mode
-{ "mode": "live" }  # or "paper"
-```
-
-## API Documentation
-
-### Sessions
-- `POST /api/sessions/create` - Create trading session
-- `GET /api/sessions/today` - Get today's session
-
-### Positions
-- `POST /api/positions/create` - Create position
-- `GET /api/positions/open` - Get open positions
-- `PATCH /api/positions/[id]/close` - Close position
-
-### Levels
-- `POST /api/agents/find-levels` - Analyze and identify levels
-- `GET /api/identified-levels/session/[id]` - Get session levels
-
-### News & Prices
-- `GET /api/news-events/recent` - Get recent market news
-- `GET /api/price-data/latest` - Get latest candles
-
-### Settings
-- `GET /api/settings/trading-mode` - Get trading mode
-- `PATCH /api/settings/trading-mode` - Set trading mode
-
-## Performance Metrics
-
-**Target KPIs**:
-- Win rate: >55%
-- Risk/Reward ratio: >1.5:1
-- Trade completion rate: >80%
-- Average response time: <100ms
-
-## Security
-
-- **RLS Policies**: Users isolated to own data
-- **API Auth**: All endpoints require valid session
-- **Secrets**: .env.local never committed to git
-- **Headers**: Security headers on all responses
-
-## Development Guidelines
-
-### TypeScript
-- Strict mode enabled
-- No `any` types
-- Full type definitions for database and API
-
-### Code Quality
-- Functions under 50 lines
-- Descriptive variable names
-- Error handling with try/catch
-- Console logs for errors only
-
-### Git Workflow
-- Create feature branch from main
-- Commit with clear messages
-- PR review before merge
-- Never commit .env.local or credentials
-
-## Troubleshooting
-
-### "Cannot read property of undefined"
-Usually missing environment variable. Check `.env.local` has all required keys.
-
-### "RLS policy blocking query"
-Check Supabase RLS policies allow current user's operations.
-
-### "Claude API timeout"
-Increase timeout or check API key validity.
-
-### "OANDA connection failed"
-Verify API key, account ID, and environment (practice vs live) are correct.
-
-## Future Roadmap
-
-- Phase 2: Email/SMS notifications, push alerts
-- Phase 3: Advanced analytics dashboard, trade statistics
-- Phase 4: OANDA account integration (live execution)
-- Phase 5: Multi-position management, portfolio analytics
-- Phase 6: Mobile app, real-time alerts on-the-go
-
-## License
-
-Proprietary - Trading Platform
-
-## Support
-
-For issues or questions:
-1. Check documentation in /docs
-2. Review recent migration for schema changes
-3. Check .env.local for missing credentials
-4. Review Supabase logs for database errors
+Navigate to `http://localhost:3000` to open the workstation.
