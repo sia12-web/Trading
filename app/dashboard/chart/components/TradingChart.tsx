@@ -3823,6 +3823,14 @@ export function TradingChart({
         status: m.status,
         lastTriggeredAt: m.lastTriggeredAt,
       })),
+      recentCandles: (candles || []).slice(-100).map((c) => ({
+        time: typeof c.time === 'number' ? c.time : Math.floor(new Date(c.time).getTime() / 1000),
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume ?? 1,
+      })),
     }
   }, [
     instrument,

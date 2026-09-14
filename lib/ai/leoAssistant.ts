@@ -193,6 +193,14 @@ export interface LeoChatContext {
   candlestickPatterns?: LeoCandlestickPatternsContext
   selectedDataPoints?: LeoDataPoint[]
   dataPoints?: LeoDataPoint[]
+  recentCandles?: Array<{
+    time: number
+    open: number
+    high: number
+    low: number
+    close: number
+    volume: number
+  }>
   trappedTraders?: string
 }
 

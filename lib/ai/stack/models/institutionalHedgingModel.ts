@@ -67,6 +67,8 @@ export interface InstitutionalHedgingTelemetry {
     type: 'GAMMA_FLIP' | 'CTA_LIQUIDATION' | 'ABSORPTION_WALL' | 'CALL_WALL' | 'PUT_WALL'
     urgency: 'HIGH' | 'MEDIUM' | 'EXTREME'
     description: string
+    reactionStatus?: 'PENDING' | 'TESTING' | 'HELD' | 'BREACHED'
+    reactionDetail?: string
   }>
 }
 
@@ -159,9 +161,9 @@ export function computeCtaRebalancingBands(
   if (!candles || candles.length < 20) {
     return {
       trendBias: 'NEUTRAL',
-      ctaLongTrigger: currentPrice * 1.005,
-      ctaLiquidationTrigger: currentPrice * 0.995,
-      ctaShortFlipTrigger: currentPrice * 0.99,
+      ctaLongTrigger: Number((currentPrice * 1.005).toFixed(2)),
+      ctaLiquidationTrigger: Number((currentPrice * 0.995).toFixed(2)),
+      ctaShortFlipTrigger: Number((currentPrice * 0.99).toFixed(2)),
       distanceToLiquidationPts: 0,
       riskOfForcedSqueeze: false,
     }
@@ -277,6 +279,108 @@ export function computeBasisArbitrage(
 }
 
 /**
+ * Evaluates whether price has tested, held, or breached a Big Money level.
+ */
+export function computeMarketReaction(
+  levelPrice: number,
+  levelType: string,
+  currentPrice: number,
+  candles: CandlePricePoint[]
+): { status: 'PENDING' | 'TESTING' | 'HELD' | 'BREACHED'; detail: string } {
+  const dist = currentPrice - levelPrice
+  const absDist = Math.abs(dist)
+
+  // Proximity threshold adapted to instrument price magnitude (~0.08% of price)
+  const testTol = Math.max(1.0, Number((currentPrice * 0.0008).toFixed(2)))
+  const breachTol = Math.max(0.5, Number((testTol * 0.6).toFixed(2)))
+  const heldTol = Math.max(0.8, Number((testTol * 0.8).toFixed(2)))
+
+  // Check if current price is actively testing the level
+  if (absDist <= testTol) {
+    return {
+      status: 'TESTING',
+      detail: `Actively testing zone (±${absDist.toFixed(1)} pts). Waiting for market reaction.`,
+    }
+  }
+
+  // Check recent candle extremes to see if level was tested
+  const recentWindow = candles && candles.length > 0 ? candles.slice(-30) : []
+  let testedInWindow = false
+  for (const c of recentWindow) {
+    if (c.low <= levelPrice + testTol && c.high >= levelPrice - testTol) {
+      testedInWindow = true
+      break
+    }
+  }
+
+  const isSupport =
+    levelType === 'PUT_WALL' ||
+    levelType === 'BUY_WALL' ||
+    (levelType === 'CTA_LIQUIDATION' && dist >= 0)
+
+  const isResistance =
+    levelType === 'CALL_WALL' ||
+    levelType === 'SELL_WALL' ||
+    (levelType === 'CTA_LIQUIDATION' && dist < 0)
+
+  if (isSupport) {
+    if (dist < -breachTol) {
+      return {
+        status: 'BREACHED',
+        detail: `Floor breached (-${Math.abs(dist).toFixed(1)} pts). Liquidation risk active.`,
+      }
+    }
+    if (testedInWindow && dist >= heldTol) {
+      return {
+        status: 'HELD',
+        detail: `Support held! Bounced +${dist.toFixed(1)} pts from institutional floor.`,
+      }
+    }
+    return {
+      status: 'PENDING',
+      detail: `Pending test (+${dist.toFixed(1)} pts above support).`,
+    }
+  }
+
+  if (isResistance) {
+    if (dist > breachTol) {
+      return {
+        status: 'BREACHED',
+        detail: `Resistance breached (+${dist.toFixed(1)} pts). Short gamma squeeze.`,
+      }
+    }
+    if (testedInWindow && dist <= -heldTol) {
+      return {
+        status: 'HELD',
+        detail: `Resistance held! Rejected -${Math.abs(dist).toFixed(1)} pts from dealer ceiling.`,
+      }
+    }
+    return {
+      status: 'PENDING',
+      detail: `Pending test (${Math.abs(dist).toFixed(1)} pts below resistance).`,
+    }
+  }
+
+  // Zero-gamma inflection boundary
+  if (dist > breachTol) {
+    return {
+      status: 'HELD',
+      detail: `Accepted above flip (+${dist.toFixed(1)} pts). Positive gamma dampening flow.`,
+    }
+  } else if (dist < -breachTol) {
+    return {
+      status: 'BREACHED',
+      detail: `Flipped below zero-gamma (-${Math.abs(dist).toFixed(1)} pts). Negative gamma volatility.`,
+    }
+  }
+
+  return {
+    status: 'TESTING',
+    detail: `Near inflection boundary (±${absDist.toFixed(1)} pts).`,
+  }
+}
+
+/**
  * Builds the complete Institutional Hedging Telemetry object.
  */
 export function buildInstitutionalHedgingTelemetry(args: {
@@ -300,42 +404,59 @@ export function buildInstitutionalHedgingTelemetry(args: {
     description: `Institutional limit order wall absorbing aggressive market orders at ${w.price}.`,
   }))
 
-  const placesTheyMustAct: InstitutionalHedgingTelemetry['placesTheyMustAct'] = [
+  const rawPlaces: Array<{
+    price: number
+    type: 'GAMMA_FLIP' | 'CTA_LIQUIDATION' | 'ABSORPTION_WALL' | 'CALL_WALL' | 'PUT_WALL'
+    urgency: 'HIGH' | 'MEDIUM' | 'EXTREME'
+    description: string
+  }> = [
     {
       price: dealerGamma.zeroGammaLevel,
       type: 'GAMMA_FLIP',
       urgency: Math.abs(currentPrice - dealerGamma.zeroGammaLevel) < 20 ? 'EXTREME' : 'HIGH',
-      description: `Zero-gamma flip boundary (${dealerGamma.zeroGammaLevel}). Dealers shift from dampening to accelerating flow.`,
+      description: `Zero-gamma flip boundary (${dealerGamma.zeroGammaLevel.toFixed(2)}). Dealers shift from dampening to accelerating flow.`,
     },
     {
       price: ctaBands.ctaLiquidationTrigger,
       type: 'CTA_LIQUIDATION',
       urgency: ctaBands.riskOfForcedSqueeze ? 'EXTREME' : 'MEDIUM',
-      description: `CTA Trend Liquidation trigger (${ctaBands.ctaLiquidationTrigger}). Systematic momentum models execute forced exits.`,
+      description: `CTA Trend Liquidation trigger (${ctaBands.ctaLiquidationTrigger.toFixed(2)}). Systematic momentum models execute forced exits.`,
     },
     {
       price: dealerGamma.callWallResistance,
       type: 'CALL_WALL',
       urgency: 'HIGH',
-      description: `Dealer Call Wall resistance (${dealerGamma.callWallResistance}). Heavy dealer short gamma overhang pinning rallies.`,
+      description: `Dealer Call Wall resistance (${dealerGamma.callWallResistance.toFixed(2)}). Heavy dealer short gamma overhang pinning rallies.`,
     },
     {
       price: dealerGamma.putWallSupport,
       type: 'PUT_WALL',
       urgency: 'HIGH',
-      description: `Dealer Put Wall support (${dealerGamma.putWallSupport}). Institutional strike pinning and long gamma floor.`,
+      description: `Dealer Put Wall support (${dealerGamma.putWallSupport.toFixed(2)}). Institutional strike pinning and long gamma floor.`,
     },
   ]
 
   // Add absorption walls to must-act places
   for (const wall of absorptionWalls) {
-    placesTheyMustAct.push({
+    rawPlaces.push({
       price: wall.price,
       type: 'ABSORPTION_WALL',
       urgency: 'HIGH',
       description: wall.description,
     })
   }
+
+  const placesTheyMustAct: InstitutionalHedgingTelemetry['placesTheyMustAct'] = rawPlaces.map((p) => {
+    const rx = computeMarketReaction(p.price, p.type, currentPrice, candles)
+    return {
+      price: Number(p.price.toFixed(2)),
+      type: p.type,
+      urgency: p.urgency,
+      description: p.description,
+      reactionStatus: rx.status,
+      reactionDetail: rx.detail,
+    }
+  })
 
   // Sort by price ascending
   placesTheyMustAct.sort((a, b) => a.price - b.price)

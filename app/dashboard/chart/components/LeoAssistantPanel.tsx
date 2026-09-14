@@ -114,6 +114,34 @@ export function LeoAssistantPanel({
   const [isStreaming, setIsStreaming] = useState(false)
   const [attachedPoints, setAttachedPoints] = useState<LeoDataPoint[]>([])
   const [armedRules, setArmedRules] = useState<ArmedDeskRule[]>([])
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Auto-resize textarea to fit multiline input dynamically up to max 130px
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+      const scrollH = textareaRef.current.scrollHeight
+      const clamped = Math.min(Math.max(scrollH, 38), 130)
+      textareaRef.current.style.height = `${clamped}px`
+    }
+  }, [inputPrompt])
+
+  // Session playbook lifecycle window: Pre-market playbook valid until 09:15 ET; NYC live reaction testing after 09:15 ET
+  const isPreSessionPlaybookWindow = (() => {
+    try {
+      const nyTime = new Date().toLocaleTimeString('en-US', {
+        timeZone: 'America/New_York',
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+      const [hh, mm] = nyTime.split(':').map(Number)
+      const nyDec = (hh || 0) + (mm || 0) / 60
+      return nyDec < 9.25 // Before 09:15 AM ET
+    } catch {
+      return false
+    }
+  })()
 
   // Multi-Agent Stack (AI Stacked) State
   const [activeTab, setActiveTab] = useState<'CHAT' | 'AI_STACK'>('CHAT')
@@ -636,6 +664,9 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
     const nextMessages = [...messages, userMessage]
     setMessages(nextMessages)
     setInputPrompt('')
+    if (textareaRef.current) {
+      textareaRef.current.style.height = '38px'
+    }
     setIsStreaming(true)
 
     // Append streaming assistant placeholder
@@ -1249,7 +1280,47 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
           )}
 
           {/* Input & Voice Controls Bar */}
-          <div className="p-2.5 border-t border-neutral-800/80 bg-neutral-900/70">
+          <div className="p-2.5 border-t border-neutral-800/80 bg-neutral-900/70 space-y-1.5">
+            {/* Quick Action Suggestion Chips */}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5 text-[9.5px] font-mono">
+              <button
+                type="button"
+                onClick={() =>
+                  handleSendMessage(
+                    `Leo, what are our must-act levels, dealer gamma walls, and CTA triggers for ${context.instrument}?`
+                  )
+                }
+                className="px-2 py-0.5 rounded-md bg-neutral-800/80 hover:bg-purple-950/60 border border-neutral-700/60 hover:border-purple-600/60 text-neutral-300 hover:text-purple-200 shrink-0 transition"
+                title="Quick query Big Money levels"
+              >
+                🎯 Big Money Triggers
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleSendMessage(
+                    `Leo, audit our session market structure, opening type, and CVD order flow for ${context.instrument}.`
+                  )
+                }
+                className="px-2 py-0.5 rounded-md bg-neutral-800/80 hover:bg-purple-950/60 border border-neutral-700/60 hover:border-purple-600/60 text-neutral-300 hover:text-purple-200 shrink-0 transition"
+                title="Audit active session and order flow"
+              >
+                📊 Session & CVD
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleSendMessage(
+                    `Leo, evaluate current position risk, rule status, and proximity to major reference magnets.`
+                  )
+                }
+                className="px-2 py-0.5 rounded-md bg-neutral-800/80 hover:bg-purple-950/60 border border-neutral-700/60 hover:border-purple-600/60 text-neutral-300 hover:text-purple-200 shrink-0 transition"
+                title="Evaluate trade risk and rules"
+              >
+                🛡️ Risk & Rules
+              </button>
+            </div>
+
             <form
               onSubmit={(e) => {
                 e.preventDefault()
@@ -1258,14 +1329,14 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                 }
                 handleSendMessage()
               }}
-              className="flex items-center gap-1.5"
+              className="flex items-end gap-1.5"
             >
               {/* Mic Voice Button */}
               {speechSupported && (
                 <button
                   type="button"
                   onClick={toggleListening}
-                  className={`relative p-2 rounded-xl border transition-all ${
+                  className={`relative p-2 rounded-xl border transition-all shrink-0 mb-0.5 ${
                     isListening
                       ? 'border-red-500 bg-red-950/80 text-red-200 ring-2 ring-red-400 ring-offset-1 ring-offset-neutral-950'
                       : 'border-neutral-800 bg-neutral-800/60 text-neutral-400 hover:text-purple-300 hover:border-purple-600 hover:bg-neutral-800'
@@ -1284,25 +1355,52 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                 </button>
               )}
 
-              {/* Text Input */}
-              <input
-                type="text"
-                value={inputPrompt}
-                onChange={(e) => setInputPrompt(e.target.value)}
-                placeholder={
-                  isListening
-                    ? 'Listening to speech...'
-                    : 'Speak to Leo or ask question...'
-                }
-                disabled={isStreaming}
-                className="flex-1 px-3 py-2 rounded-xl bg-neutral-950 border border-neutral-800 text-xs text-neutral-200 placeholder:text-neutral-500 focus:outline-none focus:border-purple-500 transition-colors font-sans"
-              />
+              {/* Multiline Interactive Textarea with Clear Button */}
+              <div className="relative flex-1 flex items-center min-w-0">
+                <textarea
+                  ref={textareaRef}
+                  rows={1}
+                  value={inputPrompt}
+                  onChange={(e) => setInputPrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      if (!isStreaming && inputPrompt.trim()) {
+                        if (isListeningRef.current) {
+                          stopListening()
+                        }
+                        handleSendMessage()
+                      }
+                    }
+                  }}
+                  placeholder={
+                    isListening
+                      ? 'Listening to speech...'
+                      : 'Ask Leo anything, discuss setups, or give trade commands...'
+                  }
+                  disabled={isStreaming}
+                  className="w-full px-3 py-2 pr-7 rounded-xl bg-neutral-950 border border-neutral-800 text-xs text-neutral-200 placeholder:text-neutral-500 focus:outline-none focus:border-purple-500 transition-colors font-sans resize-none overflow-y-auto min-h-[38px] max-h-[130px] leading-relaxed"
+                />
+                {inputPrompt.length > 0 && !isStreaming && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInputPrompt('')
+                      if (textareaRef.current) textareaRef.current.style.height = '38px'
+                    }}
+                    className="absolute right-2 top-2.5 text-neutral-500 hover:text-neutral-200 text-xs transition"
+                    title="Clear input"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
 
               {/* Send Button */}
               <button
                 type="submit"
                 disabled={isStreaming || !inputPrompt.trim()}
-                className="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:bg-neutral-800 disabled:text-neutral-600 text-white font-mono text-xs font-semibold shadow-md transition-all active:scale-95 flex items-center justify-center"
+                className="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:bg-neutral-800 disabled:text-neutral-600 text-white font-mono text-xs font-semibold shadow-md transition-all active:scale-95 flex items-center justify-center shrink-0 mb-0.5 min-h-[38px]"
               >
                 {isStreaming ? (
                   <span className="animate-spin text-[10px]">⟳</span>
@@ -1311,6 +1409,11 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                 )}
               </button>
             </form>
+
+            <div className="flex items-center justify-between px-1 text-[8.5px] font-mono text-neutral-500">
+              <span>Enter ↵ to send • Shift + Enter for new line</span>
+              <span>{inputPrompt.length > 0 ? `${inputPrompt.length} chars` : ''}</span>
+            </div>
           </div>
         </>
       ) : (
@@ -1368,6 +1471,46 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
           {/* Report Loaded */}
           {!isLoadingTeam && teamReport && (
             <>
+              {/* 0. Session Playbook Lifecycle Window Banner */}
+              <div
+                className={`p-2.5 rounded-xl border space-y-1 shrink-0 ${
+                  isPreSessionPlaybookWindow
+                    ? 'bg-emerald-950/40 border-emerald-800/60'
+                    : 'bg-amber-950/40 border-amber-800/60'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span
+                    className={`font-mono text-[10px] font-bold flex items-center gap-1.5 ${
+                      isPreSessionPlaybookWindow ? 'text-emerald-300' : 'text-amber-300'
+                    }`}
+                  >
+                    <span>{isPreSessionPlaybookWindow ? '🟢' : '🟡'}</span>
+                    {isPreSessionPlaybookWindow
+                      ? 'Pre-Session Playbook Window (Active until 09:15 ET)'
+                      : 'NYC Session Active (Pre-Session Closed at 09:15 ET)'}
+                  </span>
+                  <span
+                    className={`text-[8.5px] font-mono font-bold px-1.5 py-0.5 rounded border ${
+                      isPreSessionPlaybookWindow
+                        ? 'bg-emerald-900/60 text-emerald-300 border-emerald-700/60'
+                        : 'bg-amber-900/60 text-amber-300 border-amber-700/60'
+                    }`}
+                  >
+                    {isPreSessionPlaybookWindow ? 'PLANNING PHASE' : 'REACTION VERIFICATION'}
+                  </span>
+                </div>
+                <div
+                  className={`text-[10px] leading-tight ${
+                    isPreSessionPlaybookWindow ? 'text-emerald-200/80' : 'text-amber-200/80'
+                  }`}
+                >
+                  {isPreSessionPlaybookWindow
+                    ? 'Big Money dealer gamma & CTA triggers establish the pre-market blueprint. Use "Discuss Playbook" to lock your execution plan before cash open.'
+                    : 'Pre-market levels are theoretical until price approaches. Only when the market actually reacts (holds or breaches) does a level become actionable.'}
+                </div>
+              </div>
+
               {/* 1. Executive Team Consensus Hero Card */}
               <div className="p-3 rounded-xl bg-neutral-900/90 border border-neutral-800/90 space-y-2 shadow-lg shrink-0">
                 <div className="flex items-center justify-between">
@@ -1502,6 +1645,34 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                           <div className="text-[10px] text-neutral-300 leading-relaxed font-sans">
                             {place.description}
                           </div>
+
+                          {/* Live Market Reaction Status */}
+                          {place.reactionStatus && (
+                            <div className="flex items-center justify-between mt-1 pt-1 border-t border-neutral-800/70 text-[9px] font-mono">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span
+                                  className={`px-1.5 py-0.5 rounded text-[8px] font-extrabold border shrink-0 ${
+                                    place.reactionStatus === 'HELD'
+                                      ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                                      : place.reactionStatus === 'BREACHED'
+                                      ? 'bg-rose-950 text-rose-300 border-rose-700'
+                                      : place.reactionStatus === 'TESTING'
+                                      ? 'bg-amber-950 text-amber-300 border-amber-700 animate-pulse'
+                                      : 'bg-neutral-800 text-neutral-400 border-neutral-700'
+                                  }`}
+                                >
+                                  {place.reactionStatus === 'HELD'
+                                    ? '🛡️ HELD / DEFENDED'
+                                    : place.reactionStatus === 'BREACHED'
+                                    ? '⚠️ BREACHED'
+                                    : place.reactionStatus === 'TESTING'
+                                    ? '🎯 TESTING NOW'
+                                    : '⏳ PENDING TEST'}
+                                </span>
+                                <span className="text-neutral-400 truncate">{place.reactionDetail}</span>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )
                     })}
@@ -1575,13 +1746,27 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                 </div>
               </div>
 
+              {/* Cost & Refresh Information */}
+              <div className="pt-2 flex items-center justify-between text-[9px] font-mono text-neutral-400 px-1 mt-auto">
+                <span className="flex items-center gap-1">
+                  <span className="text-emerald-400 font-bold">⚡</span>
+                  <span>Free Local Engine ($0.00 API Cost)</span>
+                </span>
+                {teamReport && (
+                  <span className="text-neutral-500">
+                    Computed {new Date(teamReport.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </span>
+                )}
+              </div>
+
               {/* Bottom Actions */}
-              <div className="pt-2 flex items-center gap-2 mt-auto">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={fetchAiTeamConsensus}
                   disabled={isLoadingTeam}
                   className="flex-1 py-2 px-3 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-200 font-mono text-[10.5px] font-semibold transition flex items-center justify-center gap-1.5 active:scale-95"
+                  title="Re-evaluates dealer gamma, CTA bands, and live market reactions locally ($0.00 API cost)"
                 >
                   <span>⚡</span>
                   <span>Refresh Consensus</span>
@@ -1590,14 +1775,25 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                   type="button"
                   onClick={() => {
                     setActiveTab('CHAT')
-                    handleSendMessage(
-                      `Leo, explain the hedging playbook around our ${teamReport.placesTheyMustAct.length} must-act levels and how the AI stack recommends trading ${context.instrument}.`
-                    )
+                    if (isPreSessionPlaybookWindow) {
+                      handleSendMessage(
+                        `Leo, walk me through our pre-session hedging playbook around the ${teamReport.placesTheyMustAct.length} must-act levels and our execution rules for ${context.instrument} before the NYC open.`
+                      )
+                    } else {
+                      handleSendMessage(
+                        `Leo, the NYC session is active (pre-session window closed at 09:15 ET). Review how the market is actually reacting to our must-act levels: which levels have held, which have breached, and how does this affect our active trade management on ${context.instrument}?`
+                      )
+                    }
                   }}
                   className="flex-1 py-2 px-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-mono text-[10.5px] font-bold transition flex items-center justify-center gap-1.5 active:scale-95 shadow-md"
+                  title={
+                    isPreSessionPlaybookWindow
+                      ? 'Discuss pre-session game plan before cash open'
+                      : 'Discuss live market reactions to must-act levels (pre-session window closed at 09:15 ET)'
+                  }
                 >
                   <span>💬</span>
-                  <span>Discuss Playbook</span>
+                  <span>{isPreSessionPlaybookWindow ? 'Discuss Playbook' : 'Discuss Live Reactions'}</span>
                 </button>
               </div>
             </>

@@ -59,6 +59,11 @@ export class ConsensusOrchestrator {
     const pocVal = typeof lastPoc === 'number' ? lastPoc : livePrice
     const vwapVal = typeof vwapPoint === 'number' ? vwapPoint : livePrice
 
+    const pocFormatted = Number(Number(pocVal).toFixed(2))
+    const vwapFormatted = Number(Number(vwapVal).toFixed(2))
+    const pocStr = pocFormatted.toFixed(2)
+    const vwapStr = vwapFormatted.toFixed(2)
+
     const microBias: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'VOLATILE' =
       livePrice >= vwapVal && livePrice >= pocVal
         ? 'BULLISH'
@@ -72,15 +77,15 @@ export class ConsensusOrchestrator {
       role: 'MICROSTRUCTURE_EXECUTION',
       bias: microBias,
       confidence: 80,
-      keyLevelsQuoted: [pocVal, vwapVal],
-      thesis: `Order flow shows price trading ${livePrice >= vwapVal ? 'ABOVE' : 'BELOW'} Anchored VWAP (${vwapVal}) with POC anchored at ${pocVal}. ${
+      keyLevelsQuoted: [pocFormatted, vwapFormatted],
+      thesis: `Order flow shows price trading ${livePrice >= vwapVal ? 'ABOVE' : 'BELOW'} Anchored VWAP (${vwapStr}) with POC anchored at ${pocStr}. ${
         chartContext?.trappedTraders ? `Active ${chartContext.trappedTraders} detected.` : 'No trapped trader exhaustion.'
       }`,
       suggestedAction:
         microBias === 'BULLISH'
-          ? `Look for pullback tests to hold VWAP (${vwapVal}) for long continuation.`
+          ? `Look for pullback tests to hold VWAP (${vwapStr}) for long continuation.`
           : microBias === 'BEARISH'
-          ? `Look for rejection at POC (${pocVal}) for short rotation.`
+          ? `Look for rejection at POC (${pocStr}) for short rotation.`
           : 'Await market development inside the value area.',
     }
 
@@ -139,6 +144,8 @@ export class ConsensusOrchestrator {
       type: p.type,
       urgency: p.urgency,
       description: p.description,
+      reactionStatus: p.reactionStatus,
+      reactionDetail: p.reactionDetail,
     }))
 
     const executiveVerdict = `### 🏛️ Executive Team Consensus: **${consensusBias}** (${consensusConfidence}% Conviction)

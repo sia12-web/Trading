@@ -34,35 +34,49 @@ export async function POST(req: NextRequest) {
         ? chartContext.currentPrice
         : 20000 // Fallback
 
-    // Derive pseudo-candles from chart context or generate sensible anchors around live price
-    const dataPoints = chartContext?.dataPoints || chartContext?.selectedDataPoints || []
-    const candles = dataPoints
-      .filter((p) => p.category === 'POC' || p.category === 'VWAP' || p.category === 'EXTREME')
-      .map((p, idx) => {
-        const val = typeof p.value === 'number' ? p.value : parseFloat(String(p.value)) || livePrice
-        return {
-          time: Math.floor(Date.now() / 1000) - (20 - idx) * 300,
-          open: val,
-          high: val * 1.002,
-          low: val * 0.998,
-          close: val,
-          volume: typeof p.volume === 'number' ? p.volume : 500,
-        }
-      })
+    // Prioritize real candles from chart context if available
+    let candles: Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }> = []
 
-    // If no data points in context, construct synthetic 20-bar baseline around livePrice
-    if (candles.length === 0) {
-      for (let i = 0; i < 20; i++) {
-        const delta = Math.sin(i / 3) * (livePrice * 0.003)
-        const close = livePrice + delta
-        candles.push({
-          time: Math.floor(Date.now() / 1000) - (20 - i) * 300,
-          open: close - 2,
-          high: close + (livePrice * 0.002),
-          low: close - (livePrice * 0.002),
-          close,
-          volume: 800 + i * 20,
+    if (chartContext?.recentCandles && chartContext.recentCandles.length > 0) {
+      candles = chartContext.recentCandles.map((c) => ({
+        time: c.time,
+        open: Number(c.open.toFixed(2)),
+        high: Number(c.high.toFixed(2)),
+        low: Number(c.low.toFixed(2)),
+        close: Number(c.close.toFixed(2)),
+        volume: c.volume ?? 1,
+      }))
+    } else {
+      // Derive pseudo-candles from chart context data points or baseline
+      const dataPoints = chartContext?.dataPoints || chartContext?.selectedDataPoints || []
+      candles = dataPoints
+        .filter((p) => p.category === 'POC' || p.category === 'VWAP' || p.category === 'EXTREME')
+        .map((p, idx) => {
+          const val = typeof p.value === 'number' ? p.value : parseFloat(String(p.value)) || livePrice
+          return {
+            time: Math.floor(Date.now() / 1000) - (20 - idx) * 300,
+            open: Number(val.toFixed(2)),
+            high: Number((val * 1.002).toFixed(2)),
+            low: Number((val * 0.998).toFixed(2)),
+            close: Number(val.toFixed(2)),
+            volume: typeof p.volume === 'number' ? p.volume : 500,
+          }
         })
+
+      // If still no candles in context, construct 20-bar baseline around livePrice
+      if (candles.length === 0) {
+        for (let i = 0; i < 20; i++) {
+          const delta = Math.sin(i / 3) * (livePrice * 0.003)
+          const close = Number((livePrice + delta).toFixed(2))
+          candles.push({
+            time: Math.floor(Date.now() / 1000) - (20 - i) * 300,
+            open: Number((close - 2).toFixed(2)),
+            high: Number((close + (livePrice * 0.002)).toFixed(2)),
+            low: Number((close - (livePrice * 0.002)).toFixed(2)),
+            close,
+            volume: 800 + i * 20,
+          })
+        }
       }
     }
 

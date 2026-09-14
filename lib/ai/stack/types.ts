@@ -80,6 +80,8 @@ export interface TeamConsensusReport {
     type: string
     urgency: 'HIGH' | 'MEDIUM' | 'EXTREME'
     description: string
+    reactionStatus?: 'PENDING' | 'TESTING' | 'HELD' | 'BREACHED'
+    reactionDetail?: string
   }>
   verification: VerificationAudit
 }
