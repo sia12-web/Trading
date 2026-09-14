@@ -54,6 +54,7 @@ import { parseCalendarEventMs } from '@/lib/trading/deskNewsHazard'
 import type { DeskCalendarEvent } from '@/lib/trading/deskNews'
 import {
   detect5DaySessionExtremes,
+  detectDailyExtremes,
   detectSpikes,
   detectDistributionReferences,
   detectEmotionalNewsMoves,
@@ -2334,15 +2335,24 @@ export function TradingChart({
         }
       }
 
-      // IT: 5D POC Line — ONLY line that extends across the screen to the right (paneW)
+      // IT: 5D POC Line — extends only till the last candle (not into whitespace / price axis)
       const yPoc = series.priceToCoordinate(frvp5d.poc)
       if (yPoc != null && Number.isFinite(yPoc) && yPoc >= 0 && yPoc <= paneH) {
         const lineStart = Math.max(0, xAnchor)
+        const lastCandle = list[list.length - 1]
+        const rawXLast = lastCandle
+          ? timeToX(chart.timeScale(), toChartTime(lastCandle.time as number, tz), candleTimes)
+          : null
+        const lineEnd =
+          rawXLast != null && Number.isFinite(rawXLast)
+            ? Math.min(paneW, Math.max(lineStart, rawXLast))
+            : Math.min(paneW, lineStart + 160)
+
         ctx.strokeStyle = '#38bdf8'
         ctx.lineWidth = 2
         ctx.beginPath()
         ctx.moveTo(lineStart, Math.round(yPoc) + 0.5)
-        ctx.lineTo(paneW, Math.round(yPoc) + 0.5)
+        ctx.lineTo(lineEnd, Math.round(yPoc) + 0.5)
         ctx.stroke()
 
         ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
@@ -2975,19 +2985,19 @@ export function TradingChart({
       ? yesterdayNyc.openUnix - 16 * 3600
       : (list.length > 0 ? (list[list.length - 1]!.time as number) - 86400 * 2 : undefined)
 
-    // 2. Draw Session Extremes (True Highest & Lowest for Yesterday & Today only)
-    const sessionExtremes = detect5DaySessionExtremes(
-      list.map((c) => ({
-        time: c.time as number,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-        volume: c.volume,
-      })),
-      instrument,
-      yesterdayStartUnix
-    )
+    // 2. Draw Extremes (Daily tested swing highs/lows on 1D, or Session Extremes on intraday)
+    const rawBars = list.map((c) => ({
+      time: c.time as number,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+      volume: c.volume,
+    }))
+    const sessionExtremes =
+      timeframe === '1D'
+        ? detectDailyExtremes(rawBars, 24)
+        : detect5DaySessionExtremes(rawBars, instrument, yesterdayStartUnix)
 
     renderedSessionExtremesRef.current = []
     for (const ex of sessionExtremes) {
@@ -3090,194 +3100,175 @@ export function TradingChart({
       }
     }
 
-    // 3. Draw Late-Session Spikes (Spike High & Spike Base for Yesterday & Today only)
-    const spikes = detectSpikes(
-      list.map((c) => ({
-        time: c.time as number,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-        volume: c.volume,
-      })),
-      instrument,
-      yesterdayStartUnix
-    )
+    if (timeframe !== '1D') {
+      // 3. Draw Late-Session Spikes (Spike High & Spike Base for Yesterday & Today only)
+      const spikes = detectSpikes(
+        rawBars,
+        instrument,
+        yesterdayStartUnix
+      )
 
-    for (const sp of spikes) {
-      const chartT = toChartTime(sp.startTime, tz)
-      const xStart = timeToX(chart.timeScale(), chartT, candleTimes)
-      if (xStart == null || !Number.isFinite(xStart)) continue
-      const shelfW = Math.min(160, paneW - xStart)
-      if (shelfW <= 10) continue
+      for (const sp of spikes) {
+        const chartT = toChartTime(sp.startTime, tz)
+        const xStart = timeToX(chart.timeScale(), chartT, candleTimes)
+        if (xStart == null || !Number.isFinite(xStart)) continue
+        const shelfW = Math.min(160, paneW - xStart)
+        if (shelfW <= 10) continue
 
-      const yH = series.priceToCoordinate(sp.spikeHigh)
-      const yL = series.priceToCoordinate(sp.spikeLow)
-      const yBase = series.priceToCoordinate(sp.spikeBase)
+        const yH = series.priceToCoordinate(sp.spikeHigh)
+        const yL = series.priceToCoordinate(sp.spikeLow)
+        const yBase = series.priceToCoordinate(sp.spikeBase)
 
-      ctx.setLineDash([4, 3])
-      ctx.lineWidth = 1
+        ctx.setLineDash([4, 3])
+        ctx.lineWidth = 1
 
-      // Draw Spike Peak (High or Low)
-      const peakY = sp.direction === 'UP' ? yH : yL
-      if (peakY != null && Number.isFinite(peakY) && peakY >= 0 && peakY <= paneH) {
-        ctx.strokeStyle = 'rgba(192, 132, 252, 0.85)' // Purple
-        ctx.beginPath()
-        ctx.moveTo(xStart, Math.round(peakY) + 0.5)
-        ctx.lineTo(xStart + shelfW, Math.round(peakY) + 0.5)
-        ctx.stroke()
-      }
-
-      // Draw Spike Base (acceptance reference)
-      if (yBase != null && Number.isFinite(yBase) && yBase >= 0 && yBase <= paneH) {
-        ctx.strokeStyle = 'rgba(236, 72, 153, 0.85)' // Pink/magenta
-        ctx.beginPath()
-        ctx.moveTo(xStart, Math.round(yBase) + 0.5)
-        ctx.lineTo(xStart + shelfW, Math.round(yBase) + 0.5)
-        ctx.stroke()
-      }
-      ctx.setLineDash([])
-    }
-
-    // 4. Draw Dalton Distribution Reference Points (for Yesterday & Today only)
-    const distRefs = detectDistributionReferences(
-      list.map((c) => ({
-        time: c.time as number,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-        volume: c.volume,
-      })),
-      instrument,
-      yesterdayStartUnix
-    )
-
-    for (const ref of distRefs) {
-      const xStart = ref.startTime != null
-        ? (timeToX(chart.timeScale(), toChartTime(ref.startTime, tz), candleTimes) ?? 0)
-        : 0
-      const xEnd = ref.endTime != null
-        ? (timeToX(chart.timeScale(), toChartTime(ref.endTime, tz), candleTimes) ?? paneW)
-        : paneW
-
-      if (xEnd < -20 || xStart > paneW + 20) continue
-      const lineLeft = Math.max(0, xStart)
-      const lineRight = Math.min(paneW, Math.max(xStart + 60, xEnd))
-
-      if (ref.dayType === 'DOUBLE_DISTRIBUTION' && ref.separationLevel != null) {
-        const ySep = series.priceToCoordinate(ref.separationLevel)
-        if (ySep != null && Number.isFinite(ySep) && ySep >= 0 && ySep <= paneH) {
-          ctx.strokeStyle = 'rgba(251, 191, 36, 0.8)' // Amber/Gold
-          ctx.setLineDash([4, 4])
-          ctx.lineWidth = 1.2
+        // Draw Spike Peak (High or Low)
+        const peakY = sp.direction === 'UP' ? yH : yL
+        if (peakY != null && Number.isFinite(peakY) && peakY >= 0 && peakY <= paneH) {
+          ctx.strokeStyle = 'rgba(192, 132, 252, 0.85)' // Purple
           ctx.beginPath()
-          ctx.moveTo(lineLeft, Math.round(ySep) + 0.5)
-          ctx.lineTo(lineRight, Math.round(ySep) + 0.5)
+          ctx.moveTo(xStart, Math.round(peakY) + 0.5)
+          ctx.lineTo(xStart + shelfW, Math.round(peakY) + 0.5)
+          ctx.stroke()
+        }
+
+        // Draw Spike Base (acceptance reference)
+        if (yBase != null && Number.isFinite(yBase) && yBase >= 0 && yBase <= paneH) {
+          ctx.strokeStyle = 'rgba(236, 72, 153, 0.85)' // Pink/magenta
+          ctx.beginPath()
+          ctx.moveTo(xStart, Math.round(yBase) + 0.5)
+          ctx.lineTo(xStart + shelfW, Math.round(yBase) + 0.5)
+          ctx.stroke()
+        }
+        ctx.setLineDash([])
+      }
+
+      // 4. Draw Dalton Distribution Reference Points (for Yesterday & Today only)
+      const distRefs = detectDistributionReferences(
+        rawBars,
+        instrument,
+        yesterdayStartUnix
+      )
+
+      for (const ref of distRefs) {
+        const xStart = ref.startTime != null
+          ? (timeToX(chart.timeScale(), toChartTime(ref.startTime, tz), candleTimes) ?? 0)
+          : 0
+        const xEnd = ref.endTime != null
+          ? (timeToX(chart.timeScale(), toChartTime(ref.endTime, tz), candleTimes) ?? paneW)
+          : paneW
+
+        if (xEnd < -20 || xStart > paneW + 20) continue
+        const lineLeft = Math.max(0, xStart)
+        const lineRight = Math.min(paneW, Math.max(xStart + 60, xEnd))
+
+        if (ref.dayType === 'DOUBLE_DISTRIBUTION' && ref.separationLevel != null) {
+          const ySep = series.priceToCoordinate(ref.separationLevel)
+          if (ySep != null && Number.isFinite(ySep) && ySep >= 0 && ySep <= paneH) {
+            ctx.strokeStyle = 'rgba(251, 191, 36, 0.8)' // Amber/Gold
+            ctx.setLineDash([4, 4])
+            ctx.lineWidth = 1.2
+            ctx.beginPath()
+            ctx.moveTo(lineLeft, Math.round(ySep) + 0.5)
+            ctx.lineTo(lineRight, Math.round(ySep) + 0.5)
+            ctx.stroke()
+            ctx.setLineDash([])
+          }
+        } else if ((ref.dayType === 'TREND_BULL' || ref.dayType === 'TREND_BEAR') && ref.trendMidpoint != null) {
+          const yMid = series.priceToCoordinate(ref.trendMidpoint)
+          if (yMid != null && Number.isFinite(yMid) && yMid >= 0 && yMid <= paneH) {
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.8)' // Sky Blue
+            ctx.setLineDash([5, 3])
+            ctx.lineWidth = 1.2
+            ctx.beginPath()
+            ctx.moveTo(lineLeft, Math.round(yMid) + 0.5)
+            ctx.lineTo(lineRight, Math.round(yMid) + 0.5)
+            ctx.stroke()
+            ctx.setLineDash([])
+          }
+        }
+      }
+
+      // 5. Draw Emotional News Moves (Actual high impact news only where market actually reacted)
+      const newsMoves = detectEmotionalNewsMoves(
+        rawBars,
+        newsEvents,
+        instrument,
+        yesterdayStartUnix,
+        undefined,
+        false // strictly disable fake news markers on generic candle spikes
+      )
+
+      for (const move of newsMoves) {
+        const xStart = timeToX(chart.timeScale(), toChartTime(move.reactionStartTime, tz), candleTimes)
+        if (xStart == null || !Number.isFinite(xStart) || xStart > paneW + 30) continue
+
+        const xEnd = timeToX(chart.timeScale(), toChartTime(move.reactionEndTime, tz), candleTimes) ?? xStart
+        const shelfRight = Math.min(paneW, Math.max(xStart + 120, xStart + 240))
+        if (shelfRight < -20) continue
+
+        const yH = series.priceToCoordinate(move.newsHigh)
+        const yL = series.priceToCoordinate(move.newsLow)
+        const yBase = series.priceToCoordinate(move.basePrice)
+
+        // Draw subtle reaction corridor
+        if (yH != null && yL != null && Number.isFinite(yH) && Number.isFinite(yL)) {
+          const topY = Math.min(yH, yL)
+          const botY = Math.max(yH, yL)
+          const corridorW = Math.max(14, (xEnd - xStart) + 12)
+          ctx.fillStyle = 'rgba(168, 85, 247, 0.08)'
+          ctx.fillRect(xStart - 6, topY, corridorW, Math.max(4, botY - topY))
+          ctx.strokeStyle = 'rgba(168, 85, 247, 0.35)'
+          ctx.lineWidth = 1
+          ctx.setLineDash([2, 3])
+          ctx.strokeRect(xStart - 6, topY, corridorW, Math.max(4, botY - topY))
+          ctx.setLineDash([])
+        }
+
+        // News High Shelf (Rose)
+        if (yH != null && Number.isFinite(yH) && yH >= 0 && yH <= paneH) {
+          ctx.strokeStyle = '#f43f5e'
+          ctx.lineWidth = 1.3
+          ctx.setLineDash([4, 3])
+          ctx.beginPath()
+          ctx.moveTo(xStart, Math.round(yH) + 0.5)
+          ctx.lineTo(shelfRight, Math.round(yH) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
         }
-      } else if ((ref.dayType === 'TREND_BULL' || ref.dayType === 'TREND_BEAR') && ref.trendMidpoint != null) {
-        const yMid = series.priceToCoordinate(ref.trendMidpoint)
-        if (yMid != null && Number.isFinite(yMid) && yMid >= 0 && yMid <= paneH) {
-          ctx.strokeStyle = 'rgba(56, 189, 248, 0.8)' // Sky Blue
-          ctx.setLineDash([5, 3])
-          ctx.lineWidth = 1.2
+
+        // News Low Shelf (Emerald)
+        if (yL != null && Number.isFinite(yL) && yL >= 0 && yL <= paneH) {
+          ctx.strokeStyle = '#10b981'
+          ctx.lineWidth = 1.3
+          ctx.setLineDash([4, 3])
           ctx.beginPath()
-          ctx.moveTo(lineLeft, Math.round(yMid) + 0.5)
-          ctx.lineTo(lineRight, Math.round(yMid) + 0.5)
+          ctx.moveTo(xStart, Math.round(yL) + 0.5)
+          ctx.lineTo(shelfRight, Math.round(yL) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
         }
-      }
-    }
 
-    // 5. Draw Emotional News Moves (Actual high impact news only where market actually reacted)
-    const newsMoves = detectEmotionalNewsMoves(
-      list.map((c) => ({
-        time: c.time as number,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-        volume: c.volume,
-      })),
-      newsEvents,
-      instrument,
-      yesterdayStartUnix,
-      undefined,
-      false // strictly disable fake news markers on generic candle spikes
-    )
+        // Pre-News Base Line
+        if (yBase != null && Number.isFinite(yBase) && yBase >= 0 && yBase <= paneH) {
+          ctx.strokeStyle = 'rgba(192, 132, 252, 0.5)'
+          ctx.lineWidth = 1
+          ctx.setLineDash([2, 2])
+          ctx.beginPath()
+          ctx.moveTo(xStart, Math.round(yBase) + 0.5)
+          ctx.lineTo(xStart + 90, Math.round(yBase) + 0.5)
+          ctx.stroke()
+          ctx.setLineDash([])
+        }
 
-    for (const move of newsMoves) {
-      const xStart = timeToX(chart.timeScale(), toChartTime(move.reactionStartTime, tz), candleTimes)
-      if (xStart == null || !Number.isFinite(xStart) || xStart > paneW + 30) continue
-
-      const xEnd = timeToX(chart.timeScale(), toChartTime(move.reactionEndTime, tz), candleTimes) ?? xStart
-      const shelfRight = Math.min(paneW, Math.max(xStart + 120, xStart + 240))
-      if (shelfRight < -20) continue
-
-      const yH = series.priceToCoordinate(move.newsHigh)
-      const yL = series.priceToCoordinate(move.newsLow)
-      const yBase = series.priceToCoordinate(move.basePrice)
-
-      // Draw subtle reaction corridor
-      if (yH != null && yL != null && Number.isFinite(yH) && Number.isFinite(yL)) {
-        const topY = Math.min(yH, yL)
-        const botY = Math.max(yH, yL)
-        const corridorW = Math.max(14, (xEnd - xStart) + 12)
-        ctx.fillStyle = 'rgba(168, 85, 247, 0.08)'
-        ctx.fillRect(xStart - 6, topY, corridorW, Math.max(4, botY - topY))
-        ctx.strokeStyle = 'rgba(168, 85, 247, 0.35)'
-        ctx.lineWidth = 1
-        ctx.setLineDash([2, 3])
-        ctx.strokeRect(xStart - 6, topY, corridorW, Math.max(4, botY - topY))
-        ctx.setLineDash([])
-      }
-
-      // News High Shelf (Rose)
-      if (yH != null && Number.isFinite(yH) && yH >= 0 && yH <= paneH) {
-        ctx.strokeStyle = '#f43f5e'
-        ctx.lineWidth = 1.3
-        ctx.setLineDash([4, 3])
-        ctx.beginPath()
-        ctx.moveTo(xStart, Math.round(yH) + 0.5)
-        ctx.lineTo(shelfRight, Math.round(yH) + 0.5)
-        ctx.stroke()
-        ctx.setLineDash([])
-      }
-
-      // News Low Shelf (Emerald)
-      if (yL != null && Number.isFinite(yL) && yL >= 0 && yL <= paneH) {
-        ctx.strokeStyle = '#10b981'
-        ctx.lineWidth = 1.3
-        ctx.setLineDash([4, 3])
-        ctx.beginPath()
-        ctx.moveTo(xStart, Math.round(yL) + 0.5)
-        ctx.lineTo(shelfRight, Math.round(yL) + 0.5)
-        ctx.stroke()
-        ctx.setLineDash([])
-      }
-
-      // Pre-News Base Line
-      if (yBase != null && Number.isFinite(yBase) && yBase >= 0 && yBase <= paneH) {
-        ctx.strokeStyle = 'rgba(192, 132, 252, 0.5)'
-        ctx.lineWidth = 1
-        ctx.setLineDash([2, 2])
-        ctx.beginPath()
-        ctx.moveTo(xStart, Math.round(yBase) + 0.5)
-        ctx.lineTo(xStart + 90, Math.round(yBase) + 0.5)
-        ctx.stroke()
-        ctx.setLineDash([])
-      }
-
-      // Emotional Move tag
-      const tagY = yH != null ? yH - 12 : 30
-      if (tagY >= 10 && tagY <= paneH) {
-        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-        ctx.fillStyle = '#e879f9'
-        const dirLabel = move.direction === 'WHIPSAW' ? '±Whip' : move.direction === 'BULLISH_DRIVE' ? '▲Drive' : '▼Flush'
-        ctx.fillText(`⚡ ${move.eventName} (${dirLabel} ${move.moveRange.toFixed(1)}pts)`, xStart + 4, tagY)
+        // Emotional Move tag
+        const tagY = yH != null ? yH - 12 : 30
+        if (tagY >= 10 && tagY <= paneH) {
+          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+          ctx.fillStyle = '#e879f9'
+          const dirLabel = move.direction === 'WHIPSAW' ? '±Whip' : move.direction === 'BULLISH_DRIVE' ? '▲Drive' : '▼Flush'
+          ctx.fillText(`⚡ ${move.eventName} (${dirLabel} ${move.moveRange.toFixed(1)}pts)`, xStart + 4, tagY)
+        }
       }
     }
 
@@ -4903,20 +4894,17 @@ export function TradingChart({
   const candlesRef = useRef<OHLCV[]>([])
   const instrumentRef = useRef<Instrument>(instrument)
 
-  // Update candlestick series colors to match instrument brand color
+  // Ensure candlestick series colors always stay consistent institutional green/red across all markets
   useEffect(() => {
     if (!candleRef.current) return
-    const meta = INSTRUMENT_META[instrument]
-    const upColor = meta?.color || '#089981'
-    const downColor = '#f23645'
     try {
       candleRef.current.applyOptions({
-        upColor,
-        downColor,
-        borderUpColor: upColor,
-        borderDownColor: downColor,
-        wickUpColor: upColor,
-        wickDownColor: downColor,
+        upColor: DESK_CANDLE_UP,
+        downColor: DESK_CANDLE_DOWN,
+        borderUpColor: DESK_CANDLE_UP,
+        borderDownColor: DESK_CANDLE_DOWN,
+        wickUpColor: DESK_CANDLE_UP,
+        wickDownColor: DESK_CANDLE_DOWN,
       })
     } catch {
       /* ignore */
@@ -5789,14 +5777,12 @@ export function TradingChart({
       return paddedCandlePriceRange(min, max)
     }
 
-    const initialMeta = INSTRUMENT_META[instrumentRef.current] || INSTRUMENT_META.DOW
-    const initialUp = initialMeta.color || DESK_CANDLE_UP
     const candleSeries = chart.addCandlestickSeries({
-      upColor: initialUp,
+      upColor: DESK_CANDLE_UP,
       downColor: DESK_CANDLE_DOWN,
-      borderUpColor: initialUp,
+      borderUpColor: DESK_CANDLE_UP,
       borderDownColor: DESK_CANDLE_DOWN,
-      wickUpColor: initialUp,
+      wickUpColor: DESK_CANDLE_UP,
       wickDownColor: DESK_CANDLE_DOWN,
       borderVisible: true,
       wickVisible: true,
@@ -6276,8 +6262,8 @@ export function TradingChart({
 
       // Full continuum including afternoon — clipAfternoonBars is a no-op while freeze is off
       try {
-        // Must cover cash open of 5 trading days prior (weekends truncate a plain 5d fetch; 1m is 3d; 1D is 180d)
-        const days = timeframe === '1D' ? 180 : timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
+        // Must cover cash open of 5 trading days prior (weekends truncate a plain 5d fetch; 1m is 3d; 1D is 730d / 2 years)
+        const days = timeframe === '1D' ? 730 : timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
         const res = await fetch(
           `/api/trading/candles?instrument=${instrument}&timeframe=${timeframe}&days=${days}`
         )
@@ -6710,7 +6696,7 @@ export function TradingChart({
     const bands5m = compute5MonthAnchoredVwap({
       bars: mappedBars,
       instrument,
-      baseline: avwap5mBenchmark?.baseline ?? null,
+      baseline: timeframe === '1D' ? null : (avwap5mBenchmark?.baseline ?? null),
     })
     const bands = bands5m ?? computeAnchoredVwap(mappedBars, clock)
     latestVwapBandsRef.current = bands
@@ -6807,16 +6793,18 @@ export function TradingChart({
       }
     } catch {}
 
-    try { syncDeskPlaybookRangesRef.current(ordered) } catch {}
-    try { paintYesterdayProfileRef.current() } catch {}
-    try { paintOpeningActivityRef.current() } catch {}
-    try { paintFrvp5dRef.current(ordered) } catch {}
-    try { paintYesterdayNycRef.current(ordered) } catch {}
-    try { paintInventorySessionsRef.current() } catch {}
+    if (timeframe !== '1D') {
+      try { syncDeskPlaybookRangesRef.current(ordered) } catch {}
+      try { paintYesterdayProfileRef.current() } catch {}
+      try { paintOpeningActivityRef.current() } catch {}
+      try { paintFrvp5dRef.current(ordered) } catch {}
+      try { paintYesterdayNycRef.current(ordered) } catch {}
+      try { paintInventorySessionsRef.current() } catch {}
+      try { paintAuctionOverlayRef.current() } catch {}
+      try { paintDow15mFailOverlayRef.current() } catch {}
+      try { paintMarketControlRef.current() } catch {}
+    }
     try { paint5mAvwapBenchmarkRef.current() } catch {}
-    try { paintAuctionOverlayRef.current() } catch {}
-    try { paintDow15mFailOverlayRef.current() } catch {}
-    try { paintMarketControlRef.current() } catch {}
     try { paintFrvpHistogramRef.current?.() } catch {}
     try { paintExcessesAndRoundedRef.current?.() } catch {}
     try { paintNewsMarkersRef.current?.() } catch {}
@@ -6949,7 +6937,39 @@ export function TradingChart({
   useEffect(() => {
     const vs = vwapSeriesRef.current
     if (!vs) return
-    const bands = latestVwapBandsRef.current
+    const list = candlesRef.current
+    if (!list || list.length === 0) return
+
+    const clock = deskClockFor(instrument)
+    const mappedBars = list.map((c) => ({
+      time: c.time as number,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+      volume: c.volume,
+    }))
+    const bands5m = compute5MonthAnchoredVwap({
+      bars: mappedBars,
+      instrument,
+      baseline: timeframe === '1D' ? null : (avwap5mBenchmark?.baseline ?? null),
+    })
+    const bands = bands5m ?? computeAnchoredVwap(mappedBars, clock)
+    latestVwapBandsRef.current = bands
+    if (bands?.vwap?.length) {
+      const last = bands.vwap[bands.vwap.length - 1]
+      avwapLastRef.current = last && last.value > 0 ? last.value : null
+      const lastU = bands.upper1?.[bands.upper1.length - 1]
+      const lastL = bands.lower1?.[bands.lower1.length - 1]
+      if (last && last.value > 0) {
+        setCurrentVwap({
+          vwap: Number(last.value.toFixed(2)),
+          upper1: lastU ? Number(lastU.value.toFixed(2)) : 0,
+          lower1: lastL ? Number(lastL.value.toFixed(2)) : 0,
+        })
+      }
+    }
+
     if (bands && bands.vwap) {
       const tz = chartTzRef.current
       const shift = <T extends { time: number | UTCTimestamp; value: number }>(rows: T[]) =>
@@ -6967,7 +6987,7 @@ export function TradingChart({
       try { if (bands.upper3) vs.upper3.setData(shift(bands.upper3)) } catch {}
       try { if (bands.lower3) vs.lower3.setData(shift(bands.lower3)) } catch {}
     }
-  }, [avwap5mBenchmark, instrument])
+  }, [avwap5mBenchmark, instrument, timeframe])
 
 
   // ── Session color boxes (cached spans + imperative paint = smooth pan)
@@ -6976,7 +6996,7 @@ export function TradingChart({
     const series = candleRef.current
     const list = candlesRef.current
     const host = sessionOverlayRef.current
-    if (!chart || !series || !containerRef.current || list.length === 0) {
+    if (!chart || !series || !containerRef.current || list.length === 0 || timeframe === '1D') {
       paintSessionHighlightOverlay(host, [])
       paintPositionBandOverlay(positionBandOverlayRef.current, [])
       paintFrvpHistogramRef.current()
@@ -7331,6 +7351,23 @@ export function TradingChart({
       const last = lastCandleRef.current
       if (!last || !candleRef.current) return
 
+      if (timeframe === '1D') {
+        // Daily chart: directly update today's candle high, low, close with live tick
+        const updated: OHLCV = {
+          ...last,
+          high: Math.max(last.high, price),
+          low: Math.min(last.low, price),
+          close: price,
+        }
+        lastCandleRef.current = updated
+        try {
+          candleRef.current.update(toChartCandle(updated))
+        } catch {
+          /* ignore */
+        }
+        return
+      }
+
       const tfSec = barSeconds
       const bucketTs = quoteUnixForBucket(quoteTs)
       const stepped = applyTickToFormingBar(
@@ -7393,7 +7430,7 @@ export function TradingChart({
 
     const refreshCandles = async () => {
       try {
-        const days = timeframe === '1D' ? 180 : timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
+        const days = timeframe === '1D' ? 730 : timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
         const res = await fetch(
           `/api/trading/candles?instrument=${instrument}&timeframe=${timeframe}&days=${days}&quote=0&_=${Date.now()}`,
           { cache: 'no-store' }

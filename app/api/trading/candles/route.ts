@@ -56,9 +56,9 @@ export async function GET(request: Request) {
     const instrument = (searchParams.get('instrument') || 'DOW') as Instrument
     const timeframe = searchParams.get('timeframe') || '5m'
     const isDaily = timeframe === '1D' || timeframe === 'D'
-    const defaultDays = isDaily ? 180 : 5
-    const maxDays = isDaily ? 365 : 14
-    // Cap lookback — AVWAP needs ~5 sessions (or 180 days for 1D); hard max 14 calendar days (365 for 1D)
+    const defaultDays = isDaily ? 730 : 5
+    const maxDays = isDaily ? 1825 : 14
+    // Cap lookback — AVWAP needs ~5 sessions (or 730 days for 1D); hard max 14 calendar days (1825 for 1D)
     const days = Math.min(Math.max(parseInt(searchParams.get('days') || String(defaultDays), 10), 1), maxDays)
     const endDate = searchParams.get('date') || searchParams.get('end_date')
     const asOfParam = searchParams.get('as_of')
@@ -110,55 +110,61 @@ export async function GET(request: Request) {
       }
       // Keep afternoon bars on the replay day (and priors) — matches live continuum
     } else {
-      // Live desk: OANDA real-time 24/7 feed + Databento CME Globex MDP 3.0.
-      // Floor must cover AVWAP 5-trading-day-prior anchor; 1m is capped to 3d for responsive payload.
-      const fetchDays =
-        isDaily
-          ? days
-          : timeframe === '1m'
-            ? Math.min(days, 3)
-            : Math.max(days, AVWAP_CANDLE_FETCH_CALENDAR_DAYS)
-
-      // 1. Prioritize official CME Globex MDP 3.0 candles via Databento when configured
-      if (isDatabentoConfigured()) {
-        try {
-          const databento = await getDatabentoCandles(instrument, resolution, fetchDays)
-          if (databento?.candles?.length) {
-            candles = databento.candles
-            source = 'databento'
-          }
-        } catch (err) {
-          logger.warn(`[Candles] Databento fetch failed for ${instrument}, falling back to OANDA`, err)
-        }
-      }
-
-      // 2. Fallback to OANDA 24/7 continuous candles adjusted by CME basis
-      if (!candles || candles.length === 0) {
-        const oanda = await getOandaCandles(instrument, resolution, fetchDays)
-        if (oanda?.candles?.length) {
-          if (getCmeBasis(instrument) == null && getLastKnownCmeBasis(instrument) == null) {
-            await warmCmeBasis(instrument)
-          }
-          const basis =
-            getCmeBasis(instrument) ??
-            getLastKnownCmeBasis(instrument) ??
-            (instrument === 'DOW' ? 60.5 : instrument === 'NASDAQ' ? 36.5 : instrument === 'GOLD' ? 48.0 : 0)
-          candles = applyCmeBasisToCandles(oanda.candles, basis)
-          source = 'oanda'
-        }
-      }
-
-      // 3. Fallback to Yahoo if both Databento and OANDA were unavailable
-      if (!candles || candles.length === 0) {
-        const yahoo = await getYahooCandles(instrument, resolution, fetchDays)
+      if (isDaily) {
+        // Daily chart: fetch full multi-year daily history directly from Yahoo Finance in ~50ms
+        const yahoo = await getYahooCandles(instrument, 'D', days)
         if (yahoo?.candles?.length) {
           candles = yahoo.candles
           source = 'yahoo'
         }
-      }
+      } else {
+        // Intraday (1m, 5m, 15m, 30m, 1H, 4H): Databento -> OANDA -> Yahoo
+        const fetchDays =
+          timeframe === '1m'
+            ? Math.min(days, 3)
+            : Math.max(days, AVWAP_CANDLE_FETCH_CALENDAR_DAYS)
 
-      if (candles?.length && !isDaily) {
-        candles = clipAfternoonBars(candles, instrument)
+        // 1. Prioritize official CME Globex MDP 3.0 candles via Databento when configured
+        if (isDatabentoConfigured()) {
+          try {
+            const databento = await getDatabentoCandles(instrument, resolution, fetchDays)
+            if (databento?.candles?.length) {
+              candles = databento.candles
+              source = 'databento'
+            }
+          } catch (err) {
+            logger.warn(`[Candles] Databento fetch failed for ${instrument}, falling back to OANDA`, err)
+          }
+        }
+
+        // 2. Fallback to OANDA 24/7 continuous candles adjusted by CME basis
+        if (!candles || candles.length === 0) {
+          const oanda = await getOandaCandles(instrument, resolution, fetchDays)
+          if (oanda?.candles?.length) {
+            if (getCmeBasis(instrument) == null && getLastKnownCmeBasis(instrument) == null) {
+              await warmCmeBasis(instrument)
+            }
+            const basis =
+              getCmeBasis(instrument) ??
+              getLastKnownCmeBasis(instrument) ??
+              (instrument === 'DOW' ? 60.5 : instrument === 'NASDAQ' ? 36.5 : instrument === 'GOLD' ? 48.0 : 0)
+            candles = applyCmeBasisToCandles(oanda.candles, basis)
+            source = 'oanda'
+          }
+        }
+
+        // 3. Fallback to Yahoo if both Databento and OANDA were unavailable
+        if (!candles || candles.length === 0) {
+          const yahoo = await getYahooCandles(instrument, resolution, fetchDays)
+          if (yahoo?.candles?.length) {
+            candles = yahoo.candles
+            source = 'yahoo'
+          }
+        }
+
+        if (candles?.length) {
+          candles = clipAfternoonBars(candles, instrument)
+        }
       }
     }
 

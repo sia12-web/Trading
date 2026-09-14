@@ -14,6 +14,8 @@ const INTERVAL_MAP: Record<string, string> = {
   '60': '60m',
   '240': '60m', // fetch 60m then aggregate to 4H
   D: '1d',
+  '1D': '1d',
+  '1d': '1d',
 }
 
 export type YahooCandle = {
@@ -142,7 +144,11 @@ export async function getYahooCandles(
             ? '3mo'
             : fetchDays <= 200
               ? '6mo'
-              : '1y'
+              : fetchDays <= 400
+                ? '1y'
+                : fetchDays <= 800
+                  ? '2y'
+                  : '5y'
 
   // Intraday CME futures: explicit period1/period2 returns denser 5m history than
   // coarse range=1mo (Yahoo often truncates *=F intraday under range=).

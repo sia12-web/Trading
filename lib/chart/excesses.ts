@@ -245,6 +245,96 @@ export function detect5DaySessionExtremes(
 }
 
 /**
+ * Detect Tested Swing Highs and Lows across Daily candles.
+ * Tracks structural daily pivot peaks and troughs, traded volumes, and retest confirmation.
+ */
+export function detectDailyExtremes(
+  bars: ExcessBar[],
+  maxCount: number = 16
+): SessionExtreme[] {
+  if (!bars || bars.length < 5) return []
+  const extremes: SessionExtreme[] = []
+  const window = 2
+
+  for (let i = window; i < bars.length - 1; i++) {
+    const cur = bars[i]!
+    let isHigh = true
+    let isLow = true
+
+    for (let w = 1; w <= window; w++) {
+      if (bars[i - w]!.high >= cur.high || (i + w < bars.length && bars[i + w]!.high >= cur.high)) {
+        isHigh = false
+      }
+      if (bars[i - w]!.low <= cur.low || (i + w < bars.length && bars[i + w]!.low <= cur.low)) {
+        isLow = false
+      }
+    }
+
+    const tol = Math.max(0.05, cur.close * 0.001)
+
+    if (isHigh) {
+      let isRetested = false
+      let retestVol: number | undefined
+      for (let j = i + 1; j < bars.length; j++) {
+        const next = bars[j]!
+        if (Math.abs(next.high - cur.high) <= tol || (next.high >= cur.high - tol && next.low <= cur.high)) {
+          isRetested = true
+          retestVol = Math.max(0, next.volume > 0 ? next.volume : 1)
+          break
+        }
+      }
+      const vol = Math.max(0, cur.volume > 0 ? cur.volume : 1)
+      extremes.push({
+        id: `daily-high-${cur.time}`,
+        session: 'New York',
+        sessionKey: `daily_${cur.time}`,
+        label: `DH ${cur.high.toFixed(2)}`,
+        type: 'HIGH',
+        price: Number(cur.high.toFixed(2)),
+        time: cur.time,
+        volume: vol,
+        isRetested,
+        retestVolume: retestVol,
+        retestVolumeRatio: retestVol && vol > 0 ? Number((retestVol / vol).toFixed(2)) : undefined,
+        sessionStartTime: cur.time,
+        sessionEndTime: bars[bars.length - 1]!.time,
+      })
+    }
+
+    if (isLow) {
+      let isRetested = false
+      let retestVol: number | undefined
+      for (let j = i + 1; j < bars.length; j++) {
+        const next = bars[j]!
+        if (Math.abs(next.low - cur.low) <= tol || (next.low <= cur.low + tol && next.high >= cur.low)) {
+          isRetested = true
+          retestVol = Math.max(0, next.volume > 0 ? next.volume : 1)
+          break
+        }
+      }
+      const vol = Math.max(0, cur.volume > 0 ? cur.volume : 1)
+      extremes.push({
+        id: `daily-low-${cur.time}`,
+        session: 'New York',
+        sessionKey: `daily_${cur.time}`,
+        label: `DL ${cur.low.toFixed(2)}`,
+        type: 'LOW',
+        price: Number(cur.low.toFixed(2)),
+        time: cur.time,
+        volume: vol,
+        isRetested,
+        retestVolume: retestVol,
+        retestVolumeRatio: retestVol && vol > 0 ? Number((retestVol / vol).toFixed(2)) : undefined,
+        sessionStartTime: cur.time,
+        sessionEndTime: bars[bars.length - 1]!.time,
+      })
+    }
+  }
+
+  return extremes.slice(-maxCount)
+}
+
+/**
  * Detect Late-Session Spikes (Dalton Spike).
  * A spike occurs when price drives aggressively in the last 30-45 minutes of a session.
  */
