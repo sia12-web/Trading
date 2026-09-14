@@ -2253,7 +2253,22 @@ export function TradingChart({
       }
     }
     avwap5mLinesRef.current = []
-  }, [])
+    if (!host || timeframe === '1D' || !avwap5mBenchmark?.vwap) return
+
+    try {
+      const vwapLine = host.createPriceLine({
+        price: avwap5mBenchmark.vwap,
+        color: '#10b981',
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: `5M AVWAP ${avwap5mBenchmark.vwap.toLocaleString()}`,
+      })
+      avwap5mLinesRef.current.push(vwapLine)
+    } catch {
+      /* ignore */
+    }
+  }, [timeframe, avwap5mBenchmark])
 
   // ─── Multi-Timeframe Money Fixed Range Volume Profiles (Canvas) ─────────────
   const paintFrvpHistogram = useCallback(() => {
@@ -5814,18 +5829,18 @@ export function TradingChart({
     const vwapSeries = {
       upper3: chart.addLineSeries({ ...bandOpts, title: '' }),
       upper2: chart.addLineSeries({ ...bandOpts, title: '' }),
-      upper1: chart.addLineSeries({ ...bandOpts, color: '#3b82f6', lineWidth: 2, title: '' }),
+      upper1: chart.addLineSeries({ ...bandOpts, color: '#3b82f6', lineWidth: 2, lastValueVisible: true, title: '+1σ' }),
       vwap: chart.addLineSeries({
         color: '#10b981',
         lineWidth: 2,
         priceLineVisible: false,
-        lastValueVisible: false,
+        lastValueVisible: true,
         pointMarkersVisible: false,
         crosshairMarkerVisible: false,
-        title: '',
+        title: 'AVWAP',
         ...ignoreScale,
       }),
-      lower1: chart.addLineSeries({ ...bandOpts, color: '#b8a04a', lineWidth: 2, title: '' }),
+      lower1: chart.addLineSeries({ ...bandOpts, color: '#b8a04a', lineWidth: 2, lastValueVisible: true, title: '-1σ' }),
       lower2: chart.addLineSeries({ ...bandOpts, title: '' }),
       lower3: chart.addLineSeries({ ...bandOpts, title: '' }),
     }
@@ -6683,7 +6698,7 @@ export function TradingChart({
       /* ignore candle data error */
     }
 
-    // 5-Month Anchored VWAP with standard deviation bands (falls back to 5D cash open if baseline unavailable)
+    // 5-Month Anchored VWAP on 1D; Dynamic Session/5D Anchored VWAP with bands on intraday
     const clock = deskClockFor(instrument)
     const mappedBars = ordered.map((c) => ({
       time: c.time as number,
@@ -6693,12 +6708,14 @@ export function TradingChart({
       close: c.close,
       volume: c.volume,
     }))
-    const bands5m = compute5MonthAnchoredVwap({
-      bars: mappedBars,
-      instrument,
-      baseline: timeframe === '1D' ? null : (avwap5mBenchmark?.baseline ?? null),
-    })
-    const bands = bands5m ?? computeAnchoredVwap(mappedBars, clock)
+    const bands =
+      timeframe === '1D'
+        ? compute5MonthAnchoredVwap({
+            bars: mappedBars,
+            instrument,
+            baseline: null,
+          })
+        : computeAnchoredVwap(mappedBars, clock)
     latestVwapBandsRef.current = bands
     if (bands?.vwap?.length) {
       const last = bands.vwap[bands.vwap.length - 1]
@@ -6949,12 +6966,14 @@ export function TradingChart({
       close: c.close,
       volume: c.volume,
     }))
-    const bands5m = compute5MonthAnchoredVwap({
-      bars: mappedBars,
-      instrument,
-      baseline: timeframe === '1D' ? null : (avwap5mBenchmark?.baseline ?? null),
-    })
-    const bands = bands5m ?? computeAnchoredVwap(mappedBars, clock)
+    const bands =
+      timeframe === '1D'
+        ? compute5MonthAnchoredVwap({
+            bars: mappedBars,
+            instrument,
+            baseline: null,
+          })
+        : computeAnchoredVwap(mappedBars, clock)
     latestVwapBandsRef.current = bands
     if (bands?.vwap?.length) {
       const last = bands.vwap[bands.vwap.length - 1]
@@ -9953,16 +9972,21 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   </>
                 )
               })()}
-              {/* 5M Anchored VWAP HUD Indicator */}
+              {/* Anchored VWAP HUD Indicator */}
               <div
                 className="flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold"
-                title={`5-Month Anchored VWAP${currentVwap ? ` · Level: ${currentVwap.vwap.toLocaleString()}${livePrice ? ` · Distance: ${(livePrice - currentVwap.vwap).toFixed(1)}pts` : ''}` : ''}`}
+                title={`${timeframe === '1D' ? '5-Month' : 'Session'} Anchored VWAP${currentVwap ? ` · Level: ${currentVwap.vwap.toLocaleString()}${livePrice ? ` · Distance: ${(livePrice - currentVwap.vwap).toFixed(1)}pts` : ''}` : ''}${avwap5mBenchmark && timeframe !== '1D' ? ` · 5M Macro AVWAP: ${avwap5mBenchmark.vwap.toLocaleString()}` : ''}`}
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                <span className="text-gray-400 font-semibold">5M VWAP:</span>
+                <span className="text-gray-400 font-semibold">{timeframe === '1D' ? '5M VWAP:' : 'VWAP:'}</span>
                 <span className="font-mono font-bold">
                   {currentVwap ? currentVwap.vwap.toLocaleString() : '...'}
                 </span>
+                {timeframe !== '1D' && avwap5mBenchmark && (
+                  <span className="text-emerald-400/80 font-mono text-[10px] ml-0.5" title="Macro 5-Month Anchored VWAP">
+                    (5M: {avwap5mBenchmark.vwap.toLocaleString()})
+                  </span>
+                )}
               </div>
               <span className="text-gray-600 text-[10px]">|</span>
               {/* Interactive CVD Sub-Chart Pane Button */}
