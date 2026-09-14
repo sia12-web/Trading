@@ -48,7 +48,14 @@ export function journalTicketEquity(rows: readonly JournalEquityRow[]): {
     const tb = new Date(b.entry_timestamp || b.created_at || 0).getTime()
     return ta - tb
   })
-  const sized = chrono.find((t) => Number(t.account_size) > 0)
+  const sized = chrono.find(
+    (t) =>
+      t.account_size !== undefined &&
+      t.account_size !== null &&
+      !isNaN(Number(t.account_size)) &&
+      Number(t.account_size) >= 0 &&
+      String(t.account_size).trim() !== ''
+  )
   const startingAccount = sized ? Number(sized.account_size) : TRADEIFY_STARTING_BALANCE
 
   let running = startingAccount

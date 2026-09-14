@@ -41,6 +41,8 @@ const RES_MAP: Record<string, string> = {
   '30m': '30',
   '1H': '60',
   '4H': '240',
+  '1D': 'D',
+  'D': 'D',
 }
 
 export async function GET(request: Request) {
@@ -53,8 +55,11 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const instrument = (searchParams.get('instrument') || 'DOW') as Instrument
     const timeframe = searchParams.get('timeframe') || '5m'
-    // Cap lookback — AVWAP needs ~5 sessions; hard max 14 calendar days
-    const days = Math.min(Math.max(parseInt(searchParams.get('days') || '5', 10), 1), 14)
+    const isDaily = timeframe === '1D' || timeframe === 'D'
+    const defaultDays = isDaily ? 180 : 5
+    const maxDays = isDaily ? 365 : 14
+    // Cap lookback — AVWAP needs ~5 sessions (or 180 days for 1D); hard max 14 calendar days (365 for 1D)
+    const days = Math.min(Math.max(parseInt(searchParams.get('days') || String(defaultDays), 10), 1), maxDays)
     const endDate = searchParams.get('date') || searchParams.get('end_date')
     const asOfParam = searchParams.get('as_of')
     const asOf = asOfParam ? parseInt(asOfParam, 10) : null
@@ -108,9 +113,11 @@ export async function GET(request: Request) {
       // Live desk: OANDA real-time 24/7 feed + Databento CME Globex MDP 3.0.
       // Floor must cover AVWAP 5-trading-day-prior anchor; 1m is capped to 3d for responsive payload.
       const fetchDays =
-        timeframe === '1m'
-          ? Math.min(days, 3)
-          : Math.max(days, AVWAP_CANDLE_FETCH_CALENDAR_DAYS)
+        isDaily
+          ? days
+          : timeframe === '1m'
+            ? Math.min(days, 3)
+            : Math.max(days, AVWAP_CANDLE_FETCH_CALENDAR_DAYS)
 
       // 1. Prioritize official CME Globex MDP 3.0 candles via Databento when configured
       if (isDatabentoConfigured()) {
@@ -150,7 +157,7 @@ export async function GET(request: Request) {
         }
       }
 
-      if (candles?.length) {
+      if (candles?.length && !isDaily) {
         candles = clipAfternoonBars(candles, instrument)
       }
     }
@@ -158,7 +165,7 @@ export async function GET(request: Request) {
     if (candles && asOf != null && Number.isFinite(asOf)) {
       candles = candles.filter((c) => c.time <= asOf)
     }
-    if (candles?.length) {
+    if (candles?.length && !isDaily) {
       candles = dropImplausibleDeskBars(candles, instrument, timeframe)
     }
 

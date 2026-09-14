@@ -129,6 +129,18 @@ export interface LeoOrderFlowContext {
   description: string
 }
 
+export interface LeoLongTermMemoryItem {
+  id: string
+  instrument: string
+  timeframe: string
+  priceLow: number
+  priceHigh: number
+  purpose: string
+  notes?: string
+  status: 'ACTIVE' | 'TRIGGERED' | 'DISMISSED'
+  lastTriggeredAt?: string
+}
+
 export interface LeoChatContext {
   instrument: string
   currentPrice: number | null
@@ -138,6 +150,7 @@ export interface LeoChatContext {
   sessionDetails?: LeoSessionDetails | null
   activePosition?: LeoActivePosition | null
   orderFlow?: LeoOrderFlowContext | null
+  longTermMemories?: LeoLongTermMemoryItem[]
   longTermMoney: {
     avwap5m: number | null
     sigma1Upper: number | null
@@ -644,8 +657,8 @@ You are the trader's execution partner on the desk. When the trader gives you di
 7. TOPSTEPX $1,500 PROP FIRM CHALLENGE & AUTO OCO BRACKETS:
 - Challenge Target: +$1,500.00 (Pass & keep $1,500).
 - Maximum Loss Floor: -$500.00 (MUST NOT hit negative $500 — account breach!).
-- Current Challenge Status: Active Warning (Cumulative Net P&L: -$267.06, 5 Wins / 13 Losses across 18 executions).
-- Remaining Buffer to -$500 Breach Floor: Exactly $232.94!
+- Current Challenge Status: Active (Account 1.5KCHCR-LABS004-V2-675081-67067724, Current Prop Firm Balance: +$183.64, 37 Wins / 29 Losses across 66 executions, 56.06% Win Rate, Profit Factor 1.23, Best Trade: +$134.58).
+- Remaining Cushion to -$500 Breach Floor: Exactly $683.64 cushion ($500 MLL + $183.64 balance)!
 - TOPSTEPX AUTO OCO BRACKET PRESETS (FIXED $50 RISK BASE):
   The trader uses pre-configured TopstepX Auto OCO Brackets. When the trader mentions '1 to 1', '1:1', '1 to 2', '1:2', '1 to 3', '1:3', '1 to 5', or '1:5', map them immediately to fixed $50 risk and proportional profit target:
   * 1:1 (or '1 to 1' / '50-50'): SL = -$50 risk | TP = +$50 profit (1:1 R:R).
@@ -660,7 +673,12 @@ You are the trader's execution partner on the desk. When the trader gives you di
 - Copy-Trading Execution: The trader trades directly on this platform desk and copies fills to TopstepX / Tradovate. Whenever proposing, validating, or discussing a trade, always provide the exact copy-trading execution string:
   Format: '[BUY/SELL] [QTY] [CONTRACT] @ [ENTRY] | SL: [STOP] (-$[RISK]) | TP: [TARGET] (+$[PROFIT]) [Bracket: RATIO]'
   Example: 'BUY 1 MNQU26 @ 29150.00 | SL: 29125.00 (-$50.00) | TP: 29250.00 (+$100.00) [Bracket: 1:2 (50-100)]'
-- If the trader asks about placing a trade where dollar risk exceeds $232.94, REJECT it immediately and warn that it would breach the TopstepX -$500 floor.
+- If the trader asks about placing a trade where dollar risk exceeds the remaining cushion ($683.64), REJECT it immediately and warn that it would breach the TopstepX -$500 floor.
+- Keep risk per trade within $40–$50 (or max $75).
+- LEO LONG-TERM MEMORY ARCHITECTURE (HTF DAILY MEMORIES):
+  * The trader saves range drawings as persistent Long-Term Memories on key Higher Timeframe (HTF) Daily levels with custom observation goals (e.g. "Keep eyes on this level when price visits to see if support or resistance").
+  * When price visits these memory levels, TradingView-style audible chime alarms sound and notifications are logged.
+  * You must STRICTLY DISTINGUISH these Higher Timeframe Daily Long-Term Memories from short-term intraday (5m/1m) scalp setups! Always respect the trader's stated purpose for each memory zone.
 - If the trader asks "Leo copy this order" or specifies a bracket (e.g. "place buy on MNQ with 1 to 2"), confirm prices clearly and emit an execution block:
   <execute>
   {
@@ -784,6 +802,18 @@ ${
         )
         .join('\n')
     : 'No candlestick patterns currently enabled/detected on visible bars.'
+}
+
+[LEO'S HIGHER-TIMEFRAME LONG-TERM MEMORIES & OBSERVATION ZONES]:
+${
+  ctx.longTermMemories && ctx.longTermMemories.length > 0
+    ? ctx.longTermMemories
+        .map(
+          (m) =>
+            `- [${m.timeframe}] ${m.instrument} Range: ${m.priceLow.toFixed(2)} – ${m.priceHigh.toFixed(2)} | Purpose: "${m.purpose}" | Status: ${m.status}${m.lastTriggeredAt ? ` (Triggered at ${m.lastTriggeredAt})` : ''}`
+        )
+        .join('\n')
+    : 'No active Higher Timeframe Long-Term Memories currently set.'
 }
 
 [DATA REFERENCE POINT CLICKED / ATTACHED FROM CHART]:

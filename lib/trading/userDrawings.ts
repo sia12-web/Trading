@@ -18,6 +18,10 @@ export interface UserRangeBox {
   color?: string
   label?: string
   instrument?: string
+  isMemory?: boolean
+  memoryPurpose?: string
+  memoryNotes?: string
+  alarmEnabled?: boolean
 }
 
 export interface UserManualFRVP {

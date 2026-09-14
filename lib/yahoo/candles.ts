@@ -132,7 +132,17 @@ export async function getYahooCandles(
   const interval = INTERVAL_MAP[resolution] || '5m'
   const fetchDays = resolution === '240' ? Math.max(days, 10) : days
   const range =
-    fetchDays <= 1 ? '1d' : fetchDays <= 5 ? '5d' : fetchDays <= 30 ? '1mo' : '3mo'
+    fetchDays <= 1
+      ? '1d'
+      : fetchDays <= 5
+        ? '5d'
+        : fetchDays <= 30
+          ? '1mo'
+          : fetchDays <= 100
+            ? '3mo'
+            : fetchDays <= 200
+              ? '6mo'
+              : '1y'
 
   // Intraday CME futures: explicit period1/period2 returns denser 5m history than
   // coarse range=1mo (Yahoo often truncates *=F intraday under range=).

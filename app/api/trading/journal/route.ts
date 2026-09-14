@@ -287,7 +287,10 @@ export async function GET(request: NextRequest) {
     )
     const allTotalPnl = allClosed.reduce((s, t) => s + (t.pnl?.dollars ?? 0), 0)
 
-    const baseAccount = startingAccount || 50000
+    const hasTopstepx = mergedEntries.some((e) => String(e.id || '').startsWith('topstepx-'))
+    const baseAccount = hasTopstepx
+      ? 0
+      : (typeof startingAccount === 'number' && !isNaN(startingAccount) ? startingAccount : 50000)
     const roundedTotalPnl = Math.round(allTotalPnl * 100) / 100
 
     return NextResponse.json({
@@ -307,7 +310,7 @@ export async function GET(request: NextRequest) {
         starting_account: baseAccount,
         ending_equity: Math.round((baseAccount + roundedTotalPnl) * 100) / 100,
         equity_change: roundedTotalPnl,
-        equity_source: equity.equitySource || 'topstepx_broker',
+        equity_source: hasTopstepx ? 'topstepx_broker' : (equity.equitySource || 'topstepx_broker'),
         days,
       },
       entries: mergedEntries,
@@ -337,8 +340,8 @@ export async function GET(request: NextRequest) {
           ai_exits: 0,
           win_rate: allClosed.length ? Math.round((allWins.length / allClosed.length) * 100) : null,
           total_pnl: totalPnl,
-          starting_account: 50000,
-          ending_equity: Math.round((50000 + totalPnl) * 100) / 100,
+          starting_account: 0,
+          ending_equity: totalPnl,
           equity_change: totalPnl,
           equity_source: 'topstepx_broker',
           days: 30,

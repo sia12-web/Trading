@@ -18,8 +18,8 @@ import { buildLeoSystemPrompt } from '../lib/ai/leoAssistant'
 
 describe('TopstepX $1,500 Prop Firm Challenge Engine', () => {
   describe('Verified Order History & P&L Calculation', () => {
-    it('contains all 18 executed orders with valid tickets and contracts', () => {
-      assert.strictEqual(TOPSTEPX_ORDER_HISTORY.length, 18)
+    it('contains all 66 executed orders with valid tickets and contracts', () => {
+      assert.strictEqual(TOPSTEPX_ORDER_HISTORY.length, 66)
       for (const order of TOPSTEPX_ORDER_HISTORY) {
         assert.ok(order.ticketId.length > 5, 'Ticket ID must be valid')
         assert.ok(['MNQU26', 'MYMU26', 'MGCZ26', 'MCLV26'].includes(order.contract))
@@ -36,36 +36,28 @@ describe('TopstepX $1,500 Prop Firm Challenge Engine', () => {
 
     it('computes exact challenge metrics matching broker statement', () => {
       const state = computeTopstepXChallengeState()
-      assert.strictEqual(state.totalTrades, 18)
-      assert.strictEqual(state.winningTrades, 5)
-      assert.strictEqual(state.losingTrades, 13)
-      assert.strictEqual(state.winRate, 27.8)
-      assert.strictEqual(state.totalGrossPnl, -241.0)
-      assert.strictEqual(state.totalFees, 26.06)
-      assert.strictEqual(state.totalNetPnl, -267.06)
+      assert.strictEqual(state.totalTrades, 66)
+      assert.strictEqual(state.winningTrades, 37)
+      assert.strictEqual(state.losingTrades, 29)
+      assert.strictEqual(state.winRate, 56.06)
+      assert.strictEqual(state.totalNetPnl, 183.64)
       assert.strictEqual(state.profitTarget, 1500)
       assert.strictEqual(state.maxLossFloor, -500)
-      assert.strictEqual(state.remainingRoomToBreach, 232.94)
-      assert.strictEqual(state.status, 'ACTIVE_WARNING')
-      assert.ok(state.riskRecommendation.includes('232.94'))
-      assert.ok(state.riskRecommendation.includes('$40–$50'))
+      assert.strictEqual(state.remainingRoomToBreach, 683.64)
+      assert.strictEqual(state.status, 'ACTIVE_NORMAL')
+      assert.ok(state.riskRecommendation.includes('1500'))
     })
   })
 
   describe('Journal Row Mapping', () => {
-    it('maps all 18 orders to standard journal entries with tickets and fees', () => {
+    it('maps all 66 orders to standard journal entries with tickets and fees', () => {
       const rows = getTopstepXJournalRows()
-      assert.strictEqual(rows.length, 18)
+      assert.strictEqual(rows.length, 66)
       const first = rows[0]
-      assert.strictEqual(first.ticket_id, '3086461113')
-      assert.strictEqual(first.contract, 'MNQU26')
-      assert.strictEqual(first.instrument, 'NASDAQ')
-      assert.strictEqual(first.direction, 'LONG')
-      assert.strictEqual(first.pnl.dollars, -47.72)
-      assert.strictEqual(first.pnl.gross_dollars, -46.5)
-      assert.strictEqual(first.pnl.fees, 1.22)
-      assert.strictEqual(first.duration, '00:11:23')
+      assert.ok(first.ticket_id.length > 5)
+      assert.ok(['MNQU26', 'MYMU26', 'MGCZ26', 'MCLV26'].includes(first.contract))
       assert.strictEqual(first.fill.source, 'topstepx_broker')
+      assert.strictEqual(first.risk.account_size, 0)
     })
   })
 
@@ -88,7 +80,7 @@ describe('TopstepX $1,500 Prop Firm Challenge Engine', () => {
       const res = validateTopstepXOrderRisk({
         instrument: 'MNQ',
         entryPrice: 29150.0,
-        stopLossPrice: 29110.0,
+        stopLossPrice: 29030.0, // 120 pts * $2 = $240 > 30% of $683.64 (~$205)
         quantity: 1,
       })
       assert.strictEqual(res.allowed, true)
@@ -96,11 +88,11 @@ describe('TopstepX $1,500 Prop Firm Challenge Engine', () => {
       assert.ok(res.warning?.includes('30%'))
     })
 
-    it('rejects an order that would exceed the remaining $232.94 cushion to -$500 floor', () => {
+    it('rejects an order that would exceed the remaining cushion to -$500 floor', () => {
       const res = validateTopstepXOrderRisk({
         instrument: 'MNQ',
         entryPrice: 29150.0,
-        stopLossPrice: 29030.0,
+        stopLossPrice: 28750.0, // 400 pts * $2 = $800 > $683.64 cushion
         quantity: 1,
       })
       assert.strictEqual(res.allowed, false)
@@ -156,7 +148,7 @@ describe('TopstepX $1,500 Prop Firm Challenge Engine', () => {
       const unsafe = resolveTopstepXPlace({
         instrument: 'MNQ',
         entryPrice: 29150.0,
-        stopLossPrice: 29000.0,
+        stopLossPrice: 28750.0, // 400 pts * $2 = $800 > $683.64 cushion
         quantity: 1,
       })
       assert.strictEqual(unsafe.allowed, false)

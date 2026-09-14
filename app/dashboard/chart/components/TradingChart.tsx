@@ -161,6 +161,14 @@ import {
   computeRangeMetrics,
   formatEtTime,
 } from '@/lib/trading/userDrawings'
+import { playTradingViewChime } from '@/lib/chart/soundEffects'
+import {
+  type LeoLongTermMemory,
+  loadLongTermMemories,
+  saveLongTermMemory,
+  recordMemoryNotification,
+  evaluatePriceAgainstMemories,
+} from '@/lib/trading/leoLongTermMemory'
 import { detectCandlestickPatterns } from '@/lib/trading/candlestickPatterns'
 import { isUsMarketHoliday } from '@/lib/chart/sessionVwap'
 import {
@@ -554,11 +562,11 @@ function makeDeskChartFormatters(_instrument: Instrument): DeskChartFmt {
 
 type Instrument = 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE'
 
-export type DeskTimeframe = '1m' | '5m' | '30m'
-export const DESK_TIMEFRAMES: DeskTimeframe[] = ['1m', '5m', '30m']
+export type DeskTimeframe = '1m' | '5m' | '30m' | '1D'
+export const DESK_TIMEFRAMES: DeskTimeframe[] = ['1m', '5m', '30m', '1D']
 
 export function barSecondsForTimeframe(tf: DeskTimeframe): number {
-  return tf === '1m' ? 60 : tf === '30m' ? 1800 : 300
+  return tf === '1m' ? 60 : tf === '30m' ? 1800 : tf === '1D' ? 86400 : 300
 }
 
 /** Desk charts default to 5m — 1m and 30m available on demand. */
@@ -688,6 +696,9 @@ function toDeskCandles(
   instrument: Instrument = 'DOW',
   timeframe: DeskTimeframe = '5m'
 ): OHLCV[] {
+  if (timeframe === '1D') {
+    return candles
+  }
   const trimmed = trimDeskCandles(
     candles.map((c) => ({
       time: c.time as number,
@@ -1154,6 +1165,26 @@ export function TradingChart({
       return []
     }
   })
+
+  // ── Leo Long-Term Memory Architecture & TradingView Alarms ────────────────
+  const [memories, setMemories] = useState<LeoLongTermMemory[]>(() => loadLongTermMemories())
+  const [memoryModalOpen, setMemoryModalOpen] = useState(false)
+  const [targetMemoryRange, setTargetMemoryRange] = useState<{
+    id: string
+    priceLow: number
+    priceHigh: number
+    purpose: string
+  } | null>(null)
+  const [activeTradingViewAlarm, setActiveTradingViewAlarm] = useState<{
+    memory: LeoLongTermMemory
+    price: number
+  } | null>(null)
+
+  useEffect(() => {
+    const onMems = () => setMemories(loadLongTermMemories())
+    window.addEventListener('leo-memories-updated', onMems)
+    return () => window.removeEventListener('leo-memories-updated', onMems)
+  }, [])
 
   // Auto-save drawings to localStorage on change
   useEffect(() => {
@@ -2257,6 +2288,11 @@ export function TradingChart({
     ctx.scale(dpr, dpr)
     ctx.clearRect(0, 0, paneW, paneH)
 
+    if (timeframe === '1D') {
+      ctx.restore()
+      return
+    }
+
     const tz = chartTzRef.current
     const candleTimes = list.map((c) => toChartTime(c.time as number, tz))
 
@@ -2610,14 +2646,18 @@ export function TradingChart({
         const boxW = Math.max(4, maxX - minX)
         const boxH = Math.max(4, botY - topY)
 
+        const isMem = Boolean(r.isMemory)
+        const memFill = isMem ? 'rgba(245, 158, 11, 0.18)' : 'rgba(168, 85, 247, 0.16)'
+        const memBorder = isMem ? 'rgba(245, 158, 11, 0.95)' : 'rgba(168, 85, 247, 0.85)'
+
         // Shaded fill
-        ctx.fillStyle = 'rgba(168, 85, 247, 0.16)'
+        ctx.fillStyle = memFill
         ctx.fillRect(minX, topY, boxW, boxH)
 
         // Border
-        ctx.strokeStyle = 'rgba(168, 85, 247, 0.85)'
-        ctx.lineWidth = 1.5
-        ctx.setLineDash([4, 4])
+        ctx.strokeStyle = memBorder
+        ctx.lineWidth = isMem ? 2 : 1.5
+        ctx.setLineDash(isMem ? [] : [4, 4])
         ctx.strokeRect(minX, topY, boxW, boxH)
         ctx.setLineDash([])
 
@@ -2625,25 +2665,45 @@ export function TradingChart({
         const lowP = Math.min(r.p1.price, r.p2.price)
         const spanPts = Math.round(highP - lowP)
 
-        // Top line High badge
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
-        ctx.fillRect(minX, Math.max(0, topY - 14), 115, 14)
-        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-        ctx.fillStyle = '#c084fc'
-        ctx.fillText(`Range High: ${highP.toLocaleString()}`, minX + 4, Math.max(10, topY - 3))
+        if (isMem) {
+          // Top line Memory badge
+          ctx.fillStyle = 'rgba(20, 14, 5, 0.92)'
+          const headerText = `🧠 LEO MEMORY: ${r.memoryPurpose ? r.memoryPurpose.slice(0, 32) : 'Level Observation'} [🔔 ALARM ACTIVE]`
+          ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
+          const textW = Math.min(boxW, Math.max(160, ctx.measureText(headerText).width + 12))
+          ctx.fillRect(minX, Math.max(0, topY - 16), textW, 16)
+          ctx.strokeStyle = '#f59e0b'
+          ctx.lineWidth = 1
+          ctx.strokeRect(minX, Math.max(0, topY - 16), textW, 16)
+          ctx.fillStyle = '#fbbf24'
+          ctx.fillText(headerText, minX + 5, Math.max(11, topY - 4))
 
-        // Bottom line Low badge
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
-        ctx.fillRect(minX, botY, 115, 14)
-        ctx.fillStyle = '#c084fc'
-        ctx.fillText(`Range Low: ${lowP.toLocaleString()}`, minX + 4, botY + 11)
+          // Bottom line Low badge
+          ctx.fillStyle = 'rgba(20, 14, 5, 0.92)'
+          ctx.fillRect(minX, botY, 150, 14)
+          ctx.fillStyle = '#fcd34d'
+          ctx.fillText(`Zone: ${lowP.toLocaleString()} – ${highP.toLocaleString()} (${spanPts} pts)`, minX + 4, botY + 11)
+        } else {
+          // Top line High badge
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
+          ctx.fillRect(minX, Math.max(0, topY - 14), 115, 14)
+          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+          ctx.fillStyle = '#c084fc'
+          ctx.fillText(`Range High: ${highP.toLocaleString()}`, minX + 4, Math.max(10, topY - 3))
 
-        // Center span pill
-        const midY = (topY + botY) / 2
-        ctx.fillStyle = 'rgba(88, 28, 135, 0.9)'
-        ctx.fillRect(minX + 4, midY - 8, 95, 16)
-        ctx.fillStyle = '#f3e8ff'
-        ctx.fillText(`⬛ ${spanPts} pts (${r.label || 'Range'})`, minX + 6, midY + 4)
+          // Bottom line Low badge
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
+          ctx.fillRect(minX, botY, 115, 14)
+          ctx.fillStyle = '#c084fc'
+          ctx.fillText(`Range Low: ${lowP.toLocaleString()}`, minX + 4, botY + 11)
+
+          // Center span pill
+          const midY = (topY + botY) / 2
+          ctx.fillStyle = 'rgba(88, 28, 135, 0.9)'
+          ctx.fillRect(minX + 4, midY - 8, 95, 16)
+          ctx.fillStyle = '#f3e8ff'
+          ctx.fillText(`⬛ ${spanPts} pts (${r.label || 'Range'})`, minX + 6, midY + 4)
+        }
       }
     }
 
@@ -3704,6 +3764,17 @@ export function TradingChart({
           return active
         })()
       } : undefined,
+      longTermMemories: memories.map((m) => ({
+        id: m.id,
+        instrument: m.instrument,
+        timeframe: m.timeframe,
+        priceLow: m.priceLow,
+        priceHigh: m.priceHigh,
+        purpose: m.purpose,
+        notes: m.notes,
+        status: m.status,
+        lastTriggeredAt: m.lastTriggeredAt,
+      })),
     }
   }, [
     instrument,
@@ -3721,6 +3792,7 @@ export function TradingChart({
     activeRangeBoxes,
     activeManualFrvps,
     showCandlestickPatterns,
+    memories,
   ])
 
   // Direct chart canvas click handler for session extreme arrows and labels
@@ -3854,6 +3926,51 @@ export function TradingChart({
     },
     [trendlines, rangeBoxes, manualFrvps, livePrice]
   )
+
+  const handleAskLeoAboutMemory = useCallback(
+    (mem: LeoLongTermMemory, price: number) => {
+      setLeoExternalPoints([
+        {
+          id: mem.id,
+          label: `🧠 Leo Memory: ${mem.purpose}`,
+          value: `Zone ${mem.priceLow.toFixed(2)} – ${mem.priceHigh.toFixed(2)} (Current: ${price.toFixed(2)})`,
+          tier: 'LT',
+          category: 'RANGE',
+          description: `Higher Timeframe Daily Long-Term Memory on ${mem.instrument}. Purpose: "${mem.purpose}". Price is currently visiting this level. Analyze whether this zone acts as support or resistance, verify order flow absorption/exhaustion, and outline action plan.`,
+        },
+      ])
+      setLeoPanelOpen(true)
+    },
+    []
+  )
+
+  // ── Monitor Live Price Against Leo Long-Term Memories & Play Chime ────────
+  useEffect(() => {
+    if (livePrice == null || !Number.isFinite(livePrice)) return
+    const { triggered } = evaluatePriceAgainstMemories({
+      instrument,
+      currentPrice: livePrice,
+      cooldownSeconds: 90,
+    })
+
+    for (const mem of triggered) {
+      if (mem.alarmSoundEnabled) {
+        playTradingViewChime()
+      }
+      recordMemoryNotification({
+        memoryId: mem.id,
+        instrument: mem.instrument,
+        price: livePrice,
+        priceLow: mem.priceLow,
+        priceHigh: mem.priceHigh,
+        purpose: mem.purpose,
+      })
+      setActiveTradingViewAlarm({
+        memory: mem,
+        price: livePrice,
+      })
+    }
+  }, [livePrice, instrument])
 
   const handleDeleteTrendline = useCallback((id: string) => {
     setTrendlines((prev) => prev.filter((t) => t.id !== id))
@@ -6159,8 +6276,8 @@ export function TradingChart({
 
       // Full continuum including afternoon — clipAfternoonBars is a no-op while freeze is off
       try {
-        // Must cover cash open of 5 trading days prior (weekends truncate a plain 5d fetch; 1m is 3d)
-        const days = timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
+        // Must cover cash open of 5 trading days prior (weekends truncate a plain 5d fetch; 1m is 3d; 1D is 180d)
+        const days = timeframe === '1D' ? 180 : timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
         const res = await fetch(
           `/api/trading/candles?instrument=${instrument}&timeframe=${timeframe}&days=${days}`
         )
@@ -7276,7 +7393,7 @@ export function TradingChart({
 
     const refreshCandles = async () => {
       try {
-        const days = timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
+        const days = timeframe === '1D' ? 180 : timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
         const res = await fetch(
           `/api/trading/candles?instrument=${instrument}&timeframe=${timeframe}&days=${days}&quote=0&_=${Date.now()}`,
           { cache: 'no-store' }
@@ -9579,7 +9696,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
             {/* Timeframe selector */}
             <div className="flex items-center rounded-lg border border-surface-700 bg-surface-900/80 p-0.5">
-              {(['1m', '5m', '30m'] as const).map((tf) => (
+              {(['1m', '5m', '30m', '1D'] as const).map((tf) => (
                 <button
                   key={tf}
                   type="button"
@@ -10274,6 +10391,26 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                           <div className="flex items-center gap-1 shrink-0">
                             <button
                               type="button"
+                              onClick={() => {
+                                setTargetMemoryRange({
+                                  id: rb.id,
+                                  priceLow: lo,
+                                  priceHigh: hi,
+                                  purpose: rb.memoryPurpose || 'Keep eyes on this level when price visits to see if support or resistance',
+                                })
+                                setMemoryModalOpen(true)
+                              }}
+                              className={`px-2 py-0.5 rounded font-medium text-[11px] border transition ${
+                                rb.isMemory
+                                  ? 'bg-amber-500/30 text-amber-200 border-amber-500/50'
+                                  : 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border-purple-500/30'
+                              }`}
+                              title={rb.isMemory ? 'Edit Leo Long-Term Memory' : 'Activate Leo Long-Term Memory'}
+                            >
+                              {rb.isMemory ? '🧠 Memory Active' : '🧠 Memory'}
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => handleAskLeoAboutDrawing('RANGE', rb.id)}
                               className="px-2 py-0.5 rounded bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-medium text-[11px] border border-purple-500/30 transition"
                               title="Send to Leo AI"
@@ -10373,7 +10510,31 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               <div className="text-[11px] text-slate-300 mt-0.5 line-clamp-2">
                 {drawingToast.summary}
               </div>
-              <div className="mt-2 flex items-center gap-2">
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {drawingToast.type === 'RANGE' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const r = rangeBoxes.find((b) => b.id === drawingToast.id)
+                      if (r) {
+                        const highP = Math.max(r.p1.price, r.p2.price)
+                        const lowP = Math.min(r.p1.price, r.p2.price)
+                        setTargetMemoryRange({
+                          id: r.id,
+                          priceLow: lowP,
+                          priceHigh: highP,
+                          purpose: r.memoryPurpose || 'Keep eyes on this level when price visits to see if support or resistance',
+                        })
+                        setMemoryModalOpen(true)
+                      }
+                      setDrawingToast(null)
+                    }}
+                    className="px-2.5 py-1 rounded bg-purple-600/40 hover:bg-purple-600/60 text-purple-200 font-bold text-xs border border-purple-500/50 transition flex items-center gap-1.5 shadow-sm"
+                  >
+                    <span>🧠</span>
+                    <span>Activate Long-Term Memory</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -10383,7 +10544,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   className="px-2.5 py-1 rounded bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-200 font-semibold text-xs border border-cyan-500/40 transition flex items-center gap-1.5 shadow-sm"
                 >
                   <span>🤖</span>
-                  <span>Ask Leo to Analyze</span>
+                  <span>Ask Leo</span>
                 </button>
                 <button
                   type="button"
@@ -10391,6 +10552,195 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   className="px-2 py-1 rounded text-slate-400 hover:text-slate-200 text-xs transition"
                 >
                   View Tools
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Leo Long-Term Memory Activation Modal */}
+        {memoryModalOpen && targetMemoryRange && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+            <div className="w-full max-w-md rounded-xl border border-purple-500/60 bg-[#161b22] p-5 shadow-2xl space-y-4 text-gray-200">
+              <div className="flex items-center justify-between border-b border-[#30363d] pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🧠</span>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Activate Leo Long-Term Memory</h3>
+                    <p className="text-[11px] text-gray-400">Save Higher Timeframe level to Leo's memory with TradingView alarms</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMemoryModalOpen(false)
+                    setTargetMemoryRange(null)
+                  }}
+                  className="text-gray-400 hover:text-white text-xs font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="block text-gray-400 text-[11px] font-semibold mb-1">
+                    Level / Range Boundaries ({instrument})
+                  </label>
+                  <div className="flex items-center gap-2 font-mono">
+                    <input
+                      type="number"
+                      value={targetMemoryRange.priceLow}
+                      onChange={(e) =>
+                        setTargetMemoryRange((prev) => prev ? { ...prev, priceLow: Number(e.target.value) } : null)
+                      }
+                      className="w-full rounded bg-[#0d1117] border border-[#30363d] px-2.5 py-1.5 text-white"
+                      placeholder="Low"
+                    />
+                    <span className="text-gray-500">to</span>
+                    <input
+                      type="number"
+                      value={targetMemoryRange.priceHigh}
+                      onChange={(e) =>
+                        setTargetMemoryRange((prev) => prev ? { ...prev, priceHigh: Number(e.target.value) } : null)
+                      }
+                      className="w-full rounded bg-[#0d1117] border border-[#30363d] px-2.5 py-1.5 text-white"
+                      placeholder="High"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-gray-400 text-[11px] font-semibold mb-1">
+                    Observation Purpose &amp; Note for Leo
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={targetMemoryRange.purpose}
+                    onChange={(e) =>
+                      setTargetMemoryRange((prev) => prev ? { ...prev, purpose: e.target.value } : null)
+                    }
+                    className="w-full rounded bg-[#0d1117] border border-[#30363d] p-2 text-white placeholder-gray-500 text-xs resize-none"
+                    placeholder="e.g. Keep eyes on this level when price visits to see if support or resistance"
+                  />
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    Leo will memorize this macro level, monitor order flow &amp; volume on approach, and provide HTF commentary.
+                  </p>
+                </div>
+
+                <div className="rounded-lg bg-[#0d1117] p-3 border border-[#30363d] space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-amber-300 font-semibold flex items-center gap-1.5">
+                      <span>🔔</span>
+                      <span>TradingView-Style Chime Alarm</span>
+                    </span>
+                    <span className="text-[10px] text-emerald-400 font-bold uppercase">Armed</span>
+                  </div>
+                  <p className="text-[10px] text-gray-400">
+                    Dual-tone audio chime will sound the instant price touches or enters this range.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#30363d]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMemoryModalOpen(false)
+                    setTargetMemoryRange(null)
+                  }}
+                  className="px-3 py-1.5 rounded border border-[#30363d] text-xs font-semibold text-gray-400 hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!targetMemoryRange) return
+                    const low = Math.min(targetMemoryRange.priceLow, targetMemoryRange.priceHigh)
+                    const high = Math.max(targetMemoryRange.priceLow, targetMemoryRange.priceHigh)
+                    const memory: LeoLongTermMemory = {
+                      id: `mem-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                      instrument,
+                      timeframe,
+                      priceLow: low,
+                      priceHigh: high,
+                      purpose: targetMemoryRange.purpose || 'Keep eyes on this level when price visits to see if support or resistance',
+                      status: 'ACTIVE',
+                      createdAt: new Date().toISOString(),
+                      triggerCount: 0,
+                      sourceDrawingId: targetMemoryRange.id,
+                      alarmSoundEnabled: true,
+                    }
+                    saveLongTermMemory(memory)
+                    // Tag range box
+                    setRangeBoxes((prev) =>
+                      prev.map((b) =>
+                        b.id === targetMemoryRange.id
+                          ? {
+                              ...b,
+                              isMemory: true,
+                              memoryPurpose: memory.purpose,
+                              color: '#f59e0b',
+                            }
+                          : b
+                      )
+                    )
+                    playTradingViewChime()
+                    setMemoryModalOpen(false)
+                    setTargetMemoryRange(null)
+                  }}
+                  className="px-3.5 py-1.5 rounded bg-purple-600 hover:bg-purple-500 text-xs font-bold text-white shadow-md flex items-center gap-1.5"
+                >
+                  <span>🧠</span>
+                  <span>Save to Long-Term Memory</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TradingView-Style Live Alarm Toast */}
+        {activeTradingViewAlarm && (
+          <div className="absolute top-16 right-6 z-50 max-w-sm rounded-xl border border-amber-500/70 bg-slate-900/95 p-4 shadow-2xl backdrop-blur-md text-slate-100 flex items-start gap-3 animate-in slide-in-from-top-4 duration-200">
+            <span className="text-2xl animate-bounce">🔔</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-amber-300 uppercase tracking-wider">
+                  TradingView Alarm Triggered
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setActiveTradingViewAlarm(null)}
+                  className="text-slate-400 hover:text-white text-xs font-bold px-1"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="mt-1 font-mono text-sm font-bold text-white">
+                {activeTradingViewAlarm.memory.instrument} visited @ ${activeTradingViewAlarm.price.toFixed(2)}
+              </div>
+              <p className="mt-1 text-xs text-gray-300 italic line-clamp-2">
+                &ldquo;{activeTradingViewAlarm.memory.purpose}&rdquo;
+              </p>
+              <div className="mt-2.5 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleAskLeoAboutMemory(activeTradingViewAlarm.memory, activeTradingViewAlarm.price)
+                    setActiveTradingViewAlarm(null)
+                  }}
+                  className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-semibold text-xs border border-amber-500/40 transition flex items-center gap-1.5"
+                >
+                  <span>🤖</span>
+                  <span>Consult Leo on Level Visit</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTradingViewAlarm(null)}
+                  className="px-2 py-1 rounded text-slate-400 hover:text-slate-200 text-xs transition"
+                >
+                  Dismiss
                 </button>
               </div>
             </div>

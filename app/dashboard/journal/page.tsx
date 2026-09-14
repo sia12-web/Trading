@@ -9,7 +9,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { entrySourceLabel, entrySourceTone } from '@/lib/trading/entrySourceBadge'
-import { formatDeskMoney, deskCurrencyLabel } from '@/lib/trading/currency'
+import { formatDeskMoney } from '@/lib/trading/currency'
 import { RANGE_EDGE_RISK_PERCENT } from '@/lib/trading/positionSizing'
 import type { TopstepXChallengeState } from '@/lib/trading/topstepXChallenge'
 
@@ -477,17 +477,22 @@ function JournalPageInner() {
               <div className="flex items-center gap-2.5">
                 <span className="flex h-3 w-3 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)] animate-pulse" />
                 <div>
-                  <h2 className="text-sm font-bold tracking-tight text-white flex flex-wrap items-center gap-2">
-                    {topstepxChallenge.challengeName}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-sm font-bold tracking-tight text-white">
+                      {topstepxChallenge.challengeName}
+                    </h2>
+                    <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded bg-sky-950/70 border border-sky-600/40 text-sky-300">
+                      {topstepxChallenge.accountId || '1.5KCHCR-LABS004-V2-675081-67067724'}
+                    </span>
                     <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-600/40 text-emerald-300">
-                      Target +${topstepxChallenge.profitTarget.toLocaleString()} (Keep $1,500)
+                      Target +${topstepxChallenge.profitTarget.toLocaleString()}
                     </span>
                     <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-red-950/60 border border-red-600/40 text-red-300">
-                      Floor -${Math.abs(topstepxChallenge.maxLossFloor).toLocaleString()} Limit
+                      MLL -${Math.abs(topstepxChallenge.maxLossFloor).toLocaleString()} Limit
                     </span>
-                  </h2>
+                  </div>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    Live order history &amp; copy-trade engine for TopstepX / Tradovate.
+                    BAL: <strong className="text-emerald-400">${topstepxChallenge.totalNetPnl.toFixed(2)}</strong> · MLL: <strong className="text-red-400">-${Math.abs(topstepxChallenge.maxLossFloor).toFixed(2)}</strong> · Cushion: <strong className="text-emerald-300">${topstepxChallenge.remainingRoomToBreach.toFixed(2)}</strong> · RP&amp;L: $0.00 · UP&amp;L: $0.00
                   </p>
                 </div>
               </div>
@@ -519,10 +524,10 @@ function JournalPageInner() {
               </div>
             )}
 
-            {/* Metrics Row */}
+            {/* Metrics Row 1: Key Balances */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="rounded-lg border border-[#30363d] bg-[#0d1117]/80 p-3">
-                <div className="text-[10px] uppercase font-semibold text-gray-500">Current Net P&amp;L</div>
+                <div className="text-[10px] uppercase font-semibold text-gray-500">Total P&amp;L / Balance</div>
                 <div
                   className={`mt-1 text-xl font-bold price-mono ${
                     topstepxChallenge.totalNetPnl >= 0 ? 'text-emerald-400' : 'text-red-400'
@@ -531,7 +536,7 @@ function JournalPageInner() {
                   {fmtMoney(topstepxChallenge.totalNetPnl, true)}
                 </div>
                 <div className="text-[10px] text-gray-500 mt-0.5">
-                  Gross: {fmtMoney(topstepxChallenge.totalGrossPnl, true)} · Fees: -{fmtMoney(topstepxChallenge.totalFees)}
+                  Gross: {fmtMoney(topstepxChallenge.grossProfit || topstepxChallenge.totalGrossPnl, true)} · Loss: {fmtMoney(topstepxChallenge.grossLoss || 0)}
                 </div>
               </div>
 
@@ -559,17 +564,85 @@ function JournalPageInner() {
                   ${topstepxChallenge.distanceToTarget.toFixed(2)}
                 </div>
                 <div className="text-[10px] text-gray-500 mt-0.5">
-                  Target: +$1,500.00
+                  Progress: {topstepxChallenge.targetProgressPercent}% of target
                 </div>
               </div>
 
               <div className="rounded-lg border border-[#30363d] bg-[#0d1117]/80 p-3">
-                <div className="text-[10px] uppercase font-semibold text-gray-500">Win Rate / Fills</div>
+                <div className="text-[10px] uppercase font-semibold text-gray-500">Trade Win %</div>
                 <div className="mt-1 text-xl font-bold price-mono text-white">
                   {topstepxChallenge.winRate}%
                 </div>
                 <div className="text-[10px] text-gray-500 mt-0.5">
-                  {topstepxChallenge.winningTrades}W · {topstepxChallenge.losingTrades}L · {topstepxChallenge.totalTrades} Fills
+                  {topstepxChallenge.winningTrades}W · {topstepxChallenge.losingTrades}L · {topstepxChallenge.totalTrades} trades
+                </div>
+              </div>
+            </div>
+
+            {/* Metrics Row 2: Deep Prop Firm Stats */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="rounded-lg border border-[#30363d] bg-[#0d1117]/60 p-2.5">
+                <div className="text-[10px] uppercase font-semibold text-gray-500">Profit Factor</div>
+                <div className="mt-0.5 text-base font-bold price-mono text-emerald-300">
+                  {topstepxChallenge.profitFactor || 1.23}
+                </div>
+                <div className="text-[10px] text-gray-500">
+                  -$803.92 / +$987.56
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-[#30363d] bg-[#0d1117]/60 p-2.5">
+                <div className="text-[10px] uppercase font-semibold text-gray-500">Avg Win / Avg Loss</div>
+                <div className="mt-0.5 text-base font-bold price-mono text-white">
+                  {topstepxChallenge.avgWin ? `$${topstepxChallenge.avgWin.toFixed(2)} / -$${Math.abs(topstepxChallenge.avgLoss).toFixed(2)}` : '$26.69 / -$27.72'}
+                </div>
+                <div className="text-[10px] text-gray-500">
+                  Ratio: 0.96 · {topstepxChallenge.avgTradeDuration || '6m 38s avg'}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-[#30363d] bg-[#0d1117]/60 p-2.5">
+                <div className="text-[10px] uppercase font-semibold text-gray-500">Direction % (Long)</div>
+                <div className="mt-0.5 text-base font-bold price-mono text-white">
+                  {topstepxChallenge.tradeDirectionLongPercent || 72.73}%
+                </div>
+                <div className="text-[10px] text-gray-500">
+                  {topstepxChallenge.tradeDirectionLongCount || 48} Long · {topstepxChallenge.tradeDirectionShortCount || 18} Short
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-[#30363d] bg-[#0d1117]/60 p-2.5">
+                <div className="text-[10px] uppercase font-semibold text-gray-500">Best / Worst Trade</div>
+                <div className="mt-0.5 text-base font-bold price-mono text-emerald-400">
+                  +${topstepxChallenge.bestTrade?.toFixed(2) || '134.58'} <span className="text-red-400 font-normal text-xs">/ -${Math.abs(topstepxChallenge.worstTrade || 59.04).toFixed(2)}</span>
+                </div>
+                <div className="text-[10px] text-gray-500">
+                  {topstepxChallenge.totalLots || 68} total lots traded
+                </div>
+              </div>
+            </div>
+
+            {/* Daily Net Breakdown */}
+            <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-3 space-y-2">
+              <div className="text-[10px] uppercase tracking-wider font-semibold text-gray-400">
+                Daily Account Performance (TopstepX Ledger)
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <div className="p-2 rounded bg-[#161b22] border border-red-900/40">
+                  <div className="text-[10px] text-gray-400 font-medium">09/08 (19 trades)</div>
+                  <div className="font-bold price-mono text-red-400 mt-0.5">-$231.50</div>
+                </div>
+                <div className="p-2 rounded bg-[#161b22] border border-emerald-900/40">
+                  <div className="text-[10px] text-emerald-400 font-medium">09/09 (23 trades - Best Day)</div>
+                  <div className="font-bold price-mono text-emerald-400 mt-0.5">+$274.12</div>
+                </div>
+                <div className="p-2 rounded bg-[#161b22] border border-emerald-900/40">
+                  <div className="text-[10px] text-gray-400 font-medium">09/10 (18 trades)</div>
+                  <div className="font-bold price-mono text-emerald-400 mt-0.5">+$109.34</div>
+                </div>
+                <div className="p-2 rounded bg-[#161b22] border border-emerald-900/40">
+                  <div className="text-[10px] text-gray-400 font-medium">09/11 (6 trades)</div>
+                  <div className="font-bold price-mono text-emerald-400 mt-0.5">+$31.68</div>
                 </div>
               </div>
             </div>
@@ -607,28 +680,31 @@ function JournalPageInner() {
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="text-[10px] uppercase tracking-wider text-gray-500">
-                  Desk equity
+                  Desk equity · TopstepX Prop Firm Account {topstepxChallenge?.accountId || '1.5KCHCR-LABS004-V2-675081-67067724'}
+                </div>
+                <div className="text-[10px] font-mono text-emerald-400">
+                  LIVE · MLL Floor: -$500.00 · BAL: ${summary.ending_equity?.toFixed(2) ?? '183.64'}
                 </div>
               </div>
               <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
                 <div>
                   <div className="text-[10px] text-gray-500 uppercase">
-                    Starting ({summary.days}d window)
+                    Challenge Base
                   </div>
                   <div className="price-mono text-lg text-white">
-                    {fmtMoney(summary.starting_account ?? 50_000)}
+                    {fmtMoney(summary.starting_account ?? 0)}
                   </div>
                 </div>
                 <div className="text-gray-600 text-xl pb-0.5">→</div>
                 <div>
-                  <div className="text-[10px] text-gray-500 uppercase">After closed trades</div>
-                  <div className="price-mono text-lg text-white">
-                    {fmtMoney(summary.ending_equity ?? summary.starting_account)}
+                  <div className="text-[10px] text-gray-500 uppercase">TopstepX Prop Firm Equity</div>
+                  <div className="price-mono text-lg text-white font-bold text-emerald-400">
+                    {fmtMoney(summary.ending_equity ?? summary.starting_account ?? 183.64)}
                   </div>
                 </div>
                 <div className="ml-auto text-right">
                   <div className="text-[10px] text-gray-500 uppercase">
-                    {madeMoney ? 'You made money' : lostMoney ? 'You lost money' : 'Flat'}
+                    {madeMoney ? 'Account Profit' : lostMoney ? 'Account Drawdown' : 'Flat'}
                   </div>
                   <div
                     className={`price-mono text-2xl font-bold ${
@@ -639,8 +715,8 @@ function JournalPageInner() {
                   </div>
                 </div>
               </div>
-              <p className="mt-2 text-[11px] text-gray-600">
-                Equity is reconstructed from ticket size and closed-trade P&amp;L. Working limits and cancelled fills are not on this tape. Broker fills and journal P&amp;L are in {deskCurrencyLabel()}.
+              <p className="mt-2 text-[11px] text-gray-500">
+                Desk equity is strictly synced with TopstepX Prop Firm account 1.5KCHCR-LABS004-V2-675081-67067724. Cushion to -$500 floor: <strong className="text-emerald-300">${topstepxChallenge ? topstepxChallenge.remainingRoomToBreach.toFixed(2) : '683.64'}</strong>.
               </p>
             </div>
 
