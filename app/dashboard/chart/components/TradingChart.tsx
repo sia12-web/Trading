@@ -7495,12 +7495,12 @@ export function TradingChart({
       streamLive: boolean
     ) => {
       // Guard only true bad ticks / wrong-scale bleed (e.g. leftover tip).
-      // 4% matches LIVE_MAX_TIP_JUMP_PCT to avoid freezing on real volatility
+      // 10% tolerance avoids freezing on fast London / NYC market momentum sweeps
       const tip = lastCandleRef.current
       if (
         tip &&
         tip.close > 0 &&
-        Math.abs(price - tip.close) / tip.close > 0.04
+        Math.abs(price - tip.close) / tip.close > 0.10
       ) {
         return
       }

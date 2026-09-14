@@ -16,19 +16,22 @@ export type FormingBar = {
 }
 
 export const DESK_LIVE_BAR_SEC = 300
-/** Fill at most 3 missing 5m slots (~15m) from last close. */
-export const LIVE_MAX_GAP_FILLS = 3
+/** Fill up to 30 missing slots (~30m on 1m, 2.5h on 5m) from last close to ensure unbroken continuum. */
+export const LIVE_MAX_GAP_FILLS = 30
 /** If the packet stamp is older than this, bucket from wall clock. */
 export const LIVE_STALE_QUOTE_SEC = 120
-/** Reject a live tip that would paint a fake dump/spike vs the CME history close. */
-export const LIVE_MAX_TIP_JUMP_PCT = 0.015
-/** Drop history bars whose body is larger than a real 5m on that market. */
+/** Reject a live tip only if it represents an impossible scale glitch (e.g. unshifted CFD vs CME). */
+export const LIVE_MAX_TIP_JUMP_PCT = 0.08
+/**
+ * Hard ceiling on single 5m bar range to filter scale glitches without
+ * dropping genuine institutional fast-market breakouts (London / NYC open).
+ */
 export const DESK_MAX_5M_RANGE: Record<string, number> = {
-  DOW: 400,
-  NASDAQ: 200,
-  NIKKEI: 400,
-  GOLD: 80,
-  CRUDE: 4,
+  DOW: 2500,
+  NASDAQ: 1200,
+  NIKKEI: 2000,
+  GOLD: 300,
+  CRUDE: 25,
 }
 
 export function deskBarOpenUnix(
@@ -138,7 +141,7 @@ export function dropImplausibleDeskBars<T extends FormingBar>(
     const range = bar.high - bar.low
     if (maxRange != null && range > maxRange) continue
     const prev = out[out.length - 1]
-    const maxJump = timeframe === '30m' ? 0.08 : 0.04
+    const maxJump = timeframe === '30m' ? 0.15 : 0.08
     if (prev && !isPlausibleDeskTick(prev.close, bar.close, maxJump)) continue
     out.push(bar)
   }
@@ -158,11 +161,11 @@ export function mergeHistoryWithLiveTip<T extends FormingBar>(
   const last = history[history.length - 1]!
   const lastT = last.time
   if (liveT > lastT) {
-    if (!isPlausibleDeskTick(last.close, live.close)) return history
+    if (!isPlausibleDeskTick(last.close, live.close, 0.08)) return history
     return [...history, live]
   }
   if (liveT < lastT) return history
-  if (!isPlausibleDeskTick(last.close, live.close)) return history
+  if (!isPlausibleDeskTick(last.close, live.close, 0.08)) return history
   const close = live.close
   const next: T = {
     ...last,
