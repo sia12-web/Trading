@@ -1,30 +1,28 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export function createMockSupabaseClient(): SupabaseClient<any, 'public', any> {
-  const queryBuilder: any = {
-    select: () => queryBuilder,
-    insert: () => queryBuilder,
-    update: () => queryBuilder,
-    upsert: () => queryBuilder,
-    delete: () => queryBuilder,
-    eq: () => queryBuilder,
-    neq: () => queryBuilder,
-    gt: () => queryBuilder,
-    gte: () => queryBuilder,
-    lt: () => queryBuilder,
-    lte: () => queryBuilder,
-    in: () => queryBuilder,
-    is: () => queryBuilder,
-    order: () => queryBuilder,
-    limit: () => queryBuilder,
-    range: () => queryBuilder,
-    match: () => queryBuilder,
-    filter: () => queryBuilder,
+  const terminalResolvers: Record<string, any> = {
     maybeSingle: async () => ({ data: null, error: null }),
     single: async () => ({ data: null, error: null }),
     then: (onfulfilled: any, onrejected?: any) =>
       Promise.resolve({ data: [] as any[], error: null, count: 0 }).then(onfulfilled, onrejected),
+    catch: (onrejected?: any) =>
+      Promise.resolve({ data: [] as any[], error: null, count: 0 }).catch(onrejected),
+    finally: (onfinally?: any) =>
+      Promise.resolve({ data: [] as any[], error: null, count: 0 }).finally(onfinally),
   }
+
+  const queryBuilder: any = new Proxy(terminalResolvers, {
+    get(target, prop) {
+      if (typeof prop === 'string' && prop in target) {
+        return target[prop]
+      }
+      if (typeof prop === 'symbol') {
+        return (target as any)[prop]
+      }
+      return () => queryBuilder
+    },
+  })
 
   const mockAuth: any = {
     getUser: async () => ({
