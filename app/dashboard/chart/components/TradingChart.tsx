@@ -1248,6 +1248,7 @@ export function TradingChart({
   const railDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null)
   const railContainerRef = useRef<HTMLDivElement | null>(null)
   const [showCandlestickPatterns, setShowCandlestickPatterns] = useState(false)
+  const [positionHudMinimized, setPositionHudMinimized] = useState(false)
 
 
   useEffect(() => {
@@ -4744,6 +4745,13 @@ export function TradingChart({
   useEffect(() => {
     if (draggingBracketRef.current) return
     setEditableOverlay(positionOverlay ?? null)
+    if (positionOverlay && chartRef.current) {
+      try {
+        chartRef.current.priceScale('right').applyOptions({ autoScale: true })
+      } catch {
+        /* ignore */
+      }
+    }
   }, [positionOverlay])
 
   const workingBook = useMemo(() => {
@@ -11136,42 +11144,199 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             )}
           </div>
         )}
-        {positionOverlay && !SYSTEMATIC_LIVE_DESK && (
-          <div className="pointer-events-none absolute left-3 top-3 z-20 max-w-[min(360px,70%)]">
-            {aiVerdict ? (
-              <div
-                className={`rounded-md border px-2 py-1 shadow-lg backdrop-blur-sm ${aiVerdict.verdict.toLowerCase() === 'reversal'
-                  ? 'border-violet-500/50 bg-violet-950/85 text-violet-100'
-                  : aiVerdict.verdict.toLowerCase() === 'pullback'
-                    ? 'border-amber-500/50 bg-amber-950/85 text-amber-100'
-                    : 'border-emerald-500/40 bg-emerald-950/85 text-emerald-100'
+        {positionOverlay && !SYSTEMATIC_LIVE_DESK && (() => {
+          const dir = (positionOverlay.direction || 'long').toUpperCase()
+          const isLong = dir === 'LONG'
+          const curPx = livePrice ?? positionOverlay.entryPrice
+          const entryPx = positionOverlay.entryPrice
+          const stopPx = positionOverlay.stopLoss
+          const tpPx = positionOverlay.profitTarget
+          const pnlPts = isLong ? curPx - entryPx : entryPx - curPx
+          const isProfit = pnlPts > 0
+          const isFlat = Math.abs(pnlPts) < 0.25
+
+          const pointVal =
+            instrument === 'NASDAQ' ? 2 : instrument === 'DOW' ? 0.5 : instrument === 'GOLD' ? 10 : instrument === 'CRUDE' ? 100 : 5
+          const sz = positionOverlay.positionSize ?? 1
+          const pnlUsd = pnlPts * sz * pointVal
+
+          const distTp = isLong ? tpPx - curPx : curPx - tpPx
+          const distSl = isLong ? curPx - stopPx : stopPx - curPx
+          const totalTpSpan = Math.abs(tpPx - entryPx)
+          const tpProgress = totalTpSpan > 0 ? Math.max(0, Math.min(100, Math.round((pnlPts / totalTpSpan) * 100))) : 0
+
+          const riskSpan = Math.abs(entryPx - stopPx)
+          const currentR = riskSpan > 0 ? (pnlPts / riskSpan).toFixed(2) : '0.00'
+
+          if (positionHudMinimized) {
+            return (
+              <div className="absolute left-3 top-3 z-30 flex items-center gap-2 pointer-events-auto">
+                <button
+                  type="button"
+                  onClick={() => setPositionHudMinimized(false)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border shadow-2xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 ${
+                    isProfit
+                      ? 'bg-emerald-950/90 border-emerald-500/60 text-emerald-200'
+                      : isFlat
+                      ? 'bg-neutral-900/90 border-neutral-700/60 text-neutral-200'
+                      : 'bg-rose-950/90 border-rose-500/60 text-rose-200'
                   }`}
-              >
-                <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider">
-                  <span>
-                    {aiVerdict.verdict === 'reversal'
-                      ? 'EXIT'
-                      : aiVerdict.verdict === 'hold'
-                        ? 'HOLD'
-                        : aiVerdict.verdict === 'pullback'
-                          ? 'PULLBACK'
-                          : aiVerdict.verdict}
+                  title="Click to expand position details"
+                >
+                  <span className="w-2 h-2 rounded-full animate-ping bg-emerald-400" />
+                  <span className="font-mono text-xs font-bold">{dir} {instrument}</span>
+                  <span className="font-mono text-xs font-extrabold">
+                    {pnlPts >= 0 ? `+${pnlPts.toFixed(1)}` : pnlPts.toFixed(1)} pts
                   </span>
+                  <span className="text-[10px] font-mono opacity-80">
+                    ({pnlUsd >= 0 ? `+$${pnlUsd.toFixed(2)}` : `-$${Math.abs(pnlUsd).toFixed(2)}`})
+                  </span>
+                  <span className="text-neutral-400 hover:text-white text-[10px] ml-1">↗</span>
+                </button>
+              </div>
+            )
+          }
+
+          return (
+            <div className="absolute left-3 top-3 z-30 pointer-events-auto w-80 max-w-[calc(100%-1.5rem)] rounded-2xl border border-neutral-800/90 bg-neutral-950/95 p-3 shadow-2xl backdrop-blur-md space-y-2.5 transition-all">
+              {/* Card Header */}
+              <div className="flex items-center justify-between border-b border-neutral-800/80 pb-2">
+                <div className="flex items-center gap-1.5">
                   <span
-                    className="font-mono normal-case tracking-normal opacity-80"
-                    title="AI confidence — not Entry→TP %"
+                    className={`px-2 py-0.5 rounded text-[10px] font-extrabold font-mono tracking-wider ${
+                      isLong ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
+                    }`}
                   >
-                    {aiVerdict.confidence}%
+                    {dir} {sz} {instrument}
+                  </span>
+                  <span className="flex items-center gap-1 text-[9px] font-mono text-neutral-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    LIVE
                   </span>
                 </div>
+                <div className="flex items-center gap-1">
+                  {aiVerdict && (
+                    <span
+                      className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border ${
+                        aiVerdict.verdict.toLowerCase() === 'reversal'
+                          ? 'bg-violet-950 text-violet-300 border-violet-700'
+                          : aiVerdict.verdict.toLowerCase() === 'pullback'
+                          ? 'bg-amber-950 text-amber-300 border-amber-700'
+                          : 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                      }`}
+                    >
+                      AI: {aiVerdict.verdict.toUpperCase()} ({aiVerdict.confidence}%)
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setPositionHudMinimized(true)}
+                    className="p-1 rounded text-neutral-500 hover:text-neutral-200 hover:bg-neutral-800 text-xs transition"
+                    title="Minimize HUD"
+                  >
+                    _
+                  </button>
+                </div>
               </div>
-            ) : (
-              <div className="rounded-md border border-amber-700/40 bg-amber-950/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-amber-200 shadow-lg backdrop-blur-sm">
-                AI…
+
+              {/* Live P&L Hero Section */}
+              <div className="flex items-baseline justify-between bg-neutral-900/80 rounded-xl p-2.5 border border-neutral-800/80">
+                <div>
+                  <div className="text-[9px] font-mono text-neutral-400 uppercase tracking-wider">Unrealized P&L</div>
+                  <div
+                    className={`text-2xl font-black font-mono tracking-tight ${
+                      isProfit ? 'text-emerald-400' : isFlat ? 'text-neutral-300' : 'text-rose-400'
+                    }`}
+                  >
+                    {pnlPts >= 0 ? `+${pnlPts.toFixed(1)}` : pnlPts.toFixed(1)} <span className="text-xs font-normal">pts</span>
+                  </div>
+                </div>
+                <div className="text-right font-mono">
+                  <div
+                    className={`text-base font-bold ${
+                      isProfit ? 'text-emerald-400' : isFlat ? 'text-neutral-300' : 'text-rose-400'
+                    }`}
+                  >
+                    {pnlUsd >= 0 ? `+$${pnlUsd.toFixed(2)}` : `-$${Math.abs(pnlUsd).toFixed(2)}`}
+                  </div>
+                  <div className="text-[9px] text-neutral-400">
+                    {currentR}R multiple
+                  </div>
+                </div>
               </div>
-            )}
-          </div>
-        )}
+
+              {/* Price Ladder (Entry, Live, Target, Stop) */}
+              <div className="grid grid-cols-2 gap-1.5 text-[10px] font-mono">
+                <div className="p-1.5 rounded-lg bg-neutral-900/60 border border-neutral-800/60">
+                  <span className="text-neutral-500 text-[8.5px] block">ENTRY</span>
+                  <span className="text-blue-400 font-bold">{entryPx.toLocaleString()}</span>
+                </div>
+                <div className="p-1.5 rounded-lg bg-neutral-900/60 border border-neutral-800/60">
+                  <span className="text-neutral-500 text-[8.5px] block">LIVE PRICE</span>
+                  <span className="text-white font-bold">{curPx.toLocaleString()}</span>
+                </div>
+                <div className="p-1.5 rounded-lg bg-neutral-900/60 border border-emerald-950/60">
+                  <span className="text-emerald-500 text-[8.5px] block">TARGET (TP)</span>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-emerald-400 font-bold">{tpPx.toLocaleString()}</span>
+                    <span className="text-[8.5px] text-neutral-400">{distTp >= 0 ? `+${distTp.toFixed(1)}` : `${distTp.toFixed(1)}`}</span>
+                  </div>
+                </div>
+                <div className="p-1.5 rounded-lg bg-neutral-900/60 border border-rose-950/60">
+                  <span className="text-rose-500 text-[8.5px] block">PROTECTIVE STOP</span>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-rose-400 font-bold">{stopPx.toLocaleString()}</span>
+                    <span className="text-[8.5px] text-neutral-400">{distSl >= 0 ? `-${distSl.toFixed(1)}` : `+${Math.abs(distSl).toFixed(1)}`}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Progress to TP Bar */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[8.5px] font-mono text-neutral-400">
+                  <span>Target Progress</span>
+                  <span className="text-emerald-400 font-bold">{tpProgress}%</span>
+                </div>
+                <div className="w-full h-1.5 rounded-full bg-neutral-800 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-500 to-emerald-400 transition-all duration-300"
+                    style={{ width: `${tpProgress}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Action Buttons (1-Click Flatten & Breakeven) */}
+              <div className="flex items-center gap-1.5 pt-1 border-t border-neutral-800/70 font-mono text-[9.5px]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onClosePosition) {
+                      void onClosePosition('Trader closed position via chart HUD')
+                    }
+                  }}
+                  className="flex-1 py-1.5 px-2 rounded-lg bg-rose-950/80 hover:bg-rose-900 border border-rose-700/70 hover:border-rose-500 text-rose-200 font-bold transition active:scale-95 text-center flex items-center justify-center gap-1"
+                  title="Manual position exit (AI never auto-exits; you control execution)"
+                >
+                  <span>✕</span>
+                  <span>Flatten Trade</span>
+                </button>
+                {onAdjustBrackets && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void onAdjustBrackets({ stopLoss: entryPx })
+                    }}
+                    disabled={stopPx === entryPx}
+                    className="py-1.5 px-2.5 rounded-lg bg-neutral-800/80 hover:bg-neutral-700 border border-neutral-700 text-neutral-300 hover:text-white transition active:scale-95 disabled:opacity-40 disabled:pointer-events-none"
+                    title="Move stop loss to entry price (Risk-free trade)"
+                  >
+                    🛡️ Breakeven
+                  </button>
+                )}
+              </div>
+            </div>
+          )
+        })()}
         <button
           type="button"
           onClick={resetPriceScale}

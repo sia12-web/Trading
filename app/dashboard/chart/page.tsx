@@ -1424,8 +1424,10 @@ export default function ChartPage() {
       size?: number
     }) => {
       try {
-        const fillPrice =
-          order.price || livePriceRef.current || (order.instrument === 'DOW' ? 39800 : 21500)
+        const fillPrice = order.price || livePriceRef.current || 0
+        if (!fillPrice || fillPrice <= 0) {
+          return { success: false, message: 'Live price unavailable to execute order' }
+        }
         const targetInst = (order.instrument || instrument) as Instrument
 
         if (targetInst !== instrument) {
