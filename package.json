@@ -17,7 +17,8 @@
     "nikkei:ny-range": "npx tsx scripts/nikkei-last-ny-session-range.ts",
     "scanner": "npx tsx --env-file=.env.local scripts/live-confluence-scanner.ts",
     "backtest": "npx tsx --env-file=.env.local scripts/backtest-confluence-divergence.ts",
-    "cme:archive": "npx tsx --env-file=.env.local scripts/download-cme-nyc-sessions.ts"
+    "cme:archive": "npx tsx --env-file=.env.local scripts/download-cme-nyc-sessions.ts",
+    "databento:live": "python -u scripts/databento_live_sidecar.py"
   },
   "dependencies": {
     "@supabase/ssr": "^0.0.10",

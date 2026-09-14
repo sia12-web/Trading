@@ -20,6 +20,12 @@ import {
 } from '@/lib/trading/cmeBasis'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import {
+  subscribeDatabentoLive,
+  isDatabentoLiveActive,
+  getLatestDatabentoLiveQuote,
+} from '@/lib/databento/liveHub'
+import { isDatabentoConfigured } from '@/lib/databento/client'
+import {
   isChartStreamAllowed,
   isLiveDeskInstrument,
 } from '@/lib/trading/sessionGate'
@@ -92,7 +98,8 @@ export async function GET(request: Request) {
   refreshDayPreviousClose(instrument)
 
   const encoder = new TextEncoder()
-  let unsubscribe: (() => void) | null = null
+  let unsubscribeDb: (() => void) | null = null
+  let unsubscribeOanda: (() => void) | null = null
   let heartbeat: ReturnType<typeof setInterval> | null = null
   let basisTimer: ReturnType<typeof setInterval> | null = null
   let cmePoller: ReturnType<typeof setInterval> | null = null
@@ -188,8 +195,10 @@ export async function GET(request: Request) {
         basisTimer = null
         if (cmePoller) clearInterval(cmePoller)
         cmePoller = null
-        unsubscribe?.()
-        unsubscribe = null
+        unsubscribeDb?.()
+        unsubscribeDb = null
+        unsubscribeOanda?.()
+        unsubscribeOanda = null
         try {
           controller.close()
         } catch {
@@ -197,19 +206,51 @@ export async function GET(request: Request) {
         }
       }
 
+      // Tier 1: Real-time CME Globex exchange feed directly from Databento Live
+      if (isDatabentoConfigured()) {
+        unsubscribeDb = subscribeDatabentoLive(instrument, (trade) => {
+          send(
+            payloadFor(
+              instrument,
+              trade.price,
+              trade.bid,
+              trade.ask,
+              trade.timestamp,
+              'cme'
+            )
+          )
+        })
+
+        // Seed initial live quote immediately from Databento Live snapshot if available
+        const dbSeed = getLatestDatabentoLiveQuote(instrument)
+        if (dbSeed) {
+          send(
+            payloadFor(
+              instrument,
+              dbSeed.price,
+              dbSeed.bid,
+              dbSeed.ask,
+              dbSeed.timestamp,
+              'cme'
+            )
+          )
+        }
+      }
+
+      // Tier 2: OANDA 24/7 continuous CFDs + CME basis fallback
       if (isOandaConfigured()) {
-        // Subscribing replays the hub's last tick, so a warm basis means the first
-        // frame leaves here synchronously.
-        unsubscribe = subscribeOandaPriceStream(instrument, (quote) => {
+        unsubscribeOanda = subscribeOandaPriceStream(instrument, (quote) => {
+          // If Databento Live is active and delivering exchange trades, silence OANDA to prevent feed jitter
+          if (isDatabentoLiveActive(instrument)) return
           pending = quote
           pendingSent = false
           flushPending()
         })
 
         // Seed initial live quote immediately without waiting for first stream tick or delayed Yahoo
-        if (!pending) {
+        if (!pending && !isDatabentoLiveActive(instrument)) {
           void getOandaPrice(instrument).then((op) => {
-            if (closed || !op || pendingSent) return
+            if (closed || !op || pendingSent || isDatabentoLiveActive(instrument)) return
             pending = op
             flushPending()
           })
@@ -224,8 +265,8 @@ export async function GET(request: Request) {
         }
 
         basisTimer = setInterval(refreshBasis, CME_BASIS_REFRESH_MS)
-      } else {
-        // Fallback only when OANDA broker is completely unconfigured
+      } else if (!isDatabentoConfigured()) {
+        // Fallback only when both Databento and OANDA are completely unconfigured
         void pollCme()
         cmePoller = setInterval(pollCme, 1500)
       }
@@ -247,7 +288,8 @@ export async function GET(request: Request) {
       if (heartbeat) clearInterval(heartbeat)
       if (basisTimer) clearInterval(basisTimer)
       if (cmePoller) clearInterval(cmePoller)
-      unsubscribe?.()
+      unsubscribeDb?.()
+      unsubscribeOanda?.()
     },
   })
 

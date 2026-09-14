@@ -30,6 +30,7 @@ import { AVWAP_CANDLE_FETCH_CALENDAR_DAYS } from '@/lib/chart/sessionVwap'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import type { Instrument } from '@/types/price-feed'
 import { getDatabentoCandles, isDatabentoConfigured } from '@/lib/databento/client'
+import { fetchDatabentoLiveSnapshot } from '@/lib/databento/liveHub'
 import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
@@ -170,6 +171,38 @@ export async function GET(request: Request) {
 
         if (candles?.length) {
           candles = clipAfternoonBars(candles, instrument)
+        }
+
+        // 4. If Databento Live is active, merge the live forming 1m candle directly from CME Globex
+        if (candles?.length && !isDaily && isDatabentoConfigured()) {
+          try {
+            const snap = await fetchDatabentoLiveSnapshot()
+            const forming = snap?.forming?.[instrument]
+            if (forming && forming.close > 0) {
+              const last = candles[candles.length - 1]!
+              if (forming.time === last.time) {
+                candles[candles.length - 1] = {
+                  ...last,
+                  high: Math.max(last.high, forming.high),
+                  low: Math.min(last.low, forming.low),
+                  close: forming.close,
+                  volume: Math.max(last.volume, forming.volume),
+                }
+              } else if (forming.time > last.time) {
+                candles.push({
+                  time: forming.time,
+                  open: forming.open,
+                  high: forming.high,
+                  low: forming.low,
+                  close: forming.close,
+                  volume: forming.volume,
+                })
+              }
+              source = 'databento'
+            }
+          } catch {
+            /* ignore */
+          }
         }
       }
     }

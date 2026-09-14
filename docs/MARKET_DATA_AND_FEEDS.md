@@ -127,3 +127,39 @@ During high-volatility events (e.g. 03:00 EDT London Open, 09:30 EDT New York Ca
   - Lightweight Charts renders a visual 25-point gap between the bars.
 - Additionally, true CME Globex order books frequently skip price levels during liquidity voids, printing real exchange-side price gaps between consecutive transactions.
 
+---
+
+## 5. Databento Live CME Globex Exchange Gateway (TCP / DBN)
+
+To access true sub-millisecond CME Globex exchange trades directly from the CME Aurora colocation center without third-party broker translation, TradePulse implements a local **Databento Live Gateway Sidecar** (`scripts/databento_live_sidecar.py`).
+
+### 5.1 Architecture & Gateway Connectivity
+```mermaid
+graph LR
+    CME[CME Aurora Globex MDP 3.0] -->|DBN Binary Protocol| DB_TCP[Databento Live TCP Gateway]
+    DB_TCP -->|Raw TCP Socket| SIDECAR[scripts/databento_live_sidecar.py]
+    SIDECAR -->|Local SSE 127.0.0.1:8765/stream| HUB[lib/databento/liveHub.ts]
+    HUB -->|Server-Sent Events /api/trading/quote/stream| CLIENT[Lightweight Charts UI]
+    HUB -->|Live 1m Forming Candles| CANDLES[/api/trading/candles]
+```
+
+### 5.2 Supported Live CME Continuous Symbols
+| Market | Continuous Symbol | Primary Underlying | Schema | Sidecar Port |
+| :--- | :--- | :--- | :--- | :--- |
+| **NASDAQ** | `MNQ.c.0` | Micro E-mini Nasdaq-100 Futures | `trades` | `127.0.0.1:8765` |
+| **DOW** | `MYM.c.0` | Micro E-mini Dow Futures | `trades` | `127.0.0.1:8765` |
+| **GOLD** | `MGC.c.0` | Micro Gold Futures | `trades` | `127.0.0.1:8765` |
+| **CRUDE** | `CL.c.0` | Light Sweet Crude Oil Futures | `trades` | `127.0.0.1:8765` |
+| **NIKKEI** | `NKD.c.0` | Nikkei 225 Dollar Futures | `trades` | `127.0.0.1:8765` |
+
+### 5.3 Operation & Auto-Spawning
+- **Automatic Lifecycle**: The Node.js hub (`lib/databento/liveHub.ts`) checks the sidecar health on startup. If the sidecar is not already running and `DATABENTO_API_KEY` is present, it automatically spawns the Python sidecar daemon in the background.
+- **Manual Launch**: The sidecar can also be run directly from the command line:
+  ```bash
+  npm run databento:live
+  ```
+- **Live Feed Tiering & Failover**:
+  1. **Tier 1 (Databento Live)**: When the sidecar is active, real exchange trades stream with zero basis adjustment (`source: 'cme'`).
+  2. **Tier 2 (OANDA + Basis)**: If the sidecar is offline or disconnected, OANDA continuous CFDs seamlessly maintain the live price stream without interruption.
+
+
