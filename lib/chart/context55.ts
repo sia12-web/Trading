@@ -85,6 +85,8 @@ export interface AnchoredVwapBands5M {
   lower1: { time: UTCTimestamp; value: number }[]
   upper2: { time: UTCTimestamp; value: number }[]
   lower2: { time: UTCTimestamp; value: number }[]
+  upper3?: { time: UTCTimestamp; value: number }[]
+  lower3?: { time: UTCTimestamp; value: number }[]
   lastVwap: number | null
 }
 
@@ -97,6 +99,12 @@ export interface AnchoredVwapBenchmark5M {
   sigma2Upper: number
   sigma2Lower: number
   barCount?: number
+  baseline?: {
+    sumPV: number
+    sumV: number
+    sumP2V: number
+    startUnix?: number
+  }
 }
 
 export interface YesterdayNycSession {
@@ -497,11 +505,17 @@ export function compute5MonthAnchoredVwapFromDailyBars(
     sigma2Upper: Number((vwap + 2 * std).toFixed(2)),
     sigma2Lower: Number((vwap - 2 * std).toFixed(2)),
     barCount,
+    baseline: {
+      sumPV,
+      sumV,
+      sumP2V,
+      startUnix: anchorUnix,
+    },
   }
 }
 
 /**
- * Compute 5-Month Anchored VWAP with ±1σ and ±2σ standard deviation bands incrementally.
+ * Compute 5-Month Anchored VWAP with ±1σ, ±2σ, and ±3σ standard deviation bands incrementally.
  */
 export function compute5MonthAnchoredVwap(args: {
   bars: ContextBar[]
@@ -530,6 +544,8 @@ export function compute5MonthAnchoredVwap(args: {
   const lower1: { time: UTCTimestamp; value: number }[] = []
   const upper2: { time: UTCTimestamp; value: number }[] = []
   const lower2: { time: UTCTimestamp; value: number }[] = []
+  const upper3: { time: UTCTimestamp; value: number }[] = []
+  const lower3: { time: UTCTimestamp; value: number }[] = []
 
   // For intraday bar series without a historical baseline, apply alpha = 0.997
   // so VWAP curves dynamically with price action instead of dampening into a flat line.
@@ -557,6 +573,8 @@ export function compute5MonthAnchoredVwap(args: {
     lower1.push({ time: t, value: Number((v - std).toFixed(2)) })
     upper2.push({ time: t, value: Number((v + 2 * std).toFixed(2)) })
     lower2.push({ time: t, value: Number((v - 2 * std).toFixed(2)) })
+    upper3.push({ time: t, value: Number((v + 3 * std).toFixed(2)) })
+    lower3.push({ time: t, value: Number((v - 3 * std).toFixed(2)) })
   }
 
   if (vwap.length === 0) return null
@@ -568,6 +586,8 @@ export function compute5MonthAnchoredVwap(args: {
     lower1,
     upper2,
     lower2,
+    upper3,
+    lower3,
     lastVwap: vwap[vwap.length - 1]?.value ?? null,
   }
 }

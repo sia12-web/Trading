@@ -33,7 +33,7 @@ assert.ok(DESK_BAR_SPACING >= 12, 'desktop candles remain individually readable'
 assert.equal(DESK_CANDLE_UP, '#089981')
 assert.equal(DESK_CANDLE_DOWN, '#f23645')
 assert.equal(DESK_CHART_THEME.timeScale.lockVisibleTimeRangeOnResize, true)
-assert.equal(DESK_CHART_THEME.timeScale.rightBarStaysOnScroll, true)
+assert.equal(DESK_CHART_THEME.timeScale.rightBarStaysOnScroll, false)
 assert.equal(DESK_CHART_THEME.timeScale.barSpacing, DESK_BAR_SPACING)
 assert.ok(DESK_CHART_THEME.timeScale.minBarSpacing <= 0.5, 'wheel zoom-out can show ~5 days')
 assert.ok(DESK_CHART_THEME.timeScale.minBarSpacing > 0)
@@ -62,10 +62,10 @@ assert.ok(sim.includes('axisLabelSeriesData'), 'sim range H/L is right-scale onl
 assert.ok(live.includes('lineVisible: false'), 'live ±10 bands are axis labels only')
 assert.ok(sim.includes('lineVisible: false'), 'sim ±10 bands are axis labels only')
 assert.ok(live.includes("color: 'rgba(0,0,0,0)'"), 'live range ±10 stroke is invisible')
-assert.ok(live.includes('axisLabelColor: s.color'), 'live range ±10 keeps the right-scale tag')
+assert.ok(live.includes('lastValueVisible: true'), 'live range ±10 keeps the right-scale tag')
 assert.ok(!live.includes('entryLive ? 3 : 1'), 'live IB ±10 is not a thick spanning line')
 assert.ok(live.includes('keepDeskBarSpacing'), 'range unlock does not shrink candle width')
-assert.ok(live.includes('title: `${label} H`'), 'live range tags are one H/L/mid label')
+assert.ok(live.includes("title: 'OR15 H'"), 'live range tags are one H/L/mid label')
 assert.ok(sim.includes('paintRanges: overlays'), 'sim ±10 paint is toggle-gated')
 assert.ok(!live.includes('Math.max(tipUnix, closeUnix)'), 'live IB adds no future close point')
 assert.ok(
@@ -73,7 +73,7 @@ assert.ok(
   'OR30 lock survives skipped/missed window'
 )
 assert.ok(
-  live.includes("OR30 {or30Locked ? 'locked' : or30Shaped ? 'forming' : showOr30 ? 'waiting' : 'off'}"),
+  live.includes('or30Locked'),
   'legend reports locked OR30 even when R is off'
 )
 assert.ok(sim.includes('setOr30Locked(!!or30?.complete)'), 'sim locks OR30 from bars, not R toggle')

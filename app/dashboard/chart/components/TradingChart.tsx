@@ -68,6 +68,7 @@ import {
   quoteUnixForBucket,
 } from '@/lib/chart/liveFormingBar'
 import {
+  compute5MonthAnchoredVwap,
   compute5DayFixedRangeVolumeProfile,
   computeYesterdayNycSession,
   computeOvernightInventoryAndSessions,
@@ -1285,10 +1286,12 @@ export function TradingChart({
   const [avwap5mBenchmark, setAvwap5mBenchmark] = useState<AnchoredVwapBenchmark5M | null>(null)
   const avwap5mLinesRef = useRef<IPriceLine[]>([])
   const paint5mAvwapBenchmarkRef = useRef<() => void>(() => { })
-  const [showVwap, setShowVwap] = useState(true)
+  const showVwap = true
   const [currentVwap, setCurrentVwap] = useState<{ vwap: number; upper1: number; lower1: number } | null>(null)
   const latestVwapBandsRef = useRef<any>(null)
   const [showCvdSubPane, setShowCvdSubPane] = useState(false)
+  const showCvdSubPaneRef = useRef(showCvdSubPane)
+  showCvdSubPaneRef.current = showCvdSubPane
   const [cvdSubPaneHeight, setCvdSubPaneHeight] = useState(185)
   const cvdContainerRef = useRef<HTMLDivElement>(null)
   const cvdChartRef = useRef<IChartApi | null>(null)
@@ -4353,8 +4356,10 @@ export function TradingChart({
       }
     }
     void load5mAvwap()
+    const pollId = window.setInterval(load5mAvwap, 60_000)
     return () => {
       cancelled = true
+      window.clearInterval(pollId)
     }
   }, [instrument])
 
@@ -5983,23 +5988,29 @@ export function TradingChart({
         })
       } catch {}
 
-      let isSyncing = false
+      let isSyncingFromMain = false
+      let isSyncingFromCvd = false
+
       const syncMainToCvd = (range: any) => {
-        if (isSyncing || !range) return
-        isSyncing = true
+        if (!showCvdSubPaneRef.current || isSyncingFromCvd || isSyncingFromMain || !range) return
+        isSyncingFromMain = true
         try {
           cvdChart.timeScale().setVisibleLogicalRange(range)
         } catch {}
-        isSyncing = false
+        requestAnimationFrame(() => {
+          isSyncingFromMain = false
+        })
       }
 
       const syncCvdToMain = (range: any) => {
-        if (isSyncing || !range || !chartRef.current) return
-        isSyncing = true
+        if (!showCvdSubPaneRef.current || isSyncingFromMain || isSyncingFromCvd || !range || !chartRef.current) return
+        isSyncingFromCvd = true
         try {
           chartRef.current.timeScale().setVisibleLogicalRange(range)
         } catch {}
-        isSyncing = false
+        requestAnimationFrame(() => {
+          isSyncingFromCvd = false
+        })
       }
 
       const mainTimeScale = chartRef.current?.timeScale()
@@ -6007,7 +6018,7 @@ export function TradingChart({
       cvdChart.timeScale().subscribeVisibleLogicalRangeChange(syncCvdToMain)
 
       const initialRange = mainTimeScale?.getVisibleLogicalRange()
-      if (initialRange) {
+      if (initialRange && showCvdSubPaneRef.current) {
         try {
           cvdChart.timeScale().setVisibleLogicalRange(initialRange)
         } catch {}
@@ -6553,7 +6564,6 @@ export function TradingChart({
 
     const ts = chartRef.current.timeScale()
     let savedRange: { from: number; to: number } | null = null
-    const savedSpacing = didFitRef.current ? readDeskBarSpacing(chartRef.current) : DESK_BAR_SPACING
     if (didFitRef.current) {
       try {
         savedRange = ts.getVisibleLogicalRange()
@@ -6570,19 +6580,22 @@ export function TradingChart({
       /* ignore candle data error */
     }
 
-    // Dynamic 5D Anchored VWAP from cash open (09:30 ET) with standard deviation bands
+    // 5-Month Anchored VWAP with standard deviation bands (falls back to 5D cash open if baseline unavailable)
     const clock = deskClockFor(instrument)
-    const bands = computeAnchoredVwap(
-      ordered.map((c) => ({
-        time: c.time as number,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-        volume: c.volume,
-      })),
-      clock
-    )
+    const mappedBars = ordered.map((c) => ({
+      time: c.time as number,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+      volume: c.volume,
+    }))
+    const bands5m = compute5MonthAnchoredVwap({
+      bars: mappedBars,
+      instrument,
+      baseline: avwap5mBenchmark?.baseline ?? null,
+    })
+    const bands = bands5m ?? computeAnchoredVwap(mappedBars, clock)
     latestVwapBandsRef.current = bands
     if (bands?.vwap?.length) {
       const last = bands.vwap[bands.vwap.length - 1]
@@ -6617,8 +6630,8 @@ export function TradingChart({
         try { vs.lower1.setData(shift(bands.lower1)) } catch {}
         try { vs.upper2.setData(shift(bands.upper2)) } catch {}
         try { vs.lower2.setData(shift(bands.lower2)) } catch {}
-        try { vs.upper3.setData(shift(bands.upper3)) } catch {}
-        try { vs.lower3.setData(shift(bands.lower3)) } catch {}
+        try { vs.upper3.setData(bands.upper3 ? shift(bands.upper3) : []) } catch {}
+        try { vs.lower3.setData(bands.lower3 ? shift(bands.lower3) : []) } catch {}
       } else {
         try { vs.vwap.setData([]) } catch {}
         try { vs.upper1.setData([]) } catch {}
@@ -6804,7 +6817,6 @@ export function TradingChart({
       requestAnimationFrame(() => {
         try {
           ts.setVisibleLogicalRange(savedRange)
-          keepDeskBarSpacing(chartRef.current, savedSpacing)
           refreshSessionHighlightsRef.current?.()
         } catch {
           /* ignore */
@@ -6814,22 +6826,12 @@ export function TradingChart({
     requestAnimationFrame(() => {
       refreshSessionHighlightsRef.current?.()
     })
-  }, [candles, instrument, paintLevelLines]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [candles, instrument, paintLevelLines, avwap5mBenchmark]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Toggle VWAP series data when showVwap changes
+  // Repaint VWAP series data when avwap5mBenchmark changes or on instrument switch
   useEffect(() => {
     const vs = vwapSeriesRef.current
     if (!vs) return
-    if (!showVwap) {
-      try { vs.vwap.setData([]) } catch {}
-      try { vs.upper1.setData([]) } catch {}
-      try { vs.lower1.setData([]) } catch {}
-      try { vs.upper2.setData([]) } catch {}
-      try { vs.lower2.setData([]) } catch {}
-      try { vs.upper3.setData([]) } catch {}
-      try { vs.lower3.setData([]) } catch {}
-      return
-    }
     const bands = latestVwapBandsRef.current
     if (bands && bands.vwap) {
       const tz = chartTzRef.current
@@ -6848,7 +6850,7 @@ export function TradingChart({
       try { if (bands.upper3) vs.upper3.setData(shift(bands.upper3)) } catch {}
       try { if (bands.lower3) vs.lower3.setData(shift(bands.lower3)) } catch {}
     }
-  }, [showVwap])
+  }, [avwap5mBenchmark, instrument])
 
 
   // ── Session color boxes (cached spans + imperative paint = smooth pan)
@@ -9797,23 +9799,17 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   </>
                 )
               })()}
-              {/* VWAP HUD Toggle Button */}
-              <button
-                type="button"
-                onClick={() => setShowVwap((v) => !v)}
-                className={`transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded cursor-pointer ${
-                  showVwap
-                    ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold'
-                    : 'bg-zinc-800/60 text-zinc-400 hover:bg-zinc-800 border border-zinc-700/40 opacity-70'
-                }`}
-                title={`Anchored VWAP (Click to toggle)${currentVwap ? ` · Level: ${currentVwap.vwap.toLocaleString()}${livePrice ? ` · Distance: ${(livePrice - currentVwap.vwap).toFixed(1)}pts` : ''}` : ''}`}
+              {/* 5M Anchored VWAP HUD Indicator */}
+              <div
+                className="flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold"
+                title={`5-Month Anchored VWAP${currentVwap ? ` · Level: ${currentVwap.vwap.toLocaleString()}${livePrice ? ` · Distance: ${(livePrice - currentVwap.vwap).toFixed(1)}pts` : ''}` : ''}`}
               >
-                <span className={`w-1.5 h-1.5 rounded-full ${showVwap ? 'bg-emerald-400' : 'bg-zinc-500'}`} />
-                <span className="text-gray-400 font-semibold">VWAP:</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span className="text-gray-400 font-semibold">5M VWAP:</span>
                 <span className="font-mono font-bold">
-                  {showVwap && currentVwap ? currentVwap.vwap.toLocaleString() : showVwap ? 'ON' : 'OFF'}
+                  {currentVwap ? currentVwap.vwap.toLocaleString() : '...'}
                 </span>
-              </button>
+              </div>
               <span className="text-gray-600 text-[10px]">|</span>
               {/* Interactive CVD Sub-Chart Pane Button */}
               <button
@@ -10086,22 +10082,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               </span>
             </button>
 
-            {/* Anchored VWAP Toggle */}
-            <button
-              type="button"
-              onClick={() => setShowVwap((prev) => !prev)}
-              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-xs font-bold font-mono transition-all ${
-                showVwap
-                  ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
-                  : 'text-slate-400 hover:bg-slate-800 hover:text-emerald-300'
-              }`}
-              title="Toggle 5D Anchored VWAP & Bands"
-            >
-              <span>VW</span>
-              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-emerald-200 shadow-xl border border-slate-800 group-hover:block z-50">
-                Anchored VWAP ({showVwap ? 'ON' : 'OFF'})
-              </span>
-            </button>
 
             {/* ── Vertical Separator ── */}
             <div className="w-px h-6 bg-slate-700/80 mx-0.5" />

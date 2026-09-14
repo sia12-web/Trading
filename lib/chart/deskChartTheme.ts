@@ -14,8 +14,8 @@ export const DESK_CANDLE_DOWN = '#f23645'
 
 /** Pixel width of one candle slot — keeps bodies readable like TradingView. */
 export const DESK_BAR_SPACING = 12
-/** Wheel zoom-out floor — keeps candles readable and scrolling smooth without accidental micro-zoom lag. */
-export const DESK_MIN_BAR_SPACING = 3
+/** Wheel zoom-out floor — allows smooth TradingView-style deep zoom-out without snapping. */
+export const DESK_MIN_BAR_SPACING = 0.5
 
 export const DESK_CHART_THEME = {
   layout: {
@@ -63,7 +63,7 @@ export const DESK_CHART_THEME = {
     fixLeftEdge: false,
     fixRightEdge: false,
     lockVisibleTimeRangeOnResize: true,
-    rightBarStaysOnScroll: true,
+    rightBarStaysOnScroll: false,
   },
   handleScroll: {
     mouseWheel: true,
