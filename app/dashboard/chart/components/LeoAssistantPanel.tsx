@@ -141,11 +141,19 @@ export function LeoAssistantPanel({
     }
   }, [context.instrument, activeTab])
 
-  // Voice state (Web Speech Recognition)
+  // Voice state (Web Speech Recognition - Continuous Mode)
   const [isListening, setIsListening] = useState(false)
   const [speechSupported, setSpeechSupported] = useState(false)
   const [ttsEnabled, setTtsEnabled] = useState(false)
   const recognitionRef = useRef<any>(null)
+  const isListeningRef = useRef(false)
+  const sessionBaseTranscriptRef = useRef('')
+  const inputPromptRef = useRef('')
+  const restartTimerRef = useRef<any>(null)
+
+  useEffect(() => {
+    inputPromptRef.current = inputPrompt
+  }, [inputPrompt])
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -175,53 +183,112 @@ export function LeoAssistantPanel({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isStreaming])
 
-  // Initialize Web Speech API for voice recognition
+  // Initialize Web Speech API for voice recognition (Continuous & Keep-Alive)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const SpeechRecognition =
-        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-      if (SpeechRecognition) {
-        setSpeechSupported(true)
-        const recog = new SpeechRecognition()
-        recog.continuous = false
-        recog.interimResults = true
-        recog.lang = 'en-US'
+    if (typeof window === 'undefined') return
 
-        recog.onresult = (event: any) => {
-          const transcript = Array.from(event.results)
-            .map((result: any) => result[0].transcript)
-            .join('')
-          setInputPrompt(transcript)
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SpeechRecognition) return
+
+    setSpeechSupported(true)
+    const recog = new SpeechRecognition()
+    recog.continuous = true
+    recog.interimResults = true
+    recog.lang = 'en-US'
+    recog.maxAlternatives = 1
+
+    recog.onresult = (event: any) => {
+      let sessionTranscript = ''
+      for (let i = 0; i < event.results.length; i++) {
+        const item = event.results[i]
+        if (item && item[0]) {
+          sessionTranscript += item[0].transcript
         }
-
-        recog.onerror = (event: any) => {
-          console.warn('[Leo Voice] Recognition error:', event.error)
-          setIsListening(false)
-        }
-
-        recog.onend = () => {
-          setIsListening(false)
-        }
-
-        recognitionRef.current = recog
       }
+      const base = sessionBaseTranscriptRef.current.trim()
+      const combined = base ? `${base} ${sessionTranscript.trim()}` : sessionTranscript.trim()
+      setInputPrompt(combined)
+    }
+
+    recog.onerror = (event: any) => {
+      console.warn('[Leo Voice] Recognition event error:', event.error)
+      // Do not stop for 'no-speech' — user simply paused to think, look at the chart, or breathe!
+      if (event.error === 'no-speech') {
+        return
+      }
+      // Fatal permission or device errors
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        isListeningRef.current = false
+        setIsListening(false)
+      }
+    }
+
+    recog.onend = () => {
+      // If user still wants to listen, browser simply dropped due to silence/network timeout
+      if (isListeningRef.current) {
+        // Save whatever has been recognized so far as base for the next chunk
+        sessionBaseTranscriptRef.current = inputPromptRef.current.trim()
+        clearTimeout(restartTimerRef.current)
+        restartTimerRef.current = setTimeout(() => {
+          if (isListeningRef.current) {
+            try {
+              recog.start()
+            } catch {
+              // Ignore if already active
+            }
+          }
+        }, 150)
+      } else {
+        setIsListening(false)
+      }
+    }
+
+    recognitionRef.current = recog
+
+    return () => {
+      clearTimeout(restartTimerRef.current)
+      isListeningRef.current = false
+      try {
+        recog.abort()
+      } catch {}
     }
   }, [])
 
+  // Start continuous voice recognition
+  const startListening = () => {
+    if (!recognitionRef.current) return
+    clearTimeout(restartTimerRef.current)
+    isListeningRef.current = true
+    setIsListening(true)
+    sessionBaseTranscriptRef.current = inputPromptRef.current.trim()
+    try {
+      recognitionRef.current.start()
+    } catch (err) {
+      console.warn('[Leo Voice] Start error:', err)
+    }
+  }
+
+  // Stop continuous voice recognition
+  const stopListening = () => {
+    clearTimeout(restartTimerRef.current)
+    isListeningRef.current = false
+    setIsListening(false)
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop()
+      } catch {
+        // Ignore stop errors
+      }
+    }
+  }
+
   // Toggle voice recognition
   const toggleListening = () => {
-    if (!recognitionRef.current) return
-    if (isListening) {
-      recognitionRef.current.stop()
-      setIsListening(false)
+    if (isListeningRef.current) {
+      stopListening()
     } else {
-      setInputPrompt('')
-      try {
-        recognitionRef.current.start()
-        setIsListening(true)
-      } catch (err) {
-        console.warn('[Leo Voice] Start error:', err)
-      }
+      startListening()
     }
   }
 
@@ -436,6 +503,9 @@ export function LeoAssistantPanel({
 
   // Send message to Leo via streaming API
   const handleSendMessage = async (textToSend?: string) => {
+    if (isListeningRef.current) {
+      stopListening()
+    }
     const text = textToSend ?? inputPrompt
     if (!text.trim() || isStreaming) return
 
@@ -1028,18 +1098,37 @@ export function LeoAssistantPanel({
 
           {/* Voice Feedback Preview if Listening */}
           {isListening && (
-            <div className="px-3 py-1.5 bg-purple-950/70 border-t border-purple-700/50 flex items-center justify-between text-[11px] font-mono text-purple-200 animate-pulse">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                Listening... speak clearly to Leo
-              </span>
-              <button
-                type="button"
-                onClick={toggleListening}
-                className="text-[10px] text-neutral-400 hover:text-neutral-200 underline"
-              >
-                Stop
-              </button>
+            <div className="px-3 py-2 bg-purple-950/80 border-t border-purple-600/60 flex items-center justify-between text-xs font-mono text-purple-200">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="relative flex h-2.5 w-2.5 shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
+                </span>
+                <span className="font-semibold text-purple-100 truncate">
+                  Listening continuously... Speak naturally (won&apos;t disconnect)
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {inputPrompt.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      stopListening()
+                      handleSendMessage()
+                    }}
+                    className="px-2 py-0.5 rounded bg-purple-600 hover:bg-purple-500 text-white font-bold text-[11px] shadow-sm transition-all"
+                  >
+                    Done & Send ↵
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={stopListening}
+                  className="px-1.5 py-0.5 text-[11px] text-neutral-400 hover:text-neutral-200"
+                >
+                  Stop
+                </button>
+              </div>
             </div>
           )}
 
@@ -1048,6 +1137,9 @@ export function LeoAssistantPanel({
             <form
               onSubmit={(e) => {
                 e.preventDefault()
+                if (isListeningRef.current) {
+                  stopListening()
+                }
                 handleSendMessage()
               }}
               className="flex items-center gap-1.5"
