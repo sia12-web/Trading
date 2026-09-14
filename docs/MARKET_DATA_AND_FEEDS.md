@@ -100,3 +100,30 @@ Lightweight Charts requires strictly ascending Unix timestamps. Duplicate or out
     $$\text{Close} = \text{Price}_{\text{live}}$$
     $$\text{Volume} = \text{Volume}_{\text{bar}} + \text{Volume}_{\text{tick}}$$
   - The series is updated imperatively via `candleRef.current.update()`, guaranteeing zero lag and zero chart flickering.
+
+---
+
+## 4. Understanding Fast Market Move Gaps (London & NYC Open)
+
+During high-volatility events (e.g. 03:00 EDT London Open, 09:30 EDT New York Cash Open, or 08:30 EDT CPI releases), traders may observe candle opening gaps or discrete visual jumps on 1-minute or 5-minute charts.
+
+### 4.1 Databento Historical API vs. Live Stream
+- In the current configuration, Databento queries hit `https://hist.databento.com/v0/timeseries.get_range?dataset=GLBX.MDP3`.
+- `hist.databento.com` is Databento's **Historical HTTP Batch API**, used for seeding past bars upon chart initialization.
+- It is **not** Databento's Live WebSocket / TCP binary gateway (`live.databento.com`).
+
+### 4.2 Live Price Pipeline Sampling (OANDA + Basis SSE)
+- Live price updates are pushed down via Server-Sent Events (`/api/trading/quote/stream`) backed by OANDA CFD ticks adjusted for CME Basis.
+- While CFD pricing is fast, browser SSE connections receive aggregated updates at ~250ms to 1000ms intervals.
+- When an aggressive institutional order sweeps 40 points in 100 milliseconds:
+  - Quotes skip intermediate price increments.
+  - The client's active candle engine receives the post-sweep quote directly.
+
+### 4.3 Lightweight Charts Candle Synthesis
+- If a market surge occurs exactly at the boundary between minute bars (e.g. 09:30:00 vs 09:30:01):
+  - The prior bar closes at the last known quote before 09:30:00 (e.g. 21,500.00).
+  - The first quote received in the new bucket arrives at 09:30:00.600 at 21,525.00.
+  - The charting engine sets $\text{Open}_{new} = 21,525.00$.
+  - Lightweight Charts renders a visual 25-point gap between the bars.
+- Additionally, true CME Globex order books frequently skip price levels during liquidity voids, printing real exchange-side price gaps between consecutive transactions.
+
