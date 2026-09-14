@@ -4,7 +4,7 @@ import {
   detectCandlestickPatterns,
   evaluateLvnBullishEngulfingSetup,
   type Candle,
-} from '../lib/trading/candlestickPatterns'
+} from '../lib/trading/candlestickPatterns.ts'
 
 test('detectCandlestickPatterns - Doji', () => {
   const bars: Candle[] = [
@@ -51,4 +51,24 @@ test('evaluateLvnBullishEngulfingSetup - Valid LVN Setup', () => {
   assert.equal(setup?.stopLoss, 21483) // 21485 - 2 = 21483
   assert.equal(setup?.riskPoints, 57)
   assert.equal(setup?.tp1, 21625.5)
+})
+
+test('detectCandlestickPatterns - Buying Excess Tail', () => {
+  const bars: Candle[] = [
+    { time: 0, open: 105, high: 107, low: 100, close: 104, volume: 100 },
+    { time: 1, open: 105, high: 106, low: 95, close: 104, volume: 200 },
+  ]
+  const res = detectCandlestickPatterns(bars, 1)
+  assert.equal(res.buyingExcess, true)
+  assert.equal(res.sellingExcess, false)
+})
+
+test('detectCandlestickPatterns - Selling Excess Tail', () => {
+  const bars: Candle[] = [
+    { time: 0, open: 96, high: 100, low: 94, close: 97, volume: 100 },
+    { time: 1, open: 96, high: 106, low: 95, close: 97, volume: 200 },
+  ]
+  const res = detectCandlestickPatterns(bars, 1)
+  assert.equal(res.sellingExcess, true)
+  assert.equal(res.buyingExcess, false)
 })

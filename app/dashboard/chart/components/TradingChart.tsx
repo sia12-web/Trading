@@ -2928,6 +2928,8 @@ export function TradingChart({
 
         if (patterns.bullEng) badges.push({ text: '▲ Bull Engulfing', bg: 'rgba(16, 185, 129, 0.92)', fg: '#ffffff', pos: 'BELOW' })
         if (patterns.bearEng) badges.push({ text: '▼ Bear Engulfing', bg: 'rgba(239, 68, 68, 0.92)', fg: '#ffffff', pos: 'ABOVE' })
+        if (patterns.buyingExcess) badges.push({ text: '▲ Excess Tail', bg: 'rgba(5, 150, 105, 0.95)', fg: '#ffffff', pos: 'BELOW' })
+        if (patterns.sellingExcess) badges.push({ text: '▼ Excess Tail', bg: 'rgba(220, 38, 38, 0.95)', fg: '#ffffff', pos: 'ABOVE' })
         if (patterns.hammer) badges.push({ text: '▲ Hammer', bg: 'rgba(56, 189, 248, 0.92)', fg: '#0f172a', pos: 'BELOW' })
         if (patterns.invHammer) badges.push({ text: '▲ Inv Hammer', bg: 'rgba(20, 184, 166, 0.92)', fg: '#ffffff', pos: 'BELOW' })
         if (patterns.shootingStar) badges.push({ text: '▼ Shooting Star', bg: 'rgba(245, 158, 11, 0.92)', fg: '#0f172a', pos: 'ABOVE' })
@@ -3792,6 +3794,8 @@ export function TradingChart({
             if (res.bearHarami) active.push({ pattern: 'Bearish Harami', type: 'BEARISH', candleTimeEt: timeEt, candlePrice: bar.close, barIndex: i })
             if (res.bullKick) active.push({ pattern: 'Bullish Kicker', type: 'BULLISH', candleTimeEt: timeEt, candlePrice: bar.close, barIndex: i })
             if (res.bearKick) active.push({ pattern: 'Bearish Kicker', type: 'BEARISH', candleTimeEt: timeEt, candlePrice: bar.close, barIndex: i })
+            if (res.buyingExcess) active.push({ pattern: 'Buying Excess Tail', type: 'BULLISH', candleTimeEt: timeEt, candlePrice: bar.low, barIndex: i })
+            if (res.sellingExcess) active.push({ pattern: 'Selling Excess Tail', type: 'BEARISH', candleTimeEt: timeEt, candlePrice: bar.high, barIndex: i })
             if (res.doji && active.every(a => a.barIndex !== i)) active.push({ pattern: 'Doji', type: 'NEUTRAL', candleTimeEt: timeEt, candlePrice: bar.close, barIndex: i })
           }
           return active

@@ -17,6 +17,8 @@
  * 13. Shooting Star
  * 14. Hammer
  * 15. Inverted Hammer
+ * 16. Buying Excess Tail (Lower Rejection Tail)
+ * 17. Selling Excess Tail (Upper Rejection Tail)
  *
  * Also includes Low Volume Node (LVN) + Bullish Engulfing Confirmation Strategy:
  * - Enter BUY on Bullish Engulfing at Yesterday's FRVP Low Volume Node (LVN)
@@ -48,11 +50,15 @@ export interface CandlestickPatternResult {
   shootingStar: boolean
   hammer: boolean
   invHammer: boolean
+  buyingExcess: boolean
+  sellingExcess: boolean
 }
 
 /**
- * Detect all 15 candlestick patterns on the candle at `index` (defaults to the latest bar).
- * Follows exact math and logic from Pine Script v6 indicator "Candlestick Patterns Identified".
+ * Detect all candlestick patterns (including 15 standard patterns + Buying/Selling Excess Tails)
+ * on the candle at `index` (defaults to the latest bar).
+ * Follows exact math and logic from Pine Script v6 indicator "Candlestick Patterns Identified"
+ * and Jim Dalton's Auction Market Theory Excess Tail identification.
  */
 export function detectCandlestickPatterns(
   bars: Candle[],
@@ -76,6 +82,8 @@ export function detectCandlestickPatterns(
     shootingStar: false,
     hammer: false,
     invHammer: false,
+    buyingExcess: false,
+    sellingExcess: false,
   }
 
   if (!bars || bars.length === 0 || index < 0 || index >= bars.length) {
@@ -94,6 +102,29 @@ export function detectCandlestickPatterns(
 
   // 1. Doji
   result.doji = Math.abs(open - close) <= (high - low) * dojiSize
+
+  // 16. Buying Excess Tail (Lower Rejection Tail) & 17. Selling Excess Tail (Upper Rejection Tail)
+  // Evaluates dominant wick rejection (≥ 45% of range, ≥ 1.4x body, ≥ 1.8x opposite wick)
+  const range = Math.max(0.0001, high - low)
+  const body = Math.abs(close - open)
+  const topWick = high - Math.max(open, close)
+  const bottomWick = Math.min(open, close) - low
+  const lowerRatio = bottomWick / range
+  const upperRatio = topWick / range
+
+  const isLowerProbe = c1 ? low <= c1.low + 0.0001 : true
+  result.buyingExcess =
+    lowerRatio >= 0.45 &&
+    bottomWick >= 1.4 * body &&
+    bottomWick >= 1.8 * Math.max(0.0001, topWick) &&
+    isLowerProbe
+
+  const isHigherProbe = c1 ? high >= c1.high - 0.0001 : true
+  result.sellingExcess =
+    upperRatio >= 0.45 &&
+    topWick >= 1.4 * body &&
+    topWick >= 1.8 * Math.max(0.0001, bottomWick) &&
+    isHigherProbe
 
   if (!c1) return result
 

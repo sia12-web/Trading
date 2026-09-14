@@ -137,3 +137,39 @@ The platform detects structural swing highs and lows and evaluates subsequent re
   - Up days/bars render green (`rgba(8, 153, 129, 0.45)`).
   - Down days/bars render red (`rgba(242, 54, 69, 0.45)`).
 - **Hover Crosshair Tooltip**: Displays Open, High, Low, Close, Price Change ($pts and %), and Traded Volume (`V: 142.5k`).
+
+---
+
+## 7. Candlestick Patterns & Auction Market Excess Tails
+
+The pattern recognition engine (`lib/trading/candlestickPatterns.ts`) evaluates classical candlestick reversal formations alongside Dalton Auction Market Theory excess rejections:
+
+### 7.1 Auction Market Excess Tails (`buyingExcess` & `sellingExcess`)
+An Excess Tail signifies rapid, aggressive rejection at price extremes where market participants refuse to conduct trade, leaving behind a sharp single-print wick:
+
+- **Buying Excess Tail (Lower Rejection Tail)**:
+  - $\text{lowerRatio} = \frac{\text{bottomWick}}{\text{range}} \ge 0.45$
+  - $\text{bottomWick} \ge 1.4 \times \text{body}$
+  - $\text{bottomWick} \ge 1.8 \times \text{topWick}$
+  - Structural probe: $\text{low} \le \text{low}_{prev} + 0.0001$
+  - **Chart Badge**: `▲ Excess Tail` rendered below the candle in emerald (`rgba(5, 150, 105, 0.95)`).
+
+- **Selling Excess Tail (Upper Rejection Tail)**:
+  - $\text{upperRatio} = \frac{\text{topWick}}{\text{range}} \ge 0.45$
+  - $\text{topWick} \ge 1.4 \times \text{body}$
+  - $\text{topWick} \ge 1.8 \times \text{bottomWick}$
+  - Structural probe: $\text{high} \ge \text{high}_{prev} - 0.0001$
+  - **Chart Badge**: `▼ Excess Tail` rendered above the candle in crimson (`rgba(220, 38, 38, 0.95)`).
+
+### 7.2 Classical Candlestick Reversal Formations
+- **Doji**: Neutral equilibrium / hesitation.
+- **Bullish / Bearish Engulfing**: Trend reversal where body encompasses previous candle.
+- **Bullish / Bearish Harami**: Inside bar compression hinting at turning points.
+- **Morning Star / Evening Star**: 3-bar exhaustion and counter-offensive reversal.
+- **Hammer / Inverted Hammer / Shooting Star / Hanging Man**: Directional pin bars with specific close and body constraints.
+- **Marubozu**: Strong directional conviction with negligible wicks.
+- **Tweezer Tops / Bottoms**: Exact test and rejection of high/low across two candles.
+- **LVN Rejection Confluence**: Evaluates Bullish Engulfing or Excess Tail occurring directly at a Low Volume Node (LVN) or Value Area boundary, generating automated trade setups with defined risk points and take-profit targets.
+
+### 7.3 Leo AI Integration
+When the Candlestick Patterns toggle (`showCandlestickPatterns` 🕯️) is active, all triggered patterns on the latest bar are streamed directly to Leo AI's market context (`activePatterns`), enabling automated voice and text commentary on real-time rejections and momentum shifts.
