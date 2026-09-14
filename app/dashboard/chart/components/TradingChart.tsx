@@ -520,7 +520,7 @@ function describeTimeHighlightSpan(
  * Candle setData uses toChartTime() so UTC comps == Montreal wall clock;
  * labels therefore read UTC getters (not a second TZ conversion).
  */
-function makeDeskChartFormatters(_instrument: Instrument): DeskChartFmt {
+function makeDeskChartFormatters(_instrument: Instrument, timeframe: DeskTimeframe = '5m'): DeskChartFmt {
   const tzLabel = TRADER_DISPLAY_LABEL
   const toUnix = (time: UTCTimestamp | string | number) =>
     typeof time === 'number' ? time : Math.floor(new Date(String(time)).getTime() / 1000)
@@ -530,6 +530,8 @@ function makeDeskChartFormatters(_instrument: Instrument): DeskChartFmt {
   const formatDate = (chartUnix: number, style: 'day' | 'month' | 'year' = 'day') =>
     formatChartDate(chartUnix, style)
 
+  const isDaily = timeframe === '1D'
+
   return {
     formatTime,
     formatDate,
@@ -537,6 +539,16 @@ function makeDeskChartFormatters(_instrument: Instrument): DeskChartFmt {
     tickMarkFormatter: (time, tickMarkType) => {
       const unix = toUnix(time)
       if (!Number.isFinite(unix)) return ''
+      if (isDaily) {
+        switch (tickMarkType) {
+          case TickMarkType.Year:
+            return formatDate(unix, 'year')
+          case TickMarkType.Month:
+            return formatDate(unix, 'month')
+          default:
+            return formatDate(unix, 'day')
+        }
+      }
       switch (tickMarkType) {
         case TickMarkType.Year:
           return formatDate(unix, 'year')
@@ -554,6 +566,9 @@ function makeDeskChartFormatters(_instrument: Instrument): DeskChartFmt {
     timeFormatter: (time) => {
       const unix = toUnix(time)
       if (!Number.isFinite(unix)) return ''
+      if (isDaily) {
+        return formatDate(unix, 'day')
+      }
       return `${formatDate(unix, 'day')} ${formatTime(unix)} ${tzLabel}`
     },
   }
@@ -832,6 +847,11 @@ function OHLCVTooltip({ data, color }: { data: TooltipData | null; color: string
       <span className="text-gray-500">H <span className="text-green-400">{data.high.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
       <span className="text-gray-500">L <span className="text-red-400">{data.low.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
       <span className="text-gray-500">C <span style={{ color }}>{data.close.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
+      {data.volume > 0 && (
+        <span className="text-gray-500">
+          V <span className="text-cyan-400 font-semibold">{data.volume >= 1000 ? `${(data.volume / 1000).toFixed(1)}k` : data.volume.toLocaleString()}</span>
+        </span>
+      )}
       <span className={isUp ? 'text-green-400' : 'text-red-400'}>
         {isUp ? '▲' : '▼'} {Math.abs(data.changePct).toFixed(2)}%
       </span>
@@ -1418,6 +1438,8 @@ export function TradingChart({
   /** Host for level/SL/TP price lines — seeded once; candle setData must not touch it */
   const priceLineHostRef = useRef<ISeriesApi<'Line'> | null>(null)
   const priceLineHostSeededRef = useRef(false)
+  /** Volume histogram series overlay */
+  const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   /** ±10 allowed-entry band lines around active playbook H/L */
   const entryBandLinesRef = useRef<IPriceLine[]>([])
   /** Signature of the painted ±10 tags — repaint only when the tags would differ */
@@ -1550,6 +1572,10 @@ export function TradingChart({
   const paintDeskMarkers = useCallback((bars?: OHLCV[]) => {
     const candleSeries = candleRef.current
     if (!candleSeries) return
+    if (timeframe === '1D') {
+      try { candleSeries.setMarkers([]) } catch {}
+      return
+    }
     const list = bars ?? candlesRef.current
     const deskBars = list.map((c) => ({
       time: c.time as number,
@@ -1811,6 +1837,7 @@ export function TradingChart({
     ibAttempts,
     lunchAttempts,
     stopHits,
+    timeframe,
   ])
 
   useEffect(() => {
@@ -3288,7 +3315,7 @@ export function TradingChart({
     }
 
     ctx.restore()
-  }, [instrument, frvp5d, newsEvents])
+  }, [instrument, frvp5d, newsEvents, timeframe])
 
   useEffect(() => {
     paintExcessesAndRoundedRef.current = paintExcessesAndRounded
@@ -3303,7 +3330,7 @@ export function TradingChart({
     const host = newsMarkersOverlayRef.current
     const chart = chartRef.current
     const list = candlesRef.current
-    if (!host || !chart || !containerRef.current || list.length === 0 || newsEvents.length === 0) {
+    if (!host || !chart || !containerRef.current || list.length === 0 || newsEvents.length === 0 || timeframe === '1D') {
       if (host) host.innerHTML = ''
       return
     }
@@ -3380,7 +3407,7 @@ export function TradingChart({
         </div>
       `
     }
-  }, [newsEvents])
+  }, [newsEvents, timeframe])
 
   useEffect(() => {
     paintNewsMarkersRef.current = paintNewsMarkers
@@ -5625,7 +5652,7 @@ export function TradingChart({
   // Chart axis / tooltips always Montreal — desk logic stays on instrument clock.
   // Candle setData shifts unix → chart time; tickMarkFormatter reads UTC comps.
   useEffect(() => {
-    chartFmtRef.current = makeDeskChartFormatters(instrument)
+    chartFmtRef.current = makeDeskChartFormatters(instrument, timeframe)
     chartTzRef.current = TRADER_DISPLAY_TZ
     const chart = chartRef.current
     if (!chart) return
@@ -5634,8 +5661,12 @@ export function TradingChart({
         timeFormatter: (time: UTCTimestamp | string | number) =>
           chartFmtRef.current.timeFormatter(time),
       },
+      timeScale: {
+        timeVisible: timeframe !== '1D',
+        secondsVisible: false,
+      },
     })
-  }, [instrument])
+  }, [instrument, timeframe])
 
   // Grade market reaction into level_history, then reload playbook (no LLM).
   // If a level breaks/contests, force a Level Finder refresh (throttled) so AI
@@ -5780,10 +5811,12 @@ export function TradingChart({
         }
       }
 
-      const session = sessionFocusHighLow(visibleBars, instrumentRef.current)
-      if (session) {
-        min = session.min
-        max = session.max
+      if (timeframe !== '1D') {
+        const session = sessionFocusHighLow(visibleBars, instrumentRef.current)
+        if (session) {
+          min = session.min
+          max = session.max
+        }
       }
 
       scaleCacheList = list
@@ -5815,6 +5848,20 @@ export function TradingChart({
       priceScaleId: 'right',
       ...ignoreScale,
     })
+
+    const volumeSeries = chart.addHistogramSeries({
+      color: '#26a69a',
+      priceFormat: { type: 'volume' },
+      priceScaleId: 'volume',
+    })
+    chart.priceScale('volume').applyOptions({
+      scaleMargins: {
+        top: 0.82,
+        bottom: 0,
+      },
+      visible: false,
+    })
+    volumeSeriesRef.current = volumeSeries
 
     // Anchored VWAP + ±1/±2/±3σ bands (from NY 9:30 of 5 trading days ago)
     const bandOpts = {
@@ -5947,15 +5994,23 @@ export function TradingChart({
           const close = (candle as any).close ?? 0
           const change = close - open
           const fmt = chartFmtRef.current
+          const barTime = Number(param.time)
+          const list = candlesRef.current
+          const tz = chartTzRef.current
+          const matchedBar = list.find((b) => toChartTime(b.time as number, tz) === barTime)
+          const barVol = matchedBar?.volume ?? (candle as any).volume ?? 0
+
           tipPending = {
             time: param.time
-              ? `${fmt.formatTime(param.time as number)} ${fmt.tzLabel}`
+              ? (timeframe === '1D'
+                  ? `${fmt.formatDate(barTime, 'day')}`
+                  : `${fmt.formatTime(barTime)} ${fmt.tzLabel}`)
               : '',
             open: (candle as any).open,
             high: (candle as any).high,
             low: (candle as any).low,
             close: (candle as any).close,
-            volume: 0,
+            volume: barVol,
             change,
             changePct: open !== 0 ? (change / open) * 100 : 0,
           }
@@ -6024,6 +6079,7 @@ export function TradingChart({
       chart.remove()
       chartRef.current = null
       candleRef.current = null
+      volumeSeriesRef.current = null
       priceLineHostRef.current = null
       priceLineHostSeededRef.current = false
       vwapSeriesRef.current = null
@@ -6622,6 +6678,57 @@ export function TradingChart({
     }
   }, [instrument, clearHoverPreview, publishPriceTick])
 
+  // Reset chart series, old timestamps, and markers when switching timeframe
+  const prevTimeframeRef = useRef<DeskTimeframe | null>(null)
+  useEffect(() => {
+    const prev = prevTimeframeRef.current
+    prevTimeframeRef.current = timeframe
+    if (prev === null || prev === timeframe) return
+
+    didFitRef.current = false
+    priceLineHostSeededRef.current = false
+    lastCandleRef.current = null
+    sessionSpansRef.current = null
+    setCandles([])
+    candlesRef.current = []
+    try { candleRef.current?.setData([]) } catch {}
+    try { priceLineHostRef.current?.setData([]) } catch {}
+    try { volumeSeriesRef.current?.setData([]) } catch {}
+
+    const vs = vwapSeriesRef.current
+    if (vs) {
+      try {
+        vs.vwap.setData([])
+        vs.upper1.setData([])
+        vs.lower1.setData([])
+        vs.upper2.setData([])
+        vs.lower2.setData([])
+        vs.upper3.setData([])
+        vs.lower3.setData([])
+      } catch {}
+    }
+
+    if (timeframe === '1D') {
+      const ibs = ibSeriesRef.current
+      if (ibs) {
+        try { ibs.high.setData([]); ibs.low.setData([]) } catch {}
+      }
+      const or15s = or15SeriesRef.current
+      if (or15s) {
+        try { or15s.high.setData([]); or15s.low.setData([]) } catch {}
+      }
+      const uss = usRangeSeriesRef.current
+      if (uss) {
+        try { uss.high.setData([]); uss.low.setData([]) } catch {}
+      }
+      const or30s = or30SeriesRef.current
+      if (or30s) {
+        try { or30s.high.setData([]); or30s.low.setData([]) } catch {}
+      }
+      try { candleRef.current?.setMarkers([]) } catch {}
+    }
+  }, [timeframe])
+
   useEffect(() => {
     instrumentRef.current = instrument
   }, [instrument])
@@ -6696,6 +6803,23 @@ export function TradingChart({
       candleRef.current.setData(candleData)
     } catch {
       /* ignore candle data error */
+    }
+
+    if (volumeSeriesRef.current) {
+      const volumeData = ordered.map((c) => {
+        const t = toChartTime(c.time as number, tz) as UTCTimestamp
+        const isUp = c.close >= c.open
+        return {
+          time: t,
+          value: Number.isFinite(c.volume) ? c.volume : 0,
+          color: isUp ? 'rgba(8, 153, 129, 0.45)' : 'rgba(242, 54, 69, 0.45)',
+        }
+      })
+      try {
+        volumeSeriesRef.current.setData(sanitizeChartPoints(volumeData))
+      } catch {
+        /* ignore */
+      }
     }
 
     // 5-Month Anchored VWAP on 1D; Dynamic Session/5D Anchored VWAP with bands on intraday
@@ -6916,17 +7040,23 @@ export function TradingChart({
     if (!didFitRef.current) {
       // Tip-anchored window — never fit all ~3k history bars (looks randomly zoomed out)
       const width = containerRef.current?.clientWidth ?? 900
-      const spacing = deskBarSpacing(width, ordered.length)
-      ts.applyOptions({ barSpacing: spacing, rightOffset: DESK_CHART_THEME.timeScale.rightOffset })
+      const isDaily = timeframe === '1D'
+      const spacing = deskBarSpacing(width, ordered.length, timeframe)
+      ts.applyOptions({
+        barSpacing: spacing,
+        rightOffset: isDaily ? 6 : DESK_CHART_THEME.timeScale.rightOffset,
+        timeVisible: !isDaily,
+        secondsVisible: false,
+      })
       requestAnimationFrame(() => {
         try {
           chartRef.current?.priceScale('right').applyOptions({
             autoScale: true,
             scaleMargins: DESK_CHART_THEME.rightPriceScale.scaleMargins,
           })
-          const restored = loadDeskViewport(instrument, ordered.length, width)
+          const restored = loadDeskViewport(instrument, ordered.length, width, timeframe)
           ts.setVisibleLogicalRange(
-            restored ?? deskVisibleLogicalRange(ordered.length, width)
+            restored ?? deskVisibleLogicalRange(ordered.length, width, timeframe)
           )
           didFitRef.current = true
           refreshSessionHighlightsRef.current?.()
@@ -6948,7 +7078,7 @@ export function TradingChart({
     requestAnimationFrame(() => {
       refreshSessionHighlightsRef.current?.()
     })
-  }, [candles, instrument, paintLevelLines, avwap5mBenchmark]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [candles, instrument, paintLevelLines, avwap5mBenchmark, timeframe]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Repaint VWAP series data when avwap5mBenchmark changes or on instrument switch
   useEffect(() => {
@@ -7144,19 +7274,23 @@ export function TradingChart({
     })
     const list = candlesRef.current
     const width = containerRef.current?.clientWidth ?? 900
+    const isDaily = timeframe === '1D'
     try {
       const ts = chart.timeScale()
       ts.applyOptions({
-        barSpacing: deskBarSpacing(width, list.length),
-        rightOffset: DESK_CHART_THEME.timeScale.rightOffset,
+        barSpacing: deskBarSpacing(width, list.length, timeframe),
+        rightOffset: isDaily ? 6 : DESK_CHART_THEME.timeScale.rightOffset,
+        timeVisible: !isDaily,
+        secondsVisible: false,
       })
-      ts.setVisibleLogicalRange(deskVisibleLogicalRange(list.length, width))
-      saveDeskViewport(instrumentRef.current, deskVisibleLogicalRange(list.length, width), list.length)
+      const defaultRange = deskVisibleLogicalRange(list.length, width, timeframe)
+      ts.setVisibleLogicalRange(defaultRange)
+      saveDeskViewport(instrumentRef.current, defaultRange, list.length, timeframe)
     } catch {
       /* ignore */
     }
     requestAnimationFrame(() => refreshSessionHighlights())
-  }, [refreshSessionHighlights])
+  }, [refreshSessionHighlights, timeframe])
 
   useEffect(() => {
     refreshSessionHighlightsRef.current = refreshSessionHighlights
@@ -7191,7 +7325,7 @@ export function TradingChart({
             const range = chartRef.current.timeScale().getVisibleLogicalRange()
             const list = candlesRef.current
             if (range && list.length > 1) {
-              saveDeskViewport(instrumentRef.current, range, list.length)
+              saveDeskViewport(instrumentRef.current, range, list.length, timeframe)
             }
           } catch {
             /* ignore */
@@ -7212,21 +7346,28 @@ export function TradingChart({
       scheduleSettle()
     }
 
-    // Track pan/zoom: repaint bands every frame so colors stay locked to the candles.
-    const onRangeChange = () => {
-      interactingRef.current = true
-      paintNow()
-      if (!pointerDown) scheduleSettle()
-    }
+    el?.addEventListener('pointerdown', beginInteract, { passive: true })
+    window.addEventListener('pointerup', endInteract, { passive: true })
+    window.addEventListener('pointercancel', endInteract, { passive: true })
 
-    paintNow()
-    const t1 = window.setTimeout(paintNow, 80)
     const ts = chartRef.current.timeScale()
+    const onRangeChange = () => {
+      if (!didFitRef.current) return
+      if (interactingRef.current) {
+        if (host) host.style.opacity = '0.4'
+        if (rafPending) cancelAnimationFrame(rafPending)
+        rafPending = requestAnimationFrame(() => {
+          rafPending = 0
+          refreshSessionHighlights()
+        })
+      } else {
+        scheduleSettle()
+      }
+    }
     ts.subscribeVisibleLogicalRangeChange(onRangeChange)
-    el?.addEventListener('pointerdown', beginInteract)
-    // window: drag can end outside the chart (pointerleave used to false-settle mid-pan)
-    window.addEventListener('pointerup', endInteract)
-    window.addEventListener('pointercancel', endInteract)
+
+    const t1 = window.setTimeout(() => refreshSessionHighlights(), 200)
+
     return () => {
       window.clearTimeout(t1)
       window.clearTimeout(settleTimer)
@@ -7241,7 +7382,7 @@ export function TradingChart({
       window.removeEventListener('pointerup', endInteract)
       window.removeEventListener('pointercancel', endInteract)
     }
-  }, [chartReady, refreshSessionHighlights])
+  }, [chartReady, refreshSessionHighlights, timeframe])
 
   // ── Draw level lines ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -9759,9 +9900,14 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   onClick={() => {
                     if (timeframe === tf) return
                     didFitRef.current = false
+                    priceLineHostSeededRef.current = false
                     lastCandleRef.current = null
+                    sessionSpansRef.current = null
                     setCandles([])
                     candlesRef.current = []
+                    try { candleRef.current?.setData([]) } catch {}
+                    try { volumeSeriesRef.current?.setData([]) } catch {}
+                    try { priceLineHostRef.current?.setData([]) } catch {}
                     setTimeframe(tf)
                   }}
                   className={`rounded px-2.5 py-1 text-xs font-semibold transition-all ${

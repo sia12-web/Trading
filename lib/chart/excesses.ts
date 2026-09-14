@@ -250,7 +250,7 @@ export function detect5DaySessionExtremes(
  */
 export function detectDailyExtremes(
   bars: ExcessBar[],
-  maxCount: number = 16
+  maxCount: number = 28
 ): SessionExtreme[] {
   if (!bars || bars.length < 5) return []
   const extremes: SessionExtreme[] = []
@@ -275,11 +275,13 @@ export function detectDailyExtremes(
     if (isHigh) {
       let isRetested = false
       let retestVol: number | undefined
+      let retestTime: number | undefined
       for (let j = i + 1; j < bars.length; j++) {
         const next = bars[j]!
         if (Math.abs(next.high - cur.high) <= tol || (next.high >= cur.high - tol && next.low <= cur.high)) {
           isRetested = true
           retestVol = Math.max(0, next.volume > 0 ? next.volume : 1)
+          retestTime = next.time
           break
         }
       }
@@ -296,19 +298,22 @@ export function detectDailyExtremes(
         isRetested,
         retestVolume: retestVol,
         retestVolumeRatio: retestVol && vol > 0 ? Number((retestVol / vol).toFixed(2)) : undefined,
+        retestTime,
         sessionStartTime: cur.time,
-        sessionEndTime: bars[bars.length - 1]!.time,
+        sessionEndTime: retestTime ?? Math.min(bars[bars.length - 1]!.time, cur.time + 86400 * 20),
       })
     }
 
     if (isLow) {
       let isRetested = false
       let retestVol: number | undefined
+      let retestTime: number | undefined
       for (let j = i + 1; j < bars.length; j++) {
         const next = bars[j]!
         if (Math.abs(next.low - cur.low) <= tol || (next.low <= cur.low + tol && next.high >= cur.low)) {
           isRetested = true
           retestVol = Math.max(0, next.volume > 0 ? next.volume : 1)
+          retestTime = next.time
           break
         }
       }
@@ -325,8 +330,9 @@ export function detectDailyExtremes(
         isRetested,
         retestVolume: retestVol,
         retestVolumeRatio: retestVol && vol > 0 ? Number((retestVol / vol).toFixed(2)) : undefined,
+        retestTime,
         sessionStartTime: cur.time,
-        sessionEndTime: bars[bars.length - 1]!.time,
+        sessionEndTime: retestTime ?? Math.min(bars[bars.length - 1]!.time, cur.time + 86400 * 20),
       })
     }
   }

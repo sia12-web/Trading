@@ -105,25 +105,37 @@ export function setDeskInstrumentPreference(instrument: DeskInstrumentPref): voi
  */
 export const DESK_VISIBLE_BARS = 90
 
-export function deskVisibleBarCount(containerWidth: number, barCount: number): number {
-  const byWidth = Math.floor(Math.max(containerWidth - 80, 240) / DESK_BAR_SPACING)
-  return Math.min(Math.max(barCount, 1), Math.max(40, byWidth))
+export function deskVisibleBarCount(
+  containerWidth: number,
+  barCount: number,
+  timeframe?: string
+): number {
+  const isDaily = timeframe === '1D'
+  const spacing = isDaily ? 6 : DESK_BAR_SPACING
+  const byWidth = Math.floor(Math.max(containerWidth - 80, 240) / spacing)
+  const minBars = isDaily ? 120 : 40
+  return Math.min(Math.max(barCount, 1), Math.max(minBars, byWidth))
 }
 
 export function deskVisibleLogicalRange(
   barCount: number,
-  containerWidth = 1160
+  containerWidth = 1160,
+  timeframe?: string
 ): { from: number; to: number } {
   const last = Math.max(barCount - 1, 0)
-  const visible = deskVisibleBarCount(containerWidth, barCount)
+  const visible = deskVisibleBarCount(containerWidth, barCount, timeframe)
   return {
-    from: last - visible + 1,
+    from: Math.max(0, last - visible + 1),
     to: last + 3,
   }
 }
 
-export function deskBarSpacing(_containerWidth: number, _barCount: number): number {
-  return DESK_BAR_SPACING
+export function deskBarSpacing(
+  _containerWidth: number,
+  _barCount: number,
+  timeframe?: string
+): number {
+  return timeframe === '1D' ? 6 : DESK_BAR_SPACING
 }
 
 /** Tip-relative viewport so new prints keep the same window after refresh. */
@@ -148,9 +160,10 @@ export function encodeDeskViewport(
 export function decodeDeskViewport(
   saved: SavedDeskViewport,
   barCount: number,
-  containerWidth = 1160
+  containerWidth = 1160,
+  timeframe?: string
 ): { from: number; to: number } {
-  const fallback = deskVisibleLogicalRange(barCount, containerWidth)
+  const fallback = deskVisibleLogicalRange(barCount, containerWidth, timeframe)
   if (!Number.isFinite(saved.fromEnd) || !Number.isFinite(saved.span) || saved.span < 8) {
     return fallback
   }
@@ -160,18 +173,19 @@ export function decodeDeskViewport(
   return { from, to: from + span }
 }
 
-const VIEW_KEY = (instrument: string) => `tradepulse.chart.view.${instrument}`
+const VIEW_KEY = (instrument: string, timeframe = '5m') => `tradepulse.chart.view.${instrument}.${timeframe}`
 
 export function saveDeskViewport(
   instrument: string,
   range: { from: number; to: number },
-  barCount: number
+  barCount: number,
+  timeframe = '5m'
 ): void {
   if (typeof window === 'undefined' || barCount < 2) return
   const encoded = encodeDeskViewport(range, barCount)
   if (!encoded) return
   try {
-    sessionStorage.setItem(VIEW_KEY(instrument), JSON.stringify(encoded))
+    sessionStorage.setItem(VIEW_KEY(instrument, timeframe), JSON.stringify(encoded))
   } catch {
     /* private mode */
   }
@@ -180,14 +194,15 @@ export function saveDeskViewport(
 export function loadDeskViewport(
   instrument: string,
   barCount: number,
-  containerWidth = 1160
+  containerWidth = 1160,
+  timeframe = '5m'
 ): { from: number; to: number } | null {
   if (typeof window === 'undefined') return null
   try {
-    const raw = sessionStorage.getItem(VIEW_KEY(instrument))
+    const raw = sessionStorage.getItem(VIEW_KEY(instrument, timeframe))
     if (!raw) return null
     const parsed = JSON.parse(raw) as SavedDeskViewport
-    return decodeDeskViewport(parsed, barCount, containerWidth)
+    return decodeDeskViewport(parsed, barCount, containerWidth, timeframe)
   } catch {
     return null
   }
