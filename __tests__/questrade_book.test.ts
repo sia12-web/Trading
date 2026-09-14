@@ -384,10 +384,82 @@ const orphanStop = pairQuestradeBook({
     },
   ],
 })
-const meta = orphanStop.openPositions[0]
-assert.ok(meta)
-assert.equal(meta.stop, 8.5)
-assert.equal(orphanStop.levels.length, 1)
-assert.equal(orphanStop.levels[0]?.kind, 'sl')
+// Test TP and SL placed days later without parentId / orderGroupId
+const delayedBook = pairQuestradeBook({
+  now: new Date('2026-09-10T12:00:00Z'),
+  orders: [
+    // Entry placed on Aug 20
+    {
+      id: 1001,
+      symbol: 'SPY',
+      side: 'Buy',
+      orderType: 'Limit',
+      state: 'Executed',
+      totalQuantity: 1,
+      avgExecPrice: 765,
+      creationTime: '2026-08-20T10:00:00Z',
+      updateTime: '2026-08-20T10:05:00Z',
+    },
+    // Working entry limit placed later (unexecuted)
+    {
+      id: 1002,
+      symbol: 'SPY',
+      side: 'Buy',
+      orderType: 'Limit',
+      state: 'Accepted',
+      totalQuantity: 1,
+      limitPrice: 755,
+      creationTime: '2026-09-05T10:00:00Z',
+      updateTime: '2026-09-05T10:00:00Z',
+    },
+    // Take Profit placed on Sep 9 (20 days later!) without parentId
+    {
+      id: 1003,
+      symbol: 'SPY',
+      side: 'Sell',
+      orderType: 'Limit',
+      state: 'Accepted',
+      totalQuantity: 1,
+      limitPrice: 772,
+      creationTime: '2026-09-09T09:00:00Z',
+      updateTime: '2026-09-09T09:00:00Z',
+    },
+    // Stop loss placed on Sep 9 without parentId
+    {
+      id: 1004,
+      symbol: 'SPY',
+      side: 'Sell',
+      orderType: 'Stop',
+      state: 'Accepted',
+      totalQuantity: 1,
+      stopPrice: 740,
+      creationTime: '2026-09-09T09:05:00Z',
+      updateTime: '2026-09-09T09:05:00Z',
+    },
+  ],
+  positions: [
+    {
+      symbol: 'SPY',
+      openQuantity: 1,
+      averageEntryPrice: 765,
+      currentPrice: 761,
+      openPnl: -4,
+    },
+  ],
+})
+
+const delayedSpy = delayedBook.openPositions[0]
+assert.ok(delayedSpy, 'SPY open position must exist')
+assert.equal(delayedSpy.entry, 765)
+assert.equal(delayedSpy.target, 772, 'SPY TP placed 20 days later must be attached')
+assert.equal(delayedSpy.targetStatus, 'working')
+assert.equal(delayedSpy.stop, 740, 'SPY SL placed 20 days later must be attached')
+assert.equal(delayedSpy.stopStatus, 'working')
+
+const unexecutedSpyLimit = delayedBook.workingLimits.find((w) => w.sourceId === '1002')
+assert.ok(unexecutedSpyLimit, 'Working buy limit 1002 must exist')
+assert.equal(unexecutedSpyLimit.entry, 755)
+assert.equal(unexecutedSpyLimit.target, null, 'Unexecuted working limit must NOT borrow position TP')
+assert.equal(unexecutedSpyLimit.stop, null, 'Unexecuted working limit must NOT borrow position SL')
 
 console.log('questrade_book.test.ts: ok')

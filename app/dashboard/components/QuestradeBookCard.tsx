@@ -219,8 +219,8 @@ export function QuestradeBookCard() {
     <section className="rounded-xl border border-emerald-500/25 bg-emerald-500/[0.05] p-4">
       <h2 className="text-sm font-semibold text-emerald-100">Questrade book</h2>
       <p className="mt-0.5 text-xs text-gray-400">
-        Read-only. Their share count is not your Tradeify size. Copy on DOW or NASDAQ at NY
-        open — $400 → $250 → $150, flatten 16:59 ET.
+        Read-only. Their share count is their own book. Copy on DOW or NASDAQ at NY
+        open — close at 1.5R or flatten 16:59 ET.
       </p>
 
       {error ? <p className="mt-3 text-xs text-amber-200">{error}</p> : null}

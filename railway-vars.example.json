@@ -23,5 +23,8 @@
   "TELEGRAM_CHAT_ID": "optional-your-chat-id",
   "NEXT_PUBLIC_BASE_URL": "https://YOUR_SERVICE.up.railway.app",
   "TRADEIFY_ACCOUNT_NAME": "TDFYG-your-account",
-  "TRADEIFY_ORDER_ID": "your-tradeify-order-id"
+  "TRADEIFY_ORDER_ID": "your-tradeify-order-id",
+  "QUESTRADE_ACCOUNT_NUMBER": "29804934",
+  "QUESTRADE_WATCHER_DATABASE_URL": "postgresql://postgres:PASSWORD@hayabusa.proxy.rlwy.net:20403/railway",
+  "QUESTRADE_READ_ONLY": "true"
 }

@@ -1288,7 +1288,6 @@ export function TradingChart({
   const [showVwap, setShowVwap] = useState(true)
   const [currentVwap, setCurrentVwap] = useState<{ vwap: number; upper1: number; lower1: number } | null>(null)
   const latestVwapBandsRef = useRef<any>(null)
-  const [cvdPanelOpen, setCvdPanelOpen] = useState(false)
   const [showCvdSubPane, setShowCvdSubPane] = useState(false)
   const [cvdSubPaneHeight, setCvdSubPaneHeight] = useState(185)
   const cvdContainerRef = useRef<HTMLDivElement>(null)
@@ -4623,6 +4622,12 @@ export function TradingChart({
       setIsFullscreen(false)
     }
     requestAnimationFrame(() => {
+      if (containerRef.current && chartRef.current) {
+        chartRef.current.resize(containerRef.current.clientWidth, containerRef.current.clientHeight)
+      }
+      if (cvdContainerRef.current && cvdChartRef.current) {
+        cvdChartRef.current.resize(cvdContainerRef.current.clientWidth, cvdContainerRef.current.clientHeight)
+      }
       refreshSessionHighlightsRef.current()
     })
   }, [isFullscreen])
@@ -8907,6 +8912,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             containerRef.current.clientHeight
           )
         }
+        if (cvdContainerRef.current && cvdChartRef.current) {
+          cvdChartRef.current.resize(
+            cvdContainerRef.current.clientWidth,
+            cvdContainerRef.current.clientHeight
+          )
+        }
         pokeOverlayLayoutRef.current()
       })
     }
@@ -9540,9 +9551,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
   return (
     <div
       ref={outerWrapperRef}
-      className={`flex flex-col gap-1 ${isFullscreen
-        ? 'fixed inset-0 z-[100] bg-[#0d1117] p-2 h-screen w-screen'
-        : 'h-full w-full'
+      className={`flex flex-col gap-1 overflow-hidden ${isFullscreen
+        ? 'fixed inset-0 z-[100] bg-[#0d1117] p-2 h-screen w-full max-w-full'
+        : 'h-full w-full max-w-full min-h-0'
         }`}
     >
       {/* ── Toolbar & Sub-header HUD (Hidden in Fullscreen Mode) ────────────────── */}
@@ -9807,12 +9818,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               {/* Interactive CVD Sub-Chart Pane Button */}
               <button
                 type="button"
-                onClick={() => {
-                  setShowCvdSubPane((prev) => !prev)
-                  setCvdPanelOpen((prev) => !prev)
-                }}
+                onClick={() => setShowCvdSubPane((prev) => !prev)}
                 className={`transition flex items-center gap-1.5 select-none px-1.5 py-0.5 rounded cursor-pointer ${
-                  showCvdSubPane || cvdPanelOpen
+                  showCvdSubPane
                     ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/60 shadow-sm font-semibold'
                     : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
                 }`}
@@ -9820,8 +9828,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               >
                 <span className="text-[11px]">📊</span>
                 <span className="text-gray-400 font-semibold">CVD:</span>
-                <span className={`font-mono font-bold ${showCvdSubPane || cvdPanelOpen ? 'text-cyan-300' : 'text-zinc-400'}`}>
-                  {showCvdSubPane || cvdPanelOpen ? 'ON' : 'OFF'}
+                <span className={`font-mono font-bold ${showCvdSubPane ? 'text-cyan-300' : 'text-zinc-400'}`}>
+                  {showCvdSubPane ? 'ON' : 'OFF'}
                 </span>
                 {sessionOrderFlow?.divergence !== 'NONE' && (
                   <span className="relative flex h-2 w-2">
@@ -9848,8 +9856,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         ref={chartFrameRef}
         onClick={handleChartFrameClick}
         onMouseMove={handleChartFrameMouseMove}
-        className="flex-1 relative rounded-xl border border-zinc-800 overflow-hidden bg-[#0e1117] flex flex-col"
-        style={{ minHeight: 520 }}
+        className="flex-1 min-h-0 relative rounded-xl border border-zinc-800 overflow-hidden bg-[#0e1117] flex flex-col"
       >
         {/* Floating Exit Fullscreen Button */}
         {isFullscreen && (
@@ -10065,12 +10072,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             {/* CVD Sub-Chart Toggle */}
             <button
               type="button"
-              onClick={() => {
-                setShowCvdSubPane((prev) => !prev)
-                setCvdPanelOpen((prev) => !prev)
-              }}
+              onClick={() => setShowCvdSubPane((prev) => !prev)}
               className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
-                showCvdSubPane || cvdPanelOpen
+                showCvdSubPane
                   ? 'bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/30 font-bold'
                   : 'text-slate-400 hover:bg-slate-800 hover:text-cyan-300'
               }`}
@@ -10078,7 +10082,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             >
               <span>📊</span>
               <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-cyan-200 shadow-xl border border-slate-800 group-hover:block z-50">
-                CVD Sub-Chart ({showCvdSubPane || cvdPanelOpen ? 'ON' : 'OFF'})
+                CVD Sub-Chart ({showCvdSubPane ? 'ON' : 'OFF'})
               </span>
             </button>
 
@@ -11174,184 +11178,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </DraggableDeskWidget>
         )}
 
-        {/* ── Interactive Order Flow & CVD Inspector Panel ── */}
-        {cvdPanelOpen && (
-          <DraggableDeskWidget
-            storageKey={`cvd-order-flow-${instrument}`}
-            defaultPos={{ x: 28, y: 110 }}
-            widthClassName="w-[min(23rem,calc(100vw-2rem))]"
-            maxHeightClassName="max-h-[min(65vh,520px)]"
-            title={
-              <div className="flex items-center gap-1.5 font-bold text-xs text-cyan-300">
-                <span>📊</span>
-                <span>CVD & Order Flow ({instrument})</span>
-              </div>
-            }
-            subtitle="CME Globex · NYC Cash Anchor (09:30 ET)"
-            onClose={() => setCvdPanelOpen(false)}
-          >
-            <div className="space-y-2.5 p-3 text-xs text-slate-200">
-              {/* Top Stats: Session CVD & Latest Bar Delta */}
-              <div className="grid grid-cols-2 gap-2">
-                {/* Session CVD Card */}
-                <div className="rounded-xl border border-slate-700/80 bg-slate-800/60 p-2.5 shadow-sm">
-                  <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-                    Session CVD
-                  </div>
-                  <div
-                    className={`mt-1 font-mono text-xl font-extrabold tracking-tight ${
-                      (sessionOrderFlow?.sessionCvd ?? 0) >= 0
-                        ? 'text-emerald-400'
-                        : 'text-rose-400'
-                    }`}
-                  >
-                    {sessionOrderFlow
-                      ? `${sessionOrderFlow.sessionCvd >= 0 ? '+' : ''}${sessionOrderFlow.sessionCvd.toLocaleString()}`
-                      : '0'}
-                    <span className="text-xs font-normal text-slate-400 ml-1">Δ</span>
-                  </div>
-                  <div className="mt-1 flex items-center gap-1 text-[9.5px]">
-                    <span
-                      className={`inline-block w-1.5 h-1.5 rounded-full ${
-                        sessionOrderFlow?.trend === 'BUYER_DOMINANT'
-                          ? 'bg-emerald-400'
-                          : sessionOrderFlow?.trend === 'SELLER_DOMINANT'
-                          ? 'bg-rose-400'
-                          : 'bg-slate-400'
-                      }`}
-                    />
-                    <span
-                      className={`font-semibold uppercase ${
-                        sessionOrderFlow?.trend === 'BUYER_DOMINANT'
-                          ? 'text-emerald-300'
-                          : sessionOrderFlow?.trend === 'SELLER_DOMINANT'
-                          ? 'text-rose-300'
-                          : 'text-slate-400'
-                      }`}
-                    >
-                      {sessionOrderFlow?.trend ? sessionOrderFlow.trend.replace('_', ' ') : 'BALANCED'}
-                    </span>
-                  </div>
-                </div>
 
-                {/* Latest 1m Bar Delta Card */}
-                <div className="rounded-xl border border-slate-700/80 bg-slate-800/60 p-2.5 shadow-sm">
-                  <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-                    Latest Bar Delta
-                  </div>
-                  <div
-                    className={`mt-1 font-mono text-xl font-extrabold tracking-tight ${
-                      (sessionOrderFlow?.latestBarDelta ?? 0) >= 0
-                        ? 'text-emerald-400'
-                        : 'text-rose-400'
-                    }`}
-                  >
-                    {sessionOrderFlow
-                      ? `${sessionOrderFlow.latestBarDelta >= 0 ? '+' : ''}${sessionOrderFlow.latestBarDelta.toLocaleString()}`
-                      : '0'}
-                    <span className="text-xs font-normal text-slate-400 ml-1">Δ</span>
-                  </div>
-                  <div className="mt-1 text-[9.5px] text-slate-400 font-mono">
-                    Buy: {sessionOrderFlow?.latestBuyVolume.toLocaleString() ?? 0} · Sell: {sessionOrderFlow?.latestSellVolume.toLocaleString() ?? 0}
-                  </div>
-                </div>
-              </div>
-
-              {/* Buy vs Sell Volume Breakdown Bar */}
-              <div className="rounded-xl border border-slate-700/80 bg-slate-800/40 p-2.5 space-y-1.5">
-                <div className="flex items-center justify-between text-[10px]">
-                  <span className="font-semibold text-emerald-400">
-                    Buyers {sessionOrderFlow ? Math.round(sessionOrderFlow.latestBuyRatio * 100) : 50}%
-                  </span>
-                  <span className="text-slate-400 font-medium">Aggressive Pressure</span>
-                  <span className="font-semibold text-rose-400">
-                    Sellers {sessionOrderFlow ? 100 - Math.round(sessionOrderFlow.latestBuyRatio * 100) : 50}%
-                  </span>
-                </div>
-                <div className="h-2 w-full rounded-full bg-slate-900 overflow-hidden flex">
-                  <div
-                    className="h-full bg-emerald-500 transition-all duration-300"
-                    style={{
-                      width: `${sessionOrderFlow ? Math.round(sessionOrderFlow.latestBuyRatio * 100) : 50}%`,
-                    }}
-                  />
-                  <div
-                    className="h-full bg-rose-500 transition-all duration-300"
-                    style={{
-                      width: `${sessionOrderFlow ? 100 - Math.round(sessionOrderFlow.latestBuyRatio * 100) : 50}%`,
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Auction Order Flow Signal / Divergence Card */}
-              <div
-                className={`rounded-xl border p-2.5 text-[11px] leading-relaxed transition-all ${
-                  sessionOrderFlow?.divergence === 'BULLISH_ABSORPTION'
-                    ? 'border-emerald-500/50 bg-emerald-950/30 text-emerald-200'
-                    : sessionOrderFlow?.divergence === 'BEARISH_EXHAUSTION'
-                    ? 'border-rose-500/50 bg-rose-950/30 text-rose-200'
-                    : 'border-slate-700/60 bg-slate-800/30 text-slate-300'
-                }`}
-              >
-                <div className="flex items-center gap-1.5 font-bold text-xs">
-                  {sessionOrderFlow?.divergence === 'BULLISH_ABSORPTION' && (
-                    <>
-                      <span className="flex h-2 w-2 relative">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-                      </span>
-                      <span className="text-emerald-300">Bullish Institutional Absorption</span>
-                    </>
-                  )}
-                  {sessionOrderFlow?.divergence === 'BEARISH_EXHAUSTION' && (
-                    <>
-                      <span className="flex h-2 w-2 relative">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" />
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500" />
-                      </span>
-                      <span className="text-rose-300">Bearish Exhaustion Detected</span>
-                    </>
-                  )}
-                  {(!sessionOrderFlow || sessionOrderFlow.divergence === 'NONE') && (
-                    <>
-                      <span className="text-slate-400">⚖️</span>
-                      <span className="text-slate-300">Auction Flow Balanced</span>
-                    </>
-                  )}
-                </div>
-                <p className="mt-1 text-[10.5px] opacity-90">
-                  {sessionOrderFlow?.description ??
-                    'CVD order flow tracks aggressive market orders vs passive resting limit liquidity.'}
-                </p>
-              </div>
-
-              {/* Interactive Ask Leo Button */}
-              <button
-                type="button"
-                onClick={() => {
-                  if (sessionOrderFlow) {
-                    setLeoExternalPoints([
-                      {
-                        id: `cvd-inspect-${Date.now()}`,
-                        label: `CVD ${sessionOrderFlow.sessionCvd >= 0 ? '+' : ''}${sessionOrderFlow.sessionCvd} Δ`,
-                        value: sessionOrderFlow.sessionCvd,
-                        tier: 'ORDER_FLOW',
-                        category: 'CVD',
-                        description: `Session CVD: ${sessionOrderFlow.sessionCvd} contracts (${sessionOrderFlow.trend}). Buy ratio: ${Math.round(sessionOrderFlow.latestBuyRatio * 100)}%. Divergence: ${sessionOrderFlow.divergence}. ${sessionOrderFlow.description}`,
-                      },
-                    ])
-                  }
-                  setLeoPanelOpen(true)
-                }}
-                className="w-full rounded-xl bg-cyan-600/30 hover:bg-cyan-600/50 border border-cyan-500/40 py-2 px-3 text-cyan-200 font-semibold text-xs flex items-center justify-center gap-2 shadow-sm transition cursor-pointer"
-              >
-                <span>🤖</span>
-                <span>Ask Leo to Analyze Order Flow Confirmation</span>
-              </button>
-            </div>
-          </DraggableDeskWidget>
-        )}
 
         {/* ── Confluence Strategy Signals — rendered directly on chart candles ── */}
 

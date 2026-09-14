@@ -181,15 +181,15 @@ export function buildQuestradeTradeifyTransfer(args: {
   }
   const note = [
     `${args.row.label || args.row.symbol} ${args.row.side} × ${args.row.quantity} is the reason — not your Tradovate size.`,
-    `Your leftover NYC fill is ${copyRisk.label}.`,
+    `Your copy size is ${copyRisk.label}.`,
     args.row.kind === 'entry_limit'
-      ? 'Questrade working limit. Copy on Tradeify only if you still have a fill and NY is open.'
+      ? 'Questrade working limit. Copy on Tradeify only if NY is open.'
       : 'Open/filled Questrade book. Growth cannot hold overnight — flatten 16:59 ET.',
     copyRisk.sessionReset
-      ? 'Session ended — size is back to fill 1/3 · $400 until you take the next NYC trade.'
+      ? 'Session ended — size is back to $400 until you take the next NYC trade.'
       : null,
     !copyRisk.canSize && !copyRisk.sessionReset
-      ? 'No Tradeify fill left this session. After 18:00 ET the book resets to fill 1/3 · $400.'
+      ? 'Risk limit reached this session. After 18:00 ET the book resets.'
       : null,
     ticket
       ? `Index preview uses ${instrument} last × their stop % (${pct != null ? (pct * 100).toFixed(2) : '—'}%) at $${copyRisk.riskDollars}. Recheck at NY open.`

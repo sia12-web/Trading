@@ -166,6 +166,7 @@ function levelPrice(raw: QuestradeRawOrder): number | null {
 function isSlOrder(raw: QuestradeRawOrder): boolean {
   const cls = orderClass(raw)
   if (cls === 'STOPLOSS' || cls === 'LOSS') return true
+  if (posNum(raw.stopPrice) != null || posNum(raw.triggerStopPrice) != null) return true
   return PROTECTIVE.has(questradeOrderType(raw))
 }
 
@@ -271,11 +272,13 @@ function signedNum(v: unknown): number | null {
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : null
 }
 
-function orderPrice(raw: QuestradeRawOrder): number | null {
+function orderPrice(raw?: QuestradeRawOrder | null): number | null {
+  if (!raw) return null
   return posNum(raw.avgExecPrice) || posNum(raw.limitPrice) || posNum(raw.stopPrice)
 }
 
-function orderStamp(raw: QuestradeRawOrder): string | null {
+function orderStamp(raw?: QuestradeRawOrder | null): string | null {
+  if (!raw) return null
   return raw.updateTime || raw.timePlaced || raw.creationTime || null
 }
 
@@ -314,24 +317,76 @@ function pickLevel(
     entrySide: TeamTapeSide
     entryId?: string | null
     groupId?: string | null
+    entryPrice?: number | null
+    entryQty?: number | null
+    entryTime?: string | null
     want: 'sl' | 'tp'
+    isEntryLimit?: boolean
   }
 ): QuestradeProtectiveLevel | null {
   const opp = args.entrySide === 'BUY' ? 'SELL' : 'BUY'
+
+  // Working entry limits (unexecuted) only pair with explicitly linked brackets
+  if (args.isEntryLimit) {
+    const direct = levels.filter(
+      (l) =>
+        l.kind === args.want &&
+        l.symbol === args.symbol &&
+        l.side === opp &&
+        ((args.entryId && l.parentId === args.entryId) ||
+          (args.groupId && l.orderGroupId === args.groupId))
+    )
+    return direct[0] ?? null
+  }
+
+  const entryPx = args.entryPrice
+  const entryTs = args.entryTime ? Date.parse(args.entryTime) : 0
+
   const ranked = levels
-    .filter((l) => l.kind === args.want && l.symbol === args.symbol && l.side === opp)
+    .filter((l) => {
+      if (l.kind !== args.want || l.symbol !== args.symbol || l.side !== opp) return false
+      // Price relationship validation if entry price is known
+      if (entryPx != null && entryPx > 0 && l.price > 0) {
+        if (args.want === 'tp') {
+          const isProfitable = args.entrySide === 'BUY' ? l.price > entryPx : l.price < entryPx
+          if (!isProfitable) return false
+        } else if (args.want === 'sl') {
+          const isLossCutting = args.entrySide === 'BUY' ? l.price < entryPx : l.price > entryPx
+          if (!isLossCutting) return false
+        }
+      }
+      return true
+    })
     .map((l) => {
       let score = 0
-      if (l.status === 'working') score += 80
+      // Active working orders take highest priority
+      if (l.status === 'working') score += 100
       else if (l.status === 'filled') score += 40
       else score += 15
-      if (args.entryId && l.parentId === args.entryId) score += 30
-      if (args.groupId && l.orderGroupId === args.groupId) score += 30
-      const t = l.updatedAt ? Date.parse(l.updatedAt) : 0
-      score += Number.isFinite(t) ? Math.min(10, t / 1e13) : 0
+
+      // Explicit link gets strong boost
+      if (args.entryId && l.parentId === args.entryId) score += 50
+      if (args.groupId && l.orderGroupId === args.groupId) score += 50
+
+      // Orders placed at or after entry time
+      const lTime = l.updatedAt ? Date.parse(l.updatedAt) : 0
+      if (Number.isFinite(lTime) && lTime > 0) {
+        if (Number.isFinite(entryTs) && entryTs > 0 && lTime >= entryTs) {
+          score += 30
+        }
+        score += Math.min(20, lTime / 1e13)
+      }
+
+      // Quantity alignment
+      if (args.entryQty != null && args.entryQty > 0) {
+        if (l.quantity === args.entryQty) score += 25
+        else if (l.quantity <= args.entryQty) score += 10
+      }
+
       return { l, score }
     })
     .sort((a, b) => b.score - a.score)
+
   return ranked[0]?.l ?? null
 }
 
@@ -411,22 +466,38 @@ export function pairQuestradeBook(args: {
   ): QuestradeBookRow | null => {
     const parsed = parseQuestradeSymbol(entry.symbol)
     const side = parseQuestradeSide(entry.side)
-    const entryPx = orderPrice(entry)
-    const qty = Number(entry.totalQuantity || entry.openQuantity || 0)
+    const entryPx =
+      kind === 'open_position' ? posNum(pos?.averageEntryPrice) || orderPrice(entry) : orderPrice(entry)
+    const qty =
+      kind === 'open_position' && pos?.openQuantity
+        ? Math.abs(Number(pos.openQuantity))
+        : Number(entry.totalQuantity || entry.openQuantity || 0)
     if (!parsed || !side || !entryPx || !(qty > 0)) return null
+
+    const isLimit = kind === 'entry_limit'
+    const entryTime = orderStamp(entry)
+
     const sl = pickLevel(levels, {
       symbol: parsed.key,
       entrySide: side,
       entryId: entry.id != null ? String(entry.id) : null,
       groupId: groupKey(entry),
+      entryPrice: entryPx,
+      entryQty: qty,
+      entryTime,
       want: 'sl',
+      isEntryLimit: isLimit,
     })
     const tp = pickLevel(levels, {
       symbol: parsed.key,
       entrySide: side,
       entryId: entry.id != null ? String(entry.id) : null,
       groupId: groupKey(entry),
+      entryPrice: entryPx,
+      entryQty: qty,
+      entryTime,
       want: 'tp',
+      isEntryLimit: isLimit,
     })
     const stop = sl?.price ?? null
     const target = tp?.price ?? null
@@ -467,8 +538,44 @@ export function pairQuestradeBook(args: {
 
   const workingLimits: QuestradeBookRow[] = []
   const history: QuestradeBookRow[] = []
-  const openFromFills = new Map<string, QuestradeBookRow>()
+  const openPositions: QuestradeBookRow[] = []
 
+  // 1. Build open positions directly from active broker positions
+  for (const [sym, pos] of posBySym) {
+    const qty = Number(pos.openQuantity)
+    if (!qty) continue
+    const side: TeamTapeSide = qty < 0 ? 'SELL' : 'BUY'
+    const entryPx = posNum(pos.averageEntryPrice)
+    if (!entryPx) continue
+
+    // Find the latest executed order for this symbol to provide fill timestamp / order ID
+    const latestFill = [...orders]
+      .filter(
+        (o) =>
+          normalizeQuestradeSymbol(o.symbol) === sym &&
+          FILLED.has(String(o.state || '').toUpperCase())
+      )
+      .sort((a, b) => String(orderStamp(b) || '').localeCompare(String(orderStamp(a) || '')))[0]
+
+    const posOrder: QuestradeRawOrder = {
+      id: latestFill?.id ?? `pos-${sym}`,
+      symbol: pos.symbol || sym,
+      side,
+      orderType: latestFill?.orderType || 'Limit',
+      state: 'Executed',
+      totalQuantity: Math.abs(qty),
+      avgExecPrice: entryPx,
+      updateTime: orderStamp(latestFill) || undefined,
+      creationTime: latestFill?.creationTime,
+    }
+
+    const row = toRow(posOrder, 'open_position', 'filled', pos)
+    if (row) {
+      openPositions.push(row)
+    }
+  }
+
+  // 2. Build working entry limits and order history
   for (const o of orders) {
     const state = String(o.state || '').toUpperCase()
     const type = questradeOrderType(o)
@@ -489,38 +596,7 @@ export function pairQuestradeBook(args: {
       const row = toRow(o, 'history', 'filled', posBySym.get(key))
       if (!row) continue
       history.push(row)
-      const pos = posBySym.get(row.symbol)
-      if (pos && !openFromFills.has(row.symbol)) {
-        openFromFills.set(row.symbol, {
-          ...row,
-          kind: 'open_position',
-          quantity: Math.abs(Number(pos.openQuantity || row.quantity)),
-          entry: posNum(pos.averageEntryPrice) || row.entry,
-          mark: posNum(pos.currentPrice) ?? row.mark,
-          livePnl: signedNum(pos.openPnl),
-          status: 'filled',
-        })
-      }
     }
-  }
-
-  for (const [sym, pos] of posBySym) {
-    if (openFromFills.has(sym)) continue
-    const qty = Number(pos.openQuantity)
-    const side: TeamTapeSide = qty < 0 ? 'SELL' : 'BUY'
-    const entry = posNum(pos.averageEntryPrice)
-    if (!entry) continue
-    const fake: QuestradeRawOrder = {
-      id: `pos-${sym}`,
-      symbol: pos.symbol || sym,
-      side,
-      orderType: 'Limit',
-      state: 'Executed',
-      totalQuantity: Math.abs(qty),
-      avgExecPrice: entry,
-    }
-    const row = toRow(fake, 'open_position', 'filled', pos)
-    if (row) openFromFills.set(sym, row)
   }
 
   const visibleLevels = levels
@@ -539,7 +615,7 @@ export function pairQuestradeBook(args: {
   history.sort((a, b) => String(b.filledAt || '').localeCompare(String(a.filledAt || '')))
   return {
     workingLimits,
-    openPositions: [...openFromFills.values()],
+    openPositions,
     history,
     levels: visibleLevels,
   }

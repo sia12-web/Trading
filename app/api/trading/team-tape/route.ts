@@ -11,7 +11,6 @@ import { getTodayAttendance } from '@/lib/trading/deskAttendance'
 import { loadTradeifySessionSnapshot } from '@/lib/trading/tradeifySessionState'
 import {
   resolveTradeifyPlace,
-  tradeifySessionWindow,
 } from '@/lib/trading/tradeifyGrowth50k'
 import {
   buildTeamCopyAdvice,
@@ -20,7 +19,7 @@ import {
   type TeamTapeSignal,
   type TeamTapeStatus,
 } from '@/lib/trading/teamTape'
-import { loadQuestradeAccountSnapshot } from '@/lib/trading/questradeSession'
+import { loadQuestradeBook } from '@/lib/trading/questradeBook'
 
 export const dynamic = 'force-dynamic'
 
@@ -71,24 +70,30 @@ export async function GET(request: Request) {
   const supabase = createAdminClient() ?? (await createClient())
   const now = new Date()
   const since = new Date(now)
-  since.setUTCDate(since.getUTCDate() - 14)
+  since.setUTCDate(since.getUTCDate() - 30)
 
-  const [snap, attendance, { data, error }, questrade] = await Promise.all([
+  const [snap, attendance, teamSignalsRes, questradeBook] = await Promise.all([
     loadTradeifySessionSnapshot(supabase, deskId, now),
     getTodayAttendance(supabase, deskId, 'NY', now),
-    supabase
-      .from('team_signals')
-      .select('source_id, symbol, side, quantity, entry, stop, target, status, filled_at')
-      .eq('user_id', deskId)
-      .gte('created_at', since.toISOString())
-      .order('filled_at', { ascending: false, nullsFirst: false })
-      .limit(80),
-    loadQuestradeAccountSnapshot(supabase),
+    (async () => {
+      try {
+        const res = await supabase
+          .from('team_signals')
+          .select('source_id, symbol, side, quantity, entry, stop, target, status, filled_at')
+          .eq('user_id', deskId)
+          .gte('created_at', since.toISOString())
+          .order('filled_at', { ascending: false, nullsFirst: false })
+          .limit(80)
+        return res
+      } catch {
+        return { data: null, error: null }
+      }
+    })(),
+    loadQuestradeBook(supabase, now).catch((err) => ({
+      ok: false as const,
+      error: err instanceof Error ? err.message : 'Questrade read failed',
+    })),
   ])
-
-  if (error) {
-    return NextResponse.json({ error: error.message, ok: false }, { status: 500 })
-  }
 
   const place = resolveTradeifyPlace(snap)
   const advice = buildTeamCopyAdvice({
@@ -96,14 +101,58 @@ export async function GET(request: Request) {
     clockedIn: attendance?.status === 'clocked_in',
     now,
   })
-  const { startIso } = tradeifySessionWindow(now)
-  const signals = (data ?? []).map(asSignal)
-  const open = signals.filter((s) => {
-    if (s.status === 'closed' || s.status === 'cancelled') return false
-    if (!s.filledAt) return true
-    return s.filledAt >= startIso
-  })
-  const history = signals.filter((s) => !open.some((o) => o.sourceId === s.sourceId))
+
+  const storedSignals: TeamTapeSignal[] = (teamSignalsRes.data ?? []).map(asSignal)
+  const open: TeamTapeSignal[] = []
+  const history: TeamTapeSignal[] = []
+
+  // 1. If Questrade book loaded successfully, merge live open positions and recent history
+  if (questradeBook.ok) {
+    for (const p of questradeBook.openPositions) {
+      open.push({
+        sourceId: p.sourceId,
+        symbol: p.symbol,
+        side: p.side,
+        quantity: p.quantity,
+        entry: p.entry,
+        stop: p.stop,
+        target: p.target,
+        status: 'filled',
+        filledAt: p.filledAt,
+      })
+    }
+
+    for (const h of questradeBook.history) {
+      if (!open.some((o) => o.symbol === h.symbol)) {
+        history.push({
+          sourceId: h.sourceId,
+          symbol: h.symbol,
+          side: h.side,
+          quantity: h.quantity,
+          entry: h.entry,
+          stop: h.stop,
+          target: h.target,
+          status: h.status,
+          filledAt: h.filledAt,
+        })
+      }
+    }
+  }
+
+  // 2. Merge any stored team signals not already accounted for
+  for (const s of storedSignals) {
+    if (s.status === 'closed' || s.status === 'cancelled') {
+      if (!history.some((h) => h.sourceId === s.sourceId)) {
+        history.push(s)
+      }
+    } else {
+      if (!open.some((o) => o.symbol === s.symbol || o.sourceId === s.sourceId)) {
+        open.push(s)
+      }
+    }
+  }
+
+  const questradeSnapshot = questradeBook.ok ? questradeBook.account : questradeBook
 
   return NextResponse.json({
     ok: true,
@@ -117,6 +166,6 @@ export async function GET(request: Request) {
       clockedIn: advice.clockedIn,
       mustFlatten: advice.mustFlatten,
     },
-    questrade,
+    questrade: questradeSnapshot,
   })
 }

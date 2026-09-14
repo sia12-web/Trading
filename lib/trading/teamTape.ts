@@ -124,7 +124,7 @@ export function buildTeamCopyAdvice(args: {
       clockedIn: false,
       mustFlatten: false,
       headline: 'Clock in first.',
-      detail: `Clock in on the desk before copying trades. One NYC index only (DOW or NASDAQ), same side. Do not copy their share count.`,
+      detail: `Clock in on the desk before copying trades. One NYC index only (DOW or NASDAQ), same side. Their share count is their own book.`,
       target1_5R: null,
     }
   }
@@ -137,7 +137,7 @@ export function buildTeamCopyAdvice(args: {
     clockedIn: true,
     mustFlatten: false,
     headline: 'You may copy.',
-    detail: `Size $${riskDollars} on DOW or NASDAQ (one only, same side). Close at 1.5R or flatten 16:59 ET. Their share count is not your size.`,
+    detail: `Size $${riskDollars} on DOW or NASDAQ (one only, same side). Close at 1.5R or flatten 16:59 ET. Their share count is their own book.`,
     target1_5R: null,
   }
 }
