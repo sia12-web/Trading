@@ -47,6 +47,22 @@ const RES_MAP: Record<string, string> = {
   'D': 'D',
 }
 
+interface CachedCandleEntry {
+  data: any
+  expiresAt: number
+}
+
+const candleMemoryCache = new Map<string, CachedCandleEntry>()
+
+function pruneExpiredCandleCache() {
+  const now = Date.now()
+  for (const [key, entry] of candleMemoryCache.entries()) {
+    if (entry.expiresAt < now) {
+      candleMemoryCache.delete(key)
+    }
+  }
+}
+
 export async function GET(request: Request) {
   try {
     const user = await getOrCreateUser(request)
@@ -65,6 +81,20 @@ export async function GET(request: Request) {
     const endDate = searchParams.get('date') || searchParams.get('end_date')
     const asOfParam = searchParams.get('as_of')
     const asOf = asOfParam ? parseInt(asOfParam, 10) : null
+    const includeQuote = searchParams.get('quote') !== '0'
+
+    // Server-side fast cache check (instant response on timeframe/instrument switching)
+    const cacheKey = `${instrument}:${timeframe}:${days}:${endDate || 'live'}:${asOfParam || 'none'}:${includeQuote ? '1' : '0'}`
+    const now = Date.now()
+    const cached = candleMemoryCache.get(cacheKey)
+    if (cached && cached.expiresAt > now) {
+      return NextResponse.json(cached.data, {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'X-Candle-Cache': 'HIT',
+        },
+      })
+    }
 
     if (!isLiveDeskInstrument(instrument)) {
       return NextResponse.json(
@@ -76,7 +106,6 @@ export async function GET(request: Request) {
     const resolution = RES_MAP[timeframe] || '5'
     const sess = sessionFor(instrument)
     const toUnix = instrument === 'NIKKEI' ? tokyoDateTimeToUnix : nyDateTimeToUnix
-    const includeQuote = searchParams.get('quote') !== '0'
 
     type CandleRow = {
       time: number
@@ -289,27 +318,37 @@ export async function GET(request: Request) {
       quote = { price: last.close, change: 0, change_pct: 0 }
     }
 
-    return NextResponse.json(
-      {
-        instrument,
-        timeframe,
-        source,
-        candles: candles.map((c) => ({
-          time: c.time,
-          open: c.open,
-          high: c.high,
-          low: c.low,
-          close: c.close,
-          volume: c.volume,
-        })),
-        quote,
+    const payload = {
+      instrument,
+      timeframe,
+      source,
+      candles: candles.map((c) => ({
+        time: c.time,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      })),
+      quote,
+    }
+
+    // Cache TTL: 60s for daily, 600s for historical replay dates, 8s for intraday
+    const ttlMs = isDaily ? 60_000 : endDate ? 600_000 : 8_000
+    candleMemoryCache.set(cacheKey, {
+      data: payload,
+      expiresAt: now + ttlMs,
+    })
+    if (candleMemoryCache.size > 100) {
+      pruneExpiredCandleCache()
+    }
+
+    return NextResponse.json(payload, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'X-Candle-Cache': 'MISS',
       },
-      {
-        headers: {
-          'Cache-Control': 'no-store, no-cache, must-revalidate',
-        },
-      }
-    )
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Candle fetch failed'
     logger.error('candles.failed', { err: error, message })

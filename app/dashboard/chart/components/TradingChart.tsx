@@ -1167,6 +1167,20 @@ export function TradingChart({
   const paintNewsMarkersRef = useRef<() => void>(() => {})
   const paintUserDrawingsRef = useRef<() => void>(() => {})
 
+  // ── High-Performance Precomputed Analytics & Cache ─────────────────────────
+  const candleCacheRef = useRef<Map<string, {
+    candles: OHLCV[]
+    source: string
+    livePrice: number | null
+    timestamp: number
+  }>>(new Map())
+  const candleTimesRef = useRef<any[]>([])
+  const rawBarsRef = useRef<ContextBar[]>([])
+  const sessionExtremesRef = useRef<any[]>([])
+  const spikesRef = useRef<any[]>([])
+  const distRefsRef = useRef<any[]>([])
+  const newsMovesRef = useRef<EmotionalNewsMove[]>([])
+
   // ── User Interactive Drawing Tools (Trendline, Range, Manual FRVP) ────────
   type DrawingToolType = 'NONE' | 'TRENDLINE' | 'RANGE' | 'FRVP'
   const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingToolType>('NONE')
@@ -2309,6 +2323,63 @@ export function TradingChart({
     }
   }, [timeframe, avwap5mBenchmark])
 
+  // ── Precompute Overlay Analytics (Offload from scroll/zoom hot path) ──────────
+  useEffect(() => {
+    const list = candlesRef.current || []
+    const tz = chartTzRef.current
+    candleTimesRef.current = list.map((c) => toChartTime(c.time as number, tz))
+
+    const rawBars: ContextBar[] = list.map((c) => ({
+      time: c.time as number,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+      volume: c.volume,
+    }))
+    rawBarsRef.current = rawBars
+
+    if (rawBars.length === 0) {
+      sessionExtremesRef.current = []
+      spikesRef.current = []
+      distRefsRef.current = []
+      newsMovesRef.current = []
+      return
+    }
+
+    const yesterdayStartUnix = yesterdayNyc
+      ? yesterdayNyc.openUnix - 16 * 3600
+      : (list.length > 0 ? (list[list.length - 1]!.time as number) - 86400 * 2 : undefined)
+
+    sessionExtremesRef.current =
+      timeframe === '1D'
+        ? detectDailyExtremes(rawBars, 24)
+        : detect5DaySessionExtremes(rawBars, instrument, yesterdayStartUnix)
+
+    if (timeframe !== '1D') {
+      spikesRef.current = detectSpikes(rawBars, instrument, yesterdayStartUnix)
+      distRefsRef.current = detectDistributionReferences(rawBars, instrument, yesterdayStartUnix)
+      newsMovesRef.current = detectEmotionalNewsMoves(
+        rawBars,
+        newsEvents,
+        instrument,
+        yesterdayStartUnix,
+        undefined,
+        false
+      )
+    } else {
+      spikesRef.current = []
+      distRefsRef.current = []
+      newsMovesRef.current = []
+    }
+
+    // Trigger fast canvas repaints with newly calculated analytics
+    paintFrvpHistogramRef.current?.()
+    paintExcessesAndRoundedRef.current?.()
+    paintUserDrawingsRef.current?.()
+    paintNewsMarkersRef.current?.()
+  }, [candles, timeframe, instrument, yesterdayNyc, newsEvents])
+
   // ─── Multi-Timeframe Money Fixed Range Volume Profiles (Canvas) ─────────────
   const paintFrvpHistogram = useCallback(() => {
     const canvas = frvpHistogramCanvasRef.current
@@ -2349,7 +2420,10 @@ export function TradingChart({
     }
 
     const tz = chartTzRef.current
-    const candleTimes = list.map((c) => toChartTime(c.time as number, tz))
+    const candleTimes =
+      candleTimesRef.current.length === list.length
+        ? candleTimesRef.current
+        : list.map((c) => toChartTime(c.time as number, tz))
 
     // 1. Intermediate-Term Money: 5-Day Fixed Range Volume Profile
     if (frvp5d && frvp5d.bins && frvp5d.bins.length > 0) {
@@ -2583,7 +2657,10 @@ export function TradingChart({
     ctx.clearRect(0, 0, paneW, paneH)
 
     const tz = chartTzRef.current
-    const candleTimes = list.map((c) => toChartTime(c.time as number, tz))
+    const candleTimes =
+      candleTimesRef.current.length === list.length
+        ? candleTimesRef.current
+        : list.map((c) => toChartTime(c.time as number, tz))
 
     // 1. Render Manual FRVPs
     for (const f of activeManualFrvps) {
@@ -3034,26 +3111,13 @@ export function TradingChart({
     ctx.clearRect(0, 0, paneW, paneH)
 
     const tz = chartTzRef.current
-    const candleTimes = list.map((c) => toChartTime(c.time as number, tz))
+    const candleTimes =
+      candleTimesRef.current.length === list.length
+        ? candleTimesRef.current
+        : list.map((c) => toChartTime(c.time as number, tz))
 
-    // Anchor strictly at Yesterday (covers Yesterday Asia/London/NYC and Today only — no prior confusing days)
-    const yesterdayStartUnix = yesterdayNyc
-      ? yesterdayNyc.openUnix - 16 * 3600
-      : (list.length > 0 ? (list[list.length - 1]!.time as number) - 86400 * 2 : undefined)
-
-    // 2. Draw Extremes (Daily tested swing highs/lows on 1D, or Session Extremes on intraday)
-    const rawBars = list.map((c) => ({
-      time: c.time as number,
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-      volume: c.volume,
-    }))
-    const sessionExtremes =
-      timeframe === '1D'
-        ? detectDailyExtremes(rawBars, 24)
-        : detect5DaySessionExtremes(rawBars, instrument, yesterdayStartUnix)
+    // 2. Draw Extremes (Precomputed from analytics cache — zero CPU waste on scroll)
+    const sessionExtremes = sessionExtremesRef.current
 
     renderedSessionExtremesRef.current = []
     for (const ex of sessionExtremes) {
@@ -3157,12 +3221,8 @@ export function TradingChart({
     }
 
     if (timeframe !== '1D') {
-      // 3. Draw Late-Session Spikes (Spike High & Spike Base for Yesterday & Today only)
-      const spikes = detectSpikes(
-        rawBars,
-        instrument,
-        yesterdayStartUnix
-      )
+      // 3. Draw Late-Session Spikes (Precomputed from analytics cache)
+      const spikes = spikesRef.current
 
       for (const sp of spikes) {
         const chartT = toChartTime(sp.startTime, tz)
@@ -3199,12 +3259,8 @@ export function TradingChart({
         ctx.setLineDash([])
       }
 
-      // 4. Draw Dalton Distribution Reference Points (for Yesterday & Today only)
-      const distRefs = detectDistributionReferences(
-        rawBars,
-        instrument,
-        yesterdayStartUnix
-      )
+      // 4. Draw Dalton Distribution Reference Points (Precomputed from analytics cache)
+      const distRefs = distRefsRef.current
 
       for (const ref of distRefs) {
         const xStart = ref.startTime != null
@@ -3245,15 +3301,8 @@ export function TradingChart({
         }
       }
 
-      // 5. Draw Emotional News Moves (Actual high impact news only where market actually reacted)
-      const newsMoves = detectEmotionalNewsMoves(
-        rawBars,
-        newsEvents,
-        instrument,
-        yesterdayStartUnix,
-        undefined,
-        false // strictly disable fake news markers on generic candle spikes
-      )
+      // 5. Draw Emotional News Moves (Precomputed from analytics cache)
+      const newsMoves = newsMovesRef.current
 
       for (const move of newsMoves) {
         const xStart = timeToX(chart.timeScale(), toChartTime(move.reactionStartTime, tz), candleTimes)
@@ -3351,7 +3400,10 @@ export function TradingChart({
 
     const paneW = containerRef.current.clientWidth
     const tz = chartTzRef.current
-    const candleTimes = list.map((c) => toChartTime(c.time as number, tz))
+    const candleTimes =
+      candleTimesRef.current.length === list.length
+        ? candleTimesRef.current
+        : list.map((c) => toChartTime(c.time as number, tz))
     const nowMs = Date.now()
 
     const visibleItems: Array<{ event: DeskCalendarEvent; x: number }> = []
@@ -3772,9 +3824,9 @@ export function TradingChart({
           }
         }),
       },
-      candlestickPatterns: showCandlestickPatterns && candles.length > 0 ? {
+      candlestickPatterns: (leoPanelOpen && showCandlestickPatterns && candles.length > 0) ? {
         activePatterns: (() => {
-          const bars = candles.map((c) => ({
+          const bars = rawBarsRef.current.length === candles.length ? rawBarsRef.current : candles.map((c) => ({
             time: c.time as number,
             open: c.open,
             high: c.high,
@@ -6068,13 +6120,18 @@ export function TradingChart({
     or30SeriesRef.current = or30Series
     setChartReady(true)
 
-    // Sync overlay coordinates on chart scroll/zoom — DOM writes only, no render
+    // Sync overlay coordinates on chart scroll/zoom — throttled with requestAnimationFrame
+    let scrollRafId = 0
     const onScroll = () => {
       pokeOverlayLayoutRef.current()
-      paintFrvpHistogramRef.current?.()
-      paintExcessesAndRoundedRef.current?.()
-      paintUserDrawingsRef.current?.()
-      paintNewsMarkersRef.current?.()
+      if (scrollRafId) return
+      scrollRafId = requestAnimationFrame(() => {
+        scrollRafId = 0
+        paintFrvpHistogramRef.current?.()
+        paintExcessesAndRoundedRef.current?.()
+        paintUserDrawingsRef.current?.()
+        paintNewsMarkersRef.current?.()
+      })
     }
     chart.timeScale().subscribeVisibleLogicalRangeChange(onScroll)
 
@@ -6105,6 +6162,7 @@ export function TradingChart({
     containerRef.current.addEventListener('wheel', onWheelLayout, { passive: true })
 
     return () => {
+      if (scrollRafId) cancelAnimationFrame(scrollRafId)
       ro.disconnect()
       containerRef.current?.removeEventListener('wheel', onWheelLayout)
       try {
@@ -6365,6 +6423,21 @@ export function TradingChart({
       const tfSec = barSeconds
       const tradeLive = isLiveBarsAllowed(instrument)
 
+      const cacheKey = `${instrument}:${timeframe}`
+      const cached = candleCacheRef.current.get(cacheKey)
+      // Instant switch: display cached bars immediately if fresh (< 60s)
+      if (cached && Date.now() - cached.timestamp < 60_000 && cached.candles.length > 0) {
+        setCandles(cached.candles)
+        candlesRef.current = cached.candles
+        setDataMode('live')
+        setCandleFeed(cached.source as any)
+        if (cached.livePrice != null) {
+          setLivePrice(cached.livePrice)
+          publishPriceTick(cached.livePrice, 0)
+        }
+        loadLevels(instrument, cached.candles)
+      }
+
       // Full continuum including afternoon — clipAfternoonBars is a no-op while freeze is off
       try {
         // Must cover cash open of 5 trading days prior (weekends truncate a plain 5d fetch; 1m is 3d; 1D is 730d / 2 years)
@@ -6384,8 +6457,8 @@ export function TradingChart({
           }))
           const trimmed = normalizeCandleTimes(toDeskCandles(mapped, instrument, timeframe))
           setCandles(trimmed)
-          setDataMode('live')
-          setCandleFeed(
+          candlesRef.current = trimmed
+          const feedSource =
             json.source === 'databento'
               ? 'databento'
               : json.source === 'yahoo'
@@ -6393,12 +6466,21 @@ export function TradingChart({
               : json.source === 'oanda'
               ? 'oanda'
               : 'empty'
-          )
+          setDataMode('live')
+          setCandleFeed(feedSource)
           const last = mapped[mapped.length - 1]
           const loadedPrice = json.quote?.price ?? last?.close ?? null
           setLivePrice(loadedPrice)
           publishPriceTick(loadedPrice, json.quote?.change_pct ?? 0)
           loadLevels(instrument, trimmed)
+
+          // Store in client-side candle cache for instant switching
+          candleCacheRef.current.set(cacheKey, {
+            candles: trimmed,
+            source: feedSource,
+            livePrice: loadedPrice,
+            timestamp: Date.now(),
+          })
           return
         }
       } catch {
@@ -6723,23 +6805,27 @@ export function TradingChart({
     priceLineHostSeededRef.current = false
     lastCandleRef.current = null
     sessionSpansRef.current = null
-    setCandles([])
-    candlesRef.current = []
-    try { candleRef.current?.setData([]) } catch {}
-    try { priceLineHostRef.current?.setData([]) } catch {}
-    try { volumeSeriesRef.current?.setData([]) } catch {}
+    // Check if target timeframe already has fresh cached candles
+    const cached = candleCacheRef.current.get(`${instrument}:${timeframe}`)
+    if (!cached || Date.now() - cached.timestamp >= 60_000 || cached.candles.length === 0) {
+      setCandles([])
+      candlesRef.current = []
+      try { candleRef.current?.setData([]) } catch {}
+      try { priceLineHostRef.current?.setData([]) } catch {}
+      try { volumeSeriesRef.current?.setData([]) } catch {}
 
-    const vs = vwapSeriesRef.current
-    if (vs) {
-      try {
-        vs.vwap.setData([])
-        vs.upper1.setData([])
-        vs.lower1.setData([])
-        vs.upper2.setData([])
-        vs.lower2.setData([])
-        vs.upper3.setData([])
-        vs.lower3.setData([])
-      } catch {}
+      const vs = vwapSeriesRef.current
+      if (vs) {
+        try {
+          vs.vwap.setData([])
+          vs.upper1.setData([])
+          vs.lower1.setData([])
+          vs.upper2.setData([])
+          vs.lower2.setData([])
+          vs.upper3.setData([])
+          vs.lower3.setData([])
+        } catch {}
+      }
     }
 
     if (timeframe === '1D') {
