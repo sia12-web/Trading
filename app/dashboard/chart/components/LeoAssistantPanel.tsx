@@ -9,12 +9,14 @@ import {
   type LeoExecutionDirective,
 } from '@/lib/ai/leoAssistant'
 import { playTradingViewChime } from '@/lib/chart/soundEffects'
+import { warningToast } from '@/lib/utils/toastUtils'
 import type { TeamConsensusReport } from '@/lib/ai/stack/types'
 import type { InstitutionalHedgingTelemetry } from '@/lib/ai/stack/models/institutionalHedgingModel'
+import type { DayTypeEvaluation, MarketDayType } from '@/lib/chart/context55'
 
 export interface ArmedDeskRule {
   id: string
-  type: 'STAGNATION_TIMEOUT' | 'TELEGRAM_ALERT'
+  type: 'STAGNATION_TIMEOUT' | 'DESK_ALERT' | 'TELEGRAM_ALERT'
   description: string
   maxMinutes?: number
   targetPrice?: number
@@ -29,7 +31,17 @@ export interface ArmedDeskRule {
 export interface LeoOrderResult {
   success: boolean
   message?: string
+  error?: string
   position_id?: string
+  order?: {
+    instrument: string
+    direction: 'LONG' | 'SHORT'
+    price: number
+    stopLoss: number
+    profitTarget: number
+    size?: number
+    reason: string
+  }
 }
 
 interface LeoAssistantPanelProps {
@@ -49,6 +61,7 @@ interface LeoAssistantPanelProps {
     reason: string
     size?: number
   }) => Promise<LeoOrderResult>
+  onOverrideDayType?: (evalResult: DayTypeEvaluation | null) => void
 }
 
 // Persistent in-memory session cache per instrument so switching charts retains each market's conversation
@@ -71,6 +84,7 @@ export function LeoAssistantPanel({
   onClearExternalAttachedPoints,
   onClosePosition,
   onPlaceOrder,
+  onOverrideDayType,
 }: LeoAssistantPanelProps) {
   const [internalIsOpen, setInternalIsOpen] = useState(false)
   const isPanelOpen = controlledIsOpen !== undefined ? controlledIsOpen : internalIsOpen
@@ -376,18 +390,7 @@ export function LeoAssistantPanel({
           }),
         })
       }
-      // Send telegram update
-      await fetch('/api/trading/leo/notify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'POSITION_CLOSE',
-          instrument: context.instrument,
-          price: context.currentPrice ?? 0,
-          pnlPoints: context.activePosition?.unrealizedPnlPoints,
-          message: reason,
-        }),
-      }).catch(() => null)
+      // Telegram notifications removed per desk protocol
     } catch (err) {
       console.error('[Leo] Close failed:', err)
     }
@@ -474,40 +477,35 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
     ])
   }
 
-  // Dispatch a Telegram alert
-  const dispatchTelegramAlert = async (rule: ArmedDeskRule) => {
+  // Dispatch a Desk alert (Plays chime, triggers top-right notification toast, posts in Leo chat & speaks)
+  const dispatchDeskAlert = (rule: ArmedDeskRule) => {
     try {
       const curPrice = context.currentPrice ?? rule.targetPrice ?? 0
-      const attached = attachedPoints.find((p) => p.label === rule.targetReference)
-      const res = await fetch('/api/trading/leo/notify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'TELEGRAM_ALERT',
-          instrument: context.instrument,
-          session: rule.session ?? context.sessionDetails?.sessionName ?? 'Active Session',
-          referencePoint: rule.targetReference,
-          price: curPrice,
-          volume: (attached?.volume as string) ?? 'High Volume Confirmation',
-          retestRatio: attached?.retestRatio,
-          confidence: 'High ★★★★☆',
-          message: `Price tested ${rule.targetReference} with high volume & execution confidence.`,
-        }),
-      })
-      if (res.ok) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `tg-${Date.now()}`,
-            role: 'assistant',
-            content: `📱 **[TELEGRAM DISPATCHED]:** Alert sent for **${rule.targetReference}** at **${curPrice.toFixed(2)}** in ${rule.session ?? 'Session'}.`,
-            timestamp: Date.now(),
-          },
-        ])
-        speakText(`Telegram alert dispatched for ${rule.targetReference}`)
-      }
+
+      // 1. Play authentic chime sound
+      playTradingViewChime()
+
+      // 2. Display desk notification toast at top-right of screen
+      warningToast(
+        `🔔 Desk Alert: Price reached ${rule.targetReference} @ ${curPrice.toFixed(2)} (${rule.session ?? 'Session'}) with high volume & confidence.`,
+        9000
+      )
+
+      // 3. Post to Leo chat history
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `desk-alert-${Date.now()}`,
+          role: 'assistant',
+          content: `🔔 **[DESK ALERT FIRED]:** Alert triggered for **${rule.targetReference}** at **${curPrice.toFixed(2)}** in ${rule.session ?? 'Session'}.\n\nHigh volume & execution confidence criteria satisfied.`,
+          timestamp: Date.now(),
+        },
+      ])
+
+      // 4. Voice announcement
+      speakText(`Desk alert fired for ${rule.targetReference}`)
     } catch (e) {
-      console.error('[Leo] Telegram notify failed:', e)
+      console.error('[Leo] Desk alert dispatch failed:', e)
     }
   }
 
@@ -619,11 +617,11 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
           status: 'ARMED',
         }
         setArmedRules((prev) => [...prev.filter((r) => r.type !== 'STAGNATION_TIMEOUT'), newRule])
-      } else if (d.action === 'ARM_TELEGRAM_ALERT') {
+      } else if (d.action === 'ARM_DESK_ALERT' || d.action === 'ARM_TELEGRAM_ALERT') {
         const newRule: ArmedDeskRule = {
-          id: `tg-${Date.now()}`,
-          type: 'TELEGRAM_ALERT',
-          description: `Telegram alert when price tests ${d.targetReference} (${d.targetPrice.toLocaleString()})`,
+          id: `desk-alert-${Date.now()}`,
+          type: 'DESK_ALERT',
+          description: `Desk alert when price tests ${d.targetReference} (${d.targetPrice.toLocaleString()})`,
           targetPrice: d.targetPrice,
           targetReference: d.targetReference,
           session: d.session,
@@ -633,6 +631,51 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
           status: 'ARMED',
         }
         setArmedRules((prev) => [...prev, newRule])
+        speakText(`Desk alert armed for ${d.targetReference}`)
+      } else if (d.action === 'SET_DAY_TYPE' || (d as any).action === 'OVERRIDE_DAY_TYPE') {
+        const rawType = ((d as any).dayType || 'DOUBLE_DISTRIBUTION').toUpperCase()
+        let mappedType: MarketDayType = 'DOUBLE_DISTRIBUTION'
+        let badge = 'Double Distribution'
+        let title = 'Double Distribution Day (AI Overwrite)'
+        let desc = (d as any).reason || 'Auction structure transition confirmed by separating LVN and two distinct value areas.'
+
+        if (rawType.includes('DOUBLE')) {
+          mappedType = 'DOUBLE_DISTRIBUTION'
+          badge = 'Double Distribution'
+          title = 'Double Distribution Day (AI Overwrite)'
+        } else if (rawType.includes('TREND_BULL') || rawType === 'BULL') {
+          mappedType = 'TREND_BULL'
+          badge = 'Trend Day (Bull)'
+          title = 'Bullish Trend Day (AI Overwrite)'
+        } else if (rawType.includes('TREND_BEAR') || rawType === 'BEAR') {
+          mappedType = 'TREND_BEAR'
+          badge = 'Trend Day (Bear)'
+          title = 'Bearish Trend Day (AI Overwrite)'
+        } else if (rawType.includes('NORMAL_VAR') || rawType === 'VARIATION') {
+          mappedType = 'NORMAL_VARIATION'
+          badge = 'Normal Variation'
+          title = 'Normal Variation Day (AI Overwrite)'
+        } else if (rawType.includes('NORMAL')) {
+          mappedType = 'NORMAL'
+          badge = 'Normal Day'
+          title = 'Normal Day (AI Overwrite)'
+        } else if (rawType.includes('NEUTRAL')) {
+          mappedType = 'NEUTRAL'
+          badge = 'Neutral Day'
+          title = 'Neutral Day (AI Overwrite)'
+        }
+
+        const overrideEval: DayTypeEvaluation = {
+          type: mappedType,
+          badgeText: badge,
+          title,
+          description: desc,
+        }
+
+        onOverrideDayType?.(overrideEval)
+        speakText(`Day type updated to ${badge}.`)
+        playTradingViewChime()
+        warningToast(`🤖 Leo AI updated Day Type to: ${badge}`, 6000)
       } else if (d.action === 'CANCEL_RULES') {
         setArmedRules([])
         speakText('All rules cancelled.')
@@ -697,13 +740,17 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
             }
           }
 
-          // 2. Telegram Alert Rule
-          if (rule.type === 'TELEGRAM_ALERT' && curPrice != null && rule.targetPrice != null) {
+          // 2. Desk Alert Rule
+          if (
+            (rule.type === 'DESK_ALERT' || (rule.type as any) === 'TELEGRAM_ALERT') &&
+            curPrice != null &&
+            rule.targetPrice != null
+          ) {
             const dist = Math.abs(curPrice - rule.targetPrice)
             if (dist <= 5) {
               // Target price reached!
               changed = true
-              dispatchTelegramAlert(rule)
+              dispatchDeskAlert(rule)
               return { ...rule, status: 'TRIGGERED' as const }
             }
           }
@@ -1056,7 +1103,7 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
             </div>
           )}
 
-          {/* ── Armed Desk Rules Tray (Stagnation & Telegram Rules) ── */}
+          {/* ── Armed Desk Rules Tray (Stagnation & Desk Audio Alerts) ── */}
           {armedRules.filter((r) => r.status === 'ARMED').length > 0 && (
             <div className="px-3 py-1.5 border-b border-purple-900/60 bg-purple-950/40 space-y-1">
               {armedRules

@@ -3511,6 +3511,12 @@ export function TradingChart({
     }
   }, [instrument])
 
+  const [dayTypeOverride, setDayTypeOverride] = useState<DayTypeEvaluation | null>(null)
+
+  useEffect(() => {
+    setDayTypeOverride(null)
+  }, [instrument])
+
   const dayTypeEval: DayTypeEvaluation = useMemo(() => {
     const list = candles || []
     if (!list.length) {
@@ -3535,8 +3541,9 @@ export function TradingChart({
       ydayVal: yesterdayNyc?.val ?? ydayProfile?.val,
       overnightInventory,
       controlLabel: controlBadge,
+      overrideDayType: dayTypeOverride,
     })
-  }, [candles, instrument, yesterdayNyc, ydayProfile, overnightInventory, controlBadge])
+  }, [candles, instrument, yesterdayNyc, ydayProfile, overnightInventory, controlBadge, dayTypeOverride])
 
   const emotionalNewsMoves: EmotionalNewsMove[] = useMemo(() => {
     const list = candles || []
@@ -9151,6 +9158,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       alertPrice: priceAlert.price,
       livePrice,
     })
+    playTradingViewChime()
     onDeskAlert({
       ...msg,
       instrument,
@@ -10208,9 +10216,22 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     >
                       <span className="text-gray-500">Day: </span>
                       <span className={`text-purple-300 font-semibold ${leoPanelOpen ? 'underline decoration-dotted decoration-purple-400/50 underline-offset-2' : ''}`}>
-                        {dayTypeEval.badgeText}
+                        {dayTypeOverride ? '🤖 ' : ''}{dayTypeEval.badgeText}{dayTypeOverride ? ' (AI Overwrite)' : ''}
                       </span>
                     </button>
+                    {dayTypeOverride && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setDayTypeOverride(null)
+                        }}
+                        className="text-[9px] text-amber-400/80 hover:text-amber-300 hover:underline px-1 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 font-mono transition"
+                        title="Revert AI Overwrite back to mathematical Day Type"
+                      >
+                        Reset Math
+                      </button>
+                    )}
                     <span className="text-gray-600 text-[10px]">|</span>
                     <button
                       type="button"
@@ -11757,8 +11778,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   !armed
                     ? 'Alert fired — dismiss with ✕ or press A / Esc'
                     : pending
-                      ? 'Waiting for price to leave, then re-touch fires Telegram'
-                      : 'Drag alert line — Telegram when price touches (soft signal, not an order)'
+                      ? 'Waiting for price to leave, then re-touch fires Desk Alert'
+                      : 'Drag alert line — Desk Alert when price touches (soft signal, not an order)'
                 }
               >
                 <div
@@ -12047,6 +12068,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           onClearExternalAttachedPoints={() => setLeoExternalPoints([])}
           onClosePosition={onClosePosition}
           onPlaceOrder={onPlaceOrder}
+          onOverrideDayType={setDayTypeOverride}
         />
       </div>
     </div>

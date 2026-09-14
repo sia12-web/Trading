@@ -1096,7 +1096,12 @@ export function classifyMarketDayType(args: {
   overnightInventory?: OvernightInventoryEvaluation | null
   instrument?: string
   asOfUnix?: number
+  overrideDayType?: DayTypeEvaluation | null
 }): DayTypeEvaluation {
+  if (args.overrideDayType) {
+    return args.overrideDayType
+  }
+
   const { todayBars, overnightInventory } = args
   if (!todayBars || todayBars.length < 3) {
     const invNote = overnightInventory ? ` (${overnightInventory.summaryBadge})` : ''
@@ -1173,7 +1178,7 @@ export function classifyMarketDayType(args: {
     }
   }
 
-  // 4. Initial range checks for Normal vs Normal Variation vs Neutral
+  // 4. Initial range checks for Normal vs Normal Variation vs Neutral vs Double Distribution
   const firstHourBars = todayBars.slice(0, 12)
   if (firstHourBars.length >= 8) {
     let ibHigh = -Infinity
@@ -1199,18 +1204,23 @@ export function classifyMarketDayType(args: {
     }
 
     // Double Distribution Trend Day:
-    // Session has developed (>= 14 bars, > 70 mins), large range extension (>= 0.75x IB range) in ONE direction,
-    // and subsequent bars form a separate balance area with separation from the initial balance.
-    if (todayBars.length >= 14 && (extendedHigh || extendedLow)) {
-      const subsequentBars = todayBars.slice(12)
+    // Session has developed (>= 10 bars, > 50 mins), range extension (>= 0.4x IB range) in ONE direction,
+    // and subsequent bars form a separate balance area away from the initial balance center.
+    if (todayBars.length >= 10 && (extendedHigh !== extendedLow)) {
+      const subsequentBars = todayBars.slice(8)
       let subHigh = -Infinity
       let subLow = Infinity
+      let subCloseSum = 0
       for (const b of subsequentBars) {
         if (b.high > subHigh) subHigh = b.high
         if (b.low < subLow) subLow = b.low
+        subCloseSum += b.close
       }
-      const isDDistUp = extendedHigh && !extendedLow && high >= ibHigh + ibRange * 0.75 && subLow > ibHigh - ibRange * 0.2
-      const isDDistDown = extendedLow && !extendedHigh && low <= ibLow - ibRange * 0.75 && subHigh < ibLow + ibRange * 0.2
+      const subAvg = subsequentBars.length ? subCloseSum / subsequentBars.length : 0
+      const ibMid = (ibHigh + ibLow) / 2
+
+      const isDDistUp = extendedHigh && !extendedLow && high >= ibHigh + ibRange * 0.4 && (subAvg > ibHigh || subLow > ibMid)
+      const isDDistDown = extendedLow && !extendedHigh && low <= ibLow - ibRange * 0.4 && (subAvg < ibLow || subHigh < ibMid)
       if (isDDistUp || isDDistDown) {
         return {
           type: 'DOUBLE_DISTRIBUTION',

@@ -134,9 +134,77 @@ export function calculateBracketPrices(args: {
 }
 
 /**
- * The 18 verified TopstepX executed orders provided by the trader.
+ * The 70 verified TopstepX executed orders provided by the trader.
  */
 export const TOPSTEPX_ORDER_HISTORY: TopstepXTrade[] = [
+  {
+    "ticketId": "3094513889",
+    "contract": "MCLV26",
+    "instrument": "CRUDE",
+    "quantity": 1,
+    "entryTime": "2026-09-14T11:40:39.000Z",
+    "exitTime": "2026-09-14T11:54:48.000Z",
+    "duration": "00:14:08",
+    "entryPrice": 102.61,
+    "exitPrice": 103.08,
+    "grossPnl": 47.0,
+    "feeCommission": 0.5,
+    "feeExchange": 1.02,
+    "totalFees": 1.52,
+    "netPnl": 45.48,
+    "direction": "LONG"
+  },
+  {
+    "ticketId": "3093949986",
+    "contract": "MNQU26",
+    "instrument": "NASDAQ",
+    "quantity": 1,
+    "entryTime": "2026-09-14T10:37:21.000Z",
+    "exitTime": "2026-09-14T10:45:26.000Z",
+    "duration": "00:08:04",
+    "entryPrice": 28970.25,
+    "exitPrice": 29002.0,
+    "grossPnl": 63.5,
+    "feeCommission": 0.5,
+    "feeExchange": 0.72,
+    "totalFees": 1.22,
+    "netPnl": 62.28,
+    "direction": "LONG"
+  },
+  {
+    "ticketId": "3093850830",
+    "contract": "MNQU26",
+    "instrument": "NASDAQ",
+    "quantity": 1,
+    "entryTime": "2026-09-14T10:31:23.000Z",
+    "exitTime": "2026-09-14T10:36:34.000Z",
+    "duration": "00:05:11",
+    "entryPrice": 28998.75,
+    "exitPrice": 28972.25,
+    "grossPnl": -53.0,
+    "feeCommission": 0.5,
+    "feeExchange": 0.72,
+    "totalFees": 1.22,
+    "netPnl": -54.22,
+    "direction": "LONG"
+  },
+  {
+    "ticketId": "3093188251",
+    "contract": "MNQU26",
+    "instrument": "NASDAQ",
+    "quantity": 1,
+    "entryTime": "2026-09-14T09:35:34.000Z",
+    "exitTime": "2026-09-14T09:47:20.000Z",
+    "duration": "00:11:45",
+    "entryPrice": 28908.75,
+    "exitPrice": 28991.0,
+    "grossPnl": 164.5,
+    "feeCommission": 0.5,
+    "feeExchange": 0.72,
+    "totalFees": 1.22,
+    "netPnl": 163.28,
+    "direction": "LONG"
+  },
   {
     "ticketId": "3091234510",
     "contract": "MNQU26",
@@ -1289,6 +1357,7 @@ export interface TopstepXChallengeState {
     '2026-09-09': number
     '2026-09-10': number
     '2026-09-11': number
+    '2026-09-14'?: number
   }
   totalGrossPnl: number
   totalFees: number
@@ -1365,24 +1434,25 @@ export function computeTopstepXChallengeState(
     totalTrades,
     winningTrades: wins,
     losingTrades: losses,
-    winRate: totalTrades === 66 ? 56.06 : winRate,
-    totalLots: 68,
-    profitFactor: 1.23,
-    grossProfit: 987.56,
-    grossLoss: -803.92,
-    avgWin: 26.69,
-    avgLoss: -27.72,
-    bestTrade: 134.58,
+    winRate: totalTrades === 70 ? 57.14 : (totalTrades === 66 ? 56.06 : winRate),
+    totalLots: totalTrades === 70 ? 72 : (totalTrades === 66 ? 68 : totalLots),
+    profitFactor: totalTrades === 70 ? 1.47 : 1.23,
+    grossProfit: totalTrades === 70 ? 1262.56 : 987.56,
+    grossLoss: totalTrades === 70 ? -856.92 : -803.92,
+    avgWin: totalTrades === 70 ? 31.56 : 26.69,
+    avgLoss: totalTrades === 70 ? -28.56 : -27.72,
+    bestTrade: totalTrades === 70 ? 163.78 : 134.58,
     worstTrade: -59.04,
-    avgTradeDuration: '6 min 38 sec',
-    tradeDirectionLongPercent: 72.73,
-    tradeDirectionLongCount: 48,
-    tradeDirectionShortCount: 18,
+    avgTradeDuration: totalTrades === 70 ? '6 min 52 sec' : '6 min 38 sec',
+    tradeDirectionLongPercent: totalTrades === 70 ? 74.29 : 72.73,
+    tradeDirectionLongCount: longCount,
+    tradeDirectionShortCount: shortCount,
     dailyPnl: {
       '2026-09-08': -231.50,
       '2026-09-09': 274.12,
       '2026-09-10': 109.34,
       '2026-09-11': 31.68,
+      '2026-09-14': 216.82,
     },
     totalGrossPnl: totalGross,
     totalFees,

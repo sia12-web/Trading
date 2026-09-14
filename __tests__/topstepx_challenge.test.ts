@@ -18,8 +18,8 @@ import { buildLeoSystemPrompt } from '../lib/ai/leoAssistant'
 
 describe('TopstepX $1,500 Prop Firm Challenge Engine', () => {
   describe('Verified Order History & P&L Calculation', () => {
-    it('contains all 66 executed orders with valid tickets and contracts', () => {
-      assert.strictEqual(TOPSTEPX_ORDER_HISTORY.length, 66)
+    it('contains all 70 executed orders with valid tickets and contracts', () => {
+      assert.strictEqual(TOPSTEPX_ORDER_HISTORY.length, 70)
       for (const order of TOPSTEPX_ORDER_HISTORY) {
         assert.ok(order.ticketId.length > 5, 'Ticket ID must be valid')
         assert.ok(['MNQU26', 'MYMU26', 'MGCZ26', 'MCLV26'].includes(order.contract))
@@ -36,23 +36,23 @@ describe('TopstepX $1,500 Prop Firm Challenge Engine', () => {
 
     it('computes exact challenge metrics matching broker statement', () => {
       const state = computeTopstepXChallengeState()
-      assert.strictEqual(state.totalTrades, 66)
-      assert.strictEqual(state.winningTrades, 37)
-      assert.strictEqual(state.losingTrades, 29)
-      assert.strictEqual(state.winRate, 56.06)
-      assert.strictEqual(state.totalNetPnl, 183.64)
+      assert.strictEqual(state.totalTrades, 70)
+      assert.strictEqual(state.winningTrades, 40)
+      assert.strictEqual(state.losingTrades, 30)
+      assert.strictEqual(state.winRate, 57.14)
+      assert.strictEqual(state.totalNetPnl, 400.46)
       assert.strictEqual(state.profitTarget, 1500)
       assert.strictEqual(state.maxLossFloor, -500)
-      assert.strictEqual(state.remainingRoomToBreach, 683.64)
+      assert.strictEqual(state.remainingRoomToBreach, 900.46)
       assert.strictEqual(state.status, 'ACTIVE_NORMAL')
       assert.ok(state.riskRecommendation.includes('1500'))
     })
   })
 
   describe('Journal Row Mapping', () => {
-    it('maps all 66 orders to standard journal entries with tickets and fees', () => {
+    it('maps all 70 orders to standard journal entries with tickets and fees', () => {
       const rows = getTopstepXJournalRows()
-      assert.strictEqual(rows.length, 66)
+      assert.strictEqual(rows.length, 70)
       const first = rows[0]
       assert.ok(first.ticket_id.length > 5)
       assert.ok(['MNQU26', 'MYMU26', 'MGCZ26', 'MCLV26'].includes(first.contract))
@@ -80,7 +80,7 @@ describe('TopstepX $1,500 Prop Firm Challenge Engine', () => {
       const res = validateTopstepXOrderRisk({
         instrument: 'MNQ',
         entryPrice: 29150.0,
-        stopLossPrice: 29030.0, // 120 pts * $2 = $240 > 30% of $683.64 (~$205)
+        stopLossPrice: 28980.0, // 170 pts * $2 = $340 > 30% of $900.46 (~$270)
         quantity: 1,
       })
       assert.strictEqual(res.allowed, true)
@@ -92,7 +92,7 @@ describe('TopstepX $1,500 Prop Firm Challenge Engine', () => {
       const res = validateTopstepXOrderRisk({
         instrument: 'MNQ',
         entryPrice: 29150.0,
-        stopLossPrice: 28750.0, // 400 pts * $2 = $800 > $683.64 cushion
+        stopLossPrice: 28650.0, // 500 pts * $2 = $1000 > $900.46 cushion
         quantity: 1,
       })
       assert.strictEqual(res.allowed, false)
@@ -148,7 +148,7 @@ describe('TopstepX $1,500 Prop Firm Challenge Engine', () => {
       const unsafe = resolveTopstepXPlace({
         instrument: 'MNQ',
         entryPrice: 29150.0,
-        stopLossPrice: 28750.0, // 400 pts * $2 = $800 > $683.64 cushion
+        stopLossPrice: 28650.0, // 500 pts * $2 = $1000 > $900.46 cushion
         quantity: 1,
       })
       assert.strictEqual(unsafe.allowed, false)

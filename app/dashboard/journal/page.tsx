@@ -679,7 +679,7 @@ function JournalPageInner() {
                   Desk equity · TopstepX Prop Firm Account {topstepxChallenge?.accountId || '1.5KCHCR-LABS004-V2-675081-67067724'}
                 </div>
                 <div className="text-[10px] font-mono text-emerald-400">
-                  LIVE · MLL Floor: -$500.00 · BAL: ${summary.ending_equity?.toFixed(2) ?? '183.64'}
+                  LIVE · MLL Floor: -$500.00 · BAL: ${summary.ending_equity?.toFixed(2) ?? '400.46'}
                 </div>
               </div>
               <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
@@ -695,7 +695,7 @@ function JournalPageInner() {
                 <div>
                   <div className="text-[10px] text-gray-500 uppercase">TopstepX Prop Firm Equity</div>
                   <div className="price-mono text-lg text-white font-bold text-emerald-400">
-                    {fmtMoney(summary.ending_equity ?? summary.starting_account ?? 183.64)}
+                    {fmtMoney(summary.ending_equity ?? summary.starting_account ?? 400.46)}
                   </div>
                 </div>
                 <div className="ml-auto text-right">
@@ -703,8 +703,8 @@ function JournalPageInner() {
                     {madeMoney ? 'Account Profit' : lostMoney ? 'Account Drawdown' : 'Flat'}
                   </div>
                   <div
-                    className={`price-mono text-2xl font-bold ${
-                      madeMoney ? 'text-emerald-400' : lostMoney ? 'text-red-400' : 'text-gray-300'
+                    className={`price-mono text-lg font-bold ${
+                      madeMoney ? 'text-emerald-400' : lostMoney ? 'text-rose-400' : 'text-gray-400'
                     }`}
                   >
                     {fmtMoney(equityChange, true)}
@@ -712,7 +712,7 @@ function JournalPageInner() {
                 </div>
               </div>
               <p className="mt-2 text-[11px] text-gray-500">
-                Desk equity is strictly synced with TopstepX Prop Firm account 1.5KCHCR-LABS004-V2-675081-67067724. Cushion to -$500 floor: <strong className="text-emerald-300">${topstepxChallenge ? topstepxChallenge.remainingRoomToBreach.toFixed(2) : '683.64'}</strong>.
+                Desk equity is strictly synced with TopstepX Prop Firm account 1.5KCHCR-LABS004-V2-675081-67067724. Cushion to -$500 floor: <strong className="text-emerald-300">${topstepxChallenge ? topstepxChallenge.remainingRoomToBreach.toFixed(2) : '900.46'}</strong>.
               </p>
             </div>
 

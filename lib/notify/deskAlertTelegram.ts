@@ -4,7 +4,6 @@
  * entrance (`auction_setup`). Range lock, clock, news, BE stay on-screen.
  */
 
-import { isNyTelegramKind } from '@/lib/trading/nyDeskStrategy'
 
 export function formatDeskAlertToast(title: string, body: string): string {
   const t = String(title || '').trim()
@@ -15,21 +14,12 @@ export function formatDeskAlertToast(title: string, body: string): string {
   return `${t} — ${b}`
 }
 
-/** Null = do not send Telegram. Allowlist: CALL-legal setup only. */
-export function deskAlertTelegramText(alert: {
+/** Null = do not send Telegram. All Telegram notifications have been removed in favor of on-screen desk alerts and audio chimes. */
+export function deskAlertTelegramText(_alert: {
   kind?: string
   telegram?: string | null
   title?: string
   body?: string
 }): string | null {
-  if (!isNyTelegramKind(alert.kind)) return null
-  if (typeof alert.telegram === 'string') {
-    const trimmed = alert.telegram.trim()
-    return trimmed || null
-  }
-  const fallback = [alert.title, alert.body]
-    .filter((s) => typeof s === 'string' && s.trim())
-    .join('\n')
-    .trim()
-  return fallback || null
+  return null
 }

@@ -7,7 +7,7 @@
  * 3. Short-Term Money (Yesterday NYC Session FRVP & Prior Overnight FRVP)
  * 4. Dalton Day Types & Opening Activity
  * 5. Excessive Tails, Volume Retests & Risk Execution
- * 6. Real-Time Execution Rules (Stagnation Timeout & Telegram Alerts)
+ * 6. Real-Time Execution Rules (Stagnation Timeout & Desk Audio Alerts)
  */
 
 export interface LeoDataPoint {
@@ -228,7 +228,7 @@ export type LeoExecutionDirective =
       description?: string
     }
   | {
-      action: 'ARM_TELEGRAM_ALERT'
+      action: 'ARM_DESK_ALERT' | 'ARM_TELEGRAM_ALERT'
       targetReference: string
       targetPrice: number
       requireHighVolume?: boolean
@@ -261,6 +261,11 @@ export type LeoExecutionDirective =
       dollarRisk?: number
       dollarReward?: number
       bracketRatio?: string
+    }
+  | {
+      action: 'SET_DAY_TYPE' | 'OVERRIDE_DAY_TYPE'
+      dayType: 'DOUBLE_DISTRIBUTION' | 'NORMAL_VARIATION' | 'NORMAL' | 'TREND_BULL' | 'TREND_BEAR' | 'NEUTRAL'
+      reason?: string
     }
 
 /**
@@ -687,16 +692,26 @@ You are the trader's execution partner on the desk. When the trader gives you di
     "reason": "Trader direct voice command"
   }
   </execute>
-- Telegram Alert Rule: If the trader says "Leo if we get to this data reference [e.g. in Asia session, 5D POC, London High] and we see high volume and confidence, send me a telegram message":
-  Confirm the level, session, and criteria, and output:
+- Desk Alert Rule: If the trader says "Leo if we get to this data reference [e.g. in Asia session, 5D POC, London High, Overnight Low Value] and we see high volume and confidence, alert me" (or requests an alert or notification):
+  Confirm the parameters clearly (Target Reference, Session, Criteria) with NO edit options or Telegram mentions.
+  Confirming format:
+  Confirming alert parameters:
+
+  - **Target Reference**: [Target Reference] ([Target Price])
+  - **Session**: [Session]
+  - **Criteria**: High Volume & Confidence
+
+  Activating Desk Alert for when price reaches [Target Price] with high volume and confidence.
+  (CRITICAL PROTOCOL: Telegram integration has been completely removed from this desk. All alerts trigger on-screen notifications in the top-right of the screen along with a chime audio sound. NEVER mention Telegram or telegram dispatches. Do NOT offer editing of parameters).
+  Output:
   <execute>
   {
-    "action": "ARM_TELEGRAM_ALERT",
+    "action": "ARM_DESK_ALERT",
     "targetReference": "Target Reference Name",
     "targetPrice": 29140.0,
     "requireHighVolume": true,
     "requireConfidence": true,
-    "session": "Asia"
+    "session": "NYC"
   }
   </execute>
 - Direct Order Placement: If the trader instructs you to place an order or enter the market (e.g. "Leo buy NASDAQ", "Leo enter long at 21500", "Leo sell DOW", "Leo place order"):
@@ -730,12 +745,24 @@ You are the trader's execution partner on the desk. When the trader gives you di
     "action": "CANCEL_RULES"
   }
   </execute>
+- Dalton Day Type Analysis & Overwrite: You have full analytical authority to examine auction tails, session profiles, bimodal volume nodes, and separating LVNs to overwrite the live Dalton Day Type!
+  If the mathematical indicator shows "Normal Variation" or "Waiting", but price action and auction tails (e.g. buying excess below, selling excess above, and a developing low volume node separating two acceptance areas) confirm a Double Distribution Day (or if the trader discusses or confirms a Double Distribution profile):
+  Confirm the transition authoritatively, explain the first and second distributions and the separating LVN, and output:
+  <execute>
+  {
+    "action": "SET_DAY_TYPE",
+    "dayType": "DOUBLE_DISTRIBUTION",
+    "reason": "Auction tails and developing LVN delineate two distinct distribution zones"
+  }
+  </execute>
+  This immediately updates the Day Type HUD badge on the trader's chart to Double Distribution.
 
 7. TOPSTEPX $1,500 PROP FIRM CHALLENGE & AUTO OCO BRACKETS:
 - Challenge Target: +$1,500.00 (Pass & keep $1,500).
 - Maximum Loss Floor: -$500.00 (MUST NOT hit negative $500 — account breach!).
-- Current Challenge Status: Active (Account 1.5KCHCR-LABS004-V2-675081-67067724, Current Prop Firm Balance: +$183.64, 37 Wins / 29 Losses across 66 executions, 56.06% Win Rate, Profit Factor 1.23, Best Trade: +$134.58).
-- Remaining Cushion to -$500 Breach Floor: Exactly $683.64 cushion ($500 MLL + $183.64 balance)!
+- Current Challenge Status: Active (Account 1.5KCHCR-LABS004-V2-675081-67067724, Current Prop Firm Balance: +$400.46, 40 Wins / 30 Losses across 70 executions, 57.14% Win Rate, Profit Factor 1.47, Best Trade: +$163.78).
+- Remaining Cushion to -$500 Breach Floor: Exactly $900.46 cushion ($500 MLL + $400.46 balance)!
+- Latest Executed Session (Sept 14, 2026): 4 trades (3 Wins / 1 Loss, 75.00% Win Rate, Day Net P&L: +$216.82).
 - TOPSTEPX AUTO OCO BRACKET PRESETS (FIXED $50 RISK BASE):
   The trader uses pre-configured TopstepX Auto OCO Brackets. When the trader mentions '1 to 1', '1:1', '1 to 2', '1:2', '1 to 3', '1:3', '1 to 5', or '1:5', map them immediately to fixed $50 risk and proportional profit target:
   * 1:1 (or '1 to 1' / '50-50'): SL = -$50 risk | TP = +$50 profit (1:1 R:R).
