@@ -180,6 +180,7 @@ export type MarketDayType =
   | 'NON_CONVICTION'
   | 'TREND_BULL'
   | 'TREND_BEAR'
+  | 'DOUBLE_DISTRIBUTION'
   | 'NORMAL'
   | 'NORMAL_VARIATION'
   | 'NEUTRAL'
@@ -1194,6 +1195,30 @@ export function classifyMarketDayType(args: {
         title: 'Neutral Day',
         description:
           'Range extended both above and below the morning range. Two-sided auction / reversal.',
+      }
+    }
+
+    // Double Distribution Trend Day:
+    // Session has developed (>= 14 bars, > 70 mins), large range extension (>= 0.75x IB range) in ONE direction,
+    // and subsequent bars form a separate balance area with separation from the initial balance.
+    if (todayBars.length >= 14 && (extendedHigh || extendedLow)) {
+      const subsequentBars = todayBars.slice(12)
+      let subHigh = -Infinity
+      let subLow = Infinity
+      for (const b of subsequentBars) {
+        if (b.high > subHigh) subHigh = b.high
+        if (b.low < subLow) subLow = b.low
+      }
+      const isDDistUp = extendedHigh && !extendedLow && high >= ibHigh + ibRange * 0.75 && subLow > ibHigh - ibRange * 0.2
+      const isDDistDown = extendedLow && !extendedHigh && low <= ibLow - ibRange * 0.75 && subHigh < ibLow + ibRange * 0.2
+      if (isDDistUp || isDDistDown) {
+        return {
+          type: 'DOUBLE_DISTRIBUTION',
+          badgeText: 'Double Distribution',
+          title: 'Double Distribution Trend Day',
+          description:
+            'Initial balance broken by an aggressive initiative drive, forming a second distinct value area separated by single prints.',
+        }
       }
     }
 

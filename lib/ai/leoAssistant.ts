@@ -23,6 +23,7 @@ export interface LeoDataPoint {
     | 'EXCESS'
     | 'DAY_TYPE'
     | 'OPEN'
+    | 'INVENTORY'
     | 'TRENDLINE'
     | 'RANGE'
     | 'FRVP'

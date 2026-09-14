@@ -10084,12 +10084,22 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           {/* ── Compact Evaluators & OHLCV Tooltip Row ─────────────────────────── */}
           <div className="flex flex-wrap items-center justify-between gap-x-2.5 gap-y-1 px-1 py-0.5 text-[10.5px] text-gray-400 min-h-[22px]">
             <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
-              {/* Structural Evaluators: Day Type & Opening — only visible after NYC cash open (09:30 ET) */}
+              {/* Structural Evaluators: Day Type, Opening, and Overnight Inventory */}
               {(() => {
-                const nowNy = new Date().toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' }).split(':').map(Number)
-                const nyDec = (nowNy[0] ?? 0) + (nowNy[1] ?? 0) / 60
-                const isNycOpen = nyDec >= 9.5 && nyDec < 16
-                if (!isNycOpen) return null
+                const invText = overnightInventory
+                  ? `${overnightInventory.biasLabel} · ${overnightInventory.rangeLabel}`
+                  : 'WAIT'
+                const invColor = !overnightInventory
+                  ? 'text-gray-400'
+                  : overnightInventory.bias.includes('LONG')
+                  ? 'text-emerald-400'
+                  : overnightInventory.bias.includes('SHORT')
+                  ? 'text-rose-400'
+                  : 'text-amber-300'
+                const invTitle = overnightInventory
+                  ? `${overnightInventory.description} (Long: ${overnightInventory.pctLong}%, Short: ${overnightInventory.pctShort}%)`
+                  : 'Overnight Inventory vs Prior NYC Close (Calculated across Globex: Asia, London, Pre-Market)'
+
                 return (
                   <>
                     <button
@@ -10103,12 +10113,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                             value: dayTypeEval.badgeText,
                             tier: 'CONTEXT',
                             category: 'DAY_TYPE',
-                            description: 'Current Dalton Day Type',
+                            description: dayTypeEval.description || 'Current Dalton Day Type',
                           },
                         ])
                       }}
                       className={`${leoPanelOpen ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'} transition flex items-center gap-1 select-none`}
-                      title={leoPanelOpen ? 'Click to send Day Type to Leo AI' : 'Current Dalton Day Type'}
+                      title={leoPanelOpen ? 'Click to send Day Type to Leo AI' : (dayTypeEval.description || 'Current Dalton Day Type')}
                     >
                       <span className="text-gray-500">Day: </span>
                       <span className={`text-purple-300 font-semibold ${leoPanelOpen ? 'underline decoration-dotted decoration-purple-400/50 underline-offset-2' : ''}`}>
@@ -10137,6 +10147,30 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                       <span className="text-gray-500">Open: </span>
                       <span className={`text-cyan-300 font-semibold ${leoPanelOpen ? 'underline decoration-dotted decoration-cyan-400/50 underline-offset-2' : ''}`}>
                         {openingBadge}
+                      </span>
+                    </button>
+                    <span className="text-gray-600 text-[10px]">|</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!leoPanelOpen || !overnightInventory) return
+                        setLeoExternalPoints([
+                          {
+                            id: 'ctx-overnight-inv',
+                            label: 'Overnight Inventory',
+                            value: `${overnightInventory.biasLabel} · ${overnightInventory.rangeLabel} (${overnightInventory.pctLong}% L / ${overnightInventory.pctShort}% S)`,
+                            tier: 'CONTEXT',
+                            category: 'INVENTORY',
+                            description: overnightInventory.description,
+                          },
+                        ])
+                      }}
+                      className={`${leoPanelOpen && overnightInventory ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'} transition flex items-center gap-1 select-none`}
+                      title={leoPanelOpen ? `${invTitle} — Click to send to Leo AI` : invTitle}
+                    >
+                      <span className="text-gray-500">Inventory: </span>
+                      <span className={`${invColor} font-semibold ${leoPanelOpen && overnightInventory ? 'underline decoration-dotted decoration-current underline-offset-2' : ''}`}>
+                        {invText}
                       </span>
                     </button>
                     <span className="text-gray-600 text-[10px]">|</span>
