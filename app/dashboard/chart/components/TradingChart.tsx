@@ -3831,7 +3831,7 @@ export function TradingChart({
           }
         }),
       },
-      candlestickPatterns: (leoPanelOpen && showCandlestickPatterns && candles.length > 0) ? {
+      candlestickPatterns: candles.length > 0 ? {
         activePatterns: (() => {
           const bars = rawBarsRef.current.length === candles.length ? rawBarsRef.current : candles.map((c) => ({
             time: c.time as number,
@@ -12062,6 +12062,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         <LeoAssistantPanel
           key={leoContext.instrument}
           context={leoContext}
+          candles={candles}
           isOpen={leoPanelOpen}
           onToggleOpen={() => setLeoPanelOpen(!leoPanelOpen)}
           externalAttachedPoints={leoExternalPoints}

@@ -172,7 +172,102 @@ function buildDeskFallbackResponse(
     return `Roger that. Executing immediate market close on ${ctx.instrument} at ${curPrice}. Flattening desk position.\n\n<execute>\n{\n  "action": "CLOSE_POSITION",\n  "reason": "Trader voice command: Close position"\n}\n</execute>`
   }
 
-  // 2. Direct order placement command (e.g. "Leo buy 1 NQ", "Leo enter long", "Leo sell DOW", "place order")
+  // 2. Conditional Entry Strategy & Drawing Monitor (e.g. "monitor price for yesterday FRVP low volume node; if we see a bullish engulfing enter long...", "in low volume of yesterday fix range volume profile if we see a bullish engulfing enter")
+  if (
+    /\b(monitor|if\s+we\s+see|if\s+you\s+see|when\s+price|in\s+low\s+volume|low\s+volume\s+node|bullish\s+engulfing|bearish\s+engulfing|hammer|rejection\s+tail)\b/i.test(lower) &&
+    /\b(enter|buy|long|sell|short)\b/i.test(lower)
+  ) {
+    const isShort = /\b(sell|short)\b/i.test(lower)
+    const direction: 'LONG' | 'SHORT' = isShort ? 'SHORT' : 'LONG'
+    
+    let inst = ctx.instrument || 'NASDAQ'
+    if (/\bdow\b|ym/i.test(lower)) inst = 'DOW'
+    else if (/\bnasdaq\b|nq/i.test(lower)) inst = 'NASDAQ'
+    else if (/\bgold\b|gc/i.test(lower)) inst = 'GOLD'
+    else if (/\bcrude\b|oil|cl/i.test(lower)) inst = 'CRUDE'
+
+    let pattern: 'BULLISH_ENGULFING' | 'BEARISH_ENGULFING' | 'HAMMER' | 'INVERTED_HAMMER' | 'SHOOTING_STAR' | 'REJECTION_TAIL' | 'LEVEL_TOUCH' =
+      direction === 'LONG' ? 'BULLISH_ENGULFING' : 'BEARISH_ENGULFING'
+    if (/hammer/i.test(lower)) pattern = 'HAMMER'
+    else if (/shooting\s*star/i.test(lower)) pattern = 'SHOOTING_STAR'
+    else if (/rejection/i.test(lower)) pattern = 'REJECTION_TAIL'
+    else if (/bullish\s+engulfing/i.test(lower)) pattern = 'BULLISH_ENGULFING'
+    else if (/bearish\s+engulfing/i.test(lower)) pattern = 'BEARISH_ENGULFING'
+
+    let stopLossMode: 'BELOW_CANDLE_LOW' | 'ABOVE_CANDLE_HIGH' | 'FIXED_POINTS' | 'DOLLARS_50' =
+      direction === 'LONG' ? 'BELOW_CANDLE_LOW' : 'ABOVE_CANDLE_HIGH'
+    if (/below\s+(the\s+)?(candle|bar|engulfing)\s*low/i.test(lower)) stopLossMode = 'BELOW_CANDLE_LOW'
+    else if (/above\s+(the\s+)?(candle|bar|engulfing)\s*high/i.test(lower)) stopLossMode = 'ABOVE_CANDLE_HIGH'
+    else if (/50|fifty/i.test(lower)) stopLossMode = 'DOLLARS_50'
+
+    let takeProfitMode: '1:1' | '1:2' | '1:3' | '1:5' | 'FIXED_POINTS' = '1:2'
+    if (/1\s*:\s*1|1\s+to\s+1/i.test(lower)) takeProfitMode = '1:1'
+    else if (/1\s*:\s*3|1\s+to\s+3/i.test(lower)) takeProfitMode = '1:3'
+    else if (/1\s*:\s*5|1\s+to\s+5/i.test(lower)) takeProfitMode = '1:5'
+
+    let targetRef = 'Key Reference Level'
+    let targetPx = ctx.currentPrice ?? 28908.75
+
+    if (/frvp|volume\s*profile|low\s*volume|lvn/i.test(lower)) {
+      const frvp = ctx.userDrawings?.frvps?.[0]
+      targetRef = frvp ? `Manual FRVP (${frvp.startTimeEt}) LVN` : 'Yesterday FRVP Low Volume Node'
+      targetPx = frvp ? frvp.val : (ctx.shortTermMoney?.yval ?? (ctx.currentPrice ?? 28908.75))
+    } else if (/trendline/i.test(lower)) {
+      const tl = ctx.userDrawings?.trendlines?.[0]
+      targetRef = tl ? `${tl.label || 'Trendline'} Support` : 'Trendline Support'
+      targetPx = tl ? tl.projectedPrice : (ctx.currentPrice ?? 28908.75)
+    } else if (/range|box/i.test(lower)) {
+      const r = ctx.userDrawings?.ranges?.[0]
+      targetRef = r ? `${r.label || 'Range'} ${direction === 'LONG' ? 'Low' : 'High'}` : 'Range Boundary'
+      targetPx = r ? (direction === 'LONG' ? r.priceLow : r.priceHigh) : (ctx.currentPrice ?? 28908.75)
+    }
+
+    const matchPrice = lower.match(/(?:at|@|price|around)\s*([\d,]+(?:\.\d+)?)/i)
+    if (matchPrice) {
+      const p = parseFloat(matchPrice[1]!.replace(/,/g, ''))
+      if (Number.isFinite(p) && p > 0) targetPx = p
+    }
+
+    const patternLabel = pattern.replace(/_/g, ' ')
+    const slLabel =
+      stopLossMode === 'BELOW_CANDLE_LOW'
+        ? 'Below Bullish Engulfing Bar Low (-2 pts cushion)'
+        : stopLossMode === 'ABOVE_CANDLE_HIGH'
+        ? 'Above Bar High (+2 pts cushion)'
+        : 'Fixed Risk Bracket'
+
+    return `### 🎯 Strategy Saved & Conditional Entry Armed
+
+**Trader Instruction (Saved):**
+> "${lastMsg.trim()}"
+
+**Saved Entry Conditions:**
+- **Target Reference:** **${targetRef}**
+- **Target Level:** **${targetPx.toLocaleString()}**
+- **Trigger Pattern:** **${patternLabel}**
+- **Direction:** **${direction}**
+- **Dynamic Stop Loss:** ${slLabel}
+- **Profit Target:** **${takeProfitMode} Risk:Reward**
+- **Execution Desk:** Armed & actively monitoring live ticks. Leo will automatically execute the order on ${inst} as soon as conditions confirm.
+
+<execute>
+{
+  "action": "ARM_CONDITIONAL_ENTRY",
+  "userPrompt": "${lastMsg.replace(/["\\]/g, '')}",
+  "instrument": "${inst}",
+  "direction": "${direction}",
+  "targetReference": "${targetRef}",
+  "targetPrice": ${targetPx},
+  "pattern": "${pattern}",
+  "stopLossMode": "${stopLossMode}",
+  "takeProfitMode": "${takeProfitMode}",
+  "size": 1,
+  "description": "${direction} 1 ${inst} on ${patternLabel} at ${targetRef} (${targetPx.toLocaleString()})"
+}
+</execute>`
+  }
+
+  // 3. Direct order placement command (e.g. "Leo buy 1 NQ", "Leo enter long", "Leo sell DOW", "place order")
   if (/\b(buy|long|sell|short|enter|place\s+order|open\s+position|take\s+(a\s+)?trade)\b/i.test(lower)) {
     const isShort = /\b(sell|short)\b/i.test(lower)
     const direction: 'LONG' | 'SHORT' = isShort ? 'SHORT' : 'LONG'

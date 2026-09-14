@@ -70,3 +70,45 @@ Flattening position immediately.
   assert.equal(directives.length, 1)
   assert.equal(directives[0]?.action, 'CLOSE_POSITION')
 })
+
+test('parseLeoDirectives - ARM_CONDITIONAL_ENTRY directive with user prompt & pattern conditions', () => {
+  const text = `
+### 🎯 Strategy Saved & Conditional Entry Armed
+
+**Trader Instruction (Saved):**
+> "monitor price for yesterday FRVP low volume node; if we see a bullish engulfing, enter long, put stop loss below the bullish engulfing bar, take profit 1:2"
+
+<execute>
+{
+  "action": "ARM_CONDITIONAL_ENTRY",
+  "userPrompt": "monitor price for yesterday FRVP low volume node; if we see a bullish engulfing, enter long, put stop loss below the bullish engulfing bar, take profit 1:2",
+  "instrument": "NASDAQ",
+  "direction": "LONG",
+  "targetReference": "Yesterday FRVP Low Volume Node",
+  "targetPrice": 28908.75,
+  "pattern": "BULLISH_ENGULFING",
+  "stopLossMode": "BELOW_CANDLE_LOW",
+  "takeProfitMode": "1:2",
+  "size": 1,
+  "description": "Enter LONG on Bullish Engulfing at Yesterday FRVP Low Volume Node with SL below Engulfing Low"
+}
+</execute>
+`
+  const directives = parseLeoDirectives(text)
+  assert.equal(directives.length, 1)
+  const d = directives[0] as any
+  assert.equal(d.action, 'ARM_CONDITIONAL_ENTRY')
+  assert.equal(
+    d.userPrompt,
+    'monitor price for yesterday FRVP low volume node; if we see a bullish engulfing, enter long, put stop loss below the bullish engulfing bar, take profit 1:2'
+  )
+  assert.equal(d.instrument, 'NASDAQ')
+  assert.equal(d.direction, 'LONG')
+  assert.equal(d.targetReference, 'Yesterday FRVP Low Volume Node')
+  assert.equal(d.targetPrice, 28908.75)
+  assert.equal(d.pattern, 'BULLISH_ENGULFING')
+  assert.equal(d.stopLossMode, 'BELOW_CANDLE_LOW')
+  assert.equal(d.takeProfitMode, '1:2')
+  assert.equal(d.size, 1)
+})
+

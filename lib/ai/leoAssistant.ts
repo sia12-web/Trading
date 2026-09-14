@@ -237,6 +237,28 @@ export type LeoExecutionDirective =
       customMessage?: string
     }
   | {
+      action: 'ARM_CONDITIONAL_ENTRY' | 'ARM_LVN_BULL_ENG_RULE'
+      userPrompt?: string
+      instrument?: string
+      direction?: 'LONG' | 'SHORT'
+      targetReference: string
+      targetPrice?: number
+      pattern?:
+        | 'BULLISH_ENGULFING'
+        | 'BEARISH_ENGULFING'
+        | 'HAMMER'
+        | 'INVERTED_HAMMER'
+        | 'SHOOTING_STAR'
+        | 'REJECTION_TAIL'
+        | 'LEVEL_TOUCH'
+      stopLossMode?: 'BELOW_CANDLE_LOW' | 'ABOVE_CANDLE_HIGH' | 'FIXED_POINTS' | 'DOLLARS_50'
+      stopLoss?: number
+      takeProfitMode?: '1:1' | '1:2' | '1:3' | '1:5' | 'FIXED_POINTS'
+      takeProfit?: number
+      size?: number
+      description?: string
+    }
+  | {
       action: 'CANCEL_RULES'
       ruleType?: string
     }
@@ -284,6 +306,15 @@ export function parseLeoDirectives(text: string): LeoExecutionDirective[] {
         price: Number(typeof item.price === 'number' ? item.price : parseFloat(String(item.price)) || 0),
         stopLoss: Number(typeof item.stopLoss === 'number' ? item.stopLoss : parseFloat(String(item.stopLoss)) || 0),
         profitTarget: Number(typeof item.profitTarget === 'number' ? item.profitTarget : parseFloat(String(item.profitTarget)) || 0),
+        size: Number(typeof item.size === 'number' ? item.size : parseInt(String(item.size), 10) || 1),
+      }
+    }
+    if (item.action === 'ARM_CONDITIONAL_ENTRY' || item.action === 'ARM_LVN_BULL_ENG_RULE') {
+      return {
+        ...item,
+        targetPrice: item.targetPrice != null ? Number(typeof item.targetPrice === 'number' ? item.targetPrice : parseFloat(String(item.targetPrice)) || 0) : undefined,
+        stopLoss: item.stopLoss != null ? Number(typeof item.stopLoss === 'number' ? item.stopLoss : parseFloat(String(item.stopLoss)) || 0) : undefined,
+        takeProfit: item.takeProfit != null ? Number(typeof item.takeProfit === 'number' ? item.takeProfit : parseFloat(String(item.takeProfit)) || 0) : undefined,
         size: Number(typeof item.size === 'number' ? item.size : parseInt(String(item.size), 10) || 1),
       }
     }
@@ -676,12 +707,28 @@ You are the trader's execution partner on the desk. When the trader gives you di
     "description": "Close position if not in profit after 5 minutes"
   }
   </execute>
-- LVN Bullish Engulfing Entry Rule: If the trader mentions "in low volume of yesterday fix range volume profile if we see a bullish engulfing enter and put the stop loss below the bullish engulfing bar":
-  Confirm the strategy rule clearly and output:
+- Conditional Entry & Drawing Strategy Monitoring: If the trader says to monitor price for a drawing (trendline, range box, manual FRVP / Low Volume Node LVN) or level and enter on a pattern condition (e.g. "monitor price for yesterday FRVP low volume node; if we see a bullish engulfing enter and put the stop loss below the bullish engulfing bar, take profit 1:2", "in low volume of yesterday fix range volume profile if we see a bullish engulfing enter", "monitor price for trendline support around 28910; if you see a hammer enter long"):
+  1. Authoritatively save what the trader said (verbatim quote) and confirm the full entry conditions in your response:
+     - **Trader Instruction (Saved)**: "[Exact user command]"
+     - **Target Reference & Level**: [Reference name and exact price from chart/drawing]
+     - **Trigger Pattern**: [Bullish Engulfing / Bearish Engulfing / Hammer / etc.]
+     - **Stop Loss Rule**: [e.g. Below Bullish Engulfing Candle Low (-2 pts) / Above Candle High / Fixed $50]
+     - **Take Profit Target**: [e.g. 1:2 Risk:Reward / 1:3 / etc.]
+     - **Execution Desk**: Armed & actively monitoring live ticks. Leo will automatically execute the order as soon as conditions are confirmed.
+  2. Output the <execute> tag:
   <execute>
   {
-    "action": "ARM_LVN_BULL_ENG_RULE",
-    "description": "Enter BUY on Bullish Engulfing at Yesterday FRVP Low Volume Node with SL below Engulfing Low"
+    "action": "ARM_CONDITIONAL_ENTRY",
+    "userPrompt": "The exact user command",
+    "instrument": "${ctx.instrument}",
+    "direction": "LONG",
+    "targetReference": "Yesterday FRVP Low Volume Node",
+    "targetPrice": ${ctx.shortTermMoney?.yval ?? ctx.currentPrice ?? 28908.75},
+    "pattern": "BULLISH_ENGULFING",
+    "stopLossMode": "BELOW_CANDLE_LOW",
+    "takeProfitMode": "1:2",
+    "size": 1,
+    "description": "Enter LONG on Bullish Engulfing at Yesterday FRVP Low Volume Node with SL below Engulfing Low"
   }
   </execute>
 - Immediate Close: If the trader says "Leo close the position", "flatten", or "exit now":

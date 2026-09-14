@@ -13,19 +13,38 @@ import { warningToast } from '@/lib/utils/toastUtils'
 import type { TeamConsensusReport } from '@/lib/ai/stack/types'
 import type { InstitutionalHedgingTelemetry } from '@/lib/ai/stack/models/institutionalHedgingModel'
 import type { DayTypeEvaluation, MarketDayType } from '@/lib/chart/context55'
+import { detectCandlestickPatterns, type Candle } from '@/lib/trading/candlestickPatterns'
 
 export interface ArmedDeskRule {
   id: string
-  type: 'STAGNATION_TIMEOUT' | 'DESK_ALERT' | 'TELEGRAM_ALERT'
+  type: 'STAGNATION_TIMEOUT' | 'DESK_ALERT' | 'TELEGRAM_ALERT' | 'CONDITIONAL_ENTRY'
   description: string
-  maxMinutes?: number
-  targetPrice?: number
+  userPrompt?: string
+  instrument?: string
+  direction?: 'LONG' | 'SHORT'
   targetReference?: string
+  targetPrice?: number
+  pattern?:
+    | 'BULLISH_ENGULFING'
+    | 'BEARISH_ENGULFING'
+    | 'HAMMER'
+    | 'INVERTED_HAMMER'
+    | 'SHOOTING_STAR'
+    | 'REJECTION_TAIL'
+    | 'LEVEL_TOUCH'
+  stopLossMode?: 'BELOW_CANDLE_LOW' | 'ABOVE_CANDLE_HIGH' | 'FIXED_POINTS' | 'DOLLARS_50'
+  stopLoss?: number
+  takeProfitMode?: '1:1' | '1:2' | '1:3' | '1:5' | 'FIXED_POINTS'
+  takeProfit?: number
+  size?: number
+  maxMinutes?: number
   session?: string
   requireHighVolume?: boolean
   requireConfidence?: boolean
   createdAt: number
-  status: 'ARMED' | 'TRIGGERED' | 'SATISFIED' | 'CANCELLED'
+  status: 'ARMED' | 'TRIGGERED' | 'EXECUTED' | 'SATISFIED' | 'CANCELLED'
+  executedAt?: number
+  executedPrice?: number
 }
 
 export interface LeoOrderResult {
@@ -46,6 +65,7 @@ export interface LeoOrderResult {
 
 interface LeoAssistantPanelProps {
   context: LeoChatContext
+  candles?: any[]
   isOpen?: boolean
   onToggleOpen?: () => void
   onSelectDataPoint?: (point: LeoDataPoint) => void
@@ -78,6 +98,7 @@ function getWelcomeMessage(instrument: string): LeoMessage {
 
 export function LeoAssistantPanel({
   context,
+  candles,
   isOpen: controlledIsOpen,
   onToggleOpen,
   externalAttachedPoints,
@@ -88,6 +109,11 @@ export function LeoAssistantPanel({
 }: LeoAssistantPanelProps) {
   const [internalIsOpen, setInternalIsOpen] = useState(false)
   const isPanelOpen = controlledIsOpen !== undefined ? controlledIsOpen : internalIsOpen
+  const candlesRef = useRef<any[]>(candles || [])
+
+  useEffect(() => {
+    candlesRef.current = candles || []
+  }, [candles])
 
   const togglePanel = () => {
     if (onToggleOpen) {
@@ -607,6 +633,71 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
           size: d.size ?? 1,
           reason,
         })
+      } else if (d.action === 'ARM_CONDITIONAL_ENTRY' || d.action === 'ARM_LVN_BULL_ENG_RULE') {
+        const inst = canonicalizeInstrument(d.instrument || context.instrument)
+        const dir: 'LONG' | 'SHORT' = (d.direction || 'LONG').toUpperCase() as 'LONG' | 'SHORT'
+
+        let targetPx = d.targetPrice && d.targetPrice > 0 ? d.targetPrice : undefined
+        let targetRef = d.targetReference || 'Target Level'
+
+        if (!targetPx && attachedPoints.length > 0) {
+          const pt = attachedPoints[0]!
+          const num = typeof pt.value === 'number' ? pt.value : parseFloat(String(pt.value).replace(/[^0-9.]/g, ''))
+          if (Number.isFinite(num) && num > 0) {
+            targetPx = num
+            targetRef = pt.label || targetRef
+          }
+        }
+
+        if (!targetPx && context.userDrawings) {
+          if (context.userDrawings.frvps.length > 0) {
+            const f = context.userDrawings.frvps[0]!
+            targetPx = f.val
+            targetRef = `Manual FRVP (${f.label || 'LVN'})`
+          } else if (context.userDrawings.trendlines.length > 0) {
+            const t = context.userDrawings.trendlines[0]!
+            targetPx = t.projectedPrice
+            targetRef = `${t.label || 'Trendline'} Support`
+          } else if (context.userDrawings.ranges.length > 0) {
+            const r = context.userDrawings.ranges[0]!
+            targetPx = dir === 'LONG' ? r.priceLow : r.priceHigh
+            targetRef = `${r.label || 'Range'} Boundary`
+          }
+        }
+
+        if (!targetPx) {
+          targetPx = context.shortTermMoney?.yval ?? context.currentPrice ?? 28908.75
+        }
+
+        const userSaid = d.userPrompt || inputPromptRef.current || `Monitor ${targetRef} and enter ${dir} on pattern confirmation`
+        const pat = d.pattern || (dir === 'LONG' ? 'BULLISH_ENGULFING' : 'BEARISH_ENGULFING')
+        const slMode = d.stopLossMode || (dir === 'LONG' ? 'BELOW_CANDLE_LOW' : 'ABOVE_CANDLE_HIGH')
+        const tpMode = d.takeProfitMode || '1:2'
+        const size = d.size ?? 1
+
+        const newRule: ArmedDeskRule = {
+          id: `rule-${Date.now()}`,
+          type: 'CONDITIONAL_ENTRY',
+          description: d.description || `${dir} 1 ${inst} on ${pat.replace(/_/g, ' ')} at ${targetRef} (${targetPx.toLocaleString()})`,
+          userPrompt: userSaid,
+          instrument: inst,
+          direction: dir,
+          targetReference: targetRef,
+          targetPrice: targetPx,
+          pattern: pat,
+          stopLossMode: slMode,
+          stopLoss: d.stopLoss,
+          takeProfitMode: tpMode,
+          takeProfit: d.takeProfit,
+          size,
+          createdAt: Date.now(),
+          status: 'ARMED',
+        }
+
+        setArmedRules((prev) => [...prev, newRule])
+        playTradingViewChime()
+        warningToast(`🎯 Strategy Armed: ${dir} on ${pat.replace(/_/g, ' ')} @ ${targetPx.toLocaleString()}`, 8000)
+        speakText(`Strategy rule armed for ${dir} ${inst}. Monitoring ${pat.replace(/_/g, ' ')}.`)
       } else if (d.action === 'ARM_STAGNATION_RULE') {
         const newRule: ArmedDeskRule = {
           id: `stag-${Date.now()}`,
@@ -752,6 +843,106 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
               changed = true
               dispatchDeskAlert(rule)
               return { ...rule, status: 'TRIGGERED' as const }
+            }
+          }
+
+          // 3. Conditional Strategy Entry Rule (Candlestick Pattern at Key Drawing / Level)
+          if (rule.type === 'CONDITIONAL_ENTRY' && curPrice != null && rule.targetPrice != null) {
+            const dist = Math.abs(curPrice - rule.targetPrice)
+            // Check proximity to target drawing/level (within 15 points)
+            if (dist <= 15) {
+              const bars: Candle[] =
+                candlesRef.current && candlesRef.current.length > 0
+                  ? candlesRef.current.map((c: any) => ({
+                      time: typeof c.time === 'number' ? c.time : 0,
+                      open: Number(c.open),
+                      high: Number(c.high),
+                      low: Number(c.low),
+                      close: Number(c.close),
+                      volume: Number(c.volume || 1),
+                    }))
+                  : []
+
+              let patternFired = false
+              const lastBar = bars.length > 0 ? bars[bars.length - 1]! : null
+
+              if (bars.length >= 2) {
+                const pRes = detectCandlestickPatterns(bars, bars.length - 1)
+                if (rule.pattern === 'BULLISH_ENGULFING' && pRes.bullEng) patternFired = true
+                else if (rule.pattern === 'BEARISH_ENGULFING' && pRes.bearEng) patternFired = true
+                else if (rule.pattern === 'HAMMER' && pRes.hammer) patternFired = true
+                else if (rule.pattern === 'INVERTED_HAMMER' && pRes.invHammer) patternFired = true
+                else if (rule.pattern === 'SHOOTING_STAR' && pRes.shootingStar) patternFired = true
+                else if (
+                  rule.pattern === 'REJECTION_TAIL' &&
+                  (rule.direction === 'LONG' ? pRes.buyingExcess : pRes.sellingExcess)
+                )
+                  patternFired = true
+                else if (rule.pattern === 'LEVEL_TOUCH' && dist <= 3) patternFired = true
+              } else if (dist <= 2) {
+                // If candle history is short, trigger on precise level touch
+                patternFired = true
+              }
+
+              if (patternFired) {
+                changed = true
+                const entryPx = curPrice
+                const dir = rule.direction || 'LONG'
+                const { slDist } = getInstrumentDefaultDistances(
+                  rule.instrument || context.instrument
+                )
+
+                let sl = rule.stopLoss
+                if (!sl) {
+                  if (rule.stopLossMode === 'BELOW_CANDLE_LOW' && lastBar) {
+                    sl = Number((lastBar.low - 2.0).toFixed(2))
+                  } else if (rule.stopLossMode === 'ABOVE_CANDLE_HIGH' && lastBar) {
+                    sl = Number((lastBar.high + 2.0).toFixed(2))
+                  } else if (rule.stopLossMode === 'DOLLARS_50') {
+                    sl = Number((dir === 'LONG' ? entryPx - 25 : entryPx + 25).toFixed(2))
+                  } else {
+                    sl = Number((dir === 'LONG' ? entryPx - slDist : entryPx + slDist).toFixed(2))
+                  }
+                }
+
+                const riskPts = Math.max(1, Math.abs(entryPx - sl))
+                let tp = rule.takeProfit
+                if (!tp) {
+                  let mult = 2.0
+                  if (rule.takeProfitMode === '1:1') mult = 1.0
+                  else if (rule.takeProfitMode === '1:2') mult = 2.0
+                  else if (rule.takeProfitMode === '1:3') mult = 3.0
+                  else if (rule.takeProfitMode === '1:5') mult = 5.0
+                  tp = Number(
+                    (dir === 'LONG' ? entryPx + riskPts * mult : entryPx - riskPts * mult).toFixed(2)
+                  )
+                }
+
+                // ACTUALLY PLACE THE ORDER ON THE DESK!
+                void executePlaceOrder({
+                  instrument: rule.instrument || context.instrument,
+                  direction: dir,
+                  price: entryPx,
+                  stopLoss: sl,
+                  profitTarget: tp,
+                  size: rule.size || 1,
+                  reason: `Strategy Rule Triggered: ${rule.pattern?.replace(/_/g, ' ')} confirmed at ${rule.targetReference} (${rule.targetPrice.toLocaleString()}). Saved instruction: "${rule.userPrompt}"`,
+                })
+
+                playTradingViewChime()
+                warningToast(
+                  `⚡ [LEO AUTO-ORDER EXECUTED]: ${dir} ${rule.instrument} @ ${entryPx.toFixed(2)} | SL: ${sl.toFixed(2)} | TP: ${tp.toFixed(2)}`,
+                  10000
+                )
+                speakText(`Conditional entry triggered! Order placed for ${dir} ${rule.instrument}.`)
+
+                return {
+                  ...rule,
+                  status: 'EXECUTED' as const,
+                  executedAt: Date.now(),
+                  executedPrice: entryPx,
+                }
+              }
             }
           }
 
@@ -1103,35 +1294,157 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
             </div>
           )}
 
-          {/* ── Armed Desk Rules Tray (Stagnation & Desk Audio Alerts) ── */}
-          {armedRules.filter((r) => r.status === 'ARMED').length > 0 && (
-            <div className="px-3 py-1.5 border-b border-purple-900/60 bg-purple-950/40 space-y-1">
+          {/* ── Armed Strategy Rules & Entry Monitor Review Tray ── */}
+          {armedRules.filter((r) => r.status === 'ARMED' || r.status === 'EXECUTED').length > 0 && (
+            <div className="border-b border-purple-900/60 bg-neutral-950/90 divide-y divide-purple-950/60 max-h-[220px] overflow-y-auto">
+              <div className="px-3 py-1 bg-purple-950/60 flex items-center justify-between text-[9px] font-mono text-purple-300">
+                <span className="font-bold flex items-center gap-1">
+                  <span>🎯</span>
+                  <span>
+                    ARMED STRATEGIES & ENTRY RULES (
+                    {armedRules.filter((r) => r.status === 'ARMED').length} active)
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setArmedRules((prev) =>
+                      prev.map((r) => (r.status === 'ARMED' ? { ...r, status: 'CANCELLED' as const } : r))
+                    )
+                  }
+                  className="text-[8.5px] text-neutral-400 hover:text-rose-400 font-bold underline"
+                >
+                  Clear All
+                </button>
+              </div>
+
               {armedRules
-                .filter((r) => r.status === 'ARMED')
-                .map((rule) => (
-                  <div
-                    key={rule.id}
-                    className="flex items-center justify-between text-[10px] font-mono text-purple-200"
-                  >
-                    <span className="flex items-center gap-1.5 truncate max-w-[290px]">
-                      <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
-                      <span className="truncate">{rule.description}</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setArmedRules((prev) =>
-                          prev.map((r) =>
-                            r.id === rule.id ? { ...r, status: 'CANCELLED' as const } : r
-                          )
-                        )
-                      }
-                      className="text-[9px] text-neutral-400 hover:text-rose-400 font-bold ml-1 underline"
+                .filter((r) => r.status === 'ARMED' || r.status === 'EXECUTED')
+                .map((rule) => {
+                  const isConditional = rule.type === 'CONDITIONAL_ENTRY'
+                  const curPx = context.currentPrice ?? 0
+                  const targetPx = rule.targetPrice ?? 0
+                  const dist = Math.abs(curPx - targetPx)
+
+                  if (!isConditional) {
+                    return (
+                      <div
+                        key={rule.id}
+                        className="px-3 py-1.5 flex items-center justify-between text-[10px] font-mono text-purple-200"
+                      >
+                        <span className="flex items-center gap-1.5 truncate max-w-[280px]">
+                          <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                          <span className="truncate">{rule.description}</span>
+                        </span>
+                        {rule.status === 'ARMED' && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setArmedRules((prev) =>
+                                prev.map((r) => (r.id === rule.id ? { ...r, status: 'CANCELLED' as const } : r))
+                              )
+                            }
+                            className="text-[9px] text-neutral-400 hover:text-rose-400 font-bold ml-1 underline"
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+                    )
+                  }
+
+                  // Rich Conditional Strategy Review Card
+                  return (
+                    <div
+                      key={rule.id}
+                      className={`p-2.5 space-y-1.5 text-xs font-sans transition-all ${
+                        rule.status === 'EXECUTED'
+                          ? 'bg-purple-950/30 border-l-2 border-purple-500'
+                          : 'bg-neutral-900/80 border-l-2 border-emerald-500'
+                      }`}
                     >
-                      Cancel
-                    </button>
-                  </div>
-                ))}
+                      {/* Card Header */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          {rule.status === 'ARMED' ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-950/90 border border-emerald-500/60 text-[9px] font-mono font-bold text-emerald-300">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                              SCANNING ({dist.toFixed(1)} pts away)
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-purple-950 border border-purple-500/70 text-[9px] font-mono font-bold text-purple-300">
+                              ⚡ EXECUTED @ {rule.executedPrice?.toFixed(2)}
+                            </span>
+                          )}
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${
+                              rule.direction === 'LONG'
+                                ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/60'
+                                : 'bg-rose-900/60 text-rose-300 border border-rose-700/60'
+                            }`}
+                          >
+                            {rule.direction} {rule.size || 1}x {rule.instrument}
+                          </span>
+                        </div>
+
+                        {rule.status === 'ARMED' && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setArmedRules((prev) =>
+                                prev.map((r) => (r.id === rule.id ? { ...r, status: 'CANCELLED' as const } : r))
+                              )
+                            }
+                            className="px-1.5 py-0.5 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-700/70 text-rose-300 text-[9px] font-mono font-bold transition"
+                            title="Disarm this entry strategy"
+                          >
+                            Cancel Rule
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Saved User Prompt (What Was Said) */}
+                      {rule.userPrompt && (
+                        <div className="p-1.5 rounded bg-neutral-950/80 border border-neutral-800 text-[10px] text-purple-200 font-mono italic flex items-start gap-1">
+                          <span className="text-purple-400 not-italic shrink-0">💬</span>
+                          <span className="line-clamp-2">&quot;{rule.userPrompt}&quot;</span>
+                        </div>
+                      )}
+
+                      {/* Conditions Key-Value Grid */}
+                      <div className="grid grid-cols-2 gap-1 text-[9.5px] font-mono pt-0.5">
+                        <div className="flex items-center gap-1 text-neutral-300 truncate">
+                          <span className="text-neutral-500">📍 Level:</span>
+                          <span className="text-amber-300 font-semibold truncate" title={rule.targetReference}>
+                            {targetPx.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 text-neutral-300 truncate">
+                          <span className="text-neutral-500">⚡ Pattern:</span>
+                          <span className="text-sky-300 font-semibold truncate">
+                            {rule.pattern?.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 text-neutral-300 truncate">
+                          <span className="text-neutral-500">🛡️ SL:</span>
+                          <span className="text-neutral-300 truncate">
+                            {rule.stopLossMode === 'BELOW_CANDLE_LOW'
+                              ? 'Below Bar Low (-2p)'
+                              : rule.stopLossMode === 'ABOVE_CANDLE_HIGH'
+                              ? 'Above Bar High (+2p)'
+                              : 'Bracket'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 text-neutral-300 truncate">
+                          <span className="text-neutral-500">🎯 Target:</span>
+                          <span className="text-emerald-300 font-semibold truncate">
+                            {rule.takeProfitMode || '1:2'} R:R
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
             </div>
           )}
 
