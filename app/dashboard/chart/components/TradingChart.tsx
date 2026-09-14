@@ -4001,13 +4001,16 @@ export function TradingChart({
   )
 
   // ── Monitor Live Price Against Leo Long-Term Memories & Play Chime ────────
+  const prevLivePriceRef = useRef<number | null>(null)
   useEffect(() => {
     if (livePrice == null || !Number.isFinite(livePrice)) return
     const { triggered } = evaluatePriceAgainstMemories({
       instrument,
       currentPrice: livePrice,
+      previousPrice: prevLivePriceRef.current,
       cooldownSeconds: 90,
     })
+    prevLivePriceRef.current = livePrice
 
     for (const mem of triggered) {
       if (mem.alarmSoundEnabled) {

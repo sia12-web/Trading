@@ -511,20 +511,94 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
     }
   }
 
+  // Canonicalize instrument symbols to desk standards
+  const canonicalizeInstrument = (sym?: string): string => {
+    if (!sym) return 'NASDAQ'
+    const s = sym.toUpperCase().trim()
+    if (s === 'NQ' || s === 'MNQ' || s.includes('NAS')) return 'NASDAQ'
+    if (s === 'YM' || s === 'MYM' || s.includes('DOW')) return 'DOW'
+    if (s === 'GC' || s === 'MGC' || s.includes('GOLD')) return 'GOLD'
+    if (s === 'CL' || s === 'MCL' || s.includes('CRUDE') || s.includes('OIL')) return 'CRUDE'
+    if (s === 'NKD' || s.includes('NIKKEI')) return 'NIKKEI'
+    return s
+  }
+
+  // Get default protective bracket distances per instrument
+  const getInstrumentDefaultDistances = (inst: string): { slDist: number; tpDist: number } => {
+    switch (inst) {
+      case 'DOW':
+        return { slDist: 60, tpDist: 120 }
+      case 'CRUDE':
+        return { slDist: 0.5, tpDist: 1.0 }
+      case 'GOLD':
+        return { slDist: 5.0, tpDist: 10.0 }
+      case 'NIKKEI':
+        return { slDist: 100, tpDist: 200 }
+      case 'NASDAQ':
+      default:
+        return { slDist: 25, tpDist: 50 }
+    }
+  }
+
   // Apply parsed directives
   const applyDirectives = (directives: LeoExecutionDirective[]) => {
     for (const d of directives) {
       if (d.action === 'CLOSE_POSITION') {
-        executeClosePosition(d.reason)
-        speakText(`Position close executed: ${d.reason}`)
+        // AI Safety Protocol: AI never auto-exits positions autonomously
+        const reason = d.reason || 'Playbook target or stop condition met'
+        const inst = canonicalizeInstrument(d.instrument || context.instrument)
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `advisory-exit-${Date.now()}`,
+            role: 'assistant',
+            content: `⚠️ **[LEO EXIT ADVISORY - MANUAL ACTION REQUIRED]**\n\nLeo recommends closing the **${context.activePosition?.instrument || inst}** position.\n\n- **Reason:** ${reason}\n- **Current Price:** ${context.currentPrice != null ? context.currentPrice.toLocaleString() : 'N/A'}\n- **Current P&L:** ${context.activePosition ? `${context.activePosition.unrealizedPnlPoints >= 0 ? '+' : ''}${context.activePosition.unrealizedPnlPoints.toFixed(1)} pts` : 'Flat'}\n\n*(Desk Safety Protocol: AI never auto-exits positions. Please use the Close/Flatten button on your chart toolbar if you wish to exit).*`,
+            timestamp: Date.now(),
+          },
+        ])
+        speakText(`Leo recommends closing position: ${reason}. Manual confirmation required.`)
       } else if (d.action === 'PLACE_ORDER' || d.action === 'OPEN_POSITION') {
-        const inst = d.instrument || context.instrument || 'NASDAQ'
+        const inst = canonicalizeInstrument(d.instrument || context.instrument)
         const dir = (d.direction || 'LONG').toUpperCase() as 'LONG' | 'SHORT'
-        const px = d.price || context.currentPrice || (inst === 'DOW' ? 39800 : 21500)
-        const slDist = inst === 'DOW' ? 60 : 25
-        const tpDist = inst === 'DOW' ? 120 : 50
-        const sl = d.stopLoss || (dir === 'LONG' ? px - slDist : px + slDist)
-        const tp = d.profitTarget || (dir === 'LONG' ? px + tpDist : px - tpDist)
+        const px = Number(d.price || context.currentPrice || 0)
+
+        // Prevent order placement without a valid live price
+        if (!px || px <= 0) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `err-${Date.now()}`,
+              role: 'assistant',
+              content: `⚠️ **[LEO ORDER BLOCKED]**\nUnable to execute ${dir} on **${inst}** because live price is currently unavailable. Order aborted for risk safety.`,
+              timestamp: Date.now(),
+            },
+          ])
+          speakText(`Order blocked: live price unavailable for ${inst}`)
+          continue
+        }
+
+        const { slDist, tpDist } = getInstrumentDefaultDistances(inst)
+        let sl = d.stopLoss ? Number(d.stopLoss) : undefined
+        let tp = d.profitTarget ? Number(d.profitTarget) : undefined
+
+        // Validate and prevent bracket inversion
+        if (dir === 'LONG') {
+          if (!sl || sl >= px) {
+            sl = Number((px - slDist).toFixed(2))
+          }
+          if (!tp || tp <= px) {
+            tp = Number((px + tpDist).toFixed(2))
+          }
+        } else {
+          // SHORT
+          if (!sl || sl <= px) {
+            sl = Number((px + slDist).toFixed(2))
+          }
+          if (!tp || tp >= px) {
+            tp = Number((px - tpDist).toFixed(2))
+          }
+        }
+
         const reason = d.reason || 'Trader voice/chat command'
         void executePlaceOrder({
           instrument: inst,
@@ -591,20 +665,19 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
 
             if (elapsedMinutes >= maxM) {
               if (pos.unrealizedPnlPoints <= 0) {
-                // EXECUTED! Stagnation timeout triggered
+                // Stagnation timeout reached - Advisory alert (AI never auto-exits)
                 changed = true
                 const reason = `Stagnation timeout reached after ${maxM} minutes without positive profit`
-                executeClosePosition(reason)
                 setMessages((prev) => [
                   ...prev,
                   {
-                    id: `exec-${Date.now()}`,
+                    id: `stag-${Date.now()}`,
                     role: 'assistant',
-                    content: `🛑 **[LEO EXECUTED - STAGNATION EXIT]**\n\nPosition on ${pos.instrument} was open for ${elapsedMinutes.toFixed(1)}m without moving into profit (P&L: ${pos.unrealizedPnlPoints.toFixed(1)} pts).\n\n**Action**: Executed immediate market close. Position flattened.`,
+                    content: `🛑 **[LEO ADVISORY - STAGNATION TIMEOUT REACHED]**\n\nPosition on **${pos.instrument}** was open for **${elapsedMinutes.toFixed(1)}m** without moving into profit (P&L: **${pos.unrealizedPnlPoints.toFixed(1)} pts**).\n\n**Playbook Advisory**: ${reason}. Recommendation is to manually flatten or tighten protective stop.\n\n*(Desk Safety Protocol: AI never auto-exits; please execute manual exit on your chart toolbar if desired).*`,
                     timestamp: Date.now(),
                   },
                 ])
-                speakText(`Stagnation timeout reached after ${maxM} minutes. Position closed.`)
+                speakText(`Stagnation timeout reached after ${maxM} minutes. Manual review required.`)
                 return { ...rule, status: 'TRIGGERED' as const }
               } else {
                 // Moved into profit! Rule satisfied

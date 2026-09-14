@@ -130,3 +130,103 @@ export function playTradingViewChime(): void {
 
 - **Floating Alert Banners**: When price breaches a memory zone, a high-contrast toast banner appears at the top of the chart with an `Ask Leo` quick-action button, instantly populating Leo's chat with the memory context.
 - **Dashboard Notifications Center (`DashboardNotifications.tsx`)**: An embedded live feed on the dashboard home page logging all recent breach events, chime test triggers, and active memory zone management.
+
+---
+
+## 5. Session Playbook Lifecycle Window (09:15 AM EDT Cutoff)
+
+Trading desks prepare and debate playbooks during pre-market liquidity formation. Once the New York cash open approaches, institutional participant flows shift drastically:
+
+- **Pre-Market Viability Window (00:00 - 09:15 AM EDT)**:
+  - The `Discuss Playbook` trigger is actively available.
+  - Traders review overnight inventory, Initial Balance projections, CME dealer Gamma Flips, and institutional stop pools with Leo.
+- **09:15 AM Cutoff (`isPlaybookDiscussionEligible()`)**:
+  - Exactly at 09:15 AM EDT (15 minutes prior to cash equity open at 09:30 AM), pre-market playbook discussions are **locked**.
+  - **Rationale**: Cash open institutional order flows (dealer hedging, CTA trend liquidations, index rebalancing) override overnight models. Attempting to trade static pre-market theses into high-velocity open imbalances without live reaction validation leads to adverse selection.
+  - **Dynamic Desk Transition**: The UI displays a live countdown timer until 09:15 AM. Once passed, the prompt badge transitions to `🔒 Locked (09:15 AM Cutoff Passed - Live Reaction Mode Active)`.
+
+---
+
+## 6. AI Stacked Hedging & CME Big Money Flow Integration
+
+The Leo Assistant Panel embeds the **AI Stacked & Hedging Engine** directly into the workstation:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│  ⚡ AI STACKED HEDGING & CME BIG MONEY FLOWS                           │
+├────────────────────────────────────────────────────────────────────────┤
+│  Dealer & CTA Triggers:                                                │
+│  • 28,886.34 [HIGH]   PUT WALL          (+126.5 pts) [📌 Attach]       │
+│    Dealer Put Wall support; institutional strike pinning & gamma floor.│
+│  • 28,929.92 [MED]    CTA LIQUIDATION   (+82.9 pts)  [📌 Attach]       │
+│    CTA trend liquidation trigger; systematic momentum forced exits.    │
+│  • 29,012.07 [EXTR]   GAMMA FLIP        (+0.8 pts)   [📌 Attach]       │
+│    Zero-gamma flip boundary; dealers shift from dampening to chasing.  │
+│  • 29,147.05 [HIGH]   CALL WALL         (-134.2 pts) [📌 Attach]       │
+│    Dealer Call Wall resistance; upside hedging supply ceiling.         │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+- **Interactive Attachment**: Each institutional trigger features a `📌 Attach` button. Clicking attaches the level as an interactive chip inside Leo's prompt box, auto-injecting its strike, distance, and institutional role into the LLM context.
+- **Live Reaction Verification**: Playbook levels actively display real-time verification badges (`HELD 75%`, `BROKE`, `RESPECTED`, `CONTESTED`) computed on every incoming 1-minute candle close.
+
+---
+
+## 7. Order Execution & Desk Safety Invariants
+
+### 7.1 AI Never Auto-Exits Positions (Zero Autonomous Closes)
+> [!IMPORTANT]
+> **Desk Invariant**: Under no circumstance does Leo AI automatically close, exit, or flatten an active broker position. Only the human trader possesses authorization to liquidate or exit positions.
+
+- **Advisory Directives**: If Leo generates a `CLOSE_POSITION` directive or if a **Stagnation Timeout** is reached (e.g. 5 minutes without moving into profit), the system **blocks automated order dispatch**.
+- **Actionable Advisory Prompt**: Instead, Leo plays an audio advisory chime, synthesizes speech (`"Leo recommends closing position: reason"`), and posts an advisory card with an explicit warning:
+  `⚠️ [LEO EXIT ADVISORY - MANUAL ACTION REQUIRED] Please execute manual exit on your chart toolbar if desired.`
+
+### 7.2 Defensive Bracket & Non-Inversion Geometry
+When Leo drafts entry orders (`PLACE_ORDER` / `OPEN_POSITION`), the execution layer enforces strict mathematical boundary validation:
+1. **Live Price Requirement**: Orders are rejected immediately if a valid, positive live price cannot be resolved. No stale hardcoded fallbacks are permitted.
+2. **Instrument Canonicalization**: Handles all aliases (`NQ`/`MNQ` -> `NASDAQ`, `YM`/`MYM` -> `DOW`, `GC`/`MGC` -> `GOLD`, `CL`/`MCL` -> `CRUDE`, `NKD` -> `NIKKEI`).
+3. **Bracket Sanity**:
+   - **LONG**: Validates `stopLoss < entryPrice` and `profitTarget > entryPrice`. If inverted, snaps stop loss to `entryPrice - slDist` and target to `entryPrice + tpDist`.
+   - **SHORT**: Validates `stopLoss > entryPrice` and `profitTarget < entryPrice`. If inverted, snaps stop loss to `entryPrice + slDist` and target to `entryPrice - tpDist`.
+4. **TopstepX Risk Budgeting**: Sized strictly according to the account's $500 Maximum Loss Limit ($50 risk per micro contract).
+
+---
+
+## 8. High-Frequency Memory Crossing & Gap-Through Engine
+
+When price moves rapidly during the New York or London open, ticks can skip discrete price levels between consecutive updates.
+
+### 8.1 Adaptive Crossing Algorithm (`lib/trading/leoLongTermMemory.ts`)
+The proximity evaluation engine does not rely solely on static inside-bounds testing:
+```typescript
+// 1. Adaptive tolerance based on zone width
+const span = high - low
+const tol = Math.max(1.0, span * 0.05)
+const isInside = currentPrice >= (low - tol) && currentPrice <= (high + tol)
+
+// 2. High-speed crossing & gap jump detection
+const isCrossing = previousPrice != null && (
+  (previousPrice < low && currentPrice > high) ||
+  (previousPrice > high && currentPrice < low)
+)
+
+if (isInside || isCrossing) {
+  // Trigger alarm chime and dispatch alert
+}
+```
+- Tracks `previousPrice` across 250ms tick updates.
+- If price jumps from 29,000 to 29,050 over an institutional memory zone at 29,025, `isCrossing` evaluates to `true`, ensuring zero missed triggers during opening breakouts.
+
+---
+
+## 9. Interactive Multiline Chat Interface
+
+The trader input in `LeoAssistantPanel.tsx` is engineered for rapid keyboard workflows:
+- **Auto-Expanding Multiline Textarea**: Expands dynamically up to 160px as the trader inputs complex game plans and multi-line theses.
+- **Keybindings**:
+  - `Enter`: Submits message immediately.
+  - `Shift + Enter`: Inserts a clean newline without submitting.
+- **Attachment Chips**: Attached CME triggers (Gamma Flips, Put Walls, CTA Liquidations) appear as interactive dismissible tags directly above the input box.
+- **Voice-to-Text Support**: Includes Web Speech Recognition integration for hands-free audio dictation during fast-moving trading sessions.
+

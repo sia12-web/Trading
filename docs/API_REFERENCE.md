@@ -226,6 +226,44 @@ Fetches or stores persistent Higher Timeframe memory zones.
 
 ---
 
+### 3.3 `POST /api/trading/ai-team`
+Runs the multi-agent AI Stacked consensus engine combining the Macro Strategist, Order Flow Specialist, and Institutional Hedging Model.
+
+- **Request Body**:
+  ```json
+  {
+    "instrument": "NASDAQ",
+    "livePrice": 29012.5,
+    "chartContext": {
+      "instrument": "NASDAQ",
+      "currentPrice": 29012.5,
+      "recentCandles": [...]
+    }
+  }
+  ```
+- **Response Format (`200 OK`)**:
+  ```json
+  {
+    "success": true,
+    "report": {
+      "consensus": "CAUTIOUS_BULLISH",
+      "confidence": 85,
+      "summary": "Dealer gamma flip at 29,012 provides upside acceleration potential.",
+      "tacticalLevels": [
+        { "name": "Dealer Put Wall", "price": 28886.34, "role": "SUPPORT" },
+        { "name": "Zero Gamma Flip", "price": 29012.07, "role": "INFLECTION" }
+      ]
+    },
+    "telemetry": {
+      "gammaRegime": "POSITIVE_GAMMA",
+      "putCallRatio": 0.82,
+      "dealerFlip": 29012.07
+    }
+  }
+  ```
+
+---
+
 ## 4. Desk Operational & Attendance Endpoints
 
 ### 4.1 `POST /api/trading/clock-in`
@@ -273,3 +311,39 @@ System diagnostic probe checking database, pricing feed, and broker connectivity
     }
   }
   ```
+
+---
+
+## 5. Databento Live CME Gateway Daemon Endpoints (`http://127.0.0.1:8765`)
+
+The standalone Python background sidecar (`scripts/databento_live_sidecar.py`) streams live Globex trades and exposes a local micro-server for the Next.js workstation:
+
+### 5.1 `GET /health`
+Returns live daemon connectivity status, uptime, and trade counters.
+- **Response Format (`200 OK`)**:
+  ```json
+  {
+    "status": "ok",
+    "connected": true,
+    "uptime_sec": 1358.4,
+    "total_trades": 43427,
+    "symbols": ["MNQ.FUT", "MYM.FUT", "MCL.FUT", "NKD.FUT", "MGC.FUT"]
+  }
+  ```
+
+### 5.2 `GET /snapshot?symbol=MNQ.FUT`
+Returns the latest trade tick, bid/ask spread, and forming bar for an instrument without establishing a persistent socket.
+- **Response Format (`200 OK`)**:
+  ```json
+  {
+    "symbol": "MNQ.FUT",
+    "price": 29014.25,
+    "size": 4,
+    "side": "A",
+    "ts_event": 1726325400123456789
+  }
+  ```
+
+### 5.3 `GET /stream`
+Continuous Server-Sent Events (SSE) feed of incoming CME tick executions for ultra-low latency sub-second chart rendering.
+

@@ -172,12 +172,13 @@ export function clearAllNotifications(): void {
 export function evaluatePriceAgainstMemories(args: {
   instrument: string
   currentPrice: number
+  previousPrice?: number | null
   cooldownSeconds?: number
 }): {
   triggered: LeoLongTermMemory[]
   updatedMemories: LeoLongTermMemory[]
 } {
-  const { instrument, currentPrice, cooldownSeconds = 120 } = args
+  const { instrument, currentPrice, previousPrice = null, cooldownSeconds = 120 } = args
   const memories = loadLongTermMemories()
   const triggered: LeoLongTermMemory[] = []
   const now = Date.now()
@@ -187,8 +188,24 @@ export function evaluatePriceAgainstMemories(args: {
     if (mem.instrument.toUpperCase() !== instrument.toUpperCase()) return mem
     if (mem.status === 'DISMISSED') return mem
 
-    const inRange = currentPrice >= mem.priceLow && currentPrice <= mem.priceHigh
-    if (!inRange) return mem
+    const low = Math.min(mem.priceLow, mem.priceHigh)
+    const high = Math.max(mem.priceLow, mem.priceHigh)
+    const span = high - low
+    // Adaptive tolerance: at least 1.0 pt (for narrow/single-line memories) or 5% of zone span
+    const tol = Math.max(1.0, span * 0.05)
+
+    // 1. Direct inside-range test with tolerance
+    const inRange = currentPrice >= (low - tol) && currentPrice <= (high + tol)
+
+    // 2. Fast tick jump / crossing test (if price jumped through the zone in one tick)
+    let crossedThrough = false
+    if (previousPrice != null && Number.isFinite(previousPrice) && previousPrice > 0) {
+      crossedThrough =
+        (previousPrice < low && currentPrice > high) ||
+        (previousPrice > high && currentPrice < low)
+    }
+
+    if (!inRange && !crossedThrough) return mem
 
     const lastTriggered = mem.lastTriggeredAt ? new Date(mem.lastTriggeredAt).getTime() : 0
     if (now - lastTriggered < cooldownMs) {

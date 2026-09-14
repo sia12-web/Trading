@@ -269,6 +269,21 @@ export function parseLeoDirectives(text: string): LeoExecutionDirective[] {
   const directives: LeoExecutionDirective[] = []
   if (!text) return directives
 
+  // Helper to sanitize and normalize parsed directive
+  const sanitize = (item: any): LeoExecutionDirective | null => {
+    if (!item || typeof item !== 'object' || !item.action) return null
+    if (item.action === 'PLACE_ORDER' || item.action === 'OPEN_POSITION') {
+      return {
+        ...item,
+        price: Number(typeof item.price === 'number' ? item.price : parseFloat(String(item.price)) || 0),
+        stopLoss: Number(typeof item.stopLoss === 'number' ? item.stopLoss : parseFloat(String(item.stopLoss)) || 0),
+        profitTarget: Number(typeof item.profitTarget === 'number' ? item.profitTarget : parseFloat(String(item.profitTarget)) || 0),
+        size: Number(typeof item.size === 'number' ? item.size : parseInt(String(item.size), 10) || 1),
+      }
+    }
+    return item
+  }
+
   // 1. Search for <execute>...</execute> tags
   const executeRegex = /<execute>([\s\S]*?)<\/execute>/gi
   let match: RegExpExecArray | null
@@ -276,13 +291,17 @@ export function parseLeoDirectives(text: string): LeoExecutionDirective[] {
     const raw = match[1]?.trim()
     if (!raw) continue
     try {
-      const parsed = JSON.parse(raw)
+      // Strip trailing commas before closing braces/brackets (common LLM artifact)
+      const clean = raw.replace(/,\s*([}\]])/g, '$1')
+      const parsed = JSON.parse(clean)
       if (Array.isArray(parsed)) {
         for (const item of parsed) {
-          if (item?.action) directives.push(item)
+          const s = sanitize(item)
+          if (s) directives.push(s)
         }
-      } else if (parsed?.action) {
-        directives.push(parsed)
+      } else {
+        const s = sanitize(parsed)
+        if (s) directives.push(s)
       }
     } catch {
       // Ignore unparseable block
@@ -296,8 +315,10 @@ export function parseLeoDirectives(text: string): LeoExecutionDirective[] {
       const raw = match[1]?.trim()
       if (!raw) continue
       try {
-        const parsed = JSON.parse(raw)
-        if (parsed?.action) directives.push(parsed)
+        const clean = raw.replace(/,\s*([}\]])/g, '$1')
+        const parsed = JSON.parse(clean)
+        const s = sanitize(parsed)
+        if (s) directives.push(s)
       } catch {
         /* ignore */
       }
