@@ -1413,6 +1413,72 @@ export default function ChartPage() {
   )
   handlePlacedRef.current = handlePlaced
 
+  const handleLeoPlaceOrder = useCallback(
+    async (order: {
+      instrument: string
+      direction: 'LONG' | 'SHORT'
+      price: number
+      stopLoss: number
+      profitTarget: number
+      reason: string
+      size?: number
+    }) => {
+      try {
+        const fillPrice =
+          order.price || livePriceRef.current || (order.instrument === 'DOW' ? 39800 : 21500)
+        const targetInst = (order.instrument || instrument) as Instrument
+
+        if (targetInst !== instrument) {
+          setInstrument(targetInst)
+        }
+
+        const res = await fetch('/api/trading/positions/open', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            instrument: targetInst,
+            entry_price: fillPrice,
+            entry_direction: order.direction,
+            entry_window: 1,
+            account_size: 50000,
+            regime: order.direction === 'LONG' ? 'bullish' : 'bearish',
+            regime_confidence: 90,
+            entry_source: 'ai',
+            is_leo_order: true,
+            stop_loss_price: order.stopLoss,
+            profit_target_price: order.profitTarget,
+            entry_reason: `Leo AI Order: ${order.direction} ${targetInst} @ ${fillPrice}. ${order.reason}`,
+            auction_ticket: true,
+            risk_profile: 'tradeify_growth_50k',
+          }),
+        })
+        const json = await res.json()
+        if (res.ok && json.success) {
+          enterManage(
+            {
+              position_id: json.position_id,
+              entry_price: json.entry_price ?? fillPrice,
+              stop_loss_price: json.stop_loss_price ?? order.stopLoss,
+              position_size: json.position_size ?? order.size ?? 1,
+              risk_amount: json.risk_amount ?? 150,
+              entry_direction: order.direction,
+              profit_target_price: json.profit_target_price ?? order.profitTarget,
+              entry_source: 'ai',
+            },
+            targetInst
+          )
+          window.setTimeout(() => jumpToPriceRef.current?.(fillPrice), 150)
+          return { success: true, position_id: json.position_id, message: json.message }
+        } else {
+          return { success: false, message: json.message || 'Order placement failed' }
+        }
+      } catch (err: any) {
+        return { success: false, message: err?.message || 'Network error' }
+      }
+    },
+    [enterManage, instrument, setInstrument]
+  )
+
   // Watch live quotes — fill only durable WORKING limits (not placing/rejected)
   useEffect(() => {
     if (!pending || managePos || livePrice == null) return
@@ -2126,6 +2192,7 @@ export default function ChartPage() {
               clockedIn={clockedIn}
               useCall={false}
               levelsRefreshKey={levelsRefreshKey}
+              onPlaceOrder={handleLeoPlaceOrder}
             />
           )}
         </div>

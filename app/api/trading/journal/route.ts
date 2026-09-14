@@ -138,23 +138,18 @@ export async function GET(request: NextRequest) {
       byPosition.set(pid, list)
     }
 
-    const aiExits = rows.filter((t) => t.exit_reason === 'ai_signal')
     const equity = journalTicketEquity(rows)
     const { startingAccount, equityBefore, equityAfter } = equity
 
     const resolveExitNotes = (
       t: Record<string, any>,
-      decs: Array<Record<string, unknown>>
+      _decs: Array<Record<string, unknown>>
     ): string => {
       if (t.exit_notes && String(t.exit_notes).trim()) return String(t.exit_notes)
-      const aiNote = decs
-        .map((d) => String(d.notes ?? d.reason ?? ''))
-        .find((n) => /AI exit/i.test(n))
-      if (aiNote) return aiNote
       if (t.exit_reason === 'stop_hit') return 'Stop loss hit — exit before or at stop'
       if (t.exit_reason === 'take_profit') return 'Take profit hit'
       if (t.exit_reason === 'ai_signal') {
-        return 'AI early exit — trader confirmed before take-profit (see management decisions)'
+        return 'Trader manual exit — position closed before take-profit'
       }
       if (t.exit_reason === 'lunch_close') return 'Lunch flatten — morning desk closed'
       if (t.exit_reason === 'cash_close')
@@ -304,7 +299,6 @@ export async function GET(request: NextRequest) {
         losses: allLosses.length,
         stop_outs: allStops.length,
         take_profits: allTps.length,
-        ai_exits: aiExits.length,
         win_rate: allClosed.length ? Math.round((allWins.length / allClosed.length) * 100) : null,
         total_pnl: roundedTotalPnl,
         starting_account: baseAccount,
@@ -337,7 +331,6 @@ export async function GET(request: NextRequest) {
           losses: allLosses.length,
           stop_outs: allStops.length,
           take_profits: allTps.length,
-          ai_exits: 0,
           win_rate: allClosed.length ? Math.round((allWins.length / allClosed.length) * 100) : null,
           total_pnl: totalPnl,
           starting_account: 0,

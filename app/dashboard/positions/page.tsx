@@ -417,7 +417,7 @@ export default function PositionsPage() {
         <p className="text-[11px] text-gray-600 leading-relaxed">
           Prefer managing from the chart while price is moving — this page is the dedicated manage
           desk when you leave the chart. Working limits and fills both appear here; cancel unfilled
-          limits or manage after fill. Stops and AI exits land in Order History.
+          limits or manage after fill. Stops and trader manual exits land in Order History.
         </p>
       </div>
     </div>

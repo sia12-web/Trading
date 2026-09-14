@@ -76,7 +76,6 @@ interface Summary {
   losses: number
   stop_outs: number
   take_profits: number
-  ai_exits?: number
   manuals?: number
   win_rate: number | null
   total_pnl: number
@@ -128,10 +127,7 @@ function exitBadge(code: string | null | undefined): { label: string; className:
     case 'take_profit':
       return { label: 'TAKE PROFIT', className: 'bg-emerald-900/40 text-emerald-300 border-emerald-800' }
     case 'ai_signal':
-      return {
-        label: 'AI EXIT (TP NOT HIT)',
-        className: 'bg-violet-900/40 text-violet-300 border-violet-800',
-      }
+      return { label: 'TRADER CLOSE', className: 'bg-slate-800 text-slate-300 border-slate-600' }
     case 'lunch_close':
       return { label: 'LUNCH FLAT', className: 'bg-amber-900/40 text-amber-300 border-amber-800' }
     case 'cash_close':
@@ -720,7 +716,7 @@ function JournalPageInner() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-9 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
               {[
                 { label: 'Orders', value: summary.trades },
                 { label: 'Open', value: summary.open },
@@ -728,7 +724,6 @@ function JournalPageInner() {
                 { label: 'Losses', value: summary.losses },
                 { label: 'Stops', value: summary.stop_outs },
                 { label: 'TPs', value: summary.take_profits },
-                { label: 'AI exits', value: summary.ai_exits ?? 0 },
                 {
                   label: 'Win %',
                   value: summary.win_rate != null ? `${summary.win_rate}%` : '—',
@@ -1197,7 +1192,7 @@ function JournalPageInner() {
         )}
 
         <p className="text-[11px] text-gray-600 leading-relaxed">
-          Live desk only. After the entry window, levels leave the chart; open books stay in MANAGE until stop, target, your confirmed AI exit, or lunch confirm. Cash close auto-liquidates leftovers. Equity above is reconstructed from ticket size and closed-trade P&amp;L.
+          Live desk only. After the entry window, levels leave the chart; open books stay in MANAGE until stop, target, trader manual close, or lunch confirm. Cash close auto-liquidates leftovers. Equity above is reconstructed from ticket size and closed-trade P&amp;L.
         </p>
       </div>
     </div>

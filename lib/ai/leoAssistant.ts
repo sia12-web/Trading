@@ -231,6 +231,28 @@ export type LeoExecutionDirective =
       action: 'CANCEL_RULES'
       ruleType?: string
     }
+  | {
+      action: 'PLACE_ORDER' | 'OPEN_POSITION'
+      instrument: string
+      direction: 'LONG' | 'SHORT'
+      price: number
+      stopLoss: number
+      profitTarget: number
+      size?: number
+      reason: string
+    }
+  | {
+      action: 'COPY_TOPSTEPX_ORDER'
+      contract: string
+      direction: 'BUY' | 'SELL'
+      quantity: number
+      entryPrice: number
+      stopLoss: number
+      takeProfit: number
+      dollarRisk?: number
+      dollarReward?: number
+      bracketRatio?: string
+    }
 
 /**
  * Parses execution directives (<execute>{...}</execute>) emitted by Leo.
@@ -647,6 +669,23 @@ You are the trader's execution partner on the desk. When the trader gives you di
     "session": "Asia"
   }
   </execute>
+- Direct Order Placement: If the trader instructs you to place an order or enter the market (e.g. "Leo buy NASDAQ", "Leo enter long at 21500", "Leo sell DOW", "Leo place order"):
+  Confirm the trade setup authoritatively, state the entry price, Stop Loss, and Take Profit brackets, confirm that it is journaled into Order History and tracked live on the chart, and output:
+  <execute>
+  {
+    "action": "PLACE_ORDER",
+    "instrument": "${ctx.instrument}",
+    "direction": "LONG",
+    "price": ${ctx.currentPrice != null ? ctx.currentPrice.toFixed(2) : '21500.00'},
+    "stopLoss": ${ctx.currentPrice != null ? (ctx.currentPrice - (ctx.instrument === 'DOW' ? 60 : 25)).toFixed(2) : '21475.00'},
+    "profitTarget": ${ctx.currentPrice != null ? (ctx.currentPrice + (ctx.instrument === 'DOW' ? 120 : 50)).toFixed(2) : '21550.00'},
+    "size": 1,
+    "reason": "Trader voice command"
+  }
+  </execute>
+- CRITICAL DESK RULE ON EXITS:
+  AI NEVER EXITS A POSITION. ONLY THE TRADER CAN EXIT A POSITION (or when price reaches the trader's preset Stop Loss or Take Profit bracket levels). You must NEVER suggest, initiate, or claim to execute an "AI Exit". Only manual trader closes or bracket limit/stop triggers are permitted on this desk.
+- Live Trade Tracking & Status: When the trader asks "how is the trade going", "how is my order doing", or "position status", review [CURRENT DESK POSITION] and provide a clear real-time breakdown of current price, points P&L, dollar/CAD P&L, distance to target vs stop, and time elapsed.
 - Disarm / Cancel: If the trader says "cancel all rules" or "disarm":
   <execute>
   {

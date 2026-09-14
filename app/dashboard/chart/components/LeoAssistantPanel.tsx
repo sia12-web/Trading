@@ -8,6 +8,7 @@ import {
   type LeoMessage,
   type LeoExecutionDirective,
 } from '@/lib/ai/leoAssistant'
+import { playTradingViewChime } from '@/lib/chart/soundEffects'
 import type { TeamConsensusReport } from '@/lib/ai/stack/types'
 import type { InstitutionalHedgingTelemetry } from '@/lib/ai/stack/models/institutionalHedgingModel'
 
@@ -25,6 +26,12 @@ export interface ArmedDeskRule {
   status: 'ARMED' | 'TRIGGERED' | 'SATISFIED' | 'CANCELLED'
 }
 
+export interface LeoOrderResult {
+  success: boolean
+  message?: string
+  position_id?: string
+}
+
 interface LeoAssistantPanelProps {
   context: LeoChatContext
   isOpen?: boolean
@@ -33,6 +40,15 @@ interface LeoAssistantPanelProps {
   externalAttachedPoints?: LeoDataPoint[]
   onClearExternalAttachedPoints?: () => void
   onClosePosition?: (reason: string) => Promise<boolean | void>
+  onPlaceOrder?: (order: {
+    instrument: string
+    direction: 'LONG' | 'SHORT'
+    price: number
+    stopLoss: number
+    profitTarget: number
+    reason: string
+    size?: number
+  }) => Promise<LeoOrderResult>
 }
 
 // Persistent in-memory session cache per instrument so switching charts retains each market's conversation
@@ -54,6 +70,7 @@ export function LeoAssistantPanel({
   externalAttachedPoints,
   onClearExternalAttachedPoints,
   onClosePosition,
+  onPlaceOrder,
 }: LeoAssistantPanelProps) {
   const [internalIsOpen, setInternalIsOpen] = useState(false)
   const isPanelOpen = controlledIsOpen !== undefined ? controlledIsOpen : internalIsOpen
@@ -348,6 +365,87 @@ export function LeoAssistantPanel({
     }
   }
 
+  // Execute order placed by Leo with audio chime, speech, DB journal, and chart tracking
+  const executePlaceOrder = async (order: {
+    instrument: string
+    direction: 'LONG' | 'SHORT'
+    price: number
+    stopLoss: number
+    profitTarget: number
+    size?: number
+    reason: string
+  }) => {
+    // 1. Audio notifications: TradingView procedural chime & speech synthesis
+    playTradingViewChime()
+    speakText(
+      `Order placed: ${order.direction} ${order.instrument} at ${order.price.toLocaleString()}. Stop ${order.stopLoss.toLocaleString()}, target ${order.profitTarget.toLocaleString()}.`
+    )
+
+    // 2. Transmit to execution desk via onPlaceOrder prop or /api/trading/positions/open
+    let success = false
+    let errMsg = ''
+    try {
+      if (onPlaceOrder) {
+        const res = await onPlaceOrder(order)
+        success = res.success
+        if (!success) errMsg = res.message || 'Desk rejected order'
+      } else {
+        const res = await fetch('/api/trading/positions/open', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            instrument: order.instrument,
+            entry_price: order.price,
+            entry_direction: order.direction,
+            entry_window: 1,
+            account_size: 50000,
+            regime: order.direction === 'LONG' ? 'bullish' : 'bearish',
+            regime_confidence: 90,
+            entry_source: 'ai',
+            is_leo_order: true,
+            stop_loss_price: order.stopLoss,
+            profit_target_price: order.profitTarget,
+            entry_reason: `Leo AI Order: ${order.direction} ${order.instrument} @ ${order.price}. ${order.reason}`,
+            auction_ticket: true,
+            risk_profile: 'tradeify_growth_50k',
+          }),
+        })
+        const json = await res.json()
+        success = res.ok && json.success
+        if (!success) errMsg = json.message || 'Desk rejected order'
+      }
+    } catch (err: any) {
+      errMsg = err?.message || 'Network error'
+    }
+
+    // 3. Append execution note card into chat
+    const slPts = Math.abs(order.price - order.stopLoss).toFixed(1)
+    const tpPts = Math.abs(order.profitTarget - order.price).toFixed(1)
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `exec-order-${Date.now()}`,
+        role: 'assistant',
+        content: success
+          ? `### 🚀 **[LEO ORDER EXECUTED & JOURNALED]**
+- **Instrument:** ${order.instrument}
+- **Direction:** **${order.direction}**
+- **Entry Price:** **${order.price.toLocaleString()}**
+- **Stop Loss:** **${order.stopLoss.toLocaleString()}** (-${slPts} pts)
+- **Profit Target:** **${order.profitTarget.toLocaleString()}** (+${tpPts} pts)
+- **Execution Notes:** ${order.reason}
+- **Order History:** ✅ Saved to database (\`trades_journal\`)
+- **Live Chart:** ✅ Active position overlay mounted on chart. Tracking live price & P&L.
+
+*(AI never auto-exits; only you can close or adjust brackets).*`
+          : `⚠️ **[LEO ORDER NOTICE]**
+Attempted to place **${order.direction} ${order.instrument}** at ${order.price.toLocaleString()}, but desk returned: ${errMsg}`,
+        timestamp: Date.now(),
+      },
+    ])
+  }
+
   // Dispatch a Telegram alert
   const dispatchTelegramAlert = async (rule: ArmedDeskRule) => {
     try {
@@ -391,6 +489,24 @@ export function LeoAssistantPanel({
       if (d.action === 'CLOSE_POSITION') {
         executeClosePosition(d.reason)
         speakText(`Position close executed: ${d.reason}`)
+      } else if (d.action === 'PLACE_ORDER' || d.action === 'OPEN_POSITION') {
+        const inst = d.instrument || context.instrument || 'NASDAQ'
+        const dir = (d.direction || 'LONG').toUpperCase() as 'LONG' | 'SHORT'
+        const px = d.price || context.currentPrice || (inst === 'DOW' ? 39800 : 21500)
+        const slDist = inst === 'DOW' ? 60 : 25
+        const tpDist = inst === 'DOW' ? 120 : 50
+        const sl = d.stopLoss || (dir === 'LONG' ? px - slDist : px + slDist)
+        const tp = d.profitTarget || (dir === 'LONG' ? px + tpDist : px - tpDist)
+        const reason = d.reason || 'Trader voice/chat command'
+        void executePlaceOrder({
+          instrument: inst,
+          direction: dir,
+          price: px,
+          stopLoss: sl,
+          profitTarget: tp,
+          size: d.size ?? 1,
+          reason,
+        })
       } else if (d.action === 'ARM_STAGNATION_RULE') {
         const newRule: ArmedDeskRule = {
           id: `stag-${Date.now()}`,

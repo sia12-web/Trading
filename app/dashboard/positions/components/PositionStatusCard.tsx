@@ -57,14 +57,8 @@ export function PositionStatusCard({
   const [busy, setBusy] = useState<string | null>(null)
   const [ai, setAi] = useState<AiVerdict | null>(null)
   const [closedMsg, setClosedMsg] = useState<string | null>(null)
-  const [exitPrompt, setExitPrompt] = useState<{
-    reason: string
-    confidence: number
-  } | null>(null)
-  const [exitDismissed, setExitDismissed] = useState(false)
   const exitingRef = useRef(false)
   const aiPollInFlightRef = useRef(false)
-  const exitDismissedRef = useRef(false)
   const priceRef = useRef<number | null>(null)
   const onClosedRef = useRef(onClosed)
   const onRefreshRef = useRef(onRefresh)
@@ -91,15 +85,8 @@ export function PositionStatusCard({
   }, [currentPrice])
 
   useEffect(() => {
-    exitDismissedRef.current = exitDismissed
-  }, [exitDismissed])
-
-  useEffect(() => {
     setClosedMsg(null)
     setAi(null)
-    setExitPrompt(null)
-    setExitDismissed(false)
-    exitDismissedRef.current = false
     exitingRef.current = false
     valueAcceptedNotifiedRef.current = false
     // Do NOT seed currentPrice to entry — after Move-to-BE, SL≈entry and
@@ -165,35 +152,6 @@ export function PositionStatusCard({
           current_price: priceRef.current ?? undefined,
         }),
       }).catch(() => {})
-
-      // 2. Run AI Exit Check
-      if (!SYSTEMATIC_LIVE_DESK) {
-        const res = await fetch('/api/trading/positions/ai-exit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            position_id: positionId,
-            current_price: priceRef.current ?? undefined,
-          }),
-        })
-        if (!res.ok) return
-        const json = await res.json()
-        setAi({
-          verdict: json.verdict,
-          confidence: json.confidence,
-          reason: json.reason,
-          closed: false,
-        })
-        if (json.requires_confirmation && !exitDismissedRef.current) {
-          setExitPrompt({
-            reason: json.reason || 'AI recommends exiting on reversal',
-            confidence: json.confidence ?? 0,
-          })
-        } else if (!json.requires_confirmation) {
-          setExitPrompt(null)
-          setExitDismissed(false)
-        }
-      }
     } catch {
       /* keep last */
     } finally {
@@ -409,68 +367,6 @@ export function PositionStatusCard({
       successToast('HOLD recorded — still managing')
     } catch {
       errorToast('HOLD failed')
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  const confirmAiExit = async () => {
-    if (!position || !exitPrompt || exitingRef.current) return
-    exitingRef.current = true
-    setBusy('AI_EXIT')
-    const exitPrice = currentPrice ?? position.entry_price
-    try {
-      // Single close attempt — close route writes one TAKE_PROFIT history row.
-      const closeRes = await fetch('/api/trading/positions/close', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          position_id: position.id,
-          instrument: position.instrument,
-          exit_price: exitPrice,
-          exit_reason: 'ai_signal',
-          reason: `Trader confirmed AI exit: ${exitPrompt.reason}`,
-        }),
-      })
-      const json = await closeRes.json()
-      if (!closeRes.ok || !json.success) {
-        exitingRef.current = false
-        errorToast(json.message || 'AI exit close failed')
-        return
-      }
-      setExitPrompt(null)
-      setClosedMsg(`Closed @ ${fmt(exitPrice)} — AI exit confirmed`)
-      successToast('AI exit confirmed')
-      onClosed?.()
-      onRefresh?.()
-    } catch {
-      exitingRef.current = false
-      errorToast('AI exit confirmation failed')
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  const rejectAiExit = async () => {
-    if (!position) return
-    setBusy('AI_HOLD')
-    try {
-      await fetch('/api/trading/positions/management-decisions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          position_id: position.id,
-          decision_type: 'HOLD',
-          notes: exitPrompt
-            ? `Trader rejected AI exit: ${exitPrompt.reason}`
-            : 'Trader rejected AI exit',
-        }),
-      })
-      setExitDismissed(true)
-      setExitPrompt(null)
-      successToast('AI exit rejected — position held')
-    } catch {
-      errorToast('Could not record HOLD')
     } finally {
       setBusy(null)
     }
@@ -698,36 +594,6 @@ export function PositionStatusCard({
             <span className="text-red-400">Stops today {position.stop_loss_hit_count}/2</span>
           )}
         </div>
-
-        {/* AI exit — requires explicit trader CONFIRM (never auto-closes) */}
-        {!SYSTEMATIC_LIVE_DESK && exitPrompt && (
-          <div className="rounded-lg border border-red-500/70 bg-red-950/40 px-3 py-3 flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-red-300">
-                AI exit suggestion · {exitPrompt.confidence}% — confirm to close
-              </span>
-              <p className="mt-1 text-[12px] text-gray-200 leading-snug">{exitPrompt.reason}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={!!busy}
-                onClick={() => void confirmAiExit()}
-                className="px-3 py-1.5 rounded bg-red-600 hover:bg-red-500 text-white text-xs font-extrabold uppercase tracking-wider disabled:opacity-40"
-              >
-                {busy === 'AI_EXIT' ? '…' : 'CONFIRM EXIT'}
-              </button>
-              <button
-                type="button"
-                disabled={!!busy}
-                onClick={() => void rejectAiExit()}
-                className="px-2.5 py-1.5 rounded border border-[#30363d] text-gray-300 hover:text-white text-xs font-semibold uppercase tracking-wider disabled:opacity-40"
-              >
-                {busy === 'AI_HOLD' ? '…' : 'HOLD'}
-              </button>
-            </div>
-          </div>
-        )}
 
         {!SYSTEMATIC_LIVE_DESK && (
         <div className={`rounded-lg border px-3 py-3 ${verdictStyle}`}>

@@ -125,14 +125,11 @@ export function ManageDeskBar({
     reason: string
     confidence: number
   } | null>(null)
-  /** AI wants out — never auto-closes; trader must CONFIRM */
-  const [exitPrompt, setExitPrompt] = useState<{
-    reason: string
-    confidence: number
-  } | null>(null)
-  const [exitDismissed, setExitDismissed] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
+  const exitingRef = useRef(false)
+  const aiPollInFlightRef = useRef(false)
+  const priceRef = useRef<number | null>(currentPrice)
   const [newsExpanded, setNewsExpanded] = useState(false)
   const [beDismissed, setBeDismissed] = useState(false)
   const [serverInProfit, setServerInProfit] = useState<boolean | null>(null)
@@ -144,17 +141,11 @@ export function ManageDeskBar({
   const onValueAcceptedRef = useRef(onValueAccepted)
   const valueAcceptedNotifiedRef = useRef(false)
   const [clockMs, setClockMs] = useState(() => Date.now())
-  const exitingRef = useRef(false)
-  const aiPollInFlightRef = useRef(false)
-  const exitDismissedRef = useRef(false)
-  const priceRef = useRef(currentPrice)
   const onClosedRef = useRef(onClosed)
   const onRefreshGateRef = useRef(onRefreshGate)
   const onAiVerdictRef = useRef(onAiVerdict)
 
   useEffect(() => {
-    setExitPrompt(null)
-    setExitDismissed(false)
     setNewsExpanded(false)
     setRecommendation(null)
     setBeDismissed(false)
@@ -163,7 +154,6 @@ export function ManageDeskBar({
     beNotifiedRef.current = false
     beDismissedRef.current = false
     valueAcceptedNotifiedRef.current = false
-    exitDismissedRef.current = false
     exitingRef.current = false
   }, [position.id])
 
@@ -180,10 +170,6 @@ export function ManageDeskBar({
   useEffect(() => {
     priceRef.current = currentPrice
   }, [currentPrice])
-
-  useEffect(() => {
-    exitDismissedRef.current = exitDismissed
-  }, [exitDismissed])
 
   useEffect(() => {
     onClosedRef.current = onClosed
@@ -402,15 +388,6 @@ export function ManageDeskBar({
           options: json.options ?? null,
           closed: false,
         })
-        if (json.requires_confirmation && !exitDismissedRef.current) {
-          setExitPrompt({
-            reason: json.reason || 'AI recommends exiting on reversal',
-            confidence: json.confidence ?? 0,
-          })
-        } else if (!json.requires_confirmation) {
-          setExitPrompt(null)
-          setExitDismissed(false)
-        }
       }
     } catch {
       /* keep last */
@@ -714,67 +691,6 @@ export function ManageDeskBar({
     }
   }
 
-  const handleConfirmAiExit = async () => {
-    if (!exitPrompt || exitingRef.current) return
-    exitingRef.current = true
-    setBusy('AI_EXIT')
-    setMsg(null)
-    const exitPrice = priceRef.current ?? position.entryPrice
-    try {
-      // Single close attempt — close route writes one TAKE_PROFIT history row.
-      const closeRes = await fetch('/api/trading/positions/close', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          position_id: position.id,
-          instrument: position.instrument,
-          exit_price: exitPrice,
-          exit_reason: 'ai_signal',
-          reason: `Trader confirmed AI exit: ${exitPrompt.reason}`,
-        }),
-      })
-      const closeJson = await closeRes.json()
-      if (!closeRes.ok || !closeJson.success) {
-        exitingRef.current = false
-        setMsg(closeJson.message || 'AI exit close failed')
-        return
-      }
-      setExitPrompt(null)
-      setMsg(`Closed @ ${exitPrice.toLocaleString()} — AI exit confirmed`)
-      onClosedRef.current('ai_signal')
-      onRefreshGateRef.current()
-    } catch {
-      exitingRef.current = false
-      setMsg('AI exit confirmation failed')
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  const handleRejectAiExit = async () => {
-    setBusy('AI_HOLD')
-    try {
-      await fetch('/api/trading/positions/management-decisions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          position_id: position.id,
-          decision_type: 'HOLD',
-          notes: exitPrompt
-            ? `Trader rejected AI exit: ${exitPrompt.reason}`
-            : 'Trader rejected AI exit',
-        }),
-      })
-      setExitDismissed(true)
-      setExitPrompt(null)
-      setMsg('AI exit rejected — position held')
-    } catch {
-      setMsg('Could not record HOLD')
-    } finally {
-      setBusy(null)
-    }
-  }
-
   const verdictColor =
     ai?.verdict === 'reversal'
       ? 'text-red-400'
@@ -799,35 +715,6 @@ export function ManageDeskBar({
         >
           {atrAdviceLine}
         </p>
-      )}
-      {/* ── AI exit requires explicit trader CONFIRM (never auto-closes) ────── */}
-      {!SYSTEMATIC_LIVE_DESK && exitPrompt && (
-        <div className="rounded border border-red-500/70 bg-red-950/40 p-1.5 space-y-1">
-          <p className="text-[9px] font-bold uppercase tracking-wide text-red-300">
-            AI exit · {exitPrompt.confidence}%
-          </p>
-          <p className="text-[10px] text-gray-200 leading-snug line-clamp-2">
-            {exitPrompt.reason}
-          </p>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              disabled={!!busy}
-              onClick={() => void handleConfirmAiExit()}
-              className="px-2 py-0.5 rounded bg-red-600 hover:bg-red-500 text-white text-[9px] font-bold uppercase tracking-wide transition"
-            >
-              {busy === 'AI_EXIT' ? '…' : 'Exit'}
-            </button>
-            <button
-              type="button"
-              disabled={!!busy}
-              onClick={() => void handleRejectAiExit()}
-              className="px-2 py-0.5 rounded bg-surface-700 hover:bg-surface-600 text-gray-300 hover:text-white text-[9px] font-semibold uppercase tracking-wide transition"
-            >
-              {busy === 'AI_HOLD' ? '…' : 'Hold'}
-            </button>
-          </div>
-        </div>
       )}
 
       {/* ── Bracket recommendation (breakeven / trail / scale) — CONFIRM / REJECT ────── */}

@@ -354,7 +354,7 @@ export async function POST(request: Request): Promise<NextResponse<ClosePosition
         : body.exit_reason === 'take_profit'
           ? `Take profit hit at ${exitPrice}`
           : body.exit_reason === 'ai_signal'
-            ? `AI exit at ${exitPrice}`
+            ? `Trader close at ${exitPrice}`
             : `Closed via ${body.exit_reason} at ${exitPrice}`)
 
     const updatePayload: Record<string, unknown> = {

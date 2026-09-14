@@ -1072,6 +1072,16 @@ interface TradingChartProps {
   ) => void
   /** Close position execution callback from Leo or desk */
   onClosePosition?: (reason: string) => Promise<boolean | void>
+  /** Order placement callback from Leo AI or desk controls */
+  onPlaceOrder?: (order: {
+    instrument: string
+    direction: 'LONG' | 'SHORT'
+    price: number
+    stopLoss: number
+    profitTarget: number
+    reason: string
+    size?: number
+  }) => Promise<{ success: boolean; message?: string; position_id?: string }>
 }
 
 export interface RenderedSessionExtremeHit {
@@ -1134,6 +1144,7 @@ export function TradingChart({
   onDeskPerf,
   onSessionExit,
   onClosePosition,
+  onPlaceOrder,
 }: TradingChartProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartFrameRef = useRef<HTMLDivElement>(null)
@@ -9319,17 +9330,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     if (positionOverlay || editableOverlay) {
       const ov = editableOverlay ?? positionOverlay
       if (!ov) return
-      const v = (aiVerdict?.verdict || '').toLowerCase()
-      const aiWantsTp = v === 'reversal' || v === 'take_profit' || v === 'pullback'
-      const tpLabel =
-        v === 'reversal'
-          ? 'AI EXIT · Target'
-          : v === 'pullback'
-            ? 'AI PULLBACK · Target'
-            : v === 'hold'
-              ? 'AI HOLD · Target'
-              : 'Target'
-      const tpColor = aiWantsTp && v === 'reversal' ? '#a78bfa' : '#22c55e'
+      const tpLabel = 'Target'
+      const tpColor = '#22c55e'
       const size = filledBook?.sizeNote ? ` · ${filledBook.sizeNote}` : ''
       paint([
         {
@@ -11748,6 +11750,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           externalAttachedPoints={leoExternalPoints}
           onClearExternalAttachedPoints={() => setLeoExternalPoints([])}
           onClosePosition={onClosePosition}
+          onPlaceOrder={onPlaceOrder}
         />
       </div>
     </div>

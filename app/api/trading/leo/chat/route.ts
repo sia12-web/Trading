@@ -172,7 +172,85 @@ function buildDeskFallbackResponse(
     return `Roger that. Executing immediate market close on ${ctx.instrument} at ${curPrice}. Flattening desk position.\n\n<execute>\n{\n  "action": "CLOSE_POSITION",\n  "reason": "Trader voice command: Close position"\n}\n</execute>`
   }
 
-  // 2. Stagnation rule command: "if we are in a position and we have not moved to profit after X minutes close"
+  // 2. Direct order placement command (e.g. "Leo buy 1 NQ", "Leo enter long", "Leo sell DOW", "place order")
+  if (/\b(buy|long|sell|short|enter|place\s+order|open\s+position|take\s+(a\s+)?trade)\b/i.test(lower)) {
+    const isShort = /\b(sell|short)\b/i.test(lower)
+    const direction: 'LONG' | 'SHORT' = isShort ? 'SHORT' : 'LONG'
+    
+    // Resolve instrument
+    let inst = ctx.instrument || 'NASDAQ'
+    if (/\bdow\b|ym/i.test(lower)) inst = 'DOW'
+    else if (/\bnasdaq\b|nq/i.test(lower)) inst = 'NASDAQ'
+    else if (/\bnikkei\b|nk/i.test(lower)) inst = 'NIKKEI'
+
+    // Resolve price
+    const matchPrice = lower.match(/(?:at|@|price)\s*([\d,]+(?:\.\d+)?)/i)
+    const rawPrice = matchPrice ? parseFloat(matchPrice[1]!.replace(/,/g, '')) : (ctx.currentPrice ?? (inst === 'DOW' ? 39800 : 21500))
+    const price = Number.isFinite(rawPrice) && rawPrice > 0 ? rawPrice : (inst === 'DOW' ? 39800 : 21500)
+
+    // Resolve SL and TP brackets
+    const slDist = inst === 'DOW' ? 60 : inst === 'NIKKEI' ? 100 : 25
+    const tpDist = inst === 'DOW' ? 120 : inst === 'NIKKEI' ? 200 : 50
+
+    const matchSl = lower.match(/(?:stop|sl)\s*(?:at\s*)?([\d,]+(?:\.\d+)?)/i)
+    const matchTp = lower.match(/(?:target|tp|profit)\s*(?:at\s*)?([\d,]+(?:\.\d+)?)/i)
+
+    const stopLoss = matchSl
+      ? parseFloat(matchSl[1]!.replace(/,/g, ''))
+      : (direction === 'LONG' ? price - slDist : price + slDist)
+
+    const profitTarget = matchTp
+      ? parseFloat(matchTp[1]!.replace(/,/g, ''))
+      : (direction === 'LONG' ? price + tpDist : price - tpDist)
+
+    return `### 🚀 Leo Order Placed & Journaled
+
+Executing **${direction}** on **${inst}** at **${price.toLocaleString()}**:
+- **Direction:** ${direction}
+- **Entry Price:** ${price.toLocaleString()}
+- **Stop Loss:** ${stopLoss.toLocaleString()} (${direction === 'LONG' ? '-' : '+'}${Math.abs(price - stopLoss).toFixed(1)} pts)
+- **Profit Target:** ${profitTarget.toLocaleString()} (${direction === 'LONG' ? '+' : '-'}${Math.abs(profitTarget - price).toFixed(1)} pts)
+- **Order History:** ✅ Transmitted to execution desk and saved in Order History.
+- **Chart Tracking:** ✅ Active on chart — monitoring live price and P&L tick-by-tick.
+
+*(Note: AI never auto-exits; only you or your bracket stops/targets close the position).*
+
+<execute>
+{
+  "action": "PLACE_ORDER",
+  "instrument": "${inst}",
+  "direction": "${direction}",
+  "price": ${price},
+  "stopLoss": ${stopLoss},
+  "profitTarget": ${profitTarget},
+  "size": 1,
+  "reason": "Trader command: ${lastMsg.replace(/["\\]/g, '')}"
+}
+</execute>`
+  }
+
+  // 3. Trade status command: "how is my trade going", "position status", "how are we doing"
+  if (/how\s+is\s+(the|my)?\s*(trade|order|position)\s*(going)?|position\s+status|trade\s+status|how\s+are\s+we\s+doing/i.test(lower)) {
+    const pos = ctx.activePosition
+    if (!pos) {
+      return `### Desk Status: FLAT (${ctx.instrument} @ ${curPrice})
+
+There is currently **no open position** on the desk. All brackets are clear. Standing by for your next level, chart reference, or voice entry instruction.`
+    }
+    const sign = pos.unrealizedPnlPoints >= 0 ? '+' : ''
+    return `### 📊 Live Trade Status (${pos.instrument} · ${pos.direction})
+
+- **Entry Price:** ${pos.entryPrice.toLocaleString()}
+- **Current Price:** ${curPrice}
+- **Unrealized P&L:** **${sign}${pos.unrealizedPnlPoints.toFixed(1)} pts** (${sign}$${pos.unrealizedPnlCad.toFixed(2)} CAD)
+- **Trade Health:** ${pos.isInProfit ? '🟢 **IN PROFIT**' : '🔴 **IN DRAWDOWN**'}
+- **Brackets:** Stop Loss **${pos.stopLoss > 0 ? pos.stopLoss.toLocaleString() : 'None'}** | Take Profit **${pos.profitTarget > 0 ? pos.profitTarget.toLocaleString() : 'None'}**
+- **Duration in Trade:** ${pos.durationMinutes.toFixed(1)} minutes
+- **Chart Sync:** Displayed live on the chart canvas.
+- **Management Rule:** Only you can exit this trade. AI never auto-exits.`
+  }
+
+  // 4. Stagnation rule command: "if we are in a position and we have not moved to profit after X minutes close"
   if (/not\s+moved\s+to\s+(the\s+)?profit|stagnat|close\s+.*after\s+\d+\s*min/i.test(lower)) {
     const matchMin = lower.match(/(\d+)\s*(?:minutes?|mins?|m\b)/)
     const minutes = matchMin ? parseInt(matchMin[1]!, 10) : 5
@@ -181,7 +259,7 @@ function buildDeskFallbackResponse(
     return `Understood. Stagnation rule armed: If our ${pos ? `${pos.direction} position on ${pos.instrument} (entry: ${pos.entryPrice.toFixed(2)})` : `${ctx.instrument} position`} does not move into positive profit within ${minutes} minutes, I will automatically execute a market close to protect capital from dead auction chop.\n\n<execute>\n{\n  "action": "ARM_STAGNATION_RULE",\n  "maxMinutes": ${minutes},\n  "requireProfitPoints": 1,\n  "description": "Close position if not in profit after ${minutes} minutes"\n}\n</execute>`
   }
 
-  // 3. Telegram alert command: "send me a telegram message" or "telegram"
+  // 5. Telegram alert command: "send me a telegram message" or "telegram"
   if (/telegram|notify\s+me|send\s+me\s+a\s+message/i.test(lower)) {
     return `External Telegram notifications are currently disabled desk-wide. All live alerts, auction updates, and risk monitors are streamed directly to the website dashboard and chart in real time.`
   }

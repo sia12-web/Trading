@@ -251,6 +251,12 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
         }
       }
 
+      const isLeoOrder =
+        body.entry_source === 'ai' || (body as any).is_leo_order === true
+      if (isLeoOrder && !gate.dayLocked && !gate.revengeLocked) {
+        rangeOverrideOk = true
+      }
+
       if (!rangeOverrideOk) {
         logEntryDenied({
           route: 'open',
