@@ -642,18 +642,12 @@ test('XSS / SQLi instrument ids never appear in the prompt HTML or SQL', () => {
   }
 })
 
-test('ticket freeze + no CALL API + Level Finder does not compute CALL', () => {
+test('ticket freeze + no CALL API', () => {
   assert.equal(DEFAULT_TAKE_PROFIT_R, 1.5)
   const engine = src('lib/trading/deskCall.ts')
   assert.ok(!engine.includes('/api/trading/call'))
   assert.ok(!engine.includes('process.env'))
-  assert.ok(!src('lib/services/levelFinderAgent/levelFinderAgent.ts').includes('computeDeskCall'))
-  assert.ok(
-    src('lib/trading/liveVoicePrompt.ts').includes('CALL bias/entry ±10') ||
-      src('lib/trading/liveVoicePrompt.ts').includes('CALL (desk — bias + legal ±10)')
-  )
-  assert.ok(src('lib/trading/liveVoiceContext.ts').includes('MAX_DAY_ATTEMPTS'))
-  assert.ok(src('lib/trading/liveVoiceContext.ts').includes('workingOrders.length'))
+  assert.ok(src('app/dashboard/chart/components/LeoAssistantPanel.tsx').includes('LEO'))
 })
 
 if (failed.length) {

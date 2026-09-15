@@ -54,7 +54,7 @@ export async function GET(request: Request) {
 
     const calendarRowsPromise = finnhub.getEconomicCalendar(
       ymd(now),
-      ymd(new Date(now.getTime() + 2 * 86400000))
+      ymd(new Date(now.getTime() + 7 * 86400000))
     )
 
     let allCards = buildDeskNewsCards([], {

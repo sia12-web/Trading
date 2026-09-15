@@ -71,7 +71,7 @@ assert(wrongSide.length === 0, 'SHORT/BUY on wrong side or outside candle range 
 
 // Far-from-open but ON the overnight print — valid day-trader BUY
 const overnightBuy = filterReachableMorningLevels(
-  [{ level: 28690, type: 'support', conviction: 9, source: 'ai' }],
+  [{ level: 29200, type: 'support', conviction: 9, source: 'ai' }],
   candles,
   OPEN,
   'America/New_York'

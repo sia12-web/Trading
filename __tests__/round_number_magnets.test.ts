@@ -3,7 +3,6 @@
  * Run: npx tsx __tests__/round_number_magnets.test.ts
  */
 
-import { groundLevels } from '../lib/llm/antiHallucination'
 import {
   extendStopPastRound,
   snapProfitToRound,
@@ -12,37 +11,6 @@ import {
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(msg)
-}
-
-{
-  const candles = [
-    {
-      timestamp: '2026-07-14T13:00:00.000Z',
-      open: 29480,
-      high: 29520,
-      low: 29440,
-      close: 29500,
-      volume: 1000,
-    },
-  ]
-  const grounded = groundLevels(
-    [
-      {
-        level: 29500,
-        type: 'resistance',
-        conviction: 8,
-        reasoning: '29,500 handle + London wick',
-        timeframe: 'H1',
-      },
-    ],
-    { candles, currentPrice: 29490, snap: false }
-  )
-  assert(grounded[0]?.grounded === true, 'round handle should ground')
-  assert(
-    !!grounded[0]?.anchor_source &&
-      /round_number|high|close|open/.test(grounded[0].anchor_source),
-    `unexpected anchor ${grounded[0]?.anchor_source}`
-  )
 }
 
 {

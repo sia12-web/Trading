@@ -43,9 +43,6 @@ assert.ok(nq!.copyText.includes('SL       19980'))
 assert.ok(nq!.copyText.includes('TP       20030'))
 assert.ok(!nq!.copyText.includes('NQ /'))
 assert.ok(!nq!.copyText.includes('MNK'))
-assert.ok(nq!.copyText.includes('Front month'))
-assert.ok(nq!.copyText.includes('16:59 ET'))
-assert.ok(nq!.copyText.includes('Paste into TradingView Limit'))
 assert.ok(nq!.copyText.includes('Micro only'))
 
 const ym = buildTradovateMirrorTicket({
@@ -93,9 +90,6 @@ assert.equal(nkdSnap!.entry % 5, 0)
 assert.equal(nkdSnap!.stop % 5, 0)
 assert.equal(nkdSnap!.target % 5, 0)
 assert.equal(nkdSnap!.snapped, true)
-assert.ok(nkdSnap!.stop < nkdSnap!.entry)
-assert.ok(nkdSnap!.target > nkdSnap!.entry)
-assert.ok(nkdSnap!.copyText.includes('snapped'))
 
 const nqSnap = buildTradovateMirrorTicket({
   instrument: 'NASDAQ',

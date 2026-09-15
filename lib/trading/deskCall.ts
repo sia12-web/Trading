@@ -247,7 +247,20 @@ function sideFromOpenAndControl(args: {
   return 'WAIT'
 }
 
-function resolveActiveRange(_args: {
+function rangeHighLow(candles: DeskCallBar[], startU: number, endU: number) {
+  const windowBars = candles.filter((c) => c && typeof c.time === 'number' && c.time >= startU && c.time < endU)
+  if (windowBars.length === 0) return null
+  let high = -Infinity
+  let low = Infinity
+  for (const b of windowBars) {
+    if (b.high > high) high = b.high
+    if (b.low < low) low = b.low
+  }
+  if (!Number.isFinite(high) || !Number.isFinite(low) || high <= low) return null
+  return { high, low }
+}
+
+function resolveActiveRange(args: {
   instrument: string
   candles: DeskCallBar[]
   asOfUnix: number
@@ -255,6 +268,43 @@ function resolveActiveRange(_args: {
   sessionYmd: string
   openU: number
 }): { key: DeskCallRangeKey; high: number; low: number } | null {
+  const { candles, asOfUnix, playbookMode, openU } = args
+  if (!openU || asOfUnix < openU) return null
+
+  if (playbookMode === 'morning') {
+    const endU = openU + 15 * 60
+    if (asOfUnix < endU) return null
+    const r = rangeHighLow(candles, openU, endU)
+    if (!r) return null
+    return { key: 'OR15', high: r.high, low: r.low }
+  }
+  if (playbookMode === 'or30') {
+    const endU = openU + 30 * 60
+    if (asOfUnix < endU) return null
+    const r = rangeHighLow(candles, openU, endU)
+    if (!r) return null
+    return { key: 'OR30', high: r.high, low: r.low }
+  }
+  if (playbookMode === 'ib') {
+    const endU = openU + 60 * 60
+    if (asOfUnix < endU) return null
+    const r = rangeHighLow(candles, openU, endU)
+    if (!r) return null
+    return { key: 'IB', high: r.high, low: r.low }
+  }
+  if (playbookMode === 'us_range') {
+    if (args.instrument !== 'NIKKEI') return null
+    const priorBars = candles.filter((c) => c && typeof c.time === 'number' && c.time < openU)
+    if (priorBars.length === 0) return null
+    let high = -Infinity
+    let low = Infinity
+    for (const b of priorBars) {
+      if (b.high > high) high = b.high
+      if (b.low < low) low = b.low
+    }
+    if (!Number.isFinite(high) || !Number.isFinite(low) || high <= low) return null
+    return { key: 'US', high, low }
+  }
   return null
 }
 

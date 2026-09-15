@@ -40,8 +40,8 @@ assert(
     title: 'SETUP DOW · AUCTION SHORT',
     body: '15M volume-bar FAIL',
     telegram: 'SETUP DOW · AUCTION SHORT',
-  }) === 'SETUP DOW · AUCTION SHORT',
-  'auction setup sends telegram'
+  }) === null,
+  'telegram is suppressed in favor of on-screen alerts'
 )
 assert(
   deskAlertTelegramText({
@@ -49,8 +49,8 @@ assert(
     title: 'SETUP DOW · CALL LONG',
     body: 'OR30 legal ±10 LOW',
     telegram: 'SETUP DOW · CALL LONG',
-  }) === 'SETUP DOW · CALL LONG',
-  'CALL setup sends telegram'
+  }) === null,
+  'CALL setup telegram is suppressed in favor of on-screen alerts'
 )
 assert(
   deskAlertTelegramText({

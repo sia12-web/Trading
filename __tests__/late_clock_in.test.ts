@@ -57,17 +57,12 @@ const gate = resolveSessionGate({
   clockedIn: false,
   attendedToday: false,
 })
-assert(gate.canClockIn === true, 'gate canClockIn true after open (late join)')
-assert(gate.canPlaceEntry === false, 'no entries until clock-in')
-assert(gate.canViewLiveChart === false, 'chart locked until clock-in')
-assert(/late/i.test(gate.message), gate.message)
+assert(gate.canClockIn === false, 'gate canClockIn is false (automatic trading mode)')
+assert(gate.canPlaceEntry === false, 'no entries until clocked in')
+assert(gate.canViewLiveChart === true, 'chart viewable')
 assert(
-  isLiveTipStreamAllowed('DOW', etDate(10, 0), { attendedToday: false }).open === false,
-  'not clocked in → tip off'
-)
-assert(
-  isLiveTipStreamAllowed('DOW', etDate(10, 0), { attendedToday: true }).open === true,
-  'late join attended → tip on'
+  isLiveTipStreamAllowed('DOW', etDate(10, 0)).open === true,
+  'tip stream allowed during focus window'
 )
 
 // Tokyo live clock-in is off — Nikkei is Simulation
@@ -75,25 +70,6 @@ assert(canClockInNow('TOKYO', jstDate(8, 50)).ok === false, 'Tokyo live clock-in
 assert(canClockInNow('TOKYO', jstDate(9, 30)).ok === false, 'Tokyo late join off')
 assert(isLateJoinClockIn('TOKYO', jstDate(9, 30)) === true, 'Tokyo late flag still time-true')
 assert(canClockInNow('TOKYO', jstDate(15, 0)).ok === false, 'Tokyo after cash close')
-
-// Re-clock after early out still allowed until cash close
-const re = resolveSessionGate({
-  now: etDate(10, 0),
-  lockedInstrument: 'DOW',
-  viewingInstrument: 'DOW',
-  clockedIn: false,
-  attendedToday: true,
-})
-assert(re.canClockIn === true, 're-clock until cash close if already attended')
-
-const afterLunch = resolveSessionGate({
-  now: etDate(12, 0),
-  lockedInstrument: 'DOW',
-  viewingInstrument: 'DOW',
-  clockedIn: false,
-  attendedToday: true,
-})
-assert(afterLunch.canClockIn === true, 're-clock after lunch until cash close')
 
 // ── Brief ranking helpers ───────────────────────────────────────────────────
 

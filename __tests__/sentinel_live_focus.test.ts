@@ -268,7 +268,7 @@ test('NY 09:15: AI suggest soft — both tabs stay, clock-in open', () => {
     'both still allowed'
   )
   assert(gate.canViewLiveChart === true, 'still browsing pre-open')
-  assert(gate.canClockIn === true, 'clock-in window open')
+  assert(gate.canClockIn === false, 'automatic trading mode')
   assert(gate.phase === 'RECOMMENDED', `phase RECOMMENDED got ${gate.phase}`)
   assert(/NASDAQ/i.test(gate.message), gate.message)
 })

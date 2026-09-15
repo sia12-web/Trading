@@ -194,7 +194,7 @@ test('Sit never vetoes CALL (no sit WAIT gate)', () => {
     asOfUnix: mondayOpen + 25 * 60,
     playbookMode: 'morning',
   })
-  assert.equal(call.perfVeto, false)
+  assert.equal(Boolean(call.perfVeto), false)
   assert.ok(call.sitBadge)
   assert.ok(!call.hoverText?.includes('BLOCK  Sit:'))
 })

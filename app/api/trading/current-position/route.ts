@@ -15,6 +15,8 @@ import { scopeForCurrentPositionQuery } from '@/lib/trading/currentPositionQuery
 import type { CurrentPositionResponse, TradePosition } from '@/types/trading'
 import { reconcileBrokerClosedPosition } from '@/lib/trading/brokerPositionReconcile'
 
+export const dynamic = 'force-dynamic'
+
 export type CurrentPositionWithReconcile = CurrentPositionResponse & {
   reconciled?: {
     closed: true

@@ -11,9 +11,9 @@ import {
   zonedCivilToUnix,
 } from '../lib/chart/sessionVwap'
 import { DEFAULT_TAKE_PROFIT_R } from '../lib/trading/positionSizing'
-import { RANGE_EDGE_BAND_POINTS } from '../lib/trading/rangeEdgeEntryGate'
 import {
   CALL_BAND_POINTS,
+  RANGE_EDGE_BAND_POINTS,
   CALL_COLORS,
   assertDeskCallEntry,
   assertDeskTicketEntry,

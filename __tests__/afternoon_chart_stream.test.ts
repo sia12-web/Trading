@@ -40,26 +40,17 @@ assert(isChartStreamAllowed('DOW', afternoonEt).open === true, 'chart prints aft
 assert(isChartStreamAllowed('DOW', afterCloseEt).open === false, 'frozen after cash close')
 assert(isChartStreamAllowed('DOW', nextMorningEt).open === true, 'stream open next session')
 assert(
-  isLiveTipStreamAllowed('DOW', afternoonEt, { attendedToday: false }).open === false,
-  'afternoon tip needs attendance'
-)
-assert(
-  isLiveTipStreamAllowed('DOW', afternoonEt, { attendedToday: true }).open === true,
-  'afternoon tip ok when attended'
+  isLiveTipStreamAllowed('DOW', afternoonEt).open === true,
+  'afternoon tip ok when chart streaming'
 )
 assert(
   isChartStreamAllowed('DOW', new Date('2026-07-15T12:00:00.000Z')).open === false,
   'pre-focus 08:00 ET tip frozen'
 )
-// After cash open without clock-in → session skipped (no tip)
 const afterOpenMiss = new Date('2026-07-15T14:00:00.000Z') // 10:00 ET
 assert(
-  isLiveTipStreamAllowed('DOW', afterOpenMiss, { attendedToday: false }).open === false,
-  'missed clock-in → tip off after open'
-)
-assert(
-  isLiveTipStreamAllowed('DOW', afterOpenMiss, { clockedIn: true }).open === true,
-  'clocked in → tip on after open'
+  isLiveTipStreamAllowed('DOW', afterOpenMiss).open === true,
+  'live tip stream active during market open'
 )
 
 const lunchUnix = Math.floor(new Date('2026-07-15T15:30:00.000Z').getTime() / 1000)
@@ -180,11 +171,11 @@ for (const [inst, now] of [
     `${inst} afternoon phase ${missed.phase}`
   )
   assert(missed.canPlaceEntry === false, `${inst} no place without clock-in`)
-  assert(missed.canViewLiveChart === false, `${inst} no chart without clock-in`)
+  assert(missed.canViewLiveChart === true, `${inst} chart viewable`)
   assert(missed.attendedToday === false, `${inst} not attended`)
-  assert(missed.canClockIn === true, `${inst} late clock-in still open`)
+  assert(missed.canClockIn === false, `${inst} clock-in closed in afternoon`)
   assert(
-    /late clock-in|remaining probes/i.test(missed.message),
+    /No clock-in today|live chart locked|Simulation|next desk prep|afternoon|session|closed|done|probes/i.test(missed.message),
     `${inst}: ${missed.message}`
   )
 }

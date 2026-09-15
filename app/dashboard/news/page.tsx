@@ -245,7 +245,7 @@ export default function DeskNewsPage() {
             <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-amber-200">
               Economic calendar
             </h2>
-            <span className="text-[10px] text-amber-200/60">Next ~48h · Finnhub</span>
+            <span className="text-[10px] text-amber-200/60">Next 7 Days · Finnhub</span>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
             {calendar.slice(0, 8).map((ev) => (

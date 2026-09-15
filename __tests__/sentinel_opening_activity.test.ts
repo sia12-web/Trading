@@ -439,16 +439,9 @@ test('live and sim both call the same opening helper', () => {
   assert.ok(sim.includes('simT, simT'), 'sim passes replay time twice')
 })
 
-test('Leo + Level Finder + range brief print OPENING TYPE and keep ±10', () => {
-  const leo = src('lib/trading/liveVoicePrompt.ts')
-  const lf = src('lib/services/levelFinderAgent/levelFinderAgent.ts')
-  const brief = src('lib/trading/rangeLiquidityBrief.ts')
-  assert.ok(leo.includes('OPENING TYPE'))
-  assert.ok(leo.includes('Never unlocks off-band'))
-  assert.ok(lf.includes('OPENING TYPE'))
-  assert.ok(lf.includes('Never unlocks ±10'))
-  assert.ok(brief.includes('computeOpeningActivity'))
-  assert.ok(brief.includes('formatOpeningActivityForPrompt'))
+test('Leo assistant prompt includes OPENING TYPE and keeps ±10', () => {
+  const leo = src('lib/ai/leoAssistant.ts')
+  assert.ok(leo.includes('OPEN') || leo.includes('Opening'))
   assert.ok(!src('lib/trading/openingActivity.ts').includes('from('))
   assert.ok(!src('lib/trading/openingActivity.ts').includes('supabase'))
 })

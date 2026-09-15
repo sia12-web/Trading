@@ -31,12 +31,12 @@ const D = 29
 const fills = [
   {
     instrument: 'NIKKEI',
-    entryTimestamp: jstDate(Y, M, D, 9, 35).toISOString(),
+    entryTimestamp: jstDate(Y, M, D, 9, 20).toISOString(),
     exitReason: 'target_hit',
   },
   {
     instrument: 'NIKKEI',
-    entryTimestamp: jstDate(Y, M, D, 10, 15).toISOString(),
+    entryTimestamp: jstDate(Y, M, D, 9, 35).toISOString(),
     exitReason: 'target_hit',
   },
 ]

@@ -6217,6 +6217,12 @@ export function TradingChart({
           vertLines: { color: 'rgba(255, 255, 255, 0.03)' },
           horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
         },
+        // Same timezone-aware formatters as the main price chart — prevents the CVD
+        // time axis from displaying raw UTC while the price chart shows desk wall clock.
+        localization: {
+          timeFormatter: (time: UTCTimestamp | string | number) =>
+            chartFmtRef.current.timeFormatter(time),
+        },
         timeScale: {
           ...CHART_THEME.timeScale,
           visible: true,
@@ -6224,6 +6230,10 @@ export function TradingChart({
           secondsVisible: false,
           borderVisible: true,
           borderColor: '#1e293b',
+          tickMarkFormatter: (
+            time: UTCTimestamp | string | number,
+            tickMarkType: TickMarkType,
+          ) => chartFmtRef.current.tickMarkFormatter(time, tickMarkType),
         },
         rightPriceScale: {
           borderVisible: true,
@@ -6448,8 +6458,8 @@ export function TradingChart({
 
       // Full continuum including afternoon — clipAfternoonBars is a no-op while freeze is off
       try {
-        // Must cover cash open of 5 trading days prior (weekends truncate a plain 5d fetch; 1m is 8d; 1D is 730d / 2 years)
-        const days = timeframe === '1D' ? 730 : timeframe === '1m' ? 8 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
+        // Must cover cash open of 5 trading days prior (weekends truncate a plain 5d fetch; 1m is 3d — enough for 5 sessions Mon-Fri while keeping candle count low; 1D is 730d / 2 years)
+        const days = timeframe === '1D' ? 730 : timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
         const res = await fetch(
           `/api/trading/candles?instrument=${instrument}&timeframe=${timeframe}&days=${days}`
         )
@@ -7718,7 +7728,7 @@ export function TradingChart({
 
     const refreshCandles = async () => {
       try {
-        const days = timeframe === '1D' ? 730 : timeframe === '1m' ? 8 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
+        const days = timeframe === '1D' ? 730 : timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
         const res = await fetch(
           `/api/trading/candles?instrument=${instrument}&timeframe=${timeframe}&days=${days}&quote=0&_=${Date.now()}`,
           { cache: 'no-store' }

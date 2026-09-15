@@ -8,7 +8,7 @@ import {
   type LeoMessage,
   type LeoExecutionDirective,
 } from '@/lib/ai/leoAssistant'
-import { playTradingViewChime } from '@/lib/chart/soundEffects'
+import { playTradingViewChime, primeAudioContext } from '@/lib/chart/soundEffects'
 import { warningToast } from '@/lib/utils/toastUtils'
 import type { TeamConsensusReport } from '@/lib/ai/stack/types'
 import type { InstitutionalHedgingTelemetry } from '@/lib/ai/stack/models/institutionalHedgingModel'
@@ -202,6 +202,19 @@ export function LeoAssistantPanel({
   }
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  // Prime Web Audio API AudioContext on first user interaction anywhere on the window
+  useEffect(() => {
+    const handleGesture = () => {
+      primeAudioContext()
+    }
+    window.addEventListener('pointerdown', handleGesture, { passive: true })
+    window.addEventListener('keydown', handleGesture, { passive: true })
+    return () => {
+      window.removeEventListener('pointerdown', handleGesture)
+      window.removeEventListener('keydown', handleGesture)
+    }
+  }, [])
+
   // Auto-resize textarea to fit multiline input dynamically up to max 130px
   useEffect(() => {
     if (textareaRef.current) {
@@ -281,6 +294,7 @@ export function LeoAssistantPanel({
   const sessionBaseTranscriptRef = useRef('')
   const inputPromptRef = useRef('')
   const restartTimerRef = useRef<any>(null)
+  const executingRuleIdsRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     inputPromptRef.current = inputPrompt
@@ -478,6 +492,37 @@ export function LeoAssistantPanel({
     size?: number
     reason: string
   }) => {
+    // 0. Safety Parameter Validation Guard: Reject invalid / NaN / non-positive numbers
+    if (
+      !order.price ||
+      !Number.isFinite(order.price) ||
+      order.price <= 0 ||
+      !Number.isFinite(order.stopLoss) ||
+      order.stopLoss <= 0 ||
+      !Number.isFinite(order.profitTarget) ||
+      order.profitTarget <= 0
+    ) {
+      warningToast('⚠️ [LEO DESK ERROR]: Aborted order with invalid or non-finite price parameters.', 8000)
+      return
+    }
+
+    // Directional Bracket Sanity Guard
+    const dir = order.direction.toUpperCase() as 'LONG' | 'SHORT'
+    let sl = order.stopLoss
+    let tp = order.profitTarget
+    const { slDist } = getInstrumentDefaultDistances(order.instrument)
+
+    if (dir === 'LONG') {
+      if (sl >= order.price) sl = Number((order.price - slDist).toFixed(2))
+      if (tp <= order.price) tp = Number((order.price + slDist * 2.0).toFixed(2))
+    } else {
+      if (sl <= order.price) sl = Number((order.price + slDist).toFixed(2))
+      if (tp >= order.price) tp = Number((order.price - slDist * 2.0).toFixed(2))
+    }
+
+    order.stopLoss = sl
+    order.profitTarget = tp
+
     // 1. Audio notifications: TradingView procedural chime & speech synthesis
     playTradingViewChime()
     speakText(
@@ -833,11 +878,24 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
         setArmedRules((prev) => [...prev.filter((r) => r.type !== 'STAGNATION_TIMEOUT'), newRule])
       } else if (d.action === 'ARM_DESK_ALERT' || d.action === 'ARM_TELEGRAM_ALERT') {
         const isLongTerm = Boolean(d.isLongTerm || (d as any).longTermMemory)
+        let resolvedPx = Number(d.targetPrice)
+        if (!Number.isFinite(resolvedPx) || resolvedPx <= 0) {
+          const refLower = (d.targetReference || '').toLowerCase()
+          if (refLower.includes('low volume') || refLower.includes('y-val') || refLower.includes('val')) {
+            resolvedPx = context.shortTermMoney?.yval ?? context.currentPrice ?? 0
+          } else if (refLower.includes('y-poc') || refLower.includes('poc')) {
+            resolvedPx = context.shortTermMoney?.ypoc ?? context.intermediateMoney?.poc5d ?? context.currentPrice ?? 0
+          } else if (refLower.includes('y-low') || refLower.includes('low')) {
+            resolvedPx = context.shortTermMoney?.ylow ?? context.currentPrice ?? 0
+          } else {
+            resolvedPx = context.currentPrice ?? 0
+          }
+        }
         const newRule: ArmedDeskRule = {
           id: `desk-alert-${Date.now()}`,
           type: 'DESK_ALERT',
-          description: `Desk alert when price tests ${d.targetReference} (${d.targetPrice.toLocaleString()})${isLongTerm ? ' [Long-Term Memory]' : ' [NYC Session]'}`,
-          targetPrice: d.targetPrice,
+          description: `Desk alert when price tests ${d.targetReference} (${resolvedPx ? resolvedPx.toLocaleString() : 'Level'})${isLongTerm ? ' [Long-Term Memory]' : ' [NYC Session]'}`,
+          targetPrice: resolvedPx > 0 ? resolvedPx : undefined,
           targetReference: d.targetReference,
           session: d.session ?? 'NYC',
           isLongTerm,
@@ -1001,15 +1059,33 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
           // 2. Desk Alert Rule
           if (
             (rule.type === 'DESK_ALERT' || (rule.type as any) === 'TELEGRAM_ALERT') &&
-            curPrice != null &&
-            rule.targetPrice != null
+            curPrice != null
           ) {
-            const dist = Math.abs(curPrice - rule.targetPrice)
-            if (dist <= 5) {
-              // Target price reached!
-              changed = true
-              dispatchDeskAlert(rule)
-              return { ...rule, status: 'TRIGGERED' as const }
+            let effectiveTargetPx = rule.targetPrice
+            if ((effectiveTargetPx == null || effectiveTargetPx <= 0) && rule.targetReference) {
+              const refLower = rule.targetReference.toLowerCase()
+              if (refLower.includes('low volume') || refLower.includes('y-val') || refLower.includes('val')) {
+                effectiveTargetPx = context.shortTermMoney?.yval ?? undefined
+              } else if (refLower.includes('y-poc') || refLower.includes('poc')) {
+                effectiveTargetPx = context.shortTermMoney?.ypoc ?? context.intermediateMoney?.poc5d ?? undefined
+              } else if (refLower.includes('y-low') || refLower.includes('low')) {
+                effectiveTargetPx = context.shortTermMoney?.ylow ?? undefined
+              } else if (refLower.includes('5d poc')) {
+                effectiveTargetPx = context.intermediateMoney?.poc5d ?? undefined
+              }
+            }
+
+            if (effectiveTargetPx != null && effectiveTargetPx > 0) {
+              const tolerances = getInstrumentTolerances(rule.instrument || context.instrument)
+              const dist = Math.abs(curPrice - effectiveTargetPx)
+              const alertTolerance = Math.max(tolerances.touch * 1.5, 5.0)
+
+              if (dist <= alertTolerance) {
+                // Target price reached!
+                changed = true
+                dispatchDeskAlert({ ...rule, targetPrice: effectiveTargetPx })
+                return { ...rule, status: 'TRIGGERED' as const }
+              }
             }
           }
 
@@ -1111,6 +1187,10 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
               }
 
               if (patternFired) {
+                if (executingRuleIdsRef.current.has(rule.id)) {
+                  return rule
+                }
+                executingRuleIdsRef.current.add(rule.id)
                 changed = true
                 const entryPx = curPrice
                 const { slDist } = getInstrumentDefaultDistances(

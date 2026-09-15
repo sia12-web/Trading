@@ -155,7 +155,7 @@ export type OvernightInventoryBias =
   | 'NET_SHORT_SKEWED'
   | '100%_NET_SHORT'
 
-export type RangeRelation = 'IN_RANGE' | 'OUTSIDE_RANGE' | 'GAP_UP' | 'GAP_DOWN'
+export type RangeRelation = 'IN_RANGE' | 'OUTSIDE_RANGE' | 'GAP_UP' | 'GAP_DOWN' | 'IN_VALUE'
 
 export interface OvernightInventoryEvaluation {
   asia: SessionVolumeProfile | null
@@ -1033,20 +1033,34 @@ export function computeOvernightInventoryAndSessions(args: {
     biasLabel = `${pctShort}% Short Skew`
   }
 
-  // Determine Range Relationship
+  // Determine Range & Value Location entering or during session
   const todayBars = bars.filter((b) => b.time >= todayOpenUnix && b.time <= tipTime)
+  const tipPrice = bars.length > 0 ? bars[bars.length - 1]!.close : yesterday.close
+  const activeOpenPrice = todayBars.length > 0 ? todayBars[0]!.open : tipPrice
+
   const onHigh = overnight?.high ?? (overnightBars.length ? Math.max(...overnightBars.map((b) => b.high)) : yesterday.yh)
   const onLow = overnight?.low ?? (overnightBars.length ? Math.min(...overnightBars.map((b) => b.low)) : yesterday.yl)
 
   let rangeRelation: RangeRelation = 'IN_RANGE'
   let rangeLabel = 'In-Range'
 
-  if (todayBars.length > 0 && todayBars[0]!.open > yesterday.yh) {
+  if (activeOpenPrice > yesterday.yh) {
     rangeRelation = 'GAP_UP'
-    rangeLabel = 'Gap Up'
-  } else if (todayBars.length > 0 && todayBars[0]!.open < yesterday.yl) {
+    rangeLabel = todayBars.length > 0 ? 'Gap Up' : 'Above Range'
+  } else if (activeOpenPrice < yesterday.yl) {
     rangeRelation = 'GAP_DOWN'
-    rangeLabel = 'Gap Down'
+    rangeLabel = todayBars.length > 0 ? 'Gap Down' : 'Below Range'
+  } else if (
+    yesterday.val != null &&
+    yesterday.vah != null &&
+    activeOpenPrice >= yesterday.val &&
+    activeOpenPrice <= yesterday.vah
+  ) {
+    rangeRelation = 'IN_VALUE'
+    rangeLabel = 'In-Value & Range'
+  } else if (activeOpenPrice >= yesterday.yl && activeOpenPrice <= yesterday.yh) {
+    rangeRelation = 'IN_RANGE'
+    rangeLabel = 'In-Range'
   } else if (onHigh > yesterday.yh || onLow < yesterday.yl) {
     rangeRelation = 'OUTSIDE_RANGE'
     rangeLabel = 'Outside Range'
@@ -1059,8 +1073,8 @@ export function computeOvernightInventoryAndSessions(args: {
     description = `Overnight inventory is 100% net long entering NYC open. If the cash market fails to immediately extend above Y-High, watch for rapid inventory correction (long liquidation) returning toward yesterday close (${yesterday.close}) and Y-POC (${yesterday.poc}).`
   } else if (bias === '100%_NET_SHORT') {
     description = `Overnight inventory is 100% net short entering NYC open. If the cash market fails to sustain below Y-Low, watch for sharp short-covering squeeze toward yesterday close (${yesterday.close}) and Y-POC (${yesterday.poc}).`
-  } else if (rangeRelation === 'IN_RANGE') {
-    description = `Overnight auction was contained completely within yesterday's range [${yesterday.yl} – ${yesterday.yh}]. Symmetrical two-way auction expected unless catalyst initiates directional conviction.`
+  } else if (rangeRelation === 'IN_VALUE' || rangeRelation === 'IN_RANGE') {
+    description = `Overnight volume (${biasLabel}) tested overnight extremes [${onLow} – ${onHigh}], but price recovered entering NYC open (${activeOpenPrice.toFixed(2)}) inside yesterday's ${rangeRelation === 'IN_VALUE' ? 'Value Area & Range' : 'Range'}. Symmetrical two-way auction expected near Y-POC (${yesterday.poc}).`
   } else {
     description = `Overnight inventory (${biasLabel}) tested outside yesterday's boundaries. Monitor opening acceptance vs rejection at prior extremes.`
   }
@@ -1102,7 +1116,21 @@ export function classifyMarketDayType(args: {
     return args.overrideDayType
   }
 
-  const { todayBars, overnightInventory } = args
+  const clock = deskClockFor(args.instrument || 'DOW')
+  const rawBars = args.todayBars || []
+  const tipTime = args.asOfUnix ?? (rawBars.length > 0 ? rawBars[rawBars.length - 1]!.time : Math.floor(Date.now() / 1000))
+  const todayYmd = new Intl.DateTimeFormat('en-CA', {
+    timeZone: clock.timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(tipTime * 1000))
+  const todayOpenUnix = cashOpenUnixForYmd(todayYmd, clock)
+
+  // Filter bars strictly to TODAY'S cash session (>= 09:30 AM ET and <= tipTime)
+  const todayBars = rawBars.filter((b) => b.time >= todayOpenUnix && b.time <= tipTime)
+  const { overnightInventory } = args
+
   if (!todayBars || todayBars.length < 3) {
     const invNote = overnightInventory ? ` (${overnightInventory.summaryBadge})` : ''
     return {
