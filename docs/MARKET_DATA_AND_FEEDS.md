@@ -9,15 +9,16 @@
 
 ## 1. Supported Instruments & Contract Specifications
 
-TradePulse actively monitors and charts institutional futures instruments and CFD mirrors:
+TradePulse actively monitors and charts institutional futures instruments and CFD mirrors across four core active trading desk markets:
 
-| Display Name | Internal Symbol | Primary CME Contract | CME Tick Size | Point Value | Typical CME Basis (Offset) |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **DOW** | `DOW` | `MYM` / `YM` (E-mini/Micro Dow) | 1.0 pt | $0.50 / pt (Micro) | ~60.5 pts |
-| **NASDAQ** | `NASDAQ` | `MNQ` / `NQ` (E-mini/Micro Nasdaq) | 0.25 pt | $2.00 / pt (Micro) | ~36.5 pts |
-| **GOLD** | `GOLD` | `MGC` / `GC` (Micro/E-mini Gold) | 0.10 pt | $10.00 / pt (Micro) | ~48.0 pts |
-| **CRUDE** | `CRUDE` | `CL` / `MCL` (Crude Oil) | 0.01 pt | $10.00 / pt (Micro) | 0.00 pts |
-| **NIKKEI** | `NIKKEI` | `NKD` (Nikkei 225 Dollar-Denom) | 5.0 pts | $5.00 / pt | 0.0 pts |
+| Display Name | Internal Symbol | Primary CME Contract | CME Tick Size | Point Value | Typical CME Basis (Offset) | 2026 Base Price Level |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **DOW** | `DOW` | `MYM` / `YM` (E-mini/Micro Dow) | 1.0 pt | $0.50 / pt (Micro) | ~60.5 pts | ~52,500.00 |
+| **NASDAQ** | `NASDAQ` | `MNQ` / `NQ` (E-mini/Micro Nasdaq) | 0.25 pt | $2.00 / pt (Micro) | ~36.5 pts | ~29,500.00 |
+| **GOLD** | `GOLD` | `MGC` / `GC` (Micro/E-mini Gold) | 0.10 pt | $10.00 / pt (Micro) | ~48.0 pts | ~4,350.00 |
+| **CRUDE** | `CRUDE` | `CL` / `MCL` (Crude Oil) | 0.01 pt | $10.00 / pt (Micro) | 0.00 pts | ~104.00 |
+
+*(Note: Nikkei 225 `NKD` is retired from the active trading desk and economic calendar feeds to focus exclusively on US Indices, Gold, and Oil).*
 
 ---
 
@@ -47,10 +48,10 @@ graph TD
     SANE --> OUT[Deliver Normalized OHLCV JSON]
 ```
 
-### 2.1 Tier 1: CME Globex MDP 3.0 via Databento
-- Configured via `DATABENTO_API_KEY`.
-- Directly streams raw exchange packets from the CME Aurora colocation center (`GLBX.MDP3`).
-- Highest precision order-flow and level-matched volume data for intraday timeframes (`1m`, `5m`).
+### 2.1 Tier 1: CME Globex MDP 3.0 via Databento Live Hub
+- Configured via `DATABENTO_API_KEY` and the Databento Live Gateway Sidecar (`scripts/databento_live_sidecar.py`).
+- Directly streams raw CME Globex exchange trade ticks from the Aurora colocation center (`GLBX.MDP3`).
+- Both Server-Sent Events (`/api/trading/quote/stream`) and REST polls (`/api/trading/quote`) query `getLatestDatabentoLiveQuote` to deliver zero-latency price updates across `DOW`, `NASDAQ`, `GOLD`, and `CRUDE`.
 
 ### 2.2 Tier 2: OANDA v20 Continuous CFDs with CME Basis
 - When Databento is offline, throttled, or for extended 24-hour overnight coverage, OANDA continuous CFD pricing (`US30_USD`, `NAS100_USD`, `XAU_USD`, `WTICO_USD`) is fetched.
@@ -65,6 +66,10 @@ graph TD
 ### 2.3 Tier 3: Yahoo Finance Daily Macro History (`1D`)
 - For multi-year Higher Timeframe context on the Daily (`1D`) chart, requests bypass high-volume 1-minute historical servers (which would require downloading 260,000 bars) and query Yahoo Finance directly.
 - Returns ~500 to 730 clean, consolidated daily bars spanning 2 full calendar years in under 50 milliseconds.
+
+### 2.4 Economic Calendar: ForexFactory Fallback Feed
+- To bypass free-tier API restrictions (`HTTP 403 Forbidden` on `/calendar/economic`), `finnhubClient.ts` automatically queries the live ForexFactory Weekly Calendar JSON feed (`https://nfs.faireconomy.media/ff_calendar_thisweek.json`).
+- Automatically maps high-impact macroeconomic events (FOMC, CPI, NFP, Crude Inventories) to active trader instruments: `DOW`, `NASDAQ`, `GOLD`, and `CRUDE`.
 
 ---
 

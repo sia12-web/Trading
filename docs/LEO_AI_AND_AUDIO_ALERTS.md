@@ -182,14 +182,19 @@ The Leo Assistant Panel embeds the **AI Stacked & Hedging Engine** directly into
 - **Actionable Advisory Prompt**: Instead, Leo plays an audio advisory chime, synthesizes speech (`"Leo recommends closing position: reason"`), and posts an advisory card with an explicit warning:
   `⚠️ [LEO EXIT ADVISORY - MANUAL ACTION REQUIRED] Please execute manual exit on your chart toolbar if desired.`
 
-### 7.2 Defensive Bracket & Non-Inversion Geometry
-When Leo drafts entry orders (`PLACE_ORDER` / `OPEN_POSITION`), the execution layer enforces strict mathematical boundary validation:
-1. **Live Price Requirement**: Orders are rejected immediately if a valid, positive live price cannot be resolved. No stale hardcoded fallbacks are permitted.
-2. **Instrument Canonicalization**: Handles all aliases (`NQ`/`MNQ` -> `NASDAQ`, `YM`/`MYM` -> `DOW`, `GC`/`MGC` -> `GOLD`, `CL`/`MCL` -> `CRUDE`, `NKD` -> `NIKKEI`).
-3. **Bracket Sanity**:
+### 7.2 Defensive Bracket, Directive Sanitization & Instrument Base Prices
+When Leo drafts entry orders (`PLACE_ORDER` / `OPEN_POSITION` / `ARM_CONDITIONAL_ENTRY`), the execution layer enforces strict mathematical boundary validation:
+1. **Instrument-Aware Base Prices**: Fallbacks query exact canonical 2026 CME market levels rather than outdated static prices:
+   - **DOW**: Base `52,500.00` | SL `60 pts` | TP `120 pts`
+   - **NASDAQ**: Base `29,500.00` | SL `25 pts` | TP `50 pts`
+   - **GOLD**: Base `4,350.00` | SL `5.0 pts` | TP `10.0 pts`
+   - **CRUDE**: Base `104.00` | SL `0.50 pts` | TP `1.00 pt`
+2. **Directive Type Sanitization**: `parseLeoDirectives` cleanly casts stringified LLM outputs (e.g. `"maxMinutes": "5"`, `"quantity": "2"`) into finite numbers and strips trailing commas before JSON parsing.
+3. **Safe Notification Formatting**: Notification routes (`/api/trading/leo/notify`) format `priceDisplay` defensively to prevent unhandled `TypeError` exceptions on undefined/null prices.
+4. **Bracket Sanity**:
    - **LONG**: Validates `stopLoss < entryPrice` and `profitTarget > entryPrice`. If inverted, snaps stop loss to `entryPrice - slDist` and target to `entryPrice + tpDist`.
    - **SHORT**: Validates `stopLoss > entryPrice` and `profitTarget < entryPrice`. If inverted, snaps stop loss to `entryPrice + slDist` and target to `entryPrice - tpDist`.
-4. **TopstepX Risk Budgeting**: Sized strictly according to the account's $500 Maximum Loss Limit ($50 risk per micro contract).
+5. **TopstepX Risk Budgeting**: Sized strictly according to the account's $500 Maximum Loss Limit ($50 risk per micro contract).
 
 ---
 

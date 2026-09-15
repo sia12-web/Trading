@@ -13,7 +13,7 @@
 Fetches normalized historical OHLCV candlestick data for a specified instrument and timeframe.
 
 - **Query Parameters**:
-  - `instrument` (string, required): `DOW` | `NASDAQ` | `GOLD` | `CRUDE` | `NIKKEI`
+  - `instrument` (string, required): `DOW` | `NASDAQ` | `GOLD` | `CRUDE`
   - `timeframe` (string, optional): `1m` | `5m` | `15m` | `30m` | `1H` | `4H` | `1D` (Default: `5m`)
   - `days` (integer, optional): Calendar lookback window (Default: `730` for `1D`, `5` for intraday)
   - `quote` (string, optional): `0` to omit the quote snapshot, `1` to include (Default: `1`)

@@ -6,7 +6,7 @@
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=flat-square&logo=supabase)](https://supabase.com/)
 [![Web Audio API](https://img.shields.io/badge/Web_Audio_API-Dual_Tone_Chimes-orange?style=flat-square)](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
 
-> **TradePulse** is a high-performance, real-time trading platform designed for institutional index futures (DOW, NASDAQ, GOLD, CRUDE, NIKKEI) and equity swing traders. It pairs institutional auction market theory (Steidlmayer/Dalton), 5-month anchored VWAP bands, multi-tiered CME market data pipelines, live broker portfolio synchronization (Questrade), prop firm challenge tracking (TopstepX), and an intelligent AI copilot (Leo) with persistent memory zones and procedural audio synthesis.
+> **TradePulse** is a high-performance, real-time trading platform designed for institutional futures (DOW, NASDAQ, GOLD, CRUDE) and equity swing traders. It pairs institutional auction market theory (Steidlmayer/Dalton), 5-month anchored VWAP bands, multi-tiered CME market data pipelines (Databento Live Hub), live broker portfolio synchronization (Questrade), prop firm challenge tracking (TopstepX), and an intelligent AI copilot (Leo) with persistent memory zones and procedural audio synthesis.
 
 ---
 

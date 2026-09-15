@@ -31,7 +31,7 @@ TradePulse's charting interface is built on **TradingView's Lightweight Charts v
 ```
 
 ### 1.1 Institutional Candlestick Styling
-To ensure immediate visual clarity and eliminate distracting instrument color overrides, all markets (DOW, NASDAQ, GOLD, CRUDE, NIKKEI) enforce standard institutional colors:
+To ensure immediate visual clarity and eliminate distracting instrument color overrides, all markets (DOW, NASDAQ, GOLD, CRUDE) enforce standard institutional colors:
 - **Up Candle Body**: `#089981` (Solid Emerald Green)
 - **Down Candle Body**: `#f23645` (Solid Crimson Red)
 - **Wicks & Borders**: Matching `#089981` / `#f23645`
