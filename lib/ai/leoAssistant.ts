@@ -337,6 +337,25 @@ export function parseLeoDirectives(text: string): LeoExecutionDirective[] {
         isLongTerm: Boolean(item.isLongTerm || item.longTermMemory),
       }
     }
+    if (item.action === 'ARM_STAGNATION_RULE') {
+      const parsedMin = parseInt(String(item.maxMinutes || '5'), 10)
+      return {
+        ...item,
+        maxMinutes: Number.isFinite(parsedMin) && parsedMin > 0 ? parsedMin : 5,
+        requireProfitPoints: item.requireProfitPoints != null ? Number(item.requireProfitPoints) || 1 : 1,
+      }
+    }
+    if (item.action === 'COPY_TOPSTEPX_ORDER') {
+      return {
+        ...item,
+        quantity: Number(typeof item.quantity === 'number' ? item.quantity : parseInt(String(item.quantity), 10) || 1),
+        entryPrice: Number(typeof item.entryPrice === 'number' ? item.entryPrice : parseFloat(String(item.entryPrice)) || 0),
+        stopLoss: Number(typeof item.stopLoss === 'number' ? item.stopLoss : parseFloat(String(item.stopLoss)) || 0),
+        takeProfit: Number(typeof item.takeProfit === 'number' ? item.takeProfit : parseFloat(String(item.takeProfit)) || 0),
+        dollarRisk: item.dollarRisk != null ? Number(item.dollarRisk) : undefined,
+        dollarReward: item.dollarReward != null ? Number(item.dollarReward) : undefined,
+      }
+    }
     if (item.action === 'SAVE_LONG_TERM_MEMORY') {
       return {
         ...item,
@@ -639,6 +658,15 @@ export function extractChartDataPoints(ctx: LeoChatContext): LeoDataPoint[] {
  * Builds the comprehensive Leo system prompt infused with live chart telemetry, time, session, positions, and Dalton Auction Theory.
  */
 export function buildLeoSystemPrompt(ctx: LeoChatContext): string {
+  const defaultBasePrice =
+    ctx.instrument === 'DOW' ? 52500 : ctx.instrument === 'GOLD' ? 4350 : ctx.instrument === 'CRUDE' ? 104 : 29500
+  const activeBasePrice =
+    ctx.currentPrice != null && Number.isFinite(ctx.currentPrice) ? ctx.currentPrice : defaultBasePrice
+  const defaultSlDist =
+    ctx.instrument === 'DOW' ? 60 : ctx.instrument === 'GOLD' ? 5 : ctx.instrument === 'CRUDE' ? 0.5 : 25
+  const defaultTpDist =
+    ctx.instrument === 'DOW' ? 120 : ctx.instrument === 'GOLD' ? 10 : ctx.instrument === 'CRUDE' ? 1.0 : 50
+  const defaultTargetPrice = (ctx.shortTermMoney?.yval ?? activeBasePrice).toFixed(2)
   const currentPriceStr = ctx.currentPrice != null ? ctx.currentPrice.toFixed(2) : 'Awaiting quote'
 
   let selectedSummary = 'None attached.'
@@ -749,7 +777,7 @@ You are the trader's execution partner on the desk. When the trader gives you di
     "instrument": "${ctx.instrument}",
     "direction": "LONG",
     "targetReference": "Yesterday FRVP Low Volume Node",
-    "targetPrice": ${ctx.shortTermMoney?.yval ?? ctx.currentPrice ?? 29419.00},
+    "targetPrice": ${defaultTargetPrice},
     "pattern": "BULLISH_ENGULFING",
     "stopLossMode": "BELOW_CANDLE_LOW",
     "takeProfitMode": "1:2",
@@ -803,9 +831,9 @@ You are the trader's execution partner on the desk. When the trader gives you di
     "action": "PLACE_ORDER",
     "instrument": "${ctx.instrument}",
     "direction": "LONG",
-    "price": ${ctx.currentPrice != null ? ctx.currentPrice.toFixed(2) : '21500.00'},
-    "stopLoss": ${ctx.currentPrice != null ? (ctx.currentPrice - (ctx.instrument === 'DOW' ? 60 : 25)).toFixed(2) : '21475.00'},
-    "profitTarget": ${ctx.currentPrice != null ? (ctx.currentPrice + (ctx.instrument === 'DOW' ? 120 : 50)).toFixed(2) : '21550.00'},
+    "price": ${activeBasePrice.toFixed(2)},
+    "stopLoss": ${(activeBasePrice - defaultSlDist).toFixed(2)},
+    "profitTarget": ${(activeBasePrice + defaultTpDist).toFixed(2)},
     "size": 1,
     "reason": "Trader voice command"
   }

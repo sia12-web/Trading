@@ -205,21 +205,24 @@ function buildDeskFallbackResponse(
     else if (/1\s*:\s*3|1\s+to\s+3/i.test(lower)) takeProfitMode = '1:3'
     else if (/1\s*:\s*5|1\s+to\s+5/i.test(lower)) takeProfitMode = '1:5'
 
+    const defaultPrice =
+      inst === 'DOW' ? 52500 : inst === 'GOLD' ? 4350 : inst === 'CRUDE' ? 104 : 29500
+
     let targetRef = 'Key Reference Level'
-    let targetPx = ctx.currentPrice ?? 29419.00
+    let targetPx = ctx.currentPrice ?? defaultPrice
 
     if (/frvp|volume\s*profile|low\s*volume|lvn/i.test(lower)) {
       const frvp = ctx.userDrawings?.frvps?.[0]
       targetRef = frvp ? `Manual FRVP (${frvp.startTimeEt}) LVN` : 'Yesterday FRVP Low Volume Node'
-      targetPx = frvp ? frvp.val : (ctx.shortTermMoney?.yval ?? (ctx.currentPrice ?? 29419.00))
+      targetPx = frvp ? frvp.val : (ctx.shortTermMoney?.yval ?? (ctx.currentPrice ?? defaultPrice))
     } else if (/trendline/i.test(lower)) {
       const tl = ctx.userDrawings?.trendlines?.[0]
       targetRef = tl ? `${tl.label || 'Trendline'} Support` : 'Trendline Support'
-      targetPx = tl ? tl.projectedPrice : (ctx.currentPrice ?? 29419.00)
+      targetPx = tl ? tl.projectedPrice : (ctx.currentPrice ?? defaultPrice)
     } else if (/range|box/i.test(lower)) {
       const r = ctx.userDrawings?.ranges?.[0]
       targetRef = r ? `${r.label || 'Range'} ${direction === 'LONG' ? 'Low' : 'High'}` : 'Range Boundary'
-      targetPx = r ? (direction === 'LONG' ? r.priceLow : r.priceHigh) : (ctx.currentPrice ?? 29419.00)
+      targetPx = r ? (direction === 'LONG' ? r.priceLow : r.priceHigh) : (ctx.currentPrice ?? defaultPrice)
     }
 
     const matchPrice = lower.match(/(?:at|@|price|around)\s*([\d,]+(?:\.\d+)?)/i)
@@ -276,17 +279,22 @@ function buildDeskFallbackResponse(
     let inst = ctx.instrument || 'NASDAQ'
     if (/\bdow\b|ym/i.test(lower)) inst = 'DOW'
     else if (/\bnasdaq\b|nq/i.test(lower)) inst = 'NASDAQ'
+    else if (/\bgold\b|gc/i.test(lower)) inst = 'GOLD'
+    else if (/\bcrude\b|oil|cl/i.test(lower)) inst = 'CRUDE'
     else if (/\bnikkei\b|nk/i.test(lower)) inst = 'NIKKEI'
 
     // Resolve price
     const matchPrice = lower.match(/(?:at|@|price)\s*([\d,]+(?:\.\d+)?)/i)
-    const fallbackPrice = inst === 'DOW' ? 52700 : inst === 'GOLD' ? 4320 : inst === 'CRUDE' ? 102.5 : 29400
+    const fallbackPrice =
+      inst === 'DOW' ? 52500 : inst === 'GOLD' ? 4350 : inst === 'CRUDE' ? 104 : 29500
     const rawPrice = matchPrice ? parseFloat(matchPrice[1]!.replace(/,/g, '')) : (ctx.currentPrice ?? fallbackPrice)
     const price = Number.isFinite(rawPrice) && rawPrice > 0 ? rawPrice : fallbackPrice
 
     // Resolve SL and TP brackets
-    const slDist = inst === 'DOW' ? 60 : inst === 'NIKKEI' ? 100 : 25
-    const tpDist = inst === 'DOW' ? 120 : inst === 'NIKKEI' ? 200 : 50
+    const slDist =
+      inst === 'DOW' ? 60 : inst === 'GOLD' ? 5 : inst === 'CRUDE' ? 0.5 : inst === 'NIKKEI' ? 100 : 25
+    const tpDist =
+      inst === 'DOW' ? 120 : inst === 'GOLD' ? 10 : inst === 'CRUDE' ? 1.0 : inst === 'NIKKEI' ? 200 : 50
 
     const matchSl = lower.match(/(?:stop|sl)\s*(?:at\s*)?([\d,]+(?:\.\d+)?)/i)
     const matchTp = lower.match(/(?:target|tp|profit)\s*(?:at\s*)?([\d,]+(?:\.\d+)?)/i)

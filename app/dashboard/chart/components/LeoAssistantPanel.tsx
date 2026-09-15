@@ -821,7 +821,9 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
         }
 
         if (!targetPx) {
-          targetPx = context.shortTermMoney?.yval ?? context.currentPrice ?? 28908.75
+          const defaultPrice =
+            inst === 'DOW' ? 52500 : inst === 'GOLD' ? 4350 : inst === 'CRUDE' ? 104 : 29500
+          targetPx = context.shortTermMoney?.yval ?? context.currentPrice ?? defaultPrice
         }
 
         const userSaid =

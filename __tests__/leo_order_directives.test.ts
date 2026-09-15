@@ -112,3 +112,51 @@ test('parseLeoDirectives - ARM_CONDITIONAL_ENTRY directive with user prompt & pa
   assert.equal(d.size, 1)
 })
 
+test('parseLeoDirectives - ARM_STAGNATION_RULE with string minutes and trailing commas', () => {
+  const text = `
+<execute>
+{
+  "action": "ARM_STAGNATION_RULE",
+  "maxMinutes": "7",
+  "requireProfitPoints": "2",
+  "description": "Timeout test",
+}
+</execute>
+`
+  const directives = parseLeoDirectives(text)
+  assert.equal(directives.length, 1)
+  const d = directives[0] as any
+  assert.equal(d.action, 'ARM_STAGNATION_RULE')
+  assert.equal(d.maxMinutes, 7)
+  assert.equal(typeof d.maxMinutes, 'number')
+  assert.equal(d.requireProfitPoints, 2)
+})
+
+test('parseLeoDirectives - COPY_TOPSTEPX_ORDER with string fields', () => {
+  const text = `
+<execute>
+{
+  "action": "COPY_TOPSTEPX_ORDER",
+  "contract": "MYMU26",
+  "direction": "BUY",
+  "quantity": "2",
+  "entryPrice": "52500.25",
+  "stopLoss": "52400.00",
+  "takeProfit": "52700.00",
+  "dollarRisk": "100",
+  "dollarReward": "200"
+}
+</execute>
+`
+  const directives = parseLeoDirectives(text)
+  assert.equal(directives.length, 1)
+  const d = directives[0] as any
+  assert.equal(d.action, 'COPY_TOPSTEPX_ORDER')
+  assert.equal(d.quantity, 2)
+  assert.equal(d.entryPrice, 52500.25)
+  assert.equal(d.stopLoss, 52400.0)
+  assert.equal(d.takeProfit, 52700.0)
+  assert.equal(d.dollarRisk, 100)
+  assert.equal(d.dollarReward, 200)
+})
+

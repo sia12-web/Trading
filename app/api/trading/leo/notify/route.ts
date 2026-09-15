@@ -34,12 +34,18 @@ export async function POST(request: Request) {
 
     let text = ''
 
+    const priceNum =
+      typeof body.price === 'number' && Number.isFinite(body.price)
+        ? body.price
+        : parseFloat(String(body.price)) || 0
+    const priceDisplay = priceNum > 0 ? priceNum.toFixed(2) : '---'
+
     if (body.type === 'STAGNATION_CLOSE') {
       text = [
         `🛑 *LEO DESK EXECUTION: STAGNATION EXIT*`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         `• *Instrument*: ${body.instrument}`,
-        `• *Exit Price*: ${body.price.toFixed(2)}`,
+        `• *Exit Price*: ${priceDisplay}`,
         `• *Duration in Trade*: ${body.durationMinutes != null ? `${body.durationMinutes.toFixed(1)}m` : 'Timed out'}`,
         `• *Result*: ${body.pnlPoints != null ? `${body.pnlPoints >= 0 ? '+' : ''}${body.pnlPoints.toFixed(1)} pts` : 'Flat'}${body.pnlCad != null ? ` (${body.pnlCad >= 0 ? '+' : ''}${body.pnlCad.toFixed(2)} CAD)` : ''}`,
         `• *Reason*: Stagnation timeout triggered after failing to move into profit.`,
@@ -50,7 +56,7 @@ export async function POST(request: Request) {
         `⚡ *LEO DESK EXECUTION: POSITION CLOSED*`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         `• *Instrument*: ${body.instrument}`,
-        `• *Exit Price*: ${body.price.toFixed(2)}`,
+        `• *Exit Price*: ${priceDisplay}`,
         `• *P&L*: ${body.pnlPoints != null ? `${body.pnlPoints >= 0 ? '+' : ''}${body.pnlPoints.toFixed(1)} pts` : ''}`,
         `• *Reason*: ${body.message ?? 'Direct trader command'}`,
       ].join('\n')
@@ -66,7 +72,7 @@ export async function POST(request: Request) {
         `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         `• *Instrument*: ${body.instrument}`,
         `• *Reference Level*: ${body.referencePoint ?? 'Chart Reference'}${volStr}${retestStr}`,
-        `• *Current Price*: ${body.price.toFixed(2)}`,
+        `• *Current Price*: ${priceDisplay}`,
         ...(body.volume ? [`• *Volume Confirmation*: ${body.volume}`] : []),
         ...(body.retestRatio != null ? [`• *Retest Ratio*: ${body.retestRatio.toFixed(2)}x`] : []),
         confStr,

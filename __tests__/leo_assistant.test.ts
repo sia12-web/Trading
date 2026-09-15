@@ -141,4 +141,38 @@ describe('Leo AI Desk Assistant Unit Tests', () => {
     assert.ok(prompt.includes('[ST] Y-VAL: 44020'))
     assert.ok(prompt.includes('[IT] 5D POC: 43900'))
   })
+
+  it('uses accurate instrument-aware base prices and brackets when currentPrice is null', () => {
+    const goldPrompt = buildLeoSystemPrompt({
+      instrument: 'GOLD',
+      currentPrice: null,
+      currentTimeEt: '10:00 AM ET',
+      dayType: null,
+      openingType: null,
+      longTermMoney: null,
+      intermediateMoney: null,
+      shortTermMoney: null,
+      activeExcesses: [],
+    })
+    assert.ok(goldPrompt.includes('4350.00'))
+    assert.ok(goldPrompt.includes('4345.00')) // stopLoss = 4350 - 5
+    assert.ok(goldPrompt.includes('4360.00')) // profitTarget = 4350 + 10
+    assert.ok(!goldPrompt.includes('NaN'))
+
+    const crudePrompt = buildLeoSystemPrompt({
+      instrument: 'CRUDE',
+      currentPrice: null,
+      currentTimeEt: '10:00 AM ET',
+      dayType: null,
+      openingType: null,
+      longTermMoney: null,
+      intermediateMoney: null,
+      shortTermMoney: null,
+      activeExcesses: [],
+    })
+    assert.ok(crudePrompt.includes('104.00'))
+    assert.ok(crudePrompt.includes('103.50')) // stopLoss = 104 - 0.5
+    assert.ok(crudePrompt.includes('105.00')) // profitTarget = 104 + 1.0
+    assert.ok(!crudePrompt.includes('NaN'))
+  })
 })

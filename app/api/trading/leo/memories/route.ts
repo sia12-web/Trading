@@ -51,17 +51,32 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await request.json()
-    if (!body.instrument || body.priceLow == null || body.priceHigh == null) {
-      return NextResponse.json({ error: 'Missing required memory fields' }, { status: 400 })
+    const body = (await request.json().catch(() => ({}))) as Record<string, any>
+    if (!body || !body.instrument || body.priceLow == null || body.priceHigh == null) {
+      return NextResponse.json(
+        { error: 'Missing required memory fields (instrument, priceLow, priceHigh)' },
+        { status: 400 }
+      )
     }
+
+    const rawLow = Number(body.priceLow)
+    const rawHigh = Number(body.priceHigh)
+    if (!Number.isFinite(rawLow) || !Number.isFinite(rawHigh)) {
+      return NextResponse.json(
+        { error: 'priceLow and priceHigh must be valid finite numbers' },
+        { status: 400 }
+      )
+    }
+
+    const priceLow = Math.min(rawLow, rawHigh)
+    const priceHigh = Math.max(rawLow, rawHigh)
 
     const memory: LeoLongTermMemory = {
       id: body.id || `mem-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       instrument: String(body.instrument).toUpperCase(),
       timeframe: body.timeframe || '1D',
-      priceLow: Number(body.priceLow),
-      priceHigh: Number(body.priceHigh),
+      priceLow,
+      priceHigh,
       purpose: body.purpose || 'Keep eyes on this level when price visits to see if support or resistance',
       notes: body.notes || '',
       status: body.status || 'ACTIVE',
