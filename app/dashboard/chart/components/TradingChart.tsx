@@ -636,8 +636,8 @@ interface TooltipData {
 const INSTRUMENT_META: Record<Instrument, { label: string; symbol: string; color: string; basePrice: number }> = {
   DOW: { label: 'Micro Dow · MYM', symbol: 'MYM', color: '#1d4ed8', basePrice: 52500 },
   NASDAQ: { label: 'Micro Nasdaq · MNQ', symbol: 'MNQ', color: '#0f766e', basePrice: 29500 },
-  GOLD: { label: 'Micro Gold · MGC', symbol: 'MGC', color: '#ca8a04', basePrice: 3200 },
-  CRUDE: { label: 'Crude · CL', symbol: 'CL', color: '#78716c', basePrice: 80 },
+  GOLD: { label: 'Micro Gold · MGC', symbol: 'MGC', color: '#ca8a04', basePrice: 4350 },
+  CRUDE: { label: 'Crude · CL', symbol: 'CL', color: '#78716c', basePrice: 104 },
 }
 
 function paintPositionBandOverlay(
