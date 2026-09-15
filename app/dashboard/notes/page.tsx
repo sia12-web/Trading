@@ -3,7 +3,7 @@
 /**
  * Desk Notes & Alarms Page
  * Surfaces Desk Notifications & Leo Long-Term Memories, active level alarms,
- * and triggered notifications created via Leo voice/chat commands or level tags.
+ * trendline/range cross alerts, and triggered notifications created via Leo voice/chat.
  */
 
 import { useEffect, useState } from 'react'
@@ -18,13 +18,28 @@ import {
   type LeoMemoryNotification,
 } from '@/lib/trading/leoLongTermMemory'
 import { DashboardNotifications } from '../components/DashboardNotifications'
+import { isArmedRuleExpired } from '@/lib/trading/sessionGate'
 
 type MarketFilter = 'ALL' | 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE'
+
+export interface DeskArmedAlert {
+  id: string
+  instrument: string
+  description: string
+  targetReference?: string
+  targetPrice?: number
+  session?: string
+  status: 'ARMED' | 'TRIGGERED' | 'EXECUTED' | 'SATISFIED' | 'CANCELLED' | 'EXPIRED'
+  createdAt: number
+}
+
+const MARKETS = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'] as const
 
 export default function NotesPage() {
   const [market, setMarket] = useState<MarketFilter>('ALL')
   const [memories, setMemories] = useState<LeoLongTermMemory[]>([])
   const [notifications, setNotifications] = useState<LeoMemoryNotification[]>([])
+  const [armedAlerts, setArmedAlerts] = useState<DeskArmedAlert[]>([])
   const [newInst, setNewInst] = useState<'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE'>('NASDAQ')
   const [newPxLow, setNewPxLow] = useState('')
   const [newPxHigh, setNewPxHigh] = useState('')
@@ -34,6 +49,41 @@ export default function NotesPage() {
   const refreshData = () => {
     setMemories(loadLongTermMemories())
     setNotifications(loadMemoryNotifications())
+
+    // Load armed price/drawing alerts from localStorage across markets
+    if (typeof window !== 'undefined') {
+      const allAlerts: DeskArmedAlert[] = []
+      for (const inst of MARKETS) {
+        try {
+          const raw = localStorage.getItem(`leo_armed_rules_${inst}`)
+          if (raw) {
+            const parsed = JSON.parse(raw)
+            if (Array.isArray(parsed)) {
+              const filtered = parsed
+                .filter(
+                  (r: any) =>
+                    (r.type === 'DESK_ALERT' || r.type === 'TELEGRAM_ALERT') &&
+                    !isArmedRuleExpired(r)
+                )
+                .map((r: any) => ({
+                  id: r.id,
+                  instrument: r.instrument || inst,
+                  description: r.description || `Alert at ${r.targetReference || r.targetPrice}`,
+                  targetReference: r.targetReference,
+                  targetPrice: r.targetPrice,
+                  session: r.session || 'NYC',
+                  status: r.status,
+                  createdAt: r.createdAt || Date.now(),
+                }))
+              allAlerts.push(...filtered)
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      setArmedAlerts(allAlerts)
+    }
   }
 
   useEffect(() => {
@@ -50,6 +100,11 @@ export default function NotesPage() {
   const filteredMemories = memories.filter((m) => {
     if (market === 'ALL') return true
     return m.instrument.toUpperCase() === market
+  })
+
+  const filteredAlerts = armedAlerts.filter((a) => {
+    if (market === 'ALL') return true
+    return a.instrument.toUpperCase() === market
   })
 
   const filteredNotifs = notifications.filter((n) => {
@@ -90,6 +145,21 @@ export default function NotesPage() {
     refreshData()
   }
 
+  const handleClearAlert = (inst: string, alertId: string) => {
+    if (typeof window === 'undefined') return
+    try {
+      const raw = localStorage.getItem(`leo_armed_rules_${inst}`)
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed)) {
+          const updated = parsed.filter((r: any) => r.id !== alertId)
+          localStorage.setItem(`leo_armed_rules_${inst}`, JSON.stringify(updated))
+        }
+      }
+    } catch {}
+    refreshData()
+  }
+
   const handleClearNotifs = () => {
     clearAllNotifications()
     refreshData()
@@ -103,11 +173,11 @@ export default function NotesPage() {
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold tracking-tight text-white">Desk Notes & Alarms</h1>
             <span className="rounded-full bg-amber-500/20 px-2.5 py-0.5 text-xs font-mono font-semibold text-amber-300 border border-amber-500/30">
-              {filteredMemories.length} Active Alarm{filteredMemories.length === 1 ? '' : 's'}
+              {filteredMemories.length + filteredAlerts.length} Active Alarm{filteredMemories.length + filteredAlerts.length === 1 ? '' : 's'}
             </span>
           </div>
           <p className="mt-1 text-sm text-gray-400 max-w-xl leading-relaxed">
-            Live price visit alarms, HTF memory notes, and notifications created when asking Leo for an alert across markets.
+            Live price visit alarms, HTF memory notes, and level alerts created when asking Leo for an alert across markets.
           </p>
         </div>
 
@@ -234,15 +304,57 @@ export default function NotesPage() {
         </form>
       )}
 
+      {/* Active Price Alarms & Drawing Alerts */}
+      {filteredAlerts.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-gray-400">
+            Active Desk Price &amp; Drawing Alarms ({filteredAlerts.length})
+          </h2>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {filteredAlerts.map((alt) => (
+              <div
+                key={alt.id}
+                className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-4 space-y-2 transition"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded bg-brand-500/20 px-2 py-0.5 text-xs font-bold text-brand-300 font-mono border border-brand-500/30">
+                      {alt.instrument}
+                    </span>
+                    <span className="text-xs font-bold text-amber-200">
+                      {alt.targetReference || 'Level Alert'}
+                    </span>
+                  </div>
+                  <span className="rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-amber-500/30 text-amber-200 border border-amber-500/40">
+                    {alt.status}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-300 leading-snug">{alt.description}</p>
+                <div className="flex items-center justify-between pt-2 border-t border-surface-600/50 text-[10px] text-gray-500 font-mono">
+                  <span>Target: {alt.targetPrice ? alt.targetPrice.toLocaleString() : 'Dynamic'}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleClearAlert(alt.instrument, alt.id)}
+                    className="text-red-400 hover:text-red-300 font-medium transition"
+                  >
+                    Delete Alert
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Active Alarm Notes List */}
       <section className="space-y-3">
         <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-gray-400">
-          Active Alarm Notes ({filteredMemories.length})
+          Active Long-Term Memory Notes ({filteredMemories.length})
         </h2>
 
         {filteredMemories.length === 0 ? (
           <div className="rounded-xl border border-surface-600/60 bg-surface-800/40 p-8 text-center text-sm text-gray-500">
-            No active alarm notes for this market. Ask Leo in chat or voice:
+            No active memory notes for this market. Ask Leo in chat or voice:
             <p className="mt-1 text-xs text-gray-400 italic">
               &quot;Leo, notify me when NASDAQ tests 29,500&quot; or &quot;Leo, sound alarm at Yesterday POC&quot;
             </p>
