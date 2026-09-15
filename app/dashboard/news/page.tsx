@@ -14,6 +14,7 @@ import type {
   DeskNewsTag,
   DeskNewsWindowHours,
 } from '@/lib/trading/deskNews'
+import { buildDeskNewsHazards, type DeskNewsHazard } from '@/lib/trading/deskNewsHazard'
 
 type DeskTab = DeskNewsInstrument | 'ALL'
 
@@ -157,6 +158,33 @@ export default function DeskNewsPage() {
     return rows.filter((ev) => ev.instruments.includes(tab))
   }, [data?.calendar, tab])
 
+  const deskNotesHazards = useMemo(() => {
+    const rows = data?.calendar || []
+    if (rows.length === 0) return []
+    const activeInstruments: DeskNewsInstrument[] = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE']
+    const targetMarkets = tab === 'ALL' ? activeInstruments : [tab]
+    const all: DeskNewsHazard[] = []
+    const seen = new Set<string>()
+
+    for (const inst of targetMarkets) {
+      const hazards = buildDeskNewsHazards({
+        calendar: rows,
+        instrument: inst,
+        includeUpcomingDay: true,
+        nowMs,
+      })
+      for (const h of hazards) {
+        if (!seen.has(h.id)) {
+          seen.add(h.id)
+          all.push(h)
+        }
+      }
+    }
+
+    all.sort((a, b) => (a.atMs ?? Infinity) - (b.atMs ?? Infinity))
+    return all
+  }, [data?.calendar, tab, nowMs])
+
   const updatedLabel = data?.updatedAt
     ? formatAge(Math.floor(new Date(data.updatedAt).getTime() / 1000), nowMs)
     : null
@@ -238,6 +266,88 @@ export default function DeskNewsPage() {
 
       {/* Desk News & Market Reaction AI Assistant */}
       <DeskNewsAiAssistant tab={tab} />
+
+      {/* Desk Notes & Catalyst Warnings */}
+      {deskNotesHazards.length > 0 && (
+        <section className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <svg
+                className="w-4 h-4 text-amber-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
+                />
+              </svg>
+              <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-amber-200">
+                Desk Notes · High-Impact Catalysts
+              </h2>
+            </div>
+            <span className="text-[10px] text-amber-200/60 font-mono">Finnhub Economic Feed</span>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            {deskNotesHazards.map((h) => {
+              const isStandAside = h.level === 'stand_aside'
+              const isCareful = h.level === 'careful'
+              const badgeTone = isStandAside
+                ? 'bg-red-500/30 text-red-100 border-red-500/40'
+                : isCareful
+                  ? 'bg-amber-500/30 text-amber-100 border-amber-500/40'
+                  : 'bg-violet-500/20 text-violet-100 border-violet-500/30'
+
+              return (
+                <div
+                  key={h.id}
+                  className={`rounded-lg border p-3 space-y-1.5 ${
+                    isStandAside
+                      ? 'border-red-600/40 bg-red-950/30'
+                      : isCareful
+                        ? 'border-amber-600/40 bg-amber-950/30'
+                        : 'border-white/10 bg-black/30'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2 text-[10px]">
+                    <span
+                      className={`rounded border px-1.5 py-0.5 font-bold uppercase ${badgeTone}`}
+                    >
+                      {isStandAside
+                        ? 'Stand Aside'
+                        : isCareful
+                          ? 'Careful'
+                          : 'High Impact'}
+                    </span>
+                    <span className="font-mono text-gray-300">
+                      {h.montrealHms ? `${h.montrealHms} MTL` : 'Today'}
+                    </span>
+                  </div>
+
+                  <div className="text-xs font-bold text-white leading-snug">
+                    {h.country} · {h.event}
+                  </div>
+
+                  <div className="flex items-center gap-1 text-[10px] text-gray-400 font-mono">
+                    <span>Target:</span>
+                    <span className="text-gray-200 font-semibold">
+                      {h.instruments.join(' · ')}
+                    </span>
+                  </div>
+
+                  <p className="text-[10px] text-gray-400 leading-relaxed pt-0.5 border-t border-white/5">
+                    {h.body}
+                  </p>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
 
       {calendar.length > 0 && (
         <section className="rounded-xl border border-amber-500/25 bg-amber-950/20 p-4">
