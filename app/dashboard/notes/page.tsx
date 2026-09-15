@@ -2,8 +2,8 @@
 
 /**
  * Desk Notes & Alarms Page
- * Surfaces active level alarms, HTF memory notes, and triggered notifications
- * created via Leo voice/chat commands or manual level tags across all markets.
+ * Surfaces Desk Notifications & Leo Long-Term Memories, active level alarms,
+ * and triggered notifications created via Leo voice/chat commands or level tags.
  */
 
 import { useEffect, useState } from 'react'
@@ -17,6 +17,7 @@ import {
   type LeoLongTermMemory,
   type LeoMemoryNotification,
 } from '@/lib/trading/leoLongTermMemory'
+import { DashboardNotifications } from '../components/DashboardNotifications'
 
 type MarketFilter = 'ALL' | 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE'
 
@@ -106,7 +107,7 @@ export default function NotesPage() {
             </span>
           </div>
           <p className="mt-1 text-sm text-gray-400 max-w-xl leading-relaxed">
-            Level alarms and memory notes created when asking Leo for an alert or setting HTF key levels across markets.
+            Live price visit alarms, HTF memory notes, and notifications created when asking Leo for an alert across markets.
           </p>
         </div>
 
@@ -127,8 +128,13 @@ export default function NotesPage() {
         </div>
       </div>
 
+      {/* Primary Component: Desk Notifications & Leo Long-Term Memories */}
+      <section>
+        <DashboardNotifications />
+      </section>
+
       {/* Market Selector Tabs */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 pt-2">
         {(['ALL', 'DOW', 'NASDAQ', 'GOLD', 'CRUDE'] as const).map((m) => (
           <button
             key={m}
