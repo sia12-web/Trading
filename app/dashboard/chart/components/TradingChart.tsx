@@ -68,6 +68,7 @@ import {
   closedHistoryOhlcChanged,
   quoteUnixForBucket,
 } from '@/lib/chart/liveFormingBar'
+import { fillCandleGaps } from '@/lib/chart/candleGapFiller'
 import {
   compute5MonthAnchoredVwap,
   compute5DayFixedRangeVolumeProfile,
@@ -775,7 +776,8 @@ function normalizeCandleTimes(candles: OHLCV[]): OHLCV[] {
     if (prev && t <= (prev.time as number)) continue
     out.push(safeCandle)
   }
-  return out
+  const filled = fillCandleGaps(out.map((c) => ({ ...c, time: c.time as number })), '5m')
+  return filled.map((c) => ({ ...c, time: c.time as UTCTimestamp }))
 }
 
 /**

@@ -8,6 +8,7 @@ import { spawn } from 'child_process'
 import path from 'path'
 import type { Instrument } from '@/types/price-feed'
 import { isDatabentoConfigured } from '@/lib/databento/client'
+import { recordFeedTick } from '@/lib/databento/feedLatencySelector'
 
 export type DatabentoLiveQuote = {
   instrument: Instrument
@@ -117,7 +118,11 @@ export async function ensureDatabentoSidecarRunning(): Promise<boolean> {
 
 function emit(quote: DatabentoLiveQuote) {
   const h = hub()
-  h.lastByInstrument.set(quote.instrument, { ...quote, receivedAt: Date.now() })
+  const now = Date.now()
+  const latency = Math.max(1, Math.min(500, now - quote.timestamp * 1000))
+  recordFeedTick('databento_live', Number.isFinite(latency) ? latency : 12, false)
+
+  h.lastByInstrument.set(quote.instrument, { ...quote, receivedAt: now })
   const set = h.listeners.get(quote.instrument)
   if (!set || set.size === 0) return
   for (const fn of set) {

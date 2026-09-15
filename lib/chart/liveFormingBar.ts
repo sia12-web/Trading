@@ -1,10 +1,4 @@
-/**
- * Live 5m forming-bar rules for Trade Pulse.
- *
- * Tick delay must not invent a new open (that flips green/red). Short SSE
- * dropouts must not leave a hole on the time axis. Overnight / long gaps are
- * left for REST history — do not fabricate hours of flat bars.
- */
+import { fillCandleGaps } from '@/lib/chart/candleGapFiller'
 
 export type FormingBar = {
   time: number
@@ -162,7 +156,8 @@ export function mergeHistoryWithLiveTip<T extends FormingBar>(
   const lastT = last.time
   if (liveT > lastT) {
     if (!isPlausibleDeskTick(last.close, live.close, 0.08)) return history
-    return [...history, live]
+    const merged = [...history, live]
+    return fillCandleGaps(merged, '5m')
   }
   if (liveT < lastT) return history
   if (!isPlausibleDeskTick(last.close, live.close, 0.08)) return history
@@ -176,7 +171,7 @@ export function mergeHistoryWithLiveTip<T extends FormingBar>(
   }
   const out = history.slice()
   out[out.length - 1] = next
-  return out
+  return fillCandleGaps(out, '5m')
 }
 
 /**

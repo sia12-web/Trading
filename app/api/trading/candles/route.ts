@@ -31,6 +31,7 @@ import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import type { Instrument } from '@/types/price-feed'
 import { getDatabentoCandles, isDatabentoConfigured } from '@/lib/databento/client'
 import { fetchDatabentoLiveSnapshot } from '@/lib/databento/liveHub'
+import { fillCandleGaps } from '@/lib/chart/candleGapFiller'
 import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
@@ -242,6 +243,7 @@ export async function GET(request: Request) {
     }
     if (candles?.length && !isDaily) {
       candles = dropImplausibleDeskBars(candles, instrument, timeframe)
+      candles = fillCandleGaps(candles, timeframe, instrument)
     }
 
     if (!candles || candles.length === 0) {

@@ -27,6 +27,7 @@ import {
   type DeskRiskProfile,
 } from '@/lib/trading/tradeifyProfile'
 import { SYSTEMATIC_LIVE_DESK } from '@/lib/trading/systematicDesk'
+import { getFeedMetricsSnapshot } from '@/lib/databento/feedLatencySelector'
 
 export interface SessionGateState {
   phase: string
@@ -140,6 +141,14 @@ export function SessionBanner({
   const [newsHazard, setNewsHazard] = useState<DeskNewsHazard | null>(null)
   const [newsUnavailable, setNewsUnavailable] = useState(false)
   const [riskProfile, setRiskProfile] = useState<DeskRiskProfile>('tradeify_growth_50k')
+  const [feedSnap, setFeedSnap] = useState(() => getFeedMetricsSnapshot())
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setFeedSnap(getFeedMetricsSnapshot())
+    }, 2500)
+    return () => clearInterval(timer)
+  }, [])
   const [htfStatus, setHtfStatus] = useState<string | null>(null)
   const [htfSummary, setHtfSummary] = useState<string | null>(null)
   const [htfPerf, setHtfPerf] = useState<{
@@ -547,6 +556,16 @@ export function SessionBanner({
             {liveDeskContractLabel(gate.lockedInstrument)}
           </span>
         )}
+        <span
+          className={`rounded px-2 py-0.5 font-mono text-[10px] font-semibold border ${
+            feedSnap.activeFeed.status === 'HEALTHY'
+              ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+              : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+          }`}
+          title={`Active Databento CME feed: ${feedSnap.activeFeed.name} (${feedSnap.activeFeed.qualityScore}/100 quality)`}
+        >
+          ⚡ Databento CME · {feedSnap.activeFeed.latencyMs}ms {feedSnap.zeroGapActive ? '(Zero Gap)' : ''}
+        </span>
         {asiaOrderLive && (
           <span
             className="rounded bg-lime-500/25 px-2 py-0.5 text-lime-200 font-semibold text-xs border border-lime-500/40"
