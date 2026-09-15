@@ -14,6 +14,8 @@ import type { TeamConsensusReport } from '@/lib/ai/stack/types'
 import type { InstitutionalHedgingTelemetry } from '@/lib/ai/stack/models/institutionalHedgingModel'
 import type { DayTypeEvaluation, MarketDayType } from '@/lib/chart/context55'
 import { detectCandlestickPatterns, type Candle } from '@/lib/trading/candlestickPatterns'
+import { isArmedRuleExpired } from '@/lib/trading/sessionGate'
+import { saveLongTermMemory, type LeoLongTermMemory } from '@/lib/trading/leoLongTermMemory'
 
 export interface ArmedDeskRule {
   id: string
@@ -42,10 +44,11 @@ export interface ArmedDeskRule {
   size?: number
   maxMinutes?: number
   session?: string
+  isLongTerm?: boolean
   requireHighVolume?: boolean
   requireConfidence?: boolean
   createdAt: number
-  status: 'ARMED' | 'TRIGGERED' | 'EXECUTED' | 'SATISFIED' | 'CANCELLED'
+  status: 'ARMED' | 'TRIGGERED' | 'EXECUTED' | 'SATISFIED' | 'CANCELLED' | 'EXPIRED'
   executedAt?: number
   executedPrice?: number
 }
@@ -151,8 +154,8 @@ export function LeoAssistantPanel({
         if (saved) {
           const parsed = JSON.parse(saved)
           if (Array.isArray(parsed)) {
-            // Keep rules from last 12 hours
-            setArmedRulesState(parsed.filter((r: any) => Date.now() - (r.createdAt || 0) < 12 * 3600 * 1000))
+            // Keep rules that are either Long-Term Memory or have not expired their NYC session
+            setArmedRulesState(parsed.filter((r: any) => !isArmedRuleExpired(r)))
           }
         } else {
           setArmedRulesState([])
@@ -179,7 +182,7 @@ export function LeoAssistantPanel({
       if (saved) {
         const parsed = JSON.parse(saved)
         if (Array.isArray(parsed)) {
-          return parsed.filter((r: any) => Date.now() - (r.createdAt || 0) < 12 * 3600 * 1000)
+          return parsed.filter((r: any) => !isArmedRuleExpired(r))
         }
       }
     } catch {}
@@ -549,6 +552,7 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
   // Dispatch a Desk alert (Plays chime, triggers top-right notification toast, posts in Leo chat & speaks)
   const dispatchDeskAlert = (rule: ArmedDeskRule) => {
     try {
+      if (isArmedRuleExpired(rule)) return
       const curPrice = context.currentPrice ?? rule.targetPrice ?? 0
 
       // 1. Play authentic chime sound
@@ -784,12 +788,13 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
         const tpMode = d.takeProfitMode || '1:2'
         const size = d.size ?? 1
 
+        const isLongTerm = Boolean((d as any).isLongTerm || (d as any).longTermMemory)
         const newRule: ArmedDeskRule = {
           id: `rule-${Date.now()}`,
           type: 'CONDITIONAL_ENTRY',
           description:
             d.description ||
-            `${dir} 1 ${inst} on ${pat.replace(/_/g, ' ')} at ${targetRef} (${targetPx.toLocaleString()})`,
+            `${dir} 1 ${inst} on ${pat.replace(/_/g, ' ')} at ${targetRef} (${targetPx.toLocaleString()})${isLongTerm ? ' [Long-Term Memory]' : ' [NYC Session]'}`,
           userPrompt: userSaid,
           instrument: inst,
           direction: dir,
@@ -803,6 +808,8 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
           takeProfitMode: tpMode,
           takeProfit: d.takeProfit,
           size,
+          session: (d as any).session ?? 'NYC',
+          isLongTerm,
           createdAt: Date.now(),
           status: 'ARMED',
         }
@@ -810,7 +817,7 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
         setArmedRules((prev) => [...prev, newRule])
         playTradingViewChime()
         warningToast(
-          `🎯 Strategy Armed: ${dir} on ${pat.replace(/_/g, ' ')} @ ${targetPx.toLocaleString()}`,
+          `🎯 Strategy Armed: ${dir} on ${pat.replace(/_/g, ' ')} @ ${targetPx.toLocaleString()}${isLongTerm ? ' (Long-Term Memory)' : ' (NYC Session Only)'}`,
           8000
         )
         speakText(`Strategy rule armed for ${dir} ${inst}. Monitoring ${pat.replace(/_/g, ' ')}.`)
@@ -825,20 +832,56 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
         }
         setArmedRules((prev) => [...prev.filter((r) => r.type !== 'STAGNATION_TIMEOUT'), newRule])
       } else if (d.action === 'ARM_DESK_ALERT' || d.action === 'ARM_TELEGRAM_ALERT') {
+        const isLongTerm = Boolean(d.isLongTerm || (d as any).longTermMemory)
         const newRule: ArmedDeskRule = {
           id: `desk-alert-${Date.now()}`,
           type: 'DESK_ALERT',
-          description: `Desk alert when price tests ${d.targetReference} (${d.targetPrice.toLocaleString()})`,
+          description: `Desk alert when price tests ${d.targetReference} (${d.targetPrice.toLocaleString()})${isLongTerm ? ' [Long-Term Memory]' : ' [NYC Session]'}`,
           targetPrice: d.targetPrice,
           targetReference: d.targetReference,
-          session: d.session,
+          session: d.session ?? 'NYC',
+          isLongTerm,
           requireHighVolume: d.requireHighVolume,
           requireConfidence: d.requireConfidence,
           createdAt: Date.now(),
           status: 'ARMED',
         }
         setArmedRules((prev) => [...prev, newRule])
-        speakText(`Desk alert armed for ${d.targetReference}`)
+        playTradingViewChime()
+        warningToast(
+          `🔔 Desk Alert Armed: ${d.targetReference} @ ${d.targetPrice.toLocaleString()}${isLongTerm ? ' (Long-Term Memory)' : ' (NYC Session Only)'}`,
+          8000
+        )
+        speakText(`Desk alert armed for ${d.targetReference}${isLongTerm ? ' in Long-Term Memory' : ''}`)
+      } else if (d.action === 'SAVE_LONG_TERM_MEMORY') {
+        const low = Math.min(d.priceLow, d.priceHigh)
+        const high = Math.max(d.priceLow, d.priceHigh)
+        const mem: LeoLongTermMemory = {
+          id: `mem-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          instrument: canonicalizeInstrument(d.instrument),
+          timeframe: d.timeframe || '1D',
+          priceLow: low,
+          priceHigh: high,
+          purpose: d.purpose || 'HTF observation zone',
+          status: 'ACTIVE',
+          createdAt: new Date().toISOString(),
+          triggerCount: 0,
+          alarmSoundEnabled: true,
+          isLongTerm: true,
+        }
+        saveLongTermMemory(mem)
+        playTradingViewChime()
+        warningToast(`🧠 Saved ${mem.instrument} level to Long-Term Memory`, 8000)
+        speakText(`Saved ${mem.instrument} level to Long-Term Memory`)
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `ltm-saved-${Date.now()}`,
+            role: 'assistant',
+            content: `🧠 **[LONG-TERM MEMORY ACTIVATED]**\n\nZone **${low.toFixed(2)} – ${high.toFixed(2)}** on **${mem.instrument}** has been saved to persistent memory.\n\n*Purpose:* "${mem.purpose}"\n*Persistence:* Active indefinitely across all sessions (Asia, London, NYC) with TradingView audible alarms.`,
+            timestamp: Date.now(),
+          },
+        ])
       } else if (d.action === 'SET_DAY_TYPE' || (d as any).action === 'OVERRIDE_DAY_TYPE') {
         const rawType = ((d as any).dayType || 'DOUBLE_DISTRIBUTION').toUpperCase()
         let mappedType: MarketDayType = 'DOUBLE_DISTRIBUTION'
@@ -900,6 +943,14 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
         let changed = false
         const nextRules = prevRules.map((rule) => {
           if (rule.status !== 'ARMED') return rule
+
+          // 0. Session Expiration Guard:
+          // If not explicitly marked as Long-Term Memory, check if NYC session has ended.
+          // If ended, mark EXPIRED so it does NOT fire any notifications or place orders!
+          if (isArmedRuleExpired(rule)) {
+            changed = true
+            return { ...rule, status: 'EXPIRED' as const }
+          }
 
           // 1. Stagnation Timeout Rule
           if (rule.type === 'STAGNATION_TIMEOUT') {
@@ -1550,25 +1601,58 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                     return (
                       <div
                         key={rule.id}
-                        className="px-3 py-1.5 flex items-center justify-between text-[10px] font-mono text-purple-200"
+                        className="px-3 py-1.5 flex items-center justify-between text-[10px] font-mono text-purple-200 border-b border-purple-900/30"
                       >
                         <span className="flex items-center gap-1.5 truncate max-w-[280px]">
-                          <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse shrink-0" />
                           <span className="truncate">{rule.description}</span>
+                          {rule.isLongTerm ? (
+                            <span className="px-1 py-0.5 rounded text-[8px] bg-purple-900/70 text-purple-300 border border-purple-700/60 font-bold shrink-0">
+                              🧠 Long-Term
+                            </span>
+                          ) : (
+                            <span className="px-1 py-0.5 rounded text-[8px] bg-amber-900/40 text-amber-300 border border-amber-700/50 font-bold shrink-0">
+                              ⏱️ NYC Only
+                            </span>
+                          )}
                         </span>
-                        {rule.status === 'ARMED' && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setArmedRules((prev) =>
-                                prev.map((r) => (r.id === rule.id ? { ...r, status: 'CANCELLED' as const } : r))
-                              )
-                            }
-                            className="text-[9px] text-neutral-400 hover:text-rose-400 font-bold ml-1 underline"
-                          >
-                            Cancel
-                          </button>
-                        )}
+                        <div className="flex items-center gap-1 shrink-0">
+                          {!rule.isLongTerm && rule.status === 'ARMED' && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setArmedRules((prev) =>
+                                  prev.map((r) =>
+                                    r.id === rule.id
+                                      ? {
+                                          ...r,
+                                          isLongTerm: true,
+                                          description: r.description.replace(' [NYC Session]', ' [Long-Term Memory]'),
+                                        }
+                                      : r
+                                  )
+                                )
+                              }
+                              className="text-[8.5px] text-purple-400 hover:text-purple-300 font-bold underline mr-1"
+                              title="Make this alarm persist across sessions as Long-Term Memory"
+                            >
+                              Make Long-Term
+                            </button>
+                          )}
+                          {rule.status === 'ARMED' && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setArmedRules((prev) =>
+                                  prev.map((r) => (r.id === rule.id ? { ...r, status: 'CANCELLED' as const } : r))
+                                )
+                              }
+                              className="text-[9px] text-neutral-400 hover:text-rose-400 font-bold ml-1 underline"
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </div>
                       </div>
                     )
                   }
@@ -1585,7 +1669,7 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                     >
                       {/* Card Header */}
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           {rule.status === 'ARMED' ? (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-950/90 border border-emerald-500/60 text-[9px] font-mono font-bold text-emerald-300">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
@@ -1605,22 +1689,55 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                           >
                             {rule.direction} {rule.size || 1}x {rule.instrument}
                           </span>
+                          {rule.isLongTerm ? (
+                            <span className="px-1.5 py-0.5 rounded text-[8.5px] font-mono font-bold bg-purple-900/60 text-purple-300 border border-purple-700/60">
+                              🧠 Long-Term
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded text-[8.5px] font-mono font-bold bg-amber-900/40 text-amber-300 border border-amber-700/50">
+                              ⏱️ NYC Only
+                            </span>
+                          )}
                         </div>
 
-                        {rule.status === 'ARMED' && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setArmedRules((prev) =>
-                                prev.map((r) => (r.id === rule.id ? { ...r, status: 'CANCELLED' as const } : r))
-                              )
-                            }
-                            className="px-1.5 py-0.5 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-700/70 text-rose-300 text-[9px] font-mono font-bold transition"
-                            title="Disarm this entry strategy"
-                          >
-                            Cancel Rule
-                          </button>
-                        )}
+                        <div className="flex items-center gap-1">
+                          {!rule.isLongTerm && rule.status === 'ARMED' && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setArmedRules((prev) =>
+                                  prev.map((r) =>
+                                    r.id === rule.id
+                                      ? {
+                                          ...r,
+                                          isLongTerm: true,
+                                          description: r.description.replace(' [NYC Session]', ' [Long-Term Memory]'),
+                                        }
+                                      : r
+                                  )
+                                )
+                              }
+                              className="px-1.5 py-0.5 rounded bg-purple-950/80 hover:bg-purple-900 border border-purple-700/70 text-purple-300 text-[8.5px] font-mono font-bold transition"
+                              title="Promote to Long-Term Memory (persist across sessions)"
+                            >
+                              Make Long-Term
+                            </button>
+                          )}
+                          {rule.status === 'ARMED' && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setArmedRules((prev) =>
+                                  prev.map((r) => (r.id === rule.id ? { ...r, status: 'CANCELLED' as const } : r))
+                                )
+                              }
+                              className="px-1.5 py-0.5 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-700/70 text-rose-300 text-[9px] font-mono font-bold transition"
+                              title="Disarm this entry strategy"
+                            >
+                              Cancel Rule
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       {/* Saved User Prompt (What Was Said) */}

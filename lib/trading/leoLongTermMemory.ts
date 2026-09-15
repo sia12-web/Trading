@@ -6,6 +6,8 @@
  * when live price visits the designated memory range.
  */
 
+import { isNycSessionExpired } from '@/lib/trading/sessionGate'
+
 export interface LeoLongTermMemory {
   id: string
   instrument: string // 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE' | 'RUSSELL'
@@ -14,12 +16,13 @@ export interface LeoLongTermMemory {
   priceHigh: number
   purpose: string // e.g. "Keep eyes on this level when price visits to see if support or resistance"
   notes?: string
-  status: 'ACTIVE' | 'TRIGGERED' | 'DISMISSED'
+  status: 'ACTIVE' | 'TRIGGERED' | 'DISMISSED' | 'EXPIRED'
   createdAt: string
   lastTriggeredAt?: string
   triggerCount: number
   sourceDrawingId?: string
   alarmSoundEnabled: boolean
+  isLongTerm?: boolean
 }
 
 export interface LeoMemoryNotification {
@@ -186,7 +189,12 @@ export function evaluatePriceAgainstMemories(args: {
 
   const updatedMemories = memories.map((mem) => {
     if (mem.instrument.toUpperCase() !== instrument.toUpperCase()) return mem
-    if (mem.status === 'DISMISSED') return mem
+    if (mem.status === 'DISMISSED' || mem.status === 'EXPIRED') return mem
+
+    // If memory is not long-term (explicitly session-scoped), check if NYC session has ended
+    if (mem.isLongTerm === false && isNycSessionExpired(new Date(mem.createdAt).getTime(), now)) {
+      return { ...mem, status: 'EXPIRED' as const }
+    }
 
     const low = Math.min(mem.priceLow, mem.priceHigh)
     const high = Math.max(mem.priceLow, mem.priceHigh)

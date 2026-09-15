@@ -138,7 +138,8 @@ export interface LeoLongTermMemoryItem {
   priceHigh: number
   purpose: string
   notes?: string
-  status: 'ACTIVE' | 'TRIGGERED' | 'DISMISSED'
+  status: 'ACTIVE' | 'TRIGGERED' | 'DISMISSED' | 'EXPIRED'
+  isLongTerm?: boolean
   lastTriggeredAt?: string
 }
 
@@ -235,6 +236,7 @@ export type LeoExecutionDirective =
       requireConfidence?: boolean
       session?: string
       customMessage?: string
+      isLongTerm?: boolean
     }
   | {
       action: 'ARM_CONDITIONAL_ENTRY' | 'ARM_LVN_BULL_ENG_RULE'
@@ -243,6 +245,7 @@ export type LeoExecutionDirective =
       direction?: 'LONG' | 'SHORT'
       targetReference: string
       targetPrice?: number
+      isLongTerm?: boolean
       pattern?:
         | 'BULLISH_ENGULFING'
         | 'BEARISH_ENGULFING'
@@ -257,6 +260,14 @@ export type LeoExecutionDirective =
       takeProfit?: number
       size?: number
       description?: string
+    }
+  | {
+      action: 'SAVE_LONG_TERM_MEMORY'
+      instrument?: string
+      priceLow: number
+      priceHigh: number
+      purpose?: string
+      timeframe?: string
     }
   | {
       action: 'CANCEL_RULES'
@@ -316,6 +327,21 @@ export function parseLeoDirectives(text: string): LeoExecutionDirective[] {
         stopLoss: item.stopLoss != null ? Number(typeof item.stopLoss === 'number' ? item.stopLoss : parseFloat(String(item.stopLoss)) || 0) : undefined,
         takeProfit: item.takeProfit != null ? Number(typeof item.takeProfit === 'number' ? item.takeProfit : parseFloat(String(item.takeProfit)) || 0) : undefined,
         size: Number(typeof item.size === 'number' ? item.size : parseInt(String(item.size), 10) || 1),
+        isLongTerm: Boolean(item.isLongTerm || item.longTermMemory),
+      }
+    }
+    if (item.action === 'ARM_DESK_ALERT' || item.action === 'ARM_TELEGRAM_ALERT') {
+      return {
+        ...item,
+        targetPrice: Number(typeof item.targetPrice === 'number' ? item.targetPrice : parseFloat(String(item.targetPrice)) || 0),
+        isLongTerm: Boolean(item.isLongTerm || item.longTermMemory),
+      }
+    }
+    if (item.action === 'SAVE_LONG_TERM_MEMORY') {
+      return {
+        ...item,
+        priceLow: Number(typeof item.priceLow === 'number' ? item.priceLow : parseFloat(String(item.priceLow)) || 0),
+        priceHigh: Number(typeof item.priceHigh === 'number' ? item.priceHigh : parseFloat(String(item.priceHigh)) || 0),
       }
     }
     return item
@@ -739,17 +765,21 @@ You are the trader's execution partner on the desk. When the trader gives you di
     "reason": "Trader direct voice command"
   }
   </execute>
-- Desk Alert Rule: If the trader says "Leo if we get to this data reference [e.g. in Asia session, 5D POC, London High, Overnight Low Value] and we see high volume and confidence, alert me" (or requests an alert or notification):
-  Confirm the parameters clearly (Target Reference, Session, Criteria) with NO edit options or Telegram mentions.
+- Desk Alert Rule: If the trader says "Leo if we get to this data reference [e.g. in Asia session, 5D POC, London High, Overnight Low Value] and we see high volume and confidence, alert me" (or requests an alert, alarm, or price notification):
+  Confirm the parameters clearly (Target Reference, Session, Criteria, Long-Term Memory status) with NO edit options or Telegram mentions.
   Confirming format:
   Confirming alert parameters:
 
   - **Target Reference**: [Target Reference] ([Target Price])
   - **Session**: [Session]
   - **Criteria**: High Volume & Confidence
+  - **Persistence**: [NYC Session Only (Expires at 16:00 ET) OR Long-Term Memory]
 
   Activating Desk Alert for when price reaches [Target Price] with high volume and confidence.
-  (CRITICAL PROTOCOL: Telegram integration has been completely removed from this desk. All alerts trigger on-screen notifications in the top-right of the screen along with a chime audio sound. NEVER mention Telegram or telegram dispatches. Do NOT offer editing of parameters).
+  (CRITICAL PROTOCOL:
+   1. All alerts trigger on-screen notifications in the top-right of the screen along with a chime audio sound. NEVER mention Telegram or telegram dispatches.
+   2. SESSION EXPIRATION RULE: By default, alarms and rules are scoped strictly to the NYC session ("isLongTerm": false). Once the NYC session concludes at 16:00 ET, the alarm expires and disappears. If price tests the level after the NYC session (during Globex, Asia, London, or later), NO notification or chime will fire.
+   3. If the trader explicitly specifies "long term memory", "remember this long term", or "save to long term memory", set "isLongTerm": true so it persists indefinitely across sessions.)
   Output:
   <execute>
   {
@@ -758,7 +788,20 @@ You are the trader's execution partner on the desk. When the trader gives you di
     "targetPrice": 29140.0,
     "requireHighVolume": true,
     "requireConfidence": true,
-    "session": "NYC"
+    "session": "NYC",
+    "isLongTerm": false
+  }
+  </execute>
+- Save to Long-Term Memory: If the trader says "Leo save this level to long term memory", "Leo remember this zone long term", or asks to permanently store a macro level:
+  Confirm that the level is saved to Leo's Long-Term Memory and will alert across all sessions (Asia, London, NYC).
+  Output:
+  <execute>
+  {
+    "action": "SAVE_LONG_TERM_MEMORY",
+    "instrument": "${ctx.instrument}",
+    "priceLow": 29140.0,
+    "priceHigh": 29155.0,
+    "purpose": "HTF Daily support/resistance zone"
   }
   </execute>
 - Direct Order Placement: If the trader instructs you to place an order or enter the market (e.g. "Leo buy NASDAQ", "Leo enter long at 21500", "Leo sell DOW", "Leo place order"):

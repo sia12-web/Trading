@@ -1866,3 +1866,86 @@ export function clipAllAfternoonBars<T extends { time: number }>(
 ): T[] {
   return filterAfternoonBars(candles, instrument, 'all-days')
 }
+
+/**
+ * Checks whether an alarm or rule set during an NYC trading session has expired.
+ *
+ * Rules created during the NYC session (or without long-term memory) expire when the
+ * NYC session closes at 16:00:00 America/New_York (cash market close).
+ * Once expired, no notifications, audible chimes, or automated actions will fire.
+ *
+ * @param createdAt - unix timestamp (ms) when the rule/alarm was created
+ * @param now - current evaluation time (defaults to Date.now())
+ */
+export function isNycSessionExpired(createdAt: number, now: Date | number = Date.now()): boolean {
+  if (!createdAt || !Number.isFinite(createdAt)) return true
+  const createdDate = new Date(createdAt)
+  const nowDate = typeof now === 'number' ? new Date(now) : now
+  const tz = 'America/New_York'
+
+  const createdYmd = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(createdDate)
+  const nowYmd = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(nowDate)
+
+  const createdTime = timeInTz(createdDate, tz)
+  const nowTime = timeInTz(nowDate, tz)
+
+  // If on the same NY calendar day:
+  if (nowYmd === createdYmd) {
+    // If created before 16:00 ET (regular NYC RTH), expires at 16:00 ET
+    if (createdTime < '16:00:00') {
+      return nowTime >= '16:00:00'
+    }
+    // If created in post-market 16:00-17:00 ET, expires at 17:00 ET
+    if (createdTime < '17:00:00') {
+      return nowTime >= '17:00:00'
+    }
+    // If created after 17:00 ET (e.g. evening Globex), it targets the next session
+    return false
+  }
+
+  // If evaluated on a future NY calendar date:
+  if (nowYmd > createdYmd) {
+    // If created before 17:00 ET on created day, that NYC session is strictly in the past
+    if (createdTime < '17:00:00') {
+      return true
+    }
+    // If created after 17:00 ET (e.g. evening Globex), it was for the upcoming next day's NYC session.
+    // It expires once that next day reaches 16:00 ET
+    if (nowTime >= '16:00:00') {
+      return true
+    }
+    // If more than 36 hours elapsed (e.g. across a weekend), it has expired
+    const diffHours = (nowDate.getTime() - createdDate.getTime()) / (3600 * 1000)
+    if (diffHours >= 36) {
+      return true
+    }
+    return false
+  }
+
+  return false
+}
+
+/**
+ * Checks whether an armed Leo rule or alarm has expired.
+ *
+ * If the rule is explicitly flagged as Long-Term Memory (`isLongTerm === true`),
+ * it persists indefinitely across sessions and never expires at session close.
+ *
+ * Otherwise (session-scoped by default), once the NYC session closes at 16:00:00 ET
+ * (or during Globex/Asia/London/subsequent days), the rule expires and will NOT
+ * trigger any audio chime, desk notification, Leo chat message, or automated order.
+ */
+export function isArmedRuleExpired(
+  rule: {
+    createdAt: number
+    isLongTerm?: boolean
+    session?: string
+    status?: string
+  },
+  now: Date | number = Date.now()
+): boolean {
+  if (rule.isLongTerm) return false
+  if (rule.status && rule.status !== 'ARMED') return true
+  return isNycSessionExpired(rule.createdAt, now)
+}
+

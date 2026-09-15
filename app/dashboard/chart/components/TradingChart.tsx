@@ -11044,6 +11044,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                       triggerCount: 0,
                       sourceDrawingId: targetMemoryRange.id,
                       alarmSoundEnabled: true,
+                      isLongTerm: true,
                     }
                     saveLongTermMemory(memory)
                     // Tag range box
