@@ -20,6 +20,8 @@ import {
   isChartStreamAllowed,
   isLiveDeskInstrument,
 } from '@/lib/trading/sessionGate'
+import { isDatabentoConfigured } from '@/lib/databento/client'
+import { getLatestDatabentoLiveQuote } from '@/lib/databento/liveHub'
 import type { Instrument } from '@/types/price-feed'
 
 export const dynamic = 'force-dynamic'
@@ -97,7 +99,31 @@ export async function GET(request: Request) {
       )
     }
 
-    // 1. Try OANDA with CME basis if available and configured
+    // 1. Direct Tier 1: Real-time CME Globex quote from Databento Live Sidecar / Hub
+    if (isDatabentoConfigured()) {
+      const dbLive = getLatestDatabentoLiveQuote(instrument)
+      if (dbLive && dbLive.price > 0) {
+        const previous_close = getDayPreviousClose(instrument) ?? dbLive.price
+        const change = dbLive.price - previous_close
+        const change_pct = previous_close ? (change / previous_close) * 100 : 0
+        return NextResponse.json(
+          {
+            instrument,
+            source: 'cme',
+            price: dbLive.price,
+            bid: dbLive.bid,
+            ask: dbLive.ask,
+            change,
+            change_pct,
+            previous_close,
+            timestamp: dbLive.timestamp,
+          },
+          { headers }
+        )
+      }
+    }
+
+    // 2. Try OANDA with CME basis if available and configured
     try {
       const oanda = await getOandaPrice(instrument)
       const cachedBasis = getCmeBasis(instrument)
@@ -128,7 +154,7 @@ export async function GET(request: Request) {
 
       const basis = await warmCmeBasis(instrument)
       const staticBasis =
-        instrument === 'DOW' ? 60.5 : instrument === 'NASDAQ' ? 36.5 : instrument === 'GOLD' ? 48.0 : 0
+        instrument === 'DOW' ? 60.5 : instrument === 'NASDAQ' ? 36.5 : instrument === 'GOLD' ? 48.0 : instrument === 'CRUDE' ? 0.5 : 0
       const shift = basis ?? getLastKnownCmeBasis(instrument) ?? staticBasis
       if (oanda?.price && oanda.price > 0 && shift != null) {
         const price = applyCmeBasis(oanda.price, shift)

@@ -27,6 +27,79 @@ interface FinnhubNews {
   }>
 }
 
+let ffCalendarCache: {
+  at: number
+  rows: Array<{
+    time: string
+    country: string
+    event: string
+    impact: string
+    actual?: string | number | null
+    estimate?: string | number | null
+    prev?: string | number | null
+  }>
+} | null = null
+
+const FF_COUNTRY_MAP: Record<string, string> = {
+  USD: 'US',
+  JPY: 'JP',
+  GBP: 'GB',
+  EUR: 'EU',
+  CAD: 'CA',
+  AUD: 'AU',
+  NZD: 'NZ',
+  CHF: 'CH',
+  CNY: 'CN',
+}
+
+async function fetchForexFactoryCalendar(): Promise<
+  Array<{
+    time: string
+    country: string
+    event: string
+    impact: string
+    actual?: string | number | null
+    estimate?: string | number | null
+    prev?: string | number | null
+  }>
+> {
+  if (ffCalendarCache && Date.now() - ffCalendarCache.at < 300_000) {
+    return ffCalendarCache.rows
+  }
+  try {
+    const res = await fetch('https://nfs.faireconomy.media/ff_calendar_thisweek.json', {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      signal: AbortSignal.timeout(6000),
+    })
+    if (!res.ok) return ffCalendarCache?.rows ?? []
+    const list = (await res.json()) as Array<{
+      title?: string
+      country?: string
+      date?: string
+      impact?: string
+      forecast?: string
+      previous?: string
+    }>
+    if (!Array.isArray(list)) return ffCalendarCache?.rows ?? []
+    const mapped = list
+      .map((item) => ({
+        time: String(item.date || ''),
+        country: FF_COUNTRY_MAP[item.country || ''] || item.country || 'US',
+        event: String(item.title || ''),
+        impact: String(item.impact || 'low').toLowerCase(),
+        actual: null,
+        estimate: item.forecast || null,
+        prev: item.previous || null,
+      }))
+      .filter((e) => e.time && e.event)
+    ffCalendarCache = { at: Date.now(), rows: mapped }
+    return mapped
+  } catch (err) {
+    logger.warn('[EconomicCalendar] ForexFactory fallback failed:', err)
+    return ffCalendarCache?.rows ?? []
+  }
+}
+
 export class FinnhubClient {
   private apiKey: string
 
@@ -285,7 +358,7 @@ export class FinnhubClient {
     }
   }
 
-  /** Economic calendar (from/to YYYY-MM-DD). Soft-fails to []. */
+  /** Economic calendar (from/to YYYY-MM-DD). Falls back to ForexFactory feed if Finnhub is 403 or unavailable. */
   async getEconomicCalendar(
     fromYmd: string,
     toYmd: string
@@ -300,7 +373,9 @@ export class FinnhubClient {
       prev?: string | number | null
     }>
   > {
-    if (!this.apiKey) return []
+    if (!this.apiKey) {
+      return fetchForexFactoryCalendar()
+    }
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT)
     try {
@@ -309,13 +384,16 @@ export class FinnhubClient {
         `from=${encodeURIComponent(fromYmd)}&to=${encodeURIComponent(toYmd)}&token=${this.apiKey}`
       const response = await fetch(url, { signal: controller.signal })
       if (!response.ok) {
-        logger.warn(`[FinnhubClient] Economic calendar HTTP ${response.status}`)
-        return []
+        // Free tier returns 403 for economic calendar — seamlessly fall back to ForexFactory
+        return await fetchForexFactoryCalendar()
       }
       const data = (await response.json()) as {
         economicCalendar?: Array<Record<string, unknown>>
       }
       const rows = Array.isArray(data?.economicCalendar) ? data.economicCalendar : []
+      if (rows.length === 0) {
+        return await fetchForexFactoryCalendar()
+      }
       return rows.map((r) => ({
         time: String(r.time || r.date || ''),
         country: String(r.country || ''),
@@ -326,10 +404,10 @@ export class FinnhubClient {
         prev: (r.prev as string | number | null | undefined) ?? null,
       }))
     } catch (error) {
-      logger.warn('[FinnhubClient] Economic calendar error', {
+      logger.warn('[FinnhubClient] Economic calendar error, falling back to ForexFactory', {
         err: error instanceof Error ? error.message : String(error),
       })
-      return []
+      return await fetchForexFactoryCalendar()
     } finally {
       clearTimeout(timeoutId)
     }

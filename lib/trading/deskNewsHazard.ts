@@ -48,7 +48,15 @@ export function parseCalendarEventMs(
     return n > 1e12 ? n : n * 1000
   }
 
-  // "2026-07-29 12:30:00" → treat as UTC (Finnhub economic calendar)
+  // Check if string has explicit timezone offset (e.g. "2026-09-16T14:00:00-04:00" or "Z")
+  if (/Z$|[+-]\d{2}(?::?\d{2})?$/.test(trimmed)) {
+    const ms = Date.parse(trimmed)
+    if (Number.isFinite(ms)) {
+      if (Math.abs(ms - nowMs) <= 14 * 86400000) return ms
+    }
+  }
+
+  // "2026-07-29 12:30:00" without timezone → treat as UTC (Finnhub economic calendar)
   const m = trimmed.match(
     /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/
   )
@@ -56,14 +64,13 @@ export function parseCalendarEventMs(
     const iso = `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6] || '00'}Z`
     const ms = Date.parse(iso)
     if (!Number.isFinite(ms)) return null
-    // Reject nonsense far outside ±7d of now
-    if (Math.abs(ms - nowMs) > 7 * 86400000) return null
+    if (Math.abs(ms - nowMs) > 14 * 86400000) return null
     return ms
   }
 
   const fallback = Date.parse(trimmed)
   if (!Number.isFinite(fallback)) return null
-  if (Math.abs(fallback - nowMs) > 7 * 86400000) return null
+  if (Math.abs(fallback - nowMs) > 14 * 86400000) return null
   return fallback
 }
 

@@ -110,7 +110,7 @@ export async function GET(request: Request) {
       // A basis from a live stream, an earlier connection or a REST poll is
       // reusable immediately — fallback basis ensures immediate scaling.
       const staticBasis =
-        instrument === 'DOW' ? 60.5 : instrument === 'NASDAQ' ? 36.5 : instrument === 'GOLD' ? 48.0 : 0
+        instrument === 'DOW' ? 60.5 : instrument === 'NASDAQ' ? 36.5 : instrument === 'GOLD' ? 48.0 : instrument === 'CRUDE' ? 0.5 : 0
       let basis: number | null = getCmeBasis(instrument) ?? getLastKnownCmeBasis(instrument) ?? staticBasis
       let pending: ReturnType<typeof getLastStreamedPrice> = getLastStreamedPrice(
         instrument,
