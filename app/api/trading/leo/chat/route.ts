@@ -206,20 +206,20 @@ function buildDeskFallbackResponse(
     else if (/1\s*:\s*5|1\s+to\s+5/i.test(lower)) takeProfitMode = '1:5'
 
     let targetRef = 'Key Reference Level'
-    let targetPx = ctx.currentPrice ?? 28908.75
+    let targetPx = ctx.currentPrice ?? 29419.00
 
     if (/frvp|volume\s*profile|low\s*volume|lvn/i.test(lower)) {
       const frvp = ctx.userDrawings?.frvps?.[0]
       targetRef = frvp ? `Manual FRVP (${frvp.startTimeEt}) LVN` : 'Yesterday FRVP Low Volume Node'
-      targetPx = frvp ? frvp.val : (ctx.shortTermMoney?.yval ?? (ctx.currentPrice ?? 28908.75))
+      targetPx = frvp ? frvp.val : (ctx.shortTermMoney?.yval ?? (ctx.currentPrice ?? 29419.00))
     } else if (/trendline/i.test(lower)) {
       const tl = ctx.userDrawings?.trendlines?.[0]
       targetRef = tl ? `${tl.label || 'Trendline'} Support` : 'Trendline Support'
-      targetPx = tl ? tl.projectedPrice : (ctx.currentPrice ?? 28908.75)
+      targetPx = tl ? tl.projectedPrice : (ctx.currentPrice ?? 29419.00)
     } else if (/range|box/i.test(lower)) {
       const r = ctx.userDrawings?.ranges?.[0]
       targetRef = r ? `${r.label || 'Range'} ${direction === 'LONG' ? 'Low' : 'High'}` : 'Range Boundary'
-      targetPx = r ? (direction === 'LONG' ? r.priceLow : r.priceHigh) : (ctx.currentPrice ?? 28908.75)
+      targetPx = r ? (direction === 'LONG' ? r.priceLow : r.priceHigh) : (ctx.currentPrice ?? 29419.00)
     }
 
     const matchPrice = lower.match(/(?:at|@|price|around)\s*([\d,]+(?:\.\d+)?)/i)
@@ -280,8 +280,9 @@ function buildDeskFallbackResponse(
 
     // Resolve price
     const matchPrice = lower.match(/(?:at|@|price)\s*([\d,]+(?:\.\d+)?)/i)
-    const rawPrice = matchPrice ? parseFloat(matchPrice[1]!.replace(/,/g, '')) : (ctx.currentPrice ?? (inst === 'DOW' ? 39800 : 21500))
-    const price = Number.isFinite(rawPrice) && rawPrice > 0 ? rawPrice : (inst === 'DOW' ? 39800 : 21500)
+    const fallbackPrice = inst === 'DOW' ? 52700 : inst === 'GOLD' ? 4320 : inst === 'CRUDE' ? 102.5 : 29400
+    const rawPrice = matchPrice ? parseFloat(matchPrice[1]!.replace(/,/g, '')) : (ctx.currentPrice ?? fallbackPrice)
+    const price = Number.isFinite(rawPrice) && rawPrice > 0 ? rawPrice : fallbackPrice
 
     // Resolve SL and TP brackets
     const slDist = inst === 'DOW' ? 60 : inst === 'NIKKEI' ? 100 : 25

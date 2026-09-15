@@ -749,7 +749,7 @@ You are the trader's execution partner on the desk. When the trader gives you di
     "instrument": "${ctx.instrument}",
     "direction": "LONG",
     "targetReference": "Yesterday FRVP Low Volume Node",
-    "targetPrice": ${ctx.shortTermMoney?.yval ?? ctx.currentPrice ?? 28908.75},
+    "targetPrice": ${ctx.shortTermMoney?.yval ?? ctx.currentPrice ?? 29419.00},
     "pattern": "BULLISH_ENGULFING",
     "stopLossMode": "BELOW_CANDLE_LOW",
     "takeProfitMode": "1:2",

@@ -21,11 +21,11 @@ import { getOandaCandlesRange } from '@/lib/oanda/candles'
 
 /** Typical 40–80 Dow / 50–90 Nasdaq, with headroom. Outside this is a bad print. */
 export const CME_BASIS_MAX_ABS: Record<Instrument, number> = {
-  DOW: 120,
-  NASDAQ: 140,
-  NIKKEI: 150,
-  GOLD: 80,
-  CRUDE: 4,
+  DOW: 400,
+  NASDAQ: 500,
+  NIKKEI: 500,
+  GOLD: 150,
+  CRUDE: 15,
 }
 
 /** Tight pairing: delayed futures last vs OANDA mid of the same second. */

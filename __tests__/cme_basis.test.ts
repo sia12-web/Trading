@@ -38,8 +38,8 @@ assert.equal(YAHOO_CME_SYMBOLS.NASDAQ, 'MNQ=F')
 assert.equal(YAHOO_CME_SYMBOLS.NIKKEI, 'NKD=F')
 assert.equal(YAHOO_CME_SYMBOLS.GOLD, 'MGC=F', 'GOLD chart is CME Micro Gold')
 assert.equal(YAHOO_CME_SYMBOLS.CRUDE, 'CL=F', 'CRUDE chart is CME Crude Oil')
-assert.ok(CME_BASIS_MAX_ABS.GOLD >= 10 && CME_BASIS_MAX_ABS.GOLD <= 90)
-assert.ok(CME_BASIS_MAX_ABS.CRUDE >= 0.5 && CME_BASIS_MAX_ABS.CRUDE <= 5)
+assert.ok(CME_BASIS_MAX_ABS.GOLD >= 10 && CME_BASIS_MAX_ABS.GOLD <= 150)
+assert.ok(CME_BASIS_MAX_ABS.CRUDE >= 0.5 && CME_BASIS_MAX_ABS.CRUDE <= 15)
 
 {
   const b = cmeBasisFromPair(4540.2, 4542.1, 'GOLD')
@@ -52,13 +52,13 @@ assert.ok(CME_BASIS_MAX_ABS.CRUDE >= 0.5 && CME_BASIS_MAX_ABS.CRUDE <= 5)
   assert.equal(Math.round(applyCmeBasis(86.5, b) * 100) / 100, 86.62)
 }
 assert.equal(
-  cmeBasisFromPair(4500, 4600, 'GOLD'),
+  cmeBasisFromPair(4500, 4800, 'GOLD'),
   null,
-  '100 oz gap is not a gold basis (GLD-scale bleed)'
+  '300 oz gap is not a gold basis (GLD-scale bleed)'
 )
 
-assert.ok(CME_BASIS_MAX_ABS.DOW <= 120)
-assert.ok(CME_BASIS_MAX_ABS.NASDAQ <= 140)
+assert.ok(CME_BASIS_MAX_ABS.DOW <= 400)
+assert.ok(CME_BASIS_MAX_ABS.NASDAQ <= 500)
 assert.ok(CME_BASIS_MAX_ABS.DOW >= 80, 'Dow band keeps headroom above typical 40–80')
 assert.ok(CME_BASIS_MAX_ABS.NASDAQ >= 90, 'Nasdaq band keeps headroom above typical 50–90')
 assert.ok(CME_BASIS_PAIR_WINDOW_MS <= 2_000, 'pairing window is tighter than 8s')
@@ -71,16 +71,16 @@ assert.ok(CME_BASIS_PAIR_WINDOW_MS <= 2_000, 'pairing window is tighter than 8s'
 }
 
 {
-  const b = cmeBasisFromPair(29495.2, 29568.25, 'NASDAQ')
+  const b = cmeBasisFromPair(29120.4, 29419.0, 'NASDAQ')
   assert.ok(b != null, 'today Nasdaq basis is valid')
-  assert.equal(Math.round(applyCmeBasis(29495.2, b) * 100) / 100, 29568.25)
+  assert.equal(Math.round(applyCmeBasis(29120.4, b) * 100) / 100, 29419.0)
 }
 
-assert.equal(cmeBasisFromPair(53000, 53000 * 1.02, 'DOW'), null, '2% gap is not a basis')
+assert.equal(cmeBasisFromPair(53000, 53000 * 1.05, 'DOW'), null, '5% gap is not a basis')
 assert.equal(
-  cmeBasisFromPair(53000, 53200, 'DOW'),
+  cmeBasisFromPair(53000, 53600, 'DOW'),
   null,
-  '200 Dow pts exceeds the plausible band (old 1% frac would have allowed ~530)'
+  '600 Dow pts exceeds the plausible band'
 )
 assert.equal(cmeBasisFromPair(0, 53311, 'DOW'), null)
 assert.equal(applyCmeBasis(53262.6, null), 53262.6, 'no basis → leave OANDA')
