@@ -10127,42 +10127,24 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 barCountdown={barCountdown}
               />
               {dataMode === 'live' ? (
-                <span
-                  className={`flex items-center gap-1 text-xs font-semibold ${
-                    candleFeed === 'databento' || candleFeed === 'yahoo'
-                      ? 'text-emerald-400'
-                      : 'text-amber-400'
-                  }`}
-                  title={
-                    candleFeed === 'databento'
-                      ? 'Official CME Globex MDP 3.0 Real-Time Exchange Feed (Databento API Active)'
-                      : candleFeed === 'yahoo'
-                      ? 'Live CME futures real-time feed active'
-                      : 'OANDA CFD fallback feed active'
-                  }
-                >
-                  <span className="relative flex h-2 w-2">
-                    <span
-                      className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                        candleFeed === 'databento' || candleFeed === 'yahoo'
-                          ? 'bg-emerald-400'
-                          : 'bg-amber-400'
-                      }`}
-                    />
-                    <span
-                      className={`relative inline-flex rounded-full h-2 w-2 ${
-                        candleFeed === 'databento' || candleFeed === 'yahoo'
-                          ? 'bg-emerald-500'
-                          : 'bg-amber-500'
-                      }`}
-                    />
+                candleFeed === 'databento' || candleFeed === 'yahoo' ? (
+                  <span
+                    className="flex items-center gap-1 text-xs font-semibold text-emerald-400"
+                    title={
+                      candleFeed === 'databento'
+                        ? 'Official CME Globex MDP 3.0 Real-Time Exchange Feed (Databento API Active)'
+                        : 'Live CME futures real-time feed active'
+                    }
+                  >
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-emerald-400" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                    </span>
+                    {candleFeed === 'databento'
+                      ? 'LIVE · DATABENTO'
+                      : 'LIVE · CME'}
                   </span>
-                  {candleFeed === 'databento'
-                    ? 'LIVE · DATABENTO'
-                    : candleFeed === 'yahoo'
-                    ? 'LIVE · CME'
-                    : 'LIVE · OANDA'}
-                </span>
+                ) : null
               ) : (
                 <span
                   className="flex items-center gap-1 text-xs text-amber-400"
