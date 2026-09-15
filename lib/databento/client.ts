@@ -14,6 +14,69 @@ export const DATABENTO_SYMBOLS: Record<Instrument, string> = {
   CRUDE: 'CL.c.0',
 }
 
+/**
+ * CME Equity Index Futures (MYM, MNQ, NKD) roll 8 days prior to the 3rd Friday
+ * of March (H), June (M), September (U), December (Z).
+ */
+export function getActiveCmeQuarterlyContract(
+  root: 'MYM' | 'MNQ' | 'NKD',
+  now: Date = new Date()
+): string {
+  const year = now.getFullYear()
+  const month = now.getMonth() + 1
+  const day = now.getDate()
+  const yearDigit = String(year).slice(-1)
+
+  function getThirdFriday(y: number, m: number): number {
+    let fridays = 0
+    for (let d = 1; d <= 31; d++) {
+      const date = new Date(Date.UTC(y, m - 1, d))
+      if (date.getUTCDay() === 5) {
+        fridays++
+        if (fridays === 3) return d
+      }
+    }
+    return 21
+  }
+
+  const getRollThursday = (y: number, m: number) => getThirdFriday(y, m) - 8
+
+  if (month < 3 || (month === 3 && day < getRollThursday(year, 3))) {
+    return `${root}H${yearDigit}`
+  } else if (month < 6 || (month === 6 && day < getRollThursday(year, 6))) {
+    return `${root}M${yearDigit}`
+  } else if (month < 9 || (month === 9 && day < getRollThursday(year, 9))) {
+    return `${root}U${yearDigit}`
+  } else if (month < 12 || (month === 12 && day < getRollThursday(year, 12))) {
+    return `${root}Z${yearDigit}`
+  } else {
+    const nextYearDigit = String(year + 1).slice(-1)
+    return `${root}H${nextYearDigit}`
+  }
+}
+
+export function getDatabentoActiveSymbol(
+  instrument: Instrument,
+  now: Date = new Date()
+): { symbol: string; stype_in: 'raw_symbol' | 'continuous' } {
+  if (instrument === 'DOW') {
+    return { symbol: getActiveCmeQuarterlyContract('MYM', now), stype_in: 'raw_symbol' }
+  }
+  if (instrument === 'NASDAQ') {
+    return { symbol: getActiveCmeQuarterlyContract('MNQ', now), stype_in: 'raw_symbol' }
+  }
+  if (instrument === 'NIKKEI') {
+    return { symbol: getActiveCmeQuarterlyContract('NKD', now), stype_in: 'raw_symbol' }
+  }
+  if (instrument === 'GOLD') {
+    return { symbol: 'MGC.c.0', stype_in: 'continuous' }
+  }
+  if (instrument === 'CRUDE') {
+    return { symbol: 'CL.c.0', stype_in: 'continuous' }
+  }
+  return { symbol: 'MYM.c.0', stype_in: 'continuous' }
+}
+
 export interface DatabentoCandle {
   time: number
   open: number
@@ -107,9 +170,10 @@ export async function getDatabentoCandles(
   days: number = 5
 ): Promise<{ candles: DatabentoCandle[]; symbol: string } | null> {
   const apiKey = process.env.DATABENTO_API_KEY?.trim()
-  const symbol = DATABENTO_SYMBOLS[instrument] || 'MYM.c.0'
+  const activeSym = getDatabentoActiveSymbol(instrument)
+  const symbol = activeSym.symbol
 
-  const cacheKey = `${instrument}:${resolution}:${days}`
+  const cacheKey = `${instrument}:${resolution}:${days}:${symbol}`
   const cached = candleCache.get(cacheKey)
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
     return { candles: cached.candles, symbol }
@@ -128,7 +192,7 @@ export async function getDatabentoCandles(
       symbols: symbol,
       schema: 'ohlcv-1m',
       encoding: 'json',
-      stype_in: 'continuous',
+      stype_in: activeSym.stype_in,
       start: startDateStr,
       end: endDateStr,
     })

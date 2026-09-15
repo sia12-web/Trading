@@ -19,11 +19,11 @@ import {
 } from '@/lib/oanda/pricingStream'
 import { getOandaCandlesRange } from '@/lib/oanda/candles'
 
-/** Typical 40–80 Dow / 50–90 Nasdaq, with headroom. Outside this is a bad print. */
+/** Fair value carry + dividend basis, with ample headroom for quarterly contract rolls (index 52k+). */
 export const CME_BASIS_MAX_ABS: Record<Instrument, number> = {
-  DOW: 400,
-  NASDAQ: 500,
-  NIKKEI: 500,
+  DOW: 1500,
+  NASDAQ: 1200,
+  NIKKEI: 1500,
   GOLD: 150,
   CRUDE: 15,
 }
@@ -229,6 +229,9 @@ export function warmCmeBasis(
       if (mid == null) {
         await backfillOandaMids(instrument, yahoo.timestamp)
         mid = pairOandaMidForYahooPrint(instrument, yahoo, { fallbackMid })
+      }
+      if (mid == null && fallbackMid && fallbackMid > 0) {
+        mid = fallbackMid
       }
       if (!(mid && mid > 0)) return getLastKnownCmeBasis(instrument)
 

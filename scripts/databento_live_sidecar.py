@@ -23,6 +23,44 @@ except ImportError:
 PORT = int(os.environ.get("DATABENTO_SIDECAR_PORT", "8765"))
 HOST = "127.0.0.1"
 
+import datetime
+
+def get_active_quarterly_contract(root: str, now=None) -> str:
+    if now is None:
+        now = datetime.datetime.now()
+    year = now.year
+    month = now.month
+    day = now.day
+    year_digit = str(year)[-1]
+
+    def get_third_friday(y, m):
+        fridays = 0
+        for d in range(1, 32):
+            try:
+                dt = datetime.date(y, m, d)
+                if dt.weekday() == 4:
+                    fridays += 1
+                    if fridays == 3:
+                        return d
+            except ValueError:
+                break
+        return 21
+
+    def get_roll_thursday(y, m):
+        return get_third_friday(y, m) - 8
+
+    if month < 3 or (month == 3 and day < get_roll_thursday(year, 3)):
+        return f"{root}H{year_digit}"
+    elif month < 6 or (month == 6 and day < get_roll_thursday(year, 6)):
+        return f"{root}M{year_digit}"
+    elif month < 9 or (month == 9 and day < get_roll_thursday(year, 9)):
+        return f"{root}U{year_digit}"
+    elif month < 12 or (month == 12 and day < get_roll_thursday(year, 12)):
+        return f"{root}Z{year_digit}"
+    else:
+        next_year_digit = str(year + 1)[-1]
+        return f"{root}H{next_year_digit}"
+
 DESK_SYMBOLS = {
     "MNQ.c.0": "NASDAQ",
     "MYM.c.0": "DOW",
@@ -197,10 +235,25 @@ def run_databento_stream(api_key: str):
         try:
             print("[Sidecar] Connecting to Databento Live TCP gateway (GLBX.MDP3)...")
             live = db.Live(key=api_key)
+            active_mym = get_active_quarterly_contract("MYM")
+            active_mnq = get_active_quarterly_contract("MNQ")
+            active_nkd = get_active_quarterly_contract("NKD")
+            raw_symbols = {
+                active_mym: "DOW",
+                active_mnq: "NASDAQ",
+                active_nkd: "NIKKEI",
+            }
+            print(f"[Sidecar] Subscribing active quarterly contracts: {list(raw_symbols.keys())}")
             live.subscribe(
                 dataset="GLBX.MDP3",
                 schema="trades",
-                symbols=list(DESK_SYMBOLS.keys()),
+                symbols=list(raw_symbols.keys()),
+                stype_in="raw_symbol",
+            )
+            live.subscribe(
+                dataset="GLBX.MDP3",
+                schema="trades",
+                symbols=["MGC.c.0", "CL.c.0"],
                 stype_in="continuous",
             )
             connected = True
@@ -209,7 +262,7 @@ def run_databento_stream(api_key: str):
             for record in live:
                 if isinstance(record, db.SymbolMappingMsg):
                     in_sym = record.stype_in_symbol
-                    desk = DESK_SYMBOLS.get(in_sym, in_sym)
+                    desk = raw_symbols.get(in_sym) or DESK_SYMBOLS.get(in_sym, in_sym)
                     with lock:
                         id_to_desk[record.instrument_id] = desk
                 elif isinstance(record, db.TradeMsg):

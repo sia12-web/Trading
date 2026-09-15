@@ -57,8 +57,8 @@ assert.equal(
   '300 oz gap is not a gold basis (GLD-scale bleed)'
 )
 
-assert.ok(CME_BASIS_MAX_ABS.DOW <= 400)
-assert.ok(CME_BASIS_MAX_ABS.NASDAQ <= 500)
+assert.ok(CME_BASIS_MAX_ABS.DOW <= 1500)
+assert.ok(CME_BASIS_MAX_ABS.NASDAQ <= 1200)
 assert.ok(CME_BASIS_MAX_ABS.DOW >= 80, 'Dow band keeps headroom above typical 40–80')
 assert.ok(CME_BASIS_MAX_ABS.NASDAQ >= 90, 'Nasdaq band keeps headroom above typical 50–90')
 assert.ok(CME_BASIS_PAIR_WINDOW_MS <= 2_000, 'pairing window is tighter than 8s')
@@ -78,9 +78,9 @@ assert.ok(CME_BASIS_PAIR_WINDOW_MS <= 2_000, 'pairing window is tighter than 8s'
 
 assert.equal(cmeBasisFromPair(53000, 53000 * 1.05, 'DOW'), null, '5% gap is not a basis')
 assert.equal(
-  cmeBasisFromPair(53000, 53600, 'DOW'),
+  cmeBasisFromPair(53000, 55000, 'DOW'),
   null,
-  '600 Dow pts exceeds the plausible band'
+  '2000 Dow pts exceeds the plausible band'
 )
 assert.equal(cmeBasisFromPair(0, 53311, 'DOW'), null)
 assert.equal(applyCmeBasis(53262.6, null), 53262.6, 'no basis → leave OANDA')

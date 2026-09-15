@@ -38,15 +38,20 @@ test('CME futures and live Asia session', async (t) => {
     assert.ok(data.price > 10000, `Expected price > 10000, got ${data.price}`)
   })
 
-  await t.test('/api/trading/candles bridges the active Asia session and builds the current Asia span', async () => {
-    const res = await getCandles(new Request('http://localhost:3000/api/trading/candles?instrument=NASDAQ'))
+  await t.test('/api/trading/quote serves real CME futures price for DOW matching TradingView', async () => {
+    const res = await getQuote(new Request('http://localhost:3000/api/trading/quote?instrument=DOW'))
+    const data = await res.json()
+    assert.equal(data.instrument, 'DOW')
+    assert.equal(data.source, 'cme')
+    assert.ok(data.price > 52200, `Expected DOW price on TradingView MYMZ26 scale (> 52200), got ${data.price}`)
+  })
+
+  await t.test('/api/trading/candles serves real CME Globex candles for DOW matching TradingView MYMZ26', async () => {
+    const res = await getCandles(new Request('http://localhost:3000/api/trading/candles?instrument=DOW&timeframe=5m'))
     const data = await res.json()
     assert.ok(data.candles.length > 0, 'Should have candles')
+    assert.ok(data.source === 'yahoo' || data.source === 'databento', `Expected CME source (yahoo or databento), got ${data.source}`)
     const last = data.candles[data.candles.length - 1]
-    assert.ok(last.time > 0, `Last candle time ${last.time} should be positive`)
-
-    const { spans } = computeSessionHighlightSpans({ candles: data.candles, instrument: 'NASDAQ' })
-    const asiaSpan = spans.find((s) => s.name === 'Asia')
-    assert.ok(asiaSpan, 'Should compute Asia spans across historical and current sessions')
+    assert.ok(last.close > 52200, `Expected DOW last candle close on MYMZ26 scale (> 52200), got ${last.close}`)
   })
 })

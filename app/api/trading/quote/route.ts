@@ -152,10 +152,17 @@ export async function GET(request: Request) {
         )
       }
 
-      const basis = await warmCmeBasis(instrument)
-      const staticBasis =
-        instrument === 'DOW' ? 60.5 : instrument === 'NASDAQ' ? 36.5 : instrument === 'GOLD' ? 48.0 : instrument === 'CRUDE' ? 0.5 : 0
-      const shift = basis ?? getLastKnownCmeBasis(instrument) ?? staticBasis
+      let basis = await warmCmeBasis(instrument, { oandaMid: oanda?.price })
+      if (basis == null && oanda?.price && oanda.price > 0) {
+        const yq = await getYahooQuote(instrument)
+        if (yq?.price && yq.price > 0) {
+          const derived = yq.price - oanda.price
+          if (Math.abs(derived) <= (instrument === 'DOW' ? 1500 : instrument === 'NASDAQ' ? 1200 : 500)) {
+            basis = derived
+          }
+        }
+      }
+      const shift = basis ?? getLastKnownCmeBasis(instrument)
       if (oanda?.price && oanda.price > 0 && shift != null) {
         const price = applyCmeBasis(oanda.price, shift)
         const previous_close = getDayPreviousClose(instrument) ?? price

@@ -40,7 +40,7 @@ const FALLBACK_HIGH_IMPACT_CALENDAR: DeskCalendarEvent[] = [
     country: 'US',
     event: 'FOMC Interest Rate Decision & Rate Policy Statement',
     impact: 'high',
-    instruments: ['DOW', 'NASDAQ', 'NIKKEI', 'GOLD', 'CRUDE'],
+    instruments: ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'],
     deskNote: 'High-impact interest rate decision — major volatility trigger across all indices, FX & commodities.',
   },
   {

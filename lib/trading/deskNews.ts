@@ -154,8 +154,8 @@ export function instrumentsForHeadline(
   }
 
   if (hit.size === 0) {
-    // Unscoped general → all three so All-tab still useful; desk tabs filter later
-    return ['DOW', 'NASDAQ', 'NIKKEI']
+    // Unscoped general → all active trader desks so All-tab stays useful
+    return ['DOW', 'NASDAQ', 'GOLD', 'CRUDE']
   }
   return Array.from(hit)
 }
@@ -289,13 +289,16 @@ export function filterCardsForDesk(
 
 export function instrumentsForCalendarEvent(country: string, event: string): DeskNewsInstrument[] {
   const text = `${country} ${event}`
-  // Japan prints → Nikkei. US red (CPI/NFP/FOMC) also hits Nikkei overnight risk.
-  if (/\b(JP|Japan|BoJ|Tokyo)\b/i.test(text)) return ['NIKKEI']
-  if (/\b(US|USA|United States|Fed|FOMC)\b/i.test(text)) {
-    return ['DOW', 'NASDAQ', 'NIKKEI']
+  if (/\b(Crude|Oil|EIA|Petroleum|Gasoline|OPEC|Natural Gas)\b/i.test(text)) {
+    return ['CRUDE']
   }
-  if (/\b(EU|ECB|UK|GBP|Euro)\b/i.test(text)) return ['DOW', 'NASDAQ', 'NIKKEI']
-  return ['DOW', 'NASDAQ', 'NIKKEI']
+  if (/\b(Gold|Silver|Bullion|Precious)\b/i.test(text)) {
+    return ['GOLD']
+  }
+  if (/\b(JP|Japan|BoJ|Tokyo|Yen)\b/i.test(text)) {
+    return ['DOW', 'NASDAQ', 'GOLD']
+  }
+  return ['DOW', 'NASDAQ', 'GOLD', 'CRUDE']
 }
 
 export function deskNoteForCalendar(instruments: DeskNewsInstrument[], impact: string): string {

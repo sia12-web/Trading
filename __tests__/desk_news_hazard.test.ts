@@ -74,9 +74,17 @@ import type { DeskCalendarEvent } from '../lib/trading/deskNews'
   assert.deepEqual(instrumentsForCalendarEvent('US', 'CPI'), [
     'DOW',
     'NASDAQ',
-    'NIKKEI',
+    'GOLD',
+    'CRUDE',
   ])
-  assert.deepEqual(instrumentsForCalendarEvent('JP', 'BoJ Rate Decision'), ['NIKKEI'])
+  assert.deepEqual(instrumentsForCalendarEvent('JP', 'BoJ Rate Decision'), [
+    'DOW',
+    'NASDAQ',
+    'GOLD',
+  ])
+  assert.deepEqual(instrumentsForCalendarEvent('US', 'EIA Crude Oil Inventories'), [
+    'CRUDE',
+  ])
 }
 
 {
@@ -88,7 +96,7 @@ import type { DeskCalendarEvent } from '../lib/trading/deskNews'
       country: 'US',
       event: 'CPI',
       impact: 'high',
-      instruments: ['DOW', 'NASDAQ', 'NIKKEI'],
+      instruments: ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'],
       deskNote: 'x',
     },
     {
@@ -106,7 +114,7 @@ import type { DeskCalendarEvent } from '../lib/trading/deskNews'
       country: 'JP',
       event: 'BoJ Rate Decision',
       impact: 'high',
-      instruments: ['NIKKEI'],
+      instruments: ['DOW', 'NASDAQ', 'GOLD'],
       deskNote: 'x',
     },
     {
@@ -115,7 +123,7 @@ import type { DeskCalendarEvent } from '../lib/trading/deskNews'
       country: 'US',
       event: 'Mystery Print',
       impact: 'high',
-      instruments: ['DOW', 'NASDAQ', 'NIKKEI'],
+      instruments: ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'],
       deskNote: 'x',
     },
   ]
@@ -134,15 +142,15 @@ import type { DeskCalendarEvent } from '../lib/trading/deskNews'
     'unparseable high still in digest'
   )
 
-  const nik = buildDeskNewsHazards({
+  const gld = buildDeskNewsHazards({
     calendar: cal,
-    instrument: 'NIKKEI',
+    instrument: 'GOLD',
     nowMs: now,
     includeUpcomingDay: true,
   })
-  assert.ok(nik.some((h) => h.event === 'CPI'), 'Nikkei sees US CPI')
-  assert.ok(nik.some((h) => h.event === 'BoJ Rate Decision'), 'Nikkei sees BoJ')
-  assert.ok(!nik.some((h) => h.event === 'Speeches'))
+  assert.ok(gld.some((h) => h.event === 'CPI'), 'GOLD sees US CPI')
+  assert.ok(gld.some((h) => h.event === 'BoJ Rate Decision'), 'GOLD sees BoJ')
+  assert.ok(!gld.some((h) => h.event === 'Speeches'))
 
   const banner = pickBannerHazard(ndx)
   assert.ok(banner && banner.event === 'CPI', 'banner picks active careful over idle')
@@ -156,7 +164,7 @@ import type { DeskCalendarEvent } from '../lib/trading/deskNews'
         country: 'US',
         event: 'NFP',
         impact: 'high',
-        instruments: ['DOW', 'NASDAQ', 'NIKKEI'],
+        instruments: ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'],
         deskNote: 'x',
       },
       {
@@ -165,7 +173,7 @@ import type { DeskCalendarEvent } from '../lib/trading/deskNews'
         country: 'US',
         event: 'CPI',
         impact: 'high',
-        instruments: ['DOW', 'NASDAQ', 'NIKKEI'],
+        instruments: ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'],
         deskNote: 'x',
       },
     ],
@@ -175,14 +183,14 @@ import type { DeskCalendarEvent } from '../lib/trading/deskNews'
   })
   assert.equal(pickBannerHazard(dual)?.event, 'NFP', 'stand_aside beats careful')
 
-  const digest = formatDayNewsDigest(nik, 'NIKKEI', now)
-  assert.ok(digest && /NIKKEI desk news/.test(digest.title))
+  const digest = formatDayNewsDigest(gld, 'GOLD', now)
+  assert.ok(digest && /GOLD desk news/.test(digest.title))
   assert.ok(formatMontrealHms(now).length >= 4)
 
   // Without includeUpcomingDay, only active windows
   const activeOnly = buildDeskNewsHazards({
     calendar: cal,
-    instrument: 'NIKKEI',
+    instrument: 'GOLD',
     nowMs: now,
     includeUpcomingDay: false,
   })
