@@ -1868,6 +1868,36 @@ export function clipAllAfternoonBars<T extends { time: number }>(
 }
 
 /**
+ * Checks whether the NYC cash trading session (or pre-market analyze window) is currently active.
+ *
+ * NYC RTH cash session runs 09:30:00 - 16:00:00 America/New_York (09:15:00 pre-market setup).
+ * Returns true only during NY trading session hours on weekdays.
+ * Returns false during Asian session, London session, post-close (16:00+ ET), or weekends.
+ */
+export function isNycSessionActive(now: Date | number = Date.now(), includePreMarket: boolean = true): boolean {
+  const d = typeof now === 'number' ? new Date(now) : now
+  const tz = 'America/New_York'
+
+  const dayStr = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).format(d)
+  if (dayStr === 'Sat' || dayStr === 'Sun') return false
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(d)
+  const h = parts.find((p) => p.type === 'hour')?.value ?? '00'
+  const m = parts.find((p) => p.type === 'minute')?.value ?? '00'
+  const s = parts.find((p) => p.type === 'second')?.value ?? '00'
+  const timeStr = `${h.padStart(2, '0')}:${m.padStart(2, '0')}:${s.padStart(2, '0')}`
+
+  const startTime = includePreMarket ? '09:15:00' : '09:30:00'
+  return timeStr >= startTime && timeStr < '16:00:00'
+}
+
+/**
  * Checks whether an alarm or rule set during an NYC trading session has expired.
  *
  * Rules created during the NYC session (or without long-term memory) expire when the

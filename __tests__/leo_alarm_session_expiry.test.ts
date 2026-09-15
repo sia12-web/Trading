@@ -1,8 +1,30 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { isNycSessionExpired, isArmedRuleExpired } from '../lib/trading/sessionGate.ts'
+import { isNycSessionExpired, isArmedRuleExpired, isNycSessionActive } from '../lib/trading/sessionGate.ts'
 import { parseLeoDirectives } from '../lib/ai/leoAssistant.ts'
 import { evaluatePriceAgainstMemories } from '../lib/trading/leoLongTermMemory.ts'
+
+test('isNycSessionActive - identifies active vs off-session hours', () => {
+  // Monday 10:30 AM EDT (14:30 UTC) -> Active (NYC session ON)
+  const mon1030 = new Date('2026-09-14T14:30:00Z')
+  assert.equal(isNycSessionActive(mon1030), true, 'Active during Monday RTH')
+
+  // Monday 21:04 EDT (Tuesday 01:04 UTC - Asian session) -> Inactive (NYC session FINISHED)
+  const monAsia = new Date('2026-09-15T01:04:00Z')
+  assert.equal(isNycSessionActive(monAsia), false, 'Inactive during Asian session')
+
+  // Tuesday 04:00 EDT (08:00 UTC - London session) -> Inactive (NYC session FINISHED)
+  const tueLondon = new Date('2026-09-15T08:00:00Z')
+  assert.equal(isNycSessionActive(tueLondon), false, 'Inactive during London session')
+
+  // Tuesday 16:05 EDT (20:05 UTC - Post-close) -> Inactive
+  const tuePostClose = new Date('2026-09-15T20:05:00Z')
+  assert.equal(isNycSessionActive(tuePostClose), false, 'Inactive after 16:00 ET close')
+
+  // Saturday 12:00 EDT -> Inactive
+  const saturday = new Date('2026-09-19T16:00:00Z')
+  assert.equal(isNycSessionActive(saturday), false, 'Inactive on weekend')
+})
 
 test('Leo Alarm & Rule Session Expiry Logic', async (t) => {
   await t.test('isNycSessionExpired - rules created during NYC session expire at 16:00 ET', () => {

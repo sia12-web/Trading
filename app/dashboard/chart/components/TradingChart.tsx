@@ -230,6 +230,7 @@ import {
   liveVisibleInstruments,
   sessionFor,
   deskMarketFor,
+  isNycSessionActive,
 } from '@/lib/trading/sessionGate'
 import type { AsiaDeskOverlay } from '@/lib/trading/asiaDesk'
 import {
@@ -3699,8 +3700,8 @@ export function TradingChart({
       instrument,
       currentPrice: curPrice,
       currentTimeEt: nowEtStr,
-      dayType: dayTypeEval?.badgeText ?? null,
-      openingType: openingBadge ?? null,
+      dayType: isNycSessionActive() ? (dayTypeEval?.badgeText ?? null) : null,
+      openingType: isNycSessionActive() ? (openingBadge ?? null) : null,
       sessionDetails: {
         sessionName,
         sessionPhase,
@@ -10176,69 +10177,75 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   ? `${overnightInventory.description} (Long: ${overnightInventory.pctLong}%, Short: ${overnightInventory.pctShort}%)`
                   : 'Overnight Inventory vs Prior NYC Close (Calculated across Globex: Asia, London, Pre-Market)'
 
+                const nycActive = isNycSessionActive()
+
                 return (
                   <>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!leoPanelOpen) return
-                        setLeoExternalPoints([
-                          {
-                            id: 'ctx-day-type',
-                            label: 'Day Type',
-                            value: dayTypeEval.badgeText,
-                            tier: 'CONTEXT',
-                            category: 'DAY_TYPE',
-                            description: dayTypeEval.description || 'Current Dalton Day Type',
-                          },
-                        ])
-                      }}
-                      className={`${leoPanelOpen ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'} transition flex items-center gap-1 select-none`}
-                      title={leoPanelOpen ? 'Click to send Day Type to Leo AI' : (dayTypeEval.description || 'Current Dalton Day Type')}
-                    >
-                      <span className="text-gray-500">Day: </span>
-                      <span className={`text-purple-300 font-semibold ${leoPanelOpen ? 'underline decoration-dotted decoration-purple-400/50 underline-offset-2' : ''}`}>
-                        {dayTypeOverride ? '🤖 ' : ''}{dayTypeEval.badgeText}{dayTypeOverride ? ' (AI Overwrite)' : ''}
-                      </span>
-                    </button>
-                    {dayTypeOverride && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setDayTypeOverride(null)
-                        }}
-                        className="text-[9px] text-amber-400/80 hover:text-amber-300 hover:underline px-1 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 font-mono transition"
-                        title="Revert AI Overwrite back to mathematical Day Type"
-                      >
-                        Reset Math
-                      </button>
+                    {nycActive && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!leoPanelOpen) return
+                            setLeoExternalPoints([
+                              {
+                                id: 'ctx-day-type',
+                                label: 'Day Type',
+                                value: dayTypeEval.badgeText,
+                                tier: 'CONTEXT',
+                                category: 'DAY_TYPE',
+                                description: dayTypeEval.description || 'Current Dalton Day Type',
+                              },
+                            ])
+                          }}
+                          className={`${leoPanelOpen ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'} transition flex items-center gap-1 select-none`}
+                          title={leoPanelOpen ? 'Click to send Day Type to Leo AI' : (dayTypeEval.description || 'Current Dalton Day Type')}
+                        >
+                          <span className="text-gray-500">Day: </span>
+                          <span className={`text-purple-300 font-semibold ${leoPanelOpen ? 'underline decoration-dotted decoration-purple-400/50 underline-offset-2' : ''}`}>
+                            {dayTypeOverride ? '🤖 ' : ''}{dayTypeEval.badgeText}{dayTypeOverride ? ' (AI Overwrite)' : ''}
+                          </span>
+                        </button>
+                        {dayTypeOverride && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setDayTypeOverride(null)
+                            }}
+                            className="text-[9px] text-amber-400/80 hover:text-amber-300 hover:underline px-1 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 font-mono transition"
+                            title="Revert AI Overwrite back to mathematical Day Type"
+                          >
+                            Reset Math
+                          </button>
+                        )}
+                        <span className="text-gray-600 text-[10px]">|</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!leoPanelOpen) return
+                            setLeoExternalPoints([
+                              {
+                                id: 'ctx-open-type',
+                                label: 'Open Type',
+                                value: openingBadge,
+                                tier: 'CONTEXT',
+                                category: 'OPEN',
+                                description: 'Opening Activity Structure',
+                              },
+                            ])
+                          }}
+                          className={`${leoPanelOpen ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'} transition flex items-center gap-1 select-none`}
+                          title={leoPanelOpen ? 'Click to send Open Type to Leo AI' : 'Opening Activity Structure'}
+                        >
+                          <span className="text-gray-500">Open: </span>
+                          <span className={`text-cyan-300 font-semibold ${leoPanelOpen ? 'underline decoration-dotted decoration-cyan-400/50 underline-offset-2' : ''}`}>
+                            {openingBadge}
+                          </span>
+                        </button>
+                        <span className="text-gray-600 text-[10px]">|</span>
+                      </>
                     )}
-                    <span className="text-gray-600 text-[10px]">|</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!leoPanelOpen) return
-                        setLeoExternalPoints([
-                          {
-                            id: 'ctx-open-type',
-                            label: 'Open Type',
-                            value: openingBadge,
-                            tier: 'CONTEXT',
-                            category: 'OPEN',
-                            description: 'Opening Activity Structure',
-                          },
-                        ])
-                      }}
-                      className={`${leoPanelOpen ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'} transition flex items-center gap-1 select-none`}
-                      title={leoPanelOpen ? 'Click to send Open Type to Leo AI' : 'Opening Activity Structure'}
-                    >
-                      <span className="text-gray-500">Open: </span>
-                      <span className={`text-cyan-300 font-semibold ${leoPanelOpen ? 'underline decoration-dotted decoration-cyan-400/50 underline-offset-2' : ''}`}>
-                        {openingBadge}
-                      </span>
-                    </button>
-                    <span className="text-gray-600 text-[10px]">|</span>
                     <button
                       type="button"
                       onClick={() => {
