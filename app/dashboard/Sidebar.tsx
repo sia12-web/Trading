@@ -2,9 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { Suspense, useEffect, useState } from 'react'
-import { buildDeskNewsHazards } from '@/lib/trading/deskNewsHazard'
-import type { DeskCalendarEvent, DeskNewsInstrument } from '@/lib/trading/deskNews'
+import { Suspense, useState } from 'react'
 
 type NavItem = {
   href: string
@@ -78,6 +76,26 @@ const LIVE_ITEMS: NavItem[] = [
           strokeLinejoin="round"
           d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"
         />
+      </svg>
+    ),
+  },
+  {
+    href: '/dashboard/notes',
+    label: 'Notes',
+    hint: 'Alarms & level alerts',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-4 h-4">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+      </svg>
+    ),
+  },
+  {
+    href: '/dashboard/situations',
+    label: 'Situations',
+    hint: 'Per-market Leo rules',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-4 h-4">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5.032 14.47M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591l3.958 3.966M14.25 3.104c.251.023.501.05.75.082M19.5 14.47l-3.958-3.966a2.25 2.25 0 00-.659-1.591V3.184" />
       </svg>
     ),
   },
@@ -162,199 +180,18 @@ function NavSection({
   )
 }
 
-type CompactHazard = {
-  id: string
-  event: string
-  country: string
-  impact: string
-  montrealHms: string | null
-  level: 'none' | 'careful' | 'stand_aside'
-  instruments: DeskNewsInstrument[]
-  body: string
-}
-
-function SidebarDeskNotes() {
-  const [hazards, setHazards] = useState<CompactHazard[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    let cancelled = false
-    const fetchDeskNotes = async () => {
-      try {
-        const res = await fetch(
-          `/api/trading/desk-news?window=24&session=0&calendarOnly=1&_=${Date.now()}`,
-          { cache: 'no-store' }
-        )
-        const json = (await res.json().catch(() => null)) as {
-          ok?: boolean
-          calendar?: DeskCalendarEvent[]
-        } | null
-        if (cancelled) return
-        if (!json?.ok || !Array.isArray(json.calendar)) {
-          setHazards([])
-          setLoading(false)
-          return
-        }
-
-        const activeInstruments: DeskNewsInstrument[] = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE']
-        const allHazards: CompactHazard[] = []
-        const seenIds = new Set<string>()
-
-        for (const inst of activeInstruments) {
-          const instHazards = buildDeskNewsHazards({
-            calendar: json.calendar,
-            instrument: inst,
-            includeUpcomingDay: true,
-          })
-
-          for (const h of instHazards) {
-            if (!seenIds.has(h.id)) {
-              seenIds.add(h.id)
-              allHazards.push({
-                id: h.id,
-                event: h.event,
-                country: h.country,
-                impact: h.impact,
-                montrealHms: h.montrealHms,
-                level: h.level,
-                instruments: h.instruments.filter((i): i is DeskNewsInstrument =>
-                  activeInstruments.includes(i)
-                ),
-                body: h.body,
-              })
-            }
-          }
-        }
-
-        allHazards.sort((a, b) => {
-          const priority = { stand_aside: 0, careful: 1, none: 2 }
-          return (priority[a.level] ?? 2) - (priority[b.level] ?? 2)
-        })
-
-        setHazards(allHazards)
-      } catch {
-        if (!cancelled) setHazards([])
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-
-    void fetchDeskNotes()
-    const interval = setInterval(fetchDeskNotes, 120_000)
-    return () => {
-      cancelled = true
-      clearInterval(interval)
-    }
-  }, [])
-
-  return (
-    <div className="pt-3 px-1 border-t border-surface-600/60 mt-3 space-y-2">
-      <div className="flex items-center justify-between px-2">
-        <div className="flex items-center gap-1.5">
-          <svg
-            className="w-3.5 h-3.5 text-amber-400"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
-            />
-          </svg>
-          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400">
-            Desk Notes
-          </span>
-        </div>
-        <Link
-          href="/dashboard/news"
-          className="text-[10px] text-gray-500 hover:text-brand-300 font-medium transition-colors"
-        >
-          View all →
-        </Link>
-      </div>
-
-      {loading ? (
-        <div className="px-2 py-2 text-[11px] text-gray-500 font-mono animate-pulse">
-          Loading notes…
-        </div>
-      ) : hazards.length === 0 ? (
-        <div className="rounded-lg border border-surface-600/50 bg-surface-700/40 p-2 text-center">
-          <span className="text-[11px] text-gray-400 block font-medium">Clean calendar</span>
-          <span className="text-[9px] text-gray-500">No high-impact prints today</span>
-        </div>
-      ) : (
-        <div className="space-y-1.5">
-          {hazards.slice(0, 4).map((h) => {
-            const isStandAside = h.level === 'stand_aside'
-            const isCareful = h.level === 'careful'
-            const badgeTone = isStandAside
-              ? 'bg-red-500/25 text-red-200 border-red-500/40'
-              : isCareful
-                ? 'bg-amber-500/25 text-amber-200 border-amber-500/40'
-                : 'bg-violet-500/20 text-violet-200 border-violet-500/30'
-
-            return (
-              <Link
-                key={h.id}
-                href="/dashboard/news"
-                className={`block rounded-lg border p-2 text-xs transition hover:brightness-110 ${
-                  isStandAside
-                    ? 'border-red-600/40 bg-red-950/30'
-                    : isCareful
-                      ? 'border-amber-600/40 bg-amber-950/20'
-                      : 'border-surface-600 bg-surface-700/50'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-1 mb-1">
-                  <span
-                    className={`rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${badgeTone}`}
-                  >
-                    {isStandAside
-                      ? 'Stand Aside'
-                      : isCareful
-                        ? 'Careful'
-                        : 'High Impact'}
-                  </span>
-                  <span className="text-[10px] font-mono text-gray-400">
-                    {h.montrealHms ? `${h.montrealHms} MTL` : 'Today'}
-                  </span>
-                </div>
-                <div className="font-semibold text-white text-[11px] leading-snug truncate">
-                  {h.country} · {h.event}
-                </div>
-                <div className="flex items-center gap-1 mt-1 text-[9px] text-gray-400 font-mono">
-                  <span>Target:</span>
-                  <span className="text-gray-300 font-semibold">
-                    {h.instruments.join(' · ')}
-                  </span>
-                </div>
-              </Link>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-}
-
 function SidebarNav() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const search = searchParams.toString()
 
   return (
-    <div className="space-y-3">
-      <NavSection
-        title="Live desk"
-        items={LIVE_ITEMS}
-        pathname={pathname}
-        search={search}
-      />
-      <SidebarDeskNotes />
-    </div>
+    <NavSection
+      title="Live desk"
+      items={LIVE_ITEMS}
+      pathname={pathname}
+      search={search}
+    />
   )
 }
 
