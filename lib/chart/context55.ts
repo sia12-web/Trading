@@ -1131,7 +1131,9 @@ export function classifyMarketDayType(args: {
   const todayBars = rawBars.filter((b) => b.time >= todayOpenUnix && b.time <= tipTime)
   const { overnightInventory } = args
 
-  if (!todayBars || todayBars.length < 3) {
+  const elapsedSec = Math.max(0, tipTime - todayOpenUnix)
+
+  if (!todayBars || todayBars.length === 0 || (elapsedSec < 15 * 60 && todayBars.length < 3)) {
     const invNote = overnightInventory ? ` (${overnightInventory.summaryBadge})` : ''
     return {
       type: 'WAITING',
@@ -1153,8 +1155,8 @@ export function classifyMarketDayType(args: {
 
   const todayRange = high > low ? high - low : 0
 
-  // 1. Check Non-Trend Day (NTREND: tight compression & dry volume)
-  if (todayBars.length >= 6) {
+  // 1. Check Non-Trend Day (NTREND: tight compression & dry volume after at least 30 mins)
+  if (elapsedSec >= 30 * 60 || todayBars.length >= 6) {
     const avgRangeEstimate = todayBars[0]!.open * 0.003
     if (todayRange > 0 && todayRange < avgRangeEstimate * 0.35) {
       return {
@@ -1187,7 +1189,7 @@ export function classifyMarketDayType(args: {
   }
 
   // 3. Check Trend Day (Continuous One-Time Framing & range expansion)
-  if (args.controlLabel === 'ONE-TF BUY' && todayBars.length >= 6) {
+  if (args.controlLabel === 'ONE-TF BUY' && (elapsedSec >= 30 * 60 || todayBars.length >= 6)) {
     return {
       type: 'TREND_BULL',
       badgeText: 'Trend Day (Bull)',
@@ -1196,7 +1198,7 @@ export function classifyMarketDayType(args: {
         'Sustained upward one-time framing with aggressive directional conviction.',
     }
   }
-  if (args.controlLabel === 'ONE-TF SELL' && todayBars.length >= 6) {
+  if (args.controlLabel === 'ONE-TF SELL' && (elapsedSec >= 30 * 60 || todayBars.length >= 6)) {
     return {
       type: 'TREND_BEAR',
       badgeText: 'Trend Day (Bear)',
@@ -1207,8 +1209,12 @@ export function classifyMarketDayType(args: {
   }
 
   // 4. Initial range checks for Normal vs Normal Variation vs Neutral vs Double Distribution
-  const firstHourBars = todayBars.slice(0, 12)
-  if (firstHourBars.length >= 8) {
+  // Define IB window strictly as 09:30 AM to 10:30 AM ET (first 60 minutes)
+  const ibEndUnix = todayOpenUnix + 3600
+  const firstHourBars = todayBars.filter((b) => b.time >= todayOpenUnix && b.time <= ibEndUnix)
+  const isIbWindowComplete = elapsedSec >= 40 * 60 || firstHourBars.length >= 8
+
+  if (isIbWindowComplete && firstHourBars.length > 0) {
     let ibHigh = -Infinity
     let ibLow = Infinity
     for (const b of firstHourBars) {
@@ -1232,10 +1238,10 @@ export function classifyMarketDayType(args: {
     }
 
     // Double Distribution Trend Day:
-    // Session has developed (>= 10 bars, > 50 mins), range extension (>= 0.4x IB range) in ONE direction,
+    // Session has developed (> 45 mins elapsed), range extension (>= 0.4x IB range) in ONE direction,
     // and subsequent bars form a separate balance area away from the initial balance center.
-    if (todayBars.length >= 10 && (extendedHigh !== extendedLow)) {
-      const subsequentBars = todayBars.slice(8)
+    const subsequentBars = todayBars.filter((b) => b.time > ibEndUnix)
+    if (elapsedSec >= 45 * 60 && (extendedHigh !== extendedLow) && subsequentBars.length > 0) {
       let subHigh = -Infinity
       let subLow = Infinity
       let subCloseSum = 0

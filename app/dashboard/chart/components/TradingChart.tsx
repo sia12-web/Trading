@@ -3512,14 +3512,23 @@ export function TradingChart({
     }
   }, [instrument])
 
+  const canonicalIntradayBarsRef = useRef<OHLCV[] | null>(null)
   const [dayTypeOverride, setDayTypeOverride] = useState<DayTypeEvaluation | null>(null)
 
   useEffect(() => {
     setDayTypeOverride(null)
+    canonicalIntradayBarsRef.current = null
   }, [instrument])
 
+  if (timeframe !== '1D' && candles && candles.length > 0) {
+    canonicalIntradayBarsRef.current = candles
+  }
+
   const dayTypeEval: DayTypeEvaluation = useMemo(() => {
-    const list = candles || []
+    const list =
+      timeframe === '1D' && canonicalIntradayBarsRef.current && canonicalIntradayBarsRef.current.length > 0
+        ? canonicalIntradayBarsRef.current
+        : candles || []
     if (!list.length) {
       return {
         type: 'WAITING',
@@ -3544,7 +3553,7 @@ export function TradingChart({
       controlLabel: controlBadge,
       overrideDayType: dayTypeOverride,
     })
-  }, [candles, instrument, yesterdayNyc, ydayProfile, overnightInventory, controlBadge, dayTypeOverride])
+  }, [candles, timeframe, instrument, yesterdayNyc, ydayProfile, overnightInventory, controlBadge, dayTypeOverride])
 
   const emotionalNewsMoves: EmotionalNewsMove[] = useMemo(() => {
     const list = candles || []
