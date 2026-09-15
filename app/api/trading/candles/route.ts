@@ -150,9 +150,10 @@ export async function GET(request: Request) {
         }
       } else {
         // Intraday (1m, 5m, 15m, 30m, 1H, 4H):
+        // For 1m, 8 calendar days guarantees at least 5 full trading sessions across weekends
         const fetchDays =
           timeframe === '1m'
-            ? Math.min(days, 3)
+            ? Math.max(days, 8)
             : Math.max(days, AVWAP_CANDLE_FETCH_CALENDAR_DAYS)
 
         // 1. Prioritize real-time OANDA 24/7 continuous candles with CME basis for sub-second live continuum

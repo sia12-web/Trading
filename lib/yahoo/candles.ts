@@ -132,28 +132,39 @@ export async function getYahooCandles(
   if (!symbol) return null
 
   const interval = INTERVAL_MAP[resolution] || '5m'
-  const fetchDays = resolution === '240' ? Math.max(days, 10) : days
+  const is1m = resolution === '1' || interval === '1m'
+  const fetchDays = is1m
+    ? Math.min(days, 8)
+    : resolution === '240'
+      ? Math.max(days, 10)
+      : days
   const range =
-    fetchDays <= 1
-      ? '1d'
-      : fetchDays <= 5
+    is1m
+      ? fetchDays <= 5
         ? '5d'
-        : fetchDays <= 30
-          ? '1mo'
-          : fetchDays <= 100
-            ? '3mo'
-            : fetchDays <= 200
-              ? '6mo'
-              : fetchDays <= 400
-                ? '1y'
-                : fetchDays <= 800
-                  ? '2y'
-                  : '5y'
+        : '7d'
+      : fetchDays <= 1
+        ? '1d'
+        : fetchDays <= 5
+          ? '5d'
+          : fetchDays <= 30
+            ? '1mo'
+            : fetchDays <= 100
+              ? '3mo'
+              : fetchDays <= 200
+                ? '6mo'
+                : fetchDays <= 400
+                  ? '1y'
+                  : fetchDays <= 800
+                    ? '2y'
+                    : '5y'
 
   // Intraday CME futures: explicit period1/period2 returns denser 5m history than
   // coarse range=1mo (Yahoo often truncates *=F intraday under range=).
   const nowSec = Math.floor(Date.now() / 1000)
-  const period1 = nowSec - Math.max(fetchDays, 5) * 24 * 3600
+  const period1 = is1m
+    ? nowSec - fetchDays * 24 * 3600
+    : nowSec - Math.max(fetchDays, 5) * 24 * 3600
   let candles =
     interval === '1d'
       ? await fetchYahooChart(symbol, interval, `range=${range}`)
