@@ -10,7 +10,6 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
   loadLongTermMemories,
-  saveLongTermMemory,
   deleteLongTermMemory,
   loadMemoryNotifications,
   clearAllNotifications,
@@ -40,11 +39,6 @@ export default function NotesPage() {
   const [memories, setMemories] = useState<LeoLongTermMemory[]>([])
   const [notifications, setNotifications] = useState<LeoMemoryNotification[]>([])
   const [armedAlerts, setArmedAlerts] = useState<DeskArmedAlert[]>([])
-  const [newInst, setNewInst] = useState<'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE'>('NASDAQ')
-  const [newPxLow, setNewPxLow] = useState('')
-  const [newPxHigh, setNewPxHigh] = useState('')
-  const [newPurpose, setNewPurpose] = useState('')
-  const [showAddForm, setShowAddForm] = useState(false)
 
   const refreshData = () => {
     setMemories(loadLongTermMemories())
@@ -112,34 +106,6 @@ export default function NotesPage() {
     return n.instrument.toUpperCase() === market
   })
 
-  const handleCreateAlarm = (e: React.FormEvent) => {
-    e.preventDefault()
-    const low = parseFloat(newPxLow)
-    const high = parseFloat(newPxHigh || newPxLow)
-    if (!Number.isFinite(low) || low <= 0) return
-
-    const mem: LeoLongTermMemory = {
-      id: `mem-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      instrument: newInst,
-      timeframe: '1D',
-      priceLow: Math.min(low, high),
-      priceHigh: Math.max(low, high),
-      purpose: newPurpose.trim() || 'Level observation alarm',
-      status: 'ACTIVE',
-      createdAt: new Date().toISOString(),
-      triggerCount: 0,
-      alarmSoundEnabled: true,
-      isLongTerm: true,
-    }
-
-    saveLongTermMemory(mem)
-    setNewPxLow('')
-    setNewPxHigh('')
-    setNewPurpose('')
-    setShowAddForm(false)
-    refreshData()
-  }
-
   const handleDelete = (id: string) => {
     deleteLongTermMemory(id)
     refreshData()
@@ -182,13 +148,6 @@ export default function NotesPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowAddForm((v) => !v)}
-            className="rounded-lg bg-brand-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow hover:bg-brand-500 transition"
-          >
-            {showAddForm ? 'Cancel' : '+ New Alarm Note'}
-          </button>
           <Link
             href="/dashboard/chart"
             className="rounded-lg border border-sky-600/40 bg-sky-950/40 px-3 py-1.5 text-xs font-semibold text-sky-200 hover:bg-sky-900/50 hover:text-white transition"
@@ -220,89 +179,6 @@ export default function NotesPage() {
           </button>
         ))}
       </div>
-
-      {/* Add New Alarm Form */}
-      {showAddForm && (
-        <form
-          onSubmit={handleCreateAlarm}
-          className="rounded-xl border border-brand-500/30 bg-surface-800/90 p-4 space-y-4"
-        >
-          <h3 className="text-xs font-bold uppercase tracking-wider text-brand-300">
-            Add Alarm Note for Leo
-          </h3>
-          <div className="grid gap-3 sm:grid-cols-4">
-            <div>
-              <label className="block text-[10px] uppercase font-semibold text-gray-400 mb-1">
-                Market
-              </label>
-              <select
-                value={newInst}
-                onChange={(e) => setNewInst(e.target.value as any)}
-                className="w-full rounded-lg border border-surface-600 bg-surface-900 px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-brand-500"
-              >
-                <option value="DOW">DOW</option>
-                <option value="NASDAQ">NASDAQ</option>
-                <option value="GOLD">GOLD</option>
-                <option value="CRUDE">CRUDE</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-[10px] uppercase font-semibold text-gray-400 mb-1">
-                Price / Low Target
-              </label>
-              <input
-                type="number"
-                step="any"
-                required
-                placeholder="e.g. 29500"
-                value={newPxLow}
-                onChange={(e) => setNewPxLow(e.target.value)}
-                className="w-full rounded-lg border border-surface-600 bg-surface-900 px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-brand-500 font-mono"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] uppercase font-semibold text-gray-400 mb-1">
-                High Target (Optional Range)
-              </label>
-              <input
-                type="number"
-                step="any"
-                placeholder="Optional range high"
-                value={newPxHigh}
-                onChange={(e) => setNewPxHigh(e.target.value)}
-                className="w-full rounded-lg border border-surface-600 bg-surface-900 px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-brand-500 font-mono"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] uppercase font-semibold text-gray-400 mb-1">
-                Alarm Purpose / Note
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Sound chime on test of y-VAL"
-                value={newPurpose}
-                onChange={(e) => setNewPurpose(e.target.value)}
-                className="w-full rounded-lg border border-surface-600 bg-surface-900 px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-brand-500"
-              />
-            </div>
-          </div>
-          <div className="flex justify-end gap-2 pt-1">
-            <button
-              type="button"
-              onClick={() => setShowAddForm(false)}
-              className="rounded-lg border border-surface-600 px-3 py-1.5 text-xs text-gray-400 hover:text-white"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="rounded-lg bg-brand-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-brand-500"
-            >
-              Save Alarm Note
-            </button>
-          </div>
-        </form>
-      )}
 
       {/* Active Price Alarms & Drawing Alerts */}
       {filteredAlerts.length > 0 && (
