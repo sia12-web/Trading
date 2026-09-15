@@ -634,10 +634,10 @@ interface TooltipData {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const INSTRUMENT_META: Record<Instrument, { label: string; symbol: string; color: string; basePrice: number }> = {
-  DOW: { label: 'Micro Dow · MYM', symbol: 'MYM', color: '#1d4ed8', basePrice: 39500 },
-  NASDAQ: { label: 'Micro Nasdaq · MNQ', symbol: 'MNQ', color: '#0f766e', basePrice: 28500 },
-  GOLD: { label: 'Micro Gold · MGC', symbol: 'MGC', color: '#ca8a04', basePrice: 4500 },
-  CRUDE: { label: 'Crude · CL', symbol: 'CL', color: '#78716c', basePrice: 85 },
+  DOW: { label: 'Micro Dow · MYM', symbol: 'MYM', color: '#1d4ed8', basePrice: 52500 },
+  NASDAQ: { label: 'Micro Nasdaq · MNQ', symbol: 'MNQ', color: '#0f766e', basePrice: 29500 },
+  GOLD: { label: 'Micro Gold · MGC', symbol: 'MGC', color: '#ca8a04', basePrice: 3200 },
+  CRUDE: { label: 'Crude · CL', symbol: 'CL', color: '#78716c', basePrice: 80 },
 }
 
 function paintPositionBandOverlay(
