@@ -167,6 +167,40 @@ interface PositionOverlay {
   entryTimestamp?: string | number | null
 }
 
+const ACTIVE_POS_STORAGE_KEY = 'tradepulse.desk.managePos'
+const POSITION_OVERLAY_STORAGE_KEY = 'tradepulse.desk.positionOverlay'
+const PENDING_LIMIT_STORAGE_KEY = 'tradepulse.desk.pendingLimit'
+
+function loadStoredManagePos(): ManagePosition | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(ACTIVE_POS_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function loadStoredPositionOverlay(): PositionOverlay | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(POSITION_OVERLAY_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function loadStoredPendingLimit(): PendingLimitOrder | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(PENDING_LIMIT_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
 export default function ChartPage() {
   // SSR/hydration always starts DOW — restore preference after mount (see effect below)
   const [instrument, setInstrumentState] = useState<Instrument>('DOW')
@@ -195,11 +229,58 @@ export default function ChartPage() {
     setChartBooted(true)
   }, [])
 
-
   const [livePrice, setLivePrice] = useState<number | null>(null)
-  const [positionOverlay, setPositionOverlay] = useState<PositionOverlay | null>(null)
-  const [managePos, setManagePos] = useState<ManagePosition | null>(null)
-  const [pending, setPending] = useState<PendingLimitOrder | null>(null)
+  const [positionOverlay, setPositionOverlayState] = useState<PositionOverlay | null>(
+    () => loadStoredPositionOverlay()
+  )
+  const [managePos, setManagePosState] = useState<ManagePosition | null>(
+    () => loadStoredManagePos()
+  )
+  const [pending, setPendingState] = useState<PendingLimitOrder | null>(
+    () => loadStoredPendingLimit()
+  )
+
+  const setManagePos = useCallback(
+    (val: ManagePosition | null | ((prev: ManagePosition | null) => ManagePosition | null)) => {
+      setManagePosState((prev) => {
+        const next = typeof val === 'function' ? val(prev) : val
+        try {
+          if (next) localStorage.setItem(ACTIVE_POS_STORAGE_KEY, JSON.stringify(next))
+          else localStorage.removeItem(ACTIVE_POS_STORAGE_KEY)
+        } catch {}
+        return next
+      })
+    },
+    []
+  )
+
+  const setPositionOverlay = useCallback(
+    (val: PositionOverlay | null | ((prev: PositionOverlay | null) => PositionOverlay | null)) => {
+      setPositionOverlayState((prev) => {
+        const next = typeof val === 'function' ? val(prev) : val
+        try {
+          if (next) localStorage.setItem(POSITION_OVERLAY_STORAGE_KEY, JSON.stringify(next))
+          else localStorage.removeItem(POSITION_OVERLAY_STORAGE_KEY)
+        } catch {}
+        return next
+      })
+    },
+    []
+  )
+
+  const setPending = useCallback(
+    (val: PendingLimitOrder | null | ((prev: PendingLimitOrder | null) => PendingLimitOrder | null)) => {
+      setPendingState((prev) => {
+        const next = typeof val === 'function' ? val(prev) : val
+        try {
+          if (next) localStorage.setItem(PENDING_LIMIT_STORAGE_KEY, JSON.stringify(next))
+          else localStorage.removeItem(PENDING_LIMIT_STORAGE_KEY)
+        } catch {}
+        return next
+      })
+    },
+    []
+  )
   const [asiaOverlays, setAsiaOverlays] = useState<
     Partial<Record<'DOW' | 'GOLD', AsiaDeskOverlay>>
   >({})
@@ -2048,55 +2129,7 @@ export default function ChartPage() {
               />
             ) : null}
 
-            {showWorkingStrip ? (
-              <div
-                className={`flex items-center gap-3 rounded-lg border px-3 py-1.5 text-xs shadow-xl backdrop-blur-md ${
-                  orderStatus === 'rejected'
-                    ? 'border-red-700/50 bg-red-950/90 text-red-100'
-                    : 'border-sky-700/50 bg-sky-950/90 text-sky-100'
-                }`}
-              >
-                <span className="font-semibold uppercase tracking-wide">
-                  {orderStatus === 'placing'
-                    ? 'Placing'
-                    : orderStatus === 'rejected'
-                      ? 'Rejected'
-                      : orderStatus === 'filled'
-                        ? 'Filled'
-                        : 'Working'}
-                </span>
-                {pending && (
-                  <>
-                    <span className="price-mono">
-                      {pending.direction} @ {pending.level.toLocaleString()}
-                    </span>
-                    <span className="opacity-80">
-                      SL {pending.stopLoss.toLocaleString()}{' '}
-                      <span className="text-amber-300/90">(locked — sized at place)</span>
-                      · TP {pending.profitTarget.toLocaleString()}{' '}
-                      <span className="text-emerald-300/80">(drag on chart)</span>
-                    </span>
-                  </>
-                )}
-                {pending && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const inst = pending.instrument
-                      orderGenRef.current += 1
-                      pendingRef.current = null
-                      setPending(null)
-                      setFillError(null)
-                      setOrderStatus('idle')
-                      void cancelWorkingLimit(asLiveNy(inst))
-                    }}
-                    className="ml-auto rounded border border-sky-600/50 px-2 py-1 text-[10px] font-semibold uppercase text-sky-200 hover:bg-sky-900/50"
-                  >
-                    Cancel
-                  </button>
-                )}
-              </div>
-            ) : null}
+
 
             {fillError ? (
               <p className="px-2.5 py-1 text-xs text-red-300 bg-red-950/90 rounded border border-red-700/60 shadow-lg backdrop-blur-md">
