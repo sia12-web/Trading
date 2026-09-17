@@ -977,6 +977,12 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
         (workingRow?.id as string) ||
         ((body as any).is_leo_order ? `leo-sim-${Date.now()}` : `desk-pos-${Date.now()}`)
 
+      const profitTarget =
+        (body as any).profit_target_price ??
+        (body.entry_direction === 'LONG'
+          ? fillPrice + Math.abs(fillPrice - sizing.stop_loss_price) * 2
+          : fillPrice - Math.abs(fillPrice - sizing.stop_loss_price) * 2)
+
       logger.warn('POST /api/trading/positions/open: DB insert failed, using fallback desk position', {
         position_id: fallbackPosId,
         instrument: body.instrument,
@@ -990,7 +996,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
           instrument: body.instrument,
           entry_price: fillPrice,
           stop_loss_price: sizing.stop_loss_price,
-          profit_target_price: profitTargetPrice,
+          profit_target_price: profitTarget,
           position_size: sizing.position_size,
           risk_amount: sizing.risk_amount,
           entry_direction: body.entry_direction,
