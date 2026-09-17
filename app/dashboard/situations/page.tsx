@@ -535,157 +535,264 @@ function DetailedSituationCard({
           </div>
 
           <div className="space-y-1.5 font-mono text-[11px]">
-            {/* Condition 1: Target Price / Level Touch */}
-            <div className={`p-1.5 rounded border flex items-center justify-between ${
-              rule.conditionProgress?.levelReached || isTriggered
-                ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
-                : 'bg-surface-900/60 border-surface-700/50 text-gray-300'
-            }`}>
-              <div className="flex items-center gap-1.5 truncate">
-                <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
-                  rule.conditionProgress?.levelReached || isTriggered
-                    ? 'bg-emerald-500 text-black'
-                    : 'bg-surface-700 text-gray-400 border border-gray-600'
+            {rule.type === 'TRENDLINE_BREAKOUT_SYSTEMATIC' ? (
+              <>
+                {/* Condition 1: Bearish Trendline Crossed */}
+                <div className={`p-1.5 rounded border flex items-center justify-between ${
+                  rule.conditionProgress?.trendlineCrossed || isTriggered
+                    ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
+                    : 'bg-surface-900/60 border-surface-700/50 text-gray-300'
                 }`}>
-                  {rule.conditionProgress?.levelReached || isTriggered ? '✓' : '○'}
-                </span>
-                <span className="truncate">
-                  Level: {cond.targetPrice != null ? cond.targetPrice.toLocaleString() : cond.targetReference || 'Market'}
-                </span>
-              </div>
-              <span className="text-[10px] font-semibold shrink-0 ml-1">
-                {rule.conditionProgress?.levelReached || isTriggered ? (
-                  <span className="text-emerald-300 font-bold">
-                    Touched {rule.conditionProgress?.levelReachedPrice ? `@ ${rule.conditionProgress.levelReachedPrice.toLocaleString()}` : '✓'}
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                      rule.conditionProgress?.trendlineCrossed || isTriggered
+                        ? 'bg-emerald-500 text-black'
+                        : 'bg-surface-700 text-gray-400 border border-gray-600'
+                    }`}>
+                      {rule.conditionProgress?.trendlineCrossed || isTriggered ? '✓' : '○'}
+                    </span>
+                    <span className="truncate">Trendline: Crossed</span>
+                  </div>
+                  <span className="text-[10px] font-semibold shrink-0 ml-1">
+                    {rule.conditionProgress?.trendlineCrossed || isTriggered ? (
+                      <span className="text-emerald-300 font-bold">Crossed ✓</span>
+                    ) : (
+                      <span className="text-amber-400/90 font-medium">Monitoring Line</span>
+                    )}
                   </span>
-                ) : (
-                  <span className="text-amber-400/90 font-medium">Waiting Touch</span>
+                </div>
+
+                {/* Condition 2: 5-Minute Candle Close Confirmed */}
+                <div className={`p-1.5 rounded border flex items-center justify-between ${
+                  rule.conditionProgress?.bar5mCloseConfirmed || isTriggered
+                    ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
+                    : 'bg-surface-900/60 border-surface-700/50 text-gray-300'
+                }`}>
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                      rule.conditionProgress?.bar5mCloseConfirmed || isTriggered
+                        ? 'bg-emerald-500 text-black'
+                        : 'bg-surface-700 text-gray-400 border border-gray-600'
+                    }`}>
+                      {rule.conditionProgress?.bar5mCloseConfirmed || isTriggered ? '✓' : '○'}
+                    </span>
+                    <span className="truncate">5M Close: Above Line</span>
+                  </div>
+                  <span className="text-[10px] font-semibold shrink-0 ml-1">
+                    {rule.conditionProgress?.bar5mCloseConfirmed || isTriggered ? (
+                      <span className="text-emerald-300 font-bold">Confirmed ✓</span>
+                    ) : (
+                      <span className="text-amber-400/90 font-medium">Waiting 5M Close</span>
+                    )}
+                  </span>
+                </div>
+
+                {/* Condition 3: Trend-Borning Zone Score */}
+                <div className={`p-1.5 rounded border flex items-center justify-between ${
+                  rule.conditionProgress?.borningZoneInitiated || rule.borningZoneScore
+                    ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
+                    : 'bg-surface-900/60 border-surface-700/50 text-gray-300'
+                }`}>
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                      rule.conditionProgress?.borningZoneInitiated || rule.borningZoneScore
+                        ? 'bg-emerald-500 text-black'
+                        : 'bg-surface-700 text-gray-400 border border-gray-600'
+                    }`}>
+                      {rule.conditionProgress?.borningZoneInitiated || rule.borningZoneScore ? '✓' : '○'}
+                    </span>
+                    <span className="truncate">Borning Zone: 7-Factor Score</span>
+                  </div>
+                  <span className="text-[10px] font-semibold shrink-0 ml-1">
+                    <span className="text-emerald-300 font-bold">
+                      {rule.conditionProgress?.borningZoneScore ?? rule.borningZoneScore ?? 80}/100 ({rule.conditionProgress?.borningZoneGrade ?? rule.borningZoneGrade ?? 'A'})
+                    </span>
+                  </span>
+                </div>
+
+                {/* Condition 4: Higher Lows Timing Progression */}
+                <div className="p-1.5 rounded border bg-surface-900/60 border-surface-700/50 text-gray-300 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 bg-sky-500 text-black">
+                      ✓
+                    </span>
+                    <span className="truncate">Dynamic Line & Timing</span>
+                  </div>
+                  <span className="text-[10px] font-semibold text-sky-300 shrink-0 ml-1">
+                    {rule.conditionProgress?.higherLowsCount ? `${rule.conditionProgress.higherLowsCount} HLs (T+)` : 'T0 Origin Active'}
+                  </span>
+                </div>
+
+                {/* Condition 5: Sideways Stalling Protection */}
+                {rule.conditionProgress?.stallingPenaltyActive && (
+                  <div className="p-1.5 rounded border bg-amber-950/40 border-amber-500/40 text-amber-200 flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 bg-amber-500 text-black">
+                        ⚡
+                      </span>
+                      <span className="truncate">Stall Time-Decay</span>
+                    </div>
+                    <span className="text-[10px] font-semibold text-amber-300 shrink-0 ml-1">
+                      Steepening Upward
+                    </span>
+                  </div>
                 )}
-              </span>
-            </div>
-
-            {/* Condition 2: Candlestick Pattern or Touch Entry */}
-            {cond.pattern && cond.pattern !== 'LEVEL_TOUCH' ? (
-              <div className={`p-1.5 rounded border flex items-center justify-between ${
-                rule.conditionProgress?.patternConfirmed || isTriggered
-                  ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
-                  : 'bg-surface-900/60 border-surface-700/50 text-gray-300'
-              }`}>
-                <div className="flex items-center gap-1.5 truncate">
-                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
-                    rule.conditionProgress?.patternConfirmed || isTriggered
-                      ? 'bg-emerald-500 text-black'
-                      : 'bg-surface-700 text-gray-400 border border-gray-600'
-                  }`}>
-                    {rule.conditionProgress?.patternConfirmed || isTriggered ? '✓' : '○'}
-                  </span>
-                  <span className="truncate">Pattern: {cond.pattern.replace(/_/g, ' ')}</span>
-                </div>
-                <span className="text-[10px] font-semibold shrink-0 ml-1">
-                  {rule.conditionProgress?.patternConfirmed || isTriggered ? (
-                    <span className="text-emerald-300 font-bold">Confirmed ✓</span>
-                  ) : (
-                    <span className="text-amber-400/90 font-medium">Waiting Formation</span>
-                  )}
-                </span>
-              </div>
+              </>
             ) : (
-              <div className={`p-1.5 rounded border flex items-center justify-between ${
-                rule.conditionProgress?.levelReached || isTriggered
-                  ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
-                  : 'bg-surface-900/60 border-surface-700/50 text-gray-300'
-              }`}>
-                <div className="flex items-center gap-1.5 truncate">
-                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
+              <>
+                {/* Condition 1: Target Price / Level Touch */}
+                <div className={`p-1.5 rounded border flex items-center justify-between ${
+                  rule.conditionProgress?.levelReached || isTriggered
+                    ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
+                    : 'bg-surface-900/60 border-surface-700/50 text-gray-300'
+                }`}>
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                      rule.conditionProgress?.levelReached || isTriggered
+                        ? 'bg-emerald-500 text-black'
+                        : 'bg-surface-700 text-gray-400 border border-gray-600'
+                    }`}>
+                      {rule.conditionProgress?.levelReached || isTriggered ? '✓' : '○'}
+                    </span>
+                    <span className="truncate">
+                      Level: {cond.targetPrice != null ? cond.targetPrice.toLocaleString() : cond.targetReference || 'Market'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-semibold shrink-0 ml-1">
+                    {rule.conditionProgress?.levelReached || isTriggered ? (
+                      <span className="text-emerald-300 font-bold">
+                        Touched {rule.conditionProgress?.levelReachedPrice ? `@ ${rule.conditionProgress.levelReachedPrice.toLocaleString()}` : '✓'}
+                      </span>
+                    ) : (
+                      <span className="text-amber-400/90 font-medium">Waiting Touch</span>
+                    )}
+                  </span>
+                </div>
+
+                {/* Condition 2: Candlestick Pattern or Touch Entry */}
+                {cond.pattern && cond.pattern !== 'LEVEL_TOUCH' ? (
+                  <div className={`p-1.5 rounded border flex items-center justify-between ${
+                    rule.conditionProgress?.patternConfirmed || isTriggered
+                      ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
+                      : 'bg-surface-900/60 border-surface-700/50 text-gray-300'
+                  }`}>
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                        rule.conditionProgress?.patternConfirmed || isTriggered
+                          ? 'bg-emerald-500 text-black'
+                          : 'bg-surface-700 text-gray-400 border border-gray-600'
+                      }`}>
+                        {rule.conditionProgress?.patternConfirmed || isTriggered ? '✓' : '○'}
+                      </span>
+                      <span className="truncate">Pattern: {cond.pattern.replace(/_/g, ' ')}</span>
+                    </div>
+                    <span className="text-[10px] font-semibold shrink-0 ml-1">
+                      {rule.conditionProgress?.patternConfirmed || isTriggered ? (
+                        <span className="text-emerald-300 font-bold">Confirmed ✓</span>
+                      ) : (
+                        <span className="text-amber-400/90 font-medium">Waiting Formation</span>
+                      )}
+                    </span>
+                  </div>
+                ) : (
+                  <div className={`p-1.5 rounded border flex items-center justify-between ${
                     rule.conditionProgress?.levelReached || isTriggered
-                      ? 'bg-emerald-500 text-black'
-                      : 'bg-surface-700 text-gray-400 border border-gray-600'
+                      ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
+                      : 'bg-surface-900/60 border-surface-700/50 text-gray-300'
                   }`}>
-                    {rule.conditionProgress?.levelReached || isTriggered ? '✓' : '○'}
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                        rule.conditionProgress?.levelReached || isTriggered
+                          ? 'bg-emerald-500 text-black'
+                          : 'bg-surface-700 text-gray-400 border border-gray-600'
+                      }`}>
+                        {rule.conditionProgress?.levelReached || isTriggered ? '✓' : '○'}
+                      </span>
+                      <span className="truncate">Entry: Price Touch</span>
+                    </div>
+                    <span className="text-[10px] font-semibold shrink-0 ml-1">
+                      {rule.conditionProgress?.levelReached || isTriggered ? (
+                        <span className="text-emerald-300 font-bold">Touched ✓</span>
+                      ) : (
+                        <span className="text-cyan-400/90 font-medium">Direct Touch Active</span>
+                      )}
+                    </span>
+                  </div>
+                )}
+
+                {/* Condition 3: Timeframe Confirmation */}
+                <div className={`p-1.5 rounded border flex items-center justify-between ${
+                  rule.conditionProgress?.timeframeConfirmed || isTriggered
+                    ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
+                    : 'bg-surface-900/60 border-surface-700/50 text-gray-300'
+                }`}>
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 bg-emerald-500 text-black">
+                      ✓
+                    </span>
+                    <span className="truncate">
+                      TF: {(cond as any).entryTimeframe ? `${(cond as any).entryTimeframe}m Candle` : 'Multi-TF (Leo Monitors All)'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-semibold text-emerald-300 shrink-0 ml-1">
+                    Active ✓
                   </span>
-                  <span className="truncate">Entry: Price Touch</span>
                 </div>
-                <span className="text-[10px] font-semibold shrink-0 ml-1">
-                  {rule.conditionProgress?.levelReached || isTriggered ? (
-                    <span className="text-emerald-300 font-bold">Touched ✓</span>
-                  ) : (
-                    <span className="text-cyan-400/90 font-medium">Direct Touch Active</span>
-                  )}
-                </span>
-              </div>
-            )}
 
-            {/* Condition 3: Timeframe Confirmation */}
-            <div className={`p-1.5 rounded border flex items-center justify-between ${
-              rule.conditionProgress?.timeframeConfirmed || isTriggered
-                ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
-                : 'bg-surface-900/60 border-surface-700/50 text-gray-300'
-            }`}>
-              <div className="flex items-center gap-1.5 truncate">
-                <span className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 bg-emerald-500 text-black">
-                  ✓
-                </span>
-                <span className="truncate">
-                  TF: {(cond as any).entryTimeframe ? `${(cond as any).entryTimeframe}m Candle` : 'Multi-TF (Leo Monitors All)'}
-                </span>
-              </div>
-              <span className="text-[10px] font-semibold text-emerald-300 shrink-0 ml-1">
-                Active ✓
-              </span>
-            </div>
-
-            {/* Condition 4: CVD Divergence (if requested) */}
-            {(cond as any).cvdDivergence && (
-              <div className={`p-1.5 rounded border flex items-center justify-between ${
-                rule.conditionProgress?.cvdConfirmed || isTriggered
-                  ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
-                  : 'bg-surface-900/60 border-surface-700/50 text-gray-300'
-              }`}>
-                <div className="flex items-center gap-1.5 truncate">
-                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                {/* Condition 4: CVD Divergence (if requested) */}
+                {(cond as any).cvdDivergence && (
+                  <div className={`p-1.5 rounded border flex items-center justify-between ${
                     rule.conditionProgress?.cvdConfirmed || isTriggered
-                      ? 'bg-emerald-500 text-black'
-                      : 'bg-surface-700 text-gray-400 border border-gray-600'
+                      ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
+                      : 'bg-surface-900/60 border-surface-700/50 text-gray-300'
                   }`}>
-                    {rule.conditionProgress?.cvdConfirmed || isTriggered ? '✓' : '○'}
-                  </span>
-                  <span className="truncate">CVD Divergence</span>
-                </div>
-                <span className="text-[10px] font-semibold shrink-0 ml-1">
-                  {rule.conditionProgress?.cvdConfirmed || isTriggered ? (
-                    <span className="text-emerald-300 font-bold">Confirmed ✓</span>
-                  ) : (
-                    <span className="text-amber-400/90 font-medium">Waiting Delta</span>
-                  )}
-                </span>
-              </div>
-            )}
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                        rule.conditionProgress?.cvdConfirmed || isTriggered
+                          ? 'bg-emerald-500 text-black'
+                          : 'bg-surface-700 text-gray-400 border border-gray-600'
+                      }`}>
+                        {rule.conditionProgress?.cvdConfirmed || isTriggered ? '✓' : '○'}
+                      </span>
+                      <span className="truncate">CVD Divergence</span>
+                    </div>
+                    <span className="text-[10px] font-semibold shrink-0 ml-1">
+                      {rule.conditionProgress?.cvdConfirmed || isTriggered ? (
+                        <span className="text-emerald-300 font-bold">Confirmed ✓</span>
+                      ) : (
+                        <span className="text-amber-400/90 font-medium">Waiting Delta</span>
+                      )}
+                    </span>
+                  </div>
+                )}
 
-            {/* Condition 5: Volume Spike (if requested) */}
-            {cond.requireHighVolume && (
-              <div className={`p-1.5 rounded border flex items-center justify-between ${
-                rule.conditionProgress?.volumeConfirmed || isTriggered
-                  ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
-                  : 'bg-surface-900/60 border-surface-700/50 text-gray-300'
-              }`}>
-                <div className="flex items-center gap-1.5 truncate">
-                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                {/* Condition 5: Volume Spike (if requested) */}
+                {cond.requireHighVolume && (
+                  <div className={`p-1.5 rounded border flex items-center justify-between ${
                     rule.conditionProgress?.volumeConfirmed || isTriggered
-                      ? 'bg-emerald-500 text-black'
-                      : 'bg-surface-700 text-gray-400 border border-gray-600'
+                      ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
+                      : 'bg-surface-900/60 border-surface-700/50 text-gray-300'
                   }`}>
-                    {rule.conditionProgress?.volumeConfirmed || isTriggered ? '✓' : '○'}
-                  </span>
-                  <span className="truncate">High Vol Spike</span>
-                </div>
-                <span className="text-[10px] font-semibold shrink-0 ml-1">
-                  {rule.conditionProgress?.volumeConfirmed || isTriggered ? (
-                    <span className="text-emerald-300 font-bold">Confirmed ✓</span>
-                  ) : (
-                    <span className="text-amber-400/90 font-medium">Waiting Volume</span>
-                  )}
-                </span>
-              </div>
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                        rule.conditionProgress?.volumeConfirmed || isTriggered
+                          ? 'bg-emerald-500 text-black'
+                          : 'bg-surface-700 text-gray-400 border border-gray-600'
+                      }`}>
+                        {rule.conditionProgress?.volumeConfirmed || isTriggered ? '✓' : '○'}
+                      </span>
+                      <span className="truncate">High Vol Spike</span>
+                    </div>
+                    <span className="text-[10px] font-semibold shrink-0 ml-1">
+                      {rule.conditionProgress?.volumeConfirmed || isTriggered ? (
+                        <span className="text-emerald-300 font-bold">Confirmed ✓</span>
+                      ) : (
+                        <span className="text-amber-400/90 font-medium">Waiting Volume</span>
+                      )}
+                    </span>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -901,6 +1008,25 @@ function ArmSituationModal({
           >
             <span>⚡</span> 1:1 NASDAQ (Live Touch 29,448)
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              setInstrument('GOLD')
+              setType('TRENDLINE_BREAKOUT_SYSTEMATIC')
+              setDirection('LONG')
+              setTargetReference('Bearish Trendline Breakout')
+              setPattern('TRENDLINE_BREAKOUT_5M')
+              setStopLoss(2050)
+              setTakeProfit(2100)
+              setSize(1)
+              setIsLongTerm(true)
+              setDescription('Long 1 GOLD on 5m Candle Close above Bearish Trendline with Trend-Borning Zone & Dynamic Trailing Exit')
+              setUserPrompt('When 5m candle closes above bearish trendline, enter Long GOLD. Stop loss below breakout candle low, TP +50 pts or dynamic 1:2, exit when 5m candle closes below dynamic trendline.')
+            }}
+            className="rounded-md bg-amber-950/90 border border-amber-500/60 hover:bg-amber-900 px-2.5 py-1 text-[10px] font-bold text-amber-300 transition flex items-center gap-1"
+          >
+            <span>📐</span> Trendline Strategy (GOLD)
+          </button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 text-xs font-mono">
@@ -927,6 +1053,7 @@ function ArmSituationModal({
                 className="w-full rounded-lg border border-surface-600 bg-surface-800 p-2 text-white focus:outline-none focus:border-brand-500"
               >
                 <option value="CONDITIONAL_ENTRY">Conditional Entry</option>
+                <option value="TRENDLINE_BREAKOUT_SYSTEMATIC">Trendline Breakout & Borning Zone</option>
                 <option value="DESK_ALERT">Desk Alert</option>
                 <option value="TELEGRAM_ALERT">Telegram Alert</option>
                 <option value="STAGNATION_TIMEOUT">Stagnation Timeout</option>
@@ -936,7 +1063,7 @@ function ArmSituationModal({
           </div>
 
           {/* Direction & Pattern */}
-          {(type === 'CONDITIONAL_ENTRY' || type === 'MARKET_SITUATION') && (
+          {(type === 'CONDITIONAL_ENTRY' || type === 'MARKET_SITUATION' || type === 'TRENDLINE_BREAKOUT_SYSTEMATIC') && (
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-gray-400 mb-1">Trade Direction</label>

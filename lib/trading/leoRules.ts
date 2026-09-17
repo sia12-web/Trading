@@ -18,9 +18,14 @@ export type RuleType =
   | 'TELEGRAM_ALERT'
   | 'STAGNATION_TIMEOUT'
   | 'MARKET_SITUATION'
+  | 'TRENDLINE_BREAKOUT_SYSTEMATIC'
 
 export function isEntrySituationRule(type: RuleType | string | null | undefined): boolean {
-  return type === 'CONDITIONAL_ENTRY' || type === 'MARKET_SITUATION'
+  return (
+    type === 'CONDITIONAL_ENTRY' ||
+    type === 'MARKET_SITUATION' ||
+    type === 'TRENDLINE_BREAKOUT_SYSTEMATIC'
+  )
 }
 
 export type RuleStatus =
@@ -45,6 +50,7 @@ export type PricePattern =
   | 'ABSORPTION_REVERSAL'
   | 'BREAKOUT_RETEST'
   | 'MOMENTUM_EXPANSION'
+  | 'TRENDLINE_BREAKOUT_5M'
 
 export interface ArmedRuleCondition {
   targetReference?: string
@@ -62,6 +68,12 @@ export interface ArmedRuleCondition {
   size?: number
   maxMinutes?: number
   requireProfitPoints?: number
+  trendlineId?: string
+  borningZoneScore?: number
+  borningZoneGrade?: string
+  higherLowCount?: number
+  dynamicSlope?: number
+  dynamicExitArmed?: boolean
 }
 
 export interface RuleConditionProgress {
@@ -77,6 +89,16 @@ export interface RuleConditionProgress {
   volumeConfirmedAt?: number
   timeframeConfirmed?: boolean
   sessionConfirmed?: boolean
+  trendlineCrossed?: boolean
+  trendlineCrossedAt?: number
+  bar5mCloseConfirmed?: boolean
+  bar5mCloseConfirmedAt?: number
+  borningZoneInitiated?: boolean
+  borningZoneScore?: number
+  borningZoneGrade?: string
+  higherLowsCount?: number
+  stallingPenaltyActive?: boolean
+  dynamicTrendlineExitTriggered?: boolean
 }
 
 export interface ArmedRule {
@@ -101,6 +123,11 @@ export interface ArmedRule {
   maxMinutes?: number
   requireHighVolume?: boolean
   requireConfidence?: boolean
+  trendlineId?: string
+  borningZoneScore?: number
+  borningZoneGrade?: string
+  higherLowCount?: number
+  dynamicSlope?: number
   /** Session validity: NYC / Asia / London / 24H */
   session?: string
   isLongTerm?: boolean
@@ -185,6 +212,12 @@ export function normalizeArmedRule(raw: any, defaultInst: MarketInstrument = 'DO
     size: raw.conditions?.size != null ? Number(raw.conditions.size) : raw.size != null ? Number(raw.size) : 1,
     maxMinutes: raw.conditions?.maxMinutes != null ? Number(raw.conditions.maxMinutes) : raw.maxMinutes != null ? Number(raw.maxMinutes) : undefined,
     requireProfitPoints: raw.conditions?.requireProfitPoints != null ? Number(raw.conditions.requireProfitPoints) : raw.requireProfitPoints != null ? Number(raw.requireProfitPoints) : undefined,
+    trendlineId: raw.conditions?.trendlineId || raw.trendlineId || undefined,
+    borningZoneScore: raw.conditions?.borningZoneScore != null ? Number(raw.conditions.borningZoneScore) : raw.borningZoneScore != null ? Number(raw.borningZoneScore) : undefined,
+    borningZoneGrade: raw.conditions?.borningZoneGrade || raw.borningZoneGrade || undefined,
+    higherLowCount: raw.conditions?.higherLowCount != null ? Number(raw.conditions.higherLowCount) : raw.higherLowCount != null ? Number(raw.higherLowCount) : undefined,
+    dynamicSlope: raw.conditions?.dynamicSlope != null ? Number(raw.conditions.dynamicSlope) : raw.dynamicSlope != null ? Number(raw.dynamicSlope) : undefined,
+    dynamicExitArmed: Boolean(raw.conditions?.dynamicExitArmed ?? raw.dynamicExitArmed),
   }
 
   // Calculate default R:R if target, stop, and takeProfit are present
@@ -210,6 +243,16 @@ export function normalizeArmedRule(raw: any, defaultInst: MarketInstrument = 'DO
         volumeConfirmedAt: raw.conditionProgress.volumeConfirmedAt ? Number(raw.conditionProgress.volumeConfirmedAt) : undefined,
         timeframeConfirmed: Boolean(raw.conditionProgress.timeframeConfirmed),
         sessionConfirmed: Boolean(raw.conditionProgress.sessionConfirmed),
+        trendlineCrossed: Boolean(raw.conditionProgress.trendlineCrossed),
+        trendlineCrossedAt: raw.conditionProgress.trendlineCrossedAt ? Number(raw.conditionProgress.trendlineCrossedAt) : undefined,
+        bar5mCloseConfirmed: Boolean(raw.conditionProgress.bar5mCloseConfirmed),
+        bar5mCloseConfirmedAt: raw.conditionProgress.bar5mCloseConfirmedAt ? Number(raw.conditionProgress.bar5mCloseConfirmedAt) : undefined,
+        borningZoneInitiated: Boolean(raw.conditionProgress.borningZoneInitiated),
+        borningZoneScore: raw.conditionProgress.borningZoneScore != null ? Number(raw.conditionProgress.borningZoneScore) : undefined,
+        borningZoneGrade: raw.conditionProgress.borningZoneGrade || undefined,
+        higherLowsCount: raw.conditionProgress.higherLowsCount != null ? Number(raw.conditionProgress.higherLowsCount) : undefined,
+        stallingPenaltyActive: Boolean(raw.conditionProgress.stallingPenaltyActive),
+        dynamicTrendlineExitTriggered: Boolean(raw.conditionProgress.dynamicTrendlineExitTriggered),
       }
     : undefined
 
@@ -235,6 +278,11 @@ export function normalizeArmedRule(raw: any, defaultInst: MarketInstrument = 'DO
     maxMinutes: conditions.maxMinutes,
     requireHighVolume: conditions.requireHighVolume,
     requireConfidence: conditions.requireConfidence,
+    trendlineId: conditions.trendlineId,
+    borningZoneScore: conditions.borningZoneScore,
+    borningZoneGrade: conditions.borningZoneGrade,
+    higherLowCount: conditions.higherLowCount,
+    dynamicSlope: conditions.dynamicSlope,
     session: raw.session || 'NYC',
     isLongTerm: Boolean(raw.isLongTerm),
     createdAt,

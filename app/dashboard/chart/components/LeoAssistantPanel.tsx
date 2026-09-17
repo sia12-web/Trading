@@ -23,14 +23,25 @@ import {
   loadRulesForMarket,
   saveRulesForMarket,
   armMarketOneToOneSituation,
+  addRule,
+  updateRule,
   MARKET_DEFAULT_PARAMS,
   type MarketInstrument,
   type RuleConditionProgress,
 } from '@/lib/trading/leoRules'
+import {
+  checkTrendlineBreakout,
+  findInitiatingPoint,
+  evaluateTrendBorningZone,
+  detectHigherLowsWithTiming,
+  calculateDynamicTrendline,
+  checkDynamicTrendlineExit,
+} from '@/lib/trading/trendlineStrategy'
+import type { UserTrendline } from '@/lib/trading/userDrawings'
 
 export interface ArmedDeskRule {
   id: string
-  type: 'STAGNATION_TIMEOUT' | 'DESK_ALERT' | 'TELEGRAM_ALERT' | 'CONDITIONAL_ENTRY' | 'MARKET_SITUATION'
+  type: 'STAGNATION_TIMEOUT' | 'DESK_ALERT' | 'TELEGRAM_ALERT' | 'CONDITIONAL_ENTRY' | 'MARKET_SITUATION' | 'TRENDLINE_BREAKOUT_SYSTEMATIC'
   description: string
   userPrompt?: string
   instrument?: string
@@ -48,6 +59,8 @@ export interface ArmedDeskRule {
     | 'SHOOTING_STAR'
     | 'REJECTION_TAIL'
     | 'LEVEL_TOUCH'
+    | 'TRENDLINE_BREAKOUT_5M'
+    | string
   /** Chart timeframe user specified (e.g. '5', '15', '30'). null/undefined = any timeframe — Leo monitors all. */
   entryTimeframe?: string | null
   /** When true, Leo additionally requires CVD divergence at the level before triggering */
@@ -64,6 +77,13 @@ export interface ArmedDeskRule {
   requireHighVolume?: boolean
   requireConfidence?: boolean
   conditionProgress?: RuleConditionProgress
+  trendlineId?: string
+  conditions?: any
+  borningZoneScore?: number
+  borningZoneGrade?: string
+  higherLowCount?: number
+  dynamicSlope?: number
+  dynamicExitArmed?: boolean
   createdAt: number
   createdDateFormatted?: string
   sessionDate?: string
@@ -1202,6 +1222,87 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
 
             let signalBar: Candle | null = bars.length > 0 ? bars[bars.length - 1]! : null
 
+            // ── TRENDLINE_BREAKOUT_SYSTEMATIC Rule Handler ──
+            if (rule.type === 'TRENDLINE_BREAKOUT_SYSTEMATIC') {
+              const tlId = rule.trendlineId || rule.conditions?.trendlineId
+              const activeTl = (context.userDrawings?.trendlines || []).find((t: any) => t.id === tlId)
+              if (activeTl && bars.length > 0) {
+                const candleTl: UserTrendline = {
+                  id: activeTl.id,
+                  type: 'TRENDLINE',
+                  p1: { time: (activeTl as any).p1?.time ?? (bars[0]?.time || 0), price: activeTl.startPrice },
+                  p2: { time: (activeTl as any).p2?.time ?? (bars[bars.length - 1]?.time || 0), price: activeTl.endPrice },
+                }
+                const brkCheck = checkTrendlineBreakout(candleTl, bars)
+                const initPt = findInitiatingPoint(candleTl, bars, brkCheck.breakoutCandleIndex ?? bars.length - 1)
+                let borningScore = 80
+                let borningGrade: any = 'A'
+
+                if (initPt) {
+                  const borningRes = evaluateTrendBorningZone({
+                    initiatingPoint: initPt,
+                    bars,
+                    chartContext: context as any,
+                  })
+                  borningScore = borningRes.compositeScore
+                  borningGrade = borningRes.grade
+                }
+
+                const prevProg = rule.conditionProgress || {}
+                const newProg: RuleConditionProgress = {
+                  ...prevProg,
+                  trendlineCrossed: brkCheck.isCrossed,
+                  trendlineCrossedAt: brkCheck.isCrossed ? (prevProg.trendlineCrossedAt || Date.now()) : undefined,
+                  bar5mCloseConfirmed: brkCheck.isConfirmed5mClose,
+                  bar5mCloseConfirmedAt: brkCheck.isConfirmed5mClose ? (prevProg.bar5mCloseConfirmedAt || Date.now()) : undefined,
+                  borningZoneInitiated: Boolean(initPt),
+                  borningZoneScore: borningScore,
+                  borningZoneGrade: borningGrade,
+                  levelReached: brkCheck.isCrossed,
+                  patternConfirmed: brkCheck.isConfirmed5mClose,
+                  sessionConfirmed: true,
+                }
+
+                if (
+                  newProg.trendlineCrossed !== prevProg.trendlineCrossed ||
+                  newProg.bar5mCloseConfirmed !== prevProg.bar5mCloseConfirmed
+                ) {
+                  changed = true
+                  rule = { ...rule, conditionProgress: newProg }
+                }
+
+                if (brkCheck.isConfirmed5mClose) {
+                  if (executingRuleIdsRef.current.has(rule.id)) {
+                    return rule
+                  }
+                  executingRuleIdsRef.current.add(rule.id)
+                  changed = true
+
+                  const entryPx = brkCheck.entryPrice ?? curPrice
+                  const slPx = brkCheck.defaultStopLoss ?? Number((entryPx - 10).toFixed(2))
+                  const tpPx = brkCheck.defaultTakeProfitFixed50 ?? Number((entryPx + 50).toFixed(2))
+
+                  void executePlaceOrder({
+                    instrument: rule.instrument || context.instrument,
+                    direction: 'LONG',
+                    price: entryPx,
+                    stopLoss: slPx,
+                    profitTarget: tpPx,
+                    size: rule.size || 1,
+                    reason: `Systematic Trendline Breakout (Trend-Borning Score: ${borningScore}/100 Grade ${borningGrade})`,
+                  })
+
+                  rule = {
+                    ...rule,
+                    status: 'TRIGGERED',
+                    executedAt: Date.now(),
+                    executedPrice: entryPx,
+                  }
+                }
+              }
+              return rule
+            }
+
             // 1. Level Reached / Price Touch Condition
             const isLevelReached =
               dist <= tolerances.touch ||
@@ -1450,6 +1551,81 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
 
           return rule
         })
+
+        // Check dynamic responsive trendline breakdown exit while in position
+        if (context.activePosition && candlesRef.current.length > 0) {
+          const bars: Candle[] = candlesRef.current.map((c: any) => ({
+            time: typeof c.time === 'number' ? c.time : 0,
+            open: Number(c.open),
+            high: Number(c.high),
+            low: Number(c.low),
+            close: Number(c.close),
+            volume: Number(c.volume || 1),
+          }))
+
+          const trendlineRules = (prevRules || []).filter(
+            (r) => r.type === 'TRENDLINE_BREAKOUT_SYSTEMATIC' && r.status === 'TRIGGERED'
+          )
+
+          for (const tr of trendlineRules) {
+            const tlId = tr.trendlineId || tr.conditions?.trendlineId
+            const activeTl = (context.userDrawings?.trendlines || []).find((t: any) => t.id === tlId)
+            if (activeTl && bars.length > 0) {
+              const candleTl: UserTrendline = {
+                id: activeTl.id,
+                type: 'TRENDLINE',
+                p1: { time: (activeTl as any).p1?.time ?? (bars[0]?.time || 0), price: activeTl.startPrice },
+                p2: { time: (activeTl as any).p2?.time ?? (bars[bars.length - 1]?.time || 0), price: activeTl.endPrice },
+              }
+              const initPt = findInitiatingPoint(candleTl, bars, bars.length - 1)
+              if (initPt) {
+                const borningRes = evaluateTrendBorningZone({
+                  initiatingPoint: initPt,
+                  bars,
+                  chartContext: context as any,
+                })
+                const higherLows = detectHigherLowsWithTiming(initPt, bars)
+                const curPrice = context.currentPrice ?? bars[bars.length - 1]!.close
+                const dynLine = calculateDynamicTrendline({
+                  origin: initPt,
+                  compositeScore: borningRes.compositeScore,
+                  higherLows,
+                  currentPrice: curPrice,
+                  currentTime: Math.floor(Date.now() / 1000),
+                  bars,
+                })
+                const latestCompletedBar = bars[bars.length - 1]!
+                const exitCheck = checkDynamicTrendlineExit(dynLine, latestCompletedBar)
+                if (exitCheck.shouldExit) {
+                  if (onClosePosition) {
+                    onClosePosition('Systematic Dynamic Trendline Breakdown')
+                  } else {
+                    void fetch('/api/trading/positions/close', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ instrument: context.instrument, reason: 'trendline_breakdown' }),
+                    })
+                  }
+                  updateRule(tr.instrument as MarketInstrument, tr.id, { status: 'EXECUTED' })
+                  warningToast(
+                    `🚨 [SYSTEMATIC EXIT]: 5m candle closed below dynamic trendline @ ${latestCompletedBar.close.toFixed(2)}. Position flattened ("We are out").`,
+                    10000
+                  )
+                  speakText('Systematic exit triggered. Position flattened.')
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      id: `leo-exit-${Date.now()}`,
+                      role: 'assistant',
+                      content: `🚨 **[SYSTEMATIC EXIT EXECUTED]**\n5-minute candle closed below dynamic responsive trendline at **${latestCompletedBar.close.toFixed(2)}**.\nPosition flattened cleanly per strategy protocol: *"We are out."*`,
+                      timestamp: Date.now(),
+                    },
+                  ])
+                }
+              }
+            }
+          }
+        }
 
         return changed ? nextRules : prevRules
       })
@@ -2106,28 +2282,77 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                   <span>🎨</span> Drawn:
                 </span>
                 {context.userDrawings.trendlines.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => {
-                      if (attachedPoints.some((p) => p.id === `user-tl-${t.id}`)) return
-                      setAttachedPoints((prev) => [
-                        ...prev,
-                        {
-                          id: `user-tl-${t.id}`,
-                          label: t.label || 'Trendline',
-                          value: `${t.startPrice.toLocaleString()} → ${t.endPrice.toLocaleString()}`,
-                          tier: 'DRAWING',
-                          category: 'TRENDLINE',
-                          description: `${t.slopeDirection} trendline (${t.slopePtsPer5mBar} pts/5m). Price is ${t.priceRelation}.`,
-                        },
-                      ])
-                    }}
-                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-950/60 hover:bg-sky-900/80 border border-sky-600/50 text-[9.5px] font-mono text-sky-200 transition shadow-sm"
-                    title="Click to attach this trendline to your message"
-                  >
-                    <span>📐</span> {t.label || 'Trendline'}
-                  </button>
+                  <div key={t.id} className="inline-flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (attachedPoints.some((p) => p.id === `user-tl-${t.id}`)) return
+                        setAttachedPoints((prev) => [
+                          ...prev,
+                          {
+                            id: `user-tl-${t.id}`,
+                            label: t.label || 'Trendline',
+                            value: `${t.startPrice.toLocaleString()} → ${t.endPrice.toLocaleString()}`,
+                            tier: 'DRAWING',
+                            category: 'TRENDLINE',
+                            description: `${t.slopeDirection} trendline (${t.slopePtsPer5mBar} pts/5m). Price is ${t.priceRelation}.`,
+                          },
+                        ])
+                      }}
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-950/60 hover:bg-sky-900/80 border border-sky-600/50 text-[9.5px] font-mono text-sky-200 transition shadow-sm"
+                      title="Click to attach this trendline to your message"
+                    >
+                      <span>📐</span> {t.label || 'Trendline'}
+                    </button>
+                    {t.slopeDirection === 'DESCENDING' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const inst = (context.instrument || 'GOLD') as MarketInstrument
+                          const newRule = addRule({
+                            instrument: inst,
+                            type: 'TRENDLINE_BREAKOUT_SYSTEMATIC',
+                            direction: 'LONG',
+                            description: `Long 1 ${inst} on 5m Candle Close above ${t.label || 'Bearish Trendline'} (Trend-Borning Zone)`,
+                            userPrompt: `Monitor ${t.label || 'Bearish Trendline'}. Enter Long 1 ${inst} when 5m candle closes above trendline. SL below breakout candle low, TP +50 pts (or 1:2 R:R), exit on 5m candle close below dynamic responsive trendline.`,
+                            targetReference: t.label || 'Bearish Trendline',
+                            targetPrice: t.projectedPrice || t.endPrice,
+                            pattern: 'TRENDLINE_BREAKOUT_5M',
+                            stopLossMode: 'BELOW_CANDLE_LOW',
+                            takeProfitMode: 'FIXED_POINTS',
+                            takeProfit: 50,
+                            size: 1,
+                            isLongTerm: true,
+                            session: '24H',
+                            status: 'ARMED',
+                            trendlineId: t.id,
+                            conditions: {
+                              trendlineId: t.id,
+                              pattern: 'TRENDLINE_BREAKOUT_5M',
+                              stopLossMode: 'BELOW_CANDLE_LOW',
+                              takeProfitMode: 'FIXED_POINTS',
+                              takeProfit: 50,
+                              size: 1,
+                            },
+                          })
+                          setArmedRules((prev) => [newRule as any, ...prev.filter((r) => r.id !== newRule.id)])
+                          setMessages((prev) => [
+                            ...prev,
+                            {
+                              id: `leo-arm-${Date.now()}`,
+                              role: 'assistant',
+                              content: `🎯 **[TRENDLINE STRATEGY ARMED]**\nMonitoring **${t.label || 'Bearish Trendline'}** on **${inst}**.\n• **Entry Trigger**: Strict 5-minute candle close strictly above trendline.\n• **Trend-Borning Zone**: Lowest pivot low evaluated across 7 institutional factors (POCs, RVOL, Rejection Tails, 5M AVWAP, Round Handles, Liquidity, Time).\n• **Default Risk**: Stop Loss below breakout candle low · Take Profit: +50.0 pts.\n• **Dynamic Exit**: Trailing responsive trendline with time-decay acceleration on range chop.`,
+                              timestamp: Date.now(),
+                            },
+                          ])
+                        }}
+                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-950/80 hover:bg-amber-900 border border-amber-500/60 text-[9px] font-mono font-bold text-amber-300 transition shadow-sm"
+                        title="Arm Systematic Trendline Breakout & Trend-Borning Zone Strategy"
+                      >
+                        <span>⚡</span> Arm Borning Strategy
+                      </button>
+                    )}
+                  </div>
                 ))}
                 {context.userDrawings.ranges.map((r) => (
                   <button

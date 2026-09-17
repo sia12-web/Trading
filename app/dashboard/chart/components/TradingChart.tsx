@@ -171,7 +171,7 @@ import {
   recordMemoryNotification,
   evaluatePriceAgainstMemories,
 } from '@/lib/trading/leoLongTermMemory'
-import { detectCandlestickPatterns } from '@/lib/trading/candlestickPatterns'
+import { detectCandlestickPatterns, type Candle } from '@/lib/trading/candlestickPatterns'
 import { isUsMarketHoliday } from '@/lib/chart/sessionVwap'
 import {
   loadRulesForMarket,
@@ -187,6 +187,13 @@ import {
   computeCvdCandleBars,
   type OrderFlowSummary,
 } from '@/lib/trading/orderFlowDelta'
+import {
+  checkTrendlineBreakout,
+  findInitiatingPoint,
+  evaluateTrendBorningZone,
+  detectHigherLowsWithTiming,
+  calculateDynamicTrendline,
+} from '@/lib/trading/trendlineStrategy'
 
 const DOW_15M_FAIL_COLORS: any = { high: '#3b82f6', low: '#ef4444', mid: '#eab308', buy: '#3b82f6', sell: '#ef4444' }
 const computeDow15mFailOverlay = (..._args: any[]): any => null
@@ -2960,6 +2967,152 @@ export function TradingChart({
 
         ctx.fillStyle = '#7dd3fc'
         ctx.fillText(labelText, mx - textW / 2, my - 5)
+
+        // ── Systematic Trend-Borning Zone & Responsive Angle Engine ──
+        if (pDiff < 0 && list.length > 0) {
+          const bars5m: Candle[] = list.map((c: any) => ({
+            time: typeof c.time === 'number' ? c.time : 0,
+            open: Number(c.open),
+            high: Number(c.high),
+            low: Number(c.low),
+            close: Number(c.close),
+            volume: Number(c.volume || 1),
+          }))
+
+          const breakout = checkTrendlineBreakout(tl, bars5m)
+          const initPt = findInitiatingPoint(tl, bars5m, breakout.breakoutCandleIndex ?? bars5m.length - 1)
+
+          if (initPt) {
+            const mockChartCtx: any = {
+              yesterday: yesterdayNyc ? { poc: yesterdayNyc.poc } : null,
+              overnight: overnightInventory ? { overnight: { poc: overnightInventory.overnight?.poc } } : null,
+              frvp5d: frvp5d ? { poc: frvp5d.poc } : null,
+              avwap5m: avwap5mBenchmark ? { vwap: avwap5mBenchmark.vwap, sigma1Lower: avwap5mBenchmark.sigma1Lower, sigma2Lower: avwap5mBenchmark.sigma2Lower } : null,
+            }
+
+            const borningZone = evaluateTrendBorningZone({
+              initiatingPoint: initPt,
+              bars: bars5m,
+              chartContext: mockChartCtx,
+            })
+
+            const higherLows = detectHigherLowsWithTiming(initPt, bars5m)
+            const curPx = list[list.length - 1]?.close ?? initPt.price
+            const curSec = Math.floor(Date.now() / 1000)
+            const dynamicLine = calculateDynamicTrendline({
+              origin: initPt,
+              compositeScore: borningZone.compositeScore,
+              higherLows,
+              currentPrice: curPx,
+              currentTime: curSec,
+              bars: bars5m,
+            })
+
+            // 1. Draw Initiating Low (Trend-Borning Zone Origin)
+            const initX = timeToX(chart.timeScale(), toChartTime(initPt.time, tz), candleTimes)
+            const initY = series.priceToCoordinate(initPt.price)
+            if (initX != null && initY != null) {
+              ctx.beginPath()
+              ctx.arc(initX, initY, 6, 0, 2 * Math.PI)
+              ctx.fillStyle = 'rgba(234, 179, 8, 0.4)'
+              ctx.fill()
+              ctx.strokeStyle = '#eab308'
+              ctx.lineWidth = 2
+              ctx.stroke()
+
+              const bText = `🎯 BORNING ZONE: ${initPt.price.toFixed(2)} · Score ${borningZone.compositeScore}/100 (${borningZone.grade})`
+              ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+              const bW = ctx.measureText(bText).width + 12
+              ctx.fillStyle = 'rgba(15, 23, 42, 0.92)'
+              ctx.fillRect(initX - bW / 2, initY + 8, bW, 16)
+              ctx.strokeStyle = '#eab308'
+              ctx.lineWidth = 1
+              ctx.strokeRect(initX - bW / 2, initY + 8, bW, 16)
+              ctx.fillStyle = '#fef08a'
+              ctx.fillText(bText, initX - bW / 2 + 6, initY + 20)
+            }
+
+            // 2. Draw Higher Low Timing Intervals
+            for (let h = 1; h < higherLows.length; h++) {
+              const hl = higherLows[h]!
+              const hlX = timeToX(chart.timeScale(), toChartTime(hl.time, tz), candleTimes)
+              const hlY = series.priceToCoordinate(hl.price)
+              if (hlX != null && hlY != null) {
+                ctx.beginPath()
+                ctx.arc(hlX, hlY, 4, 0, 2 * Math.PI)
+                ctx.fillStyle = '#38bdf8'
+                ctx.fill()
+                ctx.strokeStyle = '#ffffff'
+                ctx.lineWidth = 1
+                ctx.stroke()
+
+                const hlLabel = `${hl.timingLabel}: ${hl.price.toFixed(1)}`
+                ctx.font = 'bold 8.5px ui-monospace, SFMono-Regular, monospace'
+                const hlW = ctx.measureText(hlLabel).width + 8
+                ctx.fillStyle = 'rgba(15, 23, 42, 0.9)'
+                ctx.fillRect(hlX - hlW / 2, hlY + 6, hlW, 14)
+                ctx.fillStyle = '#7dd3fc'
+                ctx.fillText(hlLabel, hlX - hlW / 2 + 4, hlY + 16)
+              }
+            }
+
+            // 3. Draw Confirmed 5m Breakout Candle Marker & Entry Target
+            if (breakout.isConfirmed5mClose && breakout.breakoutCandle) {
+              const brkX = timeToX(chart.timeScale(), toChartTime(breakout.breakoutCandle.time, tz), candleTimes)
+              const brkY = series.priceToCoordinate(breakout.breakoutCandle.close)
+              if (brkX != null && brkY != null) {
+                ctx.beginPath()
+                ctx.moveTo(brkX, brkY - 12)
+                ctx.lineTo(brkX - 6, brkY - 2)
+                ctx.lineTo(brkX + 6, brkY - 2)
+                ctx.closePath()
+                ctx.fillStyle = '#22c55e'
+                ctx.fill()
+
+                const brkText = `🚀 5M ENTRY: ${breakout.entryPrice?.toFixed(2)} · SL ${breakout.defaultStopLoss?.toFixed(2)} · TP ${breakout.defaultTakeProfitFixed50?.toFixed(2)}`
+                ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+                const brkW = ctx.measureText(brkText).width + 10
+                ctx.fillStyle = 'rgba(15, 23, 42, 0.95)'
+                ctx.fillRect(brkX - brkW / 2, brkY - 32, brkW, 16)
+                ctx.strokeStyle = '#22c55e'
+                ctx.lineWidth = 1
+                ctx.strokeRect(brkX - brkW / 2, brkY - 32, brkW, 16)
+                ctx.fillStyle = '#86efac'
+                ctx.fillText(brkText, brkX - brkW / 2 + 5, brkY - 20)
+              }
+
+              // 4. Draw Dynamic Responsive Trendline with Stalling Time-Decay
+              const dX1 = timeToX(chart.timeScale(), toChartTime(dynamicLine.p1.time, tz), candleTimes)
+              const dX2 = timeToX(chart.timeScale(), toChartTime(dynamicLine.p2.time, tz), candleTimes)
+              const dY1 = series.priceToCoordinate(dynamicLine.p1.price)
+              const dY2 = series.priceToCoordinate(dynamicLine.p2.price)
+              if (dX1 != null && dX2 != null && dY1 != null && dY2 != null) {
+                const [dex1, dey1, dex2, dey2] = extendedLine(dX1, dY1, dX2, dY2)
+                ctx.strokeStyle = dynamicLine.isStalling ? '#f97316' : '#22c55e'
+                ctx.lineWidth = 2.5
+                ctx.setLineDash(dynamicLine.isStalling ? [6, 3] : [])
+                ctx.beginPath()
+                ctx.moveTo(dex1, dey1)
+                ctx.lineTo(dex2, dey2)
+                ctx.stroke()
+                ctx.setLineDash([])
+
+                const dynText = `📈 Responsive Line (${dynamicLine.effectiveSlopePtsPer5m} pts/5m)${dynamicLine.isStalling ? ' ⚡ STALL DECAY' : ''}`
+                const dMidX = (dX1 + dX2) / 2
+                const dMidY = (dY1 + dY2) / 2
+                ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+                const dW = ctx.measureText(dynText).width + 8
+                ctx.fillStyle = dynamicLine.isStalling ? 'rgba(67, 20, 7, 0.95)' : 'rgba(6, 78, 59, 0.95)'
+                ctx.fillRect(dMidX - dW / 2, dMidY - 18, dW, 16)
+                ctx.strokeStyle = dynamicLine.isStalling ? '#f97316' : '#22c55e'
+                ctx.lineWidth = 1
+                ctx.strokeRect(dMidX - dW / 2, dMidY - 18, dW, 16)
+                ctx.fillStyle = dynamicLine.isStalling ? '#fdba74' : '#6ee7b7'
+                ctx.fillText(dynText, dMidX - dW / 2 + 4, dMidY - 6)
+              }
+            }
+          }
+        }
       }
     }
 
