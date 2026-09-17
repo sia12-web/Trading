@@ -235,3 +235,64 @@ The trader input in `LeoAssistantPanel.tsx` is engineered for rapid keyboard wor
 - **Attachment Chips**: Attached CME triggers (Gamma Flips, Put Walls, CTA Liquidations) appear as interactive dismissible tags directly above the input box.
 - **Voice-to-Text Support**: Includes Web Speech Recognition integration for hands-free audio dictation during fast-moving trading sessions.
 
+---
+
+## 10. Market Situations & Armed Entry Rules Engine
+
+The **Market Situations & Leo Rules** engine (`lib/trading/leoRules.ts` & `/app/dashboard/situations/page.tsx`) acts as the central command center for all conditional market strategies, desk alarms, level monitors, and stagnation rules armed by Leo or the trader.
+
+### 10.1 Rule Architecture & Dated Metadata (`lib/trading/leoRules.ts`)
+Every armed rule carries full timestamping, session provenance, and structured condition tiers:
+
+```typescript
+export interface ArmedRule {
+  id: string
+  instrument: 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE' | 'NIKKEI'
+  type: 'CONDITIONAL_ENTRY' | 'STAGNATION_TIMEOUT' | 'DESK_ALERT' | 'TELEGRAM_ALERT'
+  status: 'ARMED' | 'TRIGGERED' | 'EXECUTED' | 'SATISFIED' | 'CANCELLED' | 'EXPIRED'
+  createdDateFormatted: string  // e.g. "Sep 15, 2026 • 21:04 EDT"
+  sessionDate: string          // YYYY-MM-DD
+  sessionTime: string          // HH:mm EDT
+  conditions: {
+    targetReference?: string
+    targetPrice?: number
+    direction?: 'LONG' | 'SHORT'
+    pattern?: PricePattern      // 'BULLISH_ENGULFING' | 'BEARISH_ENGULFING' | 'HAMMER' | ... | 'LEVEL_TOUCH'
+    entryTimeframe?: string | null // e.g. '5', '15', '30'. null = Any TF (Leo monitors all)
+    cvdDivergence?: boolean    // Requires order flow CVD divergence at level
+    stopLossMode?: string
+    takeProfitMode?: string
+    rewardToRiskRatio?: number // Auto-calculated (e.g. 2.0)
+    size?: number
+    isLongTerm?: boolean
+    maxMinutes?: number
+  }
+  userPrompt?: string
+  description: string
+}
+```
+
+### 10.2 Pattern Defaulting Logic (`LEVEL_TOUCH`)
+> [!IMPORTANT]
+> **No Auto-Assigned Patterns**: When the trader gives a level command without explicitly stating a candlestick pattern (e.g., *"If price goes above 52,800, buy"*), Leo sets `pattern = 'LEVEL_TOUCH'` (Price Touch at Level).
+> 
+> - **Level Touch**: Fires purely on price reaching the defined target level, requiring **no specific candlestick pattern**. Rendered in UI cards as **`📍 Entry: Price Touch`**.
+> - **Explicit Patterns**: If the prompt explicitly mentions candlestick patterns (*"bullish engulfing"*, *"hammer"*, *"rejection tail"*), Leo sets the pattern accordingly (`⚡ Pattern: BULLISH ENGULFING`).
+
+### 10.3 Dynamic Timeframe & CVD Divergence Rules
+1. **Timeframe Flexibility (`entryTimeframe`)**:
+   - **User Specified**: If the prompt contains a timeframe (e.g., *"on the 5m chart"*), `entryTimeframe = '5'`.
+   - **Unspecified**: Defaults to `null` (**`⏱️ TF: Any TF — Leo monitors all`**), instructing Leo to evaluate incoming ticks across all active chart timeframes.
+2. **CVD Divergence Requirement (`cvdDivergence`)**:
+   - Spoken phrases like *"if CVD divergence at the level"* flag `cvdDivergence = true`.
+   - Displayed on situation cards as **`📊 CVD: ✅ Divergence Required`**.
+
+### 10.4 3-Tile Condition Layout & Cross-Tab Sync
+The Market Situations dashboard (`/dashboard/situations`) organizes each rule into a 3-tile condition structure:
+1. **🎯 Trigger Conditions**: Target Reference, Level, Pattern / Level Touch, Timeframe, CVD Divergence.
+2. **🛡️ Risk & Execution**: Direction, Sizing, Dynamic SL (e.g. Below Bar Low -2p), TP Risk:Reward ratio.
+3. **⏱️ Safeguards & Expiry**: Session Provenance (NYC vs LTM), Stagnation Timeouts, Expiration Window, Dated Stamp.
+
+**Cross-Tab Synchronization**: Any rule armed in the chat panel, updated on the chart, or modified in the dashboard broadcasts `leo-rules-updated` via `CustomEvent` and `StorageEvent` listeners, keeping all open browser tabs continuously in sync.
+
+

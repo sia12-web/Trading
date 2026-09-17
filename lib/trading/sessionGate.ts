@@ -1974,7 +1974,8 @@ export function isArmedRuleExpired(
   },
   now: Date | number = Date.now()
 ): boolean {
-  if (rule.isLongTerm) return false
+  const sess = (rule.session || '').toUpperCase()
+  if (rule.isLongTerm || sess === '24H' || sess === 'ALL' || sess === 'ASIA' || sess === 'LTM') return false
   if (rule.status && rule.status !== 'ARMED') return true
   return isNycSessionExpired(rule.createdAt, now)
 }

@@ -20,6 +20,7 @@ import {
   type TeamTapeStatus,
 } from '@/lib/trading/teamTape'
 import { loadQuestradeBook } from '@/lib/trading/questradeBook'
+import { getSymbolRealName } from '@/lib/trading/symbolNames'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,9 +46,12 @@ function asSignal(row: {
   const entry = Number(row.entry)
   const stop = row.stop == null ? null : Number(row.stop)
   const targetIn = row.target == null ? null : Number(row.target)
+  const meta = getSymbolRealName(row.symbol)
   return {
     sourceId: row.source_id,
     symbol: row.symbol,
+    companyName: meta.name,
+    realName: meta.name,
     side,
     quantity: Number(row.quantity),
     entry,
@@ -106,32 +110,73 @@ export async function GET(request: Request) {
   const open: TeamTapeSignal[] = []
   const history: TeamTapeSignal[] = []
 
-  // 1. If Questrade book loaded successfully, merge live open positions and recent history
+  // 1. If Questrade book loaded successfully, merge live open positions, working limits, and recent history
   if (questradeBook.ok) {
+    // Merge open positions
     for (const p of questradeBook.openPositions) {
+      const storedMatch = storedSignals.find((s) => s.symbol === p.symbol || s.sourceId === p.sourceId)
+      const stop = p.stop ?? storedMatch?.stop ?? null
+      const target =
+        p.target ??
+        storedMatch?.target ??
+        teamTapeTarget1_5R({ side: p.side, entry: p.entry, stop })
       open.push({
         sourceId: p.sourceId,
         symbol: p.symbol,
+        companyName: p.companyName || getSymbolRealName(p.symbol).name,
+        realName: p.realName || getSymbolRealName(p.symbol).name,
         side: p.side,
         quantity: p.quantity,
         entry: p.entry,
-        stop: p.stop,
-        target: p.target,
+        stop,
+        target,
         status: 'filled',
         filledAt: p.filledAt,
       })
     }
 
+    // Merge working entry limits
+    for (const w of questradeBook.workingLimits) {
+      if (!open.some((o) => o.sourceId === w.sourceId)) {
+        const storedMatch = storedSignals.find((s) => s.sourceId === w.sourceId)
+        const stop = w.stop ?? storedMatch?.stop ?? null
+        const target =
+          w.target ??
+          storedMatch?.target ??
+          teamTapeTarget1_5R({ side: w.side, entry: w.entry, stop })
+        open.push({
+          sourceId: w.sourceId,
+          symbol: w.symbol,
+          companyName: w.companyName || getSymbolRealName(w.symbol).name,
+          realName: w.realName || getSymbolRealName(w.symbol).name,
+          side: w.side,
+          quantity: w.quantity,
+          entry: w.entry,
+          stop,
+          target,
+          status: 'working',
+          filledAt: w.filledAt,
+        })
+      }
+    }
+
+    // Merge history
     for (const h of questradeBook.history) {
-      if (!open.some((o) => o.symbol === h.symbol)) {
+      if (!open.some((o) => o.symbol === h.symbol && o.sourceId === h.sourceId)) {
+        const stop = h.stop
+        const target =
+          h.target ??
+          teamTapeTarget1_5R({ side: h.side, entry: h.entry, stop })
         history.push({
           sourceId: h.sourceId,
           symbol: h.symbol,
+          companyName: h.companyName || getSymbolRealName(h.symbol).name,
+          realName: h.realName || getSymbolRealName(h.symbol).name,
           side: h.side,
           quantity: h.quantity,
           entry: h.entry,
-          stop: h.stop,
-          target: h.target,
+          stop,
+          target,
           status: h.status,
           filledAt: h.filledAt,
         })

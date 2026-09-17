@@ -368,7 +368,7 @@ function playLineFor(
   }
   const extra =
     superimpose === 'WAITING'
-      ? ' Superimpose waits for a holding IB extreme.'
+      ? ' Superimpose waits for a holding excess extreme (buying/selling defense).'
       : superimpose === 'INVALIDATED'
         ? ' Holding extreme was taken out — drop the old projection.'
         : ''

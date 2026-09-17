@@ -21,6 +21,8 @@ import {
 export type QuestradeTradeifyTransfer = {
   sourceId: string
   symbol: string
+  companyName: string
+  realName: string
   side: 'BUY' | 'SELL'
   instrument: DeskIndex
   stockEntry: number
@@ -203,6 +205,8 @@ export function buildQuestradeTradeifyTransfer(args: {
   return {
     sourceId: args.row.sourceId,
     symbol: args.row.symbol,
+    companyName: args.row.companyName || args.row.label || args.row.symbol,
+    realName: args.row.realName || args.row.label || args.row.symbol,
     side: args.row.side,
     instrument,
     stockEntry: args.row.entry,

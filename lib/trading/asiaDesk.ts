@@ -94,18 +94,30 @@ export function asiaMontrealMins(now: Date = new Date()): { ymd: string; mins: n
   return montrealCivil(Math.floor(now.getTime() / 1000))
 }
 
-/** GOLD / DOW live chart page 02:00–10:25 Montreal weekdays. */
+/**
+ * GOLD / DOW live chart page 02:00–10:25 Montreal weekdays.
+ * NOTE: The primary streaming gate is now in sessionGate.isChartStreamAllowed,
+ * which uses activeDeskSessionsAt to cover the full Asian session (18:00–03:00 ET).
+ * This function is retained for backward compatibility and overlay logic.
+ */
 export function isAsiaDeskChartWindow(now: Date = new Date()): boolean {
   if (!isAsiaMontrealWeekday(now)) return false
   const { mins } = asiaMontrealMins(now)
   return mins >= ASIA_CHART_START_MINS && mins < ASIA_CHART_END_MINS
 }
 
-/** GOLD / DOW live tip during the place window only (02:00–03:40). */
+/**
+ * GOLD / DOW live chart tip stream: full CME overnight 20:00–03:40 Montreal time.
+ * - 20:00–02:00 = Asia building window (range forms, no orders yet)
+ * - 02:00–03:40 = Asia execution window (OCO stops placed)
+ * This crosses midnight, so we check: mins >= ASIA_OPEN_MINS OR mins < ASIA_STREAM_END_MINS.
+ * Previously only covered 02:00–03:40; expanded to fix the frozen chart during the building phase.
+ */
 export function isAsiaDeskStreamWindow(now: Date = new Date()): boolean {
   if (!isAsiaMontrealWeekday(now)) return false
   const { mins } = asiaMontrealMins(now)
-  return mins >= ASIA_CHART_START_MINS && mins < ASIA_STREAM_END_MINS
+  // Crosses midnight: 20:00 → 00:00 → 03:40
+  return mins >= ASIA_OPEN_MINS || mins < ASIA_STREAM_END_MINS
 }
 
 /** Railway scan + place Telegram: 02:00–03:40 Montreal weekdays. */

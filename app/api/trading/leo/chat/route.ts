@@ -5,6 +5,8 @@ import {
   streamOpenAIResponse,
   type LeoChatContext,
 } from '@/lib/ai/leoAssistant'
+import { getLatestDatabentoLiveQuote } from '@/lib/databento/liveHub'
+import { detectCandlestickPatterns } from '@/lib/trading/candlestickPatterns'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -25,6 +27,52 @@ export async function POST(req: NextRequest) {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       })
+    }
+
+    // Zero-latency live market data injection for Leo
+    if (chartContext) {
+      // 1. Live Databento CME Globex Quote check
+      const liveQuote = getLatestDatabentoLiveQuote(chartContext.instrument as any)
+      if (liveQuote && Number.isFinite(liveQuote.price) && liveQuote.price > 0) {
+        chartContext.currentPrice = liveQuote.price
+      }
+
+      // 2. Server-verified candlestick patterns across recent candles
+      if (chartContext.recentCandles && chartContext.recentCandles.length > 0) {
+        const bars = chartContext.recentCandles
+        const activePatterns: Array<{
+          pattern: string
+          type: 'BULLISH' | 'BEARISH' | 'NEUTRAL'
+          candleTimeEt: string
+          candlePrice: number
+          barIndex: number
+        }> = []
+        const startIdx = Math.max(0, bars.length - 30)
+        for (let i = startIdx; i < bars.length; i++) {
+          const res = detectCandlestickPatterns(bars, i)
+          const b = bars[i]!
+          const timeEt = new Date(b.time * 1000).toLocaleTimeString('en-US', {
+            timeZone: 'America/New_York',
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+          if (res.bullEng) activePatterns.push({ pattern: 'Bullish Engulfing', type: 'BULLISH', candleTimeEt: timeEt, candlePrice: b.close, barIndex: i })
+          if (res.bearEng) activePatterns.push({ pattern: 'Bearish Engulfing', type: 'BEARISH', candleTimeEt: timeEt, candlePrice: b.close, barIndex: i })
+          if (res.hammer) activePatterns.push({ pattern: 'Hammer', type: 'BULLISH', candleTimeEt: timeEt, candlePrice: b.close, barIndex: i })
+          if (res.invHammer) activePatterns.push({ pattern: 'Inverted Hammer', type: 'BULLISH', candleTimeEt: timeEt, candlePrice: b.close, barIndex: i })
+          if (res.shootingStar) activePatterns.push({ pattern: 'Shooting Star', type: 'BEARISH', candleTimeEt: timeEt, candlePrice: b.close, barIndex: i })
+          if (res.hangingMan) activePatterns.push({ pattern: 'Hanging Man', type: 'BEARISH', candleTimeEt: timeEt, candlePrice: b.close, barIndex: i })
+          if (res.morningStar) activePatterns.push({ pattern: 'Morning Star', type: 'BULLISH', candleTimeEt: timeEt, candlePrice: b.close, barIndex: i })
+          if (res.eveningStar) activePatterns.push({ pattern: 'Evening Star', type: 'BEARISH', candleTimeEt: timeEt, candlePrice: b.close, barIndex: i })
+          if (res.bullHarami) activePatterns.push({ pattern: 'Bullish Harami', type: 'BULLISH', candleTimeEt: timeEt, candlePrice: b.close, barIndex: i })
+          if (res.bearHarami) activePatterns.push({ pattern: 'Bearish Harami', type: 'BEARISH', candleTimeEt: timeEt, candlePrice: b.close, barIndex: i })
+          if (res.buyingExcess) activePatterns.push({ pattern: 'Buying Excess Tail', type: 'BULLISH', candleTimeEt: timeEt, candlePrice: b.low, barIndex: i })
+          if (res.sellingExcess) activePatterns.push({ pattern: 'Selling Excess Tail', type: 'BEARISH', candleTimeEt: timeEt, candlePrice: b.high, barIndex: i })
+        }
+        if (activePatterns.length > 0) {
+          chartContext.candlestickPatterns = { activePatterns }
+        }
+      }
     }
 
     const anthropicKey = process.env.ANTHROPIC_API_KEY
@@ -186,13 +234,35 @@ function buildDeskFallbackResponse(
     else if (/\bgold\b|gc/i.test(lower)) inst = 'GOLD'
     else if (/\bcrude\b|oil|cl/i.test(lower)) inst = 'CRUDE'
 
+    // Only assign a candlestick pattern if the user actually mentioned one.
+    // If they just said "buy above this level" with no pattern language → LEVEL_TOUCH.
+    const userMentionedPattern =
+      /bullish\s+engulfing|bearish\s+engulfing|hammer|shooting\s*star|rejection\s*(tail|wick)|level\s+touch|absorption|sweep/i.test(lower)
+
     let pattern: 'BULLISH_ENGULFING' | 'BEARISH_ENGULFING' | 'HAMMER' | 'INVERTED_HAMMER' | 'SHOOTING_STAR' | 'REJECTION_TAIL' | 'LEVEL_TOUCH' =
-      direction === 'LONG' ? 'BULLISH_ENGULFING' : 'BEARISH_ENGULFING'
-    if (/hammer/i.test(lower)) pattern = 'HAMMER'
-    else if (/shooting\s*star/i.test(lower)) pattern = 'SHOOTING_STAR'
-    else if (/rejection/i.test(lower)) pattern = 'REJECTION_TAIL'
-    else if (/bullish\s+engulfing/i.test(lower)) pattern = 'BULLISH_ENGULFING'
-    else if (/bearish\s+engulfing/i.test(lower)) pattern = 'BEARISH_ENGULFING'
+      'LEVEL_TOUCH' // default: enter when price touches the level — no candle pattern required
+    if (userMentionedPattern) {
+      if (/hammer/i.test(lower)) pattern = 'HAMMER'
+      else if (/shooting\s*star/i.test(lower)) pattern = 'SHOOTING_STAR'
+      else if (/rejection/i.test(lower)) pattern = 'REJECTION_TAIL'
+      else if (/bullish\s+engulfing/i.test(lower)) pattern = 'BULLISH_ENGULFING'
+      else if (/bearish\s+engulfing/i.test(lower)) pattern = 'BEARISH_ENGULFING'
+      else pattern = direction === 'LONG' ? 'BULLISH_ENGULFING' : 'BEARISH_ENGULFING'
+    }
+
+    // Detect entry timeframe — null means "any timeframe, Leo monitors all"
+    let entryTimeframe: string | null = null
+    const tfMatch = lower.match(/\b(1|2|3|4|5|6|8|10|12|15|20|25|30|45|60|90|120|240|480|D|W)\s*(?:min(?:ute)?s?|m\b|h(?:our)?s?|hr?s?|d(?:ay)?s?|w(?:eek)?s?)/i)
+    if (tfMatch) {
+      const raw = tfMatch[1]!.toUpperCase()
+      // Normalize to minutes for standard values
+      if (/^d$/i.test(raw)) entryTimeframe = '1440'
+      else if (/^w$/i.test(raw)) entryTimeframe = '10080'
+      else entryTimeframe = raw
+    }
+
+    // Detect CVD divergence requirement
+    const cvdDivergence = /\bcvd\b|\bcumulative\s+volume\s+delta|\bdivergence\b/i.test(lower)
 
     let stopLossMode: 'BELOW_CANDLE_LOW' | 'ABOVE_CANDLE_HIGH' | 'FIXED_POINTS' | 'DOLLARS_50' =
       direction === 'LONG' ? 'BELOW_CANDLE_LOW' : 'ABOVE_CANDLE_HIGH'
@@ -231,13 +301,26 @@ function buildDeskFallbackResponse(
       if (Number.isFinite(p) && p > 0) targetPx = p
     }
 
-    const patternLabel = pattern.replace(/_/g, ' ')
+    const patternLabel =
+      pattern === 'LEVEL_TOUCH' ? 'Price Touch at Level' : pattern.replace(/_/g, ' ')
     const slLabel =
       stopLossMode === 'BELOW_CANDLE_LOW'
-        ? 'Below Bullish Engulfing Bar Low (-2 pts cushion)'
+        ? 'Below Entry Bar Low (-2 pts cushion)'
         : stopLossMode === 'ABOVE_CANDLE_HIGH'
-        ? 'Above Bar High (+2 pts cushion)'
+        ? 'Above Entry Bar High (+2 pts cushion)'
         : 'Fixed Risk Bracket'
+
+    const triggerLine =
+      pattern === 'LEVEL_TOUCH'
+        ? `- **Trigger:** **Price reaches level** (no candle pattern required)`
+        : `- **Trigger Pattern:** **${patternLabel}**`
+
+    const tfLine = entryTimeframe
+      ? `- **Timeframe:** **${entryTimeframe}m chart** (Leo watches this TF)`
+      : `- **Timeframe:** **Any** — Leo monitors all timeframes for the level`
+    const cvdLine = cvdDivergence
+      ? `- **CVD Condition:** ✅ CVD divergence required at the level`
+      : ''
 
     return `### 🎯 Strategy Saved & Conditional Entry Armed
 
@@ -247,7 +330,8 @@ function buildDeskFallbackResponse(
 **Saved Entry Conditions:**
 - **Target Reference:** **${targetRef}**
 - **Target Level:** **${targetPx.toLocaleString()}**
-- **Trigger Pattern:** **${patternLabel}**
+${triggerLine}
+${tfLine}${cvdLine ? '\n' + cvdLine : ''}
 - **Direction:** **${direction}**
 - **Dynamic Stop Loss:** ${slLabel}
 - **Profit Target:** **${takeProfitMode} Risk:Reward**
@@ -262,10 +346,12 @@ function buildDeskFallbackResponse(
   "targetReference": "${targetRef}",
   "targetPrice": ${targetPx},
   "pattern": "${pattern}",
+  "entryTimeframe": ${entryTimeframe ? `"${entryTimeframe}"` : 'null'},
+  "cvdDivergence": ${cvdDivergence},
   "stopLossMode": "${stopLossMode}",
   "takeProfitMode": "${takeProfitMode}",
   "size": 1,
-  "description": "${direction} 1 ${inst} on ${patternLabel} at ${targetRef} (${targetPx.toLocaleString()})"
+  "description": "${direction} 1 ${inst} — ${pattern === 'LEVEL_TOUCH' ? 'enter at level' : patternLabel}${entryTimeframe ? ` on ${entryTimeframe}m` : ''}${cvdDivergence ? ' + CVD div' : ''} at ${targetRef} (${targetPx.toLocaleString()})"
 }
 </execute>`
   }

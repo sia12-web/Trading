@@ -9,17 +9,28 @@ import {
   type LeoExecutionDirective,
 } from '@/lib/ai/leoAssistant'
 import { playTradingViewChime, primeAudioContext } from '@/lib/chart/soundEffects'
-import { warningToast } from '@/lib/utils/toastUtils'
+import { warningToast, successToast } from '@/lib/utils/toastUtils'
 import type { TeamConsensusReport } from '@/lib/ai/stack/types'
 import type { InstitutionalHedgingTelemetry } from '@/lib/ai/stack/models/institutionalHedgingModel'
 import type { DayTypeEvaluation, MarketDayType } from '@/lib/chart/context55'
 import { detectCandlestickPatterns, type Candle } from '@/lib/trading/candlestickPatterns'
 import { isArmedRuleExpired } from '@/lib/trading/sessionGate'
 import { saveLongTermMemory, type LeoLongTermMemory } from '@/lib/trading/leoLongTermMemory'
+import {
+  formatRuleDate,
+  listenToRuleUpdates,
+  isEntrySituationRule,
+  loadRulesForMarket,
+  saveRulesForMarket,
+  armMarketOneToOneSituation,
+  MARKET_DEFAULT_PARAMS,
+  type MarketInstrument,
+  type RuleConditionProgress,
+} from '@/lib/trading/leoRules'
 
 export interface ArmedDeskRule {
   id: string
-  type: 'STAGNATION_TIMEOUT' | 'DESK_ALERT' | 'TELEGRAM_ALERT' | 'CONDITIONAL_ENTRY'
+  type: 'STAGNATION_TIMEOUT' | 'DESK_ALERT' | 'TELEGRAM_ALERT' | 'CONDITIONAL_ENTRY' | 'MARKET_SITUATION'
   description: string
   userPrompt?: string
   instrument?: string
@@ -37,17 +48,26 @@ export interface ArmedDeskRule {
     | 'SHOOTING_STAR'
     | 'REJECTION_TAIL'
     | 'LEVEL_TOUCH'
+  /** Chart timeframe user specified (e.g. '5', '15', '30'). null/undefined = any timeframe — Leo monitors all. */
+  entryTimeframe?: string | null
+  /** When true, Leo additionally requires CVD divergence at the level before triggering */
+  cvdDivergence?: boolean
   stopLossMode?: 'BELOW_CANDLE_LOW' | 'ABOVE_CANDLE_HIGH' | 'FIXED_POINTS' | 'DOLLARS_50'
   stopLoss?: number
   takeProfitMode?: '1:1' | '1:2' | '1:3' | '1:5' | 'FIXED_POINTS'
   takeProfit?: number
+  riskReward?: string
   size?: number
   maxMinutes?: number
   session?: string
   isLongTerm?: boolean
   requireHighVolume?: boolean
   requireConfidence?: boolean
+  conditionProgress?: RuleConditionProgress
   createdAt: number
+  createdDateFormatted?: string
+  sessionDate?: string
+  sessionTime?: string
   status: 'ARMED' | 'TRIGGERED' | 'EXECUTED' | 'SATISFIED' | 'CANCELLED' | 'EXPIRED'
   executedAt?: number
   executedPrice?: number
@@ -147,20 +167,23 @@ export function LeoAssistantPanel({
     }
     setAttachedPoints([])
 
-    // Sync saved armed rules for this instrument from localStorage
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem(`leo_armed_rules_${context.instrument}`)
-        if (saved) {
-          const parsed = JSON.parse(saved)
-          if (Array.isArray(parsed)) {
-            // Keep rules that are either Long-Term Memory or have not expired their NYC session
-            setArmedRulesState(parsed.filter((r: any) => !isArmedRuleExpired(r)))
-          }
-        } else {
-          setArmedRulesState([])
-        }
-      } catch {}
+    // Sync saved armed rules for this instrument from central manager & subscribe to cross-tab updates
+    const syncRules = () => {
+      if (typeof window !== 'undefined') {
+        try {
+          const rules = loadRulesForMarket(context.instrument as MarketInstrument)
+          setArmedRulesState(rules as any)
+        } catch {}
+      }
+    }
+    syncRules()
+    const unsubscribe = listenToRuleUpdates((market) => {
+      if (!market || market === context.instrument) {
+        syncRules()
+      }
+    })
+    return () => {
+      unsubscribe()
     }
   }, [context.instrument])
 
@@ -178,13 +201,7 @@ export function LeoAssistantPanel({
   const [armedRules, setArmedRulesState] = useState<ArmedDeskRule[]>(() => {
     if (typeof window === 'undefined') return []
     try {
-      const saved = localStorage.getItem(`leo_armed_rules_${context.instrument}`)
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        if (Array.isArray(parsed)) {
-          return parsed.filter((r: any) => !isArmedRuleExpired(r))
-        }
-      }
+      return loadRulesForMarket(context.instrument as MarketInstrument) as any
     } catch {}
     return []
   })
@@ -194,7 +211,7 @@ export function LeoAssistantPanel({
       const next = typeof updater === 'function' ? updater(prev) : updater
       if (typeof window !== 'undefined') {
         try {
-          localStorage.setItem(`leo_armed_rules_${context.instrument}`, JSON.stringify(next))
+          saveRulesForMarket(context.instrument as MarketInstrument, next as any)
         } catch {}
       }
       return next
@@ -830,18 +847,28 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
           d.userPrompt ||
           inputPromptRef.current ||
           `Monitor ${targetRef} and enter ${dir} on pattern confirmation`
-        const pat = d.pattern || (dir === 'LONG' ? 'BULLISH_ENGULFING' : 'BEARISH_ENGULFING')
+        const pat = d.pattern || 'LEVEL_TOUCH'
         const slMode = d.stopLossMode || (dir === 'LONG' ? 'BELOW_CANDLE_LOW' : 'ABOVE_CANDLE_HIGH')
         const tpMode = d.takeProfitMode || '1:2'
         const size = d.size ?? 1
+        const entryTf: string | null = (d as any).entryTimeframe ?? null   // null = any TF
+        const cvdDiv: boolean = Boolean((d as any).cvdDivergence)
 
         const isLongTerm = Boolean((d as any).isLongTerm || (d as any).longTermMemory)
+        const now = Date.now()
+        const dateMeta = formatRuleDate(now)
+
+        const tfLabel = entryTf ? ` on ${entryTf}m TF` : ''
+        const cvdLabel = cvdDiv ? ' + CVD divergence' : ''
+        const entryLabel =
+          pat === 'LEVEL_TOUCH' ? 'price touch at level' : pat.replace(/_/g, ' ').toLowerCase()
+
         const newRule: ArmedDeskRule = {
-          id: `rule-${Date.now()}`,
+          id: `rule-${now}`,
           type: 'CONDITIONAL_ENTRY',
           description:
             d.description ||
-            `${dir} 1 ${inst} on ${pat.replace(/_/g, ' ')} at ${targetRef} (${targetPx.toLocaleString()})${isLongTerm ? ' [Long-Term Memory]' : ' [NYC Session]'}`,
+            `${dir} 1 ${inst} — ${entryLabel}${tfLabel}${cvdLabel} @ ${targetRef} (${targetPx.toLocaleString()})${isLongTerm ? ' [Long-Term Memory]' : ' [NYC Session]'}`,
           userPrompt: userSaid,
           instrument: inst,
           direction: dir,
@@ -850,6 +877,8 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
           drawingId,
           drawingType,
           pattern: pat,
+          entryTimeframe: entryTf,
+          cvdDivergence: cvdDiv,
           stopLossMode: slMode,
           stopLoss: d.stopLoss,
           takeProfitMode: tpMode,
@@ -857,24 +886,32 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
           size,
           session: (d as any).session ?? 'NYC',
           isLongTerm,
-          createdAt: Date.now(),
+          createdAt: now,
+          createdDateFormatted: dateMeta.formatted,
+          sessionDate: dateMeta.sessionDate,
+          sessionTime: dateMeta.sessionTime,
           status: 'ARMED',
         }
 
         setArmedRules((prev) => [...prev, newRule])
         playTradingViewChime()
         warningToast(
-          `🎯 Strategy Armed: ${dir} on ${pat.replace(/_/g, ' ')} @ ${targetPx.toLocaleString()}${isLongTerm ? ' (Long-Term Memory)' : ' (NYC Session Only)'}`,
+          `🎯 Armed: ${dir} on ${entryLabel}${tfLabel}${cvdLabel} @ ${targetPx.toLocaleString()}${isLongTerm ? ' (Long-Term Memory)' : ' (NYC Session Only)'}`,
           8000
         )
-        speakText(`Strategy rule armed for ${dir} ${inst}. Monitoring ${pat.replace(/_/g, ' ')}.`)
+        speakText(`Strategy rule armed for ${dir} ${inst}. Monitoring ${entryLabel}${cvdDiv ? ' with CVD divergence' : ''}.`)
       } else if (d.action === 'ARM_STAGNATION_RULE') {
+        const now = Date.now()
+        const dateMeta = formatRuleDate(now)
         const newRule: ArmedDeskRule = {
-          id: `stag-${Date.now()}`,
+          id: `stag-${now}`,
           type: 'STAGNATION_TIMEOUT',
           description: d.description ?? `Close if not in profit after ${d.maxMinutes}m`,
           maxMinutes: d.maxMinutes,
-          createdAt: Date.now(),
+          createdAt: now,
+          createdDateFormatted: dateMeta.formatted,
+          sessionDate: dateMeta.sessionDate,
+          sessionTime: dateMeta.sessionTime,
           status: 'ARMED',
         }
         setArmedRules((prev) => [...prev.filter((r) => r.type !== 'STAGNATION_TIMEOUT'), newRule])
@@ -893,8 +930,10 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
             resolvedPx = context.currentPrice ?? 0
           }
         }
+        const now = Date.now()
+        const dateMeta = formatRuleDate(now)
         const newRule: ArmedDeskRule = {
-          id: `desk-alert-${Date.now()}`,
+          id: `desk-alert-${now}`,
           type: 'DESK_ALERT',
           description: `Desk alert when price tests ${d.targetReference} (${resolvedPx ? resolvedPx.toLocaleString() : 'Level'})${isLongTerm ? ' [Long-Term Memory]' : ' [NYC Session]'}`,
           targetPrice: resolvedPx > 0 ? resolvedPx : undefined,
@@ -903,7 +942,10 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
           isLongTerm,
           requireHighVolume: d.requireHighVolume,
           requireConfidence: d.requireConfidence,
-          createdAt: Date.now(),
+          createdAt: now,
+          createdDateFormatted: dateMeta.formatted,
+          sessionDate: dateMeta.sessionDate,
+          sessionTime: dateMeta.sessionTime,
           status: 'ARMED',
         }
         setArmedRules((prev) => [...prev, newRule])
@@ -1091,8 +1133,8 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
             }
           }
 
-          // 3. Conditional Strategy Entry Rule (Candlestick Pattern at Key Drawing / Level)
-          if (rule.type === 'CONDITIONAL_ENTRY' && curPrice != null) {
+          // 3. Conditional Strategy Entry & Market Situation Rules
+          if (isEntrySituationRule(rule.type) && curPrice != null) {
             // Guard: Globex 17:00–18:00 ET maintenance pause
             if (isGlobexMaintenanceWindow()) return rule
 
@@ -1109,8 +1151,29 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
               return { ...rule, status: 'CANCELLED' as const }
             }
 
+            // Resolve target price from rule, conditions, or key reference levels
+            let currentTargetPx = rule.targetPrice ?? (rule as any).conditions?.targetPrice
+            if ((currentTargetPx == null || currentTargetPx <= 0) && (rule.targetReference || (rule as any).conditions?.targetReference)) {
+              const refText = String(rule.targetReference || (rule as any).conditions?.targetReference).toLowerCase()
+              if (refText.includes('low volume') || refText.includes('y-val') || refText.includes('val')) {
+                currentTargetPx = context.shortTermMoney?.yval ?? undefined
+              } else if (refText.includes('y-poc') || refText.includes('poc')) {
+                currentTargetPx = context.shortTermMoney?.ypoc ?? context.intermediateMoney?.poc5d ?? undefined
+              } else if (refText.includes('y-low') || refText.includes('low')) {
+                currentTargetPx = context.shortTermMoney?.ylow ?? undefined
+              } else if (refText.includes('5d poc')) {
+                currentTargetPx = context.intermediateMoney?.poc5d ?? undefined
+              } else if (refText.includes('y-vah') || refText.includes('vah')) {
+                currentTargetPx = context.shortTermMoney?.yvah ?? undefined
+              } else if (refText.includes('y-high') || refText.includes('high')) {
+                currentTargetPx = context.shortTermMoney?.yhigh ?? undefined
+              }
+            }
+            if (!currentTargetPx || currentTargetPx <= 0) {
+              currentTargetPx = curPrice
+            }
+
             // Dynamic Trendline Re-Projection Over Time
-            let currentTargetPx = rule.targetPrice ?? curPrice
             if (rule.drawingType === 'TRENDLINE' && rule.drawingId && context.userDrawings) {
               const activeTl = context.userDrawings.trendlines.find((t) => t.id === rule.drawingId)
               if (activeTl && Number.isFinite(activeTl.projectedPrice) && activeTl.projectedPrice > 0) {
@@ -1122,179 +1185,265 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
             const tolerances = getInstrumentTolerances(rule.instrument || context.instrument)
             const dist = Math.abs(curPrice - currentTargetPx)
 
-            if (dist <= tolerances.proximity) {
-              const bars: Candle[] =
-                candlesRef.current && candlesRef.current.length > 0
-                  ? candlesRef.current.map((c: any) => ({
-                      time: typeof c.time === 'number' ? c.time : 0,
-                      open: Number(c.open),
-                      high: Number(c.high),
-                      low: Number(c.low),
-                      close: Number(c.close),
-                      volume: Number(c.volume || 1),
-                    }))
-                  : []
+            const rawPattern = (rule.pattern || (rule as any).conditions?.pattern || '').trim().toUpperCase()
+            const isTouchOnly = !rawPattern || rawPattern === 'LEVEL_TOUCH' || rawPattern === 'TOUCH' || rawPattern === 'NONE'
 
-              let patternFired = false
-              let signalBar: Candle | null = null
+            const bars: Candle[] =
+              candlesRef.current && candlesRef.current.length > 0
+                ? candlesRef.current.map((c: any) => ({
+                    time: typeof c.time === 'number' ? c.time : 0,
+                    open: Number(c.open),
+                    high: Number(c.high),
+                    low: Number(c.low),
+                    close: Number(c.close),
+                    volume: Number(c.volume || 1),
+                  }))
+                : []
 
+            let signalBar: Candle | null = bars.length > 0 ? bars[bars.length - 1]! : null
+
+            // 1. Level Reached / Price Touch Condition
+            const isLevelReached =
+              dist <= tolerances.touch ||
+              (dir === 'LONG' ? curPrice <= currentTargetPx + tolerances.touch : curPrice >= currentTargetPx - tolerances.touch) ||
+              Boolean(rule.conditionProgress?.levelReached)
+
+            // 2. Candlestick Pattern Condition
+            let patternMatched = false
+            let matchedPatternName = ''
+
+            if (isTouchOnly) {
+              if (isLevelReached) {
+                patternMatched = true
+                matchedPatternName = 'LEVEL_TOUCH'
+              }
+            } else if (dist <= tolerances.proximity || isLevelReached) {
               if (bars.length >= 2) {
                 const lastIdx = bars.length - 1
                 const lastBar = bars[lastIdx]!
                 const prevBar = bars[lastIdx - 1]!
 
-                const lastTimeMs = lastBar.time > 1e11 ? lastBar.time : lastBar.time * 1000
-                const prevTimeMs = prevBar.time > 1e11 ? prevBar.time : prevBar.time * 1000
+                const pResCurr = detectCandlestickPatterns(bars, lastIdx)
+                const pResPrev = detectCandlestickPatterns(bars, lastIdx - 1)
 
-                // Historical Bar Guard: MUST have formed at or after rule creation
-                const isFresh =
-                  lastTimeMs >= rule.createdAt - 60000 || prevTimeMs >= rule.createdAt - 60000
-
-                if (isFresh && rule.lastEvaluatedBarTime !== lastBar.time) {
-                  if (rule.pattern === 'LEVEL_TOUCH') {
-                    if (dist <= tolerances.touch) {
-                      patternFired = true
-                      signalBar = lastBar
+                const testPat = (res: any, bar: Candle, prev: Candle | null) => {
+                  if (rawPattern === 'BULLISH_ENGULFING' && res.bullEng) return true
+                  if (rawPattern === 'BEARISH_ENGULFING' && res.bearEng) return true
+                  if (rawPattern === 'HAMMER' && res.hammer) return true
+                  if (rawPattern === 'INVERTED_HAMMER' && res.invHammer) return true
+                  if (rawPattern === 'SHOOTING_STAR' && res.shootingStar) return true
+                  if (rawPattern === 'REJECTION_TAIL' && (dir === 'LONG' ? res.buyingExcess : res.sellingExcess)) return true
+                  if (rawPattern === 'SWEEP_REVERSAL') {
+                    if (dir === 'LONG') {
+                      return res.buyingExcess || res.hammer || (prev != null && bar.low < prev.low && bar.close > bar.open)
+                    } else {
+                      return res.sellingExcess || res.shootingStar || (prev != null && bar.high > prev.high && bar.close < bar.open)
                     }
-                  } else {
-                    const pResCurr = detectCandlestickPatterns(bars, lastIdx)
-                    const pResPrev = detectCandlestickPatterns(bars, lastIdx - 1)
+                  }
+                  if (rawPattern === 'ABSORPTION_REVERSAL') {
+                    if (dir === 'LONG') return res.buyingExcess || res.hammer || res.bullEng
+                    else return res.sellingExcess || res.shootingStar || res.bearEng
+                  }
+                  if (rawPattern === 'BREAKOUT_RETEST') {
+                    if (dir === 'LONG') return bar.low <= currentTargetPx + tolerances.touch && bar.close >= currentTargetPx
+                    else return bar.high >= currentTargetPx - tolerances.touch && bar.close <= currentTargetPx
+                  }
+                  if (rawPattern === 'MOMENTUM_EXPANSION') {
+                    if (dir === 'LONG') return bar.close > bar.open && (prev != null ? bar.close > prev.high : true)
+                    else return bar.close < bar.open && (prev != null ? bar.close < prev.low : true)
+                  }
+                  return false
+                }
 
-                    const testPat = (res: any) => {
-                      if (rule.pattern === 'BULLISH_ENGULFING' && res.bullEng) return true
-                      if (rule.pattern === 'BEARISH_ENGULFING' && res.bearEng) return true
-                      if (rule.pattern === 'HAMMER' && res.hammer) return true
-                      if (rule.pattern === 'INVERTED_HAMMER' && res.invHammer) return true
-                      if (rule.pattern === 'SHOOTING_STAR' && res.shootingStar) return true
-                      if (
-                        rule.pattern === 'REJECTION_TAIL' &&
-                        (dir === 'LONG' ? res.buyingExcess : res.sellingExcess)
-                      )
-                        return true
-                      return false
-                    }
-
-                    if (testPat(pResCurr)) {
-                      patternFired = true
-                      signalBar = lastBar
-                    } else if (testPat(pResPrev)) {
-                      patternFired = true
-                      signalBar = prevBar
-                    }
+                if (testPat(pResCurr, lastBar, prevBar)) {
+                  patternMatched = true
+                  matchedPatternName = rawPattern
+                  signalBar = lastBar
+                } else if (testPat(pResPrev, prevBar, bars[lastIdx - 2] ?? null)) {
+                  patternMatched = true
+                  matchedPatternName = rawPattern
+                  signalBar = prevBar
+                } else if (dist <= tolerances.touch) {
+                  const matchesDir = dir === 'LONG' ? lastBar.close >= lastBar.open : lastBar.close <= lastBar.open
+                  if (matchesDir) {
+                    patternMatched = true
+                    matchedPatternName = rawPattern
+                    signalBar = lastBar
                   }
                 }
               } else if (dist <= tolerances.touch) {
-                patternFired = true
+                patternMatched = true
+                matchedPatternName = rawPattern || 'LEVEL_TOUCH'
                 signalBar = bars.length > 0 ? bars[0]! : null
               }
+            }
 
-              if (patternFired) {
-                if (executingRuleIdsRef.current.has(rule.id)) {
-                  return rule
+            // 3. CVD Divergence Condition
+            const needsCvd = Boolean(rule.cvdDivergence || (rule as any).conditions?.cvdDivergence)
+            let cvdMatched = true
+            if (needsCvd) {
+              const flow = context.orderFlow
+              if (flow) {
+                if (dir === 'LONG') {
+                  cvdMatched = flow.divergence === 'BULLISH_ABSORPTION' || flow.trend === 'BUYER_DOMINANT' || flow.latestBarDelta > 0
+                } else {
+                  cvdMatched = flow.divergence === 'BEARISH_EXHAUSTION' || flow.trend === 'SELLER_DOMINANT' || flow.latestBarDelta < 0
                 }
-                executingRuleIdsRef.current.add(rule.id)
-                changed = true
-                const entryPx = curPrice
-                const { slDist } = getInstrumentDefaultDistances(
-                  rule.instrument || context.instrument
-                )
-                const tickCushion =
-                  rule.instrument === 'GOLD' ? 0.3 : rule.instrument === 'CRUDE' ? 0.05 : 2.0
+              } else {
+                cvdMatched = Boolean(rule.conditionProgress?.cvdConfirmed)
+              }
+            }
 
-                let sl = rule.stopLoss
-                if (!sl) {
-                  if (rule.stopLossMode === 'BELOW_CANDLE_LOW' && signalBar) {
-                    sl = Number((signalBar.low - tickCushion).toFixed(2))
-                  } else if (rule.stopLossMode === 'ABOVE_CANDLE_HIGH' && signalBar) {
-                    sl = Number((signalBar.high + tickCushion).toFixed(2))
-                  } else if (rule.stopLossMode === 'DOLLARS_50') {
-                    const pts50 = Number(
-                      (50.0 / (tolerances.multiplier * (rule.size || 1))).toFixed(2)
-                    )
-                    sl = Number((dir === 'LONG' ? entryPx - pts50 : entryPx + pts50).toFixed(2))
-                  } else {
-                    sl = Number((dir === 'LONG' ? entryPx - slDist : entryPx + slDist).toFixed(2))
-                  }
-                }
+            // 4. Volume Condition
+            const needsVol = Boolean(rule.requireHighVolume || (rule as any).conditions?.requireHighVolume)
+            let volMatched = true
+            if (needsVol && bars.length >= 5) {
+              const avgVol = bars.slice(-10).reduce((acc, b) => acc + b.volume, 0) / Math.min(10, bars.length)
+              volMatched = (signalBar?.volume ?? 0) >= avgVol * 1.15
+            }
 
-                // 1. Bracket Inversion Protection
-                if (dir === 'LONG' && sl >= entryPx) {
-                  sl = Number((entryPx - slDist).toFixed(2))
-                } else if (dir === 'SHORT' && sl <= entryPx) {
-                  sl = Number((entryPx + slDist).toFixed(2))
-                }
+            // 5. Session Gate
+            const sessUpper = (rule.session || '').toUpperCase()
+            const isSessionActive =
+              rule.isLongTerm ||
+              !rule.session ||
+              sessUpper === 'NYC' ||
+              sessUpper === '24H' ||
+              sessUpper === 'ASIA' ||
+              sessUpper === 'ALL' ||
+              sessUpper === 'LTM'
 
-                // 2. Max Dollar Risk Clamp ($50–$65 TopstepX cushion guard)
-                const rawRiskPts = Math.abs(entryPx - sl)
-                const rawDollarRisk = rawRiskPts * tolerances.multiplier * (rule.size || 1)
-                const MAX_RISK_DOLLARS = 65.0
+            // Track Condition Checklist Progress
+            const prevProg = rule.conditionProgress || {}
+            const newProgress: RuleConditionProgress = {
+              levelReached: isLevelReached,
+              levelReachedAt: isLevelReached ? (prevProg.levelReachedAt || Date.now()) : undefined,
+              levelReachedPrice: isLevelReached ? (prevProg.levelReachedPrice || curPrice) : undefined,
+              patternConfirmed: patternMatched || Boolean(prevProg.patternConfirmed && isTouchOnly),
+              patternConfirmedAt: patternMatched ? (prevProg.patternConfirmedAt || Date.now()) : prevProg.patternConfirmedAt,
+              patternName: matchedPatternName || prevProg.patternName || rawPattern,
+              cvdConfirmed: cvdMatched,
+              cvdConfirmedAt: cvdMatched && needsCvd ? (prevProg.cvdConfirmedAt || Date.now()) : prevProg.cvdConfirmedAt,
+              volumeConfirmed: volMatched,
+              volumeConfirmedAt: volMatched && needsVol ? (prevProg.volumeConfirmedAt || Date.now()) : prevProg.volumeConfirmedAt,
+              timeframeConfirmed: true,
+              sessionConfirmed: isSessionActive,
+            }
 
-                if (rawDollarRisk > MAX_RISK_DOLLARS) {
-                  const clampedRiskPts = Number(
-                    (MAX_RISK_DOLLARS / (tolerances.multiplier * (rule.size || 1))).toFixed(2)
+            // Check if progress state updated
+            if (
+              newProgress.levelReached !== prevProg.levelReached ||
+              newProgress.patternConfirmed !== prevProg.patternConfirmed ||
+              newProgress.cvdConfirmed !== prevProg.cvdConfirmed ||
+              newProgress.volumeConfirmed !== prevProg.volumeConfirmed
+            ) {
+              changed = true
+              rule = { ...rule, conditionProgress: newProgress }
+            }
+
+            // Check if all conditions are satisfied to fire order execution
+            const patternFired =
+              newProgress.levelReached &&
+              newProgress.patternConfirmed &&
+              (!needsCvd || newProgress.cvdConfirmed) &&
+              (!needsVol || newProgress.volumeConfirmed) &&
+              isSessionActive
+
+            if (patternFired) {
+              if (executingRuleIdsRef.current.has(rule.id)) {
+                return rule
+              }
+              executingRuleIdsRef.current.add(rule.id)
+              changed = true
+              const entryPx = curPrice
+              const { slDist } = getInstrumentDefaultDistances(
+                rule.instrument || context.instrument
+              )
+              const tickCushion =
+                rule.instrument === 'GOLD' ? 0.3 : rule.instrument === 'CRUDE' ? 0.05 : 2.0
+
+              const userSl = rule.stopLoss ?? (rule as any).conditions?.stopLoss
+              let sl = userSl != null && Number.isFinite(Number(userSl)) && Number(userSl) > 0 ? Number(userSl) : undefined
+
+              if (!sl) {
+                if (rule.stopLossMode === 'BELOW_CANDLE_LOW' && signalBar) {
+                  sl = Number((signalBar.low - tickCushion).toFixed(2))
+                } else if (rule.stopLossMode === 'ABOVE_CANDLE_HIGH' && signalBar) {
+                  sl = Number((signalBar.high + tickCushion).toFixed(2))
+                } else if (rule.stopLossMode === 'DOLLARS_50') {
+                  const pts50 = Number(
+                    (50.0 / (tolerances.multiplier * (rule.size || 1))).toFixed(2)
                   )
-                  sl = Number(
-                    (dir === 'LONG' ? entryPx - clampedRiskPts : entryPx + clampedRiskPts).toFixed(
-                      2
-                    )
-                  )
+                  sl = Number((dir === 'LONG' ? entryPx - pts50 : entryPx + pts50).toFixed(2))
+                } else {
+                  sl = Number((dir === 'LONG' ? entryPx - slDist : entryPx + slDist).toFixed(2))
                 }
+              }
 
-                const finalRiskPts = Math.max(
-                  rule.instrument === 'CRUDE' ? 0.05 : rule.instrument === 'GOLD' ? 0.2 : 1.0,
-                  Math.abs(entryPx - sl)
+              // 1. Bracket Inversion Protection
+              if (dir === 'LONG' && sl >= entryPx) {
+                sl = Number((entryPx - slDist).toFixed(2))
+              } else if (dir === 'SHORT' && sl <= entryPx) {
+                sl = Number((entryPx + slDist).toFixed(2))
+              }
+
+              const finalRiskPts = Math.max(
+                rule.instrument === 'CRUDE' ? 0.05 : rule.instrument === 'GOLD' ? 0.2 : 1.0,
+                Math.abs(entryPx - sl)
+              )
+
+              // 2. Take Profit Calculation & Inversion Guard
+              const isOneToOne = rule.takeProfitMode === '1:1' || (rule as any).conditions?.takeProfitMode === '1:1' || rule.riskReward === '1:1' || (rule as any).conditions?.riskReward === '1:1'
+              const userTp = rule.takeProfit ?? (rule as any).conditions?.takeProfit
+              let tp = userTp != null && Number.isFinite(Number(userTp)) && Number(userTp) > 0 ? Number(userTp) : undefined
+              if (!tp || isOneToOne) {
+                let mult = 2.0
+                if (isOneToOne) mult = 1.0
+                else if (rule.takeProfitMode === '1:2') mult = 2.0
+                else if (rule.takeProfitMode === '1:3') mult = 3.0
+                else if (rule.takeProfitMode === '1:5') mult = 5.0
+                tp = Number(
+                  (dir === 'LONG'
+                    ? entryPx + finalRiskPts * mult
+                    : entryPx - finalRiskPts * mult
+                  ).toFixed(2)
                 )
+              }
 
-                // 3. Take Profit Calculation & Inversion Guard
-                let tp = rule.takeProfit
-                if (!tp) {
-                  let mult = 2.0
-                  if (rule.takeProfitMode === '1:1') mult = 1.0
-                  else if (rule.takeProfitMode === '1:2') mult = 2.0
-                  else if (rule.takeProfitMode === '1:3') mult = 3.0
-                  else if (rule.takeProfitMode === '1:5') mult = 5.0
-                  tp = Number(
-                    (dir === 'LONG'
-                      ? entryPx + finalRiskPts * mult
-                      : entryPx - finalRiskPts * mult
-                    ).toFixed(2)
-                  )
-                }
+              if (dir === 'LONG' && tp <= entryPx) {
+                tp = Number((entryPx + finalRiskPts * 2.0).toFixed(2))
+              } else if (dir === 'SHORT' && tp >= entryPx) {
+                tp = Number((entryPx - finalRiskPts * 2.0).toFixed(2))
+              }
 
-                if (dir === 'LONG' && tp <= entryPx) {
-                  tp = Number((entryPx + finalRiskPts * 2.0).toFixed(2))
-                } else if (dir === 'SHORT' && tp >= entryPx) {
-                  tp = Number((entryPx - finalRiskPts * 2.0).toFixed(2))
-                }
+              // ACTUALLY PLACE THE ORDER ON THE DESK!
+              void executePlaceOrder({
+                instrument: rule.instrument || context.instrument,
+                direction: dir,
+                price: entryPx,
+                stopLoss: sl,
+                profitTarget: tp,
+                size: rule.size || (rule as any).conditions?.size || 1,
+                reason: `Situation Triggered: ${rawPattern || 'Level Touch'} confirmed at ${rule.targetReference || 'Target'} (${currentTargetPx.toLocaleString()}). ${rule.userPrompt || rule.description}`,
+              })
 
-                // ACTUALLY PLACE THE ORDER ON THE DESK!
-                void executePlaceOrder({
-                  instrument: rule.instrument || context.instrument,
-                  direction: dir,
-                  price: entryPx,
-                  stopLoss: sl,
-                  profitTarget: tp,
-                  size: rule.size || 1,
-                  reason: `Strategy Rule Triggered: ${rule.pattern?.replace(/_/g, ' ')} confirmed at ${rule.targetReference} (${currentTargetPx.toLocaleString()}). Saved instruction: "${rule.userPrompt}"`,
-                })
+              playTradingViewChime()
+              warningToast(
+                `⚡ [LEO AUTO-ORDER EXECUTED]: ${dir} ${rule.instrument} @ ${entryPx.toFixed(2)} | SL: ${sl.toFixed(2)} | TP: ${tp.toFixed(2)}`,
+                10000
+              )
+              speakText(
+                `Situation triggered! Order placed for ${dir} ${rule.instrument}.`
+              )
 
-                playTradingViewChime()
-                warningToast(
-                  `⚡ [LEO AUTO-ORDER EXECUTED]: ${dir} ${rule.instrument} @ ${entryPx.toFixed(2)} | SL: ${sl.toFixed(2)} | TP: ${tp.toFixed(2)}`,
-                  10000
-                )
-                speakText(
-                  `Conditional entry triggered! Order placed for ${dir} ${rule.instrument}.`
-                )
-
-                return {
-                  ...rule,
-                  targetPrice: currentTargetPx,
-                  lastEvaluatedBarTime: signalBar?.time,
-                  status: 'EXECUTED' as const,
-                  executedAt: Date.now(),
-                  executedPrice: entryPx,
-                }
+              return {
+                ...rule,
+                conditionProgress: newProgress,
+                targetPrice: currentTargetPx,
+                lastEvaluatedBarTime: signalBar?.time,
+                status: 'EXECUTED' as const,
+                executedAt: Date.now(),
+                executedPrice: entryPx,
               }
             }
           }
@@ -1830,32 +1979,110 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                         </div>
                       )}
 
-                      {/* Conditions Key-Value Grid */}
+                      {/* Conditions Key-Value Grid with Live Ticking */}
                       <div className="grid grid-cols-2 gap-1 text-[9.5px] font-mono pt-0.5">
-                        <div className="flex items-center gap-1 text-neutral-300 truncate">
-                          <span className="text-neutral-500">📍 Level:</span>
-                          <span className="text-amber-300 font-semibold truncate" title={rule.targetReference}>
-                            {targetPx.toLocaleString()}
+                        <div className="flex items-center justify-between text-neutral-300 pr-1">
+                          <span className="text-neutral-500 truncate">📍 Level:</span>
+                          <span className="flex items-center gap-1 shrink-0">
+                            <span className="text-amber-300 font-semibold" title={rule.targetReference}>
+                              {targetPx.toLocaleString()}
+                            </span>
+                            <span className={`text-[8.5px] px-1 py-0.2 rounded font-bold ${
+                              rule.conditionProgress?.levelReached || rule.status === 'EXECUTED'
+                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/60'
+                                : 'bg-neutral-800 text-neutral-400'
+                            }`}>
+                              {rule.conditionProgress?.levelReached || rule.status === 'EXECUTED' ? '✓' : '○'}
+                            </span>
                           </span>
                         </div>
-                        <div className="flex items-center gap-1 text-neutral-300 truncate">
-                          <span className="text-neutral-500">⚡ Pattern:</span>
-                          <span className="text-sky-300 font-semibold truncate">
-                            {rule.pattern?.replace(/_/g, ' ')}
+
+                        {rule.pattern && rule.pattern !== 'LEVEL_TOUCH' ? (
+                          <div className="flex items-center justify-between text-neutral-300 pr-1">
+                            <span className="text-neutral-500 truncate">⚡ Pattern:</span>
+                            <span className="flex items-center gap-1 shrink-0">
+                              <span className="text-sky-300 font-semibold truncate max-w-[80px]">
+                                {rule.pattern.replace(/_/g, ' ')}
+                              </span>
+                              <span className={`text-[8.5px] px-1 py-0.2 rounded font-bold ${
+                                rule.conditionProgress?.patternConfirmed || rule.status === 'EXECUTED'
+                                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/60'
+                                  : 'bg-neutral-800 text-neutral-400'
+                              }`}>
+                                {rule.conditionProgress?.patternConfirmed || rule.status === 'EXECUTED' ? '✓' : '○'}
+                              </span>
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between text-neutral-300 pr-1">
+                            <span className="text-neutral-500 truncate">📍 Entry:</span>
+                            <span className="flex items-center gap-1 shrink-0">
+                              <span className="text-cyan-400 font-semibold">Price Touch</span>
+                              <span className={`text-[8.5px] px-1 py-0.2 rounded font-bold ${
+                                rule.conditionProgress?.levelReached || rule.status === 'EXECUTED'
+                                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/60'
+                                  : 'bg-neutral-800 text-neutral-400'
+                              }`}>
+                                {rule.conditionProgress?.levelReached || rule.status === 'EXECUTED' ? '✓' : '○'}
+                              </span>
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between text-neutral-300 pr-1">
+                          <span className="text-neutral-500 truncate">⏱️ TF:</span>
+                          <span className="flex items-center gap-1 shrink-0">
+                            <span className={`font-semibold ${rule.entryTimeframe ? 'text-amber-300' : 'text-neutral-400'}`}>
+                              {rule.entryTimeframe ? `${rule.entryTimeframe}m` : 'Multi-TF'}
+                            </span>
+                            <span className="text-[8.5px] px-1 py-0.2 rounded font-bold bg-emerald-950 text-emerald-300 border border-emerald-700/60">
+                              ✓
+                            </span>
                           </span>
                         </div>
-                        <div className="flex items-center gap-1 text-neutral-300 truncate">
-                          <span className="text-neutral-500">🛡️ SL:</span>
-                          <span className="text-neutral-300 truncate">
-                            {rule.stopLossMode === 'BELOW_CANDLE_LOW'
-                              ? 'Below Bar Low (-2p)'
-                              : rule.stopLossMode === 'ABOVE_CANDLE_HIGH'
-                              ? 'Above Bar High (+2p)'
-                              : 'Bracket'}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1 text-neutral-300 truncate">
-                          <span className="text-neutral-500">🎯 Target:</span>
+
+                        {rule.cvdDivergence ? (
+                          <div className="flex items-center justify-between text-neutral-300 pr-1">
+                            <span className="text-neutral-500 truncate">📊 CVD:</span>
+                            <span className="flex items-center gap-1 shrink-0">
+                              <span className="text-emerald-400 font-semibold">Divergence</span>
+                              <span className={`text-[8.5px] px-1 py-0.2 rounded font-bold ${
+                                rule.conditionProgress?.cvdConfirmed || rule.status === 'EXECUTED'
+                                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/60'
+                                  : 'bg-neutral-800 text-neutral-400'
+                              }`}>
+                                {rule.conditionProgress?.cvdConfirmed || rule.status === 'EXECUTED' ? '✓' : '○'}
+                              </span>
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between text-neutral-300 pr-1">
+                            <span className="text-neutral-500 truncate">🛡️ SL:</span>
+                            <span className="text-neutral-300 truncate">
+                              {rule.stopLossMode === 'BELOW_CANDLE_LOW'
+                                ? 'Bar Low (-2p)'
+                                : rule.stopLossMode === 'ABOVE_CANDLE_HIGH'
+                                ? 'Bar High (+2p)'
+                                : 'Bracket'}
+                            </span>
+                          </div>
+                        )}
+
+                        {rule.cvdDivergence && (
+                          <div className="flex items-center justify-between text-neutral-300 pr-1">
+                            <span className="text-neutral-500 truncate">🛡️ SL:</span>
+                            <span className="text-neutral-300 truncate">
+                              {rule.stopLossMode === 'BELOW_CANDLE_LOW'
+                                ? 'Bar Low (-2p)'
+                                : rule.stopLossMode === 'ABOVE_CANDLE_HIGH'
+                                ? 'Bar High (+2p)'
+                                : 'Bracket'}
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between text-neutral-300 pr-1">
+                          <span className="text-neutral-500 truncate">🎯 Target:</span>
                           <span className="text-emerald-300 font-semibold truncate">
                             {rule.takeProfitMode || '1:2'} R:R
                           </span>
@@ -2135,6 +2362,41 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
           <div className="p-2.5 border-t border-neutral-800/80 bg-neutral-900/70 space-y-1.5">
             {/* Quick Action Suggestion Chips */}
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5 text-[9.5px] font-mono">
+              <button
+                type="button"
+                onClick={() => {
+                  const inst = (context.instrument || 'NASDAQ') as MarketInstrument
+                  const meta = MARKET_DEFAULT_PARAMS[inst] || { defaultPrice: 29450, defaultPoints: 20 }
+                  const targetPx = context.currentPrice ?? meta.defaultPrice
+                  const pts = meta.defaultPoints
+                  armMarketOneToOneSituation(inst, {
+                    price: targetPx,
+                    direction: 'LONG',
+                    points: pts,
+                  })
+                  playTradingViewChime()
+                  const sl = Number((targetPx - pts).toFixed(2))
+                  const tp = Number((targetPx + pts).toFixed(2))
+                  successToast(
+                    `⚡ [1:1 ${inst} ARMED]: Long @ ${targetPx.toLocaleString()} | SL: ${sl.toLocaleString()} | TP: ${tp.toLocaleString()}`,
+                    8000
+                  )
+                  speakText(`Armed one to one ${inst} situation at ${targetPx.toLocaleString()}.`)
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      id: `sit-chip-${Date.now()}`,
+                      role: 'assistant',
+                      content: `⚡ **[1:1 ${inst} SITUATION ARMED]**\n\n- **Instrument**: ${inst}\n- **Target Entry**: **${targetPx.toLocaleString()}** (Price Touch)\n- **Stop Loss**: **${sl.toLocaleString()}** (-${pts} pts)\n- **Take Profit**: **${tp.toLocaleString()}** (+${pts} pts)\n- **Risk:Reward**: **1:1**\n\n*Condition is set to immediate level touch. Leo is evaluating price and will fire the order directly onto the chart canvas.*`,
+                      timestamp: Date.now(),
+                    },
+                  ])
+                }}
+                className="px-2 py-0.5 rounded-md bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-600/70 hover:border-emerald-500 text-emerald-200 hover:text-white shrink-0 transition font-bold flex items-center gap-1 shadow-sm"
+                title={`Arm 1:1 Risk-to-Reward ${context.instrument} situation right now at market price`}
+              >
+                <span>⚡</span> 1:1 {context.instrument} Live
+              </button>
               <button
                 type="button"
                 onClick={() =>

@@ -85,9 +85,11 @@ export default function NotesPage() {
     const handleUpdate = () => refreshData()
     window.addEventListener('leo-memories-updated', handleUpdate)
     window.addEventListener('leo-notifications-updated', handleUpdate)
+    window.addEventListener('leo-rules-updated', handleUpdate)
     return () => {
       window.removeEventListener('leo-memories-updated', handleUpdate)
       window.removeEventListener('leo-notifications-updated', handleUpdate)
+      window.removeEventListener('leo-rules-updated', handleUpdate)
     }
   }, [])
 

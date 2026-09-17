@@ -28,6 +28,7 @@ import {
 } from '@/lib/trading/tradeifyProfile'
 import { SYSTEMATIC_LIVE_DESK } from '@/lib/trading/systematicDesk'
 import { getFeedMetricsSnapshot } from '@/lib/databento/feedLatencySelector'
+import { useInternetLatency } from '@/lib/trading/useInternetLatency'
 
 export interface SessionGateState {
   phase: string
@@ -142,6 +143,7 @@ export function SessionBanner({
   const [newsUnavailable, setNewsUnavailable] = useState(false)
   const [riskProfile, setRiskProfile] = useState<DeskRiskProfile>('tradeify_growth_50k')
   const [feedSnap, setFeedSnap] = useState(() => getFeedMetricsSnapshot())
+  const internetLatency = useInternetLatency()
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -430,6 +432,16 @@ export function SessionBanner({
       return
     }
 
+    let timerId: number | null = null
+
+    const scheduleNext = (delayMs: number) => {
+      if (cancelled) return
+      if (timerId != null) window.clearTimeout(timerId)
+      timerId = window.setTimeout(async () => {
+        await load()
+      }, delayMs)
+    }
+
     const load = async () => {
       try {
         const res = await fetch(
@@ -445,6 +457,7 @@ export function SessionBanner({
         if (!json?.ok || !Array.isArray(json.calendar)) {
           setNewsUnavailable(true)
           setNewsHazard(null)
+          scheduleNext(30_000)
           return
         }
         setNewsUnavailable(false)
@@ -453,20 +466,30 @@ export function SessionBanner({
           instrument: desk,
           includeUpcomingDay: true,
         })
-        setNewsHazard(pickBannerHazard(hazards))
+        const picked = pickBannerHazard(hazards)
+        setNewsHazard(picked)
+
+        // Rapid 10s polling when a release print just dropped or event is near
+        const isUrgent =
+          picked?.level === 'released' ||
+          picked?.level === 'stand_aside' ||
+          picked?.level === 'careful' ||
+          hazards.some((h) => h.atMs != null && Math.abs(h.atMs - Date.now()) <= 30 * 60 * 1000)
+
+        scheduleNext(isUrgent ? 10_000 : 30_000)
       } catch {
         if (!cancelled) {
           setNewsUnavailable(true)
           setNewsHazard(null)
+          scheduleNext(30_000)
         }
       }
     }
 
     void load()
-    const id = window.setInterval(load, 120_000)
     return () => {
       cancelled = true
-      window.clearInterval(id)
+      if (timerId != null) window.clearTimeout(timerId)
     }
   }, [gate?.lockedInstrument, viewingInstrument, refreshKey])
 
@@ -565,6 +588,37 @@ export function SessionBanner({
           title={`Active Databento CME feed: ${feedSnap.activeFeed.name} (${feedSnap.activeFeed.qualityScore}/100 quality)`}
         >
           ⚡ Databento CME · {feedSnap.activeFeed.latencyMs}ms {feedSnap.zeroGapActive ? '(Zero Gap)' : ''}
+        </span>
+        <span
+          className={`rounded px-2 py-0.5 font-mono text-[10px] font-semibold border flex items-center gap-1.5 transition-colors ${
+            !internetLatency.isOnline || internetLatency.status === 'DISCONNECTED'
+              ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse'
+              : internetLatency.latencyMs > 180
+              ? 'bg-red-500/15 text-red-300 border-red-500/30'
+              : internetLatency.latencyMs > 90
+              ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+              : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+          }`}
+          title={`Your Local Internet Latency (Browser to Server RTT): ${internetLatency.latencyMs}ms · Jitter: ${internetLatency.jitterMs}ms · Quality: ${internetLatency.status}`}
+        >
+          <span
+            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+              !internetLatency.isOnline || internetLatency.status === 'DISCONNECTED'
+                ? 'bg-rose-400'
+                : internetLatency.latencyMs > 180
+                ? 'bg-red-400'
+                : internetLatency.latencyMs > 90
+                ? 'bg-amber-400'
+                : 'bg-emerald-400'
+            }`}
+          />
+          <span>
+            🌐 Internet · {!internetLatency.isOnline || internetLatency.status === 'DISCONNECTED'
+              ? 'Offline'
+              : internetLatency.latencyMs > 0
+              ? `${internetLatency.latencyMs}ms`
+              : 'Measuring...'}
+          </span>
         </span>
         {asiaOrderLive && (
           <span
@@ -675,19 +729,24 @@ export function SessionBanner({
         ) : newsHazard ? (
           <Link
             href="/dashboard/news"
-            className={`max-w-[18rem] truncate rounded px-2 py-0.5 text-[10px] font-semibold ${newsHazard.level === 'stand_aside'
-              ? 'bg-red-500/30 text-red-100 hover:bg-red-500/40'
-              : newsHazard.level === 'careful'
-                ? 'bg-amber-500/30 text-amber-100 hover:bg-amber-500/40'
-                : 'bg-violet-500/20 text-violet-100 hover:bg-violet-500/30'
-              }`}
+            className={`max-w-[24rem] truncate rounded px-2 py-0.5 text-[10px] font-semibold border transition-colors ${
+              newsHazard.level === 'released'
+                ? 'border-emerald-500/60 bg-emerald-950/90 text-emerald-100 hover:bg-emerald-900/80 animate-pulse font-bold'
+                : newsHazard.level === 'stand_aside'
+                  ? 'border-rose-500/30 bg-red-500/30 text-red-100 hover:bg-red-500/40'
+                  : newsHazard.level === 'careful'
+                    ? 'border-amber-500/30 bg-amber-500/30 text-amber-100 hover:bg-amber-500/40'
+                    : 'border-violet-500/20 bg-violet-500/20 text-violet-100 hover:bg-violet-500/30'
+            }`}
             title={`${newsHazard.body} Soft warn only — not a trade signal.`}
           >
-            {newsHazard.level === 'stand_aside'
-              ? '⛔ '
-              : newsHazard.level === 'careful'
-                ? '⚠ '
-                : '📰 '}
+            {newsHazard.level === 'released'
+              ? '🎯 '
+              : newsHazard.level === 'stand_aside'
+                ? '⛔ '
+                : newsHazard.level === 'careful'
+                  ? '⚠ '
+                  : '📰 '}
             {newsHazard.chip || ''}
           </Link>
         ) : null}

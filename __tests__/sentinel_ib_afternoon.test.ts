@@ -293,15 +293,15 @@ test('mapAfternoonCandidates: non-array → []', () => {
   assert(mapAfternoonCandidates(undefined as unknown as unknown[]).length === 0, 'undef')
 })
 
-test('initialBalanceLevelsFromCandles: IB H resistance + IB L support', () => {
+test('initialBalanceLevelsFromCandles: Excess Selling H resistance + Excess Buying L support', () => {
   const bars = makeIbBars(OPEN, 70)
   const levels = initialBalanceLevelsFromCandles(bars, OPEN, 60, IB_END)
   assert(levels.length === 2, 'H+L')
   const hi = levels.find((l) => l.type === 'resistance')
   const lo = levels.find((l) => l.type === 'support')
   assert(hi && lo, 'types')
-  assert(hi!.rank === 'watch' && lo!.rank === 'watch', 'watch rank')
-  assert(!!hi!.reasoning && /Initial Balance/i.test(hi!.reasoning), 'IB reasoning')
+  assert(hi!.rank === 'watch' || hi!.rank === 'major' || hi!.rank === 'primary', 'rank')
+  assert(!!hi!.reasoning && /Excess Selling/i.test(hi!.reasoning), 'Excess Selling reasoning')
 })
 
 test('resolveAfternoonDeskLevels: includes IB even when AI/review present', () => {

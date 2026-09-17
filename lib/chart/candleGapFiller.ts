@@ -123,23 +123,28 @@ export function fillCandleGaps<T extends BaseCandle>(
       continue
     }
 
-    // If there is a gap between expectedNextTime and targetTime, fill it
-    let cursorTime = expectedNextTime
-    while (cursorTime < targetTime && filledCount < MAX_GAP_FILL_BARS) {
-      if (!isCmeMarketHalt(cursorTime)) {
-        const carryPrice = prev.close
-        const gapBar: BaseCandle = {
-          time: cursorTime,
-          open: carryPrice,
-          high: carryPrice,
-          low: carryPrice,
-          close: carryPrice,
-          volume: 0,
+    // Fill intraday dropouts (up to 10 bars on 1m, up to 3 bars on 5m+).
+    // Never invent endless synthetic flat bars over session pauses, halts, or extended lulls.
+    const gapBarsCount = Math.round((targetTime - prev.time) / step) - 1
+    const maxGapAllowed = timeframe === '1m' || timeframe === '1' ? 10 : 3
+    if (gapBarsCount > 0 && gapBarsCount <= maxGapAllowed) {
+      let cursorTime = expectedNextTime
+      while (cursorTime < targetTime && filledCount < MAX_GAP_FILL_BARS) {
+        if (!isCmeMarketHalt(cursorTime)) {
+          const carryPrice = prev.close
+          const gapBar: BaseCandle = {
+            time: cursorTime,
+            open: carryPrice,
+            high: carryPrice,
+            low: carryPrice,
+            close: carryPrice,
+            volume: 0,
+          }
+          result.push(gapBar as T)
+          filledCount++
         }
-        result.push(gapBar as T)
-        filledCount++
+        cursorTime += step
       }
-      cursorTime += step
     }
 
     result.push({ ...cur, time: targetTime })

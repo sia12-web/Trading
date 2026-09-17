@@ -118,8 +118,16 @@ def broadcast_trade(payload: dict):
         for q in list(subscribers):
             try:
                 q.put_nowait(payload)
-            except Exception:
-                dead.append(q)
+            except Exception as e:
+                import queue
+                if isinstance(e, queue.Full):
+                    try:
+                        q.get_nowait()
+                        q.put_nowait(payload)
+                    except Exception:
+                        dead.append(q)
+                else:
+                    dead.append(q)
         for d in dead:
             subscribers.discard(d)
 
@@ -187,7 +195,7 @@ class SidecarHTTPHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
             import queue
-            client_q = queue.Queue(maxsize=1000)
+            client_q = queue.Queue(maxsize=10000)
 
             with lock:
                 subscribers.add(client_q)
@@ -221,7 +229,7 @@ class SidecarHTTPHandler(BaseHTTPRequestHandler):
 
 def run_http_server():
     server = HTTPServer((HOST, PORT), SidecarHTTPHandler)
-    print(f"[Sidecar] Local HTTP/SSE server listening on http://{HOST}:{PORT}")
+    print(f"[Sidecar] Local HTTP/SSE server listening on http://{HOST}:{PORT}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -233,7 +241,7 @@ def run_databento_stream(api_key: str):
     global connected, total_trades
     while True:
         try:
-            print("[Sidecar] Connecting to Databento Live TCP gateway (GLBX.MDP3)...")
+            print("[Sidecar] Connecting to Databento Live TCP gateway (GLBX.MDP3)...", flush=True)
             live = db.Live(key=api_key)
             active_mym = get_active_quarterly_contract("MYM")
             active_mnq = get_active_quarterly_contract("MNQ")
@@ -243,7 +251,7 @@ def run_databento_stream(api_key: str):
                 active_mnq: "NASDAQ",
                 active_nkd: "NIKKEI",
             }
-            print(f"[Sidecar] Subscribing active quarterly contracts: {list(raw_symbols.keys())}")
+            print(f"[Sidecar] Subscribing active quarterly contracts: {list(raw_symbols.keys())}", flush=True)
             live.subscribe(
                 dataset="GLBX.MDP3",
                 schema="trades",
@@ -257,7 +265,7 @@ def run_databento_stream(api_key: str):
                 stype_in="continuous",
             )
             connected = True
-            print("[Sidecar] Connected! Streaming real-time CME Globex trades...")
+            print("[Sidecar] Connected! Streaming real-time CME Globex trades...", flush=True)
 
             for record in live:
                 if isinstance(record, db.SymbolMappingMsg):
@@ -292,16 +300,16 @@ def run_databento_stream(api_key: str):
 
         except Exception as e:
             connected = False
-            print(f"[Sidecar] Stream error: {e}. Reconnecting in 3s...", file=sys.stderr)
+            print(f"[Sidecar] Stream error: {e}. Reconnecting in 3s...", file=sys.stderr, flush=True)
             time.sleep(3)
 
 def main():
     api_key = load_api_key()
     if not api_key:
-        print("[ERROR] DATABENTO_API_KEY not found in environment or .env.local", file=sys.stderr)
+        print("[ERROR] DATABENTO_API_KEY not found in environment or .env.local", file=sys.stderr, flush=True)
         sys.exit(1)
 
-    print(f"[Sidecar] Starting Databento Live Gateway Sidecar on port {PORT}...")
+    print(f"[Sidecar] Starting Databento Live Gateway Sidecar on port {PORT}...", flush=True)
     http_thread = threading.Thread(target=run_http_server, daemon=True)
     http_thread.start()
     run_databento_stream(api_key)

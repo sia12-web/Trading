@@ -21,6 +21,7 @@ graph TD
         HUD[Chart Toolbar, Timeframe Selector, Tooltip & Status HUD]
         CVD[Cumulative Volume Delta Sub-Pane]
         LEO_UI[Leo AI Chat & Memory Zone Manager]
+        SITUATIONS_UI[Market Situations & Leo Rules Dashboard - /dashboard/situations]
         NOTIF[Notifications Center & Audio Alert Dispatcher]
         DESK[Desk Journal, Swing Positions, Team Tape & Book Cards]
     end
@@ -47,15 +48,17 @@ graph TD
     subgraph Core_Services [TypeScript Service & Strategy Layer]
         CANDLE_NORM[Candle Normalizer & Time Shifter toChartTime]
         AVWAP_ENG[5-Month & Session Anchored VWAP Engine with ±1σ, ±2σ, ±3σ]
-        AUCTION_ENG[Dalton Auction Market Engine - IB, OR15, OR30, Spikes, Extremes]
+        AUCTION_ENG[Dalton Auction Market Engine - Excess Selling/Buying, Spikes, Extremes]
         PAIRING_ENG[Intelligent TP/SL Bracket Pairing Engine with Price Sanity]
         LTM_ENG[Leo Long-Term Memory & Proximity Scanner]
+        LEO_RULES[Leo Rules Manager & Dated Provenance Engine - lib/trading/leoRules.ts]
         AUDIO_SYNTH[Web Audio API Dual-Tone Chime Synthesizer]
     end
 
     subgraph Storage [Database & Persistence Layer]
         SUPABASE[(Supabase PostgreSQL)]
         RLS[Row-Level Security Policies]
+        LOCAL_SYNC[Browser LocalStorage & Cross-Tab CustomEvent Sync - leo-rules-updated]
         SESSION_CACHE[Browser SessionStorage Viewport & State Cache]
     end
 

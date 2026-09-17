@@ -35,6 +35,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'position_id required' }, { status: 400 })
     }
 
+    if (
+      body.position_id.startsWith('desk-pos-') ||
+      body.position_id.startsWith('leo-sim-') ||
+      body.position_id.startsWith('sim-')
+    ) {
+      return NextResponse.json(
+        {
+          success: true,
+          position_id: body.position_id,
+          stop_loss_price: body.stop_loss_price,
+          profit_target_price: body.profit_target_price,
+          message: 'Desk brackets updated',
+        },
+        { status: 200 }
+      )
+    }
+
     const supabase = await createClient()
     const { data: position, error } = await supabase
       .from('trades_journal')

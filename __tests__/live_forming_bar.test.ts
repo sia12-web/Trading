@@ -151,4 +151,18 @@ const t0 = 1_700_000_000 - (1_700_000_000 % 300)
   assert.equal(sane[0]!.close, 4650)
 }
 
+{
+  // Outlier tick spike rejection test (prevent phantom wicks/tails)
+  const last = { time: t0, open: 29400, high: 29410, low: 29395, close: 29405 }
+  // A rogue tick jumps 200 points up (e.g. unshifted CFD collision)
+  const spiked = applyTickToFormingBar(last, 29605, t0 + 15, 300, 'NASDAQ')
+  assert.equal(spiked.last.high, 29410, 'rogue +200 pt tick does NOT stretch NASDAQ high')
+  assert.equal(spiked.last.close, 29405, 'rogue tick close is ignored')
+
+  // A valid tick (+10 points) is accepted normally
+  const valid = applyTickToFormingBar(last, 29415, t0 + 20, 300, 'NASDAQ')
+  assert.equal(valid.last.high, 29415, 'valid tick normal expansion accepted')
+  assert.equal(valid.last.close, 29415)
+}
+
 console.log('live_forming_bar: all passed')

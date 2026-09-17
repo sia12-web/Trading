@@ -41,14 +41,15 @@ const brief = buildAfternoonDeskBrief({
 })
 
 assert(brief != null, 'brief built')
-assert(brief!.ib != null, 'IB shaped')
-assert(brief!.ibState === 'above', `ibState ${brief!.ibState}`)
+assert(brief!.excessSelling != null, 'Excess Selling shaped')
+assert(brief!.excessBuying != null, 'Excess Buying shaped')
+assert(brief!.rangeState === 'above_excess_selling', `rangeState ${brief!.rangeState}`)
 assert(brief!.morning != null && brief!.morning.volume > 0, 'morning volume')
 assert(brief!.reactions.length === 2, 'reactions')
 assert(brief!.reactions[0]!.play === 'FLIP', 'FLIP')
 
 const text = formatAfternoonDeskBriefForPrompt(brief!)
-assert(/Initial Balance/i.test(text), 'IB in prompt')
+assert(/Excess Reference Range/i.test(text), 'Excess in prompt')
 assert(/Morning session/i.test(text), 'morning range in prompt')
 assert(/FLIP/i.test(text), 'FLIP in prompt')
 assert(/Pro afternoon checklist/i.test(text), 'checklist')

@@ -11,7 +11,7 @@ import {
 export const NEWS_CAREFUL_MS = 60 * 60 * 1000
 export const NEWS_STAND_ASIDE_MS = 15 * 60 * 1000
 
-export type NewsHazardLevel = 'none' | 'careful' | 'stand_aside'
+export type NewsHazardLevel = 'none' | 'careful' | 'stand_aside' | 'released'
 
 export type DeskNewsHazard = {
   id: string
@@ -28,6 +28,10 @@ export type DeskNewsHazard = {
   chip: string
   title: string
   body: string
+  actual?: string | number | null
+  estimate?: string | number | null
+  outcome?: string | null
+  resultHeadline?: string | null
 }
 
 const TRADER_TZ = 'America/Toronto'
@@ -95,10 +99,17 @@ export function formatMontrealHms(atMs: number): string {
 
 export function classifyNewsHazardLevel(
   atMs: number | null,
-  nowMs: number = Date.now()
+  nowMs: number = Date.now(),
+  isReleased = false
 ): NewsHazardLevel {
   if (atMs == null || !Number.isFinite(atMs)) return 'none'
   const delta = atMs - nowMs
+
+  // If the print is released and within recent window (up to 45m post-release), highlight verdict
+  if (isReleased && nowMs >= atMs - 120_000 && nowMs - atMs <= 45 * 60 * 1000) {
+    return 'released'
+  }
+
   // After the print, keep stand-aside for the same ±15m window
   if (Math.abs(delta) <= NEWS_STAND_ASIDE_MS) return 'stand_aside'
   if (delta > 0 && delta <= NEWS_CAREFUL_MS) return 'careful'
@@ -116,10 +127,33 @@ function hazardCopy(
   level: NewsHazardLevel,
   montrealHms: string | null,
   country: string,
-  eventName: string
+  eventName: string,
+  extra?: {
+    actual?: string | number | null
+    estimate?: string | number | null
+    outcome?: string | null
+    resultHeadline?: string | null
+  }
 ): { chip: string; title: string; body: string } {
   const when = montrealHms ? `${montrealHms} Montreal` : 'today'
   const label = `${country} ${eventName}`.trim()
+
+  if (level === 'released') {
+    if (extra?.resultHeadline) {
+      return {
+        chip: `🎯 ${extra.resultHeadline.slice(0, 52)}`,
+        title: `News Result — ${label}`,
+        body: `🎯 JUST RELEASED: ${extra.resultHeadline}. Actual: ${extra.actual ?? '—'} (Exp: ${extra.estimate ?? '—'}). Volatility active.`,
+      }
+    }
+    const outcomeStr = extra?.outcome ? ` [${extra.outcome}]` : ''
+    const expStr = extra?.estimate ? ` (Exp ${extra.estimate})` : ''
+    return {
+      chip: `🎯 ${label}: ${extra?.actual ?? 'RELEASED'}${outcomeStr}${expStr}`.slice(0, 52),
+      title: `News Result — ${label}`,
+      body: `🎯 JUST RELEASED: ${label} actual is ${extra?.actual ?? 'reported'}${outcomeStr} vs forecast ${extra?.estimate ?? '—'}. Volatility active.`,
+    }
+  }
   if (level === 'stand_aside') {
     return {
       chip: `${when} · ${label} · STAND ASIDE ±15m`,
@@ -156,7 +190,8 @@ export function buildDeskNewsHazards(args: {
     if (!isHighImpact(ev.impact)) continue
     if (!eventTouchesInstrument(ev, args.instrument)) continue
     const atMs = parseCalendarEventMs(ev.time, nowMs)
-    const level = classifyNewsHazardLevel(atMs, nowMs)
+    const isReleased = !!(ev.isReleased || (ev.actual != null && String(ev.actual).trim() !== ''))
+    const level = classifyNewsHazardLevel(atMs, nowMs, isReleased)
     const montrealHms = atMs != null ? formatMontrealHms(atMs) : null
 
     // Day digest: keep upcoming highs even if >60m away; also keep
@@ -170,7 +205,12 @@ export function buildDeskNewsHazards(args: {
 
     const effectiveLevel: NewsHazardLevel =
       level === 'none' && includeIdleUpcoming ? 'none' : level
-    const copy = hazardCopy(effectiveLevel, montrealHms, ev.country, ev.event)
+    const copy = hazardCopy(effectiveLevel, montrealHms, ev.country, ev.event, {
+      actual: ev.actual,
+      estimate: ev.estimate,
+      outcome: ev.outcome,
+      resultHeadline: ev.resultHeadline,
+    })
     out.push({
       id: ev.id,
       event: ev.event,
@@ -183,17 +223,28 @@ export function buildDeskNewsHazards(args: {
       chip: copy.chip,
       title: copy.title,
       body: copy.body,
+      actual: ev.actual,
+      estimate: ev.estimate,
+      outcome: ev.outcome,
+      resultHeadline: ev.resultHeadline,
     })
   }
 
-  out.sort((a, b) => (a.atMs ?? Infinity) - (b.atMs ?? Infinity))
+  out.sort((a, b) => {
+    // Released events first
+    if (a.level === 'released' && b.level !== 'released') return -1
+    if (b.level === 'released' && a.level !== 'released') return 1
+    return (a.atMs ?? Infinity) - (b.atMs ?? Infinity)
+  })
   return out
 }
 
-/** Worst active hazard for the banner chip (stand_aside > careful > next high). */
+/** Worst active hazard for the banner chip (released > stand_aside > careful > next high). */
 export function pickBannerHazard(
   hazards: DeskNewsHazard[]
 ): DeskNewsHazard | null {
+  const released = hazards.find((h) => h.level === 'released')
+  if (released) return released
   const stand = hazards.find((h) => h.level === 'stand_aside')
   if (stand) return stand
   const careful = hazards.find((h) => h.level === 'careful')

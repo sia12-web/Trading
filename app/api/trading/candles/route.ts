@@ -204,14 +204,30 @@ export async function GET(request: Request) {
           candles = clipAfternoonBars(candles, instrument)
         }
 
-        // 4. If Databento Live is active, merge the live forming 1m candle directly from CME Globex
+        // 4. If Databento Live is active, merge the live forming candle directly from CME Globex
         if (candles?.length && !isDaily && isDatabentoConfigured()) {
           try {
             const snap = await fetchDatabentoLiveSnapshot()
             const forming = snap?.forming?.[instrument]
             if (forming && forming.close > 0) {
+              const stepSec =
+                timeframe === '1m' || resolution === '1'
+                  ? 60
+                  : timeframe === '5m' || resolution === '5'
+                  ? 300
+                  : timeframe === '15m' || resolution === '15'
+                  ? 900
+                  : timeframe === '30m' || resolution === '30'
+                  ? 1800
+                  : timeframe === '1H' || resolution === '60'
+                  ? 3600
+                  : timeframe === '4H' || resolution === '240'
+                  ? 14400
+                  : 300
+
+              const bucketTime = Math.floor(forming.time / stepSec) * stepSec
               const last = candles[candles.length - 1]!
-              if (forming.time === last.time) {
+              if (bucketTime === last.time) {
                 candles[candles.length - 1] = {
                   ...last,
                   high: Math.max(last.high, forming.high),
@@ -219,9 +235,9 @@ export async function GET(request: Request) {
                   close: forming.close,
                   volume: Math.max(last.volume, forming.volume),
                 }
-              } else if (forming.time > last.time) {
+              } else if (bucketTime > last.time) {
                 candles.push({
-                  time: forming.time,
+                  time: bucketTime,
                   open: forming.open,
                   high: forming.high,
                   low: forming.low,

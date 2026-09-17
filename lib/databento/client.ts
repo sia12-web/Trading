@@ -272,8 +272,21 @@ export async function getDatabentoCandles(
       close: b.close,
       volume: b.volume,
     }))
-    candleCache.set(cacheKey, { at: Date.now(), candles })
-    return { candles, symbol }
+    const resSec =
+      resolution === '1'
+        ? 60
+        : resolution === '15'
+        ? 900
+        : resolution === '30'
+        ? 1800
+        : resolution === '60'
+        ? 3600
+        : resolution === '240'
+        ? 14400
+        : 300
+    const finalCandles = resSec > 300 ? aggregateCandles(candles, resSec) : candles
+    candleCache.set(cacheKey, { at: Date.now(), candles: finalCandles })
+    return { candles: finalCandles, symbol }
   }
 
   return null

@@ -38,12 +38,18 @@ The complete technical and operational documentation is organized under the [`do
 - **Institutional Styling**: Standard TradingView green (`#089981`) and red (`#f23645`) candles desk-wide.
 - **5-Month Anchored VWAP**: Macro institutional benchmark with `±1σ`, `±2σ`, and `±3σ` volatility bands on Daily (`1D`) and dynamic session VWAP + 5M benchmark line on intraday charts (`1m`, `5m`, `30m`).
 - **5-Day Fixed Range Volume Profile (FRVP)**: Calculates Point of Control (POC), Value Area High (VAH), and Value Area Low (VAL), with the POC line terminating precisely at the current candle.
-- **Dalton Auction Theory Overlays**: Initial Balance (IB 60m), Opening Ranges (OR15, OR30), Late-Session Spikes, and Distribution references.
+- **5-Day Fixed Range Volume Profile (FRVP)**: Calculates Point of Control (POC), Value Area High (VAH), and Value Area Low (VAL), with the POC line terminating precisely at the current candle.
+- **Dalton Auction Theory & Excess Reference Ranges**: Replaces legacy Initial Balance with canonical Excess Selling High and Excess Buying Low reference boundaries (`excessLevelsFromCandles()`), 30-minute TPO period Day Type classification (`classifyMarketDayType`), Opening Ranges (OR15, OR30), and Late-Session Spikes.
 - **Daily & Intraday Tested Extremes**: Structural swing highs/lows with traded volume badges (`(142.5k)`), retest confirmation (`[Retest 0.82x]`), and bounded horizontal shelves.
 - **Cumulative Volume Delta (CVD)**: Interactive candlestick sub-pane displaying buy/sell volume imbalances and order absorption divergences.
 
-### 3. Leo AI Copilot & Web Audio API Alert Engine
+### 3. Leo AI Copilot, Market Situations & Web Audio Alert Engine
 - **Context-Aware Assistance**: Continuous situational awareness across live chart price action, Higher Timeframe daily structure, and open broker positions.
+- **Market Situations & Armed Rules Manager (`/dashboard/situations`)**: Centralized command dashboard organizing conditional entries, desk alarms, level monitors, and stagnation rules with full date/time provenance (`createdDateFormatted`), auto-calculated R:R ratios, and cross-tab sync.
+- **Smart Entry Triggers**:
+  - **Level Touch Default**: Defaults to `LEVEL_TOUCH` (Price Touch at Level) when no candlestick pattern is specified, eliminating auto-assigned patterns.
+  - **Dynamic Timeframe Rules**: Evaluates rules on specific chart timeframes (e.g. `5m`, `15m`, `30m`) or monitors all timeframes when unspecified (`entryTimeframe = null`).
+  - **CVD Divergence Conditions**: Integrates order flow volume delta divergence checks directly into armed entry rules.
 - **Persistent Long-Term Memory (LTM)**: 1-click conversion of chart Range Boxes into persistent memory zones with trader notes and audible alarms.
 - **Procedural Two-Tone Chime Synthesis**: Zero-latency TradingView-style alert chime synthesized in real time via the Web Audio API (880 Hz fundamental $\rightarrow$ 1318.51 Hz harmonic shimmer) without external audio files.
 

@@ -59,8 +59,9 @@ export function resolveInitialDeskChartInstrument(args: {
 export function initialDeskChartInstrument(): DeskInstrumentPref {
   if (typeof window === 'undefined') return 'DOW'
   try {
+    const params = new URLSearchParams(window.location.search)
     const fromUrl = parseDeskInstrument(
-      new URLSearchParams(window.location.search).get('instrument')
+      params.get('instrument') ?? params.get('market')
     )
     return resolveInitialDeskChartInstrument({
       clockLock: loadDeskClockLock(),
@@ -75,8 +76,9 @@ export function initialDeskChartInstrument(): DeskInstrumentPref {
 export function getDeskInstrumentPreference(): DeskInstrumentPref {
   if (typeof window === 'undefined') return 'DOW'
   try {
+    const params = new URLSearchParams(window.location.search)
     const fromUrl = parseDeskInstrument(
-      new URLSearchParams(window.location.search).get('instrument')
+      params.get('instrument') ?? params.get('market')
     )
     if (fromUrl) return fromUrl
     return parseDeskInstrument(localStorage.getItem(STORAGE_KEY)) ?? 'DOW'
@@ -111,9 +113,10 @@ export function deskVisibleBarCount(
   timeframe?: string
 ): number {
   const isDaily = timeframe === '1D'
-  const spacing = isDaily ? 6 : DESK_BAR_SPACING
+  const is30m = timeframe === '30m'
+  const spacing = isDaily ? 6 : is30m ? 24 : DESK_BAR_SPACING
   const byWidth = Math.floor(Math.max(containerWidth - 80, 240) / spacing)
-  const minBars = isDaily ? 120 : 40
+  const minBars = isDaily ? 120 : is30m ? 24 : 40
   return Math.min(Math.max(barCount, 1), Math.max(minBars, byWidth))
 }
 
@@ -135,7 +138,7 @@ export function deskBarSpacing(
   _barCount: number,
   timeframe?: string
 ): number {
-  return timeframe === '1D' ? 6 : DESK_BAR_SPACING
+  return timeframe === '1D' ? 6 : timeframe === '30m' ? 24 : DESK_BAR_SPACING
 }
 
 /** Tip-relative viewport so new prints keep the same window after refresh. */
@@ -167,8 +170,17 @@ export function decodeDeskViewport(
   if (!Number.isFinite(saved.fromEnd) || !Number.isFinite(saved.span) || saved.span < 8) {
     return fallback
   }
+  const is30m = timeframe === '30m'
+  const expectedVisible = deskVisibleBarCount(containerWidth, barCount, timeframe)
+  // If the saved span was from an old squished view (> 1.5x expected 30m visible bars), reset to fallback
+  if (is30m && saved.span > expectedVisible * 1.5) {
+    return fallback
+  }
   const last = Math.max(barCount - 1, 0)
-  const span = Math.min(Math.max(saved.span, 10), 10000)
+  const maxSpan = is30m
+    ? Math.max(48, Math.floor((containerWidth - 80) / 20))
+    : 10000
+  const span = Math.min(Math.max(saved.span, 10), maxSpan)
   const from = last - saved.fromEnd
   return { from, to: from + span }
 }

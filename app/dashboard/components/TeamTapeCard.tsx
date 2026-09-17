@@ -23,6 +23,8 @@ type Payload = {
   error?: string
 }
 
+import { getSymbolRealName } from '@/lib/trading/symbolNames'
+
 function montrealStamp(iso?: string | null): string {
   if (!iso) return '—'
   const d = new Date(iso)
@@ -46,18 +48,41 @@ function pnlClass(n: number | null | undefined): string {
 
 function TicketRow({ signal }: { signal: TeamTapeSignal }) {
   const buy = signal.side === 'BUY'
+  const meta = getSymbolRealName(signal.symbol)
+  const displayName = signal.companyName || meta.name
+  const isWorking = signal.status === 'working'
   return (
     <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div className="text-sm font-semibold text-white">
-          <span className={buy ? 'text-emerald-300' : 'text-red-300'}>{signal.side}</span>{' '}
-          {signal.symbol}
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-white">
+            <span className={buy ? 'text-emerald-300' : 'text-red-300'}>{signal.side}</span>{' '}
+            <span className="text-white">{signal.symbol}</span>
+            {displayName && displayName !== signal.symbol ? (
+              <span className="ml-2 text-xs font-normal text-sky-200/80">
+                · {displayName}
+              </span>
+            ) : null}
+          </div>
         </div>
-        <div className="text-[11px] text-gray-500">
-          {montrealStamp(signal.filledAt)} Montreal · {signal.status}
+        <div className="text-[11px] text-gray-400">
+          {montrealStamp(signal.filledAt)} Montreal ·{' '}
+          <span
+            className={
+              isWorking
+                ? 'font-medium text-amber-300'
+                : signal.status === 'filled'
+                  ? 'text-emerald-300'
+                  : 'text-gray-400'
+            }
+          >
+            {signal.status.toUpperCase()}
+          </span>
         </div>
       </div>
-      <p className="mt-1 text-[11px] text-gray-500">Entry {signal.entry}</p>
+      <p className="mt-1 text-[11px] text-gray-400">
+        Entry <span className="font-mono text-gray-200">{signal.entry}</span>
+      </p>
       <CopyChipRow>
         <CopyChip label="Size" value={signal.quantity} tone="size" />
         <CopyChip label="SL" value={signal.stop} tone="sl" />
@@ -80,17 +105,29 @@ function LivePositionCard({
     pnl == null
       ? '—'
       : `${pnl >= 0 ? '+' : ''}$${Math.abs(pnl).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+  const meta = getSymbolRealName(row.symbol)
+  const displayName = row.companyName || meta.name
+
   return (
     <div className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2.5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div className="text-sm font-semibold text-white">
-          <span className={buy ? 'text-emerald-300' : 'text-red-300'}>{row.side}</span>{' '}
-          {row.label}
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-white">
+            <span className={buy ? 'text-emerald-300' : 'text-red-300'}>{row.side}</span>{' '}
+            <span>{row.label}</span>
+            {displayName && displayName !== row.label && displayName !== row.symbol ? (
+              <span className="ml-2 text-xs font-normal text-sky-200/80">
+                · {displayName}
+              </span>
+            ) : null}
+          </div>
         </div>
         <div className={`text-[11px] font-medium ${pnlClass(pnl)}`}>live {pnlTxt}</div>
       </div>
-      <p className="mt-1 text-[11px] text-gray-500">
-        {row.asset === 'option' ? 'option' : 'stock'}
+      <p className="mt-1 text-[11px] text-gray-400">
+        <span className="rounded bg-white/10 px-1 py-0.5 text-[10px] uppercase text-gray-300">
+          {row.asset === 'option' ? 'Option' : 'Stock'}
+        </span>
         {row.entry != null ? ` · entry ${row.entry}` : ''}
         {row.mark != null ? ` · mark ${row.mark}` : ''}
         {row.stopStatus && row.stopStatus !== 'working' ? ` · SL ${row.stopStatus}` : ''}
@@ -128,6 +165,9 @@ function LivePositionCard({
 }
 
 function LevelCard({ level }: { level: QuestradeProtectiveLevel }) {
+  const meta = getSymbolRealName(level.symbol)
+  const displayName = level.companyName || meta.name
+
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
       <div className="min-w-0">
@@ -135,7 +175,10 @@ function LevelCard({ level }: { level: QuestradeProtectiveLevel }) {
           <span className={level.kind === 'sl' ? 'text-red-300' : 'text-emerald-300'}>
             {level.kind === 'sl' ? 'SL' : 'TP'}
           </span>{' '}
-          {level.label}
+          <span className="font-semibold">{level.label}</span>
+          {displayName && displayName !== level.label && displayName !== level.symbol ? (
+            <span className="ml-1.5 text-[11px] text-gray-400">({displayName})</span>
+          ) : null}
         </p>
         <p className="text-[11px] text-gray-500">{level.status}</p>
       </div>

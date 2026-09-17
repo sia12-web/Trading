@@ -9,7 +9,7 @@
 import { computeAnchoredVwap, deskClockFor, cashOpenUnixForYmd } from '@/lib/chart/sessionVwap'
 import { computeVolumeProfile } from '@/lib/chart/volumeProfile'
 import {
-  computeInitialBalance,
+  excessLevelsFromCandles,
   type DeskBar,
 } from '@/lib/trading/deskLevels'
 import { sessionFor, type DeskInstrument } from '@/lib/trading/sessionGate'
@@ -26,9 +26,11 @@ export type AfternoonDeskBrief = {
   tip: number
   openUnix: number
   lunchUnix: number
-  /** First-hour IB (null if not shaped) */
-  ib: { high: number; low: number; mid: number } | null
-  ibState: 'above' | 'inside' | 'below' | 'unknown'
+  /** Excess Selling High (upper range boundary) */
+  excessSelling: number | null
+  /** Excess Buying Low (lower range boundary) */
+  excessBuying: number | null
+  rangeState: 'above_excess_selling' | 'below_excess_buying' | 'within_excess_range' | 'unknown'
   morning: {
     high: number
     low: number
@@ -145,20 +147,15 @@ export function buildAfternoonDeskBrief(args: {
     }
   }
 
-  const ibRange = computeInitialBalance(bars, openUnix, Math.max(nowUnix, lunchUnix))
-  const ib = ibRange
-    ? {
-        high: ibRange.high,
-        low: ibRange.low,
-        mid: Math.round(((ibRange.high + ibRange.low) / 2) * 100) / 100,
-      }
-    : null
+  const excessLevels = excessLevelsFromCandles(bars, openUnix, Math.max(nowUnix, lunchUnix))
+  const excessSellingLvl = excessLevels.find((l) => l.type === 'resistance')?.level ?? null
+  const excessBuyingLvl = excessLevels.find((l) => l.type === 'support')?.level ?? null
 
-  let ibState: AfternoonDeskBrief['ibState'] = 'unknown'
-  if (ib) {
-    if (tip > ib.high) ibState = 'above'
-    else if (tip < ib.low) ibState = 'below'
-    else ibState = 'inside'
+  let rangeState: AfternoonDeskBrief['rangeState'] = 'unknown'
+  if (excessSellingLvl != null && excessBuyingLvl != null) {
+    if (tip > excessSellingLvl) rangeState = 'above_excess_selling'
+    else if (tip < excessBuyingLvl) rangeState = 'below_excess_buying'
+    else rangeState = 'within_excess_range'
   }
 
   const scoped = bars.filter((b) => b.time >= openUnix - 5 * 86400)
@@ -187,8 +184,9 @@ export function buildAfternoonDeskBrief(args: {
     tip: Math.round(tip * 100) / 100,
     openUnix,
     lunchUnix,
-    ib,
-    ibState,
+    excessSelling: excessSellingLvl,
+    excessBuying: excessBuyingLvl,
+    rangeState,
     morning,
     avwap: avwap != null ? Math.round(avwap * 100) / 100 : null,
     tipVsAvwapPct,
@@ -200,29 +198,29 @@ export function buildAfternoonDeskBrief(args: {
 /** Prompt block for afternoon Level Finder — facts only from desk tools. */
 export function formatAfternoonDeskBriefForPrompt(brief: AfternoonDeskBrief): string {
   const lines: string[] = [
-    'AFTERNOON DESK BRIEF (facts from our tools only — Yahoo H1 volume/candles, IB, AVWAP, POC, morning-review reactions):',
+    'AFTERNOON DESK BRIEF (facts from our tools only — Yahoo H1 volume/candles, Excess Selling / Buying, AVWAP, POC, morning-review reactions):',
     `Instrument: ${brief.instrument} · tip ${brief.tip}`,
   ]
 
-  if (brief.ib) {
+  if (brief.excessSelling != null && brief.excessBuying != null) {
     lines.push(
-      `Initial Balance (first cash hour): H ${brief.ib.high} / L ${brief.ib.low} / mid ${brief.ib.mid} · tip is ${brief.ibState.toUpperCase()} IB`
+      `Excess Reference Range: Selling High ${brief.excessSelling} / Buying Low ${brief.excessBuying} · tip is ${brief.rangeState.toUpperCase()}`
     )
-    if (brief.ibState === 'above') {
+    if (brief.rangeState === 'above_excess_selling') {
       lines.push(
-        'IB break UP — pros watch for trend continuation or failed-break back into IB; prior IB high often becomes support.'
+        'Price extended above Excess Selling high — responsive buyers auctioning higher; watch for trend continuation or failed breakout back into range.'
       )
-    } else if (brief.ibState === 'below') {
+    } else if (brief.rangeState === 'below_excess_buying') {
       lines.push(
-        'IB break DOWN — pros watch for trend continuation or failed-break reclaim; prior IB low often becomes resistance.'
+        'Price extended below Excess Buying low — responsive sellers auctioning lower; watch for trend continuation or failed auction reclaim.'
       )
     } else {
       lines.push(
-        'Inside IB — pros expect range/mean-reversion until a clean volume break of IB H or L.'
+        'Within Excess Range — price rotating between Excess Selling high and Excess Buying low.'
       )
     }
   } else {
-    lines.push('Initial Balance: not shaped yet from available bars.')
+    lines.push('Excess Reference Range: not shaped yet from available bars.')
   }
 
   if (brief.morning) {
@@ -258,10 +256,10 @@ export function formatAfternoonDeskBriefForPrompt(brief: AfternoonDeskBrief): st
 
   lines.push(
     'Pro afternoon checklist (use ONLY evidence in this brief + the candle tables below — do not invent feeds):',
-    '1) Did morning break IB with volume, or was it a quiet range day?',
+    '1) Did morning extend past Excess Selling / Buying with volume, or rotate between extremes?',
     '2) Which morning levels HELD vs BROKE (FLIP = broken→flip side; RETEST = held→retest)?',
-    '3) Where is tip vs IB, morning mid, AVWAP, and POC — those are the afternoon magnets.',
-    '4) Prefer watch levels at: IB H/L, morning H/L, flipped morning levels, AVWAP/POC confluence.',
+    '3) Where is tip vs Excess Selling, Excess Buying, morning mid, AVWAP, and POC — those are the afternoon magnets.',
+    '4) Prefer watch levels at: Excess Selling High, Excess Buying Low, flipped morning levels, AVWAP/POC confluence.',
     '5) Afternoon is WATCH-ONLY on this desk — return levels for observation / memory, not new morning entries.'
   )
 

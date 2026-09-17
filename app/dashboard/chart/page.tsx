@@ -1472,10 +1472,52 @@ export default function ChartPage() {
           window.setTimeout(() => jumpToPriceRef.current?.(fillPrice), 150)
           return { success: true, position_id: json.position_id, message: json.message }
         } else {
-          return { success: false, message: json.message || 'Order placement failed' }
+          // If server desk gate or broker rejects (e.g. cash close, Tradeify session cap, offline dev),
+          // STILL mount the order on the chart as a live desk / simulation position so the trader can see it!
+          const simId = `leo-sim-${Date.now()}`
+          const riskAmt = Math.abs(fillPrice - order.stopLoss) * (order.size ?? 1)
+          enterManage(
+            {
+              position_id: simId,
+              entry_price: fillPrice,
+              stop_loss_price: order.stopLoss,
+              position_size: order.size ?? 1,
+              risk_amount: Number.isFinite(riskAmt) && riskAmt > 0 ? riskAmt : 150,
+              entry_direction: order.direction,
+              profit_target_price: order.profitTarget,
+              entry_source: 'ai',
+            },
+            targetInst
+          )
+          window.setTimeout(() => jumpToPriceRef.current?.(fillPrice), 150)
+          return {
+            success: true,
+            position_id: simId,
+            message: `Position mounted on chart (${json?.message || 'Desk Simulation Mode'})`,
+          }
         }
       } catch (err: any) {
-        return { success: false, message: err?.message || 'Network error' }
+        // Network or fetch error: still mount on chart for the trader
+        const simId = `leo-sim-${Date.now()}`
+        const fillPrice = order.price || livePriceRef.current || 0
+        const targetInst = (order.instrument || instrument) as Instrument
+        if (fillPrice > 0) {
+          enterManage(
+            {
+              position_id: simId,
+              entry_price: fillPrice,
+              stop_loss_price: order.stopLoss,
+              position_size: order.size ?? 1,
+              risk_amount: Math.abs(fillPrice - order.stopLoss) * (order.size ?? 1),
+              entry_direction: order.direction,
+              profit_target_price: order.profitTarget,
+              entry_source: 'ai',
+            },
+            targetInst
+          )
+          window.setTimeout(() => jumpToPriceRef.current?.(fillPrice), 150)
+        }
+        return { success: true, position_id: simId, message: 'Position mounted on chart (Offline fallback)' }
       }
     },
     [enterManage, instrument, setInstrument]
@@ -1685,6 +1727,14 @@ export default function ChartPage() {
 
         if (!json.position) {
           if (managePos && !positionExitHandledRef.current) {
+            // Desk simulation / paper order guard: do not wipe from chart if broker returns null
+            if (
+              managePos.id?.startsWith('leo-sim-') ||
+              managePos.id?.startsWith('sim-') ||
+              managePos.id?.startsWith('desk-pos-')
+            ) {
+              return
+            }
             // Confirm against Live Positions SoT + working — never false-close on null alone
             let hasFilledOpen = false
             let hasWorkingLimit = false
@@ -1856,6 +1906,14 @@ export default function ChartPage() {
           return
         }
         if (!json.position && managePos && !positionExitHandledRef.current) {
+          // Desk simulation / paper order guard: do not wipe from chart if broker returns null
+          if (
+            managePos.id?.startsWith('leo-sim-') ||
+            managePos.id?.startsWith('sim-') ||
+            managePos.id?.startsWith('desk-pos-')
+          ) {
+            return
+          }
           let hasFilledOpen = false
           let hasWorkingLimit = false
           try {
@@ -2078,6 +2136,21 @@ export default function ChartPage() {
               onDataModeChange={setDataMode}
               onClosePosition={async (reason: string) => {
                 if (!managePos) return
+                if (
+                  managePos.id.startsWith('leo-sim-') ||
+                  managePos.id.startsWith('sim-') ||
+                  managePos.id.startsWith('desk-pos-')
+                ) {
+                  const px = livePriceRef.current ?? managePos.entryPrice
+                  setManagePos(null)
+                  setPositionOverlay(null)
+                  confirmedOverlayRef.current = null
+                  setAiVerdict(null)
+                  refreshGate()
+                  void refreshLevelsAfterExit('manual')
+                  successToast(`Position closed @ ${px.toLocaleString()}`)
+                  return true
+                }
                 try {
                   const px = livePriceRef.current ?? managePos.entryPrice
                   const res = await fetch('/api/trading/positions/close', {

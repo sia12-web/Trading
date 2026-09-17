@@ -13,7 +13,6 @@ import {
   zonedCivilToUnix,
   type DeskClock,
 } from '@/lib/chart/sessionVwap'
-import { computeInitialBalance } from '@/lib/trading/deskLevels'
 import { computeLongTermRegion } from '@/lib/trading/longTermBracket'
 import { computeYesterdayProfile, type YesterdayBar } from '@/lib/trading/yesterdayProfile'
 
@@ -204,20 +203,14 @@ function scoreCompletedDay(
   if (!hl) return null
   const last = bars[bars.length - 1]
   if (!last) return null
-  const ib = computeInitialBalance(
-    bars.map((b) => ({ ...b, volume: 1 })),
-    day.openU,
-    day.closeU,
-    60
-  )
   const periods = tpoPeriods(bars, day.openU)
   const mid = (hl.yh + hl.yl) / 2
   const sides = tpoCountSides(periods, mid)
   const first = periods[0]
   const buyingTail = first != null && first.low <= hl.yl + EPS
   const sellingTail = first != null && first.high >= hl.yh - EPS
-  const reUp = ib != null && hl.yh > ib.high + EPS
-  const reDown = ib != null && hl.yl < ib.low - EPS
+  const reUp = first != null && hl.yh > first.high + EPS
+  const reDown = first != null && hl.yl < first.low - EPS
   const tpoBuy = sides.up > sides.down
   const tpoSell = sides.down > sides.up
   let threeToOne: 'buy' | 'sell' | null = null

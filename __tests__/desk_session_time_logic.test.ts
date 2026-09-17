@@ -110,7 +110,7 @@ function expectPhase(
 // ── DOW + NASDAQ share ET clock ──────────────────────────────────────────────
 for (const inst of ['DOW', 'NASDAQ'] as const) {
   // Tip only from focus −30m (09:00 ET) — not midnight / early morning
-  // Asia GOLD/DOW streams 02:00–03:40 Montreal; 08:00 is still frozen.
+  // Asia GOLD/DOW streams 20:00–03:40 Montreal; 08:00 is still frozen.
   expectPhase(inst, etDate(Y, M, D, 8, 0), { lunchFreeze: false, trade: false, chart: false, deskHours: false }, `${inst} 08:00 pre-focus`)
   expectPhase(inst, etDate(Y, M, D, 9, 0), { lunchFreeze: false, trade: false, chart: true, deskHours: false }, `${inst} 09:00 focus start`)
   expectPhase(inst, etDate(Y, M, D, 9, 20), { lunchFreeze: false, trade: false, chart: true, deskHours: true }, `${inst} 09:20 prep`)
@@ -122,10 +122,13 @@ for (const inst of ['DOW', 'NASDAQ'] as const) {
   expectPhase(inst, etDate(Y, M, D, 14, 0), { lunchFreeze: false, trade: false, chart: true, deskHours: false }, `${inst} 14:00 afternoon print`)
   expectPhase(inst, etDate(Y, M, D, 15, 59), { lunchFreeze: false, trade: false, chart: true, deskHours: false }, `${inst} 15:59 before close`)
   expectPhase(inst, etDate(Y, M, D, 16, 0), { lunchFreeze: false, trade: false, chart: false, deskHours: false }, `${inst} 16:00 cash close freeze`)
-  expectPhase(inst, etDate(Y, M, D, 20, 0), { lunchFreeze: false, trade: false, chart: false, deskHours: false }, `${inst} 20:00 overnight freeze`)
 }
+// DOW streams from CME Asia open (20:00 ET) through 03:40 ET; NASDAQ stays frozen overnight.
+expectPhase('DOW', etDate(Y, M, D, 20, 0), { lunchFreeze: false, trade: false, chart: true, deskHours: false }, 'DOW 20:00 Asia building — chart live')
+expectPhase('NASDAQ', etDate(Y, M, D, 20, 0), { lunchFreeze: false, trade: false, chart: false, deskHours: false }, 'NASDAQ 20:00 overnight freeze')
 
-expectPhase('GOLD', etDate(Y, M, D, 1, 50), { lunchFreeze: false, trade: false, chart: false, deskHours: false }, 'GOLD 01:50 still building — no orders yet')
+// Asia desk sub-windows
+expectPhase('GOLD', etDate(Y, M, D, 1, 50), { lunchFreeze: false, trade: false, chart: true, deskHours: false }, 'GOLD 01:50 Asia building — chart live')
 expectPhase('DOW', etDate(Y, M, D, 2, 10), { lunchFreeze: false, trade: false, chart: true, deskHours: false }, 'DOW 02:10 Asia place window')
 expectPhase('GOLD', etDate(Y, M, D, 2, 10), { lunchFreeze: false, trade: false, chart: true, deskHours: false }, 'GOLD 02:10 Asia place window')
 expectPhase('NASDAQ', etDate(Y, M, D, 2, 10), { lunchFreeze: false, trade: false, chart: false, deskHours: false }, 'NASDAQ 02:10 still frozen')
@@ -189,8 +192,8 @@ expectPhase('NIKKEI', jstDate(Y, M, D, 22, 0), { lunchFreeze: false, trade: fals
   const tokyoMorning = jstDate(Y, M, D, 10, 0)
   assert(isLiveBarsAllowed('NIKKEI', tokyoMorning).open === true, '10:00 JST NIKKEI trading')
   assert(isChartStreamAllowed('NIKKEI', tokyoMorning).open === true, '10:00 JST NIKKEI chart')
-  // Same UTC: DOW is Jul 14 21:00 ET — after Mon? Jul 14 is Tuesday. 21:00 after 16:00 close → frozen
-  assert(isChartStreamAllowed('DOW', tokyoMorning).open === false, '21:00 ET DOW frozen while Tokyo morning')
+  // Same UTC: DOW is Jul 14 21:00 ET — after cash close BUT now Asia desk stream window (20:00–03:40 ET) is open for DOW
+  assert(isChartStreamAllowed('DOW', tokyoMorning).open === true, '21:00 ET DOW streaming in Asia desk window')
   assert(isLiveBarsAllowed('DOW', tokyoMorning).open === false, '21:00 ET DOW not trading')
 }
 

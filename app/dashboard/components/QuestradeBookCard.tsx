@@ -18,6 +18,7 @@ import type { QuestradeBookRow, QuestradeProtectiveLevel } from '@/lib/trading/q
 import type { QuestradeTradeifyTransfer } from '@/lib/trading/questradeTransfer'
 import { deskFuturesTitle } from '@/lib/trading/tradovateMirror'
 import { CopyChip, CopyChipRow } from '@/app/dashboard/components/CopyChip'
+import { getSymbolRealName } from '@/lib/trading/symbolNames'
 
 function money(n: number | null | undefined, digits = 0): string {
   if (n == null || !Number.isFinite(n)) return '—'
@@ -47,20 +48,32 @@ function pnlClass(n: number | null | undefined): string {
 
 function Ticket({ row }: { row: QuestradeBookRow }) {
   const buy = row.side === 'BUY'
+  const meta = getSymbolRealName(row.symbol)
+  const displayName = row.companyName || meta.name
+
   return (
     <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div className="text-sm font-semibold text-white">
-          <span className={buy ? 'text-emerald-300' : 'text-red-300'}>{row.side}</span>{' '}
-          {row.label}
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-white">
+            <span className={buy ? 'text-emerald-300' : 'text-red-300'}>{row.side}</span>{' '}
+            <span>{row.label}</span>
+            {displayName && displayName !== row.label && displayName !== row.symbol ? (
+              <span className="ml-2 text-xs font-normal text-emerald-200/80">
+                · {displayName}
+              </span>
+            ) : null}
+          </div>
         </div>
         <div className="text-[11px] text-gray-500">
-          {row.asset === 'option' ? 'option' : 'stock'} ·{' '}
-          {row.kind === 'entry_limit' ? 'LIMIT' : row.status} · {montrealStamp(row.filledAt)}
+          <span className="rounded bg-white/10 px-1 py-0.5 text-[10px] uppercase text-gray-300">
+            {row.asset === 'option' ? 'Option' : 'Stock'}
+          </span>{' '}
+          · {row.kind === 'entry_limit' ? 'LIMIT' : row.status} · {montrealStamp(row.filledAt)}
         </div>
       </div>
       <div className="mt-1 text-xs text-gray-400">
-        Entry {row.entry}
+        Entry <span className="font-mono text-gray-200">{row.entry}</span>
         {row.mark != null ? ` · mark ${row.mark}` : ''}
         {' · '}risk {money(row.stockRiskDollars, 2)}
         {row.kind === 'open_position' ? (
@@ -82,6 +95,9 @@ function Ticket({ row }: { row: QuestradeBookRow }) {
 }
 
 function LevelRow({ level }: { level: QuestradeProtectiveLevel }) {
+  const meta = getSymbolRealName(level.symbol)
+  const displayName = level.companyName || meta.name
+
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
       <div className="min-w-0">
@@ -89,7 +105,10 @@ function LevelRow({ level }: { level: QuestradeProtectiveLevel }) {
           <span className={level.kind === 'sl' ? 'text-red-300' : 'text-emerald-300'}>
             {level.kind === 'sl' ? 'SL' : 'TP'}
           </span>{' '}
-          {level.label}
+          <span className="font-semibold">{level.label}</span>
+          {displayName && displayName !== level.label && displayName !== level.symbol ? (
+            <span className="ml-1.5 text-[11px] text-gray-400">({displayName})</span>
+          ) : null}
         </p>
         <p className="text-[11px] text-gray-500">
           {level.status}
@@ -110,6 +129,9 @@ function LevelRow({ level }: { level: QuestradeProtectiveLevel }) {
 
 function TransferCard({ item }: { item: QuestradeTradeifyTransfer }) {
   const [copied, setCopied] = useState(false)
+  const meta = getSymbolRealName(item.symbol)
+  const displayName = item.companyName || meta.name
+
   const copy = useCallback(async () => {
     if (!item.ticket?.copyText) return
     try {
@@ -125,7 +147,11 @@ function TransferCard({ item }: { item: QuestradeTradeifyTransfer }) {
     <div className="rounded-lg border border-amber-500/25 bg-amber-500/[0.06] px-3 py-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="text-sm font-semibold text-amber-100">
-          {item.symbol} → {deskFuturesTitle(item.instrument)} {item.side}
+          <span>{item.symbol}</span>
+          {displayName && displayName !== item.symbol ? (
+            <span className="ml-1.5 text-xs font-normal text-amber-200/70">({displayName})</span>
+          ) : null}{' '}
+          → {deskFuturesTitle(item.instrument)} {item.side}
         </div>
         <span
           className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${

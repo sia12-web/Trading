@@ -4,6 +4,7 @@
  */
 
 import { takeProfitFromStopR } from '@/lib/trading/positionSizing'
+import { getSymbolRealName } from '@/lib/trading/symbolNames'
 import {
   resolveTradeifyPlace,
   tradeifyMustFlatten,
@@ -20,6 +21,8 @@ export type TeamTapeStatus = 'working' | 'filled' | 'closed' | 'cancelled'
 export type TeamTapeSignal = {
   sourceId: string
   symbol: string
+  companyName?: string
+  realName?: string
   side: TeamTapeSide
   quantity: number
   entry: number
@@ -176,7 +179,7 @@ export function parseTeamTapeIngest(
     return { ok: false, error: 'Invalid JSON' }
   }
   const b = body as Record<string, unknown>
-  const sourceId = String(b.sourceId || b.orderId || b.source_id || '').trim()
+  const sourceId = String(b.sourceId || b.orderId || b.source_id || b.id || '').trim()
   if (!sourceId) return { ok: false, error: 'sourceId required' }
   const symbol = String(b.symbol || '').trim().toUpperCase()
   if (!isTeamTapeSymbol(symbol)) {
@@ -184,13 +187,13 @@ export function parseTeamTapeIngest(
   }
   const side = parseTeamTapeSide(String(b.side || ''))
   if (!side) return { ok: false, error: 'side must be BUY or SELL' }
-  const quantity = Number(b.quantity ?? b.qty)
-  const entry = Number(b.entry ?? b.price ?? b.avgExecPrice)
+  const quantity = Number(b.quantity ?? b.qty ?? b.totalQuantity ?? b.openQuantity)
+  const entry = Number(b.entry ?? b.price ?? b.avgExecPrice ?? b.entryPrice ?? b.limitPrice)
   if (!(quantity > 0) || !(entry > 0)) {
     return { ok: false, error: 'quantity and entry required' }
   }
-  const stopRaw = b.stop ?? b.stopPrice
-  const targetRaw = b.target ?? b.takeProfit
+  const stopRaw = b.stop ?? b.stopPrice ?? b.stop_price ?? b.sl ?? b.stopLoss ?? b.triggerStopPrice
+  const targetRaw = b.target ?? b.takeProfit ?? b.take_profit ?? b.tp ?? b.profitTarget ?? b.targetPrice
   const stop =
     stopRaw == null || stopRaw === '' ? null : Number(stopRaw)
   const targetIn =
@@ -200,19 +203,26 @@ export function parseTeamTapeIngest(
     statusRaw === 'working' || statusRaw === 'closed' || statusRaw === 'cancelled'
       ? statusRaw
       : 'filled'
-  const filledAt = b.filledAt || b.filled_at
-    ? String(b.filledAt || b.filled_at)
+  const filledAt = b.filledAt || b.filled_at || b.updatedAt || b.timestamp
+    ? String(b.filledAt || b.filled_at || b.updatedAt || b.timestamp)
     : null
   const stopOk = stop != null && Number.isFinite(stop) && stop > 0 ? stop : null
   const targetOk =
     targetIn != null && Number.isFinite(targetIn) && targetIn > 0
       ? Math.round(targetIn * 100) / 100
       : teamTapeTarget1_5R({ side, entry, stop: stopOk })
+
+  const meta = getSymbolRealName(symbol)
+  const companyName = String(b.companyName || b.company_name || b.name || meta.name)
+  const realName = String(b.realName || meta.name)
+
   return {
     ok: true,
     signal: {
       sourceId,
       symbol,
+      companyName,
+      realName,
       side,
       quantity,
       entry,
@@ -232,8 +242,9 @@ export function formatTeamTelegram(args: {
   const a = withSignalTarget(args.advice, s)
   const sl = s.stop != null ? String(s.stop) : '—'
   const tp = a.target1_5R != null ? String(a.target1_5R) : '—'
+  const nameLabel = s.companyName && s.companyName !== s.symbol ? ` (${s.companyName})` : ''
   return [
-    `[TEAM] ${s.side} ${s.symbol} × ${s.quantity} @ ${s.entry}`,
+    `[TEAM] ${s.side} ${s.symbol}${nameLabel} × ${s.quantity} @ ${s.entry}`,
     `SL ${sl} · 1.5R ${tp}`,
     a.headline,
     a.detail,

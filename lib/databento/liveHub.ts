@@ -249,7 +249,8 @@ export function isDatabentoLiveActive(instrument?: Instrument): boolean {
   if (instrument) {
     const last = h.lastByInstrument.get(instrument)
     if (!last) return h.active
-    return Date.now() - last.receivedAt < 10_000
+    // 45-second window prevents quiet market periods from flapping to secondary feeds
+    return Date.now() - last.receivedAt < 45_000
   }
   return h.active
 }
@@ -259,7 +260,7 @@ export function getLatestDatabentoLiveQuote(instrument: Instrument): DatabentoLi
   const h = hub()
   const row = h.lastByInstrument.get(instrument)
   if (!row) return null
-  if (Date.now() - row.receivedAt > 15_000) return null
+  if (Date.now() - row.receivedAt > 45_000) return null
   const { receivedAt: _, ...quote } = row
   return quote
 }

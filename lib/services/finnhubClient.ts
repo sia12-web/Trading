@@ -4,6 +4,11 @@
 
 import { logger } from '@/lib/utils/logger'
 import type { FinnhubQuoteResponse, FinnhubNewsItem, Instrument } from '@/types/trading'
+import {
+  getLiveEconomicData,
+  enrichCalendarEventWithLiveResult,
+  fetchYahooFinanceHeadlines,
+} from '@/lib/trading/liveEconomicResults'
 
 const FINNHUB_BASE_URL = 'https://finnhub.io/api/v1'
 const API_TIMEOUT = 5000 // 5 seconds
@@ -42,14 +47,26 @@ let ffCalendarCache: {
 
 const FF_COUNTRY_MAP: Record<string, string> = {
   USD: 'US',
-  JPY: 'JP',
-  GBP: 'GB',
   EUR: 'EU',
-  CAD: 'CA',
+  GBP: 'GB',
+  JPY: 'JP',
   AUD: 'AU',
+  CAD: 'CA',
   NZD: 'NZ',
   CHF: 'CH',
   CNY: 'CN',
+}
+
+function isNearHighImpactEvent(rows: Array<{ time: string; impact: string }>): boolean {
+  const now = Date.now()
+  for (const r of rows) {
+    if (!/high|3|red/i.test(r.impact)) continue
+    const ms = Date.parse(r.time)
+    if (!Number.isNaN(ms) && Math.abs(ms - now) <= 30 * 60 * 1000) {
+      return true
+    }
+  }
+  return false
 }
 
 async function fetchForexFactoryCalendar(): Promise<
@@ -63,7 +80,8 @@ async function fetchForexFactoryCalendar(): Promise<
     prev?: string | number | null
   }>
 > {
-  if (ffCalendarCache && Date.now() - ffCalendarCache.at < 300_000) {
+  const cacheTtl = ffCalendarCache && isNearHighImpactEvent(ffCalendarCache.rows) ? 10_000 : 300_000
+  if (ffCalendarCache && Date.now() - ffCalendarCache.at < cacheTtl) {
     return ffCalendarCache.rows
   }
   try {
@@ -77,6 +95,7 @@ async function fetchForexFactoryCalendar(): Promise<
       country?: string
       date?: string
       impact?: string
+      actual?: string
       forecast?: string
       previous?: string
     }>
@@ -87,7 +106,7 @@ async function fetchForexFactoryCalendar(): Promise<
         country: FF_COUNTRY_MAP[item.country || ''] || item.country || 'US',
         event: String(item.title || ''),
         impact: String(item.impact || 'low').toLowerCase(),
-        actual: null,
+        actual: item.actual ? String(item.actual).trim() : null,
         estimate: item.forecast || null,
         prev: item.previous || null,
       }))
@@ -310,7 +329,7 @@ export class FinnhubClient {
     return null
   }
 
-  /** General / forex market news (not symbol-scoped). */
+  /** General / forex market news (not symbol-scoped). Falls back to Yahoo Finance RSS if API key is not configured. */
   async getMarketNews(
     category: 'general' | 'forex' | 'merger' = 'general'
   ): Promise<
@@ -324,7 +343,19 @@ export class FinnhubClient {
       origin: string
     }> | null
   > {
-    if (!this.apiKey) return null
+    if (!this.apiKey) {
+      const fallback = await fetchYahooFinanceHeadlines()
+      if (!fallback.length) return null
+      return fallback.map((item) => ({
+        headline: item.headline,
+        source: item.source,
+        datetime: item.datetime,
+        url: item.url || null,
+        summary: item.summary || null,
+        related: item.related || null,
+        origin: `market:${category}`,
+      }))
+    }
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT)
     try {
@@ -332,7 +363,17 @@ export class FinnhubClient {
       const response = await fetch(url, { signal: controller.signal })
       if (!response.ok) {
         logger.warn(`[FinnhubClient] Market news ${category} HTTP ${response.status}`)
-        return null
+        const fallback = await fetchYahooFinanceHeadlines()
+        if (!fallback.length) return null
+        return fallback.map((item) => ({
+          headline: item.headline,
+          source: item.source,
+          datetime: item.datetime,
+          url: item.url || null,
+          summary: item.summary || null,
+          related: item.related || null,
+          origin: `market:${category}`,
+        }))
       }
       const items = (await response.json()) as FinnhubNewsItem[]
       if (!Array.isArray(items)) return []
@@ -352,13 +393,22 @@ export class FinnhubClient {
       logger.warn('[FinnhubClient] Market news error', {
         err: error instanceof Error ? error.message : String(error),
       })
-      return null
+      const fallback = await fetchYahooFinanceHeadlines()
+      return fallback.map((item) => ({
+        headline: item.headline,
+        source: item.source,
+        datetime: item.datetime,
+        url: item.url || null,
+        summary: item.summary || null,
+        related: item.related || null,
+        origin: `market:${category}`,
+      }))
     } finally {
       clearTimeout(timeoutId)
     }
   }
 
-  /** Economic calendar (from/to YYYY-MM-DD). Falls back to ForexFactory feed if Finnhub is 403 or unavailable. */
+  /** Economic calendar (from/to YYYY-MM-DD). Falls back to ForexFactory feed if Finnhub is 403 or unavailable, enriched with live official feeds. */
   async getEconomicCalendar(
     fromYmd: string,
     toYmd: string
@@ -371,45 +421,106 @@ export class FinnhubClient {
       actual?: string | number | null
       estimate?: string | number | null
       prev?: string | number | null
+      outcome?: 'HIKE' | 'CUT' | 'HOLD' | 'BEAT' | 'MISS' | 'IN_LINE' | null
+      changeBps?: number | null
+      targetRange?: string | null
+      resultHeadline?: string | null
+      resultUrl?: string | null
+      releasedAt?: string | null
+      isReleased?: boolean
     }>
   > {
+    let baseRows: Array<{
+      time: string
+      country: string
+      event: string
+      impact: string
+      actual?: string | number | null
+      estimate?: string | number | null
+      prev?: string | number | null
+    }> = []
+
     if (!this.apiKey) {
-      return fetchForexFactoryCalendar()
+      baseRows = await fetchForexFactoryCalendar()
+    } else {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT)
+      try {
+        const url =
+          `${FINNHUB_BASE_URL}/calendar/economic?` +
+          `from=${encodeURIComponent(fromYmd)}&to=${encodeURIComponent(toYmd)}&token=${this.apiKey}`
+        const response = await fetch(url, { signal: controller.signal })
+        if (!response.ok) {
+          // Free tier returns 403 for economic calendar — seamlessly fall back to ForexFactory
+          baseRows = await fetchForexFactoryCalendar()
+        } else {
+          const data = (await response.json()) as {
+            economicCalendar?: Array<Record<string, unknown>>
+          }
+          const rows = Array.isArray(data?.economicCalendar) ? data.economicCalendar : []
+          if (rows.length === 0) {
+            baseRows = await fetchForexFactoryCalendar()
+          } else {
+            baseRows = rows.map((r) => ({
+              time: String(r.time || r.date || ''),
+              country: String(r.country || ''),
+              event: String(r.event || ''),
+              impact: String(r.impact || ''),
+              actual: (r.actual as string | number | null | undefined) ?? null,
+              estimate: (r.estimate as string | number | null | undefined) ?? null,
+              prev: (r.prev as string | number | null | undefined) ?? null,
+            }))
+          }
+        }
+      } catch (error) {
+        logger.warn('[FinnhubClient] Economic calendar error, falling back to ForexFactory', {
+          err: error instanceof Error ? error.message : String(error),
+        })
+        baseRows = await fetchForexFactoryCalendar()
+      } finally {
+        clearTimeout(timeoutId)
+      }
     }
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT)
+
+    // Enrich with live official feeds (Federal Reserve, BLS CPI/NFP)
     try {
-      const url =
-        `${FINNHUB_BASE_URL}/calendar/economic?` +
-        `from=${encodeURIComponent(fromYmd)}&to=${encodeURIComponent(toYmd)}&token=${this.apiKey}`
-      const response = await fetch(url, { signal: controller.signal })
-      if (!response.ok) {
-        // Free tier returns 403 for economic calendar — seamlessly fall back to ForexFactory
-        return await fetchForexFactoryCalendar()
-      }
-      const data = (await response.json()) as {
-        economicCalendar?: Array<Record<string, unknown>>
-      }
-      const rows = Array.isArray(data?.economicCalendar) ? data.economicCalendar : []
-      if (rows.length === 0) {
-        return await fetchForexFactoryCalendar()
-      }
-      return rows.map((r) => ({
-        time: String(r.time || r.date || ''),
-        country: String(r.country || ''),
-        event: String(r.event || ''),
-        impact: String(r.impact || ''),
-        actual: (r.actual as string | number | null | undefined) ?? null,
-        estimate: (r.estimate as string | number | null | undefined) ?? null,
-        prev: (r.prev as string | number | null | undefined) ?? null,
-      }))
-    } catch (error) {
-      logger.warn('[FinnhubClient] Economic calendar error, falling back to ForexFactory', {
-        err: error instanceof Error ? error.message : String(error),
+      const isNear = isNearHighImpactEvent(baseRows)
+      const liveData = await getLiveEconomicData({ ttlMs: isNear ? 10_000 : 60_000 })
+      const nowMs = Date.now()
+      return baseRows.map((r) => {
+        const dummyEvent = {
+          id: '',
+          time: r.time,
+          country: r.country,
+          event: r.event,
+          impact: r.impact,
+          instruments: [],
+          deskNote: '',
+          actual: r.actual,
+          estimate: r.estimate,
+          prev: r.prev,
+        }
+        const enriched = enrichCalendarEventWithLiveResult(dummyEvent, liveData, nowMs)
+        return {
+          time: enriched.time,
+          country: enriched.country,
+          event: enriched.event,
+          impact: enriched.impact,
+          actual: enriched.actual,
+          estimate: enriched.estimate,
+          prev: enriched.prev,
+          outcome: enriched.outcome,
+          changeBps: enriched.changeBps,
+          targetRange: enriched.targetRange,
+          resultHeadline: enriched.resultHeadline,
+          resultUrl: enriched.resultUrl,
+          releasedAt: enriched.releasedAt,
+          isReleased: enriched.isReleased,
+        }
       })
-      return await fetchForexFactoryCalendar()
-    } finally {
-      clearTimeout(timeoutId)
+    } catch (err) {
+      logger.warn('[FinnhubClient] Economic live enrichment failed, returning base rows:', err)
+      return baseRows
     }
   }
 

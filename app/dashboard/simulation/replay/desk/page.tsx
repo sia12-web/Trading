@@ -1219,7 +1219,7 @@ function SimulationDeskInner() {
       borderDownColor: DESK_CANDLE_DOWN,
       wickUpColor: DESK_CANDLE_UP,
       wickDownColor: DESK_CANDLE_DOWN,
-      borderVisible: true,
+      borderVisible: false,
       wickVisible: true,
       autoscaleInfoProvider: candleAutoscale,
     })

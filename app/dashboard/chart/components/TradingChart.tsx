@@ -174,6 +174,15 @@ import {
 import { detectCandlestickPatterns } from '@/lib/trading/candlestickPatterns'
 import { isUsMarketHoliday } from '@/lib/chart/sessionVwap'
 import {
+  loadRulesForMarket,
+  saveRulesForMarket,
+  MARKET_DEFAULT_PARAMS,
+  listenToRuleUpdates,
+  isEntrySituationRule,
+  type ArmedRule,
+  type MarketInstrument,
+} from '@/lib/trading/leoRules'
+import {
   computeOrderFlowCvd,
   computeCvdCandleBars,
   type OrderFlowSummary,
@@ -356,8 +365,10 @@ import {
 const PRICE_TICKER_MS = 50
 /** Cadence for the React state that feeds badges / proximity / alert effects. */
 const PRICE_STATE_MS = 200
-/** REST reconcile spacing while the SSE push stream is still delivering ticks. */
-const RECONCILE_HEALTHY_MS = 20_000
+/** REST reconcile spacing while the SSE push stream is still delivering ticks.
+ * Kept at 2 s so the chart keeps updating during low-volatility Asian/overnight
+ * sessions even when OANDA emits no price ticks for several seconds. */
+const RECONCILE_HEALTHY_MS = 2_000
 
 /** Candle width before range overlays / last-value tags relayout the pane. */
 function readDeskBarSpacing(chart: { timeScale: () => { options: () => { barSpacing: number } } } | null): number {
@@ -746,20 +757,23 @@ function toDeskCandles(
  * lightweight-charts requires strictly ascending unique times.
  * Yahoo (and merges) can return duplicates or slightly out-of-order bars.
  */
-function normalizeCandleTimes(candles: OHLCV[]): OHLCV[] {
+function normalizeCandleTimes(candles: OHLCV[], tf: DeskTimeframe = '5m'): OHLCV[] {
   if (!Array.isArray(candles) || candles.length === 0) return []
+  const step = barSecondsForTimeframe(tf)
   const sorted = [...candles].sort(
     (a, b) => (a.time as number) - (b.time as number)
   )
   const out: OHLCV[] = []
   for (const c of sorted) {
     if (!c) continue
-    const t = Number(c.time)
+    const rawT = Number(c.time)
     const o = Number(c.open)
     const h = Number(c.high)
     const l = Number(c.low)
     const cl = Number(c.close)
-    if (!Number.isFinite(t) || !Number.isFinite(o) || !Number.isFinite(h) || !Number.isFinite(l) || !Number.isFinite(cl)) continue
+    if (!Number.isFinite(rawT) || !Number.isFinite(o) || !Number.isFinite(h) || !Number.isFinite(l) || !Number.isFinite(cl)) continue
+    // Normalize unaligned live tick timestamps (from Yahoo / broker feeds) to bar boundary
+    const t = tf === '1D' ? rawT : Math.floor(rawT / step) * step
     const safeCandle: OHLCV = {
       time: t as UTCTimestamp,
       open: o,
@@ -770,13 +784,19 @@ function normalizeCandleTimes(candles: OHLCV[]): OHLCV[] {
     }
     const prev = out[out.length - 1]
     if (prev && (prev.time as number) === t) {
-      out[out.length - 1] = safeCandle // keep latest OHLC for duplicate timestamp
+      out[out.length - 1] = {
+        ...prev,
+        high: Math.max(prev.high, safeCandle.high),
+        low: Math.min(prev.low, safeCandle.low),
+        close: safeCandle.close,
+        volume: (prev.volume || 0) + (safeCandle.volume || 0),
+      }
       continue
     }
     if (prev && t <= (prev.time as number)) continue
     out.push(safeCandle)
   }
-  const filled = fillCandleGaps(out.map((c) => ({ ...c, time: c.time as number })), '5m')
+  const filled = tf === '1D' ? out : fillCandleGaps(out.map((c) => ({ ...c, time: c.time as number })), tf)
   return filled.map((c) => ({ ...c, time: c.time as UTCTimestamp }))
 }
 
@@ -880,11 +900,13 @@ const LivePriceTicker = memo(function LivePriceTicker({
   getTick,
   instrument,
   barCountdown,
+  timeframe,
 }: {
   subscribe: (onChange: () => void) => () => void
   getTick: () => LivePriceTick | null
   instrument: Instrument
   barCountdown: string
+  timeframe?: string
 }) {
   const tick = useSyncExternalStore(subscribe, getTick, getTick)
   if (!tick || !tick.price) return null
@@ -913,7 +935,7 @@ const LivePriceTicker = memo(function LivePriceTicker({
       {barCountdown && (
         <div
           className="flex items-center gap-1.5 font-mono text-xs font-bold text-emerald-400 mt-0.5"
-          title="Time remaining in current 5-minute candle"
+          title={`Time remaining in current ${timeframe || '5-minute'} candle`}
         >
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           <span className="text-emerald-300 font-extrabold tracking-widest">{barCountdown}</span>
@@ -1117,7 +1139,7 @@ export function TradingChart({
   positionOverlay,
   pendingLimit = null,
   asiaOco = null,
-  onCancelPending: _onCancelPending = () => {},
+  onCancelPending = () => {},
   onAdjustBrackets,
   onAdjustWorkingBrackets,
   bracketAdjustStatus = null,
@@ -1505,6 +1527,30 @@ export function TradingChart({
 
 
   const [candles, setCandles] = useState<OHLCV[]>([])
+  const [armedSituations, setArmedSituations] = useState<ArmedRule[]>([])
+
+  useEffect(() => {
+    const reload = () => {
+      try {
+        const inst = instrument as MarketInstrument
+        if (['DOW', 'NASDAQ', 'GOLD', 'CRUDE'].includes(inst)) {
+          const rules = loadRulesForMarket(inst)
+          setArmedSituations(rules.filter((r) => isEntrySituationRule(r.type) && r.status === 'ARMED'))
+        } else {
+          setArmedSituations([])
+        }
+      } catch {
+        setArmedSituations([])
+      }
+    }
+    reload()
+    const unsub = listenToRuleUpdates((market) => {
+      if (!market || market === instrument) {
+        reload()
+      }
+    })
+    return unsub
+  }, [instrument])
   const sessionOrderFlow = useMemo<OrderFlowSummary | null>(() => {
     if (!candles || candles.length === 0) return null
     const now = new Date()
@@ -3455,7 +3501,13 @@ export function TradingChart({
       }
 
       const isHigh = item.event.impact?.toLowerCase().includes('high')
-      const bg = isHigh ? '#7c3aed' : '#6d28d9'
+      const isReleased = !!(item.event.isReleased || (item.event.actual != null && String(item.event.actual).trim() !== ''))
+      const bg = isReleased ? '#059669' : isHigh ? '#7c3aed' : '#6d28d9'
+      const icon = isReleased ? '🎯' : '⚡'
+      const actualStr = item.event.actual != null ? `\nActual: ${item.event.actual}${item.event.outcome ? ` [${item.event.outcome}]` : ''}` : ''
+      const estStr = item.event.estimate != null ? ` | Exp: ${item.event.estimate}` : ''
+      const prevStr = item.event.prev != null ? ` | Prev: ${item.event.prev}` : ''
+      const tooltip = `${item.event.event} (${item.event.country}) - ${item.event.impact.toUpperCase()}${actualStr}${estStr}${prevStr}`
 
       el.innerHTML = `
         <div style="
@@ -3471,8 +3523,8 @@ export function TradingChart({
           color: #ffffff;
           font-size: 11px;
           line-height: 1;
-        " title="${item.event.event} (${item.event.country}) - ${item.event.impact}">
-          ⚡
+        " title="${tooltip}">
+          ${icon}
         </div>
       `
     }
@@ -3489,6 +3541,14 @@ export function TradingChart({
   // Poll high/medium impact calendar news events for the bottom time axis markers
   useEffect(() => {
     let cancelled = false
+    let timerId: number | null = null
+
+    const schedule = (ms: number) => {
+      if (cancelled) return
+      if (timerId != null) window.clearTimeout(timerId)
+      timerId = window.setTimeout(() => void loadNews(), ms)
+    }
+
     const loadNews = async () => {
       try {
         const res = await fetch(
@@ -3501,16 +3561,23 @@ export function TradingChart({
         } | null
         if (!cancelled && json?.ok && Array.isArray(json.calendar)) {
           setNewsEvents(json.calendar)
+          const hasRecent = json.calendar.some((e) => {
+            if (!e.impact?.toLowerCase().includes('high')) return false
+            const ms = Date.parse(e.time)
+            return !Number.isNaN(ms) && Math.abs(ms - Date.now()) <= 30 * 60 * 1000
+          })
+          schedule(hasRecent ? 15_000 : 60_000)
+        } else {
+          schedule(60_000)
         }
       } catch {
-        // quiet
+        schedule(60_000)
       }
     }
-    loadNews()
-    const timer = setInterval(loadNews, 60_000)
+    void loadNews()
     return () => {
       cancelled = true
-      clearInterval(timer)
+      if (timerId != null) window.clearTimeout(timerId)
     }
   }, [instrument])
 
@@ -5761,6 +5828,8 @@ export function TradingChart({
     chartTzRef.current = TRADER_DISPLAY_TZ
     const chart = chartRef.current
     if (!chart) return
+    const width = containerRef.current?.clientWidth ?? 900
+    const spacing = deskBarSpacing(width, candlesRef.current.length, timeframe)
     chart.applyOptions({
       localization: {
         timeFormatter: (time: UTCTimestamp | string | number) =>
@@ -5769,6 +5838,7 @@ export function TradingChart({
       timeScale: {
         timeVisible: timeframe !== '1D',
         secondsVisible: false,
+        barSpacing: spacing,
       },
     })
   }, [instrument, timeframe])
@@ -5937,7 +6007,7 @@ export function TradingChart({
       borderDownColor: DESK_CANDLE_DOWN,
       wickUpColor: DESK_CANDLE_UP,
       wickDownColor: DESK_CANDLE_DOWN,
-      borderVisible: true,
+      borderVisible: false,
       wickVisible: true,
       autoscaleInfoProvider: candleAutoscale,
     })
@@ -6265,6 +6335,7 @@ export function TradingChart({
         borderDownColor: '#f43f5e',
         wickUpColor: '#34d399',
         wickDownColor: '#fb7185',
+        borderVisible: false,
         priceFormat: {
           type: 'volume',
           precision: 0,
@@ -6484,7 +6555,7 @@ export function TradingChart({
             close: c.close,
             volume: c.volume ?? 0,
           }))
-          const trimmed = normalizeCandleTimes(toDeskCandles(mapped, instrument, timeframe))
+          const trimmed = normalizeCandleTimes(toDeskCandles(mapped, instrument, timeframe), timeframe)
           setCandles(trimmed)
           candlesRef.current = trimmed
           const feedSource =
@@ -6916,7 +6987,7 @@ export function TradingChart({
   useEffect(() => {
     if (!candleRef.current || !chartRef.current || candles.length === 0) return
 
-    const ordered = normalizeCandleTimes(candles)
+    const ordered = normalizeCandleTimes(candles, timeframe)
     const tz = chartTzRef.current
     const seenTimes = new Set<number>()
     const candleData: CandlestickData[] = []
@@ -7309,7 +7380,7 @@ export function TradingChart({
     const tip = (lastBar?.time as number) || 0
     const tipH = lastBar?.high != null ? Number(lastBar.high.toFixed(2)) : 0
     const tipL = lastBar?.low != null ? Number(lastBar.low.toFixed(2)) : 0
-    const cacheKey = `${instrument}:${tip}:${tipH}:${tipL}:${list.length}:${tz}`
+    const cacheKey = `${instrument}:${timeframe}:${tip}:${tipH}:${tipL}:${list.length}:${tz}`
     let cached = sessionSpansRef.current
     if (!cached || cached.key !== cacheKey) {
       const built = computeSessionHighlightSpans({
@@ -7322,6 +7393,7 @@ export function TradingChart({
           volume: c.volume,
         })),
         instrument,
+        barSeconds,
       })
       cached = { key: cacheKey, spans: built.spans, candleTimes: built.candleTimes }
       sessionSpansRef.current = cached
@@ -7595,6 +7667,9 @@ export function TradingChart({
       }
       let next = bars
       for (const g of fills) {
+        const prev = next[next.length - 1]
+        // Ensure gap fills strictly advance time
+        if (prev && (g.time as number) <= (prev.time as number)) continue
         try {
           candleRef.current?.update(toChartCandle(g))
         } catch {
@@ -7603,6 +7678,10 @@ export function TradingChart({
         next = [...next, g]
       }
       const last = next[next.length - 1]!
+      // Strictly prevent non-monotonic timestamps which cause Lightweight Charts to throw or drop subsequent bars
+      if ((bar.time as number) < (last.time as number)) {
+        return
+      }
       const isNewBar = (last.time as number) !== (bar.time as number)
       next =
         !isNewBar
@@ -7628,15 +7707,26 @@ export function TradingChart({
       quoteTs: number,
       streamLive: boolean
     ) => {
-      // Guard only true bad ticks / wrong-scale bleed (e.g. leftover tip).
-      // 10% tolerance avoids freezing on fast London / NYC market momentum sweeps
+      // Guard rogue ticks, cross-feed scale bleeds, and delayed outliers.
+      // Calibrated per instrument to eliminate false massive tails without blocking real volatility
       const tip = lastCandleRef.current
-      if (
-        tip &&
-        tip.close > 0 &&
-        Math.abs(price - tip.close) / tip.close > 0.10
-      ) {
-        return
+      if (tip && tip.close > 0) {
+        const instStr = String(instrument).toUpperCase()
+        const maxPts =
+          instStr === 'DOW'
+            ? 150
+            : instStr === 'NASDAQ'
+            ? 80
+            : (instrument as any) === 'NIKKEI'
+            ? 150
+            : instStr === 'GOLD'
+            ? 15
+            : instStr === 'CRUDE'
+            ? 1.5
+            : tip.close * 0.025
+        if (Math.abs(price - tip.close) > maxPts) {
+          return
+        }
       }
 
       onPriceUpdate?.(price)
@@ -7690,7 +7780,8 @@ export function TradingChart({
         },
         price,
         bucketTs,
-        tfSec
+        tfSec,
+        instrument
       )
       const fills: OHLCV[] = stepped.gapFills.map((g) => ({
         time: g.time as UTCTimestamp,
@@ -7758,7 +7849,7 @@ export function TradingChart({
           close: c.close,
           volume: c.volume ?? 0,
         }))
-        const trimmed = normalizeCandleTimes(toDeskCandles(mapped, instrument, timeframe))
+        const trimmed = normalizeCandleTimes(toDeskCandles(mapped, instrument, timeframe), timeframe)
         if (trimmed.length === 0) return
 
         const live = lastCandleRef.current
@@ -7781,7 +7872,8 @@ export function TradingChart({
               close: live.close,
               volume: live.volume,
             }
-            : null
+            : null,
+          timeframe
         )
         const nextBars: OHLCV[] = merged.map((c) => ({
           time: c.time as UTCTimestamp,
@@ -7911,6 +8003,20 @@ export function TradingChart({
     }
     openPriceStream()
 
+    const handleReconnect = () => {
+      openPriceStream()
+      void refreshCandles()
+      void pollQuote()
+    }
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshCandles()
+        void pollQuote()
+      }
+    }
+    window.addEventListener('online', handleReconnect)
+    document.addEventListener('visibilitychange', handleVisibility)
+
     // Backup REST poll — frequent only when SSE is unhealthy
     tickIntervalRef.current = setInterval(() => {
       if (!tipOpen()) return
@@ -7933,6 +8039,8 @@ export function TradingChart({
       if (tipPaintRaf) cancelAnimationFrame(tipPaintRaf)
       tipPaintRaf = 0
       clearInterval(reconcile)
+      window.removeEventListener('online', handleReconnect)
+      document.removeEventListener('visibilitychange', handleVisibility)
       try {
         es?.close()
       } catch {
@@ -9583,7 +9691,49 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       ])
       return
     }
-  }, [positionOverlay, editableOverlay, pendingLimit, editablePending, filledBook, workingBook, aiVerdict, chartReady, clearHoverPreview, onAdjustBrackets, onAdjustWorkingBrackets, asiaOco])
+
+    // ── Armed Situations Overlay Lines (Target Level, Planned SL & TP) ──
+    if (armedSituations.length > 0 && !positionOverlay && !editableOverlay && !pendingLimit) {
+      const allSitEntries: Array<{ price: number; color: string; label: string; style: LineStyle; width: 1 | 2 | 3 | 4 }> = []
+      for (const sit of armedSituations) {
+        const targetPx = sit.targetPrice ?? sit.conditions?.targetPrice
+        if (!targetPx || targetPx <= 0) continue
+        const dir = (sit.direction || 'LONG').toUpperCase()
+        const pat = sit.pattern || sit.conditions?.pattern || sit.targetReference || 'Level Touch'
+        allSitEntries.push({
+          price: targetPx,
+          color: dir === 'LONG' ? '#06b6d4' : '#f59e0b',
+          label: `🎯 SITUATION ${dir} @ ${fmt(targetPx)} (${pat})`,
+          style: LineStyle.Dashed,
+          width: 2,
+        })
+        const sl = sit.stopLoss ?? sit.conditions?.stopLoss
+        if (sl && sl > 0) {
+          allSitEntries.push({
+            price: sl,
+            color: '#ef4444',
+            label: `▁ SIT SL ${fmt(sl)}`,
+            style: LineStyle.Dotted,
+            width: 2,
+          })
+        }
+        const tp = sit.takeProfit ?? sit.conditions?.takeProfit
+        if (tp && tp > 0) {
+          allSitEntries.push({
+            price: tp,
+            color: '#10b981',
+            label: `▔ SIT TP ${fmt(tp)}`,
+            style: LineStyle.Dotted,
+            width: 2,
+          })
+        }
+      }
+      if (allSitEntries.length > 0) {
+        paint(allSitEntries)
+        return
+      }
+    }
+  }, [positionOverlay, editableOverlay, pendingLimit, editablePending, filledBook, workingBook, aiVerdict, chartReady, clearHoverPreview, onAdjustBrackets, onAdjustWorkingBrackets, asiaOco, armedSituations])
 
   /** Levels / playbook — strategy-aware titles (morning → IB → lunch break → lunch-range) */
   void focusTick
@@ -10140,6 +10290,62 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               </button>
             </div>
 
+            {/* Quick 1-Click 1:1 Market Entry Buttons (All 4 Futures Markets) */}
+            {onPlaceOrder && (
+              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-surface-900/90 border border-neutral-700/60 shadow-sm text-xs font-mono">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const curPx = livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 0)
+                    if (!curPx || curPx <= 0) return
+                    const meta = MARKET_DEFAULT_PARAMS[instrument as MarketInstrument] || { defaultPrice: curPx, defaultPoints: 20 }
+                    const slDist = meta.defaultPoints
+                    const tpDist = meta.defaultPoints
+                    const stopLoss = Number((curPx - slDist).toFixed(2))
+                    const profitTarget = Number((curPx + tpDist).toFixed(2))
+                    void onPlaceOrder({
+                      instrument,
+                      direction: 'LONG',
+                      price: curPx,
+                      stopLoss,
+                      profitTarget,
+                      size: 1,
+                      reason: `1-Click 1:1 Market Buy (${instrument})`,
+                    })
+                  }}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded font-bold bg-emerald-600/30 hover:bg-emerald-600/60 border border-emerald-500/60 text-emerald-300 hover:text-white transition shadow-sm active:scale-95 cursor-pointer"
+                  title={`Execute 1:1 Market BUY on ${instrument} @ ${livePrice ?? 'Market'} (SL: -${MARKET_DEFAULT_PARAMS[instrument as MarketInstrument]?.defaultPoints ?? 20}pts, TP: +${MARKET_DEFAULT_PARAMS[instrument as MarketInstrument]?.defaultPoints ?? 20}pts)`}
+                >
+                  <span>⚡ BUY MKT 1:1</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const curPx = livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 0)
+                    if (!curPx || curPx <= 0) return
+                    const meta = MARKET_DEFAULT_PARAMS[instrument as MarketInstrument] || { defaultPrice: curPx, defaultPoints: 20 }
+                    const slDist = meta.defaultPoints
+                    const tpDist = meta.defaultPoints
+                    const stopLoss = Number((curPx + slDist).toFixed(2))
+                    const profitTarget = Number((curPx - tpDist).toFixed(2))
+                    void onPlaceOrder({
+                      instrument,
+                      direction: 'SHORT',
+                      price: curPx,
+                      stopLoss,
+                      profitTarget,
+                      size: 1,
+                      reason: `1-Click 1:1 Market Sell (${instrument})`,
+                    })
+                  }}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded font-bold bg-rose-600/30 hover:bg-rose-600/60 border border-rose-500/60 text-rose-300 hover:text-white transition shadow-sm active:scale-95 cursor-pointer"
+                  title={`Execute 1:1 Market SELL on ${instrument} @ ${livePrice ?? 'Market'} (SL: +${MARKET_DEFAULT_PARAMS[instrument as MarketInstrument]?.defaultPoints ?? 20}pts, TP: -${MARKET_DEFAULT_PARAMS[instrument as MarketInstrument]?.defaultPoints ?? 20}pts)`}
+                >
+                  <span>⚡ SELL MKT 1:1</span>
+                </button>
+              </div>
+            )}
+
             {/* Live price ticker */}
             <div className="ml-auto flex items-center gap-3">
               <LivePriceTicker
@@ -10147,6 +10353,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 getTick={getPriceTick}
                 instrument={instrument}
                 barCountdown={barCountdown}
+                timeframe={timeframe}
               />
               {dataMode === 'live' ? (
                 candleFeed === 'databento' || candleFeed === 'yahoo' ? (
@@ -11832,125 +12039,416 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           )
         })()}
 
-        {/* Filled position — drag SL / TP to adjust brackets on OANDA + journal */}
-        {editableOverlay && !riskBox && onAdjustBrackets && (() => {
+        {/* ── TradingView On-Chart Order & Bracket Badges (Position / Armed / Pending) ── */}
+        {(editableOverlay || positionOverlay) && !riskBox && (() => {
+          const ov = editableOverlay ?? positionOverlay!
+          const isLong = (ov.direction || 'long').toLowerCase() === 'long'
+          const curPx = livePrice ?? ov.entryPrice
+          const entryPx = ov.entryPrice
+          const stopPx = ov.stopLoss
+          const tpPx = ov.profitTarget
+          const pnlPts = isLong ? curPx - entryPx : entryPx - curPx
+          const pointVal =
+            instrument === 'NASDAQ' ? 2 : instrument === 'DOW' ? 0.5 : instrument === 'GOLD' ? 10 : instrument === 'CRUDE' ? 100 : 5
+          const sz = ov.positionSize ?? 1
+          const pnlUsd = pnlPts * sz * pointVal
+
+          const distTpPts = isLong ? tpPx - curPx : curPx - tpPx
+          const distTpUsd = distTpPts * sz * pointVal
+          const distSlPts = isLong ? curPx - stopPx : stopPx - curPx
+          const distSlUsd = distSlPts * sz * pointVal
           const saving = bracketAdjustStatus === 'saving'
-          const units =
-            editableOverlay.positionSize != null &&
-              Number.isFinite(editableOverlay.positionSize) &&
-              editableOverlay.positionSize > 0
-              ? editableOverlay.positionSize
-              : 0
-          const lossPts = Math.abs(editableOverlay.entryPrice - editableOverlay.stopLoss)
-          const profitPts = Math.abs(editableOverlay.profitTarget - editableOverlay.entryPrice)
-          const lossCad = units > 0 ? (units * lossPts).toFixed(2) : null
-          const profitCad = units > 0 ? (units * profitPts).toFixed(2) : null
+
           return (
             <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
+              {/* Take Profit Line Pill */}
               <div
-                data-ov-price={editableOverlay.profitTarget}
-                data-ov-dy={-13}
-                onMouseDown={saving ? undefined : onBracketLineMouseDown('TP')}
-                className={`absolute flex items-center gap-1.5 pointer-events-auto group ${saving ? 'cursor-wait opacity-70' : 'cursor-ns-resize'
-                  }`}
-                style={{ left: '48%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
-                title={`Drag Take Profit @ ${editableOverlay.profitTarget.toLocaleString()} — saves on release`}
+                data-ov-price={tpPx}
+                data-ov-dy={-14}
+                onMouseDown={onAdjustBrackets && !saving ? onBracketLineMouseDown('TP') : undefined}
+                className={`absolute flex items-center pointer-events-auto select-none z-30 group ${
+                  onAdjustBrackets && !saving ? 'cursor-ns-resize' : 'cursor-default'
+                }`}
+                style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
+                title={onAdjustBrackets ? `Drag Take Profit @ ${tpPx.toLocaleString()} — saves on release` : `Take Profit @ ${tpPx.toLocaleString()}`}
               >
-                <div className="flex items-center rounded border border-dashed border-emerald-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-emerald-300 shadow-md">
-                  <span className="text-emerald-400">
-                    {profitCad != null
-                      ? `+${profitCad} CAD`
-                      : `TP ${editableOverlay.profitTarget.toLocaleString()}`}
-                  </span>
+                <div className="flex items-center rounded-md border border-[#363a45] bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm transition-all group-hover:border-emerald-500/70">
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
+                    <span className="font-semibold text-neutral-300">
+                      {isLong ? 'Limit Sell' : 'Limit Buy'}
+                    </span>
+                    <span className="text-emerald-400 font-bold">
+                      {distTpPts >= 0 ? `+${distTpPts.toFixed(1)} pts` : `${distTpPts.toFixed(1)} pts`} ({distTpUsd >= 0 ? `+$${distTpUsd.toFixed(2)}` : `-$${Math.abs(distTpUsd).toFixed(2)}`})
+                    </span>
+                  </div>
+                  <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#f23645]' : 'bg-[#089981]'}`}>
+                    {isLong ? `-${sz}` : `+${sz}`}
+                  </div>
+                  {onClosePosition && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void onClosePosition('Trader closed position via TP badge')
+                      }}
+                      className="px-2 py-1 text-neutral-400 hover:text-white hover:bg-[#2a2e39] transition border-l border-[#363a45] cursor-pointer"
+                      title="Close Position"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
-                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
+                {onAdjustBrackets && (
+                  <div className="w-2.5 h-2.5 ml-1.5 rounded-full bg-emerald-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
+                )}
               </div>
+
+              {/* Position Entry Line Pill */}
               <div
-                data-ov-price={editableOverlay.stopLoss}
-                data-ov-dy={-13}
-                onMouseDown={saving ? undefined : onBracketLineMouseDown('SL')}
-                className={`absolute flex items-center gap-1.5 pointer-events-auto group ${saving ? 'cursor-wait opacity-70' : 'cursor-ns-resize'
-                  }`}
-                style={{ left: '48%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
-                title={`Drag Stop Loss @ ${editableOverlay.stopLoss.toLocaleString()} — saves on release`}
+                data-ov-price={entryPx}
+                data-ov-dy={-14}
+                className="absolute flex items-center pointer-events-auto select-none z-30 group cursor-default"
+                style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
+                title={`Position Entry @ ${entryPx.toLocaleString()}`}
               >
-                <div className="flex items-center rounded border border-dashed border-red-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-red-300 shadow-md">
-                  <span className="text-red-300">
-                    {lossCad != null
-                      ? `-${lossCad} CAD`
-                      : `SL ${editableOverlay.stopLoss.toLocaleString()}`}
-                  </span>
+                <div className="flex items-center rounded-md border border-[#363a45] bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm transition-all group-hover:border-blue-500/70">
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
+                    <span className="font-semibold text-neutral-300">
+                      {isLong ? 'Market Buy' : 'Market Sell'}
+                    </span>
+                    <span className={`font-bold ${pnlPts >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {pnlUsd >= 0 ? `+$${pnlUsd.toFixed(2)}` : `-$${Math.abs(pnlUsd).toFixed(2)}`} ({pnlPts >= 0 ? `+${pnlPts.toFixed(1)}` : pnlPts.toFixed(1)} pts)
+                    </span>
+                  </div>
+                  <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#089981]' : 'bg-[#f23645]'}`}>
+                    {isLong ? `+${sz}` : `-${sz}`}
+                  </div>
+                  {onClosePosition && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void onClosePosition('Trader flattened position via on-chart badge')
+                      }}
+                      className="px-2 py-1 bg-rose-950/70 hover:bg-rose-600 text-rose-300 hover:text-white font-bold transition border-l border-[#363a45] cursor-pointer"
+                      title="Flatten / Close Position at Market"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
-                <div className="w-2.5 h-2.5 rounded-full bg-red-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
               </div>
+
+              {/* Stop Loss Line Pill */}
+              <div
+                data-ov-price={stopPx}
+                data-ov-dy={-14}
+                onMouseDown={onAdjustBrackets && !saving ? onBracketLineMouseDown('SL') : undefined}
+                className={`absolute flex items-center pointer-events-auto select-none z-30 group ${
+                  onAdjustBrackets && !saving ? 'cursor-ns-resize' : 'cursor-default'
+                }`}
+                style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
+                title={onAdjustBrackets ? `Drag Stop Loss @ ${stopPx.toLocaleString()} — saves on release` : `Stop Loss @ ${stopPx.toLocaleString()}`}
+              >
+                <div className="flex items-center rounded-md border border-[#363a45] bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm transition-all group-hover:border-red-500/70">
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
+                    <span className="font-semibold text-neutral-300">
+                      {isLong ? 'Stop Market Sell' : 'Stop Market Buy'}
+                    </span>
+                    <span className="text-rose-400 font-bold">
+                      -{distSlPts.toFixed(1)} pts (-${distSlUsd.toFixed(2)})
+                    </span>
+                  </div>
+                  <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#f23645]' : 'bg-[#089981]'}`}>
+                    {isLong ? `-${sz}` : `+${sz}`}
+                  </div>
+                  {onClosePosition && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void onClosePosition('Trader closed position via SL badge')
+                      }}
+                      className="px-2 py-1 text-neutral-400 hover:text-white hover:bg-[#2a2e39] transition border-l border-[#363a45] cursor-pointer"
+                      title="Close Position"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+                {onAdjustBrackets && (
+                  <div className="w-2.5 h-2.5 ml-1.5 rounded-full bg-red-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
+                )}
+              </div>
+
               {(bracketAdjustStatus === 'saving' ||
                 bracketAdjustStatus === 'error' ||
                 bracketAdjustError) && (
-                  <div className="absolute left-3 bottom-3 pointer-events-none rounded-md border border-white/15 bg-black/80 px-2.5 py-1.5 text-[10px] font-semibold">
-                    {bracketAdjustStatus === 'saving' && (
-                      <span className="text-amber-200">Saving SL/TP…</span>
+                <div className="absolute left-3 bottom-3 pointer-events-none rounded-md border border-white/15 bg-black/80 px-2.5 py-1.5 text-[10px] font-semibold">
+                  {bracketAdjustStatus === 'saving' && (
+                    <span className="text-amber-200">Saving SL/TP…</span>
+                  )}
+                  {(bracketAdjustStatus === 'error' || bracketAdjustError) &&
+                    bracketAdjustStatus !== 'saving' && (
+                      <span className="text-red-300">
+                        {bracketAdjustError || 'Could not update brackets'}
+                      </span>
                     )}
-                    {(bracketAdjustStatus === 'error' || bracketAdjustError) &&
-                      bracketAdjustStatus !== 'saving' && (
-                        <span className="text-red-300">
-                          {bracketAdjustError || 'Could not update brackets'}
-                        </span>
-                      )}
-                  </div>
-                )}
+                </div>
+              )}
             </div>
           )
         })()}
 
-        {/* Working limit — TP draggable; SL locked at place (sets size) */}
-        {editablePending && !positionOverlay && !riskBox && onAdjustWorkingBrackets && (() => {
-          const saving = workingBracketAdjustStatus === 'saving'
+        {/* ── Armed Situations On-Chart Badges (Waiting for Level Touch / Conditions) ── */}
+        {!positionOverlay && !editableOverlay && !pendingLimit && armedSituations.length > 0 && (() => {
+          const sit = armedSituations[0]!
+          const sitTarget = sit.targetPrice ?? sit.conditions?.targetPrice
+          if (!sitTarget || sitTarget <= 0) return null
+          const sitSl = sit.stopLoss ?? sit.conditions?.stopLoss
+          const sitTp = sit.takeProfit ?? sit.conditions?.takeProfit
+          const isLong = (sit.direction || 'LONG').toUpperCase() === 'LONG'
+          const curPx = livePrice ?? sitTarget
+          const distToTarget = Math.abs(curPx - sitTarget)
+          const distTpPts = sitTp ? Math.abs(sitTp - sitTarget) : 0
+          const distSlPts = sitSl ? Math.abs(sitTarget - sitSl) : 0
+
           return (
             <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
-              <div
-                data-ov-price={editablePending.profitTarget}
-                data-ov-dy={-13}
-                onMouseDown={saving ? undefined : onWorkingTpMouseDown}
-                className={`absolute flex items-center gap-1.5 pointer-events-auto group ${saving ? 'cursor-wait opacity-70' : 'cursor-ns-resize'
-                  }`}
-                style={{ left: '48%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
-                title={`Drag Take Profit @ ${editablePending.profitTarget.toLocaleString()} — saves on release`}
-              >
-                <div className="flex items-center rounded border border-dashed border-emerald-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-emerald-300 shadow-md">
-                  TP {editablePending.profitTarget.toLocaleString()}
+              {/* Planned Take Profit Line Pill */}
+              {sitTp && sitTp > 0 && (
+                <div
+                  data-ov-price={sitTp}
+                  data-ov-dy={-14}
+                  className="absolute flex items-center pointer-events-auto select-none z-30 group cursor-default"
+                  style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
+                  title={`Planned Take Profit @ ${sitTp.toLocaleString()}`}
+                >
+                  <div className="flex items-center rounded-md border border-[#363a45] bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
+                      <span className="font-semibold text-neutral-400">Planned TP:</span>
+                      <span className="font-semibold text-neutral-300">
+                        {isLong ? 'Limit Sell' : 'Limit Buy'}
+                      </span>
+                      <span className="text-emerald-400 font-bold">+{distTpPts.toFixed(1)} pts</span>
+                    </div>
+                    <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#f23645]' : 'bg-[#089981]'}`}>
+                      {isLong ? '-1' : '+1'}
+                    </div>
+                  </div>
                 </div>
-                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
-              </div>
+              )}
+
+              {/* Situation Entry Trigger Level (Target Price) */}
               <div
-                data-ov-price={editablePending.stopLoss}
-                data-ov-dy={-13}
-                className="absolute flex items-center gap-1.5 pointer-events-none opacity-90"
-                style={{ left: '48%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
-                title="SL locked — sized at place"
+                data-ov-price={sitTarget}
+                data-ov-dy={-14}
+                className="absolute flex items-center pointer-events-auto select-none z-30 group cursor-default"
+                style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
+                title={`Armed Situation Trigger Level @ ${sitTarget.toLocaleString()}`}
               >
-                <div className="flex items-center rounded border border-dotted border-red-500/60 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-red-300/90 shadow-md">
-                  SL {editablePending.stopLoss.toLocaleString()}
-                  <span className="ml-1.5 text-[9px] font-sans uppercase tracking-wide text-amber-300/90">
-                    locked
-                  </span>
+                <div className="flex items-center rounded-md border border-cyan-500/60 bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm">
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
+                    <span className="font-semibold text-cyan-300">
+                      {isLong ? 'Market Buy (Touch)' : 'Market Sell (Touch)'}
+                    </span>
+                    <span className="text-amber-300 font-bold">
+                      {distToTarget.toFixed(1)} pts away
+                    </span>
+                  </div>
+                  <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#089981]' : 'bg-[#f23645]'}`}>
+                    {isLong ? '+1' : '-1'}
+                  </div>
+                  {/* Instant 1-Click Market Enter Button */}
+                  {onPlaceOrder && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const cur = livePrice ?? sitTarget
+                        const meta = MARKET_DEFAULT_PARAMS[instrument as MarketInstrument] || { defaultPrice: cur, defaultPoints: 20 }
+                        const sl = sitSl ?? (isLong ? cur - meta.defaultPoints : cur + meta.defaultPoints)
+                        const tp = sitTp ?? (isLong ? cur + meta.defaultPoints : cur - meta.defaultPoints)
+                        void onPlaceOrder({
+                          instrument,
+                          direction: isLong ? 'LONG' : 'SHORT',
+                          price: cur,
+                          stopLoss: sl,
+                          profitTarget: tp,
+                          size: 1,
+                          reason: `Manual 1-Click Trigger of Armed Situation: ${sit.description}`,
+                        })
+                      }}
+                      className="px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white font-bold transition border-l border-[#363a45] flex items-center gap-0.5 cursor-pointer"
+                      title="Jump in immediately at market price"
+                    >
+                      <span>⚡ In</span>
+                    </button>
+                  )}
+                  {/* Disarm / Cancel button */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      const updated = armedSituations.filter((r) => r.id !== sit.id)
+                      setArmedSituations(updated)
+                      saveRulesForMarket(instrument as MarketInstrument, updated as any)
+                    }}
+                    className="px-2 py-1 text-neutral-400 hover:text-white hover:bg-[#2a2e39] transition border-l border-[#363a45] cursor-pointer"
+                    title="Disarm situation"
+                  >
+                    ✕
+                  </button>
                 </div>
-                <div className="w-2.5 h-2.5 rounded-full bg-red-400/50 border border-white/40 shadow-sm" />
               </div>
+
+              {/* Planned Stop Loss Line Pill */}
+              {sitSl && sitSl > 0 && (
+                <div
+                  data-ov-price={sitSl}
+                  data-ov-dy={-14}
+                  className="absolute flex items-center pointer-events-auto select-none z-30 group cursor-default"
+                  style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
+                  title={`Planned Stop Loss @ ${sitSl.toLocaleString()}`}
+                >
+                  <div className="flex items-center rounded-md border border-[#363a45] bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
+                      <span className="font-semibold text-neutral-400">Planned SL:</span>
+                      <span className="font-semibold text-neutral-300">
+                        {isLong ? 'Stop Market Sell' : 'Stop Market Buy'}
+                      </span>
+                      <span className="text-rose-400 font-bold">-{distSlPts.toFixed(1)} pts</span>
+                    </div>
+                    <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#f23645]' : 'bg-[#089981]'}`}>
+                      {isLong ? '-1' : '+1'}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })()}
+
+        {/* ── Working Limit Order On-Chart Badges ── */}
+        {(editablePending || pendingLimit) && !positionOverlay && !riskBox && (() => {
+          const pend = editablePending ?? pendingLimit!
+          const isLong = (pend.direction || 'long').toLowerCase() === 'long'
+          const curPx = livePrice ?? pend.price
+          const distToLimit = Math.abs(curPx - pend.price)
+          const distTpPts = Math.abs(pend.profitTarget - pend.price)
+          const distSlPts = Math.abs(pend.price - pend.stopLoss)
+          const saving = workingBracketAdjustStatus === 'saving'
+
+          return (
+            <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
+              {/* Working TP */}
+              <div
+                data-ov-price={pend.profitTarget}
+                data-ov-dy={-14}
+                onMouseDown={onAdjustWorkingBrackets && !saving ? onWorkingTpMouseDown : undefined}
+                className={`absolute flex items-center pointer-events-auto select-none z-30 group ${
+                  onAdjustWorkingBrackets && !saving ? 'cursor-ns-resize' : 'cursor-default'
+                }`}
+                style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
+                title={`Drag Take Profit @ ${pend.profitTarget.toLocaleString()}`}
+              >
+                <div className="flex items-center rounded border border-[#363a45] bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm">
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
+                    <span className="font-semibold text-neutral-300">
+                      {isLong ? 'Limit Sell' : 'Limit Buy'}
+                    </span>
+                    <span className="text-emerald-400 font-bold">+{distTpPts.toFixed(1)} pts</span>
+                  </div>
+                  <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#f23645]' : 'bg-[#089981]'}`}>
+                    {isLong ? '-1' : '+1'}
+                  </div>
+                  {onCancelPending && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onCancelPending()
+                      }}
+                      className="px-2 py-1 text-neutral-400 hover:text-white hover:bg-[#2a2e39] transition border-l border-[#363a45] cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+                {onAdjustWorkingBrackets && (
+                  <div className="w-2.5 h-2.5 ml-1.5 rounded-full bg-emerald-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
+                )}
+              </div>
+
+              {/* Working Limit Entry */}
+              <div
+                data-ov-price={pend.price}
+                data-ov-dy={-14}
+                className="absolute flex items-center pointer-events-auto select-none z-30 group cursor-default"
+                style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
+              >
+                <div className="flex items-center rounded border border-sky-500/60 bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm">
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
+                    <span className="font-semibold text-sky-300">
+                      {isLong ? 'Limit Buy' : 'Limit Sell'}
+                    </span>
+                    <span className="text-sky-400 font-bold">{distToLimit.toFixed(1)} pts away</span>
+                  </div>
+                  <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#089981]' : 'bg-[#f23645]'}`}>
+                    {isLong ? '+1' : '-1'}
+                  </div>
+                  {onCancelPending && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onCancelPending()
+                      }}
+                      className="px-2 py-1 bg-rose-950/70 hover:bg-rose-600 text-rose-300 hover:text-white font-bold transition border-l border-[#363a45] cursor-pointer"
+                      title="Cancel Limit Order"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Working SL */}
+              <div
+                data-ov-price={pend.stopLoss}
+                data-ov-dy={-14}
+                className="absolute flex items-center pointer-events-none select-none z-30 opacity-90"
+                style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
+              >
+                <div className="flex items-center rounded border border-dotted border-red-500/60 bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm">
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
+                    <span className="font-semibold text-neutral-300">
+                      {isLong ? 'Stop Market Sell' : 'Stop Market Buy'}
+                    </span>
+                    <span className="text-rose-400 font-bold">-{distSlPts.toFixed(1)} pts</span>
+                    <span className="text-[9px] uppercase text-amber-300">locked</span>
+                  </div>
+                  <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#f23645]' : 'bg-[#089981]'}`}>
+                    {isLong ? '-1' : '+1'}
+                  </div>
+                </div>
+              </div>
+
               {(workingBracketAdjustStatus === 'saving' ||
                 workingBracketAdjustStatus === 'error' ||
                 workingBracketAdjustError) && (
-                  <div className="absolute left-3 bottom-3 pointer-events-none rounded-md border border-white/15 bg-black/80 px-2.5 py-1.5 text-[10px] font-semibold">
-                    {workingBracketAdjustStatus === 'saving' && (
-                      <span className="text-amber-200">Saving TP…</span>
+                <div className="absolute left-3 bottom-3 pointer-events-none rounded-md border border-white/15 bg-black/80 px-2.5 py-1.5 text-[10px] font-semibold">
+                  {workingBracketAdjustStatus === 'saving' && (
+                    <span className="text-amber-200">Saving TP…</span>
+                  )}
+                  {(workingBracketAdjustStatus === 'error' || workingBracketAdjustError) &&
+                    workingBracketAdjustStatus !== 'saving' && (
+                      <span className="text-red-300">
+                        {workingBracketAdjustError || 'Could not update take profit'}
+                      </span>
                     )}
-                    {(workingBracketAdjustStatus === 'error' || workingBracketAdjustError) &&
-                      workingBracketAdjustStatus !== 'saving' && (
-                        <span className="text-red-300">
-                          {workingBracketAdjustError || 'Could not update take profit'}
-                        </span>
-                      )}
-                  </div>
-                )}
+                </div>
+              )}
             </div>
           )
         })()}
@@ -12073,7 +12571,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         <LeoAssistantPanel
           key={leoContext.instrument}
           context={leoContext}
-          candles={candles}
+          candles={candlesRef.current.length > 0 ? candlesRef.current : candles}
           isOpen={leoPanelOpen}
           onToggleOpen={() => setLeoPanelOpen(!leoPanelOpen)}
           externalAttachedPoints={leoExternalPoints}

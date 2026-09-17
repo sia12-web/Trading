@@ -1243,81 +1243,60 @@ export function classifyMarketDayType(args: {
     }
   }
 
-  // 5. Initial Balance (IB: first 60 minutes = Period A + Period B)
-  const ibEndUnix = todayOpenUnix + 3600
-  const firstHourBars = bars30m.filter((b) => b.time < ibEndUnix)
-  const isIbWindowComplete = elapsedSec >= 40 * 60 || firstHourBars.length >= 2
+  // 5. Excess Reference Range (Excess Selling High vs Excess Buying Low)
+  // The primary reference range is defined by the session's Excess Selling extreme (high)
+  // and Excess Buying extreme (low). Price auctions and rotates between these boundaries.
+  if (bars30m.length >= 2 || elapsedSec >= 40 * 60) {
+    const excessSelling = high
+    const excessBuying = low
+    const excessRange = excessSelling - excessBuying
+    const midPoint = (excessSelling + excessBuying) / 2
 
-  if (isIbWindowComplete && firstHourBars.length > 0) {
-    let ibHigh = -Infinity
-    let ibLow = Infinity
-    for (const b of firstHourBars) {
-      if (b.high > ibHigh) ibHigh = b.high
-      if (b.low < ibLow) ibLow = b.low
-    }
-    const ibRange = ibHigh - ibLow
+    // Double Distribution:
+    // When price drives away from early rotation and establishes a second distinct value zone
+    if (bars30m.length >= 4 && elapsedSec >= 60 * 60) {
+      const halfIdx = Math.floor(bars30m.length / 2)
+      const earlyBars = bars30m.slice(0, halfIdx)
+      const lateBars = bars30m.slice(halfIdx)
+      
+      let earlyAvg = 0
+      for (const b of earlyBars) earlyAvg += b.close
+      earlyAvg /= earlyBars.length
 
-    const extendedHigh = high > ibHigh + ibRange * 0.15
-    const extendedLow = low < ibLow - ibRange * 0.15
+      let lateAvg = 0
+      for (const b of lateBars) lateAvg += b.close
+      lateAvg /= lateBars.length
 
-    // Neutral Day: extended on both sides
-    if (extendedHigh && extendedLow) {
-      return {
-        type: 'NEUTRAL',
-        badgeText: 'Neutral Day',
-        title: 'Neutral Day',
-        description:
-          'Range extended both above and below the morning range. Two-sided auction / reversal.',
-      }
-    }
-
-    // Double Distribution Trend Day:
-    // Breakout beyond IB (>= 0.4x IB range) in ONE direction, with subsequent 30m periods
-    // developing value away from the initial balance center.
-    const subsequentBars = bars30m.filter((b) => b.time >= ibEndUnix)
-    if (elapsedSec >= 45 * 60 && (extendedHigh !== extendedLow) && subsequentBars.length > 0) {
-      let subHigh = -Infinity
-      let subLow = Infinity
-      let subCloseSum = 0
-      for (const b of subsequentBars) {
-        if (b.high > subHigh) subHigh = b.high
-        if (b.low < subLow) subLow = b.low
-        subCloseSum += b.close
-      }
-      const subAvg = subsequentBars.length ? subCloseSum / subsequentBars.length : 0
-      const ibMid = (ibHigh + ibLow) / 2
-
-      const isDDistUp = extendedHigh && !extendedLow && high >= ibHigh + ibRange * 0.4 && (subAvg > ibHigh || subLow > ibMid)
-      const isDDistDown = extendedLow && !extendedHigh && low <= ibLow - ibRange * 0.4 && (subAvg < ibLow || subHigh < ibMid)
-      if (isDDistUp || isDDistDown) {
+      const distributionSeparation = Math.abs(lateAvg - earlyAvg)
+      if (distributionSeparation >= excessRange * 0.35) {
         return {
           type: 'DOUBLE_DISTRIBUTION',
           badgeText: 'Double Distribution',
-          title: 'Double Distribution Trend Day',
+          title: 'Double Distribution Day',
           description:
-            'Initial balance broken by an aggressive initiative drive, forming a second distinct value area separated by single prints.',
+            'Two distinct value distributions separated by a single-print zone between Excess boundaries.',
         }
       }
     }
 
-    // Normal Variation Day: extended significantly on one side
-    if (extendedHigh || extendedLow) {
+    // Normal Variation: directional extension developing a new excess boundary
+    if (bars30m.length >= 3 && Math.abs(bars30m[bars30m.length - 1]!.close - midPoint) > excessRange * 0.3) {
       return {
         type: 'NORMAL_VARIATION',
         badgeText: 'Normal Variation',
         title: 'Normal Variation Day',
         description:
-          'Morning base extended by secondary directional probe (~0.5x to 1x IB range).',
+          'Auction expanded directionally towards an outer Excess boundary and accepted.',
       }
     }
 
-    // Normal Day: stays within initial range
+    // Normal Day: symmetric rotational auction contained between Excess boundaries
     return {
       type: 'NORMAL',
       badgeText: 'Normal Day',
-      title: 'Normal Day',
+      title: 'Normal Rotational Day',
       description:
-        'Wide initial range remains holding. Trading rotates symmetrically around center of balance.',
+        'Auction contained and rotating symmetrically between Excess Selling (High) and Excess Buying (Low).',
     }
   }
 

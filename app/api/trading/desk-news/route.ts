@@ -132,6 +132,7 @@ export async function GET(request: Request) {
       .filter((e) => e.event && e.time)
       .map((e, idx) => {
         const instrumentsHit = instrumentsForCalendarEvent(e.country, e.event)
+        const isReleased = !!(e.isReleased || (e.actual != null && String(e.actual).trim() !== ''))
         return {
           id: `cal-${idx}-${e.time}-${e.event}`.slice(0, 80),
           time: e.time,
@@ -139,12 +140,28 @@ export async function GET(request: Request) {
           event: e.event,
           impact: e.impact || 'low',
           instruments: instrumentsHit,
-          deskNote: deskNoteForCalendar(instrumentsHit, e.impact || 'low'),
+          actual: e.actual ?? null,
+          estimate: e.estimate ?? null,
+          prev: e.prev ?? null,
+          outcome: e.outcome ?? null,
+          changeBps: e.changeBps ?? null,
+          targetRange: e.targetRange ?? null,
+          resultHeadline: e.resultHeadline ?? null,
+          resultUrl: e.resultUrl ?? null,
+          releasedAt: e.releasedAt ?? null,
+          isReleased,
+          deskNote: deskNoteForCalendar(instrumentsHit, e.impact || 'low', {
+            actual: e.actual,
+            estimate: e.estimate,
+            resultHeadline: e.resultHeadline,
+            outcome: e.outcome,
+            isReleased,
+          }),
         }
       })
 
-    // Prefer HIGH impact first so a dense low-impact flood never drops CPI/FOMC/BoJ.
-    // Then sort by clock. Cap after prioritization.
+    // Prefer recently released high-impact events (within 45m) and upcoming HIGH impact first
+    // so a dense low-impact flood never drops FOMC/CPI/NFP/BoJ.
     const high = mapped.filter((e) => isHighImpact(e.impact))
     const rest = mapped.filter((e) => !isHighImpact(e.impact))
     const byTime = (a: DeskCalendarEvent, b: DeskCalendarEvent) => {
@@ -152,9 +169,16 @@ export async function GET(request: Request) {
       const bm = parseCalendarEventMs(b.time, nowMs) ?? Number.POSITIVE_INFINITY
       return am - bm
     }
-    high.sort(byTime)
+    const releasedRecent = high.filter((e) => {
+      if (!e.isReleased) return false
+      const am = parseCalendarEventMs(e.time, nowMs)
+      return am != null && nowMs >= am && nowMs - am <= 45 * 60 * 1000
+    })
+    const otherHigh = high.filter((e) => !releasedRecent.includes(e))
+    releasedRecent.sort(byTime)
+    otherHigh.sort(byTime)
     rest.sort(byTime)
-    let calendar = [...high, ...rest].slice(0, 40)
+    let calendar = [...releasedRecent, ...otherHigh, ...rest].slice(0, 40)
 
     // Optional desk filter for chart banner polls
     if (desk !== 'ALL') {

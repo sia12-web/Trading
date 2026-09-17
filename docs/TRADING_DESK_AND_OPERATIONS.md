@@ -35,13 +35,17 @@ TradePulse structures the trading day into four distinct market regimes based on
 - Key reference markers formed:
   - **15-Minute Opening Range (`OR15`)**: 09:30 - 09:45 EDT. High/Low established during maximum opening auction volume.
   - **30-Minute Opening Range (`OR30`)**: 09:30 - 10:00 EDT. Confirms morning trend continuation or mean-reversion absorption.
-  - **Initial Balance (`IB`)**: 09:30 - 10:30 EDT. The auction market foundation for the entire session.
+  - **Excess Reference Range (Excess Selling High / Excess Buying Low)**: The sole canonical reference boundaries replacing legacy Initial Balance models (`excessLevelsFromCandles()` in `lib/trading/deskLevels.ts`). Identifies responsive seller entry at session highs and responsive buyer entry at session lows.
+  - **Standardized Dalton Day Type (30-Min TPO Periods)**: Session day types (`TREND`, `NORMAL_VARIATION`, `NEUTRAL`, `NON_TREND`) are calculated by bucketing session price action into canonical 30-minute TPO periods starting from 09:30 AM cash open (`classifyMarketDayType` in `lib/chart/context55.ts`), ensuring identical classification across all chart timeframes (`1m`, `5m`, `30m`).
 
 ### 1.4 Afternoon Continuation Session (12:00 - 16:00 EDT)
 - **Objective**: Trend continuation or late-day liquidation sweeps following the lunch transition.
-- Generates the Afternoon Playbook (`/api/trading/afternoon-playbook`), analyzing whether price is accepted outside the morning Initial Balance or returning to the Day POC.
+- Generates the Afternoon Playbook (`/api/trading/afternoon-playbook`), analyzing whether price is accepted above Excess Selling High (`above_excess_selling`), below Excess Buying Low (`below_excess_buying`), or rotating within the excess range (`within_excess_range`).
 
-### 1.5 End-of-Day (EOD) Risk Flatten Window (16:59 EDT)
+### 1.5 Active CME Quarterly Contract Alignment (December 2026 Z6 Roll)
+- **Contract Alignment**: Databento live futures hubs and OANDA basis offsets automatically adjust to active December 2026 quarterly contracts (`MYMZ6`, `MNQZ6`, `NKDZ6`, `MGCZ6`, `CLZ6`) via `getActiveCmeQuarterlyContract()`.
+
+### 1.6 End-of-Day (EOD) Risk Flatten Window (16:59 EDT)
 - **Rule**: All intraday day-trading positions must be flattened by 16:59 EDT.
 - Prevents overnight margin expansion and eliminates gap risk across non-trading hours for prop firm accounts. Multi-day swing positions (e.g. SPY, GOOG equities in Questrade) remain unaffected.
 

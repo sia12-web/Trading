@@ -28,6 +28,19 @@ export const DESK_MAX_5M_RANGE: Record<string, number> = {
   CRUDE: 25,
 }
 
+/**
+ * Realistic single-tick velocity thresholds per instrument.
+ * Protects real-time forming bars from rogue ticks, cross-feed scale blips,
+ * or unconfirmed outliers from creating false massive wicks/tails.
+ */
+export const MAX_SINGLE_TICK_PTS: Record<string, number> = {
+  DOW: 150,
+  NASDAQ: 80,
+  NIKKEI: 150,
+  GOLD: 15,
+  CRUDE: 1.5,
+}
+
 export function deskBarOpenUnix(
   unix: number,
   barSec: number = DESK_LIVE_BAR_SEC
@@ -50,7 +63,8 @@ export function applyTickToFormingBar(
   last: FormingBar,
   price: number,
   quoteUnix: number,
-  barSec: number = DESK_LIVE_BAR_SEC
+  barSec: number = DESK_LIVE_BAR_SEC,
+  instrument?: string | null
 ): { last: FormingBar; rolled: boolean; gapFills: FormingBar[] } {
   const lastT = last.time
   const bucket = deskBarOpenUnix(quoteUnix, barSec)
@@ -59,6 +73,14 @@ export function applyTickToFormingBar(
   }
 
   if (bucket <= lastT) {
+    // Outlier guard within forming bar: prevent rogue multi-hundred point jumps from creating phantom tails
+    if (last.close > 0) {
+      const maxPts = instrument ? (MAX_SINGLE_TICK_PTS[instrument] ?? 100) : (last.close * 0.05)
+      if (Math.abs(price - last.close) > maxPts) {
+        return { last, rolled: false, gapFills: [] }
+      }
+    }
+
     return {
       last: {
         ...last,
@@ -148,30 +170,40 @@ export function dropImplausibleDeskBars<T extends FormingBar>(
  */
 export function mergeHistoryWithLiveTip<T extends FormingBar>(
   history: T[],
-  live: T | null | undefined
+  live: T | null | undefined,
+  timeframe: string = '5m'
 ): T[] {
   if (!live || history.length === 0) return history
-  const liveT = live.time
+  const step =
+    timeframe === '1m'
+      ? 60
+      : timeframe === '30m'
+      ? 1800
+      : timeframe === '1D'
+      ? 86400
+      : 300
+  const liveT = timeframe === '1D' ? live.time : Math.floor(live.time / step) * step
+  const alignedLive: T = { ...live, time: liveT }
   const last = history[history.length - 1]!
   const lastT = last.time
   if (liveT > lastT) {
-    if (!isPlausibleDeskTick(last.close, live.close, 0.08)) return history
-    const merged = [...history, live]
-    return fillCandleGaps(merged, '5m')
+    if (!isPlausibleDeskTick(last.close, alignedLive.close, 0.08)) return history
+    const merged = [...history, alignedLive]
+    return fillCandleGaps(merged, timeframe)
   }
   if (liveT < lastT) return history
-  if (!isPlausibleDeskTick(last.close, live.close, 0.08)) return history
-  const close = live.close
+  if (!isPlausibleDeskTick(last.close, alignedLive.close, 0.08)) return history
+  const close = alignedLive.close
   const next: T = {
     ...last,
-    open: live.open,
-    high: Math.max(last.high, live.high, close),
-    low: Math.min(last.low, live.low, close),
+    open: alignedLive.open > 0 ? alignedLive.open : last.open,
+    high: Math.max(last.high, alignedLive.high, close),
+    low: Math.min(last.low, alignedLive.low, close),
     close,
   }
   const out = history.slice()
   out[out.length - 1] = next
-  return fillCandleGaps(out, '5m')
+  return fillCandleGaps(out, timeframe)
 }
 
 /**

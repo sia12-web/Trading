@@ -4,6 +4,7 @@
  */
 
 import { isTeamTapeSymbol, parseTeamTapeSide, type TeamTapeSide } from '@/lib/trading/teamTape'
+import { getSymbolRealName } from '@/lib/trading/symbolNames'
 
 export type QuestradeLevelStatus = 'working' | 'filled' | 'cancelled'
 
@@ -44,6 +45,8 @@ export type QuestradeBookRow = {
   sourceId: string
   symbol: string
   label: string
+  companyName: string
+  realName: string
   underlying: string
   asset: 'stock' | 'option'
   side: TeamTapeSide
@@ -68,6 +71,8 @@ export type QuestradeProtectiveLevel = {
   sourceId: string
   symbol: string
   label: string
+  companyName: string
+  realName: string
   underlying: string
   asset: 'stock' | 'option'
   side: TeamTapeSide
@@ -292,10 +297,15 @@ function toProtectiveLevel(
   const status = questradeLevelStatus(raw)
   const qty = Number(raw.totalQuantity || raw.openQuantity || 0)
   if (!parsed || !side || price == null || !status || !(qty > 0)) return null
+  const realMeta = getSymbolRealName(parsed.key)
+  const companyName = realMeta.name
+  const realName = parsed.asset === 'option' ? parsed.label : realMeta.name
   return {
     sourceId: String(raw.id ?? `${parsed.key}-${kind}-${price}`),
     symbol: parsed.key,
     label: parsed.label,
+    companyName,
+    realName,
     underlying: parsed.underlying,
     asset: parsed.asset,
     side,
@@ -345,16 +355,14 @@ function pickLevel(
   const ranked = levels
     .filter((l) => {
       if (l.kind !== args.want || l.symbol !== args.symbol || l.side !== opp) return false
-      // Price relationship validation if entry price is known
-      if (entryPx != null && entryPx > 0 && l.price > 0) {
-        if (args.want === 'tp') {
-          const isProfitable = args.entrySide === 'BUY' ? l.price > entryPx : l.price < entryPx
-          if (!isProfitable) return false
-        } else if (args.want === 'sl') {
-          const isLossCutting = args.entrySide === 'BUY' ? l.price < entryPx : l.price > entryPx
-          if (!isLossCutting) return false
-        }
+      // For take-profit limit orders, prefer profitable target levels if entry price is known
+      if (args.want === 'tp' && entryPx != null && entryPx > 0 && l.price > 0) {
+        const isProfitable = args.entrySide === 'BUY' ? l.price >= entryPx : l.price <= entryPx
+        // If not strictly profitable and not explicitly linked, filter out
+        if (!isProfitable && !l.parentId && !l.orderGroupId) return false
       }
+      // Note: Stop Loss orders (kind === 'sl') are protective/trailing orders and should NEVER be discarded
+      // just because the trader moved SL to break-even or trailed it into profit!
       return true
     })
     .map((l) => {
@@ -467,7 +475,11 @@ export function pairQuestradeBook(args: {
     const parsed = parseQuestradeSymbol(entry.symbol)
     const side = parseQuestradeSide(entry.side)
     const entryPx =
-      kind === 'open_position' ? posNum(pos?.averageEntryPrice) || orderPrice(entry) : orderPrice(entry)
+      kind === 'open_position'
+        ? posNum(pos?.averageEntryPrice) ||
+          (pos?.totalCost != null && pos?.openQuantity ? posNum(Math.abs(Number(pos.totalCost) / Number(pos.openQuantity))) : null) ||
+          orderPrice(entry)
+        : orderPrice(entry)
     const qty =
       kind === 'open_position' && pos?.openQuantity
         ? Math.abs(Number(pos.openQuantity))
@@ -502,7 +514,12 @@ export function pairQuestradeBook(args: {
     const stop = sl?.price ?? null
     const target = tp?.price ?? null
     const mark = posNum(pos?.currentPrice)
-    const livePnl = signedNum(pos?.openPnl)
+    const livePnl =
+      pos?.openPnl != null
+        ? signedNum(pos.openPnl)
+        : mark != null
+          ? signedNum((mark - entryPx) * qty * (side === 'BUY' ? 1 : -1) * parsed.multiplier)
+          : null
     const stockRisk =
       stop != null
         ? Math.round(Math.abs(entryPx - stop) * qty * parsed.multiplier * 100) / 100
@@ -511,10 +528,17 @@ export function pairQuestradeBook(args: {
       mark != null
         ? Math.round(mark * qty * parsed.multiplier * 100) / 100
         : Math.round(entryPx * qty * parsed.multiplier * 100) / 100
+
+    const realMeta = getSymbolRealName(parsed.key)
+    const companyName = realMeta.name
+    const realName = parsed.asset === 'option' ? parsed.label : realMeta.name
+
     return {
       sourceId: String(entry.id),
       symbol: parsed.key,
       label: parsed.label,
+      companyName,
+      realName,
       underlying: parsed.underlying,
       asset: parsed.asset,
       side,
@@ -545,7 +569,9 @@ export function pairQuestradeBook(args: {
     const qty = Number(pos.openQuantity)
     if (!qty) continue
     const side: TeamTapeSide = qty < 0 ? 'SELL' : 'BUY'
-    const entryPx = posNum(pos.averageEntryPrice)
+    const entryPx =
+      posNum(pos.averageEntryPrice) ||
+      (pos.totalCost != null ? posNum(Math.abs(Number(pos.totalCost) / qty)) : null)
     if (!entryPx) continue
 
     // Find the latest executed order for this symbol to provide fill timestamp / order ID

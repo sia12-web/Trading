@@ -533,6 +533,17 @@ export function ManageDeskBar({
         if (cancelled) return
         const closeJson = await closeRes.json()
         if (!closeRes.ok || !closeJson.success) {
+          // Simulation / paper orders: resolve exit cleanly on chart UI
+          if (position.id.startsWith('leo-sim-') || position.id.startsWith('sim-')) {
+            setMsg(
+              hitSl
+                ? `STOP HIT @ ${exitPrice.toLocaleString()}`
+                : `TAKE PROFIT @ ${exitPrice.toLocaleString()}`
+            )
+            onClosed(exitReason)
+            onRefreshGate()
+            return
+          }
           // Journal may already be closed (broker SL/TP) — reconcile and clear UI
           if (closeRes.status === 404 || /already closed/i.test(String(closeJson.message || ''))) {
             await pollReconcile()

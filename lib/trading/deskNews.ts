@@ -38,6 +38,16 @@ export type DeskCalendarEvent = {
   impact: string
   instruments: DeskNewsInstrument[]
   deskNote: string
+  actual?: string | number | null
+  estimate?: string | number | null
+  prev?: string | number | null
+  outcome?: 'HIKE' | 'CUT' | 'HOLD' | 'BEAT' | 'MISS' | 'IN_LINE' | null
+  changeBps?: number | null
+  targetRange?: string | null
+  resultHeadline?: string | null
+  resultUrl?: string | null
+  releasedAt?: string | null
+  isReleased?: boolean
 }
 
 const PREFERRED_SOURCES = [
@@ -301,8 +311,26 @@ export function instrumentsForCalendarEvent(country: string, event: string): Des
   return ['DOW', 'NASDAQ', 'GOLD', 'CRUDE']
 }
 
-export function deskNoteForCalendar(instruments: DeskNewsInstrument[], impact: string): string {
+export function deskNoteForCalendar(
+  instruments: DeskNewsInstrument[],
+  impact: string,
+  extra?: {
+    actual?: string | number | null
+    estimate?: string | number | null
+    resultHeadline?: string | null
+    outcome?: string | null
+    isReleased?: boolean
+  }
+): string {
   const desks = instruments.join(' · ')
+  if (extra?.isReleased || extra?.actual != null) {
+    if (extra?.resultHeadline) {
+      return `🎯 ${extra.resultHeadline} · Volatility active in ${desks}.`
+    }
+    const outcomeStr = extra?.outcome ? ` [${extra.outcome}]` : ''
+    const estStr = extra?.estimate ? ` (Exp: ${extra.estimate})` : ''
+    return `🎯 RELEASED: ${extra.actual}${outcomeStr}${estStr} · Volatility active in ${desks}.`
+  }
   const hi = /high/i.test(impact)
   return hi
     ? `High-impact print — expect volatility in ${desks}. Context only.`

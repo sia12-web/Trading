@@ -149,7 +149,10 @@ export async function GET(request: Request) {
        */
       const flushPending = () => {
         if (pendingSent || !pending) return
+        if (isDatabentoLiveActive(instrument)) return
         if (basis == null) {
+          // Never send unshifted OANDA quotes on CME instruments when Databento is configured
+          if (isDatabentoConfigured()) return
           if (instrument === 'GOLD' || instrument === 'CRUDE') return
           if (Date.now() - openedAt < UNSHIFTED_AFTER_MS) return
         }

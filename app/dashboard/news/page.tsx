@@ -449,17 +449,21 @@ function NewsCard({
 
 function CalendarCard({ event }: { event: DeskCalendarEvent }) {
   const high = /high/i.test(event.impact)
+  const isReleased = !!(event.isReleased || (event.actual != null && String(event.actual).trim() !== ''))
+
   return (
     <div
-      className={`rounded-lg border px-3 py-2 ${
-        high
-          ? 'border-amber-500/40 bg-amber-500/10'
-          : 'border-white/10 bg-black/20'
+      className={`rounded-lg border px-3 py-2.5 transition-all ${
+        isReleased
+          ? 'border-emerald-500/50 bg-emerald-950/20'
+          : high
+            ? 'border-amber-500/40 bg-amber-500/10'
+            : 'border-white/10 bg-black/20'
       }`}
     >
       <div className="flex flex-wrap items-center gap-2 text-[10px]">
         <span className="font-mono text-amber-100/90">{event.time}</span>
-        <span className="text-gray-400">{event.country}</span>
+        <span className="text-gray-400 font-semibold">{event.country}</span>
         <span
           className={`rounded px-1 py-0.5 font-bold uppercase ${
             high ? 'bg-amber-500/30 text-amber-100' : 'bg-white/10 text-gray-400'
@@ -467,14 +471,65 @@ function CalendarCard({ event }: { event: DeskCalendarEvent }) {
         >
           {event.impact || 'low'}
         </span>
+        {isReleased && (
+          <span className="rounded bg-emerald-500/25 px-1.5 py-0.5 text-emerald-300 font-bold uppercase tracking-wider border border-emerald-500/40">
+            🎯 Released
+          </span>
+        )}
+        {event.outcome && (
+          <span className="rounded bg-cyan-500/20 px-1.5 py-0.5 text-cyan-200 font-bold uppercase">
+            {event.outcome}
+            {event.changeBps
+              ? ` (${event.changeBps > 0 ? `+${event.changeBps}` : event.changeBps}bps)`
+              : ''}
+          </span>
+        )}
         {event.instruments.map((i) => (
-          <span key={i} className="text-gray-500">
+          <span key={i} className="text-gray-500 font-mono">
             {i}
           </span>
         ))}
       </div>
-      <p className="mt-1 text-xs font-medium text-white leading-snug">{event.event}</p>
-      <p className="mt-0.5 text-[10px] text-gray-500">{event.deskNote}</p>
+
+      <div className="mt-1.5 flex items-baseline justify-between gap-2">
+        <p className="text-xs font-semibold text-white leading-snug">{event.event}</p>
+        {event.resultUrl && (
+          <a
+            href={event.resultUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[10px] text-sky-400 hover:underline shrink-0"
+          >
+            Source Wire ↗
+          </a>
+        )}
+      </div>
+
+      {/* Actual / Forecast / Previous data strip */}
+      <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] font-mono border-t border-white/5 pt-1.5">
+        <div className="flex items-center gap-1">
+          <span className="text-gray-500">Actual:</span>
+          <span className={`font-bold ${isReleased ? 'text-emerald-300' : 'text-gray-400'}`}>
+            {event.actual != null ? String(event.actual) : 'Pending'}
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-gray-500">Exp:</span>
+          <span className="text-gray-300">{event.estimate != null ? String(event.estimate) : '—'}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-gray-500">Prev:</span>
+          <span className="text-gray-400">{event.prev != null ? String(event.prev) : '—'}</span>
+        </div>
+        {event.targetRange && (
+          <div className="flex items-center gap-1 text-[10px] text-gray-400">
+            <span>Range:</span>
+            <span className="text-sky-300">{event.targetRange}</span>
+          </div>
+        )}
+      </div>
+
+      <p className="mt-1.5 text-[10px] text-gray-400 leading-relaxed">{event.deskNote}</p>
     </div>
   )
 }

@@ -10,7 +10,7 @@ const INTERVAL_MAP: Record<string, string> = {
   '1': '1m',
   '5': '5m',
   '15': '15m',
-  '30': '30m',
+  '30': '5m', // Yahoo's native 30m futures feed drops 85% of bars and rejects period1/2. We fetch 5m and aggregate to 30m.
   '60': '60m',
   '240': '60m', // fetch 60m then aggregate to 4H
   D: '1d',
@@ -25,6 +25,31 @@ export type YahooCandle = {
   low: number
   close: number
   volume: number
+}
+
+/** Aggregate 5m bars into 30m bars (UTC epoch buckets aligned to 1800s). */
+function aggregateTo30m(candles: YahooCandle[]): YahooCandle[] {
+  const BUCKET = 1800
+  if (candles.length === 0) return []
+  const out: YahooCandle[] = []
+  let cur: YahooCandle | null = null
+  let bucketStart = -1
+
+  for (const c of candles) {
+    const start = Math.floor(c.time / BUCKET) * BUCKET
+    if (!cur || start !== bucketStart) {
+      if (cur) out.push(cur)
+      bucketStart = start
+      cur = { time: start, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume }
+    } else {
+      cur.high = Math.max(cur.high, c.high)
+      cur.low = Math.min(cur.low, c.low)
+      cur.close = c.close
+      cur.volume += c.volume
+    }
+  }
+  if (cur) out.push(cur)
+  return out
 }
 
 /** Aggregate 60m bars into 4H bars (UTC epoch buckets — fine for desk structure). */
@@ -133,9 +158,11 @@ export async function getYahooCandles(
 
   const interval = INTERVAL_MAP[resolution] || '5m'
   const is1m = resolution === '1' || interval === '1m'
+  const is30m = resolution === '30'
+  const is4H = resolution === '240'
   const fetchDays = is1m
     ? Math.min(days, 8)
-    : resolution === '240'
+    : is4H || is30m
       ? Math.max(days, 10)
       : days
   const range =
@@ -178,6 +205,7 @@ export async function getYahooCandles(
   }
   if (!candles?.length) return null
   if (resolution === '240') candles = aggregateTo4H(candles)
+  if (resolution === '30') candles = aggregateTo30m(candles)
   return { candles, symbol }
 }
 
@@ -202,6 +230,7 @@ export async function getYahooCandlesRange(
   )
   if (!candles) return null
   if (resolution === '240') candles = aggregateTo4H(candles)
+  if (resolution === '30') candles = aggregateTo30m(candles)
   // Keep only bars inside the requested window
   candles = candles.filter((c) => c.time >= period1 && c.time <= period2)
   return { candles, symbol }

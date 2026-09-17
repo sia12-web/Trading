@@ -8,6 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import {
   DESK_VISIBLE_BARS,
+  decodeDeskViewport,
   deskBarSpacing,
   deskVisibleBarCount,
   deskVisibleLogicalRange,
@@ -29,6 +30,12 @@ assert.equal(deskVisibleBarCount(1160, 3000), 90)
 assert.ok(deskVisibleBarCount(1600, 3000) > deskVisibleBarCount(1160, 3000))
 assert.equal(deskBarSpacing(1200, 3000), DESK_BAR_SPACING)
 assert.ok(DESK_BAR_SPACING >= 12, 'desktop candles remain individually readable')
+
+// 30m timeframe specific assertions
+assert.equal(deskBarSpacing(1200, 3000, '30m'), 24, '30m gets 24px bar spacing for thick solid candles')
+assert.ok(deskVisibleBarCount(1160, 3000, '30m') <= 45, '30m visible bar count avoids squishing')
+const resetViewport = decodeDeskViewport({ fromEnd: 100, span: 90 }, 3000, 1160, '30m')
+assert.ok(resetViewport.to - resetViewport.from <= 48, 'squished 30m span from old cache is reset')
 
 assert.equal(DESK_CANDLE_UP, '#089981')
 assert.equal(DESK_CANDLE_DOWN, '#f23645')
@@ -81,5 +88,7 @@ assert.ok(live.includes('const CANDLE_REFRESH_MS = 15_000'), 'history refetch is
 assert.ok(live.includes('applyTickToFormingBar'), 'live ticks roll 5m bars without a fake open')
 assert.ok(live.includes('mergeHistoryWithLiveTip'), 'REST cannot repaint forming-bar color')
 assert.ok(!live.includes('applyOverlayLayout(), 150'), 'overlay layout is not a 150ms idle loop')
+assert.ok(live.includes('borderVisible: false'), 'live candles render solid filled bodies')
+assert.ok(sim.includes('borderVisible: false'), 'sim candles render solid filled bodies')
 
 console.log('chart_visual_quality.test.ts: all passed')

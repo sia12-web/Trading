@@ -1424,33 +1424,49 @@ export function computeIbSignals(
   return []
 }
 
-/** First-hour Initial Balance (cash open → +60m) as watch levels for afternoon. */
-export function initialBalanceLevelsFromCandles(
+/** Excess Selling (High) and Excess Buying (Low) reference levels for session auction. */
+export function excessLevelsFromCandles(
   candles: DeskBar[],
   openUnix: number,
-  ibMinutes = 60,
-  nowUnix: number = Math.floor(Date.now() / 1000)
+  _nowUnix: number = Math.floor(Date.now() / 1000)
 ): DeskLevel[] {
-  const ib = computeInitialBalance(candles, openUnix, nowUnix, ibMinutes)
-  if (!ib) return []
+  if (!openUnix || candles.length === 0) return []
+  const sessionBars = candles.filter((c) => c.time >= openUnix)
+  if (sessionBars.length === 0) return []
+  let hi = -Infinity
+  let lo = Infinity
+  for (const c of sessionBars) {
+    if (c.high > hi) hi = c.high
+    if (c.low < lo) lo = c.low
+  }
+  if (!Number.isFinite(hi) || !Number.isFinite(lo) || !(hi > lo)) return []
   return [
     {
-      level: ib.high,
+      level: Math.round(hi * 100) / 100,
       type: 'resistance',
-      conviction: 6,
-      reasoning: `Initial Balance high (first ${ibMinutes}m) — IB context box, not an entry magnet. First tag is not the entry.`,
+      conviction: 8,
+      reasoning: 'Excess Selling High — responsive sellers entered defending upper extreme.',
       source: 'structure',
       rank: 'watch',
     },
     {
-      level: ib.low,
+      level: Math.round(lo * 100) / 100,
       type: 'support',
-      conviction: 6,
-      reasoning: `Initial Balance low (first ${ibMinutes}m) — IB context box, not an entry magnet. First tag is not the entry.`,
+      conviction: 8,
+      reasoning: 'Excess Buying Low — responsive buyers entered defending lower extreme.',
       source: 'structure',
       rank: 'watch',
     },
   ]
+}
+
+export function initialBalanceLevelsFromCandles(
+  candles: DeskBar[],
+  openUnix: number,
+  _ibMinutes = 60,
+  nowUnix: number = Math.floor(Date.now() / 1000)
+): DeskLevel[] {
+  return excessLevelsFromCandles(candles, openUnix, nowUnix)
 }
 
 function liquiditySwingDeskLevels(
@@ -1464,26 +1480,30 @@ function liquiditySwingDeskLevels(
 export function mapAfternoonCandidates(rows: unknown[]): DeskLevel[] {
   if (!Array.isArray(rows)) return []
   const out: DeskLevel[] = []
-  for (const raw of rows) {
-    const r = raw as Record<string, unknown>
-    const level = Number(r.level)
-    if (!(level > 0)) continue
-    const type = String(r.candidate_type || r.original_type || 'support')
-    const play = String(r.play || 'WATCH')
-    const note = String(r.note || '')
+  for (const r of rows) {
+    if (!r || typeof r !== 'object') continue
+    const row = r as Record<string, unknown>
+    const level = Number(row.level)
+    if (!Number.isFinite(level) || !(level > 0)) continue
+    const type: DeskLevel['type'] =
+      row.type === 'support' || row.direction === 'LONG' ? 'support' : 'resistance'
+    const reasoning =
+      typeof row.reasoning === 'string' && row.reasoning.trim()
+        ? row.reasoning.trim()
+        : `Morning review ${String(row.type || 'level')} candidate`
+    const isFlip = String(row.play || '').toUpperCase() === 'FLIP'
+    const isRetest = String(row.play || '').toUpperCase() === 'RETEST'
+    const defaultConviction = isFlip ? 9 : isRetest ? 8 : 7
+    const defaultRank: DeskLevel['rank'] = isFlip ? 'primary' : 'watch'
+    const rank: DeskLevel['rank'] =
+      row.rank === 'primary' || row.rank === 'watch' ? row.rank : defaultRank
     out.push({
       level: Math.round(level * 100) / 100,
       type,
-      conviction: play === 'FLIP' ? 9 : 8,
-      reasoning:
-        note ||
-        (play === 'FLIP'
-          ? 'Morning break — flipped for afternoon watch'
-          : 'Morning hold — retest candidate into cash close'),
+      conviction: Math.min(10, Math.max(1, Number(row.conviction) || defaultConviction)),
+      reasoning,
       source: 'ai',
-      rank: play === 'FLIP' ? 'primary' : 'watch',
-      marketVerdict: play === 'FLIP' ? 'broken' : 'respected',
-      marketOutcome: play === 'FLIP' ? 'broke' : 'held',
+      rank,
     })
   }
   return out
@@ -1495,8 +1515,7 @@ function nearPrice(a: number, b: number, tolPct = 0.0008): boolean {
 }
 
 /**
- * Afternoon watch playbook: morning reaction candidates + IB + refreshed AI,
- * ranked for viewing only (no trading).
+ * Merge afternoon level candidates into a sorted DeskLevel[] + DeskPlaybook.
  */
 export function resolveAfternoonDeskLevels(
   aiRows: unknown[],
@@ -1509,12 +1528,7 @@ export function resolveAfternoonDeskLevels(
 ): { levels: DeskLevel[]; source: 'ai' | 'structure'; playbook: DeskPlaybook } {
   const fromReview = mapAfternoonCandidates(afternoonCandidates)
   const ai = mapAiLevels(aiRows)
-  const ib = initialBalanceLevelsFromCandles(candles, openUnix, 60, nowUnix)
-  const ibRange = computeInitialBalance(candles, openUnix, nowUnix, 60)
-  const liq = liquiditySwingDeskLevels(candles, ibRange)
-  // Structure levels include: bait stop pools, AVWAP bands, round handles,
-  // post-open rejection tails (morning + lunch wicks), opening drive range,
-  // and multi-day polarity flips — all critical for afternoon context.
+  const excess = excessLevelsFromCandles(candles, openUnix, nowUnix)
   const structure = structureLevelsFromCandles(candles, openUnix, timeZone)
 
   const merged: DeskLevel[] = []
@@ -1523,13 +1537,10 @@ export function resolveAfternoonDeskLevels(
     merged.push(l)
   }
 
-  // Priority: morning reaction → AI → liquidity swing → IB box (watch) → structure
+  // Priority: morning reaction → AI → Excess Selling/Buying → structure
   for (const l of fromReview) pushUnique(l)
   for (const l of ai) pushUnique(l)
-  for (const l of liq) pushUnique(l)
-  for (const l of ib) pushUnique(l)
-  // Always include structure for afternoon — it contains post-open tails, opening
-  // drive range, and polarity flips that are essential for afternoon continuation.
+  for (const l of excess) pushUnique(l)
   for (const l of structure) pushUnique(l)
 
   const tip =
@@ -1541,14 +1552,13 @@ export function resolveAfternoonDeskLevels(
 
   // ── Full afternoon pipeline (same rigor as morning) ──
   // 1. Drop levels already penetrated by morning + lunch price action
-  //    EXCEPTION: IB levels are exempt — they ARE the intraday high/low and
-  //    must always be present for afternoon break/hold analysis.
-  const ibPrices = new Set(ib.map((l) => l.level))
-  const keepPrices = new Set([...ibPrices, ...liq.map((l) => l.level)])
-  const nonIb = merged.filter((l) => !keepPrices.has(l.level))
-  const ibKept = merged.filter((l) => keepPrices.has(l.level))
-  const unspentNonIb = dropPenetratedMorningLevels(nonIb, candles, openUnix)
-  const raw = [...unspentNonIb, ...ibKept]
+  //    EXCEPTION: Excess levels are exempt — they ARE the session extremes
+  //    and must always be present for afternoon rotation analysis.
+  const excessPrices = new Set(excess.map((l) => l.level))
+  const nonExcess = merged.filter((l) => !excessPrices.has(l.level))
+  const excessKept = merged.filter((l) => excessPrices.has(l.level))
+  const unspentNonExcess = dropPenetratedMorningLevels(nonExcess, candles, openUnix)
+  const raw = [...unspentNonExcess, ...excessKept]
 
   // 2. Normalize sides by current live price (support above price → resistance, etc.)
   const normalized = normalizeLevelsByLivePrice(raw, tip)
