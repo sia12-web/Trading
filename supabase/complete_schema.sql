@@ -2,6 +2,68 @@
 -- Generated on: 2026-09-08T19:04:47.322Z
 
 -- ==========================================
+-- ==========================================
+-- 0. Core Extensions & Base Tables
+-- ==========================================
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Core profiles table
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT,
+  trading_mode TEXT NOT NULL DEFAULT 'paper' CHECK (trading_mode IN ('paper', 'live')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "profiles_all_access" ON public.profiles;
+CREATE POLICY "profiles_all_access" ON public.profiles FOR ALL USING (true) WITH CHECK (true);
+
+-- Default desk/dev user profile so foreign keys succeed immediately
+INSERT INTO public.profiles (id, email, trading_mode)
+VALUES ('00000000-0000-0000-0000-000000000001', 'desk@local', 'paper')
+ON CONFLICT (id) DO NOTHING;
+
+-- Core sessions table
+CREATE TABLE IF NOT EXISTS public.sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  index_recommendation TEXT,
+  prep_notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.sessions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "sessions_all_access" ON public.sessions;
+CREATE POLICY "sessions_all_access" ON public.sessions FOR ALL USING (true) WITH CHECK (true);
+
+-- Core positions table (legacy / paper mode)
+CREATE TABLE IF NOT EXISTS public.positions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+  instrument TEXT,
+  is_paper_trading BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.positions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "positions_all_access" ON public.positions;
+CREATE POLICY "positions_all_access" ON public.positions FOR ALL USING (true) WITH CHECK (true);
+
+-- Migration tracking table
+CREATE TABLE IF NOT EXISTS public.schema_migrations (
+  version TEXT PRIMARY KEY,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.schema_migrations ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "schema_migrations_all_access" ON public.schema_migrations;
+CREATE POLICY "schema_migrations_all_access" ON public.schema_migrations FOR ALL USING (true) WITH CHECK (true);
+
+
 -- Migration: 20260517_create_identified_levels.sql
 -- ==========================================
 -- Core table for Level Finder session outputs (was referenced but never created)
@@ -48,13 +110,13 @@ CREATE POLICY "identified_levels_update"
 
 -- Add trading_mode to profiles table (user's default preference)
 ALTER TABLE profiles
-ADD COLUMN trading_mode TEXT NOT NULL DEFAULT 'paper' CHECK (trading_mode IN ('paper', 'live'));
+ADD COLUMN IF NOT EXISTS trading_mode TEXT NOT NULL DEFAULT 'paper' CHECK (trading_mode IN ('paper', 'live'));
 
 CREATE INDEX idx_profiles_trading_mode ON profiles(trading_mode);
 
 -- Add is_paper_trading to positions table (per-position override)
 ALTER TABLE positions
-ADD COLUMN is_paper_trading BOOLEAN NOT NULL DEFAULT TRUE;
+ADD COLUMN IF NOT EXISTS is_paper_trading BOOLEAN NOT NULL DEFAULT TRUE;
 
 CREATE INDEX idx_positions_is_paper_trading ON positions(user_id, is_paper_trading);
 
