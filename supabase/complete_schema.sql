@@ -1,7 +1,3 @@
--- Combined Schema for Trading Platform
--- Generated on: 2026-09-08T19:04:47.322Z
-
--- ==========================================
 -- ==========================================
 -- 0. Core Extensions & Base Tables
 -- ==========================================
@@ -52,6 +48,39 @@ CREATE TABLE IF NOT EXISTS public.positions (
 ALTER TABLE public.positions ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "positions_all_access" ON public.positions;
 CREATE POLICY "positions_all_access" ON public.positions FOR ALL USING (true) WITH CHECK (true);
+
+-- Core trades_journal table (referenced by management_decisions and other models)
+CREATE TABLE IF NOT EXISTS public.trades_journal (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+  instrument TEXT NOT NULL DEFAULT 'DOW',
+  trade_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  entry_window SMALLINT NOT NULL DEFAULT 1,
+  entry_timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  entry_price DECIMAL(12, 2) NOT NULL DEFAULT 0,
+  entry_direction TEXT NOT NULL DEFAULT 'LONG',
+  stop_loss_price DECIMAL(12, 2) NOT NULL DEFAULT 0,
+  stop_loss_hit_at TIMESTAMPTZ,
+  stop_loss_hit_count SMALLINT DEFAULT 0,
+  position_size DECIMAL(12, 4) NOT NULL DEFAULT 1,
+  risk_amount DECIMAL(12, 2) NOT NULL DEFAULT 0,
+  account_size DECIMAL(12, 2) NOT NULL DEFAULT 50000,
+  exit_timestamp TIMESTAMPTZ,
+  exit_price DECIMAL(12, 2),
+  exit_reason TEXT,
+  profit_loss DECIMAL(12, 2),
+  profit_loss_percent DECIMAL(7, 2),
+  regime TEXT,
+  regime_confidence SMALLINT,
+  best_level_break_confidence SMALLINT,
+  best_break_level DECIMAL(12, 2),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.trades_journal ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "trades_journal_all_access" ON public.trades_journal;
+CREATE POLICY "trades_journal_all_access" ON public.trades_journal FOR ALL USING (true) WITH CHECK (true);
 
 -- Migration tracking table
 CREATE TABLE IF NOT EXISTS public.schema_migrations (
