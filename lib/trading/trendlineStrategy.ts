@@ -25,6 +25,7 @@ import type {
   SessionVolumeProfile,
 } from '@/lib/chart/context55'
 import type { UserTrendline } from '@/lib/trading/userDrawings'
+import { nyDeskSessionAt } from '@/lib/chart/sessionVwap'
 
 export interface TrendBorningChartContext {
   yesterday?: YesterdayNycSession | null
@@ -46,6 +47,10 @@ export interface TrendBorningFactorBreakdown {
     isBelowYpoc: boolean
     isBelowOnPoc: boolean
     isBelow5dPoc: boolean
+    isAboveYpoc?: boolean
+    isAboveOnPoc?: boolean
+    isAbove5dPoc?: boolean
+    direction?: 'LONG' | 'SHORT'
   }
   volumeQuality: {
     score: number
@@ -135,7 +140,9 @@ export interface TrendBorningZoneResult {
     time: number
     price: number
     candleIndex: number
+    type?: 'LOW' | 'HIGH'
   }
+  direction?: 'LONG' | 'SHORT'
   structuralZone: TrendBorningZoneRange
   compositeScore: number
   baseScore?: number
@@ -152,16 +159,17 @@ export interface HigherLowPivot {
   candleIndex: number
   elapsedSecFromOrigin: number
   elapsedMinutesFromOrigin: number
-  timingLabel: string // e.g. "T0", "T+15m", "T+20m"
+  timingLabel: string // e.g. "T0", "HL1 (T+15m)", "LH1 (T+15m)"
 }
 
 export interface DynamicResponsiveTrendline {
-  origin: { time: number; price: number }
+  origin: { time: number; price: number; type?: 'LOW' | 'HIGH' }
+  direction?: 'LONG' | 'SHORT'
   compositeScore: number
   baseSlopePtsPer5m: number
   effectiveSlopePtsPer5m: number
   slopePtsPerSec: number
-  higherLows: HigherLowPivot[]
+  higherLows: HigherLowPivot[] // Contains Higher Lows for Long, or Lower Highs for Short
   consecutiveStallBars: number
   stallPenaltyScore: number
   volumeDecayPenalty: number
@@ -174,6 +182,8 @@ export interface DynamicResponsiveTrendline {
 }
 
 export interface TrendlineBreakoutCheck {
+  direction?: 'LONG' | 'SHORT'
+  trendlineDirection?: 'BEARISH' | 'BULLISH'
   isCrossed: boolean
   isConfirmed5mClose: boolean
   breakoutCandle: Candle | null
@@ -189,19 +199,47 @@ export interface TrendlineBreakoutCheck {
 export interface TrendlineExitCheck {
   shouldExit: boolean
   isConfirmed5mCloseBelow: boolean
+  isConfirmed5mCloseAbove?: boolean
+  direction?: 'LONG' | 'SHORT'
   lastCandle: Candle | null
   projectedTrendlinePrice: number
   exitPrice: number | null
   reason: string
 }
 
+export interface SessionTrendlineDetectionResult {
+  activeUnbrokenTrendline: UserTrendline | null
+  overnightBreakCount: number
+  brokenTrendlines: UserTrendline[]
+  sessionState: 'OVERNIGHT_MONITORING' | 'NYC_SESSION_ARMED' | 'HALT'
+  currentSession: 'Asia' | 'London' | 'NYC' | 'DEAD_ZONE'
+  allPivots: { time: number; price: number; type: 'HIGH' | 'LOW'; session: string }[]
+  summary: string
+}
+
+export interface ChopShieldEvaluation {
+  isChopShieldActive: boolean
+  minScoreRequired: number
+  alternatingBreakCount: number
+  stallPenaltyMultiplier: number
+  reason: string
+}
+
 /**
- * 1. Evaluates whether price has crossed a bearish trendline and confirmed with a 5m candle close.
+ * 1. Evaluates whether price has crossed a trendline (bearish or bullish) and confirmed with a 5m candle close.
+ * - Bearish trendline (pDiff < 0): triggers LONG entry on confirmed close ABOVE the line.
+ * - Bullish trendline (pDiff > 0): triggers SHORT entry on confirmed close BELOW the line.
  */
 export function checkTrendlineBreakout(
   trendline: UserTrendline,
   bars: Candle[],
-  options?: { fixedTpPts?: number }
+  options?: {
+    fixedTpPts?: number
+    direction?: 'LONG' | 'SHORT'
+    minBreakoutTime?: number
+    currentTimeSec?: number
+    barDurationSec?: number
+  }
 ): TrendlineBreakoutCheck {
   const result: TrendlineBreakoutCheck = {
     isCrossed: false,
@@ -218,18 +256,29 @@ export function checkTrendlineBreakout(
 
   if (!bars || bars.length === 0 || !trendline) return result
 
-  const p1 = trendline.p1
-  const p2 = trendline.p2
+  // Chronologically normalize anchor points: P1 must be earlier in time than P2
+  let p1 = trendline.p1
+  let p2 = trendline.p2
+  if (p1.time > p2.time) {
+    p1 = trendline.p2
+    p2 = trendline.p1
+  }
+
   const tDiffSec = p2.time - p1.time
   const pDiff = p2.price - p1.price
 
-  // Must be descending bearish trendline
-  if (tDiffSec <= 0 || pDiff >= 0) return result
+  // Must have a non-zero time difference and price difference
+  if (tDiffSec <= 0 || pDiff === 0) return result
+
+  const isBearish = pDiff < 0
+  const dir: 'LONG' | 'SHORT' = options?.direction ?? (isBearish ? 'LONG' : 'SHORT')
+  result.direction = dir
+  result.trendlineDirection = isBearish ? 'BEARISH' : 'BULLISH'
 
   const slopePtsPerSec = pDiff / tDiffSec
-
-  // Find the first 5-minute candle that closes strictly ABOVE the trendline after p2 or during the segment
-  const evalStartSec = Math.min(p1.time, p2.time)
+  // Breakouts occur strictly after the right anchor point P2, and on or after minBreakoutTime
+  const evalStartSec = Math.max(p2.time, options?.minBreakoutTime ?? 0)
+  const barDuration = options?.barDurationSec ?? 300
 
   for (let i = 0; i < bars.length; i++) {
     const b = bars[i]!
@@ -237,33 +286,74 @@ export function checkTrendlineBreakout(
 
     const trendlinePriceAtBar = p1.price + slopePtsPerSec * (b.time - p1.time)
 
-    // Intrabar high crossed the trendline
-    if (b.high > trendlinePriceAtBar) {
-      result.isCrossed = true
-    }
+    // A candle is only confirmed closed if a subsequent candle exists or its 5m duration has elapsed
+    const isCompletedBar =
+      i < bars.length - 1 ||
+      options?.currentTimeSec == null ||
+      options.currentTimeSec >= b.time + barDuration
 
-    // Strict 5-minute bar close confirmation above the trendline
-    if (b.close > trendlinePriceAtBar) {
-      result.isConfirmed5mClose = true
-      result.breakoutCandle = b
-      result.breakoutCandleIndex = i
-      result.entryPrice = b.close
-      result.trendlineProjectedAtBreakout = Number(trendlinePriceAtBar.toFixed(2))
+    if (dir === 'LONG') {
+      // Bearish trendline being broken to upside by buyers
+      if (b.high > trendlinePriceAtBar) {
+        result.isCrossed = true
+      }
 
-      // Default Stop Loss: Placed below the low of the candle that crossed/broke the trendline
-      // With 1.0 pt safety buffer
-      const sl = Number((b.low - 1.0).toFixed(2))
-      result.defaultStopLoss = sl
+      // Strict 5-minute bar close confirmation ABOVE the trendline
+      if (b.close > trendlinePriceAtBar) {
+        if (!isCompletedBar) {
+          // Bar is still actively forming (tick crossed, but bar close is not yet confirmed)
+          continue
+        }
 
-      const riskPts = Math.max(1.0, b.close - sl)
-      result.riskPts = Number(riskPts.toFixed(2))
+        result.isConfirmed5mClose = true
+        result.breakoutCandle = b
+        result.breakoutCandleIndex = i
+        result.entryPrice = b.close
+        result.trendlineProjectedAtBreakout = Number(trendlinePriceAtBar.toFixed(2))
 
-      const fixedTp = options?.fixedTpPts ?? 50.0
-      result.defaultTakeProfitFixed50 = Number((b.close + fixedTp).toFixed(2))
-      result.defaultTakeProfit1to2 = Number((b.close + riskPts * 2).toFixed(2))
+        // Default Stop Loss: Placed below the low of the candle that broke the trendline (1.0 pt safety buffer)
+        const sl = Number((b.low - 1.0).toFixed(2))
+        result.defaultStopLoss = sl
 
-      // Stop searching at first confirmed breakout bar
-      break
+        const riskPts = Math.max(1.0, b.close - sl)
+        result.riskPts = Number(riskPts.toFixed(2))
+
+        const fixedTp = options?.fixedTpPts ?? 50.0
+        result.defaultTakeProfitFixed50 = Number((b.close + fixedTp).toFixed(2))
+        result.defaultTakeProfit1to2 = Number((b.close + riskPts * 2).toFixed(2))
+        break
+      }
+    } else {
+      // Bullish trendline being broken to downside by sellers (SHORT)
+      if (b.low < trendlinePriceAtBar) {
+        result.isCrossed = true
+      }
+
+      // Strict 5-minute bar close confirmation BELOW the trendline
+      if (b.close < trendlinePriceAtBar) {
+        if (!isCompletedBar) {
+          // Bar is still actively forming (tick crossed, but bar close is not yet confirmed)
+          continue
+        }
+
+        result.isConfirmed5mClose = true
+        result.breakoutCandle = b
+        result.breakoutCandleIndex = i
+        result.entryPrice = b.close
+        result.trendlineProjectedAtBreakout = Number(trendlinePriceAtBar.toFixed(2))
+
+        // Default Stop Loss for Short: Placed above the high of the candle that broke the trendline (+1.0 pt)
+        const sl = Number((b.high + 1.0).toFixed(2))
+        result.defaultStopLoss = sl
+
+        const riskPts = Math.max(1.0, sl - b.close)
+        result.riskPts = Number(riskPts.toFixed(2))
+
+        const fixedTp = options?.fixedTpPts ?? 50.0
+        result.defaultTakeProfitFixed50 = Number((b.close - fixedTp).toFixed(2))
+        result.defaultTakeProfit1to2 = Number((b.close - riskPts * 2).toFixed(2))
+        break
+      }
     }
   }
 
@@ -271,113 +361,203 @@ export function checkTrendlineBreakout(
 }
 
 /**
- * 2. Find the absolute lowest pivot low under the broken bearish trendline ("Initiating Point").
+ * 2. Find the Initiating Point of the Trend-Borning Zone:
+ * - For LONG: Absolute lowest pivot low under the broken bearish line.
+ * - For SHORT: Absolute highest pivot high under/around the broken bullish line.
  */
 export function findInitiatingPoint(
   trendline: UserTrendline,
   bars: Candle[],
-  breakoutIndex: number
-): { time: number; price: number; candleIndex: number } | null {
-  if (!bars || bars.length === 0 || breakoutIndex <= 0) return null
+  breakoutIndex: number,
+  options?: { direction?: 'LONG' | 'SHORT' }
+): { time: number; price: number; candleIndex: number; type: 'LOW' | 'HIGH' } | null {
+  if (!bars || bars.length === 0 || breakoutIndex < 0) return null
 
+  const pDiff = trendline.p2.price - trendline.p1.price
+  const dir: 'LONG' | 'SHORT' = options?.direction ?? (pDiff < 0 ? 'LONG' : 'SHORT')
   const p1Time = Math.min(trendline.p1.time, trendline.p2.time)
-  let lowestPrice = Infinity
-  let lowestIndex = -1
-  let lowestTime = 0
 
-  for (let i = 0; i <= breakoutIndex; i++) {
-    const b = bars[i]!
-    if (b.time >= p1Time) {
-      if (b.low < lowestPrice) {
-        lowestPrice = b.low
-        lowestIndex = i
-        lowestTime = b.time
-      }
-    }
-  }
+  if (dir === 'LONG') {
+    let lowestPrice = Infinity
+    let lowestIndex = -1
+    let lowestTime = 0
 
-  if (lowestIndex === -1) {
-    // Fallback: examine last 20 bars prior to breakout
-    const start = Math.max(0, breakoutIndex - 20)
-    for (let i = start; i <= breakoutIndex; i++) {
+    for (let i = 0; i <= breakoutIndex; i++) {
       const b = bars[i]!
-      if (b.low < lowestPrice) {
-        lowestPrice = b.low
-        lowestIndex = i
-        lowestTime = b.time
+      if (b.time >= p1Time) {
+        if (b.low < lowestPrice) {
+          lowestPrice = b.low
+          lowestIndex = i
+          lowestTime = b.time
+        }
       }
     }
-  }
 
-  if (lowestIndex === -1 || !Number.isFinite(lowestPrice)) return null
+    if (lowestIndex === -1) {
+      // Fallback: examine last 20 bars prior to breakout
+      const start = Math.max(0, breakoutIndex - 20)
+      for (let i = start; i <= breakoutIndex; i++) {
+        const b = bars[i]!
+        if (b.low < lowestPrice) {
+          lowestPrice = b.low
+          lowestIndex = i
+          lowestTime = b.time
+        }
+      }
+    }
 
-  return {
-    time: lowestTime,
-    price: Number(lowestPrice.toFixed(2)),
-    candleIndex: lowestIndex,
+    if (lowestIndex === -1 || !Number.isFinite(lowestPrice)) return null
+
+    return {
+      time: lowestTime,
+      price: Number(lowestPrice.toFixed(2)),
+      candleIndex: lowestIndex,
+      type: 'LOW',
+    }
+  } else {
+    // SHORT: Find highest pivot high under/around the broken line
+    let highestPrice = -Infinity
+    let highestIndex = -1
+    let highestTime = 0
+
+    for (let i = 0; i <= breakoutIndex; i++) {
+      const b = bars[i]!
+      if (b.time >= p1Time) {
+        if (b.high > highestPrice) {
+          highestPrice = b.high
+          highestIndex = i
+          highestTime = b.time
+        }
+      }
+    }
+
+    if (highestIndex === -1) {
+      // Fallback: examine last 20 bars prior to breakout
+      const start = Math.max(0, breakoutIndex - 20)
+      for (let i = start; i <= breakoutIndex; i++) {
+        const b = bars[i]!
+        if (b.high > highestPrice) {
+          highestPrice = b.high
+          highestIndex = i
+          highestTime = b.time
+        }
+      }
+    }
+
+    if (highestIndex === -1 || !Number.isFinite(highestPrice)) return null
+
+    return {
+      time: highestTime,
+      price: Number(highestPrice.toFixed(2)),
+      candleIndex: highestIndex,
+      type: 'HIGH',
+    }
   }
 }
 
 /**
- * 3. 7-Factor Institutional Scoring Engine for the "Bullish Trend-Borning Zone".
+ * 3. 7-Factor Institutional Scoring Engine for Trend-Borning Zones (Bullish Long or Bearish Short).
  */
 export function evaluateTrendBorningZone(params: {
-  initiatingPoint: { time: number; price: number; candleIndex: number }
+  initiatingPoint: { time: number; price: number; candleIndex: number; type?: 'LOW' | 'HIGH' }
   bars: Candle[]
   chartContext?: TrendBorningChartContext | null
   orderFlowAbsorption?: boolean
+  direction?: 'LONG' | 'SHORT'
 }): TrendBorningZoneResult {
   const { initiatingPoint, bars, chartContext, orderFlowAbsorption } = params
+  const dir: 'LONG' | 'SHORT' = params.direction ?? (initiatingPoint.type === 'HIGH' ? 'SHORT' : 'LONG')
   const idx = initiatingPoint.candleIndex
   const originPrice = initiatingPoint.price
   const originTime = initiatingPoint.time
 
   // ── FACTOR 1: Multi-Horizon POC Location (Max 25 pts) ──
-  // Checks if origin is below Yesterday POC (+10), Overnight POC (+8), and 5D POC (+7)
+  // For LONG: origin at or below Yesterday POC (+10), Overnight POC (+8), 5D POC (+7) (Discount Value)
+  // For SHORT: origin at or above Yesterday POC (+10), Overnight POC (+8), 5D POC (+7) (Premium Value)
   const pocDetails: string[] = []
   let pocScore = 0
   let isBelowYpoc = false
   let isBelowOnPoc = false
   let isBelow5dPoc = false
+  let isAboveYpoc = false
+  let isAboveOnPoc = false
+  let isAbove5dPoc = false
 
   const ypoc = chartContext?.yesterday?.poc
   const onPoc = chartContext?.overnight?.overnight?.poc ?? chartContext?.overnight?.asia?.poc
   const poc5d = chartContext?.frvp5d?.poc
 
-  if (ypoc && Number.isFinite(ypoc)) {
-    if (originPrice <= ypoc) {
-      pocScore += 10
-      isBelowYpoc = true
-      pocDetails.push(`Below Yesterday POC (${ypoc.toFixed(2)}) [+10 pts]`)
-    } else {
-      pocDetails.push(`Above Yesterday POC (${ypoc.toFixed(2)})`)
+  if (dir === 'LONG') {
+    if (ypoc && Number.isFinite(ypoc)) {
+      if (originPrice <= ypoc) {
+        pocScore += 10
+        isBelowYpoc = true
+        pocDetails.push(`Below Yesterday POC (${ypoc.toFixed(2)}) [+10 pts]`)
+      } else {
+        pocDetails.push(`Above Yesterday POC (${ypoc.toFixed(2)})`)
+      }
     }
-  }
 
-  if (onPoc && Number.isFinite(onPoc)) {
-    if (originPrice <= onPoc) {
-      pocScore += 8
-      isBelowOnPoc = true
-      pocDetails.push(`Below Overnight POC (${onPoc.toFixed(2)}) [+8 pts]`)
-    } else {
-      pocDetails.push(`Above Overnight POC (${onPoc.toFixed(2)})`)
+    if (onPoc && Number.isFinite(onPoc)) {
+      if (originPrice <= onPoc) {
+        pocScore += 8
+        isBelowOnPoc = true
+        pocDetails.push(`Below Overnight POC (${onPoc.toFixed(2)}) [+8 pts]`)
+      } else {
+        pocDetails.push(`Above Overnight POC (${onPoc.toFixed(2)})`)
+      }
     }
-  }
 
-  if (poc5d && Number.isFinite(poc5d)) {
-    if (originPrice <= poc5d) {
-      pocScore += 7
-      isBelow5dPoc = true
-      pocDetails.push(`Below 5-Day Composite POC (${poc5d.toFixed(2)}) [+7 pts]`)
-    } else {
-      pocDetails.push(`Above 5-Day Composite POC (${poc5d.toFixed(2)})`)
+    if (poc5d && Number.isFinite(poc5d)) {
+      if (originPrice <= poc5d) {
+        pocScore += 7
+        isBelow5dPoc = true
+        pocDetails.push(`Below 5-Day Composite POC (${poc5d.toFixed(2)}) [+7 pts]`)
+      } else {
+        pocDetails.push(`Above 5-Day Composite POC (${poc5d.toFixed(2)})`)
+      }
     }
-  }
 
-  // If no chartContext POC available, give baseline 15 pts if origin is at or below middle
-  if (!ypoc && !onPoc && !poc5d) {
-    pocScore = 15
-    pocDetails.push('Baseline Discount Zone (+15 pts default)')
+    if (!ypoc && !onPoc && !poc5d) {
+      pocScore = 15
+      pocDetails.push('Baseline Discount Zone (+15 pts default)')
+    }
+  } else {
+    // SHORT: Premium location above POCs
+    if (ypoc && Number.isFinite(ypoc)) {
+      if (originPrice >= ypoc) {
+        pocScore += 10
+        isAboveYpoc = true
+        pocDetails.push(`Above Yesterday POC (${ypoc.toFixed(2)}) [+10 pts]`)
+      } else {
+        pocDetails.push(`Below Yesterday POC (${ypoc.toFixed(2)})`)
+      }
+    }
+
+    if (onPoc && Number.isFinite(onPoc)) {
+      if (originPrice >= onPoc) {
+        pocScore += 8
+        isAboveOnPoc = true
+        pocDetails.push(`Above Overnight POC (${onPoc.toFixed(2)}) [+8 pts]`)
+      } else {
+        pocDetails.push(`Below Overnight POC (${onPoc.toFixed(2)})`)
+      }
+    }
+
+    if (poc5d && Number.isFinite(poc5d)) {
+      if (originPrice >= poc5d) {
+        pocScore += 7
+        isAbove5dPoc = true
+        pocDetails.push(`Above 5-Day Composite POC (${poc5d.toFixed(2)}) [+7 pts]`)
+      } else {
+        pocDetails.push(`Below 5-Day Composite POC (${poc5d.toFixed(2)})`)
+      }
+    }
+
+    if (!ypoc && !onPoc && !poc5d) {
+      pocScore = 15
+      pocDetails.push('Baseline Premium Zone (+15 pts default)')
+    }
   }
 
   pocScore = Math.min(25, Math.max(0, pocScore))
@@ -411,7 +591,7 @@ export function evaluateTrendBorningZone(params: {
     rvol = Number((clusterVolume / Math.max(1, avgVolume)).toFixed(2))
   }
 
-  // ── Structural Trend-Borning Zone & Historical Support Level Comparison ──
+  // ── Structural Trend-Borning Zone & Historical Level Comparison ──
   const zoneSpan = originPrice > 10000 ? 20.0 : originPrice > 1000 ? 5.0 : 0.5
   const zoneLow = Number((originPrice - zoneSpan).toFixed(2))
   const zoneHigh = Number((originPrice + zoneSpan).toFixed(2))
@@ -430,7 +610,6 @@ export function evaluateTrendBorningZone(params: {
   const zoneAvgVolume = zoneBarCount > 0 ? zoneTotalVolume / zoneBarCount : clusterVolume
 
   // Historical Support/Resistance Level Comparison:
-  // Look back at previous periods before this breakout where price interacted with [zoneLow, zoneHigh]
   let priorTouchVolumeSum = 0
   let priorTouchBarCount = 0
   if (bars && idx > 2) {
@@ -446,19 +625,20 @@ export function evaluateTrendBorningZone(params: {
 
   let historicalTestRatio: number | null = null
   let historicalComparisonScore = 0
-  let historicalComparisonDesc = 'No prior touches of zone in lookback'
+  const levelType = dir === 'LONG' ? 'support' : 'resistance'
+  let historicalComparisonDesc = `No prior touches of ${levelType} zone in lookback`
 
   if (priorTouchAvg > 0) {
     historicalTestRatio = Number((zoneAvgVolume / priorTouchAvg).toFixed(2))
     if (historicalTestRatio >= 1.25) {
       historicalComparisonScore = 4
-      historicalComparisonDesc = `Higher volume than prior support tests (+${Math.round((historicalTestRatio - 1) * 100)}% surge: Institutional Absorption)`
+      historicalComparisonDesc = `Higher volume than prior ${levelType} tests (+${Math.round((historicalTestRatio - 1) * 100)}% surge: Institutional Absorption)`
     } else if (historicalTestRatio <= 0.75) {
       historicalComparisonScore = -2
-      historicalComparisonDesc = `Lower volume than prior support tests (-${Math.round((1 - historicalTestRatio) * 100)}% drying: Weak Interest)`
+      historicalComparisonDesc = `Lower volume than prior ${levelType} tests (-${Math.round((1 - historicalTestRatio) * 100)}% drying: Weak Interest)`
     } else {
       historicalComparisonScore = 1
-      historicalComparisonDesc = `Volume aligned with prior support tests (${historicalTestRatio}x)`
+      historicalComparisonDesc = `Volume aligned with prior ${levelType} tests (${historicalTestRatio}x)`
     }
   }
 
@@ -502,40 +682,72 @@ export function evaluateTrendBorningZone(params: {
     const patResult: CandlestickPatternResult = detectCandlestickPatterns(bars, idx)
     const initBar = bars[idx]!
     const range = Math.max(0.0001, initBar.high - initBar.low)
-    const bottomWick = Math.min(initBar.open, initBar.close) - initBar.low
-    tailRatio = Number((bottomWick / range).toFixed(2))
 
-    if (patResult.buyingExcess || tailRatio >= 0.45) {
-      hasExcess = true
-      candleScore += 10
-      detectedPatternNames.push(`Buying Excess Tail (${Math.round(tailRatio * 100)}% wick)`)
-    }
+    if (dir === 'LONG') {
+      const bottomWick = Math.min(initBar.open, initBar.close) - initBar.low
+      tailRatio = Number((bottomWick / range).toFixed(2))
 
-    if (patResult.bullEng) {
-      candleScore += 10
-      detectedPatternNames.push('Bullish Engulfing')
-    } else if (patResult.hammer) {
-      candleScore += 10
-      detectedPatternNames.push('Hammer')
-    } else if (patResult.morningStar) {
-      candleScore += 10
-      detectedPatternNames.push('Morning Star')
-    } else if (patResult.piercing) {
-      candleScore += 8
-      detectedPatternNames.push('Piercing Line')
-    } else if (patResult.bullHarami) {
-      candleScore += 6
-      detectedPatternNames.push('Bullish Harami')
-    } else if (patResult.bullBelt) {
-      candleScore += 6
-      detectedPatternNames.push('Bullish Belt')
+      if (patResult.buyingExcess || tailRatio >= 0.45) {
+        hasExcess = true
+        candleScore += 10
+        detectedPatternNames.push(`Buying Excess Tail (${Math.round(tailRatio * 100)}% wick)`)
+      }
+
+      if (patResult.bullEng) {
+        candleScore += 10
+        detectedPatternNames.push('Bullish Engulfing')
+      } else if (patResult.hammer) {
+        candleScore += 10
+        detectedPatternNames.push('Hammer')
+      } else if (patResult.morningStar) {
+        candleScore += 10
+        detectedPatternNames.push('Morning Star')
+      } else if (patResult.piercing) {
+        candleScore += 8
+        detectedPatternNames.push('Piercing Line')
+      } else if (patResult.bullHarami) {
+        candleScore += 6
+        detectedPatternNames.push('Bullish Harami')
+      } else if (patResult.bullBelt) {
+        candleScore += 6
+        detectedPatternNames.push('Bullish Belt')
+      }
+    } else {
+      // SHORT: Rejection upper wick or bearish patterns
+      const topWick = initBar.high - Math.max(initBar.open, initBar.close)
+      tailRatio = Number((topWick / range).toFixed(2))
+
+      if (patResult.sellingExcess || tailRatio >= 0.45) {
+        hasExcess = true
+        candleScore += 10
+        detectedPatternNames.push(`Selling Excess Tail (${Math.round(tailRatio * 100)}% wick)`)
+      }
+
+      if (patResult.bearEng) {
+        candleScore += 10
+        detectedPatternNames.push('Bearish Engulfing')
+      } else if (patResult.shootingStar) {
+        candleScore += 10
+        detectedPatternNames.push('Shooting Star')
+      } else if (patResult.eveningStar) {
+        candleScore += 10
+        detectedPatternNames.push('Evening Star')
+      } else if (patResult.bearKick) {
+        candleScore += 8
+        detectedPatternNames.push('Bearish Kicker')
+      } else if (patResult.bearHarami) {
+        candleScore += 6
+        detectedPatternNames.push('Bearish Harami')
+      } else if (patResult.hangingMan) {
+        candleScore += 6
+        detectedPatternNames.push('Hanging Man')
+      }
     }
   }
 
   candleScore = Math.min(20, Math.max(3, candleScore))
 
   // ── FACTOR 4: Psychological Round Numbers (Max 10 pts) ──
-  // Century (.00) or Half-Century (.50) within +/- 5.0 pts
   const roundCentury = Math.round(originPrice / 100) * 100
   const distToCentury = Math.abs(originPrice - roundCentury)
 
@@ -563,7 +775,7 @@ export function evaluateTrendBorningZone(params: {
     roundDist = Number(distToHalfCentury.toFixed(2))
   }
 
-  // ── FACTOR 5: Long-Term Money (5-Month Anchored VWAP Support) (Max 15 pts) ──
+  // ── FACTOR 5: Long-Term Money (5-Month Anchored VWAP Support/Resistance) (Max 15 pts) ──
   const avwapBenchmark = chartContext?.avwap5m
   let avwapScore = 0
   let avwapPrice: number | null = null
@@ -575,15 +787,21 @@ export function evaluateTrendBorningZone(params: {
     const vwapVal = avwapBenchmark.vwap
     avwapPrice = vwapVal
     const distToVwap = Math.abs(originPrice - vwapVal)
-    const distToSigma1 = Math.abs(originPrice - (avwapBenchmark.sigma1Lower || vwapVal))
-    const distToSigma2 = Math.abs(originPrice - (avwapBenchmark.sigma2Lower || vwapVal))
+    const targetSigma = dir === 'LONG'
+      ? (avwapBenchmark.sigma1Lower || vwapVal)
+      : (avwapBenchmark.sigma1Upper || vwapVal)
+    const targetSigma2 = dir === 'LONG'
+      ? (avwapBenchmark.sigma2Lower || vwapVal)
+      : (avwapBenchmark.sigma2Upper || vwapVal)
+    const distToSigma1 = Math.abs(originPrice - targetSigma)
+    const distToSigma2 = Math.abs(originPrice - targetSigma2)
     const minDist = Math.min(distToVwap, distToSigma1, distToSigma2)
     avwapDist = Number(minDist.toFixed(2))
 
     if (minDist <= 15.0) {
       avwapScore = 15
       inBand = true
-      avwapDesc = `Aligned within ±15 pts of 5M AVWAP defense band (${minDist.toFixed(1)} pts)`
+      avwapDesc = `Aligned within ±15 pts of 5M AVWAP ${levelType} band (${minDist.toFixed(1)} pts)`
     } else if (minDist <= 30.0) {
       avwapScore = 8
       inBand = true
@@ -686,6 +904,10 @@ export function evaluateTrendBorningZone(params: {
       isBelowYpoc,
       isBelowOnPoc,
       isBelow5dPoc,
+      isAboveYpoc,
+      isAboveOnPoc,
+      isAbove5dPoc,
+      direction: dir,
     },
     volumeQuality: {
       score: volScore,
@@ -726,7 +948,9 @@ export function evaluateTrendBorningZone(params: {
       max: 5,
       hasRestingLiquidity: hasResting,
       deltaAbsorption: deltaAbs,
-      description: deltaAbs ? 'Delta Absorption / Trapped Sellers' : 'Resting Bid Confluence',
+      description: deltaAbs
+        ? dir === 'LONG' ? 'Delta Absorption / Trapped Sellers' : 'Delta Absorption / Trapped Buyers'
+        : dir === 'LONG' ? 'Resting Bid Confluence' : 'Resting Offer Confluence',
     },
     timeOfDay: {
       score: timeScore,
@@ -738,10 +962,11 @@ export function evaluateTrendBorningZone(params: {
     },
   }
 
-  const summary = `Borning Score ${compositeScore}/100 (${grade}) · POCs: ${pocScore}/25 · Vol: ${volScore}/20 · Candle: ${candleScore}/20 · Round: ${roundScore}/10 · 5M-AVWAP: ${avwapScore}/15 · Liq: ${liqScore}/5 · Time: ${timeScore}/5`
+  const summary = `${dir} Borning Score ${compositeScore}/100 (${grade}) · POCs: ${pocScore}/25 · Vol: ${volScore}/20 · Candle: ${candleScore}/20 · Round: ${roundScore}/10 · 5M-AVWAP: ${avwapScore}/15 · Liq: ${liqScore}/5 · Time: ${timeScore}/5`
 
   return {
     initiatingPoint,
+    direction: dir,
     structuralZone,
     compositeScore,
     grade,
@@ -752,30 +977,32 @@ export function evaluateTrendBorningZone(params: {
 }
 
 /**
- * 4. Detect Higher Lows formed after the initiating point and format their timing intervals (T0, T+15m, T+20m).
+ * 4. Detect swing pivots (Higher Lows for Long, Lower Highs for Short) formed after the initiating point
+ * and format their timing intervals (T0, T+15m, T+20m).
  */
-export function detectHigherLowsWithTiming(
-  origin: { time: number; price: number; candleIndex: number },
+export function detectSwingPivotsWithTiming(
+  origin: { time: number; price: number; candleIndex: number; type?: 'LOW' | 'HIGH' },
   bars: Candle[],
-  currentIndex = bars.length - 1
+  currentIndex = bars.length - 1,
+  direction: 'LONG' | 'SHORT' = 'LONG'
 ): HigherLowPivot[] {
-  const higherLows: HigherLowPivot[] = []
+  const pivots: HigherLowPivot[] = []
+  const isLong = direction === 'LONG'
 
   // Add origin as T0
-  higherLows.push({
+  pivots.push({
     time: origin.time,
     price: origin.price,
     candleIndex: origin.candleIndex,
     elapsedSecFromOrigin: 0,
     elapsedMinutesFromOrigin: 0,
-    timingLabel: 'T0 (Origin)',
+    timingLabel: isLong ? 'T0 (Origin)' : 'T0 (Origin High)',
   })
 
   if (!bars || bars.length === 0 || origin.candleIndex >= currentIndex) {
-    return higherLows
+    return pivots
   }
 
-  // Scan bars between origin and current for swing pivot lows (3-bar fractal low: low < prev.low && low < next.low)
   let lastPivotPrice = origin.price
   let pivotCounter = 1
 
@@ -784,34 +1011,61 @@ export function detectHigherLowsWithTiming(
     const curr = bars[i]!
     const next = bars[i + 1]!
 
-    const isSwingLow = curr.low < prev.low && curr.low < next.low
-    // Must be a HIGHER low than previous pivot
-    if (isSwingLow && curr.low > lastPivotPrice + 0.5) {
-      const elapsedSec = curr.time - origin.time
-      const elapsedMin = Math.round(elapsedSec / 60)
-      higherLows.push({
-        time: curr.time,
-        price: Number(curr.low.toFixed(2)),
-        candleIndex: i,
-        elapsedSecFromOrigin: elapsedSec,
-        elapsedMinutesFromOrigin: elapsedMin,
-        timingLabel: `HL${pivotCounter} (T+${elapsedMin}m)`,
-      })
-      lastPivotPrice = curr.low
-      pivotCounter++
+    if (isLong) {
+      const isSwingLow = curr.low < prev.low && curr.low < next.low
+      // Must be a HIGHER low than previous pivot
+      if (isSwingLow && curr.low > lastPivotPrice + 0.5) {
+        const elapsedSec = curr.time - origin.time
+        const elapsedMin = Math.round(elapsedSec / 60)
+        pivots.push({
+          time: curr.time,
+          price: Number(curr.low.toFixed(2)),
+          candleIndex: i,
+          elapsedSecFromOrigin: elapsedSec,
+          elapsedMinutesFromOrigin: elapsedMin,
+          timingLabel: `HL${pivotCounter} (T+${elapsedMin}m)`,
+        })
+        lastPivotPrice = curr.low
+        pivotCounter++
+      }
+    } else {
+      const isSwingHigh = curr.high > prev.high && curr.high > next.high
+      // Must be a LOWER high than previous pivot
+      if (isSwingHigh && curr.high < lastPivotPrice - 0.5) {
+        const elapsedSec = curr.time - origin.time
+        const elapsedMin = Math.round(elapsedSec / 60)
+        pivots.push({
+          time: curr.time,
+          price: Number(curr.high.toFixed(2)),
+          candleIndex: i,
+          elapsedSecFromOrigin: elapsedSec,
+          elapsedMinutesFromOrigin: elapsedMin,
+          timingLabel: `LH${pivotCounter} (T+${elapsedMin}m)`,
+        })
+        lastPivotPrice = curr.high
+        pivotCounter++
+      }
     }
   }
 
-  return higherLows
+  return pivots
+}
+
+export function detectHigherLowsWithTiming(
+  origin: { time: number; price: number; candleIndex: number; type?: 'LOW' | 'HIGH' },
+  bars: Candle[],
+  currentIndex = bars.length - 1
+): HigherLowPivot[] {
+  return detectSwingPivotsWithTiming(origin, bars, currentIndex, origin.type === 'HIGH' ? 'SHORT' : 'LONG')
 }
 
 /**
  * 5. Swing Volume Progression Engine:
  * Tracks consecutive swing highs and swing lows and their volume profile.
- * - If volume on swing highs is diminishing (drying up), buyers are exhausted:
+ * - If volume on swings is diminishing (drying up), participants are exhausted:
  *   a score penalty (-5 to -15 pts) is applied, and the dynamic trendline is steepened
  *   (+0.5 to +1.5 pts/5m) to push for a faster exit before a reversal catches the trader.
- * - If volume on swing highs is expanding, aggressive accumulation continues:
+ * - If volume on swings is expanding, aggressive participation continues:
  *   a score bonus (+5 to +10 pts) is awarded and the trendline maintains a healthy slope.
  */
 export function detectSwingVolumeProgression(
@@ -883,7 +1137,7 @@ export function detectSwingVolumeProgression(
         decayPercentage: expandPct,
         scoreDelta,
         slopeAccelerationPenalty: 0,
-        description: `Expanding volume on swing highs (+${expandPct}% surge: Institutional Accumulation). Maintaining healthy trend angle.`,
+        description: `Expanding volume on swing highs (+${expandPct}% surge: Institutional Continuation). Maintaining healthy trend angle.`,
       }
     }
   }
@@ -899,10 +1153,10 @@ export function detectSwingVolumeProgression(
 }
 
 /**
- * 6. Construct Dynamic Responsive Trendline with Stalling & Swing-Decay Engines.
+ * 6. Construct Dynamic Responsive Trendline with Stalling & Swing-Decay Engines (Long or Short).
  */
 export function calculateDynamicTrendline(params: {
-  origin: { time: number; price: number; candleIndex: number }
+  origin: { time: number; price: number; candleIndex?: number; type?: 'LOW' | 'HIGH' }
   compositeScore: number
   higherLows: HigherLowPivot[]
   currentPrice: number
@@ -910,11 +1164,14 @@ export function calculateDynamicTrendline(params: {
   bars: Candle[]
   structuralZone?: TrendBorningZoneRange
   swingVolumeProgression?: SwingVolumeProgression
+  direction?: 'LONG' | 'SHORT'
 }): DynamicResponsiveTrendline {
   const { origin, compositeScore, higherLows, currentPrice, currentTime, bars, structuralZone } = params
+  const dir: 'LONG' | 'SHORT' = params.direction ?? (origin.type === 'HIGH' ? 'SHORT' : 'LONG')
 
   // 1. Swing volume progression penalty/bonus:
-  const swingProgression = params.swingVolumeProgression ?? detectSwingVolumeProgression(bars, origin.candleIndex)
+  const originIdx = origin.candleIndex ?? 0
+  const swingProgression = params.swingVolumeProgression ?? detectSwingVolumeProgression(bars, originIdx)
   const volumeDecayPenalty = swingProgression.slopeAccelerationPenalty || 0
   const adjustedScore = Math.min(100, Math.max(0, compositeScore + swingProgression.scoreDelta))
 
@@ -926,11 +1183,9 @@ export function calculateDynamicTrendline(params: {
   const baseSlopePtsPer5m = Number((minSlopePtsPer5m + scoreNorm * (maxSlopePtsPer5m - minSlopePtsPer5m)).toFixed(2))
 
   // 3. Identify the active anchor point:
-  // Use the latest confirmed Higher Low if present; otherwise origin
   const activeAnchor = higherLows.length > 1 ? higherLows[higherLows.length - 1]! : higherLows[0]!
 
   // 4. Stalling / Sideways Range Detection:
-  // Check if price has failed to make progress over the last 3-6 bars (15-30 minutes)
   let consecutiveStallBars = 0
   const maxCheck = Math.min(6, bars.length)
 
@@ -941,7 +1196,6 @@ export function calculateDynamicTrendline(params: {
       const lowest = Math.min(...checkBars.map((b) => b.low))
       const rangePts = highest - lowest
 
-      // If range is compressed (< 15 pts on Dow/NQ or < 5 pts on Gold)
       const tightThreshold = currentPrice > 10000 ? 15.0 : currentPrice > 1000 ? 5.0 : 1.5
       if (rangePts <= tightThreshold) {
         consecutiveStallBars = count
@@ -951,17 +1205,21 @@ export function calculateDynamicTrendline(params: {
   }
 
   // 5. Calculate time-decay & volume-decay slope penalties:
-  // When market stalls, steepen/tighten slope upward toward price by 0.5 pts per stall bar
-  // When swing volume dries up, add volumeDecayPenalty to push exit faster
   const stallPenaltyScore = consecutiveStallBars * 0.5
-  const effectiveSlopePtsPer5m = Number((baseSlopePtsPer5m + stallPenaltyScore + volumeDecayPenalty).toFixed(2))
-  const slopePtsPerSec = effectiveSlopePtsPer5m / 300
+  let effectiveSlopePtsPer5m = Number((baseSlopePtsPer5m + stallPenaltyScore + volumeDecayPenalty).toFixed(2))
+  let slopePtsPerSec = effectiveSlopePtsPer5m / 300
+
+  if (dir === 'SHORT') {
+    // For Short, dynamic trendline slopes downwards above price
+    effectiveSlopePtsPer5m = -effectiveSlopePtsPer5m
+    slopePtsPerSec = effectiveSlopePtsPer5m / 300
+  }
 
   // 6. Projected price at current time
   const elapsedSec = Math.max(0, currentTime - activeAnchor.time)
   const currentProjectedPrice = Number((activeAnchor.price + slopePtsPerSec * elapsedSec).toFixed(2))
 
-  // Construct visual segment endpoints (p1 at active anchor, p2 projected into future +15m)
+  // Construct visual segment endpoints
   const p1 = { time: activeAnchor.time, price: activeAnchor.price }
   const p2 = {
     time: currentTime + 900, // +15 mins ahead
@@ -969,7 +1227,8 @@ export function calculateDynamicTrendline(params: {
   }
 
   return {
-    origin: { time: origin.time, price: origin.price },
+    origin: { time: origin.time, price: origin.price, type: origin.type },
+    direction: dir,
     compositeScore: adjustedScore,
     baseSlopePtsPer5m,
     effectiveSlopePtsPer5m,
@@ -988,16 +1247,20 @@ export function calculateDynamicTrendline(params: {
 }
 
 /**
- * 6. Checks if the latest completed 5-minute candle closed on the other side of the dynamic trendline (Exit Trigger).
+ * 7. Checks if the latest completed 5-minute candle closed on the other side of the dynamic trendline (Exit Trigger).
+ * - For LONG: Exit when 5m candle closes strictly BELOW ascending line.
+ * - For SHORT: Exit when 5m candle closes strictly ABOVE descending line.
  */
 export function checkDynamicTrendlineExit(
   dynamicTrendline: DynamicResponsiveTrendline,
-  completed5mBar: Candle
+  completed5mBar: Candle,
+  options?: { currentTimeSec?: number; barDurationSec?: number }
 ): TrendlineExitCheck {
   if (!dynamicTrendline || !completed5mBar) {
     return {
       shouldExit: false,
       isConfirmed5mCloseBelow: false,
+      isConfirmed5mCloseAbove: false,
       lastCandle: null,
       projectedTrendlinePrice: 0,
       exitPrice: null,
@@ -1005,22 +1268,345 @@ export function checkDynamicTrendlineExit(
     }
   }
 
+  const dir: 'LONG' | 'SHORT' = dynamicTrendline.direction ?? (dynamicTrendline.slopePtsPerSec >= 0 ? 'LONG' : 'SHORT')
   const p1 = dynamicTrendline.p1
   const slopePtsPerSec = dynamicTrendline.slopePtsPerSec
   const elapsedSec = Math.max(0, completed5mBar.time - p1.time)
   const projectedPrice = Number((p1.price + slopePtsPerSec * elapsedSec).toFixed(2))
 
-  // Must be a confirmed 5m bar close STRICTLY BELOW the dynamic responsive trendline
-  const isConfirmed5mCloseBelow = completed5mBar.close < projectedPrice
+  // Guard: Actively forming bar must NOT trigger dynamic trendline exit until 5m bar completes
+  const barDuration = options?.barDurationSec ?? 300
+  if (options?.currentTimeSec != null && options.currentTimeSec < completed5mBar.time + barDuration) {
+    return {
+      shouldExit: false,
+      isConfirmed5mCloseBelow: false,
+      isConfirmed5mCloseAbove: false,
+      direction: dir,
+      lastCandle: completed5mBar,
+      projectedTrendlinePrice: projectedPrice,
+      exitPrice: null,
+      reason: 'Active 5-minute candle still forming (awaiting confirmed close)',
+    }
+  }
+
+  if (dir === 'LONG') {
+    const isConfirmed5mCloseBelow = completed5mBar.close < projectedPrice
+    return {
+      shouldExit: isConfirmed5mCloseBelow,
+      isConfirmed5mCloseBelow,
+      isConfirmed5mCloseAbove: false,
+      direction: 'LONG',
+      lastCandle: completed5mBar,
+      projectedTrendlinePrice: projectedPrice,
+      exitPrice: isConfirmed5mCloseBelow ? completed5mBar.close : null,
+      reason: isConfirmed5mCloseBelow
+        ? `5-minute candle close confirmed below dynamic trendline (Close: ${completed5mBar.close.toFixed(2)} < Line: ${projectedPrice.toFixed(2)})`
+        : 'Price maintaining above dynamic trendline',
+    }
+  } else {
+    // SHORT: Exit when 5m candle closes strictly ABOVE the descending dynamic trendline
+    const isConfirmed5mCloseAbove = completed5mBar.close > projectedPrice
+    return {
+      shouldExit: isConfirmed5mCloseAbove,
+      isConfirmed5mCloseBelow: false,
+      isConfirmed5mCloseAbove,
+      direction: 'SHORT',
+      lastCandle: completed5mBar,
+      projectedTrendlinePrice: projectedPrice,
+      exitPrice: isConfirmed5mCloseAbove ? completed5mBar.close : null,
+      reason: isConfirmed5mCloseAbove
+        ? `5-minute candle close confirmed above dynamic trendline (Close: ${completed5mBar.close.toFixed(2)} > Line: ${projectedPrice.toFixed(2)})`
+        : 'Price maintaining below dynamic trendline',
+    }
+  }
+}
+
+/**
+ * Resamples any sequence of candles (e.g. 1-minute bars) into strictly aligned 5-minute (300s) candles.
+ * If bars are already 5-minute bars (delta >= 300s), returns deduplicated and sorted 5m candles.
+ */
+export function resampleCandlesTo5M(candles: Candle[]): Candle[] {
+  if (!candles || candles.length === 0) return []
+
+  const sorted = [...candles].sort((a, b) => a.time - b.time)
+  // Check if candles are already 5m bars (or larger)
+  if (sorted.length >= 2 && (sorted[1]!.time - sorted[0]!.time) >= 300) {
+    return sorted
+  }
+
+  const BUCKET = 300 // 5 minutes in seconds
+  const result: Candle[] = []
+  let cur: Candle | null = null
+  let bucketStart = -1
+
+  for (const c of sorted) {
+    const start = Math.floor(c.time / BUCKET) * BUCKET
+    if (!cur || start !== bucketStart) {
+      if (cur) result.push(cur)
+      bucketStart = start
+      cur = {
+        time: start,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume || 1,
+      }
+    } else {
+      cur.high = Math.max(cur.high, c.high)
+      cur.low = Math.min(cur.low, c.low)
+      cur.close = c.close
+      cur.volume = (cur.volume || 0) + (c.volume || 1)
+    }
+  }
+
+  if (cur) result.push(cur)
+  return result
+}
+
+/**
+ * 8. Multi-Session Trendline Pipeline (Asia 18:00 ET -> London 03:00 ET -> NYC 09:30 ET).
+ * Reconstructs unbroken trendlines across overnight sessions and presents the active unbroken trend entering NYC open.
+ */
+export function detectSessionTrendlines(
+  bars: Candle[],
+  options?: { currentUnix?: number; timeZone?: string }
+): SessionTrendlineDetectionResult {
+  const result: SessionTrendlineDetectionResult = {
+    activeUnbrokenTrendline: null,
+    overnightBreakCount: 0,
+    brokenTrendlines: [],
+    sessionState: 'HALT',
+    currentSession: 'DEAD_ZONE',
+    allPivots: [],
+    summary: 'No session bars available',
+  }
+
+  if (!bars || bars.length === 0) return result
+
+  const latestBar = bars[bars.length - 1]!
+  const curUnix = options?.currentUnix ?? latestBar.time
+
+  // Classify current session
+  const rawSess = nyDeskSessionAt(curUnix)
+  const currentSession: 'Asia' | 'London' | 'NYC' | 'DEAD_ZONE' =
+    rawSess === 'Asia' ? 'Asia' : rawSess === 'London' ? 'London' : rawSess === 'New York' ? 'NYC' : 'DEAD_ZONE'
+  result.currentSession = currentSession
+
+  if (currentSession === 'NYC') {
+    result.sessionState = 'NYC_SESSION_ARMED'
+  } else if (currentSession === 'Asia' || currentSession === 'London') {
+    result.sessionState = 'OVERNIGHT_MONITORING'
+  } else {
+    result.sessionState = 'HALT'
+  }
+
+  // Filter bars within the last 24-30h
+  const lookbackSec = 30 * 3600
+  const cutoffTime = curUnix - lookbackSec
+  const recentBars = bars.filter((b) => b.time >= cutoffTime)
+
+  if (recentBars.length < 5) {
+    result.summary = 'Insufficient bars in 24h lookback'
+    return result
+  }
+
+  // Detect 3-bar swing pivots in recent bars and tag their session
+  const pivots: { time: number; price: number; type: 'HIGH' | 'LOW'; session: string; barIndex: number }[] = []
+
+  for (let i = 1; i < recentBars.length - 1; i++) {
+    const prev = recentBars[i - 1]!
+    const curr = recentBars[i]!
+    const next = recentBars[i + 1]!
+    const barSess = nyDeskSessionAt(curr.time) ?? 'Overnight'
+
+    if (curr.high > prev.high && curr.high >= next.high) {
+      pivots.push({
+        time: curr.time,
+        price: curr.high,
+        type: 'HIGH',
+        session: barSess,
+        barIndex: i,
+      })
+    } else if (curr.low < prev.low && curr.low <= next.low) {
+      pivots.push({
+        time: curr.time,
+        price: curr.low,
+        type: 'LOW',
+        session: barSess,
+        barIndex: i,
+      })
+    }
+  }
+
+  result.allPivots = pivots.map((p) => ({ time: p.time, price: p.price, type: p.type, session: p.session }))
+
+  const swingHighs = pivots.filter((p) => p.type === 'HIGH')
+  const swingLows = pivots.filter((p) => p.type === 'LOW')
+
+  let activeTl: UserTrendline | null = null
+  let overnightBreaks = 0
+  const brokenTls: UserTrendline[] = []
+
+  // Helper to test if a candidate line gets broken by subsequent bars during overnight
+  const testBreak = (tl: UserTrendline, startIndex: number): { isBroken: boolean; breakBarIndex: number } => {
+    const pDiff = tl.p2.price - tl.p1.price
+    const tDiff = tl.p2.time - tl.p1.time
+    if (tDiff <= 0) return { isBroken: false, breakBarIndex: -1 }
+    const slope = pDiff / tDiff
+
+    for (let j = startIndex; j < recentBars.length; j++) {
+      const b = recentBars[j]!
+      if (b.time <= tl.p2.time) continue
+      const proj = tl.p1.price + slope * (b.time - tl.p1.time)
+
+      if (pDiff < 0 && b.close > proj) {
+        return { isBroken: true, breakBarIndex: j }
+      } else if (pDiff > 0 && b.close < proj) {
+        return { isBroken: true, breakBarIndex: j }
+      }
+    }
+    return { isBroken: false, breakBarIndex: -1 }
+  }
+
+  // 1. Evaluate descending swing high pairs (bearish trendlines)
+  if (swingHighs.length >= 2) {
+    for (let h = 0; h < swingHighs.length - 1; h++) {
+      const p1 = swingHighs[h]!
+      const p2 = swingHighs[h + 1]!
+      if (p2.price < p1.price) {
+        const sessOrigin = (p1.session === 'Asia' ? 'Asia' : p1.session === 'London' ? 'London' : 'NYC') as 'Asia' | 'London' | 'NYC'
+        const candidate: UserTrendline = {
+          id: `session-tl-${p1.time}`,
+          type: 'TRENDLINE',
+          p1: { time: p1.time, price: p1.price },
+          p2: { time: p2.time, price: p2.price },
+          sessionOrigin: sessOrigin,
+          isCarriedFromOvernight: sessOrigin !== 'NYC',
+          breakCountOvernight: overnightBreaks,
+          direction: 'BEARISH',
+          isAutoDetected: true,
+          color: '#ef4444',
+          label: `${sessOrigin} Bearish Line`,
+        }
+
+        const check = testBreak(candidate, p2.barIndex + 1)
+        if (check.isBroken) {
+          overnightBreaks++
+          candidate.breakCountOvernight = overnightBreaks
+          brokenTls.push(candidate)
+          activeTl = null
+        } else {
+          activeTl = candidate
+        }
+      }
+    }
+  }
+
+  // 2. If no unbroken bearish line, check ascending swing low pairs (bullish trendlines)
+  if (!activeTl && swingLows.length >= 2) {
+    for (let l = 0; l < swingLows.length - 1; l++) {
+      const p1 = swingLows[l]!
+      const p2 = swingLows[l + 1]!
+      if (p2.price > p1.price) {
+        const sessOrigin = (p1.session === 'Asia' ? 'Asia' : p1.session === 'London' ? 'London' : 'NYC') as 'Asia' | 'London' | 'NYC'
+        const candidate: UserTrendline = {
+          id: `session-tl-${p1.time}`,
+          type: 'TRENDLINE',
+          p1: { time: p1.time, price: p1.price },
+          p2: { time: p2.time, price: p2.price },
+          sessionOrigin: sessOrigin,
+          isCarriedFromOvernight: sessOrigin !== 'NYC',
+          breakCountOvernight: overnightBreaks,
+          direction: 'BULLISH',
+          isAutoDetected: true,
+          color: '#22c55e',
+          label: `${sessOrigin} Bullish Line`,
+        }
+
+        const check = testBreak(candidate, p2.barIndex + 1)
+        if (check.isBroken) {
+          overnightBreaks++
+          candidate.breakCountOvernight = overnightBreaks
+          brokenTls.push(candidate)
+          activeTl = null
+        } else {
+          activeTl = candidate
+        }
+      }
+    }
+  }
+
+  result.activeUnbrokenTrendline = activeTl
+  result.overnightBreakCount = overnightBreaks
+  result.brokenTrendlines = brokenTls
+
+  const sessLabel = currentSession === 'NYC' ? 'NYC Cash Session' : `${currentSession} Session`
+  const tlStatus = activeTl
+    ? `Active ${activeTl.direction} Line from ${activeTl.sessionOrigin} (Overnight breaks: ${overnightBreaks})`
+    : `No unbroken line (Overnight breaks: ${overnightBreaks})`
+
+  result.summary = `[${sessLabel}]: ${tlStatus}`
+  return result
+}
+
+/**
+ * 9. Dalton Balance Day & Chop Protection Filter:
+ * Detects rotational chop (alternating Long/Short breakouts within 90m, or compression inside Y-VA).
+ * Elevates the score threshold to Grade A (>=75) and doubles stall penalty to protect capital.
+ */
+export function evaluateChopShield(params: {
+  bars?: Candle[]
+  breakoutHistory?: Array<{ time: number; direction: 'LONG' | 'SHORT' }>
+  yVal?: number
+  yVah?: number
+  dayType?: string
+}): ChopShieldEvaluation {
+  const { bars = [], breakoutHistory = [], yVal, yVah, dayType } = params
+
+  let isChopShieldActive = false
+  let alternatingBreakCount = 0
+  let reason = 'Standard Trend Regime (Normal Score Threshold >= 60)'
+  let stallPenaltyMultiplier = 1.0
+
+  // 1. Check for rapid alternating breaks within 90 minutes (5400s)
+  if (breakoutHistory.length >= 2) {
+    const recentBreaks = breakoutHistory.slice(-4)
+    let alternations = 0
+    for (let i = 1; i < recentBreaks.length; i++) {
+      const prev = recentBreaks[i - 1]!
+      const curr = recentBreaks[i]!
+      if (curr.direction !== prev.direction && curr.time - prev.time <= 5400) {
+        alternations++
+      }
+    }
+    if (alternations >= 1) {
+      alternatingBreakCount = alternations
+      isChopShieldActive = true
+      reason = `Chop Shield Active: ${alternations} alternating Long/Short breakout(s) within 90m (Rotational Balance)`
+    }
+  }
+
+  // 2. Check if trading inside Yesterday Value Area with Neutral or Non-Trend Day
+  if (!isChopShieldActive && bars.length >= 10 && yVal != null && yVah != null && yVal > 0 && yVah > yVal) {
+    const recentBars = bars.slice(-12)
+    const allInside = recentBars.every((b) => b.close >= yVal && b.close <= yVah)
+    const isNeutral = dayType === 'NEUTRAL' || dayType === 'NON_TREND' || dayType === 'NON_CONVICTION'
+    if (allInside && isNeutral) {
+      isChopShieldActive = true
+      reason = `Chop Shield Active: Price rotating inside Yesterday Value Area [${yVal.toFixed(1)}–${yVah.toFixed(1)}] in ${dayType || 'Neutral'} Day`
+    }
+  }
+
+  if (isChopShieldActive) {
+    stallPenaltyMultiplier = 2.0
+  }
 
   return {
-    shouldExit: isConfirmed5mCloseBelow,
-    isConfirmed5mCloseBelow,
-    lastCandle: completed5mBar,
-    projectedTrendlinePrice: projectedPrice,
-    exitPrice: isConfirmed5mCloseBelow ? completed5mBar.close : null,
-    reason: isConfirmed5mCloseBelow
-      ? `5-minute candle close confirmed below dynamic trendline (Close: ${completed5mBar.close.toFixed(2)} < Line: ${projectedPrice.toFixed(2)})`
-      : 'Price maintaining above dynamic trendline',
+    isChopShieldActive,
+    minScoreRequired: isChopShieldActive ? 75 : 60,
+    alternatingBreakCount,
+    stallPenaltyMultiplier,
+    reason,
   }
 }

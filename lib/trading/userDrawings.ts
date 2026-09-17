@@ -8,6 +8,13 @@ export interface UserTrendline {
   color?: string
   label?: string
   instrument?: string
+  sessionOrigin?: 'Asia' | 'London' | 'NYC'
+  isCarriedFromOvernight?: boolean
+  breakCountOvernight?: number
+  direction?: 'BEARISH' | 'BULLISH'
+  isAutoDetected?: boolean
+  isActionTrendline?: boolean
+  isInitialOvernight?: boolean
 }
 
 export interface UserRangeBox {

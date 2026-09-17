@@ -179,6 +179,7 @@ import {
   MARKET_DEFAULT_PARAMS,
   listenToRuleUpdates,
   isEntrySituationRule,
+  addRule,
   type ArmedRule,
   type MarketInstrument,
 } from '@/lib/trading/leoRules'
@@ -1213,8 +1214,8 @@ export function TradingChart({
   const distRefsRef = useRef<any[]>([])
   const newsMovesRef = useRef<EmotionalNewsMove[]>([])
 
-  // ── User Interactive Drawing Tools (Trendline, Range, Manual FRVP) ────────
-  type DrawingToolType = 'NONE' | 'TRENDLINE' | 'RANGE' | 'FRVP'
+  // ── User Interactive Drawing Tools (Trendline, Action Line, Range, Manual FRVP) ────────
+  type DrawingToolType = 'NONE' | 'TRENDLINE' | 'ACTION_TRENDLINE' | 'RANGE' | 'FRVP'
   const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingToolType>('NONE')
   const [trendlines, setTrendlines] = useState<UserTrendline[]>(() => {
     if (typeof window === 'undefined') return []
@@ -2923,9 +2924,12 @@ export function TradingChart({
       if (x1 != null && x2 != null && y1 != null && y2 != null) {
         const [ex1, ey1, ex2, ey2] = extendedLine(x1, y1, x2, y2)
 
+        const isActionTl = Boolean(tl.isActionTrendline || tl.isInitialOvernight)
+        const tlColor = isActionTl ? '#f59e0b' : (tl.color || '#38bdf8')
+
         // Extended line
-        ctx.strokeStyle = tl.color || '#38bdf8'
-        ctx.lineWidth = 2
+        ctx.strokeStyle = tlColor
+        ctx.lineWidth = isActionTl ? 2.5 : 2
         ctx.setLineDash([])
         ctx.beginPath()
         ctx.moveTo(ex1, ey1)
@@ -2933,18 +2937,18 @@ export function TradingChart({
         ctx.stroke()
 
         // P1 handle dot (user's first click)
-        ctx.fillStyle = '#38bdf8'
+        ctx.fillStyle = tlColor
         ctx.beginPath()
-        ctx.arc(x1, y1, 4, 0, 2 * Math.PI)
+        ctx.arc(x1, y1, isActionTl ? 5 : 4, 0, 2 * Math.PI)
         ctx.fill()
         ctx.strokeStyle = '#ffffff'
         ctx.lineWidth = 1.5
         ctx.stroke()
 
         // P2 handle dot (user's second click)
-        ctx.fillStyle = '#38bdf8'
+        ctx.fillStyle = tlColor
         ctx.beginPath()
-        ctx.arc(x2, y2, 4, 0, 2 * Math.PI)
+        ctx.arc(x2, y2, isActionTl ? 5 : 4, 0, 2 * Math.PI)
         ctx.fill()
         ctx.strokeStyle = '#ffffff'
         ctx.lineWidth = 1.5
@@ -2955,21 +2959,27 @@ export function TradingChart({
         const my = (y1 + y2) / 2
         const pDiff = tl.p2.price - tl.p1.price
         const dir = pDiff > 0 ? '↗' : pDiff < 0 ? '↘' : '→'
-        const labelText = `📐 ${tl.label || 'Trendline'} ${dir} (${pDiff >= 0 ? '+' : ''}${pDiff.toFixed(1)} pts)`
+        const sessTag = tl.sessionOrigin ? ` [${tl.sessionOrigin}${tl.isCarriedFromOvernight ? ' · Overnight' : ''}]` : ''
+        const labelText = isActionTl
+          ? `🎯 ACTION TRENDLINE (INITIAL OVERNIGHT)${sessTag} ${dir} (${pDiff >= 0 ? '+' : ''}${pDiff.toFixed(1)} pts)`
+          : `📐 ${tl.label || 'Trendline'}${sessTag} ${dir} (${pDiff >= 0 ? '+' : ''}${pDiff.toFixed(1)} pts)`
 
         ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
         const textW = ctx.measureText(labelText).width
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
+        ctx.fillStyle = isActionTl ? 'rgba(30, 20, 5, 0.92)' : 'rgba(15, 23, 42, 0.85)'
         ctx.fillRect(mx - textW / 2 - 4, my - 16, textW + 8, 15)
-        ctx.strokeStyle = '#38bdf8'
-        ctx.lineWidth = 1
+        ctx.strokeStyle = isActionTl ? '#f59e0b' : '#38bdf8'
+        ctx.lineWidth = isActionTl ? 1.5 : 1
         ctx.strokeRect(mx - textW / 2 - 4, my - 16, textW + 8, 15)
 
-        ctx.fillStyle = '#7dd3fc'
+        ctx.fillStyle = isActionTl ? '#fef08a' : '#7dd3fc'
         ctx.fillText(labelText, mx - textW / 2, my - 5)
 
-        // ── Systematic Trend-Borning Zone & Responsive Angle Engine ──
-        if (pDiff < 0 && list.length > 0) {
+        // ── Systematic Trend-Borning Zone & Responsive Angle Engine (Two-Way) ──
+        if (pDiff !== 0 && list.length > 0) {
+          const isLong = pDiff < 0
+          const setupDir: 'LONG' | 'SHORT' = isLong ? 'LONG' : 'SHORT'
+
           const bars5m: Candle[] = list.map((c: any) => ({
             time: typeof c.time === 'number' ? c.time : 0,
             open: Number(c.open),
@@ -2979,21 +2989,28 @@ export function TradingChart({
             volume: Number(c.volume || 1),
           }))
 
-          const breakout = checkTrendlineBreakout(tl, bars5m)
-          const initPt = findInitiatingPoint(tl, bars5m, breakout.breakoutCandleIndex ?? bars5m.length - 1)
+          const breakout = checkTrendlineBreakout(tl, bars5m, { direction: setupDir })
+          const initPt = findInitiatingPoint(tl, bars5m, breakout.breakoutCandleIndex ?? bars5m.length - 1, { direction: setupDir })
 
           if (initPt) {
             const mockChartCtx: any = {
               yesterday: yesterdayNyc ? { poc: yesterdayNyc.poc } : null,
               overnight: overnightInventory ? { overnight: { poc: overnightInventory.overnight?.poc } } : null,
               frvp5d: frvp5d ? { poc: frvp5d.poc } : null,
-              avwap5m: avwap5mBenchmark ? { vwap: avwap5mBenchmark.vwap, sigma1Lower: avwap5mBenchmark.sigma1Lower, sigma2Lower: avwap5mBenchmark.sigma2Lower } : null,
+              avwap5m: avwap5mBenchmark ? {
+                vwap: avwap5mBenchmark.vwap,
+                sigma1Upper: avwap5mBenchmark.sigma1Upper,
+                sigma1Lower: avwap5mBenchmark.sigma1Lower,
+                sigma2Upper: avwap5mBenchmark.sigma2Upper,
+                sigma2Lower: avwap5mBenchmark.sigma2Lower,
+              } : null,
             }
 
             const borningZone = evaluateTrendBorningZone({
               initiatingPoint: initPt,
               bars: bars5m,
               chartContext: mockChartCtx,
+              direction: setupDir,
             })
 
             const higherLows = detectHigherLowsWithTiming(initPt, bars5m)
@@ -3006,9 +3023,10 @@ export function TradingChart({
               currentPrice: curPx,
               currentTime: curSec,
               bars: bars5m,
+              direction: setupDir,
             })
 
-            // 1. Draw Initiating Low (Trend-Borning Zone Origin) & Structural Band
+            // 1. Draw Initiating Point & Structural Band
             const initX = timeToX(chart.timeScale(), toChartTime(initPt.time, tz), candleTimes)
             const initY = series.priceToCoordinate(initPt.price)
 
@@ -3022,21 +3040,21 @@ export function TradingChart({
                 const bandHeight = Math.max(4, Math.abs(yLow - yHigh))
                 const initXPos = initX != null ? Math.max(0, initX - 20) : 0
 
-                ctx.fillStyle = 'rgba(234, 179, 8, 0.10)'
+                ctx.fillStyle = isLong ? 'rgba(234, 179, 8, 0.10)' : 'rgba(239, 68, 68, 0.10)'
                 ctx.fillRect(initXPos, bandTop, paneW - initXPos, bandHeight)
-                ctx.strokeStyle = 'rgba(234, 179, 8, 0.4)'
+                ctx.strokeStyle = isLong ? 'rgba(234, 179, 8, 0.4)' : 'rgba(239, 68, 68, 0.4)'
                 ctx.lineWidth = 1
                 ctx.setLineDash([3, 3])
                 ctx.strokeRect(initXPos, bandTop, paneW - initXPos, bandHeight)
                 ctx.setLineDash([])
 
                 if (initX != null) {
-                  const zVolText = `📦 Zone [${sz.zoneLow.toFixed(1)}–${sz.zoneHigh.toFixed(1)}] · Vol: ${sz.totalZoneVolume.toLocaleString()}${sz.historicalVolumeRatio ? ` (${sz.historicalVolumeRatio}x vs prior tests)` : ''}`
+                  const zVolText = `📦 ${isLong ? 'Bull' : 'Bear'} Zone [${sz.zoneLow.toFixed(1)}–${sz.zoneHigh.toFixed(1)}] · Vol: ${sz.totalZoneVolume.toLocaleString()}${sz.historicalVolumeRatio ? ` (${sz.historicalVolumeRatio}x vs prior tests)` : ''}`
                   ctx.font = '8px ui-monospace, SFMono-Regular, monospace'
                   const zW = ctx.measureText(zVolText).width + 8
                   ctx.fillStyle = 'rgba(15, 23, 42, 0.88)'
                   ctx.fillRect(initX - zW / 2, bandTop - 13, zW, 13)
-                  ctx.fillStyle = '#fcd34d'
+                  ctx.fillStyle = isLong ? '#fcd34d' : '#fca5a5'
                   ctx.fillText(zVolText, initX - zW / 2 + 4, bandTop - 3)
                 }
               }
@@ -3045,25 +3063,25 @@ export function TradingChart({
             if (initX != null && initY != null) {
               ctx.beginPath()
               ctx.arc(initX, initY, 6, 0, 2 * Math.PI)
-              ctx.fillStyle = 'rgba(234, 179, 8, 0.4)'
+              ctx.fillStyle = isLong ? 'rgba(234, 179, 8, 0.4)' : 'rgba(239, 68, 68, 0.4)'
               ctx.fill()
-              ctx.strokeStyle = '#eab308'
+              ctx.strokeStyle = isLong ? '#eab308' : '#ef4444'
               ctx.lineWidth = 2
               ctx.stroke()
 
-              const bText = `🎯 BORNING ZONE: ${initPt.price.toFixed(2)} · Score ${borningZone.compositeScore}/100 (${borningZone.grade})`
+              const bText = `🎯 ${isLong ? 'BULLISH' : 'BEARISH'} BORNING ZONE: ${initPt.price.toFixed(2)} · Score ${borningZone.compositeScore}/100 (${borningZone.grade})`
               ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
               const bW = ctx.measureText(bText).width + 12
               ctx.fillStyle = 'rgba(15, 23, 42, 0.92)'
-              ctx.fillRect(initX - bW / 2, initY + 8, bW, 16)
-              ctx.strokeStyle = '#eab308'
+              ctx.fillRect(initX - bW / 2, initY + (isLong ? 8 : -24), bW, 16)
+              ctx.strokeStyle = isLong ? '#eab308' : '#ef4444'
               ctx.lineWidth = 1
-              ctx.strokeRect(initX - bW / 2, initY + 8, bW, 16)
-              ctx.fillStyle = '#fef08a'
-              ctx.fillText(bText, initX - bW / 2 + 6, initY + 20)
+              ctx.strokeRect(initX - bW / 2, initY + (isLong ? 8 : -24), bW, 16)
+              ctx.fillStyle = isLong ? '#fef08a' : '#fca5a5'
+              ctx.fillText(bText, initX - bW / 2 + 6, initY + (isLong ? 20 : -12))
             }
 
-            // 2. Draw Higher Low Timing Intervals
+            // 2. Draw Higher Lows / Lower Highs Timing Intervals
             for (let h = 1; h < higherLows.length; h++) {
               const hl = higherLows[h]!
               const hlX = timeToX(chart.timeScale(), toChartTime(hl.time, tz), candleTimes)
@@ -3071,7 +3089,7 @@ export function TradingChart({
               if (hlX != null && hlY != null) {
                 ctx.beginPath()
                 ctx.arc(hlX, hlY, 4, 0, 2 * Math.PI)
-                ctx.fillStyle = '#38bdf8'
+                ctx.fillStyle = isLong ? '#38bdf8' : '#f43f5e'
                 ctx.fill()
                 ctx.strokeStyle = '#ffffff'
                 ctx.lineWidth = 1
@@ -3081,9 +3099,9 @@ export function TradingChart({
                 ctx.font = 'bold 8.5px ui-monospace, SFMono-Regular, monospace'
                 const hlW = ctx.measureText(hlLabel).width + 8
                 ctx.fillStyle = 'rgba(15, 23, 42, 0.9)'
-                ctx.fillRect(hlX - hlW / 2, hlY + 6, hlW, 14)
-                ctx.fillStyle = '#7dd3fc'
-                ctx.fillText(hlLabel, hlX - hlW / 2 + 4, hlY + 16)
+                ctx.fillRect(hlX - hlW / 2, hlY + (isLong ? 6 : -18), hlW, 14)
+                ctx.fillStyle = isLong ? '#7dd3fc' : '#fda4af'
+                ctx.fillText(hlLabel, hlX - hlW / 2 + 4, hlY + (isLong ? 16 : -8))
               }
             }
 
@@ -3093,23 +3111,33 @@ export function TradingChart({
               const brkY = series.priceToCoordinate(breakout.breakoutCandle.close)
               if (brkX != null && brkY != null) {
                 ctx.beginPath()
-                ctx.moveTo(brkX, brkY - 12)
-                ctx.lineTo(brkX - 6, brkY - 2)
-                ctx.lineTo(brkX + 6, brkY - 2)
+                if (isLong) {
+                  // Up triangle
+                  ctx.moveTo(brkX, brkY - 12)
+                  ctx.lineTo(brkX - 6, brkY - 2)
+                  ctx.lineTo(brkX + 6, brkY - 2)
+                } else {
+                  // Down triangle
+                  ctx.moveTo(brkX, brkY + 12)
+                  ctx.lineTo(brkX - 6, brkY + 2)
+                  ctx.lineTo(brkX + 6, brkY + 2)
+                }
                 ctx.closePath()
-                ctx.fillStyle = '#22c55e'
+                ctx.fillStyle = isLong ? '#22c55e' : '#ef4444'
                 ctx.fill()
 
-                const brkText = `🚀 5M ENTRY: ${breakout.entryPrice?.toFixed(2)} · SL ${breakout.defaultStopLoss?.toFixed(2)} · TP ${breakout.defaultTakeProfitFixed50?.toFixed(2)}`
+                const brkIcon = isLong ? '🚀 5M LONG ENTRY' : '🔻 5M SHORT ENTRY'
+                const brkText = `${brkIcon}: ${breakout.entryPrice?.toFixed(2)} · SL ${breakout.defaultStopLoss?.toFixed(2)} · TP ${breakout.defaultTakeProfitFixed50?.toFixed(2)}`
                 ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
                 const brkW = ctx.measureText(brkText).width + 10
                 ctx.fillStyle = 'rgba(15, 23, 42, 0.95)'
-                ctx.fillRect(brkX - brkW / 2, brkY - 32, brkW, 16)
-                ctx.strokeStyle = '#22c55e'
+                const boxY = isLong ? brkY - 32 : brkY + 16
+                ctx.fillRect(brkX - brkW / 2, boxY, brkW, 16)
+                ctx.strokeStyle = isLong ? '#22c55e' : '#ef4444'
                 ctx.lineWidth = 1
-                ctx.strokeRect(brkX - brkW / 2, brkY - 32, brkW, 16)
-                ctx.fillStyle = '#86efac'
-                ctx.fillText(brkText, brkX - brkW / 2 + 5, brkY - 20)
+                ctx.strokeRect(brkX - brkW / 2, boxY, brkW, 16)
+                ctx.fillStyle = isLong ? '#86efac' : '#fca5a5'
+                ctx.fillText(brkText, brkX - brkW / 2 + 5, boxY + 12)
               }
 
               // 4. Draw Dynamic Responsive Trendline with Stalling Time-Decay
@@ -3122,7 +3150,8 @@ export function TradingChart({
                 const isDrying = dynamicLine.swingVolumeProgression?.trend === 'DECLINING'
                 const isDecaying = dynamicLine.isStalling || isDrying
 
-                ctx.strokeStyle = isDecaying ? '#f97316' : '#22c55e'
+                const healthyColor = isLong ? '#22c55e' : '#f43f5e'
+                ctx.strokeStyle = isDecaying ? '#f97316' : healthyColor
                 ctx.lineWidth = 2.5
                 ctx.setLineDash(isDecaying ? [6, 3] : [])
                 ctx.beginPath()
@@ -3131,17 +3160,18 @@ export function TradingChart({
                 ctx.stroke()
                 ctx.setLineDash([])
 
-                const dynText = `📈 Responsive Line (${dynamicLine.effectiveSlopePtsPer5m} pts/5m)${dynamicLine.isStalling ? ' ⚡ STALL DECAY' : ''}${isDrying ? ` 📉 DRYING VOL (-${Math.abs(dynamicLine.swingVolumeProgression?.scoreDelta || 0)})` : ''}`
+                const dynIcon = isLong ? '📈' : '📉'
+                const dynText = `${dynIcon} Responsive Line (${Math.abs(dynamicLine.effectiveSlopePtsPer5m)} pts/5m)${dynamicLine.isStalling ? ' ⚡ STALL DECAY' : ''}${isDrying ? ` 📉 DRYING VOL (-${Math.abs(dynamicLine.swingVolumeProgression?.scoreDelta || 0)})` : ''}`
                 const dMidX = (dX1 + dX2) / 2
                 const dMidY = (dY1 + dY2) / 2
                 ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
                 const dW = ctx.measureText(dynText).width + 8
-                ctx.fillStyle = isDecaying ? 'rgba(67, 20, 7, 0.95)' : 'rgba(6, 78, 59, 0.95)'
+                ctx.fillStyle = isDecaying ? 'rgba(67, 20, 7, 0.95)' : isLong ? 'rgba(6, 78, 59, 0.95)' : 'rgba(76, 5, 25, 0.95)'
                 ctx.fillRect(dMidX - dW / 2, dMidY - 18, dW, 16)
-                ctx.strokeStyle = isDecaying ? '#f97316' : '#22c55e'
+                ctx.strokeStyle = isDecaying ? '#f97316' : healthyColor
                 ctx.lineWidth = 1
                 ctx.strokeRect(dMidX - dW / 2, dMidY - 18, dW, 16)
-                ctx.fillStyle = isDecaying ? '#fdba74' : '#6ee7b7'
+                ctx.fillStyle = isDecaying ? '#fdba74' : isLong ? '#6ee7b7' : '#fda4af'
                 ctx.fillText(dynText, dMidX - dW / 2 + 4, dMidY - 6)
               }
             }
@@ -3160,10 +3190,12 @@ export function TradingChart({
       const y2 = series.priceToCoordinate(p2.price) ?? p2.y
 
       if (x1 != null && x2 != null && y1 != null && y2 != null) {
-        if (activeDrawingTool === 'TRENDLINE') {
+        if (activeDrawingTool === 'TRENDLINE' || activeDrawingTool === 'ACTION_TRENDLINE') {
+          const isAction = activeDrawingTool === 'ACTION_TRENDLINE'
+          const draftColor = isAction ? '#f59e0b' : '#38bdf8'
           const [dex1, dey1, dex2, dey2] = extendedLine(x1, y1, x2, y2)
-          ctx.strokeStyle = '#38bdf8'
-          ctx.lineWidth = 2
+          ctx.strokeStyle = draftColor
+          ctx.lineWidth = isAction ? 2.5 : 2
           ctx.setLineDash([4, 4])
           ctx.beginPath()
           ctx.moveTo(dex1, dey1)
@@ -3171,18 +3203,20 @@ export function TradingChart({
           ctx.stroke()
           ctx.setLineDash([])
 
-          ctx.fillStyle = '#38bdf8'
+          ctx.fillStyle = draftColor
           ctx.beginPath()
-          ctx.arc(x1, y1, 4, 0, 2 * Math.PI)
+          ctx.arc(x1, y1, isAction ? 5 : 4, 0, 2 * Math.PI)
           ctx.fill()
           ctx.beginPath()
-          ctx.arc(x2, y2, 4, 0, 2 * Math.PI)
+          ctx.arc(x2, y2, isAction ? 5 : 4, 0, 2 * Math.PI)
           ctx.fill()
 
           ctx.font = 'bold 10px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillStyle = '#bae6fd'
-          ctx.fillText(`P1: ${p1.price.toLocaleString()}`, x1 + 8, y1 - 4)
-          ctx.fillText(`P2: ${p2.price.toLocaleString()} (Click to finish)`, x2 + 8, y2 - 4)
+          ctx.fillStyle = isAction ? '#fef08a' : '#bae6fd'
+          const p1Label = isAction ? `🎯 Action P1: ${p1.price.toLocaleString()}` : `P1: ${p1.price.toLocaleString()}`
+          const p2Label = isAction ? `🎯 Action P2: ${p2.price.toLocaleString()} (Click to arm)` : `P2: ${p2.price.toLocaleString()} (Click to finish)`
+          ctx.fillText(p1Label, x1 + 8, y1 - 4)
+          ctx.fillText(p2Label, x2 + 8, y2 - 4)
         } else if (activeDrawingTool === 'RANGE') {
           const minX = Math.min(x1, x2)
           const maxX = Math.max(x1, x2)
@@ -4045,6 +4079,14 @@ export function TradingChart({
             projectedPrice: m.projectedPrice,
             distancePts: m.distancePts,
             priceRelation: m.priceRelation,
+            direction: t.direction,
+            sessionOrigin: t.sessionOrigin,
+            isCarriedFromOvernight: t.isCarriedFromOvernight,
+            breakCountOvernight: t.breakCountOvernight,
+            isActionTrendline: t.isActionTrendline,
+            isInitialOvernight: t.isInitialOvernight,
+            p1: t.p1,
+            p2: t.p2,
           }
         }),
         ranges: activeRangeBoxes.map((r) => {
@@ -8885,26 +8927,75 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         setDrawingDraft({ time, price, x, y })
       } else {
         // Second click: finish drawing
-        const p1 = drawingDraft
-        const p2 = { time, price, x, y }
+        const p1Raw = drawingDraft
+        const p2Raw = { time, price, x, y }
+        // Chronological normalization: ensure p1 is earlier in time than p2
+        const p1 = p1Raw.time <= p2Raw.time ? p1Raw : p2Raw
+        const p2 = p1Raw.time <= p2Raw.time ? p2Raw : p1Raw
 
-        if (activeDrawingTool === 'TRENDLINE') {
+        if (activeDrawingTool === 'TRENDLINE' || activeDrawingTool === 'ACTION_TRENDLINE') {
+          const isAction = activeDrawingTool === 'ACTION_TRENDLINE'
+          const pDiff = p2.price - p1.price
+          const inferredDir: 'BEARISH' | 'BULLISH' = pDiff < 0 ? 'BEARISH' : 'BULLISH'
+          const tradeDir: 'LONG' | 'SHORT' = inferredDir === 'BEARISH' ? 'LONG' : 'SHORT'
           const newTl: UserTrendline = {
-            id: `tl-${Date.now()}`,
+            id: isAction ? `action-tl-${Date.now()}` : `tl-${Date.now()}`,
             type: 'TRENDLINE',
             p1: { time: p1.time, price: p1.price },
             p2: { time: p2.time, price: p2.price },
-            color: '#38bdf8',
-            label: `Trendline ${activeTrendlines.length + 1}`,
+            color: isAction ? '#f59e0b' : '#38bdf8',
+            label: isAction ? `Action Trendline (${tradeDir === 'LONG' ? 'Long on Break' : 'Short on Break'})` : `Trendline ${activeTrendlines.length + 1}`,
             instrument,
+            direction: inferredDir,
+            sessionOrigin: 'London',
+            isActionTrendline: isAction,
+            isInitialOvernight: isAction,
           }
           setTrendlines((prev) => [...prev, newTl])
-          setDrawingToast({
-            type: 'TRENDLINE',
-            id: newTl.id,
-            label: newTl.label || 'Trendline',
-            summary: `From ${newTl.p1.price.toLocaleString()} to ${newTl.p2.price.toLocaleString()} (${newTl.p2.price >= newTl.p1.price ? '+' : ''}${(newTl.p2.price - newTl.p1.price).toFixed(1)} pts)`,
-          })
+
+          if (isAction) {
+            addRule({
+              instrument: instrument as MarketInstrument,
+              type: 'TRENDLINE_BREAKOUT_SYSTEMATIC',
+              direction: tradeDir,
+              description: `${tradeDir === 'LONG' ? 'Long' : 'Short'} 1 ${instrument} on 5m Close ${tradeDir === 'LONG' ? 'above' : 'below'} Action Trendline (Overnight Initial)`,
+              userPrompt: `Monitor Initial Action Trendline from overnight. Enter ${tradeDir} 1 ${instrument} on 5m candle close breakout in NYC.`,
+              targetReference: newTl.label,
+              targetPrice: newTl.p2.price,
+              pattern: 'TRENDLINE_BREAKOUT_5M',
+              stopLossMode: tradeDir === 'SHORT' ? 'ABOVE_CANDLE_HIGH' : 'BELOW_CANDLE_LOW',
+              takeProfitMode: 'FIXED_POINTS',
+              takeProfit: 50,
+              size: 1,
+              isLongTerm: true,
+              session: 'NY',
+              status: 'ARMED',
+              trendlineId: newTl.id,
+              conditions: {
+                trendlineId: newTl.id,
+                pattern: 'TRENDLINE_BREAKOUT_5M',
+                stopLossMode: tradeDir === 'SHORT' ? 'ABOVE_CANDLE_HIGH' : 'BELOW_CANDLE_LOW',
+                takeProfitMode: 'FIXED_POINTS',
+                takeProfit: 50,
+                size: 1,
+                minBreakoutTime: Math.floor(Date.now() / 1000),
+              },
+            })
+            playTradingViewChime()
+            setDrawingToast({
+              type: 'TRENDLINE',
+              id: newTl.id,
+              label: newTl.label || 'Action Trendline',
+              summary: `🎯 Initial Overnight Action Line: Armed Leo to react on NYC ${tradeDir} Breakout with 7-Factor Scoring!`,
+            })
+          } else {
+            setDrawingToast({
+              type: 'TRENDLINE',
+              id: newTl.id,
+              label: newTl.label || 'Trendline',
+              summary: `From ${newTl.p1.price.toLocaleString()} to ${newTl.p2.price.toLocaleString()} (${newTl.p2.price >= newTl.p1.price ? '+' : ''}${(newTl.p2.price - newTl.p1.price).toFixed(1)} pts)`,
+            })
+          }
         } else if (activeDrawingTool === 'RANGE') {
           const newRange: UserRangeBox = {
             id: `range-${Date.now()}`,
@@ -9613,6 +9704,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       } else if (key === 'w') {
         e.preventDefault()
         setActiveDrawingTool((prev) => (prev === 'TRENDLINE' ? 'NONE' : 'TRENDLINE'))
+        setDrawingDraft(null)
+      } else if (key === 'x') {
+        e.preventDefault()
+        setActiveDrawingTool((prev) => (prev === 'ACTION_TRENDLINE' ? 'NONE' : 'ACTION_TRENDLINE'))
         setDrawingDraft(null)
       } else if (key === 'd') {
         e.preventDefault()
@@ -10424,6 +10519,23 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               <button
                 type="button"
                 onClick={() => {
+                  setActiveDrawingTool((prev) => (prev === 'ACTION_TRENDLINE' ? 'NONE' : 'ACTION_TRENDLINE'))
+                  setDrawingDraft(null)
+                }}
+                className={`flex items-center gap-1 px-2 py-1 rounded font-semibold transition-all ${
+                  activeDrawingTool === 'ACTION_TRENDLINE'
+                    ? 'bg-amber-500/40 text-amber-200 border border-amber-400 shadow-sm shadow-amber-500/20'
+                    : 'text-amber-400 hover:text-amber-200 hover:bg-amber-950/40'
+                }`}
+                title="Draw Action Trendline (Initial Overnight · Hotkey: X) — Leo arms reaction on NYC breakout"
+              >
+                <span>🎯</span>
+                <span className="font-bold">Action (X)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
                   setActiveDrawingTool((prev) => (prev === 'RANGE' ? 'NONE' : 'RANGE'))
                   setDrawingDraft(null)
                 }}
@@ -10902,6 +11014,33 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               </span>
             </button>
 
+            {/* Action Trendline (X) */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveDrawingTool((prev) => (prev === 'ACTION_TRENDLINE' ? 'NONE' : 'ACTION_TRENDLINE'))
+                setDrawingDraft(null)
+              }}
+              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
+                activeDrawingTool === 'ACTION_TRENDLINE'
+                  ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/40 ring-2 ring-amber-300'
+                  : 'text-amber-400 hover:bg-slate-800 hover:text-amber-200'
+              }`}
+              title="Draw Action Trendline (Initial Overnight · Hotkey: X)"
+            >
+              <span className="relative flex items-center justify-center">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-current">
+                  <path d="M4 19L19 5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                  <circle cx="4" cy="19" r="2.5" fill="currentColor" />
+                  <circle cx="19" cy="5" r="2.5" fill="currentColor" />
+                  <circle cx="19" cy="5" r="4.5" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2 2" />
+                </svg>
+              </span>
+              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-amber-300 shadow-xl border border-amber-800/60 group-hover:block z-50">
+                Action Trendline (X)
+              </span>
+            </button>
+
             {/* Range Box (D) */}
             <button
               type="button"
@@ -11007,11 +11146,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               <button
                 type="button"
                 onClick={handleClearAllDrawings}
-                className="group relative flex h-9 w-9 items-center justify-center rounded-lg text-sm text-slate-500 hover:bg-rose-500/20 hover:text-rose-300 transition-all"
+                className="group relative flex h-9 w-9 items-center justify-center rounded-lg text-base text-slate-400 hover:bg-rose-950/40 hover:text-rose-400 transition-all"
                 title="Clear All Drawings"
               >
                 <span>🗑️</span>
-                <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-rose-200 shadow-xl border border-slate-800 group-hover:block z-50">
+                <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-rose-300 shadow-xl border border-rose-900/60 group-hover:block z-50">
                   Clear All
                 </span>
               </button>
@@ -11022,26 +11161,23 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </div>
         </div>
 
-        {/* In-Progress Drawing Guide Banner */}
+        {/* In-progress drawing guide banner */}
         {activeDrawingTool !== 'NONE' && (
-          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 rounded-full bg-slate-900/90 border border-cyan-500/50 px-3.5 py-1.5 shadow-xl backdrop-blur-md text-xs text-slate-200">
-            <span className="inline-block w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
-            <span className="font-semibold text-cyan-300">
-              {activeDrawingTool === 'TRENDLINE' && 'Drawing Trendline (2 clicks)'}
-              {activeDrawingTool === 'RANGE' && 'Drawing Range Box (2 clicks)'}
-              {activeDrawingTool === 'FRVP' && 'Drawing Fixed Range Volume Profile (2 clicks)'}
-            </span>
-            <span className="text-slate-400 text-[11px]">
-              {drawingDraft ? 'Click 2nd point to finish' : 'Click 1st point to start'} · Esc to cancel
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full bg-slate-950/90 border border-cyan-500/60 px-4 py-1.5 text-xs font-medium text-cyan-200 shadow-2xl backdrop-blur-sm animate-pulse">
+            <span className="inline-block h-2 w-2 rounded-full bg-cyan-400" />
+            <span>
+              {activeDrawingTool === 'TRENDLINE' && '📐 Drawing Trendline (Click 2 swing points)'}
+              {activeDrawingTool === 'ACTION_TRENDLINE' && '🎯 Drawing Action Trendline (Initial Overnight · 2 clicks)'}
+              {activeDrawingTool === 'RANGE' && '⬛ Drawing Range Box (Click 2 corners)'}
+              {activeDrawingTool === 'FRVP' && '📊 Drawing Custom FRVP (Click start & end bars)'}
             </span>
             <button
               type="button"
               onClick={() => {
                 setActiveDrawingTool('NONE')
                 setDrawingDraft(null)
-                draftMousePosRef.current = null
               }}
-              className="ml-1 text-slate-400 hover:text-white font-bold"
+              className="ml-2 text-slate-400 hover:text-white font-bold"
               title="Cancel drawing"
             >
               ✕
@@ -11084,10 +11220,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             <div className="flex-1 overflow-y-auto p-2 space-y-2 text-xs divide-y divide-slate-800/60">
               {activeTrendlines.length === 0 && activeRangeBoxes.length === 0 && activeManualFrvps.length === 0 && (
                 <div className="py-6 text-center text-slate-500 space-y-1">
-                  <div className="text-2xl">📐 ⬛ 📊</div>
+                  <div className="text-2xl">📐 🎯 ⬛ 📊</div>
                   <div className="font-semibold text-slate-400">No active drawings on {instrument}</div>
                   <div className="text-[11px] text-slate-500">
                     Press <span className="text-sky-300 font-mono">W</span> for Trendline,{' '}
+                    <span className="text-amber-300 font-mono">X</span> for Action Line,{' '}
                     <span className="text-purple-300 font-mono">D</span> for Range, or{' '}
                     <span className="text-amber-300 font-mono">V</span> for FRVP.
                   </div>
@@ -11107,9 +11244,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                         className="group flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-800/40 hover:bg-slate-800/80 border border-slate-700/40 transition"
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1 font-semibold text-sky-300 truncate">
-                            <span>📐</span>
-                            <span className="truncate">{tl.label || 'Trendline'}</span>
+                          <div className={`flex items-center gap-1 font-semibold truncate ${tl.isActionTrendline ? 'text-amber-300' : 'text-sky-300'}`}>
+                            <span>{tl.isActionTrendline ? '🎯' : '📐'}</span>
+                            <span className="truncate">{tl.label || (tl.isActionTrendline ? 'Action Trendline' : 'Trendline')}</span>
                           </div>
                           <div className="text-[10px] text-slate-400 truncate">
                             {tl.p1.price.toLocaleString()} → {tl.p2.price.toLocaleString()}

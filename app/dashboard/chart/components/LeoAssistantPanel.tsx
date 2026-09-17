@@ -14,7 +14,7 @@ import type { TeamConsensusReport } from '@/lib/ai/stack/types'
 import type { InstitutionalHedgingTelemetry } from '@/lib/ai/stack/models/institutionalHedgingModel'
 import type { DayTypeEvaluation, MarketDayType } from '@/lib/chart/context55'
 import { detectCandlestickPatterns, type Candle } from '@/lib/trading/candlestickPatterns'
-import { isArmedRuleExpired } from '@/lib/trading/sessionGate'
+import { isArmedRuleExpired, isNycSessionActive } from '@/lib/trading/sessionGate'
 import { saveLongTermMemory, type LeoLongTermMemory } from '@/lib/trading/leoLongTermMemory'
 import {
   formatRuleDate,
@@ -36,6 +36,8 @@ import {
   detectHigherLowsWithTiming,
   calculateDynamicTrendline,
   checkDynamicTrendlineExit,
+  evaluateChopShield,
+  resampleCandlesTo5M,
 } from '@/lib/trading/trendlineStrategy'
 import type { UserTrendline } from '@/lib/trading/userDrawings'
 
@@ -935,19 +937,32 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
         speakText(`Strategy rule armed for ${dir} ${inst}. Monitoring ${entryLabel}${cvdDiv ? ' with CVD divergence' : ''}.`)
       } else if ((d as any).action === 'ARM_TRENDLINE_STRATEGY') {
         const inst = ((d as any).instrument || context.instrument || 'GOLD') as MarketInstrument
-        const tl = (context.userDrawings?.trendlines || []).find((t: any) => t.id === (d as any).trendlineId) || context.userDrawings?.trendlines?.[0]
+        const tl =
+          (context.userDrawings?.trendlines || []).find((t: any) => t.id === (d as any).trendlineId) ||
+          (context.userDrawings?.trendlines || []).find((t: any) => t.isActionTrendline) ||
+          context.userDrawings?.trendlines?.[0]
         const targetPx = tl ? tl.projectedPrice || tl.endPrice : context.currentPrice
         const tlId = tl?.id || (d as any).trendlineId || 'user-tl'
+        const tradeDir: 'LONG' | 'SHORT' =
+          (d as any).direction ||
+          (tl?.direction === 'BULLISH' ? 'SHORT' : tl?.direction === 'BEARISH' ? 'LONG' : (tl?.slopeDirection === 'ASCENDING' ? 'SHORT' : 'LONG'))
+        const isShort = tradeDir === 'SHORT'
+        const isAction = Boolean(tl?.isActionTrendline || tl?.isInitialOvernight)
+        const tlLabel = tl?.label || (isAction ? `Action Trendline (${isShort ? 'Bullish Initial' : 'Bearish Initial'})` : (isShort ? 'Bullish Trendline' : 'Bearish Trendline'))
+        const actionVerb = isShort ? 'Short' : 'Long'
+        const breakSide = isShort ? 'below' : 'above'
+        const slMode = isShort ? 'ABOVE_CANDLE_HIGH' : 'BELOW_CANDLE_LOW'
+
         const newRule = addRule({
           instrument: inst,
           type: 'TRENDLINE_BREAKOUT_SYSTEMATIC',
-          direction: 'LONG',
-          description: (d as any).description || `Long 1 ${inst} on 5m Candle Close above ${tl?.label || 'Bearish Trendline'} (Trend-Borning Zone)`,
-          userPrompt: (d as any).userPrompt || `Monitor ${tl?.label || 'Bearish Trendline'}. Enter Long 1 ${inst} when 5m candle closes above trendline.`,
-          targetReference: tl?.label || 'Bearish Trendline',
+          direction: tradeDir,
+          description: (d as any).description || `${actionVerb} 1 ${inst} on 5m Candle Close ${breakSide} ${tlLabel} (Trend-Borning Zone)`,
+          userPrompt: (d as any).userPrompt || `Monitor ${tlLabel}. Enter ${actionVerb} 1 ${inst} when 5m candle closes ${breakSide} trendline.`,
+          targetReference: tlLabel,
           targetPrice: targetPx ?? undefined,
           pattern: 'TRENDLINE_BREAKOUT_5M',
-          stopLossMode: 'BELOW_CANDLE_LOW',
+          stopLossMode: slMode,
           takeProfitMode: 'FIXED_POINTS',
           takeProfit: 50,
           size: 1,
@@ -958,7 +973,7 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
           conditions: {
             trendlineId: tlId,
             pattern: 'TRENDLINE_BREAKOUT_5M',
-            stopLossMode: 'BELOW_CANDLE_LOW',
+            stopLossMode: slMode,
             takeProfitMode: 'FIXED_POINTS',
             takeProfit: 50,
             size: 1,
@@ -966,8 +981,8 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
         })
         setArmedRules((prev) => [newRule as any, ...prev.filter((r) => r.id !== newRule.id)])
         playTradingViewChime()
-        warningToast(`🎯 Armed Trendline Strategy for ${inst}`, 8000)
-        speakText(`Trendline breakout strategy armed for ${inst}. Monitoring confirmed 5-minute candle close.`)
+        warningToast(`🎯 Armed Trendline Strategy (${tradeDir}) for ${inst}`, 8000)
+        speakText(`Trendline breakout strategy armed for ${tradeDir} ${inst}. Monitoring confirmed 5-minute candle close.`)
       } else if (d.action === 'ARM_STAGNATION_RULE') {
         const now = Date.now()
         const dateMeta = formatRuleDate(now)
@@ -1256,7 +1271,7 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
             const rawPattern = (rule.pattern || (rule as any).conditions?.pattern || '').trim().toUpperCase()
             const isTouchOnly = !rawPattern || rawPattern === 'LEVEL_TOUCH' || rawPattern === 'TOUCH' || rawPattern === 'NONE'
 
-            const bars: Candle[] =
+            const rawBars: Candle[] =
               candlesRef.current && candlesRef.current.length > 0
                 ? candlesRef.current.map((c: any) => ({
                     time: typeof c.time === 'number' ? c.time : 0,
@@ -1267,6 +1282,7 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                     volume: Number(c.volume || 1),
                   }))
                 : []
+            const bars: Candle[] = resampleCandlesTo5M(rawBars)
 
             let signalBar: Candle | null = bars.length > 0 ? bars[bars.length - 1]! : null
 
@@ -1280,9 +1296,28 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                   type: 'TRENDLINE',
                   p1: { time: (activeTl as any).p1?.time ?? (bars[0]?.time || 0), price: activeTl.startPrice },
                   p2: { time: (activeTl as any).p2?.time ?? (bars[bars.length - 1]?.time || 0), price: activeTl.endPrice },
+                  direction: activeTl.direction,
+                  sessionOrigin: activeTl.sessionOrigin,
+                  isCarriedFromOvernight: activeTl.isCarriedFromOvernight,
+                  breakCountOvernight: activeTl.breakCountOvernight,
+                  isActionTrendline: activeTl.isActionTrendline,
+                  isInitialOvernight: activeTl.isInitialOvernight,
                 }
-                const brkCheck = checkTrendlineBreakout(candleTl, bars)
-                const initPt = findInitiatingPoint(candleTl, bars, brkCheck.breakoutCandleIndex ?? bars.length - 1)
+                const tradeDir: 'LONG' | 'SHORT' =
+                  rule.direction ||
+                  (activeTl.direction === 'BULLISH' ? 'SHORT' : activeTl.direction === 'BEARISH' ? 'LONG' : (activeTl.endPrice > activeTl.startPrice ? 'SHORT' : 'LONG'))
+
+                const ruleCreatedSec = rule.createdAt ? Math.floor(new Date(rule.createdAt).getTime() / 1000) : 0
+                const minBrkTime = (rule as any).conditions?.minBreakoutTime ?? ruleCreatedSec
+                const nowSec = Math.floor(Date.now() / 1000)
+
+                const brkCheck = checkTrendlineBreakout(candleTl, bars, {
+                  direction: tradeDir,
+                  minBreakoutTime: minBrkTime,
+                  currentTimeSec: nowSec,
+                  barDurationSec: 300,
+                })
+                const initPt = findInitiatingPoint(candleTl, bars, brkCheck.breakoutCandleIndex ?? bars.length - 1, { direction: tradeDir })
                 let borningScore = 80
                 let borningGrade: any = 'A'
 
@@ -1291,10 +1326,19 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                     initiatingPoint: initPt,
                     bars,
                     chartContext: context as any,
+                    direction: tradeDir,
                   })
                   borningScore = borningRes.compositeScore
                   borningGrade = borningRes.grade
                 }
+
+                // Evaluate Dalton Balance Day Chop Shield
+                const chopShield = evaluateChopShield({
+                  bars,
+                  yVal: context.shortTermMoney?.yval ?? (context as any).yesterday?.val,
+                  yVah: context.shortTermMoney?.yvah ?? (context as any).yesterday?.vah,
+                  dayType: (context as any).dayType ?? undefined,
+                })
 
                 const prevProg = rule.conditionProgress || {}
                 const newProg: RuleConditionProgress = {
@@ -1306,6 +1350,8 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                   borningZoneInitiated: Boolean(initPt),
                   borningZoneScore: borningScore,
                   borningZoneGrade: borningGrade,
+                  chopShieldActive: chopShield.isChopShieldActive,
+                  chopShieldThreshold: chopShield.minScoreRequired,
                   levelReached: brkCheck.isCrossed,
                   patternConfirmed: brkCheck.isConfirmed5mClose,
                   sessionConfirmed: true,
@@ -1313,31 +1359,68 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
 
                 if (
                   newProg.trendlineCrossed !== prevProg.trendlineCrossed ||
-                  newProg.bar5mCloseConfirmed !== prevProg.bar5mCloseConfirmed
+                  newProg.bar5mCloseConfirmed !== prevProg.bar5mCloseConfirmed ||
+                  newProg.chopShieldActive !== prevProg.chopShieldActive
                 ) {
                   changed = true
                   rule = { ...rule, conditionProgress: newProg }
                 }
 
                 if (brkCheck.isConfirmed5mClose) {
+                  // Session Gating: Action Trendlines and NY-restricted rules only execute live orders in NYC Cash Session
+                  const isNyActive = isNycSessionActive()
+                  const isNyRestricted = rule.session === 'NY' || Boolean(activeTl.isActionTrendline || activeTl.isInitialOvernight)
+
+                  if (isNyRestricted && !isNyActive) {
+                    // Break occurred during overnight (Asia/London): notify trader to redraw new line, do NOT fire live order!
+                    if (!(rule.conditionProgress as any)?.overnightBreakAlertFired) {
+                      changed = true
+                      rule = {
+                        ...rule,
+                        conditionProgress: {
+                          ...newProg,
+                          overnightBreakAlertFired: true,
+                          overnightBreakCount: ((prevProg as any).overnightBreakCount || 0) + 1,
+                        } as any,
+                      }
+                      playTradingViewChime()
+                      warningToast(
+                        `🌙 [OVERNIGHT BREAK DETECTED]: ${activeTl.label || 'Action Trendline'} broken during overnight. No live orders executed. Redraw new initial line for NYC session.`,
+                        10000
+                      )
+                      speakText(`Overnight trendline break detected on ${rule.instrument}. Redraw initial line for New York.`)
+                    }
+                    return rule
+                  }
+
                   if (executingRuleIdsRef.current.has(rule.id)) {
                     return rule
                   }
+
+                  // Chop Shield Filter: require minimum composite score (75 during chop, 60 normal)
+                  if (borningScore < chopShield.minScoreRequired) {
+                    warningToast(
+                      `⚠️ [CHOP SHIELD]: Trendline break score (${borningScore}/100) below required threshold (${chopShield.minScoreRequired}). Trade filtered to protect capital: ${chopShield.reason}`,
+                      10000
+                    )
+                    return rule
+                  }
+
                   executingRuleIdsRef.current.add(rule.id)
                   changed = true
 
                   const entryPx = brkCheck.entryPrice ?? curPrice
-                  const slPx = brkCheck.defaultStopLoss ?? Number((entryPx - 10).toFixed(2))
-                  const tpPx = brkCheck.defaultTakeProfitFixed50 ?? Number((entryPx + 50).toFixed(2))
+                  const slPx = brkCheck.defaultStopLoss ?? (tradeDir === 'SHORT' ? Number((entryPx + 10).toFixed(2)) : Number((entryPx - 10).toFixed(2)))
+                  const tpPx = brkCheck.defaultTakeProfitFixed50 ?? (tradeDir === 'SHORT' ? Number((entryPx - 50).toFixed(2)) : Number((entryPx + 50).toFixed(2)))
 
                   void executePlaceOrder({
                     instrument: rule.instrument || context.instrument,
-                    direction: 'LONG',
+                    direction: tradeDir,
                     price: entryPx,
                     stopLoss: slPx,
                     profitTarget: tpPx,
                     size: rule.size || 1,
-                    reason: `Systematic Trendline Breakout (Trend-Borning Score: ${borningScore}/100 Grade ${borningGrade})`,
+                    reason: `Systematic Trendline Breakout (${tradeDir}) (Trend-Borning Score: ${borningScore}/100 Grade ${borningGrade})`,
                   })
 
                   rule = {
@@ -1624,13 +1707,21 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                 type: 'TRENDLINE',
                 p1: { time: (activeTl as any).p1?.time ?? (bars[0]?.time || 0), price: activeTl.startPrice },
                 p2: { time: (activeTl as any).p2?.time ?? (bars[bars.length - 1]?.time || 0), price: activeTl.endPrice },
+                direction: activeTl.direction,
+                sessionOrigin: activeTl.sessionOrigin,
+                isCarriedFromOvernight: activeTl.isCarriedFromOvernight,
+                breakCountOvernight: activeTl.breakCountOvernight,
               }
-              const initPt = findInitiatingPoint(candleTl, bars, bars.length - 1)
+              const trDir: 'LONG' | 'SHORT' =
+                tr.direction ||
+                (activeTl.direction === 'BULLISH' ? 'SHORT' : activeTl.direction === 'BEARISH' ? 'LONG' : (activeTl.endPrice > activeTl.startPrice ? 'SHORT' : 'LONG'))
+              const initPt = findInitiatingPoint(candleTl, bars, bars.length - 1, { direction: trDir })
               if (initPt) {
                 const borningRes = evaluateTrendBorningZone({
                   initiatingPoint: initPt,
                   bars,
                   chartContext: context as any,
+                  direction: trDir,
                 })
                 const higherLows = detectHigherLowsWithTiming(initPt, bars)
                 const curPrice = context.currentPrice ?? bars[bars.length - 1]!.close
@@ -1641,22 +1732,43 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                   currentPrice: curPrice,
                   currentTime: Math.floor(Date.now() / 1000),
                   bars,
+                  direction: trDir,
                 })
                 const latestCompletedBar = bars[bars.length - 1]!
-                const exitCheck = checkDynamicTrendlineExit(dynLine, latestCompletedBar)
+                const nowSec = Math.floor(Date.now() / 1000)
+                const exitCheck = checkDynamicTrendlineExit(dynLine, latestCompletedBar, {
+                  currentTimeSec: nowSec,
+                  barDurationSec: 300,
+                })
                 if (exitCheck.shouldExit) {
+                  const exitReason = `Systematic Dynamic Trendline Breakdown (${trDir})`
+
+                  // 1. Cancel working brackets on broker to eliminate orphaned limit orders
+                  void fetch('/api/trading/positions/cancel-working', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ instrument: context.instrument }),
+                  }).catch(() => {})
+
                   if (onClosePosition) {
-                    onClosePosition('Systematic Dynamic Trendline Breakdown')
+                    onClosePosition(exitReason)
                   } else {
                     void fetch('/api/trading/positions/close', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ instrument: context.instrument, reason: 'trendline_breakdown' }),
+                      body: JSON.stringify({
+                        position_id: (pos as any)?.id || 'active',
+                        instrument: context.instrument,
+                        exit_price: latestCompletedBar.close,
+                        exit_reason: 'ai_signal',
+                        exit_notes: exitReason,
+                      }),
                     })
                   }
                   updateRule(tr.instrument as MarketInstrument, tr.id, { status: 'EXECUTED' })
+                  const sideText = trDir === 'SHORT' ? 'above' : 'below'
                   warningToast(
-                    `🚨 [SYSTEMATIC EXIT]: 5m candle closed below dynamic trendline @ ${latestCompletedBar.close.toFixed(2)}. Position flattened ("We are out").`,
+                    `🚨 [SYSTEMATIC EXIT]: 5m candle closed ${sideText} dynamic trendline @ ${latestCompletedBar.close.toFixed(2)}. Position flattened ("We are out").`,
                     10000
                   )
                   speakText('Systematic exit triggered. Position flattened.')
@@ -1665,7 +1777,7 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                     {
                       id: `leo-exit-${Date.now()}`,
                       role: 'assistant',
-                      content: `🚨 **[SYSTEMATIC EXIT EXECUTED]**\n5-minute candle closed below dynamic responsive trendline at **${latestCompletedBar.close.toFixed(2)}**.\nPosition flattened cleanly per strategy protocol: *"We are out."*`,
+                      content: `🚨 **[SYSTEMATIC EXIT EXECUTED]**\n5-minute candle closed ${sideText} dynamic responsive trendline at **${latestCompletedBar.close.toFixed(2)}**.\nPosition flattened cleanly per strategy protocol: *"We are out."*`,
                       timestamp: Date.now(),
                     },
                   ])

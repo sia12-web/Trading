@@ -522,6 +522,15 @@ function DetailedSituationCard({
           <div className="font-semibold text-gray-300 flex items-center justify-between border-b border-white/5 pb-1 font-mono text-[11px] uppercase tracking-wider">
             <span className="flex items-center gap-1.5">
               <span>🎯 1. Trigger Checklist</span>
+              {rule.direction && (
+                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                  rule.direction === 'SHORT'
+                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                    : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                }`}>
+                  {rule.direction}
+                </span>
+              )}
             </span>
             {isTriggered ? (
               <span className="text-[10px] text-emerald-400 font-bold bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-500/40">
@@ -537,7 +546,7 @@ function DetailedSituationCard({
           <div className="space-y-1.5 font-mono text-[11px]">
             {rule.type === 'TRENDLINE_BREAKOUT_SYSTEMATIC' ? (
               <>
-                {/* Condition 1: Bearish Trendline Crossed */}
+                {/* Condition 1: Trendline Crossed */}
                 <div className={`p-1.5 rounded border flex items-center justify-between ${
                   rule.conditionProgress?.trendlineCrossed || isTriggered
                     ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
@@ -576,7 +585,9 @@ function DetailedSituationCard({
                     }`}>
                       {rule.conditionProgress?.bar5mCloseConfirmed || isTriggered ? '✓' : '○'}
                     </span>
-                    <span className="truncate">5M Close: Above Line</span>
+                    <span className="truncate">
+                      5M Close: {rule.direction === 'SHORT' ? 'Below Line' : 'Above Line'}
+                    </span>
                   </div>
                   <span className="text-[10px] font-semibold shrink-0 ml-1">
                     {rule.conditionProgress?.bar5mCloseConfirmed || isTriggered ? (
@@ -610,7 +621,7 @@ function DetailedSituationCard({
                   </span>
                 </div>
 
-                {/* Condition 4: Higher Lows Timing Progression */}
+                {/* Condition 4: Pivots Timing Progression */}
                 <div className="p-1.5 rounded border bg-surface-900/60 border-surface-700/50 text-gray-300 flex items-center justify-between">
                   <div className="flex items-center gap-1.5 truncate">
                     <span className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 bg-sky-500 text-black">
@@ -619,20 +630,34 @@ function DetailedSituationCard({
                     <span className="truncate">Dynamic Line & Timing</span>
                   </div>
                   <span className="text-[10px] font-semibold text-sky-300 shrink-0 ml-1">
-                    {rule.conditionProgress?.higherLowsCount ? `${rule.conditionProgress.higherLowsCount} HLs (T+)` : 'T0 Origin Active'}
+                    {rule.conditionProgress?.higherLowsCount
+                      ? `${rule.conditionProgress.higherLowsCount} ${rule.direction === 'SHORT' ? 'LHs' : 'HLs'} (T+)`
+                      : `T0 Origin (${rule.direction === 'SHORT' ? 'High' : 'Low'})`}
                   </span>
                 </div>
 
-                {/* Condition 5: Structural Zone & Swing Volume */}
-                <div className="p-1.5 rounded border bg-surface-900/60 border-surface-700/50 text-gray-300 flex items-center justify-between">
+                {/* Condition 5: Chop Shield Protection Filter */}
+                <div className={`p-1.5 rounded border flex items-center justify-between ${
+                  rule.conditionProgress?.chopShieldActive
+                    ? 'bg-amber-950/40 border-amber-500/40 text-amber-200'
+                    : 'bg-surface-900/60 border-surface-700/50 text-gray-300'
+                }`}>
                   <div className="flex items-center gap-1.5 truncate">
-                    <span className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 bg-violet-500 text-white">
-                      📊
+                    <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                      rule.conditionProgress?.chopShieldActive
+                        ? 'bg-amber-500 text-black'
+                        : 'bg-emerald-500 text-black'
+                    }`}>
+                      {rule.conditionProgress?.chopShieldActive ? '🛡️' : '✓'}
                     </span>
-                    <span className="truncate">Zone & Swing Vol</span>
+                    <span className="truncate">Chop Shield</span>
                   </div>
-                  <span className="text-[10px] font-semibold text-violet-300 shrink-0 ml-1">
-                    {rule.conditionProgress?.stallingPenaltyActive ? 'Steepening (Decay)' : 'Vol Aligned'}
+                  <span className="text-[10px] font-semibold shrink-0 ml-1">
+                    {rule.conditionProgress?.chopShieldActive ? (
+                      <span className="text-amber-300 font-bold">Active (Req ≥{rule.conditionProgress.chopShieldThreshold || 75})</span>
+                    ) : (
+                      <span className="text-emerald-300 font-medium">Normal (Req ≥60)</span>
+                    )}
                   </span>
                 </div>
 
@@ -646,7 +671,7 @@ function DetailedSituationCard({
                       <span className="truncate">Stall Time-Decay</span>
                     </div>
                     <span className="text-[10px] font-semibold text-amber-300 shrink-0 ml-1">
-                      Steepening Upward
+                      {rule.direction === 'SHORT' ? 'Steepening Downward' : 'Steepening Upward'}
                     </span>
                   </div>
                 )}

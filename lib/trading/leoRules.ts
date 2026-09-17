@@ -74,6 +74,7 @@ export interface ArmedRuleCondition {
   higherLowCount?: number
   dynamicSlope?: number
   dynamicExitArmed?: boolean
+  minBreakoutTime?: number
 }
 
 export interface RuleConditionProgress {
@@ -99,6 +100,8 @@ export interface RuleConditionProgress {
   higherLowsCount?: number
   stallingPenaltyActive?: boolean
   dynamicTrendlineExitTriggered?: boolean
+  chopShieldActive?: boolean
+  chopShieldThreshold?: number
 }
 
 export interface ArmedRule {

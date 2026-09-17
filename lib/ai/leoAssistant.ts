@@ -51,6 +51,14 @@ export interface LeoUserDrawingsContext {
     projectedPrice: number
     distancePts: number | null
     priceRelation: 'ABOVE' | 'BELOW' | 'TESTING'
+    direction?: 'BEARISH' | 'BULLISH'
+    sessionOrigin?: 'Asia' | 'London' | 'NYC'
+    isCarriedFromOvernight?: boolean
+    breakCountOvernight?: number
+    isActionTrendline?: boolean
+    isInitialOvernight?: boolean
+    p1?: { time: number; price: number }
+    p2?: { time: number; price: number }
   }>
   ranges: Array<{
     id: string
@@ -306,7 +314,7 @@ export type LeoExecutionDirective =
       action: 'ARM_TRENDLINE_STRATEGY'
       trendlineId?: string
       instrument?: string
-      direction?: 'LONG'
+      direction?: 'LONG' | 'SHORT'
       description?: string
       userPrompt?: string
     }
@@ -615,13 +623,16 @@ export function extractChartDataPoints(ctx: LeoChatContext): LeoDataPoint[] {
   // 6. User-Drawn Chart Tools & Manual References
   if (ctx.userDrawings) {
     for (const t of ctx.userDrawings.trendlines) {
+      const isAction = Boolean(t.isActionTrendline || t.isInitialOvernight)
       points.push({
         id: `user-tl-${t.id}`,
-        label: t.label || 'Trendline',
+        label: isAction ? `🎯 ${t.label || 'Action Trendline (Overnight Initial)'}` : (t.label || 'Trendline'),
         value: `${t.startPrice.toLocaleString()} → ${t.endPrice.toLocaleString()}`,
         tier: 'DRAWING',
         category: 'TRENDLINE',
-        description: `Manual Trendline [${t.slopeDirection}]: ${t.startTimeEt} to ${t.endTimeEt} (${t.slopePtsPer5mBar >= 0 ? '+' : ''}${t.slopePtsPer5mBar} pts/5m). Price is ${t.priceRelation} (${t.distancePts != null ? `${t.distancePts} pts` : ''}).`,
+        description: isAction
+          ? `🎯 INITIAL ACTION TRENDLINE (OVERNIGHT) [${t.slopeDirection}]: Hand-drawn action line from overnight. Leo reacts to NYC breakout on confirmed 5m close. Projected level: ${t.projectedPrice}. Price is ${t.priceRelation} (${t.distancePts != null ? `${t.distancePts} pts` : ''}).`
+          : `Manual Trendline [${t.slopeDirection}]: ${t.startTimeEt} to ${t.endTimeEt} (${t.slopePtsPer5mBar >= 0 ? '+' : ''}${t.slopePtsPer5mBar} pts/5m). Price is ${t.priceRelation} (${t.distancePts != null ? `${t.distancePts} pts` : ''}).`,
       })
     }
     for (const r of ctx.userDrawings.ranges) {
@@ -759,45 +770,80 @@ THE TRADER'S SYSTEM ARCHITECTURE:
    - Trend Continuation Confirmation:
      * A true breakout beyond VAH or VAL must be backed by aggressive cumulative delta (Trend: BUYER_DOMINANT or SELLER_DOMINANT). Without delta confirmation, warn of a potential look-above-and-fail.
 
-5d. THE TRADER'S SYSTEMATIC TRENDLINE BREAKOUT & "BULLISH TREND-BORNING ZONE" STRATEGY:
-   This is the trader's primary systematic strategy for trend reversal entries and dynamic risk management:
-   - 1. Bearish Trendline Breakout Entry:
-     * Trader draws or identifies a bearish trendline connecting consecutive lower highs.
-     * When price crosses and fails to make lower highs, responsive buyers have initiated a new trend.
-     * STRICT EXECUTION RULE: Wait for a CONFIRMED 5-MINUTE CANDLE CLOSE strictly above the trendline. Never enter on intra-bar wick piercings!
-     * Enter LONG at the exact close of the 5-minute breakout bar.
-   - 2. Stop Loss & Take Profit Rules:
-     * Stop Loss: Placed cleanly below the Breakout Candle Low (or initiating pivot low).
-     * Take Profit: Default +50.0 points (or 1:2 Risk-to-Reward bracket).
-   - 3. Bullish Trend-Borning Zone (Structural Zone):
-     * The lowest pivot low formed under the broken bearish trendline is the "Initiating Point" (Origin).
-     * Evaluated as a structural price zone (±5 pts on Gold, ±20 pts on Dow/NQ).
-     * 7-Factor Institutional Scoring (0–100 pts): Multi-Horizon POCs (Yesterday, Overnight, 5-Day), RVOL & Cluster Volume, Candlestick Excess Rejection Tail (≥45% wick), Psychological Round Handles (.00, .50), 5-Month Anchored VWAP defense band (±15 pts), Order Flow Delta Absorption, and Time-of-Day.
+5d. THE TRADER'S SYSTEMATIC TRENDLINE BREAKOUT, TWO-WAY "TREND-BORNING ZONE", AND MULTI-SESSION PIPELINE:
+   This is the trader's primary systematic strategy for trend reversal entries, multi-session trendline lifecycle, and dynamic risk management:
+
+   - 1. Multi-Session Trendline Pipeline (Asia 18:00 ET → London 03:00 ET → NYC 09:30 ET):
+     * The system begins tracking structural trendlines when Asia session opens at 18:00 ET.
+     * Asia is frequently a range; London open (03:00 ET) often breaks Asia's range and initiates a clean directional move.
+     * If a trendline is broken during overnight (in Asia or London), the system automatically reconstructs the new trendline connecting the subsequent swing extremes.
+     * Overnight breaks do NOT trigger live trade orders (the trader trades strictly in the NYC cash session).
+     * When NYC Cash Open (09:30 ET) arrives, the system carries forward the active unbroken overnight trendline (from Asia or London), labeled with its session origin (e.g. "Overnight Trendline [London 04:15 ET · Unbroken]").
+     * Automated execution and 7-factor institutional scoring arm strictly during the NYC session.
+
+   - 2. Two-Way Execution Systematic Cycles:
+     * A) LONG SETUP (Bearish Trendline Broken):
+       - Broken trendline was descending (connecting lower highs).
+       - STRICT ENTRY RULE: Confirmed 5-minute candle close strictly ABOVE the bearish line. Never enter on intra-bar wick piercings!
+       - Initiating Point ("Bullish Trend-Borning Zone"): Absolute lowest pivot low formed under the broken line.
+       - Stop Loss: Placed below the breakout candle low (-1.0 pt safety buffer).
+       - Take Profit: Default +50.0 points (or 1:2 Risk-to-Reward bracket).
+       - Trailing Dynamic Line: Ascending line anchored at the Borning Zone low and Higher Lows (HL1, HL2...).
+       - Systematic Exit: Flatten immediately when a 5m candle closes strictly BELOW the dynamic trendline ("We are out").
+     * B) SHORT SETUP (Bullish Trendline Broken):
+       - Broken trendline was ascending (connecting higher lows).
+       - STRICT ENTRY RULE: Confirmed 5-minute candle close strictly BELOW the bullish line.
+       - Initiating Point ("Bearish Trend-Borning Zone"): Absolute highest pivot high formed under/around the broken line.
+       - Stop Loss: Placed above the breakout candle high (+1.0 pt safety buffer).
+       - Take Profit: Default -50.0 points (or 1:2 Risk-to-Reward bracket).
+       - Trailing Dynamic Line: Descending line anchored at the Borning Zone high and Lower Highs (LH1, LH2...).
+       - Systematic Exit: Flatten immediately when a 5m candle closes strictly ABOVE the dynamic trendline ("We are out").
+
+   - 3. 7-Factor Institutional Scoring Model (0–100 pts):
+     * Multi-Horizon POCs: Long scored on discount below Y-POC (+10), ON-POC (+8), 5D-POC (+7). Short scored on premium above POCs (+10, +8, +7).
+     * RVOL & Cluster Volume: High RVOL (≥1.5x–2.0x) confirms institutional participation.
+     * Candlestick Rejection Tails: Long requires buying excess bottom wick (≥45%), Hammer, or Bullish Engulfing. Short requires selling excess top wick (≥45%), Shooting Star, or Bearish Engulfing.
+     * Round Numbers: Proximity to Century (.00) or Half-Century (.50) handles (+6 to +10 pts).
+     * 5-Month Anchored VWAP: Aligned with ±15 pts of AVWAP defense bands (+15 pts).
+     * Resting Liquidity / Delta Absorption: Trapped sellers (Long) or trapped buyers (Short) (+5 pts).
+     * Time-of-Day Context: Opening Drive (09:30–10:00 ET) +5 pts, Power Hour (15:00–16:00 ET) +4 pts, Lunch Chop (11:30–13:30 ET) 0 pts.
+
    - 4. Level Volume Comparison vs Prior Support/Resistance Touches:
-     * We compare the current initiating volume in this zone to prior historical times that price visited or tested this shelf over the 5-Day FRVP and 5-Month Anchored VWAP.
-     * Higher volume on the bounce (> 1.2x prior tests) confirms Institutional Absorption / Defense (+8 pts bonus).
-     * Lower volume (< 0.8x) warns of an anemic vacuum bounce.
-   - 5. Dynamic Swing Volume Progression & Time-Decay Angle:
-     * As the move progresses, we monitor consecutive swing highs and swing lows with their volume.
-     * If volume on swing highs is diminishing/drying up (buyer exhaustion): The dynamic score drops (-5 to -15 pts), and the dynamic trendline STEEPENS its angle upward toward price (+0.5 to +1.5 pts/5m). This pushes us out of the trade faster before a reversal catches us!
-     * If volume is expanding on swing highs: Score increases, and the trendline maintains its angle to let the trade run.
-   - 6. Systematic Exit Rule ("We are out"):
-     * When a 5-minute candle closes strictly below the dynamic responsive trendline, flatten the position immediately: "We are out".
-   - When the trader asks to arm or monitor this strategy (e.g. "Buy gold now at this price with the one risk and two reward", "Arm trendline strategy", "Monitor bearish trendline breakout"), confirm the entry on 5m close, SL below breakout candle low, TP +50 pts (or 1:2 R:R), Borning Zone score, and output an <execute> block:
+     * Current zone volume is compared to prior historical times price visited this zone over the 5-Day FRVP and 5-Month AVWAP.
+     * Higher volume (≥ 1.25x surge) confirms Institutional Absorption (+4 pts bonus).
+     * Lower volume (≤ 0.75x) warns of an anemic retest (-2 pts penalty).
+
+   - 5. Dynamic Swing Volume Progression & Stalling Time-Decay:
+     * Consecutive swing legs are tracked in real-time.
+     * If volume on swings dries up (≥ 15% drop): Score is penalized (-5 to -15 pts), and dynamic trailing line steepens toward price (+0.5 to +1.5 pts/5m) for a faster exit.
+     * If volume on swings expands (≥ 15% surge): Score is rewarded (+5 to +10 pts), allowing the runner to breathe.
+     * Sideways stalling (compressed range across 3–6 bars) applies a +0.5 pt/bar slope penalty to force a timely exit.
+
+   - 6. Dalton Balance Day & Chop Protection Shield:
+     * If the market experiences rapid alternating trendline breaks (e.g. Long then Short within 90 minutes) or trades compressed inside yesterday's Value Area in a neutral/non-trend day, the Chop Shield activates.
+     * The system raises the required score threshold to Grade A (≥ 75 pts), suppressing speculative Grade B (60–74) trades.
+     * The dynamic trailing stall penalty is doubled (2.0x) so false breakouts are flattened immediately without taking heat.
+
+   - 7. User-Drawn "Action Trendline" (Initial Overnight Trendline Tool):
+     * The trader can manually draw an "Action Trendline" on the chart using the Action Trend tool (Hotkey: X).
+     * When drawn from overnight (Asia/London), Leo recognizes this as the INITIAL ACTION TRENDLINE that the desk will react to in NYC.
+     * Leo monitors this line and automatically arms reaction for the NYC session.
+     * As soon as price breaks this line in NYC with a confirmed 5m candle close, the full systematic response executes:
+       1) Locates Initiating Point (Trend-Borning Zone Origin Low for Long, Origin High for Short)
+       2) Calculates 7-Factor Institutional Scoring Model & Structural Volume Retest Comparison
+       3) Evaluates Dalton Balance Day Chop Shield (requiring score >= 75 if choppy)
+       4) Places bracket entry with SL below/above breakout candle and TP +50/-50 (or 1:2)
+       5) Projects and trails dynamic responsive trendline for systematic breakdown exit ("We are out").
+
+   - When the trader asks to arm or monitor this strategy (e.g. "Arm trendline strategy", "Arm the action trendline", "React to the trend line from overnight", "Buy gold on trendline breakout", "Short NASDAQ on bullish trendline break"), verify direction (LONG or SHORT), confirm the entry on 5m close, SL/TP brackets, Borning Zone grade, and output an <execute> block:
      <execute>
      {
-       "action": "ARM_CONDITIONAL_ENTRY",
-       "userPrompt": "The user command",
+       "action": "ARM_TRENDLINE_STRATEGY",
        "instrument": "${ctx.instrument}",
        "direction": "LONG",
-       "targetReference": "Bearish Trendline Breakout",
-       "targetPrice": ${defaultTargetPrice},
-       "pattern": "TRENDLINE_BREAKOUT_5M",
-       "stopLossMode": "BELOW_CANDLE_LOW",
-       "takeProfitMode": "FIXED_POINTS",
-       "takeProfit": 50,
-       "size": 1,
-       "description": "Long 1 ${ctx.instrument} on confirmed 5m close above trendline with SL below breakout candle low and dynamic trailing exit"
+       "trendlineId": "active-tl",
+       "description": "Long 1 ${ctx.instrument} on confirmed 5m close above trendline with SL below breakout candle low and dynamic trailing exit",
+       "userPrompt": "The user command"
      }
      </execute>
 
@@ -1043,7 +1089,7 @@ ${
               'MANUAL TRENDLINES:',
               ...ctx.userDrawings.trendlines.map(
                 (t) =>
-                  `- ${t.label || 'Trendline'}: Start ${t.startPrice} (${t.startTimeEt}) → End ${t.endPrice} (${t.endTimeEt}) [${t.slopeDirection}, ${t.slopePtsPer5mBar >= 0 ? '+' : ''}${t.slopePtsPer5mBar} pts/5m]. Projected level: ${t.projectedPrice}. Current price is ${t.priceRelation} (${t.distancePts != null ? `${t.distancePts} pts` : ''}).`
+                  `- ${t.isActionTrendline ? '🎯 [INITIAL ACTION TRENDLINE FROM OVERNIGHT]' : (t.label || 'Trendline')}: Start ${t.startPrice} (${t.startTimeEt}) → End ${t.endPrice} (${t.endTimeEt}) [${t.slopeDirection}, ${t.slopePtsPer5mBar >= 0 ? '+' : ''}${t.slopePtsPer5mBar} pts/5m]. Projected level: ${t.projectedPrice}. Current price is ${t.priceRelation} (${t.distancePts != null ? `${t.distancePts} pts` : ''}).${t.isActionTrendline ? ' (Armed for NYC Systematic Breakout Reaction)' : ''}`
               ),
             ]
           : []),
