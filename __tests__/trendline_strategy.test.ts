@@ -7,10 +7,11 @@ import {
   detectHigherLowsWithTiming,
   calculateDynamicTrendline,
   checkDynamicTrendlineExit,
+  detectSwingVolumeProgression,
 } from '../lib/trading/trendlineStrategy.ts'
 import type { UserTrendline } from '../lib/trading/userDrawings.ts'
 import type { Candle } from '../lib/trading/candlestickPatterns.ts'
-import type { ChartContext55 } from '../lib/chart/context55.ts'
+import type { TrendBorningChartContext } from '../lib/trading/trendlineStrategy.ts'
 
 describe('Systematic Trendline Strategy & Trend-Borning Zone Engine', () => {
   // Mock bearish trendline from (t=1000, p=2080) to (t=1900, p=2060) -> slope = -20 pts / 900s
@@ -262,5 +263,94 @@ describe('Systematic Trendline Strategy & Trend-Borning Zone Engine', () => {
     assert.equal(check2.isConfirmed5mCloseBelow, true)
     assert.equal(check2.exitPrice, 2045)
     assert.ok(check2.reason.includes('5-minute candle close confirmed below dynamic trendline'))
+  })
+
+  test('8. should calculate structural Borning Zone (±5.0 on Gold) and perform historical support comparison', () => {
+    // 6 bars before initiating index where price previously touched [2045, 2055] with volume 100
+    // Initiating bar at index 4 with volume 350
+    const bars: Candle[] = [
+      { time: 0, open: 2052, high: 2054, low: 2048, close: 2050, volume: 100 }, // prior touch
+      { time: 300, open: 2050, high: 2055, low: 2047, close: 2049, volume: 100 }, // prior touch
+      { time: 600, open: 2060, high: 2065, low: 2059, close: 2064, volume: 100 },
+      { time: 900, open: 2062, high: 2063, low: 2053, close: 2054, volume: 120 },
+      { time: 1200, open: 2054, high: 2056, low: 2048, close: 2055, volume: 350 }, // initiating low: 2048
+      { time: 1500, open: 2055, high: 2064, low: 2054, close: 2063, volume: 250 },
+    ]
+
+    const res = evaluateTrendBorningZone({
+      initiatingPoint: { time: 1200, price: 2048, candleIndex: 4 },
+      bars,
+    })
+
+    assert.ok(res.structuralZone)
+    assert.equal(res.structuralZone.originPrice, 2048)
+    assert.equal(res.structuralZone.zoneSpan, 5.0) // Gold span
+    assert.equal(res.structuralZone.zoneLow, 2043)
+    assert.equal(res.structuralZone.zoneHigh, 2053)
+    assert.ok(res.structuralZone.totalZoneVolume > 0)
+    // Initiating volume (350+250) vs prior touch (100+100) -> surge ratio > 1.25 -> Institutional Absorption bonus
+    assert.ok(res.structuralZone.historicalVolumeRatio != null)
+    assert.ok(res.structuralZone.historicalVolumeRatio >= 1.25)
+    assert.ok(res.factors.volumeQuality.historicalComparisonDesc?.includes('Institutional Absorption'))
+  })
+
+  test('9. should detect swing volume progression (declining swing volume triggers buyer exhaustion penalty)', () => {
+    // Breakout at index 1.
+    // Swing High 1 at index 3 (High: 2070, Vol: 300)
+    // Swing Low at index 5 (Low: 2062, Vol: 100)
+    // Swing High 2 at index 7 (High: 2075, Vol: 120) -> 60% drop in volume on higher high!
+    const bars: Candle[] = [
+      { time: 0, open: 2050, high: 2052, low: 2049, close: 2051, volume: 100 },
+      { time: 300, open: 2051, high: 2058, low: 2051, close: 2057, volume: 200 }, // Breakout (index 1)
+      { time: 600, open: 2057, high: 2065, low: 2056, close: 2064, volume: 220 },
+      { time: 900, open: 2064, high: 2070, low: 2063, close: 2068, volume: 300 }, // SH 1 (index 3, vol 300)
+      { time: 1200, open: 2068, high: 2069, low: 2064, close: 2065, volume: 150 },
+      { time: 1500, open: 2065, high: 2066, low: 2062, close: 2063, volume: 100 }, // SL (index 5)
+      { time: 1800, open: 2063, high: 2071, low: 2063, close: 2070, volume: 110 },
+      { time: 2100, open: 2070, high: 2075, low: 2069, close: 2074, volume: 120 }, // SH 2 (index 7, vol 120 vs 300)
+      { time: 2400, open: 2074, high: 2074, low: 2068, close: 2069, volume: 90 },
+    ]
+
+    const prog = detectSwingVolumeProgression(bars, 1)
+    assert.equal(prog.trend, 'DECLINING')
+    assert.ok(prog.decayPercentage <= -15)
+    assert.ok(prog.scoreDelta < 0) // Negative penalty
+    assert.ok(prog.slopeAccelerationPenalty > 0) // Steepening slope penalty active
+    assert.ok(prog.description.includes('Buyer Exhaustion'))
+  })
+
+  test('10. should steepen dynamic trendline and reduce score when swing volume dries up', () => {
+    const origin = { time: 0, price: 2050, candleIndex: 0 }
+    const higherLows = [{ time: 0, price: 2050, candleIndex: 0, elapsedSecFromOrigin: 0, elapsedMinutesFromOrigin: 0, timingLabel: 'T0' }]
+
+    // Bars with declining swing volume
+    const barsWithDecayingVolume: Candle[] = [
+      { time: 0, open: 2050, high: 2052, low: 2049, close: 2051, volume: 100 },
+      { time: 300, open: 2051, high: 2058, low: 2051, close: 2057, volume: 200 },
+      { time: 600, open: 2057, high: 2065, low: 2056, close: 2064, volume: 220 },
+      { time: 900, open: 2064, high: 2070, low: 2063, close: 2068, volume: 300 }, // Swing high 1 (vol 300)
+      { time: 1200, open: 2068, high: 2069, low: 2064, close: 2065, volume: 150 },
+      { time: 1500, open: 2065, high: 2066, low: 2062, close: 2063, volume: 100 },
+      { time: 1800, open: 2063, high: 2071, low: 2063, close: 2070, volume: 110 },
+      { time: 2100, open: 2070, high: 2075, low: 2069, close: 2074, volume: 120 }, // Swing high 2 (vol 120)
+      { time: 2400, open: 2074, high: 2074, low: 2068, close: 2069, volume: 90 },
+    ]
+
+    const dynamicLine = calculateDynamicTrendline({
+      origin,
+      compositeScore: 85,
+      higherLows,
+      currentPrice: 2070,
+      currentTime: 2400,
+      bars: barsWithDecayingVolume,
+    })
+
+    assert.ok(dynamicLine.swingVolumeProgression)
+    assert.equal(dynamicLine.swingVolumeProgression?.trend, 'DECLINING')
+    // Score should be reduced from base 85
+    assert.ok(dynamicLine.compositeScore < 85)
+    // volumeDecayPenalty should be > 0 and added to effective slope
+    assert.ok(dynamicLine.volumeDecayPenalty > 0)
+    assert.ok(dynamicLine.effectiveSlopePtsPer5m > dynamicLine.baseSlopePtsPer5m)
   })
 })

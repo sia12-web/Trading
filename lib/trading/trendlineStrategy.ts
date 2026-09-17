@@ -54,6 +54,10 @@ export interface TrendBorningFactorBreakdown {
     clusterVolume: number
     avgVolume: number
     rating: 'HIGH' | 'ABOVE_AVERAGE' | 'NORMAL' | 'LOW'
+    zoneTotalVolume?: number
+    historicalTestRatio?: number
+    historicalComparisonScore?: number
+    historicalComparisonDesc?: string
   }
   candlestickPower: {
     score: number
@@ -96,13 +100,46 @@ export interface TrendBorningFactorBreakdown {
 
 export type BorningGrade = 'A' | 'B' | 'C' | 'D'
 
+export interface TrendBorningZoneRange {
+  originPrice: number
+  zoneSpan: number
+  zoneLow: number
+  zoneHigh: number
+  totalZoneVolume: number
+  barCount: number
+  avgBarVolume: number
+  historicalVolumeRatio?: number | null
+  historicalComparisonDesc?: string
+}
+
+export interface SwingVolumePivot {
+  type: 'SWING_HIGH' | 'SWING_LOW'
+  price: number
+  time: number
+  candleIndex: number
+  volume: number
+  rvol: number
+}
+
+export interface SwingVolumeProgression {
+  pivots: SwingVolumePivot[]
+  trend: 'DECLINING' | 'EXPANDING' | 'NEUTRAL'
+  decayPercentage: number
+  scoreDelta: number
+  slopeAccelerationPenalty: number
+  description: string
+}
+
 export interface TrendBorningZoneResult {
   initiatingPoint: {
     time: number
     price: number
     candleIndex: number
   }
+  structuralZone: TrendBorningZoneRange
   compositeScore: number
+  baseScore?: number
+  swingProgression?: SwingVolumeProgression
   grade: BorningGrade
   gradeLabel: string
   factors: TrendBorningFactorBreakdown
@@ -127,10 +164,13 @@ export interface DynamicResponsiveTrendline {
   higherLows: HigherLowPivot[]
   consecutiveStallBars: number
   stallPenaltyScore: number
+  volumeDecayPenalty: number
   isStalling: boolean
   currentProjectedPrice: number
   p1: { time: number; price: number }
   p2: { time: number; price: number }
+  structuralZone?: TrendBorningZoneRange
+  swingVolumeProgression?: SwingVolumeProgression
 }
 
 export interface TrendlineBreakoutCheck {
@@ -371,6 +411,69 @@ export function evaluateTrendBorningZone(params: {
     rvol = Number((clusterVolume / Math.max(1, avgVolume)).toFixed(2))
   }
 
+  // ── Structural Trend-Borning Zone & Historical Support Level Comparison ──
+  const zoneSpan = originPrice > 10000 ? 20.0 : originPrice > 1000 ? 5.0 : 0.5
+  const zoneLow = Number((originPrice - zoneSpan).toFixed(2))
+  const zoneHigh = Number((originPrice + zoneSpan).toFixed(2))
+
+  let zoneTotalVolume = 0
+  let zoneBarCount = 0
+  if (bars && bars.length > 0 && idx >= 0) {
+    for (let i = Math.max(0, idx - 2); i <= Math.min(bars.length - 1, idx + 2); i++) {
+      const b = bars[i]!
+      if (b.low <= zoneHigh && b.high >= zoneLow) {
+        zoneTotalVolume += b.volume || 1
+        zoneBarCount++
+      }
+    }
+  }
+  const zoneAvgVolume = zoneBarCount > 0 ? zoneTotalVolume / zoneBarCount : clusterVolume
+
+  // Historical Support/Resistance Level Comparison:
+  // Look back at previous periods before this breakout where price interacted with [zoneLow, zoneHigh]
+  let priorTouchVolumeSum = 0
+  let priorTouchBarCount = 0
+  if (bars && idx > 2) {
+    for (let i = 0; i < idx - 2; i++) {
+      const b = bars[i]!
+      if (b.low <= zoneHigh && b.high >= zoneLow) {
+        priorTouchVolumeSum += b.volume || 1
+        priorTouchBarCount++
+      }
+    }
+  }
+  const priorTouchAvg = priorTouchBarCount > 0 ? priorTouchVolumeSum / priorTouchBarCount : 0
+
+  let historicalTestRatio: number | null = null
+  let historicalComparisonScore = 0
+  let historicalComparisonDesc = 'No prior touches of zone in lookback'
+
+  if (priorTouchAvg > 0) {
+    historicalTestRatio = Number((zoneAvgVolume / priorTouchAvg).toFixed(2))
+    if (historicalTestRatio >= 1.25) {
+      historicalComparisonScore = 4
+      historicalComparisonDesc = `Higher volume than prior support tests (+${Math.round((historicalTestRatio - 1) * 100)}% surge: Institutional Absorption)`
+    } else if (historicalTestRatio <= 0.75) {
+      historicalComparisonScore = -2
+      historicalComparisonDesc = `Lower volume than prior support tests (-${Math.round((1 - historicalTestRatio) * 100)}% drying: Weak Interest)`
+    } else {
+      historicalComparisonScore = 1
+      historicalComparisonDesc = `Volume aligned with prior support tests (${historicalTestRatio}x)`
+    }
+  }
+
+  const structuralZone: TrendBorningZoneRange = {
+    originPrice,
+    zoneSpan,
+    zoneLow,
+    zoneHigh,
+    totalZoneVolume: Math.round(zoneTotalVolume),
+    barCount: zoneBarCount,
+    avgBarVolume: Math.round(zoneAvgVolume),
+    historicalVolumeRatio: historicalTestRatio,
+    historicalComparisonDesc,
+  }
+
   let volScore = 2
   let volRating: 'HIGH' | 'ABOVE_AVERAGE' | 'NORMAL' | 'LOW' = 'LOW'
   if (rvol >= 2.0) {
@@ -386,6 +489,8 @@ export function evaluateTrendBorningZone(params: {
     volScore = 4
     volRating = 'LOW'
   }
+
+  volScore = Math.min(20, Math.max(2, volScore + historicalComparisonScore))
 
   // ── FACTOR 3: Candlestick Pattern Power & Excess Tail (Max 20 pts) ──
   let candleScore = 3
@@ -589,6 +694,10 @@ export function evaluateTrendBorningZone(params: {
       clusterVolume: Math.round(clusterVolume),
       avgVolume: Math.round(avgVolume),
       rating: volRating,
+      zoneTotalVolume: structuralZone.totalZoneVolume,
+      historicalTestRatio: structuralZone.historicalVolumeRatio ?? undefined,
+      historicalComparisonScore,
+      historicalComparisonDesc,
     },
     candlestickPower: {
       score: candleScore,
@@ -633,6 +742,7 @@ export function evaluateTrendBorningZone(params: {
 
   return {
     initiatingPoint,
+    structuralZone,
     compositeScore,
     grade,
     gradeLabel,
@@ -696,7 +806,100 @@ export function detectHigherLowsWithTiming(
 }
 
 /**
- * 5. Construct Dynamic Responsive Trendline with Stalling Time-Decay Engine.
+ * 5. Swing Volume Progression Engine:
+ * Tracks consecutive swing highs and swing lows and their volume profile.
+ * - If volume on swing highs is diminishing (drying up), buyers are exhausted:
+ *   a score penalty (-5 to -15 pts) is applied, and the dynamic trendline is steepened
+ *   (+0.5 to +1.5 pts/5m) to push for a faster exit before a reversal catches the trader.
+ * - If volume on swing highs is expanding, aggressive accumulation continues:
+ *   a score bonus (+5 to +10 pts) is awarded and the trendline maintains a healthy slope.
+ */
+export function detectSwingVolumeProgression(
+  bars: Candle[],
+  startIndex: number = 0
+): SwingVolumeProgression {
+  const pivots: SwingVolumePivot[] = []
+  const start = Math.max(0, startIndex)
+
+  const avgVol = bars.length > 0
+    ? bars.reduce((acc, b) => acc + (b.volume || 1), 0) / bars.length
+    : 1
+
+  // Detect 3-bar swing pivots
+  for (let i = start + 1; i < bars.length - 1; i++) {
+    const prev = bars[i - 1]!
+    const curr = bars[i]!
+    const next = bars[i + 1]!
+
+    if (curr.high > prev.high && curr.high >= next.high) {
+      pivots.push({
+        type: 'SWING_HIGH',
+        price: curr.high,
+        time: curr.time,
+        candleIndex: i,
+        volume: curr.volume || 1,
+        rvol: Number(((curr.volume || 1) / Math.max(1, avgVol)).toFixed(2)),
+      })
+    } else if (curr.low < prev.low && curr.low <= next.low) {
+      pivots.push({
+        type: 'SWING_LOW',
+        price: curr.low,
+        time: curr.time,
+        candleIndex: i,
+        volume: curr.volume || 1,
+        rvol: Number(((curr.volume || 1) / Math.max(1, avgVol)).toFixed(2)),
+      })
+    }
+  }
+
+  const swingHighs = pivots.filter((p) => p.type === 'SWING_HIGH')
+
+  if (swingHighs.length >= 2) {
+    const lastHigh = swingHighs[swingHighs.length - 1]!
+    const prevHigh = swingHighs[swingHighs.length - 2]!
+
+    const diffRatio = (lastHigh.volume - prevHigh.volume) / Math.max(1, prevHigh.volume)
+
+    if (diffRatio <= -0.15) {
+      // Volume drying up on swing highs
+      const decayPct = Math.round(diffRatio * 100)
+      const scoreDelta = Math.max(-15, Math.min(-5, Math.round(diffRatio * 20)))
+      const slopeAccelerationPenalty = Number((Math.abs(scoreDelta) * 0.1).toFixed(2))
+      return {
+        pivots,
+        trend: 'DECLINING',
+        decayPercentage: decayPct,
+        scoreDelta,
+        slopeAccelerationPenalty,
+        description: `Drying volume on swing highs (${decayPct}% drop: Buyer Exhaustion). Steepening trailing line by +${slopeAccelerationPenalty} pts/5m for faster exit.`,
+      }
+    } else if (diffRatio >= 0.15) {
+      // Volume expanding on swing highs
+      const expandPct = Math.round(diffRatio * 100)
+      const scoreDelta = Math.min(10, Math.max(5, Math.round(diffRatio * 15)))
+      return {
+        pivots,
+        trend: 'EXPANDING',
+        decayPercentage: expandPct,
+        scoreDelta,
+        slopeAccelerationPenalty: 0,
+        description: `Expanding volume on swing highs (+${expandPct}% surge: Institutional Accumulation). Maintaining healthy trend angle.`,
+      }
+    }
+  }
+
+  return {
+    pivots,
+    trend: 'NEUTRAL',
+    decayPercentage: 0,
+    scoreDelta: 0,
+    slopeAccelerationPenalty: 0,
+    description: 'Volume progression on swings is balanced/neutral.',
+  }
+}
+
+/**
+ * 6. Construct Dynamic Responsive Trendline with Stalling & Swing-Decay Engines.
  */
 export function calculateDynamicTrendline(params: {
   origin: { time: number; price: number; candleIndex: number }
@@ -705,21 +908,28 @@ export function calculateDynamicTrendline(params: {
   currentPrice: number
   currentTime: number
   bars: Candle[]
+  structuralZone?: TrendBorningZoneRange
+  swingVolumeProgression?: SwingVolumeProgression
 }): DynamicResponsiveTrendline {
-  const { origin, compositeScore, higherLows, currentPrice, currentTime, bars } = params
+  const { origin, compositeScore, higherLows, currentPrice, currentTime, bars, structuralZone } = params
 
-  // 1. Baseline slope based on composite score:
+  // 1. Swing volume progression penalty/bonus:
+  const swingProgression = params.swingVolumeProgression ?? detectSwingVolumeProgression(bars, origin.candleIndex)
+  const volumeDecayPenalty = swingProgression.slopeAccelerationPenalty || 0
+  const adjustedScore = Math.min(100, Math.max(0, compositeScore + swingProgression.scoreDelta))
+
+  // 2. Baseline slope based on adjusted composite score:
   // Score 40 -> 2 pts per 5m bar; Score 100 -> 8 pts per 5m bar
   const minSlopePtsPer5m = 2.0
   const maxSlopePtsPer5m = 8.0
-  const scoreNorm = Math.min(1.0, Math.max(0.0, (compositeScore - 30) / 70))
+  const scoreNorm = Math.min(1.0, Math.max(0.0, (adjustedScore - 30) / 70))
   const baseSlopePtsPer5m = Number((minSlopePtsPer5m + scoreNorm * (maxSlopePtsPer5m - minSlopePtsPer5m)).toFixed(2))
 
-  // 2. Identify the active anchor point:
+  // 3. Identify the active anchor point:
   // Use the latest confirmed Higher Low if present; otherwise origin
   const activeAnchor = higherLows.length > 1 ? higherLows[higherLows.length - 1]! : higherLows[0]!
 
-  // 3. Stalling / Sideways Range Detection:
+  // 4. Stalling / Sideways Range Detection:
   // Check if price has failed to make progress over the last 3-6 bars (15-30 minutes)
   let consecutiveStallBars = 0
   const maxCheck = Math.min(6, bars.length)
@@ -740,13 +950,14 @@ export function calculateDynamicTrendline(params: {
     }
   }
 
-  // 4. Calculate time-decay slope penalty:
+  // 5. Calculate time-decay & volume-decay slope penalties:
   // When market stalls, steepen/tighten slope upward toward price by 0.5 pts per stall bar
+  // When swing volume dries up, add volumeDecayPenalty to push exit faster
   const stallPenaltyScore = consecutiveStallBars * 0.5
-  const effectiveSlopePtsPer5m = Number((baseSlopePtsPer5m + stallPenaltyScore).toFixed(2))
+  const effectiveSlopePtsPer5m = Number((baseSlopePtsPer5m + stallPenaltyScore + volumeDecayPenalty).toFixed(2))
   const slopePtsPerSec = effectiveSlopePtsPer5m / 300
 
-  // 5. Projected price at current time
+  // 6. Projected price at current time
   const elapsedSec = Math.max(0, currentTime - activeAnchor.time)
   const currentProjectedPrice = Number((activeAnchor.price + slopePtsPerSec * elapsedSec).toFixed(2))
 
@@ -759,17 +970,20 @@ export function calculateDynamicTrendline(params: {
 
   return {
     origin: { time: origin.time, price: origin.price },
-    compositeScore,
+    compositeScore: adjustedScore,
     baseSlopePtsPer5m,
     effectiveSlopePtsPer5m,
     slopePtsPerSec,
     higherLows,
     consecutiveStallBars,
     stallPenaltyScore,
+    volumeDecayPenalty,
     isStalling: consecutiveStallBars >= 3,
     currentProjectedPrice,
     p1,
     p2,
+    structuralZone,
+    swingVolumeProgression: swingProgression,
   }
 }
 

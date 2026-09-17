@@ -3008,9 +3008,40 @@ export function TradingChart({
               bars: bars5m,
             })
 
-            // 1. Draw Initiating Low (Trend-Borning Zone Origin)
+            // 1. Draw Initiating Low (Trend-Borning Zone Origin) & Structural Band
             const initX = timeToX(chart.timeScale(), toChartTime(initPt.time, tz), candleTimes)
             const initY = series.priceToCoordinate(initPt.price)
+
+            // Draw Structural Borning Zone Band [zoneLow, zoneHigh]
+            const sz = borningZone.structuralZone
+            if (sz) {
+              const yLow = series.priceToCoordinate(sz.zoneLow)
+              const yHigh = series.priceToCoordinate(sz.zoneHigh)
+              if (yLow != null && yHigh != null) {
+                const bandTop = Math.min(yLow, yHigh)
+                const bandHeight = Math.max(4, Math.abs(yLow - yHigh))
+                const initXPos = initX != null ? Math.max(0, initX - 20) : 0
+
+                ctx.fillStyle = 'rgba(234, 179, 8, 0.10)'
+                ctx.fillRect(initXPos, bandTop, paneW - initXPos, bandHeight)
+                ctx.strokeStyle = 'rgba(234, 179, 8, 0.4)'
+                ctx.lineWidth = 1
+                ctx.setLineDash([3, 3])
+                ctx.strokeRect(initXPos, bandTop, paneW - initXPos, bandHeight)
+                ctx.setLineDash([])
+
+                if (initX != null) {
+                  const zVolText = `📦 Zone [${sz.zoneLow.toFixed(1)}–${sz.zoneHigh.toFixed(1)}] · Vol: ${sz.totalZoneVolume.toLocaleString()}${sz.historicalVolumeRatio ? ` (${sz.historicalVolumeRatio}x vs prior tests)` : ''}`
+                  ctx.font = '8px ui-monospace, SFMono-Regular, monospace'
+                  const zW = ctx.measureText(zVolText).width + 8
+                  ctx.fillStyle = 'rgba(15, 23, 42, 0.88)'
+                  ctx.fillRect(initX - zW / 2, bandTop - 13, zW, 13)
+                  ctx.fillStyle = '#fcd34d'
+                  ctx.fillText(zVolText, initX - zW / 2 + 4, bandTop - 3)
+                }
+              }
+            }
+
             if (initX != null && initY != null) {
               ctx.beginPath()
               ctx.arc(initX, initY, 6, 0, 2 * Math.PI)
@@ -3088,26 +3119,29 @@ export function TradingChart({
               const dY2 = series.priceToCoordinate(dynamicLine.p2.price)
               if (dX1 != null && dX2 != null && dY1 != null && dY2 != null) {
                 const [dex1, dey1, dex2, dey2] = extendedLine(dX1, dY1, dX2, dY2)
-                ctx.strokeStyle = dynamicLine.isStalling ? '#f97316' : '#22c55e'
+                const isDrying = dynamicLine.swingVolumeProgression?.trend === 'DECLINING'
+                const isDecaying = dynamicLine.isStalling || isDrying
+
+                ctx.strokeStyle = isDecaying ? '#f97316' : '#22c55e'
                 ctx.lineWidth = 2.5
-                ctx.setLineDash(dynamicLine.isStalling ? [6, 3] : [])
+                ctx.setLineDash(isDecaying ? [6, 3] : [])
                 ctx.beginPath()
                 ctx.moveTo(dex1, dey1)
                 ctx.lineTo(dex2, dey2)
                 ctx.stroke()
                 ctx.setLineDash([])
 
-                const dynText = `📈 Responsive Line (${dynamicLine.effectiveSlopePtsPer5m} pts/5m)${dynamicLine.isStalling ? ' ⚡ STALL DECAY' : ''}`
+                const dynText = `📈 Responsive Line (${dynamicLine.effectiveSlopePtsPer5m} pts/5m)${dynamicLine.isStalling ? ' ⚡ STALL DECAY' : ''}${isDrying ? ` 📉 DRYING VOL (-${Math.abs(dynamicLine.swingVolumeProgression?.scoreDelta || 0)})` : ''}`
                 const dMidX = (dX1 + dX2) / 2
                 const dMidY = (dY1 + dY2) / 2
                 ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
                 const dW = ctx.measureText(dynText).width + 8
-                ctx.fillStyle = dynamicLine.isStalling ? 'rgba(67, 20, 7, 0.95)' : 'rgba(6, 78, 59, 0.95)'
+                ctx.fillStyle = isDecaying ? 'rgba(67, 20, 7, 0.95)' : 'rgba(6, 78, 59, 0.95)'
                 ctx.fillRect(dMidX - dW / 2, dMidY - 18, dW, 16)
-                ctx.strokeStyle = dynamicLine.isStalling ? '#f97316' : '#22c55e'
+                ctx.strokeStyle = isDecaying ? '#f97316' : '#22c55e'
                 ctx.lineWidth = 1
                 ctx.strokeRect(dMidX - dW / 2, dMidY - 18, dW, 16)
-                ctx.fillStyle = dynamicLine.isStalling ? '#fdba74' : '#6ee7b7'
+                ctx.fillStyle = isDecaying ? '#fdba74' : '#6ee7b7'
                 ctx.fillText(dynText, dMidX - dW / 2 + 4, dMidY - 6)
               }
             }

@@ -254,6 +254,8 @@ export type LeoExecutionDirective =
         | 'SHOOTING_STAR'
         | 'REJECTION_TAIL'
         | 'LEVEL_TOUCH'
+        | 'TRENDLINE_BREAKOUT_5M'
+        | string
       stopLossMode?: 'BELOW_CANDLE_LOW' | 'ABOVE_CANDLE_HIGH' | 'FIXED_POINTS' | 'DOLLARS_50'
       stopLoss?: number
       takeProfitMode?: '1:1' | '1:2' | '1:3' | '1:5' | 'FIXED_POINTS'
@@ -299,6 +301,14 @@ export type LeoExecutionDirective =
       action: 'SET_DAY_TYPE' | 'OVERRIDE_DAY_TYPE'
       dayType: 'DOUBLE_DISTRIBUTION' | 'NORMAL_VARIATION' | 'NORMAL' | 'TREND_BULL' | 'TREND_BEAR' | 'NEUTRAL'
       reason?: string
+    }
+  | {
+      action: 'ARM_TRENDLINE_STRATEGY'
+      trendlineId?: string
+      instrument?: string
+      direction?: 'LONG'
+      description?: string
+      userPrompt?: string
     }
 
 /**
@@ -748,6 +758,48 @@ THE TRADER'S SYSTEM ARCHITECTURE:
      * When price makes a new high but CVD fails to make a new high or prints negative delta, buyers are exhausted. Warn the trader of a failed auction / rejection.
    - Trend Continuation Confirmation:
      * A true breakout beyond VAH or VAL must be backed by aggressive cumulative delta (Trend: BUYER_DOMINANT or SELLER_DOMINANT). Without delta confirmation, warn of a potential look-above-and-fail.
+
+5d. THE TRADER'S SYSTEMATIC TRENDLINE BREAKOUT & "BULLISH TREND-BORNING ZONE" STRATEGY:
+   This is the trader's primary systematic strategy for trend reversal entries and dynamic risk management:
+   - 1. Bearish Trendline Breakout Entry:
+     * Trader draws or identifies a bearish trendline connecting consecutive lower highs.
+     * When price crosses and fails to make lower highs, responsive buyers have initiated a new trend.
+     * STRICT EXECUTION RULE: Wait for a CONFIRMED 5-MINUTE CANDLE CLOSE strictly above the trendline. Never enter on intra-bar wick piercings!
+     * Enter LONG at the exact close of the 5-minute breakout bar.
+   - 2. Stop Loss & Take Profit Rules:
+     * Stop Loss: Placed cleanly below the Breakout Candle Low (or initiating pivot low).
+     * Take Profit: Default +50.0 points (or 1:2 Risk-to-Reward bracket).
+   - 3. Bullish Trend-Borning Zone (Structural Zone):
+     * The lowest pivot low formed under the broken bearish trendline is the "Initiating Point" (Origin).
+     * Evaluated as a structural price zone (±5 pts on Gold, ±20 pts on Dow/NQ).
+     * 7-Factor Institutional Scoring (0–100 pts): Multi-Horizon POCs (Yesterday, Overnight, 5-Day), RVOL & Cluster Volume, Candlestick Excess Rejection Tail (≥45% wick), Psychological Round Handles (.00, .50), 5-Month Anchored VWAP defense band (±15 pts), Order Flow Delta Absorption, and Time-of-Day.
+   - 4. Level Volume Comparison vs Prior Support/Resistance Touches:
+     * We compare the current initiating volume in this zone to prior historical times that price visited or tested this shelf over the 5-Day FRVP and 5-Month Anchored VWAP.
+     * Higher volume on the bounce (> 1.2x prior tests) confirms Institutional Absorption / Defense (+8 pts bonus).
+     * Lower volume (< 0.8x) warns of an anemic vacuum bounce.
+   - 5. Dynamic Swing Volume Progression & Time-Decay Angle:
+     * As the move progresses, we monitor consecutive swing highs and swing lows with their volume.
+     * If volume on swing highs is diminishing/drying up (buyer exhaustion): The dynamic score drops (-5 to -15 pts), and the dynamic trendline STEEPENS its angle upward toward price (+0.5 to +1.5 pts/5m). This pushes us out of the trade faster before a reversal catches us!
+     * If volume is expanding on swing highs: Score increases, and the trendline maintains its angle to let the trade run.
+   - 6. Systematic Exit Rule ("We are out"):
+     * When a 5-minute candle closes strictly below the dynamic responsive trendline, flatten the position immediately: "We are out".
+   - When the trader asks to arm or monitor this strategy (e.g. "Buy gold now at this price with the one risk and two reward", "Arm trendline strategy", "Monitor bearish trendline breakout"), confirm the entry on 5m close, SL below breakout candle low, TP +50 pts (or 1:2 R:R), Borning Zone score, and output an <execute> block:
+     <execute>
+     {
+       "action": "ARM_CONDITIONAL_ENTRY",
+       "userPrompt": "The user command",
+       "instrument": "${ctx.instrument}",
+       "direction": "LONG",
+       "targetReference": "Bearish Trendline Breakout",
+       "targetPrice": ${defaultTargetPrice},
+       "pattern": "TRENDLINE_BREAKOUT_5M",
+       "stopLossMode": "BELOW_CANDLE_LOW",
+       "takeProfitMode": "FIXED_POINTS",
+       "takeProfit": 50,
+       "size": 1,
+       "description": "Long 1 ${ctx.instrument} on confirmed 5m close above trendline with SL below breakout candle low and dynamic trailing exit"
+     }
+     </execute>
 
 6. CO-PILOT EXECUTION DIRECTIVES (<execute> tags):
 You are the trader's execution partner on the desk. You MUST strictly distinguish between ALARM NOTES vs CONDITIONAL TRADE SITUATIONS:

@@ -913,6 +913,19 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
           status: 'ARMED',
         }
 
+        if ((pat as string) === 'TRENDLINE_BREAKOUT_5M') {
+          newRule.type = 'TRENDLINE_BREAKOUT_SYSTEMATIC'
+          newRule.trendlineId = drawingId
+          newRule.conditions = {
+            trendlineId: drawingId,
+            pattern: 'TRENDLINE_BREAKOUT_5M',
+            stopLossMode: 'BELOW_CANDLE_LOW',
+            takeProfitMode: 'FIXED_POINTS',
+            takeProfit: d.takeProfit || 50,
+            size,
+          }
+        }
+
         setArmedRules((prev) => [...prev, newRule])
         playTradingViewChime()
         warningToast(
@@ -920,6 +933,41 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
           8000
         )
         speakText(`Strategy rule armed for ${dir} ${inst}. Monitoring ${entryLabel}${cvdDiv ? ' with CVD divergence' : ''}.`)
+      } else if ((d as any).action === 'ARM_TRENDLINE_STRATEGY') {
+        const inst = ((d as any).instrument || context.instrument || 'GOLD') as MarketInstrument
+        const tl = (context.userDrawings?.trendlines || []).find((t: any) => t.id === (d as any).trendlineId) || context.userDrawings?.trendlines?.[0]
+        const targetPx = tl ? tl.projectedPrice || tl.endPrice : context.currentPrice
+        const tlId = tl?.id || (d as any).trendlineId || 'user-tl'
+        const newRule = addRule({
+          instrument: inst,
+          type: 'TRENDLINE_BREAKOUT_SYSTEMATIC',
+          direction: 'LONG',
+          description: (d as any).description || `Long 1 ${inst} on 5m Candle Close above ${tl?.label || 'Bearish Trendline'} (Trend-Borning Zone)`,
+          userPrompt: (d as any).userPrompt || `Monitor ${tl?.label || 'Bearish Trendline'}. Enter Long 1 ${inst} when 5m candle closes above trendline.`,
+          targetReference: tl?.label || 'Bearish Trendline',
+          targetPrice: targetPx ?? undefined,
+          pattern: 'TRENDLINE_BREAKOUT_5M',
+          stopLossMode: 'BELOW_CANDLE_LOW',
+          takeProfitMode: 'FIXED_POINTS',
+          takeProfit: 50,
+          size: 1,
+          isLongTerm: true,
+          session: '24H',
+          status: 'ARMED',
+          trendlineId: tlId,
+          conditions: {
+            trendlineId: tlId,
+            pattern: 'TRENDLINE_BREAKOUT_5M',
+            stopLossMode: 'BELOW_CANDLE_LOW',
+            takeProfitMode: 'FIXED_POINTS',
+            takeProfit: 50,
+            size: 1,
+          },
+        })
+        setArmedRules((prev) => [newRule as any, ...prev.filter((r) => r.id !== newRule.id)])
+        playTradingViewChime()
+        warningToast(`🎯 Armed Trendline Strategy for ${inst}`, 8000)
+        speakText(`Trendline breakout strategy armed for ${inst}. Monitoring confirmed 5-minute candle close.`)
       } else if (d.action === 'ARM_STAGNATION_RULE') {
         const now = Date.now()
         const dateMeta = formatRuleDate(now)

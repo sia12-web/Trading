@@ -623,7 +623,20 @@ function DetailedSituationCard({
                   </span>
                 </div>
 
-                {/* Condition 5: Sideways Stalling Protection */}
+                {/* Condition 5: Structural Zone & Swing Volume */}
+                <div className="p-1.5 rounded border bg-surface-900/60 border-surface-700/50 text-gray-300 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 bg-violet-500 text-white">
+                      📊
+                    </span>
+                    <span className="truncate">Zone & Swing Vol</span>
+                  </div>
+                  <span className="text-[10px] font-semibold text-violet-300 shrink-0 ml-1">
+                    {rule.conditionProgress?.stallingPenaltyActive ? 'Steepening (Decay)' : 'Vol Aligned'}
+                  </span>
+                </div>
+
+                {/* Condition 6: Sideways Stalling Protection */}
                 {rule.conditionProgress?.stallingPenaltyActive && (
                   <div className="p-1.5 rounded border bg-amber-950/40 border-amber-500/40 text-amber-200 flex items-center justify-between">
                     <div className="flex items-center gap-1.5 truncate">
