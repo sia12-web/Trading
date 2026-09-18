@@ -191,6 +191,7 @@ import {
 import {
   checkTrendlineBreakout,
   findInitiatingPoint,
+  findBreakoutSwingAnchor,
   evaluateTrendBorningZone,
   detectFlagAndSecondaryBreakout,
   calculateDynamicTrendline,
@@ -1227,9 +1228,10 @@ export function TradingChart({
     defaultTakeProfitFixed50: number
   }>>(new Map())
 
-  // ── User Interactive Drawing Tools (Trendline, Action Line, Range, Manual FRVP) ────────
-  type DrawingToolType = 'NONE' | 'TRENDLINE' | 'ACTION_TRENDLINE' | 'RANGE' | 'FRVP'
+  // ── User Interactive Drawing Tools (Trendline, Action Line, Reaction Line, Range, Manual FRVP) ────────
+  type DrawingToolType = 'NONE' | 'TRENDLINE' | 'ACTION_TRENDLINE' | 'REACTION_TRENDLINE' | 'RANGE' | 'FRVP'
   const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingToolType>('NONE')
+  const [activeActionTlId, setActiveActionTlId] = useState<string | null>(null)
   const [trendlines, setTrendlines] = useState<UserTrendline[]>(() => {
     if (typeof window === 'undefined') return []
     try {
@@ -3124,6 +3126,22 @@ export function TradingChart({
                 structuralZone: borningZone.structuralZone,
               })
 
+              // Find local pre-breakout swing anchor under breakout candle (prevents distant tail from forcing unnatural steep line)
+              const localSwingAnchor = findBreakoutSwingAnchor({
+                bars: bars5m,
+                breakoutIndex: activeBreakoutIndex,
+                direction: setupDir,
+                macroOrigin: initPt,
+              })
+
+              // Check if user drew a manual Reaction Trendline for this Action Breakout
+              const matchedUserReactionTl = trendlines.find(
+                (t) =>
+                  t.isReactionTrendline &&
+                  (t.parentActionTrendlineId === tl.id ||
+                    (!t.parentActionTrendlineId && Math.abs(t.p1.time - activeBreakoutCandle.time) <= 7200))
+              )
+
               const curPx = list[list.length - 1]?.close ?? initPt.price
               const curSec = Math.floor(Date.now() / 1000)
               const dynamicLine = calculateDynamicTrendline({
@@ -3137,6 +3155,8 @@ export function TradingChart({
                 breakoutCandle: activeBreakoutCandle,
                 flagState,
                 structuralZone: borningZone.structuralZone,
+                reactionAnchor: localSwingAnchor,
+                userReactionTrendline: matchedUserReactionTl,
               })
 
               // Check if subsequent completed 5-minute candles have crossed / negated the Reaction Trendline
@@ -3160,8 +3180,12 @@ export function TradingChart({
               const isReactionBroken = Boolean(reactionBrokenBar)
               if (isReactionBroken) {
                 actionLifecycleTag = ' · [COMPLETED]'
+              } else if (matchedUserReactionTl) {
+                actionLifecycleTag = ' · 📐 USER REACTION TL'
               } else if (flagState.isSecondaryBreakout) {
                 actionLifecycleTag = ' · 🚩⚡ 2ND BREAKOUT'
+              } else if (flagState.isDeepDip) {
+                actionLifecycleTag = ' · 🔄 1ST DIP RANGE'
               } else if (flagState.phase === 'FLAG_FORMING') {
                 actionLifecycleTag = ' · 🚩 FLAG FORMING'
               } else {
@@ -3432,15 +3456,22 @@ export function TradingChart({
 
                   if (!hideTrendlineBadges) {
                     const dynIcon = isLong ? '📈' : '📉'
+                    let lineTypeTitle = 'Reaction Line'
                     let slopeMode = ' · Projected'
-                    if (dynamicLine.isEmpiricalPivotSlope && (dynamicLine.activePivotCount ?? 0) >= 2) {
+                    if (dynamicLine.isUserReactionTrendline) {
+                      lineTypeTitle = 'User Reaction Line'
+                      slopeMode = ' · Manual Empirical'
+                    } else if (dynamicLine.isEmpiricalPivotSlope && (dynamicLine.activePivotCount ?? 0) >= 2) {
                       slopeMode = ' · 2-Point Structural'
+                    } else if (flagState.isDeepDip) {
+                      lineTypeTitle = isLong ? 'Range Support Floor' : 'Range Resistance Ceiling'
+                      slopeMode = ` · 1st Dip Retest [${dynamicLine.p1.price.toFixed(1)}]`
                     } else if (flagState.phase === 'FLAG_FORMING') {
                       slopeMode = ' · Trailing Support (Flag)'
                     } else if (flagState.phase === 'INCUBATION') {
                       slopeMode = ' · Trailing Support'
                     }
-                    const dynText = `${dynIcon} Reaction Line (${Math.abs(dynamicLine.effectiveSlopePtsPer5m)} pts/5m${slopeMode})${dynamicLine.isStalling && flagState.phase !== 'FLAG_FORMING' ? ' ⚡ STALL' : ''}`
+                    const dynText = `${dynIcon} ${lineTypeTitle} (${Math.abs(dynamicLine.effectiveSlopePtsPer5m)} pts/5m${slopeMode})${dynamicLine.isStalling && flagState.phase !== 'FLAG_FORMING' ? ' ⚡ STALL' : ''}`
                     ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
                     const dW = ctx.measureText(dynText).width + 10
                     const dH = 16
@@ -9247,8 +9278,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         const p1 = p1Raw.time <= p2Raw.time ? p1Raw : p2Raw
         const p2 = p1Raw.time <= p2Raw.time ? p2Raw : p1Raw
 
-        if (activeDrawingTool === 'TRENDLINE' || activeDrawingTool === 'ACTION_TRENDLINE') {
+        if (activeDrawingTool === 'TRENDLINE' || activeDrawingTool === 'ACTION_TRENDLINE' || activeDrawingTool === 'REACTION_TRENDLINE') {
           const isAction = activeDrawingTool === 'ACTION_TRENDLINE'
+          const isReaction = activeDrawingTool === 'REACTION_TRENDLINE'
           const pDiff = p2.price - p1.price
           const inferredDir: 'BEARISH' | 'BULLISH' = pDiff < 0 ? 'BEARISH' : 'BULLISH'
           const tradeDir: 'LONG' | 'SHORT' = inferredDir === 'BEARISH' ? 'LONG' : 'SHORT'
@@ -9261,16 +9293,22 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           const isCarriedFromOvernight = sessionOrigin !== 'NYC'
 
           const newTl: UserTrendline = {
-            id: isAction ? `action-tl-${Date.now()}` : `tl-${Date.now()}`,
+            id: isAction ? `action-tl-${Date.now()}` : isReaction ? `reaction-tl-${Date.now()}` : `tl-${Date.now()}`,
             type: 'TRENDLINE',
             p1: { time: p1.time, price: p1.price },
             p2: { time: p2.time, price: p2.price },
             color: isAction ? '#f59e0b' : '#38bdf8',
-            label: isAction ? `Action Trendline (${tradeDir === 'LONG' ? 'Long on Break' : 'Short on Break'})` : `Trendline ${activeTrendlines.length + 1}`,
+            label: isAction
+              ? `Action Trendline (${tradeDir === 'LONG' ? 'Long on Break' : 'Short on Break'})`
+              : isReaction
+              ? `Reaction Trendline (${tradeDir === 'LONG' ? 'Long Active' : 'Short Active'})`
+              : `Trendline ${activeTrendlines.length + 1}`,
             instrument,
             direction: inferredDir,
             sessionOrigin,
             isActionTrendline: isAction,
+            isReactionTrendline: isReaction,
+            parentActionTrendlineId: isReaction ? (activeActionTlId ?? undefined) : undefined,
             isInitialOvernight: isAction && isCarriedFromOvernight,
             isCarriedFromOvernight,
           }
@@ -9280,11 +9318,16 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           setDrawingToast({
             type: 'TRENDLINE',
             id: newTl.id,
-            label: newTl.label || (isAction ? 'Action Trendline' : 'Trendline'),
+            label: newTl.label || (isAction ? 'Action Trendline' : isReaction ? 'Reaction Trendline' : 'Trendline'),
             summary: isAction
               ? `🎯 Action Line drawn [${sessionOrigin}]. Monitoring active. Click 'Ask Leo' if you wish to arm a trade situation.`
+              : isReaction
+              ? `📐 Reaction Line bound to breakout. Systematic 5m exit tracking active.`
               : `From ${newTl.p1.price.toLocaleString()} to ${newTl.p2.price.toLocaleString()} (${newTl.p2.price >= newTl.p1.price ? '+' : ''}${(newTl.p2.price - newTl.p1.price).toFixed(1)} pts)`,
           })
+          if (isReaction) {
+            setActiveActionTlId(null)
+          }
         } else if (activeDrawingTool === 'RANGE') {
           const newRange: UserRangeBox = {
             id: `range-${Date.now()}`,
@@ -10825,6 +10868,23 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               <button
                 type="button"
                 onClick={() => {
+                  setActiveDrawingTool((prev) => (prev === 'REACTION_TRENDLINE' ? 'NONE' : 'REACTION_TRENDLINE'))
+                  setDrawingDraft(null)
+                }}
+                className={`flex items-center gap-1 px-2 py-1 rounded font-semibold transition-all ${
+                  activeDrawingTool === 'REACTION_TRENDLINE'
+                    ? 'bg-sky-500/40 text-sky-200 border border-sky-400 shadow-sm shadow-sky-500/20'
+                    : 'text-sky-400 hover:text-sky-200 hover:bg-sky-950/40'
+                }`}
+                title="Draw Reaction Trendline (Click 2 points) — Connect local swing low to higher low to monitor active breakout"
+              >
+                <span>📐⚡</span>
+                <span className="font-bold">Reaction</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
                   setActiveDrawingTool((prev) => (prev === 'RANGE' ? 'NONE' : 'RANGE'))
                   setDrawingDraft(null)
                 }}
@@ -11189,6 +11249,39 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             <span className="text-[10px] text-zinc-400 font-mono bg-zinc-800 px-1.5 py-0.5 rounded border border-zinc-700">Esc</span>
           </button>
         )}
+
+        {/* Floating Action Breakout Notification Prompt (Asks user to draw Reaction Trendline) */}
+        {confirmedBreakoutsRef.current.size > 0 && (() => {
+          const activeBreaks = Array.from(confirmedBreakoutsRef.current.entries()).filter(([tlId]) => {
+            return !trendlines.some((t) => t.isReactionTrendline && t.parentActionTrendlineId === tlId)
+          })
+          if (activeBreaks.length === 0) return null
+          const [activeId] = activeBreaks[0]!
+          return (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 px-3.5 py-1.5 rounded-xl bg-slate-900/95 border border-amber-400/80 shadow-2xl backdrop-blur-md text-xs font-mono select-none">
+              <span className="flex h-2 w-2 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+              </span>
+              <span className="text-amber-200 font-bold">Action Line Broken!</span>
+              <span className="text-slate-300 text-[11px]">Draw reaction line or use local swing:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveActionTlId(activeId)
+                  setActiveDrawingTool('REACTION_TRENDLINE')
+                  setDrawingDraft(null)
+                }}
+                className="px-2.5 py-1 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-extrabold text-[11px] transition shadow flex items-center gap-1 cursor-pointer active:scale-95"
+                title="Click and draw reaction trendline connecting local swing low to higher low"
+              >
+                <span>📐⚡</span>
+                <span>Draw Reaction Line</span>
+              </button>
+            </div>
+          )
+        })()}
+
         {/* Main Price Chart Section */}
         <div className="relative flex-1 w-full min-h-[300px]">
           <div ref={containerRef} className="absolute inset-0 z-0" />

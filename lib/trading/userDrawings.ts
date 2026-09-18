@@ -14,6 +14,10 @@ export interface UserTrendline {
   direction?: 'BEARISH' | 'BULLISH'
   isAutoDetected?: boolean
   isActionTrendline?: boolean
+  isReactionTrendline?: boolean
+  parentActionTrendlineId?: string
+  breakoutTime?: number
+  breakoutPrice?: number
   isInitialOvernight?: boolean
 }
 

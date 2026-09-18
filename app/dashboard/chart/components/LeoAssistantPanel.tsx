@@ -32,6 +32,7 @@ import {
 import {
   checkTrendlineBreakout,
   findInitiatingPoint,
+  findBreakoutSwingAnchor,
   evaluateTrendBorningZone,
   detectFlagAndSecondaryBreakout,
   calculateDynamicTrendline,
@@ -1735,6 +1736,12 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                   direction: trDir,
                   structuralZone: borningRes.structuralZone,
                 })
+                const localSwingAnchor = findBreakoutSwingAnchor({
+                  bars,
+                  breakoutIndex: breakoutCheck.breakoutCandleIndex ?? bars.length - 1,
+                  direction: trDir,
+                  macroOrigin: initPt,
+                })
 
                 const curPrice = context.currentPrice ?? bars[bars.length - 1]!.close
                 const dynLine = calculateDynamicTrendline({
@@ -1748,6 +1755,7 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                   breakoutCandle,
                   flagState,
                   structuralZone: borningRes.structuralZone,
+                  reactionAnchor: localSwingAnchor,
                 })
                 const latestCompletedBar = bars[bars.length - 1]!
                 const nowSec = Math.floor(Date.now() / 1000)

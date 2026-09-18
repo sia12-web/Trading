@@ -184,6 +184,8 @@ export interface DynamicResponsiveTrendline {
   phase?: 'INCUBATION' | 'FLAG_FORMING' | 'SECONDARY_BREAKOUT' | 'TWO_POINT_CONFIRMED'
   flagState?: PostBreakoutFlagState
   isPhase1?: boolean
+  reactionAnchor?: { time: number; price: number; candleIndex?: number }
+  isUserReactionTrendline?: boolean
 }
 
 export interface PostBreakoutFlagState {
@@ -200,6 +202,11 @@ export interface PostBreakoutFlagState {
   secondaryBreakoutCandle: Candle | null
   secondaryBreakoutPrice: number | null
   confirmedPivots: HigherLowPivot[] // Contains [T0, HL1, ...] or [T0, LH1, ...]
+  dipDepthPts: number
+  dipRatio: number
+  rangeHigh: number
+  rangeLow: number
+  isDeepDip: boolean
 }
 
 export interface TrendlineBreakoutCheck {
@@ -498,6 +505,123 @@ export function findInitiatingPoint(
       candleIndex: highestIndex,
       type: 'HIGH',
     }
+  }
+}
+
+/**
+ * 2b. Find the local pre-breakout swing anchor ("Lowest Swing Low under Breakout"):
+ * When an Action Trendline breaks out from an accumulation range, the systematic trendline
+ * should anchor to the immediate swing low from which the breakout wave launched, rather than
+ * a distant tail from hours ago that forces an unnatural slope through the accumulation range.
+ */
+export function findBreakoutSwingAnchor(params: {
+  bars: Candle[]
+  breakoutIndex: number
+  direction: 'LONG' | 'SHORT'
+  maxLookbackBars?: number
+  macroOrigin?: { time: number; price: number; candleIndex?: number }
+}): { time: number; price: number; candleIndex: number; type: 'LOW' | 'HIGH' } | null {
+  const { bars, breakoutIndex, direction, maxLookbackBars = 25, macroOrigin } = params
+  if (!bars || bars.length === 0 || breakoutIndex < 0) return null
+
+  const isLong = direction === 'LONG'
+  const macroIdx = macroOrigin?.candleIndex ?? (macroOrigin ? bars.findIndex((b) => b.time >= macroOrigin.time) : -1)
+  const minIdx = Math.max(0, breakoutIndex - maxLookbackBars, macroIdx >= 0 ? macroIdx + 1 : 0)
+
+  if (isLong) {
+    // 1. Tracing backward from breakoutIndex - 1 to find the immediate swing low of the breakout leg
+    for (let i = breakoutIndex - 1; i >= minIdx; i--) {
+      const b = bars[i]!
+      const prev = bars[i - 1]
+      const next = bars[i + 1]
+      if (prev && next && b.low < prev.low && b.low <= next.low) {
+        return {
+          time: b.time,
+          price: Number(b.low.toFixed(2)),
+          candleIndex: i,
+          type: 'LOW',
+        }
+      }
+    }
+
+    // 2. If no strict 3-bar pivot, search for lowest low in the immediate pre-breakout window (last 6-12 bars)
+    const localWindow = Math.max(minIdx, breakoutIndex - 10)
+    let bestPivotIdx = -1
+    let bestPivotPrice = Infinity
+
+    for (let i = breakoutIndex; i >= localWindow; i--) {
+      const b = bars[i]!
+      if (b.low < bestPivotPrice) {
+        bestPivotPrice = b.low
+        bestPivotIdx = i
+      }
+    }
+
+    if (bestPivotIdx >= 0 && Number.isFinite(bestPivotPrice)) {
+      return {
+        time: bars[bestPivotIdx]!.time,
+        price: Number(bestPivotPrice.toFixed(2)),
+        candleIndex: bestPivotIdx,
+        type: 'LOW',
+      }
+    }
+
+    // 3. Fallback to macro origin if available
+    if (macroOrigin) {
+      return {
+        time: macroOrigin.time,
+        price: macroOrigin.price,
+        candleIndex: macroIdx >= 0 ? macroIdx : 0,
+        type: 'LOW',
+      }
+    }
+    return null
+  } else {
+    // SHORT: Tracing backward from breakoutIndex - 1 to find the immediate swing high of the breakdown leg
+    for (let i = breakoutIndex - 1; i >= minIdx; i--) {
+      const b = bars[i]!
+      const prev = bars[i - 1]
+      const next = bars[i + 1]
+      if (prev && next && b.high > prev.high && b.high >= next.high) {
+        return {
+          time: b.time,
+          price: Number(b.high.toFixed(2)),
+          candleIndex: i,
+          type: 'HIGH',
+        }
+      }
+    }
+
+    const localWindow = Math.max(minIdx, breakoutIndex - 10)
+    let bestPivotIdx = -1
+    let bestPivotPrice = -Infinity
+
+    for (let i = breakoutIndex; i >= localWindow; i--) {
+      const b = bars[i]!
+      if (b.high > bestPivotPrice) {
+        bestPivotPrice = b.high
+        bestPivotIdx = i
+      }
+    }
+
+    if (bestPivotIdx >= 0 && Number.isFinite(bestPivotPrice)) {
+      return {
+        time: bars[bestPivotIdx]!.time,
+        price: Number(bestPivotPrice.toFixed(2)),
+        candleIndex: bestPivotIdx,
+        type: 'HIGH',
+      }
+    }
+
+    if (macroOrigin) {
+      return {
+        time: macroOrigin.time,
+        price: macroOrigin.price,
+        candleIndex: macroIdx >= 0 ? macroIdx : 0,
+        type: 'HIGH',
+      }
+    }
+    return null
   }
 }
 
@@ -1151,6 +1275,11 @@ export function detectFlagAndSecondaryBreakout(params: {
       secondaryBreakoutCandle: null,
       secondaryBreakoutPrice: null,
       confirmedPivots: standardPivots,
+      dipDepthPts: 0,
+      dipRatio: 0,
+      rangeHigh: breakoutPrice,
+      rangeLow: breakoutPrice,
+      isDeepDip: false,
     }
   }
 
@@ -1262,6 +1391,23 @@ export function detectFlagAndSecondaryBreakout(params: {
     phase = 'TWO_POINT_CONFIRMED'
   }
 
+  // 4. Calculate deep dip and accumulation range parameters
+  const allPostHighs = postBreakoutBars.map((b) => b.high)
+  const allPostLows = postBreakoutBars.map((b) => b.low)
+  const rangeHigh = Number(Math.max(...allPostHighs, breakoutPrice, polePrice).toFixed(2))
+  const rangeLow = Number(Math.min(...allPostLows, breakoutPrice, flagExtremePrice).toFixed(2))
+
+  const impulseHeight = Math.max(0.1, Math.abs(polePrice - breakoutPrice))
+  let dipDepthPts = 0
+  if (isLong) {
+    dipDepthPts = Math.max(0, polePrice - flagExtremePrice)
+  } else {
+    dipDepthPts = Math.max(0, flagExtremePrice - polePrice)
+  }
+  dipDepthPts = Number(dipDepthPts.toFixed(2))
+  const dipRatio = Number((dipDepthPts / impulseHeight).toFixed(2))
+  const isDeepDip = dipRatio >= 0.40
+
   return {
     phase,
     direction,
@@ -1276,6 +1422,11 @@ export function detectFlagAndSecondaryBreakout(params: {
     secondaryBreakoutCandle,
     secondaryBreakoutPrice: secondaryBreakoutPrice != null ? Number(secondaryBreakoutPrice.toFixed(2)) : null,
     confirmedPivots: mergedPivots,
+    dipDepthPts,
+    dipRatio,
+    rangeHigh,
+    rangeLow,
+    isDeepDip,
   }
 }
 
@@ -1392,8 +1543,22 @@ export function calculateDynamicTrendline(params: {
   direction?: 'LONG' | 'SHORT'
   breakoutCandle?: Candle | null
   flagState?: PostBreakoutFlagState | null
+  reactionAnchor?: { time: number; price: number; candleIndex?: number } | null
+  userReactionTrendline?: UserTrendline | null
 }): DynamicResponsiveTrendline {
-  const { origin, compositeScore, higherLows, currentPrice, currentTime, bars, structuralZone, breakoutCandle, flagState } = params
+  const {
+    origin,
+    compositeScore,
+    higherLows,
+    currentPrice,
+    currentTime,
+    bars,
+    structuralZone,
+    breakoutCandle,
+    flagState,
+    reactionAnchor,
+    userReactionTrendline,
+  } = params
   const dir: 'LONG' | 'SHORT' = params.direction ?? (origin.type === 'HIGH' ? 'SHORT' : 'LONG')
 
   // 1. Swing volume progression penalty/bonus:
@@ -1402,19 +1567,57 @@ export function calculateDynamicTrendline(params: {
   const volumeDecayPenalty = swingProgression.slopeAccelerationPenalty || 0
   const adjustedScore = Math.min(100, Math.max(0, compositeScore + swingProgression.scoreDelta))
 
-  // 2. Determine base slope:
-  // - PHASE 2 (Empirical Reality): If confirmed higher lows (for LONG) or lower highs (for SHORT)
-  //   exist (higherLows.length >= 2), calculate the empirical slope connecting the real pivots.
-  //   We connect the real price pivots together so the trendline hugs real market structure.
-  // - PHASE 1 (Theoretical Prior / Incubation): When no confirmed pivots exist yet (higherLows.length <= 1),
-  //   the 7-factor institutional composite score provides the assumed starting trajectory.
+  // 2. User-Drawn Reaction Trendline Override:
+  // If the user drew a Reaction Trendline for this breakout, systematically bind its geometry
+  if (userReactionTrendline) {
+    const p1 = userReactionTrendline.p1
+    const p2 = userReactionTrendline.p2
+    const dtSec = Math.max(300, p2.time - p1.time)
+    const dpPts = p2.price - p1.price
+    const rawSlopePer5m = (dpPts / dtSec) * 300
+    const slopePtsPerSec = dpPts / dtSec
+    const curElapsed = Math.max(0, currentTime - p1.time)
+    const currentProjectedPrice = Number((p1.price + slopePtsPerSec * curElapsed).toFixed(2))
+
+    return {
+      origin: { time: origin.time, price: origin.price, type: origin.type },
+      direction: dir,
+      compositeScore: adjustedScore,
+      baseSlopePtsPer5m: Number(Math.abs(rawSlopePer5m).toFixed(2)),
+      effectiveSlopePtsPer5m: Number(rawSlopePer5m.toFixed(2)),
+      slopePtsPerSec,
+      higherLows,
+      consecutiveStallBars: 0,
+      stallPenaltyScore: 0,
+      volumeDecayPenalty: 0,
+      isStalling: false,
+      currentProjectedPrice,
+      p1: { time: p1.time, price: p1.price },
+      p2: { time: p2.time, price: p2.price },
+      structuralZone,
+      swingVolumeProgression: swingProgression,
+      isEmpiricalPivotSlope: true,
+      activePivotCount: Math.max(2, higherLows.length),
+      phase: 'TWO_POINT_CONFIRMED',
+      flagState: flagState ?? undefined,
+      isPhase1: false,
+      reactionAnchor: { time: p1.time, price: p1.price },
+      isUserReactionTrendline: true,
+    }
+  }
+
+  // 3. Determine base slope:
+  // Use reactionAnchor (local breakout swing anchor) if provided, otherwise fallback to macro origin
+  const anchorP1 = reactionAnchor
+    ? { time: reactionAnchor.time, price: reactionAnchor.price }
+    : { time: origin.time, price: origin.price }
+
   const isPhase1 = flagState
     ? flagState.phase === 'FLAG_FORMING' || flagState.phase === 'INCUBATION'
-    : higherLows.length < 2
+    : (higherLows.length < 2 && Boolean(breakoutCandle))
   const hasStructuralPivots = !isPhase1 && higherLows.length >= 2
   let baseSlopePtsPer5m = 0
   let isEmpiricalPivotSlope = false
-  const anchorP1 = { time: origin.time, price: origin.price }
 
   if (hasStructuralPivots) {
     const p0 = higherLows[0]!
@@ -1448,7 +1651,7 @@ export function calculateDynamicTrendline(params: {
     }
   }
 
-  // 3. Stalling / Sideways Range Detection:
+  // 4. Stalling / Sideways Range Detection:
   let consecutiveStallBars = 0
   const maxCheck = Math.min(6, bars.length)
 
@@ -1467,9 +1670,8 @@ export function calculateDynamicTrendline(params: {
     }
   }
 
-  // 4. Calculate time-decay & volume-decay slope penalties:
-  // In Phase 1 during flags, stalling is healthy consolidation, NOT exhaustion.
-  // Suppress stall penalty during flag formation so the line does not accelerate into candles!
+  // 5. Calculate time-decay & volume-decay slope penalties:
+  // In Phase 1 during flags or deep dips, stalling is healthy consolidation, NOT exhaustion.
   const isFlagStall = flagState?.phase === 'FLAG_FORMING' || (isPhase1 && Boolean(breakoutCandle))
   const stallPenaltyScore = isFlagStall ? 0 : consecutiveStallBars * 0.5
   let effectiveSlopePtsPer5m = Number((baseSlopePtsPer5m + stallPenaltyScore + volumeDecayPenalty).toFixed(2))
@@ -1481,12 +1683,15 @@ export function calculateDynamicTrendline(params: {
     slopePtsPerSec = effectiveSlopePtsPer5m / 300
   }
 
-  // 5. Projected price at current time anchored from origin
+  // 6. Projected price at current time anchored from anchorP1
   const elapsedSec = Math.max(0, currentTime - anchorP1.time)
   let currentProjectedPrice = Number((anchorP1.price + slopePtsPerSec * elapsedSec).toFixed(2))
 
   // In Phase 1, enforce Dynamic Trailing Support Floor (Long) / Resistance Ceiling (Short):
-  // Ensure the projected price never pierces above post-breakout lows or below post-breakout highs.
+  // When in Phase 1 (deep dip or flag), keep the line flat as a Range Support Floor / Ceiling
+  let p1Price = anchorP1.price
+  let p2Price = Number((anchorP1.price + slopePtsPerSec * (elapsedSec + 900)).toFixed(2))
+
   if (isPhase1 && bars.length > 0) {
     const postBars = breakoutCandle
       ? bars.filter((b) => b.time >= breakoutCandle.time)
@@ -1495,31 +1700,33 @@ export function calculateDynamicTrendline(params: {
     if (postBars.length > 0) {
       if (dir === 'LONG') {
         const lowestPostBar = Math.min(...postBars.map((b) => b.low))
-        const safeFloor = lowestPostBar - 1.5
-        if (currentProjectedPrice > safeFloor) {
-          currentProjectedPrice = Number(Math.max(anchorP1.price, safeFloor).toFixed(2))
+        const refExtreme = flagState ? Math.min(flagState.flagExtremePrice, lowestPostBar) : lowestPostBar
+        const safeFloor = Number((Math.min(anchorP1.price, refExtreme) - 1.5).toFixed(2))
+
+        if (flagState?.isDeepDip || flagState?.phase === 'FLAG_FORMING' || currentProjectedPrice > safeFloor) {
+          currentProjectedPrice = safeFloor
+          p1Price = safeFloor
+          p2Price = safeFloor
+          effectiveSlopePtsPer5m = 0
+          slopePtsPerSec = 0
         }
       } else {
         const highestPostBar = Math.max(...postBars.map((b) => b.high))
-        const safeCeiling = highestPostBar + 1.5
-        if (currentProjectedPrice < safeCeiling) {
-          currentProjectedPrice = Number(Math.min(anchorP1.price, safeCeiling).toFixed(2))
+        const refExtreme = flagState ? Math.max(flagState.flagExtremePrice, highestPostBar) : highestPostBar
+        const safeCeiling = Number((Math.max(anchorP1.price, refExtreme) + 1.5).toFixed(2))
+
+        if (flagState?.isDeepDip || flagState?.phase === 'FLAG_FORMING' || currentProjectedPrice < safeCeiling) {
+          currentProjectedPrice = safeCeiling
+          p1Price = safeCeiling
+          p2Price = safeCeiling
+          effectiveSlopePtsPer5m = 0
+          slopePtsPerSec = 0
         }
       }
     }
   }
 
-  // Construct visual segment endpoints
-  const p1 = { time: anchorP1.time, price: anchorP1.price }
-  let p2Price = Number((anchorP1.price + slopePtsPerSec * (elapsedSec + 900)).toFixed(2))
-  if (isPhase1 && bars.length > 0) {
-    if (dir === 'LONG' && p2Price > currentProjectedPrice) {
-      p2Price = Number((currentProjectedPrice + (Math.abs(effectiveSlopePtsPer5m) * 3)).toFixed(2))
-    } else if (dir === 'SHORT' && p2Price < currentProjectedPrice) {
-      p2Price = Number((currentProjectedPrice - (Math.abs(effectiveSlopePtsPer5m) * 3)).toFixed(2))
-    }
-  }
-
+  const p1 = { time: anchorP1.time, price: p1Price }
   const p2 = {
     time: currentTime + 900, // +15 mins ahead
     price: p2Price,
@@ -1549,6 +1756,8 @@ export function calculateDynamicTrendline(params: {
     phase: currentPhase,
     flagState: flagState ?? undefined,
     isPhase1,
+    reactionAnchor: reactionAnchor ? { time: reactionAnchor.time, price: reactionAnchor.price } : undefined,
+    isUserReactionTrendline: false,
   }
 }
 

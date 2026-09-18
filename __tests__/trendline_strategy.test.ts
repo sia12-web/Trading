@@ -13,6 +13,7 @@ import {
   evaluateChopShield,
   resampleCandlesTo5M,
   detectFlagAndSecondaryBreakout,
+  findBreakoutSwingAnchor,
 } from '../lib/trading/trendlineStrategy.ts'
 import type { UserTrendline } from '../lib/trading/userDrawings.ts'
 import type { Candle } from '../lib/trading/candlestickPatterns.ts'
@@ -1055,6 +1056,167 @@ describe('Systematic Trendline Strategy & Trend-Borning Zone Engine', () => {
     const checkBreak = checkDynamicTrendlineExit(phase2Line, breakBar, { currentTimeSec: 2800, barDurationSec: 300 })
     assert.equal(checkBreak.shouldExit, true)
     assert.equal(checkBreak.exitPrice, 52212)
+    assert.ok(checkBreak.reason.includes('below dynamic trendline'))
+  })
+
+  // 30. Deep Dip & Retest Range Accommodation
+  test('30. should accommodate deep dips and retest ranges in Phase 1 without triggering premature REACTION BROKEN', () => {
+    const origin = { time: 500, price: 4378.0, candleIndex: 0, type: 'LOW' as const }
+    const breakoutCandle: Candle = { time: 1000, open: 4383, high: 4387, low: 4382, close: 4386.3, volume: 150 }
+
+    // After breakout at 4386.3, impulse moves to 4390.0, then price dips deeply to 4382.3 (retesting broken trendline/range)
+    const bars: Candle[] = [
+      { time: 500, open: 4380, high: 4381, low: 4378, close: 4380, volume: 100 },
+      breakoutCandle,
+      { time: 1300, open: 4386.3, high: 4390.0, low: 4385.0, close: 4389.0, volume: 200 }, // Impulse pole
+      { time: 1600, open: 4389.0, high: 4389.5, low: 4382.3, close: 4385.1, volume: 120 }, // Deep Dip retest bar
+    ]
+
+    const flagState = detectFlagAndSecondaryBreakout({
+      origin,
+      breakoutCandle,
+      bars,
+      direction: 'LONG',
+    })
+
+    assert.equal(flagState.phase, 'FLAG_FORMING')
+    assert.equal(flagState.polePrice, 4390.0)
+    assert.equal(flagState.flagExtremePrice, 4382.3)
+    assert.equal(flagState.isDeepDip, true)
+    assert.ok(flagState.dipRatio >= 0.40)
+    assert.equal(flagState.rangeLow, 4382.0)
+    assert.equal(flagState.rangeHigh, 4390.0)
+
+    // Calculate dynamic trendline during this deep dip in Phase 1
+    const dynLine = calculateDynamicTrendline({
+      origin,
+      compositeScore: 75,
+      higherLows: flagState.confirmedPivots,
+      currentPrice: 4385.1,
+      currentTime: 1600,
+      bars,
+      direction: 'LONG',
+      breakoutCandle,
+      flagState,
+    })
+
+    // In Phase 1 with deep dip, the line acts as a Range Support Floor safely below 4382.3 (e.g. 4380.80)
+    assert.ok(dynLine.currentProjectedPrice <= 4381.0)
+    assert.equal(dynLine.effectiveSlopePtsPer5m, 0) // Flat floor during range retest
+
+    // Check exit on the deep dip bar that closed at 4385.10 (from user's screenshot)
+    const deepDipBar = bars[3]!
+    const exitCheck = checkDynamicTrendlineExit(dynLine, deepDipBar, {
+      currentTimeSec: 1900,
+      barDurationSec: 300,
+      structuralZone: {
+        zoneLow: 4376.0,
+        zoneHigh: 4380.0,
+        pocPrice: 4378.0,
+        volumeProfilePocScore: 20,
+        orderFlowAbsorptionScore: 15,
+        multiTimeframeConfluenceScore: 15,
+        totalZoneVolume: 10000,
+        historicalVolumeRatio: 1.5,
+        rejectionWickRatio: 0.6,
+        isConfirmedHistoricalSupport: true,
+      },
+    })
+
+    // Must NOT exit! The deep dip retest is healthy range oscillation above Borning Zone
+    assert.equal(exitCheck.shouldExit, false)
+    assert.equal(exitCheck.isConfirmed5mCloseBelow, false)
+  })
+
+  // 31. Local Pre-Breakout Swing Low Anchor Detection
+  test('31. should locate the local pre-breakout swing anchor under breakout candle when accumulation range exists', () => {
+    // Distant macro tail at t=1000 (price 4378)
+    const macroOrigin = { time: 1000, price: 4378.0, candleIndex: 0 }
+
+    // 20 bars of accumulation range [4381 - 4386]
+    const bars: Candle[] = [
+      { time: 1000, open: 4380, high: 4381, low: 4378, close: 4380, volume: 500 }, // distant tail
+      { time: 1300, open: 4380, high: 4385, low: 4380, close: 4384, volume: 200 },
+      { time: 1600, open: 4384, high: 4385, low: 4382, close: 4383, volume: 150 },
+      { time: 1900, open: 4383, high: 4384, low: 4381.5, close: 4382, volume: 160 }, // local swing low launching breakout
+      { time: 2200, open: 4382, high: 4385, low: 4382, close: 4384.5, volume: 180 },
+      { time: 2500, open: 4384.5, high: 4388, low: 4384, close: 4387.0, volume: 300 }, // Breakout candle
+    ]
+
+    const breakoutIndex = 5 // bar at time 2500
+
+    // findInitiatingPoint locates the distant macro tail
+    const mockTl: UserTrendline = {
+      id: 'tl-1',
+      type: 'TRENDLINE',
+      p1: { time: 1000, price: 4395 },
+      p2: { time: 2500, price: 4385 },
+      direction: 'BEARISH',
+    }
+    const macroInit = findInitiatingPoint(mockTl, bars, breakoutIndex, { direction: 'LONG' })
+    assert.equal(macroInit?.price, 4378.0)
+    assert.equal(macroInit?.time, 1000)
+
+    // findBreakoutSwingAnchor locates the local swing low at t=1900, price=4381.50
+    const localAnchor = findBreakoutSwingAnchor({
+      bars,
+      breakoutIndex,
+      direction: 'LONG',
+      maxLookbackBars: 10,
+      macroOrigin,
+    })
+
+    assert.ok(localAnchor)
+    assert.equal(localAnchor?.price, 4381.5)
+    assert.equal(localAnchor?.time, 1900)
+    assert.equal(localAnchor?.type, 'LOW')
+  })
+
+  // 32. User-Drawn Reaction Trendline Integration
+  test('32. should bind user-drawn Reaction Trendline and evaluate exit criteria against its empirical geometry', () => {
+    const origin = { time: 1000, price: 4378.0, candleIndex: 0, type: 'LOW' as const }
+
+    // User draws reaction trendline from (t=1900, p=4382) to (t=2500, p=4391) -> slope = 9 pts / 600s = +4.5 pts / 300s
+    const userReactionTl: UserTrendline = {
+      id: 'tl-user-reaction-1',
+      type: 'TRENDLINE',
+      p1: { time: 1900, price: 4382.0 },
+      p2: { time: 2500, price: 4391.0 },
+      direction: 'BULLISH',
+      isReactionTrendline: true,
+      parentActionTrendlineId: 'tl-action-1',
+    }
+
+    const dynLine = calculateDynamicTrendline({
+      origin,
+      compositeScore: 80,
+      higherLows: [],
+      currentPrice: 4395.0,
+      currentTime: 3100, // 1200s from p1
+      bars: [],
+      direction: 'LONG',
+      userReactionTrendline: userReactionTl,
+    })
+
+    assert.equal(dynLine.isUserReactionTrendline, true)
+    assert.equal(dynLine.isEmpiricalPivotSlope, true)
+    assert.equal(dynLine.p1.time, 1900)
+    assert.equal(dynLine.p1.price, 4382.0)
+    assert.equal(dynLine.p2.time, 2500)
+    assert.equal(dynLine.p2.price, 4391.0)
+    assert.equal(dynLine.effectiveSlopePtsPer5m, 4.5)
+
+    // At t=3100 (1200s from p1), line is 4382 + (1200/300)*4.5 = 4382 + 18 = 4400.0
+    // Candle safely above projected price:
+    const aboveBar: Candle = { time: 3100, open: 4402, high: 4405, low: 4401, close: 4403, volume: 200 }
+    const checkAbove = checkDynamicTrendlineExit(dynLine, aboveBar, { currentTimeSec: 3400, barDurationSec: 300 })
+    assert.equal(checkAbove.shouldExit, false)
+
+    // Candle closing below user reaction line:
+    const breakBar: Candle = { time: 3100, open: 4400, high: 4401, low: 4396, close: 4397.5, volume: 300 }
+    const checkBreak = checkDynamicTrendlineExit(dynLine, breakBar, { currentTimeSec: 3400, barDurationSec: 300 })
+    assert.equal(checkBreak.shouldExit, true)
+    assert.equal(checkBreak.exitPrice, 4397.5)
     assert.ok(checkBreak.reason.includes('below dynamic trendline'))
   })
 })
