@@ -94,3 +94,22 @@ test('Leo Rules - Level Alert & Stagnation Condition Organization', () => {
   assert.equal(stagRule.conditions.maxMinutes, 10)
   assert.equal(stagRule.conditions.requireProfitPoints, 2)
 })
+
+test('Leo Rules - Cleared market situations do not auto-reseed', () => {
+  const store: Record<string, string> = {}
+  ;(global as any).window = {
+    dispatchEvent: () => {},
+  }
+  ;(global as any).localStorage = {
+    getItem: (key: string) => store[key] ?? null,
+    setItem: (key: string, val: string) => { store[key] = val },
+    removeItem: (key: string) => { delete store[key] },
+  }
+
+  const { loadRulesForMarket, saveRulesForMarket } = require('../lib/trading/leoRules')
+  saveRulesForMarket('DOW', [])
+  const loaded = loadRulesForMarket('DOW')
+  assert.deepEqual(loaded, [], 'Cleared rules array should remain empty without auto-reseeding')
+})
+
+

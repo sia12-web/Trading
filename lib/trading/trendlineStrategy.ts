@@ -289,8 +289,9 @@ export function checkTrendlineBreakout(
     // A candle is only confirmed closed if a subsequent candle exists or its 5m duration has elapsed
     const isCompletedBar =
       i < bars.length - 1 ||
-      options?.currentTimeSec == null ||
-      options.currentTimeSec >= b.time + barDuration
+      (options?.currentTimeSec != null
+        ? options.currentTimeSec >= b.time + barDuration
+        : true)
 
     if (dir === 'LONG') {
       // Bearish trendline being broken to upside by buyers

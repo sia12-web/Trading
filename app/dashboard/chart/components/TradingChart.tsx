@@ -45,6 +45,7 @@ import {
   timeToX,
   deskClockFor,
   deskSessionAt,
+  nyDeskSessionAt,
   isWeekdayYmd,
   zonedCivilToUnix,
   computeAnchoredVwap,
@@ -194,6 +195,7 @@ import {
   evaluateTrendBorningZone,
   detectHigherLowsWithTiming,
   calculateDynamicTrendline,
+  resampleCandlesTo5M,
 } from '@/lib/trading/trendlineStrategy'
 
 const DOW_15M_FAIL_COLORS: any = { high: '#3b82f6', low: '#ef4444', mid: '#eab308', buy: '#3b82f6', sell: '#ef4444' }
@@ -1213,6 +1215,13 @@ export function TradingChart({
   const spikesRef = useRef<any[]>([])
   const distRefsRef = useRef<any[]>([])
   const newsMovesRef = useRef<EmotionalNewsMove[]>([])
+  const confirmedBreakoutsRef = useRef<Map<string, {
+    breakoutCandle: Candle
+    breakoutIndex: number
+    entryPrice: number
+    defaultStopLoss: number
+    defaultTakeProfitFixed50: number
+  }>>(new Map())
 
   // ── User Interactive Drawing Tools (Trendline, Action Line, Range, Manual FRVP) ────────
   type DrawingToolType = 'NONE' | 'TRENDLINE' | 'ACTION_TRENDLINE' | 'RANGE' | 'FRVP'
@@ -2916,6 +2925,46 @@ export function TradingChart({
       return [minX, yAtLeft, maxX, yAtRight]
     }
 
+    // Collision-avoidance registry to guarantee badges never overlap on the canvas
+    const drawnBadges: { x: number; y: number; w: number; h: number }[] = []
+
+    const allocateBadgePos = (
+      prefX: number,
+      prefY: number,
+      w: number,
+      h: number,
+      preferAbove = true
+    ): { x: number; y: number } => {
+      let curX = Math.max(6, Math.min(paneW - w - 6, prefX))
+      let curY = Math.max(6, Math.min(paneH - h - 6, prefY))
+
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const col = drawnBadges.find(
+          (b) =>
+            curX < b.x + b.w + 6 &&
+            curX + w + 6 > b.x &&
+            curY < b.y + b.h + 4 &&
+            curY + h + 4 > b.y
+        )
+        if (!col) break
+        if (preferAbove) {
+          curY = col.y - h - 6
+          if (curY < 6) {
+            curY = col.y + col.h + 6
+            preferAbove = false
+          }
+        } else {
+          curY = col.y + col.h + 6
+          if (curY + h > paneH - 6) {
+            curY = col.y - h - 6
+            preferAbove = true
+          }
+        }
+      }
+      drawnBadges.push({ x: curX, y: curY, w, h })
+      return { x: curX, y: curY }
+    }
+
     for (const tl of activeTrendlines) {
       const x1 = timeToX(chart.timeScale(), toChartTime(tl.p1.time, tz), candleTimes)
       const x2 = timeToX(chart.timeScale(), toChartTime(tl.p2.time, tz), candleTimes)
@@ -2959,28 +3008,42 @@ export function TradingChart({
         const my = (y1 + y2) / 2
         const pDiff = tl.p2.price - tl.p1.price
         const dir = pDiff > 0 ? '↗' : pDiff < 0 ? '↘' : '→'
-        const sessTag = tl.sessionOrigin ? ` [${tl.sessionOrigin}${tl.isCarriedFromOvernight ? ' · Overnight' : ''}]` : ''
+
+        // Dynamic session detection: check anchor time, fallback to tl.sessionOrigin, fallback to current time
+        const anchorTime = Math.min(tl.p1.time, tl.p2.time)
+        const deskSess = nyDeskSessionAt(anchorTime) ?? (tl.sessionOrigin ? (tl.sessionOrigin === 'NYC' ? 'New York' : tl.sessionOrigin) : nyDeskSessionAt(Math.floor(Date.now() / 1000)))
+        const resolvedOrigin: 'Asia' | 'London' | 'NYC' =
+          deskSess === 'Asia' ? 'Asia' : deskSess === 'London' ? 'London' : deskSess === 'New York' ? 'NYC' : (tl.sessionOrigin || 'Asia')
+        const isCarriedOvernight = resolvedOrigin !== 'NYC'
+        const sessTag = isActionTl
+          ? ` [${resolvedOrigin}${isCarriedOvernight ? ' · Overnight' : ''}]`
+          : (tl.sessionOrigin ? ` [${tl.sessionOrigin}]` : '')
+
         const labelText = isActionTl
-          ? `🎯 ACTION TRENDLINE (INITIAL OVERNIGHT)${sessTag} ${dir} (${pDiff >= 0 ? '+' : ''}${pDiff.toFixed(1)} pts)`
+          ? `🎯 ACTION LINE${sessTag} ${dir} (${pDiff >= 0 ? '+' : ''}${pDiff.toFixed(1)} pts)`
           : `📐 ${tl.label || 'Trendline'}${sessTag} ${dir} (${pDiff >= 0 ? '+' : ''}${pDiff.toFixed(1)} pts)`
 
         ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
         const textW = ctx.measureText(labelText).width
-        ctx.fillStyle = isActionTl ? 'rgba(30, 20, 5, 0.92)' : 'rgba(15, 23, 42, 0.85)'
-        ctx.fillRect(mx - textW / 2 - 4, my - 16, textW + 8, 15)
+        const badgeW = textW + 10
+        const badgeH = 16
+        const { x: midBx, y: midBy } = allocateBadgePos(mx - badgeW / 2, my - 18, badgeW, badgeH, true)
+
+        ctx.fillStyle = isActionTl ? 'rgba(30, 20, 5, 0.94)' : 'rgba(15, 23, 42, 0.90)'
+        ctx.fillRect(midBx, midBy, badgeW, badgeH)
         ctx.strokeStyle = isActionTl ? '#f59e0b' : '#38bdf8'
         ctx.lineWidth = isActionTl ? 1.5 : 1
-        ctx.strokeRect(mx - textW / 2 - 4, my - 16, textW + 8, 15)
+        ctx.strokeRect(midBx, midBy, badgeW, badgeH)
 
         ctx.fillStyle = isActionTl ? '#fef08a' : '#7dd3fc'
-        ctx.fillText(labelText, mx - textW / 2, my - 5)
+        ctx.fillText(labelText, midBx + 5, midBy + 11)
 
         // ── Systematic Trend-Borning Zone & Responsive Angle Engine (Two-Way) ──
         if (pDiff !== 0 && list.length > 0) {
           const isLong = pDiff < 0
           const setupDir: 'LONG' | 'SHORT' = isLong ? 'LONG' : 'SHORT'
 
-          const bars5m: Candle[] = list.map((c: any) => ({
+          const rawBars: Candle[] = list.map((c: any) => ({
             time: typeof c.time === 'number' ? c.time : 0,
             open: Number(c.open),
             high: Number(c.high),
@@ -2988,9 +3051,35 @@ export function TradingChart({
             close: Number(c.close),
             volume: Number(c.volume || 1),
           }))
+          const bars5m: Candle[] = resampleCandlesTo5M(rawBars)
+          const nowSec = Math.floor(Date.now() / 1000)
 
-          const breakout = checkTrendlineBreakout(tl, bars5m, { direction: setupDir })
-          const initPt = findInitiatingPoint(tl, bars5m, breakout.breakoutCandleIndex ?? bars5m.length - 1, { direction: setupDir })
+          const breakout = checkTrendlineBreakout(tl, bars5m, {
+            direction: setupDir,
+            currentTimeSec: nowSec,
+            barDurationSec: 300,
+          })
+
+          // Maintain persistent breakout state so intra-bar ticks or rebuilds do not cause reaction line to flicker
+          if (breakout.isConfirmed5mClose && breakout.breakoutCandle) {
+            confirmedBreakoutsRef.current.set(tl.id, {
+              breakoutCandle: breakout.breakoutCandle,
+              breakoutIndex: breakout.breakoutCandleIndex ?? (bars5m.length - 1),
+              entryPrice: breakout.entryPrice ?? breakout.breakoutCandle.close,
+              defaultStopLoss: breakout.defaultStopLoss ?? (breakout.breakoutCandle.low - 1),
+              defaultTakeProfitFixed50: breakout.defaultTakeProfitFixed50 ?? (breakout.breakoutCandle.close + 50),
+            })
+          }
+
+          const cachedBrk = confirmedBreakoutsRef.current.get(tl.id)
+          const hasConfirmedBreakout = breakout.isConfirmed5mClose || Boolean(cachedBrk)
+          const activeBreakoutCandle = breakout.breakoutCandle || cachedBrk?.breakoutCandle
+          const activeBreakoutIndex = breakout.breakoutCandleIndex ?? cachedBrk?.breakoutIndex ?? (bars5m.length - 1)
+          const activeEntryPrice = breakout.entryPrice ?? cachedBrk?.entryPrice
+          const activeStopLoss = breakout.defaultStopLoss ?? cachedBrk?.defaultStopLoss
+          const activeTakeProfit = breakout.defaultTakeProfitFixed50 ?? cachedBrk?.defaultTakeProfitFixed50
+
+          const initPt = findInitiatingPoint(tl, bars5m, activeBreakoutIndex, { direction: setupDir })
 
           if (initPt) {
             const mockChartCtx: any = {
@@ -3049,36 +3138,50 @@ export function TradingChart({
                 ctx.setLineDash([])
 
                 if (initX != null) {
-                  const zVolText = `📦 ${isLong ? 'Bull' : 'Bear'} Zone [${sz.zoneLow.toFixed(1)}–${sz.zoneHigh.toFixed(1)}] · Vol: ${sz.totalZoneVolume.toLocaleString()}${sz.historicalVolumeRatio ? ` (${sz.historicalVolumeRatio}x vs prior tests)` : ''}`
-                  ctx.font = '8px ui-monospace, SFMono-Regular, monospace'
+                  const zVolText = `📦 ${isLong ? 'Bull' : 'Bear'} Zone [${sz.zoneLow.toFixed(1)}–${sz.zoneHigh.toFixed(1)}] · Vol: ${sz.totalZoneVolume.toLocaleString()}${sz.historicalVolumeRatio ? ` (${sz.historicalVolumeRatio}x)` : ''}`
+                  ctx.font = 'bold 8.5px ui-monospace, SFMono-Regular, monospace'
                   const zW = ctx.measureText(zVolText).width + 8
-                  ctx.fillStyle = 'rgba(15, 23, 42, 0.88)'
-                  ctx.fillRect(initX - zW / 2, bandTop - 13, zW, 13)
+                  const zH = 14
+                  const { x: zBx, y: zBy } = allocateBadgePos(initXPos + 6, bandTop + 2, zW, zH, false)
+                  ctx.fillStyle = 'rgba(15, 23, 42, 0.92)'
+                  ctx.fillRect(zBx, zBy, zW, zH)
                   ctx.fillStyle = isLong ? '#fcd34d' : '#fca5a5'
-                  ctx.fillText(zVolText, initX - zW / 2 + 4, bandTop - 3)
+                  ctx.fillText(zVolText, zBx + 4, zBy + 10)
                 }
               }
             }
 
             if (initX != null && initY != null) {
               ctx.beginPath()
-              ctx.arc(initX, initY, 6, 0, 2 * Math.PI)
-              ctx.fillStyle = isLong ? 'rgba(234, 179, 8, 0.4)' : 'rgba(239, 68, 68, 0.4)'
+              ctx.arc(initX, initY, 5, 0, 2 * Math.PI)
+              ctx.fillStyle = isLong ? 'rgba(234, 179, 8, 0.5)' : 'rgba(239, 68, 68, 0.5)'
               ctx.fill()
               ctx.strokeStyle = isLong ? '#eab308' : '#ef4444'
-              ctx.lineWidth = 2
+              ctx.lineWidth = 1.5
               ctx.stroke()
 
-              const bText = `🎯 ${isLong ? 'BULLISH' : 'BEARISH'} BORNING ZONE: ${initPt.price.toFixed(2)} · Score ${borningZone.compositeScore}/100 (${borningZone.grade})`
+              const bText = `🎯 ${isLong ? 'BULL' : 'BEAR'} ORIGIN: ${initPt.price.toFixed(2)} · ${borningZone.compositeScore}/100 (${borningZone.grade})`
               ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-              const bW = ctx.measureText(bText).width + 12
-              ctx.fillStyle = 'rgba(15, 23, 42, 0.92)'
-              ctx.fillRect(initX - bW / 2, initY + (isLong ? 8 : -24), bW, 16)
+              const bW = ctx.measureText(bText).width + 10
+              const bH = 16
+              const targetY = isLong ? initY + 14 : initY - 30
+              const { x: bBx, y: bBy } = allocateBadgePos(initX - bW / 2, targetY, bW, bH, !isLong)
+
+              // Small leader line from pivot dot to badge
+              ctx.strokeStyle = isLong ? 'rgba(234, 179, 8, 0.6)' : 'rgba(239, 68, 68, 0.6)'
+              ctx.lineWidth = 1
+              ctx.beginPath()
+              ctx.moveTo(initX, initY)
+              ctx.lineTo(initX, isLong ? bBy : bBy + bH)
+              ctx.stroke()
+
+              ctx.fillStyle = 'rgba(15, 23, 42, 0.94)'
+              ctx.fillRect(bBx, bBy, bW, bH)
               ctx.strokeStyle = isLong ? '#eab308' : '#ef4444'
               ctx.lineWidth = 1
-              ctx.strokeRect(initX - bW / 2, initY + (isLong ? 8 : -24), bW, 16)
+              ctx.strokeRect(bBx, bBy, bW, bH)
               ctx.fillStyle = isLong ? '#fef08a' : '#fca5a5'
-              ctx.fillText(bText, initX - bW / 2 + 6, initY + (isLong ? 20 : -12))
+              ctx.fillText(bText, bBx + 5, bBy + 11)
             }
 
             // 2. Draw Higher Lows / Lower Highs Timing Intervals
@@ -3088,27 +3191,34 @@ export function TradingChart({
               const hlY = series.priceToCoordinate(hl.price)
               if (hlX != null && hlY != null) {
                 ctx.beginPath()
-                ctx.arc(hlX, hlY, 4, 0, 2 * Math.PI)
+                ctx.arc(hlX, hlY, 3.5, 0, 2 * Math.PI)
                 ctx.fillStyle = isLong ? '#38bdf8' : '#f43f5e'
                 ctx.fill()
                 ctx.strokeStyle = '#ffffff'
                 ctx.lineWidth = 1
                 ctx.stroke()
 
-                const hlLabel = `${hl.timingLabel}: ${hl.price.toFixed(1)}`
+                const hlLabel = `${hl.timingLabel} · ${hl.price.toFixed(1)}`
                 ctx.font = 'bold 8.5px ui-monospace, SFMono-Regular, monospace'
                 const hlW = ctx.measureText(hlLabel).width + 8
-                ctx.fillStyle = 'rgba(15, 23, 42, 0.9)'
-                ctx.fillRect(hlX - hlW / 2, hlY + (isLong ? 6 : -18), hlW, 14)
+                const hlH = 14
+                const targetY = isLong ? hlY + 8 : hlY - 22
+                const { x: hlBx, y: hlBy } = allocateBadgePos(hlX - hlW / 2, targetY, hlW, hlH, !isLong)
+
+                ctx.fillStyle = 'rgba(15, 23, 42, 0.92)'
+                ctx.fillRect(hlBx, hlBy, hlW, hlH)
+                ctx.strokeStyle = isLong ? '#38bdf8' : '#f43f5e'
+                ctx.lineWidth = 1
+                ctx.strokeRect(hlBx, hlBy, hlW, hlH)
                 ctx.fillStyle = isLong ? '#7dd3fc' : '#fda4af'
-                ctx.fillText(hlLabel, hlX - hlW / 2 + 4, hlY + (isLong ? 16 : -8))
+                ctx.fillText(hlLabel, hlBx + 4, hlBy + 10)
               }
             }
 
             // 3. Draw Confirmed 5m Breakout Candle Marker & Entry Target
-            if (breakout.isConfirmed5mClose && breakout.breakoutCandle) {
-              const brkX = timeToX(chart.timeScale(), toChartTime(breakout.breakoutCandle.time, tz), candleTimes)
-              const brkY = series.priceToCoordinate(breakout.breakoutCandle.close)
+            if (hasConfirmedBreakout && activeBreakoutCandle) {
+              const brkX = timeToX(chart.timeScale(), toChartTime(activeBreakoutCandle.time, tz), candleTimes)
+              const brkY = series.priceToCoordinate(activeBreakoutCandle.close)
               if (brkX != null && brkY != null) {
                 ctx.beginPath()
                 if (isLong) {
@@ -3127,25 +3237,43 @@ export function TradingChart({
                 ctx.fill()
 
                 const brkIcon = isLong ? '🚀 5M LONG ENTRY' : '🔻 5M SHORT ENTRY'
-                const brkText = `${brkIcon}: ${breakout.entryPrice?.toFixed(2)} · SL ${breakout.defaultStopLoss?.toFixed(2)} · TP ${breakout.defaultTakeProfitFixed50?.toFixed(2)}`
+                const brkText = `${brkIcon}: ${activeEntryPrice?.toFixed(2)} · SL ${activeStopLoss?.toFixed(2)} · TP ${activeTakeProfit?.toFixed(2)}`
                 ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
                 const brkW = ctx.measureText(brkText).width + 10
+                const brkH = 16
+                const prefY = isLong ? brkY - 34 : brkY + 18
+                const { x: brkBx, y: brkBy } = allocateBadgePos(brkX - brkW / 2, prefY, brkW, brkH, isLong)
+
                 ctx.fillStyle = 'rgba(15, 23, 42, 0.95)'
-                const boxY = isLong ? brkY - 32 : brkY + 16
-                ctx.fillRect(brkX - brkW / 2, boxY, brkW, 16)
+                ctx.fillRect(brkBx, brkBy, brkW, brkH)
                 ctx.strokeStyle = isLong ? '#22c55e' : '#ef4444'
                 ctx.lineWidth = 1
-                ctx.strokeRect(brkX - brkW / 2, boxY, brkW, 16)
+                ctx.strokeRect(brkBx, brkBy, brkW, brkH)
                 ctx.fillStyle = isLong ? '#86efac' : '#fca5a5'
-                ctx.fillText(brkText, brkX - brkW / 2 + 5, boxY + 12)
+                ctx.fillText(brkText, brkBx + 5, brkBy + 11)
               }
 
-              // 4. Draw Dynamic Responsive Trendline with Stalling Time-Decay
+              // 4. Draw Dynamic Responsive Reaction Trendline (Rock-solid anchor and projection)
               const dX1 = timeToX(chart.timeScale(), toChartTime(dynamicLine.p1.time, tz), candleTimes)
-              const dX2 = timeToX(chart.timeScale(), toChartTime(dynamicLine.p2.time, tz), candleTimes)
               const dY1 = series.priceToCoordinate(dynamicLine.p1.price)
-              const dY2 = series.priceToCoordinate(dynamicLine.p2.price)
-              if (dX1 != null && dX2 != null && dY1 != null && dY2 != null) {
+
+              // Project using a reference timestamp from the visible candle series
+              const lastBarTime = (list[list.length - 1]?.time as number) || (dynamicLine.p1.time + 300)
+              const refBarTime = lastBarTime > dynamicLine.p1.time ? lastBarTime : dynamicLine.p1.time + 300
+              const refPrice = dynamicLine.p1.price + (dynamicLine.slopePtsPerSec * (refBarTime - dynamicLine.p1.time))
+
+              let dX2 = timeToX(chart.timeScale(), toChartTime(refBarTime, tz), candleTimes)
+              let dY2: number | null = series.priceToCoordinate(refPrice)
+
+              if (dX1 != null && dY1 != null) {
+                if (dX2 == null) {
+                  dX2 = dX1 + 120
+                  dY2 = dY1 + (isLong ? -50 : 50)
+                }
+                if (dY2 == null) {
+                  dY2 = series.priceToCoordinate(dynamicLine.p2.price) ?? dY1
+                }
+
                 const [dex1, dey1, dex2, dey2] = extendedLine(dX1, dY1, dX2, dY2)
                 const isDrying = dynamicLine.swingVolumeProgression?.trend === 'DECLINING'
                 const isDecaying = dynamicLine.isStalling || isDrying
@@ -3161,18 +3289,22 @@ export function TradingChart({
                 ctx.setLineDash([])
 
                 const dynIcon = isLong ? '📈' : '📉'
-                const dynText = `${dynIcon} Responsive Line (${Math.abs(dynamicLine.effectiveSlopePtsPer5m)} pts/5m)${dynamicLine.isStalling ? ' ⚡ STALL DECAY' : ''}${isDrying ? ` 📉 DRYING VOL (-${Math.abs(dynamicLine.swingVolumeProgression?.scoreDelta || 0)})` : ''}`
-                const dMidX = (dX1 + dX2) / 2
-                const dMidY = (dY1 + dY2) / 2
+                const dynText = `${dynIcon} Reaction Line (${Math.abs(dynamicLine.effectiveSlopePtsPer5m)} pts/5m)${dynamicLine.isStalling ? ' ⚡ STALL' : ''}`
                 ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-                const dW = ctx.measureText(dynText).width + 8
+                const dW = ctx.measureText(dynText).width + 10
+                const dH = 16
+
+                const midAnchorX = (dX1 + Math.min(paneW - 40, dX2)) / 2
+                const midAnchorY = (dY1 + dY2) / 2
+                const { x: dynBx, y: dynBy } = allocateBadgePos(midAnchorX - dW / 2, midAnchorY - 18, dW, dH, true)
+
                 ctx.fillStyle = isDecaying ? 'rgba(67, 20, 7, 0.95)' : isLong ? 'rgba(6, 78, 59, 0.95)' : 'rgba(76, 5, 25, 0.95)'
-                ctx.fillRect(dMidX - dW / 2, dMidY - 18, dW, 16)
+                ctx.fillRect(dynBx, dynBy, dW, dH)
                 ctx.strokeStyle = isDecaying ? '#f97316' : healthyColor
                 ctx.lineWidth = 1
-                ctx.strokeRect(dMidX - dW / 2, dMidY - 18, dW, 16)
+                ctx.strokeRect(dynBx, dynBy, dW, dH)
                 ctx.fillStyle = isDecaying ? '#fdba74' : isLong ? '#6ee7b7' : '#fda4af'
-                ctx.fillText(dynText, dMidX - dW / 2 + 4, dMidY - 6)
+                ctx.fillText(dynText, dynBx + 5, dynBy + 11)
               }
             }
           }
@@ -8938,6 +9070,14 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           const pDiff = p2.price - p1.price
           const inferredDir: 'BEARISH' | 'BULLISH' = pDiff < 0 ? 'BEARISH' : 'BULLISH'
           const tradeDir: 'LONG' | 'SHORT' = inferredDir === 'BEARISH' ? 'LONG' : 'SHORT'
+
+          // Dynamically detect session origin based on anchor time p1 (Asia, London, or NYC)
+          const anchorTime = Math.min(p1.time, p2.time)
+          const rawDeskSess = nyDeskSessionAt(anchorTime) ?? nyDeskSessionAt(Math.floor(Date.now() / 1000))
+          const sessionOrigin: 'Asia' | 'London' | 'NYC' =
+            rawDeskSess === 'Asia' ? 'Asia' : rawDeskSess === 'London' ? 'London' : rawDeskSess === 'New York' ? 'NYC' : 'Asia'
+          const isCarriedFromOvernight = sessionOrigin !== 'NYC'
+
           const newTl: UserTrendline = {
             id: isAction ? `action-tl-${Date.now()}` : `tl-${Date.now()}`,
             type: 'TRENDLINE',
@@ -8947,9 +9087,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             label: isAction ? `Action Trendline (${tradeDir === 'LONG' ? 'Long on Break' : 'Short on Break'})` : `Trendline ${activeTrendlines.length + 1}`,
             instrument,
             direction: inferredDir,
-            sessionOrigin: 'London',
+            sessionOrigin,
             isActionTrendline: isAction,
-            isInitialOvernight: isAction,
+            isInitialOvernight: isAction && isCarriedFromOvernight,
+            isCarriedFromOvernight,
           }
           setTrendlines((prev) => [...prev, newTl])
 
@@ -8958,8 +9099,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               instrument: instrument as MarketInstrument,
               type: 'TRENDLINE_BREAKOUT_SYSTEMATIC',
               direction: tradeDir,
-              description: `${tradeDir === 'LONG' ? 'Long' : 'Short'} 1 ${instrument} on 5m Close ${tradeDir === 'LONG' ? 'above' : 'below'} Action Trendline (Overnight Initial)`,
-              userPrompt: `Monitor Initial Action Trendline from overnight. Enter ${tradeDir} 1 ${instrument} on 5m candle close breakout in NYC.`,
+              description: `${tradeDir === 'LONG' ? 'Long' : 'Short'} 1 ${instrument} on 5m Close ${tradeDir === 'LONG' ? 'above' : 'below'} Action Trendline (${sessionOrigin} Initial)`,
+              userPrompt: `Monitor Initial Action Trendline from ${sessionOrigin.toLowerCase()}. Enter ${tradeDir} 1 ${instrument} on 5m candle close breakout in NYC.`,
               targetReference: newTl.label,
               targetPrice: newTl.p2.price,
               pattern: 'TRENDLINE_BREAKOUT_5M',
@@ -8986,7 +9127,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               type: 'TRENDLINE',
               id: newTl.id,
               label: newTl.label || 'Action Trendline',
-              summary: `🎯 Initial Overnight Action Line: Armed Leo to react on NYC ${tradeDir} Breakout with 7-Factor Scoring!`,
+              summary: `🎯 Initial ${sessionOrigin} Action Line: Armed Leo to react on NYC ${tradeDir} Breakout with 7-Factor Scoring!`,
             })
           } else {
             setDrawingToast({

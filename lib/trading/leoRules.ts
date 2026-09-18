@@ -456,16 +456,14 @@ export function loadRulesForMarket(market: MarketInstrument): ArmedRule[] {
   }
   try {
     const raw = localStorage.getItem(`leo_armed_rules_${market}`)
-    if (!raw) {
+    if (raw === null) {
       const seeded = seedDefaultMarketSituations(market)
       saveRulesForMarket(market, seeded)
       return seeded
     }
     const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      const seeded = seedDefaultMarketSituations(market)
-      saveRulesForMarket(market, seeded)
-      return seeded
+    if (!Array.isArray(parsed)) {
+      return []
     }
     return parsed.map((r) => {
       const normalized = normalizeArmedRule(r, market)
