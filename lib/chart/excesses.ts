@@ -625,10 +625,84 @@ function parseCalendarTimeUnix(time: string | number | null | undefined, _nowMs:
  * 4. Post-news acceptance vs rejection
  * 5. Unscheduled breaking news volatility spikes (>2.5x ATR)
  */
+/**
+ * Minimum move range (in points) required for a news announcement reaction to be considered "dramatic".
+ * Routine candle fluctuations below these thresholds must NEVER be annotated as emotional news moves or flushes.
+ */
+const MIN_DRAMATIC_NEWS_MOVE_PTS: Record<string, number> = {
+  DOW: 60.0,
+  YM: 60.0,
+  MYM: 60.0,
+  US30: 60.0,
+  NIKKEI: 120.0,
+  NKD: 120.0,
+  JP225: 120.0,
+  NASDAQ: 40.0,
+  NQ: 40.0,
+  MNQ: 40.0,
+  ES: 15.0,
+  MES: 15.0,
+  SPX: 15.0,
+  RTY: 12.0,
+  RUSSELL: 12.0,
+  GOLD: 8.0,
+  GC: 8.0,
+  MGC: 8.0,
+  SILVER: 0.35,
+  SI: 0.35,
+  CRUDE: 0.75,
+  CL: 0.75,
+  OIL: 0.75,
+}
+
+/**
+ * Check if an economic calendar event corresponds directly to the traded instrument.
+ */
+export function isEventDomesticToInstrument(country: string | undefined, event: string, instrument: string): boolean {
+  const c = (country || '').toUpperCase().trim()
+  const ev = event.toLowerCase()
+  const inst = instrument.toUpperCase().trim()
+
+  const isUsIndex = /^(DOW|YM|MYM|US30|NASDAQ|NQ|MNQ|ES|MES|SPX|RTY|RUSSELL)$/.test(inst)
+  const isGold = /^(GOLD|GC|MGC|SILVER|SI)$/.test(inst)
+  const isNikkei = /^(NIKKEI|NKD|JP225)$/.test(inst)
+  const isCrude = /^(CRUDE|CL|MCL|OIL)$/.test(inst)
+
+  if (isUsIndex || isGold) {
+    if (c === 'US' || c === 'USD' || c.includes('UNITED STATES')) return true
+    if (/\b(fomc|fed\b|powell|cpi|ppi|nfp|non-farm|payroll|pce|gdp|ism\b)\b/i.test(ev)) return true
+    return false
+  }
+
+  if (isNikkei) {
+    if (c === 'JP' || c === 'JPY' || c.includes('JAPAN')) return true
+    if (/\b(boj\b|bank of japan|tokyo|yen)\b/i.test(ev)) return true
+    if (c === 'US' || c === 'USD') return true
+    return false
+  }
+
+  if (isCrude) {
+    if (/\b(crude|oil|eia|petroleum|gasoline|opec|natural gas|api)\b/i.test(ev)) return true
+    if (c === 'US' || c === 'USD') return true
+    return false
+  }
+
+  return true
+}
+
+/**
+ * Detect Emotional News Moves (sudden high & low spikes upon economic news announcements).
+ * Captures:
+ * 1. News Reaction High & News Reaction Low
+ * 2. Pre-news base price
+ * 3. Direction / Whipsaw classification
+ * 4. Post-news acceptance vs rejection
+ * 5. Unscheduled breaking news volatility spikes (>2.5x ATR)
+ */
 export function detectEmotionalNewsMoves(
   bars: ExcessBar[],
   calendarEvents: CalendarEventParam[] = [],
-  _instrument: string = 'DOW',
+  instrument: string = 'DOW',
   anchorUnix?: number,
   nowMs: number = Date.now(),
   allowUnscheduledSpikes: boolean = false
@@ -641,12 +715,18 @@ export function detectEmotionalNewsMoves(
   const moves: EmotionalNewsMove[] = []
   const processedIndices = new Set<number>()
 
+  const instKey = instrument.toUpperCase().replace(/[^A-Z0-9]/g, '')
+  const baseThreshold = MIN_DRAMATIC_NEWS_MOVE_PTS[instKey] ?? 20.0
+
   // 1. Process explicit economic calendar events that really impact the market
   for (const e of calendarEvents) {
     const impactRaw = (e.impact || '').toLowerCase()
     const isExplicitHigh = impactRaw.includes('high')
     const isKnownMacroDriver = /cpi|fomc|fed\b|nfp|non-farm|payroll|powell|rate decision|gdp|ppi|unemployment|retail sales|pce\b|ism\b/i.test(e.event)
     if (!isExplicitHigh && !isKnownMacroDriver) continue
+
+    // Determine if the event corresponds directly to this instrument
+    const isDomestic = isEventDomesticToInstrument(e.country, e.event, instrument)
 
     const eventUnix = parseCalendarTimeUnix(e.time, nowMs)
     if (!eventUnix) continue
@@ -670,15 +750,26 @@ export function detectEmotionalNewsMoves(
     let nHigh = -Infinity
     let nLow = Infinity
     let nVol = 0
+    let maxSingleBarRange = 0
     for (const b of reactionBars) {
       if (b.high > nHigh) nHigh = b.high
       if (b.low < nLow) nLow = b.low
       nVol += Math.max(0, b.volume > 0 ? b.volume : 1)
+      const r = b.high - b.low
+      if (r > maxSingleBarRange) maxSingleBarRange = r
     }
     const moveRange = Number((nHigh - nLow).toFixed(2))
     if (moveRange <= 0) continue
 
-    // Verify that the market ACTUALLY reacted to this news announcement
+    // The move must be genuinely DRAMATIC:
+    // Minimum points must be at least the instrument threshold and at least 0.12% of price (or 1.5x for foreign events)
+    const minRequiredPts = Math.max(baseThreshold, basePrice > 0 ? basePrice * 0.0012 : baseThreshold) * (isDomestic ? 1.0 : 1.5)
+    if (moveRange < minRequiredPts) {
+      // Market did not move enough to qualify as a dramatic news move (e.g. 12 or 17 pts on Dow / Nikkei is trivial noise)
+      continue
+    }
+
+    // Verify that the market ACTUALLY reacted dramatically compared to pre-news baseline
     const lookback = Math.min(10, eventIdx)
     let preRangeSum = 0
     let preVolSum = 0
@@ -692,8 +783,16 @@ export function detectEmotionalNewsMoves(
     const avgPreVol = lookback > 0 ? preVolSum / lookback : 1
     const reactionExpansion = avgPreRange > 0 ? moveRange / avgPreRange : 1
     const volumeExpansion = avgPreVol > 0 ? (nVol / reactionBars.length) / avgPreVol : 1
-    if (reactionExpansion < 1.25 && volumeExpansion < 1.25) {
-      // Market did not meaningfully react to this news event — skip
+    const singleBarExpansion = avgPreRange > 0 ? maxSingleBarRange / avgPreRange : 1
+
+    const minReactionExp = isDomestic ? 1.75 : 2.5
+    const minVolExp = isDomestic ? 1.4 : 2.0
+    const isDramaticExpansion =
+      (reactionExpansion >= minReactionExp && (volumeExpansion >= minVolExp || reactionExpansion >= minReactionExp * 1.25)) &&
+      singleBarExpansion >= 1.35
+
+    if (!isDramaticExpansion) {
+      // Market did not dramatically react to this news event — skip
       continue
     }
 
@@ -707,18 +806,30 @@ export function detectEmotionalNewsMoves(
     let direction: 'WHIPSAW' | 'BULLISH_DRIVE' | 'BEARISH_DRIVE' = 'WHIPSAW'
     let description = ''
 
-    if (upSpread >= 0.35 * moveRange && downSpread >= 0.35 * moveRange) {
-      direction = 'WHIPSAW'
-      description = `Two-way whipsaw: both High (${nHigh}) and Low (${nLow}) swept by ${moveRange.toFixed(1)} pts`
-    } else if (lastReactionClose >= basePrice + 0.25 * moveRange) {
-      direction = 'BULLISH_DRIVE'
-      description = `Bullish news drive: impulsive surge +${(lastReactionClose - basePrice).toFixed(1)} pts to high ${nHigh}`
-    } else if (lastReactionClose <= basePrice - 0.25 * moveRange) {
+    // True Bearish Flush: Unidirectional impulsive selloff where price closed near the lows
+    const isBearishFlush =
+      downSpread >= 0.65 * moveRange &&
+      lastReactionClose <= basePrice - 0.50 * moveRange &&
+      upSpread <= 0.35 * moveRange
+
+    // True Bullish Drive: Unidirectional impulsive rally where price closed near the highs
+    const isBullishDrive =
+      upSpread >= 0.65 * moveRange &&
+      lastReactionClose >= basePrice + 0.50 * moveRange &&
+      downSpread <= 0.35 * moveRange
+
+    if (isBearishFlush) {
       direction = 'BEARISH_DRIVE'
       description = `Bearish news flush: impulsive selloff -${(basePrice - lastReactionClose).toFixed(1)} pts to low ${nLow}`
+    } else if (isBullishDrive) {
+      direction = 'BULLISH_DRIVE'
+      description = `Bullish news drive: impulsive surge +${(lastReactionClose - basePrice).toFixed(1)} pts to high ${nHigh}`
     } else {
       direction = 'WHIPSAW'
-      description = `Emotional news whipsaw: range expanded ${moveRange.toFixed(1)} pts`
+      const isTwoWaySweep = upSpread >= 0.30 * moveRange && downSpread >= 0.30 * moveRange
+      description = isTwoWaySweep
+        ? `Two-way whipsaw: both High (${nHigh}) and Low (${nLow}) swept by ${moveRange.toFixed(1)} pts`
+        : `Emotional news whipsaw: range expanded ${moveRange.toFixed(1)} pts`
     }
 
     let status: EmotionalNewsMove['status'] = 'WITHIN_RANGE'
@@ -785,16 +896,17 @@ export function detectEmotionalNewsMoves(
       const curRange = curBar.high - curBar.low
       const curVol = Math.max(0, curBar.volume > 0 ? curBar.volume : 1)
 
-      if (avgRange > 0 && curRange >= 2.5 * avgRange && curVol >= 1.8 * avgVol) {
+      if (avgRange > 0 && curRange >= 2.5 * avgRange && curVol >= 1.8 * avgVol && curRange >= baseThreshold) {
         const basePrice = curBar.open
         const upSpread = curBar.high - basePrice
         const downSpread = basePrice - curBar.low
-        const isWhipsaw = upSpread >= 0.35 * curRange && downSpread >= 0.35 * curRange
-        const direction: 'WHIPSAW' | 'BULLISH_DRIVE' | 'BEARISH_DRIVE' = isWhipsaw
-          ? 'WHIPSAW'
-          : curBar.close >= basePrice
+        const isBearishFlush = downSpread >= 0.65 * curRange && curBar.close <= basePrice - 0.50 * curRange
+        const isBullishDrive = upSpread >= 0.65 * curRange && curBar.close >= basePrice + 0.50 * curRange
+        const direction: 'WHIPSAW' | 'BULLISH_DRIVE' | 'BEARISH_DRIVE' = isBearishFlush
+          ? 'BEARISH_DRIVE'
+          : isBullishDrive
             ? 'BULLISH_DRIVE'
-            : 'BEARISH_DRIVE'
+            : 'WHIPSAW'
 
         let status: EmotionalNewsMove['status'] = 'WITHIN_RANGE'
         let isRetested = false

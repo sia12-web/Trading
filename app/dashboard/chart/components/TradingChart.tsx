@@ -3878,9 +3878,9 @@ export function TradingChart({
           ctx.setLineDash([])
         }
 
-        // Emotional Move tag
+        // Emotional Move tag (hidden when user toggles Labels: OFF)
         const tagY = yH != null ? yH - 12 : 30
-        if (tagY >= 10 && tagY <= paneH) {
+        if (!hideTrendlineBadges && tagY >= 10 && tagY <= paneH) {
           ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
           ctx.fillStyle = '#e879f9'
           const dirLabel = move.direction === 'WHIPSAW' ? '±Whip' : move.direction === 'BULLISH_DRIVE' ? '▲Drive' : '▼Flush'
@@ -3890,7 +3890,7 @@ export function TradingChart({
     }
 
     ctx.restore()
-  }, [instrument, frvp5d, newsEvents, timeframe])
+  }, [instrument, frvp5d, newsEvents, timeframe, hideTrendlineBadges])
 
   useEffect(() => {
     paintExcessesAndRoundedRef.current = paintExcessesAndRounded

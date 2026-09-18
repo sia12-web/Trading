@@ -210,4 +210,95 @@ describe('Auction Market Theory - Session Extremes, Spikes & Distribution Refere
     assert.equal(moves[0]!.moveRange, 180)
     assert.equal(moves[0]!.direction, 'WHIPSAW')
   })
+
+  it('rejects trivial or non-dramatic moves (e.g. 17 pts on DOW / 52k instrument) and does not label as flush', () => {
+    const baseTime = 1788876000
+    // User scenario: BOJ event during Tokyo session on high price instrument (52,195)
+    // Range expands only 17 pts (52205 to 52188), which is normal candle fluctuation
+    const bars: ExcessBar[] = [
+      { time: baseTime - 600, open: 52190, high: 52200, low: 52185, close: 52195, volume: 150 },
+      { time: baseTime - 300, open: 52195, high: 52202, low: 52190, close: 52198, volume: 180 },
+      // Reaction bars: moveRange = 52205 - 52188 = 17.0 pts
+      { time: baseTime, open: 52198, high: 52205, low: 52192, close: 52194, volume: 220 },
+      { time: baseTime + 300, open: 52194, high: 52200, low: 52188, close: 52190, volume: 240 },
+      { time: baseTime + 600, open: 52190, high: 52196, low: 52189, close: 52192, volume: 190 },
+      { time: baseTime + 900, open: 52192, high: 52204, low: 52190, close: 52201, volume: 210 },
+    ]
+
+    const events = [
+      { time: baseTime, event: 'BOJ Press Conference', impact: 'High', country: 'JP' }
+    ]
+
+    const moves = detectEmotionalNewsMoves(bars, events, 'DOW')
+    // Must be completely rejected: 17 pts is not dramatic on DOW (requires >= 60 pts) and JP event is foreign
+    assert.equal(moves.length, 0)
+  })
+
+  it('rejects foreign news event on DOW unless it creates a verified dramatic global shockwave', () => {
+    const baseTime = 1788876000
+    // Event is from Japan (BOJ), but move on DOW is only 35 pts (domestic noise)
+    const quietBars: ExcessBar[] = [
+      { time: baseTime - 300, open: 44000, high: 44015, low: 43990, close: 44005, volume: 400 },
+      { time: baseTime, open: 44005, high: 44030, low: 43995, close: 44010, volume: 550 },
+      { time: baseTime + 300, open: 44010, high: 44025, low: 44000, close: 44015, volume: 450 },
+      { time: baseTime + 600, open: 44015, high: 44025, low: 44005, close: 44010, volume: 400 },
+      { time: baseTime + 900, open: 44010, high: 44020, low: 44000, close: 44015, volume: 380 },
+    ]
+
+    const foreignEvents = [
+      { time: baseTime, event: 'BOJ Rate Decision', impact: 'High', country: 'JP' }
+    ]
+
+    const movesQuiet = detectEmotionalNewsMoves(quietBars, foreignEvents, 'DOW')
+    assert.equal(movesQuiet.length, 0) // Rejected
+
+    // Now test when foreign event triggers a REAL global macro shockwave (250 pts on DOW with 6x volume)
+    const shockwaveBars: ExcessBar[] = [
+      { time: baseTime - 300, open: 44000, high: 44020, low: 43980, close: 44005, volume: 400 },
+      { time: baseTime, open: 44005, high: 44015, low: 43765, close: 43770, volume: 5500 }, // -240 pt violent shock
+      { time: baseTime + 300, open: 43770, high: 43790, low: 43750, close: 43760, volume: 3800 },
+      { time: baseTime + 600, open: 43760, high: 43780, low: 43740, close: 43755, volume: 2900 },
+      { time: baseTime + 900, open: 43755, high: 43810, low: 43750, close: 43800, volume: 2100 },
+    ]
+
+    const movesShock = detectEmotionalNewsMoves(shockwaveBars, foreignEvents, 'DOW')
+    assert.equal(movesShock.length, 1)
+    assert.equal(movesShock[0]!.direction, 'BEARISH_DRIVE')
+    assert.ok(movesShock[0]!.description.includes('Bearish news flush'))
+  })
+
+  it('correctly classifies genuine Bearish Flush vs Whipsaw without false flushes', () => {
+    const baseTime = 1788876000
+    // Scenario A: Wick dips down 120 pts but completely rebounds to close near base price -> WHIPSAW, NOT A FLUSH!
+    const whipBars: ExcessBar[] = [
+      { time: baseTime - 300, open: 44000, high: 44020, low: 43980, close: 44005, volume: 500 },
+      { time: baseTime, open: 44005, high: 44030, low: 43880, close: 43995, volume: 6000 }, // Low: 43880, close: 43995 (rebound!)
+      { time: baseTime + 300, open: 43995, high: 44040, low: 43980, close: 44020, volume: 3000 },
+      { time: baseTime + 600, open: 44020, high: 44035, low: 43990, close: 44010, volume: 2000 },
+      { time: baseTime + 900, open: 44010, high: 44025, low: 44000, close: 44015, volume: 1500 },
+    ]
+
+    const events = [
+      { time: baseTime, event: 'FOMC Rate Decision', impact: 'High', country: 'US' }
+    ]
+
+    const movesWhip = detectEmotionalNewsMoves(whipBars, events, 'DOW')
+    assert.equal(movesWhip.length, 1)
+    assert.equal(movesWhip[0]!.direction, 'WHIPSAW') // Rebound = Whipsaw, NOT a Flush!
+
+    // Scenario B: True Bearish Flush where price closes at the lows (-180 pts)
+    const flushBars: ExcessBar[] = [
+      { time: baseTime - 300, open: 44000, high: 44020, low: 43980, close: 44005, volume: 500 },
+      { time: baseTime, open: 44005, high: 44015, low: 43820, close: 43825, volume: 6500 }, // Closed near low (43825)
+      { time: baseTime + 300, open: 43825, high: 43840, low: 43810, close: 43815, volume: 3500 },
+      { time: baseTime + 600, open: 43815, high: 43830, low: 43800, close: 43805, volume: 2200 },
+      { time: baseTime + 900, open: 43805, high: 43830, low: 43790, close: 43820, volume: 1800 },
+    ]
+
+    const movesFlush = detectEmotionalNewsMoves(flushBars, events, 'DOW')
+    assert.equal(movesFlush.length, 1)
+    assert.equal(movesFlush[0]!.direction, 'BEARISH_DRIVE')
+    assert.ok(movesFlush[0]!.description.includes('Bearish news flush'))
+  })
 })
+
