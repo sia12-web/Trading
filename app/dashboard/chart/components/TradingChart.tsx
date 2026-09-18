@@ -195,6 +195,7 @@ import {
   evaluateTrendBorningZone,
   detectHigherLowsWithTiming,
   calculateDynamicTrendline,
+  checkDynamicTrendlineExit,
   resampleCandlesTo5M,
 } from '@/lib/trading/trendlineStrategy'
 
@@ -3003,7 +3004,7 @@ export function TradingChart({
         ctx.lineWidth = 1.5
         ctx.stroke()
 
-        // Midpoint badge
+        // Midpoint badge coordinates
         const mx = (x1 + x2) / 2
         const my = (y1 + y2) / 2
         const pDiff = tl.p2.price - tl.p1.price
@@ -3014,32 +3015,12 @@ export function TradingChart({
         const deskSess = nyDeskSessionAt(anchorTime) ?? (tl.sessionOrigin ? (tl.sessionOrigin === 'NYC' ? 'New York' : tl.sessionOrigin) : nyDeskSessionAt(Math.floor(Date.now() / 1000)))
         const resolvedOrigin: 'Asia' | 'London' | 'NYC' =
           deskSess === 'Asia' ? 'Asia' : deskSess === 'London' ? 'London' : deskSess === 'New York' ? 'NYC' : (tl.sessionOrigin || 'Asia')
-        const isCarriedOvernight = resolvedOrigin !== 'NYC'
-        const sessTag = isActionTl
-          ? ` [${resolvedOrigin}${isCarriedOvernight ? ' · Overnight' : ''}]`
-          : (tl.sessionOrigin ? ` [${tl.sessionOrigin}]` : '')
 
-        const labelText = isActionTl
-          ? `🎯 ACTION LINE${sessTag} ${dir} (${pDiff >= 0 ? '+' : ''}${pDiff.toFixed(1)} pts)`
-          : `📐 ${tl.label || 'Trendline'}${sessTag} ${dir} (${pDiff >= 0 ? '+' : ''}${pDiff.toFixed(1)} pts)`
+        // ── Systematic Trend-Borning Zone & Responsive Angle Engine (Action Trendlines ONLY) ──
+        let actionLifecycleTag = ' · ARMED ⏳'
+        let systematicLayersToRender: (() => void) | null = null
 
-        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-        const textW = ctx.measureText(labelText).width
-        const badgeW = textW + 10
-        const badgeH = 16
-        const { x: midBx, y: midBy } = allocateBadgePos(mx - badgeW / 2, my - 18, badgeW, badgeH, true)
-
-        ctx.fillStyle = isActionTl ? 'rgba(30, 20, 5, 0.94)' : 'rgba(15, 23, 42, 0.90)'
-        ctx.fillRect(midBx, midBy, badgeW, badgeH)
-        ctx.strokeStyle = isActionTl ? '#f59e0b' : '#38bdf8'
-        ctx.lineWidth = isActionTl ? 1.5 : 1
-        ctx.strokeRect(midBx, midBy, badgeW, badgeH)
-
-        ctx.fillStyle = isActionTl ? '#fef08a' : '#7dd3fc'
-        ctx.fillText(labelText, midBx + 5, midBy + 11)
-
-        // ── Systematic Trend-Borning Zone & Responsive Angle Engine (Two-Way) ──
-        if (pDiff !== 0 && list.length > 0) {
+        if (isActionTl && pDiff !== 0 && list.length > 0) {
           const isLong = pDiff < 0
           const setupDir: 'LONG' | 'SHORT' = isLong ? 'LONG' : 'SHORT'
 
@@ -3079,144 +3060,171 @@ export function TradingChart({
           const activeStopLoss = breakout.defaultStopLoss ?? cachedBrk?.defaultStopLoss
           const activeTakeProfit = breakout.defaultTakeProfitFixed50 ?? cachedBrk?.defaultTakeProfitFixed50
 
-          const initPt = findInitiatingPoint(tl, bars5m, activeBreakoutIndex, { direction: setupDir })
+          // Crucial: The Trend-Borning Zone, entry targets, and reaction line ONLY exist once a breakout is confirmed!
+          // Prior to confirmed breakout, the Action Trendline is in ARMED / MONITORING state with zero visual clutter.
+          if (hasConfirmedBreakout && activeBreakoutCandle) {
+            const initPt = findInitiatingPoint(tl, bars5m, activeBreakoutIndex, { direction: setupDir })
 
-          if (initPt) {
-            const mockChartCtx: any = {
-              yesterday: yesterdayNyc ? { poc: yesterdayNyc.poc } : null,
-              overnight: overnightInventory ? { overnight: { poc: overnightInventory.overnight?.poc } } : null,
-              frvp5d: frvp5d ? { poc: frvp5d.poc } : null,
-              avwap5m: avwap5mBenchmark ? {
-                vwap: avwap5mBenchmark.vwap,
-                sigma1Upper: avwap5mBenchmark.sigma1Upper,
-                sigma1Lower: avwap5mBenchmark.sigma1Lower,
-                sigma2Upper: avwap5mBenchmark.sigma2Upper,
-                sigma2Lower: avwap5mBenchmark.sigma2Lower,
-              } : null,
-            }
+            if (initPt) {
+              const mockChartCtx: any = {
+                yesterday: yesterdayNyc ? { poc: yesterdayNyc.poc } : null,
+                overnight: overnightInventory ? { overnight: { poc: overnightInventory.overnight?.poc } } : null,
+                frvp5d: frvp5d ? { poc: frvp5d.poc } : null,
+                avwap5m: avwap5mBenchmark ? {
+                  vwap: avwap5mBenchmark.vwap,
+                  sigma1Upper: avwap5mBenchmark.sigma1Upper,
+                  sigma1Lower: avwap5mBenchmark.sigma1Lower,
+                  sigma2Upper: avwap5mBenchmark.sigma2Upper,
+                  sigma2Lower: avwap5mBenchmark.sigma2Lower,
+                } : null,
+              }
 
-            const borningZone = evaluateTrendBorningZone({
-              initiatingPoint: initPt,
-              bars: bars5m,
-              chartContext: mockChartCtx,
-              direction: setupDir,
-            })
+              const borningZone = evaluateTrendBorningZone({
+                initiatingPoint: initPt,
+                bars: bars5m,
+                chartContext: mockChartCtx,
+                direction: setupDir,
+              })
 
-            const higherLows = detectHigherLowsWithTiming(initPt, bars5m)
-            const curPx = list[list.length - 1]?.close ?? initPt.price
-            const curSec = Math.floor(Date.now() / 1000)
-            const dynamicLine = calculateDynamicTrendline({
-              origin: initPt,
-              compositeScore: borningZone.compositeScore,
-              higherLows,
-              currentPrice: curPx,
-              currentTime: curSec,
-              bars: bars5m,
-              direction: setupDir,
-            })
+              const higherLows = detectHigherLowsWithTiming(initPt, bars5m, bars5m.length - 1)
+              const curPx = list[list.length - 1]?.close ?? initPt.price
+              const curSec = Math.floor(Date.now() / 1000)
+              const dynamicLine = calculateDynamicTrendline({
+                origin: initPt,
+                compositeScore: borningZone.compositeScore,
+                higherLows,
+                currentPrice: curPx,
+                currentTime: curSec,
+                bars: bars5m,
+                direction: setupDir,
+              })
 
-            // 1. Draw Initiating Point & Structural Band
-            const initX = timeToX(chart.timeScale(), toChartTime(initPt.time, tz), candleTimes)
-            const initY = series.priceToCoordinate(initPt.price)
+              // Check if subsequent completed 5-minute candles have crossed / negated the Reaction Trendline
+              let reactionBrokenBar: Candle | null = null
+              let reactionExitPrice: number | null = null
 
-            // Draw Structural Borning Zone Band [zoneLow, zoneHigh]
-            const sz = borningZone.structuralZone
-            if (sz) {
-              const yLow = series.priceToCoordinate(sz.zoneLow)
-              const yHigh = series.priceToCoordinate(sz.zoneHigh)
-              if (yLow != null && yHigh != null) {
-                const bandTop = Math.min(yLow, yHigh)
-                const bandHeight = Math.max(4, Math.abs(yLow - yHigh))
-                const initXPos = initX != null ? Math.max(0, initX - 20) : 0
-
-                ctx.fillStyle = isLong ? 'rgba(234, 179, 8, 0.10)' : 'rgba(239, 68, 68, 0.10)'
-                ctx.fillRect(initXPos, bandTop, paneW - initXPos, bandHeight)
-                ctx.strokeStyle = isLong ? 'rgba(234, 179, 8, 0.4)' : 'rgba(239, 68, 68, 0.4)'
-                ctx.lineWidth = 1
-                ctx.setLineDash([3, 3])
-                ctx.strokeRect(initXPos, bandTop, paneW - initXPos, bandHeight)
-                ctx.setLineDash([])
-
-                if (initX != null) {
-                  const zVolText = `📦 ${isLong ? 'Bull' : 'Bear'} Zone [${sz.zoneLow.toFixed(1)}–${sz.zoneHigh.toFixed(1)}] · Vol: ${sz.totalZoneVolume.toLocaleString()}${sz.historicalVolumeRatio ? ` (${sz.historicalVolumeRatio}x)` : ''}`
-                  ctx.font = 'bold 8.5px ui-monospace, SFMono-Regular, monospace'
-                  const zW = ctx.measureText(zVolText).width + 8
-                  const zH = 14
-                  const { x: zBx, y: zBy } = allocateBadgePos(initXPos + 6, bandTop + 2, zW, zH, false)
-                  ctx.fillStyle = 'rgba(15, 23, 42, 0.92)'
-                  ctx.fillRect(zBx, zBy, zW, zH)
-                  ctx.fillStyle = isLong ? '#fcd34d' : '#fca5a5'
-                  ctx.fillText(zVolText, zBx + 4, zBy + 10)
+              for (let bIdx = activeBreakoutIndex + 1; bIdx < bars5m.length; bIdx++) {
+                const bar = bars5m[bIdx]!
+                const exitCheck = checkDynamicTrendlineExit(dynamicLine, bar, {
+                  currentTimeSec: curSec,
+                  barDurationSec: 300,
+                })
+                if (exitCheck.shouldExit) {
+                  reactionBrokenBar = bar
+                  reactionExitPrice = exitCheck.exitPrice ?? bar.close
+                  break
                 }
               }
-            }
 
-            if (initX != null && initY != null) {
-              ctx.beginPath()
-              ctx.arc(initX, initY, 5, 0, 2 * Math.PI)
-              ctx.fillStyle = isLong ? 'rgba(234, 179, 8, 0.5)' : 'rgba(239, 68, 68, 0.5)'
-              ctx.fill()
-              ctx.strokeStyle = isLong ? '#eab308' : '#ef4444'
-              ctx.lineWidth = 1.5
-              ctx.stroke()
+              const isReactionBroken = Boolean(reactionBrokenBar)
+              actionLifecycleTag = isReactionBroken ? ' · [COMPLETED]' : ' · BREAKOUT ACTIVE ⚡'
 
-              const bText = `🎯 ${isLong ? 'BULL' : 'BEAR'} ORIGIN: ${initPt.price.toFixed(2)} · ${borningZone.compositeScore}/100 (${borningZone.grade})`
-              ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-              const bW = ctx.measureText(bText).width + 10
-              const bH = 16
-              const targetY = isLong ? initY + 14 : initY - 30
-              const { x: bBx, y: bBy } = allocateBadgePos(initX - bW / 2, targetY, bW, bH, !isLong)
+              systematicLayersToRender = () => {
+                // 1. Draw Initiating Point & Structural Band
+                const initX = timeToX(chart.timeScale(), toChartTime(initPt.time, tz), candleTimes)
+                const initY = series.priceToCoordinate(initPt.price)
 
-              // Small leader line from pivot dot to badge
-              ctx.strokeStyle = isLong ? 'rgba(234, 179, 8, 0.6)' : 'rgba(239, 68, 68, 0.6)'
-              ctx.lineWidth = 1
-              ctx.beginPath()
-              ctx.moveTo(initX, initY)
-              ctx.lineTo(initX, isLong ? bBy : bBy + bH)
-              ctx.stroke()
+              // Draw Structural Borning Zone Band [zoneLow, zoneHigh]
+              const sz = borningZone.structuralZone
+              if (sz) {
+                const yLow = series.priceToCoordinate(sz.zoneLow)
+                const yHigh = series.priceToCoordinate(sz.zoneHigh)
+                if (yLow != null && yHigh != null) {
+                  const bandTop = Math.min(yLow, yHigh)
+                  const bandHeight = Math.max(4, Math.abs(yLow - yHigh))
+                  const initXPos = initX != null ? Math.max(0, initX - 20) : 0
 
-              ctx.fillStyle = 'rgba(15, 23, 42, 0.94)'
-              ctx.fillRect(bBx, bBy, bW, bH)
-              ctx.strokeStyle = isLong ? '#eab308' : '#ef4444'
-              ctx.lineWidth = 1
-              ctx.strokeRect(bBx, bBy, bW, bH)
-              ctx.fillStyle = isLong ? '#fef08a' : '#fca5a5'
-              ctx.fillText(bText, bBx + 5, bBy + 11)
-            }
+                  // If reaction line was already broken/completed, dim the band
+                  const bandAlpha = isReactionBroken ? '0.04' : '0.10'
+                  const borderAlpha = isReactionBroken ? '0.2' : '0.4'
+                  ctx.fillStyle = isLong ? `rgba(234, 179, 8, ${bandAlpha})` : `rgba(239, 68, 68, ${bandAlpha})`
+                  ctx.fillRect(initXPos, bandTop, paneW - initXPos, bandHeight)
+                  ctx.strokeStyle = isLong ? `rgba(234, 179, 8, ${borderAlpha})` : `rgba(239, 68, 68, ${borderAlpha})`
+                  ctx.lineWidth = 1
+                  ctx.setLineDash([3, 3])
+                  ctx.strokeRect(initXPos, bandTop, paneW - initXPos, bandHeight)
+                  ctx.setLineDash([])
 
-            // 2. Draw Higher Lows / Lower Highs Timing Intervals
-            for (let h = 1; h < higherLows.length; h++) {
-              const hl = higherLows[h]!
-              const hlX = timeToX(chart.timeScale(), toChartTime(hl.time, tz), candleTimes)
-              const hlY = series.priceToCoordinate(hl.price)
-              if (hlX != null && hlY != null) {
+                  if (initX != null && !isReactionBroken) {
+                    const zVolText = `📦 ${isLong ? 'Bull' : 'Bear'} Zone [${sz.zoneLow.toFixed(1)}–${sz.zoneHigh.toFixed(1)}] · Vol: ${sz.totalZoneVolume.toLocaleString()}${sz.historicalVolumeRatio ? ` (${sz.historicalVolumeRatio}x)` : ''}`
+                    ctx.font = 'bold 8.5px ui-monospace, SFMono-Regular, monospace'
+                    const zW = ctx.measureText(zVolText).width + 8
+                    const zH = 14
+                    const { x: zBx, y: zBy } = allocateBadgePos(initXPos + 6, bandTop + 2, zW, zH, false)
+                    ctx.fillStyle = 'rgba(15, 23, 42, 0.92)'
+                    ctx.fillRect(zBx, zBy, zW, zH)
+                    ctx.fillStyle = isLong ? '#fcd34d' : '#fca5a5'
+                    ctx.fillText(zVolText, zBx + 4, zBy + 10)
+                  }
+                }
+              }
+
+              if (initX != null && initY != null) {
                 ctx.beginPath()
-                ctx.arc(hlX, hlY, 3.5, 0, 2 * Math.PI)
-                ctx.fillStyle = isLong ? '#38bdf8' : '#f43f5e'
+                ctx.arc(initX, initY, 5, 0, 2 * Math.PI)
+                ctx.fillStyle = isReactionBroken ? 'rgba(100, 116, 139, 0.4)' : (isLong ? 'rgba(234, 179, 8, 0.5)' : 'rgba(239, 68, 68, 0.5)')
                 ctx.fill()
-                ctx.strokeStyle = '#ffffff'
-                ctx.lineWidth = 1
+                ctx.strokeStyle = isReactionBroken ? '#64748b' : (isLong ? '#eab308' : '#ef4444')
+                ctx.lineWidth = 1.5
                 ctx.stroke()
 
-                const hlLabel = `${hl.timingLabel} · ${hl.price.toFixed(1)}`
-                ctx.font = 'bold 8.5px ui-monospace, SFMono-Regular, monospace'
-                const hlW = ctx.measureText(hlLabel).width + 8
-                const hlH = 14
-                const targetY = isLong ? hlY + 8 : hlY - 22
-                const { x: hlBx, y: hlBy } = allocateBadgePos(hlX - hlW / 2, targetY, hlW, hlH, !isLong)
+                const bStatus = isReactionBroken ? ' [COMPLETED]' : ''
+                const bText = `🎯 ${isLong ? 'BULL' : 'BEAR'} ORIGIN: ${initPt.price.toFixed(2)} · ${borningZone.compositeScore}/100 (${borningZone.grade})${bStatus}`
+                ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+                const bW = ctx.measureText(bText).width + 10
+                const bH = 16
+                const targetY = isLong ? initY + 14 : initY - 30
+                const { x: bBx, y: bBy } = allocateBadgePos(initX - bW / 2, targetY, bW, bH, !isLong)
 
-                ctx.fillStyle = 'rgba(15, 23, 42, 0.92)'
-                ctx.fillRect(hlBx, hlBy, hlW, hlH)
-                ctx.strokeStyle = isLong ? '#38bdf8' : '#f43f5e'
+                // Small leader line from pivot dot to badge
+                ctx.strokeStyle = isReactionBroken ? 'rgba(100, 116, 139, 0.5)' : (isLong ? 'rgba(234, 179, 8, 0.6)' : 'rgba(239, 68, 68, 0.6)')
                 ctx.lineWidth = 1
-                ctx.strokeRect(hlBx, hlBy, hlW, hlH)
-                ctx.fillStyle = isLong ? '#7dd3fc' : '#fda4af'
-                ctx.fillText(hlLabel, hlBx + 4, hlBy + 10)
-              }
-            }
+                ctx.beginPath()
+                ctx.moveTo(initX, initY)
+                ctx.lineTo(initX, isLong ? bBy : bBy + bH)
+                ctx.stroke()
 
-            // 3. Draw Confirmed 5m Breakout Candle Marker & Entry Target
-            if (hasConfirmedBreakout && activeBreakoutCandle) {
+                ctx.fillStyle = isReactionBroken ? 'rgba(30, 41, 59, 0.94)' : 'rgba(15, 23, 42, 0.94)'
+                ctx.fillRect(bBx, bBy, bW, bH)
+                ctx.strokeStyle = isReactionBroken ? '#64748b' : (isLong ? '#eab308' : '#ef4444')
+                ctx.lineWidth = 1
+                ctx.strokeRect(bBx, bBy, bW, bH)
+                ctx.fillStyle = isReactionBroken ? '#94a3b8' : (isLong ? '#fef08a' : '#fca5a5')
+                ctx.fillText(bText, bBx + 5, bBy + 11)
+              }
+
+              // 2. Draw Higher Lows / Lower Highs (limit to at most 2 most recent significant pivots to prevent visual clutter)
+              const visiblePivots = higherLows.slice(1).slice(-2)
+              for (const hl of visiblePivots) {
+                const hlX = timeToX(chart.timeScale(), toChartTime(hl.time, tz), candleTimes)
+                const hlY = series.priceToCoordinate(hl.price)
+                if (hlX != null && hlY != null) {
+                  ctx.beginPath()
+                  ctx.arc(hlX, hlY, 3.5, 0, 2 * Math.PI)
+                  ctx.fillStyle = isLong ? '#38bdf8' : '#f43f5e'
+                  ctx.fill()
+                  ctx.strokeStyle = '#ffffff'
+                  ctx.lineWidth = 1
+                  ctx.stroke()
+
+                  const hlLabel = `${hl.timingLabel} · ${hl.price.toFixed(1)}`
+                  ctx.font = 'bold 8.5px ui-monospace, SFMono-Regular, monospace'
+                  const hlW = ctx.measureText(hlLabel).width + 8
+                  const hlH = 14
+                  const targetY = isLong ? hlY + 8 : hlY - 22
+                  const { x: hlBx, y: hlBy } = allocateBadgePos(hlX - hlW / 2, targetY, hlW, hlH, !isLong)
+
+                  ctx.fillStyle = 'rgba(15, 23, 42, 0.92)'
+                  ctx.fillRect(hlBx, hlBy, hlW, hlH)
+                  ctx.strokeStyle = isLong ? '#38bdf8' : '#f43f5e'
+                  ctx.lineWidth = 1
+                  ctx.strokeRect(hlBx, hlBy, hlW, hlH)
+                  ctx.fillStyle = isLong ? '#7dd3fc' : '#fda4af'
+                  ctx.fillText(hlLabel, hlBx + 4, hlBy + 10)
+                }
+              }
+
+              // 3. Draw Confirmed 5m Breakout Candle Marker & Entry Target
               const brkX = timeToX(chart.timeScale(), toChartTime(activeBreakoutCandle.time, tz), candleTimes)
               const brkY = series.priceToCoordinate(activeBreakoutCandle.close)
               if (brkX != null && brkY != null) {
@@ -3253,61 +3261,120 @@ export function TradingChart({
                 ctx.fillText(brkText, brkBx + 5, brkBy + 11)
               }
 
-              // 4. Draw Dynamic Responsive Reaction Trendline (Rock-solid anchor and projection)
+              // 4. Draw Dynamic Responsive Reaction Trendline
               const dX1 = timeToX(chart.timeScale(), toChartTime(dynamicLine.p1.time, tz), candleTimes)
               const dY1 = series.priceToCoordinate(dynamicLine.p1.price)
 
-              // Project using a reference timestamp from the visible candle series
-              const lastBarTime = (list[list.length - 1]?.time as number) || (dynamicLine.p1.time + 300)
-              const refBarTime = lastBarTime > dynamicLine.p1.time ? lastBarTime : dynamicLine.p1.time + 300
-              const refPrice = dynamicLine.p1.price + (dynamicLine.slopePtsPerSec * (refBarTime - dynamicLine.p1.time))
-
-              let dX2 = timeToX(chart.timeScale(), toChartTime(refBarTime, tz), candleTimes)
-              let dY2: number | null = series.priceToCoordinate(refPrice)
-
               if (dX1 != null && dY1 != null) {
-                if (dX2 == null) {
-                  dX2 = dX1 + 120
-                  dY2 = dY1 + (isLong ? -50 : 50)
+                if (isReactionBroken && reactionBrokenBar) {
+                  // The reaction trendline was CROSSED/NEGATED by a 5m close!
+                  // Terminate the ray at the breaking candle instead of projecting forward infinitely
+                  const exitX = timeToX(chart.timeScale(), toChartTime(reactionBrokenBar.time, tz), candleTimes) ?? (dX1 + 100)
+                  const exitY = series.priceToCoordinate(reactionBrokenBar.close) ?? dY1
+
+                  ctx.strokeStyle = '#64748b' // Muted slate indicating completed/broken line
+                  ctx.lineWidth = 1.5
+                  ctx.setLineDash([4, 4])
+                  ctx.beginPath()
+                  ctx.moveTo(dX1, dY1)
+                  ctx.lineTo(exitX, exitY)
+                  ctx.stroke()
+                  ctx.setLineDash([])
+
+                  // Invalidation / Exit Marker at crossing candle
+                  const exitText = `🛑 REACTION BROKEN: 5M Close @ ${reactionExitPrice?.toFixed(2)} (Cycle Negated)`
+                  ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+                  const eW = ctx.measureText(exitText).width + 10
+                  const eH = 16
+                  const prefExitY = isLong ? exitY + 18 : exitY - 34
+                  const { x: eBx, y: eBy } = allocateBadgePos(exitX - eW / 2, prefExitY, eW, eH, !isLong)
+
+                  ctx.fillStyle = 'rgba(30, 41, 59, 0.95)'
+                  ctx.fillRect(eBx, eBy, eW, eH)
+                  ctx.strokeStyle = '#ef4444'
+                  ctx.lineWidth = 1.5
+                  ctx.strokeRect(eBx, eBy, eW, eH)
+                  ctx.fillStyle = '#fca5a5'
+                  ctx.fillText(exitText, eBx + 5, eBy + 11)
+                } else {
+                  // Active reaction trendline protecting the live trade
+                  const lastBarTime = (list[list.length - 1]?.time as number) || (dynamicLine.p1.time + 300)
+                  const refBarTime = lastBarTime > dynamicLine.p1.time ? lastBarTime : dynamicLine.p1.time + 300
+                  const refPrice = dynamicLine.p1.price + (dynamicLine.slopePtsPerSec * (refBarTime - dynamicLine.p1.time))
+
+                  let dX2 = timeToX(chart.timeScale(), toChartTime(refBarTime, tz), candleTimes)
+                  let dY2: number | null = series.priceToCoordinate(refPrice)
+
+                  if (dX2 == null) {
+                    dX2 = dX1 + 120
+                    dY2 = dY1 + (isLong ? -50 : 50)
+                  }
+                  if (dY2 == null) {
+                    dY2 = series.priceToCoordinate(dynamicLine.p2.price) ?? dY1
+                  }
+
+                  const [dex1, dey1, dex2, dey2] = extendedLine(dX1, dY1, dX2, dY2)
+                  const isDrying = dynamicLine.swingVolumeProgression?.trend === 'DECLINING'
+                  const isDecaying = dynamicLine.isStalling || isDrying
+
+                  const healthyColor = isLong ? '#22c55e' : '#f43f5e'
+                  ctx.strokeStyle = isDecaying ? '#f97316' : healthyColor
+                  ctx.lineWidth = 2.5
+                  ctx.setLineDash(isDecaying ? [6, 3] : [])
+                  ctx.beginPath()
+                  ctx.moveTo(dex1, dey1)
+                  ctx.lineTo(dex2, dey2)
+                  ctx.stroke()
+                  ctx.setLineDash([])
+
+                  const dynIcon = isLong ? '📈' : '📉'
+                  const dynText = `${dynIcon} Reaction Line (${Math.abs(dynamicLine.effectiveSlopePtsPer5m)} pts/5m)${dynamicLine.isStalling ? ' ⚡ STALL' : ''}`
+                  ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+                  const dW = ctx.measureText(dynText).width + 10
+                  const dH = 16
+
+                  const midAnchorX = (dX1 + Math.min(paneW - 40, dX2)) / 2
+                  const midAnchorY = (dY1 + dY2) / 2
+                  const { x: dynBx, y: dynBy } = allocateBadgePos(midAnchorX - dW / 2, midAnchorY - 18, dW, dH, true)
+
+                  ctx.fillStyle = isDecaying ? 'rgba(67, 20, 7, 0.95)' : isLong ? 'rgba(6, 78, 59, 0.95)' : 'rgba(76, 5, 25, 0.95)'
+                  ctx.fillRect(dynBx, dynBy, dW, dH)
+                  ctx.strokeStyle = isDecaying ? '#f97316' : healthyColor
+                  ctx.lineWidth = 1
+                  ctx.strokeRect(dynBx, dynBy, dW, dH)
+                  ctx.fillStyle = isDecaying ? '#fdba74' : isLong ? '#6ee7b7' : '#fda4af'
+                  ctx.fillText(dynText, dynBx + 5, dynBy + 11)
                 }
-                if (dY2 == null) {
-                  dY2 = series.priceToCoordinate(dynamicLine.p2.price) ?? dY1
-                }
-
-                const [dex1, dey1, dex2, dey2] = extendedLine(dX1, dY1, dX2, dY2)
-                const isDrying = dynamicLine.swingVolumeProgression?.trend === 'DECLINING'
-                const isDecaying = dynamicLine.isStalling || isDrying
-
-                const healthyColor = isLong ? '#22c55e' : '#f43f5e'
-                ctx.strokeStyle = isDecaying ? '#f97316' : healthyColor
-                ctx.lineWidth = 2.5
-                ctx.setLineDash(isDecaying ? [6, 3] : [])
-                ctx.beginPath()
-                ctx.moveTo(dex1, dey1)
-                ctx.lineTo(dex2, dey2)
-                ctx.stroke()
-                ctx.setLineDash([])
-
-                const dynIcon = isLong ? '📈' : '📉'
-                const dynText = `${dynIcon} Reaction Line (${Math.abs(dynamicLine.effectiveSlopePtsPer5m)} pts/5m)${dynamicLine.isStalling ? ' ⚡ STALL' : ''}`
-                ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-                const dW = ctx.measureText(dynText).width + 10
-                const dH = 16
-
-                const midAnchorX = (dX1 + Math.min(paneW - 40, dX2)) / 2
-                const midAnchorY = (dY1 + dY2) / 2
-                const { x: dynBx, y: dynBy } = allocateBadgePos(midAnchorX - dW / 2, midAnchorY - 18, dW, dH, true)
-
-                ctx.fillStyle = isDecaying ? 'rgba(67, 20, 7, 0.95)' : isLong ? 'rgba(6, 78, 59, 0.95)' : 'rgba(76, 5, 25, 0.95)'
-                ctx.fillRect(dynBx, dynBy, dW, dH)
-                ctx.strokeStyle = isDecaying ? '#f97316' : healthyColor
-                ctx.lineWidth = 1
-                ctx.strokeRect(dynBx, dynBy, dW, dH)
-                ctx.fillStyle = isDecaying ? '#fdba74' : isLong ? '#6ee7b7' : '#fda4af'
-                ctx.fillText(dynText, dynBx + 5, dynBy + 11)
               }
             }
           }
+        }
+      }
+
+        // Midpoint badge render
+        const sessTag = isActionTl ? ` [${resolvedOrigin}]` : ''
+        const labelText = isActionTl
+          ? `🎯 ACTION LINE${sessTag} ${dir} (${pDiff >= 0 ? '+' : ''}${pDiff.toFixed(1)} pts)${actionLifecycleTag}`
+          : `📐 ${tl.label || 'Trendline'} ${dir} (${pDiff >= 0 ? '+' : ''}${pDiff.toFixed(1)} pts)`
+
+        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+        const textW = ctx.measureText(labelText).width
+        const badgeW = textW + 10
+        const badgeH = 16
+        const { x: midBx, y: midBy } = allocateBadgePos(mx - badgeW / 2, my - 18, badgeW, badgeH, true)
+
+        ctx.fillStyle = isActionTl ? 'rgba(30, 20, 5, 0.94)' : 'rgba(15, 23, 42, 0.90)'
+        ctx.fillRect(midBx, midBy, badgeW, badgeH)
+        ctx.strokeStyle = isActionTl ? '#f59e0b' : '#38bdf8'
+        ctx.lineWidth = isActionTl ? 1.5 : 1
+        ctx.strokeRect(midBx, midBy, badgeW, badgeH)
+
+        ctx.fillStyle = isActionTl ? '#fef08a' : '#7dd3fc'
+        ctx.fillText(labelText, midBx + 5, midBy + 11)
+
+        // Execute systematic layers if active (confirmed breakout)
+        if (systematicLayersToRender) {
+          systematicLayersToRender()
         }
       }
     }

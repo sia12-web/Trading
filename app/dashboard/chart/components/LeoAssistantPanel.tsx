@@ -938,9 +938,12 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
       } else if ((d as any).action === 'ARM_TRENDLINE_STRATEGY') {
         const inst = ((d as any).instrument || context.instrument || 'GOLD') as MarketInstrument
         const tl =
-          (context.userDrawings?.trendlines || []).find((t: any) => t.id === (d as any).trendlineId) ||
-          (context.userDrawings?.trendlines || []).find((t: any) => t.isActionTrendline) ||
-          context.userDrawings?.trendlines?.[0]
+          (context.userDrawings?.trendlines || []).find((t: any) => t.id === (d as any).trendlineId && (t.isActionTrendline || t.isInitialOvernight)) ||
+          (context.userDrawings?.trendlines || []).find((t: any) => t.isActionTrendline || t.isInitialOvernight)
+        if (!tl) {
+          console.warn('[LeoAssistantPanel] ARM_TRENDLINE_STRATEGY ignored: No Action Trendline found on chart.')
+          return
+        }
         const targetPx = tl ? tl.projectedPrice || tl.endPrice : context.currentPrice
         const tlId = tl?.id || (d as any).trendlineId || 'user-tl'
         const tradeDir: 'LONG' | 'SHORT' =
@@ -1290,7 +1293,7 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
             if (rule.type === 'TRENDLINE_BREAKOUT_SYSTEMATIC') {
               const tlId = rule.trendlineId || rule.conditions?.trendlineId
               const activeTl = (context.userDrawings?.trendlines || []).find((t: any) => t.id === tlId)
-              if (activeTl && bars.length > 0) {
+              if (activeTl && Boolean(activeTl.isActionTrendline || activeTl.isInitialOvernight) && bars.length > 0) {
                 const candleTl: UserTrendline = {
                   id: activeTl.id,
                   type: 'TRENDLINE',
