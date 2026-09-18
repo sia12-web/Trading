@@ -1232,6 +1232,25 @@ export function TradingChart({
   type DrawingToolType = 'NONE' | 'TRENDLINE' | 'ACTION_TRENDLINE' | 'REACTION_TRENDLINE' | 'RANGE' | 'FRVP'
   const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingToolType>('NONE')
   const [activeActionTlId, setActiveActionTlId] = useState<string | null>(null)
+  const [dismissedBreakoutPrompts, setDismissedBreakoutPrompts] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set()
+    try {
+      const saved = localStorage.getItem('trading_desk_dismissed_breakouts_v1')
+      return saved ? new Set(JSON.parse(saved)) : new Set()
+    } catch {
+      return new Set()
+    }
+  })
+
+  const dismissBreakoutPrompt = useCallback((id: string) => {
+    setDismissedBreakoutPrompts((prev) => {
+      const next = new Set(prev).add(id)
+      try {
+        localStorage.setItem('trading_desk_dismissed_breakouts_v1', JSON.stringify(Array.from(next)))
+      } catch {}
+      return next
+    })
+  }, [])
   const [trendlines, setTrendlines] = useState<UserTrendline[]>(() => {
     if (typeof window === 'undefined') return []
     try {
@@ -4746,6 +4765,16 @@ export function TradingChart({
 
   const handleDeleteTrendline = useCallback((id: string) => {
     setTrendlines((prev) => prev.filter((t) => t.id !== id))
+    confirmedBreakoutsRef.current.delete(id)
+    setDismissedBreakoutPrompts((prev) => {
+      if (!prev.has(id)) return prev
+      const next = new Set(prev)
+      next.delete(id)
+      try {
+        localStorage.setItem('trading_desk_dismissed_breakouts_v1', JSON.stringify(Array.from(next)))
+      } catch {}
+      return next
+    })
     requestAnimationFrame(() => paintUserDrawingsRef.current())
   }, [])
 
@@ -4765,6 +4794,11 @@ export function TradingChart({
     setManualFrvps([])
     setDrawingDraft(null)
     draftMousePosRef.current = null
+    confirmedBreakoutsRef.current.clear()
+    setDismissedBreakoutPrompts(new Set())
+    try {
+      localStorage.removeItem('trading_desk_dismissed_breakouts_v1')
+    } catch {}
     requestAnimationFrame(() => paintUserDrawingsRef.current())
   }, [])
 
@@ -10067,6 +10101,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         if (activeDrawingTool !== 'NONE' || drawingDraft) {
           e.preventDefault()
           setActiveDrawingTool('NONE')
+          setActiveActionTlId(null)
           setDrawingDraft(null)
           draftMousePosRef.current = null
         } else if (riskBoxActive || riskBox) {
@@ -11251,20 +11286,23 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         )}
 
         {/* Floating Action Breakout Notification Prompt (Asks user to draw Reaction Trendline) */}
-        {confirmedBreakoutsRef.current.size > 0 && (() => {
+        {activeDrawingTool === 'NONE' && confirmedBreakoutsRef.current.size > 0 && (() => {
           const activeBreaks = Array.from(confirmedBreakoutsRef.current.entries()).filter(([tlId]) => {
+            const tlExists = trendlines.some((t) => t.id === tlId)
+            if (!tlExists) return false
+            if (dismissedBreakoutPrompts.has(tlId)) return false
             return !trendlines.some((t) => t.isReactionTrendline && t.parentActionTrendlineId === tlId)
           })
           if (activeBreaks.length === 0) return null
           const [activeId] = activeBreaks[0]!
           return (
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 px-3.5 py-1.5 rounded-xl bg-slate-900/95 border border-amber-400/80 shadow-2xl backdrop-blur-md text-xs font-mono select-none">
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/95 border border-amber-400/80 shadow-2xl backdrop-blur-md text-xs font-mono select-none">
               <span className="flex h-2 w-2 relative">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
               </span>
               <span className="text-amber-200 font-bold">Action Line Broken!</span>
-              <span className="text-slate-300 text-[11px]">Draw reaction line or use local swing:</span>
+              <span className="text-slate-300 text-[11px] hidden sm:inline">Draw reaction line or use local swing:</span>
               <button
                 type="button"
                 onClick={() => {
@@ -11277,6 +11315,33 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               >
                 <span>📐⚡</span>
                 <span>Draw Reaction Line</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  dismissBreakoutPrompt(activeId)
+                  setDrawingToast({
+                    type: 'TRENDLINE',
+                    id: activeId,
+                    label: 'Local Swing Anchor',
+                    summary: 'Using automatic local swing anchor for breakout tracking.',
+                  })
+                }}
+                className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-200 font-semibold text-[11px] border border-amber-400/40 transition shadow cursor-pointer active:scale-95"
+                title="Accept automatic local swing anchor and dismiss"
+              >
+                Use Local Swing
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  dismissBreakoutPrompt(activeId)
+                }}
+                className="ml-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded p-1 transition cursor-pointer font-bold text-xs"
+                title="Close notification"
+              >
+                ✕
               </button>
             </div>
           )
@@ -11450,6 +11515,26 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               </span>
             </button>
 
+            {/* Reaction Trendline */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveDrawingTool((prev) => (prev === 'REACTION_TRENDLINE' ? 'NONE' : 'REACTION_TRENDLINE'))
+                setDrawingDraft(null)
+              }}
+              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
+                activeDrawingTool === 'REACTION_TRENDLINE'
+                  ? 'bg-sky-500 text-slate-950 shadow-lg shadow-sky-500/40 ring-2 ring-sky-300'
+                  : 'text-sky-400 hover:bg-slate-800 hover:text-sky-200'
+              }`}
+              title="Draw Reaction Trendline (Click 2 swing points)"
+            >
+              <span>📐⚡</span>
+              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-sky-200 shadow-xl border border-sky-800/60 group-hover:block z-50">
+                Reaction Trendline
+              </span>
+            </button>
+
             {/* Range Box (D) */}
             <button
               type="button"
@@ -11577,6 +11662,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             <span>
               {activeDrawingTool === 'TRENDLINE' && '📐 Drawing Trendline (Click 2 swing points)'}
               {activeDrawingTool === 'ACTION_TRENDLINE' && '🎯 Drawing Action Trendline (Initial Overnight · 2 clicks)'}
+              {activeDrawingTool === 'REACTION_TRENDLINE' && '📐⚡ Drawing Reaction Trendline (Click 2 swing points)'}
               {activeDrawingTool === 'RANGE' && '⬛ Drawing Range Box (Click 2 corners)'}
               {activeDrawingTool === 'FRVP' && '📊 Drawing Custom FRVP (Click start & end bars)'}
             </span>
@@ -11584,6 +11670,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               type="button"
               onClick={() => {
                 setActiveDrawingTool('NONE')
+                setActiveActionTlId(null)
                 setDrawingDraft(null)
               }}
               className="ml-2 text-slate-400 hover:text-white font-bold"
