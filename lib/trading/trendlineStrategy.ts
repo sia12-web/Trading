@@ -181,6 +181,25 @@ export interface DynamicResponsiveTrendline {
   swingVolumeProgression?: SwingVolumeProgression
   isEmpiricalPivotSlope?: boolean
   activePivotCount?: number
+  phase?: 'INCUBATION' | 'FLAG_FORMING' | 'SECONDARY_BREAKOUT' | 'TWO_POINT_CONFIRMED'
+  flagState?: PostBreakoutFlagState
+  isPhase1?: boolean
+}
+
+export interface PostBreakoutFlagState {
+  phase: 'INCUBATION' | 'FLAG_FORMING' | 'SECONDARY_BREAKOUT' | 'TWO_POINT_CONFIRMED'
+  direction: 'LONG' | 'SHORT'
+  breakoutTime: number
+  breakoutPrice: number
+  polePrice: number
+  poleTime: number
+  flagExtremePrice: number // Flag Low for LONG, Flag High for SHORT
+  flagExtremeTime: number
+  flagCandleCount: number
+  isSecondaryBreakout: boolean
+  secondaryBreakoutCandle: Candle | null
+  secondaryBreakoutPrice: number | null
+  confirmedPivots: HigherLowPivot[] // Contains [T0, HL1, ...] or [T0, LH1, ...]
 }
 
 export interface TrendlineBreakoutCheck {
@@ -207,6 +226,7 @@ export interface TrendlineExitCheck {
   projectedTrendlinePrice: number
   exitPrice: number | null
   reason: string
+  phase?: 'INCUBATION' | 'FLAG_FORMING' | 'SECONDARY_BREAKOUT' | 'TWO_POINT_CONFIRMED'
 }
 
 export interface SessionTrendlineDetectionResult {
@@ -1086,6 +1106,180 @@ export function detectHigherLowsWithTiming(
 }
 
 /**
+ * Detect post-breakout Flag consolidation and Secondary Breakouts.
+ * - In Phase 1, price frequently pauses or forms a Flag (bull flag / bear flag).
+ * - When a completed 5m candle breaks beyond the initial impulse pole, a Secondary Breakout is confirmed.
+ * - The consolidation extreme (Flag Low for Long, Flag High for Short) is promoted to Higher Low 1 (HL1) / LH1,
+ *   establishing the verified 2-point empirical trendline.
+ */
+export function detectFlagAndSecondaryBreakout(params: {
+  origin: { time: number; price: number; candleIndex?: number; type?: 'LOW' | 'HIGH' }
+  breakoutCandle: Candle
+  bars: Candle[]
+  direction: 'LONG' | 'SHORT'
+  structuralZone?: TrendBorningZoneRange
+}): PostBreakoutFlagState {
+  const { origin, breakoutCandle, bars, direction, structuralZone: _structuralZone } = params
+  const isLong = direction === 'LONG'
+
+  const originIdx = origin.candleIndex ?? Math.max(0, bars.findIndex((b) => b.time >= origin.time))
+  const standardPivots = detectSwingPivotsWithTiming(
+    { ...origin, candleIndex: originIdx },
+    bars,
+    bars.length - 1,
+    direction
+  )
+
+  const breakoutPrice = breakoutCandle.close
+  const breakoutTime = breakoutCandle.time
+
+  const breakoutIdx = bars.findIndex((b) => b.time >= breakoutCandle.time)
+  const postBreakoutBars = breakoutIdx >= 0 ? bars.slice(breakoutIdx) : [breakoutCandle]
+
+  if (postBreakoutBars.length <= 1) {
+    return {
+      phase: standardPivots.length >= 2 ? 'TWO_POINT_CONFIRMED' : 'INCUBATION',
+      direction,
+      breakoutTime,
+      breakoutPrice,
+      polePrice: breakoutPrice,
+      poleTime: breakoutTime,
+      flagExtremePrice: isLong ? breakoutCandle.low : breakoutCandle.high,
+      flagExtremeTime: breakoutTime,
+      flagCandleCount: 0,
+      isSecondaryBreakout: false,
+      secondaryBreakoutCandle: null,
+      secondaryBreakoutPrice: null,
+      confirmedPivots: standardPivots,
+    }
+  }
+
+  // 1. Scan through post-breakout bars to identify impulse pole and subsequent flag
+  let polePrice = isLong ? -Infinity : Infinity
+  let poleTime = breakoutTime
+  let poleIdx = 0
+  let inFlag = false
+  let flagStartIdx = -1
+
+  for (let i = 0; i < postBreakoutBars.length; i++) {
+    const bar = postBreakoutBars[i]!
+    if (!inFlag) {
+      if (isLong) {
+        if (bar.high >= polePrice) {
+          polePrice = bar.high
+          poleTime = bar.time
+          poleIdx = i
+        } else if (i > poleIdx && bar.close < polePrice) {
+          inFlag = true
+          flagStartIdx = i
+        }
+      } else {
+        if (bar.low <= polePrice) {
+          polePrice = bar.low
+          poleTime = bar.time
+          poleIdx = i
+        } else if (i > poleIdx && bar.close > polePrice) {
+          inFlag = true
+          flagStartIdx = i
+        }
+      }
+    }
+  }
+
+  if (!inFlag && poleIdx < postBreakoutBars.length - 1) {
+    inFlag = true
+    flagStartIdx = poleIdx + 1
+  }
+
+  const flagBars = inFlag && flagStartIdx >= 0 ? postBreakoutBars.slice(flagStartIdx) : []
+  const flagCandleCount = flagBars.length
+
+  let flagExtremePrice = isLong
+    ? (flagBars.length > 0 ? Math.min(...flagBars.map((b) => b.low)) : polePrice)
+    : (flagBars.length > 0 ? Math.max(...flagBars.map((b) => b.high)) : polePrice)
+  let flagExtremeTime = poleTime
+  let isSecondaryBreakout = false
+  let secondaryBreakoutCandle: Candle | null = null
+  let secondaryBreakoutPrice: number | null = null
+
+  if (flagCandleCount > 0) {
+    if (isLong) {
+      const matchBar = flagBars.find((b) => b.low === flagExtremePrice)
+      if (matchBar) flagExtremeTime = matchBar.time
+
+      // Check for secondary breakout above polePrice
+      for (const bar of flagBars) {
+        if (bar.close > polePrice) {
+          isSecondaryBreakout = true
+          secondaryBreakoutCandle = bar
+          secondaryBreakoutPrice = bar.close
+          break
+        }
+      }
+    } else {
+      const matchBar = flagBars.find((b) => b.high === flagExtremePrice)
+      if (matchBar) flagExtremeTime = matchBar.time
+
+      // Check for secondary breakdown below polePrice
+      for (const bar of flagBars) {
+        if (bar.close < polePrice) {
+          isSecondaryBreakout = true
+          secondaryBreakoutCandle = bar
+          secondaryBreakoutPrice = bar.close
+          break
+        }
+      }
+    }
+  }
+
+  // 3. Assemble confirmed pivots
+  const mergedPivots: HigherLowPivot[] = [...standardPivots]
+
+  if (isSecondaryBreakout && flagExtremePrice !== polePrice) {
+    const alreadyExists = mergedPivots.some((p) => Math.abs(p.time - flagExtremeTime) <= 600)
+    if (!alreadyExists) {
+      const elapsedSec = flagExtremeTime - origin.time
+      const elapsedMin = Math.round(elapsedSec / 60)
+      const pivotIndex = bars.findIndex((b) => b.time === flagExtremeTime)
+      mergedPivots.push({
+        time: flagExtremeTime,
+        price: Number(flagExtremePrice.toFixed(2)),
+        candleIndex: pivotIndex >= 0 ? pivotIndex : originIdx + 2,
+        elapsedSecFromOrigin: elapsedSec,
+        elapsedMinutesFromOrigin: elapsedMin,
+        timingLabel: isLong ? `HL${mergedPivots.length} (Flag T+${elapsedMin}m)` : `LH${mergedPivots.length} (Flag T+${elapsedMin}m)`,
+      })
+      mergedPivots.sort((a, b) => a.time - b.time)
+    }
+  }
+
+  let phase: PostBreakoutFlagState['phase'] = 'INCUBATION'
+  if (isSecondaryBreakout) {
+    phase = 'SECONDARY_BREAKOUT'
+  } else if (flagCandleCount >= 1) {
+    phase = 'FLAG_FORMING'
+  } else if (mergedPivots.length >= 2) {
+    phase = 'TWO_POINT_CONFIRMED'
+  }
+
+  return {
+    phase,
+    direction,
+    breakoutTime,
+    breakoutPrice,
+    polePrice: Number(polePrice.toFixed(2)),
+    poleTime,
+    flagExtremePrice: Number(flagExtremePrice.toFixed(2)),
+    flagExtremeTime,
+    flagCandleCount,
+    isSecondaryBreakout,
+    secondaryBreakoutCandle,
+    secondaryBreakoutPrice: secondaryBreakoutPrice != null ? Number(secondaryBreakoutPrice.toFixed(2)) : null,
+    confirmedPivots: mergedPivots,
+  }
+}
+
+/**
  * 5. Swing Volume Progression Engine:
  * Tracks consecutive swing highs and swing lows and their volume profile.
  * - If volume on swings is diminishing (drying up), participants are exhausted:
@@ -1180,6 +1374,11 @@ export function detectSwingVolumeProgression(
 
 /**
  * 6. Construct Dynamic Responsive Trendline with Stalling & Swing-Decay Engines (Long or Short).
+ * - Phase 1 (Incubation / Flag): Only 1 pivot exists (Origin). The trendline acts as a Trailing Support Floor (Long)
+ *   or Trailing Resistance Ceiling (Short), clamped safely outside post-breakout consolidation/flag bars.
+ *   Stall penalties are suppressed during flags so the line never slices through candles.
+ * - Phase 2 (Two Confirmed Pivots): Once confirmed HL1/LH1 exists (from swing detection or secondary flag breakout),
+ *   the line superimposes empirically connecting the real price pivots together.
  */
 export function calculateDynamicTrendline(params: {
   origin: { time: number; price: number; candleIndex?: number; type?: 'LOW' | 'HIGH' }
@@ -1191,8 +1390,10 @@ export function calculateDynamicTrendline(params: {
   structuralZone?: TrendBorningZoneRange
   swingVolumeProgression?: SwingVolumeProgression
   direction?: 'LONG' | 'SHORT'
+  breakoutCandle?: Candle | null
+  flagState?: PostBreakoutFlagState | null
 }): DynamicResponsiveTrendline {
-  const { origin, compositeScore, higherLows, currentPrice, currentTime, bars, structuralZone } = params
+  const { origin, compositeScore, higherLows, currentPrice, currentTime, bars, structuralZone, breakoutCandle, flagState } = params
   const dir: 'LONG' | 'SHORT' = params.direction ?? (origin.type === 'HIGH' ? 'SHORT' : 'LONG')
 
   // 1. Swing volume progression penalty/bonus:
@@ -1205,9 +1406,12 @@ export function calculateDynamicTrendline(params: {
   // - PHASE 2 (Empirical Reality): If confirmed higher lows (for LONG) or lower highs (for SHORT)
   //   exist (higherLows.length >= 2), calculate the empirical slope connecting the real pivots.
   //   We connect the real price pivots together so the trendline hugs real market structure.
-  // - PHASE 1 (Theoretical Prior): When no confirmed pivots exist yet (higherLows.length <= 1),
+  // - PHASE 1 (Theoretical Prior / Incubation): When no confirmed pivots exist yet (higherLows.length <= 1),
   //   the 7-factor institutional composite score provides the assumed starting trajectory.
-  const hasStructuralPivots = higherLows.length >= 2
+  const isPhase1 = flagState
+    ? flagState.phase === 'FLAG_FORMING' || flagState.phase === 'INCUBATION'
+    : higherLows.length < 2
+  const hasStructuralPivots = !isPhase1 && higherLows.length >= 2
   let baseSlopePtsPer5m = 0
   let isEmpiricalPivotSlope = false
   const anchorP1 = { time: origin.time, price: origin.price }
@@ -1219,21 +1423,29 @@ export function calculateDynamicTrendline(params: {
     const dpPts = pLatest.price - p0.price
     const rawEmpiricalSlopePer5m = (dpPts / dtSec) * 300
 
-    if (dir === 'LONG' && rawEmpiricalSlopePer5m > 0.2) {
+    if (dir === 'LONG' && rawEmpiricalSlopePer5m > 0.1) {
       baseSlopePtsPer5m = Number(rawEmpiricalSlopePer5m.toFixed(2))
       isEmpiricalPivotSlope = true
-    } else if (dir === 'SHORT' && rawEmpiricalSlopePer5m < -0.2) {
+    } else if (dir === 'SHORT' && rawEmpiricalSlopePer5m < -0.1) {
       baseSlopePtsPer5m = Number(Math.abs(rawEmpiricalSlopePer5m).toFixed(2))
       isEmpiricalPivotSlope = true
     }
   }
 
   if (!isEmpiricalPivotSlope) {
-    // Score 40 -> 2 pts per 5m bar; Score 100 -> 8 pts per 5m bar
-    const minSlopePtsPer5m = 2.0
-    const maxSlopePtsPer5m = 8.0
-    const scoreNorm = Math.min(1.0, Math.max(0.0, (adjustedScore - 30) / 70))
-    baseSlopePtsPer5m = Number((minSlopePtsPer5m + scoreNorm * (maxSlopePtsPer5m - minSlopePtsPer5m)).toFixed(2))
+    if (flagState || breakoutCandle) {
+      // In active post-breakout trade during Phase 1: gentle trailing slope
+      const minSlopePtsPer5m = 1.0
+      const maxSlopePtsPer5m = 3.5
+      const scoreNorm = Math.min(1.0, Math.max(0.0, (adjustedScore - 30) / 70))
+      baseSlopePtsPer5m = Number((minSlopePtsPer5m + scoreNorm * (maxSlopePtsPer5m - minSlopePtsPer5m)).toFixed(2))
+    } else {
+      // General fallback
+      const minSlopePtsPer5m = 2.0
+      const maxSlopePtsPer5m = 8.0
+      const scoreNorm = Math.min(1.0, Math.max(0.0, (adjustedScore - 30) / 70))
+      baseSlopePtsPer5m = Number((minSlopePtsPer5m + scoreNorm * (maxSlopePtsPer5m - minSlopePtsPer5m)).toFixed(2))
+    }
   }
 
   // 3. Stalling / Sideways Range Detection:
@@ -1256,7 +1468,10 @@ export function calculateDynamicTrendline(params: {
   }
 
   // 4. Calculate time-decay & volume-decay slope penalties:
-  const stallPenaltyScore = consecutiveStallBars * 0.5
+  // In Phase 1 during flags, stalling is healthy consolidation, NOT exhaustion.
+  // Suppress stall penalty during flag formation so the line does not accelerate into candles!
+  const isFlagStall = flagState?.phase === 'FLAG_FORMING' || (isPhase1 && Boolean(breakoutCandle))
+  const stallPenaltyScore = isFlagStall ? 0 : consecutiveStallBars * 0.5
   let effectiveSlopePtsPer5m = Number((baseSlopePtsPer5m + stallPenaltyScore + volumeDecayPenalty).toFixed(2))
   let slopePtsPerSec = effectiveSlopePtsPer5m / 300
 
@@ -1268,14 +1483,49 @@ export function calculateDynamicTrendline(params: {
 
   // 5. Projected price at current time anchored from origin
   const elapsedSec = Math.max(0, currentTime - anchorP1.time)
-  const currentProjectedPrice = Number((anchorP1.price + slopePtsPerSec * elapsedSec).toFixed(2))
+  let currentProjectedPrice = Number((anchorP1.price + slopePtsPerSec * elapsedSec).toFixed(2))
 
-  // Construct visual segment endpoints (anchoring at origin and projecting through swings)
+  // In Phase 1, enforce Dynamic Trailing Support Floor (Long) / Resistance Ceiling (Short):
+  // Ensure the projected price never pierces above post-breakout lows or below post-breakout highs.
+  if (isPhase1 && bars.length > 0) {
+    const postBars = breakoutCandle
+      ? bars.filter((b) => b.time >= breakoutCandle.time)
+      : bars.slice(-Math.min(bars.length, 6))
+
+    if (postBars.length > 0) {
+      if (dir === 'LONG') {
+        const lowestPostBar = Math.min(...postBars.map((b) => b.low))
+        const safeFloor = lowestPostBar - 1.5
+        if (currentProjectedPrice > safeFloor) {
+          currentProjectedPrice = Number(Math.max(anchorP1.price, safeFloor).toFixed(2))
+        }
+      } else {
+        const highestPostBar = Math.max(...postBars.map((b) => b.high))
+        const safeCeiling = highestPostBar + 1.5
+        if (currentProjectedPrice < safeCeiling) {
+          currentProjectedPrice = Number(Math.min(anchorP1.price, safeCeiling).toFixed(2))
+        }
+      }
+    }
+  }
+
+  // Construct visual segment endpoints
   const p1 = { time: anchorP1.time, price: anchorP1.price }
+  let p2Price = Number((anchorP1.price + slopePtsPerSec * (elapsedSec + 900)).toFixed(2))
+  if (isPhase1 && bars.length > 0) {
+    if (dir === 'LONG' && p2Price > currentProjectedPrice) {
+      p2Price = Number((currentProjectedPrice + (Math.abs(effectiveSlopePtsPer5m) * 3)).toFixed(2))
+    } else if (dir === 'SHORT' && p2Price < currentProjectedPrice) {
+      p2Price = Number((currentProjectedPrice - (Math.abs(effectiveSlopePtsPer5m) * 3)).toFixed(2))
+    }
+  }
+
   const p2 = {
     time: currentTime + 900, // +15 mins ahead
-    price: Number((anchorP1.price + slopePtsPerSec * (elapsedSec + 900)).toFixed(2)),
+    price: p2Price,
   }
+
+  const currentPhase = flagState?.phase ?? (hasStructuralPivots ? 'TWO_POINT_CONFIRMED' : 'INCUBATION')
 
   return {
     origin: { time: origin.time, price: origin.price, type: origin.type },
@@ -1296,18 +1546,22 @@ export function calculateDynamicTrendline(params: {
     swingVolumeProgression: swingProgression,
     isEmpiricalPivotSlope,
     activePivotCount: higherLows.length,
+    phase: currentPhase,
+    flagState: flagState ?? undefined,
+    isPhase1,
   }
 }
 
 /**
  * 7. Checks if the latest completed 5-minute candle closed on the other side of the dynamic trendline (Exit Trigger).
- * - For LONG: Exit when 5m candle closes strictly BELOW ascending line.
- * - For SHORT: Exit when 5m candle closes strictly ABOVE descending line.
+ * - Phase 1 (Single Anchor / Incubation / Flag): Trade is structurally protected by the Borning Zone / Origin price.
+ *   Normal candle pullbacks inside flags do NOT trigger an exit. Only a 5m close breaching the Borning Zone triggers exit.
+ * - Phase 2 (Two Confirmed Pivots): 5m close across verified 2-point trendline triggers systematic exit.
  */
 export function checkDynamicTrendlineExit(
   dynamicTrendline: DynamicResponsiveTrendline,
   completed5mBar: Candle,
-  options?: { currentTimeSec?: number; barDurationSec?: number }
+  options?: { currentTimeSec?: number; barDurationSec?: number; structuralZone?: TrendBorningZoneRange }
 ): TrendlineExitCheck {
   if (!dynamicTrendline || !completed5mBar) {
     return {
@@ -1339,9 +1593,55 @@ export function checkDynamicTrendlineExit(
       projectedTrendlinePrice: projectedPrice,
       exitPrice: null,
       reason: 'Active 5-minute candle still forming (awaiting confirmed close)',
+      phase: dynamicTrendline.phase,
     }
   }
 
+  const isPhase1FlagProtected =
+    Boolean(dynamicTrendline.flagState) &&
+    (dynamicTrendline.flagState?.phase === 'FLAG_FORMING' ||
+      dynamicTrendline.flagState?.phase === 'INCUBATION' ||
+      (dynamicTrendline.activePivotCount ?? 0) < 2)
+  const sz = dynamicTrendline.structuralZone ?? options?.structuralZone
+
+  if (isPhase1FlagProtected) {
+    // Phase 1: Incubation / Flag consolidation holding above/below Borning Zone
+    if (dir === 'LONG') {
+      const invalidationLevel = sz?.zoneLow ?? dynamicTrendline.origin.price
+      const isBorningZoneBreached = completed5mBar.close < invalidationLevel
+      return {
+        shouldExit: isBorningZoneBreached,
+        isConfirmed5mCloseBelow: isBorningZoneBreached,
+        isConfirmed5mCloseAbove: false,
+        direction: 'LONG',
+        lastCandle: completed5mBar,
+        projectedTrendlinePrice: projectedPrice,
+        exitPrice: isBorningZoneBreached ? completed5mBar.close : null,
+        reason: isBorningZoneBreached
+          ? `5-minute candle close confirmed below dynamic trendline & structural Borning Zone (Close: ${completed5mBar.close.toFixed(2)} < Zone: ${invalidationLevel.toFixed(2)})`
+          : 'Phase 1: Incubation / Flag consolidation holding above Borning Zone',
+        phase: dynamicTrendline.phase,
+      }
+    } else {
+      const invalidationLevel = sz?.zoneHigh ?? dynamicTrendline.origin.price
+      const isBorningZoneBreached = completed5mBar.close > invalidationLevel
+      return {
+        shouldExit: isBorningZoneBreached,
+        isConfirmed5mCloseBelow: false,
+        isConfirmed5mCloseAbove: isBorningZoneBreached,
+        direction: 'SHORT',
+        lastCandle: completed5mBar,
+        projectedTrendlinePrice: projectedPrice,
+        exitPrice: isBorningZoneBreached ? completed5mBar.close : null,
+        reason: isBorningZoneBreached
+          ? `5-minute candle close confirmed above dynamic trendline & structural Borning Zone (Close: ${completed5mBar.close.toFixed(2)} > Zone: ${invalidationLevel.toFixed(2)})`
+          : 'Phase 1: Incubation / Flag consolidation holding below Borning Zone',
+        phase: dynamicTrendline.phase,
+      }
+    }
+  }
+
+  // Phase 2: Verified 2-Point Structural Trendline
   if (dir === 'LONG') {
     const isConfirmed5mCloseBelow = completed5mBar.close < projectedPrice
     return {
@@ -1355,6 +1655,7 @@ export function checkDynamicTrendlineExit(
       reason: isConfirmed5mCloseBelow
         ? `5-minute candle close confirmed below dynamic trendline (Close: ${completed5mBar.close.toFixed(2)} < Line: ${projectedPrice.toFixed(2)})`
         : 'Price maintaining above dynamic trendline',
+      phase: dynamicTrendline.phase,
     }
   } else {
     // SHORT: Exit when 5m candle closes strictly ABOVE the descending dynamic trendline
@@ -1370,6 +1671,7 @@ export function checkDynamicTrendlineExit(
       reason: isConfirmed5mCloseAbove
         ? `5-minute candle close confirmed above dynamic trendline (Close: ${completed5mBar.close.toFixed(2)} > Line: ${projectedPrice.toFixed(2)})`
         : 'Price maintaining below dynamic trendline',
+      phase: dynamicTrendline.phase,
     }
   }
 }

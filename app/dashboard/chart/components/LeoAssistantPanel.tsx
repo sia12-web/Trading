@@ -33,7 +33,7 @@ import {
   checkTrendlineBreakout,
   findInitiatingPoint,
   evaluateTrendBorningZone,
-  detectHigherLowsWithTiming,
+  detectFlagAndSecondaryBreakout,
   calculateDynamicTrendline,
   checkDynamicTrendlineExit,
   evaluateChopShield,
@@ -1726,22 +1726,35 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                   chartContext: context as any,
                   direction: trDir,
                 })
-                const higherLows = detectHigherLowsWithTiming(initPt, bars)
+                const breakoutCheck = checkTrendlineBreakout(candleTl, bars, { direction: trDir })
+                const breakoutCandle = breakoutCheck.breakoutCandle || bars[Math.max(0, bars.length - 1)]!
+                const flagState = detectFlagAndSecondaryBreakout({
+                  origin: initPt,
+                  breakoutCandle,
+                  bars,
+                  direction: trDir,
+                  structuralZone: borningRes.structuralZone,
+                })
+
                 const curPrice = context.currentPrice ?? bars[bars.length - 1]!.close
                 const dynLine = calculateDynamicTrendline({
                   origin: initPt,
                   compositeScore: borningRes.compositeScore,
-                  higherLows,
+                  higherLows: flagState.confirmedPivots,
                   currentPrice: curPrice,
                   currentTime: Math.floor(Date.now() / 1000),
                   bars,
                   direction: trDir,
+                  breakoutCandle,
+                  flagState,
+                  structuralZone: borningRes.structuralZone,
                 })
                 const latestCompletedBar = bars[bars.length - 1]!
                 const nowSec = Math.floor(Date.now() / 1000)
                 const exitCheck = checkDynamicTrendlineExit(dynLine, latestCompletedBar, {
                   currentTimeSec: nowSec,
                   barDurationSec: 300,
+                  structuralZone: borningRes.structuralZone,
                 })
                 if (exitCheck.shouldExit) {
                   const exitReason = `Systematic Dynamic Trendline Breakdown (${trDir})`

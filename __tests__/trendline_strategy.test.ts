@@ -12,6 +12,7 @@ import {
   detectSessionTrendlines,
   evaluateChopShield,
   resampleCandlesTo5M,
+  detectFlagAndSecondaryBreakout,
 } from '../lib/trading/trendlineStrategy.ts'
 import type { UserTrendline } from '../lib/trading/userDrawings.ts'
 import type { Candle } from '../lib/trading/candlestickPatterns.ts'
@@ -832,6 +833,231 @@ describe('Systematic Trendline Strategy & Trend-Borning Zone Engine', () => {
     assert.equal(check.entryPrice, 52190)
     assert.equal(check.direction, 'SHORT')
   })
+
+  test('26. should NOT trigger REACTION BROKEN when price flags or consolidates in Phase 1 after breakout', () => {
+    // Breakout occurs at t=1000 with close 52200. Origin is at t=500 with low 52180.
+    const origin = { time: 500, price: 52180, candleIndex: 0, type: 'LOW' as const }
+    const breakoutCandle: Candle = { time: 1000, open: 52190, high: 52205, low: 52188, close: 52200, volume: 300 }
+    const structuralZone = {
+      originPrice: 52180,
+      zoneSpan: 10,
+      zoneLow: 52175,
+      zoneHigh: 52185,
+      totalZoneVolume: 500,
+      barCount: 3,
+      avgBarVolume: 166,
+    }
+
+    // Post-breakout flag consolidation: candles pull back slightly and move sideways above the Borning Zone
+    const bars: Candle[] = [
+      { time: 500, open: 52182, high: 52186, low: 52180, close: 52184, volume: 150 }, // Origin bar
+      breakoutCandle, // t=1000
+      { time: 1300, open: 52201, high: 52210, low: 52198, close: 52205, volume: 200 }, // Impulse continuation
+      { time: 1600, open: 52205, high: 52208, low: 52194, close: 52196, volume: 120 }, // Flag bar 1 (pullback)
+      { time: 1900, open: 52196, high: 52202, low: 52195, close: 52200, volume: 110 }, // Flag bar 2 (pause)
+      { time: 2200, open: 52200, high: 52204, low: 52196, close: 52198, volume: 100 }, // Flag bar 3 (pause)
+    ]
+
+    const flagState = detectFlagAndSecondaryBreakout({
+      origin,
+      breakoutCandle,
+      bars,
+      direction: 'LONG',
+      structuralZone,
+    })
+
+    assert.equal(flagState.phase, 'FLAG_FORMING')
+    assert.equal(flagState.polePrice, 52210)
+    assert.equal(flagState.flagExtremePrice, 52194)
+    assert.equal(flagState.flagCandleCount, 3)
+    assert.equal(flagState.isSecondaryBreakout, false)
+
+    const dynamicLine = calculateDynamicTrendline({
+      origin,
+      compositeScore: 80,
+      higherLows: flagState.confirmedPivots,
+      currentPrice: 52198,
+      currentTime: 2200,
+      bars,
+      direction: 'LONG',
+      breakoutCandle,
+      flagState,
+      structuralZone,
+    })
+
+    assert.equal(dynamicLine.isPhase1, true)
+    // Projected price must act as support floor strictly below flag lows (52194)
+    assert.ok(dynamicLine.currentProjectedPrice <= 52194)
+
+    // For every flag candle, verify checkDynamicTrendlineExit does NOT trigger exit!
+    for (let i = 2; i < bars.length; i++) {
+      const exitCheck = checkDynamicTrendlineExit(dynamicLine, bars[i]!, {
+        currentTimeSec: 2500,
+        barDurationSec: 300,
+        structuralZone,
+      })
+      assert.equal(exitCheck.shouldExit, false, `Bar at ${bars[i]!.time} falsely triggered exit!`)
+      assert.ok(exitCheck.reason.includes('Phase 1: Incubation / Flag consolidation holding above Borning Zone'))
+    }
+  })
+
+  test('27. should detect Bull Flag consolidation and trigger Secondary Breakout on 5m close above impulse pole', () => {
+    const origin = { time: 500, price: 52180, candleIndex: 0, type: 'LOW' as const }
+    const breakoutCandle: Candle = { time: 1000, open: 52190, high: 52205, low: 52188, close: 52200, volume: 300 }
+    const structuralZone = {
+      originPrice: 52180,
+      zoneSpan: 10,
+      zoneLow: 52175,
+      zoneHigh: 52185,
+      totalZoneVolume: 500,
+      barCount: 3,
+      avgBarVolume: 166,
+    }
+
+    const bars: Candle[] = [
+      { time: 500, open: 52182, high: 52186, low: 52180, close: 52184, volume: 150 },
+      breakoutCandle,
+      { time: 1300, open: 52201, high: 52215, low: 52198, close: 52212, volume: 250 }, // Pole High = 52215
+      { time: 1600, open: 52212, high: 52214, low: 52202, close: 52205, volume: 120 }, // Flag Low = 52202
+      { time: 1900, open: 52205, high: 52210, low: 52203, close: 52208, volume: 110 },
+      { time: 2200, open: 52208, high: 52222, low: 52206, close: 52220, volume: 400 }, // Secondary Breakout: Close 52220 > Pole 52215!
+    ]
+
+    const flagState = detectFlagAndSecondaryBreakout({
+      origin,
+      breakoutCandle,
+      bars,
+      direction: 'LONG',
+      structuralZone,
+    })
+
+    assert.equal(flagState.isSecondaryBreakout, true)
+    assert.equal(flagState.polePrice, 52215)
+    assert.equal(flagState.flagExtremePrice, 52202)
+    assert.equal(flagState.secondaryBreakoutCandle?.time, 2200)
+    assert.equal(flagState.secondaryBreakoutPrice, 52220)
+    assert.equal(flagState.phase, 'SECONDARY_BREAKOUT')
+  })
+
+  test('28. should promote flag low to confirmed Higher Low 1 (HL1) upon secondary breakout, establishing genuine 2-point trendline', () => {
+    const origin = { time: 500, price: 52180, candleIndex: 0, type: 'LOW' as const }
+    const breakoutCandle: Candle = { time: 1000, open: 52190, high: 52205, low: 52188, close: 52200, volume: 300 }
+    const bars: Candle[] = [
+      { time: 500, open: 52182, high: 52186, low: 52180, close: 52184, volume: 150 },
+      breakoutCandle,
+      { time: 1300, open: 52201, high: 52215, low: 52198, close: 52212, volume: 250 }, // Pole High = 52215
+      { time: 1600, open: 52212, high: 52214, low: 52202, close: 52205, volume: 120 }, // Flag Low = 52202 (HL1)
+      { time: 1900, open: 52205, high: 52210, low: 52203, close: 52208, volume: 110 },
+      { time: 2200, open: 52208, high: 52222, low: 52206, close: 52220, volume: 400 }, // Secondary Breakout
+    ]
+
+    const flagState = detectFlagAndSecondaryBreakout({
+      origin,
+      breakoutCandle,
+      bars,
+      direction: 'LONG',
+    })
+
+    // Confirmed pivots must now have Origin T0 and promoted Flag Low HL1!
+    assert.equal(flagState.confirmedPivots.length, 2)
+    assert.equal(flagState.confirmedPivots[0]!.price, 52180)
+    assert.equal(flagState.confirmedPivots[1]!.price, 52202)
+    assert.equal(flagState.confirmedPivots[1]!.time, 1600)
+    assert.ok(flagState.confirmedPivots[1]!.timingLabel.includes('HL1'))
+
+    const dynamicLine = calculateDynamicTrendline({
+      origin,
+      compositeScore: 85,
+      higherLows: flagState.confirmedPivots,
+      currentPrice: 52220,
+      currentTime: 2200,
+      bars,
+      direction: 'LONG',
+      breakoutCandle,
+      flagState,
+    })
+
+    // Must be a verified 2-point empirical trendline connecting Origin (52180) to HL1 (52202)!
+    assert.equal(dynamicLine.isEmpiricalPivotSlope, true)
+    assert.equal(dynamicLine.activePivotCount, 2)
+    assert.equal(dynamicLine.p1.price, 52180)
+    // Empirical slope: (52202 - 52180) / (1600 - 500)s * 300s = 22 / 1100 * 300 = 6.0 pts / 5m!
+    assert.equal(dynamicLine.baseSlopePtsPer5m, 6.0)
+    assert.equal(dynamicLine.effectiveSlopePtsPer5m, 6.0)
+  })
+
+  test('29. should trigger REACTION BROKEN exit ONLY when price closes across confirmed 2-point line, or breaches Borning Zone in Phase 1', () => {
+    const origin = { time: 500, price: 52180, candleIndex: 0, type: 'LOW' as const }
+    const breakoutCandle: Candle = { time: 1000, open: 52190, high: 52205, low: 52188, close: 52200, volume: 300 }
+    const structuralZone = {
+      originPrice: 52180,
+      zoneSpan: 10,
+      zoneLow: 52175,
+      zoneHigh: 52185,
+      totalZoneVolume: 500,
+      barCount: 3,
+      avgBarVolume: 166,
+    }
+
+    // Part A: In Phase 1, a catastrophic collapse that closes below Borning Zone triggers immediate structural exit
+    const phase1Line = calculateDynamicTrendline({
+      origin,
+      compositeScore: 80,
+      higherLows: [{ time: 500, price: 52180, candleIndex: 0, elapsedSecFromOrigin: 0, elapsedMinutesFromOrigin: 0, timingLabel: 'T0' }],
+      currentPrice: 52170,
+      currentTime: 1300,
+      bars: [breakoutCandle],
+      direction: 'LONG',
+      breakoutCandle,
+      flagState: {
+        phase: 'INCUBATION',
+        direction: 'LONG',
+        breakoutTime: 1000,
+        breakoutPrice: 52200,
+        polePrice: 52205,
+        poleTime: 1000,
+        flagExtremePrice: 52188,
+        flagExtremeTime: 1000,
+        flagCandleCount: 0,
+        isSecondaryBreakout: false,
+        secondaryBreakoutCandle: null,
+        secondaryBreakoutPrice: null,
+        confirmedPivots: [{ time: 500, price: 52180, candleIndex: 0, elapsedSecFromOrigin: 0, elapsedMinutesFromOrigin: 0, timingLabel: 'T0' }],
+      },
+      structuralZone,
+    })
+
+    const collapseBar: Candle = { time: 1300, open: 52185, high: 52186, low: 52168, close: 52170, volume: 500 }
+    const exitCollapse = checkDynamicTrendlineExit(phase1Line, collapseBar, { currentTimeSec: 1600, barDurationSec: 300, structuralZone })
+    assert.equal(exitCollapse.shouldExit, true)
+    assert.ok(exitCollapse.reason.includes('structural Borning Zone'))
+
+    // Part B: In Phase 2, verified 2-point trendline triggers exit when 5m candle closes below line
+    const phase2Line = calculateDynamicTrendline({
+      origin,
+      compositeScore: 85,
+      higherLows: [
+        { time: 500, price: 52180, candleIndex: 0, elapsedSecFromOrigin: 0, elapsedMinutesFromOrigin: 0, timingLabel: 'T0' },
+        { time: 1600, price: 52202, candleIndex: 3, elapsedSecFromOrigin: 1100, elapsedMinutesFromOrigin: 18, timingLabel: 'HL1' },
+      ],
+      currentPrice: 52220,
+      currentTime: 2200,
+      bars: [],
+      direction: 'LONG',
+    })
+
+    // At t=2500 (2000s from origin at 6.0 pts/5m), projected line is 52180 + (2000/300)*6.0 = 52180 + 40 = 52220
+    const safeBar: Candle = { time: 2500, open: 52225, high: 52230, low: 52222, close: 52226, volume: 100 }
+    const checkSafe = checkDynamicTrendlineExit(phase2Line, safeBar, { currentTimeSec: 2800, barDurationSec: 300 })
+    assert.equal(checkSafe.shouldExit, false)
+
+    const breakBar: Candle = { time: 2500, open: 52225, high: 52225, low: 52210, close: 52212, volume: 400 }
+    const checkBreak = checkDynamicTrendlineExit(phase2Line, breakBar, { currentTimeSec: 2800, barDurationSec: 300 })
+    assert.equal(checkBreak.shouldExit, true)
+    assert.equal(checkBreak.exitPrice, 52212)
+    assert.ok(checkBreak.reason.includes('below dynamic trendline'))
+  })
 })
+
 
 

@@ -192,7 +192,7 @@ import {
   checkTrendlineBreakout,
   findInitiatingPoint,
   evaluateTrendBorningZone,
-  detectHigherLowsWithTiming,
+  detectFlagAndSecondaryBreakout,
   calculateDynamicTrendline,
   checkDynamicTrendlineExit,
   resampleCandlesTo5M,
@@ -3116,17 +3116,27 @@ export function TradingChart({
                 direction: setupDir,
               })
 
-              const higherLows = detectHigherLowsWithTiming(initPt, bars5m, bars5m.length - 1)
+              const flagState = detectFlagAndSecondaryBreakout({
+                origin: initPt,
+                breakoutCandle: activeBreakoutCandle,
+                bars: bars5m,
+                direction: setupDir,
+                structuralZone: borningZone.structuralZone,
+              })
+
               const curPx = list[list.length - 1]?.close ?? initPt.price
               const curSec = Math.floor(Date.now() / 1000)
               const dynamicLine = calculateDynamicTrendline({
                 origin: initPt,
                 compositeScore: borningZone.compositeScore,
-                higherLows,
+                higherLows: flagState.confirmedPivots,
                 currentPrice: curPx,
                 currentTime: curSec,
                 bars: bars5m,
                 direction: setupDir,
+                breakoutCandle: activeBreakoutCandle,
+                flagState,
+                structuralZone: borningZone.structuralZone,
               })
 
               // Check if subsequent completed 5-minute candles have crossed / negated the Reaction Trendline
@@ -3138,6 +3148,7 @@ export function TradingChart({
                 const exitCheck = checkDynamicTrendlineExit(dynamicLine, bar, {
                   currentTimeSec: curSec,
                   barDurationSec: 300,
+                  structuralZone: borningZone.structuralZone,
                 })
                 if (exitCheck.shouldExit) {
                   reactionBrokenBar = bar
@@ -3147,7 +3158,15 @@ export function TradingChart({
               }
 
               const isReactionBroken = Boolean(reactionBrokenBar)
-              actionLifecycleTag = isReactionBroken ? ' · [COMPLETED]' : ' · BREAKOUT ACTIVE ⚡'
+              if (isReactionBroken) {
+                actionLifecycleTag = ' · [COMPLETED]'
+              } else if (flagState.isSecondaryBreakout) {
+                actionLifecycleTag = ' · 🚩⚡ 2ND BREAKOUT'
+              } else if (flagState.phase === 'FLAG_FORMING') {
+                actionLifecycleTag = ' · 🚩 FLAG FORMING'
+              } else {
+                actionLifecycleTag = ' · BREAKOUT ACTIVE ⚡'
+              }
 
               systematicLayersToRender = () => {
                 // 1. Draw Initiating Point & Structural Band
@@ -3226,7 +3245,7 @@ export function TradingChart({
               }
 
               // 2. Draw Higher Lows / Lower Highs (limit to at most 2 most recent significant pivots to prevent visual clutter)
-              const visiblePivots = higherLows.slice(1).slice(-2)
+              const visiblePivots = (flagState.confirmedPivots || []).slice(1).slice(-2)
               for (const hl of visiblePivots) {
                 const hlX = timeToX(chart.timeScale(), toChartTime(hl.time, tz), candleTimes)
                 const hlY = series.priceToCoordinate(hl.price)
@@ -3255,6 +3274,52 @@ export function TradingChart({
                     ctx.fillStyle = isLong ? '#7dd3fc' : '#fda4af'
                     ctx.fillText(hlLabel, hlBx + 4, hlBy + 10)
                   }
+                }
+              }
+
+              // Draw Flag Forming Badge if price is consolidating post-breakout
+              if (flagState.phase === 'FLAG_FORMING' && !isReactionBroken && !hideTrendlineBadges) {
+                const flagX = timeToX(chart.timeScale(), toChartTime(flagState.flagExtremeTime, tz), candleTimes)
+                const flagY = series.priceToCoordinate(flagState.flagExtremePrice)
+                if (flagX != null && flagY != null) {
+                  const fText = isLong
+                    ? `🚩 BULL FLAG (Low ${flagState.flagExtremePrice.toFixed(1)} · Trigger > ${flagState.polePrice.toFixed(1)})`
+                    : `🚩 BEAR FLAG (High ${flagState.flagExtremePrice.toFixed(1)} · Trigger < ${flagState.polePrice.toFixed(1)})`
+                  ctx.font = 'bold 8.5px ui-monospace, SFMono-Regular, monospace'
+                  const fW = ctx.measureText(fText).width + 8
+                  const fH = 14
+                  const targetY = isLong ? flagY + 10 : flagY - 24
+                  const { x: fBx, y: fBy } = allocateBadgePos(flagX - fW / 2, targetY, fW, fH, !isLong)
+                  ctx.fillStyle = 'rgba(15, 23, 42, 0.94)'
+                  ctx.fillRect(fBx, fBy, fW, fH)
+                  ctx.strokeStyle = '#38bdf8'
+                  ctx.lineWidth = 1
+                  ctx.strokeRect(fBx, fBy, fW, fH)
+                  ctx.fillStyle = '#7dd3fc'
+                  ctx.fillText(fText, fBx + 4, fBy + 10)
+                }
+              }
+
+              // Draw Confirmed Secondary Breakout Marker
+              if (flagState.isSecondaryBreakout && flagState.secondaryBreakoutCandle && !isReactionBroken && !hideTrendlineBadges) {
+                const sbX = timeToX(chart.timeScale(), toChartTime(flagState.secondaryBreakoutCandle.time, tz), candleTimes)
+                const sbY = series.priceToCoordinate(flagState.secondaryBreakoutCandle.close)
+                if (sbX != null && sbY != null) {
+                  const sbText = isLong
+                    ? `🚩⚡ 2ND BREAKOUT: > ${flagState.polePrice.toFixed(1)} (HL1 Confirmed)`
+                    : `🚩⚡ 2ND BREAKDOWN: < ${flagState.polePrice.toFixed(1)} (LH1 Confirmed)`
+                  ctx.font = 'bold 8.5px ui-monospace, SFMono-Regular, monospace'
+                  const sbW = ctx.measureText(sbText).width + 8
+                  const sbH = 14
+                  const targetY = isLong ? sbY - 26 : sbY + 12
+                  const { x: sbBx, y: sbBy } = allocateBadgePos(sbX - sbW / 2, targetY, sbW, sbH, isLong)
+                  ctx.fillStyle = 'rgba(15, 23, 42, 0.94)'
+                  ctx.fillRect(sbBx, sbBy, sbW, sbH)
+                  ctx.strokeStyle = isLong ? '#22c55e' : '#ef4444'
+                  ctx.lineWidth = 1
+                  ctx.strokeRect(sbBx, sbBy, sbW, sbH)
+                  ctx.fillStyle = isLong ? '#86efac' : '#fca5a5'
+                  ctx.fillText(sbText, sbBx + 4, sbBy + 10)
                 }
               }
 
@@ -3367,8 +3432,15 @@ export function TradingChart({
 
                   if (!hideTrendlineBadges) {
                     const dynIcon = isLong ? '📈' : '📉'
-                    const slopeMode = dynamicLine.isEmpiricalPivotSlope ? ' · Structural' : ' · Projected'
-                    const dynText = `${dynIcon} Reaction Line (${Math.abs(dynamicLine.effectiveSlopePtsPer5m)} pts/5m${slopeMode})${dynamicLine.isStalling ? ' ⚡ STALL' : ''}`
+                    let slopeMode = ' · Projected'
+                    if (dynamicLine.isEmpiricalPivotSlope && (dynamicLine.activePivotCount ?? 0) >= 2) {
+                      slopeMode = ' · 2-Point Structural'
+                    } else if (flagState.phase === 'FLAG_FORMING') {
+                      slopeMode = ' · Trailing Support (Flag)'
+                    } else if (flagState.phase === 'INCUBATION') {
+                      slopeMode = ' · Trailing Support'
+                    }
+                    const dynText = `${dynIcon} Reaction Line (${Math.abs(dynamicLine.effectiveSlopePtsPer5m)} pts/5m${slopeMode})${dynamicLine.isStalling && flagState.phase !== 'FLAG_FORMING' ? ' ⚡ STALL' : ''}`
                     ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
                     const dW = ctx.measureText(dynText).width + 10
                     const dH = 16
