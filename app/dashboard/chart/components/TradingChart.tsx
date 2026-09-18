@@ -3328,7 +3328,8 @@ export function TradingChart({
                   ctx.setLineDash([])
 
                   const dynIcon = isLong ? '📈' : '📉'
-                  const dynText = `${dynIcon} Reaction Line (${Math.abs(dynamicLine.effectiveSlopePtsPer5m)} pts/5m)${dynamicLine.isStalling ? ' ⚡ STALL' : ''}`
+                  const slopeMode = dynamicLine.isEmpiricalPivotSlope ? ' · Structural' : ' · Projected'
+                  const dynText = `${dynIcon} Reaction Line (${Math.abs(dynamicLine.effectiveSlopePtsPer5m)} pts/5m${slopeMode})${dynamicLine.isStalling ? ' ⚡ STALL' : ''}`
                   ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
                   const dW = ctx.measureText(dynText).width + 10
                   const dH = 16

@@ -179,6 +179,8 @@ export interface DynamicResponsiveTrendline {
   p2: { time: number; price: number }
   structuralZone?: TrendBorningZoneRange
   swingVolumeProgression?: SwingVolumeProgression
+  isEmpiricalPivotSlope?: boolean
+  activePivotCount?: number
 }
 
 export interface TrendlineBreakoutCheck {
@@ -1176,17 +1178,42 @@ export function calculateDynamicTrendline(params: {
   const volumeDecayPenalty = swingProgression.slopeAccelerationPenalty || 0
   const adjustedScore = Math.min(100, Math.max(0, compositeScore + swingProgression.scoreDelta))
 
-  // 2. Baseline slope based on adjusted composite score:
-  // Score 40 -> 2 pts per 5m bar; Score 100 -> 8 pts per 5m bar
-  const minSlopePtsPer5m = 2.0
-  const maxSlopePtsPer5m = 8.0
-  const scoreNorm = Math.min(1.0, Math.max(0.0, (adjustedScore - 30) / 70))
-  const baseSlopePtsPer5m = Number((minSlopePtsPer5m + scoreNorm * (maxSlopePtsPer5m - minSlopePtsPer5m)).toFixed(2))
+  // 2. Determine base slope:
+  // - PHASE 2 (Empirical Reality): If confirmed higher lows (for LONG) or lower highs (for SHORT)
+  //   exist (higherLows.length >= 2), calculate the empirical slope connecting the real pivots.
+  //   We connect the real price pivots together so the trendline hugs real market structure.
+  // - PHASE 1 (Theoretical Prior): When no confirmed pivots exist yet (higherLows.length <= 1),
+  //   the 7-factor institutional composite score provides the assumed starting trajectory.
+  const hasStructuralPivots = higherLows.length >= 2
+  let baseSlopePtsPer5m = 0
+  let isEmpiricalPivotSlope = false
+  const anchorP1 = { time: origin.time, price: origin.price }
 
-  // 3. Identify the active anchor point:
-  const activeAnchor = higherLows.length > 1 ? higherLows[higherLows.length - 1]! : higherLows[0]!
+  if (hasStructuralPivots) {
+    const p0 = higherLows[0]!
+    const pLatest = higherLows[higherLows.length - 1]!
+    const dtSec = Math.max(300, pLatest.time - p0.time)
+    const dpPts = pLatest.price - p0.price
+    const rawEmpiricalSlopePer5m = (dpPts / dtSec) * 300
 
-  // 4. Stalling / Sideways Range Detection:
+    if (dir === 'LONG' && rawEmpiricalSlopePer5m > 0.2) {
+      baseSlopePtsPer5m = Number(rawEmpiricalSlopePer5m.toFixed(2))
+      isEmpiricalPivotSlope = true
+    } else if (dir === 'SHORT' && rawEmpiricalSlopePer5m < -0.2) {
+      baseSlopePtsPer5m = Number(Math.abs(rawEmpiricalSlopePer5m).toFixed(2))
+      isEmpiricalPivotSlope = true
+    }
+  }
+
+  if (!isEmpiricalPivotSlope) {
+    // Score 40 -> 2 pts per 5m bar; Score 100 -> 8 pts per 5m bar
+    const minSlopePtsPer5m = 2.0
+    const maxSlopePtsPer5m = 8.0
+    const scoreNorm = Math.min(1.0, Math.max(0.0, (adjustedScore - 30) / 70))
+    baseSlopePtsPer5m = Number((minSlopePtsPer5m + scoreNorm * (maxSlopePtsPer5m - minSlopePtsPer5m)).toFixed(2))
+  }
+
+  // 3. Stalling / Sideways Range Detection:
   let consecutiveStallBars = 0
   const maxCheck = Math.min(6, bars.length)
 
@@ -1205,7 +1232,7 @@ export function calculateDynamicTrendline(params: {
     }
   }
 
-  // 5. Calculate time-decay & volume-decay slope penalties:
+  // 4. Calculate time-decay & volume-decay slope penalties:
   const stallPenaltyScore = consecutiveStallBars * 0.5
   let effectiveSlopePtsPer5m = Number((baseSlopePtsPer5m + stallPenaltyScore + volumeDecayPenalty).toFixed(2))
   let slopePtsPerSec = effectiveSlopePtsPer5m / 300
@@ -1216,15 +1243,15 @@ export function calculateDynamicTrendline(params: {
     slopePtsPerSec = effectiveSlopePtsPer5m / 300
   }
 
-  // 6. Projected price at current time
-  const elapsedSec = Math.max(0, currentTime - activeAnchor.time)
-  const currentProjectedPrice = Number((activeAnchor.price + slopePtsPerSec * elapsedSec).toFixed(2))
+  // 5. Projected price at current time anchored from origin
+  const elapsedSec = Math.max(0, currentTime - anchorP1.time)
+  const currentProjectedPrice = Number((anchorP1.price + slopePtsPerSec * elapsedSec).toFixed(2))
 
-  // Construct visual segment endpoints
-  const p1 = { time: activeAnchor.time, price: activeAnchor.price }
+  // Construct visual segment endpoints (anchoring at origin and projecting through swings)
+  const p1 = { time: anchorP1.time, price: anchorP1.price }
   const p2 = {
     time: currentTime + 900, // +15 mins ahead
-    price: Number((activeAnchor.price + slopePtsPerSec * (elapsedSec + 900)).toFixed(2)),
+    price: Number((anchorP1.price + slopePtsPerSec * (elapsedSec + 900)).toFixed(2)),
   }
 
   return {
@@ -1244,6 +1271,8 @@ export function calculateDynamicTrendline(params: {
     p2,
     structuralZone,
     swingVolumeProgression: swingProgression,
+    isEmpiricalPivotSlope,
+    activePivotCount: higherLows.length,
   }
 }
 

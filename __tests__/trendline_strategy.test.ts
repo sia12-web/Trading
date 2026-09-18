@@ -724,5 +724,52 @@ describe('Systematic Trendline Strategy & Trend-Borning Zone Engine', () => {
     assert.equal(c5m.close, 2052) // Close of last 1m bar
     assert.equal(c5m.volume, 150) // Sum of volume: 20+30+25+40+35 = 150
   })
+
+  test('23. should superimpose dynamic trendline onto real higher low pivots when available, falling back to institutional score when no pivots exist yet', () => {
+    const origin = { time: 0, price: 2050, candleIndex: 0 }
+
+    // Phase 1: Newborn breakout with only Origin (0 structural pivots yet)
+    const lineScoreGuided = calculateDynamicTrendline({
+      origin,
+      compositeScore: 90,
+      higherLows: [{ time: 0, price: 2050, candleIndex: 0, elapsedSecFromOrigin: 0, elapsedMinutesFromOrigin: 0, timingLabel: 'T0' }],
+      currentPrice: 2055,
+      currentTime: 300,
+      bars: [],
+      direction: 'LONG',
+    })
+    assert.equal(lineScoreGuided.isEmpiricalPivotSlope, false)
+    assert.ok(lineScoreGuided.effectiveSlopePtsPer5m > 6.0) // Score-guided projection
+
+    // Phase 2: Price action prints real Higher Low (HL1 at t=1800 with low=2062)
+    const lineEmpirical = calculateDynamicTrendline({
+      origin,
+      compositeScore: 90,
+      higherLows: [
+        { time: 0, price: 2050, candleIndex: 0, elapsedSecFromOrigin: 0, elapsedMinutesFromOrigin: 0, timingLabel: 'T0' },
+        { time: 1800, price: 2062, candleIndex: 6, elapsedSecFromOrigin: 1800, elapsedMinutesFromOrigin: 30, timingLabel: 'HL1 (T+30m)' },
+      ],
+      currentPrice: 2065,
+      currentTime: 2100,
+      bars: [],
+      direction: 'LONG',
+    })
+
+    // Real empirical slope: (2062 - 2050) / 1800s * 300s = 12 / 6 = 2.0 pts / 5m!
+    assert.equal(lineEmpirical.isEmpiricalPivotSlope, true)
+    assert.equal(lineEmpirical.baseSlopePtsPer5m, 2.0)
+    assert.equal(lineEmpirical.effectiveSlopePtsPer5m, 2.0)
+    assert.equal(lineEmpirical.p1.price, 2050) // Starts at Origin
+    // At t=1800, projected line passes exactly through HL1 (2062)
+    const checkAtHl1 = checkDynamicTrendlineExit(lineEmpirical, {
+      time: 1800,
+      open: 2063,
+      high: 2066,
+      low: 2062,
+      close: 2064,
+      volume: 100,
+    })
+    assert.equal(checkAtHl1.projectedTrendlinePrice, 2062)
+  })
 })
 
