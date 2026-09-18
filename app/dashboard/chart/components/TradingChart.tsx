@@ -1217,6 +1217,10 @@ export function TradingChart({
   const distRefsRef = useRef<any[]>([])
   const newsMovesRef = useRef<EmotionalNewsMove[]>([])
   const confirmedBreakoutsRef = useRef<Map<string, {
+    p1Time: number
+    p1Price: number
+    p2Time: number
+    p2Price: number
     breakoutCandle: Candle
     breakoutIndex: number
     entryPrice: number
@@ -3041,9 +3045,26 @@ export function TradingChart({
             barDurationSec: 300,
           })
 
+          // Invalidate stale breakout cache if user adjusted, dragged, or modified the trendline anchors
+          const existingBrk = confirmedBreakoutsRef.current.get(tl.id)
+          if (existingBrk) {
+            if (
+              existingBrk.p1Time !== tl.p1.time ||
+              existingBrk.p1Price !== tl.p1.price ||
+              existingBrk.p2Time !== tl.p2.time ||
+              existingBrk.p2Price !== tl.p2.price
+            ) {
+              confirmedBreakoutsRef.current.delete(tl.id)
+            }
+          }
+
           // Maintain persistent breakout state so intra-bar ticks or rebuilds do not cause reaction line to flicker
           if (breakout.isConfirmed5mClose && breakout.breakoutCandle) {
             confirmedBreakoutsRef.current.set(tl.id, {
+              p1Time: tl.p1.time,
+              p1Price: tl.p1.price,
+              p2Time: tl.p2.time,
+              p2Price: tl.p2.price,
               breakoutCandle: breakout.breakoutCandle,
               breakoutIndex: breakout.breakoutCandleIndex ?? (bars5m.length - 1),
               entryPrice: breakout.entryPrice ?? breakout.breakoutCandle.close,
