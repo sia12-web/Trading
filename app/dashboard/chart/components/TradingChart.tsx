@@ -180,7 +180,6 @@ import {
   MARKET_DEFAULT_PARAMS,
   listenToRuleUpdates,
   isEntrySituationRule,
-  addRule,
   type ArmedRule,
   type MarketInstrument,
 } from '@/lib/trading/leoRules'
@@ -9183,49 +9182,15 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           }
           setTrendlines((prev) => [...prev, newTl])
 
-          if (isAction) {
-            addRule({
-              instrument: instrument as MarketInstrument,
-              type: 'TRENDLINE_BREAKOUT_SYSTEMATIC',
-              direction: tradeDir,
-              description: `${tradeDir === 'LONG' ? 'Long' : 'Short'} 1 ${instrument} on 5m Close ${tradeDir === 'LONG' ? 'above' : 'below'} Action Trendline (${sessionOrigin} Initial)`,
-              userPrompt: `Monitor Initial Action Trendline from ${sessionOrigin.toLowerCase()}. Enter ${tradeDir} 1 ${instrument} on 5m candle close breakout in NYC.`,
-              targetReference: newTl.label,
-              targetPrice: newTl.p2.price,
-              pattern: 'TRENDLINE_BREAKOUT_5M',
-              stopLossMode: tradeDir === 'SHORT' ? 'ABOVE_CANDLE_HIGH' : 'BELOW_CANDLE_LOW',
-              takeProfitMode: 'FIXED_POINTS',
-              takeProfit: 50,
-              size: 1,
-              isLongTerm: true,
-              session: 'NY',
-              status: 'ARMED',
-              trendlineId: newTl.id,
-              conditions: {
-                trendlineId: newTl.id,
-                pattern: 'TRENDLINE_BREAKOUT_5M',
-                stopLossMode: tradeDir === 'SHORT' ? 'ABOVE_CANDLE_HIGH' : 'BELOW_CANDLE_LOW',
-                takeProfitMode: 'FIXED_POINTS',
-                takeProfit: 50,
-                size: 1,
-                minBreakoutTime: Math.floor(Date.now() / 1000),
-              },
-            })
-            playTradingViewChime()
-            setDrawingToast({
-              type: 'TRENDLINE',
-              id: newTl.id,
-              label: newTl.label || 'Action Trendline',
-              summary: `🎯 Initial ${sessionOrigin} Action Line: Armed Leo to react on NYC ${tradeDir} Breakout with 7-Factor Scoring!`,
-            })
-          } else {
-            setDrawingToast({
-              type: 'TRENDLINE',
-              id: newTl.id,
-              label: newTl.label || 'Trendline',
-              summary: `From ${newTl.p1.price.toLocaleString()} to ${newTl.p2.price.toLocaleString()} (${newTl.p2.price >= newTl.p1.price ? '+' : ''}${(newTl.p2.price - newTl.p1.price).toFixed(1)} pts)`,
-            })
-          }
+          playTradingViewChime()
+          setDrawingToast({
+            type: 'TRENDLINE',
+            id: newTl.id,
+            label: newTl.label || (isAction ? 'Action Trendline' : 'Trendline'),
+            summary: isAction
+              ? `🎯 Action Line drawn [${sessionOrigin}]. Monitoring active. Click 'Ask Leo' if you wish to arm a trade situation.`
+              : `From ${newTl.p1.price.toLocaleString()} to ${newTl.p2.price.toLocaleString()} (${newTl.p2.price >= newTl.p1.price ? '+' : ''}${(newTl.p2.price - newTl.p1.price).toFixed(1)} pts)`,
+          })
         } else if (activeDrawingTool === 'RANGE') {
           const newRange: UserRangeBox = {
             id: `range-${Date.now()}`,
