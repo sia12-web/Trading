@@ -278,13 +278,36 @@ export function checkTrendlineBreakout(
   result.trendlineDirection = isBearish ? 'BEARISH' : 'BULLISH'
 
   const slopePtsPerSec = pDiff / tDiffSec
-  // Breakouts occur strictly after the right anchor point P2, and on or after minBreakoutTime
-  const evalStartSec = Math.max(p2.time, options?.minBreakoutTime ?? 0)
   const barDuration = options?.barDurationSec ?? 300
+  const minBreakoutSec = options?.minBreakoutTime ?? 0
 
+  // 1. Identify the candle index containing or immediately preceding Anchor P2.
+  // CRITICAL RULE (Anchor Point Isolation Principle):
+  // Anchor 1 (P1) and Anchor 2 (P2) establish the trendline.
+  // The candle containing P2 is part of the line definition and can NEVER trigger a breakout.
+  // Breakout evaluation must strictly start on candles that form AFTER Anchor P2's candle.
+  let p2Index = -1
   for (let i = 0; i < bars.length; i++) {
     const b = bars[i]!
-    if (b.time < evalStartSec) continue
+    const nextBarTime = i < bars.length - 1 ? bars[i + 1]!.time : b.time + barDuration
+    if (p2.time >= b.time && p2.time < nextBarTime) {
+      p2Index = i
+      break
+    }
+  }
+
+  // If P2 is on or beyond the latest bar in bars, no breakout is possible yet
+  if (p2Index === -1 && bars.length > 0 && p2.time >= bars[bars.length - 1]!.time) {
+    p2Index = bars.length - 1
+  }
+
+  // Breakouts occur strictly starting at the candle AFTER P2
+  const startIndex = p2Index >= 0 ? p2Index + 1 : 0
+
+  for (let i = startIndex; i < bars.length; i++) {
+    const b = bars[i]!
+    if (b.time < minBreakoutSec) continue
+    if (b.time <= p2.time) continue
 
     const trendlinePriceAtBar = p1.price + slopePtsPerSec * (b.time - p1.time)
 

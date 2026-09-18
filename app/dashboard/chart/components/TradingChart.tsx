@@ -3078,6 +3078,8 @@ export function TradingChart({
               defaultStopLoss: breakout.defaultStopLoss ?? (breakout.breakoutCandle.low - 1),
               defaultTakeProfitFixed50: breakout.defaultTakeProfitFixed50 ?? (breakout.breakoutCandle.close + 50),
             })
+          } else if (!breakout.isConfirmed5mClose) {
+            confirmedBreakoutsRef.current.delete(tl.id)
           }
 
           const cachedBrk = confirmedBreakoutsRef.current.get(tl.id)

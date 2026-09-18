@@ -771,5 +771,67 @@ describe('Systematic Trendline Strategy & Trend-Borning Zone Engine', () => {
     })
     assert.equal(checkAtHl1.projectedTrendlinePrice, 2062)
   })
+
+  test('24. should NOT trigger false breakout on candle containing Anchor 2 (P2) or when subsequent candles stay on valid side', () => {
+    // User scenario: Bullish Action Trendline drawn in Tokyo/Asia from P1 (1000, 52184) to P2 (1900, 52195)
+    const tl: UserTrendline = {
+      id: 'tl-tokyo-bull',
+      type: 'TRENDLINE',
+      p1: { time: 1000, price: 52184 },
+      p2: { time: 1900, price: 52195 },
+      color: '#f59e0b',
+      isActionTrendline: true,
+    }
+
+    // Bar at 1900 is Anchor 2 itself (low 52195, close 52195)
+    // Subsequent bars (2200, 2500, 2800, 3100) all trade comfortably ABOVE the trendline
+    const bars: Candle[] = [
+      { time: 1000, open: 52185, high: 52188, low: 52184, close: 52186, volume: 100 },
+      { time: 1300, open: 52186, high: 52192, low: 52185, close: 52190, volume: 120 },
+      { time: 1600, open: 52190, high: 52198, low: 52188, close: 52196, volume: 150 },
+      { time: 1900, open: 52197, high: 52200, low: 52195, close: 52195, volume: 180 }, // Anchor 2 bar
+      { time: 2200, open: 52201, high: 52206, low: 52200, close: 52204, volume: 200 }, // Post-anchor bar 1 (strictly above line 52198.67)
+      { time: 2500, open: 52204, high: 52208, low: 52203, close: 52206, volume: 220 }, // Post-anchor bar 2 (strictly above line 52202.33)
+      { time: 2800, open: 52207, high: 52212, low: 52207, close: 52210, volume: 190 }, // Post-anchor bar 3 (strictly above line 52206.00)
+      { time: 3100, open: 52211, high: 52215, low: 52210, close: 52213, volume: 210 }, // Post-anchor bar 4 (strictly above line 52209.67)
+    ]
+
+    const check = checkTrendlineBreakout(tl, bars)
+    // Must NOT trigger breakout! Zero bars closed below trendline after Anchor 2
+    assert.equal(check.isConfirmed5mClose, false)
+    assert.equal(check.isCrossed, false)
+    assert.equal(check.breakoutCandle, null)
+    assert.equal(check.entryPrice, null)
+  })
+
+  test('25. should trigger breakout ONLY when a post-P2 candle closes across the trendline', () => {
+    const tl: UserTrendline = {
+      id: 'tl-tokyo-bull-2',
+      type: 'TRENDLINE',
+      p1: { time: 1000, price: 52184 },
+      p2: { time: 1900, price: 52195 },
+      color: '#f59e0b',
+      isActionTrendline: true,
+    }
+
+    // Line projected at t=3400: 52184 + ((52195 - 52184)/900) * 2400 = 52184 + (11/900)*2400 = 52184 + 29.33 = 52213.33
+    // At t=3400, price breaks down and candle closes at 52190 (below 52213.33)
+    const bars: Candle[] = [
+      { time: 1000, open: 52185, high: 52188, low: 52184, close: 52186, volume: 100 },
+      { time: 1900, open: 52197, high: 52200, low: 52195, close: 52195, volume: 180 }, // Anchor 2 bar
+      { time: 2200, open: 52196, high: 52206, low: 52196, close: 52202, volume: 200 },
+      { time: 2500, open: 52202, high: 52208, low: 52200, close: 52205, volume: 220 },
+      { time: 2800, open: 52205, high: 52212, low: 52204, close: 52210, volume: 190 },
+      { time: 3100, open: 52210, high: 52220, low: 52208, close: 52218, volume: 210 },
+      { time: 3400, open: 52216, high: 52217, low: 52189, close: 52190, volume: 450 }, // Real breakout bar!
+    ]
+
+    const check = checkTrendlineBreakout(tl, bars)
+    assert.equal(check.isConfirmed5mClose, true)
+    assert.equal(check.breakoutCandle?.time, 3400)
+    assert.equal(check.entryPrice, 52190)
+    assert.equal(check.direction, 'SHORT')
+  })
 })
+
 
