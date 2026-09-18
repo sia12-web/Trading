@@ -1395,8 +1395,10 @@ export function resampleCandlesTo5M(candles: Candle[]): Candle[] {
 }
 
 /**
- * 8. Multi-Session Trendline Pipeline (Asia 18:00 ET -> London 03:00 ET -> NYC 09:30 ET).
- * Reconstructs unbroken trendlines across overnight sessions and presents the active unbroken trend entering NYC open.
+ * 8. Multi-Session Trendline Pipeline (Legacy Analytics Utility).
+ * NOTE: The trading platform NEVER auto-draws Action Trendlines on the chart.
+ * Action Trendlines are 100% manually drawn by the trader with discretionary market vision.
+ * The system only evaluates breakouts and initiates systematic Borning Zones once the user's manual line is crossed.
  */
 export function detectSessionTrendlines(
   bars: Candle[],
