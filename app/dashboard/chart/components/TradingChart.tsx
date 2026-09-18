@@ -1547,6 +1547,14 @@ export function TradingChart({
   )
 
 
+  const [hideTrendlineBadges, setHideTrendlineBadges] = useState<boolean>(() => {
+    try {
+      return typeof window !== 'undefined' && localStorage.getItem('hide_trendline_badges') === 'true'
+    } catch {
+      return false
+    }
+  })
+
   const [candles, setCandles] = useState<OHLCV[]>([])
   const [armedSituations, setArmedSituations] = useState<ArmedRule[]>([])
 
@@ -3165,7 +3173,7 @@ export function TradingChart({
                   ctx.strokeRect(initXPos, bandTop, paneW - initXPos, bandHeight)
                   ctx.setLineDash([])
 
-                  if (initX != null && !isReactionBroken) {
+                  if (initX != null && !isReactionBroken && !hideTrendlineBadges) {
                     const zVolText = `📦 ${isLong ? 'Bull' : 'Bear'} Zone [${sz.zoneLow.toFixed(1)}–${sz.zoneHigh.toFixed(1)}] · Vol: ${sz.totalZoneVolume.toLocaleString()}${sz.historicalVolumeRatio ? ` (${sz.historicalVolumeRatio}x)` : ''}`
                     ctx.font = 'bold 8.5px ui-monospace, SFMono-Regular, monospace'
                     const zW = ctx.measureText(zVolText).width + 8
@@ -3188,29 +3196,31 @@ export function TradingChart({
                 ctx.lineWidth = 1.5
                 ctx.stroke()
 
-                const bStatus = isReactionBroken ? ' [COMPLETED]' : ''
-                const bText = `🎯 ${isLong ? 'BULL' : 'BEAR'} ORIGIN: ${initPt.price.toFixed(2)} · ${borningZone.compositeScore}/100 (${borningZone.grade})${bStatus}`
-                ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-                const bW = ctx.measureText(bText).width + 10
-                const bH = 16
-                const targetY = isLong ? initY + 14 : initY - 30
-                const { x: bBx, y: bBy } = allocateBadgePos(initX - bW / 2, targetY, bW, bH, !isLong)
+                if (!hideTrendlineBadges) {
+                  const bStatus = isReactionBroken ? ' [COMPLETED]' : ''
+                  const bText = `🎯 ${isLong ? 'BULL' : 'BEAR'} ORIGIN: ${initPt.price.toFixed(2)} · ${borningZone.compositeScore}/100 (${borningZone.grade})${bStatus}`
+                  ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+                  const bW = ctx.measureText(bText).width + 10
+                  const bH = 16
+                  const targetY = isLong ? initY + 14 : initY - 30
+                  const { x: bBx, y: bBy } = allocateBadgePos(initX - bW / 2, targetY, bW, bH, !isLong)
 
-                // Small leader line from pivot dot to badge
-                ctx.strokeStyle = isReactionBroken ? 'rgba(100, 116, 139, 0.5)' : (isLong ? 'rgba(234, 179, 8, 0.6)' : 'rgba(239, 68, 68, 0.6)')
-                ctx.lineWidth = 1
-                ctx.beginPath()
-                ctx.moveTo(initX, initY)
-                ctx.lineTo(initX, isLong ? bBy : bBy + bH)
-                ctx.stroke()
+                  // Small leader line from pivot dot to badge
+                  ctx.strokeStyle = isReactionBroken ? 'rgba(100, 116, 139, 0.5)' : (isLong ? 'rgba(234, 179, 8, 0.6)' : 'rgba(239, 68, 68, 0.6)')
+                  ctx.lineWidth = 1
+                  ctx.beginPath()
+                  ctx.moveTo(initX, initY)
+                  ctx.lineTo(initX, isLong ? bBy : bBy + bH)
+                  ctx.stroke()
 
-                ctx.fillStyle = isReactionBroken ? 'rgba(30, 41, 59, 0.94)' : 'rgba(15, 23, 42, 0.94)'
-                ctx.fillRect(bBx, bBy, bW, bH)
-                ctx.strokeStyle = isReactionBroken ? '#64748b' : (isLong ? '#eab308' : '#ef4444')
-                ctx.lineWidth = 1
-                ctx.strokeRect(bBx, bBy, bW, bH)
-                ctx.fillStyle = isReactionBroken ? '#94a3b8' : (isLong ? '#fef08a' : '#fca5a5')
-                ctx.fillText(bText, bBx + 5, bBy + 11)
+                  ctx.fillStyle = isReactionBroken ? 'rgba(30, 41, 59, 0.94)' : 'rgba(15, 23, 42, 0.94)'
+                  ctx.fillRect(bBx, bBy, bW, bH)
+                  ctx.strokeStyle = isReactionBroken ? '#64748b' : (isLong ? '#eab308' : '#ef4444')
+                  ctx.lineWidth = 1
+                  ctx.strokeRect(bBx, bBy, bW, bH)
+                  ctx.fillStyle = isReactionBroken ? '#94a3b8' : (isLong ? '#fef08a' : '#fca5a5')
+                  ctx.fillText(bText, bBx + 5, bBy + 11)
+                }
               }
 
               // 2. Draw Higher Lows / Lower Highs (limit to at most 2 most recent significant pivots to prevent visual clutter)
@@ -3227,20 +3237,22 @@ export function TradingChart({
                   ctx.lineWidth = 1
                   ctx.stroke()
 
-                  const hlLabel = `${hl.timingLabel} · ${hl.price.toFixed(1)}`
-                  ctx.font = 'bold 8.5px ui-monospace, SFMono-Regular, monospace'
-                  const hlW = ctx.measureText(hlLabel).width + 8
-                  const hlH = 14
-                  const targetY = isLong ? hlY + 8 : hlY - 22
-                  const { x: hlBx, y: hlBy } = allocateBadgePos(hlX - hlW / 2, targetY, hlW, hlH, !isLong)
+                  if (!hideTrendlineBadges) {
+                    const hlLabel = `${hl.timingLabel} · ${hl.price.toFixed(1)}`
+                    ctx.font = 'bold 8.5px ui-monospace, SFMono-Regular, monospace'
+                    const hlW = ctx.measureText(hlLabel).width + 8
+                    const hlH = 14
+                    const targetY = isLong ? hlY + 8 : hlY - 22
+                    const { x: hlBx, y: hlBy } = allocateBadgePos(hlX - hlW / 2, targetY, hlW, hlH, !isLong)
 
-                  ctx.fillStyle = 'rgba(15, 23, 42, 0.92)'
-                  ctx.fillRect(hlBx, hlBy, hlW, hlH)
-                  ctx.strokeStyle = isLong ? '#38bdf8' : '#f43f5e'
-                  ctx.lineWidth = 1
-                  ctx.strokeRect(hlBx, hlBy, hlW, hlH)
-                  ctx.fillStyle = isLong ? '#7dd3fc' : '#fda4af'
-                  ctx.fillText(hlLabel, hlBx + 4, hlBy + 10)
+                    ctx.fillStyle = 'rgba(15, 23, 42, 0.92)'
+                    ctx.fillRect(hlBx, hlBy, hlW, hlH)
+                    ctx.strokeStyle = isLong ? '#38bdf8' : '#f43f5e'
+                    ctx.lineWidth = 1
+                    ctx.strokeRect(hlBx, hlBy, hlW, hlH)
+                    ctx.fillStyle = isLong ? '#7dd3fc' : '#fda4af'
+                    ctx.fillText(hlLabel, hlBx + 4, hlBy + 10)
+                  }
                 }
               }
 
@@ -3264,21 +3276,23 @@ export function TradingChart({
                 ctx.fillStyle = isLong ? '#22c55e' : '#ef4444'
                 ctx.fill()
 
-                const brkIcon = isLong ? '🚀 5M LONG ENTRY' : '🔻 5M SHORT ENTRY'
-                const brkText = `${brkIcon}: ${activeEntryPrice?.toFixed(2)} · SL ${activeStopLoss?.toFixed(2)} · TP ${activeTakeProfit?.toFixed(2)}`
-                ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-                const brkW = ctx.measureText(brkText).width + 10
-                const brkH = 16
-                const prefY = isLong ? brkY - 34 : brkY + 18
-                const { x: brkBx, y: brkBy } = allocateBadgePos(brkX - brkW / 2, prefY, brkW, brkH, isLong)
+                if (!hideTrendlineBadges) {
+                  const brkIcon = isLong ? '🚀 5M LONG ENTRY' : '🔻 5M SHORT ENTRY'
+                  const brkText = `${brkIcon}: ${activeEntryPrice?.toFixed(2)} · SL ${activeStopLoss?.toFixed(2)} · TP ${activeTakeProfit?.toFixed(2)}`
+                  ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+                  const brkW = ctx.measureText(brkText).width + 10
+                  const brkH = 16
+                  const prefY = isLong ? brkY - 34 : brkY + 18
+                  const { x: brkBx, y: brkBy } = allocateBadgePos(brkX - brkW / 2, prefY, brkW, brkH, isLong)
 
-                ctx.fillStyle = 'rgba(15, 23, 42, 0.95)'
-                ctx.fillRect(brkBx, brkBy, brkW, brkH)
-                ctx.strokeStyle = isLong ? '#22c55e' : '#ef4444'
-                ctx.lineWidth = 1
-                ctx.strokeRect(brkBx, brkBy, brkW, brkH)
-                ctx.fillStyle = isLong ? '#86efac' : '#fca5a5'
-                ctx.fillText(brkText, brkBx + 5, brkBy + 11)
+                  ctx.fillStyle = 'rgba(15, 23, 42, 0.95)'
+                  ctx.fillRect(brkBx, brkBy, brkW, brkH)
+                  ctx.strokeStyle = isLong ? '#22c55e' : '#ef4444'
+                  ctx.lineWidth = 1
+                  ctx.strokeRect(brkBx, brkBy, brkW, brkH)
+                  ctx.fillStyle = isLong ? '#86efac' : '#fca5a5'
+                  ctx.fillText(brkText, brkBx + 5, brkBy + 11)
+                }
               }
 
               // 4. Draw Dynamic Responsive Reaction Trendline
@@ -3301,21 +3315,23 @@ export function TradingChart({
                   ctx.stroke()
                   ctx.setLineDash([])
 
-                  // Invalidation / Exit Marker at crossing candle
-                  const exitText = `🛑 REACTION BROKEN: 5M Close @ ${reactionExitPrice?.toFixed(2)} (Cycle Negated)`
-                  ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-                  const eW = ctx.measureText(exitText).width + 10
-                  const eH = 16
-                  const prefExitY = isLong ? exitY + 18 : exitY - 34
-                  const { x: eBx, y: eBy } = allocateBadgePos(exitX - eW / 2, prefExitY, eW, eH, !isLong)
+                  if (!hideTrendlineBadges) {
+                    // Invalidation / Exit Marker at crossing candle
+                    const exitText = `🛑 REACTION BROKEN: 5M Close @ ${reactionExitPrice?.toFixed(2)} (Cycle Negated)`
+                    ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+                    const eW = ctx.measureText(exitText).width + 10
+                    const eH = 16
+                    const prefExitY = isLong ? exitY + 18 : exitY - 34
+                    const { x: eBx, y: eBy } = allocateBadgePos(exitX - eW / 2, prefExitY, eW, eH, !isLong)
 
-                  ctx.fillStyle = 'rgba(30, 41, 59, 0.95)'
-                  ctx.fillRect(eBx, eBy, eW, eH)
-                  ctx.strokeStyle = '#ef4444'
-                  ctx.lineWidth = 1.5
-                  ctx.strokeRect(eBx, eBy, eW, eH)
-                  ctx.fillStyle = '#fca5a5'
-                  ctx.fillText(exitText, eBx + 5, eBy + 11)
+                    ctx.fillStyle = 'rgba(30, 41, 59, 0.95)'
+                    ctx.fillRect(eBx, eBy, eW, eH)
+                    ctx.strokeStyle = '#ef4444'
+                    ctx.lineWidth = 1.5
+                    ctx.strokeRect(eBx, eBy, eW, eH)
+                    ctx.fillStyle = '#fca5a5'
+                    ctx.fillText(exitText, eBx + 5, eBy + 11)
+                  }
                 } else {
                   // Active reaction trendline protecting the live trade
                   const lastBarTime = (list[list.length - 1]?.time as number) || (dynamicLine.p1.time + 300)
@@ -3347,24 +3363,26 @@ export function TradingChart({
                   ctx.stroke()
                   ctx.setLineDash([])
 
-                  const dynIcon = isLong ? '📈' : '📉'
-                  const slopeMode = dynamicLine.isEmpiricalPivotSlope ? ' · Structural' : ' · Projected'
-                  const dynText = `${dynIcon} Reaction Line (${Math.abs(dynamicLine.effectiveSlopePtsPer5m)} pts/5m${slopeMode})${dynamicLine.isStalling ? ' ⚡ STALL' : ''}`
-                  ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-                  const dW = ctx.measureText(dynText).width + 10
-                  const dH = 16
+                  if (!hideTrendlineBadges) {
+                    const dynIcon = isLong ? '📈' : '📉'
+                    const slopeMode = dynamicLine.isEmpiricalPivotSlope ? ' · Structural' : ' · Projected'
+                    const dynText = `${dynIcon} Reaction Line (${Math.abs(dynamicLine.effectiveSlopePtsPer5m)} pts/5m${slopeMode})${dynamicLine.isStalling ? ' ⚡ STALL' : ''}`
+                    ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+                    const dW = ctx.measureText(dynText).width + 10
+                    const dH = 16
 
-                  const midAnchorX = (dX1 + Math.min(paneW - 40, dX2)) / 2
-                  const midAnchorY = (dY1 + dY2) / 2
-                  const { x: dynBx, y: dynBy } = allocateBadgePos(midAnchorX - dW / 2, midAnchorY - 18, dW, dH, true)
+                    const midAnchorX = (dX1 + Math.min(paneW - 40, dX2)) / 2
+                    const midAnchorY = (dY1 + dY2) / 2
+                    const { x: dynBx, y: dynBy } = allocateBadgePos(midAnchorX - dW / 2, midAnchorY - 18, dW, dH, true)
 
-                  ctx.fillStyle = isDecaying ? 'rgba(67, 20, 7, 0.95)' : isLong ? 'rgba(6, 78, 59, 0.95)' : 'rgba(76, 5, 25, 0.95)'
-                  ctx.fillRect(dynBx, dynBy, dW, dH)
-                  ctx.strokeStyle = isDecaying ? '#f97316' : healthyColor
-                  ctx.lineWidth = 1
-                  ctx.strokeRect(dynBx, dynBy, dW, dH)
-                  ctx.fillStyle = isDecaying ? '#fdba74' : isLong ? '#6ee7b7' : '#fda4af'
-                  ctx.fillText(dynText, dynBx + 5, dynBy + 11)
+                    ctx.fillStyle = isDecaying ? 'rgba(67, 20, 7, 0.95)' : isLong ? 'rgba(6, 78, 59, 0.95)' : 'rgba(76, 5, 25, 0.95)'
+                    ctx.fillRect(dynBx, dynBy, dW, dH)
+                    ctx.strokeStyle = isDecaying ? '#f97316' : healthyColor
+                    ctx.lineWidth = 1
+                    ctx.strokeRect(dynBx, dynBy, dW, dH)
+                    ctx.fillStyle = isDecaying ? '#fdba74' : isLong ? '#6ee7b7' : '#fda4af'
+                    ctx.fillText(dynText, dynBx + 5, dynBy + 11)
+                  }
                 }
               }
             }
@@ -3378,20 +3396,22 @@ export function TradingChart({
           ? `🎯 ACTION LINE${sessTag} ${dir} (${pDiff >= 0 ? '+' : ''}${pDiff.toFixed(1)} pts)${actionLifecycleTag}`
           : `📐 ${tl.label || 'Trendline'} ${dir} (${pDiff >= 0 ? '+' : ''}${pDiff.toFixed(1)} pts)`
 
-        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-        const textW = ctx.measureText(labelText).width
-        const badgeW = textW + 10
-        const badgeH = 16
-        const { x: midBx, y: midBy } = allocateBadgePos(mx - badgeW / 2, my - 18, badgeW, badgeH, true)
+        if (!hideTrendlineBadges) {
+          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+          const textW = ctx.measureText(labelText).width
+          const badgeW = textW + 10
+          const badgeH = 16
+          const { x: midBx, y: midBy } = allocateBadgePos(mx - badgeW / 2, my - 18, badgeW, badgeH, true)
 
-        ctx.fillStyle = isActionTl ? 'rgba(30, 20, 5, 0.94)' : 'rgba(15, 23, 42, 0.90)'
-        ctx.fillRect(midBx, midBy, badgeW, badgeH)
-        ctx.strokeStyle = isActionTl ? '#f59e0b' : '#38bdf8'
-        ctx.lineWidth = isActionTl ? 1.5 : 1
-        ctx.strokeRect(midBx, midBy, badgeW, badgeH)
+          ctx.fillStyle = isActionTl ? 'rgba(30, 20, 5, 0.94)' : 'rgba(15, 23, 42, 0.90)'
+          ctx.fillRect(midBx, midBy, badgeW, badgeH)
+          ctx.strokeStyle = isActionTl ? '#f59e0b' : '#38bdf8'
+          ctx.lineWidth = isActionTl ? 1.5 : 1
+          ctx.strokeRect(midBx, midBy, badgeW, badgeH)
 
-        ctx.fillStyle = isActionTl ? '#fef08a' : '#7dd3fc'
-        ctx.fillText(labelText, midBx + 5, midBy + 11)
+          ctx.fillStyle = isActionTl ? '#fef08a' : '#7dd3fc'
+          ctx.fillText(labelText, midBx + 5, midBy + 11)
+        }
 
         // Execute systematic layers if active (confirmed breakout)
         if (systematicLayersToRender) {
@@ -3556,7 +3576,7 @@ export function TradingChart({
     }
 
     ctx.restore()
-  }, [activeTrendlines, activeRangeBoxes, activeManualFrvps, drawingDraft, activeDrawingTool, showCandlestickPatterns])
+  }, [activeTrendlines, activeRangeBoxes, activeManualFrvps, drawingDraft, activeDrawingTool, showCandlestickPatterns, hideTrendlineBadges])
 
   useEffect(() => {
     paintUserDrawingsRef.current = paintUserDrawings
@@ -10784,61 +10804,88 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               </button>
             </div>
 
-            {/* Quick 1-Click 1:1 Market Entry Buttons (All 4 Futures Markets) */}
-            {onPlaceOrder && (
-              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-surface-900/90 border border-neutral-700/60 shadow-sm text-xs font-mono">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const curPx = livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 0)
-                    if (!curPx || curPx <= 0) return
-                    const meta = MARKET_DEFAULT_PARAMS[instrument as MarketInstrument] || { defaultPrice: curPx, defaultPoints: 20 }
-                    const slDist = meta.defaultPoints
-                    const tpDist = meta.defaultPoints
-                    const stopLoss = Number((curPx - slDist).toFixed(2))
-                    const profitTarget = Number((curPx + tpDist).toFixed(2))
-                    void onPlaceOrder({
-                      instrument,
-                      direction: 'LONG',
-                      price: curPx,
-                      stopLoss,
-                      profitTarget,
-                      size: 1,
-                      reason: `1-Click 1:1 Market Buy (${instrument})`,
-                    })
-                  }}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded font-bold bg-emerald-600/30 hover:bg-emerald-600/60 border border-emerald-500/60 text-emerald-300 hover:text-white transition shadow-sm active:scale-95 cursor-pointer"
-                  title={`Execute 1:1 Market BUY on ${instrument} @ ${livePrice ?? 'Market'} (SL: -${MARKET_DEFAULT_PARAMS[instrument as MarketInstrument]?.defaultPoints ?? 20}pts, TP: +${MARKET_DEFAULT_PARAMS[instrument as MarketInstrument]?.defaultPoints ?? 20}pts)`}
-                >
-                  <span>⚡ BUY MKT 1:1</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const curPx = livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 0)
-                    if (!curPx || curPx <= 0) return
-                    const meta = MARKET_DEFAULT_PARAMS[instrument as MarketInstrument] || { defaultPrice: curPx, defaultPoints: 20 }
-                    const slDist = meta.defaultPoints
-                    const tpDist = meta.defaultPoints
-                    const stopLoss = Number((curPx + slDist).toFixed(2))
-                    const profitTarget = Number((curPx - tpDist).toFixed(2))
-                    void onPlaceOrder({
-                      instrument,
-                      direction: 'SHORT',
-                      price: curPx,
-                      stopLoss,
-                      profitTarget,
-                      size: 1,
-                      reason: `1-Click 1:1 Market Sell (${instrument})`,
-                    })
-                  }}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded font-bold bg-rose-600/30 hover:bg-rose-600/60 border border-rose-500/60 text-rose-300 hover:text-white transition shadow-sm active:scale-95 cursor-pointer"
-                  title={`Execute 1:1 Market SELL on ${instrument} @ ${livePrice ?? 'Market'} (SL: +${MARKET_DEFAULT_PARAMS[instrument as MarketInstrument]?.defaultPoints ?? 20}pts, TP: -${MARKET_DEFAULT_PARAMS[instrument as MarketInstrument]?.defaultPoints ?? 20}pts)`}
-                >
-                  <span>⚡ SELL MKT 1:1</span>
-                </button>
-              </div>
-            )}
+            {/* Quick 1-Click 1:1 Market Entry Buttons & Canvas Label Visibility Toggle */}
+            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-surface-900/90 border border-neutral-700/60 shadow-sm text-xs font-mono">
+              {onPlaceOrder && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const curPx = livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 0)
+                      if (!curPx || curPx <= 0) return
+                      const meta = MARKET_DEFAULT_PARAMS[instrument as MarketInstrument] || { defaultPrice: curPx, defaultPoints: 20 }
+                      const slDist = meta.defaultPoints
+                      const tpDist = meta.defaultPoints
+                      const stopLoss = Number((curPx - slDist).toFixed(2))
+                      const profitTarget = Number((curPx + tpDist).toFixed(2))
+                      void onPlaceOrder({
+                        instrument,
+                        direction: 'LONG',
+                        price: curPx,
+                        stopLoss,
+                        profitTarget,
+                        size: 1,
+                        reason: `1-Click 1:1 Market Buy (${instrument})`,
+                      })
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded font-bold bg-emerald-600/30 hover:bg-emerald-600/60 border border-emerald-500/60 text-emerald-300 hover:text-white transition shadow-sm active:scale-95 cursor-pointer"
+                    title={`Execute 1:1 Market BUY on ${instrument} @ ${livePrice ?? 'Market'} (SL: -${MARKET_DEFAULT_PARAMS[instrument as MarketInstrument]?.defaultPoints ?? 20}pts, TP: +${MARKET_DEFAULT_PARAMS[instrument as MarketInstrument]?.defaultPoints ?? 20}pts)`}
+                  >
+                    <span>⚡ BUY MKT 1:1</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const curPx = livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 0)
+                      if (!curPx || curPx <= 0) return
+                      const meta = MARKET_DEFAULT_PARAMS[instrument as MarketInstrument] || { defaultPrice: curPx, defaultPoints: 20 }
+                      const slDist = meta.defaultPoints
+                      const tpDist = meta.defaultPoints
+                      const stopLoss = Number((curPx + slDist).toFixed(2))
+                      const profitTarget = Number((curPx - tpDist).toFixed(2))
+                      void onPlaceOrder({
+                        instrument,
+                        direction: 'SHORT',
+                        price: curPx,
+                        stopLoss,
+                        profitTarget,
+                        size: 1,
+                        reason: `1-Click 1:1 Market Sell (${instrument})`,
+                      })
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded font-bold bg-rose-600/30 hover:bg-rose-600/60 border border-rose-500/60 text-rose-300 hover:text-white transition shadow-sm active:scale-95 cursor-pointer"
+                    title={`Execute 1:1 Market SELL on ${instrument} @ ${livePrice ?? 'Market'} (SL: +${MARKET_DEFAULT_PARAMS[instrument as MarketInstrument]?.defaultPoints ?? 20}pts, TP: -${MARKET_DEFAULT_PARAMS[instrument as MarketInstrument]?.defaultPoints ?? 20}pts)`}
+                  >
+                    <span>⚡ SELL MKT 1:1</span>
+                  </button>
+                  <div className="h-3.5 w-px bg-surface-700 mx-0.5" />
+                </>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setHideTrendlineBadges((prev) => {
+                    const next = !prev
+                    try {
+                      localStorage.setItem('hide_trendline_badges', String(next))
+                    } catch {}
+                    return next
+                  })
+                }}
+                className={`flex items-center gap-1 px-2 py-1 rounded font-bold transition shadow-sm active:scale-95 cursor-pointer ${
+                  hideTrendlineBadges
+                    ? 'bg-amber-500/25 hover:bg-amber-500/40 border border-amber-500/70 text-amber-300'
+                    : 'bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 text-neutral-300 hover:text-white'
+                }`}
+                title={
+                  hideTrendlineBadges
+                    ? 'Systematic text labels on trendlines are hidden (Click to show labels)'
+                    : 'Hide systematic text labels on trendlines (Keeps initiate & responsive lines visible on chart)'
+                }
+              >
+                <span>{hideTrendlineBadges ? '🙈 Labels: OFF' : '🏷️ Labels: ON'}</span>
+              </button>
+            </div>
 
             {/* Live price ticker */}
             <div className="ml-auto flex items-center gap-3">
@@ -11392,6 +11439,26 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 </span>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHideTrendlineBadges((prev) => {
+                      const next = !prev
+                      try {
+                        localStorage.setItem('hide_trendline_badges', String(next))
+                      } catch {}
+                      return next
+                    })
+                  }}
+                  className={`text-[11px] font-semibold px-1.5 py-0.5 rounded transition ${
+                    hideTrendlineBadges
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50'
+                      : 'bg-slate-700/60 text-slate-300 hover:text-white'
+                  }`}
+                  title={hideTrendlineBadges ? 'Show trendline text labels' : 'Hide trendline text labels'}
+                >
+                  {hideTrendlineBadges ? '🙈 Text Off' : '🏷️ Text On'}
+                </button>
                 {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length > 0 && (
                   <button
                     type="button"
