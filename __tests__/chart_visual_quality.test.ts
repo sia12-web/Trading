@@ -57,6 +57,8 @@ assert.ok(sim.includes('const ignoreScale'), 'sim studies excluded from candle s
 assert.ok(!sim.includes('autoscaleInfoProvider: undefined'), 'sim host cannot reopen default scale')
 assert.ok(sim.includes('const extendTo = Math.max(tip, simT)'), 'sim adds no future close point')
 
+assert.ok(DESK_CHART_THEME.rightPriceScale.minimumWidth >= 75, 'price scale has aligned minimum width to prevent sub-pixel time scale drift')
+
 const live = src('app/dashboard/chart/components/TradingChart.tsx')
 assert.ok(live.includes('sessionFocusHighLow'), 'live Y-axis follows current session')
 assert.ok(!live.includes('fitContent()'), 'live Reset scale does not zoom to full history')
@@ -90,5 +92,8 @@ assert.ok(live.includes('mergeHistoryWithLiveTip'), 'REST cannot repaint forming
 assert.ok(!live.includes('applyOverlayLayout(), 150'), 'overlay layout is not a 150ms idle loop')
 assert.ok(live.includes('borderVisible: false'), 'live candles render solid filled bodies')
 assert.ok(sim.includes('borderVisible: false'), 'sim candles render solid filled bodies')
+assert.ok(live.includes('rangesDiffer'), 'CVD time scale sync guards sub-pixel ping-pong oscillation')
+assert.ok(live.includes('paintOverlaysSinglePassRef'), 'live tick overlay updates use single-pass throttled painter')
+assert.ok(!live.includes('closedChanged || !streamLive'), 'refreshCandles does not force full setData when market is static')
 
 console.log('chart_visual_quality.test.ts: all passed')

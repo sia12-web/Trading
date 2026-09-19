@@ -51,6 +51,7 @@ export const DESK_CHART_THEME = {
     alignLabels: true,
     entireTextOnly: true,
     ticksVisible: true,
+    minimumWidth: 75,
     scaleMargins: { top: 0.12, bottom: 0.12 },
   },
   timeScale: {

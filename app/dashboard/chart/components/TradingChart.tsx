@@ -5967,25 +5967,28 @@ export function TradingChart({
     for (const p of placed) overlayPlace(p.el, p.x, p.y, p.w, p.h)
   }, [])
 
+  const paintOverlaysSinglePass = useCallback(() => {
+    applyOverlayLayout()
+    paintFrvpHistogramRef.current?.()
+    paintExcessesAndRoundedRef.current?.()
+    paintUserDrawingsRef.current?.()
+    paintNewsMarkersRef.current?.()
+  }, [applyOverlayLayout])
+
+  const paintOverlaysSinglePassRef = useRef(paintOverlaysSinglePass)
+  paintOverlaysSinglePassRef.current = paintOverlaysSinglePass
+
   const overlayRafRef = useRef(0)
   const overlaySampleUntilRef = useRef(0)
 
   /** Place now, then keep sampling each frame for a beat so kinetic scroll and
    * autoscale animations stay glued to the candles without a perpetual loop. */
   const pokeOverlayLayout = useCallback(() => {
-    applyOverlayLayout()
-    paintFrvpHistogramRef.current?.()
-    paintExcessesAndRoundedRef.current?.()
-    paintUserDrawingsRef.current?.()
-    paintNewsMarkersRef.current?.()
+    paintOverlaysSinglePass()
     overlaySampleUntilRef.current = Date.now() + OVERLAY_SETTLE_MS
     if (overlayRafRef.current) return
     const loop = () => {
-      applyOverlayLayout()
-      paintFrvpHistogramRef.current?.()
-      paintExcessesAndRoundedRef.current?.()
-      paintUserDrawingsRef.current?.()
-      paintNewsMarkersRef.current?.()
+      paintOverlaysSinglePass()
       if (Date.now() < overlaySampleUntilRef.current) {
         overlayRafRef.current = requestAnimationFrame(loop)
       } else {
@@ -5993,7 +5996,7 @@ export function TradingChart({
       }
     }
     overlayRafRef.current = requestAnimationFrame(loop)
-  }, [applyOverlayLayout])
+  }, [paintOverlaysSinglePass])
 
   const pokeOverlayLayoutRef = useRef(pokeOverlayLayout)
   pokeOverlayLayoutRef.current = pokeOverlayLayout
@@ -7240,6 +7243,7 @@ export function TradingChart({
           borderVisible: true,
           borderColor: '#1e293b',
           autoScale: true,
+          minimumWidth: 75,
           scaleMargins: {
             top: 0.15,
             bottom: 0.15,
@@ -7274,28 +7278,40 @@ export function TradingChart({
         })
       } catch {}
 
-      let isSyncingFromMain = false
-      let isSyncingFromCvd = false
+      let isSyncingTimeScale = false
+
+      const rangesDiffer = (r1: any, r2: any, eps = 0.05) => {
+        if (!r1 || !r2) return true
+        return Math.abs(r1.from - r2.from) >= eps || Math.abs(r1.to - r2.to) >= eps
+      }
 
       const syncMainToCvd = (range: any) => {
-        if (!showCvdSubPaneRef.current || isSyncingFromCvd || isSyncingFromMain || !range) return
-        isSyncingFromMain = true
+        if (!showCvdSubPaneRef.current || isSyncingTimeScale || !range || !cvdChartRef.current) return
+        const targetTs = cvdChartRef.current.timeScale()
+        const currentRange = targetTs.getVisibleLogicalRange()
+        if (!rangesDiffer(currentRange, range)) return
+
+        isSyncingTimeScale = true
         try {
-          cvdChart.timeScale().setVisibleLogicalRange(range)
+          targetTs.setVisibleLogicalRange(range)
         } catch {}
         requestAnimationFrame(() => {
-          isSyncingFromMain = false
+          isSyncingTimeScale = false
         })
       }
 
       const syncCvdToMain = (range: any) => {
-        if (!showCvdSubPaneRef.current || isSyncingFromMain || isSyncingFromCvd || !range || !chartRef.current) return
-        isSyncingFromCvd = true
+        if (!showCvdSubPaneRef.current || isSyncingTimeScale || !range || !chartRef.current) return
+        const targetTs = chartRef.current.timeScale()
+        const currentRange = targetTs.getVisibleLogicalRange()
+        if (!rangesDiffer(currentRange, range)) return
+
+        isSyncingTimeScale = true
         try {
-          chartRef.current.timeScale().setVisibleLogicalRange(range)
+          targetTs.setVisibleLogicalRange(range)
         } catch {}
         requestAnimationFrame(() => {
-          isSyncingFromCvd = false
+          isSyncingTimeScale = false
         })
       }
 
@@ -7304,7 +7320,7 @@ export function TradingChart({
       cvdChart.timeScale().subscribeVisibleLogicalRangeChange(syncCvdToMain)
 
       const initialRange = mainTimeScale?.getVisibleLogicalRange()
-      if (initialRange && showCvdSubPaneRef.current) {
+      if (initialRange && showCvdSubPaneRef.current && rangesDiffer(cvdChart.timeScale().getVisibleLogicalRange(), initialRange)) {
         try {
           cvdChart.timeScale().setVisibleLogicalRange(initialRange)
         } catch {}
@@ -8208,7 +8224,10 @@ export function TradingChart({
       // New prints / range unlock must not shrink candles (last-value tags widen the axis)
       requestAnimationFrame(() => {
         try {
-          ts.setVisibleLogicalRange(savedRange)
+          const cur = ts.getVisibleLogicalRange()
+          if (!cur || Math.abs(cur.from - savedRange.from) >= 0.05 || Math.abs(cur.to - savedRange.to) >= 0.05) {
+            ts.setVisibleLogicalRange(savedRange)
+          }
           refreshSessionHighlightsRef.current?.()
         } catch {
           /* ignore */
@@ -8563,6 +8582,7 @@ export function TradingChart({
       close: bar.close,
     })
 
+    let lastOverlayTickPaint = 0
     const paintTipBar = (bar: OHLCV) => {
       lastCandleRef.current = bar
       if (tipPaintRaf) return
@@ -8572,7 +8592,13 @@ export function TradingChart({
         if (!b || !candleRef.current) return
         try {
           candleRef.current.update(toChartCandle(b))
-          if (!interactingRef.current) pokeOverlayLayoutRef.current()
+          if (!interactingRef.current) {
+            const now = Date.now()
+            if (now - lastOverlayTickPaint >= 150) {
+              lastOverlayTickPaint = now
+              paintOverlaysSinglePassRef.current()
+            }
+          }
         } catch {
           /* ignore */
         }
@@ -8838,11 +8864,9 @@ export function TradingChart({
           tipOwned
         )
 
-        // Never reset didFitRef here — new prints must not yank a panned viewport
         lastCandleRef.current = nextBars[nextBars.length - 1]!
         // REST owns closed bars: replace gap-fill flats when Yahoo catches up.
-        // Once market is closed (!streamLive), always push candles to finalize closing bars & AVWAP.
-        if (structureChanged || closedChanged || !streamLive) {
+        if (structureChanged || closedChanged) {
           setCandles(nextBars)
         } else {
           const tip = nextBars[nextBars.length - 1]!
