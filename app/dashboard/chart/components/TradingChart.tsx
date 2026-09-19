@@ -14116,7 +14116,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           context={leoContext}
           candles={candlesRef.current.length > 0 ? candlesRef.current : candles}
           isOpen={leoPanelOpen}
-          onToggleOpen={() => setLeoPanelOpen(!leoPanelOpen)}
+          onToggleOpen={() => setLeoPanelOpen((prev) => !prev)}
+          onClose={() => setLeoPanelOpen(false)}
           externalAttachedPoints={leoExternalPoints}
           onClearExternalAttachedPoints={() => setLeoExternalPoints([])}
           externalPrompt={leoAutoPrompt}

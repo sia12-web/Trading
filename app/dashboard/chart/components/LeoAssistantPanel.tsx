@@ -117,6 +117,7 @@ interface LeoAssistantPanelProps {
   candles?: any[]
   isOpen?: boolean
   onToggleOpen?: () => void
+  onClose?: () => void
   onSelectDataPoint?: (point: LeoDataPoint) => void
   externalAttachedPoints?: LeoDataPoint[]
   onClearExternalAttachedPoints?: () => void
@@ -152,6 +153,7 @@ export function LeoAssistantPanel({
   candles,
   isOpen: controlledIsOpen,
   onToggleOpen,
+  onClose,
   externalAttachedPoints,
   onClearExternalAttachedPoints,
   externalPrompt,
@@ -173,6 +175,20 @@ export function LeoAssistantPanel({
       onToggleOpen()
     } else {
       setInternalIsOpen((prev) => !prev)
+    }
+  }
+
+  const handleClose = (e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation()
+      e.preventDefault()
+    }
+    if (onClose) {
+      onClose()
+    } else if (onToggleOpen) {
+      onToggleOpen()
+    } else {
+      setInternalIsOpen(false)
     }
   }
 
@@ -339,6 +355,7 @@ export function LeoAssistantPanel({
   const inputPromptRef = useRef('')
   const restartTimerRef = useRef<any>(null)
   const executingRuleIdsRef = useRef<Set<string>>(new Set())
+  const activeAbortControllerRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     inputPromptRef.current = inputPrompt
@@ -1829,12 +1846,15 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
     }
     const text = textToSend ?? inputPrompt
     if (!text.trim()) return
-    if (isStreaming) {
-      if (textToSend) {
-        setInputPrompt(textToSend)
-      }
-      return
+
+    // Abort active prior streaming request if running
+    if (activeAbortControllerRef.current) {
+      activeAbortControllerRef.current.abort()
+      activeAbortControllerRef.current = null
     }
+
+    const abortController = new AbortController()
+    activeAbortControllerRef.current = abortController
 
     const points = pointsToSend !== undefined ? pointsToSend : attachedPoints
 
@@ -1848,7 +1868,11 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
 
     const nextMessages = [...messages, userMessage]
     setMessages(nextMessages)
+
+    // Clear state & voice transcript refs synchronously upon message send
     setInputPrompt('')
+    inputPromptRef.current = ''
+    sessionBaseTranscriptRef.current = ''
     if (textareaRef.current) {
       textareaRef.current.style.height = '38px'
     }
@@ -1869,6 +1893,7 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
     try {
       const response = await fetch('/api/trading/leo/chat', {
         method: 'POST',
+        signal: abortController.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: nextMessages.map((m) => ({
@@ -1928,7 +1953,7 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
               )
             }
           } catch {
-            // Ignore parse errors
+             // Ignore parse errors
           }
         }
       }
@@ -1942,6 +1967,9 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
       // Voice readout if enabled
       speakText(accumulated)
     } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        return
+      }
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === assistantId
@@ -1953,6 +1981,9 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
         )
       )
     } finally {
+      if (activeAbortControllerRef.current === abortController) {
+        activeAbortControllerRef.current = null
+      }
       setIsStreaming(false)
       setAttachedPoints([]) // reset attached after sending
     }
@@ -2037,7 +2068,7 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
 
       {/* ─── Expanded Glassmorphism Assistant Panel ───────────────────────── */}
       {isPanelOpen && (
-        <div className="absolute top-2 bottom-2 right-2 z-40 w-full max-w-[395px] flex flex-col rounded-2xl backdrop-blur-xl bg-neutral-950/90 border border-purple-500/35 shadow-2xl overflow-hidden transition-all duration-300">
+        <div className="absolute top-2 bottom-2 right-2 z-[60] w-full max-w-[395px] flex flex-col rounded-2xl backdrop-blur-xl bg-neutral-950/90 border border-purple-500/35 shadow-2xl overflow-hidden transition-all duration-300">
           {/* Header Bar */}
           <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-neutral-800/80 bg-neutral-900/60">
             <div className="flex items-center gap-2">
@@ -2073,12 +2104,12 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                 {ttsEnabled ? '🔊' : '🔇'}
               </button>
 
-              {/* Minimize */}
+              {/* Close Panel */}
               <button
                 type="button"
-                onClick={togglePanel}
-                className="p-1.5 rounded-lg border border-neutral-800 bg-neutral-900/50 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700 transition-colors text-xs"
-                title="Minimize panel"
+                onClick={handleClose}
+                className="p-1.5 rounded-lg border border-neutral-800 bg-neutral-900/50 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700 transition-colors text-xs cursor-pointer z-10"
+                title="Close panel"
               >
                 ✕
               </button>
@@ -2934,7 +2965,7 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault()
-                      if (!isStreaming && inputPrompt.trim()) {
+                      if (inputPrompt.trim()) {
                         if (isListeningRef.current) {
                           stopListening()
                         }
@@ -2947,17 +2978,18 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                       ? 'Listening to speech...'
                       : 'Ask Leo anything, discuss setups, or give trade commands...'
                   }
-                  disabled={isStreaming}
                   className="w-full px-3 py-2 pr-7 rounded-xl bg-neutral-950 border border-neutral-800 text-xs text-neutral-200 placeholder:text-neutral-500 focus:outline-none focus:border-purple-500 transition-colors font-sans resize-none overflow-y-auto min-h-[38px] max-h-[130px] leading-relaxed"
                 />
-                {inputPrompt.length > 0 && !isStreaming && (
+                {inputPrompt.length > 0 && (
                   <button
                     type="button"
                     onClick={() => {
                       setInputPrompt('')
+                      inputPromptRef.current = ''
+                      sessionBaseTranscriptRef.current = ''
                       if (textareaRef.current) textareaRef.current.style.height = '38px'
                     }}
-                    className="absolute right-2 top-2.5 text-neutral-500 hover:text-neutral-200 text-xs transition"
+                    className="absolute right-2 top-2.5 text-neutral-500 hover:text-neutral-200 text-xs transition z-10"
                     title="Clear input"
                   >
                     ✕
@@ -2968,7 +3000,7 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
               {/* Send Button */}
               <button
                 type="submit"
-                disabled={isStreaming || !inputPrompt.trim()}
+                disabled={!inputPrompt.trim()}
                 className="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:bg-neutral-800 disabled:text-neutral-600 text-white font-mono text-xs font-semibold shadow-md transition-all active:scale-95 flex items-center justify-center shrink-0 mb-0.5 min-h-[38px]"
               >
                 {isStreaming ? (
