@@ -7,7 +7,7 @@ import {
 } from '@/lib/ai/leoAssistant'
 import { getLatestDatabentoLiveQuote } from '@/lib/databento/liveHub'
 import { detectCandlestickPatterns } from '@/lib/trading/candlestickPatterns'
-import { evaluatePriceQuestioning } from '@/lib/trading/priceQuestioning'
+import { evaluatePriceQuestioning, isPriceQuestioningSessionActive } from '@/lib/trading/priceQuestioning'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -474,6 +474,22 @@ There is currently **no open position** on the desk. All brackets are clear. Sta
       (p) => p.id === 'price-critique-dossier' || p.label.toLowerCase().includes('price critique')
     )
   ) {
+    const isCritiqueActive = isPriceQuestioningSessionActive(Date.now(), '09:00')
+    if (!isCritiqueActive && !ctx.priceQuestioning) {
+      return `### ⏱️ Leo Auction Price Critique & Questioning Desk (${ctx.instrument} @ ${curPrice})
+
+> *"The market is a place to do business. If price is not suitable for us, we never force a trade."*
+
+⚠️ **Questioning Desk Off-Session:**
+The Auction Price Critique & Questioning Desk is active during the **New York Session (09:00 AM / 09:15 AM – 16:00 ET)**.
+
+- **Current Global Session:** ${sessionName}
+- **Status:** Inactive during Asian and London sessions.
+- **Next Desk Activation:** 09:00 AM / 09:15 AM ET (New York Pre-Market Open Preparation).
+
+Participants in Asia and London are currently establishing initial overnight inventory and volume profiles. Stand by until New York pre-market to critique price location against accumulated overnight wholesale inventory.`
+    }
+
     const pq = ctx.priceQuestioning || evaluatePriceQuestioning({
       currentPrice: ctx.currentPrice || 0,
       instrument: ctx.instrument,

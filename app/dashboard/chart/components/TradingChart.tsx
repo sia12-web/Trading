@@ -200,7 +200,12 @@ import {
   evaluateHorizontalRunway,
   calculateEmpiricalSpeedlines,
 } from '@/lib/trading/trendlineStrategy'
-import { evaluatePriceQuestioning, type PriceCritiqueEvaluation } from '@/lib/trading/priceQuestioning'
+import {
+  evaluatePriceQuestioning,
+  isPriceQuestioningSessionActive,
+  type PriceCritiqueEvaluation,
+  type CritiqueSessionStart,
+} from '@/lib/trading/priceQuestioning'
 
 const DOW_15M_FAIL_COLORS: any = { high: '#3b82f6', low: '#ef4444', mid: '#eab308', buy: '#3b82f6', sell: '#ef4444' }
 const computeDow15mFailOverlay = (..._args: any[]): any => null
@@ -4292,7 +4297,37 @@ export function TradingChart({
   const [showQuestioningModal, setShowQuestioningModal] = useState(false)
 
   // ── Auction Price Critique & "Questioning" Engine Evaluation ───────────────
+  const [critiqueStartOption, setCritiqueStartOption] = useState<CritiqueSessionStart>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('trading_critique_start_time')
+      if (saved === '09:15' || saved === '09:00') return saved
+    }
+    return '09:00'
+  })
+  const critiqueStartOptionRef = useRef<CritiqueSessionStart>(critiqueStartOption)
+  useEffect(() => {
+    critiqueStartOptionRef.current = critiqueStartOption
+  }, [critiqueStartOption])
+
+  const [isCritiqueSessionActiveState, setIsCritiqueSessionActiveState] = useState<boolean>(() =>
+    isPriceQuestioningSessionActive(Date.now(), critiqueStartOption)
+  )
+
+  useEffect(() => {
+    const checkActive = () => {
+      const active = isPriceQuestioningSessionActive(Date.now(), critiqueStartOptionRef.current)
+      setIsCritiqueSessionActiveState(active)
+      if (!active) {
+        setShowQuestioningModal(false)
+      }
+    }
+    checkActive()
+    const id = setInterval(checkActive, 5000)
+    return () => clearInterval(id)
+  }, [critiqueStartOption])
+
   const livePriceCritique = useMemo<PriceCritiqueEvaluation | null>(() => {
+    if (!isCritiqueSessionActiveState) return null
     const list = candles || []
     const lastBar = list.length ? list[list.length - 1] : null
     const curPrice = livePrice ?? lastBar?.close ?? null
@@ -4303,12 +4338,15 @@ export function TradingChart({
         timeZone: 'America/New_York',
         hour: '2-digit',
         minute: '2-digit',
+        second: '2-digit',
       }) + ' ET'
 
     return evaluatePriceQuestioning({
       currentPrice: curPrice,
       instrument,
       currentTimeEt: nowEtStr,
+      now: now.getTime(),
+      sessionStart: critiqueStartOption,
       yesterday: yesterdayNyc
         ? {
             poc: yesterdayNyc.poc,
@@ -4385,6 +4423,8 @@ export function TradingChart({
     frvp5d,
     avwap5mBenchmark,
     sessionOrderFlow,
+    isCritiqueSessionActiveState,
+    critiqueStartOption,
   ])
 
   const leoContext: LeoChatContext = useMemo(() => {
@@ -5829,6 +5869,9 @@ export function TradingChart({
         return
       }
       if (e.key === 'q' || e.key === 'Q') {
+        if (!isPriceQuestioningSessionActive(Date.now(), critiqueStartOptionRef.current)) {
+          return
+        }
         setShowQuestioningModal((prev) => !prev)
       }
     }
@@ -11575,39 +11618,43 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   </span>
                 )}
               </button>
-              <span className="text-gray-600 text-[10px]">|</span>
-              {/* Questioning / Price Critique Desk Button */}
-              <button
-                type="button"
-                onClick={() => setShowQuestioningModal((prev) => !prev)}
-                className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer ${
-                  showQuestioningModal
-                    ? 'bg-amber-500/25 text-amber-200 border border-amber-400/60 shadow-sm font-semibold'
-                    : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
-                }`}
-                title="Auction Price Critique & Questioning Desk (Hotkey: Q) — Question the price before doing business!"
-              >
-                <span className="text-[11px]">⚖️</span>
-                <span className="text-gray-400 font-semibold">Critique:</span>
-                <span
-                  className={`font-mono font-bold ${
-                    !livePriceCritique
-                      ? 'text-gray-400'
-                      : livePriceCritique.valuationState.includes('DISCOUNT')
-                      ? 'text-emerald-400'
-                      : livePriceCritique.valuationState.includes('PREMIUM')
-                      ? 'text-rose-400'
-                      : 'text-cyan-300'
-                  }`}
-                >
-                  {livePriceCritique ? livePriceCritique.valuationState.replace('_', ' ') : 'STANDBY'}
-                </span>
-                {livePriceCritique?.weakHandTrap.isTrapRisk && (
-                  <span className="px-1 py-0.2 rounded bg-rose-500/20 text-rose-300 text-[9px] font-bold border border-rose-500/40 animate-pulse">
-                    TRAP RISK
-                  </span>
-                )}
-              </button>
+              {isCritiqueSessionActiveState && (
+                <>
+                  <span className="text-gray-600 text-[10px]">|</span>
+                  {/* Questioning / Price Critique Desk Button */}
+                  <button
+                    type="button"
+                    onClick={() => setShowQuestioningModal((prev) => !prev)}
+                    className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer ${
+                      showQuestioningModal
+                        ? 'bg-amber-500/25 text-amber-200 border border-amber-400/60 shadow-sm font-semibold'
+                        : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
+                    }`}
+                    title="Auction Price Critique & Questioning Desk (Hotkey: Q) — Question the price before doing business!"
+                  >
+                    <span className="text-[11px]">⚖️</span>
+                    <span className="text-gray-400 font-semibold">Critique:</span>
+                    <span
+                      className={`font-mono font-bold ${
+                        !livePriceCritique
+                          ? 'text-gray-400'
+                          : livePriceCritique.valuationState.includes('DISCOUNT')
+                          ? 'text-emerald-400'
+                          : livePriceCritique.valuationState.includes('PREMIUM')
+                          ? 'text-rose-400'
+                          : 'text-cyan-300'
+                      }`}
+                    >
+                      {livePriceCritique ? livePriceCritique.valuationState.replace('_', ' ') : 'STANDBY'}
+                    </span>
+                    {livePriceCritique?.weakHandTrap.isTrapRisk && (
+                      <span className="px-1 py-0.2 rounded bg-rose-500/20 text-rose-300 text-[9px] font-bold border border-rose-500/40 animate-pulse">
+                        TRAP RISK
+                      </span>
+                    )}
+                  </button>
+                </>
+              )}
             </div>
 
             {/* OHLCV Hover Tooltip inline on the right */}
@@ -13825,14 +13872,51 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     </p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setShowQuestioningModal(false)}
-                  className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800 transition text-sm cursor-pointer"
-                  title="Close (Esc or Q)"
-                >
-                  ✕
-                </button>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center bg-zinc-800/90 rounded-lg p-0.5 border border-zinc-700/70 text-[10px]">
+                    <span className="text-zinc-400 px-1.5 font-medium">NY Session Unlock:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCritiqueStartOption('09:00')
+                        critiqueStartOptionRef.current = '09:00'
+                        if (typeof window !== 'undefined') localStorage.setItem('trading_critique_start_time', '09:00')
+                      }}
+                      className={`px-2 py-0.5 rounded font-mono font-bold transition cursor-pointer ${
+                        critiqueStartOption === '09:00'
+                          ? 'bg-amber-500 text-slate-950 shadow-sm'
+                          : 'text-zinc-400 hover:text-white'
+                      }`}
+                      title="Activate starting at 09:00 AM ET (30 mins before NY cash open)"
+                    >
+                      09:00 AM
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCritiqueStartOption('09:15')
+                        critiqueStartOptionRef.current = '09:15'
+                        if (typeof window !== 'undefined') localStorage.setItem('trading_critique_start_time', '09:15')
+                      }}
+                      className={`px-2 py-0.5 rounded font-mono font-bold transition cursor-pointer ${
+                        critiqueStartOption === '09:15'
+                          ? 'bg-amber-500 text-slate-950 shadow-sm'
+                          : 'text-zinc-400 hover:text-white'
+                      }`}
+                      title="Activate starting at 09:15 AM ET (15 mins before NY cash open)"
+                    >
+                      09:15 AM
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowQuestioningModal(false)}
+                    className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800 transition text-sm cursor-pointer"
+                    title="Close (Esc or Q)"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
 
               {/* Body */}

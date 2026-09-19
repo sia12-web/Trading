@@ -35,6 +35,45 @@ export type AuctionValuationState =
   | 'PREMIUM'
   | 'EXTREME_PREMIUM'
 
+export type CritiqueSessionStart = '09:00' | '09:15'
+
+/**
+ * Checks whether the Price Critique & Questioning desk is currently active.
+ *
+ * Requirements:
+ * 1. Mon - Fri only (excludes Saturday and Sunday).
+ * 2. Active strictly during New York Session window (starts at 09:00 ET or 09:15 ET; ends at 16:00 ET Cash Close).
+ * 3. Inactive (hidden) during Asian session (18:00 - 03:00 ET) and London session (03:00 - 09:00 ET).
+ *
+ * Uses IANA timezone 'America/New_York' via Intl.DateTimeFormat for Daylight Saving Time accuracy.
+ */
+export function isPriceQuestioningSessionActive(
+  now: Date | number = Date.now(),
+  start: CritiqueSessionStart | string = '09:00'
+): boolean {
+  const d = typeof now === 'number' ? new Date(now) : now
+  const tz = 'America/New_York'
+
+  // Monday through Friday only
+  const dayStr = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).format(d)
+  if (dayStr === 'Sat' || dayStr === 'Sun') return false
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(d)
+  const h = parts.find((p) => p.type === 'hour')?.value ?? '00'
+  const m = parts.find((p) => p.type === 'minute')?.value ?? '00'
+  const s = parts.find((p) => p.type === 'second')?.value ?? '00'
+  const timeStr = `${h.padStart(2, '0')}:${m.padStart(2, '0')}:${s.padStart(2, '0')}`
+
+  const startHms = start.startsWith('09:15') ? '09:15:00' : '09:00:00'
+  return timeStr >= startHms && timeStr < '16:00:00'
+}
+
 export type QuestioningAuditStatus = 'PASSED' | 'WARNING' | 'DANGER'
 
 export interface QuestioningAuditItem {
@@ -48,6 +87,8 @@ export interface QuestioningAuditItem {
 export interface PriceCritiqueEvaluation {
   currentPrice: number
   instrument: string
+  isSessionActive?: boolean
+  sessionPhase?: string
   valuationState: AuctionValuationState
   valuationScore: number // -100 (Deep Discount) to +100 (Extreme Premium)
   suitabilityVerdict:
@@ -95,6 +136,8 @@ export interface EvaluatePriceQuestioningParams {
   currentPrice: number
   instrument?: string
   currentTimeEt?: string // e.g. "09:35:12" or "14:15"
+  now?: Date | number
+  sessionStart?: CritiqueSessionStart
   yesterday?: {
     poc?: number | null
     vah?: number | null
@@ -441,6 +484,7 @@ export function evaluatePriceQuestioning(
   return {
     currentPrice,
     instrument,
+    isSessionActive: isPriceQuestioningSessionActive(params.now ?? Date.now(), params.sessionStart ?? '09:00'),
     valuationState,
     valuationScore,
     suitabilityVerdict,

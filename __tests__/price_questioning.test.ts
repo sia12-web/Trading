@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert'
 import {
   evaluatePriceQuestioning,
+  isPriceQuestioningSessionActive,
   type PriceCritiqueEvaluation,
 } from '../lib/trading/priceQuestioning'
 import { buildLeoSystemPrompt, type LeoChatContext } from '../lib/ai/leoAssistant'
@@ -307,5 +308,81 @@ describe('Auction Price Critique & "Questioning" Engine', () => {
     assert.ok(response.includes('Overnight & Global Session Inventory Reality'))
     assert.ok(response.includes('The 6-Question Pre-Trade Self-Audit'))
     assert.ok(response.includes('Overnight POC:** 2052'))
+  })
+
+  it('11. should accurately activate at 09:00 ET / 09:15 ET and deactivate during Asian session, London session, post-close, and weekends', () => {
+    // Mon Sep 14, 2026 (EDT is UTC-4)
+    // 1. Monday 08:59 EDT (12:59 UTC) -> Inactive (London session / pre-open)
+    const mon0859 = new Date('2026-09-14T12:59:59Z')
+    assert.strictEqual(isPriceQuestioningSessionActive(mon0859, '09:00'), false)
+    assert.strictEqual(isPriceQuestioningSessionActive(mon0859, '09:15'), false)
+
+    // 2. Monday 09:00 EDT (13:00 UTC) -> Active for 09:00, Inactive for 09:15
+    const mon0900 = new Date('2026-09-14T13:00:00Z')
+    assert.strictEqual(isPriceQuestioningSessionActive(mon0900, '09:00'), true)
+    assert.strictEqual(isPriceQuestioningSessionActive(mon0900, '09:15'), false)
+
+    // 3. Monday 09:14 EDT (13:14 UTC) -> Active for 09:00, Inactive for 09:15
+    const mon0914 = new Date('2026-09-14T13:14:30Z')
+    assert.strictEqual(isPriceQuestioningSessionActive(mon0914, '09:00'), true)
+    assert.strictEqual(isPriceQuestioningSessionActive(mon0914, '09:15'), false)
+
+    // 4. Monday 09:15 EDT (13:15 UTC) -> Active for both
+    const mon0915 = new Date('2026-09-14T13:15:00Z')
+    assert.strictEqual(isPriceQuestioningSessionActive(mon0915, '09:00'), true)
+    assert.strictEqual(isPriceQuestioningSessionActive(mon0915, '09:15'), true)
+
+    // 5. Monday 09:30 EDT (13:30 UTC - Cash Open) -> Active
+    const mon0930 = new Date('2026-09-14T13:30:00Z')
+    assert.strictEqual(isPriceQuestioningSessionActive(mon0930, '09:00'), true)
+    assert.strictEqual(isPriceQuestioningSessionActive(mon0930, '09:15'), true)
+
+    // 6. Monday 12:00 EDT (16:00 UTC - NY Lunch) -> Active
+    const mon1200 = new Date('2026-09-14T16:00:00Z')
+    assert.strictEqual(isPriceQuestioningSessionActive(mon1200, '09:00'), true)
+
+    // 7. Monday 15:59:59 EDT (19:59:59 UTC - MOC / Cash close) -> Active
+    const mon1559 = new Date('2026-09-14T19:59:59Z')
+    assert.strictEqual(isPriceQuestioningSessionActive(mon1559, '09:00'), true)
+
+    // 8. Monday 16:00:01 EDT (20:00:01 UTC - Post-close) -> Inactive
+    const mon1600 = new Date('2026-09-14T20:00:01Z')
+    assert.strictEqual(isPriceQuestioningSessionActive(mon1600, '09:00'), false)
+
+    // 9. Monday 21:00 EDT (Tuesday 01:00 UTC - Asian Session) -> Inactive
+    const monAsia = new Date('2026-09-15T01:00:00Z')
+    assert.strictEqual(isPriceQuestioningSessionActive(monAsia, '09:00'), false)
+
+    // 10. Tuesday 04:00 EDT (08:00 UTC - London Session) -> Inactive
+    const tueLondon = new Date('2026-09-15T08:00:00Z')
+    assert.strictEqual(isPriceQuestioningSessionActive(tueLondon, '09:00'), false)
+
+    // 11. Saturday 12:00 EDT (16:00 UTC - Weekend) -> Inactive
+    const saturday = new Date('2026-09-19T16:00:00Z')
+    assert.strictEqual(isPriceQuestioningSessionActive(saturday, '09:00'), false)
+  })
+
+  it('12. should return off-session guidance from buildDeskFallbackResponse when asked outside active hours without telemetry', () => {
+    const ctx: LeoChatContext = {
+      instrument: 'GOLD',
+      currentPrice: 2090.0,
+      sessionDetails: {
+        sessionName: 'Asian Session',
+        sessionPhase: 'Tokyo Open',
+        sessionElapsedMinutes: 120,
+        nextCheckpoint: '03:00 ET London Open',
+      },
+      // Note: No priceQuestioning telemetry passed, and current test runs on Saturday (off-session)
+    }
+
+    const response = buildDeskFallbackResponse(
+      [{ role: 'user', content: 'Leo, critique the price' }],
+      ctx
+    )
+
+    // Verify off-session guidance
+    assert.ok(response.includes('Questioning Desk Off-Session'))
+    assert.ok(response.includes('New York Session (09:00 AM / 09:15 AM – 16:00 ET)'))
+    assert.ok(response.includes('Inactive during Asian and London sessions'))
   })
 })
