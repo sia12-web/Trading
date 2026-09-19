@@ -3113,8 +3113,8 @@ export function TradingChart({
               breakoutCandle: breakout.breakoutCandle,
               breakoutIndex: breakout.breakoutCandleIndex ?? (bars5m.length - 1),
               entryPrice: breakout.entryPrice ?? breakout.breakoutCandle.close,
-              defaultStopLoss: breakout.defaultStopLoss ?? (breakout.breakoutCandle.low - 1),
-              defaultTakeProfitFixed50: breakout.defaultTakeProfitFixed50 ?? (breakout.breakoutCandle.close + 50),
+              defaultStopLoss: breakout.defaultStopLoss ?? (isLong ? breakout.breakoutCandle.low - 1 : breakout.breakoutCandle.high + 1),
+              defaultTakeProfitFixed50: breakout.defaultTakeProfitFixed50 ?? (isLong ? breakout.breakoutCandle.close + 50 : breakout.breakoutCandle.close - 50),
             })
           } else if (!breakout.isConfirmed5mClose) {
             confirmedBreakoutsRef.current.delete(tl.id)
@@ -4483,7 +4483,8 @@ export function TradingChart({
         trendlines: activeTrendlines.map((t) => {
           const nowSec = Math.floor(Date.now() / 1000)
           const m = computeTrendlineMetrics(t.p1, t.p2, curPrice, nowSec)
-          const setupDir = t.p2.price < t.p1.price ? 'LONG' : 'SHORT'
+          const isLongSetup = t.isReactionTrendline ? t.p2.price >= t.p1.price : t.p2.price < t.p1.price
+          const setupDir: 'LONG' | 'SHORT' = isLongSetup ? 'LONG' : 'SHORT'
           const tlMockChartCtx: any = {
             yesterday: yesterdayNyc ? { poc: yesterdayNyc.poc, high: yesterdayNyc.yh, low: yesterdayNyc.yl, vah: yesterdayNyc.vah, val: yesterdayNyc.val } : null,
             overnight: overnightInventory ? {
@@ -4771,7 +4772,8 @@ export function TradingChart({
         const tl = trendlines.find((t) => t.id === id)
         if (!tl) return
         const m = computeTrendlineMetrics(tl.p1, tl.p2, curPrice, curTime)
-        const setupDir = tl.p2.price < tl.p1.price ? 'LONG' : 'SHORT'
+        const isLongSetup = tl.isReactionTrendline ? tl.p2.price >= tl.p1.price : tl.p2.price < tl.p1.price
+        const setupDir: 'LONG' | 'SHORT' = isLongSetup ? 'LONG' : 'SHORT'
         const tlMockChartCtx: any = {
           yesterday: yesterdayNyc ? { poc: yesterdayNyc.poc, high: yesterdayNyc.yh, low: yesterdayNyc.yl, vah: yesterdayNyc.vah, val: yesterdayNyc.val } : null,
           overnight: overnightInventory ? {

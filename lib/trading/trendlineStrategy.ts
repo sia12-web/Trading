@@ -2421,11 +2421,15 @@ export function evaluateHorizontalRunway(params: {
 
   let summary = ''
   if (quality === 'EXCELLENT') {
-    summary = `Clear runway (${runwayPts.toFixed(1)} pts to ${nearestResistance?.label ?? 'Target'} · ${runwayRatio}:1 R:R). Low overhead congestion.`
+    summary = direction === 'LONG'
+      ? `Clear runway (${runwayPts.toFixed(1)} pts to ${nearestResistance?.label ?? 'Target'} · ${runwayRatio}:1 R:R). Low overhead congestion.`
+      : `Clear runway (${runwayPts.toFixed(1)} pts to ${nearestResistance?.label ?? 'Target'} · ${runwayRatio}:1 R:R). Uncontested path to lower demand target.`
   } else if (quality === 'ACCEPTABLE') {
     summary = `Adequate runway (${runwayPts.toFixed(1)} pts to ${nearestResistance?.label ?? 'Target'} · ${runwayRatio}:1 R:R). Normal rotational target.`
   } else {
-    summary = `⚠️ Tight Runway Warning (${runwayPts.toFixed(1)} pts to ${nearestResistance?.label ?? 'Resistance'} · ${runwayRatio}:1 R:R). High trap risk directly under heavy institutional supply.`
+    summary = direction === 'LONG'
+      ? `⚠️ Tight Runway Warning (${runwayPts.toFixed(1)} pts to ${nearestResistance?.label ?? 'Resistance'} · ${runwayRatio}:1 R:R). High trap risk directly under heavy institutional supply.`
+      : `⚠️ Tight Runway Warning (${runwayPts.toFixed(1)} pts to ${nearestResistance?.label ?? 'Support'} · ${runwayRatio}:1 R:R). High trap risk directly above heavy institutional demand/support.`
   }
 
   return {
@@ -2459,32 +2463,47 @@ export function calculateEmpiricalSpeedlines(params: {
   currentTime: number
   direction?: 'LONG' | 'SHORT'
 }): EmpiricalSpeedlineCorridor {
-  const { origin, breakout, currentPrice, currentTime } = params
-  const dir: 'LONG' | 'SHORT' = params.direction ?? (breakout.price >= origin.price ? 'LONG' : 'SHORT')
-  const elapsedSec = Math.max(60, breakout.time - origin.time)
-  const deltaPts = breakout.price - origin.price
-  const baseVelocityPtsPerSec = deltaPts / elapsedSec
-  const baseVelocityPtsPer5m = Number(((deltaPts / elapsedSec) * 300).toFixed(2))
+  const { currentPrice, currentTime } = params
+  // Chronologically normalize origin and breakout so origin is earlier
+  let orig = params.origin
+  let brk = params.breakout
+  if (orig.time > brk.time) {
+    orig = params.breakout
+    brk = params.origin
+  }
+
+  const dir: 'LONG' | 'SHORT' = params.direction ?? (brk.price >= orig.price ? 'LONG' : 'SHORT')
+  const elapsedSec = Math.max(60, Math.abs(brk.time - orig.time))
+  const deltaPts = Math.abs(brk.price - orig.price)
+  const absVelocityPtsPerSec = deltaPts / elapsedSec
+  const signedVelocityPtsPerSec = dir === 'LONG' ? absVelocityPtsPerSec : -absVelocityPtsPerSec
+  const baseVelocityPtsPerSec = signedVelocityPtsPerSec
+  const baseVelocityPtsPer5m = Number(((signedVelocityPtsPerSec) * 300).toFixed(2))
 
   const climaxRayMultiplier = 1.5
   const retestFloorMultiplier = 0.5
 
-  const timeFromOrigin = Math.max(0, currentTime - origin.time)
+  const timeFromOrigin = Math.max(0, currentTime - orig.time)
+  const baseAnchorPrice = dir === 'LONG' ? Math.min(orig.price, brk.price) : Math.max(orig.price, brk.price)
 
   const projectedEquilibriumPrice = Number(
-    (origin.price + baseVelocityPtsPerSec * timeFromOrigin).toFixed(2)
+    (baseAnchorPrice + signedVelocityPtsPerSec * timeFromOrigin).toFixed(2)
   )
   const projectedClimaxPrice = Number(
-    (origin.price + baseVelocityPtsPerSec * climaxRayMultiplier * timeFromOrigin).toFixed(2)
+    (baseAnchorPrice + signedVelocityPtsPerSec * climaxRayMultiplier * timeFromOrigin).toFixed(2)
   )
   const projectedRetestFloorPrice = Number(
-    (origin.price + baseVelocityPtsPerSec * retestFloorMultiplier * timeFromOrigin).toFixed(2)
+    (baseAnchorPrice + signedVelocityPtsPerSec * retestFloorMultiplier * timeFromOrigin).toFixed(2)
   )
 
   let currentVelocityState: EmpiricalSpeedlineCorridor['currentVelocityState'] = 'EQUILIBRIUM'
   let summary = ''
 
-  if (dir === 'LONG') {
+  if (deltaPts < 0.05) {
+    // Flat / horizontal reference line
+    currentVelocityState = 'EQUILIBRIUM'
+    summary = `Flat Reference Slope: Market is rotational near baseline (${currentPrice.toFixed(1)}).`
+  } else if (dir === 'LONG') {
     if (currentPrice >= projectedClimaxPrice) {
       currentVelocityState = 'CLIMAX_PARABOLIC'
       summary = `Parabolic Climax Surge: Price (${currentPrice.toFixed(1)}) is exceeding the 1.5x velocity ray (${projectedClimaxPrice.toFixed(1)}). Scale out profits into horizontal resistance.`
@@ -2507,7 +2526,7 @@ export function calculateEmpiricalSpeedlines(params: {
       summary = `Momentum Stalled: Price (${currentPrice.toFixed(1)}) crossed above 0.5x equilibrium ceiling (${projectedRetestFloorPrice.toFixed(1)}). Trailing caution advised.`
     } else if (currentPrice > projectedEquilibriumPrice) {
       currentVelocityState = 'HEALTHY_RETEST'
-      summary = `Healthy Retest: Price consolidating below 0.5x ceiling (${projectedRetestFloorPrice.toFixed(1)}).`
+      summary = `Healthy Retest: Price consolidating between 1.0x equilibrium (${projectedEquilibriumPrice.toFixed(1)}) and 0.5x ceiling (${projectedRetestFloorPrice.toFixed(1)}).`
     } else {
       currentVelocityState = 'EQUILIBRIUM'
       summary = `Sustainable Velocity: Price (${currentPrice.toFixed(1)}) tracking healthy 1.0x downward slope (-${Math.abs(baseVelocityPtsPer5m)} pts/5m).`
@@ -2515,8 +2534,8 @@ export function calculateEmpiricalSpeedlines(params: {
   }
 
   return {
-    origin,
-    breakout,
+    origin: orig,
+    breakout: brk,
     elapsedSec,
     deltaPts,
     baseVelocityPtsPerSec,
