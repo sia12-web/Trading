@@ -203,12 +203,11 @@ export function parseQuestradeSymbol(raw?: string | null): {
   const key = normalizeQuestradeSymbol(raw)
   if (!key) return null
   const opt = key.match(OPTION_RE)
-  if (opt) {
+  if (opt && opt[1] && opt[2] && opt[3] && opt[4]) {
     const underlying = opt[1]
     const expiry = opt[2]
     const right = opt[3].toUpperCase() === 'P' ? 'Put' : 'Call'
     const strikeRaw = opt[4]
-    if (!underlying || !expiry || !right || !strikeRaw) return null
     const kind = right
     const strikeNum = Number(strikeRaw)
     const strike = Number.isFinite(strikeNum)
@@ -226,7 +225,7 @@ export function parseQuestradeSymbol(raw?: string | null): {
     }
   }
   const optOcc = key.match(OPTION_OCC)
-  if (optOcc) {
+  if (optOcc && optOcc[1] && optOcc[2] && optOcc[3] && optOcc[4] && optOcc[5] && optOcc[6]) {
     const underlying = optOcc[1]
     const yy = optOcc[2]
     const mm = optOcc[3]
