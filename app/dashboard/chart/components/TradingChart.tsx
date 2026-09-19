@@ -200,6 +200,7 @@ import {
   evaluateHorizontalRunway,
   calculateEmpiricalSpeedlines,
 } from '@/lib/trading/trendlineStrategy'
+import { evaluatePriceQuestioning, type PriceCritiqueEvaluation } from '@/lib/trading/priceQuestioning'
 
 const DOW_15M_FAIL_COLORS: any = { high: '#3b82f6', low: '#ef4444', mid: '#eab308', buy: '#3b82f6', sell: '#ef4444' }
 const computeDow15mFailOverlay = (..._args: any[]): any => null
@@ -4287,6 +4288,103 @@ export function TradingChart({
   // ── Leo AI Desk Assistant Live State & Telemetry Context ──────────────────
   const [leoPanelOpen, setLeoPanelOpen] = useState(false)
   const [leoExternalPoints, setLeoExternalPoints] = useState<LeoDataPoint[]>([])
+  const [showQuestioningModal, setShowQuestioningModal] = useState(false)
+
+  // ── Auction Price Critique & "Questioning" Engine Evaluation ───────────────
+  const livePriceCritique = useMemo<PriceCritiqueEvaluation | null>(() => {
+    const list = candles || []
+    const lastBar = list.length ? list[list.length - 1] : null
+    const curPrice = livePrice ?? lastBar?.close ?? null
+    if (curPrice == null) return null
+    const now = new Date()
+    const nowEtStr =
+      now.toLocaleTimeString('en-US', {
+        timeZone: 'America/New_York',
+        hour: '2-digit',
+        minute: '2-digit',
+      }) + ' ET'
+
+    return evaluatePriceQuestioning({
+      currentPrice: curPrice,
+      instrument,
+      currentTimeEt: nowEtStr,
+      yesterday: yesterdayNyc
+        ? {
+            poc: yesterdayNyc.poc,
+            high: yesterdayNyc.yh,
+            low: yesterdayNyc.yl,
+            vah: yesterdayNyc.vah,
+            val: yesterdayNyc.val,
+          }
+        : null,
+      overnight: overnightInventory
+        ? {
+            overnight: {
+              poc: overnightInventory.overnight?.poc,
+              high: overnightInventory.overnight?.high,
+              low: overnightInventory.overnight?.low,
+            },
+            asia: {
+              poc: overnightInventory.asia?.poc,
+              high: overnightInventory.asia?.high,
+              low: overnightInventory.asia?.low,
+            },
+            london: {
+              poc: overnightInventory.london?.poc,
+              high: overnightInventory.london?.high,
+              low: overnightInventory.london?.low,
+            },
+            biasLabel: overnightInventory.biasLabel,
+            pctLong: overnightInventory.pctLong,
+            pctShort: overnightInventory.pctShort,
+          }
+        : null,
+      frvp5d: frvp5d
+        ? {
+            poc: frvp5d.poc,
+            vah: frvp5d.vah,
+            val: frvp5d.val,
+            high: frvp5d.high,
+            low: frvp5d.low,
+          }
+        : null,
+      avwap5m: avwap5mBenchmark
+        ? {
+            vwap: avwap5mBenchmark.vwap,
+            sigma1Upper: avwap5mBenchmark.sigma1Upper,
+            sigma1Lower: avwap5mBenchmark.sigma1Lower,
+            sigma2Upper: avwap5mBenchmark.sigma2Upper,
+            sigma2Lower: avwap5mBenchmark.sigma2Lower,
+          }
+        : null,
+      orderFlow: sessionOrderFlow
+        ? {
+            sessionCvd: sessionOrderFlow.sessionCvd,
+            trend: sessionOrderFlow.trend,
+            divergence: sessionOrderFlow.divergence,
+          }
+        : null,
+      lastCandle: lastBar
+        ? {
+            open: lastBar.open,
+            high: lastBar.high,
+            low: lastBar.low,
+            close: lastBar.close,
+            volume: lastBar.volume,
+            isBullish: lastBar.close >= lastBar.open,
+          }
+        : null,
+    })
+  }, [
+    livePrice,
+    candles,
+    instrument,
+    yesterdayNyc,
+    overnightInventory,
+    frvp5d,
+    avwap5mBenchmark,
+    sessionOrderFlow,
+  ])
 
   const leoContext: LeoChatContext = useMemo(() => {
     const list = candles || []
@@ -4667,11 +4765,13 @@ export function TradingChart({
         close: c.close,
         volume: c.volume ?? 1,
       })),
+      priceQuestioning: livePriceCritique || undefined,
     }
   }, [
     instrument,
     livePrice,
     candles,
+    livePriceCritique,
     dayTypeEval,
     openingBadge,
     avwap5mBenchmark,
@@ -5714,6 +5814,26 @@ export function TradingChart({
       refreshSessionHighlightsRef.current()
     })
   }, [isFullscreen])
+
+  // Hotkey Q: Toggle Auction Price Critique & "Questioning" Desk
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return
+      }
+      if (e.key === 'q' || e.key === 'Q') {
+        setShowQuestioningModal((prev) => !prev)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   // Voice stays closed on refresh / clock-in — user opens via toolbar (V).
   const showLevelsRef = useRef(false)
@@ -11454,6 +11574,39 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   </span>
                 )}
               </button>
+              <span className="text-gray-600 text-[10px]">|</span>
+              {/* Questioning / Price Critique Desk Button */}
+              <button
+                type="button"
+                onClick={() => setShowQuestioningModal((prev) => !prev)}
+                className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer ${
+                  showQuestioningModal
+                    ? 'bg-amber-500/25 text-amber-200 border border-amber-400/60 shadow-sm font-semibold'
+                    : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
+                }`}
+                title="Auction Price Critique & Questioning Desk (Hotkey: Q) — Question the price before doing business!"
+              >
+                <span className="text-[11px]">⚖️</span>
+                <span className="text-gray-400 font-semibold">Critique:</span>
+                <span
+                  className={`font-mono font-bold ${
+                    !livePriceCritique
+                      ? 'text-gray-400'
+                      : livePriceCritique.valuationState.includes('DISCOUNT')
+                      ? 'text-emerald-400'
+                      : livePriceCritique.valuationState.includes('PREMIUM')
+                      ? 'text-rose-400'
+                      : 'text-cyan-300'
+                  }`}
+                >
+                  {livePriceCritique ? livePriceCritique.valuationState.replace('_', ' ') : 'STANDBY'}
+                </span>
+                {livePriceCritique?.weakHandTrap.isTrapRisk && (
+                  <span className="px-1 py-0.2 rounded bg-rose-500/20 text-rose-300 text-[9px] font-bold border border-rose-500/40 animate-pulse">
+                    TRAP RISK
+                  </span>
+                )}
+              </button>
             </div>
 
             {/* OHLCV Hover Tooltip inline on the right */}
@@ -13646,6 +13799,202 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             >
               ✕
             </button>
+          </div>
+        )}
+
+        {/* ── Auction Price Critique & "Questioning" Desk Modal ── */}
+        {showQuestioningModal && livePriceCritique && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="relative w-full max-w-2xl max-h-[90vh] flex flex-col bg-[#0f141c] border border-amber-500/40 rounded-2xl shadow-2xl overflow-hidden font-sans text-slate-200">
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-800 bg-gradient-to-r from-amber-950/40 via-slate-900 to-slate-900">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-xl">⚖️</span>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-extrabold text-sm tracking-wide text-amber-300 uppercase">
+                        Auction Price Critique & "Questioning" Desk
+                      </h3>
+                      <span className="text-[10px] text-zinc-400 font-mono bg-zinc-800/80 px-1.5 py-0.5 rounded border border-zinc-700">
+                        Hotkey: Q
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-zinc-400">
+                      {instrument} @ <span className="font-mono font-bold text-white">{livePriceCritique.currentPrice.toFixed(2)}</span>
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowQuestioningModal(false)}
+                  className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800 transition text-sm cursor-pointer"
+                  title="Close (Esc or Q)"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
+                {/* Core Philosophy Banner */}
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-200/90 leading-relaxed italic">
+                  "The market is a place to do business. If price is not suitable for us, we never force a trade. Price advertises opportunity: when discounted we buy, when premium we short."
+                </div>
+
+                {/* Valuation State & Meter */}
+                <div className="p-4 rounded-xl bg-zinc-900/80 border border-zinc-800 flex flex-col gap-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-zinc-400 uppercase tracking-wider text-[11px]">Valuation Meter</span>
+                    <span className={`px-2 py-0.5 rounded font-extrabold text-xs font-mono uppercase tracking-wider ${
+                      livePriceCritique.valuationState.includes('DISCOUNT')
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : livePriceCritique.valuationState.includes('PREMIUM')
+                        ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                        : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                    }`}>
+                      {livePriceCritique.valuationState.replace('_', ' ')} ({livePriceCritique.valuationScore > 0 ? '+' : ''}{livePriceCritique.valuationScore} / 100)
+                    </span>
+                  </div>
+
+                  {/* Meter Bar */}
+                  <div className="relative w-full h-3 bg-zinc-800 rounded-full overflow-hidden flex">
+                    <div className="w-1/2 h-full bg-gradient-to-r from-emerald-500 via-emerald-400 to-zinc-700 opacity-60" />
+                    <div className="w-1/2 h-full bg-gradient-to-r from-zinc-700 via-rose-400 to-rose-500 opacity-60" />
+                    {/* Position Marker */}
+                    <div
+                      className="absolute top-0 bottom-0 w-2.5 bg-white rounded-full shadow-[0_0_8px_white] -translate-x-1/2"
+                      style={{ left: `${Math.max(5, Math.min(95, ((livePriceCritique.valuationScore + 100) / 200) * 100))}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[10px] text-zinc-500 font-mono">
+                    <span>-100 Deep Discount</span>
+                    <span>0 Fair Value</span>
+                    <span>+100 Extreme Premium</span>
+                  </div>
+                </div>
+
+                {/* Overnight & Session Inventory Reality */}
+                <div className="p-4 rounded-xl bg-zinc-900/80 border border-zinc-800 space-y-2">
+                  <div className="flex items-center gap-2 text-sky-400 font-bold uppercase tracking-wider text-[11px]">
+                    <span>🌐</span>
+                    <span>Overnight & Global Inventory Reality</span>
+                  </div>
+                  <p className="text-zinc-300 text-[11.5px] leading-relaxed">
+                    {livePriceCritique.inventoryCritique.critiqueSummary}
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 font-mono text-[11px]">
+                    <div className="p-2 rounded bg-zinc-800/60 border border-zinc-700/50">
+                      <span className="text-zinc-500 block text-[9.5px]">ON-POC</span>
+                      <span className="text-white font-bold">{livePriceCritique.inventoryCritique.overnightPoc ?? 'N/A'}</span>
+                    </div>
+                    <div className="p-2 rounded bg-zinc-800/60 border border-zinc-700/50">
+                      <span className="text-zinc-500 block text-[9.5px]">Y-POC</span>
+                      <span className="text-white font-bold">{livePriceCritique.multiHorizonLevels.yesterdayPoc ?? 'N/A'}</span>
+                    </div>
+                    <div className="p-2 rounded bg-zinc-800/60 border border-zinc-700/50">
+                      <span className="text-zinc-500 block text-[9.5px]">5D-POC</span>
+                      <span className="text-white font-bold">{livePriceCritique.multiHorizonLevels.fiveDayPoc ?? 'N/A'}</span>
+                    </div>
+                    <div className="p-2 rounded bg-zinc-800/60 border border-zinc-700/50">
+                      <span className="text-zinc-500 block text-[9.5px]">5M AVWAP</span>
+                      <span className="text-emerald-400 font-bold">{livePriceCritique.multiHorizonLevels.fiveMonthAvwap ?? 'N/A'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Weak-Hand Trap & Emotional Risk Radar */}
+                <div className={`p-4 rounded-xl border ${
+                  livePriceCritique.weakHandTrap.isTrapRisk
+                    ? 'bg-rose-500/10 border-rose-500/40 text-rose-200'
+                    : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
+                }`}>
+                  <div className="flex items-center gap-2 font-bold uppercase tracking-wider text-[11px] mb-1">
+                    <span>{livePriceCritique.weakHandTrap.isTrapRisk ? '⚠️' : '🛡️'}</span>
+                    <span>Weak-Hand Trap & Emotional Risk Radar</span>
+                  </div>
+                  <p className="text-[11.5px] leading-relaxed">
+                    {livePriceCritique.weakHandTrap.isTrapRisk
+                      ? livePriceCritique.weakHandTrap.warning
+                      : 'No acute weak-hand trap detected. Order flow and volume indicate structural participation.'}
+                  </p>
+                </div>
+
+                {/* 6-Point Questioning Self-Audit Checklist */}
+                <div className="space-y-2">
+                  <span className="font-bold text-zinc-400 uppercase tracking-wider text-[11px] block">
+                    Pre-Trade 6-Question Self-Audit
+                  </span>
+                  <div className="space-y-2">
+                    {livePriceCritique.sixQuestionAudit.map((q) => (
+                      <div
+                        key={q.id}
+                        className="p-3 rounded-lg bg-zinc-900/60 border border-zinc-800/80 flex flex-col gap-1"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-zinc-300 text-[11px]">{q.question}</span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold font-mono ${
+                              q.status === 'DANGER'
+                                ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
+                                : q.status === 'WARNING'
+                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                            }`}
+                          >
+                            {q.status}
+                          </span>
+                        </div>
+                        <div className="text-[10.5px] text-zinc-400 leading-snug">
+                          <span className="text-zinc-200 font-medium">{q.headline}: </span>
+                          {q.detail}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Desk Guidance */}
+                <div className="p-3 rounded-xl bg-zinc-800/80 border border-zinc-700/60 text-amber-200 font-mono text-[11px] flex items-start gap-2">
+                  <span className="text-base">📋</span>
+                  <div>
+                    <span className="font-bold uppercase text-zinc-400 block text-[10px]">Desk Directive</span>
+                    {livePriceCritique.deskGuidance}
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-between px-5 py-3 border-t border-zinc-800 bg-zinc-950">
+                <button
+                  type="button"
+                  onClick={() => setShowQuestioningModal(false)}
+                  className="px-4 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-semibold transition cursor-pointer"
+                >
+                  Close (Esc)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLeoExternalPoints([
+                      {
+                        id: 'price-critique-dossier',
+                        label: `Price Critique: ${livePriceCritique.valuationState}`,
+                        value: `${livePriceCritique.valuationScore > 0 ? '+' : ''}${livePriceCritique.valuationScore} / 100`,
+                        tier: 'CONTEXT',
+                        category: 'INVENTORY',
+                        description: `${livePriceCritique.deskGuidance} | ${livePriceCritique.inventoryCritique.critiqueSummary}`,
+                      },
+                    ])
+                    setLeoPanelOpen(true)
+                    setShowQuestioningModal(false)
+                  }}
+                  className="px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-lg transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+                >
+                  <span>🤖</span>
+                  <span>Ask Leo to Critique Price</span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
 

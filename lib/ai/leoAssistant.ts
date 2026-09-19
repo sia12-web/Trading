@@ -10,6 +10,8 @@
  * 6. Real-Time Execution Rules (Stagnation Timeout & Desk Audio Alerts)
  */
 
+import type { PriceCritiqueEvaluation } from '../trading/priceQuestioning'
+
 export interface LeoDataPoint {
   id: string
   label: string
@@ -230,6 +232,7 @@ export interface LeoChatContext {
     volume: number
   }>
   trappedTraders?: string
+  priceQuestioning?: PriceCritiqueEvaluation
 }
 
 export interface LeoMessage {
@@ -899,6 +902,32 @@ THE TRADER'S SYSTEM ARCHITECTURE:
          * 0.5x Ray: Retest floor ray (trend support floor; stall/reversal warning if broken).
      * When the trader asks about Gann Fans, Gann angles, or trendline curving: Explain this distinction clearly and reference their active Horizontal Runway and Empirical Velocity readouts.
 
+    - 5f. AUCTION PRICE CRITIQUE & "QUESTIONING" DESK PROTOCOL:
+      * The Market is a Place to Do Business (Auction Market Theory):
+        - Price advertises opportunity. When discounted (wholesale), institutions accumulate; when premium (retail), institutions distribute.
+        - If price is not suitable, NEVER FORCE A TRADE. Patience is the primary edge of the professional day trader.
+      * The Overnight & Session Inventory Reality Check:
+        - Critique current price relative to Asia, London, and Overnight participants:
+          "Why the hell should we buy at 9:30 AM NYC Open when London and Asian participants accumulated 30 points lower overnight?"
+        - If overnight inventory is heavily net long, buying at the high means paying top retail price to overnight longs looking to unload inventory onto late emotional retail buyers.
+        - Same for shorting: Never short into the floor of a discounted auction where overnight shorts are seeking to cover and exit.
+      * Multi-Horizon Valuation Anchors:
+        - Short-Term Money (Day Trader Primary Focus): Yesterday NYC POC, Overnight POC, Overnight High/Low, Inventory Skew (% Long vs % Short).
+        - Intermediate-Term Money: 5-Day POC (extended across), 5-Day VAH/VAL.
+        - Long-Term Money (Macro Framing): 5-Month Anchored VWAP (±1σ, ±2σ bands). Day traders focus primarily on inventory and the last 5 days, but the 5M AVWAP provides critical macro trend alignment.
+      * Weak-Hand & Emotional Retail Trap Protection:
+        - Emotional retail traders buy tops (FOMO on a single green candle, round number, or thin volume pop) and sell bottoms.
+        - Strong institutional money lets weak hands push price into extremes, traps them, and punishes them on aggressive reversal.
+        - To protect the trader from being a victim, constantly critique the price for being too expensive to buy or too low to short.
+      * The 6-Point Questioning Pre-Trade Self-Audit:
+        1. Single-Candle Impulse Trap: Are you entering just because you saw a single bullish or bearish candle?
+        2. Round Number Magnet: Are you reacting just to a rounded number (.00 or .50 handle) without institutional volume confirmation?
+        3. Liquidity Vacuum: Is price moving in low volume where institutions set traps?
+        4. Time Regulation: Can time regulate value right now (e.g. active morning drive vs 11:30–13:30 lunch doldrums)?
+        5. Global Inventory: Where did Asian, London & Overnight participants do business?
+        6. Wholesale Value: Is current price a wholesale discount or an expensive retail premium relative to Yesterday POC & 5D POC?
+      * When the trader asks to critique price, questions a trade entry, or asks "why should I buy here?", guide them through this protocol authoritatively, cite the exact prices from [AUCTION PRICE CRITIQUE & "QUESTIONING" TELEMETRY], and preach patience if the market is not offering a favorable business location.
+
 6. CO-PILOT EXECUTION DIRECTIVES (<execute> tags):
 You are the trader's execution partner on the desk. You MUST strictly distinguish between ALARM NOTES vs CONDITIONAL TRADE SITUATIONS:
 
@@ -1120,6 +1149,19 @@ ${
 - Overnight Extremes: ON-Low ${ctx.shortTermMoney.onlow ?? 'N/A'} | ON-High ${ctx.shortTermMoney.onhigh ?? 'N/A'}
 - Overnight Inventory Skew: ${ctx.shortTermMoney.overnightBias ?? 'Evaluating'}`
     : 'No Short-Term session data available.'
+}
+
+[AUCTION PRICE CRITIQUE & "QUESTIONING" TELEMETRY]:
+${
+  ctx.priceQuestioning
+    ? `- Valuation State: ${ctx.priceQuestioning.valuationState.replace('_', ' ')} (Score: ${ctx.priceQuestioning.valuationScore > 0 ? '+' : ''}${ctx.priceQuestioning.valuationScore} / 100)
+- Suitability Verdict: ${ctx.priceQuestioning.suitabilityVerdict}
+- Desk Guidance: ${ctx.priceQuestioning.deskGuidance}
+- Overnight & Session Inventory Reality: ${ctx.priceQuestioning.inventoryCritique.critiqueSummary}
+- Weak-Hand Trap Risk: ${ctx.priceQuestioning.weakHandTrap.isTrapRisk ? `⚠️ ${ctx.priceQuestioning.weakHandTrap.warning}` : 'None detected (Structural participation)'}
+- Pre-Trade 6-Question Self-Audit:
+${ctx.priceQuestioning.sixQuestionAudit.map((q) => `  * [${q.status}] ${q.question} -> ${q.headline}: ${q.detail}`).join('\n')}`
+    : 'No live price critique telemetry available.'
 }
 
 [ACTIVE EXCESSES & SESSION EXTREMES]:

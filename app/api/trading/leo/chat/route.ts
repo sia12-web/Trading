@@ -7,6 +7,7 @@ import {
 } from '@/lib/ai/leoAssistant'
 import { getLatestDatabentoLiveQuote } from '@/lib/databento/liveHub'
 import { detectCandlestickPatterns } from '@/lib/trading/candlestickPatterns'
+import { evaluatePriceQuestioning } from '@/lib/trading/priceQuestioning'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -460,6 +461,89 @@ There is currently **no open position** on the desk. All brackets are clear. Sta
   // 5. Telegram alert command: "send me a telegram message" or "telegram"
   if (/telegram|notify\s+me|send\s+me\s+a\s+message/i.test(lower)) {
     return `External Telegram notifications are currently disabled desk-wide. All live alerts, auction updates, and risk monitors are streamed directly to the website dashboard and chart in real time.`
+  }
+
+  // 5b. Auction Price Critique & "Questioning" Inquiry:
+  // e.g. "critique price", "questioning", "why should i buy here", "why the hell should i buy", "is price too expensive", "who bought overnight", "am i trapped"
+  if (
+    /\b(questioning|critique(\s+the)?\s+price|why\s+(should\s+i|the\s+hell\s+should\s+i|would\s+i)\s+(buy|sell|short)|is\s+(the\s+)?price\s+too\s+(high|expensive|low|cheap)|who\s+bought\s+overnight|am\s+i\s+chasing|am\s+i\s+trapped|why\s+buy\s+now|why\s+short\s+now|market\s+is\s+a\s+place\s+to\s+do\s+business|weak\s+hand)\b/i.test(
+      lower
+    )
+  ) {
+    const pq = ctx.priceQuestioning || evaluatePriceQuestioning({
+      currentPrice: ctx.currentPrice || 0,
+      instrument: ctx.instrument,
+      currentTimeEt: ctx.currentTimeEt,
+      yesterday: ctx.shortTermMoney ? {
+        poc: ctx.shortTermMoney.ypoc,
+        high: ctx.shortTermMoney.yhigh,
+        low: ctx.shortTermMoney.ylow,
+        vah: ctx.shortTermMoney.yvah,
+        val: ctx.shortTermMoney.yval,
+      } : null,
+      overnight: ctx.shortTermMoney ? {
+        overnight: {
+          poc: ctx.shortTermMoney.onpoc,
+          high: ctx.shortTermMoney.onhigh,
+          low: ctx.shortTermMoney.onlow,
+        },
+        biasLabel: ctx.shortTermMoney.overnightBias,
+      } : null,
+      frvp5d: ctx.intermediateMoney ? {
+        poc: ctx.intermediateMoney.poc5d,
+        vah: ctx.intermediateMoney.vah5d,
+        val: ctx.intermediateMoney.val5d,
+        high: ctx.intermediateMoney.high5d,
+        low: ctx.intermediateMoney.low5d,
+      } : null,
+      avwap5m: ctx.longTermMoney ? {
+        vwap: ctx.longTermMoney.avwap5m,
+        sigma1Upper: ctx.longTermMoney.sigma1Upper,
+        sigma1Lower: ctx.longTermMoney.sigma1Lower,
+        sigma2Upper: ctx.longTermMoney.sigma2Upper,
+        sigma2Lower: ctx.longTermMoney.sigma2Lower,
+      } : null,
+      orderFlow: ctx.orderFlow ? {
+        sessionCvd: ctx.orderFlow.sessionCvd,
+        trend: ctx.orderFlow.trend,
+        divergence: ctx.orderFlow.divergence,
+      } : null,
+    })
+
+    return `### Leo Auction Price Critique & Questioning Desk (${ctx.instrument} @ ${curPrice})
+
+> *"The market is a place to do business. If price is not suitable for us, we never force a trade. Price advertises opportunity: when discounted we buy, when premium we short."*
+
+---
+
+### 1. Valuation & Location Read
+- **Auction State:** **${pq.valuationState.replace('_', ' ')}** (Valuation Score: **${pq.valuationScore > 0 ? '+' : ''}${pq.valuationScore} / 100**)
+- **Suitability Verdict:** \`${pq.suitabilityVerdict}\`
+- **Wholesale Reference Target:** **${pq.wholesaleTarget != null ? pq.wholesaleTarget.toFixed(2) : 'Awaiting rotation'}**
+
+---
+
+### 2. Overnight & Global Session Inventory Reality
+${pq.inventoryCritique.critiqueSummary}
+- **Overnight POC:** ${pq.inventoryCritique.overnightPoc ?? 'N/A'}${pq.inventoryCritique.distanceFromOnPocPts != null ? ` (${pq.inventoryCritique.distanceFromOnPocPts > 0 ? '+' : ''}${pq.inventoryCritique.distanceFromOnPocPts} pts distance)` : ''}
+- **Inventory Skew:** ${pq.inventoryCritique.overnightBias ?? 'Evaluating'} (${pq.inventoryCritique.pctLong}% Long / ${pq.inventoryCritique.pctShort}% Short)
+- **Multi-Horizon POCs:** Yesterday POC @ **${pq.multiHorizonLevels.yesterdayPoc ?? 'N/A'}** | 5D-POC @ **${pq.multiHorizonLevels.fiveDayPoc ?? 'N/A'}** | 5M AVWAP @ **${pq.multiHorizonLevels.fiveMonthAvwap ?? 'N/A'}**
+
+---
+
+### 3. Weak-Hand Trap & Emotional Risk Radar
+${pq.weakHandTrap.isTrapRisk ? `⚠️ **ACTIVE TRAP ALERT:** ${pq.weakHandTrap.warning}` : `✅ **STRUCTURAL HEALTH:** No acute weak-hand trap detected. Auction participation is structural.`}
+*Remember: Emotional traders buy tops on a single green candle and sell bottoms in panic. Strong money lets weak hands push price to exhaustion, traps them, and punishes them on reversal.*
+
+---
+
+### 4. The 6-Question Pre-Trade Self-Audit
+${pq.sixQuestionAudit.map(q => `- **[${q.status}] ${q.question}**\n  ↳ *${q.headline}*: ${q.detail}`).join('\n')}
+
+---
+
+### Desk Directive:
+${pq.deskGuidance}`
   }
 
   // Gann Fan / Geometric Angle inquiry: "can we use gann fan to enhance that strategy or that is just illusion"
