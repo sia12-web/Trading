@@ -207,7 +207,7 @@ export async function POST(req: NextRequest) {
 /**
  * Deterministic institutional trade planner & execution fallback when external API is unreachable.
  */
-function buildDeskFallbackResponse(
+export function buildDeskFallbackResponse(
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
   ctx: LeoChatContext
 ): string {
@@ -466,8 +466,12 @@ There is currently **no open position** on the desk. All brackets are clear. Sta
   // 5b. Auction Price Critique & "Questioning" Inquiry:
   // e.g. "critique price", "questioning", "why should i buy here", "why the hell should i buy", "is price too expensive", "who bought overnight", "am i trapped"
   if (
-    /\b(questioning|critique(\s+the)?\s+price|why\s+(should\s+i|the\s+hell\s+should\s+i|would\s+i)\s+(buy|sell|short)|is\s+(the\s+)?price\s+too\s+(high|expensive|low|cheap)|who\s+bought\s+overnight|am\s+i\s+chasing|am\s+i\s+trapped|why\s+buy\s+now|why\s+short\s+now|market\s+is\s+a\s+place\s+to\s+do\s+business|weak\s+hand)\b/i.test(
+    lower.includes('critique') ||
+    /\b(questioning|why\s+(should\s+i|the\s+hell\s+should\s+i|would\s+i)\s+(buy|sell|short)|is\s+(the\s+)?price\s+too\s+(high|expensive|low|cheap)|who\s+bought\s+overnight|am\s+i\s+chasing|am\s+i\s+trapped|why\s+buy\s+now|why\s+short\s+now|market\s+is\s+a\s+place\s+to\s+do\s+business|weak\s+hand)\b/i.test(
       lower
+    ) ||
+    ctx.selectedDataPoints?.some(
+      (p) => p.id === 'price-critique-dossier' || p.label.toLowerCase().includes('price critique')
     )
   ) {
     const pq = ctx.priceQuestioning || evaluatePriceQuestioning({

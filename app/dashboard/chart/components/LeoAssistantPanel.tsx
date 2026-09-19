@@ -120,6 +120,8 @@ interface LeoAssistantPanelProps {
   onSelectDataPoint?: (point: LeoDataPoint) => void
   externalAttachedPoints?: LeoDataPoint[]
   onClearExternalAttachedPoints?: () => void
+  externalPrompt?: string | null
+  onClearExternalPrompt?: () => void
   onClosePosition?: (reason: string) => Promise<boolean | void>
   onPlaceOrder?: (order: {
     instrument: string
@@ -152,6 +154,8 @@ export function LeoAssistantPanel({
   onToggleOpen,
   externalAttachedPoints,
   onClearExternalAttachedPoints,
+  externalPrompt,
+  onClearExternalPrompt,
   onClosePosition,
   onPlaceOrder,
   onOverrideDayType,
@@ -1819,19 +1823,27 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
   }, [context.activePosition, context.currentPrice, context.instrument])
 
   // Send message to Leo via streaming API
-  const handleSendMessage = async (textToSend?: string) => {
+  const handleSendMessage = async (textToSend?: string, pointsToSend?: LeoDataPoint[]) => {
     if (isListeningRef.current) {
       stopListening()
     }
     const text = textToSend ?? inputPrompt
-    if (!text.trim() || isStreaming) return
+    if (!text.trim()) return
+    if (isStreaming) {
+      if (textToSend) {
+        setInputPrompt(textToSend)
+      }
+      return
+    }
+
+    const points = pointsToSend !== undefined ? pointsToSend : attachedPoints
 
     const userMessage: LeoMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
       content: text,
       timestamp: Date.now(),
-      attachedPoints: [...attachedPoints],
+      attachedPoints: [...points],
     }
 
     const nextMessages = [...messages, userMessage]
@@ -1875,7 +1887,7 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
           })),
           chartContext: {
             ...context,
-            selectedDataPoints: attachedPoints,
+            selectedDataPoints: points,
           },
         }),
       })
@@ -1945,6 +1957,40 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
       setAttachedPoints([]) // reset attached after sending
     }
   }
+
+  // Auto-fill & auto-submit external prompt (e.g. Questioning desk "Ask Leo to Critique Price")
+  useEffect(() => {
+    if (externalPrompt && externalPrompt.trim()) {
+      const promptToSend = externalPrompt.trim()
+      const points =
+        externalAttachedPoints && externalAttachedPoints.length > 0
+          ? externalAttachedPoints
+          : attachedPoints
+
+      if (!isPanelOpen) {
+        if (onToggleOpen) {
+          onToggleOpen()
+        } else {
+          setInternalIsOpen(true)
+        }
+      }
+
+      onClearExternalPrompt?.()
+      if (externalAttachedPoints && externalAttachedPoints.length > 0) {
+        onClearExternalAttachedPoints?.()
+      }
+
+      handleSendMessage(promptToSend, points)
+    }
+  }, [
+    externalPrompt,
+    externalAttachedPoints,
+    attachedPoints,
+    isPanelOpen,
+    onToggleOpen,
+    onClearExternalPrompt,
+    onClearExternalAttachedPoints,
+  ])
 
   const activePos = context.activePosition
 

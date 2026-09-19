@@ -4288,6 +4288,7 @@ export function TradingChart({
   // ── Leo AI Desk Assistant Live State & Telemetry Context ──────────────────
   const [leoPanelOpen, setLeoPanelOpen] = useState(false)
   const [leoExternalPoints, setLeoExternalPoints] = useState<LeoDataPoint[]>([])
+  const [leoAutoPrompt, setLeoAutoPrompt] = useState<string | null>(null)
   const [showQuestioningModal, setShowQuestioningModal] = useState(false)
 
   // ── Auction Price Critique & "Questioning" Engine Evaluation ───────────────
@@ -13985,6 +13986,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                         description: `${livePriceCritique.deskGuidance} | ${livePriceCritique.inventoryCritique.critiqueSummary}`,
                       },
                     ])
+                    setLeoAutoPrompt(
+                      'Leo, critique the current market price and auction structure based on overnight inventory, yesterday and 5-day POCs, and 5-month AVWAP.'
+                    )
                     setLeoPanelOpen(true)
                     setShowQuestioningModal(false)
                   }}
@@ -14007,6 +14011,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           onToggleOpen={() => setLeoPanelOpen(!leoPanelOpen)}
           externalAttachedPoints={leoExternalPoints}
           onClearExternalAttachedPoints={() => setLeoExternalPoints([])}
+          externalPrompt={leoAutoPrompt}
+          onClearExternalPrompt={() => setLeoAutoPrompt(null)}
           onClosePosition={onClosePosition}
           onPlaceOrder={onPlaceOrder}
           onOverrideDayType={setDayTypeOverride}

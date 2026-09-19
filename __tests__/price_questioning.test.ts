@@ -5,6 +5,7 @@ import {
   type PriceCritiqueEvaluation,
 } from '../lib/trading/priceQuestioning'
 import { buildLeoSystemPrompt, type LeoChatContext } from '../lib/ai/leoAssistant'
+import { buildDeskFallbackResponse } from '../app/api/trading/leo/chat/route'
 
 describe('Auction Price Critique & "Questioning" Engine', () => {
   it('1. should classify EXTREME_PREMIUM when price trades far above Yesterday and Overnight POCs', () => {
@@ -259,5 +260,52 @@ describe('Auction Price Critique & "Questioning" Engine', () => {
     assert.ok(prompt.includes('Valuation State: EXTREME PREMIUM'))
     assert.ok(prompt.includes('Overnight & Session Inventory Reality'))
     assert.ok(prompt.includes('Pre-Trade 6-Question Self-Audit'))
+  })
+
+  it('10. should produce comprehensive Auction Price Critique response when Auto-Prompt or dossier is submitted', () => {
+    const critique: PriceCritiqueEvaluation = evaluatePriceQuestioning({
+      currentPrice: 2090.0,
+      instrument: 'GOLD',
+      currentTimeEt: '09:35:00 ET',
+      yesterday: { poc: 2050.0 },
+      overnight: {
+        overnight: { poc: 2052.0 },
+        pctLong: 80,
+        pctShort: 20,
+      },
+      frvp5d: { poc: 2050.0 },
+    })
+
+    const ctx: LeoChatContext = {
+      instrument: 'GOLD',
+      currentPrice: 2090.0,
+      currentTimeEt: '09:35:00 ET',
+      priceQuestioning: critique,
+      selectedDataPoints: [
+        {
+          id: 'price-critique-dossier',
+          label: `Price Critique: ${critique.valuationState}`,
+          value: '+80 / 100',
+          tier: 'CONTEXT',
+          category: 'INVENTORY',
+          description: 'Test dossier',
+        },
+      ],
+    }
+
+    const autoPrompt =
+      'Leo, critique the current market price and auction structure based on overnight inventory, yesterday and 5-day POCs, and 5-month AVWAP.'
+
+    const response = buildDeskFallbackResponse(
+      [{ role: 'user', content: autoPrompt }],
+      ctx
+    )
+
+    // Verify response contains Leo Auction Price Critique & Questioning Desk
+    assert.ok(response.includes('Leo Auction Price Critique & Questioning Desk (GOLD @ 2090.00)'))
+    assert.ok(response.includes('Valuation & Location Read'))
+    assert.ok(response.includes('Overnight & Global Session Inventory Reality'))
+    assert.ok(response.includes('The 6-Question Pre-Trade Self-Audit'))
+    assert.ok(response.includes('Overnight POC:** 2052'))
   })
 })
