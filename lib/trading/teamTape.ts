@@ -55,8 +55,8 @@ export function isTeamTapeSymbol(raw?: string | null): boolean {
 
 export function parseTeamTapeSide(raw?: string | null): TeamTapeSide | null {
   const s = String(raw || '').trim().toUpperCase()
-  if (s === 'BUY' || s === 'LONG') return 'BUY'
-  if (s === 'SELL' || s === 'SHORT') return 'SELL'
+  if (s === 'BUY' || s === 'LONG' || s === 'BTO' || s === 'BTC' || s === 'COV') return 'BUY'
+  if (s === 'SELL' || s === 'SHORT' || s === 'STC' || s === 'STO') return 'SELL'
   return null
 }
 

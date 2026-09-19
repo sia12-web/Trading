@@ -186,16 +186,28 @@ export async function GET(request: Request) {
 
   // 2. Merge any stored team signals not already accounted for
   for (const s of storedSignals) {
+    const inHistory = history.some((h) => h.sourceId === s.sourceId)
+    const inOpen = open.some((o) => o.symbol === s.symbol || o.sourceId === s.sourceId)
     if (s.status === 'closed' || s.status === 'cancelled') {
-      if (!history.some((h) => h.sourceId === s.sourceId)) {
+      if (!inHistory) {
         history.push(s)
       }
     } else {
-      if (!open.some((o) => o.symbol === s.symbol || o.sourceId === s.sourceId)) {
+      // Do not resurrect an order into open if it is already in history,
+      // or if questrade live book is connected and confirms this symbol is not open in the account.
+      const questradeClosedSymbol =
+        questradeBook.ok &&
+        !questradeBook.openPositions.some((p) => p.symbol === s.symbol) &&
+        questradeBook.history.some((h) => h.symbol === s.symbol || h.sourceId === s.sourceId)
+      if (!inOpen && !inHistory && !questradeClosedSymbol) {
         open.push(s)
       }
     }
   }
+
+  // Ensure both open and history are consistently sorted newest first
+  open.sort((a, b) => String(b.filledAt || '').localeCompare(String(a.filledAt || '')))
+  history.sort((a, b) => String(b.filledAt || '').localeCompare(String(a.filledAt || '')))
 
   const questradeSnapshot = questradeBook.ok ? questradeBook.account : questradeBook
 

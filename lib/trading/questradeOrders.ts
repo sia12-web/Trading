@@ -120,6 +120,7 @@ const DEAD = new Set([
   'REPLACED',
 ])
 const OPTION_RE = /^([A-Z0-9.\-]+)\s+(\d{2}[A-Za-z]{3}\d{2})([CPcp])(\d+(?:\.\d+)?)$/
+const OPTION_OCC = /^([A-Z0-9.\-]+)\s+(\d{2})(\d{2})(\d{2})([CPcp])(\d{8})$/
 const LEVEL_LOOKBACK_MS = 21 * 24 * 60 * 60 * 1000
 
 export function questradeOrderType(raw: QuestradeRawOrder): string {
@@ -205,10 +206,10 @@ export function parseQuestradeSymbol(raw?: string | null): {
   if (opt) {
     const underlying = opt[1]
     const expiry = opt[2]
-    const right = opt[3]
+    const right = opt[3].toUpperCase() === 'P' ? 'Put' : 'Call'
     const strikeRaw = opt[4]
     if (!underlying || !expiry || !right || !strikeRaw) return null
-    const kind = right === 'P' ? 'Put' : 'Call'
+    const kind = right
     const strikeNum = Number(strikeRaw)
     const strike = Number.isFinite(strikeNum)
       ? strikeNum % 1 === 0
@@ -221,6 +222,28 @@ export function parseQuestradeSymbol(raw?: string | null): {
       underlying,
       asset: 'option',
       label: `${underlying} ${expiry} $${strike} ${kind}`,
+      multiplier: 100,
+    }
+  }
+  const optOcc = key.match(OPTION_OCC)
+  if (optOcc) {
+    const underlying = optOcc[1]
+    const yy = optOcc[2]
+    const mm = optOcc[3]
+    const dd = optOcc[4]
+    const right = optOcc[5].toUpperCase() === 'P' ? 'Put' : 'Call'
+    const strikeNum = Number(optOcc[6]) / 1000
+    const strike = Number.isFinite(strikeNum)
+      ? strikeNum % 1 === 0
+        ? String(strikeNum)
+        : strikeNum.toFixed(2)
+      : String(strikeNum)
+    return {
+      raw: key,
+      key,
+      underlying,
+      asset: 'option',
+      label: `${underlying} ${yy}-${mm}-${dd} $${strike} ${right}`,
       multiplier: 100,
     }
   }

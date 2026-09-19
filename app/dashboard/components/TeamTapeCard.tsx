@@ -231,6 +231,10 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
   const last = open[0]
   const levels = compact ? (book?.levels ?? []).slice(0, 8) : book?.levels ?? []
 
+  const tapeSignals = open.filter(
+    (s) => !book?.openPositions?.some((p) => p.sourceId === s.sourceId || p.symbol === s.symbol)
+  )
+
   return (
     <section className="rounded-xl border border-sky-500/25 bg-sky-500/[0.06] p-4">
       <div className="flex items-start justify-between gap-3">
@@ -324,10 +328,14 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
             Recent tape
           </h3>
           <div className="mt-2 space-y-2">
-            {open.length === 0 ? (
-              <p className="text-xs text-gray-500">No open team tickets.</p>
+            {tapeSignals.length === 0 ? (
+              <p className="text-xs text-gray-500">
+                {book?.openPositions?.length
+                  ? 'All active desk positions tracked in live book above.'
+                  : 'No open team tickets.'}
+              </p>
             ) : (
-              open.map((s) => <TicketRow key={s.sourceId} signal={s} />)
+              tapeSignals.map((s) => <TicketRow key={s.sourceId} signal={s} />)
             )}
           </div>
           <h3 className="mt-6 text-xs font-semibold uppercase tracking-wide text-gray-500">

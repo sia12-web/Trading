@@ -11,6 +11,7 @@ import {
 import {
   formatTeamTelegram,
   parseTeamTapeIngest,
+  parseTeamTapeSide,
   teamTapeTarget1_5R,
 } from '../lib/trading/teamTape'
 import {
@@ -284,4 +285,33 @@ assert.equal(xfer.realName, 'NVIDIA Corporation')
 assert.ok(xfer.ticket)
 
 console.log('Tradeify Transfers tests passed.')
+
+// ==========================================
+// 5. OCC Option Format & Broker Side Actions
+// ==========================================
+
+console.log('Testing OCC Option Format & Broker Side Actions...')
+
+// OCC option symbol parsing
+const occParsed = parseQuestradeSymbol('AAPL  260918C00150000')
+assert.ok(occParsed, 'OCC option AAPL 260918C00150000 must parse')
+assert.equal(occParsed?.asset, 'option')
+assert.equal(occParsed?.underlying, 'AAPL')
+assert.equal(occParsed?.multiplier, 100)
+assert.equal(occParsed?.label, 'AAPL 26-09-18 $150 Call')
+
+const occPutParsed = parseQuestradeSymbol('SPY  261016P00500000')
+assert.ok(occPutParsed, 'OCC option SPY 261016P00500000 must parse')
+assert.equal(occPutParsed?.asset, 'option')
+assert.equal(occPutParsed?.underlying, 'SPY')
+assert.equal(occPutParsed?.label, 'SPY 26-10-16 $500 Put')
+
+// parseTeamTapeSide with BTO / STC
+assert.equal(parseTeamTapeSide('BTO'), 'BUY')
+assert.equal(parseTeamTapeSide('BTC'), 'BUY')
+assert.equal(parseTeamTapeSide('COV'), 'BUY')
+assert.equal(parseTeamTapeSide('STC'), 'SELL')
+assert.equal(parseTeamTapeSide('STO'), 'SELL')
+
+console.log('OCC Option Format & Broker Side Actions tests passed.')
 console.log('All team tape update & symbol name tests passed successfully!')
