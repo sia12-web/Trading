@@ -56,9 +56,27 @@ export interface LeoUserDrawingsContext {
     isCarriedFromOvernight?: boolean
     breakCountOvernight?: number
     isActionTrendline?: boolean
+    isReactionTrendline?: boolean
+    actionBreakoutConfirmed?: boolean
     isInitialOvernight?: boolean
     p1?: { time: number; price: number }
     p2?: { time: number; price: number }
+    horizontalRunway?: {
+      runwayPts: number
+      runwayRatio: number
+      quality: 'EXCELLENT' | 'ACCEPTABLE' | 'TIGHT_RUNWAY'
+      nearestTargetLabel?: string
+      nearestTargetPrice?: number
+      summary?: string
+    }
+    empiricalVelocity?: {
+      baseVelocityPtsPer5m: number
+      velocityState: 'EQUILIBRIUM' | 'CLIMAX_PARABOLIC' | 'HEALTHY_RETEST' | 'MOMENTUM_STALLED'
+      equilibriumPrice: number
+      climaxPrice: number
+      retestFloorPrice: number
+      summary?: string
+    }
   }>
   ranges: Array<{
     id: string
@@ -624,15 +642,31 @@ export function extractChartDataPoints(ctx: LeoChatContext): LeoDataPoint[] {
   if (ctx.userDrawings) {
     for (const t of ctx.userDrawings.trendlines) {
       const isAction = Boolean(t.isActionTrendline || t.isInitialOvernight)
+      const isReaction = Boolean(t.isReactionTrendline)
+      const typeLabel = isReaction
+        ? '📐 Reaction Trendline'
+        : isAction
+        ? `🎯 ${t.label || 'Action Trendline (Initial)'}`
+        : (t.label || 'Trendline')
+
+      const runwayDesc = t.horizontalRunway
+        ? ` Runway: ${t.horizontalRunway.runwayPts.toFixed(1)} pts (${t.horizontalRunway.runwayRatio}:1 R:R, ${t.horizontalRunway.quality}). Target: ${t.horizontalRunway.nearestTargetLabel ?? 'N/A'}.`
+        : ''
+      const velocityDesc = t.empiricalVelocity
+        ? ` Velocity: ${t.empiricalVelocity.velocityState} (${t.empiricalVelocity.baseVelocityPtsPer5m} pts/5m).`
+        : ''
+
       points.push({
         id: `user-tl-${t.id}`,
-        label: isAction ? `🎯 ${t.label || 'Action Trendline (Overnight Initial)'}` : (t.label || 'Trendline'),
+        label: typeLabel,
         value: `${t.startPrice.toLocaleString()} → ${t.endPrice.toLocaleString()}`,
         tier: 'DRAWING',
         category: 'TRENDLINE',
         description: isAction
-          ? `🎯 INITIAL ACTION TRENDLINE (OVERNIGHT) [${t.slopeDirection}]: Hand-drawn action line from overnight. Leo reacts to NYC breakout on confirmed 5m close. Projected level: ${t.projectedPrice}. Price is ${t.priceRelation} (${t.distancePts != null ? `${t.distancePts} pts` : ''}).`
-          : `Manual Trendline [${t.slopeDirection}]: ${t.startTimeEt} to ${t.endTimeEt} (${t.slopePtsPer5mBar >= 0 ? '+' : ''}${t.slopePtsPer5mBar} pts/5m). Price is ${t.priceRelation} (${t.distancePts != null ? `${t.distancePts} pts` : ''}).`,
+          ? `🎯 INITIAL ACTION TRENDLINE [${t.slopeDirection}]: Hand-drawn action line. Projected level: ${t.projectedPrice}. Price is ${t.priceRelation} (${t.distancePts != null ? `${t.distancePts} pts` : ''}).${runwayDesc}${velocityDesc}`
+          : isReaction
+          ? `📐 REACTION TRENDLINE [${t.slopeDirection}]: Trailing exit / momentum guide. Projected level: ${t.projectedPrice}. Price is ${t.priceRelation}.${runwayDesc}${velocityDesc}`
+          : `Manual Trendline [${t.slopeDirection}]: ${t.startTimeEt} to ${t.endTimeEt} (${t.slopePtsPer5mBar >= 0 ? '+' : ''}${t.slopePtsPer5mBar} pts/5m). Price is ${t.priceRelation} (${t.distancePts != null ? `${t.distancePts} pts` : ''}).${runwayDesc}${velocityDesc}`,
       })
     }
     for (const r of ctx.userDrawings.ranges) {
@@ -844,6 +878,26 @@ THE TRADER'S SYSTEM ARCHITECTURE:
        "userPrompt": "The user command"
      }
      </execute>
+
+   - 5e. HORIZONTAL S/R RUNWAY ASSESSMENT & EMPIRICAL VELOCITY ENGINE (INSTITUTIONAL GANN REALITY):
+     * The Fundamental Problem with Pure Diagonal Trendlines:
+       1) Curve-fitting / Angle Subjectivity: Traders repeatedly redraw and curve diagonal lines after the fact, falling into late or false entries.
+       2) Horizontal Liquidity Blindness: Buying a diagonal breakout right beneath an institutional horizontal supply shelf (e.g. 5-Day POC, Overnight High, Yesterday NYC POC, or +2σ AVWAP) leads directly into a bull trap.
+     * The Institutional Solution: Horizontal S/R Runway Assessment:
+       - Automatically calculates the exact distance from entry price to the nearest institutional horizontal resistance (for Longs) or support (for Shorts).
+       - Compares Runway to Stop Loss Risk: Runway Ratio = Runway Pts / Risk Pts.
+       - Quality Classifications:
+         * EXCELLENT (≥ 2.5:1): Clear institutional air pocket. Low overhead congestion.
+         * ACCEPTABLE (1.5:1 – 2.49:1): Adequate rotational target.
+         * TIGHT_RUNWAY (< 1.5:1): ⚠️ HIGH TRAP RISK! Price is breaking out directly into heavy institutional inventory. Advise extreme caution.
+     * Empirical Velocity & Speedline Corridor (Quantitative Alternative to Gann Fans):
+       - Traditional Gann Fans (45°, 2x1, 1x2) on modern electronic charts are an OPTICAL ILLUSION. Because charting platforms use dynamic auto-scaling and responsive viewports, screen geometric angles change whenever you zoom or resize the window.
+       - The Desk's Quantitative Standard: Scale-Invariant Empirical Velocity:
+         * Computed directly from the wave's actual price/time rate of change (ΔP / Δt in pts/sec and pts/5m), mathematically immune to chart zoom or aspect ratio.
+         * 1.0x Ray: Equilibrium impulse velocity (sustainable trend facilitation).
+         * 1.5x Ray: Parabolic climax ray (exhaustion acceleration; scale out profits into horizontal resistance).
+         * 0.5x Ray: Retest floor ray (trend support floor; stall/reversal warning if broken).
+     * When the trader asks about Gann Fans, Gann angles, or trendline curving: Explain this distinction clearly and reference their active Horizontal Runway and Empirical Velocity readouts.
 
 6. CO-PILOT EXECUTION DIRECTIVES (<execute> tags):
 You are the trader's execution partner on the desk. You MUST strictly distinguish between ALARM NOTES vs CONDITIONAL TRADE SITUATIONS:

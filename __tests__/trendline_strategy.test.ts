@@ -15,6 +15,8 @@ import {
   detectFlagAndSecondaryBreakout,
   findBreakoutSwingAnchor,
   isReactionTrendlineEligible,
+  evaluateHorizontalRunway,
+  calculateEmpiricalSpeedlines,
 } from '../lib/trading/trendlineStrategy.ts'
 import type { UserTrendline } from '../lib/trading/userDrawings.ts'
 import type { Candle } from '../lib/trading/candlestickPatterns.ts'
@@ -1326,6 +1328,113 @@ describe('Systematic Trendline Strategy & Trend-Borning Zone Engine', () => {
     })
     // Descending reaction line for LONG was rejected as invalid user reaction line:
     assert.notEqual(dynLineInvalid.isUserReactionTrendline, true)
+  })
+
+  test('34. should evaluate horizontal S/R runway ratio and detect tight runway trap risk', () => {
+    const mockChartCtx: any = {
+      yesterday: { poc: 2058, high: 2075, low: 2040, vah: 2070, val: 2045 },
+      overnight: {
+        overnight: { poc: 2055, high: 2085, low: 2038 },
+      },
+      frvp5d: { poc: 2030, vah: 2060, val: 2025, high: 2090, low: 2020 },
+    }
+
+    // Case 1: Long entry with distant overhead resistance (Overnight High 2085, distance 35 pts, SL risk 10 pts)
+    const longRunwayClear = evaluateHorizontalRunway({
+      entryPrice: 2050,
+      stopLossPrice: 2040,
+      direction: 'LONG',
+      chartContext: {
+        overnight: { overnight: { high: 2085 } },
+      },
+    })
+    assert.equal(longRunwayClear.quality, 'EXCELLENT')
+    assert.equal(longRunwayClear.runwayPts, 35)
+    assert.equal(longRunwayClear.runwayRatio, 3.5)
+    assert.equal(longRunwayClear.nearestResistance?.label, 'Overnight High')
+    assert.match(longRunwayClear.summary, /Clear runway/)
+
+    // Case 2: Long entry directly under tight Yesterday NYC POC (2058 vs Entry 2050 -> 8 pts runway, 10 pts risk = 0.8:1 R:R)
+    const longRunwayTight = evaluateHorizontalRunway({
+      entryPrice: 2050,
+      stopLossPrice: 2040,
+      direction: 'LONG',
+      chartContext: mockChartCtx,
+    })
+    assert.equal(longRunwayTight.quality, 'TIGHT_RUNWAY')
+    assert.equal(longRunwayTight.runwayPts, 5) // Overnight POC @ 2055 is 5 pts away
+    assert.equal(longRunwayTight.runwayRatio, 0.5)
+    assert.match(longRunwayTight.summary, /⚠️ Tight Runway Warning/)
+
+    // Case 3: Short entry with 20 pts runway to 5D POC (2050 -> 2030, 10 pts risk = 2.0:1 R:R)
+    const shortRunway = evaluateHorizontalRunway({
+      entryPrice: 2050,
+      stopLossPrice: 2060,
+      direction: 'SHORT',
+      chartContext: {
+        frvp5d: { poc: 2030 },
+      },
+    })
+    assert.equal(shortRunway.quality, 'ACCEPTABLE')
+    assert.equal(shortRunway.runwayPts, 20)
+    assert.equal(shortRunway.runwayRatio, 2.0)
+    assert.equal(shortRunway.nearestResistance?.label, '5-Day POC')
+  })
+
+  test('35. should calculate empirical speedlines and classify velocity states (Equilibrium, Climax, Retest)', () => {
+    const origin = { time: 1000, price: 2040 }
+    const breakout = { time: 1600, price: 2060 } // elapsed = 600s, delta = +20 pts => 10 pts/5m
+
+    // Current time at t=1900 (300s post breakout, 900s from origin)
+    // Projected equilibrium = 2040 + (20/600)*900 = 2070
+    // Projected climax (1.5x) = 2040 + (20/600)*1.5*900 = 2085
+    // Projected retest floor (0.5x) = 2040 + (20/600)*0.5*900 = 2055
+
+    // Case 1: Price tracking equilibrium slope (2072)
+    const eqCorridor = calculateEmpiricalSpeedlines({
+      origin,
+      breakout,
+      currentPrice: 2072,
+      currentTime: 1900,
+      direction: 'LONG',
+    })
+    assert.equal(eqCorridor.baseVelocityPtsPer5m, 10)
+    assert.equal(eqCorridor.projectedEquilibriumPrice, 2070)
+    assert.equal(eqCorridor.projectedClimaxPrice, 2085)
+    assert.equal(eqCorridor.projectedRetestFloorPrice, 2055)
+    assert.equal(eqCorridor.currentVelocityState, 'EQUILIBRIUM')
+
+    // Case 2: Price goes parabolic climax (> 2085)
+    const climaxCorridor = calculateEmpiricalSpeedlines({
+      origin,
+      breakout,
+      currentPrice: 2090,
+      currentTime: 1900,
+      direction: 'LONG',
+    })
+    assert.equal(climaxCorridor.currentVelocityState, 'CLIMAX_PARABOLIC')
+    assert.match(climaxCorridor.summary, /Parabolic Climax Surge/)
+
+    // Case 3: Price tests between floor (2055) and equilibrium (2070)
+    const retestCorridor = calculateEmpiricalSpeedlines({
+      origin,
+      breakout,
+      currentPrice: 2062,
+      currentTime: 1900,
+      direction: 'LONG',
+    })
+    assert.equal(retestCorridor.currentVelocityState, 'HEALTHY_RETEST')
+
+    // Case 4: Price stalls and breaches retest floor (< 2055)
+    const stalledCorridor = calculateEmpiricalSpeedlines({
+      origin,
+      breakout,
+      currentPrice: 2050,
+      currentTime: 1900,
+      direction: 'LONG',
+    })
+    assert.equal(stalledCorridor.currentVelocityState, 'MOMENTUM_STALLED')
+    assert.match(stalledCorridor.summary, /Momentum Stalled/)
   })
 })
 

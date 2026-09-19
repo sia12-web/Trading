@@ -287,8 +287,16 @@ function buildDeskFallbackResponse(
       targetPx = frvp ? frvp.val : (ctx.shortTermMoney?.yval ?? (ctx.currentPrice ?? defaultPrice))
     } else if (/trendline/i.test(lower)) {
       const tl = ctx.userDrawings?.trendlines?.[0]
-      targetRef = tl ? `${tl.label || 'Trendline'} Support` : 'Trendline Support'
-      targetPx = tl ? tl.projectedPrice : (ctx.currentPrice ?? defaultPrice)
+      const tlLabel = tl?.isReactionTrendline
+        ? 'Reaction Trendline'
+        : tl?.isActionTrendline
+        ? 'Action Trendline'
+        : (tl?.label || 'Trendline')
+      const nearestTarget = tl?.horizontalRunway?.nearestTargetLabel
+        ? `${tlLabel} Breakout → ${tl.horizontalRunway.nearestTargetLabel}`
+        : `${tlLabel} Support`
+      targetRef = tl ? nearestTarget : 'Trendline Breakout Support'
+      targetPx = tl ? (tl.horizontalRunway?.nearestTargetPrice ?? tl.projectedPrice) : (ctx.currentPrice ?? defaultPrice)
     } else if (/range|box/i.test(lower)) {
       const r = ctx.userDrawings?.ranges?.[0]
       targetRef = r ? `${r.label || 'Range'} ${direction === 'LONG' ? 'Low' : 'High'}` : 'Range Boundary'
@@ -454,23 +462,73 @@ There is currently **no open position** on the desk. All brackets are clear. Sta
     return `External Telegram notifications are currently disabled desk-wide. All live alerts, auction updates, and risk monitors are streamed directly to the website dashboard and chart in real time.`
   }
 
+  // Gann Fan / Geometric Angle inquiry: "can we use gann fan to enhance that strategy or that is just illusion"
+  if (/gann|gann\s*fan|fan\s*line|geometric\s*angle/i.test(lower)) {
+    return `### Institutional Reality Check: Gann Fans vs. Empirical Velocity
+
+**The Short Answer:** Traditional Gann Fans on modern electronic charts are largely an **optical illusion**, but their core intuition—comparing Price Velocity against Time (ΔP / Δt)—is valid when computed quantitatively.
+
+---
+
+### Why Static Gann Fans Fail on Modern Electronic Charts
+1. **Geometric Scale Distortion:**
+   W.D. Gann drew his fans by hand on physical square grid paper where 1 point = 1 day (a true 45° angle was 1×1). On modern electronic charts with dynamic auto-scaling, window resizing, and zooming, the visual degree angle changes every time you zoom or resize your browser. A 45° line on your desktop turns into 20° on a laptop!
+2. **The "Curving" Trap:**
+   Relying solely on diagonal lines leads traders to continuously redraw and curve lines to fit recent price wicks, creating false entries and confirmation bias.
+3. **Horizontal Liquidity Blindness:**
+   A diagonal line does not tell you if you are buying directly beneath an institutional supply wall (e.g. Yesterday NYC POC, Overnight High, 5-Day POC, or +2σ AVWAP). Entering a diagonal breakout into an overhead supply shelf creates a lethal bull trap.
+
+---
+
+### The Desk's Quantitative Standard:
+1. **Scale-Invariant Empirical Velocity Corridor (ΔP / Δt):**
+   Instead of drawing fixed degree angles, our engine calculates the **empirical velocity** directly from the initiating swing:
+   - **1.0x Equilibrium Ray:** The sustainable baseline impulse velocity (pts/sec and pts/5m).
+   - **1.5x Climax / Parabolic Ray:** Momentum acceleration threshold where price goes parabolic. Warns you to scale out profits rather than chase.
+   - **0.5x Retest Floor Ray:** Defines the minimum speed required to maintain trend structure. A close below signals momentum stall.
+2. **Horizontal S/R Runway Assessment:**
+   Every Action Trendline breakout is matched against our Multi-Timeframe Institutional Levels (Overnight High/Low, Yesterday POC/VAH/VAL, 5D-POC, AVWAP ±1σ / ±2σ):
+   - **Clear Runway (≥ 2.5:1):** High-probability setup with open air pocket to target.
+   - **Tight Runway (< 1.5:1):** ⚠️ Trap warning! Price is breaking out right into heavy institutional supply.
+
+**Desk Verdict:** Leave the subjective geometric Gann Fans behind. Trade the **Action/Reaction Trendlines** backed by **Horizontal S/R Runway** and the **Empirical Velocity Corridor** for true institutional mathematical edge.`
+  }
+
   // 4. User Drawings: Trendline analysis
-  if (/trendline|trend\s+line/i.test(lower)) {
+  if (/trendline|trend\s+line|reaction\s+line|action\s+line/i.test(lower)) {
     const tl = ctx.userDrawings?.trendlines?.[0]
     if (tl) {
-      return `### Leo Trendline Assessment (${ctx.instrument} @ ${curPrice})
+      const typeLabel = tl.isReactionTrendline
+        ? 'Reaction Trendline'
+        : tl.isActionTrendline || tl.isInitialOvernight
+        ? 'Action Trendline'
+        : (tl.label || 'Trendline')
 
-I've got eyes on your manual **${tl.label || 'Trendline'}**:
+      const runwayBlock = tl.horizontalRunway
+        ? `\n- **Horizontal S/R Runway:** **${tl.horizontalRunway.runwayPts.toFixed(1)} pts** (${tl.horizontalRunway.runwayRatio}:1 R:R, **${tl.horizontalRunway.quality}**)
+- **Nearest Target:** ${tl.horizontalRunway.nearestTargetLabel ?? 'Rotational Target'} @ **${tl.horizontalRunway.nearestTargetPrice?.toFixed(1) ?? 'N/A'}**
+- **Runway Assessment:** ${tl.horizontalRunway.summary}`
+        : ''
+
+      const velocityBlock = tl.empiricalVelocity
+        ? `\n- **Empirical Velocity:** **${tl.empiricalVelocity.velocityState}** (${tl.empiricalVelocity.baseVelocityPtsPer5m} pts / 5m candle)
+- **Velocity Corridor:** Equilibrium @ **${tl.empiricalVelocity.equilibriumPrice.toFixed(1)}** | Climax (1.5x) @ **${tl.empiricalVelocity.climaxPrice.toFixed(1)}** | Retest Floor (0.5x) @ **${tl.empiricalVelocity.retestFloorPrice.toFixed(1)}**
+- **Velocity Read:** ${tl.empiricalVelocity.summary}`
+        : ''
+
+      return `### Leo ${typeLabel} Assessment (${ctx.instrument} @ ${curPrice})
+
+I've got eyes on your manual **${typeLabel}**:
 - **Trajectory:** From **${tl.startPrice.toLocaleString()}** (${tl.startTimeEt}) to **${tl.endPrice.toLocaleString()}** (${tl.endTimeEt})
 - **Slope & Angle:** ${tl.slopeDirection} at ${tl.slopePtsPer5mBar >= 0 ? '+' : ''}${tl.slopePtsPer5mBar.toFixed(1)} pts / 5m candle (${tl.slopePtsPerMin >= 0 ? '+' : ''}${tl.slopePtsPerMin.toFixed(2)} pts/min)
 - **Current Dynamic Level:** Projected at **${tl.projectedPrice.toLocaleString()}**
-- **Price Action:** Market is currently **${tl.priceRelation}** the trendline${tl.distancePts != null ? ` (${Math.abs(tl.distancePts).toFixed(1)} pts distance)` : ''}.
+- **Price Action:** Market is currently **${tl.priceRelation}** the trendline${tl.distancePts != null ? ` (${Math.abs(tl.distancePts).toFixed(1)} pts distance)` : ''}.${runwayBlock}${velocityBlock}
 
 **Desk Playbook Read:**
 ${tl.priceRelation === 'TESTING'
-  ? `Price is actively testing the trendline. Watch candle close and volume: a rejection wick here confirms responsive support/defense, while heavy 5m bar penetration signals trend breakdown.`
+  ? `Price is actively testing the ${typeLabel}. Watch candle close and volume: a rejection wick here confirms responsive support/defense, while heavy 5m bar penetration signals trend breakdown.`
   : tl.priceRelation === 'ABOVE'
-    ? `Price is accepted above the trendline. As long as market holds above ${tl.projectedPrice.toLocaleString()}, buyer facilitation remains intact.`
+    ? `Price is accepted above the ${typeLabel}. As long as market holds above ${tl.projectedPrice.toLocaleString()}, buyer facilitation remains intact.`
     : `Price is trading below the line. Look for responsive re-acceptance above ${tl.projectedPrice.toLocaleString()} before trusting long momentum.`}`
     }
   }

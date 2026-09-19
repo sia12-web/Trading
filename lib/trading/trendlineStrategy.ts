@@ -254,6 +254,47 @@ export interface ChopShieldEvaluation {
   reason: string
 }
 
+export interface HorizontalTargetLevel {
+  label: string
+  price: number
+  type: 'POC' | 'EXTREME' | 'VALUE_AREA' | 'SIGMA' | 'FIXED'
+  distancePts: number
+  isOverhead: boolean
+}
+
+export interface HorizontalRunwayAssessment {
+  direction: 'LONG' | 'SHORT'
+  entryPrice: number
+  stopLossPrice: number
+  riskPts: number
+  nearestResistance: HorizontalTargetLevel | null
+  nearestSupport: HorizontalTargetLevel | null
+  runwayPts: number
+  runwayRatio: number // runwayPts / riskPts
+  quality: 'EXCELLENT' | 'ACCEPTABLE' | 'TIGHT_RUNWAY'
+  target1: HorizontalTargetLevel
+  target2: HorizontalTargetLevel
+  target3: HorizontalTargetLevel
+  allHorizontalLevels: HorizontalTargetLevel[]
+  summary: string
+}
+
+export interface EmpiricalSpeedlineCorridor {
+  origin: { time: number; price: number }
+  breakout: { time: number; price: number }
+  elapsedSec: number
+  deltaPts: number
+  baseVelocityPtsPerSec: number
+  baseVelocityPtsPer5m: number
+  climaxRayMultiplier: number // 1.5x
+  retestFloorMultiplier: number // 0.5x
+  projectedEquilibriumPrice: number
+  projectedClimaxPrice: number
+  projectedRetestFloorPrice: number
+  currentVelocityState: 'EQUILIBRIUM' | 'CLIMAX_PARABOLIC' | 'HEALTHY_RETEST' | 'MOMENTUM_STALLED'
+  summary: string
+}
+
 /**
  * 1. Evaluates whether price has crossed a trendline (bearish or bullish) and confirmed with a 5m candle close.
  * - Bearish trendline (pDiff < 0): triggers LONG entry on confirmed close ABOVE the line.
@@ -2214,5 +2255,278 @@ export function evaluateChopShield(params: {
     alternatingBreakCount,
     stallPenaltyMultiplier,
     reason,
+  }
+}
+
+/**
+ * 10. Horizontal S/R Runway & Confluence Engine
+ * Evaluates whether an Action Breakout has sufficient reward-to-risk runway before colliding with
+ * heavy institutional horizontal resistance/support (Overnight High/Low, Yesterday POC, 5D-POC, VAH/VAL).
+ * Solves the "horizontal liquidity blindness" problem of pure diagonal trendlines.
+ */
+export function evaluateHorizontalRunway(params: {
+  entryPrice: number
+  stopLossPrice: number
+  direction: 'LONG' | 'SHORT'
+  chartContext?: TrendBorningChartContext | null
+  fixedTpPts?: number
+}): HorizontalRunwayAssessment {
+  const { entryPrice, stopLossPrice, direction, chartContext } = params
+  const riskPts = Math.max(0.5, Math.abs(entryPrice - stopLossPrice))
+  const fixedTp = params.fixedTpPts ?? 50.0
+
+  const levels: HorizontalTargetLevel[] = []
+
+  const addLevel = (label: string, price: number | null | undefined, type: HorizontalTargetLevel['type']) => {
+    if (price == null || !Number.isFinite(price) || price <= 0) return
+    const diff = price - entryPrice
+    const distancePts = Number(Math.abs(diff).toFixed(2))
+    const isOverhead = diff > 0
+    if (!levels.some((l) => Math.abs(l.price - price) < 0.2)) {
+      levels.push({ label, price: Number(price.toFixed(2)), type, distancePts, isOverhead })
+    }
+  }
+
+  // Extract from multi-session institutional context:
+  if (chartContext) {
+    const on = chartContext.overnight?.overnight
+    if (on) {
+      addLevel('Overnight POC', on.poc, 'POC')
+      addLevel('Overnight High', on.high, 'EXTREME')
+      addLevel('Overnight Low', on.low, 'EXTREME')
+    }
+    const asia = chartContext.overnight?.asia
+    if (asia) {
+      addLevel('Asia High', asia.high, 'EXTREME')
+      addLevel('Asia Low', asia.low, 'EXTREME')
+      addLevel('Asia POC', asia.poc, 'POC')
+    }
+    const london = chartContext.overnight?.london
+    if (london) {
+      addLevel('London High', london.high, 'EXTREME')
+      addLevel('London Low', london.low, 'EXTREME')
+      addLevel('London POC', london.poc, 'POC')
+    }
+    const y = chartContext.yesterday
+    if (y) {
+      addLevel('Yesterday POC', y.poc, 'POC')
+      addLevel('Yesterday High', (y as any).high ?? y.yh, 'EXTREME')
+      addLevel('Yesterday Low', (y as any).low ?? y.yl, 'EXTREME')
+      addLevel('Yesterday VAH', y.vah, 'VALUE_AREA')
+      addLevel('Yesterday VAL', y.val, 'VALUE_AREA')
+    }
+    const frvp = chartContext.frvp5d
+    if (frvp) {
+      addLevel('5-Day POC', frvp.poc, 'POC')
+      addLevel('5-Day VAH', frvp.vah, 'VALUE_AREA')
+      addLevel('5-Day VAL', frvp.val, 'VALUE_AREA')
+      addLevel('5-Day High', frvp.high, 'EXTREME')
+      addLevel('5-Day Low', frvp.low, 'EXTREME')
+    }
+    const avwap = chartContext.avwap5m
+    if (avwap) {
+      addLevel('AVWAP +1σ', avwap.sigma1Upper, 'SIGMA')
+      addLevel('AVWAP -1σ', avwap.sigma1Lower, 'SIGMA')
+      addLevel('AVWAP +2σ', avwap.sigma2Upper, 'SIGMA')
+      addLevel('AVWAP -2σ', avwap.sigma2Lower, 'SIGMA')
+    }
+  }
+
+  // Fallback fixed target if no context levels exist
+  const fallbackFixedTp = direction === 'LONG' ? entryPrice + fixedTp : entryPrice - fixedTp
+  addLevel(
+    direction === 'LONG' ? `Fixed +${fixedTp} Target` : `Fixed -${fixedTp} Target`,
+    fallbackFixedTp,
+    'FIXED'
+  )
+
+  levels.sort((a, b) => a.distancePts - b.distancePts)
+
+  const overheadLevels = levels.filter((l) => l.isOverhead && l.distancePts >= 0.5)
+  const supportLevels = levels.filter((l) => !l.isOverhead && l.distancePts >= 0.5)
+
+  let nearestResistance: HorizontalTargetLevel | null = null
+  let nearestSupport: HorizontalTargetLevel | null = null
+  let runwayPts = 0
+
+  if (direction === 'LONG') {
+    nearestResistance = overheadLevels[0] ?? null
+    nearestSupport = supportLevels[0] ?? null
+    runwayPts = nearestResistance ? nearestResistance.distancePts : fixedTp
+  } else {
+    nearestResistance = supportLevels[0] ?? null
+    nearestSupport = overheadLevels[0] ?? null
+    runwayPts = nearestResistance ? nearestResistance.distancePts : fixedTp
+  }
+
+  const runwayRatio = Number((runwayPts / riskPts).toFixed(2))
+  const quality: 'EXCELLENT' | 'ACCEPTABLE' | 'TIGHT_RUNWAY' =
+    runwayRatio >= 2.5 ? 'EXCELLENT' : runwayRatio >= 1.5 ? 'ACCEPTABLE' : 'TIGHT_RUNWAY'
+
+  let target1: HorizontalTargetLevel
+  let target2: HorizontalTargetLevel
+  let target3: HorizontalTargetLevel
+
+  if (direction === 'LONG') {
+    target1 =
+      overheadLevels[0] ?? {
+        label: 'Target 1 (Scale-Out)',
+        price: entryPrice + riskPts * 1.5,
+        type: 'FIXED',
+        distancePts: riskPts * 1.5,
+        isOverhead: true,
+      }
+    target2 =
+      overheadLevels[1] ?? {
+        label: 'Target 2 (Structural High)',
+        price: entryPrice + riskPts * 2.5,
+        type: 'FIXED',
+        distancePts: riskPts * 2.5,
+        isOverhead: true,
+      }
+    target3 =
+      overheadLevels.find((l) => l.distancePts >= fixedTp * 0.75) ?? {
+        label: 'Target 3 (Runner Extension)',
+        price: entryPrice + fixedTp,
+        type: 'FIXED',
+        distancePts: fixedTp,
+        isOverhead: true,
+      }
+  } else {
+    target1 =
+      supportLevels[0] ?? {
+        label: 'Target 1 (Scale-Out)',
+        price: entryPrice - riskPts * 1.5,
+        type: 'FIXED',
+        distancePts: riskPts * 1.5,
+        isOverhead: false,
+      }
+    target2 =
+      supportLevels[1] ?? {
+        label: 'Target 2 (Structural Low)',
+        price: entryPrice - riskPts * 2.5,
+        type: 'FIXED',
+        distancePts: riskPts * 2.5,
+        isOverhead: false,
+      }
+    target3 =
+      supportLevels.find((l) => l.distancePts >= fixedTp * 0.75) ?? {
+        label: 'Target 3 (Runner Extension)',
+        price: entryPrice - fixedTp,
+        type: 'FIXED',
+        distancePts: fixedTp,
+        isOverhead: false,
+      }
+  }
+
+  let summary = ''
+  if (quality === 'EXCELLENT') {
+    summary = `Clear runway (${runwayPts.toFixed(1)} pts to ${nearestResistance?.label ?? 'Target'} · ${runwayRatio}:1 R:R). Low overhead congestion.`
+  } else if (quality === 'ACCEPTABLE') {
+    summary = `Adequate runway (${runwayPts.toFixed(1)} pts to ${nearestResistance?.label ?? 'Target'} · ${runwayRatio}:1 R:R). Normal rotational target.`
+  } else {
+    summary = `⚠️ Tight Runway Warning (${runwayPts.toFixed(1)} pts to ${nearestResistance?.label ?? 'Resistance'} · ${runwayRatio}:1 R:R). High trap risk directly under heavy institutional supply.`
+  }
+
+  return {
+    direction,
+    entryPrice,
+    stopLossPrice,
+    riskPts,
+    nearestResistance,
+    nearestSupport,
+    runwayPts,
+    runwayRatio,
+    quality,
+    target1,
+    target2,
+    target3,
+    allHorizontalLevels: levels,
+    summary,
+  }
+}
+
+/**
+ * 11. Empirical Velocity & Speedline Corridor
+ * The scale-invariant quantitative alternative to subjective Gann Fans.
+ * Derives equilibrium velocity (1.0x), climax acceleration ray (1.5x), and retest support ray (0.5x)
+ * directly from the empirical breakout wave without screen-scaling optical distortion.
+ */
+export function calculateEmpiricalSpeedlines(params: {
+  origin: { time: number; price: number }
+  breakout: { time: number; price: number }
+  currentPrice: number
+  currentTime: number
+  direction?: 'LONG' | 'SHORT'
+}): EmpiricalSpeedlineCorridor {
+  const { origin, breakout, currentPrice, currentTime } = params
+  const dir: 'LONG' | 'SHORT' = params.direction ?? (breakout.price >= origin.price ? 'LONG' : 'SHORT')
+  const elapsedSec = Math.max(60, breakout.time - origin.time)
+  const deltaPts = breakout.price - origin.price
+  const baseVelocityPtsPerSec = deltaPts / elapsedSec
+  const baseVelocityPtsPer5m = Number(((deltaPts / elapsedSec) * 300).toFixed(2))
+
+  const climaxRayMultiplier = 1.5
+  const retestFloorMultiplier = 0.5
+
+  const timeFromOrigin = Math.max(0, currentTime - origin.time)
+
+  const projectedEquilibriumPrice = Number(
+    (origin.price + baseVelocityPtsPerSec * timeFromOrigin).toFixed(2)
+  )
+  const projectedClimaxPrice = Number(
+    (origin.price + baseVelocityPtsPerSec * climaxRayMultiplier * timeFromOrigin).toFixed(2)
+  )
+  const projectedRetestFloorPrice = Number(
+    (origin.price + baseVelocityPtsPerSec * retestFloorMultiplier * timeFromOrigin).toFixed(2)
+  )
+
+  let currentVelocityState: EmpiricalSpeedlineCorridor['currentVelocityState'] = 'EQUILIBRIUM'
+  let summary = ''
+
+  if (dir === 'LONG') {
+    if (currentPrice >= projectedClimaxPrice) {
+      currentVelocityState = 'CLIMAX_PARABOLIC'
+      summary = `Parabolic Climax Surge: Price (${currentPrice.toFixed(1)}) is exceeding the 1.5x velocity ray (${projectedClimaxPrice.toFixed(1)}). Scale out profits into horizontal resistance.`
+    } else if (currentPrice < projectedRetestFloorPrice) {
+      currentVelocityState = 'MOMENTUM_STALLED'
+      summary = `Momentum Stalled: Price (${currentPrice.toFixed(1)}) closed below the 0.5x equilibrium floor (${projectedRetestFloorPrice.toFixed(1)}). Trailing caution advised.`
+    } else if (currentPrice < projectedEquilibriumPrice) {
+      currentVelocityState = 'HEALTHY_RETEST'
+      summary = `Healthy Retest: Price is consolidating between 0.5x floor (${projectedRetestFloorPrice.toFixed(1)}) and 1.0x equilibrium (${projectedEquilibriumPrice.toFixed(1)}).`
+    } else {
+      currentVelocityState = 'EQUILIBRIUM'
+      summary = `Sustainable Velocity: Price (${currentPrice.toFixed(1)}) tracking healthy 1.0x impulse slope (+${Math.abs(baseVelocityPtsPer5m)} pts/5m).`
+    }
+  } else {
+    if (currentPrice <= projectedClimaxPrice) {
+      currentVelocityState = 'CLIMAX_PARABOLIC'
+      summary = `Parabolic Climax Breakdown: Price (${currentPrice.toFixed(1)}) exceeding 1.5x downward velocity (${projectedClimaxPrice.toFixed(1)}). Scale out short profits.`
+    } else if (currentPrice > projectedRetestFloorPrice) {
+      currentVelocityState = 'MOMENTUM_STALLED'
+      summary = `Momentum Stalled: Price (${currentPrice.toFixed(1)}) crossed above 0.5x equilibrium ceiling (${projectedRetestFloorPrice.toFixed(1)}). Trailing caution advised.`
+    } else if (currentPrice > projectedEquilibriumPrice) {
+      currentVelocityState = 'HEALTHY_RETEST'
+      summary = `Healthy Retest: Price consolidating below 0.5x ceiling (${projectedRetestFloorPrice.toFixed(1)}).`
+    } else {
+      currentVelocityState = 'EQUILIBRIUM'
+      summary = `Sustainable Velocity: Price (${currentPrice.toFixed(1)}) tracking healthy 1.0x downward slope (-${Math.abs(baseVelocityPtsPer5m)} pts/5m).`
+    }
+  }
+
+  return {
+    origin,
+    breakout,
+    elapsedSec,
+    deltaPts,
+    baseVelocityPtsPerSec,
+    baseVelocityPtsPer5m,
+    climaxRayMultiplier,
+    retestFloorMultiplier,
+    projectedEquilibriumPrice,
+    projectedClimaxPrice,
+    projectedRetestFloorPrice,
+    currentVelocityState,
+    summary,
   }
 }

@@ -16,6 +16,7 @@ export interface UserTrendline {
   isActionTrendline?: boolean
   isReactionTrendline?: boolean
   parentActionTrendlineId?: string
+  actionBreakoutConfirmed?: boolean
   breakoutTime?: number
   breakoutPrice?: number
   isInitialOvernight?: boolean

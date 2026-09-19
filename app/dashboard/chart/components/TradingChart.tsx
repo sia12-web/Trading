@@ -197,6 +197,8 @@ import {
   calculateDynamicTrendline,
   checkDynamicTrendlineExit,
   resampleCandlesTo5M,
+  evaluateHorizontalRunway,
+  calculateEmpiricalSpeedlines,
 } from '@/lib/trading/trendlineStrategy'
 
 const DOW_15M_FAIL_COLORS: any = { high: '#3b82f6', low: '#ef4444', mid: '#eab308', buy: '#3b82f6', sell: '#ef4444' }
@@ -3133,9 +3135,13 @@ export function TradingChart({
 
             if (initPt) {
               const mockChartCtx: any = {
-                yesterday: yesterdayNyc ? { poc: yesterdayNyc.poc } : null,
-                overnight: overnightInventory ? { overnight: { poc: overnightInventory.overnight?.poc } } : null,
-                frvp5d: frvp5d ? { poc: frvp5d.poc } : null,
+                yesterday: yesterdayNyc ? { poc: yesterdayNyc.poc, high: yesterdayNyc.yh, low: yesterdayNyc.yl, vah: yesterdayNyc.vah, val: yesterdayNyc.val } : null,
+                overnight: overnightInventory ? {
+                  overnight: { poc: overnightInventory.overnight?.poc, high: overnightInventory.overnight?.high, low: overnightInventory.overnight?.low },
+                  asia: { poc: overnightInventory.asia?.poc, high: overnightInventory.asia?.high, low: overnightInventory.asia?.low },
+                  london: { poc: overnightInventory.london?.poc, high: overnightInventory.london?.high, low: overnightInventory.london?.low },
+                } : null,
+                frvp5d: frvp5d ? { poc: frvp5d.poc, vah: frvp5d.vah, val: frvp5d.val, high: frvp5d.high, low: frvp5d.low } : null,
                 avwap5m: avwap5mBenchmark ? {
                   vwap: avwap5mBenchmark.vwap,
                   sigma1Upper: avwap5mBenchmark.sigma1Upper,
@@ -3144,6 +3150,13 @@ export function TradingChart({
                   sigma2Lower: avwap5mBenchmark.sigma2Lower,
                 } : null,
               }
+
+              const horizontalRunway = evaluateHorizontalRunway({
+                entryPrice: activeEntryPrice ?? activeBreakoutCandle.close,
+                stopLossPrice: activeStopLoss ?? (isLong ? activeBreakoutCandle.low - 1 : activeBreakoutCandle.high + 1),
+                direction: setupDir,
+                chartContext: mockChartCtx,
+              })
 
               const borningZone = evaluateTrendBorningZone({
                 initiatingPoint: initPt,
@@ -3403,7 +3416,11 @@ export function TradingChart({
 
                 if (!hideTrendlineBadges) {
                   const brkIcon = isLong ? '🚀 5M LONG ENTRY' : '🔻 5M SHORT ENTRY'
-                  const brkText = `${brkIcon}: ${activeEntryPrice?.toFixed(2)} · SL ${activeStopLoss?.toFixed(2)} · TP ${activeTakeProfit?.toFixed(2)}`
+                  const targetInfo = horizontalRunway.nearestResistance
+                    ? `🎯 Target: ${horizontalRunway.nearestResistance.price.toFixed(1)} (${horizontalRunway.nearestResistance.label} · ${horizontalRunway.runwayRatio}:1 Runway)`
+                    : `TP ${activeTakeProfit?.toFixed(2)}`
+                  const trapWarning = horizontalRunway.quality === 'TIGHT_RUNWAY' ? ' ⚠️ TIGHT RUNWAY' : ''
+                  const brkText = `${brkIcon}: ${activeEntryPrice?.toFixed(2)} · SL ${activeStopLoss?.toFixed(2)} · ${targetInfo}${trapWarning}`
                   ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
                   const brkW = ctx.measureText(brkText).width + 10
                   const brkH = 16
@@ -3412,10 +3429,10 @@ export function TradingChart({
 
                   ctx.fillStyle = 'rgba(15, 23, 42, 0.95)'
                   ctx.fillRect(brkBx, brkBy, brkW, brkH)
-                  ctx.strokeStyle = isLong ? '#22c55e' : '#ef4444'
+                  ctx.strokeStyle = horizontalRunway.quality === 'TIGHT_RUNWAY' ? '#f59e0b' : isLong ? '#22c55e' : '#ef4444'
                   ctx.lineWidth = 1
                   ctx.strokeRect(brkBx, brkBy, brkW, brkH)
-                  ctx.fillStyle = isLong ? '#86efac' : '#fca5a5'
+                  ctx.fillStyle = horizontalRunway.quality === 'TIGHT_RUNWAY' ? '#fcd34d' : isLong ? '#86efac' : '#fca5a5'
                   ctx.fillText(brkText, brkBx + 5, brkBy + 11)
                 }
               }
@@ -4464,7 +4481,40 @@ export function TradingChart({
       })),
       userDrawings: {
         trendlines: activeTrendlines.map((t) => {
-          const m = computeTrendlineMetrics(t.p1, t.p2, curPrice, Math.floor(Date.now() / 1000))
+          const nowSec = Math.floor(Date.now() / 1000)
+          const m = computeTrendlineMetrics(t.p1, t.p2, curPrice, nowSec)
+          const setupDir = t.p2.price < t.p1.price ? 'LONG' : 'SHORT'
+          const tlMockChartCtx: any = {
+            yesterday: yesterdayNyc ? { poc: yesterdayNyc.poc, high: yesterdayNyc.yh, low: yesterdayNyc.yl, vah: yesterdayNyc.vah, val: yesterdayNyc.val } : null,
+            overnight: overnightInventory ? {
+              overnight: { poc: overnightInventory.overnight?.poc, high: overnightInventory.overnight?.high, low: overnightInventory.overnight?.low },
+              asia: { poc: overnightInventory.asia?.poc, high: overnightInventory.asia?.high, low: overnightInventory.asia?.low },
+              london: { poc: overnightInventory.london?.poc, high: overnightInventory.london?.high, low: overnightInventory.london?.low },
+            } : null,
+            frvp5d: frvp5d ? { poc: frvp5d.poc, vah: frvp5d.vah, val: frvp5d.val, high: frvp5d.high, low: frvp5d.low } : null,
+            avwap5m: avwap5mBenchmark ? {
+              vwap: avwap5mBenchmark.vwap,
+              sigma1Upper: avwap5mBenchmark.sigma1Upper,
+              sigma1Lower: avwap5mBenchmark.sigma1Lower,
+              sigma2Upper: avwap5mBenchmark.sigma2Upper,
+              sigma2Lower: avwap5mBenchmark.sigma2Lower,
+            } : null,
+          }
+          const basePx = curPrice ?? t.p2.price
+          const runway = evaluateHorizontalRunway({
+            entryPrice: basePx,
+            stopLossPrice: setupDir === 'LONG' ? basePx - 10 : basePx + 10,
+            direction: setupDir,
+            chartContext: tlMockChartCtx,
+          })
+          const speedlines = calculateEmpiricalSpeedlines({
+            origin: t.p1,
+            breakout: t.p2,
+            currentPrice: basePx,
+            currentTime: nowSec,
+            direction: setupDir,
+          })
+
           return {
             id: t.id,
             label: t.label,
@@ -4483,9 +4533,27 @@ export function TradingChart({
             isCarriedFromOvernight: t.isCarriedFromOvernight,
             breakCountOvernight: t.breakCountOvernight,
             isActionTrendline: t.isActionTrendline,
+            isReactionTrendline: t.isReactionTrendline,
+            actionBreakoutConfirmed: t.actionBreakoutConfirmed,
             isInitialOvernight: t.isInitialOvernight,
             p1: t.p1,
             p2: t.p2,
+            horizontalRunway: {
+              runwayPts: runway.runwayPts,
+              runwayRatio: runway.runwayRatio,
+              quality: runway.quality,
+              nearestTargetLabel: runway.nearestResistance?.label,
+              nearestTargetPrice: runway.nearestResistance?.price,
+              summary: runway.summary,
+            },
+            empiricalVelocity: {
+              baseVelocityPtsPer5m: speedlines.baseVelocityPtsPer5m,
+              velocityState: speedlines.currentVelocityState,
+              equilibriumPrice: speedlines.projectedEquilibriumPrice,
+              climaxPrice: speedlines.projectedClimaxPrice,
+              retestFloorPrice: speedlines.projectedRetestFloorPrice,
+              summary: speedlines.summary,
+            },
           }
         }),
         ranges: activeRangeBoxes.map((r) => {
@@ -4703,14 +4771,54 @@ export function TradingChart({
         const tl = trendlines.find((t) => t.id === id)
         if (!tl) return
         const m = computeTrendlineMetrics(tl.p1, tl.p2, curPrice, curTime)
+        const setupDir = tl.p2.price < tl.p1.price ? 'LONG' : 'SHORT'
+        const tlMockChartCtx: any = {
+          yesterday: yesterdayNyc ? { poc: yesterdayNyc.poc, high: yesterdayNyc.yh, low: yesterdayNyc.yl, vah: yesterdayNyc.vah, val: yesterdayNyc.val } : null,
+          overnight: overnightInventory ? {
+            overnight: { poc: overnightInventory.overnight?.poc, high: overnightInventory.overnight?.high, low: overnightInventory.overnight?.low },
+            asia: { poc: overnightInventory.asia?.poc, high: overnightInventory.asia?.high, low: overnightInventory.asia?.low },
+            london: { poc: overnightInventory.london?.poc, high: overnightInventory.london?.high, low: overnightInventory.london?.low },
+          } : null,
+          frvp5d: frvp5d ? { poc: frvp5d.poc, vah: frvp5d.vah, val: frvp5d.val, high: frvp5d.high, low: frvp5d.low } : null,
+          avwap5m: avwap5mBenchmark ? {
+            vwap: avwap5mBenchmark.vwap,
+            sigma1Upper: avwap5mBenchmark.sigma1Upper,
+            sigma1Lower: avwap5mBenchmark.sigma1Lower,
+            sigma2Upper: avwap5mBenchmark.sigma2Upper,
+            sigma2Lower: avwap5mBenchmark.sigma2Lower,
+          } : null,
+        }
+        const runway = evaluateHorizontalRunway({
+          entryPrice: curPrice,
+          stopLossPrice: setupDir === 'LONG' ? curPrice - 10 : curPrice + 10,
+          direction: setupDir,
+          chartContext: tlMockChartCtx,
+        })
+        const speedlines = calculateEmpiricalSpeedlines({
+          origin: tl.p1,
+          breakout: tl.p2,
+          currentPrice: curPrice,
+          currentTime: curTime,
+          direction: setupDir,
+        })
+
+        const tlTypeLabel = tl.isReactionTrendline
+          ? 'Reaction Trendline'
+          : tl.actionBreakoutConfirmed
+          ? 'Action Trendline (Breakout Confirmed)'
+          : 'Action Trendline'
+
+        const runwayStr = `Horizontal S/R Runway: ${runway.runwayPts.toFixed(1)} pts (${runway.runwayRatio}:1 R:R, ${runway.quality}). Nearest target: ${runway.nearestResistance ? `${runway.nearestResistance.label} @ ${runway.nearestResistance.price.toFixed(1)}` : 'None'}.`
+        const velocityStr = `Empirical Velocity: ${speedlines.currentVelocityState} (Equilibrium: ${speedlines.projectedEquilibriumPrice.toFixed(1)}, Climax 1.5x: ${speedlines.projectedClimaxPrice.toFixed(1)}, Retest 0.5x: ${speedlines.projectedRetestFloorPrice.toFixed(1)}). ${speedlines.summary}`
+
         setLeoExternalPoints([
           {
             id: tl.id,
-            label: tl.label || 'Trendline',
+            label: tl.label || tlTypeLabel,
             value: `${m.direction} (${m.slopePtsPer5mBar >= 0 ? '+' : ''}${m.slopePtsPer5mBar} pts/5m)`,
             tier: 'DRAWING',
             category: 'TRENDLINE',
-            description: `User Trendline: From ${tl.p1.price.toLocaleString()} (${formatEtTime(tl.p1.time)}) to ${tl.p2.price.toLocaleString()} (${formatEtTime(tl.p2.time)}). Projected: ${m.projectedPrice.toLocaleString()}. Price is ${m.priceRelation} (${m.distancePts != null ? `${m.distancePts} pts` : 'N/A'}).`,
+            description: `${tlTypeLabel}: From ${tl.p1.price.toLocaleString()} (${formatEtTime(tl.p1.time)}) to ${tl.p2.price.toLocaleString()} (${formatEtTime(tl.p2.time)}). Projected: ${m.projectedPrice.toLocaleString()}. Price is ${m.priceRelation} (${m.distancePts != null ? `${m.distancePts} pts` : 'N/A'}). ${runwayStr} ${velocityStr}`,
           },
         ])
         setLeoPanelOpen(true)
