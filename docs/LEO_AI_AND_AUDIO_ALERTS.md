@@ -295,4 +295,43 @@ The Market Situations dashboard (`/dashboard/situations`) organizes each rule in
 
 **Cross-Tab Synchronization**: Any rule armed in the chat panel, updated on the chart, or modified in the dashboard broadcasts `leo-rules-updated` via `CustomEvent` and `StorageEvent` listeners, keeping all open browser tabs continuously in sync.
 
+---
+
+## 11. Leo Questioning Engine, System Prompt Section 5f & Telemetry Integration
+
+Leo integrates the **Auction Price Critique & Questioning Protocol** into its core prompt engineering and context processing pipeline (`lib/ai/leoAssistant.ts` & `/api/trading/leo/chat`):
+
+### 11.1 System Prompt Section 5f: AUCTION PRICE CRITIQUE & "QUESTIONING" DESK PROTOCOL
+- **Auction Mindset**: Instructs Leo to treat the market as a place to conduct business only at advantageous wholesale prices. If price is not suitable, Leo preaches patience: *"We do not force a trade. Be patient."*
+- **Aggressive Price Critique**: Commands Leo to challenge the trader whenever they attempt to chase a single green/red candle or buy into expensive overnight retail inventory: *"Why the hell should we buy here at 9:30 AM when Asian & London participants bought 30 points lower?"*
+- **6-Point Pre-Trade Self-Audit Checklist**: Leo incorporates Q1 Impulse Trap, Q2 Psychological Magnet, Q3 Liquidity Vacuum, Q4 Time Regulation, Q5 Global Inventory, and Q6 Wholesale vs Retail Valuation into every trade evaluation.
+
+### 11.2 System Telemetry Ingestion
+When the chart computes live price critique telemetry (`evaluatePriceQuestioning`), it injects a structured block directly into Leo's prompt context:
+
+```
+[AUCTION PRICE CRITIQUE & "QUESTIONING" TELEMETRY]
+• Valuation State: EXTREME_PREMIUM (Score: +78/100)
+• Suitability Verdict: WEAK_HAND_TRAP_RISK
+• Wholesale Target: 2045.00 (Yesterday NYC POC)
+• Session Inventory Reality: Asian/London participants accumulated lower overnight. Buying here risks providing exit liquidity.
+• Weak-Hand Trap Alert: SINGLE_CANDLE_FOMO (Spike into retail premium)
+• 6-Question Pre-Trade Audit:
+  1. Impulse Trap: DANGER (Single-candle FOMO detected)
+  2. Psychological Magnet: PASSED
+  3. Liquidity Vacuum: WARNING (Low volume extension)
+  4. Time Regulation: PASSED (RTH Cash Open)
+  5. Inventory Overhang: DANGER (Overnight long inventory overhead)
+  6. Wholesale vs Retail: DANGER (Price 35pts above 5D-POC)
+• Desk Recommendation: Hold patient. Market is advertising at retail premium. Await responsive rotation into 2045 before buying.
+```
+
+### 11.3 1-Click Dossier Submission ("Ask Leo to Critique Price")
+- Clicking **Ask Leo to Critique Price** on the floating Questioning card automatically formats the live critique dossier, populates Leo's input box, and dispatches the auto-prompt.
+- Leo responds with a structured institutional report detailing Valuation & Location, Overnight Inventory Reality, Weak-Hand Trap breakdown, the 6-Question Audit status, and actionable patience guidance.
+
+### 11.4 Deterministic Off-Session Fallback Handlers
+- When a trader asks questioning inquiries outside New York active hours (or without pre-computed telemetry), `buildDeskFallbackResponse` in `/api/trading/leo/chat/route.ts` catches questioning keywords (*"critique price"*, *"why should I buy here?"*, *"is price expensive?"*, *"am I trapped?"*).
+- Provides off-session guidance explaining that Globex participants in Asia/London are currently establishing initial inventory and directs the trader to await NY pre-market formation at 09:00 AM / 09:15 AM ET.
+
 

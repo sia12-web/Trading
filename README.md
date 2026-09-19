@@ -34,17 +34,24 @@ The complete technical and operational documentation is organized under the [`do
 - **Macro Daily History**: High-speed consolidation of 2 years of daily macro candles from Yahoo Finance in under 50ms.
 - **Forming Bar Engine**: Imperative in-memory candle updates via Server-Sent Events (`/api/trading/quote/stream`) with zero UI lag.
 
-### 2. Institutional Financial Charting (Lightweight Charts v4)
+### 2. Institutional Financial Charting & Visual Quality Engine (Lightweight Charts v4)
 - **Institutional Styling**: Standard TradingView green (`#089981`) and red (`#f23645`) candles desk-wide.
 - **5-Month Anchored VWAP**: Macro institutional benchmark with `±1σ`, `±2σ`, and `±3σ` volatility bands on Daily (`1D`) and dynamic session VWAP + 5M benchmark line on intraday charts (`1m`, `5m`, `30m`).
 - **5-Day Fixed Range Volume Profile (FRVP)**: Calculates Point of Control (POC), Value Area High (VAH), and Value Area Low (VAL), with the POC line terminating precisely at the current candle.
-- **5-Day Fixed Range Volume Profile (FRVP)**: Calculates Point of Control (POC), Value Area High (VAH), and Value Area Low (VAL), with the POC line terminating precisely at the current candle.
-- **Dalton Auction Theory & Excess Reference Ranges**: Replaces legacy Initial Balance with canonical Excess Selling High and Excess Buying Low reference boundaries (`excessLevelsFromCandles()`), 30-minute TPO period Day Type classification (`classifyMarketDayType`), Opening Ranges (OR15, OR30), and Late-Session Spikes.
+- **Dalton Auction Theory & Excess Reference Ranges**: Canonical Excess Selling High and Excess Buying Low reference boundaries (`excessLevelsFromCandles()`), 30-minute TPO period Day Type classification (`classifyMarketDayType`), Opening Ranges (OR15, OR30), and Late-Session Spikes.
 - **Daily & Intraday Tested Extremes**: Structural swing highs/lows with traded volume badges (`(142.5k)`), retest confirmation (`[Retest 0.82x]`), and bounded horizontal shelves.
-- **Cumulative Volume Delta (CVD)**: Interactive candlestick sub-pane displaying buy/sell volume imbalances and order absorption divergences.
+- **Cumulative Volume Delta (CVD) & TimeScale Sync Locking**: Interactive candlestick sub-pane displaying buy/sell volume imbalances. Features a unified mutual exclusion lock (`isSyncingTimeScale`) and sub-pixel epsilon threshold (`< 0.05 bars`) to eliminate chart shaking, combined with aligned `minimumWidth: 75px` price scales and 150ms throttled single-pass overlay painting.
+- **Horizontal S/R Runway & Empirical Velocity Corridor**: Computes scale-invariant momentum slope ($\Delta P / \Delta t$) with $1.0\times$ Equilibrium, $1.5\times$ Climax, and $0.5\times$ Retest Floor rays, paired with multi-session overhead resistance runway evaluation to flag tight runway traps ($< 1.5:1$ R:R).
 
-### 3. Leo AI Copilot, Market Situations & Web Audio Alert Engine
-- **Context-Aware Assistance**: Continuous situational awareness across live chart price action, Higher Timeframe daily structure, and open broker positions.
+### 3. "Questioning" — Auction Price Critique & Pre-Trade Self-Audit Protocol
+- **The Market as an Auction Place**: Evaluates whether price is advertising opportunity at a wholesale discount or expensive retail premium (`DEEP_DISCOUNT`, `DISCOUNT`, `FAIR_VALUE`, `PREMIUM`, `EXTREME_PREMIUM`).
+- **Session Inventory Reality Check**: Critiques price relative to Asian, London, and Overnight participants at the 9:30 AM NY Open: *"Why buy at 9:30 AM when overnight participants accumulated 30 points lower?"*
+- **6-Point Pre-Trade Self-Audit Checklist**: Interactive audit verifying Q1 Impulse Trap, Q2 Psychological Magnet, Q3 Liquidity Vacuum, Q4 Time Regulation (Open Drive vs 11:30–13:30 Lunch Doldrums), Q5 Inventory Overhang, and Q6 Wholesale vs Retail Valuation.
+- **NY Session Window Gating**: Strictly restricted to New York pre-market & cash hours (09:00 ET / 09:15 ET through 16:00 ET close via `America/New_York` clock). Completely deactivated during Asian, London, post-close, and weekend hours.
+- **Interactive Visual HUD & Leo Integration**: Features a color-coded `⚖️ Critique: [STATUS]` HUD button, hotkey `Q`, floating desk card with valuation meter, and 1-click dossier submission into Leo AI (Section 5f system prompt & telemetry).
+
+### 4. Leo AI Copilot, Market Situations & Web Audio Alert Engine
+- **Context-Aware Assistance**: Continuous situational awareness across live chart price action, Higher Timeframe daily structure, open broker positions, and Auction Price Critique telemetry.
 - **Market Situations & Armed Rules Manager (`/dashboard/situations`)**: Centralized command dashboard organizing conditional entries, desk alarms, level monitors, and stagnation rules with full date/time provenance (`createdDateFormatted`), auto-calculated R:R ratios, and cross-tab sync.
 - **Smart Entry Triggers**:
   - **Level Touch Default**: Defaults to `LEVEL_TOUCH` (Price Touch at Level) when no candlestick pattern is specified, eliminating auto-assigned patterns.
@@ -53,12 +60,12 @@ The complete technical and operational documentation is organized under the [`do
 - **Persistent Long-Term Memory (LTM)**: 1-click conversion of chart Range Boxes into persistent memory zones with trader notes and audible alarms.
 - **Procedural Two-Tone Chime Synthesis**: Zero-latency TradingView-style alert chime synthesized in real time via the Web Audio API (880 Hz fundamental $\rightarrow$ 1318.51 Hz harmonic shimmer) without external audio files.
 
-### 4. Questrade Broker & TopstepX Prop Firm Integration
+### 5. Questrade Broker & TopstepX Prop Firm Integration
 - **Questrade Live Sync**: Real-time portfolio book, cash balance, open multi-day swing equities (SPY, GOOG, SLV, COPX).
 - **Intelligent Delayed TP/SL Bracket Pairing**: Proprietary algorithm pairing delayed limit targets and stop orders with open positions based on price relationship sanity (Long TP > Entry > SL) and recency scoring, completely isolating unexecuted entry limits.
 - **TopstepX $1,500 Challenge**: Zero-base prop equity engine tracking official challenge `1.5KCHCR-LABS004-V2-675081-67067724`, Max Loss Limit floor (-$500.00), live cushion ($683.64), win rate (56.06%), and the verified 66-trade ledger.
 
-### 5. Strict Desk Risk Controls & Zero-Telemetry Privacy
+### 6. Strict Desk Risk Controls & Zero-Telemetry Privacy
 - **Risk Limits**: Fixed $400 dollar risk per setup, Daily Loss Limit (DLL) circuit breakers, 3-attempt daily ladder, and +$700 Green Day lock.
 - **Zero Telemetry**: All Telegram notifications are permanently disabled desk-wide. Telemetry, order execution, and trading signals remain 100% private on the local platform.
 

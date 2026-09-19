@@ -125,27 +125,16 @@ The system scans 4 distinct structural market setups across the daily auction:
 
 ---
 
-## 5. 📡 AUTOMATED ALERTS & DATABASE JOURNALING
+## 5. 📡 DESK NOTIFICATIONS, SOUND CHIMES & ZERO-TELEMETRY JOURNALING
 
-Whenever an order is triggered:
+Whenever an order or setup is triggered:
 
-1. **Telegram Instant Alert**:
-   Sends immediate notification formatted as:
-   ```text
-   🚨 DOW ASIA BREAKOUT ENTRY — 🟢 BUY STOP TRIGGERED
-   Instrument: DOW (MYM Futures)
-   Setup: Asia Narrow Range (8 PM - 2 AM ET <80 pts Compression)
-   Asia Range: 63 pts
-   Direction: LONG
-   Entry Order: 53,440
-   Stop Loss: 53,388.5 (Asia Midpoint)
-   Take Profit: 53,517 (1.50R Target)
-   Position Size: 16 MYM ($400 Risk / [51.5 pts x $0.5])
-   Timestamp: 2026-08-19T02:00:00.000Z
-   ```
+1. **Zero-Telemetry Local Notification & Web Audio Chime**:
+   - Telegram notifications are permanently disabled desk-wide (`telegramConfigured() === false`) to enforce 100% on-platform execution privacy.
+   - Real-time alerts stream directly to the local dashboard via Server-Sent Events (SSE) and play zero-latency TradingView-style dual-tone chimes synthesized via the Web Audio API.
 
 2. **Supabase Database Journaling**:
-   Automatically logs trade record with setup name, instrument, entry price, stop loss, take profit, position size, risk dollars, R:R ratio, and execution timestamp.
+   - Automatically logs trade record with setup name, instrument, entry price, stop loss, take profit, position size, risk dollars, R:R ratio, and execution timestamp.
 
 ---
 
@@ -160,3 +149,22 @@ All limit, stop-loss, and take-profit orders pass through the `snapDeskPrice()` 
 - **Silver (SI)**: Snapped to 0.005 tick increments.
 
 `snapStopToTick()` and `snapTargetToTick()` guarantee that protective stops and profit targets always remain on the correct side of the market after rounding.
+
+---
+
+## 7. ⚖️ THE "QUESTIONING" AUCTION PRICE CRITIQUE PROTOCOL
+
+Every setup is evaluated by the **Auction Price Critique & "Questioning" Engine** (`lib/trading/priceQuestioning.ts`):
+
+1. **Wholesale vs. Retail Valuation**:
+   - Classifies current price relative to multi-horizon POCs (Yesterday NYC POC, Overnight POC, 5D-POC, 5M-AVWAP): `DEEP_DISCOUNT`, `DISCOUNT`, `FAIR_VALUE`, `PREMIUM`, `EXTREME_PREMIUM`.
+2. **Session Inventory Reality Check**:
+   - Critiques 9:30 AM NY Open entries against overnight participants: *"Why buy at 9:30 AM when Asian and London participants accumulated 30 points lower overnight?"*
+3. **6-Point Pre-Trade Self-Audit**:
+   - Evaluates Q1 Impulse Trap, Q2 Psychological Magnet, Q3 Liquidity Vacuum, Q4 Time Regulation (Open Drive vs 11:30–13:30 Lunch Doldrums), Q5 Global Inventory, and Q6 Wholesale vs Retail Valuation.
+4. **Horizontal S/R Runway & Empirical Velocity Corridor**:
+   - Calculates scale-invariant momentum slope ($\Delta P / \Delta t$) with $1.0\times$ Equilibrium, $1.5\times$ Climax, and $0.5\times$ Retest Floor rays.
+   - Evaluates overhead resistance runway ratio to reject tight runway traps ($< 1.5:1$ R:R).
+5. **NY Session Window Gating**:
+   - Pre-trade critique is active strictly during New York pre-market & cash hours (09:00 ET / 09:15 ET to 16:00 ET close).
+

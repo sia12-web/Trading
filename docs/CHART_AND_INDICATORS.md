@@ -173,3 +173,59 @@ An Excess Tail signifies rapid, aggressive rejection at price extremes where mar
 
 ### 7.3 Leo AI Integration
 When the Candlestick Patterns toggle (`showCandlestickPatterns` 🕯️) is active, all triggered patterns on the latest bar are streamed directly to Leo AI's market context (`activePatterns`), enabling automated voice and text commentary on real-time rejections and momentum shifts.
+
+---
+
+## 8. Chart Visual Stability, Sub-Pane TimeScale Sync Lock & Aligned Price Scale Widths
+
+To eliminate chart shaking, horizontal jitter, and visual micro-stuttering across the main candlestick chart and CVD sub-pane, TradePulse enforces strict visual rendering invariants:
+
+### 8.1 Unified TimeScale Sync Mutual Exclusion (`isSyncingTimeScale`)
+- **Feedback Loop Elimination**: Synchronizing time scales between two charts can create an infinite ping-pong feedback loop if floating-point logical ranges differ. TradePulse uses a single unified boolean lock (`isSyncingTimeScale`).
+- **Sub-Pixel Epsilon Guard**:
+  ```typescript
+  const rangesDiffer = (r1: any, r2: any, eps = 0.05) => {
+    if (!r1 || !r2) return true
+    return Math.abs(r1.from - r2.from) >= eps || Math.abs(r1.to - r2.to) >= eps
+  }
+  ```
+  If the target chart's logical range is already within 0.05 bars of the requested range, `setVisibleLogicalRange` is skipped, terminating rounding noise feedback.
+
+### 8.2 Aligned Minimum Price Scale Width (`minimumWidth: 75px`)
+- Lightweight Charts automatically sizes price scale widths based on label lengths.
+- By setting `minimumWidth: 75` on both `DESK_CHART_THEME.rightPriceScale` and `cvdChart.rightPriceScale`, both plot areas have identical pixel widths, guaranteeing 1:1 vertical candle slot alignment.
+
+### 8.3 Throttled Single-Pass Live Tick Overlay Painting
+- Live tick updates (`paintTipBar`) call `paintOverlaysSinglePassRef.current()` at most once every 150ms.
+- The 320ms kinetic scroll animation loop (`pokeOverlayLayout`) is reserved strictly for user drag and wheel gestures, saving tens of thousands of redundant DOM queries and canvas redraws per minute during fast market streams.
+
+---
+
+## 9. Horizontal S/R Runway & Scale-Invariant Empirical Velocity Corridor
+
+### 9.1 Scale-Invariant Empirical Velocity ($\Delta P / \Delta t$)
+Traditional geometric Gann Fans ($45^\circ$, $1\times1$) distort on digital monitors whenever the chart zooms or resizes. TradePulse calculates true **Scale-Invariant Empirical Velocity**:
+- **Baseline Velocity ($1.0\times$)**: $\Delta P / \Delta t$ in points per 5-minute candle.
+- **Parabolic Climax Ray ($1.5\times$)**: Warns when momentum goes parabolic into horizontal resistance, triggering profit take-outs.
+- **Retest Floor Ray ($0.5\times$)**: Minimum slope required to maintain trend structure. Closing below signals momentum stall.
+
+### 9.2 Horizontal S/R Runway Assessment
+Evaluates multi-session levels (Overnight High/Low/POC, Yesterday RTH High/Low/POC, 5D-POC, 5M-AVWAP) to calculate the **Runway-to-Risk Ratio**:
+$$\text{Runway Ratio} = \frac{\text{Distance to Nearest Overhead Resistance (pts)}}{\text{Entry to Stop Loss Risk (pts)}}$$
+- **`EXCELLENT` ($\ge 2.5:1$)**: Clear institutional air pocket.
+- **`ACCEPTABLE` ($1.5:1 - 2.49:1$)**: Standard rotational target.
+- **`TIGHT_RUNWAY` ($< 1.5:1$)**: ⚠️ **High Trap Risk** directly beneath heavy supply.
+
+---
+
+## 10. "Questioning" — Auction Price Critique & Pre-Trade Self-Audit HUD
+
+### 10.1 Interactive HUD Button & Hotkey `Q`
+- Positioned in the top evaluator row: **`⚖️ Critique: [DISCOUNT / PREMIUM / FAIR / TRAP RISK]`**.
+- Dynamically color-coded (Emerald = Discount, Rose = Premium, Amber = Trap Risk).
+- Pressing **`Q`** or clicking the button toggles the floating **Auction Questioning & Critique Desk Card**.
+
+### 10.2 Valuation Meter & Session Inventory Reality Card
+- Displays a visual gradient pointer from $-100$ (Deep Discount) to $+100$ (Extreme Premium).
+- Critiques 9:30 AM NY Open price action against overnight participants: *"Why buy at 9:30 AM when Asian & London buyers accumulated 30 points lower?"*
+- Features 1-click **Ask Leo to Critique Price** integration, populating Leo with full telemetry and auto-executing an institutional auction audit.

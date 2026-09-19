@@ -187,16 +187,28 @@ Submits a conversational message to Leo with active chart and market context.
 - **Request Body**:
   ```json
   {
-    "message": "Is Dow 40,600 a valid short entry right now?",
+    "message": "Critique this price at 9:30 AM open",
     "instrument": "DOW",
-    "currentPrice": 40580.0
+    "currentPrice": 40580.0,
+    "priceQuestioning": {
+      "valuationState": "EXTREME_PREMIUM",
+      "valuationScore": 78,
+      "suitabilityVerdict": "WEAK_HAND_TRAP_RISK",
+      "wholesaleTarget": 40480.0,
+      "inventoryCritique": "Asian and London participants accumulated 30 points lower overnight. Buying at retail open risks providing exit liquidity to overnight longs.",
+      "weakHandTrap": "SINGLE_CANDLE_FOMO",
+      "sixQuestionAudit": [
+        { "id": "q1_impulse", "status": "DANGER", "headline": "Single-Candle FOMO", "details": "Impulse spike into retail premium" },
+        { "id": "q6_wholesale", "status": "DANGER", "headline": "Wholesale vs Retail", "details": "Price 35pts above 5D-POC" }
+      ]
+    }
   }
   ```
 - **Response Format (`200 OK`)**:
   ```json
   {
-    "response": "40,600 represents the 5-Month Anchored VWAP. Look for seller absorption and a rejection candle on the 5m before entering short. Place stop loss above 40,625.",
-    "suggestedAction": "WAIT_FOR_CONFIRMATION"
+    "response": "Market is advertising at EXTREME PREMIUM (+78 score). Asian/London participants accumulated lower overnight. Do not provide exit liquidity. Hold patient for responsive rotation to wholesale 40,480 before buying.",
+    "suggestedAction": "HOLD_PATIENT_DO_NOT_FORCE"
   }
   ```
 

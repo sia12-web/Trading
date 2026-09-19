@@ -100,3 +100,40 @@ In previous versions, automated notifications and signals were dispatched to Tel
 - `telegramConfigured()` in `lib/notify/telegram.ts` unconditionally returns `false`.
 - `sendTelegramMessage()` immediately exits with `{ ok: true, skipped: true }` without executing any network calls.
 - All real-time signals, risk notifications, and Leo AI insights stream exclusively to the private web dashboard via secure Server-Sent Events (SSE) and on-screen audio synthesizers.
+
+---
+
+## 5. The "Questioning" Protocol — Auction Price Critique & Pre-Trade Self-Audit Desk
+
+> *"The market is a place to do business. If price is not suitable for us, we never force a trade. Price advertises opportunity: when discounted we buy, when premium we short."*
+
+### 5.1 Auction Market Valuation States (`priceQuestioning.ts`)
+The engine computes composite weighted deviation across multi-horizon reference anchors (Yesterday POC: 30%, Overnight POC: 30%, 5D-POC: 25%, 5M-AVWAP: 15%) to classify current auction state:
+- **`DEEP_DISCOUNT` (Score $-100 \dots -60$)**: Price trading far below wholesale value anchors. Prime location for responsive buying.
+- **`DISCOUNT` (Score $-59 \dots -20$)**: Advantageous wholesale buying territory.
+- **`FAIR_VALUE` (Score $-19 \dots +19$)**: Rotational equilibrium. Requires breakout momentum confirmation.
+- **`PREMIUM` (Score $+20 \dots +59$)**: Advantageous wholesale shorting / retail exit territory.
+- **`EXTREME_PREMIUM` (Score $+60 \dots +100$)**: Price extended far above wholesale benchmarks. High trap risk for buyers.
+
+### 5.2 Session Inventory Reality Check
+At the 9:30 AM New York Cash Open (and throughout the session), the platform compares current price to overnight participants:
+- *"Why the hell should I buy at 9:30 AM when Asian and London participants accumulated 30 points lower overnight?"*
+- Prevents buying expensive retail from overnight longs seeking exit liquidity, and prevents shorting into overnight sellers at structural session lows.
+
+### 5.3 The 6-Point Questioning Pre-Trade Self-Audit
+1. **Q1: Impulse Trap**: *Why enter now? Is it just because you saw a single bullish or bearish candle?*
+2. **Q2: Psychological Magnet**: *Are you reacting just to a rounded number (.00 or .50 handle)?*
+3. **Q3: Liquidity Vacuum**: *Is price moving in low volume where institutions set up traps?*
+4. **Q4: Time Regulation**: *Can time regulate value right now (Session Phase: Open Drive vs 11:30–13:30 Lunch Doldrums)?*
+5. **Q5: Global Inventory**: *Where did Asian, London & Overnight participants do business?*
+6. **Q6: Wholesale vs. Retail**: *Is current price a wholesale discount or an expensive retail premium relative to Yesterday POC & 5D POC?*
+
+### 5.4 Weak-Hand Trap & Emotional Retail Protection
+- **Single-Candle FOMO**: Flagged when a large impulse candle spikes into Extreme Premium or Deep Discount.
+- **Round-Number Magnet**: Flagged when price approaches century/half-century handles without supporting volume.
+- **Thin Liquidity Vacuum**: Flagged when price extends rapidly on low volume.
+- **Lunch Doldrums Chop**: Flagged during 11:30 AM – 1:30 PM ET low-liquidity rotational chop.
+
+### 5.5 Accurate NY Session Window Gating
+- **Active Window**: Weekdays (Mon–Fri) from **09:00 AM / 09:15 AM ET** (pre-market unlock) through **16:00 ET** (Cash Market Close) strictly locked to `America/New_York` timezone.
+- **Off-Session Inactivity**: During Asian session (18:00–03:00 ET), London session (03:00–09:00 ET), post-close (16:00+ ET), and weekends, the `⚖️ Critique:` HUD button is completely hidden, hotkey `Q` is disabled, and Leo provides off-session guidance directing traders to wait for NY pre-market formation.
