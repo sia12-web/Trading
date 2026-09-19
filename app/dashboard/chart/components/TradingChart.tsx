@@ -1251,11 +1251,20 @@ export function TradingChart({
       return next
     })
   }, [])
+  const [brokenActionLineIds, setBrokenActionLineIds] = useState<string[]>([])
   const [trendlines, setTrendlines] = useState<UserTrendline[]>(() => {
     if (typeof window === 'undefined') return []
     try {
       const saved = localStorage.getItem('trading_desk_trendlines_v1')
-      return saved ? JSON.parse(saved) : []
+      if (!saved) return []
+      const parsed: UserTrendline[] = JSON.parse(saved)
+      // System integrity: Reaction lines MUST be anchored to an existing Action Trendline
+      const actionIds = new Set(
+        parsed.filter((t) => t.isActionTrendline || t.isInitialOvernight).map((t) => t.id)
+      )
+      return parsed.filter(
+        (t) => !t.isReactionTrendline || (t.parentActionTrendlineId && actionIds.has(t.parentActionTrendlineId))
+      )
     } catch {
       return []
     }
@@ -1558,6 +1567,12 @@ export function TradingChart({
     () => trendlines.filter((t) => t.instrument === instrument),
     [trendlines, instrument]
   )
+  const hasBrokenAction = useMemo(() => {
+    if (brokenActionLineIds.length > 0) return true
+    return activeTrendlines.some(
+      (t) => (t.isActionTrendline || t.isInitialOvernight) && confirmedBreakoutsRef.current.has(t.id)
+    )
+  }, [brokenActionLineIds, activeTrendlines])
   const activeRangeBoxes = useMemo(
     () => rangeBoxes.filter((r) => r.instrument === instrument),
     [rangeBoxes, instrument]
@@ -3544,6 +3559,17 @@ export function TradingChart({
       }
     }
 
+    // Synchronize currently broken action lines into state for toolbar locks
+    const currentBrokenIds = activeTrendlines
+      .filter((t) => (t.isActionTrendline || t.isInitialOvernight) && confirmedBreakoutsRef.current.has(t.id))
+      .map((t) => t.id)
+    setBrokenActionLineIds((prev) => {
+      if (prev.length === currentBrokenIds.length && prev.every((id, i) => id === currentBrokenIds[i])) {
+        return prev
+      }
+      return currentBrokenIds
+    })
+
     // 4. In-progress Drawing Draft Preview
     if (drawingDraft && draftMousePosRef.current) {
       const p1 = drawingDraft
@@ -3554,12 +3580,13 @@ export function TradingChart({
       const y2 = series.priceToCoordinate(p2.price) ?? p2.y
 
       if (x1 != null && x2 != null && y1 != null && y2 != null) {
-        if (activeDrawingTool === 'TRENDLINE' || activeDrawingTool === 'ACTION_TRENDLINE') {
+        if (activeDrawingTool === 'TRENDLINE' || activeDrawingTool === 'ACTION_TRENDLINE' || activeDrawingTool === 'REACTION_TRENDLINE') {
           const isAction = activeDrawingTool === 'ACTION_TRENDLINE'
+          const isReaction = activeDrawingTool === 'REACTION_TRENDLINE'
           const draftColor = isAction ? '#f59e0b' : '#38bdf8'
           const [dex1, dey1, dex2, dey2] = extendedLine(x1, y1, x2, y2)
           ctx.strokeStyle = draftColor
-          ctx.lineWidth = isAction ? 2.5 : 2
+          ctx.lineWidth = isAction || isReaction ? 2.5 : 2
           ctx.setLineDash([4, 4])
           ctx.beginPath()
           ctx.moveTo(dex1, dey1)
@@ -3569,16 +3596,24 @@ export function TradingChart({
 
           ctx.fillStyle = draftColor
           ctx.beginPath()
-          ctx.arc(x1, y1, isAction ? 5 : 4, 0, 2 * Math.PI)
+          ctx.arc(x1, y1, isAction || isReaction ? 5 : 4, 0, 2 * Math.PI)
           ctx.fill()
           ctx.beginPath()
-          ctx.arc(x2, y2, isAction ? 5 : 4, 0, 2 * Math.PI)
+          ctx.arc(x2, y2, isAction || isReaction ? 5 : 4, 0, 2 * Math.PI)
           ctx.fill()
 
           ctx.font = 'bold 10px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillStyle = isAction ? '#fef08a' : '#bae6fd'
-          const p1Label = isAction ? `🎯 Action P1: ${p1.price.toLocaleString()}` : `P1: ${p1.price.toLocaleString()}`
-          const p2Label = isAction ? `🎯 Action P2: ${p2.price.toLocaleString()} (Click to arm)` : `P2: ${p2.price.toLocaleString()} (Click to finish)`
+          ctx.fillStyle = isAction ? '#fef08a' : isReaction ? '#67e8f9' : '#bae6fd'
+          const p1Label = isAction
+            ? `🎯 Action P1: ${p1.price.toLocaleString()}`
+            : isReaction
+            ? `📐⚡ Reaction P1 (Swing Anchor): ${p1.price.toLocaleString()}`
+            : `P1: ${p1.price.toLocaleString()}`
+          const p2Label = isAction
+            ? `🎯 Action P2: ${p2.price.toLocaleString()} (Click to arm)`
+            : isReaction
+            ? `📐⚡ Reaction P2 (Higher Low): ${p2.price.toLocaleString()} (Click to bind)`
+            : `P2: ${p2.price.toLocaleString()} (Click to finish)`
           ctx.fillText(p1Label, x1 + 8, y1 - 4)
           ctx.fillText(p2Label, x2 + 8, y2 - 4)
         } else if (activeDrawingTool === 'RANGE') {
@@ -4764,8 +4799,10 @@ export function TradingChart({
   }, [livePrice, instrument])
 
   const handleDeleteTrendline = useCallback((id: string) => {
-    setTrendlines((prev) => prev.filter((t) => t.id !== id))
+    // Delete target trendline AND any reaction trendline bound to this action trendline
+    setTrendlines((prev) => prev.filter((t) => t.id !== id && t.parentActionTrendlineId !== id))
     confirmedBreakoutsRef.current.delete(id)
+    setBrokenActionLineIds((prev) => prev.filter((bId) => bId !== id))
     setDismissedBreakoutPrompts((prev) => {
       if (!prev.has(id)) return prev
       const next = new Set(prev)
@@ -4795,6 +4832,7 @@ export function TradingChart({
     setDrawingDraft(null)
     draftMousePosRef.current = null
     confirmedBreakoutsRef.current.clear()
+    setBrokenActionLineIds([])
     setDismissedBreakoutPrompts(new Set())
     try {
       localStorage.removeItem('trading_desk_dismissed_breakouts_v1')
@@ -9315,6 +9353,34 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         if (activeDrawingTool === 'TRENDLINE' || activeDrawingTool === 'ACTION_TRENDLINE' || activeDrawingTool === 'REACTION_TRENDLINE') {
           const isAction = activeDrawingTool === 'ACTION_TRENDLINE'
           const isReaction = activeDrawingTool === 'REACTION_TRENDLINE'
+
+          // SYSTEM RULE: Reaction Trendline CANNOT be drawn unless an Action Trendline is broken!
+          let boundActionTlId: string | undefined = undefined
+          if (isReaction) {
+            const candidateId = activeActionTlId || brokenActionLineIds[0] || null
+            const parentTl = candidateId
+              ? trendlines.find((t) => t.id === candidateId && (t.isActionTrendline || t.isInitialOvernight))
+              : trendlines.find(
+                  (t) => (t.isActionTrendline || t.isInitialOvernight) && confirmedBreakoutsRef.current.has(t.id)
+                )
+
+            if (!parentTl || !confirmedBreakoutsRef.current.has(parentTl.id)) {
+              setActiveDrawingTool('NONE')
+              setActiveActionTlId(null)
+              setDrawingDraft(null)
+              draftMousePosRef.current = null
+              setDrawingToast({
+                type: 'TRENDLINE',
+                id: `reaction-blocked-${Date.now()}`,
+                label: 'Reaction Line Blocked',
+                summary:
+                  'Reaction trendlines can only be drawn after an Action Trendline has experienced a confirmed breakout.',
+              })
+              return
+            }
+            boundActionTlId = parentTl.id
+          }
+
           const pDiff = p2.price - p1.price
           const inferredDir: 'BEARISH' | 'BULLISH' = pDiff < 0 ? 'BEARISH' : 'BULLISH'
           const tradeDir: 'LONG' | 'SHORT' = inferredDir === 'BEARISH' ? 'LONG' : 'SHORT'
@@ -9342,7 +9408,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             sessionOrigin,
             isActionTrendline: isAction,
             isReactionTrendline: isReaction,
-            parentActionTrendlineId: isReaction ? (activeActionTlId ?? undefined) : undefined,
+            parentActionTrendlineId: isReaction ? boundActionTlId : undefined,
             isInitialOvernight: isAction && isCarriedFromOvernight,
             isCarriedFromOvernight,
           }
@@ -10903,18 +10969,41 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               <button
                 type="button"
                 onClick={() => {
+                  if (!hasBrokenAction) {
+                    setDrawingToast({
+                      type: 'TRENDLINE',
+                      id: `reaction-locked-${Date.now()}`,
+                      label: 'Reaction Line Locked',
+                      summary:
+                        'Reaction trendlines can only be drawn after an Action Trendline has experienced a confirmed breakout on a 5-minute candle.',
+                    })
+                    return
+                  }
+                  const targetId = activeActionTlId || brokenActionLineIds[0] || null
+                  setActiveActionTlId(targetId)
                   setActiveDrawingTool((prev) => (prev === 'REACTION_TRENDLINE' ? 'NONE' : 'REACTION_TRENDLINE'))
                   setDrawingDraft(null)
                 }}
                 className={`flex items-center gap-1 px-2 py-1 rounded font-semibold transition-all ${
-                  activeDrawingTool === 'REACTION_TRENDLINE'
+                  !hasBrokenAction
+                    ? 'opacity-40 cursor-not-allowed text-slate-500 hover:text-slate-500 bg-slate-900/40 border border-slate-800'
+                    : activeDrawingTool === 'REACTION_TRENDLINE'
                     ? 'bg-sky-500/40 text-sky-200 border border-sky-400 shadow-sm shadow-sky-500/20'
-                    : 'text-sky-400 hover:text-sky-200 hover:bg-sky-950/40'
+                    : 'text-sky-400 hover:text-sky-200 hover:bg-sky-950/40 ring-1 ring-amber-400/40 animate-pulse'
                 }`}
-                title="Draw Reaction Trendline (Click 2 points) — Connect local swing low to higher low to monitor active breakout"
+                title={
+                  hasBrokenAction
+                    ? 'Draw Reaction Trendline (Action line broken! Click 2 swing points)'
+                    : 'Reaction Line Locked: Requires an Action Trendline with a confirmed breakout'
+                }
               >
                 <span>📐⚡</span>
                 <span className="font-bold">Reaction</span>
+                {!hasBrokenAction ? (
+                  <span className="text-[10px] text-slate-500 font-mono">🔒</span>
+                ) : (
+                  <span className="text-[10px] text-amber-300 font-bold">●</span>
+                )}
               </button>
 
               <button
@@ -11519,19 +11608,42 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             <button
               type="button"
               onClick={() => {
+                if (!hasBrokenAction) {
+                  setDrawingToast({
+                    type: 'TRENDLINE',
+                    id: `reaction-locked-${Date.now()}`,
+                    label: 'Reaction Line Locked',
+                    summary:
+                      'Reaction trendlines can only be drawn after an Action Trendline has experienced a confirmed breakout on a 5-minute candle.',
+                  })
+                  return
+                }
+                const targetId = activeActionTlId || brokenActionLineIds[0] || null
+                setActiveActionTlId(targetId)
                 setActiveDrawingTool((prev) => (prev === 'REACTION_TRENDLINE' ? 'NONE' : 'REACTION_TRENDLINE'))
                 setDrawingDraft(null)
               }}
               className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
-                activeDrawingTool === 'REACTION_TRENDLINE'
+                !hasBrokenAction
+                  ? 'opacity-30 cursor-not-allowed text-slate-600 hover:text-slate-600 bg-slate-950/40'
+                  : activeDrawingTool === 'REACTION_TRENDLINE'
                   ? 'bg-sky-500 text-slate-950 shadow-lg shadow-sky-500/40 ring-2 ring-sky-300'
                   : 'text-sky-400 hover:bg-slate-800 hover:text-sky-200'
               }`}
-              title="Draw Reaction Trendline (Click 2 swing points)"
+              title={
+                hasBrokenAction
+                  ? 'Draw Reaction Trendline (Action line broken! Click 2 swing points)'
+                  : 'Reaction Line Locked: Requires a broken Action Trendline'
+              }
             >
-              <span>📐⚡</span>
+              <span className="relative">
+                📐⚡
+                {!hasBrokenAction && (
+                  <span className="absolute -bottom-1 -right-1 text-[9px] leading-none">🔒</span>
+                )}
+              </span>
               <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-sky-200 shadow-xl border border-sky-800/60 group-hover:block z-50">
-                Reaction Trendline
+                {hasBrokenAction ? 'Reaction Trendline' : 'Reaction Locked (Action line required)'}
               </span>
             </button>
 
@@ -11760,12 +11872,32 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                         className="group flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-800/40 hover:bg-slate-800/80 border border-slate-700/40 transition"
                       >
                         <div className="min-w-0 flex-1">
-                          <div className={`flex items-center gap-1 font-semibold truncate ${tl.isActionTrendline ? 'text-amber-300' : 'text-sky-300'}`}>
-                            <span>{tl.isActionTrendline ? '🎯' : '📐'}</span>
-                            <span className="truncate">{tl.label || (tl.isActionTrendline ? 'Action Trendline' : 'Trendline')}</span>
+                          <div
+                            className={`flex items-center gap-1 font-semibold truncate ${
+                              tl.isActionTrendline
+                                ? 'text-amber-300'
+                                : tl.isReactionTrendline
+                                ? 'text-cyan-300'
+                                : 'text-sky-300'
+                            }`}
+                          >
+                            <span>{tl.isActionTrendline ? '🎯' : tl.isReactionTrendline ? '📐⚡' : '📐'}</span>
+                            <span className="truncate">
+                              {tl.label ||
+                                (tl.isActionTrendline
+                                  ? 'Action Trendline'
+                                  : tl.isReactionTrendline
+                                  ? 'Reaction Trendline'
+                                  : 'Trendline')}
+                            </span>
                           </div>
                           <div className="text-[10px] text-slate-400 truncate">
                             {tl.p1.price.toLocaleString()} → {tl.p2.price.toLocaleString()}
+                            {tl.isReactionTrendline && tl.parentActionTrendlineId && (
+                              <span className="ml-1 text-[9px] text-cyan-400 font-mono">
+                                (Action Breakout Bound)
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">

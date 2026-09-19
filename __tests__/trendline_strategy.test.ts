@@ -14,6 +14,7 @@ import {
   resampleCandlesTo5M,
   detectFlagAndSecondaryBreakout,
   findBreakoutSwingAnchor,
+  isReactionTrendlineEligible,
 } from '../lib/trading/trendlineStrategy.ts'
 import type { UserTrendline } from '../lib/trading/userDrawings.ts'
 import type { Candle } from '../lib/trading/candlestickPatterns.ts'
@@ -1218,6 +1219,113 @@ describe('Systematic Trendline Strategy & Trend-Borning Zone Engine', () => {
     assert.equal(checkBreak.shouldExit, true)
     assert.equal(checkBreak.exitPrice, 4397.5)
     assert.ok(checkBreak.reason.includes('below dynamic trendline'))
+  })
+
+  // 33. Reaction Trendline Usability & System-Wide Broken Action Line Enforcement
+  test('33. should enforce that a Reaction Trendline is NOT eligible or usable unless an Action Trendline is broken, and reject mismatched orientation', () => {
+    const unbrokenActionTl: UserTrendline = {
+      id: 'action-tl-unbroken',
+      type: 'TRENDLINE',
+      p1: { time: 1000, price: 2080 },
+      p2: { time: 1900, price: 2060 },
+      isActionTrendline: true,
+      direction: 'BEARISH',
+    }
+
+    const brokenActionTl: UserTrendline = {
+      id: 'action-tl-broken',
+      type: 'TRENDLINE',
+      p1: { time: 1000, price: 2080 },
+      p2: { time: 1900, price: 2060 },
+      isActionTrendline: true,
+      direction: 'BEARISH',
+    }
+
+    const validReactionTl: UserTrendline = {
+      id: 'reaction-tl-1',
+      type: 'TRENDLINE',
+      p1: { time: 2000, price: 2050 },
+      p2: { time: 2300, price: 2058 }, // ascending for LONG
+      isReactionTrendline: true,
+      parentActionTrendlineId: 'action-tl-broken',
+    }
+
+    // 1. If action line is NOT broken, reaction line is NOT eligible
+    assert.equal(
+      isReactionTrendlineEligible({
+        reactionTl: validReactionTl,
+        parentActionTl: unbrokenActionTl,
+        isActionBroken: false,
+        direction: 'LONG',
+      }),
+      false
+    )
+
+    // 2. If parent action line is missing, reaction line is NOT eligible
+    assert.equal(
+      isReactionTrendlineEligible({
+        reactionTl: validReactionTl,
+        parentActionTl: null,
+        isActionBroken: true,
+        direction: 'LONG',
+      }),
+      false
+    )
+
+    // 3. If parentActionTrendlineId mismatches, reaction line is NOT eligible
+    assert.equal(
+      isReactionTrendlineEligible({
+        reactionTl: { ...validReactionTl, parentActionTrendlineId: 'different-id' },
+        parentActionTl: brokenActionTl,
+        isActionBroken: true,
+        direction: 'LONG',
+      }),
+      false
+    )
+
+    // 4. If direction is LONG but reaction line is descending, it is NOT eligible
+    const descendingReactionTl: UserTrendline = {
+      id: 'reaction-tl-descending',
+      type: 'TRENDLINE',
+      p1: { time: 2000, price: 2058 },
+      p2: { time: 2300, price: 2050 }, // descending
+      isReactionTrendline: true,
+      parentActionTrendlineId: 'action-tl-broken',
+    }
+    assert.equal(
+      isReactionTrendlineEligible({
+        reactionTl: descendingReactionTl,
+        parentActionTl: brokenActionTl,
+        isActionBroken: true,
+        direction: 'LONG',
+      }),
+      false
+    )
+
+    // 5. Eligible when action line is broken, parent matches, and orientation matches
+    assert.equal(
+      isReactionTrendlineEligible({
+        reactionTl: validReactionTl,
+        parentActionTl: brokenActionTl,
+        isActionBroken: true,
+        direction: 'LONG',
+      }),
+      true
+    )
+
+    // 6. calculateDynamicTrendline ignores descending reaction line for LONG and falls back to dynamic line
+    const dynLineInvalid = calculateDynamicTrendline({
+      origin: { time: 1000, price: 2045, type: 'LOW' },
+      compositeScore: 80,
+      higherLows: [],
+      currentPrice: 2065,
+      currentTime: 2400,
+      bars: [],
+      direction: 'LONG',
+      userReactionTrendline: descendingReactionTl,
+    })
+    // Descending reaction line for LONG was rejected as invalid user reaction line:
+    assert.notEqual(dynLineInvalid.isUserReactionTrendline, true)
   })
 })
 

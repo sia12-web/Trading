@@ -1524,6 +1524,37 @@ export function detectSwingVolumeProgression(
 }
 
 /**
+ * Systematic Validation:
+ * A Reaction Trendline is ONLY usable and valid when anchored to an Action Trendline that is currently broken.
+ * Dalton Auction Rules:
+ * - An Action Trendline sets the overnight / prior auction boundary.
+ * - A Reaction Trendline tracks the post-breakout reaction wave.
+ * - Reaction lines cannot exist without a broken action line.
+ * - For LONG (breakout of bearish action line), reaction line must be ascending (p2.price >= p1.price).
+ * - For SHORT (breakdown of bullish action line), reaction line must be descending (p2.price <= p1.price).
+ */
+export function isReactionTrendlineEligible(params: {
+  reactionTl?: UserTrendline | null
+  parentActionTl?: UserTrendline | null
+  isActionBroken?: boolean
+  direction?: 'LONG' | 'SHORT'
+}): boolean {
+  const { reactionTl, parentActionTl, isActionBroken, direction } = params
+  if (!isActionBroken) return false
+  if (!parentActionTl || (!parentActionTl.isActionTrendline && !parentActionTl.isInitialOvernight)) return false
+  if (!reactionTl || !reactionTl.isReactionTrendline) return false
+  if (reactionTl.parentActionTrendlineId && reactionTl.parentActionTrendlineId !== parentActionTl.id) return false
+
+  if (direction === 'LONG' && reactionTl.p2.price < reactionTl.p1.price) {
+    return false
+  }
+  if (direction === 'SHORT' && reactionTl.p2.price > reactionTl.p1.price) {
+    return false
+  }
+  return true
+}
+
+/**
  * 6. Construct Dynamic Responsive Trendline with Stalling & Swing-Decay Engines (Long or Short).
  * - Phase 1 (Incubation / Flag): Only 1 pivot exists (Origin). The trendline acts as a Trailing Support Floor (Long)
  *   or Trailing Resistance Ceiling (Short), clamped safely outside post-breakout consolidation/flag bars.
@@ -1568,8 +1599,17 @@ export function calculateDynamicTrendline(params: {
   const adjustedScore = Math.min(100, Math.max(0, compositeScore + swingProgression.scoreDelta))
 
   // 2. User-Drawn Reaction Trendline Override:
-  // If the user drew a Reaction Trendline for this breakout, systematically bind its geometry
-  if (userReactionTrendline) {
+  // If the user drew a Reaction Trendline for this breakout, systematically bind its geometry.
+  // Must be marked isReactionTrendline and orientation must conform to trade direction.
+  const isValidUserReaction = Boolean(
+    userReactionTrendline &&
+      userReactionTrendline.isReactionTrendline &&
+      (dir === 'LONG'
+        ? userReactionTrendline.p2.price >= userReactionTrendline.p1.price
+        : userReactionTrendline.p2.price <= userReactionTrendline.p1.price)
+  )
+
+  if (userReactionTrendline && isValidUserReaction) {
     const p1 = userReactionTrendline.p1
     const p2 = userReactionTrendline.p2
     const dtSec = Math.max(300, p2.time - p1.time)
