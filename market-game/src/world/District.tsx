@@ -249,24 +249,24 @@ function WingPads({
 }) {
   return (
     <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 6.55]} receiveShadow>
-        <planeGeometry args={[16.6, 7.4]} />
-        <meshStandardMaterial map={brick} color="#e08858" roughness={0.84} emissive="#c06038" emissiveIntensity={0.1} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 7.25]} receiveShadow>
+        <planeGeometry args={[17.4, 8.2]} />
+        <meshStandardMaterial map={brick} color="#e08858" roughness={0.84} emissive="#c06038" emissiveIntensity={0.12} />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[8.2, 0.012, -1.15]} receiveShadow>
-        <planeGeometry args={[7.6, 16.2]} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[8.7, 0.012, -1.7]} receiveShadow>
+        <planeGeometry args={[8.0, 17.2]} />
         <meshStandardMaterial map={dirt} color="#c49a60" roughness={0.88} />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-8.35, 0.014, 0]} receiveShadow>
-        <planeGeometry args={[7.4, 14.2]} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-9.2, 0.014, 0]} receiveShadow>
+        <planeGeometry args={[7.8, 15.4]} />
         <meshStandardMaterial map={concrete} color="#6eb0c0" roughness={0.82} />
       </mesh>
-      <Stencil word="YESTERDAY" ink="#c45c2a" position={[0, 0.03, 3.55]} />
-      <Stencil word="FIVE-DAY" ink="#a34a38" position={[8.15, 0.03, -1.1]} rot={-Math.PI / 2} />
-      <Stencil word="FIVE-MONTH" ink="#2a6a78" position={[-8.3, 0.03, 0]} rot={Math.PI / 2} />
-      <WingSign word="YESTERDAY" paint="#c45c2a" position={[0, 0, 10.15]} />
-      <WingSign word="FIVE-DAY" paint="#a34a38" position={[11.15, 0, -6.85]} />
-      <WingSign word="FIVE-MONTH" paint="#2a6a78" position={[-10.85, 0, 5.35]} />
+      <Stencil word="YESTERDAY" ink="#c45c2a" position={[0, 0.03, 4.15]} />
+      <Stencil word="FIVE-DAY" ink="#a34a38" position={[8.65, 0.03, -1.6]} rot={-Math.PI / 2} />
+      <Stencil word="FIVE-MONTH" ink="#2a6a78" position={[-9.15, 0.03, 0]} rot={Math.PI / 2} />
+      <WingSign word="YESTERDAY" paint="#c45c2a" position={[0, 0, 11.35]} />
+      <WingSign word="FIVE-DAY" paint="#a34a38" position={[11.55, 0, -1.55]} />
+      <WingSign word="FIVE-MONTH" paint="#2a6a78" position={[-11.55, 0, 1.55]} />
     </group>
   )
 }
@@ -285,7 +285,7 @@ function Stencil({
   const tex = useMemo(() => makeStencilTexture(word, ink), [word, ink])
   return (
     <mesh rotation={[-Math.PI / 2, 0, rot]} position={position}>
-      <planeGeometry args={[5.4, 1.15]} />
+        <planeGeometry args={[6.2, 1.35]} />
       <meshStandardMaterial map={tex} transparent opacity={0.85} depthWrite={false} />
     </mesh>
   )
@@ -304,13 +304,13 @@ function WingSign({
   return (
     <group position={position} rotation={[0, Math.PI / 4, 0]}>
       {[-1.7, 1.7].map((x) => (
-        <mesh key={x} position={[x, 0.7, 0]} castShadow>
-          <boxGeometry args={[0.14, 1.4, 0.14]} />
+        <mesh key={x} position={[x, 1.15, 0]} castShadow>
+          <boxGeometry args={[0.16, 2.3, 0.16]} />
           <meshStandardMaterial color="#4a3020" />
         </mesh>
       ))}
-      <mesh position={[0, 1.35, 0]} castShadow>
-        <boxGeometry args={[4.2, 0.85, 0.16]} />
+      <mesh position={[0, 2.15, 0]} castShadow>
+        <boxGeometry args={[5.4, 1.15, 0.18]} />
         <meshStandardMaterial map={tex} roughness={0.55} />
       </mesh>
     </group>
@@ -323,9 +323,9 @@ function WorkLamps({ on }: { on: number }) {
     [2.4, 2.4],
     [-2.4, -2.4],
     [2.4, -2.4],
-    [-8.4, 0],
-    [3.2, 8.4],
-    [8.4, -1.0],
+    [-9.2, 0],
+    [3.4, 9.2],
+    [8.9, -1.6],
   ]
   return (
     <group>

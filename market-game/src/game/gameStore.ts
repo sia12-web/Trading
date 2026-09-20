@@ -57,6 +57,30 @@ const typicalVol: Record<StoreId, number> = {
   'avwap-lower': 280,
 }
 
+/** Stall character so HVN/POC open full and LVN stays a vacuum unless flooded. */
+const volBias: Record<StoreId, number> = {
+  'y-hvn': 1.72,
+  'y-poc': 1.18,
+  'y-lvn': 0.22,
+  '5d-hvn': 1.48,
+  '5d-poc': 1.58,
+  '5d-lvn': 0.18,
+  avwap: 1.22,
+  'avwap-upper': 0.88,
+  'avwap-lower': 0.42,
+}
+
+function floorTape(): { liveVol: Record<string, number>; tpo: Record<string, number> } {
+  const liveVol: Record<string, number> = {}
+  for (const id of Object.keys(typicalVol) as StoreId[]) {
+    liveVol[id] = typicalVol[id]! * volBias[id]!
+  }
+  return {
+    liveVol,
+    tpo: { 'y-poc': 5.4 },
+  }
+}
+
 function advertisedFor(id: StoreId, avwap: AnchoredVwap): number {
   switch (id) {
     case 'y-hvn':
@@ -103,8 +127,7 @@ function fresh(): GameSnapshot {
     inspecting: null,
     fills: [],
     pnl: 0,
-    tpo: {},
-    liveVol: {},
+    ...floorTape(),
     shutter: 0,
     floorAlive: 0,
     pointerLocked: false,
@@ -148,7 +171,7 @@ export function enterDow() {
     scene: 'dow',
     phase: 'preopen',
     clockMin: PREOPEN_MIN,
-    player: { x: 3.35, y: 0, z: 8.55, yaw: 0 },
+    player: { x: 3.35, y: 0, z: 9.35, yaw: 0 },
     livePrice: market.priorClose,
     message: 'NYC cash is about to open. Move Price to a store.',
   }
@@ -166,6 +189,7 @@ export function skipToOpen() {
     startAmbience()
     strikeBell()
   })
+  const tape = floorTape()
   set({
     scene: 'dow',
     phase: 'opening',
@@ -175,7 +199,9 @@ export function skipToOpen() {
     floorAlive: 0,
     livePrice: market.openPrint,
     message: null,
-    player: state.scene === 'dow' ? state.player : { x: 3.35, y: 0, z: 8.55, yaw: 0 },
+    liveVol: tape.liveVol,
+    tpo: tape.tpo,
+    player: state.scene === 'dow' ? state.player : { x: 3.35, y: 0, z: 9.35, yaw: 0 },
   })
 }
 
@@ -265,7 +291,7 @@ export function storeRead(id: StoreId, snap: GameSnapshot = state): StoreRead {
 export function stallState(id: StoreId, snap: GameSnapshot = state) {
   const read = storeRead(id, snap)
   const printed = snap.lastPrint && snap.lastPrint.storeId === id ? performance.now() - snap.lastPrint.at : 99999
-  const printBoost = printed < 2400 ? 1 - printed / 2400 : 0
+  const printBoost = printed < 3600 ? 1 - printed / 3600 : 0
   return {
     ...read,
     ...stallOccupancy({
@@ -326,11 +352,15 @@ export function takeAuction(side: Side) {
     note,
   }
   printFill(side === 'buy')
+  const liveVol = { ...state.liveVol }
+  const kind = kindOf(id)
+  liveVol[id] = typicalVol[id]! * (kind === 'lvn' ? 2.35 : 1.9)
   set({
     fills: [fill, ...state.fills].slice(0, 12),
     inspecting: null,
     message: note,
     lastPrint: { storeId: id, side, at: performance.now() },
+    liveVol,
   })
 }
 
@@ -353,12 +383,15 @@ export function tickGame(dt: number) {
     const clockMin = state.clockMin + dt * 0.55
     if (clockMin >= NY_OPEN_MIN) {
       void resumeAudio().then(strikeBell)
+      const tape = floorTape()
       set({
         phase: 'opening',
         clockMin: NY_OPEN_MIN,
         openElapsed: 0,
         livePrice: market.openPrint,
         message: null,
+        liveVol: tape.liveVol,
+        tpo: tape.tpo,
       })
       return
     }
@@ -397,7 +430,7 @@ export function tickGame(dt: number) {
   const avwap = pushVwapTick(
     state.avwap,
     livePrice,
-    180 + tapeRand() * 90 + Math.abs(livePrice - state.livePrice) * 40,
+    2200 + tapeRand() * 1100 + Math.abs(livePrice - state.livePrice) * 480,
   )
 
   const liveVol = { ...state.liveVol }
@@ -416,9 +449,10 @@ export function tickGame(dt: number) {
   for (const id of ids) {
     const px = advertisedFor(id, avwap)
     const dist = Math.abs(livePrice - px)
-    const pulse = Math.max(0.15, 1.35 - dist / 90) * typicalVol[id]!
-    const wander = 0.7 + tapeRand() * 0.7
-    liveVol[id] = pulse * wander
+    const pulse = Math.max(0.22, 1.15 - dist / 140) * typicalVol[id]! * volBias[id]!
+    const wander = 0.9 + tapeRand() * 0.16
+    const prev = liveVol[id] ?? pulse
+    liveVol[id] = prev * 0.9 + pulse * wander * 0.1
     if (dist < 18) tpo[id] = (tpo[id] ?? 0) + dt * 0.55
   }
 

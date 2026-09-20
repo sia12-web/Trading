@@ -294,16 +294,16 @@ export function stallOccupancy(args: {
   let occupancy = 0
   if (args.floorAlive > 0.04) {
     if (args.kind === 'lvn') {
-      occupancy = (args.divergence < 0 ? -args.divergence : 0.04) * shut
+      occupancy = (args.divergence < 0 ? -args.divergence : 0.02) * shut
     } else {
-      occupancy = clamp(0.08 + args.divergence * 0.82, 0, 1) * shut
+      occupancy = clamp(0.12 + args.divergence * 0.9, 0, 1) * shut
     }
   }
-  if (args.timeOpportunity < 0.38 && args.kind !== 'lvn') occupancy *= 0.42
-  occupancy = clamp(occupancy + boost * 0.55, 0, 1)
+  if (args.timeOpportunity < 0.38 && args.kind !== 'lvn') occupancy *= 0.32
+  occupancy = clamp(occupancy + boost * 0.7, 0, 1)
   let door =
-    args.phase === 'preopen' ? 0 : args.phase === 'opening' ? shut : clamp(0.12 + args.timeOpportunity * 0.88, 0, 1)
-  if (boost > 0.35) door = clamp(door + 0.22, 0, 1)
+    args.phase === 'preopen' ? 0 : args.phase === 'opening' ? shut : clamp(0.08 + args.timeOpportunity * 0.92, 0, 1)
+  if (boost > 0.35) door = clamp(door + 0.28, 0, 1)
   return {
     occupancy,
     hollow: args.kind !== 'lvn' && occupancy < 0.28,
