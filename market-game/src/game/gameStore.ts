@@ -115,6 +115,7 @@ function kindOf(id: StoreId) {
 let fillSeq = 1
 let lastUiEmit = 0
 let openWallMs = 0
+let openingLocked = false
 
 function fresh(): GameSnapshot {
   return {
@@ -194,6 +195,7 @@ export function skipToOpen() {
   })
   const tape = floorTape()
   openWallMs = performance.now()
+  openingLocked = false
   set({
     scene: 'dow',
     phase: 'opening',
@@ -413,22 +415,8 @@ export function tickGame(dt: number) {
   }
 
   if (state.phase === 'opening') {
-    const openElapsed = (performance.now() - openWallMs) / 1000
-    const shutter = Math.min(1, Math.max(0, (openElapsed - 0.08) / GATE_ROLL_SEC))
-    const floorAlive = Math.min(1, Math.max(0, (openElapsed - 0.12) / GATE_ROLL_SEC))
-    const clockMin = NY_OPEN_MIN + openElapsed / 60
-    if (openElapsed >= OPEN_CINEMATIC_SEC) {
-      set({
-        phase: 'live',
-        openElapsed,
-        shutter: 1,
-        floorAlive: 1,
-        clockMin: NY_OPEN_MIN + OPEN_CINEMATIC_SEC / 60,
-        message: null,
-      })
-      return
-    }
-    set({ openElapsed, shutter, floorAlive, clockMin })
+    if (openingLocked) return
+    applyOpening((performance.now() - openWallMs) / 1000)
     return
   }
 
@@ -498,11 +486,37 @@ export function advertisedPrice(id: StoreId, snap: GameSnapshot = state): number
   return advertisedFor(id, snap.avwap)
 }
 
-/** Force the 9:30 hold to wall-clock before a screenshot so the tape cannot skip seconds. */
+function applyOpening(openElapsed: number) {
+  const shutter = Math.min(1, Math.max(0, (openElapsed - 0.08) / GATE_ROLL_SEC))
+  const floorAlive = Math.min(1, Math.max(0, (openElapsed - 0.12) / GATE_ROLL_SEC))
+  const clockMin = NY_OPEN_MIN + openElapsed / 60
+  if (openElapsed >= OPEN_CINEMATIC_SEC) {
+    openingLocked = false
+    set({
+      phase: 'live',
+      openElapsed,
+      shutter: 1,
+      floorAlive: 1,
+      clockMin: NY_OPEN_MIN + OPEN_CINEMATIC_SEC / 60,
+      message: null,
+    })
+    return getGame()
+  }
+  set({ openElapsed, shutter, floorAlive, clockMin })
+  return getGame()
+}
+
+/** Step the 9:30 hold by a fixed slice so a screenshot pass cannot skip seconds. */
+export function stepOpening(sec = 0.25) {
+  if (state.phase !== 'opening') return getGame()
+  openingLocked = true
+  return applyOpening(state.openElapsed + Math.max(0, sec))
+}
+
 export function syncOpening() {
   if (state.phase !== 'opening') return getGame()
-  tickGame(0)
-  return getGame()
+  if (openingLocked) return getGame()
+  return applyOpening((performance.now() - openWallMs) / 1000)
 }
 
 if (typeof window !== 'undefined') {
@@ -515,5 +529,6 @@ if (typeof window !== 'undefined') {
     enterDow,
     getGame,
     syncOpening,
+    stepOpening,
   }
 }
