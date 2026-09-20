@@ -154,7 +154,7 @@ export function Player({
     } else {
       vel.current = THREE.MathUtils.lerp(vel.current, 0, 0.14)
     }
-    bob.current += dt * (5 + vel.current * 8)
+    bob.current += dt * (6.5 + vel.current * 10)
 
     if (group.current) {
       group.current.position.set(pos.current.x, 0, pos.current.z)
@@ -172,15 +172,15 @@ export function Player({
   return (
     <group ref={group} position={spawn}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.025, 0]}>
-        <circleGeometry args={[0.52, 24]} />
+        <circleGeometry args={[0.62, 24]} />
         <meshBasicMaterial color="#0a1808" transparent opacity={0.42} toneMapped={false} />
       </mesh>
       <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
-        <ringGeometry args={[0.5, 0.72, 36]} />
+        <ringGeometry args={[0.58, 0.84, 36]} />
         <meshBasicMaterial color={selected ? '#e8ff6a' : '#9dff3a'} toneMapped={false} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.055, 0]}>
-        <ringGeometry args={[0.72, 0.82, 36]} />
+        <ringGeometry args={[0.84, 0.96, 36]} />
         <meshBasicMaterial color="#fff8dc" toneMapped={false} />
       </mesh>
       <PriceBody vel={vel} bob={bob} />
@@ -203,11 +203,11 @@ function PriceBody({
   useFrame(() => {
     const walk = vel.current
     const b = bob.current
-    const leg = Math.sin(b) * 1.18 * walk
+    const leg = Math.sin(b) * 1.45 * walk
     if (left.current) left.current.rotation.x = leg
     if (right.current) right.current.rotation.x = -leg
-    if (larm.current) larm.current.rotation.x = -leg * 0.92
-    if (rarm.current) rarm.current.rotation.x = leg * 0.92
+    if (larm.current) larm.current.rotation.x = -leg * 1.05
+    if (rarm.current) rarm.current.rotation.x = leg * 1.05
   })
 
   const outline = '#fff6d8'
@@ -218,93 +218,93 @@ function PriceBody({
   const pants = '#1e1a16'
 
   return (
-    <group scale={1.34}>
-      <mesh position={[0, 0.58, 0]} scale={1.22}>
-        <boxGeometry args={[0.4, 0.5, 0.26]} />
+    <group scale={1.62}>
+      <mesh position={[0, 0.62, 0]} scale={1.2}>
+        <boxGeometry args={[0.48, 0.54, 0.3]} />
         <meshBasicMaterial color={outline} side={THREE.BackSide} toneMapped={false} />
       </mesh>
-      <mesh position={[0, 0.58, 0]} castShadow>
-        <boxGeometry args={[0.4, 0.5, 0.26]} />
+      <mesh position={[0, 0.62, 0]} castShadow>
+        <boxGeometry args={[0.48, 0.54, 0.3]} />
         <meshBasicMaterial color={tunic} toneMapped={false} />
       </mesh>
-      <mesh position={[0, 0.36, 0.02]}>
-        <boxGeometry args={[0.42, 0.1, 0.18]} />
+      <mesh position={[0, 0.38, 0.02]}>
+        <boxGeometry args={[0.5, 0.12, 0.2]} />
         <meshBasicMaterial color="#2a1c12" toneMapped={false} />
       </mesh>
-      <mesh position={[0, 0.9, 0]} scale={1.24}>
-        <sphereGeometry args={[0.16, 10, 8]} />
+      <mesh position={[0, 0.98, 0]} scale={1.22}>
+        <sphereGeometry args={[0.18, 10, 8]} />
         <meshBasicMaterial color={outline} side={THREE.BackSide} toneMapped={false} />
       </mesh>
-      <mesh position={[0, 0.9, 0]} castShadow>
-        <sphereGeometry args={[0.16, 10, 8]} />
+      <mesh position={[0, 0.98, 0]} castShadow>
+        <sphereGeometry args={[0.18, 10, 8]} />
         <meshBasicMaterial color={skin} toneMapped={false} />
       </mesh>
-      <mesh position={[0, 1.06, 0]} scale={1.22}>
-        <cylinderGeometry args={[0.18, 0.22, 0.16, 10]} />
+      <mesh position={[0, 1.16, 0]} scale={1.2}>
+        <cylinderGeometry args={[0.2, 0.24, 0.18, 10]} />
         <meshBasicMaterial color={outline} side={THREE.BackSide} toneMapped={false} />
       </mesh>
-      <mesh position={[0, 1.06, 0]} castShadow>
-        <cylinderGeometry args={[0.18, 0.22, 0.16, 10]} />
+      <mesh position={[0, 1.16, 0]} castShadow>
+        <cylinderGeometry args={[0.2, 0.24, 0.18, 10]} />
         <meshBasicMaterial color={brass} toneMapped={false} />
       </mesh>
-      <mesh position={[0, 1.14, 0.05]}>
-        <boxGeometry args={[0.09, 0.12, 0.18]} />
+      <mesh position={[0, 1.26, 0.06]}>
+        <boxGeometry args={[0.1, 0.14, 0.2]} />
         <meshBasicMaterial color="#8a6a38" toneMapped={false} />
       </mesh>
-      <group ref={larm} position={[-0.34, 0.68, 0]}>
-        <mesh position={[0, -0.24, 0]} scale={1.28}>
-          <capsuleGeometry args={[0.11, 0.38, 3, 6]} />
+      <group ref={larm} position={[-0.42, 0.74, 0]}>
+        <mesh position={[0, -0.28, 0]} scale={1.26}>
+          <capsuleGeometry args={[0.14, 0.42, 3, 6]} />
           <meshBasicMaterial color={outline} side={THREE.BackSide} toneMapped={false} />
         </mesh>
-        <mesh position={[0, -0.24, 0]} castShadow>
-          <capsuleGeometry args={[0.11, 0.38, 3, 6]} />
+        <mesh position={[0, -0.28, 0]} castShadow>
+          <capsuleGeometry args={[0.14, 0.42, 3, 6]} />
           <meshBasicMaterial color={leather} toneMapped={false} />
         </mesh>
       </group>
-      <group ref={rarm} position={[0.34, 0.68, 0]}>
-        <mesh position={[0, -0.24, 0]} scale={1.28}>
-          <capsuleGeometry args={[0.11, 0.38, 3, 6]} />
+      <group ref={rarm} position={[0.42, 0.74, 0]}>
+        <mesh position={[0, -0.28, 0]} scale={1.26}>
+          <capsuleGeometry args={[0.14, 0.42, 3, 6]} />
           <meshBasicMaterial color={outline} side={THREE.BackSide} toneMapped={false} />
         </mesh>
-        <mesh position={[0, -0.24, 0]} castShadow>
-          <capsuleGeometry args={[0.11, 0.38, 3, 6]} />
+        <mesh position={[0, -0.28, 0]} castShadow>
+          <capsuleGeometry args={[0.14, 0.42, 3, 6]} />
           <meshBasicMaterial color={leather} toneMapped={false} />
         </mesh>
-        <mesh position={[0.16, -0.42, 0.04]} rotation={[0, 0, -0.45]} castShadow>
-          <boxGeometry args={[0.1, 0.48, 0.1]} />
+        <mesh position={[0.18, -0.5, 0.06]} rotation={[0, 0, -0.4]} castShadow>
+          <boxGeometry args={[0.12, 0.58, 0.12]} />
           <meshBasicMaterial color="#6a7280" toneMapped={false} />
         </mesh>
-        <mesh position={[0.28, -0.64, 0.04]} rotation={[0, 0, -0.12]} castShadow>
-          <boxGeometry args={[0.2, 0.2, 0.06]} />
+        <mesh position={[0.32, -0.76, 0.06]} rotation={[0, 0, -0.1]} castShadow>
+          <boxGeometry args={[0.24, 0.24, 0.08]} />
           <meshBasicMaterial color="#8a9098" toneMapped={false} />
         </mesh>
       </group>
-      <group ref={left} position={[-0.16, 0.4, 0]}>
-        <mesh position={[0, -0.24, 0]} scale={1.28}>
-          <capsuleGeometry args={[0.12, 0.36, 3, 6]} />
+      <group ref={left} position={[-0.2, 0.42, 0]}>
+        <mesh position={[0, -0.28, 0]} scale={1.26}>
+          <capsuleGeometry args={[0.15, 0.4, 3, 6]} />
           <meshBasicMaterial color={outline} side={THREE.BackSide} toneMapped={false} />
         </mesh>
-        <mesh position={[0, -0.24, 0]} castShadow>
-          <capsuleGeometry args={[0.12, 0.36, 3, 6]} />
+        <mesh position={[0, -0.28, 0]} castShadow>
+          <capsuleGeometry args={[0.15, 0.4, 3, 6]} />
           <meshBasicMaterial color={pants} toneMapped={false} />
         </mesh>
-        <mesh position={[0, -0.46, 0.08]} castShadow>
-          <boxGeometry args={[0.2, 0.09, 0.28]} />
-          <meshBasicMaterial color="#141210" toneMapped={false} />
+        <mesh position={[0, -0.52, 0.12]} castShadow>
+          <boxGeometry args={[0.24, 0.12, 0.34]} />
+          <meshBasicMaterial color="#fff6d8" toneMapped={false} />
         </mesh>
       </group>
-      <group ref={right} position={[0.16, 0.4, 0]}>
-        <mesh position={[0, -0.24, 0]} scale={1.28}>
-          <capsuleGeometry args={[0.12, 0.36, 3, 6]} />
+      <group ref={right} position={[0.2, 0.42, 0]}>
+        <mesh position={[0, -0.28, 0]} scale={1.26}>
+          <capsuleGeometry args={[0.15, 0.4, 3, 6]} />
           <meshBasicMaterial color={outline} side={THREE.BackSide} toneMapped={false} />
         </mesh>
-        <mesh position={[0, -0.24, 0]} castShadow>
-          <capsuleGeometry args={[0.12, 0.36, 3, 6]} />
+        <mesh position={[0, -0.28, 0]} castShadow>
+          <capsuleGeometry args={[0.15, 0.4, 3, 6]} />
           <meshBasicMaterial color={pants} toneMapped={false} />
         </mesh>
-        <mesh position={[0, -0.46, 0.08]} castShadow>
-          <boxGeometry args={[0.2, 0.09, 0.28]} />
-          <meshBasicMaterial color="#141210" toneMapped={false} />
+        <mesh position={[0, -0.52, 0.12]} castShadow>
+          <boxGeometry args={[0.24, 0.12, 0.34]} />
+          <meshBasicMaterial color="#fff6d8" toneMapped={false} />
         </mesh>
       </group>
     </group>
