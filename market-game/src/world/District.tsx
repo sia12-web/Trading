@@ -6,6 +6,7 @@ import { closeInspect, inspectStore, setWalkTarget } from '../game/gameStore'
 import { storeAtPoint, YARD } from '../game/stores'
 import { useGame } from '../ui/useGame'
 import {
+  makeFasciaTexture,
   makeStencilTexture,
   useAsphaltTexture,
   useBrickTexture,
@@ -242,6 +243,9 @@ function WingPads({
       <Stencil word="YESTERDAY" ink="#c45c2a" position={[0, 0.03, 3.35]} />
       <Stencil word="FIVE-DAY" ink="#a34a38" position={[0, 0.03, -3.35]} />
       <Stencil word="FIVE-MONTH" ink="#2a6a78" position={[-3.55, 0.03, 0]} rot={Math.PI / 2} />
+      <WingSign word="YESTERDAY" paint="#c45c2a" position={[0, 0, 9.35]} />
+      <WingSign word="FIVE-DAY" paint="#a34a38" position={[5.15, 0, -8.15]} />
+      <WingSign word="FIVE-MONTH" paint="#2a6a78" position={[-9.2, 0, 4.85]} />
     </group>
   )
 }
@@ -263,6 +267,32 @@ function Stencil({
       <planeGeometry args={[5.4, 1.15]} />
       <meshStandardMaterial map={tex} transparent opacity={0.85} depthWrite={false} />
     </mesh>
+  )
+}
+
+function WingSign({
+  word,
+  paint,
+  position,
+}: {
+  word: string
+  paint: string
+  position: [number, number, number]
+}) {
+  const tex = useMemo(() => makeFasciaTexture(word, paint), [word, paint])
+  return (
+    <group position={position} rotation={[0, Math.PI / 4, 0]}>
+      {[-1.7, 1.7].map((x) => (
+        <mesh key={x} position={[x, 0.55, 0]} castShadow>
+          <boxGeometry args={[0.12, 1.1, 0.12]} />
+          <meshStandardMaterial color="#4a3020" />
+        </mesh>
+      ))}
+      <mesh position={[0, 1.05, 0]} castShadow>
+        <boxGeometry args={[3.7, 0.72, 0.14]} />
+        <meshStandardMaterial map={tex} roughness={0.55} />
+      </mesh>
+    </group>
   )
 }
 

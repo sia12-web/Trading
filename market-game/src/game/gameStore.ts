@@ -8,7 +8,7 @@ import {
   PREOPEN_MIN,
   sessionProgress,
 } from './session'
-import { nearestStore } from './stores'
+import { nearestStore, STORES } from './stores'
 import type { AnchoredVwap, Fill, SceneId, SessionPhase, Side, StoreId, StoreRead } from './types'
 
 const market = buildDowMarket()
@@ -206,6 +206,15 @@ export function toggleInspect() {
 }
 
 export function inspectStore(id: StoreId) {
+  const s = STORES.find((x) => x.id === id)
+  if (s) {
+    const yaw = s.range === 'fiveMonth' ? -Math.PI / 2 : 0
+    const lz = 2.05
+    walkTarget = {
+      x: s.position[0] - lz * Math.sin(yaw),
+      z: s.position[2] + lz * Math.cos(yaw),
+    }
+  }
   set({ inspecting: id, nearby: id, message: null })
 }
 
@@ -271,7 +280,7 @@ export function stallState(id: StoreId, snap: GameSnapshot = state) {
 }
 
 export function inStall(snap: GameSnapshot = state): StoreId | null {
-  return nearestStore(snap.player.x, snap.player.z, 2.2)?.id ?? null
+  return nearestStore(snap.player.x, snap.player.z, 2.85)?.id ?? null
 }
 
 export function takeAuction(side: Side) {

@@ -15,7 +15,7 @@ export function StorePanel() {
       <p>{store.theory}</p>
       {g.message && <p style={{ color: '#d4a046', fontSize: 13 }}>{g.message}</p>}
       <button className="ghost" onClick={closeInspect} style={{ marginTop: 8, width: '100%' }}>
-        ESC · walk in to take
+        ESC · B take · F fade
       </button>
     </div>
   )

@@ -15,10 +15,10 @@ export function IsoCamera({ mode }: { mode: 'hub' | 'dow' }) {
     const g = getGame()
     let height = 12.6
     let zoom = 58
-    const dist = mode === 'hub' ? 13.5 : 16.4
+    const dist = mode === 'hub' ? 15.2 : 16.4
     if (mode === 'hub') {
-      height = 11.2
-      zoom = 52
+      height = 12.4
+      zoom = 46
     } else if (g.phase === 'preopen') {
       height = 16.4
       zoom = 44

@@ -90,11 +90,11 @@ function RangeRails({
   return (
     <group>
       <mesh position={[0, yHi, 2.08]} castShadow>
-        <boxGeometry args={[width, 0.08, 0.08]} />
+        <boxGeometry args={[width, 0.14, 0.14]} />
         <meshStandardMaterial color="#c4a046" metalness={0.5} roughness={0.35} />
       </mesh>
       <mesh position={[0, yLo, 2.08]}>
-        <boxGeometry args={[width, 0.08, 0.08]} />
+        <boxGeometry args={[width, 0.14, 0.14]} />
         <meshStandardMaterial color="#4a3428" metalness={0.25} roughness={0.55} />
       </mesh>
       <mesh position={[0, (yVah + yVal) / 2, 2.04]}>
@@ -120,7 +120,7 @@ function Fascia({ title, paint, y, z }: { title: string; paint: string; y: numbe
   useEffect(() => () => tex.dispose(), [tex])
   return (
     <mesh position={[0, y, z]}>
-      <planeGeometry args={[2.15, 0.4]} />
+      <planeGeometry args={[2.85, 0.52]} />
       <meshStandardMaterial map={tex} roughness={0.55} />
     </mesh>
   )

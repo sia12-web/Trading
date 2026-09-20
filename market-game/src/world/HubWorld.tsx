@@ -151,29 +151,37 @@ function LockedGate({
           <coneGeometry args={[1.8, 1.1, 7]} />
           <meshStandardMaterial map={dirt} color="#6a5030" roughness={0.95} />
         </mesh>
-        <mesh position={[-0.7, 2.15, 0]} rotation={[0, 0, 0.45]} castShadow>
-          <boxGeometry args={[0.16, 3.4, 0.16]} />
-          <meshStandardMaterial color="#6a4a28" />
+        <mesh position={[-0.85, 2.45, 0]} rotation={[0, 0, 0.42]} castShadow>
+          <boxGeometry args={[0.22, 4.2, 0.22]} />
+          <meshStandardMaterial color="#c4a070" />
         </mesh>
-        <mesh position={[0.7, 2.15, 0]} rotation={[0, 0, -0.45]} castShadow>
-          <boxGeometry args={[0.16, 3.4, 0.16]} />
-          <meshStandardMaterial color="#6a4a28" />
+        <mesh position={[0.85, 2.45, 0]} rotation={[0, 0, -0.42]} castShadow>
+          <boxGeometry args={[0.22, 4.2, 0.22]} />
+          <meshStandardMaterial color="#c4a070" />
         </mesh>
-        <mesh position={[0, 3.55, 0]} castShadow>
-          <boxGeometry args={[1.8, 0.14, 0.18]} />
-          <meshStandardMaterial color="#5a3a20" />
+        <mesh position={[0, 4.35, 0]} castShadow>
+          <boxGeometry args={[2.2, 0.18, 0.22]} />
+          <meshStandardMaterial color="#a07838" />
+        </mesh>
+        <mesh position={[0, 4.55, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+          <torusGeometry args={[0.55, 0.08, 8, 16]} />
+          <meshStandardMaterial color="#c4a046" metalness={0.55} roughness={0.35} />
         </mesh>
         <mesh position={[0, 0.85, 1.15]} castShadow>
           <boxGeometry args={[1.2, 1.5, 0.15]} />
           <meshStandardMaterial color="#1a1410" />
         </mesh>
-        <mesh position={[1.35, 0.45, 0.8]} castShadow>
-          <dodecahedronGeometry args={[0.45, 0]} />
-          <meshStandardMaterial color="#c4a046" metalness={0.45} roughness={0.4} />
+        <mesh position={[1.35, 0.55, 0.9]} castShadow>
+          <dodecahedronGeometry args={[0.62, 0]} />
+          <meshStandardMaterial color="#e8c04a" metalness={0.55} roughness={0.32} emissive="#c4a046" emissiveIntensity={0.45} />
         </mesh>
-        <mesh position={[1.7, 0.28, 1.15]} castShadow>
+        <mesh position={[1.85, 0.38, 1.25]} castShadow>
+          <dodecahedronGeometry args={[0.4, 0]} />
+          <meshStandardMaterial color="#f0d070" metalness={0.55} roughness={0.3} emissive="#d4a046" emissiveIntensity={0.35} />
+        </mesh>
+        <mesh position={[0.9, 0.32, 1.45]} castShadow>
           <dodecahedronGeometry args={[0.28, 0]} />
-          <meshStandardMaterial color="#e8c060" metalness={0.5} roughness={0.38} />
+          <meshStandardMaterial color="#c4a046" metalness={0.5} roughness={0.35} />
         </mesh>
         <Lock y={0.95} z={1.35} />
         <Sign text="MINE" color="#e8d080" y={4.05} />

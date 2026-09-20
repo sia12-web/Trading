@@ -10,7 +10,6 @@ export function Hud() {
   const stall = inStall(g)
   const phaseLabel =
     g.phase === 'preopen' ? 'PRE-OPEN' : g.phase === 'opening' ? 'CASH OPEN' : 'LIVE'
-  const name = stall ? STORES.find((s) => s.id === stall)?.name : g.nearby ? STORES.find((s) => s.id === g.nearby)?.name : null
 
   if (g.scene === 'hub') return <HubHud />
 
@@ -48,12 +47,12 @@ export function Hud() {
 
       {g.phase === 'opening' && <div className="open-pip">9:30 NYC</div>}
 
-      {g.phase === 'live' && !g.inspecting && (
+      {g.phase === 'live' && (
         <div className="prompt iso-prompt">
           {stall ? (
             <>On the floor · B take · F fade</>
-          ) : g.nearby ? (
-            <>Walk into {name}</>
+          ) : g.nearby || g.inspecting ? (
+            <>Walk into the stall · B take · F fade</>
           ) : (
             <>WASD · walk a stall</>
           )}

@@ -117,7 +117,7 @@ export const STORES: StoreDef[] = [
 
 export const LOCKED_MARKETS = [
   { id: 'nasdaq' as const, name: 'NASDAQ', world: 'Technology campuses', position: [5.1, 0, 0] as [number, number, number] },
-  { id: 'gold' as const, name: 'GOLD', world: 'Mines', position: [0, 0, 5.1] as [number, number, number] },
+  { id: 'gold' as const, name: 'GOLD', world: 'Mines', position: [2.85, 0, 4.55] as [number, number, number] },
   { id: 'oil' as const, name: 'OIL', world: 'Fields & refineries', position: [-5.1, 0, 0] as [number, number, number] },
 ]
 

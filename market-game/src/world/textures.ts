@@ -186,21 +186,21 @@ export function useDirtTexture() {
 
 export function makeFasciaTexture(title: string, paint: string): THREE.CanvasTexture {
   const c = document.createElement('canvas')
-  c.width = 512
-  c.height = 96
+  c.width = 768
+  c.height = 128
   const ctx = c.getContext('2d')!
   ctx.fillStyle = '#2a2218'
-  ctx.fillRect(0, 0, 512, 96)
+  ctx.fillRect(0, 0, 768, 128)
   ctx.fillStyle = '#3a3024'
-  ctx.fillRect(6, 6, 500, 84)
+  ctx.fillRect(8, 8, 752, 112)
   ctx.strokeStyle = paint
-  ctx.lineWidth = 4
-  ctx.strokeRect(10, 10, 492, 76)
+  ctx.lineWidth = 6
+  ctx.strokeRect(14, 14, 740, 100)
   ctx.fillStyle = '#f0e6d4'
-  ctx.font = 'bold 42px "IBM Plex Mono", monospace'
+  ctx.font = 'bold 64px "IBM Plex Mono", sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText(title, 256, 50)
+  ctx.fillText(title, 384, 68)
   const t = new THREE.CanvasTexture(c)
   t.colorSpace = THREE.SRGBColorSpace
   t.needsUpdate = true
