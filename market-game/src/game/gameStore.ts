@@ -146,7 +146,7 @@ export function enterDow() {
     scene: 'dow',
     phase: 'preopen',
     clockMin: PREOPEN_MIN,
-    player: { x: 2.2, y: 0, z: 2.2, yaw: 0 },
+    player: { x: 3.35, y: 0, z: 8.55, yaw: 0 },
     livePrice: market.priorClose,
     message: 'NYC cash is about to open. Move Price to a store.',
   }
@@ -173,7 +173,7 @@ export function skipToOpen() {
     floorAlive: 0,
     livePrice: market.openPrint,
     message: null,
-    player: state.scene === 'dow' ? state.player : { x: 2.2, y: 0, z: 2.2, yaw: 0 },
+    player: state.scene === 'dow' ? state.player : { x: 3.35, y: 0, z: 8.55, yaw: 0 },
   })
 }
 
@@ -210,9 +210,11 @@ export function toggleInspect() {
 export function inspectStore(id: StoreId) {
   const s = STORES.find((x) => x.id === id)
   if (s) {
-    const len = Math.hypot(s.position[0], s.position[2]) || 1
-    const k = 1 - 2.05 / len
-    walkTarget = { x: s.position[0] * k, z: s.position[2] * k }
+    const porch =
+      s.range === 'fiveMonth'
+        ? { x: s.position[0] + 2.15, z: s.position[2] }
+        : { x: s.position[0], z: s.position[2] + 2.15 }
+    walkTarget = porch
   }
   set({ inspecting: id, nearby: id, message: null })
 }

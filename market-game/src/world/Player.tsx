@@ -167,7 +167,7 @@ export function Player({
   return (
     <group ref={group} position={spawn}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
-        <ringGeometry args={[0.42, 0.58, 24]} />
+        <ringGeometry args={[0.48, 0.68, 24]} />
         <meshBasicMaterial color={selected ? '#e8c04a' : '#f4efe6'} transparent opacity={0.95} />
       </mesh>
       <PriceBody vel={vel} bob={bob} />
@@ -198,7 +198,7 @@ function PriceBody({
   })
 
   return (
-    <group scale={1.15}>
+    <group scale={1.35}>
       <mesh position={[0, 0.72, 0]} scale={1.12}>
         <capsuleGeometry args={[0.28, 0.42, 4, 8]} />
         <meshBasicMaterial color="#1a140e" />
