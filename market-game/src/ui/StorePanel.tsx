@@ -1,4 +1,4 @@
-import { closeInspect } from '../game/gameStore'
+import { closeInspect, takeAuction } from '../game/gameStore'
 import { STORES } from '../game/stores'
 import { useActiveRead, useGame } from './useGame'
 
@@ -14,9 +14,17 @@ export function StorePanel() {
       <h3>{store.name}</h3>
       <p>{store.theory}</p>
       {g.message && <p style={{ color: '#d4a046', fontSize: 13 }}>{g.message}</p>}
-      <button className="ghost" onClick={closeInspect} style={{ marginTop: 8, width: '100%' }}>
-        ESC · B take · F fade
-      </button>
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <button className="ghost hit" onClick={() => takeAuction('buy')} style={{ flex: 1 }}>
+          B take
+        </button>
+        <button className="ghost hit" onClick={() => takeAuction('sell')} style={{ flex: 1 }}>
+          F fade
+        </button>
+        <button className="ghost" onClick={closeInspect} style={{ flex: 1 }}>
+          ESC
+        </button>
+      </div>
     </div>
   )
 }
