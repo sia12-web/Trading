@@ -462,26 +462,32 @@ function WindowRow({
   return (
     <>
       {xs.map((x) => (
-        <mesh key={x} position={[x, y, z]}>
-          <boxGeometry args={[0.42, 0.55, 0.06]} />
-          <meshStandardMaterial
-            color="#5a88a0"
-            roughness={0.22}
-            metalness={0.15}
-            emissive="#d8c080"
-            emissiveIntensity={0.08 + lit * 0.55}
-          />
-        </mesh>
+        <group key={x} position={[x, y, z]}>
+          <mesh position={[0, 0, -0.02]}>
+            <boxGeometry args={[0.56, 0.7, 0.08]} />
+            <meshStandardMaterial color="#f0e6d4" roughness={0.55} />
+          </mesh>
+          <mesh>
+            <boxGeometry args={[0.4, 0.52, 0.06]} />
+            <meshStandardMaterial
+              color="#5a88a0"
+              roughness={0.22}
+              metalness={0.15}
+              emissive="#d8c080"
+              emissiveIntensity={0.08 + lit * 0.55}
+            />
+          </mesh>
+        </group>
       ))}
     </>
   )
 }
 
-function Cornice({ w, d, y, color = '#6a4030' }: { w: number; d: number; y: number; color?: string }) {
+function Cornice({ w, d, y, color = '#e4d4b8' }: { w: number; d: number; y: number; color?: string }) {
   return (
     <mesh position={[0, y, 0]} castShadow>
       <boxGeometry args={[w, 0.16, d]} />
-      <meshStandardMaterial color={color} roughness={0.7} />
+      <meshStandardMaterial color={color} roughness={0.55} />
     </mesh>
   )
 }
@@ -516,7 +522,7 @@ function Foundry({
       </mesh>
       <mesh position={[0, 2.05, 2.28]} castShadow>
         <boxGeometry args={[2.15, 0.12, 0.85]} />
-        <meshStandardMaterial color="#5a5044" roughness={0.7} metalness={0.2} />
+        <meshStandardMaterial color="#c4a05a" roughness={0.48} metalness={0.35} />
       </mesh>
       <RollDoor width={1.7} height={1.85} open={stall.door} z={2.12} />
       {[-1.05, 1.05].map((x) => (
@@ -594,7 +600,7 @@ function Hall({ brick, metal, stall }: { brick: THREE.Texture; metal: THREE.Text
       {[-1.55, -0.52, 0.52, 1.55].map((x) => (
         <mesh key={x} position={[x, 1.15, 2.2]} castShadow>
           <cylinderGeometry args={[0.16, 0.2, 2.3, 8]} />
-          <meshStandardMaterial color="#8a7a62" metalness={0.18} roughness={0.62} />
+        <meshStandardMaterial color="#d8c8a8" metalness={0.18} roughness={0.62} />
         </mesh>
       ))}
       <mesh position={[0, 2.35, 2.2]}>

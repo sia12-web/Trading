@@ -15,6 +15,7 @@ export function YardDressing() {
       <OilStains />
       <CourtyardFill />
       <MillBackLot />
+      <NorthCourt />
       <WaterTower />
       <OuterBelt />
     </group>
@@ -394,6 +395,143 @@ function Worker({ x, z, rot, color }: { x: number; z: number; rot: number; color
         <capsuleGeometry args={[0.06, 0.28, 3, 6]} />
         <meshBasicMaterial color="#5c3220" toneMapped={false} />
       </mesh>
+    </group>
+  )
+}
+
+function NorthCourt() {
+  return (
+    <group>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0.4, 0.028, -5.85]} receiveShadow>
+        <planeGeometry args={[12.6, 8.4]} />
+        <meshStandardMaterial color="#3aaa32" roughness={0.88} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.034, -5.55]} receiveShadow>
+        <planeGeometry args={[2.05, 8.2]} />
+        <meshStandardMaterial color="#8a6a42" roughness={0.92} />
+      </mesh>
+      <GardenPlot x={-1.85} z={-3.55} w={2.4} d={1.55} />
+      <GardenPlot x={2.05} z={-3.45} w={2.5} d={1.5} />
+      <GardenPlot x={-1.65} z={-7.55} w={2.2} d={1.4} />
+      <GardenPlot x={1.85} z={-7.45} w={2.3} d={1.35} />
+      <Shed x={-3.55} z={-6.35} rot={0.12} />
+      <Shed x={3.65} z={-6.15} rot={-0.08} />
+      <Shed x={-4.05} z={-8.45} rot={-0.18} />
+      <Shed x={4.15} z={-8.25} rot={0.14} />
+      <BeamRack x={-4.25} z={-4.15} />
+      <BeamRack x={4.35} z={-4.05} />
+      <BeamRack x={-5.05} z={-6.95} />
+      <Cart x={-2.15} z={-4.85} rot={0.4} />
+      <Cart x={2.25} z={-4.75} rot={-0.5} />
+      <Cart x={-0.15} z={-6.45} rot={0.15} />
+      <Cart x={0.35} z={-8.35} rot={-2.8} />
+      <CrateStack x={-3.05} z={-7.85} />
+      <CrateStack x={3.15} z={-7.65} />
+      <CrateStack x={-1.85} z={-8.95} />
+      <CrateStack x={1.95} z={-8.85} />
+      <CrateStack x={-5.15} z={-5.15} />
+      <CrateStack x={5.25} z={-5.05} />
+      <Barrel x={-4.55} z={-5.45} color="#5a4030" />
+      <Barrel x={4.65} z={-5.35} color="#3a6a88" />
+      <Barrel x={-2.65} z={-7.25} color="#4a5840" />
+      <Barrel x={2.75} z={-7.15} color="#5a4030" />
+      <Barrel x={-0.85} z={-5.05} color="#3a6a88" />
+      <Barrel x={0.95} z={-4.95} color="#5a4030" />
+      {[-5.4, -2.7, 0, 2.7, 5.4].map((x) => (
+        <mesh key={x} position={[x, 0.7, -9.15]} castShadow>
+          <cylinderGeometry args={[0.07, 0.09, 1.4, 6]} />
+          <meshStandardMaterial color="#c4a05a" metalness={0.35} roughness={0.5} />
+        </mesh>
+      ))}
+      <mesh position={[0, 1.42, -9.15]} castShadow>
+        <boxGeometry args={[11.4, 0.06, 0.06]} />
+        <meshStandardMaterial color="#c4a05a" metalness={0.35} roughness={0.5} />
+      </mesh>
+      <Worker x={-2.45} z={-5.55} rot={0.3} color="#3a6a88" />
+      <Worker x={2.55} z={-5.45} rot={-0.35} color="#c4a046" />
+      <Worker x={-1.15} z={-6.85} rot={1.1} color="#5a7a50" />
+      <Worker x={1.25} z={-6.75} rot={-1.2} color="#8aa0b0" />
+      <Worker x={-3.35} z={-8.05} rot={0.7} color="#c4a046" />
+      <Worker x={3.45} z={-7.95} rot={-0.8} color="#3a6a88" />
+      <Bush x={-5.15} z={-7.45} h={1.15} seed={31} />
+      <Bush x={5.25} z={-7.25} h={1.05} seed={32} />
+      <Bush x={-4.35} z={-3.25} h={1.0} seed={33} />
+      <Bush x={4.45} z={-3.15} h={1.1} seed={34} />
+      <Bush x={-0.55} z={-3.15} h={0.95} seed={35} />
+      <Bush x={0.65} z={-8.95} h={1.05} seed={36} />
+      <Pine x={-5.55} z={-8.85} h={2.8} seed={41} />
+      <Broadleaf x={5.65} z={-8.65} h={2.5} seed={42} />
+      <Cypress x={-5.85} z={-3.65} h={3.1} seed={43} />
+      <Willow x={5.95} z={-3.55} h={2.7} seed={44} />
+    </group>
+  )
+}
+
+function GardenPlot({ x, z, w, d }: { x: number; z: number; w: number; d: number }) {
+  return (
+    <group position={[x, 0, z]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]} receiveShadow>
+        <planeGeometry args={[w, d]} />
+        <meshStandardMaterial color="#6a4a28" roughness={0.94} />
+      </mesh>
+      {[-0.35, 0.35].map((row, i) =>
+        [-0.45, 0, 0.45].map((col, j) => (
+          <mesh key={`${i}${j}`} position={[col * (w / 2.4), 0.12, row * (d / 1.4)]} castShadow>
+            <sphereGeometry args={[0.12, 6, 5]} />
+            <meshStandardMaterial color={j % 2 ? '#3a8c34' : '#2a6a28'} roughness={0.8} />
+          </mesh>
+        )),
+      )}
+    </group>
+  )
+}
+
+function Shed({ x, z, rot }: { x: number; z: number; rot: number }) {
+  return (
+    <group position={[x, 0, z]} rotation={[0, rot, 0]}>
+      <mesh position={[0, 0.85, 0]} castShadow receiveShadow>
+        <boxGeometry args={[2.35, 1.7, 1.85]} />
+        <meshStandardMaterial color="#c45a38" roughness={0.84} />
+      </mesh>
+      <mesh position={[0, 1.82, 0]} rotation={[0, 0, 0.42]} castShadow>
+        <boxGeometry args={[2.7, 0.12, 2.05]} />
+        <meshStandardMaterial color="#8a5040" roughness={0.6} />
+      </mesh>
+      <mesh position={[-0.55, 1.15, 0.95]}>
+        <boxGeometry args={[0.7, 0.55, 0.06]} />
+        <meshStandardMaterial color="#f0e6d4" roughness={0.55} />
+      </mesh>
+      <mesh position={[-0.55, 1.15, 0.98]}>
+        <boxGeometry args={[0.5, 0.38, 0.04]} />
+        <meshStandardMaterial color="#5a88a0" roughness={0.25} />
+      </mesh>
+      <mesh position={[0.45, 0.7, 0.95]}>
+        <boxGeometry args={[0.55, 1.05, 0.08]} />
+        <meshStandardMaterial color="#3a1810" />
+      </mesh>
+      <mesh position={[0, 1.95, 0.2]}>
+        <boxGeometry args={[0.55, 0.08, 0.12]} />
+        <meshStandardMaterial color="#c4a05a" metalness={0.4} roughness={0.45} />
+      </mesh>
+    </group>
+  )
+}
+
+function BeamRack({ x, z }: { x: number; z: number }) {
+  return (
+    <group position={[x, 0, z]}>
+      {[-0.45, 0.45].map((sz) => (
+        <mesh key={sz} position={[0, 0.55, sz]} rotation={[0, 0, Math.PI / 2]} castShadow>
+          <cylinderGeometry args={[0.1, 0.1, 2.4, 8]} />
+          <meshStandardMaterial color="#6a5a48" metalness={0.35} roughness={0.55} />
+        </mesh>
+      ))}
+      {[-0.7, 0, 0.7].map((sx) => (
+        <mesh key={sx} position={[sx, 0.32, 0]}>
+          <boxGeometry args={[0.08, 0.64, 1.05]} />
+          <meshStandardMaterial color="#c4a05a" metalness={0.32} roughness={0.5} />
+        </mesh>
+      ))}
     </group>
   )
 }

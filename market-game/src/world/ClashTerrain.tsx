@@ -347,38 +347,26 @@ export function Pine({
   seed?: number
 }) {
   const yaw = jitter(seed, 1) * Math.PI
-  const lean = (jitter(seed, 2) - 0.5) * 0.12
-  const g1 = h > 4.2 ? '#145a1e' : '#166422'
-  const g2 = h > 4.2 ? '#1c7a28' : '#1a7024'
-  const g3 = '#247a32'
-  const ox = (jitter(seed, 3) - 0.5) * h * 0.06
-  const oz = (jitter(seed, 4) - 0.5) * h * 0.06
+  const lean = (jitter(seed, 2) - 0.5) * 0.08
+  const layers: Array<[number, number, number, string]> = [
+    [h * 0.38, h * 0.1, h * 0.32, '#145a1c'],
+    [h * 0.31, h * 0.1, h * 0.44, '#176824'],
+    [h * 0.24, h * 0.09, h * 0.56, '#1e802c'],
+    [h * 0.17, h * 0.09, h * 0.68, '#269636'],
+    [h * 0.1, h * 0.08, h * 0.8, '#32a840'],
+  ]
   return (
     <group position={[x, y, z]} rotation={[lean, yaw, 0]}>
       <mesh position={[0, h * 0.18, 0]} castShadow>
-        <cylinderGeometry args={[0.09, 0.2, h * 0.38, 7]} />
-        <meshStandardMaterial color="#4a2c16" roughness={0.94} />
+        <cylinderGeometry args={[0.07, 0.16, h * 0.36, 6]} />
+        <meshStandardMaterial color="#5a3418" roughness={0.92} />
       </mesh>
-      <mesh position={[h * 0.08, h * 0.28, 0]} rotation={[0, 0, 0.7]} castShadow>
-        <cylinderGeometry args={[0.04, 0.07, h * 0.18, 5]} />
-        <meshStandardMaterial color="#3a2414" roughness={0.94} />
-      </mesh>
-      <mesh position={[ox, h * 0.4, oz]} castShadow>
-        <coneGeometry args={[h * 0.3, h * 0.48, 8]} />
-        <meshStandardMaterial color={g1} roughness={0.8} />
-      </mesh>
-      <mesh position={[-ox * 0.6, h * 0.58, oz * 0.4]} rotation={[0.04, 0.3, 0]} castShadow>
-        <coneGeometry args={[h * 0.22, h * 0.4, 8]} />
-        <meshStandardMaterial color={g2} roughness={0.78} />
-      </mesh>
-      <mesh position={[ox * 0.5, h * 0.74, -oz * 0.5]} rotation={[-0.05, 0.8, 0]} castShadow>
-        <coneGeometry args={[h * 0.15, h * 0.3, 7]} />
-        <meshStandardMaterial color={g3} roughness={0.76} />
-      </mesh>
-      <mesh position={[0, h * 0.9, 0]} castShadow>
-        <coneGeometry args={[h * 0.09, h * 0.2, 6]} />
-        <meshStandardMaterial color="#2e8a38" roughness={0.74} />
-      </mesh>
+      {layers.map(([r, hh, yy, c], i) => (
+        <mesh key={i} position={[0, yy, 0]} rotation={[0, i * 0.28, 0]} castShadow>
+          <cylinderGeometry args={[r * 0.42, r, hh, 8]} />
+          <meshStandardMaterial color={c} roughness={0.72} />
+        </mesh>
+      ))}
     </group>
   )
 }
@@ -397,43 +385,34 @@ export function Broadleaf({
   seed?: number
 }) {
   const yaw = jitter(seed, 5) * Math.PI * 2
-  const leaf = seed % 3 === 0 ? '#2e8c30' : seed % 3 === 1 ? '#3a9a36' : '#247828'
-  const leaf2 = seed % 2 === 0 ? '#1e6a24' : '#348a32'
-  const leaf3 = '#4aa040'
+  const puffs: Array<[number, number, number, number, string]> = [
+    [0, h * 0.68, 0, h * 0.28, '#2e8c30'],
+    [h * 0.22, h * 0.62, h * 0.12, h * 0.2, '#3a9a36'],
+    [-h * 0.2, h * 0.64, -h * 0.1, h * 0.18, '#247828'],
+    [h * 0.08, h * 0.78, -h * 0.16, h * 0.16, '#4aa040'],
+    [-h * 0.12, h * 0.76, h * 0.14, h * 0.15, '#1e6a24'],
+    [h * 0.16, h * 0.54, -h * 0.14, h * 0.14, '#348a32'],
+  ]
   return (
     <group position={[x, y, z]} rotation={[0, yaw, 0]}>
-      <mesh position={[0, h * 0.24, 0]} castShadow>
-        <cylinderGeometry args={[0.1, 0.2, h * 0.48, 7]} />
+      <mesh position={[0, h * 0.26, 0]} castShadow>
+        <cylinderGeometry args={[0.09, 0.18, h * 0.5, 6]} />
         <meshStandardMaterial color="#5a3218" roughness={0.92} />
       </mesh>
-      <mesh position={[h * 0.08, h * 0.42, h * 0.04]} rotation={[0.35, 0.4, 0.2]} castShadow>
-        <cylinderGeometry args={[0.05, 0.09, h * 0.28, 5]} />
+      <mesh position={[h * 0.1, h * 0.44, h * 0.05]} rotation={[0.4, 0.3, 0.18]} castShadow>
+        <cylinderGeometry args={[0.04, 0.08, h * 0.26, 5]} />
         <meshStandardMaterial color="#4a2814" roughness={0.92} />
       </mesh>
-      <mesh position={[-h * 0.1, h * 0.4, -h * 0.06]} rotation={[-0.3, -0.5, -0.15]} castShadow>
-        <cylinderGeometry args={[0.045, 0.08, h * 0.24, 5]} />
+      <mesh position={[-h * 0.1, h * 0.42, -h * 0.06]} rotation={[-0.35, -0.4, -0.12]} castShadow>
+        <cylinderGeometry args={[0.04, 0.07, h * 0.22, 5]} />
         <meshStandardMaterial color="#4a2814" roughness={0.92} />
       </mesh>
-      <mesh position={[0, h * 0.64, 0]} castShadow>
-        <dodecahedronGeometry args={[h * 0.3, 0]} />
-        <meshStandardMaterial color={leaf} roughness={0.76} />
-      </mesh>
-      <mesh position={[h * 0.2, h * 0.7, h * 0.1]} castShadow>
-        <icosahedronGeometry args={[h * 0.2, 0]} />
-        <meshStandardMaterial color={leaf2} roughness={0.78} />
-      </mesh>
-      <mesh position={[-h * 0.18, h * 0.78, -h * 0.08]} castShadow>
-        <dodecahedronGeometry args={[h * 0.18, 0]} />
-        <meshStandardMaterial color={leaf3} roughness={0.77} />
-      </mesh>
-      <mesh position={[h * 0.06, h * 0.86, -h * 0.16]} castShadow>
-        <icosahedronGeometry args={[h * 0.14, 0]} />
-        <meshStandardMaterial color={leaf} roughness={0.75} />
-      </mesh>
-      <mesh position={[-h * 0.08, h * 0.58, h * 0.18]} castShadow>
-        <dodecahedronGeometry args={[h * 0.15, 0]} />
-        <meshStandardMaterial color={leaf2} roughness={0.78} />
-      </mesh>
+      {puffs.map(([px, py, pz, r, c], i) => (
+        <mesh key={i} position={[px, py, pz]} scale={[1, 0.62, 1]} castShadow>
+          <sphereGeometry args={[r, 8, 6]} />
+          <meshStandardMaterial color={c} roughness={0.74} />
+        </mesh>
+      ))}
     </group>
   )
 }
@@ -452,24 +431,25 @@ export function Cypress({
   seed?: number
 }) {
   const yaw = jitter(seed, 8) * Math.PI
+  const rings: Array<[number, number, string]> = [
+    [h * 0.16, h * 0.28, '#145a22'],
+    [h * 0.14, h * 0.44, '#176428'],
+    [h * 0.12, h * 0.6, '#1a702c'],
+    [h * 0.09, h * 0.74, '#1e7c32'],
+    [h * 0.06, h * 0.88, '#228a38'],
+  ]
   return (
-    <group position={[x, y, z]} rotation={[0, yaw, (jitter(seed, 9) - 0.5) * 0.08]}>
-      <mesh position={[0, h * 0.14, 0]} castShadow>
-        <cylinderGeometry args={[0.07, 0.12, h * 0.28, 6]} />
+    <group position={[x, y, z]} rotation={[0, yaw, (jitter(seed, 9) - 0.5) * 0.06]}>
+      <mesh position={[0, h * 0.12, 0]} castShadow>
+        <cylinderGeometry args={[0.06, 0.1, h * 0.24, 6]} />
         <meshStandardMaterial color="#3a2414" roughness={0.94} />
       </mesh>
-      <mesh position={[0, h * 0.38, 0]} castShadow>
-        <coneGeometry args={[h * 0.16, h * 0.42, 8]} />
-        <meshStandardMaterial color="#145a22" roughness={0.8} />
-      </mesh>
-      <mesh position={[0, h * 0.62, 0]} castShadow>
-        <coneGeometry args={[h * 0.12, h * 0.36, 8]} />
-        <meshStandardMaterial color="#1a6a28" roughness={0.78} />
-      </mesh>
-      <mesh position={[0, h * 0.82, 0]} castShadow>
-        <coneGeometry args={[h * 0.07, h * 0.28, 7]} />
-        <meshStandardMaterial color="#227430" roughness={0.76} />
-      </mesh>
+      {rings.map(([r, yy, c], i) => (
+        <mesh key={i} position={[0, yy, 0]} scale={[1, 1.15, 1]} castShadow>
+          <sphereGeometry args={[r, 8, 6]} />
+          <meshStandardMaterial color={c} roughness={0.76} />
+        </mesh>
+      ))}
     </group>
   )
 }
@@ -488,32 +468,26 @@ export function Willow({
   seed?: number
 }) {
   const yaw = jitter(seed, 11) * Math.PI * 2
+  const drapes = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => {
+    const a = (i / 8) * Math.PI * 2
+    return [Math.cos(a) * h * 0.28, Math.sin(a) * h * 0.28] as [number, number]
+  })
   return (
     <group position={[x, y, z]} rotation={[0, yaw, 0]}>
-      <mesh position={[0, h * 0.22, 0]} castShadow>
-        <cylinderGeometry args={[0.1, 0.16, h * 0.44, 7]} />
+      <mesh position={[0, h * 0.24, 0]} castShadow>
+        <cylinderGeometry args={[0.09, 0.15, h * 0.48, 6]} />
         <meshStandardMaterial color="#4a3018" roughness={0.92} />
       </mesh>
-      <mesh position={[0, h * 0.58, 0]} castShadow>
-        <dodecahedronGeometry args={[h * 0.34, 0]} />
+      <mesh position={[0, h * 0.62, 0]} scale={[1.15, 0.48, 1.15]} castShadow>
+        <sphereGeometry args={[h * 0.32, 10, 7]} />
         <meshStandardMaterial color="#3a8c38" roughness={0.74} />
       </mesh>
-      <mesh position={[h * 0.22, h * 0.48, h * 0.08]} castShadow>
-        <icosahedronGeometry args={[h * 0.18, 0]} />
-        <meshStandardMaterial color="#2e7a30" roughness={0.78} />
-      </mesh>
-      <mesh position={[-h * 0.2, h * 0.46, -h * 0.1]} castShadow>
-        <icosahedronGeometry args={[h * 0.16, 0]} />
-        <meshStandardMaterial color="#4a9a40" roughness={0.76} />
-      </mesh>
-      <mesh position={[h * 0.04, h * 0.36, h * 0.22]} castShadow>
-        <dodecahedronGeometry args={[h * 0.14, 0]} />
-        <meshStandardMaterial color="#2a6a28" roughness={0.8} />
-      </mesh>
-      <mesh position={[-h * 0.12, h * 0.34, h * 0.16]} castShadow>
-        <dodecahedronGeometry args={[h * 0.12, 0]} />
-        <meshStandardMaterial color="#348034" roughness={0.79} />
-      </mesh>
+      {drapes.map(([dx, dz], i) => (
+        <mesh key={i} position={[dx, h * 0.38, dz]} castShadow>
+          <capsuleGeometry args={[h * 0.055, h * 0.28, 3, 6]} />
+          <meshStandardMaterial color={i % 2 ? '#2e7a30' : '#4a9a40'} roughness={0.78} />
+        </mesh>
+      ))}
     </group>
   )
 }
@@ -534,16 +508,16 @@ export function Bush({
   const yaw = jitter(seed, 13) * Math.PI
   return (
     <group position={[x, y, z]} rotation={[0, yaw, 0]}>
-      <mesh position={[0, h * 0.36, 0]} castShadow>
-        <dodecahedronGeometry args={[h * 0.4, 0]} />
+      <mesh position={[0, h * 0.32, 0]} scale={[1, 0.7, 1]} castShadow>
+        <sphereGeometry args={[h * 0.38, 8, 6]} />
         <meshStandardMaterial color="#246c28" roughness={0.8} />
       </mesh>
-      <mesh position={[h * 0.24, h * 0.3, h * 0.1]} castShadow>
-        <icosahedronGeometry args={[h * 0.26, 0]} />
+      <mesh position={[h * 0.22, h * 0.26, h * 0.08]} scale={[1, 0.65, 1]} castShadow>
+        <sphereGeometry args={[h * 0.24, 7, 5]} />
         <meshStandardMaterial color="#3a8c34" roughness={0.78} />
       </mesh>
-      <mesh position={[-h * 0.18, h * 0.28, -h * 0.12]} castShadow>
-        <dodecahedronGeometry args={[h * 0.22, 0]} />
+      <mesh position={[-h * 0.18, h * 0.24, -h * 0.1]} scale={[1, 0.65, 1]} castShadow>
+        <sphereGeometry args={[h * 0.2, 7, 5]} />
         <meshStandardMaterial color="#1e5c22" roughness={0.82} />
       </mesh>
     </group>
@@ -585,7 +559,7 @@ export function ClashWalls({ wall, brick }: { wall: number; brick: THREE.Texture
           </mesh>
           <mesh position={[x, 3.5, z]} castShadow>
             <boxGeometry args={[1.55, 0.28, 1.55]} />
-            <meshStandardMaterial color="#6a5038" roughness={0.55} metalness={0.25} />
+            <meshStandardMaterial color="#c4a05a" roughness={0.45} metalness={0.4} />
           </mesh>
         </group>
       ))}
@@ -609,12 +583,12 @@ export function MorningSun({ warm }: { warm: boolean }) {
 
   return (
     <>
-      <hemisphereLight args={[warm ? '#f8e0c4' : '#d8f0ff', warm ? '#8a7a52' : '#52a048', warm ? 0.58 : 0.7]} />
-      <ambientLight intensity={warm ? 0.4 : 0.54} />
+      <hemisphereLight args={[warm ? '#f8e0c4' : '#c8e8ff', warm ? '#8a7a52' : '#48b044', warm ? 0.62 : 0.82]} />
+      <ambientLight intensity={warm ? 0.46 : 0.64} />
       <directionalLight
         ref={light}
         position={sunPos}
-        intensity={warm ? 1.55 : 2.05}
+        intensity={warm ? 1.7 : 2.28}
         color={sun}
         castShadow
         shadow-mapSize={[2048, 2048]}
@@ -627,9 +601,9 @@ export function MorningSun({ warm }: { warm: boolean }) {
         shadow-camera-top={38}
         shadow-camera-bottom={-38}
       />
-      <directionalLight position={[-12, 11, -14]} intensity={warm ? 0.42 : 0.62} color="#c4e4f8" />
-      <directionalLight position={[4, 14, -8]} intensity={warm ? 0.18 : 0.28} color="#fff6e0" />
-      <directionalLight position={[16, 7, 4]} intensity={warm ? 0.16 : 0.22} color="#ffe8c4" />
+      <directionalLight position={[-12, 11, -14]} intensity={warm ? 0.5 : 0.78} color="#c4e4f8" />
+      <directionalLight position={[4, 14, -8]} intensity={warm ? 0.22 : 0.36} color="#fff6e0" />
+      <directionalLight position={[16, 7, 4]} intensity={warm ? 0.2 : 0.3} color="#ffe8c4" />
     </>
   )
 }

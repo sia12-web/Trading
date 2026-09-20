@@ -32,7 +32,7 @@ export function District() {
     const sky = sunK < 0.35 ? '#e8bc7c' : '#6ac8ee'
 
   useFrame(() => {
-    gl.toneMappingExposure = 1.14 + 0.12 * sunK
+    gl.toneMappingExposure = 1.2 + 0.14 * sunK
     gl.setClearColor(sky, 1)
     gl.shadowMap.type = THREE.PCFSoftShadowMap
   })
@@ -128,15 +128,21 @@ function BellTower({
       </mesh>
       {[-0.62, 0.62].map((x) =>
         [1.35, 2.45, 3.5].map((y) => (
-          <mesh key={`${x}${y}`} position={[x, y, 1.1]}>
-            <boxGeometry args={[0.42, 0.62, 0.08]} />
-            <meshStandardMaterial color="#2a3a44" roughness={0.25} />
-          </mesh>
+          <group key={`${x}${y}`} position={[x, y, 1.1]}>
+            <mesh>
+              <boxGeometry args={[0.52, 0.74, 0.08]} />
+              <meshStandardMaterial color="#f0e6d4" roughness={0.55} />
+            </mesh>
+            <mesh position={[0, 0, 0.03]}>
+              <boxGeometry args={[0.38, 0.56, 0.06]} />
+              <meshStandardMaterial color="#2a3a44" roughness={0.25} />
+            </mesh>
+          </group>
         )),
       )}
       <mesh position={[0, 5.35, 0]} castShadow>
         <boxGeometry args={[2.85, 0.6, 2.85]} />
-        <meshStandardMaterial map={metal} color="#8a6a38" metalness={0.4} roughness={0.45} />
+        <meshStandardMaterial map={metal} color="#c4a05a" metalness={0.42} roughness={0.42} />
       </mesh>
       <mesh position={[0, 6.05, 0]} castShadow>
         <coneGeometry args={[1.28, 1.25, 4]} />
@@ -258,10 +264,16 @@ function SouthGate({ open }: { open: number }) {
   return (
     <group position={[0, 0, 12.15]}>
       {[-2.25, 2.25].map((x) => (
-        <mesh key={x} position={[x, 1.7, 0]} castShadow>
-          <boxGeometry args={[0.62, 3.4, 0.62]} />
-          <meshStandardMaterial color="#b84a30" roughness={0.75} />
-        </mesh>
+        <group key={x}>
+          <mesh position={[x, 1.7, 0]} castShadow>
+            <boxGeometry args={[0.62, 3.4, 0.62]} />
+            <meshStandardMaterial color="#b84a30" roughness={0.75} />
+          </mesh>
+          <mesh position={[x, 3.48, 0]} castShadow>
+            <boxGeometry args={[0.78, 0.16, 0.78]} />
+            <meshStandardMaterial color="#c4a05a" metalness={0.4} roughness={0.45} />
+          </mesh>
+        </group>
       ))}
       <mesh position={[0, 0.48 + open * 3.05, 0.08]} castShadow>
         <boxGeometry args={[4.4, 0.48, 0.5]} />

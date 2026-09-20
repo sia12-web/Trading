@@ -19,7 +19,7 @@ export function HubWorld() {
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.014, 0]} receiveShadow>
         <planeGeometry args={[YARD * 2 - 0.55, YARD * 2 - 0.55]} />
-        <meshStandardMaterial map={grass} color="#48b83a" roughness={0.88} />
+        <meshStandardMaterial map={grass} color="#3aaa32" roughness={0.88} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[2.8, 0.02, -3.4]} receiveShadow>
         <circleGeometry args={[1.15, 14]} />
@@ -51,7 +51,7 @@ export function HubWorld() {
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]} receiveShadow>
         <circleGeometry args={[1.85, 20]} />
-        <meshStandardMaterial map={grass} color="#52c442" roughness={0.84} />
+        <meshStandardMaterial map={grass} color="#42b838" roughness={0.84} />
       </mesh>
 
       <ClashWalls wall={YARD} brick={brick} />
@@ -102,17 +102,23 @@ function DowGate({
       </mesh>
       <mesh position={[0, 2.95, 0]} castShadow>
         <boxGeometry args={[3.45, 0.14, 2.85]} />
-        <meshStandardMaterial color="#8a5a40" roughness={0.7} />
+        <meshStandardMaterial color="#c4a05a" roughness={0.45} metalness={0.4} />
       </mesh>
       <mesh position={[1.15, 3.75, -0.35]} castShadow>
         <cylinderGeometry args={[0.18, 0.24, 1.55, 8]} />
         <meshStandardMaterial map={metal} color="#6a5a48" roughness={0.55} />
       </mesh>
       {[-0.82, 0.82].map((x) => (
-        <mesh key={x} position={[x, 1.85, 1.35]}>
-          <boxGeometry args={[0.48, 0.58, 0.07]} />
-          <meshStandardMaterial color="#2a3a44" roughness={0.28} />
-        </mesh>
+        <group key={x} position={[x, 1.85, 1.35]}>
+          <mesh>
+            <boxGeometry args={[0.58, 0.7, 0.08]} />
+            <meshStandardMaterial color="#f0e6d4" roughness={0.55} />
+          </mesh>
+          <mesh position={[0, 0, 0.03]}>
+            <boxGeometry args={[0.42, 0.52, 0.05]} />
+            <meshStandardMaterial color="#2a3a44" roughness={0.28} />
+          </mesh>
+        </group>
       ))}
       <group position={[-2.35, 0, 0.4]}>
         <mesh position={[0, 0.85, 0]} castShadow receiveShadow>
@@ -157,40 +163,76 @@ function LockedGate({
       <group position={market.position}>
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]} receiveShadow>
           <circleGeometry args={[4.2, 20]} />
-          <meshStandardMaterial map={grass} color="#4aaa40" roughness={0.85} />
+          <meshStandardMaterial map={grass} color="#3aaa32" roughness={0.85} />
         </mesh>
-        <mesh position={[-1.25, 2.55, -0.2]} castShadow receiveShadow>
-          <boxGeometry args={[2.65, 5.1, 2.35]} />
-          <meshStandardMaterial color="#7aa8c0" roughness={0.22} metalness={0.42} />
+        <mesh position={[-1.25, 2.35, -0.2]} castShadow receiveShadow>
+          <boxGeometry args={[2.65, 4.7, 2.35]} />
+          <meshStandardMaterial map={brick} color="#d4c4a8" roughness={0.78} />
         </mesh>
-        <mesh position={[1.45, 1.95, 0.25]} castShadow receiveShadow>
-          <boxGeometry args={[2.15, 3.9, 2.15]} />
-          <meshStandardMaterial color="#6a98b0" roughness={0.24} metalness={0.4} />
+        <mesh position={[-1.25, 4.85, -0.2]} rotation={[0, 0, 0.42]} castShadow>
+          <boxGeometry args={[3.15, 0.16, 2.55]} />
+          <meshStandardMaterial color="#c45a32" roughness={0.58} />
         </mesh>
-        <mesh position={[0.05, 3.55, -1.65]} castShadow receiveShadow>
-          <boxGeometry args={[1.85, 2.4, 1.55]} />
-          <meshStandardMaterial color="#8ab4c8" roughness={0.2} metalness={0.38} />
+        <mesh position={[-1.25, 4.85, -0.2]} rotation={[0, 0, -0.42]} castShadow>
+          <boxGeometry args={[3.15, 0.16, 2.55]} />
+          <meshStandardMaterial color="#c45a32" roughness={0.58} />
         </mesh>
-        <mesh position={[0.15, 5.25, -0.1]} rotation={[0, Math.PI / 4, 0]} castShadow>
-          <coneGeometry args={[1.7, 1.25, 4]} />
-          <meshStandardMaterial color="#5a8898" roughness={0.45} />
+        <mesh position={[1.45, 1.75, 0.25]} castShadow receiveShadow>
+          <boxGeometry args={[2.15, 3.5, 2.15]} />
+          <meshStandardMaterial map={brick} color="#c8b494" roughness={0.8} />
         </mesh>
+        <mesh position={[1.45, 3.62, 0.25]} rotation={[0, 0, 0.4]} castShadow>
+          <boxGeometry args={[2.55, 0.14, 2.35]} />
+          <meshStandardMaterial color="#c45a32" roughness={0.58} />
+        </mesh>
+        <mesh position={[0.05, 3.15, -1.65]} castShadow receiveShadow>
+          <boxGeometry args={[1.85, 2.1, 1.55]} />
+          <meshStandardMaterial map={brick} color="#d8c8ac" roughness={0.78} />
+        </mesh>
+        <mesh position={[0.05, 4.32, -1.65]} rotation={[0, 0, 0.38]} castShadow>
+          <boxGeometry args={[2.2, 0.12, 1.75]} />
+          <meshStandardMaterial color="#c45a32" roughness={0.58} />
+        </mesh>
+        {[-1.85, -0.65].map((x) => (
+          <group key={x} position={[x, 2.15, 1.0]}>
+            <mesh>
+              <boxGeometry args={[0.58, 0.78, 0.08]} />
+              <meshStandardMaterial color="#f0e6d4" roughness={0.55} />
+            </mesh>
+            <mesh position={[0, 0, 0.04]}>
+              <boxGeometry args={[0.42, 0.58, 0.05]} />
+              <meshStandardMaterial color="#5a88a0" roughness={0.28} />
+            </mesh>
+          </group>
+        ))}
+        {[0.85, 1.95].map((x) => (
+          <group key={x} position={[x, 1.85, 1.35]}>
+            <mesh>
+              <boxGeometry args={[0.5, 0.68, 0.08]} />
+              <meshStandardMaterial color="#f0e6d4" roughness={0.55} />
+            </mesh>
+            <mesh position={[0, 0, 0.04]}>
+              <boxGeometry args={[0.36, 0.5, 0.05]} />
+              <meshStandardMaterial color="#5a88a0" roughness={0.28} />
+            </mesh>
+          </group>
+        ))}
         <mesh position={[0, 0.1, 1.7]} receiveShadow>
           <boxGeometry args={[3.6, 0.12, 2.0]} />
-          <meshStandardMaterial color="#d4d0c4" roughness={0.72} />
+          <meshStandardMaterial color="#d4c4a8" roughness={0.72} />
         </mesh>
         {[-2.05, 2.05].map((x) => (
           <mesh key={x} position={[x, 1.05, 1.95]} castShadow>
             <cylinderGeometry args={[0.09, 0.12, 2.1, 6]} />
-            <meshStandardMaterial color="#8a9498" metalness={0.45} roughness={0.5} />
+            <meshStandardMaterial color="#c4a05a" metalness={0.4} roughness={0.48} />
           </mesh>
         ))}
         <mesh position={[0, 2.25, 1.95]}>
           <boxGeometry args={[4.2, 0.08, 0.08]} />
-          <meshStandardMaterial color="#8a9498" metalness={0.45} />
+          <meshStandardMaterial color="#c4a05a" metalness={0.4} />
         </mesh>
         <Lock y={1.15} z={2.15} />
-        <Sign text="CAMPUS" color="#8aa0b4" y={4.75} z={1.25} w={2.5} />
+        <Sign text="CAMPUS" color="#e8dcc8" y={4.75} z={1.25} w={2.5} />
       </group>
     )
   }
@@ -370,11 +412,11 @@ function PlazaYard() {
     <group>
       <mesh position={[0, 0.42, 0]} castShadow>
         <cylinderGeometry args={[0.38, 0.48, 0.72, 12]} />
-        <meshStandardMaterial color="#6a7068" metalness={0.35} roughness={0.55} />
+        <meshStandardMaterial color="#c4a05a" metalness={0.4} roughness={0.48} />
       </mesh>
       <mesh position={[0, 0.82, 0]}>
         <cylinderGeometry args={[0.12, 0.16, 0.18, 8]} />
-        <meshStandardMaterial color="#8a7a62" roughness={0.6} />
+        <meshStandardMaterial color="#e8dcc8" roughness={0.55} />
       </mesh>
       <MarketStall x={-1.65} z={1.55} rot={0.08} />
       <MarketStall x={1.65} z={1.45} rot={-0.1} />
@@ -382,8 +424,8 @@ function PlazaYard() {
       <MarketStall x={1.6} z={-1.4} rot={Math.PI - 0.08} />
       <Cart x={0.15} z={2.15} rot={-0.2} />
       <Cart x={-0.25} z={-2.05} rot={2.9} />
-      <CrateStack x={2.15} z={0.15} />
-      <CrateStack x={-2.2} z={-0.1} />
+      <FlowerBed x={2.15} z={0.05} />
+      <FlowerBed x={-2.2} z={-0.05} />
       <Barrel x={1.05} z={-0.85} color="#5a4030" />
       <Barrel x={-1.1} z={0.75} color="#3a6a88" />
       <Worker x={0.55} z={1.85} rot={0.3} color="#3a6a88" />
@@ -469,12 +511,28 @@ function CornerHuts() {
       <Hut x={8.05} z={-7.85} rot={-0.3} />
       <Hut x={-8.25} z={7.55} rot={0.5} />
       <Hut x={8.15} z={7.35} rot={-0.45} />
+      <Hut x={-6.05} z={-10.35} rot={0.18} />
+      <Hut x={6.15} z={-10.15} rot={-0.22} />
+      <Hut x={-10.55} z={-5.15} rot={0.62} />
+      <Hut x={10.65} z={-5.05} rot={-0.55} />
+      <Hut x={-6.25} z={10.45} rot={0.28} />
+      <Hut x={6.35} z={10.25} rot={-0.32} />
+      <Hut x={-10.45} z={5.85} rot={0.72} />
+      <Hut x={10.55} z={5.65} rot={-0.68} />
+      <FlowerBed x={-5.15} z={-8.85} />
+      <FlowerBed x={5.25} z={-8.65} />
+      <FlowerBed x={-9.15} z={6.55} />
+      <FlowerBed x={9.25} z={6.35} />
       <Worker x={-7.55} z={-7.25} rot={0.6} color="#5a7a50" />
       <Worker x={7.45} z={-7.05} rot={-0.5} color="#3a6a88" />
       <Worker x={-7.65} z={6.85} rot={1.1} color="#8aa0b0" />
       <Worker x={7.55} z={6.65} rot={-1.2} color="#c4a046" />
-      <CrateStack x={-8.65} z={-6.85} />
-      <CrateStack x={8.55} z={-6.65} />
+      <Worker x={-5.45} z={-9.55} rot={0.4} color="#c4a046" />
+      <Worker x={5.55} z={-9.35} rot={-0.35} color="#5a7a50" />
+      <Bush x={-9.45} z={-6.55} h={1.1} seed={41} />
+      <Bush x={9.55} z={-6.35} h={1.05} seed={42} />
+      <Bush x={-5.65} z={8.85} h={1.15} seed={43} />
+      <Bush x={5.75} z={8.65} h={1.0} seed={44} />
     </group>
   )
 }
@@ -553,16 +611,47 @@ function Hut({ x, z, rot }: { x: number; z: number; rot: number }) {
       </mesh>
       <mesh position={[0, 1.85, 0]} rotation={[0, 0, 0.45]} castShadow>
         <boxGeometry args={[1.85, 0.12, 1.65]} />
-        <meshStandardMaterial color="#6a5040" roughness={0.62} />
+        <meshStandardMaterial color="#c45a32" roughness={0.58} />
       </mesh>
       <mesh position={[0, 1.85, 0]} rotation={[0, 0, -0.45]} castShadow>
         <boxGeometry args={[1.85, 0.12, 1.65]} />
-        <meshStandardMaterial color="#6a5040" roughness={0.62} />
+        <meshStandardMaterial color="#c45a32" roughness={0.58} />
       </mesh>
-      <mesh position={[0, 0.62, 0.76]}>
+      <mesh position={[0, 1.95, 0]}>
+        <boxGeometry args={[0.42, 0.08, 0.12]} />
+        <meshStandardMaterial color="#c4a05a" metalness={0.4} roughness={0.45} />
+      </mesh>
+      <mesh position={[-0.38, 1.15, 0.74]}>
+        <boxGeometry args={[0.42, 0.5, 0.06]} />
+        <meshStandardMaterial color="#f0e6d4" roughness={0.55} />
+      </mesh>
+      <mesh position={[-0.38, 1.15, 0.78]}>
+        <boxGeometry args={[0.3, 0.36, 0.04]} />
+        <meshStandardMaterial color="#5a88a0" roughness={0.28} />
+      </mesh>
+      <mesh position={[0.32, 0.62, 0.76]}>
         <boxGeometry args={[0.42, 0.7, 0.08]} />
         <meshStandardMaterial color="#3a1810" />
       </mesh>
+    </group>
+  )
+}
+
+function FlowerBed({ x, z }: { x: number; z: number }) {
+  return (
+    <group position={[x, 0, z]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]} receiveShadow>
+        <planeGeometry args={[1.15, 0.85]} />
+        <meshStandardMaterial color="#6a4a28" roughness={0.94} />
+      </mesh>
+      {[-0.28, 0.28].map((dx, i) =>
+        [-0.18, 0.18].map((dz, j) => (
+          <mesh key={`${i}${j}`} position={[dx, 0.16, dz]} castShadow>
+            <sphereGeometry args={[0.12, 6, 5]} />
+            <meshStandardMaterial color={i + j === 1 ? '#c45a6a' : '#3a8c34'} roughness={0.7} />
+          </mesh>
+        )),
+      )}
     </group>
   )
 }
