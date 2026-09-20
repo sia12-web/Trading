@@ -315,7 +315,7 @@ export function takeAuction(side: Side) {
     set({ message: 'Wait for the cash open.' })
     return
   }
-  const id = nearestStore(state.player.x, state.player.z, 5.2)?.id ?? null
+  const id = nearestStore(state.player.x, state.player.z, 5.2)?.id ?? state.inspecting ?? state.nearby
   if (!id) {
     set({ message: 'Walk Price into a stall to take the auction.' })
     return

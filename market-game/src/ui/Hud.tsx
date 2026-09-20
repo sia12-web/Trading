@@ -49,7 +49,7 @@ export function Hud() {
 
       {g.phase === 'live' && (
         <div className="prompt iso-prompt">
-          {stall ? (
+          {stall || g.inspecting ? (
             <>
               On the floor{' '}
               <button className="ghost hit" onClick={() => takeAuction('buy')}>
