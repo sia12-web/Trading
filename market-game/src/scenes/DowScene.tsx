@@ -29,8 +29,8 @@ export function DowScene() {
       dpr={[1, 1.75]}
       gl={{ antialias: true, powerPreference: 'high-performance' }}
       onCreated={({ gl }) => {
-        gl.setClearColor('#7ec4f0')
-        gl.toneMappingExposure = 1.55
+        gl.setClearColor('#6a9cc4')
+        gl.toneMappingExposure = 1.05
       }}
     >
       <Suspense fallback={null}>
@@ -40,7 +40,7 @@ export function DowScene() {
           <StoreBuilding key={s.id} store={s} />
         ))}
         <NPCs />
-        <Player spawn={[1.6, 0, 1.6]} />
+        <Player spawn={[0.85, 0, 0.85]} />
         <CinematicFx />
       </Suspense>
     </Canvas>

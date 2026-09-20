@@ -94,7 +94,7 @@ function fresh(): GameSnapshot {
     phase: 'preopen',
     clockMin: PREOPEN_MIN,
     openElapsed: 0,
-    player: { x: 0, y: 0, z: 1.8, yaw: 0 },
+    player: { x: 0, y: 0, z: 1.1, yaw: 0 },
     livePrice: market.priorClose,
     avwap: { ...market.avwap },
     nearby: null,
@@ -144,7 +144,7 @@ export function enterDow() {
     scene: 'dow',
     phase: 'preopen',
     clockMin: PREOPEN_MIN,
-    player: { x: 1.6, y: 0, z: 1.6, yaw: 0 },
+    player: { x: 0.85, y: 0, z: 0.85, yaw: 0 },
     livePrice: market.priorClose,
     message: 'NYC cash is about to open. Move Price to a store.',
   }
@@ -170,7 +170,7 @@ export function skipToLive() {
     floorAlive: 1,
     livePrice: market.openPrint,
     message: 'Market is open. Visit the stores.',
-    player: state.scene === 'dow' ? state.player : { x: 1.6, y: 0, z: 1.6, yaw: 0 },
+    player: state.scene === 'dow' ? state.player : { x: 0.85, y: 0, z: 0.85, yaw: 0 },
   })
 }
 

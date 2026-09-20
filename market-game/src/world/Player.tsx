@@ -1,8 +1,6 @@
-import { Billboard } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
-import { fmtPx } from '../game/auction'
 import {
   clearWalkTarget,
   closeInspect,
@@ -17,8 +15,8 @@ import {
 import { COLLISIONS, YARD } from '../game/stores'
 import { useGame } from '../ui/useGame'
 
-const SPEED = 6.2
-const SPRINT = 10.5
+const SPEED = 4.6
+const SPRINT = 7.8
 
 const keys = {
   w: false,
@@ -31,9 +29,9 @@ const keys = {
 function blocked(x: number, z: number, enabled: boolean): boolean {
   if (!enabled) return false
   for (const c of COLLISIONS) {
-    if (Math.abs(x - c.x) < c.w / 2 + 0.45 && Math.abs(z - c.z) < c.d / 2 + 0.45) return true
+    if (Math.abs(x - c.x) < c.w / 2 + 0.35 && Math.abs(z - c.z) < c.d / 2 + 0.35) return true
   }
-  if (Math.abs(x) > YARD - 0.8 || Math.abs(z) > YARD - 0.8) return true
+  if (Math.abs(x) > YARD - 0.7 || Math.abs(z) > YARD - 0.7) return true
   return false
 }
 
@@ -69,7 +67,7 @@ export function bindPlayerKeys() {
   }
 }
 
-/** Price as a Clash-style unit on the floor. Camera is owned by IsoCamera. */
+/** Price as a Clash-style troop: chunky silhouette, ground ring, no ticker hat. */
 export function Player({
   spawn,
   collide = true,
@@ -128,7 +126,7 @@ export function Player({
         const tx = target.x - pos.current.x
         const tz = target.z - pos.current.z
         const dist = Math.hypot(tx, tz)
-        if (dist < 0.35) clearWalkTarget()
+        if (dist < 0.28) clearWalkTarget()
         else {
           mx = tx / dist
           mz = tz / dist
@@ -163,16 +161,15 @@ export function Player({
     setPlayer({ x: pos.current.x, y: 0, z: pos.current.z, yaw: yaw.current })
   })
 
-  const ticker = fmtPx(g.livePrice)
   const selected = Boolean(g.nearby || g.inspecting)
 
   return (
-    <group ref={group} position={spawn} scale={0.88}>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
-        <ringGeometry args={[0.55, 0.72, 28]} />
-        <meshBasicMaterial color={selected ? '#d4a046' : '#f4efe6'} transparent opacity={0.9} />
+    <group ref={group} position={spawn}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
+        <ringGeometry args={[0.42, 0.58, 24]} />
+        <meshBasicMaterial color={selected ? '#e8c04a' : '#f4efe6'} transparent opacity={0.95} />
       </mesh>
-      <PriceBody vel={vel} bob={bob} label={ticker} />
+      <PriceBody vel={vel} bob={bob} />
     </group>
   )
 }
@@ -180,80 +177,63 @@ export function Player({
 function PriceBody({
   vel,
   bob,
-  label,
 }: {
   vel: { current: number }
   bob: { current: number }
-  label: string
 }) {
   const left = useRef<THREE.Mesh>(null)
   const right = useRef<THREE.Mesh>(null)
-  const canvas = useMemo(() => {
-    const c = document.createElement('canvas')
-    c.width = 512
-    c.height = 160
-    return c
-  }, [])
-  const tex = useMemo(() => {
-    const t = new THREE.CanvasTexture(canvas)
-    t.colorSpace = THREE.SRGBColorSpace
-    return t
-  }, [canvas])
+  const larm = useRef<THREE.Mesh>(null)
+  const rarm = useRef<THREE.Mesh>(null)
 
   useFrame(() => {
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    ctx.fillStyle = '#07090d'
-    ctx.fillRect(0, 0, 512, 160)
-    ctx.strokeStyle = '#d4a046'
-    ctx.lineWidth = 10
-    ctx.strokeRect(10, 10, 492, 140)
-    ctx.fillStyle = '#f4efe6'
-    ctx.font = 'bold 72px IBM Plex Mono, monospace'
-    ctx.textAlign = 'center'
-    ctx.fillText(label, 256, 88)
-    ctx.fillStyle = '#d4a046'
-    ctx.font = '28px IBM Plex Mono, monospace'
-    ctx.fillText('PRICE', 256, 128)
-    tex.needsUpdate = true
     const walk = vel.current
     const b = bob.current
-    const leg = Math.sin(b) * 0.45 * walk
+    const leg = Math.sin(b) * 0.55 * walk
     if (left.current) left.current.rotation.x = leg
     if (right.current) right.current.rotation.x = -leg
+    if (larm.current) larm.current.rotation.x = -leg * 0.7
+    if (rarm.current) rarm.current.rotation.x = leg * 0.7
   })
 
   return (
-    <group>
-      <mesh position={[0, 1.05, 0]} castShadow>
-        <capsuleGeometry args={[0.32, 0.7, 6, 12]} />
-        <meshPhysicalMaterial
-          color="#c4a574"
-          metalness={0.92}
-          roughness={0.18}
-          emissive="#3a2a12"
-          emissiveIntensity={0.45}
-          clearcoat={0.6}
-        />
+    <group scale={1.15}>
+      <mesh position={[0, 0.72, 0]} scale={1.12}>
+        <capsuleGeometry args={[0.28, 0.42, 4, 8]} />
+        <meshBasicMaterial color="#1a140e" />
       </mesh>
-      <mesh position={[0, 1.85, 0]} castShadow>
-        <sphereGeometry args={[0.26, 16, 12]} />
-        <meshPhysicalMaterial color="#efe6d6" metalness={0.7} roughness={0.22} emissive="#d4a046" emissiveIntensity={0.55} />
+      <mesh position={[0, 0.72, 0]} castShadow>
+        <capsuleGeometry args={[0.26, 0.4, 5, 10]} />
+        <meshStandardMaterial color="#c45c2a" roughness={0.55} />
       </mesh>
-      <mesh ref={left} position={[-0.16, 0.4, 0]} castShadow>
-        <capsuleGeometry args={[0.09, 0.42, 4, 8]} />
-        <meshStandardMaterial color="#2a241c" metalness={0.4} roughness={0.5} />
+      <mesh position={[0, 1.18, 0]} castShadow>
+        <sphereGeometry args={[0.2, 12, 10]} />
+        <meshStandardMaterial color="#e6c8a8" roughness={0.55} />
       </mesh>
-      <mesh ref={right} position={[0.16, 0.4, 0]} castShadow>
-        <capsuleGeometry args={[0.09, 0.42, 4, 8]} />
-        <meshStandardMaterial color="#2a241c" metalness={0.4} roughness={0.5} />
+      <mesh position={[0, 1.32, 0]} castShadow>
+        <cylinderGeometry args={[0.22, 0.24, 0.14, 10]} />
+        <meshStandardMaterial color="#d4a046" roughness={0.45} />
       </mesh>
-      <Billboard position={[0, 2.55, 0]} follow>
-        <mesh>
-          <planeGeometry args={[1.7, 0.52]} />
-          <meshBasicMaterial map={tex} toneMapped={false} />
-        </mesh>
-      </Billboard>
+      <mesh position={[0, 0.78, 0.16]}>
+        <boxGeometry args={[0.38, 0.22, 0.06]} />
+        <meshStandardMaterial color="#2a2218" />
+      </mesh>
+      <mesh ref={larm} position={[-0.32, 0.72, 0]} castShadow>
+        <capsuleGeometry args={[0.08, 0.32, 3, 6]} />
+        <meshStandardMaterial color="#a04a28" />
+      </mesh>
+      <mesh ref={rarm} position={[0.32, 0.72, 0]} castShadow>
+        <capsuleGeometry args={[0.08, 0.32, 3, 6]} />
+        <meshStandardMaterial color="#a04a28" />
+      </mesh>
+      <mesh ref={left} position={[-0.12, 0.28, 0]} castShadow>
+        <capsuleGeometry args={[0.09, 0.32, 3, 6]} />
+        <meshStandardMaterial color="#2a241c" />
+      </mesh>
+      <mesh ref={right} position={[0.12, 0.28, 0]} castShadow>
+        <capsuleGeometry args={[0.09, 0.32, 3, 6]} />
+        <meshStandardMaterial color="#2a241c" />
+      </mesh>
     </group>
   )
 }

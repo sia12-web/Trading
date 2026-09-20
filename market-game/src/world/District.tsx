@@ -1,5 +1,5 @@
 import { Sky } from '@react-three/drei'
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import { useRef } from 'react'
 import * as THREE from 'three'
 import { closeInspect, inspectStore, setWalkTarget } from '../game/gameStore'
@@ -9,6 +9,7 @@ import {
   useAsphaltTexture,
   useBrickTexture,
   useConcreteTexture,
+  useDirtTexture,
   useGrassTexture,
   useMetalTexture,
 } from './textures'
@@ -16,38 +17,57 @@ import { YardDressing } from './YardDressing'
 
 export function District() {
   const g = useGame()
+  const { gl } = useThree()
   const asphalt = useAsphaltTexture()
   const brick = useBrickTexture()
   const metal = useMetalTexture()
   const concrete = useConcreteTexture()
   const grass = useGrassTexture()
+  const dirt = useDirtTexture()
   const dawn = g.phase === 'preopen'
-  const sun = dawn ? '#ffe8c4' : '#fff6e4'
+  const sunPos: [number, number, number] = dawn ? [26, 7.5, 14] : [32, 12, 18]
+  const sun = dawn ? '#ff9a58' : '#ffd39a'
+
+  useFrame(() => {
+    gl.toneMappingExposure = dawn ? 0.88 : 1.05
+    gl.setClearColor(dawn ? '#c48a62' : '#6a9cc4', 1)
+  })
 
   return (
     <>
-      <Sky sunPosition={dawn ? [60, 18, 28] : [90, 42, 20]} turbidity={dawn ? 8 : 3.4} rayleigh={dawn ? 1.2 : 0.55} mieCoefficient={0.004} mieDirectionalG={0.8} />
-      <hemisphereLight args={['#d6eeff', '#c8b080', dawn ? 1.15 : 1.4]} />
-      <ambientLight intensity={dawn ? 1.05 : 1.28} />
+      <Sky
+        sunPosition={sunPos}
+        turbidity={dawn ? 10 : 4.2}
+        rayleigh={dawn ? 2.2 : 0.7}
+        mieCoefficient={0.006}
+        mieDirectionalG={0.82}
+      />
+      <hemisphereLight args={[dawn ? '#8a6a88' : '#9eb8d4', dawn ? '#3a2414' : '#4a3824', dawn ? 0.32 : 0.42]} />
+      <ambientLight intensity={dawn ? 0.18 : 0.26} />
       <directionalLight
-        position={[38, 54, 24]}
-        intensity={dawn ? 2.35 : 2.85}
+        position={sunPos}
+        intensity={dawn ? 1.55 : 2.05}
         color={sun}
         castShadow
         shadow-mapSize={[2048, 2048]}
-        shadow-camera-near={4}
-        shadow-camera-far={130}
-        shadow-camera-left={-42}
-        shadow-camera-right={42}
-        shadow-camera-top={42}
-        shadow-camera-bottom={-42}
+        shadow-bias={-0.0004}
+        shadow-camera-near={2}
+        shadow-camera-far={70}
+        shadow-camera-left={-20}
+        shadow-camera-right={20}
+        shadow-camera-top={20}
+        shadow-camera-bottom={-20}
       />
-      <fog attach="fog" args={[dawn ? '#c4d8ec' : '#9fd0f0', 90, 260]} />
-      <color attach="background" args={[dawn ? '#9ec4e4' : '#7ec4f0']} />
+      <fog attach="fog" args={[dawn ? '#c49a78' : '#7aa8c8', 28, 72]} />
+      <color attach="background" args={[dawn ? '#c48a62' : '#6a9cc4']} />
 
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, 0]} receiveShadow>
-        <planeGeometry args={[160, 160]} />
-        <meshStandardMaterial map={grass} roughness={0.9} color="#86b85a" />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.08, 0]} receiveShadow>
+        <planeGeometry args={[42, 42]} />
+        <meshStandardMaterial map={dirt} roughness={0.95} color="#6e563c" />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]} receiveShadow>
+        <ringGeometry args={[YARD + 0.6, YARD + 4.4, 4]} />
+        <meshStandardMaterial map={grass} roughness={0.92} color="#4e6e34" />
       </mesh>
 
       <mesh
@@ -56,7 +76,7 @@ export function District() {
         receiveShadow
         onClick={(e) => {
           e.stopPropagation()
-          const hit = storeAtPoint(e.point.x, e.point.z, 3.8)
+          const hit = storeAtPoint(e.point.x, e.point.z, 2.8)
           if (hit) inspectStore(hit.id)
           else {
             closeInspect()
@@ -64,47 +84,38 @@ export function District() {
           }
         }}
       >
-        <circleGeometry args={[YARD - 0.2, 56]} />
-        <meshStandardMaterial map={concrete} roughness={0.86} color="#ddd4c6" />
+        <planeGeometry args={[YARD * 2 - 0.4, YARD * 2 - 0.4]} />
+        <meshStandardMaterial map={concrete} roughness={0.9} color="#8a8074" />
       </mesh>
-
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, 0]} receiveShadow>
-        <ringGeometry args={[6.4, 9.2, 56]} />
-        <meshStandardMaterial map={asphalt} color="#9a968c" roughness={0.88} />
-      </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
-        <ringGeometry args={[4.4, 4.9, 56]} />
-        <meshStandardMaterial color="#f0c84c" metalness={0.5} roughness={0.32} />
-      </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.028, 0]}>
-        <circleGeometry args={[4.2, 44]} />
-        <meshStandardMaterial map={asphalt} color="#9c9890" roughness={0.88} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]} receiveShadow>
+        <circleGeometry args={[2.15, 28]} />
+        <meshStandardMaterial map={asphalt} color="#5a564e" roughness={0.88} />
       </mesh>
 
       <YardWalls brick={brick} />
+      <CliffBezel dirt={dirt} grass={grass} />
       <BellTower metal={metal} brick={brick} ringing={g.phase === 'opening'} />
       <YardDressing />
-      <Lamps on={Math.max(0.45, g.shutter)} />
-      <pointLight position={[0, 9, 0]} color="#ffe9b8" intensity={4.5} distance={20} />
+      {dawn && <Lamps />}
     </>
   )
 }
 
 function YardWalls({ brick }: { brick: THREE.Texture }) {
   const t = YARD
-  const h = 1.7
+  const h = 1.35
   const segs: Array<[number, number, number, number]> = [
-    [0, -t, t * 2 + 1.6, 0.95],
-    [0, t, t * 2 + 1.6, 0.95],
-    [-t, 0, 0.95, t * 2],
-    [t, 0, 0.95, t * 2],
+    [0, -t, t * 2 + 1.2, 0.72],
+    [0, t, t * 2 + 1.2, 0.72],
+    [-t, 0, 0.72, t * 2],
+    [t, 0, 0.72, t * 2],
   ]
   return (
     <group>
       {segs.map(([x, z, w, d], i) => (
         <mesh key={i} position={[x, h / 2, z]} castShadow receiveShadow>
           <boxGeometry args={[w, h, d]} />
-          <meshStandardMaterial map={brick} color="#e09062" roughness={0.78} />
+          <meshStandardMaterial map={brick} color="#a05638" roughness={0.86} />
         </mesh>
       ))}
       {([
@@ -114,13 +125,41 @@ function YardWalls({ brick }: { brick: THREE.Texture }) {
         [t, t],
       ] as Array<[number, number]>).map(([x, z]) => (
         <group key={`${x}${z}`}>
-          <mesh position={[x, 2.4, z]} castShadow>
-            <boxGeometry args={[1.9, 4.8, 1.9]} />
-            <meshStandardMaterial map={brick} color="#d06840" roughness={0.76} />
+          <mesh position={[x, 1.7, z]} castShadow>
+            <boxGeometry args={[1.35, 3.4, 1.35]} />
+            <meshStandardMaterial map={brick} color="#8a4430" roughness={0.84} />
           </mesh>
-          <mesh position={[x, 5.05, z]} castShadow>
-            <boxGeometry args={[2.2, 0.4, 2.2]} />
-            <meshStandardMaterial color="#e8c04a" metalness={0.45} roughness={0.4} />
+          <mesh position={[x, 3.5, z]} castShadow>
+            <boxGeometry args={[1.55, 0.28, 1.55]} />
+            <meshStandardMaterial color="#6a5038" roughness={0.55} metalness={0.25} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  )
+}
+
+function CliffBezel({ dirt, grass }: { dirt: THREE.Texture; grass: THREE.Texture }) {
+  const blocks: Array<[number, number, number, number, number]> = [
+    [-19, -10, 5.5, 3.2, 8],
+    [-18, 6, 5, 2.8, 7],
+    [18, -8, 5.2, 3, 7.5],
+    [19, 8, 4.8, 2.6, 6.5],
+    [0, -20, 14, 2.4, 4.2],
+    [8, 20, 9, 2.2, 4],
+    [-10, 20, 8, 2.5, 4.4],
+  ]
+  return (
+    <group>
+      {blocks.map(([x, z, w, h, d], i) => (
+        <group key={i} position={[x, 0, z]}>
+          <mesh position={[0, h / 2, 0]} castShadow receiveShadow>
+            <boxGeometry args={[w, h, d]} />
+            <meshStandardMaterial map={dirt} color="#5a4632" roughness={0.95} />
+          </mesh>
+          <mesh position={[0, h + 0.08, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <planeGeometry args={[w * 0.92, d * 0.92]} />
+            <meshStandardMaterial map={grass} color="#3e5c2c" roughness={0.9} />
           </mesh>
         </group>
       ))}
@@ -143,56 +182,54 @@ function BellTower({
     bell.current.rotation.z = ringing ? Math.sin(s.clock.elapsedTime * 9) * 0.28 : 0
   })
   return (
-    <group scale={0.92}>
-      <mesh position={[0, 3.6, 0]} castShadow>
-        <boxGeometry args={[3.4, 7.2, 3.4]} />
-        <meshStandardMaterial map={brick} color="#ee9a68" roughness={0.78} />
+    <group>
+      <mesh position={[0, 2.35, 0]} castShadow>
+        <boxGeometry args={[2.15, 4.7, 2.15]} />
+        <meshStandardMaterial map={brick} color="#9a4e32" roughness={0.84} />
       </mesh>
-      {[-1.1, 1.1].map((x) =>
-        [1.8, 3.6, 5.2].map((y) => (
-          <mesh key={`${x}${y}`} position={[x, y, 1.75]}>
-            <boxGeometry args={[0.7, 1.05, 0.12]} />
-            <meshStandardMaterial color="#7ec8ea" roughness={0.2} metalness={0.15} />
+      {[-0.62, 0.62].map((x) =>
+        [1.35, 2.45, 3.5].map((y) => (
+          <mesh key={`${x}${y}`} position={[x, y, 1.1]}>
+            <boxGeometry args={[0.42, 0.62, 0.08]} />
+            <meshStandardMaterial color="#2a3a44" roughness={0.25} />
           </mesh>
         )),
       )}
-      <mesh position={[0, 7.6, 0]} castShadow>
-        <boxGeometry args={[4.3, 1.15, 4.3]} />
-        <meshStandardMaterial map={metal} color="#e0b050" metalness={0.5} roughness={0.38} />
+      <mesh position={[0, 4.95, 0]} castShadow>
+        <boxGeometry args={[2.55, 0.55, 2.55]} />
+        <meshStandardMaterial map={metal} color="#8a6a38" metalness={0.4} roughness={0.45} />
       </mesh>
-      <mesh ref={bell} position={[0, 6.5, 0]} castShadow>
-        <sphereGeometry args={[0.82, 20, 14, 0, Math.PI * 2, 0, Math.PI / 1.5]} />
-        <meshPhysicalMaterial color="#f6cc4a" metalness={0.82} roughness={0.2} />
+      <mesh position={[0, 5.55, 0]} castShadow>
+        <coneGeometry args={[1.15, 1.1, 4]} />
+        <meshStandardMaterial color="#6a3a28" roughness={0.7} />
       </mesh>
-      <pointLight color="#ffe48a" intensity={ringing ? 16 : 5} distance={16} position={[0, 6.6, 0]} />
+      <mesh ref={bell} position={[0, 4.35, 0]} castShadow>
+        <sphereGeometry args={[0.42, 16, 12, 0, Math.PI * 2, 0, Math.PI / 1.5]} />
+        <meshStandardMaterial color="#c4a046" metalness={0.7} roughness={0.28} />
+      </mesh>
+      {ringing && <pointLight color="#ffc070" intensity={6} distance={8} position={[0, 4.4, 0]} />}
     </group>
   )
 }
 
-function Lamps({ on }: { on: number }) {
+function Lamps() {
   const spots: Array<[number, number]> = [
-    [-6.2, 6.2],
-    [6.2, 6.2],
-    [-6.2, -6.2],
-    [6.2, -6.2],
-    [0, 6.8],
-    [6.8, 0],
-    [-6.8, 0],
-    [0, -6.8],
-    [-20, 8],
-    [20, -8],
+    [-2.4, 2.4],
+    [2.4, 2.4],
+    [-2.4, -2.4],
+    [2.4, -2.4],
   ]
   return (
     <group>
       {spots.map(([x, z], i) => (
         <group key={i} position={[x, 0, z]}>
-          <mesh position={[0, 2.05, 0]}>
-            <cylinderGeometry args={[0.08, 0.12, 4.1, 8]} />
-            <meshStandardMaterial color="#8a8074" metalness={0.55} />
+          <mesh position={[0, 1.35, 0]}>
+            <cylinderGeometry args={[0.06, 0.09, 2.7, 6]} />
+            <meshStandardMaterial color="#4a4038" metalness={0.45} />
           </mesh>
-          <mesh position={[0, 4.15, 0.16]}>
-            <boxGeometry args={[0.46, 0.18, 0.64]} />
-            <meshStandardMaterial color="#fff6d0" emissive="#ffd88a" emissiveIntensity={0.35 + on * 0.7} />
+          <mesh position={[0, 2.75, 0.1]}>
+            <boxGeometry args={[0.32, 0.12, 0.4]} />
+            <meshStandardMaterial color="#ffe2a8" emissive="#ffb060" emissiveIntensity={1.4} />
           </mesh>
         </group>
       ))}

@@ -14,13 +14,13 @@ function HubInteract() {
       if (e.key.toLowerCase() !== 'e') return
       const p = getGame().player
       const dDow = Math.hypot(p.x - DOW_GATE[0], p.z - DOW_GATE[2])
-      if (dDow < 3.8) {
+      if (dDow < 2.8) {
         enterDow()
         return
       }
       for (const m of LOCKED_MARKETS) {
         const d = Math.hypot(p.x - m.position[0], p.z - m.position[2])
-        if (d < 3.5) {
+        if (d < 2.6) {
           const el = document.getElementById('locked-msg')
           if (el) {
             el.textContent = `${m.name} stays locked until the DOW loop feels like live auction trading.`
@@ -42,15 +42,15 @@ export function HubScene() {
       dpr={[1, 1.75]}
       gl={{ antialias: true }}
       onCreated={({ gl }) => {
-        gl.setClearColor('#7ec4f0')
-        gl.toneMappingExposure = 1.48
+        gl.setClearColor('#6a9cc4')
+        gl.toneMappingExposure = 1.02
       }}
     >
       <Suspense fallback={null}>
         <IsoCamera mode="hub" />
         <HubWorld />
         <HubInteract />
-        <Player spawn={[0, 0, 1.5]} collide={false} bounds={{ minX: -10, maxX: 10, minZ: -10, maxZ: 10 }} />
+        <Player spawn={[0, 0, 1.1]} collide={false} bounds={{ minX: -7.2, maxX: 7.2, minZ: -7.2, maxZ: 7.2 }} />
         <CinematicFx />
       </Suspense>
     </Canvas>
