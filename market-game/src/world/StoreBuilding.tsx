@@ -132,14 +132,14 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
         </mesh>
       )}
       <mesh
-        position={[0, 0.07, 2.4]}
+        position={[0, 0.08, 1.85]}
         rotation={[-Math.PI / 2, 0, 0]}
         onClick={(e) => {
           e.stopPropagation()
           inspectStore(store.id)
         }}
       >
-        <planeGeometry args={[5.2, 4.2]} />
+        <planeGeometry args={[2.65, 2.15]} />
         <meshBasicMaterial transparent opacity={0.01} depthWrite={false} />
       </mesh>
     </group>
