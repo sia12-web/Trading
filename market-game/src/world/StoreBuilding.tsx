@@ -19,7 +19,7 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
   return (
     <group
       position={store.position}
-      scale={0.42}
+      scale={0.66}
       onClick={(e) => {
         e.stopPropagation()
         inspectStore(store.id)
@@ -27,7 +27,7 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
     >
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]} receiveShadow>
         <circleGeometry args={[6.2, 24]} />
-        <meshStandardMaterial color={hot ? store.accent : '#3a342e'} roughness={0.9} />
+        <meshStandardMaterial color={hot ? store.accent : '#e8dcc8'} roughness={0.88} />
       </mesh>
       {store.building === 'foundry' && <Foundry brick={brick} metal={metal} accent={store.accent} />}
       {store.building === 'hall' && <Hall brick={brick} metal={metal} accent={store.accent} />}
@@ -51,7 +51,7 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
           <meshBasicMaterial color={store.accent} transparent opacity={0.95} />
         </mesh>
       )}
-      <pointLight color={store.accent} intensity={hot ? 10 : 5} distance={10} position={[0, 4, 0]} />
+      <pointLight color={store.accent} intensity={hot ? 8 : 3.2} distance={12} position={[0, 4.4, 0]} />
     </group>
   )
 }
@@ -60,7 +60,7 @@ function Shutter({ metal, y, width }: { metal: THREE.Texture; y: number; width: 
   return (
     <mesh position={[0, y, 0]} castShadow>
       <boxGeometry args={[width, 0.28, width * 0.82]} />
-      <meshStandardMaterial map={metal} color="#3d4650" metalness={0.85} roughness={0.35} />
+      <meshStandardMaterial map={metal} color="#8a96a4" metalness={0.75} roughness={0.38} />
     </mesh>
   )
 }
@@ -70,11 +70,17 @@ function Foundry({ brick, metal, accent }: { brick: THREE.Texture; metal: THREE.
     <group>
       <mesh position={[0, 3.2, 0]} castShadow receiveShadow>
         <boxGeometry args={[10, 6.4, 8]} />
-        <meshStandardMaterial map={brick} roughness={0.9} />
+        <meshStandardMaterial map={brick} color="#eea078" roughness={0.82} />
       </mesh>
+      {[-2.6, 2.6].map((x) => (
+        <mesh key={x} position={[x, 3.4, 4.05]}>
+          <boxGeometry args={[1.6, 2.2, 0.12]} />
+          <meshStandardMaterial color="#8ed0ea" roughness={0.18} metalness={0.2} />
+        </mesh>
+      ))}
       <mesh position={[3.2, 9.2, -1.4]} castShadow>
         <cylinderGeometry args={[0.85, 1.1, 6.5, 10]} />
-        <meshStandardMaterial map={metal} color="#2a3038" metalness={0.7} roughness={0.4} />
+        <meshStandardMaterial map={metal} color="#8a96a4" metalness={0.65} roughness={0.38} />
       </mesh>
       <mesh position={[0, 1.4, 3.1]}>
         <boxGeometry args={[3.6, 2.8, 0.4]} />
@@ -91,7 +97,7 @@ function Hall({ brick, metal, accent }: { brick: THREE.Texture; metal: THREE.Tex
     <group>
       <mesh position={[0, 3.6, 0]} castShadow receiveShadow>
         <boxGeometry args={[12, 7.2, 9]} />
-        <meshStandardMaterial map={brick} color="#c4b4a4" roughness={0.85} />
+        <meshStandardMaterial map={brick} color="#f0c8a8" roughness={0.8} />
       </mesh>
       {[-4, -1.3, 1.3, 4].map((x) => (
         <mesh key={x} position={[x, 1.8, 4.2]} castShadow>
@@ -101,7 +107,7 @@ function Hall({ brick, metal, accent }: { brick: THREE.Texture; metal: THREE.Tex
       ))}
       <mesh position={[0, 8.1, 0]} castShadow>
         <boxGeometry args={[13, 0.45, 10]} />
-        <meshStandardMaterial map={metal} color="#2c2418" metalness={0.5} roughness={0.5} />
+        <meshStandardMaterial map={metal} color="#d4a85a" metalness={0.45} roughness={0.42} />
       </mesh>
       <mesh position={[0, 1.6, 3.4]}>
         <boxGeometry args={[4.6, 3.2, 0.2]} />
@@ -117,16 +123,16 @@ function Dock({ metal, accent }: { metal: THREE.Texture; accent: string }) {
       {[-3.6, 3.6].map((x) => (
         <mesh key={x} position={[x, 3.4, 0]} castShadow>
           <boxGeometry args={[0.45, 6.8, 7.2]} />
-          <meshStandardMaterial map={metal} color="#4b5a68" metalness={0.8} roughness={0.32} />
+          <meshStandardMaterial map={metal} color="#7a92a8" metalness={0.75} roughness={0.32} />
         </mesh>
       ))}
       <mesh position={[0, 6.9, 0]} castShadow>
         <boxGeometry args={[8.2, 0.28, 7.6]} />
-        <meshStandardMaterial map={metal} color="#6a8498" metalness={0.85} roughness={0.28} />
+        <meshStandardMaterial map={metal} color="#9ab4c8" metalness={0.8} roughness={0.28} />
       </mesh>
       <mesh position={[0, 0.3, 4.2]} rotation={[-0.08, 0, 0]} receiveShadow>
         <boxGeometry args={[7, 0.25, 5]} />
-        <meshStandardMaterial color="#3a4550" metalness={0.4} roughness={0.6} />
+        <meshStandardMaterial color="#8a9aa8" metalness={0.35} roughness={0.55} />
       </mesh>
       <mesh position={[2.2, 0.7, 3]}>
         <boxGeometry args={[1.2, 1.1, 1.2]} />
@@ -142,7 +148,7 @@ function Yard({ metal, accent }: { metal: THREE.Texture; accent: string }) {
     <group>
       <mesh position={[0, 2.8, -1]} castShadow>
         <boxGeometry args={[11, 5.6, 7]} />
-        <meshStandardMaterial map={metal} color="#5a4038" metalness={0.55} roughness={0.45} />
+        <meshStandardMaterial map={metal} color="#d07850" metalness={0.45} roughness={0.42} />
       </mesh>
       {[-2, 0, 2].map((x, i) => (
         <mesh key={x} position={[x, 0.55 + i * 0.15, 3.4]} rotation={[0, 0.2, 0]} castShadow>
@@ -168,12 +174,12 @@ function Mill({ brick, metal, accent }: { brick: THREE.Texture; metal: THREE.Tex
     <group>
       <mesh position={[0, 3.4, 0]} castShadow receiveShadow>
         <boxGeometry args={[13, 6.8, 9]} />
-        <meshStandardMaterial map={brick} roughness={0.88} />
+        <meshStandardMaterial map={brick} color="#eea070" roughness={0.8} />
       </mesh>
       {[-4, 0, 4].map((x) => (
         <mesh key={x} position={[x, 7.6, 0]} rotation={[0, 0, 0.55]} castShadow>
           <boxGeometry args={[5.2, 0.2, 9.2]} />
-          <meshStandardMaterial map={metal} color="#4a311f" metalness={0.3} roughness={0.55} />
+          <meshStandardMaterial map={metal} color="#c88848" metalness={0.28} roughness={0.5} />
         </mesh>
       ))}
       <mesh position={[0, 1.7, 4.1]}>
@@ -189,15 +195,15 @@ function Alley({ metal, accent }: { metal: THREE.Texture; accent: string }) {
     <group>
       <mesh position={[-3.4, 4, 0]} castShadow>
         <boxGeometry args={[2.2, 8, 8]} />
-        <meshStandardMaterial map={metal} color="#2a3340" metalness={0.7} roughness={0.4} />
+        <meshStandardMaterial map={metal} color="#5a7890" metalness={0.62} roughness={0.38} />
       </mesh>
       <mesh position={[3.4, 4, 0]} castShadow>
         <boxGeometry args={[2.2, 8, 8]} />
-        <meshStandardMaterial map={metal} color="#2a3340" metalness={0.7} roughness={0.4} />
+        <meshStandardMaterial map={metal} color="#5a7890" metalness={0.62} roughness={0.38} />
       </mesh>
       <mesh position={[0, 8.2, 0]}>
         <boxGeometry args={[9, 0.2, 8.4]} />
-        <meshStandardMaterial color="#1a222c" metalness={0.8} roughness={0.3} />
+        <meshStandardMaterial color="#8aa0b4" metalness={0.7} roughness={0.32} />
       </mesh>
       {Array.from({ length: 6 }, (_, i) => (
         <mesh key={i} position={[-1.9, 1 + i * 1.1, 4.1]}>
@@ -227,7 +233,7 @@ function Spire({
     <group>
       <mesh position={[0, 8, 0]} castShadow>
         <cylinderGeometry args={[1.1, 2.4, 16, 8]} />
-        <meshStandardMaterial map={metal} color="#1b3a44" metalness={0.75} roughness={0.28} />
+        <meshStandardMaterial map={metal} color="#3a8898" metalness={0.68} roughness={0.28} />
       </mesh>
       <mesh position={[0, 16.4, 0]}>
         <coneGeometry args={[1.6, 2.4, 8]} />
@@ -255,7 +261,7 @@ function Band({ metal, accent }: { metal: THREE.Texture; accent: string }) {
     <group>
       <mesh position={[0, 2.2, 0]} castShadow>
         <boxGeometry args={[6.2, 4.4, 6.2]} />
-        <meshStandardMaterial map={metal} color="#243038" metalness={0.7} roughness={0.38} />
+        <meshStandardMaterial map={metal} color="#4a7888" metalness={0.62} roughness={0.36} />
       </mesh>
       <mesh ref={ref} position={[0, 5.4, 0]} rotation={[Math.PI / 2, 0, 0]}>
         <torusGeometry args={[2.4, 0.1, 8, 40]} />
@@ -332,7 +338,7 @@ function SmokeStack({ x, z, h }: { x: number; z: number; h: number }) {
   return (
     <instancedMesh ref={ref} args={[undefined, undefined, 16]}>
       <sphereGeometry args={[1, 7, 7]} />
-      <meshStandardMaterial color="#6a6a70" transparent opacity={0.18} depthWrite={false} />
+      <meshStandardMaterial color="#d0d4d8" transparent opacity={0.14} depthWrite={false} />
     </instancedMesh>
   )
 }

@@ -53,7 +53,7 @@ function Person({
 }) {
   const ref = useRef<THREE.Group>(null)
   const color =
-    walker.kind === 'broker' ? '#c45c2a' : walker.kind === 'welder' ? '#d4a046' : '#3d6a8a'
+    walker.kind === 'broker' ? '#e07038' : walker.kind === 'welder' ? '#e8b040' : '#4a88b8'
 
   useFrame((s) => {
     if (!ref.current) return
@@ -68,7 +68,7 @@ function Person({
       ref.current.rotation.y = t + Math.PI / 2
     }
     ref.current.visible = alive > 0.2
-    ref.current.scale.setScalar(0.45 + 0.15 * alive)
+    ref.current.scale.setScalar(0.58 + 0.18 * alive)
   })
 
   const hat = walker.kind !== 'broker'

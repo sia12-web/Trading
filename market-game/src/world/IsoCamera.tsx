@@ -13,12 +13,12 @@ export function IsoCamera({ mode }: { mode: 'hub' | 'dow' }) {
     if (!cam) return
     const g = getGame()
     const opening = g.phase === 'opening'
-    const dist = mode === 'hub' ? 22 : 26
-    const height = mode === 'hub' ? 26 : 31
-    const zoomBase = mode === 'hub' ? 36 : 29
-    const zoom = opening ? 20 + g.openElapsed * 1.1 : zoomBase
+    const dist = mode === 'hub' ? 18 : 26
+    const height = mode === 'hub' ? 22 : 32
+    const zoomBase = mode === 'hub' ? 44 : 34
+    const zoom = opening ? 24 + g.openElapsed * 1.15 : zoomBase
     cam.position.set(dist, height, dist)
-    cam.lookAt(0, 0, 0)
+    cam.lookAt(0, 0.4, 0)
     cam.zoom = zoom
     cam.updateProjectionMatrix()
     cam.updateMatrixWorld()
@@ -29,9 +29,9 @@ export function IsoCamera({ mode }: { mode: 'hub' | 'dow' }) {
       ref={ref}
       makeDefault
       near={0.1}
-      far={240}
-      zoom={29}
-      position={[26, 31, 26]}
+      far={320}
+      zoom={34}
+      position={[26, 32, 26]}
     />
   )
 }

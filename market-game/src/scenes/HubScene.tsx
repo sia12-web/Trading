@@ -42,8 +42,8 @@ export function HubScene() {
       dpr={[1, 1.75]}
       gl={{ antialias: true }}
       onCreated={({ gl }) => {
-        gl.setClearColor('#141820')
-        gl.toneMappingExposure = 1.22
+        gl.setClearColor('#7ec4f0')
+        gl.toneMappingExposure = 1.48
       }}
     >
       <Suspense fallback={null}>

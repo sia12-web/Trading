@@ -167,7 +167,7 @@ export function Player({
   const selected = Boolean(g.nearby || g.inspecting)
 
   return (
-    <group ref={group} position={spawn} scale={0.72}>
+    <group ref={group} position={spawn} scale={0.88}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
         <ringGeometry args={[0.55, 0.72, 28]} />
         <meshBasicMaterial color={selected ? '#d4a046' : '#f4efe6'} transparent opacity={0.9} />

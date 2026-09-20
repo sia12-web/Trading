@@ -1,10 +1,18 @@
+import { Sky } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
-import { useMemo, useRef } from 'react'
+import { useRef } from 'react'
 import * as THREE from 'three'
 import { closeInspect, inspectStore, setWalkTarget } from '../game/gameStore'
 import { storeAtPoint, YARD } from '../game/stores'
 import { useGame } from '../ui/useGame'
-import { useAsphaltTexture, useBrickTexture, useConcreteTexture, useMetalTexture } from './textures'
+import {
+  useAsphaltTexture,
+  useBrickTexture,
+  useConcreteTexture,
+  useGrassTexture,
+  useMetalTexture,
+} from './textures'
+import { YardDressing } from './YardDressing'
 
 export function District() {
   const g = useGame()
@@ -12,27 +20,35 @@ export function District() {
   const brick = useBrickTexture()
   const metal = useMetalTexture()
   const concrete = useConcreteTexture()
-  const lit = g.phase === 'preopen' ? 0.7 : 1
+  const grass = useGrassTexture()
+  const dawn = g.phase === 'preopen'
+  const sun = dawn ? '#ffe8c4' : '#fff6e4'
 
   return (
     <>
-      <hemisphereLight args={['#ffe2b8', '#2a241c', 0.9 * lit]} />
-      <ambientLight intensity={0.5 * lit} />
+      <Sky sunPosition={dawn ? [60, 18, 28] : [90, 42, 20]} turbidity={dawn ? 8 : 3.4} rayleigh={dawn ? 1.2 : 0.55} mieCoefficient={0.004} mieDirectionalG={0.8} />
+      <hemisphereLight args={['#d6eeff', '#c8b080', dawn ? 1.15 : 1.4]} />
+      <ambientLight intensity={dawn ? 1.05 : 1.28} />
       <directionalLight
-        position={[28, 42, 18]}
-        intensity={1.9 * lit}
-        color={g.phase === 'preopen' ? '#c5d4ee' : '#ffe0b0'}
+        position={[38, 54, 24]}
+        intensity={dawn ? 2.35 : 2.85}
+        color={sun}
         castShadow
         shadow-mapSize={[2048, 2048]}
         shadow-camera-near={4}
-        shadow-camera-far={90}
-        shadow-camera-left={-28}
-        shadow-camera-right={28}
-        shadow-camera-top={28}
-        shadow-camera-bottom={-28}
+        shadow-camera-far={130}
+        shadow-camera-left={-42}
+        shadow-camera-right={42}
+        shadow-camera-top={42}
+        shadow-camera-bottom={-42}
       />
-      <fog attach="fog" args={[g.phase === 'preopen' ? '#1a1c24' : '#2c241c', 70, 160]} />
-      <color attach="background" args={[g.phase === 'preopen' ? '#151820' : '#2a2018']} />
+      <fog attach="fog" args={[dawn ? '#c4d8ec' : '#9fd0f0', 90, 260]} />
+      <color attach="background" args={[dawn ? '#9ec4e4' : '#7ec4f0']} />
+
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, 0]} receiveShadow>
+        <planeGeometry args={[160, 160]} />
+        <meshStandardMaterial map={grass} roughness={0.9} color="#86b85a" />
+      </mesh>
 
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
@@ -40,7 +56,7 @@ export function District() {
         receiveShadow
         onClick={(e) => {
           e.stopPropagation()
-          const hit = storeAtPoint(e.point.x, e.point.z, 2.8)
+          const hit = storeAtPoint(e.point.x, e.point.z, 3.8)
           if (hit) inspectStore(hit.id)
           else {
             closeInspect()
@@ -48,44 +64,47 @@ export function District() {
           }
         }}
       >
-        <planeGeometry args={[80, 80]} />
-        <meshStandardMaterial map={asphalt} roughness={0.92} color="#5a564c" />
+        <circleGeometry args={[YARD - 0.2, 56]} />
+        <meshStandardMaterial map={concrete} roughness={0.86} color="#ddd4c6" />
       </mesh>
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, 0]} receiveShadow>
-        <circleGeometry args={[YARD - 0.4, 48]} />
-        <meshStandardMaterial map={concrete} color="#8a8478" roughness={0.86} />
+        <ringGeometry args={[6.4, 9.2, 56]} />
+        <meshStandardMaterial map={asphalt} color="#9a968c" roughness={0.88} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
-        <ringGeometry args={[3.4, 3.75, 48]} />
-        <meshStandardMaterial color="#d4a046" metalness={0.7} roughness={0.3} />
+        <ringGeometry args={[4.4, 4.9, 56]} />
+        <meshStandardMaterial color="#f0c84c" metalness={0.5} roughness={0.32} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.028, 0]}>
+        <circleGeometry args={[4.2, 44]} />
+        <meshStandardMaterial map={asphalt} color="#9c9890" roughness={0.88} />
       </mesh>
 
       <YardWalls brick={brick} />
       <BellTower metal={metal} brick={brick} ringing={g.phase === 'opening'} />
-      <Crates />
-      <Lamps on={g.shutter} />
-      <pointLight position={[0, 6, 0]} color="#ffd27a" intensity={10 * lit} distance={16} />
-      {g.phase !== 'preopen' && <Dust alive={g.floorAlive} />}
+      <YardDressing />
+      <Lamps on={Math.max(0.45, g.shutter)} />
+      <pointLight position={[0, 9, 0]} color="#ffe9b8" intensity={4.5} distance={20} />
     </>
   )
 }
 
 function YardWalls({ brick }: { brick: THREE.Texture }) {
   const t = YARD
-  const h = 1.35
+  const h = 1.7
   const segs: Array<[number, number, number, number]> = [
-    [0, -t, t * 2 + 1.2, 0.7],
-    [0, t, t * 2 + 1.2, 0.7],
-    [-t, 0, 0.7, t * 2],
-    [t, 0, 0.7, t * 2],
+    [0, -t, t * 2 + 1.6, 0.95],
+    [0, t, t * 2 + 1.6, 0.95],
+    [-t, 0, 0.95, t * 2],
+    [t, 0, 0.95, t * 2],
   ]
   return (
     <group>
       {segs.map(([x, z, w, d], i) => (
         <mesh key={i} position={[x, h / 2, z]} castShadow receiveShadow>
           <boxGeometry args={[w, h, d]} />
-          <meshStandardMaterial map={brick} color="#6a5348" roughness={0.9} />
+          <meshStandardMaterial map={brick} color="#e09062" roughness={0.78} />
         </mesh>
       ))}
       {([
@@ -94,10 +113,16 @@ function YardWalls({ brick }: { brick: THREE.Texture }) {
         [-t, t],
         [t, t],
       ] as Array<[number, number]>).map(([x, z]) => (
-        <mesh key={`${x}${z}`} position={[x, 1.7, z]} castShadow>
-          <boxGeometry args={[1.3, 3.4, 1.3]} />
-          <meshStandardMaterial map={brick} color="#4a3a34" roughness={0.88} />
-        </mesh>
+        <group key={`${x}${z}`}>
+          <mesh position={[x, 2.4, z]} castShadow>
+            <boxGeometry args={[1.9, 4.8, 1.9]} />
+            <meshStandardMaterial map={brick} color="#d06840" roughness={0.76} />
+          </mesh>
+          <mesh position={[x, 5.05, z]} castShadow>
+            <boxGeometry args={[2.2, 0.4, 2.2]} />
+            <meshStandardMaterial color="#e8c04a" metalness={0.45} roughness={0.4} />
+          </mesh>
+        </group>
       ))}
     </group>
   )
@@ -118,109 +143,59 @@ function BellTower({
     bell.current.rotation.z = ringing ? Math.sin(s.clock.elapsedTime * 9) * 0.28 : 0
   })
   return (
-    <group scale={0.55}>
-      <mesh position={[0, 3.4, 0]} castShadow>
-        <boxGeometry args={[3.2, 6.8, 3.2]} />
-        <meshStandardMaterial map={brick} roughness={0.9} />
+    <group scale={0.92}>
+      <mesh position={[0, 3.6, 0]} castShadow>
+        <boxGeometry args={[3.4, 7.2, 3.4]} />
+        <meshStandardMaterial map={brick} color="#ee9a68" roughness={0.78} />
       </mesh>
-      <mesh position={[0, 7.2, 0]} castShadow>
-        <boxGeometry args={[4, 1.1, 4]} />
-        <meshStandardMaterial map={metal} color="#2c241c" metalness={0.5} roughness={0.45} />
+      {[-1.1, 1.1].map((x) =>
+        [1.8, 3.6, 5.2].map((y) => (
+          <mesh key={`${x}${y}`} position={[x, y, 1.75]}>
+            <boxGeometry args={[0.7, 1.05, 0.12]} />
+            <meshStandardMaterial color="#7ec8ea" roughness={0.2} metalness={0.15} />
+          </mesh>
+        )),
+      )}
+      <mesh position={[0, 7.6, 0]} castShadow>
+        <boxGeometry args={[4.3, 1.15, 4.3]} />
+        <meshStandardMaterial map={metal} color="#e0b050" metalness={0.5} roughness={0.38} />
       </mesh>
-      <mesh ref={bell} position={[0, 6.2, 0]} castShadow>
-        <sphereGeometry args={[0.75, 20, 14, 0, Math.PI * 2, 0, Math.PI / 1.5]} />
-        <meshPhysicalMaterial color="#c9a227" metalness={0.9} roughness={0.25} />
+      <mesh ref={bell} position={[0, 6.5, 0]} castShadow>
+        <sphereGeometry args={[0.82, 20, 14, 0, Math.PI * 2, 0, Math.PI / 1.5]} />
+        <meshPhysicalMaterial color="#f6cc4a" metalness={0.82} roughness={0.2} />
       </mesh>
-      <pointLight color="#ffd27a" intensity={ringing ? 16 : 5} distance={12} position={[0, 6.4, 0]} />
+      <pointLight color="#ffe48a" intensity={ringing ? 16 : 5} distance={16} position={[0, 6.6, 0]} />
     </group>
-  )
-}
-
-function Crates() {
-  const dummy = useMemo(() => new THREE.Object3D(), [])
-  const ref = useRef<THREE.InstancedMesh>(null)
-  const spots = useMemo(() => {
-    const a: Array<[number, number, number]> = []
-    const pts: Array<[number, number]> = [
-      [4.2, 3.4],
-      [-3.6, 4],
-      [4.8, -3.2],
-      [-4.2, -3.6],
-    ]
-    for (const [x, z] of pts) {
-      for (let i = 0; i < 4; i++) {
-        a.push([x + (i % 2) * 0.7, 0.32 + Math.floor(i / 2) * 0.65, z])
-      }
-    }
-    return a
-  }, [])
-  useFrame(() => {
-    if (!ref.current) return
-    spots.forEach((p, i) => {
-      dummy.position.set(p[0]!, p[1]!, p[2]!)
-      dummy.rotation.set(0, i * 0.2, 0)
-      dummy.updateMatrix()
-      ref.current!.setMatrixAt(i, dummy.matrix)
-    })
-    ref.current.instanceMatrix.needsUpdate = true
-  })
-  return (
-    <instancedMesh ref={ref} args={[undefined, undefined, spots.length]} castShadow>
-      <boxGeometry args={[0.65, 0.65, 0.65]} />
-      <meshStandardMaterial color="#8a5a28" roughness={0.7} />
-    </instancedMesh>
   )
 }
 
 function Lamps({ on }: { on: number }) {
   const spots: Array<[number, number]> = [
-    [-5, 5],
-    [5, 5],
-    [-5, -5],
-    [5, -5],
+    [-6.2, 6.2],
+    [6.2, 6.2],
+    [-6.2, -6.2],
+    [6.2, -6.2],
+    [0, 6.8],
+    [6.8, 0],
+    [-6.8, 0],
+    [0, -6.8],
+    [-20, 8],
+    [20, -8],
   ]
   return (
     <group>
       {spots.map(([x, z], i) => (
         <group key={i} position={[x, 0, z]}>
-          <mesh position={[0, 1.7, 0]}>
-            <cylinderGeometry args={[0.06, 0.09, 3.4, 8]} />
-            <meshStandardMaterial color="#2a2a28" metalness={0.7} />
+          <mesh position={[0, 2.05, 0]}>
+            <cylinderGeometry args={[0.08, 0.12, 4.1, 8]} />
+            <meshStandardMaterial color="#8a8074" metalness={0.55} />
           </mesh>
-          <mesh position={[0, 3.45, 0.15]}>
-            <boxGeometry args={[0.35, 0.14, 0.55]} />
-            <meshStandardMaterial color="#1a1208" emissive="#ffb24a" emissiveIntensity={0.5 + on * 2} />
+          <mesh position={[0, 4.15, 0.16]}>
+            <boxGeometry args={[0.46, 0.18, 0.64]} />
+            <meshStandardMaterial color="#fff6d0" emissive="#ffd88a" emissiveIntensity={0.35 + on * 0.7} />
           </mesh>
-          <pointLight color="#ffb45a" intensity={on * 5} distance={8} position={[0, 3.3, 0.2]} />
         </group>
       ))}
     </group>
-  )
-}
-
-function Dust({ alive }: { alive: number }) {
-  const ref = useRef<THREE.Points>(null)
-  const geo = useMemo(() => {
-    const g = new THREE.BufferGeometry()
-    const n = 180
-    const pos = new Float32Array(n * 3)
-    for (let i = 0; i < n; i++) {
-      pos[i * 3] = (Math.random() - 0.5) * 28
-      pos[i * 3 + 1] = Math.random() * 5
-      pos[i * 3 + 2] = (Math.random() - 0.5) * 28
-    }
-    g.setAttribute('position', new THREE.BufferAttribute(pos, 3))
-    return g
-  }, [])
-  useFrame((s) => {
-    if (!ref.current) return
-    ref.current.rotation.y = s.clock.elapsedTime * 0.01
-    const m = ref.current.material as THREE.PointsMaterial
-    m.opacity = 0.14 * alive
-  })
-  return (
-    <points ref={ref} geometry={geo}>
-      <pointsMaterial color="#d8c4a8" size={0.1} transparent opacity={0.1} depthWrite={false} />
-    </points>
   )
 }
