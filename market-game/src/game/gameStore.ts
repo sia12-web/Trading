@@ -309,7 +309,7 @@ export function stallState(id: StoreId, snap: GameSnapshot = state) {
 }
 
 export function inStall(snap: GameSnapshot = state): StoreId | null {
-  return nearestStore(snap.player.x, snap.player.z, 3.6)?.id ?? null
+  return nearestStore(snap.player.x, snap.player.z, 5.2)?.id ?? null
 }
 
 export function takeAuction(side: Side) {
