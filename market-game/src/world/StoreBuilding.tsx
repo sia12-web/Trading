@@ -207,7 +207,7 @@ function Dock({ metal, open }: { metal: THREE.Texture; open: number }) {
       {[-2.35, 2.35].map((x) => (
         <mesh key={x} position={[x, 2.15, 0]} castShadow>
           <boxGeometry args={[0.28, 4.3, 4.2]} />
-          <meshStandardMaterial map={metal} color="#6a6e72" metalness={0.55} roughness={0.4} />
+          <meshStandardMaterial map={metal} color="#8a9298" metalness={0.45} roughness={0.42} />
         </mesh>
       ))}
       <mesh position={[0, 4.35, 0]} castShadow>
@@ -336,11 +336,11 @@ function Alley({ metal, open }: { metal: THREE.Texture; open: number }) {
     <group>
       <mesh position={[-1.55, 2.15, 0]} castShadow>
         <boxGeometry args={[1.85, 4.3, 4.15]} />
-        <meshStandardMaterial map={metal} color="#4a5864" metalness={0.4} roughness={0.48} />
+        <meshStandardMaterial map={metal} color="#6a7a88" metalness={0.35} roughness={0.5} />
       </mesh>
       <mesh position={[1.65, 1.75, 0.25]} castShadow>
         <boxGeometry args={[1.7, 3.5, 3.7]} />
-        <meshStandardMaterial map={metal} color="#3a4854" metalness={0.4} roughness={0.5} />
+        <meshStandardMaterial map={metal} color="#5a6a78" metalness={0.35} roughness={0.52} />
       </mesh>
       <mesh position={[-1.55, 4.4, 0]}>
         <boxGeometry args={[2.05, 0.14, 4.35]} />

@@ -29,7 +29,7 @@ export function District() {
   const sun = dawn ? '#ff9a58' : '#ffd39a'
 
   useFrame(() => {
-    gl.toneMappingExposure = dawn ? 0.88 : 1.05
+        gl.toneMappingExposure = dawn ? 0.98 : 1.14
     gl.setClearColor(dawn ? '#c48a62' : '#6a9cc4', 1)
   })
 
@@ -42,15 +42,16 @@ export function District() {
         mieCoefficient={0.006}
         mieDirectionalG={0.82}
       />
-      <hemisphereLight args={[dawn ? '#8a6a88' : '#9eb8d4', dawn ? '#3a2414' : '#4a3824', dawn ? 0.32 : 0.42]} />
-      <ambientLight intensity={dawn ? 0.18 : 0.26} />
+      <hemisphereLight args={[dawn ? '#8a6a88' : '#b8cce0', dawn ? '#3a2414' : '#5a4834', dawn ? 0.42 : 0.62]} />
+      <ambientLight intensity={dawn ? 0.28 : 0.38} />
       <directionalLight
         position={sunPos}
-        intensity={dawn ? 1.55 : 2.05}
+        intensity={dawn ? 1.45 : 1.85}
         color={sun}
         castShadow
         shadow-mapSize={[2048, 2048]}
-        shadow-bias={-0.0004}
+        shadow-bias={-0.00035}
+        shadow-normalBias={0.04}
         shadow-camera-near={2}
         shadow-camera-far={70}
         shadow-camera-left={-20}
@@ -58,7 +59,8 @@ export function District() {
         shadow-camera-top={20}
         shadow-camera-bottom={-20}
       />
-      <fog attach="fog" args={[dawn ? '#c49a78' : '#7aa8c8', 28, 72]} />
+      <directionalLight position={[-18, 10, -10]} intensity={dawn ? 0.22 : 0.38} color="#9ab8d0" />
+      <fog attach="fog" args={[dawn ? '#c49a78' : '#8ab4d0', 36, 88]} />
       <color attach="background" args={[dawn ? '#c48a62' : '#6a9cc4']} />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.08, 0]} receiveShadow>
@@ -155,7 +157,7 @@ function CliffBezel({ dirt, grass }: { dirt: THREE.Texture; grass: THREE.Texture
         <group key={i} position={[x, 0, z]}>
           <mesh position={[0, h / 2, 0]} castShadow receiveShadow>
             <boxGeometry args={[w, h, d]} />
-            <meshStandardMaterial map={dirt} color="#5a4632" roughness={0.95} />
+            <meshStandardMaterial map={dirt} color="#7a6248" roughness={0.95} />
           </mesh>
           <mesh position={[0, h + 0.08, 0]} rotation={[-Math.PI / 2, 0, 0]}>
             <planeGeometry args={[w * 0.92, d * 0.92]} />

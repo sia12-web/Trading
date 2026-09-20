@@ -16,9 +16,11 @@ export function HubWorld() {
       <Sky sunPosition={[28, 12, 16]} turbidity={4.4} rayleigh={0.75} mieCoefficient={0.005} />
       <color attach="background" args={['#6a9cc4']} />
       <fog attach="fog" args={['#7aa8c8', 22, 55]} />
-      <hemisphereLight args={['#9eb8d4', '#4a3824', 0.4]} />
-      <ambientLight intensity={0.24} />
-      <directionalLight position={[28, 12, 16]} intensity={2} color="#ffd39a" castShadow />
+      <hemisphereLight args={['#b8cce0', '#5a4834', 0.58]} />
+      <ambientLight intensity={0.36} />
+      <directionalLight position={[28, 12, 16]} intensity={1.8} color="#ffd39a" castShadow />
+      <directionalLight position={[-16, 9, -8]} intensity={0.35} color="#9ab8d0" />
+      <fog attach="fog" args={['#8ab4d0', 28, 70]} />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.06, 0]} receiveShadow>
         <planeGeometry args={[28, 28]} />
@@ -30,7 +32,7 @@ export function HubWorld() {
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[16.4, 16.4]} />
-        <meshStandardMaterial map={dirt} color="#7a6a58" roughness={0.9} />
+        <meshStandardMaterial map={dirt} color="#8a7058" roughness={0.92} />
       </mesh>
 
       <HubWalls brick={brick} />
