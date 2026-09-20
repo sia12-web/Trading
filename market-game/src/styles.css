@@ -391,3 +391,106 @@ canvas {
   font-size: 13px;
   letter-spacing: 0.08em;
 }
+
+.iso-hud .chip {
+  position: absolute;
+  background: rgba(8, 10, 14, 0.78);
+  border: 1px solid rgba(212, 160, 70, 0.28);
+  padding: 12px 14px;
+  backdrop-filter: blur(10px);
+  max-width: 280px;
+}
+
+.iso-hud .chip-tl {
+  top: 16px;
+  left: 16px;
+}
+
+.iso-hud .chip-tr {
+  top: 16px;
+  right: 16px;
+  text-align: right;
+}
+
+.iso-hud .chip-bl {
+  bottom: 16px;
+  left: 16px;
+  width: 260px;
+  max-width: 260px;
+}
+
+.iso-hud .chip h1 {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 28px;
+  letter-spacing: 0.05em;
+  line-height: 0.95;
+}
+
+.iso-hud .kicker {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: #d4a046;
+}
+
+.iso-hud .time {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 34px;
+  letter-spacing: 0.03em;
+  line-height: 1;
+}
+
+.iso-hud .res {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.iso-hud .res.dim {
+  color: #89a0b8;
+}
+
+.iso-hud .factor-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 10px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: #d8d0c4;
+}
+
+.iso-prompt {
+  bottom: 18px;
+  min-width: 0;
+  width: auto;
+  max-width: 420px;
+  padding: 8px 14px;
+  font-size: 14px;
+}
+
+.iso-hud .store-panel {
+  width: 320px;
+  bottom: 16px;
+  right: 16px;
+}
+
+.iso-hud .open-banner {
+  background: transparent;
+  pointer-events: none;
+  align-items: flex-start;
+  padding-top: 18%;
+}
+
+.iso-hud .open-banner .card h2 {
+  font-size: 64px;
+}
+
+.hub-blurb {
+  margin: 8px 0 10px;
+  font-size: 14px;
+  color: #d8d0c4;
+  line-height: 1.3;
+}
+

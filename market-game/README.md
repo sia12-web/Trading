@@ -23,7 +23,7 @@ Buy and sell are **taking the auction**, not filling a form. Quality of the prin
 
 ## Store layout
 
-The district is a mill town around a bell plaza. Cash open is 9:30 AM NYC.
+The district is a walled mill yard seen from a Clash of Clans isometric camera. Cash open is 9:30 AM NYC. Yesterday sits on the south pads, five-day on the north, 5-month AVWAP on the west spire.
 
 ### Yesterday NYC session — south row (three stores)
 
@@ -65,12 +65,14 @@ npm run dev
 
 Open `http://localhost:5173`.
 
-1. Hub: four market gates. Only **DOW** unlocks. Walk to it, press **E**.
+Clash of Clans camera: isometric look-down over the whole walled yard. Price is a unit on the floor. HUD sits on the edges.
+
+1. Hub: four market buildings. Only **DOW** unlocks. Click it or **ENTER DOW DISTRICT**.
 2. District starts **pre-open**. Clock runs to 9:30 AM New York.
-3. **Market open** cinematic: bell, shutters, floor coming alive.
-4. Walk Price (**WASD**, click to look, Shift to sprint) to the stores.
-5. **E** inspect. Read **volume (divergence)** and **time (fair / still time)**. **B** buy, **F** sell.
-6. Skip cinematic with **Skip to open** if you already know the bell.
+3. **Market open**: bell, shutters lift, floor comes alive — still looking down on the whole village.
+4. **WASD** moves Price (screen-relative). Click a store to inspect, or click the ground to walk there.
+5. Read **volume (divergence)** and **time (fair / still time)**. **B** buy, **F** sell.
+6. Skip cinematic with **Skip to open**.
 
 `npm test` checks that POC / HVN / LVN / AVWAP math matches the desk’s rules (POC inside 70% value, HVN ≠ POC, AVWAP ticks toward new volume).
 

@@ -12,7 +12,7 @@ export function CinematicFx() {
         mipmapBlur
         luminanceSmoothing={0.2}
       />
-      <Vignette eskil={false} offset={0.18} darkness={0.72} />
+      <Vignette eskil={false} offset={0.25} darkness={0.45} />
       <SMAA />
     </EffectComposer>
   )

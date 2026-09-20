@@ -1,8 +1,9 @@
+import { Billboard } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { fmtPx } from '../game/auction'
-import { advertisedPrice } from '../game/gameStore'
+import { advertisedPrice, inspectStore } from '../game/gameStore'
 import type { StoreDef } from '../game/types'
 import { useGame } from '../ui/useGame'
 import { makeLedTexture, useBrickTexture, useMetalTexture } from './textures'
@@ -13,10 +14,21 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
   const metal = useMetalTexture()
   const price = advertisedPrice(store.id, g)
   const hot = g.nearby === store.id || g.inspecting === store.id
-  const shutterY = 0.2 + g.shutter * 6.4
+  const lidY = 3.2 + g.shutter * 3.8
 
   return (
-    <group position={store.position}>
+    <group
+      position={store.position}
+      scale={0.42}
+      onClick={(e) => {
+        e.stopPropagation()
+        inspectStore(store.id)
+      }}
+    >
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]} receiveShadow>
+        <circleGeometry args={[6.2, 24]} />
+        <meshStandardMaterial color={hot ? store.accent : '#3a342e'} roughness={0.9} />
+      </mesh>
       {store.building === 'foundry' && <Foundry brick={brick} metal={metal} accent={store.accent} />}
       {store.building === 'hall' && <Hall brick={brick} metal={metal} accent={store.accent} />}
       {store.building === 'dock' && <Dock metal={metal} accent={store.accent} />}
@@ -25,29 +37,29 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
       {store.building === 'alley' && <Alley metal={metal} accent={store.accent} />}
       {store.building === 'spire' && <Spire metal={metal} accent={store.accent} live={g.avwap.vwap} sigma={g.avwap.sigma} />}
       {store.building === 'band' && <Band metal={metal} accent={store.accent} />}
-      <Shutter metal={metal} y={shutterY} width={store.building === 'hall' || store.building === 'mill' ? 5.4 : 4.2} />
+      <Shutter metal={metal} y={lidY} width={store.building === 'hall' || store.building === 'mill' ? 11 : 9.2} />
       <LedSign
         title={store.name}
         price={fmtPx(price)}
         sub={store.subtitle}
         color={store.accent}
-        y={store.building === 'spire' ? 14.2 : 7.4}
+        y={store.building === 'spire' ? 17.5 : 9.2}
       />
       {hot && (
-        <mesh position={[0, 0.04, 5.2]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[1.6, 2.05, 32]} />
-          <meshBasicMaterial color={store.accent} transparent opacity={0.85} />
+        <mesh position={[0, 0.06, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[5.4, 6.1, 32]} />
+          <meshBasicMaterial color={store.accent} transparent opacity={0.95} />
         </mesh>
       )}
-      <pointLight color={store.accent} intensity={hot ? 18 : 8} distance={16} position={[0, 3.2, 3]} />
+      <pointLight color={store.accent} intensity={hot ? 10 : 5} distance={10} position={[0, 4, 0]} />
     </group>
   )
 }
 
 function Shutter({ metal, y, width }: { metal: THREE.Texture; y: number; width: number }) {
   return (
-    <mesh position={[0, y, 3.55]} castShadow>
-      <boxGeometry args={[width, 6.2, 0.18]} />
+    <mesh position={[0, y, 0]} castShadow>
+      <boxGeometry args={[width, 0.28, width * 0.82]} />
       <meshStandardMaterial map={metal} color="#3d4650" metalness={0.85} roughness={0.35} />
     </mesh>
   )
@@ -270,10 +282,12 @@ function LedSign({
   const tex = useMemo(() => makeLedTexture(title, price, sub, color), [title, price, sub, color])
   useEffect(() => () => tex.dispose(), [tex])
   return (
-    <mesh position={[0, y, 3.7]}>
-      <planeGeometry args={[7.2, 3.6]} />
-      <meshBasicMaterial map={tex} toneMapped={false} />
-    </mesh>
+    <Billboard position={[0, y, 0]} follow>
+      <mesh>
+        <planeGeometry args={[8.4, 4.2]} />
+        <meshBasicMaterial map={tex} toneMapped={false} />
+      </mesh>
+    </Billboard>
   )
 }
 

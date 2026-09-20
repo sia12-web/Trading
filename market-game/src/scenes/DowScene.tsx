@@ -4,6 +4,7 @@ import { tickGame } from '../game/gameStore'
 import { STORES } from '../game/stores'
 import { CinematicFx } from '../world/CinematicFx'
 import { District } from '../world/District'
+import { IsoCamera } from '../world/IsoCamera'
 import { NPCs } from '../world/NPCs'
 import { bindPlayerKeys, Player } from '../world/Player'
 import { StoreBuilding } from '../world/StoreBuilding'
@@ -26,20 +27,20 @@ export function DowScene() {
     <Canvas
       shadows
       dpr={[1, 1.75]}
-      camera={{ position: [8, 5, 22], fov: 48, near: 0.1, far: 220 }}
       gl={{ antialias: true, powerPreference: 'high-performance' }}
       onCreated={({ gl }) => {
-        gl.setClearColor('#241c16')
-        gl.toneMappingExposure = 1.35
+        gl.setClearColor('#2a2018')
+        gl.toneMappingExposure = 1.28
       }}
     >
       <Suspense fallback={null}>
+        <IsoCamera mode="dow" />
         <District />
         {STORES.map((s) => (
           <StoreBuilding key={s.id} store={s} />
         ))}
         <NPCs />
-        <Player spawn={[0, 0, 14]} camDist={7.8} />
+        <Player spawn={[1.6, 0, 1.6]} />
         <CinematicFx />
       </Suspense>
     </Canvas>

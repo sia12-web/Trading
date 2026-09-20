@@ -1,5 +1,7 @@
+import { Billboard } from '@react-three/drei'
 import { useMemo } from 'react'
 import * as THREE from 'three'
+import { enterDow } from '../game/gameStore'
 import { DOW_GATE, LOCKED_MARKETS } from '../game/stores'
 import { useBrickTexture, useConcreteTexture, useMetalTexture } from './textures'
 
@@ -10,34 +12,47 @@ export function HubWorld() {
 
   return (
     <>
-      <color attach="background" args={['#08090e']} />
-      <fog attach="fog" args={['#141824', 22, 95]} />
-      <hemisphereLight args={['#8a9ab8', '#120c08', 0.7]} />
-      <ambientLight intensity={0.38} />
-      <directionalLight position={[12, 22, 8]} intensity={1.55} color="#d8e2f4" castShadow />
-      <pointLight position={[0, 8, 0]} color="#d4a046" intensity={18} distance={36} />
+      <color attach="background" args={['#141820']} />
+      <fog attach="fog" args={['#181c26', 60, 140]} />
+      <hemisphereLight args={['#9aaccc', '#1a140e', 0.85]} />
+      <ambientLight intensity={0.48} />
+      <directionalLight position={[22, 34, 16]} intensity={1.7} color="#e4ecf8" castShadow />
+      <pointLight position={[0, 8, 0]} color="#d4a046" intensity={12} distance={22} />
 
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
-        <circleGeometry args={[42, 64]} />
-        <meshStandardMaterial map={concrete} color="#6a6a74" roughness={0.88} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <circleGeometry args={[22, 64]} />
+        <meshStandardMaterial map={concrete} color="#6e6e76" roughness={0.88} />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
-        <ringGeometry args={[11, 11.4, 64]} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+        <ringGeometry args={[2.2, 2.5, 48]} />
         <meshStandardMaterial color="#d4a046" metalness={0.8} roughness={0.25} />
       </mesh>
 
-      <mesh position={[0, 0.2, 0]}>
-        <cylinderGeometry args={[3.2, 3.6, 0.4, 8]} />
-        <meshStandardMaterial color="#16141c" metalness={0.6} roughness={0.4} />
-      </mesh>
-
+      <HubWalls brick={brick} />
       <DowGate position={DOW_GATE} brick={brick} metal={metal} />
       {LOCKED_MARKETS.map((m) => (
         <LockedGate key={m.id} market={m} brick={brick} metal={metal} />
       ))}
-
-      <Skyline brick={brick} />
     </>
+  )
+}
+
+function HubWalls({ brick }: { brick: THREE.Texture }) {
+  const t = 12
+  return (
+    <group>
+      {([
+        [0, -t, t * 2, 0.6],
+        [0, t, t * 2, 0.6],
+        [-t, 0, 0.6, t * 2],
+        [t, 0, 0.6, t * 2],
+      ] as Array<[number, number, number, number]>).map(([x, z, w, d], i) => (
+        <mesh key={i} position={[x, 0.7, z]} castShadow>
+          <boxGeometry args={[w, 1.4, d]} />
+          <meshStandardMaterial map={brick} color="#4a5060" roughness={0.9} />
+        </mesh>
+      ))}
+    </group>
   )
 }
 
@@ -51,21 +66,28 @@ function DowGate({
   metal: THREE.Texture
 }) {
   return (
-    <group position={position}>
-      <mesh position={[0, 5.5, 0]} castShadow>
-        <boxGeometry args={[14, 11, 3.2]} />
+    <group
+      position={position}
+      scale={0.48}
+      onClick={(e) => {
+        e.stopPropagation()
+        enterDow()
+      }}
+    >
+      <mesh position={[0, 4.4, 0]} castShadow>
+        <boxGeometry args={[9, 8.8, 6]} />
         <meshStandardMaterial map={brick} color="#5a3a30" roughness={0.88} />
       </mesh>
-      <mesh position={[0, 3.2, 1.7]}>
-        <boxGeometry args={[6.5, 6.4, 0.3]} />
-        <meshStandardMaterial color="#120806" emissive="#e11d48" emissiveIntensity={1.4} />
+      <mesh position={[0, 2.6, 3.1]}>
+        <boxGeometry args={[4.6, 5, 0.25]} />
+        <meshStandardMaterial color="#120806" emissive="#e11d48" emissiveIntensity={1.6} />
       </mesh>
-      <mesh position={[0, 12.2, 0]} castShadow>
-        <boxGeometry args={[16, 1.6, 4]} />
+      <mesh position={[0, 9.2, 0]} castShadow>
+        <boxGeometry args={[10, 1.2, 7]} />
         <meshStandardMaterial map={metal} color="#2a241c" metalness={0.6} roughness={0.4} />
       </mesh>
-      <Sign text="DOW  ·  OPEN" color="#ffb070" y={12.2} />
-      <pointLight color="#ff6a3a" intensity={20} distance={22} position={[0, 4, 3]} />
+      <Sign text="DOW  ·  OPEN" color="#ffb070" y={10.4} />
+      <pointLight color="#ff6a3a" intensity={14} distance={12} position={[0, 4, 4]} />
     </group>
   )
 }
@@ -73,7 +95,6 @@ function DowGate({
 function LockedGate({
   market,
   brick,
-  metal,
 }: {
   market: (typeof LOCKED_MARKETS)[number]
   brick: THREE.Texture
@@ -81,24 +102,20 @@ function LockedGate({
 }) {
   const tint = market.id === 'nasdaq' ? '#224466' : market.id === 'gold' ? '#6a5a20' : '#3a2a18'
   return (
-    <group position={market.position}>
-      <mesh position={[0, 4.6, 0]} castShadow>
-        <boxGeometry args={[11, 9.2, 2.6]} />
+    <group position={market.position} scale={0.42}>
+      <mesh position={[0, 3.6, 0]} castShadow>
+        <boxGeometry args={[8, 7.2, 5.2]} />
         <meshStandardMaterial map={brick} color={tint} roughness={0.9} />
       </mesh>
-      <mesh position={[0, 2.6, 1.4]}>
-        <boxGeometry args={[4.2, 5, 0.25]} />
+      <mesh position={[0, 2.2, 2.7]}>
+        <boxGeometry args={[3.4, 4, 0.2]} />
         <meshStandardMaterial color="#080808" metalness={0.4} roughness={0.5} />
       </mesh>
-      <mesh position={[0, 2.8, 1.55]} rotation={[0, 0, 0.6]}>
-        <torusGeometry args={[0.7, 0.08, 8, 20]} />
+      <mesh position={[0, 2.4, 2.85]} rotation={[0, 0, 0.6]}>
+        <torusGeometry args={[0.55, 0.07, 8, 20]} />
         <meshStandardMaterial color="#c9a227" metalness={0.9} roughness={0.25} />
       </mesh>
-      <mesh position={[0, 10, 0]}>
-        <boxGeometry args={[12, 1.3, 3]} />
-        <meshStandardMaterial map={metal} color="#1a1a20" metalness={0.55} />
-      </mesh>
-      <Sign text={`${market.name}  ·  LOCKED`} color="#8a90a0" y={10} />
+      <Sign text={`${market.name}  ·  LOCKED`} color="#8a90a0" y={8.2} />
     </group>
   )
 }
@@ -120,33 +137,11 @@ function Sign({ text, color, y }: { text: string; color: string; y: number }) {
     return t
   }, [text, color])
   return (
-    <mesh position={[0, y, 1.7]}>
-      <planeGeometry args={[10, 1.6]} />
-      <meshBasicMaterial map={tex} toneMapped={false} />
-    </mesh>
-  )
-}
-
-function Skyline({ brick }: { brick: THREE.Texture }) {
-  const buildings = useMemo(
-    () =>
-      Array.from({ length: 22 }, (_, i) => ({
-        x: -50 + i * 5.2,
-        z: -38 - (i % 3) * 4,
-        w: 3 + (i % 4),
-        h: 10 + (i * 7) % 18,
-        d: 4,
-      })),
-    [],
-  )
-  return (
-    <group>
-      {buildings.map((b, i) => (
-        <mesh key={i} position={[b.x, b.h / 2, b.z]} castShadow>
-          <boxGeometry args={[b.w, b.h, b.d]} />
-          <meshStandardMaterial map={brick} color="#1c2230" roughness={0.95} />
-        </mesh>
-      ))}
-    </group>
+    <Billboard position={[0, y, 0]} follow>
+      <mesh>
+        <planeGeometry args={[10, 1.6]} />
+        <meshBasicMaterial map={tex} toneMapped={false} />
+      </mesh>
+    </Billboard>
   )
 }

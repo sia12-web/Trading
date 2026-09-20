@@ -1,14 +1,24 @@
+import { Billboard } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { fmtPx } from '../game/auction'
-import { closeInspect, getGame, skipToLive, backToHub, setPlayer, setPointerLocked, takeAuction, toggleInspect } from '../game/gameStore'
-import { COLLISIONS } from '../game/stores'
+import {
+  clearWalkTarget,
+  closeInspect,
+  getGame,
+  getWalkTarget,
+  skipToLive,
+  backToHub,
+  setPlayer,
+  takeAuction,
+  toggleInspect,
+} from '../game/gameStore'
+import { COLLISIONS, YARD } from '../game/stores'
 import { useGame } from '../ui/useGame'
 
-const SPEED = 9
-const SPRINT = 15.5
-const BOUNDS = { minX: -62, maxX: 58, minZ: -54, maxZ: 48 }
+const SPEED = 6.2
+const SPRINT = 10.5
 
 const keys = {
   w: false,
@@ -21,8 +31,9 @@ const keys = {
 function blocked(x: number, z: number, enabled: boolean): boolean {
   if (!enabled) return false
   for (const c of COLLISIONS) {
-    if (Math.abs(x - c.x) < c.w / 2 + 0.7 && Math.abs(z - c.z) < c.d / 2 + 0.7) return true
+    if (Math.abs(x - c.x) < c.w / 2 + 0.45 && Math.abs(z - c.z) < c.d / 2 + 0.45) return true
   }
+  if (Math.abs(x) > YARD - 0.8 || Math.abs(z) > YARD - 0.8) return true
   return false
 }
 
@@ -58,110 +69,110 @@ export function bindPlayerKeys() {
   }
 }
 
+/** Price as a Clash-style unit on the floor. Camera is owned by IsoCamera. */
 export function Player({
   spawn,
-  bounds,
-  camDist = 7.4,
   collide = true,
+  bounds,
 }: {
   spawn: [number, number, number]
-  bounds?: Partial<typeof BOUNDS>
-  camDist?: number
   collide?: boolean
+  bounds?: { minX: number; maxX: number; minZ: number; maxZ: number }
 }) {
   const g = useGame()
-  const { camera, gl } = useThree()
+  const { camera } = useThree()
   const group = useRef<THREE.Group>(null)
-  const yaw = useRef(g.player.yaw)
+  const yaw = useRef(0)
   const pos = useRef(new THREE.Vector3(...spawn))
   const bob = useRef(0)
   const vel = useRef(0)
-  const lim = { ...BOUNDS, ...bounds }
+  const fwd = useRef(new THREE.Vector3())
+  const right = useRef(new THREE.Vector3())
 
   useEffect(() => {
     pos.current.set(spawn[0], spawn[1], spawn[2])
-    yaw.current = getGame().player.yaw
   }, [spawn[0], spawn[1], spawn[2]])
-
-  useEffect(() => {
-    const el = gl.domElement
-    const onClick = () => {
-      if (document.pointerLockElement !== el) el.requestPointerLock()
-    }
-    const onLock = () => setPointerLocked(document.pointerLockElement === el)
-    const onMove = (e: MouseEvent) => {
-      if (document.pointerLockElement !== el) return
-      yaw.current -= e.movementX * 0.0024
-    }
-    el.addEventListener('click', onClick)
-    document.addEventListener('pointerlockchange', onLock)
-    document.addEventListener('mousemove', onMove)
-    return () => {
-      el.removeEventListener('click', onClick)
-      document.removeEventListener('pointerlockchange', onLock)
-      document.removeEventListener('mousemove', onMove)
-    }
-  }, [gl])
 
   useFrame((_, dt) => {
     const snap = getGame()
     const frozen = snap.phase === 'opening'
-    let ix = 0
-    let iz = 0
+    fwd.current.set(0, 0, -1).applyQuaternion(camera.quaternion)
+    fwd.current.y = 0
+    if (fwd.current.lengthSq() < 0.0001) fwd.current.set(-1, 0, -1)
+    fwd.current.normalize()
+    right.current.set(1, 0, 0).applyQuaternion(camera.quaternion)
+    right.current.y = 0
+    right.current.normalize()
+
+    let mx = 0
+    let mz = 0
     if (!frozen) {
-      if (keys.w) iz -= 1
-      if (keys.s) iz += 1
-      if (keys.a) ix -= 1
-      if (keys.d) ix += 1
+      if (keys.w) {
+        mx += fwd.current.x
+        mz += fwd.current.z
+      }
+      if (keys.s) {
+        mx -= fwd.current.x
+        mz -= fwd.current.z
+      }
+      if (keys.d) {
+        mx += right.current.x
+        mz += right.current.z
+      }
+      if (keys.a) {
+        mx -= right.current.x
+        mz -= right.current.z
+      }
+      const target = getWalkTarget()
+      if (target && mx === 0 && mz === 0) {
+        const tx = target.x - pos.current.x
+        const tz = target.z - pos.current.z
+        const dist = Math.hypot(tx, tz)
+        if (dist < 0.35) clearWalkTarget()
+        else {
+          mx = tx / dist
+          mz = tz / dist
+        }
+      } else if (mx !== 0 || mz !== 0) {
+        clearWalkTarget()
+      }
     }
-    const moving = ix !== 0 || iz !== 0
-    const speed = (keys.shift ? SPRINT : SPEED) * (snap.scene === 'hub' ? 0.85 : 1)
+
+    const moving = mx !== 0 || mz !== 0
+    const speed = keys.shift ? SPRINT : SPEED
     if (moving) {
-      const len = Math.hypot(ix, iz)
-      ix /= len
-      iz /= len
-      const c = Math.cos(yaw.current)
-      const s = Math.sin(yaw.current)
-      const dx = ix * c + iz * s
-      const dz = -ix * s + iz * c
+      const len = Math.hypot(mx, mz) || 1
+      mx /= len
+      mz /= len
       const step = speed * dt
-      const nx = THREE.MathUtils.clamp(pos.current.x + dx * step, lim.minX, lim.maxX)
-      const nz = THREE.MathUtils.clamp(pos.current.z + dz * step, lim.minZ, lim.maxZ)
+      const nx = THREE.MathUtils.clamp(pos.current.x + mx * step, bounds?.minX ?? -YARD, bounds?.maxX ?? YARD)
+      const nz = THREE.MathUtils.clamp(pos.current.z + mz * step, bounds?.minZ ?? -YARD, bounds?.maxZ ?? YARD)
       if (!blocked(nx, pos.current.z, collide)) pos.current.x = nx
       if (!blocked(pos.current.x, nz, collide)) pos.current.z = nz
-      vel.current = THREE.MathUtils.lerp(vel.current, 1, 0.15)
+      yaw.current = Math.atan2(mx, mz)
+      vel.current = THREE.MathUtils.lerp(vel.current, 1, 0.18)
     } else {
-      vel.current = THREE.MathUtils.lerp(vel.current, 0, 0.12)
+      vel.current = THREE.MathUtils.lerp(vel.current, 0, 0.14)
     }
-    bob.current += dt * (4 + vel.current * 8)
+    bob.current += dt * (5 + vel.current * 8)
 
     if (group.current) {
       group.current.position.set(pos.current.x, 0, pos.current.z)
       group.current.rotation.y = yaw.current
     }
-    setPlayer({ x: pos.current.x, y: pos.current.y, z: pos.current.z, yaw: yaw.current })
-
-    const behind = new THREE.Vector3(
-      pos.current.x + Math.sin(yaw.current) * camDist,
-      3.6 + vel.current * 0.4,
-      pos.current.z + Math.cos(yaw.current) * camDist,
-    )
-    if (snap.phase === 'opening') {
-      const t = snap.openElapsed / 7.5
-      camera.position.lerp(new THREE.Vector3(8 - t * 6, 5.5 - t * 1.2, 22 - t * 8), 0.06)
-      camera.lookAt(0, 3 + t, 0)
-    } else {
-      camera.position.lerp(behind, 1 - Math.pow(0.001, dt))
-      camera.lookAt(pos.current.x, 1.55, pos.current.z)
-    }
+    setPlayer({ x: pos.current.x, y: 0, z: pos.current.z, yaw: yaw.current })
   })
 
   const ticker = fmtPx(g.livePrice)
+  const selected = Boolean(g.nearby || g.inspecting)
 
   return (
-    <group ref={group} position={spawn}>
+    <group ref={group} position={spawn} scale={0.72}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
+        <ringGeometry args={[0.55, 0.72, 28]} />
+        <meshBasicMaterial color={selected ? '#d4a046' : '#f4efe6'} transparent opacity={0.9} />
+      </mesh>
       <PriceBody vel={vel} bob={bob} label={ticker} />
-      <pointLight color="#f4d29a" intensity={1.6} distance={9} position={[0, 2.1, 0]} />
     </group>
   )
 }
@@ -175,7 +186,6 @@ function PriceBody({
   bob: { current: number }
   label: string
 }) {
-  const body = useRef<THREE.Group>(null)
   const left = useRef<THREE.Mesh>(null)
   const right = useRef<THREE.Mesh>(null)
   const canvas = useMemo(() => {
@@ -196,7 +206,7 @@ function PriceBody({
     ctx.fillStyle = '#07090d'
     ctx.fillRect(0, 0, 512, 160)
     ctx.strokeStyle = '#d4a046'
-    ctx.lineWidth = 8
+    ctx.lineWidth = 10
     ctx.strokeRect(10, 10, 492, 140)
     ctx.fillStyle = '#f4efe6'
     ctx.font = 'bold 72px IBM Plex Mono, monospace'
@@ -209,44 +219,41 @@ function PriceBody({
     const walk = vel.current
     const b = bob.current
     const leg = Math.sin(b) * 0.45 * walk
-    if (body.current) body.current.position.y = 0
     if (left.current) left.current.rotation.x = leg
     if (right.current) right.current.rotation.x = -leg
   })
 
   return (
-    <group ref={body}>
-      <mesh position={[0, 1.15, 0]} castShadow>
-        <capsuleGeometry args={[0.32, 0.85, 6, 12]} />
+    <group>
+      <mesh position={[0, 1.05, 0]} castShadow>
+        <capsuleGeometry args={[0.32, 0.7, 6, 12]} />
         <meshPhysicalMaterial
           color="#c4a574"
           metalness={0.92}
           roughness={0.18}
           emissive="#3a2a12"
-          emissiveIntensity={0.35}
+          emissiveIntensity={0.45}
           clearcoat={0.6}
         />
       </mesh>
-      <mesh position={[0, 2.05, 0]} castShadow>
-        <sphereGeometry args={[0.28, 20, 16]} />
-        <meshPhysicalMaterial color="#efe6d6" metalness={0.7} roughness={0.22} emissive="#d4a046" emissiveIntensity={0.5} />
+      <mesh position={[0, 1.85, 0]} castShadow>
+        <sphereGeometry args={[0.26, 16, 12]} />
+        <meshPhysicalMaterial color="#efe6d6" metalness={0.7} roughness={0.22} emissive="#d4a046" emissiveIntensity={0.55} />
       </mesh>
-      <mesh ref={left} position={[-0.18, 0.45, 0]} castShadow>
-        <capsuleGeometry args={[0.1, 0.55, 4, 8]} />
+      <mesh ref={left} position={[-0.16, 0.4, 0]} castShadow>
+        <capsuleGeometry args={[0.09, 0.42, 4, 8]} />
         <meshStandardMaterial color="#2a241c" metalness={0.4} roughness={0.5} />
       </mesh>
-      <mesh ref={right} position={[0.18, 0.45, 0]} castShadow>
-        <capsuleGeometry args={[0.1, 0.55, 4, 8]} />
+      <mesh ref={right} position={[0.16, 0.4, 0]} castShadow>
+        <capsuleGeometry args={[0.09, 0.42, 4, 8]} />
         <meshStandardMaterial color="#2a241c" metalness={0.4} roughness={0.5} />
       </mesh>
-      <mesh position={[0, 2.72, 0.02]}>
-        <planeGeometry args={[1.55, 0.48]} />
-        <meshBasicMaterial map={tex} toneMapped={false} />
-      </mesh>
-      <mesh position={[0, 2.05, 0.18]}>
-        <sphereGeometry args={[0.06, 8, 8]} />
-        <meshBasicMaterial color="#fff2c4" />
-      </mesh>
+      <Billboard position={[0, 2.55, 0]} follow>
+        <mesh>
+          <planeGeometry args={[1.7, 0.52]} />
+          <meshBasicMaterial map={tex} toneMapped={false} />
+        </mesh>
+      </Billboard>
     </group>
   )
 }

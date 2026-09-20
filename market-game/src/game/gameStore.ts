@@ -94,7 +94,7 @@ function fresh(): GameSnapshot {
     phase: 'preopen',
     clockMin: PREOPEN_MIN,
     openElapsed: 0,
-    player: { x: 0, y: 0, z: 8, yaw: 0 },
+    player: { x: 0, y: 0, z: 1.8, yaw: 0 },
     livePrice: market.priorClose,
     avwap: { ...market.avwap },
     nearby: null,
@@ -144,9 +144,9 @@ export function enterDow() {
     scene: 'dow',
     phase: 'preopen',
     clockMin: PREOPEN_MIN,
-    player: { x: 0, y: 0, z: 14, yaw: Math.PI },
+    player: { x: 1.6, y: 0, z: 1.6, yaw: 0 },
     livePrice: market.priorClose,
-    message: 'NYC cash is about to open. Walk Price toward the bell.',
+    message: 'NYC cash is about to open. Move Price to a store.',
   }
   emit()
 }
@@ -170,7 +170,7 @@ export function skipToLive() {
     floorAlive: 1,
     livePrice: market.openPrint,
     message: 'Market is open. Visit the stores.',
-    player: state.scene === 'dow' ? state.player : { x: 0, y: 0, z: 14, yaw: Math.PI },
+    player: state.scene === 'dow' ? state.player : { x: 1.6, y: 0, z: 1.6, yaw: 0 },
   })
 }
 
@@ -202,8 +202,26 @@ export function toggleInspect() {
   })
 }
 
+export function inspectStore(id: StoreId) {
+  set({ inspecting: id, nearby: id, message: null })
+}
+
 export function closeInspect() {
   if (state.inspecting) set({ inspecting: null })
+}
+
+let walkTarget: { x: number; z: number } | null = null
+
+export function setWalkTarget(x: number, z: number) {
+  walkTarget = { x, z }
+}
+
+export function getWalkTarget() {
+  return walkTarget
+}
+
+export function clearWalkTarget() {
+  walkTarget = null
 }
 
 export function storeRead(id: StoreId, snap: GameSnapshot = state): StoreRead {

@@ -14,61 +14,49 @@ export function Hud() {
   if (g.scene === 'hub') return <HubHud />
 
   return (
-    <div className="hud">
-      <div className="topbar">
-        <div className="brand">
-          <div className="kicker">FUTURES WORLD</div>
-          <h1>DOW DISTRICT</h1>
-          <button className="ghost" onClick={backToHub} style={{ marginTop: 8, width: 'auto' }}>
-            ← HUB
+    <div className="hud iso-hud">
+      <div className="chip chip-tl">
+        <div className="kicker">FUTURES WORLD</div>
+        <h1>DOW DISTRICT</h1>
+        <button className="ghost" onClick={backToHub}>
+          ← HUB
+        </button>
+        <div className="factor-row">
+          <span>PRICE you</span>
+          <span>VOLUME divergence</span>
+          <span>TIME opportunity</span>
+        </div>
+      </div>
+
+      <div className="chip chip-tr">
+        <div className="ny">NEW YORK</div>
+        <div className="time">{formatNyClock(g.clockMin)}</div>
+        <div className="phase">{phaseLabel}</div>
+        <div className="res">
+          <b>PRICE</b> {fmtPx(g.livePrice)}
+        </div>
+        <div className="res dim">
+          5M AVWAP {fmtPx1(g.avwap.vwap)} · σ {fmtPx1(g.avwap.sigma)}
+        </div>
+        <div className={'res ' + (g.pnl >= 0 ? 'up' : 'down')}>
+          P&L {g.pnl >= 0 ? '+' : ''}
+          {g.pnl.toFixed(1)} pts
+        </div>
+        {g.phase !== 'live' && (
+          <button className="ghost" onClick={skipToLive} style={{ marginTop: 8, width: '100%' }}>
+            SKIP TO OPEN
           </button>
-        </div>
-        <div className="px-live">
-          <div className="lbl">PRICE · YM</div>
-          <div className="num">{fmtPx(g.livePrice)}</div>
-          <div className="pnl">
-            5M AVWAP {fmtPx1(g.avwap.vwap)} · σ {fmtPx1(g.avwap.sigma)} · P&L{' '}
-            <span className={g.pnl >= 0 ? 'up' : 'down'}>
-              {g.pnl >= 0 ? '+' : ''}
-              {g.pnl.toFixed(1)} pts
-            </span>
-          </div>
-        </div>
-        <div className="clock-block">
-          <div className="ny">NEW YORK</div>
-          <div className="time">{formatNyClock(g.clockMin)}</div>
-          <div className="phase">{phaseLabel}</div>
-          {g.phase !== 'live' && (
-            <button className="ghost" onClick={skipToLive} style={{ marginTop: 8 }}>
-              SKIP TO OPEN
-            </button>
-          )}
-        </div>
+        )}
       </div>
 
-      <div className="factors">
-        <div className="factor">
-          <b>PRICE</b>
-          <span>You. Advertising. Walk into a store that is bidding for attention.</span>
-        </div>
-        <div className="factor">
-          <b>VOLUME</b>
-          <span>Divergence. Does size confirm the offer, or is the store louder than the tape?</span>
-        </div>
-        <div className="factor">
-          <b>TIME</b>
-          <span>Value is made with time. Fair already — or still an opportunity to act?</span>
-        </div>
-      </div>
-
-      <div className="tape">
+      <div className="chip chip-bl tape">
         <h2>AUCTION TAPE</h2>
-        {g.fills.length === 0 && <div style={{ opacity: 0.55 }}>No prints yet. Take an auction.</div>}
+        {g.fills.length === 0 && <div style={{ opacity: 0.55 }}>No prints yet.</div>}
         <ul>
-          {g.fills.map((f) => (
+          {g.fills.slice(0, 5).map((f) => (
             <li key={f.id}>
               <span className={f.side}>{f.side.toUpperCase()}</span>
-              <span>{STORES.find((s) => s.id === f.storeId)?.name}</span>
+              <span>{STORES.find((s) => s.id === f.storeId)?.name.replace(/ .*/, '')}</span>
               <span>{fmtPx1(f.fill)}</span>
             </li>
           ))}
@@ -86,57 +74,46 @@ export function Hud() {
       )}
 
       {g.phase === 'live' && !read && (
-        <div className="prompt">
+        <div className="prompt iso-prompt">
           {g.nearby ? (
             <>
-              Approach confirmed. Press <span className="key">E</span> to read volume & time at{' '}
-              {STORES.find((s) => s.id === g.nearby)?.name}
+              Press <span className="key">E</span> or click the building — {STORES.find((s) => s.id === g.nearby)?.name}
             </>
           ) : (
             <>
-              Click to look · <span className="key">WASD</span> walk · visit Yesterday, 5-Day, and 5-Month stores
+              <span className="key">WASD</span> move Price · click a store · click ground to walk
             </>
           )}
         </div>
       )}
 
       {g.phase === 'preopen' && (
-        <div className="prompt">
-          Shutters are down. The bell is armed. Clock runs to <span className="key">9:30 AM NYC</span>.
+        <div className="prompt iso-prompt">
+          Shutters down. Bell armed. Clock runs to <span className="key">9:30 AM NYC</span>.
         </div>
       )}
 
       {read && g.phase === 'live' && <StorePanel />}
-      {g.pointerLocked && <div className="crosshair" />}
     </div>
   )
 }
 
 function HubHud() {
   return (
-    <div className="hud">
-      <div className="topbar">
-        <div className="brand">
-          <div className="kicker">SAM FAR · AUCTION WORLDS</div>
-          <h1>MARKET GATE</h1>
-        </div>
-      </div>
-      <div className="hub-copy">
-        <h1>
-          MARKETS ARE
-          <br />
-          PLACES
-        </h1>
-        <p>
-          Walk Price to the DOW gate — industrial America. NASDAQ, gold, and oil stay locked until this
-          district feels like a live floor.
+    <div className="hud iso-hud">
+      <div className="chip chip-tl">
+        <div className="kicker">SAM FAR · AUCTION WORLDS</div>
+        <h1>MARKET GATE</h1>
+        <p className="hub-blurb">
+          Four markets. Only DOW is unlocked. Click the red mill or press ENTER DOW.
         </p>
-        <p style={{ marginTop: 10, fontFamily: 'IBM Plex Mono', fontSize: 13, color: '#d4a046' }}>
-          WASD MOVE · CLICK LOOK · E ENTER / INSPECT
-        </p>
-        <button className="ghost hit" onClick={() => enterDow()} style={{ marginTop: 16, padding: '12px 18px', fontSize: 16 }}>
+        <button className="ghost hit" onClick={() => enterDow()}>
           ENTER DOW DISTRICT
         </button>
+      </div>
+      <div className="chip chip-tr">
+        <div className="ny">ISOMETRIC</div>
+        <div className="phase">WASD MOVE · CLICK DOW</div>
       </div>
       <div id="locked-msg" className="locked-toast" style={{ opacity: 0 }} />
     </div>
