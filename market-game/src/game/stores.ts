@@ -147,14 +147,14 @@ export const COURT_STENCILS = [
  */
 export const STORE_PLAQUES = [
   { word: 'FOUNDRY', ink: '#e07040', x: -5.25, z: 11.75, wide: 4.35 },
-  { word: 'HALL', ink: '#e8b050', x: 1.65, z: 11.35, wide: 3.45 },
+  { word: 'HALL', ink: '#e8b050', x: 1.85, z: 13.15, wide: 3.55 },
   { word: 'DOCK', ink: '#6aa0b8', x: 7.05, z: 11.05, wide: 3.45 },
   { word: 'ALLEY', ink: '#7a90a0', x: 11.15, z: 6.75, wide: 3.55 },
   { word: 'MILL', ink: '#d48848', x: 11.25, z: 3.05, wide: 3.45 },
   { word: 'YARD', ink: '#d48848', x: 11.35, z: 0.55, wide: 3.35 },
-  { word: 'PIT', ink: '#c4a060', x: -7.05, z: 8.75, wide: 3.25 },
-  { word: 'SPIRE', ink: '#6ab0c4', x: -7.15, z: 6.05, wide: 3.95 },
-  { word: 'LOFT', ink: '#7a98c0', x: -7.05, z: 2.65, wide: 3.35 },
+  { word: 'PIT', ink: '#c4a060', x: -10.35, z: 13.55, wide: 3.25 },
+  { word: 'SPIRE', ink: '#6ab0c4', x: -8.05, z: 14.65, wide: 3.95 },
+  { word: 'LOFT', ink: '#7a98c0', x: -10.15, z: 12.05, wide: 3.35 },
 ] as const
 
 const SHORT: Record<StoreDef['building'], string> = {
