@@ -171,7 +171,7 @@ export function enterDow() {
     scene: 'dow',
     phase: 'preopen',
     clockMin: PREOPEN_MIN,
-    player: { x: 3.35, y: 0, z: 9.35, yaw: 0 },
+    player: { x: 3.4, y: 0, z: 9.85, yaw: 0 },
     livePrice: market.priorClose,
     message: 'NYC cash is about to open. Move Price to a store.',
   }
@@ -201,7 +201,7 @@ export function skipToOpen() {
     message: null,
     liveVol: tape.liveVol,
     tpo: tape.tpo,
-    player: state.scene === 'dow' ? state.player : { x: 3.35, y: 0, z: 9.35, yaw: 0 },
+    player: state.scene === 'dow' ? state.player : { x: 3.4, y: 0, z: 9.85, yaw: 0 },
   })
 }
 

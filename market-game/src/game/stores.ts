@@ -13,7 +13,7 @@ export const STORES: StoreDef[] = [
     subtitle: 'Yesterday NYC · High Volume Node',
     theory:
       'Acceptance. Trade clustered here yesterday. Size should show up if Price is advertising a real offer — empty furnaces mean divergence.',
-    position: [-5.6, 0, 7.15],
+    position: [-6.9, 0, 7.55],
     accent: '#c45c2a',
     building: 'foundry',
   },
@@ -25,7 +25,7 @@ export const STORES: StoreDef[] = [
     subtitle: 'Yesterday NYC · Point of Control / Fair Value',
     theory:
       'The fairest price of yesterday’s cash session — highest traded volume. Value is made with time; lingering here balances the day.',
-    position: [0, 0, 7.55],
+    position: [0, 0, 8.05],
     accent: '#b45309',
     building: 'hall',
   },
@@ -37,7 +37,7 @@ export const STORES: StoreDef[] = [
     subtitle: 'Yesterday NYC · Low Volume Node',
     theory:
       'A vacuum. Price traveled fast and left little trade. If volume floods while you stand here, the single print is filling — window closing.',
-    position: [5.6, 0, 7.15],
+    position: [6.9, 0, 7.55],
     accent: '#3d6a8a',
     building: 'dock',
   },
@@ -49,7 +49,7 @@ export const STORES: StoreDef[] = [
     subtitle: 'Five-day FRVP · High Volume Node',
     theory:
       'Short-term money’s other home. A second distribution across five NYC sessions. Slow, heavy steel — fills, not spikes.',
-    position: [8.55, 0, -7.35],
+    position: [9.2, 0, -7.45],
     accent: '#a34a38',
     building: 'yard',
   },
@@ -61,7 +61,7 @@ export const STORES: StoreDef[] = [
     subtitle: 'Five-day FRVP · Point of Control',
     theory:
       'Composite fair value for the last five cash sessions. Wholesale vs retail is judged from here. Time spent = value accepted.',
-    position: [8.75, 0, -1.65],
+    position: [9.4, 0, -1.85],
     accent: '#c47a28',
     building: 'mill',
   },
@@ -73,7 +73,7 @@ export const STORES: StoreDef[] = [
     subtitle: 'Five-day FRVP · Low Volume Node',
     theory:
       'The air pocket between five-day distributions. Fast rejection if you belong elsewhere; a trap if you advertise without time.',
-    position: [8.55, 0, 3.55],
+    position: [9.2, 0, 3.35],
     accent: '#4a6578',
     building: 'alley',
   },
@@ -160,12 +160,12 @@ export function storeAtPoint(x: number, z: number, maxDist = 3.5): StoreDef | nu
 /** Tight cores so Price can walk the porch into each stall. Five-Day yaw swaps footprint. */
 export const COLLISIONS: Array<{ x: number; z: number; w: number; d: number }> = [
   { x: 0, z: 0, w: 1.35, d: 1.35 },
-  { x: -5.6, z: 6.95, w: 4.4, d: 2.2 },
-  { x: 0, z: 7.35, w: 5.2, d: 2.3 },
-  { x: 5.6, z: 7.0, w: 3.6, d: 1.75 },
-  { x: 8.75, z: -7.35, w: 2.15, d: 4.6 },
-  { x: 8.95, z: -1.65, w: 2.35, d: 5.4 },
-  { x: 8.75, z: 3.55, w: 1.8, d: 3.4 },
+  { x: -6.9, z: 7.35, w: 3.6, d: 2.05 },
+  { x: 0, z: 7.85, w: 4.2, d: 2.15 },
+  { x: 6.9, z: 7.4, w: 3.2, d: 1.7 },
+  { x: 9.4, z: -7.45, w: 2.05, d: 4.4 },
+  { x: 9.6, z: -1.85, w: 2.25, d: 5.2 },
+  { x: 9.4, z: 3.35, w: 1.7, d: 3.2 },
   { x: -9.65, z: 0, w: 1.55, d: 1.55 },
   { x: -9.25, z: -4.35, w: 2.2, d: 1.9 },
   { x: -9.25, z: 4.35, w: 2.2, d: 1.9 },

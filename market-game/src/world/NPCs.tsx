@@ -79,11 +79,11 @@ function Person({
   const ref = useRef<THREE.Group>(null)
   const left = useRef<THREE.Mesh>(null)
   const right = useRef<THREE.Mesh>(null)
-  const color = kind === 'broker' ? '#e07038' : kind === 'welder' ? '#3a7aa0' : '#c4a046'
+  const color = kind === 'broker' ? '#f0c040' : kind === 'welder' ? '#e07030' : '#8aa0b0'
   const yaw = storeYaw(store.range)
   const col = slot % 3
   const row = Math.floor(slot / 3)
-  const doorLocal: [number, number] = [(col - 1) * 0.62, 2.05 + row * 0.58]
+  const doorLocal: [number, number] = [(col - 1) * 0.7, 2.75 + row * 0.72]
   const worldDoor = rotate2(doorLocal, yaw)
   const home: [number, number] = [store.position[0] + worldDoor[0], store.position[2] + worldDoor[1]]
   const gate: [number, number] = [0.12 * ((seed % 3) - 1), 0.12 * ((seed % 2) - 0.5)]
@@ -101,7 +101,7 @@ function Person({
     ref.current.position.y = hop ? 0.34 + Math.abs(Math.sin(s.clock.elapsedTime * 16)) * 0.42 : 0
     ref.current.rotation.y = Math.atan2(store.position[0] - x, store.position[2] - z) || t
     ref.current.visible = alive > 0.08
-    ref.current.scale.setScalar(1.85 + 0.08 * alive)
+    ref.current.scale.setScalar(2.15 + 0.1 * alive)
     const leg = Math.sin(t * 8) * 0.5
     if (left.current) left.current.rotation.x = leaving || arrive < 0.92 ? leg : 0.08
     if (right.current) right.current.rotation.x = leaving || arrive < 0.92 ? -leg : -0.08
@@ -110,12 +110,12 @@ function Person({
   return (
     <group ref={ref} position={[home[0], 0, home[1]]}>
       <mesh position={[0, 0.72, 0]} castShadow>
-        <capsuleGeometry args={[0.24, 0.48, 4, 8]} />
-        <meshStandardMaterial color={color} roughness={0.52} emissive={color} emissiveIntensity={0.28} />
+        <capsuleGeometry args={[0.26, 0.52, 4, 8]} />
+        <meshBasicMaterial color={color} />
       </mesh>
-      <mesh position={[0, 1.18, 0]} castShadow>
-        <sphereGeometry args={[0.2, 8, 6]} />
-        <meshStandardMaterial color="#f0d0a8" emissive="#d4b090" emissiveIntensity={0.16} />
+      <mesh position={[0, 1.22, 0]} castShadow>
+        <sphereGeometry args={[0.22, 8, 6]} />
+        <meshBasicMaterial color="#f0d0a8" />
       </mesh>
       {kind !== 'broker' && (
         <mesh position={[0, 1.34, 0]} castShadow>

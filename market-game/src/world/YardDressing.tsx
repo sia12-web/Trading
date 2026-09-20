@@ -163,7 +163,7 @@ function PalletRows() {
 
 function RailSpur() {
   return (
-      <group position={[12.05, 0, -1.4]} rotation={[0, 0.08, 0]}>
+      <group position={[12.55, 0, -1.6]} rotation={[0, 0.08, 0]}>
       {[-0.42, 0.42].map((x) => (
         <mesh key={x} position={[x, 0.06, 0]}>
           <boxGeometry args={[0.08, 0.08, 12]} />
