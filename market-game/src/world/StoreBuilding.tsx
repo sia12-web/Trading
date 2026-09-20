@@ -40,22 +40,22 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
   const yaw = storeYaw(store.range)
   const shell =
     store.building === 'foundry'
-      ? { w: 4.45, d: 3.85, fasciaY: 3.85 }
+      ? { w: 4.45, d: 3.85, fasciaY: 2.42 }
       : store.building === 'hall'
-        ? { w: 4.7, d: 4.3, fasciaY: 3.95 }
+        ? { w: 4.7, d: 4.3, fasciaY: 2.48 }
         : store.building === 'dock'
-          ? { w: 4.2, d: 3.7, fasciaY: 3.75 }
+          ? { w: 4.2, d: 3.7, fasciaY: 2.38 }
           : store.building === 'yard'
-            ? { w: 5.4, d: 3.85, fasciaY: 3.55 }
+            ? { w: 5.4, d: 3.85, fasciaY: 2.35 }
             : store.building === 'mill'
-              ? { w: 6.3, d: 4.85, fasciaY: 3.65 }
+              ? { w: 6.3, d: 4.85, fasciaY: 2.42 }
               : store.building === 'alley'
-                ? { w: 3.7, d: 4.2, fasciaY: 3.55 }
+                ? { w: 3.7, d: 4.2, fasciaY: 2.35 }
                 : store.building === 'spire'
-                  ? { w: 3.55, d: 3.55, fasciaY: 4.05 }
+                  ? { w: 3.55, d: 3.55, fasciaY: 2.55 }
                   : store.building === 'loft'
-                    ? { w: 3.7, d: 3.55, fasciaY: 3.85 }
-                    : { w: 3.65, d: 3.5, fasciaY: 2.35 }
+                    ? { w: 3.7, d: 3.55, fasciaY: 2.48 }
+                    : { w: 3.65, d: 3.5, fasciaY: 1.85 }
   const gableX = store.range === 'fiveDay' ? shell.w * 0.52 : store.range === 'fiveMonth' ? -shell.w * 0.52 : 0
 
   return (
@@ -77,9 +77,9 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
       {store.building === 'loft' && <Loft brick={brick} metal={metal} avwap={g.avwap} stall={st} />}
       {store.building === 'pit' && <Pit brick={brick} metal={metal} avwap={g.avwap} stall={st} />}
       <RangeStoreys range={range} nodePx={price} color={store.accent} width={shell.w} depth={shell.d} />
-      <Fascia title={label} paint={store.accent} y={shell.fasciaY} width={Math.min(3.55, shell.w * 0.82)} z={shell.d * 0.52} />
+      <Fascia title={label} paint={store.accent} y={shell.fasciaY} width={Math.min(3.85, shell.w * 0.92)} z={shell.d * 0.52} />
       {gableX !== 0 && (
-        <GableSign title={label} paint={store.accent} x={gableX} y={shell.fasciaY - 0.15} />
+        <GableSign title={label} paint={store.accent} x={gableX} y={shell.fasciaY} />
       )}
       <ChalkBoard price={fmtPx(price)} y={store.building === 'pit' ? 1.05 : 1.4} z={shell.d * 0.52 + 0.12} pulse={printed} />
       <GoodsPile stall={st} kind={store.kind} z={shell.d * 0.55 + 0.55} />
@@ -129,40 +129,39 @@ function RangeStoreys({
   width: number
   depth: number
 }) {
-  const yLo = rangeHeight(range.lo, range.lo, range.hi, 0.22, 3.85)
-  const yHi = rangeHeight(range.hi, range.lo, range.hi, 0.22, 3.85)
-  const yVal = rangeHeight(range.val, range.lo, range.hi, 0.22, 3.85)
-  const yVah = rangeHeight(range.vah, range.lo, range.hi, 0.22, 3.85)
-  const yNode = rangeHeight(nodePx, range.lo, range.hi, 0.22, 3.85)
-  const bandH = Math.max(0.55, yVah - yVal)
+  const yLo = rangeHeight(range.lo, range.lo, range.hi, 0.22, 3.55)
+  const yHi = rangeHeight(range.hi, range.lo, range.hi, 0.22, 3.55)
+  const yVal = rangeHeight(range.val, range.lo, range.hi, 0.22, 3.55)
+  const yVah = rangeHeight(range.vah, range.lo, range.hi, 0.22, 3.55)
+  const yNode = rangeHeight(nodePx, range.lo, range.hi, 0.22, 3.55)
+  const bandH = Math.max(0.28, Math.min(0.42, yVah - yVal))
   const span = Math.max(1.05, yHi - yLo)
   const slats = 5
   return (
     <group>
       <mesh position={[0, (yVah + yVal) / 2, 0]} castShadow>
-        <boxGeometry args={[width + 0.14, Math.min(0.62, bandH), depth + 0.14]} />
+        <boxGeometry args={[width + 0.08, bandH, depth + 0.08]} />
         <meshStandardMaterial color={color} roughness={0.48} metalness={0.18} />
       </mesh>
       {Array.from({ length: slats }, (_, i) => {
         const y = yLo + (span * i) / (slats - 1)
-        const cap = i === 0 || i === slats - 1
         return (
           <mesh key={i} position={[0, y, 0]} castShadow>
-            <boxGeometry args={[width + 0.22, cap ? 0.16 : 0.1, depth + 0.22]} />
-            <meshStandardMaterial color={i === 0 ? '#2a1810' : i === slats - 1 ? '#f0c84a' : '#6a4a30'} roughness={0.52} />
+            <boxGeometry args={[width + 0.1, 0.07, depth + 0.1]} />
+            <meshStandardMaterial color={i === 0 ? '#2a1810' : i === slats - 1 ? '#e8c04a' : '#6a4a30'} roughness={0.52} />
           </mesh>
         )
       })}
       <mesh position={[0, yHi, 0]} castShadow>
-        <boxGeometry args={[width + 0.34, 0.22, depth + 0.34]} />
+        <boxGeometry args={[width + 0.14, 0.12, depth + 0.14]} />
         <meshBasicMaterial color="#f0c84a" />
       </mesh>
       <mesh position={[0, yLo, 0]} castShadow>
-        <boxGeometry args={[width + 0.28, 0.2, depth + 0.28]} />
+        <boxGeometry args={[width + 0.12, 0.12, depth + 0.12]} />
         <meshBasicMaterial color="#2a1810" />
       </mesh>
       <mesh position={[0, yNode, 0]} castShadow>
-        <boxGeometry args={[width + 0.2, 0.14, depth + 0.2]} />
+        <boxGeometry args={[width + 0.1, 0.1, depth + 0.1]} />
         <meshStandardMaterial color="#e8c070" roughness={0.4} metalness={0.28} />
       </mesh>
     </group>
@@ -174,7 +173,7 @@ function Fascia({ title, paint, y, width, z }: { title: string; paint: string; y
   useEffect(() => () => tex.dispose(), [tex])
   return (
     <mesh position={[0, y, z]} castShadow>
-      <boxGeometry args={[width, 0.72, 0.16]} />
+      <boxGeometry args={[width, 0.88, 0.18]} />
       <meshStandardMaterial map={tex} roughness={0.48} />
     </mesh>
   )
@@ -185,7 +184,7 @@ function GableSign({ title, paint, x, y }: { title: string; paint: string; x: nu
   useEffect(() => () => tex.dispose(), [tex])
   return (
     <mesh position={[x, y, 0]} rotation={[0, (x > 0 ? 1 : -1) * (Math.PI / 2), 0]} castShadow>
-      <boxGeometry args={[2.95, 0.7, 0.16]} />
+      <boxGeometry args={[3.55, 0.88, 0.18]} />
       <meshStandardMaterial map={tex} roughness={0.48} />
     </mesh>
   )
