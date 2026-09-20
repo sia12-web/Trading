@@ -326,6 +326,12 @@ function CourtPlaque({
         <planeGeometry args={[wide * 0.94, 0.58]} />
         <meshBasicMaterial map={tex} toneMapped={false} />
       </mesh>
+      {onPick && (
+        <mesh position={[0, 1.2, 0.4]}>
+          <planeGeometry args={[wide + 0.8, 1.55]} />
+          <meshBasicMaterial transparent opacity={0.01} depthWrite={false} />
+        </mesh>
+      )}
     </group>
   )
 }
@@ -366,6 +372,12 @@ function WallStrip({
         <planeGeometry args={[wide, 0.48]} />
         <meshBasicMaterial map={tex} toneMapped={false} />
       </mesh>
+      {onPick && (
+        <mesh position={[0, 1.55, 0.2]}>
+          <planeGeometry args={[wide + 0.7, 1.25]} />
+          <meshBasicMaterial transparent opacity={0.01} depthWrite={false} />
+        </mesh>
+      )}
     </group>
   )
 }

@@ -139,7 +139,7 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
           inspectStore(store.id)
         }}
       >
-        <planeGeometry args={[2.65, 2.15]} />
+        <planeGeometry args={store.building === 'foundry' ? [3.85, 3.25] : [2.65, 2.15]} />
         <meshBasicMaterial transparent opacity={0.01} depthWrite={false} />
       </mesh>
     </group>

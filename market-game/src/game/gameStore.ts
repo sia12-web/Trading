@@ -490,3 +490,14 @@ export function tickGame(dt: number) {
 export function advertisedPrice(id: StoreId, snap: GameSnapshot = state): number {
   return advertisedFor(id, snap.avwap)
 }
+
+if (typeof window !== 'undefined') {
+  ;(window as unknown as { __dow: Record<string, unknown> }).__dow = {
+    inspectStore,
+    takeAuction,
+    skipToOpen,
+    backToHub,
+    enterDow,
+    getGame,
+  }
+}
