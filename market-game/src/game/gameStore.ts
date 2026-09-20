@@ -113,6 +113,7 @@ function kindOf(id: StoreId) {
 
 let fillSeq = 1
 let lastUiEmit = 0
+let openWallMs = 0
 
 function fresh(): GameSnapshot {
   return {
@@ -190,6 +191,7 @@ export function skipToOpen() {
     strikeBell()
   })
   const tape = floorTape()
+  openWallMs = performance.now()
   set({
     scene: 'dow',
     phase: 'opening',
@@ -375,6 +377,7 @@ export function tickGame(dt: number) {
     if (clockMin >= NY_OPEN_MIN) {
       void resumeAudio().then(strikeBell)
       const tape = floorTape()
+      openWallMs = performance.now()
       set({
         phase: 'opening',
         clockMin: NY_OPEN_MIN,
@@ -391,7 +394,7 @@ export function tickGame(dt: number) {
   }
 
   if (state.phase === 'opening') {
-    const openElapsed = state.openElapsed + dt
+    const openElapsed = (performance.now() - openWallMs) / 1000
     const shutter = Math.min(1, Math.max(0, (openElapsed - 0.35) / 4.2))
     const floorAlive = Math.min(1, Math.max(0, (openElapsed - 1.05) / 5.6))
     if (openElapsed >= OPEN_CINEMATIC_SEC) {

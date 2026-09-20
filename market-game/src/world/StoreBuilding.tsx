@@ -87,6 +87,17 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
           <meshBasicMaterial color="#d4a046" transparent opacity={0.88} />
         </mesh>
       )}
+      <mesh
+        position={[0, 0.07, 2.4]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        onClick={(e) => {
+          e.stopPropagation()
+          inspectStore(store.id)
+        }}
+      >
+        <planeGeometry args={[4.4, 3.4]} />
+        <meshBasicMaterial transparent opacity={0.01} depthWrite={false} />
+      </mesh>
     </group>
   )
 }

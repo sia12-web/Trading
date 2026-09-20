@@ -13,15 +13,13 @@ import { StoreBuilding } from '../world/StoreBuilding'
 export function DowScene() {
   useEffect(() => bindPlayerKeys(), [])
   useEffect(() => {
-    let raf = 0
     let last = performance.now()
-    const loop = (now: number) => {
-      tickGame(Math.min(0.05, (now - last) / 1000))
+    const id = window.setInterval(() => {
+      const now = performance.now()
+      tickGame(Math.min(0.2, (now - last) / 1000))
       last = now
-      raf = requestAnimationFrame(loop)
-    }
-    raf = requestAnimationFrame(loop)
-    return () => cancelAnimationFrame(raf)
+    }, 50)
+    return () => window.clearInterval(id)
   }, [])
 
   return (
