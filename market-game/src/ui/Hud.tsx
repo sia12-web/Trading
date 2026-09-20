@@ -1,5 +1,5 @@
 import { fmtPx, fmtPx1 } from '../game/auction'
-import { backToHub, enterDow, inStall, skipToOpen } from '../game/gameStore'
+import { backToHub, enterDow, inStall, skipToOpen, takeAuction } from '../game/gameStore'
 import { formatNyClock } from '../game/session'
 import { STORES } from '../game/stores'
 import { StorePanel } from './StorePanel'
@@ -49,10 +49,16 @@ export function Hud() {
 
       {g.phase === 'live' && (
         <div className="prompt iso-prompt">
-          {stall ? (
-            <>On the floor · B take · F fade</>
-          ) : g.nearby || g.inspecting ? (
-            <>Walk into the stall · B take · F fade</>
+          {stall || g.inspecting ? (
+            <>
+              On the floor{' '}
+              <button className="ghost hit" onClick={() => takeAuction('buy')}>
+                B take
+              </button>{' '}
+              <button className="ghost hit" onClick={() => takeAuction('sell')}>
+                F fade
+              </button>
+            </>
           ) : (
             <>WASD · walk a stall</>
           )}

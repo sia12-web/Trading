@@ -42,6 +42,7 @@ export type GameSnapshot = {
   pointerLocked: boolean
   message: string | null
   lastPrint: { storeId: StoreId; side: Side; at: number } | null
+  walkTo: { x: number; z: number } | null
 }
 
 const typicalVol: Record<StoreId, number> = {
@@ -109,6 +110,7 @@ function fresh(): GameSnapshot {
     pointerLocked: false,
     message: null,
     lastPrint: null,
+    walkTo: null,
   }
 }
 
@@ -209,32 +211,28 @@ export function toggleInspect() {
 
 export function inspectStore(id: StoreId) {
   const s = STORES.find((x) => x.id === id)
-  if (s) {
-    const porch =
-      s.range === 'fiveMonth'
-        ? { x: s.position[0] + 2.15, z: s.position[2] }
-        : { x: s.position[0], z: s.position[2] + 2.15 }
-    walkTarget = porch
-  }
-  set({ inspecting: id, nearby: id, message: null })
+  const porch = s
+    ? s.range === 'fiveMonth'
+      ? { x: s.position[0] + 2.15, z: s.position[2] }
+      : { x: s.position[0], z: s.position[2] + 2.15 }
+    : null
+  set({ inspecting: id, nearby: id, message: null, walkTo: porch })
 }
 
 export function closeInspect() {
   if (state.inspecting) set({ inspecting: null })
 }
 
-let walkTarget: { x: number; z: number } | null = null
-
 export function setWalkTarget(x: number, z: number) {
-  walkTarget = { x, z }
+  set({ walkTo: { x, z } }, false)
 }
 
 export function getWalkTarget() {
-  return walkTarget
+  return state.walkTo
 }
 
 export function clearWalkTarget() {
-  walkTarget = null
+  if (state.walkTo) set({ walkTo: null }, false)
 }
 
 export function storeRead(id: StoreId, snap: GameSnapshot = state): StoreRead {
@@ -284,9 +282,21 @@ export function inStall(snap: GameSnapshot = state): StoreId | null {
   return nearestStore(snap.player.x, snap.player.z, 3.15)?.id ?? null
 }
 
+function distToStore(id: StoreId, snap: GameSnapshot = state): number {
+  const s = STORES.find((x) => x.id === id)
+  if (!s) return Infinity
+  return Math.hypot(snap.player.x - s.position[0], snap.player.z - s.position[2])
+}
+
 export function takeAuction(side: Side) {
-  if (state.phase !== 'live') return
-  const id = inStall()
+  if (state.phase !== 'live') {
+    set({ message: 'Wait for the cash open.' })
+    return
+  }
+  const id =
+    inStall() ??
+    (state.inspecting && distToStore(state.inspecting) < 4.6 ? state.inspecting : null) ??
+    (state.nearby && distToStore(state.nearby) < 4.6 ? state.nearby : null)
   if (!id) {
     set({ message: 'Walk Price into a stall to take the auction.' })
     return

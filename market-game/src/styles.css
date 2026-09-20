@@ -473,13 +473,10 @@ canvas {
   font-size: 10px;
 }
 
-.iso-prompt {
-  bottom: 10px;
-  min-width: 0;
-  width: auto;
-  max-width: 280px;
-  padding: 5px 10px;
-  font-size: 11px;
+.iso-prompt button {
+  margin: 0 2px;
+  font-size: 10px;
+  padding: 2px 7px;
 }
 
 .iso-hud .store-panel {

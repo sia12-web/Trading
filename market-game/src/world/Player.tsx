@@ -58,10 +58,10 @@ export function bindPlayerKeys() {
     if (k === 'd') keys.d = false
     if (e.key === 'Shift') keys.shift = false
   }
-  window.addEventListener('keydown', down)
+  window.addEventListener('keydown', down, true)
   window.addEventListener('keyup', up)
   return () => {
-    window.removeEventListener('keydown', down)
+    window.removeEventListener('keydown', down, true)
     window.removeEventListener('keyup', up)
     keys.w = keys.a = keys.s = keys.d = keys.shift = false
   }
