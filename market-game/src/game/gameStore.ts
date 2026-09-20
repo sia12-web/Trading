@@ -94,7 +94,7 @@ function fresh(): GameSnapshot {
     phase: 'preopen',
     clockMin: PREOPEN_MIN,
     openElapsed: 0,
-    player: { x: 0, y: 0, z: 8, yaw: Math.PI },
+    player: { x: 0, y: 0, z: 8, yaw: 0 },
     livePrice: market.priorClose,
     avwap: { ...market.avwap },
     nearby: null,

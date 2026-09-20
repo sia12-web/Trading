@@ -31,7 +31,9 @@ canvas {
 }
 
 .hud button,
-.hud .hit {
+.hud .hit,
+.store-panel,
+.store-panel * {
   pointer-events: auto;
 }
 

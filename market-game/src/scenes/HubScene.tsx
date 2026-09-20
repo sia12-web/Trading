@@ -42,8 +42,8 @@ export function HubScene() {
       camera={{ position: [0, 6, 18], fov: 50, near: 0.1, far: 180 }}
       gl={{ antialias: true }}
       onCreated={({ gl }) => {
-        gl.setClearColor('#08090e')
-        gl.toneMappingExposure = 1.05
+        gl.setClearColor('#141824')
+        gl.toneMappingExposure = 1.25
       }}
     >
       <Suspense fallback={null}>
@@ -51,7 +51,7 @@ export function HubScene() {
         <HubInteract />
         <Player
           spawn={[0, 0, 6]}
-          camDist={8.2}
+          camDist={10}
           collide={false}
           bounds={{ minX: -28, maxX: 28, minZ: -28, maxZ: 28 }}
         />

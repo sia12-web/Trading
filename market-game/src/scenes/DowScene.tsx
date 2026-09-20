@@ -29,8 +29,8 @@ export function DowScene() {
       camera={{ position: [8, 5, 22], fov: 48, near: 0.1, far: 220 }}
       gl={{ antialias: true, powerPreference: 'high-performance' }}
       onCreated={({ gl }) => {
-        gl.setClearColor('#1a1410')
-        gl.toneMappingExposure = 1.12
+        gl.setClearColor('#241c16')
+        gl.toneMappingExposure = 1.35
       }}
     >
       <Suspense fallback={null}>

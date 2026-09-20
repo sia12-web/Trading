@@ -1,5 +1,5 @@
 import { fmtPx, fmtPx1 } from '../game/auction'
-import { backToHub, skipToLive } from '../game/gameStore'
+import { backToHub, enterDow, skipToLive } from '../game/gameStore'
 import { formatNyClock } from '../game/session'
 import { STORES } from '../game/stores'
 import { StorePanel } from './StorePanel'
@@ -134,6 +134,9 @@ function HubHud() {
         <p style={{ marginTop: 10, fontFamily: 'IBM Plex Mono', fontSize: 13, color: '#d4a046' }}>
           WASD MOVE · CLICK LOOK · E ENTER / INSPECT
         </p>
+        <button className="ghost hit" onClick={() => enterDow()} style={{ marginTop: 16, padding: '12px 18px', fontSize: 16 }}>
+          ENTER DOW DISTRICT
+        </button>
       </div>
       <div id="locked-msg" className="locked-toast" style={{ opacity: 0 }} />
     </div>

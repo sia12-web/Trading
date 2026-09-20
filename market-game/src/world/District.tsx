@@ -14,12 +14,12 @@ export function District() {
 
   return (
     <>
-      <hemisphereLight args={['#ffd9a8', '#1a1c22', g.phase === 'preopen' ? 0.28 : 0.55]} />
-      <ambientLight intensity={g.phase === 'preopen' ? 0.08 : 0.18} />
+      <hemisphereLight args={['#ffd9a8', '#1a1c22', g.phase === 'preopen' ? 0.55 : 0.85]} />
+      <ambientLight intensity={g.phase === 'preopen' ? 0.32 : 0.42} />
       <directionalLight
         position={[-30, sunY, 20]}
-        intensity={g.phase === 'preopen' ? 0.35 : 1.35}
-        color={g.phase === 'preopen' ? '#8aa0c8' : '#ffd4a8'}
+        intensity={g.phase === 'preopen' ? 1.05 : 1.85}
+        color={g.phase === 'preopen' ? '#c5d4ee' : '#ffd4a8'}
         castShadow
         shadow-mapSize={[2048, 2048]}
         shadow-camera-near={2}
@@ -29,23 +29,28 @@ export function District() {
         shadow-camera-top={70}
         shadow-camera-bottom={-70}
       />
-      <fog attach="fog" args={['#1c140f', 28, 120]} />
-      <color attach="background" args={[g.phase === 'preopen' ? '#07080d' : '#1a1410']} />
+      <fog attach="fog" args={[g.phase === 'preopen' ? '#161820' : '#2a221c', 48, 160]} />
+      <color attach="background" args={[g.phase === 'preopen' ? '#12141c' : '#241c16']} />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
         <planeGeometry args={[160, 140]} />
-        <meshStandardMaterial map={asphalt} roughness={0.95} color="#2a2926" />
+        <meshStandardMaterial map={asphalt} roughness={0.92} color="#4a4844" />
       </mesh>
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]} receiveShadow>
         <circleGeometry args={[16, 48]} />
-        <meshStandardMaterial map={concrete} color="#8a8178" roughness={0.9} />
+        <meshStandardMaterial map={concrete} color="#9a948c" roughness={0.86} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
         <ringGeometry args={[14.2, 14.7, 64]} />
         <meshStandardMaterial color="#d4a046" metalness={0.7} roughness={0.3} />
       </mesh>
 
+      <pointLight position={[0, 9, 0]} color="#ffd27a" intensity={14} distance={28} />
+      <pointLight position={[-22, 6, 32]} color="#e11d48" intensity={10} distance={18} />
+      <pointLight position={[0, 6, 34]} color="#f59e0b" intensity={12} distance={20} />
+      <pointLight position={[22, 6, 32]} color="#38bdf8" intensity={10} distance={18} />
+      <pointLight position={[-50, 12, 0]} color="#22d3ee" intensity={16} distance={26} />
       <BellTower metal={metal} brick={brick} ringing={g.phase === 'opening'} />
       <Backdrop brick={brick} metal={metal} />
       <Crates />

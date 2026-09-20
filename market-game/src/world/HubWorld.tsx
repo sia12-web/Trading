@@ -11,15 +11,15 @@ export function HubWorld() {
   return (
     <>
       <color attach="background" args={['#08090e']} />
-      <fog attach="fog" args={['#0b0d14', 18, 80]} />
-      <hemisphereLight args={['#6a7a98', '#120c08', 0.45]} />
-      <ambientLight intensity={0.12} />
-      <directionalLight position={[12, 22, 8]} intensity={0.9} color="#c8d4ea" castShadow />
-      <pointLight position={[0, 8, 0]} color="#d4a046" intensity={12} distance={28} />
+      <fog attach="fog" args={['#141824', 22, 95]} />
+      <hemisphereLight args={['#8a9ab8', '#120c08', 0.7]} />
+      <ambientLight intensity={0.38} />
+      <directionalLight position={[12, 22, 8]} intensity={1.55} color="#d8e2f4" castShadow />
+      <pointLight position={[0, 8, 0]} color="#d4a046" intensity={18} distance={36} />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
         <circleGeometry args={[42, 64]} />
-        <meshStandardMaterial map={concrete} color="#3a3a42" roughness={0.92} />
+        <meshStandardMaterial map={concrete} color="#6a6a74" roughness={0.88} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
         <ringGeometry args={[11, 11.4, 64]} />
