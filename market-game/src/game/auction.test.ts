@@ -11,7 +11,7 @@ import {
 } from './auction'
 import { buildDowMarket } from './marketData'
 import { OPEN_CINEMATIC_SEC } from './session'
-import { COURT_SIGNS, COURT_STENCILS, porchOf, STORE_PLAQUES, STORES } from './stores'
+import { COURT_SIGNS, COURT_STENCILS, porchOf, STORE_PLAQUES, STORES, storeShortName } from './stores'
 import type { OhlcvBar } from './types'
 
 function bar(partial: Partial<OhlcvBar> & { close: number }): OhlcvBar {
@@ -227,6 +227,19 @@ assert.ok(
   STORE_PLAQUES.find((s) => s.word === 'SPIRE')!.x < -8,
   'SPIRE is named on the west five-month court',
 )
+assert.ok(
+  STORE_PLAQUES.find((s) => s.word === 'SPIRE')!.z > 2,
+  'SPIRE plaque sits camera-near of the west court, not behind the foundry',
+)
+assert.ok(
+  STORE_PLAQUES.find((s) => s.word === 'LOFT')!.z > -2,
+  'LOFT plaque sits in the default Clash crop with the court names',
+)
+assert.equal(storeShortName('y-poc'), 'HALL', 'tape never prints AUCTION from AUCTION HALL')
+assert.equal(storeShortName('y-hvn'), 'FOUNDRY')
+assert.equal(storeShortName('y-lvn'), 'DOCK')
+assert.equal(storeShortName('5d-poc'), 'MILL')
+assert.equal(storeShortName('avwap'), 'SPIRE')
 
 const hallTime = timeOpportunity({ kind: 'poc', tpoAtPrice: 6.2, sessionProgress: 0.02 })
 const millTime = timeOpportunity({ kind: 'poc', tpoAtPrice: 0.4, sessionProgress: 0.02 })

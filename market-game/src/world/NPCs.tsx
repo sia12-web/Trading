@@ -103,7 +103,7 @@ function ShiftWalker({ seed, alive }: { seed: number; alive: number }) {
     const z = THREE.MathUtils.lerp(gate[1], dest[1], t)
     ref.current.position.set(x, 0, z)
     ref.current.rotation.y = Math.atan2(dest[0] - gate[0], dest[1] - gate[1])
-    ref.current.visible = alive > 0.02
+    ref.current.visible = true
     const walking = t < 0.92
     const leg = Math.sin(s.clock.elapsedTime * 10 + seed) * (walking ? 0.7 : 0.08)
     if (left.current) left.current.rotation.x = leg
@@ -112,7 +112,7 @@ function ShiftWalker({ seed, alive }: { seed: number; alive: number }) {
 
   const color = seed % 3 === 0 ? '#c4a046' : seed % 3 === 1 ? '#5a7a50' : '#8aa0b0'
   return (
-    <group ref={ref} position={[gate[0], 0, gate[1]]} scale={1.12}>
+    <group ref={ref} position={[gate[0], 0, gate[1]]} scale={1.28}>
       <TroopBody color={color} left={left} right={right} />
     </group>
   )
@@ -163,7 +163,7 @@ function Person({
     ref.current.position.z = z
     ref.current.position.y = hop ? 0.38 + Math.abs(Math.sin(s.clock.elapsedTime * 14)) * 0.5 : 0
     ref.current.rotation.y = Math.atan2(store.position[0] - x, store.position[2] - z) || t
-    ref.current.visible = alive > 0.04
+    ref.current.visible = true
     ref.current.scale.setScalar(1.02 + 0.06 * alive)
     const leg = Math.sin(t * 8) * 0.5
     if (left.current) left.current.rotation.x = leaving || arrive < 0.92 ? leg : 0.08
@@ -171,7 +171,7 @@ function Person({
   })
 
   return (
-    <group ref={ref} position={[home[0], 0, home[1]]} scale={1.15}>
+    <group ref={ref} position={[home[0], 0, home[1]]} scale={1.32}>
       <TroopBody color={color} left={left} right={right} hardhat={kind !== 'broker'} kit={kind} />
     </group>
   )

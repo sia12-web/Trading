@@ -76,91 +76,103 @@ function DowGate({
   return (
     <group
       position={position}
-      rotation={[0, Math.PI, 0]}
+      rotation={[0, 0, 0]}
       onClick={(e) => {
         e.stopPropagation()
         enterDow()
       }}
     >
-      <mesh position={[0, 1.95, 0]} castShadow receiveShadow>
-        <boxGeometry args={[4.85, 3.9, 3.55]} />
+      <mesh position={[0, 2.55, 0]} castShadow receiveShadow>
+        <boxGeometry args={[7.35, 5.1, 5.05]} />
         <meshStandardMaterial map={brick} color="#b84a30" roughness={0.86} />
       </mesh>
-      {[-1.35, 1.35].map((x) => (
-        <mesh key={x} position={[x, 4.05, 0]} rotation={[0, 0, 0.48]} castShadow>
-          <boxGeometry args={[2.15, 0.16, 3.75]} />
+      {[-2.15, 0, 2.15].map((x) => (
+        <mesh key={x} position={[x, 5.35, 0]} rotation={[0, 0, 0.52]} castShadow>
+          <boxGeometry args={[2.85, 0.2, 5.25]} />
           <meshStandardMaterial map={metal} color="#6a5040" roughness={0.62} />
         </mesh>
       ))}
-      <mesh position={[0, 1.15, 1.82]}>
-        <boxGeometry args={[1.45, 2.15, 0.12]} />
-        <meshStandardMaterial color="#4a1810" />
-      </mesh>
-      <mesh position={[0, 1.15, 1.9]}>
-        <boxGeometry args={[1.15, 1.75, 0.06]} />
-        <meshStandardMaterial color="#3a1008" emissive="#8a4020" emissiveIntensity={0.28} />
-      </mesh>
-      <mesh position={[0, 4.0, 0]} castShadow>
-        <boxGeometry args={[5.15, 0.18, 3.75]} />
+      <mesh position={[0, 5.2, 0]} castShadow>
+        <boxGeometry args={[7.65, 0.22, 5.25]} />
         <meshStandardMaterial color="#c4a05a" roughness={0.45} metalness={0.4} />
       </mesh>
-      <mesh position={[1.65, 5.55, -0.45]} castShadow>
-        <cylinderGeometry args={[0.32, 0.42, 3.15, 10]} />
-        <meshStandardMaterial map={metal} color="#6a5a48" roughness={0.55} />
+      <mesh position={[0, 1.35, 2.58]}>
+        <boxGeometry args={[2.15, 2.55, 0.16]} />
+        <meshStandardMaterial color="#4a1810" />
       </mesh>
-      <mesh position={[1.65, 7.25, -0.45]} castShadow>
-        <cylinderGeometry args={[0.38, 0.28, 0.45, 10]} />
-        <meshStandardMaterial color="#4a4038" metalness={0.35} roughness={0.5} />
+      <mesh position={[0, 1.35, 2.68]}>
+        <boxGeometry args={[1.75, 2.15, 0.08]} />
+        <meshStandardMaterial color="#3a1008" emissive="#8a4020" emissiveIntensity={0.32} />
       </mesh>
-      {[-1.15, 1.15].map((x) => (
-        <group key={x} position={[x, 2.35, 1.8]}>
+      {[-2.35, -1.15, 1.15, 2.35].map((x) => (
+        <group key={x} position={[x, 3.05, 2.55]}>
           <mesh>
-            <boxGeometry args={[0.7, 0.85, 0.1]} />
+            <boxGeometry args={[0.82, 1.05, 0.12]} />
             <meshStandardMaterial color="#f0e6d4" roughness={0.55} />
           </mesh>
-          <mesh position={[0, 0, 0.04]}>
-            <boxGeometry args={[0.5, 0.62, 0.06]} />
-            <meshStandardMaterial color="#2a3a44" roughness={0.28} />
+          <mesh position={[0, 0, 0.05]}>
+            <boxGeometry args={[0.58, 0.78, 0.08]} />
+            <meshStandardMaterial color="#2a3a44" roughness={0.28} emissive="#c8a060" emissiveIntensity={0.22} />
           </mesh>
         </group>
       ))}
-      <group position={[-3.15, 0, 0.55]}>
-        <mesh position={[0, 1.15, 0]} castShadow receiveShadow>
-          <boxGeometry args={[1.55, 2.3, 1.55]} />
-          <meshStandardMaterial map={brick} color="#a84a32" roughness={0.86} />
-        </mesh>
-        <mesh position={[0, 2.42, 0]} rotation={[0, 0, 0.4]} castShadow>
-          <boxGeometry args={[1.85, 0.12, 1.7]} />
-          <meshStandardMaterial color="#c45a32" roughness={0.58} />
-        </mesh>
-      </group>
-      <group position={[3.15, 0, 0.55]}>
-        <mesh position={[0, 1.15, 0]} castShadow receiveShadow>
-          <boxGeometry args={[1.55, 2.3, 1.55]} />
-          <meshStandardMaterial map={brick} color="#a84a32" roughness={0.86} />
-        </mesh>
-        <mesh position={[0, 2.42, 0]} rotation={[0, 0, -0.4]} castShadow>
-          <boxGeometry args={[1.85, 0.12, 1.7]} />
-          <meshStandardMaterial color="#c45a32" roughness={0.58} />
-        </mesh>
-      </group>
-      <group position={[0, 0, 3.15]} rotation={[0, 0.1, 0]}>
+      <mesh position={[2.35, 7.15, -0.65]} castShadow>
+        <cylinderGeometry args={[0.42, 0.55, 4.05, 10]} />
+        <meshStandardMaterial map={metal} color="#6a5a48" roughness={0.55} />
+      </mesh>
+      <mesh position={[2.35, 9.35, -0.65]} castShadow>
+        <cylinderGeometry args={[0.52, 0.36, 0.55, 10]} />
+        <meshStandardMaterial color="#4a4038" metalness={0.35} roughness={0.5} />
+      </mesh>
+      <mesh position={[1.35, 6.55, -0.85]} castShadow>
+        <cylinderGeometry args={[0.28, 0.38, 2.85, 10]} />
+        <meshStandardMaterial map={metal} color="#5a4a40" roughness={0.55} />
+      </mesh>
+      <mesh position={[1.35, 8.15, -0.85]}>
+        <cylinderGeometry args={[0.34, 0.24, 0.4, 10]} />
+        <meshStandardMaterial color="#4a4038" />
+      </mesh>
+      {[-3.2, 3.2].map((x) => (
+        <group key={x} position={[x, 0, 0.85]}>
+          <mesh position={[0, 1.45, 0]} castShadow receiveShadow>
+            <boxGeometry args={[2.05, 2.9, 2.35]} />
+            <meshStandardMaterial map={brick} color="#a84a32" roughness={0.86} />
+          </mesh>
+          <mesh position={[0, 3.05, 0]} rotation={[0, 0, x > 0 ? -0.4 : 0.4]} castShadow>
+            <boxGeometry args={[2.35, 0.14, 2.55]} />
+            <meshStandardMaterial color="#c45a32" roughness={0.58} />
+          </mesh>
+        </group>
+      ))}
+      <group position={[0, 0, 3.85]} rotation={[0, 0.08, 0]}>
         <mesh position={[0, 0.28, 0]} receiveShadow>
-          <boxGeometry args={[4.4, 0.12, 0.55]} />
+          <boxGeometry args={[6.4, 0.14, 0.7]} />
           <meshStandardMaterial map={metal} color="#5a5048" metalness={0.4} roughness={0.5} />
         </mesh>
-        <mesh position={[0.85, 0.55, 0]} castShadow>
-          <boxGeometry args={[1.35, 0.7, 0.7]} />
+        <mesh position={[1.15, 0.62, 0]} castShadow>
+          <boxGeometry args={[1.85, 0.85, 0.85]} />
           <meshStandardMaterial color="#6a4030" roughness={0.7} />
         </mesh>
-        {([-0.55, 0.55] as const).map((dx) => (
-          <mesh key={dx} position={[0.55 + dx, 0.22, 0.38]} rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[0.12, 0.12, 0.1, 8]} />
+        <mesh position={[-1.55, 0.62, 0.05]} castShadow>
+          <boxGeometry args={[1.55, 0.85, 0.8]} />
+          <meshStandardMaterial color="#5a4840" roughness={0.65} />
+        </mesh>
+        {([-0.55, 0.55, -2.15, -0.95] as const).map((dx) => (
+          <mesh key={dx} position={[0.55 + dx, 0.22, 0.42]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.14, 0.14, 0.12, 8]} />
             <meshStandardMaterial color="#1a1a18" />
           </mesh>
         ))}
       </group>
-      <Sign text="DOW MILL" color="#e8dcc8" y={4.35} z={1.85} w={3.15} />
+      <mesh position={[2.35, 9.85, -0.65]}>
+        <sphereGeometry args={[0.42, 8, 6]} />
+        <meshBasicMaterial color="#f4efe4" transparent opacity={0.45} depthWrite={false} />
+      </mesh>
+      <mesh position={[2.55, 10.45, -0.55]}>
+        <sphereGeometry args={[0.5, 8, 6]} />
+        <meshBasicMaterial color="#f4efe4" transparent opacity={0.28} depthWrite={false} />
+      </mesh>
+      <Sign text="DOW MILL" color="#e8dcc8" y={5.55} z={2.62} w={3.85} />
     </group>
   )
 }
@@ -457,13 +469,18 @@ function PlazaYard() {
 function MillYard() {
   return (
     <group>
-      <MarketStall x={-1.85} z={6.15} rot={0.06} />
-      <MarketStall x={1.8} z={6.05} rot={-0.08} />
-      <Cart x={0.15} z={6.55} rot={0.1} />
-      <CrateStack x={2.35} z={5.55} />
-      <Barrel x={-2.25} z={5.45} color="#5a4030" />
+      <MarketStall x={-2.15} z={6.15} rot={0.06} />
+      <MarketStall x={2.1} z={6.05} rot={-0.08} />
+      <Cart x={0.15} z={6.85} rot={0.1} />
+      <CrateStack x={2.55} z={5.55} />
+      <CrateStack x={-2.65} z={5.35} />
+      <CrateStack x={3.15} z={7.15} />
+      <Barrel x={-2.45} z={5.45} color="#5a4030" />
+      <Barrel x={2.85} z={5.85} color="#3a3a38" />
       <Worker x={0.85} z={5.65} rot={0.2} color="#5a7a50" />
       <Worker x={-0.95} z={5.55} rot={-0.25} color="#8aa0b0" />
+      <Worker x={1.55} z={7.25} rot={-0.4} color="#c4a046" />
+      <Worker x={-1.65} z={7.15} rot={0.35} color="#3a6a88" />
       <Bush x={-3.15} z={7.15} h={1.05} seed={21} />
       <Bush x={3.05} z={7.05} h={0.95} seed={22} />
     </group>
@@ -527,18 +544,18 @@ function FieldYard() {
 function CornerHuts() {
   return (
     <group>
-      <Hut x={-8.15} z={-8.05} rot={0.35} />
-      <Hut x={8.05} z={-7.85} rot={-0.3} />
-      <Hut x={-8.25} z={7.55} rot={0.5} />
-      <Hut x={8.15} z={7.35} rot={-0.45} />
-      <Hut x={-6.05} z={-10.35} rot={0.18} />
-      <Hut x={6.15} z={-10.15} rot={-0.22} />
-      <Hut x={-10.55} z={-5.15} rot={0.62} />
-      <Hut x={10.65} z={-5.05} rot={-0.55} />
-      <Hut x={-6.25} z={10.45} rot={0.28} />
-      <Hut x={6.35} z={10.25} rot={-0.32} />
-      <Hut x={-10.45} z={5.85} rot={0.72} />
-      <Hut x={10.55} z={5.65} rot={-0.68} />
+      <BrickHouse x={-8.15} z={-8.05} rot={0.35} />
+      <BrickHouse x={8.05} z={-7.85} rot={-0.3} />
+      <BrickHouse x={-8.25} z={7.55} rot={0.5} />
+      <BrickHouse x={8.15} z={7.35} rot={-0.45} />
+      <BrickHouse x={-6.05} z={-10.35} rot={0.18} />
+      <BrickHouse x={6.15} z={-10.15} rot={-0.22} />
+      <BrickHouse x={-10.55} z={-5.15} rot={0.62} />
+      <BrickHouse x={10.65} z={-5.05} rot={-0.55} />
+      <BrickHouse x={-6.25} z={10.45} rot={0.28} />
+      <BrickHouse x={6.35} z={10.25} rot={-0.32} />
+      <BrickHouse x={-10.45} z={5.85} rot={0.72} />
+      <BrickHouse x={10.55} z={5.65} rot={-0.68} />
       <FlowerBed x={-5.15} z={-8.85} />
       <FlowerBed x={5.25} z={-8.65} />
       <FlowerBed x={-9.15} z={6.55} />
@@ -622,35 +639,39 @@ function Barrel({ x, z, color }: { x: number; z: number; color: string }) {
   )
 }
 
-function Hut({ x, z, rot }: { x: number; z: number; rot: number }) {
+function BrickHouse({ x, z, rot }: { x: number; z: number; rot: number }) {
   return (
     <group position={[x, 0, z]} rotation={[0, rot, 0]}>
-      <mesh position={[0, 0.85, 0]} castShadow receiveShadow>
-        <boxGeometry args={[1.55, 1.7, 1.45]} />
+      <mesh position={[0, 1.45, 0]} castShadow receiveShadow>
+        <boxGeometry args={[2.55, 2.9, 2.25]} />
         <meshStandardMaterial color="#b84a32" roughness={0.86} />
       </mesh>
-      <mesh position={[0, 1.85, 0]} rotation={[0, 0, 0.45]} castShadow>
-        <boxGeometry args={[1.85, 0.12, 1.65]} />
+      <mesh position={[0, 2.98, 0]} castShadow>
+        <boxGeometry args={[2.75, 0.16, 2.45]} />
+        <meshStandardMaterial color="#e4d4b8" roughness={0.55} />
+      </mesh>
+      <mesh position={[0, 3.45, 0]} rotation={[0, 0, 0.42]} castShadow>
+        <boxGeometry args={[2.05, 0.14, 2.45]} />
         <meshStandardMaterial color="#c45a32" roughness={0.58} />
       </mesh>
-      <mesh position={[0, 1.85, 0]} rotation={[0, 0, -0.45]} castShadow>
-        <boxGeometry args={[1.85, 0.12, 1.65]} />
+      <mesh position={[0, 3.45, 0]} rotation={[0, 0, -0.42]} castShadow>
+        <boxGeometry args={[2.05, 0.14, 2.45]} />
         <meshStandardMaterial color="#c45a32" roughness={0.58} />
       </mesh>
-      <mesh position={[0, 1.95, 0]}>
-        <boxGeometry args={[0.42, 0.08, 0.12]} />
-        <meshStandardMaterial color="#c4a05a" metalness={0.4} roughness={0.45} />
-      </mesh>
-      <mesh position={[-0.38, 1.15, 0.74]}>
-        <boxGeometry args={[0.42, 0.5, 0.06]} />
-        <meshStandardMaterial color="#f0e6d4" roughness={0.55} />
-      </mesh>
-      <mesh position={[-0.38, 1.15, 0.78]}>
-        <boxGeometry args={[0.3, 0.36, 0.04]} />
-        <meshStandardMaterial color="#5a88a0" roughness={0.28} />
-      </mesh>
-      <mesh position={[0.32, 0.62, 0.76]}>
-        <boxGeometry args={[0.42, 0.7, 0.08]} />
+      {[-0.65, 0.65].map((sx) => (
+        <group key={sx} position={[sx, 2.15, 1.16]}>
+          <mesh>
+            <boxGeometry args={[0.62, 0.72, 0.08]} />
+            <meshStandardMaterial color="#f0e6d4" roughness={0.55} />
+          </mesh>
+          <mesh position={[0, 0, 0.04]}>
+            <boxGeometry args={[0.44, 0.52, 0.05]} />
+            <meshStandardMaterial color="#5a88a0" roughness={0.28} />
+          </mesh>
+        </group>
+      ))}
+      <mesh position={[0.15, 0.85, 1.18]}>
+        <boxGeometry args={[0.62, 1.15, 0.1]} />
         <meshStandardMaterial color="#3a1810" />
       </mesh>
     </group>

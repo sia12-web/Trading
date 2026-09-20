@@ -150,13 +150,31 @@ export const STORE_PLAQUES = [
   { word: 'FOUNDRY', ink: '#e07040', x: -2.55, z: 9.55, wide: 3.55 },
   { word: 'HALL', ink: '#e8b050', x: 1.55, z: 9.85, wide: 2.85 },
   { word: 'DOCK', ink: '#6aa0b8', x: 8.15, z: 9.35, wide: 2.75 },
-  { word: 'ALLEY', ink: '#7a90a0', x: 10.55, z: 4.85, wide: 3.15 },
-  { word: 'MILL', ink: '#d48848', x: 10.75, z: -0.15, wide: 2.95 },
-  { word: 'YARD', ink: '#d48848', x: 10.55, z: -5.65, wide: 2.85 },
-  { word: 'PIT', ink: '#c4a060', x: -9.35, z: 5.85, wide: 2.55 },
-  { word: 'SPIRE', ink: '#6ab0c4', x: -9.45, z: 0.35, wide: 3.15 },
-  { word: 'LOFT', ink: '#7a98c0', x: -9.35, z: -5.15, wide: 2.75 },
+  { word: 'ALLEY', ink: '#7a90a0', x: 11.15, z: 6.05, wide: 3.15 },
+  { word: 'MILL', ink: '#d48848', x: 11.25, z: 1.65, wide: 2.95 },
+  { word: 'YARD', ink: '#d48848', x: 11.35, z: -2.35, wide: 2.85 },
+  { word: 'PIT', ink: '#c4a060', x: -8.25, z: 7.15, wide: 2.65 },
+  { word: 'SPIRE', ink: '#6ab0c4', x: -8.35, z: 3.25, wide: 3.35 },
+  { word: 'LOFT', ink: '#7a98c0', x: -8.25, z: -1.45, wide: 2.85 },
 ] as const
+
+const SHORT: Record<StoreDef['building'], string> = {
+  foundry: 'FOUNDRY',
+  hall: 'HALL',
+  dock: 'DOCK',
+  yard: 'YARD',
+  mill: 'MILL',
+  alley: 'ALLEY',
+  spire: 'SPIRE',
+  loft: 'LOFT',
+  pit: 'PIT',
+}
+
+/** Tape / fascia name — never "AUCTION" from AUCTION HALL. */
+export function storeShortName(id: StoreDef['id']): string {
+  const s = STORES.find((x) => x.id === id)
+  return s ? SHORT[s.building] : id
+}
 
 /** Fascia sits on local +Z. Yaw matches Three.js so that face is the courtyard. */
 export function storeYaw(range: RangeKind): number {

@@ -1,7 +1,7 @@
 import { fmtPx, fmtPx1 } from '../game/auction'
 import { backToHub, enterDow, inStall, skipToOpen, takeAuction } from '../game/gameStore'
 import { formatNyClock } from '../game/session'
-import { STORES } from '../game/stores'
+import { storeShortName } from '../game/stores'
 import { StorePanel } from './StorePanel'
 import { useGame } from './useGame'
 
@@ -38,7 +38,7 @@ export function Hud() {
           {g.fills.slice(0, 3).map((f) => (
             <div key={f.id} className="tape-row">
               <span className={f.side}>{f.side === 'buy' ? 'B' : 'S'}</span>
-              <span>{STORES.find((s) => s.id === f.storeId)?.name.replace(/ .*/, '')}</span>
+              <span>{storeShortName(f.storeId)}</span>
               <span>{fmtPx1(f.fill)}</span>
             </div>
           ))}

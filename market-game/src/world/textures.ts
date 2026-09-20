@@ -283,6 +283,24 @@ export function makeStencilTexture(word: string, ink: string): THREE.CanvasTextu
   return t
 }
 
+export function makeLadderLabelTexture(word: string, ink: string): THREE.CanvasTexture {
+  const c = document.createElement('canvas')
+  c.width = 256
+  c.height = 80
+  const ctx = c.getContext('2d')!
+  ctx.fillStyle = ink
+  ctx.fillRect(0, 0, 256, 80)
+  ctx.fillStyle = '#f4ead8'
+  ctx.font = 'bold 48px "IBM Plex Mono", sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(word, 128, 42)
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = THREE.SRGBColorSpace
+  t.needsUpdate = true
+  return t
+}
+
 export function makeCourtSignTexture(word: string, ink: string): THREE.CanvasTexture {
   const c = document.createElement('canvas')
   c.width = 1024

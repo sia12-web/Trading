@@ -207,7 +207,7 @@ function WingPads({
         <CourtPlaque key={s.word} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} />
       ))}
       {STORE_PLAQUES.map((s) => (
-        <CourtPlaque key={`store-${s.word}`} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} />
+        <CourtPlaque key={`store-${s.word}`} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} lift={0.62} />
       ))}
     </group>
   )
@@ -241,26 +241,28 @@ function CourtPlaque({
   x,
   z,
   wide,
+  lift = 0,
 }: {
   word: string
   ink: string
   x: number
   z: number
   wide: number
+  lift?: number
 }) {
   const tex = useMemo(() => makeCourtSignTexture(word, ink), [word, ink])
   return (
-    <group position={[x, 0, z]} rotation={[0, Math.PI / 4, 0]}>
+    <group position={[x, lift, z]} rotation={[0, Math.PI / 4, 0]}>
       <mesh position={[0, 0.7, 0.18]} castShadow>
-        <boxGeometry args={[0.18, 1.4, 0.18]} />
+        <boxGeometry args={[0.2, 1.4 + lift, 0.2]} />
         <meshStandardMaterial color="#3a2a1c" roughness={0.8} />
       </mesh>
       <mesh position={[0, 1.72, 0.28]} castShadow>
-        <boxGeometry args={[wide, 1.05, 0.16]} />
+        <boxGeometry args={[wide, 1.18, 0.18]} />
         <meshStandardMaterial color="#2a1c14" roughness={0.7} />
       </mesh>
-      <mesh position={[0, 1.72, 0.38]}>
-        <planeGeometry args={[wide - 0.18, 0.88]} />
+      <mesh position={[0, 1.72, 0.4]}>
+        <planeGeometry args={[wide - 0.16, 0.98]} />
         <meshBasicMaterial map={tex} toneMapped={false} />
       </mesh>
     </group>
@@ -268,28 +270,43 @@ function CourtPlaque({
 }
 
 function SouthGate({ open }: { open: number }) {
+  const h = 2.45 * (1 - open * 0.92)
   return (
     <group position={[0, 0, 12.15]}>
-      {[-2.25, 2.25].map((x) => (
+      {[-2.55, 2.55].map((x) => (
         <group key={x}>
-          <mesh position={[x, 1.7, 0]} castShadow>
-            <boxGeometry args={[0.62, 3.4, 0.62]} />
+          <mesh position={[x, 2.05, 0]} castShadow>
+            <boxGeometry args={[0.78, 4.1, 0.78]} />
             <meshStandardMaterial color="#b84a30" roughness={0.75} />
           </mesh>
-          <mesh position={[x, 3.48, 0]} castShadow>
-            <boxGeometry args={[0.78, 0.16, 0.78]} />
+          <mesh position={[x, 4.18, 0]} castShadow>
+            <boxGeometry args={[0.95, 0.2, 0.95]} />
             <meshStandardMaterial color="#c4a05a" metalness={0.4} roughness={0.45} />
           </mesh>
         </group>
       ))}
-      <mesh position={[0, 0.55 + open * 3.15, 0.08]} castShadow>
-        <boxGeometry args={[4.8, 0.62, 0.58]} />
-        <meshStandardMaterial color="#e8c04a" metalness={0.45} roughness={0.35} emissive="#c4a046" emissiveIntensity={0.25 + open * 1.1} />
+      <mesh position={[0, 4.25, 0]} castShadow>
+        <boxGeometry args={[5.9, 0.28, 0.7]} />
+        <meshStandardMaterial color="#c4a05a" metalness={0.4} roughness={0.42} />
+      </mesh>
+      <mesh position={[0, h / 2 + 0.1, 0.06]} castShadow>
+        <boxGeometry args={[5.15, Math.max(0.12, h), 0.22]} />
+        <meshStandardMaterial
+          color={open > 0.4 ? '#d4b078' : '#1a1814'}
+          metalness={0.38}
+          roughness={0.46}
+          emissive={open > 0.4 ? '#8a6030' : '#000000'}
+          emissiveIntensity={open > 0.4 ? 0.22 : 0}
+        />
+      </mesh>
+      <mesh position={[0, 0.55 + open * 3.35, 0.16]} castShadow>
+        <boxGeometry args={[5.35, 0.72, 0.62]} />
+        <meshStandardMaterial color="#e8c04a" metalness={0.45} roughness={0.35} emissive="#c4a046" emissiveIntensity={0.25 + open * 1.2} />
       </mesh>
       {open > 0.08 && (
-        <mesh position={[0, 0.12, 0.2]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[1.6, 2.4, 24]} />
-          <meshBasicMaterial color="#ffe080" transparent opacity={0.25 + open * 0.45} toneMapped={false} />
+        <mesh position={[0, 0.12, 0.28]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[1.7, 2.65, 24]} />
+          <meshBasicMaterial color="#ffe080" transparent opacity={0.28 + open * 0.5} toneMapped={false} />
         </mesh>
       )}
     </group>
@@ -347,18 +364,18 @@ function WorkLamps({ on }: { on: number }) {
             <meshStandardMaterial color="#4a4038" metalness={0.45} />
           </mesh>
           <mesh position={[0, 3.15, 0.12]}>
-            <boxGeometry args={[0.42, 0.16, 0.5]} />
+            <boxGeometry args={[0.55, 0.22, 0.62]} />
             <meshStandardMaterial
               color={on > 0.12 ? '#ffe2a8' : '#4a4038'}
               emissive="#ffb060"
-              emissiveIntensity={on * 2.2}
+              emissiveIntensity={on * 2.6}
             />
           </mesh>
-          <mesh position={[0, 3.02, 0.22]}>
-            <sphereGeometry args={[0.14, 8, 6]} />
+          <mesh position={[0, 3.02, 0.28]}>
+            <sphereGeometry args={[0.22, 8, 6]} />
             <meshBasicMaterial color={on > 0.12 ? '#ffe8b0' : '#2a2218'} toneMapped={false} />
           </mesh>
-          {on > 0.18 && <pointLight color="#ffc070" intensity={on * 4.5} distance={7.5} position={[0, 2.9, 0.35]} />}
+          {on > 0.12 && <pointLight color="#ffc070" intensity={on * 6.2} distance={8.5} position={[0, 2.9, 0.4]} />}
         </group>
       ))}
     </group>
