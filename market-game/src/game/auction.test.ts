@@ -203,12 +203,20 @@ assert.ok(
   'YARD plaque stays on the east crane dirt, not the mill wall',
 )
 assert.ok(
+  COURT_SIGNS.find((s) => s.word === 'YARD')!.z > 1.5,
+  'YARD court name sits on the camera-near east wall, not the back crane',
+)
+assert.ok(
   COURT_SIGNS.find((s) => s.word === 'FIVE-DAY')!.x > 8,
   'FIVE-DAY plaque stays east of the south-gate trees so the full word reads',
 )
 assert.ok(
-  COURT_SIGNS.filter((s) => s.word !== 'YARD').every((s) => s.z > 16),
-  'court names sit on the camera-near outer wall cap, not behind the brick',
+  COURT_SIGNS.filter((s) => s.word !== 'YARD').every((s) => s.z > 14.4 && s.z < 15.5),
+  'court names sit on the south wall inside the Clash crop so YESTERDAY is not clipped to YESTER',
+)
+assert.ok(
+  COURT_SIGNS.find((s) => s.word === 'YESTERDAY')!.wide >= 4.4,
+  'YESTERDAY is the full word on the wall strip',
 )
 assert.deepEqual(
   STORE_PLAQUES.map((s) => s.word),
@@ -228,15 +236,15 @@ assert.ok(
   'ALLEY is named on the east court',
 )
 assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'SPIRE')!.x < -8,
-  'SPIRE is named on the west five-month court',
+  STORE_PLAQUES.find((s) => s.word === 'SPIRE')!.x > -8.2,
+  'SPIRE is named on the west courtyard apron, not behind the hall',
 )
 assert.ok(
   STORE_PLAQUES.find((s) => s.word === 'SPIRE')!.z > 5,
   'SPIRE plaque sits camera-near of the west court, not behind the hall',
 )
 assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'LOFT')!.z > 0,
+  STORE_PLAQUES.find((s) => s.word === 'LOFT')!.z > 2,
   'LOFT plaque sits in the default Clash crop with the court names',
 )
 assert.ok(
@@ -246,6 +254,10 @@ assert.ok(
 assert.ok(
   STORE_PLAQUES.find((s) => s.word === 'PIT')!.z > 7,
   'PIT plaque stays camera-near of the five-month court',
+)
+assert.ok(
+  STORE_PLAQUES.find((s) => s.word === 'YARD')!.z > 0,
+  'YARD is a word on the east apron in the default crop, not only the crane',
 )
 assert.equal(storeShortName('y-poc'), 'HALL', 'tape never prints AUCTION from AUCTION HALL')
 assert.equal(storeShortName('y-hvn'), 'FOUNDRY')
@@ -272,6 +284,9 @@ assert.ok(apronM[0] < 0 && apronM[2] > 0, 'five-month apron gauge maps to world 
 const hallTime = timeOpportunity({ kind: 'poc', tpoAtPrice: 6.2, sessionProgress: 0.02 })
 const millTime = timeOpportunity({ kind: 'poc', tpoAtPrice: 0.4, sessionProgress: 0.02 })
 assert.ok(hallTime.fairToday && hallTime.opportunity < millTime.opportunity, 'yesterday POC is already fair; five-day POC still a window')
+assert.ok(hallTime.opportunity < 0.38, 'yesterday POC opportunity is low enough to fly a FAIR flag')
+const foundryTime = timeOpportunity({ kind: 'hvn', tpoAtPrice: 0.8, sessionProgress: 0.02 })
+assert.ok(!foundryTime.fairToday && foundryTime.opportunity > 0.5, 'yesterday HVN is still a window, not FAIR')
 
 console.log('auction tests: ok')
 console.log(

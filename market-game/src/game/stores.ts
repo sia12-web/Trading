@@ -125,14 +125,14 @@ export const DOW_GATE: [number, number, number] = [0, 0, 8.4]
 export const HUB_WALK = 14.2
 
 /**
- * Court names live on a thin camera-near wall cap (outer +Z / +X), not giant
- * plaza boards. Yesterday / Five-Day / Five-Month / Yard stay readable.
+ * Court names live on the south / east wall inside the Clash crop (not past
+ * the camera, which clipped YESTERDAY to YESTER). Full words stay.
  */
 export const COURT_SIGNS = [
-  { word: 'YESTERDAY', ink: '#e07040', x: 0, z: 16.42, wide: 5.15 },
-  { word: 'FIVE-DAY', ink: '#d48848', x: 9.15, z: 16.42, wide: 4.65 },
-  { word: 'FIVE-MONTH', ink: '#6ab0c4', x: -6.55, z: 16.42, wide: 5.25 },
-  { word: 'YARD', ink: '#d48848', x: 16.42, z: -4.25, wide: 3.65 },
+  { word: 'YESTERDAY', ink: '#e07040', x: 0.25, z: 15.08, wide: 4.55 },
+  { word: 'FIVE-DAY', ink: '#d48848', x: 8.75, z: 15.08, wide: 4.15 },
+  { word: 'FIVE-MONTH', ink: '#6ab0c4', x: -6.15, z: 15.08, wide: 4.75 },
+  { word: 'YARD', ink: '#d48848', x: 15.08, z: 2.65, wide: 3.25 },
 ] as const
 export const COURT_STENCILS = [
   { word: 'YESTERDAY', ink: '#e07040', x: 0, z: 13.85, w: 5.2, d: 0.85 },
@@ -146,15 +146,15 @@ export const COURT_STENCILS = [
  * read in the same Clash crop as the court plaques — not only on inspect.
  */
 export const STORE_PLAQUES = [
-  { word: 'FOUNDRY', ink: '#e07040', x: -6.15, z: 12.05, wide: 3.95 },
-  { word: 'HALL', ink: '#e8b050', x: 2.95, z: 11.25, wide: 2.95 },
-  { word: 'DOCK', ink: '#6aa0b8', x: 7.85, z: 11.05, wide: 2.95 },
-  { word: 'ALLEY', ink: '#7a90a0', x: 11.55, z: 6.35, wide: 3.15 },
-  { word: 'MILL', ink: '#d48848', x: 11.65, z: 2.15, wide: 2.95 },
-  { word: 'YARD', ink: '#d48848', x: 11.75, z: -1.55, wide: 2.85 },
-  { word: 'PIT', ink: '#c4a060', x: -8.85, z: 8.15, wide: 2.65 },
-  { word: 'SPIRE', ink: '#6ab0c4', x: -8.95, z: 5.85, wide: 3.55 },
-  { word: 'LOFT', ink: '#7a98c0', x: -8.85, z: 0.95, wide: 2.85 },
+  { word: 'FOUNDRY', ink: '#e07040', x: -5.25, z: 11.75, wide: 4.35 },
+  { word: 'HALL', ink: '#e8b050', x: 1.65, z: 11.35, wide: 3.45 },
+  { word: 'DOCK', ink: '#6aa0b8', x: 7.05, z: 11.05, wide: 3.45 },
+  { word: 'ALLEY', ink: '#7a90a0', x: 11.15, z: 6.75, wide: 3.55 },
+  { word: 'MILL', ink: '#d48848', x: 11.25, z: 3.05, wide: 3.45 },
+  { word: 'YARD', ink: '#d48848', x: 11.35, z: 0.55, wide: 3.35 },
+  { word: 'PIT', ink: '#c4a060', x: -7.05, z: 8.75, wide: 3.25 },
+  { word: 'SPIRE', ink: '#6ab0c4', x: -7.15, z: 6.05, wide: 3.95 },
+  { word: 'LOFT', ink: '#7a98c0', x: -7.05, z: 2.65, wide: 3.35 },
 ] as const
 
 const SHORT: Record<StoreDef['building'], string> = {

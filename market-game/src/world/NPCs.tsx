@@ -94,7 +94,7 @@ function ShiftWalker({ seed, alive }: { seed: number; alive: number }) {
     [3.2, 4.8],
   ]
   const dest = dests[seed % dests.length]!
-  const gate: [number, number] = seed % 2 === 0 ? [-4.45 + (seed % 3) * 0.35, 12.2] : [4.45 - (seed % 3) * 0.35, 12.2]
+  const gate: [number, number] = seed % 2 === 0 ? [-5.15 + (seed % 3) * 0.35, 12.9] : [5.15 - (seed % 3) * 0.35, 12.9]
 
   useFrame((s) => {
     if (!ref.current) return

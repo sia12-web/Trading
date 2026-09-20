@@ -413,12 +413,13 @@ canvas {
 }
 
 .iso-hud .chip-bl {
-  bottom: 10px;
-  left: 10px;
-  top: auto;
+  top: 10px;
+  left: 88px;
+  bottom: auto;
   right: auto;
-  width: 168px;
-  max-width: 168px;
+  width: 220px;
+  max-width: 220px;
+  font-size: 13px;
 }
 
 .iso-hud .chip h1 {
@@ -480,7 +481,7 @@ canvas {
   justify-content: space-between;
   gap: 8px;
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 10px;
+  font-size: 13px;
 }
 
 .iso-prompt button {

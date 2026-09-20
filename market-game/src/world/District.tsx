@@ -207,7 +207,7 @@ function WingPads({
         <WallStrip key={s.word} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} east={s.word === 'YARD'} />
       ))}
       {STORE_PLAQUES.map((s) => (
-        <CourtPlaque key={`store-${s.word}`} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} lift={0.22} />
+        <CourtPlaque key={`store-${s.word}`} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} lift={0.12} />
       ))}
     </group>
   )
@@ -253,16 +253,16 @@ function CourtPlaque({
   const tex = useMemo(() => makeCourtSignTexture(word, ink), [word, ink])
   return (
     <group position={[x, lift, z]} rotation={[0, Math.PI / 4, 0]}>
-      <mesh position={[0, 0.38, 0.12]} castShadow>
-        <boxGeometry args={[0.1, 0.72 + lift, 0.1]} />
+      <mesh position={[0, 0.42, 0.1]} castShadow>
+        <boxGeometry args={[0.12, 0.84 + lift, 0.12]} />
         <meshStandardMaterial color="#3a2a1c" roughness={0.8} />
       </mesh>
-      <mesh position={[0, 0.92, 0.16]} castShadow>
-        <boxGeometry args={[wide * 0.92, 0.48, 0.1]} />
-        <meshStandardMaterial color="#2a1c14" roughness={0.7} />
+      <mesh position={[0, 1.18, 0.16]} castShadow>
+        <boxGeometry args={[wide, 0.72, 0.12]} />
+        <meshStandardMaterial color="#1a120c" roughness={0.68} />
       </mesh>
-      <mesh position={[0, 0.92, 0.23]}>
-        <planeGeometry args={[wide * 0.86, 0.38]} />
+      <mesh position={[0, 1.18, 0.24]}>
+        <planeGeometry args={[wide * 0.94, 0.58]} />
         <meshBasicMaterial map={tex} toneMapped={false} />
       </mesh>
     </group>
@@ -287,12 +287,12 @@ function WallStrip({
   const tex = useMemo(() => makeCourtSignTexture(word, ink), [word, ink])
   return (
     <group position={[x, 0, z]} rotation={[0, east ? -Math.PI / 4 : Math.PI / 4, 0]}>
-      <mesh position={[0, 1.62, 0.02]} castShadow>
-        <boxGeometry args={[wide + 0.18, 0.52, 0.12]} />
+      <mesh position={[0, 1.55, -0.22]} castShadow>
+        <boxGeometry args={[wide + 0.16, 0.58, 0.14]} />
         <meshStandardMaterial color="#1a120c" roughness={0.68} />
       </mesh>
-      <mesh position={[0, 1.62, 0.1]}>
-        <planeGeometry args={[wide, 0.42]} />
+      <mesh position={[0, 1.55, -0.14]}>
+        <planeGeometry args={[wide, 0.48]} />
         <meshBasicMaterial map={tex} toneMapped={false} />
       </mesh>
     </group>
@@ -302,8 +302,8 @@ function WallStrip({
 function SouthGate({ open }: { open: number }) {
   return (
     <group>
-      <GateLeaf x={-4.45} open={open} />
-      <GateLeaf x={4.45} open={open} />
+      <GateLeaf x={-5.15} open={open} />
+      <GateLeaf x={5.15} open={open} />
     </group>
   )
 }
@@ -311,7 +311,7 @@ function SouthGate({ open }: { open: number }) {
 function GateLeaf({ x, open }: { x: number; open: number }) {
   const h = 3.85 * (1 - open * 0.92)
   return (
-    <group position={[x, 0, 12.35]}>
+    <group position={[x, 0, 13.05]}>
       {[-1.85, 1.85].map((dx) => (
         <group key={dx}>
           <mesh position={[dx, 2.55, 0]} castShadow>
@@ -393,8 +393,8 @@ function WorkLamps({ on }: { on: number }) {
     [0.2, 11.2],
     [8.6, 3.2],
     [-8.4, 8.6],
-    [-4.45, 12.0],
-    [4.45, 12.0],
+    [-5.15, 12.7],
+    [5.15, 12.7],
   ]
   return (
     <group>

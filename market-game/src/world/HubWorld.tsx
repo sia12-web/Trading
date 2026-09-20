@@ -273,7 +273,7 @@ function LockedGate({
           <meshStandardMaterial color="#c4a05a" metalness={0.4} />
         </mesh>
         <Lock y={1.15} z={2.15} />
-        <Sign text="CAMPUS" color="#e8dcc8" y={4.75} z={1.25} w={2.5} />
+        <Sign text="CAMPUS" color="#e8dcc8" y={4.75} z={1.25} w={1.65} />
       </group>
     )
   }
@@ -331,7 +331,7 @@ function LockedGate({
           </mesh>
         </group>
         <Lock y={1.25} z={1.75} />
-        <Sign text="MINES" color="#d4c4a0" y={5.15} z={0.55} w={2.4} />
+        <Sign text="MINES" color="#d4c4a0" y={5.15} z={0.55} w={1.55} />
       </group>
     )
   }
@@ -368,7 +368,7 @@ function LockedGate({
         <meshStandardMaterial color="#4a4844" metalness={0.5} />
       </mesh>
       <Lock y={1.05} z={1.95} />
-      <Sign text="FIELDS" color="#c4a090" y={4.55} z={1.15} w={2.4} />
+      <Sign text="FIELDS" color="#c4a090" y={4.55} z={1.15} w={1.55} />
     </group>
   )
 }

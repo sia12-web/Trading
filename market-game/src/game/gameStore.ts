@@ -77,7 +77,7 @@ function floorTape(): { liveVol: Record<string, number>; tpo: Record<string, num
   }
   return {
     liveVol,
-    tpo: { 'y-poc': 6.2, '5d-poc': 0.4 },
+    tpo: { 'y-poc': 6.2, 'y-hvn': 0.8, '5d-poc': 0.4 },
   }
 }
 
@@ -321,7 +321,7 @@ export function takeAuction(side: Side) {
     set({ message: 'Wait for the cash open.' })
     return
   }
-  const id = state.inspecting ?? state.nearby ?? nearestStore(state.player.x, state.player.z, 3.15)?.id
+  const id = state.inspecting ?? state.nearby ?? nearestStore(state.player.x, state.player.z, 5.2)?.id
   if (!id) {
     set({ message: 'Walk Price into a stall to take the auction.' })
     return
@@ -407,8 +407,8 @@ export function tickGame(dt: number) {
 
   if (state.phase === 'opening') {
     const openElapsed = (performance.now() - openWallMs) / 1000
-    const shutter = Math.min(1, Math.max(0, (openElapsed - 0.12) / 9.6))
-    const floorAlive = Math.min(1, Math.max(0, (openElapsed - 0.05) / 11.4))
+    const shutter = Math.min(1, Math.max(0, (openElapsed - 0.06) / 4.4))
+    const floorAlive = Math.min(1, Math.max(0, (openElapsed - 0.04) / 10.2))
     const clockMin = NY_OPEN_MIN + openElapsed / 60
     if (openElapsed >= OPEN_CINEMATIC_SEC) {
       set({
