@@ -229,7 +229,7 @@ function WingPads({
             x={s.x}
             z={s.z}
             wide={s.wide}
-            lift={s.word === 'FOUNDRY' || s.word === 'PIT' ? 0.48 : s.word === 'LOFT' ? 0.32 : 0.12}
+            lift={s.word === 'FOUNDRY' || s.word === 'PIT' ? 0.48 : s.word === 'HALL' ? 0.55 : s.word === 'LOFT' ? 0.32 : 0.12}
             onPick={() => inspectStore(s.id)}
           />
         ),
@@ -263,7 +263,7 @@ function Stencil({
 
 function StallTimePlaques() {
   const g = useGame()
-  const marks = [{ id: 'y-poc' as const, x: 0.15, z: 11.95, wide: 3.85 }]
+  const marks = [{ id: 'y-poc' as const, x: -0.85, z: 11.55, wide: 3.85 }]
   return (
     <>
       {marks.map((m) => {

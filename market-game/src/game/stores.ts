@@ -147,7 +147,7 @@ export const COURT_STENCILS = [
  */
 export const STORE_PLAQUES = [
   { word: 'FOUNDRY', ink: '#e07040', x: -8.25, z: 12.95, wide: 4.15, id: 'y-hvn' as const },
-  { word: 'HALL', ink: '#e8b050', x: -2.55, z: 12.65, wide: 3.35, id: 'y-poc' as const },
+  { word: 'HALL', ink: '#e8b050', x: 2.15, z: 12.55, wide: 3.35, id: 'y-poc' as const },
   { word: 'DOCK', ink: '#6aa0b8', x: 7.55, z: 12.15, wide: 3.35, id: 'y-lvn' as const },
   { word: 'ALLEY', ink: '#7a90a0', x: 11.15, z: 6.75, wide: 3.55, id: '5d-lvn' as const },
   { word: 'MILL', ink: '#d48848', x: 11.25, z: 3.05, wide: 3.45, id: '5d-poc' as const },
