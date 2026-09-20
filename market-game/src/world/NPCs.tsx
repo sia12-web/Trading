@@ -111,7 +111,7 @@ function ShiftWalker({ seed, alive }: { seed: number; alive: number }) {
 
   const color = seed % 3 === 0 ? '#f0c040' : seed % 3 === 1 ? '#e07030' : '#8aa0b0'
   return (
-    <group ref={ref} position={[gate[0], 0, gate[1]]} scale={1.05}>
+    <group ref={ref} position={[gate[0], 0, gate[1]]} scale={1.22}>
       <TroopBody color={color} left={left} right={right} />
     </group>
   )
@@ -170,7 +170,7 @@ function Person({
   })
 
   return (
-    <group ref={ref} position={[home[0], 0, home[1]]}>
+    <group ref={ref} position={[home[0], 0, home[1]]} scale={1.12}>
       <TroopBody color={color} left={left} right={right} hardhat={kind !== 'broker'} kit={kind} />
     </group>
   )

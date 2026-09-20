@@ -82,7 +82,7 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
         <GableSign title={label} paint={store.accent} x={gableX} y={shell.fasciaY} />
       )}
       <ChalkBoard price={fmtPx(price)} y={store.building === 'pit' ? 1.05 : 1.4} z={shell.d * 0.52 + 0.12} pulse={printed} />
-      <GoodsPile stall={st} kind={store.kind} z={shell.d * 0.55 + 0.55} />
+      <GoodsPile stall={st} kind={store.kind} z={shell.d * 0.55 + 0.85} />
       {printed && st.printSide === 'buy' && <PrintBurst />}
       {printed && st.printSide === 'sell' && <FadeSweep />}
       {hot && (

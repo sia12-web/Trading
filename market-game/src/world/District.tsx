@@ -286,16 +286,16 @@ function WingSign({
 
 function SouthGate({ open }: { open: number }) {
   return (
-    <group position={[0, 0, 13.85]}>
-      {[-2.15, 2.15].map((x) => (
-        <mesh key={x} position={[x, 1.55, 0]} castShadow>
-          <boxGeometry args={[0.55, 3.1, 0.55]} />
-          <meshStandardMaterial color="#8a4a30" roughness={0.75} />
+    <group position={[0, 0, 12.15]}>
+      {[-2.25, 2.25].map((x) => (
+        <mesh key={x} position={[x, 1.7, 0]} castShadow>
+          <boxGeometry args={[0.62, 3.4, 0.62]} />
+          <meshStandardMaterial color="#b84a30" roughness={0.75} />
         </mesh>
       ))}
-      <mesh position={[0, 0.35 + open * 2.55, 0]} castShadow>
-        <boxGeometry args={[3.7, 0.28, 0.32]} />
-        <meshStandardMaterial color="#c4a046" metalness={0.4} roughness={0.4} emissive="#8a7028" emissiveIntensity={open * 0.45} />
+      <mesh position={[0, 0.42 + open * 2.7, 0.08]} castShadow>
+        <boxGeometry args={[4.1, 0.38, 0.42]} />
+        <meshStandardMaterial color="#e8c04a" metalness={0.45} roughness={0.35} emissive="#c4a046" emissiveIntensity={0.2 + open * 0.7} />
       </mesh>
     </group>
   )
