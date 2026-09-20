@@ -1,11 +1,12 @@
 import { Sky } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { closeInspect, inspectStore, setWalkTarget } from '../game/gameStore'
 import { storeAtPoint, YARD } from '../game/stores'
 import { useGame } from '../ui/useGame'
 import {
+  makeStencilTexture,
   useAsphaltTexture,
   useBrickTexture,
   useConcreteTexture,
@@ -90,15 +91,16 @@ export function District() {
         <meshStandardMaterial map={concrete} roughness={0.9} color="#8a8074" />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]} receiveShadow>
-        <circleGeometry args={[2.15, 28]} />
+        <planeGeometry args={[4.4, 4.4]} />
         <meshStandardMaterial map={asphalt} color="#5a564e" roughness={0.88} />
       </mesh>
 
+      <WingPads brick={brick} concrete={concrete} dirt={dirt} />
       <YardWalls brick={brick} />
       <CliffBezel dirt={dirt} grass={grass} />
       <BellTower metal={metal} brick={brick} ringing={g.phase === 'opening'} />
       <YardDressing />
-      {dawn && <Lamps />}
+      <WorkLamps on={g.shutter} />
     </>
   )
 }
@@ -214,12 +216,65 @@ function BellTower({
   )
 }
 
-function Lamps() {
+function WingPads({
+  brick,
+  concrete,
+  dirt,
+}: {
+  brick: THREE.Texture
+  concrete: THREE.Texture
+  dirt: THREE.Texture
+}) {
+  return (
+    <group>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 6.35]} receiveShadow>
+        <planeGeometry args={[17.4, 7.6]} />
+        <meshStandardMaterial map={brick} color="#9a5a40" roughness={0.9} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, -6.35]} receiveShadow>
+        <planeGeometry args={[17.4, 7.6]} />
+        <meshStandardMaterial map={dirt} color="#6a5440" roughness={0.92} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, Math.PI / 2]} position={[-7.35, 0.014, 0]} receiveShadow>
+        <planeGeometry args={[12.4, 6.6]} />
+        <meshStandardMaterial map={concrete} color="#4a6a70" roughness={0.86} />
+      </mesh>
+      <Stencil word="YESTERDAY" ink="#c45c2a" position={[0, 0.03, 3.35]} />
+      <Stencil word="FIVE-DAY" ink="#a34a38" position={[0, 0.03, -3.35]} />
+      <Stencil word="FIVE-MONTH" ink="#2a6a78" position={[-3.55, 0.03, 0]} rot={Math.PI / 2} />
+    </group>
+  )
+}
+
+function Stencil({
+  word,
+  ink,
+  position,
+  rot = 0,
+}: {
+  word: string
+  ink: string
+  position: [number, number, number]
+  rot?: number
+}) {
+  const tex = useMemo(() => makeStencilTexture(word, ink), [word, ink])
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, rot]} position={position}>
+      <planeGeometry args={[5.4, 1.15]} />
+      <meshStandardMaterial map={tex} transparent opacity={0.85} depthWrite={false} />
+    </mesh>
+  )
+}
+
+function WorkLamps({ on }: { on: number }) {
   const spots: Array<[number, number]> = [
     [-2.4, 2.4],
     [2.4, 2.4],
     [-2.4, -2.4],
     [2.4, -2.4],
+    [-8.4, 0],
+    [3.2, 8.2],
+    [3.2, -8.2],
   ]
   return (
     <group>
@@ -231,7 +286,11 @@ function Lamps() {
           </mesh>
           <mesh position={[0, 2.75, 0.1]}>
             <boxGeometry args={[0.32, 0.12, 0.4]} />
-            <meshStandardMaterial color="#ffe2a8" emissive="#ffb060" emissiveIntensity={1.4} />
+            <meshStandardMaterial
+              color={on > 0.15 ? '#ffe2a8' : '#4a4038'}
+              emissive="#ffb060"
+              emissiveIntensity={on * 1.35}
+            />
           </mesh>
         </group>
       ))}

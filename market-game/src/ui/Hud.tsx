@@ -1,15 +1,16 @@
 import { fmtPx, fmtPx1 } from '../game/auction'
-import { backToHub, enterDow, skipToLive } from '../game/gameStore'
+import { backToHub, enterDow, inStall, skipToOpen } from '../game/gameStore'
 import { formatNyClock } from '../game/session'
 import { STORES } from '../game/stores'
 import { StorePanel } from './StorePanel'
-import { useActiveRead, useGame } from './useGame'
+import { useGame } from './useGame'
 
 export function Hud() {
   const g = useGame()
-  const read = useActiveRead()
+  const stall = inStall(g)
   const phaseLabel =
     g.phase === 'preopen' ? 'PRE-OPEN' : g.phase === 'opening' ? 'CASH OPEN' : 'LIVE'
+  const name = stall ? STORES.find((s) => s.id === stall)?.name : g.nearby ? STORES.find((s) => s.id === g.nearby)?.name : null
 
   if (g.scene === 'hub') return <HubHud />
 
@@ -25,12 +26,10 @@ export function Hud() {
       <div className="chip chip-tr">
         <div className="time">{formatNyClock(g.clockMin)}</div>
         <div className="phase">{phaseLabel}</div>
-        <div className="res">
-          {fmtPx(g.livePrice)}
-        </div>
-        {g.phase !== 'live' && (
-          <button className="ghost" onClick={skipToLive}>
-            SKIP
+        <div className="res">{fmtPx(g.livePrice)}</div>
+        {g.phase === 'preopen' && (
+          <button className="ghost" onClick={skipToOpen}>
+            9:30
           </button>
         )}
       </div>
@@ -49,19 +48,23 @@ export function Hud() {
 
       {g.phase === 'opening' && <div className="open-pip">9:30 NYC</div>}
 
-      {g.phase === 'live' && !read && (
+      {g.phase === 'live' && !g.inspecting && (
         <div className="prompt iso-prompt">
-          {g.nearby ? (
-            <>
-              E / click — {STORES.find((s) => s.id === g.nearby)?.name}
-            </>
+          {stall ? (
+            <>On the floor · B take · F fade</>
+          ) : g.nearby ? (
+            <>Walk into {name}</>
           ) : (
-            <>WASD · click store</>
+            <>WASD · walk a stall</>
           )}
         </div>
       )}
 
-      {read && g.phase === 'live' && <StorePanel />}
+      {g.message && g.phase === 'live' && !g.inspecting && (
+        <div className="floor-note">{g.message}</div>
+      )}
+
+      {g.inspecting && <StorePanel />}
     </div>
   )
 }
@@ -70,7 +73,7 @@ function HubHud() {
   return (
     <div className="hud iso-hud">
       <div className="chip chip-tl">
-        <div className="kicker">MARKETS</div>
+        <div className="kicker">NYC CASH</div>
         <button className="ghost hit" onClick={() => enterDow()}>
           ENTER DOW
         </button>

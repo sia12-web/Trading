@@ -6,7 +6,7 @@ import {
   closeInspect,
   getGame,
   getWalkTarget,
-  skipToLive,
+  skipToOpen,
   backToHub,
   setPlayer,
   takeAuction,
@@ -47,7 +47,7 @@ export function bindPlayerKeys() {
     if (k === 'escape') closeInspect()
     if (k === 'b' || k === '1') takeAuction('buy')
     if (k === 'f' || k === '2') takeAuction('sell')
-    if (k === 'o' && getGame().scene === 'dow') skipToLive()
+    if (k === 'o' && getGame().scene === 'dow') skipToOpen()
     if (k === 'h' && getGame().scene === 'dow') backToHub()
   }
   const up = (e: KeyboardEvent) => {

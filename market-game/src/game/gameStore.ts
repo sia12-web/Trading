@@ -1,4 +1,4 @@
-import { pushVwapTick, timeOpportunity, volumeDivergence } from './auction'
+import { pushVwapTick, stallOccupancy, timeOpportunity, volumeDivergence } from './auction'
 import { clank, printFill, resumeAudio, startAmbience, strikeBell } from './audio'
 import { buildDowMarket, rng } from './marketData'
 import {
@@ -41,6 +41,7 @@ export type GameSnapshot = {
   floorAlive: number
   pointerLocked: boolean
   message: string | null
+  lastPrint: { storeId: StoreId; side: Side; at: number } | null
 }
 
 const typicalVol: Record<StoreId, number> = {
@@ -107,6 +108,7 @@ function fresh(): GameSnapshot {
     floorAlive: 0,
     pointerLocked: false,
     message: null,
+    lastPrint: null,
   }
 }
 
@@ -156,20 +158,21 @@ export function backToHub() {
   emit()
 }
 
-export function skipToLive() {
+export function skipToOpen() {
+  if (state.phase === 'opening' || state.phase === 'live') return
   void resumeAudio().then(() => {
     startAmbience()
     strikeBell()
   })
   set({
     scene: 'dow',
-    phase: 'live',
-    clockMin: NY_OPEN_MIN + 0.2,
-    openElapsed: OPEN_CINEMATIC_SEC,
-    shutter: 1,
-    floorAlive: 1,
+    phase: 'opening',
+    clockMin: NY_OPEN_MIN,
+    openElapsed: 0,
+    shutter: 0,
+    floorAlive: 0,
     livePrice: market.openPrint,
-    message: 'Market is open. Visit the stores.',
+    message: null,
     player: state.scene === 'dow' ? state.player : { x: 0.85, y: 0, z: 0.85, yaw: 0 },
   })
 }
@@ -255,19 +258,39 @@ export function storeRead(id: StoreId, snap: GameSnapshot = state): StoreRead {
   }
 }
 
+export function stallState(id: StoreId, snap: GameSnapshot = state) {
+  const read = storeRead(id, snap)
+  return { ...read, ...stallOccupancy({
+    kind: kindOf(id),
+    divergence: read.divergence,
+    timeOpportunity: read.timeOpportunity,
+    shutter: snap.shutter,
+    floorAlive: snap.floorAlive,
+    phase: snap.phase,
+  }) }
+}
+
+export function inStall(snap: GameSnapshot = state): StoreId | null {
+  return nearestStore(snap.player.x, snap.player.z, 2.2)?.id ?? null
+}
+
 export function takeAuction(side: Side) {
-  const id = state.inspecting ?? state.nearby
-  if (!id || state.phase !== 'live') return
+  if (state.phase !== 'live') return
+  const id = inStall()
+  if (!id) {
+    set({ message: 'Walk Price into a stall to take the auction.' })
+    return
+  }
   const read = storeRead(id)
   const slip = (1 - Math.max(0, read.divergence)) * 4.5 * (tapeRand() + 0.2)
   const fillPx = side === 'buy' ? read.advertised + slip : read.advertised - slip
-  let note = 'Took the auction.'
+  let note = 'Took the auction on the floor.'
   if (read.fairToday && read.timeOpportunity < 0.35) {
-    note = 'Already fair today — thin leftover opportunity.'
+    note = 'Already fair today — thin leftover window.'
   } else if (read.divergence < -0.4) {
-    note = 'Size did not confirm. You advertised into an empty (or flooding) store.'
+    note = 'Size did not confirm.'
   } else if (read.divergence > 0.4 && read.timeOpportunity > 0.45) {
-    note = 'Volume confirms and time remains. Clean taking of the offer.'
+    note = 'Volume confirms and time remains.'
   }
   const fill: Fill = {
     id: fillSeq++,
@@ -283,8 +306,9 @@ export function takeAuction(side: Side) {
   printFill(side === 'buy')
   set({
     fills: [fill, ...state.fills].slice(0, 12),
-    inspecting: id,
+    inspecting: null,
     message: note,
+    lastPrint: { storeId: id, side, at: performance.now() },
   })
 }
 
@@ -312,7 +336,7 @@ export function tickGame(dt: number) {
         clockMin: NY_OPEN_MIN,
         openElapsed: 0,
         livePrice: market.openPrint,
-        message: 'MARKET OPEN — 9:30 AM NEW YORK',
+        message: null,
       })
       return
     }
@@ -331,7 +355,7 @@ export function tickGame(dt: number) {
         shutter: 1,
         floorAlive: 1,
         clockMin: NY_OPEN_MIN + 0.15,
-        message: 'Stores are live. Walk Price in.',
+        message: null,
       })
       return
     }

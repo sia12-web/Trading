@@ -207,6 +207,47 @@ export function makeFasciaTexture(title: string, paint: string): THREE.CanvasTex
   return t
 }
 
+export function makeStencilTexture(word: string, ink: string): THREE.CanvasTexture {
+  const c = document.createElement('canvas')
+  c.width = 1024
+  c.height = 256
+  const ctx = c.getContext('2d')!
+  ctx.clearRect(0, 0, 1024, 256)
+  ctx.fillStyle = ink
+  ctx.globalAlpha = 0.55
+  ctx.font = 'bold 92px "Bebas Neue", "IBM Plex Mono", sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(word, 512, 128)
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = THREE.SRGBColorSpace
+  t.needsUpdate = true
+  return t
+}
+
+export function makeChalkTexture(price: string): THREE.CanvasTexture {
+  const c = document.createElement('canvas')
+  c.width = 384
+  c.height = 192
+  const ctx = c.getContext('2d')!
+  ctx.fillStyle = '#24382c'
+  ctx.fillRect(0, 0, 384, 192)
+  ctx.fillStyle = '#1a2a22'
+  ctx.fillRect(10, 10, 364, 172)
+  ctx.strokeStyle = '#c4a046'
+  ctx.lineWidth = 4
+  ctx.strokeRect(16, 16, 352, 160)
+  ctx.fillStyle = '#e8e0c8'
+  ctx.font = 'bold 54px "IBM Plex Mono", monospace'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(price, 192, 100)
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = THREE.SRGBColorSpace
+  t.needsUpdate = true
+  return t
+}
+
 export function makeCalloutTexture(title: string, price: string, hex: string): THREE.CanvasTexture {
   const c = document.createElement('canvas')
   c.width = 512

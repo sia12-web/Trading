@@ -69,7 +69,7 @@ export type StoreDef = {
   theory: string
   position: [number, number, number]
   accent: string
-  building: 'foundry' | 'dock' | 'hall' | 'yard' | 'alley' | 'mill' | 'spire' | 'band'
+  building: 'foundry' | 'dock' | 'hall' | 'yard' | 'alley' | 'mill' | 'spire' | 'loft' | 'pit'
 }
 
 export type StoreRead = {

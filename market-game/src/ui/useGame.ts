@@ -7,7 +7,6 @@ export function useGame(): GameSnapshot {
 
 export function useActiveRead() {
   const g = useGame()
-  const id = g.inspecting ?? g.nearby
-  if (!id) return null
-  return storeRead(id, g)
+  if (!g.inspecting) return null
+  return storeRead(g.inspecting, g)
 }

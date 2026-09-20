@@ -269,6 +269,51 @@ export function timeOpportunity(args: {
   }
 }
 
+/**
+ * Floor occupancy from divergence + time. HVN/POC fill when size confirms and
+ * go hollow when advertising empty. LVN stays air unless the tape floods it.
+ */
+export function stallOccupancy(args: {
+  kind: VolumeNode['kind'] | 'avwap'
+  divergence: number
+  timeOpportunity: number
+  shutter: number
+  floorAlive: number
+  phase: 'preopen' | 'opening' | 'live'
+}): {
+  occupancy: number
+  hollow: boolean
+  clogged: boolean
+  interior: number
+  door: number
+} {
+  const shut = args.shutter
+  let occupancy = 0
+  if (args.floorAlive > 0.04) {
+    if (args.kind === 'lvn') {
+      occupancy = (args.divergence < 0 ? -args.divergence : 0.05) * shut * (0.4 + args.timeOpportunity * 0.6)
+    } else {
+      occupancy = clamp(0.36 + args.divergence * 0.55, 0, 1) * shut * (0.32 + args.timeOpportunity * 0.68)
+    }
+  }
+  occupancy = clamp(occupancy, 0, 1)
+  const door =
+    args.phase === 'preopen' ? 0 : args.phase === 'opening' ? shut : clamp(0.18 + args.timeOpportunity * 0.82, 0, 1)
+  return {
+    occupancy,
+    hollow: args.kind !== 'lvn' && occupancy < 0.28,
+    clogged: args.kind === 'lvn' && occupancy > 0.38,
+    interior: occupancy * args.timeOpportunity * shut,
+    door,
+  }
+}
+
+/** Map a print onto a vertical range (session high–low or AVWAP ±2σ). */
+export function rangeHeight(px: number, lo: number, hi: number, minH = 0.28, maxH = 4.05): number {
+  const t = (px - lo) / (hi - lo || 1)
+  return minH + clamp(t, 0, 1) * (maxH - minH)
+}
+
 export function clamp(n: number, a: number, b: number): number {
   return Math.max(a, Math.min(b, n))
 }

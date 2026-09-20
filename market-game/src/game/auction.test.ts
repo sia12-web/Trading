@@ -3,6 +3,7 @@ import {
   computeAnchoredVwap,
   computeVolumeProfile,
   pushVwapTick,
+  stallOccupancy,
   timeOpportunity,
   volumeDivergence,
 } from './auction'
@@ -76,6 +77,35 @@ assert.ok(dow.avwap.sigma > 0, '5M AVWAP has volatility')
 assert.equal(STORES.filter((s) => s.range === 'yesterday').length, 3)
 assert.equal(STORES.filter((s) => s.range === 'fiveDay').length, 3)
 assert.ok(STORES.filter((s) => s.range === 'fiveMonth').length >= 1)
+
+const emptyHvn = stallOccupancy({
+  kind: 'hvn',
+  divergence: -0.85,
+  timeOpportunity: 0.8,
+  shutter: 1,
+  floorAlive: 1,
+  phase: 'live',
+})
+assert.ok(emptyHvn.hollow, 'HVN advertising empty reads hollow')
+const floodLvn = stallOccupancy({
+  kind: 'lvn',
+  divergence: -0.9,
+  timeOpportunity: 0.7,
+  shutter: 1,
+  floorAlive: 1,
+  phase: 'live',
+})
+assert.ok(floodLvn.clogged, 'LVN flood clogs the dock')
+const asleep = stallOccupancy({
+  kind: 'poc',
+  divergence: 0.6,
+  timeOpportunity: 1,
+  shutter: 0,
+  floorAlive: 0,
+  phase: 'preopen',
+})
+assert.equal(asleep.occupancy, 0)
+assert.equal(asleep.door, 0)
 
 console.log('auction tests: ok')
 console.log(

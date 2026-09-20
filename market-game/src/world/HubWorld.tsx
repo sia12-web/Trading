@@ -15,7 +15,6 @@ export function HubWorld() {
     <>
       <Sky sunPosition={[28, 12, 16]} turbidity={4.4} rayleigh={0.75} mieCoefficient={0.005} />
       <color attach="background" args={['#6a9cc4']} />
-      <fog attach="fog" args={['#7aa8c8', 22, 55]} />
       <hemisphereLight args={['#b8cce0', '#5a4834', 0.58]} />
       <ambientLight intensity={0.36} />
       <directionalLight position={[28, 12, 16]} intensity={1.8} color="#ffd39a" castShadow />
@@ -26,10 +25,6 @@ export function HubWorld() {
         <planeGeometry args={[28, 28]} />
         <meshStandardMaterial map={dirt} color="#6e563c" roughness={0.95} />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.03, 0]} receiveShadow>
-        <ringGeometry args={[9.2, 12.4, 4]} />
-        <meshStandardMaterial map={grass} color="#4e6e34" roughness={0.9} />
-      </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[16.4, 16.4]} />
         <meshStandardMaterial map={dirt} color="#8a7058" roughness={0.92} />
@@ -38,7 +33,7 @@ export function HubWorld() {
       <HubWalls brick={brick} />
       <DowGate position={DOW_GATE} brick={brick} metal={metal} />
       {LOCKED_MARKETS.map((m) => (
-        <LockedGate key={m.id} market={m} brick={brick} metal={metal} />
+        <LockedGate key={m.id} market={m} brick={brick} metal={metal} dirt={dirt} grass={grass} />
       ))}
       <HubDressing />
     </>
@@ -97,7 +92,7 @@ function DowGate({
         <cylinderGeometry args={[0.28, 0.35, 2.2, 8]} />
         <meshStandardMaterial map={metal} color="#5a4a40" />
       </mesh>
-      <Sign text="DOW" color="#e8dcc8" y={4.85} />
+      <Sign text="DOW MILL" color="#e8dcc8" y={4.85} />
     </group>
   )
 }
@@ -106,53 +101,118 @@ function LockedGate({
   market,
   brick,
   metal,
+  dirt,
+  grass,
 }: {
   market: (typeof LOCKED_MARKETS)[number]
   brick: THREE.Texture
   metal: THREE.Texture
+  dirt: THREE.Texture
+  grass: THREE.Texture
 }) {
   if (market.id === 'nasdaq') {
     return (
       <group position={market.position}>
-        <mesh position={[0, 1.7, 0]} castShadow>
-          <boxGeometry args={[3.4, 3.4, 2.6]} />
-          <meshStandardMaterial color="#2a4058" roughness={0.25} metalness={0.45} />
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]} receiveShadow>
+          <circleGeometry args={[3.1, 20]} />
+          <meshStandardMaterial map={grass} color="#3a6a40" roughness={0.85} />
         </mesh>
-        <mesh position={[0, 1.1, 1.35]}>
-          <boxGeometry args={[1.1, 1.8, 0.08]} />
-          <meshStandardMaterial color="#12181e" />
+        <mesh position={[-0.85, 1.85, -0.2]} castShadow>
+          <boxGeometry args={[1.7, 3.7, 1.5]} />
+          <meshStandardMaterial color="#8ab0c8" roughness={0.12} metalness={0.55} />
         </mesh>
-        <Lock y={1.2} z={1.42} />
-        <Sign text="NASDAQ" color="#8aa0b4" y={3.6} />
+        <mesh position={[1.05, 1.35, 0.15]} castShadow>
+          <boxGeometry args={[1.35, 2.7, 1.35]} />
+          <meshStandardMaterial color="#6a90a8" roughness={0.14} metalness={0.5} />
+        </mesh>
+        <mesh position={[0, 0.08, 1.1]} receiveShadow>
+          <boxGeometry args={[2.4, 0.1, 1.4]} />
+          <meshStandardMaterial color="#d8d0c4" roughness={0.7} />
+        </mesh>
+        {[-1.6, 1.6].map((x) => (
+          <mesh key={x} position={[x, 0.7, 1.35]}>
+            <cylinderGeometry args={[0.06, 0.08, 1.4, 6]} />
+            <meshStandardMaterial color="#c4c8cc" metalness={0.5} />
+          </mesh>
+        ))}
+        <Lock y={1.05} z={1.55} />
+        <Sign text="CAMPUS" color="#8aa0b4" y={3.85} />
       </group>
     )
   }
   if (market.id === 'gold') {
     return (
       <group position={market.position}>
-        <mesh position={[0, 1.55, 0]} castShadow>
-          <boxGeometry args={[3.6, 3.1, 2.8]} />
-          <meshStandardMaterial map={brick} color="#b08a40" roughness={0.7} />
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]} receiveShadow>
+          <circleGeometry args={[3.2, 16]} />
+          <meshStandardMaterial map={dirt} color="#8a6a38" roughness={0.95} />
         </mesh>
-        <mesh position={[0, 3.25, 0]} castShadow>
-          <boxGeometry args={[2.2, 0.7, 2.2]} />
-          <meshStandardMaterial color="#c4a046" metalness={0.5} roughness={0.35} />
+        <mesh position={[0, 0.55, -0.4]} castShadow>
+          <coneGeometry args={[1.8, 1.1, 7]} />
+          <meshStandardMaterial map={dirt} color="#6a5030" roughness={0.95} />
         </mesh>
-        <Lock y={1.15} z={1.45} />
-        <Sign text="GOLD" color="#e8d080" y={3.85} />
+        <mesh position={[-0.7, 2.15, 0]} rotation={[0, 0, 0.45]} castShadow>
+          <boxGeometry args={[0.16, 3.4, 0.16]} />
+          <meshStandardMaterial color="#6a4a28" />
+        </mesh>
+        <mesh position={[0.7, 2.15, 0]} rotation={[0, 0, -0.45]} castShadow>
+          <boxGeometry args={[0.16, 3.4, 0.16]} />
+          <meshStandardMaterial color="#6a4a28" />
+        </mesh>
+        <mesh position={[0, 3.55, 0]} castShadow>
+          <boxGeometry args={[1.8, 0.14, 0.18]} />
+          <meshStandardMaterial color="#5a3a20" />
+        </mesh>
+        <mesh position={[0, 0.85, 1.15]} castShadow>
+          <boxGeometry args={[1.2, 1.5, 0.15]} />
+          <meshStandardMaterial color="#1a1410" />
+        </mesh>
+        <mesh position={[1.35, 0.45, 0.8]} castShadow>
+          <dodecahedronGeometry args={[0.45, 0]} />
+          <meshStandardMaterial color="#c4a046" metalness={0.45} roughness={0.4} />
+        </mesh>
+        <mesh position={[1.7, 0.28, 1.15]} castShadow>
+          <dodecahedronGeometry args={[0.28, 0]} />
+          <meshStandardMaterial color="#e8c060" metalness={0.5} roughness={0.38} />
+        </mesh>
+        <Lock y={0.95} z={1.35} />
+        <Sign text="MINE" color="#e8d080" y={4.05} />
       </group>
     )
   }
+  void brick
   return (
     <group position={market.position}>
-      {[-0.85, 0.85].map((x) => (
-        <mesh key={x} position={[x, 1.15, 0]} castShadow>
-          <cylinderGeometry args={[0.7, 0.75, 2.3, 12]} />
-          <meshStandardMaterial map={metal} color="#5a4030" roughness={0.5} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]} receiveShadow>
+        <circleGeometry args={[3.15, 16]} />
+        <meshStandardMaterial map={dirt} color="#5a4a30" roughness={0.95} />
+      </mesh>
+      {([
+        [-0.95, 0.85, 0.7],
+        [0.95, 1.15, 0.85],
+        [0.15, 0.55, -0.95],
+      ] as Array<[number, number, number]>).map(([x, h, z]) => (
+        <mesh key={`${x}${z}`} position={[x, h, z]} castShadow>
+          <cylinderGeometry args={[h * 0.55, h * 0.62, h * 2, 14]} />
+          <meshStandardMaterial map={metal} color="#6a5040" roughness={0.45} metalness={0.4} />
         </mesh>
       ))}
-      <Lock y={0.9} z={1.15} />
-      <Sign text="OIL" color="#c4a090" y={2.6} />
+      {[-0.35, 0.35].map((x) => (
+        <mesh key={x} position={[x, 1.7, 0.2]}>
+          <boxGeometry args={[0.08, 3.4, 0.08]} />
+          <meshStandardMaterial color="#4a4038" metalness={0.4} />
+        </mesh>
+      ))}
+      <mesh position={[0, 3.45, 0.2]} rotation={[0, 0, Math.PI / 2]}>
+        <boxGeometry args={[0.08, 0.85, 0.08]} />
+        <meshStandardMaterial color="#4a4038" />
+      </mesh>
+      <mesh position={[0, 2.4, 0.55]} rotation={[0, 0, Math.PI / 2]} castShadow>
+        <cylinderGeometry args={[0.07, 0.07, 2.2, 8]} />
+        <meshStandardMaterial color="#3a3834" metalness={0.5} />
+      </mesh>
+      <Lock y={0.85} z={1.45} />
+      <Sign text="FIELD" color="#c4a090" y={3.55} />
     </group>
   )
 }
