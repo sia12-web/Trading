@@ -117,11 +117,11 @@ export const STORES: StoreDef[] = [
 
 export const LOCKED_MARKETS = [
   { id: 'nasdaq' as const, name: 'NASDAQ', world: 'Technology campuses', position: [8.6, 0, 1.4] as [number, number, number] },
-  { id: 'gold' as const, name: 'GOLD', world: 'Mines', position: [3.4, 0, 8.8] as [number, number, number] },
+  { id: 'gold' as const, name: 'GOLD', world: 'Mines', position: [0, 0, -8.6] as [number, number, number] },
   { id: 'oil' as const, name: 'OIL', world: 'Fields & refineries', position: [-8.6, 0, 1.6] as [number, number, number] },
 ]
 
-export const DOW_GATE: [number, number, number] = [0, 0, -8.6]
+export const DOW_GATE: [number, number, number] = [0, 0, 8.4]
 export const HUB_WALK = 14.2
 
 export function storeYaw(range: RangeKind): number {

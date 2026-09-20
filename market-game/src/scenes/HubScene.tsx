@@ -54,7 +54,7 @@ export function HubScene() {
         <IsoCamera mode="hub" />
         <HubWorld />
         <HubInteract />
-        <Player spawn={[0, 0, 2.2]} collide={false} bounds={{ minX: -HUB_WALK, maxX: HUB_WALK, minZ: -HUB_WALK, maxZ: HUB_WALK }} />
+        <Player spawn={[0, 0, 3.4]} collide={false} bounds={{ minX: -HUB_WALK, maxX: HUB_WALK, minZ: -HUB_WALK, maxZ: HUB_WALK }} />
         <CinematicFx />
       </Suspense>
     </Canvas>

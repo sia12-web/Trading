@@ -85,6 +85,7 @@ function DowGate({
   return (
     <group
       position={position}
+      rotation={[0, Math.PI, 0]}
       onClick={(e) => {
         e.stopPropagation()
         enterDow()
@@ -320,15 +321,33 @@ function HubDressing() {
       <CrateStack x={2.55} z={1.15} />
       <CrateStack x={-2.65} z={1.05} />
       <CrateStack x={0.35} z={-2.85} />
+      <CrateStack x={5.8} z={5.4} />
+      <CrateStack x={-5.9} z={5.2} />
+      <CrateStack x={5.6} z={-5.5} />
+      <CrateStack x={-5.7} z={-4.8} />
       <Barrel x={1.15} z={-1.85} color="#c45a28" />
       <Barrel x={-1.25} z={-1.65} color="#3a6a88" />
       <Barrel x={0.15} z={-3.35} color="#c4a046" />
       <Barrel x={3.55} z={2.85} color="#8a4030" />
       <Barrel x={-3.45} z={2.65} color="#c45a28" />
+      <Barrel x={6.4} z={4.2} color="#c45a28" />
+      <Barrel x={-6.2} z={4.0} color="#3a6a88" />
+      <Barrel x={6.1} z={-3.8} color="#c4a046" />
+      <Barrel x={-6.4} z={-3.4} color="#8a4030" />
+      <MarketStall x={-5.2} z={2.4} rot={0.2} />
+      <MarketStall x={5.15} z={2.55} rot={-0.15} />
+      <MarketStall x={-4.8} z={-2.6} rot={Math.PI / 2} />
+      <MarketStall x={4.9} z={-2.4} rot={-Math.PI / 2} />
+      <Cart x={6.2} z={-0.4} rot={1.2} />
+      <Cart x={-6.3} z={0.2} rot={-1.1} />
       <Worker x={0.85} z={4.15} rot={0.4} color="#ff6a28" />
       <Worker x={-1.15} z={4.05} rot={-0.3} color="#f0c040" />
       <Worker x={2.95} z={-2.15} rot={1.1} color="#e07030" />
       <Worker x={-3.05} z={-1.45} rot={-1.2} color="#8aa0b0" />
+      <Worker x={5.4} z={3.6} rot={0.8} color="#c44a22" />
+      <Worker x={-5.5} z={3.4} rot={-0.7} color="#e07030" />
+      <Worker x={4.6} z={-4.2} rot={2.1} color="#f0c040" />
+      <Worker x={-4.4} z={-4.0} rot={-2.3} color="#8aa0b0" />
       <mesh position={[0.2, 0.42, -1.15]} castShadow>
         <cylinderGeometry args={[0.32, 0.38, 0.72, 10]} />
         <meshStandardMaterial color="#8a9098" metalness={0.4} roughness={0.4} />

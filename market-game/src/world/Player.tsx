@@ -194,7 +194,7 @@ function PriceBody({
   useFrame(() => {
     const walk = vel.current
     const b = bob.current
-    const leg = Math.sin(b) * 0.55 * walk
+    const leg = Math.sin(b) * 0.85 * walk
     if (left.current) left.current.rotation.x = leg
     if (right.current) right.current.rotation.x = -leg
     if (larm.current) larm.current.rotation.x = -leg * 0.7
@@ -202,7 +202,7 @@ function PriceBody({
   })
 
   return (
-    <group scale={0.92}>
+    <group scale={1.18}>
       <mesh position={[0, 0.72, 0]} castShadow>
         <boxGeometry args={[0.42, 0.5, 0.26]} />
         <meshBasicMaterial color="#ff6a28" toneMapped={false} />
