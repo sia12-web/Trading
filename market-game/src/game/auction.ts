@@ -307,7 +307,7 @@ export function stallOccupancy(args: {
     }
   }
   // Already-fair keeps the volume (bodies/goods) and only eases the door.
-  if (args.timeOpportunity < 0.38 && args.kind !== 'lvn' && !take) occupancy *= 0.78
+  if (args.timeOpportunity < 0.38 && args.kind !== 'lvn' && !take) occupancy = clamp(Math.max(occupancy, 0.55), 0, 1)
   if (take) occupancy = clamp(occupancy + boost * 0.9, 0, 1)
   if (fade) occupancy = clamp(occupancy * (0.08 + (1 - boost) * 0.2), 0, 0.22)
   let door =

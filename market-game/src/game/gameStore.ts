@@ -77,7 +77,7 @@ function floorTape(): { liveVol: Record<string, number>; tpo: Record<string, num
   }
   return {
     liveVol,
-    tpo: { 'y-poc': 5.4 },
+    tpo: { 'y-poc': 6.2, '5d-poc': 0.4 },
   }
 }
 
@@ -359,7 +359,7 @@ export function takeAuction(side: Side) {
   set({
     fills: [fill, ...state.fills].slice(0, 12),
     inspecting: null,
-    message: note,
+    message: null,
     lastPrint: { storeId: id, side, at: performance.now() },
     liveVol,
   })
@@ -406,20 +406,21 @@ export function tickGame(dt: number) {
 
   if (state.phase === 'opening') {
     const openElapsed = (performance.now() - openWallMs) / 1000
-    const shutter = Math.min(1, Math.max(0, (openElapsed - 0.15) / 4.2))
-    const floorAlive = Math.min(1, Math.max(0, (openElapsed - 0.08) / 8.4))
+    const shutter = Math.min(1, Math.max(0, (openElapsed - 0.12) / 9.6))
+    const floorAlive = Math.min(1, Math.max(0, (openElapsed - 0.05) / 11.4))
+    const clockMin = NY_OPEN_MIN + openElapsed / 60
     if (openElapsed >= OPEN_CINEMATIC_SEC) {
       set({
         phase: 'live',
         openElapsed,
         shutter: 1,
         floorAlive: 1,
-        clockMin: NY_OPEN_MIN + 0.15,
+        clockMin: NY_OPEN_MIN + OPEN_CINEMATIC_SEC / 60,
         message: null,
       })
       return
     }
-    set({ openElapsed, shutter, floorAlive })
+    set({ openElapsed, shutter, floorAlive, clockMin })
     return
   }
 

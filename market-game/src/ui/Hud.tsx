@@ -45,7 +45,7 @@ export function Hud() {
         </div>
       )}
 
-      {g.phase === 'opening' && <div className="open-pip">9:30 NYC</div>}
+      {g.phase === 'opening' && <div className="open-pip">9:30 NYC · CASH OPEN</div>}
 
       {g.phase === 'live' && (
         <div className="prompt iso-prompt">
@@ -65,7 +65,7 @@ export function Hud() {
         </div>
       )}
 
-      {g.message && g.phase === 'live' && !g.inspecting && (
+      {g.message && g.phase === 'live' && !g.inspecting && !g.lastPrint && (
         <div className="floor-note">{g.message}</div>
       )}
 

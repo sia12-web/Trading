@@ -8,7 +8,7 @@ export const PREOPEN_MIN = 9 * 60 + 28
 export const OPEN_CINEMATIC_SEC = 12
 
 /** Session minutes advanced per real second after the open. */
-export const LIVE_TIME_SCALE = 2.4
+export const LIVE_TIME_SCALE = 0.12
 
 export function formatNyClock(minutes: number): string {
   const m = ((minutes % (24 * 60)) + 24 * 60) % (24 * 60)

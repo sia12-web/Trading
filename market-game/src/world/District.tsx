@@ -121,8 +121,8 @@ function BellTower({
   })
   return (
     <group>
-      <mesh position={[0, 2.35, 0]} castShadow receiveShadow>
-        <boxGeometry args={[2.15, 4.7, 2.15]} />
+      <mesh position={[0, 2.55, 0]} castShadow receiveShadow>
+        <boxGeometry args={[2.45, 5.1, 2.45]} />
         <meshStandardMaterial map={brick} color="#c45632" roughness={0.8} />
       </mesh>
       {[-0.62, 0.62].map((x) =>
@@ -133,26 +133,26 @@ function BellTower({
           </mesh>
         )),
       )}
-      <mesh position={[0, 4.95, 0]} castShadow>
-        <boxGeometry args={[2.55, 0.55, 2.55]} />
+      <mesh position={[0, 5.35, 0]} castShadow>
+        <boxGeometry args={[2.85, 0.6, 2.85]} />
         <meshStandardMaterial map={metal} color="#8a6a38" metalness={0.4} roughness={0.45} />
       </mesh>
-      <mesh position={[0, 5.55, 0]} castShadow>
-        <coneGeometry args={[1.15, 1.1, 4]} />
+      <mesh position={[0, 6.05, 0]} castShadow>
+        <coneGeometry args={[1.28, 1.25, 4]} />
         <meshStandardMaterial color="#6a3a28" roughness={0.7} />
       </mesh>
-      <mesh ref={bell} position={[0, 4.55, 0]} castShadow>
-        <sphereGeometry args={[0.58, 16, 12, 0, Math.PI * 2, 0, Math.PI / 1.5]} />
+      <mesh ref={bell} position={[0, 5.05, 0]} castShadow>
+        <sphereGeometry args={[0.78, 16, 12, 0, Math.PI * 2, 0, Math.PI / 1.5]} />
         <meshStandardMaterial color="#e8c04a" metalness={0.7} roughness={0.28} emissive="#c4a046" emissiveIntensity={ringing ? 0.45 : 0.08} />
       </mesh>
-      <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]} position={[0, 4.35, 0]}>
-        <ringGeometry args={[0.7, 0.88, 24]} />
+      <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]} position={[0, 4.75, 0]}>
+        <ringGeometry args={[0.85, 1.15, 24]} />
         <meshBasicMaterial color="#ffe080" transparent opacity={0} toneMapped={false} />
       </mesh>
       {opening && (
         <>
-          <mesh position={[0, 6.35, 1.35]} rotation={[0, Math.PI / 4, 0]}>
-            <planeGeometry args={[3.6, 0.72]} />
+          <mesh position={[0, 6.85, 1.45]} rotation={[0, Math.PI / 4, 0]}>
+            <planeGeometry args={[4.2, 0.85]} />
             <meshStandardMaterial map={banner} roughness={0.55} />
           </mesh>
           <mesh position={[0, 3.15, 1.22]}>
@@ -225,8 +225,8 @@ function SouthGate({ open }: { open: number }) {
           <meshStandardMaterial color="#b84a30" roughness={0.75} />
         </mesh>
       ))}
-      <mesh position={[0, 0.42 + open * 2.7, 0.08]} castShadow>
-        <boxGeometry args={[4.1, 0.38, 0.42]} />
+      <mesh position={[0, 0.48 + open * 3.05, 0.08]} castShadow>
+        <boxGeometry args={[4.4, 0.48, 0.5]} />
         <meshStandardMaterial color="#e8c04a" metalness={0.45} roughness={0.35} emissive="#c4a046" emissiveIntensity={0.2 + open * 0.7} />
       </mesh>
     </group>

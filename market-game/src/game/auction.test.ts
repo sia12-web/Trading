@@ -6,6 +6,7 @@ import {
   stallOccupancy,
   timeOpportunity,
   volumeDivergence,
+  rangeHeight,
 } from './auction'
 import { buildDowMarket } from './marketData'
 import { porchOf, STORES } from './stores'
@@ -165,6 +166,18 @@ const faded = stallOccupancy({
 })
 assert.ok(faded.occupancy < 0.25, 'a fade empties the porch')
 assert.ok(faded.door < 0.4, 'a fade drops the shutter')
+
+const lo = 42000
+const hi = 43000
+assert.ok(Math.abs(rangeHeight(lo, lo, hi, 0.3, 3.6) - 0.3) < 1e-6, 'range low sits on the bottom storey')
+assert.ok(Math.abs(rangeHeight(hi, lo, hi, 0.3, 3.6) - 3.6) < 1e-6, 'range high sits on the top storey')
+const yVal = rangeHeight(42200, lo, hi, 0.3, 3.6)
+const yVah = rangeHeight(42800, lo, hi, 0.3, 3.6)
+assert.ok(yVal > 0.3 && yVah < 3.6 && yVah - yVal > 0.5, 'value area is a countable mid belt')
+
+const hallTime = timeOpportunity({ kind: 'poc', tpoAtPrice: 6.2, sessionProgress: 0.02 })
+const millTime = timeOpportunity({ kind: 'poc', tpoAtPrice: 0.4, sessionProgress: 0.02 })
+assert.ok(hallTime.fairToday && hallTime.opportunity < millTime.opportunity, 'yesterday POC is already fair; five-day POC still a window')
 
 console.log('auction tests: ok')
 console.log(

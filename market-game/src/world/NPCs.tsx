@@ -35,16 +35,16 @@ function StallCrowd({ store }: { store: StoreDef }) {
   const printed = Boolean(g.lastPrint && g.lastPrint.storeId === store.id && performance.now() - g.lastPrint.at < PRINT_HOLD_MS)
   const fade = printed && g.lastPrint?.side === 'sell'
   const take = printed && g.lastPrint?.side === 'buy'
-  const max = store.kind === 'lvn' ? 6 : store.kind === 'poc' ? 16 : store.kind === 'avwap' ? 12 : 14
+  const max = store.kind === 'lvn' ? 6 : store.kind === 'poc' ? 22 : store.kind === 'avwap' ? 16 : 18
   const n = fade
-    ? Math.max(2, Math.round(max * 0.25))
+    ? 0
     : store.kind === 'lvn'
       ? st.clogged
         ? max
         : take
-          ? 6
+          ? 8
           : 0
-      : Math.max(0, Math.round(st.occupancy * max) + (take ? 8 : 0))
+      : Math.max(0, Math.round(st.occupancy * max) + (take ? 10 : 0))
   if (n <= 0) return null
   const arrive = Math.min(1, Math.max(0, g.floorAlive / 0.92))
   return (
@@ -70,7 +70,7 @@ function StallCrowd({ store }: { store: StoreDef }) {
 function ShiftColumn({ alive }: { alive: number }) {
   return (
     <group>
-      {Array.from({ length: 20 }, (_, i) => (
+      {Array.from({ length: 34 }, (_, i) => (
         <ShiftWalker key={i} seed={i} alive={alive} />
       ))}
     </group>
@@ -111,7 +111,7 @@ function ShiftWalker({ seed, alive }: { seed: number; alive: number }) {
 
   const color = seed % 3 === 0 ? '#f0c040' : seed % 3 === 1 ? '#e07030' : '#8aa0b0'
   return (
-    <group ref={ref} position={[gate[0], 0, gate[1]]} scale={0.72}>
+    <group ref={ref} position={[gate[0], 0, gate[1]]} scale={0.82}>
       <TroopBody color={color} left={left} right={right} />
     </group>
   )

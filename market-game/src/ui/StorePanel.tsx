@@ -12,7 +12,7 @@ export function StorePanel() {
   return (
     <div className="store-panel" style={{ borderColor: store.accent }}>
       <h3>{store.name}</h3>
-      <p>{store.theory}</p>
+      <p>{store.subtitle}</p>
       {g.message && <p style={{ color: '#d4a046', fontSize: 13 }}>{g.message}</p>}
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
         <button className="ghost hit" onClick={() => takeAuction('buy')} style={{ flex: 1 }}>

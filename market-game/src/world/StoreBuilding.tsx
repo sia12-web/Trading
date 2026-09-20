@@ -76,10 +76,17 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
       {store.building === 'spire' && <Spire brick={brick} metal={metal} avwap={g.avwap} live={g.livePrice} stall={st} printed={printed} />}
       {store.building === 'loft' && <Loft brick={brick} metal={metal} avwap={g.avwap} stall={st} />}
       {store.building === 'pit' && <Pit brick={brick} metal={metal} avwap={g.avwap} stall={st} />}
-      <RangeStoreys range={range} nodePx={price} color={store.accent} width={shell.w} depth={shell.d} />
+      <RangeStoreys
+        rangeKind={store.range}
+        range={range}
+        nodePx={price}
+        color={store.accent}
+        width={shell.w}
+        depth={shell.d}
+      />
       <Fascia title={label} paint={store.accent} y={shell.fasciaY} width={Math.min(3.85, shell.w * 0.92)} z={shell.d * 0.52} />
       {gableX !== 0 && (
-        <GableSign title={label} paint={store.accent} x={gableX} y={shell.fasciaY} />
+        <GableSign title={label} paint={store.accent} x={gableX} y={2.55} />
       )}
       <ChalkBoard price={fmtPx(price)} y={store.building === 'pit' ? 1.05 : 1.4} z={shell.d * 0.52 + 0.12} pulse={printed} />
       <GoodsPile stall={st} kind={store.kind} z={shell.d * 0.55 + 0.85} />
@@ -117,53 +124,73 @@ function wingRange(p: VolumeProfile) {
 }
 
 function RangeStoreys({
+  rangeKind,
   range,
   nodePx,
   color,
   width,
   depth,
 }: {
+  rangeKind: StoreDef['range']
   range: { lo: number; hi: number; val: number; vah: number }
   nodePx: number
   color: string
   width: number
   depth: number
 }) {
-  const yLo = rangeHeight(range.lo, range.lo, range.hi, 0.22, 3.55)
-  const yHi = rangeHeight(range.hi, range.lo, range.hi, 0.22, 3.55)
-  const yVal = rangeHeight(range.val, range.lo, range.hi, 0.22, 3.55)
-  const yVah = rangeHeight(range.vah, range.lo, range.hi, 0.22, 3.55)
-  const yNode = rangeHeight(nodePx, range.lo, range.hi, 0.22, 3.55)
-  const bandH = Math.max(0.28, Math.min(0.42, yVah - yVal))
-  const span = Math.max(1.05, yHi - yLo)
-  const slats = 5
+  const yLo = rangeHeight(range.lo, range.lo, range.hi, 0.28, 3.65)
+  const yHi = rangeHeight(range.hi, range.lo, range.hi, 0.28, 3.65)
+  const yVal = rangeHeight(range.val, range.lo, range.hi, 0.28, 3.65)
+  const yVah = rangeHeight(range.vah, range.lo, range.hi, 0.28, 3.65)
+  const yNode = rangeHeight(nodePx, range.lo, range.hi, 0.28, 3.65)
+  const vaH = Math.max(0.55, yVah - yVal)
+  const wallW = rangeKind === 'yesterday' ? width : depth
+  const pose =
+    rangeKind === 'fiveDay'
+      ? { p: [width * 0.52 + 0.07, 0, 0] as [number, number, number], r: [0, Math.PI / 2, 0] as [number, number, number] }
+      : rangeKind === 'fiveMonth'
+        ? { p: [-width * 0.52 - 0.07, 0, 0] as [number, number, number], r: [0, -Math.PI / 2, 0] as [number, number, number] }
+        : { p: [0, 0, depth * 0.52 + 0.07] as [number, number, number], r: [0, 0, 0] as [number, number, number] }
   return (
-    <group>
-      <mesh position={[0, (yVah + yVal) / 2, 0]} castShadow>
-        <boxGeometry args={[width + 0.08, bandH, depth + 0.08]} />
-        <meshStandardMaterial color={color} roughness={0.48} metalness={0.18} />
+    <group position={pose.p} rotation={pose.r}>
+      <mesh position={[0, yLo, 0.02]} castShadow>
+        <boxGeometry args={[wallW * 0.9, 0.2, 0.1]} />
+        <meshBasicMaterial color="#1a1008" />
       </mesh>
-      {Array.from({ length: slats }, (_, i) => {
-        const y = yLo + (span * i) / (slats - 1)
-        return (
-          <mesh key={i} position={[0, y, 0]} castShadow>
-            <boxGeometry args={[width + 0.1, 0.07, depth + 0.1]} />
-            <meshStandardMaterial color={i === 0 ? '#2a1810' : i === slats - 1 ? '#e8c04a' : '#6a4a30'} roughness={0.52} />
-          </mesh>
-        )
-      })}
-      <mesh position={[0, yHi, 0]} castShadow>
-        <boxGeometry args={[width + 0.14, 0.12, depth + 0.14]} />
+      <mesh position={[0, (yVal + yVah) / 2, 0.03]} castShadow>
+        <boxGeometry args={[wallW * 0.94, vaH, 0.12]} />
+        <meshStandardMaterial color={color} roughness={0.42} metalness={0.12} />
+      </mesh>
+      <mesh position={[0, yVal, 0.05]}>
+        <boxGeometry args={[wallW * 0.96, 0.08, 0.1]} />
+        <meshBasicMaterial color="#e8dcc0" />
+      </mesh>
+      <mesh position={[0, yVah, 0.05]}>
+        <boxGeometry args={[wallW * 0.96, 0.08, 0.1]} />
+        <meshBasicMaterial color="#e8dcc0" />
+      </mesh>
+      <mesh position={[0, yHi, 0.04]} castShadow>
+        <boxGeometry args={[wallW * 0.9, 0.2, 0.1]} />
         <meshBasicMaterial color="#f0c84a" />
       </mesh>
-      <mesh position={[0, yLo, 0]} castShadow>
-        <boxGeometry args={[width + 0.12, 0.12, depth + 0.12]} />
-        <meshBasicMaterial color="#2a1810" />
+      <mesh position={[-wallW * 0.4, 1.9, 0.06]} castShadow>
+        <boxGeometry args={[0.32, 3.55, 0.08]} />
+        <meshStandardMaterial color="#241810" roughness={0.7} />
       </mesh>
-      <mesh position={[0, yNode, 0]} castShadow>
-        <boxGeometry args={[width + 0.1, 0.1, depth + 0.1]} />
-        <meshStandardMaterial color="#e8c070" roughness={0.4} metalness={0.28} />
-      </mesh>
+      {(
+        [
+          [yLo, '#1a1008', 0.14],
+          [yVal, '#e8dcc0', 0.1],
+          [yVah, '#e8dcc0', 0.1],
+          [yHi, '#f0c84a', 0.14],
+          [yNode, '#fff4d0', 0.18],
+        ] as Array<[number, string, number]>
+      ).map(([y, c, h], i) => (
+        <mesh key={i} position={[-wallW * 0.4, y, 0.12]}>
+          <boxGeometry args={[0.42, h, 0.1]} />
+          <meshBasicMaterial color={c} />
+        </mesh>
+      ))}
     </group>
   )
 }
@@ -184,7 +211,7 @@ function GableSign({ title, paint, x, y }: { title: string; paint: string; x: nu
   useEffect(() => () => tex.dispose(), [tex])
   return (
     <mesh position={[x, y, 0]} rotation={[0, (x > 0 ? 1 : -1) * (Math.PI / 2), 0]} castShadow>
-      <boxGeometry args={[3.55, 0.88, 0.18]} />
+      <boxGeometry args={[4.15, 1.05, 0.2]} />
       <meshStandardMaterial map={tex} roughness={0.48} />
     </mesh>
   )
@@ -203,16 +230,16 @@ function NyCashBunting({ y, z }: { y: number; z: number }) {
 
 function PrintBurst() {
   return (
-    <group position={[0, 0.45, 3.35]}>
-      {Array.from({ length: 14 }, (_, i) => (
-        <mesh key={i} position={[((i % 5) - 2) * 0.72, 0.22 + Math.floor(i / 5) * 0.58, (i % 3) * 0.28 - 0.1]} castShadow>
-          <boxGeometry args={[0.78, 0.62, 0.62]} />
+    <group position={[0, 0.45, 3.15]}>
+      {Array.from({ length: 20 }, (_, i) => (
+        <mesh key={i} position={[((i % 5) - 2) * 0.82, 0.28 + Math.floor(i / 5) * 0.7, (i % 3) * 0.32 - 0.08]} castShadow>
+          <boxGeometry args={[0.9, 0.72, 0.7]} />
           <meshBasicMaterial color={i % 2 ? '#f0c84a' : '#e07030'} />
         </mesh>
       ))}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0.1]}>
-        <ringGeometry args={[1.35, 2.05, 22]} />
-        <meshBasicMaterial color="#ffe080" transparent opacity={0.82} toneMapped={false} />
+        <ringGeometry args={[1.55, 2.35, 22]} />
+        <meshBasicMaterial color="#ffe080" transparent opacity={0.88} toneMapped={false} />
       </mesh>
     </group>
   )
@@ -256,14 +283,15 @@ function ChalkBoard({ price, y, z, pulse }: { price: string; y: number; z: numbe
 function GoodsPile({ stall, kind, z }: { stall: Stall; kind: StoreDef['kind']; z: number }) {
   const taking = stall.printSide === 'buy' && stall.printBoost > 0.12
   const fading = stall.printSide === 'sell' && stall.printBoost > 0.12
-  const extra = taking ? 16 : 0
+  const extra = taking ? 22 : 0
+  const filled = Math.round(stall.occupancy * 26)
   const n = fading
     ? 0
     : kind === 'lvn'
       ? stall.clogged
-        ? 14 + extra
+        ? 16 + extra
         : extra
-      : Math.round(stall.occupancy * 22) + extra
+      : (filled > 0 ? Math.max(8, filled) : 0) + extra
   if (n <= 0) return stall.hollow || fading || (kind === 'lvn' && !stall.clogged) ? <EmptyRacks z={z} /> : null
   return (
     <group>
@@ -271,13 +299,13 @@ function GoodsPile({ stall, kind, z }: { stall: Stall; kind: StoreDef['kind']; z
         <mesh
           key={i}
           position={[
-            -1.85 + (i % 5) * 0.72,
-            0.32 + Math.floor(i / 5) * 0.5 + stall.printBoost * 0.28,
-            z + (i % 2) * 0.46,
+            -1.95 + (i % 5) * 0.78,
+            0.36 + Math.floor(i / 5) * 0.58 + stall.printBoost * 0.32,
+            z + (i % 2) * 0.5,
           ]}
           castShadow
         >
-          <boxGeometry args={[0.62, 0.48, 0.54]} />
+          <boxGeometry args={[0.7, 0.54, 0.6]} />
           <meshBasicMaterial color={kind === 'lvn' ? '#8a6040' : i % 2 ? '#e07030' : '#f0c84a'} />
         </mesh>
       ))}
@@ -288,15 +316,15 @@ function GoodsPile({ stall, kind, z }: { stall: Stall; kind: StoreDef['kind']; z
 function EmptyRacks({ z }: { z: number }) {
   return (
     <group position={[0, 0.55, z]}>
-      {[-0.55, 0.55].map((x) => (
+      {[-0.7, 0.7].map((x) => (
         <mesh key={x} position={[x, 0, 0]}>
-          <boxGeometry args={[0.08, 1.1, 0.7]} />
+          <boxGeometry args={[0.1, 1.35, 0.85]} />
           <meshStandardMaterial color="#4a4038" />
         </mesh>
       ))}
-      {[0.2, 0.55].map((y) => (
-        <mesh key={y} position={[0, y - 0.4, 0]}>
-          <boxGeometry args={[1.2, 0.04, 0.65]} />
+      {[0.15, 0.55, 0.95].map((y) => (
+        <mesh key={y} position={[0, y - 0.45, 0]}>
+          <boxGeometry args={[1.45, 0.05, 0.8]} />
           <meshStandardMaterial color="#5a5048" />
         </mesh>
       ))}
@@ -746,21 +774,21 @@ function Spire({
   const cab = useRef<THREE.Mesh>(null)
   const deck = useRef<THREE.Mesh>(null)
   const needle = useRef<THREE.Mesh>(null)
-  const cabY = useRef(rangeHeight(avwap.vwap, avwap.lower2, avwap.upper2, 1.15, 4.55))
-  const liveY = useRef(rangeHeight(live, avwap.lower2, avwap.upper2, 1.15, 4.55))
+  const cabY = useRef(rangeHeight(avwap.vwap, avwap.lower2, avwap.upper2, 1.35, 4.85))
+  const liveY = useRef(rangeHeight(live, avwap.lower2, avwap.upper2, 1.35, 4.85))
 
   useFrame((_, dt) => {
-    const target = rangeHeight(avwap.vwap, avwap.lower2, avwap.upper2, 1.15, 4.55)
-    const liveT = rangeHeight(live, avwap.lower2, avwap.upper2, 1.15, 4.55)
-    cabY.current = THREE.MathUtils.lerp(cabY.current, target, 1 - Math.exp(-dt * 4.6))
-    liveY.current = THREE.MathUtils.lerp(liveY.current, liveT, 1 - Math.exp(-dt * 6.2))
+    const target = rangeHeight(avwap.vwap, avwap.lower2, avwap.upper2, 1.35, 4.85)
+    const liveT = rangeHeight(live, avwap.lower2, avwap.upper2, 1.35, 4.85)
+    cabY.current = THREE.MathUtils.lerp(cabY.current, target, 1 - Math.exp(-dt * 5.2))
+    liveY.current = THREE.MathUtils.lerp(liveY.current, liveT, 1 - Math.exp(-dt * 7.4))
     if (cab.current) cab.current.position.y = cabY.current
-    if (deck.current) deck.current.position.y = cabY.current - 0.42
+    if (deck.current) deck.current.position.y = cabY.current - 0.48
     if (needle.current) needle.current.position.y = liveY.current
   })
 
-  const yU = rangeHeight(avwap.upper1, avwap.lower2, avwap.upper2, 1.15, 4.55)
-  const yL = rangeHeight(avwap.lower1, avwap.lower2, avwap.upper2, 1.15, 4.55)
+  const yU = rangeHeight(avwap.upper1, avwap.lower2, avwap.upper2, 1.35, 4.85)
+  const yL = rangeHeight(avwap.lower1, avwap.lower2, avwap.upper2, 1.35, 4.85)
 
   return (
     <group>
@@ -778,22 +806,26 @@ function Spire({
       </mesh>
       <WindowRow xs={[-1.05, 1.05]} y={2.55} z={1.76} lit={stall.interior} />
       <RollDoor width={1.45} height={1.7} open={stall.door} z={1.78} />
-      <mesh ref={deck} position={[0, 2.4, 1.82]} castShadow>
-        <boxGeometry args={[2.35, 0.16, 0.55]} />
+      <mesh position={[-1.72, 2.7, 0.15]} castShadow>
+        <boxGeometry args={[0.16, 4.4, 0.16]} />
+        <meshStandardMaterial color="#8a6a38" metalness={0.35} roughness={0.45} />
+      </mesh>
+      <mesh ref={deck} position={[0, 2.4, 1.88]} castShadow>
+        <boxGeometry args={[2.65, 0.18, 0.7]} />
         <meshStandardMaterial color="#e8c04a" metalness={0.5} roughness={0.32} />
       </mesh>
-      <mesh ref={cab} position={[0, 2.8, 1.95]} castShadow>
-        <boxGeometry args={[1.15, 0.7, 0.7]} />
+      <mesh ref={cab} position={[0, 2.9, 2.05]} castShadow>
+        <boxGeometry args={[1.45, 0.92, 0.88]} />
         <meshStandardMaterial
           color="#e8c04a"
           metalness={0.5}
           roughness={0.3}
           emissive="#c4a046"
-          emissiveIntensity={printed ? 1.15 : 0.42}
+          emissiveIntensity={printed ? 1.25 : 0.55}
         />
       </mesh>
-      <mesh ref={needle} position={[1.55, 2.8, 1.7]} castShadow>
-        <boxGeometry args={[0.18, 0.42, 0.42]} />
+      <mesh ref={needle} position={[1.62, 2.8, 1.78]} castShadow>
+        <boxGeometry args={[0.22, 0.55, 0.5]} />
         <meshBasicMaterial color="#ffe080" />
       </mesh>
       <mesh position={[1.78, yU, 0]} castShadow>
@@ -813,7 +845,6 @@ function Spire({
 
 function Loft({
   brick,
-  metal,
   avwap,
   stall,
 }: {
@@ -822,41 +853,41 @@ function Loft({
   avwap: AnchoredVwap
   stall: Stall
 }) {
-  const premium = rangeHeight(avwap.upper1, avwap.lower2, avwap.upper2, 2.05, 3.55)
+  const deck = useRef<THREE.Group>(null)
+  const target = rangeHeight(avwap.upper1, avwap.lower2, avwap.upper2, 2.15, 3.85)
+  useFrame((_, dt) => {
+    if (!deck.current) return
+    deck.current.position.y = THREE.MathUtils.lerp(deck.current.position.y, target, 1 - Math.exp(-dt * 4.2))
+  })
   return (
     <group>
       <mesh position={[0, 1.55, 0]} castShadow receiveShadow>
         <boxGeometry args={[3.55, 3.1, 3.4]} />
         <meshStandardMaterial map={brick} color={stall.hollow ? '#c07048' : '#d06038'} roughness={0.8} />
       </mesh>
-      <mesh position={[0, premium + 0.85, 0]} castShadow>
-        <boxGeometry args={[3.7, 1.85, 3.55]} />
-        <meshStandardMaterial
-          map={metal}
-          color="#8ab0d0"
-          metalness={0.28}
-          roughness={0.35}
-          emissive="#5a88b0"
-          emissiveIntensity={0.14 + stall.interior * 0.3}
-        />
-      </mesh>
-      <mesh position={[0, premium + 1.95, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
-        <coneGeometry args={[2.35, 0.85, 4]} />
-        <meshStandardMaterial color="#3a5a88" />
-      </mesh>
-      <WindowRow xs={[-0.95, 0.95]} y={2.15} z={1.74} lit={stall.interior} />
-      {[-0.75, 0.75].map((x) => (
-        <mesh key={x} position={[x, premium + 0.85, 1.82]}>
-          <boxGeometry args={[1.05, 1.05, 0.08]} />
-          <meshStandardMaterial
-            color="#e8f4ff"
-            roughness={0.12}
-            metalness={0.35}
-            emissive="#c8e0f4"
-            emissiveIntensity={0.28 + stall.interior * 0.5}
-          />
+      <group ref={deck} position={[0, target, 0]}>
+        <mesh position={[0, 0.85, 0]} castShadow>
+          <boxGeometry args={[3.7, 1.55, 3.55]} />
+          <meshStandardMaterial map={brick} color="#c45a38" roughness={0.78} />
         </mesh>
-      ))}
+        <mesh position={[0, 1.75, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
+          <coneGeometry args={[2.15, 0.7, 4]} />
+          <meshStandardMaterial color="#8a4030" />
+        </mesh>
+        {[-0.75, 0.75].map((x) => (
+          <mesh key={x} position={[x, 0.85, 1.82]}>
+            <boxGeometry args={[1.05, 0.95, 0.08]} />
+            <meshStandardMaterial
+              color="#e8f4ff"
+              roughness={0.12}
+              metalness={0.35}
+              emissive="#c8e0f4"
+              emissiveIntensity={0.28 + stall.interior * 0.5}
+            />
+          </mesh>
+        ))}
+      </group>
+      <WindowRow xs={[-0.95, 0.95]} y={2.15} z={1.74} lit={stall.interior} />
       <RollDoor width={1.4} height={1.6} open={stall.door} z={1.76} />
     </group>
   )
@@ -873,7 +904,12 @@ function Pit({
   avwap: AnchoredVwap
   stall: Stall
 }) {
-  const floor = rangeHeight(avwap.lower1, avwap.lower2, avwap.upper2, 0.12, 1.15)
+  const pit = useRef<THREE.Mesh>(null)
+  const target = rangeHeight(avwap.lower1, avwap.lower2, avwap.upper2, 0.18, 1.35)
+  useFrame((_, dt) => {
+    if (!pit.current) return
+    pit.current.position.y = THREE.MathUtils.lerp(pit.current.position.y, target + 0.12, 1 - Math.exp(-dt * 4.2))
+  })
   return (
     <group>
       <mesh position={[0, 1.15, 0]} castShadow receiveShadow>
@@ -884,11 +920,11 @@ function Pit({
         <boxGeometry args={[3.7, 0.16, 3.55]} />
         <meshStandardMaterial map={metal} color="#8a7040" metalness={0.35} roughness={0.45} />
       </mesh>
-      <mesh position={[0, floor + 0.12, 0.15]} receiveShadow>
-        <boxGeometry args={[2.4, 0.16, 2.2]} />
-        <meshStandardMaterial color="#f0c84a" roughness={0.4} metalness={0.4} emissive="#d4a046" emissiveIntensity={0.32} />
+      <mesh ref={pit} position={[0, target + 0.12, 0.15]} receiveShadow>
+        <boxGeometry args={[2.4, 0.2, 2.2]} />
+        <meshStandardMaterial color="#f0c84a" roughness={0.4} metalness={0.4} emissive="#d4a046" emissiveIntensity={0.4} />
       </mesh>
-      {Array.from({ length: 5 }, (_, i) => (
+      {Array.from({ length: 8 }, (_, i) => (
         <mesh key={i} position={[0, 0.14 + i * 0.16, 1.85 - i * 0.18]} rotation={[-0.38, 0, 0]}>
           <boxGeometry args={[1.7, 0.1, 0.42]} />
           <meshStandardMaterial color="#b07a38" />
@@ -896,7 +932,7 @@ function Pit({
       ))}
       {stall.occupancy > 0.12 &&
         [0, 1, 2, 3, 4].map((i) => (
-          <mesh key={i} position={[-0.85 + i * 0.42, floor + 0.4, 0.2]} castShadow>
+          <mesh key={i} position={[-0.85 + i * 0.42, target + 0.4, 0.2]} castShadow>
             <boxGeometry args={[0.38, 0.36, 0.34]} />
             <meshStandardMaterial color="#c47830" />
           </mesh>
