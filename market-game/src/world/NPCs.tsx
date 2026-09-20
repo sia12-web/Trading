@@ -73,7 +73,7 @@ function Person({
   const ref = useRef<THREE.Group>(null)
   const left = useRef<THREE.Mesh>(null)
   const right = useRef<THREE.Mesh>(null)
-  const color = kind === 'broker' ? '#8a4030' : kind === 'welder' ? '#6a5a28' : '#3a4a58'
+  const color = kind === 'broker' ? '#e07038' : kind === 'welder' ? '#3a7aa0' : '#c4a046'
   const yaw = store.range === 'fiveMonth' ? -Math.PI / 2 : 0
   const doorLocal: [number, number] = [((seed % 5) - 2) * 0.38, 2.15]
   const worldDoor = rotate2(doorLocal, yaw)
@@ -93,7 +93,7 @@ function Person({
     ref.current.position.y = hop ? 0.18 + Math.abs(Math.sin(s.clock.elapsedTime * 14)) * 0.22 : 0
     ref.current.rotation.y = Math.atan2(home[0] - x, home[1] - z) || t
     ref.current.visible = alive > 0.12
-    ref.current.scale.setScalar(0.7 + 0.14 * alive)
+    ref.current.scale.setScalar(0.92 + 0.12 * alive)
     const leg = Math.sin(t * 7) * 0.45
     if (left.current) left.current.rotation.x = leg
     if (right.current) right.current.rotation.x = -leg
@@ -103,16 +103,16 @@ function Person({
     <group ref={ref} position={[home[0], 0, home[1]]}>
       <mesh position={[0, 0.55, 0]} castShadow>
         <capsuleGeometry args={[0.16, 0.32, 4, 8]} />
-        <meshStandardMaterial color={color} roughness={0.65} />
+        <meshStandardMaterial color={color} roughness={0.55} emissive={color} emissiveIntensity={0.18} />
       </mesh>
       <mesh position={[0, 0.88, 0]} castShadow>
         <sphereGeometry args={[0.13, 8, 6]} />
-        <meshStandardMaterial color="#d4b090" />
+        <meshStandardMaterial color="#f0d0a8" emissive="#d4b090" emissiveIntensity={0.12} />
       </mesh>
       {kind !== 'broker' && (
         <mesh position={[0, 0.98, 0]} castShadow>
           <cylinderGeometry args={[0.14, 0.16, 0.1, 8]} />
-          <meshStandardMaterial color="#c4a046" />
+          <meshStandardMaterial color="#f0c040" emissive="#c4a046" emissiveIntensity={0.2} />
         </mesh>
       )}
       {kind === 'broker' && (

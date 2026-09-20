@@ -1,5 +1,6 @@
 import { Canvas } from '@react-three/fiber'
 import { Suspense, useEffect } from 'react'
+import * as THREE from 'three'
 import { tickGame } from '../game/gameStore'
 import { STORES } from '../game/stores'
 import { CinematicFx } from '../world/CinematicFx'
@@ -29,8 +30,9 @@ export function DowScene() {
       dpr={[1, 1.75]}
       gl={{ antialias: true, powerPreference: 'high-performance' }}
       onCreated={({ gl }) => {
-        gl.setClearColor('#6a9cc4')
-        gl.toneMappingExposure = 1.05
+        gl.setClearColor('#74c8f0')
+        gl.toneMapping = THREE.ACESFilmicToneMapping
+        gl.toneMappingExposure = 1.58
       }}
     >
       <Suspense fallback={null}>

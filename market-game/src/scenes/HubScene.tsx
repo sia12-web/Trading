@@ -1,5 +1,6 @@
 import { Canvas } from '@react-three/fiber'
 import { Suspense, useEffect } from 'react'
+import * as THREE from 'three'
 import { enterDow, getGame } from '../game/gameStore'
 import { DOW_GATE, LOCKED_MARKETS } from '../game/stores'
 import { CinematicFx } from '../world/CinematicFx'
@@ -14,7 +15,7 @@ function HubInteract() {
       if (e.key.toLowerCase() !== 'e') return
       const p = getGame().player
       const dDow = Math.hypot(p.x - DOW_GATE[0], p.z - DOW_GATE[2])
-      if (dDow < 2.8) {
+      if (dDow < 3.6) {
         enterDow()
         return
       }
@@ -42,8 +43,9 @@ export function HubScene() {
       dpr={[1, 1.75]}
       gl={{ antialias: true }}
       onCreated={({ gl }) => {
-        gl.setClearColor('#6a9cc4')
-        gl.toneMappingExposure = 1.02
+        gl.setClearColor('#74c8f0')
+        gl.toneMapping = THREE.ACESFilmicToneMapping
+        gl.toneMappingExposure = 1.56
       }}
     >
       <Suspense fallback={null}>

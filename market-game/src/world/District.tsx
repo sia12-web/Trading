@@ -27,51 +27,53 @@ export function District() {
   const grass = useGrassTexture()
   const dirt = useDirtTexture()
   const dawn = g.phase === 'preopen'
-  const sunPos: [number, number, number] = dawn ? [26, 7.5, 14] : [32, 12, 18]
-  const sun = dawn ? '#ff9a58' : '#ffd39a'
+  const sunPos: [number, number, number] = dawn ? [26, 12, 18] : [22, 42, 18]
+  const sun = dawn ? '#ffc488' : '#fff6d0'
+  const sky = dawn ? '#c8b090' : '#74c8f0'
 
   useFrame(() => {
-        gl.toneMappingExposure = dawn ? 0.98 : 1.14
-    gl.setClearColor(dawn ? '#c48a62' : '#6a9cc4', 1)
+    gl.toneMappingExposure = dawn ? 1.22 : 1.62
+    gl.setClearColor(sky, 1)
   })
 
   return (
     <>
       <Sky
         sunPosition={sunPos}
-        turbidity={dawn ? 10 : 4.2}
-        rayleigh={dawn ? 2.2 : 0.7}
-        mieCoefficient={0.006}
-        mieDirectionalG={0.82}
+        turbidity={dawn ? 5.4 : 1.55}
+        rayleigh={dawn ? 1.15 : 0.28}
+        mieCoefficient={dawn ? 0.005 : 0.0028}
+        mieDirectionalG={0.72}
       />
-      <hemisphereLight args={[dawn ? '#8a6a88' : '#b8cce0', dawn ? '#3a2414' : '#5a4834', dawn ? 0.42 : 0.62]} />
-      <ambientLight intensity={dawn ? 0.28 : 0.38} />
+      <hemisphereLight args={[dawn ? '#f0d0b0' : '#e8f4ff', dawn ? '#7a6a48' : '#6a9a48', dawn ? 0.82 : 1.28]} />
+      <ambientLight intensity={dawn ? 0.58 : 0.98} />
       <directionalLight
         position={sunPos}
-        intensity={dawn ? 1.45 : 1.85}
+        intensity={dawn ? 1.85 : 2.85}
         color={sun}
         castShadow
         shadow-mapSize={[2048, 2048]}
-        shadow-bias={-0.00035}
-        shadow-normalBias={0.04}
+        shadow-bias={-0.00028}
+        shadow-normalBias={0.05}
         shadow-camera-near={2}
-        shadow-camera-far={70}
-        shadow-camera-left={-20}
-        shadow-camera-right={20}
-        shadow-camera-top={20}
-        shadow-camera-bottom={-20}
+        shadow-camera-far={90}
+        shadow-camera-left={-24}
+        shadow-camera-right={24}
+        shadow-camera-top={24}
+        shadow-camera-bottom={-24}
       />
-      <directionalLight position={[-18, 10, -10]} intensity={dawn ? 0.22 : 0.38} color="#9ab8d0" />
-      <fog attach="fog" args={[dawn ? '#c49a78' : '#8ab4d0', 36, 88]} />
-      <color attach="background" args={[dawn ? '#c48a62' : '#6a9cc4']} />
+      <directionalLight position={[18, 16, 18]} intensity={dawn ? 0.42 : 0.78} color="#fff4dc" />
+      <directionalLight position={[-20, 14, -10]} intensity={dawn ? 0.52 : 0.7} color="#b5dcff" />
+      <directionalLight position={[6, 8, -18]} intensity={dawn ? 0.16 : 0.28} color="#ffe8b0" />
+      <color attach="background" args={[sky]} />
 
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.08, 0]} receiveShadow>
-        <planeGeometry args={[42, 42]} />
-        <meshStandardMaterial map={dirt} roughness={0.95} color="#6e563c" />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.1, 0]} receiveShadow>
+        <planeGeometry args={[56, 56]} />
+        <meshStandardMaterial map={grass} roughness={0.88} color="#58b03c" />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]} receiveShadow>
-        <ringGeometry args={[YARD + 0.6, YARD + 4.4, 4]} />
-        <meshStandardMaterial map={grass} roughness={0.92} color="#4e6e34" />
+        <ringGeometry args={[YARD + 0.2, YARD + 7.4, 4]} />
+        <meshStandardMaterial map={grass} roughness={0.86} color="#4eaa38" />
       </mesh>
 
       <mesh
@@ -89,7 +91,7 @@ export function District() {
         }}
       >
         <planeGeometry args={[YARD * 2 - 0.4, YARD * 2 - 0.4]} />
-        <meshStandardMaterial map={concrete} roughness={0.9} color="#8a8074" />
+        <meshStandardMaterial map={concrete} roughness={0.84} color="#c8b8a4" />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]} receiveShadow>
         <planeGeometry args={[4.4, 4.4]} />
@@ -120,7 +122,7 @@ function YardWalls({ brick }: { brick: THREE.Texture }) {
       {segs.map(([x, z, w, d], i) => (
         <mesh key={i} position={[x, h / 2, z]} castShadow receiveShadow>
           <boxGeometry args={[w, h, d]} />
-          <meshStandardMaterial map={brick} color="#a05638" roughness={0.86} />
+          <meshStandardMaterial map={brick} color="#d45c36" roughness={0.8} emissive="#c44a28" emissiveIntensity={0.12} />
         </mesh>
       ))}
       {([
@@ -132,7 +134,7 @@ function YardWalls({ brick }: { brick: THREE.Texture }) {
         <group key={`${x}${z}`}>
           <mesh position={[x, 1.7, z]} castShadow>
             <boxGeometry args={[1.35, 3.4, 1.35]} />
-            <meshStandardMaterial map={brick} color="#8a4430" roughness={0.84} />
+            <meshStandardMaterial map={brick} color="#c44a30" roughness={0.8} emissive="#b04028" emissiveIntensity={0.1} />
           </mesh>
           <mesh position={[x, 3.5, z]} castShadow>
             <boxGeometry args={[1.55, 0.28, 1.55]} />
@@ -160,11 +162,11 @@ function CliffBezel({ dirt, grass }: { dirt: THREE.Texture; grass: THREE.Texture
         <group key={i} position={[x, 0, z]}>
           <mesh position={[0, h / 2, 0]} castShadow receiveShadow>
             <boxGeometry args={[w, h, d]} />
-            <meshStandardMaterial map={dirt} color="#7a6248" roughness={0.95} />
+            <meshStandardMaterial map={dirt} color="#9a7a54" roughness={0.92} />
           </mesh>
           <mesh position={[0, h + 0.08, 0]} rotation={[-Math.PI / 2, 0, 0]}>
             <planeGeometry args={[w * 0.92, d * 0.92]} />
-            <meshStandardMaterial map={grass} color="#3e5c2c" roughness={0.9} />
+            <meshStandardMaterial map={grass} color="#4aa832" roughness={0.84} emissive="#2a7018" emissiveIntensity={0.08} />
           </mesh>
         </group>
       ))}
@@ -190,7 +192,7 @@ function BellTower({
     <group>
       <mesh position={[0, 2.35, 0]} castShadow>
         <boxGeometry args={[2.15, 4.7, 2.15]} />
-        <meshStandardMaterial map={brick} color="#9a4e32" roughness={0.84} />
+        <meshStandardMaterial map={brick} color="#d45630" roughness={0.78} emissive="#c44828" emissiveIntensity={0.14} />
       </mesh>
       {[-0.62, 0.62].map((x) =>
         [1.35, 2.45, 3.5].map((y) => (
@@ -230,15 +232,15 @@ function WingPads({
     <group>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 6.35]} receiveShadow>
         <planeGeometry args={[17.4, 7.6]} />
-        <meshStandardMaterial map={brick} color="#9a5a40" roughness={0.9} />
+        <meshStandardMaterial map={brick} color="#e08858" roughness={0.84} emissive="#c06038" emissiveIntensity={0.1} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, -6.35]} receiveShadow>
         <planeGeometry args={[17.4, 7.6]} />
-        <meshStandardMaterial map={dirt} color="#6a5440" roughness={0.92} />
+        <meshStandardMaterial map={dirt} color="#b08a58" roughness={0.88} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, Math.PI / 2]} position={[-7.35, 0.014, 0]} receiveShadow>
         <planeGeometry args={[12.4, 6.6]} />
-        <meshStandardMaterial map={concrete} color="#4a6a70" roughness={0.86} />
+        <meshStandardMaterial map={concrete} color="#6a9aa8" roughness={0.82} />
       </mesh>
       <Stencil word="YESTERDAY" ink="#c45c2a" position={[0, 0.03, 3.35]} />
       <Stencil word="FIVE-DAY" ink="#a34a38" position={[0, 0.03, -3.35]} />

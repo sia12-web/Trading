@@ -5,7 +5,7 @@ import { MathUtils, type OrthographicCamera as OrthoCam } from 'three'
 import { getGame } from '../game/gameStore'
 import { OPEN_CINEMATIC_SEC } from '../game/session'
 
-/** Clash 3/4 ortho. Open is a real settle: dawn wide → packed village. */
+/** One packed Clash shot for preopen and live: walls + trees + cliff bezel, no dirt/sky void. */
 export function IsoCamera({ mode }: { mode: 'hub' | 'dow' }) {
   const ref = useRef<OrthoCam>(null)
 
@@ -13,22 +13,19 @@ export function IsoCamera({ mode }: { mode: 'hub' | 'dow' }) {
     const cam = ref.current
     if (!cam) return
     const g = getGame()
-    let height = 12.6
-    let zoom = 58
-    const dist = mode === 'hub' ? 15.2 : 16.4
+    let height = 14.25
+    let zoom = 45
+    const dist = mode === 'hub' ? 13.5 : 18.5
     if (mode === 'hub') {
-      height = 12.4
-      zoom = 46
-    } else if (g.phase === 'preopen') {
-      height = 16.4
-      zoom = 44
+      height = 10.9
+      zoom = 50
     } else if (g.phase === 'opening') {
       const k = Math.min(1, g.openElapsed / OPEN_CINEMATIC_SEC)
-      height = MathUtils.lerp(16.4, 12.6, k)
-      zoom = MathUtils.lerp(44, 58, k)
+      height = MathUtils.lerp(14.4, 14.25, k)
+      zoom = MathUtils.lerp(44.5, 45, k)
     }
     cam.position.set(dist, height, dist)
-    cam.lookAt(0, 1.15, 0)
+    cam.lookAt(0, 1.05, 0)
     cam.zoom = zoom
     cam.updateProjectionMatrix()
     cam.updateMatrixWorld()
@@ -39,9 +36,9 @@ export function IsoCamera({ mode }: { mode: 'hub' | 'dow' }) {
       ref={ref}
       makeDefault
       near={0.1}
-      far={120}
-      zoom={58}
-      position={[16.4, 12.6, 16.4]}
+      far={160}
+      zoom={45}
+      position={[18.5, 14.25, 18.5]}
     />
   )
 }

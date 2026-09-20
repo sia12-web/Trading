@@ -209,11 +209,11 @@ function WindowRow({
         <mesh key={x} position={[x, y, z]}>
           <boxGeometry args={[0.42, 0.55, 0.06]} />
           <meshStandardMaterial
-            color="#2c3c46"
+            color="#5a88a0"
             roughness={0.22}
             metalness={0.15}
-            emissive="#c8a060"
-            emissiveIntensity={lit * 0.55}
+            emissive="#d8c080"
+            emissiveIntensity={0.08 + lit * 0.55}
           />
         </mesh>
       ))}
@@ -236,7 +236,13 @@ function Foundry({ brick, metal, stall }: { brick: THREE.Texture; metal: THREE.T
     <group>
       <mesh position={[0, 1.85, -0.15]} castShadow receiveShadow>
         <boxGeometry args={[5.15, 3.7, 4.15]} />
-        <meshStandardMaterial map={brick} color={stall.hollow ? '#6a4034' : '#a05034'} roughness={0.86} />
+        <meshStandardMaterial
+          map={brick}
+          color={stall.hollow ? '#d08058' : '#e07048'}
+          roughness={0.78}
+          emissive="#c45830"
+          emissiveIntensity={0.16}
+        />
       </mesh>
       <Cornice w={5.4} d={4.4} y={3.78} />
       <WindowRow xs={[-1.7, -0.85, 0.85, 1.7]} y={2.55} z={2.1} lit={stall.interior} />
@@ -284,19 +290,25 @@ function Hall({ brick, metal, stall }: { brick: THREE.Texture; metal: THREE.Text
     <group>
       <mesh position={[0, 2.05, 0]} castShadow receiveShadow>
         <boxGeometry args={[6.05, 4.1, 4.55]} />
-        <meshStandardMaterial map={brick} color={stall.hollow ? '#6a4438' : '#b06040'} roughness={0.84} />
+        <meshStandardMaterial
+          map={brick}
+          color={stall.hollow ? '#d88860' : '#ee7848'}
+          roughness={0.76}
+          emissive="#d06038"
+          emissiveIntensity={0.18}
+        />
       </mesh>
       <mesh position={[0, 4.45, 0]} castShadow>
         <boxGeometry args={[6.5, 0.18, 5]} />
-        <meshStandardMaterial map={metal} color="#6a4a30" roughness={0.55} />
+        <meshStandardMaterial map={metal} color="#a06a40" roughness={0.52} emissive="#6a3a20" emissiveIntensity={0.1} />
       </mesh>
       <mesh position={[0, 4.95, 0]} rotation={[0, 0, 0.48]} castShadow>
         <boxGeometry args={[3.6, 0.16, 5.05]} />
-        <meshStandardMaterial map={metal} color="#7a5434" roughness={0.5} />
+        <meshStandardMaterial map={metal} color="#b07848" roughness={0.48} emissive="#7a4020" emissiveIntensity={0.1} />
       </mesh>
       <mesh position={[0, 4.95, 0]} rotation={[0, 0, -0.48]} castShadow>
         <boxGeometry args={[3.6, 0.16, 5.05]} />
-        <meshStandardMaterial map={metal} color="#7a5434" roughness={0.5} />
+        <meshStandardMaterial map={metal} color="#b07848" roughness={0.48} emissive="#7a4020" emissiveIntensity={0.1} />
       </mesh>
       {[-2.15, -0.72, 0.72, 2.15].map((x) => (
         <mesh key={x} position={[x, 1.15, 2.45]} castShadow>
@@ -316,7 +328,21 @@ function Hall({ brick, metal, stall }: { brick: THREE.Texture; metal: THREE.Text
       <RollDoor width={1.7} height={1.95} open={stall.door} z={2.36} />
       <mesh position={[0, 0.55, 1.55]} castShadow>
         <cylinderGeometry args={[0.55, 0.7, 0.9, 10]} />
-        <meshStandardMaterial color="#8a6a38" metalness={0.3} roughness={0.5} />
+        <meshStandardMaterial color="#c4a046" metalness={0.35} roughness={0.45} emissive="#8a7028" emissiveIntensity={0.12} />
+      </mesh>
+      {[0, 1, 2].map((i) => (
+        <mesh key={i} position={[0, 0.08 + i * 0.11, 2.62 - i * 0.2]} receiveShadow>
+          <boxGeometry args={[2.35 - i * 0.12, 0.12, 0.48]} />
+          <meshStandardMaterial color="#d4c4a4" roughness={0.82} />
+        </mesh>
+      ))}
+      <mesh position={[0, 5.05, 2.28]} rotation={[Math.PI / 2, 0, Math.PI]}>
+        <coneGeometry args={[2.05, 0.16, 3]} />
+        <meshStandardMaterial color="#c45a32" roughness={0.7} emissive="#a04020" emissiveIntensity={0.12} />
+      </mesh>
+      <mesh position={[0, 3.52, 2.34]}>
+        <circleGeometry args={[0.28, 16]} />
+        <meshStandardMaterial color="#f0e8d0" roughness={0.35} emissive="#e8dcc0" emissiveIntensity={0.2} />
       </mesh>
     </group>
   )
@@ -329,17 +355,35 @@ function Dock({ metal, stall }: { metal: THREE.Texture; stall: Stall }) {
       {[-2.35, 2.35].map((x) => (
         <mesh key={x} position={[x, 2.15, 0]} castShadow>
           <boxGeometry args={[0.28, 4.3, 4.2]} />
-          <meshStandardMaterial map={metal} color="#8a9298" metalness={0.45} roughness={0.42} />
+          <meshStandardMaterial
+            map={metal}
+            color="#c8d0d6"
+            metalness={0.38}
+            roughness={0.42}
+            emissive="#8a949c"
+            emissiveIntensity={0.14}
+          />
         </mesh>
       ))}
+      <mesh position={[0, 1.95, -0.25]} castShadow receiveShadow>
+        <boxGeometry args={[4.55, 3.7, 3.55]} />
+        <meshStandardMaterial
+          map={metal}
+          color="#c5cdd4"
+          metalness={0.36}
+          roughness={0.44}
+          emissive="#8a949c"
+          emissiveIntensity={0.14}
+        />
+      </mesh>
       <mesh position={[0, 4.35, 0]} castShadow>
         <boxGeometry args={[5.1, 0.18, 4.5]} />
-        <meshStandardMaterial map={metal} color="#7a8088" metalness={0.5} roughness={0.38} />
+        <meshStandardMaterial map={metal} color="#b8c4cc" metalness={0.45} roughness={0.38} emissive="#788088" emissiveIntensity={0.1} />
       </mesh>
       {[-1.2, 0, 1.2].map((x) => (
         <mesh key={x} position={[x, 2.1, 2.05]}>
           <boxGeometry args={[1.05, 2.5 * (1 - stall.door * 0.15), 0.06]} />
-          <meshStandardMaterial color="#2a3038" transparent opacity={jam ? 0.55 : 0.18 + (1 - stall.door) * 0.35} />
+          <meshStandardMaterial color="#6a8490" transparent opacity={jam ? 0.55 : 0.2 + (1 - stall.door) * 0.28} />
         </mesh>
       ))}
       <mesh position={[0, 0.12, 2.55]} receiveShadow>
@@ -363,7 +407,7 @@ function Truck({ x, z }: { x: number; z: number }) {
     <group position={[x, 0, z]} rotation={[0, -0.4, 0]}>
       <mesh position={[0, 0.72, 0]} castShadow>
         <boxGeometry args={[1.55, 0.95, 0.85]} />
-        <meshStandardMaterial color="#6a3a28" roughness={0.55} />
+        <meshStandardMaterial color="#c44a28" roughness={0.52} emissive="#8a2818" emissiveIntensity={0.16} />
       </mesh>
       <mesh position={[-1.05, 0.55, 0]} castShadow>
         <boxGeometry args={[0.55, 0.6, 0.8]} />
@@ -385,7 +429,13 @@ function Yard({ metal, brick, stall }: { metal: THREE.Texture; brick: THREE.Text
     <group>
       <mesh position={[0, 1.75, -0.35]} castShadow receiveShadow>
         <boxGeometry args={[5.25, 3.5, 3.7]} />
-        <meshStandardMaterial map={brick} color={stall.hollow ? '#5a3a30' : '#8a4a34'} roughness={0.85} />
+        <meshStandardMaterial
+          map={brick}
+          color={stall.hollow ? '#c87850' : '#dc6038'}
+          roughness={0.78}
+          emissive="#b84828"
+          emissiveIntensity={0.15}
+        />
       </mesh>
       <Cornice w={5.5} d={3.95} y={3.58} />
       <WindowRow xs={[-1.5, 0, 1.5]} y={2.35} z={1.52} lit={stall.interior} />
@@ -433,13 +483,19 @@ function Mill({ brick, metal, stall }: { brick: THREE.Texture; metal: THREE.Text
     <group>
       <mesh position={[0, 1.85, 0]} castShadow receiveShadow>
         <boxGeometry args={[6.15, 3.7, 4.7]} />
-        <meshStandardMaterial map={brick} color={stall.hollow ? '#6a4030' : '#a85a38'} roughness={0.84} />
+        <meshStandardMaterial
+          map={brick}
+          color={stall.hollow ? '#d07850' : '#e86840'}
+          roughness={0.76}
+          emissive="#c45030"
+          emissiveIntensity={0.16}
+        />
       </mesh>
       {[-2.05, 0, 2.05].map((x) => (
         <group key={x}>
           <mesh position={[x, 4.15, 0]} rotation={[0, 0, 0.62]} castShadow>
             <boxGeometry args={[2.35, 0.14, 4.85]} />
-            <meshStandardMaterial map={metal} color="#6a4030" roughness={0.55} />
+            <meshStandardMaterial map={metal} color="#8a5a38" roughness={0.52} emissive="#5a3020" emissiveIntensity={0.1} />
           </mesh>
           <mesh position={[x + 0.55, 4.45, 2.38]}>
             <boxGeometry args={[0.7, 0.45, 0.08]} />
@@ -451,7 +507,11 @@ function Mill({ brick, metal, stall }: { brick: THREE.Texture; metal: THREE.Text
       <RollDoor width={1.85} height={1.9} open={stall.door} z={2.4} />
       <mesh position={[2.55, 0.45, 2.15]} rotation={[0, 0, -0.22]} receiveShadow>
         <boxGeometry args={[1.6, 0.12, 1.4]} />
-        <meshStandardMaterial color="#6a5a40" />
+        <meshStandardMaterial color="#8a7a50" />
+      </mesh>
+      <mesh position={[0, 3.95, 0]} castShadow>
+        <boxGeometry args={[6.35, 0.12, 4.9]} />
+        <meshStandardMaterial color="#c45a32" roughness={0.7} emissive="#a03820" emissiveIntensity={0.08} />
       </mesh>
     </group>
   )
@@ -462,11 +522,25 @@ function Alley({ metal, stall }: { metal: THREE.Texture; stall: Stall }) {
     <group>
       <mesh position={[-1.55, 2.15, 0]} castShadow>
         <boxGeometry args={[1.85, 4.3, 4.15]} />
-        <meshStandardMaterial map={metal} color="#6a7a88" metalness={0.35} roughness={0.5} />
+        <meshStandardMaterial
+          map={metal}
+          color="#9aacb8"
+          metalness={0.3}
+          roughness={0.46}
+          emissive="#6a7a88"
+          emissiveIntensity={0.14}
+        />
       </mesh>
       <mesh position={[1.65, 1.75, 0.25]} castShadow>
         <boxGeometry args={[1.7, 3.5, 3.7]} />
-        <meshStandardMaterial map={metal} color="#5a6a78" metalness={0.35} roughness={0.52} />
+        <meshStandardMaterial
+          map={metal}
+          color="#8a9aa8"
+          metalness={0.3}
+          roughness={0.48}
+          emissive="#5a6a78"
+          emissiveIntensity={0.12}
+        />
       </mesh>
       <mesh position={[-1.55, 4.4, 0]}>
         <boxGeometry args={[2.05, 0.14, 4.35]} />

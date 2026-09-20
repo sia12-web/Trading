@@ -67,7 +67,7 @@ export function bindPlayerKeys() {
   }
 }
 
-/** Price as a Clash-style troop: chunky silhouette, ground ring, no ticker hat. */
+/** Price as a Clash troop: unlit silhouette, ground halo that survives shade. */
 export function Player({
   spawn,
   collide = true,
@@ -166,9 +166,13 @@ export function Player({
 
   return (
     <group ref={group} position={spawn}>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
-        <ringGeometry args={[0.48, 0.68, 24]} />
-        <meshBasicMaterial color={selected ? '#e8c04a' : '#f4efe6'} transparent opacity={0.95} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
+        <ringGeometry args={[0.7, 0.98, 28]} />
+        <meshBasicMaterial color={selected ? '#ffe066' : '#fff4c8'} toneMapped={false} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+        <circleGeometry args={[0.66, 20]} />
+        <meshBasicMaterial color="#1a140e" transparent opacity={0.28} toneMapped={false} />
       </mesh>
       <PriceBody vel={vel} bob={bob} />
     </group>
@@ -198,42 +202,42 @@ function PriceBody({
   })
 
   return (
-    <group scale={1.35}>
-      <mesh position={[0, 0.72, 0]} scale={1.12}>
+    <group scale={1.88}>
+      <mesh position={[0, 0.72, 0]} scale={1.22}>
         <capsuleGeometry args={[0.28, 0.42, 4, 8]} />
-        <meshBasicMaterial color="#1a140e" />
+        <meshBasicMaterial color="#140c06" toneMapped={false} />
       </mesh>
       <mesh position={[0, 0.72, 0]} castShadow>
         <capsuleGeometry args={[0.26, 0.4, 5, 10]} />
-        <meshStandardMaterial color="#c45c2a" roughness={0.55} />
+        <meshBasicMaterial color="#ff6a28" toneMapped={false} />
       </mesh>
-      <mesh position={[0, 1.18, 0]} castShadow>
-        <sphereGeometry args={[0.2, 12, 10]} />
-        <meshStandardMaterial color="#e6c8a8" roughness={0.55} />
+      <mesh position={[0, 1.2, 0]} castShadow>
+        <sphereGeometry args={[0.22, 12, 10]} />
+        <meshBasicMaterial color="#f0d0a8" toneMapped={false} />
       </mesh>
-      <mesh position={[0, 1.32, 0]} castShadow>
-        <cylinderGeometry args={[0.22, 0.24, 0.14, 10]} />
-        <meshStandardMaterial color="#d4a046" roughness={0.45} />
+      <mesh position={[0, 1.36, 0]} castShadow>
+        <cylinderGeometry args={[0.24, 0.26, 0.16, 10]} />
+        <meshBasicMaterial color="#f0c040" toneMapped={false} />
       </mesh>
-      <mesh position={[0, 0.78, 0.16]}>
-        <boxGeometry args={[0.38, 0.22, 0.06]} />
-        <meshStandardMaterial color="#2a2218" />
+      <mesh position={[0, 0.78, 0.18]}>
+        <boxGeometry args={[0.4, 0.24, 0.06]} />
+        <meshBasicMaterial color="#2a1810" toneMapped={false} />
       </mesh>
-      <mesh ref={larm} position={[-0.32, 0.72, 0]} castShadow>
-        <capsuleGeometry args={[0.08, 0.32, 3, 6]} />
-        <meshStandardMaterial color="#a04a28" />
+      <mesh ref={larm} position={[-0.34, 0.72, 0]} castShadow>
+        <capsuleGeometry args={[0.09, 0.34, 3, 6]} />
+        <meshBasicMaterial color="#c44a22" toneMapped={false} />
       </mesh>
-      <mesh ref={rarm} position={[0.32, 0.72, 0]} castShadow>
-        <capsuleGeometry args={[0.08, 0.32, 3, 6]} />
-        <meshStandardMaterial color="#a04a28" />
+      <mesh ref={rarm} position={[0.34, 0.72, 0]} castShadow>
+        <capsuleGeometry args={[0.09, 0.34, 3, 6]} />
+        <meshBasicMaterial color="#c44a22" toneMapped={false} />
       </mesh>
-      <mesh ref={left} position={[-0.12, 0.28, 0]} castShadow>
-        <capsuleGeometry args={[0.09, 0.32, 3, 6]} />
-        <meshStandardMaterial color="#2a241c" />
+      <mesh ref={left} position={[-0.13, 0.28, 0]} castShadow>
+        <capsuleGeometry args={[0.1, 0.34, 3, 6]} />
+        <meshBasicMaterial color="#2a2218" toneMapped={false} />
       </mesh>
-      <mesh ref={right} position={[0.12, 0.28, 0]} castShadow>
-        <capsuleGeometry args={[0.09, 0.32, 3, 6]} />
-        <meshStandardMaterial color="#2a241c" />
+      <mesh ref={right} position={[0.13, 0.28, 0]} castShadow>
+        <capsuleGeometry args={[0.1, 0.34, 3, 6]} />
+        <meshBasicMaterial color="#2a2218" toneMapped={false} />
       </mesh>
     </group>
   )
