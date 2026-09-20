@@ -413,7 +413,7 @@ export function tickGame(dt: number) {
   }
 
   if (state.phase === 'opening') {
-    const openElapsed = Math.min(OPEN_CINEMATIC_SEC + 0.05, state.openElapsed + Math.max(0, dt))
+    const openElapsed = (performance.now() - openWallMs) / 1000
     const shutter = Math.min(1, Math.max(0, (openElapsed - 0.08) / GATE_ROLL_SEC))
     const floorAlive = Math.min(1, Math.max(0, (openElapsed - 0.12) / GATE_ROLL_SEC))
     const clockMin = NY_OPEN_MIN + openElapsed / 60
@@ -498,6 +498,13 @@ export function advertisedPrice(id: StoreId, snap: GameSnapshot = state): number
   return advertisedFor(id, snap.avwap)
 }
 
+/** Force the 9:30 hold to wall-clock before a screenshot so the tape cannot skip seconds. */
+export function syncOpening() {
+  if (state.phase !== 'opening') return getGame()
+  tickGame(0)
+  return getGame()
+}
+
 if (typeof window !== 'undefined') {
   ;(window as unknown as { __dow: Record<string, unknown> }).__dow = {
     inspectStore,
@@ -507,5 +514,6 @@ if (typeof window !== 'undefined') {
     backToHub,
     enterDow,
     getGame,
+    syncOpening,
   }
 }
