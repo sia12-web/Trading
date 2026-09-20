@@ -203,7 +203,7 @@ assert.ok(
   'YESTERDAY stays on a south-apron plaque so the full word is not eaten by the hall or gates',
 )
 assert.ok(
-  Math.abs(COURT_SIGNS.find((s) => s.word === 'YESTERDAY')!.x) < 1.3,
+  Math.abs(COURT_SIGNS.find((s) => s.word === 'YESTERDAY')!.x) < 1.2,
   'YESTERDAY sits in the south-gate gap, not on a gate leaf that ate DAY',
 )
 assert.ok(

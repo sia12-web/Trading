@@ -129,7 +129,7 @@ export const HUB_WALK = 14.2
  * the camera, which clipped YESTERDAY to YESTER). Full words stay.
  */
 export const COURT_SIGNS = [
-  { word: 'YESTERDAY', ink: '#e07040', x: -1.05, z: 14.55, wide: 5.25 },
+  { word: 'YESTERDAY', ink: '#e07040', x: 0.22, z: 13.88, wide: 5.25 },
   { word: 'FIVE-DAY', ink: '#d48848', x: 8.75, z: 15.08, wide: 4.15 },
   { word: 'FIVE-MONTH', ink: '#6ab0c4', x: -6.15, z: 15.08, wide: 4.75 },
   { word: 'YARD', ink: '#d48848', x: 15.08, z: 2.65, wide: 3.25 },
@@ -152,9 +152,9 @@ export const STORE_PLAQUES = [
   { word: 'ALLEY', ink: '#7a90a0', x: 11.15, z: 6.75, wide: 3.55, id: '5d-lvn' as const },
   { word: 'MILL', ink: '#d48848', x: 11.25, z: 3.05, wide: 3.45, id: '5d-poc' as const },
   { word: 'YARD', ink: '#d48848', x: 11.35, z: 0.55, wide: 3.35, id: '5d-hvn' as const },
-  { word: 'PIT', ink: '#c4a060', x: -12.85, z: 13.75, wide: 3.35, id: 'avwap-lower' as const },
-  { word: 'SPIRE', ink: '#6ab0c4', x: -10.35, z: 15.08, wide: 4.15, id: 'avwap' as const },
-  { word: 'LOFT', ink: '#7a98c0', x: -12.15, z: 11.85, wide: 3.35, id: 'avwap-upper' as const },
+  { word: 'PIT', ink: '#c4a060', x: -12.45, z: 13.55, wide: 3.45, id: 'avwap-lower' as const },
+  { word: 'SPIRE', ink: '#6ab0c4', x: -9.85, z: 15.08, wide: 4.25, id: 'avwap' as const },
+  { word: 'LOFT', ink: '#7a98c0', x: -10.55, z: 12.15, wide: 3.55, id: 'avwap-upper' as const },
 ] as const
 
 const SHORT: Record<StoreDef['building'], string> = {
