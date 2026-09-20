@@ -147,9 +147,9 @@ export const COURT_STENCILS = [
  * read in the same Clash crop as the court plaques — not only on inspect.
  */
 export const STORE_PLAQUES = [
-  { word: 'FOUNDRY', ink: '#e07040', x: -2.55, z: 9.55, wide: 3.55 },
-  { word: 'HALL', ink: '#e8b050', x: 1.55, z: 9.85, wide: 2.85 },
-  { word: 'DOCK', ink: '#6aa0b8', x: 8.15, z: 9.35, wide: 2.75 },
+  { word: 'FOUNDRY', ink: '#e07040', x: -4.35, z: 10.65, wide: 3.75 },
+  { word: 'HALL', ink: '#e8b050', x: 2.85, z: 10.55, wide: 2.95 },
+  { word: 'DOCK', ink: '#6aa0b8', x: 7.55, z: 10.45, wide: 2.95 },
   { word: 'ALLEY', ink: '#7a90a0', x: 11.15, z: 6.05, wide: 3.15 },
   { word: 'MILL', ink: '#d48848', x: 11.25, z: 1.65, wide: 2.95 },
   { word: 'YARD', ink: '#d48848', x: 11.35, z: -2.35, wide: 2.85 },

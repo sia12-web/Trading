@@ -597,7 +597,7 @@ function MillBackLot() {
 
 function WaterTower() {
   return (
-    <group position={[12.55, 0, 12.15]}>
+    <group position={[12.4, 0, -10.15]}>
       {([-0.55, 0.55] as const).map((x) =>
         ([-0.55, 0.55] as const).map((z) => (
           <mesh key={`${x}${z}`} position={[x, 2.1, z]} castShadow>
