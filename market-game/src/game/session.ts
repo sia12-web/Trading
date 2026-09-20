@@ -7,6 +7,9 @@ export const PREOPEN_MIN = 9 * 60 + 28
 /** Real seconds of cinematic at 9:30. Skip-to-open still plays this wake. */
 export const OPEN_CINEMATIC_SEC = 12
 
+/** Both south gates keep rolling for nearly the whole CASH OPEN hold. */
+export const GATE_ROLL_SEC = 11
+
 /** Session minutes advanced per real second after the open. */
 export const LIVE_TIME_SCALE = 0.12
 

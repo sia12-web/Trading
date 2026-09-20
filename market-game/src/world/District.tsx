@@ -205,7 +205,7 @@ function WingPads({
       ))}
       {COURT_SIGNS.map((s) =>
         s.word === 'YESTERDAY' ? (
-          <CourtPlaque key={s.word} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} lift={0.28} />
+          <CourtPlaque key={s.word} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} lift={0.42} />
         ) : (
           <WallStrip key={s.word} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} east={s.word === 'YARD'} />
         ),
@@ -229,7 +229,7 @@ function WingPads({
             x={s.x}
             z={s.z}
             wide={s.wide}
-            lift={s.word === 'FOUNDRY' || s.word === 'PIT' ? 0.48 : s.word === 'HALL' ? 0.58 : s.word === 'LOFT' ? 0.32 : 0.12}
+            lift={s.word === 'FOUNDRY' || s.word === 'PIT' ? 0.52 : s.word === 'HALL' ? 0.62 : s.word === 'LOFT' ? 0.36 : 0.14}
             onPick={() => inspectStore(s.id)}
           />
         ),
@@ -263,7 +263,17 @@ function Stencil({
 
 function StallTimePlaques() {
   const g = useGame()
-  const marks = [{ id: 'y-poc' as const, x: -0.85, z: 11.55, wide: 3.85 }]
+  const marks = [
+    { id: 'y-poc' as const, x: -0.55, z: 12.05, wide: 4.05 },
+    { id: 'y-hvn' as const, x: -6.35, z: 11.45, wide: 3.55 },
+    { id: 'y-lvn' as const, x: 6.15, z: 11.25, wide: 3.45 },
+    { id: '5d-poc' as const, x: 8.95, z: 8.05, wide: 3.45 },
+    { id: '5d-hvn' as const, x: 8.85, z: -0.15, wide: 3.35 },
+    { id: '5d-lvn' as const, x: 8.75, z: 5.15, wide: 3.35 },
+    { id: 'avwap' as const, x: -8.85, z: 8.55, wide: 3.45 },
+    { id: 'avwap-upper' as const, x: -9.15, z: 10.15, wide: 3.35 },
+    { id: 'avwap-lower' as const, x: -9.05, z: 12.35, wide: 3.35 },
+  ]
   return (
     <>
       {marks.map((m) => {

@@ -12,6 +12,7 @@ import {
   takeAuction,
   toggleInspect,
   inspectStore,
+  takeFoundry,
 } from '../game/gameStore'
 import { COLLISIONS, YARD } from '../game/stores'
 import { useGame } from '../ui/useGame'
@@ -47,6 +48,7 @@ export function bindPlayerKeys() {
     if (k === 'e') toggleInspect()
     if (k === 'escape') closeInspect()
     if (k === 'g') inspectStore('y-hvn')
+    if (k === 't') takeFoundry()
     if (k === 'b' || k === '1') takeAuction('buy')
     if (k === 'f' || k === '2') takeAuction('sell')
     if (k === 'o' && getGame().scene === 'dow') skipToOpen()

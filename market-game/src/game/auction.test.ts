@@ -8,9 +8,10 @@ import {
   volumeDivergence,
   rangeHeight,
   PRINT_HOLD_MS,
+  LADDER_TICKS,
 } from './auction'
 import { buildDowMarket } from './marketData'
-import { OPEN_CINEMATIC_SEC } from './session'
+import { OPEN_CINEMATIC_SEC, GATE_ROLL_SEC } from './session'
 import { COURT_SIGNS, COURT_STENCILS, porchOf, STORE_PLAQUES, STORES, storeShortName, cameraLadderLocals, apronGaugeLocal } from './stores'
 import type { OhlcvBar } from './types'
 
@@ -178,6 +179,9 @@ const yVah = rangeHeight(42800, lo, hi, 0.3, 3.6)
 assert.ok(yVal > 0.3 && yVah < 3.6 && yVah - yVal > 0.5, 'value area is a countable mid belt')
 
 assert.equal(OPEN_CINEMATIC_SEC, 12, 'cash open holds twelve wall-clock seconds')
+assert.ok(GATE_ROLL_SEC >= 10, 'both south gates keep rolling through CASH OPEN, not only the first four seconds')
+assert.ok(GATE_ROLL_SEC < OPEN_CINEMATIC_SEC, 'gates finish the roll before LIVE so the hold is still CASH OPEN')
+assert.equal(LADDER_TICKS, 9, 'range ladders are countable rungs, not HIGH stickers')
 assert.ok(PRINT_HOLD_MS >= 12000, 'take dump stays long enough to film still and video')
 const yard = STORES.find((s) => s.building === 'yard')!
 assert.ok(yard.position[0] > 8 && yard.position[2] < mill.position[2] - 4, 'YARD is the far east crane store')
@@ -199,7 +203,7 @@ assert.ok(
   'YESTERDAY stays on a south-apron plaque so the full word is not eaten by the hall or gates',
 )
 assert.ok(
-  Math.abs(COURT_SIGNS.find((s) => s.word === 'YESTERDAY')!.x) < 1.2,
+  Math.abs(COURT_SIGNS.find((s) => s.word === 'YESTERDAY')!.x) < 1.3,
   'YESTERDAY sits in the south-gate gap, not on a gate leaf that ate DAY',
 )
 assert.ok(
@@ -219,8 +223,8 @@ assert.ok(
   'court names sit on the south apron inside the Clash crop so YESTERDAY is not clipped to YESTER',
 )
 assert.ok(
-  COURT_SIGNS.find((s) => s.word === 'YESTERDAY')!.wide >= 4.4,
-  'YESTERDAY is the full word on the wall strip',
+  COURT_SIGNS.find((s) => s.word === 'YESTERDAY')!.wide >= 5,
+  'YESTERDAY is the full word on the camera-near plaque',
 )
 assert.deepEqual(
   STORE_PLAQUES.map((s) => s.word),

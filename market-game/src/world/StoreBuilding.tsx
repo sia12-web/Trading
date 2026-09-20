@@ -1,7 +1,7 @@
 import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
-import { fmtPx, fmtPx1, PRINT_HOLD_MS, rangeHeight } from '../game/auction'
+import { fmtPx, fmtPx1, LADDER_TICKS, PRINT_HOLD_MS, rangeHeight } from '../game/auction'
 import { advertisedPrice, inspectStore, marketWorld, stallState } from '../game/gameStore'
 import { apronGaugeLocal, cameraLadderLocals, storeYaw } from '../game/stores'
 import type { AnchoredVwap, StoreDef, VolumeProfile } from '../game/types'
@@ -91,9 +91,6 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
         color={store.accent}
       />
       <Fascia title={label} paint={store.accent} y={shell.fasciaY + 0.28} width={Math.min(5.05, shell.w * 1.12)} z={shell.d * 0.52 + 0.08} />
-      {store.building === 'hall' && (
-        <Fascia title="YESTERDAY" paint="#e07040" y={shell.fasciaY + 1.22} width={4.55} z={shell.d * 0.52 + 0.16} />
-      )}
       {store.building === 'mill' && (
         <Fascia title="FIVE-DAY" paint="#d48848" y={shell.fasciaY + 1.18} width={4.75} z={shell.d * 0.52 + 0.16} />
       )}
@@ -241,38 +238,39 @@ function Ladder({
   color: string
   apron?: boolean
 }) {
-  const vaH = Math.max(0.95, yVah - yVal)
-  const x = apron ? 0 : -wallW * 0.46
-  const ticks = 9
+  const vaH = Math.max(1.15, yVah - yVal)
+  const x = apron ? 0 : -wallW * 0.48
+  const ticks = LADDER_TICKS
+  const rungW = apron ? 1.28 : 1.05
   return (
     <group position={p} rotation={r}>
-      <mesh position={[x, 2.28, 0.18]} castShadow>
-        <boxGeometry args={[0.28, 4.7, 0.28]} />
-        <meshBasicMaterial color="#120e0a" />
+      <mesh position={[x, 2.35, 0.22]} castShadow>
+        <boxGeometry args={[apron ? 0.42 : 0.34, 5.05, apron ? 0.42 : 0.32]} />
+        <meshBasicMaterial color="#100c08" />
       </mesh>
       {Array.from({ length: ticks }, (_, i) => {
         const y = yLo + (i / (ticks - 1)) * (yHi - yLo)
         return (
-          <mesh key={i} position={[x + 0.48, y, 0.32]}>
-            <boxGeometry args={[0.78, 0.12, 0.18]} />
-            <meshBasicMaterial color="#f4ead8" />
+          <mesh key={i} position={[x + rungW * 0.42, y, 0.42]} castShadow>
+            <boxGeometry args={[rungW, 0.16, 0.22]} />
+            <meshBasicMaterial color={i === 0 || i === ticks - 1 ? '#fff6d0' : '#f4ead8'} />
           </mesh>
         )
       })}
-      <mesh position={[x + 0.52, (yVal + yVah) / 2, 0.38]} castShadow>
-        <boxGeometry args={[0.92, vaH, 0.32]} />
+      <mesh position={[x + 0.62, (yVal + yVah) / 2, 0.48]} castShadow>
+        <boxGeometry args={[apron ? 1.18 : 1.05, vaH, 0.38]} />
         <meshBasicMaterial color={color} />
       </mesh>
-      <mesh position={[x + 0.58, yLo, 0.42]} castShadow>
-        <boxGeometry args={[1.05, 0.36, 0.26]} />
+      <mesh position={[x + 0.72, yLo, 0.55]} castShadow>
+        <boxGeometry args={[apron ? 1.42 : 1.22, 0.42, 0.32]} />
         <meshBasicMaterial color="#0a0806" />
       </mesh>
-      <mesh position={[x + 0.58, yHi, 0.42]} castShadow>
-        <boxGeometry args={[1.05, 0.36, 0.26]} />
+      <mesh position={[x + 0.72, yHi, 0.55]} castShadow>
+        <boxGeometry args={[apron ? 1.42 : 1.22, 0.42, 0.32]} />
         <meshBasicMaterial color="#e8c04a" />
       </mesh>
-      <mesh position={[x + 0.92, yNode, 0.5]} castShadow>
-        <boxGeometry args={[1.22, 0.2, 0.3]} />
+      <mesh position={[x + 1.05, yNode, 0.62]} castShadow>
+        <boxGeometry args={[apron ? 1.55 : 1.35, 0.24, 0.36]} />
         <meshBasicMaterial color="#fff6d0" />
       </mesh>
     </group>
@@ -378,20 +376,20 @@ function TimeFlag({ stall, x, z }: { stall: Stall; x: number; z: number }) {
   const ink = fair ? '#c8e070' : stall.door > 0.45 ? '#e8c04a' : '#8a7860'
   const tex = useMemo(() => makeCourtSignTexture(word, ink), [word, ink])
   useEffect(() => () => tex.dispose(), [tex])
-  const wide = fair ? 3.95 : 2.85
-  const y = fair ? 4.72 : 4.28
+  const wide = fair ? 4.15 : 2.55
+  const y = fair ? 4.85 : 3.95
   return (
     <group position={[x, 0, z]} rotation={[0, Math.PI / 4, 0]}>
       <mesh position={[0, 2.15, 0]} castShadow>
-        <boxGeometry args={[0.14, fair ? 4.55 : 4.15, 0.14]} />
+        <boxGeometry args={[0.14, fair ? 4.65 : 3.85, 0.14]} />
         <meshStandardMaterial color="#c4a05a" metalness={0.35} roughness={0.5} />
       </mesh>
       <mesh position={[0.06, y, 0.12]} castShadow>
-        <boxGeometry args={[wide, fair ? 1.05 : 0.92, 0.16]} />
+        <boxGeometry args={[wide, fair ? 1.12 : 0.82, 0.16]} />
         <meshStandardMaterial color={fair ? '#3a4a18' : '#1a120c'} />
       </mesh>
       <mesh position={[0.06, y, 0.22]}>
-        <planeGeometry args={[wide * 0.94, fair ? 0.86 : 0.74]} />
+        <planeGeometry args={[wide * 0.94, fair ? 0.92 : 0.66]} />
         <meshBasicMaterial map={tex} toneMapped={false} />
       </mesh>
     </group>
@@ -424,29 +422,29 @@ function PrintBurst({ name, px }: { name: string; px: string }) {
   const tape = useMemo(() => makeCourtSignTexture(`${name}  ${px}`, '#e8c04a'), [name, px])
   useEffect(() => () => tape.dispose(), [tape])
   return (
-    <group position={[0.2, 0.08, 3.55]}>
-      {Array.from({ length: 36 }, (_, i) => (
+    <group position={[0.35, 0.08, 4.55]}>
+      {Array.from({ length: 48 }, (_, i) => (
         <mesh
           key={i}
-          position={[((i % 6) - 2.5) * 0.72, 0.32 + Math.floor(i / 6) * 0.52, ((i % 3) - 1) * 0.5]}
+          position={[((i % 6) - 2.5) * 0.78, 0.38 + Math.floor(i / 6) * 0.58, ((i % 4) - 1.5) * 0.52]}
           rotation={[0, (i % 4) * 0.08, 0]}
           castShadow
         >
-          <boxGeometry args={[0.68, 0.48, 0.55]} />
+          <boxGeometry args={[0.74, 0.52, 0.6]} />
           <meshStandardMaterial color={wood[i % wood.length]} roughness={0.72} metalness={i % 3 === 1 ? 0.38 : 0.05} />
         </mesh>
       ))}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0.12]}>
-        <ringGeometry args={[1.85, 2.85, 24]} />
+        <ringGeometry args={[2.15, 3.35, 24]} />
         <meshBasicMaterial color="#c8d890" transparent opacity={0.94} toneMapped={false} />
       </mesh>
-      <group position={[0.15, 2.15, 1.35]} rotation={[0, Math.PI / 4, 0]}>
+      <group position={[0.2, 2.55, 1.85]} rotation={[0, Math.PI / 4, 0]}>
         <mesh position={[0, 0, 0]} castShadow>
-          <boxGeometry args={[4.85, 0.95, 0.16]} />
+          <boxGeometry args={[5.65, 1.22, 0.2]} />
           <meshStandardMaterial color="#1a120c" />
         </mesh>
-        <mesh position={[0, 0, 0.12]}>
-          <planeGeometry args={[4.65, 0.78]} />
+        <mesh position={[0, 0, 0.14]}>
+          <planeGeometry args={[5.4, 1.02]} />
           <meshBasicMaterial map={tape} toneMapped={false} />
         </mesh>
       </group>

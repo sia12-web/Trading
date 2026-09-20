@@ -272,6 +272,9 @@ export function timeOpportunity(args: {
 /** How long a take/fade keeps the porch reacting. Long enough to film still + video on the same dump. */
 export const PRINT_HOLD_MS = 18000
 
+/** Countable rungs on every camera-near range ladder (not HIGH/VAL/LOW stickers). */
+export const LADDER_TICKS = 9
+
 /**
  * Floor occupancy from divergence + time. HVN/POC fill when size confirms and
  * go hollow when advertising empty. LVN stays air unless the tape floods it.

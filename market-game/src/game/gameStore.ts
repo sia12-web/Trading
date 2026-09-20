@@ -2,6 +2,7 @@ import { PRINT_HOLD_MS, pushVwapTick, stallOccupancy, timeOpportunity, volumeDiv
 import { clank, printFill, resumeAudio, startAmbience, steamWhistle, strikeBell } from './audio'
 import { buildDowMarket, rng } from './marketData'
 import {
+  GATE_ROLL_SEC,
   LIVE_TIME_SCALE,
   NY_OPEN_MIN,
   OPEN_CINEMATIC_SEC,
@@ -316,12 +317,12 @@ export function inStall(snap: GameSnapshot = state): StoreId | null {
   return nearestStore(snap.player.x, snap.player.z, 5.2)?.id ?? null
 }
 
-export function takeAuction(side: Side) {
+export function takeAuction(side: Side, storeId?: StoreId) {
   if (state.phase !== 'live') {
     set({ message: 'Wait for the cash open.' })
     return
   }
-  const id = state.inspecting ?? state.nearby ?? nearestStore(state.player.x, state.player.z, 5.2)?.id
+  const id = storeId ?? state.inspecting ?? state.nearby ?? nearestStore(state.player.x, state.player.z, 5.2)?.id
   if (!id) {
     set({ message: 'Walk Price into a stall to take the auction.' })
     return
@@ -366,6 +367,12 @@ export function takeAuction(side: Side) {
   })
 }
 
+/** Inspect Foundry and print a buy so the dump + FOUNDRY tape share one frame. */
+export function takeFoundry() {
+  inspectStore('y-hvn')
+  takeAuction('buy', 'y-hvn')
+}
+
 function markFills(live: number, fills: Fill[]): { fills: Fill[]; pnl: number } {
   let pnl = 0
   const next = fills.map((f) => {
@@ -407,8 +414,8 @@ export function tickGame(dt: number) {
 
   if (state.phase === 'opening') {
     const openElapsed = (performance.now() - openWallMs) / 1000
-    const shutter = Math.min(1, Math.max(0, (openElapsed - 0.06) / 4.4))
-    const floorAlive = Math.min(1, Math.max(0, (openElapsed - 0.04) / 10.2))
+    const shutter = Math.min(1, Math.max(0, (openElapsed - 0.08) / GATE_ROLL_SEC))
+    const floorAlive = Math.min(1, Math.max(0, (openElapsed - 0.12) / GATE_ROLL_SEC))
     const clockMin = NY_OPEN_MIN + openElapsed / 60
     if (openElapsed >= OPEN_CINEMATIC_SEC) {
       set({
@@ -495,6 +502,7 @@ if (typeof window !== 'undefined') {
   ;(window as unknown as { __dow: Record<string, unknown> }).__dow = {
     inspectStore,
     takeAuction,
+    takeFoundry,
     skipToOpen,
     backToHub,
     enterDow,
