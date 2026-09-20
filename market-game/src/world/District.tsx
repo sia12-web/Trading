@@ -1,7 +1,7 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
-import { closeInspect, inspectStore, setWalkTarget } from '../game/gameStore'
+import { closeInspect, inspectStore, setWalkTarget, stallState } from '../game/gameStore'
 import { OPEN_CINEMATIC_SEC } from '../game/session'
 import { COURT_SIGNS, COURT_STENCILS, STORE_PLAQUES, storeAtPoint, YARD } from '../game/stores'
 import { useGame } from '../ui/useGame'
@@ -203,12 +203,17 @@ function WingPads({
       {COURT_STENCILS.map((s) => (
         <Stencil key={s.word} word={s.word} ink={s.ink} position={[s.x, 0.055, s.z]} w={s.w} d={s.d} />
       ))}
-      {COURT_SIGNS.map((s) => (
-        <WallStrip key={s.word} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} east={s.word === 'YARD'} />
-      ))}
+      {COURT_SIGNS.map((s) =>
+        s.word === 'YESTERDAY' ? (
+          <CourtPlaque key={s.word} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} lift={0.28} />
+        ) : (
+          <WallStrip key={s.word} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} east={s.word === 'YARD'} />
+        ),
+      )}
       {STORE_PLAQUES.map((s) => (
         <CourtPlaque key={`store-${s.word}`} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} lift={0.12} />
       ))}
+      <StallTimePlaques />
     </group>
   )
 }
@@ -232,6 +237,36 @@ function Stencil({
       <planeGeometry args={[w, d]} />
       <meshBasicMaterial map={tex} toneMapped={false} depthWrite={false} />
     </mesh>
+  )
+}
+
+function StallTimePlaques() {
+  const g = useGame()
+  const marks = [
+    { id: 'y-poc' as const, x: -0.15, z: 13.88, wide: 3.85 },
+    { id: 'y-hvn' as const, x: -5.65, z: 12.72, wide: 3.25 },
+    { id: '5d-poc' as const, x: 12.15, z: 4.55, wide: 3.25 },
+  ]
+  return (
+    <>
+      {marks.map((m) => {
+        const st = stallState(m.id, g)
+        const fair = st.fairToday && st.timeOpportunity < 0.38
+        const word = fair ? 'FAIR' : st.door > 0.45 ? 'OPEN' : 'SHUT'
+        const ink = fair ? '#c8e070' : st.door > 0.45 ? '#e8c04a' : '#8a7860'
+        return (
+          <CourtPlaque
+            key={`time-${m.id}`}
+            word={word}
+            ink={ink}
+            x={m.x}
+            z={m.z}
+            wide={fair ? m.wide + 0.4 : m.wide}
+            lift={fair ? 0.62 : 0.28}
+          />
+        )
+      })}
+    </>
   )
 }
 

@@ -195,8 +195,8 @@ for (const sign of COURT_SIGNS.filter((s) => s.word !== 'YARD')) {
   assert.ok(sign.z > 12.4, `${sign.word} plaque stays camera-near of the hall, not behind it`)
 }
 assert.ok(
-  COURT_SIGNS.find((s) => s.word === 'YESTERDAY')!.z > 12.6,
-  'YESTERDAY stays on the south strip so the full word is not eaten by the hall',
+  COURT_SIGNS.find((s) => s.word === 'YESTERDAY')!.z > 13.2,
+  'YESTERDAY stays on a south-apron plaque so the full word is not eaten by the hall or gates',
 )
 assert.ok(
   COURT_SIGNS.find((s) => s.word === 'YARD')!.x > 12,
@@ -211,8 +211,8 @@ assert.ok(
   'FIVE-DAY plaque stays east of the south-gate trees so the full word reads',
 )
 assert.ok(
-  COURT_SIGNS.filter((s) => s.word !== 'YARD').every((s) => s.z > 14.4 && s.z < 15.5),
-  'court names sit on the south wall inside the Clash crop so YESTERDAY is not clipped to YESTER',
+  COURT_SIGNS.filter((s) => s.word !== 'YARD').every((s) => s.z > 13.2 && s.z < 15.5),
+  'court names sit on the south apron inside the Clash crop so YESTERDAY is not clipped to YESTER',
 )
 assert.ok(
   COURT_SIGNS.find((s) => s.word === 'YESTERDAY')!.wide >= 4.4,
@@ -240,8 +240,12 @@ assert.ok(
   'SPIRE is named on the west-south apron, not behind the hall',
 )
 assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'SPIRE')!.z > 12.5,
+  STORE_PLAQUES.find((s) => s.word === 'SPIRE')!.z > 13.5,
   'SPIRE plaque sits on the camera-near south wall with the court names',
+)
+assert.ok(
+  STORE_PLAQUES.find((s) => s.word === 'SPIRE')!.x > -6,
+  'SPIRE sits in the left-gate gap so the word is not buried under FIVE-MONTH',
 )
 assert.ok(
   STORE_PLAQUES.find((s) => s.word === 'LOFT')!.z > 11.5,

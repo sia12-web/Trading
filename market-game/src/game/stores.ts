@@ -129,7 +129,7 @@ export const HUB_WALK = 14.2
  * the camera, which clipped YESTERDAY to YESTER). Full words stay.
  */
 export const COURT_SIGNS = [
-  { word: 'YESTERDAY', ink: '#e07040', x: 0.25, z: 15.08, wide: 4.55 },
+  { word: 'YESTERDAY', ink: '#e07040', x: 3.55, z: 13.72, wide: 4.65 },
   { word: 'FIVE-DAY', ink: '#d48848', x: 8.75, z: 15.08, wide: 4.15 },
   { word: 'FIVE-MONTH', ink: '#6ab0c4', x: -6.15, z: 15.08, wide: 4.75 },
   { word: 'YARD', ink: '#d48848', x: 15.08, z: 2.65, wide: 3.25 },
@@ -153,7 +153,7 @@ export const STORE_PLAQUES = [
   { word: 'MILL', ink: '#d48848', x: 11.25, z: 3.05, wide: 3.45 },
   { word: 'YARD', ink: '#d48848', x: 11.35, z: 0.55, wide: 3.35 },
   { word: 'PIT', ink: '#c4a060', x: -10.35, z: 13.55, wide: 3.25 },
-  { word: 'SPIRE', ink: '#6ab0c4', x: -8.05, z: 14.65, wide: 3.95 },
+  { word: 'SPIRE', ink: '#6ab0c4', x: -4.85, z: 14.22, wide: 4.15 },
   { word: 'LOFT', ink: '#7a98c0', x: -10.15, z: 12.05, wide: 3.35 },
 ] as const
 
