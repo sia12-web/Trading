@@ -251,23 +251,23 @@ function PriceBody({
         <boxGeometry args={[0.1, 0.14, 0.2]} />
         <meshBasicMaterial color="#8a6a38" toneMapped={false} />
       </mesh>
-      <group ref={larm} position={[-0.42, 0.74, 0]}>
+      <group ref={larm} position={[-0.44, 0.74, 0]}>
         <mesh position={[0, -0.28, 0]} scale={1.26}>
-          <capsuleGeometry args={[0.14, 0.42, 3, 6]} />
+          <capsuleGeometry args={[0.18, 0.42, 3, 6]} />
           <meshBasicMaterial color={outline} side={THREE.BackSide} toneMapped={false} />
         </mesh>
         <mesh position={[0, -0.28, 0]} castShadow>
-          <capsuleGeometry args={[0.14, 0.42, 3, 6]} />
+          <capsuleGeometry args={[0.18, 0.42, 3, 6]} />
           <meshBasicMaterial color={leather} toneMapped={false} />
         </mesh>
       </group>
-      <group ref={rarm} position={[0.42, 0.74, 0]}>
+      <group ref={rarm} position={[0.44, 0.74, 0]}>
         <mesh position={[0, -0.28, 0]} scale={1.26}>
-          <capsuleGeometry args={[0.14, 0.42, 3, 6]} />
+          <capsuleGeometry args={[0.18, 0.42, 3, 6]} />
           <meshBasicMaterial color={outline} side={THREE.BackSide} toneMapped={false} />
         </mesh>
         <mesh position={[0, -0.28, 0]} castShadow>
-          <capsuleGeometry args={[0.14, 0.42, 3, 6]} />
+          <capsuleGeometry args={[0.18, 0.42, 3, 6]} />
           <meshBasicMaterial color={leather} toneMapped={false} />
         </mesh>
         <mesh position={[0.18, -0.5, 0.06]} rotation={[0, 0, -0.4]} castShadow>

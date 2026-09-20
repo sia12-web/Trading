@@ -28,7 +28,7 @@ export function DowScene() {
       dpr={[1, 1.75]}
       gl={{ antialias: true, powerPreference: 'high-performance' }}
       onCreated={({ gl }) => {
-        gl.setClearColor('#6ac8ee')
+        gl.setClearColor('#8eccf0')
         gl.toneMapping = THREE.ACESFilmicToneMapping
         gl.toneMappingExposure = 1.1
         gl.shadowMap.enabled = true

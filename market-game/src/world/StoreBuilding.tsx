@@ -91,6 +91,15 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
         color={store.accent}
       />
       <Fascia title={label} paint={store.accent} y={shell.fasciaY + 0.28} width={Math.min(5.05, shell.w * 1.12)} z={shell.d * 0.52 + 0.08} />
+      {store.building === 'hall' && (
+        <Fascia title="YESTERDAY" paint="#e07040" y={shell.fasciaY + 1.22} width={4.35} z={shell.d * 0.52 + 0.1} />
+      )}
+      {store.building === 'mill' && (
+        <Fascia title="FIVE-DAY" paint="#d48848" y={shell.fasciaY + 1.18} width={4.55} z={shell.d * 0.52 + 0.1} />
+      )}
+      {store.building === 'spire' && (
+        <Fascia title="FIVE-MONTH" paint="#6ab0c4" y={shell.fasciaY + 1.28} width={4.15} z={shell.d * 0.52 + 0.1} />
+      )}
       <FaceShutter open={st.door} width={Math.min(2.55, shell.w * 0.58)} z={shell.d * 0.52 + 0.16} />
       <TimeFlag stall={st} z={shell.d * 0.55 + 0.72} />
       <PorchTell stall={st} kind={store.kind} z={shell.d * 0.55 + 0.55} />

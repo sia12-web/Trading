@@ -13,13 +13,13 @@ export function HubWorld() {
 
   return (
     <>
-      <color attach="background" args={['#6ac8ee']} />
-      <MorningSun warm={false} />
+      <color attach="background" args={['#8eccf0']} />
+      <MorningSun warm />
       <ClashTerrain wall={YARD} />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.014, 0]} receiveShadow>
         <planeGeometry args={[YARD * 2 - 0.55, YARD * 2 - 0.55]} />
-        <meshStandardMaterial map={grass} color="#3aaa32" roughness={0.88} />
+        <meshStandardMaterial map={grass} color="#3a8c34" roughness={0.88} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.022, 5.2]} receiveShadow>
         <planeGeometry args={[7.4, 9.8]} />
@@ -102,7 +102,7 @@ function DowGate({
       ))}
       <mesh position={[0, 5.2, 0]} castShadow>
         <boxGeometry args={[7.65, 0.22, 5.25]} />
-        <meshStandardMaterial color="#c4a05a" roughness={0.45} metalness={0.4} />
+        <meshStandardMaterial color="#c45a32" roughness={0.58} />
       </mesh>
       <mesh position={[0, 1.35, 2.58]}>
         <boxGeometry args={[2.15, 2.55, 0.16]} />
@@ -450,15 +450,47 @@ function HubDressing() {
 function PlazaYard() {
   return (
     <group>
-      <FlowerBed x={2.35} z={0.15} />
-      <FlowerBed x={-2.4} z={-0.1} />
-      <FlowerBed x={1.15} z={2.05} />
-      <FlowerBed x={-1.25} z={2.15} />
-      <Bush x={2.85} z={1.55} h={0.85} seed={31} />
-      <Bush x={-2.95} z={1.45} h={0.9} seed={32} />
+      <Well />
+      <FlowerBed x={2.45} z={0.25} />
+      <FlowerBed x={-2.5} z={-0.15} />
+      <FlowerBed x={1.25} z={2.15} />
+      <FlowerBed x={-1.35} z={2.25} />
+      <FlowerBed x={2.15} z={-1.85} />
+      <FlowerBed x={-2.05} z={-1.95} />
+      <Bush x={2.95} z={1.65} h={0.9} seed={31} />
+      <Bush x={-3.05} z={1.55} h={0.95} seed={32} />
+      <Bush x={2.75} z={-2.15} h={0.8} seed={33} />
+      <Bush x={-2.85} z={-2.05} h={0.85} seed={34} />
+      <Broadleaf x={3.35} z={0.85} h={2.45} seed={51} />
+      <Willow x={-3.45} z={0.65} h={2.35} seed={52} />
       <Worker x={0.55} z={1.85} rot={0.3} color="#3a6a88" />
       <Worker x={-0.65} z={1.75} rot={-0.4} color="#c4a046" />
       <Worker x={1.15} z={-0.55} rot={1.1} color="#5a7a50" />
+    </group>
+  )
+}
+
+function Well() {
+  return (
+    <group position={[0.15, 0, -0.35]}>
+      <mesh position={[0, 0.28, 0]} castShadow>
+        <cylinderGeometry args={[0.42, 0.48, 0.55, 10]} />
+        <meshStandardMaterial color="#c8b494" roughness={0.78} />
+      </mesh>
+      <mesh position={[0, 0.58, 0]}>
+        <cylinderGeometry args={[0.32, 0.32, 0.08, 10]} />
+        <meshStandardMaterial color="#3a4a50" roughness={0.4} metalness={0.2} />
+      </mesh>
+      {[-0.38, 0.38].map((x) => (
+        <mesh key={x} position={[x, 0.95, 0]} castShadow>
+          <boxGeometry args={[0.08, 0.85, 0.08]} />
+          <meshStandardMaterial color="#6a4a28" roughness={0.8} />
+        </mesh>
+      ))}
+      <mesh position={[0, 1.38, 0]} rotation={[0, 0, 0.2]} castShadow>
+        <boxGeometry args={[0.95, 0.08, 0.55]} />
+        <meshStandardMaterial color="#c45a32" roughness={0.62} />
+      </mesh>
     </group>
   )
 }
@@ -545,16 +577,16 @@ function FieldYard() {
 function CornerHuts() {
   return (
     <group>
-      <MillRowHouse x={-8.35} z={-7.55} rot={0.42} variant={0} />
-      <MillRowHouse x={7.65} z={-8.25} rot={-0.22} variant={1} />
-      <MillRowHouse x={-11.15} z={-4.35} rot={0.78} variant={2} />
-      <MillRowHouse x={10.25} z={-4.55} rot={-0.62} variant={3} />
-      <MillRowHouse x={-10.85} z={6.35} rot={0.55} variant={4} />
-      <MillRowHouse x={10.15} z={6.85} rot={-0.48} variant={5} />
-      <MillRowHouse x={-5.55} z={-10.65} rot={0.12} variant={6} />
-      <MillRowHouse x={5.45} z={-10.85} rot={-0.18} variant={7} />
-      <MillRowHouse x={-7.25} z={8.85} rot={0.95} variant={8} />
-      <MillRowHouse x={7.45} z={8.55} rot={-0.88} variant={9} />
+      <Cottage x={-8.55} z={-7.15} rot={0.48} kind={0} />
+      <Cottage x={7.35} z={-8.55} rot={-0.18} kind={1} />
+      <Cottage x={-11.45} z={-3.85} rot={0.85} kind={2} />
+      <Cottage x={10.05} z={-4.85} rot={-0.72} kind={3} />
+      <Cottage x={-10.65} z={6.75} rot={0.42} kind={4} />
+      <Cottage x={9.85} z={7.15} rot={-0.38} kind={5} />
+      <Cottage x={-5.15} z={-10.95} rot={0.08} kind={6} />
+      <Cottage x={5.75} z={-11.15} rot={-0.14} kind={7} />
+      <Cottage x={-7.65} z={9.15} rot={1.05} kind={8} />
+      <Cottage x={7.85} z={8.25} rot={-0.95} kind={9} />
       <FlowerBed x={-5.15} z={-8.85} />
       <FlowerBed x={5.25} z={-8.65} />
       <FlowerBed x={-9.15} z={6.55} />
@@ -640,63 +672,227 @@ function Barrel({ x, z, color }: { x: number; z: number; color: string }) {
   )
 }
 
-function MillRowHouse({ x, z, rot, variant }: { x: number; z: number; rot: number; variant: number }) {
-  const w = 2.15 + (variant % 3) * 0.55
-  const d = 1.95 + (variant % 2) * 0.5
-  const h = 2.45 + (variant % 4) * 0.42
-  const brick = ['#8a3a28', '#7a3224', '#9a4430', '#6a2e22', '#a04832'][variant % 5]
-  const pitched = variant % 3 !== 1
-  const chimney = variant % 2 === 0
-  const bays = 1 + (variant % 3)
+function Cottage({ x, z, rot, kind }: { x: number; z: number; rot: number; kind: number }) {
+  const cream = '#e4d4b8'
+  const terra = '#c45a32'
+  const soot = '#8a3a28'
+  const sill = '#f0e6d4'
   return (
     <group position={[x, 0, z]} rotation={[0, rot, 0]}>
-      <mesh position={[0, h / 2, 0]} castShadow receiveShadow>
-        <boxGeometry args={[w, h, d]} />
-        <meshStandardMaterial color={brick} roughness={0.88} />
-      </mesh>
-      {pitched ? (
-        <mesh position={[0, h + 0.28, 0]} rotation={[0, 0, variant % 2 === 0 ? 0.38 : -0.32]} castShadow>
-          <boxGeometry args={[w + 0.35, 0.16, d + 0.28]} />
-          <meshStandardMaterial color={variant % 4 === 0 ? '#6a5a48' : '#c45a32'} roughness={0.6} />
-        </mesh>
-      ) : (
-        <mesh position={[0, h + 0.12, 0]} castShadow>
-          <boxGeometry args={[w + 0.22, 0.2, d + 0.22]} />
-          <meshStandardMaterial color="#e4d4b8" roughness={0.55} />
-        </mesh>
+      {kind === 0 && (
+        <>
+          <mesh position={[0, 1.15, 0]} castShadow receiveShadow>
+            <boxGeometry args={[2.35, 2.3, 2.05]} />
+            <meshStandardMaterial color={cream} roughness={0.8} />
+          </mesh>
+          <mesh position={[0, 2.55, 0]} rotation={[0, 0, 0.42]} castShadow>
+            <boxGeometry args={[2.85, 0.16, 2.35]} />
+            <meshStandardMaterial color={terra} roughness={0.6} />
+          </mesh>
+          <mesh position={[0, 2.55, 0]} rotation={[0, 0, -0.42]} castShadow>
+            <boxGeometry args={[2.85, 0.16, 2.35]} />
+            <meshStandardMaterial color={terra} roughness={0.6} />
+          </mesh>
+          <Win x={-0.55} y={1.45} z={1.08} />
+          <Win x={0.55} y={1.45} z={1.08} />
+          <Door x={0} z={1.1} />
+          <Chimney x={0.7} y={3.15} z={-0.2} />
+        </>
       )}
-      {Array.from({ length: bays }, (_, i) => {
-        const sx = (i - (bays - 1) / 2) * 0.72
-        return (
-          <group key={i} position={[sx, h * 0.62, d / 2 + 0.04]}>
-            <mesh>
-              <boxGeometry args={[0.58, 0.72, 0.1]} />
-              <meshStandardMaterial color="#f0e6d4" roughness={0.55} />
-            </mesh>
-            <mesh position={[0, 0, 0.04]}>
-              <boxGeometry args={[0.4, 0.52, 0.06]} />
-              <meshStandardMaterial color="#2a3a44" roughness={0.28} />
-            </mesh>
-          </group>
-        )
-      })}
-      <mesh position={[variant % 2 === 0 ? 0.18 : -0.22, 0.72, d / 2 + 0.05]}>
-        <boxGeometry args={[0.62, 1.18, 0.12]} />
-        <meshStandardMaterial color="#2a1410" />
-      </mesh>
-      {chimney && (
-        <mesh position={[w * 0.28, h + 0.85, -d * 0.12]} castShadow>
-          <boxGeometry args={[0.32, 1.15, 0.32]} />
-          <meshStandardMaterial color="#4a3028" roughness={0.8} />
-        </mesh>
+      {kind === 1 && (
+        <>
+          <mesh position={[0, 1.85, 0]} castShadow receiveShadow>
+            <boxGeometry args={[2.15, 3.7, 1.95]} />
+            <meshStandardMaterial color={cream} roughness={0.8} />
+          </mesh>
+          <mesh position={[0, 3.85, 0]} rotation={[0, 0, 0.38]} castShadow>
+            <boxGeometry args={[2.55, 0.14, 2.2]} />
+            <meshStandardMaterial color={terra} roughness={0.6} />
+          </mesh>
+          <Win x={-0.48} y={2.55} z={1.02} />
+          <Win x={0.48} y={2.55} z={1.02} />
+          <Win x={-0.48} y={1.35} z={1.02} />
+          <Door x={0.35} z={1.04} />
+          <mesh position={[0, 2.05, 1.12]} castShadow>
+            <boxGeometry args={[1.65, 0.08, 0.45]} />
+            <meshStandardMaterial color={sill} roughness={0.7} />
+          </mesh>
+        </>
       )}
-      {variant % 3 === 2 && (
-        <mesh position={[-w * 0.42, h * 0.45, 0]} castShadow>
-          <boxGeometry args={[0.55, h * 0.7, d * 0.7]} />
-          <meshStandardMaterial color="#6a3224" roughness={0.86} />
-        </mesh>
+      {kind === 2 && (
+        <>
+          <mesh position={[0, 1.55, 0]} castShadow receiveShadow>
+            <boxGeometry args={[2.85, 3.1, 2.15]} />
+            <meshStandardMaterial color={soot} roughness={0.88} />
+          </mesh>
+          <mesh position={[0, 3.22, 0]} castShadow>
+            <boxGeometry args={[3.05, 0.18, 2.35]} />
+            <meshStandardMaterial color={cream} roughness={0.55} />
+          </mesh>
+          <Win x={-0.75} y={2.15} z={1.12} />
+          <Win x={0.75} y={2.15} z={1.12} />
+          <Door x={0} z={1.14} />
+          <Chimney x={-0.85} y={3.85} z={0.15} />
+        </>
+      )}
+      {kind === 3 && (
+        <>
+          <mesh position={[-0.35, 1.15, 0]} castShadow receiveShadow>
+            <boxGeometry args={[2.45, 2.3, 2.25]} />
+            <meshStandardMaterial color={cream} roughness={0.8} />
+          </mesh>
+          <mesh position={[1.15, 0.85, 0.15]} castShadow>
+            <boxGeometry args={[1.35, 1.7, 1.65]} />
+            <meshStandardMaterial color={soot} roughness={0.86} />
+          </mesh>
+          <mesh position={[-0.35, 2.45, 0]} rotation={[0, 0, 0.35]} castShadow>
+            <boxGeometry args={[2.85, 0.14, 2.45]} />
+            <meshStandardMaterial color={terra} roughness={0.6} />
+          </mesh>
+          <Win x={-0.7} y={1.45} z={1.18} />
+          <Door x={0.15} z={1.2} />
+        </>
+      )}
+      {kind === 4 && (
+        <>
+          <mesh position={[-0.55, 1.35, 0]} castShadow>
+            <cylinderGeometry args={[1.05, 1.15, 2.7, 12]} />
+            <meshStandardMaterial color={soot} roughness={0.86} />
+          </mesh>
+          <mesh position={[1.05, 0.95, 0.25]} castShadow receiveShadow>
+            <boxGeometry args={[1.55, 1.9, 1.55]} />
+            <meshStandardMaterial color={cream} roughness={0.8} />
+          </mesh>
+          <mesh position={[1.05, 2.05, 0.25]} rotation={[0, 0, 0.4]} castShadow>
+            <boxGeometry args={[1.85, 0.12, 1.75]} />
+            <meshStandardMaterial color={terra} roughness={0.6} />
+          </mesh>
+          <Door x={1.05} z={1.08} />
+        </>
+      )}
+      {kind === 5 && (
+        <>
+          <mesh position={[0, 1.05, 0]} castShadow receiveShadow>
+            <boxGeometry args={[3.35, 2.1, 2.25]} />
+            <meshStandardMaterial color={cream} roughness={0.8} />
+          </mesh>
+          <mesh position={[0, 2.35, 0]} rotation={[0, 0, 0.28]} castShadow>
+            <boxGeometry args={[3.85, 0.16, 2.55]} />
+            <meshStandardMaterial color={terra} roughness={0.6} />
+          </mesh>
+          <Win x={-1.05} y={1.25} z={1.18} />
+          <Win x={0} y={1.25} z={1.18} />
+          <Win x={1.05} y={1.25} z={1.18} />
+          <Door x={-0.35} z={1.2} />
+          <Chimney x={1.25} y={2.95} z={-0.25} />
+        </>
+      )}
+      {kind === 6 && (
+        <>
+          <mesh position={[0, 2.05, 0]} castShadow receiveShadow>
+            <boxGeometry args={[1.95, 4.1, 1.85]} />
+            <meshStandardMaterial color={soot} roughness={0.88} />
+          </mesh>
+          <mesh position={[0, 4.25, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
+            <coneGeometry args={[1.45, 0.85, 4]} />
+            <meshStandardMaterial color={terra} roughness={0.62} />
+          </mesh>
+          <Win x={0} y={2.85} z={0.98} />
+          <Win x={0} y={1.65} z={0.98} />
+          <Door x={0} z={1.0} />
+        </>
+      )}
+      {kind === 7 && (
+        <>
+          <mesh position={[-0.45, 1.25, 0]} castShadow receiveShadow>
+            <boxGeometry args={[2.25, 2.5, 1.85]} />
+            <meshStandardMaterial color={cream} roughness={0.8} />
+          </mesh>
+          <mesh position={[0.95, 1.05, 0.55]} castShadow>
+            <boxGeometry args={[1.55, 2.1, 1.45]} />
+            <meshStandardMaterial color={cream} roughness={0.8} />
+          </mesh>
+          <mesh position={[-0.45, 2.65, 0]} rotation={[0, 0, 0.4]} castShadow>
+            <boxGeometry args={[2.65, 0.14, 2.15]} />
+            <meshStandardMaterial color={terra} roughness={0.6} />
+          </mesh>
+          <mesh position={[0.95, 2.25, 0.55]} rotation={[0, 0, -0.35]} castShadow>
+            <boxGeometry args={[1.85, 0.12, 1.65]} />
+            <meshStandardMaterial color={terra} roughness={0.6} />
+          </mesh>
+          <Win x={-0.7} y={1.55} z={0.98} />
+          <Door x={0.85} z={1.32} />
+        </>
+      )}
+      {kind === 8 && (
+        <>
+          <mesh position={[0, 1.05, 0]} castShadow receiveShadow>
+            <boxGeometry args={[2.05, 2.1, 2.05]} />
+            <meshStandardMaterial color={cream} roughness={0.8} />
+          </mesh>
+          <mesh position={[0, 2.35, 0]} castShadow>
+            <sphereGeometry args={[1.15, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2]} />
+            <meshStandardMaterial color={terra} roughness={0.62} />
+          </mesh>
+          <Win x={-0.45} y={1.25} z={1.08} />
+          <Win x={0.45} y={1.25} z={1.08} />
+          <Door x={0} z={1.1} />
+        </>
+      )}
+      {kind === 9 && (
+        <>
+          <mesh position={[0, 1.45, 0]} castShadow receiveShadow>
+            <boxGeometry args={[2.55, 2.9, 2.05]} />
+            <meshStandardMaterial color={soot} roughness={0.88} />
+          </mesh>
+          <mesh position={[1.45, 0.85, 0.15]} castShadow>
+            <boxGeometry args={[1.15, 1.7, 1.55]} />
+            <meshStandardMaterial color={terra} roughness={0.7} />
+          </mesh>
+          <mesh position={[0, 3.05, 0]} castShadow>
+            <boxGeometry args={[2.75, 0.16, 2.25]} />
+            <meshStandardMaterial color={cream} roughness={0.55} />
+          </mesh>
+          <Win x={-0.6} y={1.85} z={1.08} />
+          <Win x={0.6} y={1.85} z={1.08} />
+          <Door x={-0.2} z={1.1} />
+          <Chimney x={0.85} y={3.65} z={-0.35} />
+        </>
       )}
     </group>
+  )
+}
+
+function Win({ x, y, z }: { x: number; y: number; z: number }) {
+  return (
+    <group position={[x, y, z]}>
+      <mesh>
+        <boxGeometry args={[0.52, 0.62, 0.08]} />
+        <meshStandardMaterial color="#f0e6d4" roughness={0.55} />
+      </mesh>
+      <mesh position={[0, 0, 0.04]}>
+        <boxGeometry args={[0.36, 0.44, 0.05]} />
+        <meshStandardMaterial color="#2a3a44" roughness={0.28} />
+      </mesh>
+    </group>
+  )
+}
+
+function Door({ x, z }: { x: number; z: number }) {
+  return (
+    <mesh position={[x, 0.72, z]}>
+      <boxGeometry args={[0.55, 1.15, 0.1]} />
+      <meshStandardMaterial color="#2a1410" />
+    </mesh>
+  )
+}
+
+function Chimney({ x, y, z }: { x: number; y: number; z: number }) {
+  return (
+    <mesh position={[x, y, z]} castShadow>
+      <boxGeometry args={[0.32, 1.05, 0.32]} />
+      <meshStandardMaterial color="#4a3028" roughness={0.8} />
+    </mesh>
   )
 }
 

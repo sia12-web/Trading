@@ -29,7 +29,7 @@ export function District() {
   const dawn = g.phase === 'preopen'
   const sunK =
     g.phase === 'opening' ? Math.min(1, g.openElapsed / OPEN_CINEMATIC_SEC) : dawn ? 0 : 1
-    const sky = sunK < 0.35 ? '#e8bc7c' : '#6ac8ee'
+    const sky = sunK < 0.35 ? '#ffd4a0' : '#8eccf0'
 
   useFrame(() => {
     gl.toneMappingExposure = 1.2 + 0.14 * sunK
@@ -204,10 +204,10 @@ function WingPads({
         <Stencil key={s.word} word={s.word} ink={s.ink} position={[s.x, 0.055, s.z]} w={s.w} d={s.d} />
       ))}
       {COURT_SIGNS.map((s) => (
-        <CourtPlaque key={s.word} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} />
+        <WallStrip key={s.word} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} east={s.word === 'YARD'} />
       ))}
       {STORE_PLAQUES.map((s) => (
-        <CourtPlaque key={`store-${s.word}`} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} lift={0.62} />
+        <CourtPlaque key={`store-${s.word}`} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} lift={0.22} />
       ))}
     </group>
   )
@@ -253,16 +253,46 @@ function CourtPlaque({
   const tex = useMemo(() => makeCourtSignTexture(word, ink), [word, ink])
   return (
     <group position={[x, lift, z]} rotation={[0, Math.PI / 4, 0]}>
-      <mesh position={[0, 0.7, 0.18]} castShadow>
-        <boxGeometry args={[0.2, 1.4 + lift, 0.2]} />
+      <mesh position={[0, 0.38, 0.12]} castShadow>
+        <boxGeometry args={[0.1, 0.72 + lift, 0.1]} />
         <meshStandardMaterial color="#3a2a1c" roughness={0.8} />
       </mesh>
-      <mesh position={[0, 1.72, 0.28]} castShadow>
-        <boxGeometry args={[wide, 1.18, 0.18]} />
+      <mesh position={[0, 0.92, 0.16]} castShadow>
+        <boxGeometry args={[wide * 0.92, 0.48, 0.1]} />
         <meshStandardMaterial color="#2a1c14" roughness={0.7} />
       </mesh>
-      <mesh position={[0, 1.72, 0.4]}>
-        <planeGeometry args={[wide - 0.16, 0.98]} />
+      <mesh position={[0, 0.92, 0.23]}>
+        <planeGeometry args={[wide * 0.86, 0.38]} />
+        <meshBasicMaterial map={tex} toneMapped={false} />
+      </mesh>
+    </group>
+  )
+}
+
+function WallStrip({
+  word,
+  ink,
+  x,
+  z,
+  wide,
+  east = false,
+}: {
+  word: string
+  ink: string
+  x: number
+  z: number
+  wide: number
+  east?: boolean
+}) {
+  const tex = useMemo(() => makeCourtSignTexture(word, ink), [word, ink])
+  return (
+    <group position={[x, 0, z]} rotation={[0, east ? -Math.PI / 2 : 0, 0]}>
+      <mesh position={[0, 1.12, 0.06]} castShadow>
+        <boxGeometry args={[wide + 0.18, 0.5, 0.1]} />
+        <meshStandardMaterial color="#241810" roughness={0.72} />
+      </mesh>
+      <mesh position={[0, 1.12, 0.12]}>
+        <planeGeometry args={[wide, 0.38]} />
         <meshBasicMaterial map={tex} toneMapped={false} />
       </mesh>
     </group>
