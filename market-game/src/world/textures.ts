@@ -254,7 +254,7 @@ export function makeFasciaTexture(title: string, paint: string): THREE.CanvasTex
   ctx.lineWidth = 6
   ctx.strokeRect(14, 14, 740, 100)
   ctx.fillStyle = '#f0e6d4'
-  ctx.font = 'bold 64px "IBM Plex Mono", sans-serif'
+  ctx.font = 'bold 72px "IBM Plex Mono", sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.fillText(title, 384, 68)

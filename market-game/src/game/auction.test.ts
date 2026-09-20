@@ -11,7 +11,7 @@ import {
 } from './auction'
 import { buildDowMarket } from './marketData'
 import { OPEN_CINEMATIC_SEC } from './session'
-import { COURT_SIGNS, COURT_STENCILS, porchOf, STORES } from './stores'
+import { COURT_SIGNS, COURT_STENCILS, porchOf, STORE_PLAQUES, STORES } from './stores'
 import type { OhlcvBar } from './types'
 
 function bar(partial: Partial<OhlcvBar> & { close: number }): OhlcvBar {
@@ -205,6 +205,27 @@ assert.ok(
 assert.ok(
   COURT_SIGNS.find((s) => s.word === 'FIVE-DAY')!.x > 8,
   'FIVE-DAY plaque stays east of the south-gate trees so the full word reads',
+)
+assert.deepEqual(
+  STORE_PLAQUES.map((s) => s.word),
+  ['FOUNDRY', 'HALL', 'DOCK', 'ALLEY', 'MILL', 'YARD', 'PIT', 'SPIRE', 'LOFT'],
+  'all nine store names sit on camera-near plaques with the court signs',
+)
+assert.ok(
+  STORE_PLAQUES.every((s) => s.wide >= 2.5),
+  'store name plaques are Clash-readable, not inspect-only',
+)
+assert.ok(
+  STORE_PLAQUES.find((s) => s.word === 'MILL')!.x > 8,
+  'MILL is named on the east court, not only YARD',
+)
+assert.ok(
+  STORE_PLAQUES.find((s) => s.word === 'ALLEY')!.x > 8,
+  'ALLEY is named on the east court',
+)
+assert.ok(
+  STORE_PLAQUES.find((s) => s.word === 'SPIRE')!.x < -8,
+  'SPIRE is named on the west five-month court',
 )
 
 const hallTime = timeOpportunity({ kind: 'poc', tpoAtPrice: 6.2, sessionProgress: 0.02 })

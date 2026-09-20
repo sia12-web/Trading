@@ -35,7 +35,7 @@ function StallCrowd({ store }: { store: StoreDef }) {
   const printed = Boolean(g.lastPrint && g.lastPrint.storeId === store.id && performance.now() - g.lastPrint.at < PRINT_HOLD_MS)
   const fade = printed && g.lastPrint?.side === 'sell'
   const take = printed && g.lastPrint?.side === 'buy'
-  const max = store.kind === 'lvn' ? 6 : store.kind === 'poc' ? 22 : store.kind === 'avwap' ? 16 : 18
+  const max = store.kind === 'lvn' ? 4 : store.kind === 'poc' ? 28 : store.kind === 'avwap' ? 18 : 24
   const n = fade
     ? 0
     : store.kind === 'lvn'
@@ -70,7 +70,7 @@ function StallCrowd({ store }: { store: StoreDef }) {
 function ShiftColumn({ alive }: { alive: number }) {
   return (
     <group>
-      {Array.from({ length: 34 }, (_, i) => (
+      {Array.from({ length: 48 }, (_, i) => (
         <ShiftWalker key={i} seed={i} alive={alive} />
       ))}
     </group>
@@ -94,7 +94,7 @@ function ShiftWalker({ seed, alive }: { seed: number; alive: number }) {
     [3.2, 4.8],
   ]
   const dest = dests[seed % dests.length]!
-  const gate: [number, number] = [(seed % 5) * 0.7 - 1.4, 14.35]
+  const gate: [number, number] = [(seed % 5) * 0.7 - 1.4, 12.35]
 
   useFrame((s) => {
     if (!ref.current) return
@@ -103,15 +103,16 @@ function ShiftWalker({ seed, alive }: { seed: number; alive: number }) {
     const z = THREE.MathUtils.lerp(gate[1], dest[1], t)
     ref.current.position.set(x, 0, z)
     ref.current.rotation.y = Math.atan2(dest[0] - gate[0], dest[1] - gate[1])
-    ref.current.visible = alive > 0.02 && t < 0.98
-    const leg = Math.sin(s.clock.elapsedTime * 10 + seed) * 0.55
+    ref.current.visible = alive > 0.02
+    const walking = t < 0.92
+    const leg = Math.sin(s.clock.elapsedTime * 10 + seed) * (walking ? 0.7 : 0.08)
     if (left.current) left.current.rotation.x = leg
     if (right.current) right.current.rotation.x = -leg
   })
 
   const color = seed % 3 === 0 ? '#c4a046' : seed % 3 === 1 ? '#5a7a50' : '#8aa0b0'
   return (
-    <group ref={ref} position={[gate[0], 0, gate[1]]} scale={0.82}>
+    <group ref={ref} position={[gate[0], 0, gate[1]]} scale={1.12}>
       <TroopBody color={color} left={left} right={right} />
     </group>
   )
@@ -148,7 +149,7 @@ function Person({
   const doorLocal: [number, number] = [(col - 1.5) * 0.62, 2.65 + row * 0.62]
   const worldDoor = rotate2(doorLocal, yaw)
   const home: [number, number] = [store.position[0] + worldDoor[0], store.position[2] + worldDoor[1]]
-  const gate: [number, number] = [(seed % 5) * 0.65 - 1.3, 14.35]
+  const gate: [number, number] = [(seed % 5) * 0.65 - 1.3, 12.35]
 
   useFrame((s) => {
     if (!ref.current) return
@@ -170,7 +171,7 @@ function Person({
   })
 
   return (
-    <group ref={ref} position={[home[0], 0, home[1]]} scale={0.88}>
+    <group ref={ref} position={[home[0], 0, home[1]]} scale={1.15}>
       <TroopBody color={color} left={left} right={right} hardhat={kind !== 'broker'} kit={kind} />
     </group>
   )

@@ -142,6 +142,22 @@ export const COURT_STENCILS = [
   { word: 'YARD', ink: '#d48848', x: 12.35, z: -6.15, w: 4.4, d: 1.45 },
 ] as const
 
+/**
+ * Store names sit on the camera-near (+X,+Z) apron of every shell so all nine
+ * read in the same Clash crop as the court plaques — not only on inspect.
+ */
+export const STORE_PLAQUES = [
+  { word: 'FOUNDRY', ink: '#e07040', x: -2.55, z: 9.55, wide: 3.55 },
+  { word: 'HALL', ink: '#e8b050', x: 1.55, z: 9.85, wide: 2.85 },
+  { word: 'DOCK', ink: '#6aa0b8', x: 8.15, z: 9.35, wide: 2.75 },
+  { word: 'ALLEY', ink: '#7a90a0', x: 10.55, z: 4.85, wide: 3.15 },
+  { word: 'MILL', ink: '#d48848', x: 10.75, z: -0.15, wide: 2.95 },
+  { word: 'YARD', ink: '#d48848', x: 10.55, z: -5.65, wide: 2.85 },
+  { word: 'PIT', ink: '#c4a060', x: -9.35, z: 5.85, wide: 2.55 },
+  { word: 'SPIRE', ink: '#6ab0c4', x: -9.45, z: 0.35, wide: 3.15 },
+  { word: 'LOFT', ink: '#7a98c0', x: -9.35, z: -5.15, wide: 2.75 },
+] as const
+
 /** Fascia sits on local +Z. Yaw matches Three.js so that face is the courtyard. */
 export function storeYaw(range: RangeKind): number {
   if (range === 'fiveMonth') return Math.PI / 2

@@ -82,65 +82,85 @@ function DowGate({
         enterDow()
       }}
     >
-      <mesh position={[0, 1.42, 0]} castShadow receiveShadow>
-        <boxGeometry args={[3.25, 2.85, 2.65]} />
+      <mesh position={[0, 1.95, 0]} castShadow receiveShadow>
+        <boxGeometry args={[4.85, 3.9, 3.55]} />
         <meshStandardMaterial map={brick} color="#b84a30" roughness={0.86} />
       </mesh>
-      {[-1.05, 1.05].map((x) => (
-        <mesh key={x} position={[x, 3.05, 0]} rotation={[0, 0, 0.55]} castShadow>
-          <boxGeometry args={[1.45, 0.12, 2.8]} />
+      {[-1.35, 1.35].map((x) => (
+        <mesh key={x} position={[x, 4.05, 0]} rotation={[0, 0, 0.48]} castShadow>
+          <boxGeometry args={[2.15, 0.16, 3.75]} />
           <meshStandardMaterial map={metal} color="#6a5040" roughness={0.62} />
         </mesh>
       ))}
-      <mesh position={[0, 1.05, 1.38]}>
-        <boxGeometry args={[1.15, 1.85, 0.1]} />
+      <mesh position={[0, 1.15, 1.82]}>
+        <boxGeometry args={[1.45, 2.15, 0.12]} />
         <meshStandardMaterial color="#4a1810" />
       </mesh>
-      <mesh position={[0, 1.05, 1.44]}>
-        <boxGeometry args={[0.92, 1.45, 0.05]} />
-        <meshStandardMaterial color="#3a1008" emissive="#8a4020" emissiveIntensity={0.22} />
+      <mesh position={[0, 1.15, 1.9]}>
+        <boxGeometry args={[1.15, 1.75, 0.06]} />
+        <meshStandardMaterial color="#3a1008" emissive="#8a4020" emissiveIntensity={0.28} />
       </mesh>
-      <mesh position={[0, 2.95, 0]} castShadow>
-        <boxGeometry args={[3.45, 0.14, 2.85]} />
+      <mesh position={[0, 4.0, 0]} castShadow>
+        <boxGeometry args={[5.15, 0.18, 3.75]} />
         <meshStandardMaterial color="#c4a05a" roughness={0.45} metalness={0.4} />
       </mesh>
-      <mesh position={[1.15, 3.75, -0.35]} castShadow>
-        <cylinderGeometry args={[0.18, 0.24, 1.55, 8]} />
+      <mesh position={[1.65, 5.55, -0.45]} castShadow>
+        <cylinderGeometry args={[0.32, 0.42, 3.15, 10]} />
         <meshStandardMaterial map={metal} color="#6a5a48" roughness={0.55} />
       </mesh>
-      {[-0.82, 0.82].map((x) => (
-        <group key={x} position={[x, 1.85, 1.35]}>
+      <mesh position={[1.65, 7.25, -0.45]} castShadow>
+        <cylinderGeometry args={[0.38, 0.28, 0.45, 10]} />
+        <meshStandardMaterial color="#4a4038" metalness={0.35} roughness={0.5} />
+      </mesh>
+      {[-1.15, 1.15].map((x) => (
+        <group key={x} position={[x, 2.35, 1.8]}>
           <mesh>
-            <boxGeometry args={[0.58, 0.7, 0.08]} />
+            <boxGeometry args={[0.7, 0.85, 0.1]} />
             <meshStandardMaterial color="#f0e6d4" roughness={0.55} />
           </mesh>
-          <mesh position={[0, 0, 0.03]}>
-            <boxGeometry args={[0.42, 0.52, 0.05]} />
+          <mesh position={[0, 0, 0.04]}>
+            <boxGeometry args={[0.5, 0.62, 0.06]} />
             <meshStandardMaterial color="#2a3a44" roughness={0.28} />
           </mesh>
         </group>
       ))}
-      <group position={[-2.35, 0, 0.4]}>
-        <mesh position={[0, 0.85, 0]} castShadow receiveShadow>
-          <boxGeometry args={[1.15, 1.7, 1.15]} />
+      <group position={[-3.15, 0, 0.55]}>
+        <mesh position={[0, 1.15, 0]} castShadow receiveShadow>
+          <boxGeometry args={[1.55, 2.3, 1.55]} />
           <meshStandardMaterial map={brick} color="#a84a32" roughness={0.86} />
         </mesh>
-        <mesh position={[0, 1.82, 0]} rotation={[0, 0, 0.4]} castShadow>
-          <boxGeometry args={[1.4, 0.1, 1.3]} />
-          <meshStandardMaterial color="#6a5040" roughness={0.6} />
+        <mesh position={[0, 2.42, 0]} rotation={[0, 0, 0.4]} castShadow>
+          <boxGeometry args={[1.85, 0.12, 1.7]} />
+          <meshStandardMaterial color="#c45a32" roughness={0.58} />
         </mesh>
       </group>
-      <group position={[2.35, 0, 0.4]}>
-        <mesh position={[0, 0.85, 0]} castShadow receiveShadow>
-          <boxGeometry args={[1.15, 1.7, 1.15]} />
+      <group position={[3.15, 0, 0.55]}>
+        <mesh position={[0, 1.15, 0]} castShadow receiveShadow>
+          <boxGeometry args={[1.55, 2.3, 1.55]} />
           <meshStandardMaterial map={brick} color="#a84a32" roughness={0.86} />
         </mesh>
-        <mesh position={[0, 1.82, 0]} rotation={[0, 0, -0.4]} castShadow>
-          <boxGeometry args={[1.4, 0.1, 1.3]} />
-          <meshStandardMaterial color="#6a5040" roughness={0.6} />
+        <mesh position={[0, 2.42, 0]} rotation={[0, 0, -0.4]} castShadow>
+          <boxGeometry args={[1.85, 0.12, 1.7]} />
+          <meshStandardMaterial color="#c45a32" roughness={0.58} />
         </mesh>
       </group>
-      <Sign text="DOW MILL" color="#e8dcc8" y={3.35} z={1.38} w={2.35} />
+      <group position={[0, 0, 3.15]} rotation={[0, 0.1, 0]}>
+        <mesh position={[0, 0.28, 0]} receiveShadow>
+          <boxGeometry args={[4.4, 0.12, 0.55]} />
+          <meshStandardMaterial map={metal} color="#5a5048" metalness={0.4} roughness={0.5} />
+        </mesh>
+        <mesh position={[0.85, 0.55, 0]} castShadow>
+          <boxGeometry args={[1.35, 0.7, 0.7]} />
+          <meshStandardMaterial color="#6a4030" roughness={0.7} />
+        </mesh>
+        {([-0.55, 0.55] as const).map((dx) => (
+          <mesh key={dx} position={[0.55 + dx, 0.22, 0.38]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.12, 0.12, 0.1, 8]} />
+            <meshStandardMaterial color="#1a1a18" />
+          </mesh>
+        ))}
+      </group>
+      <Sign text="DOW MILL" color="#e8dcc8" y={4.35} z={1.85} w={3.15} />
     </group>
   )
 }

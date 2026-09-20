@@ -3,7 +3,7 @@ import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { closeInspect, inspectStore, setWalkTarget } from '../game/gameStore'
 import { OPEN_CINEMATIC_SEC } from '../game/session'
-import { COURT_SIGNS, COURT_STENCILS, storeAtPoint, YARD } from '../game/stores'
+import { COURT_SIGNS, COURT_STENCILS, STORE_PLAQUES, storeAtPoint, YARD } from '../game/stores'
 import { useGame } from '../ui/useGame'
 import { ClashTerrain, ClashWalls, MorningSun } from './ClashTerrain'
 import {
@@ -140,6 +140,10 @@ function BellTower({
           </group>
         )),
       )}
+      <mesh position={[0, 4.15, 1.18]} castShadow>
+        <boxGeometry args={[1.85, 1.65, 0.12]} />
+        <meshStandardMaterial color="#1a1210" roughness={0.7} />
+      </mesh>
       <mesh position={[0, 5.35, 0]} castShadow>
         <boxGeometry args={[2.85, 0.6, 2.85]} />
         <meshStandardMaterial map={metal} color="#c4a05a" metalness={0.42} roughness={0.42} />
@@ -148,9 +152,9 @@ function BellTower({
         <coneGeometry args={[1.28, 1.25, 4]} />
         <meshStandardMaterial color="#6a3a28" roughness={0.7} />
       </mesh>
-      <mesh ref={bell} position={[0, 5.05, 0]} castShadow>
-        <sphereGeometry args={[0.78, 16, 12, 0, Math.PI * 2, 0, Math.PI / 1.5]} />
-        <meshStandardMaterial color="#e8c04a" metalness={0.7} roughness={0.28} emissive="#c4a046" emissiveIntensity={ringing ? 0.45 : 0.08} />
+      <mesh ref={bell} position={[0, 4.55, 1.05]} castShadow>
+        <sphereGeometry args={[0.95, 16, 12, 0, Math.PI * 2, 0, Math.PI / 1.5]} />
+        <meshStandardMaterial color="#e8c04a" metalness={0.7} roughness={0.28} emissive="#c4a046" emissiveIntensity={ringing ? 0.85 : 0.12} />
       </mesh>
       <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]} position={[0, 4.75, 0]}>
         <ringGeometry args={[0.85, 1.15, 24]} />
@@ -168,7 +172,7 @@ function BellTower({
           </mesh>
         </>
       )}
-      {ringing && <pointLight color="#ffc070" intensity={9} distance={12} position={[0, 4.5, 0]} />}
+      {ringing && <pointLight color="#ffc070" intensity={14} distance={16} position={[0, 4.4, 1.2]} />}
     </group>
   )
 }
@@ -201,6 +205,9 @@ function WingPads({
       ))}
       {COURT_SIGNS.map((s) => (
         <CourtPlaque key={s.word} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} />
+      ))}
+      {STORE_PLAQUES.map((s) => (
+        <CourtPlaque key={`store-${s.word}`} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} />
       ))}
     </group>
   )
@@ -275,10 +282,16 @@ function SouthGate({ open }: { open: number }) {
           </mesh>
         </group>
       ))}
-      <mesh position={[0, 0.48 + open * 3.05, 0.08]} castShadow>
-        <boxGeometry args={[4.4, 0.48, 0.5]} />
-        <meshStandardMaterial color="#e8c04a" metalness={0.45} roughness={0.35} emissive="#c4a046" emissiveIntensity={0.2 + open * 0.7} />
+      <mesh position={[0, 0.55 + open * 3.15, 0.08]} castShadow>
+        <boxGeometry args={[4.8, 0.62, 0.58]} />
+        <meshStandardMaterial color="#e8c04a" metalness={0.45} roughness={0.35} emissive="#c4a046" emissiveIntensity={0.25 + open * 1.1} />
       </mesh>
+      {open > 0.08 && (
+        <mesh position={[0, 0.12, 0.2]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[1.6, 2.4, 24]} />
+          <meshBasicMaterial color="#ffe080" transparent opacity={0.25 + open * 0.45} toneMapped={false} />
+        </mesh>
+      )}
     </group>
   )
 }
@@ -319,23 +332,33 @@ function WorkLamps({ on }: { on: number }) {
     [-9.2, -6.8],
     [3.4, 9.2],
     [8.9, -1.6],
+    [-4.2, 9.0],
+    [6.6, 8.8],
+    [0.2, 11.2],
+    [8.6, 3.2],
+    [-8.4, 8.6],
   ]
   return (
     <group>
       {spots.map(([x, z], i) => (
         <group key={i} position={[x, 0, z]}>
-          <mesh position={[0, 1.35, 0]} castShadow>
-            <cylinderGeometry args={[0.06, 0.09, 2.7, 6]} />
+          <mesh position={[0, 1.55, 0]} castShadow>
+            <cylinderGeometry args={[0.07, 0.1, 3.1, 6]} />
             <meshStandardMaterial color="#4a4038" metalness={0.45} />
           </mesh>
-          <mesh position={[0, 2.75, 0.1]}>
-            <boxGeometry args={[0.32, 0.12, 0.4]} />
+          <mesh position={[0, 3.15, 0.12]}>
+            <boxGeometry args={[0.42, 0.16, 0.5]} />
             <meshStandardMaterial
-              color={on > 0.15 ? '#ffe2a8' : '#4a4038'}
+              color={on > 0.12 ? '#ffe2a8' : '#4a4038'}
               emissive="#ffb060"
-              emissiveIntensity={on * 1.35}
+              emissiveIntensity={on * 2.2}
             />
           </mesh>
+          <mesh position={[0, 3.02, 0.22]}>
+            <sphereGeometry args={[0.14, 8, 6]} />
+            <meshBasicMaterial color={on > 0.12 ? '#ffe8b0' : '#2a2218'} toneMapped={false} />
+          </mesh>
+          {on > 0.18 && <pointLight color="#ffc070" intensity={on * 4.5} distance={7.5} position={[0, 2.9, 0.35]} />}
         </group>
       ))}
     </group>
