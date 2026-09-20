@@ -211,7 +211,7 @@ function WingPads({
         ),
       )}
       {STORE_PLAQUES.map((s) =>
-        s.word === 'SPIRE' ? (
+        s.word === 'SPIRE' || s.word === 'HALL' ? (
           <WallStrip
             key={`store-${s.word}`}
             word={s.word}

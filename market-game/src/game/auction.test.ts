@@ -248,8 +248,8 @@ assert.ok(
   'PIT is a west-apron word, not stacked under FOUNDRY',
 )
 assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'HALL')!.x > 1 && STORE_PLAQUES.find((s) => s.word === 'HALL')!.x < 3.2,
-  'HALL sits in the south-gate gap right of YESTERDAY so both words read',
+  STORE_PLAQUES.find((s) => s.word === 'HALL')!.z > 14.9,
+  'HALL is a south-wall word in the gate gap, not behind a gate leaf',
 )
 assert.ok(
   STORE_PLAQUES.find((s) => s.word === 'DOCK')!.z > 11.5,
