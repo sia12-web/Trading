@@ -70,6 +70,8 @@ export function District() {
       <WingPads brick={brick} concrete={concrete} dirt={dirt} />
       <YardWalls brick={brick} />
       <BellTower metal={metal} brick={brick} ringing={g.phase === 'opening'} opening={g.phase === 'opening'} />
+      <SouthGate open={g.shutter} />
+      <StackSteam on={g.phase === 'opening' ? Math.min(1, g.shutter + 0.2) : g.phase === 'live' ? 0.35 : 0} />
       <YardDressing />
       <WorkLamps on={g.shutter} />
     </>
@@ -187,10 +189,16 @@ function BellTower({
         <meshBasicMaterial color="#ffe080" transparent opacity={0} toneMapped={false} />
       </mesh>
       {opening && (
-        <mesh position={[0, 6.35, 1.35]} rotation={[0, Math.PI / 4, 0]}>
-          <planeGeometry args={[3.6, 0.72]} />
-          <meshStandardMaterial map={banner} roughness={0.55} />
-        </mesh>
+        <>
+          <mesh position={[0, 6.35, 1.35]} rotation={[0, Math.PI / 4, 0]}>
+            <planeGeometry args={[3.6, 0.72]} />
+            <meshStandardMaterial map={banner} roughness={0.55} />
+          </mesh>
+          <mesh position={[0, 3.15, 1.22]}>
+            <boxGeometry args={[2.05, 0.55, 0.08]} />
+            <meshStandardMaterial map={banner} roughness={0.55} />
+          </mesh>
+        </>
       )}
       {ringing && <pointLight color="#ffc070" intensity={9} distance={12} position={[0, 4.5, 0]} />}
     </group>
@@ -225,7 +233,7 @@ function WingPads({
       <Stencil word="FIVE-MONTH" ink="#2a6a78" position={[-10.9, 0.03, -1.4]} rot={Math.PI / 2} />
       <WingSign word="YESTERDAY" paint="#c45c2a" position={[0, 0, 11.55]} />
       <WingSign word="FIVE-DAY" paint="#a34a38" position={[10.75, 0, 6.15]} />
-      <WingSign word="FIVE-MONTH" paint="#2a6a78" position={[-12.35, 0, 10.15]} />
+      <WingSign word="FIVE-MONTH" paint="#2a6a78" position={[-12.2, 0, 10.05]} />
     </group>
   )
 }
@@ -276,13 +284,57 @@ function WingSign({
   )
 }
 
+function SouthGate({ open }: { open: number }) {
+  return (
+    <group position={[0, 0, 13.85]}>
+      {[-2.15, 2.15].map((x) => (
+        <mesh key={x} position={[x, 1.55, 0]} castShadow>
+          <boxGeometry args={[0.55, 3.1, 0.55]} />
+          <meshStandardMaterial color="#8a4a30" roughness={0.75} />
+        </mesh>
+      ))}
+      <mesh position={[0, 0.35 + open * 2.55, 0]} castShadow>
+        <boxGeometry args={[3.7, 0.28, 0.32]} />
+        <meshStandardMaterial color="#c4a046" metalness={0.4} roughness={0.4} emissive="#8a7028" emissiveIntensity={open * 0.45} />
+      </mesh>
+    </group>
+  )
+}
+
+function StackSteam({ on }: { on: number }) {
+  const ref = useRef<THREE.Group>(null)
+  useFrame((s) => {
+    if (!ref.current) return
+    ref.current.visible = on > 0.04
+    const t = s.clock.elapsedTime
+    ref.current.children.forEach((ch, i) => {
+      ch.position.y = 6.2 + ((t * 0.55 + i * 0.33) % 1.8)
+      const mat = (ch as THREE.Mesh).material as THREE.MeshBasicMaterial
+      mat.opacity = on * (0.35 - ((t * 0.55 + i * 0.33) % 1.8) * 0.16)
+    })
+  })
+  if (on <= 0) return null
+  return (
+    <group ref={ref} position={[-3.2, 0, 6.9]}>
+      {[0, 1, 2, 3].map((i) => (
+        <mesh key={i} position={[0, 6.4, 0]}>
+          <sphereGeometry args={[0.32 + i * 0.04, 8, 6]} />
+          <meshBasicMaterial color="#f4efe4" transparent opacity={0.3} depthWrite={false} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
 function WorkLamps({ on }: { on: number }) {
   const spots: Array<[number, number]> = [
     [-2.4, 2.4],
     [2.4, 2.4],
     [-2.4, -2.4],
     [2.4, -2.4],
-    [-9.2, 0],
+    [-9.2, 4.2],
+    [-9.2, -1.4],
+    [-9.2, -6.8],
     [3.4, 9.2],
     [8.9, -1.6],
   ]

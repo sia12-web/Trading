@@ -1,6 +1,7 @@
 import { useFrame } from '@react-three/fiber'
 import { useRef } from 'react'
 import * as THREE from 'three'
+import { PRINT_HOLD_MS } from '../game/auction'
 import { stallState } from '../game/gameStore'
 import { STORES, storeYaw } from '../game/stores'
 import type { StoreDef } from '../game/types'
@@ -31,16 +32,19 @@ export function NPCs() {
 function StallCrowd({ store }: { store: StoreDef }) {
   const g = useGame()
   const st = stallState(store.id, g)
-  const printed = Boolean(g.lastPrint && g.lastPrint.storeId === store.id && performance.now() - g.lastPrint.at < 5200)
-  const max = store.kind === 'lvn' ? 5 : store.kind === 'poc' ? 16 : store.kind === 'avwap' ? 10 : 14
-  const n =
-    store.kind === 'lvn'
+  const printed = Boolean(g.lastPrint && g.lastPrint.storeId === store.id && performance.now() - g.lastPrint.at < PRINT_HOLD_MS)
+  const fade = printed && g.lastPrint?.side === 'sell'
+  const take = printed && g.lastPrint?.side === 'buy'
+  const max = store.kind === 'lvn' ? 6 : store.kind === 'poc' ? 16 : store.kind === 'avwap' ? 12 : 14
+  const n = fade
+    ? Math.max(2, Math.round(max * 0.25))
+    : store.kind === 'lvn'
       ? st.clogged
         ? max
-        : printed
-          ? 5
+        : take
+          ? 6
           : 0
-      : Math.max(0, Math.round(st.occupancy * max) + (printed ? 6 : 0))
+      : Math.max(0, Math.round(st.occupancy * max) + (take ? 8 : 0))
   if (n <= 0) return null
   const arrive = Math.min(1, Math.max(0, g.floorAlive / 0.92))
   return (
@@ -54,9 +58,9 @@ function StallCrowd({ store }: { store: StoreDef }) {
           kind={KIND[store.kind]}
           alive={g.floorAlive}
           arrive={arrive}
-          hop={printed}
+          hop={take}
           door={st.door}
-          leaving={st.timeOpportunity < 0.38 && st.fairToday}
+          leaving={fade || (st.timeOpportunity < 0.38 && st.fairToday)}
         />
       ))}
     </group>
@@ -66,7 +70,7 @@ function StallCrowd({ store }: { store: StoreDef }) {
 function ShiftColumn({ alive }: { alive: number }) {
   return (
     <group>
-      {Array.from({ length: 12 }, (_, i) => (
+      {Array.from({ length: 20 }, (_, i) => (
         <ShiftWalker key={i} seed={i} alive={alive} />
       ))}
     </group>
@@ -78,15 +82,19 @@ function ShiftWalker({ seed, alive }: { seed: number; alive: number }) {
   const left = useRef<THREE.Mesh>(null)
   const right = useRef<THREE.Mesh>(null)
   const dests: Array<[number, number]> = [
-    [-5.45, 5.4],
+    [-4.15, 5.4],
     [0, 5.6],
     [6.9, 5.3],
     [6.4, -1.6],
-    [-8.2, 2.4],
+    [-8.7, 4.1],
+    [-8.8, -1.3],
+    [-8.7, -6.4],
+    [6.6, 3.1],
+    [6.5, -7.0],
     [3.2, 4.8],
   ]
   const dest = dests[seed % dests.length]!
-  const gate: [number, number] = [(seed % 5) * 0.7 - 1.4, 12.6]
+  const gate: [number, number] = [(seed % 5) * 0.7 - 1.4, 14.35]
 
   useFrame((s) => {
     if (!ref.current) return
@@ -140,7 +148,7 @@ function Person({
   const doorLocal: [number, number] = [(col - 1.5) * 0.62, 2.65 + row * 0.62]
   const worldDoor = rotate2(doorLocal, yaw)
   const home: [number, number] = [store.position[0] + worldDoor[0], store.position[2] + worldDoor[1]]
-  const gate: [number, number] = [(seed % 5) * 0.65 - 1.3, 12.55]
+  const gate: [number, number] = [(seed % 5) * 0.65 - 1.3, 14.35]
 
   useFrame((s) => {
     if (!ref.current) return
@@ -238,5 +246,5 @@ function TroopBody({
 function rotate2(p: [number, number], yaw: number): [number, number] {
   const c = Math.cos(yaw)
   const s = Math.sin(yaw)
-  return [p[0] * c - p[1] * s, p[0] * s + p[1] * c]
+  return [p[0] * c + p[1] * s, -p[0] * s + p[1] * c]
 }

@@ -8,7 +8,7 @@ import {
   volumeDivergence,
 } from './auction'
 import { buildDowMarket } from './marketData'
-import { STORES } from './stores'
+import { porchOf, STORES } from './stores'
 import type { OhlcvBar } from './types'
 
 function bar(partial: Partial<OhlcvBar> & { close: number }): OhlcvBar {
@@ -126,18 +126,45 @@ const boosted = stallOccupancy({
   floorAlive: 1,
   phase: 'live',
   printBoost: 1,
+  printSide: 'buy',
 })
 assert.ok(boosted.occupancy > 0.55, 'a print fills the stall')
 assert.ok(boosted.printBoost === 1)
+assert.ok(boosted.door > 0.7, 'a take throws the door')
 
 const foundry = STORES.find((s) => s.building === 'foundry')!
 const pit = STORES.find((s) => s.building === 'pit')!
 const loft = STORES.find((s) => s.building === 'loft')!
 const spire = STORES.find((s) => s.building === 'spire')!
-assert.ok(pit.position[0] < foundry.position[0] - 4, 'Five-Month pit sits west of Foundry')
+const mill = STORES.find((s) => s.building === 'mill')!
+assert.ok(pit.position[0] < foundry.position[0] - 5, 'Five-Month pit sits west of Foundry')
 assert.ok(loft.position[0] < -10, 'loft is on the west wall')
 assert.ok(spire.position[0] < -10, 'spire is on the west wall')
-assert.ok(pit.position[2] > 2, 'discount pit is camera-near west')
+assert.ok(pit.position[2] > spire.position[2], 'discount pit is camera-near of the spire')
+assert.ok(spire.position[2] > loft.position[2], 'spire sits between pit and loft')
+assert.deepEqual(
+  STORES.map((s) => s.building),
+  ['foundry', 'hall', 'dock', 'yard', 'mill', 'alley', 'spire', 'loft', 'pit'],
+)
+assert.ok(['FOUNDRY', 'AUCTION HALL', 'LOADING DOCK', 'BEAM YARD', 'SAWTOOTH MILL', 'THE ALLEY', 'ANCHOR SPIRE', 'PREMIUM LOFT', 'DISCOUNT PIT'].every((n) => STORES.some((s) => s.name === n)))
+
+const pitPorch = porchOf(pit)
+const millPorch = porchOf(mill)
+assert.ok(pitPorch.x > pit.position[0] + 1.5, 'west porch faces the courtyard (east)')
+assert.ok(millPorch.x < mill.position[0] - 1.5, 'east porch faces the courtyard (west)')
+
+const faded = stallOccupancy({
+  kind: 'hvn',
+  divergence: 0.7,
+  timeOpportunity: 0.7,
+  shutter: 1,
+  floorAlive: 1,
+  phase: 'live',
+  printBoost: 1,
+  printSide: 'sell',
+})
+assert.ok(faded.occupancy < 0.25, 'a fade empties the porch')
+assert.ok(faded.door < 0.4, 'a fade drops the shutter')
 
 console.log('auction tests: ok')
 console.log(

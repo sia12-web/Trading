@@ -269,9 +269,13 @@ export function timeOpportunity(args: {
   }
 }
 
+/** How long a take/fade keeps the porch reacting. */
+export const PRINT_HOLD_MS = 10000
+
 /**
  * Floor occupancy from divergence + time. HVN/POC fill when size confirms and
  * go hollow when advertising empty. LVN stays air unless the tape floods it.
+ * A take dumps goods; a fade empties the porch.
  */
 export function stallOccupancy(args: {
   kind: VolumeNode['kind'] | 'avwap'
@@ -281,6 +285,7 @@ export function stallOccupancy(args: {
   floorAlive: number
   phase: 'preopen' | 'opening' | 'live'
   printBoost?: number
+  printSide?: 'buy' | 'sell' | null
 }): {
   occupancy: number
   hollow: boolean
@@ -291,6 +296,8 @@ export function stallOccupancy(args: {
 } {
   const shut = args.shutter
   const boost = args.printBoost ?? 0
+  const fade = args.printSide === 'sell' && boost > 0.08
+  const take = args.printSide === 'buy' && boost > 0.08
   let occupancy = 0
   if (args.floorAlive > 0.04) {
     if (args.kind === 'lvn') {
@@ -300,11 +307,13 @@ export function stallOccupancy(args: {
     }
   }
   // Already-fair keeps the volume (bodies/goods) and only eases the door.
-  if (args.timeOpportunity < 0.38 && args.kind !== 'lvn') occupancy *= 0.78
-  occupancy = clamp(occupancy + boost * 0.85, 0, 1)
+  if (args.timeOpportunity < 0.38 && args.kind !== 'lvn' && !take) occupancy *= 0.78
+  if (take) occupancy = clamp(occupancy + boost * 0.9, 0, 1)
+  if (fade) occupancy = clamp(occupancy * (0.08 + (1 - boost) * 0.2), 0, 0.22)
   let door =
     args.phase === 'preopen' ? 0 : args.phase === 'opening' ? shut : clamp(0.08 + args.timeOpportunity * 0.92, 0, 1)
-  if (boost > 0.35) door = clamp(door + 0.28, 0, 1)
+  if (take) door = clamp(door + 0.4, 0, 1)
+  if (fade) door = clamp(door * 0.22, 0, 0.35)
   return {
     occupancy,
     hollow: args.kind !== 'lvn' && occupancy < 0.28,

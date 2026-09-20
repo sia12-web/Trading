@@ -1,4 +1,4 @@
-import { pushVwapTick, stallOccupancy, timeOpportunity, volumeDivergence } from './auction'
+import { PRINT_HOLD_MS, pushVwapTick, stallOccupancy, timeOpportunity, volumeDivergence } from './auction'
 import { clank, printFill, resumeAudio, startAmbience, steamWhistle, strikeBell } from './audio'
 import { buildDowMarket, rng } from './marketData'
 import {
@@ -65,9 +65,9 @@ const volBias: Record<StoreId, number> = {
   '5d-hvn': 1.48,
   '5d-poc': 1.58,
   '5d-lvn': 0.18,
-  avwap: 1.22,
-  'avwap-upper': 0.88,
-  'avwap-lower': 0.42,
+  avwap: 1.35,
+  'avwap-upper': 1.05,
+  'avwap-lower': 1.12,
 }
 
 function floorTape(): { liveVol: Record<string, number>; tpo: Record<string, number> } {
@@ -294,7 +294,8 @@ export function storeRead(id: StoreId, snap: GameSnapshot = state): StoreRead {
 export function stallState(id: StoreId, snap: GameSnapshot = state) {
   const read = storeRead(id, snap)
   const printed = snap.lastPrint && snap.lastPrint.storeId === id ? performance.now() - snap.lastPrint.at : 99999
-  const printBoost = printed < 5200 ? 1 - printed / 5200 : 0
+  const printBoost = printed < PRINT_HOLD_MS ? 1 - printed / PRINT_HOLD_MS : 0
+  const printSide = printed < PRINT_HOLD_MS && snap.lastPrint ? snap.lastPrint.side : null
   return {
     ...read,
     ...stallOccupancy({
@@ -305,7 +306,9 @@ export function stallState(id: StoreId, snap: GameSnapshot = state) {
       floorAlive: snap.floorAlive,
       phase: snap.phase,
       printBoost,
+      printSide,
     }),
+    printSide,
   }
 }
 
@@ -348,7 +351,11 @@ export function takeAuction(side: Side) {
   printFill(side === 'buy')
   const liveVol = { ...state.liveVol }
   const kind = kindOf(id)
-  liveVol[id] = typicalVol[id]! * (kind === 'lvn' ? 2.35 : 1.9)
+  if (side === 'buy') {
+    liveVol[id] = typicalVol[id]! * (kind === 'lvn' ? 2.6 : 2.15)
+  } else {
+    liveVol[id] = typicalVol[id]! * (kind === 'lvn' ? 0.18 : 0.22)
+  }
   set({
     fills: [fill, ...state.fills].slice(0, 12),
     inspecting: null,
@@ -399,8 +406,8 @@ export function tickGame(dt: number) {
 
   if (state.phase === 'opening') {
     const openElapsed = (performance.now() - openWallMs) / 1000
-    const shutter = Math.min(1, Math.max(0, (openElapsed - 0.2) / 3.6))
-    const floorAlive = Math.min(1, Math.max(0, (openElapsed - 0.15) / 6.2))
+    const shutter = Math.min(1, Math.max(0, (openElapsed - 0.15) / 4.2))
+    const floorAlive = Math.min(1, Math.max(0, (openElapsed - 0.08) / 8.4))
     if (openElapsed >= OPEN_CINEMATIC_SEC) {
       set({
         phase: 'live',

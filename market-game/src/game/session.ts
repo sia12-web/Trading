@@ -5,7 +5,7 @@ export const NY_CLOSE_MIN = 16 * 60
 export const PREOPEN_MIN = 9 * 60 + 28
 
 /** Real seconds of cinematic at 9:30. Skip-to-open still plays this wake. */
-export const OPEN_CINEMATIC_SEC = 10
+export const OPEN_CINEMATIC_SEC = 12
 
 /** Session minutes advanced per real second after the open. */
 export const LIVE_TIME_SCALE = 2.4
