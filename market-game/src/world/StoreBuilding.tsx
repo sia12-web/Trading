@@ -174,7 +174,7 @@ function RangeStoreys({
       </mesh>
       <mesh position={[0, yHi, 0.04]} castShadow>
         <boxGeometry args={[wallW * 0.9, 0.2, 0.1]} />
-        <meshBasicMaterial color="#f0c84a" />
+        <meshStandardMaterial color="#c4a04a" roughness={0.52} metalness={0.28} />
       </mesh>
       <mesh position={[-wallW * 0.4, 1.9, 0.06]} castShadow>
         <boxGeometry args={[0.32, 3.55, 0.08]} />
@@ -185,7 +185,7 @@ function RangeStoreys({
           [yLo, '#1a1008', 0.14],
           [yVal, '#e8dcc0', 0.1],
           [yVah, '#e8dcc0', 0.1],
-          [yHi, '#f0c84a', 0.14],
+          [yHi, '#c4a04a', 0.14],
           [yNode, '#fff4d0', 0.18],
         ] as Array<[number, string, number]>
       ).map(([y, c, h], i) => (
@@ -243,17 +243,18 @@ function NyCashBunting({ y, z }: { y: number; z: number }) {
 }
 
 function PrintBurst() {
+  const wood = ['#5a3e28', '#6a767c', '#4a5840', '#6a5030']
   return (
-    <group position={[0, 0.45, 3.15]}>
+    <group position={[0, 0.28, 3.15]}>
       {Array.from({ length: 20 }, (_, i) => (
-        <mesh key={i} position={[((i % 5) - 2) * 0.82, 0.28 + Math.floor(i / 5) * 0.7, (i % 3) * 0.32 - 0.08]} castShadow>
-          <boxGeometry args={[0.9, 0.72, 0.7]} />
-          <meshBasicMaterial color={i % 2 ? '#f0c84a' : '#e07030'} />
+        <mesh key={i} position={[((i % 5) - 2) * 0.48, 0.16 + Math.floor(i / 5) * 0.32, (i % 3) * 0.2 - 0.04]} castShadow>
+          <boxGeometry args={[0.38, 0.26, 0.32]} />
+          <meshStandardMaterial color={wood[i % wood.length]} roughness={0.78} metalness={i % 3 === 1 ? 0.35 : 0.05} />
         </mesh>
       ))}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0.1]}>
-        <ringGeometry args={[1.55, 2.35, 22]} />
-        <meshBasicMaterial color="#ffe080" transparent opacity={0.88} toneMapped={false} />
+        <ringGeometry args={[1.15, 1.75, 22]} />
+        <meshBasicMaterial color="#c8d4a0" transparent opacity={0.72} toneMapped={false} />
       </mesh>
     </group>
   )
@@ -307,20 +308,26 @@ function GoodsPile({ stall, kind, z }: { stall: Stall; kind: StoreDef['kind']; z
         : extra
       : (filled > 0 ? Math.max(8, filled) : 0) + extra
   if (n <= 0) return stall.hollow || fading || (kind === 'lvn' && !stall.clogged) ? <EmptyRacks z={z} /> : null
+  const wood = kind === 'lvn' ? ['#5a4030', '#4a4840', '#6a5848'] : ['#5a3e28', '#6a767c', '#4a5840']
   return (
     <group>
       {Array.from({ length: n }, (_, i) => (
         <mesh
           key={i}
           position={[
-            -1.95 + (i % 5) * 0.78,
-            0.36 + Math.floor(i / 5) * 0.58 + stall.printBoost * 0.32,
-            z + (i % 2) * 0.5,
+            -1.45 + (i % 5) * 0.52,
+            0.16 + Math.floor(i / 5) * 0.3 + stall.printBoost * 0.18,
+            z + (i % 2) * 0.28,
           ]}
+          rotation={[0, (i % 3) * 0.12, 0]}
           castShadow
         >
-          <boxGeometry args={[0.7, 0.54, 0.6]} />
-          <meshBasicMaterial color={kind === 'lvn' ? '#8a6040' : i % 2 ? '#e07030' : '#f0c84a'} />
+          <boxGeometry args={[0.38, 0.26, 0.32]} />
+          <meshStandardMaterial
+            color={wood[i % wood.length]}
+            roughness={0.78}
+            metalness={i % 3 === 1 ? 0.32 : 0.04}
+          />
         </mesh>
       ))}
     </group>
@@ -426,8 +433,8 @@ function Foundry({
         <boxGeometry args={[4.35, 3.7, 3.7]} />
         <meshStandardMaterial
           map={brick}
-          color={stall.hollow ? '#c87858' : '#d46840'}
-          roughness={0.8}
+          color={stall.hollow ? '#b06848' : '#c45432'}
+          roughness={0.86}
         />
       </mesh>
       <Cornice w={4.6} d={3.95} y={3.78} />
@@ -435,6 +442,10 @@ function Foundry({
       <mesh position={[-1.55, 0.95, 2.05]}>
         <boxGeometry args={[1.5, 1.7, 0.1]} />
         <meshStandardMaterial color="#1a1210" roughness={0.5} />
+      </mesh>
+      <mesh position={[0, 2.05, 2.28]} castShadow>
+        <boxGeometry args={[2.15, 0.12, 0.85]} />
+        <meshStandardMaterial color="#5a5044" roughness={0.7} metalness={0.2} />
       </mesh>
       <RollDoor width={1.7} height={1.85} open={stall.door} z={2.12} />
       {[-1.05, 1.05].map((x) => (
@@ -487,10 +498,10 @@ function Hall({ brick, metal, stall }: { brick: THREE.Texture; metal: THREE.Text
     <group>
       <mesh position={[0, 2.05, 0]} castShadow receiveShadow>
         <boxGeometry args={[4.55, 4.1, 4.15]} />
-        <meshStandardMaterial
+          <meshStandardMaterial
           map={brick}
-          color={stall.hollow ? '#d08058' : '#dc6840'}
-          roughness={0.8}
+          color={stall.hollow ? '#b07050' : '#c45a38'}
+          roughness={0.86}
         />
       </mesh>
       <mesh position={[0, 4.45, 0]} castShadow>
@@ -512,7 +523,7 @@ function Hall({ brick, metal, stall }: { brick: THREE.Texture; metal: THREE.Text
       {[-1.55, -0.52, 0.52, 1.55].map((x) => (
         <mesh key={x} position={[x, 1.15, 2.2]} castShadow>
           <cylinderGeometry args={[0.16, 0.2, 2.3, 8]} />
-          <meshStandardMaterial color="#c4a046" metalness={0.45} roughness={0.4} />
+          <meshStandardMaterial color="#8a7a62" metalness={0.18} roughness={0.62} />
         </mesh>
       ))}
       <mesh position={[0, 2.35, 2.2]}>
@@ -527,7 +538,7 @@ function Hall({ brick, metal, stall }: { brick: THREE.Texture; metal: THREE.Text
       <RollDoor width={1.7} height={1.95} open={stall.door} z={2.36} />
       <mesh position={[0, 0.55, 1.55]} castShadow>
         <cylinderGeometry args={[0.55, 0.7, 0.9, 10]} />
-        <meshStandardMaterial color="#c4a046" metalness={0.35} roughness={0.45} emissive="#8a7028" emissiveIntensity={0.12} />
+        <meshStandardMaterial color="#6a7068" metalness={0.4} roughness={0.55} />
       </mesh>
       {[0, 1, 2].map((i) => (
         <mesh key={i} position={[0, 0.08 + i * 0.11, 2.62 - i * 0.2]} receiveShadow>
@@ -565,9 +576,9 @@ function Dock({ metal, stall, printed }: { metal: THREE.Texture; stall: Stall; p
           <boxGeometry args={[0.28, 4.3, 3.6]} />
           <meshStandardMaterial
             map={metal}
-            color="#b8c0c6"
-            metalness={0.38}
-            roughness={0.44}
+            color="#8a949c"
+            metalness={0.32}
+            roughness={0.55}
           />
         </mesh>
       ))}
@@ -575,9 +586,9 @@ function Dock({ metal, stall, printed }: { metal: THREE.Texture; stall: Stall; p
         <boxGeometry args={[3.55, 3.7, 3.15]} />
         <meshStandardMaterial
           map={metal}
-          color="#b5bdc4"
-          metalness={0.36}
-          roughness={0.46}
+            color="#7a868e"
+            metalness={0.3}
+            roughness={0.58}
         />
       </mesh>
       <mesh position={[0, 4.45, 0]} castShadow>
@@ -590,6 +601,10 @@ function Dock({ metal, stall, printed }: { metal: THREE.Texture; stall: Stall; p
           <meshStandardMaterial map={metal} color="#9aa8b0" metalness={0.42} roughness={0.4} />
         </mesh>
       ))}
+      <mesh position={[0, 3.55, 2.15]} castShadow>
+        <boxGeometry args={[3.4, 0.12, 1.15]} />
+        <meshStandardMaterial map={metal} color="#6a7068" metalness={0.32} roughness={0.55} />
+      </mesh>
       {[-1.2, 0, 1.2].map((x) => (
         <mesh key={x} position={[x, 2.1, 2.05]}>
           <boxGeometry args={[1.05, 2.5 * (1 - stall.door * 0.15), 0.06]} />
@@ -641,8 +656,8 @@ function Yard({ metal, brick, stall }: { metal: THREE.Texture; brick: THREE.Text
         <boxGeometry args={[5.25, 3.5, 3.7]} />
         <meshStandardMaterial
           map={brick}
-          color={stall.hollow ? '#c07048' : '#d05834'}
-          roughness={0.8}
+          color={stall.hollow ? '#b06848' : '#c45432'}
+          roughness={0.86}
         />
       </mesh>
       <Cornice w={5.5} d={3.95} y={3.58} />
@@ -693,8 +708,8 @@ function Mill({ brick, metal, stall }: { brick: THREE.Texture; metal: THREE.Text
         <boxGeometry args={[6.15, 3.7, 4.7]} />
         <meshStandardMaterial
           map={brick}
-          color={stall.hollow ? '#c87048' : '#d86038'}
-          roughness={0.8}
+          color={stall.hollow ? '#b06848' : '#c45432'}
+          roughness={0.86}
         />
       </mesh>
       {[-2.05, 0, 2.05].map((x) => (
@@ -730,18 +745,18 @@ function Alley({ metal, stall }: { metal: THREE.Texture; stall: Stall }) {
         <boxGeometry args={[1.85, 4.3, 4.15]} />
         <meshStandardMaterial
           map={metal}
-          color="#8a9caa"
-          metalness={0.3}
-          roughness={0.48}
+          color="#6a7882"
+          metalness={0.28}
+          roughness={0.58}
         />
       </mesh>
       <mesh position={[1.65, 1.75, 0.25]} castShadow>
         <boxGeometry args={[1.7, 3.5, 3.7]} />
         <meshStandardMaterial
           map={metal}
-          color="#7a8a98"
-          metalness={0.3}
-          roughness={0.5}
+          color="#5a6a74"
+          metalness={0.28}
+          roughness={0.6}
         />
       </mesh>
       <mesh position={[-1.55, 4.4, 0]}>
@@ -808,7 +823,7 @@ function Spire({
     <group>
       <mesh position={[0, 2.15, 0]} castShadow receiveShadow>
         <boxGeometry args={[3.45, 4.3, 3.45]} />
-        <meshStandardMaterial map={brick} color={stall.hollow ? '#b87858' : '#c46840'} roughness={0.8} />
+        <meshStandardMaterial map={brick} color={stall.hollow ? '#a86850' : '#b85a3a'} roughness={0.86} />
       </mesh>
       <mesh position={[0, 4.42, 0]} castShadow>
         <boxGeometry args={[3.7, 0.18, 3.7]} />
@@ -826,16 +841,16 @@ function Spire({
       </mesh>
       <mesh ref={deck} position={[0, 2.4, 1.88]} castShadow>
         <boxGeometry args={[2.65, 0.18, 0.7]} />
-        <meshStandardMaterial color="#e8c04a" metalness={0.5} roughness={0.32} />
+        <meshStandardMaterial color="#8a7a52" metalness={0.42} roughness={0.48} />
       </mesh>
       <mesh ref={cab} position={[0, 2.9, 2.05]} castShadow>
         <boxGeometry args={[1.45, 0.92, 0.88]} />
         <meshStandardMaterial
-          color="#e8c04a"
-          metalness={0.5}
-          roughness={0.3}
-          emissive="#c4a046"
-          emissiveIntensity={printed ? 1.25 : 0.55}
+          color="#b89048"
+          metalness={0.42}
+          roughness={0.48}
+          emissive="#8a6a30"
+          emissiveIntensity={printed ? 0.7 : 0.22}
         />
       </mesh>
       <mesh ref={needle} position={[1.62, 2.8, 1.78]} castShadow>
@@ -877,7 +892,7 @@ function Loft({
     <group>
       <mesh position={[0, 1.55, 0]} castShadow receiveShadow>
         <boxGeometry args={[3.55, 3.1, 3.4]} />
-        <meshStandardMaterial map={brick} color={stall.hollow ? '#c07048' : '#d06038'} roughness={0.8} />
+        <meshStandardMaterial map={brick} color={stall.hollow ? '#b06848' : '#c45432'} roughness={0.86} />
       </mesh>
       <group ref={deck} position={[0, target, 0]}>
         <mesh position={[0, 0.85, 0]} castShadow>
@@ -928,15 +943,15 @@ function Pit({
     <group>
       <mesh position={[0, 1.15, 0]} castShadow receiveShadow>
         <boxGeometry args={[3.5, 2.3, 3.35]} />
-        <meshStandardMaterial map={brick} color={stall.hollow ? '#b88850' : '#c49040'} roughness={0.78} />
+        <meshStandardMaterial map={brick} color={stall.hollow ? '#a87850' : '#b88848'} roughness={0.84} />
       </mesh>
       <mesh position={[0, 2.4, 0]} castShadow>
         <boxGeometry args={[3.7, 0.16, 3.55]} />
-        <meshStandardMaterial map={metal} color="#8a7040" metalness={0.35} roughness={0.45} />
+        <meshStandardMaterial map={metal} color="#6a5a40" metalness={0.32} roughness={0.55} />
       </mesh>
       <mesh ref={pit} position={[0, target + 0.12, 0.15]} receiveShadow>
         <boxGeometry args={[2.4, 0.2, 2.2]} />
-        <meshStandardMaterial color="#f0c84a" roughness={0.4} metalness={0.4} emissive="#d4a046" emissiveIntensity={0.4} />
+        <meshStandardMaterial color="#8a7040" roughness={0.58} metalness={0.32} emissive="#6a5028" emissiveIntensity={0.12} />
       </mesh>
       {Array.from({ length: 8 }, (_, i) => (
         <mesh key={i} position={[0, 0.14 + i * 0.16, 1.85 - i * 0.18]} rotation={[-0.38, 0, 0]}>
@@ -948,7 +963,7 @@ function Pit({
         [0, 1, 2, 3, 4].map((i) => (
           <mesh key={i} position={[-0.85 + i * 0.42, target + 0.4, 0.2]} castShadow>
             <boxGeometry args={[0.38, 0.36, 0.34]} />
-            <meshStandardMaterial color="#c47830" />
+            <meshStandardMaterial color="#6a5040" roughness={0.75} />
           </mesh>
         ))}
       <RollDoor width={1.5} height={1.45} open={stall.door} z={1.72} />

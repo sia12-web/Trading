@@ -109,7 +109,7 @@ function ShiftWalker({ seed, alive }: { seed: number; alive: number }) {
     if (right.current) right.current.rotation.x = -leg
   })
 
-  const color = seed % 3 === 0 ? '#f0c040' : seed % 3 === 1 ? '#e07030' : '#8aa0b0'
+  const color = seed % 3 === 0 ? '#c4a046' : seed % 3 === 1 ? '#5a7a50' : '#8aa0b0'
   return (
     <group ref={ref} position={[gate[0], 0, gate[1]]} scale={0.82}>
       <TroopBody color={color} left={left} right={right} />
@@ -141,7 +141,7 @@ function Person({
   const ref = useRef<THREE.Group>(null)
   const left = useRef<THREE.Mesh>(null)
   const right = useRef<THREE.Mesh>(null)
-  const color = kind === 'broker' ? '#f0c040' : kind === 'welder' ? '#e07030' : '#8aa0b0'
+  const color = kind === 'broker' ? '#c4a046' : kind === 'welder' ? '#3a6a88' : '#5a7a50'
   const yaw = storeYaw(store.range)
   const col = slot % 4
   const row = Math.floor(slot / 4)
@@ -202,7 +202,7 @@ function TroopBody({
       {hardhat && (
         <mesh position={[0, 1.1, 0]} castShadow>
           <cylinderGeometry args={[0.17, 0.19, 0.12, 8]} />
-          <meshStandardMaterial color="#f0c040" />
+          <meshStandardMaterial color="#c4a05a" roughness={0.55} />
         </mesh>
       )}
       {kit === 'broker' && (
@@ -225,11 +225,11 @@ function TroopBody({
       )}
       <mesh position={[-0.24, 0.62, 0]} rotation={[0, 0, 0.4]} castShadow>
         <capsuleGeometry args={[0.055, 0.26, 3, 6]} />
-        <meshBasicMaterial color="#c44a22" />
+        <meshBasicMaterial color="#5c3220" />
       </mesh>
       <mesh position={[0.24, 0.62, 0]} rotation={[0, 0, -0.4]} castShadow>
         <capsuleGeometry args={[0.055, 0.26, 3, 6]} />
-        <meshBasicMaterial color="#c44a22" />
+        <meshBasicMaterial color="#5c3220" />
       </mesh>
       <mesh ref={left} position={[-0.11, 0.26, 0]} castShadow>
         <capsuleGeometry args={[0.07, 0.26, 3, 6]} />

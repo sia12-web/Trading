@@ -207,15 +207,24 @@ function RimRocks({ outer, dirt }: { outer: number; dirt: THREE.Texture }) {
   ]
   return (
     <group>
-      {spots.map(([x, z, w, h, d], i) => (
-        <mesh key={i} position={[x, h / 2 - 0.08, z]} castShadow receiveShadow>
-          <boxGeometry args={[w, h, d]} />
-          <meshStandardMaterial map={dirt} color={i % 3 === 0 ? '#6a4830' : '#584028'} roughness={0.96} />
-        </mesh>
-      ))}
+      {spots.map(([x, z, w, h, d], i) =>
+        i % 3 === 1 ? (
+          <mesh key={i} position={[x, h * 0.42, z]} rotation={[0.15, i * 0.7, 0.08]} castShadow receiveShadow>
+            <dodecahedronGeometry args={[Math.max(w, d) * 0.42, 0]} />
+            <meshStandardMaterial map={dirt} color="#5a3c26" roughness={0.96} />
+          </mesh>
+        ) : (
+          <mesh key={i} position={[x, h / 2 - 0.08, z]} rotation={[0, i * 0.2, 0]} castShadow receiveShadow>
+            <boxGeometry args={[w, h, d]} />
+            <meshStandardMaterial map={dirt} color={i % 3 === 0 ? '#6a4830' : '#584028'} roughness={0.96} />
+          </mesh>
+        ),
+      )}
     </group>
   )
 }
+
+type TreeKind = 'pine' | 'oak' | 'cypress' | 'willow' | 'bush'
 
 function MixedForest({ wall, outer, cliffH }: { wall: number; outer: number; cliffH: number }) {
   const mid = (wall + outer) * 0.52
@@ -223,67 +232,81 @@ function MixedForest({ wall, outer, cliffH }: { wall: number; outer: number; cli
   const valley = outer + 14
   const terraceY = -cliffH * 0.42
   const valleyY = -cliffH + 0.04
-  const trees: Array<[number, number, number, 'pine' | 'oak' | 'gold' | 'bush', number]> = [
+  const trees: Array<[number, number, number, TreeKind, number]> = [
     [-mid - 0.8, mid + 1.6, 4.4, 'pine', 0],
     [-mid + 2.4, mid + 0.6, 3.2, 'oak', 0],
-    [-mid + 5.8, mid + 1.9, 4.8, 'pine', 0],
-    [mid - 6.2, mid + 0.4, 2.9, 'gold', 0],
+    [-mid + 5.8, mid + 1.9, 4.8, 'cypress', 0],
+    [mid - 6.2, mid + 0.4, 2.9, 'willow', 0],
     [mid - 2.8, mid + 1.5, 4.1, 'pine', 0],
     [mid + 0.9, mid - 0.2, 3.6, 'oak', 0],
     [mid + 1.4, 4.8, 5.1, 'pine', 0],
-    [mid + 0.5, 1.2, 3.3, 'oak', 0],
-    [mid + 1.8, -3.6, 4.6, 'pine', 0],
-    [mid + 0.2, -7.4, 2.8, 'gold', 0],
+    [mid + 0.5, 1.2, 3.3, 'willow', 0],
+    [mid + 1.8, -3.6, 4.6, 'cypress', 0],
+    [mid + 0.2, -7.4, 2.8, 'oak', 0],
     [mid - 0.6, -mid - 1.2, 4.0, 'pine', 0],
     [4.2, -mid - 1.8, 3.4, 'oak', 0],
-    [0.6, -mid - 0.4, 4.7, 'pine', 0],
-    [-3.8, -mid - 1.5, 3.1, 'gold', 0],
+    [0.6, -mid - 0.4, 4.7, 'cypress', 0],
+    [-3.8, -mid - 1.5, 3.1, 'willow', 0],
     [-7.2, -mid - 0.7, 4.3, 'pine', 0],
     [-mid - 1.2, -mid + 2.2, 3.7, 'oak', 0],
     [-mid - 0.4, -4.8, 4.9, 'pine', 0],
-    [-mid - 1.6, -1.1, 3.2, 'oak', 0],
-    [-mid + 0.3, 3.4, 4.2, 'pine', 0],
-    [-mid - 0.8, 7.6, 2.7, 'gold', 0],
+    [-mid - 1.6, -1.1, 3.2, 'willow', 0],
+    [-mid + 0.3, 3.4, 4.2, 'cypress', 0],
+    [-mid - 0.8, 7.6, 2.7, 'oak', 0],
     [-8.4, mid + 0.8, 3.8, 'oak', 0],
     [8.8, -mid - 0.6, 3.5, 'pine', 0],
-    [3.1, mid + 2.4, 2.6, 'oak', 0],
+    [3.1, mid + 2.4, 2.6, 'willow', 0],
     [-2.2, mid + 1.1, 4.5, 'pine', 0],
+    [mid + 3.6, mid + 2.8, 3.8, 'pine', 0],
+    [-mid - 2.4, mid + 3.2, 4.2, 'oak', 0],
+    [mid + 2.2, -mid - 3.0, 3.5, 'cypress', 0],
+    [-mid - 3.1, -mid - 2.2, 4.0, 'pine', 0],
+    [6.8, mid + 3.6, 2.4, 'willow', 0],
+    [-7.4, -mid - 3.4, 3.1, 'oak', 0],
     [mid - 4.4, -2.2, 1.4, 'bush', 0],
     [-mid + 3.1, 5.2, 1.2, 'bush', 0],
     [2.8, mid - 1.6, 1.1, 'bush', 0],
     [-5.6, -mid + 2.4, 1.3, 'bush', 0],
+    [mid - 1.2, 6.4, 1.05, 'bush', 0],
+    [-4.8, mid + 2.2, 1.25, 'bush', 0],
     [far - 1.2, 8.4, 4.8, 'pine', terraceY],
     [far - 0.4, 2.2, 3.4, 'oak', terraceY],
-    [far - 1.6, -4.6, 5.2, 'pine', terraceY],
-    [9.4, far - 0.8, 3.9, 'gold', terraceY],
+    [far - 1.6, -4.6, 5.2, 'cypress', terraceY],
+    [9.4, far - 0.8, 3.9, 'willow', terraceY],
     [2.6, far - 1.4, 4.4, 'pine', terraceY],
     [-5.2, far - 0.6, 3.1, 'oak', terraceY],
     [-(far - 1.0), 6.8, 4.6, 'pine', terraceY],
-    [-(far - 0.5), 0.4, 3.3, 'oak', terraceY],
-    [-(far - 1.4), -7.2, 4.9, 'pine', terraceY],
-    [-8.8, -(far - 0.9), 3.6, 'gold', terraceY],
+    [-(far - 0.5), 0.4, 3.3, 'willow', terraceY],
+    [-(far - 1.4), -7.2, 4.9, 'cypress', terraceY],
+    [-8.8, -(far - 0.9), 3.6, 'oak', terraceY],
     [1.4, -(far - 1.2), 4.2, 'pine', terraceY],
     [7.6, -(far - 0.5), 2.9, 'oak', terraceY],
+    [far + 0.8, 5.6, 3.7, 'willow', terraceY],
+    [-(far + 1.2), -3.8, 4.1, 'pine', terraceY],
+    [4.4, far + 1.6, 3.3, 'cypress', terraceY],
+    [-6.2, -(far + 1.4), 3.8, 'oak', terraceY],
     [far + 2.2, 11.8, 1.3, 'bush', terraceY],
     [-(far + 1.6), -9.4, 1.15, 'bush', terraceY],
     [far + 3.2, far - 2.4, 5.4, 'pine', valleyY],
     [-(far + 2.8), far - 1.8, 4.1, 'oak', valleyY],
-    [far + 2.6, -(far - 2.2), 4.7, 'pine', valleyY],
-    [-(far + 3.0), -(far - 1.6), 3.8, 'gold', valleyY],
+    [far + 2.6, -(far - 2.2), 4.7, 'cypress', valleyY],
+    [-(far + 3.0), -(far - 1.6), 3.8, 'willow', valleyY],
     [far + 4.4, 11.2, 3.2, 'oak', valleyY],
     [-(far + 4.1), -10.4, 3.6, 'pine', valleyY],
-    [12.4, far + 3.6, 4.0, 'gold', valleyY],
+    [12.4, far + 3.6, 4.0, 'willow', valleyY],
     [-11.6, -(far + 3.2), 3.4, 'oak', valleyY],
     [valley - 1.4, 8.2, 5.6, 'pine', valleyY],
     [valley - 0.6, -3.4, 3.8, 'oak', valleyY],
-    [-(valley - 1.2), 4.6, 4.9, 'pine', valleyY],
-    [-(valley - 0.4), -8.8, 3.3, 'gold', valleyY],
+    [-(valley - 1.2), 4.6, 4.9, 'cypress', valleyY],
+    [-(valley - 0.4), -8.8, 3.3, 'willow', valleyY],
     [6.2, valley - 1.8, 4.4, 'oak', valleyY],
     [-7.4, -(valley - 1.2), 5.1, 'pine', valleyY],
     [valley + 2.8, valley - 4.2, 4.2, 'pine', valleyY],
     [-(valley + 2.4), -(valley - 3.6), 3.6, 'oak', valleyY],
-    [14.8, valley + 1.2, 2.8, 'gold', valleyY],
-    [-13.2, -(valley + 0.8), 3.1, 'pine', valleyY],
+    [14.8, valley + 1.2, 2.8, 'willow', valleyY],
+    [-13.2, -(valley + 0.8), 3.1, 'cypress', valleyY],
+    [valley + 5.2, 4.6, 4.0, 'pine', valleyY],
+    [-(valley + 4.8), -5.2, 3.5, 'oak', valleyY],
     [valley + 1.6, 16.4, 1.4, 'bush', valleyY],
     [-(valley + 0.8), -15.2, 1.2, 'bush', valleyY],
   ]
@@ -291,37 +314,70 @@ function MixedForest({ wall, outer, cliffH }: { wall: number; outer: number; cli
     <group>
       {trees.map(([x, z, h, kind, y], i) =>
         kind === 'bush' ? (
-          <Bush key={i} x={x} z={z} h={h} y={y} />
+          <Bush key={i} x={x} z={z} h={h} y={y} seed={i + 3} />
         ) : kind === 'pine' ? (
-          <Pine key={i} x={x} z={z} h={h} y={y} />
+          <Pine key={i} x={x} z={z} h={h} y={y} seed={i + 1} />
+        ) : kind === 'cypress' ? (
+          <Cypress key={i} x={x} z={z} h={h} y={y} seed={i + 5} />
+        ) : kind === 'willow' ? (
+          <Willow key={i} x={x} z={z} h={h} y={y} seed={i + 7} />
         ) : (
-          <Broadleaf key={i} x={x} z={z} h={h} gold={kind === 'gold'} y={y} />
+          <Broadleaf key={i} x={x} z={z} h={h} y={y} seed={i + 2} />
         ),
       )}
     </group>
   )
 }
 
-export function Pine({ x, z, h = 4, y = 0 }: { x: number; z: number; h?: number; y?: number }) {
-  const g1 = h > 4.2 ? '#1a7a28' : '#176c22'
-  const g2 = h > 4.2 ? '#228a30' : '#1f7c2a'
+function jitter(seed: number, k: number) {
+  return Math.sin(seed * 12.9898 + k * 78.233) * 0.5 + 0.5
+}
+
+export function Pine({
+  x,
+  z,
+  h = 4,
+  y = 0,
+  seed = 1,
+}: {
+  x: number
+  z: number
+  h?: number
+  y?: number
+  seed?: number
+}) {
+  const yaw = jitter(seed, 1) * Math.PI
+  const lean = (jitter(seed, 2) - 0.5) * 0.12
+  const g1 = h > 4.2 ? '#145a1e' : '#166422'
+  const g2 = h > 4.2 ? '#1c7a28' : '#1a7024'
+  const g3 = '#247a32'
+  const ox = (jitter(seed, 3) - 0.5) * h * 0.06
+  const oz = (jitter(seed, 4) - 0.5) * h * 0.06
   return (
-    <group position={[x, y, z]}>
-      <mesh position={[0, h * 0.16, 0]} castShadow>
-        <cylinderGeometry args={[0.1, 0.16, h * 0.34, 6]} />
-        <meshStandardMaterial color="#5a3218" roughness={0.92} />
+    <group position={[x, y, z]} rotation={[lean, yaw, 0]}>
+      <mesh position={[0, h * 0.18, 0]} castShadow>
+        <cylinderGeometry args={[0.09, 0.2, h * 0.38, 7]} />
+        <meshStandardMaterial color="#4a2c16" roughness={0.94} />
       </mesh>
-      <mesh position={[0, h * 0.42, 0]} castShadow>
-        <coneGeometry args={[h * 0.26, h * 0.5, 7]} />
-        <meshStandardMaterial color={g1} roughness={0.78} />
+      <mesh position={[h * 0.08, h * 0.28, 0]} rotation={[0, 0, 0.7]} castShadow>
+        <cylinderGeometry args={[0.04, 0.07, h * 0.18, 5]} />
+        <meshStandardMaterial color="#3a2414" roughness={0.94} />
       </mesh>
-      <mesh position={[0, h * 0.66, 0]} castShadow>
-        <coneGeometry args={[h * 0.18, h * 0.38, 7]} />
-        <meshStandardMaterial color={g2} roughness={0.76} />
+      <mesh position={[ox, h * 0.4, oz]} castShadow>
+        <coneGeometry args={[h * 0.3, h * 0.48, 8]} />
+        <meshStandardMaterial color={g1} roughness={0.8} />
       </mesh>
-      <mesh position={[0, h * 0.84, 0]} castShadow>
-        <coneGeometry args={[h * 0.11, h * 0.24, 7]} />
-        <meshStandardMaterial color="#2e9a40" roughness={0.74} />
+      <mesh position={[-ox * 0.6, h * 0.58, oz * 0.4]} rotation={[0.04, 0.3, 0]} castShadow>
+        <coneGeometry args={[h * 0.22, h * 0.4, 8]} />
+        <meshStandardMaterial color={g2} roughness={0.78} />
+      </mesh>
+      <mesh position={[ox * 0.5, h * 0.74, -oz * 0.5]} rotation={[-0.05, 0.8, 0]} castShadow>
+        <coneGeometry args={[h * 0.15, h * 0.3, 7]} />
+        <meshStandardMaterial color={g3} roughness={0.76} />
+      </mesh>
+      <mesh position={[0, h * 0.9, 0]} castShadow>
+        <coneGeometry args={[h * 0.09, h * 0.2, 6]} />
+        <meshStandardMaterial color="#2e8a38" roughness={0.74} />
       </mesh>
     </group>
   )
@@ -331,49 +387,164 @@ export function Broadleaf({
   x,
   z,
   h = 3.4,
-  gold = false,
   y = 0,
+  seed = 1,
 }: {
   x: number
   z: number
   h?: number
-  gold?: boolean
   y?: number
+  seed?: number
 }) {
-  const leaf = gold ? '#c4b030' : '#3aaa38'
-  const leaf2 = gold ? '#8aaa32' : '#2e8c30'
+  const yaw = jitter(seed, 5) * Math.PI * 2
+  const leaf = seed % 3 === 0 ? '#2e8c30' : seed % 3 === 1 ? '#3a9a36' : '#247828'
+  const leaf2 = seed % 2 === 0 ? '#1e6a24' : '#348a32'
+  const leaf3 = '#4aa040'
   return (
-    <group position={[x, y, z]}>
-      <mesh position={[0, h * 0.22, 0]} castShadow>
-        <cylinderGeometry args={[0.12, 0.18, h * 0.44, 6]} />
-        <meshStandardMaterial color="#6a4020" roughness={0.9} />
+    <group position={[x, y, z]} rotation={[0, yaw, 0]}>
+      <mesh position={[0, h * 0.24, 0]} castShadow>
+        <cylinderGeometry args={[0.1, 0.2, h * 0.48, 7]} />
+        <meshStandardMaterial color="#5a3218" roughness={0.92} />
       </mesh>
-      <mesh position={[0, h * 0.62, 0]} castShadow>
-        <sphereGeometry args={[h * 0.28, 8, 6]} />
-        <meshStandardMaterial color={leaf} roughness={0.72} />
+      <mesh position={[h * 0.08, h * 0.42, h * 0.04]} rotation={[0.35, 0.4, 0.2]} castShadow>
+        <cylinderGeometry args={[0.05, 0.09, h * 0.28, 5]} />
+        <meshStandardMaterial color="#4a2814" roughness={0.92} />
       </mesh>
-      <mesh position={[h * 0.16, h * 0.7, h * 0.08]} castShadow>
-        <sphereGeometry args={[h * 0.2, 7, 5]} />
-        <meshStandardMaterial color={leaf2} roughness={0.74} />
+      <mesh position={[-h * 0.1, h * 0.4, -h * 0.06]} rotation={[-0.3, -0.5, -0.15]} castShadow>
+        <cylinderGeometry args={[0.045, 0.08, h * 0.24, 5]} />
+        <meshStandardMaterial color="#4a2814" roughness={0.92} />
       </mesh>
-      <mesh position={[-h * 0.12, h * 0.78, -h * 0.06]} castShadow>
-        <sphereGeometry args={[h * 0.16, 7, 5]} />
-        <meshStandardMaterial color={leaf} roughness={0.73} />
+      <mesh position={[0, h * 0.64, 0]} castShadow>
+        <dodecahedronGeometry args={[h * 0.3, 0]} />
+        <meshStandardMaterial color={leaf} roughness={0.76} />
+      </mesh>
+      <mesh position={[h * 0.2, h * 0.7, h * 0.1]} castShadow>
+        <icosahedronGeometry args={[h * 0.2, 0]} />
+        <meshStandardMaterial color={leaf2} roughness={0.78} />
+      </mesh>
+      <mesh position={[-h * 0.18, h * 0.78, -h * 0.08]} castShadow>
+        <dodecahedronGeometry args={[h * 0.18, 0]} />
+        <meshStandardMaterial color={leaf3} roughness={0.77} />
+      </mesh>
+      <mesh position={[h * 0.06, h * 0.86, -h * 0.16]} castShadow>
+        <icosahedronGeometry args={[h * 0.14, 0]} />
+        <meshStandardMaterial color={leaf} roughness={0.75} />
+      </mesh>
+      <mesh position={[-h * 0.08, h * 0.58, h * 0.18]} castShadow>
+        <dodecahedronGeometry args={[h * 0.15, 0]} />
+        <meshStandardMaterial color={leaf2} roughness={0.78} />
       </mesh>
     </group>
   )
 }
 
-export function Bush({ x, z, h = 1.2, y = 0 }: { x: number; z: number; h?: number; y?: number }) {
+export function Cypress({
+  x,
+  z,
+  h = 4.2,
+  y = 0,
+  seed = 1,
+}: {
+  x: number
+  z: number
+  h?: number
+  y?: number
+  seed?: number
+}) {
+  const yaw = jitter(seed, 8) * Math.PI
   return (
-    <group position={[x, y, z]}>
-      <mesh position={[0, h * 0.38, 0]} castShadow>
-        <sphereGeometry args={[h * 0.42, 7, 5]} />
-        <meshStandardMaterial color="#2e8c32" roughness={0.78} />
+    <group position={[x, y, z]} rotation={[0, yaw, (jitter(seed, 9) - 0.5) * 0.08]}>
+      <mesh position={[0, h * 0.14, 0]} castShadow>
+        <cylinderGeometry args={[0.07, 0.12, h * 0.28, 6]} />
+        <meshStandardMaterial color="#3a2414" roughness={0.94} />
       </mesh>
-      <mesh position={[h * 0.22, h * 0.32, h * 0.12]} castShadow>
-        <sphereGeometry args={[h * 0.28, 6, 5]} />
-        <meshStandardMaterial color="#48b040" roughness={0.76} />
+      <mesh position={[0, h * 0.38, 0]} castShadow>
+        <coneGeometry args={[h * 0.16, h * 0.42, 8]} />
+        <meshStandardMaterial color="#145a22" roughness={0.8} />
+      </mesh>
+      <mesh position={[0, h * 0.62, 0]} castShadow>
+        <coneGeometry args={[h * 0.12, h * 0.36, 8]} />
+        <meshStandardMaterial color="#1a6a28" roughness={0.78} />
+      </mesh>
+      <mesh position={[0, h * 0.82, 0]} castShadow>
+        <coneGeometry args={[h * 0.07, h * 0.28, 7]} />
+        <meshStandardMaterial color="#227430" roughness={0.76} />
+      </mesh>
+    </group>
+  )
+}
+
+export function Willow({
+  x,
+  z,
+  h = 3.2,
+  y = 0,
+  seed = 1,
+}: {
+  x: number
+  z: number
+  h?: number
+  y?: number
+  seed?: number
+}) {
+  const yaw = jitter(seed, 11) * Math.PI * 2
+  return (
+    <group position={[x, y, z]} rotation={[0, yaw, 0]}>
+      <mesh position={[0, h * 0.22, 0]} castShadow>
+        <cylinderGeometry args={[0.1, 0.16, h * 0.44, 7]} />
+        <meshStandardMaterial color="#4a3018" roughness={0.92} />
+      </mesh>
+      <mesh position={[0, h * 0.58, 0]} castShadow>
+        <dodecahedronGeometry args={[h * 0.34, 0]} />
+        <meshStandardMaterial color="#3a8c38" roughness={0.74} />
+      </mesh>
+      <mesh position={[h * 0.22, h * 0.48, h * 0.08]} castShadow>
+        <icosahedronGeometry args={[h * 0.18, 0]} />
+        <meshStandardMaterial color="#2e7a30" roughness={0.78} />
+      </mesh>
+      <mesh position={[-h * 0.2, h * 0.46, -h * 0.1]} castShadow>
+        <icosahedronGeometry args={[h * 0.16, 0]} />
+        <meshStandardMaterial color="#4a9a40" roughness={0.76} />
+      </mesh>
+      <mesh position={[h * 0.04, h * 0.36, h * 0.22]} castShadow>
+        <dodecahedronGeometry args={[h * 0.14, 0]} />
+        <meshStandardMaterial color="#2a6a28" roughness={0.8} />
+      </mesh>
+      <mesh position={[-h * 0.12, h * 0.34, h * 0.16]} castShadow>
+        <dodecahedronGeometry args={[h * 0.12, 0]} />
+        <meshStandardMaterial color="#348034" roughness={0.79} />
+      </mesh>
+    </group>
+  )
+}
+
+export function Bush({
+  x,
+  z,
+  h = 1.2,
+  y = 0,
+  seed = 1,
+}: {
+  x: number
+  z: number
+  h?: number
+  y?: number
+  seed?: number
+}) {
+  const yaw = jitter(seed, 13) * Math.PI
+  return (
+    <group position={[x, y, z]} rotation={[0, yaw, 0]}>
+      <mesh position={[0, h * 0.36, 0]} castShadow>
+        <dodecahedronGeometry args={[h * 0.4, 0]} />
+        <meshStandardMaterial color="#246c28" roughness={0.8} />
+      </mesh>
+      <mesh position={[h * 0.24, h * 0.3, h * 0.1]} castShadow>
+        <icosahedronGeometry args={[h * 0.26, 0]} />
+        <meshStandardMaterial color="#3a8c34" roughness={0.78} />
+      </mesh>
+      <mesh position={[-h * 0.18, h * 0.28, -h * 0.12]} castShadow>
+        <dodecahedronGeometry args={[h * 0.22, 0]} />
+        <meshStandardMaterial color="#1e5c22" roughness={0.82} />
       </mesh>
     </group>
   )
@@ -396,9 +567,9 @@ export function ClashWalls({ wall, brick }: { wall: number; brick: THREE.Texture
   return (
     <group>
       {segs.map(([x, z, w, d], i) => (
-        <mesh key={i} position={[x, h / 2, z]} castShadow receiveShadow>
+        <mesh key={i} position={[x, h / 2, z]} rotation={[0, i === 4 ? 0.04 : i === 5 ? -0.05 : 0, 0]} castShadow receiveShadow>
           <boxGeometry args={[w, h, d]} />
-          <meshStandardMaterial map={brick} color="#c45a38" roughness={0.82} />
+          <meshStandardMaterial map={brick} color={i % 2 ? '#b84a30' : '#c45a38'} roughness={0.86} />
         </mesh>
       ))}
       {([

@@ -30,7 +30,7 @@ export function useBrickTexture() {
         256,
         256,
         (ctx, w, h) => {
-          ctx.fillStyle = '#8a6a58'
+          ctx.fillStyle = '#5a4034'
           ctx.fillRect(0, 0, w, h)
           const bw = 26
           const bh = 11
@@ -39,14 +39,29 @@ export function useBrickTexture() {
             const ox = row % 2 === 0 ? 0 : bw / 2
             for (let x = -bw; x < w; x += bw + gap) {
               const soot = Math.random()
-              const r = 168 + Math.floor(soot * 28) - (soot > 0.82 ? 42 : 0)
-              const g = 78 + Math.floor(soot * 18) - (soot > 0.82 ? 22 : 0)
-              const b = 48 + Math.floor(soot * 8) - (soot > 0.82 ? 12 : 0)
+              const chip = soot > 0.9
+              const r = 142 + Math.floor(soot * 36) - (soot > 0.72 ? 48 : 0) - (chip ? 30 : 0)
+              const g = 62 + Math.floor(soot * 16) - (soot > 0.72 ? 24 : 0)
+              const b = 40 + Math.floor(soot * 8) - (soot > 0.72 ? 14 : 0)
               ctx.fillStyle = `rgb(${r},${g},${b})`
               ctx.fillRect(x + ox, y, bw, bh)
-              ctx.fillStyle = 'rgba(28,18,12,0.28)'
+              ctx.fillStyle = 'rgba(22,12,8,0.38)'
               ctx.fillRect(x + ox, y + bh - 2, bw, 2)
+              if (chip) {
+                ctx.fillStyle = 'rgba(40,24,16,0.55)'
+                ctx.fillRect(x + ox + 4, y + 2, 8, 5)
+              }
+              if (soot > 0.78) {
+                ctx.fillStyle = 'rgba(28,18,12,0.35)'
+                ctx.fillRect(x + ox, y, bw, 3)
+              }
             }
+          }
+          ctx.fillStyle = 'rgba(18,10,8,0.22)'
+          for (let i = 0; i < 14; i++) {
+            ctx.beginPath()
+            ctx.ellipse(Math.random() * w, Math.random() * h, 18 + Math.random() * 22, 6, Math.random(), 0, Math.PI * 2)
+            ctx.fill()
           }
         },
         3,
@@ -63,17 +78,28 @@ export function useMetalTexture() {
         256,
         256,
         (ctx, w, h) => {
-          ctx.fillStyle = '#8a9088'
+          ctx.fillStyle = '#6a7068'
           ctx.fillRect(0, 0, w, h)
           for (let x = 0; x < w; x += 16) {
-            ctx.fillStyle = x % 32 === 0 ? '#9aa098' : '#7a8078'
+            const rust = Math.random()
+            ctx.fillStyle = x % 32 === 0 ? '#7a8078' : '#5a6058'
             ctx.fillRect(x, 0, 14, h)
-            ctx.fillStyle = 'rgba(40,36,28,0.28)'
+            ctx.fillStyle = 'rgba(28,24,18,0.4)'
             ctx.fillRect(x + 13, 0, 1, h)
+            if (rust > 0.45) {
+              ctx.fillStyle = `rgba(${110 + rust * 50},${55 + rust * 20},28,0.38)`
+              ctx.fillRect(x + 1, Math.random() * h * 0.4, 10, 18 + rust * 40)
+            }
           }
-          for (let i = 0; i < 90; i++) {
-            ctx.fillStyle = `rgba(${110 + Math.random() * 70},${70 + Math.random() * 40},40,0.22)`
-            ctx.fillRect(Math.random() * w, Math.random() * h, 8, 3)
+          for (let i = 0; i < 70; i++) {
+            ctx.fillStyle = `rgba(${90 + Math.random() * 50},${50 + Math.random() * 24},28,0.32)`
+            ctx.fillRect(Math.random() * w, Math.random() * h, 10, 4)
+          }
+          ctx.fillStyle = 'rgba(12,10,8,0.28)'
+          for (let i = 0; i < 10; i++) {
+            ctx.beginPath()
+            ctx.ellipse(Math.random() * w, Math.random() * h, 16, 7, 0.4, 0, Math.PI * 2)
+            ctx.fill()
           }
         },
         2.4,
