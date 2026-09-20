@@ -131,13 +131,13 @@ export const HUB_WALK = 14.2
  */
 export const COURT_SIGNS = [
   { word: 'YESTERDAY', ink: '#e07040', x: 0, z: 13.05, wide: 5.15 },
-  { word: 'FIVE-DAY', ink: '#d48848', x: 6.45, z: 12.92, wide: 4.45 },
+  { word: 'FIVE-DAY', ink: '#d48848', x: 9.15, z: 13.48, wide: 4.55 },
   { word: 'FIVE-MONTH', ink: '#6ab0c4', x: -6.55, z: 12.92, wide: 5.25 },
   { word: 'YARD', ink: '#d48848', x: 12.55, z: -4.25, wide: 3.65 },
 ] as const
 export const COURT_STENCILS = [
   { word: 'YESTERDAY', ink: '#e07040', x: 0, z: 13.25, w: 6.4, d: 1.45 },
-  { word: 'FIVE-DAY', ink: '#d48848', x: 6.45, z: 13.12, w: 6.1, d: 1.4 },
+  { word: 'FIVE-DAY', ink: '#d48848', x: 9.15, z: 13.22, w: 6.1, d: 1.4 },
   { word: 'FIVE-MONTH', ink: '#6ab0c4', x: -6.55, z: 13.12, w: 6.8, d: 1.4 },
   { word: 'YARD', ink: '#d48848', x: 12.35, z: -6.15, w: 4.4, d: 1.45 },
 ] as const

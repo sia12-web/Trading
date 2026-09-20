@@ -203,8 +203,8 @@ assert.ok(
   'YARD plaque stays on the east crane dirt, not the mill wall',
 )
 assert.ok(
-  COURT_SIGNS.find((s) => s.word === 'YARD')!.wide >= 3.4,
-  'YARD lettering is large enough to read from the default crop',
+  COURT_SIGNS.find((s) => s.word === 'FIVE-DAY')!.x > 8,
+  'FIVE-DAY plaque stays east of the south-gate trees so the full word reads',
 )
 
 const hallTime = timeOpportunity({ kind: 'poc', tpoAtPrice: 6.2, sessionProgress: 0.02 })
