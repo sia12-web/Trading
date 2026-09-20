@@ -217,7 +217,7 @@ function Stencil({
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={position}>
       <planeGeometry args={[w, d]} />
-      <meshBasicMaterial map={tex} toneMapped={false} />
+      <meshBasicMaterial map={tex} toneMapped={false} depthWrite={false} />
     </mesh>
   )
 }
@@ -238,16 +238,16 @@ function CourtPlaque({
   const tex = useMemo(() => makeCourtSignTexture(word, ink), [word, ink])
   return (
     <group position={[x, 0, z]} rotation={[0, Math.PI / 4, 0]}>
-      <mesh position={[0, 0.62, 0]} castShadow>
-        <boxGeometry args={[0.2, 1.35, 0.2]} />
+      <mesh position={[0, 0.7, 0.18]} castShadow>
+        <boxGeometry args={[0.18, 1.4, 0.18]} />
         <meshStandardMaterial color="#3a2a1c" roughness={0.8} />
       </mesh>
-      <mesh position={[0, 1.58, 0.04]} castShadow>
-        <boxGeometry args={[wide, 0.98, 0.16]} />
+      <mesh position={[0, 1.72, 0.28]} castShadow>
+        <boxGeometry args={[wide, 1.05, 0.16]} />
         <meshStandardMaterial color="#2a1c14" roughness={0.7} />
       </mesh>
-      <mesh position={[0, 1.58, 0.14]}>
-        <planeGeometry args={[wide - 0.2, 0.8]} />
+      <mesh position={[0, 1.72, 0.38]}>
+        <planeGeometry args={[wide - 0.18, 0.88]} />
         <meshBasicMaterial map={tex} toneMapped={false} />
       </mesh>
     </group>

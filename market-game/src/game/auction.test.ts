@@ -188,15 +188,23 @@ assert.deepEqual(
 )
 assert.deepEqual(
   COURT_STENCILS.map((s) => s.word),
-  ['YESTERDAY', 'FIVE-DAY', 'FIVE-MONTH'],
-  'yesterday / five-day / five-month stay as ground stencils',
+  ['YESTERDAY', 'FIVE-DAY', 'FIVE-MONTH', 'YARD'],
+  'yesterday / five-day / five-month / yard stay as ground stencils',
 )
 for (const sign of COURT_SIGNS.filter((s) => s.word !== 'YARD')) {
-  assert.ok(sign.z > 10.2, `${sign.word} plaque stays on the camera-near south plaza`)
+  assert.ok(sign.z > 12.4, `${sign.word} plaque stays camera-near of the hall, not behind it`)
 }
 assert.ok(
-  COURT_SIGNS.find((s) => s.word === 'YARD')!.x > 10,
-  'YARD plaque stays on the east crane, not the mill wall',
+  COURT_SIGNS.find((s) => s.word === 'YESTERDAY')!.z > 12.6,
+  'YESTERDAY stays on the south strip so the full word is not eaten by the hall',
+)
+assert.ok(
+  COURT_SIGNS.find((s) => s.word === 'YARD')!.x > 12,
+  'YARD plaque stays on the east crane dirt, not the mill wall',
+)
+assert.ok(
+  COURT_SIGNS.find((s) => s.word === 'YARD')!.wide >= 3.4,
+  'YARD lettering is large enough to read from the default crop',
 )
 
 const hallTime = timeOpportunity({ kind: 'poc', tpoAtPrice: 6.2, sessionProgress: 0.02 })

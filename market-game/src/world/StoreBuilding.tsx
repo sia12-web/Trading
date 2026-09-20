@@ -56,7 +56,7 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
                   : store.building === 'loft'
                     ? { w: 3.7, d: 3.55, fasciaY: 2.48 }
                     : { w: 3.65, d: 3.5, fasciaY: 2.25 }
-  const gableX = store.range === 'fiveDay' ? shell.w * 0.52 : store.range === 'fiveMonth' ? -shell.w * 0.52 : 0
+  const gableX = store.range === 'fiveDay' || store.range === 'fiveMonth' ? shell.w * 0.52 : 0
 
   return (
     <group
@@ -84,7 +84,7 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
         width={shell.w}
         depth={shell.d}
       />
-      <Fascia title={label} paint={store.accent} y={shell.fasciaY} width={Math.min(4.15, shell.w * 0.96)} z={shell.d * 0.52} />
+      <Fascia title={label} paint={store.accent} y={shell.fasciaY} width={Math.min(4.55, shell.w * 1.02)} z={shell.d * 0.52} />
       {gableX !== 0 && (
         <GableSign title={label} paint={store.accent} x={gableX} y={store.building === 'yard' ? 3.15 : 2.55} />
       )}
@@ -153,15 +153,17 @@ function RangeStoreys({
   const yVal = rangeHeight(range.val, range.lo, range.hi, 0.22, 3.72)
   const yVah = rangeHeight(range.vah, range.lo, range.hi, 0.22, 3.72)
   const yNode = rangeHeight(nodePx, range.lo, range.hi, 0.22, 3.72)
+  // Camera sits at +X+Z. Put ladders on the faces that shot actually sees:
+  // yesterday south; five-day east+south; five-month courtyard+south.
   const faces =
     rangeKind === 'fiveDay'
       ? [
-          { p: [0, 0, depth * 0.52 + 0.08] as [number, number, number], r: [0, 0, 0] as [number, number, number], w: width },
-          { p: [-width * 0.52 - 0.08, 0, 0] as [number, number, number], r: [0, -Math.PI / 2, 0] as [number, number, number], w: depth },
+          { p: [0, 0, -depth * 0.52 - 0.08] as [number, number, number], r: [0, Math.PI, 0] as [number, number, number], w: width },
+          { p: [width * 0.52 + 0.08, 0, 0] as [number, number, number], r: [0, Math.PI / 2, 0] as [number, number, number], w: depth },
         ]
       : rangeKind === 'fiveMonth'
         ? [
-            { p: [0, 0, -depth * 0.52 - 0.08] as [number, number, number], r: [0, Math.PI, 0] as [number, number, number], w: width },
+            { p: [0, 0, depth * 0.52 + 0.08] as [number, number, number], r: [0, 0, 0] as [number, number, number], w: width },
             { p: [width * 0.52 + 0.08, 0, 0] as [number, number, number], r: [0, Math.PI / 2, 0] as [number, number, number], w: depth },
           ]
         : [{ p: [0, 0, depth * 0.52 + 0.08] as [number, number, number], r: [0, 0, 0] as [number, number, number], w: width }]
@@ -277,17 +279,17 @@ function YardPlaque() {
   const tex = useMemo(() => makeCourtSignTexture('YARD', '#d48848'), [])
   useEffect(() => () => tex.dispose(), [tex])
   return (
-    <group position={[0.2, 0, 2.55]} rotation={[0, Math.PI / 4, 0]}>
-      <mesh position={[0, 0.5, 0]} castShadow>
-        <boxGeometry args={[0.14, 1.0, 0.14]} />
+    <group position={[0.15, 0, -2.05]} rotation={[0, Math.PI, 0]}>
+      <mesh position={[0, 0.55, 0]} castShadow>
+        <boxGeometry args={[0.16, 1.1, 0.16]} />
         <meshStandardMaterial color="#3a2a1c" />
       </mesh>
-      <mesh position={[0, 1.18, 0.05]} castShadow>
-        <boxGeometry args={[2.15, 0.62, 0.1]} />
+      <mesh position={[0, 1.42, 0.06]} castShadow>
+        <boxGeometry args={[3.05, 0.82, 0.12]} />
         <meshStandardMaterial color="#2a1c14" />
       </mesh>
-      <mesh position={[0, 1.18, 0.12]}>
-        <planeGeometry args={[2.0, 0.5]} />
+      <mesh position={[0, 1.42, 0.14]}>
+        <planeGeometry args={[2.88, 0.66]} />
         <meshBasicMaterial map={tex} toneMapped={false} />
       </mesh>
     </group>
@@ -306,18 +308,23 @@ function NyCashBunting({ y, z }: { y: number; z: number }) {
 }
 
 function PrintBurst() {
-  const wood = ['#5a3e28', '#6a767c', '#4a5840', '#6a5030']
+  const wood = ['#8a6240', '#7a868c', '#6a5840', '#9a7048']
   return (
-    <group position={[0, 0.42, 3.05]}>
-      {Array.from({ length: 24 }, (_, i) => (
-        <mesh key={i} position={[((i % 4) - 1.5) * 0.7, 0.28 + Math.floor(i / 4) * 0.52, (i % 2) * 0.38 - 0.1]} castShadow>
-          <boxGeometry args={[0.62, 0.46, 0.5]} />
-          <meshStandardMaterial color={wood[i % wood.length]} roughness={0.78} metalness={i % 3 === 1 ? 0.32 : 0.04} />
+    <group position={[0, 0.08, 3.55]}>
+      {Array.from({ length: 30 }, (_, i) => (
+        <mesh
+          key={i}
+          position={[((i % 5) - 2) * 0.7, 0.26 + Math.floor(i / 5) * 0.48, ((i % 3) - 1) * 0.42]}
+          rotation={[0, (i % 4) * 0.08, 0]}
+          castShadow
+        >
+          <boxGeometry args={[0.64, 0.44, 0.52]} />
+          <meshStandardMaterial color={wood[i % wood.length]} roughness={0.72} metalness={i % 3 === 1 ? 0.38 : 0.05} />
         </mesh>
       ))}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0.1]}>
-        <ringGeometry args={[1.35, 2.05, 22]} />
-        <meshBasicMaterial color="#c8d4a0" transparent opacity={0.8} toneMapped={false} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0.12]}>
+        <ringGeometry args={[1.55, 2.35, 24]} />
+        <meshBasicMaterial color="#c8d890" transparent opacity={0.92} toneMapped={false} />
       </mesh>
     </group>
   )
@@ -361,36 +368,36 @@ function ChalkBoard({ price, y, z, pulse }: { price: string; y: number; z: numbe
 function GoodsPile({ stall, kind, z }: { stall: Stall; kind: StoreDef['kind']; z: number }) {
   const taking = stall.printSide === 'buy' && stall.printBoost > 0.08
   const fading = stall.printSide === 'sell' && stall.printBoost > 0.08
-  const extra = taking ? 18 : 0
-  const filled = Math.round(stall.occupancy * 22)
+  const extra = taking ? 22 : 0
+  const filled = Math.round(stall.occupancy * 24)
   const n = fading
     ? 0
     : kind === 'lvn'
       ? stall.clogged
         ? 14 + extra
         : extra
-      : (filled > 0 ? Math.max(6, filled) : 0) + extra
+      : (filled > 0 ? Math.max(8, filled) : 0) + extra
   if (n <= 0) return stall.hollow || fading || (kind === 'lvn' && !stall.clogged) ? <EmptyRacks z={z} /> : null
-  const wood = kind === 'lvn' ? ['#5a4030', '#4a4840', '#6a5848'] : ['#5a3e28', '#6a767c', '#4a5840']
-  const box: [number, number, number] = taking ? [0.58, 0.42, 0.48] : [0.46, 0.34, 0.4]
+  const wood = kind === 'lvn' ? ['#6a5040', '#5a5850', '#7a6858'] : ['#7a5438', '#6a767c', '#5a4a38']
+  const box: [number, number, number] = taking ? [0.62, 0.4, 0.5] : [0.5, 0.32, 0.42]
   return (
     <group>
       {Array.from({ length: n }, (_, i) => (
         <mesh
           key={i}
           position={[
-            -1.55 + (i % 5) * (taking ? 0.64 : 0.56),
-            box[1] / 2 + Math.floor(i / 5) * (box[1] + 0.04) + stall.printBoost * 0.12,
-            z + (i % 2) * 0.34,
+            -1.7 + (i % 5) * (taking ? 0.7 : 0.58),
+            box[1] / 2 + Math.floor(i / 5) * (box[1] + 0.05) + stall.printBoost * 0.1,
+            z + 0.22 + (i % 2) * 0.36,
           ]}
-          rotation={[0, (i % 3) * 0.12, 0]}
+          rotation={[0, (i % 3) * 0.1, 0]}
           castShadow
         >
           <boxGeometry args={box} />
           <meshStandardMaterial
             color={wood[i % wood.length]}
-            roughness={0.78}
-            metalness={i % 3 === 1 ? 0.32 : 0.04}
+            roughness={0.74}
+            metalness={i % 3 === 1 ? 0.34 : 0.04}
           />
         </mesh>
       ))}
@@ -400,17 +407,17 @@ function GoodsPile({ stall, kind, z }: { stall: Stall; kind: StoreDef['kind']; z
 
 function EmptyRacks({ z }: { z: number }) {
   return (
-    <group position={[0, 0.55, z]}>
-      {[-0.7, 0.7].map((x) => (
+    <group position={[0, 0.62, z + 0.15]}>
+      {[-0.95, 0, 0.95].map((x) => (
         <mesh key={x} position={[x, 0, 0]}>
-          <boxGeometry args={[0.1, 1.35, 0.85]} />
-          <meshStandardMaterial color="#4a4038" />
+          <boxGeometry args={[0.12, 1.55, 0.95]} />
+          <meshStandardMaterial color="#5a5348" metalness={0.22} roughness={0.55} />
         </mesh>
       ))}
-      {[0.15, 0.55, 0.95].map((y) => (
-        <mesh key={y} position={[0, y - 0.45, 0]}>
-          <boxGeometry args={[1.45, 0.05, 0.8]} />
-          <meshStandardMaterial color="#5a5048" />
+      {[0.12, 0.55, 0.98, 1.38].map((y) => (
+        <mesh key={y} position={[0, y - 0.5, 0]}>
+          <boxGeometry args={[1.95, 0.06, 0.88]} />
+          <meshStandardMaterial color="#6a6258" />
         </mesh>
       ))}
     </group>

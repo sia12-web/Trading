@@ -125,20 +125,21 @@ export const DOW_GATE: [number, number, number] = [0, 0, 8.4]
 export const HUB_WALK = 14.2
 
 /**
- * Court names live on the camera-near south plaza (high Z) plus YARD on the
- * east crane. Do not tuck these behind hall / mill / pit — that strips the names.
+ * Court names sit on the camera-near strip (high Z, just inside the south wall)
+ * so hall / foundry / mill cannot eat the letters. YARD lives on the east dirt
+ * next to the crane — a crane with no word is not a store.
  */
 export const COURT_SIGNS = [
-  { word: 'YESTERDAY', ink: '#e07040', x: 0, z: 10.72, wide: 4.55 },
-  { word: 'FIVE-DAY', ink: '#d48848', x: 6.55, z: 10.58, wide: 4.25 },
-  { word: 'FIVE-MONTH', ink: '#6ab0c4', x: -6.85, z: 10.58, wide: 4.95 },
-  { word: 'YARD', ink: '#d48848', x: 11.35, z: -5.85, wide: 2.85 },
+  { word: 'YESTERDAY', ink: '#e07040', x: 0, z: 13.05, wide: 5.15 },
+  { word: 'FIVE-DAY', ink: '#d48848', x: 6.45, z: 12.92, wide: 4.45 },
+  { word: 'FIVE-MONTH', ink: '#6ab0c4', x: -6.55, z: 12.92, wide: 5.25 },
+  { word: 'YARD', ink: '#d48848', x: 12.55, z: -4.25, wide: 3.65 },
 ] as const
-
 export const COURT_STENCILS = [
-  { word: 'YESTERDAY', ink: '#e07040', x: 0, z: 11.28, w: 5.9, d: 1.55 },
-  { word: 'FIVE-DAY', ink: '#d48848', x: 6.55, z: 11.18, w: 5.7, d: 1.5 },
-  { word: 'FIVE-MONTH', ink: '#6ab0c4', x: -6.85, z: 11.18, w: 6.4, d: 1.5 },
+  { word: 'YESTERDAY', ink: '#e07040', x: 0, z: 13.25, w: 6.4, d: 1.45 },
+  { word: 'FIVE-DAY', ink: '#d48848', x: 6.45, z: 13.12, w: 6.1, d: 1.4 },
+  { word: 'FIVE-MONTH', ink: '#6ab0c4', x: -6.55, z: 13.12, w: 6.8, d: 1.4 },
+  { word: 'YARD', ink: '#d48848', x: 12.35, z: -6.15, w: 4.4, d: 1.45 },
 ] as const
 
 /** Fascia sits on local +Z. Yaw matches Three.js so that face is the courtyard. */
