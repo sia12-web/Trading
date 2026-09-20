@@ -30,9 +30,9 @@ export function DowScene() {
       dpr={[1, 1.75]}
       gl={{ antialias: true, powerPreference: 'high-performance' }}
       onCreated={({ gl }) => {
-        gl.setClearColor('#74c8f0')
+        gl.setClearColor('#6eb4e8')
         gl.toneMapping = THREE.ACESFilmicToneMapping
-        gl.toneMappingExposure = 1.58
+        gl.toneMappingExposure = 1.36
       }}
     >
       <Suspense fallback={null}>

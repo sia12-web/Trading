@@ -13,8 +13,8 @@ export function HubWorld() {
 
   return (
     <>
-      <Sky sunPosition={[22, 40, 16]} turbidity={1.6} rayleigh={0.3} mieCoefficient={0.003} />
-      <color attach="background" args={['#74c8f0']} />
+      <Sky sunPosition={[22, 40, 16]} turbidity={3.1} rayleigh={0.8} mieCoefficient={0.0035} />
+      <color attach="background" args={['#6eb4e8']} />
       <hemisphereLight args={['#e8f4ff', '#6a9a48', 1.22]} />
       <ambientLight intensity={0.95} />
       <directionalLight position={[22, 40, 16]} intensity={2.7} color="#fff6d0" castShadow />

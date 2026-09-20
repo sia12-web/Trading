@@ -202,10 +202,10 @@ function PriceBody({
   })
 
   return (
-    <group scale={1.88}>
-      <mesh position={[0, 0.72, 0]} scale={1.22}>
+    <group scale={1.52}>
+      <mesh position={[0, 0.72, 0]} scale={1.14}>
         <capsuleGeometry args={[0.28, 0.42, 4, 8]} />
-        <meshBasicMaterial color="#140c06" toneMapped={false} />
+        <meshBasicMaterial color="#1a0e06" toneMapped={false} side={THREE.BackSide} />
       </mesh>
       <mesh position={[0, 0.72, 0]} castShadow>
         <capsuleGeometry args={[0.26, 0.4, 5, 10]} />

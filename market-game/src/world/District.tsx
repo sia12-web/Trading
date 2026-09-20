@@ -29,10 +29,10 @@ export function District() {
   const dawn = g.phase === 'preopen'
   const sunPos: [number, number, number] = dawn ? [26, 12, 18] : [22, 42, 18]
   const sun = dawn ? '#ffc488' : '#fff6d0'
-  const sky = dawn ? '#c8b090' : '#74c8f0'
+  const sky = dawn ? '#c8b090' : '#6eb4e8'
 
   useFrame(() => {
-    gl.toneMappingExposure = dawn ? 1.22 : 1.62
+    gl.toneMappingExposure = dawn ? 1.18 : 1.38
     gl.setClearColor(sky, 1)
   })
 
@@ -40,10 +40,10 @@ export function District() {
     <>
       <Sky
         sunPosition={sunPos}
-        turbidity={dawn ? 5.4 : 1.55}
-        rayleigh={dawn ? 1.15 : 0.28}
-        mieCoefficient={dawn ? 0.005 : 0.0028}
-        mieDirectionalG={0.72}
+        turbidity={dawn ? 5.2 : 3.2}
+        rayleigh={dawn ? 1.2 : 0.82}
+        mieCoefficient={dawn ? 0.005 : 0.0035}
+        mieDirectionalG={0.7}
       />
       <hemisphereLight args={[dawn ? '#f0d0b0' : '#e8f4ff', dawn ? '#7a6a48' : '#6a9a48', dawn ? 0.82 : 1.28]} />
       <ambientLight intensity={dawn ? 0.58 : 0.98} />
