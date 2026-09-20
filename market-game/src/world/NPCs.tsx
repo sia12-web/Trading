@@ -101,7 +101,7 @@ function Person({
     ref.current.position.y = hop ? 0.34 + Math.abs(Math.sin(s.clock.elapsedTime * 16)) * 0.42 : 0
     ref.current.rotation.y = Math.atan2(store.position[0] - x, store.position[2] - z) || t
     ref.current.visible = alive > 0.08
-    ref.current.scale.setScalar(2.15 + 0.1 * alive)
+    ref.current.scale.setScalar(0.88 + 0.06 * alive)
     const leg = Math.sin(t * 8) * 0.5
     if (left.current) left.current.rotation.x = leaving || arrive < 0.92 ? leg : 0.08
     if (right.current) right.current.rotation.x = leaving || arrive < 0.92 ? -leg : -0.08
@@ -109,44 +109,52 @@ function Person({
 
   return (
     <group ref={ref} position={[home[0], 0, home[1]]}>
-      <mesh position={[0, 0.72, 0]} castShadow>
-        <capsuleGeometry args={[0.26, 0.52, 4, 8]} />
+      <mesh position={[0, 0.62, 0]} castShadow>
+        <boxGeometry args={[0.36, 0.46, 0.22]} />
         <meshBasicMaterial color={color} />
       </mesh>
-      <mesh position={[0, 1.22, 0]} castShadow>
-        <sphereGeometry args={[0.22, 8, 6]} />
+      <mesh position={[0, 0.98, 0]} castShadow>
+        <sphereGeometry args={[0.16, 8, 6]} />
         <meshBasicMaterial color="#f0d0a8" />
       </mesh>
       {kind !== 'broker' && (
-        <mesh position={[0, 1.34, 0]} castShadow>
-          <cylinderGeometry args={[0.21, 0.23, 0.14, 8]} />
+        <mesh position={[0, 1.1, 0]} castShadow>
+          <cylinderGeometry args={[0.17, 0.19, 0.12, 8]} />
           <meshStandardMaterial color="#f0c040" emissive="#c4a046" emissiveIntensity={0.28} />
         </mesh>
       )}
       {kind === 'broker' && (
-        <mesh position={[0, 0.76, 0.16]}>
-          <boxGeometry args={[0.3, 0.2, 0.06]} />
+        <mesh position={[0, 0.64, 0.12]}>
+          <boxGeometry args={[0.22, 0.16, 0.05]} />
           <meshStandardMaterial color="#e8dcc8" />
         </mesh>
       )}
       {kind === 'welder' && (
-        <mesh position={[0.26, 0.64, 0]}>
-          <boxGeometry args={[0.16, 0.22, 0.12]} />
+        <mesh position={[0.22, 0.58, 0]}>
+          <boxGeometry args={[0.14, 0.18, 0.1]} />
           <meshStandardMaterial color="#4a4a48" />
         </mesh>
       )}
       {kind === 'worker' && (
-        <mesh position={[-0.22, 0.62, 0.02]}>
-          <boxGeometry args={[0.14, 0.18, 0.14]} />
+        <mesh position={[-0.2, 0.56, 0.02]}>
+          <boxGeometry args={[0.12, 0.16, 0.12]} />
           <meshStandardMaterial color="#6a3a28" />
         </mesh>
       )}
-      <mesh ref={left} position={[-0.12, 0.26, 0]}>
-        <capsuleGeometry args={[0.08, 0.26, 3, 6]} />
+      <mesh position={[-0.24, 0.62, 0]} rotation={[0, 0, 0.4]} castShadow>
+        <capsuleGeometry args={[0.055, 0.26, 3, 6]} />
+        <meshBasicMaterial color="#c44a22" />
+      </mesh>
+      <mesh position={[0.24, 0.62, 0]} rotation={[0, 0, -0.4]} castShadow>
+        <capsuleGeometry args={[0.055, 0.26, 3, 6]} />
+        <meshBasicMaterial color="#c44a22" />
+      </mesh>
+      <mesh ref={left} position={[-0.11, 0.26, 0]} castShadow>
+        <capsuleGeometry args={[0.07, 0.26, 3, 6]} />
         <meshStandardMaterial color="#2a241c" />
       </mesh>
-      <mesh ref={right} position={[0.12, 0.26, 0]}>
-        <capsuleGeometry args={[0.08, 0.26, 3, 6]} />
+      <mesh ref={right} position={[0.11, 0.26, 0]} castShadow>
+        <capsuleGeometry args={[0.07, 0.26, 3, 6]} />
         <meshStandardMaterial color="#2a241c" />
       </mesh>
     </group>

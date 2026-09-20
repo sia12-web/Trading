@@ -333,10 +333,8 @@ function Foundry({
         <boxGeometry args={[4.35, 3.7, 3.7]} />
         <meshStandardMaterial
           map={brick}
-          color={stall.hollow ? '#d08058' : '#e07048'}
-          roughness={0.78}
-          emissive="#c45830"
-          emissiveIntensity={0.16}
+          color={stall.hollow ? '#c87858' : '#d46840'}
+          roughness={0.8}
         />
       </mesh>
       <Cornice w={4.6} d={3.95} y={3.78} />
@@ -393,23 +391,25 @@ function Hall({ brick, metal, stall }: { brick: THREE.Texture; metal: THREE.Text
         <boxGeometry args={[4.55, 4.1, 4.15]} />
         <meshStandardMaterial
           map={brick}
-          color={stall.hollow ? '#d88860' : '#ee7848'}
-          roughness={0.76}
-          emissive="#d06038"
-          emissiveIntensity={0.18}
+          color={stall.hollow ? '#d08058' : '#dc6840'}
+          roughness={0.8}
         />
       </mesh>
       <mesh position={[0, 4.45, 0]} castShadow>
         <boxGeometry args={[4.95, 0.18, 4.5]} />
-        <meshStandardMaterial map={metal} color="#a06a40" roughness={0.52} emissive="#6a3a20" emissiveIntensity={0.1} />
+        <meshStandardMaterial map={metal} color="#a06a40" roughness={0.52} />
       </mesh>
       <mesh position={[0, 4.95, 0]} rotation={[0, 0, 0.48]} castShadow>
         <boxGeometry args={[3.6, 0.16, 5.05]} />
-        <meshStandardMaterial map={metal} color="#b07848" roughness={0.48} emissive="#7a4020" emissiveIntensity={0.1} />
+        <meshStandardMaterial map={metal} color="#b07848" roughness={0.48} />
       </mesh>
       <mesh position={[0, 4.95, 0]} rotation={[0, 0, -0.48]} castShadow>
         <boxGeometry args={[3.6, 0.16, 5.05]} />
-        <meshStandardMaterial map={metal} color="#b07848" roughness={0.48} emissive="#7a4020" emissiveIntensity={0.1} />
+        <meshStandardMaterial map={metal} color="#b07848" roughness={0.48} />
+      </mesh>
+      <mesh position={[0, 5.15, 2.35]} rotation={[Math.PI / 2, 0, Math.PI]} castShadow>
+        <coneGeometry args={[2.15, 0.22, 3]} />
+        <meshStandardMaterial color="#c45a32" roughness={0.7} />
       </mesh>
       {[-1.55, -0.52, 0.52, 1.55].map((x) => (
         <mesh key={x} position={[x, 1.15, 2.2]} castShadow>
@@ -437,10 +437,6 @@ function Hall({ brick, metal, stall }: { brick: THREE.Texture; metal: THREE.Text
           <meshStandardMaterial color="#d4c4a4" roughness={0.82} />
         </mesh>
       ))}
-      <mesh position={[0, 5.05, 2.28]} rotation={[Math.PI / 2, 0, Math.PI]}>
-        <coneGeometry args={[2.05, 0.16, 3]} />
-        <meshStandardMaterial color="#c45a32" roughness={0.7} emissive="#a04020" emissiveIntensity={0.12} />
-      </mesh>
       <mesh position={[0, 3.52, 2.34]}>
         <circleGeometry args={[0.28, 16]} />
         <meshStandardMaterial color="#f0e8d0" roughness={0.35} emissive="#e8dcc0" emissiveIntensity={0.2} />
@@ -458,11 +454,9 @@ function Dock({ metal, stall, printed }: { metal: THREE.Texture; stall: Stall; p
           <boxGeometry args={[0.28, 4.3, 3.6]} />
           <meshStandardMaterial
             map={metal}
-            color="#c8d0d6"
+            color="#b8c0c6"
             metalness={0.38}
-            roughness={0.42}
-            emissive="#8a949c"
-            emissiveIntensity={0.14}
+            roughness={0.44}
           />
         </mesh>
       ))}
@@ -470,17 +464,21 @@ function Dock({ metal, stall, printed }: { metal: THREE.Texture; stall: Stall; p
         <boxGeometry args={[3.55, 3.7, 3.15]} />
         <meshStandardMaterial
           map={metal}
-          color="#c5cdd4"
+          color="#b5bdc4"
           metalness={0.36}
-          roughness={0.44}
-          emissive="#8a949c"
-          emissiveIntensity={0.14}
+          roughness={0.46}
         />
       </mesh>
-      <mesh position={[0, 4.35, 0]} castShadow>
+      <mesh position={[0, 4.45, 0]} castShadow>
         <boxGeometry args={[4.15, 0.18, 3.9]} />
-        <meshStandardMaterial map={metal} color="#b8c4cc" metalness={0.45} roughness={0.38} emissive="#788088" emissiveIntensity={0.1} />
+        <meshStandardMaterial map={metal} color="#a8b4bc" metalness={0.45} roughness={0.4} />
       </mesh>
+      {[-1.5, -0.75, 0, 0.75, 1.5].map((x) => (
+        <mesh key={x} position={[x, 4.58, 0]} rotation={[0, 0, 0.55]} castShadow>
+          <boxGeometry args={[0.85, 0.08, 3.95]} />
+          <meshStandardMaterial map={metal} color="#9aa8b0" metalness={0.42} roughness={0.4} />
+        </mesh>
+      ))}
       {[-1.2, 0, 1.2].map((x) => (
         <mesh key={x} position={[x, 2.1, 2.05]}>
           <boxGeometry args={[1.05, 2.5 * (1 - stall.door * 0.15), 0.06]} />
@@ -532,10 +530,8 @@ function Yard({ metal, brick, stall }: { metal: THREE.Texture; brick: THREE.Text
         <boxGeometry args={[5.25, 3.5, 3.7]} />
         <meshStandardMaterial
           map={brick}
-          color={stall.hollow ? '#c87850' : '#dc6038'}
-          roughness={0.78}
-          emissive="#b84828"
-          emissiveIntensity={0.15}
+          color={stall.hollow ? '#c07048' : '#d05834'}
+          roughness={0.8}
         />
       </mesh>
       <Cornice w={5.5} d={3.95} y={3.58} />
@@ -586,10 +582,8 @@ function Mill({ brick, metal, stall }: { brick: THREE.Texture; metal: THREE.Text
         <boxGeometry args={[6.15, 3.7, 4.7]} />
         <meshStandardMaterial
           map={brick}
-          color={stall.hollow ? '#d07850' : '#e86840'}
-          roughness={0.76}
-          emissive="#c45030"
-          emissiveIntensity={0.16}
+          color={stall.hollow ? '#c87048' : '#d86038'}
+          roughness={0.8}
         />
       </mesh>
       {[-2.05, 0, 2.05].map((x) => (
@@ -625,22 +619,18 @@ function Alley({ metal, stall }: { metal: THREE.Texture; stall: Stall }) {
         <boxGeometry args={[1.85, 4.3, 4.15]} />
         <meshStandardMaterial
           map={metal}
-          color="#9aacb8"
+          color="#8a9caa"
           metalness={0.3}
-          roughness={0.46}
-          emissive="#6a7a88"
-          emissiveIntensity={0.14}
+          roughness={0.48}
         />
       </mesh>
       <mesh position={[1.65, 1.75, 0.25]} castShadow>
         <boxGeometry args={[1.7, 3.5, 3.7]} />
         <meshStandardMaterial
           map={metal}
-          color="#8a9aa8"
+          color="#7a8a98"
           metalness={0.3}
-          roughness={0.48}
-          emissive="#5a6a78"
-          emissiveIntensity={0.12}
+          roughness={0.5}
         />
       </mesh>
       <mesh position={[-1.55, 4.4, 0]}>

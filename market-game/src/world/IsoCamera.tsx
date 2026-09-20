@@ -3,19 +3,17 @@ import { useFrame } from '@react-three/fiber'
 import { useRef } from 'react'
 import type { OrthographicCamera as OrthoCam } from 'three'
 
-/** One packed Clash shot for preopen and live: walls + trees + cliff bezel, no dirt/sky void. */
+/** One packed Clash shot for hub and mill: walls + tree belt + cliff, no sky void. */
 export function IsoCamera({ mode }: { mode: 'hub' | 'dow' }) {
   const ref = useRef<OrthoCam>(null)
+  void mode
 
   useFrame(() => {
     const cam = ref.current
     if (!cam) return
-    const height = mode === 'hub' ? 10.9 : 14.25
-    const zoom = mode === 'hub' ? 50 : 45
-    const dist = mode === 'hub' ? 13.5 : 18.5
-    cam.position.set(dist, height, dist)
+    cam.position.set(18.5, 14.25, 18.5)
     cam.lookAt(0, 1.05, 0)
-    cam.zoom = zoom
+    cam.zoom = 45
     cam.updateProjectionMatrix()
     cam.updateMatrixWorld()
   })

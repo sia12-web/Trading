@@ -24,13 +24,15 @@ export function DowScene() {
 
   return (
     <Canvas
-      shadows
+      shadows="soft"
       dpr={[1, 1.75]}
       gl={{ antialias: true, powerPreference: 'high-performance' }}
       onCreated={({ gl }) => {
-        gl.setClearColor('#7eb8dc')
+        gl.setClearColor('#6aa8cc')
         gl.toneMapping = THREE.ACESFilmicToneMapping
-        gl.toneMappingExposure = 1.36
+        gl.toneMappingExposure = 1.1
+        gl.shadowMap.enabled = true
+        gl.shadowMap.type = THREE.PCFSoftShadowMap
       }}
     >
       <Suspense fallback={null}>

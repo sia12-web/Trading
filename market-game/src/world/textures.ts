@@ -30,19 +30,22 @@ export function useBrickTexture() {
         256,
         256,
         (ctx, w, h) => {
-          ctx.fillStyle = '#a0482c'
+          ctx.fillStyle = '#8a6a58'
           ctx.fillRect(0, 0, w, h)
-          const bw = 28
-          const bh = 12
-          for (let y = 0, row = 0; y < h; y += bh + 3, row++) {
+          const bw = 26
+          const bh = 11
+          const gap = 5
+          for (let y = 0, row = 0; y < h; y += bh + gap, row++) {
             const ox = row % 2 === 0 ? 0 : bw / 2
-            for (let x = -bw; x < w; x += bw + 3) {
+            for (let x = -bw; x < w; x += bw + gap) {
               const soot = Math.random()
-              const r = 198 + Math.floor(soot * 32) - (soot > 0.9 ? 18 : 0)
-              const g = 92 + Math.floor(soot * 24)
-              const b = 52 + Math.floor(soot * 10)
+              const r = 168 + Math.floor(soot * 28) - (soot > 0.82 ? 42 : 0)
+              const g = 78 + Math.floor(soot * 18) - (soot > 0.82 ? 22 : 0)
+              const b = 48 + Math.floor(soot * 8) - (soot > 0.82 ? 12 : 0)
               ctx.fillStyle = `rgb(${r},${g},${b})`
               ctx.fillRect(x + ox, y, bw, bh)
+              ctx.fillStyle = 'rgba(28,18,12,0.28)'
+              ctx.fillRect(x + ox, y + bh - 2, bw, 2)
             }
           }
         },
@@ -143,17 +146,37 @@ export function useGrassTexture() {
         256,
         256,
         (ctx, w, h) => {
-          ctx.fillStyle = '#3d9a32'
+          ctx.fillStyle = '#2f8a28'
           ctx.fillRect(0, 0, w, h)
-          for (let i = 0; i < 1800; i++) {
-            const g = 118 + Math.random() * 70
-            ctx.fillStyle = `rgb(${g - 62},${g},${g - 88})`
-            ctx.fillRect(Math.random() * w, Math.random() * h, 3, 3)
+          for (let i = 0; i < 2200; i++) {
+            const g = 96 + Math.random() * 80
+            ctx.fillStyle = `rgb(${g - 70},${g},${g - 96})`
+            ctx.fillRect(Math.random() * w, Math.random() * h, 3, 4)
           }
-          ctx.fillStyle = '#5a8a30'
-          for (let i = 0; i < 10; i++) {
-            ctx.fillRect(Math.random() * w, Math.random() * h, 14, 8)
+          for (let i = 0; i < 18; i++) {
+            ctx.fillStyle = `rgba(${90 + Math.random() * 40},${70 + Math.random() * 24},32,0.45)`
+            ctx.beginPath()
+            ctx.ellipse(
+              Math.random() * w,
+              Math.random() * h,
+              16 + Math.random() * 28,
+              7 + Math.random() * 10,
+              Math.random(),
+              0,
+              Math.PI * 2,
+            )
+            ctx.fill()
           }
+          ctx.strokeStyle = 'rgba(92,70,38,0.35)'
+          ctx.lineWidth = 7
+          ctx.beginPath()
+          ctx.moveTo(0, h * 0.42)
+          ctx.quadraticCurveTo(w * 0.5, h * 0.55, w, h * 0.38)
+          ctx.stroke()
+          ctx.beginPath()
+          ctx.moveTo(w * 0.48, 0)
+          ctx.quadraticCurveTo(w * 0.4, h * 0.5, w * 0.55, h)
+          ctx.stroke()
         },
         6,
         6,
@@ -169,12 +192,20 @@ export function useDirtTexture() {
         256,
         256,
         (ctx, w, h) => {
-          ctx.fillStyle = '#6a5238'
+          ctx.fillStyle = '#6e5436'
           ctx.fillRect(0, 0, w, h)
-          for (let i = 0; i < 1400; i++) {
-            const v = 70 + Math.random() * 50
-            ctx.fillStyle = `rgb(${v},${v - 18},${v - 36})`
-            ctx.fillRect(Math.random() * w, Math.random() * h, 4, 3)
+          for (let i = 0; i < 1600; i++) {
+            const v = 78 + Math.random() * 48
+            ctx.fillStyle = `rgb(${v},${v - 22},${v - 40})`
+            ctx.fillRect(Math.random() * w, Math.random() * h, 3, 3)
+          }
+          for (let i = 0; i < 80; i++) {
+            ctx.fillStyle = `rgba(${120 + Math.random() * 40},${100 + Math.random() * 20},70,0.35)`
+            ctx.fillRect(Math.random() * w, Math.random() * h, 5, 4)
+          }
+          for (let i = 0; i < 40; i++) {
+            ctx.fillStyle = 'rgba(40,28,16,0.35)'
+            ctx.fillRect(Math.random() * w, Math.random() * h, 6, 2)
           }
         },
         4,

@@ -1,11 +1,12 @@
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
+import { Pine } from './ClashTerrain'
 
-/** Packed mill dressing: poplars, courtyard market, water tower, rail — leftover tile is not empty. */
+/** Packed mill dressing: pines on the grass, packed courtyard, rail, workers. */
 export function YardDressing() {
   return (
     <group>
-      <Poplars />
+      <Pines />
       <PipeRacks />
       <PalletRows />
       <RailSpur />
@@ -19,58 +20,21 @@ export function YardDressing() {
   )
 }
 
-function Poplar({ x, z, h = 4.2 }: { x: number; z: number; h?: number }) {
-  return (
-    <group position={[x, 0, z]}>
-      <mesh position={[0, h * 0.22, 0]} castShadow>
-        <cylinderGeometry args={[0.11, 0.18, h * 0.44, 6]} />
-        <meshStandardMaterial color="#8a5230" roughness={0.9} />
-      </mesh>
-      <mesh position={[0, h * 0.55, 0]} scale={[1, 1.45, 1]} castShadow>
-        <sphereGeometry args={[0.78, 8, 7]} />
-        <meshStandardMaterial color="#2f8a32" roughness={0.76} emissive="#1e5c20" emissiveIntensity={0.16} />
-      </mesh>
-      <mesh position={[0.22, h * 0.78, 0.08]} scale={[0.82, 1.15, 0.82]} castShadow>
-        <sphereGeometry args={[0.58, 8, 7]} />
-        <meshStandardMaterial color="#267828" roughness={0.76} emissive="#184c18" emissiveIntensity={0.12} />
-      </mesh>
-      <mesh position={[-0.18, h * 0.92, -0.1]} scale={[0.68, 1.05, 0.68]} castShadow>
-        <sphereGeometry args={[0.42, 7, 6]} />
-        <meshStandardMaterial color="#3a9c38" roughness={0.74} emissive="#246020" emissiveIntensity={0.1} />
-      </mesh>
-    </group>
-  )
-}
-
-function Poplars() {
+function Pines() {
   const spots: Array<[number, number, number]> = [
-    [-16.6, -16.4, 4.4],
-    [16.4, -16.5, 4.1],
-    [-16.7, 16.2, 4.6],
-    [16.6, 16.4, 4.3],
-    [-16.8, 0, 4.8],
-    [16.8, 4.2, 4.2],
-    [16.7, -5.5, 3.9],
-    [0, -16.8, 4.5],
-    [7.2, 16.6, 4.0],
-    [-8.2, 16.5, 4.4],
-    [-12.2, -16.7, 3.8],
-    [12.1, -16.6, 4.2],
-    [-16.5, 8.2, 3.7],
-    [16.5, 10.4, 4.0],
-    [-4.5, -16.7, 3.9],
-    [4.2, -16.8, 4.5],
-    [-16.6, -8.4, 4.1],
-    [10.4, 16.5, 3.8],
-    [-19.2, -10.2, 3.4],
-    [19.1, -8.4, 3.6],
-    [18.8, 8.2, 3.5],
-    [-18.6, 6.4, 3.7],
+    [-13.8, -13.6, 3.6],
+    [13.6, -13.5, 3.4],
+    [-13.7, 13.4, 3.8],
+    [13.8, 13.6, 3.5],
+    [-13.9, 6.2, 3.2],
+    [13.9, -6.1, 3.3],
+    [6.4, 13.7, 3.1],
+    [-6.2, -13.8, 3.4],
   ]
   return (
     <group>
       {spots.map(([x, z, h], i) => (
-        <Poplar key={i} x={x} z={z} h={h} />
+        <Pine key={i} x={x} z={z} h={h} />
       ))}
     </group>
   )
@@ -83,7 +47,7 @@ function PipeRacks() {
         {[-0.35, 0.35].map((z) => (
           <mesh key={z} position={[0, 0.55, z]} rotation={[0, 0, Math.PI / 2]} castShadow>
             <cylinderGeometry args={[0.11, 0.11, 2.6, 8]} />
-            <meshStandardMaterial color="#c45a32" metalness={0.4} roughness={0.45} emissive="#8a3018" emissiveIntensity={0.08} />
+            <meshStandardMaterial color="#c45a32" metalness={0.4} roughness={0.45} />
           </mesh>
         ))}
         {[-1.0, 0, 1.0].map((x) => (
@@ -179,7 +143,7 @@ function RailSpur() {
       <group position={[0, 0, 1.2]}>
         <mesh position={[0, 0.72, 0]} castShadow>
           <boxGeometry args={[1.75, 0.98, 3.5]} />
-          <meshStandardMaterial color="#c43828" roughness={0.52} emissive="#8a1810" emissiveIntensity={0.14} />
+          <meshStandardMaterial color="#c43828" roughness={0.52} />
         </mesh>
         <mesh position={[0, 1.32, -0.2]}>
           <boxGeometry args={[1.2, 0.12, 2.4]} />
@@ -260,7 +224,7 @@ function Barrel({ x, z, color }: { x: number; z: number; color: string }) {
   return (
     <mesh position={[x, 0.32, z]} castShadow>
       <cylinderGeometry args={[0.2, 0.22, 0.62, 8]} />
-      <meshStandardMaterial color={color} roughness={0.5} metalness={0.2} emissive={color} emissiveIntensity={0.08} />
+      <meshStandardMaterial color={color} roughness={0.5} metalness={0.2} />
     </mesh>
   )
 }
@@ -270,7 +234,7 @@ function Cart({ x, z, rot }: { x: number; z: number; rot: number }) {
     <group position={[x, 0, z]} rotation={[0, rot, 0]}>
       <mesh position={[0, 0.38, 0]} castShadow>
         <boxGeometry args={[0.95, 0.42, 0.62]} />
-        <meshStandardMaterial color="#c45a28" roughness={0.55} emissive="#8a3010" emissiveIntensity={0.1} />
+        <meshStandardMaterial color="#c45a28" roughness={0.55} />
       </mesh>
       <mesh position={[0.42, 0.55, 0]}>
         <boxGeometry args={[0.12, 0.55, 0.55]} />
@@ -314,7 +278,7 @@ function MarketStall({ x, z, rot }: { x: number; z: number; rot: number }) {
       ))}
       <mesh position={[0, 1.05, 0]} rotation={[0, 0, 0.35]} castShadow>
         <boxGeometry args={[1.35, 0.08, 0.95]} />
-        <meshStandardMaterial color="#d45830" roughness={0.6} emissive="#a03018" emissiveIntensity={0.12} />
+        <meshStandardMaterial color="#d45830" roughness={0.6} />
       </mesh>
     </group>
   )
@@ -322,33 +286,115 @@ function MarketStall({ x, z, rot }: { x: number; z: number; rot: number }) {
 
 function CourtyardFill() {
   const ring: Array<[number, string]> = [
-    [0.45, '#c45a28'],
-    [1.05, '#3a6a88'],
-    [2.05, '#c4a046'],
-    [2.65, '#8a4030'],
-    [3.65, '#c45a28'],
-    [4.25, '#3a6a88'],
-    [5.2, '#c4a046'],
-    [5.8, '#8a4030'],
+    [0.35, '#c45a28'],
+    [0.95, '#3a6a88'],
+    [1.55, '#c4a046'],
+    [2.15, '#8a4030'],
+    [2.75, '#c45a28'],
+    [3.35, '#3a6a88'],
+    [3.95, '#c4a046'],
+    [4.55, '#8a4030'],
+    [5.15, '#c45a28'],
+    [5.75, '#3a6a88'],
   ]
   return (
     <group>
       {ring.map(([a, color], i) => (
-        <Barrel key={i} x={Math.cos(a) * 1.78} z={Math.sin(a) * 1.78} color={color} />
+        <Barrel key={i} x={Math.cos(a) * 2.05} z={Math.sin(a) * 2.05} color={color} />
       ))}
-      <Cart x={1.82} z={1.48} rot={-0.45} />
-      <Cart x={-1.72} z={-1.42} rot={1.15} />
-      <CrateStack x={1.68} z={-1.62} />
-      <CrateStack x={-1.78} z={1.52} />
-      <MarketStall x={2.12} z={0.55} rot={Math.PI / 2} />
-      <MarketStall x={-2.12} z={-0.55} rot={-Math.PI / 2} />
-      <mesh position={[0.15, 0.42, 2.05]} castShadow>
+      <Cart x={1.92} z={1.55} rot={-0.45} />
+      <Cart x={-1.82} z={-1.48} rot={1.15} />
+      <Cart x={0.15} z={-2.55} rot={0.2} />
+      <CrateStack x={1.72} z={-1.68} />
+      <CrateStack x={-1.82} z={1.58} />
+      <CrateStack x={-0.15} z={2.65} />
+      <CrateStack x={2.55} z={0.15} />
+      <MarketStall x={2.22} z={0.55} rot={Math.PI / 2} />
+      <MarketStall x={-2.22} z={-0.55} rot={-Math.PI / 2} />
+      <MarketStall x={0.55} z={-2.15} rot={0} />
+      <MarketStall x={-0.55} z={2.15} rot={Math.PI} />
+      <mesh position={[0.15, 0.42, 2.85]} castShadow>
         <cylinderGeometry args={[0.28, 0.34, 0.7, 10]} />
         <meshStandardMaterial color="#8a9098" metalness={0.4} roughness={0.4} />
       </mesh>
-      <mesh position={[0.15, 0.82, 2.05]}>
+      <mesh position={[0.15, 0.82, 2.85]}>
         <cylinderGeometry args={[0.08, 0.12, 0.22, 8]} />
         <meshStandardMaterial color="#c4a046" />
+      </mesh>
+      <ApronTruck />
+      <Worker x={0.95} z={3.45} rot={0.5} color="#ff6a28" />
+      <Worker x={-1.05} z={3.35} rot={-0.4} color="#f0c040" />
+      <Worker x={3.15} z={-0.85} rot={1.2} color="#e07030" />
+      <Worker x={-3.25} z={0.55} rot={-1.1} color="#8aa0b0" />
+      <Worker x={1.55} z={-3.15} rot={2.4} color="#c44a22" />
+      <Worker x={-1.65} z={-3.05} rot={-2.2} color="#e07030" />
+      <group position={[-4.4, 0, 0.8]}>
+        {[-0.35, 0.35].map((z) => (
+          <mesh key={z} position={[0, 0.55, z]} rotation={[0, 0, Math.PI / 2]} castShadow>
+            <cylinderGeometry args={[0.1, 0.1, 2.4, 8]} />
+            <meshStandardMaterial color="#5a8aa0" metalness={0.4} roughness={0.42} />
+          </mesh>
+        ))}
+      </group>
+      <group position={[4.5, 0, 1.1]}>
+        {[-0.35, 0.35].map((z) => (
+          <mesh key={z} position={[0, 0.55, z]} rotation={[0, 0, Math.PI / 2]} castShadow>
+            <cylinderGeometry args={[0.1, 0.1, 2.4, 8]} />
+            <meshStandardMaterial color="#c45a32" metalness={0.4} roughness={0.45} />
+          </mesh>
+        ))}
+      </group>
+    </group>
+  )
+}
+
+function ApronTruck() {
+  return (
+    <group position={[-0.4, 0, -4.15]} rotation={[0, 0.35, 0]}>
+      <mesh position={[0, 0.72, 0]} castShadow receiveShadow>
+        <boxGeometry args={[1.7, 0.95, 0.95]} />
+        <meshStandardMaterial color="#c44a28" roughness={0.52} />
+      </mesh>
+      <mesh position={[-1.15, 0.55, 0]} castShadow>
+        <boxGeometry args={[0.6, 0.6, 0.88]} />
+        <meshStandardMaterial color="#3a3a38" />
+      </mesh>
+      {([-0.5, 0.5] as const).map((dx) => (
+        <mesh key={dx} position={[dx, 0.22, 0.48]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.2, 0.2, 0.16, 8]} />
+          <meshStandardMaterial color="#1a1a18" />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
+function Worker({ x, z, rot, color }: { x: number; z: number; rot: number; color: string }) {
+  return (
+    <group position={[x, 0, z]} rotation={[0, rot, 0]} scale={0.9}>
+      <mesh position={[0, 0.62, 0]} castShadow>
+        <boxGeometry args={[0.38, 0.48, 0.24]} />
+        <meshBasicMaterial color={color} toneMapped={false} />
+      </mesh>
+      <mesh position={[0, 0.98, 0]} castShadow>
+        <sphereGeometry args={[0.16, 8, 7]} />
+        <meshBasicMaterial color="#f0d0a8" toneMapped={false} />
+      </mesh>
+      <mesh position={[-0.16, 0.28, 0]} castShadow>
+        <capsuleGeometry args={[0.07, 0.28, 3, 6]} />
+        <meshBasicMaterial color="#2a2218" toneMapped={false} />
+      </mesh>
+      <mesh position={[0.16, 0.28, 0]} castShadow>
+        <capsuleGeometry args={[0.07, 0.28, 3, 6]} />
+        <meshBasicMaterial color="#2a2218" toneMapped={false} />
+      </mesh>
+      <mesh position={[-0.26, 0.58, 0.02]} rotation={[0, 0, 0.35]} castShadow>
+        <capsuleGeometry args={[0.06, 0.28, 3, 6]} />
+        <meshBasicMaterial color="#c44a22" toneMapped={false} />
+      </mesh>
+      <mesh position={[0.26, 0.58, 0.02]} rotation={[0, 0, -0.35]} castShadow>
+        <capsuleGeometry args={[0.06, 0.28, 3, 6]} />
+        <meshBasicMaterial color="#c44a22" toneMapped={false} />
       </mesh>
     </group>
   )
@@ -367,11 +413,11 @@ function WaterTower() {
       )}
       <mesh position={[0, 4.55, 0]} castShadow>
         <cylinderGeometry args={[0.95, 1.05, 1.7, 12]} />
-        <meshStandardMaterial color="#c8d0d6" metalness={0.4} roughness={0.4} emissive="#8a949c" emissiveIntensity={0.12} />
+        <meshStandardMaterial color="#c8d0d6" metalness={0.4} roughness={0.4} />
       </mesh>
       <mesh position={[0, 5.55, 0]} castShadow>
         <coneGeometry args={[1.12, 0.7, 8]} />
-        <meshStandardMaterial color="#c45a32" roughness={0.55} emissive="#8a2818" emissiveIntensity={0.12} />
+        <meshStandardMaterial color="#c45a32" roughness={0.55} />
       </mesh>
       <mesh position={[0, 3.55, 0]}>
         <cylinderGeometry args={[0.22, 0.22, 0.55, 8]} />
