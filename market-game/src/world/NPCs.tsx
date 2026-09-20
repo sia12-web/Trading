@@ -94,7 +94,7 @@ function ShiftWalker({ seed, alive }: { seed: number; alive: number }) {
     [3.2, 4.8],
   ]
   const dest = dests[seed % dests.length]!
-  const gate: [number, number] = [(seed % 5) * 0.7 - 1.4, 12.35]
+  const gate: [number, number] = seed % 2 === 0 ? [-4.45 + (seed % 3) * 0.35, 12.2] : [4.45 - (seed % 3) * 0.35, 12.2]
 
   useFrame((s) => {
     if (!ref.current) return
@@ -112,7 +112,7 @@ function ShiftWalker({ seed, alive }: { seed: number; alive: number }) {
 
   const color = seed % 3 === 0 ? '#c4a046' : seed % 3 === 1 ? '#5a7a50' : '#8aa0b0'
   return (
-    <group ref={ref} position={[gate[0], 0, gate[1]]} scale={1.28}>
+    <group ref={ref} position={[gate[0], 0, gate[1]]} scale={1.55}>
       <TroopBody color={color} left={left} right={right} />
     </group>
   )
@@ -149,7 +149,7 @@ function Person({
   const doorLocal: [number, number] = [(col - 1.5) * 0.62, 2.65 + row * 0.62]
   const worldDoor = rotate2(doorLocal, yaw)
   const home: [number, number] = [store.position[0] + worldDoor[0], store.position[2] + worldDoor[1]]
-  const gate: [number, number] = [(seed % 5) * 0.65 - 1.3, 12.35]
+  const gate: [number, number] = seed % 2 === 0 ? [-4.45 + (seed % 3) * 0.3, 12.2] : [4.45 - (seed % 3) * 0.3, 12.2]
 
   useFrame((s) => {
     if (!ref.current) return
@@ -171,7 +171,7 @@ function Person({
   })
 
   return (
-    <group ref={ref} position={[home[0], 0, home[1]]} scale={1.32}>
+    <group ref={ref} position={[home[0], 0, home[1]]} scale={1.48}>
       <TroopBody color={color} left={left} right={right} hardhat={kind !== 'broker'} kit={kind} />
     </group>
   )

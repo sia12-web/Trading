@@ -11,7 +11,7 @@ import {
 } from './auction'
 import { buildDowMarket } from './marketData'
 import { OPEN_CINEMATIC_SEC } from './session'
-import { COURT_SIGNS, COURT_STENCILS, porchOf, STORE_PLAQUES, STORES, storeShortName } from './stores'
+import { COURT_SIGNS, COURT_STENCILS, porchOf, STORE_PLAQUES, STORES, storeShortName, cameraLadderLocals, apronGaugeLocal } from './stores'
 import type { OhlcvBar } from './types'
 
 function bar(partial: Partial<OhlcvBar> & { close: number }): OhlcvBar {
@@ -228,18 +228,42 @@ assert.ok(
   'SPIRE is named on the west five-month court',
 )
 assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'SPIRE')!.z > 2,
-  'SPIRE plaque sits camera-near of the west court, not behind the foundry',
+  STORE_PLAQUES.find((s) => s.word === 'SPIRE')!.z > 5,
+  'SPIRE plaque sits camera-near of the west court, not behind the hall',
 )
 assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'LOFT')!.z > -2,
+  STORE_PLAQUES.find((s) => s.word === 'LOFT')!.z > 0,
   'LOFT plaque sits in the default Clash crop with the court names',
+)
+assert.ok(
+  STORE_PLAQUES.find((s) => s.word === 'FOUNDRY')!.z > 11.5,
+  'FOUNDRY plaque sits on the south apron, not under the shell',
+)
+assert.ok(
+  STORE_PLAQUES.find((s) => s.word === 'PIT')!.z > 7,
+  'PIT plaque stays camera-near of the five-month court',
 )
 assert.equal(storeShortName('y-poc'), 'HALL', 'tape never prints AUCTION from AUCTION HALL')
 assert.equal(storeShortName('y-hvn'), 'FOUNDRY')
 assert.equal(storeShortName('y-lvn'), 'DOCK')
 assert.equal(storeShortName('5d-poc'), 'MILL')
 assert.equal(storeShortName('avwap'), 'SPIRE')
+
+const yFaces = cameraLadderLocals('yesterday', 4, 4)
+assert.ok(yFaces.some((f) => f.face === 'south' && f.p[2] > 0), 'yesterday thermometer on the south (camera-near) wall')
+assert.ok(yFaces.some((f) => f.face === 'east' && f.p[0] > 0), 'yesterday thermometer on the east (camera-right) wall')
+const dFaces = cameraLadderLocals('fiveDay', 4, 4)
+assert.ok(dFaces.some((f) => f.face === 'south' && f.p[0] > 0), 'five-day south face is local +X (world +Z)')
+assert.ok(dFaces.some((f) => f.face === 'east' && f.p[2] < 0), 'five-day east face is local -Z (world +X)')
+const mFaces = cameraLadderLocals('fiveMonth', 4, 4)
+assert.ok(mFaces.some((f) => f.face === 'south' && f.p[0] < 0), 'five-month south face is local -X (world +Z)')
+assert.ok(mFaces.some((f) => f.face === 'east' && f.p[2] > 0), 'five-month courtyard face is local +Z (world +X)')
+const apronY = apronGaugeLocal('yesterday', 4, 4)
+const apronD = apronGaugeLocal('fiveDay', 4, 4)
+const apronM = apronGaugeLocal('fiveMonth', 4, 4)
+assert.ok(apronY[0] > 0 && apronY[2] > 0, 'yesterday apron gauge on +X+Z corner')
+assert.ok(apronD[0] > 0 && apronD[2] < 0, 'five-day apron gauge maps to world +X+Z')
+assert.ok(apronM[0] < 0 && apronM[2] > 0, 'five-month apron gauge maps to world +X+Z')
 
 const hallTime = timeOpportunity({ kind: 'poc', tpoAtPrice: 6.2, sessionProgress: 0.02 })
 const millTime = timeOpportunity({ kind: 'poc', tpoAtPrice: 0.4, sessionProgress: 0.02 })

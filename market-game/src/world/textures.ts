@@ -285,16 +285,18 @@ export function makeStencilTexture(word: string, ink: string): THREE.CanvasTextu
 
 export function makeLadderLabelTexture(word: string, ink: string): THREE.CanvasTexture {
   const c = document.createElement('canvas')
-  c.width = 256
-  c.height = 80
+  c.width = 384
+  c.height = 128
   const ctx = c.getContext('2d')!
+  ctx.fillStyle = '#140c08'
+  ctx.fillRect(0, 0, 384, 128)
   ctx.fillStyle = ink
-  ctx.fillRect(0, 0, 256, 80)
-  ctx.fillStyle = '#f4ead8'
-  ctx.font = 'bold 48px "IBM Plex Mono", sans-serif'
+  ctx.fillRect(8, 8, 368, 112)
+  ctx.fillStyle = '#f8f0dc'
+  ctx.font = 'bold 72px "IBM Plex Mono", sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText(word, 128, 42)
+  ctx.fillText(word, 192, 68)
   const t = new THREE.CanvasTexture(c)
   t.colorSpace = THREE.SRGBColorSpace
   t.needsUpdate = true

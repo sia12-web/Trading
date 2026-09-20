@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { fmtPx, PRINT_HOLD_MS, rangeHeight } from '../game/auction'
 import { advertisedPrice, inspectStore, marketWorld, stallState } from '../game/gameStore'
-import { storeYaw } from '../game/stores'
+import { apronGaugeLocal, cameraLadderLocals, storeYaw } from '../game/stores'
 import type { AnchoredVwap, StoreDef, VolumeProfile } from '../game/types'
 import { useGame } from '../ui/useGame'
 import { makeChalkTexture, makeCourtSignTexture, makeFasciaTexture, makeLadderLabelTexture, makeOpenBannerTexture, useBrickTexture, useMetalTexture } from './textures'
@@ -84,6 +84,12 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
         width={shell.w}
         depth={shell.d}
       />
+      <ApronGauge
+        p={apronGaugeLocal(store.range, shell.w, shell.d)}
+        range={range}
+        nodePx={price}
+        color={store.accent}
+      />
       <Fascia title={label} paint={store.accent} y={shell.fasciaY + 0.28} width={Math.min(5.05, shell.w * 1.12)} z={shell.d * 0.52 + 0.08} />
       <FaceShutter open={st.door} width={Math.min(2.55, shell.w * 0.58)} z={shell.d * 0.52 + 0.16} />
       <TimeFlag stall={st} z={shell.d * 0.55 + 0.72} />
@@ -151,34 +157,50 @@ function RangeStoreys({
   width: number
   depth: number
 }) {
-  const yLo = rangeHeight(range.lo, range.lo, range.hi, 0.22, 3.72)
-  const yHi = rangeHeight(range.hi, range.lo, range.hi, 0.22, 3.72)
-  const yVal = rangeHeight(range.val, range.lo, range.hi, 0.22, 3.72)
-  const yVah = rangeHeight(range.vah, range.lo, range.hi, 0.22, 3.72)
-  const yNode = rangeHeight(nodePx, range.lo, range.hi, 0.22, 3.72)
-  // Camera sits at +X+Z. Vertical thermometers on those faces — not gold lintels:
-  // yesterday south+east; five-day east+south; five-month courtyard+south.
-  const faces =
-    rangeKind === 'fiveDay'
-      ? [
-          { p: [0, 0, -depth * 0.52 - 0.1] as [number, number, number], r: [0, Math.PI, 0] as [number, number, number], w: width },
-          { p: [-width * 0.52 - 0.1, 0, 0] as [number, number, number], r: [0, -Math.PI / 2, 0] as [number, number, number], w: depth },
-        ]
-      : rangeKind === 'fiveMonth'
-        ? [
-            { p: [0, 0, depth * 0.52 + 0.1] as [number, number, number], r: [0, 0, 0] as [number, number, number], w: width },
-            { p: [width * 0.52 + 0.1, 0, 0] as [number, number, number], r: [0, Math.PI / 2, 0] as [number, number, number], w: depth },
-          ]
-        : [
-            { p: [0, 0, depth * 0.52 + 0.1] as [number, number, number], r: [0, 0, 0] as [number, number, number], w: width },
-            { p: [width * 0.52 + 0.1, 0, 0] as [number, number, number], r: [0, Math.PI / 2, 0] as [number, number, number], w: depth },
-          ]
+  const yLo = rangeHeight(range.lo, range.lo, range.hi, 0.28, 4.15)
+  const yHi = rangeHeight(range.hi, range.lo, range.hi, 0.28, 4.15)
+  const yVal = rangeHeight(range.val, range.lo, range.hi, 0.28, 4.15)
+  const yVah = rangeHeight(range.vah, range.lo, range.hi, 0.28, 4.15)
+  const yNode = rangeHeight(nodePx, range.lo, range.hi, 0.28, 4.15)
+  const faces = cameraLadderLocals(rangeKind, width, depth)
   return (
     <>
-      {faces.map((f, i) => (
-        <Ladder key={i} p={f.p} r={f.r} wallW={f.w} yLo={yLo} yHi={yHi} yVal={yVal} yVah={yVah} yNode={yNode} color={color} />
+      {faces.map((f) => (
+        <Ladder key={f.face} p={f.p} r={f.r} wallW={f.w} yLo={yLo} yHi={yHi} yVal={yVal} yVah={yVah} yNode={yNode} color={color} />
       ))}
     </>
+  )
+}
+
+function ApronGauge({
+  p,
+  range,
+  nodePx,
+  color,
+}: {
+  p: [number, number, number]
+  range: { lo: number; hi: number; val: number; vah: number }
+  nodePx: number
+  color: string
+}) {
+  const yLo = rangeHeight(range.lo, range.lo, range.hi, 0.32, 4.35)
+  const yHi = rangeHeight(range.hi, range.lo, range.hi, 0.32, 4.35)
+  const yVal = rangeHeight(range.val, range.lo, range.hi, 0.32, 4.35)
+  const yVah = rangeHeight(range.vah, range.lo, range.hi, 0.32, 4.35)
+  const yNode = rangeHeight(nodePx, range.lo, range.hi, 0.32, 4.35)
+  return (
+    <Ladder
+      p={p}
+      r={[0, Math.PI / 4, 0]}
+      wallW={2.4}
+      yLo={yLo}
+      yHi={yHi}
+      yVal={yVal}
+      yVah={yVah}
+      yNode={yNode}
+      color={color}
+      apron
+    />
   )
 }
 
@@ -192,6 +214,7 @@ function Ladder({
   yVah,
   yNode,
   color,
+  apron = false,
 }: {
   p: [number, number, number]
   r: [number, number, number]
@@ -202,13 +225,14 @@ function Ladder({
   yVah: number
   yNode: number
   color: string
+  apron?: boolean
 }) {
-  const vaH = Math.max(0.62, yVah - yVal)
-  const x = -wallW * 0.46
-  const ticks = 8
+  const vaH = Math.max(0.85, yVah - yVal)
+  const x = apron ? 0 : -wallW * 0.44
+  const ticks = 9
   const lowTex = useMemo(() => makeLadderLabelTexture('LOW', '#1a1008'), [])
   const valTex = useMemo(() => makeLadderLabelTexture('VAL', color), [color])
-  const highTex = useMemo(() => makeLadderLabelTexture('HIGH', '#c49018'), [])
+  const highTex = useMemo(() => makeLadderLabelTexture('HIGH', '#b07810'), [])
   useEffect(
     () => () => {
       lowTex.dispose()
@@ -219,45 +243,49 @@ function Ladder({
   )
   return (
     <group position={p} rotation={r}>
-      <mesh position={[x, 2.15, 0.34]} castShadow>
-        <boxGeometry args={[0.3, 4.35, 0.3]} />
-        <meshBasicMaterial color="#1a120c" />
+      <mesh position={[x, 2.35, 0.22]} castShadow>
+        <boxGeometry args={[0.42, 4.85, 0.42]} />
+        <meshBasicMaterial color="#14100c" />
+      </mesh>
+      <mesh position={[x + 0.28, 2.35, 0.18]} castShadow>
+        <boxGeometry args={[0.55, 4.55, 0.12]} />
+        <meshBasicMaterial color="#2a2218" />
       </mesh>
       {Array.from({ length: ticks }, (_, i) => {
         const y = yLo + (i / (ticks - 1)) * (yHi - yLo)
         return (
-          <mesh key={i} position={[x + 0.32, y, 0.38]}>
-            <boxGeometry args={[0.42, 0.07, 0.14]} />
-            <meshBasicMaterial color="#d8c8a8" />
+          <mesh key={i} position={[x + 0.52, y, 0.32]}>
+            <boxGeometry args={[0.72, 0.1, 0.18]} />
+            <meshBasicMaterial color="#e8dcc0" />
           </mesh>
         )
       })}
-      <mesh position={[x + 0.38, (yVal + yVah) / 2, 0.42]} castShadow>
-        <boxGeometry args={[0.7, vaH, 0.22]} />
+      <mesh position={[x + 0.58, (yVal + yVah) / 2, 0.4]} castShadow>
+        <boxGeometry args={[1.05, vaH, 0.32]} />
         <meshBasicMaterial color={color} />
       </mesh>
-      <mesh position={[x + 0.42, yLo, 0.46]} castShadow>
-        <boxGeometry args={[0.78, 0.28, 0.22]} />
-        <meshBasicMaterial color="#1a1008" />
+      <mesh position={[x + 0.62, yLo, 0.46]} castShadow>
+        <boxGeometry args={[1.18, 0.42, 0.3]} />
+        <meshBasicMaterial color="#0c0806" />
       </mesh>
-      <mesh position={[x + 0.42, yHi, 0.46]} castShadow>
-        <boxGeometry args={[0.78, 0.28, 0.22]} />
+      <mesh position={[x + 0.62, yHi, 0.46]} castShadow>
+        <boxGeometry args={[1.18, 0.42, 0.3]} />
         <meshBasicMaterial color="#f0c84a" />
       </mesh>
-      <mesh position={[x + 0.62, yNode, 0.5]} castShadow>
-        <boxGeometry args={[0.95, 0.22, 0.24]} />
+      <mesh position={[x + 0.92, yNode, 0.54]} castShadow>
+        <boxGeometry args={[1.45, 0.28, 0.34]} />
         <meshBasicMaterial color="#fff6d0" />
       </mesh>
-      <mesh position={[x + 0.95, yLo, 0.48]}>
-        <planeGeometry args={[0.7, 0.22]} />
+      <mesh position={[x + 1.42, yLo, 0.52]}>
+        <planeGeometry args={[1.15, 0.38]} />
         <meshBasicMaterial map={lowTex} toneMapped={false} />
       </mesh>
-      <mesh position={[x + 0.95, (yVal + yVah) / 2, 0.48]}>
-        <planeGeometry args={[0.7, 0.22]} />
+      <mesh position={[x + 1.42, (yVal + yVah) / 2, 0.52]}>
+        <planeGeometry args={[1.15, 0.38]} />
         <meshBasicMaterial map={valTex} toneMapped={false} />
       </mesh>
-      <mesh position={[x + 0.95, yHi, 0.48]}>
-        <planeGeometry args={[0.78, 0.22]} />
+      <mesh position={[x + 1.48, yHi, 0.52]}>
+        <planeGeometry args={[1.28, 0.4]} />
         <meshBasicMaterial map={highTex} toneMapped={false} />
       </mesh>
     </group>
@@ -330,27 +358,27 @@ function NyCashBunting({ y, z }: { y: number; z: number }) {
 }
 
 function FaceShutter({ open, width, z }: { open: number; width: number; z: number }) {
-  const h = 2.15 * (1 - open * 0.92)
+  const h = 2.45 * (1 - open * 0.94)
   return (
     <group position={[0, 0, z]}>
-      <mesh position={[0, 2.22, 0]}>
-        <boxGeometry args={[width + 0.28, 0.14, 0.12]} />
+      <mesh position={[0, 2.48, 0]}>
+        <boxGeometry args={[width + 0.42, 0.18, 0.16]} />
         <meshStandardMaterial color="#e4d4b8" metalness={0.18} roughness={0.55} />
       </mesh>
-      <mesh position={[0, h / 2 + 0.12, 0.03]} castShadow>
-        <boxGeometry args={[width, Math.max(0.12, h), 0.14]} />
+      <mesh position={[0, h / 2 + 0.12, 0.04]} castShadow>
+        <boxGeometry args={[width + 0.08, Math.max(0.14, h), 0.18]} />
         <meshStandardMaterial
-          color={open > 0.45 ? '#c4a070' : '#1c1814'}
+          color={open > 0.45 ? '#d4b078' : '#12100e'}
           metalness={0.32}
           roughness={0.5}
           emissive={open > 0.45 ? '#8a5020' : '#000000'}
-          emissiveIntensity={open > 0.45 ? 0.28 : 0}
+          emissiveIntensity={open > 0.45 ? 0.38 : 0}
         />
       </mesh>
       {open > 0.2 && (
-        <mesh position={[0, 0.55, -0.06]}>
-          <boxGeometry args={[width * 0.9, 1.25 * open, 0.04]} />
-          <meshBasicMaterial color="#ffc070" transparent opacity={0.2 + open * 0.4} toneMapped={false} />
+        <mesh position={[0, 0.62, -0.06]}>
+          <boxGeometry args={[width * 0.92, 1.45 * open, 0.05]} />
+          <meshBasicMaterial color="#ffc070" transparent opacity={0.28 + open * 0.45} toneMapped={false} />
         </mesh>
       )}
     </group>
@@ -360,21 +388,21 @@ function FaceShutter({ open, width, z }: { open: number; width: number; z: numbe
 function TimeFlag({ stall, z }: { stall: Stall; z: number }) {
   const fair = stall.fairToday && stall.timeOpportunity < 0.38
   const word = fair ? 'FAIR' : stall.door > 0.45 ? 'OPEN' : 'SHUT'
-  const ink = fair ? '#6a5840' : stall.door > 0.45 ? '#e8c04a' : '#3a3028'
+  const ink = fair ? '#5a4830' : stall.door > 0.45 ? '#c49018' : '#2a2218'
   const tex = useMemo(() => makeLadderLabelTexture(word, ink), [word, ink])
   useEffect(() => () => tex.dispose(), [tex])
   return (
-    <group position={[0, 0, z]}>
-      <mesh position={[0, 1.55, 0]} castShadow>
-        <boxGeometry args={[0.08, 1.55, 0.08]} />
+    <group position={[1.55, 0, z + 0.15]}>
+      <mesh position={[0, 1.85, 0]} castShadow>
+        <boxGeometry args={[0.12, 2.15, 0.12]} />
         <meshStandardMaterial color="#c4a05a" metalness={0.35} roughness={0.5} />
       </mesh>
-      <mesh position={[0.02, 2.35, 0.08]} castShadow>
-        <boxGeometry args={[1.15, 0.42, 0.08]} />
-        <meshStandardMaterial color="#2a1c14" />
+      <mesh position={[0.04, 2.95, 0.1]} castShadow>
+        <boxGeometry args={[1.85, 0.72, 0.12]} />
+        <meshStandardMaterial color="#1a120c" />
       </mesh>
-      <mesh position={[0.02, 2.35, 0.14]}>
-        <planeGeometry args={[1.05, 0.32]} />
+      <mesh position={[0.04, 2.95, 0.18]}>
+        <planeGeometry args={[1.72, 0.58]} />
         <meshBasicMaterial map={tex} toneMapped={false} />
       </mesh>
     </group>
@@ -405,21 +433,21 @@ function PorchTell({ stall, kind, z }: { stall: Stall; kind: StoreDef['kind']; z
 function PrintBurst() {
   const wood = ['#8a6240', '#7a868c', '#6a5840', '#9a7048']
   return (
-    <group position={[0, 0.08, 3.55]}>
+    <group position={[0.35, 0.08, 4.15]}>
       {Array.from({ length: 30 }, (_, i) => (
         <mesh
           key={i}
-          position={[((i % 5) - 2) * 0.7, 0.26 + Math.floor(i / 5) * 0.48, ((i % 3) - 1) * 0.42]}
+          position={[((i % 5) - 2) * 0.78, 0.3 + Math.floor(i / 5) * 0.54, ((i % 3) - 1) * 0.48]}
           rotation={[0, (i % 4) * 0.08, 0]}
           castShadow
         >
-          <boxGeometry args={[0.64, 0.44, 0.52]} />
+          <boxGeometry args={[0.72, 0.5, 0.58]} />
           <meshStandardMaterial color={wood[i % wood.length]} roughness={0.72} metalness={i % 3 === 1 ? 0.38 : 0.05} />
         </mesh>
       ))}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0.12]}>
-        <ringGeometry args={[1.55, 2.35, 24]} />
-        <meshBasicMaterial color="#c8d890" transparent opacity={0.92} toneMapped={false} />
+        <ringGeometry args={[1.75, 2.65, 24]} />
+        <meshBasicMaterial color="#c8d890" transparent opacity={0.94} toneMapped={false} />
       </mesh>
     </group>
   )
@@ -501,20 +529,26 @@ function GoodsPile({ stall, kind, z }: { stall: Stall; kind: StoreDef['kind']; z
 }
 
 function EmptyRacks({ z }: { z: number }) {
+  const tex = useMemo(() => makeLadderLabelTexture('THIN', '#3a3830'), [])
+  useEffect(() => () => tex.dispose(), [tex])
   return (
-    <group position={[0, 0.85, z + 0.22]}>
-      {[-1.35, 0, 1.35].map((x) => (
+    <group position={[0, 0.95, z + 0.22]}>
+      {[-1.45, 0, 1.45].map((x) => (
         <mesh key={x} position={[x, 0, 0]}>
-          <boxGeometry args={[0.18, 2.15, 1.25]} />
+          <boxGeometry args={[0.22, 2.45, 1.45]} />
           <meshStandardMaterial color="#5a5348" metalness={0.22} roughness={0.55} />
         </mesh>
       ))}
       {[0.12, 0.55, 0.98, 1.42, 1.85].map((y) => (
         <mesh key={y} position={[0, y - 0.55, 0]}>
-          <boxGeometry args={[2.75, 0.08, 1.15]} />
+          <boxGeometry args={[3.05, 0.1, 1.35]} />
           <meshStandardMaterial color="#6a6258" />
         </mesh>
       ))}
+      <mesh position={[0, 1.55, 0.78]}>
+        <planeGeometry args={[1.55, 0.42]} />
+        <meshBasicMaterial map={tex} toneMapped={false} />
+      </mesh>
     </group>
   )
 }
@@ -1015,18 +1049,18 @@ function Spire({
         <boxGeometry args={[2.65, 0.18, 0.7]} />
         <meshStandardMaterial color="#8a7a52" metalness={0.42} roughness={0.48} />
       </mesh>
-      <mesh ref={cab} position={[0, 2.9, 2.15]} castShadow>
-        <boxGeometry args={[2.35, 1.45, 1.35]} />
+      <mesh ref={cab} position={[0, 2.9, 2.35]} castShadow>
+        <boxGeometry args={[2.65, 1.75, 1.55]} />
         <meshStandardMaterial
-          color="#b89048"
+          color="#d4a046"
           metalness={0.42}
           roughness={0.48}
           emissive="#8a6a30"
-          emissiveIntensity={printed ? 0.7 : 0.22}
+          emissiveIntensity={printed ? 0.85 : 0.38}
         />
       </mesh>
-      <mesh ref={needle} position={[1.95, 2.8, 1.95]} castShadow>
-        <boxGeometry args={[0.48, 1.05, 0.85]} />
+      <mesh ref={needle} position={[2.15, 2.8, 2.15]} castShadow>
+        <boxGeometry args={[0.58, 1.25, 0.95]} />
         <meshBasicMaterial color="#ffe080" />
       </mesh>
       <mesh position={[1.78, yU, 0]} castShadow>

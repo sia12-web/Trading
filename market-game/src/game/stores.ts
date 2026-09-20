@@ -147,15 +147,15 @@ export const COURT_STENCILS = [
  * read in the same Clash crop as the court plaques — not only on inspect.
  */
 export const STORE_PLAQUES = [
-  { word: 'FOUNDRY', ink: '#e07040', x: -4.35, z: 10.65, wide: 3.75 },
-  { word: 'HALL', ink: '#e8b050', x: 2.85, z: 10.55, wide: 2.95 },
-  { word: 'DOCK', ink: '#6aa0b8', x: 7.55, z: 10.45, wide: 2.95 },
-  { word: 'ALLEY', ink: '#7a90a0', x: 11.15, z: 6.05, wide: 3.15 },
-  { word: 'MILL', ink: '#d48848', x: 11.25, z: 1.65, wide: 2.95 },
-  { word: 'YARD', ink: '#d48848', x: 11.35, z: -2.35, wide: 2.85 },
-  { word: 'PIT', ink: '#c4a060', x: -8.25, z: 7.15, wide: 2.65 },
-  { word: 'SPIRE', ink: '#6ab0c4', x: -8.35, z: 3.25, wide: 3.35 },
-  { word: 'LOFT', ink: '#7a98c0', x: -8.25, z: -1.45, wide: 2.85 },
+  { word: 'FOUNDRY', ink: '#e07040', x: -6.15, z: 12.05, wide: 3.95 },
+  { word: 'HALL', ink: '#e8b050', x: 2.95, z: 11.25, wide: 2.95 },
+  { word: 'DOCK', ink: '#6aa0b8', x: 7.85, z: 11.05, wide: 2.95 },
+  { word: 'ALLEY', ink: '#7a90a0', x: 11.55, z: 6.35, wide: 3.15 },
+  { word: 'MILL', ink: '#d48848', x: 11.65, z: 2.15, wide: 2.95 },
+  { word: 'YARD', ink: '#d48848', x: 11.75, z: -1.55, wide: 2.85 },
+  { word: 'PIT', ink: '#c4a060', x: -8.85, z: 8.15, wide: 2.65 },
+  { word: 'SPIRE', ink: '#6ab0c4', x: -8.95, z: 5.85, wide: 3.55 },
+  { word: 'LOFT', ink: '#7a98c0', x: -8.85, z: 0.95, wide: 2.85 },
 ] as const
 
 const SHORT: Record<StoreDef['building'], string> = {
@@ -181,6 +181,41 @@ export function storeYaw(range: RangeKind): number {
   if (range === 'fiveMonth') return Math.PI / 2
   if (range === 'fiveDay') return -Math.PI / 2
   return 0
+}
+
+/**
+ * Thermometer locals whose labels face the Clash camera (+X,+Z).
+ * Yesterday: south + east. Five-day: east + south. Five-month: courtyard-east + south.
+ * Never the north/back wall — those read as gold lintels from this camera.
+ */
+export function cameraLadderLocals(
+  range: RangeKind,
+  width: number,
+  depth: number,
+): Array<{ p: [number, number, number]; r: [number, number, number]; w: number; face: 'south' | 'east' }> {
+  if (range === 'fiveDay') {
+    return [
+      { p: [0, 0, -depth * 0.52 - 0.16], r: [0, Math.PI, 0], w: width, face: 'east' },
+      { p: [width * 0.52 + 0.16, 0, 0], r: [0, Math.PI / 2, 0], w: depth, face: 'south' },
+    ]
+  }
+  if (range === 'fiveMonth') {
+    return [
+      { p: [0, 0, depth * 0.52 + 0.16], r: [0, 0, 0], w: width, face: 'east' },
+      { p: [-width * 0.52 - 0.16, 0, 0], r: [0, -Math.PI / 2, 0], w: depth, face: 'south' },
+    ]
+  }
+  return [
+    { p: [0, 0, depth * 0.52 + 0.16], r: [0, 0, 0], w: width, face: 'south' },
+    { p: [width * 0.52 + 0.16, 0, 0], r: [0, Math.PI / 2, 0], w: depth, face: 'east' },
+  ]
+}
+
+/** Free-standing apron gauge on the camera-near (+X,+Z) corner. */
+export function apronGaugeLocal(range: RangeKind, width: number, depth: number): [number, number, number] {
+  if (range === 'fiveDay') return [width * 0.48, 0, -depth * 0.62]
+  if (range === 'fiveMonth') return [-width * 0.48, 0, depth * 0.62]
+  return [width * 0.48, 0, depth * 0.62]
 }
 
 export function porchOf(s: StoreDef): { x: number; z: number } {

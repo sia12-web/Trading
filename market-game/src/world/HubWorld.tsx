@@ -21,6 +21,10 @@ export function HubWorld() {
         <planeGeometry args={[YARD * 2 - 0.55, YARD * 2 - 0.55]} />
         <meshStandardMaterial map={grass} color="#3aaa32" roughness={0.88} />
       </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.022, 5.2]} receiveShadow>
+        <planeGeometry args={[7.4, 9.8]} />
+        <meshStandardMaterial map={dirt} color="#8a6840" roughness={0.92} />
+      </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[2.8, 0.02, -3.4]} receiveShadow>
         <circleGeometry args={[1.15, 14]} />
         <meshStandardMaterial map={dirt} color="#8a6a40" roughness={0.92} />
@@ -49,9 +53,13 @@ export function HubWorld() {
         <circleGeometry args={[3.1, 22]} />
         <meshStandardMaterial map={dirt} color="#b08a58" roughness={0.88} />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]} receiveShadow>
-        <circleGeometry args={[1.85, 20]} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[3.4, 0.03, 3.2]} receiveShadow>
+        <circleGeometry args={[1.65, 16]} />
         <meshStandardMaterial map={grass} color="#42b838" roughness={0.84} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-3.6, 0.03, 3.4]} receiveShadow>
+        <circleGeometry args={[1.45, 16]} />
+        <meshStandardMaterial map={grass} color="#3aaa32" roughness={0.84} />
       </mesh>
 
       <ClashWalls wall={YARD} brick={brick} />
@@ -442,26 +450,15 @@ function HubDressing() {
 function PlazaYard() {
   return (
     <group>
-      <mesh position={[0, 0.42, 0]} castShadow>
-        <cylinderGeometry args={[0.38, 0.48, 0.72, 12]} />
-        <meshStandardMaterial color="#c4a05a" metalness={0.4} roughness={0.48} />
-      </mesh>
-      <mesh position={[0, 0.82, 0]}>
-        <cylinderGeometry args={[0.12, 0.16, 0.18, 8]} />
-        <meshStandardMaterial color="#e8dcc8" roughness={0.55} />
-      </mesh>
-      <MarketStall x={-1.65} z={1.55} rot={0.08} />
-      <MarketStall x={1.65} z={1.45} rot={-0.1} />
-      <MarketStall x={-1.7} z={-1.35} rot={Math.PI + 0.1} />
-      <MarketStall x={1.6} z={-1.4} rot={Math.PI - 0.08} />
-      <Cart x={0.15} z={2.15} rot={-0.2} />
-      <Cart x={-0.25} z={-2.05} rot={2.9} />
-      <FlowerBed x={2.15} z={0.05} />
-      <FlowerBed x={-2.2} z={-0.05} />
-      <Barrel x={1.05} z={-0.85} color="#5a4030" />
-      <Barrel x={-1.1} z={0.75} color="#3a6a88" />
+      <FlowerBed x={2.35} z={0.15} />
+      <FlowerBed x={-2.4} z={-0.1} />
+      <FlowerBed x={1.15} z={2.05} />
+      <FlowerBed x={-1.25} z={2.15} />
+      <Bush x={2.85} z={1.55} h={0.85} seed={31} />
+      <Bush x={-2.95} z={1.45} h={0.9} seed={32} />
       <Worker x={0.55} z={1.85} rot={0.3} color="#3a6a88" />
       <Worker x={-0.65} z={1.75} rot={-0.4} color="#c4a046" />
+      <Worker x={1.15} z={-0.55} rot={1.1} color="#5a7a50" />
     </group>
   )
 }
@@ -472,15 +469,19 @@ function MillYard() {
       <MarketStall x={-2.15} z={6.15} rot={0.06} />
       <MarketStall x={2.1} z={6.05} rot={-0.08} />
       <Cart x={0.15} z={6.85} rot={0.1} />
+      <Cart x={-1.15} z={8.15} rot={-0.35} />
       <CrateStack x={2.55} z={5.55} />
       <CrateStack x={-2.65} z={5.35} />
       <CrateStack x={3.15} z={7.15} />
+      <CrateStack x={-3.05} z={7.45} />
       <Barrel x={-2.45} z={5.45} color="#5a4030" />
       <Barrel x={2.85} z={5.85} color="#3a3a38" />
       <Worker x={0.85} z={5.65} rot={0.2} color="#5a7a50" />
       <Worker x={-0.95} z={5.55} rot={-0.25} color="#8aa0b0" />
       <Worker x={1.55} z={7.25} rot={-0.4} color="#c4a046" />
       <Worker x={-1.65} z={7.15} rot={0.35} color="#3a6a88" />
+      <Worker x={0.25} z={8.35} rot={0.1} color="#8aa0b0" />
+      <Worker x={2.35} z={8.05} rot={-0.7} color="#5a7a50" />
       <Bush x={-3.15} z={7.15} h={1.05} seed={21} />
       <Bush x={3.05} z={7.05} h={0.95} seed={22} />
     </group>
@@ -544,14 +545,16 @@ function FieldYard() {
 function CornerHuts() {
   return (
     <group>
-      <BrickHouse x={-8.15} z={-8.05} rot={0.35} />
-      <BrickHouse x={8.05} z={-7.85} rot={-0.3} />
-      <BrickHouse x={-10.55} z={-5.15} rot={0.62} />
-      <BrickHouse x={10.65} z={-5.05} rot={-0.55} />
-      <BrickHouse x={-10.45} z={5.85} rot={0.72} />
-      <BrickHouse x={10.55} z={5.65} rot={-0.68} />
-      <BrickHouse x={-6.05} z={-10.35} rot={0.18} />
-      <BrickHouse x={6.15} z={-10.15} rot={-0.22} />
+      <MillRowHouse x={-8.35} z={-7.55} rot={0.42} variant={0} />
+      <MillRowHouse x={7.65} z={-8.25} rot={-0.22} variant={1} />
+      <MillRowHouse x={-11.15} z={-4.35} rot={0.78} variant={2} />
+      <MillRowHouse x={10.25} z={-4.55} rot={-0.62} variant={3} />
+      <MillRowHouse x={-10.85} z={6.35} rot={0.55} variant={4} />
+      <MillRowHouse x={10.15} z={6.85} rot={-0.48} variant={5} />
+      <MillRowHouse x={-5.55} z={-10.65} rot={0.12} variant={6} />
+      <MillRowHouse x={5.45} z={-10.85} rot={-0.18} variant={7} />
+      <MillRowHouse x={-7.25} z={8.85} rot={0.95} variant={8} />
+      <MillRowHouse x={7.45} z={8.55} rot={-0.88} variant={9} />
       <FlowerBed x={-5.15} z={-8.85} />
       <FlowerBed x={5.25} z={-8.65} />
       <FlowerBed x={-9.15} z={6.55} />
@@ -562,6 +565,8 @@ function CornerHuts() {
       <Worker x={7.55} z={6.65} rot={-1.2} color="#c4a046" />
       <Worker x={-5.45} z={-9.55} rot={0.4} color="#c4a046" />
       <Worker x={5.55} z={-9.35} rot={-0.35} color="#5a7a50" />
+      <Worker x={-8.15} z={5.45} rot={0.2} color="#3a6a88" />
+      <Worker x={8.25} z={5.25} rot={-0.15} color="#8aa0b0" />
       <Bush x={-9.45} z={-6.55} h={1.1} seed={41} />
       <Bush x={9.55} z={-6.35} h={1.05} seed={42} />
       <Bush x={-5.65} z={8.85} h={1.15} seed={43} />
@@ -635,37 +640,62 @@ function Barrel({ x, z, color }: { x: number; z: number; color: string }) {
   )
 }
 
-function BrickHouse({ x, z, rot }: { x: number; z: number; rot: number }) {
+function MillRowHouse({ x, z, rot, variant }: { x: number; z: number; rot: number; variant: number }) {
+  const w = 2.15 + (variant % 3) * 0.55
+  const d = 1.95 + (variant % 2) * 0.5
+  const h = 2.45 + (variant % 4) * 0.42
+  const brick = ['#8a3a28', '#7a3224', '#9a4430', '#6a2e22', '#a04832'][variant % 5]
+  const pitched = variant % 3 !== 1
+  const chimney = variant % 2 === 0
+  const bays = 1 + (variant % 3)
   return (
     <group position={[x, 0, z]} rotation={[0, rot, 0]}>
-      <mesh position={[0, 1.55, 0]} castShadow receiveShadow>
-        <boxGeometry args={[2.75, 3.1, 2.35]} />
-        <meshStandardMaterial color="#8a3a28" roughness={0.88} />
+      <mesh position={[0, h / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[w, h, d]} />
+        <meshStandardMaterial color={brick} roughness={0.88} />
       </mesh>
-      <mesh position={[0, 3.18, 0]} castShadow>
-        <boxGeometry args={[2.95, 0.18, 2.55]} />
-        <meshStandardMaterial color="#e4d4b8" roughness={0.55} />
-      </mesh>
-      <mesh position={[0, 3.55, 0]} castShadow>
-        <boxGeometry args={[3.05, 0.22, 2.65]} />
-        <meshStandardMaterial color="#6a5a48" roughness={0.62} metalness={0.2} />
-      </mesh>
-      {[-0.7, 0.7].map((sx) => (
-        <group key={sx} position={[sx, 2.25, 1.22]}>
-          <mesh>
-            <boxGeometry args={[0.68, 0.78, 0.1]} />
-            <meshStandardMaterial color="#f0e6d4" roughness={0.55} />
-          </mesh>
-          <mesh position={[0, 0, 0.04]}>
-            <boxGeometry args={[0.48, 0.56, 0.06]} />
-            <meshStandardMaterial color="#2a3a44" roughness={0.28} />
-          </mesh>
-        </group>
-      ))}
-      <mesh position={[0.12, 0.88, 1.24]}>
-        <boxGeometry args={[0.7, 1.25, 0.12]} />
+      {pitched ? (
+        <mesh position={[0, h + 0.28, 0]} rotation={[0, 0, variant % 2 === 0 ? 0.38 : -0.32]} castShadow>
+          <boxGeometry args={[w + 0.35, 0.16, d + 0.28]} />
+          <meshStandardMaterial color={variant % 4 === 0 ? '#6a5a48' : '#c45a32'} roughness={0.6} />
+        </mesh>
+      ) : (
+        <mesh position={[0, h + 0.12, 0]} castShadow>
+          <boxGeometry args={[w + 0.22, 0.2, d + 0.22]} />
+          <meshStandardMaterial color="#e4d4b8" roughness={0.55} />
+        </mesh>
+      )}
+      {Array.from({ length: bays }, (_, i) => {
+        const sx = (i - (bays - 1) / 2) * 0.72
+        return (
+          <group key={i} position={[sx, h * 0.62, d / 2 + 0.04]}>
+            <mesh>
+              <boxGeometry args={[0.58, 0.72, 0.1]} />
+              <meshStandardMaterial color="#f0e6d4" roughness={0.55} />
+            </mesh>
+            <mesh position={[0, 0, 0.04]}>
+              <boxGeometry args={[0.4, 0.52, 0.06]} />
+              <meshStandardMaterial color="#2a3a44" roughness={0.28} />
+            </mesh>
+          </group>
+        )
+      })}
+      <mesh position={[variant % 2 === 0 ? 0.18 : -0.22, 0.72, d / 2 + 0.05]}>
+        <boxGeometry args={[0.62, 1.18, 0.12]} />
         <meshStandardMaterial color="#2a1410" />
       </mesh>
+      {chimney && (
+        <mesh position={[w * 0.28, h + 0.85, -d * 0.12]} castShadow>
+          <boxGeometry args={[0.32, 1.15, 0.32]} />
+          <meshStandardMaterial color="#4a3028" roughness={0.8} />
+        </mesh>
+      )}
+      {variant % 3 === 2 && (
+        <mesh position={[-w * 0.42, h * 0.45, 0]} castShadow>
+          <boxGeometry args={[0.55, h * 0.7, d * 0.7]} />
+          <meshStandardMaterial color="#6a3224" roughness={0.86} />
+        </mesh>
+      )}
     </group>
   )
 }
@@ -691,7 +721,7 @@ function FlowerBed({ x, z }: { x: number; z: number }) {
 
 function Worker({ x, z, rot, color }: { x: number; z: number; rot: number; color: string }) {
   return (
-    <group position={[x, 0, z]} rotation={[0, rot, 0]} scale={0.7}>
+    <group position={[x, 0, z]} rotation={[0, rot, 0]} scale={1.05}>
       <mesh position={[0, 0.62, 0]} castShadow>
         <boxGeometry args={[0.38, 0.48, 0.24]} />
         <meshBasicMaterial color={color} toneMapped={false} />
