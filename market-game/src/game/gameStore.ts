@@ -381,7 +381,7 @@ export function tickGame(dt: number) {
   if (state.scene !== 'dow') return
 
   if (state.phase === 'preopen') {
-    const clockMin = state.clockMin + dt * 0.55
+    const clockMin = state.clockMin + dt * 0.12
     if (clockMin >= NY_OPEN_MIN) {
       void resumeAudio().then(() => {
         strikeBell()
