@@ -310,12 +310,6 @@ export function inStall(snap: GameSnapshot = state): StoreId | null {
   return nearestStore(snap.player.x, snap.player.z, 3.6)?.id ?? null
 }
 
-function distToStore(id: StoreId, snap: GameSnapshot = state): number {
-  const s = STORES.find((x) => x.id === id)
-  if (!s) return Infinity
-  return Math.hypot(snap.player.x - s.position[0], snap.player.z - s.position[2])
-}
-
 export function takeAuction(side: Side) {
   if (state.phase !== 'live') {
     set({ message: 'Wait for the cash open.' })
