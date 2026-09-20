@@ -265,7 +265,7 @@ function WingPads({
       <Stencil word="FIVE-DAY" ink="#a34a38" position={[9.25, 0.03, -1.8]} rot={-Math.PI / 2} />
       <Stencil word="FIVE-MONTH" ink="#2a6a78" position={[-9.15, 0.03, 0]} rot={Math.PI / 2} />
       <WingSign word="YESTERDAY" paint="#c45c2a" position={[0, 0, 11.55]} />
-      <WingSign word="FIVE-DAY" paint="#a34a38" position={[12.15, 0, -1.75]} />
+      <WingSign word="FIVE-DAY" paint="#a34a38" position={[10.35, 0, 0.15]} />
       <WingSign word="FIVE-MONTH" paint="#2a6a78" position={[-11.55, 0, 1.55]} />
     </group>
   )

@@ -20,7 +20,24 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
   const hot = g.nearby === store.id || g.inspecting === store.id
   const printed = Boolean(g.lastPrint && g.lastPrint.storeId === store.id && performance.now() - g.lastPrint.at < 3600)
   const range = profileRange(store, g.avwap)
-  const short = store.name.split(' ')[0] ?? store.name
+  const label =
+    store.building === 'foundry'
+      ? 'FOUNDRY'
+      : store.building === 'hall'
+        ? 'HALL'
+        : store.building === 'dock'
+          ? 'DOCK'
+          : store.building === 'yard'
+            ? 'YARD'
+            : store.building === 'mill'
+              ? 'MILL'
+              : store.building === 'alley'
+                ? 'ALLEY'
+                : store.building === 'spire'
+                  ? 'SPIRE'
+                  : store.building === 'loft'
+                    ? 'LOFT'
+                    : 'PIT'
   const yaw = storeYaw(store.range)
 
   return (
@@ -45,9 +62,21 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
         <RangeRails range={range} nodePx={price} color={store.accent} width={store.building === 'loft' ? 3.0 : 4.0} />
       )}
       <Fascia
-        title={short}
+        title={label}
         paint={store.accent}
-        y={store.building === 'spire' ? 7.4 : store.building === 'pit' ? 2.85 : store.building === 'loft' ? 6.4 : 4.55}
+        y={
+          store.building === 'spire'
+            ? 8.2
+            : store.building === 'pit'
+              ? 2.95
+              : store.building === 'loft'
+                ? 6.9
+                : store.building === 'hall'
+                  ? 5.7
+                  : store.building === 'mill'
+                    ? 5.35
+                    : 4.75
+        }
       />
       <ChalkBoard price={fmtPx(price)} y={store.building === 'pit' ? 1.15 : 1.45} z={store.building === 'spire' ? 1.05 : 2.35} pulse={printed} />
       <GoodsPile stall={st} kind={store.kind} z={store.building === 'spire' ? 1.35 : 3.05} />
@@ -128,7 +157,7 @@ function Fascia({ title, paint, y }: { title: string; paint: string; y: number }
   return (
     <Billboard position={[0, y, 0.4]} follow>
       <mesh>
-        <planeGeometry args={[3.8, 0.78]} />
+        <planeGeometry args={[3.15, 0.7]} />
         <meshBasicMaterial map={tex} toneMapped={false} />
       </mesh>
     </Billboard>
