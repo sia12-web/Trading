@@ -286,13 +286,13 @@ function WallStrip({
 }) {
   const tex = useMemo(() => makeCourtSignTexture(word, ink), [word, ink])
   return (
-    <group position={[x, 0, z]} rotation={[0, east ? -Math.PI / 2 : 0, 0]}>
-      <mesh position={[0, 1.12, 0.06]} castShadow>
-        <boxGeometry args={[wide + 0.18, 0.5, 0.1]} />
+    <group position={[x, 0, z]} rotation={[0, east ? -Math.PI / 4 : Math.PI / 4, 0]}>
+      <mesh position={[0, 1.48, 0.04]} castShadow>
+        <boxGeometry args={[wide + 0.12, 0.42, 0.08]} />
         <meshStandardMaterial color="#241810" roughness={0.72} />
       </mesh>
-      <mesh position={[0, 1.12, 0.12]}>
-        <planeGeometry args={[wide, 0.38]} />
+      <mesh position={[0, 1.48, 0.1]}>
+        <planeGeometry args={[wide, 0.34]} />
         <meshBasicMaterial map={tex} toneMapped={false} />
       </mesh>
     </group>
