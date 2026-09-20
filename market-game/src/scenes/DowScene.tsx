@@ -40,7 +40,7 @@ export function DowScene() {
           <StoreBuilding key={s.id} store={s} />
         ))}
         <NPCs />
-        <Player spawn={[0.85, 0, 0.85]} />
+        <Player spawn={[2.2, 0, 2.2]} />
         <CinematicFx />
       </Suspense>
     </Canvas>

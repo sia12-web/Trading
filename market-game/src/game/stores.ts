@@ -144,7 +144,7 @@ export function storeAtPoint(x: number, z: number, maxDist = 3.5): StoreDef | nu
 
 /** Tight cores so Price can walk the porch into each stall. */
 export const COLLISIONS: Array<{ x: number; z: number; w: number; d: number }> = [
-  { x: 0, z: 0, w: 2.2, d: 2.2 },
+  { x: 0, z: 0, w: 1.35, d: 1.35 },
   { x: -5.6, z: 5.15, w: 4.4, d: 2.15 },
   { x: 0, z: 5.95, w: 5.2, d: 2.25 },
   { x: 5.6, z: 5.55, w: 3.6, d: 1.7 },

@@ -29,7 +29,7 @@ const keys = {
 function blocked(x: number, z: number, enabled: boolean): boolean {
   if (!enabled) return false
   for (const c of COLLISIONS) {
-    if (Math.abs(x - c.x) < c.w / 2 + 0.35 && Math.abs(z - c.z) < c.d / 2 + 0.35) return true
+    if (Math.abs(x - c.x) < c.w / 2 + 0.28 && Math.abs(z - c.z) < c.d / 2 + 0.28) return true
   }
   if (Math.abs(x) > YARD - 0.7 || Math.abs(z) > YARD - 0.7) return true
   return false
@@ -145,8 +145,9 @@ export function Player({
       const step = speed * dt
       const nx = THREE.MathUtils.clamp(pos.current.x + mx * step, bounds?.minX ?? -YARD, bounds?.maxX ?? YARD)
       const nz = THREE.MathUtils.clamp(pos.current.z + mz * step, bounds?.minZ ?? -YARD, bounds?.maxZ ?? YARD)
-      if (!blocked(nx, pos.current.z, collide)) pos.current.x = nx
-      if (!blocked(pos.current.x, nz, collide)) pos.current.z = nz
+      const trapped = blocked(pos.current.x, pos.current.z, collide)
+      if (trapped || !blocked(nx, pos.current.z, collide)) pos.current.x = nx
+      if (trapped || !blocked(pos.current.x, nz, collide)) pos.current.z = nz
       yaw.current = Math.atan2(mx, mz)
       vel.current = THREE.MathUtils.lerp(vel.current, 1, 0.18)
     } else {

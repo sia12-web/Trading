@@ -146,7 +146,7 @@ export function enterDow() {
     scene: 'dow',
     phase: 'preopen',
     clockMin: PREOPEN_MIN,
-    player: { x: 0.85, y: 0, z: 0.85, yaw: 0 },
+    player: { x: 2.2, y: 0, z: 2.2, yaw: 0 },
     livePrice: market.priorClose,
     message: 'NYC cash is about to open. Move Price to a store.',
   }
@@ -173,7 +173,7 @@ export function skipToOpen() {
     floorAlive: 0,
     livePrice: market.openPrint,
     message: null,
-    player: state.scene === 'dow' ? state.player : { x: 0.85, y: 0, z: 0.85, yaw: 0 },
+    player: state.scene === 'dow' ? state.player : { x: 2.2, y: 0, z: 2.2, yaw: 0 },
   })
 }
 
@@ -194,7 +194,9 @@ export function setPlayer(p: PlayerState) {
     return
   }
   const nearbyChanged = nearby !== state.nearby
-  set({ player: p, nearby }, nearbyChanged)
+  const wasIn = nearestStore(state.player.x, state.player.z, 3.15)?.id ?? null
+  const nowIn = nearby && nearestStore(p.x, p.z, 3.15)?.id === nearby ? nearby : null
+  set({ player: p, nearby }, nearbyChanged || wasIn !== nowIn)
 }
 
 export function toggleInspect() {
@@ -208,12 +210,9 @@ export function toggleInspect() {
 export function inspectStore(id: StoreId) {
   const s = STORES.find((x) => x.id === id)
   if (s) {
-    const yaw = s.range === 'fiveMonth' ? -Math.PI / 2 : 0
-    const lz = 2.05
-    walkTarget = {
-      x: s.position[0] - lz * Math.sin(yaw),
-      z: s.position[2] + lz * Math.cos(yaw),
-    }
+    const len = Math.hypot(s.position[0], s.position[2]) || 1
+    const k = 1 - 2.05 / len
+    walkTarget = { x: s.position[0] * k, z: s.position[2] * k }
   }
   set({ inspecting: id, nearby: id, message: null })
 }
@@ -280,7 +279,7 @@ export function stallState(id: StoreId, snap: GameSnapshot = state) {
 }
 
 export function inStall(snap: GameSnapshot = state): StoreId | null {
-  return nearestStore(snap.player.x, snap.player.z, 2.85)?.id ?? null
+  return nearestStore(snap.player.x, snap.player.z, 3.15)?.id ?? null
 }
 
 export function takeAuction(side: Side) {
