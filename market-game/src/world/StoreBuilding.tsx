@@ -88,6 +88,9 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
       {gableX !== 0 && (
         <GableSign title={label} paint={store.accent} x={gableX} y={2.55} />
       )}
+      {store.range === 'fiveDay' && (
+        <EastSign title={label} paint={store.accent} y={2.7} z={-shell.d * 0.52} width={Math.min(4.2, shell.w * 0.9)} />
+      )}
       <ChalkBoard price={fmtPx(price)} y={store.building === 'pit' ? 1.05 : 1.4} z={shell.d * 0.52 + 0.12} pulse={printed} />
       <GoodsPile stall={st} kind={store.kind} z={shell.d * 0.55 + 0.85} />
       {printed && st.printSide === 'buy' && <PrintBurst />}
@@ -213,6 +216,17 @@ function GableSign({ title, paint, x, y }: { title: string; paint: string; x: nu
     <mesh position={[x, y, 0]} rotation={[0, (x > 0 ? 1 : -1) * (Math.PI / 2), 0]} castShadow>
       <boxGeometry args={[4.15, 1.05, 0.2]} />
       <meshStandardMaterial map={tex} roughness={0.48} />
+    </mesh>
+  )
+}
+
+function EastSign({ title, paint, y, z, width }: { title: string; paint: string; y: number; z: number; width: number }) {
+  const tex = useMemo(() => makeFasciaTexture(title, paint), [title, paint])
+  useEffect(() => () => tex.dispose(), [tex])
+  return (
+    <mesh position={[0, y, z]} rotation={[0, Math.PI, 0]} castShadow>
+      <boxGeometry args={[width, 1.05, 0.2]} />
+      <meshBasicMaterial map={tex} />
     </mesh>
   )
 }
