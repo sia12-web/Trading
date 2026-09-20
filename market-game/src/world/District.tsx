@@ -190,12 +190,13 @@ function WingPads({
         <planeGeometry args={[8.6, 16.2]} />
         <meshStandardMaterial map={concrete} color="#6aa0b0" roughness={0.84} />
       </mesh>
-      <Stencil word="YESTERDAY" ink="#e07040" position={[0, 0.04, 4.55]} />
-      <Stencil word="FIVE-DAY" ink="#d48848" position={[7.15, 0.04, -1.8]} rot={-Math.PI / 2} />
-      <Stencil word="FIVE-MONTH" ink="#6ab0c4" position={[-8.35, 0.04, -1.4]} rot={Math.PI / 2} />
-      <CourtPlaque word="YESTERDAY" ink="#e07040" x={0} z={5.15} />
-      <CourtPlaque word="FIVE-DAY" ink="#d48848" x={6.35} z={-1.85} />
-      <CourtPlaque word="FIVE-MONTH" ink="#6ab0c4" x={-7.55} z={-1.4} />
+      <Stencil word="YESTERDAY" ink="#e07040" position={[0, 0.04, 10.55]} />
+      <Stencil word="FIVE-DAY" ink="#d48848" position={[11.85, 0.04, -1.8]} rot={-Math.PI / 2} />
+      <Stencil word="FIVE-MONTH" ink="#6ab0c4" position={[-8.15, 0.04, 1.15]} rot={Math.PI / 2} />
+      <CourtPlaque word="YESTERDAY" ink="#e07040" x={0} z={10.85} />
+      <CourtPlaque word="FIVE-DAY" ink="#d48848" x={12.05} z={-1.85} />
+      <CourtPlaque word="FIVE-MONTH" ink="#6ab0c4" x={-7.85} z={2.55} />
+      <CourtPlaque word="YARD" ink="#d48848" x={11.55} z={-6.35} />
     </group>
   )
 }
@@ -225,15 +226,15 @@ function CourtPlaque({ word, ink, x, z }: { word: string; ink: string; x: number
   return (
     <group position={[x, 0, z]} rotation={[0, Math.PI / 4, 0]}>
       <mesh position={[0, 0.55, 0]} castShadow>
-        <boxGeometry args={[0.16, 1.1, 0.16]} />
+        <boxGeometry args={[0.18, 1.2, 0.18]} />
         <meshStandardMaterial color="#3a2a1c" roughness={0.8} />
       </mesh>
-      <mesh position={[0, 1.28, 0.04]} castShadow>
-        <boxGeometry args={[2.85, 0.72, 0.12]} />
+      <mesh position={[0, 1.42, 0.04]} castShadow>
+        <boxGeometry args={[3.45, 0.88, 0.14]} />
         <meshStandardMaterial color="#2a1c14" roughness={0.7} />
       </mesh>
-      <mesh position={[0, 1.28, 0.11]}>
-        <planeGeometry args={[2.7, 0.58]} />
+      <mesh position={[0, 1.42, 0.12]}>
+        <planeGeometry args={[3.28, 0.72]} />
         <meshBasicMaterial map={tex} toneMapped={false} />
       </mesh>
     </group>
