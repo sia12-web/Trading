@@ -2,6 +2,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { closeInspect, inspectStore, setWalkTarget } from '../game/gameStore'
+import { OPEN_CINEMATIC_SEC } from '../game/session'
 import { storeAtPoint, YARD } from '../game/stores'
 import { useGame } from '../ui/useGame'
 import {
@@ -26,22 +27,28 @@ export function District() {
   const grass = useGrassTexture()
   const dirt = useDirtTexture()
   const dawn = g.phase === 'preopen'
-  const sunPos: [number, number, number] = dawn ? [26, 12, 18] : [22, 42, 18]
-  const sun = dawn ? '#ffc488' : '#fff6d0'
-  const sky = dawn ? '#c8b090' : '#7eb8dc'
+  const sunK =
+    g.phase === 'opening' ? Math.min(1, g.openElapsed / OPEN_CINEMATIC_SEC) : dawn ? 0 : 1
+  const sunPos: [number, number, number] = [
+    26 - 4 * sunK,
+    12 + 30 * sunK,
+    18,
+  ]
+  const sun = sunK < 0.5 ? '#ffc488' : '#fff6d0'
+  const sky = sunK < 0.35 ? '#c8b090' : '#7eb8dc'
 
   useFrame(() => {
-    gl.toneMappingExposure = dawn ? 1.18 : 1.38
+    gl.toneMappingExposure = 1.18 + 0.2 * sunK
     gl.setClearColor(sky, 1)
   })
 
   return (
     <>
-      <hemisphereLight args={[dawn ? '#f0d0b0' : '#e8f4ff', dawn ? '#7a6a48' : '#6a9a48', dawn ? 0.82 : 1.28]} />
-      <ambientLight intensity={dawn ? 0.58 : 0.98} />
+      <hemisphereLight args={[sunK < 0.35 ? '#f0d0b0' : '#e8f4ff', sunK < 0.35 ? '#7a6a48' : '#6a9a48', 0.82 + 0.46 * sunK]} />
+      <ambientLight intensity={0.58 + 0.4 * sunK} />
       <directionalLight
         position={sunPos}
-        intensity={dawn ? 1.85 : 2.85}
+        intensity={1.85 + sunK}
         color={sun}
         castShadow
         shadow-mapSize={[2048, 2048]}
@@ -54,9 +61,9 @@ export function District() {
         shadow-camera-top={24}
         shadow-camera-bottom={-24}
       />
-      <directionalLight position={[18, 16, 18]} intensity={dawn ? 0.42 : 0.78} color="#fff4dc" />
-      <directionalLight position={[-20, 14, -10]} intensity={dawn ? 0.52 : 0.7} color="#b5dcff" />
-      <directionalLight position={[6, 8, -18]} intensity={dawn ? 0.16 : 0.28} color="#ffe8b0" />
+      <directionalLight position={[18, 16, 18]} intensity={0.42 + 0.36 * sunK} color="#fff4dc" />
+      <directionalLight position={[-20, 14, -10]} intensity={0.52 + 0.18 * sunK} color="#b5dcff" />
+      <directionalLight position={[6, 8, -18]} intensity={0.16 + 0.12 * sunK} color="#ffe8b0" />
       <color attach="background" args={[sky]} />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.1, 0]} receiveShadow>
