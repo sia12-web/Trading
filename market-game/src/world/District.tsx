@@ -211,7 +211,7 @@ function WingPads({
         ),
       )}
       {STORE_PLAQUES.map((s) =>
-        s.word === 'SPIRE' || s.word === 'HALL' ? (
+        s.word === 'SPIRE' ? (
           <WallStrip
             key={`store-${s.word}`}
             word={s.word}
@@ -229,7 +229,7 @@ function WingPads({
             x={s.x}
             z={s.z}
             wide={s.wide}
-            lift={s.word === 'FOUNDRY' || s.word === 'PIT' ? 0.48 : s.word === 'HALL' ? 0.55 : s.word === 'LOFT' ? 0.32 : 0.12}
+            lift={s.word === 'FOUNDRY' || s.word === 'PIT' ? 0.48 : s.word === 'HALL' ? 0.58 : s.word === 'LOFT' ? 0.32 : 0.12}
             onPick={() => inspectStore(s.id)}
           />
         ),
