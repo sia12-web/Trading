@@ -1,0 +1,387 @@
+import { pushVwapTick, timeOpportunity, volumeDivergence } from './auction'
+import { clank, printFill, resumeAudio, startAmbience, strikeBell } from './audio'
+import { buildDowMarket, rng } from './marketData'
+import {
+  LIVE_TIME_SCALE,
+  NY_OPEN_MIN,
+  OPEN_CINEMATIC_SEC,
+  PREOPEN_MIN,
+  sessionProgress,
+} from './session'
+import { nearestStore } from './stores'
+import type { AnchoredVwap, Fill, SceneId, SessionPhase, Side, StoreId, StoreRead } from './types'
+
+const market = buildDowMarket()
+const tapeRand = rng(77)
+
+type Listener = () => void
+
+export type PlayerState = {
+  x: number
+  y: number
+  z: number
+  yaw: number
+}
+
+export type GameSnapshot = {
+  scene: SceneId
+  phase: SessionPhase
+  clockMin: number
+  openElapsed: number
+  player: PlayerState
+  livePrice: number
+  avwap: AnchoredVwap
+  nearby: StoreId | null
+  inspecting: StoreId | null
+  fills: Fill[]
+  pnl: number
+  tpo: Record<string, number>
+  liveVol: Record<string, number>
+  shutter: number
+  floorAlive: number
+  pointerLocked: boolean
+  message: string | null
+}
+
+const typicalVol: Record<StoreId, number> = {
+  'y-hvn': market.yesterday.hvn.volume / 12,
+  'y-lvn': Math.max(40, market.yesterday.lvn.volume / 12),
+  'y-poc': market.yesterday.poc.volume / 12,
+  '5d-hvn': market.fiveDay.hvn.volume / 18,
+  '5d-lvn': Math.max(40, market.fiveDay.lvn.volume / 18),
+  '5d-poc': market.fiveDay.poc.volume / 18,
+  avwap: 400,
+  'avwap-upper': 280,
+  'avwap-lower': 280,
+}
+
+function advertisedFor(id: StoreId, avwap: AnchoredVwap): number {
+  switch (id) {
+    case 'y-hvn':
+      return market.yesterday.hvn.price
+    case 'y-lvn':
+      return market.yesterday.lvn.price
+    case 'y-poc':
+      return market.yesterday.poc.price
+    case '5d-hvn':
+      return market.fiveDay.hvn.price
+    case '5d-lvn':
+      return market.fiveDay.lvn.price
+    case '5d-poc':
+      return market.fiveDay.poc.price
+    case 'avwap':
+      return avwap.vwap
+    case 'avwap-upper':
+      return avwap.upper1
+    case 'avwap-lower':
+      return avwap.lower1
+  }
+}
+
+function kindOf(id: StoreId) {
+  if (id.endsWith('hvn')) return 'hvn' as const
+  if (id.endsWith('lvn')) return 'lvn' as const
+  if (id.endsWith('poc')) return 'poc' as const
+  return 'avwap' as const
+}
+
+let fillSeq = 1
+let lastUiEmit = 0
+
+function fresh(): GameSnapshot {
+  return {
+    scene: 'hub',
+    phase: 'preopen',
+    clockMin: PREOPEN_MIN,
+    openElapsed: 0,
+    player: { x: 0, y: 0, z: 8, yaw: Math.PI },
+    livePrice: market.priorClose,
+    avwap: { ...market.avwap },
+    nearby: null,
+    inspecting: null,
+    fills: [],
+    pnl: 0,
+    tpo: {},
+    liveVol: {},
+    shutter: 0,
+    floorAlive: 0,
+    pointerLocked: false,
+    message: null,
+  }
+}
+
+let state = fresh()
+const listeners = new Set<Listener>()
+
+function emit() {
+  for (const l of listeners) l()
+}
+
+function set(partial: Partial<GameSnapshot>, force = true) {
+  state = { ...state, ...partial }
+  const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+  if (force || now - lastUiEmit > 70) {
+    lastUiEmit = now
+    emit()
+  }
+}
+
+export const marketWorld = market
+
+export function getGame(): GameSnapshot {
+  return state
+}
+
+export function subscribeGame(fn: Listener): () => void {
+  listeners.add(fn)
+  return () => listeners.delete(fn)
+}
+
+export function enterDow() {
+  void resumeAudio().then(() => startAmbience())
+  state = {
+    ...fresh(),
+    scene: 'dow',
+    phase: 'preopen',
+    clockMin: PREOPEN_MIN,
+    player: { x: 0, y: 0, z: 14, yaw: Math.PI },
+    livePrice: market.priorClose,
+    message: 'NYC cash is about to open. Walk Price toward the bell.',
+  }
+  emit()
+}
+
+export function backToHub() {
+  state = fresh()
+  emit()
+}
+
+export function skipToLive() {
+  void resumeAudio().then(() => {
+    startAmbience()
+    strikeBell()
+  })
+  set({
+    scene: 'dow',
+    phase: 'live',
+    clockMin: NY_OPEN_MIN + 0.2,
+    openElapsed: OPEN_CINEMATIC_SEC,
+    shutter: 1,
+    floorAlive: 1,
+    livePrice: market.openPrint,
+    message: 'Market is open. Visit the stores.',
+    player: state.scene === 'dow' ? state.player : { x: 0, y: 0, z: 14, yaw: Math.PI },
+  })
+}
+
+export function setPointerLocked(v: boolean) {
+  if (state.pointerLocked === v) return
+  set({ pointerLocked: v })
+}
+
+export function setPlayer(p: PlayerState) {
+  const near = nearestStore(p.x, p.z)
+  const nearby = near?.id ?? null
+  if (
+    p.x === state.player.x &&
+    p.z === state.player.z &&
+    p.yaw === state.player.yaw &&
+    nearby === state.nearby
+  ) {
+    return
+  }
+  const nearbyChanged = nearby !== state.nearby
+  set({ player: p, nearby }, nearbyChanged)
+}
+
+export function toggleInspect() {
+  if (!state.nearby) return
+  set({
+    inspecting: state.inspecting === state.nearby ? null : state.nearby,
+    message: null,
+  })
+}
+
+export function closeInspect() {
+  if (state.inspecting) set({ inspecting: null })
+}
+
+export function storeRead(id: StoreId, snap: GameSnapshot = state): StoreRead {
+  const advertised = advertisedFor(id, snap.avwap)
+  const liveVolume = snap.liveVol[id] ?? typicalVol[id]! * 0.7
+  const typicalVolume = typicalVol[id]!
+  const kind = kindOf(id)
+  const divergence = volumeDivergence({ kind, liveVolume, typicalVolume })
+  const t = timeOpportunity({
+    kind,
+    tpoAtPrice: snap.tpo[id] ?? 0,
+    sessionProgress: sessionProgress(snap.clockMin),
+  })
+  let volumeLabel = 'Tape matches the store'
+  if (divergence > 0.35) volumeLabel = 'Size confirms — divergence favors you'
+  else if (divergence < -0.35) volumeLabel = 'Advertising without size — fade the offer'
+  if (kind === 'lvn') {
+    if (divergence < -0.25) volumeLabel = 'Vacuum flooding — divergence against Price'
+    else if (divergence > 0.25) volumeLabel = 'Still thin — fast market holds'
+  }
+  return {
+    id,
+    advertised,
+    liveVolume,
+    typicalVolume,
+    divergence,
+    timeOpportunity: t.opportunity,
+    timeLabel: t.label,
+    volumeLabel,
+    fairToday: t.fairToday,
+  }
+}
+
+export function takeAuction(side: Side) {
+  const id = state.inspecting ?? state.nearby
+  if (!id || state.phase !== 'live') return
+  const read = storeRead(id)
+  const slip = (1 - Math.max(0, read.divergence)) * 4.5 * (tapeRand() + 0.2)
+  const fillPx = side === 'buy' ? read.advertised + slip : read.advertised - slip
+  let note = 'Took the auction.'
+  if (read.fairToday && read.timeOpportunity < 0.35) {
+    note = 'Already fair today — thin leftover opportunity.'
+  } else if (read.divergence < -0.4) {
+    note = 'Size did not confirm. You advertised into an empty (or flooding) store.'
+  } else if (read.divergence > 0.4 && read.timeOpportunity > 0.45) {
+    note = 'Volume confirms and time remains. Clean taking of the offer.'
+  }
+  const fill: Fill = {
+    id: fillSeq++,
+    t: state.clockMin,
+    storeId: id,
+    side,
+    advertised: read.advertised,
+    fill: fillPx,
+    divergence: read.divergence,
+    timeOpportunity: read.timeOpportunity,
+    note,
+  }
+  printFill(side === 'buy')
+  set({
+    fills: [fill, ...state.fills].slice(0, 12),
+    inspecting: id,
+    message: note,
+  })
+}
+
+function markFills(live: number, fills: Fill[]): { fills: Fill[]; pnl: number } {
+  let pnl = 0
+  const next = fills.map((f) => {
+    const signed = f.side === 'buy' ? live - f.fill : f.fill - live
+    const quality = 0.55 + f.divergence * 0.25 + f.timeOpportunity * 0.2
+    const marked = signed * quality
+    pnl += marked
+    return { ...f, mark: live, pnl: marked }
+  })
+  return { fills: next, pnl }
+}
+
+export function tickGame(dt: number) {
+  if (state.scene !== 'dow') return
+
+  if (state.phase === 'preopen') {
+    const clockMin = state.clockMin + dt * 0.55
+    if (clockMin >= NY_OPEN_MIN) {
+      void resumeAudio().then(strikeBell)
+      set({
+        phase: 'opening',
+        clockMin: NY_OPEN_MIN,
+        openElapsed: 0,
+        livePrice: market.openPrint,
+        message: 'MARKET OPEN — 9:30 AM NEW YORK',
+      })
+      return
+    }
+    set({ clockMin, shutter: 0, floorAlive: 0 }, false)
+    return
+  }
+
+  if (state.phase === 'opening') {
+    const openElapsed = state.openElapsed + dt
+    const shutter = Math.min(1, Math.max(0, (openElapsed - 0.6) / 3.2))
+    const floorAlive = Math.min(1, Math.max(0, (openElapsed - 2.2) / 3.4))
+    if (openElapsed >= OPEN_CINEMATIC_SEC) {
+      set({
+        phase: 'live',
+        openElapsed,
+        shutter: 1,
+        floorAlive: 1,
+        clockMin: NY_OPEN_MIN + 0.15,
+        message: 'Stores are live. Walk Price in.',
+      })
+      return
+    }
+    set({ openElapsed, shutter, floorAlive })
+    return
+  }
+
+  const clockMin = state.clockMin + dt * LIVE_TIME_SCALE
+  const prog = sessionProgress(clockMin)
+  const toward =
+    market.yesterday.poc.price * 0.45 +
+    state.avwap.vwap * 0.25 +
+    market.fiveDay.poc.price * 0.3
+  const noise = (tapeRand() - 0.5) * 7.5
+  const livePrice = state.livePrice + (toward - state.livePrice) * 0.018 * dt * 8 + noise * dt
+
+  const avwap = pushVwapTick(
+    state.avwap,
+    livePrice,
+    180 + tapeRand() * 90 + Math.abs(livePrice - state.livePrice) * 40,
+  )
+
+  const liveVol = { ...state.liveVol }
+  const tpo = { ...state.tpo }
+  const ids: StoreId[] = [
+    'y-hvn',
+    'y-lvn',
+    'y-poc',
+    '5d-hvn',
+    '5d-lvn',
+    '5d-poc',
+    'avwap',
+    'avwap-upper',
+    'avwap-lower',
+  ]
+  for (const id of ids) {
+    const px = advertisedFor(id, avwap)
+    const dist = Math.abs(livePrice - px)
+    const pulse = Math.max(0.15, 1.35 - dist / 90) * typicalVol[id]!
+    const wander = 0.7 + tapeRand() * 0.7
+    liveVol[id] = pulse * wander
+    if (dist < 18) tpo[id] = (tpo[id] ?? 0) + dt * 0.55
+  }
+
+  if (state.nearby) {
+    tpo[state.nearby] = (tpo[state.nearby] ?? 0) + dt * 0.85
+  }
+
+  const marked = markFills(livePrice, state.fills)
+  if (tapeRand() < 0.012) clank()
+
+  set(
+    {
+      clockMin,
+      livePrice,
+      avwap,
+      liveVol,
+      tpo,
+      fills: marked.fills,
+      pnl: marked.pnl,
+      shutter: 1,
+      floorAlive: 1,
+      message: prog > 0.98 ? 'Cash session complete.' : state.message,
+    },
+    false,
+  )
+}
+
+export function advertisedPrice(id: StoreId, snap: GameSnapshot = state): number {
+  return advertisedFor(id, snap.avwap)
+}
