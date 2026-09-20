@@ -307,7 +307,7 @@ export function stallState(id: StoreId, snap: GameSnapshot = state) {
 }
 
 export function inStall(snap: GameSnapshot = state): StoreId | null {
-  return nearestStore(snap.player.x, snap.player.z, 3.15)?.id ?? null
+  return nearestStore(snap.player.x, snap.player.z, 3.6)?.id ?? null
 }
 
 function distToStore(id: StoreId, snap: GameSnapshot = state): number {
