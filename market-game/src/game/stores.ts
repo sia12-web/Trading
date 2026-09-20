@@ -125,37 +125,17 @@ export const DOW_GATE: [number, number, number] = [0, 0, 8.4]
 export const HUB_WALK = 14.2
 
 /**
- * Court names live on the south / east wall inside the Clash crop (not past
- * the camera, which clipped YESTERDAY to YESTER). Full words stay.
+ * Court names live on the south / east outer wall cap inside the Clash crop.
+ * Store names live on small fascias — not plaza plaques.
  */
 export const COURT_SIGNS = [
-  { word: 'YESTERDAY', ink: '#e07040', x: 0.22, z: 13.88, wide: 5.25 },
-  { word: 'FIVE-DAY', ink: '#d48848', x: 8.75, z: 15.08, wide: 4.15 },
-  { word: 'FIVE-MONTH', ink: '#6ab0c4', x: -6.15, z: 15.08, wide: 4.75 },
-  { word: 'YARD', ink: '#d48848', x: 15.08, z: 2.65, wide: 3.25 },
-] as const
-export const COURT_STENCILS = [
-  { word: 'YESTERDAY', ink: '#e07040', x: 0, z: 13.85, w: 5.2, d: 0.85 },
-  { word: 'FIVE-DAY', ink: '#d48848', x: 9.15, z: 13.85, w: 4.8, d: 0.8 },
-  { word: 'FIVE-MONTH', ink: '#6ab0c4', x: -6.55, z: 13.85, w: 5.4, d: 0.8 },
-  { word: 'YARD', ink: '#d48848', x: 13.85, z: -6.15, w: 3.6, d: 0.85 },
+  { word: 'YESTERDAY', ink: '#e07040', x: 0.08, z: 15.08, wide: 5.05 },
+  { word: 'FIVE-DAY', ink: '#d48848', x: 7.85, z: 15.08, wide: 3.85 },
+  { word: 'FIVE-MONTH', ink: '#6ab0c4', x: -7.25, z: 15.08, wide: 4.45 },
+  { word: 'YARD', ink: '#d48848', x: 15.08, z: 3.15, wide: 2.95 },
 ] as const
 
-/**
- * Store names sit on the camera-near (+X,+Z) apron of every shell so all nine
- * read in the same Clash crop as the court plaques — not only on inspect.
- */
-export const STORE_PLAQUES = [
-  { word: 'FOUNDRY', ink: '#e07040', x: -7.85, z: 13.15, wide: 4.35, id: 'y-hvn' as const },
-  { word: 'HALL', ink: '#e8b050', x: 4.95, z: 14.55, wide: 3.65, id: 'y-poc' as const },
-  { word: 'DOCK', ink: '#6aa0b8', x: 7.55, z: 12.15, wide: 3.35, id: 'y-lvn' as const },
-  { word: 'ALLEY', ink: '#7a90a0', x: 11.15, z: 6.75, wide: 3.55, id: '5d-lvn' as const },
-  { word: 'MILL', ink: '#d48848', x: 11.25, z: 3.05, wide: 3.45, id: '5d-poc' as const },
-  { word: 'YARD', ink: '#d48848', x: 11.35, z: 0.55, wide: 3.35, id: '5d-hvn' as const },
-  { word: 'PIT', ink: '#c4a060', x: -12.45, z: 13.55, wide: 3.45, id: 'avwap-lower' as const },
-  { word: 'SPIRE', ink: '#6ab0c4', x: -9.85, z: 15.08, wide: 4.25, id: 'avwap' as const },
-  { word: 'LOFT', ink: '#7a98c0', x: -10.55, z: 12.15, wide: 3.55, id: 'avwap-upper' as const },
-] as const
+export const FASCIA_NAMES = ['FOUNDRY', 'HALL', 'DOCK', 'YARD', 'MILL', 'ALLEY', 'SPIRE', 'LOFT', 'PIT'] as const
 
 const SHORT: Record<StoreDef['building'], string> = {
   foundry: 'FOUNDRY',

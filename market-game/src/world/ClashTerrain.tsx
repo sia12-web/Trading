@@ -20,11 +20,11 @@ export function ClashTerrain({
     <group>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -cliffH - 1.15, 0]} receiveShadow>
         <planeGeometry args={[260, 260]} />
-        <meshStandardMaterial color="#3e9c36" roughness={0.96} />
+        <meshStandardMaterial color="#2e7a2c" roughness={0.96} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -cliffH + 0.02, 0]} receiveShadow>
         <planeGeometry args={[outer * 2 + 52, outer * 2 + 52]} />
-          <meshStandardMaterial map={grass} color="#46a43a" roughness={0.88} />
+          <meshStandardMaterial map={grass} color="#348832" roughness={0.88} />
       </mesh>
       <LowerTerrace grass={grass} outer={outer} y={-cliffH * 0.42} />
       <IrregularCliff wall={wall} outer={outer} cliffH={cliffH} dirt={dirt} />
@@ -61,37 +61,33 @@ function MorningSky() {
 }
 
 function GrassTufts({ wall }: { wall: number }) {
-  const spots: Array<[number, number, number, string]> = [
-    [4.8, 16.8, 0.22, '#c45a6a'],
-    [-5.2, 17.1, 0.2, '#e8d060'],
-    [8.4, 16.4, 0.18, '#3a8c34'],
-    [-9.1, 16.6, 0.21, '#c45a6a'],
-    [17.2, 4.2, 0.2, '#e8d060'],
-    [16.8, -6.4, 0.22, '#3a8c34'],
-    [-16.6, 5.1, 0.19, '#c45a6a'],
-    [-17.0, -4.8, 0.2, '#e8d060'],
-    [2.2, -16.9, 0.18, '#3a8c34'],
-    [-3.4, -17.2, 0.21, '#c45a6a'],
-    [12.4, 12.8, 0.2, '#e8d060'],
-    [-11.8, 13.2, 0.19, '#3a8c34'],
-    [13.1, -12.2, 0.22, '#c45a6a'],
-    [-12.6, -13.0, 0.18, '#e8d060'],
-    [wall + 3.2, 7.4, 0.24, '#c45a6a'],
-    [-(wall + 2.8), -6.2, 0.22, '#3a8c34'],
-    [6.6, wall + 3.4, 0.2, '#e8d060'],
-    [-7.2, -(wall + 3.1), 0.21, '#c45a6a'],
+  const spots: Array<[number, number, number]> = [
+    [4.8, 16.8, 0.18],
+    [-5.2, 17.1, 0.16],
+    [8.4, 16.4, 0.15],
+    [-9.1, 16.6, 0.17],
+    [17.2, 4.2, 0.16],
+    [16.8, -6.4, 0.18],
+    [-16.6, 5.1, 0.15],
+    [-17.0, -4.8, 0.16],
+    [2.2, -16.9, 0.15],
+    [-3.4, -17.2, 0.17],
+    [12.4, 12.8, 0.16],
+    [-11.8, 13.2, 0.15],
+    [13.1, -12.2, 0.18],
+    [-12.6, -13.0, 0.15],
+    [wall + 3.2, 7.4, 0.19],
+    [-(wall + 2.8), -6.2, 0.18],
+    [6.6, wall + 3.4, 0.16],
+    [-7.2, -(wall + 3.1), 0.17],
   ]
   return (
     <group>
-      {spots.map(([x, z, r, c], i) => (
+      {spots.map(([x, z, r], i) => (
         <group key={i} position={[x, 0, z]}>
-          <mesh position={[0, r * 0.7, 0]} castShadow>
-            <icosahedronGeometry args={[r, 0]} />
-            <meshStandardMaterial color={c} roughness={0.72} flatShading />
-          </mesh>
-          <mesh position={[r * 0.7, r * 0.45, r * 0.2]} castShadow>
-            <icosahedronGeometry args={[r * 0.55, 0]} />
-            <meshStandardMaterial color="#2e7a28" roughness={0.78} flatShading />
+          <mesh position={[0, r * 0.55, 0]} castShadow>
+            <sphereGeometry args={[r, 7, 5]} />
+            <meshStandardMaterial color={i % 2 ? '#2a6a28' : '#3a7a30'} roughness={0.86} />
           </mesh>
         </group>
       ))}
@@ -114,7 +110,7 @@ function PlateauPads({ grass, outer }: { grass: THREE.Texture; outer: number }) 
       {pads.map(([x, z, w, d, rot], i) => (
         <mesh key={i} rotation={[-Math.PI / 2, 0, rot]} position={[x, 0.004, z]} receiveShadow>
           <planeGeometry args={[w, d]} />
-          <meshStandardMaterial map={grass} color={i % 2 ? '#4cb440' : '#3e9c36'} roughness={0.86} />
+          <meshStandardMaterial map={grass} color={i % 2 ? '#3a8c34' : '#2e7a2c'} roughness={0.86} />
         </mesh>
       ))}
     </group>
@@ -162,7 +158,7 @@ function LowerTerrace({ grass, outer, y }: { grass: THREE.Texture; outer: number
       {pads.map(([x, z, w, d], i) => (
         <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[x, y, z]} receiveShadow>
           <planeGeometry args={[w, d]} />
-          <meshStandardMaterial map={grass} color="#46a43a" roughness={0.88} />
+          <meshStandardMaterial map={grass} color="#348832" roughness={0.88} />
         </mesh>
       ))}
     </group>
@@ -184,7 +180,7 @@ function GrassFingers({ wall, grass }: { wall: number; grass: THREE.Texture }) {
       {pads.map(([x, z, w, d], i) => (
         <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[x, 0.006, z]} receiveShadow>
           <planeGeometry args={[w, d]} />
-          <meshStandardMaterial map={grass} color="#4cb440" roughness={0.86} />
+          <meshStandardMaterial map={grass} color="#3a8c34" roughness={0.86} />
         </mesh>
       ))}
     </group>
@@ -472,19 +468,13 @@ export function Pine({
   seed?: number
 }) {
   const yaw = jitter(seed, 1) * Math.PI
-  const lean = (jitter(seed, 2) - 0.5) * 0.1
-  const tufts: Array<[number, number, number, number, string]> = [
-    [0, h * 0.28, 0, h * 0.3, '#124a16'],
-    [h * 0.08, h * 0.36, h * 0.06, h * 0.24, '#16581c'],
-    [-h * 0.07, h * 0.4, -h * 0.05, h * 0.22, '#176420'],
-    [h * 0.06, h * 0.5, -h * 0.05, h * 0.2, '#1a7024'],
-    [-h * 0.05, h * 0.56, h * 0.06, h * 0.18, '#1c7a28'],
-    [h * 0.04, h * 0.66, -h * 0.03, h * 0.16, '#1e842c'],
-    [-h * 0.03, h * 0.74, h * 0.04, h * 0.14, '#228c32'],
-    [0, h * 0.84, 0, h * 0.12, '#26963a'],
-    [0, h * 0.94, 0, h * 0.08, '#2aa242'],
-    [h * 0.14, h * 0.32, -h * 0.1, h * 0.14, '#145218'],
-    [-h * 0.12, h * 0.3, h * 0.1, h * 0.13, '#104214'],
+  const lean = (jitter(seed, 2) - 0.5) * 0.08
+  const layers: Array<[number, number, number, string]> = [
+    [h * 0.32, h * 0.38, h * 0.34, '#124a16'],
+    [h * 0.48, h * 0.3, h * 0.3, '#16581c'],
+    [h * 0.62, h * 0.23, h * 0.26, '#1a7024'],
+    [h * 0.74, h * 0.16, h * 0.22, '#1e842c'],
+    [h * 0.86, h * 0.1, h * 0.18, '#228c32'],
   ]
   return (
     <group position={[x, y, z]} rotation={[lean, yaw, 0]}>
@@ -492,10 +482,10 @@ export function Pine({
         <cylinderGeometry args={[0.055, 0.13, h * 0.34, 6]} />
         <meshStandardMaterial color="#5a3418" roughness={0.92} />
       </mesh>
-      {tufts.map(([px, py, pz, r, c], i) => (
-        <mesh key={i} position={[px, py, pz]} scale={[0.82, 0.92, 0.82]} rotation={[0, i * 0.45, 0]} castShadow>
-          <icosahedronGeometry args={[r, 0]} />
-          <meshStandardMaterial color={c} roughness={0.74} flatShading />
+      {layers.map(([py, r, lh, c], i) => (
+        <mesh key={i} position={[0, py, 0]} rotation={[0, i * 0.22, 0]} castShadow>
+          <coneGeometry args={[r, lh, 7]} />
+          <meshStandardMaterial color={c} roughness={0.78} />
         </mesh>
       ))}
     </group>
@@ -544,8 +534,8 @@ export function Broadleaf({
       </mesh>
       {puffs.map(([px, py, pz, r, c], i) => (
         <mesh key={i} position={[px, py, pz]} scale={[1, 0.7, 1.08]} rotation={[0, i * 0.55, 0]} castShadow>
-          <icosahedronGeometry args={[r, 0]} />
-          <meshStandardMaterial color={c} roughness={0.76} flatShading />
+          <sphereGeometry args={[r, 7, 6]} />
+          <meshStandardMaterial color={c} roughness={0.78} />
         </mesh>
       ))}
     </group>
@@ -566,13 +556,12 @@ export function Cypress({
   seed?: number
 }) {
   const yaw = jitter(seed, 8) * Math.PI
-  const rings: Array<[number, number, number, number, string]> = [
-    [h * 0.04, h * 0.26, 0, h * 0.15, '#145a22'],
-    [-h * 0.03, h * 0.4, h * 0.02, h * 0.14, '#176428'],
-    [h * 0.03, h * 0.54, -h * 0.02, h * 0.13, '#1a702c'],
-    [-h * 0.02, h * 0.68, 0, h * 0.11, '#1e7c32'],
-    [0, h * 0.8, h * 0.02, h * 0.09, '#228a38'],
-    [0.01, h * 0.9, 0, h * 0.07, '#269440'],
+  const rings: Array<[number, number, number, string]> = [
+    [h * 0.3, h * 0.16, h * 0.28, '#145a22'],
+    [h * 0.48, h * 0.13, h * 0.26, '#176428'],
+    [h * 0.64, h * 0.1, h * 0.24, '#1a702c'],
+    [h * 0.78, h * 0.075, h * 0.22, '#1e7c32'],
+    [h * 0.9, h * 0.05, h * 0.18, '#228a38'],
   ]
   return (
     <group position={[x, y, z]} rotation={[0, yaw, (jitter(seed, 9) - 0.5) * 0.06]}>
@@ -580,10 +569,10 @@ export function Cypress({
         <cylinderGeometry args={[0.05, 0.09, h * 0.24, 6]} />
         <meshStandardMaterial color="#3a2414" roughness={0.94} />
       </mesh>
-      {rings.map(([px, py, pz, r, c], i) => (
-        <mesh key={i} position={[px, py, pz]} scale={[0.72, 1.35, 0.72]} rotation={[0, i * 0.3, 0]} castShadow>
-          <icosahedronGeometry args={[r, 0]} />
-          <meshStandardMaterial color={c} roughness={0.76} flatShading />
+      {rings.map(([py, r, lh, c], i) => (
+        <mesh key={i} position={[0, py, 0]} rotation={[0, i * 0.18, 0]} castShadow>
+          <coneGeometry args={[r, lh, 7]} />
+          <meshStandardMaterial color={c} roughness={0.78} />
         </mesh>
       ))}
     </group>
@@ -623,8 +612,8 @@ export function Willow({
       </mesh>
       {puffs.map(([px, py, pz, r, c], i) => (
         <mesh key={i} position={[px, py, pz]} scale={[1.1, 0.55, 1.1]} rotation={[0, i * 0.5, 0]} castShadow>
-          <icosahedronGeometry args={[r, 0]} />
-          <meshStandardMaterial color={c} roughness={0.76} flatShading />
+          <sphereGeometry args={[r, 7, 6]} />
+          <meshStandardMaterial color={c} roughness={0.78} />
         </mesh>
       ))}
       {drapes.map(([dx, dz], i) => (
@@ -662,8 +651,8 @@ export function Bush({
     <group position={[x, y, z]} rotation={[0, yaw, 0]}>
       {puffs.map(([px, py, pz, r, c], i) => (
         <mesh key={i} position={[px, py, pz]} scale={[1, 0.68, 1]} rotation={[0, i * 0.7, 0]} castShadow>
-          <icosahedronGeometry args={[r, 0]} />
-          <meshStandardMaterial color={c} roughness={0.8} flatShading />
+          <sphereGeometry args={[r, 7, 6]} />
+          <meshStandardMaterial color={c} roughness={0.82} />
         </mesh>
       ))}
     </group>

@@ -12,7 +12,7 @@ import {
 } from './auction'
 import { buildDowMarket } from './marketData'
 import { OPEN_CINEMATIC_SEC, GATE_ROLL_SEC } from './session'
-import { COURT_SIGNS, COURT_STENCILS, porchOf, STORE_PLAQUES, STORES, storeShortName, cameraLadderLocals, apronGaugeLocal } from './stores'
+import { COURT_SIGNS, FASCIA_NAMES, porchOf, STORES, storeShortName, cameraLadderLocals, apronGaugeLocal } from './stores'
 import type { OhlcvBar } from './types'
 
 function bar(partial: Partial<OhlcvBar> & { close: number }): OhlcvBar {
@@ -188,112 +188,44 @@ assert.ok(yard.position[0] > 8 && yard.position[2] < mill.position[2] - 4, 'YARD
 assert.deepEqual(
   COURT_SIGNS.map((s) => s.word),
   ['YESTERDAY', 'FIVE-DAY', 'FIVE-MONTH', 'YARD'],
-  'all four court names stay on low signs',
-)
-assert.deepEqual(
-  COURT_STENCILS.map((s) => s.word),
-  ['YESTERDAY', 'FIVE-DAY', 'FIVE-MONTH', 'YARD'],
-  'yesterday / five-day / five-month / yard stay as ground stencils',
+  'court names stay on the outer wall cap',
 )
 for (const sign of COURT_SIGNS.filter((s) => s.word !== 'YARD')) {
-  assert.ok(sign.z > 12.4, `${sign.word} plaque stays camera-near of the hall, not behind it`)
+  assert.ok(sign.z > 14.8 && sign.z < 15.3, `${sign.word} sits on the south wall cap, not a plaza plaque`)
 }
 assert.ok(
-  COURT_SIGNS.find((s) => s.word === 'YESTERDAY')!.z > 13.2,
-  'YESTERDAY stays on a south-apron plaque so the full word is not eaten by the hall or gates',
+  COURT_SIGNS.find((s) => s.word === 'YESTERDAY')!.z > 14.8,
+  'YESTERDAY is the full word on the south wall cap so the hall cannot eat DAY',
 )
 assert.ok(
   Math.abs(COURT_SIGNS.find((s) => s.word === 'YESTERDAY')!.x) < 1.2,
-  'YESTERDAY sits in the south-gate gap, not on a gate leaf that ate DAY',
+  'YESTERDAY sits on the south cap in the gate gap',
 )
 assert.ok(
-  COURT_SIGNS.find((s) => s.word === 'YARD')!.x > 12,
-  'YARD plaque stays on the east crane dirt, not the mill wall',
+  COURT_SIGNS.find((s) => s.word === 'YARD')!.x > 14.5,
+  'YARD court name sits on the east wall cap, not a mill shed',
 )
 assert.ok(
   COURT_SIGNS.find((s) => s.word === 'YARD')!.z > 1.5,
-  'YARD court name sits on the camera-near east wall, not the back crane',
+  'YARD court name is camera-near on the east cap',
 )
 assert.ok(
-  COURT_SIGNS.find((s) => s.word === 'FIVE-DAY')!.x > 8,
-  'FIVE-DAY plaque stays east of the south-gate trees so the full word reads',
-)
-assert.ok(
-  COURT_SIGNS.filter((s) => s.word !== 'YARD').every((s) => s.z > 13.2 && s.z < 15.5),
-  'court names sit on the south apron inside the Clash crop so YESTERDAY is not clipped to YESTER',
+  COURT_SIGNS.find((s) => s.word === 'FIVE-DAY')!.x > 6,
+  'FIVE-DAY sits on the east-south cap so the full word reads',
 )
 assert.ok(
   COURT_SIGNS.find((s) => s.word === 'YESTERDAY')!.wide >= 5,
-  'YESTERDAY is the full word on the camera-near plaque',
+  'YESTERDAY is the full word on the wall cap',
 )
 assert.deepEqual(
-  STORE_PLAQUES.map((s) => s.word),
-  ['FOUNDRY', 'HALL', 'DOCK', 'ALLEY', 'MILL', 'YARD', 'PIT', 'SPIRE', 'LOFT'],
-  'all nine store names sit on camera-near plaques with the court signs',
+  [...FASCIA_NAMES].sort(),
+  ['ALLEY', 'DOCK', 'FOUNDRY', 'HALL', 'LOFT', 'MILL', 'PIT', 'SPIRE', 'YARD'],
+  'all nine store names live on small fascias, not plaza plaques',
 )
-assert.ok(
-  STORE_PLAQUES.every((s) => s.wide >= 2.5),
-  'store name plaques are Clash-readable, not inspect-only',
-)
-assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'MILL')!.x > 8,
-  'MILL is named on the east court, not only YARD',
-)
-assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'ALLEY')!.x > 8,
-  'ALLEY is named on the east court',
-)
-assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'SPIRE')!.x < -8,
-  'SPIRE sits on the west-south wall with PIT/LOFT, left of the gate that ate the word',
-)
-assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'PIT')!.x < -12,
-  'PIT is a west-apron word, not stacked under FOUNDRY',
-)
-assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'HALL')!.x > 4 && STORE_PLAQUES.find((s) => s.word === 'HALL')!.x < 6.2,
-  'HALL stands in front of the right gate so the word is not behind a leaf',
-)
-assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'HALL')!.z > 13.8,
-  'HALL is camera-near of the right gate, in the default crop',
-)
-assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'DOCK')!.z > 11.5,
-  'DOCK plaque sits camera-near of the loading bay, in the default crop',
-)
-for (let i = 0; i < STORE_PLAQUES.length; i++) {
-  for (let j = i + 1; j < STORE_PLAQUES.length; j++) {
-    const a = STORE_PLAQUES[i]
-    const b = STORE_PLAQUES[j]
-    const d = Math.hypot(a.x - b.x, a.z - b.z)
-    assert.ok(d > 1.85, `${a.word} and ${b.word} plaques overlap (${d.toFixed(2)})`)
-  }
-}
-assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'SPIRE')!.z > 14.9,
-  'SPIRE plaque sits on the camera-near south wall with FIVE-MONTH',
-)
-assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'LOFT')!.z > 11.5,
-  'LOFT plaque sits in the default Clash crop with the court names',
-)
-assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'FOUNDRY')!.z > 12.4,
-  'FOUNDRY plaque sits left of the south gate so the word is not only a fascia',
-)
-assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'PIT')!.z > 12.5,
-  'PIT plaque stays camera-near of the five-month court',
-)
-assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'HALL')!.z > 12.5,
-  'HALL plaque sits in the south-gate gap so the word reads with YESTERDAY',
-)
-assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'YARD')!.z > 0,
-  'YARD is a word on the east apron in the default crop, not only the crane',
+assert.deepEqual(
+  STORES.map((s) => storeShortName(s.id)).sort(),
+  [...FASCIA_NAMES].sort(),
+  'every store fascia matches the nine readable names',
 )
 assert.equal(storeShortName('y-poc'), 'HALL', 'tape never prints AUCTION from AUCTION HALL')
 assert.equal(storeShortName('y-hvn'), 'FOUNDRY')

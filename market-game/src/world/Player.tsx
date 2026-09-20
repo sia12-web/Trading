@@ -176,15 +176,15 @@ export function Player({
   return (
     <group ref={group} position={spawn}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.025, 0]}>
-        <circleGeometry args={[0.62, 24]} />
+        <circleGeometry args={[0.28, 24]} />
         <meshBasicMaterial color="#0a1808" transparent opacity={0.42} toneMapped={false} />
       </mesh>
       <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
-        <ringGeometry args={[0.58, 0.84, 36]} />
+        <ringGeometry args={[0.26, 0.38, 36]} />
         <meshBasicMaterial color={selected ? '#e8ff6a' : '#9dff3a'} toneMapped={false} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.055, 0]}>
-        <ringGeometry args={[0.84, 0.96, 36]} />
+        <ringGeometry args={[0.38, 0.44, 36]} />
         <meshBasicMaterial color="#fff8dc" toneMapped={false} />
       </mesh>
       <PriceBody vel={vel} bob={bob} />
@@ -223,7 +223,7 @@ function PriceBody({
   const pants = '#1e1a16'
 
   return (
-    <group scale={1.72}>
+    <group scale={0.48}>
       <mesh position={[0, 0.62, 0]} scale={1.2}>
         <boxGeometry args={[0.48, 0.54, 0.3]} />
         <meshBasicMaterial color={outline} side={THREE.BackSide} toneMapped={false} />

@@ -6,7 +6,7 @@ import { advertisedPrice, inspectStore, marketWorld, stallState } from '../game/
 import { apronGaugeLocal, cameraLadderLocals, storeYaw } from '../game/stores'
 import type { AnchoredVwap, StoreDef, VolumeProfile } from '../game/types'
 import { useGame } from '../ui/useGame'
-import { makeChalkTexture, makeCourtSignTexture, makeFasciaTexture, makeLadderLabelTexture, makeOpenBannerTexture, useBrickTexture, useMetalTexture } from './textures'
+import { makeChalkTexture, makeCourtSignTexture, makeFasciaTexture, useBrickTexture, useMetalTexture } from './textures'
 
 type Stall = ReturnType<typeof stallState>
 
@@ -56,7 +56,7 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
                   : store.building === 'loft'
                     ? { w: 3.7, d: 3.55, fasciaY: 2.48 }
                     : { w: 3.65, d: 3.5, fasciaY: 2.25 }
-  const gableX = store.range === 'fiveDay' || store.range === 'fiveMonth' ? shell.w * 0.52 : 0
+  const fasciaW = Math.min(2.92, 1.08 + label.length * 0.24)
 
   return (
     <group
@@ -90,29 +90,16 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
         nodePx={price}
         color={store.accent}
       />
-      <Fascia title={label} paint={store.accent} y={shell.fasciaY + 0.28} width={Math.min(5.05, shell.w * 1.12)} z={shell.d * 0.52 + 0.08} />
-      {store.building === 'mill' && (
-        <Fascia title="FIVE-DAY" paint="#d48848" y={shell.fasciaY + 1.18} width={4.75} z={shell.d * 0.52 + 0.16} />
-      )}
-      {store.building === 'spire' && (
-        <Fascia title="FIVE-MONTH" paint="#6ab0c4" y={shell.fasciaY + 1.28} width={4.35} z={shell.d * 0.52 + 0.16} />
-      )}
+      <Fascia
+        title={label}
+        paint={store.accent}
+        y={shell.fasciaY + 0.52}
+        width={fasciaW}
+        z={store.range === 'fiveDay' ? -shell.d * 0.52 - 0.1 : shell.d * 0.52 + 0.1}
+        rotY={store.range === 'fiveDay' ? Math.PI : 0}
+      />
       <FaceShutter open={st.door} width={Math.min(2.55, shell.w * 0.58)} z={shell.d * 0.52 + 0.16} />
-      <TimeFlag stall={st} x={shell.w * 0.38} z={shell.d * 0.72 + 1.95} />
       <PorchTell stall={st} kind={store.kind} z={shell.d * 0.55 + 0.55} />
-      {gableX !== 0 && (
-        <GableSign title={label} paint={store.accent} x={gableX} y={store.building === 'yard' ? 3.15 : 2.55} />
-      )}
-      {store.range === 'fiveDay' && (
-        <EastSign
-          title={label}
-          paint={store.accent}
-          y={store.building === 'yard' ? 3.65 : 3.05}
-          z={-shell.d * 0.52}
-          width={store.building === 'yard' ? 5.25 : Math.min(4.7, shell.w * 0.98)}
-        />
-      )}
-      {store.building === 'yard' && <YardPlaque />}
       <ChalkBoard price={fmtPx(price)} y={store.building === 'pit' ? 1.05 : 1.4} z={shell.d * 0.52 + 0.12} pulse={printed} />
       <GoodsPile stall={st} kind={store.kind} z={shell.d * 0.55 + 0.85} />
       {printed && st.printSide === 'buy' && (
@@ -124,8 +111,8 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
       {printed && st.printSide === 'sell' && <FadeSweep />}
       {hot && (
         <mesh position={[0, 0.04, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[2.15, 2.38, 28]} />
-          <meshBasicMaterial color="#d4a046" transparent opacity={0.88} />
+          <ringGeometry args={[1.02, 1.16, 28]} />
+          <meshBasicMaterial color="#d4a046" transparent opacity={0.72} />
         </mesh>
       )}
       <mesh
@@ -277,67 +264,27 @@ function Ladder({
   )
 }
 
-function Fascia({ title, paint, y, width, z }: { title: string; paint: string; y: number; width: number; z: number }) {
+function Fascia({
+  title,
+  paint,
+  y,
+  width,
+  z,
+  rotY = 0,
+}: {
+  title: string
+  paint: string
+  y: number
+  width: number
+  z: number
+  rotY?: number
+}) {
   const tex = useMemo(() => makeFasciaTexture(title, paint), [title, paint])
   useEffect(() => () => tex.dispose(), [tex])
   return (
-    <mesh position={[0, y, z]} castShadow>
-      <boxGeometry args={[width, 1.22, 0.22]} />
+    <mesh position={[0, y, z]} rotation={[0, rotY, 0]} castShadow>
+      <boxGeometry args={[width, 0.48, 0.14]} />
       <meshBasicMaterial map={tex} />
-    </mesh>
-  )
-}
-
-function GableSign({ title, paint, x, y }: { title: string; paint: string; x: number; y: number }) {
-  const tex = useMemo(() => makeFasciaTexture(title, paint), [title, paint])
-  useEffect(() => () => tex.dispose(), [tex])
-  return (
-    <mesh position={[x, y, 0]} rotation={[0, (x > 0 ? 1 : -1) * (Math.PI / 2), 0]} castShadow>
-      <boxGeometry args={[4.55, 1.35, 0.24]} />
-      <meshBasicMaterial map={tex} />
-    </mesh>
-  )
-}
-
-function EastSign({ title, paint, y, z, width }: { title: string; paint: string; y: number; z: number; width: number }) {
-  const tex = useMemo(() => makeFasciaTexture(title, paint), [title, paint])
-  useEffect(() => () => tex.dispose(), [tex])
-  return (
-    <mesh position={[0, y, z]} rotation={[0, Math.PI, 0]} castShadow>
-      <boxGeometry args={[width, 1.35, 0.24]} />
-      <meshBasicMaterial map={tex} />
-    </mesh>
-  )
-}
-
-function YardPlaque() {
-  const tex = useMemo(() => makeCourtSignTexture('YARD', '#d48848'), [])
-  useEffect(() => () => tex.dispose(), [tex])
-  return (
-    <group position={[0.15, 0, -2.05]} rotation={[0, Math.PI, 0]}>
-      <mesh position={[0, 0.55, 0]} castShadow>
-        <boxGeometry args={[0.16, 1.1, 0.16]} />
-        <meshStandardMaterial color="#3a2a1c" />
-      </mesh>
-      <mesh position={[0, 1.42, 0.06]} castShadow>
-        <boxGeometry args={[3.05, 0.82, 0.12]} />
-        <meshStandardMaterial color="#2a1c14" />
-      </mesh>
-      <mesh position={[0, 1.42, 0.14]}>
-        <planeGeometry args={[2.88, 0.66]} />
-        <meshBasicMaterial map={tex} toneMapped={false} />
-      </mesh>
-    </group>
-  )
-}
-
-function NyCashBunting({ y, z }: { y: number; z: number }) {
-  const tex = useMemo(() => makeOpenBannerTexture(), [])
-  useEffect(() => () => tex.dispose(), [tex])
-  return (
-    <mesh position={[0, y, z]}>
-      <boxGeometry args={[3.5, 0.58, 0.1]} />
-      <meshStandardMaterial map={tex} roughness={0.55} />
     </mesh>
   )
 }
@@ -348,50 +295,27 @@ function FaceShutter({ open, width, z }: { open: number; width: number; z: numbe
     <group position={[0, 0, z]}>
       <mesh position={[0, 2.48, 0]}>
         <boxGeometry args={[width + 0.42, 0.18, 0.16]} />
-        <meshStandardMaterial color="#e4d4b8" metalness={0.18} roughness={0.55} />
+        <meshStandardMaterial color="#d8c8a8" metalness={0.12} roughness={0.62} />
       </mesh>
       <mesh position={[0, h / 2 + 0.12, 0.04]} castShadow>
         <boxGeometry args={[width + 0.08, Math.max(0.14, h), 0.18]} />
         <meshStandardMaterial
-          color={open > 0.45 ? '#d4b078' : '#12100e'}
-          metalness={0.32}
-          roughness={0.5}
-          emissive={open > 0.45 ? '#8a5020' : '#000000'}
-          emissiveIntensity={open > 0.45 ? 0.38 : 0}
+          color={open > 0.45 ? '#7a848c' : '#4a504c'}
+          metalness={0.42}
+          roughness={0.46}
         />
       </mesh>
       {open > 0.2 && (
         <mesh position={[0, 0.62, -0.06]}>
           <boxGeometry args={[width * 0.92, 1.45 * open, 0.05]} />
-          <meshBasicMaterial color="#ffc070" transparent opacity={0.28 + open * 0.45} toneMapped={false} />
+          <meshStandardMaterial
+            color="#c45a32"
+            emissive="#a04828"
+            emissiveIntensity={0.18 + open * 0.35}
+            roughness={0.55}
+          />
         </mesh>
       )}
-    </group>
-  )
-}
-
-function TimeFlag({ stall, x, z }: { stall: Stall; x: number; z: number }) {
-  const fair = stall.fairToday && stall.timeOpportunity < 0.38
-  const word = fair ? 'FAIR' : stall.door > 0.45 ? 'OPEN' : 'SHUT'
-  const ink = fair ? '#c8e070' : stall.door > 0.45 ? '#e8c04a' : '#8a7860'
-  const tex = useMemo(() => makeCourtSignTexture(word, ink), [word, ink])
-  useEffect(() => () => tex.dispose(), [tex])
-  const wide = fair ? 4.15 : 2.55
-  const y = fair ? 4.85 : 3.95
-  return (
-    <group position={[x, 0, z]} rotation={[0, Math.PI / 4, 0]}>
-      <mesh position={[0, 2.15, 0]} castShadow>
-        <boxGeometry args={[0.14, fair ? 4.65 : 3.85, 0.14]} />
-        <meshStandardMaterial color="#c4a05a" metalness={0.35} roughness={0.5} />
-      </mesh>
-      <mesh position={[0.06, y, 0.12]} castShadow>
-        <boxGeometry args={[wide, fair ? 1.12 : 0.82, 0.16]} />
-        <meshStandardMaterial color={fair ? '#3a4a18' : '#1a120c'} />
-      </mesh>
-      <mesh position={[0.06, y, 0.22]}>
-        <planeGeometry args={[wide * 0.94, fair ? 0.92 : 0.66]} />
-        <meshBasicMaterial map={tex} toneMapped={false} />
-      </mesh>
     </group>
   )
 }
@@ -406,12 +330,12 @@ function PorchTell({ stall, kind, z }: { stall: Stall; kind: StoreDef['kind']; z
       {[-1.25, 1.25].map((x) => (
         <mesh key={x} position={[x, 0.62, 0]} castShadow>
           <cylinderGeometry args={[0.08, 0.09, 1.24, 6]} />
-          <meshStandardMaterial color="#c4a05a" metalness={0.35} roughness={0.5} />
+          <meshStandardMaterial color="#8a6a48" metalness={0.22} roughness={0.62} />
         </mesh>
       ))}
       <mesh position={[0, 1.22, 0]} rotation={[0, 0, settled ? 0 : 0.08]}>
         <boxGeometry args={[2.55, 0.07, 0.07]} />
-        <meshStandardMaterial color={empty ? '#5a5348' : settled ? '#6a5840' : '#e8c04a'} metalness={0.3} roughness={0.45} />
+        <meshStandardMaterial color={empty ? '#5a5348' : settled ? '#6a5840' : '#c45a32'} metalness={0.22} roughness={0.52} />
       </mesh>
     </group>
   )
@@ -528,8 +452,6 @@ function GoodsPile({ stall, kind, z }: { stall: Stall; kind: StoreDef['kind']; z
 }
 
 function EmptyRacks({ z }: { z: number }) {
-  const tex = useMemo(() => makeLadderLabelTexture('THIN', '#3a3830'), [])
-  useEffect(() => () => tex.dispose(), [tex])
   return (
     <group position={[0, 0.95, z + 0.22]}>
       {[-1.45, 0, 1.45].map((x) => (
@@ -544,10 +466,6 @@ function EmptyRacks({ z }: { z: number }) {
           <meshStandardMaterial color="#6a6258" />
         </mesh>
       ))}
-      <mesh position={[0, 1.55, 0.78]}>
-        <planeGeometry args={[1.55, 0.42]} />
-        <meshBasicMaterial map={tex} toneMapped={false} />
-      </mesh>
     </group>
   )
 }
@@ -559,17 +477,20 @@ function RollDoor({ width, height, open, z }: { width: number; height: number; o
       <mesh position={[0, h / 2 + 0.08, z]} castShadow>
         <boxGeometry args={[width, Math.max(0.08, h), 0.12]} />
         <meshStandardMaterial
-          color={open > 0.55 ? '#d4b078' : '#1a1814'}
-          metalness={0.35}
-          roughness={0.48}
-          emissive={open > 0.55 ? '#8a6030' : '#000000'}
-          emissiveIntensity={open > 0.55 ? 0.14 : 0}
+          color={open > 0.55 ? '#7a848c' : '#3e4442'}
+          metalness={0.42}
+          roughness={0.46}
         />
       </mesh>
       {open > 0.28 && (
         <mesh position={[0, 0.55, z - 0.08]}>
           <boxGeometry args={[width * 0.92, 1.05 * open, 0.04]} />
-          <meshBasicMaterial color="#ffc070" transparent opacity={0.22 + open * 0.35} toneMapped={false} />
+          <meshStandardMaterial
+            color="#c45a32"
+            emissive="#a04828"
+            emissiveIntensity={0.12 + open * 0.28}
+            roughness={0.55}
+          />
         </mesh>
       )}
     </group>
@@ -650,7 +571,7 @@ function Foundry({
       </mesh>
       <mesh position={[0, 2.05, 2.28]} castShadow>
         <boxGeometry args={[2.15, 0.12, 0.85]} />
-        <meshStandardMaterial color="#c4a05a" roughness={0.48} metalness={0.35} />
+        <meshStandardMaterial color="#d8c8a8" roughness={0.62} />
       </mesh>
       <RollDoor width={1.7} height={1.85} open={stall.door} z={2.12} />
       {[-1.05, 1.05].map((x) => (
@@ -698,7 +619,6 @@ function Foundry({
 }
 
 function Hall({ brick, metal, stall }: { brick: THREE.Texture; metal: THREE.Texture; stall: Stall }) {
-  const g = useGame()
   return (
     <group>
       <mesh position={[0, 2.05, 0]} castShadow receiveShadow>
@@ -767,7 +687,6 @@ function Hall({ brick, metal, stall }: { brick: THREE.Texture; metal: THREE.Text
         <boxGeometry args={[0.05, 0.2, 0.04]} />
         <meshStandardMaterial color="#2a1810" />
       </mesh>
-      {g.phase !== 'preopen' && <NyCashBunting y={5.35} z={2.42} />}
     </group>
   )
 }

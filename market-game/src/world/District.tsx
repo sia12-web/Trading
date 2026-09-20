@@ -1,15 +1,14 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
-import { closeInspect, inspectStore, setWalkTarget, stallState } from '../game/gameStore'
+import { closeInspect, inspectStore, setWalkTarget } from '../game/gameStore'
 import { OPEN_CINEMATIC_SEC } from '../game/session'
-import { COURT_SIGNS, COURT_STENCILS, STORE_PLAQUES, storeAtPoint, YARD } from '../game/stores'
+import { COURT_SIGNS, storeAtPoint, YARD } from '../game/stores'
 import { useGame } from '../ui/useGame'
 import { ClashTerrain, ClashWalls, MorningSun } from './ClashTerrain'
 import {
   makeCourtSignTexture,
   makeOpenBannerTexture,
-  makeStencilTexture,
   useAsphaltTexture,
   useBrickTexture,
   useConcreteTexture,
@@ -39,7 +38,7 @@ export function District() {
 
   return (
     <>
-      <MorningSun warm={sunK < 0.45} />
+      <MorningSun warm />
       <color attach="background" args={[sky]} />
 
       <ClashTerrain wall={YARD} />
@@ -67,7 +66,7 @@ export function District() {
       </mesh>
       <WearPaths dirt={dirt} />
 
-      <WingPads brick={brick} concrete={concrete} dirt={dirt} />
+      <WingPads brick={brick} dirt={dirt} />
       <ClashWalls wall={YARD} brick={brick} />
       <BellTower metal={metal} brick={brick} ringing={g.phase === 'opening'} opening={g.phase === 'opening'} />
       <SouthGate open={g.shutter} />
@@ -146,7 +145,7 @@ function BellTower({
       </mesh>
       <mesh position={[0, 5.35, 0]} castShadow>
         <boxGeometry args={[2.85, 0.6, 2.85]} />
-        <meshStandardMaterial map={metal} color="#c4a05a" metalness={0.42} roughness={0.42} />
+        <meshStandardMaterial map={metal} color="#d8c8a8" roughness={0.55} metalness={0.18} />
       </mesh>
       <mesh position={[0, 6.05, 0]} castShadow>
         <coneGeometry args={[1.28, 1.25, 4]} />
@@ -179,11 +178,9 @@ function BellTower({
 
 function WingPads({
   brick,
-  concrete,
   dirt,
 }: {
   brick: THREE.Texture
-  concrete: THREE.Texture
   dirt: THREE.Texture
 }) {
   return (
@@ -198,150 +195,11 @@ function WingPads({
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-10.9, 0.018, -1.2]} receiveShadow>
         <planeGeometry args={[8.6, 16.2]} />
-        <meshStandardMaterial map={concrete} color="#6aa0b0" roughness={0.84} />
+        <meshStandardMaterial map={dirt} color="#b88868" roughness={0.88} />
       </mesh>
-      {COURT_STENCILS.map((s) => (
-        <Stencil key={s.word} word={s.word} ink={s.ink} position={[s.x, 0.055, s.z]} w={s.w} d={s.d} />
+      {COURT_SIGNS.map((s) => (
+        <WallStrip key={s.word} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} east={s.word === 'YARD'} />
       ))}
-      {COURT_SIGNS.map((s) =>
-        s.word === 'YESTERDAY' ? (
-          <CourtPlaque key={s.word} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} lift={0.42} />
-        ) : (
-          <WallStrip key={s.word} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} east={s.word === 'YARD'} />
-        ),
-      )}
-      {STORE_PLAQUES.map((s) =>
-        s.word === 'SPIRE' ? (
-          <WallStrip
-            key={`store-${s.word}`}
-            word={s.word}
-            ink={s.ink}
-            x={s.x}
-            z={s.z}
-            wide={s.wide}
-            onPick={() => inspectStore(s.id)}
-          />
-        ) : (
-          <CourtPlaque
-            key={`store-${s.word}`}
-            word={s.word}
-            ink={s.ink}
-            x={s.x}
-            z={s.z}
-            wide={s.wide}
-            lift={s.word === 'FOUNDRY' || s.word === 'PIT' ? 0.52 : s.word === 'HALL' ? 0.62 : s.word === 'LOFT' ? 0.36 : 0.14}
-            onPick={() => inspectStore(s.id)}
-          />
-        ),
-      )}
-      <StallTimePlaques />
-    </group>
-  )
-}
-
-function Stencil({
-  word,
-  ink,
-  position,
-  w,
-  d,
-}: {
-  word: string
-  ink: string
-  position: [number, number, number]
-  w: number
-  d: number
-}) {
-  const tex = useMemo(() => makeStencilTexture(word, ink), [word, ink])
-  return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={position}>
-      <planeGeometry args={[w, d]} />
-      <meshBasicMaterial map={tex} toneMapped={false} depthWrite={false} />
-    </mesh>
-  )
-}
-
-function StallTimePlaques() {
-  const g = useGame()
-  const marks = [
-    { id: 'y-poc' as const, x: -0.55, z: 12.05, wide: 4.05 },
-    { id: 'y-hvn' as const, x: -6.35, z: 11.45, wide: 3.55 },
-    { id: 'y-lvn' as const, x: 6.15, z: 11.25, wide: 3.45 },
-    { id: '5d-poc' as const, x: 8.95, z: 8.05, wide: 3.45 },
-    { id: '5d-hvn' as const, x: 8.85, z: -0.15, wide: 3.35 },
-    { id: '5d-lvn' as const, x: 8.75, z: 5.15, wide: 3.35 },
-    { id: 'avwap' as const, x: -8.85, z: 8.55, wide: 3.45 },
-    { id: 'avwap-upper' as const, x: -9.15, z: 10.15, wide: 3.35 },
-    { id: 'avwap-lower' as const, x: -9.05, z: 12.35, wide: 3.35 },
-  ]
-  return (
-    <>
-      {marks.map((m) => {
-        const st = stallState(m.id, g)
-        const fair = st.fairToday && st.timeOpportunity < 0.38
-        if (!fair) return null
-        return (
-          <CourtPlaque
-            key={`time-${m.id}`}
-            word="FAIR"
-            ink="#c8e070"
-            x={m.x}
-            z={m.z}
-            wide={m.wide}
-            lift={0.95}
-          />
-        )
-      })}
-    </>
-  )
-}
-
-function CourtPlaque({
-  word,
-  ink,
-  x,
-  z,
-  wide,
-  lift = 0,
-  onPick,
-}: {
-  word: string
-  ink: string
-  x: number
-  z: number
-  wide: number
-  lift?: number
-  onPick?: () => void
-}) {
-  const tex = useMemo(() => makeCourtSignTexture(word, ink), [word, ink])
-  return (
-    <group
-      position={[x, lift, z]}
-      rotation={[0, Math.PI / 4, 0]}
-      onClick={(e) => {
-        if (!onPick) return
-        e.stopPropagation()
-        onPick()
-      }}
-    >
-      <mesh position={[0, 0.42, 0.1]} castShadow>
-        <boxGeometry args={[0.12, 0.84 + lift, 0.12]} />
-        <meshStandardMaterial color="#3a2a1c" roughness={0.8} />
-      </mesh>
-      <mesh position={[0, 1.18, 0.16]} castShadow>
-        <boxGeometry args={[wide, 0.72, 0.12]} />
-        <meshStandardMaterial color="#1a120c" roughness={0.68} />
-      </mesh>
-      <mesh position={[0, 1.18, 0.24]}>
-        <planeGeometry args={[wide * 0.94, 0.58]} />
-        <meshBasicMaterial map={tex} toneMapped={false} />
-      </mesh>
-      {onPick && (
-        <mesh position={[0, 1.2, 0.4]}>
-          <planeGeometry args={[wide + 0.8, 1.55]} />
-          <meshBasicMaterial transparent opacity={0.01} depthWrite={false} />
-        </mesh>
-      )}
     </group>
   )
 }
@@ -413,32 +271,30 @@ function GateLeaf({ x, open }: { x: number; open: number }) {
           </mesh>
           <mesh position={[dx, 5.18, 0]} castShadow>
             <boxGeometry args={[0.9, 0.22, 0.9]} />
-            <meshStandardMaterial color="#c4a05a" metalness={0.4} roughness={0.45} />
+            <meshStandardMaterial color="#d8c8a8" roughness={0.62} />
           </mesh>
         </group>
       ))}
       <mesh position={[0, 5.28, 0]} castShadow>
         <boxGeometry args={[4.55, 0.32, 0.78]} />
-        <meshStandardMaterial color="#c4a05a" metalness={0.4} roughness={0.42} />
+        <meshStandardMaterial color="#d8c8a8" roughness={0.6} />
       </mesh>
       <mesh position={[0, h / 2 + 0.12, 0.08]} castShadow>
         <boxGeometry args={[3.55, Math.max(0.16, h), 0.28]} />
         <meshStandardMaterial
-          color={open > 0.4 ? '#d4b078' : '#12100e'}
-          metalness={0.38}
+          color={open > 0.4 ? '#7a848c' : '#3e4442'}
+          metalness={0.42}
           roughness={0.46}
-          emissive={open > 0.4 ? '#8a6030' : '#000000'}
-          emissiveIntensity={open > 0.4 ? 0.32 : 0}
         />
       </mesh>
       <mesh position={[0, 0.7 + open * 4.15, 0.22]} castShadow>
-        <boxGeometry args={[3.75, 0.82, 0.7]} />
-        <meshStandardMaterial color="#e8c04a" metalness={0.45} roughness={0.35} emissive="#c4a046" emissiveIntensity={0.3 + open * 1.4} />
+        <boxGeometry args={[3.75, 0.42, 0.38]} />
+        <meshStandardMaterial color="#5a6058" metalness={0.4} roughness={0.48} />
       </mesh>
       {open > 0.08 && (
         <mesh position={[0, 0.12, 0.35]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[1.15, 2.15, 22]} />
-          <meshBasicMaterial color="#ffe080" transparent opacity={0.32 + open * 0.55} toneMapped={false} />
+          <ringGeometry args={[1.15, 1.85, 22]} />
+          <meshBasicMaterial color="#c45a32" transparent opacity={0.12 + open * 0.22} toneMapped={false} />
         </mesh>
       )}
     </group>
@@ -474,42 +330,31 @@ function WorkLamps({ on }: { on: number }) {
   const spots: Array<[number, number]> = [
     [-2.4, 2.4],
     [2.4, 2.4],
-    [-2.4, -2.4],
-    [2.4, -2.4],
     [-9.2, 4.2],
-    [-9.2, -1.4],
-    [-9.2, -6.8],
-    [3.4, 9.2],
     [8.9, -1.6],
-    [-4.2, 9.0],
-    [6.6, 8.8],
-    [0.2, 11.2],
-    [8.6, 3.2],
-    [-8.4, 8.6],
     [-5.15, 12.7],
     [5.15, 12.7],
+    [-8.4, 8.6],
+    [8.6, 3.2],
   ]
   return (
     <group>
       {spots.map(([x, z], i) => (
         <group key={i} position={[x, 0, z]}>
           <mesh position={[0, 1.85, 0]} castShadow>
-            <cylinderGeometry args={[0.1, 0.14, 3.7, 6]} />
-            <meshStandardMaterial color="#4a4038" metalness={0.45} />
+            <cylinderGeometry args={[0.08, 0.12, 3.7, 6]} />
+            <meshStandardMaterial color="#4a4038" metalness={0.38} roughness={0.55} />
           </mesh>
           <mesh position={[0, 3.75, 0.18]}>
-            <boxGeometry args={[0.78, 0.32, 0.85]} />
+            <boxGeometry args={[0.62, 0.28, 0.72]} />
             <meshStandardMaterial
-              color={on > 0.12 ? '#ffe2a8' : '#4a4038'}
-              emissive="#ffb060"
-              emissiveIntensity={on * 3.4}
+              color={on > 0.12 ? '#d8c8a8' : '#4a4038'}
+              emissive="#c45a32"
+              emissiveIntensity={on * 0.85}
+              roughness={0.55}
             />
           </mesh>
-          <mesh position={[0, 3.55, 0.38]}>
-            <sphereGeometry args={[0.32, 8, 6]} />
-            <meshBasicMaterial color={on > 0.12 ? '#ffe8b0' : '#2a2218'} toneMapped={false} />
-          </mesh>
-          {on > 0.12 && <pointLight color="#ffc070" intensity={on * 8.4} distance={10} position={[0, 3.4, 0.5]} />}
+          {on > 0.12 && <pointLight color="#ffc080" intensity={on * 3.2} distance={8} position={[0, 3.4, 0.5]} />}
         </group>
       ))}
     </group>

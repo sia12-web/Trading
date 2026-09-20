@@ -19,7 +19,7 @@ export function HubWorld() {
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.014, 0]} receiveShadow>
         <planeGeometry args={[YARD * 2 - 0.55, YARD * 2 - 0.55]} />
-        <meshStandardMaterial map={grass} color="#4cb440" roughness={0.86} />
+        <meshStandardMaterial map={grass} color="#3a8c34" roughness={0.86} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.022, 5.2]} receiveShadow>
         <planeGeometry args={[7.4, 9.8]} />
