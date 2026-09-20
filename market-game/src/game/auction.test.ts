@@ -191,10 +191,10 @@ assert.deepEqual(
   'court names stay on the outer wall cap',
 )
 for (const sign of COURT_SIGNS.filter((s) => s.word !== 'YARD')) {
-  assert.ok(sign.z > 14.8 && sign.z < 15.3, `${sign.word} sits on the south wall cap, not a plaza plaque`)
+  assert.ok(sign.z > 15.4 && sign.z < 16.2, `${sign.word} sits on the south wall cap, not a plaza plaque`)
 }
 assert.ok(
-  COURT_SIGNS.find((s) => s.word === 'YESTERDAY')!.z > 14.8,
+  COURT_SIGNS.find((s) => s.word === 'YESTERDAY')!.z > 15.4,
   'YESTERDAY is the full word on the south wall cap so the hall cannot eat DAY',
 )
 assert.ok(
@@ -202,7 +202,7 @@ assert.ok(
   'YESTERDAY sits on the south cap in the gate gap',
 )
 assert.ok(
-  COURT_SIGNS.find((s) => s.word === 'YARD')!.x > 14.5,
+  COURT_SIGNS.find((s) => s.word === 'YARD')!.x > 15.4,
   'YARD court name sits on the east wall cap, not a mill shed',
 )
 assert.ok(

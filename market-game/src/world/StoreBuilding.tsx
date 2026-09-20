@@ -56,7 +56,7 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
                   : store.building === 'loft'
                     ? { w: 3.7, d: 3.55, fasciaY: 2.48 }
                     : { w: 3.65, d: 3.5, fasciaY: 2.25 }
-  const fasciaW = Math.min(2.92, 1.08 + label.length * 0.24)
+  const fasciaW = Math.min(3.15, 1.22 + label.length * 0.26)
 
   return (
     <group
@@ -93,7 +93,7 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
       <Fascia
         title={label}
         paint={store.accent}
-        y={shell.fasciaY + 0.52}
+        y={shell.fasciaY + 0.85}
         width={fasciaW}
         z={store.range === 'fiveDay' ? -shell.d * 0.52 - 0.1 : shell.d * 0.52 + 0.1}
         rotY={store.range === 'fiveDay' ? Math.PI : 0}
@@ -283,7 +283,7 @@ function Fascia({
   useEffect(() => () => tex.dispose(), [tex])
   return (
     <mesh position={[0, y, z]} rotation={[0, rotY, 0]} castShadow>
-      <boxGeometry args={[width, 0.48, 0.14]} />
+      <boxGeometry args={[width, 0.56, 0.14]} />
       <meshBasicMaterial map={tex} />
     </mesh>
   )

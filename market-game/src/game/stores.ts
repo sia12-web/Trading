@@ -129,10 +129,10 @@ export const HUB_WALK = 14.2
  * Store names live on small fascias — not plaza plaques.
  */
 export const COURT_SIGNS = [
-  { word: 'YESTERDAY', ink: '#e07040', x: 0.08, z: 15.08, wide: 5.05 },
-  { word: 'FIVE-DAY', ink: '#d48848', x: 7.85, z: 15.08, wide: 3.85 },
-  { word: 'FIVE-MONTH', ink: '#6ab0c4', x: -7.25, z: 15.08, wide: 4.45 },
-  { word: 'YARD', ink: '#d48848', x: 15.08, z: 3.15, wide: 2.95 },
+  { word: 'YESTERDAY', ink: '#e07040', x: 0.08, z: 15.82, wide: 5.05 },
+  { word: 'FIVE-DAY', ink: '#d48848', x: 7.85, z: 15.82, wide: 3.85 },
+  { word: 'FIVE-MONTH', ink: '#6ab0c4', x: -7.25, z: 15.82, wide: 4.45 },
+  { word: 'YARD', ink: '#d48848', x: 15.82, z: 3.15, wide: 2.95 },
 ] as const
 
 export const FASCIA_NAMES = ['FOUNDRY', 'HALL', 'DOCK', 'YARD', 'MILL', 'ALLEY', 'SPIRE', 'LOFT', 'PIT'] as const

@@ -232,17 +232,17 @@ function WallStrip({
         onPick()
       }}
     >
-      <mesh position={[0, 1.55, -0.22]} castShadow>
-        <boxGeometry args={[wide + 0.16, 0.58, 0.14]} />
+      <mesh position={[0, 1.78, 0]} castShadow>
+        <boxGeometry args={[wide + 0.16, 0.42, 0.18]} />
         <meshStandardMaterial color="#1a120c" roughness={0.68} />
       </mesh>
-      <mesh position={[0, 1.55, -0.14]}>
-        <planeGeometry args={[wide, 0.48]} />
+      <mesh position={[0, 1.78, 0.1]}>
+        <planeGeometry args={[wide, 0.34]} />
         <meshBasicMaterial map={tex} toneMapped={false} />
       </mesh>
       {onPick && (
-        <mesh position={[0, 1.55, 0.2]}>
-          <planeGeometry args={[wide + 0.7, 1.25]} />
+        <mesh position={[0, 1.78, 0.28]}>
+          <planeGeometry args={[wide + 0.7, 1.05]} />
           <meshBasicMaterial transparent opacity={0.01} depthWrite={false} />
         </mesh>
       )}
