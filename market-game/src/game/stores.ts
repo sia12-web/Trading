@@ -124,6 +124,23 @@ export const LOCKED_MARKETS = [
 export const DOW_GATE: [number, number, number] = [0, 0, 8.4]
 export const HUB_WALK = 14.2
 
+/**
+ * Court names live on the camera-near south plaza (high Z) plus YARD on the
+ * east crane. Do not tuck these behind hall / mill / pit — that strips the names.
+ */
+export const COURT_SIGNS = [
+  { word: 'YESTERDAY', ink: '#e07040', x: 0, z: 10.72, wide: 4.55 },
+  { word: 'FIVE-DAY', ink: '#d48848', x: 6.55, z: 10.58, wide: 4.25 },
+  { word: 'FIVE-MONTH', ink: '#6ab0c4', x: -6.85, z: 10.58, wide: 4.95 },
+  { word: 'YARD', ink: '#d48848', x: 11.35, z: -5.85, wide: 2.85 },
+] as const
+
+export const COURT_STENCILS = [
+  { word: 'YESTERDAY', ink: '#e07040', x: 0, z: 11.28, w: 5.9, d: 1.55 },
+  { word: 'FIVE-DAY', ink: '#d48848', x: 6.55, z: 11.18, w: 5.7, d: 1.5 },
+  { word: 'FIVE-MONTH', ink: '#6ab0c4', x: -6.85, z: 11.18, w: 6.4, d: 1.5 },
+] as const
+
 /** Fascia sits on local +Z. Yaw matches Three.js so that face is the courtyard. */
 export function storeYaw(range: RangeKind): number {
   if (range === 'fiveMonth') return Math.PI / 2

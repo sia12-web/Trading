@@ -3,7 +3,7 @@ import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { closeInspect, inspectStore, setWalkTarget } from '../game/gameStore'
 import { OPEN_CINEMATIC_SEC } from '../game/session'
-import { storeAtPoint, YARD } from '../game/stores'
+import { COURT_SIGNS, COURT_STENCILS, storeAtPoint, YARD } from '../game/stores'
 import { useGame } from '../ui/useGame'
 import { ClashTerrain, ClashWalls, MorningSun } from './ClashTerrain'
 import {
@@ -190,13 +190,12 @@ function WingPads({
         <planeGeometry args={[8.6, 16.2]} />
         <meshStandardMaterial map={concrete} color="#6aa0b0" roughness={0.84} />
       </mesh>
-      <Stencil word="YESTERDAY" ink="#e07040" position={[0, 0.04, 10.55]} />
-      <Stencil word="FIVE-DAY" ink="#d48848" position={[11.85, 0.04, -1.8]} rot={-Math.PI / 2} />
-      <Stencil word="FIVE-MONTH" ink="#6ab0c4" position={[-8.15, 0.04, 1.15]} rot={Math.PI / 2} />
-      <CourtPlaque word="YESTERDAY" ink="#e07040" x={0} z={10.85} />
-      <CourtPlaque word="FIVE-DAY" ink="#d48848" x={12.05} z={-1.85} />
-      <CourtPlaque word="FIVE-MONTH" ink="#6ab0c4" x={-7.85} z={2.55} />
-      <CourtPlaque word="YARD" ink="#d48848" x={11.55} z={-6.35} />
+      {COURT_STENCILS.map((s) => (
+        <Stencil key={s.word} word={s.word} ink={s.ink} position={[s.x, 0.055, s.z]} w={s.w} d={s.d} />
+      ))}
+      {COURT_SIGNS.map((s) => (
+        <CourtPlaque key={s.word} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} />
+      ))}
     </group>
   )
 }
@@ -205,36 +204,50 @@ function Stencil({
   word,
   ink,
   position,
-  rot = 0,
+  w,
+  d,
 }: {
   word: string
   ink: string
   position: [number, number, number]
-  rot?: number
+  w: number
+  d: number
 }) {
   const tex = useMemo(() => makeStencilTexture(word, ink), [word, ink])
   return (
-    <mesh rotation={[-Math.PI / 2, 0, rot]} position={position}>
-      <planeGeometry args={[8.8, 2.05]} />
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={position}>
+      <planeGeometry args={[w, d]} />
       <meshBasicMaterial map={tex} toneMapped={false} />
     </mesh>
   )
 }
 
-function CourtPlaque({ word, ink, x, z }: { word: string; ink: string; x: number; z: number }) {
+function CourtPlaque({
+  word,
+  ink,
+  x,
+  z,
+  wide,
+}: {
+  word: string
+  ink: string
+  x: number
+  z: number
+  wide: number
+}) {
   const tex = useMemo(() => makeCourtSignTexture(word, ink), [word, ink])
   return (
     <group position={[x, 0, z]} rotation={[0, Math.PI / 4, 0]}>
-      <mesh position={[0, 0.55, 0]} castShadow>
-        <boxGeometry args={[0.18, 1.2, 0.18]} />
+      <mesh position={[0, 0.62, 0]} castShadow>
+        <boxGeometry args={[0.2, 1.35, 0.2]} />
         <meshStandardMaterial color="#3a2a1c" roughness={0.8} />
       </mesh>
-      <mesh position={[0, 1.42, 0.04]} castShadow>
-        <boxGeometry args={[3.45, 0.88, 0.14]} />
+      <mesh position={[0, 1.58, 0.04]} castShadow>
+        <boxGeometry args={[wide, 0.98, 0.16]} />
         <meshStandardMaterial color="#2a1c14" roughness={0.7} />
       </mesh>
-      <mesh position={[0, 1.42, 0.12]}>
-        <planeGeometry args={[3.28, 0.72]} />
+      <mesh position={[0, 1.58, 0.14]}>
+        <planeGeometry args={[wide - 0.2, 0.8]} />
         <meshBasicMaterial map={tex} toneMapped={false} />
       </mesh>
     </group>

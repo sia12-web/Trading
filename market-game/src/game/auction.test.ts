@@ -11,7 +11,7 @@ import {
 } from './auction'
 import { buildDowMarket } from './marketData'
 import { OPEN_CINEMATIC_SEC } from './session'
-import { porchOf, STORES } from './stores'
+import { COURT_SIGNS, COURT_STENCILS, porchOf, STORES } from './stores'
 import type { OhlcvBar } from './types'
 
 function bar(partial: Partial<OhlcvBar> & { close: number }): OhlcvBar {
@@ -181,6 +181,23 @@ assert.equal(OPEN_CINEMATIC_SEC, 12, 'cash open holds twelve wall-clock seconds'
 assert.ok(PRINT_HOLD_MS >= 12000, 'take dump stays long enough to film still and video')
 const yard = STORES.find((s) => s.building === 'yard')!
 assert.ok(yard.position[0] > 8 && yard.position[2] < mill.position[2] - 4, 'YARD is the far east crane store')
+assert.deepEqual(
+  COURT_SIGNS.map((s) => s.word),
+  ['YESTERDAY', 'FIVE-DAY', 'FIVE-MONTH', 'YARD'],
+  'all four court names stay on low signs',
+)
+assert.deepEqual(
+  COURT_STENCILS.map((s) => s.word),
+  ['YESTERDAY', 'FIVE-DAY', 'FIVE-MONTH'],
+  'yesterday / five-day / five-month stay as ground stencils',
+)
+for (const sign of COURT_SIGNS.filter((s) => s.word !== 'YARD')) {
+  assert.ok(sign.z > 10.2, `${sign.word} plaque stays on the camera-near south plaza`)
+}
+assert.ok(
+  COURT_SIGNS.find((s) => s.word === 'YARD')!.x > 10,
+  'YARD plaque stays on the east crane, not the mill wall',
+)
 
 const hallTime = timeOpportunity({ kind: 'poc', tpoAtPrice: 6.2, sessionProgress: 0.02 })
 const millTime = timeOpportunity({ kind: 'poc', tpoAtPrice: 0.4, sessionProgress: 0.02 })

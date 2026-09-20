@@ -156,13 +156,13 @@ function RangeStoreys({
   const faces =
     rangeKind === 'fiveDay'
       ? [
-          { p: [0, 0, -depth * 0.52 - 0.08] as [number, number, number], r: [0, Math.PI, 0] as [number, number, number], w: width },
-          { p: [width * 0.52 + 0.08, 0, 0] as [number, number, number], r: [0, Math.PI / 2, 0] as [number, number, number], w: depth },
+          { p: [0, 0, depth * 0.52 + 0.08] as [number, number, number], r: [0, 0, 0] as [number, number, number], w: width },
+          { p: [-width * 0.52 - 0.08, 0, 0] as [number, number, number], r: [0, -Math.PI / 2, 0] as [number, number, number], w: depth },
         ]
       : rangeKind === 'fiveMonth'
         ? [
-            { p: [0, 0, depth * 0.52 + 0.08] as [number, number, number], r: [0, 0, 0] as [number, number, number], w: width },
-            { p: [-width * 0.52 - 0.08, 0, 0] as [number, number, number], r: [0, -Math.PI / 2, 0] as [number, number, number], w: depth },
+            { p: [0, 0, -depth * 0.52 - 0.08] as [number, number, number], r: [0, Math.PI, 0] as [number, number, number], w: width },
+            { p: [width * 0.52 + 0.08, 0, 0] as [number, number, number], r: [0, Math.PI / 2, 0] as [number, number, number], w: depth },
           ]
         : [{ p: [0, 0, depth * 0.52 + 0.08] as [number, number, number], r: [0, 0, 0] as [number, number, number], w: width }]
   return (
