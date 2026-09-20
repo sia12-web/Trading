@@ -101,7 +101,7 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
         <Fascia title="FIVE-MONTH" paint="#6ab0c4" y={shell.fasciaY + 1.28} width={4.35} z={shell.d * 0.52 + 0.16} />
       )}
       <FaceShutter open={st.door} width={Math.min(2.55, shell.w * 0.58)} z={shell.d * 0.52 + 0.16} />
-      <TimeFlag stall={st} x={shell.w * 0.42} z={shell.d * 0.62 + 1.45} />
+      <TimeFlag stall={st} x={shell.w * 0.38} z={shell.d * 0.72 + 1.95} />
       <PorchTell stall={st} kind={store.kind} z={shell.d * 0.55 + 0.55} />
       {gableX !== 0 && (
         <GableSign title={label} paint={store.accent} x={gableX} y={store.building === 'yard' ? 3.15 : 2.55} />
@@ -253,26 +253,26 @@ function Ladder({
       {Array.from({ length: ticks }, (_, i) => {
         const y = yLo + (i / (ticks - 1)) * (yHi - yLo)
         return (
-          <mesh key={i} position={[x + 0.38, y, 0.28]}>
-            <boxGeometry args={[0.52, 0.07, 0.14]} />
-            <meshBasicMaterial color="#f0e6d0" />
+          <mesh key={i} position={[x + 0.48, y, 0.32]}>
+            <boxGeometry args={[0.78, 0.12, 0.18]} />
+            <meshBasicMaterial color="#f4ead8" />
           </mesh>
         )
       })}
-      <mesh position={[x + 0.42, (yVal + yVah) / 2, 0.34]} castShadow>
-        <boxGeometry args={[0.72, vaH, 0.28]} />
+      <mesh position={[x + 0.52, (yVal + yVah) / 2, 0.38]} castShadow>
+        <boxGeometry args={[0.92, vaH, 0.32]} />
         <meshBasicMaterial color={color} />
       </mesh>
-      <mesh position={[x + 0.48, yLo, 0.38]} castShadow>
-        <boxGeometry args={[0.82, 0.28, 0.22]} />
+      <mesh position={[x + 0.58, yLo, 0.42]} castShadow>
+        <boxGeometry args={[1.05, 0.36, 0.26]} />
         <meshBasicMaterial color="#0a0806" />
       </mesh>
-      <mesh position={[x + 0.48, yHi, 0.38]} castShadow>
-        <boxGeometry args={[0.82, 0.28, 0.22]} />
+      <mesh position={[x + 0.58, yHi, 0.42]} castShadow>
+        <boxGeometry args={[1.05, 0.36, 0.26]} />
         <meshBasicMaterial color="#e8c04a" />
       </mesh>
-      <mesh position={[x + 0.78, yNode, 0.46]} castShadow>
-        <boxGeometry args={[1.05, 0.16, 0.26]} />
+      <mesh position={[x + 0.92, yNode, 0.5]} castShadow>
+        <boxGeometry args={[1.22, 0.2, 0.3]} />
         <meshBasicMaterial color="#fff6d0" />
       </mesh>
     </group>
@@ -378,19 +378,20 @@ function TimeFlag({ stall, x, z }: { stall: Stall; x: number; z: number }) {
   const ink = fair ? '#c8e070' : stall.door > 0.45 ? '#e8c04a' : '#8a7860'
   const tex = useMemo(() => makeCourtSignTexture(word, ink), [word, ink])
   useEffect(() => () => tex.dispose(), [tex])
-  const wide = fair ? 3.55 : 2.85
+  const wide = fair ? 3.95 : 2.85
+  const y = fair ? 4.72 : 4.28
   return (
     <group position={[x, 0, z]} rotation={[0, Math.PI / 4, 0]}>
-      <mesh position={[0, 2.05, 0]} castShadow>
-        <boxGeometry args={[0.14, 4.15, 0.14]} />
+      <mesh position={[0, 2.15, 0]} castShadow>
+        <boxGeometry args={[0.14, fair ? 4.55 : 4.15, 0.14]} />
         <meshStandardMaterial color="#c4a05a" metalness={0.35} roughness={0.5} />
       </mesh>
-      <mesh position={[0.06, 4.28, 0.12]} castShadow>
-        <boxGeometry args={[wide, 0.92, 0.16]} />
+      <mesh position={[0.06, y, 0.12]} castShadow>
+        <boxGeometry args={[wide, fair ? 1.05 : 0.92, 0.16]} />
         <meshStandardMaterial color={fair ? '#3a4a18' : '#1a120c'} />
       </mesh>
-      <mesh position={[0.06, 4.28, 0.22]}>
-        <planeGeometry args={[wide * 0.94, 0.74]} />
+      <mesh position={[0.06, y, 0.22]}>
+        <planeGeometry args={[wide * 0.94, fair ? 0.86 : 0.74]} />
         <meshBasicMaterial map={tex} toneMapped={false} />
       </mesh>
     </group>
@@ -439,13 +440,13 @@ function PrintBurst({ name, px }: { name: string; px: string }) {
         <ringGeometry args={[1.85, 2.85, 24]} />
         <meshBasicMaterial color="#c8d890" transparent opacity={0.94} toneMapped={false} />
       </mesh>
-      <group position={[0.15, 1.85, 1.15]} rotation={[0, Math.PI / 4, 0]}>
+      <group position={[0.15, 2.15, 1.35]} rotation={[0, Math.PI / 4, 0]}>
         <mesh position={[0, 0, 0]} castShadow>
-          <boxGeometry args={[4.35, 0.82, 0.14]} />
+          <boxGeometry args={[4.85, 0.95, 0.16]} />
           <meshStandardMaterial color="#1a120c" />
         </mesh>
-        <mesh position={[0, 0, 0.1]}>
-          <planeGeometry args={[4.15, 0.68]} />
+        <mesh position={[0, 0, 0.12]}>
+          <planeGeometry args={[4.65, 0.78]} />
           <meshBasicMaterial map={tape} toneMapped={false} />
         </mesh>
       </group>

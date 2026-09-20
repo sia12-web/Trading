@@ -199,6 +199,10 @@ assert.ok(
   'YESTERDAY stays on a south-apron plaque so the full word is not eaten by the hall or gates',
 )
 assert.ok(
+  Math.abs(COURT_SIGNS.find((s) => s.word === 'YESTERDAY')!.x) < 1.2,
+  'YESTERDAY sits in the south-gate gap, not on a gate leaf that ate DAY',
+)
+assert.ok(
   COURT_SIGNS.find((s) => s.word === 'YARD')!.x > 12,
   'YARD plaque stays on the east crane dirt, not the mill wall',
 )
@@ -239,6 +243,26 @@ assert.ok(
   STORE_PLAQUES.find((s) => s.word === 'SPIRE')!.x < -8,
   'SPIRE sits on the west-south wall with PIT/LOFT, left of the gate that ate the word',
 )
+assert.ok(
+  STORE_PLAQUES.find((s) => s.word === 'PIT')!.x < -12,
+  'PIT is a west-apron word, not stacked under FOUNDRY',
+)
+assert.ok(
+  STORE_PLAQUES.find((s) => s.word === 'HALL')!.x < 0,
+  'HALL sits left of YESTERDAY so the two words do not occupy the same post',
+)
+assert.ok(
+  STORE_PLAQUES.find((s) => s.word === 'DOCK')!.z > 11.5,
+  'DOCK plaque sits camera-near of the loading bay, in the default crop',
+)
+for (let i = 0; i < STORE_PLAQUES.length; i++) {
+  for (let j = i + 1; j < STORE_PLAQUES.length; j++) {
+    const a = STORE_PLAQUES[i]
+    const b = STORE_PLAQUES[j]
+    const d = Math.hypot(a.x - b.x, a.z - b.z)
+    assert.ok(d > 1.85, `${a.word} and ${b.word} plaques overlap (${d.toFixed(2)})`)
+  }
+}
 assert.ok(
   STORE_PLAQUES.find((s) => s.word === 'SPIRE')!.z > 14.9,
   'SPIRE plaque sits on the camera-near south wall with FIVE-MONTH',

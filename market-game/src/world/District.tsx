@@ -229,7 +229,7 @@ function WingPads({
             x={s.x}
             z={s.z}
             wide={s.wide}
-            lift={s.word === 'FOUNDRY' ? 0.38 : 0.12}
+            lift={s.word === 'FOUNDRY' || s.word === 'PIT' ? 0.48 : s.word === 'LOFT' ? 0.32 : 0.12}
             onPick={() => inspectStore(s.id)}
           />
         ),
@@ -263,27 +263,22 @@ function Stencil({
 
 function StallTimePlaques() {
   const g = useGame()
-  const marks = [
-    { id: 'y-poc' as const, x: -0.15, z: 13.88, wide: 3.85 },
-    { id: 'y-hvn' as const, x: -5.65, z: 12.72, wide: 3.25 },
-    { id: '5d-poc' as const, x: 12.15, z: 4.55, wide: 3.25 },
-  ]
+  const marks = [{ id: 'y-poc' as const, x: 0.15, z: 11.95, wide: 3.85 }]
   return (
     <>
       {marks.map((m) => {
         const st = stallState(m.id, g)
         const fair = st.fairToday && st.timeOpportunity < 0.38
-        const word = fair ? 'FAIR' : st.door > 0.45 ? 'OPEN' : 'SHUT'
-        const ink = fair ? '#c8e070' : st.door > 0.45 ? '#e8c04a' : '#8a7860'
+        if (!fair) return null
         return (
           <CourtPlaque
             key={`time-${m.id}`}
-            word={word}
-            ink={ink}
+            word="FAIR"
+            ink="#c8e070"
             x={m.x}
             z={m.z}
-            wide={fair ? m.wide + 0.4 : m.wide}
-            lift={fair ? 0.62 : 0.28}
+            wide={m.wide}
+            lift={0.95}
           />
         )
       })}
