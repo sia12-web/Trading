@@ -13,7 +13,7 @@ export const STORES: StoreDef[] = [
     subtitle: 'Yesterday NYC · High Volume Node',
     theory:
       'Acceptance. Trade clustered here yesterday. Size should show up if Price is advertising a real offer — empty furnaces mean divergence.',
-    position: [-6.9, 0, 7.55],
+    position: [-5.45, 0, 7.7],
     accent: '#c45c2a',
     building: 'foundry',
   },
@@ -85,7 +85,7 @@ export const STORES: StoreDef[] = [
     subtitle: 'Five-month Anchored VWAP · live',
     theory:
       'Long-term money. Anchored at cash open five months back, Σ(P·V)/ΣV, updating on every print. Price is advertising; this tower is the institutional benchmark.',
-    position: [-9.45, 0, 0],
+    position: [-11.05, 0, -1.55],
     accent: '#2a6a78',
     building: 'spire',
   },
@@ -97,7 +97,7 @@ export const STORES: StoreDef[] = [
     subtitle: 'Five-month AVWAP · upper 1σ',
     theory:
       'Premium to long-term value. The band breathes with incoming volume. Time still regulates whether this stretch is an opportunity or already spent.',
-    position: [-9.05, 0, -4.35],
+    position: [-10.85, 0, -6.35],
     accent: '#3a5a88',
     building: 'loft',
   },
@@ -109,7 +109,7 @@ export const STORES: StoreDef[] = [
     subtitle: 'Five-month AVWAP · lower 1σ',
     theory:
       'Discount to long-term value. Gold-teal money from the desk’s 5-month bands, made physical as a loading annex that rises and falls with σ.',
-    position: [-9.05, 0, 4.35],
+    position: [-10.85, 0, 3.55],
     accent: '#8a7040',
     building: 'pit',
   },
@@ -161,15 +161,15 @@ export function storeAtPoint(x: number, z: number, maxDist = 3.5): StoreDef | nu
 /** Tight cores so Price can walk the porch into each stall. Five-Day yaw swaps footprint. */
 export const COLLISIONS: Array<{ x: number; z: number; w: number; d: number }> = [
   { x: 0, z: 0, w: 1.35, d: 1.35 },
-  { x: -6.9, z: 7.35, w: 3.6, d: 2.05 },
+  { x: -5.45, z: 7.5, w: 3.6, d: 2.05 },
   { x: 0, z: 7.85, w: 4.2, d: 2.15 },
   { x: 6.9, z: 7.4, w: 3.2, d: 1.7 },
   { x: 9.4, z: -7.45, w: 2.05, d: 4.4 },
   { x: 9.6, z: -1.85, w: 2.25, d: 5.2 },
   { x: 9.4, z: 3.35, w: 1.7, d: 3.2 },
-  { x: -9.65, z: 0, w: 1.55, d: 1.55 },
-  { x: -9.25, z: -4.35, w: 2.2, d: 1.9 },
-  { x: -9.25, z: 4.35, w: 2.2, d: 1.9 },
+  { x: -11.15, z: -1.55, w: 1.7, d: 1.7 },
+  { x: -10.95, z: -6.35, w: 2.2, d: 1.9 },
+  { x: -10.95, z: 3.55, w: 2.2, d: 1.9 },
 ]
 
 export const YARD = 15.2

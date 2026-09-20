@@ -116,7 +116,7 @@ const settled = stallOccupancy({
   phase: 'live',
 })
 assert.ok(settled.door < 0.45, 'already-fair door eases shut')
-assert.ok(settled.occupancy < 0.35, 'already-fair crowd thins')
+assert.ok(settled.occupancy > 0.4, 'already-fair POC still holds the volume')
 
 const boosted = stallOccupancy({
   kind: 'hvn',
@@ -129,6 +129,15 @@ const boosted = stallOccupancy({
 })
 assert.ok(boosted.occupancy > 0.55, 'a print fills the stall')
 assert.ok(boosted.printBoost === 1)
+
+const foundry = STORES.find((s) => s.building === 'foundry')!
+const pit = STORES.find((s) => s.building === 'pit')!
+const loft = STORES.find((s) => s.building === 'loft')!
+const spire = STORES.find((s) => s.building === 'spire')!
+assert.ok(pit.position[0] < foundry.position[0] - 4, 'Five-Month pit sits west of Foundry')
+assert.ok(loft.position[0] < -10, 'loft is on the west wall')
+assert.ok(spire.position[0] < -10, 'spire is on the west wall')
+assert.ok(pit.position[2] > 2, 'discount pit is camera-near west')
 
 console.log('auction tests: ok')
 console.log(

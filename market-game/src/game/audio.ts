@@ -89,6 +89,30 @@ export function startAmbience(): void {
   }
 }
 
+export function steamWhistle(): void {
+  const c = ac()
+  const t0 = c.currentTime
+  const o = c.createOscillator()
+  const o2 = c.createOscillator()
+  const g = c.createGain()
+  o.type = 'sawtooth'
+  o2.type = 'triangle'
+  o.frequency.setValueAtTime(420, t0)
+  o.frequency.exponentialRampToValueAtTime(680, t0 + 0.35)
+  o.frequency.exponentialRampToValueAtTime(310, t0 + 1.4)
+  o2.frequency.setValueAtTime(210, t0)
+  g.gain.setValueAtTime(0.0001, t0)
+  g.gain.exponentialRampToValueAtTime(0.18, t0 + 0.08)
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.6)
+  o.connect(g)
+  o2.connect(g)
+  g.connect(master!)
+  o.start(t0)
+  o2.start(t0)
+  o.stop(t0 + 1.7)
+  o2.stop(t0 + 1.7)
+}
+
 export function clank(): void {
   const c = ac()
   const t0 = c.currentTime

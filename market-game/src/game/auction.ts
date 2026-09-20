@@ -299,8 +299,9 @@ export function stallOccupancy(args: {
       occupancy = clamp(0.12 + args.divergence * 0.9, 0, 1) * shut
     }
   }
-  if (args.timeOpportunity < 0.38 && args.kind !== 'lvn') occupancy *= 0.32
-  occupancy = clamp(occupancy + boost * 0.7, 0, 1)
+  // Already-fair keeps the volume (bodies/goods) and only eases the door.
+  if (args.timeOpportunity < 0.38 && args.kind !== 'lvn') occupancy *= 0.78
+  occupancy = clamp(occupancy + boost * 0.85, 0, 1)
   let door =
     args.phase === 'preopen' ? 0 : args.phase === 'opening' ? shut : clamp(0.08 + args.timeOpportunity * 0.92, 0, 1)
   if (boost > 0.35) door = clamp(door + 0.28, 0, 1)

@@ -1,5 +1,5 @@
 import { pushVwapTick, stallOccupancy, timeOpportunity, volumeDivergence } from './auction'
-import { clank, printFill, resumeAudio, startAmbience, strikeBell } from './audio'
+import { clank, printFill, resumeAudio, startAmbience, steamWhistle, strikeBell } from './audio'
 import { buildDowMarket, rng } from './marketData'
 import {
   LIVE_TIME_SCALE,
@@ -189,6 +189,7 @@ export function skipToOpen() {
   void resumeAudio().then(() => {
     startAmbience()
     strikeBell()
+    steamWhistle()
   })
   const tape = floorTape()
   openWallMs = performance.now()
@@ -293,7 +294,7 @@ export function storeRead(id: StoreId, snap: GameSnapshot = state): StoreRead {
 export function stallState(id: StoreId, snap: GameSnapshot = state) {
   const read = storeRead(id, snap)
   const printed = snap.lastPrint && snap.lastPrint.storeId === id ? performance.now() - snap.lastPrint.at : 99999
-  const printBoost = printed < 3600 ? 1 - printed / 3600 : 0
+  const printBoost = printed < 5200 ? 1 - printed / 5200 : 0
   return {
     ...read,
     ...stallOccupancy({
@@ -375,7 +376,10 @@ export function tickGame(dt: number) {
   if (state.phase === 'preopen') {
     const clockMin = state.clockMin + dt * 0.55
     if (clockMin >= NY_OPEN_MIN) {
-      void resumeAudio().then(strikeBell)
+      void resumeAudio().then(() => {
+        strikeBell()
+        steamWhistle()
+      })
       const tape = floorTape()
       openWallMs = performance.now()
       set({
@@ -395,8 +399,8 @@ export function tickGame(dt: number) {
 
   if (state.phase === 'opening') {
     const openElapsed = (performance.now() - openWallMs) / 1000
-    const shutter = Math.min(1, Math.max(0, (openElapsed - 0.35) / 4.2))
-    const floorAlive = Math.min(1, Math.max(0, (openElapsed - 1.05) / 5.6))
+    const shutter = Math.min(1, Math.max(0, (openElapsed - 0.2) / 3.6))
+    const floorAlive = Math.min(1, Math.max(0, (openElapsed - 0.15) / 6.2))
     if (openElapsed >= OPEN_CINEMATIC_SEC) {
       set({
         phase: 'live',

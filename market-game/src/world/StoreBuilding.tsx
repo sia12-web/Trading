@@ -7,7 +7,7 @@ import { advertisedPrice, inspectStore, marketWorld, stallState } from '../game/
 import { storeYaw } from '../game/stores'
 import type { AnchoredVwap, StoreDef, VolumeProfile } from '../game/types'
 import { useGame } from '../ui/useGame'
-import { makeChalkTexture, makeFasciaTexture, useBrickTexture, useMetalTexture } from './textures'
+import { makeChalkTexture, makeFasciaTexture, makeOpenBannerTexture, useBrickTexture, useMetalTexture } from './textures'
 
 type Stall = ReturnType<typeof stallState>
 
@@ -18,7 +18,7 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
   const price = advertisedPrice(store.id, g)
   const st = stallState(store.id, g)
   const hot = g.nearby === store.id || g.inspecting === store.id
-  const printed = Boolean(g.lastPrint && g.lastPrint.storeId === store.id && performance.now() - g.lastPrint.at < 3600)
+  const printed = Boolean(g.lastPrint && g.lastPrint.storeId === store.id && performance.now() - g.lastPrint.at < 5200)
   const range = profileRange(store, g.avwap)
   const label =
     store.building === 'foundry'
@@ -58,24 +58,29 @@ export function StoreBuilding({ store }: { store: StoreDef }) {
       {store.building === 'spire' && <Spire metal={metal} avwap={g.avwap} live={g.livePrice} stall={st} printed={printed} />}
       {store.building === 'loft' && <Loft metal={metal} avwap={g.avwap} stall={st} />}
       {store.building === 'pit' && <Pit metal={metal} avwap={g.avwap} stall={st} />}
-      {store.building !== 'spire' && store.building !== 'pit' && (
-        <RangeRails range={range} nodePx={price} color={store.accent} width={store.building === 'loft' ? 3.0 : 4.0} />
+      {store.building !== 'spire' && (
+        <RangeRails
+          range={range}
+          nodePx={price}
+          color={store.accent}
+          width={store.building === 'loft' || store.building === 'pit' ? 3.15 : 4.15}
+        />
       )}
       <Fascia
         title={label}
         paint={store.accent}
         y={
           store.building === 'spire'
-            ? 8.2
+            ? 4.85
             : store.building === 'pit'
-              ? 2.95
+              ? 2.55
               : store.building === 'loft'
-                ? 6.9
+                ? 4.15
                 : store.building === 'hall'
-                  ? 5.7
+                  ? 5.55
                   : store.building === 'mill'
-                    ? 5.35
-                    : 4.75
+                    ? 5.15
+                    : 4.55
         }
       />
       <ChalkBoard price={fmtPx(price)} y={store.building === 'pit' ? 1.15 : 1.45} z={store.building === 'spire' ? 1.05 : 2.35} pulse={printed} />
@@ -123,38 +128,44 @@ function RangeRails({
   color: string
   width: number
 }) {
-  const yLo = rangeHeight(range.lo, range.lo, range.hi, 0.42, 4.15)
-  const yHi = rangeHeight(range.hi, range.lo, range.hi, 0.42, 4.15)
-  const yVal = rangeHeight(range.val, range.lo, range.hi, 0.42, 4.15)
-  const yVah = rangeHeight(range.vah, range.lo, range.hi, 0.42, 4.15)
-  const yNode = rangeHeight(nodePx, range.lo, range.hi, 0.42, 4.15)
-  const bandH = Math.max(0.55, yVah - yVal)
-  const span = yHi - yLo
+  const yLo = rangeHeight(range.lo, range.lo, range.hi, 0.38, 4.35)
+  const yHi = rangeHeight(range.hi, range.lo, range.hi, 0.38, 4.35)
+  const yVal = rangeHeight(range.val, range.lo, range.hi, 0.38, 4.35)
+  const yVah = rangeHeight(range.vah, range.lo, range.hi, 0.38, 4.35)
+  const yNode = rangeHeight(nodePx, range.lo, range.hi, 0.38, 4.35)
+  const bandH = Math.max(0.7, yVah - yVal)
+  const span = Math.max(1.2, yHi - yLo)
+  const slats = 5
   return (
     <group>
-      <mesh position={[0, (yVah + yVal) / 2, 2.22]} castShadow>
-        <boxGeometry args={[width * 0.98, bandH, 0.28]} />
-        <meshStandardMaterial color={color} roughness={0.48} metalness={0.18} emissive={color} emissiveIntensity={0.28} />
+      <mesh position={[0, (yVah + yVal) / 2, 2.12]} castShadow>
+        <boxGeometry args={[width * 0.98, bandH, 0.42]} />
+        <meshStandardMaterial color={color} roughness={0.5} metalness={0.16} />
       </mesh>
-      <mesh position={[0, yHi, 2.28]} castShadow>
-        <boxGeometry args={[width + 0.25, 0.42, 0.38]} />
+      {Array.from({ length: slats }, (_, i) => {
+        const y = yLo + (span * i) / (slats - 1)
+        return (
+          <mesh key={i} position={[0, y, 2.28]} castShadow>
+            <boxGeometry args={[width + 0.12, 0.12, 0.2]} />
+            <meshStandardMaterial color={i === 0 ? '#2a1810' : i === slats - 1 ? '#f0c84a' : '#6a4a30'} roughness={0.55} />
+          </mesh>
+        )
+      })}
+      <mesh position={[0, yHi, 2.34]} castShadow>
+        <boxGeometry args={[width + 0.32, 0.28, 0.32]} />
         <meshBasicMaterial color="#f0c84a" />
       </mesh>
-      <mesh position={[0, yLo, 2.28]} castShadow>
-        <boxGeometry args={[width + 0.18, 0.4, 0.36]} />
+      <mesh position={[0, yLo, 2.34]} castShadow>
+        <boxGeometry args={[width + 0.22, 0.26, 0.3]} />
         <meshBasicMaterial color="#2a1810" />
       </mesh>
-      <mesh position={[0, yNode, 0.15]} receiveShadow>
-        <boxGeometry args={[width * 0.62, 0.22, 2.55]} />
-        <meshStandardMaterial color="#e8c070" roughness={0.48} metalness={0.22} emissive="#c4a046" emissiveIntensity={0.18} />
-      </mesh>
-      <mesh position={[width / 2 + 0.12, (yHi + yLo) / 2, 2.05]} castShadow>
-        <boxGeometry args={[0.38, span + 0.7, 0.22]} />
-        <meshStandardMaterial color="#5a3a22" roughness={0.62} />
+      <mesh position={[0, yNode, 0.2]} receiveShadow>
+        <boxGeometry args={[width * 0.7, 0.18, 2.7]} />
+        <meshStandardMaterial color="#e8c070" roughness={0.48} metalness={0.22} />
       </mesh>
       {([-width / 2, width / 2] as const).map((x) => (
-        <mesh key={x} position={[x, (yHi + yLo) / 2, 2.26]}>
-          <boxGeometry args={[0.22, span + 0.55, 0.22]} />
+        <mesh key={x} position={[x, (yHi + yLo) / 2, 2.22]} castShadow>
+          <boxGeometry args={[0.18, span + 0.55, 0.18]} />
           <meshStandardMaterial color="#3a2a1c" />
         </mesh>
       ))}
@@ -166,27 +177,50 @@ function Fascia({ title, paint, y }: { title: string; paint: string; y: number }
   const tex = useMemo(() => makeFasciaTexture(title, paint), [title, paint])
   useEffect(() => () => tex.dispose(), [tex])
   return (
-    <Billboard position={[0, y, 0.4]} follow>
-      <mesh>
-        <planeGeometry args={[3.15, 0.7]} />
-        <meshBasicMaterial map={tex} toneMapped={false} />
+    <group>
+      <mesh position={[0, y, 2.18]} castShadow>
+        <boxGeometry args={[2.85, 0.62, 0.12]} />
+        <meshStandardMaterial map={tex} roughness={0.5} />
       </mesh>
-    </Billboard>
+      <Billboard position={[0, y + 0.85, 0.35]} follow>
+        <mesh>
+          <planeGeometry args={[2.55, 0.52]} />
+          <meshBasicMaterial map={tex} toneMapped={false} />
+        </mesh>
+      </Billboard>
+    </group>
+  )
+}
+
+function NyCashBunting() {
+  const tex = useMemo(() => makeOpenBannerTexture(), [])
+  useEffect(() => () => tex.dispose(), [tex])
+  return (
+    <mesh position={[0, 5.85, 2.42]}>
+      <planeGeometry args={[3.4, 0.58]} />
+      <meshStandardMaterial map={tex} roughness={0.55} />
+    </mesh>
   )
 }
 
 function PrintBurst() {
   return (
-    <group position={[0, 0.45, 3.15]}>
-      {[-1.1, -0.35, 0.4, 1.15].map((x, i) => (
-        <mesh key={x} position={[x, 0.22 + (i % 2) * 0.28, (i % 3) * 0.2]} castShadow>
-          <boxGeometry args={[0.62, 0.48, 0.52]} />
+    <group position={[0, 0.55, 3.2]}>
+      {[-1.45, -0.72, 0, 0.72, 1.45].map((x, i) => (
+        <mesh key={x} position={[x, 0.28 + (i % 2) * 0.38, (i % 3) * 0.22]} castShadow>
+          <boxGeometry args={[0.72, 0.58, 0.58]} />
           <meshBasicMaterial color={i % 2 ? '#f0c84a' : '#e07030'} />
         </mesh>
       ))}
+      {[-0.9, 0.9].map((x) => (
+        <mesh key={`s${x}`} position={[x, 0.95, 0.15]} castShadow>
+          <boxGeometry args={[0.55, 0.42, 0.48]} />
+          <meshBasicMaterial color="#ffe080" />
+        </mesh>
+      ))}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-        <ringGeometry args={[1.05, 1.45, 22]} />
-        <meshBasicMaterial color="#ffe080" transparent opacity={0.7} toneMapped={false} />
+        <ringGeometry args={[1.15, 1.7, 22]} />
+        <meshBasicMaterial color="#ffe080" transparent opacity={0.78} toneMapped={false} />
       </mesh>
     </group>
   )
@@ -211,8 +245,8 @@ function ChalkBoard({ price, y, z, pulse }: { price: string; y: number; z: numbe
 }
 
 function GoodsPile({ stall, kind, z }: { stall: Stall; kind: StoreDef['kind']; z: number }) {
-  const extra = stall.printBoost > 0.2 ? 8 : 0
-  const n = kind === 'lvn' ? (stall.clogged ? 10 + extra : extra) : Math.round(stall.occupancy * 16) + extra
+  const extra = stall.printBoost > 0.15 ? 12 : 0
+  const n = kind === 'lvn' ? (stall.clogged ? 12 + extra : extra) : Math.round(stall.occupancy * 20) + extra
   if (n <= 0) return stall.hollow ? <EmptyRacks z={z} /> : null
   return (
     <group>
@@ -220,13 +254,13 @@ function GoodsPile({ stall, kind, z }: { stall: Stall; kind: StoreDef['kind']; z
         <mesh
           key={i}
           position={[
-            -1.55 + (i % 4) * 0.58,
-            0.28 + Math.floor(i / 4) * 0.42 + stall.printBoost * 0.28,
-            z + (i % 2) * 0.38,
+            -1.7 + (i % 5) * 0.68,
+            0.3 + Math.floor(i / 5) * 0.46 + stall.printBoost * 0.42,
+            z + (i % 2) * 0.42,
           ]}
           castShadow
         >
-          <boxGeometry args={[0.52, 0.4, 0.44]} />
+          <boxGeometry args={[0.58, 0.44, 0.5]} />
           <meshBasicMaterial color={kind === 'lvn' ? '#8a6040' : i % 2 ? '#e07030' : '#f0c84a'} />
         </mesh>
       ))}
@@ -438,9 +472,22 @@ function Hall({ brick, metal, stall }: { brick: THREE.Texture; metal: THREE.Text
         </mesh>
       ))}
       <mesh position={[0, 3.52, 2.34]}>
-        <circleGeometry args={[0.28, 16]} />
-        <meshStandardMaterial color="#f0e8d0" roughness={0.35} emissive="#e8dcc0" emissiveIntensity={0.2} />
+        <circleGeometry args={[0.42, 16]} />
+        <meshStandardMaterial color="#f0e8d0" roughness={0.35} />
       </mesh>
+      <mesh position={[0, 3.52, 2.36]}>
+        <circleGeometry args={[0.08, 10]} />
+        <meshStandardMaterial color="#c45a32" />
+      </mesh>
+      <mesh position={[0.12, 3.62, 2.37]} rotation={[0, 0, -0.55]}>
+        <boxGeometry args={[0.06, 0.28, 0.04]} />
+        <meshStandardMaterial color="#2a1810" />
+      </mesh>
+      <mesh position={[-0.02, 3.38, 2.37]} rotation={[0, 0, 0.15]}>
+        <boxGeometry args={[0.05, 0.2, 0.04]} />
+        <meshStandardMaterial color="#2a1810" />
+      </mesh>
+      <NyCashBunting />
     </group>
   )
 }
@@ -675,16 +722,19 @@ function Spire({
   const legs = useRef<THREE.Group>(null)
   const deck = useRef<THREE.Group>(null)
   const cab = useRef<THREE.Mesh>(null)
-  const lift = useRef(rangeHeight(avwap.vwap, avwap.lower2, avwap.upper2, 2.8, 10.4))
-  const cabY = useRef(rangeHeight(live, avwap.lower2, avwap.upper2, 2.8, 10.4))
-  const yU = rangeHeight(avwap.upper1, avwap.lower2, avwap.upper2, 2.8, 10.4)
-  const yL = rangeHeight(avwap.lower1, avwap.lower2, avwap.upper2, 2.8, 10.4)
+  const lift = useRef(rangeHeight(avwap.vwap, avwap.lower2, avwap.upper2, 2.4, 9.6))
+  const cabY = useRef(rangeHeight(live, avwap.lower2, avwap.upper2, 2.4, 9.6))
+  const yU = rangeHeight(avwap.upper1, avwap.lower2, avwap.upper2, 2.4, 9.6)
+  const yL = rangeHeight(avwap.lower1, avwap.lower2, avwap.upper2, 2.4, 9.6)
+  const yHi = rangeHeight(avwap.upper2, avwap.lower2, avwap.upper2, 2.4, 9.6)
+  const yLo = rangeHeight(avwap.lower2, avwap.lower2, avwap.upper2, 2.4, 9.6)
 
-  useFrame((_, dt) => {
-    const target = rangeHeight(avwap.vwap, avwap.lower2, avwap.upper2, 2.8, 10.4)
-    const cabT = rangeHeight(live, avwap.lower2, avwap.upper2, 2.8, 10.4)
-    lift.current = THREE.MathUtils.lerp(lift.current, target, 1 - Math.exp(-dt * 3.2))
-    cabY.current = THREE.MathUtils.lerp(cabY.current, cabT, 1 - Math.exp(-dt * 5.4))
+  useFrame((s, dt) => {
+    const bob = Math.sin(s.clock.elapsedTime * 0.85) * 0.22
+    const target = rangeHeight(avwap.vwap, avwap.lower2, avwap.upper2, 2.4, 9.6) + bob
+    const cabT = rangeHeight(live, avwap.lower2, avwap.upper2, 2.4, 9.6)
+    lift.current = THREE.MathUtils.lerp(lift.current, target, 1 - Math.exp(-dt * 4.2))
+    cabY.current = THREE.MathUtils.lerp(cabY.current, cabT, 1 - Math.exp(-dt * 6.2))
     if (legs.current) legs.current.scale.y = lift.current / 6
     if (deck.current) deck.current.position.y = lift.current
     if (cab.current) cab.current.position.y = cabY.current
@@ -693,42 +743,50 @@ function Spire({
   return (
     <group>
       <group ref={legs}>
-        {([-0.75, 0.75] as const).map((x) =>
-          ([-0.75, 0.75] as const).map((z) => (
+        {([-0.85, 0.85] as const).map((x) =>
+          ([-0.85, 0.85] as const).map((z) => (
             <mesh key={`${x}${z}`} position={[x, 3, z]} castShadow>
-              <boxGeometry args={[0.16, 6, 0.16]} />
+              <boxGeometry args={[0.22, 6, 0.22]} />
               <meshStandardMaterial map={metal} color="#5a7a88" metalness={0.5} roughness={0.4} />
             </mesh>
           )),
         )}
       </group>
       <group ref={deck}>
-        <mesh position={[0, 0.12, 0]} castShadow>
-          <boxGeometry args={[2.1, 0.28, 2.1]} />
-          <meshStandardMaterial color="#2a8aa0" metalness={0.45} roughness={0.38} emissive="#1a6070" emissiveIntensity={0.25} />
+        <mesh position={[0, 0.16, 0]} castShadow>
+          <boxGeometry args={[2.85, 0.38, 2.85]} />
+          <meshStandardMaterial color="#2a8aa0" metalness={0.45} roughness={0.38} />
         </mesh>
-        <mesh position={[0, 0.72, 0]}>
-          <coneGeometry args={[0.38, 0.85, 4]} />
-          <meshStandardMaterial color="#e8c04a" metalness={0.5} roughness={0.32} emissive="#c4a046" emissiveIntensity={0.2} />
+        <mesh position={[0, 0.85, 0]} castShadow>
+          <coneGeometry args={[0.48, 1.05, 4]} />
+          <meshStandardMaterial color="#e8c04a" metalness={0.5} roughness={0.32} />
         </mesh>
       </group>
       <mesh ref={cab} position={[0, 5, 0]} castShadow>
-        <boxGeometry args={[1.05, 0.62, 1.05]} />
+        <boxGeometry args={[1.35, 0.78, 1.35]} />
         <meshStandardMaterial
           color="#e8c04a"
           metalness={0.5}
           roughness={0.3}
           emissive="#c4a046"
-          emissiveIntensity={printed ? 1.1 : 0.45}
+          emissiveIntensity={printed ? 1.1 : 0.35}
         />
       </mesh>
-      <mesh position={[0, yU, 0]}>
-        <boxGeometry args={[2.85, 0.2, 2.85]} />
-        <meshStandardMaterial color="#4a78c0" metalness={0.4} roughness={0.4} emissive="#2a4878" emissiveIntensity={0.22} />
+      <mesh position={[0, yHi, 0]} castShadow>
+        <boxGeometry args={[3.15, 0.16, 3.15]} />
+        <meshBasicMaterial color="#f0c84a" />
       </mesh>
-      <mesh position={[0, yL, 0]}>
-        <boxGeometry args={[2.85, 0.2, 2.85]} />
-        <meshStandardMaterial color="#c49040" metalness={0.35} roughness={0.45} emissive="#8a6020" emissiveIntensity={0.18} />
+      <mesh position={[0, yU, 0]} castShadow>
+        <boxGeometry args={[3.35, 0.32, 3.35]} />
+        <meshStandardMaterial color="#4a78c0" metalness={0.4} roughness={0.4} />
+      </mesh>
+      <mesh position={[0, yL, 0]} castShadow>
+        <boxGeometry args={[3.35, 0.32, 3.35]} />
+        <meshStandardMaterial color="#c49040" metalness={0.35} roughness={0.45} />
+      </mesh>
+      <mesh position={[0, yLo, 0]} castShadow>
+        <boxGeometry args={[3.15, 0.16, 3.15]} />
+        <meshBasicMaterial color="#2a1810" />
       </mesh>
       {(stall.interior > 0.2 || printed) && (
         <pointLight color="#4aa0b0" intensity={stall.interior * 4 + stall.printBoost * 5} distance={8} position={[0, 5, 0]} />

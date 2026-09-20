@@ -216,16 +216,16 @@ function WingPads({
         <planeGeometry args={[8.2, 17.4]} />
         <meshStandardMaterial map={dirt} color="#a88858" roughness={0.9} />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-9.2, 0.018, 0]} receiveShadow>
-        <planeGeometry args={[7.8, 15.4]} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-10.9, 0.018, -1.2]} receiveShadow>
+        <planeGeometry args={[8.6, 16.2]} />
         <meshStandardMaterial map={concrete} color="#6aa0b0" roughness={0.84} />
       </mesh>
       <Stencil word="YESTERDAY" ink="#c45c2a" position={[0, 0.03, 4.35]} />
       <Stencil word="FIVE-DAY" ink="#a34a38" position={[9.25, 0.03, -1.8]} rot={-Math.PI / 2} />
-      <Stencil word="FIVE-MONTH" ink="#2a6a78" position={[-9.15, 0.03, 0]} rot={Math.PI / 2} />
+      <Stencil word="FIVE-MONTH" ink="#2a6a78" position={[-10.9, 0.03, -1.4]} rot={Math.PI / 2} />
       <WingSign word="YESTERDAY" paint="#c45c2a" position={[0, 0, 11.55]} />
       <WingSign word="FIVE-DAY" paint="#a34a38" position={[10.75, 0, 6.15]} />
-      <WingSign word="FIVE-MONTH" paint="#2a6a78" position={[-10.55, 0, 6.25]} />
+      <WingSign word="FIVE-MONTH" paint="#2a6a78" position={[-12.35, 0, 10.15]} />
     </group>
   )
 }
