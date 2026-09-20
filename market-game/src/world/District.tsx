@@ -198,7 +198,7 @@ function WingPads({
         <meshStandardMaterial map={dirt} color="#b88868" roughness={0.88} />
       </mesh>
       {COURT_SIGNS.map((s) => (
-        <WallStrip key={s.word} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} east={s.word === 'YARD'} />
+        <WallStrip key={s.word} word={s.word} ink={s.ink} x={s.x} z={s.z} y={s.y} wide={s.wide} east={s.word === 'YARD'} />
       ))}
     </group>
   )
@@ -209,6 +209,7 @@ function WallStrip({
   ink,
   x,
   z,
+  y = 1.78,
   wide,
   east = false,
   onPick,
@@ -217,6 +218,7 @@ function WallStrip({
   ink: string
   x: number
   z: number
+  y?: number
   wide: number
   east?: boolean
   onPick?: () => void
@@ -232,16 +234,16 @@ function WallStrip({
         onPick()
       }}
     >
-      <mesh position={[0, 1.78, 0]} castShadow>
+      <mesh position={[0, y, 0]} castShadow>
         <boxGeometry args={[wide + 0.16, 0.42, 0.18]} />
         <meshStandardMaterial color="#1a120c" roughness={0.68} />
       </mesh>
-      <mesh position={[0, 1.78, 0.1]}>
+      <mesh position={[0, y, 0.1]}>
         <planeGeometry args={[wide, 0.34]} />
         <meshBasicMaterial map={tex} toneMapped={false} />
       </mesh>
       {onPick && (
-        <mesh position={[0, 1.78, 0.28]}>
+        <mesh position={[0, y, 0.28]}>
           <planeGeometry args={[wide + 0.7, 1.05]} />
           <meshBasicMaterial transparent opacity={0.01} depthWrite={false} />
         </mesh>

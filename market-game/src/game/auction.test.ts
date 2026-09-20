@@ -194,6 +194,10 @@ for (const sign of COURT_SIGNS.filter((s) => s.word !== 'YARD')) {
   assert.ok(sign.z > 15.4 && sign.z < 16.2, `${sign.word} sits on the south wall cap, not a plaza plaque`)
 }
 assert.ok(
+  COURT_SIGNS.find((s) => s.word === 'YESTERDAY')!.y > 3.2,
+  'YESTERDAY sits on the south mid-tower cap so the wall mass cannot eat DAY',
+)
+assert.ok(
   COURT_SIGNS.find((s) => s.word === 'YESTERDAY')!.z > 15.4,
   'YESTERDAY is the full word on the south wall cap so the hall cannot eat DAY',
 )
