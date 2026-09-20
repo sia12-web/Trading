@@ -172,11 +172,11 @@ export function useGrassTexture() {
         256,
         256,
         (ctx, w, h) => {
-          ctx.fillStyle = '#2f8a28'
+          ctx.fillStyle = '#3e9a34'
           ctx.fillRect(0, 0, w, h)
-          for (let i = 0; i < 2200; i++) {
-            const g = 96 + Math.random() * 80
-            ctx.fillStyle = `rgb(${g - 70},${g},${g - 96})`
+          for (let i = 0; i < 2800; i++) {
+            const g = 118 + Math.random() * 90
+            ctx.fillStyle = `rgb(${g - 58},${g},${g - 88})`
             ctx.fillRect(Math.random() * w, Math.random() * h, 3, 4)
           }
           for (let i = 0; i < 18; i++) {

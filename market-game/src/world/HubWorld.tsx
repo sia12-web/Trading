@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import * as THREE from 'three'
 import { enterDow } from '../game/gameStore'
 import { DOW_GATE, LOCKED_MARKETS, YARD } from '../game/stores'
-import { ClashTerrain, ClashWalls, MorningSun, Pine, Broadleaf, Bush, Cypress, Willow } from './ClashTerrain'
+import { ClashTerrain, ClashWalls, NestedWalls, MorningSun, Pine, Broadleaf, Bush, Cypress, Willow } from './ClashTerrain'
 import { useBrickTexture, useDirtTexture, useGrassTexture, useMetalTexture } from './textures'
 
 export function HubWorld() {
@@ -19,7 +19,7 @@ export function HubWorld() {
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.014, 0]} receiveShadow>
         <planeGeometry args={[YARD * 2 - 0.55, YARD * 2 - 0.55]} />
-        <meshStandardMaterial map={grass} color="#3a8c34" roughness={0.88} />
+        <meshStandardMaterial map={grass} color="#4cb440" roughness={0.86} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.022, 5.2]} receiveShadow>
         <planeGeometry args={[7.4, 9.8]} />
@@ -63,6 +63,7 @@ export function HubWorld() {
       </mesh>
 
       <ClashWalls wall={YARD} brick={brick} />
+      <NestedWalls brick={brick} />
       <DowGate position={DOW_GATE} brick={brick} metal={metal} />
       {LOCKED_MARKETS.map((m) => (
         <LockedGate key={m.id} market={m} brick={brick} metal={metal} dirt={dirt} grass={grass} />
@@ -587,10 +588,24 @@ function CornerHuts() {
       <Cottage x={5.75} z={-11.15} rot={-0.14} kind={7} />
       <Cottage x={-7.65} z={9.15} rot={1.05} kind={8} />
       <Cottage x={7.85} z={8.25} rot={-0.95} kind={9} />
+      <Cottage x={-12.15} z={1.85} rot={0.62} kind={7} />
+      <Cottage x={11.85} z={2.25} rot={-0.55} kind={0} />
+      <Cottage x={-2.15} z={-12.35} rot={0.22} kind={5} />
+      <Cottage x={2.45} z={-12.15} rot={-0.28} kind={3} />
+      <Cottage x={-12.55} z={8.85} rot={0.9} kind={1} />
+      <Cottage x={12.15} z={-7.45} rot={-0.82} kind={6} />
+      <StonePath />
+      <FenceRun />
       <FlowerBed x={-5.15} z={-8.85} />
       <FlowerBed x={5.25} z={-8.65} />
       <FlowerBed x={-9.15} z={6.55} />
       <FlowerBed x={9.25} z={6.35} />
+      <FlowerBed x={-11.2} z={0.4} />
+      <FlowerBed x={11.05} z={0.85} />
+      <FlowerBed x={-3.4} z={-11.2} />
+      <FlowerBed x={3.55} z={-10.95} />
+      <FlowerBed x={-8.4} z={4.15} />
+      <FlowerBed x={8.55} z={3.85} />
       <Worker x={-7.55} z={-7.25} rot={0.6} color="#5a7a50" />
       <Worker x={7.45} z={-7.05} rot={-0.5} color="#3a6a88" />
       <Worker x={-7.65} z={6.85} rot={1.1} color="#8aa0b0" />
@@ -893,6 +908,56 @@ function Chimney({ x, y, z }: { x: number; y: number; z: number }) {
       <boxGeometry args={[0.32, 1.05, 0.32]} />
       <meshStandardMaterial color="#4a3028" roughness={0.8} />
     </mesh>
+  )
+}
+
+function StonePath() {
+  const pads: Array<[number, number, number, number, number]> = [
+    [0.1, 3.6, 1.35, 5.4, 0],
+    [3.4, 1.15, 5.2, 1.15, 0.08],
+    [-3.55, 1.05, 5.0, 1.15, -0.06],
+    [0.05, -3.8, 1.25, 4.6, 0.04],
+  ]
+  return (
+    <group>
+      {pads.map(([x, z, w, d, rot], i) => (
+        <mesh key={i} rotation={[-Math.PI / 2, 0, rot]} position={[x, 0.034, z]} receiveShadow>
+          <planeGeometry args={[w, d]} />
+          <meshStandardMaterial color="#c4b49a" roughness={0.82} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
+function FenceRun() {
+  const posts: Array<[number, number]> = [
+    [-4.8, -8.2],
+    [-3.6, -8.6],
+    [-2.4, -8.9],
+    [4.6, -8.15],
+    [3.4, -8.55],
+    [2.2, -8.85],
+    [-9.8, 4.4],
+    [-9.4, 5.5],
+    [9.6, 4.2],
+    [9.2, 5.35],
+  ]
+  return (
+    <group>
+      {posts.map(([x, z], i) => (
+        <group key={i} position={[x, 0, z]}>
+          <mesh position={[0, 0.55, 0]} castShadow>
+            <boxGeometry args={[0.08, 1.1, 0.08]} />
+            <meshStandardMaterial color="#6a4a28" roughness={0.8} />
+          </mesh>
+          <mesh position={[0.45, 0.72, 0]} rotation={[0, 0, Math.PI / 2]}>
+            <boxGeometry args={[0.06, 0.9, 0.06]} />
+            <meshStandardMaterial color="#8a6a40" roughness={0.75} />
+          </mesh>
+        </group>
+      ))}
+    </group>
   )
 }
 

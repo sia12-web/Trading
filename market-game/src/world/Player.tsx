@@ -203,11 +203,12 @@ function PriceBody({
   useFrame(() => {
     const walk = vel.current
     const b = bob.current
+    const idle = 0.28 * (1 - walk)
     const leg = Math.sin(b) * 1.45 * walk
-    if (left.current) left.current.rotation.x = leg
-    if (right.current) right.current.rotation.x = -leg
-    if (larm.current) larm.current.rotation.x = -leg * 1.05
-    if (rarm.current) rarm.current.rotation.x = leg * 1.05
+    if (left.current) left.current.rotation.x = idle + leg
+    if (right.current) right.current.rotation.x = idle - leg
+    if (larm.current) larm.current.rotation.x = 0.18 - leg * 1.05
+    if (rarm.current) rarm.current.rotation.x = 0.18 + leg * 1.05
   })
 
   const outline = '#fff6d8'
@@ -218,7 +219,7 @@ function PriceBody({
   const pants = '#1e1a16'
 
   return (
-    <group scale={1.62}>
+    <group scale={1.72}>
       <mesh position={[0, 0.62, 0]} scale={1.2}>
         <boxGeometry args={[0.48, 0.54, 0.3]} />
         <meshBasicMaterial color={outline} side={THREE.BackSide} toneMapped={false} />

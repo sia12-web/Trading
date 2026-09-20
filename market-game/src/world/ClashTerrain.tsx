@@ -20,11 +20,11 @@ export function ClashTerrain({
     <group>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -cliffH - 1.15, 0]} receiveShadow>
         <planeGeometry args={[260, 260]} />
-        <meshStandardMaterial color="#348c34" roughness={0.96} />
+        <meshStandardMaterial color="#3e9c36" roughness={0.96} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -cliffH + 0.02, 0]} receiveShadow>
         <planeGeometry args={[outer * 2 + 52, outer * 2 + 52]} />
-        <meshStandardMaterial map={grass} color="#348c30" roughness={0.9} />
+          <meshStandardMaterial map={grass} color="#46a43a" roughness={0.88} />
       </mesh>
       <LowerTerrace grass={grass} outer={outer} y={-cliffH * 0.42} />
       <IrregularCliff wall={wall} outer={outer} cliffH={cliffH} dirt={dirt} />
@@ -34,7 +34,67 @@ export function ClashTerrain({
       <DirtWear wall={wall} dirt={dirt} />
       <DirtRoads wall={wall} belt={belt} dirt={dirt} />
       <RimRocks outer={outer} dirt={dirt} />
+      <GrassTufts wall={wall} />
       <MixedForest wall={wall} outer={outer} cliffH={cliffH} />
+      <MorningSky />
+    </group>
+  )
+}
+
+function MorningSky() {
+  return (
+    <group>
+      <mesh position={[0, -2, 0]} scale={[-1, 1, -1]}>
+        <sphereGeometry args={[118, 28, 16, 0, Math.PI * 2, 0, Math.PI / 2.05]} />
+        <meshBasicMaterial color="#8eccf0" side={THREE.BackSide} depthWrite={false} />
+      </mesh>
+      <mesh position={[22, 28, 18]}>
+        <sphereGeometry args={[7.4, 16, 12]} />
+        <meshBasicMaterial color="#ffe8b0" />
+      </mesh>
+      <mesh position={[22, 28, 18]}>
+        <sphereGeometry args={[11.2, 16, 12]} />
+        <meshBasicMaterial color="#fff6d8" transparent opacity={0.28} depthWrite={false} />
+      </mesh>
+    </group>
+  )
+}
+
+function GrassTufts({ wall }: { wall: number }) {
+  const spots: Array<[number, number, number, string]> = [
+    [4.8, 16.8, 0.22, '#c45a6a'],
+    [-5.2, 17.1, 0.2, '#e8d060'],
+    [8.4, 16.4, 0.18, '#3a8c34'],
+    [-9.1, 16.6, 0.21, '#c45a6a'],
+    [17.2, 4.2, 0.2, '#e8d060'],
+    [16.8, -6.4, 0.22, '#3a8c34'],
+    [-16.6, 5.1, 0.19, '#c45a6a'],
+    [-17.0, -4.8, 0.2, '#e8d060'],
+    [2.2, -16.9, 0.18, '#3a8c34'],
+    [-3.4, -17.2, 0.21, '#c45a6a'],
+    [12.4, 12.8, 0.2, '#e8d060'],
+    [-11.8, 13.2, 0.19, '#3a8c34'],
+    [13.1, -12.2, 0.22, '#c45a6a'],
+    [-12.6, -13.0, 0.18, '#e8d060'],
+    [wall + 3.2, 7.4, 0.24, '#c45a6a'],
+    [-(wall + 2.8), -6.2, 0.22, '#3a8c34'],
+    [6.6, wall + 3.4, 0.2, '#e8d060'],
+    [-7.2, -(wall + 3.1), 0.21, '#c45a6a'],
+  ]
+  return (
+    <group>
+      {spots.map(([x, z, r, c], i) => (
+        <group key={i} position={[x, 0, z]}>
+          <mesh position={[0, r * 0.7, 0]} castShadow>
+            <icosahedronGeometry args={[r, 0]} />
+            <meshStandardMaterial color={c} roughness={0.72} flatShading />
+          </mesh>
+          <mesh position={[r * 0.7, r * 0.45, r * 0.2]} castShadow>
+            <icosahedronGeometry args={[r * 0.55, 0]} />
+            <meshStandardMaterial color="#2e7a28" roughness={0.78} flatShading />
+          </mesh>
+        </group>
+      ))}
     </group>
   )
 }
@@ -54,7 +114,7 @@ function PlateauPads({ grass, outer }: { grass: THREE.Texture; outer: number }) 
       {pads.map(([x, z, w, d, rot], i) => (
         <mesh key={i} rotation={[-Math.PI / 2, 0, rot]} position={[x, 0.004, z]} receiveShadow>
           <planeGeometry args={[w, d]} />
-          <meshStandardMaterial map={grass} color={i % 2 ? '#3a8c34' : '#348c30'} roughness={0.88} />
+          <meshStandardMaterial map={grass} color={i % 2 ? '#4cb440' : '#3e9c36'} roughness={0.86} />
         </mesh>
       ))}
     </group>
@@ -77,9 +137,9 @@ function DirtWear({ wall, dirt }: { wall: number; dirt: THREE.Texture }) {
   return (
     <group>
       {spots.map(([x, z, w, d], i) => (
-        <mesh key={i} rotation={[-Math.PI / 2, 0, i * 0.18]} position={[x, 0.016, z]} receiveShadow>
+        <mesh key={i} rotation={[-Math.PI / 2, 0, i * 0.18]} position={[x, 0.018, z]} receiveShadow>
           <planeGeometry args={[w, d]} />
-          <meshStandardMaterial map={dirt} color="#8a6e48" roughness={0.93} transparent opacity={0.55} />
+          <meshStandardMaterial map={dirt} color="#8a6e48" roughness={0.93} transparent opacity={0.78} />
         </mesh>
       ))}
     </group>
@@ -102,7 +162,7 @@ function LowerTerrace({ grass, outer, y }: { grass: THREE.Texture; outer: number
       {pads.map(([x, z, w, d], i) => (
         <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[x, y, z]} receiveShadow>
           <planeGeometry args={[w, d]} />
-          <meshStandardMaterial map={grass} color="#348c30" roughness={0.9} />
+          <meshStandardMaterial map={grass} color="#46a43a" roughness={0.88} />
         </mesh>
       ))}
     </group>
@@ -124,7 +184,7 @@ function GrassFingers({ wall, grass }: { wall: number; grass: THREE.Texture }) {
       {pads.map(([x, z, w, d], i) => (
         <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[x, 0.006, z]} receiveShadow>
           <planeGeometry args={[w, d]} />
-          <meshStandardMaterial map={grass} color="#3a8c34" roughness={0.88} />
+          <meshStandardMaterial map={grass} color="#4cb440" roughness={0.86} />
         </mesh>
       ))}
     </group>
@@ -356,6 +416,24 @@ function MixedForest({ wall, outer, cliffH }: { wall: number; outer: number; cli
     [-(valley + 4.8), -5.2, 3.5, 'oak', valleyY],
     [valley + 1.6, 16.4, 1.4, 'bush', valleyY],
     [-(valley + 0.8), -15.2, 1.2, 'bush', valleyY],
+    [mid + 2.8, 8.2, 4.6, 'pine', 0],
+    [mid + 3.4, -1.4, 3.8, 'oak', 0],
+    [-mid - 2.6, 5.4, 4.2, 'cypress', 0],
+    [-mid - 3.2, -6.8, 3.6, 'willow', 0],
+    [7.2, mid + 3.8, 5.0, 'pine', 0],
+    [-8.6, mid + 4.2, 3.4, 'oak', 0],
+    [mid + 4.8, 12.2, 4.4, 'pine', 0],
+    [-(mid + 4.4), -11.6, 3.9, 'cypress', 0],
+    [11.2, mid + 5.4, 2.8, 'willow', 0],
+    [-10.4, -mid - 4.8, 3.2, 'oak', 0],
+    [4.6, mid + 4.8, 1.35, 'bush', 0],
+    [-5.8, -mid - 4.2, 1.2, 'bush', 0],
+    [far + 1.4, 9.6, 5.2, 'pine', terraceY],
+    [-(far + 1.8), -8.2, 4.4, 'oak', terraceY],
+    [8.8, far + 2.2, 3.6, 'cypress', terraceY],
+    [-9.4, -(far + 1.8), 4.0, 'willow', terraceY],
+    [far + 3.6, 0.8, 4.8, 'pine', terraceY],
+    [-(far + 3.2), 2.4, 3.5, 'oak', terraceY],
   ]
   return (
     <group>
@@ -396,23 +474,26 @@ export function Pine({
   const yaw = jitter(seed, 1) * Math.PI
   const lean = (jitter(seed, 2) - 0.5) * 0.1
   const tufts: Array<[number, number, number, number, string]> = [
-    [0, h * 0.34, 0, h * 0.28, '#145a1c'],
-    [h * 0.08, h * 0.48, h * 0.05, h * 0.24, '#176824'],
-    [-h * 0.07, h * 0.52, -h * 0.06, h * 0.22, '#1a7028'],
-    [h * 0.05, h * 0.64, -h * 0.04, h * 0.2, '#1e802c'],
-    [-h * 0.04, h * 0.7, h * 0.05, h * 0.18, '#228c32'],
-    [0, h * 0.82, 0, h * 0.14, '#2a9a3a'],
-    [h * 0.12, h * 0.4, -h * 0.1, h * 0.16, '#1c6c24'],
-    [-h * 0.11, h * 0.38, h * 0.08, h * 0.15, '#165820'],
+    [0, h * 0.28, 0, h * 0.3, '#124a16'],
+    [h * 0.08, h * 0.36, h * 0.06, h * 0.24, '#16581c'],
+    [-h * 0.07, h * 0.4, -h * 0.05, h * 0.22, '#176420'],
+    [h * 0.06, h * 0.5, -h * 0.05, h * 0.2, '#1a7024'],
+    [-h * 0.05, h * 0.56, h * 0.06, h * 0.18, '#1c7a28'],
+    [h * 0.04, h * 0.66, -h * 0.03, h * 0.16, '#1e842c'],
+    [-h * 0.03, h * 0.74, h * 0.04, h * 0.14, '#228c32'],
+    [0, h * 0.84, 0, h * 0.12, '#26963a'],
+    [0, h * 0.94, 0, h * 0.08, '#2aa242'],
+    [h * 0.14, h * 0.32, -h * 0.1, h * 0.14, '#145218'],
+    [-h * 0.12, h * 0.3, h * 0.1, h * 0.13, '#104214'],
   ]
   return (
     <group position={[x, y, z]} rotation={[lean, yaw, 0]}>
-      <mesh position={[0, h * 0.18, 0]} castShadow>
-        <cylinderGeometry args={[0.06, 0.14, h * 0.38, 6]} />
+      <mesh position={[0, h * 0.16, 0]} castShadow>
+        <cylinderGeometry args={[0.055, 0.13, h * 0.34, 6]} />
         <meshStandardMaterial color="#5a3418" roughness={0.92} />
       </mesh>
       {tufts.map(([px, py, pz, r, c], i) => (
-        <mesh key={i} position={[px, py, pz]} scale={[1, 0.78, 1]} rotation={[0, i * 0.4, 0]} castShadow>
+        <mesh key={i} position={[px, py, pz]} scale={[0.82, 0.92, 0.82]} rotation={[0, i * 0.45, 0]} castShadow>
           <icosahedronGeometry args={[r, 0]} />
           <meshStandardMaterial color={c} roughness={0.74} flatShading />
         </mesh>
@@ -589,44 +670,107 @@ export function Bush({
   )
 }
 
-/** Offset brick ring so the wall is not a perfect square fence. */
+/** Jogged brick ring plus bastions so the compound is a village, not a square lot. */
 export function ClashWalls({ wall, brick }: { wall: number; brick: THREE.Texture }) {
   const t = wall
-  const h = 1.35
-  const segs: Array<[number, number, number, number]> = [
-    [0, -t, t * 2 + 1.2, 0.72],
-    [0, t, t * 2 + 1.2, 0.72],
-    [-t, 0, 0.72, t * 2],
-    [t, 0, 0.72, t * 2],
-    [0, t - 0.72, 7.4, 0.95],
-    [5.1, -t + 0.68, 6.6, 0.95],
-    [-t + 0.7, 3.4, 0.95, 7.0],
-    [t - 0.7, -2.6, 0.95, 5.8],
+  const h = 1.42
+  const segs: Array<[number, number, number, number, number]> = [
+    [0, t + 0.62, t * 0.78, 0.92, 0],
+    [-t * 0.68, t - 0.08, t * 0.58, 0.82, 0.05],
+    [t * 0.68, t + 0.28, t * 0.58, 0.82, -0.04],
+    [0, -t - 0.48, t * 0.74, 0.9, 0],
+    [-t * 0.64, -t + 0.18, t * 0.54, 0.8, -0.05],
+    [t * 0.64, -t - 0.12, t * 0.54, 0.8, 0.06],
+    [t + 0.58, 0.2, 0.92, t * 0.74, 0],
+    [t - 0.08, t * 0.62, 0.82, t * 0.52, 0.05],
+    [t + 0.32, -t * 0.6, 0.82, t * 0.54, -0.04],
+    [-t - 0.48, -0.15, 0.9, t * 0.72, 0],
+    [-t + 0.12, t * 0.58, 0.82, t * 0.5, -0.05],
+    [-t - 0.22, -t * 0.62, 0.82, t * 0.54, 0.06],
+    [t - 1.15, t - 1.05, 3.55, 0.95, 0.62],
+    [-(t - 0.95), t - 1.25, 3.35, 0.95, -0.55],
+    [t - 1.25, -(t - 1.0), 3.2, 0.95, -0.5],
+    [-(t - 1.1), -(t - 1.2), 3.35, 0.95, 0.58],
+  ]
+  const midTowers: Array<[number, number]> = [
+    [0, t + 0.62],
+    [t + 0.58, 0.2],
+    [0, -t - 0.48],
+    [-t - 0.48, -0.15],
   ]
   return (
     <group>
-      {segs.map(([x, z, w, d], i) => (
-        <mesh key={i} position={[x, h / 2, z]} rotation={[0, i === 4 ? 0.04 : i === 5 ? -0.05 : 0, 0]} castShadow receiveShadow>
+      {segs.map(([x, z, w, d, rot], i) => (
+        <mesh key={i} position={[x, h / 2, z]} rotation={[0, rot, 0]} castShadow receiveShadow>
           <boxGeometry args={[w, h, d]} />
           <meshStandardMaterial map={brick} color={i % 2 ? '#b84a30' : '#c45a38'} roughness={0.86} />
         </mesh>
       ))}
       {([
-        [-t, -t],
-        [t, -t],
-        [-t, t],
-        [t, t],
+        [-t - 0.15, -t - 0.15],
+        [t + 0.2, -t - 0.1],
+        [-t - 0.1, t + 0.25],
+        [t + 0.28, t + 0.32],
       ] as Array<[number, number]>).map(([x, z]) => (
         <group key={`${x}${z}`}>
-          <mesh position={[x, 1.7, z]} castShadow receiveShadow>
-            <boxGeometry args={[1.35, 3.4, 1.35]} />
+          <mesh position={[x, 1.85, z]} castShadow receiveShadow>
+            <boxGeometry args={[1.55, 3.7, 1.55]} />
             <meshStandardMaterial map={brick} color="#b84a30" roughness={0.82} />
           </mesh>
-          <mesh position={[x, 3.5, z]} castShadow>
-            <boxGeometry args={[1.55, 0.28, 1.55]} />
+          <mesh position={[x, 3.82, z]} castShadow>
+            <boxGeometry args={[1.78, 0.3, 1.78]} />
             <meshStandardMaterial color="#b08a40" roughness={0.32} metalness={0.72} />
           </mesh>
         </group>
+      ))}
+      {midTowers.map(([x, z], i) => (
+        <group key={`mid${i}`}>
+          <mesh position={[x, 1.55, z]} castShadow receiveShadow>
+            <boxGeometry args={[1.15, 3.1, 1.15]} />
+            <meshStandardMaterial map={brick} color="#c45a38" roughness={0.84} />
+          </mesh>
+          <mesh position={[x, 3.22, z]} castShadow>
+            <boxGeometry args={[1.32, 0.22, 1.32]} />
+            <meshStandardMaterial color="#b08a40" roughness={0.32} metalness={0.72} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  )
+}
+
+/** Inner plaza ring for the hub so cottages sit between two walls, Clash-style. */
+export function NestedWalls({ brick }: { brick: THREE.Texture }) {
+  const t = 6.85
+  const h = 1.12
+  const segs: Array<[number, number, number, number, number]> = [
+    [-4.85, t, 5.5, 0.62, 0.03],
+    [4.85, t + 0.12, 5.5, 0.62, -0.04],
+    [t + 0.1, -0.4, 0.62, 9.4, 0],
+    [t - 0.2, 4.2, 0.62, 4.6, 0.05],
+    [-t, 0.8, 0.62, 8.6, 0],
+    [-t + 0.15, -3.8, 0.62, 4.2, -0.04],
+    [0.4, -t - 0.12, 9.6, 0.62, 0.02],
+    [-4.6, -t + 0.1, 5.2, 0.62, -0.05],
+  ]
+  return (
+    <group>
+      {segs.map(([x, z, w, d, rot], i) => (
+        <mesh key={i} position={[x, h / 2, z]} rotation={[0, rot, 0]} castShadow receiveShadow>
+          <boxGeometry args={[w, h, d]} />
+          <meshStandardMaterial map={brick} color={i % 2 ? '#c45a38' : '#b84a30'} roughness={0.86} />
+        </mesh>
+      ))}
+      {([
+        [t, t],
+        [-t, t],
+        [t, -t],
+        [-t, -t],
+      ] as Array<[number, number]>).map(([x, z]) => (
+        <mesh key={`${x}${z}`} position={[x, 1.35, z]} castShadow>
+          <boxGeometry args={[1.05, 2.7, 1.05]} />
+          <meshStandardMaterial map={brick} color="#b84a30" roughness={0.82} />
+        </mesh>
       ))}
     </group>
   )
@@ -648,12 +792,12 @@ export function MorningSun({ warm }: { warm: boolean }) {
 
   return (
     <>
-      <hemisphereLight args={[warm ? '#ffe8c8' : '#c8e4ff', warm ? '#7a6a48' : '#3a8c38', warm ? 0.72 : 0.88]} />
-      <ambientLight intensity={warm ? 0.52 : 0.7} />
+      <hemisphereLight args={[warm ? '#ffe8c8' : '#c8e4ff', warm ? '#7a6a48' : '#3a8c38', warm ? 0.86 : 0.96]} />
+      <ambientLight intensity={warm ? 0.62 : 0.78} />
       <directionalLight
         ref={light}
         position={sunPos}
-        intensity={warm ? 1.85 : 2.42}
+        intensity={warm ? 2.05 : 2.55}
         color={sun}
         castShadow
         shadow-mapSize={[2048, 2048]}
@@ -666,9 +810,9 @@ export function MorningSun({ warm }: { warm: boolean }) {
         shadow-camera-top={38}
         shadow-camera-bottom={-38}
       />
-      <directionalLight position={[-12, 11, -14]} intensity={warm ? 0.58 : 0.86} color="#d4e8f8" />
-      <directionalLight position={[4, 14, -8]} intensity={warm ? 0.28 : 0.42} color="#fff6e0" />
-      <directionalLight position={[16, 7, 4]} intensity={warm ? 0.26 : 0.38} color="#ffe8c4" />
+      <directionalLight position={[-12, 11, -14]} intensity={warm ? 0.72 : 0.96} color="#d4e8f8" />
+      <directionalLight position={[4, 14, -8]} intensity={warm ? 0.38 : 0.5} color="#fff6e0" />
+      <directionalLight position={[16, 7, 4]} intensity={warm ? 0.34 : 0.44} color="#ffe8c4" />
     </>
   )
 }

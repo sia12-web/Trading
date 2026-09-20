@@ -207,8 +207,8 @@ assert.ok(
   'FIVE-DAY plaque stays east of the south-gate trees so the full word reads',
 )
 assert.ok(
-  COURT_SIGNS.filter((s) => s.word !== 'YARD').every((s) => s.z > 14.2),
-  'court names sit on a thin south-wall strip, not giant plaza boards',
+  COURT_SIGNS.filter((s) => s.word !== 'YARD').every((s) => s.z > 16),
+  'court names sit on the camera-near outer wall cap, not behind the brick',
 )
 assert.deepEqual(
   STORE_PLAQUES.map((s) => s.word),

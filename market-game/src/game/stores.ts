@@ -125,14 +125,14 @@ export const DOW_GATE: [number, number, number] = [0, 0, 8.4]
 export const HUB_WALK = 14.2
 
 /**
- * Court names live on a thin inner-wall strip (high Z / high X), not giant
+ * Court names live on a thin camera-near wall cap (outer +Z / +X), not giant
  * plaza boards. Yesterday / Five-Day / Five-Month / Yard stay readable.
  */
 export const COURT_SIGNS = [
-  { word: 'YESTERDAY', ink: '#e07040', x: 0, z: 14.68, wide: 4.85 },
-  { word: 'FIVE-DAY', ink: '#d48848', x: 9.15, z: 14.68, wide: 4.35 },
-  { word: 'FIVE-MONTH', ink: '#6ab0c4', x: -6.55, z: 14.68, wide: 4.95 },
-  { word: 'YARD', ink: '#d48848', x: 14.68, z: -4.25, wide: 3.45 },
+  { word: 'YESTERDAY', ink: '#e07040', x: 0, z: 16.42, wide: 5.15 },
+  { word: 'FIVE-DAY', ink: '#d48848', x: 9.15, z: 16.42, wide: 4.65 },
+  { word: 'FIVE-MONTH', ink: '#6ab0c4', x: -6.55, z: 16.42, wide: 5.25 },
+  { word: 'YARD', ink: '#d48848', x: 16.42, z: -4.25, wide: 3.65 },
 ] as const
 export const COURT_STENCILS = [
   { word: 'YESTERDAY', ink: '#e07040', x: 0, z: 13.85, w: 5.2, d: 0.85 },
