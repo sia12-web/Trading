@@ -16,7 +16,7 @@ export function DowScene() {
     let last = performance.now()
     const id = window.setInterval(() => {
       const now = performance.now()
-      tickGame(Math.min(0.2, (now - last) / 1000))
+      tickGame(Math.min(0.28, (now - last) / 1000))
       last = now
     }, 50)
     return () => window.clearInterval(id)

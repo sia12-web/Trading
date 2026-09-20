@@ -413,7 +413,7 @@ export function tickGame(dt: number) {
   }
 
   if (state.phase === 'opening') {
-    const openElapsed = (performance.now() - openWallMs) / 1000
+    const openElapsed = Math.min(OPEN_CINEMATIC_SEC + 0.05, state.openElapsed + Math.max(0, dt))
     const shutter = Math.min(1, Math.max(0, (openElapsed - 0.08) / GATE_ROLL_SEC))
     const floorAlive = Math.min(1, Math.max(0, (openElapsed - 0.12) / GATE_ROLL_SEC))
     const clockMin = NY_OPEN_MIN + openElapsed / 60
