@@ -240,7 +240,7 @@ assert.ok(
   'SPIRE sits on the west-south wall with PIT/LOFT, left of the gate that ate the word',
 )
 assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'SPIRE')!.z > 14.4,
+  STORE_PLAQUES.find((s) => s.word === 'SPIRE')!.z > 14.9,
   'SPIRE plaque sits on the camera-near south wall with FIVE-MONTH',
 )
 assert.ok(

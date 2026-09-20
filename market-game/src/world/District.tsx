@@ -210,9 +210,13 @@ function WingPads({
           <WallStrip key={s.word} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} east={s.word === 'YARD'} />
         ),
       )}
-      {STORE_PLAQUES.map((s) => (
-        <CourtPlaque key={`store-${s.word}`} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} lift={0.12} />
-      ))}
+      {STORE_PLAQUES.map((s) =>
+        s.word === 'SPIRE' ? (
+          <WallStrip key={`store-${s.word}`} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} />
+        ) : (
+          <CourtPlaque key={`store-${s.word}`} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} lift={s.word === 'FOUNDRY' ? 0.38 : 0.12} />
+        ),
+      )}
       <StallTimePlaques />
     </group>
   )
