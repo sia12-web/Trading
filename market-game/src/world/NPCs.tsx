@@ -170,7 +170,7 @@ function Person({
   })
 
   return (
-    <group ref={ref} position={[home[0], 0, home[1]]} scale={0.7}>
+    <group ref={ref} position={[home[0], 0, home[1]]} scale={0.88}>
       <TroopBody color={color} left={left} right={right} hardhat={kind !== 'broker'} kit={kind} />
     </group>
   )

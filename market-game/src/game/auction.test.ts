@@ -7,8 +7,10 @@ import {
   timeOpportunity,
   volumeDivergence,
   rangeHeight,
+  PRINT_HOLD_MS,
 } from './auction'
 import { buildDowMarket } from './marketData'
+import { OPEN_CINEMATIC_SEC } from './session'
 import { porchOf, STORES } from './stores'
 import type { OhlcvBar } from './types'
 
@@ -174,6 +176,11 @@ assert.ok(Math.abs(rangeHeight(hi, lo, hi, 0.3, 3.6) - 3.6) < 1e-6, 'range high 
 const yVal = rangeHeight(42200, lo, hi, 0.3, 3.6)
 const yVah = rangeHeight(42800, lo, hi, 0.3, 3.6)
 assert.ok(yVal > 0.3 && yVah < 3.6 && yVah - yVal > 0.5, 'value area is a countable mid belt')
+
+assert.equal(OPEN_CINEMATIC_SEC, 12, 'cash open holds twelve wall-clock seconds')
+assert.ok(PRINT_HOLD_MS >= 12000, 'take dump stays long enough to film still and video')
+const yard = STORES.find((s) => s.building === 'yard')!
+assert.ok(yard.position[0] > 8 && yard.position[2] < mill.position[2] - 4, 'YARD is the far east crane store')
 
 const hallTime = timeOpportunity({ kind: 'poc', tpoAtPrice: 6.2, sessionProgress: 0.02 })
 const millTime = timeOpportunity({ kind: 'poc', tpoAtPrice: 0.4, sessionProgress: 0.02 })

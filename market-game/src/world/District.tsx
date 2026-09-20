@@ -7,6 +7,7 @@ import { storeAtPoint, YARD } from '../game/stores'
 import { useGame } from '../ui/useGame'
 import { ClashTerrain, ClashWalls, MorningSun } from './ClashTerrain'
 import {
+  makeCourtSignTexture,
   makeOpenBannerTexture,
   makeStencilTexture,
   useAsphaltTexture,
@@ -189,9 +190,12 @@ function WingPads({
         <planeGeometry args={[8.6, 16.2]} />
         <meshStandardMaterial map={concrete} color="#6aa0b0" roughness={0.84} />
       </mesh>
-      <Stencil word="YESTERDAY" ink="#c45c2a" position={[0, 0.03, 4.35]} />
-      <Stencil word="FIVE-DAY" ink="#a34a38" position={[9.25, 0.03, -1.8]} rot={-Math.PI / 2} />
-      <Stencil word="FIVE-MONTH" ink="#2a6a78" position={[-10.9, 0.03, -1.4]} rot={Math.PI / 2} />
+      <Stencil word="YESTERDAY" ink="#e07040" position={[0, 0.04, 4.55]} />
+      <Stencil word="FIVE-DAY" ink="#d48848" position={[7.15, 0.04, -1.8]} rot={-Math.PI / 2} />
+      <Stencil word="FIVE-MONTH" ink="#6ab0c4" position={[-8.35, 0.04, -1.4]} rot={Math.PI / 2} />
+      <CourtPlaque word="YESTERDAY" ink="#e07040" x={0} z={5.15} />
+      <CourtPlaque word="FIVE-DAY" ink="#d48848" x={6.35} z={-1.85} />
+      <CourtPlaque word="FIVE-MONTH" ink="#6ab0c4" x={-7.55} z={-1.4} />
     </group>
   )
 }
@@ -210,9 +214,29 @@ function Stencil({
   const tex = useMemo(() => makeStencilTexture(word, ink), [word, ink])
   return (
     <mesh rotation={[-Math.PI / 2, 0, rot]} position={position}>
-      <planeGeometry args={[6.2, 1.35]} />
-      <meshStandardMaterial map={tex} transparent opacity={0.85} depthWrite={false} />
+      <planeGeometry args={[8.8, 2.05]} />
+      <meshBasicMaterial map={tex} toneMapped={false} />
     </mesh>
+  )
+}
+
+function CourtPlaque({ word, ink, x, z }: { word: string; ink: string; x: number; z: number }) {
+  const tex = useMemo(() => makeCourtSignTexture(word, ink), [word, ink])
+  return (
+    <group position={[x, 0, z]} rotation={[0, Math.PI / 4, 0]}>
+      <mesh position={[0, 0.55, 0]} castShadow>
+        <boxGeometry args={[0.16, 1.1, 0.16]} />
+        <meshStandardMaterial color="#3a2a1c" roughness={0.8} />
+      </mesh>
+      <mesh position={[0, 1.28, 0.04]} castShadow>
+        <boxGeometry args={[2.85, 0.72, 0.12]} />
+        <meshStandardMaterial color="#2a1c14" roughness={0.7} />
+      </mesh>
+      <mesh position={[0, 1.28, 0.11]}>
+        <planeGeometry args={[2.7, 0.58]} />
+        <meshBasicMaterial map={tex} toneMapped={false} />
+      </mesh>
+    </group>
   )
 }
 

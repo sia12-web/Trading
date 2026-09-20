@@ -269,13 +269,36 @@ export function makeStencilTexture(word: string, ink: string): THREE.CanvasTextu
   c.width = 1024
   c.height = 256
   const ctx = c.getContext('2d')!
-  ctx.clearRect(0, 0, 1024, 256)
+  ctx.fillStyle = '#1a1410'
+  ctx.fillRect(0, 0, 1024, 256)
   ctx.fillStyle = ink
-  ctx.globalAlpha = 0.55
-  ctx.font = 'bold 92px "Bebas Neue", "IBM Plex Mono", sans-serif'
+  ctx.font = 'bold 110px "Bebas Neue", "IBM Plex Mono", sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.fillText(word, 512, 128)
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = THREE.SRGBColorSpace
+  t.needsUpdate = true
+  return t
+}
+
+export function makeCourtSignTexture(word: string, ink: string): THREE.CanvasTexture {
+  const c = document.createElement('canvas')
+  c.width = 768
+  c.height = 192
+  const ctx = c.getContext('2d')!
+  ctx.fillStyle = '#241810'
+  ctx.fillRect(0, 0, 768, 192)
+  ctx.fillStyle = '#3a2a1c'
+  ctx.fillRect(10, 10, 748, 172)
+  ctx.strokeStyle = ink
+  ctx.lineWidth = 8
+  ctx.strokeRect(18, 18, 732, 156)
+  ctx.fillStyle = '#f4ead8'
+  ctx.font = 'bold 78px "Bebas Neue", "IBM Plex Mono", sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(word, 384, 100)
   const t = new THREE.CanvasTexture(c)
   t.colorSpace = THREE.SRGBColorSpace
   t.needsUpdate = true

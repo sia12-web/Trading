@@ -349,6 +349,7 @@ export function takeAuction(side: Side) {
     note,
   }
   printFill(side === 'buy')
+  clearWalkTarget()
   const liveVol = { ...state.liveVol }
   const kind = kindOf(id)
   if (side === 'buy') {

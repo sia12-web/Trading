@@ -52,10 +52,22 @@ export function Hud() {
           {stall || g.inspecting ? (
             <>
               On the floor{' '}
-              <button className="ghost hit" onClick={() => takeAuction('buy')}>
+              <button
+                className="ghost hit"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  takeAuction('buy')
+                }}
+              >
                 B take
               </button>{' '}
-              <button className="ghost hit" onClick={() => takeAuction('sell')}>
+              <button
+                className="ghost hit"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  takeAuction('sell')
+                }}
+              >
                 F fade
               </button>
             </>

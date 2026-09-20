@@ -459,10 +459,20 @@ canvas {
   color: #d4a046;
 }
 
+.iso-hud .prompt,
+.iso-hud .iso-prompt {
+  pointer-events: auto;
+}
+
 .iso-hud .ghost {
   margin-top: 4px;
   font-size: 10px;
   padding: 3px 6px;
+}
+
+.iso-hud .ghost.hit {
+  font-size: 15px;
+  padding: 6px 12px;
 }
 
 .iso-hud .tape-row {

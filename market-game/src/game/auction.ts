@@ -269,8 +269,8 @@ export function timeOpportunity(args: {
   }
 }
 
-/** How long a take/fade keeps the porch reacting. */
-export const PRINT_HOLD_MS = 10000
+/** How long a take/fade keeps the porch reacting. Long enough to film still + video on the same dump. */
+export const PRINT_HOLD_MS = 18000
 
 /**
  * Floor occupancy from divergence + time. HVN/POC fill when size confirms and
