@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import * as THREE from 'three'
 import { enterDow } from '../game/gameStore'
 import { DOW_GATE, LOCKED_MARKETS, YARD } from '../game/stores'
-import { ClashTerrain, MorningSun, Pine } from './ClashTerrain'
+import { ClashTerrain, ClashWalls, MorningSun, Pine, Broadleaf, Bush } from './ClashTerrain'
 import { useBrickTexture, useDirtTexture, useGrassTexture, useMetalTexture } from './textures'
 
 export function HubWorld() {
@@ -13,63 +13,38 @@ export function HubWorld() {
 
   return (
     <>
-      <color attach="background" args={['#6aa8cc']} />
+      <color attach="background" args={['#6ac8ee']} />
       <MorningSun warm={false} />
       <ClashTerrain wall={YARD} />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.014, 0]} receiveShadow>
         <planeGeometry args={[YARD * 2 - 0.55, YARD * 2 - 0.55]} />
-        <meshStandardMaterial map={dirt} color="#a88858" roughness={0.9} />
+        <meshStandardMaterial map={grass} color="#52c842" roughness={0.86} />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.022, 0]} receiveShadow>
-        <planeGeometry args={[8.4, 8.4]} />
-        <meshStandardMaterial map={grass} color="#4aaa38" roughness={0.88} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.022, 4.6]} receiveShadow>
+        <planeGeometry args={[3.6, 16.4]} />
+        <meshStandardMaterial map={dirt} color="#b08a58" roughness={0.9} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, Math.PI / 2]} position={[0, 0.022, 0]} receiveShadow>
+        <planeGeometry args={[3.4, 18.8]} />
+        <meshStandardMaterial map={dirt} color="#b08a58" roughness={0.9} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.026, 0]} receiveShadow>
+        <planeGeometry args={[7.2, 7.2]} />
+        <meshStandardMaterial map={dirt} color="#c49a62" roughness={0.88} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]} receiveShadow>
+        <circleGeometry args={[2.4, 20]} />
+        <meshStandardMaterial map={grass} color="#58cc46" roughness={0.84} />
       </mesh>
 
-      <HubWalls brick={brick} />
+      <ClashWalls wall={YARD} brick={brick} />
       <DowGate position={DOW_GATE} brick={brick} metal={metal} />
       {LOCKED_MARKETS.map((m) => (
         <LockedGate key={m.id} market={m} brick={brick} metal={metal} dirt={dirt} grass={grass} />
       ))}
       <HubDressing />
     </>
-  )
-}
-
-function HubWalls({ brick }: { brick: THREE.Texture }) {
-  const t = YARD
-  const h = 1.35
-  return (
-    <group>
-      {([
-        [0, -t, t * 2 + 1.2, 0.72],
-        [0, t, t * 2 + 1.2, 0.72],
-        [-t, 0, 0.72, t * 2],
-        [t, 0, 0.72, t * 2],
-      ] as Array<[number, number, number, number]>).map(([x, z, w, d], i) => (
-        <mesh key={i} position={[x, h / 2, z]} castShadow receiveShadow>
-          <boxGeometry args={[w, h, d]} />
-          <meshStandardMaterial map={brick} color="#c45a38" roughness={0.82} />
-        </mesh>
-      ))}
-      {([
-        [-t, -t],
-        [t, -t],
-        [-t, t],
-        [t, t],
-      ] as Array<[number, number]>).map(([x, z]) => (
-        <group key={`${x}${z}`}>
-          <mesh position={[x, 1.7, z]} castShadow receiveShadow>
-            <boxGeometry args={[1.35, 3.4, 1.35]} />
-            <meshStandardMaterial map={brick} color="#b84a30" roughness={0.82} />
-          </mesh>
-          <mesh position={[x, 3.5, z]} castShadow>
-            <boxGeometry args={[1.55, 0.28, 1.55]} />
-            <meshStandardMaterial color="#6a5038" roughness={0.55} metalness={0.25} />
-          </mesh>
-        </group>
-      ))}
-    </group>
   )
 }
 
@@ -91,39 +66,39 @@ function DowGate({
         enterDow()
       }}
     >
-      <mesh position={[0, 2.15, 0]} castShadow receiveShadow>
-        <boxGeometry args={[6.2, 4.3, 4.6]} />
+      <mesh position={[0, 1.85, 0]} castShadow receiveShadow>
+        <boxGeometry args={[4.85, 3.7, 3.55]} />
         <meshStandardMaterial map={brick} color="#c45432" roughness={0.8} />
       </mesh>
-      {[-1.85, 0, 1.85].map((x) => (
-        <mesh key={x} position={[x, 4.55, 0]} rotation={[0, 0, 0.58]} castShadow>
-          <boxGeometry args={[2.4, 0.16, 4.75]} />
+      {[-1.45, 0, 1.45].map((x) => (
+        <mesh key={x} position={[x, 3.95, 0]} rotation={[0, 0, 0.58]} castShadow>
+          <boxGeometry args={[1.85, 0.14, 3.7]} />
           <meshStandardMaterial map={metal} color="#8a5a38" roughness={0.52} />
         </mesh>
       ))}
-      <mesh position={[0, 1.45, 2.35]}>
-        <boxGeometry args={[1.9, 2.7, 0.12]} />
+      <mesh position={[0, 1.25, 1.82]}>
+        <boxGeometry args={[1.55, 2.3, 0.12]} />
         <meshStandardMaterial color="#5a1810" />
       </mesh>
-      <mesh position={[0, 1.45, 2.42]}>
-        <boxGeometry args={[1.55, 2.15, 0.06]} />
+      <mesh position={[0, 1.25, 1.88]}>
+        <boxGeometry args={[1.25, 1.8, 0.06]} />
         <meshStandardMaterial color="#3a1008" emissive="#c45828" emissiveIntensity={0.35} />
       </mesh>
-      <mesh position={[0, 4.55, 0]} castShadow>
-        <boxGeometry args={[6.45, 0.18, 4.85]} />
+      <mesh position={[0, 3.95, 0]} castShadow>
+        <boxGeometry args={[5.05, 0.16, 3.8]} />
         <meshStandardMaterial color="#c45a32" roughness={0.7} />
       </mesh>
-      <mesh position={[2.35, 5.85, -0.55]} castShadow>
-        <cylinderGeometry args={[0.32, 0.4, 2.6, 8]} />
+      <mesh position={[1.85, 5.05, -0.4]} castShadow>
+        <cylinderGeometry args={[0.26, 0.32, 2.2, 8]} />
         <meshStandardMaterial map={metal} color="#8a6a50" />
       </mesh>
-      {[-1.4, 1.4].map((x) => (
-        <mesh key={x} position={[x, 2.55, 2.32]}>
-          <boxGeometry args={[0.7, 0.85, 0.08]} />
+      {[-1.1, 1.1].map((x) => (
+        <mesh key={x} position={[x, 2.2, 1.8]}>
+          <boxGeometry args={[0.58, 0.72, 0.08]} />
           <meshStandardMaterial color="#2a3a44" roughness={0.25} />
         </mesh>
       ))}
-      <Sign text="DOW MILL" color="#e8dcc8" y={5.15} z={2.38} w={3.4} />
+      <Sign text="DOW MILL" color="#e8dcc8" y={4.45} z={1.85} w={2.9} />
     </group>
   )
 }
@@ -299,18 +274,22 @@ function HubDressing() {
     <group>
       {(
         [
-          [-13.4, -4.2, 3.8],
-          [13.4, -4.0, 4.0],
-          [-13.2, 4.4, 3.6],
-          [13.2, 4.6, 3.9],
-          [-4.4, 13.2, 3.5],
-          [4.6, 13.4, 3.7],
-          [-4.2, -13.4, 3.4],
-          [4.4, -13.2, 3.6],
-        ] as Array<[number, number, number]>
-      ).map(([x, z, h], i) => (
-        <Pine key={i} x={x} z={z} h={h} />
-      ))}
+          [-13.4, -4.2, 3.8, 'pine'],
+          [13.4, -4.0, 3.2, 'oak'],
+          [-13.2, 4.4, 4.2, 'pine'],
+          [13.2, 4.6, 2.9, 'gold'],
+          [-4.4, 13.2, 3.5, 'oak'],
+          [4.6, 13.4, 4.1, 'pine'],
+          [-4.2, -13.4, 2.8, 'gold'],
+          [4.4, -13.2, 3.6, 'oak'],
+          [-10.2, 8.6, 3.1, 'oak'],
+          [10.4, 8.8, 2.7, 'pine'],
+          [-9.8, -8.4, 3.4, 'gold'],
+          [10.1, -8.2, 2.9, 'oak'],
+        ] as Array<[number, number, number, 'pine' | 'oak' | 'gold']>
+      ).map(([x, z, h, kind], i) =>
+        kind === 'pine' ? <Pine key={i} x={x} z={z} h={h} /> : <Broadleaf key={i} x={x} z={z} h={h} gold={kind === 'gold'} />,
+      )}
       {([-2.4, -0.8, 0.8, 2.4] as const).map((x, i) => (
         <MarketStall key={x} x={x} z={2.15} rot={i % 2 ? 0.12 : -0.1} />
       ))}
@@ -348,6 +327,27 @@ function HubDressing() {
       <Worker x={-5.5} z={3.4} rot={-0.7} color="#e07030" />
       <Worker x={4.6} z={-4.2} rot={2.1} color="#f0c040" />
       <Worker x={-4.4} z={-4.0} rot={-2.3} color="#8aa0b0" />
+      <Worker x={1.2} z={6.4} rot={3.0} color="#ff6a28" />
+      <Worker x={-1.6} z={6.1} rot={-2.8} color="#f0c040" />
+      <Worker x={2.4} z={5.2} rot={0.2} color="#e07030" />
+      <Worker x={-2.8} z={5.0} rot={-0.4} color="#8aa0b0" />
+      <MarketStall x={-2.4} z={5.85} rot={0.08} />
+      <MarketStall x={2.35} z={5.7} rot={-0.1} />
+      <MarketStall x={0.15} z={6.55} rot={0} />
+      <CrateStack x={3.4} z={6.8} />
+      <CrateStack x={-3.5} z={6.6} />
+      <Cart x={1.1} z={7.15} rot={-0.2} />
+      <Cart x={-1.2} z={7.05} rot={0.25} />
+      <Barrel x={3.9} z={5.8} color="#c45a28" />
+      <Barrel x={-3.8} z={5.6} color="#c4a046" />
+      <MarketStall x={-6.8} z={-1.2} rot={Math.PI / 2} />
+      <MarketStall x={6.9} z={-1.0} rot={-Math.PI / 2} />
+      <CrateStack x={-7.4} z={1.8} />
+      <CrateStack x={7.3} z={1.6} />
+      <Cart x={-7.1} z={-5.2} rot={0.7} />
+      <Cart x={7.2} z={-5.0} rot={-0.8} />
+      <Worker x={-6.6} z={-0.2} rot={1.4} color="#c44a22" />
+      <Worker x={6.7} z={0.1} rot={-1.5} color="#f0c040" />
       <mesh position={[0.2, 0.42, -1.15]} castShadow>
         <cylinderGeometry args={[0.32, 0.38, 0.72, 10]} />
         <meshStandardMaterial color="#8a9098" metalness={0.4} roughness={0.4} />
@@ -372,6 +372,28 @@ function HubDressing() {
           <meshStandardMaterial color="#5a8aa0" metalness={0.4} roughness={0.42} />
         </mesh>
       </group>
+      <Hut x={-3.6} z={-5.4} rot={0.2} />
+      <Hut x={3.8} z={-5.2} rot={-0.15} />
+      <Hut x={-8.4} z={-4.6} rot={0.4} />
+      <Hut x={8.2} z={-4.4} rot={-0.35} />
+      <Bush x={-2.2} z={-5.8} h={1.15} />
+      <Bush x={2.4} z={-5.6} h={1.05} />
+      <Bush x={-7.2} z={6.8} h={1.25} />
+      <Bush x={7.4} z={6.6} h={1.1} />
+      <Bush x={0.4} z={-6.4} h={1.2} />
+      <MarketStall x={-3.2} z={-6.6} rot={0.12} />
+      <MarketStall x={3.1} z={-6.4} rot={-0.1} />
+      <CrateStack x={-1.4} z={-6.2} />
+      <CrateStack x={1.5} z={-6.1} />
+      <Cart x={0.2} z={-7.2} rot={0.4} />
+      <Worker x={-3.8} z={-6.2} rot={0.6} color="#ff6a28" />
+      <Worker x={3.4} z={-6.0} rot={-0.5} color="#f0c040" />
+      <Worker x={-8.1} z={5.4} rot={1.1} color="#e07030" />
+      <Worker x={8.0} z={5.2} rot={-1.2} color="#8aa0b0" />
+      <CrateStack x={-8.8} z={5.8} />
+      <CrateStack x={8.6} z={5.6} />
+      <Barrel x={-8.2} z={6.4} color="#c45a28" />
+      <Barrel x={8.4} z={6.2} color="#3a6a88" />
     </group>
   )
 }
@@ -440,9 +462,32 @@ function Barrel({ x, z, color }: { x: number; z: number; color: string }) {
   )
 }
 
+function Hut({ x, z, rot }: { x: number; z: number; rot: number }) {
+  return (
+    <group position={[x, 0, z]} rotation={[0, rot, 0]}>
+      <mesh position={[0, 0.85, 0]} castShadow receiveShadow>
+        <boxGeometry args={[1.55, 1.7, 1.45]} />
+        <meshStandardMaterial color="#c45a38" roughness={0.82} />
+      </mesh>
+      <mesh position={[0, 1.85, 0]} rotation={[0, 0, 0.45]} castShadow>
+        <boxGeometry args={[1.85, 0.12, 1.65]} />
+        <meshStandardMaterial color="#8a5a38" roughness={0.55} />
+      </mesh>
+      <mesh position={[0, 1.85, 0]} rotation={[0, 0, -0.45]} castShadow>
+        <boxGeometry args={[1.85, 0.12, 1.65]} />
+        <meshStandardMaterial color="#8a5a38" roughness={0.55} />
+      </mesh>
+      <mesh position={[0, 0.62, 0.76]}>
+        <boxGeometry args={[0.42, 0.7, 0.08]} />
+        <meshStandardMaterial color="#3a1810" />
+      </mesh>
+    </group>
+  )
+}
+
 function Worker({ x, z, rot, color }: { x: number; z: number; rot: number; color: string }) {
   return (
-    <group position={[x, 0, z]} rotation={[0, rot, 0]} scale={0.92}>
+    <group position={[x, 0, z]} rotation={[0, rot, 0]} scale={0.7}>
       <mesh position={[0, 0.62, 0]} castShadow>
         <boxGeometry args={[0.38, 0.48, 0.24]} />
         <meshBasicMaterial color={color} toneMapped={false} />

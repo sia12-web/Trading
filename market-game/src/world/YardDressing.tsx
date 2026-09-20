@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
-import { Pine } from './ClashTerrain'
+import { Pine, Broadleaf, Bush } from './ClashTerrain'
 
 /** Packed mill dressing: pines on the grass, packed courtyard, rail, workers. */
 export function YardDressing() {
@@ -14,6 +14,7 @@ export function YardDressing() {
       <HoseReels />
       <OilStains />
       <CourtyardFill />
+      <MillBackLot />
       <WaterTower />
       <OuterBelt />
     </group>
@@ -21,21 +22,31 @@ export function YardDressing() {
 }
 
 function Pines() {
-  const spots: Array<[number, number, number]> = [
-    [-13.8, -13.6, 3.6],
-    [13.6, -13.5, 3.4],
-    [-13.7, 13.4, 3.8],
-    [13.8, 13.6, 3.5],
-    [-13.9, 6.2, 3.2],
-    [13.9, -6.1, 3.3],
-    [6.4, 13.7, 3.1],
-    [-6.2, -13.8, 3.4],
+  const spots: Array<[number, number, number, 'pine' | 'oak' | 'gold' | 'bush']> = [
+    [-13.8, -13.6, 3.6, 'pine'],
+    [13.6, -13.5, 2.8, 'oak'],
+    [-13.7, 13.4, 3.8, 'pine'],
+    [13.8, 13.6, 2.4, 'gold'],
+    [-13.9, 6.2, 3.2, 'oak'],
+    [13.9, -6.1, 3.3, 'pine'],
+    [6.4, 13.7, 2.6, 'oak'],
+    [-6.2, -13.8, 3.4, 'pine'],
+    [-12.2, -4.8, 1.2, 'bush'],
+    [12.4, 5.1, 1.1, 'bush'],
+    [-5.4, 13.1, 1.3, 'bush'],
+    [4.8, -13.2, 1.15, 'bush'],
   ]
   return (
     <group>
-      {spots.map(([x, z, h], i) => (
-        <Pine key={i} x={x} z={z} h={h} />
-      ))}
+      {spots.map(([x, z, h, kind], i) =>
+        kind === 'bush' ? (
+          <Bush key={i} x={x} z={z} h={h} />
+        ) : kind === 'pine' ? (
+          <Pine key={i} x={x} z={z} h={h} />
+        ) : (
+          <Broadleaf key={i} x={x} z={z} h={h} gold={kind === 'gold'} />
+        ),
+      )}
     </group>
   )
 }
@@ -371,7 +382,7 @@ function ApronTruck() {
 
 function Worker({ x, z, rot, color }: { x: number; z: number; rot: number; color: string }) {
   return (
-    <group position={[x, 0, z]} rotation={[0, rot, 0]} scale={0.9}>
+    <group position={[x, 0, z]} rotation={[0, rot, 0]} scale={0.7}>
       <mesh position={[0, 0.62, 0]} castShadow>
         <boxGeometry args={[0.38, 0.48, 0.24]} />
         <meshBasicMaterial color={color} toneMapped={false} />
@@ -396,6 +407,65 @@ function Worker({ x, z, rot, color }: { x: number; z: number; rot: number; color
         <capsuleGeometry args={[0.06, 0.28, 3, 6]} />
         <meshBasicMaterial color="#c44a22" toneMapped={false} />
       </mesh>
+    </group>
+  )
+}
+
+function MillBackLot() {
+  return (
+    <group>
+      <CrateStack x={12.35} z={-3.15} />
+      <CrateStack x={12.55} z={-1.05} />
+      <CrateStack x={12.25} z={0.85} />
+      <CrateStack x={11.45} z={-4.85} />
+      <CrateStack x={11.7} z={2.15} />
+      <Pallet x={12.15} z={-2.15} y={0.08} />
+      <Pallet x={12.45} z={0.05} y={0.08} rot={0.25} />
+      <Pallet x={11.85} z={1.55} y={0.08} rot={-0.2} />
+      <group position={[12.05, 0, -3.85]}>
+        {[-0.32, 0.32].map((z) => (
+          <mesh key={z} position={[0, 0.55, z]} rotation={[0, 0, Math.PI / 2]} castShadow>
+            <cylinderGeometry args={[0.1, 0.1, 2.2, 8]} />
+            <meshStandardMaterial color="#c45a32" metalness={0.4} roughness={0.45} />
+          </mesh>
+        ))}
+      </group>
+      <group position={[12.15, 0, 1.65]}>
+        {[-0.32, 0.32].map((z) => (
+          <mesh key={z} position={[0, 0.55, z]} rotation={[0, 0, Math.PI / 2]} castShadow>
+            <cylinderGeometry args={[0.1, 0.1, 2.2, 8]} />
+            <meshStandardMaterial color="#5a8aa0" metalness={0.4} roughness={0.42} />
+          </mesh>
+        ))}
+      </group>
+      <group position={[11.55, 0, -0.35]} rotation={[0, 0.55, 0]}>
+        <mesh position={[0, 0.72, 0]} castShadow>
+          <boxGeometry args={[1.55, 0.9, 0.88]} />
+          <meshStandardMaterial color="#c44a28" roughness={0.52} />
+        </mesh>
+        <mesh position={[-1.05, 0.52, 0]} castShadow>
+          <boxGeometry args={[0.55, 0.55, 0.82]} />
+          <meshStandardMaterial color="#3a3a38" />
+        </mesh>
+        {([-0.45, 0.45] as const).map((dx) => (
+          <mesh key={dx} position={[dx, 0.22, 0.44]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.18, 0.18, 0.14, 8]} />
+            <meshStandardMaterial color="#1a1a18" />
+          </mesh>
+        ))}
+      </group>
+      <Cart x={11.2} z={-2.55} rot={1.15} />
+      <Cart x={11.35} z={2.45} rot={-0.85} />
+      <Barrel x={12.7} z={-4.2} color="#c45a28" />
+      <Barrel x={12.85} z={-0.15} color="#3a6a88" />
+      <Barrel x={12.55} z={1.95} color="#c4a046" />
+      <Barrel x={11.15} z={-5.35} color="#8a4030" />
+      <Worker x={10.55} z={-2.45} rot={-0.6} color="#ff6a28" />
+      <Worker x={10.75} z={-0.55} rot={0.4} color="#f0c040" />
+      <Worker x={10.45} z={1.35} rot={1.3} color="#e07030" />
+      <Worker x={11.85} z={-3.55} rot={-1.5} color="#8aa0b0" />
+      <Worker x={7.15} z={-1.85} rot={0.2} color="#c44a22" />
+      <Worker x={7.35} z={0.15} rot={-0.3} color="#e07030" />
     </group>
   )
 }

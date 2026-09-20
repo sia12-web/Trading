@@ -167,11 +167,11 @@ export function Player({
   return (
     <group ref={group} position={spawn}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
-        <ringGeometry args={[0.42, 0.62, 28]} />
+        <ringGeometry args={[0.28, 0.44, 28]} />
         <meshBasicMaterial color={selected ? '#ffe066' : '#fff4c8'} toneMapped={false} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-        <circleGeometry args={[0.38, 20]} />
+        <circleGeometry args={[0.26, 20]} />
         <meshBasicMaterial color="#1a140e" transparent opacity={0.28} toneMapped={false} />
       </mesh>
       <PriceBody vel={vel} bob={bob} />
@@ -202,53 +202,41 @@ function PriceBody({
   })
 
   return (
-    <group scale={1.18}>
-      <mesh position={[0, 0.72, 0]} castShadow>
-        <boxGeometry args={[0.42, 0.5, 0.26]} />
+    <group scale={0.7}>
+      <mesh position={[0, 0.4, 0]} castShadow>
+        <boxGeometry args={[0.3, 0.36, 0.2]} />
         <meshBasicMaterial color="#ff6a28" toneMapped={false} />
       </mesh>
-      <mesh position={[0, 0.48, 0]} castShadow>
-        <boxGeometry args={[0.38, 0.16, 0.24]} />
-        <meshBasicMaterial color="#c44a22" toneMapped={false} />
-      </mesh>
-      <mesh position={[0, 1.08, 0]} castShadow>
-        <sphereGeometry args={[0.18, 10, 8]} />
+      <mesh position={[0, 0.64, 0]} castShadow>
+        <sphereGeometry args={[0.13, 10, 8]} />
         <meshBasicMaterial color="#f0d0a8" toneMapped={false} />
       </mesh>
-      <mesh position={[0, 1.2, 0]} castShadow>
-        <cylinderGeometry args={[0.22, 0.24, 0.14, 10]} />
+      <mesh position={[0, 0.76, 0]} castShadow>
+        <cylinderGeometry args={[0.16, 0.18, 0.12, 10]} />
         <meshBasicMaterial color="#f0c040" toneMapped={false} />
       </mesh>
-      <mesh position={[0, 1.16, 0.12]}>
-        <boxGeometry args={[0.2, 0.06, 0.08]} />
-        <meshBasicMaterial color="#c4a046" toneMapped={false} />
-      </mesh>
-      <mesh position={[0, 0.72, 0.14]}>
-        <boxGeometry args={[0.28, 0.18, 0.05]} />
-        <meshBasicMaterial color="#2a1810" toneMapped={false} />
-      </mesh>
-      <mesh ref={larm} position={[-0.32, 0.78, 0]} castShadow>
-        <capsuleGeometry args={[0.08, 0.36, 3, 6]} />
+      <mesh ref={larm} position={[-0.26, 0.46, 0]} castShadow>
+        <capsuleGeometry args={[0.065, 0.34, 3, 6]} />
         <meshBasicMaterial color="#c44a22" toneMapped={false} />
       </mesh>
-      <mesh ref={rarm} position={[0.32, 0.78, 0]} castShadow>
-        <capsuleGeometry args={[0.08, 0.36, 3, 6]} />
+      <mesh ref={rarm} position={[0.26, 0.46, 0]} castShadow>
+        <capsuleGeometry args={[0.065, 0.34, 3, 6]} />
         <meshBasicMaterial color="#c44a22" toneMapped={false} />
       </mesh>
-      <mesh ref={left} position={[-0.12, 0.28, 0]} castShadow>
-        <capsuleGeometry args={[0.09, 0.32, 3, 6]} />
+      <mesh ref={left} position={[-0.1, 0.18, 0]} castShadow>
+        <capsuleGeometry args={[0.075, 0.28, 3, 6]} />
         <meshBasicMaterial color="#2a2218" toneMapped={false} />
       </mesh>
-      <mesh ref={right} position={[0.12, 0.28, 0]} castShadow>
-        <capsuleGeometry args={[0.09, 0.32, 3, 6]} />
+      <mesh ref={right} position={[0.1, 0.18, 0]} castShadow>
+        <capsuleGeometry args={[0.075, 0.28, 3, 6]} />
         <meshBasicMaterial color="#2a2218" toneMapped={false} />
       </mesh>
-      <mesh position={[-0.12, 0.06, 0.04]} castShadow>
-        <boxGeometry args={[0.16, 0.08, 0.22]} />
+      <mesh position={[-0.1, 0.04, 0.05]} castShadow>
+        <boxGeometry args={[0.13, 0.06, 0.18]} />
         <meshBasicMaterial color="#1a1410" toneMapped={false} />
       </mesh>
-      <mesh position={[0.12, 0.06, 0.04]} castShadow>
-        <boxGeometry args={[0.16, 0.08, 0.22]} />
+      <mesh position={[0.1, 0.04, 0.05]} castShadow>
+        <boxGeometry args={[0.13, 0.06, 0.18]} />
         <meshBasicMaterial color="#1a1410" toneMapped={false} />
       </mesh>
     </group>
