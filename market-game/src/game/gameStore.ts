@@ -8,7 +8,7 @@ import {
   PREOPEN_MIN,
   sessionProgress,
 } from './session'
-import { nearestStore, STORES } from './stores'
+import { nearestStore, porchOf, STORES } from './stores'
 import type { AnchoredVwap, Fill, SceneId, SessionPhase, Side, StoreId, StoreRead } from './types'
 
 const market = buildDowMarket()
@@ -211,11 +211,7 @@ export function toggleInspect() {
 
 export function inspectStore(id: StoreId) {
   const s = STORES.find((x) => x.id === id)
-  const porch = s
-    ? s.range === 'fiveMonth'
-      ? { x: s.position[0] + 2.15, z: s.position[2] }
-      : { x: s.position[0], z: s.position[2] + 2.15 }
-    : null
+  const porch = s ? porchOf(s) : null
   set({ inspecting: id, nearby: id, message: null, walkTo: porch })
 }
 
@@ -268,14 +264,20 @@ export function storeRead(id: StoreId, snap: GameSnapshot = state): StoreRead {
 
 export function stallState(id: StoreId, snap: GameSnapshot = state) {
   const read = storeRead(id, snap)
-  return { ...read, ...stallOccupancy({
-    kind: kindOf(id),
-    divergence: read.divergence,
-    timeOpportunity: read.timeOpportunity,
-    shutter: snap.shutter,
-    floorAlive: snap.floorAlive,
-    phase: snap.phase,
-  }) }
+  const printed = snap.lastPrint && snap.lastPrint.storeId === id ? performance.now() - snap.lastPrint.at : 99999
+  const printBoost = printed < 2400 ? 1 - printed / 2400 : 0
+  return {
+    ...read,
+    ...stallOccupancy({
+      kind: kindOf(id),
+      divergence: read.divergence,
+      timeOpportunity: read.timeOpportunity,
+      shutter: snap.shutter,
+      floorAlive: snap.floorAlive,
+      phase: snap.phase,
+      printBoost,
+    }),
+  }
 }
 
 export function inStall(snap: GameSnapshot = state): StoreId | null {
@@ -366,8 +368,8 @@ export function tickGame(dt: number) {
 
   if (state.phase === 'opening') {
     const openElapsed = state.openElapsed + dt
-    const shutter = Math.min(1, Math.max(0, (openElapsed - 0.6) / 3.2))
-    const floorAlive = Math.min(1, Math.max(0, (openElapsed - 2.2) / 3.4))
+    const shutter = Math.min(1, Math.max(0, (openElapsed - 0.35) / 4.2))
+    const floorAlive = Math.min(1, Math.max(0, (openElapsed - 1.05) / 5.6))
     if (openElapsed >= OPEN_CINEMATIC_SEC) {
       set({
         phase: 'live',

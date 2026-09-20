@@ -40,10 +40,11 @@ export function strikeBell(): void {
     o.start(t0 + delay)
     o.stop(t0 + delay + decay + 0.05)
   }
-  make(392, 0, 0.55, 2.8)
-  make(784, 0.02, 0.22, 2.2)
-  make(523.25, 0.85, 0.4, 2.6)
-  make(659.25, 1.7, 0.28, 2.4)
+  make(392, 0, 0.72, 3.2)
+  make(784, 0.02, 0.32, 2.6)
+  make(523.25, 0.85, 0.52, 3.0)
+  make(659.25, 1.7, 0.38, 2.8)
+  make(261.6, 0.04, 0.28, 3.4)
 }
 
 export function startAmbience(): void {

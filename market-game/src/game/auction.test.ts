@@ -107,6 +107,29 @@ const asleep = stallOccupancy({
 assert.equal(asleep.occupancy, 0)
 assert.equal(asleep.door, 0)
 
+const settled = stallOccupancy({
+  kind: 'poc',
+  divergence: 0.55,
+  timeOpportunity: 0.22,
+  shutter: 1,
+  floorAlive: 1,
+  phase: 'live',
+})
+assert.ok(settled.door < 0.45, 'already-fair door eases shut')
+assert.ok(settled.occupancy < 0.35, 'already-fair crowd thins')
+
+const boosted = stallOccupancy({
+  kind: 'hvn',
+  divergence: 0.15,
+  timeOpportunity: 0.7,
+  shutter: 1,
+  floorAlive: 1,
+  phase: 'live',
+  printBoost: 1,
+})
+assert.ok(boosted.occupancy > 0.55, 'a print fills the stall')
+assert.ok(boosted.printBoost === 1)
+
 console.log('auction tests: ok')
 console.log(
   `Y POC ${dow.yesterday.poc.price}  HVN ${dow.yesterday.hvn.price}  LVN ${dow.yesterday.lvn.price}`,

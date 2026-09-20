@@ -1,8 +1,8 @@
-import type { StoreDef } from './types'
+import type { RangeKind, StoreDef } from './types'
 
 /**
- * Packed Clash-style mill village. Yesterday south, five-day north,
- * 5M AVWAP west, bell courtyard center — buildings almost touch.
+ * Three Clash-readable courts around the bell: Yesterday south (camera-near),
+ * Five-Day east (camera-right, not behind the hall), Five-Month west.
  */
 export const STORES: StoreDef[] = [
   {
@@ -13,7 +13,7 @@ export const STORES: StoreDef[] = [
     subtitle: 'Yesterday NYC · High Volume Node',
     theory:
       'Acceptance. Trade clustered here yesterday. Size should show up if Price is advertising a real offer — empty furnaces mean divergence.',
-    position: [-5.6, 0, 5.35],
+    position: [-5.35, 0, 6.2],
     accent: '#c45c2a',
     building: 'foundry',
   },
@@ -25,7 +25,7 @@ export const STORES: StoreDef[] = [
     subtitle: 'Yesterday NYC · Point of Control / Fair Value',
     theory:
       'The fairest price of yesterday’s cash session — highest traded volume. Value is made with time; lingering here balances the day.',
-    position: [0, 0, 6.15],
+    position: [0, 0, 6.9],
     accent: '#b45309',
     building: 'hall',
   },
@@ -37,7 +37,7 @@ export const STORES: StoreDef[] = [
     subtitle: 'Yesterday NYC · Low Volume Node',
     theory:
       'A vacuum. Price traveled fast and left little trade. If volume floods while you stand here, the single print is filling — window closing.',
-    position: [5.6, 0, 5.35],
+    position: [5.35, 0, 6.2],
     accent: '#3d6a8a',
     building: 'dock',
   },
@@ -49,7 +49,7 @@ export const STORES: StoreDef[] = [
     subtitle: 'Five-day FRVP · High Volume Node',
     theory:
       'Short-term money’s other home. A second distribution across five NYC sessions. Slow, heavy steel — fills, not spikes.',
-    position: [-5.6, 0, -5.35],
+    position: [8.1, 0, -6.4],
     accent: '#a34a38',
     building: 'yard',
   },
@@ -61,7 +61,7 @@ export const STORES: StoreDef[] = [
     subtitle: 'Five-day FRVP · Point of Control',
     theory:
       'Composite fair value for the last five cash sessions. Wholesale vs retail is judged from here. Time spent = value accepted.',
-    position: [0, 0, -6.15],
+    position: [8.3, 0, -1.0],
     accent: '#c47a28',
     building: 'mill',
   },
@@ -73,7 +73,7 @@ export const STORES: StoreDef[] = [
     subtitle: 'Five-day FRVP · Low Volume Node',
     theory:
       'The air pocket between five-day distributions. Fast rejection if you belong elsewhere; a trap if you advertise without time.',
-    position: [5.6, 0, -5.35],
+    position: [8.1, 0, 4.0],
     accent: '#4a6578',
     building: 'alley',
   },
@@ -85,7 +85,7 @@ export const STORES: StoreDef[] = [
     subtitle: 'Five-month Anchored VWAP · live',
     theory:
       'Long-term money. Anchored at cash open five months back, Σ(P·V)/ΣV, updating on every print. Price is advertising; this tower is the institutional benchmark.',
-    position: [-7.15, 0, 0],
+    position: [-8.65, 0, 0],
     accent: '#2a6a78',
     building: 'spire',
   },
@@ -97,7 +97,7 @@ export const STORES: StoreDef[] = [
     subtitle: 'Five-month AVWAP · upper 1σ',
     theory:
       'Premium to long-term value. The band breathes with incoming volume. Time still regulates whether this stretch is an opportunity or already spent.',
-    position: [-6.45, 0, -3.35],
+    position: [-8.2, 0, -3.7],
     accent: '#3a5a88',
     building: 'loft',
   },
@@ -109,7 +109,7 @@ export const STORES: StoreDef[] = [
     subtitle: 'Five-month AVWAP · lower 1σ',
     theory:
       'Discount to long-term value. Gold-teal money from the desk’s 5-month bands, made physical as a loading annex that rises and falls with σ.',
-    position: [-6.45, 0, 3.35],
+    position: [-8.2, 0, 3.7],
     accent: '#8a7040',
     building: 'pit',
   },
@@ -122,6 +122,19 @@ export const LOCKED_MARKETS = [
 ]
 
 export const DOW_GATE: [number, number, number] = [0, 0, -5.1]
+
+export function storeYaw(range: RangeKind): number {
+  return range === 'fiveMonth' ? -Math.PI / 2 : 0
+}
+
+export function porchOf(s: StoreDef): { x: number; z: number } {
+  const yaw = storeYaw(s.range)
+  const lx = 0
+  const lz = 2.2
+  const c = Math.cos(yaw)
+  const n = Math.sin(yaw)
+  return { x: s.position[0] + lx * c - lz * n, z: s.position[2] + lx * n + lz * c }
+}
 
 export function nearestStore(x: number, z: number, maxDist = 3.4): StoreDef | null {
   let best: StoreDef | null = null
@@ -145,15 +158,15 @@ export function storeAtPoint(x: number, z: number, maxDist = 3.5): StoreDef | nu
 /** Tight cores so Price can walk the porch into each stall. */
 export const COLLISIONS: Array<{ x: number; z: number; w: number; d: number }> = [
   { x: 0, z: 0, w: 1.35, d: 1.35 },
-  { x: -5.6, z: 5.15, w: 4.4, d: 2.15 },
-  { x: 0, z: 5.95, w: 5.2, d: 2.25 },
-  { x: 5.6, z: 5.55, w: 3.6, d: 1.7 },
-  { x: -5.6, z: -5.55, w: 4.6, d: 2.2 },
-  { x: 0, z: -6.35, w: 5.4, d: 2.35 },
-  { x: 5.6, z: -5.55, w: 3.4, d: 1.8 },
-  { x: -7.45, z: 0, w: 1.55, d: 1.55 },
-  { x: -7.05, z: -3.35, w: 1.9, d: 2.2 },
-  { x: -7.05, z: 3.35, w: 1.9, d: 2.2 },
+  { x: -5.35, z: 6.0, w: 4.4, d: 2.15 },
+  { x: 0, z: 6.7, w: 5.2, d: 2.25 },
+  { x: 5.35, z: 6.4, w: 3.6, d: 1.7 },
+  { x: 8.1, z: -6.6, w: 4.6, d: 2.2 },
+  { x: 8.3, z: -1.2, w: 5.4, d: 2.35 },
+  { x: 8.1, z: 3.8, w: 3.4, d: 1.8 },
+  { x: -8.85, z: 0, w: 1.55, d: 1.55 },
+  { x: -8.4, z: -3.7, w: 1.9, d: 2.2 },
+  { x: -8.4, z: 3.7, w: 1.9, d: 2.2 },
 ]
 
 export const YARD = 15.2

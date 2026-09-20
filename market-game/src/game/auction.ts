@@ -280,31 +280,37 @@ export function stallOccupancy(args: {
   shutter: number
   floorAlive: number
   phase: 'preopen' | 'opening' | 'live'
+  printBoost?: number
 }): {
   occupancy: number
   hollow: boolean
   clogged: boolean
   interior: number
   door: number
+  printBoost: number
 } {
   const shut = args.shutter
+  const boost = args.printBoost ?? 0
   let occupancy = 0
   if (args.floorAlive > 0.04) {
     if (args.kind === 'lvn') {
-      occupancy = (args.divergence < 0 ? -args.divergence : 0.05) * shut * (0.4 + args.timeOpportunity * 0.6)
+      occupancy = (args.divergence < 0 ? -args.divergence : 0.04) * shut
     } else {
-      occupancy = clamp(0.36 + args.divergence * 0.55, 0, 1) * shut * (0.32 + args.timeOpportunity * 0.68)
+      occupancy = clamp(0.08 + args.divergence * 0.82, 0, 1) * shut
     }
   }
-  occupancy = clamp(occupancy, 0, 1)
-  const door =
-    args.phase === 'preopen' ? 0 : args.phase === 'opening' ? shut : clamp(0.18 + args.timeOpportunity * 0.82, 0, 1)
+  if (args.timeOpportunity < 0.38 && args.kind !== 'lvn') occupancy *= 0.42
+  occupancy = clamp(occupancy + boost * 0.55, 0, 1)
+  let door =
+    args.phase === 'preopen' ? 0 : args.phase === 'opening' ? shut : clamp(0.12 + args.timeOpportunity * 0.88, 0, 1)
+  if (boost > 0.35) door = clamp(door + 0.22, 0, 1)
   return {
     occupancy,
     hollow: args.kind !== 'lvn' && occupancy < 0.28,
     clogged: args.kind === 'lvn' && occupancy > 0.38,
-    interior: occupancy * args.timeOpportunity * shut,
+    interior: occupancy * Math.max(0.35, args.timeOpportunity) * shut,
     door,
+    printBoost: boost,
   }
 }
 

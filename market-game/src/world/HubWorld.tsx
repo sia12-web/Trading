@@ -30,11 +30,11 @@ export function HubWorld() {
 
       <HubCliffs dirt={dirt} grass={grass} />
       <HubWalls brick={brick} />
-      <group scale={1.38} position={[0, 0, -0.35]}>
+      <group scale={1.55} position={[0, 0, -0.2]}>
         <DowGate position={DOW_GATE} brick={brick} metal={metal} />
       </group>
       {LOCKED_MARKETS.map((m) => (
-        <group key={m.id} scale={1.22}>
+        <group key={m.id} scale={1.05}>
           <LockedGate market={m} brick={brick} metal={metal} dirt={dirt} grass={grass} />
         </group>
       ))}

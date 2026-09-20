@@ -7,6 +7,7 @@ import { storeAtPoint, YARD } from '../game/stores'
 import { useGame } from '../ui/useGame'
 import {
   makeFasciaTexture,
+  makeOpenBannerTexture,
   makeStencilTexture,
   useAsphaltTexture,
   useBrickTexture,
@@ -100,7 +101,7 @@ export function District() {
       <WingPads brick={brick} concrete={concrete} dirt={dirt} />
       <YardWalls brick={brick} />
       <CliffBezel dirt={dirt} grass={grass} />
-      <BellTower metal={metal} brick={brick} ringing={g.phase === 'opening'} />
+      <BellTower metal={metal} brick={brick} ringing={g.phase === 'opening'} opening={g.phase === 'opening'} />
       <YardDressing />
       <WorkLamps on={g.shutter} />
     </>
@@ -177,15 +178,24 @@ function BellTower({
   metal,
   brick,
   ringing,
+  opening,
 }: {
   metal: THREE.Texture
   brick: THREE.Texture
   ringing: boolean
+  opening: boolean
 }) {
   const bell = useRef<THREE.Mesh>(null)
+  const ring = useRef<THREE.Mesh>(null)
+  const banner = useMemo(() => makeOpenBannerTexture(), [])
   useFrame((s) => {
-    if (!bell.current) return
-    bell.current.rotation.z = ringing ? Math.sin(s.clock.elapsedTime * 9) * 0.28 : 0
+    if (bell.current) bell.current.rotation.z = ringing ? Math.sin(s.clock.elapsedTime * 9) * 0.34 : 0
+    if (ring.current) {
+      const k = (s.clock.elapsedTime % 1.4) / 1.4
+      ring.current.scale.setScalar(1 + k * 2.4)
+      const mat = ring.current.material as THREE.MeshBasicMaterial
+      mat.opacity = ringing ? (1 - k) * 0.55 : 0
+    }
   })
   return (
     <group>
@@ -209,11 +219,21 @@ function BellTower({
         <coneGeometry args={[1.15, 1.1, 4]} />
         <meshStandardMaterial color="#6a3a28" roughness={0.7} />
       </mesh>
-      <mesh ref={bell} position={[0, 4.35, 0]} castShadow>
-        <sphereGeometry args={[0.42, 16, 12, 0, Math.PI * 2, 0, Math.PI / 1.5]} />
-        <meshStandardMaterial color="#c4a046" metalness={0.7} roughness={0.28} />
+      <mesh ref={bell} position={[0, 4.55, 0]} castShadow>
+        <sphereGeometry args={[0.58, 16, 12, 0, Math.PI * 2, 0, Math.PI / 1.5]} />
+        <meshStandardMaterial color="#e8c04a" metalness={0.7} roughness={0.28} emissive="#c4a046" emissiveIntensity={ringing ? 0.45 : 0.08} />
       </mesh>
-      {ringing && <pointLight color="#ffc070" intensity={6} distance={8} position={[0, 4.4, 0]} />}
+      <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]} position={[0, 4.35, 0]}>
+        <ringGeometry args={[0.7, 0.88, 24]} />
+        <meshBasicMaterial color="#ffe080" transparent opacity={0} toneMapped={false} />
+      </mesh>
+      {opening && (
+        <mesh position={[0, 6.35, 1.35]} rotation={[0, Math.PI / 4, 0]}>
+          <planeGeometry args={[3.6, 0.72]} />
+          <meshStandardMaterial map={banner} roughness={0.55} />
+        </mesh>
+      )}
+      {ringing && <pointLight color="#ffc070" intensity={9} distance={12} position={[0, 4.5, 0]} />}
     </group>
   )
 }
@@ -229,24 +249,24 @@ function WingPads({
 }) {
   return (
     <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 6.35]} receiveShadow>
-        <planeGeometry args={[17.4, 7.6]} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 6.55]} receiveShadow>
+        <planeGeometry args={[16.6, 7.4]} />
         <meshStandardMaterial map={brick} color="#e08858" roughness={0.84} emissive="#c06038" emissiveIntensity={0.1} />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, -6.35]} receiveShadow>
-        <planeGeometry args={[17.4, 7.6]} />
-        <meshStandardMaterial map={dirt} color="#b08a58" roughness={0.88} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[8.2, 0.012, -1.15]} receiveShadow>
+        <planeGeometry args={[7.6, 16.2]} />
+        <meshStandardMaterial map={dirt} color="#c49a60" roughness={0.88} />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, Math.PI / 2]} position={[-7.35, 0.014, 0]} receiveShadow>
-        <planeGeometry args={[12.4, 6.6]} />
-        <meshStandardMaterial map={concrete} color="#6a9aa8" roughness={0.82} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-8.35, 0.014, 0]} receiveShadow>
+        <planeGeometry args={[7.4, 14.2]} />
+        <meshStandardMaterial map={concrete} color="#6eb0c0" roughness={0.82} />
       </mesh>
-      <Stencil word="YESTERDAY" ink="#c45c2a" position={[0, 0.03, 3.35]} />
-      <Stencil word="FIVE-DAY" ink="#a34a38" position={[0, 0.03, -3.35]} />
-      <Stencil word="FIVE-MONTH" ink="#2a6a78" position={[-3.55, 0.03, 0]} rot={Math.PI / 2} />
-      <WingSign word="YESTERDAY" paint="#c45c2a" position={[0, 0, 9.35]} />
-      <WingSign word="FIVE-DAY" paint="#a34a38" position={[5.15, 0, -8.15]} />
-      <WingSign word="FIVE-MONTH" paint="#2a6a78" position={[-9.2, 0, 4.85]} />
+      <Stencil word="YESTERDAY" ink="#c45c2a" position={[0, 0.03, 3.55]} />
+      <Stencil word="FIVE-DAY" ink="#a34a38" position={[8.15, 0.03, -1.1]} rot={-Math.PI / 2} />
+      <Stencil word="FIVE-MONTH" ink="#2a6a78" position={[-8.3, 0.03, 0]} rot={Math.PI / 2} />
+      <WingSign word="YESTERDAY" paint="#c45c2a" position={[0, 0, 10.15]} />
+      <WingSign word="FIVE-DAY" paint="#a34a38" position={[11.15, 0, -6.85]} />
+      <WingSign word="FIVE-MONTH" paint="#2a6a78" position={[-10.85, 0, 5.35]} />
     </group>
   )
 }
@@ -284,13 +304,13 @@ function WingSign({
   return (
     <group position={position} rotation={[0, Math.PI / 4, 0]}>
       {[-1.7, 1.7].map((x) => (
-        <mesh key={x} position={[x, 0.55, 0]} castShadow>
-          <boxGeometry args={[0.12, 1.1, 0.12]} />
+        <mesh key={x} position={[x, 0.7, 0]} castShadow>
+          <boxGeometry args={[0.14, 1.4, 0.14]} />
           <meshStandardMaterial color="#4a3020" />
         </mesh>
       ))}
-      <mesh position={[0, 1.05, 0]} castShadow>
-        <boxGeometry args={[3.7, 0.72, 0.14]} />
+      <mesh position={[0, 1.35, 0]} castShadow>
+        <boxGeometry args={[4.2, 0.85, 0.16]} />
         <meshStandardMaterial map={tex} roughness={0.55} />
       </mesh>
     </group>
@@ -304,8 +324,8 @@ function WorkLamps({ on }: { on: number }) {
     [-2.4, -2.4],
     [2.4, -2.4],
     [-8.4, 0],
-    [3.2, 8.2],
-    [3.2, -8.2],
+    [3.2, 8.4],
+    [8.4, -1.0],
   ]
   return (
     <group>

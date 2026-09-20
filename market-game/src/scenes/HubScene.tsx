@@ -15,7 +15,7 @@ function HubInteract() {
       if (e.key.toLowerCase() !== 'e') return
       const p = getGame().player
       const dDow = Math.hypot(p.x - DOW_GATE[0], p.z - DOW_GATE[2])
-      if (dDow < 3.6) {
+      if (dDow < 4.2) {
         enterDow()
         return
       }

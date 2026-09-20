@@ -78,7 +78,7 @@ function HubHud() {
   return (
     <div className="hud iso-hud">
       <div className="chip chip-tl">
-        <div className="kicker">NYC CASH</div>
+        <div className="kicker">DOW</div>
         <button className="ghost hit" onClick={() => enterDow()}>
           ENTER DOW
         </button>

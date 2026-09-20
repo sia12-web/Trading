@@ -248,6 +248,29 @@ export function makeChalkTexture(price: string): THREE.CanvasTexture {
   return t
 }
 
+export function makeOpenBannerTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas')
+  c.width = 768
+  c.height = 160
+  const ctx = c.getContext('2d')!
+  ctx.fillStyle = '#3a2210'
+  ctx.fillRect(0, 0, 768, 160)
+  ctx.fillStyle = '#5a3a18'
+  ctx.fillRect(10, 10, 748, 140)
+  ctx.strokeStyle = '#e8c04a'
+  ctx.lineWidth = 8
+  ctx.strokeRect(18, 18, 732, 124)
+  ctx.fillStyle = '#f4e6c8'
+  ctx.font = 'bold 72px "Bebas Neue", "IBM Plex Mono", sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText('9:30 NYC CASH', 384, 82)
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = THREE.SRGBColorSpace
+  t.needsUpdate = true
+  return t
+}
+
 export function makeCalloutTexture(title: string, price: string, hex: string): THREE.CanvasTexture {
   const c = document.createElement('canvas')
   c.width = 512
