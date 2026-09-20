@@ -212,9 +212,26 @@ function WingPads({
       )}
       {STORE_PLAQUES.map((s) =>
         s.word === 'SPIRE' ? (
-          <WallStrip key={`store-${s.word}`} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} />
+          <WallStrip
+            key={`store-${s.word}`}
+            word={s.word}
+            ink={s.ink}
+            x={s.x}
+            z={s.z}
+            wide={s.wide}
+            onPick={() => inspectStore(s.id)}
+          />
         ) : (
-          <CourtPlaque key={`store-${s.word}`} word={s.word} ink={s.ink} x={s.x} z={s.z} wide={s.wide} lift={s.word === 'FOUNDRY' ? 0.38 : 0.12} />
+          <CourtPlaque
+            key={`store-${s.word}`}
+            word={s.word}
+            ink={s.ink}
+            x={s.x}
+            z={s.z}
+            wide={s.wide}
+            lift={s.word === 'FOUNDRY' ? 0.38 : 0.12}
+            onPick={() => inspectStore(s.id)}
+          />
         ),
       )}
       <StallTimePlaques />
@@ -281,6 +298,7 @@ function CourtPlaque({
   z,
   wide,
   lift = 0,
+  onPick,
 }: {
   word: string
   ink: string
@@ -288,10 +306,19 @@ function CourtPlaque({
   z: number
   wide: number
   lift?: number
+  onPick?: () => void
 }) {
   const tex = useMemo(() => makeCourtSignTexture(word, ink), [word, ink])
   return (
-    <group position={[x, lift, z]} rotation={[0, Math.PI / 4, 0]}>
+    <group
+      position={[x, lift, z]}
+      rotation={[0, Math.PI / 4, 0]}
+      onClick={(e) => {
+        if (!onPick) return
+        e.stopPropagation()
+        onPick()
+      }}
+    >
       <mesh position={[0, 0.42, 0.1]} castShadow>
         <boxGeometry args={[0.12, 0.84 + lift, 0.12]} />
         <meshStandardMaterial color="#3a2a1c" roughness={0.8} />
@@ -315,6 +342,7 @@ function WallStrip({
   z,
   wide,
   east = false,
+  onPick,
 }: {
   word: string
   ink: string
@@ -322,10 +350,19 @@ function WallStrip({
   z: number
   wide: number
   east?: boolean
+  onPick?: () => void
 }) {
   const tex = useMemo(() => makeCourtSignTexture(word, ink), [word, ink])
   return (
-    <group position={[x, 0, z]} rotation={[0, east ? -Math.PI / 4 : Math.PI / 4, 0]}>
+    <group
+      position={[x, 0, z]}
+      rotation={[0, east ? -Math.PI / 4 : Math.PI / 4, 0]}
+      onClick={(e) => {
+        if (!onPick) return
+        e.stopPropagation()
+        onPick()
+      }}
+    >
       <mesh position={[0, 1.55, -0.22]} castShadow>
         <boxGeometry args={[wide + 0.16, 0.58, 0.14]} />
         <meshStandardMaterial color="#1a120c" roughness={0.68} />

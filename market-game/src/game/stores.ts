@@ -146,15 +146,15 @@ export const COURT_STENCILS = [
  * read in the same Clash crop as the court plaques — not only on inspect.
  */
 export const STORE_PLAQUES = [
-  { word: 'FOUNDRY', ink: '#e07040', x: -8.55, z: 13.22, wide: 4.55 },
-  { word: 'HALL', ink: '#e8b050', x: 1.85, z: 13.15, wide: 3.55 },
-  { word: 'DOCK', ink: '#6aa0b8', x: 7.05, z: 11.05, wide: 3.45 },
-  { word: 'ALLEY', ink: '#7a90a0', x: 11.15, z: 6.75, wide: 3.55 },
-  { word: 'MILL', ink: '#d48848', x: 11.25, z: 3.05, wide: 3.45 },
-  { word: 'YARD', ink: '#d48848', x: 11.35, z: 0.55, wide: 3.35 },
-  { word: 'PIT', ink: '#c4a060', x: -10.35, z: 13.55, wide: 3.25 },
-  { word: 'SPIRE', ink: '#6ab0c4', x: -10.95, z: 15.08, wide: 4.35 },
-  { word: 'LOFT', ink: '#7a98c0', x: -10.15, z: 12.05, wide: 3.35 },
+  { word: 'FOUNDRY', ink: '#e07040', x: -8.55, z: 13.22, wide: 4.55, id: 'y-hvn' as const },
+  { word: 'HALL', ink: '#e8b050', x: 1.85, z: 13.15, wide: 3.55, id: 'y-poc' as const },
+  { word: 'DOCK', ink: '#6aa0b8', x: 7.05, z: 11.05, wide: 3.45, id: 'y-lvn' as const },
+  { word: 'ALLEY', ink: '#7a90a0', x: 11.15, z: 6.75, wide: 3.55, id: '5d-lvn' as const },
+  { word: 'MILL', ink: '#d48848', x: 11.25, z: 3.05, wide: 3.45, id: '5d-poc' as const },
+  { word: 'YARD', ink: '#d48848', x: 11.35, z: 0.55, wide: 3.35, id: '5d-hvn' as const },
+  { word: 'PIT', ink: '#c4a060', x: -10.35, z: 13.55, wide: 3.25, id: 'avwap-lower' as const },
+  { word: 'SPIRE', ink: '#6ab0c4', x: -10.95, z: 15.08, wide: 4.35, id: 'avwap' as const },
+  { word: 'LOFT', ink: '#7a98c0', x: -10.15, z: 12.05, wide: 3.35, id: 'avwap-upper' as const },
 ] as const
 
 const SHORT: Record<StoreDef['building'], string> = {
