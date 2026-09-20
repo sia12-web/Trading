@@ -236,24 +236,20 @@ assert.ok(
   'ALLEY is named on the east court',
 )
 assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'SPIRE')!.x < -2,
-  'SPIRE is named on the west-south apron, not behind the hall',
+  STORE_PLAQUES.find((s) => s.word === 'SPIRE')!.x < -8,
+  'SPIRE sits on the west-south wall with PIT/LOFT, left of the gate that ate the word',
 )
 assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'SPIRE')!.z > 13.5,
-  'SPIRE plaque sits on the camera-near south wall with the court names',
-)
-assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'SPIRE')!.x > -6,
-  'SPIRE sits in the left-gate gap so the word is not buried under FIVE-MONTH',
+  STORE_PLAQUES.find((s) => s.word === 'SPIRE')!.z > 14.4,
+  'SPIRE plaque sits on the camera-near south wall with FIVE-MONTH',
 )
 assert.ok(
   STORE_PLAQUES.find((s) => s.word === 'LOFT')!.z > 11.5,
   'LOFT plaque sits in the default Clash crop with the court names',
 )
 assert.ok(
-  STORE_PLAQUES.find((s) => s.word === 'FOUNDRY')!.z > 11.5,
-  'FOUNDRY plaque sits on the south apron, not under the shell',
+  STORE_PLAQUES.find((s) => s.word === 'FOUNDRY')!.z > 12.4,
+  'FOUNDRY plaque sits left of the south gate so the word is not only a fascia',
 )
 assert.ok(
   STORE_PLAQUES.find((s) => s.word === 'PIT')!.z > 12.5,
