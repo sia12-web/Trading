@@ -141,6 +141,22 @@ const t0 = 1_700_000_000 - (1_700_000_000 % 300)
 }
 
 {
+  const history = [
+    { time: t0, open: 93.4, high: 93.6, low: 93.2, close: 93.51, volume: 1 },
+  ]
+  const calendarFront = {
+    time: t0,
+    open: 97.2,
+    high: 97.8,
+    low: 97.1,
+    close: 97.44,
+    volume: 0,
+  }
+  const merged = mergeHistoryWithLiveTip(history, calendarFront, '5m', 'CRUDE')
+  assert.equal(merged[0]!.close, 93.51, 'calendar-front CL must not jump the CL=F book')
+}
+
+{
   const bars = [
     { time: t0, open: 4650, high: 4652, low: 4648, close: 4650 },
     { time: t0 + 300, open: 4650, high: 4650, low: 3400, close: 3400 },

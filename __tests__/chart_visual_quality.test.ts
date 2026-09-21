@@ -93,6 +93,9 @@ assert.ok(!live.includes('applyOverlayLayout(), 150'), 'overlay layout is not a 
 assert.ok(live.includes('borderVisible: false'), 'live candles render solid filled bodies')
 assert.ok(sim.includes('borderVisible: false'), 'sim candles render solid filled bodies')
 assert.ok(live.includes('rangesDiffer'), 'CVD time scale sync guards sub-pixel ping-pong oscillation')
+assert.ok(live.includes('syncCvdFromMainRef'), 'CVD pane follows the price chart zoom instead of drifting ahead')
+assert.ok(live.includes('cvdIndependentZoomRef'), 'CVD pane can zoom independently of the price chart')
+assert.ok(live.includes('unixFromLogical'), 'range boxes can be drawn into whitespace after the last price')
 assert.ok(live.includes('paintOverlaysSinglePassRef'), 'live tick overlay updates use single-pass throttled painter')
 assert.ok(!live.includes('closedChanged || !streamLive'), 'refreshCandles does not force full setData when market is static')
 

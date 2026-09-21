@@ -25,6 +25,7 @@ import {
   getLatestDatabentoLiveQuote,
 } from '@/lib/databento/liveHub'
 import { isDatabentoConfigured } from '@/lib/databento/client'
+import { liveTipDisagreesWithBook } from '@/lib/chart/liveFormingBar'
 import {
   isChartStreamAllowed,
   isLiveDeskInstrument,
@@ -103,6 +104,7 @@ export async function GET(request: Request) {
   let heartbeat: ReturnType<typeof setInterval> | null = null
   let basisTimer: ReturnType<typeof setInterval> | null = null
   let cmePoller: ReturnType<typeof setInterval> | null = null
+  let bookTimer: ReturnType<typeof setInterval> | null = null
   let closed = false
 
   const stream = new ReadableStream({
@@ -115,6 +117,7 @@ export async function GET(request: Request) {
         60_000
       )
       let pendingSent = false
+      let dbOnBook = true
       const openedAt = Date.now()
 
       const send = (obj: unknown) => {
@@ -149,10 +152,10 @@ export async function GET(request: Request) {
        */
       const flushPending = () => {
         if (pendingSent || !pending) return
-        if (isDatabentoLiveActive(instrument)) return
+        if (isDatabentoLiveActive(instrument) && dbOnBook) return
         if (basis == null) {
           // Never send unshifted OANDA quotes on CME instruments when Databento is configured
-          if (isDatabentoConfigured()) return
+          if (isDatabentoConfigured() && dbOnBook) return
           if (instrument === 'GOLD' || instrument === 'CRUDE') return
           if (Date.now() - openedAt < UNSHIFTED_AFTER_MS) return
         }
@@ -187,6 +190,24 @@ export async function GET(request: Request) {
         }
       }
 
+      let bookPx = getDayPreviousClose(instrument) ?? 0
+      const refreshBook = async () => {
+        try {
+          const yq = await getYahooQuote(instrument)
+          if (closed || !yq?.price) return
+          bookPx = yq.price
+        } catch {
+          /* keep */
+        }
+      }
+      void refreshBook()
+      bookTimer = setInterval(() => {
+        void refreshBook()
+      }, 8_000)
+
+      const databentoAgreesWithBook = (price: number) =>
+        !(bookPx > 0 && liveTipDisagreesWithBook(price, bookPx, instrument))
+
       const cleanup = () => {
         if (closed) return
         closed = true
@@ -196,6 +217,8 @@ export async function GET(request: Request) {
         basisTimer = null
         if (cmePoller) clearInterval(cmePoller)
         cmePoller = null
+        if (bookTimer) clearInterval(bookTimer)
+        bookTimer = null
         unsubscribeDb?.()
         unsubscribeDb = null
         unsubscribeOanda?.()
@@ -210,6 +233,11 @@ export async function GET(request: Request) {
       // Tier 1: Real-time CME Globex exchange feed directly from Databento Live
       if (isDatabentoConfigured()) {
         unsubscribeDb = subscribeDatabentoLive(instrument, (trade) => {
+          if (!databentoAgreesWithBook(trade.price)) {
+            dbOnBook = false
+            return
+          }
+          dbOnBook = true
           send(
             payloadFor(
               instrument,
@@ -224,7 +252,7 @@ export async function GET(request: Request) {
 
         // Seed initial live quote immediately from Databento Live snapshot if available
         const dbSeed = getLatestDatabentoLiveQuote(instrument)
-        if (dbSeed) {
+        if (dbSeed && databentoAgreesWithBook(dbSeed.price)) {
           send(
             payloadFor(
               instrument,
@@ -235,23 +263,25 @@ export async function GET(request: Request) {
               'cme'
             )
           )
+        } else if (dbSeed && !databentoAgreesWithBook(dbSeed.price)) {
+          dbOnBook = false
         }
       }
 
       // Tier 2: OANDA 24/7 continuous CFDs + CME basis fallback
       if (isOandaConfigured()) {
         unsubscribeOanda = subscribeOandaPriceStream(instrument, (quote) => {
-          // If Databento Live is active and delivering exchange trades, silence OANDA to prevent feed jitter
-          if (isDatabentoLiveActive(instrument)) return
+          // If Databento Live is active and delivering the volume-month book, silence OANDA
+          if (isDatabentoLiveActive(instrument) && dbOnBook) return
           pending = quote
           pendingSent = false
           flushPending()
         })
 
         // Seed initial live quote immediately without waiting for first stream tick or delayed Yahoo
-        if (!pending && !isDatabentoLiveActive(instrument)) {
+        if (!pending && !(isDatabentoLiveActive(instrument) && dbOnBook)) {
           void getOandaPrice(instrument).then((op) => {
-            if (closed || !op || pendingSent || isDatabentoLiveActive(instrument)) return
+            if (closed || !op || pendingSent || (isDatabentoLiveActive(instrument) && dbOnBook)) return
             pending = op
             flushPending()
           })
@@ -289,6 +319,7 @@ export async function GET(request: Request) {
       if (heartbeat) clearInterval(heartbeat)
       if (basisTimer) clearInterval(basisTimer)
       if (cmePoller) clearInterval(cmePoller)
+      if (bookTimer) clearInterval(bookTimer)
       unsubscribeDb?.()
       unsubscribeOanda?.()
     },

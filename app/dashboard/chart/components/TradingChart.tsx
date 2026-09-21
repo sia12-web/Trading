@@ -44,6 +44,7 @@ import {
   projectSessionHighlightRects,
   paintSessionHighlightOverlay,
   timeToX,
+  unixFromLogical,
   deskClockFor,
   deskSessionAt,
   nyDeskSessionAt,
@@ -1498,6 +1499,51 @@ export function TradingChart({
   const cvdChartRef = useRef<IChartApi | null>(null)
   const cvdCandleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const cachedCvdBarsRef = useRef<any[]>([])
+  const cvdTimeSyncingRef = useRef(false)
+  const cvdIndependentZoomRef = useRef(false)
+  const [cvdFollowsPrice, setCvdFollowsPrice] = useState(true)
+  const syncCvdFromMainRef = useRef<() => void>(() => {})
+  const detachCvdFromPriceRef = useRef<() => void>(() => {})
+  const relinkCvdToPriceRef = useRef<() => void>(() => {})
+  const rangesDiffer = (
+    r1: { from: number; to: number } | null,
+    r2: { from: number; to: number } | null,
+    eps = 0.05
+  ) => {
+    if (!r1 || !r2) return true
+    return Math.abs(r1.from - r2.from) >= eps || Math.abs(r1.to - r2.to) >= eps
+  }
+  syncCvdFromMainRef.current = () => {
+    if (!showCvdSubPaneRef.current || cvdTimeSyncingRef.current) return
+    if (cvdIndependentZoomRef.current) return
+    const main = chartRef.current
+    const cvd = cvdChartRef.current
+    if (!main || !cvd) return
+    const range = main.timeScale().getVisibleLogicalRange()
+    if (!range) return
+    const current = cvd.timeScale().getVisibleLogicalRange()
+    if (!rangesDiffer(current, range)) return
+    cvdTimeSyncingRef.current = true
+    try {
+      cvd.timeScale().setVisibleLogicalRange(range)
+    } catch {
+      /* ignore */
+    }
+    requestAnimationFrame(() => {
+      cvdTimeSyncingRef.current = false
+    })
+  }
+  detachCvdFromPriceRef.current = () => {
+    if (cvdIndependentZoomRef.current) return
+    cvdIndependentZoomRef.current = true
+    setCvdFollowsPrice(false)
+  }
+  relinkCvdToPriceRef.current = () => {
+    const wasIndependent = cvdIndependentZoomRef.current
+    cvdIndependentZoomRef.current = false
+    if (!cvdFollowsPrice || wasIndependent) setCvdFollowsPrice(true)
+    requestAnimationFrame(() => syncCvdFromMainRef.current())
+  }
   const cvdSessionOverlayRef = useRef<HTMLDivElement>(null)
   const [currentCvdLegend, setCurrentCvdLegend] = useState<{ open: number; high: number; low: number; close: number } | null>(null)
   const [yesterdayNyc, setYesterdayNyc] = useState<YesterdayNycSession | null>(null)
@@ -3682,8 +3728,8 @@ export function TradingChart({
           ctx.fillText(p1Label, x1 + 8, y1 - 4)
           ctx.fillText(p2Label, x2 + 8, y2 - 4)
         } else if (activeDrawingTool === 'RANGE') {
-          const minX = Math.min(x1, x2)
-          const maxX = Math.max(x1, x2)
+          const minX = Math.min(x1, p2.x)
+          const maxX = Math.max(x1, p2.x)
           const topY = Math.min(y1, y2)
           const botY = Math.max(y1, y2)
           const boxW = Math.max(4, maxX - minX)
@@ -7184,6 +7230,7 @@ export function TradingChart({
     let scrollRafId = 0
     const onScroll = () => {
       pokeOverlayLayoutRef.current()
+      syncCvdFromMainRef.current()
       if (scrollRafId) return
       scrollRafId = requestAnimationFrame(() => {
         scrollRafId = 0
@@ -7218,13 +7265,19 @@ export function TradingChart({
       }
     })
     ro.observe(containerRef.current)
-    const onWheelLayout = () => pokeOverlayLayoutRef.current()
+    const onWheelLayout = () => {
+      pokeOverlayLayoutRef.current()
+      relinkCvdToPriceRef.current()
+    }
+    const onPricePointer = () => relinkCvdToPriceRef.current()
     containerRef.current.addEventListener('wheel', onWheelLayout, { passive: true })
+    containerRef.current.addEventListener('mousedown', onPricePointer)
 
     return () => {
       if (scrollRafId) cancelAnimationFrame(scrollRafId)
       ro.disconnect()
       containerRef.current?.removeEventListener('wheel', onWheelLayout)
+      containerRef.current?.removeEventListener('mousedown', onPricePointer)
       try {
         chart.timeScale().unsubscribeVisibleLogicalRangeChange(onScroll)
       } catch { }
@@ -7297,6 +7350,20 @@ export function TradingChart({
             bottom: 0.15,
           },
         },
+        // Wheel / drag / pinch zoom this pane only. Price chart zoom still
+        // re-links CVD; CVD zoom never moves the price bars.
+        handleScroll: {
+          mouseWheel: true,
+          pressedMouseMove: true,
+          horzTouchDrag: true,
+          vertTouchDrag: false,
+        },
+        handleScale: {
+          axisPressedMouseMove: { time: true, price: true },
+          axisDoubleClickReset: { time: false, price: true },
+          mouseWheel: true,
+          pinch: true,
+        },
       })
       cvdChartRef.current = cvdChart
 
@@ -7326,54 +7393,6 @@ export function TradingChart({
         })
       } catch {}
 
-      let isSyncingTimeScale = false
-
-      const rangesDiffer = (r1: any, r2: any, eps = 0.05) => {
-        if (!r1 || !r2) return true
-        return Math.abs(r1.from - r2.from) >= eps || Math.abs(r1.to - r2.to) >= eps
-      }
-
-      const syncMainToCvd = (range: any) => {
-        if (!showCvdSubPaneRef.current || isSyncingTimeScale || !range || !cvdChartRef.current) return
-        const targetTs = cvdChartRef.current.timeScale()
-        const currentRange = targetTs.getVisibleLogicalRange()
-        if (!rangesDiffer(currentRange, range)) return
-
-        isSyncingTimeScale = true
-        try {
-          targetTs.setVisibleLogicalRange(range)
-        } catch {}
-        requestAnimationFrame(() => {
-          isSyncingTimeScale = false
-        })
-      }
-
-      const syncCvdToMain = (range: any) => {
-        if (!showCvdSubPaneRef.current || isSyncingTimeScale || !range || !chartRef.current) return
-        const targetTs = chartRef.current.timeScale()
-        const currentRange = targetTs.getVisibleLogicalRange()
-        if (!rangesDiffer(currentRange, range)) return
-
-        isSyncingTimeScale = true
-        try {
-          targetTs.setVisibleLogicalRange(range)
-        } catch {}
-        requestAnimationFrame(() => {
-          isSyncingTimeScale = false
-        })
-      }
-
-      const mainTimeScale = chartRef.current?.timeScale()
-      mainTimeScale?.subscribeVisibleLogicalRangeChange(syncMainToCvd)
-      cvdChart.timeScale().subscribeVisibleLogicalRangeChange(syncCvdToMain)
-
-      const initialRange = mainTimeScale?.getVisibleLogicalRange()
-      if (initialRange && showCvdSubPaneRef.current && rangesDiffer(cvdChart.timeScale().getVisibleLogicalRange(), initialRange)) {
-        try {
-          cvdChart.timeScale().setVisibleLogicalRange(initialRange)
-        } catch {}
-      }
-
       const onCrosshairMove = (param: any) => {
         if (!param || !param.time || !param.seriesPrices) return
         const priceData = param.seriesPrices.get(cvdSeries)
@@ -7387,6 +7406,12 @@ export function TradingChart({
         }
       }
       cvdChart.subscribeCrosshairMove(onCrosshairMove)
+
+      const onCvdInteract = () => detachCvdFromPriceRef.current()
+      const onCvdDblClick = () => relinkCvdToPriceRef.current()
+      cvdContainer.addEventListener('wheel', onCvdInteract, { passive: true })
+      cvdContainer.addEventListener('mousedown', onCvdInteract)
+      cvdContainer.addEventListener('dblclick', onCvdDblClick)
 
       const ro = new ResizeObserver(() => {
         if (cvdContainerRef.current && cvdChartRef.current && showCvdSubPane) {
@@ -7453,11 +7478,12 @@ export function TradingChart({
             cvdSubPaneHeight
           )
           const mainRange = chartRef.current?.timeScale().getVisibleLogicalRange()
-          if (mainRange) {
+          if (mainRange && !cvdIndependentZoomRef.current) {
             try {
               cvdChartRef.current.timeScale().setVisibleLogicalRange(mainRange)
             } catch {}
           }
+          syncCvdFromMainRef.current()
         }
       })
     }
@@ -7996,6 +8022,19 @@ export function TradingChart({
     const tz = chartTzRef.current
     const seenTimes = new Set<string>()
     const candleData: CandlestickData[] = []
+    const cvdRaw = computeCvdCandleBars(
+      ordered.map((c) => ({
+        time: c.time as number,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      }))
+    )
+    const cvdByUnix = new Map<number, (typeof cvdRaw)[number]>()
+    for (const b of cvdRaw) cvdByUnix.set(b.time, b)
+    const shiftedCvd: CandlestickData[] = []
     for (const c of ordered) {
       const t = toSeriesTime(c.time as number, timeframe, tz)
       const key = isBusinessDay(t) ? `${t.year}-${t.month}-${t.day}` : String(t)
@@ -8008,9 +8047,18 @@ export function TradingChart({
           low: c.low,
           close: c.close,
         })
+        const d = cvdByUnix.get(c.time as number)
+        shiftedCvd.push({
+          time: t,
+          open: d?.open ?? 0,
+          high: d?.high ?? 0,
+          low: d?.low ?? 0,
+          close: d?.close ?? 0,
+        })
       }
     }
     candleData.sort((a, b) => chartTimeToUnix(a.time) - chartTimeToUnix(b.time))
+    shiftedCvd.sort((a, b) => chartTimeToUnix(a.time) - chartTimeToUnix(b.time))
 
     const ts = chartRef.current.timeScale()
     let savedRange: { from: number; to: number } | null = null
@@ -8114,35 +8162,8 @@ export function TradingChart({
       }
     }
 
-    // Update & Cache CVD Candlesticks for Sub-Chart Pane
+    // Update & Cache CVD Candlesticks for Sub-Chart Pane — same timestamps as price.
     try {
-      const cvdBars = computeCvdCandleBars(
-        ordered.map((c) => ({
-          time: c.time as number,
-          open: c.open,
-          high: c.high,
-          low: c.low,
-          close: c.close,
-          volume: c.volume,
-        }))
-      )
-      const seenCvdTimes = new Set<string>()
-      const shiftedCvd: CandlestickData[] = []
-      for (const b of cvdBars) {
-        const t = toSeriesTime(b.time, timeframe, tz)
-        const key = isBusinessDay(t) ? `${t.year}-${t.month}-${t.day}` : String(t)
-        if (!seenCvdTimes.has(key)) {
-          seenCvdTimes.add(key)
-          shiftedCvd.push({
-            time: t,
-            open: b.open,
-            high: b.high,
-            low: b.low,
-            close: b.close,
-          })
-        }
-      }
-      shiftedCvd.sort((a, b) => chartTimeToUnix(a.time) - chartTimeToUnix(b.time))
       cachedCvdBarsRef.current = shiftedCvd
 
       if (cvdCandleSeriesRef.current) {
@@ -8158,6 +8179,7 @@ export function TradingChart({
             })
           }
         }
+        requestAnimationFrame(() => syncCvdFromMainRef.current())
       }
     } catch {}
 
@@ -8287,6 +8309,7 @@ export function TradingChart({
           )
           didFitRef.current = true
           refreshSessionHighlightsRef.current?.()
+          syncCvdFromMainRef.current()
         } catch {
           /* ignore */
         }
@@ -8300,6 +8323,7 @@ export function TradingChart({
             ts.setVisibleLogicalRange(savedRange)
           }
           refreshSessionHighlightsRef.current?.()
+          syncCvdFromMainRef.current()
         } catch {
           /* ignore */
         }
@@ -8883,7 +8907,8 @@ export function TradingChart({
               volume: live.volume,
             }
             : null,
-          timeframe
+          timeframe,
+          instrument
         )
         const nextBars: OHLCV[] = merged.map((c) => ({
           time: c.time as UTCTimestamp,
@@ -9680,13 +9705,21 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       const rect = container.getBoundingClientRect()
       const x = clientX - rect.left
       const timeScale = chart.timeScale()
-      const logical = timeScale.coordinateToLogical(x)
+      let logical = timeScale.coordinateToLogical(x)
       const list = candlesRef.current
-      if (logical != null && list.length > 0) {
-        const idx = Math.max(0, Math.min(list.length - 1, Math.round(logical)))
-        return Number(list[idx]?.time) || null
+      if (!(list.length > 0)) return null
+      if (logical == null) {
+        const lastIdx = list.length - 1
+        const lastX = timeScale.logicalToCoordinate(lastIdx)
+        const prevX = lastIdx > 0 ? timeScale.logicalToCoordinate(lastIdx - 1) : null
+        if (lastX != null && prevX != null && lastX !== prevX) {
+          logical = lastIdx + (x - lastX) / (lastX - prevX)
+        } else {
+          return null
+        }
       }
-      return null
+      const times = list.map((c) => Number(c.time))
+      return unixFromLogical(logical, times, barSeconds)
     }
 
     const onMouseDown = (e: MouseEvent) => {
@@ -9885,7 +9918,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       }
       container.style.cursor = ''
     }
-  }, [activeDrawingTool, drawingDraft, trendlines.length, rangeBoxes.length, manualFrvps.length, paintUserDrawings])
+  }, [activeDrawingTool, drawingDraft, trendlines.length, rangeBoxes.length, manualFrvps.length, paintUserDrawings, barSeconds, chartReady])
 
   // Clear risk box chart lines
   const clearRiskBoxLines = useCallback(() => {
@@ -11882,7 +11915,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </div>
 
           {/* CVD Sub-Pane Header Legend */}
-          <div className="absolute top-2 left-3 z-10 flex items-center gap-2 text-xs font-mono font-semibold bg-zinc-950/85 px-2.5 py-1 rounded border border-zinc-800/80 pointer-events-none select-none shadow-sm">
+          <div className="absolute top-2 left-3 z-10 flex items-center gap-2 text-xs font-mono font-semibold bg-zinc-950/85 px-2.5 py-1 rounded border border-zinc-800/80 select-none shadow-sm pointer-events-none">
             <span className="font-bold text-zinc-300">CVD</span>
             {currentCvdLegend ? (
               <span className={currentCvdLegend.close >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
@@ -11894,10 +11927,28 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             ) : (
               <span className="text-zinc-500">—</span>
             )}
+            {!cvdFollowsPrice && (
+              <button
+                type="button"
+                className="pointer-events-auto ml-1 rounded border border-cyan-500/40 bg-cyan-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-cyan-300 hover:bg-cyan-500/25"
+                title="Match CVD zoom back to the price chart"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  relinkCvdToPriceRef.current()
+                }}
+              >
+                Follow price
+              </button>
+            )}
           </div>
 
           {/* CVD Lightweight Chart Container */}
-          <div ref={cvdContainerRef} className="absolute inset-0 z-0" />
+          <div
+            ref={cvdContainerRef}
+            className="absolute inset-0 z-0"
+            title="Scroll or drag to zoom CVD only. Double-click or Follow price to match the chart."
+          />
           <div
             ref={cvdSessionOverlayRef}
             className="pointer-events-none absolute inset-0 z-[1]"

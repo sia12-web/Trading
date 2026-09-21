@@ -55,6 +55,91 @@ export function getActiveCmeQuarterlyContract(
   }
 }
 
+const NYMEX_MONTH_CODES = ['F', 'G', 'H', 'J', 'K', 'M', 'N', 'Q', 'U', 'V', 'X', 'Z'] as const
+
+function nyCivilDate(now: Date): { y: number; m: number; d: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now)
+  const get = (t: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((p) => p.type === t)?.value || 0)
+  return { y: get('year'), m: get('month'), d: get('day') }
+}
+
+function ymdNum(y: number, m: number, d: number): number {
+  return y * 10000 + m * 100 + d
+}
+
+function isWeekendUtc(y: number, m: number, d: number): boolean {
+  const w = new Date(Date.UTC(y, m - 1, d)).getUTCDay()
+  return w === 0 || w === 6
+}
+
+function prevBusinessDay(y: number, m: number, d: number): [number, number, number] {
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  do {
+    dt.setUTCDate(dt.getUTCDate() - 1)
+  } while (dt.getUTCDay() === 0 || dt.getUTCDay() === 6)
+  return [dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate()]
+}
+
+function businessDaysBefore(y: number, m: number, d: number, n: number): [number, number, number] {
+  let cy = y
+  let cm = m
+  let cd = d
+  for (let i = 0; i < n; i++) {
+    ;[cy, cm, cd] = prevBusinessDay(cy, cm, cd)
+  }
+  return [cy, cm, cd]
+}
+
+/**
+ * CME WTI last trade date: 3 business days prior to the 25th of the month
+ * preceding the contract month. If the 25th is a weekend, 3 business days
+ * prior to the last business day before the 25th.
+ */
+function clLastTradeYmd(contractYear: number, contractMonth: number): [number, number, number] {
+  let y = contractYear
+  let m = contractMonth - 1
+  if (m < 1) {
+    m = 12
+    y -= 1
+  }
+  let originY = y
+  let originM = m
+  let originD = 25
+  if (isWeekendUtc(y, m, 25)) {
+    ;[originY, originM, originD] = prevBusinessDay(y, m, 25)
+  }
+  return businessDaysBefore(originY, originM, originD, 3)
+}
+
+/**
+ * Volume-lead WTI month (same contract Tradovate / Yahoo CL=F use).
+ * `CL.c.0` is calendar front and stays on the expiring month after volume has
+ * already rolled — that was painting October (~97) on a November (~93) book.
+ */
+export function getActiveCmeClContract(now: Date = new Date()): string {
+  const ny = nyCivilDate(now)
+  const today = ymdNum(ny.y, ny.m, ny.d)
+  // Roll 5 business days before last trade so we follow volume, not the expiry calendar.
+  const ROLL_LEAD_BD = 5
+  for (let i = 0; i < 14; i++) {
+    const dt = new Date(Date.UTC(ny.y, ny.m - 1 + i, 1))
+    const cy = dt.getUTCFullYear()
+    const cm = dt.getUTCMonth() + 1
+    const last = clLastTradeYmd(cy, cm)
+    const roll = businessDaysBefore(last[0], last[1], last[2], ROLL_LEAD_BD)
+    if (today <= ymdNum(roll[0], roll[1], roll[2])) {
+      return `CL${NYMEX_MONTH_CODES[cm - 1]}${String(cy).slice(-1)}`
+    }
+  }
+  return `CL${NYMEX_MONTH_CODES[ny.m - 1]}${String(ny.y).slice(-1)}`
+}
+
 export function getDatabentoActiveSymbol(
   instrument: Instrument,
   now: Date = new Date()
@@ -72,7 +157,7 @@ export function getDatabentoActiveSymbol(
     return { symbol: 'MGC.c.0', stype_in: 'continuous' }
   }
   if (instrument === 'CRUDE') {
-    return { symbol: 'CL.c.0', stype_in: 'continuous' }
+    return { symbol: getActiveCmeClContract(now), stype_in: 'raw_symbol' }
   }
   return { symbol: 'MYM.c.0', stype_in: 'continuous' }
 }
@@ -232,7 +317,7 @@ export async function getDatabentoCandles(
             symbols: symbol,
             schema: 'ohlcv-1m',
             encoding: 'json',
-            stype_in: 'continuous',
+            stype_in: activeSym.stype_in,
             start: validStartIso,
             end: validEndIso,
           })

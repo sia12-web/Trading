@@ -26,6 +26,11 @@ HOST = "127.0.0.1"
 
 import datetime
 
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None
+
 def get_active_quarterly_contract(root: str, now=None) -> str:
     if now is None:
         now = datetime.datetime.now()
@@ -61,6 +66,56 @@ def get_active_quarterly_contract(root: str, now=None) -> str:
     else:
         next_year_digit = str(year + 1)[-1]
         return f"{root}H{next_year_digit}"
+
+NYMEX_MONTH_CODES = "FGHJKMNQUVXZ"
+
+
+def _prev_business_day(d: datetime.date) -> datetime.date:
+    d = d - datetime.timedelta(days=1)
+    while d.weekday() >= 5:
+        d -= datetime.timedelta(days=1)
+    return d
+
+
+def _business_days_before(d: datetime.date, n: int) -> datetime.date:
+    for _ in range(n):
+        d = _prev_business_day(d)
+    return d
+
+
+def _cl_last_trade(contract_year: int, contract_month: int) -> datetime.date:
+    """CME WTI: 3 business days prior to the 25th of the month before delivery."""
+    if contract_month == 1:
+        y, m = contract_year - 1, 12
+    else:
+        y, m = contract_year, contract_month - 1
+    origin = datetime.date(y, m, 25)
+    if origin.weekday() >= 5:
+        origin = _prev_business_day(origin)
+    return _business_days_before(origin, 3)
+
+
+def get_active_cl_contract(now=None) -> str:
+    """Volume-lead WTI month (Yahoo CL=F / Tradovate), not calendar CL.c.0."""
+    if now is None:
+        now = (
+            datetime.datetime.now(ZoneInfo("America/New_York"))
+            if ZoneInfo is not None
+            else datetime.datetime.now()
+        )
+    today = now.date() if hasattr(now, "date") else now
+    roll_lead_bd = 5
+    y, m = today.year, today.month
+    for i in range(14):
+        mm = m + i
+        cy = y + (mm - 1) // 12
+        cm = (mm - 1) % 12 + 1
+        last = _cl_last_trade(cy, cm)
+        roll = _business_days_before(last, roll_lead_bd)
+        if today <= roll:
+            return f"CL{NYMEX_MONTH_CODES[cm - 1]}{str(cy)[-1]}"
+    return f"CL{NYMEX_MONTH_CODES[m - 1]}{str(y)[-1]}"
+
 
 DESK_SYMBOLS = {
     "MNQ.c.0": "NASDAQ",
@@ -296,12 +351,17 @@ def run_databento_stream(api_key: str):
             active_mym = get_active_quarterly_contract("MYM")
             active_mnq = get_active_quarterly_contract("MNQ")
             active_nkd = get_active_quarterly_contract("NKD")
+            active_cl = get_active_cl_contract()
             raw_symbols = {
                 active_mym: "DOW",
                 active_mnq: "NASDAQ",
                 active_nkd: "NIKKEI",
+                active_cl: "CRUDE",
             }
-            print(f"[Sidecar] Subscribing active quarterly contracts: {list(raw_symbols.keys())}", flush=True)
+            print(
+                f"[Sidecar] Subscribing raw contracts: {list(raw_symbols.keys())} (WTI {active_cl})",
+                flush=True,
+            )
             # Instrument ids are only valid for one gateway session, and they change
             # across a contract roll. Stale entries would map prints of an expired
             # contract onto a live desk book.
@@ -316,7 +376,7 @@ def run_databento_stream(api_key: str):
             live.subscribe(
                 dataset="GLBX.MDP3",
                 schema="trades",
-                symbols=["MGC.c.0", "CL.c.0"],
+                symbols=["MGC.c.0"],
                 stype_in="continuous",
             )
             connected = True

@@ -389,6 +389,26 @@ export function timeToX(
 }
 
 /**
+ * Map a time-scale logical index to unix seconds, including the empty
+ * slots to the right of the last bar (and left of the first).
+ */
+export function unixFromLogical(
+  logical: number,
+  unixTimes: number[],
+  barSec: number
+): number | null {
+  if (!(unixTimes.length > 0) || !Number.isFinite(logical) || !(barSec > 0)) return null
+  const lastIdx = unixTimes.length - 1
+  if (logical <= 0) return unixTimes[0]! + logical * barSec
+  if (logical >= lastIdx) return unixTimes[lastIdx]! + (logical - lastIdx) * barSec
+  const i0 = Math.floor(logical)
+  const frac = logical - i0
+  const t0 = unixTimes[i0]!
+  const t1 = unixTimes[i0 + 1]!
+  return t0 + (t1 - t0) * frac
+}
+
+/**
  * Latest finished Asia / London / NY session ranges from bars that exist.
  * Current in-progress session is excluded until its scheduled end (live + sim).
  * Yahoo index data is often RTH-only — Asia may be absent; London overlap + NY still show.

@@ -25,7 +25,7 @@ import {
   isLiveDeskInstrument,
   sessionFor,
 } from '@/lib/trading/sessionGate'
-import { dropImplausibleDeskBars } from '@/lib/chart/liveFormingBar'
+import { dropImplausibleDeskBars, liveTipDisagreesWithBook } from '@/lib/chart/liveFormingBar'
 import { AVWAP_CANDLE_FETCH_CALENDAR_DAYS } from '@/lib/chart/sessionVwap'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import type { Instrument } from '@/types/price-feed'
@@ -275,25 +275,35 @@ export async function GET(request: Request) {
             if (liveBars?.length) {
               const merged = aggregateLiveBars(liveBars, stepSec)
               if (merged.length > 0) {
-                const firstLive = merged[0]!.time
-                const kept = candles.filter((c) => c.time < firstLive)
-                const overlap = candles.find((c) => c.time === firstLive)
-                // The sidecar may have started part-way through the oldest overlapping
-                // bucket, so union it with the vendor bar instead of replacing it.
-                // Later buckets are fully covered by the live stream.
-                if (overlap) {
-                  const live = merged[0]!
-                  merged[0] = {
-                    time: live.time,
-                    open: overlap.open,
-                    high: Math.max(overlap.high, live.high),
-                    low: Math.min(overlap.low, live.low),
-                    close: live.close,
-                    volume: Math.max(overlap.volume, live.volume),
+                const vendorClose = candles[candles.length - 1]!.close
+                const liveClose = merged[merged.length - 1]!.close
+                // Wrong-month live (calendar CL.c.0 vs volume CL=F) must not splice
+                // a 4-point jump onto the vendor series.
+                if (liveTipDisagreesWithBook(liveClose, vendorClose, instrument)) {
+                  logger.warn(
+                    `[Candles] Skipping Databento live overlay for ${instrument}: live ${liveClose} vs book ${vendorClose}`
+                  )
+                } else {
+                  const firstLive = merged[0]!.time
+                  const kept = candles.filter((c) => c.time < firstLive)
+                  const overlap = candles.find((c) => c.time === firstLive)
+                  // The sidecar may have started part-way through the oldest overlapping
+                  // bucket, so union it with the vendor bar instead of replacing it.
+                  // Later buckets are fully covered by the live stream.
+                  if (overlap) {
+                    const live = merged[0]!
+                    merged[0] = {
+                      time: live.time,
+                      open: overlap.open,
+                      high: Math.max(overlap.high, live.high),
+                      low: Math.min(overlap.low, live.low),
+                      close: live.close,
+                      volume: Math.max(overlap.volume, live.volume),
+                    }
                   }
+                  candles = [...kept, ...merged]
+                  source = 'databento'
                 }
-                candles = [...kept, ...merged]
-                source = 'databento'
               }
             }
           } catch (err) {
@@ -338,7 +348,12 @@ export async function GET(request: Request) {
       // opening tip than the stream it is about to attach to.
       if (!endDate && isDatabentoConfigured()) {
         const dbLive = await resolveDatabentoLiveQuote(instrument)
-        if (dbLive && dbLive.price > 0) {
+        const bookClose = candles[candles.length - 1]?.close
+        if (
+          dbLive &&
+          dbLive.price > 0 &&
+          !(bookClose && liveTipDisagreesWithBook(dbLive.price, bookClose, instrument))
+        ) {
           const previous_close = getDayPreviousClose(instrument) ?? dbLive.price
           const change = dbLive.price - previous_close
           quote = {

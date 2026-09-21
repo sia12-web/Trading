@@ -22,6 +22,7 @@ import {
 } from '@/lib/trading/sessionGate'
 import { isDatabentoConfigured } from '@/lib/databento/client'
 import { resolveDatabentoLiveQuote } from '@/lib/databento/liveHub'
+import { liveTipDisagreesWithBook } from '@/lib/chart/liveFormingBar'
 import type { Instrument } from '@/types/price-feed'
 
 export const dynamic = 'force-dynamic'
@@ -103,23 +104,27 @@ export async function GET(request: Request) {
     if (isDatabentoConfigured()) {
       const dbLive = await resolveDatabentoLiveQuote(instrument)
       if (dbLive && dbLive.price > 0) {
-        const previous_close = getDayPreviousClose(instrument) ?? dbLive.price
-        const change = dbLive.price - previous_close
-        const change_pct = previous_close ? (change / previous_close) * 100 : 0
-        return NextResponse.json(
-          {
-            instrument,
-            source: 'cme',
-            price: dbLive.price,
-            bid: dbLive.bid,
-            ask: dbLive.ask,
-            change,
-            change_pct,
-            previous_close,
-            timestamp: dbLive.timestamp,
-          },
-          { headers }
-        )
+        const yq = await getYahooQuote(instrument)
+        const book = yq?.price
+        if (!(book && liveTipDisagreesWithBook(dbLive.price, book, instrument))) {
+          const previous_close = getDayPreviousClose(instrument) ?? dbLive.price
+          const change = dbLive.price - previous_close
+          const change_pct = previous_close ? (change / previous_close) * 100 : 0
+          return NextResponse.json(
+            {
+              instrument,
+              source: 'cme',
+              price: dbLive.price,
+              bid: dbLive.bid,
+              ask: dbLive.ask,
+              change,
+              change_pct,
+              previous_close,
+              timestamp: dbLive.timestamp,
+            },
+            { headers }
+          )
+        }
       }
     }
 

@@ -41,6 +41,23 @@ export const MAX_SINGLE_TICK_PTS: Record<string, number> = {
   CRUDE: 1.5,
 }
 
+/**
+ * Live CME print vs the vendor book we are overlaying. A calendar-front
+ * contract after the volume roll (e.g. CLV6 ~97 vs CLX6 / CL=F ~93) trips this;
+ * a delayed Yahoo last of a few ticks does not.
+ */
+export function liveTipDisagreesWithBook(
+  liveClose: number,
+  bookClose: number,
+  instrument?: string | null
+): boolean {
+  if (!(liveClose > 0) || !(bookClose > 0)) return false
+  const maxPts = instrument
+    ? (MAX_SINGLE_TICK_PTS[instrument] ?? bookClose * 0.025)
+    : bookClose * 0.025
+  return Math.abs(liveClose - bookClose) > maxPts * 2
+}
+
 export function deskBarOpenUnix(
   unix: number,
   barSec: number = DESK_LIVE_BAR_SEC
@@ -171,7 +188,8 @@ export function dropImplausibleDeskBars<T extends FormingBar>(
 export function mergeHistoryWithLiveTip<T extends FormingBar>(
   history: T[],
   live: T | null | undefined,
-  timeframe: string = '5m'
+  timeframe: string = '5m',
+  instrument?: string | null
 ): T[] {
   if (!live || history.length === 0) return history
   const step =
@@ -186,6 +204,9 @@ export function mergeHistoryWithLiveTip<T extends FormingBar>(
   const alignedLive: T = { ...live, time: liveT }
   const last = history[history.length - 1]!
   const lastT = last.time
+  if (liveTipDisagreesWithBook(alignedLive.close, last.close, instrument)) {
+    return history
+  }
   if (liveT > lastT) {
     if (!isPlausibleDeskTick(last.close, alignedLive.close, 0.08)) return history
     const merged = [...history, alignedLive]
