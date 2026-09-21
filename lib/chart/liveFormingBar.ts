@@ -249,10 +249,14 @@ export function mergeHistoryWithLiveTip<T extends FormingBar>(
   const alignedLive: T = { ...live, time: liveT }
   const last = history[history.length - 1]!
   const lastT = last.time
-  // Same-bar only: delayed Yahoo close vs live *now* is a real move, not a
-  // wrong-month contract. Comparing across timestamps skipped the tape and
-  // left the chart on delayed bars with a hole to the live tip.
-  if (liveT === lastT && liveTipDisagreesWithBook(alignedLive.close, last.close, instrument)) {
+  // A fast live close can legitimately be far from delayed REST in the same
+  // bucket. Reject only when both the open and close are off-book, which is the
+  // signature of a different contract/scale (e.g. CLV6 vs CLX6), not volatility.
+  if (
+    liveT === lastT &&
+    liveTipDisagreesWithBook(alignedLive.close, last.close, instrument) &&
+    liveTipDisagreesWithBook(alignedLive.open, last.open, instrument)
+  ) {
     return history
   }
   if (liveT > lastT) {

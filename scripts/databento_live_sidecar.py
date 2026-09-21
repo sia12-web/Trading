@@ -11,6 +11,7 @@ import time
 import json
 import collections
 import threading
+import math
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
@@ -588,6 +589,7 @@ def run_http_server():
 
 def run_databento_stream(api_key: str):
     global connected, total_trades
+    reconnect_delay = 0.25
     while True:
         try:
             print("[Sidecar] Connecting to Databento Live TCP gateway (GLBX.MDP3)...", flush=True)
@@ -604,6 +606,7 @@ def run_databento_stream(api_key: str):
                 id_to_desk.clear()
             subscribe_live(live, raw_symbols)
             connected = True
+            reconnect_delay = 0.25
             print("[Sidecar] Connected! Streaming real-time CME Globex trades...", flush=True)
 
             for record in live:
@@ -617,8 +620,13 @@ def run_databento_stream(api_key: str):
                         desk = id_to_desk.get(record.instrument_id)
                         if not desk:
                             continue
-                        price = record.pretty_price
-                        size = record.size
+                        try:
+                            price = float(record.pretty_price)
+                        except (TypeError, ValueError):
+                            continue
+                        if not math.isfinite(price) or price <= 0:
+                            continue
+                        size = max(0, int(record.size or 0))
                         ts_sec = int(record.ts_event / 1e9)
                         total_trades += 1
 
@@ -645,8 +653,13 @@ def run_databento_stream(api_key: str):
 
         except Exception as e:
             connected = False
-            print(f"[Sidecar] Stream error: {e}. Reconnecting in 3s...", file=sys.stderr, flush=True)
-            time.sleep(3)
+            print(
+                f"[Sidecar] Stream error: {e}. Reconnecting in {reconnect_delay:.2f}s...",
+                file=sys.stderr,
+                flush=True,
+            )
+            time.sleep(reconnect_delay)
+            reconnect_delay = min(reconnect_delay * 2, 3.0)
 
 
 def main():

@@ -6836,6 +6836,13 @@ export function TradingChart({
     // Still refresh the book in the background.
   }, [deskLevelsActive, rangeStrategy, morningAttempts, ibAttempts, lunchAttempts, stopHits])
 
+  // Candle loading must not restart whenever level-attempt state changes and
+  // recreates loadLevels. Keep the latest level loader behind a stable ref.
+  const loadLevelsRef = useRef(loadLevels)
+  useEffect(() => {
+    loadLevelsRef.current = loadLevels
+  }, [loadLevels])
+
   // Chart axis / tooltips always Montreal — desk logic stays on instrument clock.
   // Candle setData shifts unix → chart time; tickMarkFormatter reads UTC comps.
   useEffect(() => {
@@ -7547,7 +7554,7 @@ export function TradingChart({
           setLivePrice(cached.livePrice)
           publishPriceTick(cached.livePrice, cached.changePct)
         }
-        loadLevels(instrument, cached.candles)
+        loadLevelsRef.current(instrument, cached.candles)
       }
 
       // Full continuum including afternoon — clipAfternoonBars is a no-op while freeze is off
@@ -7584,7 +7591,7 @@ export function TradingChart({
           const loadedPrice = json.quote?.price ?? last?.close ?? null
           setLivePrice(loadedPrice)
           publishPriceTick(loadedPrice, json.quote?.change_pct ?? 0)
-          loadLevels(instrument, trimmed)
+          loadLevelsRef.current(instrument, trimmed)
 
           // Store in client-side candle cache for instant switching
           candleCacheRef.current.set(cacheKey, {
@@ -7621,14 +7628,14 @@ export function TradingChart({
       const generatedPrice = generated[generated.length - 1]?.close ?? null
       setLivePrice(generatedPrice)
       publishPriceTick(generatedPrice, 0)
-      loadLevels(instrument, generated)
+      loadLevelsRef.current(instrument, generated)
     }
 
     load()
     return () => {
       cancelled = true
     }
-  }, [instrument, chartReady, loadLevels, levelsRefreshKey, lockedInstrument, publishPriceTick, timeframe])
+  }, [instrument, chartReady, publishPriceTick, timeframe])
 
   // Mid-morning: re-grade levels against candles every 2 minutes (rule engine only)
   useEffect(() => {
@@ -7641,8 +7648,8 @@ export function TradingChart({
   // Initial / instrument load — do not wipe levels when working or in a trade
   useEffect(() => {
     if (!chartReady) return
-    void loadLevels(instrument)
-  }, [chartReady, instrument, loadLevels])
+    void loadLevels(instrument, candlesRef.current)
+  }, [chartReady, instrument, levelsRefreshKey, loadLevels])
 
   // Reset chart series + levels when switching instrument (wrong-scale leftovers squash the pane)
   const prevInstrumentRef = useRef<Instrument | null>(null)
@@ -8660,6 +8667,8 @@ export function TradingChart({
     let tipPaintRaf = 0
     const fetchGen = ++candleFetchGenRef.current
     let sseHealthy = false
+    let lastSseMessageAt = 0
+    const SSE_STALE_MS = 3_000
 
     /** Live quote stream active during cash/focus hours and active sessions (Asia, London, NY) */
     const tipOpen = () =>
@@ -9082,6 +9091,7 @@ export function TradingChart({
           }
           if (typeof json.price !== 'number' || !(json.price > 0)) return
           sseHealthy = true
+          lastSseMessageAt = Date.now()
           const streamLive = tipOpen()
           const ts =
             typeof json.timestamp === 'number' && json.timestamp > 0
@@ -9113,6 +9123,7 @@ export function TradingChart({
     }
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
+        openPriceStream()
         void refreshCandles()
         void pollQuote()
       }
@@ -9123,7 +9134,7 @@ export function TradingChart({
     // Backup REST poll — frequent only when SSE is unhealthy
     tickIntervalRef.current = setInterval(() => {
       if (!tipOpen()) return
-      if (sseHealthy) return
+      if (sseHealthy && Date.now() - lastSseMessageAt < SSE_STALE_MS) return
       void pollQuote()
     }, 500)
     // Safety reconcile even when SSE is healthy (drift / missed reconnect) —
@@ -9132,7 +9143,13 @@ export function TradingChart({
     const reconcile = setInterval(() => {
       if (!tipOpen()) return
       const now = Date.now()
-      if (sseHealthy && now - lastReconcileAt < RECONCILE_HEALTHY_MS) return
+      if (
+        sseHealthy &&
+        now - lastSseMessageAt < SSE_STALE_MS &&
+        now - lastReconcileAt < RECONCILE_HEALTHY_MS
+      ) {
+        return
+      }
       lastReconcileAt = now
       void pollQuote()
     }, 4_000)

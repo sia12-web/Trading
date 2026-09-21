@@ -190,6 +190,34 @@ const t0 = 1_700_000_000 - (1_700_000_000 % 300)
 }
 
 {
+  const delayedRest = [
+    {
+      time: t0,
+      open: 29_400,
+      high: 29_450,
+      low: 29_390,
+      close: 29_420,
+      volume: 1,
+    },
+  ]
+  const fastLive = {
+    time: t0,
+    open: 29_400,
+    high: 29_650,
+    low: 29_390,
+    close: 29_640,
+    volume: 0,
+  }
+  const merged = mergeHistoryWithLiveTip(delayedRest, fastLive, '5m', 'NASDAQ')
+  assert.equal(
+    merged[0]!.close,
+    29_640,
+    '15s REST refresh must not repaint a legitimate fast forming close'
+  )
+  assert.equal(merged[0]!.high, 29_650)
+}
+
+{
   const bars = [
     { time: t0, open: 4650, high: 4652, low: 4648, close: 4650 },
     { time: t0 + 300, open: 4650, high: 4650, low: 3400, close: 3400 },

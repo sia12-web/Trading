@@ -240,15 +240,23 @@ async function runUpstream() {
         if (chunk.startsWith('data: ')) {
           try {
             const parsed = JSON.parse(chunk.slice(6))
-            if (parsed?.instrument && parsed?.price) {
+            const price = Number(parsed?.price)
+            const timestamp = Number(parsed?.timestamp)
+            if (
+              parsed?.instrument &&
+              Number.isFinite(price) &&
+              price > 0 &&
+              Number.isFinite(timestamp) &&
+              timestamp > 0
+            ) {
               emit({
                 instrument: parsed.instrument as Instrument,
-                price: Number(parsed.price),
-                bid: Number(parsed.bid ?? parsed.price),
-                ask: Number(parsed.ask ?? parsed.price),
+                price,
+                bid: Number(parsed.bid ?? price),
+                ask: Number(parsed.ask ?? price),
                 size: Number(parsed.size ?? 1),
                 side: parsed.side,
-                timestamp: Number(parsed.timestamp) || Math.floor(Date.now() / 1000),
+                timestamp,
                 source: 'cme_globex',
                 bar:
                   parsed.bar && Number(parsed.bar.close) > 0
