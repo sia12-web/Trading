@@ -4,10 +4,28 @@
 import { NextResponse } from 'next/server'
 import { checkEnv } from '@/lib/utils/env'
 import { logger } from '@/lib/utils/logger'
+import { isDatabentoConfigured } from '@/lib/databento/client'
+import { ensureDatabentoSidecarRunning } from '@/lib/databento/liveHub'
 
 export const dynamic = 'force-dynamic'
 
+/**
+ * Warm the CME Globex live session from the deploy health probe. Starting it lazily on
+ * the first chart subscribe would otherwise put the sidecar spawn and the gateway
+ * handshake on a trader's critical path. Instrumentation cannot do this: it is also
+ * compiled for the edge runtime, where child_process/fs do not resolve.
+ */
+let sidecarWarmed = false
+function warmDatabentoSidecar() {
+  if (sidecarWarmed || !isDatabentoConfigured()) return
+  sidecarWarmed = true
+  void ensureDatabentoSidecarRunning()
+    .then((ready) => logger.info('health.databento_sidecar', { ready }))
+    .catch((err) => logger.warn('health.databento_sidecar_failed', { err }))
+}
+
 export async function GET() {
+  warmDatabentoSidecar()
   const env = checkEnv()
   const body = {
     ok: env.ok,

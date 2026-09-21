@@ -30,7 +30,7 @@ import { AVWAP_CANDLE_FETCH_CALENDAR_DAYS } from '@/lib/chart/sessionVwap'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import type { Instrument } from '@/types/price-feed'
 import { getDatabentoCandles, isDatabentoConfigured } from '@/lib/databento/client'
-import { fetchDatabentoLiveSnapshot } from '@/lib/databento/liveHub'
+import { fetchDatabentoLiveBars, resolveDatabentoLiveQuote } from '@/lib/databento/liveHub'
 import { fillCandleGaps } from '@/lib/chart/candleGapFiller'
 import { logger } from '@/lib/utils/logger'
 
@@ -48,6 +48,53 @@ const RES_MAP: Record<string, string> = {
   'D': 'D',
 }
 
+const RES_SECONDS: Record<string, number> = {
+  '1': 60,
+  '5': 300,
+  '15': 900,
+  '30': 1800,
+  '60': 3600,
+  '240': 14400,
+}
+
+function resolutionSeconds(resolution: string, timeframe: string): number {
+  return RES_SECONDS[resolution] ?? RES_SECONDS[RES_MAP[timeframe] ?? ''] ?? 300
+}
+
+type LiveBar = {
+  time: number
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+}
+
+/** Roll the sidecar's 1m bars up to the requested resolution. Input is oldest-first. */
+function aggregateLiveBars(bars: LiveBar[], stepSec: number): LiveBar[] {
+  const out: LiveBar[] = []
+  for (const bar of bars) {
+    const bucket = Math.floor(bar.time / stepSec) * stepSec
+    const cur = out[out.length - 1]
+    if (!cur || cur.time !== bucket) {
+      out.push({
+        time: bucket,
+        open: bar.open,
+        high: bar.high,
+        low: bar.low,
+        close: bar.close,
+        volume: bar.volume,
+      })
+    } else {
+      cur.high = Math.max(cur.high, bar.high)
+      cur.low = Math.min(cur.low, bar.low)
+      cur.close = bar.close
+      cur.volume += bar.volume
+    }
+  }
+  return out
+}
+
 interface CachedCandleEntry {
   data: any
   expiresAt: number
@@ -55,12 +102,22 @@ interface CachedCandleEntry {
 
 const candleMemoryCache = new Map<string, CachedCandleEntry>()
 
-function pruneExpiredCandleCache() {
+/** Hard ceiling on retained payloads. Replay requests carry a distinct `as_of` per call,
+ *  so expiry alone can never bring the map back down. */
+const CANDLE_CACHE_MAX_ENTRIES = 200
+
+function pruneCandleCache() {
   const now = Date.now()
   for (const [key, entry] of candleMemoryCache.entries()) {
     if (entry.expiresAt < now) {
       candleMemoryCache.delete(key)
     }
+  }
+  // Map iterates in insertion order, so the front is always the oldest entry.
+  while (candleMemoryCache.size > CANDLE_CACHE_MAX_ENTRIES) {
+    const oldest = candleMemoryCache.keys().next()
+    if (oldest.done) break
+    candleMemoryCache.delete(oldest.value)
   }
 }
 
@@ -204,51 +261,43 @@ export async function GET(request: Request) {
           candles = clipAfternoonBars(candles, instrument)
         }
 
-        // 4. If Databento Live is active, merge the live forming candle directly from CME Globex
+        // 4. Overlay the tail of the series with real CME Globex prints. Yahoo and OANDA
+        //    both publish intraday bars several minutes behind the tape, and fillCandleGaps
+        //    would otherwise reconstruct that window as flat zero-volume bars — fabricated
+        //    OHLC that every downstream overlay (VWAP, profile, IB, excess, delta) reads as
+        //    real. These bars are built from the live tick stream, so there is no lag.
         if (candles?.length && !isDaily && isDatabentoConfigured()) {
           try {
-            const snap = await fetchDatabentoLiveSnapshot()
-            const forming = snap?.forming?.[instrument]
-            if (forming && forming.close > 0) {
-              const stepSec =
-                timeframe === '1m' || resolution === '1'
-                  ? 60
-                  : timeframe === '5m' || resolution === '5'
-                  ? 300
-                  : timeframe === '15m' || resolution === '15'
-                  ? 900
-                  : timeframe === '30m' || resolution === '30'
-                  ? 1800
-                  : timeframe === '1H' || resolution === '60'
-                  ? 3600
-                  : timeframe === '4H' || resolution === '240'
-                  ? 14400
-                  : 300
-
-              const bucketTime = Math.floor(forming.time / stepSec) * stepSec
-              const last = candles[candles.length - 1]!
-              if (bucketTime === last.time) {
-                candles[candles.length - 1] = {
-                  ...last,
-                  high: Math.max(last.high, forming.high),
-                  low: Math.min(last.low, forming.low),
-                  close: forming.close,
-                  volume: Math.max(last.volume, forming.volume),
+            const stepSec = resolutionSeconds(resolution, timeframe)
+            const vendorLast = candles[candles.length - 1]!.time
+            // Re-fetch the last vendor bucket too: it is usually still incomplete.
+            const liveBars = await fetchDatabentoLiveBars(instrument, vendorLast)
+            if (liveBars?.length) {
+              const merged = aggregateLiveBars(liveBars, stepSec)
+              if (merged.length > 0) {
+                const firstLive = merged[0]!.time
+                const kept = candles.filter((c) => c.time < firstLive)
+                const overlap = candles.find((c) => c.time === firstLive)
+                // The sidecar may have started part-way through the oldest overlapping
+                // bucket, so union it with the vendor bar instead of replacing it.
+                // Later buckets are fully covered by the live stream.
+                if (overlap) {
+                  const live = merged[0]!
+                  merged[0] = {
+                    time: live.time,
+                    open: overlap.open,
+                    high: Math.max(overlap.high, live.high),
+                    low: Math.min(overlap.low, live.low),
+                    close: live.close,
+                    volume: Math.max(overlap.volume, live.volume),
+                  }
                 }
-              } else if (bucketTime > last.time) {
-                candles.push({
-                  time: bucketTime,
-                  open: forming.open,
-                  high: forming.high,
-                  low: forming.low,
-                  close: forming.close,
-                  volume: forming.volume,
-                })
+                candles = [...kept, ...merged]
+                source = 'databento'
               }
-              source = 'databento'
             }
-          } catch {
-            /* ignore */
+          } catch (err) {
+            logger.warn(`[Candles] Databento live bar overlay failed for ${instrument}`, err)
           }
         }
       }
@@ -284,28 +333,47 @@ export async function GET(request: Request) {
       previous_close?: number
     } | null = null
     if (includeQuote) {
-      try {
-        // Live tip on CME scale (same path as /quote) so painted ±10 bands
-        // and the streaming last share one book.
-        const o = await getOandaPrice(instrument)
-        const basis =
-          getCmeBasis(instrument) ?? getLastKnownCmeBasis(instrument)
-        if (!endDate && (basis == null || getCmeBasis(instrument, CME_BASIS_REFRESH_MS) == null)) {
-          void warmCmeBasis(instrument)
-        }
-        if (!endDate && o?.price && o.price > 0 && (basis != null || (instrument !== 'GOLD' && instrument !== 'CRUDE'))) {
-          const price = applyCmeBasis(o.price, basis)
-          const previous_close = getDayPreviousClose(instrument) ?? price
-          const change = price - previous_close
+      // Real CME Globex print first, matching /api/trading/quote. Anything below is a
+      // basis-shifted proxy, so preferring them here would hand the chart a different
+      // opening tip than the stream it is about to attach to.
+      if (!endDate && isDatabentoConfigured()) {
+        const dbLive = await resolveDatabentoLiveQuote(instrument)
+        if (dbLive && dbLive.price > 0) {
+          const previous_close = getDayPreviousClose(instrument) ?? dbLive.price
+          const change = dbLive.price - previous_close
           quote = {
-            price,
+            price: dbLive.price,
             change,
             change_pct: previous_close ? (change / previous_close) * 100 : 0,
             previous_close,
           }
         }
-      } catch {
-        /* fallback to CME */
+      }
+      // Only reached without a live exchange print — skipping it also saves a round trip.
+      if (!quote) {
+        try {
+          // Live tip on CME scale (same path as /quote) so painted ±10 bands
+          // and the streaming last share one book.
+          const o = await getOandaPrice(instrument)
+          const basis =
+            getCmeBasis(instrument) ?? getLastKnownCmeBasis(instrument)
+          if (!endDate && (basis == null || getCmeBasis(instrument, CME_BASIS_REFRESH_MS) == null)) {
+            void warmCmeBasis(instrument)
+          }
+          if (!endDate && o?.price && o.price > 0 && (basis != null || (instrument !== 'GOLD' && instrument !== 'CRUDE'))) {
+            const price = applyCmeBasis(o.price, basis)
+            const previous_close = getDayPreviousClose(instrument) ?? price
+            const change = price - previous_close
+            quote = {
+              price,
+              change,
+              change_pct: previous_close ? (change / previous_close) * 100 : 0,
+              previous_close,
+            }
+          }
+        } catch {
+          /* fallback to CME */
+        }
       }
 
       // Direct CME futures fallback from exchange feed (Tradovate / CME MYM, MNQ, NKD, MGC, CL)
@@ -352,14 +420,17 @@ export async function GET(request: Request) {
       quote,
     }
 
-    // Cache TTL: 60s for daily, 600s for historical replay dates, 8s for intraday
-    const ttlMs = isDaily ? 60_000 : endDate ? 600_000 : 8_000
+    // Cache TTL: 60s for daily, 600s for historical replay dates, 5s for intraday.
+    // The chart re-polls bars every 15s, so a longer intraday TTL stacks on top of that
+    // interval and the tape can sit up to 30s behind. 5s still absorbs the burst of
+    // duplicate requests that a panel mount fires off.
+    const ttlMs = isDaily ? 60_000 : endDate ? 600_000 : 5_000
     candleMemoryCache.set(cacheKey, {
       data: payload,
       expiresAt: now + ttlMs,
     })
-    if (candleMemoryCache.size > 100) {
-      pruneExpiredCandleCache()
+    if (candleMemoryCache.size > CANDLE_CACHE_MAX_ENTRIES) {
+      pruneCandleCache()
     }
 
     return NextResponse.json(payload, {

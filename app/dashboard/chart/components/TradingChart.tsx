@@ -380,6 +380,14 @@ import {
   type StoredPriceAlert,
 } from '@/lib/trading/priceTouchAlert'
 
+/** How long client-cached bars may be painted to cover an instrument/timeframe switch. */
+const CANDLE_CACHE_FRESH_MS = 300_000
+/**
+ * A cached last price may only be republished this recently. It marks open positions, so
+ * an older value must surface as "no price" rather than as a stale live quote.
+ */
+const CACHED_PRICE_FRESH_MS = 15_000
+
 /** Header ticker repaint cadence — the readout subtree only. */
 const PRICE_TICKER_MS = 50
 /** Cadence for the React state that feeds badges / proximity / alert effects. */
@@ -1216,6 +1224,7 @@ export function TradingChart({
     candles: OHLCV[]
     source: string
     livePrice: number | null
+    changePct: number
     timestamp: number
   }>>(new Map())
   const candleTimesRef = useRef<any[]>([])
@@ -6609,30 +6618,25 @@ export function TradingChart({
     const byPrice = new Map<number, LevelLine>()
 
     let aiRows: unknown[] = []
-    try {
-      const aiRes = await fetch(aiLevelsUrl(inst))
-      if (aiRes.ok) {
-        const aiJson = await aiRes.json()
-        aiRows = aiJson.levels ?? []
-      }
-    } catch {
-      /* AI history optional until Level Finder has run */
-    }
-
     let afternoonCandidates: unknown[] = []
-    if (useAfternoonLevels) {
-      try {
-        const ap = await fetch(
-          `/api/trading/afternoon-playbook?instrument=${encodeURIComponent(inst)}`
-        )
-        if (ap.ok) {
-          const aj = await ap.json()
-          afternoonCandidates = Array.isArray(aj.candidates) ? aj.candidates : []
-        }
-      } catch {
-        /* optional until morning-review / IB prep has run */
-      }
-    }
+
+    const aiPromise = fetch(aiLevelsUrl(inst))
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (json?.levels) aiRows = json.levels
+      })
+      .catch(() => {})
+
+    const afternoonPromise = useAfternoonLevels
+      ? fetch(`/api/trading/afternoon-playbook?instrument=${encodeURIComponent(inst)}`)
+          .then((res) => (res.ok ? res.json() : null))
+          .then((json) => {
+            if (Array.isArray(json?.candidates)) afternoonCandidates = json.candidates
+          })
+          .catch(() => {})
+      : Promise.resolve()
+
+    await Promise.all([aiPromise, afternoonPromise])
 
     // Structure / IB anchored at this market's cash open (yesterday range)
     const sess = sessionFor(inst)
@@ -7461,15 +7465,15 @@ export function TradingChart({
 
       const cacheKey = `${instrument}:${timeframe}`
       const cached = candleCacheRef.current.get(cacheKey)
-      // Instant switch: display cached bars immediately if fresh (< 60s)
-      if (cached && Date.now() - cached.timestamp < 60_000 && cached.candles.length > 0) {
+      // Instant switch: display cached bars immediately if fresh
+      if (cached && Date.now() - cached.timestamp < CANDLE_CACHE_FRESH_MS && cached.candles.length > 0) {
         setCandles(cached.candles)
         candlesRef.current = cached.candles
         setDataMode('live')
         setCandleFeed(cached.source as any)
-        if (cached.livePrice != null) {
+        if (cached.livePrice != null && Date.now() - cached.timestamp < CACHED_PRICE_FRESH_MS) {
           setLivePrice(cached.livePrice)
-          publishPriceTick(cached.livePrice, 0)
+          publishPriceTick(cached.livePrice, cached.changePct)
         }
         loadLevels(instrument, cached.candles)
       }
@@ -7515,6 +7519,7 @@ export function TradingChart({
             candles: trimmed,
             source: feedSource,
             livePrice: loadedPrice,
+            changePct: json.quote?.change_pct ?? 0,
             timestamp: Date.now(),
           })
           return
@@ -7580,11 +7585,29 @@ export function TradingChart({
     lastCandleRef.current = null
     sessionSpansRef.current = null
     setStreamArmed(false)
-    setCandles([])
-    candlesRef.current = []
+
+    // Paint cached bars to avoid a blank flash, but only while they are recent enough to
+    // still be the same tape. The price is held to a much tighter window than the bars:
+    // it marks open positions, so a stale mark is worse than showing none.
+    const cacheKey = `${instrument}:${timeframe}`
+    const cached = candleCacheRef.current.get(cacheKey)
+    const cacheAge = cached ? Date.now() - cached.timestamp : Infinity
+    if (cached && cached.candles.length > 0 && cacheAge < CANDLE_CACHE_FRESH_MS) {
+      setCandles(cached.candles)
+      candlesRef.current = cached.candles
+    } else {
+      setCandles([])
+      candlesRef.current = []
+    }
+    if (cached?.livePrice != null && cacheAge < CACHED_PRICE_FRESH_MS) {
+      setLivePrice(cached.livePrice)
+      publishPriceTick(cached.livePrice, cached.changePct)
+    } else {
+      setLivePrice(null)
+      publishPriceTick(null, 0)
+    }
+
     setLevels([])
-    setLivePrice(null)
-    publishPriceTick(null, 0)
     clearHoverPreview()
 
     const host = priceLineHostRef.current
@@ -7843,7 +7866,9 @@ export function TradingChart({
     sessionSpansRef.current = null
     // Check if target timeframe already has fresh cached candles
     const cached = candleCacheRef.current.get(`${instrument}:${timeframe}`)
-    if (!cached || Date.now() - cached.timestamp >= 60_000 || cached.candles.length === 0) {
+    // Same window the loader uses, otherwise bars are wiped here and immediately
+    // repainted from the very same cache entry, which reads as a flash.
+    if (!cached || Date.now() - cached.timestamp >= CANDLE_CACHE_FRESH_MS || cached.candles.length === 0) {
       setCandles([])
       candlesRef.current = []
       try { candleRef.current?.setData([]) } catch {}
@@ -8513,16 +8538,9 @@ export function TradingChart({
     const ts = chartRef.current.timeScale()
     const onRangeChange = () => {
       if (!didFitRef.current) return
-      if (interactingRef.current) {
-        if (host) host.style.opacity = '0.4'
-        if (rafPending) cancelAnimationFrame(rafPending)
-        rafPending = requestAnimationFrame(() => {
-          rafPending = 0
-          refreshSessionHighlights()
-        })
-      } else {
-        scheduleSettle()
-      }
+      if (host) host.style.opacity = '1'
+      paintNow()
+      scheduleSettle()
     }
     ts.subscribeVisibleLogicalRangeChange(onRangeChange)
 

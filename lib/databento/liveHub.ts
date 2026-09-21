@@ -5,6 +5,7 @@
  */
 
 import { spawn } from 'child_process'
+import { existsSync } from 'fs'
 import path from 'path'
 import type { Instrument } from '@/types/price-feed'
 import { isDatabentoConfigured } from '@/lib/databento/client'
@@ -30,6 +31,11 @@ type HubState = {
   lastByInstrument: Map<Instrument, DatabentoLiveQuote & { receivedAt: number }>
   lastHealthCheck: number
   isSpawning: boolean
+  lastTickAt: number
+  reconnectAttempts: number
+  reconnectTimer: ReturnType<typeof setTimeout> | null
+  /** Epoch ms until which the sidecar is treated as down, so callers skip the timeout. */
+  downUntil: number
 }
 
 const g = globalThis as typeof globalThis & {
@@ -37,6 +43,11 @@ const g = globalThis as typeof globalThis & {
 }
 
 const SIDECAR_URL = process.env.DATABENTO_SIDECAR_URL || 'http://127.0.0.1:8765'
+
+/** A feed delivering prints inside this window is live regardless of health-probe latency. */
+const TICK_LIVE_WINDOW_MS = 45_000
+/** How long to skip sidecar HTTP probes after a failure, so requests never pay the timeout. */
+const DOWN_BACKOFF_MS = 15_000
 
 function hub(): HubState {
   if (!g.__databentoLiveHub) {
@@ -47,9 +58,23 @@ function hub(): HubState {
       lastByInstrument: new Map(),
       lastHealthCheck: 0,
       isSpawning: false,
+      lastTickAt: 0,
+      reconnectAttempts: 0,
+      reconnectTimer: null,
+      downUntil: 0,
     }
   }
   return g.__databentoLiveHub
+}
+
+/** True when exchange prints arrived recently enough to trust the feed without probing. */
+function hasRecentTicks(h: HubState = hub()): boolean {
+  return h.lastTickAt > 0 && Date.now() - h.lastTickAt < TICK_LIVE_WINDOW_MS
+}
+
+/** True when the sidecar is inside its failure backoff and should not be probed. */
+export function isDatabentoSidecarDown(): boolean {
+  return Date.now() < hub().downUntil
 }
 
 /** Check if the Databento Live Sidecar is currently active and healthy */
@@ -61,22 +86,46 @@ export async function checkDatabentoSidecarHealth(): Promise<boolean> {
       signal: AbortSignal.timeout(1500),
     })
     if (!res.ok) {
-      h.active = false
+      h.downUntil = Date.now() + DOWN_BACKOFF_MS
+      // A probe failure must not silence a stream that is still delivering prints,
+      // or the desk flaps onto a slower feed mid-session.
+      if (!hasRecentTicks(h)) h.active = false
       return false
     }
     const json = await res.json()
-    h.active = json?.status === 'ok' && json?.connected === true
+    h.downUntil = 0
+    h.active = (json?.status === 'ok' && json?.connected === true) || hasRecentTicks(h)
     h.lastHealthCheck = Date.now()
     return h.active
   } catch {
-    h.active = false
+    h.downUntil = Date.now() + DOWN_BACKOFF_MS
+    if (!hasRecentTicks(h)) h.active = false
     return false
   }
 }
 
 /**
+ * Python interpreter used for the sidecar. The deploy image installs `databento` into
+ * /opt/venv, which a bare `python3` would not see.
+ */
+function resolvePythonBin(): string {
+  const explicit = process.env.DATABENTO_SIDECAR_PYTHON?.trim()
+  if (explicit) return explicit
+  if (process.platform === 'win32') return 'python'
+  for (const candidate of ['/opt/venv/bin/python3', '/opt/venv/bin/python']) {
+    if (existsSync(candidate)) return candidate
+  }
+  return 'python3'
+}
+
+/** Set when spawning is pointless (no interpreter, managed externally) to stop retry churn. */
+let spawnBlockedUntil = 0
+
+/**
  * Ensure the Python Databento Live Sidecar is running.
  * If down and Databento is configured, automatically spawns it in the background.
+ * Spawning is skipped when the sidecar is managed externally (DATABENTO_SIDECAR_URL set
+ * to a remote host) or when a previous spawn attempt proved the interpreter is missing.
  */
 export async function ensureDatabentoSidecarRunning(): Promise<boolean> {
   if (!isDatabentoConfigured()) return false
@@ -85,21 +134,32 @@ export async function ensureDatabentoSidecarRunning(): Promise<boolean> {
 
   const h = hub()
   if (h.isSpawning) return false
+  if (Date.now() < spawnBlockedUntil) return false
+  if (process.env.DATABENTO_SIDECAR_URL) return false
   h.isSpawning = true
 
   try {
     const scriptPath = path.resolve(process.cwd(), 'scripts', 'databento_live_sidecar.py')
-    const child = spawn('python', ['-u', scriptPath], {
+    const pythonBin = resolvePythonBin()
+    const child = spawn(pythonBin, ['-u', scriptPath], {
       detached: true,
       stdio: 'ignore',
       env: { ...process.env },
       windowsHide: true,
     })
+    let spawnFailed = false
+    child.on('error', (err) => {
+      spawnFailed = true
+      console.warn(`[Databento LiveHub] Cannot start sidecar (${pythonBin}):`, err.message)
+    })
     child.unref()
 
-    // Give it 2.5 seconds to initialize socket and bind
+    // Give it 3 seconds to install its handler, bind the socket and reach the gateway
     for (let i = 0; i < 5; i++) {
       await new Promise((r) => setTimeout(r, 600))
+      if (spawnFailed) break
+      // The failure backoff would otherwise make every probe in this loop a no-op
+      h.downUntil = 0
       const ok = await checkDatabentoSidecarHealth()
       if (ok) {
         h.isSpawning = false
@@ -107,7 +167,12 @@ export async function ensureDatabentoSidecarRunning(): Promise<boolean> {
         return true
       }
     }
+    if (spawnFailed) {
+      // No usable interpreter — stop paying 3s of spawn+probe on every subscribe.
+      spawnBlockedUntil = Date.now() + 10 * 60_000
+    }
   } catch (err) {
+    spawnBlockedUntil = Date.now() + 10 * 60_000
     console.warn('[Databento LiveHub] Failed to spawn sidecar:', err)
   } finally {
     h.isSpawning = false
@@ -121,6 +186,12 @@ function emit(quote: DatabentoLiveQuote) {
   const now = Date.now()
   const latency = Math.max(1, Math.min(500, now - quote.timestamp * 1000))
   recordFeedTick('databento_live', Number.isFinite(latency) ? latency : 12, false)
+
+  // An arriving exchange print is the strongest possible liveness signal.
+  h.active = true
+  h.lastTickAt = now
+  h.downUntil = 0
+  h.reconnectAttempts = 0
 
   h.lastByInstrument.set(quote.instrument, { ...quote, receivedAt: now })
   const set = h.listeners.get(quote.instrument)
@@ -188,17 +259,52 @@ async function runUpstream() {
     }
   } catch (err) {
     if ((err as Error)?.name !== 'AbortError') {
-      h.active = false
+      if (!hasRecentTicks(h)) h.active = false
     }
   } finally {
-    if (h.abort === abort) h.abort = null
+    if (h.abort === abort) {
+      h.abort = null
+      // The stream ended on its own (sidecar restart, gateway drop). Without this the
+      // feed stays dark until some future subscriber happens to re-arm it.
+      if (!abort.signal.aborted) scheduleReconnect()
+    }
   }
+}
+
+/**
+ * Reconnect the sidecar stream with capped exponential backoff. Only one timer is ever
+ * pending, so overlapping drops cannot fan out into a reconnect storm.
+ */
+function scheduleReconnect() {
+  const h = hub()
+  if (h.reconnectTimer) return
+
+  let anyListeners = false
+  for (const set of h.listeners.values()) {
+    if (set.size > 0) {
+      anyListeners = true
+      break
+    }
+  }
+  if (!anyListeners) return
+
+  const attempt = Math.min(h.reconnectAttempts++, 5)
+  const delay = Math.min(250 * 2 ** attempt, 8_000)
+  h.reconnectTimer = setTimeout(() => {
+    h.reconnectTimer = null
+    void ensureDatabentoSidecarRunning().then((ok) => {
+      if (ok && !h.abort) restartUpstream()
+      else scheduleReconnect()
+    })
+  }, delay)
+  h.reconnectTimer.unref?.()
 }
 
 function restartUpstream() {
   const h = hub()
-  h.abort?.abort()
+  const prev = h.abort
   h.abort = null
+  prev?.abort()
   void runUpstream()
 }
 
@@ -249,8 +355,8 @@ export function isDatabentoLiveActive(instrument?: Instrument): boolean {
   if (instrument) {
     const last = h.lastByInstrument.get(instrument)
     if (!last) return h.active
-    // 45-second window prevents quiet market periods from flapping to secondary feeds
-    return Date.now() - last.receivedAt < 45_000
+    // Wide window prevents quiet market periods from flapping to secondary feeds
+    return Date.now() - last.receivedAt < TICK_LIVE_WINDOW_MS
   }
   return h.active
 }
@@ -260,9 +366,80 @@ export function getLatestDatabentoLiveQuote(instrument: Instrument): DatabentoLi
   const h = hub()
   const row = h.lastByInstrument.get(instrument)
   if (!row) return null
-  if (Date.now() - row.receivedAt > 45_000) return null
+  if (Date.now() - row.receivedAt > TICK_LIVE_WINDOW_MS) return null
   const { receivedAt: _, ...quote } = row
   return quote
+}
+
+export type DatabentoLiveBar = {
+  time: number
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+}
+
+/**
+ * Real 1m bars the sidecar assembled from live CME prints, from `sinceSec` onward and
+ * including the forming bar. Historical bar vendors lag the tape by several minutes, so
+ * this is the only true source for the most recent bars.
+ */
+export async function fetchDatabentoLiveBars(
+  instrument: Instrument,
+  sinceSec: number
+): Promise<DatabentoLiveBar[] | null> {
+  const h = hub()
+  if (isDatabentoSidecarDown()) return null
+  try {
+    const res = await fetch(
+      `${SIDECAR_URL}/bars?instrument=${encodeURIComponent(instrument)}&since=${Math.floor(sinceSec)}`,
+      { cache: 'no-store', signal: AbortSignal.timeout(600) }
+    )
+    if (!res.ok) {
+      h.downUntil = Date.now() + DOWN_BACKOFF_MS
+      return null
+    }
+    const json = await res.json()
+    const bars = json?.bars?.[instrument]
+    if (!Array.isArray(bars)) return null
+    return bars.filter(
+      (b: DatabentoLiveBar) =>
+        Number.isFinite(b?.time) && Number.isFinite(b?.close) && b.close > 0
+    )
+  } catch {
+    h.downUntil = Date.now() + DOWN_BACKOFF_MS
+    return null
+  }
+}
+
+/**
+ * Latest real CME print, preferring in-process hub state and falling back to the sidecar.
+ * The hub is only warm in a process that holds an open upstream stream, so routes that do
+ * not subscribe (candles) would otherwise silently drop to a basis-shifted proxy.
+ */
+export async function resolveDatabentoLiveQuote(
+  instrument: Instrument
+): Promise<DatabentoLiveQuote | null> {
+  const local = getLatestDatabentoLiveQuote(instrument)
+  if (local) return local
+  const snap = await fetchDatabentoLiveSnapshot()
+  const row = snap?.quotes?.[instrument]
+  if (!row || !(Number(row.price) > 0)) return null
+  // The sidecar retains the last print indefinitely, so an idle or closed market would
+  // otherwise hand back a quote from hours ago as if it were live.
+  const ageMs = Date.now() - Number(row.timestamp) * 1000
+  if (!Number.isFinite(ageMs) || ageMs > TICK_LIVE_WINDOW_MS) return null
+  return {
+    instrument,
+    price: Number(row.price),
+    bid: Number(row.bid ?? row.price),
+    ask: Number(row.ask ?? row.price),
+    size: Number(row.size ?? 1),
+    side: row.side,
+    timestamp: Number(row.timestamp) || Math.floor(Date.now() / 1000),
+    source: 'cme_globex',
+  }
 }
 
 /** Fetch snapshot of all live quotes and forming 1m candles */
@@ -270,14 +447,22 @@ export async function fetchDatabentoLiveSnapshot(): Promise<{
   quotes: Record<string, DatabentoLiveQuote>
   forming: Record<string, { time: number; open: number; high: number; low: number; close: number; volume: number }>
 } | null> {
+  const h = hub()
+  // Request paths await this snapshot, so a down sidecar must fail instantly rather than
+  // adding the full timeout to every candle response.
+  if (isDatabentoSidecarDown()) return null
   try {
     const res = await fetch(`${SIDECAR_URL}/snapshot`, {
       cache: 'no-store',
-      signal: AbortSignal.timeout(1500),
+      signal: AbortSignal.timeout(600),
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      h.downUntil = Date.now() + DOWN_BACKOFF_MS
+      return null
+    }
     return await res.json()
   } catch {
+    h.downUntil = Date.now() + DOWN_BACKOFF_MS
     return null
   }
 }

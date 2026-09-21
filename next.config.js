@@ -8,6 +8,12 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
 
+  // Next 14 silently ignores instrumentation.ts without this. It is what starts the
+  // Tradeify flatten watchdog, the Asia desk watch and the Databento live session.
+  experimental: {
+    instrumentationHook: true,
+  },
+
   // Do NOT put NEXT_PUBLIC_* in `env` here — that inlines build-time values
   // (often empty on Railway) and breaks runtime even after vars are set.
   // Next.js already exposes NEXT_PUBLIC_* from the environment.

@@ -21,7 +21,7 @@ import {
   isLiveDeskInstrument,
 } from '@/lib/trading/sessionGate'
 import { isDatabentoConfigured } from '@/lib/databento/client'
-import { getLatestDatabentoLiveQuote } from '@/lib/databento/liveHub'
+import { resolveDatabentoLiveQuote } from '@/lib/databento/liveHub'
 import type { Instrument } from '@/types/price-feed'
 
 export const dynamic = 'force-dynamic'
@@ -101,16 +101,7 @@ export async function GET(request: Request) {
 
     // 1. Direct Tier 1: Real-time CME Globex quote from Databento Live Sidecar / Hub
     if (isDatabentoConfigured()) {
-      let dbLive = getLatestDatabentoLiveQuote(instrument)
-      if (!dbLive) {
-        try {
-          const { fetchDatabentoLiveSnapshot } = await import('@/lib/databento/liveHub')
-          const snap = await fetchDatabentoLiveSnapshot()
-          if (snap?.quotes?.[instrument]) {
-            dbLive = snap.quotes[instrument]!
-          }
-        } catch {}
-      }
+      const dbLive = await resolveDatabentoLiveQuote(instrument)
       if (dbLive && dbLive.price > 0) {
         const previous_close = getDayPreviousClose(instrument) ?? dbLive.price
         const change = dbLive.price - previous_close

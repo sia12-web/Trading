@@ -9,8 +9,9 @@ import sys
 import os
 import time
 import json
+import collections
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 try:
@@ -69,11 +70,16 @@ DESK_SYMBOLS = {
     "NKD.c.0": "NIKKEI",
 }
 
+# Completed 1m bars retained per desk. The historical bar vendors run several minutes
+# behind the tape, so these are the only real prints available for the recent gap.
+BAR_HISTORY_MINUTES = 480
+
 # State store (thread-safe)
 lock = threading.Lock()
 id_to_desk = {}
 latest_quotes = {}
 forming_candles = {}
+completed_bars = {}  # desk -> deque of finished 1m bars, oldest first
 subscribers = set()  # Set of client Queue objects
 total_trades = 0
 connected = False
@@ -98,6 +104,14 @@ def update_forming_candle(desk: str, price: float, size: int, ts_sec: int):
     bucket = (ts_sec // 60) * 60
     cur = forming_candles.get(desk)
     if not cur or cur["time"] != bucket:
+        # Retain the bar that just closed; it is real exchange data that no
+        # historical vendor will serve for another several minutes.
+        if cur and cur["time"] < bucket:
+            history = completed_bars.get(desk)
+            if history is None:
+                history = collections.deque(maxlen=BAR_HISTORY_MINUTES)
+                completed_bars[desk] = history
+            history.append(cur)
         forming_candles[desk] = {
             "time": bucket,
             "open": price,
@@ -180,6 +194,36 @@ class SidecarHTTPHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
 
+        elif path == "/bars":
+            # Completed 1m bars built from live CME prints, plus the forming bar.
+            # ?instrument=NASDAQ&since=<unix> keeps the payload to just the recent gap.
+            qs = parse_qs(parsed.query)
+            want = (qs.get("instrument", [None])[0] or "").upper() or None
+            try:
+                since = int(qs.get("since", ["0"])[0])
+            except ValueError:
+                since = 0
+
+            with lock:
+                desks = [want] if want else list(completed_bars.keys())
+                out = {}
+                for desk in desks:
+                    bars = [dict(b) for b in completed_bars.get(desk, ()) if b["time"] >= since]
+                    forming = forming_candles.get(desk)
+                    if forming and forming["time"] >= since:
+                        bars.append(dict(forming))
+                    if bars:
+                        out[desk] = bars
+                res = {"bars": out, "timestamp": int(time.time())}
+
+            body = json.dumps(res).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+
         elif path == "/stream":
             qs = parse_qs(parsed.query)
             filter_inst = qs.get("instrument", [None])[0]
@@ -199,13 +243,15 @@ class SidecarHTTPHandler(BaseHTTPRequestHandler):
 
             with lock:
                 subscribers.add(client_q)
-                if filter_inst and filter_inst in latest_quotes:
-                    seed = latest_quotes[filter_inst]
-                    try:
-                        self.wfile.write(f"data: {json.dumps(seed)}\n\n".encode("utf-8"))
-                        self.wfile.flush()
-                    except Exception:
-                        pass
+                seed = latest_quotes.get(filter_inst) if filter_inst else None
+
+            # Written outside the lock — a slow client must never stall trade ingestion.
+            if seed:
+                try:
+                    self.wfile.write(f"data: {json.dumps(seed)}\n\n".encode("utf-8"))
+                    self.wfile.flush()
+                except Exception:
+                    pass
 
             try:
                 while True:
@@ -228,7 +274,11 @@ class SidecarHTTPHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
 def run_http_server():
-    server = HTTPServer((HOST, PORT), SidecarHTTPHandler)
+    # Threaded: /stream is a long-lived SSE response. On a single-threaded server it
+    # would block /health and /snapshot for its entire lifetime, which makes the Node
+    # hub time out, mark the feed inactive and fall back to a slower quote source.
+    server = ThreadingHTTPServer((HOST, PORT), SidecarHTTPHandler)
+    server.daemon_threads = True
     print(f"[Sidecar] Local HTTP/SSE server listening on http://{HOST}:{PORT}", flush=True)
     try:
         server.serve_forever()
@@ -252,6 +302,11 @@ def run_databento_stream(api_key: str):
                 active_nkd: "NIKKEI",
             }
             print(f"[Sidecar] Subscribing active quarterly contracts: {list(raw_symbols.keys())}", flush=True)
+            # Instrument ids are only valid for one gateway session, and they change
+            # across a contract roll. Stale entries would map prints of an expired
+            # contract onto a live desk book.
+            with lock:
+                id_to_desk.clear()
             live.subscribe(
                 dataset="GLBX.MDP3",
                 schema="trades",

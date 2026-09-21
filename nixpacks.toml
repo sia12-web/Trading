@@ -3,5 +3,13 @@
 [variables]
 NIXPACKS_NODE_VERSION = "22"
 
+# Python is only here for scripts/databento_live_sidecar.py, which holds the CME Globex
+# live session. Without it the desk silently falls back to a slower quote source.
+[phases.setup]
+aptPkgs = ["python3", "python3-venv"]
+
 [phases.install]
-cmds = ["npm ci"]
+cmds = [
+  "npm ci",
+  "python3 -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir -r scripts/requirements-sidecar.txt",
+]

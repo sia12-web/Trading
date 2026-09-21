@@ -91,24 +91,42 @@ function dedupeSort(candles: YahooCandle[]): YahooCandle[] {
   return deduped
 }
 
+/**
+ * This is the primary intraday bar source, so it needs a deadline: without one a stalled
+ * Yahoo connection holds the candles route open indefinitely instead of failing over to
+ * Databento. `unreachable` lets the caller skip its second attempt when the first was a
+ * transport failure rather than an empty result.
+ */
+const YAHOO_CHART_TIMEOUT_MS = 4_000
+
+const UNREACHABLE = Symbol('yahoo-unreachable')
+type ChartResult = YahooCandle[] | null | typeof UNREACHABLE
+
 async function fetchYahooChart(
   symbol: string,
   interval: string,
   query: string
-): Promise<YahooCandle[] | null> {
+): Promise<ChartResult> {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&${query}`
 
-  const response = await fetch(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (compatible; TradePulse/1.0)',
-      Accept: 'application/json',
-    },
-    cache: 'no-store',
-  })
+  let response: Response
+  try {
+    response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; TradePulse/1.0)',
+        Accept: 'application/json',
+      },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(YAHOO_CHART_TIMEOUT_MS),
+    })
+  } catch (err) {
+    console.error(`[Yahoo] Candle fetch failed for ${symbol}:`, (err as Error)?.message)
+    return UNREACHABLE
+  }
 
   if (!response.ok) {
     console.error(`[Yahoo] Candle HTTP ${response.status} for ${symbol}`)
-    return null
+    return response.status >= 500 ? UNREACHABLE : null
   }
 
   const json = await response.json()
@@ -192,7 +210,7 @@ export async function getYahooCandles(
   const period1 = is1m
     ? nowSec - fetchDays * 24 * 3600
     : nowSec - Math.max(fetchDays, 5) * 24 * 3600
-  let candles =
+  const first =
     interval === '1d'
       ? await fetchYahooChart(symbol, interval, `range=${range}`)
       : await fetchYahooChart(
@@ -200,8 +218,12 @@ export async function getYahooCandles(
           interval,
           `period1=${period1}&period2=${nowSec}`
         )
-  if (!candles?.length) {
-    candles = await fetchYahooChart(symbol, interval, `range=${range}`)
+  // Retry the coarser range= form only when Yahoo answered but had nothing useful.
+  // Retrying after a timeout just doubles the wait before failing over to Databento.
+  let candles: YahooCandle[] | null = first === UNREACHABLE ? null : first
+  if (first !== UNREACHABLE && !candles?.length) {
+    const retry = await fetchYahooChart(symbol, interval, `range=${range}`)
+    candles = retry === UNREACHABLE ? null : retry
   }
   if (!candles?.length) return null
   if (resolution === '240') candles = aggregateTo4H(candles)
@@ -223,12 +245,13 @@ export async function getYahooCandlesRange(
   if (!symbol) return null
 
   const interval = INTERVAL_MAP[resolution] || '5m'
-  let candles = await fetchYahooChart(
+  const fetched = await fetchYahooChart(
     symbol,
     interval,
     `period1=${Math.floor(period1)}&period2=${Math.floor(period2)}`
   )
-  if (!candles) return null
+  if (!fetched || fetched === UNREACHABLE) return null
+  let candles: YahooCandle[] = fetched
   if (resolution === '240') candles = aggregateTo4H(candles)
   if (resolution === '30') candles = aggregateTo30m(candles)
   // Keep only bars inside the requested window

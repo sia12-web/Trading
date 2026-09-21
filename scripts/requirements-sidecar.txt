@@ -1,0 +1,3 @@
+# Databento CME Globex live gateway session (scripts/databento_live_sidecar.py).
+# Kept out of the repo root so Nixpacks does not detect this as a Python app.
+databento==0.86.0
