@@ -9705,13 +9705,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       const rect = container.getBoundingClientRect()
       const x = clientX - rect.left
       const timeScale = chart.timeScale()
-      let logical = timeScale.coordinateToLogical(x)
+      let logical: number | null = timeScale.coordinateToLogical(x) as number | null
       const list = candlesRef.current
       if (!(list.length > 0)) return null
       if (logical == null) {
         const lastIdx = list.length - 1
-        const lastX = timeScale.logicalToCoordinate(lastIdx)
-        const prevX = lastIdx > 0 ? timeScale.logicalToCoordinate(lastIdx - 1) : null
+        const lastX = timeScale.logicalToCoordinate(lastIdx as never)
+        const prevX = lastIdx > 0 ? timeScale.logicalToCoordinate((lastIdx - 1) as never) : null
         if (lastX != null && prevX != null && lastX !== prevX) {
           logical = lastIdx + (x - lastX) / (lastX - prevX)
         } else {
