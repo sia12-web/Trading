@@ -96,6 +96,10 @@ assert.ok(live.includes('rangesDiffer'), 'CVD time scale sync guards sub-pixel p
 assert.ok(live.includes('syncCvdFromMainRef'), 'CVD pane follows the price chart zoom instead of drifting ahead')
 assert.ok(live.includes('cvdIndependentZoomRef'), 'CVD pane can zoom independently of the price chart')
 assert.ok(live.includes('logicalFromPixel'), 'range boxes use pixel time so they can be drawn past the last print')
+assert.ok(
+  !live.includes('rightOffset: futurePad'),
+  'selecting a drawing tool must not change rightOffset (that snaps the camera to the far right)'
+)
 assert.ok(live.includes('paintOverlaysSinglePassRef'), 'live tick overlay updates use single-pass throttled painter')
 assert.ok(!live.includes('closedChanged || !streamLive'), 'refreshCandles does not force full setData when market is static')
 

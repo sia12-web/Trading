@@ -9442,17 +9442,16 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     })
   }, [])
 
-  // Lock chart scrolling & scaling during active drawing to prevent chart jumping
+  // Lock pan/zoom while a 2-click draw is in progress so a drag does not pan.
+  // Never change rightOffset here — that snaps the camera to last-bar + pad
+  // (the chart jumps to the far right the moment a drawing tool is selected).
+  // Future clicks past the last print use logicalFromPixel, not extra whitespace.
   useEffect(() => {
     const chart = chartRef.current
     if (!chart) return
     const drawing = drawTimeActive || drawZoneActive || activeDrawingTool !== 'NONE'
-    const futurePad =
-      activeDrawingTool !== 'NONE'
-        ? 180
-        : timeframe === '1D'
-          ? 6
-          : DESK_CHART_THEME.timeScale.rightOffset
+    const ts = chart.timeScale()
+    const savedRange = ts.getVisibleLogicalRange()
 
     chart.applyOptions({
       handleScroll: {
@@ -9473,11 +9472,15 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         mouseWheel: !drawing,
         pinch: !drawing,
       },
-      timeScale: {
-        rightOffset: futurePad,
-      },
     })
-  }, [drawTimeActive, drawZoneActive, activeDrawingTool, timeframe])
+    if (savedRange) {
+      try {
+        ts.setVisibleLogicalRange(savedRange)
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [drawTimeActive, drawZoneActive, activeDrawingTool])
 
   // ── Highlight Time Range tool — 2-Click (Click Start → Move → Click End) ────
   useEffect(() => {
