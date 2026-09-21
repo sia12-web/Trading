@@ -336,8 +336,10 @@ export function timeToX(
   timeScale: { timeToCoordinate: (t: any) => number | null },
   t: number,
   candleTimes: number[],
-  asBusinessDay = false
+  asBusinessDay = false,
+  barSec?: number
 ): number | null {
+  if (candleTimes.length === 0) return null
   const toCoord = (unix: number) => {
     if (!asBusinessDay) {
       return timeScale.timeToCoordinate(unix as UTCTimestamp)
@@ -350,25 +352,41 @@ export function timeToX(
     })
   }
 
-  const direct = toCoord(t)
-  if (direct !== null) return direct
-  if (candleTimes.length === 0) return null
-
   const first = candleTimes[0]!
   const last = candleTimes[candleTimes.length - 1]!
-  if (t <= first) return toCoord(first)
-  if (t >= last) {
+  const step =
+    barSec && barSec > 0
+      ? barSec
+      : candleTimes.length >= 2
+        ? Math.max(last - candleTimes[candleTimes.length - 2]!, 1)
+        : 1
+  if (t > last) {
     const xLast = toCoord(last)
     if (xLast == null) return null
     if (candleTimes.length >= 2) {
       const prev = candleTimes[candleTimes.length - 2]!
       const xPrev = toCoord(prev)
-      if (xPrev != null && prev < last) {
-        return xLast + (xLast - xPrev) * ((t - last) / (last - prev))
+      if (xPrev != null && xLast !== xPrev) {
+        return xLast + ((xLast - xPrev) * (t - last)) / step
       }
     }
     return xLast
   }
+  if (t < first) {
+    const xFirst = toCoord(first)
+    if (xFirst == null) return null
+    if (candleTimes.length >= 2) {
+      const next = candleTimes[1]!
+      const xNext = toCoord(next)
+      if (xNext != null && xNext !== xFirst) {
+        return xFirst + ((xNext - xFirst) * (t - first)) / step
+      }
+    }
+    return xFirst
+  }
+
+  const direct = toCoord(t)
+  if (direct !== null) return direct
 
   let lo = 0
   let hi = candleTimes.length - 1
@@ -406,6 +424,40 @@ export function unixFromLogical(
   const t0 = unixTimes[i0]!
   const t1 = unixTimes[i0 + 1]!
   return t0 + (t1 - t0) * frac
+}
+
+/**
+ * Pixel → logical index, including whitespace past the last (and before the first) bar.
+ * lightweight-charts clamps coordinateToLogical to the data range, so future
+ * clicks must be derived from last-bar X + bar width.
+ */
+export function logicalFromPixel(
+  timeScale: {
+    coordinateToLogical: (x: number) => number | null
+    logicalToCoordinate: (logical: any) => number | null
+  },
+  x: number,
+  barCount: number
+): number | null {
+  if (!(barCount > 0) || !Number.isFinite(x)) return null
+  const lastIdx = barCount - 1
+  const lastX = timeScale.logicalToCoordinate(lastIdx as never)
+  const prevX =
+    lastIdx > 0 ? timeScale.logicalToCoordinate((lastIdx - 1) as never) : null
+  const firstX = timeScale.logicalToCoordinate(0 as never)
+  const barW =
+    lastX != null && prevX != null && lastX !== prevX
+      ? lastX - prevX
+      : firstX != null && lastX != null && lastIdx > 0
+        ? (lastX - firstX) / lastIdx
+        : 12
+  if (!(barW > 0)) return lastIdx
+  if (lastX != null && x > lastX) return lastIdx + (x - lastX) / barW
+  if (firstX != null && x < firstX) return (x - firstX) / barW
+  const fromApi = timeScale.coordinateToLogical(x)
+  if (fromApi != null && Number.isFinite(Number(fromApi))) return Number(fromApi)
+  if (lastX == null) return null
+  return lastIdx + (x - lastX) / barW
 }
 
 /**

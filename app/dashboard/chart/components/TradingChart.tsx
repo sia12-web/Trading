@@ -45,6 +45,7 @@ import {
   paintSessionHighlightOverlay,
   timeToX,
   unixFromLogical,
+  logicalFromPixel,
   deskClockFor,
   deskSessionAt,
   nyDeskSessionAt,
@@ -2985,8 +2986,8 @@ export function TradingChart({
 
     // 2. Render Range Boxes
     for (const r of activeRangeBoxes) {
-      const x1 = timeToX(chart.timeScale(), toChartTime(r.p1.time, tz), candleTimes)
-      const x2 = timeToX(chart.timeScale(), toChartTime(r.p2.time, tz), candleTimes)
+      const x1 = timeToX(chart.timeScale(), toChartTime(r.p1.time, tz), candleTimes, false, barSeconds)
+      const x2 = timeToX(chart.timeScale(), toChartTime(r.p2.time, tz), candleTimes, false, barSeconds)
       const y1 = series.priceToCoordinate(r.p1.price)
       const y2 = series.priceToCoordinate(r.p2.price)
       if (x1 != null && x2 != null && y1 != null && y2 != null) {
@@ -3685,8 +3686,8 @@ export function TradingChart({
     if (drawingDraft && draftMousePosRef.current) {
       const p1 = drawingDraft
       const p2 = draftMousePosRef.current
-      const x1 = timeToX(chart.timeScale(), toChartTime(p1.time, tz), candleTimes) ?? p1.x
-      const x2 = timeToX(chart.timeScale(), toChartTime(p2.time, tz), candleTimes) ?? p2.x
+      const x1 = timeToX(chart.timeScale(), toChartTime(p1.time, tz), candleTimes, false, barSeconds) ?? p1.x
+      const x2 = timeToX(chart.timeScale(), toChartTime(p2.time, tz), candleTimes, false, barSeconds) ?? p2.x
       const y1 = series.priceToCoordinate(p1.price) ?? p1.y
       const y2 = series.priceToCoordinate(p2.price) ?? p2.y
 
@@ -3846,7 +3847,7 @@ export function TradingChart({
     }
 
     ctx.restore()
-  }, [activeTrendlines, activeRangeBoxes, activeManualFrvps, drawingDraft, activeDrawingTool, showCandlestickPatterns, hideTrendlineBadges])
+  }, [activeTrendlines, activeRangeBoxes, activeManualFrvps, drawingDraft, activeDrawingTool, showCandlestickPatterns, hideTrendlineBadges, barSeconds])
 
   useEffect(() => {
     paintUserDrawingsRef.current = paintUserDrawings
@@ -9446,6 +9447,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     const chart = chartRef.current
     if (!chart) return
     const drawing = drawTimeActive || drawZoneActive || activeDrawingTool !== 'NONE'
+    const futurePad =
+      activeDrawingTool !== 'NONE'
+        ? 180
+        : timeframe === '1D'
+          ? 6
+          : DESK_CHART_THEME.timeScale.rightOffset
 
     chart.applyOptions({
       handleScroll: {
@@ -9465,9 +9472,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         },
         mouseWheel: !drawing,
         pinch: !drawing,
-      }
+      },
+      timeScale: {
+        rightOffset: futurePad,
+      },
     })
-  }, [drawTimeActive, drawZoneActive, activeDrawingTool])
+  }, [drawTimeActive, drawZoneActive, activeDrawingTool, timeframe])
 
   // ── Highlight Time Range tool — 2-Click (Click Start → Move → Click End) ────
   useEffect(() => {
@@ -9704,20 +9714,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       if (!chart || !container) return null
       const rect = container.getBoundingClientRect()
       const x = clientX - rect.left
-      const timeScale = chart.timeScale()
-      let logical: number | null = timeScale.coordinateToLogical(x) as number | null
       const list = candlesRef.current
       if (!(list.length > 0)) return null
-      if (logical == null) {
-        const lastIdx = list.length - 1
-        const lastX = timeScale.logicalToCoordinate(lastIdx as never)
-        const prevX = lastIdx > 0 ? timeScale.logicalToCoordinate((lastIdx - 1) as never) : null
-        if (lastX != null && prevX != null && lastX !== prevX) {
-          logical = lastIdx + (x - lastX) / (lastX - prevX)
-        } else {
-          return null
-        }
-      }
+      const logical = logicalFromPixel(chart.timeScale(), x, list.length)
+      if (logical == null) return null
       const times = list.map((c) => Number(c.time))
       return unixFromLogical(logical, times, barSeconds)
     }
