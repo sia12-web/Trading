@@ -9,6 +9,8 @@ import {
   closedHistoryOhlcChanged,
   deskBarOpenUnix,
   dropImplausibleDeskBars,
+  isPlausibleRealtimeTick,
+  liveQuoteDisagreesWithReference,
   mergeHistoryWithLiveTip,
   quoteUnixForBucket,
   LIVE_MAX_GAP_FILLS,
@@ -29,6 +31,37 @@ const t0 = 1_700_000_000 - (1_700_000_000 % 300)
   assert.equal(next.last.open, 100)
   assert.equal(next.last.close, 100.8)
   assert.equal(next.last.high, 101)
+}
+
+{
+  const current = {
+    time: t0 + 300,
+    open: 101,
+    high: 102,
+    low: 100,
+    close: 101.5,
+  }
+  const replayed = applyTickToFormingBar(current, 99, t0 + 10)
+  assert.deepEqual(replayed.last, current, 'older replay tick must not corrupt current bar')
+  assert.equal(replayed.rolled, false)
+}
+
+{
+  // A fast but valid exchange move must keep printing; the tighter proxy guard
+  // still blocks the same transition until its basis/book is verified.
+  assert.equal(isPlausibleRealtimeTick(29_400, 29_500, 'NASDAQ', true), true)
+  assert.equal(isPlausibleRealtimeTick(29_400, 29_500, 'NASDAQ', false), false)
+
+  // Delayed Yahoo must never veto live Databento during a real volatility move.
+  assert.equal(
+    liveQuoteDisagreesWithReference(29_500, t0 + 600, 29_400, t0, 'NASDAQ'),
+    false
+  )
+  assert.equal(
+    liveQuoteDisagreesWithReference(97.4, t0 + 30, 93.5, t0, 'CRUDE'),
+    true,
+    'same-time wrong-month scale mismatch is still rejected'
+  )
 }
 
 {

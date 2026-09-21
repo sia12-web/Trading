@@ -23,9 +23,10 @@ import {
   subscribeDatabentoLive,
   isDatabentoLiveActive,
   getLatestDatabentoLiveQuote,
+  type DatabentoLiveBar,
 } from '@/lib/databento/liveHub'
 import { isDatabentoConfigured } from '@/lib/databento/client'
-import { liveTipDisagreesWithBook } from '@/lib/chart/liveFormingBar'
+import { liveQuoteDisagreesWithReference } from '@/lib/chart/liveFormingBar'
 import {
   isChartStreamAllowed,
   isLiveDeskInstrument,
@@ -47,7 +48,9 @@ function payloadFor(
   bid: number,
   ask: number,
   timestamp: number,
-  source: 'cme' | 'oanda' = 'oanda'
+  source: 'cme' | 'oanda' = 'oanda',
+  bar?: DatabentoLiveBar,
+  feed?: 'databento'
 ) {
   const previous_close = getDayPreviousClose(instrument) ?? price
   const change = price - previous_close
@@ -62,6 +65,8 @@ function payloadFor(
     change_pct,
     previous_close,
     timestamp,
+    bar,
+    feed,
   }
 }
 
@@ -106,6 +111,7 @@ export async function GET(request: Request) {
   let cmePoller: ReturnType<typeof setInterval> | null = null
   let bookTimer: ReturnType<typeof setInterval> | null = null
   let closed = false
+  let pendingFrame: unknown = null
 
   const stream = new ReadableStream({
     start(controller) {
@@ -122,6 +128,29 @@ export async function GET(request: Request) {
 
       const send = (obj: unknown) => {
         if (closed) return
+        // Bound queue growth. During a volatility burst a slow browser needs
+        // the newest exchange state, not thousands of stale prints. Databento
+        // frames include exact forming-bar OHLCV, so coalescing preserves the
+        // candle high/low while preventing seconds of replay lag.
+        if ((controller.desiredSize ?? 1) <= 0) {
+          const incomingTs = Number(
+            (obj as { timestamp?: unknown } | null)?.timestamp
+          )
+          const pendingTs = Number(
+            (pendingFrame as { timestamp?: unknown } | null)?.timestamp
+          )
+          if (
+            pendingFrame != null &&
+            Number.isFinite(incomingTs) &&
+            Number.isFinite(pendingTs) &&
+            incomingTs > 0 &&
+            pendingTs > incomingTs
+          ) {
+            return
+          }
+          pendingFrame = obj
+          return
+        }
         try {
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify(obj)}\n\n`)
@@ -191,11 +220,13 @@ export async function GET(request: Request) {
       }
 
       let bookPx = getDayPreviousClose(instrument) ?? 0
+      let bookTs = 0
       const refreshBook = async () => {
         try {
           const yq = await getYahooQuote(instrument)
           if (closed || !yq?.price) return
           bookPx = yq.price
+          bookTs = yq.timestamp
         } catch {
           /* keep */
         }
@@ -205,8 +236,17 @@ export async function GET(request: Request) {
         void refreshBook()
       }, 8_000)
 
-      const databentoAgreesWithBook = (price: number) =>
-        !(bookPx > 0 && liveTipDisagreesWithBook(price, bookPx, instrument))
+      const databentoAgreesWithBook = (price: number, timestamp: number) =>
+        !(
+          bookPx > 0 &&
+          liveQuoteDisagreesWithReference(
+            price,
+            timestamp,
+            bookPx,
+            bookTs,
+            instrument
+          )
+        )
 
       const cleanup = () => {
         if (closed) return
@@ -233,7 +273,7 @@ export async function GET(request: Request) {
       // Tier 1: Real-time CME Globex exchange feed directly from Databento Live
       if (isDatabentoConfigured()) {
         unsubscribeDb = subscribeDatabentoLive(instrument, (trade) => {
-          if (!databentoAgreesWithBook(trade.price)) {
+          if (!databentoAgreesWithBook(trade.price, trade.timestamp)) {
             dbOnBook = false
             return
           }
@@ -245,14 +285,16 @@ export async function GET(request: Request) {
               trade.bid,
               trade.ask,
               trade.timestamp,
-              'cme'
+              'cme',
+              trade.bar,
+              'databento'
             )
           )
         })
 
         // Seed initial live quote immediately from Databento Live snapshot if available
         const dbSeed = getLatestDatabentoLiveQuote(instrument)
-        if (dbSeed && databentoAgreesWithBook(dbSeed.price)) {
+        if (dbSeed && databentoAgreesWithBook(dbSeed.price, dbSeed.timestamp)) {
           send(
             payloadFor(
               instrument,
@@ -260,10 +302,15 @@ export async function GET(request: Request) {
               dbSeed.bid,
               dbSeed.ask,
               dbSeed.timestamp,
-              'cme'
+              'cme',
+              dbSeed.bar,
+              'databento'
             )
           )
-        } else if (dbSeed && !databentoAgreesWithBook(dbSeed.price)) {
+        } else if (
+          dbSeed &&
+          !databentoAgreesWithBook(dbSeed.price, dbSeed.timestamp)
+        ) {
           dbOnBook = false
         }
       }
@@ -305,6 +352,7 @@ export async function GET(request: Request) {
       // Keep proxies / browsers from treating the connection as idle
       heartbeat = setInterval(() => {
         if (closed) return
+        if ((controller.desiredSize ?? 1) <= 0) return
         try {
           controller.enqueue(encoder.encode(`: hb ${Date.now()}\n\n`))
         } catch {
@@ -313,6 +361,18 @@ export async function GET(request: Request) {
       }, 15_000)
 
       request.signal.addEventListener('abort', cleanup)
+    },
+    pull(controller) {
+      if (closed || pendingFrame == null) return
+      const frame = pendingFrame
+      pendingFrame = null
+      try {
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify(frame)}\n\n`)
+        )
+      } catch {
+        /* cancellation cleanup owns the subscriptions */
+      }
     },
     cancel() {
       closed = true

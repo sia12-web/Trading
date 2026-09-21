@@ -452,8 +452,9 @@ export default function ChartPage() {
     livePriceRef.current = null
   }, [instrument, gate?.lockedInstrument, managePos?.instrument])
 
-  // Fill detection needs every tick on the ref; UI state is throttled unless a limit is working
+  // Fill detection reads every tick through a ref; UI state remains throttled.
   const pendingActiveRef = useRef(false)
+  const pendingFillTickRef = useRef<(price: number) => void>(() => {})
   useEffect(() => {
     pendingActiveRef.current = !!pending && !managePos
   }, [pending, managePos])
@@ -461,8 +462,9 @@ export default function ChartPage() {
   const onPriceUpdate = useCallback((price: number) => {
     livePriceRef.current = price
     if (pendingActiveRef.current) {
-      setLivePrice(price)
-      return
+      // Evaluate working-limit fills directly on every exchange print without
+      // forcing the entire desk page to React-render at burst tick rates.
+      pendingFillTickRef.current(price)
     }
     const now = Date.now()
     if (now - lastParentPriceAt.current < 50) return
@@ -1603,6 +1605,28 @@ export default function ChartPage() {
     },
     [enterManage, instrument, setInstrument]
   )
+
+  // Every-tick working-limit check lives behind a ref so TradingChart's hot
+  // callback stays stable. fillingRef inside fillPending deduplicates bursts.
+  useEffect(() => {
+    pendingFillTickRef.current = (price: number) => {
+      if (!pending || managePos || orderStatus !== 'working') return
+      if (
+        !quoteBelongsToBook({
+          instrument: pending.instrument,
+          entry: pending.level,
+          quote: price,
+        })
+      ) {
+        return
+      }
+      if (!limitWouldFill(pending.direction, pending.level, price)) return
+      void fillPending(pending, pending.level)
+    }
+    return () => {
+      pendingFillTickRef.current = () => {}
+    }
+  }, [pending, managePos, orderStatus, fillPending])
 
   // Watch live quotes — fill only durable WORKING limits (not placing/rejected)
   useEffect(() => {

@@ -58,6 +58,46 @@ export function liveTipDisagreesWithBook(
   return Math.abs(liveClose - bookClose) > maxPts * 2
 }
 
+/**
+ * Contract/scale guard for two prints that represent approximately the same
+ * exchange time. Never compare Databento now with Yahoo's ~10-minute-delayed
+ * print: a real fast-market move would be mistaken for the wrong contract and
+ * the live stream would freeze until Yahoo caught up.
+ */
+export function liveQuoteDisagreesWithReference(
+  liveClose: number,
+  liveUnix: number,
+  referenceClose: number,
+  referenceUnix: number,
+  instrument?: string | null,
+  maxSeparationSec: number = LIVE_STALE_QUOTE_SEC
+): boolean {
+  if (!(liveUnix > 0) || !(referenceUnix > 0)) return false
+  if (Math.abs(liveUnix - referenceUnix) > maxSeparationSec) return false
+  return liveTipDisagreesWithBook(liveClose, referenceClose, instrument)
+}
+
+/**
+ * Per-tick guard. Official raw-contract Databento prints are trusted up to the
+ * hard scale-glitch ceiling; proxy/fallback feeds keep tighter point limits.
+ */
+export function isPlausibleRealtimeTick(
+  lastClose: number,
+  price: number,
+  instrument?: string | null,
+  trustedExchange: boolean = false
+): boolean {
+  if (!(price > 0)) return false
+  if (!(lastClose > 0)) return true
+  if (trustedExchange) {
+    return Math.abs(price - lastClose) / lastClose <= LIVE_MAX_TIP_JUMP_PCT
+  }
+  const maxPts = instrument
+    ? (MAX_SINGLE_TICK_PTS[instrument] ?? lastClose * 0.025)
+    : lastClose * 0.05
+  return Math.abs(price - lastClose) <= maxPts
+}
+
 export function deskBarOpenUnix(
   unix: number,
   barSec: number = DESK_LIVE_BAR_SEC
@@ -81,7 +121,8 @@ export function applyTickToFormingBar(
   price: number,
   quoteUnix: number,
   barSec: number = DESK_LIVE_BAR_SEC,
-  instrument?: string | null
+  instrument?: string | null,
+  trustedExchange: boolean = false
 ): { last: FormingBar; rolled: boolean; gapFills: FormingBar[] } {
   const lastT = last.time
   const bucket = deskBarOpenUnix(quoteUnix, barSec)
@@ -89,13 +130,17 @@ export function applyTickToFormingBar(
     return { last, rolled: false, gapFills: [] }
   }
 
-  if (bucket <= lastT) {
+  // Reconnect replay and network reordering can deliver an older completed
+  // bucket after the chart has advanced. Never fold that price into the
+  // current candle; REST/Databento bar reconciliation owns older buckets.
+  if (bucket < lastT) {
+    return { last, rolled: false, gapFills: [] }
+  }
+
+  if (bucket === lastT) {
     // Outlier guard within forming bar: prevent rogue multi-hundred point jumps from creating phantom tails
-    if (last.close > 0) {
-      const maxPts = instrument ? (MAX_SINGLE_TICK_PTS[instrument] ?? 100) : (last.close * 0.05)
-      if (Math.abs(price - last.close) > maxPts) {
-        return { last, rolled: false, gapFills: [] }
-      }
+    if (!isPlausibleRealtimeTick(last.close, price, instrument, trustedExchange)) {
+      return { last, rolled: false, gapFills: [] }
     }
 
     return {

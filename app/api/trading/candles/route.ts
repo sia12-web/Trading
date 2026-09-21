@@ -25,7 +25,10 @@ import {
   isLiveDeskInstrument,
   sessionFor,
 } from '@/lib/trading/sessionGate'
-import { dropImplausibleDeskBars, liveTipDisagreesWithBook } from '@/lib/chart/liveFormingBar'
+import {
+  dropImplausibleDeskBars,
+  liveQuoteDisagreesWithReference,
+} from '@/lib/chart/liveFormingBar'
 import { AVWAP_CANDLE_FETCH_CALENDAR_DAYS } from '@/lib/chart/sessionVwap'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import type { Instrument } from '@/types/price-feed'
@@ -296,11 +299,21 @@ export async function GET(request: Request) {
       // opening tip than the stream it is about to attach to.
       if (!endDate && isDatabentoConfigured()) {
         const dbLive = await resolveDatabentoLiveQuote(instrument)
-        const bookClose = candles[candles.length - 1]?.close
+        const bookTip = candles[candles.length - 1]
+        const bookClose = bookTip?.close
         if (
           dbLive &&
           dbLive.price > 0 &&
-          !(bookClose && liveTipDisagreesWithBook(dbLive.price, bookClose, instrument))
+          !(
+            bookClose &&
+            liveQuoteDisagreesWithReference(
+              dbLive.price,
+              dbLive.timestamp,
+              bookClose,
+              bookTip?.time ?? 0,
+              instrument
+            )
+          )
         ) {
           const previous_close = getDayPreviousClose(instrument) ?? dbLive.price
           const change = dbLive.price - previous_close

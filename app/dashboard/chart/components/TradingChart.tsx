@@ -70,6 +70,7 @@ import {
   dropImplausibleDeskBars,
   mergeHistoryWithLiveTip,
   closedHistoryOhlcChanged,
+  isPlausibleRealtimeTick,
   quoteUnixForBucket,
 } from '@/lib/chart/liveFormingBar'
 import { fillCandleGaps } from '@/lib/chart/candleGapFiller'
@@ -7986,7 +7987,10 @@ export function TradingChart({
   }, [instrument])
 
   useEffect(() => {
-    candlesRef.current = candles
+    // Keep the imperative tick buffer separate from React state. The hot path
+    // updates only its final element in place; cloning here prevents mutating
+    // the state array while avoiding an O(history) copy on every exchange tick.
+    candlesRef.current = candles.slice()
     requestAnimationFrame(() => {
       refreshSessionHighlightsRef.current?.()
     })
@@ -8700,7 +8704,7 @@ export function TradingChart({
         lastCandleRef.current = bar
         return
       }
-      let next = bars
+      const next = bars
       for (const g of fills) {
         const prev = next[next.length - 1]
         // Ensure gap fills strictly advance time
@@ -8710,7 +8714,7 @@ export function TradingChart({
         } catch {
           /* ignore */
         }
-        next = [...next, g]
+        next.push(g)
       }
       const last = next[next.length - 1]!
       // Strictly prevent non-monotonic timestamps which cause Lightweight Charts to throw or drop subsequent bars
@@ -8718,10 +8722,15 @@ export function TradingChart({
         return
       }
       const isNewBar = (last.time as number) !== (bar.time as number)
-      next =
-        !isNewBar
-          ? [...next.slice(0, -1), { ...last, ...bar, volume: last.volume || bar.volume }]
-          : [...next, bar]
+      if (isNewBar) {
+        next.push(bar)
+      } else {
+        next[next.length - 1] = {
+          ...last,
+          ...bar,
+          volume: Math.max(last.volume ?? 0, bar.volume ?? 0),
+        }
+      }
       candlesRef.current = next
       paintTipBar(bar)
       if (fills.length > 0) {
@@ -8740,28 +8749,41 @@ export function TradingChart({
       price: number,
       changePct: number,
       quoteTs: number,
-      streamLive: boolean
+      streamLive: boolean,
+      trustedExchange: boolean,
+      exchangeBar?: {
+        time: number
+        open: number
+        high: number
+        low: number
+        close: number
+        volume: number
+      }
     ) => {
       // Guard rogue ticks, cross-feed scale bleeds, and delayed outliers.
       // Calibrated per instrument to eliminate false massive tails without blocking real volatility
       const tip = lastCandleRef.current
-      if (tip && tip.close > 0) {
-        const instStr = String(instrument).toUpperCase()
-        const maxPts =
-          instStr === 'DOW'
-            ? 150
-            : instStr === 'NASDAQ'
-            ? 80
-            : (instrument as any) === 'NIKKEI'
-            ? 150
-            : instStr === 'GOLD'
-            ? 15
-            : instStr === 'CRUDE'
-            ? 1.5
-            : tip.close * 0.025
-        if (Math.abs(price - tip.close) > maxPts) {
-          return
-        }
+      if (
+        trustedExchange &&
+        timeframe !== '1D' &&
+        tip &&
+        Math.floor(quoteTs / barSeconds) * barSeconds <
+          (tip.time as number)
+      ) {
+        // Reconnect replay for an already-closed bucket. The bar refresh owns
+        // it; publishing it as the current quote would make the ticker jump back.
+        return
+      }
+      if (
+        tip &&
+        !isPlausibleRealtimeTick(
+          tip.close,
+          price,
+          instrument,
+          trustedExchange
+        )
+      ) {
+        return
       }
 
       onPriceUpdate?.(price)
@@ -8803,7 +8825,12 @@ export function TradingChart({
       }
 
       const tfSec = barSeconds
-      const bucketTs = quoteUnixForBucket(quoteTs)
+      // Databento event time is authoritative, including reconnect replay.
+      // Wall-clock bucketing stale exchange events would stuff old prints into
+      // the current bar and create false volatility.
+      const bucketTs = trustedExchange
+        ? quoteTs
+        : quoteUnixForBucket(quoteTs)
       const stepped = applyTickToFormingBar(
         {
           time: last.time as number,
@@ -8816,7 +8843,8 @@ export function TradingChart({
         price,
         bucketTs,
         tfSec,
-        instrument
+        instrument,
+        trustedExchange
       )
       const fills: OHLCV[] = stepped.gapFills.map((g) => ({
         time: g.time as UTCTimestamp,
@@ -8826,13 +8854,30 @@ export function TradingChart({
         close: g.close,
         volume: g.volume ?? 0,
       }))
+      const exchangeBucket =
+        exchangeBar && exchangeBar.time > 0
+          ? Math.floor(exchangeBar.time / tfSec) * tfSec
+          : -1
+      const exactExchangeMinute =
+        trustedExchange &&
+        exchangeBar &&
+        exchangeBucket === stepped.last.time
+          ? exchangeBar
+          : null
       const bar: OHLCV = {
         time: stepped.last.time as UTCTimestamp,
         open: stepped.last.open,
-        high: stepped.last.high,
-        low: stepped.last.low,
+        high: exactExchangeMinute
+          ? Math.max(stepped.last.high, exactExchangeMinute.high)
+          : stepped.last.high,
+        low: exactExchangeMinute
+          ? Math.min(stepped.last.low, exactExchangeMinute.low)
+          : stepped.last.low,
         close: stepped.last.close,
-        volume: stepped.last.volume ?? last.volume ?? 0,
+        volume:
+          tfSec === 60 && exactExchangeMinute
+            ? exactExchangeMinute.volume
+            : stepped.last.volume ?? last.volume ?? 0,
       }
       commitTipBar(bar, fills)
     }
@@ -8854,7 +8899,14 @@ export function TradingChart({
             typeof json.timestamp === 'number' && json.timestamp > 0
               ? json.timestamp
               : Math.floor(Date.now() / 1000)
-          applyQuote(json.price, json.change_pct ?? 0, ts, streamLive)
+          applyQuote(
+            json.price,
+            json.change_pct ?? 0,
+            ts,
+            streamLive,
+            json.feed === 'databento',
+            json.bar
+          )
         }
       } catch {
         /* keep */
@@ -9010,6 +9062,16 @@ export function TradingChart({
             change_pct?: number
             timestamp?: number
             instrument?: string
+            source?: string
+            feed?: string
+            bar?: {
+              time: number
+              open: number
+              high: number
+              low: number
+              close: number
+              volume: number
+            }
           }
           // Hard reject ticks from another book (stale EventSource during tab switch)
           if (
@@ -9025,7 +9087,14 @@ export function TradingChart({
             typeof json.timestamp === 'number' && json.timestamp > 0
               ? json.timestamp
               : Math.floor(Date.now() / 1000)
-          applyQuote(json.price, json.change_pct ?? 0, ts, streamLive)
+          applyQuote(
+            json.price,
+            json.change_pct ?? 0,
+            ts,
+            streamLive,
+            json.feed === 'databento',
+            json.bar
+          )
         } catch {
           /* ignore bad frames */
         }

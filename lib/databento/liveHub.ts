@@ -20,6 +20,8 @@ export type DatabentoLiveQuote = {
   side?: string
   timestamp: number
   source: 'cme_globex'
+  /** Exact forming 1m OHLCV from every exchange print. */
+  bar?: DatabentoLiveBar
 }
 
 export type DatabentoLiveListener = (quote: DatabentoLiveQuote) => void
@@ -248,6 +250,17 @@ async function runUpstream() {
                 side: parsed.side,
                 timestamp: Number(parsed.timestamp) || Math.floor(Date.now() / 1000),
                 source: 'cme_globex',
+                bar:
+                  parsed.bar && Number(parsed.bar.close) > 0
+                    ? {
+                        time: Number(parsed.bar.time),
+                        open: Number(parsed.bar.open),
+                        high: Number(parsed.bar.high),
+                        low: Number(parsed.bar.low),
+                        close: Number(parsed.bar.close),
+                        volume: Number(parsed.bar.volume) || 0,
+                      }
+                    : undefined,
               })
             }
           } catch {
@@ -354,7 +367,10 @@ export function isDatabentoLiveActive(instrument?: Instrument): boolean {
   if (!h.active) return false
   if (instrument) {
     const last = h.lastByInstrument.get(instrument)
-    if (!last) return h.active
+    // A local SSE socket can be connected before the Databento gateway has
+    // delivered this instrument. Treating the socket itself as market data
+    // silences OANDA and leaves the chart frozen on startup/reconnect.
+    if (!last) return false
     // Wide window prevents quiet market periods from flapping to secondary feeds
     return Date.now() - last.receivedAt < TICK_LIVE_WINDOW_MS
   }
@@ -448,6 +464,7 @@ export async function resolveDatabentoLiveQuote(
     side: row.side,
     timestamp: Number(row.timestamp) || Math.floor(Date.now() / 1000),
     source: 'cme_globex',
+    bar: row.bar,
   }
 }
 

@@ -174,6 +174,9 @@ DESK_SYMBOLS = {
 # Completed 1m bars retained per desk. The historical bar vendors run several minutes
 # behind the tape, so these are the only real prints available for the recent gap.
 BAR_HISTORY_MINUTES = 480
+# The local consumer only needs the newest print. A huge queue turns a brief
+# Node/browser stall into seconds of stale replay during volatility.
+SSE_TICK_QUEUE_MAX = 128
 
 # State store (thread-safe)
 lock = threading.Lock()
@@ -204,6 +207,10 @@ def load_api_key():
 def update_forming_candle(desk: str, price: float, size: int, ts_sec: int):
     bucket = (ts_sec // 60) * 60
     cur = forming_candles.get(desk)
+    # A reconnect replay can overlap prints already seen from the live head.
+    # Never roll the forming candle backward.
+    if cur and bucket < cur["time"]:
+        return
     if not cur or cur["time"] != bucket:
         # Retain the bar that just closed; it is real exchange data that no
         # historical vendor will serve for another several minutes.
@@ -419,8 +426,17 @@ def broadcast_trade(payload: dict):
                 import queue
                 if isinstance(e, queue.Full):
                     try:
-                        q.get_nowait()
-                        q.put_nowait(payload)
+                        # Do not replay a stale volatility burst after a slow
+                        # consumer recovers. The newest payload carries exact
+                        # forming-bar OHLCV, so dropping queued prints loses no
+                        # candle extremes and restores real-time immediately.
+                        while True:
+                            q.get_nowait()
+                    except queue.Empty:
+                        try:
+                            q.put_nowait(payload)
+                        except Exception:
+                            dead.append(q)
                     except Exception:
                         dead.append(q)
                 else:
@@ -522,7 +538,7 @@ class SidecarHTTPHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
             import queue
-            client_q = queue.Queue(maxsize=10000)
+            client_q = queue.Queue(maxsize=SSE_TICK_QUEUE_MAX)
 
             with lock:
                 subscribers.add(client_q)
@@ -618,6 +634,10 @@ def run_databento_stream(api_key: str):
                         }
                         latest_quotes[desk] = payload
                         update_forming_candle(desk, price, size, ts_sec)
+                        # Carry exact exchange OHLCV with every quote. Downstream
+                        # may coalesce stale prints under backpressure without
+                        # losing the burst high/low that shapes the candle.
+                        payload["bar"] = dict(forming_candles[desk])
 
                     broadcast_trade(payload)
                 elif hasattr(record, "pretty_open") and hasattr(record, "pretty_close"):
